@@ -297,3 +297,45 @@ describe('useWindowedPhotos', () => {
     expect(fetchMock.mock.calls.length).toBe(before)
   })
 })
+
+describe('useWindowedPhotos unknown tokens', () => {
+  it('surfaces the filter tokens the query language did not understand', async () => {
+    fetchMock.mockResolvedValue({ ...pageAt(1, 0), unknown_tokens: ['osoba:Jarmila'] })
+
+    const { result } = renderHook(() => useWindowedPhotos({ ...PARAMS, q: 'osoba:Jarmila' }))
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('ready')
+    })
+    expect(result.current.unknownTokens).toEqual(['osoba:Jarmila'])
+  })
+
+  it('reports none when the response carries none', async () => {
+    servePagesOf(1)
+    const { result } = renderHook(() => useWindowedPhotos(PARAMS))
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('ready')
+    })
+    expect(result.current.unknownTokens).toEqual([])
+  })
+
+  it('forgets the previous query’s tokens when the query changes', async () => {
+    // The reset is what stops a corrected query from still being scolded for
+    // the typo the reader has just fixed.
+    fetchMock.mockResolvedValue({ ...pageAt(1, 0), unknown_tokens: ['osoba:Jarmila'] })
+    const { result, rerender } = renderHook(
+      (params: PhotoListParams) => useWindowedPhotos(params),
+      { initialProps: { ...PARAMS, q: 'osoba:Jarmila' } },
+    )
+    await waitFor(() => {
+      expect(result.current.unknownTokens).toEqual(['osoba:Jarmila'])
+    })
+
+    fetchMock.mockResolvedValue(pageAt(1, 0))
+    rerender({ ...PARAMS, q: 'person:Jarmila' })
+    await waitFor(() => {
+      expect(result.current.unknownTokens).toEqual([])
+    })
+  })
+})

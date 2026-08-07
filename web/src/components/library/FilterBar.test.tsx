@@ -177,8 +177,11 @@ describe('FilterBar header', () => {
   it('points the quick filter at /search for real search, carrying the view', () => {
     renderBar({ ...LIBRARY_DEFAULTS, q: 'sunset' }, vi.fn(), { searchHref: '/search?q=sunset' })
 
-    // The quick filter says what it does; the link says where real search lives.
-    expect(screen.getByPlaceholderText('Filter by title and description…')).toBeInTheDocument()
+    // The quick filter says what it does — text *or* a filter; the link says
+    // where ranked full-text and semantic search live.
+    expect(
+      screen.getByPlaceholderText('Search — text, or a filter like year:1965 or person:Jarmila'),
+    ).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Full-text & semantic search/ })).toHaveAttribute(
       'href',
       '/search?q=sunset',
@@ -200,7 +203,7 @@ describe('FilterBar header', () => {
     // but there is no point advertising semantics while the box is unreachable.
     expect(screen.queryByRole('link', { name: /Full-text/ })).not.toBeInTheDocument()
     // …while the quick-filter help text (unrelated to embeddings) stays put.
-    expect(screen.getByText('Filters title and description.')).toBeInTheDocument()
+    expect(screen.getByText(/Searches title, description and notes/)).toBeInTheDocument()
   })
 
   it('shows the semantic-search link and the filter help when the box is reachable', () => {
@@ -209,7 +212,7 @@ describe('FilterBar header', () => {
       semanticSearch: true,
     })
 
-    expect(screen.getByText('Filters title and description.')).toBeInTheDocument()
+    expect(screen.getByText(/Searches title, description and notes/)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Full-text & semantic search/ })).toHaveAttribute(
       'href',
       '/search?q=sunset',
@@ -643,5 +646,91 @@ describe('FilterBar favorites toggle', () => {
     expect(chip).toHaveClass('text-bg-primary')
     await user.click(screen.getByRole('button', { name: 'Remove filter: Favorites' }))
     expect(onChange).toHaveBeenCalledWith({ favorite: '' })
+  })
+})
+
+describe('FilterBar query language', () => {
+  // The field always ran the whole `key:value` language; it only ever claimed
+  // otherwise. These guard the claim, not the parser (which is the backend's).
+  it('describes the query language in the placeholder and the hint', () => {
+    renderBar(LIBRARY_DEFAULTS, vi.fn(), { searchHref: '/search' })
+
+    expect(screen.getByLabelText('Filter the library')).toHaveAttribute(
+      'placeholder',
+      expect.stringContaining('year:1965'),
+    )
+    expect(screen.getByText(/understands filters like year:1965/)).toBeInTheDocument()
+  })
+
+  it('offers the same query-language help the search page opens', async () => {
+    const user = userEvent.setup()
+    renderBar(LIBRARY_DEFAULTS, vi.fn())
+
+    const help = screen.getByRole('button', { name: 'Search query language help' })
+    // Beside the field, in the header row — not buried in the filters drawer.
+    expect(help.parentElement).toContainElement(screen.getByLabelText('Filter the library'))
+
+    await user.click(help)
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveTextContent('Search query language')
+  })
+
+  it('hides the help when the page owns the query box itself', () => {
+    // `/search` renders the bar with `showSearch={false}`; its own box already
+    // carries the `?`, and a second one would be two triggers for one language.
+    renderBar(LIBRARY_DEFAULTS, vi.fn(), { showSearch: false })
+    expect(
+      screen.queryByRole('button', { name: 'Search query language help' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('admits when the query, not the picker, sets the year', () => {
+    renderBar({ ...LIBRARY_DEFAULTS, q: 'year:1960-1969' }, vi.fn(), { facets: FACETS })
+
+    const year = screen.getByLabelText('Year')
+    // "Any year" over a grid holding only the sixties is the contradiction; the
+    // resting option now points at the query instead.
+    expect(within(year).queryByRole('option', { name: 'Any year' })).not.toBeInTheDocument()
+    expect(within(year).getByRole('option', { name: 'Set by the query' })).toBeInTheDocument()
+    expect(screen.getByText('year:1960-1969')).toBeInTheDocument()
+    expect(year).toHaveAttribute('aria-describedby', 'library-year-from-query')
+  })
+
+  it('flags the album and person pickers the query has taken over', () => {
+    renderBar({ ...LIBRARY_DEFAULTS, q: 'album:"Léto 2024" subject:Jarmila' }, vi.fn(), {
+      facets: FACETS,
+    })
+
+    // Aliases count: `subject:` is `person:` under another name.
+    expect(screen.getByLabelText('Album')).toHaveAttribute('placeholder', 'Set by the query')
+    expect(screen.getByLabelText('Person')).toHaveAttribute('placeholder', 'Set by the query')
+    // The note is tied to the control, so it is announced with it and not just
+    // read as loose text that happens to sit nearby.
+    expect(screen.getByLabelText('Album')).toHaveAttribute(
+      'aria-describedby',
+      'library-album-from-query',
+    )
+    expect(screen.getByLabelText('Label')).not.toHaveAttribute('aria-describedby')
+    expect(screen.getByText('album:"Léto 2024"')).toBeInTheDocument()
+    expect(screen.getByText('subject:Jarmila')).toBeInTheDocument()
+    // Untouched facets keep their own resting label.
+    expect(screen.getByLabelText('Label')).toHaveAttribute('placeholder', 'Any label')
+  })
+
+  it('leaves every picker alone for a plain free-text query', () => {
+    renderBar({ ...LIBRARY_DEFAULTS, q: 'svatba' }, vi.fn(), { facets: FACETS })
+
+    const year = screen.getByLabelText('Year')
+    expect(within(year).getByRole('option', { name: 'Any year' })).toBeInTheDocument()
+    expect(screen.queryByText(/Already set by the query/)).not.toBeInTheDocument()
+  })
+
+  it('says nothing about a filter key the language does not know', () => {
+    // `osoba:` is a typo for `person:`: it filters nothing (the backend searches
+    // it as text), so claiming it drives the Person picker would be a new lie.
+    renderBar({ ...LIBRARY_DEFAULTS, q: 'osoba:Jarmila' }, vi.fn(), { facets: FACETS })
+
+    expect(screen.getByLabelText('Person')).toHaveAttribute('placeholder', 'Any person')
+    expect(screen.queryByText(/Already set by the query/)).not.toBeInTheDocument()
   })
 })

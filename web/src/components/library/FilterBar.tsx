@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
 import Col from 'react-bootstrap/Col'
@@ -20,9 +20,11 @@ import {
   LIBRARY_DEFAULTS,
   parseFilterList,
 } from '../../lib/libraryView'
+import { FACET_QUERY_KEYS, facetQueryTokens, queryFilterTokens } from '../../lib/queryLanguage'
 import { type SetUrlState } from '../../lib/urlState'
 import { ENTITY_STYLE } from '../entityStyle'
 import { Icon } from '../Icon'
+import { SearchQueryHelp } from '../search/SearchQueryHelp'
 
 import { buildChips } from './filterChips'
 import { GridDensityControl } from './GridDensityControl'
@@ -42,8 +44,9 @@ export interface FilterBarProps<T extends LibraryView> {
    */
   total?: number
   /**
-   * Whether to show the substring search input. The search page hides it
-   * (`false`) because its prominent query box already owns `q`. Defaults true.
+   * Whether to show the query field (and, with it, the query-language help
+   * beside it). The search page hides both (`false`) because its prominent
+   * query box already owns `q` and carries its own `?`. Defaults true.
    */
   showSearch?: boolean
   /**
@@ -97,9 +100,14 @@ export interface FilterBarProps<T extends LibraryView> {
  * filter — facets included — is echoed as a removable chip plus a single clear-all
  * action, so a filtered set is never a mystery even while the drawer is shut.
  *
- * The quick filter is a substring match, not a search: `searchHref` puts a
- * labelled link to `/search` beside it, which is where full-text and semantic
- * search live. The two are never duplicated here.
+ * The quick filter speaks the whole `key:value` query language, exactly as
+ * `/search` does — `year:1960-1969` narrows the grid to the sixties here too —
+ * with the residual free text matching title, description and notes as a
+ * substring. So it carries the same {@link SearchQueryHelp} `?` the search page
+ * uses rather than a second, drifting explanation of the language, and the
+ * facet pickers below flag the facets the query has already taken over. What
+ * `/search` adds is *ranking* — full-text relevance and semantic similarity —
+ * which is what `searchHref` links to when the embeddings box is reachable.
  *
  * Facet and enum filters push a history entry (so Back steps through views) while
  * the free-text inputs replace it (so live typing does not flood history). All
@@ -136,6 +144,10 @@ export function FilterBar<T extends LibraryView>({
 
   const chips = buildChips(view, t, { facets })
   const clearVisible = hasActiveFilters(view, { ignoreQuery: !showSearch })
+  // Which facets the query itself already sets. The pickers below would
+  // otherwise keep reading "any year" while `year:1960-1969` in the box has
+  // filtered the grid down to the sixties.
+  const queryFilters = useMemo(() => queryFilterTokens(view.q), [view.q])
 
   const clearAll = () => {
     // Keep the current sort, and keep the query when it is owned by the page's
@@ -151,7 +163,7 @@ export function FilterBar<T extends LibraryView>({
     <>
       {facets && narrow && (
         <>
-          <FacetRow view={view} facets={facets} push={push} />
+          <FacetRow view={view} facets={facets} push={push} queryFilters={queryFilters} />
           <hr className="my-3" />
         </>
       )}
@@ -163,21 +175,27 @@ export function FilterBar<T extends LibraryView>({
     <Form className="mb-3" role="search" aria-label={t('library.filters.barLabel')}>
       <div className="d-flex flex-wrap align-items-center gap-2">
         {showSearch && (
-          <InputGroup className="kukatko-filter-search">
-            <InputGroup.Text aria-hidden="true">
-              <SearchIcon />
-            </InputGroup.Text>
-            <Form.Control
-              type="search"
-              size="lg"
-              value={view.q}
-              aria-label={t('library.filters.search')}
-              placeholder={t('library.filters.searchPlaceholder')}
-              onChange={(e) => {
-                replace({ q: e.target.value })
-              }}
-            />
-          </InputGroup>
+          <>
+            <InputGroup className="kukatko-filter-search">
+              <InputGroup.Text aria-hidden="true">
+                <SearchIcon />
+              </InputGroup.Text>
+              <Form.Control
+                type="search"
+                size="lg"
+                value={view.q}
+                aria-label={t('library.filters.search')}
+                placeholder={t('library.filters.searchPlaceholder')}
+                onChange={(e) => {
+                  replace({ q: e.target.value })
+                }}
+              />
+            </InputGroup>
+            {/* The very same help the search page opens: this field speaks the
+                same query language, so it gets the same one explanation rather
+                than a second, drifting copy of it. */}
+            <SearchQueryHelp />
+          </>
         )}
 
         {showSort && (
@@ -224,11 +242,13 @@ export function FilterBar<T extends LibraryView>({
 
       {/* The hint sits below the alignment row, not inside the search field's flex
           item: kept a sibling of that item it would stretch the search column and
-          the row's centre alignment would push the sort selector down. The plain
-          help text describes the quick filter and always shows; the link to
-          real full-text/semantic search only appears when semantic search is
-          actually available (the embeddings box is reachable), since full-text
-          alone already works and the link's own label promises semantics. */}
+          the row's centre alignment would push the sort selector down. It names
+          what the field really does — substring over title/description/notes
+          *and* the full `key:value` query language, which works here exactly as
+          it does on `/search`; the `?` beside the field spells the language out.
+          The link to ranked full-text/semantic search only appears when semantic
+          search is actually available (the embeddings box is reachable), since
+          the link's own label promises semantics. */}
       {showSearch && searchHref !== undefined && (
         <div className="form-text mt-1">
           {t('library.filters.searchHint')}{' '}
@@ -244,7 +264,9 @@ export function FilterBar<T extends LibraryView>({
           phone they move into the filters drawer (see `panel` above) so the
           photos start near the top of the screen instead of below four stacked
           selects. */}
-      {facets && !narrow && <FacetRow view={view} facets={facets} push={push} />}
+      {facets && !narrow && (
+        <FacetRow view={view} facets={facets} push={push} queryFilters={queryFilters} />
+      )}
 
       {chips.length > 0 && (
         <div className="d-flex flex-wrap align-items-center gap-2 mt-2">
@@ -337,20 +359,36 @@ export function FilterBar<T extends LibraryView>({
  * twice.
  *
  * All four push a history entry, so Back steps back through facet choices.
+ *
+ * A picker is not the only way to set its facet: `year:1960-1969` or
+ * `person:Jarmila` typed into the search box filters the grid just as hard, and
+ * the picker knows nothing about it. Rather than let the control read "any
+ * year" over a grid holding only the sixties, each facet whose key appears in
+ * the query says so underneath itself, quoting the tokens responsible
+ * ({@link queryFilterTokens}). The picker keeps working — adding a facet on top
+ * of the query narrows further, as ANDed filters do everywhere else.
  */
 function FacetRow({
   view,
   facets,
   push,
+  queryFilters,
 }: {
   view: LibraryView
   facets: LibraryFacets
   push: (patch: Partial<LibraryView>) => void
+  queryFilters: ReadonlyMap<string, string[]>
 }) {
   const { t } = useTranslation()
   const selectedAlbums = parseFilterList(view.album)
   const selectedLabels = parseFilterList(view.label)
   const selectedPeople = parseFilterList(view.person)
+  const fromQuery = {
+    year: facetQueryTokens(queryFilters, FACET_QUERY_KEYS.year),
+    album: facetQueryTokens(queryFilters, FACET_QUERY_KEYS.album),
+    label: facetQueryTokens(queryFilters, FACET_QUERY_KEYS.label),
+    person: facetQueryTokens(queryFilters, FACET_QUERY_KEYS.person),
+  }
   return (
     <Row className="kukatko-filter-facets g-2 mt-1">
       <Col xs={12} md={6} lg={3}>
@@ -358,17 +396,26 @@ function FacetRow({
           <Form.Label className="small mb-1">{t('library.filters.year')}</Form.Label>
           <Form.Select
             value={view.year}
+            aria-describedby={fromQuery.year === '' ? undefined : 'library-year-from-query'}
             onChange={(e) => {
               push({ year: e.target.value })
             }}
           >
-            <option value="">{t('library.filters.anyYear')}</option>
+            {/* With the query already scoping the year, "any year" would be a
+                lie about what the grid shows; the resting option admits who is
+                in charge instead. */}
+            <option value="">
+              {fromQuery.year === ''
+                ? t('library.filters.anyYear')
+                : t('library.filters.setByQueryOption')}
+            </option>
             {facets.years.map((bucket) => (
               <option key={bucket.year} value={String(bucket.year)}>
                 {t('library.filters.yearOption', { year: bucket.year, n: bucket.count })}
               </option>
             ))}
           </Form.Select>
+          <QueryOverrideNote id="library-year-from-query" tokens={fromQuery.year} />
         </Form.Group>
       </Col>
 
@@ -376,7 +423,12 @@ function FacetRow({
         <SearchableSelect
           id="library-album"
           label={t('library.filters.album')}
-          anyLabel={t('library.filters.anyAlbum')}
+          anyLabel={
+            fromQuery.album === ''
+              ? t('library.filters.anyAlbum')
+              : t('library.filters.setByQueryOption')
+          }
+          describedBy={fromQuery.album === '' ? undefined : 'library-album-from-query'}
           value=""
           options={facets.albums
             .filter((album) => !selectedAlbums.includes(album.uid))
@@ -389,13 +441,19 @@ function FacetRow({
             push({ album: addToFilterList(view.album, value) })
           }}
         />
+        <QueryOverrideNote id="library-album-from-query" tokens={fromQuery.album} />
       </Col>
 
       <Col xs={12} md={6} lg={3}>
         <SearchableSelect
           id="library-label"
           label={t('library.filters.label')}
-          anyLabel={t('library.filters.anyLabel')}
+          anyLabel={
+            fromQuery.label === ''
+              ? t('library.filters.anyLabel')
+              : t('library.filters.setByQueryOption')
+          }
+          describedBy={fromQuery.label === '' ? undefined : 'library-label-from-query'}
           value=""
           options={facets.labels
             .filter((label) => !selectedLabels.includes(label.uid))
@@ -408,13 +466,19 @@ function FacetRow({
             push({ label: addToFilterList(view.label, value) })
           }}
         />
+        <QueryOverrideNote id="library-label-from-query" tokens={fromQuery.label} />
       </Col>
 
       <Col xs={12} md={6} lg={3}>
         <SearchableSelect
           id="library-person"
           label={t('library.filters.person')}
-          anyLabel={t('library.filters.anyPerson')}
+          anyLabel={
+            fromQuery.person === ''
+              ? t('library.filters.anyPerson')
+              : t('library.filters.setByQueryOption')
+          }
+          describedBy={fromQuery.person === '' ? undefined : 'library-person-from-query'}
           value=""
           options={facets.subjects
             .filter((subject) => !selectedPeople.includes(subject.uid))
@@ -430,8 +494,28 @@ function FacetRow({
             push({ person: addToFilterList(view.person, value) })
           }}
         />
+        <QueryOverrideNote id="library-person-from-query" tokens={fromQuery.person} />
       </Col>
     </Row>
+  )
+}
+
+/**
+ * The note under a facet picker whose facet the search query already sets,
+ * quoting the tokens verbatim so the reader can find them in the box and edit
+ * them. Renders nothing when `tokens` is empty, so callers need no condition of
+ * their own.
+ */
+function QueryOverrideNote({ id, tokens }: { id: string; tokens: string }) {
+  const { t } = useTranslation()
+  if (tokens === '') {
+    return null
+  }
+  return (
+    <div id={id} className="form-text mt-1">
+      <Icon name="info-circle" className="me-1" />
+      {t('library.filters.setByQuery')} <code>{tokens}</code>
+    </div>
   )
 }
 

@@ -14,6 +14,7 @@ import { PhotoGrid } from '../components/library/PhotoGrid'
 import { type TimelineJump, TimelineScrubber } from '../components/library/TimelineScrubber'
 import { BatchActionBar } from '../components/organize/BatchActionBar'
 import { SaveSearchModal } from '../components/savedsearch/SaveSearchModal'
+import { UnknownFiltersAlert } from '../components/search/UnknownFiltersAlert'
 import { SlideshowStart } from '../components/slideshow/SlideshowStart'
 import { useBulkEdit } from '../hooks/useBulkEdit'
 import { useGridKeyboardNavigation } from '../hooks/useGridKeyboardNavigation'
@@ -76,9 +77,10 @@ export function LibraryPage() {
   // The grid is a *window* over the result, not a growing prefix of it: `photos`
   // is as long as the whole library with holes where pages are not loaded, so any
   // position is reachable in one scroll plus one fetch.
-  const { photos, total, status, moreError, ensureRange, retry } = useWindowedPhotos(params, {
-    reloadKey,
-  })
+  const { photos, total, status, moreError, unknownTokens, ensureRange, retry } = useWindowedPhotos(
+    params,
+    { reloadKey },
+  )
   const facets = useLibraryFacets(params)
   // Hover-select: every tile carries a corner checkmark for a writer, with no
   // explicit "enter selection mode" step, and the floating batch bar rises the
@@ -268,6 +270,11 @@ export function LibraryPage() {
         showFavorite
         searchHref={searchHref(view)}
       />
+
+      {/* A mistyped filter key (`osoba:` for `person:`) is not "no such photos":
+          it degraded to free text, so say which token fell through instead of
+          letting an empty grid blame the library. */}
+      <UnknownFiltersAlert tokens={unknownTokens} />
 
       {status === 'loading' && <GridSkeleton />}
 

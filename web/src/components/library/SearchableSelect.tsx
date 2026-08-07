@@ -26,6 +26,11 @@ export interface SearchableSelectProps {
   options: SelectOption[]
   /** The "no filter" row's text (e.g. "Any album"), also the empty placeholder. */
   anyLabel: string
+  /**
+   * DOM id of a note describing the control — the filter bar points it at the
+   * "the query already sets this facet" line below the field. Omit for none.
+   */
+  describedBy?: string
   /** Called with the chosen option's value, or `''` when the filter is cleared. */
   onChange: (value: string) => void
 }
@@ -53,6 +58,7 @@ export function SearchableSelect({
   value,
   options,
   anyLabel,
+  describedBy,
   onChange,
 }: SearchableSelectProps) {
   const { t } = useTranslation()
@@ -150,6 +156,7 @@ export function SearchableSelect({
         role="combobox"
         aria-expanded={open}
         aria-controls={listboxId}
+        aria-describedby={describedBy}
         aria-autocomplete="list"
         autoComplete="off"
         onFocus={() => {

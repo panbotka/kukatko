@@ -3,8 +3,11 @@
  * backend understands (kept in sync with `internal/query`), key autocomplete
  * for the search box, and the rows the help modal lists.
  *
- * Parsing itself is the backend's job — the frontend sends `q` verbatim and
- * only needs the key list for discoverability.
+ * Parsing itself is the backend's job — the frontend sends `q` verbatim. What
+ * lives here is the key list (for discoverability) and a token *scanner* that
+ * only answers "which known filter keys does this query use", so a control can
+ * admit the query already sets it instead of silently disagreeing with the
+ * results.
  */
 
 /** Every filter key of the query language, including aliases, alphabetical. */
@@ -53,6 +56,149 @@ export const FILTER_KEYS = [
   'uid',
   'year',
 ] as const
+
+/** Fast membership test for {@link FILTER_KEYS}. */
+const KNOWN_KEYS: ReadonlySet<string> = new Set<string>(FILTER_KEYS)
+
+/** One scanned character of a token, and whether it was quoted or escaped. */
+interface TokenChar {
+  /** The character itself, one UTF-16 code unit (quotes and escapes dropped). */
+  r: string
+  /** True when the character was quoted or backslash-escaped, so it is literal. */
+  lit: boolean
+}
+
+/** One whitespace-separated token: its verbatim source and its scanned characters. */
+interface ScannedToken {
+  /** The token exactly as typed, quotes included. */
+  raw: string
+  /** The token's characters with their literal flags. */
+  chars: TokenChar[]
+}
+
+/**
+ * Splits an input into whitespace-separated tokens the way `internal/query`'s
+ * scanner does: double quotes make their content literal (and are dropped from
+ * the characters, kept in `raw`), a backslash makes the next character literal,
+ * and an unterminated quote closes at the end of the input.
+ *
+ * It walks UTF-16 code units rather than code points. Every character it acts
+ * on — the quote, the backslash, the colon, whitespace — is ASCII, so a
+ * surrogate half can never be mistaken for one; it only ever lands in a value,
+ * which is copied out of `input` verbatim.
+ */
+function scanTokens(input: string): ScannedToken[] {
+  const tokens: ScannedToken[] = []
+  let i = 0
+  while (i < input.length) {
+    if (/\s/.test(input[i])) {
+      i++
+      continue
+    }
+    const start = i
+    const chars: TokenChar[] = []
+    let inQuote = false
+    while (i < input.length) {
+      const r = input[i]
+      if (r === '\\' && i + 1 < input.length) {
+        chars.push({ r: input[i + 1], lit: true })
+        i += 2
+        continue
+      }
+      if (r === '"') {
+        inQuote = !inQuote
+        i++
+        continue
+      }
+      if (!inQuote && /\s/.test(r)) {
+        break
+      }
+      chars.push({ r, lit: inQuote })
+      i++
+    }
+    tokens.push({ raw: input.slice(start, i), chars })
+  }
+  return tokens
+}
+
+/**
+ * The lowercased filter key of a token, or null when the token is not
+ * filter-shaped. Mirrors the backend's rule: the split happens at the first
+ * unescaped, unquoted colon, at least one character must precede it, and every
+ * character of the key must be an unescaped ASCII letter — so `title:x` is a
+ * filter while `12:30`, `-year:1965` and a quoted `"a:b"` are free text.
+ */
+function tokenKey(chars: TokenChar[]): string | null {
+  for (let i = 0; i < chars.length; i++) {
+    const c = chars[i]
+    if (c.r !== ':' || c.lit) {
+      continue
+    }
+    if (i === 0) {
+      return null
+    }
+    let key = ''
+    for (const kc of chars.slice(0, i)) {
+      if (kc.lit || !/^[a-zA-Z]$/.test(kc.r)) {
+        return null
+      }
+      key += kc.r
+    }
+    return key.toLowerCase()
+  }
+  return null
+}
+
+/**
+ * Groups a query's *recognised* filter tokens by their lowercased key, each
+ * value the token exactly as typed. Only keys the language knows are reported:
+ * an unknown key degrades to free text server-side, so it filters nothing and
+ * must not be presented as a filter here.
+ *
+ * This is not a parser — the backend remains the only thing that parses `q`.
+ * It exists so the UI can tell when a control's own state has been overtaken by
+ * the query (`year:1960-1969` typed into the search box while the Year picker
+ * still reads "any year") and say so instead of contradicting itself.
+ */
+export function queryFilterTokens(input: string): Map<string, string[]> {
+  const out = new Map<string, string[]>()
+  for (const token of scanTokens(input)) {
+    const key = tokenKey(token.chars)
+    if (key === null || !KNOWN_KEYS.has(key)) {
+      continue
+    }
+    const existing = out.get(key)
+    if (existing === undefined) {
+      out.set(key, [token.raw])
+    } else {
+      existing.push(token.raw)
+    }
+  }
+  return out
+}
+
+/**
+ * The filter keys behind each facet picker, including aliases. A query using
+ * any of them sets that facet without the picker knowing, which is what
+ * {@link queryFilterTokens} lets the filter bar flag.
+ */
+export const FACET_QUERY_KEYS = {
+  year: ['year'],
+  album: ['album'],
+  label: ['label'],
+  person: ['person', 'subject'],
+} as const
+
+/**
+ * The filter tokens of `input` that drive the named facet, joined for display —
+ * `''` when the query leaves that facet alone.
+ */
+export function facetQueryTokens(
+  tokens: ReadonlyMap<string, string[]>,
+  keys: readonly string[],
+): string {
+  return keys.flatMap((key) => tokens.get(key) ?? []).join(' ')
+}
 
 /** A key-autocomplete proposal for the token being typed. */
 export interface KeySuggestion {

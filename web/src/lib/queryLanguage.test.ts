@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
-import { applyFilterKey, FILTER_KEYS, suggestFilterKeys } from './queryLanguage'
+import {
+  applyFilterKey,
+  FACET_QUERY_KEYS,
+  facetQueryTokens,
+  FILTER_KEYS,
+  queryFilterTokens,
+  suggestFilterKeys,
+} from './queryLanguage'
 
 describe('suggestFilterKeys', () => {
   it('suggests keys sharing the trailing token prefix', () => {
@@ -83,5 +90,64 @@ describe('applyFilterKey', () => {
     if (s) {
       expect(applyFilterKey('la', s, 'label')).toBe('label:')
     }
+  })
+})
+
+describe('queryFilterTokens', () => {
+  it('groups recognised filter tokens by their key', () => {
+    const tokens = queryFilterTokens('svatba year:1960-1969 person:Jarmila')
+    expect(tokens.get('year')).toEqual(['year:1960-1969'])
+    expect(tokens.get('person')).toEqual(['person:Jarmila'])
+    expect(tokens.has('svatba')).toBe(false)
+  })
+
+  it('keeps every token of a repeated key, as typed', () => {
+    const tokens = queryFilterTokens('album:Léto album:"Vánoce 2024"')
+    expect(tokens.get('album')).toEqual(['album:Léto', 'album:"Vánoce 2024"'])
+  })
+
+  it('lowercases the key but never the value', () => {
+    expect(queryFilterTokens('Year:1965').get('year')).toEqual(['Year:1965'])
+  })
+
+  it('ignores keys the language does not know', () => {
+    // `osoba:` is the Czech spelling of `person:`; the backend degrades it to
+    // free text, so it filters nothing and must not be reported as a filter.
+    expect(queryFilterTokens('osoba:Jarmila').size).toBe(0)
+  })
+
+  it('ignores tokens that are not filter-shaped', () => {
+    // A quoted colon, a leading '-' (a negated free-text term, since a key is
+    // ASCII letters only), a bare colon and a time all stay free text.
+    for (const input of ['"year:1965"', '-year:1965', ':1965', '12:30', 'year']) {
+      expect(queryFilterTokens(input).size, input).toBe(0)
+    }
+  })
+
+  it('honours an escaped colon', () => {
+    expect(queryFilterTokens('year\\:1965').size).toBe(0)
+  })
+
+  it('finds a filter after a quoted value holding spaces', () => {
+    const tokens = queryFilterTokens('camera:"Canon EOS R6" year:1965')
+    expect(tokens.get('camera')).toEqual(['camera:"Canon EOS R6"'])
+    expect(tokens.get('year')).toEqual(['year:1965'])
+  })
+
+  it('returns nothing for an empty query', () => {
+    expect(queryFilterTokens('').size).toBe(0)
+    expect(queryFilterTokens('   ').size).toBe(0)
+  })
+})
+
+describe('facetQueryTokens', () => {
+  it('joins every alias of a facet in one string', () => {
+    const tokens = queryFilterTokens('person:Anna subject:Jarmila')
+    expect(facetQueryTokens(tokens, FACET_QUERY_KEYS.person)).toBe('person:Anna subject:Jarmila')
+  })
+
+  it('is empty when the query leaves the facet alone', () => {
+    const tokens = queryFilterTokens('year:1965')
+    expect(facetQueryTokens(tokens, FACET_QUERY_KEYS.album)).toBe('')
   })
 })
