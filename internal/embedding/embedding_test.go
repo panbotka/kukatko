@@ -98,8 +98,77 @@ func TestNew_defaults(t *testing.T) {
 	if c.requestTimeout != DefaultRequestTimeout || c.healthTimeout != DefaultHealthTimeout {
 		t.Errorf("timeouts = %v/%v", c.requestTimeout, c.healthTimeout)
 	}
+	if c.textTimeout != DefaultTextTimeout {
+		t.Errorf("textTimeout = %v, want %v", c.textTimeout, DefaultTextTimeout)
+	}
 	if c.healthPath != DefaultHealthPath {
 		t.Errorf("healthPath = %q, want %q", c.healthPath, DefaultHealthPath)
+	}
+}
+
+func TestNew_boundedDialer(t *testing.T) {
+	t.Parallel()
+	c, err := New(Config{BaseURL: "http://box:8000"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	// The stock http.DefaultTransport waits 30 s on a dial the offline box never
+	// answers — long enough to make an interactive search look broken — so the
+	// client must carry a transport of its own rather than sharing that one.
+	transport, ok := c.client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("transport = %T, want *http.Transport", c.client.Transport)
+	}
+	if transport == http.DefaultTransport {
+		t.Error("client shares http.DefaultTransport, so its 30 s dial timeout applies")
+	}
+	if c.client.Timeout != 0 {
+		t.Errorf("client.Timeout = %v, want 0 (deadlines come from the context)", c.client.Timeout)
+	}
+}
+
+func TestNew_customHTTPClientWins(t *testing.T) {
+	t.Parallel()
+	own := &http.Client{}
+	c, err := New(Config{BaseURL: "http://box:8000", HTTPClient: own, DialTimeout: time.Second})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	// An injected client owns its transport; we must not rebuild it underneath.
+	if c.client != own {
+		t.Error("New replaced the injected HTTPClient")
+	}
+}
+
+func TestTextEmbedding_timeout(t *testing.T) {
+	t.Parallel()
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		<-release
+		_ = json.NewEncoder(w).Encode(embeddingResponse{Dim: 4, Embedding: makeVec(4)})
+	}))
+	defer srv.Close()
+	defer close(release)
+
+	// A generous RequestTimeout must not apply here: the query embedding serves an
+	// interactive search and is bounded by the much shorter TextTimeout, so the
+	// search can fall back to full-text instead of blocking on a stalled box.
+	c, err := New(Config{
+		BaseURL:        srv.URL,
+		ImageDim:       4,
+		RequestTimeout: time.Minute,
+		TextTimeout:    100 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	start := time.Now()
+	_, _, _, err = c.TextEmbedding(context.Background(), "beach")
+	if !IsUnavailable(err) {
+		t.Errorf("err = %v, want ErrUnavailable (timeout)", err)
+	}
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Errorf("TextEmbedding waited %v, want the text timeout to cut it short", elapsed)
 	}
 }
 

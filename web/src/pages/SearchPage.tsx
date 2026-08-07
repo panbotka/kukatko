@@ -21,6 +21,7 @@ import { SlideshowStart } from '../components/slideshow/SlideshowStart'
 import { useBulkEdit } from '../hooks/useBulkEdit'
 import { usePhotoSearch } from '../hooks/usePhotoSearch'
 import { useReloadKey } from '../hooks/useReloadKey'
+import { useSearchMode } from '../hooks/useSearchMode'
 import { detailQueryString } from '../lib/detailView'
 import { viewToParams } from '../lib/libraryView'
 import { SEARCH_DEFAULTS, type SearchView, toMode } from '../lib/searchView'
@@ -36,7 +37,10 @@ const SEARCH_DEBOUNCE_MS = 350
  * restore the exact search and the URL is shareable. Typing is debounced before
  * it commits to the URL (and triggers a fetch). When a semantic/hybrid search
  * falls back to full-text because the embeddings sidecar is offline, a
- * non-blocking notice explains that semantic ranking was skipped.
+ * non-blocking notice beside the mode selector explains that semantic ranking
+ * was skipped — shown as soon as the instance reports the sidecar unreachable,
+ * before a search runs, since by then the request has already gone out as
+ * full-text and there is nothing to wait for.
  *
  * The results can be played as a slideshow, which replays the search itself (the
  * `mode` travels in the URL) rather than re-listing the library by the query.
@@ -55,7 +59,11 @@ export function SearchPage() {
   const [view, setView] = useUrlState<SearchView>(SEARCH_DEFAULTS)
 
   const params = useMemo(() => viewToParams(view), [view])
-  const mode = toMode(view.mode)
+  // The selector keeps showing what the reader picked; `mode` is what the search
+  // actually runs as, which is full-text whenever the embeddings box is down.
+  // Everything downstream — the fetch, the detail links, the slideshow — uses the
+  // effective mode, so nothing further along re-asks for the unavailable one.
+  const { mode, semanticAvailable, downgraded } = useSearchMode(toMode(view.mode))
   // Each tile carries the search scope — the query, filters and (always-present)
   // mode — so the detail page pages prev/next through the same ranked results and
   // Esc/Back returns to the search, not the library with `q` as a substring filter.
@@ -81,6 +89,7 @@ export function SearchPage() {
   const bulk = useBulkEdit({ onEdited: reload, hoverSelect: true })
   const selection = bulk.selection
   const selecting = selection.count > 0
+  const hasQuery = view.q.trim() !== ''
   const hasResults = status === 'ready' && photos.length > 0
 
   // Local, debounced mirror of the URL query so typing stays responsive but the
@@ -99,10 +108,13 @@ export function SearchPage() {
   // grid at all — a selection made against the old results has nowhere to live,
   // so leave selection mode with it. Filters, which merely narrow the same
   // search, keep the selection, as they do on the library.
+  // Both the picked mode and the effective one are watched: the reader switching
+  // modes is the obvious case, and the sidecar coming back re-ranks the same
+  // query into a different result set without anyone touching the controls.
   const leaveSelection = selection.disable
   useEffect(() => {
     leaveSelection()
-  }, [view.q, mode, leaveSelection])
+  }, [view.q, view.mode, mode, leaveSelection])
 
   // Select every result that has paged in, matching the library's select-all: it
   // never reaches beyond what the grid has actually loaded.
@@ -185,22 +197,42 @@ export function SearchPage() {
               >
                 <option value="hybrid">{t('search.mode.hybrid')}</option>
                 <option value="fulltext">{t('search.mode.fulltext')}</option>
-                <option value="semantic">{t('search.mode.semantic')}</option>
+                {/* Semantic search cannot be served at all without the sidecar,
+                    so it is taken off the menu rather than silently answered by
+                    something else; hybrid stays, as full-text is a fair half of
+                    what it promises. */}
+                <option
+                  value="semantic"
+                  disabled={!semanticAvailable}
+                  title={semanticAvailable ? undefined : t('search.semanticUnavailable')}
+                >
+                  {t('search.mode.semantic')}
+                </option>
               </Form.Select>
             </Form.Group>
           </Col>
         </Row>
+
+        {/* Beside the controls that caused it, and before any results: the
+            fallback is known from the capability flag, not from a reply. */}
+        {(downgraded || degraded) && (
+          <Alert variant="warning" className="py-2 mt-2 mb-0">
+            {t('search.degraded')}
+          </Alert>
+        )}
       </Form>
 
-      <FilterBar view={view} onChange={setView} total={total} showSearch={false} showSort={false} />
+      {/* No query means no result set, so there is no count to state: showing
+          "0 photos" above the "type something" prompt reads as an empty library. */}
+      <FilterBar
+        view={view}
+        onChange={setView}
+        total={hasQuery ? total : undefined}
+        showSearch={false}
+        showSort={false}
+      />
 
       <GlobalSearchSections query={view.q} />
-
-      {degraded && (
-        <Alert variant="warning" className="py-2">
-          {t('search.degraded')}
-        </Alert>
-      )}
 
       {unknownTokens.length > 0 && (
         <Alert variant="info" className="py-2">

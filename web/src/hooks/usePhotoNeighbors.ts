@@ -8,6 +8,7 @@ import {
 } from '../services/photos'
 
 import { PAGE_SIZE } from './usePaginatedPhotos'
+import { useSearchMode } from './useSearchMode'
 
 /** The previous/next photo UIDs around the current one in the list order. */
 export interface PhotoNeighbors {
@@ -37,7 +38,10 @@ const NONE: PhotoNeighbors = { prev: null, next: null }
  * When `mode` is set the photo was opened from the search page, so paging goes
  * through `GET /search` (ranking `params.q`) instead of the library list — the
  * two return different orders for the same query, and prev/next must follow the
- * search order the grid showed.
+ * search order the grid showed. A semantic/hybrid `mode` is downgraded to
+ * full-text while the embeddings sidecar is unreachable, exactly as the grid's
+ * own search is: it keeps a shared or bookmarked search link from spending the
+ * sidecar timeout on neighbours, and matches the order that grid would show.
  *
  * `params` should be memoised by the caller so its identity changes only when the
  * query actually changes. When `enabled` is false (e.g. no originating list) the
@@ -50,7 +54,11 @@ export function usePhotoNeighbors(
   mode?: SearchMode,
 ): PhotoNeighbors {
   const [neighbors, setNeighbors] = useState<PhotoNeighbors>(NONE)
-  const key = JSON.stringify({ params, mode })
+  // A hook cannot be called conditionally, so resolve with a stand-in when there
+  // is no search mode at all and drop the result again below.
+  const { mode: resolved } = useSearchMode(mode ?? 'fulltext')
+  const searchMode = mode === undefined ? undefined : resolved
+  const key = JSON.stringify({ params, mode: searchMode })
 
   useEffect(() => {
     if (!enabled) {
@@ -66,9 +74,9 @@ export function usePhotoNeighbors(
       for (let page = 0; page < MAX_PAGES; page++) {
         const pageParams = { ...params, limit: PAGE_SIZE, offset }
         const res =
-          mode === undefined
+          searchMode === undefined
             ? await fetchPhotos(pageParams, controller.signal)
-            : await searchPhotos(pageParams, mode, controller.signal)
+            : await searchPhotos(pageParams, searchMode, controller.signal)
         for (const photo of res.photos) {
           order.push(photo.uid)
         }
@@ -103,7 +111,7 @@ export function usePhotoNeighbors(
       cancelled = true
       controller.abort()
     }
-  }, [uid, key, enabled, params, mode])
+  }, [uid, key, enabled, params, searchMode])
 
   return neighbors
 }

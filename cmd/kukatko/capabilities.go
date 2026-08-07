@@ -29,11 +29,7 @@ func buildReachabilityChecker(cfg *config.Config) (*reachability.Checker, error)
 	if cfg.Embedding.URL == "" {
 		return reachability.New(reachability.Config{}), nil
 	}
-	client, err := embedding.New(embedding.Config{
-		BaseURL:  cfg.Embedding.URL,
-		ImageDim: cfg.Embedding.ImageDim,
-		FaceDim:  cfg.Embedding.FaceDim,
-	})
+	client, err := embedding.New(embeddingClientConfig(cfg))
 	if err != nil {
 		return nil, fmt.Errorf("capabilities: building embedding health client: %w", err)
 	}

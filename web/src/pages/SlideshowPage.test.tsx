@@ -4,6 +4,7 @@ import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { CapabilitiesContext } from '../capabilities/CapabilitiesContext'
 import i18n from '../i18n'
 import { type Photo, type PhotoListResponse } from '../services/photos'
 
@@ -45,12 +46,18 @@ function page(photos: Photo[], extra: Partial<PhotoListResponse> = {}): PhotoLis
   return { photos, total: photos.length, limit: 100, offset: 0, next_offset: null, ...extra }
 }
 
-function renderPage(initialEntry = '/slideshow') {
+/**
+ * Renders the slideshow. `semanticSearch` is the instance capability; it
+ * defaults to available so a replayed search runs in the mode the URL asks for.
+ */
+function renderPage(initialEntry = '/slideshow', semanticSearch = true) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <MemoryRouter initialEntries={[initialEntry]}>
-        <SlideshowPage />
-      </MemoryRouter>
+      <CapabilitiesContext.Provider value={{ semantic_search: semanticSearch }}>
+        <MemoryRouter initialEntries={[initialEntry]}>
+          <SlideshowPage />
+        </MemoryRouter>
+      </CapabilitiesContext.Provider>
     </I18nextProvider>,
   )
 }
@@ -105,6 +112,18 @@ describe('SlideshowPage', () => {
     expect(fetchMock).not.toHaveBeenCalled()
     expect(searchMock.mock.calls[0][0].q).toBe('beach')
     expect(searchMock.mock.calls[0][1]).toBe('semantic')
+  })
+
+  it('replays a semantic search as full-text while the embeddings box is offline', async () => {
+    searchMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    renderPage('/slideshow?q=beach&mode=semantic', false)
+
+    await screen.findByRole('img')
+    // Still the search endpoint (the library would play a different set), but in
+    // the mode that can actually be answered — a slideshow that starts half a
+    // minute late reads as broken.
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(searchMock.mock.calls[0][1]).toBe('fulltext')
   })
 
   it('shows a graceful empty state for an empty set', async () => {

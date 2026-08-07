@@ -81,6 +81,9 @@ func TestLoad_defaults(t *testing.T) {
 		{"embedding.url", cfg.Embedding.URL, "http://localhost:8000"},
 		{"embedding.image_dim", cfg.Embedding.ImageDim, 768},
 		{"embedding.face_dim", cfg.Embedding.FaceDim, 512},
+		{"embedding.dial_timeout", cfg.Embedding.DialTimeout, 3 * time.Second},
+		{"embedding.request_timeout", cfg.Embedding.RequestTimeout, 60 * time.Second},
+		{"embedding.text_timeout", cfg.Embedding.TextTimeout, 5 * time.Second},
 		{"embedding.wake.enabled", cfg.Embedding.Wake.Enabled, false},
 		{"embedding.wake.broadcast_addr", cfg.Embedding.Wake.BroadcastAddr, "255.255.255.255:9"},
 		{"embedding.wake.min_queue", cfg.Embedding.Wake.MinQueue, 1},
@@ -224,6 +227,7 @@ func TestLoad_envOverridesDefaults(t *testing.T) {
 	t.Setenv("KUKATKO_WEB_HOST", "127.0.0.1")
 	t.Setenv("KUKATKO_DATABASE_MAX_OPEN_CONNS", "50")
 	t.Setenv("KUKATKO_EMBEDDING_URL", "http://box:9000")
+	t.Setenv("KUKATKO_EMBEDDING_TEXT_TIMEOUT", "2s")
 	t.Setenv("KUKATKO_DUPLICATE_ENABLED", "false")
 	t.Setenv("KUKATKO_SIDECAR_ENABLED", "false")
 	t.Setenv("KUKATKO_DUPLICATE_EMBEDDING_MAX_DIST", "0.1")
@@ -250,6 +254,11 @@ func TestLoad_envOverridesDefaults(t *testing.T) {
 	}
 	if cfg.Embedding.URL != "http://box:9000" {
 		t.Errorf("embedding.url = %q, want http://box:9000", cfg.Embedding.URL)
+	}
+	// The search-facing timeout is the one an operator tunes when the box is slow
+	// but reachable, so it must be reachable from the environment too.
+	if cfg.Embedding.TextTimeout != 2*time.Second {
+		t.Errorf("embedding.text_timeout = %v, want 2s", cfg.Embedding.TextTimeout)
 	}
 	if cfg.Duplicate.Enabled {
 		t.Error("duplicate.enabled = true, want false")

@@ -154,9 +154,11 @@ implemented**, per the task's conservative-changes rule.
   📋 The **mode selector labels** ("Hybrid / Full-text / Semantic") remain technical — rename to
   plain terms (e.g. "Smart / By text / By meaning") and/or hide the selector behind an "advanced"
   toggle, defaulting everyone to the smart mode. 🔴🟡 — **verified still open (2026-08-05)**:
-  the selector reads "Hybridní / Fulltext / Sémantické". While renaming it, fix the bigger
-  problem behind it: with the box offline every hybrid query blocks for a **30 s** timeout even
-  though `/capabilities` already reports `semantic_search: false`. See `UX_RESEARCH.md` **N1**.
+  the selector reads "Hybridní / Fulltext / Sémantické". The bigger problem behind it — with the box
+  offline every hybrid query blocked for a **30 s** timeout even though `/capabilities` already
+  reported `semantic_search: false` — is ✅ **Done (2026-08-07)**: the query now goes out as
+  full-text straight away, "Sémantické" is `disabled` with an explanation, and the notice appears
+  beside the selector before the search runs. See `UX_RESEARCH.md` **N1**.
 - **Touch/States:** Field is full-size (good); header Save-view + retry are `size="sm"` (now
   floored on touch ✅).
 

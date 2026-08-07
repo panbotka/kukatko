@@ -270,10 +270,23 @@ type WebConfig struct {
 // EmbeddingConfig points at the external embedding service and records the
 // vector dimensions it produces.
 type EmbeddingConfig struct {
-	URL      string     `mapstructure:"url"`
-	ImageDim int        `mapstructure:"image_dim"`
-	FaceDim  int        `mapstructure:"face_dim"`
-	Wake     WakeConfig `mapstructure:"wake"`
+	URL      string `mapstructure:"url"`
+	ImageDim int    `mapstructure:"image_dim"`
+	FaceDim  int    `mapstructure:"face_dim"`
+	// DialTimeout bounds opening the connection to the sidecar. The box is
+	// usually powered off, and an unanswered dial is what an offline box looks
+	// like, so this is short: it is the ceiling on what any call — including an
+	// interactive search — pays to discover the sidecar is not there.
+	DialTimeout time.Duration `mapstructure:"dial_timeout"`
+	// RequestTimeout bounds one image or face embedding. Those run as queue work
+	// on a possibly cold GPU, so the bound is generous; it never delays a request
+	// a person is waiting on.
+	RequestTimeout time.Duration `mapstructure:"request_timeout"`
+	// TextTimeout bounds embedding a search query — the one interactive call.
+	// Keep it at a few seconds: search degrades to full-text when it expires, and
+	// showing text results beats making the reader wait for semantic ones.
+	TextTimeout time.Duration `mapstructure:"text_timeout"`
+	Wake        WakeConfig    `mapstructure:"wake"`
 }
 
 // WakeConfig optionally wakes the embeddings box via Wake-on-LAN when embedding
@@ -799,15 +812,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("web.allowed_origins", []string{})
 	v.SetDefault("web.secure_cookies", false)
 
-	v.SetDefault("embedding.url", "http://localhost:8000")
-	v.SetDefault("embedding.image_dim", 768)
-	v.SetDefault("embedding.face_dim", 512)
-	v.SetDefault("embedding.wake.enabled", false)
-	v.SetDefault("embedding.wake.mac", "")
-	v.SetDefault("embedding.wake.broadcast_addr", "255.255.255.255:9")
-	v.SetDefault("embedding.wake.interface", "")
-	v.SetDefault("embedding.wake.min_queue", 1)
-	v.SetDefault("embedding.wake.cooldown", "5m")
+	setEmbeddingDefaults(v)
 
 	v.SetDefault("faces.min_det_score", 0.5)
 	v.SetDefault("faces.iou_threshold", 0.1)
@@ -953,6 +958,27 @@ func setThumbDefaults(v *viper.Viper) {
 	v.SetDefault("thumb.vips_binary", "vipsthumbnail")
 	v.SetDefault("thumb.concurrency", 0)          // non-positive falls back to GOMAXPROCS
 	v.SetDefault("thumb.max_pixels", 200_000_000) // 200 MP; <= 0 disables the cap
+}
+
+// setEmbeddingDefaults registers the embedding-sidecar defaults: where the box
+// is, the vector dimensions it produces, the three timeouts and the inert
+// Wake-on-LAN settings. The dial timeout is far below the request ones on
+// purpose — the box is usually powered off, which shows up as a dial nobody
+// answers, and the stock transport would spend 30 s on it. Split out of
+// setDefaults to keep each function within the length budget.
+func setEmbeddingDefaults(v *viper.Viper) {
+	v.SetDefault("embedding.url", "http://localhost:8000")
+	v.SetDefault("embedding.image_dim", 768)
+	v.SetDefault("embedding.face_dim", 512)
+	v.SetDefault("embedding.dial_timeout", "3s")
+	v.SetDefault("embedding.request_timeout", "60s") // queue work on a cold GPU
+	v.SetDefault("embedding.text_timeout", "5s")     // the interactive search path
+	v.SetDefault("embedding.wake.enabled", false)
+	v.SetDefault("embedding.wake.mac", "")
+	v.SetDefault("embedding.wake.broadcast_addr", "255.255.255.255:9")
+	v.SetDefault("embedding.wake.interface", "")
+	v.SetDefault("embedding.wake.min_queue", 1)
+	v.SetDefault("embedding.wake.cooldown", "5m")
 }
 
 // setStacksDefaults registers the stacking defaults. It is split out of

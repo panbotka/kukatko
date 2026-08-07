@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
+import { CapabilitiesContext } from '../capabilities/CapabilitiesContext'
 import { NARROW_VIEWPORT_QUERY } from '../hooks/useIsNarrowViewport'
 import i18n from '../i18n'
 import { type AlbumCount, type LabelCount } from '../services/organize'
@@ -223,17 +224,24 @@ function LocationProbe() {
   )
 }
 
-function renderPage(canWrite = true, entry = '/photos/b?sort=oldest') {
+/**
+ * Renders the detail page. `semanticSearch` is the instance capability, which
+ * decides the mode prev/next pages the originating search with; it defaults to
+ * available so a `mode=semantic` URL is followed as written.
+ */
+function renderPage(canWrite = true, entry = '/photos/b?sort=oldest', semanticSearch = true) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <AuthContext.Provider value={auth(canWrite)}>
-        <MemoryRouter initialEntries={[entry]}>
-          <Routes>
-            <Route path="/photos/:uid" element={<PhotoDetailPage />} />
-          </Routes>
-          <LocationProbe />
-        </MemoryRouter>
-      </AuthContext.Provider>
+      <CapabilitiesContext.Provider value={{ semantic_search: semanticSearch }}>
+        <AuthContext.Provider value={auth(canWrite)}>
+          <MemoryRouter initialEntries={[entry]}>
+            <Routes>
+              <Route path="/photos/:uid" element={<PhotoDetailPage />} />
+            </Routes>
+            <LocationProbe />
+          </MemoryRouter>
+        </AuthContext.Provider>
+      </CapabilitiesContext.Provider>
     </I18nextProvider>,
   )
 }
@@ -1239,6 +1247,19 @@ describe('PhotoDetailPage — immersive viewer', () => {
       await waitFor(() => {
         expect(screen.getByTestId('location')).toHaveTextContent('/search?q=beach&mode=semantic')
       })
+    })
+
+    it('pages prev/next as full-text while the embeddings box is offline', async () => {
+      renderPage(true, '/photos/b?q=beach&mode=semantic', false)
+
+      await screen.findByRole('heading', { name: 'Beach' })
+      await waitFor(() => {
+        expect(searchPhotosMock).toHaveBeenCalled()
+      })
+      // The grid this photo was opened from ran full-text too, so following it is
+      // both the right order and the only one that answers without waiting out
+      // the offline sidecar's timeout.
+      expect(searchPhotosMock.mock.calls[0][1]).toBe('fulltext')
     })
 
     it('carries the open drawer through prev/next so it stays open while paging', async () => {

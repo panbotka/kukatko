@@ -422,7 +422,10 @@ here.
   panel — inline `Collapse` on desktop, `Offcanvas` on mobile per `matchMedia` (the shared hook `useIsNarrowViewport`,
   defensive against jsdom, where `matchMedia` returns `undefined`); each active filter = a removable
   **chip** (`buildChips`, a pill with a cross, clears only that filter — the `q` query has no chip,
-  it has its own field; **album and label chips carry the entity color** — `.kk-entity-album`
+  it has its own field; the photo count below the chips comes from the `total` prop, which is **optional** —
+  omit it and the bar states nothing (the live region stays mounted, so the number is announced when it
+  arrives), which is how `SearchPage` avoids claiming zero photos before a query is even typed;
+  **album and label chips carry the entity color** — `.kk-entity-album`
   vs. `.kk-entity-tag` + a guide icon from `ENTITY_STYLE`, so an album and a label are distinct at a glance
   (see *entity colors* in `tokens.css`); the other filters stay a neutral `text-bg-primary`)
   + one **„zrušit filtry"** + the photo count; **no behavior change** — everything
@@ -730,7 +733,14 @@ here.
   `SearchPage` = semantic/hybrid/fulltext search: a prominent debounced (350 ms)
   search field + a mode toggle (`q`+`mode` in the URL), the same virtualized grid as the
   library + the shared `FilterBar` (without query/sort), `degraded` → a non-blocking notice
-  (sidecar offline), idle/loading/empty/error states (an empty result **repeats the query** —
+  (sidecar offline) **beside the mode selector, raised from `useSearchMode().downgraded` before a search
+  runs** rather than only from the server's reply: with `semantic_search:false` the request already went out
+  as `fulltext`, so there is nothing to wait for and nothing to announce afterwards. The same flag `disabled`s
+  the **Semantic** option (`title` = `search.semanticUnavailable`) — hybrid stays, full-text is a fair half of
+  what it promises — while the URL keeps the picked mode, so it applies again the minute the box is back.
+  The `FilterBar` count is **omitted entirely until a query exists** (`total={hasQuery ? total : undefined}`):
+  „Počet fotek: 0“ over „Zadejte hledaný výraz.“ reads as an empty library, not as an unasked question.
+  idle/loading/empty/error states (an empty result **repeats the query** —
   `search.empty.hintQuery` „Pro «dotaz» jsme nic nenašli…“ — and advises loosening the narrowing; the error is
   `ErrorState` with Retry); the field speaks **the search language**
   (`q` = free text + `klíč:hodnota` filters, grammar in docs/API.md „Vyhledávací jazyk (q=)“;
@@ -939,7 +949,8 @@ here.
   out); rating hotkeys `0`–`5`/`p`/`r`/`v` on document (except while typing into an input).
   **prev/next** = `<Link replace>` `‹`/`›` carrying scope+filters from the URL (`detailQuery`) **and `info`**,
   respecting the source listing's order (`usePhotoNeighbors` over `neighborParams`+`mode` — `GET
-  /photos`, or `GET /search` when the detail came from a search; stop at the ends); **touch**:
+  /photos`, or `GET /search` when the detail came from a search, in the mode `useSearchMode` resolves so a
+  bookmarked `mode=hybrid` link doesn't spend the sidecar timeout on neighbours; stop at the ends); **touch**:
   `usePinchZoom` (pinch/double-tap zoom + pan + swipe on a plain still) or `useSwipeNavigation`
   (swipe when faces/edit are on, where zoom is off so the transform doesn't shift the boxes/preview);
   neighbor preload (`new Image()` on `fit_1920`). **Paging without a full-page flicker** — only the first
@@ -1751,7 +1762,8 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   fetch keeps the last state; **unlike `useAuth` the hook doesn't throw** — the context has a safe default
   `{semantic_search:false}` (**no `version`**), so a component outside the provider merely hides the optional
   offer — or prints no version — instead of crashing.
-  `FilterBar` reads it for the semantic-search link, `Layout`/`MobileNavDrawer`/`HelpPage` for the version:
+  `FilterBar` reads it for the semantic-search link, `useSearchMode` to decide the mode a search is
+  actually sent as, `Layout`/`MobileNavDrawer`/`HelpPage` for the version:
   the shell holds it once, so no menu open ever costs a request and the number cannot disagree with the
   binary that serves the page — a version baked into this bundle would drift the moment either side is
   rebuilt alone), `hooks/` (`usePaginatedPhotos` = a shared
@@ -1771,7 +1783,17 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `fetchPhotos` (`reloadKey` replays the grid in the background after a mutation, just like `useScopedPhotos`);
   `usePhotoSearch(params,mode,{reloadKey?})` = a wrapper over `searchPhotos` with an injected `mode`
   (it goes into `key` → a mode change resets with a skeleton), disabled on an empty `q` (idle), `reloadKey`
-  replays the search in the background after a mutation;
+  replays the search in the background after a mutation; the `mode` it sends is the one
+  `useSearchMode` resolves, so **no page backed by this hook can block on the sidecar timeout**;
+  `useSearchMode(requested)` → `{mode,semanticAvailable,downgraded}` = the one place that decides what a search
+  is really sent as: `effectiveSearchMode` (`lib/searchView`) turns `semantic`/`hybrid` into `fulltext` while
+  `useCapabilities().semantic_search` is false. The box is offline most of the time, and asking anyway only buys
+  the sidecar timeout (30 s of bare spinner, measured on the live instance) before the backend answers with the
+  full-text results it had all along. Idempotent and mode-preserving when semantic search is up, so applying it
+  along a chain is safe; the capability refreshes in the background, so a box coming back flips the mode and
+  re-runs the search within a minute. Read by `usePhotoSearch`, `usePhotoNeighbors`, `SlideshowPage` and
+  `SearchPage` (which additionally stamps the **effective** mode into the tiles' `detailQuery` and the
+  slideshow scope, so nothing downstream re-asks for the unavailable mode);
   `useUploadQueue` = the upload queue: `addFiles` (dedup on name+size+mtime)/`removeItem`/
   `start`/`retry`/`retryFailed`/`clear`, a concurrency ceiling `MAX_CONCURRENT_UPLOADS` (3),
   per-file status+progress, a summary of counts + `progress` (the **overall** fraction of the batch 0–1 weighted by

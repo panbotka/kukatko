@@ -63,7 +63,7 @@ dopad/pracnost — nahoře je to, co se vyplatí udělat první.
 
 | # | Nález | Dopad | Pracnost | Kde |
 | --- | --- | :---: | :---: | --- |
-| [N1](#n1) | Hledání čeká 30 s na AI službu, o které aplikace ví, že je offline | 🔴 | ⚪ | `SearchPage`, `usePhotoSearch` |
+| [N1](#n1) ✅ | Hledání čeká 30 s na AI službu, o které aplikace ví, že je offline | 🔴 | ⚪ | `SearchPage`, `usePhotoSearch` |
 | [N2](#n2) | Knihovna dotazovací jazyk umí, ale tvrdí opak (a mlčí u překlepu) | 🔴 | ⚪ | `FilterBar` |
 | [N3](#n3) | Na `/search` a `/saved` nevede z menu žádný odkaz, `Žebříček` má top-level slot | 🔴 | ⚪ | `navItems.ts` |
 | [N4](#n4) | Hustota mřížky je jedna hodnota pro notebook i telefon | 🔴 | ⚪ | `lib/gridDensity.ts` |
@@ -132,6 +132,16 @@ odhad dostupnosti nikdy nestál 30 s.
 `web/src/hooks/usePhotoSearch.ts`, `web/src/capabilities/CapabilitiesProvider.tsx`
 (dnes ani jeden ze zmíněných souborů `Capabilities` nepoužívá). Serverová strana:
 `internal/photoapi` + `internal/embedding` (timeout).
+
+**✅ Vyřešeno (7. 8. 2026).** Rozhodování o režimu je teď v jednom háčku
+`useSearchMode`: při `semantic_search: false` odchází dotaz rovnou jako `fulltext`
+(z `usePhotoSearch`, `usePhotoNeighbors` i promítání, ne jen ze `SearchPage`), volba
+„Sémantické" je `disabled` s vysvětlením a hláška o nedostupnosti visí u nabídky
+režimů **dřív, než hledání proběhne**. Zvolený režim zůstává v URL, takže se uplatní,
+jakmile se box vrátí. Pojistka na serveru: klient sidecaru má vlastní transport
+s 3s dial timeoutem a text embedding (jediné interaktivní volání) 5s strop — oboje
+konfigurovatelné (`embedding.dial_timeout`/`text_timeout`), takže ani chybný odhad
+dostupnosti nestojí 30 s.
 
 ---
 

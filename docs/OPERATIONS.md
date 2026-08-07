@@ -445,7 +445,9 @@ Neither one prints a stack trace, the response body, or the token.
 | `--mode` (`search` only) | `hybrid` | `fulltext`/`semantic`/`hybrid` |
 
 If the box (embeddings sidecar) is offline, `semantic`/`hybrid` falls back to fulltext and the summary
-line says so (`degraded`).
+line says so (`degraded`). The CLI has no capability probe, so unlike the web UI it does send the
+request and finds out from the answer — bounded by `embedding.dial_timeout`/`text_timeout`, a few
+seconds, not the half minute a stock dialer would spend.
 
 ```bash
 kukatkoctl photos list --year 2024 --limit 5
@@ -688,6 +690,17 @@ long-running and belong on the machine where the instance runs — so they remai
   (**default 1m**). Env: `KUKATKO_WORKER_COUNT`, `_POLL_INTERVAL`, `_STALE_AFTER`,
   `_STALE_SCAN_INTERVAL`; `type_count` is a map, so it is set in YAML only (the safe defaults mean an
   env-only deployment never needs it).
+- **Embedding-sidecar keys (`embedding.*`, `internal/embedding`):** `url` (default
+  `http://localhost:8000`), `image_dim`/`face_dim` (768/512) plus three timeouts, all built into
+  every client through `embeddingClientConfig` in `cmd/kukatko`. `dial_timeout` (**default 3s**)
+  bounds *opening* the connection: the box is usually powered off, that shows up as a dial nobody
+  answers, and Go's stock transport would sit on it for 30 s — this is the ceiling on what any call
+  pays to find out the sidecar is not there. `request_timeout` (**default 60s**) bounds one
+  image/face embedding; those are queue work on a possibly cold GPU, so it stays generous and never
+  delays a request a person is waiting on. `text_timeout` (**default 5s**) bounds embedding a search
+  query — the one interactive call — because search degrades to full-text when it expires and text
+  results now beat semantic results later. Env: `KUKATKO_EMBEDDING_URL`, `_DIAL_TIMEOUT`,
+  `_REQUEST_TIMEOUT`, `_TEXT_TIMEOUT`.
 - **Wake-on-LAN keys (`embedding.wake.*`, `internal/wake`):** `enabled` (bool, **default false** —
   the feature is fully inert), `mac` (the box's MAC, **required and parsed during validation** when enabled),
   `broadcast_addr` (the UDP broadcast target, default `255.255.255.255:9`), `interface` (the NIC for the raw
