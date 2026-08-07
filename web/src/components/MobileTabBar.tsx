@@ -21,18 +21,27 @@ interface TabEntry {
 
 /**
  * The everyday loop, and nothing else. The bar is deliberately not a second copy
- * of the navbar: browse (people, places, map), the review game, the tools and the
- * admin groups all stay in the hamburger menu, because a bottom bar earns its
- * permanent strip of a phone screen only by being short enough to hit blind.
+ * of the navbar: the labels, browse (people, places, map), the review game, the
+ * tools and the admin groups all stay in the hamburger menu, because a bottom bar
+ * earns its permanent strip of a phone screen only by being short enough to hit
+ * blind.
  *
  * Four tabs at most, so a 320px screen still gives each one a comfortable finger
  * target and an unabbreviated label; Upload drops out for a viewer, leaving three.
  * The library is the homepage, so its tab points at the site root.
+ *
+ * **Search holds the third slot, Štítky does not.** On a phone the only way to
+ * search was the unlabelled magnifier in the top bar, whose `title` names the `/`
+ * and Ctrl+K chords on hover — which never happens on a touch screen. Browsing by
+ * label is the rarer errand of the two and keeps its row in the drawer, so the
+ * trade costs nothing and buys the app's strongest feature a thumb-level slot.
+ * The label is the imperative „Hledat" rather than the navbar's noun „Hledání":
+ * a tab is something you do, like the „Nahrát" beside it.
  */
 const TABS: readonly TabEntry[] = [
   { to: LIBRARY_PATH, labelKey: 'nav.library', titleKey: 'nav.titles.library', icon: 'images' },
   { to: '/albums', labelKey: 'nav.albums', titleKey: 'nav.titles.albums', icon: 'collection' },
-  { to: '/labels', labelKey: 'nav.labels', titleKey: 'nav.titles.labels', icon: 'tags' },
+  { to: '/search', labelKey: 'nav.searchShort', titleKey: 'nav.titles.search', icon: 'search' },
   {
     to: '/upload',
     labelKey: 'nav.upload',
@@ -47,7 +56,8 @@ const TABS: readonly TabEntry[] = [
  * **only below the navbar's `md` expand breakpoint**. On a phone the whole
  * primary navigation is otherwise folded into the hamburger, so reaching the
  * library or the albums costs an open-then-tap every single time; the bar puts
- * the everyday loop one thumb-reach away while the top bar keeps search.
+ * the everyday loop — searching among it now — one thumb-reach away, while the
+ * top bar keeps the command palette's shortcut.
  *
  * On `md`+ it renders nothing at all — the decision is made in JS via
  * {@link useIsNarrowViewport} rather than by a `d-md-none` display rule, so the

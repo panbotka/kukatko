@@ -85,11 +85,13 @@ implemented**, per the task's conservative-changes rule.
   library became the landing page. Nothing further to do.
 - **Readability / States / Intimidation:** Every entry pairs a bootstrap-icons glyph with an
   action-describing `title`, so daily users recognise entries by shape.
-  ⚠️ **Correction (2026-08-05):** this section used to claim that searching and saved searches
+  ~~⚠️ **Correction (2026-08-05):** this section used to claim that searching and saved searches
   "are reached from `/search`". They are not reachable at all from the bar — `/search` itself
   has no nav entry in any role, only the unlabelled magnifier icon, and `/saved` sits one level
-  inside `/search`. Meanwhile `Žebříček` holds a top-level slot for a page with one player.
-  See `UX_RESEARCH.md` **N3**. 🔴⚪
+  inside `/search`. Meanwhile `Žebříček` holds a top-level slot for a page with one player.~~
+  — **fixed (2026-08-07):** **Hledání** is a labelled top-level entry (bar and phone drawer,
+  and the phone tab bar's third slot), **Uložená hledání** sit in „Procházet" beside the
+  favourites, and `Žebříček` is demoted into the same group. See `UX_RESEARCH.md` **N3**. ✅
 
 ---
 

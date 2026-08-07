@@ -27,7 +27,6 @@ import {
   BROWSE_GROUP,
   GOVERNANCE_GROUP,
   HELP_ITEM,
-  LEADERBOARD_ITEM,
   type NavEntry,
   type NavGroup,
   OPERATIONS_GROUP,
@@ -46,9 +45,9 @@ import { SearchCommand } from './search/SearchCommand'
  * {@link Footer} below it.
  *
  * The bar carries a deliberate hierarchy rather than one flat row of equals. The
- * everyday loop leads: **Knihovna**, **Alba**, **Štítky**, the "Procházet" browse
- * dropdown, the "Třídění" review game, and — as the one filled call-to-action —
- * **Nahrát**. A thin divider then sets off the quieter power-user and admin
+ * everyday loop leads: **Knihovna**, **Alba**, **Štítky**, **Hledání**, the
+ * "Procházet" browse dropdown, the "Třídění" review game, and — as the one filled
+ * call-to-action — **Nahrát**. A thin divider then sets off the quieter power-user and admin
  * cluster: the "Nástroje" tools dropdown (which now also holds the expand tool),
  * the maintainer-only "Provoz" operations dropdown (import, maintenance, system),
  * and the admin-or-higher "Správa" governance dropdown (users, audit). The
@@ -70,8 +69,16 @@ import { SearchCommand } from './search/SearchCommand'
  * hamburger — is the global {@link SearchCommand}: a compact icon button, since
  * all it does is open the command palette (`/` or Cmd/Ctrl-K). On a phone CSS
  * pairs it with the hamburger at the trailing edge rather than leaving it alone
- * on the left of a row the brand used to open. The language switcher is not in the
- * bar: this instance is Czech, so the setting sits on the account page rather than
+ * on the left of a row the brand used to open. That circle is the *shortcut*, not
+ * the entrance: it carries no label and states its chords only in a `title`, so
+ * the labelled **Hledání** item beside Štítky is what actually makes search
+ * findable — the bare glyph was the whole way in, and a phone never hovers.
+ * Because the swap trades **Žebříček** (now inside "Procházet") for **Hledání**,
+ * the widest role's bar comes out marginally *narrower* than before, which is what
+ * keeps this change clear of the inline row's long-standing overflow.
+ *
+ * The language switcher is not in the bar: this instance is Czech, so the setting
+ * sits on the account page rather than
  * spending prime bar space. Every entry pairs an icon (for daily recognition) with
  * a `title` describing the action it performs. The items themselves live in
  * `navItems.ts`, so the phone menu below cannot drift from the bar's set or its
@@ -220,15 +227,14 @@ export function Layout() {
           {!narrow && (
             <Navbar.Collapse id={MOBILE_MENU_ID}>
               <Nav className="me-auto">
-                {/* The everyday loop, loudest first. Library (the homepage), Albums
-                    and Labels are the always-visible entry points. */}
+                {/* The everyday loop, loudest first. Library (the homepage), Albums,
+                    Labels and Search are the always-visible entry points. */}
                 {PRIMARY_ITEMS.map((entry) => renderLink(entry))}
-                {/* The remaining browse destinations, one level down. */}
+                {/* The remaining browse destinations — saved searches and the
+                    leaderboard among them — one level down. */}
                 {renderGroup(BROWSE_GROUP)}
                 {/* The review game: editors only, and kept in plain sight. */}
                 {canWrite && renderLink(REVIEW_ITEM)}
-                {/* The review game's scoreboard: visible to every signed-in role. */}
-                {renderLink(LEADERBOARD_ITEM)}
                 {/* Adding photos is the loop's payoff: the bar's one filled CTA,
                     hidden from viewers. */}
                 {canWrite && renderLink(UPLOAD_ITEM, { cta: true })}

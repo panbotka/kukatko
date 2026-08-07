@@ -99,7 +99,7 @@ describe('MobileTabBar on a phone', () => {
 
     const bar = screen.getByRole('navigation', { name: 'Primary navigation' })
     // The library is the homepage, so its tab points at the site root.
-    const tabs = ['Library', '/', 'Albums', '/albums', 'Labels', '/labels', 'Upload', '/upload']
+    const tabs = ['Library', '/', 'Albums', '/albums', 'Search', '/search', 'Upload', '/upload']
     for (let i = 0; i < tabs.length; i += 2) {
       expect(screen.getByRole('link', { name: tabs[i] })).toHaveAttribute('href', tabs[i + 1])
     }
@@ -108,6 +108,18 @@ describe('MobileTabBar on a phone', () => {
     expect(bar.querySelectorAll('a')).toHaveLength(4)
     expect(screen.queryByRole('link', { name: 'People' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Review' })).not.toBeInTheDocument()
+  })
+
+  it('spends the third slot on search rather than labels', () => {
+    renderBar()
+
+    // Searching is what the top bar could only offer through an unlabelled
+    // magnifier a thumb never hovers; browsing by label is the rarer errand and
+    // keeps its row in the drawer.
+    const search = screen.getByRole('link', { name: 'Search' })
+    expect(search).toHaveAttribute('title', 'Search the photos')
+    expect(search.querySelector('i.bi.bi-search')).not.toBeNull()
+    expect(screen.queryByRole('link', { name: 'Labels' })).not.toBeInTheDocument()
   })
 
   it('gives every tab an icon, a label and an action tooltip', () => {

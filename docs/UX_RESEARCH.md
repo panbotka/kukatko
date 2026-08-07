@@ -65,7 +65,7 @@ dopad/pracnost — nahoře je to, co se vyplatí udělat první.
 | --- | --- | :---: | :---: | --- |
 | [N1](#n1) ✅ | Hledání čeká 30 s na AI službu, o které aplikace ví, že je offline | 🔴 | ⚪ | `SearchPage`, `usePhotoSearch` |
 | [N2](#n2) | Knihovna dotazovací jazyk umí, ale tvrdí opak (a mlčí u překlepu) | 🔴 | ⚪ | `FilterBar` |
-| [N3](#n3) | Na `/search` a `/saved` nevede z menu žádný odkaz, `Žebříček` má top-level slot | 🔴 | ⚪ | `navItems.ts` |
+| [N3](#n3) ✅ | Na `/search` a `/saved` nevede z menu žádný odkaz, `Žebříček` má top-level slot | 🔴 | ⚪ | `navItems.ts` |
 | [N4](#n4) | Hustota mřížky je jedna hodnota pro notebook i telefon | 🔴 | ⚪ | `lib/gridDensity.ts` |
 | [N5](#n5) | Zpět z fotky ztratí pozici v knihovně | 🔴 | 🟡 | `PhotoGrid`, `usePaginatedPhotos` |
 | [N6](#n6) | Na telefonu panel obličejů i informací fotku úplně zakryje | 🔴 | 🟡 | `photo/viewer.css` |
@@ -217,6 +217,18 @@ místo ve složkách.
 
 **Kde to je.** `web/src/components/navItems.ts`, `web/src/components/Layout.tsx`,
 `web/src/components/MobileTabBar.tsx`, `web/src/components/MobileNavDrawer.tsx`.
+
+**✅ Vyřešeno (7. 8. 2026).** **Hledání** je čtvrtá položka nejvyšší úrovně (ikona
+lupy + text), hned za Štítky — na desktopu i v mobilní zásuvce, protože obě čtou
+`PRIMARY_ITEMS`. Kolečko s lupou zůstalo jako zkratka na paletu. **Uložená hledání**
+jsou v „Procházet" hned za Oblíbenými, **Žebříček** je na konci téže skupiny (varianta
+„postranní panel v `/review`" by znamenala sáhnout na stránku, což zadání vylučovalo).
+Spodní lišta na telefonu je teď **Knihovna · Alba · Hledat · Nahrát** — `Štítky` z ní
+odešly do zásuvky, protože prohlížení podle štítku je z těch dvou ta vzácnější pochůzka.
+Šířku lišty to nezhoršilo: v Chromiu s českými popisky (`probe` nad skutečným `Layout`em)
+je položka „Hledání" **95 px** proti 102 px „Žebříčku", takže řádek správce je o **7 px
+užší** než předtím — při 1200/1280 px přetéká kontejner o 111 px místo 118 px, od 1400 px
+se vejde tak jako dřív.
 
 ---
 

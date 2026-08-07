@@ -28,16 +28,32 @@ export interface NavGroup {
 
 /**
  * The always-visible destinations, in the order the library is actually browsed:
- * everything, then by album, then by label. Available to every signed-in role.
- * The library is the homepage, so its entry points to the site root.
+ * everything, then by album, then by label, then by query. Available to every
+ * signed-in role. The library is the homepage, so its entry points to the site root.
+ *
+ * **Hledání is a menu item, not just a shortcut.** The magnifier button in the bar
+ * (see `SearchCommand`) opens the command palette and names its chords in a `title`
+ * — which a phone never shows and a first-time desktop user has to hover to find.
+ * The `/search` page behind this entry is the only place carrying the query-language
+ * help and the search-mode selector, i.e. the app's strongest feature; it gets a
+ * label like every other destination and the bare circle stays as the shortcut.
  */
 export const PRIMARY_ITEMS: NavEntry[] = [
   { to: LIBRARY_PATH, labelKey: 'nav.library', titleKey: 'nav.titles.library', icon: 'images' },
   { to: '/albums', labelKey: 'nav.albums', titleKey: 'nav.titles.albums', icon: 'collection' },
   { to: '/labels', labelKey: 'nav.labels', titleKey: 'nav.titles.labels', icon: 'tags' },
+  { to: '/search', labelKey: 'nav.search', titleKey: 'nav.titles.search', icon: 'search' },
 ]
 
-/** The "Procházet" (Browse) group: the less-travelled ways into the library. */
+/**
+ * The "Procházet" (Browse) group: the less-travelled ways into the library.
+ *
+ * Saved searches sit right after Oblíbené because that is what they are — smart
+ * albums, a stored way *into* the library — and their only other door was a
+ * dropdown on `/search`, one level deeper than anything else in the app. Žebříček
+ * closes the group: the sorting scoreboard is a way of looking at the library too,
+ * but a rarely-used one, and a top-level slot next to Knihovna and Alba oversold it.
+ */
 export const BROWSE_GROUP: NavGroup = {
   id: 'nav-browse',
   labelKey: 'nav.browse',
@@ -50,9 +66,21 @@ export const BROWSE_GROUP: NavGroup = {
       titleKey: 'nav.titles.favorites',
       icon: 'heart',
     },
+    {
+      to: '/saved',
+      labelKey: 'savedSearches.nav',
+      titleKey: 'savedSearches.navTitle',
+      icon: 'bookmarks',
+    },
     { to: '/people', labelKey: 'nav.people', titleKey: 'nav.titles.people', icon: 'people' },
     { to: '/places', labelKey: 'nav.places', titleKey: 'nav.titles.places', icon: 'geo-alt' },
     { to: '/map', labelKey: 'nav.map', titleKey: 'nav.titles.map', icon: 'map' },
+    {
+      to: '/leaderboard',
+      labelKey: 'nav.leaderboard',
+      titleKey: 'nav.titles.leaderboard',
+      icon: 'trophy',
+    },
   ],
 }
 
@@ -160,19 +188,6 @@ export const REVIEW_ITEM: NavEntry = {
   labelKey: 'nav.review',
   titleKey: 'nav.titles.review',
   icon: 'ui-checks',
-}
-
-/**
- * The sorting leaderboard — the review game's competition standings. Visible to
- * every signed-in role (viewer and up): reading the aggregate counts is not a
- * write action, so it is not gated behind a role group. It sits top-level next
- * to the review game it summarizes, so the game's scoreboard is one click away.
- */
-export const LEADERBOARD_ITEM: NavEntry = {
-  to: '/leaderboard',
-  labelKey: 'nav.leaderboard',
-  titleKey: 'nav.titles.leaderboard',
-  icon: 'trophy',
 }
 
 /**
