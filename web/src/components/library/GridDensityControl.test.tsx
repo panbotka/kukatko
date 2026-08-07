@@ -9,6 +9,11 @@ import { GridDensityControl } from './GridDensityControl'
 
 const STORAGE_KEY = 'kukatko.grid.density'
 
+/** Pins the jsdom viewport width so the narrow-viewport cap is deterministic. */
+function setViewportWidth(px: number): void {
+  Object.defineProperty(window, 'innerWidth', { value: px, writable: true, configurable: true })
+}
+
 function renderControl() {
   return render(
     <I18nextProvider i18n={i18n}>
@@ -23,10 +28,12 @@ beforeAll(async () => {
 
 beforeEach(() => {
   window.localStorage.clear()
+  setViewportWidth(1024)
 })
 
 afterEach(() => {
   window.localStorage.clear()
+  setViewportWidth(1024)
 })
 
 describe('GridDensityControl', () => {
@@ -82,5 +89,37 @@ describe('GridDensityControl', () => {
     expect(screen.getByText('10')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'More tiles per row' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Fewer tiles per row' })).toBeEnabled()
+  })
+
+  it('reads out the clamped count on a phone, not the stored one', () => {
+    setViewportWidth(393)
+    window.localStorage.setItem(STORAGE_KEY, '8')
+    renderControl()
+
+    expect(screen.getByText('3')).toBeInTheDocument()
+    expect(screen.queryByText('8')).not.toBeInTheDocument()
+  })
+
+  it('does not offer a step the narrow viewport would refuse', () => {
+    setViewportWidth(393)
+    window.localStorage.setItem(STORAGE_KEY, '3')
+    renderControl()
+
+    expect(screen.getByRole('button', { name: 'More tiles per row' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Fewer tiles per row' })).toBeEnabled()
+  })
+
+  it('steps down from the clamped count on a phone', async () => {
+    setViewportWidth(393)
+    window.localStorage.setItem(STORAGE_KEY, '8')
+    const user = userEvent.setup()
+    renderControl()
+
+    // The step starts from what is on screen (3), not from the stored 8 — an
+    // explicit choice here does replace the preference.
+    await user.click(screen.getByRole('button', { name: 'Fewer tiles per row' }))
+
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('2')
+    expect(screen.getByText('2')).toBeInTheDocument()
   })
 })

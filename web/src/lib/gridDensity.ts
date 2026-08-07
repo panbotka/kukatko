@@ -41,6 +41,33 @@ export const GRID_GAP_PX = 3
 export const GRID_DENSITY_DEFAULT = 5
 
 /**
+ * A column ceiling a narrow viewport imposes on the grid, whatever the user's
+ * stored density says.
+ */
+export interface GridColumnCap {
+  /** Applies to viewports strictly narrower than this many CSS pixels. */
+  belowWidthPx: number
+  /** The most columns such a viewport will render. */
+  maxColumns: number
+}
+
+/**
+ * The column ceilings for narrow viewports, ascending by width — Bootstrap's
+ * `sm` (576 px) and `md` (768 px) boundaries, so the grid steps down where the
+ * rest of the layout already does.
+ *
+ * The density is a single number per browser profile, so a count pinned on a
+ * laptop follows the user onto a phone: eight columns across 393 px leaves tiles
+ * under 50 px, where the favourite heart drawn on a tile is larger than the
+ * photograph under it. The ceiling only limits what is *rendered* — the stored
+ * preference is never rewritten, see {@link clampColumnsToWidth}.
+ */
+export const GRID_COLUMN_CAPS: readonly GridColumnCap[] = [
+  { belowWidthPx: 576, maxColumns: 3 },
+  { belowWidthPx: 768, maxColumns: 4 },
+]
+
+/**
  * The width an outlier-review tile targets when its column count is seeded from
  * the screen: the 16rem the grid was hard-coded to before it had a control. A
  * face you are asked to judge needs far more room than a library thumbnail, so
@@ -136,6 +163,30 @@ export function initialColumns(scope: GridDensityScope = LIBRARY_GRID_SCOPE): nu
 }
 
 /**
+ * The most columns a viewport of `width` pixels will render, per
+ * {@link GRID_COLUMN_CAPS}: at most 3 below 576 px, at most 4 below 768 px, and
+ * the full {@link GRID_COLUMNS_MAX} from there up. A width that cannot be used
+ * (0, negative, non-finite — no `window`, or a non-DOM test) imposes no ceiling:
+ * without a measurement the user's own choice is the better guess.
+ */
+export function maxColumnsForWidth(width: number): number {
+  if (!Number.isFinite(width) || width <= 0) {
+    return GRID_COLUMNS_MAX
+  }
+  for (const cap of GRID_COLUMN_CAPS) {
+    if (width < cap.belowWidthPx) {
+      return cap.maxColumns
+    }
+  }
+  return GRID_COLUMNS_MAX
+}
+
+/** The column ceiling of the current viewport, unmeasurable width → no ceiling. */
+export function maxColumnsForViewport(): number {
+  return maxColumnsForWidth(viewportWidth())
+}
+
+/**
  * Narrows a raw value to a usable column count. A finite number is rounded and
  * clamped into 1..{@link GRID_COLUMNS_MAX}; anything else — a legacy `'auto'`
  * string, `null`, `NaN`, a tampered object — is coerced to a concrete count
@@ -150,6 +201,21 @@ export function sanitizeDensity(
     return clampColumns(raw)
   }
   return initialColumns(scope)
+}
+
+/**
+ * The column count a grid actually renders on a viewport of `width` pixels: the
+ * sanitized preference, lowered to that viewport's ceiling when the screen is
+ * too narrow to carry it. This is a display-time clamp and nothing else — the
+ * persisted preference stays exactly as the user set it, so widening the window
+ * (or opening the same library on a laptop) restores their density verbatim.
+ */
+export function clampColumnsToWidth(
+  density: number,
+  width: number,
+  scope: GridDensityScope = LIBRARY_GRID_SCOPE,
+): number {
+  return Math.min(sanitizeDensity(density, scope), maxColumnsForWidth(width))
 }
 
 /**

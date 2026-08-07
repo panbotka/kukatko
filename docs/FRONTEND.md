@@ -531,7 +531,9 @@ here.
   columns up to 10, the middle chip is **only a read-only indicator** of the current column count (1…10) —
   no „auto" mode and no reset button (`pointer-events: none`, it is not a button); it steps along
   the `stepDensity` ladder within 1…10; icons via `Icon` (`dash-lg`/`grid-3x3-gap-fill`/`plus-lg`),
-  `−` is disabled at 1 (one photo per row), `+` at 10; reads/writes `useGridDensity`, i.e.
+  `−` is disabled at 1 (one photo per row), `+` at the **viewport's ceiling** (10 on a desktop, but 4 below
+  768px and 3 below 576px, see `useGridDensity` `maxColumns`) — the chip reads out the count **in effect**,
+  so a narrow screen shows what it renders and never offers a step it would refuse; reads/writes `useGridDensity`, i.e.
   localStorage, **not the URL** — it is a device preference, not part of the shared view; it sits in the header of
   `FilterBar` and in the header of `SubjectPage` (a person's gallery), it changes all photo grids in the app
   at once — and because it is only a view preference, **it is not write-gated** (a viewer sees it too);
@@ -2069,13 +2071,18 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   in state → `statusOf` changes identity on every settle, so an effect can depend on it;
   `useSlideshowSettings` = a persistent effect+speed over
   `lib/slideshowSettings` (read once on mount, the setters write into localStorage, sanitization);
-  `useGridDensity()` → `{density,setDensity}` = the photo grid's density (**always a concrete column count
-  1…10**, no `'auto'` mode) over `useSyncExternalStore` on top of `lib/gridDensity`. localStorage is
+  `useGridDensity()` → `{density,setDensity,maxColumns,storedDensity}` = the photo grid's density (**always a
+  concrete column count 1…10**, no `'auto'` mode) over `useSyncExternalStore` on top of `lib/gridDensity`. localStorage is
   **the single source of truth** (no in-memory copy): the snapshot is a primitive (a column count, or `null`
   = nothing usable stored), so React's `Object.is` comparison never loops. **On first
   use** (empty storage or an older `'auto'`/broken value to be migrated) the density is seeded **once**
   from the viewport width (`initialColumns`) and stored — auto only ever seeds the first value, after that it is
-  hard-coded to the user's choice and a later resize **doesn't move it**. `subscribe` also listens to the `storage`
+  hard-coded to the user's choice and a later resize **doesn't move it**. What a resize *does* move is the
+  **ceiling**: a second `useSyncExternalStore` (on `resize`/`orientationchange`, snapshotting
+  `maxColumnsForViewport()` — the ceiling, not the width, so dragging a window edge only re-renders where the
+  grid changes shape) gives `maxColumns`, and `density = min(storedDensity, maxColumns)`. So a phone renders
+  at most 3 columns and a small tablet 4 **whatever is stored**, while `storedDensity` (and localStorage) keep
+  the user's own number for the wide window it was chosen on. `subscribe` also listens to the `storage`
   event → all tabs on the device hold the same column count; `setGridDensity` sanitizes, writes
   and repaints **all** grids at once, without a context and without a provider (so page tests work
   without a wrapper too). It takes an optional **`GridDensityScope`** (default `LIBRARY_GRID_SCOPE`): the
@@ -2262,7 +2269,15 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   unavailable storage, broken JSON or an older `'auto'` —, so that the caller seeds from the width and migrates the
   value) + `initialColumnsForWidth(width)` (how many ~140px tiles fit across the width, clamped
   1…10; narrow → 1, a phone → 1–2, very wide → 10) + `initialColumns()` (the seed for the current viewport)
-  + the pure `gridTemplateColumns(density)` → **always `repeat(N, 1fr)`** = exactly N equal columns on
+  + `GRID_COLUMN_CAPS` (`{belowWidthPx,maxColumns}[]` = **at most 3 columns below 576px, 4 below 768px** —
+  Bootstrap `sm`/`md`) + `maxColumnsForWidth(width)` / `maxColumnsForViewport()` (that ceiling for a width /
+  for the live viewport; an unmeasurable width → **no ceiling**, the user's own choice is the better guess)
+  + `clampColumnsToWidth(density,width)` (the sanitized preference lowered to the ceiling). The clamp is
+  **display-only** — the stored number is never rewritten, so a wide window restores the chosen density
+  verbatim. It exists because *one* number is shared by the laptop that pinned it and the phone that has to
+  live with it: eight columns across a 393px screen leaves tiles under 50px, i.e. a mesh of favourite hearts
+  over photographs too small to recognize.
+  Finally + the pure `gridTemplateColumns(density)` → **always `repeat(N, 1fr)`** = exactly N equal columns on
   every viewport (no `auto-fill` fallback, because the user always picks a concrete number); the gap
   between tiles is handled separately by `gap` on the container. Everything above takes an optional
   **`GridDensityScope`** `{storageKey, tileMinPx, gapPx}` (the whole per-grid contract) and defaults to

@@ -18,6 +18,14 @@ function setViewportWidth(px: number): void {
   Object.defineProperty(window, 'innerWidth', { value: px, writable: true, configurable: true })
 }
 
+/** Resizes the jsdom viewport the way a browser would: width + a `resize` event. */
+function resizeTo(px: number): void {
+  act(() => {
+    setViewportWidth(px)
+    window.dispatchEvent(new Event('resize'))
+  })
+}
+
 beforeEach(() => {
   window.localStorage.clear()
   setViewportWidth(1024)
@@ -144,6 +152,63 @@ describe('useGridDensity', () => {
     // Woken by the same listener set, but reading its own key: unmoved.
     expect(review.result.current.density).toBe(initialColumnsForWidth(1024, OUTLIER_GRID_SCOPE))
     expect(window.localStorage.getItem(OUTLIER_GRID_SCOPE.storageKey)).not.toBe('9')
+  })
+
+  it('clamps a desktop density down on a phone without touching the stored value', () => {
+    setViewportWidth(393)
+    window.localStorage.setItem(STORAGE_KEY, '8')
+    const { result } = renderHook(() => useGridDensity())
+
+    // Eight columns across 393px is a mesh of hearts over invisible photos.
+    expect(result.current.density).toBe(3)
+    expect(result.current.maxColumns).toBe(3)
+    // The preference itself survives — the clamp is display-only.
+    expect(result.current.storedDensity).toBe(8)
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('8')
+  })
+
+  it('caps a small tablet one step higher than a phone', () => {
+    setViewportWidth(700)
+    window.localStorage.setItem(STORAGE_KEY, '8')
+    const { result } = renderHook(() => useGridDensity())
+
+    expect(result.current.density).toBe(4)
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('8')
+  })
+
+  it('restores the chosen density when the window goes wide again', () => {
+    setViewportWidth(393)
+    window.localStorage.setItem(STORAGE_KEY, '8')
+    const { result } = renderHook(() => useGridDensity())
+    expect(result.current.density).toBe(3)
+
+    resizeTo(1440)
+    expect(result.current.density).toBe(8)
+    expect(result.current.maxColumns).toBe(GRID_COLUMNS_MAX)
+
+    // …and narrowing it clamps again, in both directions, for as long as the
+    // stored 8 stays stored.
+    resizeTo(393)
+    expect(result.current.density).toBe(3)
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('8')
+  })
+
+  it('leaves a density the viewport can carry alone', () => {
+    setViewportWidth(393)
+    window.localStorage.setItem(STORAGE_KEY, '2')
+    const { result } = renderHook(() => useGridDensity())
+
+    expect(result.current.density).toBe(2)
+    expect(result.current.storedDensity).toBe(2)
+  })
+
+  it('clamps the review grid by the same viewport rules', () => {
+    setViewportWidth(393)
+    window.localStorage.setItem(OUTLIER_GRID_SCOPE.storageKey, '8')
+    const { result } = renderHook(() => useGridDensity(OUTLIER_GRID_SCOPE))
+
+    expect(result.current.density).toBe(3)
+    expect(window.localStorage.getItem(OUTLIER_GRID_SCOPE.storageKey)).toBe('8')
   })
 
   it('does not thrash when the scope is passed as a fresh object each render', () => {

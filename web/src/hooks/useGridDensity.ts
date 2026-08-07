@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react'
 
 import {
+  GRID_COLUMNS_MAX,
   type GridDensity,
   type GridDensityScope,
   initialColumns,
   LIBRARY_GRID_SCOPE,
+  maxColumnsForViewport,
   readStoredDensity,
   sanitizeDensity,
   writeDensity,
@@ -30,6 +32,27 @@ function subscribe(onStoreChange: () => void): () => void {
 }
 
 /**
+ * Subscribes a component to the viewport's column ceiling. A resize (or a phone
+ * rotating) can move the grid between the breakpoint caps, and unlike the stored
+ * density that change reaches no `storage` event — so it needs its own listener.
+ * The snapshot is the ceiling itself, not the width, so dragging a window edge
+ * re-renders only when the grid would actually change shape.
+ */
+function subscribeViewport(onStoreChange: () => void): () => void {
+  window.addEventListener('resize', onStoreChange)
+  window.addEventListener('orientationchange', onStoreChange)
+  return () => {
+    window.removeEventListener('resize', onStoreChange)
+    window.removeEventListener('orientationchange', onStoreChange)
+  }
+}
+
+/** The ceiling to assume with no viewport to measure (SSR): no ceiling at all. */
+function serverMaxColumns(): number {
+  return GRID_COLUMNS_MAX
+}
+
+/**
  * Pins a grid to a column count, persists it under the scope's key and re-renders
  * every grid. The scope defaults to the photo library, the grid that had this
  * setting first.
@@ -46,10 +69,25 @@ export function setGridDensity(
 
 /** Result of {@link useGridDensity}: the current density plus its setter. */
 export interface UseGridDensityResult {
-  /** The current column count, always a concrete number in 1..GRID_COLUMNS_MAX. */
+  /**
+   * The column count actually in effect: the stored preference, lowered to what
+   * this viewport can carry. Always a concrete number in
+   * `GRID_COLUMNS_MIN..GRID_COLUMNS_MAX`.
+   */
   density: GridDensity
   /** Pins a new column count and persists it under this hook's scope. */
   setDensity: (density: number) => void
+  /**
+   * The most columns this viewport will render (see `GRID_COLUMN_CAPS`) — the
+   * ceiling a picker must not offer to step past.
+   */
+  maxColumns: number
+  /**
+   * The user's stored choice, before the viewport ceiling. Equals {@link density}
+   * on a wide screen; on a narrow one it is the value that comes back when the
+   * window widens again.
+   */
+  storedDensity: GridDensity
 }
 
 /**
@@ -62,6 +100,13 @@ export interface UseGridDensityResult {
  * stable from then on and a later window resize never moves it. After that the
  * value is exactly what the user set with the control. A cross-tab `storage`
  * event keeps every open tab on the same count.
+ *
+ * The one thing that does move with the window is the *ceiling*: a viewport too
+ * narrow to carry the chosen count renders fewer columns (`GRID_COLUMN_CAPS` —
+ * at most 3 below 576 px, 4 below 768 px), because one stored number is shared
+ * by the laptop that set it and the phone that has to live with it. The clamp is
+ * display-only: `density` is what the grid renders, `storedDensity` what the
+ * user chose, and widening the window brings the latter straight back.
  *
  * Scopes do not share a number: the photo library (the default) and the
  * `/outliers` review grid each keep their own, because a comfortable density for
@@ -85,6 +130,16 @@ export function useGridDensity(scope: GridDensityScope = LIBRARY_GRID_SCOPE): Us
   const getSnapshot = useCallback(() => readStoredDensity(resolved), [resolved])
   const stored = useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 
+  // The narrow-viewport ceiling is the other half of the effective count. It is
+  // read from the live viewport rather than from storage, so it never touches
+  // the persisted preference: a phone renders fewer columns, a laptop the user's
+  // own number, and the same browser profile can do both without a fight.
+  const maxColumns = useSyncExternalStore(
+    subscribeViewport,
+    maxColumnsForViewport,
+    serverMaxColumns,
+  )
+
   // First use on this device: no numeric preference yet (empty storage or a
   // legacy `'auto'`). Seed it once from the current viewport width — auto's only
   // remaining job — and persist it so the count stays put across resizes.
@@ -104,6 +159,7 @@ export function useGridDensity(scope: GridDensityScope = LIBRARY_GRID_SCOPE): Us
   // Until that seed lands (the effect runs after the first paint) the effective
   // value is the same width-derived count, so the very first render already
   // shows it and there is no flash to a placeholder default.
-  const density = stored ?? initialColumns(resolved)
-  return { density, setDensity }
+  const storedDensity = stored ?? initialColumns(resolved)
+  const density = Math.min(storedDensity, maxColumns)
+  return { density, setDensity, maxColumns, storedDensity }
 }

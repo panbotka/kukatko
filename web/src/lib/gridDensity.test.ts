@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import {
+  clampColumnsToWidth,
+  GRID_COLUMN_CAPS,
   GRID_COLUMN_CHOICES,
   GRID_COLUMNS_MAX,
   GRID_COLUMNS_MIN,
@@ -9,6 +11,8 @@ import {
   initialColumns,
   initialColumnsForWidth,
   LIBRARY_GRID_SCOPE,
+  maxColumnsForViewport,
+  maxColumnsForWidth,
   OUTLIER_GRID_SCOPE,
   readStoredDensity,
   sanitizeDensity,
@@ -186,6 +190,98 @@ describe('initialColumnsForWidth', () => {
     expect(initialColumns()).toBe(2)
     setViewportWidth(1440)
     expect(initialColumns()).toBe(GRID_COLUMNS_MAX)
+  })
+})
+
+describe('maxColumnsForWidth', () => {
+  it('caps a phone at three columns', () => {
+    // 393px (a current phone) at the desktop's eight columns would leave tiles
+    // under 50px — the favourite heart drawn on a tile bigger than the photo.
+    expect(maxColumnsForWidth(320)).toBe(3)
+    expect(maxColumnsForWidth(393)).toBe(3)
+    expect(maxColumnsForWidth(575)).toBe(3)
+  })
+
+  it('caps a small tablet at four columns', () => {
+    expect(maxColumnsForWidth(576)).toBe(4)
+    expect(maxColumnsForWidth(700)).toBe(4)
+    expect(maxColumnsForWidth(767)).toBe(4)
+  })
+
+  it('imposes no ceiling from the md breakpoint up', () => {
+    expect(maxColumnsForWidth(768)).toBe(GRID_COLUMNS_MAX)
+    expect(maxColumnsForWidth(1024)).toBe(GRID_COLUMNS_MAX)
+    expect(maxColumnsForWidth(4000)).toBe(GRID_COLUMNS_MAX)
+  })
+
+  it('imposes no ceiling when the width cannot be measured', () => {
+    // No window (SSR) or a non-DOM test: without a measurement the user's own
+    // choice is the better guess than an invented clamp.
+    expect(maxColumnsForWidth(0)).toBe(GRID_COLUMNS_MAX)
+    expect(maxColumnsForWidth(-100)).toBe(GRID_COLUMNS_MAX)
+    expect(maxColumnsForWidth(Number.NaN)).toBe(GRID_COLUMNS_MAX)
+  })
+
+  it('reads the current viewport width via maxColumnsForViewport', () => {
+    setViewportWidth(393)
+    expect(maxColumnsForViewport()).toBe(3)
+    setViewportWidth(700)
+    expect(maxColumnsForViewport()).toBe(4)
+    setViewportWidth(1440)
+    expect(maxColumnsForViewport()).toBe(GRID_COLUMNS_MAX)
+  })
+
+  it('keeps the caps ascending by width and never below the floor', () => {
+    const widths = GRID_COLUMN_CAPS.map((cap) => cap.belowWidthPx)
+    expect(widths).toEqual([...widths].sort((a, b) => a - b))
+    for (const cap of GRID_COLUMN_CAPS) {
+      expect(cap.maxColumns).toBeGreaterThanOrEqual(GRID_COLUMNS_MIN)
+      expect(cap.maxColumns).toBeLessThanOrEqual(GRID_COLUMNS_MAX)
+    }
+  })
+})
+
+describe('clampColumnsToWidth', () => {
+  it('clamps a desktop density down on a phone', () => {
+    expect(clampColumnsToWidth(8, 393)).toBe(3)
+    expect(clampColumnsToWidth(GRID_COLUMNS_MAX, 320)).toBe(3)
+  })
+
+  it('clamps a desktop density down on a small tablet', () => {
+    expect(clampColumnsToWidth(8, 700)).toBe(4)
+  })
+
+  it('restores the stored preference verbatim on a wide viewport', () => {
+    // The clamp is display-only: the same stored 8 that a phone renders as 3
+    // comes back untouched the moment the window is wide again.
+    expect(clampColumnsToWidth(8, 1280)).toBe(8)
+    expect(clampColumnsToWidth(8, 768)).toBe(8)
+    expect(clampColumnsToWidth(GRID_COLUMNS_MAX, 1440)).toBe(GRID_COLUMNS_MAX)
+  })
+
+  it('never raises a density that already fits', () => {
+    expect(clampColumnsToWidth(1, 393)).toBe(1)
+    expect(clampColumnsToWidth(2, 393)).toBe(2)
+    expect(clampColumnsToWidth(3, 700)).toBe(3)
+  })
+
+  it('sanitizes the preference before clamping it', () => {
+    expect(clampColumnsToWidth(99, 393)).toBe(3)
+    expect(clampColumnsToWidth(99, 1440)).toBe(GRID_COLUMNS_MAX)
+    expect(clampColumnsToWidth(0, 393)).toBe(GRID_COLUMNS_MIN)
+    expect(clampColumnsToWidth(3.6, 1440)).toBe(4)
+  })
+
+  it('honours the preference when the width is unusable', () => {
+    expect(clampColumnsToWidth(8, 0)).toBe(8)
+    expect(clampColumnsToWidth(8, Number.NaN)).toBe(8)
+  })
+
+  it('clamps a second scope by the same viewport rules', () => {
+    // The ceiling is a property of the screen, not of the grid: a review card at
+    // eight columns on a phone is as unusable as a library thumbnail.
+    expect(clampColumnsToWidth(8, 393, OUTLIER_GRID_SCOPE)).toBe(3)
+    expect(clampColumnsToWidth(8, 1440, OUTLIER_GRID_SCOPE)).toBe(8)
   })
 })
 
