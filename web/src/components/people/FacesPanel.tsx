@@ -33,10 +33,11 @@ const STATE_CHIP: Record<FaceState, string> = {
 
 /**
  * The faces sidebar of the photo detail: one row per detected face, and the
- * assignment controls for the selected one. It appears beside the photo (below it
- * on a phone) whenever the face boxes are shown, and is the only place people are
- * named — the boxes on the photo and these rows drive the same selection, so
- * clicking either one gets you there.
+ * assignment controls for the selected one. It appears beside the photo (on a
+ * phone, in a bottom sheet under it — the photo has to stay on screen, or the
+ * numbered rows have no numbered boxes left to match) whenever the face boxes are
+ * shown, and is the only place people are named — the boxes on the photo and
+ * these rows drive the same selection, so clicking either one gets you there.
  *
  * Rows are numbered by position, matching the number drawn on each box: `face_index`
  * cannot be used, as markers with no detected face carry negative ones.
@@ -82,7 +83,11 @@ export function FacesPanel({ faces, canWrite, hovered, onHover, onClose }: Faces
           <Icon name="x-lg" />
         </Button>
       </Card.Header>
-      <Card.Body style={{ maxHeight: '80vh', overflowY: 'auto' }}>
+      {/* The height cap is a class in `viewer.css`, not an inline style: on a
+          phone the drawer is a short bottom sheet that scrolls itself, and the
+          sheet has to be able to LIFT the cap — an inline style outranks the
+          media query that would. */}
+      <Card.Body className="kk-viewer__panel-scroll">
         {faces.actionError && <Alert variant="danger">{t('faces.assignError')}</Alert>}
         {faces.status === 'loading' && (
           <Spinner animation="border" size="sm" role="status">

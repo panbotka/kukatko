@@ -35,12 +35,20 @@ export interface AutoHideChrome {
  * one gesture away.
  *
  * Activity is watched globally (pointer move/down, key, touch) so any interaction
- * anywhere wakes it. Visibility is tracked through a ref and only committed to
- * state on an actual change, so the flood of `pointermove` events never triggers
- * a re-render per frame. While `paused` the chrome is pinned visible and no timer
- * runs. The reduced-motion contract is honoured by the CSS transition (built on
- * the duration tokens, which collapse to ~0 under `prefers-reduced-motion`), so
- * this hook only decides *whether* the chrome shows, never *how* it animates.
+ * anywhere wakes it — a tap counts, which is what makes this survivable on a
+ * phone, where there is no pointer to move. Visibility is tracked through a ref
+ * and only committed to state on an actual change, so the flood of `pointermove`
+ * events never triggers a re-render per frame. While `paused` the chrome is
+ * pinned visible and no timer runs. The reduced-motion contract is honoured by the
+ * CSS transition (built on the duration tokens, which collapse to ~0 under
+ * `prefers-reduced-motion`), so this hook only decides *whether* the chrome shows,
+ * never *how* it animates.
+ *
+ * It does not decide *what* hides, either: this is one boolean on the viewer root
+ * (`data-chrome`), and `viewer.css` picks which surfaces answer to it. Two
+ * deliberately do not — the persistent back control and the photo's title, which
+ * dim rather than leave, so an idle screen never becomes a photograph with no
+ * visible name and no visible way off it.
  */
 export function useAutoHideChrome(options: UseAutoHideChromeOptions = {}): AutoHideChrome {
   const { idleMs = DEFAULT_IDLE_MS, paused = false } = options

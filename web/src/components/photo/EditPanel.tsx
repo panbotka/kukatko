@@ -59,8 +59,9 @@ function withoutCrop(edit: PhotoEdit): PhotoEdit {
  * API; the original file is never modified. Editor/admin only (the page gates
  * rendering).
  *
- * It sits beside the photo (below it on a phone) exactly like `FacesPanel`, whose
- * shape it mirrors: a card whose header names it and carries the close button.
+ * It sits beside the photo (on a phone, in the bottom sheet under it) exactly like
+ * `FacesPanel`, whose shape it mirrors: a card whose header names it and carries
+ * the close button.
  * Crucially it renders NO image of its own — it is a controlled component, and
  * the page previews the reported edit on the one photo the detail already shows,
  * live and CSS-only (matching how the backend renders the download).
@@ -107,7 +108,10 @@ export function EditPanel({ uid, edit, onChange, onSaved, onClose }: EditPanelPr
           <Icon name="x-lg" />
         </Button>
       </Card.Header>
-      <Card.Body style={{ maxHeight: '80vh', overflowY: 'auto' }}>
+      {/* Shares `FacesPanel`'s height cap, and shares the reason it is a class in
+          `viewer.css` rather than an inline style: on a phone the drawer is a short
+          bottom sheet that scrolls itself and has to be able to LIFT the cap. */}
+      <Card.Body className="kk-viewer__panel-scroll">
         {error && (
           <Alert variant="danger" className="py-2 small">
             {t('photo.edit.error')}

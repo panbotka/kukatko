@@ -1,10 +1,13 @@
 /* Immersive full-bleed photo viewer. The detail route IS the viewer: a single
    image owns the whole viewport over a warm near-black backdrop, the chrome
-   (top bar + prev/next arrows) melts away after a short idle and returns on any
-   pointer move or tap, and a metadata drawer slides in from the side on demand.
-   Replaces the old click-to-open lightbox. All surfaces/accents/radii come from
-   the design tokens; motion is built on the duration tokens, which collapse to
-   ~0 under prefers-reduced-motion, so reduced-motion users get instant swaps. */
+   (top bar + prev/next arrows) melts away after a short idle — all but the way
+   back and the photo's name, which stay — and returns on any pointer move or
+   tap, and a metadata drawer opens on demand: from the side on a wide screen, as
+   a bottom sheet under half the screen on a phone, so the photo stays visible
+   either way. Replaces the old click-to-open lightbox. All surfaces/accents/radii
+   come from the design tokens; motion is built on the duration tokens, which
+   collapse to ~0 under prefers-reduced-motion, so reduced-motion users get
+   instant swaps. */
 
 .kk-viewer {
   position: fixed;
@@ -14,6 +17,15 @@
      stage's shrink, and the chrome/next-arrow shift that keeps them out from
      under it, so the three can never drift apart. */
   --kk-viewer-panel-w: min(26rem, 100%);
+  /* The height the same drawer takes on a phone, where it is a bottom sheet
+     rather than a side drawer. Under half the screen on purpose: the photo above
+     it stays the larger thing, which is what makes the faces panel's numbered
+     rows readable against the numbered boxes drawn on the photograph. Shared by
+     the sheet and by the stage's shrink, so those two cannot drift apart either.
+     `dvh`, not `vh`: a phone browser's collapsing address bar changes the real
+     viewport, and a sheet measured against the larger one would be taller than
+     the screen it sits in. */
+  --kk-viewer-sheet-h: 46dvh;
   background: var(--kk-viewer-backdrop);
   overflow: hidden;
   color: var(--kk-text);
@@ -42,9 +54,12 @@
   align-items: center;
   justify-content: center;
   padding: 3.5rem 0.5rem;
-  /* When the drawer opens on a wide screen the stage yields the space it takes,
-     so the photo re-centres in what is left rather than hiding behind it. */
-  transition: right var(--kk-duration-base) var(--kk-ease-standard);
+  /* Whenever the drawer opens the stage yields the space it takes, so the photo
+     re-centres in what is left rather than hiding behind it — to the right on a
+     wide screen, downwards on a phone, where the drawer is a bottom sheet. */
+  transition:
+    right var(--kk-duration-base) var(--kk-ease-standard),
+    bottom var(--kk-duration-base) var(--kk-ease-standard);
 }
 
 /* The figure wraps the rendered image so the face overlay's percentage geometry
@@ -125,9 +140,12 @@
 
 /* ---- Chrome (auto-hiding) -------------------------------------------- */
 
-/* The top bar + nav arrows fade together when the viewer is idle. The
-   persistent close button is deliberately NOT in this group — it stays. */
+/* The top bar's controls + the nav arrows fade together when the viewer is idle.
+   The persistent back button is deliberately NOT in this group — it stays — and
+   neither is the heading, see the idle rules right below. */
 .kk-viewer__chrome,
+.kk-viewer__heading,
+.kk-viewer__actions,
 .kk-viewer__nav {
   transition:
     opacity var(--kk-duration-base) var(--kk-ease-standard),
@@ -135,10 +153,36 @@
     right var(--kk-duration-base) var(--kk-ease-standard);
 }
 
+/* Idle. The bar does NOT leave wholesale, and that is the point: with a mouse any
+   move brings it back, but a phone has no such gesture, so an idle screen holding
+   one photograph and one unlabelled glyph tells a reader nothing about how to get
+   anywhere. What melts away is the bar's *controls* and most of its darkening
+   wash; what stays is the way out (the persistent back arrow, which never fades at
+   all) and the photo's name, dimmed to a whisper rather than removed — enough to
+   say "this screen has a title and a way back" without competing with the photo.
+   The bar stops taking pointer events either way: what is left of it is text, and
+   a tap anywhere is what wakes the rest of the chrome back up. */
 .kk-viewer[data-chrome='hidden'] .kk-viewer__chrome {
+  pointer-events: none;
+}
+
+.kk-viewer[data-chrome='hidden'] .kk-viewer__chrome::before {
+  opacity: 0.55;
+}
+
+.kk-viewer[data-chrome='hidden'] .kk-viewer__heading {
+  opacity: 0.72;
+}
+
+/* With most of the wash gone the name leans on its own shadow to stay readable —
+   measured over a blown-out sky, which is the case that decides this number. */
+.kk-viewer[data-chrome='hidden'] .kk-viewer__title {
+  text-shadow: 0 1px 4px rgb(0 0 0 / 85%);
+}
+
+.kk-viewer[data-chrome='hidden'] .kk-viewer__actions {
   opacity: 0;
   transform: translateY(-0.5rem);
-  pointer-events: none;
 }
 
 .kk-viewer[data-chrome='hidden'] .kk-viewer__nav {
@@ -158,7 +202,20 @@
   padding: calc(0.6rem + env(safe-area-inset-top, 0px))
     calc(0.75rem + env(safe-area-inset-right, 0px)) 2.5rem
     calc(0.75rem + env(safe-area-inset-left, 0px));
+}
+
+/* The bar's darkening wash rides a pseudo-element rather than the bar's own
+   background, so it can soften on its own while the title it keeps legible stays
+   put: a gradient cannot be transitioned, an opacity can. Out of flow (so it is
+   not a flex item) and behind the bar's content — `.kk-viewer__chrome` is a
+   positioned, z-indexed stacking context, so `z-index: -1` stays inside it. */
+.kk-viewer__chrome::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
   background: var(--kk-viewer-chrome-scrim);
+  transition: opacity var(--kk-duration-base) var(--kk-ease-standard);
 }
 
 /* Title block: left of the actions, truncates instead of shoving them off. */
@@ -292,9 +349,15 @@
   color: #fff;
 }
 
-/* The persistent close button: top-left, always reachable (never fades with the
-   chrome), so Esc has a visible twin the pointer can always find. */
-.kk-viewer__close {
+/* The persistent way OUT: top-left, always reachable (never fades with the
+   chrome), so Esc has a visible twin the pointer can always find.
+
+   It wears a BACK ARROW, not a cross, and that is load-bearing. The drawer
+   carries its own ✕, and on a phone the two used to sit side by side at the same
+   height as two identical round crosses — the left one dropping the whole photo,
+   the right one merely shutting the panel. Two glyphs, two meanings: the arrow
+   leaves the photograph, the cross closes what is over it. */
+.kk-viewer__back {
   position: absolute;
   top: calc(0.6rem + env(safe-area-inset-top, 0px));
   left: calc(0.75rem + env(safe-area-inset-left, 0px));
@@ -302,8 +365,8 @@
   opacity: 0.85;
 }
 
-.kk-viewer__close:hover,
-.kk-viewer__close:focus-visible {
+.kk-viewer__back:hover,
+.kk-viewer__back:focus-visible {
   opacity: 1;
 }
 
@@ -407,6 +470,11 @@
 
 /* ---- Info drawer ----------------------------------------------------- */
 
+/* One panel, two shapes. Here it is the desktop side drawer, sliding in from the
+   right beside a photo that narrows to make room; below `md` the bottom-sheet
+   block at the foot of this file re-anchors the very same element to the bottom
+   edge. Same DOM, same open/shut state, same content — only the geometry
+   differs, because "beside the photo" does not exist on a 393px screen. */
 .kk-viewer__panel {
   position: absolute;
   top: 0;
@@ -459,6 +527,17 @@
   margin-top: var(--kk-space-5);
 }
 
+/* The body of a lead panel's own card (faces, edits) — the drawer's tallest
+   content by far, so on a wide screen it caps itself and scrolls. It is a class
+   rather than an inline style precisely so the phone can LIFT the cap (see the
+   bottom-sheet block): inside a short sheet a second scroll region nested in the
+   sheet's own is a touch trap, and an inline style would outrank the media query
+   that undoes it. */
+.kk-viewer__panel-scroll {
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
 /* The metadata edit form's actions live in a NON-scrolling footer of the drawer
    (portaled here from MetadataPanel), so Save/Cancel stay pinned to the drawer's
    bottom edge while editing — at any screen height and scroll position. A sticky
@@ -480,21 +559,8 @@
   border-top: 1px solid var(--kk-surface-border);
 }
 
-/* The scrim dims the stage behind the drawer on a phone (where the drawer
-   overlays instead of shrinking the stage). Tap it to close. */
-.kk-viewer__panel-scrim {
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  border: 0;
-  padding: 0;
-  background: var(--kk-viewer-panel-scrim);
-  cursor: pointer;
-  animation: kk-viewer-in var(--kk-duration-fast) var(--kk-ease-standard);
-}
-
 /* Wide screens: the drawer sits beside the photo and the stage makes room, so
-   the image is never hidden behind the panel and no scrim is needed. */
+   the image is never hidden behind the panel. */
 @media (min-width: 768px) {
   .kk-viewer[data-panel='open'] .kk-viewer__stage {
     right: var(--kk-viewer-panel-w);
@@ -511,8 +577,82 @@
   .kk-viewer[data-panel='open'] .kk-viewer__nav--next {
     right: calc(var(--kk-viewer-panel-w) + 0.75rem + env(safe-area-inset-right, 0px));
   }
+}
 
-  .kk-viewer__panel-scrim {
-    display: none;
+/* ---- Phone: the drawer is a bottom sheet ----------------------------- */
+
+/* Below `md` there is no room *beside* a photo — a 26rem drawer on a 393px phone
+   is the whole screen — so the side drawer used to become an opaque panel over a
+   photograph nobody could see any more. That breaks the faces panel outright: its
+   rows are numbered to match the numbered boxes drawn ON the photo, and with the
+   photo gone there is nothing left to match them against.
+
+   So at this width the drawer stops being a side drawer and becomes a bottom
+   sheet. It rises from the bottom edge over a little under half the screen, the
+   stage gives up exactly that height, and the photo keeps the rest — visible,
+   and still taking its own touch gestures. It also puts the panel's ✕ a long way
+   from the viewer's back arrow in the top-left corner, which is what stops a tap
+   meant for "close the panel" from closing the whole photo.
+
+   The breakpoint is Bootstrap's `md` boundary — the same one `useIsNarrowViewport`
+   hands the curation dock — so the two phone decisions cannot drift apart. */
+@media (max-width: 767.98px) {
+  .kk-viewer__panel {
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: auto;
+    height: var(--kk-viewer-sheet-h);
+    /* Room above the first row of content for the grab handle. */
+    padding-top: 0.9rem;
+    border-left: 0;
+    border-top: 1px solid var(--kk-surface-border);
+    border-radius: var(--kk-radius-lg) var(--kk-radius-lg) 0 0;
+    /* It arrives from below now, not from the side. */
+    transform: translateY(100%);
+  }
+
+  /* The handle. A sheet has to say "I am a panel that came up from the bottom
+     edge, and the photo is still up there" at a glance, and this is the shape
+     that says it. Decorative only (`aria-hidden` by construction — it is a
+     pseudo-element): the sheet is closed by its own ✕, by the toggle that opened
+     it, or by Esc. */
+  .kk-viewer__panel::before {
+    content: '';
+    position: absolute;
+    top: 0.4rem;
+    left: 50%;
+    width: 2.25rem;
+    height: 0.25rem;
+    transform: translateX(-50%);
+    border-radius: var(--kk-radius-pill);
+    background: var(--kk-surface-border);
+  }
+
+  .kk-viewer__panel.is-open {
+    transform: translateY(0);
+  }
+
+  /* The photo yields exactly the sheet's height and keeps the rest of the screen.
+     Its own bottom padding goes with it — the sheet is right there, so there is
+     nothing left to clear. */
+  .kk-viewer[data-panel='open'] .kk-viewer__stage {
+    bottom: var(--kk-viewer-sheet-h);
+    padding-bottom: 0.5rem;
+  }
+
+  /* A sheet this short cannot afford the desktop drawer's padding. */
+  .kk-viewer__panel-body {
+    padding: var(--kk-space-3);
+    padding-bottom: calc(var(--kk-space-4) + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* A lead panel's list scrolls WITH the sheet rather than inside a second
+     scroller nested in it — two scroll regions stacked in a ~370px window is a
+     touch trap. */
+  .kk-viewer__panel-scroll {
+    max-height: none;
+    overflow-y: visible;
   }
 }

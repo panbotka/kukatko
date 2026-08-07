@@ -111,9 +111,11 @@ function flagBtnClass(on: boolean): string {
  * near-black backdrop, reflecting the saved non-destructive edit (or, while the
  * edit panel is open, the adjustments in progress). The chrome — a top action
  * bar, the prev/next arrows and (on a phone) the bottom curation dock — melts
- * away after a short idle and returns on any pointer move or tap; a persistent
- * close (Esc / ✕) always works and steps back to the originating list at its
- * exact prior scroll position.
+ * away after a short idle and returns on any pointer move or tap, all but the way
+ * back and the photo's name: a phone has no "move the mouse" gesture, so those two
+ * stay (dimmed) rather than leaving a screen with no visible way off it. A
+ * persistent back arrow (Esc / ←) always works and steps back to the originating
+ * list at its exact prior scroll position.
  *
  * Where the everyday curation controls sit depends on the reach: with a mouse
  * the top edge costs nothing, so they ride the top action bar; on a phone that
@@ -124,8 +126,12 @@ function flagBtnClass(on: boolean): string {
  * All the rich metadata and curation — caption & place (EXIF, date, location with
  * its map), people/faces, albums & labels, technical details, the variants stack,
  * similar photos and the non-destructive editor — live in a metadata drawer that
- * slides in from the side on demand rather than being always visible; the default
- * state is just the photo. The open photo and the drawer's open state both live
+ * opens on demand rather than being always visible: from the side on a wide
+ * screen, as a bottom sheet over a little under half the height on a phone, where
+ * "beside the photo" does not exist. The default state is just the photo, and the
+ * photo stays visible (and pannable) beside or above the drawer either way — the
+ * faces panel's numbered rows only mean anything against the numbered boxes drawn
+ * on the photograph. The open photo and the drawer's open state both live
  * in URL params, so Back and refresh behave. Every mutation is role-gated; viewers
  * get a read-only viewer.
  */
@@ -510,11 +516,11 @@ export function PhotoDetailPage() {
       <div className="kk-viewer" data-chrome="visible">
         <button
           type="button"
-          className="kk-viewer__btn kk-viewer__btn--icon kk-viewer__close"
+          className="kk-viewer__btn kk-viewer__btn--icon kk-viewer__back"
           aria-label={t('photo.back')}
           onClick={close}
         >
-          <Icon name="x-lg" />
+          <Icon name="arrow-left" />
         </button>
         <div className="kk-viewer__stage d-flex justify-content-center align-items-center">
           <Spinner animation="border" role="status" variant="light">
@@ -827,15 +833,22 @@ export function PhotoDetailPage() {
       data-chrome={chrome.visible ? 'visible' : 'hidden'}
       data-panel={panelOpen ? 'open' : 'closed'}
     >
-      {/* Persistent close: top-left, never fades with the chrome, so Esc always
-          has a visible twin the pointer can find. Returns to the originating list. */}
+      {/* The persistent way out: top-left, never fades with the chrome, so Esc
+          always has a visible twin the pointer can find. Returns to the
+          originating list.
+
+          A BACK ARROW, never a cross. The drawer carries its own ✕, and on a phone
+          the two sit on one screen — as two identical round crosses they read as
+          the same control, so a tap meant to shut the panel dropped the whole
+          photograph instead. The arrow leaves the photo; the cross closes what is
+          over it. */}
       <button
         type="button"
-        className="kk-viewer__btn kk-viewer__btn--icon kk-viewer__close"
+        className="kk-viewer__btn kk-viewer__btn--icon kk-viewer__back"
         aria-label={t('photo.back')}
         onClick={close}
       >
-        <Icon name="x-lg" />
+        <Icon name="arrow-left" />
       </button>
 
       {/* Auto-hiding top action bar: the photo's name, then the view toggles —
@@ -947,21 +960,11 @@ export function PhotoDetailPage() {
         </div>
       )}
 
-      {/* On a phone the drawer overlays the stage; a scrim dims the photo behind it
-          and closes the drawer when tapped. Hidden at ≥ md, where the stage makes
-          room beside the drawer instead. */}
-      {panelOpen && (
-        <button
-          type="button"
-          className="kk-viewer__panel-scrim"
-          aria-label={t('photo.viewer.closeInfo')}
-          onClick={() => {
-            setPanelOpen(false)
-          }}
-        />
-      )}
-
-      {/* The metadata drawer: everything the photo carries, on demand. */}
+      {/* The metadata drawer: everything the photo carries, on demand. At ≥ md it
+          slides in beside the photo; on a phone it rises from the bottom edge as a
+          sheet over a little under half the screen. Either way the stage gives up
+          exactly that space, so the photo stays visible — and there is no scrim
+          over it, so it stays pannable too. */}
       <aside
         className={`kk-viewer__panel${panelOpen ? ' is-open' : ''}`}
         aria-label={t('photo.viewer.info')}

@@ -68,7 +68,7 @@ dopad/pracnost — nahoře je to, co se vyplatí udělat první.
 | [N3](#n3) ✅ | Na `/search` a `/saved` nevede z menu žádný odkaz, `Žebříček` má top-level slot | 🔴 | ⚪ | `navItems.ts` |
 | [N4](#n4) | Hustota mřížky je jedna hodnota pro notebook i telefon | 🔴 | ⚪ | `lib/gridDensity.ts` |
 | [N5](#n5) ✅ | Zpět z fotky ztratí pozici v knihovně | 🔴 | 🟡 | `PhotoGrid`, `usePaginatedPhotos` |
-| [N6](#n6) | Na telefonu panel obličejů i informací fotku úplně zakryje | 🔴 | 🟡 | `photo/viewer.css` |
+| [N6](#n6) ✅ | Na telefonu panel obličejů i informací fotku úplně zakryje | 🔴 | 🟡 | `photo/viewer.css` |
 | [N7](#n7) | 438 alb v jedné hromadě, i když API už rozlišuje jejich typ | 🔴 | 🟡 | `AlbumsPage` |
 | [N8](#n8) | `/people`: 105 osob bez hledání, a 125 Mpx stažených na 72 čtverečků | 🔴 | 🟡 | `PeoplePage`, `SubjectTile` |
 | [N9](#n9) | Seznam obličejů nemá náhledy, jmenovky na fotce se překrývají | 🟡 | 🟡 | `FacesPanel`, `FaceOverlay` |
@@ -82,7 +82,7 @@ dopad/pracnost — nahoře je to, co se vyplatí udělat první.
 | [N17](#n17) | Nápověda o dotazovacím jazyce mlčí a slibuje zapamatovanou pozici | 🟡 | ⚪ | `HelpPage` |
 | [N18](#n18) | `Rok` (109 položek) a `Pořízeno od/do` jsou dva soupeřící filtry data | 🟡 | 🟡 | `FilterBar` |
 | [N19](#n19) | Mobil: 350 z 852 px je ovládání, a časová osa je skrytá | 🟡 | 🟡 | `LibraryPage`, `TimelineScrubber` |
-| [N20](#n20) | Ovládání prohlížeče fotky se schová i s jedinou cestou zpět | 🟡 | ⚪ | `useAutoHideChrome` |
+| [N20](#n20) ✅ | Ovládání prohlížeče fotky se schová i s jedinou cestou zpět | 🟡 | ⚪ | `useAutoHideChrome` |
 | [N21](#n21) | Obálky alb se opakují, alba jdou od sebe rozeznat jen podle názvu | 🟡 | 🟡 | `AlbumsPage`, výběr obálky |
 | [N22](#n22) | `/stats` mluví o „Embeddingách" a nenabízí žádnou akci | 🟡 | ⚪ | `StatsPage` |
 | [N23](#n23) | Mapa je světlá v tmavé aplikaci a `Místa` jsou jeden řádek | 🟡 | 🟡 | `MapPage`, `PlacesPage` |
@@ -340,6 +340,21 @@ zavře celou fotku, když chtěl zavřít panel.
 **Kde to je.** `web/src/components/photo/viewer.css` (`.kk-viewer__panel`,
 `.kk-viewer__panel-scrim`), `web/src/components/people/FacesPanel.tsx`,
 `web/src/components/photo/MetadataPanel.tsx`.
+
+**✅ Vyřešeno (8. 8. 2026).** Pod `md` je z bočního panelu **spodní zásuvka**: tentýž
+prvek se překotví ke spodní hraně přes `--kk-viewer-sheet-h` (46 dvh — `dvh`, ne
+`vh`, kvůli sjíždějícímu adresnímu řádku), scéna o přesně tutéž výšku ustoupí
+(`bottom: var(--kk-viewer-sheet-h)`), takže fotka nad zásuvkou zůstane vidět
+i s vlastními dotykovými gesty. **Stínítko zmizelo úplně** — i průhledné by
+z fotky udělalo zavírací tlačítko, a tím pádem nepohyblivou fotku; zavírá se
+křížkem zásuvky, přepínačem, který ji otevřel, nebo Esc. Zásuvka dostala úchyt
+(pseudoprvek) a menší odsazení, seznam obličejů (i úprav) uvnitř ní přestal být
+druhým posuvným oknem (`.kk-viewer__panel-scroll`, strop výšky se v zásuvce ruší).
+**Dva křížky jsou pryč:** trvalé tlačítko vlevo nahoře je teď **šipka zpět**
+(`kk-viewer__back`, `arrow-left`), křížek zůstal jen tomu, co je nad fotkou.
+Křížek panelu je při 393 × 852 na `y = 487`, tlačítko zpět na `y = 10` — nemají se
+kde potkat. Ověřeno v Chromiu na 393 × 852 (zásuvka 393 × 392, scéna 393 × 460,
+fotka celá uvnitř scény) i na 1280 × 800, kde je rozvržení beze změny.
 
 ---
 
@@ -823,6 +838,17 @@ zpět, když se z prohlížeče vrací do seznamu.
 
 **Kde to je.** `web/src/hooks/useAutoHideChrome.ts`,
 `web/src/components/photo/viewer.css`.
+
+**✅ Vyřešeno (8. 8. 2026).** Nečinnost už nebere celou horní lištu. Odejdou její
+**ovládací prvky**, šipky a spodní lišta; zůstane **cesta ven** (trvalá šipka zpět,
+která neblednutím nikdy neprošla) a **název fotky**, zeslabený na `opacity: 0.72`
+místo úplného zmizení. Ztmavovací závoj lišty se přesunul na pseudoprvek
+`.kk-viewer__chrome::before` a v klidu ztenčí na `0.55` — přechod přes průhlednost,
+protože přechod přes přechod (gradient) neexistuje —, takže název drží čitelnost
+i nad přepáleným nebem (ověřeno v prohlížeči; navíc mu v klidovém stavu zesílí
+vlastní stín). Rozhoduje o tom `viewer.css`, ne háček: ten dál drží jen jeden
+příznak `data-chrome` na kořeni prohlížeče. Křížek nahradila šipka zpět spolu
+s [N6](#n6).
 
 ---
 

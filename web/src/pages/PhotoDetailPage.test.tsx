@@ -773,8 +773,6 @@ describe('PhotoDetailPage — immersive viewer', () => {
       expect(viewer(container)).toHaveAttribute('data-panel', 'closed')
       await openInfo(user)
       expect(viewer(container)).toHaveAttribute('data-panel', 'open')
-      // Scope to the drawer: on a phone the scrim behind it answers to the same
-      // label, and both closing affordances are meant to survive this change.
       const panel = screen.getByRole('complementary', { name: 'Info' })
       await user.click(within(panel).getByRole('button', { name: 'Close info' }))
       expect(viewer(container)).toHaveAttribute('data-panel', 'closed')
@@ -847,6 +845,161 @@ describe('PhotoDetailPage — immersive viewer', () => {
       const buttons = declarations(ruleBody(css, /\.kk-viewer__dock \.btn\s*(?=\{)/) ?? '')
       expect(buttons.get('min-width')).toBe('2.75rem')
       expect(buttons.get('min-height')).toBe('2.75rem')
+    })
+  })
+
+  /**
+   * The drawer's phone shape. On a 393 × 852 phone the side drawer measured the
+   * whole viewport: an opaque panel plus a 55 % black scrim over a photo that was
+   * still mounted, still loaded, and not visible by a single pixel — which makes
+   * the faces panel meaningless, because its rows are numbered to match the boxes
+   * drawn ON that photo. Below `md` it is a bottom sheet instead.
+   *
+   * jsdom evaluates no media queries and computes no layout, so the geometry is
+   * pinned by reading `viewer.css` itself; the DOM tests below cover what a query
+   * can see. (The layout itself was checked in a real browser at 393 × 852 — see
+   * the commit — because neither of these can see a pixel.)
+   */
+  describe('phone bottom sheet', () => {
+    const css = readCss('src/components/photo/viewer.css')
+    // The `max-width: 767.98px` block — the phone half of the drawer's two shapes.
+    // Picked by content, so it survives another narrow block being added later.
+    const sheet =
+      ruleBody(css, /@media \(max-width: 767\.98px\)\s*(?=\{)/, /\.kk-viewer__panel\s*\{/) ?? ''
+
+    it('re-anchors the drawer to the bottom edge', () => {
+      const panel = declarations(ruleBody(sheet, /\.kk-viewer__panel\s*(?=\{)/) ?? '')
+      expect(panel.get('top')).toBe('auto')
+      expect(panel.get('bottom')).toBe('0')
+      expect(panel.get('left')).toBe('0')
+      expect(panel.get('right')).toBe('0')
+      expect(panel.get('height')).toBe('var(--kk-viewer-sheet-h)')
+      // It rises from below now instead of sliding in from the right…
+      expect(panel.get('transform')).toBe('translateY(100%)')
+      // …and comes to rest at the bottom edge when open.
+      const open = declarations(ruleBody(sheet, /\.kk-viewer__panel\.is-open\s*(?=\{)/) ?? '')
+      expect(open.get('transform')).toBe('translateY(0)')
+    })
+
+    it('takes under half the screen, so the photo above it stays the larger thing', () => {
+      const root = declarations(ruleBody(css, /\.kk-viewer\s*(?=\{)/) ?? '')
+      // `dvh`, not `vh`: a phone browser's collapsing address bar changes the real
+      // viewport, and a sheet measured against the larger one overshoots the screen.
+      const share = /^(\d+(?:\.\d+)?)dvh$/.exec(root.get('--kk-viewer-sheet-h') ?? '')
+      expect(share).not.toBeNull()
+      expect(Number(share?.[1])).toBeGreaterThanOrEqual(40)
+      expect(Number(share?.[1])).toBeLessThanOrEqual(50)
+    })
+
+    it('gives the stage back exactly the sheet’s height', () => {
+      // The one thing that keeps the photo on screen: the stage yields the sheet's
+      // height rather than the sheet covering it. Same variable on both sides, so
+      // a photo half-under the sheet is not expressible.
+      const stage = declarations(
+        ruleBody(sheet, /\.kk-viewer\[data-panel='open'\] \.kk-viewer__stage\s*(?=\{)/) ?? '',
+      )
+      expect(stage.get('bottom')).toBe('var(--kk-viewer-sheet-h)')
+      expect(css).toContain('bottom var(--kk-duration-base)')
+    })
+
+    it('lifts a lead panel’s own height cap inside the sheet', () => {
+      // Two nested scroll regions in a ~370px window is a touch trap; in the sheet
+      // the faces/edits list scrolls with the sheet.
+      const list = declarations(ruleBody(sheet, /\.kk-viewer__panel-scroll\s*(?=\{)/) ?? '')
+      expect(list.get('max-height')).toBe('none')
+    })
+
+    it('drops the full-screen scrim entirely', () => {
+      // The 55 % black wash was half the bug. A sheet needs the photo above it both
+      // VISIBLE and still taking its own touch gestures, so the scrim is gone
+      // rather than merely shrunk — panning a photo through a dimming tap target
+      // is not panning it.
+      expect(css).not.toContain('kk-viewer__panel-scrim')
+      expect(readCss('src/styles/tokens.css')).not.toContain('--kk-viewer-panel-scrim')
+    })
+
+    it('leaves the photo mounted, unscrimmed and gesture-bearing while the sheet is open', async () => {
+      mockViewport(true)
+      const user = userEvent.setup()
+      const { container } = renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      await openInfo(user)
+      expect(viewer(container)).toHaveAttribute('data-panel', 'open')
+      expect(container.querySelector('.kk-viewer__panel-scrim')).toBeNull()
+      // The figure still carries the swipe/pinch surface marker, so the photo above
+      // the sheet is not merely a picture of a photo.
+      expect(container.querySelector('.kk-viewer__figure')).toHaveAttribute('data-swipe-surface')
+    })
+
+    it('gives the two controls different glyphs', async () => {
+      // The other half of the bug: two visually identical round crosses ended up
+      // side by side at the same height — the left one closing the whole photo, the
+      // right one merely the panel. An arrow leaves the photo, a cross closes what
+      // is over it.
+      mockViewport(true)
+      const user = userEvent.setup()
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+      await openInfo(user)
+
+      const back = screen.getByRole('button', { name: 'Back to the list' })
+      expect(back.querySelector('i')).toHaveClass('bi-arrow-left')
+      const panel = screen.getByRole('complementary', { name: 'Info' })
+      expect(
+        within(panel).getByRole('button', { name: 'Close info' }).querySelector('i'),
+      ).toHaveClass('bi-x-lg')
+    })
+  })
+
+  /**
+   * What the idle timer is allowed to take. On a desktop any mouse move brings the
+   * chrome back; a phone has no such gesture, so an idle screen showing one
+   * photograph and one unlabelled glyph left a reader with no name for what they
+   * were looking at and no hint that anything else was there. The way back and the
+   * title now dim instead of leaving.
+   */
+  describe('idle chrome stylesheet', () => {
+    const css = readCss('src/components/photo/viewer.css')
+    const idle = (part: string) =>
+      declarations(
+        ruleBody(css, new RegExp(`\\.kk-viewer\\[data-chrome='hidden'\\] \\.${part}\\s*(?=\\{)`)) ??
+          '',
+      )
+
+    it('keeps the photo’s title, dimmed rather than removed', () => {
+      const opacity = Number(idle('kk-viewer__heading').get('opacity'))
+      expect(opacity).toBeGreaterThan(0)
+      expect(opacity).toBeLessThan(1)
+    })
+
+    it('never fades the persistent back control at all', () => {
+      // It lives outside the chrome by construction; assert no idle rule reaches
+      // it, so a later refactor cannot quietly fold the one way out into the fade.
+      expect(
+        ruleBody(css, /\.kk-viewer\[data-chrome='hidden'\] \.kk-viewer__back\s*(?=\{)/),
+      ).toBeUndefined()
+    })
+
+    it('still takes the controls and the arrows away', () => {
+      // "Everything else may still hide" — the point is an immersive photo, not a
+      // permanent bar.
+      expect(idle('kk-viewer__actions').get('opacity')).toBe('0')
+      expect(idle('kk-viewer__nav').get('opacity')).toBe('0')
+      expect(idle('kk-viewer__dock').get('opacity')).toBe('0')
+    })
+
+    it('softens the darkening wash instead of dropping it', () => {
+      // The title that stays has to stay LEGIBLE over an unknown photograph, so the
+      // wash behind it thins rather than vanishing. It rides a pseudo-element for
+      // exactly this: a gradient cannot be transitioned, an opacity can.
+      const wash = declarations(
+        ruleBody(css, /\.kk-viewer\[data-chrome='hidden'\] \.kk-viewer__chrome::before\s*(?=\{)/) ??
+          '',
+      )
+      const opacity = Number(wash.get('opacity'))
+      expect(opacity).toBeGreaterThan(0)
+      expect(opacity).toBeLessThan(1)
     })
   })
 
