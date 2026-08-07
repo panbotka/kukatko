@@ -4,6 +4,7 @@ import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 import {
   type GridComponents,
+  type GridStateSnapshot,
   type ListRange,
   VirtuosoGrid,
   type VirtuosoGridHandle,
@@ -186,6 +187,18 @@ export interface PhotoGridProps {
    * rendered tile; return null for photos that need none.
    */
   tileExtras?: (photo: Photo) => React.ReactNode
+  /**
+   * A position this grid was left at, restored as it mounts: the offset plus the
+   * measurements needed to lay the tiles out at it before anything is on screen,
+   * so returning from a photo lands on the tile it was opened from instead of at
+   * the top. Read once, when the grid mounts — see `useGridScrollMemory`.
+   */
+  restoreStateFrom?: GridStateSnapshot
+  /**
+   * Reports the grid's position (and the measurements that give it meaning)
+   * whenever it changes, so the page can remember where the reader was.
+   */
+  onStateChanged?: (state: GridStateSnapshot) => void
 }
 
 /**
@@ -199,6 +212,11 @@ export interface PhotoGridProps {
  * loaded, watches `onRangeChanged` to fetch what came into view, and leaves
  * `onEndReached` off — that is what lets it jump straight to any position
  * instead of paging its way there.
+ *
+ * Where the reader is in it is not the grid's business to remember, but it is the
+ * grid's to report and to restore: `onStateChanged` hands the page a position to
+ * keep and `restoreStateFrom` puts the grid back at one, which is what makes Back
+ * out of a photo land on the tile it was opened from.
  */
 export function PhotoGrid({
   photos,
@@ -214,6 +232,8 @@ export function PhotoGrid({
   onRangeChanged,
   focusedIndex = -1,
   tileExtras,
+  restoreStateFrom,
+  onStateChanged,
 }: PhotoGridProps) {
   // Shift+click selects the contiguous range between the anchor and the clicked
   // tile; the grid supplies its own photo order so pages need no extra wiring.
@@ -245,6 +265,8 @@ export function PhotoGrid({
       context={{ loadingMore, moreError, onRetry }}
       endReached={onEndReached}
       rangeChanged={onRangeChanged}
+      restoreStateFrom={restoreStateFrom}
+      stateChanged={onStateChanged}
       components={gridComponents}
       itemContent={(index, photo) =>
         photo === undefined ? (

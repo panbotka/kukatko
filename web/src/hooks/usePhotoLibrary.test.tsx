@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { type Photo, type PhotoListParams, type PhotoListResponse } from '../services/photos'
 
+import { RESTORE_MAX_PAGES } from './usePaginatedPhotos'
 import { usePhotoLibrary } from './usePhotoLibrary'
 
 // Mock the data service: the hook is the unit under test, the network is not.
@@ -159,6 +160,108 @@ describe('usePhotoLibrary', () => {
 
     await waitFor(() => {
       expect(result.current.status).toBe('ready')
+    })
+  })
+
+  describe('restoring a length (initialCount)', () => {
+    it('walks back to the length the list had before reporting ready', async () => {
+      fetchMock.mockResolvedValueOnce(page([photo('a'), photo('b')], 6, 2))
+      fetchMock.mockResolvedValueOnce(page([photo('c'), photo('d')], 6, 4))
+      fetchMock.mockResolvedValueOnce(page([photo('e'), photo('f')], 6, null))
+
+      // The reader left this list 250 photos long: coming back with only the
+      // first page would leave a document far too short to scroll back into.
+      const { result } = renderHook(() =>
+        usePhotoLibrary({ sort: 'newest' }, { initialCount: 250 }),
+      )
+
+      expect(result.current.status).toBe('loading')
+      await waitFor(() => {
+        expect(result.current.status).toBe('ready')
+      })
+      expect(result.current.photos.map((p) => p.uid)).toEqual(['a', 'b', 'c', 'd', 'e', 'f'])
+      // Whole pages, walked at the offsets the server gave.
+      expect(fetchMock.mock.calls.map((c) => c[0].offset)).toEqual([0, 2, 4])
+      expect(result.current.hasMore).toBe(false)
+    })
+
+    it('loads a single page when there is no length to restore', async () => {
+      fetchMock.mockResolvedValue(page([photo('a')], 3, 1))
+
+      const { result } = renderHook(() => usePhotoLibrary({ sort: 'newest' }, { initialCount: 0 }))
+
+      await waitFor(() => {
+        expect(result.current.status).toBe('ready')
+      })
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    })
+
+    it('caps how far the walk goes, so the wait stays bounded', async () => {
+      // Every page says there is another one: without the cap, restoring a
+      // reader who had scrolled very deep would hold the skeleton up for as many
+      // round-trips as it took them to get there.
+      fetchMock.mockImplementation((params: PhotoListParams) =>
+        Promise.resolve(page([photo(`p${String(params.offset ?? 0)}`)], 10_000, 1)),
+      )
+
+      const { result } = renderHook(() =>
+        usePhotoLibrary({ sort: 'newest' }, { initialCount: 100_000 }),
+      )
+
+      await waitFor(() => {
+        expect(result.current.status).toBe('ready')
+      })
+      expect(fetchMock).toHaveBeenCalledTimes(RESTORE_MAX_PAGES)
+      // The list is still short of where the reader was, but far closer than the
+      // top — and scrolling on simply pages the rest in as before.
+      expect(result.current.hasMore).toBe(true)
+    })
+
+    it('keeps the pages that did arrive when the walk dies partway', async () => {
+      fetchMock.mockResolvedValueOnce(page([photo('a'), photo('b')], 6, 2))
+      fetchMock.mockRejectedValueOnce(new Error('boom'))
+
+      const { result } = renderHook(() =>
+        usePhotoLibrary({ sort: 'newest' }, { initialCount: 250 }),
+      )
+
+      await waitFor(() => {
+        expect(result.current.status).toBe('ready')
+      })
+      // A short list beats an error page: what arrived stays, and `hasMore` still
+      // points at the page that failed, so scrolling on asks for it again.
+      expect(result.current.photos.map((p) => p.uid)).toEqual(['a', 'b'])
+      expect(result.current.hasMore).toBe(true)
+    })
+
+    it('reports an error when the walk gets nowhere at all', async () => {
+      fetchMock.mockRejectedValue(new Error('boom'))
+
+      const { result } = renderHook(() =>
+        usePhotoLibrary({ sort: 'newest' }, { initialCount: 250 }),
+      )
+
+      await waitFor(() => {
+        expect(result.current.status).toBe('error')
+      })
+    })
+
+    it('does not refetch when only the restore length changes', async () => {
+      fetchMock.mockResolvedValue(page([photo('a')], 1, null))
+
+      const { result, rerender } = renderHook(
+        (props: { initialCount: number }) => usePhotoLibrary({ sort: 'newest' }, props),
+        { initialProps: { initialCount: 0 } },
+      )
+      await waitFor(() => {
+        expect(result.current.status).toBe('ready')
+      })
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+
+      // The restore length is not part of the query: it is read when a query
+      // starts, and moving it alone must not re-run the list.
+      rerender({ initialCount: 500 })
+      expect(fetchMock).toHaveBeenCalledTimes(1)
     })
   })
 

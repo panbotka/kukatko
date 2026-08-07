@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useLocation } from 'react-router-dom'
 
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
@@ -8,9 +9,11 @@ import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
 import { BatchActionBar } from '../components/organize/BatchActionBar'
 import { useBulkEdit } from '../hooks/useBulkEdit'
+import { useGridScrollMemory } from '../hooks/useGridScrollMemory'
 import { usePhotoLibrary } from '../hooks/usePhotoLibrary'
 import { useReloadKey } from '../hooks/useReloadKey'
 import { detailQueryString } from '../lib/detailView'
+import { gridScrollKey, readGridScroll } from '../lib/gridScroll'
 import { LIBRARY_DEFAULTS, type LibraryView, viewToParams } from '../lib/libraryView'
 import { useUrlState } from '../lib/urlState'
 
@@ -30,6 +33,7 @@ import { useUrlState } from '../lib/urlState'
  */
 export function FavoritesPage() {
   const { t } = useTranslation()
+  const location = useLocation()
   const [view, setView] = useUrlState<LibraryView>(LIBRARY_DEFAULTS)
   const [reloadKey, reload] = useReloadKey()
 
@@ -42,10 +46,17 @@ export function FavoritesPage() {
     () => detailQueryString({ ...view, favorite: 'true', mode: '' }),
     [view],
   )
+  // Where the grid was left, per view, so opening a photo and coming back — Back,
+  // or the viewer's own "back to list", which pops the same entry — returns to
+  // the tile it was opened from. This list only ever grew by appending pages, so
+  // it also has to come back as long as it was before the offset means anything.
+  const scrollKey = gridScrollKey(location.pathname, location.search)
+  const restoreCount = useMemo(() => readGridScroll(scrollKey)?.count ?? 0, [scrollKey])
   const { photos, total, status, loadingMore, moreError, loadMore, retry } = usePhotoLibrary(
     params,
-    { reloadKey },
+    { reloadKey, initialCount: restoreCount },
   )
+  const gridScroll = useGridScrollMemory({ key: scrollKey, count: photos.length })
 
   // Hover-select: a writer's tiles carry the corner checkmark from the outset,
   // so the toolbar below keys off what is picked rather than an explicit mode.
@@ -87,6 +98,8 @@ export function FavoritesPage() {
             selection={bulk.gridSelection}
             favoritable
             detailQuery={detailQuery}
+            restoreStateFrom={gridScroll.restoreFrom}
+            onStateChanged={gridScroll.onStateChanged}
           />
         </div>
       )}

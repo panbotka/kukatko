@@ -3,7 +3,7 @@ import Alert from 'react-bootstrap/Alert'
 import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
 import { BackLink } from '../components/BackLink'
@@ -19,9 +19,11 @@ import { type BatchExtraAction, BatchActionBar } from '../components/organize/Ba
 import { DownloadZipButton } from '../components/organize/DownloadZipButton'
 import { SlideshowStart } from '../components/slideshow/SlideshowStart'
 import { useBulkEdit } from '../hooks/useBulkEdit'
+import { useGridScrollMemory } from '../hooks/useGridScrollMemory'
 import { useReloadKey } from '../hooks/useReloadKey'
 import { useScopedPhotos } from '../hooks/useScopedPhotos'
 import { detailQueryString } from '../lib/detailView'
+import { gridScrollKey, readGridScroll } from '../lib/gridScroll'
 import { LIBRARY_DEFAULTS, type LibraryView, viewToParams } from '../lib/libraryView'
 import { useUrlState } from '../lib/urlState'
 import { isNotFound } from '../services/auth'
@@ -71,6 +73,7 @@ export function AlbumDetailPage() {
   const { t } = useTranslation()
   const { canWrite } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const { uid = '' } = useParams<{ uid: string }>()
   const [state, setState] = useState<State>({ status: 'loading' })
   const [editing, setEditing] = useState(false)
@@ -87,11 +90,18 @@ export function AlbumDetailPage() {
     () => detailQueryString({ ...view, album: uid, label: '', favorite: '', mode: '' }),
     [view, uid],
   )
+  // Where the grid was left, per view, so opening a photo and coming back — Back,
+  // or the viewer's own "back to list", which pops the same entry — returns to
+  // the tile it was opened from. This list only ever grew by appending pages, so
+  // it also has to come back as long as it was before the offset means anything.
+  const scrollKey = gridScrollKey(location.pathname, location.search)
+  const restoreCount = useMemo(() => readGridScroll(scrollKey)?.count ?? 0, [scrollKey])
   const { photos, total, status, loadingMore, moreError, loadMore, retry } = useScopedPhotos(
     scope,
     params,
-    { reloadKey },
+    { reloadKey, initialCount: restoreCount },
   )
+  const gridScroll = useGridScrollMemory({ key: scrollKey, count: photos.length })
 
   // Hover-select: a writer's tiles carry the corner checkmark from the outset,
   // so the toolbar below keys off what is picked rather than an explicit mode.
@@ -313,6 +323,8 @@ export function AlbumDetailPage() {
             onRetry={retry}
             selection={bulk.gridSelection}
             detailQuery={detailQuery}
+            restoreStateFrom={gridScroll.restoreFrom}
+            onStateChanged={gridScroll.onStateChanged}
           />
         </div>
       )}

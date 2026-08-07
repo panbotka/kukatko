@@ -1,31 +1,40 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { type ReactNode } from 'react'
+import { type GridStateSnapshot } from 'react-virtuoso'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
+import { writeGridScroll } from '../lib/gridScroll'
 import { ApiError } from '../services/auth'
 import { type Album } from '../services/organize'
 import { type Photo, type PhotoListResponse } from '../services/photos'
 
 import { AlbumDetailPage } from './AlbumDetailPage'
 
-// Minimal stand-in for react-virtuoso's grid (jsdom has no layout).
+// Minimal stand-in for react-virtuoso's grid (jsdom has no layout). It records
+// the position it was mounted with, which is as much as a layout-less DOM can
+// say about the grid being put back where the reader left it.
 interface MockGridProps {
   data: Photo[]
   itemContent: (index: number, item: Photo) => ReactNode
+  restoreStateFrom?: GridStateSnapshot
 }
+const grid = vi.hoisted(() => ({ restoredFrom: null as GridStateSnapshot | null }))
 vi.mock('react-virtuoso', () => ({
-  VirtuosoGrid: ({ data, itemContent }: MockGridProps) => (
-    <div data-testid="grid">
-      {data.map((item, index) => (
-        <div key={item.uid}>{itemContent(index, item)}</div>
-      ))}
-    </div>
-  ),
+  VirtuosoGrid: ({ data, itemContent, restoreStateFrom }: MockGridProps) => {
+    grid.restoredFrom = restoreStateFrom ?? null
+    return (
+      <div data-testid="grid">
+        {data.map((item, index) => (
+          <div key={item.uid}>{itemContent(index, item)}</div>
+        ))}
+      </div>
+    )
+  },
 }))
 
 vi.mock('../services/photos', async (importOriginal) => {
@@ -132,6 +141,8 @@ function renderPage(canWrite = true) {
 
 beforeEach(async () => {
   await i18n.changeLanguage('en')
+  window.sessionStorage.clear()
+  grid.restoredFrom = null
   fetchPhotosMock.mockReset()
   fetchAlbumMock.mockReset()
   deleteAlbumMock.mockReset()
@@ -590,5 +601,63 @@ describe('AlbumDetailPage on a narrow (phone) screen', () => {
     expect(within(menu).queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
     expect(within(menu).queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
     expect(menu.querySelector('.dropdown-divider')).toBeNull()
+  })
+})
+
+describe('AlbumDetailPage scroll position', () => {
+  /** A virtuoso state at the given offset, as the grid would report it. */
+  function gridState(scrollTop: number) {
+    return {
+      gap: { column: 8, row: 8 },
+      item: { height: 220, width: 220 },
+      scrollTop,
+      viewport: { height: 900, width: 1400 },
+    }
+  }
+
+  /** A page of `count` photos starting at `from`, in an album of 250. */
+  function albumPage(from: number, count: number): PhotoListResponse {
+    const photos = Array.from({ length: count }, (_, i) =>
+      photo(`p${String(from + i)}`, `p${String(from + i)}.jpg`),
+    )
+    return {
+      photos,
+      total: 250,
+      limit: 100,
+      offset: from,
+      next_offset: from + count < 250 ? from + count : null,
+    }
+  }
+
+  it('reloads the album to the length it had and restores the position', async () => {
+    // This album's grid only ever grew by appending pages: without walking back
+    // to 250 photos the document is a single page tall and the remembered offset
+    // has nowhere to land.
+    writeGridScroll('/albums/al_1', {
+      count: 250,
+      scrollY: 6000,
+      snapshot: gridState(6000),
+    })
+    fetchAlbumMock.mockResolvedValue(album())
+    fetchPhotosMock.mockImplementation((params) =>
+      Promise.resolve(albumPage(params.offset ?? 0, 100)),
+    )
+
+    renderPage()
+
+    await screen.findByRole('link', { name: 'p0.jpg' })
+    expect(fetchPhotosMock.mock.calls.map((c) => c[0].offset)).toEqual([0, 100, 200])
+    expect(grid.restoredFrom).toEqual(gridState(6000))
+  })
+
+  it('opens at the top of an album it has not shown before', async () => {
+    fetchAlbumMock.mockResolvedValue(album())
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+
+    renderPage()
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    expect(fetchPhotosMock).toHaveBeenCalledTimes(1)
+    expect(grid.restoredFrom).toBeNull()
   })
 })

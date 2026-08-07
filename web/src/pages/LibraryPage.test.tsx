@@ -3,11 +3,12 @@ import userEvent from '@testing-library/user-event'
 import { forwardRef, type ReactNode, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
-import { type ListRange, type VirtuosoGridHandle } from 'react-virtuoso'
+import { type GridStateSnapshot, type ListRange, type VirtuosoGridHandle } from 'react-virtuoso'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
+import { readGridScroll, writeGridScroll } from '../lib/gridScroll'
 import { type AlbumCount, type LabelCount } from '../services/organize'
 import { type SubjectCount } from '../services/people'
 import { type Photo, type PhotoListResponse, type Timeline } from '../services/photos'
@@ -20,6 +21,10 @@ const grid = vi.hoisted(() => ({
   scrollToIndex: vi.fn(),
   /** Set by the mock grid: scrolls its window so `index` sits at the top. */
   scrollTo: null as ((index: number) => void) | null,
+  /** The position the grid was mounted with, if the page restored one. */
+  restoredFrom: null as GridStateSnapshot | null,
+  /** Set by the mock grid: reports a position back, as virtuoso would. */
+  reportState: null as ((state: GridStateSnapshot) => void) | null,
 }))
 
 /**
@@ -40,14 +45,20 @@ interface MockGridProps {
   itemContent: (index: number, item: Photo | undefined) => ReactNode
   computeItemKey?: (index: number, item: Photo | undefined) => string
   rangeChanged?: (range: ListRange) => void
+  restoreStateFrom?: GridStateSnapshot
+  stateChanged?: (state: GridStateSnapshot) => void
 }
 vi.mock('react-virtuoso', () => ({
   VirtuosoGrid: forwardRef<VirtuosoGridHandle, MockGridProps>(function MockGrid(
-    { data, itemContent, computeItemKey, rangeChanged },
+    { data, itemContent, computeItemKey, rangeChanged, restoreStateFrom, stateChanged },
     ref,
   ) {
     const [start, setStart] = useState(0)
     grid.scrollTo = setStart
+    // Real virtuoso reads `restoreStateFrom` once, as it mounts; recording it is
+    // as much as jsdom (which lays nothing out) can say about the restore.
+    grid.restoredFrom = restoreStateFrom ?? null
+    grid.reportState = stateChanged ?? null
     const rangeRef = useRef(rangeChanged)
     rangeRef.current = rangeChanged
     useImperativeHandle(ref, () => ({
@@ -295,6 +306,9 @@ beforeEach(async () => {
   favoriteMock.mockReset()
   favoriteMock.mockResolvedValue(undefined)
   grid.scrollToIndex.mockReset()
+  grid.restoredFrom = null
+  grid.reportState = null
+  window.sessionStorage.clear()
 })
 
 describe('LibraryPage', () => {
@@ -842,5 +856,65 @@ describe('LibraryPage unknown filters', () => {
 
     await screen.findByRole('link', { name: 'a.jpg' })
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+})
+
+describe('LibraryPage scroll position', () => {
+  /** A virtuoso state at the given offset, as the grid would report it. */
+  function gridState(scrollTop: number) {
+    return {
+      gap: { column: 8, row: 8 },
+      item: { height: 220, width: 220 },
+      scrollTop,
+      viewport: { height: 900, width: 1400 },
+    }
+  }
+
+  it('remembers where the reader was when they open a photo', async () => {
+    servePagesOf(20_000)
+    const { unmount } = renderLibrary()
+    await screen.findByRole('link', { name: 'p0.jpg' })
+
+    act(() => {
+      grid.reportState?.(gridState(4000))
+    })
+    // Opening a photo unmounts the library; the position has to survive that.
+    unmount()
+
+    expect(readGridScroll('/')).toEqual({ count: 0, scrollY: 0, snapshot: gridState(4000) })
+  })
+
+  it('puts the grid back where it was on the way in', async () => {
+    writeGridScroll('/', { count: 0, scrollY: 4000, snapshot: gridState(4000) })
+    servePagesOf(20_000)
+
+    renderLibrary()
+    await screen.findByRole('link', { name: 'p0.jpg' })
+
+    expect(grid.restoredFrom).toEqual(gridState(4000))
+  })
+
+  it('does not restore a position taken under different filters', async () => {
+    // 4000px into a newest-first library is a different photo from 4000px into
+    // the same library sorted oldest-first: the position belongs to the view.
+    writeGridScroll('/', { count: 0, scrollY: 4000, snapshot: gridState(4000) })
+    servePagesOf(20_000)
+
+    renderLibrary('/?sort=oldest')
+    await screen.findByRole('link', { name: 'p0.jpg' })
+
+    expect(grid.restoredFrom).toBeNull()
+  })
+
+  it('restores across a timeline jump, which is the same view', async () => {
+    // `at` records which month the scrubber is parked on — a position, not a
+    // filter — so it must not split one view's memory in two.
+    writeGridScroll('/', { count: 0, scrollY: 4000, snapshot: gridState(4000) })
+    servePagesOf(20_000)
+
+    renderLibrary('/?at=2013-05')
+    await screen.findByRole('link', { name: 'p0.jpg' })
+
+    expect(grid.restoredFrom).toEqual(gridState(4000))
   })
 })

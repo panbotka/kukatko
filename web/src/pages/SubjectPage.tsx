@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
-import { useParams } from 'react-router-dom'
+import { useLocation, useParams } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
 import { BackLink } from '../components/BackLink'
@@ -18,10 +18,12 @@ import { SubjectPhotoTile } from '../components/people/SubjectPhotoTile'
 import { Skeleton } from '../components/Skeleton'
 import { useBulkEdit } from '../hooks/useBulkEdit'
 import { useGridDensity } from '../hooks/useGridDensity'
+import { useGridScrollMemory } from '../hooks/useGridScrollMemory'
 import { useReloadKey } from '../hooks/useReloadKey'
 import { useSubjectPhotos } from '../hooks/useSubjectPhotos'
 import { DETAIL_DEFAULTS, detailQueryString } from '../lib/detailView'
 import { GRID_GAP_PX, gridTemplateColumns } from '../lib/gridDensity'
+import { gridScrollKey, readGridScroll } from '../lib/gridScroll'
 import { isNotFound } from '../services/auth'
 import { fetchSubject, type Subject, updateSubject } from '../services/people'
 
@@ -64,14 +66,51 @@ export function SubjectPage() {
   const { t } = useTranslation()
   const { canWrite } = useAuth()
   const { density } = useGridDensity()
+  const location = useLocation()
   const { uid = '' } = useParams<{ uid: string }>()
   const [state, setState] = useState<State>({ status: 'loading' })
   const [editing, setEditing] = useState(false)
   const [coverBusy, setCoverBusy] = useState(false)
 
   const [reloadKey, reload] = useReloadKey()
+  // Where the gallery was left, so opening a photo and coming back — Back, or the
+  // viewer's own "back to list", which pops the same entry — returns to the tile
+  // it was opened from. The gallery grows a page at a time, so it also has to come
+  // back as long as it was before the offset means anything.
+  const scrollKey = gridScrollKey(location.pathname, location.search)
+  const remembered = useMemo(() => readGridScroll(scrollKey), [scrollKey])
+  const restoreCount = remembered?.count ?? 0
+  const restoreScrollY = remembered?.scrollY ?? 0
   const { photos, status, hasMore, loadingMore, loadMore, retry } = useSubjectPhotos(uid, {
     reloadKey,
+    initialCount: restoreCount,
+  })
+
+  // This gallery renders every tile itself, so there is no virtuoso to hand a
+  // position back to: the window offset is restored directly, once the gallery
+  // holds what it held. Its tiles are squares, so the document is already its
+  // final height the moment they are in the DOM — no thumbnail has to load first.
+  const [restoredKey, setRestoredKey] = useState('')
+  const restorePending = restoreScrollY > 0 && restoredKey !== scrollKey
+  useEffect(() => {
+    if (!restorePending || status !== 'ready') {
+      return
+    }
+    if (photos.length < restoreCount && hasMore) {
+      return
+    }
+    window.scrollTo(0, restoreScrollY)
+    setRestoredKey(scrollKey)
+  }, [restorePending, status, photos.length, restoreCount, hasMore, restoreScrollY, scrollKey])
+
+  // Writing is held off until the restore has landed: the offsets on the way
+  // there — a gallery pinned to the top of a document that is still filling —
+  // would otherwise overwrite the very position being restored.
+  useGridScrollMemory({
+    key: scrollKey,
+    count: photos.length,
+    track: 'window',
+    restoring: restorePending,
   })
 
   // Each tile carries this subject's scope in the detail link (`person=<uid>`), so

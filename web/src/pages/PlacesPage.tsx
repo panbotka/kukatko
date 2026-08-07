@@ -3,6 +3,7 @@ import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
 import ListGroup from 'react-bootstrap/ListGroup'
 import { useTranslation } from 'react-i18next'
+import { useLocation } from 'react-router-dom'
 
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
@@ -12,8 +13,10 @@ import { PhotoGrid } from '../components/library/PhotoGrid'
 import { BulkEditControl } from '../components/organize/BulkEditControl'
 import { SelectionBar } from '../components/organize/SelectionBar'
 import { useBulkEdit } from '../hooks/useBulkEdit'
+import { useGridScrollMemory } from '../hooks/useGridScrollMemory'
 import { useReloadKey } from '../hooks/useReloadKey'
 import { useScopedPhotos } from '../hooks/useScopedPhotos'
+import { gridScrollKey, readGridScroll } from '../lib/gridScroll'
 import { LIBRARY_DEFAULTS, type LibraryView, viewToParams } from '../lib/libraryView'
 import { useUrlState } from '../lib/urlState'
 import { fetchPlaces, type PlaceCountry } from '../services/places'
@@ -60,6 +63,7 @@ type State =
  */
 export function PlacesPage() {
   const { t } = useTranslation()
+  const location = useLocation()
   const [state, setState] = useState<State>({ status: 'loading' })
   // Bumped to re-run the hierarchy fetch after an error retry.
   const [hierarchyKey, reloadHierarchy] = useReloadKey()
@@ -73,11 +77,18 @@ export function PlacesPage() {
   const scope = useMemo(() => ({ country, city }), [country, city])
   // The grid is only meaningful once a city (within a country) is selected.
   const gridEnabled = country !== '' && city !== ''
+  // Where the grid was left, per view, so opening a photo and coming back — Back,
+  // or the viewer's own "back to list", which pops the same entry — returns to
+  // the tile it was opened from. This list only ever grew by appending pages, so
+  // it also has to come back as long as it was before the offset means anything.
+  const scrollKey = gridScrollKey(location.pathname, location.search)
+  const restoreCount = useMemo(() => readGridScroll(scrollKey)?.count ?? 0, [scrollKey])
   const { photos, total, status, loadingMore, moreError, loadMore, retry } = useScopedPhotos(
     scope,
     params,
-    { enabled: gridEnabled, reloadKey: photosKey },
+    { enabled: gridEnabled, reloadKey: photosKey, initialCount: restoreCount },
   )
+  const gridScroll = useGridScrollMemory({ key: scrollKey, count: photos.length })
 
   // Hover-select: a writer's tiles carry the corner checkmark from the outset,
   // so the toolbar below keys off what is picked rather than an explicit mode.
@@ -255,6 +266,8 @@ export function PlacesPage() {
                   onEndReached={loadMore}
                   onRetry={retry}
                   selection={bulk.gridSelection}
+                  restoreStateFrom={gridScroll.restoreFrom}
+                  onStateChanged={gridScroll.onStateChanged}
                 />
               )}
             </>

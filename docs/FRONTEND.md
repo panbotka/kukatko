@@ -398,7 +398,10 @@ here.
   handle) + `onRangeChanged` (the visible range) for the timeline; it takes its column template from
   `useGridDensity` → `lib/gridDensity` `gridTemplateColumns`, the DOM carries `data-density` for tests.
   A density change **only restyles** the existing `<div>` — virtuoso re-measures the tiles, scroll and selection
-  survive because the grid is neither keyed nor remounted),
+  survive because the grid is neither keyed nor remounted. Where the reader is in it is reported through
+  **`onStateChanged(state)`** and put back through **`restoreStateFrom`** (virtuoso's own `GridStateSnapshot`:
+  the offset plus the measurements that let the grid lay the tiles out at it before anything is on screen);
+  the grid remembers nothing itself, the page does — see `useGridScrollMemory`),
   `TimelineScrubber` (**the timeline** — a thin fixed vertical date rail beside the grid: it fetches a monthly
   histogram via `useTimeline(params)` (refetch on filter change) and lays it out through
   `components/library/timelineRail`. **Every month bucket owns an equal slice of the rail**
@@ -1818,7 +1821,14 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   may come back shorter) and walks them in order by the server's `next_offset`, until the range runs out
   or (after a bulk archive) the photos run out. Otherwise a reload would throw a reader nested on page 4
   to the end of a hundred-page list and lose pages 2–4 for them.
-  `usePhotoLibrary(params,{reloadKey?})` = a thin wrapper over it over
+  **`initialCount`** makes the *initial* load walk the same way: a list that only ever grew by appending pages
+  comes back holding one page, which is a document far too short to restore a deep scroll position into, so a
+  page returning a reader to where they were passes the length the list had then. It is rounded up to whole
+  pages and capped at `RESTORE_MAX_PAGES` (12 → 1200 photos), which bounds the wait rather than the depth:
+  past the cap the grid opens as deep as it got. The walk is read when a query *starts* (a ref, not part of the
+  query key — moving it alone refetches nothing), and pages that did arrive before a failure are **kept**
+  (`hasMore` still points at the one that failed) rather than thrown away for an error page.
+  `usePhotoLibrary(params,{reloadKey?,initialCount?})` = a thin wrapper over it over
   `fetchPhotos` (`reloadKey` replays the grid in the background after a mutation, just like `useScopedPhotos`);
   `usePhotoSearch(params,mode,{reloadKey?})` = a wrapper over `searchPhotos` with an injected `mode`
   (it goes into `key` → a mode change resets with a skeleton), disabled on an empty `q` (idle), `reloadKey`
@@ -1849,12 +1859,12 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   → a selection made **after** the batch finished really does get applied (it used to be silently dropped
   while the green message reported success); an internal rewrite of a `create:` marker to a real UID during
   a running assignment does **not** return the state to `idle`;
-  `useSubjectPhotos(uid,{reloadKey?})` = a wrapper over `usePaginatedPhotos` over
+  `useSubjectPhotos(uid,{reloadKey?,initialCount?})` = a wrapper over `usePaginatedPhotos` over
   `GET /subjects/{uid}/photos` (a person's gallery, `uid` goes into `key` → a reset with a skeleton when the
   person changes, `reloadKey` is a background refetch after a mutation); `useScopedPhotos` = a wrapper over `usePaginatedPhotos`
   over `GET /photos` scoped to an album/label/**place** (`PhotoScope` `{album?,label?,country?,city?}`
-  + filters/sort from the URL, options `{reloadKey?,enabled?}` — `reloadKey` for a background refetch after a mutation, `enabled:false`
-  → idle without a fetch, e.g. Places before a city is picked); `useMapPhotos` = a one-off (unpaginated) loader
+  + filters/sort from the URL, options `{reloadKey?,enabled?,initialCount?}` — `reloadKey` for a background refetch after a mutation, `enabled:false`
+  → idle without a fetch, e.g. Places before a city is picked; `initialCount` restores the list's length, see above); `useMapPhotos` = a one-off (unpaginated) loader
   of the GeoJSON feed of geotagged photos over `fetchMapPhotos` (`status` loading/ready/error, `retry`,
   cancels in-flight + ignores stale when the filters change);
   `useJobStats(enabled)` = a poller of the job-queue state over `fetchJobStats` (`GET /jobs/stats`) for the badge
@@ -1898,6 +1908,23 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   where a page is not loaded; `ensureRange(start,end)` (called from `onRangeChanged`) loads the pages
   covering the visible range plus `WINDOW_PREFETCH_PAGES` either side, **aborts** the requests a jump has
   travelled past, and evicts down to `WINDOW_MAX_PAGES` so memory stays bounded however far the reader goes.
+  `useGridScrollMemory({key,count?,track?,restoring?})` = **where the reader was in a photo grid**, remembered
+  per view for the browser session over `lib/gridScroll`. Browsing is a constant grid → photo → grid, and
+  every step used to land back at the top (measured on the live instance: Back from `scrollY=4000` gave 195),
+  which put the older end of a 20 000 photo library out of reach. It returns `restoreFrom` (the snapshot for
+  `PhotoGrid`'s `restoreStateFrom`) and `restoreScrollY` (for a grid that renders its own tiles), and takes
+  `onStateChanged` back from the grid. `track:'window'` records `window.scrollY` off a passive scroll listener
+  instead (the person gallery), and `restoring:true` suppresses every write while the caller is still driving
+  the view to its position — the offsets on the way there must not overwrite the one being restored; the
+  virtuoso path needs no flag, it simply ignores a reported offset of zero until the grid has been seen away
+  from its top. Nothing here re-renders the caller (refs + a 200 ms debounced write, flushed on unmount and on
+  `pagehide`, so leaving for a photo always records the position), and an untouched view is never written, so
+  opening a photo without scrolling keeps what the last visit left. The restore length (`count`) is read back
+  by the page itself (`readGridScroll(key)?.count`) because it feeds the list hook *above* this one.
+  Both ways back are the same history pop — the browser's Back button and the viewer's „Zpět na seznam"
+  (`PhotoDetailPage` closes with `navigate(-1)`) — so both restore. Wired into `LibraryPage` (windowed, so
+  `count` stays 0: the grid is as tall as the whole result from its first response), `AlbumDetailPage`,
+  `LabelDetailPage`, `SubjectPage` (`track:'window'`), `FavoritesPage`, `SearchPage` and `PlacesPage`.
   A failed page is retried on the next range change up to `WINDOW_MAX_ATTEMPTS`, then surfaces as `moreError`
   (footer retry); a `reloadKey` bump refetches exactly the loaded pages in the background. It also passes the
   response's `unknown_tokens` through as `unknownTokens` (every page of one query carries the same verdict on
@@ -2121,6 +2148,16 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   nothing to show, so the caller renders nothing rather than an empty line) and `commitUrl(info)`
   (`https://github.com/panbotka/kukatko/commit/<sha>`, or `null` unless the commit is 7–40 hex characters,
   which is what keeps a development build's `none` from becoming a dead link);
+  `gridScroll.ts` = the **session store of grid positions** behind `useGridScrollMemory`: one
+  `sessionStorage` entry (`kukatko.gridScroll`) holding `{snapshot?,scrollY,count}` per view key, plus
+  `gridScrollKey(pathname,search)` — the path and the query that defines the *result set*, sorted for
+  stability and with the position-only params (`at`, `info`) dropped, so a timeline jump keys to the same
+  view while a changed filter keys to a different one and can never restore an unrelated position. Session
+  (not local) storage: a position is worth restoring in the tab that scrolled it and worth forgetting by
+  tomorrow. Reads are validated field by field (storage is shared with other builds, and a half-read
+  snapshot handed to virtuoso would restore a nonsense layout), the store is an LRU of
+  `GRID_SCROLL_MAX_ENTRIES` (16) views, and every failure — disabled storage, a full quota, foreign JSON —
+  costs the reader their position and nothing else;
   `urlState.ts` = the `useUrlState` hook +
   the pure `readUrlState`/`writeUrlState`: the view state ↔ the URL query via the History API, „Back always
   works"; `libraryView.ts` = the `LibraryView` type (incl. `min_rating`/`flag`, the `favorite` toggle and the facets
