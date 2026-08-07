@@ -31,6 +31,12 @@ export interface UseScopedPhotosOptions {
    * page before a city is selected. Defaults to true.
    */
   enabled?: boolean
+  /**
+   * How many photos the initial load should reach, so a remembered scroll
+   * position has a document tall enough to be restored into. See
+   * {@link import('./usePaginatedPhotos').UsePaginatedPhotosOptions.initialCount}.
+   */
+  initialCount?: number
 }
 
 /**
@@ -70,5 +76,6 @@ export function useScopedPhotos(
   return usePaginatedPhotos(scoped, fetcher, {
     reloadKey: options.reloadKey,
     enabled: options.enabled,
+    initialCount: options.initialCount,
   })
 }

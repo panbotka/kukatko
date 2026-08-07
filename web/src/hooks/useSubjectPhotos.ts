@@ -16,6 +16,12 @@ export interface UseSubjectPhotosOptions {
    * the other photo-list hooks so they all refetch the same way.
    */
   reloadKey?: string
+  /**
+   * How many photos the initial load should reach, so a remembered scroll
+   * position has a document tall enough to be restored into. See
+   * {@link import('./usePaginatedPhotos').UsePaginatedPhotosOptions.initialCount}.
+   */
+  initialCount?: number
 }
 
 /**
@@ -34,5 +40,9 @@ export function useSubjectPhotos(
   )
   // `uid` discriminates the query (switching subject reloads with the skeleton);
   // `reloadKey` refetches in the background to reflect a bulk edit in place.
-  return usePaginatedPhotos(NO_PARAMS, fetcher, { key: uid, reloadKey: options.reloadKey })
+  return usePaginatedPhotos(NO_PARAMS, fetcher, {
+    key: uid,
+    reloadKey: options.reloadKey,
+    initialCount: options.initialCount,
+  })
 }

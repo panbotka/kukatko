@@ -23,6 +23,12 @@ export interface UsePhotoLibraryOptions {
    * `useScopedPhotos` so both library hooks refetch the same way.
    */
   reloadKey?: string
+  /**
+   * How many photos the initial load should reach, so a remembered scroll
+   * position has a document tall enough to be restored into. See
+   * {@link import('./usePaginatedPhotos').UsePaginatedPhotosOptions.initialCount}.
+   */
+  initialCount?: number
 }
 
 /**
@@ -38,5 +44,8 @@ export function usePhotoLibrary(
   params: PhotoListParams,
   options: UsePhotoLibraryOptions = {},
 ): UsePhotoLibraryResult {
-  return usePaginatedPhotos(params, fetchPhotos, { reloadKey: options.reloadKey })
+  return usePaginatedPhotos(params, fetchPhotos, {
+    reloadKey: options.reloadKey,
+    initialCount: options.initialCount,
+  })
 }

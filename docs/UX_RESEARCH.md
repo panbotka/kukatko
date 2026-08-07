@@ -67,7 +67,7 @@ dopad/pracnost — nahoře je to, co se vyplatí udělat první.
 | [N2](#n2) | Knihovna dotazovací jazyk umí, ale tvrdí opak (a mlčí u překlepu) | 🔴 | ⚪ | `FilterBar` |
 | [N3](#n3) ✅ | Na `/search` a `/saved` nevede z menu žádný odkaz, `Žebříček` má top-level slot | 🔴 | ⚪ | `navItems.ts` |
 | [N4](#n4) | Hustota mřížky je jedna hodnota pro notebook i telefon | 🔴 | ⚪ | `lib/gridDensity.ts` |
-| [N5](#n5) | Zpět z fotky ztratí pozici v knihovně | 🔴 | 🟡 | `PhotoGrid`, `usePaginatedPhotos` |
+| [N5](#n5) ✅ | Zpět z fotky ztratí pozici v knihovně | 🔴 | 🟡 | `PhotoGrid`, `usePaginatedPhotos` |
 | [N6](#n6) | Na telefonu panel obličejů i informací fotku úplně zakryje | 🔴 | 🟡 | `photo/viewer.css` |
 | [N7](#n7) | 438 alb v jedné hromadě, i když API už rozlišuje jejich typ | 🔴 | 🟡 | `AlbumsPage` |
 | [N8](#n8) | `/people`: 105 osob bez hledání, a 125 Mpx stažených na 72 čtverečků | 🔴 | 🟡 | `PeoplePage`, `SubjectTile` |
@@ -289,6 +289,24 @@ už `scrollToIndex` vystavuje ven.
 **Kde to je.** `web/src/components/library/PhotoGrid.tsx` (imperativní handle kolem
 řádku 169), `web/src/hooks/usePaginatedPhotos.ts`, `web/src/pages/LibraryPage.tsx`.
 Týká se stejně tak detailu alba, štítku i osoby.
+
+**✅ Vyřešeno (8. 8. 2026).** Pozici si pamatuje nový háček `useGridScrollMemory`
+nad `lib/gridScroll`: jeden záznam v `sessionStorage` na *pohled* (cesta + filtry,
+bez `at`/`info` — skok po časové ose je tentýž pohled, jiný filtr už ne), takže se
+nikdy neobnoví pozice z nesouvisejícího výsledku. Mřížka ji hlásí přes
+`stateChanged` a dostává zpět přes `restoreStateFrom`, což jsou nástroje, které
+`react-virtuoso` na tohle má. U mřížek, které rostou přidáváním stránek (album,
+štítek, osoba, oblíbené, hledání, místa), se navíc pamatuje **délka** seznamu:
+`usePaginatedPhotos` má nový `initialCount` a při návratu dojde na tolik stránek,
+kolik jich čtenář měl (strop `RESTORE_MAX_PAGES` = 12), protože do dokumentu
+vysokého jednu stránku se hluboká pozice nedá obnovit. Galerie osoby není
+virtualizovaná, takže se u ní vrací rovnou `window.scrollY`.
+
+Změřeno v prohlížeči na 3 000 fotkách (vlastní instance nad testovací databází):
+knihovna `scrollY = 20 000` → Zpět → **20 000**, „Zpět na seznam" z 35 000 →
+**35 000**, detail alba 8 000 → **8 000** (znovu načteno 700 fotek), štítek 5 000 →
+**5 000**, osoba 6 000 → **6 000** (500 dlaždic). `/?sort=oldest` startuje na **0**,
+takže pozice z jiného řazení se nepřenáší.
 
 ---
 
@@ -701,7 +719,8 @@ Uživatelské role, Váš účet). Dva problémy:
 2. **Kapitola „Procházení fotek" slibuje něco, co neplatí:** *„Stav prohlížení —
    filtry, řazení i pozici — si aplikace pamatuje v adrese stránky, takže tlačítko
    Zpět vždy funguje."* Filtry a řazení v adrese skutečně jsou, **pozice ne**
-   ([N5](#n5)).
+   ([N5](#n5)). *(Vyřešeno 8. 8. 2026 spolu s [N5](#n5): pozici si aplikace pamatuje
+   po dobu návštěvy — ne v adrese — a věta v nápovědě to teď říká takhle.)*
 
 **Proč to vadí.** Nápověda je jediné místo, kde se dá funkce objevit bez toho, aby
 na ni člověk narazil. Když v ní nejsilnější funkce chybí, prakticky neexistuje.

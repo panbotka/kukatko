@@ -16,6 +16,12 @@ export interface UsePhotoSearchOptions {
    * `usePhotoLibrary`/`useScopedPhotos` so every photo-list hook refetches alike.
    */
   reloadKey?: string
+  /**
+   * How many photos the initial load should reach, so a remembered scroll
+   * position has a document tall enough to be restored into. See
+   * {@link import('./usePaginatedPhotos').UsePaginatedPhotosOptions.initialCount}.
+   */
+  initialCount?: number
 }
 
 /**
@@ -55,5 +61,6 @@ export function usePhotoSearch(
     enabled,
     key: effective,
     reloadKey: options.reloadKey,
+    initialCount: options.initialCount,
   })
 }

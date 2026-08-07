@@ -111,7 +111,7 @@
     "sections": {
       "browsing": {
         "title": "Procházení fotek",
-        "body": "Úvodní stránka je vaše knihovna – všechny fotky seřazené od nejnovějších, s nekonečným posouváním. U filtrů si nastavíte, kolik dlaždic se vejde na řádek (ovladač „Dlaždic na řádek“), takže si zobrazení přizpůsobíte od velkých náhledů po hustou mřížku. Kliknutím na fotku ji otevřete přes celou obrazovku, kde uvidíte podrobnosti a další akce.\nStav prohlížení – filtry, řazení i pozici – si aplikace pamatuje v adrese stránky, takže tlačítko Zpět vždy funguje a odkaz na aktuální pohled můžete sdílet."
+        "body": "Úvodní stránka je vaše knihovna – všechny fotky seřazené od nejnovějších, s nekonečným posouváním. U filtrů si nastavíte, kolik dlaždic se vejde na řádek (ovladač „Dlaždic na řádek“), takže si zobrazení přizpůsobíte od velkých náhledů po hustou mřížku. Kliknutím na fotku ji otevřete přes celou obrazovku, kde uvidíte podrobnosti a další akce.\nStav prohlížení si aplikace pamatuje: filtry a řazení v adrese stránky, takže odkaz na aktuální pohled můžete sdílet, a místo, kam jste se doscrollovali, po dobu návštěvy – tlačítko Zpět (i „Zpět na seznam“ ve fotce) vás vrátí přesně tam, kde jste přestali."
       },
       "search": {
         "title": "Hledání",

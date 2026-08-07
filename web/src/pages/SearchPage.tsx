@@ -5,6 +5,7 @@ import Col from 'react-bootstrap/Col'
 import Form from 'react-bootstrap/Form'
 import Row from 'react-bootstrap/Row'
 import { useTranslation } from 'react-i18next'
+import { useLocation } from 'react-router-dom'
 
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
@@ -20,10 +21,12 @@ import { SearchQueryInput } from '../components/search/SearchQueryInput'
 import { UnknownFiltersAlert } from '../components/search/UnknownFiltersAlert'
 import { SlideshowStart } from '../components/slideshow/SlideshowStart'
 import { useBulkEdit } from '../hooks/useBulkEdit'
+import { useGridScrollMemory } from '../hooks/useGridScrollMemory'
 import { usePhotoSearch } from '../hooks/usePhotoSearch'
 import { useReloadKey } from '../hooks/useReloadKey'
 import { useSearchMode } from '../hooks/useSearchMode'
 import { detailQueryString } from '../lib/detailView'
+import { gridScrollKey, readGridScroll } from '../lib/gridScroll'
 import { viewToParams } from '../lib/libraryView'
 import { SEARCH_DEFAULTS, type SearchView, toMode } from '../lib/searchView'
 import { useUrlState } from '../lib/urlState'
@@ -57,6 +60,7 @@ const SEARCH_DEBOUNCE_MS = 350
  */
 export function SearchPage() {
   const { t } = useTranslation()
+  const location = useLocation()
   const [view, setView] = useUrlState<SearchView>(SEARCH_DEFAULTS)
 
   const params = useMemo(() => viewToParams(view), [view])
@@ -72,6 +76,12 @@ export function SearchPage() {
     () => detailQueryString({ ...view, favorite: '', mode }),
     [view, mode],
   )
+  // Where the grid was left, per view, so opening a photo and coming back — Back,
+  // or the viewer's own "back to list", which pops the same entry — returns to
+  // the tile it was opened from. This list only ever grew by appending pages, so
+  // it also has to come back as long as it was before the offset means anything.
+  const scrollKey = gridScrollKey(location.pathname, location.search)
+  const restoreCount = useMemo(() => readGridScroll(scrollKey)?.count ?? 0, [scrollKey])
   const [reloadKey, reload] = useReloadKey()
   const {
     photos,
@@ -83,7 +93,8 @@ export function SearchPage() {
     moreError,
     loadMore,
     retry,
-  } = usePhotoSearch(params, mode, { reloadKey })
+  } = usePhotoSearch(params, mode, { reloadKey, initialCount: restoreCount })
+  const gridScroll = useGridScrollMemory({ key: scrollKey, count: photos.length })
 
   // Hover-select: a writer's tiles carry the corner checkmark from the outset,
   // so the toolbar below keys off what is picked rather than an explicit mode.
@@ -270,6 +281,8 @@ export function SearchPage() {
             onRetry={retry}
             selection={bulk.gridSelection}
             detailQuery={detailQuery}
+            restoreStateFrom={gridScroll.restoreFrom}
+            onStateChanged={gridScroll.onStateChanged}
           />
         </div>
       )}

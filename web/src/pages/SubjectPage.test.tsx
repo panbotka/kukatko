@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
 import { GRID_COLUMNS_MAX } from '../lib/gridDensity'
+import { readGridScroll, writeGridScroll } from '../lib/gridScroll'
 import { type Subject } from '../services/people'
 import { type Photo, type PhotoListResponse } from '../services/photos'
 
@@ -123,6 +124,7 @@ beforeEach(async () => {
   // The grid density lives in localStorage; clear it so the seeded column count
   // is deterministic per test and one density test never leaks into another.
   window.localStorage.clear()
+  window.sessionStorage.clear()
   fetchSubjectMock.mockReset()
   fetchPhotosMock.mockReset()
   updateSubjectMock.mockReset()
@@ -502,5 +504,60 @@ describe('SubjectPage', () => {
 
     // Every other photo still offers the plain (settable) affordance.
     expect(screen.getByRole('button', { name: 'Set as cover' })).toBeInTheDocument()
+  })
+})
+
+describe('SubjectPage scroll position', () => {
+  /** A page of `count` photos that says whether more follow. */
+  function gallery(from: number, count: number, nextOffset: number | null): PhotoListResponse {
+    const photos = Array.from({ length: count }, (_, i) =>
+      photo(`p${String(from + i)}`, `p${String(from + i)}.jpg`),
+    )
+    return { photos, total: 250, limit: 100, offset: from, next_offset: nextOffset }
+  }
+
+  it('reloads the gallery to the length it had and scrolls back to the tile', async () => {
+    // The gallery this person's photos were browsed in was 250 long and scrolled
+    // to 2400px; coming back with one page would be a document too short to hold
+    // that offset at all.
+    writeGridScroll('/people/sj_1', { count: 250, scrollY: 2400 })
+    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined)
+    fetchPhotosMock.mockImplementation((_uid, params) => {
+      const offset = params.offset ?? 0
+      return Promise.resolve(gallery(offset, 100, offset + 100 < 250 ? offset + 100 : null))
+    })
+
+    renderPage()
+
+    await waitFor(() => {
+      expect(scrollTo).toHaveBeenCalledWith(0, 2400)
+    })
+    // The walk stopped at the length that was remembered, not at every page the
+    // person has.
+    expect(fetchPhotosMock.mock.calls.map((c) => c[1].offset)).toEqual([0, 100, 200])
+  })
+
+  it('starts at the top for a person it has never shown', async () => {
+    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined)
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+
+    renderPage()
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    expect(scrollTo).not.toHaveBeenCalled()
+    expect(fetchPhotosMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('remembers where the gallery was left', async () => {
+    vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined)
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg'), photo('b', 'b.jpg')]))
+    const { unmount } = renderPage()
+    await screen.findByRole('link', { name: 'a.jpg' })
+
+    Object.defineProperty(window, 'scrollY', { value: 1500, configurable: true, writable: true })
+    window.dispatchEvent(new Event('scroll'))
+    unmount()
+
+    expect(readGridScroll('/people/sj_1')).toEqual({ count: 2, scrollY: 1500 })
   })
 })

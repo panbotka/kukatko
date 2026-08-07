@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { type ListRange, type VirtuosoGridHandle } from 'react-virtuoso'
 
 import { useAuth } from '../auth/AuthContext'
@@ -18,10 +18,12 @@ import { UnknownFiltersAlert } from '../components/search/UnknownFiltersAlert'
 import { SlideshowStart } from '../components/slideshow/SlideshowStart'
 import { useBulkEdit } from '../hooks/useBulkEdit'
 import { useGridKeyboardNavigation } from '../hooks/useGridKeyboardNavigation'
+import { useGridScrollMemory } from '../hooks/useGridScrollMemory'
 import { useLibraryFacets } from '../hooks/useLibraryFacets'
 import { useReloadKey } from '../hooks/useReloadKey'
 import { useWindowedPhotos } from '../hooks/useWindowedPhotos'
 import { detailQueryString } from '../lib/detailView'
+import { gridScrollKey } from '../lib/gridScroll'
 import {
   hasActiveFilters,
   LIBRARY_DEFAULTS,
@@ -49,7 +51,10 @@ const ANCHOR_PARAM = 'at'
  * The main photo library: a filter/sort bar over a virtualized thumbnail grid.
  * The entire view (filters, sort) lives in the URL, so Back / Forward restore the
  * exact view and sharing the URL reproduces it — the timeline's position
- * ({@link ANCHOR_PARAM}) included. The grid is a *window* over the result: it is
+ * ({@link ANCHOR_PARAM}) included. Where the reader was scrolled to is remembered
+ * per view for the session (`useGridScrollMemory`), so opening a photo and coming
+ * back lands on the tile it was opened from rather than at the top. The grid is a
+ * *window* over the result: it is
  * as tall as the whole library from the first response on and fetches the pages
  * under the viewport as they come into view, which is what lets the timeline jump
  * to any month at a fixed cost. Every tile carries a favorite heart
@@ -119,6 +124,15 @@ export function LibraryPage() {
   // the default newest-first date order (the timeline is always date-grouped), so
   // it is hidden for other sorts and in selection mode.
   const gridRef = useRef<VirtuosoGridHandle>(null)
+  // Where the grid was left, per view, so stepping into a photo and coming back
+  // — Back, or the viewer's own "back to list", which pops the same entry —
+  // returns to the tile it was opened from instead of to the top of the library.
+  // The windowed grid is as tall as the whole result from its first response, so
+  // there is no loaded length to catch up to first: the offset alone restores it.
+  const location = useLocation()
+  const gridScroll = useGridScrollMemory({
+    key: gridScrollKey(location.pathname, location.search),
+  })
   const [rangeStart, setRangeStart] = useState(0)
   const onRangeChanged = useCallback(
     (range: ListRange) => {
@@ -333,6 +347,8 @@ export function LibraryPage() {
               gridRef={gridRef}
               onRangeChanged={onRangeChanged}
               focusedIndex={focusedIndex}
+              restoreStateFrom={gridScroll.restoreFrom}
+              onStateChanged={gridScroll.onStateChanged}
             />
           </div>
           {showScrubber && (

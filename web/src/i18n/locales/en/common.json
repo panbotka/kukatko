@@ -111,7 +111,7 @@
     "sections": {
       "browsing": {
         "title": "Browsing photos",
-        "body": "The home page is your library – every photo newest-first, with endless scrolling. In the filters you choose how many tiles fit on a row (the “Tiles per row” control), so you can go from large previews to a dense grid. Click a photo to open it full-screen, where you'll see its details and more actions.\nThe app remembers your browsing state – filters, sorting and position – in the page address, so the Back button always works and you can share a link to the current view."
+        "body": "The home page is your library – every photo newest-first, with endless scrolling. In the filters you choose how many tiles fit on a row (the “Tiles per row” control), so you can go from large previews to a dense grid. Click a photo to open it full-screen, where you'll see its details and more actions.\nThe app remembers your browsing state: the filters and sorting in the page address, so you can share a link to the current view, and how far you had scrolled for the length of your visit – so Back (and the viewer's “Back to list”) returns you exactly where you left off."
       },
       "search": {
         "title": "Search",

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useParams } from 'react-router-dom'
+import { useLocation, useParams } from 'react-router-dom'
 
 import { BackLink } from '../components/BackLink'
 import { EmptyState } from '../components/EmptyState'
@@ -11,9 +11,11 @@ import { PhotoGrid } from '../components/library/PhotoGrid'
 import { BatchActionBar } from '../components/organize/BatchActionBar'
 import { SlideshowStart } from '../components/slideshow/SlideshowStart'
 import { useBulkEdit } from '../hooks/useBulkEdit'
+import { useGridScrollMemory } from '../hooks/useGridScrollMemory'
 import { useReloadKey } from '../hooks/useReloadKey'
 import { useScopedPhotos } from '../hooks/useScopedPhotos'
 import { detailQueryString } from '../lib/detailView'
+import { gridScrollKey, readGridScroll } from '../lib/gridScroll'
 import { LIBRARY_DEFAULTS, type LibraryView, viewToParams } from '../lib/libraryView'
 import { useUrlState } from '../lib/urlState'
 import { isNotFound } from '../services/auth'
@@ -53,6 +55,7 @@ const LABELS_PATH = '/labels'
  */
 export function LabelDetailPage() {
   const { t } = useTranslation()
+  const location = useLocation()
   const { uid = '' } = useParams<{ uid: string }>()
   const [state, setState] = useState<State>({ status: 'loading' })
   const [reloadKey, reload] = useReloadKey()
@@ -66,11 +69,18 @@ export function LabelDetailPage() {
     () => detailQueryString({ ...view, label: uid, album: '', favorite: '', mode: '' }),
     [view, uid],
   )
+  // Where the grid was left, per view, so opening a photo and coming back — Back,
+  // or the viewer's own "back to list", which pops the same entry — returns to
+  // the tile it was opened from. This list only ever grew by appending pages, so
+  // it also has to come back as long as it was before the offset means anything.
+  const scrollKey = gridScrollKey(location.pathname, location.search)
+  const restoreCount = useMemo(() => readGridScroll(scrollKey)?.count ?? 0, [scrollKey])
   const { photos, total, status, loadingMore, moreError, loadMore, retry } = useScopedPhotos(
     scope,
     params,
-    { reloadKey },
+    { reloadKey, initialCount: restoreCount },
   )
+  const gridScroll = useGridScrollMemory({ key: scrollKey, count: photos.length })
 
   // Hover-select: a writer's tiles carry the corner checkmark from the outset,
   // so the toolbar below keys off what is picked rather than an explicit mode.
@@ -165,6 +175,8 @@ export function LabelDetailPage() {
             onRetry={retry}
             selection={bulk.gridSelection}
             detailQuery={detailQuery}
+            restoreStateFrom={gridScroll.restoreFrom}
+            onStateChanged={gridScroll.onStateChanged}
           />
         </div>
       )}
