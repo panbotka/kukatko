@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next'
 
 import { useGridDensity } from '../../hooks/useGridDensity'
 import {
-  GRID_COLUMNS_MAX,
   GRID_COLUMNS_MIN,
   type GridDensityScope,
   LIBRARY_GRID_SCOPE,
@@ -34,10 +33,15 @@ export interface GridDensityControlProps {
  * The control is shared across grids but the *number* is not: each `scope` has
  * its own key, so the library and the `/outliers` review grid never fight over
  * one density.
+ *
+ * The readout and the buttons follow the count **in effect**, not the stored
+ * one: on a narrow viewport the grid caps its columns (`GRID_COLUMN_CAPS`), so
+ * `+` disables at that cap rather than offering a step the screen would refuse.
+ * The user's wider-screen choice is untouched and comes back with the window.
  */
 export function GridDensityControl({ scope = LIBRARY_GRID_SCOPE }: GridDensityControlProps = {}) {
   const { t } = useTranslation()
-  const { density, setDensity } = useGridDensity(scope)
+  const { density, setDensity, maxColumns } = useGridDensity(scope)
 
   return (
     <ButtonGroup size="lg" className="kukatko-grid-density" aria-label={t('library.density.label')}>
@@ -67,7 +71,7 @@ export function GridDensityControl({ scope = LIBRARY_GRID_SCOPE }: GridDensityCo
       <Button
         type="button"
         variant="outline-secondary"
-        disabled={density >= GRID_COLUMNS_MAX}
+        disabled={density >= maxColumns}
         aria-label={t('library.density.more')}
         onClick={() => {
           setDensity(stepDensity(density, 1, scope))
