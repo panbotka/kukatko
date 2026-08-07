@@ -205,9 +205,12 @@
      is a top-down darkening wash that lets white controls sit legibly over an
      unknown photograph without a hard bar; the dock scrim is its mirror image
      for the phone's bottom curation strip, a touch denser because it backs a
-     full row of controls rather than a title; the panel scrim dims the stage
-     behind the sliding info drawer on a phone. `z` layers the viewer above the
-     app shell (Bootstrap's modal backdrop is 1040/1050, so this clears them). */
+     full row of controls rather than a title. There is deliberately no scrim
+     behind the info drawer any more: on a phone the drawer is a bottom sheet
+     over the lower half, and dimming the photo above it would undo the very
+     thing the sheet exists to keep — a visible, still-pannable photograph.
+     `z` layers the viewer above the app shell (Bootstrap's modal backdrop is
+     1040/1050, so this clears them). */
   --kk-viewer-backdrop: #0a0806;
   --kk-viewer-chrome-scrim: linear-gradient(
     to bottom,
@@ -221,7 +224,6 @@
     rgb(0 0 0 / 58%) 60%,
     rgb(0 0 0 / 34%) 100%
   );
-  --kk-viewer-panel-scrim: rgb(0 0 0 / 55%);
   --kk-viewer-z: 1080;
 
   /* ---- Motion ---------------------------------------------------------

@@ -969,15 +969,26 @@ here.
   backdrop** (`--kk-viewer-backdrop`), reflecting the saved non-destructive edit (a live draft while the Úpravy
   panel is open) — for a **video** `VideoPlayer` instead of the image, for a **live photo** `LivePhoto` (both have
   their own native fullscreen; the image viewer doesn't open for them). The style is in
-  `components/photo/viewer.css`, the `--kk-viewer-*` tokens (backdrop, chrome/panel scrim, z-index) in
+  `components/photo/viewer.css`, the `--kk-viewer-*` tokens (backdrop, chrome/dock scrim, z-index) in
   `tokens.css`. **It replaced the old click-opens-lightbox** — `Lightbox` and `lightbox.css` were removed
   and absorbed here.
-  **Disappearing chrome:** the top action bar (title + toggles, plus the curatorial loop on a mouse),
+  **Disappearing chrome:** the top action bar's **toggles** (plus the curatorial loop on a mouse),
   the **‹/› arrows** and the phone's **bottom curation dock**
   after a short idle **dim away** and return on mouse move / tap / key
   (`useAutoHideChrome` — an idle timer + a global wake, `paused` when the drawer is open, so a control
   under your hand doesn't vanish); the transitions run on duration tokens, so `prefers-reduced-motion`
-  turns them off. **The persistent close ✕** (a circle at top left, `photo.back`, **doesn't disappear** with the chrome) and **Esc**
+  turns them off. **Two things in that bar deliberately survive the idle** (N20): the way out and
+  **the photo's title** (`.kk-viewer__heading`, dimmed to `opacity: .72` rather than removed) — with a
+  mouse any move brings the chrome back, but a phone has no such gesture, so an idle screen used to be
+  one photograph plus one unlabelled glyph, with no name for what you were looking at. The bar's
+  darkening wash rides `.kk-viewer__chrome::before` exactly so it can thin to `.55` on its own
+  (a gradient can't be transitioned, an opacity can) and keep the surviving title legible over a
+  blown-out sky; the title's own shadow deepens in that state too. **The hook decides only *whether***
+  — one `data-chrome` flag on the viewer root; `viewer.css` decides **what** answers to it.
+  **The persistent way out** is `.kk-viewer__back` (a circle at top left, `photo.back`, **never fades**
+  with the chrome) — **a back arrow, not a ✕** (N6/N20): the drawer carries its own ✕ and on a phone
+  the two sat side by side as identical round crosses, so a tap meant for the panel closed the whole
+  photo. Arrow = leave the photo, cross = close what is over it. It and **Esc**
   always work and return **to the exact previous scroll position**: `navigate(-1)` when you arrived here from
   the grid (the browser restores scroll), otherwise (a direct link/refresh — caught by `location.key === 'default'`
   at mount) `backHref(view)` reconstructs the list URL. **Keys:** ←/→ steps through neighbors, `f`
@@ -1096,11 +1107,26 @@ here.
   (a finger never hovers, but a tap focuses the box — and the keyboard gets it too), and `FacesPanel`
   **scrolls the selected row into view** (`block: 'nearest'`), so a box tapped on the photo doesn't select
   a row somewhere off-screen in the drawer.
-  **The information runs in the drawer** (`.kk-viewer__panel`), which **slides in from the side on demand** (on a phone
-  full-width with a scrim, at ≥ md the **stage narrows** on the left so the photo doesn't vanish behind the panel; together
-  with the stage the **top bar and the `›` arrow** also move over by the drawer's width (`--kk-viewer-panel-w`), so the panel toggles
-  and paging stay **visible beside the drawer, not under it**) —
-  the default state is just the photo. Its content is **the same components as before, only in the drawer instead of below
+  **The information runs in the drawer** (`.kk-viewer__panel`), **one element with two shapes** — the default
+  state is just the photo, and whichever shape opens, **the stage yields exactly the space it takes**, so the
+  photograph is never the thing that disappears. At **≥ md** it slides in **from the right** and the **stage
+  narrows** by `--kk-viewer-panel-w`; together with the stage the **top bar and the `›` arrow** move over by the
+  same width, so the panel toggles and paging stay **visible beside the drawer, not under it**.
+  **Below `md` it is a bottom sheet** (N6): the `@media (max-width: 767.98px)` block at the foot of
+  `viewer.css` re-anchors the same element to the bottom edge over `--kk-viewer-sheet-h` (**46 dvh** — `dvh`, not
+  `vh`, so a phone's collapsing address bar can't make the sheet taller than the screen), gives it a grab handle
+  (a pseudo-element), rounded top corners and tighter padding, and the stage takes `bottom: var(--kk-viewer-sheet-h)`.
+  It used to be the desktop drawer copied unchanged, which at 393 px meant an opaque panel over a photo that was
+  still loaded and **not visible by a single pixel** — fatal for the faces panel, whose rows are numbered to match
+  boxes drawn *on* that photo. **There is no scrim any more** (`--kk-viewer-panel-scrim` is gone): the photo above
+  the sheet has to stay both visible **and** gesture-bearing, and a tap-to-dismiss layer over it is neither.
+  The sheet is closed by its own ✕, by the toggle that opened it, or by Esc. The height cap on the lead panels'
+  cards (`FacesPanel`, `EditPanel`) is a class (`.kk-viewer__panel-scroll`), not an inline style, precisely so the
+  sheet can **lift** it — two nested scroll regions in a ~370 px window is a touch trap, and an inline style would
+  outrank the media query that undoes it. The breakpoint is `useIsNarrowViewport`'s, so the sheet and the
+  curation dock cannot disagree about what a phone is. Guarded by `PhotoDetailPage.test.tsx` (geometry read out of
+  `viewer.css`, glyphs in the DOM) and verified in a real browser at 393 × 852.
+  Its content is **the same components as before, only in the drawer instead of below
   the photo** (the `OrganizeBadges` „filed under" strip above the photo is gone — albums/labels are in Uspořádání).
   **The drawer's sections**
   (`components/photo/`): **1. Uspořádání** (`sections.organize`) = **the primary block, always
@@ -1763,7 +1789,10 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   because the label replaces the button's content for a screen reader) — that one *is* worth knowing: it is nameable by
   hand here and nowhere else, no suggestion, similarity search or the review game will ever bring it up.
   A click selects/deselects, hover mirrors the box; the selected row **scrolls itself into view**
-  (`block: 'nearest'`), so that a tap on a box in the photo doesn't mark a row off-screen; under the selected row
+  (`block: 'nearest'`), so that a tap on a box in the photo doesn't mark a row off-screen. Its list carries the
+  **class** `.kk-viewer__panel-scroll` (shared with `EditPanel`) rather than an inline `maxHeight`, because on a
+  phone the drawer is a short bottom sheet that scrolls itself and has to be able to *lift* the cap — an inline
+  style would outrank the media query that does it. Under the selected row
   `FaceAssignPanel` expands
   (`key={face_index}` → the state resets when the selection changes). **`FaceAssignPanel`** = the top-3 suggestions
   (`{name} · {confidence}%`, one-tap) + a typeahead over `useSubjects` (`AddAutocomplete` with `autoFocus`
@@ -1966,7 +1995,10 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   key, touch), holds visibility in a ref and commits to state **only on a real change**, so a
   flood of `pointermove` doesn't re-render every frame; `paused` **pins the chrome visible** and doesn't start the
   timer (when the drawer is open). It decides only *whether* the chrome shows — *how* it animates is handled by
-  a CSS transition on duration tokens (under `prefers-reduced-motion` ~0);
+  a CSS transition on duration tokens (under `prefers-reduced-motion` ~0) — and it doesn't decide **what** hides
+  either: it sets one `data-chrome` flag on the viewer root and `viewer.css` picks the surfaces that answer to it.
+  Two deliberately don't (N20): the persistent back control and the photo's title, which dim rather than leave, so
+  an idle phone screen is never a photograph with no name and no visible way off it;
   `useGridKeyboardNavigation({count,enabled,resetKey,getColumns,
   scrollToIndex,onOpen,onToggleSelect,onToggleFavorite,hasSelection,onClearSelection})` = grid navigation
   over `useKeyboardShortcuts`: it holds `focusedIndex` (the highlight), the arrows + `j`/`k`/`h`/`l` move
