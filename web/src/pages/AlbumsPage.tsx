@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
 
@@ -6,10 +6,19 @@ import { useAuth } from '../auth/AuthContext'
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
 import { AlbumEditModal } from '../components/organize/AlbumEditModal'
+import { AlbumFilterBar } from '../components/organize/AlbumFilterBar'
 import { AlbumTile } from '../components/organize/AlbumTile'
 import { TileGridSkeleton } from '../components/Skeleton'
 import { TileGrid } from '../components/TileGrid'
 import { useReloadKey } from '../hooks/useReloadKey'
+import {
+  type AlbumsView,
+  albumBrowseOptions,
+  ALBUMS_DEFAULTS,
+  ALBUMS_SHOW_EMPTY,
+  browseAlbums,
+} from '../lib/albumBrowse'
+import { useUrlState } from '../lib/urlState'
 import { type AlbumSummary, fetchAlbums } from '../services/organize'
 
 /** Fetch lifecycle of the albums list. */
@@ -18,19 +27,33 @@ type State =
   | { status: 'error' }
   | { status: 'ready'; albums: AlbumSummary[] }
 
+/** No albums at all, so the tab counts have nothing to report. */
+const NO_ALBUMS: AlbumSummary[] = []
+
 /**
  * The albums index: a responsive, virtualized grid of album cards (cover, title,
- * count), each linking to its detail page, newest album first as the server ranks
- * them.
+ * count), each linking to its detail page.
+ *
+ * The API returns every album in one list, but more than half of them are
+ * machine-made — month folders, moments, place albums — and in one pile they
+ * bury the albums somebody actually created. So the page splits them by `type`
+ * into four sections (Moje alba · Podle měsíce · Momenty · Místa), opens on the
+ * hand-made ones, hides the albums holding no photos, and offers a name search
+ * and an ordering. All of it lives in the URL, so Back steps through the
+ * sections and a link carries the exact view. Nothing here is stored: the
+ * machine-made English titles are only *rendered* in Czech (see
+ * `i18n/albumNames`).
+ *
  * Editors and admins get a create button; the modal refetches the grid on
  * success. Mutation controls are hidden from viewers.
  */
 export function AlbumsPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { canWrite } = useAuth()
   const [state, setState] = useState<State>({ status: 'loading' })
   const [creating, setCreating] = useState(false)
   const [reloadKey, reload] = useReloadKey()
+  const [view, setView] = useUrlState<AlbumsView>(ALBUMS_DEFAULTS)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -50,6 +73,13 @@ export function AlbumsPage() {
       controller.abort()
     }
   }, [reloadKey])
+
+  const albums = state.status === 'ready' ? state.albums : NO_ALBUMS
+  const language = i18n.language
+  const { visible, counts, filteredOut } = useMemo(
+    () => browseAlbums(albums, albumBrowseOptions(view, language)),
+    [albums, view, language],
+  )
 
   return (
     <>
@@ -73,22 +103,37 @@ export function AlbumsPage() {
 
       {state.status === 'error' && <ErrorState title={t('albums.error')} onRetry={reload} />}
 
-      {state.status === 'ready' && state.albums.length === 0 && (
+      {state.status === 'ready' && albums.length === 0 && (
         <EmptyState title={t('albums.empty.title')} hint={t('albums.empty.hint')} />
       )}
 
-      {state.status === 'ready' && state.albums.length > 0 && (
-        // Virtualized (see TileGrid) so a large collection keeps the DOM — and the
-        // cover loads it starts — bounded by the viewport, not by the album count.
-        // The geometry matches the skeleton above, so the grid doesn't shift when
-        // the data lands.
-        <TileGrid
-          items={state.albums}
-          itemKey={(album) => album.uid}
-          renderItem={(album) => <AlbumTile album={album} />}
-          minTile={160}
-          gap={12}
-        />
+      {state.status === 'ready' && albums.length > 0 && (
+        <>
+          <AlbumFilterBar view={view} onChange={setView} counts={counts} />
+
+          {visible.length === 0 && (
+            <EmptyState
+              title={t('albums.noMatches.title')}
+              hint={
+                filteredOut > 0 ? t('albums.noMatches.hintFiltered') : t('albums.noMatches.hint')
+              }
+            />
+          )}
+
+          {visible.length > 0 && (
+            // Virtualized (see TileGrid) so a large collection keeps the DOM — and the
+            // cover loads it starts — bounded by the viewport, not by the album count.
+            // The geometry matches the skeleton above, so the grid doesn't shift when
+            // the data lands.
+            <TileGrid
+              items={visible}
+              itemKey={(album) => album.uid}
+              renderItem={(album) => <AlbumTile album={album} />}
+              minTile={160}
+              gap={12}
+            />
+          )}
+        </>
       )}
 
       {canWrite && (
@@ -103,6 +148,10 @@ export function AlbumsPage() {
             // ones at the end, where random uids decide the order among them. Only
             // the server knows where it lands, so ask it instead of guessing.
             reload()
+            // A brand-new album holds no photos and carries no search term, so
+            // the default view would swallow it whole. Show the section it landed
+            // in, with empty albums visible, rather than let it vanish on save.
+            setView({ ...ALBUMS_DEFAULTS, empty: ALBUMS_SHOW_EMPTY })
             setCreating(false)
           }}
         />

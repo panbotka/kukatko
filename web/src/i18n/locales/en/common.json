@@ -750,6 +750,30 @@
       "title": "No albums yet",
       "hint": "Create an album to start grouping your photos."
     },
+    "tabs": {
+      "album": "My albums",
+      "folder": "By month",
+      "moment": "Moments",
+      "state": "Places"
+    },
+    "sort": {
+      "date": "Newest first",
+      "name": "By name",
+      "count": "By photo count"
+    },
+    "filters": {
+      "barLabel": "Album filters",
+      "sections": "Album kind",
+      "search": "Search albums",
+      "searchPlaceholder": "Search by name…",
+      "sort": "Sort",
+      "showEmpty": "Include empty"
+    },
+    "noMatches": {
+      "title": "Nothing matches here",
+      "hint": "Try another section or another name.",
+      "hintFiltered": "Try another section, another name, or switch “Include empty” on."
+    },
     "edit": {
       "titleNew": "New album",
       "titleEdit": "Edit album",
