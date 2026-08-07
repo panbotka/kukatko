@@ -1,14 +1,14 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { type ComponentType, type ReactNode } from 'react'
 import { I18nextProvider } from 'react-i18next'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import { type TileGridLayout } from '../components/TileGrid'
 import i18n from '../i18n'
-import { type Album, type AlbumCount } from '../services/organize'
+import { type Album, type AlbumSummary, type AlbumType } from '../services/organize'
 
 import { AlbumsPage } from './AlbumsPage'
 
@@ -16,11 +16,11 @@ import { AlbumsPage } from './AlbumsPage'
 // one measures zero and mounts nothing). It renders every album through the real
 // `List` component, which keeps the grid's own column template assertable.
 interface MockGridProps {
-  data: AlbumCount[]
+  data: AlbumSummary[]
   context: TileGridLayout
   components: { List: ComponentType<{ context: TileGridLayout; children: ReactNode }> }
-  itemContent: (index: number, item: AlbumCount) => ReactNode
-  computeItemKey: (index: number, item: AlbumCount) => string
+  itemContent: (index: number, item: AlbumSummary) => ReactNode
+  computeItemKey: (index: number, item: AlbumSummary) => string
 }
 vi.mock('react-virtuoso', () => ({
   VirtuosoGrid: ({ components, context, data, itemContent, computeItemKey }: MockGridProps) => (
@@ -41,18 +41,38 @@ const { fetchAlbums, createAlbum } = await import('../services/organize')
 const fetchMock = vi.mocked(fetchAlbums)
 const createMock = vi.mocked(createAlbum)
 
-function album(uid: string, title: string): AlbumCount {
+function album(
+  uid: string,
+  title: string,
+  { type = 'album', photoCount = 3 }: { type?: AlbumType; photoCount?: number } = {},
+): AlbumSummary {
   return {
     uid,
     slug: title.toLowerCase(),
     title,
     description: '',
-    type: 'album',
+    type,
     private: false,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
-    photo_count: 3,
+    photo_count: photoCount,
   }
+}
+
+/**
+ * A library like the real one: a couple of hand-made albums among the
+ * machine-made month folders, moments and places, plus an empty leftover.
+ */
+function mixedLibrary(): AlbumSummary[] {
+  return [
+    album('al_1', 'Dovolená 2019'),
+    album('al_2', 'Zebra', { photoCount: 7 }),
+    album('al_3', 'Pets', { photoCount: 0 }),
+    album('al_4', 'January 2026', { type: 'folder', photoCount: 15 }),
+    album('al_5', 'May 2026', { type: 'folder', photoCount: 4 }),
+    album('al_6', 'Trip to the lake', { type: 'moment', photoCount: 9 }),
+    album('al_7', 'Czechia', { type: 'state', photoCount: 120 }),
+  ]
 }
 
 /** Builds a minimal auth context value with the given write capability. */
@@ -70,17 +90,53 @@ function auth(canWrite: boolean): AuthContextValue {
   } as unknown as AuthContextValue
 }
 
-function renderPage(canWrite = true, children?: ReactNode) {
+/** Surfaces the current URL query and a Back control for navigation tests. */
+function LocationProbe() {
+  const location = useLocation()
+  const navigate = useNavigate()
+  return (
+    <>
+      <span data-testid="search">{location.search}</span>
+      <button
+        type="button"
+        onClick={() => {
+          void navigate(-1)
+        }}
+      >
+        __back
+      </button>
+    </>
+  )
+}
+
+function renderPage(canWrite = true, children?: ReactNode, entry = '/albums') {
   return render(
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={auth(canWrite)}>
-        <MemoryRouter>
+        <MemoryRouter initialEntries={[entry]}>
           <AlbumsPage />
+          <LocationProbe />
           {children}
         </MemoryRouter>
       </AuthContext.Provider>
     </I18nextProvider>,
   )
+}
+
+/** The album titles currently in the grid, in render order. */
+function gridTitles(): string[] {
+  const grid = document.querySelector<HTMLElement>('.kk-tile-grid')
+  if (grid === null) {
+    return []
+  }
+  return within(grid)
+    .getAllByRole('link')
+    .map((link) => link.getAttribute('aria-label') ?? '')
+}
+
+/** The section button carrying the given label. */
+function section(name: string) {
+  return screen.getByRole('button', { name: new RegExp(`^${name}`) })
 }
 
 beforeEach(async () => {
@@ -109,7 +165,7 @@ describe('AlbumsPage', () => {
     // count still follows the container width — one at 320px, two at 360px.
     expect(grid?.style.gridTemplateColumns).toBe('repeat(auto-fill, minmax(160px, 1fr))')
     expect(grid?.style.gap).toBe('12px')
-    expect(screen.getAllByRole('link')).toHaveLength(2)
+    expect(gridTitles()).toHaveLength(2)
   })
 
   it('shows the empty state when there are no albums', async () => {
@@ -125,11 +181,132 @@ describe('AlbumsPage', () => {
     renderPage()
 
     await screen.findByText('Zebra')
-    const titles = screen.getAllByRole('link').map((link) => link.getAttribute('aria-label'))
-    expect(titles).toEqual(['Zebra', 'Alps'])
+    expect(gridTitles()).toEqual(['Zebra', 'Alps'])
   })
 
-  it('creates an album: calls the API and refetches the grid in server order', async () => {
+  it('opens on the hand-made albums, leaving the machine-made ones to their sections', async () => {
+    fetchMock.mockResolvedValue(mixedLibrary())
+    renderPage()
+
+    await screen.findByText('Dovolená 2019')
+    // Two of seven: the month folders, the moment and the place are elsewhere,
+    // and the empty leftover is hidden altogether.
+    expect(gridTitles()).toEqual(['Dovolená 2019', 'Zebra'])
+  })
+
+  it('counts every section, so the strip says where the rest of the albums are', async () => {
+    fetchMock.mockResolvedValue(mixedLibrary())
+    renderPage()
+
+    await screen.findByText('Dovolená 2019')
+    expect(section('My albums')).toHaveTextContent('2')
+    expect(section('By month')).toHaveTextContent('2')
+    expect(section('Moments')).toHaveTextContent('1')
+    expect(section('Places')).toHaveTextContent('1')
+  })
+
+  it('switches sections into the URL, so Back steps out of one', async () => {
+    fetchMock.mockResolvedValue(mixedLibrary())
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByText('Dovolená 2019')
+    await user.click(section('By month'))
+
+    expect(gridTitles()).toEqual(['January 2026', 'May 2026'])
+    expect(screen.getByTestId('search')).toHaveTextContent('type=folder')
+
+    await user.click(screen.getByRole('button', { name: '__back' }))
+    await waitFor(() => {
+      expect(gridTitles()).toEqual(['Dovolená 2019', 'Zebra'])
+    })
+  })
+
+  it('restores the section from the URL, so a link carries the view', async () => {
+    fetchMock.mockResolvedValue(mixedLibrary())
+    renderPage(true, undefined, '/albums?type=moment')
+
+    await screen.findByText('Trip to the lake')
+    expect(gridTitles()).toEqual(['Trip to the lake'])
+  })
+
+  it('filters by name as it is typed, without pushing a history entry per keystroke', async () => {
+    fetchMock.mockResolvedValue(mixedLibrary())
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByText('Dovolená 2019')
+    // A pushed entry to come back to, so what Back skips is visible.
+    await user.click(section('By month'))
+    await user.type(screen.getByRole('searchbox', { name: 'Search albums' }), 'may')
+
+    expect(gridTitles()).toEqual(['May 2026'])
+    expect(screen.getByTestId('search')).toHaveTextContent('q=may')
+
+    // Live typing replaces the entry, so one Back steps out of the whole search
+    // instead of deleting one letter at a time.
+    await user.click(screen.getByRole('button', { name: '__back' }))
+    await waitFor(() => {
+      expect(screen.getByTestId('search').textContent).toBe('')
+    })
+    expect(gridTitles()).toEqual(['Dovolená 2019', 'Zebra'])
+  })
+
+  it('offers the section counts of a search, so a miss points at where the hits are', async () => {
+    fetchMock.mockResolvedValue(mixedLibrary())
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByText('Dovolená 2019')
+    await user.type(screen.getByRole('searchbox', { name: 'Search albums' }), 'january')
+
+    expect(await screen.findByText('Nothing matches here')).toBeInTheDocument()
+    expect(section('By month')).toHaveTextContent('1')
+  })
+
+  it('sorts by name and by photo count', async () => {
+    fetchMock.mockResolvedValue(mixedLibrary())
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByText('Dovolená 2019')
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Sort' }), 'name')
+    expect(gridTitles()).toEqual(['Dovolená 2019', 'Zebra'])
+    expect(screen.getByTestId('search')).toHaveTextContent('sort=name')
+
+    await user.click(section('By month'))
+    // 15 photos in January against 4 in May: by name the order is alphabetical,
+    // by count the fuller album leads.
+    expect(gridTitles()).toEqual(['January 2026', 'May 2026'])
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Sort' }), 'count')
+    expect(gridTitles()).toEqual(['January 2026', 'May 2026'])
+  })
+
+  it('hides albums with no photos until the switch asks for them', async () => {
+    fetchMock.mockResolvedValue(mixedLibrary())
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByText('Dovolená 2019')
+    expect(gridTitles()).not.toContain('Pets')
+
+    await user.click(screen.getByRole('checkbox', { name: 'Include empty' }))
+    expect(gridTitles()).toContain('Pets')
+    expect(screen.getByTestId('search')).toHaveTextContent('empty=1')
+  })
+
+  it('renders a machine-made month album in Czech, leaving the stored title alone', async () => {
+    await i18n.changeLanguage('cs')
+    fetchMock.mockResolvedValue(mixedLibrary())
+    renderPage(true, undefined, '/albums?type=folder')
+
+    expect(await screen.findByText('leden 2026')).toBeInTheDocument()
+    expect(screen.queryByText('January 2026')).not.toBeInTheDocument()
+    // Display only: nothing was sent back to the server.
+    expect(createMock).not.toHaveBeenCalled()
+  })
+
+  it('creates an album: calls the API and shows the fresh, still empty album', async () => {
     const created: Album = {
       uid: 'al_new',
       slug: 'trip',
@@ -155,7 +332,10 @@ describe('AlbumsPage', () => {
     await waitFor(() => {
       expect(createMock).toHaveBeenCalledWith(expect.objectContaining({ title: 'Trip' }))
     })
+    // An album with no photos would fall through the default filter, so saving
+    // one turns the switch on rather than hiding what was just created.
     expect(await screen.findByText('Trip')).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: 'Include empty' })).toBeChecked()
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 

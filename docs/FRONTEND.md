@@ -580,7 +580,14 @@ here.
   `components/organize/` = `AlbumTile` (an album card: the **effective cover** `cover_uid`
   (manually chosen, otherwise the album's newest photo — computed by the backend) / name / **year range**
   via `formatCaptureRange` (only when the album has dated photos) / count → `/albums/{uid}`;
-  `EmptyState` only for an album with no photos),
+  `EmptyState` only for an album with no photos; the name is the **display title**
+  (`i18n/albumNames` `albumDisplayTitle(title, i18n.language)`) and the *same* string feeds the link's
+  `aria-label`, its `title` and the cover's `alt`, so none of them can drift back to the raw one),
+  `AlbumFilterBar` (the album index's own filter bar: the section strip — Moje alba · Podle měsíce ·
+  Momenty · Místa, each with its live count as a `Badge`, `ButtonGroup` + `aria-pressed` like
+  `CandidateFilterTabs` — plus a name search, the ordering `Form.Select` and the „I prázdná" switch;
+  every control writes straight into the URL via `SetUrlState<AlbumsView>`, **pushing** except the
+  live-typed query, which replaces),
   `AlbumEditModal` (create/rename an album: name/description/private), `LabelEditModal` (create/rename
   a label: name/priority), `SelectionBar` (a sticky selection toolbar: count +
   actions + clear — shown at `selection.count > 0` since those grids are hover-select too;
@@ -726,10 +733,21 @@ here.
   for editors **hover-select** → the shared **`BatchActionBar`** (the library's full set of actions,
   `onSelectAll` picks every loaded tile); a bulk removal from favorites drops the photo from the list
   (the selection is cleared **before** the refetch, so no photo that vanished from the grid stays in it),
-  `AlbumsPage` = `/albums` a grid of album cards + `Nové album` (editor/admin) — the order **from
-  the newest album** (by the newest photo, undated/empty at the end) **is enforced by the backend**,
-  the page doesn't reorder and has no sort selector; after creating an album it **reloads the list**
-  (`useReloadKey`) instead of locally appending to the end — where a new album belongs is known only to the server;
+  `AlbumsPage` = `/albums` a grid of album cards + `Nové album` (editor/admin), **split by `type`**
+  through `AlbumFilterBar` + the pure `lib/albumBrowse`: the API returns one flat list in which more than
+  half the albums are machine-made (month folders, moments, places), so the page opens on **Moje alba**
+  (`album`) and leaves the rest to **Podle měsíce** (`folder` + `month`) · **Momenty** (`moment`) ·
+  **Místa** (`state`); albums with `photo_count = 0` are hidden until the „I prázdná" switch asks for
+  them, a name search filters over the **stored and the displayed** title, and the sort selector offers
+  **Od nejnovějších** (the backend's own ranking — by the newest photo, undated/empty at the end —
+  which the page **keeps** rather than reorders, since only the server can compute it) / **Podle názvu** /
+  **Podle počtu fotek**. The whole view (`type`/`q`/`sort`/`empty`) lives in the **URL** (`ALBUMS_DEFAULTS`
+  are omitted from it), so Back steps through the sections and a link carries the exact view; only the
+  live-typed query replaces its history entry. After creating an album it **reloads the list**
+  (`useReloadKey`) instead of locally appending to the end — where a new album belongs is known only to the
+  server — and resets the view **with empty albums shown**, so a fresh (photo-less) album isn't swallowed by
+  the default filter. Filtering everything away shows `albums.noMatches` (a hint pointing at the switch when
+  the filters actually dropped something) while the section badges keep saying where the matches are;
   the grid is **virtualized** (`TileGrid`, minTile 160 / gap 12 — the skeleton's geometry), so a large
   collection puts only the visible rows plus a buffer into the DOM and starts only their cover loads,
   while the layout stays exactly the one the plain CSS grid drew,
@@ -2215,6 +2233,17 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   (is a `.modal.show` with a form control open? → suppress the shortcuts behind a dialog), `HELP_SHORTCUT_KEY`
   (`?`) and `SHORTCUT_GROUPS` (the grouped Grid/Detail source of truth for the help, `titleKey`/`descriptionKey`
   typed as i18next `ParseKeys`, so a non-existent key is a compile error);
+  `albumBrowse.ts` = the album index's view state + the pure browse rules: the `AlbumsView` type
+  (`type`/`q`/`sort`/`empty`, string-only for the URL) + `ALBUMS_DEFAULTS` (hand-made albums, the server's
+  order, empty ones hidden) + `ALBUMS_SHOW_EMPTY` (`'1'`) + the `toAlbumTab`/`toAlbumSort` sanitizers +
+  `albumBrowseOptions(view, language)` + `browseAlbums(albums, options)` → `{visible, counts, filteredOut}`.
+  `tabForType` puts **every** album type into one of the four sections (`album` · `folder` **and `month`** ·
+  `moment` · `state`; a type this frontend doesn't know yet lands in the default one, so it can never fall
+  out of all of them). The search matches the **stored title and the Czech display name** (`leden` finds
+  `January 2026`) via `lib/text` `foldedIncludes`; `name`/`count` sort by the **displayed** name
+  (`localeCompare`, numeric, base sensitivity — so `květen` really precedes `leden`) while `date`
+  **keeps the order the API returned**; the counts are taken **after** the search + empty filter but
+  **before** the section split, so a badge answers „where are my matches?" rather than restating the totals,
   `searchView.ts` = the `SearchView` type (= `LibraryView` + `mode`)
   + `SEARCH_DEFAULTS` (mode `hybrid`) + the `toMode` sanitizer;
   `auditView.ts` = the `AuditView` type (filters + `offset`, string-only for the URL) + `AUDIT_DEFAULTS`
@@ -2627,7 +2656,13 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   the query params use the endpoint's names (`user`/`entity_type`/`entity_uid`), the records use the columns'
   (`actor_uid`/`target_type`/`target_uid`),
   `i18n/` (the i18next init — the options are exported as `initOptions`, so that a test can boot them
-  into its own instance — + `locales/{cs,en}/common.json`;
+  into its own instance — + `locales/{cs,en}/common.json` + `albumNames.ts`
+  (`albumDisplayTitle(title, language)`: the **display-time only** Czech rendering of the machine-made
+  English album titles the import left behind — a leading English month with an optional four-digit year
+  (`January 2026` → `leden 2026`) and a whole title that is a known English country name (`Czechia` →
+  `Česko`, both `Czechia` and `Czech Republic`). The match must be **exact**: `January in Norway` and
+  `May Day` stay as they are, and so does everything on a non-Czech UI. Nothing is ever written back —
+  renaming albums in the database is explicitly out of scope; tests `albumNames.test.ts`);
   typed keys via `types/i18next.d.ts` — add new strings to **both** locale files;
   **Czech is the default**, no hard-coded UI texts — everything through `t()`. The only detector is
   `localStorage` (which `LanguageSwitcher` from `AccountPage` writes to); `navigator`/`htmlTag` are **deliberately

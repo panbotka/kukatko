@@ -59,7 +59,8 @@ It is **not** for you if you are looking for:
   description, dates, people, albums, labels — is also written to a versioned YAML sidecar next to
   the original. Lose the DB and the meaning of your library is still on the disk.
 - **Czech first, English second.** The UI ships bilingual (`cs` default), because it was written
-  for a family that speaks Czech.
+  for a family that speaks Czech. Even the English album names the import left behind (`January
+  2026`, a country) read in Czech — at display time only, without touching what is stored.
 
 Around that sit the ordinary things a library needs and Kukátko has: albums and labels, videos
 (range streaming, live photos), maps and browsing by place, a slideshow, per-user favourites and

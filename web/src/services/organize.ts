@@ -131,7 +131,9 @@ interface PhotoUIDsResponse {
 
 /**
  * Lists every album with its photo count, effective cover and capture-time
- * span, ordered by title.
+ * span, newest album first: the backend ranks them by their newest photo, with
+ * undated and empty albums last. The album index keeps that order as its
+ * default sort — only the server can compute it.
  */
 export async function fetchAlbums(signal?: AbortSignal): Promise<AlbumSummary[]> {
   const body = await getJSON<AlbumsResponse>('/albums', signal)

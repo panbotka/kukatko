@@ -64,6 +64,24 @@ describe('AlbumTile', () => {
     expect(screen.getByText('1998–1999')).toBeInTheDocument()
   })
 
+  it('renders a machine-made English title in Czech, everywhere the title is used', async () => {
+    await i18n.changeLanguage('cs')
+    renderTile(album({ cover_uid: 'ph1', title: 'January 2026' }))
+
+    // The link's accessible name, its hover text and the alt text all come from
+    // the same display name, so none of them can drift back to the raw title.
+    const link = screen.getByRole('link', { name: 'leden 2026' })
+    expect(link).toHaveAttribute('title', 'leden 2026')
+    expect(screen.getByRole('img', { name: 'leden 2026' })).toBeInTheDocument()
+    expect(screen.queryByText('January 2026')).toBeNull()
+  })
+
+  it('leaves a hand-written title untouched', async () => {
+    await i18n.changeLanguage('cs')
+    renderTile(album({ cover_uid: 'ph1' }))
+    expect(screen.getByRole('link', { name: 'Pouť 2024' })).toBeInTheDocument()
+  })
+
   it('shows no range line when no photo in the album is dated', () => {
     // A title free of digits, so the only four-digit text a match could find
     // would be the range line itself.

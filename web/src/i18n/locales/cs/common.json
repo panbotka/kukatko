@@ -704,6 +704,30 @@
       "title": "Zatím žádná alba",
       "hint": "Vytvoř album a začni seskupovat své fotky."
     },
+    "tabs": {
+      "album": "Moje alba",
+      "folder": "Podle měsíce",
+      "moment": "Momenty",
+      "state": "Místa"
+    },
+    "sort": {
+      "date": "Od nejnovějších",
+      "name": "Podle názvu",
+      "count": "Podle počtu fotek"
+    },
+    "filters": {
+      "barLabel": "Filtr alb",
+      "sections": "Druh alba",
+      "search": "Hledat album",
+      "searchPlaceholder": "Hledat podle názvu…",
+      "sort": "Řadit",
+      "showEmpty": "I prázdná"
+    },
+    "noMatches": {
+      "title": "Nic tu neodpovídá",
+      "hint": "Zkus jinou sekci nebo jiný název.",
+      "hintFiltered": "Zkus jinou sekci, jiný název, nebo zapni „I prázdná“."
+    },
     "edit": {
       "titleNew": "Nové album",
       "titleEdit": "Upravit album",

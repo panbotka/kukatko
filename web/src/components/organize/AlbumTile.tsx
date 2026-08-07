@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { EmptyState } from '../EmptyState'
 import { FadeInImage } from '../FadeInImage'
 
+import { albumDisplayTitle } from '../../i18n/albumNames'
 import { formatCaptureRange } from '../../lib/format'
 import { type AlbumSummary } from '../../services/organize'
 import { GRID_THUMB_SIZE, thumbUrl } from '../../services/photos'
@@ -22,18 +23,23 @@ export interface AlbumTileProps {
  * The cover is the album's effective one — the hand-picked cover when there is
  * one, and the album's newest photo otherwise — so a tile only falls back to the
  * empty state when the album genuinely holds nothing to show.
+ *
+ * The title is the album's display name: a machine-made English one (`January
+ * 2026`, a country) reads in Czech on a Czech UI, everything else verbatim. It
+ * is a rendering decision only — the stored title is never touched.
  */
 export function AlbumTile({ album }: AlbumTileProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const cover = album.cover_uid
   const range = formatCaptureRange(album.taken_from, album.taken_to)
+  const title = albumDisplayTitle(album.title, i18n.language)
 
   return (
     <Link
       to={`/albums/${album.uid}`}
       className="kk-tile d-block text-decoration-none text-body"
-      aria-label={album.title}
-      title={album.title}
+      aria-label={title}
+      title={title}
     >
       <div
         className="kk-tile__media mb-1 d-flex align-items-center justify-content-center"
@@ -42,7 +48,7 @@ export function AlbumTile({ album }: AlbumTileProps) {
         {cover !== undefined && cover !== '' ? (
           <FadeInImage
             src={thumbUrl(cover, GRID_THUMB_SIZE)}
-            alt={album.title}
+            alt={title}
             className="w-100 h-100"
             style={{ objectFit: 'cover' }}
           />
@@ -58,7 +64,7 @@ export function AlbumTile({ album }: AlbumTileProps) {
           </span>
         )}
       </div>
-      <div className="fw-semibold text-truncate">{album.title}</div>
+      <div className="fw-semibold text-truncate">{title}</div>
       {range !== '' && <div className="kk-text-caption text-secondary text-nowrap">{range}</div>}
       <div className="kk-text-caption text-secondary">
         {t('albums.photoCount', { count: album.photo_count })}
