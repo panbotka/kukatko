@@ -142,6 +142,31 @@ describe('MobileNavDrawer', () => {
     ).toHaveAttribute('href', '/import')
   })
 
+  it('gives search a labelled row and files saved searches under Browse', async () => {
+    const user = userEvent.setup()
+    renderShell(auth())
+    const drawer = await openDrawer(user)
+
+    // On a phone the search page used to have no menu entry at all — its only
+    // door was the top bar's unlabelled magnifier, whose shortcut tooltip a
+    // touch screen never shows. Here it is a row of the everyday block.
+    const main = within(drawer).getByRole('region', { name: 'Main' })
+    const search = within(main).getByRole('link', { name: 'Search' })
+    expect(search).toHaveAttribute('href', '/search')
+    expect(search).toHaveAttribute('title', 'Search the photos')
+
+    // Saved searches are smart albums: they belong beside the favorites, not a
+    // dropdown deeper still inside the search page.
+    const browse = within(drawer).getByRole('region', { name: 'Browse' })
+    expect(within(browse).getByRole('link', { name: 'Saved searches' })).toHaveAttribute(
+      'href',
+      '/saved',
+    )
+    // And the leaderboard is demoted out of the everyday block into Browse.
+    expect(within(main).queryByRole('link', { name: 'Leaderboard' })).not.toBeInTheDocument()
+    expect(within(browse).getByRole('link', { name: 'Leaderboard' })).toBeInTheDocument()
+  })
+
   it('carries the maintainer’s complete set of destinations', async () => {
     const user = userEvent.setup()
     renderShell(auth({ isMaintainer: true }))
@@ -153,13 +178,15 @@ describe('MobileNavDrawer', () => {
       '/',
       '/albums',
       '/labels',
+      '/search',
       '/review',
-      '/leaderboard',
       '/upload',
       '/favorites',
+      '/saved',
       '/people',
       '/places',
       '/map',
+      '/leaderboard',
       '/expand',
       '/faces',
       '/recognition',
@@ -236,11 +263,13 @@ describe('MobileNavDrawer', () => {
       '/',
       '/albums',
       '/labels',
-      '/leaderboard',
+      '/search',
       '/favorites',
+      '/saved',
       '/people',
       '/places',
       '/map',
+      '/leaderboard',
       '/account',
       '/stats',
       '/help',

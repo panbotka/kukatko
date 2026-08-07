@@ -15,15 +15,20 @@ here.
   nav with a **visible hierarchy based on
   how often an ordinary person uses an item**: the everyday loop (browsing, sorting, adding photos) is
   loud and immediate, while admin/power-user tooling is present but quieter. It leads with **Knihovna** `/` (= the home
-  page; `NavLink` has `end`, otherwise it would light up on every route), **Alba** `/albums` and **Štítky**
-  `/labels` (always visible top-level, the `PRIMARY_ITEMS` registry); the remaining browse targets are gathered by the
-  **Procházet** dropdown (`nav.browse`, `BROWSE_GROUP`): **Oblíbené** `/favorites`, **Lidé** `/people`,
-  **Místa** `/places`, **Mapa** `/map`; **Třídění** `/review` (`REVIEW_ITEM`, gated on `canWrite`) stays
+  page; `NavLink` has `end`, otherwise it would light up on every route), **Alba** `/albums`, **Štítky**
+  `/labels` and **Hledání** `/search` (always visible top-level, the `PRIMARY_ITEMS` registry — search is a
+  *labelled* destination since 2026-08-07, because the magnifier circle below carries no text and states its
+  `/`-and-Ctrl+K chords only in a `title` a phone never hovers, which left the app's strongest feature with no
+  trace in any menu; the circle stays as the shortcut, see `UX_RESEARCH.md` **N3**); the remaining browse targets are gathered by the
+  **Procházet** dropdown (`nav.browse`, `BROWSE_GROUP`): **Oblíbené** `/favorites`, **Uložená hledání**
+  `/saved` (smart albums, so they sit next to the favourites instead of a dropdown *inside* `/search`),
+  **Lidé** `/people`, **Místa** `/places`, **Mapa** `/map`, and last **Žebříček** `/leaderboard` (`trophy`
+  icon, **no role gate** — the competitive standing is just an aggregate of counts, so **every logged-in
+  user** sees it, even a viewer). The leaderboard used to hold a top-level slot beside Třídění; on the live
+  instance it has one player and 38 answers in total, which does not buy a place next to Knihovna and Alba.
+  **Třídění** `/review` (`REVIEW_ITEM`, gated on `canWrite`) does stay
   top-level, not under „Nástroje" — tidying the library one question at a time is the most-used curatorial
-  loop, and a game nobody finds is a game nobody plays; **Žebříček** `/leaderboard`
-  (`LEADERBOARD_ITEM`, `trophy` icon) sits right next to Třídění as its scoreboard and has **no
-  role gate** — the competitive standing is just an aggregate of counts, so **every logged-in user** sees it (even a viewer),
-  not just editors; **Nahrát** `/upload` (gated on
+  loop, and a game nobody finds is a game nobody plays; **Nahrát** `/upload` (gated on
   `canWrite`) is the bar's **single call-to-action** — a filled pill (`kukatko-nav-cta`, prop `cta`
   in `renderLink`) so adding photos stands out. After it a **divider** (`kukatko-nav-divider` — a vertical
   hairline in the inline bar ≥ md, horizontal in the collapsed burger menu; drawn only when a role
@@ -66,8 +71,13 @@ here.
   which is what replaces the keycap the field used to draw — both chords are listed in the
   keyboard-shortcuts overlay sitting in the same bar too. It opens a **command palette** reachable from
   anywhere via `/` or Cmd/Ctrl-K (it doesn't steal typing — see `SearchCommand` below). The old full
-  `/search` page and saved searches remain; only the navbar no longer has a standalone „Hledat" link or the
-  library's filter field.
+  `/search` page and saved searches remain, and **both are back in the menus** (top-level **Hledání**,
+  „Procházet" → **Uložená hledání**) — the circle is the shortcut, not the only door; what the navbar does
+  not bring back is the library's filter field.
+  **Overflow, measured again for that swap** (Chromium over the real `Layout`, Czech labels, maintainer =
+  the widest role): „Hledání" is **95px** against „Žebříček"'s 102px, so the inline row came out **7px
+  narrower** — at a 1200/1280px viewport the container is overrun by 111px instead of 118px, and from 1400px
+  (container 1320px) it fits, before and after alike. An editor's row fits at 1200px either way.
   Every item and every dropdown toggle carries an **icon** (`Icon`) and a **`title` describing the action**, not
   the noun („Zobrazit alba", not „Alba"; keys `nav.titles.*`); icons are decorative
   (`aria-hidden`) beside the visible text label. A dropdown is hidden entirely when the user has
@@ -76,7 +86,7 @@ here.
   `/albums/{uid}`) — it is built from `Dropdown`+`Dropdown.Toggle as={NavLink}` (not `NavDropdown`, which
   consumes the `title` prop for the toggle's content, leaving none for the tooltip). **The whole item registry
   lives in `components/navItems.ts`** (`NavEntry`/`NavGroup`, `PRIMARY_ITEMS`, `BROWSE_GROUP`, `TOOLS_GROUP`,
-  `OPERATIONS_GROUP`, `GOVERNANCE_GROUP`, `REVIEW_ITEM`, `LEADERBOARD_ITEM`, `UPLOAD_ITEM`, `ACCOUNT_ITEM`,
+  `OPERATIONS_GROUP`, `GOVERNANCE_GROUP`, `REVIEW_ITEM`, `UPLOAD_ITEM`, `ACCOUNT_ITEM`,
   `STATS_ITEM`, `HELP_ITEM`, `pathMatches`), so the bar and the phone drawer below read **the same list with the same role
   gates** and cannot drift apart. On a phone the `Navbar` is **controlled**
   (an `expanded` state + `onToggle`); a `useEffect` on the `useLocation` pathname resets it to closed on
@@ -96,7 +106,7 @@ here.
   the focus trap and the body scroll-lock come from Bootstrap; the header adds a labelled close button
   (`nav.closeMenu`) and the title `nav.menu`. The body is **labelled sections**, each a `<section>` +
   `<h2>` heading (so it is a named `region` for assistive tech and for tests): **Hlavní**
-  (`nav.sections.main` — Knihovna/Alba/Štítky + Třídění when `canWrite` + Žebříček + Nahrát when `canWrite`,
+  (`nav.sections.main` — Knihovna/Alba/Štítky/Hledání + Třídění and Nahrát when `canWrite`,
   the last keeping the bar's filled CTA look), **Procházet**, the `canWrite` **Nástroje**, the `isMaintainer`
   **Provoz**, the `isAdmin` **Správa**, and **Účet** (`nav.sections.account` — Můj účet, Nápověda, the
   keyboard-shortcuts overlay, **the build version** and Odhlásit se, i.e. the user dropdown unfolded; the
@@ -114,7 +124,10 @@ here.
   whole primary nav is folded into the burger, so every everyday destination costs an open-then-tap — this
   pins them to the bottom edge where the thumb already is. Four tabs at most (`TABS`), the everyday loop only:
   **Knihovna** `/` (`end`-matched, otherwise the root's prefix match lights it up everywhere), **Alba** `/albums`,
-  **Štítky** `/labels`, **Nahrát** `/upload` (gated on `canWrite` — a viewer gets three). Browse / Třídění /
+  **Hledat** `/search` (`nav.searchShort` — the imperative, like the „Nahrát" beside it, where the bar and the
+  drawer use the page's own noun „Hledání"; it took the slot **Štítky** `/labels` used to hold, which keeps its
+  row in the drawer: on a phone searching had no entry at all, while browsing by label is the rarer errand),
+  **Nahrát** `/upload` (gated on `canWrite` — a viewer gets three). Browse / Třídění /
   Nástroje / Provoz / Správa deliberately stay in the burger menu: the bar earns its permanent strip only by
   being short enough to hit blind. Each tab is a `NavLink` with a decorative `Icon` above a short label plus the
   same `nav.titles.*` action tooltip as the navbar, an `active` accent-tinted pill matching the top bar's
@@ -696,7 +709,8 @@ here.
   refetch, the grid doesn't flash to a skeleton**). Esc clears the selection,
   plus a **Uložit pohled** button (`SaveSearchModal` →
   `createSavedSearch` with the current view object as `params`),
-  `SavedSearchesPage` = `/saved` (any logged-in user) „Moje uložená hledání": a list of the current
+  `SavedSearchesPage` = `/saved` (any logged-in user, reached from the „Procházet" nav group as well as
+  from the dropdown on `/search`) „Moje uložená hledání": a list of the current
   user's saved views, each link opens the exactly restored view (`savedSearchHref`), plus
   renaming (`SaveSearchModal`) and **optimistic deletion** + empty state; the row is phone-proof —
   the name truncates (`kk-min-w-0` + `text-truncate`) and rename/delete keep only their glyph below
@@ -1539,7 +1553,9 @@ here.
   (its corner placement above the veil, and a 44 px full-strength target under `@media (hover: none)`, which
   jsdom evaluates for nobody — read out of the shipped stylesheet like the `app.css` guards in `src/styles/`),
   `LeaderboardPage` = `/leaderboard` (**any logged-in user** — reading aggregates is not a write, so the
-  top-level link **Žebříček** is seen by a viewer too, right next to **Třídění**; **inside `Layout`**, not
+  **Žebříček** link is seen by a viewer too; since 2026-08-07 it is the last entry of the „Procházet"
+  dropdown rather than a top-level slot beside **Třídění** — one player and 38 answers on the live instance
+  did not earn a place next to Knihovna and Alba. **Inside `Layout`**, not
   fullscreen) a **competitive sorting leaderboard** over `GET /review/leaderboard` (`fetchLeaderboard(window)`):
   who decided the most in the review game. A sorted table (`react-bootstrap` `Table`) **Pořadí · Hráč · Ano ·
   Ne · Celkem**, the top 3 carry a **medal** (`Icon` `trophy-fill`/`award-fill` + a color class

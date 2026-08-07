@@ -195,23 +195,31 @@ describe('Layout navbar', () => {
     expect(albums.closest('.navbar.kukatko-navbar')).toBeNull()
   })
 
-  it('keeps Library, Albums and Labels as always-visible top-level links', () => {
+  it('keeps Library, Albums, Labels and Search as always-visible top-level links', () => {
     renderLayout(auth())
 
     // The library is the homepage, so its nav entry points at the root route.
     expect(screen.getByRole('link', { name: 'Library' })).toHaveAttribute('href', '/')
     expect(screen.getByRole('link', { name: 'Albums' })).toHaveAttribute('href', '/albums')
     expect(screen.getByRole('link', { name: 'Labels' })).toHaveAttribute('href', '/labels')
+    // The search page is the only place with the query-language help and the
+    // mode selector, so it is a labelled destination like the rest — not just
+    // the magnifier circle's hover tooltip.
+    const search = screen.getByRole('link', { name: 'Search' })
+    expect(search).toHaveAttribute('href', '/search')
+    expect(search).toHaveAttribute('title', 'Search the photos')
+    expect(search.querySelector('i.bi.bi-search')).not.toBeNull()
   })
 
-  it('leads the bar with a global command-search trigger, not the old search link', () => {
+  it('keeps the command-palette trigger beside the labelled search entry', () => {
     renderLayout(auth())
 
-    // Search is promoted to a command palette opened from a field-shaped trigger
-    // button (named by its action). The old plain "Search" nav link and the
-    // saved-searches dropdown are gone.
-    expect(screen.getByRole('button', { name: 'Search' })).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Search' })).not.toBeInTheDocument()
+    // Two doors to the same feature, deliberately: the icon button opens the
+    // palette (a button, named by its action), the nav link goes to the full
+    // page. The old saved-searches dropdown is still gone from the bar.
+    const trigger = screen.getByRole('button', { name: 'Search' })
+    expect(trigger).toHaveAttribute('title', 'Search the whole library (press / or Ctrl+K)')
+    expect(precedes(trigger, screen.getByRole('link', { name: 'Search' }))).toBe(true)
     expect(screen.queryByRole('button', { name: 'Saved searches' })).not.toBeInTheDocument()
   })
 
@@ -232,12 +240,31 @@ describe('Layout navbar', () => {
     await user.click(screen.getByRole('button', { name: 'Browse' }))
     for (const [name, href] of [
       ['Favorites', '/favorites'],
+      // Saved searches are smart albums, so they sit next to the favorites
+      // instead of hiding in a dropdown on the search page.
+      ['Saved searches', '/saved'],
       ['People', '/people'],
       ['Places', '/places'],
       ['Map', '/map'],
+      ['Leaderboard', '/leaderboard'],
     ]) {
       expect(screen.getByRole('link', { name })).toHaveAttribute('href', href)
     }
+  })
+
+  it('demotes the leaderboard out of the top level into Browse', async () => {
+    const user = userEvent.setup()
+    renderLayout(auth())
+
+    // A scoreboard for a game a handful of people play does not earn a slot
+    // beside Knihovna and Alba; it is one level down with the other ways of
+    // looking at the library.
+    expect(screen.queryByRole('link', { name: 'Leaderboard' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Browse' }))
+    expect(screen.getByRole('link', { name: 'Leaderboard' })).toHaveAttribute(
+      'href',
+      '/leaderboard',
+    )
   })
 
   it('gives every nav entry an icon and a title describing the action', async () => {

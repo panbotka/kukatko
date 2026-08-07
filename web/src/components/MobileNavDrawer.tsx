@@ -15,7 +15,6 @@ import {
   BROWSE_GROUP,
   GOVERNANCE_GROUP,
   HELP_ITEM,
-  LEADERBOARD_ITEM,
   type NavEntry,
   type NavGroup,
   OPERATIONS_GROUP,
@@ -104,12 +103,9 @@ export function MobileNavDrawer({
     {
       id: 'main',
       labelKey: 'nav.sections.main',
-      items: [
-        ...PRIMARY_ITEMS,
-        ...(canWrite ? [REVIEW_ITEM] : []),
-        LEADERBOARD_ITEM,
-        ...(canWrite ? [UPLOAD_ITEM] : []),
-      ],
+      // The review game and the upload CTA share one gate, so they share one
+      // spread; the leaderboard they used to sandwich now lives in Procházet.
+      items: [...PRIMARY_ITEMS, ...(canWrite ? [REVIEW_ITEM, UPLOAD_ITEM] : [])],
     },
     ...groups
       .filter((candidate) => candidate.open)
