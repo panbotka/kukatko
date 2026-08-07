@@ -9,6 +9,7 @@ import { ErrorState } from '../components/ErrorState'
 import { Slideshow, SLIDESHOW_PREVIEW_SIZE } from '../components/slideshow/Slideshow'
 import { useImagePreloader } from '../hooks/useImagePreloader'
 import { usePaginatedPhotos } from '../hooks/usePaginatedPhotos'
+import { useSearchMode } from '../hooks/useSearchMode'
 import { preloadWindow, type SlideReadiness, useSlideshow } from '../hooks/useSlideshow'
 import { useSlideshowSettings } from '../hooks/useSlideshowSettings'
 import { LIBRARY_DEFAULTS, LIBRARY_PATH, type LibraryView, viewToParams } from '../lib/libraryView'
@@ -58,15 +59,20 @@ export function SlideshowPage() {
     [view, album, label],
   )
 
+  // The same downgrade the search grid applies: with the embeddings sidecar
+  // unreachable a semantic/hybrid replay would only wait for the sidecar timeout
+  // before the backend answered it with full-text anyway — and a slideshow that
+  // starts half a minute late reads as broken.
+  const { mode: searchMode } = useSearchMode(toMode(mode))
   const fetcher = useCallback(
     (p: PhotoListParams, signal: AbortSignal) =>
-      mode === '' ? fetchPhotos(p, signal) : searchPhotos(p, toMode(mode), signal),
-    [mode],
+      mode === '' ? fetchPhotos(p, signal) : searchPhotos(p, searchMode, signal),
+    [mode, searchMode],
   )
   const { photos, total, status, loadingMore, hasMore, loadMore, retry } = usePaginatedPhotos(
     params,
     fetcher,
-    { key: mode },
+    { key: mode === '' ? '' : searchMode },
   )
 
   const { settings, setEffect, setIntervalMs } = useSlideshowSettings()

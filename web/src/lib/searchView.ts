@@ -37,6 +37,21 @@ export function toMode(raw: string): SearchMode {
 }
 
 /**
+ * Returns the mode a search should actually be sent with. Semantic and hybrid
+ * both need the embeddings sidecar; when the instance reports it unreachable
+ * they are answered by full-text anyway, so asking for them only buys a wait for
+ * the sidecar timeout before the same results arrive. The box is offline most of
+ * the time here, which makes that wait the normal case rather than the rare one
+ * — so the request goes out as full-text from the start and the page says why.
+ *
+ * Pure and mode-preserving when semantic search is available, so it is safe to
+ * apply more than once along a call chain.
+ */
+export function effectiveSearchMode(mode: SearchMode, semanticAvailable: boolean): SearchMode {
+  return semanticAvailable || mode === 'fulltext' ? mode : 'fulltext'
+}
+
+/**
  * Builds the link from a library view to the search page, carrying the filters
  * (and the quick-filter text as the search query) so the reader lands on the same
  * photos and can widen them with full-text or semantic search. Values equal to a

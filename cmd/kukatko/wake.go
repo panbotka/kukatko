@@ -40,11 +40,7 @@ func (c embedJobCounter) PendingEmbeddingJobs(ctx context.Context) (int, error) 
 // already checks the MAC, so this typically only fails on a bad interface name).
 func buildWakeService(cfg *config.Config, db *database.DB) (*wake.Service, error) {
 	w := cfg.Embedding.Wake
-	client, err := embedding.New(embedding.Config{
-		BaseURL:  cfg.Embedding.URL,
-		ImageDim: cfg.Embedding.ImageDim,
-		FaceDim:  cfg.Embedding.FaceDim,
-	})
+	client, err := embedding.New(embeddingClientConfig(cfg))
 	if err != nil {
 		return nil, fmt.Errorf("wake: building embedding health client: %w", err)
 	}

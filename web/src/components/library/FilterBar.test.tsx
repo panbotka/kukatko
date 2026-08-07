@@ -26,14 +26,19 @@ function renderBar(
     searchHref?: string
     /** The `semantic_search` capability the bar reads; defaults to available. */
     semanticSearch?: boolean
+    /** The count to state; pass `undefined` for "there is nothing to count". */
+    total?: number
   } = {},
 ) {
   const { semanticSearch = true, ...barProps } = props
+  // `in`, not a default: passing `total: undefined` is itself the case under
+  // test ("nothing to count"), and a default would swallow it back to 0.
+  const total = 'total' in props ? props.total : 0
   return render(
     <I18nextProvider i18n={i18n}>
       <CapabilitiesContext.Provider value={{ semantic_search: semanticSearch }}>
         <MemoryRouter>
-          <FilterBar view={view} onChange={onChange} total={0} {...barProps} />
+          <FilterBar view={view} onChange={onChange} total={total} {...barProps} />
         </MemoryRouter>
       </CapabilitiesContext.Provider>
     </I18nextProvider>,
@@ -120,6 +125,18 @@ describe('FilterBar header', () => {
 
     await user.selectOptions(screen.getByLabelText('Sort'), 'rating')
     expect(onChange).toHaveBeenCalledWith({ sort: 'rating' })
+  })
+
+  it('states the photo count it was given', () => {
+    renderBar(LIBRARY_DEFAULTS, vi.fn(), { total: 3 })
+    expect(screen.getByText('Photos: 3')).toBeInTheDocument()
+  })
+
+  it('states nothing when there is no result set to count', () => {
+    // The search page before a query is typed: "Photos: 0" would read as an
+    // empty library rather than as "nothing searched for yet".
+    renderBar(LIBRARY_DEFAULTS, vi.fn(), { total: undefined })
+    expect(screen.queryByText(/^photos:/i)).not.toBeInTheDocument()
   })
 
   it('hides the search and sort controls when asked', () => {

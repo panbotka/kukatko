@@ -6,6 +6,7 @@ import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
+import { CapabilitiesContext } from '../capabilities/CapabilitiesContext'
 import i18n from '../i18n'
 import { type Photo, type PhotoListResponse } from '../services/photos'
 
@@ -116,15 +117,22 @@ function auth(canWrite: boolean): AuthContextValue {
   } as unknown as AuthContextValue
 }
 
-function renderSearch(initialEntry = '/search', canWrite = true) {
+/**
+ * Renders the page. `semanticSearch` is the instance capability: it defaults to
+ * available, because that is the state in which every mode behaves as picked;
+ * the offline-sidecar behaviour has its own tests.
+ */
+function renderSearch(initialEntry = '/search', canWrite = true, semanticSearch = true) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <AuthContext.Provider value={auth(canWrite)}>
-        <MemoryRouter initialEntries={[initialEntry]}>
-          <SearchPage />
-          <LocationProbe />
-        </MemoryRouter>
-      </AuthContext.Provider>
+      <CapabilitiesContext.Provider value={{ semantic_search: semanticSearch }}>
+        <AuthContext.Provider value={auth(canWrite)}>
+          <MemoryRouter initialEntries={[initialEntry]}>
+            <SearchPage />
+            <LocationProbe />
+          </MemoryRouter>
+        </AuthContext.Provider>
+      </CapabilitiesContext.Provider>
     </I18nextProvider>,
   )
 }
@@ -227,6 +235,70 @@ describe('SearchPage', () => {
     ).toBeInTheDocument()
     // The results still render alongside the notice (non-blocking).
     expect(screen.getByRole('link', { name: 'a.jpg' })).toBeInTheDocument()
+  })
+
+  describe('with the embeddings sidecar offline', () => {
+    it('searches as full-text right away instead of waiting for the sidecar timeout', async () => {
+      searchMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+      renderSearch('/search?q=beach&mode=hybrid', true, false)
+
+      await screen.findByRole('link', { name: 'a.jpg' })
+      // The capability already says the sidecar is unreachable, so nothing that
+      // could block on its timeout is sent — hybrid goes out as full-text.
+      expect(searchMock.mock.calls.every(([, mode]) => mode === 'fulltext')).toBe(true)
+    })
+
+    it('says so beside the mode selector before any search runs', () => {
+      renderSearch('/search', true, false)
+
+      // No query has been typed yet: the notice comes from the capability flag,
+      // not from a reply the page is still waiting for.
+      expect(searchMock).not.toHaveBeenCalled()
+      expect(screen.getByText(/search by content is temporarily unavailable/i)).toBeInTheDocument()
+    })
+
+    it('offers no notice while semantic search is available', () => {
+      renderSearch('/search', true, true)
+
+      expect(
+        screen.queryByText(/search by content is temporarily unavailable/i),
+      ).not.toBeInTheDocument()
+    })
+
+    it('disables the semantic option and explains why', () => {
+      renderSearch('/search', true, false)
+
+      const semantic = within(screen.getByLabelText('Mode')).getByRole('option', {
+        name: 'Semantic',
+      })
+      expect(semantic).toBeDisabled()
+      expect(semantic).toHaveAttribute('title', expect.stringMatching(/unavailable/i))
+    })
+
+    it('keeps the picked mode in the URL so it applies again once the box is back', async () => {
+      searchMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+      renderSearch('/search?q=beach&mode=semantic', true, false)
+
+      await screen.findByRole('link', { name: 'a.jpg' })
+      expect(screen.getByLabelText('Mode')).toHaveValue('semantic')
+      expect(screen.getByTestId('search')).toHaveTextContent('mode=semantic')
+    })
+  })
+
+  it('states no photo count until a query exists', () => {
+    renderSearch('/search')
+
+    // "Photos: 0" above "Enter a search term." reads as an empty library, when in
+    // truth nothing has been searched for yet.
+    expect(screen.getByText('Enter a search term.')).toBeInTheDocument()
+    expect(screen.queryByText(/^photos:/i)).not.toBeInTheDocument()
+  })
+
+  it('states the photo count once a query has results', async () => {
+    searchMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    renderSearch('/search?q=beach')
+
+    expect(await screen.findByText('Photos: 1')).toBeInTheDocument()
   })
 
   it('hints at query-language tokens the server did not understand', async () => {

@@ -31,11 +31,7 @@ func buildSystemAPI(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, backupSvc *backup.Service,
 	mapsHealth *mapy.Health, geocodeBudget *placesjob.WindowBudget,
 ) (*systemapi.API, *system.Service, error) {
-	client, err := embedding.New(embedding.Config{
-		BaseURL:  cfg.Embedding.URL,
-		ImageDim: cfg.Embedding.ImageDim,
-		FaceDim:  cfg.Embedding.FaceDim,
-	})
+	client, err := embedding.New(embeddingClientConfig(cfg))
 	if err != nil {
 		return nil, nil, fmt.Errorf("initialising embedding client: %w", err)
 	}

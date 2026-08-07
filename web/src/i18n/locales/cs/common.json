@@ -550,6 +550,7 @@
       "semantic": "Sémantické"
     },
     "degraded": "Vyhledávání podle obsahu je teď dočasně nedostupné. Zobrazujeme výsledky podle textu.",
+    "semanticUnavailable": "Vyhledávání podle obsahu je teď nedostupné — služba pro rozpoznávání obsahu neběží.",
     "prompt": "Zadejte hledaný výraz.",
     "empty": {
       "title": "Nic nenalezeno",

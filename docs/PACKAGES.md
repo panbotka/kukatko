@@ -823,7 +823,7 @@ to `## Package map` in `CLAUDE.md`.
   the frontend polls, no SSE), `internal/embedding/`
   (an HTTP client to the inference sidecar on the **box**, the same contract as photo-sorter, all behind
   the `Client` interface (fakeable in tests): `New(Config{BaseURL,ImageDim,FaceDim,
-  RequestTimeout,HealthTimeout,HealthPath,HTTPClient})` → `*HTTPClient`; `ImageEmbedding(ctx,
+  RequestTimeout,TextTimeout,DialTimeout,HealthTimeout,HealthPath,HTTPClient})` → `*HTTPClient`; `ImageEmbedding(ctx,
   img io.Reader)`/`TextEmbedding(ctx,text)` → a 768-dim CLIP vector + `model`/`pretrained`
   (`POST /embed/image` multipart `file` streamed via `io.Pipe` / `POST /embed/text` JSON
   `{text}`), `FaceEmbeddings(ctx,img)` → `[]Face` (512-dim embedding, `BBox [4]float64`
@@ -832,8 +832,14 @@ to `## Package map` in `CLAUDE.md`.
   transport-error/timeout = offline); **box offline-aware typed errors** `ErrUnavailable`
   (transport failed / status 502/503/504, retryable — helper `IsUnavailable`) vs `ErrBadResponse`
   (a malformed response) vs `ErrDimMismatch` (dimension validation 768/512) vs `ErrInvalidURL`; a cancelled
-  context is not passed off as unavailability; per-request timeouts via context (default request 60 s /
-  health 5 s), never holds the whole image in RAM), `internal/vectors/`
+  context is not passed off as unavailability; per-request timeouts via context — image/face 60 s (queue
+  work on a cold GPU, generous on purpose), **text 5 s** (`TextEmbedding` answers an interactive search,
+  which degrades to full-text on failure, so waiting longer is strictly worse than the results it already
+  had), health 5 s — over a transport of its own with a **3 s dial timeout**: the box is usually powered off
+  and that shows up as a dial nobody answers, where the stock `http.DefaultTransport` would sit for 30 s;
+  an injected `HTTPClient` keeps its own transport. All three are configurable (`embedding.dial_timeout`/
+  `request_timeout`/`text_timeout`, applied at every construction site through `embeddingClientConfig` in
+  `cmd/kukatko`); never holds the whole image in RAM), `internal/vectors/`
   (the DB layer for embeddings and faces, **stored directly in Postgres** as `halfvec` (float16)
   columns with HNSW cosine indexes — tables `embeddings`/`faces` in migration `0006_embeddings.sql`;
   `halfvec` instead of `vector` halves the HNSW index memory at a negligible recall loss on

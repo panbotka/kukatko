@@ -35,8 +35,12 @@ const PANEL_ID = 'library-filter-panel'
 export interface FilterBarProps<T extends LibraryView> {
   view: T
   onChange: SetUrlState<T>
-  /** Total number of photos matching the current filters, shown as a count. */
-  total: number
+  /**
+   * Total number of photos matching the current filters, shown as a count. Omit
+   * it when there is no result set to count — the search page before a query is
+   * typed — so the bar states nothing rather than claiming zero photos.
+   */
+  total?: number
   /**
    * Whether to show the substring search input. The search page hides it
    * (`false`) because its prominent query box already owns `q`. Defaults true.
@@ -273,8 +277,10 @@ export function FilterBar<T extends LibraryView>({
       )}
 
       <div className="d-flex align-items-center justify-content-between mt-2">
+        {/* The live region stays mounted while the count is absent, so the number
+            is announced when it arrives instead of a new region appearing. */}
         <span className="text-secondary small" aria-live="polite">
-          {t('library.count', { count: total })}
+          {total !== undefined && t('library.count', { count: total })}
         </span>
         {clearVisible && (
           <Button

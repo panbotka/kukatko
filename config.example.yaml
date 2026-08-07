@@ -131,6 +131,18 @@ embedding:
   image_dim: 768
   # Dimensionality of face embeddings produced by the service.
   face_dim: 512
+  # How long to wait for the connection to the service to open. The box is
+  # usually off, and an unanswered dial is exactly what that looks like, so this
+  # is the ceiling on what any call pays to discover the service is not there.
+  # (Go's default dialer would wait 30 s.)
+  dial_timeout: 3s
+  # How long one image/face embedding may take. Queue work on a possibly cold
+  # GPU, so this is generous; it never delays a request a person is waiting on.
+  request_timeout: 60s
+  # How long embedding a search query may take — the one interactive call.
+  # Keep it at a few seconds: search degrades to full-text when it expires, and
+  # text results now beat semantic results later.
+  text_timeout: 5s
   # Optional Wake-on-LAN auto-wake of the embeddings box. When enabled, the
   # server sends a magic packet on the local LAN whenever image_embed/face_detect
   # jobs are waiting above min_queue AND the sidecar health check reports offline.

@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/textproto"
 	"net/url"
@@ -39,9 +40,20 @@ const (
 	// DefaultFaceDim is the dimensionality of ArcFace face embeddings.
 	DefaultFaceDim = 512
 
-	// DefaultRequestTimeout bounds a single embedding request; GPU inference can
-	// be slow, especially on a cold box, so this is generous.
+	// DefaultRequestTimeout bounds a single image/face embedding request; GPU
+	// inference can be slow, especially on a cold box, so this is generous. It
+	// only ever delays queue work, never a user-facing request.
 	DefaultRequestTimeout = 60 * time.Second
+	// DefaultTextTimeout bounds a text embedding, which serves an interactive
+	// search request and must therefore fail fast: a semantic search that cannot
+	// be answered in a few seconds degrades to full-text, and waiting longer only
+	// leaves the reader staring at a spinner for results that were ready all along.
+	DefaultTextTimeout = 5 * time.Second
+	// DefaultDialTimeout bounds establishing the TCP connection to the sidecar.
+	// It is deliberately far below the request timeouts because an offline box —
+	// the normal state here — shows up as a dial that never completes; Go's
+	// default dialer would wait 30 s before giving up.
+	DefaultDialTimeout = 3 * time.Second
 	// DefaultHealthTimeout bounds the cheap availability probe so an offline box
 	// is detected quickly instead of stalling the worker.
 	DefaultHealthTimeout = 5 * time.Second
@@ -108,14 +120,22 @@ type Config struct {
 	ImageDim int
 	// FaceDim is the expected face embedding size (default DefaultFaceDim).
 	FaceDim int
-	// RequestTimeout bounds a single embedding request (default DefaultRequestTimeout).
+	// RequestTimeout bounds a single image/face embedding request (default
+	// DefaultRequestTimeout).
 	RequestTimeout time.Duration
+	// TextTimeout bounds a single text embedding request — the interactive search
+	// path (default DefaultTextTimeout).
+	TextTimeout time.Duration
+	// DialTimeout bounds connecting to the sidecar (default DefaultDialTimeout).
+	// Ignored when HTTPClient is supplied, whose transport the caller owns.
+	DialTimeout time.Duration
 	// HealthTimeout bounds the Healthy probe (default DefaultHealthTimeout).
 	HealthTimeout time.Duration
 	// HealthPath is the route probed by Healthy (default DefaultHealthPath).
 	HealthPath string
-	// HTTPClient lets callers inject a custom client (default a zero-value
-	// http.Client whose timeouts are enforced per request via context).
+	// HTTPClient lets callers inject a custom client (default an http.Client with
+	// a dial-timeout-bounded transport; the overall deadlines are enforced per
+	// request via context).
 	HTTPClient *http.Client
 }
 
@@ -125,6 +145,7 @@ type HTTPClient struct {
 	imageDim       int
 	faceDim        int
 	requestTimeout time.Duration
+	textTimeout    time.Duration
 	healthTimeout  time.Duration
 	healthPath     string
 	client         *http.Client
@@ -151,9 +172,11 @@ func New(cfg Config) (*HTTPClient, error) {
 		imageDim:       orDefaultInt(cfg.ImageDim, DefaultImageDim),
 		faceDim:        orDefaultInt(cfg.FaceDim, DefaultFaceDim),
 		requestTimeout: orDefaultDuration(cfg.RequestTimeout, DefaultRequestTimeout),
+		textTimeout:    orDefaultDuration(cfg.TextTimeout, DefaultTextTimeout),
 		healthTimeout:  orDefaultDuration(cfg.HealthTimeout, DefaultHealthTimeout),
 		healthPath:     orDefaultString(cfg.HealthPath, DefaultHealthPath),
-		client:         orDefaultHTTPClient(cfg.HTTPClient),
+		client: orDefaultHTTPClient(
+			cfg.HTTPClient, orDefaultDuration(cfg.DialTimeout, DefaultDialTimeout)),
 	}, nil
 }
 
@@ -181,14 +204,25 @@ func orDefaultString(v, def string) string {
 	return def
 }
 
-// orDefaultHTTPClient returns c when non-nil, otherwise a fresh http.Client.
-// Per-request deadlines are applied via context, so the client itself carries no
-// Timeout.
-func orDefaultHTTPClient(c *http.Client) *http.Client {
+// orDefaultHTTPClient returns c when non-nil, otherwise an http.Client whose
+// transport gives up on an unanswered connection after dialTimeout. Bounding the
+// dial matters more than it looks: the sidecar's box is usually powered off, and
+// the stock transport would spend 30 s on a connection that will never open —
+// long enough to make an interactive search look broken. The overall per-request
+// deadlines are applied via context, so the client itself carries no Timeout.
+func orDefaultHTTPClient(c *http.Client, dialTimeout time.Duration) *http.Client {
 	if c != nil {
 		return c
 	}
-	return &http.Client{}
+	transport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		// Unreachable with the stdlib default; fall back to a plain client rather
+		// than panicking if something replaced it.
+		return &http.Client{}
+	}
+	transport = transport.Clone()
+	transport.DialContext = (&net.Dialer{Timeout: dialTimeout, KeepAlive: 30 * time.Second}).DialContext
+	return &http.Client{Transport: transport}
 }
 
 // embeddingResponse is the shared image/text endpoint response body.
@@ -230,11 +264,14 @@ func (c *HTTPClient) ImageEmbedding(
 }
 
 // TextEmbedding computes the CLIP embedding of text by POSTing JSON {"text":...}
-// to /embed/text. It validates the returned dimensionality.
+// to /embed/text. It validates the returned dimensionality. Unlike the image and
+// face endpoints this one answers an interactive search, so it is bounded by the
+// much shorter text timeout: the caller degrades to full-text on failure, and a
+// long wait is strictly worse than results it could already have shown.
 func (c *HTTPClient) TextEmbedding(
 	ctx context.Context, text string,
 ) (embedding []float32, model, pretrained string, err error) {
-	body, err := c.postJSON(ctx, endpointText, map[string]string{"text": text})
+	body, err := c.postJSON(ctx, endpointText, map[string]string{"text": text}, c.textTimeout)
 	if err != nil {
 		return nil, "", "", err
 	}
@@ -327,14 +364,16 @@ func (c *HTTPClient) Healthy(ctx context.Context) bool {
 	return true
 }
 
-// postJSON marshals payload as JSON and POSTs it to endpoint, returning the
-// response body or a classified error.
-func (c *HTTPClient) postJSON(ctx context.Context, endpoint string, payload any) ([]byte, error) {
+// postJSON marshals payload as JSON and POSTs it to endpoint within timeout,
+// returning the response body or a classified error.
+func (c *HTTPClient) postJSON(
+	ctx context.Context, endpoint string, payload any, timeout time.Duration,
+) ([]byte, error) {
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("%s: marshal request: %w", endpoint, err)
 	}
-	ctx, cancel := context.WithTimeout(ctx, c.requestTimeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	reqURL := c.baseURL.JoinPath(endpoint)

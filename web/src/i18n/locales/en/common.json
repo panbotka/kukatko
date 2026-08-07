@@ -550,6 +550,7 @@
       "semantic": "Semantic"
     },
     "degraded": "Search by content is temporarily unavailable right now. Showing text-based results instead.",
+    "semanticUnavailable": "Content search is unavailable right now — the service that reads photo content is offline.",
     "prompt": "Enter a search term.",
     "empty": {
       "title": "Nothing found",

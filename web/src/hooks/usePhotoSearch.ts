@@ -3,6 +3,7 @@ import { useCallback } from 'react'
 import { type PhotoListParams, searchPhotos, type SearchMode } from '../services/photos'
 
 import { usePaginatedPhotos, type UsePaginatedPhotosResult } from './usePaginatedPhotos'
+import { useSearchMode } from './useSearchMode'
 
 /** Result of {@link usePhotoSearch}: identical to the library list result. */
 export type UsePhotoSearchResult = UsePaginatedPhotosResult
@@ -28,6 +29,11 @@ export interface UsePhotoSearchOptions {
  * `degraded` flag the server sets when a semantic/hybrid search fell back to
  * full-text.
  *
+ * A semantic or hybrid `mode` is downgraded to full-text while the instance
+ * reports the embeddings sidecar unreachable (see {@link useSearchMode}), so no
+ * page backed by this hook can block on the sidecar timeout for results the
+ * backend would have degraded to full-text anyway.
+ *
  * `params` should be memoised by the caller so its identity changes only when
  * the query actually changes.
  */
@@ -36,16 +42,18 @@ export function usePhotoSearch(
   mode: SearchMode,
   options: UsePhotoSearchOptions = {},
 ): UsePhotoSearchResult {
+  const { mode: effective } = useSearchMode(mode)
   const fetcher = useCallback(
-    (p: PhotoListParams, signal: AbortSignal) => searchPhotos(p, mode, signal),
-    [mode],
+    (p: PhotoListParams, signal: AbortSignal) => searchPhotos(p, effective, signal),
+    [effective],
   )
   const enabled = (params.q ?? '').trim() !== ''
-  // `mode` discriminates the query (switching it re-runs the search with the
-  // skeleton); `reloadKey` refetches in the background to reflect a bulk edit.
+  // The effective `mode` discriminates the query (switching it — or the sidecar
+  // coming back — re-runs the search with the skeleton); `reloadKey` refetches in
+  // the background to reflect a bulk edit.
   return usePaginatedPhotos(params, fetcher, {
     enabled,
-    key: mode,
+    key: effective,
     reloadKey: options.reloadKey,
   })
 }

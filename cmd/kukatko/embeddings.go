@@ -14,6 +14,22 @@ import (
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
+// embeddingClientConfig translates the embedding section of the app config into
+// the sidecar client's own config. Every construction site goes through it so
+// the timeouts — in particular the short dial timeout that keeps an offline box
+// from stalling a search — apply to health probes and queue work alike, rather
+// than only wherever someone remembered to pass them.
+func embeddingClientConfig(cfg *config.Config) embedding.Config {
+	return embedding.Config{
+		BaseURL:        cfg.Embedding.URL,
+		ImageDim:       cfg.Embedding.ImageDim,
+		FaceDim:        cfg.Embedding.FaceDim,
+		DialTimeout:    cfg.Embedding.DialTimeout,
+		RequestTimeout: cfg.Embedding.RequestTimeout,
+		TextTimeout:    cfg.Embedding.TextTimeout,
+	}
+}
+
 // buildEmbedService assembles the embedding subsystem: the configured original
 // store and thumbnailer (the preview sent to the sidecar), the photo and vector
 // repositories, and the offline-aware embeddings sidecar client. It returns the
@@ -32,11 +48,7 @@ func buildEmbedService(
 	photoStore := photos.NewStore(db.Pool())
 	vectorStore := vectors.NewStore(db.Pool())
 
-	client, err := embedding.New(embedding.Config{
-		BaseURL:  cfg.Embedding.URL,
-		ImageDim: cfg.Embedding.ImageDim,
-		FaceDim:  cfg.Embedding.FaceDim,
-	})
+	client, err := embedding.New(embeddingClientConfig(cfg))
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("initialising embedding client: %w", err)
 	}
