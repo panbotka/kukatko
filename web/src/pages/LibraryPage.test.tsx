@@ -819,3 +819,28 @@ describe('LibraryPage', () => {
     })
   })
 })
+
+describe('LibraryPage unknown filters', () => {
+  it('says which filter the query language did not understand', async () => {
+    // `osoba:` is the Czech spelling of `person:`: the backend degrades it to
+    // free text, so the grid comes back empty. Without the notice that reads as
+    // "no such photos" instead of "you typed it wrong".
+    fetchMock.mockResolvedValue({
+      ...page([], 0, null),
+      unknown_tokens: ['osoba:Jarmila'],
+    })
+    renderLibrary('/?q=osoba%3AJarmila')
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent("I don't understand these filters")
+    expect(alert).toHaveTextContent('osoba:Jarmila')
+  })
+
+  it('stays quiet when every filter parsed', async () => {
+    fetchMock.mockResolvedValue(page([photo('a', 'a.jpg')], 1, null))
+    renderLibrary('/?q=year%3A1965')
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+})

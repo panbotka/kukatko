@@ -17,6 +17,7 @@ import { SavedSearchesDropdown } from '../components/savedsearch/SavedSearchesDr
 import { GlobalSearchSections } from '../components/search/GlobalSearchSections'
 import { SearchQueryHelp } from '../components/search/SearchQueryHelp'
 import { SearchQueryInput } from '../components/search/SearchQueryInput'
+import { UnknownFiltersAlert } from '../components/search/UnknownFiltersAlert'
 import { SlideshowStart } from '../components/slideshow/SlideshowStart'
 import { useBulkEdit } from '../hooks/useBulkEdit'
 import { usePhotoSearch } from '../hooks/usePhotoSearch'
@@ -234,17 +235,7 @@ export function SearchPage() {
 
       <GlobalSearchSections query={view.q} />
 
-      {unknownTokens.length > 0 && (
-        <Alert variant="info" className="py-2">
-          {t('search.unknownTokens')}{' '}
-          {unknownTokens.map((token, i) => (
-            <span key={token + String(i)}>
-              {i > 0 && ', '}
-              <code>{token}</code>
-            </span>
-          ))}
-        </Alert>
-      )}
+      <UnknownFiltersAlert tokens={unknownTokens} />
 
       {status === 'idle' && (
         <div className="text-center text-secondary py-5">

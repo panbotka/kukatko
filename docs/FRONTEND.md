@@ -452,9 +452,25 @@ here.
   selected people), the select is a pure „add-picker" (it keeps the placeholder „libovolné", drops its selected
   items from its options so they can't be added twice), already-selected albums/labels/people hang as
   removable chips (one per UID) below.
-  The inline **„filtrovat dle názvu/popisu"** field (`q`) stays a quick narrowing of the grid; the help text
-  „Filtruje název a popis." (describes `q`, unrelated to embeddings) is **always visible**, but
-  **the link to `/search`** for fulltext + semantic search shows **only when semantic
+  **A facet is not set only by its picker**: `year:`, `album:`, `label:` and `person:`/`subject:` inside `q`
+  filter the grid just as hard while the picker knows nothing about them (a query of `year:1960-1969` over a
+  „Libovolný rok" select is the visible state contradicting the results). So `FilterBar` scans `q` with
+  `lib/queryLanguage.ts` `queryFilterTokens`/`facetQueryTokens` + `FACET_QUERY_KEYS` — a **scanner, not a
+  parser**: it answers only „which known filter keys does this query use", parsing stays exclusively with the
+  backend — and every affected facet admits it: the resting option/placeholder reads „Určuje dotaz" instead of
+  „Libovolný rok"/„libovolné", and a `form-text` note (`QueryOverrideNote`, `bi-info-circle`) below the control
+  quotes the responsible tokens verbatim as `<code>` (`aria-describedby` on the Year select). An **unknown**
+  key (`osoba:`) filters nothing — it degrades to free text server-side — so it is deliberately not reported
+  there; the picker keeps working, adding a facet on top of the query narrows further as ANDed filters do
+  everywhere else.
+  The inline search field (`q`) is **not** merely a substring narrowing: it runs the **whole `klíč:hodnota`
+  search language**, exactly as `/search` does — `year:1960-1969` narrows the library grid to the sixties here
+  too — with the residual free text matching title/description/notes as a substring. The placeholder and the
+  hint therefore name both halves („Hledat — text, nebo filtr jako `year:1965` či `person:Jarmila`"), and
+  beside the field sits **the very same `SearchQueryHelp` `?`** the search page opens — one language, one
+  explanation, never a second copy to drift (`showSearch={false}` hides field and `?` together, so `/search`
+  doesn't end up with two triggers). What `/search` adds on top is **ranking**, which is what
+  **the link to `/search`** promises: it shows **only when semantic
   search is available** — `FilterBar` reads `useCapabilities().semantic_search` and hides the link when the embeddings box is offline
   (fulltext keeps working, but its label promises semantics); `searchHref` carries the current `q`,
   the search modes are **not duplicated** here), `SearchableSelect`
@@ -754,7 +770,8 @@ here.
   as its own `text-nowrap` `<code>` (the cell wraps between keys, never inside one) — whatever still
   doesn't fit scrolls in its own wrapper instead of pushing the dialog past a 320px viewport),
   and `unknown_tokens` from the response (`PhotoListResponse.unknown_tokens` → `usePaginatedPhotos`
-  returns `unknownTokens`) → a non-blocking info hint „těmto filtrům nerozumím“ above the grid;
+  returns `unknownTokens`) → `UnknownFiltersAlert`, a non-blocking info hint „těmto filtrům nerozumím“ above
+  the grid — the same component, and therefore the same wording, the library raises under its own filter bar;
   a pure filter query returns `mode: "filter"` (`EffectiveSearchMode`); the tiles carry the search scope in the detail link
   (`detailQuery` with `q`+`mode`) → Esc/Back from a photo returns to the search (sorted results, not the library with `q`
   as a substring) and prev/next pages the same results, plus above the grid a **cross-entity section**
@@ -1578,6 +1595,10 @@ here.
   `DirectHitBanner`: a „Přejít na" card linking straight to the resolved photo/album/label/person, or — when the
   id names nothing — a plain warning alert saying so, because the photo grid staying empty underneath is the
   expected outcome of an id lookup, not a failed search) +
+  `UnknownFiltersAlert` (the „těmto filtrům nerozumím (hledám je jako obyčejný text)" info alert listing the
+  raw `unknown_tokens` as `<code>`, in input order and repeats included; renders **nothing** for an empty
+  list, so a caller needs no condition of its own. Shared by `SearchPage` and `LibraryPage` — a mistyped key
+  is one mistake and gets one explanation, wherever it was typed) +
   `SearchCommand` (**a global command palette** in the navbar: a compact icon trigger
   (`kukatko-search-trigger`, named + shortcut-hinted by `aria-label`/`title`, see the navbar above)
   opens via `react-bootstrap` `Modal` a top-anchored console — a live input (a combobox
@@ -1860,7 +1881,10 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   covering the visible range plus `WINDOW_PREFETCH_PAGES` either side, **aborts** the requests a jump has
   travelled past, and evicts down to `WINDOW_MAX_PAGES` so memory stays bounded however far the reader goes.
   A failed page is retried on the next range change up to `WINDOW_MAX_ATTEMPTS`, then surfaces as `moreError`
-  (footer retry); a `reloadKey` bump refetches exactly the loaded pages in the background.
+  (footer retry); a `reloadKey` bump refetches exactly the loaded pages in the background. It also passes the
+  response's `unknown_tokens` through as `unknownTokens` (every page of one query carries the same verdict on
+  `q`, and a query change resets it), which is what lets the library raise `UnknownFiltersAlert` for a mistyped
+  filter key instead of showing an empty grid that reads as „not in the library".
   This is what makes the timeline's jump cost **independent of distance** — measured on a seeded
   20 889-photo library, clicking the oldest year went from **40.3 s / 102 sequential page requests**
   (the old `useGridJump`, which paged its way to the target) to **~3.1 s**, the same as a jump one month

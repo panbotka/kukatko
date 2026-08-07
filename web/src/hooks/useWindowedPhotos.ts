@@ -44,6 +44,13 @@ export interface UseWindowedPhotosResult {
   /** True when a page fetch failed after the first one succeeded. */
   moreError: boolean
   /**
+   * Filter-shaped `q` tokens the query language did not understand. They
+   * degraded to free text server-side, so the grid below is a real (usually
+   * empty) result rather than an error — the caller shows a hint so a mistyped
+   * key does not read as "not in the library".
+   */
+  unknownTokens: string[]
+  /**
    * Declares which absolute index range the grid is showing; the hook loads the
    * pages covering it (plus {@link WINDOW_PREFETCH_PAGES} on each side) and drops
    * pages that have drifted out of the window. Cheap and idempotent — call it on
@@ -70,6 +77,7 @@ interface WindowState {
   pages: ReadonlyMap<number, Photo[]>
   status: ListStatus
   moreError: boolean
+  unknownTokens: string[]
 }
 
 const INITIAL: WindowState = {
@@ -77,6 +85,7 @@ const INITIAL: WindowState = {
   pages: new Map<number, Photo[]>(),
   status: 'loading',
   moreError: false,
+  unknownTokens: [],
 }
 
 /**
@@ -189,6 +198,9 @@ export function useWindowedPhotos(
             pages: evict(pages, rangeRef.current.first, rangeRef.current.last),
             status: 'ready',
             moreError: exhausted(attemptsRef.current),
+            // Every page of one query carries the same verdict on `q`, so
+            // whichever answers last is as good as the first.
+            unknownTokens: res.unknown_tokens ?? [],
           }
         })
       })
@@ -320,6 +332,7 @@ export function useWindowedPhotos(
     total: state.total,
     status: state.status,
     moreError: state.moreError,
+    unknownTokens: state.unknownTokens,
     ensureRange,
     retry,
   }

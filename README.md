@@ -43,7 +43,9 @@ It is **not** for you if you are looking for:
 - **Search that understands the picture and the query.** Full-text, semantic (CLIP), and a hybrid
   of both; plus a query language that mixes free text with `key:value` filters in one box —
   `dovolená camera:"Canon EOS R6" iso:100-400 faces:2`, `label:cat|dog`, `taken:2024-05`,
-  `near:<uid>`. Faces are detected, clustered, and matched to named people; nothing is ever
+  `near:<uid>`. The same language works in the library's own search field, which offers the same
+  `?` cheat sheet, points out a filter it did not understand, and flags the facet pickers the query
+  has already set. Faces are detected, clustered, and matched to named people; nothing is ever
   assigned automatically — the machine narrows the list, a human confirms.
 - **A library an AI agent can use.** Kukátko can expose itself as an **MCP server**, so an agent
   searches and organizes the library directly ("find all of grandma's photos from the sixties and

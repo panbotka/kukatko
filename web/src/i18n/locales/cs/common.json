@@ -114,7 +114,7 @@
       },
       "search": {
         "title": "Hledání",
-        "body": "Rychlý filtr nad knihovnou prohledává názvy a popisy fotek – hodí se, když víte, jak je fotka pojmenovaná. Úplné hledání (přes lištu hledání nahoře nebo klávesu „/“) navíc umí vyhledávat podle obsahu: napíšete, co má být na fotce, a Kukátko najde vizuálně odpovídající snímky, i když u nich není nic napsané.\nHledání podle obsahu závisí na AI službě. Když je zrovna nedostupná, běžné hledání podle názvu a popisu funguje dál."
+        "body": "Vyhledávací pole nad knihovnou prohledává názvy, popisy a poznámky fotek – a rozumí i filtrům „klíč:hodnota“, stejně jako úplné hledání: „year:1965“ vám knihovnu zúží na rok 1965, „person:Jarmila“ na fotky s Jarmilou. Celý seznam filtrů ukáže „?“ vedle pole. Když nějakému filtru nerozumíme, řekneme to – nezůstane po něm jen prázdná knihovna. Úplné hledání (přes lištu hledání nahoře nebo klávesu „/“) navíc umí vyhledávat podle obsahu: napíšete, co má být na fotce, a Kukátko najde vizuálně odpovídající snímky, i když u nich není nic napsané.\nHledání podle obsahu závisí na AI službě. Když je zrovna nedostupná, běžné hledání podle názvu a popisu funguje dál."
       },
       "albums": {
         "title": "Alba",
@@ -446,9 +446,11 @@
     "filters": {
       "barLabel": "Filtry fotek",
       "search": "Filtrovat v knihovně",
-      "searchPlaceholder": "Filtrovat podle názvu a popisu…",
-      "searchHint": "Filtruje název a popis.",
+      "searchPlaceholder": "Hledat — text, nebo filtr jako year:1965 či person:Jarmila",
+      "searchHint": "Hledá v názvu, popisu a poznámce a rozumí filtrům jako year:1965, album:\"Léto 2024\" nebo person:Jarmila.",
       "fullSearchLink": "Fulltext a sémantické hledání →",
+      "setByQuery": "Nastavuje už dotaz:",
+      "setByQueryOption": "Určuje dotaz",
       "year": "Rok",
       "anyYear": "Libovolný rok",
       "yearOption": "{{year}} ({{n}})",

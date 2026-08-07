@@ -114,7 +114,7 @@
       },
       "search": {
         "title": "Search",
-        "body": "The quick filter above the library searches photo titles and descriptions – handy when you know what a photo is called. Full search (from the search bar at the top or the “/” key) can also search by content: type what should be in the photo and Kukátko finds visually matching shots, even when nothing is written about them.\nSearch by content depends on the AI service. When it happens to be offline, ordinary search by title and description keeps working."
+        "body": "The search field above the library matches photo titles, descriptions and notes – and it also understands the “key:value” filters, exactly like full search: “year:1965” narrows the library to 1965, “person:Jarmila” to photos of Jarmila. The “?” beside the field lists every filter. A filter we did not understand is pointed out rather than left as an empty library. Full search (from the search bar at the top or the “/” key) can also search by content: type what should be in the photo and Kukátko finds visually matching shots, even when nothing is written about them.\nSearch by content depends on the AI service. When it happens to be offline, ordinary search by title and description keeps working."
       },
       "albums": {
         "title": "Albums",
@@ -446,9 +446,11 @@
     "filters": {
       "barLabel": "Photo filters",
       "search": "Filter the library",
-      "searchPlaceholder": "Filter by title and description…",
-      "searchHint": "Filters title and description.",
+      "searchPlaceholder": "Search — text, or a filter like year:1965 or person:Jarmila",
+      "searchHint": "Searches title, description and notes, and understands filters like year:1965, album:\"Summer 2024\" or person:Jarmila.",
       "fullSearchLink": "Full-text & semantic search →",
+      "setByQuery": "Already set by the query:",
+      "setByQueryOption": "Set by the query",
       "year": "Year",
       "anyYear": "Any year",
       "yearOption": "{{year}} ({{n}})",
