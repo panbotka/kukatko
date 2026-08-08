@@ -79,7 +79,7 @@ dopad/pracnost — nahoře je to, co se vyplatí udělat první.
 | [N14](#n14) ✅ | Zašedlá tlačítka bez vysvětlení, proč nejdou zmáčknout | 🟡 | ⚪ | `ReasonedButton`, `FacesPanel` |
 | [N15](#n15) ✅ | Karta prohlížeče se vždy jmenuje „Kukátko" | 🟡 | ⚪ | `useDocumentTitle`, stránky |
 | [N16](#n16) | Mobilní zásuvka filtrů nemá patičku s počtem výsledků ani „Použít" | 🟡 | ⚪ | `FilterBar` |
-| [N17](#n17) | Nápověda o dotazovacím jazyce mlčí a slibuje zapamatovanou pozici | 🟡 | ⚪ | `HelpPage` |
+| [N17](#n17) ✅ | Nápověda o dotazovacím jazyce mlčí a slibuje zapamatovanou pozici | 🟡 | ⚪ | `HelpPage` |
 | [N18](#n18) | `Rok` (109 položek) a `Pořízeno od/do` jsou dva soupeřící filtry data | 🟡 | 🟡 | `FilterBar` |
 | [N19](#n19) | Mobil: 350 z 852 px je ovládání, a časová osa je skrytá | 🟡 | 🟡 | `LibraryPage`, `TimelineScrubber` |
 | [N20](#n20) ✅ | Ovládání prohlížeče fotky se schová i s jedinou cestou zpět | 🟡 | ⚪ | `useAutoHideChrome` |
@@ -841,6 +841,23 @@ příklady a odkazem na plnou tabulku (nebo tam rovnou vložit tutéž komponent
 podle [N5](#n5).
 
 **Kde to je.** `web/src/pages/HelpPage.tsx`, texty v `web/src/i18n`.
+
+**✅ Vyřešeno (8. 8. 2026).** Kapitola „Hledání" dotazovací jazyk **učí**, ne jen
+zmiňuje. Nejdřív tři hotové dotazy, které stačí zkopírovat do pole — `year:1965`,
+`person:Jarmila rating:4-5`, `album:"Léto 2024" faces:2`, u každého jedna věta, co
+udělá — a hned pod nimi **celá tabulka operátorů a filtrů**.
+
+Ta tabulka není opsaná: nápověda vykresluje **tutéž komponentu**, kterou otevírá
+`?` u vyhledávacího pole. Reference se proto vystěhovala z modálu do
+`components/search/SearchQueryReference.tsx` a `SearchQueryHelp` je od té chvíle
+jen `?` a modál kolem ní. Syntaxe má jeden zdroj pravdy — nový filtr
+v `QUERY_HELP_ROWS` se objeví i v nápovědě, místo aby ji tiše nechal zastarat.
+
+Druhá půlka nálezu byla vyřešená už s [N5](#n5); tady jen ověřená v běžící
+aplikaci: knihovna doscrollovaná na 20 000 px → otevřít fotku → Zpět → 20 000 px,
+a `Zpět na seznam` z 35 000 px → 35 000 px (nasazené sestavení, které
+`useGridScrollMemory` ještě nemá, přistane v obou případech na ~190 px). Věta
+v nápovědě tedy slibuje přesně to, co sestavení, se kterým jde ven, umí.
 
 ---
 

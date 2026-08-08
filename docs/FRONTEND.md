@@ -755,7 +755,12 @@ here.
   with a short **table of contents** at the top and an `Accordion` (collapsible sections, open by default) that in plain
   language explains browsing, search, albums, labels, favorites/rating, people and faces, duplicates,
   shot variants (stacks), the map and places, deletion+trash, import and **roles** (what each role may do). Texts
-  in the new top-level namespace `help.*` (cs/en); the first `Accordion` in the app. At the foot the
+  in the new top-level namespace `help.*` (cs/en); the first `Accordion` in the app. The **Search chapter
+  teaches the query language** (`SearchQueryChapter`): `help.sections.search.queryTitle`/`queryIntro`, three
+  ready-made queries as a `<dl>` (`QUERY_EXAMPLES` — literal query text, the same in both languages, one
+  sentence each under `help.sections.search.example.*`), and then **`SearchQueryReference` itself**, not a
+  retelling of it — a feature missing from help effectively does not exist for a reader who never presses
+  the `?`, and a second hand-written copy of the syntax would drift the day a filter is added. At the foot the
   `BuildInfo` block (`help.version.*`, a named `region`) gives the **build in full** — the version plus the
   commit as a real `<a href>` (`target="_blank" rel="noopener noreferrer"`, as the footer's GitHub link
   does) into the public repository, which is what
@@ -886,7 +891,9 @@ here.
   parsed exclusively by the backend): the input is `SearchQueryInput` (`components/search/`) — a combobox
   with **filter-key autocomplete** (suggestions from `lib/queryLanguage.ts` `suggestFilterKeys`/
   `applyFilterKey` + `FILTER_KEYS`; arrows + Enter/Tab accept `klíč:`, Esc closes, values are
-  never completed), beside the label `SearchQueryHelp` (a `?` button → a modal with operators and filters
+  never completed), beside the label `SearchQueryHelp` (a `?` button → a modal holding
+  **`SearchQueryReference`** — the reference lives in its own component because `/help`'s Search chapter
+  renders the same tables inline, so the syntax has one source of truth; operators and filters
   with examples, rows from `QUERY_HELP_ROWS`/`QUERY_HELP_OPERATORS`, texts `search.help.*` cs+en; the
   `?` keeps its small glyph but gets a 44px square on touch via `kukatko-tap-target-touch`; the
   modal is `fullscreen="sm-down"` with both tables `responsive`, and a multi-key row renders every key

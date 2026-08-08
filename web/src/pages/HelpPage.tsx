@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next'
 
 import { useCapabilities } from '../capabilities/CapabilitiesContext'
 import { Icon, type IconName } from '../components/Icon'
+import { SearchQueryReference } from '../components/search/SearchQueryReference'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { commitUrl, formatVersion } from '../lib/version'
 
@@ -106,6 +107,19 @@ const SECTIONS: HelpSection[] = [
   },
 ]
 
+/**
+ * The three worked queries the Search chapter opens its query-language part
+ * with, before the full reference: one plain filter, two filters and a range,
+ * then a quoted value beside a count. They are literal query text, so they are
+ * the same in both languages (as the reference's own example is) — only the
+ * sentence explaining each is translated, under `help.sections.search.example`.
+ */
+const QUERY_EXAMPLES: { id: 'year' | 'person' | 'album'; query: string }[] = [
+  { id: 'year', query: 'year:1965' },
+  { id: 'person', query: 'person:Jarmila rating:4-5' },
+  { id: 'album', query: 'album:"Léto 2024" faces:2' },
+]
+
 /** The role ladder rows shown inside the "roles" section, low to high. */
 const ROLE_ROWS: { role: ParseKeys; descKey: ParseKeys }[] = [
   { role: 'roles.viewer', descKey: 'help.sections.roles.viewer' },
@@ -125,6 +139,43 @@ function renderParagraphs(body: string) {
       {para}
     </p>
   ))
+}
+
+/**
+ * The query-language part of the Search chapter: three ready-made queries with
+ * a sentence each, then {@link SearchQueryReference} — the very tables the `?`
+ * beside every search field opens.
+ *
+ * It is embedded rather than retold because help is the one place a feature is
+ * found without stumbling over it: a reader who never presses `?` would
+ * otherwise never learn that `person:` exists. Embedding also keeps the syntax
+ * to a single source of truth, so a filter added to `QUERY_HELP_ROWS` shows up
+ * here too instead of leaving help quietly out of date.
+ */
+function SearchQueryChapter() {
+  const { t } = useTranslation()
+
+  return (
+    <section className="mt-3" aria-labelledby="help-query-language">
+      <h3 id="help-query-language" className="kk-section-title h6">
+        {t('help.sections.search.queryTitle')}
+      </h3>
+      <p className="kk-text-body">{t('help.sections.search.queryIntro')}</p>
+      <dl className="row">
+        {QUERY_EXAMPLES.map((example) => (
+          <Fragment key={example.id}>
+            <dt className="col-sm-5">
+              <code>{example.query}</code>
+            </dt>
+            <dd className="col-sm-7 kk-text-body">
+              {t(`help.sections.search.example.${example.id}`)}
+            </dd>
+          </Fragment>
+        ))}
+      </dl>
+      <SearchQueryReference />
+    </section>
+  )
 }
 
 /**
@@ -214,6 +265,7 @@ export function HelpPage() {
               </Accordion.Header>
               <Accordion.Body>
                 {renderParagraphs(t(section.bodyKey))}
+                {section.id === 'search' && <SearchQueryChapter />}
                 {section.id === 'roles' && (
                   <dl className="row mb-0 mt-2">
                     {ROLE_ROWS.map((row) => (

@@ -1,17 +1,19 @@
-import { Fragment, useState } from 'react'
+import { useState } from 'react'
 import Button from 'react-bootstrap/Button'
 import Modal from 'react-bootstrap/Modal'
-import Table from 'react-bootstrap/Table'
 import { useTranslation } from 'react-i18next'
 
-import { QUERY_HELP_OPERATORS, QUERY_HELP_ROWS } from '../../lib/queryLanguage'
 import { Icon } from '../Icon'
+
+import { SearchQueryReference } from './SearchQueryReference'
 
 /**
  * The query-language help: a small `?` button next to the search box and a
- * modal listing every filter with one worked example, plus the operators
- * (AND/OR/NOT, ranges, quoting, wildcards). A query language nobody knows
- * about is a query language nobody uses — this is its discoverability.
+ * modal holding {@link SearchQueryReference} — every filter with one worked
+ * example, plus the operators (AND/OR/NOT, ranges, quoting, wildcards). A query
+ * language nobody knows about is a query language nobody uses — this is its
+ * discoverability at the field; the Search chapter of `/help` renders the same
+ * reference for the reader who looks for it there.
  */
 export function SearchQueryHelp() {
   const { t } = useTranslation()
@@ -58,54 +60,7 @@ export function SearchQueryHelp() {
           </Modal.Title>
         </Modal.Header>
         <Modal.Body>
-          <p className="text-secondary small">{t('search.help.intro')}</p>
-          <p className="small">
-            <code>{t('search.help.example')}</code>
-          </p>
-
-          <section className="mb-3">
-            <h3 className="kk-section-title text-secondary">{t('search.help.operatorsTitle')}</h3>
-            <Table size="sm" borderless responsive className="mb-0 align-middle">
-              <tbody>
-                {QUERY_HELP_OPERATORS.map((op) => (
-                  <tr key={op.id}>
-                    <td className="text-nowrap pe-3">
-                      <code>{op.example}</code>
-                    </td>
-                    <td className="text-secondary small">{t(`search.help.op.${op.id}`)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </Table>
-          </section>
-
-          <section className="mb-0">
-            <h3 className="kk-section-title text-secondary">{t('search.help.filtersTitle')}</h3>
-            <Table size="sm" borderless responsive className="mb-0 align-middle">
-              <tbody>
-                {QUERY_HELP_ROWS.map((row) => (
-                  <tr key={row.id}>
-                    {/* A row can list several keys (`favorite: private:
-                        archived:`). Each key alone stays unbroken, but the cell
-                        may wrap between them — otherwise the widest rows would
-                        force the whole table to scroll on a phone. */}
-                    <td className="pe-3">
-                      {row.keys.split(' ').map((key, index) => (
-                        <Fragment key={key}>
-                          {index > 0 && ' '}
-                          <code className="text-nowrap">{key}</code>
-                        </Fragment>
-                      ))}
-                    </td>
-                    <td className="text-secondary small">
-                      {t(`search.help.desc.${row.id}`)}{' '}
-                      <code className="text-nowrap">{row.example}</code>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </Table>
-          </section>
+          <SearchQueryReference />
         </Modal.Body>
       </Modal>
     </>
