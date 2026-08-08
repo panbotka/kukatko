@@ -78,6 +78,27 @@ describe('HelpPage', () => {
     expect(screen.getByText('Maintainer')).toBeInTheDocument()
   })
 
+  it('teaches the key:value query language in the search section, worked examples first', () => {
+    renderHelp()
+
+    // Three ready-made queries a reader can copy straight into the field.
+    for (const query of ['year:1965', 'person:Jarmila rating:4-5', 'album:"Léto 2024" faces:2']) {
+      expect(screen.getByText(query)).toBeInTheDocument()
+    }
+  })
+
+  it('embeds the full query reference, so help and the ? modal cannot disagree', () => {
+    renderHelp()
+
+    // The very tables the search page's `?` opens, rendered inline: one source
+    // of truth for the syntax, and the language is findable without stumbling
+    // over the modal first.
+    expect(screen.getByRole('heading', { name: 'Operators' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Filters' })).toBeInTheDocument()
+    expect(screen.getByText('camera:')).toBeInTheDocument()
+    expect(screen.getByText('rating:')).toBeInTheDocument()
+  })
+
   it('notes that favourites and ratings are per-user', () => {
     renderHelp()
 

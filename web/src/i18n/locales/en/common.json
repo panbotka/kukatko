@@ -122,7 +122,14 @@
       },
       "search": {
         "title": "Search",
-        "body": "The search field above the library matches photo titles, descriptions and notes – and it also understands the “key:value” filters, exactly like full search: “year:1965” narrows the library to 1965, “person:Jarmila” to photos of Jarmila. The “?” beside the field lists every filter. A filter we did not understand is pointed out rather than left as an empty library. Full search (from the search bar at the top or the “/” key) can also search by content: type what should be in the photo and Kukátko finds visually matching shots, even when nothing is written about them.\nSearch by content depends on the AI service. When it happens to be offline, ordinary search by title and description keeps working."
+        "body": "The search field above the library matches photo titles, descriptions and notes – and it also understands the “key:value” filters, exactly like full search: “year:1965” narrows the library to 1965, “person:Jarmila” to photos of Jarmila. The “?” beside the field lists every filter, and so does the table further down this chapter. A filter we did not understand is pointed out rather than left as an empty library. Full search (from the search bar at the top or the “/” key) can also search by content: type what should be in the photo and Kukátko finds visually matching shots, even when nothing is written about them.\nSearch by content depends on the AI service. When it happens to be offline, ordinary search by title and description keeps working.",
+        "queryTitle": "The key:value filters",
+        "queryIntro": "Besides words, the search field takes filters in the form key:value. A few ready-made queries to copy:",
+        "example": {
+          "year": "Every photo taken in 1965.",
+          "person": "Photos of Jarmila you rated four or five stars.",
+          "album": "Photos from the Léto 2024 album with at least two faces."
+        }
       },
       "albums": {
         "title": "Albums",

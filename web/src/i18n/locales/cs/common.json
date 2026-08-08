@@ -122,7 +122,14 @@
       },
       "search": {
         "title": "Hledání",
-        "body": "Vyhledávací pole nad knihovnou prohledává názvy, popisy a poznámky fotek – a rozumí i filtrům „klíč:hodnota“, stejně jako úplné hledání: „year:1965“ vám knihovnu zúží na rok 1965, „person:Jarmila“ na fotky s Jarmilou. Celý seznam filtrů ukáže „?“ vedle pole. Když nějakému filtru nerozumíme, řekneme to – nezůstane po něm jen prázdná knihovna. Úplné hledání (přes lištu hledání nahoře nebo klávesu „/“) navíc umí vyhledávat podle obsahu: napíšete, co má být na fotce, a Kukátko najde vizuálně odpovídající snímky, i když u nich není nic napsané.\nHledání podle obsahu závisí na AI službě. Když je zrovna nedostupná, běžné hledání podle názvu a popisu funguje dál."
+        "body": "Vyhledávací pole nad knihovnou prohledává názvy, popisy a poznámky fotek – a rozumí i filtrům „klíč:hodnota“, stejně jako úplné hledání: „year:1965“ vám knihovnu zúží na rok 1965, „person:Jarmila“ na fotky s Jarmilou. Celý seznam filtrů ukáže „?“ vedle pole a najdete ho i níže v této kapitole. Když nějakému filtru nerozumíme, řekneme to – nezůstane po něm jen prázdná knihovna. Úplné hledání (přes lištu hledání nahoře nebo klávesu „/“) navíc umí vyhledávat podle obsahu: napíšete, co má být na fotce, a Kukátko najde vizuálně odpovídající snímky, i když u nich není nic napsané.\nHledání podle obsahu závisí na AI službě. Když je zrovna nedostupná, běžné hledání podle názvu a popisu funguje dál.",
+        "queryTitle": "Filtry klíč:hodnota",
+        "queryIntro": "Kromě slov snese vyhledávací pole i filtry ve tvaru klíč:hodnota. Několik hotových dotazů, které stačí zkopírovat:",
+        "example": {
+          "year": "Všechny fotky pořízené v roce 1965.",
+          "person": "Fotky s Jarmilou, kterým jste dali čtyři nebo pět hvězdiček.",
+          "album": "Fotky z alba Léto 2024, na kterých jsou aspoň dva obličeje."
+        }
       },
       "albums": {
         "title": "Alba",
