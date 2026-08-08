@@ -19,6 +19,7 @@ import {
   ALBUMS_SHOW_EMPTY,
   browseAlbums,
 } from '../lib/albumBrowse'
+import { planAlbumCovers } from '../lib/albumCovers'
 import { useUrlState } from '../lib/urlState'
 import { type AlbumSummary, fetchAlbums } from '../services/organize'
 
@@ -44,6 +45,10 @@ const NO_ALBUMS: AlbumSummary[] = []
  * sections and a link carries the exact view. Nothing here is stored: the
  * machine-made English titles are only *rendered* in Czech (see
  * `i18n/albumNames`).
+ *
+ * The covers are planned for the whole section at once (`lib/albumCovers`)
+ * rather than tile by tile, because overlapping albums share their newest photo
+ * and a per-tile choice drew it on every one of them.
  *
  * Editors and admins get a create button; the modal refetches the grid on
  * success. Mutation controls are hidden from viewers.
@@ -82,6 +87,12 @@ export function AlbumsPage() {
     () => browseAlbums(albums, albumBrowseOptions(view, language)),
     [albums, view, language],
   )
+  // Planned once for the whole section, not per tile: overlapping albums share
+  // their newest photo, and a cover picked tile by tile would draw it on every
+  // one of them. Memoized against `visible` so the grid — which is virtualized,
+  // and so mounts a tile afresh every time it scrolls back — keeps handing that
+  // tile the same cover.
+  const covers = useMemo(() => planAlbumCovers(visible), [visible])
 
   return (
     <>
@@ -130,7 +141,7 @@ export function AlbumsPage() {
             <TileGrid
               items={visible}
               itemKey={(album) => album.uid}
-              renderItem={(album) => <AlbumTile album={album} />}
+              renderItem={(album) => <AlbumTile album={album} cover={covers.get(album.uid)} />}
               minTile={160}
               gap={12}
             />

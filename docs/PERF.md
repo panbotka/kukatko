@@ -327,6 +327,16 @@ the old and new statements return **byte-identical** rows. No migration and no
 new index — the fix is the query shape, and the plan is two sequential scans and
 a `GroupAggregate`.
 
+**The candidate covers ride along for free.** The listing also returns
+`cover_uids`, the album's `organize.CoverCandidates` (8) newest visible photos,
+so the index can draw a tile that differs from its neighbours' rather than the
+one photo overlapping albums share. It is the *same* aggregate sliced further —
+`[1:$1]` instead of `[1]` — and because both projections spell it identically the
+executor computes it once; the plan test measures 210 ms / 1 024 blocks with the
+candidates against 208 ms / 1 013 without. Note the statement now takes one
+parameter (the bound), which anything running it by hand — `EXPLAIN`, `psql` —
+has to supply.
+
 **Measured** on a reproduction of the production shape (20 000 photos, 437
 albums, 40 641 memberships, each album a contiguous slice of the timeline;
 PostgreSQL 17.8 on the Pi):

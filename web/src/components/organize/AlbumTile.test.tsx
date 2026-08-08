@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import i18n from '../../i18n'
+import { type AlbumCover } from '../../lib/albumCovers'
 import { type AlbumSummary } from '../../services/organize'
 
 import { AlbumTile } from './AlbumTile'
@@ -24,14 +25,19 @@ function album(overrides: Partial<AlbumSummary> = {}): AlbumSummary {
   }
 }
 
-function renderTile(a: AlbumSummary) {
+function renderTile(a: AlbumSummary, cover?: AlbumCover) {
   return render(
     <I18nextProvider i18n={i18n}>
       <MemoryRouter>
-        <AlbumTile album={a} />
+        <AlbumTile album={a} cover={cover} />
       </MemoryRouter>
     </I18nextProvider>,
   )
+}
+
+/** The `src` of every image the tile drew, in document order. */
+function sources(container: HTMLElement): string[] {
+  return [...container.querySelectorAll('img')].map((img) => img.getAttribute('src') ?? '')
 }
 
 beforeEach(async () => {
@@ -80,6 +86,45 @@ describe('AlbumTile', () => {
     await i18n.changeLanguage('cs')
     renderTile(album({ cover_uid: 'ph1' }))
     expect(screen.getByRole('link', { name: 'Pouť 2024' })).toBeInTheDocument()
+  })
+
+  it('draws the planned collage, one image per photo', () => {
+    const { container } = renderTile(album({ cover_uid: 'p1', photo_count: 40 }), {
+      kind: 'collage',
+      photoUids: ['p1', 'p2', 'p3', 'p4'],
+    })
+
+    expect(sources(container)).toEqual([
+      '/api/v1/photos/p1/thumb/tile_224',
+      '/api/v1/photos/p2/thumb/tile_224',
+      '/api/v1/photos/p3/thumb/tile_224',
+      '/api/v1/photos/p4/thumb/tile_224',
+    ])
+    // The cells are decoration: the link is already named after the album, and
+    // four identical alt texts would only make the page longer to listen to.
+    expect(screen.queryAllByRole('img')).toHaveLength(0)
+    expect(screen.getByRole('link', { name: 'Pouť 2024' })).toBeInTheDocument()
+  })
+
+  it('collages an album of its own accord when no plan is passed', () => {
+    // A tile rendered alone has nobody to collide with, so it plans for itself.
+    const { container } = renderTile(
+      album({ cover_uid: 'p1', cover_uids: ['p1', 'p2', 'p3', 'p4', 'p5'], photo_count: 5 }),
+    )
+    expect(sources(container)).toEqual([
+      '/api/v1/photos/p1/thumb/tile_224',
+      '/api/v1/photos/p2/thumb/tile_224',
+      '/api/v1/photos/p3/thumb/tile_224',
+      '/api/v1/photos/p4/thumb/tile_224',
+    ])
+  })
+
+  it('draws one photo, at grid size, for an album too small to collage', () => {
+    const { container } = renderTile(
+      album({ cover_uid: 'p1', cover_uids: ['p1', 'p2'], photo_count: 2 }),
+    )
+    expect(sources(container)).toEqual(['/api/v1/photos/p1/thumb/tile_500'])
+    expect(screen.getByRole('img', { name: 'Pouť 2024' })).toBeInTheDocument()
   })
 
   it('shows no range line when no photo in the album is dated', () => {

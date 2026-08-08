@@ -496,6 +496,35 @@
   color: var(--bs-secondary-color, rgb(255 255 255 / 60%));
 }
 
+/*
+ * A cover made of four photos (the albums index — see `lib/albumCovers` for why
+ * one photo is not enough). It fills the square media well exactly, so the tile
+ * keeps the same geometry as a single-image cover and the grid never shifts
+ * between the two.
+ *
+ * The hairline gap is the whole point of the arrangement: without it four crops
+ * of the same afternoon melt into one picture. It is drawn by the well's own
+ * sunken surface showing through, so it needs no colour of its own and stays
+ * right in both themes.
+ */
+.kk-tile__collage {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 2px;
+  width: 100%;
+  height: 100%;
+}
+
+/* A grid item's automatic minimum size is its content's — for an image, its
+   intrinsic pixels — which would push a 500px crop's cell past its half of the
+   tile and burst the collage out of the well. Zeroing it lets the cells stay the
+   size the tracks say they are. */
+.kk-tile__collage > img {
+  min-width: 0;
+  min-height: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   /* The lift is decorative; the shadow/colour change alone still signals hover. */
   .kk-tile:hover,

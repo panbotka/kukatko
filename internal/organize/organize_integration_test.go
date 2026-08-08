@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strconv"
 	"testing"
 	"time"
 
@@ -493,6 +494,101 @@ func TestAlbumListCoverStackAndTieBreak(t *testing.T) {
 	}
 	assertRange(t, "stacked", got,
 		time.Date(1990, 1, 1, 0, 0, 0, 0, time.UTC), shared)
+}
+
+// TestAlbumListCoverCandidates pins the cover candidates the album index hands
+// the grid so it can draw albums that differ from one another: the head of the
+// very same order the single cover picks from, capped, with the hidden photos
+// left out and a hand-picked cover deliberately absent from the list.
+//
+// The candidates are what makes overlapping albums distinguishable, so the parts
+// worth fencing are the ones a rewrite would break silently: the order (a
+// collage drawn from a shuffled list would change on every request), the cap
+// (an unbounded list would carry the whole library in the payload) and the
+// visibility rule (a candidate the album's own grid does not show is a lie).
+func TestAlbumListCoverCandidates(t *testing.T) {
+	store, photoStore, _, _ := newStores(t)
+	ctx := t.Context()
+
+	// Ten photos an hour apart: more than the cap, and with a capture order the
+	// test knows, so no tie-break is involved and the expected list is exact.
+	base := time.Date(2015, 6, 1, 8, 0, 0, 0, time.UTC)
+	newestFirst := make([]string, 0, 10)
+	for i := range 10 {
+		newestFirst = append(newestFirst,
+			makePhotoAt(t, photoStore, "cand"+strconv.Itoa(i), base.Add(time.Duration(i)*time.Hour)))
+	}
+	slices.Reverse(newestFirst)
+
+	// The newest photo of all, and hidden: neither the cover nor any candidate.
+	archived := makePhotoAt(t, photoStore, "candArchived", base.Add(100*time.Hour))
+	if _, err := photoStore.Archive(ctx, archived); err != nil {
+		t.Fatalf("Archive: %v", err)
+	}
+
+	full, _ := store.CreateAlbum(ctx, organize.Album{Title: "A Full"})
+	pinned, _ := store.CreateAlbum(ctx, organize.Album{Title: "B Pinned"})
+	small, _ := store.CreateAlbum(ctx, organize.Album{Title: "C Small"})
+	emptyAlbum, _ := store.CreateAlbum(ctx, organize.Album{Title: "D Empty"})
+	members := append(slices.Clone(newestFirst), archived)
+	addPhotos(t, store, full.UID, members...)
+	addPhotos(t, store, pinned.UID, members...)
+	addPhotos(t, store, small.UID, newestFirst[0], newestFirst[1])
+	oldest := newestFirst[len(newestFirst)-1]
+	if _, err := store.SetCover(ctx, pinned.UID, &oldest); err != nil {
+		t.Fatalf("SetCover: %v", err)
+	}
+
+	list, err := store.ListAlbums(ctx)
+	if err != nil {
+		t.Fatalf("ListAlbums: %v", err)
+	}
+
+	// A Full: the cap's worth of the album's newest visible photos, in that
+	// order, the archived one nowhere among them.
+	fullGot := albumByUID(t, list, full.UID)
+	want := newestFirst[:organize.CoverCandidates]
+	if !slices.Equal(fullGot.CoverUIDs, want) {
+		t.Errorf("full candidates = %v, want %v", fullGot.CoverUIDs, want)
+	}
+	if slices.Contains(fullGot.CoverUIDs, archived) {
+		t.Errorf("candidates %v include the archived photo %q", fullGot.CoverUIDs, archived)
+	}
+	// The single cover stays the head of the same list, so a caller drawing one
+	// image and a caller drawing four start from the same photo.
+	if fullGot.CoverUID == nil || *fullGot.CoverUID != want[0] {
+		t.Errorf("full cover = %v, want the first candidate %q", fullGot.CoverUID, want[0])
+	}
+
+	// B Pinned: the hand-picked cover answers "what does this album look like"
+	// and must not be mistaken for a candidate — the list is unchanged by it.
+	pinnedGot := albumByUID(t, list, pinned.UID)
+	if pinnedGot.CoverUID == nil || *pinnedGot.CoverUID != oldest {
+		t.Errorf("pinned cover = %v, want hand-picked %q", pinnedGot.CoverUID, oldest)
+	}
+	if !slices.Equal(pinnedGot.CoverUIDs, want) {
+		t.Errorf("pinned candidates = %v, want the derived %v", pinnedGot.CoverUIDs, want)
+	}
+
+	// C Small: fewer photos than the cap yields fewer candidates, not padding.
+	if got := albumByUID(t, list, small.UID); !slices.Equal(got.CoverUIDs, newestFirst[:2]) {
+		t.Errorf("small candidates = %v, want %v", got.CoverUIDs, newestFirst[:2])
+	}
+
+	// D Empty: nothing to offer, and an empty list rather than a NULL to scan.
+	if got := albumByUID(t, list, emptyAlbum.UID); len(got.CoverUIDs) != 0 {
+		t.Errorf("empty album candidates = %v, want none", got.CoverUIDs)
+	}
+
+	// The grid renders these in order; a list that reshuffled between requests
+	// would redraw every album on every reload.
+	again, err := store.ListAlbums(ctx)
+	if err != nil {
+		t.Fatalf("ListAlbums again: %v", err)
+	}
+	if got := albumByUID(t, again, full.UID); !slices.Equal(got.CoverUIDs, fullGot.CoverUIDs) {
+		t.Errorf("candidates changed between calls: %v then %v", fullGot.CoverUIDs, got.CoverUIDs)
+	}
 }
 
 // TestAlbumCoverSetNullOnPhotoDelete checks SetCover and the cover_photo_uid SET

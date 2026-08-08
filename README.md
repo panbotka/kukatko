@@ -74,13 +74,14 @@ It is **not** for you if you are looking for:
   tap — is on the phone too, as a narrow strip of years along the right edge that fades to a hint
   when you are not using it.
 
-Around that sit the ordinary things a library needs and Kukátko has: albums and labels, videos
-(range streaming, live photos), maps and browsing by place, a slideshow, per-user favourites and
-ratings, bulk editing, multi-upload from a phone, duplicate detection, a trash with retention,
-accounts with four roles, a durable audit trail, S3 backup with a restore runbook, and import from
-any folder on disk — a Google Takeout export included, sidecars and all. Every view lives in the
-URL and every browser tab is named after what it shows (`Svatba 1965 · Kukátko`), so Back, a second
-tab, a bookmark and the history list all work the way the rest of the web does.
+Around that sit the ordinary things a library needs and Kukátko has: albums — each covered by a
+collage of four of its photos, so two albums drawn from the same afternoon don't look alike — and
+labels, videos (range streaming, live photos), maps and browsing by place, a slideshow, per-user
+favourites and ratings, bulk editing, multi-upload from a phone, duplicate detection, a trash with
+retention, accounts with four roles, a durable audit trail, S3 backup with a restore runbook, and
+import from any folder on disk — a Google Takeout export included, sidecars and all. Every view
+lives in the URL and every browser tab is named after what it shows (`Svatba 1965 · Kukátko`), so
+Back, a second tab, a bookmark and the history list all work the way the rest of the web does.
 
 ## Status
 

@@ -97,11 +97,15 @@ export interface AlbumCount extends Album {
  *
  * `cover_uid` is the hand-picked `cover_photo_uid` when there is one and the
  * album's newest photo otherwise; it is absent only for an album with no photos
- * to show. `taken_from`/`taken_to` are absent together when no photo in the
- * album has a known capture time.
+ * to show. `cover_uids` are that same photo and the ones behind it — the album's
+ * newest few, `organize.CoverCandidates` at most, and never the hand-picked
+ * cover — from which the grid draws a collage or a cover a neighbouring album
+ * has not already used (see `lib/albumCovers`). `taken_from`/`taken_to` are
+ * absent together when no photo in the album has a known capture time.
  */
 export interface AlbumSummary extends AlbumCount {
   cover_uid?: string
+  cover_uids?: string[]
   taken_from?: string
   taken_to?: string
 }

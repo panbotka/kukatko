@@ -133,6 +133,20 @@ type AlbumSummary struct {
 	// It is nil only for an album that holds no visible photo and has no cover
 	// chosen by hand, which is the album index's cue to draw the empty state.
 	CoverUID *string `json:"cover_uid,omitempty"`
+	// CoverUIDs are the album's first CoverCandidates visible photos in the same
+	// order CoverUID picks from — newest first, an unknown capture time last, uid
+	// breaking ties. They exist because one cover per album is not enough to tell
+	// albums apart: overlapping albums share their newest photo, so a grid of
+	// single covers renders the same picture several times over. A caller draws a
+	// collage from them, or steps to the next one when a neighbour already took a
+	// photo; the album index does both (see `web/src/lib/albumCovers.ts`).
+	//
+	// They are the *derived* candidates only: a hand-picked Album.CoverPhotoUID
+	// never enters the list, because it is an answer to a different question
+	// ("what does this album look like") that the caller must not dilute. The
+	// slice is empty for an album holding no visible photo, and shorter than
+	// CoverCandidates for a small album.
+	CoverUIDs []string `json:"cover_uids,omitempty"`
 	// TakenFrom and TakenTo bracket the capture times of the album's visible
 	// photos: the earliest and the latest. Both are nil together when no visible
 	// photo in the album has a known capture time, since a range needs at least

@@ -1494,7 +1494,7 @@ to `## Package map` in `CLAUDE.md`.
   newest album**: `MAX(p.taken_at) DESC NULLS LAST, a.uid` — undated and empty albums
   aggregate NULL and go last, `uid` makes the order total and stable; **no COALESCE on
   `created_at`** — for an album that would give an undated album the upload time and float it to the top;
-  `AlbumCount` + `CoverUID`/`TakenFrom`/`TakenTo` — all computed **in one SQL and in one pass**, without a
+  `AlbumCount` + `CoverUID`/`CoverUIDs`/`TakenFrom`/`TakenTo` — all computed **in one SQL and in one pass**, without a
   migration: a single LEFT JOIN chain `albums → album_photos → photos` restricted to the visible members
   (`archived_at IS NULL AND (stack_uid IS NULL OR stack_primary)`) carries every derived column —
   `photo_count = COUNT(p.uid)`, `MIN`/`MAX(taken_at)`, and the fallback cover as
@@ -1502,7 +1502,14 @@ to `## Package map` in `CLAUDE.md`.
   `CoverUID = COALESCE(cover_photo_uid, fallback)` → a manually chosen cover wins, otherwise the newest
   **visible** photo, deterministically the same on every query. A hidden photo (archived, or a non-primary
   stack member) joins as a NULL row, so it neither counts, nor supplies the cover, nor shifts the range; an
-  undated photo can be the cover, but doesn't enter the range. The cover came from a `LEFT JOIN LATERAL …
+  undated photo can be the cover, but doesn't enter the range.
+  `CoverUIDs` is the head of that very same array — `[1:$1]` instead of `[1]`, with `CoverCandidates` (8,
+  passed as the statement's only parameter so the number lives in one place) as the bound and `'{}'` for an
+  empty album. One cover per album cannot tell overlapping albums apart (they share their newest photo), so
+  the index draws a collage or steps to the next candidate; a hand-picked cover stays **out** of the list —
+  it answers a different question, and a client must not dilute it into one cell of four. The two
+  projections spell the aggregate identically, so the executor computes it once: the candidates cost
+  nothing beyond the payload (measured unchanged, 210 ms / 1 024 blocks on the plan-test fixture). The cover came from a `LEFT JOIN LATERAL …
   ORDER BY taken_at DESC LIMIT 1` until 2026-08-02: the planner serves such a per-album `LIMIT 1` by walking
   the **global** `photos.taken_at` order, which cost 17.3M buffer hits and 33 s on the production library —
   **never pick a per-group row with a correlated `ORDER BY … LIMIT 1` here**, see `docs/PERF.md` §
@@ -1552,7 +1559,7 @@ to `## Package map` in `CLAUDE.md`.
   `LabelStore` (subsets of `organize.Store`) → unit-testable with fakes without a DB;
   `NewAPI(Config{Albums,Labels,RequireAuth,RequireWrite})`+`RegisterRoutes` mounts two
   subrouters: **albums** `GET /albums` (RequireAuth, `{albums:[AlbumSummary]}` — counts, the effective
-  `cover_uid` and the range `taken_from`/`taken_to`),
+  `cover_uid`, the further covers `cover_uids` and the range `taken_from`/`taken_to`),
   `POST /albums` (RequireWrite, 201, `title` required, type validation via `ErrInvalidType`),
   `GET /albums/{uid}` (RequireAuth), `PATCH /albums/{uid}` (RequireWrite, edits
   title/description/cover_photo_uid/private; **the structural `type` is preserved** —
