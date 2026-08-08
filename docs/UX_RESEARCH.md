@@ -73,7 +73,7 @@ dopad/pracnost — nahoře je to, co se vyplatí udělat první.
 | [N8](#n8) | `/people`: 105 osob bez hledání, a 125 Mpx stažených na 72 čtverečků | 🔴 | 🟡 | `PeoplePage`, `SubjectTile` |
 | [N9](#n9) | Seznam obličejů nemá náhledy, jmenovky na fotce se překrývají | 🟡 | 🟡 | `FacesPanel`, `FaceOverlay` |
 | [N10](#n10) | `/labels`: 113 štítků jako svislý seznam bez hledání a řazení | 🟡 | ⚪ | `LabelsPage` |
-| [N11](#n11) | Příznaky se jmenují podle tvaru ikony: „Oko", „Palec nahoru" | 🟡 | ⚪ | `FlagControl`, `FilterBar` |
+| [N11](#n11) ✅ | Příznaky se jmenují podle tvaru ikony: „Oko", „Palec nahoru" | 🟡 | ⚪ | `FlagControl`, `FilterBar` |
 | [N12](#n12) | Do textu pro uživatele prosakuje `AI_MODEL:`, `Unknown`, anglické názvy | 🟡 | ⚪ | `MetadataPanel`, import |
 | [N13](#n13) | Stránka, na kterou nemám právo, mlčky přesměruje na knihovnu | 🟡 | ⚪ | routing, `LeaderboardPage` |
 | [N14](#n14) | Zašedlá tlačítka bez vysvětlení, proč nejdou zmáčknout | 🟡 | ⚪ | `FacesPanel`, `PhotoLocation` |
@@ -572,6 +572,16 @@ o překlady + `aria-label`.
 
 **Kde to je.** `web/src/components/library/FlagControl.tsx`,
 `web/src/components/library/FilterBar.tsx` (hodnoty „Označení"), `web/src/i18n`.
+
+**✅ Vyřešeno (8. 8. 2026).** Tlačítka se jmenují podle toho, co dělají:
+**„Vybrat" / „Zamítnout" / „Prohlédnout později"** (en „Pick" / „Reject" /
+„Look at later"). Krátké jméno nese `aria-label`, `title` k němu přidal jednu
+větu, co příznak znamená (`rating.pickHint` / `rejectHint` / `eyeHint`) — dřív
+tam byla jen kopie jména. Táž jména dostaly hodnoty filtru „Označení"
+(„Vše / Vybrané / Zamítnuté / **K prohlédnutí později**"), takže filtr
+a prohlížeč mluví stejně, a nápověda dotazovacího jazyka u `flag:` teď ke
+každé hodnotě dopisuje její jméno. Uložené hodnoty `pick`/`reject`/`eye`,
+API ani klíč `flag:` se nezměnily — je to změna wordingu v UI.
 
 ---
 

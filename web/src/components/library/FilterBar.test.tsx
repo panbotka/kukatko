@@ -551,6 +551,20 @@ describe('FilterBar advanced controls', () => {
     expect(onChange).toHaveBeenCalledWith({ flag: 'eye' })
   })
 
+  it('offers the flag values under the names the viewer uses, not the glyphs', async () => {
+    const user = userEvent.setup()
+    renderBar(LIBRARY_DEFAULTS, vi.fn())
+
+    await openPanel(user)
+    const options = within(screen.getByLabelText('Flag')).getAllByRole('option')
+    expect(options.map((o) => o.textContent)).toEqual([
+      'Any',
+      'Picked',
+      'Rejected',
+      'To look at later',
+    ])
+  })
+
   it('replaces history for live-typed free-text input', async () => {
     const onChange = vi.fn()
     const user = userEvent.setup()
@@ -567,14 +581,14 @@ describe('FilterBar active-filter chips', () => {
     renderBar({ ...LIBRARY_DEFAULTS, min_rating: '4', flag: 'pick' }, vi.fn())
 
     expect(screen.getByText('Rating: ≥ 4')).toBeInTheDocument()
-    expect(screen.getByText('Flag: Picks')).toBeInTheDocument()
+    expect(screen.getByText('Flag: Picked')).toBeInTheDocument()
     const toggle = screen.getByRole('button', { name: /Filters/ })
     expect(within(toggle).getByText('2')).toBeInTheDocument()
   })
 
   it('renders the eye value on the flag chip', () => {
     renderBar({ ...LIBRARY_DEFAULTS, flag: 'eye' }, vi.fn())
-    expect(screen.getByText('Flag: Eyes')).toBeInTheDocument()
+    expect(screen.getByText('Flag: To look at later')).toBeInTheDocument()
   })
 
   it('clears a single filter when its chip is dismissed', async () => {

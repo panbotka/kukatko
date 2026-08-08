@@ -529,9 +529,14 @@ here.
   rollback to the owning list, which is how the library's `f` shares this button's state instead of
   keeping a second one), `RatingStars` (pure controlled 0–5 stars; a click on the current
   rating clears it to 0; without `onRate` a read-only display) + `FlagControl` (a pure controlled per-user
-  **personal flag** — three neutral states via `Icon` bootstrap-icons: 👁 eye (`text-info`),
-  👍 thumbs-up (stored `pick`, `text-success`), 👎 thumbs-down (stored `reject`, `text-danger`);
-  a click on the active state clears it to `none`; without `onFlag` read-only; a sibling of the link → a click doesn't navigate),
+  **personal flag** — three neutral states via `Icon` bootstrap-icons: 👁 **Prohlédnout později**
+  (stored `eye`, `text-info`), 👍 **Vybrat** (stored `pick`, `text-success`), 👎 **Zamítnout**
+  (stored `reject`, `text-danger`). Each button is **named after the act, not the glyph** —
+  the `aria-label` is the short name (`rating.eye`/`pick`/`reject`) and the `title` is the
+  one-sentence explanation (`rating.eyeHint`/`pickHint`/`rejectHint`), which is also what the
+  library's **Označení** filter calls its values (`library.flag.eyes` = „K prohlédnutí později"),
+  so the filter and the viewer agree; the stored values and the `flag:` query key are untouched.
+  A click on the active state clears it to `none`; without `onFlag` read-only; a sibling of the link → a click doesn't navigate),
   `GridSkeleton` (a placeholder photo grid on the first load; it also mirrors the chosen density, so after
   the photos load the layout doesn't jump. The tiles are `Skeleton` blocks (the shared `.kk-skeleton` shimmer, not
   Bootstrap `.placeholder`); the `label?` prop localizes the `role="status"` message (a person's gallery says
@@ -1062,7 +1067,7 @@ here.
   **Deep-linkable:** the open photo is in the route, **the drawer state in the `info` query param** (outside
   `DetailView`/`DETAIL_DEFAULTS`, so it doesn't leak into the neighbors or into `backHref`), scope in the query — so Back and
   refresh line up. The **curation loop** is `RatingStars`+`FlagControl` (per-user stars 0–5 + a personal flag
-  eye/👍/👎 over `useRating`) and `FavoriteToggle` (shares the optimistic toggle with `f`), followed by
+  Prohlédnout později/Vybrat/Zamítnout over `useRating`) and `FavoriteToggle` (shares the optimistic toggle with `f`), followed by
   **Archivovat/Vrátit z koše** (editor+ only per `canWrite`, as with bulk archiving): `archivePhoto`
   sends the open photo to the trash, `unarchivePhoto` restores it (a photo opened from `/trash` arrives already
   archived); **you stay on the page** — `archived_at` is toggled in place (the label flips
