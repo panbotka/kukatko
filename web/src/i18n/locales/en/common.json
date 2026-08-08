@@ -2,6 +2,13 @@
   "app": {
     "tagline": "Self-hosted photo & video library"
   },
+  "documentTitle": {
+    "app": "Kukátko",
+    "page": "{{title}} · Kukátko",
+    "album": "Album {{name}}",
+    "label": "Label {{name}}",
+    "search": "Search “{{query}}”"
+  },
   "confirmModal": {
     "cancel": "Cancel"
   },

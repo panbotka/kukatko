@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next'
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
 import { ClusterCard } from '../components/people/ClusterCard'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import {
   assignCluster,
   type ClusterAssignRequest,
@@ -32,6 +33,7 @@ type State =
  */
 export function ClustersPage() {
   const { t } = useTranslation()
+  useDocumentTitle(t('clusters.title'))
   const [state, setState] = useState<State>({ status: 'loading' })
   const [busyUid, setBusyUid] = useState<string | null>(null)
   const [actionError, setActionError] = useState(false)

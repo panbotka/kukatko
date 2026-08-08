@@ -156,6 +156,15 @@ beforeEach(async () => {
 })
 
 describe('AlbumDetailPage', () => {
+  it('names the browser tab after the album, so a bookmark says which one', async () => {
+    fetchAlbumMock.mockResolvedValue(album())
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    renderPage()
+
+    await screen.findByRole('heading', { name: 'Holidays' })
+    expect(document.title).toBe('Album Holidays · Kukátko')
+  })
+
   it('scopes the photo grid to the album from the URL', async () => {
     fetchAlbumMock.mockResolvedValue(album())
     fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))

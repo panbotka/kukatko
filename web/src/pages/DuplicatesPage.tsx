@@ -10,6 +10,7 @@ import { ErrorState } from '../components/ErrorState'
 import { DuplicateGroupCard } from '../components/duplicates/DuplicateGroupCard'
 import { MergeConfirmModal } from '../components/duplicates/MergeConfirmModal'
 import { GridSkeleton } from '../components/library/GridSkeleton'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { ApiError } from '../services/auth'
 import {
   type DuplicateGroup,
@@ -53,6 +54,7 @@ function actionMessage(err: unknown, t: TFunction): string {
  */
 export function DuplicatesPage() {
   const { t } = useTranslation()
+  useDocumentTitle(t('duplicates.title'))
   const [groups, setGroups] = useState<DuplicateGroup[]>([])
   const [status, setStatus] = useState<Status>('loading')
   const [nextOffset, setNextOffset] = useState<number | null>(null)

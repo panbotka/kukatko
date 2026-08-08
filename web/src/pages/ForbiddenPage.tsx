@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { LIBRARY_PATH } from '../lib/libraryView'
 import { type GuardRole } from '../services/auth'
 
@@ -39,6 +40,7 @@ const MESSAGE_KEYS = {
  */
 export function ForbiddenPage({ role }: { role: GuardRole }) {
   const { t } = useTranslation()
+  useDocumentTitle(t('forbidden.title'))
 
   return (
     <div className="text-center py-5" data-testid="forbidden-page">

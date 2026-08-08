@@ -8,6 +8,7 @@ import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
 import { LeafletMap } from '../components/map/LeafletMap'
 import { MapFilterBar } from '../components/map/MapFilterBar'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useMapPhotos } from '../hooks/useMapPhotos'
 import {
   MAP_DEFAULTS,
@@ -42,6 +43,7 @@ const TILE_FAILURE_MESSAGES = {
  */
 export function MapPage() {
   const { t } = useTranslation()
+  useDocumentTitle(t('map.title'))
   const navigate = useNavigate()
   const [view, setView] = useUrlState<MapView>(MAP_DEFAULTS)
   const [tileFailure, setTileFailure] = useState<TileFailure | null>(null)

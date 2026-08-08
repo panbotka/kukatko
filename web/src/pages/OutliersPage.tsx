@@ -13,6 +13,7 @@ import { SelectionBar } from '../components/organize/SelectionBar'
 import { OutlierCard } from '../components/people/OutlierCard'
 import { OutlierControls } from '../components/people/OutlierControls'
 import { OutlierStats } from '../components/people/OutlierStats'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useGridDensity } from '../hooks/useGridDensity'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { useReloadKey } from '../hooks/useReloadKey'
@@ -82,6 +83,7 @@ function nextActionableIndex(items: OutlierItem[], fromIndex: number): number {
  */
 export function OutliersPage() {
   const { t } = useTranslation()
+  useDocumentTitle(t('outliersPage.title'))
   const { subjects, loading: subjectsLoading } = useSubjects()
   const [searchParams, setSearchParams] = useSearchParams()
 

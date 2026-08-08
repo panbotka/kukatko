@@ -9,6 +9,7 @@ import { PeopleFilterBar } from '../components/people/PeopleFilterBar'
 import { SubjectTile } from '../components/people/SubjectTile'
 import { TileGridSkeleton } from '../components/Skeleton'
 import { TileGrid } from '../components/TileGrid'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useReloadKey } from '../hooks/useReloadKey'
 import {
   type PeopleView,
@@ -53,6 +54,7 @@ const TILE_GAP = 12
  */
 export function PeoplePage() {
   const { t, i18n } = useTranslation()
+  useDocumentTitle(t('people.title'))
   const { canWrite } = useAuth()
   const [state, setState] = useState<State>({ status: 'loading' })
   const [reloadKey, reload] = useReloadKey()

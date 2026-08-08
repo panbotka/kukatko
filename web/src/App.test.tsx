@@ -185,6 +185,22 @@ describe('routing', () => {
     expect(screen.getByTestId('search')).toBeEmptyDOMElement()
   })
 
+  it('names the browser tab after the route, and re-names it on navigation', async () => {
+    // Browser history is how "the photo I saw last week" is found again, so each
+    // entry has to be labelled with the page it is — and, crucially, stop being
+    // labelled with it the moment the reader moves on.
+    const user = userEvent.setup()
+    renderRoutes(['/', '/stats'])
+
+    await screen.findByRole('heading', { level: 1, name: 'Library statistics' })
+    expect(document.title).toBe('Library statistics · Kukátko')
+
+    await user.click(screen.getByRole('button', { name: '__back' }))
+
+    await screen.findByRole('heading', { name: 'Library' })
+    expect(document.title).toBe('Library · Kukátko')
+  })
+
   it('replaces the /library history entry so Back does not bounce', async () => {
     const user = userEvent.setup()
     // `/nowhere` renders the 404 page: a static previous entry to go Back to.

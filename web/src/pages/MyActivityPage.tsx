@@ -10,6 +10,7 @@ import { ErrorState } from '../components/ErrorState'
 import { Icon } from '../components/Icon'
 import { RecordTable, type RecordColumn } from '../components/RecordTable'
 import { ListSkeleton } from '../components/Skeleton'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useReloadKey } from '../hooks/useReloadKey'
 import {
   ACTIVITY_DEFAULTS,
@@ -49,6 +50,7 @@ type State =
  */
 export function MyActivityPage() {
   const { t, i18n } = useTranslation()
+  useDocumentTitle(t('activity.title'))
   const [view, setView] = useUrlState<ActivityView>(ACTIVITY_DEFAULTS)
   const params = useMemo(() => viewToParams(view), [view])
   const [state, setState] = useState<State>({ status: 'loading' })

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 
 import { ErrorState } from '../components/ErrorState'
 import { LibraryStatsCards } from '../components/LibraryStatsCards'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useLibraryStats } from '../hooks/useLibraryStats'
 
 /**
@@ -21,6 +22,7 @@ import { useLibraryStats } from '../hooks/useLibraryStats'
  */
 export function StatsPage() {
   const { t } = useTranslation()
+  useDocumentTitle(t('stats.title'))
   const { state, reload } = useLibraryStats()
 
   return (

@@ -10,6 +10,7 @@ import { EmptyState } from '../components/EmptyState'
 import { Icon, type IconName } from '../components/Icon'
 import { KeyboardShortcutsHelp } from '../components/KeyboardShortcutsHelp'
 import { REVIEW_PREVIEW_SIZE, ReviewPhoto } from '../components/review/ReviewPhoto'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useImagePreloader } from '../hooks/useImagePreloader'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { useReviewGame } from '../hooks/useReviewGame'
@@ -248,6 +249,7 @@ function QuestionText({ question }: { question: ReviewQuestion }) {
  */
 export function ReviewPage() {
   const { t } = useTranslation()
+  useDocumentTitle(t('nav.review'))
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const source = parseSource(searchParams.get('source'))

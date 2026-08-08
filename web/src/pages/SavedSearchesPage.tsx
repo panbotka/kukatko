@@ -11,6 +11,7 @@ import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
 import { Icon } from '../components/Icon'
 import { SaveSearchModal } from '../components/savedsearch/SaveSearchModal'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useReloadKey } from '../hooks/useReloadKey'
 import { savedSearchHref } from '../lib/savedSearchView'
 import { deleteSavedSearch, fetchSavedSearches, type SavedSearch } from '../services/savedSearches'
@@ -29,6 +30,7 @@ type State =
  */
 export function SavedSearchesPage() {
   const { t } = useTranslation()
+  useDocumentTitle(t('savedSearches.title'))
   const [state, setState] = useState<State>({ status: 'loading' })
   const [editing, setEditing] = useState<SavedSearch | null>(null)
   const [pendingDelete, setPendingDelete] = useState<SavedSearch | null>(null)

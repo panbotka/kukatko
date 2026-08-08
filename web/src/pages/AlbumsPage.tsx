@@ -10,6 +10,7 @@ import { AlbumFilterBar } from '../components/organize/AlbumFilterBar'
 import { AlbumTile } from '../components/organize/AlbumTile'
 import { TileGridSkeleton } from '../components/Skeleton'
 import { TileGrid } from '../components/TileGrid'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useReloadKey } from '../hooks/useReloadKey'
 import {
   type AlbumsView,
@@ -49,6 +50,7 @@ const NO_ALBUMS: AlbumSummary[] = []
  */
 export function AlbumsPage() {
   const { t, i18n } = useTranslation()
+  useDocumentTitle(t('albums.title'))
   const { canWrite } = useAuth()
   const [state, setState] = useState<State>({ status: 'loading' })
   const [creating, setCreating] = useState(false)

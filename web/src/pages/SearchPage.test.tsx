@@ -163,6 +163,20 @@ describe('SearchPage', () => {
     expect(searchMock).not.toHaveBeenCalled()
   })
 
+  it('quotes the query in the browser tab, so a saved search is recognisable', async () => {
+    searchMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    renderSearch('/search?q=beach')
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    expect(document.title).toBe('Search “beach” · Kukátko')
+  })
+
+  it('falls back to the page name in the tab while nothing has been asked for', () => {
+    renderSearch()
+
+    expect(document.title).toBe('Search · Kukátko')
+  })
+
   it('reproduces the query and mode from a shared URL and searches with them', async () => {
     searchMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
     renderSearch('/search?q=beach&mode=semantic')

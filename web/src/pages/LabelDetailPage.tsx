@@ -11,6 +11,7 @@ import { PhotoGrid } from '../components/library/PhotoGrid'
 import { BatchActionBar } from '../components/organize/BatchActionBar'
 import { SlideshowStart } from '../components/slideshow/SlideshowStart'
 import { useBulkEdit } from '../hooks/useBulkEdit'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useGridScrollMemory } from '../hooks/useGridScrollMemory'
 import { useReloadKey } from '../hooks/useReloadKey'
 import { useScopedPhotos } from '../hooks/useScopedPhotos'
@@ -111,6 +112,13 @@ export function LabelDetailPage() {
       controller.abort()
     }
   }, [uid])
+
+  // Named after the label it shows, above the early returns because a hook may
+  // not be called conditionally. Until it loads there is no name, and the tab
+  // falls back to the bare app name rather than the previous page's.
+  useDocumentTitle(
+    state.status === 'ready' ? t('documentTitle.label', { name: state.label.name }) : null,
+  )
 
   if (state.status === 'missing') {
     return (

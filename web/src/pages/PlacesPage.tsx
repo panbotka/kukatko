@@ -13,6 +13,7 @@ import { PhotoGrid } from '../components/library/PhotoGrid'
 import { BulkEditControl } from '../components/organize/BulkEditControl'
 import { SelectionBar } from '../components/organize/SelectionBar'
 import { useBulkEdit } from '../hooks/useBulkEdit'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useGridScrollMemory } from '../hooks/useGridScrollMemory'
 import { useReloadKey } from '../hooks/useReloadKey'
 import { useScopedPhotos } from '../hooks/useScopedPhotos'
@@ -63,6 +64,7 @@ type State =
  */
 export function PlacesPage() {
   const { t } = useTranslation()
+  useDocumentTitle(t('places.title'))
   const location = useLocation()
   const [state, setState] = useState<State>({ status: 'loading' })
   // Bumped to re-run the hierarchy fetch after an error retry.

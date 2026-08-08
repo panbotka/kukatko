@@ -14,6 +14,7 @@ import { useAuth } from '../auth/AuthContext'
 import { ErrorState } from '../components/ErrorState'
 import { JobStateLegend, type JobStateKey } from '../components/JobStateLegend'
 import { LibraryStatsCards } from '../components/LibraryStatsCards'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useLibraryStats } from '../hooks/useLibraryStats'
 import { formatBytes, formatDateTime } from '../lib/format'
 import {
@@ -607,6 +608,7 @@ function AnnouncementCard() {
  */
 export function SystemStatusPage() {
   const { t } = useTranslation()
+  useDocumentTitle(t('system.title'))
   const { isMaintainer } = useAuth()
   const [state, setState] = useState<State>({ status: 'loading' })
   const [notice, setNotice] = useState<ActionNotice | null>(null)

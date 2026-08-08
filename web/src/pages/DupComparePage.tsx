@@ -18,6 +18,7 @@ import { MergeConfirmModal } from '../components/duplicates/MergeConfirmModal'
 import '../components/duplicates/compare.css'
 import { useAuth } from '../auth/AuthContext'
 import { useComparePair } from '../hooks/useComparePair'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { useReloadKey } from '../hooks/useReloadKey'
 import { useSyncZoom } from '../hooks/useSyncZoom'
@@ -81,6 +82,7 @@ function actionMessage(err: unknown, t: TFunction): string {
  */
 export function DupComparePage() {
   const { t, i18n } = useTranslation()
+  useDocumentTitle(t('duplicates.compare.title'))
   const navigate = useNavigate()
   const { downloadToken } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
