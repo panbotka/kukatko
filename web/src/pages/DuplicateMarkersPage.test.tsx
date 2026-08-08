@@ -8,6 +8,7 @@ import { beforeEach, expect, it, vi } from 'vitest'
 import i18n from '../i18n'
 import { ApiError } from '../services/auth'
 import { type DuplicateMarkerGroup, type DuplicateMarkersResponse } from '../services/dupmarkers'
+import { frameRatio, loadImageAs } from '../test/imageFrame'
 
 import { DuplicateMarkersPage } from './DuplicateMarkersPage'
 
@@ -117,10 +118,34 @@ it('lists every finding with one numbered box per marker', async () => {
   })
   expect(screen.getByText('Marie')).toBeInTheDocument()
   expect(screen.getByText('Jan')).toBeInTheDocument()
-  // Three boxes drawn over the first photo, three close-ups under it.
+  // Three boxes drawn over the first photo, three close-ups under it. The boxes are
+  // percentages of the preview's frame, so they wait until the preview has reported
+  // the shape it actually rendered at (`useImageFrame`).
   const first = cards()[0]
+  expect(within(first).queryAllByTestId('dup-marker-box')).toHaveLength(0)
+  loadImageAs(within(first).getByAltText('The photo with every box of Marie outlined'), 1280, 960)
   expect(within(first).getAllByTestId('dup-marker-box')).toHaveLength(3)
   expect(within(first).getAllByTestId('dup-marker-crop')).toHaveLength(3)
+})
+
+it('frames the preview from the loaded image, not from a transposed row', async () => {
+  // A row stored already-oriented and then rotated a second time reads as landscape
+  // while the file is portrait; framed from it, every box over the photo is
+  // stretched sideways off its face.
+  fetchMock.mockResolvedValue(
+    page([{ ...group('p1', 'Marie', 2), width: 3000, height: 4000, orientation: 6 }]),
+  )
+
+  renderPage()
+
+  await waitFor(() => {
+    expect(cards()).toHaveLength(1)
+  })
+  expect(frameRatio(screen.getByTestId('dup-marker-preview'))).toBeCloseTo(4000 / 3000)
+
+  loadImageAs(screen.getByAltText('The photo with every box of Marie outlined'), 960, 1280)
+  expect(frameRatio(screen.getByTestId('dup-marker-preview'))).toBeCloseTo(3000 / 4000)
+  expect(screen.getAllByTestId('dup-marker-box')).toHaveLength(2)
 })
 
 it('crops the close-ups from a fit_* size, never a centre-cropped tile', async () => {

@@ -18,6 +18,7 @@ import {
   type ReviewSource,
 } from '../services/review'
 import { declarations, readCss, ruleBody } from '../test/css'
+import { frameRatio, loadImageAs } from '../test/imageFrame'
 
 import { ReviewPage } from './ReviewPage'
 
@@ -166,6 +167,11 @@ describe('ReviewPage', () => {
     const question = await screen.findByTestId('review-question')
     expect(question).toHaveTextContent('Tomáš Kozák')
 
+    // The rectangle is placed in percentages of the stage, so it waits until the
+    // preview has reported the frame it actually rendered at.
+    expect(screen.queryByTestId('review-bbox')).toBeNull()
+    loadImageAs(screen.getByAltText('Photo under review'), 1200, 800)
+
     // The drawn rectangle is the tight bbox grown by 30 % of its own size on
     // every side: a tight crop of a face is unjudgeable.
     const box = screen.getByTestId('review-bbox')
@@ -173,6 +179,35 @@ describe('ReviewPage', () => {
     expect(parseFloat(box.style.top)).toBeCloseTo(24)
     expect(parseFloat(box.style.width)).toBeCloseTo(32)
     expect(parseFloat(box.style.height)).toBeCloseTo(32)
+  })
+
+  it('sizes the stage from the loaded preview rather than from a transposed row', async () => {
+    // A row whose dimensions were stored already-oriented and then rotated a
+    // second time: 3000x4000 + orientation 6 reads as a landscape 4000x3000, while
+    // the file (and its preview) is portrait. The stage must follow the preview.
+    const question = faceQuestion('q1')
+    queueMock.mockResolvedValue(
+      makeQueue([
+        {
+          ...question,
+          photo: { ...question.photo, file_width: 3000, file_height: 4000, file_orientation: 6 },
+        },
+      ]),
+    )
+    const { container } = renderPage()
+    await screen.findByTestId('review-question')
+
+    const stage = container.querySelector<HTMLElement>('.review-photo')
+    // Until the preview loads the row is the estimate — it keeps the stage from
+    // resizing under the question — and no rectangle is drawn against it.
+    expect(frameRatio(stage)).toBeCloseTo(4000 / 3000)
+    expect(screen.queryByTestId('review-bbox')).toBeNull()
+
+    loadImageAs(screen.getByAltText('Photo under review'), 1440, 1920)
+    // The frame the preview reports, which is the one a correct row (4000x3000 +
+    // orientation 6 → a 3000x4000 display frame) would have given.
+    expect(frameRatio(stage)).toBeCloseTo(3000 / 4000)
+    expect(screen.getByTestId('review-bbox')).toBeInTheDocument()
   })
 
   it('asks a label question with the label name and draws no face box', async () => {

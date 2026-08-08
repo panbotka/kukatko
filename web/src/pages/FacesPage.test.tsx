@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import i18n from '../i18n'
 import { type Candidate, type CandidateResult } from '../services/faces'
 import { type Photo } from '../services/photos'
+import { frameRatio, loadImageAs } from '../test/imageFrame'
 
 import { FacesPage } from './FacesPage'
 
@@ -50,6 +51,11 @@ function makeCandidate(
     action,
     ...extra,
   }
+}
+
+/** makeCandidate at photo `uid` whose catalogue row carries the given dimensions. */
+function candidateWithRow(uid: string, row: Partial<Photo>): Candidate {
+  return makeCandidate(uid, 'create_marker', { photo: { ...makePhoto(uid), ...row } })
 }
 
 /** makeResult wraps candidates in a full result, tallying the action counts. */
@@ -122,6 +128,10 @@ describe('FacesPage results', () => {
     renderPage('/faces?subject=su_1')
 
     expect(await screen.findByTestId('candidate-card')).toBeInTheDocument()
+    // The rectangle is positioned in percentages of the frame around the preview,
+    // so it waits for the preview to report the frame it actually rendered at.
+    expect(screen.queryByTestId('candidate-bbox')).toBeNull()
+    loadImageAs(screen.getByAltText('Photo with the candidate face'), 720, 576)
     expect(screen.getByTestId('candidate-bbox')).toBeInTheDocument()
     expect(screen.getByText('70% match')).toBeInTheDocument()
     expect(searchMock).toHaveBeenCalledWith(
@@ -129,6 +139,40 @@ describe('FacesPage results', () => {
       { threshold: 0.5, limit: 0 },
       expect.any(AbortSignal),
     )
+  })
+
+  it('marks the candidate face from the loaded preview, not from a transposed row', async () => {
+    // The production shape of the bug: a row stored already-oriented (3000x4000)
+    // and then rotated a second time by its orientation 6 reads as a landscape
+    // 4000x3000, while the file — and the preview drawn from it — is portrait.
+    // Sized from that row the rectangle's x and width are stretched by 1.78 and the
+    // rightmost face lands off the photo entirely.
+    const wrong = { file_width: 3000, file_height: 4000, file_orientation: 6 }
+    const right = { file_width: 4000, file_height: 3000, file_orientation: 6 }
+
+    searchMock.mockResolvedValue(makeResult([candidateWithRow('p1', wrong)]))
+    const transposed = renderPage('/faces?subject=su_1')
+    await screen.findByTestId('candidate-card')
+    // The row is the estimate that keeps the card's height still, and while it is
+    // all there is, no rectangle is drawn against it.
+    expect(frameRatio(screen.getByTestId('candidate-frame'))).toBeCloseTo(4000 / 3000)
+    expect(screen.queryByTestId('candidate-bbox')).toBeNull()
+
+    loadImageAs(screen.getByAltText('Photo with the candidate face'), 1440, 1920)
+    const measured = frameRatio(screen.getByTestId('candidate-frame'))
+    const box = screen.getByTestId('candidate-bbox').getAttribute('style')
+    transposed.unmount()
+
+    // The same candidate on a correct row: same frame, same rectangle. Which is the
+    // whole point — the row no longer decides where the box goes.
+    searchMock.mockResolvedValue(makeResult([candidateWithRow('p1', right)]))
+    renderPage('/faces?subject=su_1')
+    await screen.findByTestId('candidate-card')
+    loadImageAs(screen.getByAltText('Photo with the candidate face'), 1440, 1920)
+
+    expect(measured).toBeCloseTo(frameRatio(screen.getByTestId('candidate-frame')))
+    expect(measured).toBeCloseTo(3000 / 4000)
+    expect(box).toBe(screen.getByTestId('candidate-bbox').getAttribute('style'))
   })
 
   it('shows the computed min_match_count and its explanation', async () => {

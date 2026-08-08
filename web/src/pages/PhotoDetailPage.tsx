@@ -28,6 +28,7 @@ import { useAutoHideChrome } from '../hooks/useAutoHideChrome'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useFaces } from '../hooks/useFaces'
 import { useFavorite } from '../hooks/useFavorite'
+import { useImageFrame } from '../hooks/useImageFrame'
 import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { usePhotoNeighbors } from '../hooks/usePhotoNeighbors'
@@ -35,7 +36,6 @@ import { usePinchZoom } from '../hooks/usePinchZoom'
 import { useRating } from '../hooks/useRating'
 import { useSwipeNavigation } from '../hooks/useSwipeNavigation'
 import { backHref, DETAIL_DEFAULTS, detailQueryString, detailToParams } from '../lib/detailView'
-import { displayFrame } from '../lib/faceGeometry'
 import { readFaceOverlay, writeFaceOverlay } from '../lib/faceOverlayPref'
 import { formatDateTimeMinutes } from '../lib/format'
 import { editPreviewStyle, editTransform, isIdentityEdit, NEUTRAL_EDIT } from '../lib/photoEdit'
@@ -259,6 +259,16 @@ export function PhotoDetailPage() {
   // booleans the render does. `state` is read without destructuring so it stays
   // legal up here.
   const ready = state.status === 'ready' ? state.photo : null
+  // The stage's frame: the shape of the ONE preview on screen, measured from the
+  // image itself once it has loaded (the catalogue row is only the estimate that
+  // holds the layout still until then). It sizes the figure the face boxes are
+  // positioned against, so it has to be the rendered image and nothing else.
+  const stage = useImageFrame({
+    source: ready?.uid ?? '',
+    width: ready?.file_width ?? 0,
+    height: ready?.file_height ?? 0,
+    orientation: ready?.file_orientation ?? 0,
+  })
   // What the one photo previews: the adjustments in progress while the edit panel
   // is open, otherwise the stored edit.
   const previewEdit = editDraft ?? (state.status === 'ready' ? state.edit : NEUTRAL_EDIT)
@@ -789,13 +799,14 @@ export function PhotoDetailPage() {
         </div>
       )
     }
-    // Give the figure the photo's display aspect ratio (after EXIF orientation)
-    // so it fits the stage by "contain" while its box stays exactly the rendered
-    // image — the only thing that keeps the percentage face overlay on the faces
-    // instead of drifting into a letterbox gap. Absent dimensions fall back to the
+    // Give the figure the photo's display aspect ratio so it fits the stage by
+    // "contain" while its box stays exactly the rendered image — the only thing
+    // that keeps the percentage face overlay on the faces instead of drifting into
+    // a letterbox gap. It comes from the loaded image (`stage`), not from the row:
+    // a row with a transposed dimension pair letterboxes the photo inside its own
+    // figure and throws every box off its face. Absent dimensions fall back to the
     // bare shrink-wrap (no `data-framed`), which a frameless photo never needs.
-    const frame = displayFrame(photo.file_width, photo.file_height, photo.file_orientation ?? 0)
-    const framed = frame.width > 0 && frame.height > 0
+    const framed = stage.aspectRatio !== undefined
     return (
       <div
         // Keyed on the DISPLAYED photo (not the route uid): while a neighbour
@@ -804,9 +815,7 @@ export function PhotoDetailPage() {
         key={photo.uid}
         className="kk-viewer__figure"
         data-framed={framed ? 'true' : undefined}
-        style={
-          framed ? { aspectRatio: `${String(frame.width)} / ${String(frame.height)}` } : undefined
-        }
+        style={framed ? { aspectRatio: stage.aspectRatio } : undefined}
         data-swipe-surface=""
         onTouchStart={(event) => {
           zoom.handlers.onTouchStart(event)
@@ -822,6 +831,7 @@ export function PhotoDetailPage() {
         }}
       >
         <img
+          {...stage.imgProps}
           className="kk-viewer__image"
           src={poster}
           alt={title}
@@ -831,6 +841,10 @@ export function PhotoDetailPage() {
         {showFaces && (
           <FaceOverlay
             faces={faces.faces}
+            // No box until the figure is the measured image: against the row's
+            // estimate a box can sit off its face and then jump when the real
+            // frame lands. The layer itself stays, so the faces view is up.
+            measured={stage.measured}
             selected={faces.selected?.face_index ?? null}
             hovered={hoveredFace}
             onSelect={(faceIndex) => {

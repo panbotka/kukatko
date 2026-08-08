@@ -213,4 +213,19 @@ describe('FaceOverlay', () => {
     expect(box).toHaveClass('kk-face-box')
     expect(box).toHaveStyle({ left: '50%', top: '50%', width: '20%', height: '20%' })
   })
+
+  it('draws no box while the frame under it is still provisional', () => {
+    render(
+      <I18nextProvider i18n={i18n}>
+        <FaceOverlay faces={faces()} selected={null} onSelect={vi.fn()} measured={false} />
+      </I18nextProvider>,
+    )
+
+    // The layer stays (the faces view is on), but percentages are only as good as
+    // the box they are percentages of: against a wrapper sized from the catalogue
+    // row rather than from the loaded image, a box can land off its face and then
+    // jump. Better a box a moment late than a box on the wrong part of the photo.
+    expect(screen.getByTestId('face-overlay')).toBeInTheDocument()
+    expect(screen.queryAllByRole('button')).toHaveLength(0)
+  })
 })
