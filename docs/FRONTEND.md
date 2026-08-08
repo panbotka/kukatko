@@ -330,6 +330,28 @@ here.
   (keyboard-shrunk) phone viewport; it is deliberately **not** `fullscreen="sm-down"` like the admin form
   dialogs — a confirm has no inputs, so no keyboard ever covers its footer, and a phone-wide sheet for a
   two-line question reads as a page rather than as a question. Tests: `ConfirmModal.test.tsx`),
+  `ReasonedButton` (**the shared „a button that is off always says why" control.** A greyed-out
+  control with no explanation reads as a malfunction, so this drop-in for react-bootstrap's `Button`
+  has **no `disabled` prop at all**: the only way to switch it off is `disabledReason` — one finished,
+  already-translated sentence, specific („Nejdřív vyberte fotky, na které se má úprava použít.") rather
+  than generic. Empty/`null`/`undefined` = a live button. **It does not use the native `disabled`
+  attribute**, and that is the point: `<button disabled>` leaves the tab order, so a keyboard or
+  screen-reader user can never reach the explanation, and Bootstrap's own `.btn:disabled` rule sets
+  `pointer-events: none`, which stops the browser ever showing the `title` — a `title` on a natively
+  disabled Bootstrap button is therefore invisible to **both** input methods. Instead it sets
+  `aria-disabled`, keeps the button focusable and hoverable, swallows the click in JS (so a
+  `type="submit"` inside a form cannot submit it either) and takes the greyed look from `.kk-btn-inert`
+  in `app.css` — Bootstrap's own `--bs-btn-disabled-*` values plus `cursor: not-allowed`, minus the
+  `pointer-events` kill; the hover/active/focus overrides keep an inert button from repainting on the
+  way past, while leaving the focus ring alone. The reason reaches the reader three ways: `title`
+  (mouse), `aria-describedby` → a `visually-hidden` sibling (keyboard/AT; `visually-hidden` is
+  absolutely positioned, so it adds no box to the toolbar), and — where a cluster of buttons shares one
+  reason already printed on screen — prop `reasonId`, which points `aria-describedby` at that visible
+  line instead of hiding a second copy (one sentence for a screen reader, and a phone, which never gets
+  a `title`, can read it at all). Used by `BulkEditControl`, `StackSelectedControl`, `PhotoLocation`
+  and `UserActions` in `UsersPage`. Test helpers `expectOff`/`expectLive` live in `test/reasoned.ts` —
+  jest-dom's `toBeDisabled()` only looks at the attribute and would report such a button as live.
+  Tests: `ReasonedButton.test.tsx`),
   `RecordTable` (**the shared „wide admin table → stacked cards" reflow.** A many-column roster only
   ever survived a phone by scrolling sideways inside `.table-responsive`, which parked the later columns
   and — worse — the per-row actions off-screen. One `columns` definition drives both layouts, so a table
@@ -651,7 +673,9 @@ here.
   pages pass none),
   `BulkEditControl` (**a reusable trigger** for bulk editing: a button
   (`selection.edit`) + `BulkEditModal`, driven solely by the result of `useBulkEdit`; **it doesn't render at all
-  for a viewer**, and is disabled at an empty selection — just drop it into `SelectionBar`, the page
+  for a viewer**, and at an empty selection it is a `ReasonedButton` that says why it is off
+  (`selection.editDisabled` — "pick the photos the edit should apply to first") rather than greying out
+  in silence — just drop it into `SelectionBar`, the page
   holds no dialog state; the optional `prefill` prop flows through into the modal. The photo lists now
   reach the same dialog through the batch bar's **Další úpravy**, so this is left to the grids that
   still use `SelectionBar`), `SelectionStart` (**the counterpart** to `BulkEditControl`: a button
@@ -663,8 +687,12 @@ here.
   `albumUid` (+ `name` = the album title) = the whole album; **available to a viewer too** (a download is not a write),
   disabled when there is nothing to download. Inserted into the library's `SelectionBar` and into the album header),
   `StackSelectedControl` (a **Seskupit vybrané** button (`selection.stack`) on the batch bar — so on
-  every photo list, not just the library — **editor/admin only**, disabled until **≥ 2** photos are selected; calls
-  `stackPhotos`, on success clears the selection and reloads the grid),
+  every photo list, not just the library — **editor/admin only** (absent, never greyed, for a viewer); a
+  `ReasonedButton` that stays off until **≥ 2** photos are selected and tells the reader which of the two
+  reasons it is: `selection.stackDisabled` (pick another photo — something to act on) or
+  `selection.stackBusy` (the request is running — something to wait out); calls
+  `stackPhotos`, on success clears the selection and reloads the grid; tests
+  `StackSelectedControl.test.tsx`),
   `BulkEditModal` (**bulk edit** of the selection via `POST /photos/bulk`, the whole batch
   in a single transaction on the backend; the form is split into **four sections** (`.kk-text-eyebrow`
   headings): **Zařazení** (add/remove albums, add/remove labels — four `MultiSelect`s, so one
@@ -748,7 +776,10 @@ here.
   archive/download/stack/more edits via the bulk API + toasts; on success `reloadKey` = **a background
   refetch, the grid doesn't flash to a skeleton**). Esc clears the selection,
   plus a **Uložit pohled** button (`SaveSearchModal` →
-  `createSavedSearch` with the current view object as `params`),
+  `createSavedSearch` with the current view object as `params`) — live for **every** role, a saved search
+  being personal like the favourite heart, and since 2026-08-08 carrying the same `savedSearches.saveViewTitle`
+  one-liner the search header gives it, so it cannot be mistaken for one of the editor controls it stands next
+  to (see `UX_RESEARCH.md` **N14**),
   `SavedSearchesPage` = `/saved` (any logged-in user, reached from the „Procházet" nav group as well as
   from the dropdown on `/search`) „Moje uložená hledání": a list of the current
   user's saved views, each link opens the exactly restored view (`savedSearchHref`), plus
@@ -955,13 +986,19 @@ here.
   off-screen anyway — the utility classes make it a shrinkable flex column (a scroll container's automatic
   minimum size is 0) and hand the cap through. The **Povolit/Zakázat** question follows `ConfirmModal` instead:
   `scrollable`, but a centred card on every screen — it has no inputs, so no keyboard can reach it.
-  **Your own row has a `disabled` toggle** + a short explanation of why
+  **Your own row has an off toggle** + a short explanation of why
   (`users.selfDisableHint`), **deletion is not offered** — an account is retired by disabling it, so the history
   (photos, ratings, audit) stays whole. **The maintainer boundary** (mirrors the backend
   `authorizeUserManagement`): the **maintainer** role may be granted only by a maintainer — the role
   `<select>` doesn't offer it to a non-maintainer at all (`ROLES.filter`, prop `isMaintainer`) — and a maintainer account may not
-  be edited / re-passworded / disabled by a non-maintainer, so its three row actions are `disabled` with the hint
-  `users.maintainerManageHint` (`canManage = isMaintainer || role !== 'maintainer'`). API validation errors map to a specific field
+  be edited / re-passworded / disabled by a non-maintainer, so its three row actions go off with the hint
+  `users.maintainerManageHint` (`canManage = isMaintainer || role !== 'maintainer'`). This is the one place
+  the app keeps the buttons on screen instead of hiding them — and rightly so: it is **not** a role gate but a
+  per-row boundary (this administrator may manage users, just not *this* one), which is exactly what the
+  printed line beside the row says. `UserActions` renders all three via `ReasonedButton` with `reasonId`
+  pointing at that visible line, so the sentence exists once and is reachable by hover, by focus and by eye
+  on a phone; before, the `title` on a natively disabled Bootstrap button could be read by neither a mouse
+  (`pointer-events: none`) nor a keyboard (out of the tab order). API validation errors map to a specific field
   (`fieldErrorFor`: 409 → username *unless* the message names the maintainer, 400 by keyword →
   password/role/note, otherwise a form-level alert), not to a generic banner. **The last-maintainer
   refusal** (409 `auth: cannot remove the last maintainer`, see `docs/API.md`) belongs to no input — the
@@ -1287,7 +1324,12 @@ here.
   (deletes), a failed PATCH **keeps** the half-typed values and shows the existing `saveError` alert.
   The PATCH's response is the full detail (`albums`/`labels`/`files`), with which the
   page replaces the held photo; the read-only location = `PhotoLocation` (a mini-map over the mapy.com proxy + on-demand
-  `reverseGeocode`) **embedded** in this block. **3. Technické údaje** (`TechnicalDetails`,
+  `reverseGeocode`) **embedded** in this block. **Zjistit místo is not role-gated** — a geocode is a read
+  that costs mapy.com credits, not write access — so a viewer gets the same live button; it goes off only
+  for the duration of its own request, via `ReasonedButton` (`photo.location.lookupBusy`), because a grey
+  button beside a bare spinner reads as broken rather than busy. **Vymazat polohu** is the editor's, and
+  a viewer simply does not get it (the app-wide rule: a role leaves no greyed-out control behind); it too
+  states `photo.location.clearBusy` while the write is in flight. **3. Technické údaje** (`TechnicalDetails`,
   **closed on first render** expander `aria-expanded`/`aria-controls`): **everything the app knows about
   the photo**, in **groups** (`MetaGroup` = a heading + `<dl className="row">`, two columns on a wide
   viewport, one on a narrow one; long values wrap, never stretch the page):
@@ -1737,7 +1779,11 @@ here.
   names the role actually demanded, the way out points at `/`, the Czech default),
   plus the guard-level checks in `ProtectedRoute.test.tsx` and `App.test.tsx` below),
   `components/savedsearch/` = `SaveSearchModal` (a modal for naming when saving a new view
-  or renaming an existing saved search) + `SavedSearchesDropdown` (a dropdown in the header of
+  or renaming an existing saved search; a saved search is **personal**, like the favourite heart, so
+  nothing here is role-gated and a viewer saves views like anyone else. Both footer buttons are
+  `ReasonedButton`s that go off together while the save is in flight and say so
+  (`savedSearches.edit.busy`) — two grey buttons and no words is the state a reader takes for a broken
+  dialog; tests `SaveSearchModal.test.tsx`) + `SavedSearchesDropdown` (a dropdown in the header of
   `SearchPage` — **not in the navbar**; lazy fetch on open, items open the saved view via
   `savedSearchHref`, „Spravovat" → `/saved`, loading/empty/error states inside the menu);
   `components/search/` = `GlobalSearchSections` (a compact cross-entity section above the photo grid of the
@@ -1917,7 +1963,12 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   person's name: `Vybrat obličej #2: Alice`) — that one *is* worth knowing: it is nameable by
   hand here and nowhere else, no suggestion, similarity search or the review game will ever bring it up.
   A click selects/deselects, hover **and focus** mirror the box (a viewer's inert row reports hover too — with the
-  names shown one at a time, that is how a viewer asks which box is whom); the selected row **scrolls itself into view**
+  names shown one at a time, that is how a viewer asks which box is whom — but a list of rows that answer no click
+  reads as a broken panel, so above it a viewer gets **one line saying why** (`faces.viewerNote`: looking is fine,
+  naming needs the editor role). It is the counterweight to the app-wide rule that a role renders no greyed-out
+  control: where the missing buttons would leave the reader puzzled, the panel says once what they would have
+  said one by one. Not an `Alert` — nothing is wrong — and not shown to an editor or on an empty list);
+  the selected row **scrolls itself into view**
   (`block: 'nearest'`), so that a tap on a box in the photo doesn't mark a row off-screen. Its list carries the
   **class** `.kk-viewer__panel-scroll` (shared with `EditPanel`) rather than an inline `maxHeight`, because on a
   phone the drawer is a short bottom sheet that scrolls itself and has to be able to *lift* the cap — an inline

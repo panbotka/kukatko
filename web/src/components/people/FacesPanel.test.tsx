@@ -372,6 +372,27 @@ describe('FacesPanel', () => {
     expect(screen.queryByLabelText('Name this face')).not.toBeInTheDocument()
   })
 
+  it('tells a viewer why there is nothing here to press', () => {
+    renderPanel(facesResult({ faces: [faceView({ face_index: 0, subject_name: 'Alice' })] }), false)
+
+    // A list of rows that answer no click reads as a broken panel unless the
+    // panel says, once, that naming is an editor's job.
+    expect(
+      screen.getByText(
+        'You can look through the faces, but naming them needs the editor role — ask an administrator for it.',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('keeps the note off an editor’s panel and off an empty one', () => {
+    const note = /naming them needs the editor role/
+    renderPanel(facesResult({ faces: [faceView({ face_index: 0, subject_name: 'Alice' })] }))
+    expect(screen.queryByText(note)).not.toBeInTheDocument()
+
+    renderPanel(facesResult({ faces: [] }), false)
+    expect(screen.queryByText(note)).not.toBeInTheDocument()
+  })
+
   it("pairs a viewer's inert row with the photo on hover", async () => {
     // A viewer has nothing to click, but the boxes only name the one being
     // pointed at — so hovering a row is how they ask "which one is that?".

@@ -1,4 +1,4 @@
-import { type SyntheticEvent, useCallback, useEffect, useState } from 'react'
+import { type SyntheticEvent, useCallback, useEffect, useId, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
@@ -13,6 +13,7 @@ import { useTranslation } from 'react-i18next'
 import { useAuth } from '../auth/AuthContext'
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
+import { ReasonedButton } from '../components/ReasonedButton'
 import { RecordTable, type RecordColumn } from '../components/RecordTable'
 import { formatDate, formatDateTime } from '../lib/format'
 import { ApiError, MIN_PASSWORD_LENGTH, type Role } from '../services/auth'
@@ -604,57 +605,65 @@ function UserActions({
 }: UserActionsProps) {
   const { t } = useTranslation()
   const size = stacked ? undefined : 'sm'
-  const buttons = (
-    <>
-      <Button
-        variant="outline-secondary"
-        size={size}
-        disabled={!canManage}
-        title={canManage ? undefined : t('users.maintainerManageHint')}
-        onClick={onEdit}
-      >
-        {t('users.edit')}
-      </Button>
-      <Button
-        variant="outline-secondary"
-        size={size}
-        disabled={!canManage}
-        title={canManage ? undefined : t('users.maintainerManageHint')}
-        onClick={onPassword}
-      >
-        {t('users.changePassword')}
-      </Button>
-      <Button
-        variant={user.disabled ? 'outline-success' : 'outline-danger'}
-        size={size}
-        disabled={self || !canManage}
-        title={
-          self
-            ? t('users.selfDisableHint')
-            : canManage
-              ? undefined
-              : t('users.maintainerManageHint')
-        }
-        onClick={onToggle}
-      >
-        {user.disabled ? t('users.enable') : t('users.disable')}
-      </Button>
-    </>
-  )
+  const hintId = useId()
+  // Not a role gate but a per-row boundary: this administrator may manage users,
+  // just not *this* one. That is why the buttons stay on the row instead of
+  // vanishing — and why, per the app-wide rule, they have to say why they are
+  // off. `ReasonedButton` is what makes that sentence actually reachable: a
+  // natively disabled Bootstrap button takes no focus and shows no `title`.
+  const outOfReach = canManage ? undefined : t('users.maintainerManageHint')
   // Why a control is dead, in one line under it: the reason belongs next to the
-  // button, not only in a `title` a touch device never shows.
+  // button, not only in a `title` a touch device never shows. Every reason a
+  // button in this cluster can have is the one printed there, so they all
+  // describe themselves by that line rather than each carrying a hidden copy of
+  // the same sentence for a screen reader to repeat.
   const hint = self
     ? t('users.selfDisableHint')
     : canManage
       ? null
       : t('users.maintainerManageHint')
+  const buttons = (
+    <>
+      <ReasonedButton
+        variant="outline-secondary"
+        size={size}
+        disabledReason={outOfReach}
+        reasonId={hintId}
+        onClick={onEdit}
+      >
+        {t('users.edit')}
+      </ReasonedButton>
+      <ReasonedButton
+        variant="outline-secondary"
+        size={size}
+        disabledReason={outOfReach}
+        reasonId={hintId}
+        onClick={onPassword}
+      >
+        {t('users.changePassword')}
+      </ReasonedButton>
+      <ReasonedButton
+        variant={user.disabled ? 'outline-success' : 'outline-danger'}
+        size={size}
+        disabledReason={self ? t('users.selfDisableHint') : outOfReach}
+        reasonId={hintId}
+        onClick={onToggle}
+      >
+        {user.disabled ? t('users.enable') : t('users.disable')}
+      </ReasonedButton>
+    </>
+  )
   return (
     <>
       {/* On a card the buttons are the grid items of the card's own full-width
           action row, so they must not be boxed in a second wrapper; in a table
           cell they need their own inline cluster. */}
       {stacked ? buttons : <div className="d-flex gap-1 flex-wrap">{buttons}</div>}
-      {hint !== null && <div className="text-secondary small mt-1">{hint}</div>}
+      {hint !== null && (
+        <div id={hintId} className="text-secondary small mt-1">
+          {hint}
+        </div>
+      )}
     </>
   )
 }

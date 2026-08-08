@@ -83,6 +83,12 @@ const STATE_CHIP: Record<FaceState, string> = {
  *
  * Pointing at a row lights its box on the photo (`onHover`), and the pairing is
  * reported from **focus** as well, so tabbing through the rows walks the boxes too.
+ *
+ * A viewer may not name anybody, so their rows are plain rows rather than dead
+ * buttons — the app-wide rule (see `ReasonedButton`) is that a role never leaves
+ * a greyed-out control behind. They still light their box on hover, because
+ * „which one is that?" is a viewer's question too; a one-line note above the list
+ * says why there is nothing here to press.
  */
 export function FacesPanel({
   photoUid,
@@ -162,6 +168,16 @@ export function FacesPanel({
           </Spinner>
         )}
         {faces.status === 'error' && <Alert variant="danger">{t('faces.error')}</Alert>}
+
+        {/* A viewer's rows are plain rows, not buttons — but they sit in a panel
+            whose whole point is naming, and an unexplained list of things that
+            do not respond to a click reads as a broken panel. So the panel says
+            once, in words, what the missing controls would have said one by one.
+            The note is placed above the list because that is where a reader
+            starts, and it is not an `Alert`: nothing is wrong. */}
+        {!canWrite && faces.faces.length > 0 && (
+          <p className="text-secondary small mb-2">{t('faces.viewerNote')}</p>
+        )}
 
         <div className="list-group list-group-flush" ref={listRef}>
           {faces.faces.map((face, position) => {

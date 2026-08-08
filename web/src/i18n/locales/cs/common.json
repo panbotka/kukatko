@@ -280,7 +280,8 @@
     "viewer": "Prohlížeč",
     "editor": "Editor",
     "admin": "Správce",
-    "maintainer": "Správce systému"
+    "maintainer": "Správce systému",
+    "needEditor": "Na tohle potřebujete roli editora — požádejte o ni správce."
   },
   "auth": {
     "loading": "Načítání…"
@@ -683,7 +684,8 @@
       "error": "Nepodařilo se uložit. Zkontroluj jméno a zkus to znovu.",
       "name": "Jméno",
       "cancel": "Zrušit",
-      "save": "Uložit"
+      "save": "Uložit",
+      "busy": "Pohled se právě ukládá — chvilku strpení."
     },
     "navTitle": "Zobrazit uložená hledání",
     "openTitle": "Otevřít uložené hledání „{{name}}“",
@@ -990,7 +992,10 @@
     "edit": "Hromadná úprava",
     "stack": "Seskupit vybrané",
     "cancel": "Zrušit",
-    "toggle": "Vybrat {{name}}"
+    "toggle": "Vybrat {{name}}",
+    "editDisabled": "Nejdřív vyberte fotky, na které se má úprava použít.",
+    "stackDisabled": "Skupinu tvoří aspoň dvě fotky — vyberte ještě další.",
+    "stackBusy": "Fotky se právě seskupují — chvilku strpení."
   },
   "batch": {
     "bar": "Hromadné akce",
@@ -1446,7 +1451,8 @@
     "noEmbedding": {
       "mark": "Bez embeddingu",
       "note": "Tenhle obličej nemá embedding — jméno mu jde dát jen tady a ručně. Návrhy, hledání podle podoby ani hra na třídění se k němu nikdy nedostanou."
-    }
+    },
+    "viewerNote": "Obličeje si můžete prohlédnout, ale na jejich pojmenování potřebujete roli editora — požádejte o ni správce."
   },
   "outliers": {
     "title": "Možné chyby",
@@ -1723,7 +1729,9 @@
       "none": "Tato fotka nemá uloženou polohu.",
       "lookup": "Zjistit místo",
       "lookupError": "Místo se nepodařilo zjistit.",
-      "clear": "Vymazat polohu"
+      "clear": "Vymazat polohu",
+      "lookupBusy": "Místo se právě zjišťuje — chvilku strpení.",
+      "clearBusy": "Poloha se právě maže — chvilku strpení."
     },
     "edit": {
       "title": "Úpravy",

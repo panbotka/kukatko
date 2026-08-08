@@ -377,7 +377,19 @@ on unexplained jargon that even a non-developer admin will struggle with.
    photo-detail fix. ✅
 9. **New (2026-08-05) — RBAC is invisible.** Routes a role cannot use redirect silently to the
    library, and controls it cannot use are `disabled` with no explanation. See
-   `UX_RESEARCH.md` **N13** and **N14**. 🟡⚪
+   `UX_RESEARCH.md` **N13** and **N14**. 🟡⚪ — ✅ **Done (2026-08-08).** Routes answer with
+   `ForbiddenPage` on the address that was asked for (N13), and controls follow **one rule, both
+   halves of it**: (a) *a control the reader's role forbids is not rendered at all* — the app
+   already did this nearly everywhere (`OrganizePanel`, `PeoplePanel`, `FacesPanel`,
+   `PhotoLocation`'s clear, the batch bars, the nav), so a greyed-out control now always means
+   "not right now", never "not you", and the two are told apart without pressing anything; (b)
+   *whatever is greyed out says why*, in one finished sentence, via the shared `ReasonedButton`
+   (see `FRONTEND.md`) — which has no `disabled` prop, so a dead control cannot exist without a
+   reason. The one place that keeps its buttons on screen is the user roster's maintainer
+   boundary, and that is not a role gate: this administrator may manage users, just not *this*
+   one, which is what the printed line beside the row says. Where the absent controls would leave
+   a reader puzzled (the faces panel, whose whole point is naming) the panel says once, in words,
+   what the missing buttons would have said one by one.
 10. **New (2026-08-05) — index pages don't scale.** Albums (438), Labels (113) and People (105)
     all render one flat list with no search and no sort. See `UX_RESEARCH.md` **N7**, **N8**,
     **N10**. 🔴🟡

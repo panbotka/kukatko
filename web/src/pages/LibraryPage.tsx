@@ -264,9 +264,14 @@ export function LibraryPage() {
           {status === 'ready' && photos.length > 0 && (
             <SlideshowStart scope={NO_SCOPE} view={view} count={total} />
           )}
+          {/* Saving a view is personal, like the favourite heart beside it — the
+              saved search belongs to the reader, not to the library — so it is
+              live for every role, including a viewer, and carries the same
+              one-line explanation the search header gives it. */}
           <Button
             variant="outline-secondary"
             size="sm"
+            title={t('savedSearches.saveViewTitle')}
             onClick={() => {
               setSavingView(true)
             }}

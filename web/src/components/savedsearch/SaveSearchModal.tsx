@@ -1,5 +1,4 @@
 import { type SyntheticEvent, useEffect, useState } from 'react'
-import Button from 'react-bootstrap/Button'
 import Form from 'react-bootstrap/Form'
 import Modal from 'react-bootstrap/Modal'
 import { useTranslation } from 'react-i18next'
@@ -10,6 +9,7 @@ import {
   type SavedSearchParams,
   updateSavedSearch,
 } from '../../services/savedSearches'
+import { ReasonedButton } from '../ReasonedButton'
 
 /** Props for {@link SaveSearchModal}. */
 export interface SaveSearchModalProps {
@@ -100,12 +100,23 @@ export function SaveSearchModal({ search, params, show, onHide, onSaved }: SaveS
           </Form.Group>
         </Modal.Body>
         <Modal.Footer>
-          <Button variant="secondary" onClick={onHide} disabled={busy}>
+          {/* Both footer buttons go off together while the save is in flight, and
+              both say so: two greyed buttons and no words is the state a reader
+              takes for a broken dialog. */}
+          <ReasonedButton
+            variant="secondary"
+            onClick={onHide}
+            disabledReason={busy ? t('savedSearches.edit.busy') : undefined}
+          >
             {t('savedSearches.edit.cancel')}
-          </Button>
-          <Button type="submit" variant="primary" disabled={busy}>
+          </ReasonedButton>
+          <ReasonedButton
+            type="submit"
+            variant="primary"
+            disabledReason={busy ? t('savedSearches.edit.busy') : undefined}
+          >
             {t('savedSearches.edit.save')}
-          </Button>
+          </ReasonedButton>
         </Modal.Footer>
       </Form>
     </Modal>

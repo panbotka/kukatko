@@ -374,6 +374,19 @@ describe('LibraryPage', () => {
     expect(screen.queryByRole('link', { name: 'Upload photos' })).not.toBeInTheDocument()
   })
 
+  it('leaves saving a view live for a viewer, and says what it does', async () => {
+    // A saved search is personal, like the favourite heart — no role gate — so
+    // the button must not read as one of the greyed-out editor controls. It
+    // carries the same one-liner the search header gives it.
+    fetchMock.mockResolvedValue(page([], 0, null))
+    renderLibraryAs(viewerAuth)
+
+    const save = await screen.findByRole('button', { name: 'Save view' })
+    expect(save).toBeEnabled()
+    expect(save).not.toHaveAttribute('aria-disabled')
+    expect(save).toHaveAttribute('title', 'Save the current view as a search')
+  })
+
   it('renders an error with a retry that reloads the photos', async () => {
     fetchMock.mockRejectedValueOnce(new Error('boom'))
     const user = userEvent.setup()

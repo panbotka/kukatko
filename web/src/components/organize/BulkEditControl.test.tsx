@@ -7,6 +7,7 @@ import { AuthContext, type AuthContextValue } from '../../auth/AuthContext'
 import { useBulkEdit } from '../../hooks/useBulkEdit'
 import i18n from '../../i18n'
 import { ApiError } from '../../services/auth'
+import { expectLive, expectOff } from '../../test/reasoned'
 
 import { BulkEditControl } from './BulkEditControl'
 
@@ -106,18 +107,29 @@ describe('BulkEditControl', () => {
     expect(screen.queryByRole('button', { name: 'Bulk edit' })).not.toBeInTheDocument()
   })
 
-  it('is disabled while nothing is selected and enabled once a photo is picked', async () => {
+  it('is off — and says why — while nothing is selected', async () => {
     const user = userEvent.setup()
     renderControl()
 
-    expect(screen.getByRole('button', { name: 'Bulk edit' })).toBeDisabled()
+    expectOff(
+      screen.getByRole('button', { name: 'Bulk edit' }),
+      'Select the photos the edit should apply to first.',
+    )
 
     await user.click(screen.getByRole('button', { name: 'toggle ph1' }))
-    expect(screen.getByRole('button', { name: 'Bulk edit' })).toBeEnabled()
+    expectLive(screen.getByRole('button', { name: 'Bulk edit' }))
 
-    // Deselecting the last photo disables it again.
+    // Deselecting the last photo switches it off again.
     await user.click(screen.getByRole('button', { name: 'toggle ph1' }))
-    expect(screen.getByRole('button', { name: 'Bulk edit' })).toBeDisabled()
+    expectOff(screen.getByRole('button', { name: 'Bulk edit' }))
+  })
+
+  it('does not open the dialog while it is off', async () => {
+    const user = userEvent.setup()
+    renderControl()
+
+    await user.click(screen.getByRole('button', { name: 'Bulk edit' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
   it('submits exactly the selected photos and clears the selection on success', async () => {
@@ -140,7 +152,7 @@ describe('BulkEditControl', () => {
     // Selection mode stays on, but the applied batch is gone: no stale UID can
     // be carried into the next action, and the list is refreshed.
     expect(screen.getByTestId('count')).toHaveTextContent('0')
-    expect(screen.getByRole('button', { name: 'Bulk edit' })).toBeDisabled()
+    expectOff(screen.getByRole('button', { name: 'Bulk edit' }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(onEdited).toHaveBeenCalledTimes(1)
   })
@@ -162,7 +174,7 @@ describe('BulkEditControl', () => {
     // Dismissing the failed dialog still leaves the selection ready for a retry.
     await user.click(screen.getByRole('button', { name: 'Cancel' }))
     expect(screen.getByTestId('count')).toHaveTextContent('2')
-    expect(screen.getByRole('button', { name: 'Bulk edit' })).toBeEnabled()
+    expectLive(screen.getByRole('button', { name: 'Bulk edit' }))
   })
 
   it('falls back to a generic message when the failure carries none', async () => {

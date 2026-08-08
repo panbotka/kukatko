@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import i18n from '../../i18n'
 import { type GeocodeResult } from '../../services/map'
 import { type PhotoDetail } from '../../services/photos'
+import { expectLive, expectOff } from '../../test/reasoned'
 
 import { PhotoLocation } from './PhotoLocation'
 
@@ -120,5 +121,55 @@ describe('PhotoLocation', () => {
 
     renderLocation({ photo: photo({ lat: undefined, lng: undefined }) })
     expect(screen.getByText('This photo has no stored location.')).toBeInTheDocument()
+  })
+
+  it('keeps the lookup live for a viewer — it is a read, not a write', () => {
+    renderLocation({ canWrite: false })
+
+    expectLive(screen.getByRole('button', { name: 'Look up place' }))
+  })
+
+  it('says the lookup is running rather than greying out in silence', async () => {
+    let settle: (place: GeocodeResult) => void = () => undefined
+    reverseGeocodeMock.mockReturnValue(
+      new Promise<GeocodeResult>((resolve) => {
+        settle = resolve
+      }),
+    )
+    const user = userEvent.setup()
+    renderLocation({})
+
+    await user.click(screen.getByRole('button', { name: 'Look up place' }))
+    expectOff(
+      screen.getByRole('button', { name: 'Look up place' }),
+      'The place is being looked up — one moment.',
+    )
+
+    settle({ name: 'Prague', location: 'Prague, Czechia', regional_structure: [] })
+    expect(await screen.findByText('Prague')).toBeInTheDocument()
+    expectLive(screen.getByRole('button', { name: 'Look up place' }))
+  })
+
+  it('says the location is being cleared while the write is in flight', async () => {
+    let settle: (photo: PhotoDetail) => void = () => undefined
+    updatePhotoMock.mockReturnValue(
+      new Promise<PhotoDetail>((resolve) => {
+        settle = resolve
+      }),
+    )
+    const onUpdated = vi.fn()
+    const user = userEvent.setup()
+    renderLocation({ onUpdated })
+
+    await user.click(screen.getByRole('button', { name: 'Clear location' }))
+    expectOff(
+      screen.getByRole('button', { name: 'Clear location' }),
+      'The location is being cleared — one moment.',
+    )
+
+    settle(photo({ lat: undefined, lng: undefined }))
+    await waitFor(() => {
+      expect(onUpdated).toHaveBeenCalled()
+    })
   })
 })

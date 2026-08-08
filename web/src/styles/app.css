@@ -534,6 +534,42 @@ body {
   }
 }
 
+/* ---- Buttons that are off, and say why ---------------------------------
+ *
+ * `ReasonedButton` marks itself `aria-disabled` instead of taking the native
+ * `disabled` attribute, so the reader can still focus it (to hear the reason)
+ * and still hover it (to see the reason in the `title`). Bootstrap's own
+ * `.btn:disabled` rule would have killed both: it drops the control out of the
+ * tab order and sets `pointer-events: none`, which suppresses the tooltip.
+ *
+ * So the look is reproduced here by hand — the same `--bs-btn-disabled-*`
+ * custom properties Bootstrap resolves per variant, minus the parts that make
+ * the explanation unreachable.
+ */
+.kk-btn-inert {
+  color: var(--bs-btn-disabled-color);
+  background-color: var(--bs-btn-disabled-bg);
+  border-color: var(--bs-btn-disabled-border-color);
+  opacity: var(--bs-btn-disabled-opacity);
+  cursor: not-allowed;
+  /* A control that does nothing must not answer a press like one that does. */
+  box-shadow: none;
+}
+
+/* Bootstrap's hover/active/focus rules are written for a live button and would
+   otherwise repaint an inert one on the way past. Focus itself must stay
+   visible — that is how a keyboard reader knows where the reason is being read
+   from — so only the colour changes are undone. */
+.kk-btn-inert:hover,
+.kk-btn-inert:active,
+.kk-btn-inert:focus,
+.kk-btn-inert:focus-visible {
+  color: var(--bs-btn-disabled-color);
+  background-color: var(--bs-btn-disabled-bg);
+  border-color: var(--bs-btn-disabled-border-color);
+  box-shadow: none;
+}
+
 /* ---- Mobile bottom tab bar ---------------------------------------------
  *
  * The phone-only strip of primary destinations (`MobileTabBar`), pinned to the
