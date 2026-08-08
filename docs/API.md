@@ -823,21 +823,27 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
 - **Maintenance API (`/api/v1`, `internal/maintenanceapi`, maintainer-only via `RequireMaintainer`):**
   the library's integrity check & repairs. `GET /maintenance/scan` → `Report` (counts + samples:
   `missing_originals`/`orphan_files`/`missing_thumbnails`/`missing_embeddings`/`missing_faces`/
-  `missing_phashes`/`transposed_dimensions`/`duplicate_face_markers` + the totals
+  `missing_phashes`/`transposed_dimensions`/`transposed_face_boxes`/`duplicate_face_markers` + the totals
   `photos`/`files_in_db`/`originals_on_disk`);
   `POST /maintenance/repair`
   `{thumbnails,embeddings,faces,phashes,import_orphans,dimensions,face_markers}` (each opt-in) → `RepairResult`
   with scheduling counts (`*_enqueued` + `orphans_imported/skipped/failed` +
-  `dimensions_fixed`/`face_boxes_fixed`/`face_links_cleared`);
+  `dimensions_fixed`/`face_boxes_fixed`/`face_boxes_skipped`/`face_links_cleared`);
   `DisallowUnknownFields`, an empty selection →
   400, an orphan import without an importer → 503 (`ErrOrphanImportUnavailable`). The repairs are idempotent and
   run through the job queue (thumbnail/pHash via the `thumbnail` job, embeddings/faces backfill), and **never
-  delete originals**. `dimensions` is the exception that writes the catalogue directly: it rewrites the
-  pixel dimensions of quarter-turned photos whose columns hold the **displayed** frame instead of the stored
-  one (the PhotoPrism-derived import defect that letterboxed the viewer and drifted the face boxes) plus the
-  faces normalized against that transposed frame. Each row is corrected from **the file's own EXIF document**,
-  not from a guess about where it came from, and every write is guarded on the exact state it replaces — so
-  `transposed_dimensions` in the scan is its dry run and a re-run is a no-op. `face_markers` is the other
+  delete originals**. `dimensions` is the exception that writes the catalogue directly, in two halves. It
+  rewrites the pixel dimensions of quarter-turned photos whose columns hold the **displayed** frame instead of
+  the stored one (the PhotoPrism-derived import defect that letterboxed the viewer and drifted the face boxes),
+  each row corrected from **the file's own EXIF document** rather than from a guess about where it came from
+  (`transposed_dimensions` is that half's dry run). It then corrects the face boxes recorded against the same
+  transposed frame — **not** with one blind transform: those rows are not all in the same coordinate space, so
+  each is decided from the photo's own face markers (a quarter turn for a box that is in the raw frame, a
+  per-axis rescale for one the sidecar had already rotated, or only the cached frame when the box is right), and
+  a row whose space the markers cannot establish is left **completely untouched** (`face_boxes_skipped`) so a
+  later run can pick it up once the photo carries a marker to reconcile it against. `transposed_face_boxes`
+  counts what would be written (per face row, sampled by photo uid), so it is the dry run of that half; every
+  write is guarded on the exact state it replaces, so a re-run is a no-op and no box is ever moved twice. `face_markers` is the other
   direct-write repair: a marker describes one region, so at most one detected face may claim it, and
   `duplicate_face_markers` (sampled by **marker uid**) counts the markers more than one face row still caches —
   the surplus links non-exclusive matching wrote, which render one person twice and mislead everything reading

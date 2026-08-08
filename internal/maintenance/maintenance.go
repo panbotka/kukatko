@@ -59,9 +59,13 @@ type VectorCatalog interface {
 	ListPhotosMissingEmbedding(ctx context.Context, limit int) ([]string, error)
 	// ListPhotosMissingFaces returns the uids of photos with no face detection.
 	ListPhotosMissingFaces(ctx context.Context, limit int) ([]string, error)
-	// RepairFaceDimensions re-normalises the faces of one photo that were recorded
-	// against the transposed display frame, returning how many rows changed.
-	RepairFaceDimensions(ctx context.Context, photoUID string, rawWidth, rawHeight int) (int64, error)
+	// PlanFaceBoxRepair decides, per face row recorded against the transposed frame
+	// of a quarter-turned photo, which correction that row's evidence supports. It
+	// is read-only, hence the dry run of the faces half of the dimension repair.
+	PlanFaceBoxRepair(ctx context.Context) ([]vectors.FaceBoxPlan, error)
+	// ApplyFaceBoxRepair writes the plans that carry a transform, returning how many
+	// face rows changed. Skipped plans are not written at all.
+	ApplyFaceBoxRepair(ctx context.Context, plans []vectors.FaceBoxPlan) (int64, error)
 	// ListDuplicateFaceMarkers returns the markers cached on more than one face row.
 	ListDuplicateFaceMarkers(ctx context.Context) ([]vectors.DuplicateFaceMarker, error)
 }
@@ -245,6 +249,10 @@ func (s *Service) Scan(ctx context.Context) (Report, error) {
 	if err != nil {
 		return Report{}, err
 	}
+	faceBoxes, err := s.scanFaceBoxes(ctx)
+	if err != nil {
+		return Report{}, err
+	}
 	duplicateMarkers, err := s.scanFaceMarkers(ctx)
 	if err != nil {
 		return Report{}, err
@@ -260,8 +268,40 @@ func (s *Service) Scan(ctx context.Context) (Report, error) {
 		MissingFaces:         derived.faces,
 		MissingPhashes:       derived.phashes,
 		TransposedDimensions: dimensions,
+		TransposedFaceBoxes:  faceBoxes,
 		DuplicateFaceMarkers: duplicateMarkers,
 	}, nil
+}
+
+// scanFaceBoxes turns the faces half of the dimension repair into a Finding: the
+// face rows it would rewrite, counted per row and sampled by photo uid.
+//
+// The plan is the dry run, so what the scan reports is literally what the repair
+// would do — including the rows it would deliberately leave alone, which are
+// counted nowhere here precisely because nothing would be written for them. The
+// repair reports those as FaceBoxesSkipped when it runs.
+func (s *Service) scanFaceBoxes(ctx context.Context) (Finding, error) {
+	plans, err := s.vectors.PlanFaceBoxRepair(ctx)
+	if err != nil {
+		return Finding{}, fmt.Errorf("maintenance: planning face box repair: %w", err)
+	}
+	rows := 0
+	samples := make([]string, 0, s.sampleLimit)
+	seen := make(map[string]struct{}, len(plans))
+	for _, plan := range plans {
+		if plan.Transform == vectors.TransformSkip {
+			continue
+		}
+		rows++
+		if _, ok := seen[plan.Face.PhotoUID]; ok {
+			continue
+		}
+		seen[plan.Face.PhotoUID] = struct{}{}
+		if len(samples) < s.sampleLimit {
+			samples = append(samples, plan.Face.PhotoUID)
+		}
+	}
+	return Finding{Count: rows, Samples: samples}, nil
 }
 
 // scanFaceMarkers turns the markers cached on more than one face into a Finding

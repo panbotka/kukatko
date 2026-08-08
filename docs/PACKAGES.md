@@ -920,12 +920,30 @@ to `## Package map` in `CLAUDE.md`.
   (uids of photos with no `face_detections` row, like `ListPhotosMissingEmbedding`); FK
   `ON DELETE CASCADE` — deleting a photo
   deletes embeddings, faces and face_detections, fixing the photo-sorter gap with orphans;
-  **orientation geometry** (`geometry.go`): `RenormalizeTransposedBBox(bbox,rawW,rawH,orientation)` repairs a
-  box that was divided by the **transposed** display frame (a per-axis rescale by `rawW/rawH` and its
-  reciprocal; anything but a quarter turn or a degenerate frame is returned unchanged) — the photo-sorter
-  migration ran its faces through it — and `RepairFaceDimensions(uid,rawW,rawH)` is the same correction as
-  one guarded `UPDATE` over a photo's face rows (it matches only rows whose cached `photo_width`/`photo_height`
-  are the raw pair swapped, so it is idempotent), the faces half of `maintenance repair --dimensions`),
+  **orientation geometry** (`geometry.go` + `facerepair.go`), the faces half of
+  `maintenance repair --dimensions`: a face row whose cached `photo_width`/`photo_height` are its photo's stored
+  pair **swapped** is the fingerprint of the defect, but those rows are **not all in one coordinate space** —
+  whether the embeddings sidecar auto-rotated an image before detecting on it has varied over the library's life
+  — so the correction is chosen **per row from evidence**, never from provenance. `FrameTransform` =
+  `TransformSkip` (write nothing at all) / `TransformFrame` (the box is already in display space, only the cached
+  frame was transposed) / `TransformRotate` (`RotateRawBBox(bbox,orientation)`: the numbers are a correct box in
+  the **RAW** frame and need the quarter turn the EXIF tag describes — 5 transposes, 6 turns 90° CW, 7
+  transverses, 8 turns 270° CW; a box inside the raw frame is always inside the display frame after it) /
+  `TransformRescale` (`RenormalizeTransposedBBox(bbox,rawW,rawH,orientation)`: a per-axis rescale by `rawW/rawH`
+  and its reciprocal, for a box the sidecar had **already** auto-rotated and that was only divided by the wrong
+  pair; a degenerate frame or anything but a quarter turn returns the box unchanged). The evidence is the photo's
+  **valid face markers** (display space, regions a person has seen sit on a face): the candidate whose
+  transformed box lands nearest a marker **centre** (not IoU — the two detectors size a face differently) wins if
+  it is within 5 % of the frame and beats the runner-up by both a factor of 2 and 0.02; a candidate whose box
+  would fall off the photo is refuted before it is scored. A row the markers cannot place inherits its photo's
+  verdict only when every decided row of that photo agrees (a photo's faces come from one detection run, hence
+  one space), otherwise it stays `TransformSkip`. Measured against the live catalogue the rotation reconciled 4
+  detection/marker pairs out of 4 and the rescale 0, which is why the old blind rescale was replaced.
+  `PlanFaceBoxRepair()` → `[]FaceBoxPlan{Face TransposedFace,Transform,BBox}` is read-only — **the dry run** —
+  and finds its candidates by joining `photos`, so a row stays findable after the photos half has corrected the
+  photo row; `ApplyFaceBoxRepair(plans)` writes only the plans that carry a transform, each guarded on the
+  fingerprint it was planned from, so a **skipped row keeps the fingerprint a later run finds it by** (a marker
+  added tomorrow is new evidence) and no box is ever moved twice),
   `internal/people/`
   (the DB layer for **subjects** (people/animals/other) and **markers** (face/label regions on
   photos), tables `subjects`/`markers` in migration `0008_subjects_markers.sql`: `subjects`
@@ -2068,7 +2086,7 @@ to `## Package map` in `CLAUDE.md`.
   `PhotoCatalog` (`CountPhotos`/`ListPrimaryFiles`/`ListFilePaths`/`ListPhotosMissingPhash`/
   `ListDimensionMismatches`/`RepairDimensions`,
   satisfied by `photos.Store`)/`VectorCatalog` (`ListPhotosMissingEmbedding`/`ListPhotosMissingFaces`/
-  `RepairFaceDimensions`/`ListDuplicateFaceMarkers`,
+  `PlanFaceBoxRepair`/`ApplyFaceBoxRepair`/`ListDuplicateFaceMarkers`,
   `vectors.Store`)/`OriginalStore` (`Stat`, `storage.Storage`)/`DiskScanner` (`List`, an adapter over
   `backup.DiskOriginals`)/`ThumbChecker` (`HasThumbnail`, `NewThumbCache` over `thumb.Thumbnailer`)/
   `Enqueuer` (`EnqueueThumbnail`, `jobs.Enqueuer`)/`EmbedBackfiller` (`embedjob.Service`)/
@@ -2078,7 +2096,8 @@ to `## Package map` in `CLAUDE.md`.
   unit-testable with fakes without DB/disk/queue; `Service` = `New(Config{...,SampleLimit})`
   (panics on a nil mandatory collaborator; default `SampleLimit` 20); **`Scan(ctx)`** (read-only) returns
   `Report{Photos,FilesInDB,OriginalsOnDisk,MissingOriginals,OrphanFiles,MissingThumbnails,
-  MissingEmbeddings,MissingFaces,MissingPhashes,TransposedDimensions,DuplicateFaceMarkers}` — each class is a
+  MissingEmbeddings,MissingFaces,MissingPhashes,TransposedDimensions,TransposedFaceBoxes,
+  DuplicateFaceMarkers}` — each class is a
   `Finding{Count,Samples}`
   (a count + a limited sample of identifiers); `representativeThumbSize`=`tile_224` is the proxy for the presence of
   thumbnails, an orphan = a file on disk with no `photo_files.file_path` (the `orphanKeys` set-diff), `Report.Clean()`;
@@ -2087,11 +2106,16 @@ to `## Package map` in `CLAUDE.md`.
   `thumbnail` jobs (`EnqueueThumbnail`), embeddings/faces call the backfill, the orphan import goes through the
   upload pipeline (a per-orphan failure is counted without aborting); `ErrOrphanImportUnavailable` when the
   import is selected without an importer.
-  **`Dimensions`** is the one repair that writes the catalogue instead of enqueuing regenerable work: for every
-  photo `TransposedDimensions` reports it writes the file's own pair (`photos.RepairDimensions`) and then, only
-  for a row that actually changed, re-normalizes that photo's faces against the corrected frame
-  (`vectors.RepairFaceDimensions`) → `DimensionsFixed`/`FaceBoxesFixed`. Both halves are guarded on the state
-  they replace, so an interrupted run resumes and a re-run is a no-op; `Scan` is the **dry run**.
+  **`Dimensions`** is the one repair that writes the catalogue instead of enqueuing regenerable work, and it has
+  two halves. For every photo `TransposedDimensions` reports it writes the file's own pair
+  (`photos.RepairDimensions`, `DimensionsFixed`); then it runs the faces half over the **whole** catalogue
+  (`vectors.PlanFaceBoxRepair` + `ApplyFaceBoxRepair` → `FaceBoxesFixed`/`FaceBoxesSkipped`) rather than only
+  over the photos it just fixed — a photo corrected by an earlier run still carries face rows to decide, and a
+  row skipped for want of evidence has to stay reachable once that evidence arrives. Each face row gets the
+  transform its photo's markers support and nothing at all when they support none (`FaceBoxesSkipped`), which is
+  why `TransposedFaceBoxes` counts only the rows that would actually be written: a finding is what the repair
+  would do. Both halves are guarded on the state they replace, so an interrupted run resumes, a re-run is a
+  no-op and no box is moved twice; `Scan` is the **dry run**.
   **`FaceMarkers`** likewise writes the catalogue directly: `DuplicateFaceMarkers` (from
   `vectors.ListDuplicateFaceMarkers`, sampled by marker uid) is its dry run, and the repair visits each
   affected photo once (`affectedPhotos`, sorted, deduplicated) and delegates to `FaceCache.ClearSurplusLinks`,

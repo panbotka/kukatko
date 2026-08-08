@@ -148,6 +148,13 @@ func printScanReport(cmd *cobra.Command, report maintenance.Report) {
 	if len(report.TransposedDimensions.Samples) > 0 {
 		cmd.Printf("    e.g. %v\n", report.TransposedDimensions.Samples)
 	}
+	// The faces half of the same repair, counted per face row and sampled by photo:
+	// only the rows whose coordinate space the photo's markers establish, which is
+	// exactly what the repair would rewrite.
+	cmd.Printf("  transposed faces:   %d\n", report.TransposedFaceBoxes.Count)
+	if len(report.TransposedFaceBoxes.Samples) > 0 {
+		cmd.Printf("    e.g. %v\n", report.TransposedFaceBoxes.Samples)
+	}
 	// Likewise the dry run of `repair --face-markers`, sampled by marker uid.
 	cmd.Printf("  dup face markers:   %d\n", report.DuplicateFaceMarkers.Count)
 	if len(report.DuplicateFaceMarkers.Samples) > 0 {
@@ -184,8 +191,8 @@ func runMaintenanceRepair(cmd *cobra.Command) error {
 		result.ThumbnailsEnqueued, result.PhashesEnqueued, result.EmbeddingsEnqueued, result.FacesEnqueued)
 	cmd.Printf("orphans imported=%d skipped=%d failed=%d\n",
 		result.OrphansImported, result.OrphansSkipped, result.OrphansFailed)
-	cmd.Printf("dimensions fixed=%d face boxes fixed=%d\n",
-		result.DimensionsFixed, result.FaceBoxesFixed)
+	cmd.Printf("dimensions fixed=%d face boxes fixed=%d left alone=%d\n",
+		result.DimensionsFixed, result.FaceBoxesFixed, result.FaceBoxesSkipped)
 	cmd.Printf("surplus face links cleared=%d\n", result.FaceLinksCleared)
 	return nil
 }

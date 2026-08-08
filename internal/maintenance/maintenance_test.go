@@ -51,10 +51,10 @@ func (f *fakePhotos) RepairDimensions(_ context.Context, m photos.DimensionMisma
 // fakeVectors is an in-memory VectorCatalog.
 type fakeVectors struct {
 	missingEmb, missingFaces []string
-	// facesPerPhoto is how many face rows RepairFaceDimensions reports changing;
-	// repairedFaces records the (uid, raw width, raw height) it was called with.
-	facesPerPhoto int64
-	repairedFaces []string
+	// facePlans is what the faces half of the dimension repair would do; appliedFaces
+	// records the rows actually written, as "uid#index:transform".
+	facePlans    []vectors.FaceBoxPlan
+	appliedFaces []string
 	// duplicateMarkers are the markers cached on more than one face, which the scan
 	// reports and the face-marker repair re-matches.
 	duplicateMarkers []vectors.DuplicateFaceMarker
@@ -66,11 +66,22 @@ func (f *fakeVectors) ListPhotosMissingEmbedding(context.Context, int) ([]string
 func (f *fakeVectors) ListPhotosMissingFaces(context.Context, int) ([]string, error) {
 	return f.missingFaces, nil
 }
-func (f *fakeVectors) RepairFaceDimensions(
-	_ context.Context, photoUID string, rawWidth, rawHeight int,
+func (f *fakeVectors) PlanFaceBoxRepair(context.Context) ([]vectors.FaceBoxPlan, error) {
+	return f.facePlans, nil
+}
+func (f *fakeVectors) ApplyFaceBoxRepair(
+	_ context.Context, plans []vectors.FaceBoxPlan,
 ) (int64, error) {
-	f.repairedFaces = append(f.repairedFaces, fmt.Sprintf("%s:%dx%d", photoUID, rawWidth, rawHeight))
-	return f.facesPerPhoto, nil
+	var applied int64
+	for _, plan := range plans {
+		if plan.Transform == vectors.TransformSkip {
+			continue
+		}
+		f.appliedFaces = append(f.appliedFaces,
+			fmt.Sprintf("%s#%d:%d", plan.Face.PhotoUID, plan.Face.FaceIndex, plan.Transform))
+		applied++
+	}
+	return applied, nil
 }
 func (f *fakeVectors) ListDuplicateFaceMarkers(context.Context) ([]vectors.DuplicateFaceMarker, error) {
 	return f.duplicateMarkers, nil
