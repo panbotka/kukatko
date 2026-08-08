@@ -811,6 +811,30 @@
     "loading": "Loading labels…",
     "error": "Could not load labels.",
     "actionError": "The action failed. Please try again.",
+    "cloud": "Labels",
+    "actions": "Actions for the label “{{name}}”",
+    "photoCount_one": "{{count}} photo",
+    "photoCount_other": "{{count}} photos",
+    "filters": {
+      "barLabel": "Label filters",
+      "search": "Search labels",
+      "searchPlaceholder": "Search by name…",
+      "sort": "Sort"
+    },
+    "sort": {
+      "count": "By photo count",
+      "name": "By name"
+    },
+    "noMatches": {
+      "title": "No label matches",
+      "hint": "Try another name."
+    },
+    "group": {
+      "name": "{{prefix}}…",
+      "toggle_one": "Group {{prefix}} — {{count}} label",
+      "toggle_other": "Group {{prefix}} — {{count}} labels",
+      "members": "Labels in the group {{prefix}}"
+    },
     "confirmTitle": "Delete label?",
     "confirmDelete": "Delete the label \"{{name}}\"?",
     "deleteConfirm": "Delete label",
@@ -828,9 +852,10 @@
       "save": "Save"
     },
     "review": {
-      "toggle": "Ask about the label “{{name}}” in the review game",
       "on": "The review game asks about this label",
-      "off": "The review game skips this label"
+      "off": "The review game skips this label",
+      "enable": "Ask about it in the review game",
+      "disable": "Skip it in the review game"
     }
   },
   "labelDetail": {

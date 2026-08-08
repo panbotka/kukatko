@@ -130,6 +130,18 @@ describe('coarse-pointer touch-target floor', () => {
     expect(lengthPx(chip.get('min-height'))).toBe(0)
     expect(chip.get('box-sizing')).toBe('content-box')
   })
+
+  it('grows a label chip to the floor rather than exempting its menu', () => {
+    // The labels cloud packs a link and a "…" menu into one pill. Trimming the
+    // menu (the `.badge .btn-close` trick) would leave a hundred sub-44px targets
+    // on the page a phone reads most; growing the pill instead keeps both the
+    // link and the menu finger-sized, and the desktop chip stays compact.
+    const block = ruleBody(css, /@media\s*\(pointer:\s*coarse\)/, /\.kk-label-chip__link/) ?? ''
+    const link = declarations(ruleBody(block, /\.kk-label-chip__link,/) ?? '')
+    expect(lengthPx(link.get('min-height'))).toBeGreaterThanOrEqual(TOUCH_FLOOR_PX)
+    const menu = declarations(ruleBody(block, /\.kk-label-chip__menu\s*(?=\{)/) ?? '')
+    expect(lengthPx(menu.get('min-width'))).toBeGreaterThanOrEqual(TOUCH_FLOOR_PX)
+  })
 })
 
 /**

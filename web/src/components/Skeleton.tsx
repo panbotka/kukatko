@@ -113,15 +113,54 @@ export interface ListSkeletonProps {
 }
 
 /**
- * A loading placeholder for a stacked list of rows (labels): evenly spaced full-
- * width blocks the height of a real row, so a list view keeps its rhythm while
- * loading rather than collapsing to a centered spinner.
+ * A loading placeholder for a stacked list of rows (activity, decisions,
+ * leaderboard): evenly spaced full-width blocks the height of a real row, so a
+ * list view keeps its rhythm while loading rather than collapsing to a centered
+ * spinner.
  */
 export function ListSkeleton({ label, count = 8, rowHeight = '3.25rem' }: ListSkeletonProps) {
   return (
     <div role="status" aria-busy="true" aria-label={label} className="d-flex flex-column gap-2">
       {Array.from({ length: count }, (_, row) => (
         <Skeleton key={row} height={rowHeight} radius="var(--kk-radius-md)" />
+      ))}
+      <span className="visually-hidden">{label}</span>
+    </div>
+  )
+}
+
+/**
+ * The widths, in rem, the chip placeholders cycle through. A cloud of identical
+ * pills reads as a progress bar rather than as labels; a fixed cycle of uneven
+ * ones looks like words without making the placeholder random (and so unstable
+ * between renders and untestable).
+ */
+const CHIP_WIDTHS = [6, 9, 5, 11, 7, 8, 6.5, 10]
+
+/** Props for {@link ChipCloudSkeleton}. */
+export interface ChipCloudSkeletonProps {
+  /** Localized "loading…" label, announced once to assistive tech. */
+  label: string
+  /** How many placeholder chips to draw. */
+  count?: number
+}
+
+/**
+ * A loading placeholder for a wrapping cloud of pills (labels): pill-shaped
+ * blocks of uneven width, wrapped and gapped exactly as the real chips are, so
+ * the page holds its eventual shape instead of drawing a stack of full-width
+ * rows the data will never fill.
+ */
+export function ChipCloudSkeleton({ label, count = 24 }: ChipCloudSkeletonProps) {
+  return (
+    <div role="status" aria-busy="true" aria-label={label} className="d-flex flex-wrap gap-2">
+      {Array.from({ length: count }, (_, chip) => (
+        <Skeleton
+          key={chip}
+          height="2.25rem"
+          width={`${String(CHIP_WIDTHS[chip % CHIP_WIDTHS.length])}rem`}
+          radius="var(--kk-radius-pill)"
+        />
       ))}
       <span className="visually-hidden">{label}</span>
     </div>
