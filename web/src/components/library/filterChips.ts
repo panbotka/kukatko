@@ -5,8 +5,11 @@ import {
   type LibraryView,
   LIBRARY_DEFAULTS,
   parseFilterList,
+  periodOf,
+  periodPatch,
   removeFromFilterList,
 } from '../../lib/libraryView'
+import { ANY_PERIOD, formatPeriod, isAnyPeriod } from '../../lib/period'
 import { type EntityKind } from '../entityStyle'
 
 /** A single active-filter descriptor, rendered as a removable chip. */
@@ -20,7 +23,7 @@ export interface FilterChip {
   /**
    * The catalog entity this chip stands for, when it is one. Album, label and
    * person chips carry a kind so the bar can colour and icon them per the shared
-   * entity convention; the remaining filters (year, favorites, rating, flag, …)
+   * entity convention; the remaining filters (period, favorites, rating, flag, …)
    * leave it undefined and keep the neutral chip style.
    */
   kind?: EntityKind
@@ -46,10 +49,15 @@ export interface BuildChipsOptions {
 /**
  * Derives the removable chips for every active filter. The returned length
  * doubles as the "active filters" count on the filter bar's toggle badge.
+ *
+ * `locale` is the reader's active language, used to word the capture period the
+ * way its own control does — a chip and the control it mirrors must not describe
+ * the same filter differently.
  */
 export function buildChips(
   view: LibraryView,
   t: TFunction,
+  locale: string,
   options: BuildChipsOptions = {},
 ): FilterChip[] {
   const { facets, includeQuery = false } = options
@@ -63,11 +71,14 @@ export function buildChips(
       clear: { q: '' },
     })
   }
-  if (view.year !== '') {
+  // One chip for the whole time axis, however it was set — a decade, a year, or
+  // an exact date range — because there is one filter behind all three.
+  const period = periodOf(view)
+  if (!isAnyPeriod(period)) {
     chips.push({
-      key: 'year',
-      label: `${t('library.filters.year')}: ${view.year}`,
-      clear: { year: '' },
+      key: 'period',
+      label: `${t('library.filters.period')}: ${formatPeriod(period, t, locale)}`,
+      clear: periodPatch(ANY_PERIOD),
     })
   }
   // One chip per selected album and one per selected label (the facets combine
@@ -128,20 +139,6 @@ export function buildChips(
       key: 'camera',
       label: `${t('library.filters.camera')}: ${view.camera}`,
       clear: { camera: '' },
-    })
-  }
-  if (view.taken_after !== '') {
-    chips.push({
-      key: 'taken_after',
-      label: `${t('library.filters.takenAfter')}: ${view.taken_after}`,
-      clear: { taken_after: '' },
-    })
-  }
-  if (view.taken_before !== '') {
-    chips.push({
-      key: 'taken_before',
-      label: `${t('library.filters.takenBefore')}: ${view.taken_before}`,
-      clear: { taken_before: '' },
     })
   }
   if (view.min_rating !== '') {

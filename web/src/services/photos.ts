@@ -255,14 +255,18 @@ export interface PhotoListParams {
   camera?: string
   q?: string
   /**
-   * Capture-year facet as a four-digit string, e.g. `'2023'` (`year` query
-   * param): keep only photos taken in that calendar year. Photos with an unknown
-   * capture time are excluded. Empty / undefined means no filter.
+   * Capture-time period, lower bound: an RFC3339 timestamp or a YYYY-MM-DD date
+   * (read as UTC midnight). Together with {@link PhotoListParams.taken_before} it
+   * is the only way the client scopes the time axis — a year, a decade or an
+   * arbitrary span are all this one pair, so the backend's single-year `year`
+   * param has no caller here. Photos with an unknown capture time are excluded.
    */
-  year?: string
-  /** RFC3339 timestamp or YYYY-MM-DD date. */
   taken_after?: string
-  /** RFC3339 timestamp or YYYY-MM-DD date. */
+  /**
+   * Capture-time period, upper bound (inclusive, `taken_at <= …`). The library
+   * sends the end of the last day rather than its midnight, so a period covers
+   * the whole day the reader picked; see `lib/period` `takenBeforeParam`.
+   */
   taken_before?: string
   /**
    * Scope the listing to photos in one or more albums (`album` query param).
@@ -374,7 +378,6 @@ export function buildPhotoQuery(params: PhotoListParams): URLSearchParams {
   set('has_gps', params.has_gps)
   set('camera', params.camera)
   set('q', params.q)
-  set('year', params.year)
   set('taken_after', params.taken_after)
   set('taken_before', params.taken_before)
   setList('album', params.album)
@@ -1309,13 +1312,14 @@ export interface YearsResponse {
 
 /**
  * Fetches the years that hold photos, newest first, each with its count, via
- * `GET /api/v1/photos/years` — the option list behind the library's year facet.
+ * `GET /api/v1/photos/years` — the option list behind the library's period filter,
+ * which groups them into decades.
  *
  * It accepts the same filter params as {@link fetchPhotos}, and the counts respect
  * them (including the caller's archived visibility), so a year's count is
- * what the grid will show once that year is selected. The backend deliberately
- * ignores `year` itself — a facet must not narrow its own options — so callers may
- * pass the whole view; sort/order and pagination are ignored as well.
+ * what the grid will show once that year is picked. The caller drops the period
+ * bounds first — a facet must not narrow its own options; see `useLibraryFacets`
+ * — and sort/order and pagination are ignored here as well.
  *
  * @throws ApiError with `status` 400 (invalid filter) or 5xx so the caller can
  *   render the matching message.

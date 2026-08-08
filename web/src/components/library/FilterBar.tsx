@@ -20,7 +20,10 @@ import {
   type LibraryView,
   LIBRARY_DEFAULTS,
   parseFilterList,
+  periodOf,
+  periodPatch,
 } from '../../lib/libraryView'
+import { periodFromQuery } from '../../lib/period'
 import { FACET_QUERY_KEYS, facetQueryTokens, queryFilterTokens } from '../../lib/queryLanguage'
 import { type SetUrlState } from '../../lib/urlState'
 import { ENTITY_STYLE } from '../entityStyle'
@@ -29,6 +32,7 @@ import { SearchQueryHelp } from '../search/SearchQueryHelp'
 
 import { buildChips } from './filterChips'
 import { GridDensityControl } from './GridDensityControl'
+import { PeriodFilter } from './PeriodFilter'
 import { SearchableSelect } from './SearchableSelect'
 
 /** DOM id of the collapsible / offcanvas advanced-filter panel. */
@@ -65,17 +69,20 @@ export interface FilterBarProps<T extends LibraryView> {
    */
   showDensity?: boolean
   /**
-   * The Year / Album / Label / Person facet option lists. Omit to hide the facet
-   * row — pages whose grid is already scoped to one album, label or place have
-   * nothing to offer there. Album titles, label names and subject names also let
-   * the chips name a filter instead of showing its UID.
+   * The Album / Label / Person facet option lists plus the years the library
+   * holds. Omit on pages whose grid is already scoped to one album, label or
+   * place: the three entity pickers are then dropped from the primary row (the
+   * period control stays — every grid can be narrowed in time), and the period
+   * control offers its exact dates without the decade list it has no counts for.
+   * Album titles, label names and subject names also let the chips name a filter
+   * instead of showing its UID.
    */
   facets?: LibraryFacets
   /**
    * Whether to show the favorites toggle. Off by default: pages already scoped to
    * favorites (the Favorites page) would only offer a redundant, conflicting
-   * control. The library opts in so "favorites + album + year" can be combined in
-   * the main grid.
+   * control. The library opts in so "favorites + album + period" can be combined
+   * in the main grid.
    */
   showFavorite?: boolean
   /**
@@ -92,19 +99,27 @@ export interface FilterBarProps<T extends LibraryView> {
  * visual anchor, matching title and description as you type), the sort selector,
  * the grid-density picker (how many photos sit side by side — a per-device
  * display preference, not part of the view), and a "Filters" toggle badged with
- * the count of active filters. On desktop the facet row — Year, Album, Label,
- * Person, the ways photos are actually found — sits below the header in its own
- * always-visible four-across row (only when the page supplies `facets`). On a
- * phone that row would stack into four full-width blocks that push the photos off
- * the first screen, so there the facets fold into the same disclosure surface as
- * the rest of the filters. The remaining filters (date range, camera, archived,
- * favorites, location, min rating, flag) live in a collapsible panel on desktop
- * and an offcanvas drawer on phones, so the resting state stays uncluttered — the
- * favorites toggle only when the page opts in via `showFavorite`. Every active
- * filter — facets included — is echoed as a removable chip plus a single clear-all
- * action, so a filtered set is never a mystery even while the drawer is shut.
- * The drawer closes on a sticky footer carrying the live result count
- * ({@link FilterDrawerFooter}) rather than only on the cross ten fields back up.
+ * the count of active filters. On desktop the primary filter row — Period,
+ * Album, Label, Person, the ways photos are actually found — sits below the
+ * header in its own always-visible four-across row (the three entity pickers only
+ * when the page supplies `facets`). On a phone that row would stack into four
+ * full-width blocks that push the photos off the first screen, so there it folds
+ * into the same disclosure surface as the rest of the filters. The remaining
+ * filters (camera, archived, favorites, location, min rating, flag) live in a
+ * collapsible panel on desktop and an offcanvas drawer on phones, so the resting
+ * state stays uncluttered — the favorites toggle only when the page opts in via
+ * `showFavorite`. Every active filter — the primary row included — is echoed as a
+ * removable chip plus a single clear-all action, so a filtered set is never a
+ * mystery even while the drawer is shut. The drawer closes on a sticky footer
+ * carrying the live result count ({@link FilterDrawerFooter}) rather than only on
+ * the cross ten fields back up.
+ *
+ * There is exactly **one** control per thing being filtered. The time axis used
+ * to have two — a Year dropdown of single years in the primary row and a
+ * "taken after / taken before" pair buried in the panel — which between them
+ * could neither express a decade nor agree with each other;
+ * {@link PeriodFilter} is both of them, in the primary row, over one pair of URL
+ * keys.
  *
  * The quick filter speaks the whole `key:value` query language, exactly as
  * `/search` does — `year:1960-1969` narrows the grid to the sixties here too —
@@ -134,7 +149,7 @@ export function FilterBar<T extends LibraryView>({
   showFavorite = false,
   searchHref,
 }: FilterBarProps<T>) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [open, setOpen] = useState(false)
   const narrow = useIsNarrowViewport()
   // Only advertise semantic search when the embeddings box is reachable; the
@@ -148,10 +163,10 @@ export function FilterBar<T extends LibraryView>({
     onChange(patch as Partial<T>, { replace: true })
   }
 
-  const chips = buildChips(view, t, { facets })
+  const chips = buildChips(view, t, i18n.language, { facets })
   const clearVisible = hasActiveFilters(view, { ignoreQuery: !showSearch })
-  // Which facets the query itself already sets. The pickers below would
-  // otherwise keep reading "any year" while `year:1960-1969` in the box has
+  // Which filters the query itself already sets. The pickers below would
+  // otherwise keep reading "any period" while `year:1960-1969` in the box has
   // filtered the grid down to the sixties.
   const queryFilters = useMemo(() => queryFilterTokens(view.q), [view.q])
 
@@ -161,15 +176,15 @@ export function FilterBar<T extends LibraryView>({
     push({ ...LIBRARY_DEFAULTS, sort: view.sort, ...(showSearch ? {} : { q: view.q }) })
   }
 
-  // On a phone the facet pickers fold in here, above the advanced filters, so
+  // On a phone the primary pickers fold in here, above the advanced filters, so
   // they no longer sit between the search box and the photos; on desktop they
   // keep their own always-visible row (rendered below the header) and this panel
   // holds only the advanced filters.
   const panel = (
     <>
-      {facets && narrow && (
+      {narrow && (
         <>
-          <FacetRow view={view} facets={facets} push={push} queryFilters={queryFilters} />
+          <PrimaryFilterRow view={view} facets={facets} push={push} queryFilters={queryFilters} />
           <hr className="my-3" />
         </>
       )}
@@ -266,12 +281,11 @@ export function FilterBar<T extends LibraryView>({
         </div>
       )}
 
-      {/* Desktop keeps the facet pickers in a persistent four-across row; on a
-          phone they move into the filters drawer (see `panel` above) so the
-          photos start near the top of the screen instead of below four stacked
-          selects. */}
-      {facets && !narrow && (
-        <FacetRow view={view} facets={facets} push={push} queryFilters={queryFilters} />
+      {/* Desktop keeps the primary pickers in a persistent row; on a phone they
+          move into the filters drawer (see `panel` above) so the photos start
+          near the top of the screen instead of below four stacked selects. */}
+      {!narrow && (
+        <PrimaryFilterRow view={view} facets={facets} push={push} queryFilters={queryFilters} />
       )}
 
       {chips.length > 0 && (
@@ -432,12 +446,13 @@ function FilterDrawerFooter({
 }
 
 /**
- * The four facets photos are actually found by: the years present in the catalog
- * (each with its count, so the reader sees how much a year holds before
- * committing), and the albums, labels and people (subjects) the photo belongs to
- * or contains. Album, label and person are type-to-filter selects because all
- * three collections grow without bound; year is a plain select because the catalog
- * only ever holds a handful of years.
+ * The primary filter row: the ways photos are actually found. The period they
+ * were taken in — always offered, because every grid in the app can be narrowed
+ * in time — and, when the page supplies `facets`, the albums, labels and people
+ * (subjects) a photo belongs to or contains. Album, label and person are
+ * type-to-filter selects because all three collections grow without bound;
+ * the period is {@link PeriodFilter}, a decade list over the years the catalog
+ * holds with its exact-date fields underneath.
  *
  * Album, label and person are multi-select: each pick *adds* to the current set
  * (combined with AND — a photo must be in every chosen album, carry every chosen
@@ -447,33 +462,34 @@ function FilterDrawerFooter({
  * already-selected entries from its options so the same entry cannot be added
  * twice.
  *
- * All four push a history entry, so Back steps back through facet choices.
+ * All four push a history entry, so Back steps back through the choices.
  *
- * A picker is not the only way to set its facet: `year:1960-1969` or
+ * A picker is not the only way to set its filter: `year:1960-1969` or
  * `person:Jarmila` typed into the search box filters the grid just as hard, and
- * the picker knows nothing about it. Rather than let the control read "any
- * year" over a grid holding only the sixties, each facet whose key appears in
- * the query says so underneath itself, quoting the tokens responsible
- * ({@link queryFilterTokens}). The picker keeps working — adding a facet on top
- * of the query narrows further, as ANDed filters do everywhere else.
+ * the picker knows nothing about it. Rather than let a control read "any period"
+ * over a grid holding only the sixties, each one whose key appears in the query
+ * says so underneath itself, quoting the tokens responsible
+ * ({@link queryFilterTokens}) — and the period control goes further and *shows*
+ * the period the query sets ({@link periodFromQuery}), so the two can never
+ * disagree. The pickers keep working: adding a filter on top of the query narrows
+ * further, as ANDed filters do everywhere else.
  */
-function FacetRow({
+function PrimaryFilterRow({
   view,
   facets,
   push,
   queryFilters,
 }: {
   view: LibraryView
-  facets: LibraryFacets
+  facets: LibraryFacets | undefined
   push: (patch: Partial<LibraryView>) => void
   queryFilters: ReadonlyMap<string, string[]>
 }) {
-  const { t } = useTranslation()
   const selectedAlbums = parseFilterList(view.album)
   const selectedLabels = parseFilterList(view.label)
   const selectedPeople = parseFilterList(view.person)
   const fromQuery = {
-    year: facetQueryTokens(queryFilters, FACET_QUERY_KEYS.year),
+    period: facetQueryTokens(queryFilters, FACET_QUERY_KEYS.period),
     album: facetQueryTokens(queryFilters, FACET_QUERY_KEYS.album),
     label: facetQueryTokens(queryFilters, FACET_QUERY_KEYS.label),
     person: facetQueryTokens(queryFilters, FACET_QUERY_KEYS.person),
@@ -481,33 +497,56 @@ function FacetRow({
   return (
     <Row className="kukatko-filter-facets g-2 mt-1">
       <Col xs={12} md={6} lg={3}>
-        <Form.Group controlId="library-year">
-          <Form.Label className="small mb-1">{t('library.filters.year')}</Form.Label>
-          <Form.Select
-            value={view.year}
-            aria-describedby={fromQuery.year === '' ? undefined : 'library-year-from-query'}
-            onChange={(e) => {
-              push({ year: e.target.value })
-            }}
-          >
-            {/* With the query already scoping the year, "any year" would be a
-                lie about what the grid shows; the resting option admits who is
-                in charge instead. */}
-            <option value="">
-              {fromQuery.year === ''
-                ? t('library.filters.anyYear')
-                : t('library.filters.setByQueryOption')}
-            </option>
-            {facets.years.map((bucket) => (
-              <option key={bucket.year} value={String(bucket.year)}>
-                {t('library.filters.yearOption', { year: bucket.year, n: bucket.count })}
-              </option>
-            ))}
-          </Form.Select>
-          <QueryOverrideNote id="library-year-from-query" tokens={fromQuery.year} />
-        </Form.Group>
+        <PeriodFilter
+          id="library-period"
+          value={periodOf(view)}
+          years={facets?.years ?? []}
+          queryPeriod={periodFromQuery(queryFilters)}
+          describedBy={fromQuery.period === '' ? undefined : 'library-period-from-query'}
+          onChange={(period) => {
+            push(periodPatch(period))
+          }}
+        />
+        <QueryOverrideNote id="library-period-from-query" tokens={fromQuery.period} />
       </Col>
 
+      {facets !== undefined && (
+        <FacetPickers
+          view={view}
+          facets={facets}
+          push={push}
+          fromQuery={fromQuery}
+          selected={{ albums: selectedAlbums, labels: selectedLabels, people: selectedPeople }}
+        />
+      )}
+    </Row>
+  )
+}
+
+/**
+ * The album / label / person columns of {@link PrimaryFilterRow}, split out so
+ * the row itself stays readable and the pages that scope their grid to one album
+ * or place simply do not render them.
+ */
+function FacetPickers({
+  view,
+  facets,
+  push,
+  fromQuery,
+  selected,
+}: {
+  view: LibraryView
+  facets: LibraryFacets
+  push: (patch: Partial<LibraryView>) => void
+  fromQuery: { album: string; label: string; person: string }
+  selected: { albums: string[]; labels: string[]; people: string[] }
+}) {
+  const { t } = useTranslation()
+  const selectedAlbums = selected.albums
+  const selectedLabels = selected.labels
+  const selectedPeople = selected.people
+  return (
+    <>
       <Col xs={12} md={6} lg={3}>
         <SearchableSelect
           id="library-album"
@@ -585,7 +624,7 @@ function FacetRow({
         />
         <QueryOverrideNote id="library-person-from-query" tokens={fromQuery.person} />
       </Col>
-    </Row>
+    </>
   )
 }
 
@@ -608,7 +647,12 @@ function QueryOverrideNote({ id, tokens }: { id: string; tokens: string }) {
   )
 }
 
-/** The advanced-filter controls, shared by the desktop collapse and mobile offcanvas. */
+/**
+ * The advanced-filter controls, shared by the desktop collapse and mobile
+ * offcanvas. The capture-date pair that used to open this panel is gone from
+ * here: it was the second, hidden half of a time filter whose visible half could
+ * not express a decade, and both are now {@link PeriodFilter} in the primary row.
+ */
 function AdvancedFilters({
   view,
   push,
@@ -623,45 +667,6 @@ function AdvancedFilters({
   const { t } = useTranslation()
   return (
     <Row className="kukatko-filter-panel g-3">
-      <Col xs={12} lg={6}>
-        <fieldset className="mb-0">
-          {/* Group the two date inputs for assistive tech, but keep the group
-              name off-screen: a visible legend is a whole extra label row the
-              single-input sibling columns lack, which drops the date inputs
-              below their neighbours and misaligns the grid. The per-input
-              labels below carry the visible text in the same `.small mb-1`
-              style every other column uses, so all headings and inputs share a
-              baseline while the fieldset still exposes "Date taken" to a11y. */}
-          <legend className="visually-hidden">{t('library.filters.dateRange')}</legend>
-          <Row className="g-2">
-            <Col xs={6}>
-              <Form.Group controlId="library-taken-after">
-                <Form.Label className="small mb-1">{t('library.filters.takenAfter')}</Form.Label>
-                <Form.Control
-                  type="date"
-                  value={view.taken_after}
-                  onChange={(e) => {
-                    push({ taken_after: e.target.value })
-                  }}
-                />
-              </Form.Group>
-            </Col>
-            <Col xs={6}>
-              <Form.Group controlId="library-taken-before">
-                <Form.Label className="small mb-1">{t('library.filters.takenBefore')}</Form.Label>
-                <Form.Control
-                  type="date"
-                  value={view.taken_before}
-                  onChange={(e) => {
-                    push({ taken_before: e.target.value })
-                  }}
-                />
-              </Form.Group>
-            </Col>
-          </Row>
-        </fieldset>
-      </Col>
-
       <Col xs={12} sm={6} lg={3}>
         <Form.Group controlId="library-archived">
           <Form.Label className="small mb-1">{t('library.filters.archived')}</Form.Label>

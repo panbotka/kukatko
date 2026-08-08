@@ -10,6 +10,8 @@
  * results.
  */
 
+import { PERIOD_QUERY_KEYS } from './period'
+
 /** Every filter key of the query language, including aliases, alphabetical. */
 export const FILTER_KEYS = [
   'added',
@@ -178,12 +180,14 @@ export function queryFilterTokens(input: string): Map<string, string[]> {
 }
 
 /**
- * The filter keys behind each facet picker, including aliases. A query using
- * any of them sets that facet without the picker knowing, which is what
- * {@link queryFilterTokens} lets the filter bar flag.
+ * The filter keys behind each control of the filter bar, aliases included. A
+ * query using any of them sets that filter without the control knowing, which is
+ * what {@link queryFilterTokens} lets the filter bar flag.
  */
 export const FACET_QUERY_KEYS = {
-  year: ['year'],
+  // The period control covers the whole time axis, so every key that scopes it
+  // counts — a `before:1950` narrows the grid exactly as a `year:` does.
+  period: PERIOD_QUERY_KEYS,
   album: ['album'],
   label: ['label'],
   person: ['person', 'subject'],

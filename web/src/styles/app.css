@@ -1118,12 +1118,38 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* The Year / Album / Label facet row sits directly under the header and stays
-   visible: these are the three ways photos are actually found. Its controls get
+/* The Period / Album / Label / Person row sits directly under the header and
+   stays visible: these are the ways photos are actually found. Its controls get
    the same finger-friendly sizing as the advanced panel's. */
 .kukatko-filter-facets .form-control,
 .kukatko-filter-facets .form-select {
   min-height: 2.75rem;
+}
+
+/* The period picker's panel: a decade list that a 122-year library makes long,
+   plus the exact-date fields under it. Capping it at half the viewport keeps the
+   photos behind it visible and the panel itself scrollable, exactly as
+   `SearchableSelect`'s listbox does — the two sit side by side in the same row
+   and must not behave differently. */
+.kukatko-period-panel {
+  max-height: 50vh;
+  /* The panel is `w-100` of its column, which at the row's narrowest (lg=3 of a
+     container) is ~275 px — too little for the two date inputs to sit side by
+     side without truncating their own value ("06/01/2…"). This widens it just
+     past that: 21rem leaves each input 140 px, which fits a whole date. */
+  min-width: 21rem;
+}
+
+/* The exact-date pair stays pinned to the bottom of that scroll area. A library
+   reaching back to 1905 offers thirteen decades, and letting the dates scroll
+   away under them would rebuild the very problem this control fixes: a date
+   range that works but that nobody finds. */
+.kukatko-period-panel .kukatko-period-exact {
+  position: sticky;
+  bottom: 0;
+  padding-top: var(--kk-space-2);
+  border-top: var(--bs-dropdown-border-width) solid var(--bs-dropdown-border-color);
+  background-color: var(--bs-dropdown-bg);
 }
 
 /* Controls inside the advanced panel are finger-friendly (44px minimum). */

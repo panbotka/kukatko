@@ -5,13 +5,17 @@ import { fetchSubjects, type SubjectCount } from '../services/people'
 import { fetchPhotoYears, type PhotoListParams, type YearBucket } from '../services/photos'
 
 /**
- * The option lists behind the library's Year / Album / Label / Person facets.
+ * The option lists behind the library's Period / Album / Label / Person facets.
  * Empty lists are the honest resting state: a fresh catalog has no years, and a
  * request that failed leaves the facet with nothing to offer rather than a stale
  * set.
  */
 export interface LibraryFacets {
-  /** Years that hold photos, newest first, each with its count. */
+  /**
+   * Years that hold photos, newest first, each with its count — what the period
+   * filter groups into decades, so it only ever offers periods the library can
+   * actually answer.
+   */
   years: YearBucket[]
   /** Every album, ordered by title, each with its photo count. */
   albums: AlbumCount[]
@@ -31,10 +35,12 @@ function isAbort(err: unknown): boolean {
  *
  * The year counts depend on the rest of the view (a year holds fewer photos once
  * a label is picked), so they are refetched whenever `params` changes and the
- * request carries the current filters. `year` itself is stripped: the backend
- * ignores it anyway — a facet must not narrow its own options — and omitting it
- * keeps the request identical while the reader switches years, so no refetch
- * happens. Albums and labels are catalog-wide, so they load once.
+ * request carries the current filters. The **period** bounds are stripped: they
+ * are what these counts are the options for, and a facet must not narrow its own
+ * options — a picked decade would leave every other decade reading zero. Dropping
+ * them also keeps the request identical while the reader tries one period after
+ * another, so no refetch happens. Albums and labels are catalog-wide, so they
+ * load once.
  *
  * A failed request leaves that list empty rather than surfacing an error: a
  * filter bar that cannot offer a facet is a degraded bar, not a broken page, and
@@ -54,8 +60,12 @@ export function useLibraryFacets(params: PhotoListParams): LibraryFacets {
   const [labels, setLabels] = useState<LabelCount[]>([])
   const [subjects, setSubjects] = useState<SubjectCount[]>([])
 
-  // Drop the year filter so selecting a year does not re-request the same list.
-  const yearParams = useMemo<PhotoListParams>(() => ({ ...params, year: '' }), [params])
+  // Drop the period so picking one does not re-request — and does not hollow out
+  // — the very list it was picked from.
+  const yearParams = useMemo<PhotoListParams>(
+    () => ({ ...params, taken_after: '', taken_before: '' }),
+    [params],
+  )
 
   // Monotonic id of the newest year request. The abort on cleanup only helps
   // while the response is still in flight; a filter change that lands after the

@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
@@ -272,30 +272,112 @@ describe('FilterBar layout', () => {
 })
 
 describe('FilterBar facets', () => {
-  it('hides the facet row when the page supplies no options', () => {
+  it('drops the entity pickers when the page supplies no options, keeping the period', () => {
     renderBar(LIBRARY_DEFAULTS, vi.fn())
-    expect(screen.queryByLabelText('Year')).not.toBeInTheDocument()
+    // Every grid can be narrowed in time, including one already scoped to an
+    // album or a place, so the period control is not part of the facet bundle.
+    expect(screen.getByRole('button', { name: 'Period: Any period' })).toBeInTheDocument()
     expect(screen.queryByLabelText('Album')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Label')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Person')).not.toBeInTheDocument()
   })
 
-  it('offers each year present in the catalog with its photo count', () => {
+  it('offers only the decades the library holds, expandable to their years', async () => {
+    const user = userEvent.setup()
     renderBar(LIBRARY_DEFAULTS, vi.fn(), { facets: FACETS })
 
-    const year = screen.getByLabelText('Year')
-    expect(within(year).getByRole('option', { name: 'Any year' })).toBeInTheDocument()
-    expect(within(year).getByRole('option', { name: '2023 (12)' })).toBeInTheDocument()
-    expect(within(year).getByRole('option', { name: '2021 (3)' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Period: Any period' }))
+    // 2021 and 2023 live in one decade, which carries both their counts…
+    expect(screen.getByRole('button', { name: '2020–2029 15' })).toBeInTheDocument()
+    // …and no decade is offered that the library cannot answer.
+    expect(screen.queryByRole('button', { name: /^1960–1969/ })).not.toBeInTheDocument()
+    // The years hide behind the decade until they are asked for.
+    expect(screen.queryByRole('button', { name: '2023 12' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Show the years of 2020–2029' }))
+    expect(screen.getByRole('button', { name: '2023 12' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '2021 3' })).toBeInTheDocument()
   })
 
-  it('writes the selected year to the view state', async () => {
+  it('writes a picked decade to the view state as one inclusive period', async () => {
     const onChange = vi.fn()
     const user = userEvent.setup()
     renderBar(LIBRARY_DEFAULTS, onChange, { facets: FACETS })
 
-    await user.selectOptions(screen.getByLabelText('Year'), '2023')
-    expect(onChange).toHaveBeenCalledWith({ year: '2023' })
+    await user.click(screen.getByRole('button', { name: 'Period: Any period' }))
+    await user.click(screen.getByRole('button', { name: '2020–2029 15' }))
+
+    expect(onChange).toHaveBeenCalledWith({
+      taken_after: '2020-01-01',
+      taken_before: '2029-12-31',
+      year: '',
+    })
+  })
+
+  it('writes a picked year the same way, through the same pair of keys', async () => {
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    renderBar(LIBRARY_DEFAULTS, onChange, { facets: FACETS })
+
+    await user.click(screen.getByRole('button', { name: 'Period: Any period' }))
+    await user.click(screen.getByRole('button', { name: 'Show the years of 2020–2029' }))
+    await user.click(screen.getByRole('button', { name: '2023 12' }))
+
+    expect(onChange).toHaveBeenCalledWith({
+      taken_after: '2023-01-01',
+      taken_before: '2023-12-31',
+      year: '',
+    })
+  })
+
+  it('states the period in words on the trigger instead of making it be opened', () => {
+    renderBar(
+      { ...LIBRARY_DEFAULTS, taken_after: '1960-01-01', taken_before: '1969-12-31' },
+      vi.fn(),
+      { facets: FACETS },
+    )
+    expect(screen.getByRole('button', { name: 'Period: 1960–1969' })).toBeInTheDocument()
+  })
+
+  it('words an open-ended period as such', () => {
+    renderBar({ ...LIBRARY_DEFAULTS, taken_before: '1949-12-31' }, vi.fn())
+    expect(screen.getByRole('button', { name: 'Period: until 1949' })).toBeInTheDocument()
+  })
+
+  it('keeps the exact-date fields inside the one period control', async () => {
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    renderBar({ ...LIBRARY_DEFAULTS, taken_after: '2019-06-01' }, onChange, { facets: FACETS })
+
+    // Not a second filter in the advanced panel: they are the fine grain of the
+    // same one, so "summer 2019" is reachable without leaving the control.
+    expect(screen.queryByLabelText('Taken from')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /^Period:/ }))
+    const from = screen.getByLabelText('Taken from')
+    expect(from).toHaveValue('2019-06-01')
+
+    fireEvent.change(screen.getByLabelText('Taken until'), { target: { value: '2019-08-31' } })
+    expect(onChange).toHaveBeenCalledWith({
+      taken_after: '2019-06-01',
+      taken_before: '2019-08-31',
+      year: '',
+    })
+  })
+
+  it('folds a legacy year= URL into the period rather than dropping it', () => {
+    renderBar({ ...LIBRARY_DEFAULTS, year: '1965' }, vi.fn(), { facets: FACETS })
+    expect(screen.getByRole('button', { name: 'Period: 1965' })).toBeInTheDocument()
+    expect(screen.getByText('Period: 1965')).toBeInTheDocument()
+  })
+
+  it('clears the period, the legacy key included, from its own resting row', async () => {
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    renderBar({ ...LIBRARY_DEFAULTS, year: '1965' }, onChange, { facets: FACETS })
+
+    await user.click(screen.getByRole('button', { name: 'Period: 1965' }))
+    await user.click(screen.getByRole('button', { name: 'Any period' }))
+    expect(onChange).toHaveBeenCalledWith({ taken_after: '', taken_before: '', year: '' })
   })
 
   it('writes the album picked from the searchable select to the view state', async () => {
@@ -435,7 +517,7 @@ describe('FilterBar facets', () => {
       facets: FACETS,
     })
 
-    expect(screen.getByText('Year: 2023')).toBeInTheDocument()
+    expect(screen.getByText('Period: 2023')).toBeInTheDocument()
     expect(screen.getByText('Album: Holidays')).toBeInTheDocument()
     expect(screen.getByText('Label: Beach')).toBeInTheDocument()
   })
@@ -499,31 +581,35 @@ describe('FilterBar narrow viewport (phone)', () => {
     mockViewport(false)
   })
 
-  it('keeps the facet pickers out of the resting layout, echoing an active one as a chip', () => {
+  it('keeps the primary pickers out of the resting layout, echoing an active one as a chip', () => {
     mockViewport(true)
-    renderBar({ ...LIBRARY_DEFAULTS, year: '2023' }, vi.fn(), { facets: FACETS })
+    renderBar(
+      { ...LIBRARY_DEFAULTS, taken_after: '2023-01-01', taken_before: '2023-12-31' },
+      vi.fn(),
+      { facets: FACETS },
+    )
 
-    // The four facet selects no longer stack between the search box and the
-    // photos — they have folded into the (shut) filters drawer…
-    expect(screen.queryByLabelText('Year')).not.toBeInTheDocument()
+    // The four pickers no longer stack between the search box and the photos —
+    // they have folded into the (shut) filters drawer…
+    expect(screen.queryByRole('button', { name: /^Period:/ })).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Album')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Label')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Person')).not.toBeInTheDocument()
-    // …yet an active facet stays visible as a chip, so the filtered set is never a
-    // mystery even with the drawer closed.
-    expect(screen.getByText('Year: 2023')).toBeInTheDocument()
+    // …yet an active filter stays visible as a chip, so the filtered set is never
+    // a mystery even with the drawer closed.
+    expect(screen.getByText('Period: 2023')).toBeInTheDocument()
   })
 
-  it('reveals the facet pickers inside the filters drawer once it is opened', async () => {
+  it('reveals the primary pickers inside the filters drawer once it is opened', async () => {
     mockViewport(true)
     const user = userEvent.setup()
     renderBar(LIBRARY_DEFAULTS, vi.fn(), { facets: FACETS })
 
-    expect(screen.queryByLabelText('Year')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Period:/ })).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /Filters/ }))
     // The same progressive-disclosure surface the advanced filters already used
-    // now carries the facets too.
-    expect(await screen.findByLabelText('Year')).toBeInTheDocument()
+    // now carries the primary row too.
+    expect(await screen.findByRole('button', { name: /^Period:/ })).toBeInTheDocument()
     expect(screen.getByLabelText('Album')).toBeInTheDocument()
   })
 })
@@ -579,13 +665,18 @@ describe('FilterBar drawer footer (phone)', () => {
     const drawer = await openDrawer(user)
     expect(within(drawer).getByRole('button', { name: 'Show 227 photos' })).toBeInTheDocument()
 
-    // The page refetches under the newly picked year and hands the bar a new
+    // The page refetches under the newly picked period and hands the bar a new
     // total. That is the whole point: the number moves while the drawer is open.
-    rerender(barTree({ ...LIBRARY_DEFAULTS, year: '2023' }, vi.fn(), { ...props, total: 12 }))
+    rerender(
+      barTree({ ...LIBRARY_DEFAULTS, taken_after: '2023-01-01' }, vi.fn(), {
+        ...props,
+        total: 12,
+      }),
+    )
 
     const stillOpen = screen.getByRole('dialog')
     expect(within(stillOpen).getByRole('button', { name: 'Show 12 photos' })).toBeInTheDocument()
-    expect(within(stillOpen).getByLabelText('Year')).toBeInTheDocument()
+    expect(within(stillOpen).getByRole('button', { name: /^Period:/ })).toBeInTheDocument()
   })
 
   it('says a single photo in the singular', async () => {
@@ -847,16 +938,34 @@ describe('FilterBar query language', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('admits when the query, not the picker, sets the year', () => {
+  it('shows the period the query sets, so the two cannot contradict each other', () => {
     renderBar({ ...LIBRARY_DEFAULTS, q: 'year:1960-1969' }, vi.fn(), { facets: FACETS })
 
-    const year = screen.getByLabelText('Year')
-    // "Any year" over a grid holding only the sixties is the contradiction; the
-    // resting option now points at the query instead.
-    expect(within(year).queryByRole('option', { name: 'Any year' })).not.toBeInTheDocument()
-    expect(within(year).getByRole('option', { name: 'Set by the query' })).toBeInTheDocument()
+    // "Any period" over a grid holding only the sixties was the contradiction;
+    // the control now reads the period out of the query itself.
+    const period = screen.getByRole('button', { name: 'Period: 1960–1969' })
+    expect(screen.queryByRole('button', { name: /Any period/ })).not.toBeInTheDocument()
     expect(screen.getByText('year:1960-1969')).toBeInTheDocument()
-    expect(year).toHaveAttribute('aria-describedby', 'library-year-from-query')
+    expect(period).toHaveAttribute('aria-describedby', 'library-period-from-query')
+  })
+
+  it('quotes the tokens without inventing a period when the query sets several', () => {
+    renderBar({ ...LIBRARY_DEFAULTS, q: 'year:1960-1969 before:1965-01-01' }, vi.fn())
+
+    // Two tokens narrow the grid together; showing one of them as *the* period
+    // would be a fresh contradiction rather than a fix.
+    expect(screen.getByRole('button', { name: 'Period: Any period' })).toBeInTheDocument()
+    expect(screen.getByText('year:1960-1969 before:1965-01-01')).toBeInTheDocument()
+  })
+
+  it('flags the period control for a date key too, not only for year:', () => {
+    renderBar({ ...LIBRARY_DEFAULTS, q: 'after:2024-05-01' }, vi.fn())
+
+    expect(screen.getByRole('button', { name: /^Period:/ })).toHaveAttribute(
+      'aria-describedby',
+      'library-period-from-query',
+    )
+    expect(screen.getByText('after:2024-05-01')).toBeInTheDocument()
   })
 
   it('flags the album and person pickers the query has taken over', () => {
@@ -883,8 +992,7 @@ describe('FilterBar query language', () => {
   it('leaves every picker alone for a plain free-text query', () => {
     renderBar({ ...LIBRARY_DEFAULTS, q: 'svatba' }, vi.fn(), { facets: FACETS })
 
-    const year = screen.getByLabelText('Year')
-    expect(within(year).getByRole('option', { name: 'Any year' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Period: Any period' })).toBeInTheDocument()
     expect(screen.queryByText(/Already set by the query/)).not.toBeInTheDocument()
   })
 

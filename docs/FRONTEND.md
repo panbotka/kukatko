@@ -464,13 +464,13 @@ here.
   (**a redesign for a calm default state + progressive disclosure**: the header holds only a prominent
   search field (the visual anchor, the largest element), sort (incl. **by rating**),
   `GridDensityControl` and a
-  **Filtry** button with a badge of the active-filter count; advanced filters (date from/to, location, private,
+  **Filtry** button with a badge of the active-filter count; advanced filters (location, private,
   camera, archive, **min. rating ≥1…≥5**, **picked/rejected flag**) live in a collapsible
   panel — inline `Collapse` on desktop, `Offcanvas` on mobile per `matchMedia` (the shared hook `useIsNarrowViewport`,
   defensive against jsdom, where `matchMedia` returns `undefined`).
   **The mobile drawer ends in a sticky footer** (`FilterDrawerFooter`, `.offcanvas-footer.kukatko-filter-footer`):
   the drawer covers the screen, so the „Počet fotek: N" line stays behind it and filtering was blind —
-  set a year, a person and a rating, scroll ten fields back up to the cross (the only exit) and only there
+  set a period, a person and a rating, scroll ten fields back up to the cross (the only exit) and only there
   learn the combination matches nothing. The footer's **primary button carries the live count**
   („Zobrazit 227 fotek", from the same `total` prop, so it follows every filter change with the drawer
   open) and closes the drawer; at `total === 0` it says „Žádné fotky — zavřít" instead of promising a grid
@@ -496,16 +496,17 @@ here.
   on the search page, `showDensity` hides density in the trash (card-based, not a photo grid),
   **`showFavorite`** enables the **Oblíbené** toggle in the panel (a two-state select „Vše"/„Jen oblíbené"
   → `view.favorite` `''`/`'true'`, the backend scopes only to `true`; the library enables it so you can
-  combine „oblíbené + album + rok" in the main grid, the Oblíbené page doesn't — it's already scoped)
+  combine „oblíbené + album + období" in the main grid, the Oblíbené page doesn't — it's already scoped)
   (chips/panel/clear keep working); ~44 px tap targets via `styles/app.css`
   `.kukatko-filter-*`;
-  **the four facets by which photos are actually searched** (the `facets` prop from `useLibraryFacets`): on
+  **the four ways photos are actually searched** (the entity three from the `facets` prop of
+  `useLibraryFacets`, the period always): on
   **desktop** its own always-visible row of four below the header, on **phone** (per
   `useIsNarrowViewport`) it **folds into the same filter `Offcanvas`** as the advanced filters —
-  otherwise four columns stacked below one another would push the photos below the first screen; the active facet
+  otherwise four columns stacked below one another would push the photos below the first screen; the active filter
   still stays visible as a **chip**, so the filtered set is no mystery even with the drawer closed:
-  **Rok** = a plain `<select>`
-  („Libovolný rok" + `{{year}} ({{n}})` from `GET /photos/years`, the catalog always has only a handful of years),
+  **Období** = `PeriodFilter` (below; rendered even without `facets` — an album- or place-scoped grid can be
+  narrowed in time too, it just gets no decade list),
   **Album**, **Štítek** and **Osoba** = `SearchableSelect` (all collections grow without limit;
   people from `GET /subjects` with `photo_count` — the count beside an option promises how many photos
   picking it yields, so a person is counted by photos like an album or a label, not by faces),
@@ -514,16 +515,21 @@ here.
   selected people), the select is a pure „add-picker" (it keeps the placeholder „libovolné", drops its selected
   items from its options so they can't be added twice), already-selected albums/labels/people hang as
   removable chips (one per UID) below.
-  **A facet is not set only by its picker**: `year:`, `album:`, `label:` and `person:`/`subject:` inside `q`
+  **A filter is not set only by its picker**: `year:`/`taken:`/`before:`/`after:`, `album:`, `label:` and
+  `person:`/`subject:` inside `q`
   filter the grid just as hard while the picker knows nothing about them (a query of `year:1960-1969` over a
-  „Libovolný rok" select is the visible state contradicting the results). So `FilterBar` scans `q` with
+  „Libovolné období" trigger is the visible state contradicting the results). So `FilterBar` scans `q` with
   `lib/queryLanguage.ts` `queryFilterTokens`/`facetQueryTokens` + `FACET_QUERY_KEYS` — a **scanner, not a
   parser**: it answers only „which known filter keys does this query use", parsing stays exclusively with the
-  backend — and every affected facet admits it: the resting option/placeholder reads „Určuje dotaz" instead of
-  „Libovolný rok"/„libovolné", and a `form-text` note (`QueryOverrideNote`, `bi-info-circle`) below the control
-  quotes the responsible tokens verbatim as `<code>` (`aria-describedby` on the Year select). An **unknown**
+  backend — and every affected control admits it: the resting option/placeholder reads „Určuje dotaz" instead of
+  „libovolné", and a `form-text` note (`QueryOverrideNote`, `bi-info-circle`) below the control
+  quotes the responsible tokens verbatim as `<code>` (`aria-describedby` on the control). **Období goes one
+  step further and shows the period the query sets** (`lib/period` `periodFromQuery` over a lone, plainly
+  shaped `year:` token → `1960–1969` on the trigger), so the control and the query can never contradict each
+  other; several period tokens AND together, so none of them is shown as *the* period and only the note
+  quotes them. An **unknown**
   key (`osoba:`) filters nothing — it degrades to free text server-side — so it is deliberately not reported
-  there; the picker keeps working, adding a facet on top of the query narrows further as ANDed filters do
+  there; the picker keeps working, adding a filter on top of the query narrows further as ANDed filters do
   everywhere else.
   The inline search field (`q`) is **not** merely a substring narrowing: it runs the **whole `klíč:hodnota`
   search language**, exactly as `/search` does — `year:1960-1969` narrows the library grid to the sixties here
@@ -535,14 +541,32 @@ here.
   **the link to `/search`** promises: it shows **only when semantic
   search is available** — `FilterBar` reads `useCapabilities().semantic_search` and hides the link when the embeddings box is offline
   (fulltext keeps working, but its label promises semantics); `searchHref` carries the current `q`,
-  the search modes are **not duplicated** here), `SearchableSelect`
+  the search modes are **not duplicated** here),
+  `PeriodFilter` (`components/library/`, **the library's one control on the time axis**, and the fix for
+  having had two: a **Rok** `<select>` of 109 single years — out of which no decade could be assembled — in
+  the primary row, and a **Pořízeno od / do** pair hidden one click deeper in the panel that could express a
+  range but nobody found. The trigger is styled as the selects beside it (`.form-select`, `bi-calendar-range`)
+  and **states the period in words** — `1960–1969`, `1965`, „od 1960", „do 1949",
+  „1. 6. 2019 – 31. 8. 2019" (`lib/period` `formatPeriod`) — so it needn't be opened to be read; its panel
+  (`.kukatko-period-panel`, capped at `50vh` and scrollable like `SearchableSelect`'s listbox) holds
+  „Libovolné období", the **decades the library actually holds** with their photo counts
+  (`groupYearsIntoDecades` over the `years` facet — the calendar decade, so what it selects never depends on
+  which of its years exist today), each **expandable by a chevron to its own years** with counts, and the
+  **exact-date** pair for „léto 2019" — `position: sticky` at the bottom of the scroll area
+  (`.kukatko-period-exact`), because a date pair that scrolls away under thirteen decades is exactly the
+  hidden filter this control replaces. Opening it auto-expands the decade of the current period.
+  Everything it writes is the one `Period` = `taken_after`/`taken_before` (+ clearing the legacy `year`),
+  so there is no second state to drift; it closes on Escape and on focus leaving the widget, needs no popper),
+  `SearchableSelect`
   (`components/library/`, a single-select facet you can type into: at rest it shows the choice,
   focus opens the full list, typing narrows it **case- and diacritic-insensitive** via `lib/text`
   `foldedIncludes` (`namesti` finds `Náměstí`, same as the backend `immutable_unaccent`);
   the leading row „libovolné" clears the facet, keyboard Up/Down/Enter/Esc, combobox/listbox ARIA,
   a `MAX_SUGGESTIONS` (50) cap on rendered suggestions; it never creates items —
-  mirrors `AddAutocomplete`), `filterChips.ts` (pure `buildChips(view, t, {facets?, includeQuery?})`
-  → `FilterChip{key,label,clear,kind?}` for each active filter; **one chip per selected album,
+  mirrors `AddAutocomplete`), `filterChips.ts` (pure `buildChips(view, t, locale, {facets?, includeQuery?})`
+  → `FilterChip{key,label,clear,kind?}` for each active filter; **one chip for the whole time axis**
+  („Období: 1960–1969"), worded by the same `formatPeriod` the control uses — a chip and its control must not
+  describe one filter differently, which is why `locale` is passed in; **one chip per selected album,
   label and person** (`clear` removes only its own UID from the list, the last chip clears the facet; an album chip has
   `kind:'album'`, a label `kind:'tag'`, a person `kind:'person'` → `FilterBar` takes the color + icon from it via
   `ENTITY_STYLE`; **favorites** = a neutral chip with no `kind`); `facets`
@@ -2124,8 +2148,9 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
 
   `useLibraryFacets(params)` = a loader of the library's facet offers → `LibraryFacets{years,albums,labels,subjects}`:
   the years over `fetchPhotoYears` **refetch when the filters change** (a year holds fewer photos as soon as a label
-  is added), but it **strips `year` from the request** (the backend ignores it anyway — a facet must not narrow its own
-  offer — and without it the request stays identical, so switching years doesn't refetch); albums, labels and
+  is added), but it **strips the period (`taken_after`/`taken_before`) from the request** (a facet must not
+  narrow its own offer — with the sixties picked every other decade would read zero — and without it the
+  request stays identical, so trying one period after another doesn't refetch); albums, labels and
   subjects (people, via `fetchSubjects`) are catalogues, loaded **once**. A failure leaves that list **empty** instead of an error (a facet
   that has nothing to offer is a degraded bar, not a broken page — load errors are reported by the grid);
   in-flight requests are cancelled by `AbortController` when `params` change/on unmount, and the years response is additionally
@@ -2426,7 +2451,21 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `urlState.ts` = the `useUrlState` hook +
   the pure `readUrlState`/`writeUrlState`: the view state ↔ the URL query via the History API, „Back always
   works"; `libraryView.ts` = the `LibraryView` type (incl. `min_rating`/`flag`, the `favorite` toggle and the facets
-  `year`/`album`/`label`/`person`) + `LIBRARY_DEFAULTS` +
+  `album`/`label`/`person`) + `LIBRARY_DEFAULTS` +
+  **the capture period as one filter**: `periodOf(view)` is the single accessor of the time axis
+  (`taken_after`/`taken_before`, sanitised to `YYYY-MM-DD` so a hand-typed URL degrades to „open" instead of a
+  400; when both are empty a **legacy** `year=1965` — old bookmarks and saved searches — is folded in as that
+  year's period) and `periodPatch(period)` the single writer (it clears `year`, so the two can never both be
+  set); `viewToParams` sends it as `taken_after` + `takenBeforeParam(to)`, the **end** of the last day
+  (`…T23:59:59.999999Z`) — `taken_at <= taken_before` would otherwise drop everything shot that day after
+  midnight, and a decade would lose its last New Year's Eve +
+  `lib/period.ts` (pure, no React: the `Period{from,to}` pair of inclusive UTC calendar days — one
+  representation for a decade, a year, „před 1950" and „léto 2019" — plus `periodForYears`/`yearSpanOf`
+  (a whole-year span only when both bounds sit on year boundaries, so „léto 2019" is never reported as
+  „2019"), `groupYearsIntoDecades`, `parseYearRange`/`periodFromQuery` (the shapes the backend's number range
+  accepts: `1965`, `1960-1969`, `1960-`, `-1949`) and `formatPeriod`. UTC is what makes a picked decade
+  return exactly what the year facet counted: EXIF times are read as UTC wall clock and the DB session is
+  pinned to UTC, so `date_part('year', taken_at)` and these bounds agree by construction) +
   `LIBRARY_PATH` (= `/`, the library's canonical route — **the library is the home page**; every link
   in the app points here, `/library` is only a redirect for old links) +
   the **multi-selection of the `album`/`label`/`person` facets**: each key carries a **comma-joined list of UIDs** (urlState
@@ -2684,9 +2723,12 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   (a monthly date histogram, the same filters as the list; the backend ignores sort/pagination), the types
   `Timeline`/`TimelineBucket{year,month,count,cumulative}` — the basis for `TimelineScrubber`,
   `fetchPhotoYears(params,signal)` over `GET /api/v1/photos/years` → `YearsResponse{years,total}`
-  (a year histogram, the same filters as the list; the backend ignores `year` itself, and sort/pagination too),
-  the types `YearsResponse`/`YearBucket{year,count}` — the basis for the year facet (`useLibraryFacets`);
-  `PhotoListParams` additionally has `year?: string` (a four-digit year), `buildPhotoQuery` serializes it,
+  (a year histogram, the same filters as the list; sort/pagination are ignored, and the caller drops the
+  period first), the types `YearsResponse`/`YearBucket{year,count}` — the basis for the decades the
+  period filter offers (`useLibraryFacets`);
+  `PhotoListParams` scopes the time axis **only** through `taken_after`/`taken_before` (the backend's
+  single-year `year` param has no caller here — one filter, one representation), `buildPhotoQuery`
+  serializes them,
   `favoritePhoto(uid,favorite,signal)` over `PUT`/`DELETE /api/v1/photos/{uid}/favorite` (a per-user
   toggle, 204, the basis for the optimistic `useFavorite`),
   `ratePhoto(uid,{rating?,flag?},signal)` over `PUT /api/v1/photos/{uid}/rating` +
