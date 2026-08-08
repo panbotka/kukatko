@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
+import { useImageFrame } from '../../hooks/useImageFrame'
 import { faceBoxStyle, padBbox } from '../../lib/faceGeometry'
 import { type Bbox } from '../../services/people'
 import { type Photo, thumbUrl } from '../../services/photos'
@@ -36,19 +37,11 @@ export interface ReviewPhotoProps {
 }
 
 /**
- * displayAspect returns the CSS `aspect-ratio` of a photo in display
- * (EXIF-oriented) space; orientations 5–8 swap width and height. Falls back to
- * 3:2 when dimensions are unknown so the stage never collapses to zero height.
+ * 3:2 is the stage's shape while nothing better is known — a landscape frame is
+ * the commonest shot, and the point of a fallback here is only that the stage
+ * never collapses to zero height.
  */
-function displayAspect(orientation: number, fileWidth: number, fileHeight: number): number {
-  const rotated = orientation >= 5 && orientation <= 8
-  const width = rotated ? fileHeight : fileWidth
-  const height = rotated ? fileWidth : fileHeight
-  if (width <= 0 || height <= 0) {
-    return 1.5
-  }
-  return width / height
-}
+const FALLBACK_RATIO = 1.5
 
 /**
  * The review game's photo stage: the full frame as large as the space left
@@ -59,17 +52,30 @@ function displayAspect(orientation: number, fileWidth: number, fileHeight: numbe
  * measurement (the {@link CandidateFaceImage} approach, scaled to a full
  * screen). A quiet corner anchor leads out to the photo's own page, so anything
  * worth keeping or sharing can be taken along.
+ *
+ * The shape comes from {@link useImageFrame}: the loaded preview's own natural
+ * size, with the catalogue row only as the estimate that keeps the stage from
+ * resizing under the question. The rectangle waits for the measurement — against
+ * a row with a transposed dimension pair it would mark the wrong part of the
+ * photo, and being asked „is this Alice?" about the wrong face is worse than
+ * being asked a moment later.
  */
 export function ReviewPhoto({ photo, href, bbox, alt }: ReviewPhotoProps) {
   const { t } = useTranslation()
   const [failed, setFailed] = useState(false)
+  const stage = useImageFrame({
+    source: photo.uid,
+    width: photo.file_width,
+    height: photo.file_height,
+    orientation: photo.file_orientation ?? 0,
+  })
 
   // A new photo is a clean slate for the load-failure flag.
   useEffect(() => {
     setFailed(false)
   }, [photo.uid])
 
-  const ratio = displayAspect(photo.file_orientation ?? 0, photo.file_width, photo.file_height)
+  const ratio = stage.ratio ?? FALLBACK_RATIO
   // `100cqh` is the stage's real height (it is a size container), so the frame
   // caps itself against the room that is actually left after the question and
   // the buttons — never against an estimate that drifts when they grow.
@@ -86,6 +92,7 @@ export function ReviewPhoto({ photo, href, bbox, alt }: ReviewPhotoProps) {
         </div>
       ) : (
         <img
+          {...stage.imgProps}
           src={thumbUrl(photo.uid, REVIEW_PREVIEW_SIZE)}
           alt={alt}
           decoding="async"
@@ -95,7 +102,7 @@ export function ReviewPhoto({ photo, href, bbox, alt }: ReviewPhotoProps) {
           className="review-photo__img"
         />
       )}
-      {bbox !== undefined && (
+      {bbox !== undefined && stage.measured && (
         <div
           className="position-absolute top-0 start-0 w-100 h-100"
           style={{ pointerEvents: 'none' }}

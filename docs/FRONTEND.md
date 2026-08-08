@@ -1291,19 +1291,26 @@ here.
   — the frames would miss the faces, so they'd rather not draw and come back once the preview is neutral again.
   **Watch out — a load-bearing invariant:** `FaceOverlay` positions boxes in **percentages** of the `.kk-viewer__figure` wrapper,
   whose box **must sit exactly on the rendered image**. So the figure gets an **inline `aspect-ratio`**
-  from the photo's stored dimensions (`displayFrame(file_width, file_height, file_orientation)` — orientation 5–8
-  swaps the sides) and `data-framed='true'`: this way it fits into the stage via „contain", but its box is
+  from `useImageFrame` — **the loaded image's own `naturalWidth`/`naturalHeight`** (post-orientation), with the
+  catalogue row's `displayFrame` only as the estimate that holds the layout still until the preview arrives —
+  plus `data-framed='true'`: this way it fits into the stage via „contain", but its box is
   **exactly the image** (no letterbox bars into which percentage boxes would drift), in both the width- and
-  height-limited fit. If the dimensions were missing (`data-framed` isn't set), it falls back to a bare
-  `inline-flex` shrink — a frameless photo carries no face geometry anyway. (jsdom doesn't catch the letterbox
+  height-limited fit. If neither the row nor the image gives a frame (`data-framed` isn't set), it falls back to a bare
+  `inline-flex` shrink — a frameless photo carries no face geometry anyway. **No box is drawn until the frame is
+  measured** (`FaceOverlay`'s `measured` prop — the layer mounts, empty): drawn against the estimate a box can
+  sit off its face and then jump. (jsdom doesn't catch the letterbox
   — verify the geometry visually; previously the figure just shrank to the `<img>` and when the stage was narrowed by the panel
   it stretched, so the **frames drifted apart**.)
-  The other half of that invariant is on the backend: `file_width`/`file_height` **must be the stored,
+  Taking the frame from the image is what makes the viewer immune to the **other** half of that invariant, which
+  is on the backend: `file_width`/`file_height` **must be the stored,
   pre-rotation dimensions**, because `displayFrame` is what applies the orientation to them. PhotoPrism
   reports its own dimensions with the tag **already applied**, so the import that took them verbatim
   stored a pair the frontend rotated a second time — the figure got the transposed aspect ratio, „contain"
   letterboxed the photo inside it, and every percentage box drifted off the faces (85 photos with a marker,
-  orientations 6 and 8). The importers now de-orient on the way in (`internal/exif` `RawDimensions`) and
+  orientations 6 and 8; ~8.6 % of the library carries the pair). The rows still want repairing — everything that
+  crops a **square tile** out of a photo (`subjectTile`, `Outliers`, `OutlierCard`, `DuplicateMarkerCrop`,
+  `useFaces`) scales a background instead of overlaying a box on a rendered image and so cannot measure its way
+  out. The importers now de-orient on the way in (`internal/exif` `RawDimensions`) and
   already-imported rows are corrected by `kukatko maintenance repair --dimensions`, whose dry run is
   `maintenance scan` (the `transposed_dimensions` finding). The same repair's other half moves the **face boxes**
   that were normalized against that transposed frame — most of them are a correct box in the raw frame and need
@@ -1607,7 +1614,10 @@ here.
   faces, matches found, done, and the **computed `min_match_count`** with an explanation; `CandidateFilterTabs`
   (Vše/Nové/Přiřadit/Hotovo with counts, also scopes „Potvrdit vše"), `CandidateLegend` + `CandidateCard`
   (`CandidateFaceImage` = a **full `fit_720` preview** with the face as a **colored rectangle** via
-  `faceBoxStyle`, not a cropped chip; color/badge/rectangle share one code via the bucket `new`/`assign`/
+  `faceBoxStyle`, not a cropped chip; the wrapper's `aspect-ratio` — the rectangle's coordinate system — comes
+  from `useImageFrame`, i.e. the loaded preview, and the rectangle waits for that measurement (`candidate-frame`
+  is the wrapper, and the row is only the estimate keeping the card's height still); color/badge/rectangle share
+  one code via the bucket `new`/`assign`/
   `done` in `lib/candidateReview`); ✓ confirms (`assignFace`, `create_marker` vs `assign_person` per the
   candidate's `marker_uid`) **optimistically in place** (the card flips, the grid doesn't reload), ✗
   **permanently rejects** via `rejectFace` (`services/feedback`) and removes the card; **keyboard** (arrows/
@@ -1797,7 +1807,9 @@ here.
   `Virtuoso` list (`useWindowScroll`, keyed by `groupKey`) — a card is tall, and twenty of them mounted at once
   is a lot of images. Each `DuplicateMarkerGroupCard` is built around the picture, because the decision cannot be
   made without one: **the whole photo** (`fit_1280`, never a `tile_*` — a centre-cropped square is not the frame
-  the bboxes were normalised to) with every one of that person's boxes outlined and **numbered**, and one
+  the bboxes were normalised to) with every one of that person's boxes outlined and **numbered** — the preview's
+  `aspect-ratio` comes from `useImageFrame` and the boxes wait for that measurement, so a transposed catalogue
+  row cannot stretch them off the faces — and one
   numbered `DuplicateMarkerCrop` close-up per box below it (the same 30 % context crop as `/outliers`, its source
   size picked per marker by `lib/faceSource`); the numbers are the join between the two halves.
   Three decisions, all explicit: **„Nechat #n"** → `keepMarker` (the others are **detached**, not deleted — on a
@@ -1819,7 +1831,10 @@ here.
   vertically or horizontally, on a short display (a phone in landscape) the **photo** shrinks — text and buttons
   win, you never have to scroll to Ne/Nevím/Ano; the state is driven by `useReviewGame`, the photo is drawn by `ReviewPhoto`
   (`REVIEW_PREVIEW_SIZE = fit_1280`, i.e. **the whole shot**, not a square tile — the bbox is relative
-  to the full frame; the face frame via `padBbox`+`faceBoxStyle` from `lib/faceGeometry` with **~30 %
+  to the full frame; the stage's shape comes from `useImageFrame` (the loaded preview; the row is the estimate
+  that keeps the stage from resizing under the question, 3:2 when there is none) and the rectangle waits for it —
+  being asked „is this Alice?" about the wrong face is worse than being asked a moment later; the face frame via
+  `padBbox`+`faceBoxStyle` from `lib/faceGeometry` with **~30 %
   padding**, because you can't recognize a face from a tight crop, + a gentle dimming of the surroundings), the question
   `QuestionText` (`Trans` with `<strong>` around the name/label — an i18n **template**, not string concatenation)
   and the confidence `ConfidenceHint` (a muted % + a bar: context, not the answer); three actions **Ano · Ne ·
@@ -2109,7 +2124,10 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   the URL via `SetUrlState<PeopleView>`, **pushing** except the live-typed query, which replaces),
   `FaceOverlay`+`FacesPanel`+`FaceAssignPanel` (`FaceOverlay` = a **purely presentational** transparent layer
   of clickable boxes from the normalized bbox via `faceBoxStyle`, **no image or fetch of its own** —
-  it mounts as the last child of the `position-relative` wrapper tight around the `<img>`; the layer is
+  it mounts as the last child of the `position-relative` wrapper tight around the `<img>`. Its `measured` prop
+  (default `true`) says whether that wrapper is the **measured** image (`useImageFrame`) or still an estimate;
+  while it is `false` the layer renders **empty**, because percentages are only as good as the box they are
+  percentages of. The layer is
   click-through, pointer events are caught only by the boxes (and with `readOnly` not even by those; the box's number and name tag have
   `pointer-events:none`, otherwise they would steal the click and break the swipe). A box carries `.kk-face-box` = an invisible
   44px hitbox on `pointer: coarse` (see app.css below), so even a small face can be hit on a phone, and it reports
@@ -2529,6 +2547,26 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   key, seed tile and gutter of *one* grid. Every subscriber is woken by every change but each reads its
   own key, so `/outliers` (`OUTLIER_GRID_SCOPE`) and the library never move each other's number; the scope is
   re-`useMemo`d from its fields, not used by identity, so an inline `{…}` at a call site can't thrash the seed;
+  `useImageFrame({source,width,height,orientation})` → `{frame,measured,aspectRatio,ratio,imgProps}` =
+  **the frame a face box is positioned against, taken from the loaded image**. Wherever a box is drawn over a
+  full-frame photo the wrapper *is* the box's coordinate system (the box is percentages of it), so the wrapper
+  must sit exactly on the rendered pixels — and the catalogue row cannot be trusted for that: the PhotoPrism
+  import stored already-oriented dimensions that `displayFrame` rotates a **second** time, so ~8.6 % of the
+  library carries a transposed pair (`phqale6fftf3a3v5tn17vtfd3d`: stored 3000x4000 + orientation 6 over a
+  portrait file → a 4/3 wrapper around a 3/4 image, every box's x/width stretched by 1.78, one of the three
+  faces off the right edge entirely). `naturalWidth`/`naturalHeight` **are post-orientation**, so the row
+  survives only as the **initial estimate** (no layout jump while the image loads) and the measurement takes
+  over on load; `measured` says which one you have. Callers spread `imgProps` onto the image and **draw no box
+  until `measured`** — a box against a provisional frame lands off its face and then visibly jumps. `imgProps`
+  is `ref`+`onLoad`, not just `onLoad`: the `ref` catches an image already complete before React attached the
+  handler, and it demands `img.complete` before believing what it reads, or a `src` swapped to the next photo
+  (the element keeps reporting the old image's size until the new one arrives) would stamp the previous frame
+  onto it. Used by `PhotoDetailPage`+`FaceOverlay`, `CandidateFaceImage`, `ReviewPhoto` and
+  `DuplicateMarkerGroupCard`'s whole-photo preview — one implementation, four call sites. The measurement is a
+  **shape** (a `fit_*` thumbnail, not the original), so never read it as the original's pixel count; the
+  square-tile croppers keep taking `displayFrame` from the row (see the viewer's invariant above). Tests
+  `hooks/useImageFrame.test.tsx` + `test/imageFrame.ts` (`loadImageAs`/`frameRatio` — jsdom fetches nothing, so
+  a test about a box has to report the load itself);
   `useIsNarrowViewport()` = a shared hook over `matchMedia` (`(max-width: 767.98px)`, Bootstrap `md`;
   it removes `change`, a missing/broken `matchMedia` → „wide"; the single source of truth for the filter
   offcanvas, the default grid density, the collapse of `BatchActionBar` and `HeaderActions` into the „…" overflow menu on a phone, and the move

@@ -4,8 +4,9 @@ import Card from 'react-bootstrap/Card'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
+import { useImageFrame } from '../../hooks/useImageFrame'
 import { groupKey } from '../../lib/duplicateMarkers'
-import { displayFrame, faceBoxStyle } from '../../lib/faceGeometry'
+import { faceBoxStyle } from '../../lib/faceGeometry'
 import { formatDate } from '../../lib/format'
 import { type DuplicateMarkerGroup } from '../../services/dupmarkers'
 import { thumbUrl } from '../../services/photos'
@@ -61,8 +62,17 @@ export function DuplicateMarkerGroupCard({
   onDismiss,
 }: DuplicateMarkerGroupCardProps) {
   const { t, i18n } = useTranslation()
-  const frame = displayFrame(group.width, group.height, group.orientation)
-  const known = frame.width > 0 && frame.height > 0
+  // The preview's frame *is* the coordinate system of the boxes over it, so it
+  // comes from the loaded preview rather than from the catalogue row (which, on a
+  // photo imported with already-oriented dimensions, is transposed and would throw
+  // every box off its face). The row remains the estimate that holds the card's
+  // height still while the preview loads.
+  const preview = useImageFrame({
+    source: group.photo_uid,
+    width: group.width,
+    height: group.height,
+    orientation: group.orientation,
+  })
   const title = group.photo_title !== '' ? group.photo_title : t('duplicateMarkers.card.untitled')
 
   return (
@@ -95,11 +105,14 @@ export function DuplicateMarkerGroupCard({
           data-testid="dup-marker-preview"
           style={{
             maxWidth: '32rem',
-            aspectRatio: known ? `${String(frame.width)} / ${String(frame.height)}` : '3 / 2',
+            // 3:2 while nothing is known yet: the card needs a height, and with no
+            // frame there is no box to misplace either.
+            aspectRatio: preview.aspectRatio ?? '3 / 2',
             background: 'var(--bs-dark)',
           }}
         >
           <img
+            {...preview.imgProps}
             src={thumbUrl(group.photo_uid, PREVIEW_SIZE)}
             alt={t('duplicateMarkers.card.previewAlt', { name: group.subject_name })}
             loading="lazy"
@@ -107,21 +120,25 @@ export function DuplicateMarkerGroupCard({
             className="w-100 h-100"
             style={{ objectFit: 'contain' }}
           />
-          {group.markers.map((marker, index) => (
-            <span
-              key={marker.uid}
-              data-testid="dup-marker-box"
-              className="position-absolute border border-2 border-warning rounded-1"
-              style={{ ...faceBoxStyle(marker.bbox), pointerEvents: 'none' }}
-            >
+          {/* No box until the frame is the measured preview: drawn against the
+              estimate a box can sit off its face and then jump. The numbered crops
+              below carry the same numbers, so nothing is lost in the meantime. */}
+          {preview.measured &&
+            group.markers.map((marker, index) => (
               <span
-                className="position-absolute top-0 start-0 badge text-bg-warning"
-                style={{ transform: 'translate(-2px, -100%)' }}
+                key={marker.uid}
+                data-testid="dup-marker-box"
+                className="position-absolute border border-2 border-warning rounded-1"
+                style={{ ...faceBoxStyle(marker.bbox), pointerEvents: 'none' }}
               >
-                {index + 1}
+                <span
+                  className="position-absolute top-0 start-0 badge text-bg-warning"
+                  style={{ transform: 'translate(-2px, -100%)' }}
+                >
+                  {index + 1}
+                </span>
               </span>
-            </span>
-          ))}
+            ))}
         </div>
 
         <div className="row row-cols-2 row-cols-md-3 row-cols-lg-4 g-3">

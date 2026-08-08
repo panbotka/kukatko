@@ -30,6 +30,14 @@ export interface FaceOverlayProps {
    * whose rows still report the pairing. Defaults false.
    */
   readOnly?: boolean
+  /**
+   * Whether the wrapper the boxes are positioned against is the **measured**
+   * frame of the loaded image (`useImageFrame`) rather than a provisional
+   * estimate. While false the layer renders empty: a box placed against a frame
+   * that may still change lands off its face and then visibly jumps. Defaults
+   * true, for a caller that owns a frame it has already settled.
+   */
+  measured?: boolean
 }
 
 /**
@@ -76,6 +84,11 @@ const CHROME: CSSProperties = { pointerEvents: 'none', whiteSpace: 'nowrap' }
  * alone. Pairing with the panel is reported from focus as well as hover, so a
  * tap (which focuses the box) and the keyboard both light the matching row,
  * where hover alone would never fire on touch.
+ *
+ * **The layer draws nothing until its wrapper is the measured image**
+ * (`measured`). Percentages are only as good as the box they are percentages of,
+ * and a wrapper sized from the catalogue row can be the wrong shape — better a
+ * box a moment late than a box on the wrong part of the photograph.
  */
 export function FaceOverlay({
   faces,
@@ -84,8 +97,10 @@ export function FaceOverlay({
   onSelect,
   onHover,
   readOnly = false,
+  measured = true,
 }: FaceOverlayProps) {
   const { t } = useTranslation()
+  const drawn = measured ? faces : []
 
   return (
     <div
@@ -93,7 +108,7 @@ export function FaceOverlay({
       style={{ pointerEvents: 'none' }}
       data-testid="face-overlay"
     >
-      {faces.map((face, position) => {
+      {drawn.map((face, position) => {
         const state = faceState(face)
         const number = position + 1
         const isSelected = selected === face.face_index

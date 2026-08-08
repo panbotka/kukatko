@@ -12,6 +12,7 @@ import { type AlbumCount, type LabelCount } from '../services/organize'
 import { type FacesResponse } from '../services/people'
 import { type PhotoDetail, type PhotoEdit, type PhotoListResponse } from '../services/photos'
 import { declarations, readCss, ruleBody } from '../test/css'
+import { frameRatio, loadImageAs } from '../test/imageFrame'
 
 import { PhotoDetailPage } from './PhotoDetailPage'
 
@@ -286,6 +287,25 @@ function viewer(container: HTMLElement): HTMLElement {
     throw new Error('viewer root not found')
   }
   return el
+}
+
+/** The figure the face overlay's percentages are measured against. */
+function stageFigure(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('.kk-viewer__figure')
+}
+
+/**
+ * Reports the stage preview as loaded at the given natural size — jsdom fetches
+ * nothing, so this is the only way the viewer learns the shape of what it renders.
+ * Until it happens no face box is drawn, so any test about the boxes has to call
+ * it. The default is the shape of `photo()`'s own row, i.e. a correct row.
+ */
+function loadPreview(width = 4000, height = 3000): void {
+  const img = document.querySelector<HTMLImageElement>('img.kk-viewer__image')
+  if (img === null) {
+    throw new Error('stage preview not found')
+  }
+  loadImageAs(img, width, height)
 }
 
 beforeEach(async () => {
@@ -1031,27 +1051,60 @@ describe('PhotoDetailPage — immersive viewer', () => {
     it('stamps the figure with the photo’s display aspect ratio so the overlay lands true', async () => {
       // The figure is given the exact frame ratio inline, so its box IS the
       // rendered image (no letterbox for the percentage face boxes to drift into).
-      const { container } = renderPage()
+      // Before the image has loaded that ratio is the catalogue row's estimate,
+      // which is what keeps the stage from resizing when the photo arrives.
+      renderPage()
       await screen.findByRole('heading', { name: 'Beach' })
 
-      const figure = container.querySelector<HTMLElement>('.kk-viewer__figure')
-      expect(figure).not.toBeNull()
-      expect(figure).toHaveAttribute('data-framed', 'true')
-      expect(figure).toHaveStyle({ aspectRatio: '4000 / 3000' })
+      expect(stageFigure()).not.toBeNull()
+      expect(stageFigure()).toHaveAttribute('data-framed', 'true')
+      expect(stageFigure()).toHaveStyle({ aspectRatio: '4000 / 3000' })
     })
 
-    it('swaps the framed ratio for a quarter-turn EXIF orientation', async () => {
+    it('swaps the estimated ratio for a quarter-turn EXIF orientation', async () => {
       // Orientations 5–8 rotate the image a quarter turn; the thumbnailer bakes
-      // that in and markers live in that display space, so the figure must too.
+      // that in and markers live in that display space, so the estimate must too.
       fetchPhotoMock.mockResolvedValue(
         photo({ file_width: 4000, file_height: 3000, file_orientation: 6 }),
       )
-      const { container } = renderPage()
+      renderPage()
       await screen.findByRole('heading', { name: 'Beach' })
 
-      expect(container.querySelector<HTMLElement>('.kk-viewer__figure')).toHaveStyle({
-        aspectRatio: '3000 / 4000',
-      })
+      expect(stageFigure()).toHaveStyle({ aspectRatio: '3000 / 4000' })
+    })
+
+    it('hands the figure over to the loaded image’s own dimensions', async () => {
+      // `naturalWidth`/`naturalHeight` are post-orientation, so once the preview is
+      // there the browser has already told us the truth — and the row, whatever it
+      // says, stops mattering.
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+      expect(frameRatio(stageFigure())).toBeCloseTo(4000 / 3000)
+
+      loadPreview(1920, 1440)
+      expect(stageFigure()).toHaveStyle({ aspectRatio: '1920 / 1440' })
+      // A correct row and its image agree, so nothing moved: same frame, same
+      // letterboxing, same zoom behaviour as before.
+      expect(frameRatio(stageFigure())).toBeCloseTo(4000 / 3000)
+    })
+
+    it('frames a transposed row from the image, not from the row', async () => {
+      // Production photo `phqale6fftf3a3v5tn17vtfd3d`: stored 3000x4000 with EXIF
+      // orientation 6 — dimensions that were already oriented and then got rotated
+      // a second time — while the file, and the preview, are portrait. Framed from
+      // that row the figure is 1.78x too wide and one of the three faces lands off
+      // the right edge of the image entirely.
+      fetchPhotoMock.mockResolvedValue(
+        photo({ file_width: 3000, file_height: 4000, file_orientation: 6 }),
+      )
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+      expect(frameRatio(stageFigure())).toBeCloseTo(4000 / 3000)
+
+      loadPreview(1440, 1920)
+      // The frame a correct row (4000x3000 + orientation 6) would have produced, so
+      // the boxes land exactly where they land on a repaired row.
+      expect(frameRatio(stageFigure())).toBeCloseTo(3000 / 4000)
     })
   })
 
@@ -1156,6 +1209,9 @@ describe('PhotoDetailPage — immersive viewer', () => {
       // Turning faces on opens the drawer alongside the boxes.
       expect(viewer(container)).toHaveAttribute('data-panel', 'open')
       expect(screen.getByTestId('face-overlay')).toBeInTheDocument()
+      // The boxes wait for the preview to report the frame they are percentages of.
+      expect(screen.queryByRole('button', { name: 'Unnamed face 1' })).not.toBeInTheDocument()
+      loadPreview()
       expect(screen.getByRole('button', { name: 'Unnamed face 1' })).toBeEnabled()
       expect(screen.getByRole('button', { name: 'Unnamed face 2' })).toBeEnabled()
       // The panel lists the same faces.
@@ -1841,6 +1897,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
     // A viewer may show the faces but cannot select one to name it.
     await user.click(screen.getByRole('button', { name: 'Show faces' }))
     expect(screen.getByTestId('face-overlay')).toBeInTheDocument()
+    loadPreview()
     expect(screen.getByRole('button', { name: 'Unnamed face 1' })).toBeDisabled()
     expect(
       screen.queryByRole('button', { name: 'Select face #1: No name' }),
