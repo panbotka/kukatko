@@ -3,6 +3,7 @@ package mapsapi_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -25,12 +26,23 @@ type fakeLister struct {
 	photos    []photos.Photo
 	gotParams photos.ListParams
 	err       error
+	// total is what Count answers, and countParams records what it was asked —
+	// the map's coverage figure is the one call that must NOT carry has-GPS.
+	total       int
+	countParams photos.ListParams
+	countErr    error
 }
 
 // List records params and returns the canned photos (or error).
 func (f *fakeLister) List(_ context.Context, params photos.ListParams) ([]photos.Photo, error) {
 	f.gotParams = params
 	return f.photos, f.err
+}
+
+// Count records params and returns the canned total (or error).
+func (f *fakeLister) Count(_ context.Context, params photos.ListParams) (int, error) {
+	f.countParams = params
+	return f.total, f.countErr
 }
 
 // passthroughAuth is a no-op auth middleware for tests (every request is allowed).
@@ -417,6 +429,66 @@ func TestGeoJSON_shapeAndFilters(t *testing.T) {
 	}
 	if !got.OnlyArchived {
 		t.Error("archived=only did not set OnlyArchived")
+	}
+}
+
+// TestGeoJSON_coverage checks the collection reports how much of the filtered
+// library it can place: the markers actually drawn against the same filters
+// counted with the has-GPS restriction lifted, which is the denominator the map's
+// "N of M photos" sentence needs. The count must keep every other filter — a
+// coverage figure over the whole library while the map shows one album would be a
+// number that lies.
+func TestGeoJSON_coverage(t *testing.T) {
+	t.Parallel()
+	lat, lng := 50.0, 14.0
+	lister := &fakeLister{
+		photos: []photos.Photo{{UID: "ph_a", Lat: &lat, Lng: &lng}},
+		total:  7,
+	}
+	ts := newTestServer(t, lister, func(w http.ResponseWriter, _ *http.Request) {})
+
+	resp := ts.get(t, "/api/v1/map/photos?album=al_1&archived=only")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	var fc struct {
+		Coverage struct {
+			Located int `json:"located"`
+			Total   int `json:"total"`
+		} `json:"coverage"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&fc); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if fc.Coverage.Located != 1 || fc.Coverage.Total != 7 {
+		t.Errorf("coverage = %+v, want located 1 of 7", fc.Coverage)
+	}
+
+	counted := lister.countParams
+	if counted.HasGPS != nil {
+		t.Errorf("count kept HasGPS = %v, want it lifted", *counted.HasGPS)
+	}
+	if len(counted.AlbumUIDs) != 1 || counted.AlbumUIDs[0] != "al_1" || !counted.OnlyArchived {
+		t.Errorf("count params = %+v, want the album and archived filters kept", counted)
+	}
+	if counted.Limit != 0 || counted.Offset != 0 {
+		t.Errorf("count params carried paging: limit %d, offset %d", counted.Limit, counted.Offset)
+	}
+}
+
+// TestGeoJSON_coverageFailure checks a failing count is a 500 rather than a
+// collection quietly claiming the library holds no photos at all.
+func TestGeoJSON_coverageFailure(t *testing.T) {
+	t.Parallel()
+	lister := &fakeLister{countErr: errors.New("boom")}
+	ts := newTestServer(t, lister, func(w http.ResponseWriter, _ *http.Request) {})
+
+	resp := ts.get(t, "/api/v1/map/photos")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", resp.StatusCode)
 	}
 }
 

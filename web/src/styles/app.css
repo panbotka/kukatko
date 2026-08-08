@@ -1891,6 +1891,32 @@ body {
   background-color: var(--kk-surface-sunken);
 }
 
+/* Tiles toned down for the dark page. mapy.com publishes no dark mapset — the
+   drawn ones (Základní, Turistická) are white paper — so the only way to stop a
+   70dvh panel of it glaring out of a near-black page is to dim it here. The
+   component decides which mapsets get the class (`mapsetNeedsDimming`); the
+   aerial imagery never does, because it is photography and the rest of the app
+   shows photographs at full strength.
+
+   It is a dimming, not the usual `invert()` dark-map trick. Inverting turns
+   water orange and forests magenta, and this map is read against the user's own
+   memory of a place — a false-colour Morava is worse than a bright one. The
+   numbers are measured, not guessed: over the production map at zoom 7 the raw
+   tiles average 210/255 against the page's 22, and 0.62 brings them to ~130 —
+   far enough that the panel stops glaring, while the next step down (0.5) starts
+   losing the small-town labels. The slight contrast lift buys back the
+   separation the dimming costs, and dropping a little saturation keeps the
+   greens from going luminous once the surrounding tone is this dark.
+
+   The filter is on the tile PANE, not the container: everything the app draws
+   over the map — pins, cluster bubbles, popups, controls, the attribution strip
+   — lives in sibling panes and keeps its own colour. A filter on the container
+   would also establish a containing block for the fixed-position elements
+   underneath it. */
+.kukatko-map--dim-tiles .leaflet-tile-pane {
+  filter: brightness(0.62) saturate(0.82) contrast(1.08);
+}
+
 /* Zoom control. The touch variant is spelled out beside the plain one because
    `.leaflet-touch .leaflet-bar` re-borders the bar in its own `rgba(0,0,0,.2)`
    the moment the browser reports a touchscreen. */
@@ -1987,6 +2013,36 @@ body {
    rounded bubble. */
 .kukatko-map .kukatko-map-popup img {
   border-radius: var(--kk-radius-sm);
+}
+
+/* --------------------------------------------------------------------------
+   Place browse rows (`PlaceRow`)
+   -------------------------------------------------------------------------- */
+
+/* The preview well in a place row. Fixed and square so the list stays a column
+   of names — a preview that changed height with the photo would turn a list of
+   municipalities into a ragged edge — and sunken so a row whose place has no
+   photo left to show reads as an empty well rather than a hole. 56px keeps the
+   row itself above the 44px touch floor without the picture taking over. */
+.kk-place-row__media {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: var(--kk-radius-sm);
+  background-color: var(--kk-surface-sunken);
+}
+
+/* Room to breathe once there is one. A phone shows the list at the size above;
+   from `md` up the previews are worth actually looking at. */
+@media (min-width: 768px) {
+  .kk-place-row__media {
+    width: 4.5rem;
+    height: 4.5rem;
+  }
 }
 
 /* --------------------------------------------------------------------------

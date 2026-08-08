@@ -640,10 +640,17 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   come in later tasks.
 - **Places API (`/api/v1`, `internal/placesapi`, authenticated via `RequireAuth`):** browsing the
   reverse-geocoded place hierarchy + scoping the photo listing to a locality. `GET /places` →
-  `{places:[{country, count, cities:[{city, count}]}]}` — counts aggregated over **non-archived**
+  `{places:[{country, count, cover_uid, cities:[{city, count, cover_uid}]}]}` — counts aggregated over
+  **non-archived**
   photos with place data; a country's `count` also includes photos without a known city (may exceed the sum of
   the cities), `cities` is always an array; ordered **count desc, then name** (for both countries and cities); photos
   without place data (no `photo_places` row or an empty `country` — a no-GPS "processed" marker) are excluded.
+  `cover_uid` is the place's **newest visible photo** — the thumbnail the browse list draws (Places is a way
+  through a photo library, not a table of names); a country takes the newest across all of its cities, the
+  unknown-city group included. It is the same `array_agg(… ORDER BY taken_at DESC NULLS LAST, uid)[1]`
+  subscript the album index uses — one more aggregate over the pass the count already makes, never a
+  correlated `ORDER BY … LIMIT 1` (see `docs/PERF.md` § "The album index"). The key is **omitted** when
+  there is nothing to draw.
   Optional `?country=` drills down only into the cities of one country. The aggregation is computed by
   `photos.Store.AggregatePlaces` (a single `GROUP BY country, city` JOIN on `photo_places`, the hierarchy is
   assembled in Go). **A locality's photo gallery** runs via the shared `GET /photos?country={c}&city={c}`
@@ -729,7 +736,13 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   a feature carries `uid`/`title`/`taken_at`/`media_type`/a relative `thumb` and, for an estimated location,
   `location_estimated: true` (otherwise the key is **not sent at all**). Estimated photos are in the feed
   **by default** — that is what the estimate is for — but a pin that looks the same as a measured one is a silent lie, so
-  the client draws them in a **different shape** (dashed, not just a different colour) + a `title`. mapy.com errors
+  the client draws them in a **different shape** (dashed, not just a different colour) + a `title`. The collection
+  also carries the foreign member `coverage: {located, total}` (RFC 7946 §6.1 permits foreign members):
+  `located` = markers actually drawn, `total` = photos matching **the same filters** with the has-GPS
+  restriction lifted (one extra `photos.Store.Count`, paging stripped). It is computed server-side because
+  only the server knows the exact filter set; the map states it in words ("Na mapě je 2 378 z 20 906 fotek
+  — u ostatních není uložená poloha"), since a map showing 11 % of a library and saying nothing reads as
+  broken rather than sparse. mapy.com errors
   (**401/403 → 424** `mapsapi.StatusMapKeyRejected` = *our* key rejected, a raw 403 does not
   leak out — the caller's request is fine; 404→404, 429→429, 5xx→502/503)
   **do not leak the key**; every result is written into `mapy.Health` (→ the `GET /system/status`

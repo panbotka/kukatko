@@ -86,12 +86,35 @@ const HIERARCHY: PlaceCountry[] = [
   {
     country: 'Czechia',
     count: 12,
+    cover_uid: 'cz',
     cities: [
-      { city: 'Prague', count: 8 },
-      { city: 'Brno', count: 4 },
+      { city: 'Prague', count: 8, cover_uid: 'pr' },
+      { city: 'Brno', count: 4, cover_uid: 'bo' },
     ],
   },
-  { country: 'Italy', count: 3, cities: [{ city: 'Rome', count: 3 }] },
+  // Italy's cities carry no cover, so a row with nothing to draw is covered too.
+  {
+    country: 'Italy',
+    count: 5,
+    cover_uid: 'it',
+    cities: [
+      { city: 'Rome', count: 3 },
+      { city: 'Milan', count: 2 },
+    ],
+  },
+]
+
+/** A library entirely inside one country — this instance's actual shape. */
+const ONE_COUNTRY: PlaceCountry[] = [
+  {
+    country: 'Czechia',
+    count: 12,
+    cover_uid: 'cz',
+    cities: [
+      { city: 'Prague', count: 8, cover_uid: 'pr' },
+      { city: 'Brno', count: 4, cover_uid: 'bo' },
+    ],
+  },
 ]
 
 function auth(canWrite: boolean): AuthContextValue {
@@ -198,6 +221,99 @@ describe('PlacesPage', () => {
 
     expect(await screen.findByText('Could not load places.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument()
+  })
+
+  it('draws a preview photo for every row', async () => {
+    fetchPlacesMock.mockResolvedValue(HIERARCHY)
+    const user = userEvent.setup()
+    const { container } = renderPage()
+
+    await screen.findByRole('button', { name: /Czechia/ })
+    const covers = container.querySelectorAll('img')
+    expect([...covers].map((img) => img.getAttribute('src'))).toEqual([
+      '/api/v1/photos/cz/thumb/tile_224',
+      '/api/v1/photos/it/thumb/tile_224',
+    ])
+
+    await user.click(screen.getByRole('button', { name: /Czechia/ }))
+
+    await screen.findByRole('button', { name: /Prague/ })
+    expect([...container.querySelectorAll('img')].map((img) => img.getAttribute('src'))).toEqual([
+      '/api/v1/photos/pr/thumb/tile_224',
+      '/api/v1/photos/bo/thumb/tile_224',
+    ])
+  })
+
+  it('shows no broken image for a place with no cover', async () => {
+    fetchPlacesMock.mockResolvedValue(HIERARCHY)
+    const user = userEvent.setup()
+    const { container } = renderPage()
+
+    await user.click(await screen.findByRole('button', { name: /Italy/ }))
+
+    // Rome carries no cover_uid: the well stays empty rather than requesting a
+    // thumbnail for nothing.
+    expect(await screen.findByRole('button', { name: /Rome/ })).toBeInTheDocument()
+    expect(container.querySelectorAll('img')).toHaveLength(0)
+  })
+})
+
+describe('PlacesPage single-entry levels', () => {
+  it('opens on the cities when the library holds one country', async () => {
+    fetchPlacesMock.mockResolvedValue(ONE_COUNTRY)
+    renderPage()
+
+    // The country list would have been one row; its cities are shown instead.
+    expect(await screen.findByRole('button', { name: /Prague/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Brno/ })).toBeInTheDocument()
+    // The breadcrumb still names the country, but as text: there is nowhere to
+    // step back to.
+    expect(screen.queryByRole('button', { name: 'Places' })).not.toBeInTheDocument()
+    expect(screen.getByText('Czechia')).toBeInTheDocument()
+  })
+
+  it('opens on the photos when that one country holds one city', async () => {
+    fetchPlacesMock.mockResolvedValue([
+      { country: 'Czechia', count: 5, cover_uid: 'cz', cities: [{ city: 'Brno', count: 5 }] },
+    ])
+    fetchPhotosMock.mockResolvedValue(page([photo('a')]))
+    renderPage()
+
+    await waitFor(() => {
+      expect(fetchPhotosMock).toHaveBeenCalled()
+    })
+    const params = fetchPhotosMock.mock.calls[0][0]
+    expect(params.country).toBe('Czechia')
+    expect(params.city).toBe('Brno')
+  })
+
+  it('keeps the city list when the one city leaves photos behind', async () => {
+    // 5 of the country's 40 photos are in the only named town; the rest were
+    // never resolved to one and have no row, so skipping would hide them.
+    fetchPlacesMock.mockResolvedValue([
+      { country: 'Czechia', count: 40, cover_uid: 'cz', cities: [{ city: 'Brno', count: 5 }] },
+    ])
+    renderPage()
+
+    expect(await screen.findByRole('button', { name: /Brno/ })).toBeInTheDocument()
+    expect(fetchPhotosMock).not.toHaveBeenCalled()
+  })
+
+  it('puts the implied country into the URL when a city is picked', async () => {
+    fetchPlacesMock.mockResolvedValue(ONE_COUNTRY)
+    fetchPhotosMock.mockResolvedValue(page([]))
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: /Prague/ }))
+
+    await waitFor(() => {
+      expect(fetchPhotosMock).toHaveBeenCalled()
+    })
+    // A link to a city without its country is not an address anyone can open.
+    const params = fetchPhotosMock.mock.calls[0][0]
+    expect(params.country).toBe('Czechia')
+    expect(params.city).toBe('Prague')
   })
 })
 

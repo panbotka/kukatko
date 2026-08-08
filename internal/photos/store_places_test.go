@@ -2,7 +2,14 @@ package photos
 
 import (
 	"testing"
+	"time"
 )
+
+// placeTime is a helper for a fixed capture time in the cover-selection cases.
+func placeTime(day int) *time.Time {
+	t := time.Date(2026, time.May, day, 12, 0, 0, 0, time.UTC)
+	return &t
+}
 
 // TestAssemblePlaces verifies the flat (country, city, count) rows fold into the
 // nested hierarchy with correct per-country totals, that the unknown-city group
@@ -60,6 +67,50 @@ func TestAssemblePlaces(t *testing.T) {
 				}},
 			},
 		},
+		{
+			name: "each city keeps its own cover, the country takes the newest",
+			in: []placeCell{
+				{country: "Czechia", city: "Brno", count: 2, cover: "old", coverTakenAt: placeTime(1)},
+				{country: "Czechia", city: "Praha", count: 5, cover: "new", coverTakenAt: placeTime(9)},
+			},
+			want: []CountryPlaces{
+				{Country: "Czechia", Count: 7, CoverUID: "new", Cities: []CityCount{
+					{City: "Praha", Count: 5, CoverUID: "new"},
+					{City: "Brno", Count: 2, CoverUID: "old"},
+				}},
+			},
+		},
+		{
+			name: "a photo placed only by country can be the country cover",
+			in: []placeCell{
+				{country: "Czechia", city: "Brno", count: 9, cover: "city", coverTakenAt: placeTime(1)},
+				{country: "Czechia", city: "", count: 1, cover: "loose", coverTakenAt: placeTime(4)},
+			},
+			want: []CountryPlaces{
+				{Country: "Czechia", Count: 10, CoverUID: "loose", Cities: []CityCount{
+					{City: "Brno", Count: 9, CoverUID: "city"},
+				}},
+			},
+		},
+		{
+			name: "an unknown capture time loses to a known one, then uid breaks the tie",
+			in: []placeCell{
+				{country: "Czechia", city: "Zlin", count: 1, cover: "undated"},
+				{country: "Czechia", city: "Brno", count: 1, cover: "dated", coverTakenAt: placeTime(2)},
+				{country: "Austria", city: "Wien", count: 1, cover: "bbb"},
+				{country: "Austria", city: "Linz", count: 1, cover: "aaa"},
+			},
+			want: []CountryPlaces{
+				{Country: "Austria", Count: 2, CoverUID: "aaa", Cities: []CityCount{
+					{City: "Linz", Count: 1, CoverUID: "aaa"},
+					{City: "Wien", Count: 1, CoverUID: "bbb"},
+				}},
+				{Country: "Czechia", Count: 2, CoverUID: "dated", Cities: []CityCount{
+					{City: "Brno", Count: 1, CoverUID: "dated"},
+					{City: "Zlin", Count: 1, CoverUID: "undated"},
+				}},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -73,14 +124,44 @@ func TestAssemblePlaces(t *testing.T) {
 	}
 }
 
+// TestAssemblePlacesCoverIsOrderIndependent verifies the country cover does not
+// depend on the order the aggregation rows arrive in: Postgres makes no promise
+// about group order, so a cover chosen from the first row seen would drift
+// between requests.
+func TestAssemblePlacesCoverIsOrderIndependent(t *testing.T) {
+	t.Parallel()
+
+	forward := []placeCell{
+		{country: "Czechia", city: "Brno", count: 1, cover: "a", coverTakenAt: placeTime(3)},
+		{country: "Czechia", city: "Praha", count: 1, cover: "b", coverTakenAt: placeTime(3)},
+		{country: "Czechia", city: "Zlin", count: 1, cover: "c"},
+	}
+	reversed := []placeCell{forward[2], forward[1], forward[0]}
+
+	got := assemblePlaces(forward)
+	back := assemblePlaces(reversed)
+	if len(got) != 1 || len(back) != 1 {
+		t.Fatalf("assemblePlaces = %+v / %+v, want one country each", got, back)
+	}
+	if got[0].CoverUID != back[0].CoverUID {
+		t.Errorf("cover depends on row order: %q vs %q", got[0].CoverUID, back[0].CoverUID)
+	}
+	if got[0].CoverUID != "a" {
+		t.Errorf("cover = %q, want the lower uid of the two newest", got[0].CoverUID)
+	}
+}
+
 // equalPlaces reports whether two place hierarchies are identical in country and
-// city order, counts and names.
+// city order, counts, names and covers.
 func equalPlaces(a, b []CountryPlaces) bool {
 	if len(a) != len(b) {
 		return false
 	}
 	for i := range a {
 		if a[i].Country != b[i].Country || a[i].Count != b[i].Count {
+			return false
+		}
+		if a[i].CoverUID != b[i].CoverUID {
 			return false
 		}
 		if len(a[i].Cities) != len(b[i].Cities) {

@@ -5,6 +5,8 @@ import {
   buildMapQuery,
   fetchMapPhotos,
   type MapFeatureCollection,
+  MAPSETS,
+  mapsetNeedsDimming,
   probeTileFailure,
   tileLayerUrl,
   toMapset,
@@ -155,5 +157,22 @@ describe('probeTileFailure', () => {
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
     expect(url).toBe(TILE_URL)
     expect(init.credentials).toBe('same-origin')
+  })
+})
+
+describe('mapsetNeedsDimming', () => {
+  it('dims the drawn maps and leaves the imagery alone', () => {
+    // mapy.com publishes no dark mapset, so the drawn ones are white paper and
+    // have to be toned down to sit in a dark interface; the aerial view is
+    // photography, which the app shows at full strength everywhere else.
+    expect(mapsetNeedsDimming('basic')).toBe(true)
+    expect(mapsetNeedsDimming('outdoor')).toBe(true)
+    expect(mapsetNeedsDimming('aerial')).toBe(false)
+  })
+
+  it('answers for every mapset the switcher offers', () => {
+    for (const mapset of MAPSETS) {
+      expect(typeof mapsetNeedsDimming(mapset)).toBe('boolean')
+    }
   })
 })

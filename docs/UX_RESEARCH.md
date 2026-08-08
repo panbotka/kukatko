@@ -85,7 +85,7 @@ dopad/pracnost — nahoře je to, co se vyplatí udělat první.
 | [N20](#n20) ✅ | Ovládání prohlížeče fotky se schová i s jedinou cestou zpět | 🟡 | ⚪ | `useAutoHideChrome` |
 | [N21](#n21) ✅ | Obálky alb se opakují, alba jdou od sebe rozeznat jen podle názvu | 🟡 | 🟡 | `AlbumsPage`, výběr obálky |
 | [N22](#n22) ✅ | `/stats` mluví o „Embeddingách" a nenabízí žádnou akci | 🟡 | ⚪ | `StatsPage` |
-| [N23](#n23) | Mapa je světlá v tmavé aplikaci a `Místa` jsou jeden řádek | 🟡 | 🟡 | `MapPage`, `PlacesPage` |
+| [N23](#n23) ✅ | Mapa je světlá v tmavé aplikaci a `Místa` jsou jeden řádek | 🟡 | 🟡 | `MapPage`, `PlacesPage` |
 | [N24](#n24) | Detail alba nemá časovou osu ani popis | ⚪ | ⚪ | `AlbumDetailPage` |
 | [N25](#n25) | Prázdné hledání hlásí „Počet fotek: 0" | ⚪ | ⚪ | `SearchPage` |
 | [N26](#n26) | Technické údaje ukazují SHA256, PhotoPrism UID a souřadnice | ⚪ | ⚪ | `TechnicalDetails` |
@@ -1046,7 +1046,7 @@ ho odmítl ([N13](#n13)). Odkaz do knihovny zůstává všem.
 ---
 
 <a id="n23"></a>
-### N23 — Mapa je světlá v tmavé aplikaci a `Místa` jsou jeden řádek 🟡 🟡
+### N23 — Mapa je světlá v tmavé aplikaci a `Místa` jsou jeden řádek 🟡 🟡 ✅
 
 **Co se stalo.** Tři věci na dvou stránkách:
 
@@ -1078,6 +1078,47 @@ uživatele je to dvakrát zklamání a zároveň dvě položky menu, které mu n
 
 **Kde to je.** `web/src/pages/MapPage.tsx`, `web/src/components/map/*`,
 `web/src/pages/PlacesPage.tsx`, `internal/mapsapi` (volba stylu dlaždic).
+
+**✅ Vyřešeno (8. 8. 2026).** **Tmavý podklad poskytovatel nenabízí** — mapy.com
+publikuje čtyři rastrové sady (`basic`, `outdoor`, `winter`, `aerial`) a žádná
+z nich není tmavá, takže padla druhá varianta návrhu: dlaždice ztlumí sama
+aplikace. Třída `kukatko-map--dim-tiles` (nasazuje ji `LeafletMap` podle
+`mapsetNeedsDimming`) klade `filter: brightness(0.62) saturate(0.82)
+contrast(1.08)` na **vrstvu dlaždic**, ne na kontejner — špendlíky, shluky,
+bubliny a ovládání zůstávají v plné barvě. Je to ztlumení, ne obvyklý trik
+s `invert()`: ten obrátí vodu do oranžové a lesy do fialové, a tuhle mapu člověk
+čte proti vlastní paměti místa. Čísla jsou změřená na produkční mapě v zoomu 7:
+syrové dlaždice mají průměrný jas 210/255 proti 22 stránky, 0,62 je snese na
+~130, a další krok dolů (0,5) už začíná ztrácet názvy menších obcí. Letecká je
+fotografie, ta se neztlumuje. Neaktivní přepínače stylu jsou `outline-light`
+místo `outline-secondary` — Superhero má `secondary` odsycenou modrou, která na
+téhle skoro černé stránce vypadá jako vypnuté tlačítko (2,1:1); teď drží ~7,8:1.
+
+Mapa taky **řekne, za kolik knihovny mluví**. Feed `GET /map/photos` nese cizí
+člen `coverage:{located,total}` (RFC 7946 §6.1 je povoluje) — vykreslené
+značky proti jednomu `Count` nad **týmiž** filtry s vypnutou podmínkou na GPS.
+Počítá to server, protože přesnou sadu filtrů zná jen on. Pod filtry pak stojí
+věta „Na mapě je 2 378 z 20 906 fotek — u ostatních není uložená poloha." a pro
+role s právem zápisu odkaz **„Doplnit polohu"** do knihovny s `has_gps=false` —
+tedy tam, kde se poloha nastavuje ([N13](#n13): prohlížející vidí stejné číslo,
+ale ne odkaz na stránku, kde by nic nezmohl). Odkaz, ne tlačítko: hromadný odhad
+polohy je běh nad celou knihovnou a ten nepatří pod jedno kliknutí v patičce
+filtrů.
+
+Na `/places` má **každý řádek náhled** (`PlaceRow`): `AggregatePlaces` vrací
+`cover_uid` — nejnovější viditelnou fotku místa — pro zemi i pro obec, stejným
+`array_agg(… ORDER BY taken_at DESC NULLS LAST, uid)[1]` podvýběrem, jaký používá
+index alb, tedy jedním agregátem navíc nad průchodem, který se pro počty stejně
+dělá (nikdy korelovaným `ORDER BY … LIMIT 1`, viz `docs/PERF.md`). Země si bere
+nejnovější napříč svými obcemi včetně skupiny bez známého města. A **úroveň
+s jediným řádkem se přeskakuje** (`lib/placeDrill`): tahle knihovna je celá
+česká, takže `/places` teď rovnou ukazuje 17 obcí a v drobečkové navigaci stojí
+„Místa / Česko" textem, ne odkazem — odkaz, který vede na tutéž obrazovku, je
+horší než prostý text. Přeskočení se počítá z načtené hierarchie a **nezapisuje
+se do URL**: adresa dál říká, co uživatel vybral. Úroveň obcí se přeskočí jen
+tehdy, když ta jediná obec drží **celý** počet země — země má i fotky, jejichž
+město se nikdy nedohledalo, a ty vlastní řádek nemají, takže pouhé
+`cities.length === 1` by je tiše schovalo.
 
 ---
 

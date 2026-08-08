@@ -380,10 +380,18 @@ go test -tags integration -run TestAlbumListPlanStaysProportionalToMemberships .
 - `internal/vectors` `findDuplicatePairsSQL` — a `CROSS JOIN LATERAL … ORDER BY
   embedding <=> … LIMIT n`, but that inner order is served by the HNSW index, so
   the probe is bounded by design rather than a scan of the table.
-- `internal/photos` (`store_places`, `store_years`, `store_timeline`),
+- `internal/photos` (`store_years`, `store_timeline`),
   `internal/review` `leaderboard`, `internal/jobs`
   stats, `internal/savedsearch` — plain aggregates or single-table listings, no
   per-group row pick.
+- `internal/photos` `aggregatePlacesSQL` — **does** pick one row per group since
+  2026-08-08 (each place's cover photo for the `/places` previews), and picks it
+  the way this section prescribes: `(array_agg(p.uid ORDER BY p.taken_at DESC
+  NULLS LAST, p.uid))[1]` beside the `count(*)` the query already computes, so
+  the cover costs no node of its own. `MAX(p.taken_at)` rides along as that
+  cover's capture time — by construction, since the aggregate sorts `NULLS LAST`
+  — and lets a country's cover be chosen across its cities in Go rather than by
+  a second query.
 - The remaining `ORDER BY … LIMIT 1` statements (`internal/jobs` claim,
   `internal/dupmerge`, `internal/importer`, `internal/photos` stack-primary
   election) run once per mutation against a keyed lookup, not once per row of a

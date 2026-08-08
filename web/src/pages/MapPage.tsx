@@ -4,6 +4,7 @@ import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 
+import { useAuth } from '../auth/AuthContext'
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
 import { LeafletMap } from '../components/map/LeafletMap'
@@ -40,11 +41,17 @@ const TILE_FAILURE_MESSAGES = {
  * server's API key — the page says so in a dismissible warning instead of showing
  * an unexplained grey grid. The map itself stays up: the markers, clusters and
  * popups all keep working over the empty background.
+ *
+ * The feed also reports how much of the filtered library carries a location at
+ * all, which the filter bar states in words; on this collection the map speaks
+ * for about one photo in nine, and saying so is the difference between a sparse
+ * map and a map that looks broken.
  */
 export function MapPage() {
   const { t } = useTranslation()
   useDocumentTitle(t('map.title'))
   const navigate = useNavigate()
+  const { canWrite } = useAuth()
   const [view, setView] = useUrlState<MapView>(MAP_DEFAULTS)
   const [tileFailure, setTileFailure] = useState<TileFailure | null>(null)
   const [warningDismissed, setWarningDismissed] = useState(false)
@@ -71,7 +78,7 @@ export function MapPage() {
       }),
     [taken_after, taken_before, archived, album, label],
   )
-  const { features, status, retry } = useMapPhotos(params)
+  const { features, coverage, status, retry } = useMapPhotos(params)
 
   const mapset = mapsetFromView(view)
   const viewport = viewportFromView(view)
@@ -124,7 +131,14 @@ export function MapPage() {
     <>
       <h1 className="kk-page-title mb-3">{t('map.title')}</h1>
 
-      <MapFilterBar view={view} onChange={setView} mapset={mapset} count={features.length} />
+      <MapFilterBar
+        view={view}
+        onChange={setView}
+        mapset={mapset}
+        count={features.length}
+        coverage={coverage}
+        canWrite={canWrite}
+      />
 
       {status === 'error' ? (
         <ErrorState title={t('map.error.load')} onRetry={retry} />

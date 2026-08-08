@@ -199,6 +199,38 @@ describe('LeafletMap tile layer', () => {
   })
 })
 
+describe('LeafletMap dark tiles', () => {
+  /** The map container, which Leaflet is handed and the component styles. */
+  function container(view: ReturnType<typeof render>): HTMLElement {
+    const el = view.container.querySelector('.kukatko-map')
+    if (el === null) {
+      throw new Error('map container not rendered')
+    }
+    return el as HTMLElement
+  }
+
+  it('tones the drawn mapsets down for the dark page', () => {
+    const view = renderMap()
+    expect(container(view).classList.contains('kukatko-map--dim-tiles')).toBe(true)
+  })
+
+  it('leaves the aerial imagery at full strength and restores the dim on the way back', () => {
+    const view = renderMap()
+    const props = {
+      features: FEATURES,
+      viewport: null,
+      onViewportChange: vi.fn(),
+      onSelectPhoto: vi.fn(),
+      thumbAlt: 'Photo on the map',
+    }
+    view.rerender(<LeafletMap {...props} mapset="aerial" />)
+    expect(container(view).classList.contains('kukatko-map--dim-tiles')).toBe(false)
+    // The class must not be a one-way trip — the switcher goes both ways.
+    view.rerender(<LeafletMap {...props} mapset="outdoor" />)
+    expect(container(view).classList.contains('kukatko-map--dim-tiles')).toBe(true)
+  })
+})
+
 describe('LeafletMap tile failures', () => {
   it('reports the URL of a tile that failed to load, so the page can explain why', () => {
     const onTileError = vi.fn()

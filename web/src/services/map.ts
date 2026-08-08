@@ -41,12 +41,28 @@ export interface MapFeature {
 }
 
 /**
+ * How much of the filtered library the map can show: `total` photos match the
+ * active filters, `located` of them carry a position and became a marker. The
+ * difference is what the map is silent about — on this library most of it.
+ *
+ * A GeoJSON foreign member (RFC 7946 §6.1 permits them), computed server-side
+ * because only the server knows the exact filter set behind the features.
+ */
+export interface MapCoverage {
+  located: number
+  total: number
+}
+
+/**
  * The GeoJSON `FeatureCollection` returned by `GET /api/v1/map/photos`: every
- * geotagged photo matching the active filters, capped server-side.
+ * geotagged photo matching the active filters, capped server-side, plus the
+ * coverage those features represent.
  */
 export interface MapFeatureCollection {
   type: 'FeatureCollection'
   features: MapFeature[]
+  /** Optional so a response from an older backend still parses. */
+  coverage?: MapCoverage
 }
 
 /**
@@ -140,6 +156,28 @@ export const MAPSETS: readonly Mapset[] = ['basic', 'outdoor', 'aerial']
 /** Narrows a raw string to a known mapset, defaulting to "basic". */
 export function toMapset(raw: string): Mapset {
   return (MAPSETS as readonly string[]).includes(raw) ? (raw as Mapset) : 'basic'
+}
+
+/**
+ * The mapsets drawn as a light map — a white page with roads on it. mapy.com
+ * publishes four raster mapsets (`basic`, `outdoor`, `winter`, `aerial`) and no
+ * dark one at all, so a dark app cannot simply ask for a dark base layer: the
+ * only ones it can pick from are the two the switcher offers plus the aerial
+ * imagery. Hence {@link mapsetNeedsDimming}, and hence the set is spelled out
+ * here rather than inferred — the day mapy.com ships a dark style, adding it to
+ * `MAPSETS` and leaving it out of this set is the whole change.
+ */
+const LIGHT_MAPSETS: readonly Mapset[] = ['basic', 'outdoor']
+
+/**
+ * Whether a mapset's tiles have to be toned down to sit inside the dark
+ * interface. True for the drawn maps, whose white paper is a lightbox in the
+ * middle of a near-black page; false for the aerial imagery, which is
+ * photography — the same content the rest of the app shows at full strength, and
+ * already dark enough not to glare.
+ */
+export function mapsetNeedsDimming(mapset: Mapset): boolean {
+  return LIGHT_MAPSETS.includes(mapset)
 }
 
 /**
