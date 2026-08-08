@@ -99,6 +99,13 @@ export function AlbumTile({ album, cover }: AlbumTileProps) {
         )}
       </div>
       <div className="fw-semibold text-truncate">{title}</div>
+      {/* Two lines of what the album is, where a title alone often says nothing
+          ("Rodáci 2016"). Clamped, because a card grid whose rows are different
+          heights reads as broken — the detail page shows all of it. A
+          machine-made album has no description and loses no room to this. */}
+      {album.description !== '' && (
+        <div className="kk-text-caption kk-prose-clamp text-secondary">{album.description}</div>
+      )}
       {range !== '' && <div className="kk-text-caption text-secondary text-nowrap">{range}</div>}
       <div className="kk-text-caption text-secondary">
         {t('albums.photoCount', { count: album.photo_count })}

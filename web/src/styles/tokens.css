@@ -361,6 +361,33 @@
   line-height: var(--kk-line-height-caption);
 }
 
+/*
+ * The prose a person wrote about a collection — an album's description, under
+ * its heading. It is read, not scanned, so it is held to a measure a line of
+ * text can be followed across (a full-width line on a desktop monitor is not),
+ * and it keeps the line breaks it was typed with: a description is often a list
+ * of names or years, and reflowing it into one paragraph loses what the writer
+ * meant by the newline.
+ */
+.kk-prose-note {
+  max-width: 68ch;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+/*
+ * The same prose in a tile caption, where it is a hint rather than the text:
+ * two lines, then an ellipsis. The tile links to the page that shows all of it,
+ * and a card grid whose rows are different heights reads as broken.
+ */
+.kk-prose-clamp {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
 /* An eyebrow above a section title — used where a group needs a quiet label. */
 .kk-text-eyebrow {
   font-size: var(--kk-font-size-caption);

@@ -74,8 +74,13 @@ func parseListParams(q url.Values) (photos.ListParams, []string, error) {
 	if err != nil {
 		return photos.ListParams{}, nil, err
 	}
-	// An album scope is always presented chronologically, oldest first, whatever
-	// sort or order the query carries. The override lives here — where the album
+	// An album scope is always presented chronologically: the sort *field* is
+	// pinned to the capture time whatever key the query asks for, so an album is
+	// never shown by title or file size. Only the direction is the reader's to
+	// choose — an album spanning a lifetime is as often read from its newest end
+	// as from its oldest — so an explicitly requested descending sort
+	// (?sort=newest, or ?order=desc) is honoured and everything else, an absent
+	// sort included, stays oldest-first. The override lives here — where the album
 	// scope enters the shared list path — so the endpoint's defaults stay
 	// untouched for every other view. It fires whenever at least one album is
 	// selected (the filter now accepts several, combined with AND). Photos with no
@@ -83,7 +88,9 @@ func parseListParams(q url.Values) (photos.ListParams, []string, error) {
 	// the order total.
 	if len(params.AlbumUIDs) > 0 {
 		params.Sort = photos.SortByChronology
-		params.Order = photos.OrderAsc
+		if params.Order != photos.OrderDesc {
+			params.Order = photos.OrderAsc
+		}
 	}
 	return params, unknown, nil
 }

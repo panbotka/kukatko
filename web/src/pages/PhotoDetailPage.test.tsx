@@ -1372,12 +1372,26 @@ describe('PhotoDetailPage — immersive viewer', () => {
       expect(next.getAttribute('href')).toContain('sort=oldest')
       expect(next.getAttribute('href')).toContain('album=al_1')
 
-      // Closing returns to the originating scoped list (album), carrying its state.
+      // Closing returns to the originating scoped list (album), carrying its
+      // state — measured against the album page's own defaults, which rest at
+      // oldest-first, so that order needs no param and a reversal would get one.
       await user.click(screen.getByRole('button', { name: 'Back to the list' }))
       await waitFor(() => {
         expect(screen.getByTestId('location')).toHaveTextContent('/albums/al_1')
       })
-      expect(screen.getByTestId('location')).toHaveTextContent('sort=oldest')
+      expect(screen.getByTestId('location')).not.toHaveTextContent('sort=')
+    })
+
+    it('carries a reversed album order back to the album on close', async () => {
+      const user = userEvent.setup()
+      renderPage(true, '/photos/b?sort=newest&album=al_1')
+
+      await screen.findByRole('heading', { name: 'Beach' })
+      await user.click(screen.getByRole('button', { name: 'Back to the list' }))
+      await waitFor(() => {
+        expect(screen.getByTestId('location')).toHaveTextContent('/albums/al_1')
+      })
+      expect(screen.getByTestId('location')).toHaveTextContent('sort=newest')
     })
 
     it('pages prev/next within a subject when opened from a person gallery', async () => {
