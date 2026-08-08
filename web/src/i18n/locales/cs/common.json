@@ -1404,9 +1404,8 @@
     },
     "count": "Obličejů: {{count}}",
     "row": {
-      "label": "Obličej #{{number}}",
-      "select": "Vybrat obličej #{{number}}",
-      "selectNoEmbedding": "Vybrat obličej #{{number}} (bez embeddingu)"
+      "select": "Vybrat obličej #{{number}}: {{name}}",
+      "selectNoEmbedding": "Vybrat obličej #{{number}}: {{name}} (bez embeddingu)"
     },
     "state": {
       "unnamed": "Bez jména"

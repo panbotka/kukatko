@@ -73,6 +73,25 @@ describe('useFaces', () => {
     expect(result.current.selected?.face_index).toBe(0)
   })
 
+  it('puts the detections into reading order, whatever order they arrived in', async () => {
+    // Detection order is the model's own: on the reported group photo it put #1 in
+    // the middle, #3 to its left and #5 at the far left, so a panel row could only
+    // be matched to a person by hunting for a numeric badge on the photo.
+    const scrambled = facesResponse()
+    scrambled.faces = [
+      { ...scrambled.faces[0], face_index: 0, bbox: [0.4, 0.5, 0.1, 0.1] },
+      { ...scrambled.faces[0], face_index: 1, bbox: [0.7, 0.12, 0.1, 0.1] },
+      { ...scrambled.faces[0], face_index: 2, bbox: [0.1, 0.5, 0.1, 0.1] },
+      { ...scrambled.faces[0], face_index: 3, bbox: [0.2, 0.1, 0.1, 0.1] },
+    ]
+    const { result } = await renderReady(scrambled)
+
+    // Top row left to right (3, 1), then the row below it (2, 0).
+    expect(result.current.faces.map((face) => face.face_index)).toEqual([3, 1, 2, 0])
+    // And the walk starts at the first face left to name *in that order*.
+    expect(result.current.selected?.face_index).toBe(3)
+  })
+
   it('selects nothing when every face already has a name', async () => {
     const { result } = await renderReady(namedResponse())
     expect(result.current.selected).toBeNull()

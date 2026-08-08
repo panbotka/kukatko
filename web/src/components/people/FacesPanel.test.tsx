@@ -51,6 +51,7 @@ function renderPanel(faces: UseFacesResult, canWrite = true, hovered: number | n
   return render(
     <I18nextProvider i18n={i18n}>
       <FacesPanel
+        photoUid="ph_1"
         faces={faces}
         canWrite={canWrite}
         hovered={hovered}
@@ -78,10 +79,10 @@ describe('FacesPanel', () => {
       }),
     )
 
-    const unnamed = screen.getByRole('button', { name: 'Select face #1' })
+    const unnamed = screen.getByRole('button', { name: 'Select face #1: No name' })
     expect(unnamed).toHaveAttribute('data-face-state', 'unnamed')
     expect(unnamed).toHaveTextContent('No name')
-    const named = screen.getByRole('button', { name: 'Select face #2' })
+    const named = screen.getByRole('button', { name: 'Select face #2: Alice' })
     expect(named).toHaveAttribute('data-face-state', 'named')
     expect(named).toHaveTextContent('Alice')
   })
@@ -96,7 +97,7 @@ describe('FacesPanel', () => {
     )
 
     for (const number of [1, 2]) {
-      const row = screen.getByRole('button', { name: `Select face #${String(number)}` })
+      const row = screen.getByRole('button', { name: `Select face #${String(number)}: No name` })
       expect(row).toHaveAttribute('data-face-state', 'unnamed')
       expect(row).toHaveTextContent('No name')
     }
@@ -106,14 +107,16 @@ describe('FacesPanel', () => {
     await i18n.changeLanguage('cs')
     renderPanel(facesResult({ faces: [faceView({ face_index: 0 })] }))
 
-    expect(screen.getByRole('button', { name: 'Vybrat obličej #1' })).toHaveTextContent('Bez jména')
+    expect(screen.getByRole('button', { name: 'Vybrat obličej #1: Bez jména' })).toHaveTextContent(
+      'Bez jména',
+    )
   })
 
   it('numbers rows by position, so a marker with no detected face is not "#0"', () => {
     // Markers with no detected face carry negative face indexes.
     renderPanel(facesResult({ faces: [faceView({ face_index: -1, marker_uid: 'mk_1' })] }))
     expect(
-      screen.getByRole('button', { name: 'Select face #1 (no embedding)' }),
+      screen.getByRole('button', { name: 'Select face #1: No name (no embedding)' }),
     ).toBeInTheDocument()
   })
 
@@ -126,13 +129,13 @@ describe('FacesPanel', () => {
       }),
     )
 
-    const marked = screen.getByRole('button', { name: 'Select face #1 (no embedding)' })
+    const marked = screen.getByRole('button', { name: 'Select face #1: No name (no embedding)' })
     expect(marked).toHaveAttribute('data-embedding', 'none')
     expect(marked).toHaveTextContent('No embedding')
     // The mark is not a state: the row is still just "not named".
     expect(marked).toHaveAttribute('data-face-state', 'unnamed')
 
-    const plain = screen.getByRole('button', { name: 'Select face #2' })
+    const plain = screen.getByRole('button', { name: 'Select face #2: No name' })
     expect(plain).not.toHaveAttribute('data-embedding')
     expect(plain).not.toHaveTextContent('No embedding')
   })
@@ -161,12 +164,13 @@ describe('FacesPanel', () => {
     const face = faceView({ face_index: 0 })
 
     const { rerender } = renderPanel(facesResult({ faces: [face], select }))
-    await user.click(screen.getByRole('button', { name: 'Select face #1' }))
+    await user.click(screen.getByRole('button', { name: 'Select face #1: No name' }))
     expect(select).toHaveBeenCalledWith(0)
 
     rerender(
       <I18nextProvider i18n={i18n}>
         <FacesPanel
+          photoUid="ph_1"
           faces={facesResult({ faces: [face], selected: face, select })}
           canWrite
           hovered={null}
@@ -175,16 +179,85 @@ describe('FacesPanel', () => {
         />
       </I18nextProvider>,
     )
-    await user.click(screen.getByRole('button', { name: 'Select face #1' }))
+    await user.click(screen.getByRole('button', { name: 'Select face #1: No name' }))
     expect(select).toHaveBeenLastCalledWith(null)
+  })
+
+  it('leads every row with a crop of its own face, not with an ordinal', () => {
+    // The whole point of the panel: a row has to be matchable to a person by
+    // LOOKING at it. "Obličej #4" sent the reader hunting for a numeric badge
+    // somewhere on the photo before they could name anybody.
+    const { container } = renderPanel(
+      facesResult({
+        faces: [faceView({ face_index: 0 }), faceView({ face_index: 1, subject_name: 'Alice' })],
+      }),
+    )
+
+    const crops = container.querySelectorAll('img')
+    expect(crops).toHaveLength(2)
+    // Cut from a `fit_*` preview of the photo — a `tile_*` is a centre-cropped
+    // square and the bbox would land beside the face (`lib/faceSource`).
+    for (const crop of crops) {
+      expect(crop.getAttribute('src')).toMatch(/\/photos\/ph_1\/thumb\/fit_\d+$/)
+    }
+    // The number survives as the cross-reference to the box on the photo…
+    expect(screen.getByRole('button', { name: 'Select face #1: No name' })).toHaveTextContent('1')
+    // …but the words around it are gone.
+    expect(screen.queryByText(/Face #/)).not.toBeInTheDocument()
+  })
+
+  it('falls back to a person icon while the frame is still unknown', () => {
+    // The crop needs the photo's frame; until it lands the slot is filled anyway,
+    // so the list does not jump when it does.
+    const { container } = renderPanel(
+      facesResult({ faces: [faceView({ face_index: 0 })], frame: null }),
+    )
+
+    expect(container.querySelector('img')).toBeNull()
+    expect(container.querySelector('.bi-person-circle')).toBeInTheDocument()
   })
 
   it('reports the hovered row so the box on the photo can highlight', async () => {
     const user = userEvent.setup()
     renderPanel(facesResult({ faces: [faceView({ face_index: 0 })] }))
 
-    await user.hover(screen.getByRole('button', { name: 'Select face #1' }))
+    await user.hover(screen.getByRole('button', { name: 'Select face #1: No name' }))
     expect(onHover).toHaveBeenCalledWith(0)
+
+    await user.unhover(screen.getByRole('button', { name: 'Select face #1: No name' }))
+    expect(onHover).toHaveBeenLastCalledWith(null)
+  })
+
+  it('pairs a focused row with its box too, so the keyboard walks the photo', async () => {
+    const user = userEvent.setup()
+    renderPanel(facesResult({ faces: [faceView({ face_index: 0 }), faceView({ face_index: 1 })] }))
+
+    // The card's own close button is the panel's first tab stop.
+    await user.tab()
+    await user.tab()
+    expect(screen.getByRole('button', { name: 'Select face #1: No name' })).toHaveFocus()
+    expect(onHover).toHaveBeenLastCalledWith(0)
+
+    // Moving on drops the first pairing before lighting the next one, so exactly
+    // one box is ever highlighted.
+    await user.tab()
+    expect(onHover).toHaveBeenNthCalledWith(2, null)
+    expect(onHover).toHaveBeenLastCalledWith(1)
+  })
+
+  it('marks the row the photo says is hovered', () => {
+    renderPanel(
+      facesResult({ faces: [faceView({ face_index: 0 }), faceView({ face_index: 1 })] }),
+      true,
+      1,
+    )
+
+    expect(screen.getByRole('button', { name: 'Select face #1: No name' })).not.toHaveClass(
+      'bg-body-secondary',
+    )
+    expect(screen.getByRole('button', { name: 'Select face #2: No name' })).toHaveClass(
+      'bg-body-secondary',
+    )
   })
 
   it('brings the selected row into view, so a box tapped on the photo finds it', () => {
@@ -295,8 +368,25 @@ describe('FacesPanel', () => {
     renderPanel(facesResult({ faces: [faceView({ face_index: 0, subject_name: 'Alice' })] }), false)
 
     expect(screen.getByText('Alice')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Select face #1' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Select face #1: Alice' })).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Name this face')).not.toBeInTheDocument()
+  })
+
+  it("pairs a viewer's inert row with the photo on hover", async () => {
+    // A viewer has nothing to click, but the boxes only name the one being
+    // pointed at — so hovering a row is how they ask "which one is that?".
+    const user = userEvent.setup()
+    const { container } = renderPanel(
+      facesResult({ faces: [faceView({ face_index: 0, subject_name: 'Alice' })] }),
+      false,
+    )
+
+    const [row] = container.getElementsByClassName('list-group-item')
+    await user.hover(row)
+    expect(onHover).toHaveBeenCalledWith(0)
+
+    await user.unhover(row)
+    expect(onHover).toHaveBeenLastCalledWith(null)
   })
 
   it('reports a failed assignment', () => {

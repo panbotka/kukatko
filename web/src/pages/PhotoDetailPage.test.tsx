@@ -1136,10 +1136,10 @@ describe('PhotoDetailPage — immersive viewer', () => {
       expect(screen.getByRole('button', { name: 'Unnamed face 2' })).toBeEnabled()
       // The panel lists the same faces.
       expect(screen.getByText('Faces: 2')).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: 'Select face #1' })).toBeInTheDocument()
-      // Still exactly one *preview* — the boxes are drawn over it and the rows are
-      // text. The people chips' crops are 24px images, so the invariant is counted
-      // in full-size previews.
+      expect(screen.getByRole('button', { name: 'Select face #1: No name' })).toBeInTheDocument()
+      // Still exactly one *preview* — the boxes are drawn over it, and the crops in
+      // the panel rows and the people chips are small `fit_*` cut-outs, so the
+      // invariant is counted in full-size previews.
       const previews = [...container.querySelectorAll('img')].filter((img) =>
         img.getAttribute('src')?.includes('fit_1920'),
       )
@@ -1804,7 +1804,9 @@ describe('PhotoDetailPage — immersive viewer', () => {
     await user.click(screen.getByRole('button', { name: 'Show faces' }))
     expect(screen.getByTestId('face-overlay')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Unnamed face 1' })).toBeDisabled()
-    expect(screen.queryByRole('button', { name: 'Select face #1' })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Select face #1: No name' }),
+    ).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Name this face')).not.toBeInTheDocument()
   })
 })

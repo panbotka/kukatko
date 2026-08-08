@@ -1003,6 +1003,7 @@ export function PhotoDetailPage() {
           {showFaces && (
             <section className="kk-viewer__section">
               <FacesPanel
+                photoUid={photo.uid}
                 faces={faces}
                 canWrite={canWrite}
                 hovered={hoveredFace}

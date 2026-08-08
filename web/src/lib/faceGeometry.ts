@@ -34,6 +34,69 @@ export function faceBoxStyle(bbox: Bbox): Pick<CSSProperties, 'left' | 'top' | '
   }
 }
 
+/** The vertical centre of a normalised bbox. */
+function centreY(bbox: Bbox): number {
+  return bbox[1] + bbox[3] / 2
+}
+
+/** The horizontal centre of a normalised bbox. */
+function centreX(bbox: Bbox): number {
+  return bbox[0] + bbox[2] / 2
+}
+
+/**
+ * Whether two face boxes sit on the same row of the photo: their vertical centres
+ * are closer than half the taller box, i.e. the boxes genuinely overlap rather
+ * than merely being near each other.
+ *
+ * Taking the *taller* box is the forgiving choice on purpose. Merging two rows is
+ * the cheap mistake — inside a band the order is still left to right, which is how
+ * the eye crosses them anyway — while splitting one real row scatters its
+ * numbering, which is exactly the complaint the ordering exists to fix.
+ */
+function sameRow(a: Bbox, b: Bbox): boolean {
+  return Math.abs(centreY(a) - centreY(b)) <= Math.max(a[3], b[3]) / 2
+}
+
+/**
+ * Orders faces the way a reader crosses the photo: the top row left to right,
+ * then the next row down, and so on. It is what makes the number on a box and the
+ * position of its row in the faces panel mean something — detection order is the
+ * model's, and on a group photo it puts #1 in the middle and #5 at the far left,
+ * so matching a row to a person means hunting for a tiny numeric badge.
+ *
+ * Rows are found by a single greedy pass down the photo: faces are visited from
+ * the top and each one either joins the open band ({@link sameRow} against the
+ * band's **topmost** member) or starts a new one. Anchoring on the topmost member
+ * rather than on the last one added is what stops a slow drift down a crowd from
+ * chaining every face into one endless row.
+ *
+ * The sort is stable, so faces that genuinely share a position keep the order they
+ * arrived in.
+ */
+export function readingOrder<T extends { bbox: Bbox }>(faces: readonly T[]): T[] {
+  const topDown = [...faces].sort((a, b) => centreY(a.bbox) - centreY(b.bbox))
+  const ordered: T[] = []
+  let band: T[] = []
+
+  const flush = () => {
+    band.sort((a, b) => centreX(a.bbox) - centreX(b.bbox))
+    ordered.push(...band)
+    band = []
+  }
+
+  for (const face of topDown) {
+    if (band.length > 0 && sameRow(band[0].bbox, face.bbox)) {
+      band.push(face)
+      continue
+    }
+    flush()
+    band = [face]
+  }
+  flush()
+  return ordered
+}
+
 /**
  * Expands a face bbox by `padding` of its own width/height on every side and
  * clamps the result to the unit square. The default 30 % is the outlier-review

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { displayFrame, type Frame } from '../lib/faceGeometry'
+import { displayFrame, type Frame, readingOrder } from '../lib/faceGeometry'
 import { isNamed } from '../lib/faceState'
 import {
   type AssignRequest,
@@ -18,7 +18,10 @@ type State = { status: 'loading' } | { status: 'error' } | { status: 'ready'; da
 export interface UseFacesResult {
   /** Whether the detections are still loading, failed, or are ready. */
   status: 'loading' | 'error' | 'ready'
-  /** The detected faces; empty while loading, on error, or when none were found. */
+  /**
+   * The detected faces in reading order (see {@link readingOrder}); empty while
+   * loading, on error, or when none were found.
+   */
   faces: FaceView[]
   /**
    * The photo's display frame (its pixel dimensions with the EXIF orientation
@@ -97,6 +100,11 @@ function nextUnnamed(faces: FaceView[], afterIndex: number): number | null {
  * out of the view so the photo detail can draw the boxes as an overlay on its one
  * image while rendering the naming panel elsewhere on the page.
  *
+ * The detections are put into **reading order** (`readingOrder`) the moment they
+ * land, so every consumer numbers and walks them the way the eye crosses the
+ * photo: left to right, top to bottom. Detection order is the model's own and on a
+ * group photo is effectively arbitrary.
+ *
  * On load the first unnamed face is selected, and naming one advances to the next —
  * so a photo full of people is worked through from the keyboard alone.
  *
@@ -134,9 +142,14 @@ export function useFaces(photoUid: string): UseFacesResult {
       if (latestRequest.current !== requestId || currentUidRef.current !== photoUid) {
         return
       }
-      setState({ status: 'ready', data })
+      // Reading order, once, here — everything downstream numbers faces by their
+      // array position (the boxes on the photo, the panel rows, the people chips)
+      // and walks them in it, so the one order the detector happened to emit is
+      // replaced at the single point they all read from.
+      const ordered = { ...data, faces: readingOrder(data.faces) }
+      setState({ status: 'ready', data: ordered })
       if (autoSelect) {
-        setSelected(firstUnnamed(data.faces))
+        setSelected(firstUnnamed(ordered.faces))
       }
     },
     [photoUid],
