@@ -5,6 +5,7 @@ import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
+import { displayFrame, padBbox, squareCrop } from '../../lib/faceGeometry'
 import { EmptyState } from '../EmptyState'
 
 import {
@@ -14,7 +15,7 @@ import {
   type OutlierResult,
 } from '../../services/people'
 
-import { FaceThumb } from './FaceThumb'
+import { FaceCrop } from './FaceCrop'
 
 /** Props for {@link Outliers}. */
 export interface OutliersProps {
@@ -27,6 +28,17 @@ type State =
   | { status: 'loading' }
   | { status: 'error' }
   | { status: 'ready'; result: OutlierResult }
+
+/**
+ * How much of the surrounding photo the strip keeps around the face box, per
+ * side. The same 30 % the tiles and the full review use: a crop tight on the
+ * detector's box is a nose and two eyes, recognisable to a machine and not to a
+ * person.
+ */
+const CONTEXT_PADDING = 0.3
+
+/** Edge length of one face in the strip, in CSS pixels. */
+const FACE_SIZE = 96
 
 /** A stable key for an outlier face (unique within a subject). */
 function faceKey(face: OutlierFace): string {
@@ -121,11 +133,26 @@ export function Outliers({ subjectUid }: OutliersProps) {
       <div className="d-flex flex-wrap gap-3">
         {faces.map((face) => {
           const key = faceKey(face)
-          const label = t('outliers.faceLabel', { distance: face.distance.toFixed(3) })
+          // The crop is cut from a full-frame `fit_*` preview picked per face, so
+          // the box lands where the face is and a small face still costs a small
+          // download. The centre-cropped `tile_*` this used to crop is a
+          // different frame from the one the bbox was normalised against, which
+          // put the crop beside the face on anything but a square photo.
+          const frame = displayFrame(face.width, face.height, face.orientation)
+          const crop = squareCrop(padBbox(face.bbox, CONTEXT_PADDING), frame)
           return (
-            <div key={key} className="text-center" style={{ width: '96px' }}>
+            <div key={key} className="text-center" style={{ width: `${String(FACE_SIZE)}px` }}>
               <Link to={`/photos/${face.photo_uid}`} aria-label={t('outliers.openPhoto')}>
-                <FaceThumb photoUid={face.photo_uid} bbox={face.bbox} label={label} />
+                <FaceCrop
+                  photoUid={face.photo_uid}
+                  crop={crop}
+                  frame={frame}
+                  // The link around it already names the action; a second
+                  // announcement of the same face would only be noise.
+                  label=""
+                  size={FACE_SIZE}
+                  className="rounded"
+                />
               </Link>
               <div className="small text-secondary mt-1">{face.distance.toFixed(3)}</div>
               <Button

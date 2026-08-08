@@ -52,6 +52,7 @@ export function SubjectTile({ subject }: SubjectTileProps) {
             alt={subject.name}
             className="w-100 h-100"
             style={{ objectFit: 'cover' }}
+            skeleton
           />
         )}
         {image.kind === 'face' && (
