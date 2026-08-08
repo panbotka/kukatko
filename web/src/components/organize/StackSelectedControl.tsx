@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
 
 import { type UseBulkEditResult } from '../../hooks/useBulkEdit'
 import { stackPhotos } from '../../services/photos'
+import { ReasonedButton } from '../ReasonedButton'
 
 /** Props for {@link StackSelectedControl}. */
 export interface StackSelectedControlProps {
@@ -17,9 +17,9 @@ export interface StackSelectedControlProps {
  * The "stack selected" affordance of a photo list: it groups the selected photos
  * into one stack (manual stacking, for the shots automatic detection misses) and
  * then clears the selection and reloads the grid. It is absent for a viewer, who
- * may not write, and disabled until at least two photos are selected, since a
- * stack needs two members. On failure the selection is left intact so the reader
- * can retry.
+ * may not write, and off — saying why — until at least two photos are selected,
+ * since a stack needs two members. On failure the selection is left intact so
+ * the reader can retry.
  */
 export function StackSelectedControl({
   bulk,
@@ -43,14 +43,16 @@ export function StackSelectedControl({
         setBusy(false)
       })
   }
+  // Two different reasons, never merged into one dead button: "still working"
+  // passes, "pick another photo" is something the reader has to act on.
+  const reason = busy
+    ? t('selection.stackBusy')
+    : bulk.selection.count < 2
+      ? t('selection.stackDisabled')
+      : undefined
   return (
-    <Button
-      variant={variant}
-      size="sm"
-      disabled={busy || bulk.selection.count < 2}
-      onClick={onClick}
-    >
+    <ReasonedButton variant={variant} size="sm" disabledReason={reason} onClick={onClick}>
       {t('selection.stack')}
-    </Button>
+    </ReasonedButton>
   )
 }

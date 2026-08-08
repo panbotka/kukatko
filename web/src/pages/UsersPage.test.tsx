@@ -9,6 +9,7 @@ import i18n from '../i18n'
 import { ApiError } from '../services/auth'
 import { type AdminUser } from '../services/users'
 import { installRule } from '../test/css'
+import { expectLive, expectOff } from '../test/reasoned'
 
 import { UsersPage } from './UsersPage'
 
@@ -161,9 +162,15 @@ describe('UsersPage', () => {
     expect(await screen.findByText('ops')).toBeInTheDocument()
     const row = screen.getByText('ops').closest('tr') as HTMLElement
     // A non-maintainer cannot edit, reset the password of, or disable a maintainer.
-    expect(within(row).getByRole('button', { name: 'Edit' })).toBeDisabled()
-    expect(within(row).getByRole('button', { name: 'Change password' })).toBeDisabled()
-    expect(within(row).getByRole('button', { name: 'Disable' })).toBeDisabled()
+    const locked = 'Only a system maintainer can manage this account.'
+    for (const name of ['Edit', 'Change password', 'Disable']) {
+      const button = within(row).getByRole('button', { name })
+      expectOff(button)
+      // Reachable both ways: the tooltip for a mouse, the printed line the
+      // button describes itself by for a keyboard, a screen reader and a phone.
+      expect(button).toHaveAttribute('title', locked)
+      expect(button).toHaveAttribute('aria-describedby', within(row).getByText(locked).id)
+    }
   })
 
   it('lets a maintainer manage another maintainer account', async () => {
@@ -172,7 +179,7 @@ describe('UsersPage', () => {
 
     expect(await screen.findByText('ops')).toBeInTheDocument()
     const row = screen.getByText('ops').closest('tr') as HTMLElement
-    expect(within(row).getByRole('button', { name: 'Edit' })).toBeEnabled()
+    expectLive(within(row).getByRole('button', { name: 'Edit' }))
   })
 
   it('renders the table from the fetched users', async () => {
@@ -290,8 +297,8 @@ describe('UsersPage', () => {
     // instead of trailing off the right edge of eight columns.
     const edit = within(card).getByRole('button', { name: 'Edit' })
     expect(edit.parentElement).toHaveClass('kk-record-card__actions', 'd-grid')
-    expect(within(card).getByRole('button', { name: 'Change password' })).toBeEnabled()
-    expect(within(card).getByRole('button', { name: 'Disable' })).toBeEnabled()
+    expectLive(within(card).getByRole('button', { name: 'Change password' }))
+    expectLive(within(card).getByRole('button', { name: 'Disable' }))
     // The actions column header is not repeated as a field label.
     expect(within(card).queryByText('Actions')).toBeNull()
   })
@@ -308,12 +315,18 @@ describe('UsersPage', () => {
     const [own, maintainer] = screen.getAllByRole('listitem')
 
     // Own account: disabling is refused, with the reason spelled out on the card.
-    expect(within(own).getByRole('button', { name: 'Disable' })).toBeDisabled()
-    expect(within(own).getByText('You cannot disable your own account.')).toBeInTheDocument()
+    expectOff(within(own).getByRole('button', { name: 'Disable' }))
+    // The sentence is on the card itself, and the button points at it — one
+    // copy, reachable by hover, by focus and by eye on a phone alike.
+    const ownHint = within(own).getByText('You cannot disable your own account.')
+    expect(within(own).getByRole('button', { name: 'Disable' })).toHaveAttribute(
+      'aria-describedby',
+      ownHint.id,
+    )
     // A maintainer's account is untouchable for a plain admin, same as on the table.
-    expect(within(maintainer).getByRole('button', { name: 'Edit' })).toBeDisabled()
-    expect(within(maintainer).getByRole('button', { name: 'Change password' })).toBeDisabled()
-    expect(within(maintainer).getByRole('button', { name: 'Disable' })).toBeDisabled()
+    expectOff(within(maintainer).getByRole('button', { name: 'Edit' }))
+    expectOff(within(maintainer).getByRole('button', { name: 'Change password' }))
+    expectOff(within(maintainer).getByRole('button', { name: 'Disable' }))
   })
 
   it('opens the confirmation dialog from a phone card’s action row', async () => {
@@ -392,9 +405,10 @@ describe('UsersPage', () => {
     const own = within(rows[1]).getByRole('button', { name: 'Disable' })
     const other = within(rows[2]).getByRole('button', { name: 'Disable' })
 
-    expect(own).toBeDisabled()
-    expect(within(rows[1]).getByText('You cannot disable your own account.')).toBeInTheDocument()
-    expect(other).toBeEnabled()
+    expectOff(own)
+    const ownHint = within(rows[1]).getByText('You cannot disable your own account.')
+    expect(own).toHaveAttribute('aria-describedby', ownHint.id)
+    expectLive(other)
   })
 
   it('disables another user only after the confirmation step', async () => {

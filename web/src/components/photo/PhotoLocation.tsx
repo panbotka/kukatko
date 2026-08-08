@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import Button from 'react-bootstrap/Button'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 
+import { ReasonedButton } from '../ReasonedButton'
 import { LeafletMap } from '../map/LeafletMap'
 import { type GeocodeResult, type MapFeature, reverseGeocode } from '../../services/map'
 import { type PhotoDetail, updatePhoto } from '../../services/photos'
@@ -46,6 +46,11 @@ type GeocodeState =
  * only looking it up when asked), and — for editors — a button to clear the
  * location. When the photo has no coordinate it shows a hint; geotagging is done
  * via the metadata edit form.
+ *
+ * Clearing is an editor's power, so for a viewer that button is **absent** rather
+ * than greyed out (the app-wide rule, see `ReasonedButton`); the lookup button
+ * stays live for everyone and only ever goes off while its own request is in
+ * flight — with the reason attached.
  */
 export function PhotoLocation({ photo, canWrite, onUpdated }: PhotoLocationProps) {
   const { t } = useTranslation()
@@ -103,23 +108,28 @@ export function PhotoLocation({ photo, canWrite, onUpdated }: PhotoLocationProps
       </div>
 
       <div className="d-flex gap-2 flex-wrap align-items-center">
-        <Button
+        {/* Looking a place up is a read: it costs mapy.com credits, not write
+            access, so a viewer gets the same live button an editor does. While
+            the lookup runs the button says so — the spinner beside it is a
+            symbol, and a greyed control with no words next to it reads as broken
+            rather than busy. */}
+        <ReasonedButton
           variant="outline-secondary"
           size="sm"
-          disabled={geocode.status === 'loading'}
+          disabledReason={geocode.status === 'loading' ? t('photo.location.lookupBusy') : undefined}
           onClick={() => void lookup()}
         >
           {t('photo.location.lookup')}
-        </Button>
+        </ReasonedButton>
         {canWrite && (
-          <Button
+          <ReasonedButton
             variant="outline-danger"
             size="sm"
-            disabled={clearing}
+            disabledReason={clearing ? t('photo.location.clearBusy') : undefined}
             onClick={() => void clearLocation()}
           >
             {t('photo.location.clear')}
-          </Button>
+          </ReasonedButton>
         )}
         {geocode.status === 'loading' && (
           <Spinner animation="border" role="status" size="sm">

@@ -280,7 +280,8 @@
     "viewer": "Viewer",
     "editor": "Editor",
     "admin": "Administrator",
-    "maintainer": "Maintainer"
+    "maintainer": "Maintainer",
+    "needEditor": "You need the editor role for this — ask an administrator for it."
   },
   "auth": {
     "loading": "Loading…"
@@ -683,7 +684,8 @@
       "error": "Could not save. Check the name and try again.",
       "name": "Name",
       "cancel": "Cancel",
-      "save": "Save"
+      "save": "Save",
+      "busy": "The view is being saved — one moment."
     },
     "navTitle": "Show your saved searches",
     "openTitle": "Open the saved search \"{{name}}\"",
@@ -1022,7 +1024,10 @@
     "edit": "Bulk edit",
     "stack": "Stack selected",
     "cancel": "Cancel",
-    "toggle": "Select {{name}}"
+    "toggle": "Select {{name}}",
+    "editDisabled": "Select the photos the edit should apply to first.",
+    "stackDisabled": "A stack needs at least two photos — select another one.",
+    "stackBusy": "The photos are being stacked — one moment."
   },
   "batch": {
     "bar": "Batch actions",
@@ -1402,7 +1407,8 @@
     "noEmbedding": {
       "mark": "No embedding",
       "note": "This face has no embedding — it can only ever be named here, by hand. Suggestions, similarity search and the review game will never reach it."
-    }
+    },
+    "viewerNote": "You can look through the faces, but naming them needs the editor role — ask an administrator for it."
   },
   "outliers": {
     "title": "Possible mistakes",
@@ -1671,7 +1677,9 @@
       "none": "This photo has no stored location.",
       "lookup": "Look up place",
       "lookupError": "Could not look up the place.",
-      "clear": "Clear location"
+      "clear": "Clear location",
+      "lookupBusy": "The place is being looked up — one moment.",
+      "clearBusy": "The location is being cleared — one moment."
     },
     "edit": {
       "title": "Edits",

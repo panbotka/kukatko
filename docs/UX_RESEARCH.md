@@ -76,7 +76,7 @@ dopad/pracnost — nahoře je to, co se vyplatí udělat první.
 | [N11](#n11) ✅ | Příznaky se jmenují podle tvaru ikony: „Oko", „Palec nahoru" | 🟡 | ⚪ | `FlagControl`, `FilterBar` |
 | [N12](#n12) ✅ | Do textu pro uživatele prosakuje `AI_MODEL:`, `Unknown`, anglické názvy | 🟡 | ⚪ | `MetadataPanel`, import |
 | [N13](#n13) ✅ | Stránka, na kterou nemám právo, mlčky přesměruje na knihovnu | 🟡 | ⚪ | routing, `LeaderboardPage` |
-| [N14](#n14) | Zašedlá tlačítka bez vysvětlení, proč nejdou zmáčknout | 🟡 | ⚪ | `FacesPanel`, `PhotoLocation` |
+| [N14](#n14) ✅ | Zašedlá tlačítka bez vysvětlení, proč nejdou zmáčknout | 🟡 | ⚪ | `ReasonedButton`, `FacesPanel` |
 | [N15](#n15) | Karta prohlížeče se vždy jmenuje „Kukátko" | 🟡 | ⚪ | `Layout` |
 | [N16](#n16) | Mobilní zásuvka filtrů nemá patičku s počtem výsledků ani „Použít" | 🟡 | ⚪ | `FilterBar` |
 | [N17](#n17) | Nápověda o dotazovacím jazyce mlčí a slibuje zapamatovanou pozici | 🟡 | ⚪ | `HelpPage` |
@@ -715,6 +715,32 @@ prohlížeče vůbec nevykreslovat. Konzistentně jedno nebo druhé; dnes je to 
 **Kde to je.** `web/src/components/people/FacesPanel.tsx`,
 `web/src/components/photo/PhotoLocation.tsx`,
 `web/src/components/savedsearch/*`, `web/src/pages/LibraryPage.tsx`.
+
+**✅ Vyřešeno (8. 8. 2026).** Pravidlo je jedno a zní: **prvek, na který nemáte
+roli, se nevykreslí vůbec** — zašedlé tlačítko v Kukátku tedy nikdy neznamená
+„ne vy", vždycky jen „teď ne". Obojí se tak dá rozeznat, aniž by se na cokoli
+muselo klikat. K tomu druhá půlka pravidla: **co je zašedlé, musí říct proč.**
+Nese ji nová sdílená komponenta `ReasonedButton`, která **nemá `disabled`** —
+jediný způsob, jak ji vypnout, je `disabledReason`, jedna hotová věta („Nejdřív
+vyberte fotky, na které se má úprava použít."). Vypíná se přes `aria-disabled`,
+ne přes nativní atribut: `<button disabled>` vypadne z pořadí tabulátoru (a s ním
+i vysvětlení) a Bootstrap mu navíc dává `pointer-events: none`, takže se nikdy
+neukáže ani `title` — nápověda na nativně zakázaném tlačítku je tedy neviditelná
+pro myš i pro klávesnici. Věta se čte třemi cestami: `title` pro myš,
+`aria-describedby` na skrytou poznámku pro klávesnici a odečítač, a tam, kde už
+věta na obrazovce je (řádky v `UsersPage`), `reasonId` na ten viditelný řádek —
+telefon, který `title` nikdy nedostane, si ji přečte očima.
+
+Ke třem konkrétním místům z hlášení: řádky v panelu obličejů nejsou tlačítka,
+prohlížeč u nich má napsáno proč („Obličeje si můžete prohlédnout, ale na jejich
+pojmenování potřebujete roli editora…") místo mlčenlivého seznamu, který
+nereaguje na klik. „**Zjistit místo**" je čtení, ne zápis (mapy.com stojí kredity,
+ne oprávnění) — pro prohlížeče zůstává živé a zhasíná jen po dobu vlastního
+dotazu, tehdy s větou „Místo se právě zjišťuje". „**Uložit pohled**" je osobní
+jako srdíčko oblíbených, žádná role ho nehlídá; v knihovně teď má stejné
+jednořádkové vysvětlení jako v hledání, aby se nepletlo se zašedlými prvky vedle.
+Stejné ošetření dostaly „Hromadná úprava" a „Seskupit vybrané" (řeknou, že chybí
+výběr, ne že jsou rozbité) a tři akce na řádku uživatele.
 
 ---
 

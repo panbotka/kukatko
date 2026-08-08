@@ -1,7 +1,7 @@
-import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
 
 import { type UseBulkEditResult } from '../../hooks/useBulkEdit'
+import { ReasonedButton } from '../ReasonedButton'
 
 import { BulkEditModal, type BulkEditPrefill } from './BulkEditModal'
 
@@ -22,9 +22,9 @@ export interface BulkEditControlProps {
  * dialog state.
  *
  * The whole control — trigger and dialog both — is absent for a viewer, who may
- * not write; it is disabled while nothing is selected, since an empty batch has
- * nothing to apply to. The dialog always submits exactly the selected UIDs, never
- * the filtered result set behind them.
+ * not write; it goes off while nothing is selected, since an empty batch has
+ * nothing to apply to, and then says exactly that. The dialog always submits
+ * exactly the selected UIDs, never the filtered result set behind them.
  */
 export function BulkEditControl({ bulk, variant = 'primary', prefill }: BulkEditControlProps) {
   const { t } = useTranslation()
@@ -33,9 +33,14 @@ export function BulkEditControl({ bulk, variant = 'primary', prefill }: BulkEdit
   }
   return (
     <>
-      <Button variant={variant} size="sm" disabled={bulk.selection.count === 0} onClick={bulk.open}>
+      <ReasonedButton
+        variant={variant}
+        size="sm"
+        disabledReason={bulk.selection.count === 0 ? t('selection.editDisabled') : undefined}
+        onClick={bulk.open}
+      >
         {t('selection.edit')}
-      </Button>
+      </ReasonedButton>
       <BulkEditModal
         show={bulk.editing}
         photoUids={bulk.photoUids}
