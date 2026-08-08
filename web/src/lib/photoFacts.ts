@@ -125,6 +125,43 @@ export function formatMime(mime: string): string {
   return parts[1].replace(/^x-/, '').split('+')[0].toUpperCase()
 }
 
+/**
+ * Codec names that are the same fact as a format label under another spelling, so
+ * that a file whose codec column says `jpg` is not announced as "JPEG (JPG)".
+ */
+const CODEC_ALIASES: Record<string, string | undefined> = {
+  jpg: 'jpeg',
+  tif: 'tiff',
+}
+
+/**
+ * The file's format as one line: the MIME label, plus the stored image codec in
+ * brackets when it is genuinely a second fact — `image/heic` encoded with HEVC
+ * reads "HEIC (HEVC)".
+ *
+ * The two columns usually say the same thing twice ("Formát: JPEG" over "Kodek
+ * obrazu: jpeg"), which is noise in a table a person reads to learn something. A
+ * container and its codec do diverge, though — HEIC/HEVC, MOV/H.264 — and losing
+ * that would be losing a fact, so the codec survives exactly when it differs.
+ * Comparison is case-insensitive and forgives the spellings in {@link CODEC_ALIASES}.
+ *
+ * Returns the codec alone when the MIME type is empty, and the empty string when
+ * neither is known — which the caller drops.
+ */
+export function fileFormat(mime: string, codec: string | undefined): string {
+  const label = formatMime(mime)
+  const raw = codec?.trim() ?? ''
+  if (raw === '') {
+    return label
+  }
+  const shown = raw.toUpperCase()
+  if (label === '') {
+    return shown
+  }
+  const normalized = CODEC_ALIASES[raw.toLowerCase()] ?? raw.toLowerCase()
+  return normalized === label.toLowerCase() ? label : `${label} (${shown})`
+}
+
 /** The EXIF orientation values (1–8), the raw tag as the file carries it. */
 export const ORIENTATIONS = [1, 2, 3, 4, 5, 6, 7, 8] as const
 

@@ -1,6 +1,8 @@
 import { localizeCountryNames } from '../i18n/countryNames'
 import { type PhotoDetail } from '../services/photos'
 
+import { placeName } from './photoPlace'
+
 /**
  * The pieces {@link photoDisplayTitle} needs from a photo. Narrower than
  * {@link PhotoDetail} so the rule can be reasoned about (and tested) without
@@ -22,19 +24,6 @@ export type PhotoTitle =
   | { kind: 'facts'; date: string; place: string }
   /** The photo has no identity to show at all. */
   | { kind: 'unknown' }
-
-/**
- * Picks the most specific place name the photo's geocoded hierarchy offers,
- * narrowest first: the named place ("Špilberk") beats the city, which beats the
- * country. The geocoder leaves levels it did not resolve empty, so this skips the
- * blanks rather than rendering them.
- */
-function placeName(place: TitleSource['place']): string {
-  if (place === undefined) {
-    return ''
-  }
-  return [place.place_name, place.city, place.country].find((name) => name.trim() !== '') ?? ''
-}
 
 /**
  * Decides what a photo is *called*, for the detail page's heading.

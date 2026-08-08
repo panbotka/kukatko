@@ -88,6 +88,19 @@ async function expand() {
   return user
 }
 
+/** Renders a photo carrying every field, expanded. */
+function renderFull(overrides: Partial<PhotoDetail> = {}) {
+  return render(
+    <I18nextProvider i18n={i18n}>
+      <TechnicalDetails
+        photo={fullPhoto(overrides)}
+        canWrite={false}
+        onThumbnailRegenerated={vi.fn()}
+      />
+    </I18nextProvider>,
+  )
+}
+
 beforeEach(async () => {
   await i18n.changeLanguage('en')
 })
@@ -202,12 +215,8 @@ describe('TechnicalDetails', () => {
 
 describe('TechnicalDetails groups', () => {
   it('renders every group and field of a full payload', async () => {
-    render(
-      <I18nextProvider i18n={i18n}>
-        <TechnicalDetails photo={fullPhoto()} canWrite={false} onThumbnailRegenerated={vi.fn()} />
-      </I18nextProvider>,
-    )
-    await expand()
+    renderFull()
+    const user = await expand()
 
     for (const group of ['Photo', 'File', 'Location', 'Origin']) {
       expect(screen.getByRole('heading', { name: group })).toBeInTheDocument()
@@ -247,18 +256,55 @@ describe('TechnicalDetails groups', () => {
     expect(screen.getByText('Brno')).toBeInTheDocument()
     expect(screen.getByText('Špilberk')).toBeInTheDocument()
 
-    // Origin — where an imported photo came from.
+    // Origin — who put the photo here. The import UIDs are one click further
+    // down, in the developer section.
+    expect(screen.getByText('Camera Man')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'For developers' }))
     expect(screen.getByText('pp-123')).toBeInTheDocument()
     expect(screen.getByText('ps-456')).toBeInTheDocument()
   })
 
+  it('shows the exact byte count in the size tooltip', async () => {
+    renderFull()
+    await expand()
+
+    expect(screen.getByText('Size').nextElementSibling).toHaveAttribute('title', '3,145,728 B')
+  })
+
+  it('states the format once when the codec repeats it', async () => {
+    // "Format: JPEG" over "Image codec: jpeg" is the same fact twice.
+    renderFull({ file_mime: 'image/jpeg', image_codec: 'jpeg' })
+    await expand()
+
+    expect(screen.queryByText('Image codec')).not.toBeInTheDocument()
+    expect(screen.getByText('Format').nextElementSibling).toHaveTextContent('JPEG')
+  })
+
+  it('keeps a codec that is genuinely a second fact, in the same row', async () => {
+    renderFull({ file_mime: 'image/heic', image_codec: 'hevc' })
+    await expand()
+
+    expect(screen.getByText('Format').nextElementSibling).toHaveTextContent('HEIC (HEVC)')
+  })
+})
+
+describe('TechnicalDetails developer section', () => {
+  it('hides the hash and the import UIDs behind a collapsed expander', async () => {
+    renderFull()
+    await expand()
+
+    // The card is open, but the identifiers a person has no use for are not.
+    const toggle = screen.getByRole('button', { name: 'For developers' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText('Hash (SHA256)')).not.toBeInTheDocument()
+    expect(screen.queryByText('pp-123')).not.toBeInTheDocument()
+    expect(screen.queryByText('ps-456')).not.toBeInTheDocument()
+  })
+
   it('truncates the hash, keeps the full value in a tooltip and copies it', async () => {
-    render(
-      <I18nextProvider i18n={i18n}>
-        <TechnicalDetails photo={fullPhoto()} canWrite={false} onThumbnailRegenerated={vi.fn()} />
-      </I18nextProvider>,
-    )
+    renderFull()
     const user = await expand()
+    await user.click(screen.getByRole('button', { name: 'For developers' }))
 
     const hash = 'a'.repeat(64)
     expect(screen.getByText(`${'a'.repeat(12)}…`)).toBeInTheDocument()
@@ -268,17 +314,37 @@ describe('TechnicalDetails groups', () => {
     await expect(navigator.clipboard.readText()).resolves.toBe(hash)
   })
 
-  it('shows the exact byte count in the size tooltip', async () => {
-    render(
-      <I18nextProvider i18n={i18n}>
-        <TechnicalDetails photo={fullPhoto()} canWrite={false} onThumbnailRegenerated={vi.fn()} />
-      </I18nextProvider>,
-    )
-    await expand()
+  it('closes again on a second click', async () => {
+    renderFull()
+    const user = await expand()
 
-    expect(screen.getByText('Size').nextElementSibling).toHaveAttribute('title', '3,145,728 B')
+    const toggle = screen.getByRole('button', { name: 'For developers' })
+    await user.click(toggle)
+    expect(screen.getByText('pp-123')).toBeInTheDocument()
+    await user.click(toggle)
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText('pp-123')).not.toBeInTheDocument()
   })
 
+  it('is absent for a photo with nothing to put in it', async () => {
+    renderDetails({ file_hash: '', photoprism_uid: undefined, photosorter_uid: undefined })
+    await expand()
+
+    expect(screen.queryByRole('button', { name: 'For developers' })).not.toBeInTheDocument()
+  })
+
+  it('names the section in Czech too', async () => {
+    await i18n.changeLanguage('cs')
+    renderFull()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Technické údaje' }))
+
+    expect(screen.getByRole('button', { name: 'Pro vývojáře' })).toBeInTheDocument()
+  })
+})
+
+describe('TechnicalDetails empty values', () => {
   it('renders no empty groups or rows for a sparse photo', async () => {
     renderDetails({
       camera_make: '',

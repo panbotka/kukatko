@@ -1444,21 +1444,35 @@ here.
   for the duration of its own request, via `ReasonedButton` (`photo.location.lookupBusy`), because a grey
   button beside a bare spinner reads as broken rather than busy. **Vymazat polohu** is the editor's, and
   a viewer simply does not get it (the app-wide rule: a role leaves no greyed-out control behind); it too
-  states `photo.location.clearBusy` while the write is in flight. **3. Technické údaje** (`TechnicalDetails`,
+  states `photo.location.clearBusy` while the write is in flight. Under the mini-map the panel names the
+  **place, not the coordinate**: `placeLabel(photo.place)` (`lib/photoPlace`) reads the cached hierarchy as
+  one line („Špilberk, Brno, Česko"), a completed lookup **replaces** it (answering a click with the string
+  already on screen would read as the button having done nothing), and with neither the line says so
+  (`photo.location.unknownPlace`). „49.39322, 16.70869" is not an answer to „kde to je?" for anyone not
+  holding a map — the numbers survive as the line's `title` (`formatCoordinates(…, 5)`) and in full in
+  Technické údaje. **3. Technické údaje** (`TechnicalDetails`,
   **closed on first render** expander `aria-expanded`/`aria-controls`): **everything the app knows about
   the photo**, in **groups** (`MetaGroup` = a heading + `<dl className="row">`, two columns on a wide
   viewport, one on a narrow one; long values wrap, never stretch the page):
   **Fotografie** (camera/lens/aperture/exposure/focal length/ISO, serial number, software, capture
   date source, IPTC/XMP credits `subject`/`artist`/`copyright`/`license`, `keywords` as **chips**
   split on the comma, `projection` + a badge row `private`/`scan`), **Soubor** (name, `original_name`
-  only when it differs, format from MIME, size — the exact byte count in `title`, dimensions, **aspect ratio**
-  and **Mpx** (computed), EXIF orientation 1–8 as a label, color profile, `image_codec`, a shortened
-  SHA256 with the full value in `title` and **copy-to-clipboard**, added/changed), **Poloha**
+  only when it differs, **Formát** = `fileFormat(file_mime, image_codec)` — one row, not two: the codec
+  column repeats the MIME type for a plain JPEG („Formát: JPEG" over „Kodek obrazu: jpeg" is the same fact
+  twice) and only earns its brackets when it says something new, `HEIC (HEVC)`; size — the exact byte count
+  in `title`, dimensions, **aspect ratio** and **Mpx** (computed), EXIF orientation 1–8 as a label,
+  color profile, added/changed), **Poloha**
   (coordinates, `altitude`, + a **cached** `place` from the detail — country/region/city/place; **no
   on-demand geocoding**, only `PhotoLocation` does that on demand), **Video** (only `media_type`
   `video`/`live`: duration `m:ss`, codecs, audio yes/no, fps) and **Původ** (Nahrál/a
-  `photo.metadata.uploadedBy` from `photo.uploader.name`, fallback `—` `uploaderUnknown`, +
-  `photoprism_uid`/`photosorter_uid`). The **Fotka** group also names the **Model AI**
+  `photo.metadata.uploadedBy` from `photo.uploader.name`, fallback `—` `uploaderUnknown`). Last comes
+  **Pro vývojáře** (`DeveloperGroup`, `photo.technical.groups.developer`) — a group that looks like the
+  others but whose heading *is* its chevron toggle (`aria-expanded`/`aria-controls`), **closed on first
+  render** and skipped entirely when it would be empty: the shortened **SHA256** (full value in `title`,
+  **copy-to-clipboard**) and `photoprism_uid`/`photosorter_uid`. They are live data (uid search, every
+  metadata sidecar) and stay reachable, but a 64-character hex string is of no use to someone looking at a
+  family photograph and a table that opens on one reads as an app written for technicians — nothing is
+  hidden, it is only sorted by who it is for. The **Fotka** group also names the **Model AI**
   (`photo.technical.aiModel`) that wrote the automatic description — `splitAiNote(photo.ai_note).model`,
   i.e. the `AI_MODEL:` trailer taken *out* of the description in `MetadataPanel` and shown here, where a
   fact about the machinery belongs. All **read-only** (editing belongs in `MetadataPanel`);
@@ -1511,11 +1525,17 @@ here.
   value and `children` = a rich value (chips/badge/copy button), a row with `children` renders
   always — the caller decides about emptiness); `lib/photoFacts` = pure derived facts about a file
   (`aspectRatio` — a fraction reduced via gcd, decimal fallback `1,50 : 1` when it doesn't reduce to legible
-  terms; `megapixels`; `formatMime` → `JPEG`/`MOV`; `orientation`/`takenAtSource` = narrowing to a
+  terms; `megapixels`; `formatMime` → `JPEG`/`MOV`; `fileFormat(mime, codec)` = the two format columns as
+  one line, the codec kept only when it is genuinely a second fact (case-insensitive, `jpg`/`tif` forgiven);
+  `orientation`/`takenAtSource` = narrowing to a
   literal union so the `t()` key stays typed; `splitKeywords`; `shortHash`; `metaValue` = one stored value
   as the card shows it, `undefined` for blank **and for the importers' `Unknown`**; `splitAiNote` = an
   `ai_note` split into `{ text, model }` by a **trailing** `AI_MODEL:` line — a marker mid-sentence is
-  somebody's text and is left alone, and the stored value is never rewritten), `lib/format`
+  somebody's text and is left alone, and the stored value is never rewritten), `lib/photoPlace` = the
+  cached place as text, shared so its two readers cannot drift: `placeName` (the narrowest single level,
+  for `photoDisplayTitle`'s heading) and `placeLabel` (narrowest→widest as one line, a level repeating the
+  one below it dropped — a village is often its own named place — and the **region left out**: an address
+  is not a caption), `lib/format`
   `formatBytes(bytes, locale?)` (locale = decimal comma) and `formatByteCount` (the exact byte count
   for the tooltip); `lib/photoEdit` = pure helpers
   edit→CSS (`editPreviewStyle`/`editFilter`/`editTransform`/`cropClipPath`/`isIdentityEdit`/
