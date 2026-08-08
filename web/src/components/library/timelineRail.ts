@@ -72,8 +72,26 @@ export function rankForFraction(fraction: number, count: number): number {
 }
 
 /**
+ * The number of calendar months the buckets span, counting both ends: one month
+ * for a single bucket, 24 for two full years. The buckets are in grid order —
+ * which may run either way — so this reads the two ends and takes the distance
+ * between them, and it counts the *span*, not the buckets: an album holding one
+ * photo from 1910 and one from 2026 spans 116 years, however few months of it
+ * hold a photograph.
+ */
+export function spanMonths(buckets: TimelineBucket[]): number {
+  if (buckets.length === 0) {
+    return 0
+  }
+  const first = buckets[0]
+  const last = buckets[buckets.length - 1]
+  const months = (last.year - first.year) * 12 + (last.month - first.month)
+  return Math.abs(months) + 1
+}
+
+/**
  * The rank of the bucket owning a grid `index`: the last bucket whose cumulative
- * start is at or before the index. Buckets are newest-first with ascending
+ * start is at or before the index. Buckets are in grid order with ascending
  * cumulatives, so this maps a scroll position back to its month. Returns `-1`
  * only for an empty list.
  */
@@ -102,13 +120,13 @@ export function rankForIndex(buckets: TimelineBucket[], index: number): number {
 export interface RailTick {
   /** Stable React key. */
   key: string
-  /** Newest bucket of the collapsed range. */
+  /** Newest bucket of the collapsed range, by date — whichever way the rail runs. */
   newest: TimelineBucket
   /** Oldest bucket of the collapsed range (equals `newest` when nothing collapsed). */
   oldest: TimelineBucket
   /**
-   * The bucket a click jumps to: the newest of the range, except on the rail's
-   * last tick, which anchors to the library's oldest month so the start of the
+   * The bucket a click jumps to: the first of the range in rail order, except on
+   * the rail's last tick, which anchors to its final month so the far end of the
    * archive is always exactly one click away.
    */
   target: TimelineBucket
@@ -157,9 +175,17 @@ export function buildRail(buckets: TimelineBucket[], heightPx: number): RailTick
     if (count - lastRank - 1 < perTick) {
       lastRank = count - 1
     }
-    const newest = buckets[firstRank]
-    const oldest = buckets[lastRank]
-    const target = lastRank === count - 1 ? oldest : newest
+    // Rail order, then date order: which end of the range a click lands on is a
+    // question about the rail (its far end must stay one click away), while what
+    // the tick is *called* is a question about dates — and an album read
+    // oldest-first runs the rail the other way round from the library.
+    const first = buckets[firstRank]
+    const last = buckets[lastRank]
+    const target = lastRank === count - 1 ? last : first
+    const ascending =
+      last.year > first.year || (last.year === first.year && last.month > first.month)
+    const newest = ascending ? last : first
+    const oldest = ascending ? first : last
     const topFraction = (firstRank + (lastRank - firstRank + 1) / 2) / count
     const topPx = topFraction * height
     // A label is worth printing when it names a year no earlier label already
@@ -170,7 +196,7 @@ export function buildRail(buckets: TimelineBucket[], heightPx: number): RailTick
       lastLabelYear = target.year
     }
     ticks.push({
-      key: bucketKey(newest),
+      key: bucketKey(first),
       newest,
       oldest,
       target,
@@ -183,7 +209,7 @@ export function buildRail(buckets: TimelineBucket[], heightPx: number): RailTick
     firstRank = lastRank + 1
   }
 
-  // The last tick is the archive's first month, and the bottom of a long-tailed
+  // The last tick is the archive's far end, and the bottom of a long-tailed
   // rail is exactly where a reader needs a year printed. It always names its own,
   // even at the cost of the label above it — which is then the only one that can
   // sit too close, since the rest are a full gap apart from each other.

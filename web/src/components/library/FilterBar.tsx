@@ -64,6 +64,13 @@ export interface FilterBarProps<T extends LibraryView> {
    */
   showSort?: boolean
   /**
+   * Which sort options the selector offers, as `view.sort` values. Omit for the
+   * full library list; an album passes the two orders it has (`oldest`,
+   * `newest`), because its sort *key* is pinned server-side to capture time and
+   * offering "by title" there would be a control that quietly does nothing.
+   */
+  sortOptions?: readonly string[]
+  /**
    * Whether to show the grid-density picker. The trash hides it (`false`) because
    * its grid is a card list, not the photo grid the density governs. Defaults true.
    */
@@ -163,6 +170,7 @@ export function FilterBar<T extends LibraryView>({
   total,
   showSearch = true,
   showSort = true,
+  sortOptions,
   showDensity = true,
   facets,
   showFavorite = false,
@@ -213,7 +221,13 @@ export function FilterBar<T extends LibraryView>({
     <>
       {narrow && (showSort || showDensity) && (
         <>
-          <DisplayControls view={view} push={push} showSort={showSort} showDensity={showDensity} />
+          <DisplayControls
+            view={view}
+            push={push}
+            showSort={showSort}
+            sortOptions={sortOptions}
+            showDensity={showDensity}
+          />
           <hr className="my-3" />
         </>
       )}
@@ -308,6 +322,7 @@ export function FilterBar<T extends LibraryView>({
             className="kukatko-filter-sort w-auto"
             size="lg"
             value={view.sort}
+            options={sortOptions}
             onChange={(sort) => {
               push({ sort })
             }}
@@ -453,25 +468,51 @@ function SearchNote({ href, semanticSearch }: { href: string; semanticSearch: bo
 }
 
 /**
+ * Every sort the library offers, in the order the selector lists them, each with
+ * the key naming it. One list, so a page offering fewer of them picks by value
+ * and never restates a label.
+ */
+const SORT_OPTIONS = [
+  { value: 'newest', label: 'library.sort.newest' },
+  { value: 'oldest', label: 'library.sort.oldest' },
+  { value: 'added', label: 'library.sort.added' },
+  { value: 'title', label: 'library.sort.title' },
+  { value: 'size', label: 'library.sort.size' },
+  { value: 'rating', label: 'library.sort.rating' },
+] as const
+
+/**
  * The sort selector, defined once for both of the places it is shown: the
  * desktop header row (unlabelled, `aria-label` only, sized to the row) and the
  * phone drawer (under a visible label, full width). Only the presentation
  * differs — the option list must not.
+ *
+ * `options` narrows that list for a grid whose sort key is not the reader's to
+ * choose (an album, pinned to capture time server-side); omitted, it is every
+ * sort the library has.
  */
 function SortSelect({
   id,
   className,
   size,
   value,
+  options,
   onChange,
 }: {
   id?: string
   className?: string
   size?: 'sm' | 'lg'
   value: string
+  options?: readonly string[]
   onChange: (value: string) => void
 }) {
   const { t } = useTranslation()
+  // The caller's order, not the library's: an album rests at oldest-first, so
+  // that is the option it lists first.
+  const offered =
+    options === undefined
+      ? SORT_OPTIONS
+      : options.flatMap((value) => SORT_OPTIONS.filter((o) => o.value === value))
   return (
     <Form.Select
       id={id}
@@ -483,12 +524,11 @@ function SortSelect({
         onChange(e.target.value)
       }}
     >
-      <option value="newest">{t('library.sort.newest')}</option>
-      <option value="oldest">{t('library.sort.oldest')}</option>
-      <option value="added">{t('library.sort.added')}</option>
-      <option value="title">{t('library.sort.title')}</option>
-      <option value="size">{t('library.sort.size')}</option>
-      <option value="rating">{t('library.sort.rating')}</option>
+      {offered.map((sort) => (
+        <option key={sort.value} value={sort.value}>
+          {t(sort.label)}
+        </option>
+      ))}
     </Form.Select>
   )
 }
@@ -508,11 +548,13 @@ function DisplayControls({
   view,
   push,
   showSort,
+  sortOptions,
   showDensity,
 }: {
   view: LibraryView
   push: (patch: Partial<LibraryView>) => void
   showSort: boolean
+  sortOptions: readonly string[] | undefined
   showDensity: boolean
 }) {
   const { t } = useTranslation()
@@ -526,6 +568,7 @@ function DisplayControls({
           <SortSelect
             id="library-sort"
             value={view.sort}
+            options={sortOptions}
             onChange={(sort) => {
               push({ sort })
             }}

@@ -449,9 +449,11 @@ func TestList_sortAndPagination(t *testing.T) {
 }
 
 // TestList_albumScopeChronological verifies that an album-scoped listing is
-// always chronological — oldest capture time first, a photo with no capture
-// time falling back to its upload time (sorting last here, as it was uploaded
-// just now) — no matter what sort or order parameters the query carries.
+// always chronological — by capture time, a photo without one falling back to
+// its upload time (sorting last here, as it was uploaded just now) — whatever
+// sort key the query asks for, and that the one thing the query does decide is
+// the direction: an explicitly descending request reads the album from its
+// newest end, everything else from its oldest.
 func TestList_albumScopeChronological(t *testing.T) {
 	env := newEnv(t)
 	client, _ := env.login(t, "editor", auth.RoleEditor)
@@ -475,22 +477,30 @@ func TestList_albumScopeChronological(t *testing.T) {
 		}
 	}
 
-	want := []string{oldest.UID, newest.UID, undated.UID}
-	queries := []string{
-		"album=" + album.UID,
-		"album=" + album.UID + "&sort=newest",
-		"album=" + album.UID + "&sort=newest&order=desc",
-		"album=" + album.UID + "&sort=title&order=desc",
-		"album=" + album.UID + "&sort=added",
+	oldestFirst := []string{oldest.UID, newest.UID, undated.UID}
+	newestFirst := []string{undated.UID, newest.UID, oldest.UID}
+	cases := []struct {
+		query string
+		want  []string
+	}{
+		// The album's resting order, and the sort keys that leave it alone.
+		{query: "album=" + album.UID, want: oldestFirst},
+		{query: "album=" + album.UID + "&sort=oldest", want: oldestFirst},
+		{query: "album=" + album.UID + "&sort=title", want: oldestFirst},
+		// Reversed on request — still by date, never by the key that was asked for.
+		{query: "album=" + album.UID + "&sort=newest", want: newestFirst},
+		{query: "album=" + album.UID + "&order=desc", want: newestFirst},
+		{query: "album=" + album.UID + "&sort=title&order=desc", want: newestFirst},
+		{query: "album=" + album.UID + "&sort=added", want: newestFirst},
 	}
-	for _, query := range queries {
-		got := getList(t, client, base, query)
-		if g := uids(got.Photos); !equalStrings(g, want) {
-			t.Errorf("order for %q = %v, want chronological %v", query, g, want)
+	for _, tc := range cases {
+		got := getList(t, client, base, tc.query)
+		if g := uids(got.Photos); !equalStrings(g, tc.want) {
+			t.Errorf("order for %q = %v, want chronological %v", tc.query, g, tc.want)
 		}
 		for _, p := range got.Photos {
 			if p.UID == outside.UID {
-				t.Errorf("query %q leaked photo outside the album", query)
+				t.Errorf("query %q leaked photo outside the album", tc.query)
 			}
 		}
 	}

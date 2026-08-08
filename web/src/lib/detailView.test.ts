@@ -21,12 +21,21 @@ describe('detailView helpers', () => {
 
   it('builds a Back link to the originating scope, carrying the library filters', () => {
     expect(backHref(DETAIL_DEFAULTS)).toBe('/')
-    expect(backHref({ ...DETAIL_DEFAULTS, album: 'al_1' })).toBe('/albums/al_1')
     expect(backHref({ ...DETAIL_DEFAULTS, label: 'lb_2' })).toBe('/labels/lb_2')
     expect(backHref({ ...DETAIL_DEFAULTS, favorite: 'true' })).toBe('/favorites')
     // Library filters (but not the scope) are appended as a query suffix.
-    expect(backHref({ ...DETAIL_DEFAULTS, album: 'al_1', sort: 'oldest' })).toBe(
-      '/albums/al_1?sort=oldest',
+    expect(backHref({ ...DETAIL_DEFAULTS, label: 'lb_2', camera: 'Canon' })).toBe(
+      '/labels/lb_2?camera=Canon',
+    )
+  })
+
+  it('measures the album Back link against the album page, which rests oldest-first', () => {
+    // The album page's own default is oldest-first, so that is the value it can
+    // be left to assume — and newest-first is the one that has to be carried, or
+    // Back out of a reversed album would silently turn it round again.
+    expect(backHref({ ...DETAIL_DEFAULTS, album: 'al_1', sort: 'oldest' })).toBe('/albums/al_1')
+    expect(backHref({ ...DETAIL_DEFAULTS, album: 'al_1', sort: 'newest' })).toBe(
+      '/albums/al_1?sort=newest',
     )
   })
 

@@ -108,6 +108,28 @@ export const LIBRARY_DEFAULTS: LibraryView = {
   flag: '',
 }
 
+/**
+ * Default view of a grid scoped to **one album**: the library defaults, but
+ * oldest first. An album is a story, and a story is read from its beginning —
+ * the backend pins an album scope to capture-time order for exactly that reason
+ * and only lets the direction be chosen. Declared beside
+ * {@link LIBRARY_DEFAULTS} and at module scope for the same reasons: a stable
+ * identity for the urlState setter, and "oldest" left out of the URL so only a
+ * deliberate switch to newest-first shows up in it — and survives Back, a reload
+ * and being shared.
+ */
+export const ALBUM_DEFAULTS: LibraryView = {
+  ...LIBRARY_DEFAULTS,
+  sort: 'oldest',
+}
+
+/**
+ * The two orders an album offers. Its sort key is not the reader's to pick (the
+ * backend pins it to capture time), so the switch is a direction, not the
+ * library's six-way selector — see {@link ALBUM_DEFAULTS}.
+ */
+export const ALBUM_SORTS: readonly string[] = ['oldest', 'newest']
+
 /** Accepted sort aliases; an unknown value falls back to the default. */
 const SORTS: readonly PhotoSort[] = ['newest', 'oldest', 'added', 'title', 'size', 'rating']
 

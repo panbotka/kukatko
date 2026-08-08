@@ -1,9 +1,9 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { type ReactNode } from 'react'
-import { type GridStateSnapshot } from 'react-virtuoso'
+import { forwardRef, type ReactNode, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { type GridStateSnapshot, type ListRange, type VirtuosoGridHandle } from 'react-virtuoso'
 import { I18nextProvider } from 'react-i18next'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
@@ -11,35 +11,79 @@ import i18n from '../i18n'
 import { writeGridScroll } from '../lib/gridScroll'
 import { ApiError } from '../services/auth'
 import { type Album } from '../services/organize'
-import { type Photo, type PhotoListResponse } from '../services/photos'
+import { type Photo, type PhotoListResponse, type Timeline } from '../services/photos'
 
 import { AlbumDetailPage } from './AlbumDetailPage'
 
-// Minimal stand-in for react-virtuoso's grid (jsdom has no layout). It records
-// the position it was mounted with, which is as much as a layout-less DOM can
-// say about the grid being put back where the reader left it.
+// Shared spies captured across renders, so a test can assert the timeline
+// scrolled the grid. Hoisted so the (hoisted) vi.mock factory can reference them.
+const grid = vi.hoisted(() => ({
+  scrollToIndex: vi.fn(),
+  /** The position the grid was mounted with, if the page restored one. */
+  restoredFrom: null as GridStateSnapshot | null,
+}))
+
+/**
+ * How many items the mock grid keeps "on screen". The album hands the grid an
+ * array as long as the whole album, so a mock rendering all of it would mount
+ * every tile of the very albums these tests make big on purpose.
+ */
+const MOCK_WINDOW = 100
+
+// Stand-in for react-virtuoso's grid (jsdom lays nothing out, so the real one
+// renders nothing). It renders a window of MOCK_WINDOW items from wherever the
+// last `scrollToIndex` landed — which is what makes it a faithful stand-in for a
+// windowed list — reports that window through `rangeChanged`, and forwards a
+// `scrollToIndex` handle so the timeline can drive it.
 interface MockGridProps {
-  data: Photo[]
-  itemContent: (index: number, item: Photo) => ReactNode
+  data: readonly (Photo | undefined)[]
+  itemContent: (index: number, item: Photo | undefined) => ReactNode
+  computeItemKey?: (index: number, item: Photo | undefined) => string
+  rangeChanged?: (range: ListRange) => void
   restoreStateFrom?: GridStateSnapshot
 }
-const grid = vi.hoisted(() => ({ restoredFrom: null as GridStateSnapshot | null }))
 vi.mock('react-virtuoso', () => ({
-  VirtuosoGrid: ({ data, itemContent, restoreStateFrom }: MockGridProps) => {
+  VirtuosoGrid: forwardRef<VirtuosoGridHandle, MockGridProps>(function MockGrid(
+    { data, itemContent, computeItemKey, rangeChanged, restoreStateFrom },
+    ref,
+  ) {
+    const [start, setStart] = useState(0)
+    // Real virtuoso reads `restoreStateFrom` once, as it mounts; recording it is
+    // as much as jsdom can say about the restore.
     grid.restoredFrom = restoreStateFrom ?? null
-    return (
-      <div data-testid="grid">
-        {data.map((item, index) => (
-          <div key={item.uid}>{itemContent(index, item)}</div>
-        ))}
-      </div>
-    )
-  },
+    const rangeRef = useRef(rangeChanged)
+    rangeRef.current = rangeChanged
+    useImperativeHandle(ref, () => ({
+      scrollToIndex: (location: number | { index?: number | 'LAST'; align?: string }) => {
+        grid.scrollToIndex(location)
+        const index = typeof location === 'number' ? location : location.index
+        if (typeof index === 'number') {
+          setStart(index)
+        }
+      },
+      scrollTo: vi.fn(),
+      scrollBy: vi.fn(),
+    }))
+    const end = Math.min(data.length - 1, start + MOCK_WINDOW - 1)
+    useEffect(() => {
+      if (data.length > 0) {
+        rangeRef.current?.({ startIndex: start, endIndex: end })
+      }
+    }, [start, end, data.length])
+    const window = []
+    for (let index = start; index <= end; index++) {
+      const item = data[index]
+      window.push(
+        <div key={computeItemKey?.(index, item) ?? index}>{itemContent(index, item)}</div>,
+      )
+    }
+    return <div data-testid="grid">{window}</div>
+  }),
 }))
 
 vi.mock('../services/photos', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/photos')>()
-  return { ...actual, fetchPhotos: vi.fn() }
+  return { ...actual, fetchPhotos: vi.fn(), fetchTimeline: vi.fn() }
 })
 
 vi.mock('../services/organize', async (importOriginal) => {
@@ -60,11 +104,12 @@ vi.mock('../services/bulk', async (importOriginal) => {
   return { ...actual, bulkUpdatePhotos: vi.fn() }
 })
 
-const { fetchPhotos } = await import('../services/photos')
+const { fetchPhotos, fetchTimeline } = await import('../services/photos')
 const { bulkUpdatePhotos } = await import('../services/bulk')
 const { fetchAlbum, deleteAlbum, removeAlbumPhotos, fetchAlbums, fetchLabels } =
   await import('../services/organize')
 const fetchPhotosMock = vi.mocked(fetchPhotos)
+const timelineMock = vi.mocked(fetchTimeline)
 const fetchAlbumMock = vi.mocked(fetchAlbum)
 const deleteAlbumMock = vi.mocked(deleteAlbum)
 const removeMock = vi.mocked(removeAlbumPhotos)
@@ -98,6 +143,21 @@ function page(photos: Photo[]): PhotoListResponse {
   return { photos, total: photos.length, limit: 100, offset: 0, next_offset: null }
 }
 
+/** An album with no months to scrub: the default for tests not about the rail. */
+const EMPTY_TIMELINE: Timeline = { buckets: [], total: 0 }
+
+/**
+ * A histogram of one month per year from `from` to `to`, oldest first — the order
+ * an album's grid runs in — with each bucket holding one photo.
+ */
+function spanningTimeline(from: number, to: number): Timeline {
+  const buckets = []
+  for (let year = from; year <= to; year++) {
+    buckets.push({ year, month: 6, count: 1, cumulative: year - from })
+  }
+  return { buckets, total: buckets.length }
+}
+
 function album(): Album {
   return {
     uid: 'al_1',
@@ -125,11 +185,37 @@ function auth(canWrite: boolean): AuthContextValue {
   } as unknown as AuthContextValue
 }
 
-function renderPage(canWrite = true) {
+/** Surfaces the current URL query, which MemoryRouter keeps to itself. */
+function LocationProbe() {
+  const location = useLocation()
+  return <span data-testid="search">{location.search}</span>
+}
+
+/** The query string the page has written, as the router sees it. */
+function currentSearch(): string {
+  return screen.getByTestId('search').textContent
+}
+
+/** A page of `count` photos starting at `from`, in an album of 250. */
+function albumPage(from: number, count: number): PhotoListResponse {
+  const photos = Array.from({ length: count }, (_, i) =>
+    photo(`p${String(from + i)}`, `p${String(from + i)}.jpg`),
+  )
+  return {
+    photos,
+    total: 250,
+    limit: 100,
+    offset: from,
+    next_offset: from + count < 250 ? from + count : null,
+  }
+}
+
+function renderPage(canWrite = true, entry = '/albums/al_1') {
   return render(
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={auth(canWrite)}>
-        <MemoryRouter initialEntries={['/albums/al_1']}>
+        <MemoryRouter initialEntries={[entry]}>
+          <LocationProbe />
           <Routes>
             <Route path="/albums/:uid" element={<AlbumDetailPage />} />
           </Routes>
@@ -150,6 +236,9 @@ beforeEach(async () => {
   bulkMock.mockReset()
   albumsMock.mockReset()
   labelsMock.mockReset()
+  timelineMock.mockReset()
+  grid.scrollToIndex.mockReset()
+  timelineMock.mockResolvedValue(EMPTY_TIMELINE)
   removeMock.mockResolvedValue([])
   albumsMock.mockResolvedValue([])
   labelsMock.mockResolvedValue([])
@@ -231,9 +320,10 @@ describe('AlbumDetailPage', () => {
     renderPage()
 
     // The tile's detail link carries ?album so pressing Esc/Back on the photo
-    // (and prev/next) returns to this album, not the whole library.
+    // (and prev/next) returns to this album, not the whole library — and the
+    // album's order with it, so prev/next steps the way the grid reads.
     const link = await screen.findByRole('link', { name: 'a.jpg' })
-    expect(link).toHaveAttribute('href', '/photos/a?album=al_1')
+    expect(link).toHaveAttribute('href', '/photos/a?sort=oldest&album=al_1')
   })
 
   it('renders no sort selector and no manual reordering controls', async () => {
@@ -242,9 +332,10 @@ describe('AlbumDetailPage', () => {
     renderPage()
 
     await screen.findByRole('link', { name: 'a.jpg' })
-    // An album is always chronological: the shared filter bar hides its sort
-    // selector here (other photo lists keep theirs).
-    expect(screen.queryByRole('combobox', { name: 'Sort' })).not.toBeInTheDocument()
+    // An album is always chronological — its sort *key* is pinned server-side —
+    // so the selector offers the two directions and nothing else.
+    const sort = screen.getByRole('combobox', { name: 'Sort' })
+    expect([...sort.querySelectorAll('option')].map((o) => o.value)).toEqual(['oldest', 'newest'])
     // Manual ordering is gone: no reorder mode, no per-tile drag handles.
     expect(screen.queryByRole('button', { name: 'Reorder' })).not.toBeInTheDocument()
     expect(
@@ -624,24 +715,10 @@ describe('AlbumDetailPage scroll position', () => {
     }
   }
 
-  /** A page of `count` photos starting at `from`, in an album of 250. */
-  function albumPage(from: number, count: number): PhotoListResponse {
-    const photos = Array.from({ length: count }, (_, i) =>
-      photo(`p${String(from + i)}`, `p${String(from + i)}.jpg`),
-    )
-    return {
-      photos,
-      total: 250,
-      limit: 100,
-      offset: from,
-      next_offset: from + count < 250 ? from + count : null,
-    }
-  }
-
-  it('reloads the album to the length it had and restores the position', async () => {
-    // This album's grid only ever grew by appending pages: without walking back
-    // to 250 photos the document is a single page tall and the remembered offset
-    // has nowhere to land.
+  it('restores the position without paging its way back to it', async () => {
+    // The grid is a window over the album: it is 250 photos tall from the first
+    // response, so the remembered offset has somewhere to land straight away and
+    // nothing has to be walked back through to get there.
     writeGridScroll('/albums/al_1', {
       count: 250,
       scrollY: 6000,
@@ -655,8 +732,10 @@ describe('AlbumDetailPage scroll position', () => {
     renderPage()
 
     await screen.findByRole('link', { name: 'p0.jpg' })
-    expect(fetchPhotosMock.mock.calls.map((c) => c[0].offset)).toEqual([0, 100, 200])
     expect(grid.restoredFrom).toEqual(gridState(6000))
+    // Only the page under the reported range (plus its prefetch neighbour) is
+    // fetched — never the whole album.
+    expect(fetchPhotosMock.mock.calls.map((c) => c[0].offset)).toEqual([0, 100])
   })
 
   it('opens at the top of an album it has not shown before', async () => {
@@ -668,5 +747,158 @@ describe('AlbumDetailPage scroll position', () => {
     await screen.findByRole('link', { name: 'a.jpg' })
     expect(fetchPhotosMock).toHaveBeenCalledTimes(1)
     expect(grid.restoredFrom).toBeNull()
+  })
+})
+
+describe('AlbumDetailPage description', () => {
+  it('shows what the album is, in the words of whoever made it', async () => {
+    // The field was stored, editable and returned by the API — and rendered
+    // nowhere. It is the answer to "what am I looking at", so it sits under the
+    // heading, above the controls.
+    fetchAlbumMock.mockResolvedValue({
+      ...album(),
+      description: 'Sjezd rodáků 2016.\nDva dny, 780 let obce.',
+    })
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    renderPage()
+
+    const heading = await screen.findByRole('heading', { name: 'Holidays' })
+    const note = screen.getByText(/Sjezd rodáků 2016/)
+    // The line breaks the writer typed are kept: a description is often a list.
+    expect(note).toHaveClass('kk-prose-note')
+    expect(note.textContent).toContain('\n')
+    expect(heading.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('spends no line on an album without one', async () => {
+    fetchAlbumMock.mockResolvedValue(album())
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    const { container } = renderPage()
+
+    await screen.findByRole('heading', { name: 'Holidays' })
+    expect(container.querySelector('.kk-prose-note')).toBeNull()
+  })
+})
+
+describe('AlbumDetailPage order', () => {
+  it('opens oldest first, the way an album is meant to be read', async () => {
+    fetchAlbumMock.mockResolvedValue(album())
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    renderPage()
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    expect(fetchPhotosMock.mock.calls[0][0].sort).toBe('oldest')
+    expect(screen.getByRole('combobox', { name: 'Sort' })).toHaveValue('oldest')
+  })
+
+  it('turns the album round and writes the choice into the URL', async () => {
+    fetchAlbumMock.mockResolvedValue(album())
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Sort' }), 'newest')
+
+    // The order reaches the backend — which pins an album to capture time and
+    // takes only the direction from here…
+    await waitFor(() => {
+      expect(fetchPhotosMock.mock.calls.at(-1)?.[0].sort).toBe('newest')
+    })
+    // …and it lives in the URL, so Back, a reload and a shared link all agree.
+    expect(currentSearch()).toContain('sort=newest')
+  })
+
+  it('reads a sort the album cannot offer as its own default', async () => {
+    // A stale link or a hand-typed URL must not leave the selector showing an
+    // order that is not in the list — the grid and the control have to agree.
+    fetchAlbumMock.mockResolvedValue(album())
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    renderPage(true, '/albums/al_1?sort=title')
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    expect(screen.getByRole('combobox', { name: 'Sort' })).toHaveValue('oldest')
+    expect(fetchPhotosMock.mock.calls[0][0].sort).toBe('oldest')
+  })
+})
+
+describe('AlbumDetailPage timeline', () => {
+  it('gives an album spanning a lifetime the library’s own timeline rail', async () => {
+    fetchAlbumMock.mockResolvedValue(album())
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    timelineMock.mockResolvedValue(spanningTimeline(1910, 2026))
+    renderPage()
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    expect(await screen.findByRole('navigation', { name: 'Timeline' })).toBeInTheDocument()
+    // The histogram is asked for with the album's own scope and order, so its
+    // cumulative indexes are indexes into this grid.
+    const params = timelineMock.mock.calls[0][0]
+    expect(params.album).toBe('al_1')
+    expect(params.sort).toBe('oldest')
+  })
+
+  it('spares a short album a scale of months it has nothing to put on', async () => {
+    fetchAlbumMock.mockResolvedValue(album())
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    // One summer: a rail here is a control offering nothing, and it costs a
+    // strip of the screen and the taps under it.
+    timelineMock.mockResolvedValue({
+      buckets: [
+        { year: 2026, month: 6, count: 1, cumulative: 0 },
+        { year: 2026, month: 7, count: 1, cumulative: 1 },
+      ],
+      total: 2,
+    })
+    renderPage()
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    await waitFor(() => {
+      expect(timelineMock).toHaveBeenCalled()
+    })
+    expect(screen.queryByRole('navigation', { name: 'Timeline' })).toBeNull()
+  })
+
+  it('jumps the grid straight to a month and remembers it in the URL', async () => {
+    // The whole point of the rail on a 781-photo album: reaching 1936 must cost
+    // one scroll and one page, not eight sequential ones.
+    fetchAlbumMock.mockResolvedValue(album())
+    fetchPhotosMock.mockImplementation((params) =>
+      Promise.resolve(albumPage(params.offset ?? 0, 100)),
+    )
+    timelineMock.mockResolvedValue({
+      buckets: [
+        { year: 1910, month: 6, count: 200, cumulative: 0 },
+        { year: 2026, month: 6, count: 50, cumulative: 200 },
+      ],
+      total: 250,
+    })
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByRole('link', { name: 'p0.jpg' })
+    const rail = await screen.findByRole('navigation', { name: 'Timeline' })
+    await user.click(within(rail).getByRole('button', { name: 'Jump to Jun 2026' }))
+
+    expect(grid.scrollToIndex).toHaveBeenCalledWith({ index: 200, align: 'start' })
+    await waitFor(() => {
+      expect(fetchPhotosMock.mock.calls.map((c) => c[0].offset)).toContain(200)
+    })
+    expect(currentSearch()).toContain('at=2026-06')
+  })
+
+  it('gets out of the way while photos are being picked', async () => {
+    fetchAlbumMock.mockResolvedValue(album())
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    timelineMock.mockResolvedValue(spanningTimeline(1910, 2026))
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByRole('navigation', { name: 'Timeline' })
+    // The rail overlays the right edge, where the tiles' own controls are.
+    await user.click(screen.getByRole('button', { name: 'Select a.jpg' }))
+    await waitFor(() => {
+      expect(screen.queryByRole('navigation', { name: 'Timeline' })).toBeNull()
+    })
   })
 })

@@ -12,6 +12,7 @@ import {
   fractionForRank,
   rankForFraction,
   rankForIndex,
+  spanMonths,
 } from './timelineRail'
 
 /**
@@ -62,6 +63,14 @@ export interface TimelineScrubberProps {
    * reader was looking at. Empty for an un-anchored view.
    */
   anchor?: string
+  /**
+   * Render nothing unless the result spans at least this many calendar months
+   * ({@link spanMonths}). A rail is a way across *time*, so on a list that is all
+   * one season it is a control offering nothing — an album of a single afternoon
+   * does not need a scale of months laid over its photographs. The library passes
+   * nothing (0): it is the whole archive, and it always spans it.
+   */
+  minSpanMonths?: number
   /** Jumps the grid to a month. */
   onJump: (jump: TimelineJump) => void
 }
@@ -90,6 +99,12 @@ export interface TimelineScrubberProps {
  * (`position: fixed`), so a loading or empty timeline simply renders nothing and
  * never shifts the grid layout.
  *
+ * It runs whichever way its grid does. The backend returns the histogram in the
+ * grid's own order, so an album read oldest-first (its resting state) gets a rail
+ * whose top is its first month — nothing here assumes newest-first beyond the
+ * order the buckets arrive in. What a *shorter* list gets is nothing at all: see
+ * {@link TimelineScrubberProps.minSpanMonths}.
+ *
  * **The phone gets the same rail, narrowed and dimmed.** It used to be hidden
  * below 576 px, which left a phone — where photos are actually browsed — with
  * nothing but scrolling to cross a 369 000 px long list. So there the rail keeps
@@ -104,6 +119,7 @@ export function TimelineScrubber({
   params,
   activeIndex,
   anchor = '',
+  minSpanMonths = 0,
   onJump,
 }: TimelineScrubberProps) {
   const { t, i18n } = useTranslation()
@@ -292,9 +308,13 @@ export function TimelineScrubber({
     emitJump(bucket, true)
   }, [anchor, buckets, emitJump])
 
-  // Nothing to scrub yet (loading, error or an empty library): render no rail so
-  // the grid layout never shifts.
+  // Nothing to scrub (loading, error, an empty library, or a result too short in
+  // time to be worth a scale of months): render no rail so the grid layout never
+  // shifts.
   if (status !== 'ready' || buckets.length === 0 || total <= 0) {
+    return null
+  }
+  if (spanMonths(buckets) < minSpanMonths) {
     return null
   }
 

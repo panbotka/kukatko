@@ -79,3 +79,61 @@ func TestBuildTimelineQuery(t *testing.T) {
 		t.Errorf("scoped query %q should AND the filter onto the guard", scoped)
 	}
 }
+
+// TestBuildTimelineQuery_followsGridOrder verifies the histogram is built over
+// the same date and in the same direction the grid is ordered by: an ascending
+// sort walks the months oldest-first, and the chronology sort (an album scope)
+// groups on the upload-time fallback so no photo falls outside a bucket.
+func TestBuildTimelineQuery_followsGridOrder(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		params ListParams
+		want   []string
+		unmet  []string
+	}{
+		{
+			name:   "ascending walks the months oldest-first",
+			params: ListParams{Order: OrderAsc},
+			want:   []string{"ORDER BY year ASC, month ASC", "WHERE taken_at IS NOT NULL"},
+		},
+		{
+			name:   "chronology groups on the upload-time fallback",
+			params: ListParams{Sort: SortByChronology, Order: OrderAsc},
+			want: []string{
+				"date_part('year', COALESCE(taken_at, created_at))",
+				"WHERE COALESCE(taken_at, created_at) IS NOT NULL",
+				"ORDER BY year ASC, month ASC",
+			},
+		},
+		{
+			name:   "a descending album keeps the fallback and reverses",
+			params: ListParams{Sort: SortByChronology, Order: OrderDesc},
+			want:   []string{"COALESCE(taken_at, created_at)", "ORDER BY year DESC, month DESC"},
+		},
+		{
+			name:   "another sort key still groups by capture time",
+			params: ListParams{Sort: SortByTitle},
+			want:   []string{"WHERE taken_at IS NOT NULL", "ORDER BY year DESC, month DESC"},
+			unmet:  []string{"COALESCE"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			query, _ := buildTimelineQuery(tt.params)
+			for _, want := range tt.want {
+				if !strings.Contains(query, want) {
+					t.Errorf("query %q missing %q", query, want)
+				}
+			}
+			for _, unwanted := range tt.unmet {
+				if strings.Contains(query, unwanted) {
+					t.Errorf("query %q should not contain %q", query, unwanted)
+				}
+			}
+		})
+	}
+}

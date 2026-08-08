@@ -135,3 +135,18 @@ describe('AlbumTile', () => {
     expect(screen.queryByText(/\d{4}/)).toBeNull()
   })
 })
+
+describe('AlbumTile description', () => {
+  it('says what the album is, where a title alone often does not', () => {
+    renderTile(album({ description: 'Sjezd rodáků, dva dny, 780 let obce.' }))
+    const note = screen.getByText('Sjezd rodáků, dva dny, 780 let obce.')
+    // Clamped to two lines: a card grid whose rows are different heights reads
+    // as broken, and the detail page shows the whole text.
+    expect(note).toHaveClass('kk-prose-clamp')
+  })
+
+  it('spends no line on an album that has no description', () => {
+    const { container } = renderTile(album())
+    expect(container.querySelector('.kk-prose-clamp')).toBeNull()
+  })
+})

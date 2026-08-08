@@ -11,12 +11,14 @@ import (
 // has_gps, date range, camera, lens, uploader, album/label scope, country/city
 // place scope, favorite, min_rating/flag and the q substring filter) via
 // parseListParams, and the aggregation respects them so the buckets
-// match exactly what the list would return in the same order. Buckets are ordered
-// newest-first by capture time to mirror the default grid, and each carries the
-// running cumulative count of photos before it so a frontend scrubber can map a
-// month to a scroll index. The sort/order params are ignored — the histogram is
-// always grouped by date and the scrubber assumes the default date sort. An
-// invalid filter value yields 400.
+// match exactly what the list would return in the same order. Buckets mirror the
+// grid: newest-first by capture time by default, oldest-first when the request
+// asks for an ascending sort, and grouped on the same COALESCE(taken_at,
+// created_at) an album scope is ordered by — each carrying the running cumulative
+// count of photos before it, so a frontend scrubber can map a month to a scroll
+// index whichever way the grid beside it runs. The sort *key* is otherwise
+// ignored: the histogram is always grouped by date. An invalid filter value
+// yields 400.
 func (a *API) handleTimeline(w http.ResponseWriter, r *http.Request) {
 	// The unknown q tokens are dropped: an aggregation has no place to report
 	// them, and the paginated list the histogram accompanies already does.

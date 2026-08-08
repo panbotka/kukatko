@@ -467,8 +467,14 @@ here.
   that a year label (`.kukatko-timeline-year`, on a `.has-year` tick) stays inside, so the bubble and the
   year labels **never overlap** even at a year boundary (where they fall onto one line); the overlay is
   `position: fixed`, so a loading/empty timeline renders nothing and
-  doesn't shift the layout; only for
-  the default newest sort. **The phone gets the same rail, narrowed and asleep** — below 576 px it used
+  doesn't shift the layout; on the library only for
+  the default newest sort. It **runs whichever way its grid does** — the backend returns the histogram in
+  the grid's own order, so an album read oldest-first gets a rail whose top is its first month (nothing
+  here assumes newest-first beyond the order the buckets arrive in; only what a collapsed tick is
+  *called* is resolved by date). **`minSpanMonths`** renders no rail at all below a given span
+  (`spanMonths(buckets)`) — the library passes nothing, the album page 24, because a scale of months
+  over one afternoon is a control offering nothing at the cost of a strip of the screen.
+  **The phone gets the same rail, narrowed and asleep** — below 576 px it used
   to be `display:none`, which left the device photos are actually browsed on with nothing but scrolling
   to cross a 369 000 px list. There (`styles/app.css` `@media (max-width: 575.98px)`) it is a 2.5 rem
   strip on the right edge showing **only its year labels** (each on its own plate — it lies over
@@ -525,7 +531,9 @@ here.
   + one **„zrušit filtry"** + the photo count; **no behavior change** — everything
   runs through `viewToParams`/`useUrlState`/`LibraryView`, the query replaces history, the rest push;
   generic over `LibraryView`+a superset, props `showSearch`/`showSort` hide the query/sort
-  on the search page, `showDensity` hides density in the trash (card-based, not a photo grid),
+  on the search page, **`sortOptions`** narrows the sort list to given values **in the given order**
+  (the album page passes `ALBUM_SORTS` = oldest/newest, its sort key being pinned server-side; omitted =
+  all six), `showDensity` hides density in the trash (card-based, not a photo grid),
   **`showFavorite`** enables the **Oblíbené** toggle in the panel (a two-state select „Vše"/„Jen oblíbené"
   → `view.favorite` `''`/`'true'`, the backend scopes only to `true`; the library enables it so you can
   combine „oblíbené + album + období" in the main grid, the Oblíbené page doesn't — it's already scoped)
@@ -609,7 +617,10 @@ here.
   `timelineRail.ts` (pure layout of the timeline rail, no React: `fractionForRank`/`rankForFraction`
   = the position of a month bucket on the rail and its exact inverse for a drag, `anchorOf(bucket)`
   = the bucket's month as the `YYYY-MM` value the library carries in its `at` URL param, `rankForIndex`
-  = binary search from a photo index back to its month, and `buildRail(buckets, heightPx)` → `RailTick[]`,
+  = binary search from a photo index back to its month, `spanMonths(buckets)` = the calendar months
+  between the two ends counting both (the album page's threshold for showing a rail at all — it measures
+  the *span*, not the buckets, so two photos 116 years apart span 116 years), and
+  `buildRail(buckets, heightPx)` → `RailTick[]`,
   which collapses month ticks and thins year labels to what the measured height fits; the ticks
   **partition** the buckets, so nothing becomes unreachable and the active month always highlights
   a tick — the invariants are tested directly against a ~460-bucket, 122-year fixture),
@@ -684,7 +695,9 @@ here.
   the tile **shows no date** — the only one it carries is
   in the `alt` text, and even there an **estimated** date is marked (`cca 1950`), so it can't be read as certain;
   the grid/timeline sort doesn't change, it is still `taken_at`,
-  `components/organize/` = `AlbumTile` (an album card: the cover / name / **year range**
+  `components/organize/` = `AlbumTile` (an album card: the cover / name / **description**
+  (`.kk-prose-clamp`, two lines then an ellipsis — the detail page shows all of it; a machine-made
+  album has none and loses no room to it) / **year range**
   via `formatCaptureRange` (only when the album has dated photos) / count → `/albums/{uid}`;
   the cover is the `cover` prop — what `lib/albumCovers` planned for the whole grid — and without it
   the tile plans **for itself alone** (right for a tile rendered on its own, and why a caller rendering
@@ -901,14 +914,25 @@ here.
   while the layout stays exactly the one the plain CSS grid drew,
   `AlbumDetailPage` = `/albums/:uid` a header + a **Promítání** button (for everyone) + editor actions
   (edit/delete/select) above
-  a photo grid scoped to the album (`useScopedPhotos` + `FilterBar showSort={false}` + URL state) —
+  a photo grid scoped to the album (`useWindowedPhotos` with `album` in the params + `FilterBar` +
+  URL state) — under the heading it renders the album's **`description`** (`.kk-prose-note`: a readable
+  measure, `white-space: pre-line`, so the line breaks the writer typed survive), which was stored,
+  editable and shown to nobody until now;
   the header row is a **`HeaderActions`** group: **Promítání** stays inline at every width, while
   **Stáhnout ZIP**, **Upravit** and — behind its own divider, in danger styling — **Smazat** fold into
   the „…" overflow menu on a phone, so the header keeps to one row instead of wrapping into two or
   three; on desktop the actions stay inline exactly as before, and either way the RBAC gate is the
   same `canWrite` on the same buttons;
-  an album is **always chronological** (oldest first, enforced by the backend), so the page has no sort
-  selector or manual reordering; selection raises the shared **`BatchActionBar`** with the album's own
+  an album is **always chronological** — the backend pins the sort *key* to capture time — so the only
+  choice is the direction: `FilterBar sortOptions={ALBUM_SORTS}` offers **Nejstarší** / **Nejnovější**
+  and nothing else, the view rests on `ALBUM_DEFAULTS` (oldest first, so only the reversal shows in the
+  URL), and a sort key from elsewhere (a stale link) is read back as the album's own default so the grid
+  and the selector cannot disagree. There is no manual reordering. An album spanning **≥ 24 months**
+  also gets the library's own **`TimelineScrubber`** beside the grid (`minSpanMonths`, hidden while a
+  selection is being gathered), with the position in the same `at=YYYY-MM` URL param the library uses —
+  which is why the grid is a *window* over the album rather than a growing prefix of it: a jump to 1936
+  in an album of 781 photos costs one scroll and one page fetch;
+  selection raises the shared **`BatchActionBar`** with the album's own
   actions merged in as `extraActions` — **Nastavit obálku** (enabled at exactly 1 selected) and
   **Odebrat z alba** (`danger`) — beside the full batch vocabulary (both removal and a successful edit
   **empty the selection**, so no
@@ -2527,7 +2551,9 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `urlState.ts` = the `useUrlState` hook +
   the pure `readUrlState`/`writeUrlState`: the view state ↔ the URL query via the History API, „Back always
   works"; `libraryView.ts` = the `LibraryView` type (incl. `min_rating`/`flag`, the `favorite` toggle and the facets
-  `album`/`label`/`person`) + `LIBRARY_DEFAULTS` +
+  `album`/`label`/`person`) + `LIBRARY_DEFAULTS` + **`ALBUM_DEFAULTS`/`ALBUM_SORTS`** (the same view
+  resting **oldest-first** for a grid scoped to one album, and the two orders such a grid offers — so
+  only a deliberate reversal ends up in the URL, and `backHref` measures an album link against these) +
   **the capture period as one filter**: `periodOf(view)` is the single accessor of the time axis
   (`taken_after`/`taken_before`, sanitised to `YYYY-MM-DD` so a hand-typed URL degrades to „open" instead of a
   400; when both are empty a **legacy** `year=1965` — old bookmarks and saved searches — is folded in as that

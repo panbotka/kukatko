@@ -191,12 +191,15 @@ to `## Package map` in `CLAUDE.md`.
   takes the newest across all its groups, the unknown-city one included, resolved by the pure `newerCover`
   so the answer does not depend on the order Postgres returned the groups in),
   `TimelineBuckets(params)` (monthly date-histogram `Timeline{Buckets:[]TimelineBucket{Year,Month,
-  Count,Cumulative},Total}` — one `GROUP BY` by `date_part(year/month, taken_at)` over
-  non-archived photos, ordered newest first (`year DESC, month DESC`, like the default grid),
-  `Cumulative` (running sum of earlier=newer buckets) computed in Go and equal to the scroll index of
-  the bucket's first image; shares `buildWhere` with `List`/`Count`, so the buckets exactly match
-  the list; photos without `taken_at` don't fall into buckets (they sort last), but `Total` (via `Count`)
-  includes them — the basis of `photoapi`'s timeline scrubber),
+  Count,Cumulative},Total}` — one `GROUP BY` by `date_part(year/month, …)` over non-archived photos,
+  **in the grid's own order**: the date it groups on is `timelineDateExpr(params)` (`taken_at`, or the
+  album view's `COALESCE(taken_at, created_at)` under `SortByChronology`) and the direction
+  `timelineDirection(params)` (`DESC` by default, `ASC` for `OrderAsc`), so `Cumulative` (a running sum
+  computed in Go) is the scroll index of the bucket's first image whichever way the grid runs; shares
+  `buildWhere` with `List`/`Count`, so the buckets exactly match the list; photos the date expression
+  leaves NULL don't fall into buckets (they sort last), but `Total` (via `Count`) includes them — under
+  chronology nothing is left out and the counts sum to the total — the basis of `photoapi`'s timeline
+  scrubber),
   `YearBuckets(params)` (year-histogram `Years{Years:[]YearBucket{Year,Count},Total}` in
   `store_years.go` — one `GROUP BY date_part('year', taken_at)`, ordered `year DESC`; shares
   `buildWhere` with `List`/`Count`, so a bucket's count = exactly what `List` returns for the same filters
@@ -634,8 +637,10 @@ to `## Package map` in `CLAUDE.md`.
   (reversible soft-delete) stays `RequireWrite`, `GET /trash/info` `RequireAuth` — `RegisterRoutes` mounts `/photos`
   **, `GET /photos/timeline`, **`GET /photos/years`**, `GET /search` and `GET /favorites`**; `parseListParams`
   validates the query → `photos.ListParams` (`limit`≤500/`offset`, `sort`
-  newest/oldest/taken_at/added/title/size**/rating** + `order` — **`album` scope overrides both**
-  to `SortByChronology`+`asc` (an album is always chronological, the defaults of other views are unchanged),
+  newest/oldest/taken_at/added/title/size**/rating** + `order` — **an `album` scope pins the sort key**
+  to `SortByChronology` and takes only the **direction** from the request (`asc` unless it explicitly
+  asked to descend: `sort=newest` or `order=desc`), so an album is always chronological but can be read
+  from either end; the defaults of other views are unchanged),
   `archived` false/true/only,
   `has_gps`, `taken_after`/`taken_before`, `camera`, `lens`, `uploader`, `q`, **`year` (four-digit
   1000–9999) → `Year`**, **`album`/`label`

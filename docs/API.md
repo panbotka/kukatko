@@ -73,16 +73,19 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   (person/animal/other) —
   a join over **markers** (a named face/region, `invalid = FALSE`; rejected markers do not count),
   each UID = its own correlated `EXISTS` over `markers`;
-  **an album scope always forces chronology** (≥ 1 selected album is enough): an album's photos run from
-  the oldest (`taken_at ASC`, a photo without a capture date falls back to its upload time `created_at`,
-  so the order is complete and stable) and `sort`/`order` from the query are ignored for an album — the
-  endpoint's defaults for other views are unchanged;
+  **an album scope always forces chronology** (≥ 1 selected album is enough): the sort **key** is pinned
+  to the capture time (a photo without one falls back to its upload time `created_at`, so the order is
+  complete and stable) whatever `sort` the query asks for, and only the **direction** is the caller's —
+  an explicitly descending request (`?sort=newest`, or `?order=desc`) reverses it, everything else, an
+  absent `sort` included, stays oldest-first. The endpoint's defaults for other views are unchanged;
   `GET /photos/timeline` (authenticated) — a **monthly date histogram** of the library (backing the
   year/month scrubber): accepts the **same filters** as `GET /photos` via `parseListParams`, response
-  `{buckets:[{year,month,count,cumulative}],total}`, buckets ordered newest first (by `taken_at`,
-  like the default grid), `cumulative` = the number of photos **before** the bucket (maps the bucket to
-  a scroll index), `total` (via `Count`) also includes photos without a capture date (they fall into no
-  bucket, sorted last); `sort`/`order` are ignored (always grouped by date), backed by
+  `{buckets:[{year,month,count,cumulative}],total}`, `cumulative` = the number of photos **before** the
+  bucket (maps the bucket to a scroll index), `total` (via `Count`) also includes photos without a
+  capture date. The histogram **mirrors the grid's order**: newest first by `taken_at` by default,
+  oldest first for an ascending request, and grouped on the same `COALESCE(taken_at, created_at)` an
+  album scope is ordered by — so under an album no photo falls outside a bucket and `cumulative` is an
+  exact grid index. The sort *key* is otherwise ignored (always grouped by date). Backed by
   `photos.Store.TimelineBuckets` (shares `buildWhere` with `List`/`Count`), invalid param → 400;
   `GET /photos/years` (authenticated) — a **year histogram** of the library (backing the filters' **year
   facet**): accepts the **same filters** as `GET /photos` via `parseListParams`, response
@@ -595,7 +598,8 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   statement about the label as a whole; "not this photo for this label" remains a per-photo rejection under
   `/feedback/label-rejections`. Subjects have no equivalent flag. **An album's/label's
   photo gallery** runs via the shared `GET /photos?album={uid}`/`?label={uid}` (the same shape +
-  filters/pagination; an album scope always has forced chronology, a label honours the chosen order). A viewer reads, but does not mutate (403).
+  filters/pagination; an album scope is always chronological and takes only the direction from `sort`,
+  a label honours the chosen order). A viewer reads, but does not mutate (403).
   Every mutation (create/update/delete of an album or label, add/remove of photos, attach/detach) writes an audit entry
   (`album.*`/`label.*`) **in the same transaction** as the change — the responses do not change. Mounted by another `server.WithAPI`
   (`buildOrganizeAPI` in `cmd/kukatko/organize.go`).

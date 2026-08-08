@@ -10,6 +10,7 @@ import {
   fractionForRank,
   rankForFraction,
   rankForIndex,
+  spanMonths,
 } from './timelineRail'
 
 /** Rail heights a real viewport produces, from a short laptop to a tall monitor. */
@@ -116,5 +117,82 @@ describe('buildRail', () => {
   it('falls back to a nominal height before the rail is measured', () => {
     expect(buildRail(buckets, 0)).toEqual(buildRail(buckets, FALLBACK_RAIL_HEIGHT_PX))
     expect(buildRail([], 549)).toEqual([])
+  })
+})
+
+describe('timelineRail span', () => {
+  it('measures the distance between the two ends, in months, counting both', () => {
+    expect(spanMonths([])).toBe(0)
+    expect(spanMonths([{ year: 2026, month: 2, count: 1, cumulative: 0 }])).toBe(1)
+    expect(
+      spanMonths([
+        { year: 2026, month: 2, count: 1, cumulative: 0 },
+        { year: 2026, month: 1, count: 1, cumulative: 1 },
+      ]),
+    ).toBe(2)
+    // Two full calendar years, the threshold an album is given a rail at.
+    expect(
+      spanMonths([
+        { year: 2025, month: 12, count: 1, cumulative: 0 },
+        { year: 2024, month: 1, count: 1, cumulative: 1 },
+      ]),
+    ).toBe(24)
+  })
+
+  it('is the same span whichever way the buckets run', () => {
+    // An album read oldest-first arrives ascending; the rail is no shorter for it.
+    const descending = [
+      { year: 2026, month: 3, count: 1, cumulative: 0 },
+      { year: 1910, month: 6, count: 1, cumulative: 1 },
+    ]
+    const ascending = [
+      { year: 1910, month: 6, count: 1, cumulative: 0 },
+      { year: 2026, month: 3, count: 1, cumulative: 1 },
+    ]
+    expect(spanMonths(ascending)).toBe(spanMonths(descending))
+    expect(spanMonths(ascending)).toBe((2026 - 1910) * 12 + (3 - 6) + 1)
+  })
+
+  it('counts the months between the ends, not the buckets that hold photos', () => {
+    // One photo from 1910 and one from 2026 is two buckets and 116 years.
+    const sparse = [
+      { year: 1910, month: 1, count: 1, cumulative: 0 },
+      { year: 2026, month: 1, count: 1, cumulative: 1 },
+    ]
+    expect(spanMonths(sparse)).toBe(116 * 12 + 1)
+  })
+})
+
+describe('buildRail on an ascending rail', () => {
+  // The album grid runs oldest-first, so its histogram does too. Everything the
+  // rail draws is in rail order; only what a tick is *called* is about dates.
+  const ascending = [...buckets].reverse().map((bucket, index, all) => ({
+    ...bucket,
+    cumulative: all.slice(0, index).reduce((sum, b) => sum + b.count, 0),
+  }))
+
+  it('anchors both ends of the rail to both ends of the album', () => {
+    const ticks = buildRail(ascending, 549)
+    expect(ticks[0].target).toBe(ascending[0])
+    expect(ticks[ticks.length - 1].target).toBe(ascending[ascending.length - 1])
+    expect(ticks[ticks.length - 1].year).toBe(ascending[ascending.length - 1].year)
+  })
+
+  it('names a collapsed tick by date, not by rail position', () => {
+    // `oldest`/`newest` feed the "Jump to <from> – <to>" label; read off rail
+    // position they would name the range backwards on an ascending rail.
+    const ticks = buildRail(ascending, 120)
+    const collapsed = ticks.find((tick) => tick.firstRank !== tick.lastRank)
+    expect(collapsed).toBeDefined()
+    if (collapsed === undefined) {
+      return
+    }
+    const asDate = (b: { year: number; month: number }) => b.year * 12 + b.month
+    expect(asDate(collapsed.oldest)).toBeLessThan(asDate(collapsed.newest))
+  })
+
+  it('keeps a key per tick that no other tick shares', () => {
+    const ticks = buildRail(ascending, 300)
+    expect(new Set(ticks.map((tick) => tick.key)).size).toBe(ticks.length)
   })
 })

@@ -1,6 +1,7 @@
 import { type PhotoListParams } from '../services/photos'
 
 import {
+  ALBUM_DEFAULTS,
   LIBRARY_DEFAULTS,
   LIBRARY_PATH,
   type LibraryView,
@@ -76,7 +77,12 @@ export function backHref(view: DetailView): string {
   const albums = parseFilterList(view.album)
   const labels = parseFilterList(view.label)
   if (albums.length === 1) {
-    return `/albums/${albums[0]}${libraryQuery({ ...view, album: '', label: '' })}`
+    // Against the album page's own defaults, not the library's: an album rests
+    // at oldest-first, so "newest" is the value that has to be carried back and
+    // "oldest" the one that may be left out. Measured against the library's
+    // defaults the two would swap, and Back out of a newest-first album would
+    // land on an oldest-first one.
+    return `/albums/${albums[0]}${scopedQuery({ ...view, album: '', label: '' }, ALBUM_DEFAULTS)}`
   }
   if (labels.length === 1 && albums.length === 0) {
     return `/labels/${labels[0]}${libraryQuery({ ...view, album: '', label: '' })}`
@@ -97,6 +103,15 @@ export function backHref(view: DetailView): string {
  * everything is at its default), so a Back link restores the view it left.
  */
 function libraryQuery(view: DetailView): string {
-  const query = writeUrlState(view, LIBRARY_DEFAULTS).toString()
+  return scopedQuery(view, LIBRARY_DEFAULTS)
+}
+
+/**
+ * {@link libraryQuery} against a chosen set of defaults, for a destination page
+ * whose resting view is not the library's — an album, which rests oldest-first.
+ * Only a value the destination would not assume by itself ends up in the URL.
+ */
+function scopedQuery(view: DetailView, defaults: LibraryView): string {
+  const query = writeUrlState(view, defaults).toString()
   return query === '' ? '' : `?${query}`
 }

@@ -308,18 +308,23 @@ func TestParseListParams_valid(t *testing.T) {
 }
 
 // TestParseListParams_albumForcesChronology verifies that an album scope pins
-// the ordering to oldest-first chronology whatever sort and order the query
-// carries, while a query without the scope keeps its requested sort.
+// the sort field to chronology whatever key the query asks for, defaults to
+// oldest-first, and lets an explicitly requested newest-first order reverse it —
+// while a query without the scope keeps its requested sort untouched.
 func TestParseListParams_albumForcesChronology(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name  string
 		query string
+		want  photos.SortOrder
 	}{
-		{name: "bare album scope", query: "album=al1"},
-		{name: "sort ignored", query: "album=al1&sort=newest"},
-		{name: "sort and order ignored", query: "album=al1&sort=title&order=desc"},
+		{name: "bare album scope is oldest-first", query: "album=al1", want: photos.OrderAsc},
+		{name: "sort key ignored", query: "album=al1&sort=title", want: photos.OrderAsc},
+		{name: "oldest stays oldest", query: "album=al1&sort=oldest", want: photos.OrderAsc},
+		{name: "newest reverses it", query: "album=al1&sort=newest", want: photos.OrderDesc},
+		{name: "explicit order reverses it", query: "album=al1&order=desc", want: photos.OrderDesc},
+		{name: "sort key ignored, its order kept", query: "album=al1&sort=size", want: photos.OrderDesc},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -328,9 +333,9 @@ func TestParseListParams_albumForcesChronology(t *testing.T) {
 			if err != nil {
 				t.Fatalf("parseListParams(%q) error: %v", tt.query, err)
 			}
-			if p.Sort != photos.SortByChronology || p.Order != photos.OrderAsc {
-				t.Errorf("parseListParams(%q) sort = %s/%s, want chronology/asc",
-					tt.query, p.Sort, p.Order)
+			if p.Sort != photos.SortByChronology || p.Order != tt.want {
+				t.Errorf("parseListParams(%q) sort = %s/%s, want chronology/%s",
+					tt.query, p.Sort, p.Order, tt.want)
 			}
 		})
 	}

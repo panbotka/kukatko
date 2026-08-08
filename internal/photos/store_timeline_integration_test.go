@@ -162,3 +162,69 @@ func TestTimelineBuckets_albumScope(t *testing.T) {
 		t.Fatalf("Count = %d, timeline.Total = %d, want equal", total, timeline.Total)
 	}
 }
+
+// TestTimelineBuckets_chronologyOrder verifies the histogram follows the grid an
+// album is actually shown in: oldest month first, grouped on the upload-time
+// fallback so an undated photo gets a bucket of its own instead of being dropped,
+// and every Cumulative indexing the right photo in the same-ordered list. Without
+// it a scrubber over an album would send the reader to the wrong month.
+func TestTimelineBuckets_chronologyOrder(t *testing.T) {
+	store, _ := newStore(t)
+	ctx := t.Context()
+
+	dec := time.Date(2023, 12, 20, 9, 0, 0, 0, time.UTC)
+	jun := time.Date(2023, 6, 15, 12, 0, 0, 0, time.UTC)
+	jan := time.Date(2022, 1, 10, 7, 0, 0, 0, time.UTC)
+	seedTimelineBuckets(t, store, []timelineBucketFixture{
+		{hash: "tlc-a", takenAt: new(dec)},
+		{hash: "tlc-b", takenAt: new(jun)},
+		{hash: "tlc-c", takenAt: new(jan)},
+		{hash: "tlc-d", takenAt: nil}, // dated by its upload time under chronology
+	})
+
+	params := photos.ListParams{Sort: photos.SortByChronology, Order: photos.OrderAsc}
+	timeline, err := store.TimelineBuckets(ctx, params)
+	if err != nil {
+		t.Fatalf("TimelineBuckets(chronology): %v", err)
+	}
+	if timeline.Total != 4 {
+		t.Fatalf("total = %d, want 4", timeline.Total)
+	}
+
+	// Oldest first, and no photo outside a bucket: under chronology the counts
+	// add up to the total, which is what makes Cumulative an exact grid index.
+	sum := 0
+	for i, b := range timeline.Buckets {
+		sum += b.Count
+		if i > 0 {
+			prev := timeline.Buckets[i-1]
+			if b.Year < prev.Year || (b.Year == prev.Year && b.Month < prev.Month) {
+				t.Fatalf("bucket[%d] = %d-%02d is older than its predecessor %d-%02d",
+					i, b.Year, b.Month, prev.Year, prev.Month)
+			}
+		}
+	}
+	if sum != timeline.Total {
+		t.Fatalf("bucket counts sum to %d, want the total %d", sum, timeline.Total)
+	}
+	if first := timeline.Buckets[0]; first.Year != 2022 || first.Month != 1 {
+		t.Fatalf("first bucket = %d-%02d, want 2022-01", first.Year, first.Month)
+	}
+
+	list, err := store.List(ctx, photos.ListParams{
+		Sort: photos.SortByChronology, Order: photos.OrderAsc, Limit: 100,
+	})
+	if err != nil {
+		t.Fatalf("List(chronology): %v", err)
+	}
+	for _, b := range timeline.Buckets {
+		first := list[b.Cumulative]
+		at := first.CreatedAt
+		if first.TakenAt != nil {
+			at = *first.TakenAt
+		}
+		if at.Year() != b.Year || int(at.Month()) != b.Month {
+			t.Fatalf("list[%d] sorts at %v, want in %d-%02d", b.Cumulative, at, b.Year, b.Month)
+		}
+	}
+}
