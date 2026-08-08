@@ -765,6 +765,34 @@
     "loading": "Načítání štítků…",
     "error": "Štítky se nepodařilo načíst.",
     "actionError": "Akce se nezdařila. Zkus to prosím znovu.",
+    "cloud": "Štítky",
+    "actions": "Akce štítku „{{name}}“",
+    "photoCount_one": "{{count}} fotka",
+    "photoCount_few": "{{count}} fotky",
+    "photoCount_many": "{{count}} fotky",
+    "photoCount_other": "{{count}} fotek",
+    "filters": {
+      "barLabel": "Filtr štítků",
+      "search": "Hledat štítek",
+      "searchPlaceholder": "Hledat podle jména…",
+      "sort": "Řadit"
+    },
+    "sort": {
+      "count": "Podle počtu fotek",
+      "name": "Podle jména"
+    },
+    "noMatches": {
+      "title": "Žádný štítek neodpovídá",
+      "hint": "Zkus jiné jméno."
+    },
+    "group": {
+      "name": "{{prefix}}…",
+      "toggle_one": "Skupina {{prefix}} – {{count}} štítek",
+      "toggle_few": "Skupina {{prefix}} – {{count}} štítky",
+      "toggle_many": "Skupina {{prefix}} – {{count}} štítku",
+      "toggle_other": "Skupina {{prefix}} – {{count}} štítků",
+      "members": "Štítky ve skupině {{prefix}}"
+    },
     "confirmTitle": "Smazat štítek?",
     "confirmDelete": "Smazat štítek „{{name}}“?",
     "deleteConfirm": "Smazat štítek",
@@ -782,9 +810,10 @@
       "save": "Uložit"
     },
     "review": {
-      "toggle": "Ptát se na štítek „{{name}}“ při třídění",
       "on": "Třídění se na tenhle štítek ptá",
-      "off": "Třídění se na tenhle štítek neptá"
+      "off": "Třídění se na tenhle štítek neptá",
+      "enable": "Ptát se na něj při třídění",
+      "disable": "Neptat se na něj při třídění"
     }
   },
   "labelDetail": {

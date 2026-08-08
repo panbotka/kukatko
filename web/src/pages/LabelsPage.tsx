@@ -1,20 +1,28 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
-import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
-import Form from 'react-bootstrap/Form'
-import ListGroup from 'react-bootstrap/ListGroup'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
 import { ConfirmModal } from '../components/ConfirmModal'
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
-import { Icon } from '../components/Icon'
+import { type LabelChipActions } from '../components/organize/LabelChip'
+import { LabelCloud } from '../components/organize/LabelCloud'
 import { LabelEditModal } from '../components/organize/LabelEditModal'
-import { ListSkeleton } from '../components/Skeleton'
+import { LabelFilterBar } from '../components/organize/LabelFilterBar'
+import { ChipCloudSkeleton } from '../components/Skeleton'
 import { useReloadKey } from '../hooks/useReloadKey'
+import {
+  type LabelsView,
+  browseLabels,
+  familyKey,
+  labelBrowseOptions,
+  LABELS_DEFAULTS,
+  toggleFamilyOpen,
+  withFamilyOpen,
+} from '../lib/labelBrowse'
+import { useUrlState } from '../lib/urlState'
 import {
   deleteLabel,
   fetchLabels,
@@ -26,11 +34,24 @@ import {
 /** Fetch lifecycle of the labels list. */
 type State = { status: 'loading' } | { status: 'error' } | { status: 'ready'; labels: LabelCount[] }
 
+/** No labels at all, so there is nothing for the cloud to fold or order. */
+const NO_LABELS: LabelCount[] = []
+
 /**
- * The labels index: a list of labels with photo counts, each linking to its
- * scoped photo grid. Editors and admins can create, rename and delete labels,
- * and switch a label in or out of the review game; mutation controls are hidden
- * from viewers.
+ * The labels index: a wrapping cloud of label chips with photo counts, each
+ * linking to its scoped photo grid. Editors and admins can create, rename and
+ * delete labels, and switch a label in or out of the review game; mutation
+ * controls are hidden from viewers.
+ *
+ * The API returns every label in one alphabetical list, and drawn as full-width
+ * rows a real library's hundred-plus of them ran five screens deep — with whole
+ * families of numbered labels (`Dum11`, `Dum12`, …) occupying the entire start of
+ * the alphabet and pushing the meaningful ones off the first screens. So the
+ * labels are chips (see `LabelCloud`), the numbered families fold into one
+ * expandable chip each, and the page carries a name search and a choice between
+ * most-used-first and alphabetical (see `LabelFilterBar` over the pure
+ * `lib/labelBrowse`). All of it lives in the URL, so Back steps through the views
+ * and a link carries the exact one.
  *
  * The review switch lives here and deliberately nowhere else. Inside the game it
  * would be an answer to the wrong question — "not this photo" is already a
@@ -38,7 +59,7 @@ type State = { status: 'loading' } | { status: 'error' } | { status: 'ready'; la
  * labels are managed, taken calmly rather than mid-round.
  */
 export function LabelsPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { canWrite } = useAuth()
   const [state, setState] = useState<State>({ status: 'loading' })
   const [editing, setEditing] = useState<Label | null>(null)
@@ -47,6 +68,7 @@ export function LabelsPage() {
   const [actionError, setActionError] = useState(false)
   const [savingUID, setSavingUID] = useState<string | null>(null)
   const [reloadKey, reload] = useReloadKey()
+  const [view, setView] = useUrlState<LabelsView>(LABELS_DEFAULTS)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -81,10 +103,10 @@ export function LabelsPage() {
   }
 
   /**
-   * Switches a label in or out of the review game. The row flips immediately and
-   * is rolled back if the save fails, so the switch never shows a state the
-   * server does not hold. Name and priority are sent back unchanged because the
-   * endpoint takes the whole editable record.
+   * Switches a label in or out of the review game. The chip flips immediately and
+   * is rolled back if the save fails, so it never shows a state the server does
+   * not hold. Name and priority are sent back unchanged because the endpoint
+   * takes the whole editable record.
    */
   async function setReviewEnabled(label: LabelCount, enabled: boolean) {
     setActionError(false)
@@ -121,13 +143,52 @@ export function LabelsPage() {
         return prev
       }
       const existing = prev.labels.find((l) => l.uid === saved.uid)
-      const labels = existing
-        ? prev.labels.map((l) => (l.uid === saved.uid ? { ...l, ...saved } : l))
-        : [...prev.labels, { ...saved, photo_count: 0 }]
-      labels.sort((a, b) => b.priority - a.priority)
-      return { status: 'ready', labels }
+      // A new label is simply appended: the cloud's own search, folding and
+      // ordering decide where it lands, so nothing is sorted here.
+      return {
+        status: 'ready',
+        labels: existing
+          ? prev.labels.map((l) => (l.uid === saved.uid ? { ...l, ...saved } : l))
+          : [...prev.labels, { ...saved, photo_count: 0 }],
+      }
     })
+    reveal(saved)
   }
+
+  /**
+   * Makes a just-saved label visible. A numbered name (`Dum99`) joins a family
+   * that may be folded shut, and a label that vanishes the moment it is saved
+   * reads as a failed save; expanding its family costs one URL key and keeps the
+   * chip on screen.
+   */
+  function reveal(saved: Label) {
+    const key = familyKey(saved.name)
+    if (key !== null) {
+      setView({ open: withFamilyOpen(view.open, key) })
+    }
+  }
+
+  const labels = state.status === 'ready' ? state.labels : NO_LABELS
+  const language = i18n.language
+  const { entries } = useMemo(
+    () => browseLabels(labels, labelBrowseOptions(view, language)),
+    [labels, view, language],
+  )
+
+  const actions: LabelChipActions | undefined = canWrite
+    ? {
+        onRename: (label) => {
+          setEditing(label)
+        },
+        onDelete: (label) => {
+          setPendingDelete(label)
+        },
+        onToggleReview: (label, enabled) => {
+          void setReviewEnabled(label, enabled)
+        },
+        savingUID,
+      }
+    : undefined
 
   return (
     <>
@@ -147,94 +208,32 @@ export function LabelsPage() {
 
       {actionError && <Alert variant="danger">{t('labels.actionError')}</Alert>}
 
-      {state.status === 'loading' && <ListSkeleton label={t('labels.loading')} />}
+      {state.status === 'loading' && <ChipCloudSkeleton label={t('labels.loading')} />}
 
       {state.status === 'error' && <ErrorState title={t('labels.error')} onRetry={reload} />}
 
-      {state.status === 'ready' && state.labels.length === 0 && (
+      {state.status === 'ready' && labels.length === 0 && (
         <EmptyState title={t('labels.empty.title')} hint={t('labels.empty.hint')} />
       )}
 
-      {state.status === 'ready' && state.labels.length > 0 && (
-        <ListGroup className="gap-2">
-          {state.labels.map((label) => (
-            <ListGroup.Item
-              key={label.uid}
-              className="kk-tile-row d-flex align-items-center justify-content-between gap-2"
-            >
-              {/* The name truncates rather than pushing the row past the
-                  viewport (a label name is user data and can be long or
-                  unbroken); the count keeps its width so it never truncates
-                  away. */}
-              <Link
-                to={`/labels/${label.uid}`}
-                className="text-decoration-none d-flex align-items-center gap-2 flex-grow-1 kk-min-w-0"
-              >
-                <span className="text-truncate">{label.name}</span>
-                <Badge bg="secondary" pill className="flex-shrink-0">
-                  {label.photo_count}
-                </Badge>
-              </Link>
-              {canWrite && (
-                /* Both actions keep a glyph and drop their word below `sm`, so a
-                   phone row never has to fit a name plus two Czech-worded
-                   buttons across ~336px. The `aria-label` carries the same word
-                   the button shows, so the accessible name is identical at every
-                   width. */
-                <div className="d-flex align-items-center gap-1 flex-shrink-0">
-                  {/* The review switch is wordless at every width — a per-row
-                      label would repeat the same sentence down the whole page —
-                      so the game's own icon carries the meaning and the
-                      accessible name names both the label and what the switch
-                      does. The hover text sits on the wrapper because Form.Check
-                      does not forward `title` to either the input or its label. */}
-                  <span
-                    title={label.review_enabled ? t('labels.review.on') : t('labels.review.off')}
-                  >
-                    <Form.Check
-                      type="switch"
-                      id={`label-review-${label.uid}`}
-                      className="mb-0 me-1 d-inline-flex align-items-center gap-1"
-                      checked={label.review_enabled}
-                      disabled={savingUID === label.uid}
-                      aria-label={t('labels.review.toggle', { name: label.name })}
-                      label={<Icon name="ui-checks" />}
-                      onChange={(event) => {
-                        void setReviewEnabled(label, event.target.checked)
-                      }}
-                    />
-                  </span>
-                  <Button
-                    variant="outline-secondary"
-                    size="sm"
-                    className="d-inline-flex align-items-center gap-2 kukatko-tap-target-touch"
-                    aria-label={t('labels.rename')}
-                    title={t('labels.rename')}
-                    onClick={() => {
-                      setEditing(label)
-                    }}
-                  >
-                    <Icon name="pencil" />
-                    <span className="d-none d-sm-inline">{t('labels.rename')}</span>
-                  </Button>
-                  <Button
-                    variant="outline-danger"
-                    size="sm"
-                    className="d-inline-flex align-items-center gap-2 kukatko-tap-target-touch"
-                    aria-label={t('labels.delete')}
-                    title={t('labels.delete')}
-                    onClick={() => {
-                      setPendingDelete(label)
-                    }}
-                  >
-                    <Icon name="trash" />
-                    <span className="d-none d-sm-inline">{t('labels.delete')}</span>
-                  </Button>
-                </div>
-              )}
-            </ListGroup.Item>
-          ))}
-        </ListGroup>
+      {state.status === 'ready' && labels.length > 0 && (
+        <>
+          <LabelFilterBar view={view} onChange={setView} />
+
+          {entries.length === 0 && (
+            <EmptyState title={t('labels.noMatches.title')} hint={t('labels.noMatches.hint')} />
+          )}
+
+          {entries.length > 0 && (
+            <LabelCloud
+              entries={entries}
+              actions={actions}
+              onToggleFamily={(key) => {
+                setView({ open: toggleFamilyOpen(view.open, key) })
+              }}
+            />
+          )}
+        </>
       )}
 
       {canWrite && (

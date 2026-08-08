@@ -1112,6 +1112,143 @@ body {
   font-size: 0.6rem;
 }
 
+/* ---- Label cloud -------------------------------------------------------- */
+
+/*
+ * The labels index. A label is one word and a number, and given a full-width row
+ * each, a real library's hundred-plus of them made a document five screens tall.
+ * As a wrapping cloud of pills the same hundred fit into a screen or two, so the
+ * ordering — not the scroll position — decides what the reader meets first.
+ */
+.kk-label-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--kk-space-2);
+}
+
+/* One label: a pill split between the link and (for an editor) its actions menu.
+   The border and the background live on the pill, so the hairline is drawn once
+   however many controls sit inside it. */
+.kk-label-chip {
+  display: inline-flex;
+  align-items: stretch;
+  max-width: 100%;
+  border: 1px solid var(--kk-surface-border);
+  border-radius: var(--kk-radius-pill);
+  background-color: var(--kk-surface-raised);
+  transition: background-color var(--kk-duration-fast) var(--kk-ease-standard);
+}
+
+.kk-label-chip:hover,
+.kk-label-chip:focus-within {
+  background-color: color-mix(in srgb, var(--kk-surface-raised) 88%, var(--bs-primary) 12%);
+}
+
+.kk-label-chip__link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--kk-space-2);
+
+  /* A flex item refuses to shrink below its content by default, so one long
+     unbroken label name would stretch its chip past the cloud. */
+  min-width: 0;
+  min-height: 2.25rem;
+  padding-inline: var(--kk-space-3);
+  border-radius: inherit;
+  color: var(--kk-text);
+  text-decoration: none;
+}
+
+/* User data, so it may be long or unbroken: it truncates instead of widening the
+   chip past the container. */
+.kk-label-chip__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The photo count rides beside the name and keeps its own width; tabular figures
+   so a row of chips does not twitch as counts change. */
+.kk-label-chip__count {
+  flex-shrink: 0;
+  color: var(--kk-text-muted);
+  font-size: var(--kk-font-size-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The mark on a label the review game skips — quiet, since it is a state and not
+   an alarm. */
+.kk-label-chip__skipped {
+  flex-shrink: 0;
+  color: var(--kk-text-muted);
+  font-size: var(--kk-font-size-caption);
+}
+
+/* The "…" actions menu is trim on a mouse: it repeats on every chip, and the
+   width it takes is width the cloud exists to save. The coarse-pointer block
+   below gives it a full finger target. */
+.kk-label-chip__menu {
+  --bs-btn-padding-x: var(--kk-space-2);
+  --bs-btn-padding-y: 0;
+
+  display: inline-flex;
+  align-items: center;
+  border-radius: inherit;
+  color: var(--kk-text-muted);
+  text-decoration: none;
+}
+
+.kk-label-chip__menu.dropdown-toggle::after {
+  display: none;
+}
+
+/* The chip standing in for a folded family of numbered labels (`Dum11`, `Dum12`,
+   …). It borrows the pill's own colours rather than an outline button's muted
+   grey — it stands for labels, and the one control hiding forty-six of them must
+   not be the dimmest thing on the page. Only the dashed border sets it apart,
+   saying "a stack" instead of "one more label". */
+.kk-label-family {
+  --bs-btn-padding-y: 0;
+  --bs-btn-color: var(--kk-text);
+  --bs-btn-bg: var(--kk-surface-raised);
+  --bs-btn-border-color: var(--kk-surface-border);
+  --bs-btn-hover-color: var(--kk-text);
+  --bs-btn-hover-bg: color-mix(in srgb, var(--kk-surface-raised) 88%, var(--bs-primary) 12%);
+  --bs-btn-hover-border-color: var(--kk-surface-border);
+  --bs-btn-active-color: var(--kk-text);
+  --bs-btn-active-bg: color-mix(in srgb, var(--kk-surface-raised) 80%, var(--bs-primary) 20%);
+  --bs-btn-active-border-color: var(--kk-surface-border);
+
+  min-height: 2.25rem;
+  border-style: dashed;
+}
+
+/* An expanded family takes a line of its own, and its members sit in a boxed,
+   indented list underneath — otherwise an open `Dum…` is indistinguishable from
+   the cloud simply continuing. */
+.kk-label-cloud__group {
+  flex: 0 0 100%;
+}
+
+.kk-label-cloud__members {
+  padding: var(--kk-space-2);
+  border: 1px dashed var(--kk-surface-border);
+  border-radius: var(--kk-radius-md);
+}
+
+/* On touch the whole chip is the target, so it grows to the finger floor rather
+   than letting the menu button burst out of the pill it sits in. */
+@media (pointer: coarse) {
+  .kk-label-chip__link,
+  .kk-label-family {
+    min-height: 2.75rem;
+  }
+
+  .kk-label-chip__menu {
+    min-width: 2.75rem;
+  }
+}
+
 /* ---- Global search command --------------------------------------------- */
 
 /*

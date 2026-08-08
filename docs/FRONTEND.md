@@ -292,12 +292,15 @@ here.
   `PhotoTile`/`TrashCard` and added the fade to covers/previews:
   `AlbumTile`, `SubjectTile`, `SubjectPhotoTile`, `SimilarPhotos`, `StackStrip`,
   `DuplicateGroupCard`, `GlobalSearchSections`, `SearchCommand`. Tests: `FadeInImage.test.tsx`),
-  `Skeleton` / `TileGridSkeleton` / `ListSkeleton` (**shared skeleton placeholders** instead of
+  `Skeleton` / `TileGridSkeleton` / `ListSkeleton` / `ChipCloudSkeleton` (**shared skeleton placeholders** instead of
   full-page spinners on the main data views: `Skeleton` is a single shimmer block
   (`.kk-skeleton`, warm surface-1 + a sweeping sheen, `aria-hidden`, props size/circle/radius);
   `TileGridSkeleton` is a grid of cards (a square cover + 1–2 caption rows) with the same responsive
   `minmax` as the real grid — `AlbumsPage` (minTile 160, 2 rows) and `PeoplePage` (140, 1 row);
-  `ListSkeleton` is a stack of rows (`LabelsPage`). The container carries `role="status"` + `aria-busy` and one
+  `ListSkeleton` is a stack of rows (`MyActivityPage`, `ReviewDecisionsPage`, `LeaderboardPage`);
+  `ChipCloudSkeleton` is a wrapping row of pills of uneven width (`LabelsPage`) — the widths cycle
+  through a fixed list rather than being random, so the placeholder is stable between renders and
+  testable. The container carries `role="status"` + `aria-busy` and one
   localized message (the existing keys `*.loading`); the shimmer is the only motion → under
   `prefers-reduced-motion` it turns off and stays a static tone. Tests: `Skeleton.test.tsx`),
   `TileGrid` (**the virtualized card grid** — the same `react-virtuoso` `VirtuosoGrid` treatment the
@@ -594,6 +597,20 @@ here.
   `CandidateFilterTabs` — plus a name search, the ordering `Form.Select` and the „I prázdná" switch;
   every control writes straight into the URL via `SetUrlState<AlbumsView>`, **pushing** except the
   live-typed query, which replaces),
+  `LabelFilterBar` (the labels index's own filter bar: a name search + the ordering, both writing
+  straight into the URL via `SetUrlState<LabelsView>`, **pushing** except the live-typed query. No
+  filter beyond the search: a label is a name and a count, and there is nothing else to filter it by),
+  `LabelCloud` (the labels index as a **wrapping cloud of pills** — a real `ul`/`li`, so a screen
+  reader counts them instead of reading a heap of links. A folded numbered family renders as one
+  dashed toggle chip (`aria-expanded` + `aria-controls`) showing the shared prefix and **how many
+  labels** hide behind it; expanded, it takes a whole line (`.kk-label-cloud__group`) with its members
+  in their own boxed list, so an open `Dum…` cannot be mistaken for the cloud continuing),
+  `LabelChip` (one label: a pill (`.kk-label-chip`) carrying the name (truncates — user data),
+  the photo count and, for an editor, the "…" actions `Dropdown`. Its `LabelChipActions` prop bundles
+  rename/delete/toggle-review + `savingUID`, and its **absence** is what makes the chip read-only for
+  a viewer. The link's `aria-label` spells out the bare count and the skip state, which the glyphs say
+  nothing about. On a coarse pointer the whole pill grows to 44px rather than the menu being exempted
+  from the floor — see `styles/tapTargets.test.ts`),
   `AlbumEditModal` (create/rename an album: name/description/private), `LabelEditModal` (create/rename
   a label: name/priority), `SelectionBar` (a sticky selection toolbar: count +
   actions + clear — shown at `selection.count > 0` since those grids are hover-select too;
@@ -773,18 +790,30 @@ here.
   UIDs of photos that vanished from the grid stay in it, and reload the grid via `reloadKey`); the tiles carry the
   album scope in the detail link (`detailQuery` with `album=uid`) → Esc/Back/prev-next from a photo returns to the album;
   the album's own header controls **stay visible** during a selection (the bar floats over the bottom edge),
-  `LabelsPage` = `/labels` a list of labels with counts + create/rename/delete (editor/admin) — the
-  row takes the same phone treatment as `SavedSearchesPage` (name truncates, the count keeps its
-  width, rename/delete collapse to a glyph below `sm`); each row also carries the **review-game switch**
-  (`Form.Check type="switch"`, `label.review_enabled`, editor/admin only): wordless at every width — a per-row
-  sentence would repeat itself down the whole page — so the game's own `ui-checks` glyph carries the meaning,
-  the `aria-label` names both the label and what the switch does (`labels.review.toggle`), and a wrapping
-  `<span title>` says which way it currently sits (`Form.Check` forwards `title` to neither the input nor its
-  label). It `PATCH`es the label with its name and priority carried across unchanged, flips the row
-  optimistically and **rolls back plus shows `labels.actionError` if the save fails** — a switch left flipped
-  after a failed save would tell the operator a label is out of the game when it is not. The switch lives here
-  and deliberately **not inside the game**: "don't ask me about this label again" mid-round is a decision about
-  a whole label taken at the worst moment, and "not this photo" is already a per-photo rejection,
+  `LabelsPage` = `/labels` **a wrapping cloud of label chips** with counts + `Nový štítek`
+  (editor/admin). It used to be a column of full-width rows: a label is one word and a number, so a
+  real library's 113 of them ran a 5 730 px document with no controls at all, in which the alphabet
+  alone decided what you met first — and dozens of numbered `DumNN` house-number labels occupied the
+  entire start of it. Now the labels are chips (`LabelCloud` + `LabelChip`), the numbered families
+  **fold into one expandable chip each**, and the page carries a name search + an ordering
+  (`LabelFilterBar` over the pure `lib/labelBrowse`), defaulting to **most photos first** rather than
+  to the alphabet. The whole view (`q`/`sort`/`open`) lives in the **URL** (`LABELS_DEFAULTS` are
+  omitted from it), so Back steps through it and a link carries the exact one; only the live-typed
+  query replaces its history entry. Searching everything away shows `labels.noMatches`; the loading
+  placeholder is `ChipCloudSkeleton`, not the old row stack. Creating or renaming a label **expands
+  the family its name lands in** (`withFamilyOpen`) — a new `Dum99` disappearing behind a folded chip
+  the moment it is saved reads as a failed save. The row's three inline controls became a per-chip
+  "…" `Dropdown` (**Přejmenovat** · the review-game action · **Smazat** behind a divider), because
+  repeated on a hundred chips they would cost more width than the names — the width the cloud exists
+  to save. The **review-game setting** (`label.review_enabled`, editor/admin only) reads there as the
+  action it is (`labels.review.enable`/`disable`) instead of as a switch, and a label the game skips
+  carries a muted `slash-circle` on its chip plus `labels.review.off` in the link's `aria-label`, so
+  the state is still visible without opening the menu. It `PATCH`es the label with its name and
+  priority carried across unchanged, flips the chip optimistically and **rolls back plus shows
+  `labels.actionError` if the save fails** — a chip left flipped after a failed save would tell the
+  operator a label is out of the game when it is not. The setting lives here and deliberately **not
+  inside the game**: "don't ask me about this label again" mid-round is a decision about a whole label
+  taken at the worst moment, and "not this photo" is already a per-photo rejection,
   `LabelDetailPage` = `/labels/:uid` a photo grid scoped to the label (`useScopedPhotos` + `FilterBar` + URL);
   the tiles carry the label scope in the detail link (`detailQuery` with `label=uid`) → Esc/Back/prev-next from a photo
   returns to the label; + a **Promítání** button + for editors **hover-select** → the shared
@@ -2305,6 +2334,19 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `count` by `photo_count` (the figure the tile's caption shows) with the name as the tie-break; a
   subject type this frontend doesn't know yet counts as `other` rather than falling out of every option,
   and the counts are taken **after** the search but **before** the type split,
+  `labelBrowse.ts` = the same job for the labels index, plus the **numbered-family folding**: the
+  `LabelsView` type (`q`/`sort`/`open`) + `LABELS_DEFAULTS` (everything, **most photos first** — the
+  alphabet is precisely the order that puts `DumNN` first) + `toLabelSort` +
+  `labelBrowseOptions(view, language)` + `browseLabels(labels, options)` → `{entries, matched,
+  filteredOut}`. An entry is either one label or a `LabelFamilyEntry` standing in for several:
+  `familyPrefix('Dum 12')` → `Dum` (a trailing number after a prefix that ends in a non-digit, so a
+  bare `2024` belongs nowhere), `familyKey` folds that prefix for the URL (`dum`), and a family folds
+  only from **`LABEL_FAMILY_MIN` (4) members** up — below it the chip would hide less than it costs.
+  A family sorts by its members' **total** count (so folding cannot bury a big prefix) or by its
+  prefix, and its members sort by the same rule (numeric collation → `Dum4` before `Dum11`). **A
+  search dissolves the families entirely**: typing `dum4` asks for `Dum4` itself, not for a chip to
+  open again. `openFamilies`/`toggleFamilyOpen`/`withFamilyOpen` encode the expanded set as the
+  comma-separated `open` URL value,
   `searchView.ts` = the `SearchView` type (= `LibraryView` + `mode`)
   + `SEARCH_DEFAULTS` (mode `hybrid`) + the `toMode` sanitizer;
   `auditView.ts` = the `AuditView` type (filters + `offset`, string-only for the URL) + `AUDIT_DEFAULTS`
@@ -2844,7 +2886,8 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   the `?` by the query field, a row action whose word shrinks to a glyph on a phone); **`.kk-min-w-0`**
   (`min-width: 0` on a flex item — without it the item refuses to shrink below the minimum of its content and
   one long unbreakable name pushes the whole row/header past the viewport; used by the rows of
-  `LabelsPage`/`SavedSearchesPage` and the title groups in `AlbumDetailPage`/`LabelDetailPage`);
+  `SavedSearchesPage` and the title groups in `AlbumDetailPage`/`LabelDetailPage` — the labels cloud
+  carries the same `min-width: 0` inside `.kk-label-chip__link` instead);
   **`.kk-multiline`** (`white-space: pre-wrap` — a value the user typed into a `<textarea>` and that is read
   back as plain text: HTML would collapse its line breaks into spaces, so a two-line photo description came
   back as one line. `pre-wrap`, not `pre-line`, keeps a run of spaces too — in hand-typed text that is the
@@ -2930,7 +2973,13 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   none` for dragging, hidden at widths ≤ 575.98px); **the filter bar** `.kukatko-filter-*`
   (`.kukatko-filter-search` = the search field grows and fills the header's row, `.kukatko-filter-sort`
   a minimum width, `.kukatko-filter-panel` = 44px tap targets on the panel's elements, `.kukatko-filter-chip`
-  = a tappable pill chip with a cross); the CSS variable `--kukatko-navbar-height`),
+  = a tappable pill chip with a cross); **the labels cloud** `.kk-label-*` (`.kk-label-cloud` = the
+  wrapping flex cloud, `.kk-label-chip` = the pill that owns the hairline and the hover, split between
+  `__link` (`min-width: 0` so a long name truncates, `__name`/`__count`/`__skipped` inside) and the
+  caret-less `__menu`; `.kk-label-family` = the dashed toggle of a folded numbered family and
+  `.kk-label-cloud__group`/`__members` = the full-width line an expanded one takes, plus its boxed
+  member list; on a coarse pointer the whole pill grows to 44px instead of trimming its menu);
+  the CSS variable `--kukatko-navbar-height`),
   `test/setup.ts` (a jsdom **`window.matchMedia` stub** — a non-matching default, individual tests can
   override it to simulate a phone — a **`PointerEvent` stub** (a `MouseEvent` subclass; without it jsdom
   dispatches `pointerdown`/`pointermove` as a bare `Event` with no `clientX`/`clientY`, so a drag test
