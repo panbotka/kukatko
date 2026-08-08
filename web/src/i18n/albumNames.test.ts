@@ -23,6 +23,13 @@ describe('albumDisplayTitle', () => {
     expect(albumDisplayTitle('United Kingdom', 'cs')).toBe('Spojené království')
   })
 
+  it('renders a place album composed of a country and a year in Czech', () => {
+    // The importers wrote hundreds of these next to hand-named Czech albums.
+    expect(albumDisplayTitle('Czech Republic 2026', 'cs')).toBe('Česko 2026')
+    expect(albumDisplayTitle('Czech Republic 2025', 'cs')).toBe('Česko 2025')
+    expect(albumDisplayTitle('Austria 2019', 'cs')).toBe('Rakousko 2019')
+  })
+
   it('leaves everything else exactly as it is stored', () => {
     // The whole point: a hand-written album name is data, not a pattern to fix.
     expect(albumDisplayTitle('Dovolená 2019', 'cs')).toBe('Dovolená 2019')

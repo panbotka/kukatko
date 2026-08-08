@@ -556,7 +556,7 @@ export function PhotoDetailPage() {
   // it and lives in the technical details.
   const captureDate =
     photo.taken_at !== undefined ? formatDateTimeMinutes(photo.taken_at, i18n.language) : ''
-  const displayTitle = photoDisplayTitle(titleSource(photo), captureDate)
+  const displayTitle = photoDisplayTitle(titleSource(photo, i18n.language), captureDate)
   // The one-string form, for alt text and the players' titles.
   const title = photoTitleText(displayTitle, t('photo.untitled'))
 

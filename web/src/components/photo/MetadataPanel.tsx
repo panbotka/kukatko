@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next'
 
 import { type Coordinates, formatCoordinates, parseCoordinates } from '../../lib/coordinates'
 import { formatDateTimeMinutes } from '../../lib/format'
-import { joinKeywords, sameKeywords, splitKeywords } from '../../lib/photoFacts'
+import { joinKeywords, sameKeywords, splitAiNote, splitKeywords } from '../../lib/photoFacts'
 import { type Place } from '../../services/map'
 import { type PhotoDetail, type PhotoMetadataUpdate, updatePhoto } from '../../services/photos'
 import { Icon } from '../Icon'
@@ -373,6 +373,14 @@ export function MetadataPanel({ photo, canWrite, onUpdated, footer }: MetadataPa
         .filter((part) => part !== '')
         .join(' ')
     : takenAtText
+
+  // The automatic description as the reader sees it: without the `AI_MODEL:` line
+  // the photo-sorter import appended to some 2500 of them. The model itself is not
+  // lost — the technical details name it — and the *stored* note is untouched, so
+  // the edit form below still holds the field exactly as the catalogue has it: an
+  // editor is editing the raw value, and a save can never quietly drop the trailer
+  // off a photo they only came to retitle.
+  const aiNoteText = splitAiNote(photo.ai_note).text
 
   const parsedCoords = useMemo(() => parseCoordinates(coordText), [coordText])
   const hasCoordText = coordText.trim() !== ''
@@ -847,7 +855,7 @@ export function MetadataPanel({ photo, canWrite, onUpdated, footer }: MetadataPa
       <EditableField
         label={t('photo.metadata.aiNote')}
         prompt={t('photo.metadata.aiNotePrompt')}
-        value={photo.ai_note}
+        value={aiNoteText}
         canWrite={canWrite}
         onEdit={startEditing}
       />

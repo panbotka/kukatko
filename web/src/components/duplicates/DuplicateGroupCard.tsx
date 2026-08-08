@@ -10,6 +10,7 @@ import { Link } from 'react-router-dom'
 
 import { formatBytes, formatDate } from '../../lib/format'
 import { pairId } from '../../lib/duplicateCompare'
+import { photoLabel } from '../../lib/photoTitle'
 import { type DuplicateGroup, type DuplicateMember } from '../../services/duplicates'
 import { thumbUrl } from '../../services/photos'
 import { FadeInImage } from '../FadeInImage'
@@ -124,7 +125,7 @@ interface DuplicateMemberTileProps {
 /** A single comparison tile: thumbnail, metadata and the keep-this radio. */
 function DuplicateMemberTile({ member, selected, groupId, onSelect }: DuplicateMemberTileProps) {
   const { t, i18n } = useTranslation()
-  const label = member.title !== '' ? member.title : member.file_name
+  const label = photoLabel(member, i18n.language)
   return (
     <div className={`border rounded p-2 h-100 ${selected ? 'border-primary border-2' : ''}`}>
       <Link to={`/photos/${member.uid}`} className="d-block mb-2">

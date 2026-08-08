@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
-import { photoDisplayTitle, photoTitleText, type TitleSource } from './photoTitle'
+import { type PhotoDetail } from '../services/photos'
+
+import {
+  photoDisplayTitle,
+  photoLabel,
+  photoTitleText,
+  titleSource,
+  type TitleSource,
+} from './photoTitle'
 
 /** A photo with no title, no date and no place — the empty starting point. */
 function photo(over: Partial<TitleSource> = {}): TitleSource {
@@ -97,5 +105,64 @@ describe('photoTitleText', () => {
 
   it('uses the untitled wording when the photo has no identity', () => {
     expect(photoTitleText({ kind: 'unknown' }, 'Bez názvu')).toBe('Bez názvu')
+  })
+})
+
+/** A catalogue row, filled in only as far as the title rule can see. */
+function detail(overrides: Partial<PhotoDetail> = {}): PhotoDetail {
+  return {
+    uid: 'p1',
+    file_hash: 'h',
+    file_name: 'IMG_8423.jpeg',
+    file_size: 1,
+    file_mime: 'image/jpeg',
+    file_width: 1,
+    file_height: 1,
+    taken_at_source: 'exif',
+    thumb_url: '/thumb',
+    download_url: '/download',
+    title: '',
+    description: '',
+    camera_make: '',
+    camera_model: '',
+    lens_model: '',
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+    files: [],
+    albums: [],
+    labels: [],
+    ...overrides,
+  }
+}
+
+describe('titleSource', () => {
+  it('translates the country the importers composed into the stored title', () => {
+    const got = titleSource(detail({ title: 'Jan Novák / Czech Republic / 2026' }), 'cs')
+    expect(got.title).toBe('Jan Novák / Česko / 2026')
+  })
+
+  it('leaves a title somebody wrote themselves alone', () => {
+    expect(titleSource(detail({ title: 'Vánoce u babičky' }), 'cs').title).toBe('Vánoce u babičky')
+  })
+
+  it('shows the stored English on an English UI', () => {
+    const got = titleSource(detail({ title: 'Jan Novák / Czech Republic / 2026' }), 'en')
+    expect(got.title).toBe('Jan Novák / Czech Republic / 2026')
+  })
+})
+
+describe('photoLabel', () => {
+  it('is the title, with its country names read in Czech', () => {
+    expect(photoLabel({ title: 'Jan / Czech Republic / 2026', file_name: 'IMG_1.jpg' }, 'cs')).toBe(
+      'Jan / Česko / 2026',
+    )
+  })
+
+  it('falls back to the file name when the photo has no title', () => {
+    expect(photoLabel({ title: '', file_name: 'IMG_1.jpg' }, 'cs')).toBe('IMG_1.jpg')
+  })
+
+  it('never touches a hand-written title', () => {
+    expect(photoLabel({ title: 'Léto u vody', file_name: 'IMG_1.jpg' }, 'cs')).toBe('Léto u vody')
   })
 })

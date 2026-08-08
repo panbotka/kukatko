@@ -242,7 +242,9 @@ implemented**, per the task's conservative-changes rule.
   photo app but could get tooltips. 📋 ⚪⚪ — **verified still open (2026-08-05)**, plus three
   harder leaks found by using the page: `AI_MODEL: gemini-2.5-flash` rendered as part of the
   auto description, literal `Unknown` for camera/lens, and a raw SHA256 + PhotoPrism UID +
-  lat/long. See `UX_RESEARCH.md` **N12** and **N26**.
+  lat/long. See `UX_RESEARCH.md` **N12** and **N26**. ✅ fixed 2026-08-08 for the first two:
+  the model trailer is split off the description (and named in Technical details instead) and a
+  stored `Unknown` renders no row at all.
 - **New (2026-08-05), mobile only:** the faces and info panels are full-viewport opaque sheets on
   a phone, so the photo they describe is completely hidden, and the viewer's close button
   overlaps the panel title. See `UX_RESEARCH.md` **N6**.
@@ -361,7 +363,8 @@ on unexplained jargon that even a non-developer admin will struggle with.
    "semantic/full-text", "clustered", "geotag" (✅ all fixed), plus still-present "perceptual
    hash / embedding distance", "dead jobs / dead-letter", "orphan files", "box". 📋
    — **extended 2026-08-05:** the list also has to cover copy that reaches *every* role —
-   "Embeddingy" on `/stats`, `AI_MODEL: gemini-2.5-flash` and `Unknown` on photo detail, and
+   "Embeddingy" on `/stats`, `AI_MODEL: gemini-2.5-flash` and `Unknown` on photo detail (✅ both
+   fixed 2026-08-08, see **N12**), and
    the flag buttons named after their glyph ("Oko", "Palec nahoru", "Označené okem" — ✅ fixed
    2026-08-08: they are named after the act now, "Vybrat"/"Zamítnout"/"Prohlédnout později",
    each with a one-sentence tooltip). See `UX_RESEARCH.md` **N11**, **N12**, **N22**.

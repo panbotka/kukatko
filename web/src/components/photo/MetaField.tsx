@@ -1,10 +1,15 @@
 import { type ReactNode } from 'react'
 
+import { metaValue } from '../../lib/photoFacts'
+
 /** Props for {@link MetaField}. */
 export interface MetaFieldProps {
   /** The (already translated) field label. */
   label: string
-  /** The formatted value; an empty or absent value omits the row entirely. */
+  /**
+   * The formatted value; an empty, absent or placeholder value (`Unknown`)
+   * omits the row entirely.
+   */
   value?: string
   /**
    * Native tooltip on the value — where the row shows a shortened form: the exact
@@ -26,18 +31,24 @@ export interface MetaFieldProps {
  * keeps the panels free of blank "Lens: —" noise, so a photo without EXIF simply
  * shows fewer rows.
  *
+ * The same rule covers the importers' placeholders — `metaValue` drops a stored
+ * `Unknown` exactly as it drops an empty string. It lives here rather than at each
+ * caller so that *every* row of the table obeys it: "Fotoaparát: Unknown" is an
+ * English word in the middle of a Czech table saying precisely as much as a blank.
+ *
  * Values wrap rather than push the page sideways — a hash, an ICC profile name or
  * a path is long, and horizontal scrolling on the detail page is never the answer.
  */
 export function MetaField({ label, value, title, children }: MetaFieldProps) {
-  if (children === undefined && (value === undefined || value === '')) {
+  const shown = metaValue(value)
+  if (children === undefined && shown === undefined) {
     return null
   }
   return (
     <>
       <dt className="col-sm-5 small text-secondary fw-normal">{label}</dt>
       <dd className="col-sm-7 mb-2 text-break" title={title}>
-        {children ?? value}
+        {children ?? shown}
       </dd>
     </>
   )
