@@ -30,6 +30,24 @@ const LANDSCAPE: Insets = { top: 0, right: 47, bottom: 21, left: 47 }
 
 const REM_PX = 16
 
+/**
+ * The spacing scale, read out of `tokens.css`. App rules spend tokens rather than
+ * raw lengths, so resolving a padding means resolving `var()` first. Read, never
+ * transcribed — a retuned scale has to move these guards with it.
+ */
+const SPACING = spacingScale()
+
+/** Parses `--kk-space-*` out of `tokens.css` into a token → length map. */
+function spacingScale(): Map<string, string> {
+  const out = new Map<string, string>()
+  for (const match of readCss('src/styles/tokens.css').matchAll(
+    /(--kk-space-\d+)\s*:\s*([^;]+);/g,
+  )) {
+    out.set(match[1], match[2].trim())
+  }
+  return out
+}
+
 /** Splits a value into its top-level terms, keeping `calc(a + b)` groups whole. */
 function terms(value: string): string[] {
   const out: string[] = []
@@ -69,6 +87,14 @@ function lengthPx(term: string, insets: Insets): number {
   const absolute = /^(-?[\d.]+)(rem|px)$/.exec(term)
   if (absolute !== null) {
     return Number(absolute[1]) * (absolute[2] === 'rem' ? REM_PX : 1)
+  }
+  const token = /^var\(\s*(--[\w-]+)\s*\)$/.exec(term)
+  if (token !== null) {
+    const value = SPACING.get(token[1])
+    if (value === undefined) {
+      throw new Error(`not a spacing token: ${token[1]}`)
+    }
+    return lengthPx(value, insets)
   }
   throw new Error(`unsupported length: ${term}`)
 }
@@ -214,5 +240,29 @@ describe('duplicate compare safe-area insets', () => {
     expect(rows.left).toBeGreaterThanOrEqual(LANDSCAPE.left)
     expect(rows.right).toBeGreaterThanOrEqual(LANDSCAPE.right)
     expect(valuePx(paddingSides(footer).bottom, LANDSCAPE)).toBeGreaterThanOrEqual(LANDSCAPE.bottom)
+  })
+})
+
+/**
+ * The phone filter drawer's footer, which owns the bottom edge while it is open.
+ * The drawer is a full-height offcanvas layered over `.kk-tabbar` — the element
+ * that normally carries the home-indicator inset for the whole app — so the
+ * footer has to carry that inset itself; without it the button that closes the
+ * drawer sits in the swipe strip, which is exactly the tap this footer exists to
+ * make easy. Landscape matters as much as portrait here: the home bar is slimmer
+ * but still there, and the footer is the same rule in both.
+ */
+describe('filter drawer footer safe-area insets', () => {
+  const footer = rule(readCss('src/styles/app.css'), /\.kukatko-filter-footer\s*(?=\{)/)
+
+  it('keeps the even padding it reads as where there is no home indicator', () => {
+    // The inset is *added* to the spacing, never a replacement for it, so a
+    // desktop-width drawer is unchanged.
+    expect(paddingPx(DESKTOP, footer)).toEqual({ top: 12, right: 12, bottom: 12, left: 12 })
+  })
+
+  it('clears the home-indicator bar in portrait and in landscape alike', () => {
+    expect(paddingPx(PORTRAIT, footer).bottom).toBeGreaterThanOrEqual(PORTRAIT.bottom)
+    expect(paddingPx(LANDSCAPE, footer).bottom).toBeGreaterThanOrEqual(LANDSCAPE.bottom)
   })
 })

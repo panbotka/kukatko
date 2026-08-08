@@ -483,7 +483,11 @@
       "toggle": "Filters",
       "dateRange": "Date taken",
       "removeFilter": "Remove filter: {{name}}",
-      "clear": "Clear filters"
+      "clear": "Clear filters",
+      "apply_one": "Show {{count}} photo",
+      "apply_other": "Show {{count}} photos",
+      "applyEmpty": "No photos — close",
+      "applyClose": "Close filters"
     },
     "density": {
       "label": "Tiles per row",

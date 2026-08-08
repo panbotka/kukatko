@@ -467,7 +467,22 @@ here.
   **Filtry** button with a badge of the active-filter count; advanced filters (date from/to, location, private,
   camera, archive, **min. rating ≥1…≥5**, **picked/rejected flag**) live in a collapsible
   panel — inline `Collapse` on desktop, `Offcanvas` on mobile per `matchMedia` (the shared hook `useIsNarrowViewport`,
-  defensive against jsdom, where `matchMedia` returns `undefined`); each active filter = a removable
+  defensive against jsdom, where `matchMedia` returns `undefined`).
+  **The mobile drawer ends in a sticky footer** (`FilterDrawerFooter`, `.offcanvas-footer.kukatko-filter-footer`):
+  the drawer covers the screen, so the „Počet fotek: N" line stays behind it and filtering was blind —
+  set a year, a person and a rating, scroll ten fields back up to the cross (the only exit) and only there
+  learn the combination matches nothing. The footer's **primary button carries the live count**
+  („Zobrazit 227 fotek", from the same `total` prop, so it follows every filter change with the drawer
+  open) and closes the drawer; at `total === 0` it says „Žádné fotky — zavřít" instead of promising a grid
+  that isn't there and **stays usable** (getting out must always be possible), and with `total` undefined
+  („nothing searched for yet") it drops the number for „Zavřít filtry". Beside it a secondary
+  **„Zrušit filtry"** (only when there is something to clear) that deliberately **does not close** —
+  clearing is the recovery from an empty set and the count beside it shows the recovery worked.
+  Sticky needs no positioning: `.offcanvas` is already a flex column whose `.offcanvas-body` grows and
+  scrolls, so a footer **after** the body is pinned to the bottom edge *and* subtracted from the scroll
+  area (the last field scrolls above it, no reserved padding to keep in sync); the footer carries
+  `env(safe-area-inset-bottom)` itself, because the drawer covers the `.kk-tabbar` that normally owns that
+  edge. Each active filter = a removable
   **chip** (`buildChips`, a pill with a cross, clears only that filter — the `q` query has no chip,
   it has its own field; the photo count below the chips comes from the `total` prop, which is **optional** —
   omit it and the bar states nothing (the live region stays mounted, so the number is announced when it

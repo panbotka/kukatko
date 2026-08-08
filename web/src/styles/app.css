@@ -1132,6 +1132,37 @@ body {
   min-height: 2.75rem;
 }
 
+/*
+ * The phone filter drawer's sticky footer — the way out of the drawer, with the
+ * live result count on it (`FilterDrawerFooter`).
+ *
+ * No positioning is needed to make it stick: Bootstrap's `.offcanvas` is already
+ * a flex column whose `.offcanvas-body` grows and scrolls, so a footer placed
+ * after the body is pinned to the bottom edge *and* subtracted from the scroll
+ * area. The last field therefore scrolls above the footer instead of hiding
+ * under it, with no reserved padding to keep in sync with the footer's height.
+ *
+ * It carries the home-indicator inset itself, because the drawer covers the tab
+ * bar that normally owns the bottom edge (`.kk-tabbar`) — without it the buttons
+ * would sit in the swipe strip. The background is the panel's own plate
+ * (`inherit`), so the footer reads as part of the drawer and the hairline is
+ * what separates it from the scrolling fields.
+ *
+ * The element also carries Bootstrap's `.offcanvas-footer` — the structural name
+ * for this slot, which 5.3 does not style — so the markup stays conventional and
+ * these rules stay the only thing describing it.
+ */
+.kukatko-filter-footer {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  gap: var(--kk-space-2);
+  padding: var(--kk-space-3);
+  padding-bottom: calc(var(--kk-space-3) + env(safe-area-inset-bottom, 0px));
+  background-color: inherit;
+  border-top: 1px solid var(--kk-surface-border);
+}
+
 /* Active-filter chips: a comfortably tappable pill with a trailing remove
    button. Sized so the whole chip clears the touch-target floor. */
 .kukatko-filter-chip {
