@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { formatByteCount, formatBytes, formatDateTime, formatDuration } from '../../lib/format'
 import {
   aspectRatio,
-  formatMime,
+  fileFormat,
   megapixels,
   metaValue,
   orientation,
@@ -36,6 +36,9 @@ export interface TechnicalDetailsProps {
 
 /** The DOM id of the collapsible region, referenced by `aria-controls`. */
 const REGION_ID = 'photo-technical-details'
+
+/** The DOM id of the nested developer region, referenced by `aria-controls`. */
+const DEVELOPER_REGION_ID = 'photo-technical-details-developer'
 
 /**
  * Whether a formatted value has anything to show — the same question
@@ -67,6 +70,47 @@ function MetaGroup({ title, children }: { title: string; children: ReactNode }) 
 }
 
 /**
+ * The last group of the card, and the only one that is itself collapsed: the
+ * machine identifiers — the SHA256 of the bytes and the UIDs the photo carried
+ * over from PhotoPrism and photo-sorter.
+ *
+ * They are live data (uid search and every metadata sidecar are built on them),
+ * so they stay reachable; but a person looking at a family photograph has no use
+ * for a 64-character hex string, and a table that opens on one reads as an app
+ * written for technicians. Behind one more click they are still two seconds away
+ * for whoever actually needs them.
+ *
+ * It looks like a {@link MetaGroup} whose heading grew a chevron, so the card
+ * keeps its rhythm; the heading *is* the button, because a separate toggle beside
+ * a heading is two things to hit for one action.
+ */
+function DeveloperGroup({ title, children }: { title: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="mb-3">
+      <Button
+        variant="link"
+        size="sm"
+        className="px-0 small text-uppercase text-secondary fw-semibold text-decoration-none"
+        aria-expanded={open}
+        aria-controls={DEVELOPER_REGION_ID}
+        onClick={() => {
+          setOpen(!open)
+        }}
+      >
+        <Icon name={open ? 'chevron-down' : 'chevron-right'} className="me-1" />
+        {title}
+      </Button>
+      {open && (
+        <dl id={DEVELOPER_REGION_ID} className="row mb-0 mt-2">
+          {children}
+        </dl>
+      )}
+    </div>
+  )
+}
+
+/**
  * Everything the app knows about a photo — capture settings, the IPTC/XMP credit
  * block, the file's own technicals, its cached place, a video's streams and where
  * an imported photo came from — grouped and collapsed behind an expander that is
@@ -77,6 +121,10 @@ function MetaGroup({ title, children }: { title: string; children: ReactNode }) 
  * A field the photo has no value for is not rendered at all, and nor is a group
  * that would hold only such fields: a scan with no EXIF shows a handful of rows
  * rather than a wall of dashes.
+ *
+ * The identifiers a machine needs and a person does not — the SHA256 and the
+ * import UIDs — sit one further click down, in {@link DeveloperGroup}. Nothing is
+ * hidden; it is only sorted by who it is for.
  */
 export function TechnicalDetails({
   photo,
@@ -120,7 +168,9 @@ export function TechnicalDetails({
   const pixels = megapixels(photo.file_width, photo.file_height, locale)
   const resolution =
     pixels === undefined ? undefined : `${pixels} ${t('photo.technical.megapixelUnit')}`
-  const format = formatMime(photo.file_mime)
+  // One row, not two: the codec column repeats the MIME type for a plain JPEG and
+  // only earns its brackets when it says something new (HEIC encoded with HEVC).
+  const format = fileFormat(photo.file_mime, photo.image_codec)
   const size = photo.file_size > 0 ? formatBytes(photo.file_size, locale) : undefined
   const exif = orientation(photo.file_orientation)
   const orientationLabel =
@@ -188,12 +238,13 @@ export function TechnicalDetails({
     resolution,
     orientationLabel,
     photo.color_profile,
-    photo.image_codec,
-    photo.file_hash,
   ].some(has)
   const hasLocationGroup = has(coordinates) || has(altitude) || place !== undefined
   const hasVideoGroup =
     isVideo && [duration, photo.video_codec, photo.audio_codec, audio, fps].some(has)
+  // A photo imported from neither library and (impossibly) without a hash has
+  // nothing to put behind the extra click, so it gets no expander either.
+  const hasDeveloperGroup = [photo.file_hash, photo.photoprism_uid, photo.photosorter_uid].some(has)
 
   async function copyHash() {
     try {
@@ -284,25 +335,6 @@ export function TechnicalDetails({
               <MetaField label={t('photo.technical.resolution')} value={resolution} />
               <MetaField label={t('photo.technical.orientation')} value={orientationLabel} />
               <MetaField label={t('photo.technical.colorProfile')} value={photo.color_profile} />
-              <MetaField label={t('photo.technical.imageCodec')} value={photo.image_codec} />
-              {photo.file_hash !== '' && (
-                <MetaField label={t('photo.technical.fileHash')} title={photo.file_hash}>
-                  <span className="d-inline-flex align-items-center gap-2">
-                    <code className="text-break">{shortHash(photo.file_hash)}</code>
-                    <Button
-                      variant="link"
-                      size="sm"
-                      className="p-0 lh-1 text-decoration-none"
-                      aria-label={t('photo.technical.copyHash')}
-                      onClick={() => {
-                        void copyHash()
-                      }}
-                    >
-                      <Icon name={copied ? 'check-lg' : 'clipboard'} />
-                    </Button>
-                  </span>
-                </MetaField>
-              )}
               <MetaField
                 label={t('photo.technical.createdAt')}
                 value={formatDateTime(photo.created_at, locale)}
@@ -337,17 +369,40 @@ export function TechnicalDetails({
 
           <MetaGroup title={t('photo.technical.groups.origin')}>
             <MetaField label={t('photo.metadata.uploadedBy')} value={uploader} />
-            <MetaField
-              label={t('photo.technical.photoprismUid')}
-              value={photo.photoprism_uid}
-              title={photo.photoprism_uid}
-            />
-            <MetaField
-              label={t('photo.technical.photosorterUid')}
-              value={photo.photosorter_uid}
-              title={photo.photosorter_uid}
-            />
           </MetaGroup>
+
+          {hasDeveloperGroup && (
+            <DeveloperGroup title={t('photo.technical.groups.developer')}>
+              {photo.file_hash !== '' && (
+                <MetaField label={t('photo.technical.fileHash')} title={photo.file_hash}>
+                  <span className="d-inline-flex align-items-center gap-2">
+                    <code className="text-break">{shortHash(photo.file_hash)}</code>
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="p-0 lh-1 text-decoration-none"
+                      aria-label={t('photo.technical.copyHash')}
+                      onClick={() => {
+                        void copyHash()
+                      }}
+                    >
+                      <Icon name={copied ? 'check-lg' : 'clipboard'} />
+                    </Button>
+                  </span>
+                </MetaField>
+              )}
+              <MetaField
+                label={t('photo.technical.photoprismUid')}
+                value={photo.photoprism_uid}
+                title={photo.photoprism_uid}
+              />
+              <MetaField
+                label={t('photo.technical.photosorterUid')}
+                value={photo.photosorter_uid}
+                title={photo.photosorter_uid}
+              />
+            </DeveloperGroup>
+          )}
 
           {canWrite && (
             <RegenerateThumbnailButton uid={photo.uid} onRegenerated={onThumbnailRegenerated} />

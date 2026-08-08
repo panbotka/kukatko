@@ -79,10 +79,56 @@ beforeEach(async () => {
 })
 
 describe('PhotoLocation', () => {
-  it('shows the mini-map and coordinates when geotagged', () => {
-    renderLocation({})
+  it('names the place under the map and keeps the numbers on hover', () => {
+    renderLocation({
+      photo: photo({
+        place: {
+          country: 'Česko',
+          region: 'Jihomoravský kraj',
+          city: 'Brno',
+          place_name: 'Špilberk',
+        },
+      }),
+    })
+
     expect(screen.getByTestId('map')).toBeInTheDocument()
-    expect(screen.getByText('50.08000, 14.42000')).toBeInTheDocument()
+    // "50.08000, 14.42000" is not an answer to "where is this?" — the place is.
+    expect(screen.queryByText('50.08000, 14.42000')).not.toBeInTheDocument()
+    const line = screen.getByText('Špilberk, Brno, Česko')
+    expect(line).toHaveAttribute('title', '50.08000, 14.42000')
+  })
+
+  it('says the place is unknown rather than falling back to the numbers', () => {
+    renderLocation({})
+
+    const line = screen.getByText('The place is not known yet.')
+    expect(line).toHaveAttribute('title', '50.08000, 14.42000')
+  })
+
+  it('replaces the cached place with the one just looked up', async () => {
+    reverseGeocodeMock.mockResolvedValue({
+      name: 'Špilberk Castle',
+      location: 'Brno, Czechia',
+      regional_structure: [],
+    })
+    const user = userEvent.setup()
+    renderLocation({
+      photo: photo({
+        place: {
+          country: 'Česko',
+          region: 'Jihomoravský kraj',
+          city: 'Brno',
+          place_name: 'Špilberk',
+        },
+      }),
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Look up place' }))
+
+    // Answering a click with the string that was already on screen would read as
+    // the button having done nothing.
+    expect(await screen.findByText('Špilberk Castle')).toBeInTheDocument()
+    expect(screen.queryByText('Špilberk, Brno, Česko')).not.toBeInTheDocument()
   })
 
   it('reverse-geocodes the place on demand', async () => {

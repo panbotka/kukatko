@@ -1675,7 +1675,8 @@
         "file": "Soubor",
         "location": "Poloha",
         "video": "Video",
-        "origin": "Původ"
+        "origin": "Původ",
+        "developer": "Pro vývojáře"
       },
       "flags": "Příznaky",
       "private": "Soukromá",
@@ -1714,7 +1715,6 @@
         "8": "Otočeno o 90° vlevo"
       },
       "colorProfile": "Barevný profil",
-      "imageCodec": "Kodek obrazu",
       "fileHash": "Otisk (SHA256)",
       "copyHash": "Zkopírovat otisk",
       "createdAt": "Přidáno do knihovny",
@@ -1762,6 +1762,7 @@
       "lookup": "Zjistit místo",
       "lookupError": "Místo se nepodařilo zjistit.",
       "clear": "Vymazat polohu",
+      "unknownPlace": "Místo zatím neurčeno.",
       "lookupBusy": "Místo se právě zjišťuje — chvilku strpení.",
       "clearBusy": "Poloha se právě maže — chvilku strpení."
     },

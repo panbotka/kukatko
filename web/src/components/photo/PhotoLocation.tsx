@@ -4,6 +4,8 @@ import { useTranslation } from 'react-i18next'
 
 import { ReasonedButton } from '../ReasonedButton'
 import { LeafletMap } from '../map/LeafletMap'
+import { formatCoordinates } from '../../lib/coordinates'
+import { placeLabel } from '../../lib/photoPlace'
 import { type GeocodeResult, type MapFeature, reverseGeocode } from '../../services/map'
 import { type PhotoDetail, updatePhoto } from '../../services/photos'
 
@@ -40,12 +42,34 @@ type GeocodeState =
   | { status: 'ready'; place: GeocodeResult }
 
 /**
+ * What the line under the map says: the place a lookup just resolved, else the
+ * one the `places` job cached on the photo, else nothing — for which the caller
+ * has words of its own.
+ *
+ * A freshly looked-up name wins over the cached hierarchy because it is what the
+ * user just asked for; answering a click with the string that was already on
+ * screen would read as the button having done nothing.
+ */
+function shownPlace(photo: PhotoDetail, geocode: GeocodeState): string {
+  if (geocode.status === 'ready') {
+    const { name, location } = geocode.place
+    return name !== '' ? name : location
+  }
+  return placeLabel(photo.place)
+}
+
+/**
  * The GPS panel of the detail page: a Leaflet mini-map (over the mapy.com backend
  * proxy, so the key stays server-side) centred on the photo's coordinate, a
  * button to reverse-geocode the place name on demand (saving mapy.com credits by
  * only looking it up when asked), and — for editors — a button to clear the
  * location. When the photo has no coordinate it shows a hint; geotagging is done
  * via the metadata edit form.
+ *
+ * Under the map the panel names the **place**, not the coordinate: the cached
+ * hierarchy the `places` job resolved, replaced by a fresh lookup once one is
+ * made. The numbers stay in the line's `title` — a hover for whoever wants to
+ * paste them into a map — and in full in the technical details.
  *
  * Clearing is an editor's power, so for a viewer that button is **absent** rather
  * than greyed out (the app-wide rule, see `ReasonedButton`); the lookup button
@@ -59,6 +83,7 @@ export function PhotoLocation({ photo, canWrite, onUpdated }: PhotoLocationProps
 
   const lat = photo.lat
   const lng = photo.lng
+  const place = shownPlace(photo, geocode)
   if (lat === undefined || lng === undefined) {
     return <p className="text-secondary small mb-0">{t('photo.location.none')}</p>
   }
@@ -103,9 +128,16 @@ export function PhotoLocation({ photo, canWrite, onUpdated }: PhotoLocationProps
         />
       </div>
 
-      <div className="small text-secondary mb-2">
-        {lat.toFixed(5)}, {lng.toFixed(5)}
-      </div>
+      {/* Where the photo was taken, in words. The coordinate itself is still one
+          hover away — and spelled out in full in the technical details — but
+          "49.39322, 16.70869" is not an answer to "where is this?" for anyone
+          who is not holding a map. */}
+      <p
+        className={place !== '' ? 'mb-2' : 'small text-secondary mb-2'}
+        title={formatCoordinates({ lat, lng }, 5)}
+      >
+        {place !== '' ? place : t('photo.location.unknownPlace')}
+      </p>
 
       <div className="d-flex gap-2 flex-wrap align-items-center">
         {/* Looking a place up is a read: it costs mapy.com credits, not write
@@ -138,11 +170,6 @@ export function PhotoLocation({ photo, canWrite, onUpdated }: PhotoLocationProps
         )}
       </div>
 
-      {geocode.status === 'ready' && (
-        <p className="mt-2 mb-0">
-          {geocode.place.name !== '' ? geocode.place.name : geocode.place.location}
-        </p>
-      )}
       {geocode.status === 'error' && (
         <p className="mt-2 mb-0 text-secondary small">{t('photo.location.lookupError')}</p>
       )}

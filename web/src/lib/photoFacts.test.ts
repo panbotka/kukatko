@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   addKeywords,
   aspectRatio,
+  fileFormat,
   formatMime,
   joinKeywords,
   megapixels,
@@ -69,6 +70,37 @@ describe('formatMime', () => {
 
   it('is empty for an empty type', () => {
     expect(formatMime('')).toBe('')
+  })
+})
+
+describe('fileFormat', () => {
+  it('states the format once when the codec repeats it', () => {
+    // The old table said "Format: JPEG" over "Image codec: jpeg" — the same fact
+    // twice, once in each spelling.
+    expect(fileFormat('image/jpeg', 'jpeg')).toBe('JPEG')
+    expect(fileFormat('image/jpeg', 'JPEG')).toBe('JPEG')
+    expect(fileFormat('image/png', 'png')).toBe('PNG')
+  })
+
+  it('forgives the alternative spellings of the same codec', () => {
+    expect(fileFormat('image/jpeg', 'jpg')).toBe('JPEG')
+    expect(fileFormat('image/tiff', 'tif')).toBe('TIFF')
+  })
+
+  it('keeps a codec that is genuinely a second fact', () => {
+    expect(fileFormat('image/heic', 'hevc')).toBe('HEIC (HEVC)')
+    expect(fileFormat('video/quicktime', 'avc1')).toBe('MOV (AVC1)')
+  })
+
+  it('falls back to whichever of the two is known', () => {
+    expect(fileFormat('image/jpeg', undefined)).toBe('JPEG')
+    expect(fileFormat('image/jpeg', '  ')).toBe('JPEG')
+    expect(fileFormat('', 'hevc')).toBe('HEVC')
+  })
+
+  it('is empty when neither is known, so the row is dropped', () => {
+    expect(fileFormat('', '')).toBe('')
+    expect(fileFormat('', undefined)).toBe('')
   })
 })
 

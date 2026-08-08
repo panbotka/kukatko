@@ -1621,7 +1621,8 @@
         "file": "File",
         "location": "Location",
         "video": "Video",
-        "origin": "Origin"
+        "origin": "Origin",
+        "developer": "For developers"
       },
       "flags": "Flags",
       "private": "Private",
@@ -1660,7 +1661,6 @@
         "8": "Rotated 90° left"
       },
       "colorProfile": "Colour profile",
-      "imageCodec": "Image codec",
       "fileHash": "Hash (SHA256)",
       "copyHash": "Copy the hash",
       "createdAt": "Added to the library",
@@ -1708,6 +1708,7 @@
       "lookup": "Look up place",
       "lookupError": "Could not look up the place.",
       "clear": "Clear location",
+      "unknownPlace": "The place is not known yet.",
       "lookupBusy": "The place is being looked up — one moment.",
       "clearBusy": "The location is being cleared — one moment."
     },
