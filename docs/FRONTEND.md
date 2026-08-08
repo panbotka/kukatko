@@ -1305,7 +1305,10 @@ here.
   letterboxed the photo inside it, and every percentage box drifted off the faces (85 photos with a marker,
   orientations 6 and 8). The importers now de-orient on the way in (`internal/exif` `RawDimensions`) and
   already-imported rows are corrected by `kukatko maintenance repair --dimensions`, whose dry run is
-  `maintenance scan` (the `transposed_dimensions` finding).
+  `maintenance scan` (the `transposed_dimensions` finding). The same repair's other half moves the **face boxes**
+  that were normalized against that transposed frame — most of them are a correct box in the raw frame and need
+  the quarter turn, not a rescale — but it decides that per row from the photo's own markers and leaves a row it
+  cannot place exactly where it is (`transposed_face_boxes` is that half's dry run).
   The boxes are colored by state (`lib/faceState`) — **two colors: green = named, yellow = not named**, deliberately
   no third one (see the `faceState.ts` note below); the selected one is primary + a ring, and every box carries a
   **number `#N`** — in **reading order**, see `useFaces` below. **A name is drawn only on the ACTIVE box**

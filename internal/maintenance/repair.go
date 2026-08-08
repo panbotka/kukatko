@@ -68,6 +68,11 @@ type RepairResult struct {
 	DimensionsFixed int `json:"dimensions_fixed"`
 	// FaceBoxesFixed is the number of face rows re-normalised alongside them.
 	FaceBoxesFixed int `json:"face_boxes_fixed"`
+	// FaceBoxesSkipped is the number of face rows with the same defect that were
+	// deliberately left untouched because the evidence does not say which coordinate
+	// space their box is in. They stay exactly as they are, so a later run can pick
+	// them up once the photo carries a marker to reconcile them against.
+	FaceBoxesSkipped int `json:"face_boxes_skipped"`
 	// FaceLinksCleared is the number of face rows whose surplus claim on a marker
 	// another face won was cleared.
 	FaceLinksCleared int `json:"face_links_cleared"`
@@ -153,20 +158,28 @@ func affectedPhotos(duplicates []vectors.DuplicateFaceMarker) []string {
 }
 
 // repairDimensions rewrites the pixel dimensions of every photo the scan reports
-// as transposed and re-normalises the faces recorded against that transposed
+// as transposed and then corrects the face boxes recorded against that transposed
 // frame, when the dimension repair is selected.
 //
-// The photo row is fixed first and the faces second, because the faces repair is
-// keyed on the photo's corrected (stored) pair; both are guarded on the exact
-// state they replace, so an interrupted run resumes cleanly and a re-run is a
-// no-op. Unlike the other repairs it writes the catalogue directly instead of
-// enqueuing work — there is nothing to regenerate, only two columns and a bbox to
-// correct — which is why `maintenance scan` reports it first and the flag is
-// opt-in.
+// The photo rows are fixed first because the faces half reads the corrected pair
+// as the frame it reasons against. Unlike the other repairs it writes the
+// catalogue directly instead of enqueuing work — there is nothing to regenerate,
+// only two columns and a bbox to correct — which is why `maintenance scan` reports
+// it and the flag is opt-in.
 func (s *Service) repairDimensions(ctx context.Context, opts RepairOptions, res *RepairResult) error {
 	if !opts.Dimensions {
 		return nil
 	}
+	if err := s.repairPhotoDimensions(ctx, res); err != nil {
+		return err
+	}
+	return s.repairFaceBoxes(ctx, res)
+}
+
+// repairPhotoDimensions writes the file's own dimensions onto every photo whose
+// columns hold them transposed. Each write is guarded on the exact pair it
+// replaces, so an interrupted run resumes cleanly and a re-run is a no-op.
+func (s *Service) repairPhotoDimensions(ctx context.Context, res *RepairResult) error {
 	mismatches, err := s.photos.ListDimensionMismatches(ctx)
 	if err != nil {
 		return fmt.Errorf("maintenance: listing dimension mismatches: %w", err)
@@ -179,16 +192,37 @@ func (s *Service) repairDimensions(ctx context.Context, opts RepairOptions, res 
 		if repairErr != nil {
 			return fmt.Errorf("maintenance: repairing dimensions of %s: %w", m.UID, repairErr)
 		}
-		if !changed {
-			continue
+		if changed {
+			res.DimensionsFixed++
 		}
-		res.DimensionsFixed++
-		faces, faceErr := s.vectors.RepairFaceDimensions(ctx, m.UID, m.RawWidth, m.RawHeight)
-		if faceErr != nil {
-			return fmt.Errorf("maintenance: repairing face dimensions of %s: %w", m.UID, faceErr)
-		}
-		res.FaceBoxesFixed += int(faces)
 	}
+	return nil
+}
+
+// repairFaceBoxes corrects the face rows whose cached frame is their photo's
+// stored pair transposed, applying to each the transform that photo's markers
+// support and leaving alone every row whose space the evidence cannot establish.
+//
+// It runs over the whole catalogue rather than over the photos the photos half
+// just fixed: a photo corrected by an earlier run still carries face rows to
+// decide, and a row skipped for want of evidence has to remain reachable once that
+// evidence arrives. Both halves are guarded on the state they replace, so no box
+// is ever moved twice.
+func (s *Service) repairFaceBoxes(ctx context.Context, res *RepairResult) error {
+	plans, err := s.vectors.PlanFaceBoxRepair(ctx)
+	if err != nil {
+		return fmt.Errorf("maintenance: planning face box repair: %w", err)
+	}
+	for _, plan := range plans {
+		if plan.Transform == vectors.TransformSkip {
+			res.FaceBoxesSkipped++
+		}
+	}
+	applied, err := s.vectors.ApplyFaceBoxRepair(ctx, plans)
+	if err != nil {
+		return fmt.Errorf("maintenance: repairing face boxes: %w", err)
+	}
+	res.FaceBoxesFixed += int(applied)
 	return nil
 }
 

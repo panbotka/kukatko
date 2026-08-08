@@ -55,10 +55,16 @@ configuration key both here **and** into `config.example.yaml`.
   (each opt-in; thumbnails/phashes enqueue `thumbnail` jobs drained by a running server's worker,
   embeddings/faces backfill, orphan import synchronously via the upload pipeline; `--dimensions` writes the
   catalogue directly — it rewrites the pixel dimensions of quarter-turned photos whose columns hold the
-  **displayed** frame instead of the stored one, plus the faces normalized against that transposed frame,
-  taking every correction from the file's own EXIF document rather than from its provenance; its **dry run is
-  `maintenance scan`**, whose `transposed dims` line and sample are exactly what it would rewrite, and every
-  write is guarded on the state it replaces, so a re-run is a no-op and the swap is undone by swapping back.
+  **displayed** frame instead of the stored one, taking that correction from the file's own EXIF document rather
+  than from its provenance, and then corrects the face boxes normalized against the same transposed frame.
+  Those boxes are **not** all in one coordinate space (whether the embeddings sidecar auto-rotated before
+  detecting has varied), so this half decides **per row from the photo's own face markers**: a quarter turn for a
+  box that is really in the raw frame, a per-axis rescale for one the sidecar had already rotated, or only the
+  cached frame when the box itself is right. A row the markers cannot place is left completely untouched
+  (`left alone=N` in the output) and stays findable, so a later run picks it up once the photo carries a marker
+  to reconcile it against. Its **dry run is `maintenance scan`**, whose `transposed dims` and `transposed faces`
+  lines and samples are exactly what it would rewrite, and every write is guarded on the state it replaces, so a
+  re-run is a no-op, the photo pair's swap is undone by swapping back and no face box is ever moved twice.
   It does **not** rewrite the metadata sidecars, which carry a copy of the dimensions — follow it with
   `kukatko sidecar backfill` if the corrected pair should reach them too.
   `--face-markers` likewise writes the catalogue directly: a marker describes one region, so at most one

@@ -41,6 +41,16 @@ type Report struct {
 	// applies the orientation to them rotates a second time. Listing them is the
 	// dry run of `maintenance repair --dimensions`.
 	TransposedDimensions Finding `json:"transposed_dimensions"`
+	// TransposedFaceBoxes are the face rows `maintenance repair --dimensions` would
+	// rewrite: rows whose cached frame is their photo's stored pair transposed and
+	// whose coordinate space the photo's markers establish. Counted per face row,
+	// sampled by photo uid.
+	//
+	// Rows with the same defect whose space the evidence cannot establish are
+	// deliberately not counted: the repair leaves them exactly as they are so a later
+	// run — once the photo has a marker to reconcile them against — can still pick
+	// them up, and a finding is what the repair would do, not what is wrong.
+	TransposedFaceBoxes Finding `json:"transposed_face_boxes"`
 	// DuplicateFaceMarkers are markers cached on more than one detected face,
 	// sampled by marker uid. A marker describes one region, so a second face
 	// claiming it is a surplus link — it renders one person twice on the photo and
@@ -59,6 +69,7 @@ func (r Report) Clean() bool {
 		r.MissingFaces.Count == 0 &&
 		r.MissingPhashes.Count == 0 &&
 		r.TransposedDimensions.Count == 0 &&
+		r.TransposedFaceBoxes.Count == 0 &&
 		r.DuplicateFaceMarkers.Count == 0
 }
 
