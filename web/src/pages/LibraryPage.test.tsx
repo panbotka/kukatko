@@ -1,10 +1,10 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { forwardRef, type ReactNode, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { type GridStateSnapshot, type ListRange, type VirtuosoGridHandle } from 'react-virtuoso'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
@@ -248,6 +248,24 @@ function LocationProbe() {
       </button>
     </>
   )
+}
+
+/**
+ * Points `window.matchMedia` at a fixed phone/desktop answer. The shared test
+ * setup stubs a non-matching (desktop) `matchMedia`; a phone-width test overrides
+ * it so the page and its filter bar take their narrow branch.
+ */
+function mockViewport(narrow: boolean): void {
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches: narrow,
+    media: query,
+    onchange: null,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  }))
 }
 
 /** Minimal viewer auth context: enough for LibraryPage's role-gated controls. */
@@ -947,5 +965,48 @@ describe('LibraryPage scroll position', () => {
     await screen.findByRole('link', { name: 'p0.jpg' })
 
     expect(grid.restoredFrom).toEqual(gridState(4000))
+  })
+})
+
+/**
+ * What a phone gets instead of the page's heading row. "Knihovna" over the photo
+ * wall repeated what the bottom tab bar already highlights, and the two view
+ * actions beside it are occasional — together they were a fifth of a 852px
+ * screen spent on chrome. So the heading goes `visually-hidden` (the page still
+ * opens with an `h1` for a screen reader) and the actions move into the filters
+ * drawer, which is the surface with room for them.
+ */
+describe('LibraryPage on a phone', () => {
+  afterEach(() => {
+    mockViewport(false)
+  })
+
+  it('keeps the heading for a screen reader but takes its row back for photos', async () => {
+    mockViewport(true)
+    servePagesOf(3)
+
+    renderLibrary()
+    await screen.findByRole('link', { name: 'p0.jpg' })
+
+    const heading = screen.getByRole('heading', { level: 1, name: 'Library' })
+    expect(heading).toHaveClass('visually-hidden')
+  })
+
+  it('moves the view actions into the filters drawer rather than dropping them', async () => {
+    mockViewport(true)
+    const user = userEvent.setup()
+    servePagesOf(3)
+
+    renderLibrary()
+    await screen.findByRole('link', { name: 'p0.jpg' })
+    // Nothing is lost — but nothing costs a row either, and the buttons exist
+    // exactly once.
+    expect(screen.queryByRole('button', { name: 'Save view' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Slideshow' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /Filters/ }))
+    const drawer = await screen.findByRole('dialog')
+    expect(within(drawer).getByRole('button', { name: 'Save view' })).toBeInTheDocument()
+    expect(within(drawer).getByRole('link', { name: 'Slideshow' })).toBeInTheDocument()
   })
 })

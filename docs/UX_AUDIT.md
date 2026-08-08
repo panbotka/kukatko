@@ -152,6 +152,20 @@ implemented**, per the task's conservative-changes rule.
   **Období** control (`PeriodFilter`) in the primary row — decades expandable to years, exact dates
   pinned under them, one `taken_after`/`taken_before` pair in the URL — and it *reads the period out
   of the query* rather than contradicting it. ✅
+- **The phone screen — fixed:** on a 393 × 852 phone the first photo used to start at **371 px**
+  and the tab bar took 54 more, leaving 53 % of the screen for photographs. Above them: the
+  „Knihovna" heading with Slideshow and Uložit pohled, the search field, the sort select, the
+  density stepper next to Filtry, a two-line note about the search box, and „Počet fotek: 20637".
+  Six rows of chrome for one field and one button's worth of daily use — on the device the library
+  is actually browsed on. Now, below `md`: the heading is `visually-hidden` (the tab bar already
+  says where you are), the view actions, the sort, the density and the note are in the Filtry
+  drawer, and the count rides in the header row under the Filtry button. Measured again on
+  production at 393 × 852: the first photo row starts at **150 px**, 76 % of the screen. ✅
+- **The phone had no timeline — fixed:** `.kukatko-timeline` was `display: none` below 576 px, so
+  the one control that can skip a 369 018 px list to 1965 existed only where it was least needed.
+  A phone rail replaces the hiding: a 2.5 rem strip of year labels on the right edge (the grid
+  reserves the lane, so it covers no tile and steals no tap), faint at rest and at full strength —
+  plated, with the month bubble — for 1.6 s after any scroll or touch. ✅
 
 ### Favorites (`/favorites`)
 - Simplest, cleanest page. Excellent action-guiding empty state ("Tap the heart on a photo…").

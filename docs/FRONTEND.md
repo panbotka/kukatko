@@ -148,7 +148,9 @@ here.
   `github` icon (`aria-hidden`); texts `footer.*` (cs/en). It renders in normal flow — on a
   short page it simply follows the content, overlapping and floating nothing. Inside is a space-between
   flex row: operator + GitHub on the left, `children` fills the right side (today the admin job-queue
-  badge); `.kukatko-footer` shares safe-area padding with `.kukatko-main`),
+  badge); `.kukatko-footer` shares safe-area padding with `.kukatko-main` — which carries
+  `pt-3 pt-md-4 pb-4`, one step less top padding on a phone, where that gap comes straight out of the
+  first screen),
   `JobQueueBadges` (right side of the footer: a compact badge with the job-queue state **for maintainers only**
   — the `/jobs` endpoint is a maintainer-only operational capability; via `useAuth().isMaintainer` +
   `useJobStats` — a non-maintainer renders nothing and **makes no request**.
@@ -459,15 +461,39 @@ here.
   that a year label (`.kukatko-timeline-year`, on a `.has-year` tick) stays inside, so the bubble and the
   year labels **never overlap** even at a year boundary (where they fall onto one line); the overlay is
   `position: fixed`, so a loading/empty timeline renders nothing and
-  doesn't shift the layout, on small widths it hides via `styles/app.css` `.kukatko-timeline*`; only for
-  the default newest sort), `FilterBar`
-  (**a redesign for a calm default state + progressive disclosure**: the header holds only a prominent
+  doesn't shift the layout; only for
+  the default newest sort. **The phone gets the same rail, narrowed and asleep** — below 576 px it used
+  to be `display:none`, which left the device photos are actually browsed on with nothing but scrolling
+  to cross a 369 000 px list. There (`styles/app.css` `@media (max-width: 575.98px)`) it is a 2.5 rem
+  strip on the right edge showing **only its year labels** (each on its own plate — it lies over
+  photographs, not beside them), starting 6 rem below the navbar so it can't take a tap meant for the
+  **Filtry** button. It **sleeps**: at rest a 0.55-opacity scale, and any activity — the grid scrolling
+  under it (`activeIndex` moving, no listener of its own) or a finger on it — sets `is-active` for
+  `IDLE_MS` (1.6 s), which brings it to full strength, backs it with a blurred plate and reveals the month
+  bubble. The state is a class; everything it *means* is CSS, so on desktop it means nothing. `LibraryPage`
+  reserves the strip as grid padding (`.kukatko-grid-timeline-lane`, phone widths only, while the scrubber
+  is shown) — a phone has no container margin for the rail to hang in, and without the lane it would cover
+  the right column's favourite hearts and take their taps), `FilterBar`
+  (**a redesign for a calm default state + progressive disclosure**: on desktop the header holds a prominent
   search field (the visual anchor, the largest element), sort (incl. **by rating**),
   `GridDensityControl` and a
   **Filtry** button with a badge of the active-filter count; advanced filters (location, private,
   camera, archive, **min. rating ≥1…≥5**, **picked/rejected flag**) live in a collapsible
   panel — inline `Collapse` on desktop, `Offcanvas` on mobile per `matchMedia` (the shared hook `useIsNarrowViewport`,
   defensive against jsdom, where `matchMedia` returns `undefined`).
+  **On a phone the header is the search field and the Filtry button, and nothing else.** That desktop
+  header alone stacked into three rows there, and with the page heading, the search note and the count line
+  above it the first photo started at 371 px of an 852 px screen (measured on production at 393 × 852);
+  now it starts at **150 px**. What moved: sort and density into the drawer (`DisplayControls`, its first
+  section — they are what was *taken away* from the bar, so they must be the first thing found), the search
+  note to the drawer's foot (`SearchNote`, defined once and placed in exactly one of the two), the page's own
+  view actions to the drawer's very bottom (**`mobileActions`**, a `ReactNode` the page hands over — rendered
+  only when narrow, so the buttons are never in the document twice), and the **result count into the header
+  row itself**, wrapping onto a full-width line under the Filtry button (`.kukatko-filter-status`
+  + `flex-row-reverse`, with a 2.75 rem right pad so it clears the timeline rail's lane). `.kukatko-filter-search`
+  drops to an 8 rem flex-basis below `md` (an 18 rem basis is wider than the screen, which wrapped the button
+  onto its own row) and the bar's bottom margin is `.kukatko-filter-bar` (1 rem, 0.5 rem on a phone) rather
+  than an `mb-3` utility.
   **The mobile drawer ends in a sticky footer** (`FilterDrawerFooter`, `.offcanvas-footer.kukatko-filter-footer`):
   the drawer covers the screen, so the „Počet fotek: N" line stays behind it and filtering was blind —
   set a period, a person and a rating, scroll ten fields back up to the cross (the only exit) and only there
@@ -823,7 +849,14 @@ here.
   `createSavedSearch` with the current view object as `params`) — live for **every** role, a saved search
   being personal like the favourite heart, and since 2026-08-08 carrying the same `savedSearches.saveViewTitle`
   one-liner the search header gives it, so it cannot be mistaken for one of the editor controls it stands next
-  to (see `UX_RESEARCH.md` **N14**),
+  to (see `UX_RESEARCH.md` **N14**).
+  **On a phone the page spends no row on a heading.** „Knihovna" over the photo wall repeated what the
+  bottom tab bar already highlights, and the two view actions beside it (Promítání, Uložit pohled) are
+  occasional; together they were a fifth of the first screen. Below `md` (`useIsNarrowViewport`) the
+  heading renders `visually-hidden` — the page still opens with an `h1` for a screen reader — and the two
+  actions are handed to `FilterBar` as **`mobileActions`**, which hosts them at the foot of the filters
+  drawer. Both are built once into a `viewActions` fragment and rendered in exactly one of the two places,
+  so neither button can end up in the document twice,
   `SavedSearchesPage` = `/saved` (any logged-in user, reached from the „Procházet" nav group as well as
   from the dropdown on `/search`) „Moje uložená hledání": a list of the current
   user's saved views, each link opens the exactly restored view (`savedSearchHref`), plus

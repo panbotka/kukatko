@@ -21,6 +21,16 @@ import {
  */
 const DRAG_THRESHOLD_PX = 3
 
+/**
+ * How long the rail stays "awake" after the last sign of activity — a scroll of
+ * the grid, or a touch of the rail itself. Awake it is fully opaque, carries a
+ * backing plate so its labels stay legible over the photographs it overlays, and
+ * shows the month bubble; asleep it fades back to a hint of a scale. On desktop
+ * the state changes nothing (the rail sits in its own margin and is always
+ * readable), so this only shapes the phone rail.
+ */
+const IDLE_MS = 1600
+
 /** A month the rail asks the grid to jump to. */
 export interface TimelineJump {
   /**
@@ -78,8 +88,17 @@ export interface TimelineScrubberProps {
  * As the grid scrolls, the tick owning the visible range start is highlighted
  * and a floating bubble names its month. The rail overlays the viewport
  * (`position: fixed`), so a loading or empty timeline simply renders nothing and
- * never shifts the grid layout; on very small screens it is hidden via CSS to
- * avoid crowding the grid.
+ * never shifts the grid layout.
+ *
+ * **The phone gets the same rail, narrowed and dimmed.** It used to be hidden
+ * below 576 px, which left a phone — where photos are actually browsed — with
+ * nothing but scrolling to cross a 369 000 px long list. So there the rail keeps
+ * only its year labels, in a strip along the right edge, and it sleeps: at rest
+ * it is a faint scale over the photographs, and any sign of activity — the grid
+ * scrolling under it, or a finger on it — wakes it for {@link IDLE_MS}, opaque,
+ * plated for legibility and showing the month bubble. That awake/asleep state is
+ * the `is-active` class; everything it means is CSS, and on desktop it means
+ * nothing at all.
  */
 export function TimelineScrubber({
   params,
@@ -99,6 +118,29 @@ export function TimelineScrubber({
   const draggingRef = useRef(false)
   const draggedRef = useRef(false)
   const dragOriginRef = useRef(0)
+
+  // Awake or asleep — see {@link IDLE_MS}. `bump` restarts the countdown, so a
+  // continuous scroll or drag keeps the rail up for as long as it lasts.
+  const [awake, setAwake] = useState(false)
+  const idleTimerRef = useRef<number | undefined>(undefined)
+  const bump = useCallback(() => {
+    setAwake(true)
+    window.clearTimeout(idleTimerRef.current)
+    idleTimerRef.current = window.setTimeout(() => {
+      setAwake(false)
+    }, IDLE_MS)
+  }, [])
+  // The grid's visible range moving *is* the scroll signal — no listener of our
+  // own — and the first run doubles as the rail introducing itself on arrival.
+  useEffect(() => {
+    bump()
+  }, [activeIndex, bump])
+  useEffect(
+    () => () => {
+      window.clearTimeout(idleTimerRef.current)
+    },
+    [],
+  )
 
   useEffect(() => {
     if (rail === null) {
@@ -170,6 +212,7 @@ export function TimelineScrubber({
       draggedRef.current = false
       dragOriginRef.current = event.clientY
       lastJumpedRef.current = null
+      bump()
       // The pointer is deliberately NOT captured here. Capturing on press
       // retargets the compatibility mouse events — and with them the `click` —
       // to the capturing element, so a tick would never see its own click and
@@ -184,7 +227,7 @@ export function TimelineScrubber({
         jumpToPointer(event.clientY)
       }
     },
-    [jumpToPointer],
+    [jumpToPointer, bump],
   )
 
   const handlePointerMove = useCallback(
@@ -192,6 +235,7 @@ export function TimelineScrubber({
       if (!draggingRef.current) {
         return
       }
+      bump()
       if (!draggedRef.current) {
         if (Math.abs(event.clientY - dragOriginRef.current) < DRAG_THRESHOLD_PX) {
           return
@@ -203,7 +247,7 @@ export function TimelineScrubber({
       }
       jumpToPointer(event.clientY)
     },
-    [rail, jumpToPointer],
+    [rail, jumpToPointer, bump],
   )
 
   const endDrag = useCallback(
@@ -257,7 +301,7 @@ export function TimelineScrubber({
   return (
     <nav
       ref={setRail}
-      className="kukatko-timeline"
+      className={`kukatko-timeline${awake ? ' is-active' : ''}`}
       aria-label={t('library.timeline.label')}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}

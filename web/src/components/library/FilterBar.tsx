@@ -1,5 +1,5 @@
 import type { TFunction } from 'i18next'
-import { useMemo, useState } from 'react'
+import { type ReactNode, useMemo, useState } from 'react'
 import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
 import Col from 'react-bootstrap/Col'
@@ -91,28 +91,47 @@ export interface FilterBarProps<T extends LibraryView> {
    * is the destination), and no link is rendered.
    */
   searchHref?: string
+  /**
+   * Page-level view actions (Slideshow, Save view) to host at the foot of the
+   * filters drawer, rendered **only on a narrow viewport**. A phone has no room
+   * for a page-heading row above the photos, so the page hands its actions here
+   * instead of spending a line of the first screen on them; on desktop the page
+   * keeps them in its own header and passes nothing.
+   */
+  mobileActions?: ReactNode
 }
 
 /**
  * Library filter + sort controls, built for a calm default and progressive
- * disclosure. The header is a single row: a prominent quick-filter field (the
- * visual anchor, matching title and description as you type), the sort selector,
- * the grid-density picker (how many photos sit side by side — a per-device
- * display preference, not part of the view), and a "Filters" toggle badged with
- * the count of active filters. On desktop the primary filter row — Period,
- * Album, Label, Person, the ways photos are actually found — sits below the
- * header in its own always-visible four-across row (the three entity pickers only
- * when the page supplies `facets`). On a phone that row would stack into four
- * full-width blocks that push the photos off the first screen, so there it folds
- * into the same disclosure surface as the rest of the filters. The remaining
- * filters (camera, archived, favorites, location, min rating, flag) live in a
- * collapsible panel on desktop and an offcanvas drawer on phones, so the resting
- * state stays uncluttered — the favorites toggle only when the page opts in via
- * `showFavorite`. Every active filter — the primary row included — is echoed as a
- * removable chip plus a single clear-all action, so a filtered set is never a
- * mystery even while the drawer is shut. The drawer closes on a sticky footer
- * carrying the live result count ({@link FilterDrawerFooter}) rather than only on
- * the cross ten fields back up.
+ * disclosure. On desktop the header is a single row: a prominent quick-filter
+ * field (the visual anchor, matching title and description as you type), the
+ * sort selector, the grid-density picker (how many photos sit side by side — a
+ * per-device display preference, not part of the view), and a "Filters" toggle
+ * badged with the count of active filters. The primary filter row — Period,
+ * Album, Label, Person, the ways photos are actually found — sits below it in
+ * its own always-visible four-across row (the three entity pickers only when the
+ * page supplies `facets`). The remaining filters (camera, archived, favorites,
+ * location, min rating, flag) live in a collapsible panel, so the resting state
+ * stays uncluttered — the favorites toggle only when the page opts in via
+ * `showFavorite`.
+ *
+ * **On a phone the header is the search field and the Filters button, and
+ * nothing else.** Photos are browsed mostly on phones, which is where the app
+ * has the least room: the desktop header alone stacked into three rows there,
+ * and with the page heading, the search note and the count line above it the
+ * first photo started past 350 px of a 852 px screen. So everything the header
+ * carries besides the search — the sort order, the grid density, the primary
+ * pickers, the note explaining the query language, and the page's own view
+ * actions (`mobileActions`) — folds into the offcanvas drawer, which has room to
+ * spare, and the result count rides in the header row itself, beside the
+ * Filters button that opens them ({@link FilterDrawerFooter} states it again on
+ * the way out). What is left above the photos is one field and one button.
+ *
+ * Every active filter — the primary row included — is echoed as a removable chip
+ * plus a single clear-all action, so a filtered set is never a mystery even
+ * while the drawer is shut. The drawer closes on a sticky footer carrying the
+ * live result count ({@link FilterDrawerFooter}) rather than only on the cross
+ * ten fields back up.
  *
  * There is exactly **one** control per thing being filtered. The time axis used
  * to have two — a Year dropdown of single years in the primary row and a
@@ -148,6 +167,7 @@ export function FilterBar<T extends LibraryView>({
   facets,
   showFavorite = false,
   searchHref,
+  mobileActions,
 }: FilterBarProps<T>) {
   const { t, i18n } = useTranslation()
   const [open, setOpen] = useState(false)
@@ -176,12 +196,27 @@ export function FilterBar<T extends LibraryView>({
     push({ ...LIBRARY_DEFAULTS, sort: view.sort, ...(showSearch ? {} : { q: view.q }) })
   }
 
-  // On a phone the primary pickers fold in here, above the advanced filters, so
-  // they no longer sit between the search box and the photos; on desktop they
-  // keep their own always-visible row (rendered below the header) and this panel
-  // holds only the advanced filters.
+  // The note under the search field, rendered in exactly one place: below the
+  // header row on desktop, inside the drawer on a phone.
+  const searchNote =
+    showSearch && searchHref !== undefined ? (
+      <SearchNote href={searchHref} semanticSearch={semanticSearch} />
+    ) : null
+
+  // Everything the phone header cannot afford folds in here, in the order a
+  // reader looks for it: the two display controls the header used to carry
+  // (sort, density), then the primary pickers, then the advanced filters, then
+  // the reference material (what the search box understands) and the page's own
+  // view actions. On desktop the display controls and the primary row keep their
+  // always-visible places above and this panel holds only the advanced filters.
   const panel = (
     <>
+      {narrow && (showSort || showDensity) && (
+        <>
+          <DisplayControls view={view} push={push} showSort={showSort} showDensity={showDensity} />
+          <hr className="my-3" />
+        </>
+      )}
       {narrow && (
         <>
           <PrimaryFilterRow view={view} facets={facets} push={push} queryFilters={queryFilters} />
@@ -189,11 +224,56 @@ export function FilterBar<T extends LibraryView>({
         </>
       )}
       <AdvancedFilters view={view} push={push} replace={replace} showFavorite={showFavorite} />
+      {narrow && searchNote !== null && (
+        <>
+          <hr className="my-3" />
+          {searchNote}
+        </>
+      )}
+      {narrow && mobileActions !== undefined && (
+        <>
+          <hr className="my-3" />
+          {/* `d-grid` stretches whatever the page handed over into full-width
+              rows, so a page never has to know how its buttons are laid out
+              here. */}
+          <div className="d-grid gap-2">{mobileActions}</div>
+        </>
+      )}
     </>
   )
 
+  // The result count and the clear-all action. On desktop they are a row of
+  // their own under the bar. On a phone the row rides *inside* the header's flex
+  // row as a full-width wrapped line, so the count lands directly beneath the
+  // Filters button (`flex-row-reverse` keeps it on that side) instead of costing
+  // a line of its own between the search field and the photos.
+  const status = (
+    <div
+      className={`kukatko-filter-status d-flex align-items-center justify-content-between gap-2 ${
+        narrow ? 'w-100 flex-row-reverse' : 'mt-2'
+      }`}
+    >
+      {/* The live region stays mounted while the count is absent, so the number
+          is announced when it arrives instead of a new region appearing. */}
+      <span className="text-secondary small" aria-live="polite">
+        {total !== undefined && t('library.count', { count: total })}
+      </span>
+      {clearVisible && (
+        <Button
+          type="button"
+          size="sm"
+          variant="link"
+          className="text-decoration-none px-0"
+          onClick={clearAll}
+        >
+          {t('library.filters.clear')}
+        </Button>
+      )}
+    </div>
+  )
+
   return (
-    <Form className="mb-3" role="search" aria-label={t('library.filters.barLabel')}>
+    <Form className="kukatko-filter-bar" role="search" aria-label={t('library.filters.barLabel')}>
       <div className="d-flex flex-wrap align-items-center gap-2">
         {showSearch && (
           <>
@@ -219,26 +299,22 @@ export function FilterBar<T extends LibraryView>({
           </>
         )}
 
-        {showSort && (
-          <Form.Select
+        {/* Sort and density are display preferences, used far less often than
+            the search field beside them. On a phone they are the difference
+            between a one-row header and a three-row one, so there they live in
+            the drawer (see `panel`). */}
+        {!narrow && showSort && (
+          <SortSelect
             className="kukatko-filter-sort w-auto"
             size="lg"
             value={view.sort}
-            aria-label={t('library.filters.sort')}
-            onChange={(e) => {
-              push({ sort: e.target.value })
+            onChange={(sort) => {
+              push({ sort })
             }}
-          >
-            <option value="newest">{t('library.sort.newest')}</option>
-            <option value="oldest">{t('library.sort.oldest')}</option>
-            <option value="added">{t('library.sort.added')}</option>
-            <option value="title">{t('library.sort.title')}</option>
-            <option value="size">{t('library.sort.size')}</option>
-            <option value="rating">{t('library.sort.rating')}</option>
-          </Form.Select>
+          />
         )}
 
-        {showDensity && <GridDensityControl />}
+        {!narrow && showDensity && <GridDensityControl />}
 
         <Button
           type="button"
@@ -259,27 +335,20 @@ export function FilterBar<T extends LibraryView>({
             </Badge>
           )}
         </Button>
+
+        {/* On a phone the count wraps onto its own line right under the Filters
+            button. It is the one number the reader wants from this bar, and it
+            now costs no line of its own. */}
+        {narrow && status}
       </div>
 
-      {/* The hint sits below the alignment row, not inside the search field's flex
+      {/* The note sits below the alignment row, not inside the search field's flex
           item: kept a sibling of that item it would stretch the search column and
-          the row's centre alignment would push the sort selector down. It names
-          what the field really does — substring over title/description/notes
-          *and* the full `key:value` query language, which works here exactly as
-          it does on `/search`; the `?` beside the field spells the language out.
-          The link to ranked full-text/semantic search only appears when semantic
-          search is actually available (the embeddings box is reachable), since
-          the link's own label promises semantics. */}
-      {showSearch && searchHref !== undefined && (
-        <div className="form-text mt-1">
-          {t('library.filters.searchHint')}{' '}
-          {semanticSearch && (
-            <Link to={searchHref} className="text-decoration-none">
-              {t('library.filters.fullSearchLink')}
-            </Link>
-          )}
-        </div>
-      )}
+          the row's centre alignment would push the sort selector down. On a phone
+          it is two lines of reference material above the photos, so there it
+          moves into the drawer (see `panel`) — the placeholder and the `?` beside
+          the field carry the same message at no cost in height. */}
+      {!narrow && searchNote}
 
       {/* Desktop keeps the primary pickers in a persistent row; on a phone they
           move into the filters drawer (see `panel` above) so the photos start
@@ -318,24 +387,7 @@ export function FilterBar<T extends LibraryView>({
         </div>
       )}
 
-      <div className="d-flex align-items-center justify-content-between mt-2">
-        {/* The live region stays mounted while the count is absent, so the number
-            is announced when it arrives instead of a new region appearing. */}
-        <span className="text-secondary small" aria-live="polite">
-          {total !== undefined && t('library.count', { count: total })}
-        </span>
-        {clearVisible && (
-          <Button
-            type="button"
-            size="sm"
-            variant="link"
-            className="text-decoration-none px-0"
-            onClick={clearAll}
-          >
-            {t('library.filters.clear')}
-          </Button>
-        )}
-      </div>
+      {!narrow && status}
 
       {narrow ? (
         <Offcanvas
@@ -371,6 +423,125 @@ export function FilterBar<T extends LibraryView>({
         </Collapse>
       )}
     </Form>
+  )
+}
+
+/**
+ * The note under the search field: what the box really does — a substring match
+ * over title, description and notes *and* the full `key:value` query language,
+ * which works here exactly as it does on `/search`; the `?` beside the field
+ * spells that language out in full. The link to ranked full-text/semantic search
+ * only appears when semantic search is actually available (the embeddings box is
+ * reachable), since the link's own label promises semantics.
+ *
+ * Defined once and placed twice: under the header row on desktop, at the foot of
+ * the filters drawer on a phone, where two lines of reference material would
+ * otherwise stand between the search field and the photographs.
+ */
+function SearchNote({ href, semanticSearch }: { href: string; semanticSearch: boolean }) {
+  const { t } = useTranslation()
+  return (
+    <div className="form-text mt-1">
+      {t('library.filters.searchHint')}{' '}
+      {semanticSearch && (
+        <Link to={href} className="text-decoration-none">
+          {t('library.filters.fullSearchLink')}
+        </Link>
+      )}
+    </div>
+  )
+}
+
+/**
+ * The sort selector, defined once for both of the places it is shown: the
+ * desktop header row (unlabelled, `aria-label` only, sized to the row) and the
+ * phone drawer (under a visible label, full width). Only the presentation
+ * differs — the option list must not.
+ */
+function SortSelect({
+  id,
+  className,
+  size,
+  value,
+  onChange,
+}: {
+  id?: string
+  className?: string
+  size?: 'sm' | 'lg'
+  value: string
+  onChange: (value: string) => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <Form.Select
+      id={id}
+      className={className}
+      size={size}
+      value={value}
+      aria-label={t('library.filters.sort')}
+      onChange={(e) => {
+        onChange(e.target.value)
+      }}
+    >
+      <option value="newest">{t('library.sort.newest')}</option>
+      <option value="oldest">{t('library.sort.oldest')}</option>
+      <option value="added">{t('library.sort.added')}</option>
+      <option value="title">{t('library.sort.title')}</option>
+      <option value="size">{t('library.sort.size')}</option>
+      <option value="rating">{t('library.sort.rating')}</option>
+    </Form.Select>
+  )
+}
+
+/**
+ * The two display controls the phone header cannot afford: the sort order and
+ * the grid density. They are not filters — nothing here narrows the result —
+ * but they are what the header used to spend two of its three rows on, and the
+ * drawer is the one surface with room to spare. Each keeps the label it wears
+ * elsewhere, so the reader recognises the control they lost from the bar rather
+ * than meeting a new one.
+ *
+ * Rendered only on a narrow viewport, so neither control ever exists twice in
+ * the document.
+ */
+function DisplayControls({
+  view,
+  push,
+  showSort,
+  showDensity,
+}: {
+  view: LibraryView
+  push: (patch: Partial<LibraryView>) => void
+  showSort: boolean
+  showDensity: boolean
+}) {
+  const { t } = useTranslation()
+  return (
+    <Row className="kukatko-filter-display g-3">
+      {showSort && (
+        <Col xs={12}>
+          <Form.Label className="small mb-1" htmlFor="library-sort">
+            {t('library.filters.sort')}
+          </Form.Label>
+          <SortSelect
+            id="library-sort"
+            value={view.sort}
+            onChange={(sort) => {
+              push({ sort })
+            }}
+          />
+        </Col>
+      )}
+      {showDensity && (
+        <Col xs={12}>
+          {/* A plain caption, not a `<label>`: the stepper is a button group,
+              which nothing can be labelled *for*. It names itself to assistive
+              technology through the group's own `aria-label`. */}
+          <div className="small mb-1">{t('library.density.label')}</div>
+          <GridDensityControl />
+        </Col>
+      )}
+    </Row>
   )
 }
 
