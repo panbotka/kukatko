@@ -66,6 +66,14 @@ It is **not** for you if you are looking for:
   for a family that speaks Czech. Even the English album names the import left behind (`January
   2026`, a country) read in Czech — at display time only, without touching what is stored.
 
+- **A phone is the first screen, not the leftover one.** Photos are browsed mostly on phones, so
+  that is where the chrome is cheapest: the library's header there is the search field and the
+  Filters button, with everything else — sort, tile density, the pickers, the view actions — folded
+  into a drawer that has room for them, and the first photo starts 150 px down an 852 px screen
+  instead of 371. The **timeline** — a date rail that jumps twenty thousand photos to 1965 in one
+  tap — is on the phone too, as a narrow strip of years along the right edge that fades to a hint
+  when you are not using it.
+
 Around that sit the ordinary things a library needs and Kukátko has: albums and labels, videos
 (range streaming, live photos), maps and browsing by place, a slideshow, per-user favourites and
 ratings, bulk editing, multi-upload from a phone, duplicate detection, a trash with retention,

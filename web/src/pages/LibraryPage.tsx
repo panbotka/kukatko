@@ -20,6 +20,7 @@ import { useBulkEdit } from '../hooks/useBulkEdit'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useGridKeyboardNavigation } from '../hooks/useGridKeyboardNavigation'
 import { useGridScrollMemory } from '../hooks/useGridScrollMemory'
+import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
 import { useLibraryFacets } from '../hooks/useLibraryFacets'
 import { useReloadKey } from '../hooks/useReloadKey'
 import { useWindowedPhotos } from '../hooks/useWindowedPhotos'
@@ -64,11 +65,20 @@ const ANCHOR_PARAM = 'at'
  * a range) and a floating batch action bar that rises once anything is picked, for
  * add-to-album, add/remove-label, favorite, archive, download and the full editor
  * via the bulk API. Escape clears the selection and hides the bar.
+ *
+ * On a phone the page spends no line on a heading row. "Knihovna" over the photo
+ * wall told the reader what the bottom tab bar already highlights, and the two
+ * view actions beside it (Slideshow, Save view) are occasional — together they
+ * cost a fifth of the first screen. The heading stays for assistive technology
+ * (`visually-hidden`, so the page still opens with an `h1`) and the actions move
+ * into the filters drawer, which {@link FilterBar} hosts for exactly this
+ * reason.
  */
 export function LibraryPage() {
   const { t, i18n } = useTranslation()
   useDocumentTitle(t('library.title'))
   const { canWrite } = useAuth()
+  const narrow = useIsNarrowViewport()
   const navigate = useNavigate()
   const [view, setView] = useUrlState<LibraryView>(LIBRARY_DEFAULTS)
   const [savingView, setSavingView] = useState(false)
@@ -258,30 +268,44 @@ export function LibraryPage() {
     setView({ ...LIBRARY_DEFAULTS, sort: view.sort })
   }
 
+  // The page's own view actions. Rendered in exactly one place — the heading row
+  // on desktop, the filters drawer on a phone — so neither button is ever in the
+  // document twice.
+  const viewActions = (
+    <>
+      {status === 'ready' && photos.length > 0 && (
+        <SlideshowStart scope={NO_SCOPE} view={view} count={total} />
+      )}
+      {/* Saving a view is personal, like the favourite heart beside it — the
+          saved search belongs to the reader, not to the library — so it is
+          live for every role, including a viewer, and carries the same
+          one-line explanation the search header gives it. */}
+      <Button
+        variant="outline-secondary"
+        size="sm"
+        title={t('savedSearches.saveViewTitle')}
+        onClick={() => {
+          setSavingView(true)
+        }}
+      >
+        {t('savedSearches.saveView')}
+      </Button>
+    </>
+  )
+
   return (
     <>
-      <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-        <h1 className="kk-page-title mb-0">{t('library.title')}</h1>
-        <div className="d-flex gap-1 flex-wrap">
-          {status === 'ready' && photos.length > 0 && (
-            <SlideshowStart scope={NO_SCOPE} view={view} count={total} />
-          )}
-          {/* Saving a view is personal, like the favourite heart beside it — the
-              saved search belongs to the reader, not to the library — so it is
-              live for every role, including a viewer, and carries the same
-              one-line explanation the search header gives it. */}
-          <Button
-            variant="outline-secondary"
-            size="sm"
-            title={t('savedSearches.saveViewTitle')}
-            onClick={() => {
-              setSavingView(true)
-            }}
-          >
-            {t('savedSearches.saveView')}
-          </Button>
+      {narrow ? (
+        // The tab bar already says which destination this is; the heading only
+        // has to survive for a screen reader, which reads it without it taking
+        // a row from the photographs.
+        <h1 className="visually-hidden">{t('library.title')}</h1>
+      ) : (
+        <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+          <h1 className="kk-page-title mb-0">{t('library.title')}</h1>
+          <div className="d-flex gap-1 flex-wrap">{viewActions}</div>
         </div>
-      </div>
+      )}
 
       <FilterBar
         view={view}
@@ -290,6 +314,7 @@ export function LibraryPage() {
         facets={facets}
         showFavorite
         searchHref={searchHref(view)}
+        mobileActions={narrow ? viewActions : undefined}
       />
 
       {/* A mistyped filter key (`osoba:` for `person:`) is not "no such photos":
@@ -333,6 +358,12 @@ export function LibraryPage() {
         <>
           <div
             ref={gridWrapRef}
+            // On a phone the fixed timeline rail has no page margin to hang in,
+            // so the grid gives it a lane of its own along the right edge
+            // (CSS, phone widths only). Without it the rail lies over the right
+            // column's tiles and takes the taps meant for their favourite
+            // hearts.
+            className={showScrubber ? 'kukatko-grid-timeline-lane' : undefined}
             // Keep the last rows scrollable clear of the floating bar while a
             // selection is active, so nothing hides behind it. The clearance
             // tracks the bar's measured height (`--kk-batch-clearance`), so it

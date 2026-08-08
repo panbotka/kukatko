@@ -1088,10 +1088,83 @@ body {
   pointer-events: none;
 }
 
-/* On very small screens the rail would crowd the grid — hide it there. */
+/*
+ * The phone rail. It used to be `display: none` below 576px, which took the one
+ * control that can skip a 369 000 px list away from the device the library is
+ * actually browsed on and left it with scrolling. It is here instead, narrowed
+ * to a strip along the right edge and asleep until it is needed:
+ *
+ * - Only the year labels survive. They are the scale a reader steers by, and
+ *   dropping their mark (the plain month ticks keep theirs, shortened) is what
+ *   fits a four-digit year into a 2.5rem strip — 6.5 % of a 393px screen.
+ * - Each year label carries its own plate, because on a phone the rail lies over
+ *   photographs rather than beside them, and light text over an arbitrary
+ *   photograph is not text.
+ * - At rest the whole rail is a faint scale; the `is-active` class the component
+ *   sets while the grid scrolls or a finger is down brings it to full strength,
+ *   backs it with a blurred plate and reveals the month bubble. So the rail is
+ *   present when it is being used and nearly invisible when it is not.
+ */
 @media (max-width: 575.98px) {
+  /* The lane the grid leaves for the rail. On desktop the rail hangs in the
+     container's own margin and costs the grid nothing; a phone has no margin, so
+     the page reserves the width instead of letting the rail lie over the right
+     column — where the tiles' favourite hearts are, and where a tap would reach
+     the rail rather than the heart. Two tiles of 169px instead of 188px is what
+     a usable timeline costs. */
+  .kukatko-grid-timeline-lane {
+    padding-right: 2.5rem;
+  }
+
   .kukatko-timeline {
+    /* Start below the phone header. The rail is fixed, so at the top of the page
+       it would otherwise lie across the Filters button and the count beside it,
+       and a tap aimed at the button would jump the grid to 2014 instead. 6rem is
+       that header: the field row, the count line under it, and the gaps around
+       them. Below it the rail has only photographs underneath. */
+    top: calc(var(--kukatko-navbar-height) + env(safe-area-inset-top, 0px) + 6rem);
+    width: 2.5rem;
+    opacity: 0.55;
+    transition:
+      opacity var(--kk-duration-base) var(--kk-ease-standard),
+      background-color var(--kk-duration-base) var(--kk-ease-standard);
+  }
+
+  .kukatko-timeline.is-active {
+    opacity: 1;
+    background-color: rgb(0 0 0 / 32%);
+    backdrop-filter: blur(var(--kk-header-blur));
+    -webkit-backdrop-filter: blur(var(--kk-header-blur));
+  }
+
+  /* The year label is the tick: its plate is the mark. */
+  .kukatko-timeline-tick.has-year {
+    padding: 0.1rem 0.3rem;
+    border-radius: var(--kk-radius-sm);
+    background-color: rgb(0 0 0 / 55%);
+  }
+
+  .kukatko-timeline-tick.has-year .kukatko-timeline-mark {
     display: none;
+  }
+
+  .kukatko-timeline-mark {
+    width: 0.5rem;
+  }
+
+  .kukatko-timeline-tick.active .kukatko-timeline-mark {
+    width: 0.8rem;
+  }
+
+  /* The bubble names the month under the reader's thumb, and only then: at rest
+     it would be a label floating over the photographs for no reason. */
+  .kukatko-timeline-current {
+    opacity: 0;
+    transition: opacity var(--kk-duration-base) var(--kk-ease-standard);
+  }
+
+  .kukatko-timeline.is-active .kukatko-timeline-current {
+    opacity: 1;
   }
 }
 
@@ -1105,9 +1178,43 @@ body {
   min-width: 12rem;
 }
 
+/* On a phone the field is the only thing left in the header row besides the
+   Filters button, and an 18rem basis is wider than the screen — so the button
+   wrapped onto a line of its own and the header cost two rows for two controls.
+   A small basis lets the field simply take whatever the button leaves. */
+@media (max-width: 767.98px) {
+  .kukatko-filter-search {
+    flex-basis: 8rem;
+    min-width: 8rem;
+  }
+}
+
+/* The bar's own bottom rhythm, in CSS rather than an `mb-3` utility so a phone
+   can spend less of the first screen on the gap between the last control and the
+   first photograph. Desktop keeps the 1rem the utility gave it. */
+.kukatko-filter-bar {
+  margin-bottom: var(--kk-space-4);
+}
+
+@media (max-width: 767.98px) {
+  .kukatko-filter-bar {
+    margin-bottom: var(--kk-space-2);
+  }
+}
+
 /* Keep the sort select from shrinking below a legible width in the header. */
 .kukatko-filter-sort {
   min-width: 9rem;
+}
+
+/* The count + clear-all line. On a phone it wraps under the Filters button and
+   keeps to that side (`flex-row-reverse` in the markup), so the reader reads the
+   number where the control that changes it is — but it has to stop short of the
+   right edge, which on a phone belongs to the fixed timeline rail. */
+@media (max-width: 767.98px) {
+  .kukatko-filter-status {
+    padding-right: 2.75rem;
+  }
 }
 
 /* The density stepper's centre chip shows the current column count. A stable

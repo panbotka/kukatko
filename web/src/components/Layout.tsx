@@ -338,7 +338,10 @@ export function Layout() {
           }}
         />
       )}
-      <Container as="main" className="py-4 kukatko-main">
+      {/* A phone pays for its top padding out of the first screen — on the
+          library that gap sits directly above the photographs — so it gets one
+          step less of it and `md`+ keeps the full 1.5rem. */}
+      <Container as="main" className="pt-3 pt-md-4 pb-4 kukatko-main">
         <AnnouncementBanner />
         <Outlet />
       </Container>

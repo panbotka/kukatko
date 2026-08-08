@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { type ReactNode } from 'react'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -26,6 +27,8 @@ interface BarProps {
   semanticSearch?: boolean
   /** The count to state; pass `undefined` for "there is nothing to count". */
   total?: number
+  /** The page's own view actions, which the drawer hosts on a phone. */
+  mobileActions?: ReactNode
 }
 
 /**
@@ -575,6 +578,17 @@ function mockViewport(narrow: boolean): void {
   }))
 }
 
+/**
+ * Opens the phone drawer and returns its panel. An open Offcanvas is a portal
+ * and the bar's own controls are siblings in the same document (not
+ * `aria-hidden`), so anything asserted *about the drawer* has to be scoped to
+ * this element with `within()`.
+ */
+async function openFilterDrawer(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: /Filters/ }))
+  return screen.findByRole('dialog')
+}
+
 describe('FilterBar narrow viewport (phone)', () => {
   afterEach(() => {
     // Restore the shared desktop default so later tests never inherit a phone.
@@ -611,6 +625,67 @@ describe('FilterBar narrow viewport (phone)', () => {
     // now carries the primary row too.
     expect(await screen.findByRole('button', { name: /^Period:/ })).toBeInTheDocument()
     expect(screen.getByLabelText('Album')).toBeInTheDocument()
+  })
+
+  it('leaves the phone header with the search field, the Filters button and the count', () => {
+    mockViewport(true)
+    renderBar(LIBRARY_DEFAULTS, vi.fn(), { total: 20637, searchHref: '/search?q=' })
+
+    // What survives above the photographs…
+    expect(screen.getByLabelText('Filter the library')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Filters/ })).toBeInTheDocument()
+    // …with the one number the bar states riding beside the button that changes
+    // it, rather than on a line of its own.
+    expect(screen.getByText('Photos: 20637')).toBeInTheDocument()
+
+    // …and what does not: the display controls and the note explaining the query
+    // language, which together cost two of the header's three rows.
+    expect(screen.queryByLabelText('Sort')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Tiles per row')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Searches title, description and notes/)).not.toBeInTheDocument()
+  })
+
+  it('folds the sort order, the density and the search note into the drawer', async () => {
+    mockViewport(true)
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    renderBar(LIBRARY_DEFAULTS, onChange, { searchHref: '/search?q=' })
+
+    const drawer = await openFilterDrawer(user)
+    // The controls are not merely present somewhere — they are inside the
+    // drawer, which is the only place a phone can reach them now.
+    await user.selectOptions(within(drawer).getByLabelText('Sort'), 'oldest')
+    expect(onChange).toHaveBeenCalledWith({ sort: 'oldest' })
+    expect(within(drawer).getByLabelText('Tiles per row')).toBeInTheDocument()
+    expect(within(drawer).getByText(/Searches title, description and notes/)).toBeInTheDocument()
+  })
+
+  it('hosts the page own view actions at the foot of the drawer, and only there', async () => {
+    mockViewport(true)
+    const user = userEvent.setup()
+    renderBar(LIBRARY_DEFAULTS, vi.fn(), {
+      mobileActions: <button type="button">Save view</button>,
+    })
+
+    // A phone has no heading row for them to sit in, so until the drawer is
+    // opened they are nowhere — and never in the document twice.
+    expect(screen.queryByRole('button', { name: 'Save view' })).not.toBeInTheDocument()
+    const drawer = await openFilterDrawer(user)
+    expect(within(drawer).getByRole('button', { name: 'Save view' })).toBeInTheDocument()
+  })
+
+  it('ignores the page view actions on a desktop, where the page keeps them itself', async () => {
+    mockViewport(false)
+    const user = userEvent.setup()
+    renderBar(LIBRARY_DEFAULTS, vi.fn(), {
+      mobileActions: <button type="button">Save view</button>,
+    })
+
+    await user.click(screen.getByRole('button', { name: /Filters/ }))
+    // The desktop panel is the same `panel` element as the drawer's body; were
+    // the actions unconditional, opening it would put a second copy of the
+    // page's own buttons on the page.
+    expect(screen.queryByRole('button', { name: 'Save view' })).not.toBeInTheDocument()
   })
 })
 

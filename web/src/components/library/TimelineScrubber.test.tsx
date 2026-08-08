@@ -1,7 +1,7 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../../i18n'
 import { type PhotoListParams, type Timeline } from '../../services/photos'
@@ -332,5 +332,84 @@ describe('TimelineScrubber', () => {
       expect(fetchMock).toHaveBeenCalled()
     })
     expect(screen.queryByRole('navigation')).not.toBeInTheDocument()
+  })
+})
+
+/**
+ * The awake/asleep state (`is-active`), which is what makes the rail usable on a
+ * phone: there it lies over the photographs rather than beside them, so it is a
+ * faint scale at rest and only comes to full strength — plated, with the month
+ * bubble showing — while it is being used. Everything that state *means* is CSS;
+ * what is asserted here is that the class tracks activity, since a rail stuck
+ * asleep is unreadable and one stuck awake permanently covers photographs.
+ */
+describe('TimelineScrubber wakefulness', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('wakes on arrival and falls asleep once nothing has happened', async () => {
+    fetchMock.mockResolvedValue(TIMELINE)
+    renderScrubber({})
+
+    // Arriving is itself activity: the rail announces that it is there.
+    const rail = await screen.findByRole('navigation')
+    expect(rail).toHaveClass('is-active')
+
+    act(() => {
+      vi.advanceTimersByTime(2000)
+    })
+    expect(rail).not.toHaveClass('is-active')
+  })
+
+  it('wakes again when the grid scrolls under it', async () => {
+    fetchMock.mockResolvedValue(TIMELINE)
+    // One params object across both renders: a fresh one would be a new filter
+    // to `useTimeline`, which would refetch and unmount the rail mid-test.
+    const params: PhotoListParams = { sort: 'newest' }
+    const { rerender } = renderScrubber({ params, activeIndex: 0 })
+
+    const rail = await screen.findByRole('navigation')
+    act(() => {
+      vi.advanceTimersByTime(2000)
+    })
+    expect(rail).not.toHaveClass('is-active')
+
+    // The visible range moving *is* the scroll signal — the rail needs no
+    // listener of its own to notice.
+    rerender(
+      <I18nextProvider i18n={i18n}>
+        <TimelineScrubber params={params} activeIndex={5} onJump={vi.fn()} />
+      </I18nextProvider>,
+    )
+    expect(screen.getByRole('navigation')).toHaveClass('is-active')
+  })
+
+  it('stays awake for as long as a finger is on it', async () => {
+    fetchMock.mockResolvedValue(TIMELINE)
+    stubRailGeometry()
+    renderScrubber({})
+
+    const rail = await screen.findByRole('navigation')
+    act(() => {
+      vi.advanceTimersByTime(2000)
+    })
+
+    fireEvent.pointerDown(rail, { clientY: 10 })
+    expect(rail).toHaveClass('is-active')
+    // Half the idle window later a drag step keeps it up rather than letting the
+    // countdown that started with the press run out mid-gesture.
+    act(() => {
+      vi.advanceTimersByTime(1000)
+    })
+    fireEvent.pointerMove(rail, { clientY: 200 })
+    act(() => {
+      vi.advanceTimersByTime(1000)
+    })
+    expect(rail).toHaveClass('is-active')
   })
 })
