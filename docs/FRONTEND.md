@@ -1621,13 +1621,28 @@ here.
   the estimate is for — but drawn with a **different pin shape** (`estimatedMarkerIcon` in `LeafletMap`: a hollow
   dashed ring, **not** just a different color — that wouldn't survive a color-blind view or a black-and-white print) plus
   a `title` from the `estimatedTitle` prop, which says the same in words to a screen reader; a pin that looks the same
-  as a measured one would let the map claim a precision it doesn't have,
+  as a measured one would let the map claim a precision it doesn't have; the feed's **`coverage`** member is
+  stated in words by `MapFilterBar` (`map.coverage`, counts grouped through `formatCount`) — a map holding
+  11 % of a library and saying nothing reads as broken rather than sparse — and an **editor** additionally gets
+  `map.coverageAction`, a link to `/library?has_gps=false`, the photos a location can be set on (never a
+  button that would run an estimate over the library on their behalf); a viewer is told the same number and
+  sent nowhere,
   `PlacesPage` = `/places` browsing the library by locality: a single `fetchPlaces()` fetch pulls
-  the countries→cities hierarchy with counts; a **drill in the URL** (`?country=&city=` via `useUrlState` over
-  `PlacesView` = `LibraryView`+`country`/`city`, so Back walks the levels) — level 1 a list of countries
-  (`ListGroup`), level 2 the cities of the selected country (from nested data, no refetch), level 3 a photo grid
+  the countries→cities hierarchy with counts and per-place `cover_uid`; a **drill in the URL**
+  (`?country=&city=` via `useUrlState` over
+  `PlacesView` = `LibraryView`+`country`/`city`, so Back walks the levels) — level 1 a list of countries,
+  level 2 the cities of the selected country (from nested data, no refetch), both as **`PlaceRow`** (preview
+  photo + name + count; Places is a way through a photo library, so a row without a picture is a gallery
+  spelled as a table), level 3 a photo grid
   scoped to `{country,city}` via `useScopedPhotos` (enabled only after a city is picked) + the shared
-  `FilterBar` + a Místa/country/city breadcrumb; loading/empty/error states, for editors **selection mode**
+  `FilterBar` + a Místa/country/city breadcrumb; a level holding **exactly one row is stepped past**
+  (`lib/placeDrill.resolvePlaceDrill`) — this library is entirely Czech, so `/places` opened on a single
+  „Česko" row that every visit began by clicking through; the skip is resolved from the fetched hierarchy and
+  **never written into the URL** (the address keeps saying what the user chose), a city level is only skipped
+  when its one city holds **all** of the country's photos (a country also holds photos whose town was never
+  resolved and which have no row of their own), and a level that was skipped renders in the breadcrumb as
+  plain text rather than a link that lands on the same screen; loading/empty/error states, for editors
+  **selection mode**
   over the grid → `BulkEditControl` (refetch on success, an edit can move a photo out of a place); walking
   the drill **leaves selection mode**, each place is its own list,
   `SlideshowPage` = `/slideshow` a fullscreen slideshow (outside `Layout`, no navbar): reads the scope
@@ -2004,8 +2019,19 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   by itself after 2 s — so the gesture never repaints the React tree);
   the default height is **`70dvh`** (`DEFAULT_MAP_HEIGHT`, a dynamic viewport unit = what really
   remains on a phone under the disappearing chrome bar; a `vh` fallback in `.kukatko-map`), the detail's mini-map
-  and the picker pass a fixed one), `MapFilterBar` (a basemap toggle
-  basic/outdoor/aerial + date from/to, archived, private, count, clear filters);
+  and the picker pass a fixed one; a mapset the provider draws **light** (`mapsetNeedsDimming` in
+  `services/map` — mapy.com publishes no dark tileset, only `basic`/`outdoor`/`winter`/`aerial`) gets the
+  class `kukatko-map--dim-tiles`, whose CSS filter tones the **tile pane** down for the dark page and leaves
+  pins, clusters, popups and controls at full colour; a dimming rather than the usual `invert()` trick, which
+  turns water orange, and toggled imperatively because Leaflet stamps its own classes onto that element),
+  `MapFilterBar` (a basemap toggle
+  basic/outdoor/aerial — inactive buttons are `outline-light`, since Superhero's `secondary` navy on this
+  page's near-black reads as disabled — + date from/to, archived, private, the coverage sentence with the
+  editor's "fill in locations" link, clear filters);
+  `components/places/` = `PlaceRow` (one row of the place browse list: a fixed square preview well
+  (`.kk-place-row__media`, sunken so a place with nothing to draw is an empty well and not a hole; a map-pin
+  glyph stands in), the place name, the photo-count badge; the preview is `alt=""` — the row's own text
+  already names the place);
   `components/people/` = `SubjectTile`/`SubjectPhotoTile`/`SubjectEditModal`,
   `FaceCrop` (**the preferred** face crop: an `<img>` with a `fit_*` source from `lib/faceSource.ts`
   `faceSourceSize` (the whole frame — `tile_*` is a centred square on which the crop would miss the face;
@@ -2180,7 +2206,8 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   + filters/sort from the URL, options `{reloadKey?,enabled?,initialCount?}` — `reloadKey` for a background refetch after a mutation, `enabled:false`
   → idle without a fetch, e.g. Places before a city is picked; `initialCount` restores the list's length, see above); `useMapPhotos` = a one-off (unpaginated) loader
   of the GeoJSON feed of geotagged photos over `fetchMapPhotos` (`status` loading/ready/error, `retry`,
-  cancels in-flight + ignores stale when the filters change);
+  the feed's `coverage` or `null` while it is unknown, cancels in-flight + ignores stale when the filters
+  change);
   `useJobStats(enabled)` = a poller of the job-queue state over `fetchJobStats` (`GET /jobs/stats`) for the badge
   in the footer: it fetches **only when `enabled`** (admin), refetches after ~30 s, **pauses on a hidden tab**
   (`visibilitychange`/`document.hidden`) and refreshes immediately on return; it swallows a failure and returns `null`
@@ -2627,6 +2654,12 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   marker is not a drag) and **never for a touch that started on `.leaflet-marker-draggable` /
   `.leaflet-control`** (dragging the picker's pin with one finger works, and advising „two fingers" there would be
   bad advice at the worst moment), from which `LeafletMap` shows the „dvěma prsty" hint;
+  `placeDrill.ts` = the pure `resolvePlaceDrill(countries, country, city)` → the level `/places` actually
+  shows: the URL's choice with any level of **exactly one row** stepped past, the selected country's entry,
+  the `…Implied` flags and `canClearCountry`/`canClearCity` (whether stepping back up would show anything
+  new, which is what lets the breadcrumb render a skipped level as text). A city level is only skipped when
+  its one city holds the country's **whole** count — a country's photos whose town was never resolved have
+  no row of their own, so a bare `cities.length === 1` test would hide them;
   `faceState.ts` = the pure `faceState(face)` (**`named`/`unnamed`, two states and two colors** — it reads the assignment, not
   `face.action`, so that an optimistic update keeps the box and the row in sync with the click just made)
   + `isNamed` + `hasEmbedding`; one source of truth for the colors in the overlay, `FacesPanel` and `PeoplePanel`.
@@ -2949,11 +2982,15 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   failed to load is refetched and the proxy's status is translated into a `TileFailure`: **424 → `key_rejected`**
   (mapy.com is rejecting **our** key), 429 → `rate_limited`, 503 → `unavailable`, otherwise `error`;
   200/404 → `null`, because a missing tile outside the coverage is a normal response; a network error →
-  `'error'`, an abort bubbles up), `toMapset`/`MAPSETS`; the types
-  `MapFeature`/`MapFeatureCollection`/`MapFeatureProperties`/`MapPhotoParams`/`Mapset`/
+  `'error'`, an abort bubbles up), `toMapset`/`MAPSETS`, **`mapsetNeedsDimming(mapset)`** (whether the
+  provider draws that mapset light and it therefore has to be toned down for the dark page — mapy.com
+  publishes no dark tileset, so `basic`/`outdoor` are true and the aerial imagery is not; the day one ships,
+  adding it to `MAPSETS` and leaving it out of the light set is the whole change); the types
+  `MapFeature`/`MapFeatureCollection`/`MapFeatureProperties`/`MapPhotoParams`/`MapCoverage`/`Mapset`/
   `TileFailure`/`GeocodeResult`/`RegionalItem`/`Place`);
   `places.ts` = the place-hierarchy client: `fetchPlaces(country?,signal)` over `GET /api/v1/places`
-  → `PlaceCountry[]` (countries with counts + nested `cities`, the optional `country` drills into the cities of one
+  → `PlaceCountry[]` (countries with counts, a `cover_uid` preview + nested `cities` carrying the same, the
+  optional `country` drills into the cities of one
   country); the types `PlaceCountry`/`PlaceCity`; browsing a place's photos goes through the shared
   `fetchPhotos({country,city})`;
   `import.ts` = the **read-only** admin import client: `fetchImportRuns(signal)` over

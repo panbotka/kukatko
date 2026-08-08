@@ -4,10 +4,21 @@ import Col from 'react-bootstrap/Col'
 import Form from 'react-bootstrap/Form'
 import Row from 'react-bootstrap/Row'
 import { useTranslation } from 'react-i18next'
+import { Link } from 'react-router-dom'
 
+import { formatCount } from '../../lib/format'
 import { hasActiveMapFilters, MAP_DEFAULTS, type MapView } from '../../lib/mapView'
 import { type SetUrlState } from '../../lib/urlState'
-import { type Mapset, MAPSETS } from '../../services/map'
+import { type MapCoverage, type Mapset, MAPSETS } from '../../services/map'
+
+/**
+ * Where the "fill in the missing locations" link leads: the library scoped to the
+ * photos that have no position at all. That is the page where a location gets
+ * set — open a photo, place it on the picker map — so the link hands over the
+ * exact working set rather than an admin button that would run an estimate over
+ * the whole library behind the user's back.
+ */
+const NO_LOCATION_LIBRARY = '/library?has_gps=false'
 
 /** Props for {@link MapFilterBar}. */
 export interface MapFilterBarProps {
@@ -17,6 +28,19 @@ export interface MapFilterBarProps {
   mapset: Mapset
   /** Number of geotagged photos currently plotted. */
   count: number
+  /**
+   * How many of the filtered photos the map could place, out of how many match
+   * at all. Omitted while the feed is still loading, and for a backend that does
+   * not report it; the bar then falls back to the plain marker count.
+   */
+  coverage?: MapCoverage | null
+  /**
+   * Whether the viewer may edit photo metadata, and so act on the missing
+   * locations. A viewer is told the same number — the map being 11 % of the
+   * library is a fact about what they are looking at — but is not sent to a page
+   * where every photo is read-only.
+   */
+  canWrite?: boolean
 }
 
 /**
@@ -25,9 +49,24 @@ export interface MapFilterBarProps {
  * Every control writes through `onChange` into the URL, so Back/Forward and a
  * shared link reproduce the map. The mapset and filters push history entries;
  * the date inputs do too (they are discrete choices, not live-typed text).
+ *
+ * The footer says how much of the library is actually on the map. On this
+ * collection that is about one photo in nine, and the old "Fotek na mapě: 2 378"
+ * left the other eight unexplained — a map can look empty because a filter is
+ * narrow or because nothing was ever geotagged, and those call for opposite
+ * reactions. Editors get the missing photos as a link.
  */
-export function MapFilterBar({ view, onChange, mapset, count }: MapFilterBarProps) {
-  const { t } = useTranslation()
+export function MapFilterBar({
+  view,
+  onChange,
+  mapset,
+  count,
+  coverage,
+  canWrite = false,
+}: MapFilterBarProps) {
+  const { t, i18n } = useTranslation()
+  const missing =
+    coverage === undefined || coverage === null ? 0 : coverage.total - coverage.located
 
   return (
     <Form className="mb-3" aria-label={t('map.filters.label')}>
@@ -37,7 +76,11 @@ export function MapFilterBar({ view, onChange, mapset, count }: MapFilterBarProp
             <Button
               key={id}
               type="button"
-              variant={id === mapset ? 'primary' : 'outline-secondary'}
+              // The inactive style is `outline-light`, not `outline-secondary`:
+              // Superhero's secondary is a desaturated navy that on this page's
+              // near-black background reads as an unlit button, and the two
+              // unchosen mapsets then look disabled rather than available.
+              variant={id === mapset ? 'primary' : 'outline-light'}
               active={id === mapset}
               aria-pressed={id === mapset}
               onClick={() => {
@@ -94,9 +137,26 @@ export function MapFilterBar({ view, onChange, mapset, count }: MapFilterBarProp
         </Col>
       </Row>
 
-      <div className="d-flex align-items-center justify-content-between mt-2">
+      <div className="d-flex align-items-center justify-content-between gap-2 mt-2 flex-wrap">
         <span className="text-secondary small" aria-live="polite">
-          {t('map.count', { count })}
+          {coverage === undefined || coverage === null ? (
+            t('map.count', { count })
+          ) : (
+            <>
+              {/* Grouped by hand: five-digit counts are read wrong ungrouped,
+                  and i18next runs without a number formatter. */}
+              {t('map.coverage', {
+                located: formatCount(coverage.located, i18n.language),
+                total: formatCount(coverage.total, i18n.language),
+              })}
+              {canWrite && missing > 0 && (
+                <>
+                  {' '}
+                  <Link to={NO_LOCATION_LIBRARY}>{t('map.coverageAction')}</Link>
+                </>
+              )}
+            </>
+          )}
         </span>
         {hasActiveMapFilters(view) && (
           <Button

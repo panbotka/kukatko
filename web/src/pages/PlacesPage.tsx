@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
 import ListGroup from 'react-bootstrap/ListGroup'
 import { useTranslation } from 'react-i18next'
@@ -12,6 +11,7 @@ import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
 import { BulkEditControl } from '../components/organize/BulkEditControl'
 import { SelectionBar } from '../components/organize/SelectionBar'
+import { PlaceRow } from '../components/places/PlaceRow'
 import { useBulkEdit } from '../hooks/useBulkEdit'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useGridScrollMemory } from '../hooks/useGridScrollMemory'
@@ -19,8 +19,12 @@ import { useReloadKey } from '../hooks/useReloadKey'
 import { useScopedPhotos } from '../hooks/useScopedPhotos'
 import { gridScrollKey, readGridScroll } from '../lib/gridScroll'
 import { LIBRARY_DEFAULTS, type LibraryView, viewToParams } from '../lib/libraryView'
+import { resolvePlaceDrill } from '../lib/placeDrill'
 import { useUrlState } from '../lib/urlState'
 import { fetchPlaces, type PlaceCountry } from '../services/places'
+
+/** No hierarchy yet: the drill has nothing to resolve against. */
+const NO_COUNTRIES: PlaceCountry[] = []
 
 /**
  * URL-encoded view state for the Places page: the library filter/sort fields
@@ -49,12 +53,18 @@ type State =
 
 /**
  * Places page: browse the library by location. Lists countries with photo
- * counts; selecting a country reveals its cities, and selecting a city shows the
- * photo grid scoped to that place (reusing {@link FilterBar} + {@link PhotoGrid},
- * exactly like an album or label gallery). The place drill and the filters live
- * in the URL (`/places?country=…&city=…`), so Back/Forward step through the
- * drill. The country → city hierarchy is fetched once; the grid loads only once a
- * city is chosen.
+ * counts and a preview of each; selecting a country reveals its cities, and
+ * selecting a city shows the photo grid scoped to that place (reusing
+ * {@link FilterBar} + {@link PhotoGrid}, exactly like an album or label gallery).
+ * The place drill and the filters live in the URL (`/places?country=…&city=…`),
+ * so Back/Forward step through the drill. The country → city hierarchy is fetched
+ * once; the grid loads only once a city is chosen.
+ *
+ * A level holding a single row is stepped past rather than shown
+ * (`lib/placeDrill`): this library is entirely Czech, so the country list was one
+ * row that every visit began by clicking through. The skip is resolved from the
+ * fetched hierarchy and never written into the URL — the address keeps saying
+ * what the user chose, and a country that grows a second one simply reappears.
  *
  * Editors can multi-select over that grid straight away — the corner checkmark is
  * offered from the outset, as on the library — and bulk-edit the picked
@@ -73,7 +83,15 @@ export function PlacesPage() {
   const [photosKey, reloadPhotos] = useReloadKey()
 
   const [view, setView] = useUrlState<PlacesView>(PLACES_DEFAULTS)
-  const { country, city } = view
+
+  // What is on screen: the URL's choice, with any level of exactly one row
+  // stepped past. Everything below reads these, not the raw view fields.
+  const countries = state.status === 'ready' ? state.countries : NO_COUNTRIES
+  const drill = useMemo(
+    () => resolvePlaceDrill(countries, view.country, view.city),
+    [countries, view.country, view.city],
+  )
+  const { country, city, selected: selectedCountry } = drill
 
   const params = useMemo(() => viewToParams(view), [view])
   const scope = useMemo(() => ({ country, city }), [country, city])
@@ -131,9 +149,12 @@ export function PlacesPage() {
   )
   const selectCity = useCallback(
     (name: string) => {
-      setView({ city: name })
+      // Write the country too: it may only be implied (a library with one
+      // country never puts it in the URL), and a link to a city without its
+      // country is not an address anyone else can open.
+      setView({ country, city: name })
     },
-    [setView],
+    [setView, country],
   )
   const clearPlace = useCallback(() => {
     setView({ country: '', city: '' })
@@ -142,33 +163,34 @@ export function PlacesPage() {
     setView({ city: '' })
   }, [setView])
 
-  const selectedCountry = useMemo(
-    () =>
-      state.status === 'ready' ? state.countries.find((c) => c.country === country) : undefined,
-    [state, country],
-  )
-
   return (
     <>
       <div className="d-flex justify-content-between align-items-center gap-2 mb-3 flex-wrap">
         <h1 className="kk-page-title mb-0">{t('places.title')}</h1>
       </div>
 
-      {/* Breadcrumb drill: Places / Country / City, each level clickable. */}
+      {/* Breadcrumb drill: Places / Country / City. A level is a link only when
+          going back to it would show something new — a level that was stepped
+          past holds one row, and a link that lands on the same screen is worse
+          than plain text. */}
       {(country !== '' || city !== '') && (
         <nav aria-label={t('places.breadcrumb')} className="mb-3">
-          <Button variant="link" className="p-0 text-decoration-none" onClick={clearPlace}>
-            {t('places.title')}
-          </Button>
+          {drill.canClearCountry ? (
+            <Button variant="link" className="p-0 text-decoration-none" onClick={clearPlace}>
+              {t('places.title')}
+            </Button>
+          ) : (
+            <span className="text-secondary">{t('places.title')}</span>
+          )}
           {country !== '' && (
             <>
               <span className="text-secondary mx-2">/</span>
-              {city === '' ? (
-                <span className="fw-semibold">{country}</span>
-              ) : (
+              {drill.canClearCity ? (
                 <Button variant="link" className="p-0 text-decoration-none" onClick={clearCity}>
                   {country}
                 </Button>
+              ) : (
+                <span className={city === '' ? 'fw-semibold' : 'text-secondary'}>{country}</span>
               )}
             </>
           )}
@@ -191,24 +213,20 @@ export function PlacesPage() {
         <>
           {/* Level 1: countries. */}
           {country === '' &&
-            (state.countries.length === 0 ? (
+            (countries.length === 0 ? (
               <EmptyState title={t('places.empty.title')} hint={t('places.empty.hint')} />
             ) : (
               <ListGroup>
-                {state.countries.map((c) => (
-                  <ListGroup.Item
+                {countries.map((c) => (
+                  <PlaceRow
                     key={c.country}
-                    action
-                    onClick={() => {
+                    name={c.country}
+                    count={c.count}
+                    coverUid={c.cover_uid}
+                    onSelect={() => {
                       selectCountry(c.country)
                     }}
-                    className="d-flex justify-content-between align-items-center"
-                  >
-                    <span>{c.country}</span>
-                    <Badge bg="secondary" pill>
-                      {t('places.photoCount', { count: c.count })}
-                    </Badge>
-                  </ListGroup.Item>
+                  />
                 ))}
               </ListGroup>
             ))}
@@ -221,19 +239,15 @@ export function PlacesPage() {
             ) : (
               <ListGroup>
                 {selectedCountry.cities.map((c) => (
-                  <ListGroup.Item
+                  <PlaceRow
                     key={c.city}
-                    action
-                    onClick={() => {
+                    name={c.city}
+                    count={c.count}
+                    coverUid={c.cover_uid}
+                    onSelect={() => {
                       selectCity(c.city)
                     }}
-                    className="d-flex justify-content-between align-items-center"
-                  >
-                    <span>{c.city}</span>
-                    <Badge bg="secondary" pill>
-                      {t('places.photoCount', { count: c.count })}
-                    </Badge>
-                  </ListGroup.Item>
+                  />
                 ))}
               </ListGroup>
             ))}

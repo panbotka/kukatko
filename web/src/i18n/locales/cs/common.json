@@ -1126,6 +1126,8 @@
   "map": {
     "title": "Mapa",
     "count": "Fotek na mapě: {{count}}",
+    "coverage": "Na mapě je {{located}} z {{total}} fotek — u ostatních není uložená poloha.",
+    "coverageAction": "Doplnit polohu",
     "loading": "Načítání fotek…",
     "thumbAlt": "Fotka na mapě",
     "gesture": {

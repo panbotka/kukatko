@@ -181,11 +181,15 @@ to `## Package map` in `CLAUDE.md`.
   immutable_unaccent(q))`, ordered by `ts_rank` (title>description>notes>file_name),
   diacritics-insensitive, honours all List filters + pagination; an empty query →
   `ErrEmptySearch`; `Count` with `FullText` returns the total thanks to the shared `buildWhere`),
-  `AggregatePlaces(country)` (place hierarchy `[]CountryPlaces{Country,Count,Cities:[]CityCount}` —
+  `AggregatePlaces(country)` (place hierarchy `[]CountryPlaces{Country,Count,CoverUID,Cities:[]CityCount}` —
   one `GROUP BY country, city` joining `photos`×`photo_places` over non-archived photos with place
   data, the hierarchy assembled in Go, ordered count desc/name; empty `country`='' = all countries, otherwise
   drill-down into the cities of one country; photos with empty `country` (no-GPS marker) are excluded — the basis of
-  `placesapi`),
+  `placesapi`. Every level also carries a `CoverUID`, the place's newest visible photo: the same
+  `array_agg(… ORDER BY taken_at DESC NULLS LAST, uid)[1]` subscript the album index uses, one more
+  aggregate over the pass the count already makes and **never** a correlated `ORDER BY … LIMIT 1`. A country
+  takes the newest across all its groups, the unknown-city one included, resolved by the pure `newerCover`
+  so the answer does not depend on the order Postgres returned the groups in),
   `TimelineBuckets(params)` (monthly date-histogram `Timeline{Buckets:[]TimelineBucket{Year,Month,
   Count,Cumulative},Total}` — one `GROUP BY` by `date_part(year/month, taken_at)` over
   non-archived photos, ordered newest first (`year DESC, month DESC`, like the default grid),
@@ -1727,8 +1731,11 @@ to `## Package map` in `CLAUDE.md`.
   (a read-only HTTP API over the reverse-geocoded place hierarchy — the basis of Places browse: the interface
   `Store` (a subset of `photos.Store`: `AggregatePlaces`) → unit-testable with a fake; `NewAPI(Config{
   Store,RequireAuth})`+`RegisterRoutes` mounts `GET /places` behind `RequireAuth`: a hierarchy with counts
-  `{places:[{country,count,cities:[{city,count}]}]}` aggregated over non-archived photos with place data
-  (a country's count includes photos without a city too, cities always an array; ordered count desc/name), an optional
+  `{places:[{country,count,cover_uid,cities:[{city,count,cover_uid}]}]}` aggregated over non-archived photos
+  with place data
+  (a country's count includes photos without a city too, cities always an array; ordered count desc/name;
+  `cover_uid` is the place's newest visible photo, omitted when there is none — Places is a browse of a photo
+  library, so its rows carry pictures), an optional
   `?country=` drills only into the cities of one country; photos without place data are excluded (`photos.Store.
   AggregatePlaces` computes it with one `GROUP BY country, city` joining on `photo_places`). **Browsing a
   locality's photos has no own endpoint** — it goes through the shared `GET /photos` scoped `?country=`/`?city=`
@@ -1841,7 +1848,7 @@ to `## Package map` in `CLAUDE.md`.
   so it never carries the key), `internal/mapsapi/`
   (the HTTP API for maps — tile proxy, reverse geocode, place search and a GeoJSON feed; the interfaces
   `TileFetcher`/`Geocoder`/`PlaceSearcher` (satisfied by `mapy.Client`, nil → 503) and `PhotoLister`
-  (`photos.Store.List`) →
+  (`photos.Store.List`+`Count`) →
   unit-testable with fakes; `NewAPI(Config{Tiles,Geocoder,Places,Photos,Health,RequireAuth,TileCacheMaxAge,
   TileCacheTTL,TileCacheBytes,GeocodeCacheTTL,GeocodeRatePerSec,GeocodeRateBurst,MaxGeoPhotos})`+
   `RegisterRoutes` mounts
@@ -1873,7 +1880,11 @@ to `## Package map` in `CLAUDE.md`.
   **FeatureCollection**, `parseGeoParams` forces `HasGPS=true` + honours `taken_after`/`taken_before`/
   `album`/`label`/`archived`, `Limit=MaxGeoPhotos`, ordering taken_at desc; every feature is a
   `Point` with an RFC 7946 `[lng,lat]` coordinate and the properties `uid`/`title`/`taken_at`/`media_type`/
-  the relative `thumb` path `tile_224`, photos missing either coordinate are skipped); defaults cache 24h /
+  the relative `thumb` path `tile_224`, photos missing either coordinate are skipped; the collection also
+  carries the foreign member `coverage:{located,total}` — the markers drawn against one extra `Count` over the
+  **same** params with `HasGPS` lifted and paging stripped, so the map can say what it is leaving out instead
+  of showing 11 % of a library in silence; a failing count is a 500, not a collection quietly claiming the
+  library is empty); defaults cache 24h /
   tile cache 64 MiB + 24h / rate 5/s burst 10 / max 50000 features; mounted by `server.WithAPI`
   (`buildMapsAPI` in `cmd/kukatko/maps.go`, both the client and `mapy.Health` are built only when
   `maps.mapy_api_key` is set — `newMapsHealth`; `buildSystemAPI` gets the same tracker)),

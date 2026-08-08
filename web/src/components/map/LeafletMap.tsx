@@ -9,7 +9,7 @@ import 'leaflet.markercluster/dist/MarkerCluster.Default.css'
 import { enableTwoFingerPan, prefersTouchGestures } from '../../lib/mapGestures'
 import { buildPopupElement } from '../../lib/mapPopup'
 import { type MapViewport } from '../../lib/mapView'
-import { type MapFeature, type Mapset, tileLayerUrl } from '../../services/map'
+import { type MapFeature, type Mapset, mapsetNeedsDimming, tileLayerUrl } from '../../services/map'
 
 /**
  * mapy.com requires both an attribution link to the Seznam copyright page and a
@@ -330,6 +330,17 @@ export function LeafletMap({
   useEffect(() => {
     tileLayerRef.current?.setUrl(tileLayerUrl(mapset))
   }, [mapset])
+
+  // Tone the drawn mapsets down to match the dark page (the filter itself is in
+  // `styles/app.css`, scoped to the tile pane so pins, clusters and popups keep
+  // their colours). The class is toggled imperatively rather than rendered into
+  // `className`: Leaflet stamps its own classes onto this same element, and a
+  // React-owned className rewrites the whole attribute when it changes, which
+  // would take `leaflet-container` with it.
+  const dimTiles = mapsetNeedsDimming(mapset)
+  useEffect(() => {
+    containerRef.current?.classList.toggle('kukatko-map--dim-tiles', dimTiles)
+  }, [dimTiles])
 
   // Rebuild the clustered markers whenever the features change.
   useEffect(() => {

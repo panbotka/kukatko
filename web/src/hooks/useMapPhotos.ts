@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { fetchMapPhotos, type MapFeature, type MapPhotoParams } from '../services/map'
+import {
+  fetchMapPhotos,
+  type MapCoverage,
+  type MapFeature,
+  type MapPhotoParams,
+} from '../services/map'
 
 /** Lifecycle of a map photo fetch. */
 export type MapPhotosStatus = 'loading' | 'ready' | 'error'
@@ -8,6 +13,13 @@ export type MapPhotosStatus = 'loading' | 'ready' | 'error'
 /** State returned by {@link useMapPhotos}. */
 export interface MapPhotosState {
   features: MapFeature[]
+  /**
+   * How many of the filtered photos the map could place, out of how many match
+   * at all. `null` until the first response arrives, and for a backend that does
+   * not report it — the page then says nothing about coverage rather than
+   * guessing at a total it cannot know.
+   */
+  coverage: MapCoverage | null
   status: MapPhotosStatus
   /** Re-runs the fetch with the current params (e.g. after an error). */
   retry: () => void
@@ -25,6 +37,7 @@ export interface MapPhotosState {
  */
 export function useMapPhotos(params: MapPhotoParams): MapPhotosState {
   const [features, setFeatures] = useState<MapFeature[]>([])
+  const [coverage, setCoverage] = useState<MapCoverage | null>(null)
   const [status, setStatus] = useState<MapPhotosStatus>('loading')
   // Bumping this forces the load effect to re-run for a manual retry.
   const [reloadToken, setReloadToken] = useState(0)
@@ -42,6 +55,7 @@ export function useMapPhotos(params: MapPhotoParams): MapPhotosState {
           return
         }
         setFeatures(collection.features)
+        setCoverage(collection.coverage ?? null)
         setStatus('ready')
       })
       .catch((err: unknown) => {
@@ -63,5 +77,5 @@ export function useMapPhotos(params: MapPhotoParams): MapPhotosState {
     setReloadToken((token) => token + 1)
   }, [])
 
-  return { features, status, retry }
+  return { features, coverage, status, retry }
 }

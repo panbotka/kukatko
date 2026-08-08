@@ -87,10 +87,14 @@ type PlaceSearcher interface {
 }
 
 // PhotoLister is the subset of the photos repository the GeoJSON endpoint needs:
-// listing photos under a set of filters. photos.Store satisfies it.
+// listing photos under a set of filters, and counting them under the same filters
+// with the has-GPS restriction lifted (the map's coverage figure). photos.Store
+// satisfies it.
 type PhotoLister interface {
 	// List returns photos matching params, ordered and paginated as requested.
 	List(ctx context.Context, params photos.ListParams) ([]photos.Photo, error)
+	// Count returns how many photos match params, ignoring paging.
+	Count(ctx context.Context, params photos.ListParams) (int, error)
 }
 
 // API exposes the maps endpoints over HTTP. The route guard is supplied by the

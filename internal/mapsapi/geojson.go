@@ -1,6 +1,7 @@
 package mapsapi
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -23,6 +24,20 @@ const thumbPathPrefix = "/api/v1/photos/"
 type featureCollection struct {
 	Type     string    `json:"type"`
 	Features []feature `json:"features"`
+	// Coverage is a foreign member (RFC 7946 §6.1 explicitly permits them) saying
+	// how much of the filtered library this map can show at all. It rides on the
+	// feed rather than being a request of its own because only the server knows
+	// the exact filter set behind these features; a client counting for itself
+	// would have to reimplement them and would drift the moment one changed.
+	Coverage coverage `json:"coverage"`
+}
+
+// coverage is the map's honest report of what it is not showing: how many photos
+// match the active filters (Total) against how many of them carry a location and
+// so became a marker (Located). The difference is what the map is silent about.
+type coverage struct {
+	Located int `json:"located"`
+	Total   int `json:"total"`
 }
 
 // feature is a single GeoJSON Feature: a point geometry plus the marker
@@ -63,7 +78,9 @@ type featureProps struct {
 // handlePhotos returns a GeoJSON FeatureCollection of geotagged photos, honouring
 // the standard list filters (date range, album/label scope, archived).
 // Only photos with both coordinates are included; the response is capped at
-// maxGeoPhotos features. Invalid filter values are answered with 400.
+// maxGeoPhotos features. The collection also carries the coverage foreign member,
+// so the map can say how many of the filtered photos it is leaving off. Invalid
+// filter values are answered with 400.
 func (a *API) handlePhotos(w http.ResponseWriter, r *http.Request) {
 	params, err := a.parseGeoParams(r.URL.Query())
 	if err != nil {
@@ -83,7 +100,34 @@ func (a *API) handlePhotos(w http.ResponseWriter, r *http.Request) {
 			fc.Features = append(fc.Features, f)
 		}
 	}
+	fc.Coverage, err = a.countCoverage(r.Context(), params, len(fc.Features))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "counting photos failed")
+		return
+	}
 	writeJSON(w, http.StatusOK, fc)
+}
+
+// countCoverage reports how many photos the same filters match with the has-GPS
+// restriction lifted, so the map can name the photos it cannot place. Located is
+// the number of markers actually drawn — the truthful answer to "how many are on
+// the map", including the case where the feed hit its cap — and the total is the
+// one value that needs asking the database for.
+func (a *API) countCoverage(ctx context.Context, params photos.ListParams, located int) (coverage, error) {
+	// Every other filter is kept: a coverage figure over the whole library while
+	// the map shows one album would be a number that lies. Count already ignores
+	// paging, but the feed's page size is a listing concern and saying so here
+	// keeps the two apart.
+	countParams := params
+	countParams.HasGPS = nil
+	countParams.Limit = 0
+	countParams.Offset = 0
+
+	total, err := a.photos.Count(ctx, countParams)
+	if err != nil {
+		return coverage{}, fmt.Errorf("mapsapi: counting photos for coverage: %w", err)
+	}
+	return coverage{Located: located, Total: total}, nil
 }
 
 // toFeature converts a photo to a GeoJSON feature, reporting false when the photo

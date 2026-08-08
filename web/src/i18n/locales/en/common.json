@@ -723,6 +723,8 @@
   "map": {
     "title": "Map",
     "count": "Photos on the map: {{count}}",
+    "coverage": "{{located}} of {{total}} photos are on the map — the rest have no location stored.",
+    "coverageAction": "Fill in locations",
     "loading": "Loading photos…",
     "thumbAlt": "Photo on the map",
     "gesture": {

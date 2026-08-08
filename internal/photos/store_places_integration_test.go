@@ -4,6 +4,7 @@ package photos_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/places"
@@ -12,10 +13,13 @@ import (
 // placeFixture is one seeded photo and the place to cache for it. An empty
 // country marks a photo whose place row carries no real location (a no-GPS
 // "processed" marker), which the aggregation and the place scope must ignore.
+// day is the fixture's capture day in May 2026, which decides which photo covers
+// its place; zero leaves the capture time unknown.
 type placeFixture struct {
 	hash     string
 	country  string
 	city     string
+	day      int
 	archived bool
 	noPlace  bool // create the photo but no photo_places row at all
 }
@@ -29,9 +33,14 @@ func seedPlaces(
 	ctx := t.Context()
 	uids := make(map[string]string, len(fixtures))
 	for _, f := range fixtures {
+		var takenAt *time.Time
+		if f.day != 0 {
+			at := time.Date(2026, time.May, f.day, 12, 0, 0, 0, time.UTC)
+			takenAt = &at
+		}
 		photo := mustCreate(t, store, photos.Photo{
 			FileHash: f.hash, FilePath: "p/" + f.hash + ".jpg",
-			FileName: f.hash + ".jpg", FileMime: "image/jpeg",
+			FileName: f.hash + ".jpg", FileMime: "image/jpeg", TakenAt: takenAt,
 		})
 		uids[f.hash] = photo.UID
 		if !f.noPlace {
@@ -53,13 +62,15 @@ func seedPlaces(
 // placesFixtures is the shared dataset for the aggregation and scope tests:
 // Czechia has three live photos (Praha×2, Brno×1), Austria one (Wien), plus an
 // archived Praha photo, a no-place photo, and an empty-country marker — all three
-// of which must be excluded from both the counts and the place scope.
+// of which must be excluded from both the counts and the place scope. The capture
+// days make the covers deterministic and put the newest photo of all inside the
+// archived one, which must therefore cover nothing.
 var placesFixtures = []placeFixture{
-	{hash: "pp-a", country: "Czechia", city: "Praha"},
-	{hash: "pp-b", country: "Czechia", city: "Praha"},
-	{hash: "pp-c", country: "Czechia", city: "Brno"},
-	{hash: "pp-d", country: "Austria", city: "Wien"},
-	{hash: "pp-e", country: "Czechia", city: "Praha", archived: true},
+	{hash: "pp-a", country: "Czechia", city: "Praha", day: 1},
+	{hash: "pp-b", country: "Czechia", city: "Praha", day: 5},
+	{hash: "pp-c", country: "Czechia", city: "Brno", day: 9},
+	{hash: "pp-d", country: "Austria", city: "Wien", day: 2},
+	{hash: "pp-e", country: "Czechia", city: "Praha", day: 20, archived: true},
 	{hash: "pp-f", noPlace: true},
 	{hash: "pp-g", country: "", city: ""},
 }
@@ -71,7 +82,7 @@ var placesFixtures = []placeFixture{
 func TestAggregatePlaces(t *testing.T) {
 	store, db := newStore(t)
 	placeStore := places.NewStore(db.Pool())
-	seedPlaces(t, store, placeStore, placesFixtures)
+	uids := seedPlaces(t, store, placeStore, placesFixtures)
 	ctx := t.Context()
 
 	t.Run("full hierarchy counts and sorting", func(t *testing.T) {
@@ -117,6 +128,28 @@ func TestAggregatePlaces(t *testing.T) {
 		}
 		if len(got) != 0 {
 			t.Fatalf("unknown country = %+v, want empty", got)
+		}
+	})
+
+	t.Run("every level carries its newest live photo as a cover", func(t *testing.T) {
+		got, err := store.AggregatePlaces(ctx, "")
+		if err != nil {
+			t.Fatalf("AggregatePlaces(all): %v", err)
+		}
+		// Brno's single photo is Czechia's newest live one, so it covers both the
+		// city and the country; the archived pp-e is newer still and covers nothing.
+		if got[0].CoverUID != uids["pp-c"] {
+			t.Errorf("Czechia cover = %q, want pp-c (%q)", got[0].CoverUID, uids["pp-c"])
+		}
+		if got[1].CoverUID != uids["pp-d"] {
+			t.Errorf("Austria cover = %q, want pp-d (%q)", got[1].CoverUID, uids["pp-d"])
+		}
+		cities := got[0].Cities
+		if cities[0].CoverUID != uids["pp-b"] {
+			t.Errorf("Praha cover = %q, want pp-b (%q)", cities[0].CoverUID, uids["pp-b"])
+		}
+		if cities[1].CoverUID != uids["pp-c"] {
+			t.Errorf("Brno cover = %q, want pp-c (%q)", cities[1].CoverUID, uids["pp-c"])
 		}
 	})
 }

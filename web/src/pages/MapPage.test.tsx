@@ -5,6 +5,7 @@ import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../i18n'
+import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import { type LeafletMapProps } from '../components/map/LeafletMap'
 import { type MapFeature, type MapFeatureCollection } from '../services/map'
 
@@ -65,8 +66,27 @@ function feature(uid: string): MapFeature {
   }
 }
 
-function collection(features: MapFeature[]): MapFeatureCollection {
-  return { type: 'FeatureCollection', features }
+function collection(features: MapFeature[], total?: number): MapFeatureCollection {
+  const fc: MapFeatureCollection = { type: 'FeatureCollection', features }
+  if (total !== undefined) {
+    fc.coverage = { located: features.length, total }
+  }
+  return fc
+}
+
+/** Builds a minimal auth context value with the given write capability. */
+function auth(canWrite: boolean): AuthContextValue {
+  return {
+    status: 'authenticated',
+    user: { uid: 'u1', username: 'u', display_name: 'U', role: canWrite ? 'editor' : 'viewer' },
+    role: canWrite ? 'editor' : 'viewer',
+    downloadToken: null,
+    canWrite,
+    isAdmin: false,
+    login: vi.fn(),
+    logout: vi.fn(),
+    refresh: vi.fn(),
+  } as unknown as AuthContextValue
 }
 
 /** Surfaces the current location for navigation assertions. */
@@ -75,13 +95,15 @@ function LocationProbe() {
   return <span data-testid="location">{location.pathname + location.search}</span>
 }
 
-function renderMap(initialEntry = '/map') {
+function renderMap(initialEntry = '/map', canWrite = true) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <MemoryRouter initialEntries={[initialEntry]}>
-        <MapPage />
-        <LocationProbe />
-      </MemoryRouter>
+      <AuthContext.Provider value={auth(canWrite)}>
+        <MemoryRouter initialEntries={[initialEntry]}>
+          <MapPage />
+          <LocationProbe />
+        </MemoryRouter>
+      </AuthContext.Provider>
     </I18nextProvider>,
   )
 }
@@ -173,6 +195,51 @@ describe('MapPage', () => {
     await screen.findByRole('link', { name: 'ph1' })
     expect(screen.getByTestId('leaflet-map')).toHaveAttribute('data-mapset', 'outdoor')
     expect(fetchMock.mock.calls[0][0].archived).toBe('only')
+  })
+})
+
+describe('MapPage coverage', () => {
+  it('says how much of the library the map speaks for', async () => {
+    fetchMock.mockResolvedValue(collection([feature('ph1'), feature('ph2')], 20906))
+    renderMap()
+
+    expect(
+      await screen.findByText(
+        '2 of 20,906 photos are on the map — the rest have no location stored.',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('offers an editor the photos that have no location', async () => {
+    fetchMock.mockResolvedValue(collection([feature('ph1')], 10))
+    const user = userEvent.setup()
+    renderMap()
+
+    await user.click(await screen.findByRole('link', { name: 'Fill in locations' }))
+    expect(screen.getByTestId('location')).toHaveTextContent('/library?has_gps=false')
+  })
+
+  it('states the coverage to a viewer but sends them nowhere', async () => {
+    fetchMock.mockResolvedValue(collection([feature('ph1')], 10))
+    renderMap('/map', false)
+
+    expect(await screen.findByText(/1 of 10 photos are on the map/)).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Fill in locations' })).not.toBeInTheDocument()
+  })
+
+  it('offers nothing to fill in when every photo is already placed', async () => {
+    fetchMock.mockResolvedValue(collection([feature('ph1')], 1))
+    renderMap()
+
+    await screen.findByText(/1 of 1 photos are on the map/)
+    expect(screen.queryByRole('link', { name: 'Fill in locations' })).not.toBeInTheDocument()
+  })
+
+  it('falls back to the plain marker count when the feed reports no coverage', async () => {
+    fetchMock.mockResolvedValue(collection([feature('ph1')]))
+    renderMap()
+
+    expect(await screen.findByText('Photos on the map: 1')).toBeInTheDocument()
   })
 })
 

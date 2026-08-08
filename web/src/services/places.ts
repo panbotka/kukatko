@@ -8,6 +8,12 @@ import { ApiError } from './auth'
 export interface PlaceCity {
   city: string
   count: number
+  /**
+   * UID of the city's newest visible photo — the preview the browse list draws.
+   * Absent only for a place the server could not pick a photo for, which the
+   * aggregation cannot normally produce.
+   */
+  cover_uid?: string
 }
 
 /**
@@ -19,6 +25,11 @@ export interface PlaceCity {
 export interface PlaceCountry {
   country: string
   count: number
+  /**
+   * UID of the country's newest visible photo, taken from whichever of its cities
+   * holds it. Same contract as {@link PlaceCity.cover_uid}.
+   */
+  cover_uid?: string
   cities: PlaceCity[]
 }
 

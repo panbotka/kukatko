@@ -104,12 +104,26 @@ describe('Leaflet chrome overrides', () => {
     expect(active.get('color')).toBe('var(--kk-text)')
   })
 
-  it('leaves the tiles and the markers alone', () => {
+  it('leaves the markers alone and touches the tiles only to dim them', () => {
     // The map's *content* keeps its own colours: retinting a tile or a cluster
-    // bubble would be recolouring the data, not the chrome.
+    // bubble would be recolouring the data, not the chrome. The one rule allowed
+    // near the tiles is the dark-page dimming, which substitutes no colour at
+    // all and is opt-in per mapset — hence the class in its selector.
     for (const selector of leafletSelectors(css)) {
-      expect(selector).not.toContain('.leaflet-tile')
       expect(selector).not.toContain('.marker-cluster')
+      if (selector.includes('.leaflet-tile')) {
+        expect(selector).toBe('.kukatko-map--dim-tiles .leaflet-tile-pane')
+      }
     }
+  })
+
+  it('dims the tile pane with a filter and nothing else', () => {
+    const dim = declarations(ruleBody(css, /\.kukatko-map--dim-tiles \.leaflet-tile-pane/) ?? '')
+    // A single `filter` — anything else here would be repainting the map rather
+    // than turning its brightness down. And it must stay a dimming: `invert()`
+    // makes water orange, which is worse than a bright map you can still read.
+    expect([...dim.keys()]).toEqual(['filter'])
+    expect(dim.get('filter')).toContain('brightness(')
+    expect(dim.get('filter')).not.toContain('invert(')
   })
 })
