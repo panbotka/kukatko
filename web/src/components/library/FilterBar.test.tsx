@@ -14,35 +14,43 @@ import { type SubjectCount } from '../../services/people'
 
 import { FilterBar } from './FilterBar'
 
-function renderBar(
-  view: LibraryView,
-  onChange: SetUrlState<LibraryView>,
-  props: {
-    showSearch?: boolean
-    showSort?: boolean
-    showDensity?: boolean
-    facets?: LibraryFacets
-    showFavorite?: boolean
-    searchHref?: string
-    /** The `semantic_search` capability the bar reads; defaults to available. */
-    semanticSearch?: boolean
-    /** The count to state; pass `undefined` for "there is nothing to count". */
-    total?: number
-  } = {},
-) {
+/** The knobs a test may turn, on top of the view and its change handler. */
+interface BarProps {
+  showSearch?: boolean
+  showSort?: boolean
+  showDensity?: boolean
+  facets?: LibraryFacets
+  showFavorite?: boolean
+  searchHref?: string
+  /** The `semantic_search` capability the bar reads; defaults to available. */
+  semanticSearch?: boolean
+  /** The count to state; pass `undefined` for "there is nothing to count". */
+  total?: number
+}
+
+/**
+ * The bar inside the providers it needs, as an element rather than a render, so
+ * a test can hand the very same tree to `rerender` — that is how the page
+ * delivering a fresh `total` under an open drawer is reproduced.
+ */
+function barTree(view: LibraryView, onChange: SetUrlState<LibraryView>, props: BarProps = {}) {
   const { semanticSearch = true, ...barProps } = props
   // `in`, not a default: passing `total: undefined` is itself the case under
   // test ("nothing to count"), and a default would swallow it back to 0.
   const total = 'total' in props ? props.total : 0
-  return render(
+  return (
     <I18nextProvider i18n={i18n}>
       <CapabilitiesContext.Provider value={{ semantic_search: semanticSearch }}>
         <MemoryRouter>
           <FilterBar view={view} onChange={onChange} total={total} {...barProps} />
         </MemoryRouter>
       </CapabilitiesContext.Provider>
-    </I18nextProvider>,
+    </I18nextProvider>
   )
+}
+
+function renderBar(view: LibraryView, onChange: SetUrlState<LibraryView>, props: BarProps = {}) {
+  return render(barTree(view, onChange, props))
 }
 
 /** An album the facet select offers, trimmed to the fields the bar reads. */
@@ -517,6 +525,147 @@ describe('FilterBar narrow viewport (phone)', () => {
     // now carries the facets too.
     expect(await screen.findByLabelText('Year')).toBeInTheDocument()
     expect(screen.getByLabelText('Album')).toBeInTheDocument()
+  })
+})
+
+/**
+ * The drawer's footer, the fix for filtering blind on a phone. The drawer covers
+ * the screen, so the "Photos: N" line the bar keeps beside the grid is behind
+ * it: the reader used to set a year, a person and a rating, scroll ten fields
+ * back up to the cross — the only exit — and only there learn the combination
+ * matched nothing. These tests hold the footer to the two promises that fix it:
+ * the count is readable *inside* the drawer and follows every filter change, and
+ * there is always a way out, the empty result very much included.
+ *
+ * An open Offcanvas is a portal, so each test scopes its queries to the
+ * `role="dialog"` panel: the bar's own controls are siblings in the same
+ * document and are not `aria-hidden`, so an unscoped `getByRole` would happily
+ * match the wrong button.
+ */
+describe('FilterBar drawer footer (phone)', () => {
+  afterEach(() => {
+    mockViewport(false)
+  })
+
+  /** Opens the drawer and returns its panel, scoped for `within()`. */
+  async function openDrawer(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole('button', { name: /Filters/ }))
+    return screen.findByRole('dialog')
+  }
+
+  it('carries the live result count on the button that closes the drawer', async () => {
+    mockViewport(true)
+    const user = userEvent.setup()
+    renderBar(LIBRARY_DEFAULTS, vi.fn(), { total: 227 })
+
+    const drawer = await openDrawer(user)
+    const apply = within(drawer).getByRole('button', { name: 'Show 227 photos' })
+
+    await user.click(apply)
+    // Back on the grid, with the filters the reader just set still in force.
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Filters/ })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
+  })
+
+  it('restates the count as the filters change, without closing the drawer', async () => {
+    mockViewport(true)
+    const user = userEvent.setup()
+    const props = { facets: FACETS, total: 227 }
+    const { rerender } = renderBar(LIBRARY_DEFAULTS, vi.fn(), props)
+
+    const drawer = await openDrawer(user)
+    expect(within(drawer).getByRole('button', { name: 'Show 227 photos' })).toBeInTheDocument()
+
+    // The page refetches under the newly picked year and hands the bar a new
+    // total. That is the whole point: the number moves while the drawer is open.
+    rerender(barTree({ ...LIBRARY_DEFAULTS, year: '2023' }, vi.fn(), { ...props, total: 12 }))
+
+    const stillOpen = screen.getByRole('dialog')
+    expect(within(stillOpen).getByRole('button', { name: 'Show 12 photos' })).toBeInTheDocument()
+    expect(within(stillOpen).getByLabelText('Year')).toBeInTheDocument()
+  })
+
+  it('says a single photo in the singular', async () => {
+    mockViewport(true)
+    const user = userEvent.setup()
+    renderBar(LIBRARY_DEFAULTS, vi.fn(), { total: 1 })
+
+    const drawer = await openDrawer(user)
+    expect(within(drawer).getByRole('button', { name: 'Show 1 photo' })).toBeInTheDocument()
+  })
+
+  it('still lets the reader out when the filters match nothing', async () => {
+    mockViewport(true)
+    const user = userEvent.setup()
+    renderBar({ ...LIBRARY_DEFAULTS, min_rating: '5' }, vi.fn(), { total: 0 })
+
+    const drawer = await openDrawer(user)
+    // "Show 0 photos" would promise a grid that is not there; the button admits
+    // the set is empty and stays the way out regardless.
+    const apply = within(drawer).getByRole('button', { name: 'No photos — close' })
+    expect(apply).toBeEnabled()
+
+    await user.click(apply)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('drops the number when the page has no result set to count', async () => {
+    mockViewport(true)
+    const user = userEvent.setup()
+    // The search page before a query is typed: nothing has been searched for, so
+    // a count would be an invention rather than an answer.
+    renderBar(LIBRARY_DEFAULTS, vi.fn(), { total: undefined })
+
+    const drawer = await openDrawer(user)
+    expect(within(drawer).getByRole('button', { name: 'Close filters' })).toBeInTheDocument()
+    expect(within(drawer).queryByRole('button', { name: /Show/ })).not.toBeInTheDocument()
+  })
+
+  it('clears the filters from the footer without closing the drawer', async () => {
+    mockViewport(true)
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    renderBar({ ...LIBRARY_DEFAULTS, min_rating: '5', flag: 'pick' }, onChange, { total: 0 })
+
+    const drawer = await openDrawer(user)
+    await user.click(within(drawer).getByRole('button', { name: 'Clear filters' }))
+
+    expect(onChange).toHaveBeenCalledWith({ ...LIBRARY_DEFAULTS, sort: LIBRARY_DEFAULTS.sort })
+    // Clearing is how the reader recovers from an empty set, so the drawer stays
+    // open for the count on the button beside it to show the recovery worked.
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
+  it('offers nothing to clear when no filter is set', async () => {
+    mockViewport(true)
+    const user = userEvent.setup()
+    renderBar(LIBRARY_DEFAULTS, vi.fn(), { total: 5 })
+
+    const drawer = await openDrawer(user)
+    expect(within(drawer).getByRole('button', { name: 'Show 5 photos' })).toBeInTheDocument()
+    expect(within(drawer).queryByRole('button', { name: 'Clear filters' })).not.toBeInTheDocument()
+  })
+
+  it('keeps the footer outside the scroll area, so it cannot cover the last field', async () => {
+    mockViewport(true)
+    const user = userEvent.setup()
+    renderBar(LIBRARY_DEFAULTS, vi.fn(), { facets: FACETS, total: 5 })
+
+    const drawer = await openDrawer(user)
+    const body = drawer.querySelector('.offcanvas-body')
+    const footer = drawer.querySelector('.offcanvas-footer')
+    expect(body).not.toBeNull()
+    expect(footer).not.toBeNull()
+    // Siblings in the offcanvas' flex column: the body is the scroller and the
+    // footer is subtracted from it, so the last field scrolls above the footer
+    // rather than under it. Were the footer inside the body it would scroll away
+    // with the fields — and reserving padding instead would drift the moment the
+    // footer's own height changed.
+    expect(body?.contains(footer)).toBe(false)
+    expect(footer?.parentElement).toBe(drawer)
   })
 })
 

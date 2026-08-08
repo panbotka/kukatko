@@ -1,3 +1,4 @@
+import type { TFunction } from 'i18next'
 import { useMemo, useState } from 'react'
 import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
@@ -40,7 +41,10 @@ export interface FilterBarProps<T extends LibraryView> {
   /**
    * Total number of photos matching the current filters, shown as a count. Omit
    * it when there is no result set to count — the search page before a query is
-   * typed — so the bar states nothing rather than claiming zero photos.
+   * typed — so the bar states nothing rather than claiming zero photos. On a
+   * phone it is also what the drawer's primary button says
+   * ({@link FilterDrawerFooter}), so the reader learns what a filter combination
+   * yields without closing the drawer to find out.
    */
   total?: number
   /**
@@ -99,6 +103,8 @@ export interface FilterBarProps<T extends LibraryView> {
  * favorites toggle only when the page opts in via `showFavorite`. Every active
  * filter — facets included — is echoed as a removable chip plus a single clear-all
  * action, so a filtered set is never a mystery even while the drawer is shut.
+ * The drawer closes on a sticky footer carrying the live result count
+ * ({@link FilterDrawerFooter}) rather than only on the cross ten fields back up.
  *
  * The quick filter speaks the whole `key:value` query language, exactly as
  * `/search` does — `year:1960-1969` narrows the grid to the sixties here too —
@@ -330,6 +336,18 @@ export function FilterBar<T extends LibraryView>({
             <Offcanvas.Title>{t('library.filters.toggle')}</Offcanvas.Title>
           </Offcanvas.Header>
           <Offcanvas.Body id={PANEL_ID}>{panel}</Offcanvas.Body>
+          {/* A sibling of the body, not a child of it: `.offcanvas` is a flex
+              column whose body grows and scrolls, so the footer is pinned to the
+              bottom edge *and* subtracted from the scroll area — the last field
+              scrolls above it rather than under it. */}
+          <FilterDrawerFooter
+            total={total}
+            clearVisible={clearVisible}
+            onClear={clearAll}
+            onClose={() => {
+              setOpen(false)
+            }}
+          />
         </Offcanvas>
       ) : (
         <Collapse in={open}>
@@ -339,6 +357,77 @@ export function FilterBar<T extends LibraryView>({
         </Collapse>
       )}
     </Form>
+  )
+}
+
+/**
+ * What the drawer's primary button says. The live result count when there is
+ * one; at zero the empty-set wording instead of "Show 0 photos", which reads
+ * like a broken promise; and, when the page has no result set to count at all
+ * (`total` undefined — the search page before a query is typed), a plain "close"
+ * rather than a fabricated number.
+ */
+function applyLabel(t: TFunction, total: number | undefined): string {
+  if (total === undefined) {
+    return t('library.filters.applyClose')
+  }
+  if (total === 0) {
+    return t('library.filters.applyEmpty')
+  }
+  return t('library.filters.apply', { count: total })
+}
+
+/**
+ * The phone drawer's sticky footer: the way out, with the answer already on it.
+ *
+ * On a phone the filters take over the screen, so the "Photos: N" line the bar
+ * keeps beside the grid sits *under* the drawer, invisible. Without this footer
+ * the reader sets a year, a person and a rating, scrolls ten fields back up to
+ * the only exit — the cross in the header — and only then learns the combination
+ * matches nothing. The primary button carries that number instead and closes the
+ * drawer, so the count is read before the trip back and the trip is one tap from
+ * wherever the scrolling stopped. It needs no state of its own: `total` is the
+ * same prop the bar already states, so the number follows every filter change
+ * live, with the drawer still open.
+ *
+ * It stays usable at zero — an empty result is exactly when the reader most
+ * needs a way out — so the button only changes its wording, never its ability to
+ * close.
+ *
+ * "Clear filters" repeats the bar's own action (and, like it, appears only when
+ * there is something to clear) and deliberately does *not* close: clearing is
+ * how the reader recovers from an empty set, and the count on the button beside
+ * it updates in place to show the recovery worked.
+ */
+function FilterDrawerFooter({
+  total,
+  clearVisible,
+  onClear,
+  onClose,
+}: {
+  total: number | undefined
+  clearVisible: boolean
+  onClear: () => void
+  onClose: () => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <div className="offcanvas-footer kukatko-filter-footer">
+      <Button type="button" size="lg" variant="primary" className="w-100" onClick={onClose}>
+        {applyLabel(t, total)}
+      </Button>
+      {clearVisible && (
+        <Button
+          type="button"
+          size="lg"
+          variant="outline-secondary"
+          className="w-100"
+          onClick={onClear}
+        >
+          {t('library.filters.clear')}
+        </Button>
+      )}
+    </div>
   )
 }
 

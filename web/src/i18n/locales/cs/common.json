@@ -483,7 +483,13 @@
       "toggle": "Filtry",
       "dateRange": "Datum pořízení",
       "removeFilter": "Odebrat filtr: {{name}}",
-      "clear": "Zrušit filtry"
+      "clear": "Zrušit filtry",
+      "apply_one": "Zobrazit {{count}} fotku",
+      "apply_few": "Zobrazit {{count}} fotky",
+      "apply_many": "Zobrazit {{count}} fotky",
+      "apply_other": "Zobrazit {{count}} fotek",
+      "applyEmpty": "Žádné fotky — zavřít",
+      "applyClose": "Zavřít filtry"
     },
     "density": {
       "label": "Dlaždic na řádek",
