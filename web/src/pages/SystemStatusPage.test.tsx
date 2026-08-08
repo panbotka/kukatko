@@ -268,7 +268,7 @@ describe('SystemStatusPage', () => {
 
     expect(await screen.findByRole('heading', { name: 'Library' })).toBeInTheDocument()
     expect(await screen.findByTestId('stat-headline-photos')).toHaveTextContent('1,234')
-    expect(screen.getByTestId('stat-embeddings-without-embedding')).toHaveTextContent('34')
+    expect(screen.getByTestId('stat-content-pending')).toHaveTextContent('34')
     // One data source: the dashboard reads the same endpoint as the stats page.
     expect(statsMock).toHaveBeenCalledTimes(1)
   })

@@ -221,7 +221,7 @@
     "error": "Statistiky knihovny se nepodařilo načíst.",
     "groups": {
       "photos": "Fotky",
-      "embeddings": "Embeddingy",
+      "content": "Vyhledávání podle obsahu",
       "faces": "Obličeje",
       "people": "Lidé a zvířata",
       "collections": "Alba a štítky"
@@ -230,9 +230,8 @@
     "videos": "Z toho videí",
     "live": "V knihovně",
     "archived": "V koši",
-    "embeddings": "Embeddingů celkem",
-    "withEmbedding": "Fotek s embeddingem",
-    "withoutEmbedding": "Fotek bez embeddingu",
+    "contentReady": "Fotek připravených k hledání podle obsahu",
+    "contentPending": "Zbývá zpracovat",
     "faces": "Nalezených obličejů",
     "withFaces": "Fotek s obličejem",
     "withoutFaces": "Fotek bez obličeje",
@@ -243,7 +242,12 @@
     "markersAssigned": "Pojmenovaných obličejů",
     "markersUnassigned": "Nepojmenovaných obličejů",
     "albums": "Alb celkem",
-    "labels": "Štítků"
+    "labels": "Štítků",
+    "links": {
+      "trash": "Otevřít koš",
+      "withoutFaces": "Zobrazit v knihovně fotky bez obličeje",
+      "unnamed": "Pojmenovat obličeje v třídění"
+    }
   },
   "reviewDecisions": {
     "title": "Rozhodnutí v třídění",

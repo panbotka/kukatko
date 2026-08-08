@@ -4,6 +4,7 @@ import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
 import type { LibraryStats } from '../services/system'
 
@@ -44,12 +45,32 @@ function stats(overrides: Partial<LibraryStats> = {}): LibraryStats {
   }
 }
 
-function renderPage() {
+// auth builds an AuthContext value for the given capability. The page itself is
+// open to every role; only the action links behind the highlighted numbers are
+// gated, so `canWrite` is the whole difference between a viewer and an editor.
+function auth(canWrite: boolean): AuthContextValue {
+  return {
+    status: 'authenticated',
+    user: { uid: 'u1', username: 'u', display_name: 'U', role: canWrite ? 'editor' : 'viewer' },
+    role: canWrite ? 'editor' : 'viewer',
+    downloadToken: null,
+    canWrite,
+    isAdmin: false,
+    isMaintainer: false,
+    login: vi.fn(),
+    logout: vi.fn(),
+    refresh: vi.fn(),
+  } as unknown as AuthContextValue
+}
+
+function renderPage(canWrite = true) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <MemoryRouter>
-        <StatsPage />
-      </MemoryRouter>
+      <AuthContext.Provider value={auth(canWrite)}>
+        <MemoryRouter>
+          <StatsPage />
+        </MemoryRouter>
+      </AuthContext.Provider>
     </I18nextProvider>,
   )
 }
@@ -70,7 +91,7 @@ describe('StatsPage', () => {
 
     // Headline numbers: grouped for the active locale, never raw JSON.
     expect(await screen.findByTestId('stat-headline-photos')).toHaveTextContent('20,310')
-    expect(screen.getByTestId('stat-headline-embeddings')).toHaveTextContent('20,092')
+    expect(screen.getByTestId('stat-headline-content')).toHaveTextContent('20,092')
     expect(screen.getByTestId('stat-headline-faces')).toHaveTextContent('112,806')
     expect(screen.getByTestId('stat-headline-people')).toHaveTextContent('42')
     expect(screen.getByTestId('stat-headline-collections')).toHaveTextContent('12')
@@ -78,7 +99,7 @@ describe('StatsPage', () => {
     // Every group renders under its own heading.
     for (const name of [
       'Photos',
-      'Embeddings',
+      'Search by content',
       'Faces',
       'People and animals',
       'Albums and labels',
@@ -87,15 +108,63 @@ describe('StatsPage', () => {
     }
   })
 
+  it('says what an embedding buys the reader instead of naming it', async () => {
+    renderPage()
+
+    // The page is open to the whole family, so the pipeline's vocabulary stays
+    // out of it: no card, row or headline mentions an embedding.
+    expect(await screen.findByTestId('library-stats')).not.toHaveTextContent(/embedding/i)
+    expect(screen.getByText('Photos ready to search by content')).toBeInTheDocument()
+    expect(screen.getByText('Still to process')).toBeInTheDocument()
+  })
+
   it('reports the derived coverage gaps, which is what the page is opened for', async () => {
     renderPage()
 
-    expect(await screen.findByTestId('stat-embeddings-without-embedding')).toHaveTextContent('218')
+    expect(await screen.findByTestId('stat-content-pending')).toHaveTextContent('218')
     expect(screen.getByTestId('stat-faces-without-faces')).toHaveTextContent('5,743')
     expect(screen.getByTestId('stat-people-unnamed')).toHaveTextContent('150')
     // The photo breakdown carries the trash and the video count too.
     expect(screen.getByTestId('stat-photos-archived')).toHaveTextContent('9')
     expect(screen.getByTestId('stat-photos-videos')).toHaveTextContent('118')
+  })
+
+  it('turns the numbers that mean work into links to where that work happens', async () => {
+    renderPage()
+
+    const unnamed = within(await screen.findByTestId('stat-people-unnamed')).getByRole('link', {
+      name: 'Name faces in the review game',
+    })
+    expect(unnamed).toHaveTextContent('150')
+    expect(unnamed).toHaveAttribute('href', '/review')
+
+    // The library's own "no faces" filter, so the destination is an ordinary
+    // library view rather than a screen of its own.
+    expect(
+      within(screen.getByTestId('stat-faces-without-faces')).getByRole('link', {
+        name: 'Show photos without a face in the library',
+      }),
+    ).toHaveAttribute('href', '/?q=faces%3A0')
+
+    expect(
+      within(screen.getByTestId('stat-photos-archived')).getByRole('link', {
+        name: 'Open the trash',
+      }),
+    ).toHaveAttribute('href', '/trash')
+  })
+
+  it('never offers a viewer a link they would be turned away from', async () => {
+    renderPage(false)
+
+    // Both destinations write (naming a face, emptying the trash), so a viewer
+    // reads the plain number instead of being sent to a forbidden page.
+    expect(await screen.findByTestId('stat-people-unnamed')).toHaveTextContent('150')
+    expect(within(screen.getByTestId('stat-people-unnamed')).queryByRole('link')).toBeNull()
+    expect(within(screen.getByTestId('stat-photos-archived')).queryByRole('link')).toBeNull()
+    // The library is open to every role, so that link survives.
+    expect(
+      within(screen.getByTestId('stat-faces-without-faces')).getByRole('link'),
+    ).toHaveAttribute('href', '/?q=faces%3A0')
   })
 
   it('shows an error state instead of zeroes when the counts cannot be loaded', async () => {

@@ -174,11 +174,17 @@ here.
   `MaintenancePage` and `SystemStatusPage`; the `states` prop controls order and selection — Maintenance omits
   `pending`, System adds it. Tests: `JobStateLegend.test.tsx`),
   `LibraryStatsCards` (**the shared rendering of the library counts** `GET /system/stats`: five
-  `Card`s in a responsive `Row` — photos, embeddings, faces, people, collections — each with a headline
-  number (`kk-display`) over its breakdown (`dl`), every value through `formatCount` for the active language;
-  a **coverage gap** row (bez embeddingu / bez obličeje / nepojmenované) turns `text-warning` while non-zero.
-  Purely presentational — the caller owns loading/errors/retry — so `StatsPage` and `SystemStatusPage`'s
-  Knihovna section cannot drift apart or double-fetch),
+  `Card`s in a responsive `Row` — photos, vyhledávání podle obsahu, faces, people, collections — each with a
+  headline number (`kk-display`) over its breakdown (`dl`), every value through `formatCount` for the active
+  language; a **coverage gap** row (zbývá zpracovat / bez obličeje / nepojmenované) turns `text-warning` while
+  non-zero. The vocabulary is the family's, not the pipeline's: the card that named the embedding now says what
+  it buys (**Vyhledávání podle obsahu**, headline = `photos_with_embedding`, row = `photos_without_embedding`).
+  A count that stands for work to be done is a **`Link`** (`text-reset text-decoration-underline`, so it keeps
+  the row's colour and gains an underline; `aria-label`/`title` name the destination, since "16 585" names
+  nothing): v koši → `/trash`, fotky bez obličeje → the library's own filter `/?q=faces%3A0`, nepojmenované
+  obličeje → `/review`. The two write destinations are gated on `useAuth().canWrite` and render as plain text
+  for a viewer — never a link that would bounce them (N13). The caller still owns loading/errors/retry, so
+  `StatsPage` and `SystemStatusPage`'s Knihovna section cannot drift apart or double-fetch),
   `Icon` (**the app's single icon set**: a bootstrap-icons glyph as `<i class="bi bi-{name}">`,
   the font is imported globally in `main.tsx`; the `IconName` union holds the dictionary of used icons, so a typo
   is a compile error; always `aria-hidden` beside a visible label),
@@ -1826,15 +1832,19 @@ here.
   leaderboard; reachable from the **user menu** and the phone drawer's account section) the **library
   statistics** over `GET /system/stats` (`useLibraryStats`), modelled on photo-sorter's status page: five
   cards (`LibraryStatsCards`, shared with `SystemStatusPage`) — **Fotky** (celkem, z toho videa, v knihovně,
-  v koši), **Embeddingy** (celkem, fotek s/bez), **Obličeje** (nalezených, fotek s/bez), **Lidé a zvířata**
-  (subjekty po druhu, pojmenované/nepojmenované obličeje) and **Alba a štítky**. Each card leads with its
-  headline number (`kk-display`) and breaks it down beneath; **every number is grouped for the active
-  language** (`formatCount`, cs „20 310" / en „20,310" — never raw JSON), and the **coverage gaps**
-  (bez embeddingu / bez obličeje / nepojmenované) are highlighted while non-zero — that is what the page is
-  opened for while verifying an import. A failed load shows `ErrorState` + retry and **renders no grid of
-  zeroes**, so an unavailable count never reads as an empty library. i18n `stats.*` (cs/en). Tests:
-  `StatsPage.test.tsx` (loaded counts with separators + group headings, the derived gaps, the error state
-  without a zero grid, retry, cs grouping),
+  v koši), **Vyhledávání podle obsahu** (připravených fotek, zbývá zpracovat), **Obličeje** (nalezených, fotek
+  s/bez), **Lidé a zvířata** (subjekty po druhu, pojmenované/nepojmenované obličeje) and **Alba a štítky**.
+  Each card leads with its headline number (`kk-display`) and breaks it down beneath; **every number is grouped
+  for the active language** (`formatCount`, cs „20 310" / en „20,310" — never raw JSON), and the **coverage
+  gaps** (zbývá zpracovat / bez obličeje / nepojmenované) are highlighted while non-zero — that is what the page
+  is opened for while verifying an import. Because **everyone** reads this page it carries **no pipeline
+  jargon** (no „embedding" anywhere) and the highlighted numbers **lead somewhere** — `/trash`, the library at
+  `?q=faces:0`, `/review` — with the write-gated ones hidden from a viewer (see `LibraryStatsCards`). A failed
+  load shows `ErrorState` + retry and **renders no grid of zeroes**, so an unavailable count never reads as an
+  empty library. i18n `stats.*` (cs/en). Tests: `StatsPage.test.tsx` (loaded counts with separators + group
+  headings, no „embedding" in the grid, the derived gaps, the three links with their hrefs and accessible
+  names, **a viewer sees the two write links as plain numbers**, the error state without a zero grid, retry,
+  cs grouping),
   `ReviewDecisionsPage` = `/audit/reviews` (admin **or** maintainer, `RequireRole role="admin"`)
   an **overview of one user's review decisions** (reachable by clicking through from the leaderboard): over `GET /audit`
   with `?via=review&user=…` (`fetchAuditLog`). At the top the user's name + their **Ano/Ne/Celkem** tally
