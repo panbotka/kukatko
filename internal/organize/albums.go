@@ -55,7 +55,7 @@ func scanAlbumSummary(row pgx.Row) (AlbumSummary, error) {
 	if err := row.Scan(
 		&as.UID, &as.Slug, &as.Title, &as.Description, &as.Type, &as.CoverPhotoUID,
 		&as.Private, &as.CreatedBy, &as.CreatedAt, &as.UpdatedAt, &as.PhotoCount,
-		&as.CoverUID, &as.TakenFrom, &as.TakenTo,
+		&as.CoverUID, &as.CoverUIDs, &as.TakenFrom, &as.TakenTo,
 	); err != nil {
 		return AlbumSummary{}, fmt.Errorf("organize: scanning album summary: %w", err)
 	}
@@ -204,6 +204,12 @@ func (s *Store) UpdateAlbum(ctx context.Context, uid string, upd AlbumUpdate) (A
 //     returns the same cover on every request. The FILTER drops the NULL rows the
 //     LEFT JOIN produces for a hidden photo or an empty album, which then yields
 //     no array at all and so no cover. COALESCE lets a hand-picked cover win.
+//   - cover_uids is the head of that very same ordered array — the first $1
+//     candidates rather than only the first — so the index can draw a collage or
+//     step past a cover a neighbouring album already used. It costs nothing
+//     extra: the two projections spell the aggregate identically, so the executor
+//     computes it once and the slice is a subscript on the result. COALESCE to
+//     '{}' keeps an empty album an empty list rather than a NULL.
 //
 // The cover falling out of the same aggregation is the point, not a flourish: it
 // used to be a LATERAL "ORDER BY p2.taken_at DESC LIMIT 1" correlated on a.uid,
@@ -221,6 +227,8 @@ SELECT a.uid, a.slug, a.title, a.description, a.type, a.cover_photo_uid,
        COALESCE(a.cover_photo_uid,
                 (array_agg(p.uid ORDER BY p.taken_at DESC NULLS LAST, p.uid)
                      FILTER (WHERE p.uid IS NOT NULL))[1]) AS cover_uid,
+       COALESCE((array_agg(p.uid ORDER BY p.taken_at DESC NULLS LAST, p.uid)
+                     FILTER (WHERE p.uid IS NOT NULL))[1:$1::int], '{}') AS cover_uids,
        MIN(p.taken_at) AS taken_from,
        MAX(p.taken_at) AS taken_to
 FROM albums a
@@ -229,6 +237,18 @@ LEFT JOIN photos p ON p.uid = ap.photo_uid AND p.archived_at IS NULL
     AND (p.stack_uid IS NULL OR p.stack_primary)
 GROUP BY a.uid
 ORDER BY MAX(p.taken_at) DESC NULLS LAST, a.uid`
+
+// CoverCandidates is how many of an album's photos ListAlbums offers as covers
+// in AlbumSummary.CoverUIDs. It is passed to listAlbumsSQL as the array-slice
+// bound rather than written into the statement, so the number lives in exactly
+// one place.
+//
+// Eight is twice what a 2×2 collage needs, which is the point: two albums built
+// from the same photos can then both fill a collage without sharing a single
+// picture. Raising it costs nothing per album (the candidates are a slice of an
+// array the query already builds) but grows the listing's payload for every
+// album, most of which never need a second candidate.
+const CoverCandidates = 8
 
 // ListAlbums returns every album together with how many photos it contains, the
 // cover to render for it and the span of capture times across its photos, newest
@@ -240,8 +260,12 @@ ORDER BY MAX(p.taken_at) DESC NULLS LAST, a.uid`
 // span, so the index describes exactly the photos the album's grid shows. A
 // hand-picked cover is honoured as chosen, archived or not, because it is the
 // user's own explicit answer to what the album looks like.
+//
+// Each summary also carries up to CoverCandidates further covers
+// (AlbumSummary.CoverUIDs), so a grid of albums can render tiles that differ
+// from one another instead of repeating the one photo overlapping albums share.
 func (s *Store) ListAlbums(ctx context.Context) ([]AlbumSummary, error) {
-	rows, err := s.pool.Query(ctx, listAlbumsSQL)
+	rows, err := s.pool.Query(ctx, listAlbumsSQL, CoverCandidates)
 	if err != nil {
 		return nil, fmt.Errorf("organize: listing albums: %w", err)
 	}

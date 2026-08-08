@@ -134,6 +134,17 @@ function gridTitles(): string[] {
     .map((link) => link.getAttribute('aria-label') ?? '')
 }
 
+/** The image sources of every tile in the grid, in render order. */
+function gridCovers(): string[][] {
+  const grid = document.querySelector<HTMLElement>('.kk-tile-grid')
+  if (grid === null) {
+    return []
+  }
+  return within(grid)
+    .getAllByRole('link')
+    .map((link) => [...link.querySelectorAll('img')].map((img) => img.getAttribute('src') ?? ''))
+}
+
 /** The section button carrying the given label. */
 function section(name: string) {
   return screen.getByRole('button', { name: new RegExp(`^${name}`) })
@@ -166,6 +177,24 @@ describe('AlbumsPage', () => {
     expect(grid?.style.gridTemplateColumns).toBe('repeat(auto-fill, minmax(160px, 1fr))')
     expect(grid?.style.gap).toBe('12px')
     expect(gridTitles()).toHaveLength(2)
+  })
+
+  it('draws albums built from the same photos with different covers', async () => {
+    // The bug this fences off: the cover was each album's newest photo, so four
+    // albums holding the same scanned title page all showed that page. A grid of
+    // cards earns its extra room over a list only while the cards differ.
+    const shared = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8']
+    fetchMock.mockResolvedValue([
+      { ...album('al_1', 'Kronika I'), cover_uid: 'p1', cover_uids: shared },
+      { ...album('al_2', 'Kronika II'), cover_uid: 'p1', cover_uids: shared },
+    ])
+    renderPage()
+
+    await screen.findByText('Kronika I')
+    const [first = [], second = []] = gridCovers()
+    expect(first).toHaveLength(4)
+    expect(second).toHaveLength(4)
+    expect(first.filter((src) => second.includes(src))).toEqual([])
   })
 
   it('shows the empty state when there are no albums', async () => {

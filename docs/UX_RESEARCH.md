@@ -83,7 +83,7 @@ dopad/pracnost — nahoře je to, co se vyplatí udělat první.
 | [N18](#n18) | `Rok` (109 položek) a `Pořízeno od/do` jsou dva soupeřící filtry data | 🟡 | 🟡 | `FilterBar` |
 | [N19](#n19) | Mobil: 350 z 852 px je ovládání, a časová osa je skrytá | 🟡 | 🟡 | `LibraryPage`, `TimelineScrubber` |
 | [N20](#n20) ✅ | Ovládání prohlížeče fotky se schová i s jedinou cestou zpět | 🟡 | ⚪ | `useAutoHideChrome` |
-| [N21](#n21) | Obálky alb se opakují, alba jdou od sebe rozeznat jen podle názvu | 🟡 | 🟡 | `AlbumsPage`, výběr obálky |
+| [N21](#n21) ✅ | Obálky alb se opakují, alba jdou od sebe rozeznat jen podle názvu | 🟡 | 🟡 | `AlbumsPage`, výběr obálky |
 | [N22](#n22) | `/stats` mluví o „Embeddingách" a nenabízí žádnou akci | 🟡 | ⚪ | `StatsPage` |
 | [N23](#n23) | Mapa je světlá v tmavé aplikaci a `Místa` jsou jeden řádek | 🟡 | 🟡 | `MapPage`, `PlacesPage` |
 | [N24](#n24) | Detail alba nemá časovou osu ani popis | ⚪ | ⚪ | `AlbumDetailPage` |
@@ -982,6 +982,22 @@ se neliší, je to horší než seznam — zabírá víc místa a nepomáhá.
 3. Umožnit ruční nastavení obálky u alba (u osoby už to existuje).
 
 **Kde to je.** `web/src/pages/AlbumsPage.tsx`, `cover_uid` z `internal/organize`.
+
+**✅ Vyřešeno (8. 8. 2026).** Obálkou alba jsou **čtyři fotky místo jedné**:
+`GET /albums` vrací vedle `cover_uid` i `cover_uids` — osm nejnovějších viditelných
+fotek alba, řez toho samého pole, ze kterého se obálka brala doteď, takže dotaz
+nestojí ani o milisekundu víc (210 ms / 1 024 bloků proti 208 ms / 1 013 předtím).
+Z nich `lib/albumCovers` poskládá **koláž 2 × 2**; album, které na ni nemá dost
+fotek, spadne zpátky na jeden obrázek — koláž vycpaná opakováním je horší než
+poctivá jedna fotka. A obojí přitom **přeskakuje fotky, které si vzala dřívější
+dlaždice**, takže dvě alba postavená z těch samých fotek ukážou osm různých.
+Plánuje se celý seznam najednou (`useMemo` nad `visible`), ne dlaždice po
+dlaždici: rošt je virtualizovaný a plán počítaný podle právě viditelného okna by
+dlaždici při každém návratu přidělil jinou obálku. Ručně vybraná obálka
+(`cover_photo_uid`) všechno přebíjí a zobrazí se samostatně — někdo odpověděl na
+otázku „jak album vypadá" a odhad nesmí přebít rozhodnutí. Bod 3 návrhu (ruční
+nastavení obálky z rozhraní) je samostatná zapisovací funkce a součástí téhle
+změny není.
 
 ---
 

@@ -556,12 +556,18 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   Thumbnails and metadata are computed **locally**, so the backfill works even when the box is offline; the job queue
   deduplicates, so a repeated run is idempotent. Mounted by `server.WithAPI` (`buildJobs`).
 - **Albums & Labels API (`/api/v1`, `internal/organizeapi`):** **albums** `GET /albums`
-  (RequireAuth) → `{albums:[{...album, photo_count, cover_uid?, taken_from?, taken_to?}]}`
+  (RequireAuth) → `{albums:[{...album, photo_count, cover_uid?, cover_uids?, taken_from?, taken_to?}]}`
   (`organize.AlbumSummary`): `cover_uid` is the **effective cover** — a manually chosen
   `cover_photo_uid`, otherwise the **newest live photo of the album** (deterministically: `taken_at DESC NULLS
-  LAST, uid`); `taken_from`/`taken_to` is the **`taken_at` range** across the album's photos. Both are aggregated
-  by a single SQL query (LEFT JOIN + LATERAL, no migration) and count **only live photos** —
-  an archived photo is counted into `photo_count`, but supplies no cover and does not move the range. Absent
+  LAST, uid`); `cover_uids` is that same photo **and the ones behind it** in the same order,
+  `organize.CoverCandidates` (8) at most and **never the hand-picked cover**, because one cover per album is
+  not enough to tell albums apart — overlapping albums share their newest photo, so the client draws a
+  2 × 2 collage or steps to a photo a neighbouring tile has not used (`web/src/lib/albumCovers.ts`).
+  It is a slice of the array the cover already aggregates, so it costs nothing extra;
+  `taken_from`/`taken_to` is the **`taken_at` range** across the album's photos. All are aggregated
+  by a single SQL query (one LEFT JOIN + aggregates over it, no migration, no per-album lookup — see
+  `docs/PERF.md` § "The album index") and count **only live photos** —
+  an archived photo is not counted into `photo_count`, supplies no cover and does not move the range. Absent
   when the album has nothing to show / no photo has a known `taken_at`. **The list order** is always
   **newest album first**: sorted by the **newest live photo of the album** (`MAX(taken_at) DESC
   NULLS LAST`, `uid` as the tiebreak for a total and stable order). Albums that cannot be assigned

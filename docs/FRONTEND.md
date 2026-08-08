@@ -678,12 +678,18 @@ here.
   the tile **shows no date** — the only one it carries is
   in the `alt` text, and even there an **estimated** date is marked (`cca 1950`), so it can't be read as certain;
   the grid/timeline sort doesn't change, it is still `taken_at`,
-  `components/organize/` = `AlbumTile` (an album card: the **effective cover** `cover_uid`
-  (manually chosen, otherwise the album's newest photo — computed by the backend) / name / **year range**
+  `components/organize/` = `AlbumTile` (an album card: the cover / name / **year range**
   via `formatCaptureRange` (only when the album has dated photos) / count → `/albums/{uid}`;
-  `EmptyState` only for an album with no photos; the name is the **display title**
+  the cover is the `cover` prop — what `lib/albumCovers` planned for the whole grid — and without it
+  the tile plans **for itself alone** (right for a tile rendered on its own, and why a caller rendering
+  many must pass it): a `collage` draws four `tile_224` cells into `.kk-tile__collage` (a 2 × 2 grid
+  filling the same square well, so the geometry never differs from a single cover) inside an
+  `aria-hidden` wrapper with empty `alt`s — the link is already named after the album, and four
+  identical alt texts would only make the page longer to listen to —, a `single` draws one `tile_500`
+  image with the title as its `alt`, and `none` falls back to `EmptyState`;
+  the name is the **display title**
   (`i18n/albumNames` `albumDisplayTitle(title, i18n.language)`) and the *same* string feeds the link's
-  `aria-label`, its `title` and the cover's `alt`, so none of them can drift back to the raw one),
+  `aria-label`, its `title` and a single cover's `alt`, so none of them can drift back to the raw one),
   `AlbumFilterBar` (the album index's own filter bar: the section strip — Moje alba · Podle měsíce ·
   Momenty · Místa, each with its live count as a `Badge`, `ButtonGroup` + `aria-pressed` like
   `CandidateFilterTabs` — plus a name search, the ordering `Form.Select` and the „I prázdná" switch;
@@ -2531,6 +2537,20 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   (`localeCompare`, numeric, base sensitivity — so `květen` really precedes `leden`) while `date`
   **keeps the order the API returned**; the counts are taken **after** the search + empty filter but
   **before** the section split, so a badge answers „where are my matches?" rather than restating the totals;
+  `albumCovers.ts` = what each album tile draws, so a grid of cards actually differs card to card: the
+  `AlbumCover` union (`none` · `single{photoUid}` · `collage{photoUids}`) + `ALBUM_COLLAGE_TILES` (4) +
+  `coverPhotoUids(cover)` + the pure `albumCover(album, taken?)` and `planAlbumCovers(albums)`.
+  The cover used to be the album's newest photo, and overlapping albums share exactly that — four albums
+  holding one scanned title page all showed it. So an album with at least four candidates
+  (`cover_uids`, the backend's `organize.CoverCandidates` newest photos) becomes a **2 × 2 collage**,
+  a smaller one degrades to a **single image** (a collage padded with repeats is worse than an honest
+  single photo), and either way the photos an earlier tile took are skipped — with a top-up from the
+  album's own order when too few are left, because three pictures and a hole shout louder than a repeat.
+  A hand-picked `cover_photo_uid` overrules all of it and is shown alone, never as one cell:
+  a guess must not overrule a decision. `planAlbumCovers` walks the list in render order, taking each
+  cover's photos out of circulation for the tiles after it; the grid is **virtualized**, so the page
+  plans the whole `visible` list once in a `useMemo` — a plan recomputed per visible window would deal
+  a tile a new cover every time it scrolled back;
   `peopleBrowse.ts` = the same job for the people index: the `PeopleView` type (`q`/`type`/`sort`) +
   `PEOPLE_DEFAULTS` (everybody, alphabetical) + the `toPeopleTab`/`toPeopleSort` sanitizers +
   `peopleBrowseOptions(view, language)` + `browsePeople(subjects, options)` → `{visible, counts,

@@ -238,7 +238,8 @@ func explainAlbumIndex(t *testing.T, db *database.DB) explainResult {
 	t.Helper()
 	var raw []byte
 	err := db.Pool().QueryRow(t.Context(),
-		"EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) "+organize.ListAlbumsSQL).Scan(&raw)
+		"EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) "+organize.ListAlbumsSQL,
+		organize.CoverCandidates).Scan(&raw)
 	if err != nil {
 		t.Fatalf("explaining the album index: %v", err)
 	}
