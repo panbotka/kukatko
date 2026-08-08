@@ -9,16 +9,18 @@ import { useLibraryStats } from '../hooks/useLibraryStats'
 /**
  * The library-statistics page (`GET /system/stats`): how big the library is and
  * how much of it has been processed — photos and videos, what is in the trash,
- * how many photos carry an embedding or a detected face (and, explicitly, how
- * many carry neither), how many people and animals are named, and how it is
- * organised into albums and labels.
+ * how much can already be searched by content or has a face on it (and,
+ * explicitly, how much still cannot), how many people and animals are named, and
+ * how it is organised into albums and labels.
  *
  * Visible to every signed-in role: these are read-only aggregate counts, the same
  * numbers photo-sorter's status page showed, and knowing them is not an
- * operations privilege. The System page renders the very same counts as its
- * Library section from this one endpoint. A failed aggregation shows an error
- * with a retry rather than a grid of zeroes, which would read as an empty
- * library. See docs/FRONTEND.md.
+ * operations privilege. Because everyone reads it, it speaks the family's
+ * vocabulary rather than the pipeline's, and the counts that stand for work to be
+ * done link to where that work happens ({@link LibraryStatsCards}). The System
+ * page renders the very same counts as its Library section from this one
+ * endpoint. A failed aggregation shows an error with a retry rather than a grid
+ * of zeroes, which would read as an empty library. See docs/FRONTEND.md.
  */
 export function StatsPage() {
   const { t } = useTranslation()

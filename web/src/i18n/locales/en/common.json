@@ -221,7 +221,7 @@
     "error": "Failed to load the library statistics.",
     "groups": {
       "photos": "Photos",
-      "embeddings": "Embeddings",
+      "content": "Search by content",
       "faces": "Faces",
       "people": "People and animals",
       "collections": "Albums and labels"
@@ -230,9 +230,8 @@
     "videos": "Of which videos",
     "live": "In the library",
     "archived": "In the trash",
-    "embeddings": "Embeddings in total",
-    "withEmbedding": "Photos with an embedding",
-    "withoutEmbedding": "Photos without an embedding",
+    "contentReady": "Photos ready to search by content",
+    "contentPending": "Still to process",
     "faces": "Detected faces",
     "withFaces": "Photos with a face",
     "withoutFaces": "Photos without a face",
@@ -243,7 +242,12 @@
     "markersAssigned": "Named faces",
     "markersUnassigned": "Unnamed faces",
     "albums": "Albums in total",
-    "labels": "Labels"
+    "labels": "Labels",
+    "links": {
+      "trash": "Open the trash",
+      "withoutFaces": "Show photos without a face in the library",
+      "unnamed": "Name faces in the review game"
+    }
   },
   "reviewDecisions": {
     "title": "Review decisions",

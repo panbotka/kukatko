@@ -84,7 +84,7 @@ dopad/pracnost — nahoře je to, co se vyplatí udělat první.
 | [N19](#n19) | Mobil: 350 z 852 px je ovládání, a časová osa je skrytá | 🟡 | 🟡 | `LibraryPage`, `TimelineScrubber` |
 | [N20](#n20) ✅ | Ovládání prohlížeče fotky se schová i s jedinou cestou zpět | 🟡 | ⚪ | `useAutoHideChrome` |
 | [N21](#n21) ✅ | Obálky alb se opakují, alba jdou od sebe rozeznat jen podle názvu | 🟡 | 🟡 | `AlbumsPage`, výběr obálky |
-| [N22](#n22) | `/stats` mluví o „Embeddingách" a nenabízí žádnou akci | 🟡 | ⚪ | `StatsPage` |
+| [N22](#n22) ✅ | `/stats` mluví o „Embeddingách" a nenabízí žádnou akci | 🟡 | ⚪ | `StatsPage` |
 | [N23](#n23) | Mapa je světlá v tmavé aplikaci a `Místa` jsou jeden řádek | 🟡 | 🟡 | `MapPage`, `PlacesPage` |
 | [N24](#n24) | Detail alba nemá časovou osu ani popis | ⚪ | ⚪ | `AlbumDetailPage` |
 | [N25](#n25) | Prázdné hledání hlásí „Počet fotek: 0" | ⚪ | ⚪ | `SearchPage` |
@@ -1024,6 +1024,24 @@ výzva k akci, po které nenásleduje žádná akce.
 
 **Kde to je.** `web/src/pages/StatsPage.tsx`,
 `web/src/components/LibraryStatsCards.tsx`, texty v `web/src/i18n`.
+
+**✅ Vyřešeno (8. 8. 2026).** Slovo „embedding" ze stránky zmizelo — karta se
+jmenuje **„Vyhledávání podle obsahu"** a říká, co z toho uživatel má:
+v čele **„Fotek připravených k hledání podle obsahu 20 664"**, pod tím jediný
+řádek **„Zbývá zpracovat 242"**. Zrušený řádek nic neubral: `embeddings` (počet
+řádků v tabulce) a `photos_with_embedding` jsou v `internal/system/store.go`
+totéž číslo, `embeddings` má `photo_uid` jako primární klíč. Čísla se počítají
+úplně stejně jako předtím.
+
+Zvýrazněná čísla teď někam vedou: **v koši** → `/trash`, **fotky bez obličeje** →
+knihovna s filtrem `/?q=faces%3A0` (vlastní filtr dotazovacího jazyka, takže cíl
+je běžný pohled knihovny, který jde dál filtrovat i uložit), **nepojmenované
+obličeje** → `/review`. Odkaz je `Link` s třídami `text-reset
+text-decoration-underline` — podědí barvu řádku (zvýrazněná mezera zůstane
+žlutá) a přibere podtržení, aby byl poznat; přístupné jméno je cíl, ne číslo
+(„16 585" samo o sobě neříká nic). Obě zapisovací cesty jsou podmíněné
+`useAuth().canWrite`: prohlížející uživatel vidí prosté číslo, ne odkaz, který by
+ho odmítl ([N13](#n13)). Odkaz do knihovny zůstává všem.
 
 ---
 
