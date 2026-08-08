@@ -11,7 +11,11 @@ export interface FaceOverlayProps {
   faces: FaceView[]
   /** The `face_index` whose naming panel is open, or null when none is. */
   selected: number | null
-  /** The `face_index` hovered in the faces panel, or null. Highlights its box. */
+  /**
+   * The `face_index` the reader is pointing at — hovered or focused, on either
+   * side of the pair, since the page feeds its own `onHover` straight back here.
+   * Its box is thickened and is the only one that shows a name.
+   */
   hovered?: number | null
   /** Selects a face (opens its naming panel). Never called when read-only. */
   onSelect: (faceIndex: number) => void
@@ -21,8 +25,9 @@ export interface FaceOverlayProps {
    */
   onHover?: (faceIndex: number | null) => void
   /**
-   * When true the boxes are drawn with their names but cannot be selected, for
-   * viewers who may not assign people. Defaults false.
+   * When true the boxes are drawn but cannot be selected or even hovered, for
+   * viewers who may not assign people — their names then come from the panel,
+   * whose rows still report the pairing. Defaults false.
    */
   readOnly?: boolean
 }
@@ -53,8 +58,17 @@ const CHROME: CSSProperties = { pointerEvents: 'none', whiteSpace: 'nowrap' }
  * is click-through, so only the boxes intercept pointer events — and when
  * read-only not even those, leaving the image below fully clickable.
  *
- * Each box carries its number, so a panel row ("Face #2") can be traced back to a
- * face without hunting; an assigned box also carries the person's name.
+ * Each box carries its number — assigned in reading order by `useFaces`, so #1 is
+ * the leftmost face of the top row — which is what ties a box to its row in the
+ * faces panel.
+ *
+ * **Only the active box carries a name.** Drawing every name at once is what the
+ * boxes used to do, and on a group photo the labels lay across each other and
+ * across neighbouring boxes: with fifteen people it is an unreadable pile, and the
+ * library holds thousands of those. The name now appears on the box the reader is
+ * actually pointing at (hovered, focused, or selected — `hovered` carries all
+ * three, since focus reports through it), which is also the box whose row is lit
+ * in the panel. The remaining names are one hover away there.
  *
  * A box is only as big as the face it traces, which on a phone leaves a small
  * face far below the finger floor — so on a coarse pointer `.kk-face-box` grows
@@ -84,6 +98,7 @@ export function FaceOverlay({
         const number = position + 1
         const isSelected = selected === face.face_index
         const isHovered = hovered === face.face_index
+        const isActive = isSelected || isHovered
         const label =
           state === 'named' ? (face.subject_name ?? '') : t('faces.unnamed', { index: number })
         // A box hugging the bottom edge would have its name label clipped away by
@@ -111,12 +126,16 @@ export function FaceOverlay({
             style={{
               ...faceBoxStyle(face.bbox),
               borderStyle: 'solid',
-              borderWidth: isSelected || isHovered ? 3 : 2,
+              borderWidth: isActive ? 3 : 2,
               borderColor: isSelected ? 'var(--bs-primary)' : STATE_COLOR[state],
               boxShadow: isSelected ? '0 0 0 3px rgba(var(--bs-primary-rgb), 0.35)' : undefined,
               background: 'transparent',
               cursor: readOnly ? 'default' : 'pointer',
               pointerEvents: readOnly ? 'none' : 'auto',
+              // The active box is the one carrying a name, and a name reaches
+              // outside the box it belongs to — lift it over its neighbours, or a
+              // box drawn later paints its border straight through the label.
+              zIndex: isActive ? 1 : undefined,
             }}
           >
             <span
@@ -127,7 +146,7 @@ export function FaceOverlay({
             >
               {number}
             </span>
-            {state === 'named' && (
+            {state === 'named' && isActive && (
               <span
                 className={`position-absolute start-0 badge text-bg-dark ${
                   bottomEdge ? 'bottom-100' : 'top-100'

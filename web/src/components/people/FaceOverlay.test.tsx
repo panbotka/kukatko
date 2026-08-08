@@ -34,6 +34,7 @@ function renderOverlay(
   readOnly = false,
   selected: number | null = null,
   boxes: FaceView[] = faces(),
+  hovered: number | null = null,
 ) {
   const onSelect = vi.fn()
   const onHover = vi.fn()
@@ -42,6 +43,7 @@ function renderOverlay(
       <FaceOverlay
         faces={boxes}
         selected={selected}
+        hovered={hovered}
         onSelect={onSelect}
         onHover={onHover}
         readOnly={readOnly}
@@ -140,11 +142,23 @@ describe('FaceOverlay', () => {
     })
   })
 
-  it('numbers every box and labels the named ones, without stealing their clicks', () => {
+  it('numbers every box', () => {
     renderOverlay()
 
-    const numbered = screen.getByRole('button', { name: 'Unnamed face 1' })
-    expect(numbered).toHaveTextContent('1')
+    expect(screen.getByRole('button', { name: 'Unnamed face 1' })).toHaveTextContent('1')
+    expect(screen.getByRole('button', { name: 'Alice' })).toHaveTextContent('2')
+  })
+
+  it('names only the box being pointed at, so labels cannot pile up', () => {
+    // Every name drawn at once is what made a group photo unreadable: the labels
+    // lay across each other and across the neighbouring boxes.
+    const { unmount } = renderOverlay()
+    expect(screen.queryByText('Alice')).not.toBeInTheDocument()
+    unmount()
+
+    // The page hands the pairing back as `hovered` — from hover or from focus,
+    // which is what a finger and the keyboard produce instead.
+    renderOverlay(false, null, faces(), 1)
 
     // The name label rides on the box; if it caught pointer events, clicking the
     // person's name would not select the face (and would kill the swipe gesture).
@@ -152,6 +166,14 @@ describe('FaceOverlay', () => {
     const label = screen.getByText('Alice')
     expect(named).toContainElement(label)
     expect(label).toHaveStyle({ pointerEvents: 'none' })
+    // It also has to sit over its neighbours, or a box drawn later paints its
+    // border straight through the label.
+    expect(named).toHaveStyle({ zIndex: '1' })
+  })
+
+  it('names the selected box as well, since selection is where naming happens', () => {
+    renderOverlay(false, 1)
+    expect(screen.getByText('Alice')).toBeInTheDocument()
   })
 
   it('reports the hovered box so the panel can highlight its row', async () => {

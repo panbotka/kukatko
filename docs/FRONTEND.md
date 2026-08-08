@@ -1121,14 +1121,20 @@ here.
   already-imported rows are corrected by `kukatko maintenance repair --dimensions`, whose dry run is
   `maintenance scan` (the `transposed_dimensions` finding).
   The boxes are colored by state (`lib/faceState`) — **two colors: green = named, yellow = not named**, deliberately
-  no third one (see the `faceState.ts` note below); the selected one is primary + a ring, they carry a **number `#N`** and
-  for named ones **a name under the box**; hovering a box highlights the row in the panel and vice versa (`hovered`/`onHover`
+  no third one (see the `faceState.ts` note below); the selected one is primary + a ring, and every box carries a
+  **number `#N`** — in **reading order**, see `useFaces` below. **A name is drawn only on the ACTIVE box**
+  (hovered, focused or selected; `zIndex: 1` lifts it over the neighbours it reaches across). Drawing every name at
+  once is what the overlay used to do, and with two people side by side one label lay across another and across a
+  third box — on a fifteen-person group photo an unreadable pile, and `faces:3 face:new` alone returns 2 937 photos.
+  The other names are one hover away in the panel, whose rows carry the crops.
+  Hovering a box highlights the row in the panel and vice versa (`hovered`/`onHover`
   held by the page). A click on a box or on a panel row = the same selection (and opens the drawer).
   **On touch** the pair still works: a box is only as big as the face, so on `pointer: coarse` `.kk-face-box`
   grows an **invisible 44px hit box** around it (an `::after` in `app.css`, `min-*: 100%` so a face already
   bigger keeps its own target and the **drawn outline never changes**; `pointer-events` is inherited, so a
   read-only box stays click-through). The pairing highlight is reported from **focus** as well as hover
-  (a finger never hovers, but a tap focuses the box — and the keyboard gets it too), and `FacesPanel`
+  **on both sides** (a finger never hovers, but a tap focuses the box — and the keyboard tabs the panel rows),
+  and `FacesPanel`
   **scrolls the selected row into view** (`block: 'nearest'`), so a box tapped on the photo doesn't select
   a row somewhere off-screen in the drawer.
   **The information runs in the drawer** (`.kk-viewer__panel`), **one element with two shapes** — the default
@@ -1828,16 +1834,25 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   click-through, pointer events are caught only by the boxes (and with `readOnly` not even by those; the box's number and name tag have
   `pointer-events:none`, otherwise they would steal the click and break the swipe). A box carries `.kk-face-box` = an invisible
   44px hitbox on `pointer: coarse` (see app.css below), so even a small face can be hit on a phone, and it reports
-  the pairing with the panel from **focus** too, not only from hover (a finger doesn't hover, but a tap focuses the box). The data +
+  the pairing with the panel from **focus** too, not only from hover (a finger doesn't hover, but a tap focuses the box).
+  **The name tag is drawn only on the active box** (hovered/focused/selected — all three arrive as `hovered`) and that box
+  gets `zIndex: 1`; see the viewer section above for why every name at once was unreadable. The data +
   the naming state machine
   are held by the `useFaces` hook. **`FacesPanel`** = the panel in the viewer's drawer, the single place where assignment happens:
-  **text rows** `Obličej #N` + a colored status chip (no crops — one image per page): the person's name (green), or
-  **Bez jména** (yellow) — the same two states as the boxes. A row whose face has **no embedding**
+  a row per face = **the number badge** (the same mark as on the box, the cross-reference to the photo) + **a round 44px
+  `FaceCrop` of that face** (`padBbox(0.25)`+`squareCrop`, `label=""` because the row's own label names the person;
+  the generic person icon stands in while `faces.frame` is null, i.e. only during loading) + a colored status chip:
+  the person's name (green), or
+  **Bez jména** (yellow) — the same two states as the boxes. The row used to read `Obličej #N` and nothing else,
+  which meant naming anybody started with hunting a tiny numeric badge somewhere on the photo — the words are gone,
+  the crop answers "who" by being looked at, and the bare number stayed as the tie to the box. A row whose face has **no embedding**
   (`hasEmbedding` = a negative `face_index`, i.e. a marker with no face row behind it) also carries a small muted
   `slash-circle` (`data-embedding="none"`, title/visually-hidden **Bez embeddingu**, and the row's `aria-label` says it too,
-  because the label replaces the button's content for a screen reader) — that one *is* worth knowing: it is nameable by
+  because the label replaces the button's content for a screen reader — which is also why that label now carries the
+  person's name: `Vybrat obličej #2: Alice`) — that one *is* worth knowing: it is nameable by
   hand here and nowhere else, no suggestion, similarity search or the review game will ever bring it up.
-  A click selects/deselects, hover mirrors the box; the selected row **scrolls itself into view**
+  A click selects/deselects, hover **and focus** mirror the box (a viewer's inert row reports hover too — with the
+  names shown one at a time, that is how a viewer asks which box is whom); the selected row **scrolls itself into view**
   (`block: 'nearest'`), so that a tap on a box in the photo doesn't mark a row off-screen. Its list carries the
   **class** `.kk-viewer__panel-scroll` (shared with `EditPanel`) rather than an inline `maxHeight`, because on a
   phone the drawer is a short bottom sheet that scrolls itself and has to be able to *lift* the cap — an inline
@@ -2085,7 +2100,11 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `useFaces(photoUid)` = loads a photo's faces (`fetchFaces`) and holds the naming state machine
   (box selection, an optimistic assignment, a reconciling refetch against the server, `busy`/`actionError`);
   extracted from `FaceOverlay`, so that the detail can draw the boxes over its single image and render the naming
-  panel elsewhere on the page. **After loading it selects the first unnamed face**
+  panel elsewhere on the page. **The detections are put into reading order the moment they land**
+  (`readingOrder`, in the one place all the consumers read from): everything numbers and walks faces **by their array
+  position** — the boxes, the panel rows, the people chips, `firstUnnamed`/`nextUnnamed` — and detection order is the
+  model's own, which on the reported group photo put #1 in the middle, #3 to its left and #5 at the far left.
+  **After loading it selects the first unnamed face**
   and **after an assignment it moves the selection to the next unnamed one** (`firstUnnamed`/`nextUnnamed`, ordered by
   **the order in the array**, not by `face_index`; `facesRef` against a stale closure) — so you get through a group
   photo without reaching for the mouse. `unassign` **keeps** the selection (the face has just been freed and you
@@ -2347,7 +2366,14 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   color**, only a mark on the panel row + a note in `FaceAssignPanel`, because it decides whether automation can
   ever reach the face at all;
   `faceGeometry.ts` = the pure `faceBoxStyle` (a normalized bbox → absolute `left/top/width/height`
-  in %, for the overlay) + `padBbox`/`boxWithinCrop`/`cropImageStyle` + `displayFrame` (the stored
+  in %, for the overlay) + `readingOrder` (a list of anything carrying a `bbox` → the order the eye crosses the
+  photo: the top row left to right, then the row below. One greedy pass down the photo assigns faces to **row bands** —
+  a face joins the open band when its vertical centre is within **half the taller box** of the band's **topmost**
+  member, i.e. the boxes genuinely overlap. Anchoring on the topmost member, not on the face last added, is what
+  stops a slow drift down a crowd from chaining everybody into one endless row; merging two rows is the cheap
+  mistake — inside a band the order is still left to right — while splitting one real row scatters its numbering,
+  which is the whole thing this fixes. It never mutates its input and the sort is stable, so faces sharing a
+  position keep their arrival order. Applied once, in `useFaces`) + `padBbox`/`boxWithinCrop`/`cropImageStyle` + `displayFrame` (the stored
   dimensions + the EXIF orientation → the **displayed** frame; orientations 5–8 swap the sides, because the bbox is in
   display space — its input **must** be the pre-rotation pair, see the invariant at the viewer above)
   + `squareCrop` (a bbox → a crop **square in pixels**, not in normalized

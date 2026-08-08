@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { displayFrame, padBbox, squareCrop } from './faceGeometry'
+import { displayFrame, padBbox, readingOrder, squareCrop } from './faceGeometry'
 
 import { type Bbox } from '../services/people'
 
@@ -56,6 +56,86 @@ describe('displayFrame', () => {
   it('leaves a degenerate frame alone rather than inventing one', () => {
     expect(displayFrame(0, 0, 8)).toEqual({ width: 0, height: 0 })
     expect(displayFrame(-1, 100, 1)).toEqual({ width: -1, height: 100 })
+  })
+})
+
+describe('readingOrder', () => {
+  /** A named face box, so an assertion reads as the order of the people. */
+  function face(name: string, bbox: Bbox) {
+    return { name, bbox }
+  }
+
+  /** The order the function put them in, by name. */
+  function names(faces: { name: string; bbox: Bbox }[]): string[] {
+    return readingOrder(faces).map((f) => f.name)
+  }
+
+  it('orders one row of faces left to right', () => {
+    // Handed to it in the arbitrary order a detector emits.
+    expect(
+      names([
+        face('c', [0.7, 0.3, 0.1, 0.15]),
+        face('a', [0.1, 0.3, 0.1, 0.15]),
+        face('b', [0.4, 0.31, 0.1, 0.15]),
+      ]),
+    ).toEqual(['a', 'b', 'c'])
+  })
+
+  it('takes the top row before the one below it', () => {
+    expect(
+      names([
+        face('back-right', [0.6, 0.1, 0.1, 0.12]),
+        face('front-left', [0.1, 0.5, 0.14, 0.18]),
+        face('back-left', [0.2, 0.1, 0.1, 0.12]),
+        face('front-right', [0.6, 0.52, 0.14, 0.18]),
+      ]),
+    ).toEqual(['back-left', 'back-right', 'front-left', 'front-right'])
+  })
+
+  it('keeps a row together when the heads are not perfectly level', () => {
+    // A tall person beside a short one: the centres differ, but the boxes still
+    // overlap, so this is one row and must not be split into two.
+    expect(
+      names([
+        face('right', [0.6, 0.3, 0.12, 0.16]),
+        face('tall', [0.35, 0.24, 0.12, 0.16]),
+        face('left', [0.1, 0.31, 0.12, 0.16]),
+      ]),
+    ).toEqual(['left', 'tall', 'right'])
+  })
+
+  it('does not chain a slow drift down a crowd into one endless row', () => {
+    // Each face is only a little lower than the one before it, but the third is a
+    // long way below the first. A band anchored on the face last added would take
+    // all three and answer `c, a, b`; anchoring on the band's topmost member
+    // breaks the chain and leaves `c` where it belongs — on the row below.
+    expect(
+      names([
+        face('a', [0.45, 0.1, 0.1, 0.1]),
+        face('b', [0.85, 0.14, 0.1, 0.1]),
+        face('c', [0.05, 0.18, 0.1, 0.1]),
+      ]),
+    ).toEqual(['a', 'b', 'c'])
+  })
+
+  it('is stable for faces sharing a position', () => {
+    const same: Bbox = [0.1, 0.2, 0.3, 0.4]
+    expect(names([face('first', same), face('second', same), face('third', same)])).toEqual([
+      'first',
+      'second',
+      'third',
+    ])
+  })
+
+  it('leaves the input array alone', () => {
+    const faces = [face('b', [0.5, 0.1, 0.1, 0.1]), face('a', [0.1, 0.1, 0.1, 0.1])]
+    readingOrder(faces)
+    expect(faces.map((f) => f.name)).toEqual(['b', 'a'])
+  })
+
+  it('handles the empty and single-face photos', () => {
+    expect(readingOrder([])).toEqual([])
+    expect(names([face('only', [0.4, 0.4, 0.2, 0.2])])).toEqual(['only'])
   })
 })
 

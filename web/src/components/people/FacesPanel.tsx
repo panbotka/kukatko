@@ -7,19 +7,44 @@ import { useTranslation } from 'react-i18next'
 
 import { useSubjects } from '../../hooks/useSubjects'
 import { type UseFacesResult } from '../../hooks/useFaces'
+import { padBbox, squareCrop } from '../../lib/faceGeometry'
 import { type FaceState, faceState, hasEmbedding } from '../../lib/faceState'
+import { type FaceView } from '../../services/people'
+import { ENTITY_STYLE } from '../entityStyle'
 import { Icon } from '../Icon'
 import { FaceAssignPanel } from './FaceAssignPanel'
+import { FaceCrop } from './FaceCrop'
+
+/**
+ * The edge length of a row's face crop, in CSS pixels. Bigger than the 24px chip
+ * in `PeoplePanel`: this is the screen where a face gets its name, so the crop has
+ * to be recognisable on its own rather than merely confirm a name written beside
+ * it — but it still has to leave the row a row, not a tile.
+ */
+const ROW_FACE_SIZE = 44
+
+/**
+ * How much context a row's crop keeps around the face box. Between the chip's
+ * 15 % and the review card's 30 %: at 44px a little hair and chin is what turns a
+ * crop into a person, and the row has the width to spend on it.
+ */
+const ROW_FACE_PADDING = 0.25
 
 /** Props for {@link FacesPanel}. */
 export interface FacesPanelProps {
+  /** The photo the faces are on — the row crops are cut from its thumbnail. */
+  photoUid: string
   /** The faces state machine, shared with the overlay drawn on the photo. */
   faces: UseFacesResult
   /** Whether the viewer may assign people (editors and admins). */
   canWrite: boolean
   /** The `face_index` hovered on the photo, or null. Highlights its row. */
   hovered: number | null
-  /** Reports the hovered row, so the overlay can highlight its box. */
+  /**
+   * Reports the hovered — or focused — row, so the overlay can highlight its box
+   * and draw its name. Focus counts because a finger never hovers and neither
+   * does the keyboard.
+   */
   onHover: (faceIndex: number | null) => void
   /** Closes the panel (same as toggling faces off). */
   onClose: () => void
@@ -35,25 +60,67 @@ const STATE_CHIP: Record<FaceState, string> = {
  * The faces sidebar of the photo detail: one row per detected face, and the
  * assignment controls for the selected one. It appears beside the photo (on a
  * phone, in a bottom sheet under it — the photo has to stay on screen, or the
- * numbered rows have no numbered boxes left to match) whenever the face boxes are
- * shown, and is the only place people are named — the boxes on the photo and
- * these rows drive the same selection, so clicking either one gets you there.
+ * rows have no boxes left to match) whenever the face boxes are shown, and is the
+ * only place people are named — the boxes on the photo and these rows drive the
+ * same selection, so clicking either one gets you there.
+ *
+ * **Every row leads with a crop of its own face.** It used to lead with the words
+ * „Obličej #4", which asked the reader to find a tiny numeric badge somewhere on
+ * the photo before they could name anybody — on a fifteen-person group photo that
+ * is the whole job. The number survives as a small badge, matching the one drawn
+ * on the box, but it is now the cross-reference rather than the identity.
  *
  * Rows are numbered by position, matching the number drawn on each box: `face_index`
- * cannot be used, as markers with no detected face carry negative ones.
+ * cannot be used, as markers with no detected face carry negative ones. That
+ * position is reading order (`useFaces` sorts on arrival), so #1 is the leftmost
+ * face of the top row and the rows run down the photo the way the eye does.
  *
  * A row is either named or not — the same two states the boxes use. What it does
  * carry beyond that is a small mark when the face has no embedding
  * ({@link hasEmbedding}): that one is worth knowing, because such a face can only
  * ever be named here by hand — no suggestion, no similarity search and no review
  * game will bring it up.
+ *
+ * Pointing at a row lights its box on the photo (`onHover`), and the pairing is
+ * reported from **focus** as well, so tabbing through the rows walks the boxes too.
  */
-export function FacesPanel({ faces, canWrite, hovered, onHover, onClose }: FacesPanelProps) {
+export function FacesPanel({
+  photoUid,
+  faces,
+  canWrite,
+  hovered,
+  onHover,
+  onClose,
+}: FacesPanelProps) {
   const { t } = useTranslation()
   const { subjects, loading: subjectsLoading } = useSubjects()
 
   const selected = faces.selected
+  const frame = faces.frame
   const listRef = useRef<HTMLDivElement>(null)
+
+  /**
+   * The row's leading picture: a crop of the actual face, or the generic person
+   * icon while the frame is unknown (only ever during loading) — the slot is
+   * always filled, so the list does not jump as the frame arrives.
+   */
+  const faceGlyph = (face: FaceView) => {
+    if (frame === null) {
+      return <Icon name={ENTITY_STYLE.person.icon} />
+    }
+    return (
+      <FaceCrop
+        photoUid={photoUid}
+        crop={squareCrop(padBbox(face.bbox, ROW_FACE_PADDING), frame)}
+        frame={frame}
+        // The row's own label already says whose face this is; a second
+        // announcement of the same name is noise.
+        label=""
+        size={ROW_FACE_SIZE}
+        className="rounded-circle flex-shrink-0"
+      />
+    )
+  }
 
   // Tapping a box on the photo selects a face from the other side of the pair,
   // and on a phone this list scrolls (and lives in a drawer below the photo) —
@@ -105,8 +172,11 @@ export function FacesPanel({ faces, canWrite, hovered, onHover, onClose }: Faces
             const chip = state === 'named' ? (face.subject_name ?? '') : t('faces.state.unnamed')
             const row = (
               <>
-                <span className="fw-medium">{t('faces.row.label', { number })}</span>
-                <span className={`badge ms-2 text-truncate ${STATE_CHIP[state]}`}>{chip}</span>
+                {/* The cross-reference to the photo, drawn like the badge on the
+                    box so the two read as the same mark. */}
+                <span className="badge text-bg-dark flex-shrink-0">{number}</span>
+                {faceGlyph(face)}
+                <span className={`badge text-truncate ${STATE_CHIP[state]}`}>{chip}</span>
                 {!embedded && (
                   // The row of a `canWrite` viewer is a button whose aria-label
                   // replaces its content, so it says this in its own label instead;
@@ -114,7 +184,7 @@ export function FacesPanel({ faces, canWrite, hovered, onHover, onClose }: Faces
                   // `opacity` rather than `text-secondary`: it stays muted on a
                   // plain row and still legible on the selected (primary) one,
                   // where a fixed secondary grey all but disappears.
-                  <span className="ms-2 opacity-75" title={t('faces.noEmbedding.mark')}>
+                  <span className="opacity-75" title={t('faces.noEmbedding.mark')}>
                     <Icon name="slash-circle" />
                     <span className="visually-hidden">{t('faces.noEmbedding.mark')}</span>
                   </span>
@@ -127,14 +197,14 @@ export function FacesPanel({ faces, canWrite, hovered, onHover, onClose }: Faces
                 {canWrite ? (
                   <button
                     type="button"
-                    className={`list-group-item list-group-item-action d-flex align-items-center ${
+                    className={`list-group-item list-group-item-action d-flex align-items-center gap-2 ${
                       isSelected ? 'active' : ''
                     } ${hovered === face.face_index && !isSelected ? 'bg-body-secondary' : ''}`}
                     aria-pressed={isSelected}
                     aria-label={
                       embedded
-                        ? t('faces.row.select', { number })
-                        : t('faces.row.selectNoEmbedding', { number })
+                        ? t('faces.row.select', { number, name: chip })
+                        : t('faces.row.selectNoEmbedding', { number, name: chip })
                     }
                     data-face-state={state}
                     data-embedding={embedded ? undefined : 'none'}
@@ -147,14 +217,34 @@ export function FacesPanel({ faces, canWrite, hovered, onHover, onClose }: Faces
                     onMouseLeave={() => {
                       onHover(null)
                     }}
+                    // A finger never hovers and the keyboard never will either, so
+                    // the box↔row pairing is reported from focus as well — the same
+                    // way `FaceOverlay` reports it from the other side.
+                    onFocus={() => {
+                      onHover(face.face_index)
+                    }}
+                    onBlur={() => {
+                      onHover(null)
+                    }}
                   >
                     {row}
                   </button>
                 ) : (
+                  // A viewer's row is inert, but still pairs with the photo on
+                  // hover: with the name labels on the boxes shown one at a time,
+                  // this is how a viewer asks "which one is that?".
                   <div
-                    className="list-group-item d-flex align-items-center"
+                    className={`list-group-item d-flex align-items-center gap-2 ${
+                      hovered === face.face_index ? 'bg-body-secondary' : ''
+                    }`}
                     data-face-state={state}
                     data-embedding={embedded ? undefined : 'none'}
+                    onMouseEnter={() => {
+                      onHover(face.face_index)
+                    }}
+                    onMouseLeave={() => {
+                      onHover(null)
+                    }}
                   >
                     {row}
                   </div>

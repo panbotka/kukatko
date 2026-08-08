@@ -1364,9 +1364,8 @@
     },
     "count": "Faces: {{count}}",
     "row": {
-      "label": "Face #{{number}}",
-      "select": "Select face #{{number}}",
-      "selectNoEmbedding": "Select face #{{number}} (no embedding)"
+      "select": "Select face #{{number}}: {{name}}",
+      "selectNoEmbedding": "Select face #{{number}}: {{name}} (no embedding)"
     },
     "state": {
       "unnamed": "No name"
