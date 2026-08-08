@@ -1117,7 +1117,30 @@
     "photoCount_one": "{{count}} fotka",
     "photoCount_few": "{{count}} fotky",
     "photoCount_many": "{{count}} fotky",
-    "photoCount_other": "{{count}} fotek"
+    "photoCount_other": "{{count}} fotek",
+    "filters": {
+      "barLabel": "Filtr lidí",
+      "search": "Hledat člověka",
+      "searchPlaceholder": "Hledat podle jména…",
+      "type": "Druh",
+      "typeOption": "{{label}} ({{count}})",
+      "anyType": "Všichni",
+      "sort": "Řadit"
+    },
+    "tabs": {
+      "person": "Lidé",
+      "pet": "Zvířata",
+      "other": "Ostatní"
+    },
+    "sort": {
+      "name": "Podle jména",
+      "count": "Podle počtu fotek"
+    },
+    "noMatches": {
+      "title": "Nikdo tu neodpovídá",
+      "hint": "Zkus jiný druh.",
+      "hintFiltered": "Zkus jiné jméno, nebo jiný druh."
+    }
   },
   "subject": {
     "loading": "Načítání osoby…",
@@ -1401,7 +1424,6 @@
     "empty": "Žádné přiřazené obličeje k projití.",
     "notMeaningful": "Příliš málo obličejů pro spolehlivé seřazení.",
     "unassignError": "Obličej se nepodařilo odebrat. Zkus to prosím znovu.",
-    "faceLabel": "Obličej (vzdálenost {{distance}})",
     "openPhoto": "Otevřít fotku",
     "unassign": "Není to tato osoba",
     "reviewAll": "Projít všechny"

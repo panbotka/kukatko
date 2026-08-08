@@ -1,10 +1,10 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import i18n from '../../i18n'
-import { type SubjectCount } from '../../services/people'
+import { type SubjectCount, type SubjectFace } from '../../services/people'
 
 import { SubjectTile } from './SubjectTile'
 
@@ -28,6 +28,23 @@ function subject(over: Partial<SubjectCount> = {}): SubjectCount {
     marker_count: 5,
     photo_count: 3,
     ...over,
+  }
+}
+
+/**
+ * A cover face `share` of the frame's width across, on a 4032x3024 photo — the
+ * shape most of the catalogue is.
+ */
+function coverFace(share: number): SubjectFace {
+  return {
+    photo_uid: 'p1',
+    x: 0.4,
+    y: 0.3,
+    w: share,
+    h: (share * 4032) / 3024,
+    width: 4032,
+    height: 3024,
+    orientation: 1,
   }
 }
 
@@ -82,5 +99,58 @@ describe('SubjectTile', () => {
   it('links to the subject page', () => {
     renderTile()
     expect(screen.getByRole('link', { name: 'Anna' })).toHaveAttribute('href', '/people/s1')
+  })
+})
+
+describe('SubjectTile face crop', () => {
+  it('cuts the crop from a full-frame fit_* size, never a centre-cropped tile', () => {
+    // The bbox is normalised against the whole frame; a `tile_*` is a
+    // centre-cropped square, so the crop would land beside the face.
+    renderTile({ cover_face: coverFace(0.3) })
+    expect(screen.getByRole('img', { name: 'Anna' })).toHaveAttribute(
+      'src',
+      expect.stringContaining('/thumb/fit_'),
+    )
+  })
+
+  it('does not buy the biggest preview for a face that no preview can sharpen', () => {
+    // The regression this tile is named for: 72 of these squares pulled 125 Mpx
+    // because every small face escalated to the ceiling. A small face and a big
+    // one now cost at most one rung apart.
+    renderTile({ cover_face: coverFace(0.03) })
+    const small = screen.getByRole('img', { name: 'Anna' }).getAttribute('src')
+    expect(small).toContain('/thumb/fit_1280')
+  })
+
+  it('takes the cheapest rung for a face that fills the frame', () => {
+    renderTile({ cover_face: coverFace(0.6) })
+    expect(screen.getByRole('img', { name: 'Anna' })).toHaveAttribute(
+      'src',
+      expect.stringContaining('/thumb/fit_720'),
+    )
+  })
+
+  it('shimmers until the crop has decoded, so a filling page is not a broken one', () => {
+    const { container } = renderTile({ cover_face: coverFace(0.3) })
+    expect(container.querySelector('.kk-skeleton')).not.toBeNull()
+
+    fireEvent.load(screen.getByRole('img', { name: 'Anna' }))
+    expect(container.querySelector('.kk-skeleton')).toBeNull()
+  })
+
+  it('stops shimmering when the crop will never arrive', () => {
+    // A placeholder that pulses forever says "still loading" about an image that
+    // has already given up.
+    const { container } = renderTile({ cover_face: coverFace(0.3) })
+    fireEvent.error(screen.getByRole('img', { name: 'Anna' }))
+    expect(container.querySelector('.kk-skeleton')).toBeNull()
+  })
+
+  it('shimmers under a chosen cover photo too', () => {
+    const { container } = renderTile({ cover_photo_uid: 'p9' })
+    expect(container.querySelector('.kk-skeleton')).not.toBeNull()
+
+    fireEvent.load(screen.getByRole('img', { name: 'Anna' }))
+    expect(container.querySelector('.kk-skeleton')).toBeNull()
   })
 })

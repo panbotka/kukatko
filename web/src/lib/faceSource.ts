@@ -36,10 +36,67 @@ export const FACE_SOURCE_TILE_MAX = 1920
 export const FACE_SOURCE_REVIEW_MAX = 3840
 
 /**
+ * The most a tile-sized face crop may cost to **download**, in source pixels.
+ *
+ * The ceiling above is not enough on its own, because a crop is a small window
+ * onto a whole frame that has to be fetched entire: the average face spans a few
+ * per cent of its photo, so no registered rung ever puts {@link DEFAULT_TARGET_PX}
+ * pixels across it and the rule below would climb straight to the ceiling for
+ * most of the library. Measured on the people index that meant 60 previews and
+ * 125 Mpx of image to fill 72 tiles of 152 px — roughly 75× the pixels the page
+ * renders, and about eight seconds of dark squares.
+ *
+ * So a tile also carries a budget, and 1.5 Mpx is where the marginal rung stops
+ * being worth it: on a 12–24 Mpx original it admits `fit_1280` (~1.1–1.2 Mpx)
+ * and refuses `fit_1920` (~2.5 Mpx), which for the average face is the
+ * difference between ~102 px and ~153 px across a 152 px tile — both an upscale
+ * on a 2× display — at 2.3× the bytes. On a small original every rung stays
+ * inside it, so a modest photo is never penalised for the sins of a 24 Mpx one.
+ *
+ * The real fix is a face crop cut server-side; until that exists this is the
+ * honest trade between a sharp tile and a page that fills.
+ */
+export const FACE_SOURCE_TILE_BUDGET_PX = 1_500_000
+
+/**
+ * No download budget: whatever the ceiling allows. The review views ask for it
+ * deliberately — a card whose entire job is to be judged is worth its bytes, one
+ * screen holds a handful of them, and they load lazily.
+ */
+export const FACE_SOURCE_REVIEW_BUDGET_PX = Number.POSITIVE_INFINITY
+
+/**
  * How many real pixels a crop should have across it by default, sized for the
  * people grid's tiles (~150 CSS px) with headroom for a 2× display.
  */
 export const DEFAULT_TARGET_PX = 300
+
+/** What a caller is willing to spend on one face crop. */
+export interface FaceSourceLimits {
+  /** Highest rung the caller accepts. Defaults to {@link FACE_SOURCE_TILE_MAX}. */
+  maxSize?: number
+  /**
+   * Ceiling on the chosen thumbnail's own pixel count. Defaults to
+   * {@link FACE_SOURCE_TILE_BUDGET_PX}; pass
+   * {@link FACE_SOURCE_REVIEW_BUDGET_PX} to lift it.
+   */
+  budgetPx?: number
+}
+
+/**
+ * How many pixels `fit_size` actually holds for this frame. `fit_*` bounds the
+ * longest side and never upscales, so a rung past the original's own resolution
+ * costs exactly what the original does — which is why the budget has to be
+ * measured against the frame rather than against the rung's nominal size.
+ */
+function sourcePixels(frame: Frame, size: number): number {
+  const longSide = Math.max(frame.width, frame.height)
+  if (longSide <= 0) {
+    return 0
+  }
+  const scale = Math.min(1, size / longSide)
+  return frame.width * frame.height * scale * scale
+}
 
 /**
  * How many real pixels an `/outliers` **context crop** should have across it.
@@ -61,7 +118,7 @@ export const OUTLIER_TARGET_PX = 154
 
 /**
  * Picks the smallest thumbnail that still puts about `targetPx` real pixels
- * across the crop, never going past `maxSize`.
+ * across the crop, within the caller's {@link FaceSourceLimits}.
  *
  * A fixed size cannot serve both cases. A face filling half the frame is sharp
  * from `fit_720`; a face 2 % across it is 13 pixels there, and blowing 13 pixels
@@ -75,6 +132,12 @@ export const OUTLIER_TARGET_PX = 154
  * which also means a rung past the original's own resolution is never chosen, as
  * it would be the same pixels under a different URL.
  *
+ * Two limits bound the answer, and they answer different questions: `maxSize` is
+ * how sharp a crop is worth being, `budgetPx` is how much it is worth costing.
+ * Only the second one bites for a small face — no rung reaches the target there,
+ * so without a budget every such crop would take the ceiling, which is precisely
+ * how a grid of little tiles came to pull a hundred megapixels.
+ *
  * A degenerate crop or frame yields the smallest source: it tells us nothing, so
  * it should not cost anything.
  */
@@ -82,9 +145,13 @@ export function faceSourceSize(
   crop: Bbox,
   frame: Frame,
   targetPx: number,
-  maxSize: number = FACE_SOURCE_TILE_MAX,
+  { maxSize = FACE_SOURCE_TILE_MAX, budgetPx = FACE_SOURCE_TILE_BUDGET_PX }: FaceSourceLimits = {},
 ): string {
-  const ladder = FACE_SOURCE_SIZES.filter((size) => size <= maxSize)
+  const ladder = FACE_SOURCE_SIZES.filter(
+    (size) => size <= maxSize && sourcePixels(frame, size) <= budgetPx,
+  )
+  // The bottom rung is always allowed: it is the cheapest address there is, and
+  // an empty ladder would leave the crop with no image at all.
   const usable = ladder.length > 0 ? ladder : [FACE_SOURCE_SIZES[0]]
   const cropPx = crop[2] * frame.width
   const longSide = Math.max(frame.width, frame.height)
@@ -96,8 +163,10 @@ export function faceSourceSize(
     return `fit_${String(enough)}`
   }
   // No rung clears the bar — the pixels are simply not in the original. Take the
-  // biggest source that still *adds* any: past the original's own long side every
-  // rung is the same image under a different URL, and a needless cache entry.
+  // biggest *affordable* source that still adds any: past the original's own long
+  // side every rung is the same image under a different URL, and a needless cache
+  // entry. For a tile the budget has usually already cut the ladder short here,
+  // which is the whole point — a face that cannot be sharp must not be expensive.
   const capped = usable.find((size) => size >= longSide) ?? usable[usable.length - 1]
   return `fit_${String(capped)}`
 }

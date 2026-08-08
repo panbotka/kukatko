@@ -283,7 +283,13 @@ here.
   1:1. Everything on motion tokens via the `.kk-media-img` class, so under `prefers-reduced-motion` the
   transition collapses to an instant swap; only `opacity`+`transform` move (GPU). Default `loading="lazy"`
   + `decoding="async"` (overridable), the rest of the attributes (`src`/`alt`/`style`/`onError`/`className`)
-  flow through. Replaced the manual `loaded` fade in `PhotoTile`/`TrashCard` and added the fade to covers/previews:
+  flow through. Optional `skeleton` draws a `Skeleton` **behind** the image until it decodes (absolutely
+  positioned, corners inherited — the caller's box has to be `position: relative`, which the tile media
+  well is): for a grid whose sources are measured in megapixels, an empty dark square reads as broken
+  rather than as loading. It clears on `onError` as well as on `onLoad` — a placeholder that pulses
+  forever says „still loading" about an image that has given up — and the caller's own `onError` still
+  runs (`OutlierCard` steps down the thumbnail ladder from it). `SubjectTile`/`FaceCrop` ask for it. Replaced the manual `loaded` fade in
+  `PhotoTile`/`TrashCard` and added the fade to covers/previews:
   `AlbumTile`, `SubjectTile`, `SubjectPhotoTile`, `SimilarPhotos`, `StackStrip`,
   `DuplicateGroupCard`, `GlobalSearchSections`, `SearchCommand`. Tests: `FadeInImage.test.tsx`),
   `Skeleton` / `TileGridSkeleton` / `ListSkeleton` (**shared skeleton placeholders** instead of
@@ -304,7 +310,7 @@ here.
   A buffer of `increaseViewportBy {top: 200, bottom: 400}` starts a row's covers a touch before it
   scrolls in. The class is `.kk-tile-grid`, a **selector hook only**: unlike `.kukatko-photo-grid`,
   which strips the card chrome off what it holds, the tiles keep their `.kk-tile` look. Used by
-  `AlbumsPage`. Tests: `TileGrid.test.tsx`),
+  `AlbumsPage` and `PeoplePage`. Tests: `TileGrid.test.tsx`),
   `ConfirmModal` (**the single shared confirmation dialog** — replaced the native `window.confirm`
   in four places: `AlbumDetailPage` (deleting an album), `LabelsPage` (deleting a label),
   `SavedSearchesPage` (deleting a saved search).
@@ -1305,7 +1311,18 @@ here.
   for the tooltip); `lib/photoEdit` = pure helpers
   edit→CSS (`editPreviewStyle`/`editFilter`/`editTransform`/`cropClipPath`/`isIdentityEdit`/
   `rotateRight`/`hasCrop`/`NEUTRAL_EDIT`),
-  `PeoplePage` = `/people` a people index: a responsive `SubjectTile` grid (image/name/photo
+  `PeoplePage` = `/people` a people index: a responsive, **virtualized** `SubjectTile` grid
+  (`TileGrid`, minTile 140 / gap 12 — the skeleton's geometry) with its own **`PeopleFilterBar`** over
+  the pure `lib/peopleBrowse`: a name search (folded, so `nemcova` finds `Němcová` — the library's
+  „Osoba" facet matches the same way), a **kind** selector (Všichni · Lidé · Zvířata · Ostatní, each
+  with its live count) and an ordering (**Podle jména**, re-collated in the reader's language rather
+  than the database's / **Podle počtu fotek**, ties broken by name so the grid never reshuffles). The
+  whole view (`q`/`type`/`sort`) lives in the **URL** (`PEOPLE_DEFAULTS` are omitted from it), so Back
+  steps through it and a link carries the exact one; only the live-typed query replaces its history
+  entry. Filtering everything away shows `people.noMatches` (the hint blames the search only when the
+  search actually dropped somebody). Virtualizing matters more here than on `/albums`: every tile's
+  face crop is cut from a full-frame preview, so mounting all of them at once is what made the page
+  fetch a hundred megapixels before it drew anything. The tile shows the image/name/photo
   count — `photo_count`, **not** `marker_count`: the caption says „fotek" and the tile links to the
   subject's gallery, which lists a photo once however many of that person's faces it holds; the face
   tools — `CandidateSearchForm`, `FaceAssignPanel`, `OutlierControls` — keep `marker_count`, and their
@@ -1785,12 +1802,26 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   to the caller**: a chip stops at `FACE_SOURCE_TILE_MAX` (1920 — a dense grid of chips isn't worth megabytes),
   a card that exists to be **judged** goes to `FACE_SOURCE_REVIEW_MAX` (3840, `/outliers`). Below the target
   it never picks a rung above the original's own long side — `fit_*` doesn't upscale, so that would be the same
-  pixels at another URL) in an `overflow:hidden` container,
+  pixels at another URL. Beside the ceiling there is a **download budget** (`FaceSourceLimits.budgetPx`,
+  by default `FACE_SOURCE_TILE_BUDGET_PX` = 1.5 Mpx, measured against the *frame* — what `fit_N` really
+  costs for this photo — so a small original is never punished for a 24 Mpx one; the review views pass
+  `FACE_SOURCE_REVIEW_BUDGET_PX` = ∞). The budget is the answer to the "no rung reaches the target"
+  case: most faces span a few per cent of their frame, so without it every one of them took the ceiling
+  and 72 people tiles of 152 px pulled **125 Mpx**. It admits `fit_1280` and refuses `fit_1920` on the
+  shape most of the catalogue is — ~102 px instead of ~153 px across the tile, both an upscale on a 2×
+  display, at 2.3× the bytes. The real fix is a face crop cut server-side; this is the honest trade
+  until then) in an `overflow:hidden` container,
   `cropImageStyle` in %, `aspect-ratio` from the crop's real pixel proportions → **nothing is
   deformed**; `size` = a fixed width in px, otherwise it fills the parent (`w-100 h-100`); `label=""` =
-  decorative, when the name stands beside it. It needs the frame's dimensions),
+  decorative, when the name stands beside it. It renders through `FadeInImage skeleton`, so a crop that
+  hasn't decoded shimmers instead of sitting as a dark square. It needs the frame's dimensions),
   `FaceThumb` (**the legacy** square crop via `faceCropStyle` — it deforms and reads `tile_*`; it stays
   only for cluster previews, whose payload doesn't carry the frame),
+  `PeopleFilterBar` (the people index's own filter bar: a name search + the **kind** selector (with each
+  option's live count) + the ordering, all `Form.Select`/`InputGroup` in one row. It offers the kinds as
+  a select rather than the tab strip `AlbumFilterBar` uses, because one of them holds nearly everybody
+  and three buttons reading zero are a strip that only takes space; every control writes straight into
+  the URL via `SetUrlState<PeopleView>`, **pushing** except the live-typed query, which replaces),
   `FaceOverlay`+`FacesPanel`+`FaceAssignPanel` (`FaceOverlay` = a **purely presentational** transparent layer
   of clickable boxes from the normalized bbox via `faceBoxStyle`, **no image or fetch of its own** —
   it mounts as the last child of the `position-relative` wrapper tight around the `<img>`; the layer is
@@ -1824,7 +1855,10 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   rejected card disappears from the list; `no_faces`/`no_embeddings`/empty have an explanation; an
   **Otevřít celý nástroj** link to `/faces?subject={uid}`), `Outliers` (a ranking of suspicious faces
   with a one-tap unassign on the person's page + a **Projít všechny** link to `/outliers?subject={uid}`, where
-  the full sweep version lives),
+  the full sweep version lives; each face is a `FaceCrop` — a `fit_*` source picked per face, padded and
+  squared like the people tiles. It used to be a `FaceThumb`, i.e. a centre-cropped `tile_*` treated as
+  the whole frame, so on anything but a square photo the crop landed **beside** the face; and being a CSS
+  background it also loaded for every face at once, however far down the page the section sits),
   `OutlierCard`/`OutlierControls`/`OutlierStats` (the building blocks of `/outliers`: a card with a **context
   crop** (30 % around the bbox, `padBbox`+`cropImageStyle`+`faceMarkerStyle`), the question „Je to chyba?"
   and two opposite verdicts (✓ remove / ✗ confirm), a selection checkbox and a focus ring; a config
@@ -2243,7 +2277,15 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `January 2026`) via `lib/text` `foldedIncludes`; `name`/`count` sort by the **displayed** name
   (`localeCompare`, numeric, base sensitivity — so `květen` really precedes `leden`) while `date`
   **keeps the order the API returned**; the counts are taken **after** the search + empty filter but
-  **before** the section split, so a badge answers „where are my matches?" rather than restating the totals,
+  **before** the section split, so a badge answers „where are my matches?" rather than restating the totals;
+  `peopleBrowse.ts` = the same job for the people index: the `PeopleView` type (`q`/`type`/`sort`) +
+  `PEOPLE_DEFAULTS` (everybody, alphabetical) + the `toPeopleTab`/`toPeopleSort` sanitizers +
+  `peopleBrowseOptions(view, language)` + `browsePeople(subjects, options)` → `{visible, counts,
+  filteredOut}`. The search is `foldedIncludes` over the name; `name` sorts by `localeCompare`
+  (numeric, base sensitivity — the API orders in the *database's* collation, this one in the reader's),
+  `count` by `photo_count` (the figure the tile's caption shows) with the name as the tie-break; a
+  subject type this frontend doesn't know yet counts as `other` rather than falling out of every option,
+  and the counts are taken **after** the search but **before** the type split,
   `searchView.ts` = the `SearchView` type (= `LibraryView` + `mode`)
   + `SEARCH_DEFAULTS` (mode `hybrid`) + the `toMode` sanitizer;
   `auditView.ts` = the `AuditView` type (filters + `offset`, string-only for the URL) + `AUDIT_DEFAULTS`

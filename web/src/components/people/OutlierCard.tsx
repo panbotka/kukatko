@@ -8,6 +8,7 @@ import { Link } from 'react-router-dom'
 
 import { cropImageStyle, displayFrame, faceMarkerStyle, padBbox } from '../../lib/faceGeometry'
 import {
+  FACE_SOURCE_REVIEW_BUDGET_PX,
   FACE_SOURCE_REVIEW_MAX,
   faceSourceSize,
   OUTLIER_TARGET_PX,
@@ -99,7 +100,10 @@ export function OutlierCard({
   // already fallen back keeps that fallback — and a card whose face changed
   // identity (never in the grid, which keys by face, but cheap to be right about)
   // starts again from the preferred size.
-  const preferred = faceSourceSize(crop, frame, OUTLIER_TARGET_PX, FACE_SOURCE_REVIEW_MAX)
+  const preferred = faceSourceSize(crop, frame, OUTLIER_TARGET_PX, {
+    maxSize: FACE_SOURCE_REVIEW_MAX,
+    budgetPx: FACE_SOURCE_REVIEW_BUDGET_PX,
+  })
   const [degraded, setDegraded] = useState<{ from: string; size: string } | null>(null)
   const source = degraded !== null && degraded.from === preferred ? degraded.size : preferred
 

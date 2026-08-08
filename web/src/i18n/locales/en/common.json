@@ -1101,7 +1101,30 @@
     "noCover": "No cover",
     "private": "Private",
     "photoCount_one": "{{count}} photo",
-    "photoCount_other": "{{count}} photos"
+    "photoCount_other": "{{count}} photos",
+    "filters": {
+      "barLabel": "People filters",
+      "search": "Search people",
+      "searchPlaceholder": "Search by name…",
+      "type": "Kind",
+      "typeOption": "{{label}} ({{count}})",
+      "anyType": "Everyone",
+      "sort": "Sort"
+    },
+    "tabs": {
+      "person": "People",
+      "pet": "Animals",
+      "other": "Other"
+    },
+    "sort": {
+      "name": "By name",
+      "count": "By photo count"
+    },
+    "noMatches": {
+      "title": "Nobody matches here",
+      "hint": "Try another kind.",
+      "hintFiltered": "Try another name, or another kind."
+    }
   },
   "subject": {
     "loading": "Loading person…",
@@ -1361,7 +1384,6 @@
     "empty": "No assigned faces to review.",
     "notMeaningful": "Too few faces to rank reliably.",
     "unassignError": "Could not remove the face. Please try again.",
-    "faceLabel": "Face (distance {{distance}})",
     "openPhoto": "Open photo",
     "unassign": "Not this person",
     "reviewAll": "Review all"

@@ -3,6 +3,7 @@ import { DEFAULT_TARGET_PX, faceSourceSize } from '../../lib/faceSource'
 
 import { type Bbox } from '../../services/people'
 import { thumbUrl } from '../../services/photos'
+import { FadeInImage } from '../FadeInImage'
 
 /** Props for {@link FaceCrop}. */
 export interface FaceCropProps {
@@ -40,6 +41,12 @@ export interface FaceCropProps {
  * in a square tile is a square, and callers pass a crop that is already square in
  * pixels (see `squareCrop`).
  *
+ * Which thumbnail the crop is cut from is decided per face by `lib/faceSource`,
+ * from how big the face is in its frame and what a tile is worth spending — a
+ * grid of little squares must not each pull the largest preview there is. Until
+ * the source has decoded, the box shows a shimmering placeholder rather than an
+ * empty dark well, so a page filling in reads as loading rather than as broken.
+ *
  * Prefer this over `FaceThumb`, which crops a centre-cropped `tile_*` square as
  * though it were the whole frame and scales its axes independently. This one
  * needs the frame's dimensions to be correct; `FaceThumb` remains for the cluster
@@ -58,12 +65,11 @@ export function FaceCrop({ photoUid, crop, frame, label, size, className }: Face
       className={`position-relative overflow-hidden${className !== undefined ? ` ${className}` : ''}`}
       style={{ aspectRatio: `${ratio}`, ...(size !== undefined && { width: `${size}px` }) }}
     >
-      <img
+      <FadeInImage
         src={thumbUrl(photoUid, faceSourceSize(crop, frame, targetPx))}
         alt={label}
         aria-hidden={label === '' || undefined}
-        loading="lazy"
-        decoding="async"
+        skeleton
         style={cropImageStyle(crop)}
       />
     </div>

@@ -28,9 +28,13 @@ import { isNotFound } from '../services/auth'
 import { fetchSubject, type Subject, updateSubject } from '../services/people'
 
 /**
- * Where the back link leads. The people index keeps no view state of its own in
- * the URL, so the bare route restores it exactly; should it ever grow filters,
- * this is the one place that has to carry them.
+ * Where the back link leads: the people index, opened on its defaults. The index
+ * now keeps a view (search, kind, ordering) in the query string, and this link
+ * deliberately does not carry it — a person can be reached from anywhere (an
+ * audit entry, a photo, a bookmark), so the link promises the list itself rather
+ * than a view the reader may never have been in. Coming back from a filtered
+ * index is what the browser's own Back is for, and it restores it exactly; the
+ * album and label detail pages link to their lists the same way.
  */
 const PEOPLE_PATH = '/people'
 
