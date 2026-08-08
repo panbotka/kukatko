@@ -188,6 +188,7 @@
     "empty": {
       "title": "No decisions yet",
       "hint": "Be the first to sort.",
+      "hintViewer": "Once somebody starts sorting, they will show up here.",
       "action": "Start sorting"
     },
     "error": {
@@ -1819,6 +1820,15 @@
     "title": "Page not found",
     "message": "The requested page does not exist.",
     "back": "Back to home"
+  },
+  "forbidden": {
+    "title": "You can't open this page",
+    "message": {
+      "editor": "You need the editor role for this part — ask an administrator for it.",
+      "admin": "You need the administrator role for this part — ask someone who already has it.",
+      "maintainer": "You need the maintainer role for this part — ask someone who already has it."
+    },
+    "back": "Back to the library"
   },
   "import": {
     "title": "Import",

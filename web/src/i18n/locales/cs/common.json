@@ -188,6 +188,7 @@
     "empty": {
       "title": "Zatím žádná rozhodnutí",
       "hint": "Buďte první, kdo bude třídit.",
+      "hintViewer": "Až někdo začne třídit, objeví se tady.",
       "action": "Začít třídit"
     },
     "error": {
@@ -1871,6 +1872,15 @@
     "title": "Stránka nenalezena",
     "message": "Požadovaná stránka neexistuje.",
     "back": "Zpět na domovskou stránku"
+  },
+  "forbidden": {
+    "title": "Sem nemáte přístup",
+    "message": {
+      "editor": "Na tuhle část potřebujete roli editora — požádejte o ni správce.",
+      "admin": "Na tuhle část potřebujete roli správce — požádejte o ni někoho, kdo ji už má.",
+      "maintainer": "Na tuhle část potřebujete roli správce systému — požádejte o ni někoho, kdo ji už má."
+    },
+    "back": "Zpět do knihovny"
   },
   "import": {
     "title": "Import",

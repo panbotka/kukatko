@@ -55,11 +55,15 @@ function parseWindow(raw: string | null): LeaderboardWindow {
  * of who has recorded the most review decisions, with a top-three podium, the
  * caller's own row highlighted, and an all-time / last-7-days / today window
  * toggle whose state lives in the URL so "Back always works". Visible to every
- * signed-in role — watching the game is not a write action. See docs/FRONTEND.md.
+ * signed-in role — watching the game is not a write action — but the two
+ * invitations *into* the game (the empty state's button and the not-on-board
+ * hint, both pointing at the editors-only `/review`) are shown to writers only:
+ * for a viewer they were a button that appeared to do nothing.
+ * See docs/FRONTEND.md.
  */
 export function LeaderboardPage() {
   const { t } = useTranslation()
-  const { user, isAdmin } = useAuth()
+  const { user, canWrite, isAdmin } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
   const [reloadKey, reload] = useReloadKey()
 
@@ -121,12 +125,16 @@ export function LeaderboardPage() {
       <EmptyState
         icon={<Icon name="trophy" />}
         title={t('leaderboard.empty.title')}
-        hint={t('leaderboard.empty.hint')}
+        // The review game is editors-only, so a viewer gets neither the
+        // invitation to play nor the button: it would land them on a 403.
+        hint={canWrite ? t('leaderboard.empty.hint') : t('leaderboard.empty.hintViewer')}
         action={
-          <Link to="/review" className="btn btn-primary d-inline-flex align-items-center gap-2">
-            <Icon name="ui-checks" />
-            {t('leaderboard.empty.action')}
-          </Link>
+          canWrite ? (
+            <Link to="/review" className="btn btn-primary d-inline-flex align-items-center gap-2">
+              <Icon name="ui-checks" />
+              {t('leaderboard.empty.action')}
+            </Link>
+          ) : undefined
         }
       />
     )
@@ -200,7 +208,10 @@ export function LeaderboardPage() {
             })}
           </tbody>
         </Table>
-        {!onBoard && (
+        {/* The hint is the way *into* the game, so it is only for those who may
+            play. A viewer will never be on the board and cannot get on it; the
+            line would just be a link to a 403. */}
+        {!onBoard && canWrite && (
           <p className="text-secondary small mt-3 mb-0" data-testid="leaderboard-not-on-board">
             {t('leaderboard.notOnBoard.hint')}{' '}
             <Link to="/review">{t('leaderboard.notOnBoard.action')}</Link>

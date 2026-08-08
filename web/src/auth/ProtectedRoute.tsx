@@ -2,7 +2,8 @@ import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
 
-import { roleAtLeast, type Role } from '../services/auth'
+import { ForbiddenPage } from '../pages/ForbiddenPage'
+import { type GuardRole, roleAtLeast } from '../services/auth'
 
 import { useAuth } from './AuthContext'
 
@@ -39,16 +40,23 @@ export function RequireAuth() {
 
 /**
  * Guards nested routes by minimum role. Assumes an authenticated user (nest it
- * inside {@link RequireAuth}); users below `role` are sent to the home page.
+ * inside {@link RequireAuth}); users below `role` get the {@link ForbiddenPage}
+ * **in place of** the route.
+ *
+ * It deliberately does not redirect. Bouncing to the library dropped the user on
+ * a page they had not asked for with no explanation — indistinguishable from a
+ * broken link — and threw away the address, so a reload could not even show what
+ * went wrong. Rendering in place keeps the URL, and the sentence, where the user
+ * put them.
  */
-export function RequireRole({ role }: { role: Role }) {
+export function RequireRole({ role }: { role: GuardRole }) {
   const { role: current } = useAuth()
 
   if (current === null) {
     return <Navigate to="/login" replace />
   }
   if (!roleAtLeast(current, role)) {
-    return <Navigate to="/" replace />
+    return <ForbiddenPage role={role} />
   }
   return <Outlet />
 }
@@ -58,13 +66,14 @@ export function RequireRole({ role }: { role: Role }) {
  * capability, so it requires a maintainer (the top of the ladder). Named after
  * the capability it gates rather than the role, mirroring the backend's
  * `RequireImport` middleware; the equivalent {@link RequireRole} threshold is
- * `role="maintainer"`. Users without it are sent to the home page.
+ * `role="maintainer"`. Users without it get the {@link ForbiddenPage} in place of
+ * the route, for the same reason {@link RequireRole} does.
  */
 export function RequireImport() {
   const { canImport } = useAuth()
 
   if (!canImport) {
-    return <Navigate to="/" replace />
+    return <ForbiddenPage role="maintainer" />
   }
   return <Outlet />
 }

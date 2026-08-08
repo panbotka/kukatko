@@ -133,6 +133,39 @@ describe('routing', () => {
     ).toBeInTheDocument()
   })
 
+  it('explains the refusal on a fullscreen route a viewer may not enter', async () => {
+    // /review is editors-only and lives outside Layout. A viewer who typed it —
+    // or followed a shared link — used to land in the library with no word of
+    // explanation; now the route itself says why, and the address survives.
+    renderRoutes(['/review'])
+
+    expect(await screen.findByTestId('forbidden-page')).toHaveTextContent(/editor role/i)
+    expect(screen.getByTestId('pathname')).toHaveTextContent('/review')
+  })
+
+  it('explains the refusal inside the shell for a viewer on /upload', async () => {
+    renderRoutes(['/upload'])
+
+    expect(await screen.findByTestId('forbidden-page')).toBeInTheDocument()
+    expect(screen.getByTestId('pathname')).toHaveTextContent('/upload')
+    // The library never loads behind the refusal — the guard replaced the route,
+    // it did not navigate away from it.
+    expect(fetchPhotosMock).not.toHaveBeenCalled()
+  })
+
+  it('leaves Back pointing at wherever the refused user came from', async () => {
+    const user = userEvent.setup()
+    renderRoutes(['/nowhere', '/duplicates'])
+
+    expect(await screen.findByTestId('forbidden-page')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '__back' }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('pathname')).toHaveTextContent('/nowhere')
+    })
+  })
+
   it('redirects /library?year=2024 to /?year=2024, preserving the query', async () => {
     renderRoutes(['/library?year=2024'])
 

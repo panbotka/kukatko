@@ -1684,13 +1684,17 @@ here.
   param** `window` (`useSearchParams`, replace — „Back always works"), changing the window refetches.
   `ListSkeleton` while loading, `ErrorState` with retry (`useReloadKey`), an **empty state** (`EmptyState`
   „Zatím žádná rozhodnutí" + a CTA to `/review`); if the logged-in user is off the leaderboard, a quiet hint „Zatím
-  nejste na žebříčku" with a link to `/review`. The board is small (a row per user), so a **plain
+  nejste na žebříčku" with a link to `/review`. **Both invitations are `canWrite`-only**: `/review` is
+  editors-only, so for a viewer the „Začněte třídit" button was the reported *broken button* — pressed,
+  it silently produced the library. A viewer now gets neither the button (and a different empty-state
+  hint, `leaderboard.empty.hintViewer`) nor the not-on-board line, which they could never act on
+  anyway. The board is small (a row per user), so a **plain
   table without virtualization**. **For an admin (`isAdmin`) a player's name is a link** to their decisions
   overview (`/audit/reviews?user=…`, aria-label `leaderboard.viewDecisions`) → `ReviewDecisionsPage`;
   a non-admin sees only the name without a click-through. i18n `leaderboard.*` (cs/en). Tests: `LeaderboardPage.test.tsx`
   (sorted standings + the Ano/Ne split, highlighting of one's own row, switching the window changes the query param and
   refetches, the empty state with a link to `/review`, top-3 medals, a not-on-board hint, **admin click-through /
-  non-admin plain name**),
+  non-admin plain name**, and the two viewer cases: **no CTA in the empty state** and **no not-on-board line**),
   `StatsPage` = `/stats` (**any logged-in user** — read-only aggregate counts, so no role gate, like the
   leaderboard; reachable from the **user menu** and the phone drawer's account section) the **library
   statistics** over `GET /system/stats` (`useLibraryStats`), modelled on photo-sorter's status page: five
@@ -1716,7 +1720,22 @@ here.
   user has no decisions; without a selected user a hint back to the leaderboard; self-gated on `isAdmin`.
   i18n `reviewDecisions.*` (cs/en). Tests: `ReviewDecisionsPage.test.tsx` (the Ano/Ne split + thumbnails,
   the tally from the leaderboard, the filter changes the URL and refetches, the empty state, a non-admin alert),
-  `NotFoundPage`),
+  `NotFoundPage`,
+  `ForbiddenPage` (**no route of its own** — the route guards render it *in place of* the route the
+  current role may not enter, so `/review`, `/duplicates`, `/upload`, `/import`, … no longer bounce a
+  viewer to the library without a word. Styled like `NotFoundPage`, its sibling in „this page is not
+  for you": a heading, one sentence and a link back to the library. It takes the demanded role
+  (`GuardRole` = `Role` without `viewer`, the floor nobody can miss) and prints **its own sentence per
+  role** — `forbidden.message.{editor,admin,maintainer}` — rather than interpolating a role name into
+  one template: Czech would have to decline it („roli editora" / „roli správce systému") and the way
+  to *get* the role differs (an editor asks an admin; an admin asks someone who already is one).
+  Because it renders instead of navigating, **the URL stays on the protected route** — a reload
+  repeats the explanation and Back goes where the user came from, not one step forward again. On the
+  two fullscreen guarded routes (`/review`, `/duplicates/compare`) the guard sits outside `Layout`, so
+  it renders bare, without the navbar; the link back to the library is then the only way out, which is
+  why it is unconditional. i18n `forbidden.*` (cs/en). Tests: `ForbiddenPage.test.tsx` (the sentence
+  names the role actually demanded, the way out points at `/`, the Czech default),
+  plus the guard-level checks in `ProtectedRoute.test.tsx` and `App.test.tsx` below),
   `components/savedsearch/` = `SaveSearchModal` (a modal for naming when saving a new view
   or renaming an existing saved search) + `SavedSearchesDropdown` (a dropdown in the header of
   `SearchPage` — **not in the navbar**; lazy fetch on open, items open the saved view via
@@ -1938,7 +1957,14 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `overflow: hidden` therefore cannot clip; the strokes are absolute px, so they don't thin out at ten columns);
   `auth/` (`AuthContext`/`useAuth` + `AuthProvider` = boot `GET /auth/me`,
   exposes `user`/`role`/`login`/`logout`/`refresh`/`canWrite`/`isAdmin` (admin+)/`isMaintainer`/`canImport`; `ProtectedRoute` =
-  the `RequireAuth` + `RequireRole` + `RequireImport` route guards),
+  the `RequireAuth` + `RequireRole` + `RequireImport` route guards. `RequireAuth` still **redirects** —
+  signing in is the missing step and `/login` is where you take it, with the requested location stashed
+  in history state. The two *authorization* guards do not: a role that is too low gets `ForbiddenPage`
+  **rendered in place of the route** (`RequireRole` passes its own threshold, `RequireImport` passes
+  `maintainer`). They used to `<Navigate to="/" replace>`, which dropped the user on a page they had not
+  asked for, with no explanation and without the address — a shared link to `/duplicates` opened the
+  library and read as a broken app. `RequireRole`'s prop is a `GuardRole`, so `role="viewer"` — a
+  threshold nobody could fail — is a compile error),
   `capabilities/` (`CapabilitiesContext`/`useCapabilities` + `CapabilitiesProvider` = what the instance is —
   the feature flags `{semantic_search}` **and the running build `{version?}`** — from
   `GET /api/v1/capabilities`; the provider sits inside `AuthProvider`,
@@ -3048,7 +3074,10 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   but **outside `Layout`** — fullscreen like `/review`), `/import` under `RequireImport` (= maintainer,
   `canImport`), `/maintenance` and `/system` under `RequireRole role="maintainer"` = operations (maintainer
   only), `/users` and `/audit` under `RequireRole role="admin"` = governance (admin **or**
-  maintainer)). Config:
+  maintainer)). **A role-gated route a user may not enter renders `ForbiddenPage` on that very URL** —
+  no redirect, so the address bar, a reload and Back all keep pointing at what was asked for
+  (`App.test.tsx` covers the fullscreen `/review`, the in-shell `/upload` — where the library must *not*
+  fetch behind the refusal — and Back off `/duplicates`). Config:
   `vite.config.ts` (the build → `../internal/web/static/dist`, vitest jsdom, **`restoreMocks: true`** =
   the single place mocks are restored, the dev proxy
   `/healthz`+`/api` → `:8080`), `eslint.config.js` (strict typed, plus a test-file-only
