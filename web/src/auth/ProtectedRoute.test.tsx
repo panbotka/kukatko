@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import { I18nextProvider } from 'react-i18next'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { describe, expect, it, vi } from 'vitest'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../i18n'
 import { type Role } from '../services/auth'
@@ -28,6 +28,11 @@ function authValue(status: AuthStatus, role: Role | null = null): AuthContextVal
   }
 }
 
+/** Surfaces the resolved path, so a test can prove the URL did not move. */
+function LocationProbe() {
+  return <span data-testid="pathname">{useLocation().pathname}</span>
+}
+
 function renderApp(
   value: AuthContextValue,
   guard: 'auth' | 'role' | 'import',
@@ -49,11 +54,21 @@ function renderApp(
               <Route path="/secret" element={<div>secret content</div>} />
             </Route>
           </Routes>
+          <LocationProbe />
         </MemoryRouter>
       </AuthContext.Provider>
     </I18nextProvider>,
   )
 }
+
+beforeEach(async () => {
+  await i18n.changeLanguage('en')
+})
+
+afterEach(async () => {
+  // Czech is the instance default; restore it for whoever runs next.
+  await i18n.changeLanguage('cs')
+})
 
 describe('RequireAuth', () => {
   it('redirects unauthenticated users to the login page', () => {
@@ -78,11 +93,19 @@ describe('RequireAuth', () => {
 })
 
 describe('RequireRole', () => {
-  it('redirects users below the required role to home', () => {
+  it('explains the refusal instead of redirecting users below the required role', () => {
     renderApp(authValue('authenticated', 'viewer'), 'role')
 
-    expect(screen.getByText('home page')).toBeInTheDocument()
+    // A 403 page in place of the route, naming the role that is missing.
+    expect(screen.getByTestId('forbidden-page')).toHaveTextContent(/administrator role/i)
     expect(screen.queryByText('secret content')).not.toBeInTheDocument()
+    expect(screen.queryByText('home page')).not.toBeInTheDocument()
+  })
+
+  it('keeps the URL on the protected route, so a reload repeats the explanation', () => {
+    renderApp(authValue('authenticated', 'viewer'), 'role')
+
+    expect(screen.getByTestId('pathname')).toHaveTextContent('/secret')
   })
 
   it('renders the content for users meeting the required role', () => {
@@ -99,13 +122,16 @@ describe('RequireImport', () => {
     expect(screen.getByText('secret content')).toBeInTheDocument()
   })
 
-  it('redirects admins, editors and viewers to home', () => {
+  it('shows admins, editors and viewers the 403 page on the route itself', () => {
     // Import is now an operations capability: only a maintainer holds it, so even
-    // an admin (governance, not operations) is sent home.
+    // an admin (governance, not operations) is refused — and told so, on the URL
+    // they asked for, rather than being dropped on the library.
     for (const role of ['admin', 'editor', 'viewer'] as const) {
       const { unmount } = renderApp(authValue('authenticated', role), 'import')
-      expect(screen.getByText('home page')).toBeInTheDocument()
+      expect(screen.getByTestId('forbidden-page')).toHaveTextContent(/maintainer role/i)
+      expect(screen.getByTestId('pathname')).toHaveTextContent('/secret')
       expect(screen.queryByText('secret content')).not.toBeInTheDocument()
+      expect(screen.queryByText('home page')).not.toBeInTheDocument()
       unmount()
     }
   })

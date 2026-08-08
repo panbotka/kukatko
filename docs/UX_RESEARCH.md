@@ -75,7 +75,7 @@ dopad/pracnost — nahoře je to, co se vyplatí udělat první.
 | [N10](#n10) | `/labels`: 113 štítků jako svislý seznam bez hledání a řazení | 🟡 | ⚪ | `LabelsPage` |
 | [N11](#n11) ✅ | Příznaky se jmenují podle tvaru ikony: „Oko", „Palec nahoru" | 🟡 | ⚪ | `FlagControl`, `FilterBar` |
 | [N12](#n12) ✅ | Do textu pro uživatele prosakuje `AI_MODEL:`, `Unknown`, anglické názvy | 🟡 | ⚪ | `MetadataPanel`, import |
-| [N13](#n13) | Stránka, na kterou nemám právo, mlčky přesměruje na knihovnu | 🟡 | ⚪ | routing, `LeaderboardPage` |
+| [N13](#n13) ✅ | Stránka, na kterou nemám právo, mlčky přesměruje na knihovnu | 🟡 | ⚪ | routing, `LeaderboardPage` |
 | [N14](#n14) | Zašedlá tlačítka bez vysvětlení, proč nejdou zmáčknout | 🟡 | ⚪ | `FacesPanel`, `PhotoLocation` |
 | [N15](#n15) | Karta prohlížeče se vždy jmenuje „Kukátko" | 🟡 | ⚪ | `Layout` |
 | [N16](#n16) | Mobilní zásuvka filtrů nemá patičku s počtem výsledků ani „Použít" | 🟡 | ⚪ | `FilterBar` |
@@ -674,6 +674,20 @@ pro danou roli nikam nevedou (tlačítko na `Žebříčku`).
 **Kde to je.** Ochrany cest v `web/src/App.tsx` / `web/src/auth`,
 `web/src/pages/LeaderboardPage.tsx` (tlačítko), `web/src/pages/NotFoundPage.tsx`
 (vzor pro novou stránku).
+
+**✅ Vyřešeno (8. 8. 2026).** `RequireRole` a `RequireImport` už nepřesměrovávají.
+Místo `<Navigate to="/">` vykreslí **na té samé adrese** novou `ForbiddenPage` ve
+stylu `NotFoundPage`: nadpis, jedna věta a odkaz zpět do knihovny. Věta pojmenuje
+roli, která chybí, a každá role má vlastní znění (`forbidden.message.{editor,admin,
+maintainer}`) — čeština by ji jinak musela skloňovat a cesta k roli se liší.
+Protože se nikam nenaviguje, **adresa zůstane** na chráněné cestě: obnovení stránky
+ukáže totéž vysvětlení a `Zpět` vede tam, odkud uživatel přišel. Přihlášení je
+výjimka — `RequireAuth` dál posílá na `/login`, protože tam se chybějící krok
+opravdu udělá. Na `Žebříčku` zmizely obě pozvánky do třídění (tlačítko „Začněte
+třídit" i řádek „Zatím nejste na žebříčku") pro role bez práva zápisu; prohlížeč
+místo nich dostane jiný text prázdného stavu. Ostatní odkazy na cesty jen pro
+editory (`/upload` v knihovně, `/people/clusters` u osob, celé menu) už `canWrite`
+hlídaly.
 
 ---
 

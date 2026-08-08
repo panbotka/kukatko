@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
+import { type Role } from '../services/auth'
 import { type Leaderboard, type LeaderboardEntry } from '../services/review'
 
 import { LeaderboardPage } from './LeaderboardPage'
@@ -35,16 +36,22 @@ function board(entries: LeaderboardEntry[], window: Leaderboard['window'] = 'all
   return { window, caller_uid: 'u2', entries }
 }
 
-/** A signed-in user; `uid` decides which board row is highlighted as "you" and
- * `isAdmin` whether the per-user decision click-through is offered. */
-function auth(uid: string, isAdmin = false): AuthContextValue {
-  const role = isAdmin ? 'admin' : 'viewer'
+/** A signed-in user; `uid` decides which board row is highlighted as "you",
+ * `isAdmin` whether the per-user decision click-through is offered, and
+ * `canWrite` whether the invitations into the review game are shown at all. */
+function auth(uid: string, isAdmin = false, canWrite = isAdmin): AuthContextValue {
+  let role: Role = 'viewer'
+  if (isAdmin) {
+    role = 'admin'
+  } else if (canWrite) {
+    role = 'editor'
+  }
   return {
     status: 'authenticated',
     user: { uid, username: 'me', display_name: 'Me', role },
     role,
     downloadToken: null,
-    canWrite: false,
+    canWrite,
     isAdmin,
     login: vi.fn(),
     logout: vi.fn(),
@@ -58,10 +65,10 @@ function WindowProbe() {
   return <span data-testid="window-probe">{params.get('window') ?? ''}</span>
 }
 
-function renderPage(uid = 'u2', isAdmin = false) {
+function renderPage(uid = 'u2', isAdmin = false, canWrite = isAdmin) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <AuthContext.Provider value={auth(uid, isAdmin)}>
+      <AuthContext.Provider value={auth(uid, isAdmin, canWrite)}>
         <MemoryRouter initialEntries={['/leaderboard']}>
           <WindowProbe />
           <LeaderboardPage />
@@ -142,12 +149,23 @@ describe('LeaderboardPage', () => {
 
   it('shows the empty state when no one has sorted yet', async () => {
     fetchMock.mockResolvedValue(board([]))
-    renderPage()
+    renderPage('u2', false, true)
 
     expect(await screen.findByTestId('empty-state')).toBeInTheDocument()
     expect(screen.getByText('No decisions yet')).toBeInTheDocument()
-    // The empty state invites the reader into the review game.
+    // The empty state invites an editor into the review game.
     expect(screen.getByRole('link', { name: /start sorting/i })).toHaveAttribute('href', '/review')
+  })
+
+  it('does not invite a viewer into a game they may not play', async () => {
+    fetchMock.mockResolvedValue(board([]))
+    renderPage('u2')
+
+    expect(await screen.findByTestId('empty-state')).toBeInTheDocument()
+    // /review is editors-only: offering the button would send a viewer to a 403,
+    // which is exactly the "broken button" this page was reported for.
+    expect(screen.queryByRole('link', { name: /start sorting/i })).toBeNull()
+    expect(screen.getByText(/once somebody starts sorting/i)).toBeInTheDocument()
   })
 
   it('links each player to their decision history for an admin', async () => {
@@ -170,11 +188,19 @@ describe('LeaderboardPage', () => {
 
   it('hints the way in when the caller has no row yet', async () => {
     fetchMock.mockResolvedValue(board([entry('u1', 'Alice', 10, 2)]))
-    renderPage('nobody')
+    renderPage('nobody', false, true)
 
     expect(await screen.findByTestId('leaderboard-not-on-board')).toBeInTheDocument()
     expect(
       within(screen.getByTestId('leaderboard-not-on-board')).getByRole('link'),
     ).toHaveAttribute('href', '/review')
+  })
+
+  it('keeps the way-in hint from a viewer, who can never take it', async () => {
+    fetchMock.mockResolvedValue(board([entry('u1', 'Alice', 10, 2)]))
+    renderPage('nobody')
+
+    expect(await screen.findByText('Alice')).toBeInTheDocument()
+    expect(screen.queryByTestId('leaderboard-not-on-board')).toBeNull()
   })
 })

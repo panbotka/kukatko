@@ -8,6 +8,14 @@
  */
 export type Role = 'viewer' | 'editor' | 'admin' | 'maintainer'
 
+/**
+ * The roles that are meaningful as a route-guard threshold. `viewer` is the
+ * floor of the ladder — every authenticated user already holds it — so guarding
+ * on it would never deny anyone, and the 403 page would have no honest sentence
+ * to print about what is missing.
+ */
+export type GuardRole = Exclude<Role, 'viewer'>
+
 /** Authenticated user, mirroring the backend `auth.User` JSON shape. */
 export interface User {
   uid: string
