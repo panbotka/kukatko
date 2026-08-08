@@ -1,5 +1,14 @@
 import { type ArchivedFilter, type PhotoListParams, type PhotoSort } from '../services/photos'
 
+import {
+  ANY_PERIOD,
+  isAnyPeriod,
+  type Period,
+  periodForYears,
+  takenBeforeParam,
+  toDateBound,
+} from './period'
+
 /**
  * The library's canonical route. The library *is* the homepage — the grid is the
  * app's centrepiece — so every link the app builds points here. The historical
@@ -24,8 +33,12 @@ export type LibraryView = {
   camera: string
   q: string
   /**
-   * Capture-year facet: '' (any) or a four-digit year, one of those
-   * `GET /photos/years` offers. Photos with no capture time never match.
+   * **Legacy** capture-year facet: '' or a four-digit year. Nothing writes it any
+   * more — the period control replaced the year dropdown and stores its state in
+   * {@link LibraryView.taken_after}/{@link LibraryView.taken_before} — but URLs
+   * and saved searches minted before that swap still carry it, so it is still
+   * read: {@link periodOf} folds it into the period, and the first touch of the
+   * control clears it ({@link periodPatch}).
    */
   year: string
   /**
@@ -57,7 +70,15 @@ export type LibraryView = {
    * no "not favorited" value — wired into the URL like every other filter.
    */
   favorite: string
+  /**
+   * Capture-time period, lower bound: '' (open) or an inclusive `YYYY-MM-DD` day.
+   * Together with {@link LibraryView.taken_before} it is the **single** filter on
+   * the time axis — a decade, a year, "before 1950" or "summer 2019" are all this
+   * one pair — written by the period control and read back through
+   * {@link periodOf}. Photos with no capture time never match.
+   */
   taken_after: string
+  /** Capture-time period, inclusive upper bound; see {@link LibraryView.taken_after}. */
   taken_before: string
   /** Minimum star rating filter: '' (any) or '1'–'5'. */
   min_rating: string
@@ -103,16 +124,38 @@ function toArchived(raw: string): ArchivedFilter {
   return (ARCHIVED as readonly string[]).includes(raw) ? (raw as ArchivedFilter) : 'false'
 }
 
-/** A four-digit calendar year — the only year value the backend accepts. */
+/** A four-digit calendar year, as the legacy `year` URL key still carries one. */
 const YEAR_PATTERN = /^\d{4}$/
 
 /**
- * Narrows a raw string to a four-digit year, dropping anything else (a hand-typed
- * or stale URL) to "no filter" rather than letting the backend answer 400 and the
- * grid render an error.
+ * The capture-time period the view is filtered by — the one accessor every
+ * reader of the time axis goes through, so no two of them can disagree.
+ *
+ * Normally that is the `taken_after`/`taken_before` pair, sanitised so a
+ * hand-typed or stale URL degrades to "open" instead of a 400 from the backend.
+ * When neither is set, a legacy `year=1965` (an old bookmark, a saved search
+ * stored before the year dropdown became a period control) is folded in as that
+ * year's period, so those views keep showing what they always showed.
  */
-function toYear(raw: string): string {
-  return YEAR_PATTERN.test(raw) ? raw : ''
+export function periodOf(view: LibraryView): Period {
+  const period = { from: toDateBound(view.taken_after), to: toDateBound(view.taken_before) }
+  if (!isAnyPeriod(period)) {
+    return period
+  }
+  if (!YEAR_PATTERN.test(view.year)) {
+    return ANY_PERIOD
+  }
+  const year = Number(view.year)
+  return periodForYears(year, year)
+}
+
+/**
+ * The view patch that puts `period` in force — including the clearing of the
+ * legacy `year` key, so the two can never both be set and contradict each other.
+ * Passing {@link ANY_PERIOD} clears the filter.
+ */
+export function periodPatch(period: Period): Partial<LibraryView> {
+  return { taken_after: period.from, taken_before: period.to, year: '' }
 }
 
 /**
@@ -162,27 +205,32 @@ export function removeFromFilterList(raw: string, uid: string): string {
 
 /**
  * Maps the URL view state to API list params, sanitising the enum-like fields so
- * a tampered URL cannot send an out-of-range sort/archived/year value to the
- * backend. Free-text, tri-state and UID filters pass through verbatim: the album,
- * label and person values stay in their comma-joined form and are split into
- * repeated query params by {@link import('../services/photos').buildPhotoQuery}.
- * The backend treats an empty value as no filter, and an unknown album/label/person
+ * a tampered URL cannot send an out-of-range sort/archived value to the backend.
+ * Free-text, tri-state and UID filters pass through verbatim: the album, label
+ * and person values stay in their comma-joined form and are split into repeated
+ * query params by {@link import('../services/photos').buildPhotoQuery}. The
+ * backend treats an empty value as no filter, and an unknown album/label/person
  * UID simply matches nothing.
+ *
+ * The time axis goes through {@link periodOf}, so the legacy `year` key and the
+ * date bounds arrive as one period, with its upper bound stretched to the end of
+ * its last day ({@link takenBeforeParam}) — a period is inclusive of the day the
+ * reader picked.
  */
 export function viewToParams(view: LibraryView): PhotoListParams {
+  const period = periodOf(view)
   return {
     sort: toSort(view.sort),
     archived: toArchived(view.archived),
     has_gps: view.has_gps,
     camera: view.camera,
     q: view.q,
-    year: toYear(view.year),
     album: view.album,
     label: view.label,
     person: view.person,
     favorite: view.favorite,
-    taken_after: view.taken_after,
-    taken_before: view.taken_before,
+    taken_after: period.from,
+    taken_before: takenBeforeParam(period.to),
     min_rating: view.min_rating,
     flag: view.flag,
   }
@@ -202,13 +250,11 @@ export function hasActiveFilters(
     view.has_gps !== '' ||
     view.camera !== '' ||
     (!options.ignoreQuery && view.q !== '') ||
-    view.year !== '' ||
+    !isAnyPeriod(periodOf(view)) ||
     view.album !== '' ||
     view.label !== '' ||
     view.person !== '' ||
     view.favorite !== '' ||
-    view.taken_after !== '' ||
-    view.taken_before !== '' ||
     view.min_rating !== '' ||
     view.flag !== ''
   )

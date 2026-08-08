@@ -340,10 +340,11 @@ describe('LibraryPage', () => {
     labelsMock.mockResolvedValue([label('lb_1', 'Beach', 2)])
     renderLibrary('/?q=sunset&year=2023&album=al_1&label=lb_1')
 
-    // Albums and labels are named by their title, not the UID the URL carries.
+    // Albums and labels are named by their title, not the UID the URL carries;
+    // the legacy `year=` a bookmark still holds reads as the period it is.
     expect(
       await screen.findByText(
-        'Active filters: Filter the library: sunset · Year: 2023 · Album: Holidays · Label: Beach',
+        'Active filters: Filter the library: sunset · Period: 2023 · Album: Holidays · Label: Beach',
       ),
     ).toBeInTheDocument()
   })
@@ -435,7 +436,7 @@ describe('LibraryPage', () => {
     expect(first.camera).toBe('Canon')
   })
 
-  it('writes a selected year facet to the query string and refetches with it', async () => {
+  it('writes a picked decade to the query string and refetches with it', async () => {
     fetchMock.mockResolvedValue(page([photo('a', 'a.jpg')], 1, null))
     yearsMock.mockResolvedValue({
       years: [
@@ -448,12 +449,19 @@ describe('LibraryPage', () => {
     renderLibrary()
 
     await screen.findByRole('link', { name: 'a.jpg' })
-    await user.selectOptions(await screen.findByLabelText('Year'), '2023')
+    await user.click(await screen.findByRole('button', { name: /^Period:/ }))
+    await user.click(screen.getByRole('button', { name: /^2020–2029/ }))
 
-    expect(screen.getByTestId('search')).toHaveTextContent('year=2023')
+    // One filter, one pair of URL keys — the decade the 109-entry year dropdown
+    // could never express.
+    const search = screen.getByTestId('search')
+    expect(search).toHaveTextContent('taken_after=2020-01-01')
+    expect(search).toHaveTextContent('taken_before=2029-12-31')
     await waitFor(() => {
-      const calls = fetchMock.mock.calls
-      expect(calls[calls.length - 1][0].year).toBe('2023')
+      const last = fetchMock.mock.calls[fetchMock.mock.calls.length - 1][0]
+      expect(last.taken_after).toBe('2020-01-01')
+      // Inclusive of the last day, not its midnight.
+      expect(last.taken_before).toBe('2029-12-31T23:59:59.999999Z')
     })
   })
 
@@ -545,7 +553,9 @@ describe('LibraryPage', () => {
 
     await screen.findByText('No photos found')
     const first = fetchMock.mock.calls[0][0]
-    expect(first.year).toBe('2023')
+    // A legacy `year=` still in the URL arrives as the period it always meant.
+    expect(first.taken_after).toBe('2023-01-01')
+    expect(first.taken_before).toBe('2023-12-31T23:59:59.999999Z')
     expect(first.album).toBe('al_1')
     expect(first.label).toBe('lb_1')
     expect(first.camera).toBe('Canon')
@@ -554,15 +564,16 @@ describe('LibraryPage', () => {
 
   it('never asks the years endpoint to narrow its own facet', async () => {
     fetchMock.mockResolvedValue(page([], 0, null))
-    renderLibrary('/?year=2023&camera=Canon')
+    renderLibrary('/?taken_after=2023-01-01&taken_before=2023-12-31&camera=Canon')
 
     await screen.findByText('No photos found')
     await waitFor(() => {
       expect(yearsMock).toHaveBeenCalled()
     })
-    // The other filters still scope the counts; the selected year does not.
+    // The other filters still scope the counts; the chosen period does not.
     const asked = yearsMock.mock.calls[0][0]
-    expect(asked.year).toBe('')
+    expect(asked.taken_after).toBe('')
+    expect(asked.taken_before).toBe('')
     expect(asked.camera).toBe('Canon')
   })
 

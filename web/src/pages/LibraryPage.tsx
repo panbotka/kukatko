@@ -66,7 +66,7 @@ const ANCHOR_PARAM = 'at'
  * via the bulk API. Escape clears the selection and hides the bar.
  */
 export function LibraryPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   useDocumentTitle(t('library.title'))
   const { canWrite } = useAuth()
   const navigate = useNavigate()
@@ -253,7 +253,7 @@ export function LibraryPage() {
   // there — the quick-filter text included, unlike the bar's own chips — and be
   // able to drop them all in one click. Clearing keeps the sort: it narrows
   // nothing, so resetting it would be a surprise.
-  const activeFilters = buildChips(view, t, { facets, includeQuery: true })
+  const activeFilters = buildChips(view, t, i18n.language, { facets, includeQuery: true })
   const clearFilters = () => {
     setView({ ...LIBRARY_DEFAULTS, sort: view.sort })
   }

@@ -144,6 +144,14 @@ implemented**, per the task's conservative-changes rule.
 - **Consistency:** Mixes `<Link className="btn…">` and `<Button>` for visually identical controls.
   📋 Standardize on `<Button as={Link}>`. 🟡⚪
 - **States:** All present and friendly.
+- **Time axis — fixed:** the filter bar used to carry *two* controls meaning "when was this taken":
+  a **Rok** `<select>` of 109 single years in the primary row, and a **Pořízeno od / do** pair one
+  click deeper in Filtry. Neither was right: for a library reaching back to 1905 the visible control
+  could not express a decade ("babiččiny fotky ze šedesátek"), the one that could was hidden, and the
+  two never synchronised with a `year:1960-1969` typed into the search box. They are now one
+  **Období** control (`PeriodFilter`) in the primary row — decades expandable to years, exact dates
+  pinned under them, one `taken_after`/`taken_before` pair in the URL — and it *reads the period out
+  of the query* rather than contradicting it. ✅
 
 ### Favorites (`/favorites`)
 - Simplest, cleanest page. Excellent action-guiding empty state ("Tap the heart on a photo…").

@@ -52,13 +52,15 @@ describe('useLibraryFacets', () => {
   it('loads the year counts for the current filters', async () => {
     yearsMock.mockResolvedValue(years(2026, 7))
 
-    const { result } = render({ sort: 'newest' })
+    const { result } = render({ sort: 'newest', taken_after: '1960-01-01' })
 
     await waitFor(() => {
       expect(result.current.years).toEqual([{ year: 2026, count: 7 }])
     })
-    // The year filter itself is stripped: a facet must not narrow its own options.
-    expect(yearsMock.mock.calls[0][0].year).toBe('')
+    // The period itself is stripped: a facet must not narrow its own options —
+    // with the sixties picked, every other decade would read zero.
+    expect(yearsMock.mock.calls[0][0].taken_after).toBe('')
+    expect(yearsMock.mock.calls[0][0].taken_before).toBe('')
   })
 
   it('empties the year facet when its request fails', async () => {

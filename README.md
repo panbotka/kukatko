@@ -45,8 +45,12 @@ It is **not** for you if you are looking for:
   `dovolená camera:"Canon EOS R6" iso:100-400 faces:2`, `label:cat|dog`, `taken:2024-05`,
   `near:<uid>`. The same language works in the library's own search field, which offers the same
   `?` cheat sheet, points out a filter it did not understand, and flags the facet pickers the query
-  has already set. Faces are detected, clustered, and matched to named people; nothing is ever
-  assigned automatically — the machine narrows the list, a human confirms.
+  has already set. The time axis is one control, not two: a **period filter** offering the decades
+  the library holds, each expandable to its years, with exact dates underneath — so "the sixties",
+  "before 1950" and "summer 2019" are all a click or two away, and the picker shows the period a
+  `year:` in the search box has already set instead of contradicting it. Faces are detected,
+  clustered, and matched to named people; nothing is ever assigned automatically — the machine
+  narrows the list, a human confirms.
 - **A library an AI agent can use.** Kukátko can expose itself as an **MCP server**, so an agent
   searches and organizes the library directly ("find all of grandma's photos from the sixties and
   put them in an album"). Off by default, authenticated with an ordinary API token, bound by the

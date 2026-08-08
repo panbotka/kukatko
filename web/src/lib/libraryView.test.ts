@@ -6,9 +6,12 @@ import {
   joinFilterList,
   LIBRARY_DEFAULTS,
   parseFilterList,
+  periodOf,
+  periodPatch,
   removeFromFilterList,
   viewToParams,
 } from './libraryView'
+import { ANY_PERIOD } from './period'
 import { readUrlState, writeUrlState } from './urlState'
 
 describe('filter-list encoding', () => {
@@ -59,6 +62,39 @@ describe('viewToParams multi-value facets', () => {
   })
 })
 
+describe('the capture period', () => {
+  it('reads the date bounds, dropping a bound the backend would reject', () => {
+    expect(periodOf({ ...LIBRARY_DEFAULTS, taken_after: '1960-01-01' })).toEqual({
+      from: '1960-01-01',
+      to: '',
+    })
+    expect(periodOf({ ...LIBRARY_DEFAULTS, taken_before: 'loni' })).toEqual(ANY_PERIOD)
+  })
+
+  it('folds a legacy year= into the period it always meant', () => {
+    // Bookmarks and saved searches minted before the year dropdown became a
+    // period control still carry it; they must keep showing what they showed.
+    expect(periodOf({ ...LIBRARY_DEFAULTS, year: '1965' })).toEqual({
+      from: '1965-01-01',
+      to: '1965-12-31',
+    })
+    expect(periodOf({ ...LIBRARY_DEFAULTS, year: '65' })).toEqual(ANY_PERIOD)
+  })
+
+  it('lets the date bounds win over the legacy key, and clears it on any write', () => {
+    const view = { ...LIBRARY_DEFAULTS, year: '1965', taken_after: '2019-06-01' }
+    expect(periodOf(view)).toEqual({ from: '2019-06-01', to: '' })
+    expect(periodPatch(ANY_PERIOD)).toEqual({ taken_after: '', taken_before: '', year: '' })
+  })
+
+  it('sends the period as one inclusive range, the last day included', () => {
+    const params = viewToParams({ ...LIBRARY_DEFAULTS, year: '1965' })
+    expect(params.taken_after).toBe('1965-01-01')
+    expect(params.taken_before).toBe('1965-12-31T23:59:59.999999Z')
+    expect(viewToParams(LIBRARY_DEFAULTS).taken_before).toBe('')
+  })
+})
+
 describe('hasActiveFilters', () => {
   it('treats a non-empty album, label or person list as an active filter', () => {
     expect(hasActiveFilters({ ...LIBRARY_DEFAULTS, album: 'al_1,al_2' })).toBe(true)
@@ -69,6 +105,13 @@ describe('hasActiveFilters', () => {
 
   it('treats the favorites toggle as an active filter', () => {
     expect(hasActiveFilters({ ...LIBRARY_DEFAULTS, favorite: 'true' })).toBe(true)
+  })
+
+  it('treats a period as an active filter, however it was set', () => {
+    expect(hasActiveFilters({ ...LIBRARY_DEFAULTS, taken_after: '1960-01-01' })).toBe(true)
+    expect(hasActiveFilters({ ...LIBRARY_DEFAULTS, year: '1965' })).toBe(true)
+    // A bound the backend would reject filters nothing, so it is not active.
+    expect(hasActiveFilters({ ...LIBRARY_DEFAULTS, taken_before: 'loni' })).toBe(false)
   })
 })
 
