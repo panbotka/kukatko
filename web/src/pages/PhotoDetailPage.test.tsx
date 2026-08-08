@@ -365,9 +365,9 @@ describe('PhotoDetailPage — immersive viewer', () => {
     const bar = actionBar(container)
     expect(within(bar).getByRole('button', { name: 'Rate 1 of 5' })).toBeInTheDocument()
     expect(within(bar).getByRole('button', { name: 'Rate 5 of 5' })).toBeInTheDocument()
-    expect(within(bar).getByRole('button', { name: 'Eye' })).toBeInTheDocument()
-    expect(within(bar).getByRole('button', { name: 'Thumbs up' })).toBeInTheDocument()
-    expect(within(bar).getByRole('button', { name: 'Thumbs down' })).toBeInTheDocument()
+    expect(within(bar).getByRole('button', { name: 'Look at later' })).toBeInTheDocument()
+    expect(within(bar).getByRole('button', { name: 'Pick' })).toBeInTheDocument()
+    expect(within(bar).getByRole('button', { name: 'Reject' })).toBeInTheDocument()
     expect(within(bar).getByRole('button', { name: 'Add to favorites' })).toBeInTheDocument()
     expect(within(bar).getByRole('button', { name: 'Archive' })).toBeInTheDocument()
     expect(screen.queryByRole('group', { name: 'Photo actions' })).not.toBeInTheDocument()
@@ -647,15 +647,15 @@ describe('PhotoDetailPage — immersive viewer', () => {
       const dock = screen.getByRole('group', { name: 'Photo actions' })
       expect(within(dock).getByRole('button', { name: 'Rate 1 of 5' })).toBeInTheDocument()
       expect(within(dock).getByRole('button', { name: 'Rate 5 of 5' })).toBeInTheDocument()
-      expect(within(dock).getByRole('button', { name: 'Eye' })).toBeInTheDocument()
-      expect(within(dock).getByRole('button', { name: 'Thumbs up' })).toBeInTheDocument()
-      expect(within(dock).getByRole('button', { name: 'Thumbs down' })).toBeInTheDocument()
+      expect(within(dock).getByRole('button', { name: 'Look at later' })).toBeInTheDocument()
+      expect(within(dock).getByRole('button', { name: 'Pick' })).toBeInTheDocument()
+      expect(within(dock).getByRole('button', { name: 'Reject' })).toBeInTheDocument()
       expect(within(dock).getByRole('button', { name: 'Add to favorites' })).toBeInTheDocument()
       expect(within(dock).getByRole('button', { name: 'Archive' })).toBeInTheDocument()
 
       const bar = actionBar(container)
       expect(within(bar).queryByRole('button', { name: 'Rate 1 of 5' })).not.toBeInTheDocument()
-      expect(within(bar).queryByRole('button', { name: 'Thumbs up' })).not.toBeInTheDocument()
+      expect(within(bar).queryByRole('button', { name: 'Pick' })).not.toBeInTheDocument()
       expect(
         within(bar).queryByRole('button', { name: 'Add to favorites' }),
       ).not.toBeInTheDocument()
@@ -702,7 +702,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
         'true',
       )
 
-      await user.click(within(dock).getByRole('button', { name: 'Thumbs down' }))
+      await user.click(within(dock).getByRole('button', { name: 'Reject' }))
       await waitFor(() => {
         expect(ratePhotoMock).toHaveBeenCalledWith('b', { flag: 'reject' })
       })
@@ -757,7 +757,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
 
       const dock = screen.getByRole('group', { name: 'Photo actions' })
       expect(within(dock).getByRole('button', { name: 'Rate 1 of 5' })).toBeInTheDocument()
-      expect(within(dock).getByRole('button', { name: 'Eye' })).toBeInTheDocument()
+      expect(within(dock).getByRole('button', { name: 'Look at later' })).toBeInTheDocument()
       expect(within(dock).getByRole('button', { name: 'Add to favorites' })).toBeInTheDocument()
       expect(within(dock).queryByRole('button', { name: 'Archive' })).not.toBeInTheDocument()
       expect(within(dock).queryByRole('button', { name: 'Restore' })).not.toBeInTheDocument()

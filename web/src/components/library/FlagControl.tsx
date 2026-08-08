@@ -21,29 +21,34 @@ export interface FlagControlProps {
   className?: string
 }
 
-/** The selectable personal-marking states, in display order (eye, up, down). */
+/** The selectable personal-marking states, in display order (eye, pick, reject). */
 type FlagValue = 'eye' | 'pick' | 'reject'
 
 /**
- * One personal-marking state's presentation: the i18n label key, the outline and
- * filled bootstrap-icons glyphs, and the Bootstrap text-colour utility applied
- * when the state is active.
+ * One personal-marking state's presentation: the i18n keys for its name and its
+ * one-sentence explanation, the outline and filled bootstrap-icons glyphs, and
+ * the Bootstrap text-colour utility applied when the state is active.
  */
 interface FlagSpec {
   readonly value: FlagValue
-  // A literal i18n key (not a wide `string`) so the typed `t()` accepts it.
+  // Literal i18n keys (not a wide `string`) so the typed `t()` accepts them.
   readonly labelKey: 'rating.eye' | 'rating.pick' | 'rating.reject'
+  readonly hintKey: 'rating.eyeHint' | 'rating.pickHint' | 'rating.rejectHint'
   readonly icon: IconName
   readonly iconActive: IconName
   readonly activeClass: string
 }
 
-// The three marks: 👁 eye (neutral accent), 👍 thumbs-up (green), 👎 thumbs-down
-// (red). Stored values pick/reject back thumbs-up/down (kept for compatibility).
+// The three marks: 👁 look at later (neutral accent), 👍 pick (green), 👎 reject
+// (red). The glyphs are shapes, the names are what the mark is *for* — an icon
+// called "thumbs up" teaches nobody that it picks a photo for further work — so
+// the label names the act and the tooltip spells it out in a sentence. The
+// stored values pick/reject/eye stay as they are (API and `flag:` query key).
 const FLAG_SPECS: readonly FlagSpec[] = [
   {
     value: 'eye',
     labelKey: 'rating.eye',
+    hintKey: 'rating.eyeHint',
     icon: 'eye',
     iconActive: 'eye-fill',
     activeClass: 'text-info',
@@ -51,6 +56,7 @@ const FLAG_SPECS: readonly FlagSpec[] = [
   {
     value: 'pick',
     labelKey: 'rating.pick',
+    hintKey: 'rating.pickHint',
     icon: 'hand-thumbs-up',
     iconActive: 'hand-thumbs-up-fill',
     activeClass: 'text-success',
@@ -58,6 +64,7 @@ const FLAG_SPECS: readonly FlagSpec[] = [
   {
     value: 'reject',
     labelKey: 'rating.reject',
+    hintKey: 'rating.rejectHint',
     icon: 'hand-thumbs-down',
     iconActive: 'hand-thumbs-down-fill',
     activeClass: 'text-danger',
@@ -65,11 +72,12 @@ const FLAG_SPECS: readonly FlagSpec[] = [
 ]
 
 /**
- * Three toggle buttons for the per-user personal marking (👁 eye, 👍 thumbs-up,
- * 👎 thumbs-down). The active mark is highlighted with its filled glyph and a
- * distinct colour; clicking it again clears the mark to `'none'` (the "clear"
- * affordance). When `onFlag` is omitted the control renders read-only. Purely
- * controlled — optimistic state lives in
+ * Three toggle buttons for the per-user personal marking — 👁 look at later,
+ * 👍 pick, 👎 reject. Each button is named after the act, not the glyph, and
+ * its tooltip explains the mark in one sentence. The active mark is highlighted
+ * with its filled glyph and a distinct colour; clicking it again clears the
+ * mark to `'none'` (the "clear" affordance). When `onFlag` is omitted the
+ * control renders read-only. Purely controlled — optimistic state lives in
  * {@link import('../../hooks/useRating').useRating}.
  */
 export function FlagControl({
@@ -97,13 +105,15 @@ export function FlagControl({
       {FLAG_SPECS.map((spec) => {
         const active = flag === spec.value
         const label = t(spec.labelKey)
+        // The accessible name stays short (it is announced on every button),
+        // the tooltip carries the sentence that explains what the mark is for.
         return (
           <button
             key={spec.value}
             type="button"
             aria-pressed={active}
             aria-label={label}
-            title={label}
+            title={t(spec.hintKey)}
             disabled={disabled || onFlag === undefined}
             onClick={toggle(spec.value)}
             style={{ fontSize: size }}

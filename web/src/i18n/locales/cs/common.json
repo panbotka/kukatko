@@ -498,7 +498,7 @@
       "any": "Vše",
       "picks": "Vybrané",
       "rejects": "Zamítnuté",
-      "eyes": "Označené okem"
+      "eyes": "K prohlédnutí později"
     },
     "favorite": {
       "only": "Jen oblíbené"
@@ -592,7 +592,7 @@
         "state": "Oblíbené, soukromé a archivované (yes/no).",
         "hidden": "Skryté z knihovny (yes/no) — jediná cesta zpátky ke skryté fotce.",
         "rating": "Vaše hodnocení hvězdičkami, 0–5.",
-        "flag": "Váš příznak: pick, reject nebo eye.",
+        "flag": "Vaše označení: pick (vybrané), reject (zamítnuté) nebo eye (k prohlédnutí později).",
         "date": "Rok, měsíc a den pořízení.",
         "takenAdded": "Datum pořízení / přidání do katalogu: RRRR, RRRR-MM nebo RRRR-MM-DD.",
         "beforeAfter": "Pořízeno před datem / od data.",
@@ -863,9 +863,12 @@
     "value": "Hodnocení {{n}} z 5",
     "rate": "Ohodnotit {{n}} z 5",
     "flag": "Osobní označení",
-    "pick": "Palec nahoru",
-    "reject": "Palec dolů",
-    "eye": "Oko"
+    "pick": "Vybrat",
+    "pickHint": "Vybrat fotku k dalšímu zpracování — do alba, k úpravám nebo do tisku.",
+    "reject": "Zamítnout",
+    "rejectHint": "Zamítnout fotku jako nepovedenou, ať se dá později hromadně vyřadit.",
+    "eye": "Prohlédnout později",
+    "eyeHint": "Odložit fotku na později, až bude čas si ji pořádně prohlédnout."
   },
   "bulkEdit": {
     "title_one": "Upravit {{count}} fotku",

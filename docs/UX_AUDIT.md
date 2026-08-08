@@ -362,8 +362,9 @@ on unexplained jargon that even a non-developer admin will struggle with.
    hash / embedding distance", "dead jobs / dead-letter", "orphan files", "box". 📋
    — **extended 2026-08-05:** the list also has to cover copy that reaches *every* role —
    "Embeddingy" on `/stats`, `AI_MODEL: gemini-2.5-flash` and `Unknown` on photo detail, and
-   the flag buttons named after their glyph ("Oko", "Palec nahoru", "Označené okem").
-   See `UX_RESEARCH.md` **N11**, **N12**, **N22**.
+   the flag buttons named after their glyph ("Oko", "Palec nahoru", "Označené okem" — ✅ fixed
+   2026-08-08: they are named after the act now, "Vybrat"/"Zamítnout"/"Prohlédnout později",
+   each with a one-sentence tooltip). See `UX_RESEARCH.md` **N11**, **N12**, **N22**.
 7. **Muted-text contrast.** `text-secondary` subtitles/hints on the dark Superhero theme are on the
    low side, especially over `bg-dark` overlays (Map, Slideshow empties). 📋 Audit contrast; consider
    a slightly lighter muted token. 🟡🟡 — **partially verified (2026-08-05)**: the inactive map

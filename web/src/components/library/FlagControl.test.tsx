@@ -26,27 +26,54 @@ beforeEach(async () => {
 describe('FlagControl', () => {
   it('renders one toggle button per personal-marking state', () => {
     renderControl('none')
-    expect(screen.getByRole('button', { name: 'Eye' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Thumbs up' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Thumbs down' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Look at later' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Pick' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeInTheDocument()
+  })
+
+  it('names the buttons after the act, never after the glyph', () => {
+    renderControl('none')
+    // A button called "Thumbs up" teaches nobody what it does; the whole point
+    // of the name is that it says what the mark is for.
+    for (const shape of [/thumbs/i, /^Eye$/]) {
+      expect(screen.queryByRole('button', { name: shape })).not.toBeInTheDocument()
+    }
+  })
+
+  it('explains each mark in a one-sentence tooltip', () => {
+    renderControl('none')
+    for (const name of ['Look at later', 'Pick', 'Reject']) {
+      const title = screen.getByRole('button', { name }).getAttribute('title')
+      // A sentence about the mark, not a second copy of the button's name.
+      expect(title).toMatch(/\.$/)
+      expect(title).not.toBe(name)
+    }
+  })
+
+  it('names the marks in Czech too', async () => {
+    await i18n.changeLanguage('cs')
+    renderControl('none')
+    expect(screen.getByRole('button', { name: 'Prohlédnout později' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Vybrat' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Zamítnout' })).toBeInTheDocument()
   })
 
   it('reflects the active flag via aria-pressed', () => {
     renderControl('pick')
-    expect(screen.getByRole('button', { name: 'Thumbs up' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    )
-    expect(screen.getByRole('button', { name: 'Thumbs down' })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: 'Pick' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Reject' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: 'Look at later' })).toHaveAttribute(
       'aria-pressed',
       'false',
     )
-    expect(screen.getByRole('button', { name: 'Eye' })).toHaveAttribute('aria-pressed', 'false')
   })
 
   it('marks the eye state as active when the eye flag is set', () => {
     renderControl('eye')
-    expect(screen.getByRole('button', { name: 'Eye' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Look at later' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
   })
 
   it('sets the eye flag when eye is clicked', async () => {
@@ -54,16 +81,16 @@ describe('FlagControl', () => {
     const user = userEvent.setup()
     renderControl('none', onFlag)
 
-    await user.click(screen.getByRole('button', { name: 'Eye' }))
+    await user.click(screen.getByRole('button', { name: 'Look at later' }))
     expect(onFlag).toHaveBeenCalledWith('eye')
   })
 
-  it('sets the reject flag when thumbs-down is clicked', async () => {
+  it('sets the reject flag when the reject button is clicked', async () => {
     const onFlag = vi.fn()
     const user = userEvent.setup()
     renderControl('none', onFlag)
 
-    await user.click(screen.getByRole('button', { name: 'Thumbs down' }))
+    await user.click(screen.getByRole('button', { name: 'Reject' }))
     expect(onFlag).toHaveBeenCalledWith('reject')
   })
 
@@ -72,7 +99,7 @@ describe('FlagControl', () => {
     const user = userEvent.setup()
     renderControl('pick', onFlag)
 
-    await user.click(screen.getByRole('button', { name: 'Thumbs up' }))
+    await user.click(screen.getByRole('button', { name: 'Pick' }))
     expect(onFlag).toHaveBeenCalledWith('none')
   })
 
@@ -82,8 +109,8 @@ describe('FlagControl', () => {
         <FlagControl flag="none" />
       </I18nextProvider>,
     )
-    expect(screen.getByRole('button', { name: 'Eye' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Thumbs up' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Thumbs down' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Look at later' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Pick' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeDisabled()
   })
 })
