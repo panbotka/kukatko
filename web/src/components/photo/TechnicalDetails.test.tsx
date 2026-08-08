@@ -346,6 +346,66 @@ describe('TechnicalDetails groups', () => {
     expect(screen.getByText('Audio').nextElementSibling).toHaveTextContent('No')
   })
 
+  it("renders no row at all for the importers' `Unknown`", async () => {
+    // PhotoPrism stores the word itself for a scan that never had a camera, so
+    // the value is not empty — and "Camera: Unknown" is an English word in the
+    // middle of a Czech table saying exactly as much as no row would.
+    renderDetails({ camera_make: 'Unknown', camera_model: 'Unknown', lens_model: 'Unknown' })
+
+    await expand()
+
+    expect(screen.queryByText('Unknown')).not.toBeInTheDocument()
+    expect(screen.queryByText('Camera')).not.toBeInTheDocument()
+    expect(screen.queryByText('Lens')).not.toBeInTheDocument()
+  })
+
+  it('falls back to the camera make when only the model is `Unknown`', async () => {
+    renderDetails({ camera_make: 'Canon', camera_model: 'Unknown' })
+
+    await expand()
+
+    expect(screen.getByText('Canon')).toBeInTheDocument()
+    expect(screen.queryByText('Unknown')).not.toBeInTheDocument()
+  })
+
+  it('drops the whole group when `Unknown` was all it had', async () => {
+    // A heading over nothing is the same blank noise as an empty row.
+    renderDetails({
+      camera_make: 'Unknown',
+      camera_model: 'Unknown',
+      lens_model: 'Unknown',
+      iso: undefined,
+      aperture: undefined,
+      exposure: undefined,
+      focal_length: undefined,
+      taken_at_source: '',
+    })
+
+    await expand()
+
+    expect(screen.queryByRole('heading', { name: 'Photo' })).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'File' })).toBeInTheDocument()
+  })
+
+  it('names the model behind an automatic description, out of the description', async () => {
+    renderDetails({ ai_note: 'Skupina mužů v krojích.\n\nAI_MODEL: gemini-2.5-flash' })
+
+    await expand()
+
+    expect(screen.getByText('AI model')).toBeInTheDocument()
+    expect(screen.getByText('gemini-2.5-flash')).toBeInTheDocument()
+    // The description itself is the caption panel's business, not this card's.
+    expect(screen.queryByText(/Skupina mužů/)).not.toBeInTheDocument()
+  })
+
+  it('has no AI model row when the note names none', async () => {
+    renderDetails({ ai_note: 'Skupina mužů v krojích.' })
+
+    await expand()
+
+    expect(screen.queryByText('AI model')).not.toBeInTheDocument()
+  })
+
   it('computes the aspect ratio and megapixels of a widescreen photo', async () => {
     renderDetails({ file_width: 1920, file_height: 1080 })
 

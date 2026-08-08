@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
+import { albumDisplayTitle } from '../i18n/albumNames'
 import { BackLink } from '../components/BackLink'
 import { ConfirmModal } from '../components/ConfirmModal'
 import { EmptyState } from '../components/EmptyState'
@@ -70,7 +71,7 @@ const ALBUMS_PATH = '/albums'
  * album) merged into it, so the page never shows two competing toolbars.
  */
 export function AlbumDetailPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { canWrite } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
@@ -241,7 +242,9 @@ export function AlbumDetailPage() {
             wraps inside the header instead of widening the page. */}
         <div className="d-flex align-items-center gap-2 flex-wrap kk-min-w-0">
           <BackLink to={ALBUMS_PATH} label={t('albumDetail.back')} />
-          <h1 className="kk-page-title mb-0">{album?.title ?? ''}</h1>
+          <h1 className="kk-page-title mb-0">
+            {album == null ? '' : albumDisplayTitle(album.title, i18n.language)}
+          </h1>
           {album?.private && <Badge bg="secondary">{t('albums.private')}</Badge>}
         </div>
         {/* The album's own controls stay put during a selection: the batch bar

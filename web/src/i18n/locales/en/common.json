@@ -1591,6 +1591,7 @@
       "scan": "Scan",
       "cameraSerial": "Serial number",
       "software": "Software",
+      "aiModel": "AI model",
       "takenAtSource": "Capture date from",
       "takenAtSourceValue": {
         "exif": "EXIF",

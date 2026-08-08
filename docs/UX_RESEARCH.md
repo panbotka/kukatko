@@ -74,7 +74,7 @@ dopad/pracnost — nahoře je to, co se vyplatí udělat první.
 | [N9](#n9) | Seznam obličejů nemá náhledy, jmenovky na fotce se překrývají | 🟡 | 🟡 | `FacesPanel`, `FaceOverlay` |
 | [N10](#n10) | `/labels`: 113 štítků jako svislý seznam bez hledání a řazení | 🟡 | ⚪ | `LabelsPage` |
 | [N11](#n11) ✅ | Příznaky se jmenují podle tvaru ikony: „Oko", „Palec nahoru" | 🟡 | ⚪ | `FlagControl`, `FilterBar` |
-| [N12](#n12) | Do textu pro uživatele prosakuje `AI_MODEL:`, `Unknown`, anglické názvy | 🟡 | ⚪ | `MetadataPanel`, import |
+| [N12](#n12) ✅ | Do textu pro uživatele prosakuje `AI_MODEL:`, `Unknown`, anglické názvy | 🟡 | ⚪ | `MetadataPanel`, import |
 | [N13](#n13) | Stránka, na kterou nemám právo, mlčky přesměruje na knihovnu | 🟡 | ⚪ | routing, `LeaderboardPage` |
 | [N14](#n14) | Zašedlá tlačítka bez vysvětlení, proč nejdou zmáčknout | 🟡 | ⚪ | `FacesPanel`, `PhotoLocation` |
 | [N15](#n15) | Karta prohlížeče se vždy jmenuje „Kukátko" | 🟡 | ⚪ | `Layout` |
@@ -626,6 +626,27 @@ stejný účinek v malém.
 **Kde to je.** `web/src/components/photo/MetadataPanel.tsx` (vykreslení `ai_note`),
 `web/src/components/photo/TechnicalDetails.tsx`, skládání názvu fotky/alba
 v `internal/places` a v odstraněných importerech migrace.
+
+**✅ Vyřešeno (8. 8. 2026).** Všechno třemi kroky **při zobrazení**; v databázi se
+nepřepsalo nic.
+
+1. `splitAiNote` (`lib/photoFacts`) rozdělí `ai_note` na `{ text, model }` podle
+   **koncového** řádku `AI_MODEL:`. „Automatický popis" ukazuje `text`, model se
+   přesunul do Technických údajů jako řádek **„Model AI"**. Značka uprostřed věty
+   je něčí text a zůstává; editační formulář drží dál **uloženou** hodnotu i se
+   značkou, aby uložení kvůli něčemu jinému nemohlo model tiše zahodit.
+2. `metaValue` (`lib/photoFacts`) považuje uložené `Unknown` za totéž co prázdno.
+   Pravidlo je v `MetaField`, takže platí pro **každý** řádek tabulky: řádek se
+   nevykreslí vůbec (skupina taky ne, když v ní nic jiného nezbylo) a fotoaparát
+   spadne z `camera_model` na `camera_make` až po vyřazení zástupné hodnoty.
+3. `localizeCountryNames` (`i18n/countryNames`, sdílený slovník s `albumNames`)
+   přeloží anglický název země, když stojí jako **celý** segment složeného jména
+   oddělený `/` nebo `,` — případně s koncovým čtyřmístným rokem. Tím se z
+   `Jan / Czech Republic / 2026` stane `Jan / Česko / 2026` a z alba
+   `Czech Republic 2026` `Česko 2026`, ale `New Zealand trip` zůstane. Používá to
+   nadpis detailu fotky, popisky dlaždic (`photoLabel`), nadpis alba, odznaky alb
+   na fotce a výsledky v paletě příkazů. Neznámý název i anglické UI dostanou
+   uložený řetězec beze změny.
 
 ---
 

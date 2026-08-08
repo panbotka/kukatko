@@ -6,9 +6,11 @@ import {
   formatMime,
   joinKeywords,
   megapixels,
+  metaValue,
   orientation,
   sameKeywords,
   shortHash,
+  splitAiNote,
   splitKeywords,
   takenAtSource,
 } from './photoFacts'
@@ -166,5 +168,77 @@ describe('shortHash', () => {
 
   it('leaves a short value alone', () => {
     expect(shortHash('abc')).toBe('abc')
+  })
+})
+
+describe('metaValue', () => {
+  it('keeps a real value, trimmed', () => {
+    expect(metaValue('Canon EOS 5D')).toBe('Canon EOS 5D')
+    expect(metaValue('  NIKON D700  ')).toBe('NIKON D700')
+  })
+
+  it("treats the importers' `Unknown` as nothing at all", () => {
+    // PhotoPrism stores the literal word for a scan that never had a camera,
+    // so the row is not empty — it is an English word in a Czech table.
+    expect(metaValue('Unknown')).toBeUndefined()
+    expect(metaValue('unknown')).toBeUndefined()
+    expect(metaValue(' UNKNOWN ')).toBeUndefined()
+  })
+
+  it('treats an empty, blank or absent value as nothing', () => {
+    expect(metaValue('')).toBeUndefined()
+    expect(metaValue('   ')).toBeUndefined()
+    expect(metaValue(undefined)).toBeUndefined()
+  })
+
+  it('does not swallow a value that merely mentions the word', () => {
+    expect(metaValue('Unknown Camera Co.')).toBe('Unknown Camera Co.')
+  })
+})
+
+describe('splitAiNote', () => {
+  it('takes the model trailer off the description', () => {
+    // The shape 2500 photos carry after the photo-sorter import.
+    expect(splitAiNote('Skupina mužů v krojích na návsi.\n\nAI_MODEL: gemini-2.5-flash')).toEqual({
+      text: 'Skupina mužů v krojích na návsi.',
+      model: 'gemini-2.5-flash',
+    })
+  })
+
+  it('takes it off when it follows the text directly, without a blank line', () => {
+    expect(splitAiNote('Pes na louce.\nAI_MODEL: gpt-4o')).toEqual({
+      text: 'Pes na louce.',
+      model: 'gpt-4o',
+    })
+  })
+
+  it('keeps the line breaks inside the description itself', () => {
+    expect(splitAiNote('První řádek.\nDruhý řádek.\n\nAI_MODEL: x').text).toBe(
+      'První řádek.\nDruhý řádek.',
+    )
+  })
+
+  it('leaves a note without the trailer exactly as it is', () => {
+    expect(splitAiNote('Skupina mužů v krojích.')).toEqual({
+      text: 'Skupina mužů v krojích.',
+      model: '',
+    })
+  })
+
+  it('only takes a trailing marker, never one in the middle of a sentence', () => {
+    const note = 'Popisek zmiňuje AI_MODEL: něco a pokračuje dál.'
+    expect(splitAiNote(note)).toEqual({ text: note, model: '' })
+  })
+
+  it('reads a note that is nothing but the trailer as having no description', () => {
+    expect(splitAiNote('AI_MODEL: gemini-2.5-flash')).toEqual({
+      text: '',
+      model: 'gemini-2.5-flash',
+    })
+  })
+
+  it('survives an absent or empty note', () => {
+    expect(splitAiNote(undefined)).toEqual({ text: '', model: '' })
+    expect(splitAiNote('')).toEqual({ text: '', model: '' })
   })
 })

@@ -1643,6 +1643,7 @@
       "scan": "Sken",
       "cameraSerial": "Sériové číslo",
       "software": "Software",
+      "aiModel": "Model AI",
       "takenAtSource": "Zdroj data pořízení",
       "takenAtSourceValue": {
         "exif": "EXIF",

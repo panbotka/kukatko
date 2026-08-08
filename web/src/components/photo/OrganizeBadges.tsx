@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { ENTITY_STYLE } from '../entityStyle'
 import { Icon } from '../Icon'
 
+import { albumDisplayTitle } from '../../i18n/albumNames'
 import { type PhotoAlbumRef, type PhotoLabelRef } from '../../services/photos'
 
 /** Props for {@link OrganizeBadges}. */
@@ -28,7 +29,7 @@ export interface OrganizeBadgesProps {
  * Organize chips. Renders nothing when the photo has neither albums nor labels.
  */
 export function OrganizeBadges({ albums, labels }: OrganizeBadgesProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
 
   if (albums.length === 0 && labels.length === 0) {
     return null
@@ -49,7 +50,7 @@ export function OrganizeBadges({ albums, labels }: OrganizeBadgesProps) {
       {albums.map((album) => (
         <Link key={album.uid} to={`/albums/${album.uid}`} className={pill('album')}>
           <Icon name={ENTITY_STYLE.album.icon} />
-          {album.title}
+          {albumDisplayTitle(album.title, i18n.language)}
         </Link>
       ))}
       {labels.map((label) => (

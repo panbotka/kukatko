@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 import { useThumbSrc } from '../../hooks/useThumbSrc'
+import { photoLabel } from '../../lib/photoTitle'
 import { purgeCountdown } from '../../lib/trashCountdown'
 import { type Photo } from '../../services/photos'
 import { FadeInImage } from '../FadeInImage'
@@ -48,10 +49,10 @@ export function TrashCard({
   onDelete,
   canPurge,
 }: TrashCardProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const thumb = useThumbSrc(photo.uid, photo.thumb_url)
 
-  const label = photo.title !== '' ? photo.title : photo.file_name
+  const label = photoLabel(photo, i18n.language)
   const countdown = purgeCountdown(photo.archived_at, retentionDays)
 
   return (

@@ -1,3 +1,4 @@
+import { localizeCountryNames } from '../i18n/countryNames'
 import { type PhotoDetail } from '../services/photos'
 
 /**
@@ -82,7 +83,29 @@ export function photoTitleText(title: PhotoTitle, untitled: string): string {
   return [title.date, title.place].filter((part) => part !== '').join(' – ')
 }
 
-/** Narrows a full {@link PhotoDetail} to what the title rule reads. */
-export function titleSource(photo: PhotoDetail): TitleSource {
-  return { title: photo.title, taken_at: photo.taken_at, place: photo.place }
+/**
+ * Narrows a full {@link PhotoDetail} to what the title rule reads, translating
+ * the English country names the importers composed into the stored title
+ * (`Jméno / Czech Republic / 2026`) on the way through. That is a display
+ * decision, not a rule about what a photo is called, which is why it happens
+ * here and not inside {@link photoDisplayTitle}; the catalogue keeps the title
+ * it has.
+ */
+export function titleSource(photo: PhotoDetail, language: string): TitleSource {
+  return {
+    title: localizeCountryNames(photo.title, language),
+    taken_at: photo.taken_at,
+    place: photo.place,
+  }
+}
+
+/**
+ * What a photo is called in a grid tile, a strip or a search hit: its title when
+ * it has one, otherwise the file name — the one place a filename does belong,
+ * since the alternative in a dense grid is a tile with no label at all. The
+ * title goes through the same country dictionary as the detail page's heading,
+ * so `Jméno / Czech Republic / 2026` does not read half in English here either.
+ */
+export function photoLabel(photo: { title: string; file_name: string }, language: string): string {
+  return photo.title !== '' ? localizeCountryNames(photo.title, language) : photo.file_name
 }

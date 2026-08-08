@@ -3,6 +3,7 @@ import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
+import { photoLabel } from '../../lib/photoTitle'
 import { fetchSimilar, type SimilarPhoto } from '../../services/photos'
 import { FadeInImage } from '../FadeInImage'
 
@@ -29,7 +30,7 @@ type State =
  * simply renders nothing — it never blocks the surrounding page.
  */
 export function SimilarPhotos({ uid, limit }: SimilarPhotosProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [state, setState] = useState<State>({ status: 'loading' })
 
   useEffect(() => {
@@ -83,7 +84,7 @@ export function SimilarPhotos({ uid, limit }: SimilarPhotosProps) {
       <h2 className="kk-section-title mb-2">{t('similar.title')}</h2>
       <div className="d-flex gap-2 overflow-auto pb-2" style={{ scrollSnapType: 'x proximity' }}>
         {state.photos.map((photo) => {
-          const label = photo.title !== '' ? photo.title : photo.file_name
+          const label = photoLabel(photo, i18n.language)
           return (
             <Link
               key={photo.uid}

@@ -1052,14 +1052,34 @@ describe('MetadataPanel multi-line values', () => {
     expect(value).toHaveClass('text-break')
   })
 
-  it('leaves the model line of an automatic description on its own line', () => {
-    // 2500 photos carry this shape; run together, the model name lands glued to
-    // the end of the last sentence.
+  it('shows an automatic description without the model line the import appended', () => {
+    // 2500 photos carry this shape. The name of the model is a fact about the
+    // machinery, not part of the one sentence the app says about the photo, so
+    // it goes to the technical details and never into the description.
     renderPanel({ photo: photo({ ai_note: AI_NOTE }) })
 
-    const value = verbatim(AI_NOTE)
+    const value = verbatim('Skupina mužů v krojích na návsi.')
     expect(getComputedStyle(value).whiteSpace).toBe('pre-wrap')
-    expect(value.textContent).toContain('\n\nAI_MODEL: gemini-2.5-flash')
+    expect(value.textContent).not.toContain('AI_MODEL')
+    expect(screen.queryByText(/AI_MODEL/)).toBeNull()
+  })
+
+  it('keeps the breaks inside a multi-line automatic description', () => {
+    const note = 'První řádek.\nDruhý řádek.'
+    renderPanel({ photo: photo({ ai_note: `${note}\n\nAI_MODEL: gemini-2.5-flash` }) })
+
+    const value = verbatim(note)
+    expect(getComputedStyle(value).whiteSpace).toBe('pre-wrap')
+    expect(value.textContent).toContain('\n')
+  })
+
+  it('still hands the editor the stored note, trailer and all', () => {
+    // Display strips it; the field edits the catalogue's own value, so a save
+    // made for something else can never quietly drop the model off the row.
+    renderPanel({ photo: photo({ ai_note: AI_NOTE }) })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Automatic description' }))
+    expect(screen.getByLabelText('Automatic description')).toHaveValue(AI_NOTE)
   })
 
   it('still prompts an empty field in italics', () => {

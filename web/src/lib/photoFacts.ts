@@ -233,6 +233,89 @@ export function sameKeywords(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((keyword, index) => keyword === b[index])
 }
 
+/**
+ * The placeholders the importers wrote where the source file said nothing —
+ * lower-cased, because they are compared case-insensitively. PhotoPrism stores
+ * the literal string `Unknown` in `camera_model`/`lens_model` for a scan that
+ * never had a camera, so the value is not empty and a naive row renders an
+ * English word in the middle of a Czech table.
+ */
+const PLACEHOLDER_VALUES: readonly string[] = ['unknown']
+
+/**
+ * One stored metadata value as the detail card should show it: trimmed, or
+ * undefined when there is nothing to show — the field is empty, or holds one of
+ * the importers' placeholders. Undefined is what every row of the technical
+ * table treats as "render nothing", so a photo with no camera shows one row
+ * fewer rather than the word `Unknown`.
+ *
+ * @example
+ *   metaValue('Canon EOS 5D') // 'Canon EOS 5D'
+ *   metaValue('Unknown')      // undefined
+ *   metaValue('  ')           // undefined
+ */
+export function metaValue(value: string | undefined): string | undefined {
+  if (value === undefined) {
+    return undefined
+  }
+  const trimmed = value.trim()
+  if (trimmed === '' || PLACEHOLDER_VALUES.includes(trimmed.toLowerCase())) {
+    return undefined
+  }
+  return trimmed
+}
+
+/** The marker the photo-sorter import appended to an automatic description. */
+const AI_MODEL_PREFIX = 'AI_MODEL:'
+
+/** An automatic description split into what it says and what wrote it. */
+export interface AiNote {
+  /** The description itself, without the model trailer. Empty when there is none. */
+  text: string
+  /** The model that wrote it, empty when the note does not name one. */
+  model: string
+}
+
+/**
+ * Splits a stored `ai_note` into the description and the model that produced it.
+ *
+ * Some 2500 photos carry the shape the photo-sorter import wrote: the Czech
+ * sentence, a blank line, then `AI_MODEL: gemini-2.5-flash`. Printed verbatim
+ * under "Automatický popis" that trailer reads as a bug in the one place where
+ * the app tells the user something about the photo by itself — so the caption
+ * shows `text` and the technical details show `model`, which is where a fact
+ * about the machinery belongs.
+ *
+ * Only a *trailing* marker line is taken (blank lines around it and all): a note
+ * that merely mentions the string mid-sentence is somebody's text and is left
+ * exactly as it is. The stored value is never changed — this is a display rule.
+ */
+export function splitAiNote(note: string | undefined): AiNote {
+  if (note === undefined || note === '') {
+    return { text: note ?? '', model: '' }
+  }
+  const lines = note.split('\n')
+  let last = lines.length
+  while (last > 0 && lines[last - 1].trim() === '') {
+    last--
+  }
+  if (last === 0) {
+    return { text: note, model: '' }
+  }
+  const marker = lines[last - 1].trim()
+  if (!marker.toUpperCase().startsWith(AI_MODEL_PREFIX)) {
+    return { text: note, model: '' }
+  }
+  let end = last - 1
+  while (end > 0 && lines[end - 1].trim() === '') {
+    end--
+  }
+  return {
+    text: lines.slice(0, end).join('\n'),
+    model: marker.slice(AI_MODEL_PREFIX.length).trim(),
+  }
+}
+
 /** How many leading characters of a hash are shown before the ellipsis. */
 const HASH_PREFIX = 12
 

@@ -1301,9 +1301,18 @@ here.
   on-demand geocoding**, only `PhotoLocation` does that on demand), **Video** (only `media_type`
   `video`/`live`: duration `m:ss`, codecs, audio yes/no, fps) and **Původ** (Nahrál/a
   `photo.metadata.uploadedBy` from `photo.uploader.name`, fallback `—` `uploaderUnknown`, +
-  `photoprism_uid`/`photosorter_uid`). All **read-only** (editing belongs in `MetadataPanel`);
+  `photoprism_uid`/`photosorter_uid`). The **Fotka** group also names the **Model AI**
+  (`photo.technical.aiModel`) that wrote the automatic description — `splitAiNote(photo.ai_note).model`,
+  i.e. the `AI_MODEL:` trailer taken *out* of the description in `MetadataPanel` and shown here, where a
+  fact about the machinery belongs. All **read-only** (editing belongs in `MetadataPanel`);
   **a field with no value doesn't render at all** (`MetaField` returns `null`) and **an empty group also
-  doesn't render** — a photo with poor metadata is not a wall of dashes. Numbers/dates via the active locale
+  doesn't render** — a photo with poor metadata is not a wall of dashes. „No value" includes the importers'
+  **`Unknown`**: PhotoPrism stores the literal word in `camera_model`/`lens_model` for a scan that never
+  had a camera, so `MetaField` runs every value through `metaValue` (`lib/photoFacts`) and drops
+  `Unknown`/blank alike — one rule, every row, no „Fotoaparát: Unknown" in the middle of a Czech table.
+  `TechnicalDetails`'s own `has()` asks `metaValue` the same question about a whole group (so a heading
+  never outlives its last row), and the camera falls back `metaValue(camera_model) ?? metaValue(camera_make)`
+  so the placeholder can't win over a make that is really there. Numbers/dates via the active locale
   (`i18n.language` → Czech has a decimal comma). **Service actions here** (editor/admin only, `canWrite`): `RegenerateThumbnailButton`
   (`components/photo/`) inside the expanded expander calls `regenerateThumbnail(uid)` (POST
   `/photos/{uid}/regenerate-thumbnail`), shows **pending** (spinner + `disabled`), then success
@@ -1346,7 +1355,10 @@ here.
   always — the caller decides about emptiness); `lib/photoFacts` = pure derived facts about a file
   (`aspectRatio` — a fraction reduced via gcd, decimal fallback `1,50 : 1` when it doesn't reduce to legible
   terms; `megapixels`; `formatMime` → `JPEG`/`MOV`; `orientation`/`takenAtSource` = narrowing to a
-  literal union so the `t()` key stays typed; `splitKeywords`; `shortHash`), `lib/format`
+  literal union so the `t()` key stays typed; `splitKeywords`; `shortHash`; `metaValue` = one stored value
+  as the card shows it, `undefined` for blank **and for the importers' `Unknown`**; `splitAiNote` = an
+  `ai_note` split into `{ text, model }` by a **trailing** `AI_MODEL:` line — a marker mid-sentence is
+  somebody's text and is left alone, and the stored value is never rewritten), `lib/format`
   `formatBytes(bytes, locale?)` (locale = decimal comma) and `formatByteCount` (the exact byte count
   for the tooltip); `lib/photoEdit` = pure helpers
   edit→CSS (`editPreviewStyle`/`editFilter`/`editTransform`/`cropClipPath`/`isIdentityEdit`/
@@ -2777,7 +2789,16 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   (`January 2026` → `leden 2026`) and a whole title that is a known English country name (`Czechia` →
   `Česko`, both `Czechia` and `Czech Republic`). The match must be **exact**: `January in Norway` and
   `May Day` stay as they are, and so does everything on a non-Czech UI. Nothing is ever written back —
-  renaming albums in the database is explicitly out of scope; tests `albumNames.test.ts`);
+  renaming albums in the database is explicitly out of scope; tests `albumNames.test.ts`)
+  + `countryNames.ts` (the **shared** English→Czech country dictionary and the two ways to read it:
+  `countryDisplayName(name, language)` = the exact lookup `albumDisplayTitle` starts from, and
+  `localizeCountryNames(text, language)` = the same dictionary applied **inside a composed name** —
+  the photo titles (`Jan / Czech Republic / 2026` → `Jan / Česko / 2026`) and place albums
+  (`Czech Republic 2026` → `Česko 2026`) the importers wrote. It substitutes only a whole `/`- or
+  `,`-separated **segment**, optionally with a trailing four-digit year, which is what keeps
+  `New Zealand trip` from becoming `Nový Zéland trip`; an unknown name and a non-Czech UI both fall
+  back to the stored string. The dictionary lives in TypeScript rather than in `common.json` because
+  it is keyed by *stored data*, not by a UI key. Tests `countryNames.test.ts`);
   typed keys via `types/i18next.d.ts` — add new strings to **both** locale files;
   **Czech is the default**, no hard-coded UI texts — everything through `t()`. The only detector is
   `localStorage` (which `LanguageSwitcher` from `AccountPage` writes to); `navigator`/`htmlTag` are **deliberately

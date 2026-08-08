@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 
 import { useThumbSrc } from '../../hooks/useThumbSrc'
 import { formatDate, formatDuration } from '../../lib/format'
+import { photoLabel } from '../../lib/photoTitle'
 import { type Photo } from '../../services/photos'
 import { FadeInImage } from '../FadeInImage'
 import { Icon } from '../Icon'
@@ -106,7 +107,7 @@ export function PhotoTile({
   // with a freshly fetched one before the tile gives up.
   const thumb = useThumbSrc(photo.uid, photo.thumb_url)
 
-  const label = photo.title !== '' ? photo.title : photo.file_name
+  const label = photoLabel(photo, i18n.language)
   // The tile shows no date of its own; the only one it carries is in the alt text,
   // and an estimated date is marked there too ("cca 1950") so it cannot be read as
   // a known one. The grid itself goes on sorting by taken_at exactly as before.

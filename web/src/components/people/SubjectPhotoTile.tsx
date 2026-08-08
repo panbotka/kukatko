@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { FadeInImage } from '../FadeInImage'
 import { Icon } from '../Icon'
 
+import { photoLabel } from '../../lib/photoTitle'
 import { type Photo } from '../../services/people'
 
 /** Props for {@link SubjectPhotoTile}. */
@@ -75,8 +76,8 @@ export function SubjectPhotoTile({
   onToggleSelect,
   detailQuery,
 }: SubjectPhotoTileProps) {
-  const { t } = useTranslation()
-  const label = photo.title !== '' ? photo.title : photo.file_name
+  const { t, i18n } = useTranslation()
+  const label = photoLabel(photo, i18n.language)
 
   // The tile root is ALWAYS a <Link>, as in the library grid, so its element
   // TYPE never changes when the gallery flips into selection-first mode and the

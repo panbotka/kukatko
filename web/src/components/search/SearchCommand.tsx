@@ -5,6 +5,8 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 
 import { useGlobalSearch } from '../../hooks/useGlobalSearch'
+import { albumDisplayTitle } from '../../i18n/albumNames'
+import { localizeCountryNames } from '../../i18n/countryNames'
 import {
   DIRECT_KIND_LABEL,
   DIRECT_TARGET_ICON,
@@ -170,7 +172,11 @@ function buildGroups(
       items: result.photos.map((photo) => ({
         id: `sc-opt-photo-${photo.uid}`,
         to: `/photos/${photo.uid}`,
-        primary: firstNonEmpty(photo.title, photo.original_name, photo.file_name),
+        primary: firstNonEmpty(
+          localizeCountryNames(photo.title, lang),
+          photo.original_name,
+          photo.file_name,
+        ),
         secondary: formatPhotoDate(photo.taken_at, lang),
         thumbUid: photo.uid,
         icon: 'images',
@@ -198,7 +204,7 @@ function buildGroups(
       items: result.albums.map((album) => ({
         id: `sc-opt-album-${album.uid}`,
         to: `/albums/${album.uid}`,
-        primary: album.title || untitled,
+        primary: album.title === '' ? untitled : albumDisplayTitle(album.title, lang),
         count: album.photo_count,
         thumbUid: album.cover,
         icon: 'collection',

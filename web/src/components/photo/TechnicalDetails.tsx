@@ -8,8 +8,10 @@ import {
   aspectRatio,
   formatMime,
   megapixels,
+  metaValue,
   orientation,
   shortHash,
+  splitAiNote,
   splitKeywords,
   takenAtSource,
 } from '../../lib/photoFacts'
@@ -35,9 +37,13 @@ export interface TechnicalDetailsProps {
 /** The DOM id of the collapsible region, referenced by `aria-controls`. */
 const REGION_ID = 'photo-technical-details'
 
-/** Whether a formatted value has anything to show. */
+/**
+ * Whether a formatted value has anything to show — the same question
+ * {@link MetaField} answers for the row itself, asked here about a whole group,
+ * so a heading never survives the last of its rows being dropped.
+ */
 function has(value: string | undefined): boolean {
-  return value !== undefined && value !== ''
+  return metaValue(value) !== undefined
 }
 
 /** Formats a number in the active locale, with at most `digits` decimals. */
@@ -88,7 +94,12 @@ export function TechnicalDetails({
   const focal = photo.focal_length !== undefined ? `${photo.focal_length} mm` : undefined
   const aperture = photo.aperture !== undefined ? `f/${photo.aperture}` : undefined
   const iso = photo.iso !== undefined ? `ISO ${photo.iso}` : undefined
-  const camera = photo.camera_model || photo.camera_make
+  // The make is the fallback for a missing model — and `Unknown` is missing, so
+  // the placeholder is resolved before the fallback rather than winning it.
+  const camera = metaValue(photo.camera_model) ?? metaValue(photo.camera_make)
+  // The model behind the automatic description. It is a fact about the machinery,
+  // so it belongs here rather than glued to the end of the description itself.
+  const aiModel = splitAiNote(photo.ai_note).model
   const source = takenAtSource(photo.taken_at_source)
   const sourceLabel =
     source === undefined ? undefined : t(`photo.technical.takenAtSourceValue.${source}`)
@@ -156,6 +167,7 @@ export function TechnicalDetails({
       iso,
       photo.camera_serial,
       photo.software,
+      aiModel,
       takenAtExact,
       sourceLabel,
       photo.subject,
@@ -235,6 +247,7 @@ export function TechnicalDetails({
               <MetaField label={t('photo.metadata.iso')} value={iso} />
               <MetaField label={t('photo.technical.cameraSerial')} value={photo.camera_serial} />
               <MetaField label={t('photo.technical.software')} value={photo.software} />
+              <MetaField label={t('photo.technical.aiModel')} value={aiModel} />
               <MetaField label={t('photo.technical.takenAtExact')} value={takenAtExact} />
               <MetaField label={t('photo.technical.takenAtSource')} value={sourceLabel} />
               <MetaField label={t('photo.technical.subject')} value={photo.subject} />
