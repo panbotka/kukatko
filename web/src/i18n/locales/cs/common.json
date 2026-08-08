@@ -2,6 +2,13 @@
   "app": {
     "tagline": "Samostatná správa fotek a videí"
   },
+  "documentTitle": {
+    "app": "Kukátko",
+    "page": "{{title}} · Kukátko",
+    "album": "Album {{name}}",
+    "label": "Štítek {{name}}",
+    "search": "Hledání „{{query}}“"
+  },
   "confirmModal": {
     "cancel": "Zrušit"
   },

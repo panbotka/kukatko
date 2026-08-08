@@ -1,9 +1,12 @@
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
+
 /** Fallback page shown for unknown client-side routes. */
 export function NotFoundPage() {
   const { t } = useTranslation()
+  useDocumentTitle(t('notFound.title'))
 
   return (
     <div className="text-center py-5">

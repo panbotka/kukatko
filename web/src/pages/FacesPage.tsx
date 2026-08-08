@@ -10,6 +10,7 @@ import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
 import { Icon } from '../components/Icon'
 import { useCandidateReview } from '../hooks/useCandidateReview'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { useSubjects } from '../hooks/useSubjects'
 import {
@@ -59,6 +60,7 @@ function nextActionableKey(items: ReviewItem[], fromIndex: number): string | nul
  */
 export function FacesPage() {
   const { t } = useTranslation()
+  useDocumentTitle(t('faceSearch.title'))
   const { subjects, loading: subjectsLoading } = useSubjects()
   const [searchParams, setSearchParams] = useSearchParams()
 

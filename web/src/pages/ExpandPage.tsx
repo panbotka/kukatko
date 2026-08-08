@@ -16,6 +16,7 @@ import { type BulkEditOutcome, type BulkEditPrefill } from '../components/organi
 import { SelectionBar } from '../components/organize/SelectionBar'
 import { SelectionStart } from '../components/organize/SelectionStart'
 import { useBulkEdit } from '../hooks/useBulkEdit'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useGridKeyboardNavigation } from '../hooks/useGridKeyboardNavigation'
 import {
   clampExpandLimit,
@@ -64,6 +65,7 @@ function kindFromParam(value: string | null): ExpandKind {
  */
 export function ExpandPage() {
   const { t } = useTranslation()
+  useDocumentTitle(t('expand.title'))
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
 

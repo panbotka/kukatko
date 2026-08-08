@@ -13,6 +13,7 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { Icon } from '../components/Icon'
 import { LanguageSwitcher } from '../components/LanguageSwitcher'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { ACTIVITY_PATH } from '../lib/activityView'
 import { ApiError, changePassword, MIN_PASSWORD_LENGTH } from '../services/auth'
 import { fetchHealth, type HealthResponse } from '../services/health'
@@ -65,6 +66,7 @@ function errorKeyFor(error: unknown): AccountErrorKey {
  */
 export function AccountPage() {
   const { t } = useTranslation()
+  useDocumentTitle(t('account.title'))
   const { user, role } = useAuth()
 
   const [current, setCurrent] = useState('')

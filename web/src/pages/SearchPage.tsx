@@ -21,6 +21,7 @@ import { SearchQueryInput } from '../components/search/SearchQueryInput'
 import { UnknownFiltersAlert } from '../components/search/UnknownFiltersAlert'
 import { SlideshowStart } from '../components/slideshow/SlideshowStart'
 import { useBulkEdit } from '../hooks/useBulkEdit'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useGridScrollMemory } from '../hooks/useGridScrollMemory'
 import { usePhotoSearch } from '../hooks/usePhotoSearch'
 import { useReloadKey } from '../hooks/useReloadKey'
@@ -103,6 +104,12 @@ export function SearchPage() {
   const selecting = selection.count > 0
   const hasQuery = view.q.trim() !== ''
   const hasResults = status === 'ready' && photos.length > 0
+  // The tab quotes the query — „svatba" — because a search is only worth finding
+  // again by what was asked for; an empty page is just "Hledání". It follows the
+  // URL, not the debounced input, so history entries and the tab agree.
+  useDocumentTitle(
+    hasQuery ? t('documentTitle.search', { query: view.q.trim() }) : t('search.title'),
+  )
 
   // Local, debounced mirror of the URL query so typing stays responsive but the
   // URL (and the fetch) only update after the user pauses. The query is the

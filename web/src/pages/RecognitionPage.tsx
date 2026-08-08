@@ -11,6 +11,7 @@ import { useSearchParams } from 'react-router-dom'
 import { EmptyState } from '../components/EmptyState'
 import { Icon } from '../components/Icon'
 import { PersonSweepCard } from '../components/recognition/PersonSweepCard'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { useSweepReview } from '../hooks/useSweepReview'
 import {
@@ -33,6 +34,7 @@ import {
  */
 export function RecognitionPage() {
   const { t } = useTranslation()
+  useDocumentTitle(t('recognition.title'))
   const [searchParams, setSearchParams] = useSearchParams()
 
   const [confidence, setConfidence] = useState(() =>

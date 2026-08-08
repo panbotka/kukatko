@@ -14,6 +14,7 @@ import { useAuth } from '../auth/AuthContext'
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
 import { RecordTable, type RecordColumn } from '../components/RecordTable'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import {
   AUDIT_DEFAULTS,
   type AuditFilters,
@@ -95,6 +96,7 @@ function actorLabel(actorUid: string | null, users: Map<string, AdminUser>): str
  */
 export function AuditPage() {
   const { t, i18n } = useTranslation()
+  useDocumentTitle(t('audit.title'))
   const { isAdmin } = useAuth()
   const [view, setView] = useUrlState<AuditView>(AUDIT_DEFAULTS)
   const params = useMemo(() => viewToParams(view), [view])

@@ -12,6 +12,7 @@ import { LabelCloud } from '../components/organize/LabelCloud'
 import { LabelEditModal } from '../components/organize/LabelEditModal'
 import { LabelFilterBar } from '../components/organize/LabelFilterBar'
 import { ChipCloudSkeleton } from '../components/Skeleton'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useReloadKey } from '../hooks/useReloadKey'
 import {
   type LabelsView,
@@ -60,6 +61,7 @@ const NO_LABELS: LabelCount[] = []
  */
 export function LabelsPage() {
   const { t, i18n } = useTranslation()
+  useDocumentTitle(t('labels.title'))
   const { canWrite } = useAuth()
   const [state, setState] = useState<State>({ status: 'loading' })
   const [editing, setEditing] = useState<Label | null>(null)

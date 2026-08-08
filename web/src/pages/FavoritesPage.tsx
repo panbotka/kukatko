@@ -9,6 +9,7 @@ import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
 import { BatchActionBar } from '../components/organize/BatchActionBar'
 import { useBulkEdit } from '../hooks/useBulkEdit'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useGridScrollMemory } from '../hooks/useGridScrollMemory'
 import { usePhotoLibrary } from '../hooks/usePhotoLibrary'
 import { useReloadKey } from '../hooks/useReloadKey'
@@ -33,6 +34,7 @@ import { useUrlState } from '../lib/urlState'
  */
 export function FavoritesPage() {
   const { t } = useTranslation()
+  useDocumentTitle(t('favorites.title'))
   const location = useLocation()
   const [view, setView] = useUrlState<LibraryView>(LIBRARY_DEFAULTS)
   const [reloadKey, reload] = useReloadKey()

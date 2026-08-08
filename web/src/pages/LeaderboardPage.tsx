@@ -11,6 +11,7 @@ import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
 import { Icon, type IconName } from '../components/Icon'
 import { ListSkeleton } from '../components/Skeleton'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useReloadKey } from '../hooks/useReloadKey'
 import {
   fetchLeaderboard,
@@ -63,6 +64,7 @@ function parseWindow(raw: string | null): LeaderboardWindow {
  */
 export function LeaderboardPage() {
   const { t } = useTranslation()
+  useDocumentTitle(t('leaderboard.title'))
   const { user, canWrite, isAdmin } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
   const [reloadKey, reload] = useReloadKey()

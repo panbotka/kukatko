@@ -11,6 +11,7 @@ import { useAuth } from '../auth/AuthContext'
 import { JobStateLegend, type JobStateKey } from '../components/JobStateLegend'
 import { NamelessSubjectsCard } from '../components/maintenance/NamelessSubjectsCard'
 import { RecordTable, type RecordColumn } from '../components/RecordTable'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { ApiError } from '../services/auth'
 import { fetchJobStats, type JobStats } from '../services/import'
 import {
@@ -461,6 +462,7 @@ function AuditPurgeCard() {
  */
 export function MaintenancePage() {
   const { t } = useTranslation()
+  useDocumentTitle(t('maintenance.title'))
   const { isMaintainer } = useAuth()
   const [scan, setScan] = useState<ScanState>({ status: 'idle' })
   const [repair, setRepair] = useState<RepairState>({ status: 'idle' })

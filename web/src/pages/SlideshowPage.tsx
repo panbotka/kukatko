@@ -7,6 +7,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
 import { Slideshow, SLIDESHOW_PREVIEW_SIZE } from '../components/slideshow/Slideshow'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useImagePreloader } from '../hooks/useImagePreloader'
 import { usePaginatedPhotos } from '../hooks/usePaginatedPhotos'
 import { useSearchMode } from '../hooks/useSearchMode'
@@ -35,6 +36,7 @@ import { fetchPhotos, type PhotoListParams, searchPhotos, thumbUrl } from '../se
  */
 export function SlideshowPage() {
   const { t } = useTranslation()
+  useDocumentTitle(t('slideshow.title'))
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
 

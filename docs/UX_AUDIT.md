@@ -393,6 +393,13 @@ on unexplained jargon that even a non-developer admin will struggle with.
 10. **New (2026-08-05) — index pages don't scale.** Albums (438), Labels (113) and People (105)
     all render one flat list with no search and no sort. See `UX_RESEARCH.md` **N7**, **N8**,
     **N10**. 🔴🟡
+11. **New (2026-08-05) — every browser tab is called „Kukátko".** `document.title` never changed,
+    so browser history — the natural route to "the photo I saw last week" — held fifty
+    indistinguishable entries, two open tabs could not be told apart, and a bookmarked view had no
+    name. See `UX_RESEARCH.md` **N15**. 🟡⚪ — ✅ **Done (2026-08-08).** Every page names its own tab
+    through one shared `useDocumentTitle` hook (`<page> · Kukátko`, i18n'd separator and all), a
+    detail page uses the data it already holds (photo, person, album, label, query), and leaving a
+    page restores the bare app name so no title is ever stale. See `FRONTEND.md`.
 
 ---
 

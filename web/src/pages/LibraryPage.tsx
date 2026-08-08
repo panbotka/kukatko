@@ -17,6 +17,7 @@ import { SaveSearchModal } from '../components/savedsearch/SaveSearchModal'
 import { UnknownFiltersAlert } from '../components/search/UnknownFiltersAlert'
 import { SlideshowStart } from '../components/slideshow/SlideshowStart'
 import { useBulkEdit } from '../hooks/useBulkEdit'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useGridKeyboardNavigation } from '../hooks/useGridKeyboardNavigation'
 import { useGridScrollMemory } from '../hooks/useGridScrollMemory'
 import { useLibraryFacets } from '../hooks/useLibraryFacets'
@@ -66,6 +67,7 @@ const ANCHOR_PARAM = 'at'
  */
 export function LibraryPage() {
   const { t } = useTranslation()
+  useDocumentTitle(t('library.title'))
   const { canWrite } = useAuth()
   const navigate = useNavigate()
   const [view, setView] = useUrlState<LibraryView>(LIBRARY_DEFAULTS)

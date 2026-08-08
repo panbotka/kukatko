@@ -2174,6 +2174,23 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `useReloadKey()` = `[key, reload]`, a string counter for a photo list's `reloadKey` — a single `reload()`
   replays the list **in the background** (a refetch of the first page without blanking into a skeleton, the photos stay
   pinned); `reload` is stable and goes straight into `useBulkEdit({onEdited})`;
+  `useDocumentTitle(title)` = **the browser tab's name**, `<page> · Kukátko` while the caller is
+  mounted. Every page calls it (`hooks/useDocumentTitle.ts`) — one hook, not a router-side table,
+  because the titles worth having are a photo's name, a person's, an album's, i.e. data only the page
+  holds. `null`/`undefined`/blank (a detail still loading) → the bare app name, never a stale or
+  invented one; the string is trimmed before it reaches the dependency array, so a page recomputing an
+  equal title does not re-run the effect. The **cleanup restores the app name**, which is what keeps a
+  photo's name off the library — React runs the outgoing page's cleanup before the incoming page's
+  effect, so a navigation between two titled pages still lands on the new one. Both the separator and
+  the brand's position are i18n (`documentTitle.page` = `{{title}} · Kukátko`, `documentTitle.app`),
+  and a language switch re-titles the tab because `t` changes identity with the language. Static pages
+  pass their own `<h1>` key (`t('albums.title')`, …); the dynamic ones pass data — an album via
+  `documentTitle.album` under the same `albumDisplayTitle` the heading uses, a label via
+  `documentTitle.label`, a person as the bare `subject.name`, a photo as the viewer's own one-string
+  name (`photoName`, the `<h1>`'s title-or-facts form), `/search` as `documentTitle.search`
+  („{{query}}") off the **URL** query rather than the debounced input, and `/audit/reviews` as the
+  player whose decisions it lists. On the pages whose render begins with early returns
+  (photo/album/label/subject detail) the call sits **above** them — a hook may not be conditional;
   `useKeyboardShortcuts(handlers,{enabled?})` = the shared plumbing of all keyboard shortcuts: a single
   document-level `keydown` listener dispatches by the normalized `shortcutToken(event.key)` onto
   `handlers` (via refs, bound once and always seeing the current closures), a matched key `preventDefault`s;

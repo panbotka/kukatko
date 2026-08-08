@@ -66,7 +66,9 @@ Around that sit the ordinary things a library needs and Kukátko has: albums and
 (range streaming, live photos), maps and browsing by place, a slideshow, per-user favourites and
 ratings, bulk editing, multi-upload from a phone, duplicate detection, a trash with retention,
 accounts with four roles, a durable audit trail, S3 backup with a restore runbook, and import from
-any folder on disk — a Google Takeout export included, sidecars and all.
+any folder on disk — a Google Takeout export included, sidecars and all. Every view lives in the
+URL and every browser tab is named after what it shows (`Svatba 1965 · Kukátko`), so Back, a second
+tab, a bookmark and the history list all work the way the rest of the web does.
 
 ## Status
 

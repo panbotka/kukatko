@@ -17,6 +17,7 @@ import { GridSkeleton } from '../components/library/GridSkeleton'
 import { SelectionBar } from '../components/organize/SelectionBar'
 import { useToast } from '../components/toast/ToastContext'
 import { TrashCard } from '../components/trash/TrashCard'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { usePaginatedPhotos } from '../hooks/usePaginatedPhotos'
 import { useSelection } from '../hooks/useSelection'
 import { LIBRARY_DEFAULTS, type LibraryView, viewToParams } from '../lib/libraryView'
@@ -71,6 +72,7 @@ function actionMessage(err: unknown, t: TFunction): string {
  */
 export function TrashPage() {
   const { t } = useTranslation()
+  useDocumentTitle(t('trash.title'))
   const { isAdmin } = useAuth()
   const toast = useToast()
   const [view, setView] = useUrlState<LibraryView>(LIBRARY_DEFAULTS)

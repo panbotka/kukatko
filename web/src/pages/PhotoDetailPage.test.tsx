@@ -318,6 +318,30 @@ beforeEach(async () => {
 })
 
 describe('PhotoDetailPage — immersive viewer', () => {
+  it('names the browser tab after the photo, and hands it back on the way out', async () => {
+    // Opening a photo in a second tab is ordinary here, and browser history is
+    // how "the photo I saw last week" is found again — both read this title.
+    const { unmount } = renderPage()
+    await screen.findByRole('heading', { name: 'Beach' })
+
+    expect(document.title).toBe('Beach · Kukátko')
+
+    // Leaving must not strand the photo's name over whatever comes next.
+    unmount()
+    expect(document.title).toBe('Kukátko')
+  })
+
+  it('falls back to the photo facts in the tab when it carries no title', async () => {
+    // A photo nobody named is called by when and where it was taken — the very
+    // same name the viewer's heading shows.
+    fetchPhotoMock.mockResolvedValue(photo({ title: '', description: '' }))
+    renderPage()
+
+    const heading = await screen.findByRole('heading', { level: 1 })
+    expect(document.title).toBe(`${heading.textContent} · Kukátko`)
+    expect(document.title).not.toBe('Kukátko')
+  })
+
   it('says a purged photo is gone rather than failing blankly', async () => {
     // The audit log outlives what it audits: an entry recording a purge links to
     // the photo it purged, so a 404 here is the normal case, not a failure.

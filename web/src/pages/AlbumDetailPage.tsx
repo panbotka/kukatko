@@ -20,6 +20,7 @@ import { type BatchExtraAction, BatchActionBar } from '../components/organize/Ba
 import { DownloadZipButton } from '../components/organize/DownloadZipButton'
 import { SlideshowStart } from '../components/slideshow/SlideshowStart'
 import { useBulkEdit } from '../hooks/useBulkEdit'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useGridScrollMemory } from '../hooks/useGridScrollMemory'
 import { useReloadKey } from '../hooks/useReloadKey'
 import { useScopedPhotos } from '../hooks/useScopedPhotos'
@@ -212,6 +213,17 @@ export function AlbumDetailPage() {
       setActionError(true)
     }
   }, [state, navigate])
+
+  // Named after the album it shows, so two open albums are told apart in the tab
+  // strip and in history — under the same display name the heading uses, not the
+  // raw machine-made title. It sits above the early returns below because a hook
+  // may not be called conditionally; until the album loads there is no name to
+  // give, and the tab falls back to the bare app name.
+  useDocumentTitle(
+    state.status === 'ready'
+      ? t('documentTitle.album', { name: albumDisplayTitle(state.album.title, i18n.language) })
+      : null,
+  )
 
   if (state.status === 'missing') {
     return (

@@ -25,6 +25,7 @@ import { FaceOverlay } from '../components/people/FaceOverlay'
 import { FacesPanel } from '../components/people/FacesPanel'
 import { useToast } from '../components/toast/ToastContext'
 import { useAutoHideChrome } from '../hooks/useAutoHideChrome'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useFaces } from '../hooks/useFaces'
 import { useFavorite } from '../hooks/useFavorite'
 import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
@@ -511,6 +512,26 @@ export function PhotoDetailPage() {
     }
   }, [neighbors.prev, neighbors.next, downloadToken])
 
+  /**
+   * What the photo is called, in one string — the same name the chrome's `<h1>`
+   * shows below. Declared as a function because the document title has to be set
+   * from a hook, and a hook cannot sit after the early returns that the narrowed
+   * `photo` lives behind.
+   */
+  function photoName(shown: PhotoDetail): string {
+    const captured =
+      shown.taken_at !== undefined ? formatDateTimeMinutes(shown.taken_at, i18n.language) : ''
+    return photoTitleText(
+      photoDisplayTitle(titleSource(shown, i18n.language), captured),
+      t('photo.untitled'),
+    )
+  }
+
+  // Opening a photo in a second tab is ordinary in a gallery, and browser history
+  // is how "the photo I saw last week" is found again — both need the tab to
+  // carry the photo's name rather than a fiftieth „Kukátko".
+  useDocumentTitle(state.status === 'ready' ? photoName(state.photo) : null)
+
   if (state.status === 'loading') {
     return (
       <div className="kk-viewer" data-chrome="visible">
@@ -557,8 +578,8 @@ export function PhotoDetailPage() {
   const captureDate =
     photo.taken_at !== undefined ? formatDateTimeMinutes(photo.taken_at, i18n.language) : ''
   const displayTitle = photoDisplayTitle(titleSource(photo, i18n.language), captureDate)
-  // The one-string form, for alt text and the players' titles.
-  const title = photoTitleText(displayTitle, t('photo.untitled'))
+  // The one-string form, for alt text, the players' titles and the browser tab.
+  const title = photoName(photo)
 
   const setPhoto = (updated: PhotoDetail): void => {
     setState({ status: 'ready', photo: updated, edit })

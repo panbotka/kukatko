@@ -17,6 +17,7 @@ import { SubjectEditModal } from '../components/people/SubjectEditModal'
 import { SubjectPhotoTile } from '../components/people/SubjectPhotoTile'
 import { Skeleton } from '../components/Skeleton'
 import { useBulkEdit } from '../hooks/useBulkEdit'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useGridDensity } from '../hooks/useGridDensity'
 import { useGridScrollMemory } from '../hooks/useGridScrollMemory'
 import { useReloadKey } from '../hooks/useReloadKey'
@@ -211,6 +212,12 @@ export function SubjectPage() {
     ],
     [t, coverBusy, selection.count, selection.selected, setCover],
   )
+
+  // The tab carries the person's name — "Jarmila · Kukátko" — which is what makes
+  // a history entry or a second tab worth anything here. It sits above the early
+  // returns because a hook may not be called conditionally; while the record
+  // loads there is no name, and the tab shows the bare app name.
+  useDocumentTitle(state.status === 'ready' ? state.subject.name : null)
 
   if (state.status === 'loading') {
     // Hold the page's shape while the record loads: a header placeholder over the

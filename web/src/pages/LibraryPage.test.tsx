@@ -312,6 +312,13 @@ beforeEach(async () => {
 })
 
 describe('LibraryPage', () => {
+  it('names the browser tab after the library, never leaving it a bare app name', () => {
+    fetchMock.mockReturnValue(new Promise<PhotoListResponse>(() => undefined))
+    renderLibrary()
+
+    expect(document.title).toBe('Library · Kukátko')
+  })
+
   it('shows a loading skeleton during the first-page load', () => {
     fetchMock.mockReturnValue(new Promise<PhotoListResponse>(() => undefined))
     renderLibrary()

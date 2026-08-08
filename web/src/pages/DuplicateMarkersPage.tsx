@@ -11,6 +11,7 @@ import { ErrorState } from '../components/ErrorState'
 import { Icon } from '../components/Icon'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { DuplicateMarkerGroupCard } from '../components/people/DuplicateMarkerGroupCard'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { dropMarker, groupKey, MIN_GROUP_SIZE, removeGroup } from '../lib/duplicateMarkers'
 import { ApiError } from '../services/auth'
 import {
@@ -64,6 +65,7 @@ function actionMessage(err: unknown, t: TFunction): string {
  */
 export function DuplicateMarkersPage() {
   const { t } = useTranslation()
+  useDocumentTitle(t('duplicateMarkers.title'))
   const [groups, setGroups] = useState<DuplicateMarkerGroup[]>([])
   const [status, setStatus] = useState<Status>('loading')
   const [total, setTotal] = useState(0)

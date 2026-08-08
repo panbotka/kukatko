@@ -9,6 +9,7 @@ import { DropZone } from '../components/upload/DropZone'
 import { UploadList } from '../components/upload/UploadList'
 import { UploadOrganize } from '../components/upload/UploadOrganize'
 import { UploadProgressHeader } from '../components/upload/UploadProgressHeader'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useUploadOrganize } from '../hooks/useUploadOrganize'
 import { useUploadQueue } from '../hooks/useUploadQueue'
 
@@ -27,6 +28,7 @@ import { useUploadQueue } from '../hooks/useUploadQueue'
  */
 export function UploadPage() {
   const { t } = useTranslation()
+  useDocumentTitle(t('upload.title'))
   const { canWrite } = useAuth()
   const {
     items,

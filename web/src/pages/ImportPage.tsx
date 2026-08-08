@@ -10,6 +10,7 @@ import { useAuth } from '../auth/AuthContext'
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
 import { RecordTable, type RecordColumn } from '../components/RecordTable'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { formatDateTime } from '../lib/format'
 import {
   fetchImportFailures,
@@ -205,6 +206,7 @@ function FailuresPanel({ failures }: { failures: ImportFailure[] }) {
  */
 export function ImportPage() {
   const { t } = useTranslation()
+  useDocumentTitle(t('import.title'))
   // Import is an operations capability, reachable by maintainers only (see
   // RequireImport); this in-page gate is a defensive fallback behind that guard.
   const { canImport } = useAuth()

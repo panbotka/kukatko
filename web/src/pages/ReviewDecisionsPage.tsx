@@ -13,6 +13,7 @@ import { ErrorState } from '../components/ErrorState'
 import { FadeInImage } from '../components/FadeInImage'
 import { Icon } from '../components/Icon'
 import { ListSkeleton } from '../components/Skeleton'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useReloadKey } from '../hooks/useReloadKey'
 import { useUrlState } from '../lib/urlState'
 import { formatDateTime } from '../lib/format'
@@ -162,6 +163,13 @@ export function ReviewDecisionsPage() {
   }, [state, subjects, labels])
 
   const activeFilter = parseDecisionFilter(view.decision)
+
+  // Whose decisions these are, exactly as the heading below says it: the page is
+  // reached one player at a time from the leaderboard, so the name is the whole
+  // point of telling two of these tabs apart.
+  useDocumentTitle(
+    view.user === '' ? t('reviewDecisions.title') : (headerEntry?.display_name ?? view.user),
+  )
 
   /** Applies an Ano/Ne filter, resetting to the first page (pushes history). */
   function selectFilter(next: DecisionFilter) {

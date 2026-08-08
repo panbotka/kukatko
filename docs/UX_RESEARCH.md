@@ -77,7 +77,7 @@ dopad/pracnost — nahoře je to, co se vyplatí udělat první.
 | [N12](#n12) ✅ | Do textu pro uživatele prosakuje `AI_MODEL:`, `Unknown`, anglické názvy | 🟡 | ⚪ | `MetadataPanel`, import |
 | [N13](#n13) ✅ | Stránka, na kterou nemám právo, mlčky přesměruje na knihovnu | 🟡 | ⚪ | routing, `LeaderboardPage` |
 | [N14](#n14) ✅ | Zašedlá tlačítka bez vysvětlení, proč nejdou zmáčknout | 🟡 | ⚪ | `ReasonedButton`, `FacesPanel` |
-| [N15](#n15) | Karta prohlížeče se vždy jmenuje „Kukátko" | 🟡 | ⚪ | `Layout` |
+| [N15](#n15) ✅ | Karta prohlížeče se vždy jmenuje „Kukátko" | 🟡 | ⚪ | `useDocumentTitle`, stránky |
 | [N16](#n16) | Mobilní zásuvka filtrů nemá patičku s počtem výsledků ani „Použít" | 🟡 | ⚪ | `FilterBar` |
 | [N17](#n17) | Nápověda o dotazovacím jazyce mlčí a slibuje zapamatovanou pozici | 🟡 | ⚪ | `HelpPage` |
 | [N18](#n18) | `Rok` (109 položek) a `Pořízeno od/do` jsou dva soupeřící filtry data | 🟡 | 🟡 | `FilterBar` |
@@ -762,6 +762,28 @@ Data pro to už každá stránka má.
 
 **Kde to je.** `web/src/components/Layout.tsx` nebo jednotlivé stránky
 (`useEffect` nad `document.title`, případně sdílený hook).
+
+**✅ Vyřešeno (8. 8. 2026).** Titulek karty se teď jmenuje podle stránky:
+`Knihovna · Kukátko`, `Svatba 1965 · Kukátko`, `Jarmila · Kukátko`,
+`Hledání „svatba" · Kukátko`, `Album Dovolená · Kukátko` — a tak dál pro každou
+stránku aplikace, včetně přihlášení, nápovědy i provozních obrazovek.
+
+Nese to **jeden sdílený hook** `useDocumentTitle(title)`
+(`web/src/hooks/useDocumentTitle.ts`), který si každá stránka zavolá se svým
+jménem; není to tabulka u routeru, protože zajímavé titulky — jméno fotky, osoby,
+alba — zná jen ta stránka, která ta data drží. Formátování, i18n i úklid jsou
+proto na jednom místě: `documentTitle.page` = `{{title}} · Kukátko` (oddělovač
+i pozice značky jsou tím pádem přeložitelné), přepnutí jazyka titulek přepíše,
+a **odchod ze stránky vrací holé „Kukátko"** — to je to, co drží jméno fotky
+mimo knihovnu. Když stránka jméno ještě nezná (detail se načítá), předá `null`
+a karta se jmenuje „Kukátko" místo cizího nebo vymyšleného jména.
+
+Statické stránky předávají svůj vlastní nadpis (`t('albums.title')` a spol.),
+takže se titulek karty a `<h1>` nemůžou rozejít; dynamické předávají data —
+album pod stejným `albumDisplayTitle`, jaký ukazuje nadpis, štítek, osobu jejím
+jménem, fotku tím jedním řetězcem, co viewer píše do nadpisu (název, jinak kdy
+a kde), a hledání dotazem **z URL**, ne z rozepsaného pole. Žádný dotaz navíc
+nikam neposílá: data už na stránce jsou.
 
 ---
 

@@ -146,6 +146,14 @@ beforeEach(async () => {
 })
 
 describe('SubjectPage', () => {
+  it('names the browser tab after the person, so history and a second tab differ', async () => {
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    renderPage()
+
+    await screen.findByRole('heading', { level: 1, name: 'Jana' })
+    expect(document.title).toBe('Jana · Kukátko')
+  })
+
   it('offers a back link that names the people list it returns to', async () => {
     fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
     renderPage()

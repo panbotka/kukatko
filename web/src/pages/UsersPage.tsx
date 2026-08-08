@@ -15,6 +15,7 @@ import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
 import { ReasonedButton } from '../components/ReasonedButton'
 import { RecordTable, type RecordColumn } from '../components/RecordTable'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { formatDate, formatDateTime } from '../lib/format'
 import { ApiError, MIN_PASSWORD_LENGTH, type Role } from '../services/auth'
 import {
@@ -681,6 +682,7 @@ function UserActions({
  */
 export function UsersPage() {
   const { t, i18n } = useTranslation()
+  useDocumentTitle(t('users.title'))
   const { isAdmin, isMaintainer, user: me } = useAuth()
   const [state, setState] = useState<State>({ status: 'loading' })
   const [dialog, setDialog] = useState<Dialog>({ kind: 'none' })

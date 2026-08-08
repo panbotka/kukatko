@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next'
 import { useLocation, useNavigate } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { ApiError } from '../services/auth'
 
 /** Shape of the history state set by the route guard on redirect to login. */
@@ -44,6 +45,7 @@ function errorKeyFor(error: unknown): LoginErrorKey {
  */
 export function LoginPage() {
   const { t } = useTranslation()
+  useDocumentTitle(t('login.title'))
   const { status: authStatus, login } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()

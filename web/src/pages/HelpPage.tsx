@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next'
 
 import { useCapabilities } from '../capabilities/CapabilitiesContext'
 import { Icon, type IconName } from '../components/Icon'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { commitUrl, formatVersion } from '../lib/version'
 
 /**
@@ -180,6 +181,7 @@ function BuildInfo() {
  */
 export function HelpPage() {
   const { t } = useTranslation()
+  useDocumentTitle(t('help.title'))
 
   return (
     <Row className="justify-content-center">
