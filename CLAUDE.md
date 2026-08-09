@@ -141,6 +141,8 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/video` — shell-out to ffprobe/ffmpeg: metadata, poster frame, on-the-fly transcode
 - `internal/wake` — optional Wake-on-LAN auto-wake of the box (**default off**, fully inert)
 - `internal/web` — SPA fallback handler + `//go:embed` embedded frontend
+- `internal/whatsnew` — "since your last visit" digest + the two-timestamp visit bookkeeping on `users` (6 h gap); read-only over the catalogue
+- `internal/whatsnewapi` — all-authenticated `GET /whats-new` (a GET that stamps the visit)
 - `internal/worker` — in-process worker runtime over the job queue (claim/dispatch/complete), per-job-type pools
 
 ## Hard quality gate (DO NOT SKIP)

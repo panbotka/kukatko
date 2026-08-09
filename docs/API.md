@@ -742,6 +742,22 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   as the change; `author_uid` = the actor from the auth context. The single-row `announcements` table (migration
   `0039_announcement.sql`). Mounted by `server.WithAPI` (`buildAnnouncementAPI` in
   `cmd/kukatko/announcement.go`).
+- **What's New API (`/api/v1`, `internal/whatsnewapi` + `internal/whatsnew`, authenticated via
+  `RequireAuth`):** the digest behind the **"what's new since your last visit"** panel on the library home.
+  `GET /whats-new` → `200 {has_news, since?, photos, comments, albums:[{uid,title}], album_count,
+  people:[{uid,name}], person_count}`. **`has_news` is the only flag the client branches on** — it is false
+  (and everything else absent or zero) for a **first-ever visit** and for a visit that found nothing, and in
+  both cases no panel is shown; a vanished account is reported the same way, so the endpoint returns 200 in
+  every non-failure case (never 404/204, one shape to parse). A store failure → 500.
+  **Readable by every role, viewers included.** `since` is RFC3339 and stays **constant for the whole
+  visit**, which is what makes it a stable key for the client-side dismissal.
+  **This GET writes:** reading the digest stamps the caller's visit (`users.last_seen_at`, and
+  `users.visit_reference_at` when a new visit begins — see migration `0053_user_visits.sql` and
+  `internal/whatsnew` in `docs/PACKAGES.md` for the two-timestamp mechanism and the **6 h** inactivity
+  threshold). It must therefore be issued **once per library-home load and never polled**. Counts mirror the
+  library grid (live, non-hidden, stack-primary photos; live comments; hand-curated albums; named subjects
+  only) and `albums`/`people` are capped at 6 links while `album_count`/`person_count` report the true
+  totals. Mounted by `server.WithAPI` (`buildWhatsNewAPI` in `cmd/kukatko/whatsnew.go`).
 - **Global Search API (`/api/v1`, `internal/globalsearchapi`, authenticated via `RequireAuth`):**
   grouped **cross-entity search** for the navbar quick-results and the search page. `GET /search/global?q=` →
   `{query, albums:[{uid,title,cover,photo_count}], labels:[{uid,name,photo_count}],

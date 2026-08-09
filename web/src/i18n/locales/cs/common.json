@@ -2752,5 +2752,24 @@
       "publishError": "Oznámení se nepodařilo zveřejnit.",
       "clearError": "Oznámení se nepodařilo zrušit."
     }
+  },
+  "whatsNew": {
+    "title": "Co je nového",
+    "since": "Od tvé poslední návštěvy {{date}}",
+    "dismiss": "Zavřít shrnutí",
+    "photos_one": "{{count}} nová fotka",
+    "photos_few": "{{count}} nové fotky",
+    "photos_many": "{{count}} nové fotky",
+    "photos_other": "{{count}} nových fotek",
+    "comments_one": "{{count}} nový komentář",
+    "comments_few": "{{count}} nové komentáře",
+    "comments_many": "{{count}} nového komentáře",
+    "comments_other": "{{count}} nových komentářů",
+    "albums": "Nová alba:",
+    "people": "Nově pojmenovaní:",
+    "more_one": "a {{count}} další",
+    "more_few": "a {{count}} další",
+    "more_many": "a {{count}} dalšího",
+    "more_other": "a {{count}} dalších"
   }
 }

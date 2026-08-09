@@ -1803,7 +1803,42 @@ to `## Package map` in `CLAUDE.md`.
   `author_uid` = the actor from the auth context); the body `{message,level}` with `DisallowUnknownFields` + 16 KiB limit,
   `ErrEmptyMessage`/`ErrInvalidLevel` → 400, response `{message, level?, author_uid?, updated_at?}`
   (`updated_at` RFC3339, otherwise omitted); mounted by `server.WithAPI` (`buildAnnouncementAPI` in
-  `cmd/kukatko/announcement.go`)), `internal/globalsearchapi/`
+  `cmd/kukatko/announcement.go`)), `internal/whatsnew/`
+  (**the returning-reader digest** behind the "what's new since your last visit" panel on the library home —
+  a shared family library otherwise makes somebody else's evening of uploading invisible to the next person
+  who opens the app; **read-only over the catalogue**, its single write is the visit bookkeeping on the
+  caller's own `users` row. **What a visit is** (migration `0053_user_visits.sql`, two nullable
+  `TIMESTAMPTZ` columns on `users`): `last_seen_at` is a heartbeat stamped to now on **every** summary read,
+  `visit_reference_at` is the digest's "since" and moves **only** when a new visit begins — a gap of at least
+  `VisitGap` (**6 h**) between two reads — taking the previous `last_seen_at` on that transition. Within one
+  visit the reference does not move however often the page reloads (the "a refresh must not reset the panel"
+  requirement); both NULL on an account that never read a summary, and a NULL reference = **no digest**
+  (a new account does not want its whole library announced). Neither column touches `updated_at` — being here
+  is not a profile edit. Since only this read stamps the heartbeat, "inactivity" means precisely
+  "the library home was not opened". `Store` = `NewStore(pool)` (+ `WithGap(d)`, a copy with a shorter
+  threshold **for tests** — production never calls it): `Summary(ctx, userUID, now)` → `Summary{HasNews,
+  Since, Photos, Comments, Albums[]{UID,Title}, AlbumCount, People[]{UID,Name}, PersonCount}`, the sentinel
+  `ErrUserNotFound` when the account vanished mid-request. It rotates the visit in **one** atomic
+  `UPDATE … RETURNING` (two tabs loading at the same instant cannot both rotate: the second waits on the row
+  lock and then sees a `last_seen_at` that is already now), then counts. **What counts:** photos under the
+  library grid's own base filter (`archived_at IS NULL AND (stack_uid IS NULL OR stack_primary) AND NOT
+  hidden_from_library` — so the number printed equals the number of tiles the link opens), live comments
+  (`deleted_at IS NULL`), **hand-curated** albums only (`type = 'album'`; an import mints folder/moment/month
+  groupings by the hundred) and **named** subjects only (`name <> ''`). Albums and people are capped at
+  `MaxItems` (**6**) links while the counts report the true totals. A `HasNews false` (zero-value) `Summary`
+  covers both "first visit" and "nothing happened" so the client branches on one flag. Every count is an
+  indexed range over a creation timestamp (`idx_albums_created_at`, `idx_subjects_created_at`,
+  `idx_photo_comments_created_at` from 0053; `idx_photos_live_created_at` from 0015)), `internal/whatsnewapi/`
+  (a one-route HTTP API over it: the `Summarizer` interface (a subset of `whatsnew.Store`) → unit-testable
+  with a fake; `NewAPI(Config{Store,RequireAuth,Now})` (`Now` defaults to `time.Now`, injectable so tests move
+  a visit forward without waiting) + `RegisterRoutes` mounts `GET /whats-new` behind **`RequireAuth`** —
+  every role including a **viewer**, since learning what the family added is not a curation power.
+  **A GET that writes** on purpose: reading the digest is what stamps the visit, and a separate POST the
+  client must remember to send would leave the reference wrong exactly when the tab was closed. Returns
+  **200** with the `Summary` in every non-failure case (`{"has_news":false}` for a first visit, an empty visit
+  **and** a `whatsnew.ErrUserNotFound`) — never a 404 or a 204, so the client parses one shape; any other
+  store error → 500 (logged). Mounted by `server.WithAPI` (`buildWhatsNewAPI` in `cmd/kukatko/whatsnew.go`)),
+  `internal/globalsearchapi/`
   (a grouped **global search** HTTP API across entities — the basis of the navbar quick-results and the cross-entity section
   of the search page: the small interfaces `Organizer` (`SearchAlbums`/`SearchLabels` + `GetAlbumByUID`/
   `GetLabelByUID`, satisfied by `organize.Store`), `PeopleSearcher` (`SearchSubjects` + `GetSubjectByUID`/

@@ -2640,5 +2640,18 @@
       "publishError": "Failed to publish the announcement.",
       "clearError": "Failed to clear the announcement."
     }
+  },
+  "whatsNew": {
+    "title": "What's new",
+    "since": "Since your last visit on {{date}}",
+    "dismiss": "Dismiss the summary",
+    "photos_one": "{{count}} new photo",
+    "photos_other": "{{count}} new photos",
+    "comments_one": "{{count}} new comment",
+    "comments_other": "{{count}} new comments",
+    "albums": "New albums:",
+    "people": "Newly named:",
+    "more_one": "and {{count}} more",
+    "more_other": "and {{count}} more"
   }
 }

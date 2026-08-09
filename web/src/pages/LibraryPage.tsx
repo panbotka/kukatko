@@ -12,6 +12,7 @@ import { buildChips } from '../components/library/filterChips'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
 import { type TimelineJump, TimelineScrubber } from '../components/library/TimelineScrubber'
+import { WhatsNewPanel } from '../components/library/WhatsNewPanel'
 import { BatchActionBar } from '../components/organize/BatchActionBar'
 import { SaveSearchModal } from '../components/savedsearch/SaveSearchModal'
 import { UnknownFiltersAlert } from '../components/search/UnknownFiltersAlert'
@@ -306,6 +307,13 @@ export function LibraryPage() {
           <div className="d-flex gap-1 flex-wrap">{viewActions}</div>
         </div>
       )}
+
+      {/* What happened while the reader was away. It sits above the filters
+          because it is about the library as a whole, not about the current
+          view, and because it is the one thing on this page a returning reader
+          should see before they start filtering. It renders nothing on a first
+          visit, when nothing changed, or once dismissed. */}
+      <WhatsNewPanel />
 
       <FilterBar
         view={view}
