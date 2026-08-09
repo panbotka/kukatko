@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/panbotka/kukatko/internal/video"
@@ -90,6 +91,25 @@ var extFormats = map[string]string{
 	".mef":  FormatRAW,
 	".heic": FormatHEIC,
 	".heif": FormatHEIC,
+}
+
+// RAWExtensions returns every camera RAW extension the pipeline recognises,
+// lowercased, **without** the leading dot and in a stable sorted order.
+//
+// It is the same set DetectFormat reports as FormatRAW, and because an upload is
+// gated on IsSupportedFormat, it is exactly the set of RAW files that can be in
+// the catalogue at all. Callers that classify stored files by their name — the
+// library statistics split their storage by media type this way — use it instead
+// of keeping a second list that would silently drift from this one.
+func RAWExtensions() []string {
+	out := make([]string, 0, len(extFormats))
+	for ext, format := range extFormats {
+		if format == FormatRAW {
+			out = append(out, strings.TrimPrefix(ext, "."))
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 // IsSupportedFormat reports whether the pipeline can ingest a file with this

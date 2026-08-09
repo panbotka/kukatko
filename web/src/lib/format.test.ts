@@ -10,6 +10,7 @@ import {
   formatDateTimeMinutes,
   formatDuration,
   formatMonth,
+  formatMonthName,
   formatPercent,
 } from './format'
 
@@ -166,6 +167,24 @@ describe('formatMonth', () => {
   it('returns an empty string for an out-of-range month', () => {
     expect(formatMonth(2026, 0, 'en')).toBe('')
     expect(formatMonth(2026, 13, 'en')).toBe('')
+  })
+})
+
+describe('formatMonthName', () => {
+  it('names the month without the year, for an axis that says the year elsewhere', () => {
+    const en = formatMonthName(2026, 1, 'en-US')
+    expect(en.toLowerCase()).toContain('jan')
+    expect(en).not.toContain('2026')
+    expect(formatMonthName(2026, 1, 'cs')).not.toBe(en)
+  })
+
+  it('is exactly the name half of formatMonth', () => {
+    expect(formatMonth(2026, 7, 'cs')).toBe(`${formatMonthName(2026, 7, 'cs')} 2026`)
+  })
+
+  it('returns an empty string for an out-of-range month', () => {
+    expect(formatMonthName(2026, 0, 'en')).toBe('')
+    expect(formatMonthName(2026, 13, 'en')).toBe('')
   })
 })
 

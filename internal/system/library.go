@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
 	"time"
 )
 
@@ -66,6 +65,12 @@ type Library struct {
 	// photos not yet run through detection and photos genuinely containing no
 	// face, which the counts alone cannot tell apart. Derived.
 	PhotosWithoutFaces int `json:"photos_without_faces"`
+	// PhotosWithGPS is how many photos carry coordinates of their own, whatever the
+	// source (the camera's EXIF, a sidecar, a manual edit or an estimate). It is
+	// the numerator of the "how much of the library is on the map?" coverage meter
+	// and is deliberately not PhotosGeocoded: a photo can have coordinates long
+	// before a metered mapy.com credit turns them into a place name.
+	PhotosWithGPS int `json:"photos_with_gps"`
 	// PhotosGeocoded is how many photos carry a cached place resolved from their
 	// coordinates. The `places` job also records a GPS-less photo as processed, but
 	// such a row has no coordinates and is deliberately not counted here.
@@ -78,6 +83,11 @@ type Library struct {
 	Embeddings int `json:"embeddings"`
 	// Faces is the total number of detected-face rows across all photos.
 	Faces int `json:"faces"`
+	// FacesAssigned is how many of those detected faces name a subject. Unlike
+	// MarkersAssigned it counts faces the detector found rather than regions of
+	// every kind (a marker may also be a hand-drawn label box), which is what makes
+	// it the honest numerator of the "how many faces have a name?" coverage meter.
+	FacesAssigned int `json:"faces_assigned"`
 	// Subjects is the total number of named subjects (people, animals, other).
 	Subjects int `json:"subjects"`
 	// SubjectsPerson is how many subjects are people.
@@ -132,55 +142,25 @@ func nonNegative(value int) int {
 	return value
 }
 
-// libraryCache memoises the library counts for a short TTL so a polled page does
-// not re-run the aggregation on every request. Only successful aggregations are
-// cached: a failure must reach the caller, which reports an error rather than
-// letting the page render zeroes as if they were real counts. It is safe for
-// concurrent use.
-type libraryCache struct {
-	counter LibraryCounter
-	ttl     time.Duration
-	now     func() time.Time
-
-	mu         sync.Mutex
-	cached     Library
-	computedAt time.Time
-	valid      bool
-}
-
-// newLibraryCache returns a libraryCache over counter. A non-positive ttl
-// defaults to defaultLibraryTTL and a nil now defaults to time.Now, so callers
-// may leave them unset.
-func newLibraryCache(counter LibraryCounter, ttl time.Duration, now func() time.Time) *libraryCache {
-	if ttl <= 0 {
-		ttl = defaultLibraryTTL
-	}
-	if now == nil {
-		now = time.Now
-	}
-	return &libraryCache{counter: counter, ttl: ttl, now: now}
-}
-
-// counts returns the memoised library counts, recomputing them when the cached
-// value is older than the TTL (or has never been computed). It returns an error
-// when the aggregation fails and nothing valid is cached to fall back on; the
-// stale value is never served past its TTL.
-func (c *libraryCache) counts(ctx context.Context) (Library, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.valid && c.now().Sub(c.computedAt) < c.ttl {
-		return c.cached, nil
-	}
-	if c.counter == nil {
-		return Library{}, errNoLibraryCounter
-	}
-	raw, err := c.counter.CountLibrary(ctx)
-	if err != nil {
-		return Library{}, fmt.Errorf("counting library: %w", err)
-	}
-	c.cached = raw.derive()
-	c.computedAt = c.now()
-	c.valid = true
-	return c.cached, nil
+// newLibraryCache returns the memoised library counts over counter: the raw
+// aggregation with its derived values filled in, recomputed at most once per TTL
+// so a page that is opened often does not re-run the COUNT(*)s on every request.
+// A non-positive ttl defaults to defaultLibraryTTL and a nil now defaults to
+// time.Now, so callers may leave them unset.
+//
+// A service wired without a counter yields errNoLibraryCounter rather than
+// panicking on a nil interface, and neither that nor a query failure is cached
+// (see snapshotCache): the caller must be able to tell an unavailable count from
+// an empty library.
+func newLibraryCache(counter LibraryCounter, ttl time.Duration, now func() time.Time) *snapshotCache[Library] {
+	return newSnapshotCache(func(ctx context.Context) (Library, error) {
+		if counter == nil {
+			return Library{}, errNoLibraryCounter
+		}
+		raw, err := counter.CountLibrary(ctx)
+		if err != nil {
+			return Library{}, fmt.Errorf("counting library: %w", err)
+		}
+		return raw.derive(), nil
+	}, ttl, defaultLibraryTTL, now)
 }

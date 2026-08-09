@@ -54,7 +54,10 @@ func buildSystemAPI(
 		geocodeReporter = geocodeBudget
 	}
 
+	// One store answers both library aggregations (the counts and the chart
+	// series), so the two can never be built from different catalogues.
 	pool := db.Pool()
+	libraryStore := system.NewStore(pool)
 	svc := system.New(system.Config{
 		DB:            db,
 		Embeddings:    client,
@@ -64,7 +67,8 @@ func buildSystemAPI(
 		Maps:          mapsReporter,
 		Geocode:       geocodeReporter,
 		Imports:       importer.NewStore(pool),
-		Library:       system.NewStore(pool),
+		Library:       libraryStore,
+		Charts:        libraryStore,
 		OriginalsPath: cfg.Storage.OriginalsPath,
 		CachePath:     cfg.Storage.CachePath,
 	})

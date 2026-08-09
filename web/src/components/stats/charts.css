@@ -1,0 +1,145 @@
+/*
+ * Chart primitives for the statistics dashboard — plain CSS over the app's own
+ * tokens, no charting library. Two shapes cover every chart on the page: a
+ * column histogram (a value per time bucket) and a horizontal bar list (a value
+ * per named thing, which doubles as the coverage meters' track).
+ *
+ * Colour: every chart on the page draws ONE measure, so every bar wears the one
+ * accent. Hues are identity, and there is no identity to carry here — the media
+ * buckets and the cameras name themselves in text beside their bar. Nothing in a
+ * chart is coloured to be pretty; the ink stays on the text tokens.
+ */
+
+.kk-chart-scroll {
+  /* A century of years does not fit on a phone. Bars keep a legible minimum
+     width and the plot scrolls sideways rather than shrinking to hairlines;
+     on a wide screen they flex out and nothing scrolls. */
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: var(--kk-space-1);
+}
+
+.kk-chart-plot {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 9rem;
+}
+
+.kk-chart-col {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-width: 5px;
+  height: 100%;
+}
+
+/* The whole column is the hit area, not the drawn bar: a bar for a thin year
+   would otherwise be a 5px target, and an empty year has nothing to open. */
+a.kk-chart-col {
+  border-radius: var(--kk-radius-sm);
+  text-decoration: none;
+}
+
+.kk-chart-bar {
+  width: 100%;
+  min-height: 2px;
+  border-radius: 4px 4px 0 0;
+  background: var(--kk-accent-solid);
+}
+
+/* A bucket with nothing in it still draws a baseline tick, so the axis reads as
+   continuous time rather than as a chart with holes in it. */
+.kk-chart-bar--empty {
+  height: 2px;
+  border-radius: 2px;
+  background: var(--kk-surface-border);
+}
+
+a.kk-chart-col:hover .kk-chart-bar,
+a.kk-chart-col:focus-visible .kk-chart-bar {
+  background: var(--kk-accent);
+}
+
+.kk-chart-axis {
+  display: flex;
+  gap: 2px;
+  margin-top: var(--kk-space-1);
+  height: 1.1rem;
+}
+
+/* Ticks are sparse (a decade, a quarter), so each label is centred on its own
+   column and allowed to overhang the neighbours it would never collide with. */
+.kk-chart-tick {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 5px;
+}
+
+.kk-chart-tick > span {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--kk-text-muted);
+  font-size: 0.6875rem;
+  white-space: nowrap;
+}
+
+.kk-barlist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kk-space-3);
+}
+
+.kk-barlist-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--kk-space-1) var(--kk-space-2);
+  align-items: baseline;
+}
+
+.kk-barlist-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kk-barlist-value {
+  color: var(--kk-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.kk-barlist-track {
+  grid-column: 1 / -1;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--kk-surface-sunken);
+}
+
+.kk-barlist-fill {
+  height: 100%;
+  min-width: 2px;
+  border-radius: 4px;
+  background: var(--kk-accent-solid);
+}
+
+/* A coverage meter is the same track reading a share rather than a magnitude,
+   so a full one is unmistakably full. */
+.kk-meter-fill {
+  background: var(--kk-accent);
+}
+
+.kk-chart-empty {
+  color: var(--kk-text-muted);
+  font-size: var(--kk-font-size-caption);
+}
+
+@media (pointer: coarse) {
+  /* A finger needs more than a hairline to land on a year. */
+  .kk-chart-col,
+  .kk-chart-tick {
+    min-width: 8px;
+  }
+}

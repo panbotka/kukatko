@@ -202,6 +202,20 @@ here.
   obličeje → `/review`. The two write destinations are gated on `useAuth().canWrite` and render as plain text
   for a viewer — never a link that would bounce them (N13). The caller still owns loading/errors/retry, so
   `StatsPage` and `SystemStatusPage`'s Knihovna section cannot drift apart or double-fetch),
+  `components/stats/` = **the charts of the statistics dashboard**, plain CSS over the app's tokens
+  (`charts.css`), no charting dependency: `ColumnChart` (a column histogram of one measure over a time axis —
+  each bar scaled against the chart's tallest with a **2 % floor** so a one-photo year is never drawn as
+  empty, an empty bucket drawn as a baseline tick so the axis reads as continuous time, the **whole column**
+  as the hit area when the bucket links somewhere, sparse `tick` labels absolutely centred so a decade label
+  may overhang its 5px column, and the plot scrolling sideways on a phone instead of shrinking a century into
+  hairlines), `BarList` (a horizontal bar list for named things — cameras, media buckets — with the name and
+  the value written out beside every bar, which is what keeps identity off the colour; it is also the track
+  behind the meters), `CoverageMeters` (the three shares as ARIA `meter` rows over the **counts**, so it needs
+  no second request; an untouched whole reads 0 %, never a division by zero), `ChartCard` (the card shell
+  matching `LibraryStatsCards`) and `LibraryChartsPanel` (the four charts assembled from
+  `GET /system/stats/charts`, with every label, tooltip, empty-state sentence and `aria-label` summary from
+  `stats.charts.*`). Both primitives take a summary `ariaLabel` carrying the chart's key numbers and render as
+  `role="img"`, or as `role="group"` when their marks link somewhere so those links stay reachable),
   `Icon` (**the app's single icon set**: a bootstrap-icons glyph as `<i class="bi bi-{name}">`,
   the font is imported globally in `main.tsx`; the `IconName` union holds the dictionary of used icons, so a typo
   is a compile error; always `aria-hidden` beside a visible label),
@@ -2124,10 +2138,37 @@ here.
   jargon** (no „embedding" anywhere) and the highlighted numbers **lead somewhere** — `/trash`, the library at
   `?q=faces:0`, `/review` — with the write-gated ones hidden from a viewer (see `LibraryStatsCards`). A failed
   load shows `ErrorState` + retry and **renders no grid of zeroes**, so an unavailable count never reads as an
-  empty library. i18n `stats.*` (cs/en). Tests: `StatsPage.test.tsx` (loaded counts with separators + group
+  empty library.
+  Below the cards the page turns into a small **charts dashboard** — "what does our library look like?" —
+  drawn from a **second** request, `GET /system/stats/charts` (`useLibraryCharts`), which loads beside the
+  counts and **fails apart from them**: a chart outage leaves a fully readable page of numbers with its own
+  `ErrorState` + retry under them. `CoverageMeters` (from the counts, so it needs no second request) reports
+  the three shares as ARIA `meter` rows — fotky se známým místem, fotky prohledatelné podle obsahu, obličeje se
+  jménem — each carrying both numbers behind the percentage, and an untouched whole (no faces detected yet)
+  reads as 0 % rather than a division by zero. `LibraryChartsPanel` then draws four charts
+  (`ChartCard` shells matching the counts cards): **fotky podle roku pořízení** (the full history, 1905→today,
+  full width — clicking a bar opens that year in the library through the period filter,
+  `?taken_after=YYYY-01-01&taken_before=YYYY-12-31`; an empty year links nowhere), **přírůstky knihovny**
+  (the last 12 months, month names localised via `formatMonthName`), **nejčastější fotoaparáty** (top 10,
+  each linking to `?camera=<model>`) and the two storage charts (**velikost podle typu**
+  image/live/video/RAW, **růst knihovny** as the running total by year of addition).
+  All of it is **plain CSS over the app's tokens** (`charts.css`) — no charting dependency: `ColumnChart` for
+  the time axes, `BarList` for the named things. One measure per chart means **one colour** per chart (the
+  accent); what a bar means is written beside it, never carried by a hue. Each chart states its key numbers in
+  an `aria-label` (`role="img"`, or `role="group"` when its bars link somewhere so the links stay reachable),
+  empty buckets draw a baseline tick so a time axis reads as continuous, a one-photo year keeps a 2 % floor so
+  it is never drawn as empty, and a series with nothing in it says so in a sentence instead of drawing an empty
+  frame. On a phone the year plot scrolls sideways rather than shrinking a century into hairlines, and a coarse
+  pointer widens the columns.
+  i18n `stats.*` incl. `stats.charts.*` (cs/en, localised month names and a pluralised „N fotek"). Tests:
+  `StatsPage.test.tsx` (loaded counts with separators + group
   headings, no „embedding" in the grid, the derived gaps, the three links with their hrefs and accessible
   names, **a viewer sees the two write links as plain numbers**, the error state without a zero grid, retry,
-  cs grouping),
+  cs grouping, **the four charts' accessible names with their key numbers, the year and camera click-throughs,
+  the coverage shares, charts failing alone and retrying alone, the empty-series sentences**),
+  `ColumnChart.test.tsx` / `BarList.test.tsx` / `CoverageMeters.test.tsx` (the primitives over fixture data:
+  bar scaling and the small-value floor, empty buckets, link vs image roles, the meters' percentages and
+  their zero whole),
   `ReviewDecisionsPage` = `/audit/reviews` (admin **or** maintainer, `RequireRole role="admin"`)
   an **overview of one user's review decisions** (reachable by clicking through from the leaderboard): over `GET /audit`
   with `?via=review&user=…` (`fetchAuditLog`). At the top the user's name + their **Ano/Ne/Celkem** tally
@@ -2557,6 +2598,10 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   an empty library and an unavailable count must not look the same), an aborted request (unmount/retry) is not an error,
   `reload` repeats the fetch (the retry in `ErrorState`); one source for `StatsPage` and the Library section
   on `SystemStatusPage` (the aggregation is memoized on the backend, two readers = one query);
+  `useLibraryCharts(enabled=true)` = its sibling over `fetchLibraryCharts` (`GET /system/stats/charts`) with the
+  same shape and the same rules — a **separate** hook, and therefore a separate request, state and retry,
+  because the charts are the heavier aggregation and must never hold the counts back or take the page down
+  with them (`StatsPage` renders the numbers and shows a chart error under them);
 
   `useLibraryFacets(params)` = a loader of the library's facet offers → `LibraryFacets{years,albums,labels,subjects}`:
   the years over `fetchPhotoYears` **refetch when the filters change** (a year holds fewer photos as soon as a label
@@ -3231,6 +3276,8 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `formatDuration(ms)` (ms → `M:SS`/`H:MM:SS`, invalid→`"0:00"`) for the video length on the tiles +
   `formatMonth(year,month,locale)` (a 1-based year/month → a locale-aware short month + year, e.g.
   `2026,1,'en'`→`"Jan 2026"`, outside 1–12 → `""`) for the timeline tick labels +
+  `formatMonthName(year,month,locale)` (its name half alone, `"Jan"` / cs `"led"`) for a chart axis whose
+  label already says the year — the arrivals chart on `StatsPage` +
   `formatCaptureRange(from?,to?)` (an album's `taken_at` range → the tightest form: a single month
   `"6/2007"`, a single year `"2006"`, otherwise `"1998–1999"` with an en dash; a missing/invalid bound →
   `""`, i.e. an album without dated photos draws no line) for `AlbumTile` +
@@ -3492,9 +3539,14 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `system.ts` = the system client: `fetchSystemStatus(signal)` over `GET /api/v1/system/status`
   → `SystemStatus` (maintainer-only), `fetchLibraryStats(signal)` over `GET /api/v1/system/stats`
   → `LibraryStats` (**any logged-in user**; it throws an `ApiError` when the backend can't total the counts — the page then shows
-  an error, not zeroes), `triggerBackup(signal)` over `POST /api/v1/backup` (409/503 → ApiError),
+  an error, not zeroes), `fetchLibraryCharts(signal)` over `GET /api/v1/system/stats/charts` → `LibraryCharts`
+  (the same readers, deliberately a **second** request so the cheap counts are never held up by the heavier
+  series; the arrays come gap-filled and never `null`), `triggerBackup(signal)` over `POST /api/v1/backup`
+  (409/503 → ApiError),
   `requeueDeadLetterJobs(signal)` (it lists `GET /jobs?state=dead` → a per-job `POST /jobs/{id}/requeue`,
-  returns the count, 404/409 skip); the types `SystemStatus`/`LibraryStats`/`DatabaseStatus`/`EmbeddingsStatus`/`JobsStatus`/
+  returns the count, 404/409 skip); the types `SystemStatus`/`LibraryStats`/`LibraryCharts` (+ its
+  `YearPhotos`/`MonthPhotos`/`CameraPhotos`/`MediaStorage`/`YearStorage`)/`DatabaseStatus`/
+  `EmbeddingsStatus`/`JobsStatus`/
   `BackupStatus`/`ImportsStatus`/`StorageStatus`/`MapsStatus`/`MapsState`/`GeocodeStatus`/`VersionInfo`; it shares
   `ApiError` from `auth.ts` and `ImportRun` from `import.ts`,
   `users.ts` = the admin account-management client over `/api/v1/admin/users`: `fetchUsers(signal)` → `AdminUser[]`

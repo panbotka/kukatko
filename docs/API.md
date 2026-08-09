@@ -1136,8 +1136,10 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
 - **Library statistics (`/api/v1`, `internal/systemapi` + `internal/system`, **every authenticated
   user** via `RequireAuth`):** `GET /system/stats` → instance-wide counts of the catalogue, modelled on
   photo-sorter's status page: `{photos,videos,live_photos,images,photos_live,photos_archived,
-  photos_with_embedding,photos_with_faces,photos_without_embedding,photos_without_faces,photos_geocoded,
-  photos_pending_geocode,embeddings,faces,subjects,subjects_person,subjects_pet,subjects_other,markers,
+  photos_with_embedding,photos_with_faces,photos_without_embedding,photos_without_faces,photos_with_gps,
+  photos_geocoded,
+  photos_pending_geocode,embeddings,faces,faces_assigned,subjects,subjects_person,subjects_pet,
+  subjects_other,markers,
   markers_assigned,markers_unassigned,albums,albums_manual,albums_folder,albums_moment,albums_state,
   albums_month,labels}`.
   Never per-user and never a `maintenance scan` tree walk — a single query of cheap `COUNT(*)`s
@@ -1146,6 +1148,9 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   and `videos`/`live_photos`/`images` are the three `media_type` values (`images` derived, see below).
   `photos_geocoded` counts photos with a cached place resolved from coordinates, `photos_pending_geocode`
   the live geotagged photos that still have none — the outstanding, metered mapy.com spend.
+  `photos_with_gps` (photos carrying coordinates of their own, whatever the source) and `faces_assigned`
+  (detected faces that name a subject — unlike `markers_assigned` it excludes hand-drawn label boxes) are the
+  numerators of the statistics page's three coverage meters; the third is `photos_with_embedding`.
   The derived values — `photos_live`, `images` (total minus the other two media types, because the
   `media_type` index deliberately excludes the majority value) and the coverage gaps
   `photos_without_embedding` / `photos_without_faces` / `markers_unassigned` — are computed by the service
@@ -1157,6 +1162,33 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   Library section of `SystemStatusPage`, from this one endpoint. The same aggregation also backs the
   `kukatko_library_*` gauges on `/metrics` (see `docs/OPERATIONS.md` § Prometheus metrics), so the two
   cannot disagree — one query, two readers.
+- **Library charts (`/api/v1`, `internal/systemapi` + `internal/system`, **every authenticated user** via
+  `RequireAuth`):** `GET /system/stats/charts` → the series the statistics page draws over those counts:
+  `{photos_by_year:[{year,photos}], added_by_month:[{month:"YYYY-MM",photos}],
+  top_cameras:[{camera,model,photos}], storage_by_media:[{media,photos,bytes}],
+  storage_by_year:[{year,photos,bytes,cumulative_bytes}]}`.
+  A **second endpoint rather than more fields on `/system/stats`**: the counts are cheap and are what an
+  import is watched with, these aggregates are heavier and change slowly, so the two are fetched side by side,
+  fail apart, and are cached apart — the counts for 30 s, the charts for **5 min**
+  (`system.defaultChartsTTL`), which is the answer to "cheap enough per view, or cached?" for these five.
+  Each series is **one grouped query** (`system.Store.AggregateCharts`, `store_charts.go`) with no join:
+  capture years and years-of-addition group the whole live table, the month window is bounded by a sargable
+  `created_at >= $1` on `idx_photos_live_created_at`, and the camera ranking is a `LIMIT 10` over a grouped
+  make/model.
+  Every series counts the **browsable** library — archived photos are excluded throughout, so a bar matches
+  the library view it links to — and buckets time **in UTC**, so the buckets do not shift with the database
+  server's time zone. `photos_by_year` covers only photos with a capture time; `top_cameras` folds make and
+  model into `camera` for display and keeps the bare `model`, which is what the library's `camera` filter
+  matches; `storage_by_media` splits `image`/`live`/`video`/`raw`, where **RAW is not a `media_type`** but a
+  file format recognised by the original's extension (`imgconvert.RAWExtensions()`) and carved out of the
+  images, so the four buckets are disjoint and add up to the library.
+  The service returns them **drawable**: both year axes have their empty years restored (a histogram whose
+  gaps are merely missing draws a lie), `added_by_month` is always exactly 12 months ending with the current
+  one, `storage_by_media` always carries all four buckets, `cumulative_bytes` is the running total, and every
+  array is `[]` rather than `null`. An empty library therefore answers **200** with empty series and a full
+  window of zeroes, not an error. A failed aggregation → **500** (never empty series, which would draw as an
+  empty library). Mounted **always** (`buildSystemAPI`). The frontend renders it on **Statistiky**
+  (`/stats`, all roles) below the counts; `SystemStatusPage` does not read it.
 - **Capabilities API (`/api/v1`, `internal/capabilitiesapi`, authenticated via `RequireAuth`):**
   `GET /capabilities` → `{semantic_search:bool, version:{version,commit}}` — a small object saying what this
   instance is, which **every authenticated user** may read (unlike the maintainer-only `/system/status`).

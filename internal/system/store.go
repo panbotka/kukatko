@@ -18,7 +18,10 @@ import (
 // because the media_type index deliberately excludes the majority value. The two
 // coverage counts are semi-joins onto the embeddings primary key and the faces
 // (photo_uid, face_index) unique index, so neither reads a heap row it does not
-// have to.
+// have to. The two counts behind the coverage meters — photos carrying their own
+// coordinates and faces that already name a subject — have no index of their own
+// and are plain scans; they are aggregates over the whole table anyway, which is
+// what the shared 30 s memoisation is for.
 //
 // The album breakdown is a single CTE rather than one filtered subquery per type:
 // the auto-generated month/moment/state albums make this table the one that grows
@@ -40,12 +43,14 @@ SELECT
     (SELECT count(*) FROM photos WHERE archived_at IS NOT NULL),
     (SELECT count(*) FROM photos p WHERE EXISTS (SELECT 1 FROM embeddings e WHERE e.photo_uid = p.uid)),
     (SELECT count(*) FROM photos p WHERE EXISTS (SELECT 1 FROM faces f WHERE f.photo_uid = p.uid)),
+    (SELECT count(*) FROM photos WHERE lat IS NOT NULL AND lng IS NOT NULL),
     (SELECT count(*) FROM photo_places WHERE lat IS NOT NULL AND lng IS NOT NULL),
     (SELECT count(*) FROM photos p
         WHERE p.archived_at IS NULL AND p.lat IS NOT NULL AND p.lng IS NOT NULL
           AND NOT EXISTS (SELECT 1 FROM photo_places pp WHERE pp.photo_uid = p.uid)),
     (SELECT count(*) FROM embeddings),
     (SELECT count(*) FROM faces),
+    (SELECT count(*) FROM faces WHERE subject_uid IS NOT NULL),
     (SELECT count(*) FROM subjects),
     (SELECT count(*) FROM subjects WHERE type = 'person'),
     (SELECT count(*) FROM subjects WHERE type = 'pet'),
@@ -83,10 +88,12 @@ func (s *Store) CountLibrary(ctx context.Context) (Library, error) {
 		&counts.PhotosArchived,
 		&counts.PhotosWithEmbedding,
 		&counts.PhotosWithFaces,
+		&counts.PhotosWithGPS,
 		&counts.PhotosGeocoded,
 		&counts.PhotosPendingGeocode,
 		&counts.Embeddings,
 		&counts.Faces,
+		&counts.FacesAssigned,
 		&counts.Subjects,
 		&counts.SubjectsPerson,
 		&counts.SubjectsPet,
