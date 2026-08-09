@@ -536,7 +536,7 @@ The `face_detect` job (`internal/facejob`) is **idempotent** via the `face_detec
 processed (`faces` may have zero rows). Weak detections are filtered by the `faces.min_det_score` threshold.
 Admin backfill: `POST /api/v1/process/faces`.
 
-**The review game and the uncertainty band (`internal/review`, faces and labels):** alongside the bulk pages
+**The review game and the uncertainty band (`internal/review`):** alongside the bulk pages
 (`/recognition`, expand) there is a "one question at a time" mode — and its design decision is
 **the uncertainty band**. Candidates are split by confidence (= 1 − cosine distance) into three zones:
 above `review.band_max` the system is essentially decided and confirmation belongs in the bulk UI (asking
@@ -550,12 +550,34 @@ and reproduction require the same queue for the same library state) and is cache
 (`review.cache_ttl`). Answers go **exclusively through the existing write paths** (the assign state machine,
 `AttachLabelAudited`, feedback) — review has no write path of its own.
 
-Every **decisive** answer (yes/no on a face or a label) meanwhile writes a durable audit row marked
+The game asks **five kinds** of question, not two. Face and label check guesses about things nobody had
+decided; **place**, **duplicate** and **outlier** check guesses the machine already *acted on* — a coordinate
+the geo-estimator wrote onto a photo, a pair the duplicate detector linked, a face somebody filed under a
+person. Those are the errors that otherwise sit in a library unseen, because no page lists them as questions,
+and each of the three composes an existing read-only service (`geoestimate.Reviewer`, `duplicates.Service`,
+`outliers.Service`) exactly as the first two compose sweep and expand. The tiers do not apply to them — their
+confidences are not points on one comparable scale — so each carries its own ordering, and **all five kinds are
+merged proportionally** so that no kind can own a session: every collector stops at the batch size, so with
+k kinds supplying material a batch holds roughly 1/k of each, while a kind that is the only one left still
+fills the batch (an exhausted library must not withhold the work it has).
+The rule that answers open no new write path holds for all of them, and one consequence is deliberate and
+absolute: **the game never merges duplicates, never deletes a photo and never invalidates a marker.** A
+duplicate "yes" records an opinion (`duplicate_confirmations`, migration `0054`) that ranks the group first on
+the duplicates page, where merging remains an explicit act with a preview in front of it; an outlier "no" goes
+through `unassign_person`, so the marker and the face survive and the answer stays reversible. A place verdict
+is the one answer with **no inverse** — nothing can mark a location an estimate again — so the UI withholds
+undo there rather than writing the old coordinates back as a decision the user never made.
+
+Every **decisive** answer writes a durable audit row marked
 `details.via = "review"` in the same transaction as the mutation; a review face confirmation (`face.assign`)
-newly gets this marker through facematch `Service.Apply` too (via `AssignRequest.Via`), so all
-four actions are consistent and ordinary recognition assignments stay unmarked. On top of these
+and an outlier detach (`face.unassign`) get this marker through facematch `Service.Apply` too (via
+`AssignRequest.Via`), so every action is consistent and the same action performed on an ordinary curation page
+stays unmarked. Which actions count as a yes and which as a no lives in **one shared list**
+(`audit.ReviewYesActions()`/`ReviewNoActions()`), read by both the leaderboard and the admin decision view, so
+a new question type becomes countable the moment its write path is wired rather than the next time somebody
+remembers. On top of these
 rows sits a **leaderboard** (`internal/review` `LeaderboardStore`, `GET /review/leaderboard`): per
-`actor_uid` it counts yes (`face.assign`+`label.attach`) and no (`face.reject`+`label.reject`) decisions,
+`actor_uid` it counts the yes and no decisions,
 skip is not counted (it writes nothing), a NULL actor (a deleted user) is omitted, with all-time /
 7-day / today windows. The partial index `idx_audit_log_review_actor` (migration `0037`) on `details->>'via'`
 keeps the aggregation cheap.

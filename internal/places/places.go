@@ -69,6 +69,46 @@ func (s *Store) GetPlace(ctx context.Context, photoUID string) (Place, error) {
 	return p, nil
 }
 
+// listPlacesByUIDsSQL fetches the cached place rows of a set of photos at once.
+const listPlacesByUIDsSQL = `
+SELECT photo_uid, country, region, city, place_name, lat, lng, geocoded_at
+FROM photo_places
+WHERE photo_uid = ANY($1)
+ORDER BY photo_uid`
+
+// PlacesByPhotoUIDs returns the cached place rows for the given photos, in uid
+// order. Photos with no row yet are simply absent from the result — a place is a
+// cache, so its absence means "not geocoded", not "error". An empty input
+// returns an empty (non-nil) slice without querying.
+//
+// It exists so a caller holding a batch of photos (the review game's place
+// check) can name where each one is thought to be in one read rather than an
+// N+1 of GetPlace.
+func (s *Store) PlacesByPhotoUIDs(ctx context.Context, photoUIDs []string) ([]Place, error) {
+	out := []Place{}
+	if len(photoUIDs) == 0 {
+		return out, nil
+	}
+	rows, err := s.pool.Query(ctx, listPlacesByUIDsSQL, photoUIDs)
+	if err != nil {
+		return nil, fmt.Errorf("places: listing places by uids: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var p Place
+		if err := rows.Scan(&p.PhotoUID, &p.Country, &p.Region, &p.City,
+			&p.PlaceName, &p.Lat, &p.Lng, &p.GeocodedAt); err != nil {
+			return nil, fmt.Errorf("places: scanning place row: %w", err)
+		}
+		out = append(out, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("places: iterating place rows: %w", err)
+	}
+	return out, nil
+}
+
 // savePlaceSQL upserts a photo's place row, stamping geocoded_at to now on every
 // write so the timestamp reflects the most recent geocode.
 const savePlaceSQL = `

@@ -1391,14 +1391,45 @@ to `## Package map` in `CLAUDE.md`.
   MCP transport**, real auth and real `kkt_` tokens; mounted in `serve`
   (`buildMCPAPI` in `cmd/kukatko/mcp.go`, in `discoveryAPIOptions`). See `docs/MCP.md`),
   `internal/review/`
-  (**the review game** — a queue of "one at a time" questions mixed from **two confidence tiers** and the application of answers;
-  **it composes existing pieces, reimplements nothing**: face questions via the `Sweeper` interface (satisfied by
+  (**the review game** — a queue of "one at a time" questions and the application of answers;
+  **it composes existing pieces, reimplements nothing**. **Five kinds** (`Kinds`): face questions via the
+  `Sweeper` interface (satisfied by
   `*sweep.Service` → per-subject candidate search with all its filters: unassigned-only,
   rejections, negative exemplar, min. face size), label questions via `Expander` (satisfied by
-  `*expand.Service` → excludes members and rejected ones), writes via `Assigner` (`*facematch.Service`),
-  `OrganizeStore.AttachLabelAudited` and `FeedbackStore.RejectFace/RejectLabel`; `New(Config{...,BandMin,
+  `*expand.Service` → excludes members and rejected ones), and the **three checks over work the machine already
+  did** (`extras.go`): `place` via `PlaceReviewer` (`*geoestimate.Reviewer`), `duplicate` via `DuplicateFinder`
+  (`*duplicates.Service`) and `outlier` via `OutlierRanker`+`SubjectLister` (`*outliers.Service` +
+  `*people.Store`), all hydrating their photos through `PhotoStore.ListByUIDs`+`Media`. **Each of the three is
+  optional** — a nil dependency simply switches that question type off, so a half-wired server still serves the
+  other kinds. Writes via `Assigner` (`*facematch.Service`),
+  `OrganizeStore.AttachLabelAudited`, the `PlaceReviewer`'s own accept/reject and
+  `FeedbackStore.RejectFace/RejectLabel/ConfirmFace/ConfirmDuplicate/DismissDuplicate`; `New(Config{...,BandMin,
   BandMax,SureMin,SureShare,QueueSize,CacheTTL,MaxLabels,LabelConcurrency,FaceBudget,LabelBudget,BuildTimeout,
-  MaxPerEntity,Now})` (an invalid band → the default pair 0.45/0.75, `Now` = a test hook).
+  MaxPerEntity,OutlierBudget,OutlierThreshold,Now})` (an invalid band → the default pair 0.45/0.75, `Now` = a
+  test hook).
+  **The three new checks (`extras.go`) — checking what the machine already acted on.** The first two kinds
+  clean up guesses about things nobody had decided; these clean up guesses the machine *wrote*: a coordinate on a
+  photo, a pair the detector linked, an assignment somebody made. No other page lists those as questions, which
+  is why they sit in a library unnoticed. Each is collected in a bounded, rotating window with its own cursor —
+  `placeCursor` over `Reviewer.Pending`, `dupCursor` over `FindGroups(limit,offset)`, `outlierCursor` over
+  `OutlierBudget` (default 4) subjects with ≥`outliers.MinMeaningful` markers — and each **degrades to "no
+  questions of this kind"** rather than failing a rebuild. **None goes through the tiers**: "the estimator
+  guessed Brno" and "these two files are 0.02 apart" are not points on one scale, so each carries its own
+  ordering (duplicates by confidence descending, outliers **most suspicious first** via `sortBySuspicion` —
+  deliberately the opposite, matching the /outliers page — places in uid order).
+  Three restrictions are load-bearing rather than simplifications: a place question needs a **geocoded** place
+  (a pair of decimal degrees is not something a human can answer about, and the photo comes back once the
+  `places` job catches up); a duplicate question is only ever a **two-member, unconfirmed** group (a "no" is
+  recorded as an edge dismissal, and a two-member group with its one edge dismissed disappears for good, whereas
+  inside a larger component the detector cannot say which edges are already settled, so the game would re-ask
+  forever — and a five-photo group is a "which do I keep?", which is the duplicates page's job); an outlier
+  question needs a **marker** (a "no" detaches through the assign state machine, and a face with no marker has
+  nothing to detach) and a **meaningful** ranking (below `MinMeaningful` faces every face is equidistant from
+  the centroid, so "furthest" is noise and the question an accusation drawn from it). `OutlierThreshold`
+  (default 0.5, `review.outlier_threshold`) is where a face is far enough to be worth asking about: two people's
+  embeddings sit around 1.0, so half of that is comfortably past "a bad photo of the right person" — which
+  matters more here than elsewhere, because asking about ten correct assignments to find one wrong one is how a
+  player learns to answer yes without looking.
   **The tiers (`tiers.go`) — the game must mostly be a click on "yes".** Band-only maximises information per
   answer but optimises the wrong quantity: what an evening of clicking buys is **confirmed assignments per
   minute of attention**, and a 90 %-confident candidate answered yes in one click is real work done, merely
@@ -1414,8 +1445,14 @@ to `## Package map` in `CLAUDE.md`.
   hard questions; the measured deviation on a full batch is the per-entity rounding, ±0.15.
   **`Queue(ctx,userUID,source,limit)`**: within a tier the order is that tier's own — the band by **distance
   from its center** (closest to the decision boundary first), the confident tier by **confidence descending**
-  (the surest is the cheapest yes) — tie-break a stable id, then `blend`, then `capEntities`; the kinds are
-  **interleaved** deterministically (comparison of integer fractions, no `rand`). Labels need `PhotoCount>0`
+  (the surest is the cheapest yes) — tie-break a stable id, then `blend`, then `capEntities`; **all five kinds
+  are then merged by `interleaveKinds`**, which places each list's i-th question at the exact rational
+  (2i+1)/(2·len) and takes the earliest (integer cross-multiplication, ties by the fixed order in `Kinds`, no
+  `rand`). That merge — not a quota — is what satisfies "no type may dominate a session", and it does so
+  **positionally**: a batch is a *prefix* of the built queue, so a queue that were merely balanced overall could
+  still open with twenty duplicate pairs in a row. Every collector stops at `need`, so with k kinds supplying
+  material a batch of n holds about n/k of each; a kind that is the only one left fills the batch alone, which
+  is the right degradation — an exhausted library must not withhold the work it still has. Labels need `PhotoCount>0`
   **and `ReviewEnabled`** (cap `MaxLabels`, fan-out `errgroup.SetLimit(LabelConcurrency)`, an error on one label
   is logged and skipped).
   **The face scan asks for both tiers in one pass** (`Threshold: 1−BandMin`, **no `MinDistance`**), reversing
@@ -1458,6 +1495,9 @@ to `## Package map` in `CLAUDE.md`.
   bounding the sources bounds the queue. `questionEntity` keys on kind+uid, so a subject and a label sharing a
   uid never collide.
   **The source is the player's choice (`source.go`)** — `SourceBoth` (default), `SourcePeople`, `SourceLabels`;
+  the three new checks ride with `SourceBoth` alone (`wantsChecks`): "people" and "labels" are promises about
+  what the game will ask, and a place or duplicate question breaks either one, while a six-way toggle would
+  spend the game's simplest control on question types that run out quickly.
   `ParseSource` maps `?source=` (empty → both, other → `ErrInvalidSource` → 400), `orBoth` folds an unknown
   value from a non-HTTP caller back to the default. It travels **into `collect`**, not onto its result: a
   labels-only rebuild never calls `Sweeper.Scan` and a people-only one never calls `Expander.Label`. That is
@@ -1502,13 +1542,30 @@ to `## Package map` in `CLAUDE.md`.
   `AttachLabelAudited` (idempotent upsert), a no → `RejectFace`/`RejectLabel` (permanent, idempotent,
   audited in the mutation's transaction); a vanished target (`ErrPhotoNotFound`/`ErrMarkerNotFound`/
   `ErrSubjectNotFound`/`ErrLabelNotFound`/`ErrTargetNotFound`) → `result:"gone"`, not an error; invalid
-  input → `ErrInvalidQuestion`/`ErrInvalidAnswer`. Unit tests with fakes (band, ordering, interleaving,
+  input → `ErrInvalidQuestion`/`ErrInvalidAnswer`.
+  **The new kinds' answers** (`answer.go`, all through paths that already exist elsewhere): `place` yes →
+  `Reviewer.Accept` (coordinates kept, `estimate`→`manual`), no → `Reviewer.Reject` (coordinates cleared,
+  `manual` tombstone left); `duplicate` yes → `ConfirmDuplicate`, no → `DismissDuplicate` — **the game NEVER
+  merges**, because merging archives copies and a game played at one keypress per second is the last place a
+  photo should be able to disappear from; `outlier` yes → `ConfirmFace` (the same set `/outliers` excludes, so
+  the two views agree without either knowing about the other), no → `unassign_person` through the assign state
+  machine, re-reading the marker so a face detached meanwhile resolves to `gone` and leaving the marker itself
+  intact. Ids: `place:<photo>` (a photo has one location, so there is nothing else to key on),
+  `duplicate:<a>:<b>` **normalised smaller-uid-first** (one pair must be one question however a scan names it,
+  or a session asks it twice) and `outlier:<photo>:<idx>:<subject>` (the same shape as a face question — it
+  identifies the same thing, only the direction of the doubt differs, which is also why `questionEntity` gives
+  them one entity key: four of each would be eight questions about one person). Unit tests with fakes (band, ordering, interleaving,
   determinism, cache TTL, skip, idempotence, gone) plus `queue_bound_test.go` (the bounded-work property
   over synthetic libraries of 10/105/1000 named subjects at the production exemplar ratio, rotation,
   early stop, dry-queue rebuild, deadline degradation) and `variety_test.go` (**`TestQueue_monotonyBaseline`
   runs the pre-fix pipeline — order + interleave, share out of reach, no spread — over the same fixture and
   fails if it stops reproducing the complaint**, then: run cap, per-entity share, ≥ 5 entities per batch,
   every question still inside one of the two tiers, reproducibility, `spread`/`longestEntityRun` unit tables)
+  and `extras_test.go` (the merge holding one of every kind in every five-long window, its degradation to the one
+  kind left, its reproducibility, the id round trip and the invalid ids per kind, `pairConfidence` taking the
+  stronger of the two incommensurable signals, `pairGroups` keeping only unjudged pairs, the outlier order being
+  the reverse of the duplicate one, the shared face/outlier entity key, `wantsChecks`, and the pixel box
+  projection over a rotated photo)
   and `source_test.go` (`ParseSource`, a restricted queue **not calling** the other source's search at all,
   an unknown source falling back to both, a switch rebuilding inside a warm `CacheTTL`, the per-source empty
   reasons, a skip holding across a switch)
@@ -1519,13 +1576,25 @@ to `## Package map` in `CLAUDE.md`.
   integration tests over real
   sweep+candidates+expand+facematch+feedback+DB, incl. `queue_scale_integration_test.go` (105 named
   subjects, an instrumented face store counting the kNN queries, and a bounded-vs-unbounded content
-  comparison) and the three selections driven over one real library in one session (plus a people-only
+  comparison) and `extras_integration_test.go` (each new kind's yes and no over real stores, asserting the
+  **whole** effect of one answer and not merely the intended one: a place accept keeps the coordinates and
+  clears the estimate without touching the neighbouring metadata, a reject leaves the tombstone that keeps the
+  photo out of the backfill's candidate set, a duplicate yes confirms **and archives nothing**, a duplicate no
+  dismisses and the pair does not come back from a cold service, an outlier no detaches the person while the
+  marker, the face and the person's other three assignments survive, an outlier yes stops the face surfacing on
+  the /outliers page too — plus the mixed batch holding every kind with none past half of it, a people-only
+  queue serving none of the three, and the place verdict's audit row carrying `via:review`)
+  and the three selections driven over one real library in one session (plus a people-only
   queue on a labels-only library reporting `no_people`), the tier mix over **planted unassigned faces**
   (production's are almost all on the nameless catch-all subject, so the face half cannot be observed there
   at all), the confident tier exhausted degrading to the band, and the label switch driven off and back on. Additionally **`LeaderboardStore`** (`NewLeaderboardStore(
   pool)`, separate from `Service` — read-only) aggregates a **review leaderboard** directly from `audit_log`: per
-  `actor_uid` it counts decisions marked `details.via = "review"` — yes = `face.assign`+`label.attach`,
-  no = `face.reject`+`label.reject`; a skip writes nothing, so it isn't counted — with the windows `WindowAllTime`/
+  `actor_uid` it counts decisions marked `details.via = "review"` — yes = `face.assign`+`label.attach`+
+  `face.confirm`+`location.confirm`+`duplicate.confirm`,
+  no = `face.reject`+`label.reject`+`face.unassign`+`location.reject`+`duplicate.dismiss` — the buckets come
+  from **`audit.ReviewYesActions()`/`ReviewNoActions()`**, one shared list also read by `internal/auditapi`, so a
+  new question type becomes countable the moment its write path is wired instead of the next time somebody
+  remembers the file; a skip writes nothing, so it isn't counted — with the windows `WindowAllTime`/
   `WindowWeek`/`WindowToday` (`ParseWindow` maps `?window=`, empty → all, other → `ErrInvalidWindow`;
   `windowCutoff` computes the bound from `created_at`), a NULL actor is skipped, ordered total desc → yes desc →
   `display_name` (fallback to `username`); so that a review face confirmation also lands in the leaderboard,
@@ -1736,6 +1805,24 @@ to `## Package map` in `CLAUDE.md`.
   (→400, a photo isn't a duplicate of itself). **Why it exists:** duplicate detection is derived state,
   recomputed on every `GET /duplicates` from hashes and embeddings, which the user's
   disagreement doesn't change — without persistence the same pair would be offered forever).
+  **Duplicate confirmations** (`duplicateconfirmations.go`, table `duplicate_confirmations`, migration
+  `0054_duplicate_confirmations.sql`) are the dismissal's **positive mirror**: "yes, this really IS the same
+  photo twice", written by the review game's duplicate check. The same shape and rules as the dismissal, down to
+  the unordered pair and the `CHECK (photo_uid COLLATE "C" < other_uid COLLATE "C")` — carried **from the start**
+  here, unlike `0034`, which needed `0038` to repair it. `ConfirmDuplicate`/`UnconfirmDuplicate` (idempotent
+  audited insert/delete, actions `duplicate.confirm`/`duplicate.unconfirm`), `IsDuplicateConfirmed`, bulk
+  `ConfirmedDuplicatePairs()`. **Why it exists:** the duplicates page only ever offered one way to agree —
+  merging, which archives copies and is not something a curator does one pair at a time from a game — so
+  agreement evaporated and a group somebody had already looked at was indistinguishable from one nobody had.
+  It changes **nothing** about detection: a confirmed pair is still detected, still shown, still mergeable; what
+  it buys is `Group.Confirmed` and the ranking that puts it first. Merging stays an explicit, separate act.
+  Both pair opinions share their machinery (`pairs.go`: `photoPair`, the `pairOpinion` statement bundle,
+  `recordPair`/`removePair`/`hasPair`/`listPairs` and `checkPairKey`, which is where the ErrEmptyKey-vs-ErrSamePhoto
+  distinction and the smaller-uid-first normalisation now live **once**) — the two tables are the same shape down
+  to the CHECK, and writing the four operations twice is exactly how the second one drifts from the first. What
+  stays duplicated is the documented API surface of each (its key type, its sentinels, the paragraph saying why
+  it mutates nothing), carrying a justified `//nolint:dupl`: collapsing two documented APIs into one generic pair
+  would cost more in readability than the repetition does.
   **Repeated-marker dismissals** (`markerdismissals.go`, table `duplicate_marker_dismissals`, migration
   `0050_duplicate_marker_dismissals.sql`) are a fourth kind: "this person **really is** marked more than once on
   this photo" — a double exposure, a mirror, a photo of a photo, a face on a poster behind its owner. Keyed by
@@ -2420,8 +2507,8 @@ to `## Package map` in `CLAUDE.md`.
   buckets (`bandCount`=`maxDiff+1` bands, which by the pigeonhole principle guarantees a shared bucket for pairs within the threshold,
   and the candidates are verified by the full Hamming distance), embeddings through HNSW (`vectors.FindDuplicatePairs`).
   All behind the interfaces `PhotoSource` (`ListByUIDs`)/`PhashSource` (`ListActivePhashes`)/`EmbeddingSource`
-  (`FindDuplicatePairs`, nil turns embedding grouping off)/`FeedbackStore` (`DismissedDuplicatePairs`,
-  nil leaves every edge in place) → unit-testable with fakes; `Service` =
+  (`FindDuplicatePairs`, nil turns embedding grouping off)/`FeedbackStore` (`DismissedDuplicatePairs` +
+  `ConfirmedDuplicatePairs`, nil leaves every edge in place and marks nothing) → unit-testable with fakes; `Service` =
   `New(Config{Photos,Phashes,Embeddings,Feedback,PhashMaxDiff,EmbeddingMaxDist,Neighbours})` (panics on nil
   Photos/Phashes; `PhashMaxDiff<0` turns pHash off, `EmbeddingMaxDist<=0` turns embeddings off);
   **Dismissed pairs** (`feedback.DismissedDuplicatePairs`, "nechat obě" from the compare view) are registered in
@@ -2433,10 +2520,15 @@ to `## Package map` in `CLAUDE.md`.
   /purged photo) is ignored; a pair is scanned over **node indexes**, whereas `seen` in `unionBucket` is over the
   **positions of entries** — those are different key spaces, which is why a dismissal is looked up via `entries[i].idx`;
   **`FindGroups(ctx,limit,offset)`** (backing `GET /duplicates`) → `Result{Groups,Total,Limit,Offset,
-  NextOffset}`; each `Group{ID (the smallest uid),Reason (phash/embedding/both),KeeperUID,Members}`,
+  NextOffset}`; each `Group{ID (the smallest uid),Reason (phash/embedding/both),KeeperUID,Confirmed,Members}`,
   a `Member` carries dimensions/size/`taken_at`/media_type + `is_keeper` + `phash_distance`/
   `embedding_distance` to the keeper; the **proposed keeper** = the highest resolution → the largest file →
-  the oldest → the smallest uid (`selectKeeperIndex`); groups ordered largest-first/newest-keeper/id,
+  the oldest → the smallest uid (`selectKeeperIndex`); **`Confirmed`** is set by `graph.addConfirmations` when any
+  pair inside the component carries a `feedback` confirmation ("yes, the same shot", written by the review game's
+  duplicate check) — unlike a dismissal it suppresses no edge and removes nothing, one confirmed pair marks the
+  whole component (the curator answered about the group they were shown), and `sortGroups` puts confirmed groups
+  **first**: confirmation is the only ordering key here that is not a guess, so it outranks size. Groups then
+  ordered largest-first/newest-keeper/id,
   `limit` clamped to `[1,100]`; it only reads, **never mutates** (resolution goes through `dupmerge`); archived
   photos are not scanned (`ListActivePhashes` filters `archived_at IS NULL`)), `internal/dupmerge/`
   (**the transactional merge of a near-duplicate group into the keeper** — the mutating counterpart of the read-only `duplicates`;
@@ -2667,7 +2759,25 @@ to `## Package map` in `CLAUDE.md`.
   neighbours / with incoherent neighbours = `(false, nil)`, **not an error** — a refusal is a normal outcome;
   idempotent and resumable **without a cursor** (the candidate set shrinks as the work is done, so a re-run *is* the
   resume), wiring `cmd/kukatko/geoestimate.go` (`buildGeoEstimateServiceOrNil` /
-  `locationEstimatorOrNil` — a nil **interface**, not a typed-nil pointer, so that processapi returns 503)),
+  `locationEstimatorOrNil` — a nil **interface**, not a typed-nil pointer, so that processapi returns 503);
+  **the reviewer** (`review.go`) is the other half of the feature: marking a location `estimate` is only useful
+  if somebody eventually rules on it, and the estimator itself never revisits an estimated photo (it has stopped
+  being a candidate), so without this the guess would sit on the map forever wearing a question mark.
+  `NewReviewer(ReviewConfig{Catalogue,Places})` (panics on a nil catalogue; `Places` may be nil, which leaves
+  every guess unnamed), `Pending(ctx,offset,limit) ([]Pending,total,error)` (one rotating window of the
+  photos carrying an estimate + the full size of that set, each with its cached `photo_places` row resolved in
+  **one** bulk read; `Pending.PlaceLabel()` = place name → city → region → country, `""` when nothing is
+  geocoded) and the two verdicts `Accept`/`Reject`. Both do a **read-modify-write** through
+  `photos.UpdateMetadataAudited` — the same path a hand edit on the photo page takes, because
+  `UpdateMetadata` replaces the whole editable record and building the update from anything but the live row
+  would blank a title somebody typed in meanwhile. Accept keeps the coordinates and promotes
+  `location_source` `estimate`→`manual`; Reject clears them and stamps `manual` anyway, the **tombstone** that
+  keeps the nightly backfill from handing the same guess straight back. A photo whose location is no longer an
+  estimate is left untouched (the verdict was about a guess that no longer exists), which also makes both
+  idempotent. The only thing that differs from a hand edit is the audit action — `location.confirm`/
+  `location.reject` rather than `photo.update` — so the decision is **countable** on the review leaderboard and
+  findable in the admin decision view, where a diff would not be. It backs the review game's place check
+  (`cmd/kukatko/review.go` `buildPlaceReviewerOrNil`, nil when `location_estimate.enabled=false`)),
   `internal/metrics/`
   (Prometheus instrumentation of the HTTP server, the queue worker and the infrastructure (pgx pool, embeddings sidecar,
   imports, thumbnails), namespace `kukatko`; an **isolated `*prometheus.Registry`** instead of the

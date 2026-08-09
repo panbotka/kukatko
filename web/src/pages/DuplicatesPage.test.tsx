@@ -24,11 +24,12 @@ const fetchMock = vi.mocked(fetchDuplicates)
 const mergeMock = vi.mocked(mergeDuplicates)
 
 // group builds a two-member duplicate group with the first member as keeper.
-function group(id: string, keeper: string, other: string): DuplicateGroup {
+function group(id: string, keeper: string, other: string, confirmed = false): DuplicateGroup {
   return {
     id,
     reason: 'phash',
     keeper_uid: keeper,
+    confirmed,
     members: [member(keeper, 400, 400, true), member(other, 200, 200, false)],
   }
 }
@@ -243,6 +244,22 @@ describe('DuplicatesPage', () => {
       member_uids: ['ph_keep', 'ph_dup'],
       dry_run: true,
     })
+  })
+
+  it('marks a human-confirmed group, and only that one', async () => {
+    fetchMock.mockResolvedValue({
+      groups: [group('g1', 'ph_keep', 'ph_dup', true), group('g2', 'ph_a', 'ph_b')],
+      total: 2,
+      limit: 20,
+      offset: 0,
+      next_offset: null,
+    })
+    renderPage()
+
+    // The badge is what explains why this group is at the top — the backend sorts
+    // confirmed groups first, and without it one would look like an ordinary
+    // machine guess that jumped the queue.
+    expect(await screen.findAllByTestId('duplicate-confirmed')).toHaveLength(1)
   })
 
   it('shows an unavailable notice when detection is disabled (503)', async () => {

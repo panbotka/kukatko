@@ -9,6 +9,8 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { EmptyState } from '../components/EmptyState'
 import { Icon, type IconName } from '../components/Icon'
 import { KeyboardShortcutsHelp } from '../components/KeyboardShortcutsHelp'
+import { ReviewDuplicate } from '../components/review/ReviewDuplicate'
+import { ReviewOutlier } from '../components/review/ReviewOutlier'
 import { REVIEW_PREVIEW_SIZE, ReviewPhoto } from '../components/review/ReviewPhoto'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useImagePreloader } from '../hooks/useImagePreloader'
@@ -215,18 +217,99 @@ function ConfidenceHint({ confidence }: { confidence: number }) {
   )
 }
 
-/** The question sentence with the person/label name as the emphasised part. */
+/**
+ * The i18n key of each kind's question sentence, an explicit map so a typo is a
+ * compile error and the typed `t` accepts it.
+ */
+const QUESTION_KEYS = {
+  face: 'review.question.face',
+  label: 'review.question.label',
+  place: 'review.question.place',
+  duplicate: 'review.question.duplicate',
+  outlier: 'review.question.outlier',
+} as const
+
+/**
+ * What each kind of question emphasises: the person, the label, the place. The
+ * duplicate check names nothing — the two photos are the question — so its
+ * sentence carries no interpolated name.
+ */
+function questionName(question: ReviewQuestion): string {
+  switch (question.kind) {
+    case 'face':
+    case 'outlier':
+      return question.subject?.name ?? ''
+    case 'label':
+      return question.label?.name ?? ''
+    case 'place':
+      return question.place?.name ?? ''
+    case 'duplicate':
+      return ''
+  }
+}
+
+/** The question sentence with the person/label/place name as the emphasised part. */
 function QuestionText({ question }: { question: ReviewQuestion }) {
-  const name =
-    question.kind === 'face' ? (question.subject?.name ?? '') : (question.label?.name ?? '')
   return (
     <h1 className="review-game__question" data-testid="review-question" aria-live="polite">
       <Trans
-        i18nKey={question.kind === 'face' ? 'review.question.face' : 'review.question.label'}
-        values={{ name }}
+        i18nKey={QUESTION_KEYS[question.kind]}
+        values={{ name: questionName(question) }}
         components={{ strong: <strong className="review-game__name" /> }}
       />
     </h1>
+  )
+}
+
+/**
+ * The quiet line under the question that says what to look at. Each kind has its
+ * own, because each stage shows something different — a rectangle on a photo, two
+ * photos, a face crop — and the place check has none at all: the photo *is* the
+ * whole of it.
+ */
+function QuestionHint({ question }: { question: ReviewQuestion }) {
+  const { t } = useTranslation()
+  let hint: string | null = null
+  if (question.kind === 'face' && question.bbox !== undefined) {
+    hint = t('review.faceHint')
+  } else if (question.kind === 'duplicate') {
+    hint = t('review.duplicate.hint')
+  } else if (question.kind === 'outlier') {
+    hint = t('review.outlier.hint')
+  }
+  if (hint === null) {
+    return null
+  }
+  return <p className="review-game__face-hint">{hint}</p>
+}
+
+/**
+ * The stage under the question, one per kind: two photos for the duplicate
+ * check, the face crop plus its context for the outlier check, the full frame
+ * (with the face rectangle, where there is one) for everything else.
+ */
+function QuestionStage({ question, alt }: { question: ReviewQuestion; alt: string }) {
+  const { t } = useTranslation()
+  if (question.kind === 'duplicate' && question.other !== undefined) {
+    return <ReviewDuplicate photo={question.photo} other={question.other} href={photoDetailPath} />
+  }
+  if (question.kind === 'outlier' && question.bbox !== undefined) {
+    return (
+      <ReviewOutlier
+        photo={question.photo}
+        bbox={question.bbox.relative}
+        href={photoDetailPath(question.photo.uid)}
+        alt={t('review.outlier.faceAlt')}
+      />
+    )
+  }
+  return (
+    <ReviewPhoto
+      photo={question.photo}
+      href={photoDetailPath(question.photo.uid)}
+      bbox={question.kind === 'face' ? question.bbox?.relative : undefined}
+      alt={alt}
+    />
   )
 }
 
@@ -371,18 +454,14 @@ export function ReviewPage() {
       <>
         <section className="review-game__prompt">
           <QuestionText question={question} />
-          {question.kind === 'face' && question.bbox !== undefined && (
-            <p className="review-game__face-hint">{t('review.faceHint')}</p>
-          )}
-          <ConfidenceHint confidence={question.confidence} />
+          <QuestionHint question={question} />
+          {/* The place check has no confidence to report: the estimator either
+              found neighbours that cluster tightly enough or refused, so there is
+              no percentage behind the guess and inventing one would be a lie. */}
+          {question.kind !== 'place' && <ConfidenceHint confidence={question.confidence} />}
         </section>
         <main className="review-game__stage">
-          <ReviewPhoto
-            photo={question.photo}
-            href={photoDetailPath(question.photo.uid)}
-            bbox={question.kind === 'face' ? question.bbox?.relative : undefined}
-            alt={t('review.photoAlt')}
-          />
+          <QuestionStage question={question} alt={t('review.photoAlt')} />
         </main>
         <footer className="review-game__actions">
           <Button

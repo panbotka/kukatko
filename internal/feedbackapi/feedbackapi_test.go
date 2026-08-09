@@ -27,6 +27,7 @@ type fakeStore struct {
 	labelKey     feedback.LabelRejectionKey
 	confirmKey   feedback.FaceConfirmationKey
 	dupKey       feedback.DuplicateDismissalKey
+	dupConfirm   feedback.DuplicateConfirmationKey
 	dupMarkerKey feedback.DuplicateMarkerDismissalKey
 	entry        audit.Entry
 }
@@ -72,6 +73,20 @@ func (f *fakeStore) UndismissDuplicate(
 	_ context.Context, key feedback.DuplicateDismissalKey, entry audit.Entry,
 ) error {
 	f.called, f.dupKey, f.entry = "UndismissDuplicate", key, entry
+	return f.err
+}
+
+func (f *fakeStore) ConfirmDuplicate(
+	_ context.Context, key feedback.DuplicateConfirmationKey, entry audit.Entry,
+) error {
+	f.called, f.dupConfirm, f.entry = "ConfirmDuplicate", key, entry
+	return f.err
+}
+
+func (f *fakeStore) UnconfirmDuplicate(
+	_ context.Context, key feedback.DuplicateConfirmationKey, entry audit.Entry,
+) error {
+	f.called, f.dupConfirm, f.entry = "UnconfirmDuplicate", key, entry
 	return f.err
 }
 

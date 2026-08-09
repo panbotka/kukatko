@@ -14,6 +14,12 @@
 // back in on each scan. Pairs dismissed via internal/feedback are dropped as edges
 // before the components are built, which is why a dismissed two-photo group
 // disappears for good while a larger group survives on its remaining edges.
+//
+// The positive opinion is read back for the same reason but does the opposite of
+// nothing to the graph: a pair somebody confirmed as really the same shot still
+// links, is still shown and is still mergeable — the confirmation only marks its
+// group (Group.Confirmed) and sorts it first, where merging is a decision already
+// made rather than one still to be judged.
 package duplicates
 
 import (
@@ -68,6 +74,9 @@ type FeedbackStore interface {
 	// DismissedDuplicatePairs returns every pair a user dismissed as not a
 	// duplicate.
 	DismissedDuplicatePairs(ctx context.Context) ([]feedback.DuplicateDismissalKey, error)
+	// ConfirmedDuplicatePairs returns every pair a user confirmed as really the
+	// same shot.
+	ConfirmedDuplicatePairs(ctx context.Context) ([]feedback.DuplicateConfirmationKey, error)
 }
 
 // Config bundles the dependencies and thresholds of a Service. Photos and Phashes
@@ -145,9 +154,15 @@ type Member struct {
 // Group is a set of photos detected as likely duplicates of each other, with a
 // suggested keeper. ID is stable across calls (the smallest member uid).
 type Group struct {
-	ID        string   `json:"id"`
-	Reason    string   `json:"reason"`
-	KeeperUID string   `json:"keeper_uid"`
+	ID        string `json:"id"`
+	Reason    string `json:"reason"`
+	KeeperUID string `json:"keeper_uid"`
+	// Confirmed reports that a human has answered "yes, this is the same photo
+	// twice" about at least one of the group's pairs (internal/feedback). It
+	// changes nothing about detection and merges nothing — it is the ranking
+	// signal that puts a group somebody has already judged above the ones nobody
+	// has looked at.
+	Confirmed bool     `json:"confirmed"`
 	Members   []Member `json:"members"`
 
 	// keeperSortTime is the keeper's capture/creation time, used to order groups;
@@ -165,7 +180,8 @@ type Result struct {
 }
 
 // FindGroups scans the catalogue, builds duplicate groups, and returns the
-// requested page (groups ordered largest-first, then newest keeper, then id).
+// requested page (groups ordered human-confirmed first, then largest, then
+// newest keeper, then id).
 // limit is clamped into [1, maxLimit] (defaulting when non-positive); a negative
 // offset is treated as zero. It returns a wrapped error if any source fails.
 func (s *Service) FindGroups(ctx context.Context, limit, offset int) (Result, error) {
@@ -206,6 +222,12 @@ func (s *Service) buildGraph(ctx context.Context) (*graph, error) {
 	}
 	g.addDismissals(dismissed)
 
+	confirmed, err := s.confirmedPairs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	g.addConfirmations(confirmed)
+
 	pairs, err := s.embeddingPairs(ctx)
 	if err != nil {
 		return nil, err
@@ -225,6 +247,19 @@ func (s *Service) dismissedPairs(ctx context.Context) ([]feedback.DuplicateDismi
 	pairs, err := s.cfg.Feedback.DismissedDuplicatePairs(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("duplicates: listing dismissed pairs: %w", err)
+	}
+	return pairs, nil
+}
+
+// confirmedPairs returns the pairs a user confirmed as really the same shot, or
+// nil when no feedback store is wired.
+func (s *Service) confirmedPairs(ctx context.Context) ([]feedback.DuplicateConfirmationKey, error) {
+	if s.cfg.Feedback == nil {
+		return nil, nil
+	}
+	pairs, err := s.cfg.Feedback.ConfirmedDuplicatePairs(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("duplicates: listing confirmed pairs: %w", err)
 	}
 	return pairs, nil
 }

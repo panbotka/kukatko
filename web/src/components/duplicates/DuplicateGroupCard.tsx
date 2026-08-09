@@ -60,6 +60,19 @@ export function DuplicateGroupCard({ group, busy, onResolve, onDismiss }: Duplic
       <Card.Header className="d-flex justify-content-between align-items-center flex-wrap gap-2">
         <span className="d-flex align-items-center gap-2">
           <Badge bg="info">{t(`duplicates.reason.${group.reason}`)}</Badge>
+          {/* Somebody has already answered "yes, this is the same photo twice" in
+              the sorting game. The backend sorts these groups first, so the badge
+              is what explains why this one is at the top — otherwise a confirmed
+              group looks like an ordinary machine guess that jumped the queue. */}
+          {group.confirmed && (
+            <Badge
+              bg="success"
+              title={t('duplicates.confirmedTitle')}
+              data-testid="duplicate-confirmed"
+            >
+              {t('duplicates.confirmed')}
+            </Badge>
+          )}
           <span className="text-secondary small">
             {t('duplicates.memberCount', { count: group.members.length })}
           </span>

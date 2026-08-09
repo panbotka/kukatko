@@ -30,8 +30,14 @@ vi.mock('../services/review', async (importOriginal) => {
 vi.mock('../services/feedback', () => ({
   rejectFace: vi.fn(),
   unrejectFace: vi.fn(),
+  confirmFace: vi.fn(),
+  unconfirmFace: vi.fn(),
   rejectLabel: vi.fn(),
   unrejectLabel: vi.fn(),
+  confirmDuplicate: vi.fn(),
+  unconfirmDuplicate: vi.fn(),
+  dismissDuplicate: vi.fn(),
+  undismissDuplicate: vi.fn(),
 }))
 
 vi.mock('../services/people', async (importOriginal) => {
@@ -45,12 +51,15 @@ vi.mock('../services/organize', async (importOriginal) => {
 })
 
 const { fetchReviewQueue, answerReview } = await import('../services/review')
-const { unrejectFace, unrejectLabel } = await import('../services/feedback')
+const { unrejectFace, unrejectLabel, unconfirmFace, unconfirmDuplicate } =
+  await import('../services/feedback')
 const { assignFace } = await import('../services/people')
 const queueMock = vi.mocked(fetchReviewQueue)
 const answerMock = vi.mocked(answerReview)
 const unrejectFaceMock = vi.mocked(unrejectFace)
 const unrejectLabelMock = vi.mocked(unrejectLabel)
+const unconfirmFaceMock = vi.mocked(unconfirmFace)
+const unconfirmDuplicateMock = vi.mocked(unconfirmDuplicate)
 const assignFaceMock = vi.mocked(assignFace)
 
 /** A photo with the display dimensions the stage needs to size its frame. */
@@ -124,6 +133,46 @@ function labelQuestion(id: string, name = 'Ostatky'): ReviewQuestion {
   }
 }
 
+/** A place question over a location the geo-estimator guessed. */
+function placeQuestion(id: string, name = 'Brno'): ReviewQuestion {
+  return {
+    id,
+    kind: 'place',
+    // The estimator either found coherent neighbours or refused, so there is no
+    // confidence behind the guess — the page must not show one.
+    confidence: 0,
+    photo: photo(`p-${id}`),
+    place: { name, country: 'cz', city: name, lat: 49.2, lng: 16.6 },
+  }
+}
+
+/** A duplicate question over a near-identical pair. */
+function duplicateQuestion(id: string): ReviewQuestion {
+  return {
+    id,
+    kind: 'duplicate',
+    confidence: 0.97,
+    photo: photo(`p-${id}-a`),
+    other: photo(`p-${id}-b`),
+    group_id: `g-${id}`,
+  }
+}
+
+/** An outlier question over a face assigned to somebody it may not be. */
+function outlierQuestion(id: string, name = 'Tomáš Kozák'): ReviewQuestion {
+  return {
+    id,
+    kind: 'outlier',
+    confidence: 0.12,
+    distance: 0.88,
+    photo: photo(`p-${id}`),
+    subject: subject(`s-${id}`, name),
+    face_index: 0,
+    bbox: { relative: [0.4, 0.3, 0.2, 0.2], pixel: [480, 240, 240, 160] },
+    marker_uid: `m-${id}`,
+  }
+}
+
 /** Wraps questions in a queue response; the backend echoes the applied source. */
 function makeQueue(questions: ReviewQuestion[], overrides: Partial<ReviewQueue> = {}): ReviewQueue {
   return {
@@ -158,6 +207,8 @@ beforeEach(async () => {
   answerMock.mockReset().mockResolvedValue({ result: 'assigned', answered: 1, remaining: 0 })
   unrejectFaceMock.mockReset().mockResolvedValue(undefined)
   unrejectLabelMock.mockReset().mockResolvedValue(undefined)
+  unconfirmFaceMock.mockReset().mockResolvedValue(undefined)
+  unconfirmDuplicateMock.mockReset().mockResolvedValue(undefined)
   assignFaceMock.mockReset()
 })
 
@@ -562,6 +613,163 @@ describe('ReviewPage', () => {
     await waitFor(() => {
       expect(screen.getByTestId('source-probe')).toHaveTextContent('people')
     })
+  })
+
+  it('asks a place question named after the guessed place, with no confidence', async () => {
+    queueMock.mockResolvedValue(makeQueue([placeQuestion('q1', 'Veselice')]))
+    renderPage()
+
+    const question = await screen.findByTestId('review-question')
+    expect(question).toHaveTextContent('Veselice')
+    // The whole frame, no face rectangle: the photo is the question.
+    expect(screen.getByAltText('Photo under review')).toBeInTheDocument()
+    expect(screen.queryByTestId('review-bbox')).toBeNull()
+    // A percentage here would be invented — the estimator reports no score.
+    expect(screen.queryByText(/Confidence/)).toBeNull()
+  })
+
+  it('shows a duplicate question as two photos side by side with their sizes', async () => {
+    queueMock.mockResolvedValue(makeQueue([duplicateQuestion('q1')]))
+    renderPage()
+
+    await screen.findByTestId('review-duplicate')
+    const halves = screen.getAllByTestId('review-duplicate-half')
+    expect(halves).toHaveLength(2)
+    // Both copies are shown, and they are different photos — a stage that
+    // rendered one twice would look identical and answer itself "yes".
+    const first = screen.getByAltText('First photo of the pair')
+    const second = screen.getByAltText('Second photo of the pair')
+    expect(first.getAttribute('src')).not.toBe(second.getAttribute('src'))
+    // The whole frame, never a centre-cropped tile: a crop hides exactly the
+    // edges where two exports of one shot differ.
+    expect(first.getAttribute('src')).toContain('fit_')
+    expect(second.getAttribute('src')).toContain('fit_')
+    // The numbers under each copy are part of the question: often the only thing
+    // that separates two exports of one shot.
+    expect(screen.getAllByText('1200 × 800 px')).toHaveLength(2)
+    // The single-photo stage must not also be mounted.
+    expect(screen.queryByTestId('review-duplicate')).toBeInTheDocument()
+    expect(screen.queryByAltText('Photo under review')).toBeNull()
+  })
+
+  it('shows an outlier question as a face crop cut from a full-frame preview', async () => {
+    queueMock.mockResolvedValue(makeQueue([outlierQuestion('q1', 'Alice')]))
+    renderPage()
+
+    const question = await screen.findByTestId('review-question')
+    expect(question).toHaveTextContent('Alice')
+    await screen.findByTestId('review-outlier')
+
+    const face = screen.getByTestId('review-outlier-face')
+    // The crop MUST come from a `fit_*` size. A `tile_*` is a centre-cropped
+    // square — a different frame from the one the bbox was normalised against —
+    // so cropping one lands beside the face on anything but a square photo.
+    expect(face.getAttribute('data-thumb-size')).toMatch(/^fit_/)
+    expect(face.getAttribute('src')).toContain('fit_')
+    expect(face.getAttribute('src')).not.toContain('tile_')
+    // The face is cropped, not merely outlined: the background is scaled and
+    // offset so only the padded box shows.
+    expect(parseFloat(face.style.width)).toBeGreaterThan(100)
+    // The box is drawn inside the crop, and the whole photo is beside it for
+    // context — a face out of its scene is how a curator gets it wrong.
+    expect(screen.getByTestId('review-outlier-bbox')).toBeInTheDocument()
+    expect(screen.getByAltText('The whole photo the face is on')).toBeInTheDocument()
+  })
+
+  it('answers the new kinds with the same one-key controls, and skips them', async () => {
+    const user = userEvent.setup()
+    queueMock.mockResolvedValue(
+      makeQueue([duplicateQuestion('q1'), outlierQuestion('q2'), placeQuestion('q3')]),
+    )
+    answerMock.mockResolvedValue({ result: 'confirmed', answered: 1, remaining: 2 })
+    renderPage()
+
+    await screen.findByTestId('review-duplicate')
+    await user.keyboard('{ArrowRight}')
+    await waitFor(() => {
+      expect(answerMock).toHaveBeenCalledWith('q1', 'yes')
+    })
+
+    await screen.findByTestId('review-outlier')
+    await user.keyboard('{ArrowLeft}')
+    await waitFor(() => {
+      expect(answerMock).toHaveBeenCalledWith('q2', 'no')
+    })
+
+    // Skipping keeps working on the new kinds too — "I do not know" is still an
+    // answer, and it still writes nothing.
+    await waitFor(() => {
+      expect(screen.getByTestId('review-question')).toHaveTextContent('Brno')
+    })
+    await user.keyboard(' ')
+    await waitFor(() => {
+      expect(answerMock).toHaveBeenCalledWith('q3', 'skip')
+    })
+  })
+
+  it('undoes a duplicate confirmation through the un-confirm endpoint', async () => {
+    const user = userEvent.setup()
+    queueMock.mockResolvedValue(makeQueue([duplicateQuestion('q1'), faceQuestion('q2')]))
+    answerMock.mockResolvedValue({ result: 'confirmed', answered: 1, remaining: 1 })
+    renderPage()
+
+    await screen.findByTestId('review-duplicate')
+    await user.keyboard('{ArrowRight}')
+    await waitFor(() => {
+      expect(answerMock).toHaveBeenCalledWith('q1', 'yes')
+    })
+
+    await user.click(screen.getByTestId('review-undo'))
+    await waitFor(() => {
+      expect(unconfirmDuplicateMock).toHaveBeenCalledWith({
+        photo_uid: 'p-q1-a',
+        other_uid: 'p-q1-b',
+      })
+    })
+    // The pair comes back as the card on screen; nothing was merged either way.
+    await waitFor(() => {
+      expect(screen.getByTestId('review-duplicate')).toBeInTheDocument()
+    })
+  })
+
+  it('undoes an outlier confirmation through the un-confirm endpoint', async () => {
+    const user = userEvent.setup()
+    queueMock.mockResolvedValue(makeQueue([outlierQuestion('q1'), faceQuestion('q2')]))
+    answerMock.mockResolvedValue({ result: 'confirmed', answered: 1, remaining: 1 })
+    renderPage()
+
+    await screen.findByTestId('review-outlier')
+    await user.keyboard('{ArrowRight}')
+    await waitFor(() => {
+      expect(answerMock).toHaveBeenCalledWith('q1', 'yes')
+    })
+
+    await user.click(screen.getByTestId('review-undo'))
+    await waitFor(() => {
+      expect(unconfirmFaceMock).toHaveBeenCalledWith({
+        photo_uid: 'p-q1',
+        face_index: 0,
+        subject_uid: 's-q1',
+      })
+    })
+  })
+
+  it('offers no undo after a place verdict, because none exists', async () => {
+    const user = userEvent.setup()
+    queueMock.mockResolvedValue(makeQueue([placeQuestion('q1'), faceQuestion('q2')]))
+    answerMock.mockResolvedValue({ result: 'confirmed', answered: 1, remaining: 1 })
+    renderPage()
+
+    await screen.findByTestId('review-question')
+    // The undo button starts disabled and must stay so: nothing can mark a
+    // location an estimate again, and pretending otherwise would write a
+    // decision the user never made.
+    expect(screen.getByTestId('review-undo')).toBeDisabled()
+    await user.keyboard('{ArrowRight}')
+    await waitFor(() => {
+      expect(answerMock).toHaveBeenCalledWith('q1', 'yes')
+    })
+    expect(screen.getByTestId('review-undo')).toBeDisabled()
   })
 
   it('reports a failed queue fetch and retries on demand', async () => {

@@ -2232,7 +2232,9 @@
         "title": "All done",
         "hint": "You have resolved every pair we found."
       }
-    }
+    },
+    "confirmed": "Confirmed",
+    "confirmedTitle": "Somebody has already confirmed in the sorting game that this is the same photo. That is why the group is at the top."
   },
   "duplicateMarkers": {
     "title": "Repeated markers",
@@ -2565,7 +2567,10 @@
   "review": {
     "question": {
       "face": "Is <strong>{{name}}</strong> in this photo?",
-      "label": "Does the label <strong>{{name}}</strong> fit this photo?"
+      "label": "Does the label <strong>{{name}}</strong> fit this photo?",
+      "place": "Was this photo taken in <strong>{{name}}</strong>?",
+      "duplicate": "Is this the <strong>same photo</strong>?",
+      "outlier": "Is this really <strong>{{name}}</strong>?"
     },
     "confidence": "Confidence {{percent}} %",
     "photoAlt": "Photo under review",
@@ -2619,6 +2624,20 @@
       "retryAnswers": "Save again",
       "dismiss": "Dismiss",
       "undo": "The answer could not be undone."
+    },
+    "duplicate": {
+      "hint": "Compare the two side by side. Nothing is merged — we only record what you think.",
+      "altFirst": "First photo of the pair",
+      "altSecond": "Second photo of the pair",
+      "dimensions": "{{width}} × {{height}} px"
+    },
+    "outlier": {
+      "hint": "The face crop, with the whole photo beside it for context.",
+      "faceAlt": "The face under question",
+      "contextAlt": "The whole photo the face is on"
+    },
+    "place": {
+      "hint": "We guessed the place from photos taken nearby in time."
     }
   },
   "announcement": {

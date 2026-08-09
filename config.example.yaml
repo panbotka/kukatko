@@ -349,6 +349,20 @@ review:
   # filled from more sources); raise it for the opposite. Set to 0 (or below) to
   # fall back to the default.
   max_per_entity: 4
+  # How many people one rebuild ranks for outliers — the "is this really X?"
+  # question over a face already assigned to X. Ranking one person loads every
+  # face assigned to them and scores it against a trimmed centroid, which is the
+  # most expensive per-person read the game does, so the window is smaller than
+  # face_budget. The cursor rotates, so successive rebuilds cover everybody. Set
+  # to 0 (or below) to fall back to the default.
+  outlier_budget: 4
+  # How far from a person's centroid (cosine distance) a face must sit before the
+  # game asks whether it is really them. Two embeddings of different people sit
+  # around 1.0, so 0.5 is comfortably past "a bad photo of the right person".
+  # Lower it to hear about borderline assignments too — at the cost of a game that
+  # mostly asks about correct ones, which is how a player learns to answer yes
+  # without looking. Set to 0 (or outside 0..2) to fall back to the default.
+  outlier_threshold: 0.5
 
 auth:
   # Credentials used to create the initial admin account on first run.

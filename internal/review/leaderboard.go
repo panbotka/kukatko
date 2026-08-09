@@ -2,10 +2,12 @@ package review
 
 // The leaderboard turns the review game into a friendly competition: it counts,
 // per user, the decisive answers they have recorded — the audit rows tagged
-// details.via = "review" (see answer.go). "Yes" decisions are face.assign and
-// label.attach, "no" decisions are face.reject and label.reject; skips write no
-// row and so never count. Deleted users (a NULL actor_uid) are excluded, and a
-// window narrows the tally to all-time, the last seven days, or today.
+// details.via = "review" (see answer.go). Which actions count as a "yes" and
+// which as a "no" is audit.ReviewYesActions/ReviewNoActions, so a new question
+// type becomes countable the moment its write path is wired rather than the next
+// time somebody remembers this file. Skips write no row and so never count.
+// Deleted users (a NULL actor_uid) are excluded, and a window narrows the tally
+// to all-time, the last seven days, or today.
 
 import (
 	"context"
@@ -125,10 +127,9 @@ ORDER BY total DESC, yes_count DESC, display_name ASC`
 // highest total first. Only users with at least one decision in the window
 // appear. It returns a wrapped error on any query or scan failure.
 func (s *LeaderboardStore) Leaderboard(ctx context.Context, window LeaderboardWindow) ([]LeaderboardEntry, error) {
-	yes := []string{audit.ActionFaceAssign, audit.ActionLabelAttach}
-	no := []string{audit.ActionFaceReject, audit.ActionLabelReject}
-	all := append(append([]string{}, yes...), no...)
-	args := []any{yes, no, all}
+	yes := audit.ReviewYesActions()
+	no := audit.ReviewNoActions()
+	args := []any{yes, no, audit.ReviewDecisionActions()}
 
 	query := leaderboardQuery
 	if cutoff := windowCutoff(window, s.now()); cutoff != nil {

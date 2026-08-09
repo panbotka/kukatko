@@ -152,6 +152,14 @@ func (in duplicateDismissalInput) toKey() feedback.DuplicateDismissalKey {
 	return feedback.DuplicateDismissalKey{PhotoUID: in.PhotoUID, OtherUID: in.OtherUID}
 }
 
+// toConfirmationKey converts the request input into a
+// feedback.DuplicateConfirmationKey. The confirmation endpoints take the same
+// body as the dismissal ones — a pair is a pair, and the verdict is the verb, not
+// the payload.
+func (in duplicateDismissalInput) toConfirmationKey() feedback.DuplicateConfirmationKey {
+	return feedback.DuplicateConfirmationKey{PhotoUID: in.PhotoUID, OtherUID: in.OtherUID}
+}
+
 // markerDismissalInput is the JSON body accepted by the repeated-marker dismissal
 // endpoints: the photo and the person marked more than once on it. The markers
 // themselves are deliberately absent — the opinion is about the situation, not

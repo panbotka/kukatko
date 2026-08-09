@@ -32,6 +32,7 @@ import (
 var catalogueTables = []string{
 	"album_photos",
 	"albums",
+	"duplicate_confirmations",
 	"duplicate_dismissals",
 	"duplicate_marker_dismissals",
 	"embeddings",

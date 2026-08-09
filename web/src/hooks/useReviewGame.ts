@@ -1,6 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { rejectFace, rejectLabel, unrejectFace, unrejectLabel } from '../services/feedback'
+import {
+  confirmDuplicate,
+  confirmFace,
+  dismissDuplicate,
+  rejectFace,
+  rejectLabel,
+  unconfirmDuplicate,
+  unconfirmFace,
+  undismissDuplicate,
+  unrejectFace,
+  unrejectLabel,
+} from '../services/feedback'
 import { attachLabel, detachLabel } from '../services/organize'
 import { assignFace, fetchFaces } from '../services/people'
 import {
@@ -23,6 +34,65 @@ const REFILL_AT = 3
 export interface AnsweredQuestion {
   question: ReviewQuestion
   answer: ReviewAnswer
+}
+
+/**
+ * Whether an answer to this question can be taken back.
+ *
+ * Every kind but one has an inverse endpoint that restores the previous state
+ * exactly — un-reject, detach, un-confirm, re-assign. The place check does not:
+ * accepting an estimated location promotes it to a decision, rejecting it clears
+ * the coordinates, and **nothing can mark a location an estimate again**. The
+ * only "undo" available would be to write the old coordinates back as a manual
+ * decision, which is not the old state but a different one, silently attributed
+ * to the user. So the game does not offer undo there rather than offering a lie;
+ * a wrong verdict is fixed on the photo's own page, where placing a pin *is* the
+ * decision it claims to be.
+ *
+ * A skip writes nothing server-side, so it is always undoable.
+ */
+export function isUndoable(last: AnsweredQuestion): boolean {
+  return last.answer === 'skip' || last.question.kind !== 'place'
+}
+
+/** The face a face/outlier question is about, as the feedback endpoints take it. */
+function faceRef(q: ReviewQuestion) {
+  return {
+    photo_uid: q.photo.uid,
+    face_index: q.face_index ?? 0,
+    subject_uid: q.subject?.uid ?? '',
+  }
+}
+
+/** The pair a duplicate question is about, as the feedback endpoints take it. */
+function pairRef(q: ReviewQuestion) {
+  return { photo_uid: q.photo.uid, other_uid: q.other?.uid ?? '' }
+}
+
+/**
+ * Applies a face question's yes/no through the direct write paths. A yes assigns
+ * to the marker when one is known, and mints one otherwise — the same branch the
+ * backend takes, so a re-answer after an undo cannot produce a second marker.
+ */
+async function sendFaceDirect(q: ReviewQuestion, yes: boolean, markerUid: string | undefined) {
+  if (!yes) {
+    await rejectFace(faceRef(q))
+    return
+  }
+  if (markerUid !== undefined && markerUid !== '') {
+    await assignFace(q.photo.uid, {
+      action: 'assign_person',
+      marker_uid: markerUid,
+      subject_uid: q.subject?.uid,
+    })
+    return
+  }
+  await assignFace(q.photo.uid, {
+    action: 'create_marker',
+    face_index: q.face_index,
+    subject_uid: q.subject?.uid,
+    bbox: q.bbox?.relative,
+  })
 }
 
 /** An optimistic answer whose request failed; held for an explicit retry. */
@@ -77,14 +147,19 @@ export interface ReviewGame {
  * this session, so the batch boundary is invisible.
  *
  * Undo goes through the *inverse* write paths (`unassign_person`, the
- * feedback-rejection DELETEs, label detach) because `POST /review/answer` is
- * idempotent per question. For the same reason a re-answer of an undone
- * question cannot go through the review endpoint (it would no-op as
- * `already_answered`), so undone questions are marked and their next yes/no is
- * sent through the direct write paths the backend itself reuses. A yes answered
- * as `create_marker` is undone by first looking the new marker up via
- * `GET /photos/{uid}/faces` — unassigning keeps the marker, so any later
- * re-yes is an `assign_person` to that same marker, never a duplicate.
+ * feedback DELETEs, label detach, the duplicate/face un-confirmations) because
+ * `POST /review/answer` is idempotent per question. For the same reason a
+ * re-answer of an undone question cannot go through the review endpoint (it
+ * would no-op as `already_answered`), so undone questions are marked and their
+ * next yes/no is sent through the direct write paths the backend itself reuses.
+ * A yes answered as `create_marker` is undone by first looking the new marker up
+ * via `GET /photos/{uid}/faces` — unassigning keeps the marker, so any later
+ * re-yes is an `assign_person` to that same marker, never a duplicate. The
+ * outlier check's "no" is the same mechanism read backwards: it detached a
+ * person from a marker that survived, so its undo re-assigns to that marker.
+ *
+ * One kind has no inverse and says so instead of faking one: see
+ * {@link isUndoable}.
  *
  * `source` decides what the game asks about (people, labels or both). Changing
  * it throws the local queue away rather than filtering it: those cards are
@@ -234,61 +309,84 @@ export function useReviewGame(source: ReviewSource = 'both'): ReviewGame {
   const revertOnServer = useCallback(
     async (last: AnsweredQuestion) => {
       const q = last.question
-      if (q.kind === 'face') {
-        if (last.answer === 'no') {
-          await unrejectFace({
-            photo_uid: q.photo.uid,
-            face_index: q.face_index ?? 0,
-            subject_uid: q.subject?.uid ?? '',
+      const yes = last.answer === 'yes'
+      switch (q.kind) {
+        case 'face':
+          if (!yes) {
+            await unrejectFace(faceRef(q))
+            return
+          }
+          await assignFace(q.photo.uid, {
+            action: 'unassign_person',
+            marker_uid: await resolveMarkerUid(q),
           })
           return
-        }
-        const markerUid = await resolveMarkerUid(q)
-        await assignFace(q.photo.uid, { action: 'unassign_person', marker_uid: markerUid })
-        return
+        case 'label':
+          if (!yes) {
+            await unrejectLabel({ photo_uid: q.photo.uid, label_uid: q.label?.uid ?? '' })
+            return
+          }
+          await detachLabel(q.label?.uid ?? '', q.photo.uid)
+          return
+        case 'duplicate':
+          await (yes ? unconfirmDuplicate(pairRef(q)) : undismissDuplicate(pairRef(q)))
+          return
+        case 'outlier':
+          if (yes) {
+            await unconfirmFace(faceRef(q))
+            return
+          }
+          // Re-attach the person to the marker the answer detached them from.
+          // The marker survived the detach — that is the whole reason the outlier
+          // "no" goes through unassign_person rather than invalidating anything.
+          await assignFace(q.photo.uid, {
+            action: 'assign_person',
+            marker_uid: await resolveMarkerUid(q),
+            subject_uid: q.subject?.uid,
+          })
+          return
+        case 'place':
+          // Unreachable: a place answer is never offered as the undo target
+          // (see isUndoable), because no write path can mark a location an
+          // estimate again.
+          throw new Error('a place verdict cannot be undone')
       }
-      if (last.answer === 'no') {
-        await unrejectLabel({ photo_uid: q.photo.uid, label_uid: q.label?.uid ?? '' })
-        return
-      }
-      await detachLabel(q.label?.uid ?? '', q.photo.uid)
     },
     [resolveMarkerUid],
   )
 
   /** Applies a yes/no through the direct write paths (re-answer after undo). */
   const sendDirect = useCallback(async (q: ReviewQuestion, verdict: ReviewAnswer) => {
-    if (q.kind === 'face') {
-      if (verdict === 'no') {
-        await rejectFace({
-          photo_uid: q.photo.uid,
-          face_index: q.face_index ?? 0,
-          subject_uid: q.subject?.uid ?? '',
-        })
+    const yes = verdict === 'yes'
+    switch (q.kind) {
+      case 'face':
+        await sendFaceDirect(q, yes, markerRef.current.get(q.id) ?? q.marker_uid)
         return
-      }
-      const markerUid = markerRef.current.get(q.id) ?? q.marker_uid
-      if (markerUid !== undefined && markerUid !== '') {
+      case 'label':
+        if (!yes) {
+          await rejectLabel({ photo_uid: q.photo.uid, label_uid: q.label?.uid ?? '' })
+          return
+        }
+        await attachLabel(q.label?.uid ?? '', q.photo.uid)
+        return
+      case 'duplicate':
+        await (yes ? confirmDuplicate(pairRef(q)) : dismissDuplicate(pairRef(q)))
+        return
+      case 'outlier':
+        if (yes) {
+          await confirmFace(faceRef(q))
+          return
+        }
         await assignFace(q.photo.uid, {
-          action: 'assign_person',
-          marker_uid: markerUid,
-          subject_uid: q.subject?.uid,
+          action: 'unassign_person',
+          marker_uid: markerRef.current.get(q.id) ?? q.marker_uid ?? '',
         })
         return
-      }
-      await assignFace(q.photo.uid, {
-        action: 'create_marker',
-        face_index: q.face_index,
-        subject_uid: q.subject?.uid,
-        bbox: q.bbox?.relative,
-      })
-      return
+      case 'place':
+        // Unreachable: a place question is never marked for the direct paths,
+        // because it is never undone in the first place (see isUndoable).
+        throw new Error('a place verdict cannot be re-sent directly')
     }
-    if (verdict === 'no') {
-      await rejectLabel({ photo_uid: q.photo.uid, label_uid: q.label?.uid ?? '' })
-      return
-    }
-    await attachLabel(q.label?.uid ?? '', q.photo.uid)
   }, [])
 
   /** Settles one answer in the background; a failure lands in `failed`. */
@@ -319,7 +417,10 @@ export function useReviewGame(source: ReviewSource = 'both'): ReviewGame {
         return
       }
       commitQueue(queueRef.current.slice(1))
-      setLastAnswer({ question: q, answer: verdict })
+      // A verdict with no inverse write path is not held as the undo target: the
+      // button stays disabled rather than offering something that cannot be done.
+      const answered = { question: q, answer: verdict }
+      setLastAnswer(isUndoable(answered) ? answered : null)
       setUndoError(false)
       if (verdict !== 'skip') {
         setAnswered((n) => n + 1)

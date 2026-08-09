@@ -317,3 +317,132 @@
     display: none;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   The duplicate check: two photos side by side.
+
+   Side by side is the whole point — a pair the eye has to scroll between is a
+   pair the eye cannot compare. The row lives inside the same stage as the
+   single-photo frame, so it inherits the "the photo takes what is left" rule:
+   each half caps its height against the stage's own remainder (`100cqh`), minus
+   the caption line under it.
+   --------------------------------------------------------------------------- */
+
+.review-duplicate {
+  display: flex;
+  gap: 0.75rem;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+}
+
+.review-duplicate__half {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  /* Equal halves whatever their aspect ratios: the question is a comparison, and
+     a bigger frame for one copy reads as a verdict on it. */
+  flex: 1 1 0;
+  min-width: 0;
+  max-height: 100%;
+  margin: 0;
+}
+
+.review-duplicate__frame {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.review-duplicate__img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+/* The numbers under each copy: often the only thing that separates two exports
+   of one shot, so they are part of the question rather than decoration. */
+.review-duplicate__meta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+  font-size: 0.8rem;
+  max-width: 100%;
+  margin: 0;
+}
+
+.review-duplicate__name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------------------
+   The outlier check: the face big, the whole photo beside it for context.
+   --------------------------------------------------------------------------- */
+
+.review-outlier {
+  display: flex;
+  gap: 0.75rem;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+}
+
+/* The face is the question, so it gets the larger share and the stage's full
+   height; the aspect ratio comes from the crop's real proportions (inline, from
+   the component) so nothing is stretched. */
+.review-outlier__face {
+  position: relative;
+  flex: 0 1 auto;
+  height: 100%;
+  max-width: 55%;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.review-outlier__face > img {
+  width: 100%;
+  height: 100%;
+}
+
+.review-outlier__context {
+  flex: 1 1 0;
+  min-width: 0;
+  max-height: 100%;
+  /* The context frame caps itself against the stage like the single-photo one
+     does; this container just gives it a column to be centred in. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  container-type: size;
+}
+
+/* A portrait phone has no width for two frames: stack them, and let the stage's
+   own remainder absorb the change (it is `flex: 1 1 0` either way). */
+@media (max-width: 576px) {
+  .review-duplicate,
+  .review-outlier {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .review-outlier__face {
+    height: auto;
+    max-width: 100%;
+    max-height: 60%;
+  }
+}

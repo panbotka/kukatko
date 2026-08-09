@@ -2,8 +2,10 @@
 // durable "no" to a face↔subject guess or a photo↔label guess (a rejection), the
 // durable "yes, this really is them" to a face↔subject assignment (a
 // confirmation), the durable "these two photos are genuinely different" to a
-// duplicate pair (a dismissal), and the durable "this person really is marked
-// twice on this photo" to a repeated-marker group (also a dismissal). It exists
+// duplicate pair (a dismissal), the durable "yes, this really is the same photo
+// twice" to a duplicate pair (a confirmation), and the durable "this person
+// really is marked twice on this photo" to a repeated-marker group (also a
+// dismissal). It exists
 // to close photo-sorter's gap where an opinion was never persisted, so the very
 // same wrong face was offered again on the next search forever and the review
 // work never shrank (see docs/ARCHITECTURE.md and migrations 0031, 0032, 0034
@@ -12,7 +14,8 @@
 // Feedback records an OPINION; it never mutates the data it is about. Rejecting
 // a face does not unassign a marker or delete the face; rejecting a label does not
 // detach the label; confirming a face assigns nothing; dismissing a duplicate pair
-// archives nothing; dismissing a repeated-marker group detaches no marker. The
+// archives nothing; confirming one merges nothing; dismissing a repeated-marker
+// group detaches no marker. The
 // review features read these opinions to exclude what a user has already settled
 // (the unassigned-face search takes a face rejection set as an exclusion filter;
 // label expansion takes a label rejection set; outlier review takes a face
@@ -112,6 +115,8 @@ func (k LabelRejectionKey) valid() bool {
 // so a group-level opinion would be meaningless the moment the library changes. A
 // pair is the edge the detector actually drew, so dismissing a pair suppresses
 // that edge on every later scan. See migration 0034.
+// The key is validated and normalised on the way in by checkPairKey (see
+// pairs.go), so the two argument orders record the one same decision.
 type DuplicateDismissalKey struct {
 	// PhotoUID is one photo of the pair.
 	PhotoUID string
@@ -119,22 +124,20 @@ type DuplicateDismissalKey struct {
 	OtherUID string
 }
 
-// valid reports whether the key names two photos. It does not check that they
-// differ; that is ErrSamePhoto's job, so callers can tell an incomplete key from
-// an impossible pair.
-func (k DuplicateDismissalKey) valid() bool {
-	return k.PhotoUID != "" && k.OtherUID != ""
-}
-
-// normalized returns the key with the lexicographically smaller uid first, the
-// canonical form the table stores and its CHECK constraint enforces. The pair is
-// unordered, so normalising on the way in is what makes dismissing (A,B) and
-// (B,A) the same idempotent decision rather than two rows.
-func (k DuplicateDismissalKey) normalized() DuplicateDismissalKey {
-	if k.PhotoUID <= k.OtherUID {
-		return k
-	}
-	return DuplicateDismissalKey{PhotoUID: k.OtherUID, OtherUID: k.PhotoUID}
+// DuplicateConfirmationKey identifies a single "yes, this really is the same
+// photo twice" decision about an unordered pair of photos. It is the positive
+// mirror of DuplicateDismissalKey and keys the pair for the same reason: a group
+// is a connected component and is not stable, an edge is what the detector drew.
+//
+// Confirming merges nothing. It records the agreement so the duplicates page can
+// rank a group a human has already judged above the ones nobody has looked at;
+// the merge stays a separate, explicit act.
+// Like the dismissal, it is validated and normalised by checkPairKey.
+type DuplicateConfirmationKey struct {
+	// PhotoUID is one photo of the pair.
+	PhotoUID string
+	// OtherUID is the photo it was confirmed against.
+	OtherUID string
 }
 
 // DuplicateMarkerDismissalKey identifies a single "this person really is marked

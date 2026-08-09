@@ -145,11 +145,47 @@ func (f *fakeFaces) FacesByKeys(_ context.Context, keys []vectors.FaceKey) ([]ve
 	return out, nil
 }
 
-// fakeFeedback records rejections.
+// fakeFeedback records every opinion the game can persist.
 type fakeFeedback struct {
 	faceRejects  []feedback.FaceRejectionKey
 	labelRejects []feedback.LabelRejectionKey
+	faceConfirms []feedback.FaceConfirmationKey
+	dupConfirms  []feedback.DuplicateConfirmationKey
+	dupDismisses []feedback.DuplicateDismissalKey
 	err          error
+}
+
+// ConfirmFace records the face confirmation.
+func (f *fakeFeedback) ConfirmFace(
+	_ context.Context, key feedback.FaceConfirmationKey, _ audit.Entry,
+) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.faceConfirms = append(f.faceConfirms, key)
+	return nil
+}
+
+// ConfirmDuplicate records the duplicate confirmation.
+func (f *fakeFeedback) ConfirmDuplicate(
+	_ context.Context, key feedback.DuplicateConfirmationKey, _ audit.Entry,
+) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.dupConfirms = append(f.dupConfirms, key)
+	return nil
+}
+
+// DismissDuplicate records the duplicate dismissal.
+func (f *fakeFeedback) DismissDuplicate(
+	_ context.Context, key feedback.DuplicateDismissalKey, _ audit.Entry,
+) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.dupDismisses = append(f.dupDismisses, key)
+	return nil
 }
 
 // RejectFace records the face rejection.
@@ -571,7 +607,7 @@ func TestInterleave_proportions(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			merged := interleave(mk(KindFace, tt.faces), mk(KindLabel, tt.label))
+			merged := interleaveKinds([][]Question{mk(KindFace, tt.faces), mk(KindLabel, tt.label)})
 			var got []Kind
 			for _, q := range merged {
 				got = append(got, q.Kind)

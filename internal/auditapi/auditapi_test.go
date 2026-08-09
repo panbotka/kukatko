@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"testing"
 	"time"
 
@@ -76,21 +77,33 @@ func TestParseFilter(t *testing.T) {
 		if !yes.ReviewOnly {
 			t.Errorf("ReviewOnly = false, want true")
 		}
-		wantYes := []string{audit.ActionFaceAssign, audit.ActionLabelAttach}
-		if len(yes.Actions) != 2 || yes.Actions[0] != wantYes[0] || yes.Actions[1] != wantYes[1] {
+		// The bucket is audit's own list, so a new review question type becomes
+		// filterable here the moment it is answerable — asserting a hardcoded copy
+		// would only pin this test to yesterday's set.
+		wantYes := audit.ReviewYesActions()
+		if !slices.Equal(yes.Actions, wantYes) {
 			t.Errorf("Actions = %v, want %v", yes.Actions, wantYes)
+		}
+		if !slices.Contains(yes.Actions, audit.ActionFaceAssign) ||
+			!slices.Contains(yes.Actions, audit.ActionLabelAttach) {
+			t.Errorf("Actions = %v, want it to include the face assign and label attach", yes.Actions)
 		}
 
 		no, err := parseFilter(url.Values{"decision": {"no"}})
 		if err != nil {
 			t.Fatalf("parseFilter(decision=no) error = %v, want nil", err)
 		}
-		wantNo := []string{audit.ActionFaceReject, audit.ActionLabelReject}
+		wantNo := audit.ReviewNoActions()
 		if no.ReviewOnly {
 			t.Errorf("ReviewOnly = true, want false without via")
 		}
-		if len(no.Actions) != 2 || no.Actions[0] != wantNo[0] || no.Actions[1] != wantNo[1] {
+		if !slices.Equal(no.Actions, wantNo) {
 			t.Errorf("Actions = %v, want %v", no.Actions, wantNo)
+		}
+		if slices.ContainsFunc(no.Actions, func(a string) bool {
+			return slices.Contains(audit.ReviewYesActions(), a)
+		}) {
+			t.Errorf("Actions = %v, want the two buckets disjoint", no.Actions)
 		}
 	})
 

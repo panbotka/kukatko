@@ -210,12 +210,20 @@ func keeperLess(a, b Member) bool {
 	return b.UID < a.UID
 }
 
-// sortGroups orders groups for stable pagination: larger groups first, then by
-// the keeper's capture/creation time (newest first), then by group id. The slice
-// is sorted in place.
+// sortGroups orders groups for stable pagination: human-confirmed groups first,
+// then larger groups, then by the keeper's capture/creation time (newest first),
+// then by group id. The slice is sorted in place.
+//
+// Confirmation outranks size because it is the only key here that is not a guess.
+// Everything else orders machine suspicions by how suspicious they look; a
+// confirmed group is one where somebody has already answered the question the
+// page exists to ask, so it is the one where merging is a decision already made.
 func sortGroups(groups []Group) {
 	sort.SliceStable(groups, func(i, j int) bool {
 		gi, gj := groups[i], groups[j]
+		if gi.Confirmed != gj.Confirmed {
+			return gi.Confirmed
+		}
 		if len(gi.Members) != len(gj.Members) {
 			return len(gi.Members) > len(gj.Members)
 		}

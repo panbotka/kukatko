@@ -20,6 +20,7 @@ type graph struct {
 	embedMatched map[int]bool       // nodes that gained an embedding edge
 	embedDist    map[[2]int]float64 // node pair -> embedding cosine distance
 	dismissed    map[[2]int]bool    // node pairs the user settled as "not duplicates"
+	confirmed    map[[2]int]bool    // node pairs the user settled as "the same shot"
 }
 
 // newGraph returns an empty graph ready to accept hashes and pairs.
@@ -31,6 +32,7 @@ func newGraph() *graph {
 		embedMatched: make(map[int]bool),
 		embedDist:    make(map[[2]int]float64),
 		dismissed:    make(map[[2]int]bool),
+		confirmed:    make(map[[2]int]bool),
 	}
 }
 
@@ -76,6 +78,25 @@ func (g *graph) addDismissals(pairs []feedback.DuplicateDismissalKey) {
 			continue
 		}
 		g.dismissed[orderedPair(ia, ib)] = true
+	}
+}
+
+// addConfirmations registers the pairs a user settled as "yes, the same shot".
+// Unlike a dismissal it draws and suppresses nothing — the edge would be drawn
+// anyway — it only marks the pair, so a group holding one can be ranked as
+// human-confirmed. It must be called after addPhashes, since it translates uids
+// into node indices.
+//
+// A pair naming a uid this scan does not know (archived, or purged since the
+// confirmation) is ignored: the group it was about no longer exists.
+func (g *graph) addConfirmations(pairs []feedback.DuplicateConfirmationKey) {
+	for _, p := range pairs {
+		ia, okA := g.index[p.PhotoUID]
+		ib, okB := g.index[p.OtherUID]
+		if !okA || !okB || ia == ib {
+			continue
+		}
+		g.confirmed[orderedPair(ia, ib)] = true
 	}
 }
 
@@ -178,9 +199,25 @@ func (g *graph) buildGroup(nodeIdxs []int, byUID map[string]photos.Photo) (Group
 		ID:             minUID(members),
 		Reason:         g.reason(nodeIdxs),
 		KeeperUID:      keeper.UID,
+		Confirmed:      g.isConfirmed(nodeIdxs),
 		Members:        members,
 		keeperSortTime: keeper.sortTime,
 	}, true
+}
+
+// isConfirmed reports whether any pair inside the component carries a human
+// "yes, the same shot". One confirmed pair marks the whole group: the curator
+// answered about the group they were shown, and a component is what the page
+// offers to merge.
+func (g *graph) isConfirmed(nodeIdxs []int) bool {
+	for a := range nodeIdxs {
+		for b := a + 1; b < len(nodeIdxs); b++ {
+			if g.confirmed[orderedPair(nodeIdxs[a], nodeIdxs[b])] {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // collectMembers builds the Member list for the present node indices and returns

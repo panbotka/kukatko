@@ -1,9 +1,30 @@
 // Package review builds the "review game" question queue and applies answers.
 //
-// The game asks one question at a time — "is this face subject X?" over a photo
-// with an unnamed face, or "should this photo carry label Y?" over a photo that
-// looks like the ones already on that label — and the user answers yes, no or
-// don't-know.
+// The game asks one question at a time and the user answers yes, no or
+// don't-know. There are five kinds of question, and every one of them is a
+// yes/no over data some other part of the app already produced:
+//
+//   - face — "is this face subject X?" over a photo with an unnamed face;
+//   - label — "should this photo carry label Y?" over a photo that looks like
+//     the ones already on that label;
+//   - place — "was this photo taken in Z?" over a photo whose coordinates the
+//     geo-estimator guessed and nobody has ruled on;
+//   - duplicate — "is this the same photo?" over the two members of a
+//     near-duplicate pair, side by side;
+//   - outlier — "is this really X?" over a face already assigned to X but
+//     sitting far from X's centroid.
+//
+// The last three are a deliberate widening of what the game is for. The first
+// two clean up guesses the machine made about things nobody had decided yet; the
+// new ones clean up guesses the machine made *and acted on* — a location written
+// onto a photo, a pair the detector linked, an assignment somebody (or something)
+// already made. Those are the errors that otherwise sit in the library unnoticed,
+// because no page lists them as questions.
+//
+// None of the three ever destroys anything on its own: the duplicate check
+// records an opinion and NEVER merges, the outlier check detaches through the
+// ordinary assign state machine (the marker survives), and the place check only
+// ever moves a coordinate the estimator invented in the first place.
 //
 // A batch is mixed from two confidence tiers, because what the game is actually
 // buying is confirmed assignments per minute of a human's attention, not
@@ -17,8 +38,16 @@
 //
 // Within a tier the order is that tier's own: the band by distance from its
 // midpoint (closest to the decision boundary first), the confident tier by
-// confidence descending. The two kinds are then interleaved deterministically,
-// skewed toward whichever kind has more candidates.
+// confidence descending. The tiers apply to the face and label questions only —
+// the three checks over already-applied work have no single comparable
+// confidence axis, so each carries its own ordering (see extras.go).
+//
+// All five kinds are then interleaved deterministically, each spread through the
+// others in proportion to how much material it has. That merge, not a quota, is
+// what stops one kind owning a session: every collector stops at `need`
+// candidates, so with k kinds supplying material a batch of n holds about n/k of
+// each — and a kind that is the only one left still fills the batch, because an
+// exhausted library should not withhold the work it does have.
 //
 // Informativeness alone does not make the game playable, though. One label that
 // matches half the library supplies hundreds of band candidates and used to fill
@@ -35,10 +64,12 @@
 //
 // The queue composes the existing read-only searches — the recognition scan
 // (per-subject face candidates, which already excludes assigned faces, persisted
-// rejections, negative exemplars and sub-reviewable faces) and the
-// label-similarity search (which already excludes members and rejected photos).
-// Both are run in a bounded, rotating window: one batch of questions costs at
-// most FaceBudget subjects and LabelBudget labels, stops as soon as the batch is
+// rejections, negative exemplars and sub-reviewable faces), the label-similarity
+// search (which already excludes members and rejected photos), the estimated
+// locations awaiting a verdict, the near-duplicate grouping and the per-person
+// outlier ranking. Each is run in a bounded, rotating window: one batch of
+// questions costs at most FaceBudget subjects, LabelBudget labels, OutlierBudget
+// rankings and a page of the other two, stops as soon as the batch is
 // full, and is capped by BuildTimeout on top of that. Answering one question
 // must not cost a library-wide work list — sweeping all of it took four minutes
 // on a real library, which is longer than any browser waits. The cursors advance
@@ -50,10 +81,15 @@
 // (labels.review_enabled): it then produces no questions and is not scanned, so
 // it costs a rebuild nothing. Subjects have no equivalent switch.
 //
-// Answers route through the existing write paths: yes on a face goes through the
-// facematch assign state machine, yes on a label through the organize attach
-// path, and no records a persisted rejection in feedback. The package never
-// opens a second write path.
+// Answers route through the existing write paths and the package never opens a
+// second one: yes on a face goes through the facematch assign state machine, yes
+// on a label through the organize attach path, a place verdict through the
+// geo-estimate reviewer's own accept/reject, an outlier "no" back through the
+// assign state machine as unassign_person, and every other verdict records a
+// persisted opinion in feedback. See answer.go for the whole map.
+//
+// What the game asks about is also bounded by what it is allowed to do: it never
+// merges duplicates, never deletes a photo and never invalidates a marker.
 //
 // Built queues are cached per user for CacheTTL so a batch fetch does not rerun
 // the vector searches, and answered or skipped questions are tracked
@@ -72,10 +108,14 @@ import (
 
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/candidates"
+	"github.com/panbotka/kukatko/internal/duplicates"
 	"github.com/panbotka/kukatko/internal/expand"
 	"github.com/panbotka/kukatko/internal/facematch"
 	"github.com/panbotka/kukatko/internal/feedback"
+	"github.com/panbotka/kukatko/internal/geoestimate"
+	"github.com/panbotka/kukatko/internal/mediaurl"
 	"github.com/panbotka/kukatko/internal/organize"
+	"github.com/panbotka/kukatko/internal/outliers"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/sweep"
@@ -129,6 +169,19 @@ const (
 	// Raising it makes a rebuild cheaper and the game more repetitive; lowering it
 	// does the opposite.
 	DefaultMaxPerEntity = 4
+	// DefaultOutlierBudget is how many subjects one rebuild ranks for outliers.
+	// Ranking a subject means loading every face assigned to them and scoring it
+	// against a trimmed centroid, which is the most expensive per-entity read of
+	// the five kinds, so the window is smaller than the face sweep's.
+	DefaultOutlierBudget = 4
+	// DefaultOutlierThreshold is the minimum cosine distance from a person's
+	// centroid a face must have before the game asks about it. Two embeddings of
+	// different people sit around 1.0, so half of that is comfortably past "this
+	// is a bad photo of the right person" — which matters more here than
+	// elsewhere, because the question is about an assignment somebody already
+	// made, and asking about ten correct ones to find one wrong one is how a
+	// player learns to answer yes without looking.
+	DefaultOutlierThreshold = 0.5
 )
 
 const (
@@ -164,16 +217,29 @@ var (
 	ErrInvalidSource = errors.New("review: invalid source")
 )
 
-// Kind tells face and label questions apart.
+// Kind tells the question types apart.
 type Kind string
 
-// The two question kinds served by the queue.
+// The question kinds served by the queue.
 const (
 	// KindFace asks whether an unnamed face is a given subject.
 	KindFace Kind = "face"
 	// KindLabel asks whether a photo should carry a given label.
 	KindLabel Kind = "label"
+	// KindPlace asks whether a photo with an estimated location really was taken
+	// at the place those coordinates name.
+	KindPlace Kind = "place"
+	// KindDuplicate asks whether two near-identical photos are the same shot.
+	KindDuplicate Kind = "duplicate"
+	// KindOutlier asks whether a face already assigned to a person, but sitting
+	// far from that person's centroid, really is them.
+	KindOutlier Kind = "outlier"
 )
+
+// Kinds lists every question kind, in the order a batch interleaves them. The
+// order is fixed rather than incidental: it is the tie-break of the merge, so a
+// rebuild over an unchanged library stays byte-for-byte reproducible.
+var Kinds = []Kind{KindFace, KindLabel, KindPlace, KindDuplicate, KindOutlier}
 
 // Answer is the player's verdict on one question.
 type Answer string
@@ -194,6 +260,9 @@ const (
 	resultAssigned        = "assigned"
 	resultLabeled         = "labeled"
 	resultRejected        = "rejected"
+	resultConfirmed       = "confirmed"
+	resultCleared         = "cleared"
+	resultDetached        = "detached"
 	resultSkipped         = "skipped"
 	resultAlreadyAnswered = "already_answered"
 	resultGone            = "gone"
@@ -247,6 +316,35 @@ type Question struct {
 	MarkerUID string `json:"marker_uid,omitempty"`
 	// Label is the label under question (label questions only).
 	Label *organize.Label `json:"label,omitempty"`
+	// Place is the estimated location under question (place questions only).
+	Place *PlaceGuess `json:"place,omitempty"`
+	// Other is the second photo of the pair (duplicate questions only).
+	Other *photos.Photo `json:"other,omitempty"`
+	// GroupID is the duplicate group the pair belongs to (duplicate questions
+	// only). It is what the variety rules treat as the question's entity, so one
+	// crowded group cannot own a batch.
+	GroupID string `json:"group_id,omitempty"`
+	// Distance is the face's cosine distance from its subject's centroid —
+	// how much of an outlier it is (outlier questions only).
+	Distance float64 `json:"distance,omitempty"`
+}
+
+// PlaceGuess is the estimated location a place question asks about: the
+// coordinates the estimator inferred and the name they reverse-geocoded to.
+type PlaceGuess struct {
+	// Name is the most specific human-readable name of the place — the place
+	// name, else the city, else the region, else the country. It is never empty:
+	// a coordinate nobody has geocoded cannot be put into a question, so those
+	// photos are not asked about at all.
+	Name string `json:"name"`
+	// Country, City and PlaceName are the cached hierarchy behind Name, so a UI
+	// can show the fuller address under the question without a second request.
+	Country   string `json:"country,omitempty"`
+	City      string `json:"city,omitempty"`
+	PlaceName string `json:"place_name,omitempty"`
+	// Lat and Lng are the estimated coordinates themselves.
+	Lat float64 `json:"lat"`
+	Lng float64 `json:"lng"`
 }
 
 // QueueResult is one batch of questions plus the session counters.
@@ -268,8 +366,11 @@ type QueueResult struct {
 
 // AnswerResult reports what one answer did plus the session counters.
 type AnswerResult struct {
-	// Result is one of assigned, labeled, rejected, skipped, already_answered
-	// or gone (the question's target vanished; the UI moves on).
+	// Result names the write the answer produced: assigned (face yes), labeled
+	// (label yes), confirmed (duplicate or outlier yes, place accept), cleared
+	// (place no), detached (outlier no), rejected (face or label no, duplicate
+	// dismissal), skipped, already_answered, or gone — the question's target
+	// vanished, and the UI simply moves on.
 	Result string `json:"result"`
 	// Answered is how many questions this session answered so far.
 	Answered int `json:"answered"`
@@ -314,12 +415,70 @@ type FaceStore interface {
 	FacesByKeys(ctx context.Context, keys []vectors.FaceKey) ([]vectors.Face, error)
 }
 
-// FeedbackStore is the slice of *feedback.Store the review game needs.
+// FeedbackStore is the slice of *feedback.Store the review game needs. Every
+// method records an opinion and mutates nothing it is about — which is exactly
+// why the game may call them: a game must never quietly merge or delete.
 type FeedbackStore interface {
 	// RejectFace persists "this face is not this subject"; idempotent.
 	RejectFace(ctx context.Context, key feedback.FaceRejectionKey, entry audit.Entry) error
 	// RejectLabel persists "this photo should not carry this label"; idempotent.
 	RejectLabel(ctx context.Context, key feedback.LabelRejectionKey, entry audit.Entry) error
+	// ConfirmFace persists "this assigned face really is this subject", which
+	// takes it out of the outlier ranking for good; idempotent.
+	ConfirmFace(ctx context.Context, key feedback.FaceConfirmationKey, entry audit.Entry) error
+	// ConfirmDuplicate persists "these two really are the same shot". It merges
+	// nothing; idempotent.
+	ConfirmDuplicate(ctx context.Context, key feedback.DuplicateConfirmationKey, entry audit.Entry) error
+	// DismissDuplicate persists "these two are genuinely different", which drops
+	// the edge from every later duplicate scan; idempotent.
+	DismissDuplicate(ctx context.Context, key feedback.DuplicateDismissalKey, entry audit.Entry) error
+}
+
+// PlaceReviewer lists the locations the estimator guessed and applies a verdict
+// to one; *geoestimate.Reviewer satisfies it. A nil one switches the place check
+// off — the queue simply never asks that kind of question.
+type PlaceReviewer interface {
+	// Pending returns one window of the photos awaiting a verdict plus the total
+	// size of that set.
+	Pending(ctx context.Context, offset, limit int) ([]geoestimate.Pending, int, error)
+	// Accept keeps an estimated location and promotes it to a decision.
+	Accept(ctx context.Context, photoUID string, meta audit.Meta) error
+	// Reject throws an estimated location away, leaving the tombstone that stops
+	// the estimator handing it back.
+	Reject(ctx context.Context, photoUID string, meta audit.Meta) error
+}
+
+// DuplicateFinder returns a page of near-duplicate groups; *duplicates.Service
+// satisfies it. A nil one switches the duplicate check off.
+type DuplicateFinder interface {
+	// FindGroups returns one page of duplicate groups, largest and
+	// human-confirmed first.
+	FindGroups(ctx context.Context, limit, offset int) (duplicates.Result, error)
+}
+
+// OutlierRanker ranks one subject's assigned faces by distance from that
+// subject's centroid; *outliers.Service satisfies it. A nil one switches the
+// outlier check off.
+type OutlierRanker interface {
+	// Outliers returns the subject's faces, most suspicious first, narrowed by
+	// opts and with the already-confirmed ones excluded.
+	Outliers(ctx context.Context, subjectUID string, opts outliers.Options) (outliers.Result, error)
+}
+
+// SubjectLister lists the subjects the outlier rotation walks; *people.Store
+// satisfies it.
+type SubjectLister interface {
+	// ListSubjects returns every subject with its non-invalid marker count.
+	ListSubjects(ctx context.Context) ([]people.SubjectCount, error)
+}
+
+// PhotoStore hydrates the catalogue records the duplicate and outlier questions
+// are about; *photos.Store satisfies it. The face and label searches hand their
+// photos over already built, but a duplicate group carries only comparison
+// fields and an outlier face only a photo uid.
+type PhotoStore interface {
+	// ListByUIDs returns the photos for the given uids, ignoring unknown ones.
+	ListByUIDs(ctx context.Context, uids []string) ([]photos.Photo, error)
 }
 
 // Assigner applies the existing face-assignment state machine; *facematch.Service
@@ -341,10 +500,27 @@ type Config struct {
 	Organize OrganizeStore
 	// Faces resolves a question's face at answer time.
 	Faces FaceStore
-	// Feedback persists rejections for no answers.
+	// Feedback persists the opinions the answers record.
 	Feedback FeedbackStore
-	// Assigner applies yes answers on faces.
+	// Assigner applies yes answers on faces and no answers on outliers.
 	Assigner Assigner
+	// Places supplies and settles the estimated-location questions; nil switches
+	// the place check off.
+	Places PlaceReviewer
+	// Duplicates supplies the near-duplicate pairs; nil switches the duplicate
+	// check off.
+	Duplicates DuplicateFinder
+	// Outliers ranks a subject's assigned faces; nil switches the outlier check
+	// off, as does a nil Subjects.
+	Outliers OutlierRanker
+	// Subjects lists the subjects the outlier rotation walks.
+	Subjects SubjectLister
+	// Photos hydrates the photo records of duplicate and outlier questions; nil
+	// switches both of those checks off.
+	Photos PhotoStore
+	// Media stamps thumbnail/download URLs onto the photos the three new
+	// question kinds carry. A nil builder yields the application's own routes.
+	Media *mediaurl.Builder
 	// Log receives non-fatal rebuild warnings; nil means slog.Default().
 	Log *slog.Logger
 	// BandMin is the inclusive lower confidence bound of the uncertainty band.
@@ -375,6 +551,12 @@ type Config struct {
 	// MaxPerEntity caps how many questions about one subject or one label may
 	// enter a batch.
 	MaxPerEntity int
+	// OutlierBudget caps how many subjects one rebuild ranks for outliers;
+	// non-positive means DefaultOutlierBudget.
+	OutlierBudget int
+	// OutlierThreshold is the minimum centroid distance a face must have to be
+	// worth asking about; non-positive means DefaultOutlierThreshold.
+	OutlierThreshold float64
 	// Now overrides the clock in tests; nil means time.Now.
 	Now func() time.Time
 }
@@ -382,13 +564,19 @@ type Config struct {
 // Service builds review queues and applies answers. It is safe for concurrent
 // use; per-user session state lives in memory.
 type Service struct {
-	sweeper  Sweeper
-	expander Expander
-	organize OrganizeStore
-	faces    FaceStore
-	feedback FeedbackStore
-	assigner Assigner
-	log      *slog.Logger
+	sweeper    Sweeper
+	expander   Expander
+	organize   OrganizeStore
+	faces      FaceStore
+	feedback   FeedbackStore
+	assigner   Assigner
+	places     PlaceReviewer
+	duplicates DuplicateFinder
+	outliers   OutlierRanker
+	subjects   SubjectLister
+	photos     PhotoStore
+	media      *mediaurl.Builder
+	log        *slog.Logger
 
 	bandMin          float64
 	bandMax          float64
@@ -402,17 +590,24 @@ type Service struct {
 	labelBudget      int
 	buildTimeout     time.Duration
 	maxPerEntity     int
+	outlierBudget    int
+	outlierThreshold float64
 	now              func() time.Time
 
 	mu       sync.Mutex
 	sessions map[string]*session
 
-	// cursorMu guards the two rotation cursors below. They are instance-wide,
-	// not per user: every rebuild advances them, so consecutive rebuilds walk
-	// successive windows of the library instead of re-reading its head.
-	cursorMu    sync.Mutex
-	faceCursor  int
-	labelCursor int
+	// cursorMu guards the rotation cursors below. They are instance-wide, not
+	// per user: every rebuild advances them, so consecutive rebuilds walk
+	// successive windows of the library instead of re-reading its head. There is
+	// one per question kind, because the kinds are scanned independently and a
+	// shared cursor would make one kind's progress skip another's work.
+	cursorMu      sync.Mutex
+	faceCursor    int
+	labelCursor   int
+	placeCursor   int
+	dupCursor     int
+	outlierCursor int
 }
 
 // faceOffset returns the subject-rotation cursor for the next rebuild.
@@ -445,6 +640,53 @@ func (s *Service) advanceLabelOffset(next int) {
 	s.labelCursor = next
 }
 
+// placeOffset returns the estimated-location rotation cursor for the next
+// rebuild.
+func (s *Service) placeOffset() int {
+	s.cursorMu.Lock()
+	defer s.cursorMu.Unlock()
+	return s.placeCursor
+}
+
+// advancePlaceOffset moves the estimated-location cursor past the window the
+// last rebuild read.
+func (s *Service) advancePlaceOffset(next int) {
+	s.cursorMu.Lock()
+	defer s.cursorMu.Unlock()
+	s.placeCursor = next
+}
+
+// dupOffset returns the duplicate-group rotation cursor for the next rebuild.
+func (s *Service) dupOffset() int {
+	s.cursorMu.Lock()
+	defer s.cursorMu.Unlock()
+	return s.dupCursor
+}
+
+// advanceDupOffset moves the duplicate-group cursor past the page the last
+// rebuild read.
+func (s *Service) advanceDupOffset(next int) {
+	s.cursorMu.Lock()
+	defer s.cursorMu.Unlock()
+	s.dupCursor = next
+}
+
+// outlierOffset returns the outlier-subject rotation cursor for the next
+// rebuild.
+func (s *Service) outlierOffset() int {
+	s.cursorMu.Lock()
+	defer s.cursorMu.Unlock()
+	return s.outlierCursor
+}
+
+// advanceOutlierOffset moves the outlier-subject cursor past the subjects the
+// last rebuild ranked.
+func (s *Service) advanceOutlierOffset(next int) {
+	s.cursorMu.Lock()
+	defer s.cursorMu.Unlock()
+	s.outlierCursor = next
+}
+
 // New assembles a review Service from cfg. It panics when a required
 // dependency is nil (a wiring bug, not a runtime condition); out-of-range
 // tunables fall back to the package defaults.
@@ -457,6 +699,12 @@ func New(cfg Config) *Service {
 		faces:            cfg.Faces,
 		feedback:         cfg.Feedback,
 		assigner:         cfg.Assigner,
+		places:           cfg.Places,
+		duplicates:       cfg.Duplicates,
+		outliers:         cfg.Outliers,
+		subjects:         cfg.Subjects,
+		photos:           cfg.Photos,
+		media:            cfg.Media,
 		log:              cfg.Log,
 		bandMin:          cfg.BandMin,
 		bandMax:          cfg.BandMax,
@@ -470,6 +718,8 @@ func New(cfg Config) *Service {
 		labelBudget:      orDefaultInt(cfg.LabelBudget, DefaultLabelBudget),
 		buildTimeout:     cfg.BuildTimeout,
 		maxPerEntity:     orDefaultInt(cfg.MaxPerEntity, DefaultMaxPerEntity),
+		outlierBudget:    orDefaultInt(cfg.OutlierBudget, DefaultOutlierBudget),
+		outlierThreshold: cfg.OutlierThreshold,
 		now:              cfg.Now,
 		sessions:         make(map[string]*session),
 	}
@@ -497,6 +747,9 @@ func (s *Service) applyFallbacks() {
 		s.log = slog.Default()
 	}
 	s.applyTierFallbacks()
+	if s.outlierThreshold <= 0 || s.outlierThreshold >= 2 {
+		s.outlierThreshold = DefaultOutlierThreshold
+	}
 	if s.cacheTTL <= 0 {
 		s.cacheTTL = DefaultCacheTTL
 	}
