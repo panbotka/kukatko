@@ -25,6 +25,7 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useGridScrollMemory } from '../hooks/useGridScrollMemory'
 import { usePhotoSearch } from '../hooks/usePhotoSearch'
 import { useReloadKey } from '../hooks/useReloadKey'
+import { useRecordSearch } from '../hooks/useSearchHistory'
 import { useSearchMode } from '../hooks/useSearchMode'
 import { detailQueryString } from '../lib/detailView'
 import { gridScrollKey, readGridScroll } from '../lib/gridScroll'
@@ -52,6 +53,10 @@ const SEARCH_DEBOUNCE_MS = 350
  *
  * This page also owns saved searches: the header pairs a "save this view" button
  * with the {@link SavedSearchesDropdown} that lists, applies and manages them.
+ * Alongside them, every query that actually runs here is remembered per user and
+ * offered back by {@link SearchQueryInput} whenever the box is focused and empty —
+ * saved searches are the ones worth naming, the history the ones merely worth
+ * repeating.
  *
  * Editors can multi-select results straight away — the corner checkmark is
  * offered from the outset, as on the library — and picking one raises the
@@ -116,6 +121,12 @@ export function SearchPage() {
   // page's own input, separate from the filter bar.
   const [text, setText] = useState(view.q)
   const [savingView, setSavingView] = useState(false)
+
+  // Remember what was searched for, so the box can offer it back — here and on
+  // whatever device the reader picks up next. It watches the URL query, which is
+  // the one that actually ran, never the keystrokes; the hook waits for it to
+  // settle so a query typed in bursts is remembered once, not as its prefixes.
+  useRecordSearch(view.q)
 
   // Keep the input in sync when the URL query changes from elsewhere (a saved
   // search, Back/Forward, a shared link).
@@ -202,6 +213,11 @@ export function SearchPage() {
                 autoFocus
                 placeholder={t('search.placeholder')}
                 onChange={setText}
+                onRun={(next) => {
+                  // Picking a recent search runs it at once: it is a whole query,
+                  // so waiting out the typing debounce would only feel slow.
+                  setView({ q: next }, { replace: true })
+                }}
               />
             </Form.Group>
           </Col>

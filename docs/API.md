@@ -810,6 +810,25 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   context — a saved search of another owner is **always reported as 404** (never disclosed), the body
   `DisallowUnknownFields` + a 1 MiB limit. The `saved_searches` table (migration `0017_saved_searches.sql`).
   Mounted by `server.WithAPI` (`buildSavedSearchAPI` in `cmd/kukatko/savedsearch.go`).
+- **Search History API (`/api/v1`, `internal/searchhistoryapi` + `internal/searchhistory`, authenticated via
+  `RequireAuth`):** each user's **recent searches** — the short ordered list the search box and the command
+  palette offer back while they are empty. It lives server-side, not in the browser, so a query composed on a
+  laptop is offered on the phone. `GET /search-history` → `{searches:[{query,searched_at}]}`, most recent
+  first, at most **20** (`searchhistory.MaxEntries`); an empty history is `[]`, never `null`, so a client always
+  parses one shape. `POST /search-history` `{query}` → **204** with no body (the caller already knows what it
+  searched for; the refreshed list is only wanted when the dropdown next opens, which is a GET). `DELETE
+  /search-history` → 204, **idempotent** (clearing an empty history succeeds). A blank/whitespace-only query
+  → 400; the body is `DisallowUnknownFields` + an 8 KiB limit. Recording is an **upsert**: re-running a query
+  moves it to the front instead of appending a duplicate, and each write prunes the history back to 20 in the
+  same transaction, so there is no retention job. Queries are stored verbatim apart from trimming and a
+  **500-character** cap (`searchhistory.Normalize`, which truncates rather than rejecting); deduplication is on
+  that exact trimmed text, so `Praha` and `praha` are two entries. **Every operation is scoped to the
+  authenticated user** — there is no path parameter and no owner in any body, so a caller can only ever read,
+  extend or clear their own history, and one user's queries can never appear in another's list. Readable and
+  writable by **every role, viewers included** (searching is not curation), and deliberately **not audited**:
+  a private convenience list is not a library mutation. The `search_history` table (migration
+  `0056_search_history.sql`). Mounted by `server.WithAPI` (`buildSearchHistoryAPI` in
+  `cmd/kukatko/searchhistory.go`).
 - **Announcement API (`/api/v1`, `internal/announcementapi` + `internal/announcement`, dual-guard):**
   a single **instance-wide announcement** (a banner for everyone logged in). `GET /announcement` behind `RequireAuth`
   (anyone authenticated reads) → `{message, level?, author_uid?, updated_at?}`; **when nothing is published it returns

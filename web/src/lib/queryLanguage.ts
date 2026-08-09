@@ -11,6 +11,7 @@
  */
 
 import { PERIOD_QUERY_KEYS } from './period'
+import { foldText } from './text'
 
 /** Every filter key of the query language, including aliases, alphabetical. */
 export const FILTER_KEYS = [
@@ -68,10 +69,18 @@ interface TokenChar {
   r: string
   /** True when the character was quoted or backslash-escaped, so it is literal. */
   lit: boolean
+  /**
+   * Index in the input where this character's source begins — the backslash for
+   * an escaped one. Quotes are not characters, so the opening quote of a value
+   * lies *before* the index of its first character.
+   */
+  at: number
 }
 
 /** One whitespace-separated token: its verbatim source and its scanned characters. */
 interface ScannedToken {
+  /** Index in the input where the token begins. */
+  start: number
   /** The token exactly as typed, quotes included. */
   raw: string
   /** The token's characters with their literal flags. */
@@ -103,7 +112,7 @@ function scanTokens(input: string): ScannedToken[] {
     while (i < input.length) {
       const r = input[i]
       if (r === '\\' && i + 1 < input.length) {
-        chars.push({ r: input[i + 1], lit: true })
+        chars.push({ r: input[i + 1], lit: true, at: i })
         i += 2
         continue
       }
@@ -115,22 +124,30 @@ function scanTokens(input: string): ScannedToken[] {
       if (!inQuote && /\s/.test(r)) {
         break
       }
-      chars.push({ r, lit: inQuote })
+      chars.push({ r, lit: inQuote, at: i })
       i++
     }
-    tokens.push({ raw: input.slice(start, i), chars })
+    tokens.push({ start, raw: input.slice(start, i), chars })
   }
   return tokens
 }
 
+/** A filter-shaped token split at its operator colon. */
+interface SplitToken {
+  /** The lowercased filter key. */
+  key: string
+  /** Index in `chars` of the colon that separates key from value. */
+  colon: number
+}
+
 /**
- * The lowercased filter key of a token, or null when the token is not
+ * Splits a token at its operator colon, or returns null when the token is not
  * filter-shaped. Mirrors the backend's rule: the split happens at the first
  * unescaped, unquoted colon, at least one character must precede it, and every
  * character of the key must be an unescaped ASCII letter — so `title:x` is a
  * filter while `12:30`, `-year:1965` and a quoted `"a:b"` are free text.
  */
-function tokenKey(chars: TokenChar[]): string | null {
+function splitToken(chars: TokenChar[]): SplitToken | null {
   for (let i = 0; i < chars.length; i++) {
     const c = chars[i]
     if (c.r !== ':' || c.lit) {
@@ -146,9 +163,17 @@ function tokenKey(chars: TokenChar[]): string | null {
       }
       key += kc.r
     }
-    return key.toLowerCase()
+    return { key: key.toLowerCase(), colon: i }
   }
   return null
+}
+
+/**
+ * The lowercased filter key of a token, or null when the token is not
+ * filter-shaped ({@link splitToken}).
+ */
+function tokenKey(chars: TokenChar[]): string | null {
+  return splitToken(chars)?.key ?? null
 }
 
 /**
@@ -250,6 +275,191 @@ export function suggestFilterKeys(input: string): KeySuggestion | null {
  */
 export function applyFilterKey(input: string, suggestion: KeySuggestion, key: string): string {
   return input.slice(0, suggestion.start) + key + ':'
+}
+
+/**
+ * The facets whose *values* the search box can complete. They are the three
+ * key:value filters whose values are names a person actually has to remember —
+ * an album title, a label, a person — as opposed to a number, a date or a
+ * yes/no, which nothing can usefully propose.
+ */
+export type ValueFacet = 'album' | 'label' | 'person'
+
+/**
+ * Which facet each completable filter key draws its values from. `subject:` is
+ * `person:`'s alias in the query language, so it completes from the same list.
+ */
+const VALUE_FACET_BY_KEY: Readonly<Record<string, ValueFacet | undefined>> = {
+  album: 'album',
+  label: 'label',
+  person: 'person',
+  subject: 'person',
+}
+
+/** Maximum number of values the autocomplete dropdown offers at once. */
+const MAX_VALUE_SUGGESTIONS = 8
+
+/** A value-autocomplete proposal for the `key:value` token being typed. */
+export interface ValueSuggestion {
+  /** The facet whose names are the candidates. */
+  facet: ValueFacet
+  /** The value text typed so far; `''` immediately after the colon. */
+  prefix: string
+  /**
+   * Index in the input where the value being typed starts — right after the
+   * colon (or after a `|` alternative separator or a `!` negation). Everything
+   * from here to the end of the input is replaced by the chosen value, opening
+   * quote included, which is what lets the replacement re-quote it correctly.
+   */
+  start: number
+}
+
+/** The plain text of a token's characters, dropping quotes and escapes. */
+function charsText(chars: readonly TokenChar[]): string {
+  return chars.map((c) => c.r).join('')
+}
+
+/**
+ * Suggests values for the `key:value` token being typed at the end of the
+ * input: `person:an` proposes the people whose name starts with "an",
+ * `album:` proposes every album. Returns null whenever the trailing token is
+ * not a completable filter — free text, a key that takes no names, or a token
+ * the caret has already left (a trailing space).
+ *
+ * Within the value it honours the query language's own structure: a `|`
+ * alternative separator and a leading `!` negation start a fresh value, so
+ * `label:cat|do` completes `do` and leaves `cat|` alone. An unterminated quote
+ * is *not* a reason to bail out — `album:"Léto 2` is exactly when a title with
+ * spaces most needs completing.
+ */
+export function suggestFilterValues(input: string): ValueSuggestion | null {
+  const tokens = scanTokens(input)
+  const token = tokens.at(-1)
+  // The caret must still be inside the token: a trailing space (outside quotes)
+  // ends it, and whatever comes next is a new token, not this value.
+  if (token === undefined || token.start + token.raw.length !== input.length) {
+    return null
+  }
+  const split = splitToken(token.chars)
+  if (split === null) {
+    return null
+  }
+  const facet = VALUE_FACET_BY_KEY[split.key]
+  if (facet === undefined) {
+    return null
+  }
+  return { facet, ...valueBounds(token, split.colon) }
+}
+
+/**
+ * Where inside `token` the value currently being typed starts, and the text of
+ * it so far. `colon` is the index in `token.chars` of the operator colon.
+ *
+ * The start is expressed as an index into the whole input and always points
+ * *after* a one-character delimiter (`:`, `|` or `!`), never at a character of
+ * the value: an opening quote is not a character at all, so anchoring on the
+ * delimiter is what makes the replacement swallow it.
+ */
+function valueBounds(token: ScannedToken, colon: number): { prefix: string; start: number } {
+  let delimiter = colon
+  for (let i = colon + 1; i < token.chars.length; i++) {
+    if (token.chars[i].r === '|' && !token.chars[i].lit) {
+      delimiter = i
+    }
+  }
+  const next = delimiter + 1
+  if (next < token.chars.length && token.chars[next].r === '!' && !token.chars[next].lit) {
+    delimiter = next
+  }
+  return {
+    prefix: charsText(token.chars.slice(delimiter + 1)),
+    // Every delimiter is an unescaped, unquoted single character, so its source
+    // is one character wide.
+    start: token.chars[delimiter].at + 1,
+  }
+}
+
+/** Characters that force a filter value to be quoted to survive the parser. */
+const VALUE_NEEDS_QUOTES = /[\s"\\|*]/
+
+/**
+ * Renders a value so the query language reads it back verbatim: quoted when it
+ * holds whitespace or an operator character (`|` splits alternatives, `*` is a
+ * wildcard, a leading `!`/`-` negates), with any quote or backslash inside
+ * backslash-escaped. Everything inside double quotes is literal to the parser,
+ * so a title such as `Léto | 2024` survives intact.
+ */
+export function quoteFilterValue(value: string): string {
+  const plain =
+    value !== '' &&
+    !VALUE_NEEDS_QUOTES.test(value) &&
+    !value.startsWith('!') &&
+    !value.startsWith('-')
+  if (plain) {
+    return value
+  }
+  return `"${value.replace(/[\\"]/g, '\\$&')}"`
+}
+
+/**
+ * Applies a chosen value suggestion: replaces the partially typed value with
+ * the properly quoted one and adds a trailing space, so the next token starts
+ * clean and the dropdown closes on its own.
+ */
+export function applyFilterValue(
+  input: string,
+  suggestion: ValueSuggestion,
+  value: string,
+): string {
+  return input.slice(0, suggestion.start) + quoteFilterValue(value) + ' '
+}
+
+/** One completable value: the name a query would carry, and its photo tally. */
+export interface FilterValue {
+  /** The name exactly as a query must spell it (an album title, a label, a person). */
+  name: string
+  /** How many photos carry it — what ranks the proposals. */
+  count: number
+}
+
+/**
+ * The values matching a typed prefix, best first: a prefix match after folding
+ * both sides (so `namesti` finds `Náměstí` and `anna` finds `Anna`), ranked by
+ * photo count and then alphabetically, and capped at
+ * {@link MAX_VALUE_SUGGESTIONS}. An empty prefix matches everything, which is
+ * what makes a bare `person:` offer the people who appear most.
+ *
+ * Values that fold to the same name are collapsed: a query matches by name, so
+ * two identically titled albums are one and the same proposal.
+ */
+export function matchFilterValues(
+  values: readonly FilterValue[],
+  prefix: string,
+  limit: number = MAX_VALUE_SUGGESTIONS,
+): FilterValue[] {
+  const folded = foldText(prefix)
+  const matches = values.filter((value) => {
+    const name = foldText(value.name)
+    return name !== '' && name.startsWith(folded)
+  })
+  // Sorted before the fold-dedup so the survivor of two identically named values
+  // is the one with the higher count.
+  matches.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+
+  const seen = new Set<string>()
+  const out: FilterValue[] = []
+  for (const value of matches) {
+    const name = foldText(value.name)
+    if (seen.has(name)) {
+      continue
+    }
+    seen.add(name)
+    out.push(value)
+    if (out.length === limit) {
+      break
+    }
+  }
+  return out
 }
 
 /**
