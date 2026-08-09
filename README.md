@@ -77,11 +77,17 @@ It is **not** for you if you are looking for:
   never merges, never deletes and never invalidates anything on its own. The questions come in
   **rounds of ten, composed rather than sorted**: consecutive questions deliberately differ in who or
   what they are about, in kind, in difficulty, and in which afternoon and which decade the photo
-  comes from, so a session stops feeling like an interrogation about one person. Each round ends with
-  a tally of what it covered, and carries one card that asks nothing at all — a photo somebody once
-  starred or favourited, with its title and year. Confirming a face answers back with what that
-  person's collection now looks like. A leaderboard counts who has answered the most and how many
-  days in a row they have kept it up, because a shared library is tidied by more than one person.
+  comes from, so a session stops feeling like an interrogation about one person. You can see where you
+  are inside the round (4/10) and how many answers you have in a row; each round ends with a tally of
+  what it covered and a single tap into the next one, and carries one card that asks nothing at all —
+  a photo somebody once starred or favourited, with its title and year. Confirming a face answers back
+  with what that person's collection now looks like. The day's first round is „Dnešní mix", and
+  finishing it is enough for the day, though nothing stops you carrying on. **On a phone the three
+  answers are a swipe**: right yes, left no, down don't know, with the card following your thumb.
+  Leaving is safe at any point — every answer was saved as it was given — and you leave with a summary
+  of the session and a small mosaic of the photos you touched. A leaderboard counts who has answered
+  the most and how many days in a row they have kept it up, because a shared library is tidied by more
+  than one person.
 - **A library an AI agent can use.** Kukátko can expose itself as an **MCP server**, so an agent
   searches and organizes the library directly ("find all of grandma's photos from the sixties and
   put them in an album"). Off by default, authenticated with an ordinary API token, bound by the

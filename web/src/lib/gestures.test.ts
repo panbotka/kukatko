@@ -10,8 +10,11 @@ import {
   pinchScale,
   swipeAction,
   SWIPE_THRESHOLD,
+  swipeVerdict,
   touchDistance,
   touchMidpoint,
+  VERDICT_HINT_THRESHOLD,
+  VERDICT_THRESHOLD,
 } from './gestures'
 
 describe('swipeAction', () => {
@@ -113,5 +116,41 @@ describe('clampPan', () => {
     // scale 2 over a 1000×800 viewport → overflow 1000×800, half is 500×400.
     expect(clampPan({ x: 900, y: -900 }, 2, 1000, 800)).toEqual({ x: 500, y: -400 })
     expect(clampPan({ x: 100, y: -100 }, 2, 1000, 800)).toEqual({ x: 100, y: -100 })
+  })
+})
+
+describe('swipeVerdict', () => {
+  it('gives the three answers the arrow keys give, in the same directions', () => {
+    expect(swipeVerdict(VERDICT_THRESHOLD + 10, 0)).toBe('yes')
+    expect(swipeVerdict(-(VERDICT_THRESHOLD + 10), 0)).toBe('no')
+    expect(swipeVerdict(0, VERDICT_THRESHOLD + 10)).toBe('skip')
+  })
+
+  it('decides nothing below the threshold, so a nudge is not an answer', () => {
+    expect(swipeVerdict(VERDICT_THRESHOLD - 1, 0)).toBeNull()
+    expect(swipeVerdict(0, VERDICT_THRESHOLD - 1)).toBeNull()
+  })
+
+  it('resolves a diagonal by the axis it is mostly going, not by which crossed first', () => {
+    // Mostly sideways with a bit of drift is still the sideways answer.
+    expect(swipeVerdict(90, 40)).toBe('yes')
+    // Mostly downwards with a bit of drift is the skip.
+    expect(swipeVerdict(40, 90)).toBe('skip')
+  })
+
+  it('never answers on an upward drag', () => {
+    // There is no fourth verdict to give it, and swiping up is how a phone is
+    // scrolled — deciding something there would be an answer nobody meant.
+    expect(swipeVerdict(0, -200)).toBeNull()
+    expect(swipeVerdict(20, -200)).toBeNull()
+  })
+
+  it('shows the verdict long before it fires one', () => {
+    // The hint threshold exists so the card can name the answer while the drag
+    // can still be steered — or taken back.
+    expect(VERDICT_HINT_THRESHOLD).toBeLessThan(VERDICT_THRESHOLD)
+    const midDrag = VERDICT_HINT_THRESHOLD + 1
+    expect(swipeVerdict(midDrag, 0, { threshold: VERDICT_HINT_THRESHOLD })).toBe('yes')
+    expect(swipeVerdict(midDrag, 0)).toBeNull()
   })
 })

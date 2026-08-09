@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useEffect } from 'react'
+import { type CSSProperties, type ReactNode, useCallback, useEffect, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
 import ButtonGroup from 'react-bootstrap/ButtonGroup'
@@ -9,14 +9,24 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { EmptyState } from '../components/EmptyState'
 import { Icon, type IconName } from '../components/Icon'
 import { KeyboardShortcutsHelp } from '../components/KeyboardShortcutsHelp'
+import { BreatherCard, RevealCard } from '../components/review/ReviewBreather'
 import { ReviewDuplicate } from '../components/review/ReviewDuplicate'
 import { ReviewOutlier } from '../components/review/ReviewOutlier'
 import { REVIEW_PREVIEW_SIZE, ReviewPhoto } from '../components/review/ReviewPhoto'
+import {
+  MilestoneBurst,
+  RoundSummaryCard,
+  SessionSummaryCard,
+} from '../components/review/ReviewSummary'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useImagePreloader } from '../hooks/useImagePreloader'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { useReviewGame } from '../hooks/useReviewGame'
+import { useReviewStreak } from '../hooks/useReviewStreak'
+import { useReviewSwipe } from '../hooks/useReviewSwipe'
+import { type SwipeVerdict } from '../lib/gestures'
 import { isTypingElement } from '../lib/ratingHotkeys'
+import { cardPhoto, type ReviewCard } from '../lib/reviewRounds'
 import { thumbUrl } from '../services/photos'
 import {
   REASON_NO_LABELS,
@@ -31,6 +41,15 @@ import '../components/review/review.css'
 
 /** How many upcoming photos are decoded ahead of the player. */
 const PRELOAD_AHEAD = 4
+
+/** How long a milestone celebration stays up before it fades on its own (ms). */
+const MILESTONE_MS = 2600
+
+/** A combo is only worth showing once it is one: two in a row, not one. */
+const COMBO_FLOOR = 2
+
+/** How far the card is rotated per pixel of horizontal drag (deg/px). */
+const DRAG_TILT = 1 / 24
 
 /**
  * The path of a photo's own detail page. The game's single place for it: the
@@ -58,6 +77,13 @@ const SOURCE_ICONS: Record<ReviewSource, IconName> = {
   people: 'people',
   labels: 'tags',
 }
+
+/** The answer a swipe is heading for, named on the card before the finger lifts. */
+const VERDICT_LABEL_KEYS = {
+  yes: 'review.actions.yes',
+  no: 'review.actions.no',
+  skip: 'review.actions.skip',
+} as const
 
 /**
  * Narrows an arbitrary query-string value to a supported source, defaulting to
@@ -314,16 +340,50 @@ function QuestionStage({ question, alt }: { question: ReviewQuestion; alt: strin
 }
 
 /**
- * The review game (`/review`, editors only): a fullscreen one-question-at-a-time
- * card flow — one plain-language question, the photo under it as large as the
+ * What the screen is showing. The game is no longer "a question or an excuse":
+ * a round ends in a card of its own, a session ends in another, and the odd card
+ * inside a round asks nothing at all — each with its own keyboard rules, which is
+ * exactly why the page names the state instead of inferring it three times.
+ */
+type Stage =
+  | 'question'
+  | 'breather'
+  | 'round-summary'
+  | 'session-summary'
+  | 'loading'
+  | 'error'
+  | 'empty'
+
+/**
+ * The keys a non-question card leaves alone. Everything else moves the game on
+ * ("any key"), but these four are about something other than the card in front
+ * of the player: leaving, undoing the last answer, opening the photo and the
+ * shortcut help.
+ */
+const RESERVED_KEYS = new Set(['Escape', 'z', 'o', '?'])
+
+/** The keys that press the primary button of a summary card. */
+const CONFIRM_KEYS = new Set(['Enter', ' ', 'ArrowRight'])
+
+/**
+ * The review game (`/review`, editors only): a fullscreen one-card-at-a-time
+ * flow played in **rounds**. A round is ~10 questions with a visible position
+ * (4/10) and a combo of consecutive answers; roughly once a round a card that
+ * asks nothing arrives — a photo "jen pro radost", or the payoff of a face just
+ * confirmed — and between rounds a small card says what the last ten came to and
+ * offers another. Leaving mid-round costs nothing: every answer was persisted on
+ * its own the moment it was given.
+ *
+ * A question is one plain-language sentence, the photo under it as large as the
  * room left over allows, and Ano / Ne / Nevím. The question and the buttons
  * always fit; the photo is what shrinks. The keyboard is the primary interface
  * (← no, → yes, Space/↓ skip, y/n, z undo, o open the photo in a new tab, Esc
- * leave); the buttons are the fallback and the touch interface. The way out to
- * the photo is a real anchor on the stage as well, because the point of it is
- * being able to copy the URL. Answers are optimistic and the next
- * question is always already in memory, so the rhythm is never broken by a
- * spinner (see {@link useReviewGame}). Rendered outside the layout shell so
+ * leave) and on touch the same three answers are a swipe — right yes, left no,
+ * down skip — with the card following the finger and naming the verdict before
+ * it fires. The way out to the photo is a real anchor on the stage as well,
+ * because the point of it is being able to copy the URL. Answers are optimistic
+ * and the next card is always already in memory, so the rhythm is never broken
+ * by a spinner (see {@link useReviewGame}). Rendered outside the layout shell so
  * nothing competes with the photo.
  *
  * What the game asks about is the player's choice — people, labels or both —
@@ -337,7 +397,10 @@ export function ReviewPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const source = parseSource(searchParams.get('source'))
   const game = useReviewGame(source)
+  const streak = useReviewStreak()
   const { prime } = useImagePreloader()
+  /** True once the player has asked to leave and the closing card is up. */
+  const [leaving, setLeaving] = useState(false)
 
   /**
    * Writes the chosen source into the URL. It replaces the entry rather than
@@ -359,16 +422,18 @@ export function ReviewPage() {
   )
 
   // Decode the next few photos ahead of the player: the card after an answer
-  // must paint instantly, and a batch refill must be invisible.
+  // must paint instantly, and a round boundary must be invisible.
   useEffect(() => {
     prime(
       game.pending
         .slice(0, PRELOAD_AHEAD)
-        .map((question) => thumbUrl(question.photo.uid, REVIEW_PREVIEW_SIZE)),
+        .map((card) => cardPhoto(card))
+        .filter((photo) => photo !== undefined)
+        .map((photo) => thumbUrl(photo.uid, REVIEW_PREVIEW_SIZE)),
     )
   }, [prime, game.pending])
 
-  const exit = useCallback(() => {
+  const leave = useCallback(() => {
     if (window.history.length > 1) {
       void navigate(-1)
       return
@@ -376,40 +441,98 @@ export function ReviewPage() {
     void navigate('/')
   }, [navigate])
 
-  const question = game.current
+  const played = game.session.confirmed + game.session.rejected + game.session.skipped
 
   /**
-   * The keyboard twin of the anchor in {@link ReviewPhoto}: opens the photo
-   * under question in a new tab, same path and same `noopener`. It answers
-   * nothing and touches the queue not at all — the card the player is looking at
-   * is still there when they come back. A new tab, not this one, because the
-   * queue lives in memory and leaving would drop the whole run.
+   * Leaving is two steps once there is something to show for the session: the
+   * closing card first, the actual exit second. A player who sorted for twenty
+   * minutes and pressed Esc deserves to be told what they did before the game
+   * disappears — and pressing Esc again is still one keystroke away.
    */
-  const openPhoto = useCallback(() => {
-    if (question === undefined) {
+  const exit = useCallback(() => {
+    if (!leaving && played > 0) {
+      setLeaving(true)
       return
     }
-    window.open(photoDetailPath(question.photo.uid), '_blank', 'noopener,noreferrer')
-  }, [question])
+    leave()
+  }, [leave, leaving, played])
+
+  const card: ReviewCard | undefined = game.current
+  const question = card?.type === 'question' ? card.question : undefined
+
+  let stage: Stage
+  if (leaving) {
+    stage = 'session-summary'
+  } else if (game.summary !== null) {
+    stage = 'round-summary'
+  } else if (card !== undefined) {
+    stage = card.type === 'question' ? 'question' : 'breather'
+  } else if (game.fetching || (!game.exhausted && !game.loadError)) {
+    stage = 'loading'
+  } else if (game.loadError) {
+    stage = 'error'
+  } else {
+    stage = 'empty'
+  }
+
+  const { answer, advance, nextRound } = game
+
+  /**
+   * The primary action of the between-rounds card: another round, or — when the
+   * backend has nothing left — the closing card. One handler, because the button
+   * and the Enter key must never disagree about what they do.
+   */
+  const continueRound = useCallback(() => {
+    if (game.exhausted) {
+      setLeaving(true)
+      return
+    }
+    nextRound()
+  }, [game.exhausted, nextRound])
+
+  const swipe = useReviewSwipe({
+    onVerdict: useCallback(
+      (verdict: SwipeVerdict) => {
+        answer(verdict)
+      },
+      [answer],
+    ),
+    enabled: stage === 'question',
+  })
+
+  /**
+   * The keyboard twin of the anchor in {@link ReviewPhoto}: opens the photo on
+   * screen in a new tab, same path and same `noopener`. It answers nothing and
+   * touches the queue not at all — the card the player is looking at is still
+   * there when they come back. A new tab, not this one, because the queue lives
+   * in memory and leaving would drop the whole run.
+   */
+  const openPhoto = useCallback(() => {
+    const photo = card === undefined ? undefined : cardPhoto(card)
+    if (photo === undefined) {
+      return
+    }
+    window.open(photoDetailPath(photo.uid), '_blank', 'noopener,noreferrer')
+  }, [card])
 
   useKeyboardShortcuts({
     ArrowLeft: () => {
-      game.answer('no')
+      answer('no')
     },
     n: () => {
-      game.answer('no')
+      answer('no')
     },
     ArrowRight: () => {
-      game.answer('yes')
+      answer('yes')
     },
     y: () => {
-      game.answer('yes')
+      answer('yes')
     },
     ' ': () => {
-      game.answer('skip')
+      answer('skip')
     },
     ArrowDown: () => {
-      game.answer('skip')
+      answer('skip')
     },
     z: game.undo,
     // `o` for open. It is deliberately not one of the answer keys' neighbours,
@@ -445,11 +568,72 @@ export function ReviewPage() {
     }
   }, [undo])
 
-  const total = game.answered + game.remaining
-  const progressPct = total > 0 ? Math.min(100, Math.round((game.answered / total) * 100)) : 0
+  // The keyboard on the cards that ask nothing. A breather moves on with any
+  // key, because there is no answer to get wrong; a summary card has one primary
+  // action, so only the keys that mean "yes, go on" press it. The answer keys
+  // reach `answer()` first through the shortcut map above and no-op there — a
+  // breather is not a question — which is what lets → both dismiss a breather and
+  // continue into the next round without either meaning being ambiguous.
+  useEffect(() => {
+    if (stage !== 'breather' && stage !== 'round-summary' && stage !== 'session-summary') {
+      return undefined
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.ctrlKey || event.metaKey || event.altKey || isTypingElement(event.target)) {
+        return
+      }
+      if (RESERVED_KEYS.has(event.key) || document.querySelector('.modal.show') !== null) {
+        return
+      }
+      if (stage === 'breather') {
+        event.preventDefault()
+        advance()
+        return
+      }
+      if (!CONFIRM_KEYS.has(event.key)) {
+        return
+      }
+      event.preventDefault()
+      if (stage === 'round-summary') {
+        continueRound()
+        return
+      }
+      leave()
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [advance, continueRound, leave, stage])
+
+  // The celebration is a moment, not a state: it clears itself so nothing has to
+  // be dismissed mid-rhythm.
+  const { milestone, clearMilestone } = game
+  useEffect(() => {
+    if (milestone === null) {
+      return undefined
+    }
+    const timer = window.setTimeout(clearMilestone, MILESTONE_MS)
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [milestone, clearMilestone])
+
+  // The hairline bar tracks the round, not the session: a session has no end to
+  // measure against, and "how far into these ten am I" is the question a player
+  // actually asks.
+  const roundPct =
+    game.round.size > 0 ? Math.min(100, Math.round((game.round.played / game.round.size) * 100)) : 0
+  const position = game.round.size > 0 ? Math.min(game.round.played + 1, game.round.size) : 0
+
+  const dragStyle: CSSProperties = swipe.dragging
+    ? {
+        transform: `translate(${String(swipe.offset.x)}px, ${String(swipe.offset.y)}px) rotate(${String(swipe.offset.x * DRAG_TILT)}deg)`,
+      }
+    : {}
 
   let body: ReactNode
-  if (question !== undefined) {
+  if (stage === 'question' && question !== undefined) {
     body = (
       <>
         <section className="review-game__prompt">
@@ -460,15 +644,29 @@ export function ReviewPage() {
               no percentage behind the guess and inventing one would be a lie. */}
           {question.kind !== 'place' && <ConfidenceHint confidence={question.confidence} />}
         </section>
-        <main className="review-game__stage">
-          <QuestionStage question={question} alt={t('review.photoAlt')} />
+        <main className="review-game__stage" data-testid="review-stage" {...swipe.handlers}>
+          <div
+            className={`review-game__card${swipe.dragging ? ' review-game__card--dragging' : ''}`}
+            style={dragStyle}
+          >
+            <QuestionStage question={question} alt={t('review.photoAlt')} />
+          </div>
+          {swipe.hint !== null && (
+            <span
+              className={`review-game__verdict review-game__verdict--${swipe.hint}`}
+              data-testid="review-swipe-hint"
+              aria-hidden="true"
+            >
+              {t(VERDICT_LABEL_KEYS[swipe.hint])}
+            </span>
+          )}
         </main>
         <footer className="review-game__actions">
           <Button
             variant="outline-danger"
             size="lg"
             onClick={() => {
-              game.answer('no')
+              answer('no')
             }}
           >
             <Icon name="x-lg" className="me-2" />
@@ -479,7 +677,7 @@ export function ReviewPage() {
             variant="outline-secondary"
             size="lg"
             onClick={() => {
-              game.answer('skip')
+              answer('skip')
             }}
           >
             {t('review.actions.skip')}
@@ -489,7 +687,7 @@ export function ReviewPage() {
             variant="success"
             size="lg"
             onClick={() => {
-              game.answer('yes')
+              answer('yes')
             }}
           >
             <Icon name="check-lg" className="me-2" />
@@ -499,9 +697,30 @@ export function ReviewPage() {
         </footer>
       </>
     )
-  } else if (game.fetching || (!game.exhausted && !game.loadError)) {
-    // The only unavoidable wait: the first batch (or a slow refill the player
-    // outran). Everything else is prefetched.
+  } else if (stage === 'breather' && card?.type === 'breather') {
+    body = (
+      <BreatherCard
+        breather={card.breather}
+        href={photoDetailPath(card.breather.photo.uid)}
+        onDismiss={advance}
+      />
+    )
+  } else if (stage === 'breather' && card?.type === 'reveal') {
+    body = <RevealCard reveal={card.reveal} onDismiss={advance} />
+  } else if (stage === 'round-summary' && game.summary !== null) {
+    body = (
+      <RoundSummaryCard
+        summary={game.summary}
+        exhausted={game.exhausted}
+        fetching={game.fetching}
+        onContinue={continueRound}
+      />
+    )
+  } else if (stage === 'session-summary') {
+    body = <SessionSummaryCard tally={game.session} touched={game.touched} onClose={leave} />
+  } else if (stage === 'loading') {
+    // The only unavoidable wait: the first round (or one the player outran).
+    // Everything else is prefetched behind the between-rounds card.
     body = (
       <div className="review-game__center">
         <Spinner animation="border" role="status">
@@ -509,7 +728,7 @@ export function ReviewPage() {
         </Spinner>
       </div>
     )
-  } else if (game.loadError) {
+  } else if (stage === 'error') {
     body = (
       <div className="review-game__center" data-testid="review-load-error">
         <Alert variant="danger" className="d-flex align-items-center gap-3 mb-0">
@@ -564,18 +783,48 @@ export function ReviewPage() {
             narrow-screen rule can drop it onto its own line. */}
         <SourceToggle source={source} onSelect={selectSource} />
         <div className="review-game__progress-text" data-testid="review-progress">
-          {t('review.progress.answered', { count: game.answered })}
-          {game.remaining > 0 && (
-            <span className="text-secondary">
-              {' · '}
-              {t('review.progress.remaining', { count: game.remaining })}
+          {position > 0 && (
+            <span className="review-game__round" data-testid="review-round-progress">
+              {game.round.daily && (
+                <span className="review-game__round-name">{t('review.round.daily')}</span>
+              )}
+              {t('review.round.position', { position, size: game.round.size })}
             </span>
           )}
+          {game.combo >= COMBO_FLOOR && (
+            <span
+              className="review-game__combo"
+              data-testid="review-combo"
+              title={t('review.comboTitle')}
+            >
+              <Icon name="lightning-charge-fill" />
+              {game.combo}
+            </span>
+          )}
+          {streak > 0 && (
+            <span
+              className="review-game__streak"
+              data-testid="review-streak"
+              title={t('review.streakTitle', { count: streak })}
+            >
+              <Icon name="fire" />
+              {streak}
+            </span>
+          )}
+          <span className="d-none d-sm-inline">
+            {t('review.progress.answered', { count: game.answered })}
+            {game.remaining > 0 && (
+              <span className="text-secondary">
+                {' · '}
+                {t('review.progress.remaining', { count: game.remaining })}
+              </span>
+            )}
+          </span>
         </div>
         <KeyboardShortcutsHelp />
       </header>
       <div className="review-game__progressbar" aria-hidden="true">
-        <div style={{ width: `${String(progressPct)}%` }} />
+        <div style={{ width: `${String(roundPct)}%` }} />
       </div>
       {game.failed.length > 0 && (
         <Alert variant="danger" className="review-game__alert" data-testid="review-answer-errors">
@@ -600,6 +849,7 @@ export function ReviewPage() {
           </div>
         </Alert>
       )}
+      {game.milestone !== null && <MilestoneBurst count={game.milestone} />}
       {body}
     </div>
   )

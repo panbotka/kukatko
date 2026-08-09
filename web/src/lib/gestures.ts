@@ -53,6 +53,48 @@ export function swipeAction(
   return dx < 0 ? 'next' : 'prev'
 }
 
+/** A review-game verdict decoded from a swipe: right yes, left no, down skip. */
+export type SwipeVerdict = 'yes' | 'no' | 'skip'
+
+/** Minimum travel (px) before a drag commits to a verdict when the finger lifts. */
+export const VERDICT_THRESHOLD = 64
+
+/**
+ * Travel (px) after which the drag already shows which verdict it is heading
+ * for. Well below {@link VERDICT_THRESHOLD}, so the card names the answer long
+ * before it fires one and a drag can be steered — or taken back — on the way.
+ */
+export const VERDICT_HINT_THRESHOLD = 24
+
+/**
+ * Decides which verdict a drag of `(dx, dy)` pixels gives the card under the
+ * finger: right is Ano, left is Ne and down is Nevím — the same three answers
+ * the buttons and the arrow keys give, in the directions the arrow keys already
+ * use, so the two input methods never disagree.
+ *
+ * The dominant axis decides which answer is in play, and only then is the
+ * threshold applied, so a diagonal drag resolves to the direction it is mostly
+ * going rather than to whichever axis crossed first. An *upward* drag decides
+ * nothing: there is no fourth answer to give it, and swiping up is how a phone
+ * is scrolled.
+ */
+export function swipeVerdict(
+  dx: number,
+  dy: number,
+  options: { threshold?: number } = {},
+): SwipeVerdict | null {
+  const { threshold = VERDICT_THRESHOLD } = options
+  const ax = Math.abs(dx)
+  const ay = Math.abs(dy)
+  if (ay > ax) {
+    return dy >= threshold ? 'skip' : null
+  }
+  if (ax < threshold) {
+    return null
+  }
+  return dx > 0 ? 'yes' : 'no'
+}
+
 /** Euclidean distance between two touch points. */
 export function touchDistance(a: TouchPoint, b: TouchPoint): number {
   return Math.hypot(a.x - b.x, a.y - b.y)

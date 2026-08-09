@@ -204,4 +204,19 @@ describe('LeaderboardPage', () => {
     expect(await screen.findByText('Alice')).toBeInTheDocument()
     expect(screen.queryByTestId('leaderboard-not-on-board')).toBeNull()
   })
+
+  it('shows each player’s day streak, and a dash for nobody on a run', async () => {
+    // The streak is the habit, not the score: the backend computes it (and does
+    // not narrow it by the window), so the board only has to render it.
+    fetchMock.mockResolvedValue(
+      board([{ ...entry('u1', 'Alice', 10, 2), streak_days: 7 }, entry('u2', 'Bob', 3, 1)]),
+    )
+    renderPage()
+
+    const alice = await screen.findByTestId('leaderboard-row-u1')
+    expect(within(alice).getByTestId('leaderboard-streak')).toHaveTextContent('7')
+    // A run of nought days is not a run, and printing "0" reads like a score.
+    const bob = screen.getByTestId('leaderboard-row-u2')
+    expect(within(bob).getByTestId('leaderboard-streak')).toHaveTextContent('—')
+  })
 })

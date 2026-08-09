@@ -195,7 +195,8 @@
       "player": "Player",
       "yes": "Yes",
       "no": "No",
-      "total": "Total"
+      "total": "Total",
+      "streak": "Streak"
     },
     "you": "You",
     "loading": "Loading the leaderboard…",
@@ -212,7 +213,9 @@
       "hint": "You're not on the board yet.",
       "action": "Start sorting"
     },
-    "viewDecisions": "View {{name}}'s decisions"
+    "viewDecisions": "View {{name}}'s decisions",
+    "streakTitle_one": "{{count}} day in a row",
+    "streakTitle_other": "{{count}} days in a row"
   },
   "stats": {
     "title": "Library statistics",
@@ -1145,7 +1148,8 @@
       "skip": "Skip — I don't know",
       "undo": "Undo the last answer",
       "open": "Open the photo under review in a new tab",
-      "leave": "Leave the review game"
+      "leave": "Leave the review game",
+      "next": "Next round / move past a card with no question"
     },
     "compare": {
       "keepLeft": "Keep the left photo (the right one is archived)",
@@ -2638,6 +2642,46 @@
     },
     "place": {
       "hint": "We guessed the place from photos taken nearby in time."
+    },
+    "round": {
+      "title": "Round {{index}}",
+      "daily": "Today's mix",
+      "position": "{{position}}/{{size}}"
+    },
+    "comboTitle": "How many answers you have in a row. A skip breaks the run.",
+    "streakTitle_one": "{{count}} day in a row with an answer",
+    "streakTitle_other": "{{count}} days in a row with an answer",
+    "milestone_one": "{{count}} answer!",
+    "milestone_other": "{{count}} answers!",
+    "breather": {
+      "joy": "just for the joy of it",
+      "continue": "Continue",
+      "favorite": "Somebody has this photo in their favourites.",
+      "rated": "Somebody rated this photo highly."
+    },
+    "reveal": {
+      "tag": "just added",
+      "title_one": "{{name}} is now on {{count}} photo",
+      "title_other": "{{name}} is now on {{count}} photos",
+      "span": "oldest {{oldest}} · newest {{newest}}",
+      "oldest": "oldest {{year}}",
+      "open": "Show photos of {{name}}"
+    },
+    "summary": {
+      "title": "Round done",
+      "confirmed": "Yes",
+      "rejected": "No",
+      "skipped": "Skipped",
+      "again": "One more round?",
+      "finish": "Show the summary",
+      "dailyDone": "Done for today",
+      "loadingNext": "Getting the next round ready…"
+    },
+    "session": {
+      "eyebrow": "end of the game",
+      "title": "Thanks for sorting!",
+      "mosaic": "The photos you got through",
+      "close": "Close"
     }
   },
   "announcement": {

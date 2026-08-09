@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import {
+  buildRoundCards,
+  dailyMixDone,
+  insertReveal,
+  markDailyMixDone,
+  milestoneCrossed,
+  questionCard,
+  type ReviewCard,
+} from '../lib/reviewRounds'
+import {
   confirmDuplicate,
   confirmFace,
   dismissDuplicate,
@@ -14,6 +23,7 @@ import {
 } from '../services/feedback'
 import { attachLabel, detachLabel } from '../services/organize'
 import { assignFace, fetchFaces } from '../services/people'
+import { type Photo } from '../services/photos'
 import {
   answerReview,
   fetchReviewQueue,
@@ -25,10 +35,10 @@ import {
 import { useReloadKey } from './useReloadKey'
 
 /**
- * When the local queue shrinks to this many cards a background refill starts,
- * so the next batch is in memory before the player reaches the boundary.
+ * How many of the photos a player touched are remembered for the end-of-session
+ * mosaic. A wall of everything would be the library; a handful is a souvenir.
  */
-const REFILL_AT = 3
+const TOUCHED_LIMIT = 24
 
 /** One answer given this session; the undo target. */
 export interface AnsweredQuestion {
@@ -98,14 +108,75 @@ async function sendFaceDirect(q: ReviewQuestion, yes: boolean, markerUid: string
 /** An optimistic answer whose request failed; held for an explicit retry. */
 export type FailedAnswer = AnsweredQuestion
 
+/** How far the current round has got, live. */
+export interface RoundProgress {
+  /** The round's 1-based number within the session. */
+  index: number
+  /** How many questions the round holds — the denominator of "4/10". */
+  size: number
+  /** How many of them are behind the player, skips included. */
+  played: number
+  /** Yes answers given in this round. */
+  confirmed: number
+  /** No answers given in this round. */
+  rejected: number
+  /** Skips given in this round. */
+  skipped: number
+  /** True while this round is the day's first — "Dnešní mix". */
+  daily: boolean
+  /** True when the backend has nothing queued behind this round. */
+  last: boolean
+}
+
+/**
+ * A finished round, snapshotted the moment its last card was consumed — the
+ * between-rounds card reports what the player just played, and keeps reporting
+ * it while the next round loads underneath.
+ */
+export interface RoundSummary extends RoundProgress {
+  /** True when finishing this round finished the day's mix. */
+  completedDaily: boolean
+}
+
+/** The whole session's tallies, for the closing card. */
+export interface SessionTally {
+  confirmed: number
+  rejected: number
+  skipped: number
+}
+
+/** An empty round; also the shape a session starts in. */
+const NO_ROUND: RoundProgress = {
+  index: 0,
+  size: 0,
+  played: 0,
+  confirmed: 0,
+  rejected: 0,
+  skipped: 0,
+  daily: false,
+  last: false,
+}
+
 /** Everything {@link useReviewGame} exposes to the page. */
 export interface ReviewGame {
-  /** The question on screen; `undefined` while loading or when the queue is dry. */
-  current: ReviewQuestion | undefined
+  /** The card on screen; `undefined` while loading or when the queue is dry. */
+  current: ReviewCard | undefined
   /** The local queue (current first) — the page prefetches these images. */
-  pending: readonly ReviewQuestion[]
+  pending: readonly ReviewCard[]
+  /** How far the current round has got. */
+  round: RoundProgress
+  /** The finished round, while its between-rounds card is up; null while playing. */
+  summary: RoundSummary | null
+  /** Consecutive answers without a skip; the combo the round header shows. */
+  combo: number
   /** Session counter of yes/no answers (skips don't count, undo subtracts). */
   answered: number
+  /** The session's own yes/no/skip split, for the closing card. */
+  session: SessionTally
+  /** The photos this session decided about, newest last; capped for the mosaic. */
+  touched: readonly Photo[]
+  /** The milestone just crossed (10/25/50), until the page clears it. */
+  milestone: number | null
   /** Rough server estimate of candidates still queued. */
   remaining: number
   /** True while a batch fetch is in flight. */
@@ -126,6 +197,10 @@ export interface ReviewGame {
   undoError: boolean
   /** Answers the current question and advances immediately (optimistic). */
   answer: (verdict: ReviewAnswer) => void
+  /** Moves past a card that asks nothing (a breather, a reveal). */
+  advance: () => void
+  /** Puts the next round on screen, dismissing the between-rounds card. */
+  nextRound: () => void
   /** Reverts the last answer through the matching inverse endpoint. */
   undo: () => void
   /** Clears the load-error/exhausted latches so the queue is fetched again. */
@@ -134,17 +209,27 @@ export interface ReviewGame {
   retryFailed: () => void
   /** Drops the failed answers without re-sending them. */
   dismissFailed: () => void
+  /** Acknowledges the celebration so it stops showing. */
+  clearMilestone: () => void
 }
 
 /**
- * The review-game engine: a local question queue refilled in the background,
+ * The review-game engine: **one round at a time**, refilled in the background,
  * optimistic answers, and a one-step undo.
+ *
+ * A fetch returns exactly one round (~10 questions), which the hook lays out as
+ * cards — the questions plus the round's breathers, which need no answer and
+ * count toward nothing (see {@link buildRoundCards}). Consuming the last card
+ * closes the round into a {@link RoundSummary} and starts loading the next one
+ * *behind* the between-rounds card, so "Ještě kolo?" is instant while the pause
+ * is real. The next round is minted server-side only once the current one is
+ * answered, so the refill waits for the in-flight answers to settle first —
+ * otherwise it would be handed the same round back.
  *
  * Answering advances the UI immediately and settles the request behind the
  * player's back; a failure is held in `failed` for an explicit retry rather
- * than blocking the flow or silently losing the verdict. The queue refills
- * itself when it runs low, deduplicating against every question already seen
- * this session, so the batch boundary is invisible.
+ * than blocking the flow or silently losing the verdict. Leaving mid-round loses
+ * nothing: every answer was already persisted on its own.
  *
  * Undo goes through the *inverse* write paths (`unassign_person`, the
  * feedback DELETEs, label detach, the duplicate/face un-confirmations) because
@@ -169,8 +254,14 @@ export interface ReviewGame {
  * restore no longer belongs to the game on screen.
  */
 export function useReviewGame(source: ReviewSource = 'both'): ReviewGame {
-  const [queue, setQueue] = useState<ReviewQuestion[]>([])
+  const [queue, setQueue] = useState<ReviewCard[]>([])
+  const [round, setRound] = useState<RoundProgress>(NO_ROUND)
+  const [summary, setSummary] = useState<RoundSummary | null>(null)
+  const [combo, setCombo] = useState(0)
   const [answered, setAnswered] = useState(0)
+  const [session, setSession] = useState<SessionTally>({ confirmed: 0, rejected: 0, skipped: 0 })
+  const [touched, setTouched] = useState<Photo[]>([])
+  const [milestone, setMilestone] = useState<number | null>(null)
   const [remaining, setRemaining] = useState(0)
   const [fetching, setFetching] = useState(false)
   const [loadError, setLoadError] = useState(false)
@@ -187,7 +278,7 @@ export function useReviewGame(source: ReviewSource = 'both'): ReviewGame {
   // The queue's source of truth. State only mirrors it for rendering: two
   // answers can land within one render (arrow keys at speed), and reading the
   // head from state would answer the same card twice.
-  const queueRef = useRef<ReviewQuestion[]>([])
+  const queueRef = useRef<ReviewCard[]>([])
   /** Every question id ever enqueued this session — refill deduplication. */
   const seenRef = useRef<Set<string>>(new Set())
   /** Ids of undone questions whose next yes/no must use the direct paths. */
@@ -205,11 +296,26 @@ export function useReviewGame(source: ReviewSource = 'both'): ReviewGame {
   failedRef.current = failed
   const lastAnswerRef = useRef<AnsweredQuestion | null>(null)
   lastAnswerRef.current = lastAnswer
+  /** The live round, read synchronously while answers land back to back. */
+  const roundRef = useRef<RoundProgress>(NO_ROUND)
+  /** The combo, and what to put back when an undo takes an answer away. */
+  const comboRef = useRef(0)
+  const comboBeforeRef = useRef(0)
+  /** The session's answer count, for the milestone comparison. */
+  const answeredRef = useRef(0)
+  /** Whether today's mix is already behind the player (read once, then tracked). */
+  const dailyDoneRef = useRef(dailyMixDone(new Date()))
 
   /** Replaces the queue in both the ref (truth) and state (render mirror). */
-  const commitQueue = useCallback((next: ReviewQuestion[]) => {
+  const commitQueue = useCallback((next: ReviewCard[]) => {
     queueRef.current = next
     setQueue(next)
+  }, [])
+
+  /** Writes a round's progress to both the ref (truth) and state (mirror). */
+  const commitRound = useCallback((next: RoundProgress) => {
+    roundRef.current = next
+    setRound(next)
   }, [])
 
   const load = useCallback(async () => {
@@ -221,6 +327,11 @@ export function useReviewGame(source: ReviewSource = 'both'): ReviewGame {
     const initial = !startedRef.current
     startedRef.current = true
     try {
+      // The next round is minted only once the current one is answered, so a
+      // refill that overtakes its own answers is handed the round it just
+      // finished. Waiting costs nothing: the player is looking at the
+      // between-rounds card while this runs.
+      await Promise.allSettled([...inflightRef.current.values()])
       const res = await fetchReviewQueue(source)
       // A batch that was in flight when the player switched the source belongs
       // to a game that is no longer on screen. The response carries the source
@@ -238,7 +349,16 @@ export function useReviewGame(source: ReviewSource = 'both'): ReviewGame {
         seenRef.current.add(q.id)
       }
       if (fresh.length > 0) {
-        commitQueue([...queueRef.current, ...fresh])
+        commitQueue([...queueRef.current, ...buildRoundCards(fresh, res.breathers ?? [])])
+        commitRound({
+          ...NO_ROUND,
+          index: res.round.index,
+          // What the player will actually be asked, which is what a "4/10" has
+          // to count: a round re-fetched mid-flight comes back shortened.
+          size: fresh.length,
+          daily: res.round.index === 1 && !dailyDoneRef.current,
+          last: res.round.last,
+        })
       } else {
         setExhausted(true)
       }
@@ -246,6 +366,7 @@ export function useReviewGame(source: ReviewSource = 'both'): ReviewGame {
       setRemaining(res.remaining)
       if (initial) {
         setAnswered(res.answered)
+        answeredRef.current = res.answered
       }
       setLoadError(false)
     } catch {
@@ -254,7 +375,7 @@ export function useReviewGame(source: ReviewSource = 'both'): ReviewGame {
       fetchingRef.current = false
       setFetching(false)
     }
-  }, [commitQueue, reload, source])
+  }, [commitQueue, commitRound, reload, source])
 
   // A changed source starts the game over: the cards in hand are about the kind
   // of question the player just turned off, so they go rather than get filtered.
@@ -267,19 +388,23 @@ export function useReviewGame(source: ReviewSource = 'both'): ReviewGame {
     }
     sourceRef.current = source
     commitQueue([])
+    commitRound(NO_ROUND)
+    setSummary(null)
     setExhausted(false)
     setLoadError(false)
     setReason(undefined)
     setRemaining(0)
     setLastAnswer(null)
     setUndoError(false)
-  }, [source, commitQueue])
+  }, [source, commitQueue, commitRound])
 
   // Initial load and background refills fall out of the same rule: whenever the
-  // local queue runs low and nothing says stop, fetch. The error/exhausted
-  // latches keep a failing or dry server from being hammered in a loop.
+  // local queue has run out and nothing says stop, fetch the next round. It runs
+  // while the between-rounds card is up, which is exactly what makes "Ještě
+  // kolo?" instant. The error/exhausted latches keep a failing or dry server
+  // from being hammered in a loop.
   useEffect(() => {
-    if (queue.length <= REFILL_AT && !exhausted && !loadError) {
+    if (queue.length === 0 && !exhausted && !loadError) {
       void load()
     }
   }, [queue.length, exhausted, loadError, load, reloadKey])
@@ -399,7 +524,13 @@ export function useReviewGame(source: ReviewSource = 'both'): ReviewGame {
         if (directRef.current.has(q.id) && verdict !== 'skip') {
           await sendDirect(q, verdict)
         } else {
-          await answerReview(q.id, verdict)
+          const res = await answerReview(q.id, verdict)
+          // The payoff of a confirmed face: what the player just added to. It
+          // rides into the round as a card rather than a toast, because it is
+          // the moment the work pays off, not a status message.
+          if (res.reveal !== undefined) {
+            commitQueue(insertReveal(queueRef.current, res.reveal))
+          }
         }
         return true
       } catch {
@@ -407,29 +538,89 @@ export function useReviewGame(source: ReviewSource = 'both'): ReviewGame {
         return false
       }
     },
-    [sendDirect],
+    [commitQueue, sendDirect],
   )
+
+  /**
+   * Closes the round when its last card is gone: the between-rounds card gets a
+   * snapshot of what was just played, and — if this was the day's first round —
+   * the daily flag is stamped so "Pro dnešek splněno" is told the truth.
+   */
+  const closeRoundIfDone = useCallback((next: ReviewCard[]) => {
+    if (next.length > 0 || roundRef.current.size === 0) {
+      return
+    }
+    const finished = roundRef.current
+    const completedDaily = finished.daily && !dailyDoneRef.current
+    if (completedDaily) {
+      markDailyMixDone(new Date())
+      dailyDoneRef.current = true
+    }
+    setSummary({ ...finished, completedDaily })
+  }, [])
 
   const answer = useCallback(
     (verdict: ReviewAnswer) => {
-      const q = queueRef.current.at(0)
-      if (q === undefined || undoingRef.current) {
+      const card = queueRef.current.at(0)
+      // A breather answers nothing: it is dismissed, never verdicted.
+      if (card?.type !== 'question' || undoingRef.current) {
         return
       }
-      commitQueue(queueRef.current.slice(1))
+      const q = card.question
+      const rest = queueRef.current.slice(1)
+      commitQueue(rest)
       // A verdict with no inverse write path is not held as the undo target: the
       // button stays disabled rather than offering something that cannot be done.
-      const answered = { question: q, answer: verdict }
-      setLastAnswer(isUndoable(answered) ? answered : null)
+      const given = { question: q, answer: verdict }
+      setLastAnswer(isUndoable(given) ? given : null)
       setUndoError(false)
+      comboBeforeRef.current = comboRef.current
+      comboRef.current = verdict === 'skip' ? 0 : comboRef.current + 1
+      setCombo(comboRef.current)
+      commitRound({
+        ...roundRef.current,
+        played: roundRef.current.played + 1,
+        confirmed: roundRef.current.confirmed + (verdict === 'yes' ? 1 : 0),
+        rejected: roundRef.current.rejected + (verdict === 'no' ? 1 : 0),
+        skipped: roundRef.current.skipped + (verdict === 'skip' ? 1 : 0),
+      })
+      setSession((prev) => ({
+        confirmed: prev.confirmed + (verdict === 'yes' ? 1 : 0),
+        rejected: prev.rejected + (verdict === 'no' ? 1 : 0),
+        skipped: prev.skipped + (verdict === 'skip' ? 1 : 0),
+      }))
       if (verdict !== 'skip') {
-        setAnswered((n) => n + 1)
+        const next = answeredRef.current + 1
+        const reached = milestoneCrossed(answeredRef.current, next)
+        answeredRef.current = next
+        setAnswered(next)
+        if (reached !== null) {
+          setMilestone(reached)
+        }
+        setTouched((prev) => [...prev, q.photo].slice(-TOUCHED_LIMIT))
       }
       setRemaining((n) => (n > 0 ? n - 1 : 0))
       inflightRef.current.set(q.id, sendAnswer(q, verdict))
+      closeRoundIfDone(rest)
     },
-    [commitQueue, sendAnswer],
+    [closeRoundIfDone, commitQueue, commitRound, sendAnswer],
   )
+
+  const advance = useCallback(() => {
+    const card = queueRef.current.at(0)
+    if (card === undefined || card.type === 'question') {
+      return
+    }
+    // A breather counts toward nothing — not the round's progress, not the
+    // combo, not the session. It is the pause, not part of the work.
+    const rest = queueRef.current.slice(1)
+    commitQueue(rest)
+    closeRoundIfDone(rest)
+  }, [closeRoundIfDone, commitQueue])
+
+  const nextRound = useCallback(() => {
+    setSummary(null)
+  }, [])
 
   const doUndo = useCallback(async () => {
     const last = lastAnswerRef.current
@@ -451,9 +642,28 @@ export function useReviewGame(source: ReviewSource = 'both'): ReviewGame {
         await revertOnServer(last)
         directRef.current.add(last.question.id)
       }
-      commitQueue([last.question, ...queueRef.current])
+      commitQueue([questionCard(last.question), ...queueRef.current])
+      // The card is back, so the round is running again — whatever the summary
+      // said a moment ago is no longer what the player just played.
+      setSummary(null)
+      commitRound({
+        ...roundRef.current,
+        played: Math.max(0, roundRef.current.played - 1),
+        confirmed: Math.max(0, roundRef.current.confirmed - (last.answer === 'yes' ? 1 : 0)),
+        rejected: Math.max(0, roundRef.current.rejected - (last.answer === 'no' ? 1 : 0)),
+        skipped: Math.max(0, roundRef.current.skipped - (last.answer === 'skip' ? 1 : 0)),
+      })
+      setSession((prev) => ({
+        confirmed: Math.max(0, prev.confirmed - (last.answer === 'yes' ? 1 : 0)),
+        rejected: Math.max(0, prev.rejected - (last.answer === 'no' ? 1 : 0)),
+        skipped: Math.max(0, prev.skipped - (last.answer === 'skip' ? 1 : 0)),
+      }))
+      comboRef.current = comboBeforeRef.current
+      setCombo(comboRef.current)
       if (last.answer !== 'skip') {
-        setAnswered((n) => (n > 0 ? n - 1 : 0))
+        answeredRef.current = Math.max(0, answeredRef.current - 1)
+        setAnswered(answeredRef.current)
+        setTouched((prev) => prev.slice(0, -1))
       }
       setRemaining((n) => n + 1)
       setLastAnswer(null)
@@ -463,7 +673,7 @@ export function useReviewGame(source: ReviewSource = 'both'): ReviewGame {
       undoingRef.current = false
       setUndoing(false)
     }
-  }, [commitQueue, revertOnServer])
+  }, [commitQueue, commitRound, revertOnServer])
 
   const undo = useCallback(() => {
     void doUndo()
@@ -486,10 +696,20 @@ export function useReviewGame(source: ReviewSource = 'both'): ReviewGame {
     setFailed([])
   }, [])
 
+  const clearMilestone = useCallback(() => {
+    setMilestone(null)
+  }, [])
+
   return {
     current: queue[0],
     pending: queue,
+    round,
+    summary,
+    combo,
     answered,
+    session,
+    touched,
+    milestone,
     remaining,
     fetching,
     loadError,
@@ -500,9 +720,12 @@ export function useReviewGame(source: ReviewSource = 'both'): ReviewGame {
     undoing,
     undoError,
     answer,
+    advance,
+    nextRound,
     undo,
     retryLoad,
     retryFailed,
     dismissFailed,
+    clearMilestone,
   }
 }

@@ -1,18 +1,22 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter, useSearchParams } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../i18n'
+import { VERDICT_THRESHOLD } from '../lib/gestures'
+import { DAILY_STORAGE_KEY } from '../lib/reviewRounds'
 import { type Label } from '../services/organize'
 import { type Subject } from '../services/people'
 import { type Photo } from '../services/photos'
 import {
+  type Leaderboard,
   REASON_NO_CANDIDATES,
   REASON_NO_LABELS,
   REASON_NO_PEOPLE,
   REASON_NO_SOURCES,
+  type ReviewBreather,
   type ReviewQuestion,
   type ReviewQueue,
   type ReviewSource,
@@ -24,7 +28,12 @@ import { ReviewPage } from './ReviewPage'
 
 vi.mock('../services/review', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/review')>()
-  return { ...actual, fetchReviewQueue: vi.fn(), answerReview: vi.fn() }
+  return {
+    ...actual,
+    fetchReviewQueue: vi.fn(),
+    answerReview: vi.fn(),
+    fetchLeaderboard: vi.fn(),
+  }
 })
 
 vi.mock('../services/feedback', () => ({
@@ -50,12 +59,13 @@ vi.mock('../services/organize', async (importOriginal) => {
   return { ...actual, attachLabel: vi.fn(), detachLabel: vi.fn() }
 })
 
-const { fetchReviewQueue, answerReview } = await import('../services/review')
+const { fetchReviewQueue, answerReview, fetchLeaderboard } = await import('../services/review')
 const { unrejectFace, unrejectLabel, unconfirmFace, unconfirmDuplicate } =
   await import('../services/feedback')
 const { assignFace } = await import('../services/people')
 const queueMock = vi.mocked(fetchReviewQueue)
 const answerMock = vi.mocked(answerReview)
+const leaderboardMock = vi.mocked(fetchLeaderboard)
 const unrejectFaceMock = vi.mocked(unrejectFace)
 const unrejectLabelMock = vi.mocked(unrejectLabel)
 const unconfirmFaceMock = vi.mocked(unconfirmFace)
@@ -173,6 +183,16 @@ function outlierQuestion(id: string, name = 'Tomáš Kozák'): ReviewQuestion {
   }
 }
 
+/** A non-question card the backend hands over alongside a round. */
+function breather(uid: string, title: string, year?: number): ReviewBreather {
+  return { kind: 'breather', photo: photo(uid), title, year, reason: 'favorite' }
+}
+
+/** The round descriptor of a later round, so a session can run past its first. */
+function nextRound(index: number) {
+  return { index, size: 2, remaining: 2, sure: 2, band: 0, entities: 2, last: false }
+}
+
 /**
  * Wraps questions in a queue response; the backend echoes the applied source and
  * describes the round the questions form (one request = one round).
@@ -213,8 +233,17 @@ function renderPage(entry = '/review') {
   )
 }
 
+/** An empty leaderboard: the streak is flavour, so most tests want it silent. */
+function emptyBoard(): Leaderboard {
+  return { window: 'all', caller_uid: 'u1', entries: [] }
+}
+
 beforeEach(async () => {
   await i18n.changeLanguage('en')
+  // The daily-mix flag lives in localStorage and outlives a test otherwise, so
+  // every test starts on a day whose mix has not been played.
+  window.localStorage.removeItem(DAILY_STORAGE_KEY)
+  leaderboardMock.mockReset().mockResolvedValue(emptyBoard())
   queueMock.mockReset()
   answerMock.mockReset().mockResolvedValue({ result: 'assigned', answered: 1, remaining: 0 })
   unrejectFaceMock.mockReset().mockResolvedValue(undefined)
@@ -800,6 +829,390 @@ describe('ReviewPage', () => {
 })
 
 /**
+ * The round is what turned an endless belt of questions into a game: a visible
+ * position inside ten, a combo that a skip costs you, a card that asks nothing
+ * roughly once a round, and a small summary at the end offering another. These
+ * tests pin the parts that a later edit could quietly undo — the counters that
+ * must NOT move on a breather, the combo undo restores, and the fact that
+ * leaving mid-round loses no answer.
+ */
+describe('ReviewPage rounds', () => {
+  it('counts the player’s position through the round and closes it with a summary', async () => {
+    const user = userEvent.setup()
+    queueMock
+      .mockResolvedValueOnce(makeQueue([faceQuestion('q1', 'Alice'), faceQuestion('q2', 'Bob')]))
+      .mockResolvedValue(
+        makeQueue([faceQuestion('q3', 'Cyril'), faceQuestion('q4', 'Dana')], {
+          round: nextRound(2),
+        }),
+      )
+    renderPage()
+    await screen.findByTestId('review-question')
+
+    expect(screen.getByTestId('review-round-progress')).toHaveTextContent('1/2')
+    await user.keyboard('{ArrowRight}')
+    await waitFor(() => {
+      expect(screen.getByTestId('review-round-progress')).toHaveTextContent('2/2')
+    })
+
+    await user.keyboard('{ArrowLeft}')
+    // The round ends in a card of its own reporting what was just played — one
+    // yes, one no — not what is left of the library.
+    const summary = await screen.findByTestId('review-round-summary')
+    expect(within(summary).getByTestId('review-tally-confirmed')).toHaveTextContent('1')
+    expect(within(summary).getByTestId('review-tally-rejected')).toHaveTextContent('1')
+    expect(within(summary).getByTestId('review-tally-skipped')).toHaveTextContent('0')
+    expect(screen.queryByTestId('review-question')).toBeNull()
+
+    // Enter is the single-tap „Ještě kolo?" — the next round is already in
+    // memory, fetched behind the summary card.
+    await user.keyboard('{Enter}')
+    await waitFor(() => {
+      expect(screen.getByTestId('review-question')).toHaveTextContent('Cyril')
+    })
+    expect(screen.getByTestId('review-round-progress')).toHaveTextContent('1/2')
+  })
+
+  it('titles the day’s first round and marks it done without closing the game', async () => {
+    const user = userEvent.setup()
+    queueMock
+      .mockResolvedValueOnce(makeQueue([faceQuestion('q1', 'Alice')]))
+      .mockResolvedValue(makeQueue([faceQuestion('q2', 'Bob')], { round: nextRound(2) }))
+    renderPage()
+    await screen.findByTestId('review-question')
+
+    expect(screen.getByTestId('review-round-progress')).toHaveTextContent("Today's mix")
+
+    await user.keyboard('{ArrowRight}')
+    const summary = await screen.findByTestId('review-round-summary')
+    expect(within(summary).getByTestId('review-daily-done')).toHaveTextContent('Done for today')
+    // „Splněno" is a fact about the day, not a locked door: the game goes on.
+    expect(within(summary).getByTestId('review-next-round')).toHaveTextContent('One more round?')
+    expect(window.localStorage.getItem(DAILY_STORAGE_KEY)).not.toBeNull()
+  })
+
+  it('counts a combo of consecutive answers, which a skip breaks and an undo restores', async () => {
+    const user = userEvent.setup()
+    queueMock.mockResolvedValue(
+      makeQueue([1, 2, 3, 4].map((n) => faceQuestion(`q${String(n)}`, `P${String(n)}`))),
+    )
+    renderPage()
+    await screen.findByTestId('review-question')
+
+    // One answer is not a run; two are.
+    await user.keyboard('{ArrowRight}')
+    expect(screen.queryByTestId('review-combo')).toBeNull()
+    await user.keyboard('{ArrowLeft}')
+    await waitFor(() => {
+      expect(screen.getByTestId('review-combo')).toHaveTextContent('2')
+    })
+
+    // „Nevím" is an honest answer, but it is not a decision — the run ends.
+    await user.keyboard(' ')
+    await waitFor(() => {
+      expect(screen.queryByTestId('review-combo')).toBeNull()
+    })
+
+    // Taking the skip back puts the run back exactly as it was.
+    await user.keyboard('z')
+    await waitFor(() => {
+      expect(screen.getByTestId('review-combo')).toHaveTextContent('2')
+    })
+  })
+
+  it('shows a breather that advances nothing — not the round, not the combo', async () => {
+    const user = userEvent.setup()
+    queueMock.mockResolvedValue(
+      makeQueue(
+        [faceQuestion('q1', 'Alice'), faceQuestion('q2', 'Bob'), faceQuestion('q3', 'Cyril')],
+        {
+          breathers: [breather('b1', 'Svatba u Kozáků', 1962)],
+        },
+      ),
+    )
+    renderPage()
+    await screen.findByTestId('review-question')
+
+    await user.keyboard('{ArrowRight}')
+    await user.keyboard('{ArrowRight}')
+
+    const breatherCard = await screen.findByTestId('review-breather')
+    expect(breatherCard).toHaveTextContent('Svatba u Kozáků')
+    expect(breatherCard).toHaveTextContent('1962')
+    expect(breatherCard).toHaveTextContent('just for the joy of it')
+    // There is nothing to answer here, so nothing may look answerable.
+    expect(screen.queryByRole('button', { name: /Yes/ })).toBeNull()
+
+    const positionBefore = screen.getByTestId('review-round-progress').textContent
+    const comboBefore = screen.getByTestId('review-combo').textContent
+    expect(answerMock).toHaveBeenCalledTimes(2)
+
+    // Any key moves on — and moving on is not an answer.
+    await user.keyboard('{ArrowRight}')
+    await waitFor(() => {
+      expect(screen.getByTestId('review-question')).toHaveTextContent('Cyril')
+    })
+    expect(answerMock).toHaveBeenCalledTimes(2)
+    expect(screen.getByTestId('review-round-progress').textContent).toBe(positionBefore)
+    expect(screen.getByTestId('review-combo').textContent).toBe(comboBefore)
+  })
+
+  it('turns a confirmed face into a reveal card that asks nothing', async () => {
+    const user = userEvent.setup()
+    answerMock.mockResolvedValue({
+      result: 'assigned',
+      answered: 1,
+      remaining: 2,
+      reveal: {
+        subject_uid: 's-alois',
+        name: 'Alois Skoták',
+        photo_count: 27,
+        oldest_year: 1962,
+        newest_year: 1998,
+      },
+    })
+    queueMock.mockResolvedValue(
+      makeQueue([
+        faceQuestion('q1', 'Alice'),
+        faceQuestion('q2', 'Bob'),
+        faceQuestion('q3', 'Cyril'),
+      ]),
+    )
+    renderPage()
+    await screen.findByTestId('review-question')
+
+    await user.keyboard('{ArrowRight}')
+    await waitFor(() => {
+      expect(screen.getByTestId('review-question')).toHaveTextContent('Bob')
+    })
+    await user.keyboard('{ArrowRight}')
+
+    const reveal = await screen.findByTestId('review-reveal')
+    expect(reveal).toHaveTextContent('Alois Skoták is now on 27 photos')
+    expect(reveal).toHaveTextContent('oldest 1962')
+    // It leads to the person, and it is not a question.
+    expect(screen.getByTestId('review-reveal-link')).toHaveAttribute('href', '/people/s-alois')
+    expect(answerMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('celebrates the tenth answer of the session, once', async () => {
+    const user = userEvent.setup()
+    queueMock.mockResolvedValue(
+      makeQueue(
+        Array.from({ length: 10 }, (_v, n) => faceQuestion(`q${String(n)}`, `P${String(n)}`)),
+      ),
+    )
+    renderPage()
+    await screen.findByTestId('review-question')
+
+    expect(screen.queryByTestId('review-milestone')).toBeNull()
+    for (let i = 0; i < 10; i += 1) {
+      await user.keyboard('{ArrowRight}')
+    }
+
+    const milestone = await screen.findByTestId('review-milestone')
+    expect(milestone).toHaveTextContent('10 answers!')
+  })
+
+  it('shows the day streak the leaderboard reports', async () => {
+    leaderboardMock.mockResolvedValue({
+      window: 'all',
+      caller_uid: 'u1',
+      entries: [
+        {
+          user_uid: 'u2',
+          display_name: 'Someone else',
+          yes_count: 9,
+          no_count: 1,
+          total: 10,
+          streak_days: 40,
+          is_me: false,
+        },
+        {
+          user_uid: 'u1',
+          display_name: 'Me',
+          yes_count: 3,
+          no_count: 1,
+          total: 4,
+          streak_days: 5,
+          is_me: true,
+        },
+      ],
+    })
+    queueMock.mockResolvedValue(makeQueue([faceQuestion('q1', 'Alice')]))
+    renderPage()
+    await screen.findByTestId('review-question')
+
+    // The player's own run, not the board leader's.
+    const streak = await screen.findByTestId('review-streak')
+    expect(streak).toHaveTextContent('5')
+  })
+
+  it('plays on when the streak cannot be read', async () => {
+    leaderboardMock.mockRejectedValue(new Error('offline'))
+    queueMock.mockResolvedValue(makeQueue([faceQuestion('q1', 'Alice')]))
+    renderPage()
+
+    // Flavour must never be able to stop the game.
+    expect(await screen.findByTestId('review-question')).toHaveTextContent('Alice')
+    expect(screen.queryByTestId('review-streak')).toBeNull()
+  })
+
+  it('closes a session left mid-round with a summary, having kept every answer', async () => {
+    const user = userEvent.setup()
+    queueMock.mockResolvedValue(
+      makeQueue([1, 2, 3, 4].map((n) => faceQuestion(`q${String(n)}`, `P${String(n)}`))),
+    )
+    renderPage()
+    await screen.findByTestId('review-question')
+
+    await user.keyboard('{ArrowRight}')
+    await user.keyboard('{ArrowLeft}')
+    await user.keyboard('{Escape}')
+
+    const summary = await screen.findByTestId('review-session-summary')
+    expect(within(summary).getByTestId('review-tally-confirmed')).toHaveTextContent('1')
+    expect(within(summary).getByTestId('review-tally-rejected')).toHaveTextContent('1')
+    // Both answers were persisted one by one as they were given: leaving costs
+    // nothing, which is the whole reason a round may be abandoned.
+    expect(answerMock).toHaveBeenCalledWith('q1', 'yes')
+    expect(answerMock).toHaveBeenCalledWith('q2', 'no')
+    // ...and the photos they touched are the way back into the library.
+    const mosaic = within(summary).getByTestId('review-session-mosaic')
+    expect(within(mosaic).getAllByRole('link')).toHaveLength(2)
+    expect(within(mosaic).getAllByRole('link')[0]).toHaveAttribute('href', '/photos/p-q2')
+  })
+
+  it('leaves straight away when there is nothing to report', async () => {
+    const user = userEvent.setup()
+    queueMock.mockResolvedValue(makeQueue([faceQuestion('q1', 'Alice')]))
+    renderPage()
+    await screen.findByTestId('review-question')
+
+    await user.keyboard('{Escape}')
+    // A player who answered nothing is not shown a summary of nothing.
+    expect(screen.queryByTestId('review-session-summary')).toBeNull()
+  })
+})
+
+/**
+ * Swipe is the touch twin of the three answer keys, and the risk it carries is
+ * a regression in the other input methods: a gesture layer that swallows keys,
+ * or a stray drag that answers on a photo somebody was only looking at.
+ */
+describe('ReviewPage swipe', () => {
+  /** A touch point in the shape a TouchEvent's touch list carries. */
+  function pt(x: number, y: number) {
+    return { clientX: x, clientY: y }
+  }
+
+  /** Drags across the stage by `(dx, dy)` and lifts the finger. */
+  function drag(el: Element, dx: number, dy: number) {
+    const from = pt(200, 300)
+    const to = pt(200 + dx, 300 + dy)
+    fireEvent.touchStart(el, { touches: [from], changedTouches: [from] })
+    fireEvent.touchMove(el, { touches: [to], changedTouches: [to] })
+    fireEvent.touchEnd(el, { touches: [], changedTouches: [to] })
+  }
+
+  it('answers yes / no / skip on a swipe right / left / down', async () => {
+    queueMock.mockResolvedValue(
+      makeQueue([1, 2, 3, 4].map((n) => faceQuestion(`q${String(n)}`, `P${String(n)}`))),
+    )
+    renderPage()
+    await screen.findByTestId('review-question')
+
+    drag(screen.getByTestId('review-stage'), VERDICT_THRESHOLD + 40, 0)
+    expect(answerMock).toHaveBeenLastCalledWith('q1', 'yes')
+    await waitFor(() => {
+      expect(screen.getByTestId('review-question')).toHaveTextContent('P2')
+    })
+
+    drag(screen.getByTestId('review-stage'), -(VERDICT_THRESHOLD + 40), 0)
+    expect(answerMock).toHaveBeenLastCalledWith('q2', 'no')
+    await waitFor(() => {
+      expect(screen.getByTestId('review-question')).toHaveTextContent('P3')
+    })
+
+    drag(screen.getByTestId('review-stage'), 0, VERDICT_THRESHOLD + 40)
+    expect(answerMock).toHaveBeenLastCalledWith('q3', 'skip')
+    await waitFor(() => {
+      expect(screen.getByTestId('review-question')).toHaveTextContent('P4')
+    })
+  })
+
+  it('names the verdict while the finger is still down, and answers nothing yet', async () => {
+    queueMock.mockResolvedValue(makeQueue([faceQuestion('q1', 'Alice'), faceQuestion('q2', 'Bob')]))
+    renderPage()
+    await screen.findByTestId('review-question')
+    const stage = screen.getByTestId('review-stage')
+
+    const from = pt(200, 300)
+    fireEvent.touchStart(stage, { touches: [from], changedTouches: [from] })
+    fireEvent.touchMove(stage, { touches: [pt(240, 300)], changedTouches: [pt(240, 300)] })
+
+    // Past the hint threshold but well short of the commit one: the card says
+    // where it is going, and the drag can still be steered or taken back.
+    expect(screen.getByTestId('review-swipe-hint')).toHaveTextContent('Yes')
+    expect(answerMock).not.toHaveBeenCalled()
+
+    // Steered back to the middle and released: nothing was answered.
+    fireEvent.touchMove(stage, { touches: [pt(202, 300)], changedTouches: [pt(202, 300)] })
+    expect(screen.queryByTestId('review-swipe-hint')).toBeNull()
+    fireEvent.touchEnd(stage, { touches: [], changedTouches: [pt(202, 300)] })
+    expect(answerMock).not.toHaveBeenCalled()
+    expect(screen.getByTestId('review-question')).toHaveTextContent('Alice')
+  })
+
+  it('ignores a short drag and a second finger', async () => {
+    queueMock.mockResolvedValue(makeQueue([faceQuestion('q1', 'Alice'), faceQuestion('q2', 'Bob')]))
+    renderPage()
+    await screen.findByTestId('review-question')
+    const stage = screen.getByTestId('review-stage')
+
+    drag(stage, VERDICT_THRESHOLD - 10, 0)
+    expect(answerMock).not.toHaveBeenCalled()
+
+    // Two fingers on a photo is a pinch, not an answer.
+    const from = pt(200, 300)
+    fireEvent.touchStart(stage, { touches: [from, pt(260, 300)], changedTouches: [from] })
+    fireEvent.touchEnd(stage, { touches: [], changedTouches: [pt(400, 300)] })
+    expect(answerMock).not.toHaveBeenCalled()
+    expect(screen.getByTestId('review-question')).toHaveTextContent('Alice')
+  })
+
+  it('leaves the keyboard exactly as it was', async () => {
+    const user = userEvent.setup()
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    queueMock.mockResolvedValue(
+      makeQueue([1, 2, 3, 4].map((n) => faceQuestion(`q${String(n)}`, `P${String(n)}`))),
+    )
+    renderPage()
+    await screen.findByTestId('review-question')
+
+    // The gesture layer sits on the stage; the document-level shortcuts must be
+    // untouched by it — this is the key-collision regression the game keeps
+    // being at risk of.
+    await user.keyboard('o')
+    expect(open).toHaveBeenCalledWith('/photos/p-q1', '_blank', 'noopener,noreferrer')
+    expect(answerMock).not.toHaveBeenCalled()
+
+    await user.keyboard('y')
+    expect(answerMock).toHaveBeenLastCalledWith('q1', 'yes')
+    await waitFor(() => {
+      expect(screen.getByTestId('review-question')).toHaveTextContent('P2')
+    })
+    await user.keyboard('n')
+    expect(answerMock).toHaveBeenLastCalledWith('q2', 'no')
+    await waitFor(() => {
+      expect(screen.getByTestId('review-question')).toHaveTextContent('P3')
+    })
+    await user.keyboard(' ')
+    expect(answerMock).toHaveBeenLastCalledWith('q3', 'skip')
+  })
+})
+
+/**
  * The anchor out to the photo is an overlay, and jsdom evaluates no media query
  * and loads no stylesheet — so what keeps it off the answer buttons and above the
  * face rectangle's dimming veil is asserted against the shipped `review.css`
@@ -848,5 +1261,29 @@ describe('review.css photo-link overlay', () => {
     )
     // There is no hover to reveal it with, so it may not be dimmed there.
     expect(onTouch.get('opacity')).toBe('1')
+  })
+
+  it('keeps the drag wrapper exactly the size of the stage', () => {
+    // The photo frame caps itself against `100cqh` — the stage's own height. A
+    // wrapper that did not fill the stage would silently change what `cqh`
+    // measures, and with it the frame the face box is normalised against.
+    const card = rule(css, /\.review-game__card\s*(?=\{)/)
+    expect(card.get('width')).toBe('100%')
+    expect(card.get('height')).toBe('100%')
+
+    const stage = rule(css, /\.review-game__stage\s*(?=\{)/)
+    expect(stage.get('flex')).toBe('1 1 0')
+    expect(stage.get('container-type')).toBe('size')
+    // The verdict badge is positioned against the stage.
+    expect(stage.get('position')).toBe('relative')
+  })
+
+  it('keeps the swipe verdict off the answer row and out of the way of taps', () => {
+    const verdict = rule(css, /\.review-game__verdict\s*(?=\{)/)
+    // Top of the stage: the three buttons own the bottom of the screen.
+    expect(verdict.get('top')).toBe('1rem')
+    expect(verdict.get('bottom')).toBeUndefined()
+    // It is a label on a gesture, never a target of its own.
+    expect(verdict.get('pointer-events')).toBe('none')
   })
 })
