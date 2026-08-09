@@ -40,7 +40,11 @@ import (
 // simply a photo that is not hidden — but it is still a bump, because a reader
 // that silently ignored the key would un-hide every hidden photo on restore,
 // which is precisely the class of quiet data loss the version exists to prevent.
-const Version = 2
+// Version 3 adds temporal.precision (see Temporal.Precision). Additive again, and
+// a bump for the same reason: a reader that ignored it would restore "somewhere
+// in the seventies" as a photo taken on 1 January 1970, turning a period nobody
+// could pin down into an exact day nobody ever claimed.
+const Version = 3
 
 // Document is one photo's sidecar: everything a human created or a machine
 // derived that would be expensive or impossible to recompute from the original
@@ -156,6 +160,11 @@ type Temporal struct {
 	// the whole meaning.
 	Estimated bool   `yaml:"estimated,omitempty"`
 	Note      string `yaml:"note,omitempty"`
+	// Precision is the grain TakenAt was stated at — day, month, year or decade.
+	// Anything coarser than a day means TakenAt is the first instant of that period
+	// in UTC, so a reader that dropped this would hand back a made-up day. Omitted
+	// for the ordinary day precision, which is what an absent key means.
+	Precision string `yaml:"precision,omitempty"`
 }
 
 // Spatial is where the photo was taken, plus the reverse-geocoded place. The

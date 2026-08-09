@@ -1,3 +1,5 @@
+import { type TakenPrecision } from '../lib/takenDate'
+
 import { ApiError } from './auth'
 
 /**
@@ -56,6 +58,8 @@ export interface BulkOperations {
   set_description?: string
   /** Clear the description. */
   clear_description?: boolean
+  /** Set the capture date of every photo at a stated grain. */
+  set_taken_at?: BulkTakenAt
   /** Set the GPS location. */
   set_location?: BulkLocation
   /** Clear the GPS location. */
@@ -74,6 +78,23 @@ export interface BulkOperations {
   unhide?: boolean
   /** Favorite (true) or unfavorite (false) for the acting user. */
   set_favorite?: boolean
+}
+
+/**
+ * A capture date for a `set_taken_at` bulk operation. The value's shape follows
+ * the precision, so the two can never disagree about how much of a date was
+ * actually stated: `1974-06-14` for a day, `1974-06` for a month, `1974` for a
+ * year and the decade's first year (`1970`) for a decade. There is no time of
+ * day — the operation exists for scans, where the hour is never known.
+ *
+ * The backend stores the first instant of the stated period in UTC and records
+ * the precision beside it, so the photos sort and filter into that period while
+ * nothing shows a day nobody claimed. It is catalogue metadata only: the
+ * original files and their EXIF are never touched.
+ */
+export interface BulkTakenAt {
+  precision: TakenPrecision
+  value: string
 }
 
 /** Per-photo outcome of a bulk apply (`bulk.PhotoResult`). */

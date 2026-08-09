@@ -975,6 +975,25 @@
       "clear": "Clear",
       "placeholder": "New description…"
     },
+    "takenAt": {
+      "label": "Capture date",
+      "noChange": "— no change —",
+      "grain": {
+        "day": "Exact date",
+        "month": "Month and year",
+        "year": "Year only",
+        "decade": "Decade"
+      },
+      "hint": "Catalogue only — the original files and their EXIF are left untouched.",
+      "pickDecade": "Pick a decade…",
+      "invalid": "Fill in the capture date for the grain you picked.",
+      "phrase": {
+        "day": "{{value}}",
+        "month": "{{value}}",
+        "year": "the year {{value}}",
+        "decade": "{{value}}"
+      }
+    },
     "location": {
       "label": "Location",
       "noChange": "— no change —",
@@ -1015,6 +1034,8 @@
       "removeLabels": "Remove labels: {{names}}",
       "setDescription": "Set the description to “{{value}}”",
       "clearDescription": "Clear the description",
+      "setTakenAt": "Set the capture date to {{date}}",
+      "setTakenAtPending": "Set the capture date — pick one first",
       "setLocation": "Set the location to {{lat}}, {{lng}}",
       "clearLocation": "Clear the location",
       "archive": "Archive",
@@ -1027,6 +1048,8 @@
     "confirm": {
       "body_one": "This change affects {{count}} photo. Read the summary above, then confirm.",
       "body_other": "This change affects {{count}} photos at once. Read the summary above, then confirm.",
+      "takenAt_one": "Set {{date}} on {{count}} photo? Their current capture dates are overwritten.",
+      "takenAt_other": "Set {{date}} on {{count}} photos? Their current capture dates are overwritten.",
       "apply_one": "Yes, apply to {{count}} photo",
       "apply_other": "Yes, apply to {{count}} photos",
       "back": "Go back"
@@ -1635,6 +1658,7 @@
       "takenAtEstimated": "Date is an estimate",
       "takenAtNote": "Dating note",
       "takenAtNotePlaceholder": "e.g. around 1950, before the wedding",
+      "takenAtPeriodHint": "Stored as the period {{period}}. Typing an exact date here replaces it with that one day.",
       "estimatedMarker": "c.",
       "estimatedTitle": "Estimated date, not an exact one",
       "estimatedTitleNote": "Estimated date, not an exact one: {{note}}",
@@ -1932,6 +1956,9 @@
     "minutesSeconds": "{{minutes}} min {{seconds}} s",
     "hours": "{{hours}} h",
     "hoursMinutes": "{{hours}} h {{minutes}} min"
+  },
+  "takenDate": {
+    "decade": "{{from}}–{{to}}"
   },
   "notFound": {
     "title": "Page not found",

@@ -3,8 +3,10 @@ package bulkapi
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/panbotka/kukatko/internal/bulk"
+	"github.com/panbotka/kukatko/internal/photos"
 )
 
 // Coordinate bounds for a set-location operation.
@@ -35,6 +37,7 @@ type operationsInput struct {
 	ClearCaption     bool           `json:"clear_caption"`
 	SetDescription   *string        `json:"set_description"`
 	ClearDescription bool           `json:"clear_description"`
+	SetTakenAt       *takenAtInput  `json:"set_taken_at"`
 	SetLocation      *locationInput `json:"set_location"`
 	ClearLocation    bool           `json:"clear_location"`
 	Archive          bool           `json:"archive"`
@@ -59,6 +62,37 @@ type locationInput struct {
 	Lng float64 `json:"lng"`
 }
 
+// takenAtInput is the wire form of a set-taken-date operation. The value's shape
+// follows the precision, so the pair can never disagree about how much of a date
+// was actually stated:
+//
+//	{"precision": "day",    "value": "1974-06-14"}
+//	{"precision": "month",  "value": "1974-06"}
+//	{"precision": "year",   "value": "1974"}
+//	{"precision": "decade", "value": "1970"}
+//
+// There is no time of day: the operation exists for scans and inherited prints,
+// where the hour is never known and a request that could carry one would invite
+// stamping a made-up one on fifty photos at once. See resolveTakenAt for what the
+// value resolves to.
+type takenAtInput struct {
+	Precision string `json:"precision"`
+	Value     string `json:"value"`
+}
+
+// The layouts each precision's value is parsed with. A layout resolves to the
+// first instant of the period it names, in UTC — Go's reference date fills the
+// missing components with the first day of the month and midnight.
+var takenAtLayouts = map[string]string{
+	photos.TakenAtPrecisionDay:    "2006-01-02",
+	photos.TakenAtPrecisionMonth:  "2006-01",
+	photos.TakenAtPrecisionYear:   "2006",
+	photos.TakenAtPrecisionDecade: "2006",
+}
+
+// yearsInDecade is the span a decade precision rounds its year down to.
+const yearsInDecade = 10
+
 // toOperations validates the input and resolves it into a bulk.Operations. It
 // rejects mutually exclusive set/clear pairs, conflicting archive/unarchive and
 // out-of-range coordinates.
@@ -81,6 +115,12 @@ func (in operationsInput) toOperations() (bulk.Operations, error) {
 		return bulk.Operations{}, err
 	}
 	ops.Description = description
+
+	takenAt, err := resolveTakenAt(in.SetTakenAt)
+	if err != nil {
+		return bulk.Operations{}, err
+	}
+	ops.TakenAt = takenAt
 
 	location, clearLocation, err := in.resolveLocation()
 	if err != nil {
@@ -113,6 +153,41 @@ func (in operationsInput) toOperations() (bulk.Operations, error) {
 	}
 	ops.Flag = flag
 	return ops, nil
+}
+
+// resolveTakenAt validates a set-taken-date operation and resolves it to the
+// instant that will be stored: the **first instant of the stated period, in
+// UTC**. "1974" becomes 1974-01-01T00:00:00Z, "1974-06" the first of June, and a
+// decade the 1 January of its first year — the year the value names is rounded
+// down to its decade ("1974" and "1970" both mean the seventies), so a caller
+// cannot state a decade that starts mid-decade.
+//
+// UTC is not a detail: the year facets and the period bounds read taken_at in
+// UTC, so anchoring there is what makes a photo dated "1974" land in the 1974
+// bucket rather than in December 1973 for readers east of Greenwich.
+//
+// A nil pointer means no change.
+func resolveTakenAt(set *takenAtInput) (*bulk.TakenAt, error) {
+	if set == nil {
+		// No date change requested: nil pointer, nil error is the "leave unchanged"
+		// signal here.
+		return nil, nil //nolint:nilnil
+	}
+	layout, ok := takenAtLayouts[set.Precision]
+	if !ok {
+		return nil, fmt.Errorf(
+			"set_taken_at.precision %q must be day, month, year or decade", set.Precision)
+	}
+	at, err := time.ParseInLocation(layout, set.Value, time.UTC)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"set_taken_at.value %q is not a %s (expected %s)", set.Value, set.Precision, layout)
+	}
+	if set.Precision == photos.TakenAtPrecisionDecade {
+		decade := at.Year() - at.Year()%yearsInDecade
+		at = time.Date(decade, time.January, 1, 0, 0, 0, 0, time.UTC)
+	}
+	return &bulk.TakenAt{At: at, Precision: set.Precision}, nil
 }
 
 // resolveRating validates a set-rating operation, rejecting a star value outside

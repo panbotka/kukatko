@@ -220,6 +220,9 @@ func (o Operations) photoColumnUpdate(uid string) (string, []any, bool) {
 	if o.Description != nil {
 		appendSet("description", *o.Description)
 	}
+	if o.TakenAt != nil {
+		o.appendTakenAt(appendSet)
+	}
 	if o.Hide != nil {
 		appendSet("hidden_from_library", *o.Hide)
 	}
@@ -236,6 +239,29 @@ func (o Operations) photoColumnUpdate(uid string) (string, []any, bool) {
 		return "", nil, false
 	}
 	return "UPDATE photos SET " + strings.Join(set, ", ") + " WHERE uid = $1", args, true
+}
+
+// appendTakenAt adds the SET clauses of a set-taken-date operation: the anchor
+// itself, its "a person decided this" provenance, the grain it was stated at and
+// the approximate-date pair that grain implies.
+//
+// A grain coarser than a day is by nature a guess — nobody who writes "1974" on
+// the back of a print is claiming the first of January — so it also raises
+// taken_at_estimated, which is what puts the "cca" marker in front of the date
+// everywhere it is shown. An exact date is the opposite claim, so it lowers the
+// flag and drops the dating note with it, keeping 0029's invariant that a note
+// only lives beside a date flagged as an estimate. Nothing here reaches the
+// original file: this is catalogue metadata, and the caller's sidecar rewrite is
+// what carries it out to storage.
+func (o Operations) appendTakenAt(appendSet func(column string, value any)) {
+	estimated := o.TakenAt.Precision != photos.TakenAtPrecisionDay
+	appendSet("taken_at", o.TakenAt.At.UTC())
+	appendSet("taken_at_source", photos.TakenAtSourceManual)
+	appendSet("taken_at_precision", o.TakenAt.Precision)
+	appendSet("taken_at_estimated", estimated)
+	if !estimated {
+		appendSet("taken_at_note", "")
+	}
 }
 
 // appendLocationAndArchive adds the literal (argument-free) SET clauses for

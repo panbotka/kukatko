@@ -10,6 +10,7 @@ package bulk
 
 import (
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -52,6 +53,22 @@ type Location struct {
 	Lng float64 `json:"lng"`
 }
 
+// TakenAt is a capture date set by a bulk operation, together with the grain it
+// was stated at. At is always the **first instant of the stated period in UTC**
+// (1 January for a year, the 1st for a month), because taken_at is the single
+// anchor the timeline, the period filter, the year facets and the query
+// language's year: filter all read — a box of scans dated "1974" has to sort and
+// filter into 1974 like any other photo. Precision is what keeps the anchor from
+// being read back as a day nobody claimed; see photos.TakenAtPrecision*.
+//
+// It changes catalogue metadata only. The originals and their EXIF are never
+// touched — the app does not write into the files it was given — and the
+// caller's usual sidecar rewrite carries the new date out to storage.
+type TakenAt struct {
+	At        time.Time `json:"at"`
+	Precision string    `json:"precision"`
+}
+
 // Operations is the resolved set of changes to apply to every target photo. Each
 // field is independently optional: nil slices/pointers and a false ClearLocation
 // mean "leave unchanged". A non-nil Title/Description pointer sets that column
@@ -61,12 +78,16 @@ type Location struct {
 // favorite; Rating sets the acting user's star rating (0–5) and Flag the
 // pick/reject flag.
 type Operations struct {
-	AddAlbums     []string
-	RemoveAlbums  []string
-	AddLabels     []string
-	RemoveLabels  []string
-	Title         *string
-	Description   *string
+	AddAlbums    []string
+	RemoveAlbums []string
+	AddLabels    []string
+	RemoveLabels []string
+	Title        *string
+	Description  *string
+	// TakenAt sets the capture date of every target photo at a stated grain — the
+	// one repair for a shelf of scans the scanner dated to the day it was switched
+	// on. See TakenAt for why a coarse grain still stores a concrete instant.
+	TakenAt       *TakenAt
 	Location      *Location
 	ClearLocation bool
 	Archive       *bool
@@ -145,7 +166,22 @@ func (o Operations) IsEmpty() bool {
 func (o Operations) Summary() map[string]any {
 	summary := o.collectionSummary()
 	o.addScalarSummary(summary)
+	o.addTakenAtSummary(summary)
 	return summary
+}
+
+// addTakenAtSummary records a set-taken-date operation in the audit details, as
+// the instant that was stored and the grain it was stated at. Both are needed to
+// read the entry back years later: the instant alone would leave "1 January
+// 1974" looking like a date somebody typed.
+func (o Operations) addTakenAtSummary(summary map[string]any) {
+	if o.TakenAt == nil {
+		return
+	}
+	summary["taken_at"] = map[string]any{
+		"at":        o.TakenAt.At.UTC().Format(time.RFC3339),
+		"precision": o.TakenAt.Precision,
+	}
 }
 
 // collectionSummary adds the album/label slice operations to a fresh summary map.

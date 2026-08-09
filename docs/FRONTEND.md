@@ -814,7 +814,7 @@ here.
   only then does the batch go; a canceled dialog creates nothing. A failed creation prints the server's message
   (`bulkEdit.createError`) and doesn't send the batch, the selection stays; when the batch fails only after creation,
   `bulkEdit.createdButApplyFailed` says the items already exist and only the assignment failed),
-  **Metadata** (set/clear the description), **Poloha**
+  **Metadata** (set/clear the description + **Datum pořízení**, `TakenAtField`), **Poloha**
   (set/clear coordinates; above the `lat`/`lng` fields on `set` sits **the same `PlaceSearch`** as in the detail
   editor — it fills only those two fields, so the sent batch is the same as if someone typed the coordinates
   by hand) and **Příznaky** (private, archive, **Knihovna** = `hide`/`unhide`, favorite); the set/clear
@@ -825,9 +825,20 @@ here.
   are in the danger key (`destructive` chips, `text-danger` label, `border-danger` select). Below the form is
   **`PendingChanges`** — a `.kk-surface` panel that says sentence by sentence what apply will do, and **how many
   photos it affects** (destructive rows in red + `visually-hidden` „(destruktivní)"; `aria-live`).
+  `TakenAtField` re-dates the whole selection (`set_taken_at`): first the **grain** (přesné datum /
+  měsíc a rok / jen rok / desetiletí), then the narrowest control that can state it (`type="date"`,
+  `type="month"`, a bounded `type="number"` year, a decade **select** labelled „1970–1979"
+  via `lib/takenDate` `formatDecade`). The grain leads because it is the real decision — a box of scans is
+  dated „1974" far oftener than to the day, and a form opening with a date picker would make the honest
+  answer the awkward one. The value's shape follows the grain and is validated client-side
+  (`bulkEdit.takenAt.invalid`) before the batch goes; a grain change clears the value. The summary row is
+  toned **destructive** (the old date is overwritten, and on some of the selection it may have been the real
+  one) and a `Form.Text` says the originals and their EXIF are untouched.
   A selection **over `LARGE_SELECTION` (50) photos** requires **explicit confirmation**: the first Apply only
   opens a danger alert („Ano, použít na N fotek" / „Zpět"), and **any form change revokes the
-  confirmation**. Client-side coordinate validation + "at least one change" stays; after applying,
+  confirmation**. **A capture date is confirmed at any selection size** and names itself — „Nastavit rok 1974
+  pro 36 fotek?" (`bulkEdit.confirm.takenAt`): it overwrites the one fact the whole library is ordered by,
+  on photos whose current dates this dialog does not show. Client-side coordinate validation + "at least one change" stays; after applying,
   a **per-photo result summary** from the response. A failed request **prints the server's message**
   (`ApiError.message` — a conflicting operation, too large a batch), otherwise a generic `bulkEdit.applyError`;
   the selection stays untouched so apply can be retried. The optional prop **`prefill`**
@@ -2904,6 +2915,16 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   accepts: `1965`, `1960-1969`, `1960-`, `-1949`) and `formatPeriod`. UTC is what makes a picked decade
   return exactly what the year facet counted: EXIF times are read as UTC wall clock and the DB session is
   pinned to UTC, so `date_part('year', taken_at)` and these bounds agree by construction);
+  `lib/takenDate.ts` (pure: how much of a capture date may be **shown**. `TAKEN_PRECISIONS`/
+  `TakenPrecision` mirror the backend's `taken_at_precision`; `isCoarsePrecision` (an absent or unknown
+  grain is an ordinary date, the safe reading); `formatTakenPeriod(takenAt, precision, t, locale)` → „1974",
+  „červen 1974", „1970–1979", and `''` for a plain date so the caller falls back to its own date rendering;
+  `formatDecade` names a decade as the span „1970–1979" in both languages — the same shape `lib/period`'s
+  `formatPeriod` writes for a picked decade, so the filter and the caption cannot disagree). The anchor is
+  read in **UTC**, the zone it was stored in: read locally, a photo dated
+  „1974" would be 31 December 1973 west of Greenwich and would contradict the year facet it sits in. Used by
+  `MetadataPanel` (the read-only capture-date row + a `Form.Text` in the edit form saying which period the
+  instant in the field stands for), `PhotoTile` (the alt text) and `BulkEditModal`);
   `lib/lifeYears.ts` (pure: `captureYear` (the **UTC** year of an ISO capture time — a local reading would
   move a New Year's Eve photograph into the wrong decade), `approximateAge(takenAt, birthYear)` = the plain
   difference of two years, `null` whenever nothing can be said: no date, no birth year, a photo dated

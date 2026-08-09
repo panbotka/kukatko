@@ -35,6 +35,15 @@ export interface Photo {
    * kept while `taken_at_estimated` is set — the backend clears it with the flag.
    */
   taken_at_note?: string
+  /**
+   * How fine `taken_at` actually is: `'day'` (an ordinary date, and what an
+   * absent value means), `'month'`, `'year'` or `'decade'`. Anything coarser than
+   * a day means `taken_at` is the first instant of that period in UTC, so
+   * anything rendering the date must consult this — see `lib/takenDate`. Sorting,
+   * the timeline, the period filter and the year facets go on using `taken_at`
+   * exactly as before.
+   */
+  taken_at_precision?: string
   title: string
   description: string
   lat?: number

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -300,4 +301,110 @@ func (stubService) Apply(
 	_ context.Context, _ string, _ []string, _ bulk.Operations,
 ) (bulk.Result, error) {
 	return bulk.Result{}, nil
+}
+
+// TestResolveTakenAt verifies that each precision parses its own value shape and
+// resolves to the first instant of the period it names, in UTC — the anchor the
+// year facets and the period filter both read.
+func TestResolveTakenAt(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		in      *takenAtInput
+		wantErr bool
+		want    time.Time
+	}{
+		{
+			name: "day is the day itself at midnight UTC",
+			in:   &takenAtInput{Precision: "day", Value: "1974-06-14"},
+			want: time.Date(1974, time.June, 14, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			name: "month is the first of the month",
+			in:   &takenAtInput{Precision: "month", Value: "1974-06"},
+			want: time.Date(1974, time.June, 1, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			name: "year is its 1 January",
+			in:   &takenAtInput{Precision: "year", Value: "1974"},
+			want: time.Date(1974, time.January, 1, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			name: "decade is the 1 January of its first year",
+			in:   &takenAtInput{Precision: "decade", Value: "1970"},
+			want: time.Date(1970, time.January, 1, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			// "1974" and "1970" both mean the seventies, so a caller cannot state a
+			// decade that starts mid-decade.
+			name: "a decade rounds its year down",
+			in:   &takenAtInput{Precision: "decade", Value: "1974"},
+			want: time.Date(1970, time.January, 1, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			name:    "an unknown precision is rejected",
+			in:      &takenAtInput{Precision: "hour", Value: "1974-06-14T10"},
+			wantErr: true,
+		},
+		{
+			name:    "a day value under year precision is rejected",
+			in:      &takenAtInput{Precision: "year", Value: "1974-06-14"},
+			wantErr: true,
+		},
+		{
+			name:    "a year value under day precision is rejected",
+			in:      &takenAtInput{Precision: "day", Value: "1974"},
+			wantErr: true,
+		},
+		{
+			name:    "an impossible day is rejected",
+			in:      &takenAtInput{Precision: "day", Value: "1974-02-31"},
+			wantErr: true,
+		},
+		{
+			name:    "an empty value is rejected",
+			in:      &takenAtInput{Precision: "year", Value: ""},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := resolveTakenAt(tt.in)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("resolveTakenAt(%+v) = %+v, want error", tt.in, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("resolveTakenAt(%+v): %v", tt.in, err)
+			}
+			if !got.At.Equal(tt.want) {
+				t.Errorf("At = %s, want %s", got.At, tt.want)
+			}
+			if got.At.Location() != time.UTC {
+				t.Errorf("At location = %s, want UTC", got.At.Location())
+			}
+			if got.Precision != tt.in.Precision {
+				t.Errorf("Precision = %q, want %q", got.Precision, tt.in.Precision)
+			}
+		})
+	}
+}
+
+// TestResolveTakenAtAbsent verifies that omitting the operation leaves the
+// capture date alone rather than clearing it.
+func TestResolveTakenAtAbsent(t *testing.T) {
+	t.Parallel()
+
+	got, err := resolveTakenAt(nil)
+	if err != nil {
+		t.Fatalf("resolveTakenAt(nil): %v", err)
+	}
+	if got != nil {
+		t.Errorf("resolveTakenAt(nil) = %+v, want nil", got)
+	}
 }

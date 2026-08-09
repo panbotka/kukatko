@@ -863,7 +863,8 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `POST /photos/bulk` `{photo_uids:[…], operations:{…}}` applies a set of operations to many photos
   **in a single transaction** with an audit-log entry. Operations (each optional): `add_to_albums`/
   `remove_from_albums`, `add_labels`/`remove_labels`, `set_caption`/`clear_caption` (→title),
-  `set_description`/`clear_description`, `set_location {lat,lng}`/`clear_location`,
+  `set_description`/`clear_description`, `set_taken_at {precision,value}` (see below),
+  `set_location {lat,lng}`/`clear_location`,
   `archive`/`unarchive`, `hide`/`unhide` (library visibility, see above),
   `set_favorite` (**per-user**), `set_rating` (0–5) / `set_flag`
   (none/pick/reject/eye) (**per-user**, invalid value → 400). Response `{results:[{photo_uid,status,
@@ -871,6 +872,16 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `skipped` (duplicate uid)/`error` (the photo does not exist — it **does not abort valid** ones); only a DB error
   rolls back the whole batch (500). A set/clear, archive/unarchive or hide/unhide conflict, an unknown operation,
   a missing album/label in an add → **400**; a batch above `bulk.max_batch_size` (default 1000) → **413**.
+  `set_taken_at` re-dates a whole selection at once — the repair for a shelf of scans carrying the day the
+  scanner was switched on. The value's shape follows the precision, so the two cannot disagree:
+  `{"precision":"day","value":"1974-06-14"}`, `"month"`/`1974-06`, `"year"`/`1974`,
+  `"decade"`/`1970` (a year mid-decade is rounded down). There is **no time of day**. It stores the
+  **first instant of the stated period in UTC** into `taken_at` — so the photos sort and filter into that
+  period everywhere (timeline, period filter, year facets, `year:`) — plus `taken_at_source = manual`,
+  `taken_at_precision` and, for a grain coarser than a day, `taken_at_estimated = true`; an exact date
+  instead lowers that flag and clears `taken_at_note` with it. A precision outside the four, or a value that
+  does not parse at its precision, → **400**. It never touches the original file or its EXIF; the caller's
+  sidecar rewrite carries the change to storage.
   Mounted by another `server.WithAPI` (`buildBulkAPI` in `cmd/kukatko/bulk.go`).
 - **Maps API (`/api/v1`, `internal/mapsapi` + `internal/mapy`, authenticated via `RequireAuth`):**
   a backend proxy to mapy.com (**the key never reaches the client** — only the `X-Mapy-Api-Key` header) +

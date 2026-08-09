@@ -524,6 +524,50 @@ describe('MetadataPanel approximate date', () => {
     expect(field).not.toHaveTextContent('For example 24 December 1998')
   })
 
+  it('shows a year-precision date as the year, never as its 1 January anchor', () => {
+    // The anchor is a storage decision — it is what makes the photo sort into
+    // 1974 — so printing it back would be the app inventing a day nobody claimed.
+    renderPanel({
+      photo: photo({
+        taken_at: '1974-01-01T00:00:00Z',
+        taken_at_precision: 'year',
+        taken_at_estimated: true,
+      }),
+    })
+
+    const field = screen.getByRole('button', { name: 'Edit Taken at' })
+    expect(field).toHaveTextContent('1974')
+    expect(field).not.toHaveTextContent('1/1/1974')
+  })
+
+  it('shows a decade-precision date as the decade', () => {
+    renderPanel({
+      photo: photo({
+        taken_at: '1970-01-01T00:00:00Z',
+        taken_at_precision: 'decade',
+        taken_at_estimated: true,
+      }),
+    })
+
+    expect(screen.getByRole('button', { name: 'Edit Taken at' })).toHaveTextContent('1970–1979')
+  })
+
+  it('says so in the edit form when the date field holds a period’s anchor', async () => {
+    const current = photo({ taken_at: '1974-01-01T00:00:00Z', taken_at_precision: 'year' })
+    mockApi(current)
+    const user = userEvent.setup()
+    renderPanel({ photo: current })
+    await startEditing(user)
+
+    // The field is an instant, so it necessarily shows the anchor. Saying which
+    // period it stands for is the honest way round.
+    expect(
+      screen.getByText(
+        'Stored as the period 1974. Typing an exact date here replaces it with that one day.',
+      ),
+    ).toBeInTheDocument()
+  })
+
   it('renders a known date to the minute, without any circa marker or seconds', () => {
     renderPanel({ photo: photo({ taken_at: '2026-01-02T00:33:39Z' }) })
 

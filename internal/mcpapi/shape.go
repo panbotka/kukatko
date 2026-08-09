@@ -71,6 +71,11 @@ type photoDetail struct {
 	// TakenAtNote records in the owner's own words what the guess rests on.
 	TakenAtEstimated bool   `json:"taken_at_estimated,omitempty"`
 	TakenAtNote      string `json:"taken_at_note,omitempty"`
+	// TakenAtPrecision is present only when the date is coarser than a day —
+	// "month", "year" or "decade" — and then TakenAt is the first instant of that
+	// period. Without it an agent would read "somewhere in the seventies" as a photo
+	// taken on 1 January 1970 and repeat that as a fact.
+	TakenAtPrecision string `json:"taken_at_precision,omitempty"`
 
 	MediaType string `json:"media_type,omitempty"`
 	FileName  string `json:"file_name,omitempty"`
@@ -246,6 +251,17 @@ func toSubjectInfo(s people.Subject) subjectInfo {
 		Type:  string(s.Type),
 		Notes: s.Notes,
 	}
+}
+
+// coarsePrecision reports a capture date's grain only when it is coarser than a
+// day, so the ordinary case stays absent from the payload: an agent reads a
+// missing field as "an ordinary date" far more reliably than it reads a "day"
+// repeated on every photo in the library.
+func coarsePrecision(precision string) string {
+	if precision == photos.TakenAtPrecisionDay {
+		return ""
+	}
+	return precision
 }
 
 // formatTime renders an optional timestamp as RFC 3339, or the empty string when

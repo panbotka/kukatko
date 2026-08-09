@@ -244,6 +244,7 @@ func metadataOf(p photos.Photo) photos.MetadataUpdate {
 		TakenAtSource:    p.TakenAtSource,
 		TakenAtEstimated: p.TakenAtEstimated,
 		TakenAtNote:      p.TakenAtNote,
+		TakenAtPrecision: p.TakenAtPrecision,
 		Lat:              p.Lat,
 		Lng:              p.Lng,
 		Altitude:         p.Altitude,
