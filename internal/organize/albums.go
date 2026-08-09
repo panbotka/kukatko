@@ -432,6 +432,48 @@ func (s *Store) AlbumsForPhoto(ctx context.Context, photoUID string) ([]Album, e
 	return out, nil
 }
 
+// listAlbumUIDsForPhotosSQL selects the album membership of a whole set of
+// photos in one index scan (idx_album_photos_photo_uid). It returns uids only —
+// the callers that want this ask "were these two photos in the same album?",
+// which needs no titles and would otherwise pay to hydrate an album record per
+// membership row.
+const listAlbumUIDsForPhotosSQL = `
+SELECT photo_uid, album_uid
+FROM album_photos
+WHERE photo_uid = ANY($1)
+ORDER BY photo_uid, album_uid`
+
+// AlbumUIDsForPhotos returns, per photo uid, the uids of the albums that photo
+// belongs to. Photos with no album — and uids that name nothing — are simply
+// absent from the map rather than present with an empty slice, so a caller reads
+// "no albums" the same way either way. An empty input yields an empty map
+// without touching the database.
+func (s *Store) AlbumUIDsForPhotos(
+	ctx context.Context, photoUIDs []string,
+) (map[string][]string, error) {
+	byPhoto := make(map[string][]string, len(photoUIDs))
+	if len(photoUIDs) == 0 {
+		return byPhoto, nil
+	}
+	rows, err := s.pool.Query(ctx, listAlbumUIDsForPhotosSQL, photoUIDs)
+	if err != nil {
+		return nil, fmt.Errorf("organize: listing album membership: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var photoUID, albumUID string
+		if err := rows.Scan(&photoUID, &albumUID); err != nil {
+			return nil, fmt.Errorf("organize: scanning album membership: %w", err)
+		}
+		byPhoto[photoUID] = append(byPhoto[photoUID], albumUID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("organize: iterating album membership: %w", err)
+	}
+	return byPhoto, nil
+}
+
 // translateMembershipFK maps a foreign-key violation from an album_photos write
 // to ErrAlbumNotFound or ErrPhotoNotFound by inspecting the violated constraint,
 // and wraps any other error. The constraint name is matched on the referencing

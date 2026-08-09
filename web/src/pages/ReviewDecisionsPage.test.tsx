@@ -68,7 +68,15 @@ function leaderboard(): Leaderboard {
     window: 'all',
     caller_uid: 'admin',
     entries: [
-      { user_uid: 'u1', display_name: 'Alice', yes_count: 3, no_count: 1, total: 4, is_me: false },
+      {
+        user_uid: 'u1',
+        display_name: 'Alice',
+        yes_count: 3,
+        no_count: 1,
+        total: 4,
+        streak_days: 0,
+        is_me: false,
+      },
     ],
   }
 }

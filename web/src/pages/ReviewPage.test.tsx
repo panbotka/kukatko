@@ -173,10 +173,22 @@ function outlierQuestion(id: string, name = 'Tomáš Kozák'): ReviewQuestion {
   }
 }
 
-/** Wraps questions in a queue response; the backend echoes the applied source. */
+/**
+ * Wraps questions in a queue response; the backend echoes the applied source and
+ * describes the round the questions form (one request = one round).
+ */
 function makeQueue(questions: ReviewQuestion[], overrides: Partial<ReviewQueue> = {}): ReviewQueue {
   return {
     questions,
+    round: {
+      index: 1,
+      size: questions.length,
+      remaining: questions.length,
+      sure: questions.length,
+      band: 0,
+      entities: questions.length,
+      last: true,
+    },
     source: 'both',
     answered: 0,
     remaining: questions.length,

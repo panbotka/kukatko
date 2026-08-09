@@ -27,6 +27,7 @@ function entry(uid: string, name: string, yes: number, no: number): LeaderboardE
     yes_count: yes,
     no_count: no,
     total: yes + no,
+    streak_days: 0,
     is_me: false,
   }
 }

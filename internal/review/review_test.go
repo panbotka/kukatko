@@ -239,6 +239,19 @@ type fixture struct {
 	// its floor (0 = the package defaults).
 	sureShare float64
 	sureMin   float64
+	// queueSize, roundSize and roundPerEntity override how much material one
+	// rebuild gathers, how long a round is and how much of one round a single
+	// entity may claim (0 = the package defaults).
+	queueSize      int
+	roundSize      int
+	roundPerEntity int
+	// albums, breathers and stats back the three read-only extras — the mixer's
+	// album rule, the round's breather card and the answer reveal. They stay nil
+	// unless a test wires them, which is also the "not wired" case the Service
+	// has to keep working through.
+	albums    *fakeAlbums
+	breathers *fakeBreathers
+	stats     *fakeSubjectStats
 	now       *time.Time
 	svc       *Service
 }
@@ -259,19 +272,110 @@ func newFixture(t *testing.T, mutate func(*fixture)) *fixture {
 	if mutate != nil {
 		mutate(f)
 	}
-	f.svc = New(Config{
-		Sweeper:      f.sweeper,
-		Expander:     f.expander,
-		Organize:     f.organize,
-		Faces:        f.faces,
-		Feedback:     f.feedback,
-		Assigner:     f.assigner,
-		MaxPerEntity: f.perEntity,
-		SureShare:    f.sureShare,
-		SureMin:      f.sureMin,
-		Now:          func() time.Time { return *f.now },
-	})
+	cfg := Config{
+		Sweeper:           f.sweeper,
+		Expander:          f.expander,
+		Organize:          f.organize,
+		Faces:             f.faces,
+		Feedback:          f.feedback,
+		Assigner:          f.assigner,
+		MaxPerEntity:      f.perEntity,
+		SureShare:         f.sureShare,
+		SureMin:           f.sureMin,
+		QueueSize:         f.queueSize,
+		RoundSize:         f.roundSize,
+		RoundMaxPerEntity: f.roundPerEntity,
+		Now:               func() time.Time { return *f.now },
+	}
+	// A nil interface, not a typed nil: the Service tests `== nil` to decide
+	// whether the extra is wired at all.
+	if f.albums != nil {
+		cfg.Albums = f.albums
+	}
+	if f.breathers != nil {
+		cfg.Breathers = f.breathers
+		cfg.Photos = f.breathers
+	}
+	if f.stats != nil {
+		cfg.Stats = f.stats
+	}
+	f.svc = New(cfg)
 	return f
+}
+
+// fakeAlbums serves scripted album membership.
+type fakeAlbums struct {
+	byPhoto map[string][]string
+	err     error
+	calls   int
+}
+
+// AlbumUIDsForPhotos returns the scripted membership of the given photos.
+func (f *fakeAlbums) AlbumUIDsForPhotos(
+	_ context.Context, photoUIDs []string,
+) (map[string][]string, error) {
+	f.calls++
+	if f.err != nil {
+		return nil, f.err
+	}
+	out := make(map[string][]string, len(photoUIDs))
+	for _, uid := range photoUIDs {
+		if albums := f.byPhoto[uid]; len(albums) > 0 {
+			out[uid] = albums
+		}
+	}
+	return out, nil
+}
+
+// fakeBreathers serves scripted breather picks and the photos behind them, so
+// one fake covers both halves of the card's hydration.
+type fakeBreathers struct {
+	picks  []BreatherPick
+	photos map[string]photos.Photo
+	err    error
+	calls  int
+}
+
+// PickBreathers returns up to limit scripted picks.
+func (f *fakeBreathers) PickBreathers(
+	_ context.Context, _ string, limit int,
+) ([]BreatherPick, error) {
+	f.calls++
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.picks[:min(limit, len(f.picks))], nil
+}
+
+// ListByUIDs returns the scripted photos among uids.
+func (f *fakeBreathers) ListByUIDs(_ context.Context, uids []string) ([]photos.Photo, error) {
+	out := make([]photos.Photo, 0, len(uids))
+	for _, uid := range uids {
+		if photo, ok := f.photos[uid]; ok {
+			out = append(out, photo)
+		}
+	}
+	return out, nil
+}
+
+// fakeSubjectStats serves scripted per-subject headline numbers.
+type fakeSubjectStats struct {
+	stats map[string]people.SubjectStats
+	err   error
+}
+
+// SubjectStats returns the scripted stats, or ErrSubjectNotFound.
+func (f *fakeSubjectStats) SubjectStats(
+	_ context.Context, subjectUID string,
+) (people.SubjectStats, error) {
+	if f.err != nil {
+		return people.SubjectStats{}, f.err
+	}
+	stats, ok := f.stats[subjectUID]
+	if !ok {
+		return people.SubjectStats{}, people.ErrSubjectNotFound
+	}
+	return stats, nil
 }
 
 // scannedPerson builds a scanned subject with face candidates at the given
@@ -425,10 +529,14 @@ func TestQueue_ordersByBoundaryDistanceAndInterleaves(t *testing.T) {
 	for _, q := range res.Questions {
 		got = append(got, fmt.Sprintf("%s@%.2f", q.Kind, q.Confidence))
 	}
-	// 3 faces vs 1 label: the label lands mid-sequence (position 1/2 ∈ (1/6, 3/6]),
-	// faces keep informativeness order (0.61 is nearest the 0.60 midpoint, then
-	// 0.50 edges out 0.70 by float rounding of the midpoint distance).
-	want := []string{"face@0.61", "face@0.50", "label@0.46", "face@0.70"}
+	// 3 faces vs 1 label. The round opens with a face (the seed picks the opening
+	// kind out of the two present) and the mixer then takes the label rather than
+	// a second face in a row — rotating the kinds is dearer to break than
+	// anything below it. The faces keep their informativeness order among
+	// themselves (0.61 is nearest the 0.60 midpoint, then 0.50 edges out 0.70 by
+	// float rounding of the midpoint distance), because the pool's order is what
+	// breaks a tie between two equally well-behaved candidates.
+	want := []string{"face@0.61", "label@0.46", "face@0.50", "face@0.70"}
 	if fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Fatalf("order = %v, want %v", got, want)
 	}

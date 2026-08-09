@@ -470,9 +470,20 @@ type ReviewConfig struct {
 	// the game exists to clean up. A value outside (0, 1) falls back to the
 	// default.
 	SureShare float64 `mapstructure:"sure_share"`
-	// QueueSize is the default number of questions per queue batch, sized so the
-	// UI can prefetch. A non-positive value falls back to the default.
+	// QueueSize is how many questions one rebuild gathers into the pool a round
+	// is mixed from — the material behind several rounds, not the size of a
+	// response. A non-positive value falls back to the default.
 	QueueSize int `mapstructure:"queue_size"`
+	// RoundSize is how many questions one round holds, and therefore the default
+	// length of a queue response: one request is one round. A non-positive value
+	// falls back to the default.
+	RoundSize int `mapstructure:"round_size"`
+	// RoundMaxPerEntity caps how many questions about one person or one label a
+	// single round may hold. It is the round's own variety cap, deliberately
+	// tighter than MaxPerEntity (which bounds the whole pool a rebuild gathers):
+	// the pool is material, the round is what a player sits through. A
+	// non-positive value falls back to the default.
+	RoundMaxPerEntity int `mapstructure:"round_max_per_entity"`
 	// CacheTTL is how long a built queue is served from the per-user cache
 	// before the expensive candidate searches run again. A non-positive value
 	// falls back to the default.
@@ -911,16 +922,20 @@ func setExpandDefaults(v *viper.Viper) {
 
 // setReviewDefaults registers the review game defaults: the uncertainty band
 // (roughly "the system is 45–75 % sure"), the confident tier above 80 % and the
-// 70 % of a batch drawn from it, the batch size the UI prefetches, the per-user
+// 70 % of a batch drawn from it, the size of the pool a rebuild gathers and of
+// the round mixed out of it, the per-user
 // queue cache window, the bounds on the label fan-out, the per-rebuild work
 // budgets plus the deadline that keep one batch of questions off the library's
-// growth curve, and the share of a batch a single person or label may claim.
+// growth curve, and the share of a pool and of a round a single person or label
+// may claim.
 func setReviewDefaults(v *viper.Viper) {
 	v.SetDefault("review.band_min", 0.45)
 	v.SetDefault("review.band_max", 0.75)
 	v.SetDefault("review.sure_min", 0.80)
 	v.SetDefault("review.sure_share", 0.70)
 	v.SetDefault("review.queue_size", 20)
+	v.SetDefault("review.round_size", 10)
+	v.SetDefault("review.round_max_per_entity", 3)
 	v.SetDefault("review.cache_ttl", "60s")
 	v.SetDefault("review.max_labels", 200)
 	v.SetDefault("review.label_concurrency", 2)

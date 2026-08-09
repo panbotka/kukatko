@@ -62,9 +62,9 @@ func TestQueue_mixesTheTiersAtTheConfiguredShare(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
-	if len(res.Questions) != DefaultQueueSize {
-		t.Fatalf("batch = %d questions, want a full batch of %d — a library with material in "+
-			"both tiers must still fill one", len(res.Questions), DefaultQueueSize)
+	if len(res.Questions) != DefaultRoundSize {
+		t.Fatalf("round = %d questions, want a full round of %d — a library with material in "+
+			"both tiers must still fill one", len(res.Questions), DefaultRoundSize)
 	}
 	sure, band := tierCounts(res.Questions)
 	got := shareOf(res.Questions)
@@ -153,9 +153,9 @@ func TestQueue_exhaustedConfidentTierDegradesToTheBand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
-	if len(res.Questions) != DefaultQueueSize {
-		t.Fatalf("batch = %d questions, want a full batch of %d from the band alone",
-			len(res.Questions), DefaultQueueSize)
+	if len(res.Questions) != DefaultRoundSize {
+		t.Fatalf("round = %d questions, want a full round of %d from the band alone",
+			len(res.Questions), DefaultRoundSize)
 	}
 	if sure, _ := tierCounts(res.Questions); sure != 0 {
 		t.Errorf("%d confident questions from a library that has none", sure)
@@ -179,9 +179,9 @@ func TestQueue_exhaustedBandDegradesToTheConfidentTier(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
-	if len(res.Questions) != DefaultQueueSize {
-		t.Fatalf("batch = %d questions, want a full batch of %d from the confident tier alone",
-			len(res.Questions), DefaultQueueSize)
+	if len(res.Questions) != DefaultRoundSize {
+		t.Fatalf("round = %d questions, want a full round of %d from the confident tier alone",
+			len(res.Questions), DefaultRoundSize)
 	}
 	if _, band := tierCounts(res.Questions); band != 0 {
 		t.Errorf("%d band questions from a library that has none", band)

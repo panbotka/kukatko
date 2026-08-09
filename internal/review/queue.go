@@ -36,36 +36,85 @@ import (
 	"github.com/panbotka/kukatko/internal/sweep"
 )
 
-// Queue returns the next batch of questions for the user from src (empty or
+// Queue returns the user's current round of questions from src (empty or
 // unknown means both sources), at most limit long (non-positive limit means the
-// configured default). The queue is rebuilt when it is cold, when it has run
-// dry, when the source changed, or once per CacheTTL; between rebuilds batches
-// are served from the cache, so answering stays fast. An empty batch carries a
-// Reason the UI can show. The error is non-nil only when the underlying searches
-// fail outright.
+// configured RoundSize). One request is one round: the questions are a playlist
+// mixed for variety rather than a prefix of a sorted list, and res.Round says
+// which round it is and what it is made of.
+//
+// The pool a round is mixed from is rebuilt when it is cold, when it has run
+// dry, when the source changed, or once per CacheTTL; between rebuilds rounds
+// are mixed from the cache, so answering stays fast. Re-fetching before
+// answering returns the same round again — the mix is a pure function of the
+// unchanged pool — so a client that retries cannot lose questions. An empty
+// round carries a Reason the UI can show. The error is non-nil only when the
+// underlying searches fail outright.
 func (s *Service) Queue(ctx context.Context, userUID string, src Source, limit int) (QueueResult, error) {
 	src = src.orBoth()
-	if limit <= 0 {
-		limit = s.queueSize
+	size := s.roundSize
+	if limit > 0 {
+		size = limit
 	}
-	limit = min(limit, maxBatch)
+	size = min(size, maxBatch)
 	sess := s.session(userUID)
 	sess.mu.Lock()
 	defer sess.mu.Unlock()
 	if s.needsRebuild(sess, src) {
-		if err := s.rebuild(ctx, sess, src, limit); err != nil {
+		if err := s.rebuild(ctx, sess, src, max(s.queueSize, size)); err != nil {
 			return QueueResult{}, err
 		}
 	}
-	batch := make([]Question, min(limit, len(sess.queue)))
+	s.ensureRound(ctx, sess, userUID, size)
+	batch := make([]Question, sess.roundLen)
 	copy(batch, sess.queue)
 	res := QueueResult{
-		Questions: batch, Source: src, Answered: sess.answeredCount, Remaining: len(sess.queue),
+		Questions: batch, Round: sess.round, Breathers: sess.breathers,
+		Source: src, Answered: sess.answeredCount, Remaining: len(sess.queue),
 	}
+	res.Round.Remaining = sess.roundLen
+	res.Round.Last = len(sess.queue) <= sess.roundLen
 	if len(sess.queue) == 0 {
 		res.Reason = sess.reason
 	}
 	return res, nil
+}
+
+// ensureRound mints the next round when the previous one has been answered
+// through, and does nothing while one is still in hand. Minting reorders the
+// pool so the round sits at its head (see session.roundLen) and picks the
+// round's breather cards.
+//
+// The seed is the user plus the round number, so two players working the same
+// library get different rounds and one player's rounds differ from each other —
+// while the mixer itself stays a pure function of (pool, config, seed), which is
+// what the variety tests assert against.
+func (s *Service) ensureRound(ctx context.Context, sess *session, userUID string, size int) {
+	if sess.roundLen > 0 || len(sess.queue) == 0 {
+		return
+	}
+	// The round being minted is the roundSeq-th, counting from zero; the summary
+	// shows it to the player counting from one.
+	seq := sess.roundSeq
+	cfg := mixConfig{
+		RoundSize:   size,
+		MaxPerRound: s.roundMaxPerEntity,
+		MaxRun:      maxSameEntityRun,
+		SureShare:   s.sureShare,
+		Seed:        roundSeed(userUID, seq),
+	}
+	round, rest := mixRound(sess.queue, cfg, sess.albumsOf)
+	pool := make([]Question, 0, len(round)+len(rest))
+	pool = append(pool, round...)
+	pool = append(pool, rest...)
+	sess.queue = pool
+	sess.roundLen = len(round)
+	sess.roundSeq = seq + 1
+	sess.round = roundSummary(sess.roundSeq, round)
+	sess.breathers = s.breathersFor(ctx, userUID, seq)
+	s.log.DebugContext(ctx, "review: round mixed", "round", sess.roundSeq,
+		"questions", len(round), "entities", sess.round.Entities,
+		"longest_run", longestEntityRun(round), "sure", sess.round.Sure,
+		"band", sess.round.Band)
 }
 
 // needsRebuild reports whether the session's cached queue has to be rebuilt: it
@@ -161,11 +210,44 @@ func (s *Service) rebuild(ctx context.Context, sess *session, src Source, need i
 	sess.source = src
 	sess.builtAt = s.now()
 	sess.reason = reasonFor(src, mat)
+	// A fresh pool has no round in it yet, and the album membership of the old
+	// pool's photos says nothing about this one's.
+	sess.roundLen = 0
+	sess.albums = s.albumsFor(ctx, sess.queue)
 	sure, band := tierCounts(sess.queue)
 	s.log.DebugContext(ctx, "review: queue rebuilt", "questions", len(sess.queue),
 		"source", string(src), "entities", countEntities(sess.queue),
 		"longest_run", longestEntityRun(sess.queue), "sure", sure, "band", band)
 	return nil
+}
+
+// albumsFor reads the album membership of a freshly built pool's photos, which
+// is what lets the mixer keep two questions about one album apart. It is one
+// indexed lookup per rebuild, not per round, because the pool does not change
+// between rounds.
+//
+// Every failure degrades to no membership at all: the album rule is one of the
+// mixer's cheapest preferences, and losing it is not worth failing a rebuild
+// that has already paid for the vector searches.
+func (s *Service) albumsFor(ctx context.Context, questions []Question) map[string][]string {
+	if s.albums == nil || len(questions) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(questions))
+	uids := make([]string, 0, len(questions))
+	for _, q := range questions {
+		if _, ok := seen[q.Photo.UID]; ok || q.Photo.UID == "" {
+			continue
+		}
+		seen[q.Photo.UID] = struct{}{}
+		uids = append(uids, q.Photo.UID)
+	}
+	byPhoto, err := s.albums.AlbumUIDsForPhotos(ctx, uids)
+	if err != nil {
+		s.log.WarnContext(ctx, "review: album membership lookup failed", "error", err)
+		return nil
+	}
+	return byPhoto
 }
 
 // collectRotating runs collect until a round comes back with candidates,

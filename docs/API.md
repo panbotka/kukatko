@@ -468,10 +468,24 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   stamp. Running out of one tier fills from the other, and a rebuild whose window came back empty rotates to
   the next one, so the queue only reports "nothing" for a genuinely empty library. `GET
   /review/queue?source=both|people|labels&limit=N` (source empty → `both`, unknown → 400; limit empty/0 →
-  `review.queue_size`, cap 100, non-numeric/negative → 400) → `{questions:[{id,kind:
+  `review.round_size`, cap 100, non-numeric/negative → 400) → `{questions:[{id,kind:
   "face"|"label"|"place"|"duplicate"|"outlier",tier?:"sure"|"band",confidence,photo,subject?,face_index?,
   bbox?{relative,pixel},action?("create_marker"|"assign_person"),marker_uid?,label?,
-  place?{name,country?,city?,place_name?,lat,lng},other?,group_id?,distance?}],source,answered,remaining,reason?}`.
+  place?{name,country?,city?,place_name?,lat,lng},other?,group_id?,distance?}],
+  round:{index,size,remaining,kinds{},sure,band,entities,last},breathers?:[{kind:"breather",photo,title,
+  year?,reason:"favorite"|"rated"}],source,answered,remaining,reason?}`.
+  **One request is one round** — the `questions` array *is* the round, so there are no boundary markers inside
+  it — and `round` says which round of the session it is (`index`, from 1), how long it was minted (`size`),
+  how much of it is still unanswered (`remaining`, = the array's length) and what it is made of
+  (`kinds`/`sure`/`band`/`entities`, fixed at mint time so a **between-rounds summary** reports what the player
+  just played rather than what is left of it). `last` says nothing is queued behind it.
+  **Re-fetching before answering returns the same round** (the mix is a pure function of an unchanged pool), so
+  a client that retries cannot lose questions; the round shrinks as it is answered and the next one is minted
+  only once it is finished. `breathers` are **non-question cards** — a photo the caller rated ≥ 4 or
+  favourited, with its title and year — carried *outside* `questions`, typed `"breather"` and carrying no id
+  the answer endpoint would accept, so they can never be mistaken for a question. One per round, rotating
+  through eras (one candidate per decade, newest first), and the field is **omitted entirely** when the library
+  has nothing worth pausing on.
   `place` carries the guessed location and the most specific name it geocoded to (a photo with no cached place is
   **not asked about** — a pair of decimal degrees is not a place anybody can answer about); `other` is the second
   photo of a duplicate pair and `group_id` its group; `distance` is an outlier face's cosine distance from its
@@ -482,17 +496,26 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `place:<photo>` / `duplicate:<photo>:<other>`, the pair ordered smaller-uid-first so one pair is one question /
   `outlier:<photo>:<index>:<subject>`),
   `tier` says which tier the question came from (the UI asks the same question either way; it is there so the
-  mix can be observed), `bbox` relative 0..1 **and** pixels (honouring EXIF orientation), the queue is
-  **deterministic** for a given library state (within a tier: the band by distance from its centre, the
-  confident tier by confidence descending, tie-break id; then the tier blend; **all five kinds are
-  interleaved** proportionally — each list's i-th question is placed at the exact rational (2i+1)/(2·len) and the
-  earliest position wins, so with k kinds supplying material a batch of n holds about n/k of each and **no kind
-  can dominate a session**; a kind that is the only one left fills the batch alone, because an exhausted library
-  should not withhold the work it has. No `rand` anywhere). On top of that order the batch is **spread across the entities it
-  asks about**, so the game does not turn into an interrogation: at most `review.max_per_entity` (default 4)
-  questions about one person or label per batch, and never more than **two in a row** about the same one while
-  another entity still has a question waiting — the variation is a deterministic reordering of the
-  informativeness order, not randomness. **`source` decides what the game asks about** — only faces
+  mix can be observed), `bbox` relative 0..1 **and** pixels (honouring EXIF orientation), and the whole thing is
+  **deterministic** for a given library state. It is built in two steps.
+  First the **pool** (`review.queue_size`, default 20 — material, not a response length; several rounds come out
+  of one pool, so the vector searches run once per pool): within a tier the band by distance from its centre and
+  the confident tier by confidence descending, tie-break id; then the tier blend; then all five kinds
+  interleaved proportionally (each list's i-th question at the exact rational (2i+1)/(2·len), earliest position
+  wins, ties by the fixed order in `Kinds`) and capped at `review.max_per_entity` (default 4) questions per
+  entity.
+  Then the **round** is mixed out of that pool (`internal/review/mixer.go`), one slot at a time: every unplaced
+  question is scored against what the round already holds and the cheapest goes next. The penalties, in
+  descending weight, are a question over `review.round_max_per_entity` (default 3) about one entity, a **third
+  in a row** about one entity, a third and then a second in a row of one **kind**, the **tier** the running
+  confident share does not want (so the configured mix holds *and* the tiers interleave instead of forming
+  blocks), a photo from an **album** the previous photo was also in, one taken within **ten minutes** of it, and
+  one from the same **decade**. Ties go to whichever question sits earlier in the pool's informativeness order,
+  so variety is never bought with a less relevant question. Nothing is forbidden outright: a pool with one
+  person in it, or ten photos from one wedding, still yields a **full round** — every candidate is merely
+  expensive, and the cheapest expensive one wins. No `rand` anywhere; the only seeded choice is which kind the
+  round tries to open with (seeded from the user and the round number), so two players do not get the same
+  opening. **`source` decides what the game asks about** — only faces
   (`people`), only labels (`labels`) or both interleaved (`both`, the default) — and it is applied **inside the
   rebuild**, not as a filter on its result: a labels-only queue never runs the subject sweep at all (the scans
   are the whole cost of a rebuild, and a subject sweep hydrates a full photo record per match). **The three new
@@ -508,8 +531,14 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   "no_people_no_labels"`; the chosen source itself is empty → `reason:"no_people"` / `"no_labels"` (only for a
   restricted source; the untouched source is never counted); sources exist, but the band is empty →
   `reason:"no_candidates"`.
-  `POST /review/answer` with `{question_id,answer:"yes"|"no"|"skip"}` → `{result,answered,remaining}`
+  `POST /review/answer` with `{question_id,answer:"yes"|"no"|"skip"}` → `{result,answered,remaining,
+  reveal?{subject_uid,name,photo_count,oldest_year?,newest_year?}}`
   (`result` ∈ assigned / labeled / confirmed / cleared / detached / rejected / skipped / already_answered / gone).
+  `reveal` is present **only** on `result:"assigned"` — the payoff of a confirmed face: how many visible photos
+  that person is on now (counted per photo, not per marker, so it matches their gallery) and the years their
+  dated photos span. It is one indexed read (`people.Store.SubjectStats`) taken **after** the write, so the
+  numbers include it, and any failure simply omits the field rather than failing an answer that already
+  succeeded.
   Every verdict routes through a write path that already exists elsewhere; the package opens none of its own:
   **face** yes → the **existing** assign state machine (the same path as `POST /photos/{uid}/faces/assign`; the
   action is derived from the face's current state — a marker exists → `assign_person`, otherwise `create_marker`
@@ -543,11 +572,18 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   of this, a review face confirmation (`face.assign`) and an outlier detach (`face.unassign`) carry `via:review`
   (they go through facematch `Service.Apply`, which assembles the audit itself; ordinary assignments and
   detaches stay unmarked, so the same action performed on a curation page is never counted). The response `{window,caller_uid,entries:[{user_uid,display_name,yes_count,no_count,total,
-  is_me}]}` is sorted (total desc → yes desc → display_name), only users with ≥1 decision in the window
-  (zero = absent), a NULL actor (a deleted user) is omitted, `is_me`/`caller_uid` mark one's own
-  row. The windows are computed from `created_at` (7 d = a sliding 7×24 h, today = midnight of the day). Served by
+  streak_days,is_me}]}` is sorted (total desc → yes desc → display_name), only users with ≥1 decision in the
+  window (zero = absent), a NULL actor (a deleted user) is omitted, `is_me`/`caller_uid` mark one's own
+  row. The windows are computed from `created_at` (7 d = a sliding 7×24 h, today = midnight of the day).
+  **`streak_days`** is the player's *current* run of consecutive days with at least one review decision, ending
+  today **or yesterday** (the day is not over, so an unfinished today must not break a run); 0 when no run is
+  alive. It is **not** narrowed by `window` — a streak is a fact about the habit, not about the slice being
+  shown — and needs **no new table**: it is a second query over the same `via:review` audit rows, reduced in
+  SQL to the distinct *hours* each user was active in over the last 400 days and folded into local days in Go
+  (`internal/review/streak.go`), where the day arithmetic is testable. The hour reduction is exact wherever the
+  zone's offset from UTC is a whole number of hours. Served by
   `review.LeaderboardStore` over the shared pool; the partial index `idx_audit_log_review_actor`
-  (migration `0037`) keeps the scan cheap.
+  (migration `0037`) keeps both scans cheap.
 - **People/Subjects API (`/api/v1`, `internal/peopleapi`):** `GET /subjects` (RequireAuth) →
   `{subjects:[{...subject, marker_count, photo_count, cover_face?}]}` (ordered by name). Both counts
   cover only non-invalid markers on visible photos and they are **not interchangeable**:

@@ -84,6 +84,12 @@ type LeaderboardEntry struct {
 	NoCount int `json:"no_count"`
 	// Total is YesCount + NoCount, the value the board ranks on.
 	Total int `json:"total"`
+	// StreakDays is the user's *current* run of consecutive days with at least
+	// one review decision, ending today or yesterday (see streak.go); zero when
+	// they have not played recently enough for a run to be alive. It is
+	// deliberately not affected by the window — a streak is a fact about the
+	// player's habit, not about the slice of time the board is showing.
+	StreakDays int `json:"streak_days"`
 }
 
 // LeaderboardStore aggregates review decisions straight from the audit log. It
@@ -124,9 +130,35 @@ GROUP BY a.actor_uid, u.display_name, u.username
 ORDER BY total DESC, yes_count DESC, display_name ASC`
 
 // Leaderboard returns the per-user review-decision tally for window, ordered
-// highest total first. Only users with at least one decision in the window
-// appear. It returns a wrapped error on any query or scan failure.
+// highest total first, each row carrying that user's current day streak. Only
+// users with at least one decision in the window appear. It returns a wrapped
+// error on any query or scan failure.
+//
+// The streak is a second query rather than a column of the first: it aggregates
+// over a different span (always all-time, because a run of days is not a
+// property of the window being shown) and at a different grain (days, not
+// answers), and folding the two into one statement would make both harder to
+// read for no saving worth having on a board of a handful of rows.
 func (s *LeaderboardStore) Leaderboard(ctx context.Context, window LeaderboardWindow) ([]LeaderboardEntry, error) {
+	entries, err := s.tally(ctx, window)
+	if err != nil {
+		return nil, err
+	}
+	streaks, err := s.streaks(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for i := range entries {
+		entries[i].StreakDays = streaks[entries[i].UserUID]
+	}
+	return entries, nil
+}
+
+// tally runs the per-user decision count for window, which is the board's
+// ranking and everything but the streak.
+func (s *LeaderboardStore) tally(
+	ctx context.Context, window LeaderboardWindow,
+) ([]LeaderboardEntry, error) {
 	yes := audit.ReviewYesActions()
 	no := audit.ReviewNoActions()
 	args := []any{yes, no, audit.ReviewDecisionActions()}

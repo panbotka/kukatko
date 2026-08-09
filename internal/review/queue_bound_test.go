@@ -122,8 +122,15 @@ func TestQueue_faceWorkDoesNotScaleWithSubjectCount(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Queue: %v", err)
 			}
-			if len(res.Questions) != DefaultQueueSize {
-				t.Fatalf("questions = %d, want a full batch of %d", len(res.Questions), DefaultQueueSize)
+			if len(res.Questions) != DefaultRoundSize {
+				t.Fatalf("questions = %d, want a full round of %d", len(res.Questions), DefaultRoundSize)
+			}
+			// The round is mixed from a pool the same bounded scan filled, so the
+			// pool has to be full too — a short pool would mean the bound cut the
+			// rebuild short rather than the round merely being shorter than it.
+			if res.Remaining < DefaultQueueSize {
+				t.Errorf("pool = %d questions, want at least the %d behind the round",
+					res.Remaining, DefaultQueueSize)
 			}
 			subjects, knn := finder.counts()
 			if subjects > maxSubjects {
@@ -205,12 +212,16 @@ func TestQueue_labelScanStopsOnceTheBatchIsFull(t *testing.T) {
 			}
 			f.expander.results[uid] = labelResult(uid, sims...)
 		}
+		// The scan fills the *pool*, not the round, so the pool target is what
+		// decides when it has enough: two labels' worth. Asking for a bigger one
+		// would (rightly) walk further — a pool of 20 that may take only 4
+		// questions per label cannot be filled from two labels.
+		f.queueSize = DefaultLabelConcurrency * DefaultMaxPerEntity
+		// The pool must also be big enough for the round, so the round is sized
+		// down with it — otherwise the round's size would raise the target back up.
+		f.roundSize = f.queueSize
 	})
-	// A batch of two labels' worth: the first chunk alone fills it. Asking for a
-	// full batch would (rightly) walk further now — a batch of 20 that may take
-	// only 4 questions per label cannot be filled from two labels.
-	batch := DefaultLabelConcurrency * DefaultMaxPerEntity
-	if _, err := f.svc.Queue(context.Background(), "user", SourceBoth, batch); err != nil {
+	if _, err := f.svc.Queue(context.Background(), "user", SourceBoth, 0); err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
 	// LabelConcurrency is 2, so the scan runs one chunk and stops: it must not

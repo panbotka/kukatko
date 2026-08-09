@@ -165,3 +165,68 @@ func TestLeaderboard_aggregatesAcrossActionsWindowsAndExclusions(t *testing.T) {
 		{"carol", "carol", 1, 0, 1}, // carol's rejection was three days ago
 	})
 }
+
+// TestLeaderboard_reportsTheCurrentDayStreak covers the one number on the board
+// that is not a total. The rows are seeded at whole-day offsets from now, so the
+// cases are the ones the streak can actually get wrong: a run reaching today, a
+// run that ended yesterday (still alive, since today is not over), a run that
+// ended earlier (dead), and rows that must not extend a run at all.
+func TestLeaderboard_reportsTheCurrentDayStreak(t *testing.T) {
+	db := dbtest.New(t)
+	dbtest.TruncateAll(t, db)
+	pool := db.Pool()
+	now := time.Now()
+
+	seedUser(t, pool, "alice", "alice", "Alice")
+	seedUser(t, pool, "bob", "bob", "Bob")
+	seedUser(t, pool, "carol", "carol", "Carol")
+	alice, bob, carol := new("alice"), new("bob"), new("carol")
+
+	// alice: today, yesterday and the day before — a live run of three, with two
+	// answers on one of the days to prove a day counts once.
+	seedAudit(t, pool, now, alice, "face.assign", true, 0)
+	seedAudit(t, pool, now, alice, "label.attach", true, 0)
+	seedAudit(t, pool, now, alice, "face.reject", true, 1)
+	seedAudit(t, pool, now, alice, "face.assign", true, 2)
+
+	// bob: yesterday and the day before, nothing today. The day is not over, so
+	// the run is still alive. A non-review row today must not extend it.
+	seedAudit(t, pool, now, bob, "face.assign", true, 1)
+	seedAudit(t, pool, now, bob, "face.assign", true, 2)
+	seedAudit(t, pool, now, bob, "face.assign", false, 0)
+
+	// carol: two days ago and three days ago — over.
+	seedAudit(t, pool, now, carol, "face.assign", true, 2)
+	seedAudit(t, pool, now, carol, "face.assign", true, 3)
+
+	store := review.NewLeaderboardStore(pool)
+	entries, err := store.Leaderboard(context.Background(), review.WindowAllTime)
+	if err != nil {
+		t.Fatalf("Leaderboard(all): %v", err)
+	}
+	want := map[string]int{"alice": 3, "bob": 2, "carol": 0}
+	got := make(map[string]int, len(entries))
+	for _, e := range entries {
+		got[e.UserUID] = e.StreakDays
+	}
+	if len(got) != len(want) {
+		t.Fatalf("board = %+v, want one row per player", entries)
+	}
+	for uid, days := range want {
+		if got[uid] != days {
+			t.Errorf("%s streak = %d, want %d", uid, got[uid], days)
+		}
+	}
+
+	// The streak is a fact about the habit, not about the slice being shown, so a
+	// narrower window must not shorten it.
+	today, err := store.Leaderboard(context.Background(), review.WindowToday)
+	if err != nil {
+		t.Fatalf("Leaderboard(today): %v", err)
+	}
+	for _, e := range today {
+		if e.UserUID == "alice" && e.StreakDays != 3 {
+			t.Errorf("alice's streak in the today window = %d, want the same 3", e.StreakDays)
+		}
+	}
+}

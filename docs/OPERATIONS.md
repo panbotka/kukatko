@@ -877,7 +877,20 @@ long-running and belong on the machine where the instance runs — so they remai
   questions is load-bearing. Running out of one tier fills from the other, and a rebuild whose window came back
   empty rotates to the next one (up to three, inside the one `build_timeout`), so an empty queue means a
   genuinely empty library rather than an exhausted tier. `queue_size` (**default 20**) —
-  the default batch size, the UI prefetches; a request may send its own `?limit` (cap 100).
+  how many questions one rebuild gathers into the **pool** a round is mixed from. It is
+  material, not a response length: several rounds come out of one pool, so the expensive
+  vector searches run once per pool rather than once per round.
+  `round_size` (**default 10**) — how many questions **one round** holds, and therefore how
+  long a queue response is: **one request is one round**. Ten is short enough that finishing
+  a round is a decision a player makes several times an evening; raise it for longer
+  sittings, lower it for a game played in the gaps. A request may still send its own
+  `?limit` (cap 100), which sizes that round.
+  `round_max_per_entity` (**default 3**) — how many questions about one person or one label
+  a **single round** may hold. It is the round's own variety cap, deliberately tighter than
+  `max_per_entity`: that one bounds the pool a rebuild gathers, this one bounds what a
+  player actually sits through. Both are **preferences, not walls** — a library with one
+  named person still gets a full round, because a round that came back empty rather than
+  repetitive would be worse.
   `cache_ttl` (**default 60s**) — how long a built queue is served from the per-user cache before the
   expensive vector searches run again (answers edit the queue in-place, the session counter is cheap).
   `max_labels` (**default 200**) — a cap on how many labels one rebuild considers. `label_concurrency`

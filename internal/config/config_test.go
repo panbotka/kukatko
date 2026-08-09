@@ -115,6 +115,8 @@ func TestLoad_defaults(t *testing.T) {
 		{"review.sure_min", cfg.Review.SureMin, 0.80},
 		{"review.sure_share", cfg.Review.SureShare, 0.70},
 		{"review.queue_size", cfg.Review.QueueSize, 20},
+		{"review.round_size", cfg.Review.RoundSize, 10},
+		{"review.round_max_per_entity", cfg.Review.RoundMaxPerEntity, 3},
 		{"review.cache_ttl", cfg.Review.CacheTTL, 60 * time.Second},
 		{"review.max_labels", cfg.Review.MaxLabels, 200},
 		{"review.label_concurrency", cfg.Review.LabelConcurrency, 2},
@@ -406,6 +408,25 @@ func TestLoad_reviewTierEnvOverrides(t *testing.T) {
 	}
 	if cfg.Review.SureShare != 0.6 {
 		t.Errorf("review.sure_share = %v, want 0.6", cfg.Review.SureShare)
+	}
+}
+
+// TestLoad_reviewRoundEnvOverrides covers the two round keys, which are the
+// dials an operator reaches for when a session feels too long or too repetitive.
+func TestLoad_reviewRoundEnvOverrides(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("KUKATKO_REVIEW_ROUND_SIZE", "6")
+	t.Setenv("KUKATKO_REVIEW_ROUND_MAX_PER_ENTITY", "2")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.Review.RoundSize != 6 {
+		t.Errorf("review.round_size = %d, want 6", cfg.Review.RoundSize)
+	}
+	if cfg.Review.RoundMaxPerEntity != 2 {
+		t.Errorf("review.round_max_per_entity = %d, want 2", cfg.Review.RoundMaxPerEntity)
 	}
 }
 
