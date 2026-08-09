@@ -117,6 +117,11 @@ type RateLimitConfig struct {
 	Upload RateLimitRule `mapstructure:"upload"`
 	// Bulk caps POST /photos/bulk (batch metadata edits).
 	Bulk RateLimitRule `mapstructure:"bulk"`
+	// Comment caps POST /photos/{uid}/comments (writing a comment). It is the one
+	// rule keyed by the acting user rather than the client IP: a household shares
+	// one address, and throttling the conversation of everyone in it because one
+	// person is chatty would be wrong.
+	Comment RateLimitRule `mapstructure:"comment"`
 	// Tiles caps GET /map/tiles/... (the mapy.com tile proxy). The geocode
 	// proxy has its own credit-protecting limiter under maps.*.
 	Tiles RateLimitRule `mapstructure:"tiles"`
@@ -1060,13 +1065,17 @@ func setOpsDefaults(v *viper.Viper) {
 
 	v.SetDefault("bulk.max_batch_size", 1000)
 
-	// Per-client-IP rate limits on heavy endpoints. Defaults are generous enough
-	// for normal human/UI use and only bite under abusive flooding. Set
-	// rate_per_sec to 0 to disable any individual rule.
+	// Per-client-IP rate limits on heavy endpoints (comment is per user). Defaults
+	// are generous enough for normal human/UI use and only bite under abusive
+	// flooding. Set rate_per_sec to 0 to disable any individual rule.
 	v.SetDefault("ratelimit.upload.rate_per_sec", 5)
 	v.SetDefault("ratelimit.upload.burst", 30)
 	v.SetDefault("ratelimit.bulk.rate_per_sec", 2)
 	v.SetDefault("ratelimit.bulk.burst", 10)
+	// A person types a comment every few seconds at most; the burst covers a
+	// flurry of short replies without letting a script fill a thread.
+	v.SetDefault("ratelimit.comment.rate_per_sec", 0.5)
+	v.SetDefault("ratelimit.comment.burst", 10)
 	v.SetDefault("ratelimit.tiles.rate_per_sec", 50)
 	v.SetDefault("ratelimit.tiles.burst", 200)
 }

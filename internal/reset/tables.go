@@ -46,6 +46,7 @@ var catalogueTables = []string{
 	"label_rejections",
 	"labels",
 	"markers",
+	"photo_comments",
 	"photo_edits",
 	"photo_files",
 	"photo_labels",

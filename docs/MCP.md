@@ -117,6 +117,10 @@ later — it is a decision about what an autonomous agent may do to someone else
 - **No setting the location.** A coordinate an agent made up is, once written, indistinguishable from
   a measured one; for estimating a location the library has its own, honestly-labeled path (`internal/geoestimate`).
   That is why `bulk_edit_photos` leaves out `Location` / `ClearLocation` too.
+- **No writing, editing or deleting comments** (`internal/comments`, see [`API.md`](API.md)). A comment is
+  one person speaking to their family in their own name; an agent posting into that thread would put words
+  in a human's mouth, and the audit trail would record a person as their author. Reading is not exposed
+  either — a thread is the most personal text in the library and nothing an agent does needs it.
 
 The `TestMCPDestructiveToolsAreNotExposed` test guards this **by intent, not by a list of names**: it takes
 the highest role, walks `tools/list` and fails on any tool whose name contains `delete`, `purge`,

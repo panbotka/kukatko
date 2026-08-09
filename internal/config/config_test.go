@@ -169,6 +169,8 @@ func TestLoad_defaults(t *testing.T) {
 		{"ratelimit.upload.burst", cfg.RateLimit.Upload.Burst, 30},
 		{"ratelimit.bulk.rate_per_sec", cfg.RateLimit.Bulk.RatePerSec, 2.0},
 		{"ratelimit.bulk.burst", cfg.RateLimit.Bulk.Burst, 10},
+		{"ratelimit.comment.rate_per_sec", cfg.RateLimit.Comment.RatePerSec, 0.5},
+		{"ratelimit.comment.burst", cfg.RateLimit.Comment.Burst, 10},
 		{"ratelimit.tiles.rate_per_sec", cfg.RateLimit.Tiles.RatePerSec, 50.0},
 		{"ratelimit.tiles.burst", cfg.RateLimit.Tiles.Burst, 200},
 		{"metrics.enabled", cfg.Metrics.Enabled, true},

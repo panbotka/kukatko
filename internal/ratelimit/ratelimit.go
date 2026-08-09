@@ -2,11 +2,12 @@
 // middleware for capping abusive request patterns on resource-intensive
 // endpoints (upload, bulk edit, import triggers, map tile proxy).
 //
-// A limiter keys buckets by an arbitrary string — typically the client IP — so
-// one noisy caller cannot exhaust shared resources while others keep working.
-// Building a limiter with a non-positive rate yields a disabled limiter that
-// allows everything, letting a single endpoint opt out purely via configuration
-// without branching at the call site.
+// A limiter keys buckets by an arbitrary string — typically the client IP, or
+// the authenticated user for an endpoint where a whole household shares one
+// address — so one noisy caller cannot exhaust shared resources while others keep
+// working. Building a limiter with a non-positive rate yields a disabled limiter
+// that allows everything, letting a single endpoint opt out purely via
+// configuration without branching at the call site.
 package ratelimit
 
 import (
@@ -146,19 +147,40 @@ func (l *Limiter) RunMaintenance(ctx context.Context, interval time.Duration) {
 // bucket is empty. A disabled limiter returns next unchanged, so an opted-out
 // endpoint pays zero per-request overhead.
 func (l *Limiter) Middleware(next http.Handler) http.Handler {
-	if l.disabled {
-		return next
-	}
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !l.Allow(clientIP(r)) {
-			w.Header().Set("Retry-After", "1")
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusTooManyRequests)
-			_ = json.NewEncoder(w).Encode(map[string]string{"error": "rate limit exceeded"})
-			return
+	return l.KeyedMiddleware(clientIP)(next)
+}
+
+// KeyedMiddleware is Middleware with the bucket key chosen by keyFn instead of
+// the client IP, for an endpoint that should be throttled per principal rather
+// than per address: a household behind one NAT is a single IP but many people,
+// and the identity is only known after the auth middleware has run, so such a
+// route mounts this one *inside* its auth guard.
+//
+// keyFn returning the empty string is not special-cased — every such request
+// shares one bucket, which is the safe reading of "no identity to attribute
+// this to". A disabled limiter yields a pass-through, as Middleware does.
+func (l *Limiter) KeyedMiddleware(keyFn func(*http.Request) string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		if l.disabled {
+			return next
 		}
-		next.ServeHTTP(w, r)
-	})
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if !l.Allow(keyFn(r)) {
+				writeTooManyRequests(w)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// writeTooManyRequests answers a throttled request with 429, a JSON error body
+// and a Retry-After hint.
+func writeTooManyRequests(w http.ResponseWriter) {
+	w.Header().Set("Retry-After", "1")
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusTooManyRequests)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": "rate limit exceeded"})
 }
 
 // clientIP returns the best-effort client IP for r. chi's RealIP middleware

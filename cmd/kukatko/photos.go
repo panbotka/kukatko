@@ -1,8 +1,11 @@
 package main
 
 import (
+	"net/http"
+
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
+	"github.com/panbotka/kukatko/internal/comments"
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/facematch"
@@ -12,6 +15,7 @@ import (
 	"github.com/panbotka/kukatko/internal/photoapi"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/places"
+	"github.com/panbotka/kukatko/internal/ratelimit"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/thumbjob"
@@ -73,6 +77,7 @@ func buildPhotoAPI(
 	if s := buildStacksServiceOrNil(cfg, db); s != nil {
 		stacker = s
 	}
+	commentLimit := ratelimit.New(cfg.RateLimit.Comment.RatePerSec, cfg.RateLimit.Comment.Burst)
 
 	return photoapi.NewAPI(photoapi.Config{
 		Store:       photoStore,
@@ -91,14 +96,31 @@ func buildPhotoAPI(
 		// The detail response carries the photo's cached place. This is a read of
 		// the photo_places cache the `places` job fills — the detail endpoint never
 		// geocodes, so opening a photo costs no mapy.com credit.
-		Places:          places.NewStore(db.Pool()),
-		Purger:          purger,
-		Stacker:         stacker,
-		RetentionDays:   cfg.Trash.RetentionDays,
-		VideoTranscode:  cfg.Video.Transcode,
-		RequireAuth:     authAPI.RequireAuth,
-		RequireWrite:    authAPI.RequireWrite,
-		RequireAdmin:    authAPI.RequireAdmin,
-		RequireDownload: authAPI.RequireAuthOrDownloadToken,
+		Places:  places.NewStore(db.Pool()),
+		Purger:  purger,
+		Stacker: stacker,
+		// Per-photo comment threads. Writing one is open to every authenticated
+		// role (viewers included), so the throttle keys on the user rather than
+		// the client IP — see photoapi.handleCreateComment.
+		Comments:         comments.NewStore(db.Pool()),
+		CommentRateLimit: commentLimit.KeyedMiddleware(commentRateKey),
+		RetentionDays:    cfg.Trash.RetentionDays,
+		VideoTranscode:   cfg.Video.Transcode,
+		RequireAuth:      authAPI.RequireAuth,
+		RequireWrite:     authAPI.RequireWrite,
+		RequireAdmin:     authAPI.RequireAdmin,
+		RequireDownload:  authAPI.RequireAuthOrDownloadToken,
 	})
+}
+
+// commentRateKey is the rate-limit bucket key for comment creation: the acting
+// user's UID, read from the auth context the guard has already populated (the
+// limiter is mounted inside it). An unauthenticated request cannot reach the
+// handler, so the empty fallback is unreachable in production and merely keeps
+// the key function total.
+func commentRateKey(r *http.Request) string {
+	if user, ok := auth.UserFromContext(r.Context()); ok {
+		return user.UID
+	}
+	return ""
 }

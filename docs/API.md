@@ -281,6 +281,38 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   download_url}` (a strip of variants), omitted for a non-stacked photo (distinct from `files`, which are the
   `photo_files` of a single row).
   Mounted by the third `server.WithAPI` (`buildPhotoAPI` in `cmd/kukatko/photos.go`).
+- **Comments API (`/api/v1`, `internal/photoapi` + `internal/comments`):** per-photo comment threads — the
+  family conversation around a picture ("who is the boy on the left?", "this was the summer before the barn
+  burned down"). `GET /photos/{uid}/comments` (authenticated) →
+  `{comments:[{uid,photo_uid,author_uid,author_name,body,created_at,edited_at?}]}`, **oldest first** (a
+  conversation reads forwards), `author_name` resolved server-side (display name, fallback username) so a
+  thread needs no second lookup; a photo with no comments — or one that does not exist — is an empty array,
+  not a 404. `POST /photos/{uid}/comments` `{body}` → **201** with the created comment; guarded by
+  **`RequireAuth`, not `RequireWrite` — the one deliberate exception to the read-only rule: a viewer may
+  comment.** Commenting is social participation, not curation of the library (a viewer still cannot retitle a
+  photo, move it between albums or name a face), and locking the read-only half of a family out of the
+  conversation would defeat the feature. That route also carries the **per-user** rate limit
+  `ratelimit.comment` (default 0.5/s, burst 10 → 429), mounted *inside* the auth guard so it keys on the
+  caller rather than on a household's shared IP.
+  `PATCH /photos/{uid}/comments/{commentUID}` `{body}` → 200 with the edited comment, **author only** —
+  anyone else, admins included, gets 403: an admin may remove a comment but never rewrite what someone is
+  recorded as having said. The edit stamps `edited_at` (null until the first edit).
+  `DELETE /photos/{uid}/comments/{commentUID}` → 204 for **the author or an admin** (403 otherwise), the same
+  moderation power admins already hold over the rest of the library. The delete is **soft**: the row keeps its
+  place with `deleted_at` stamped and drops out of every read, so deleting twice is 404 rather than a silent
+  success, and editing a deleted comment is 404 too. **Body:** plain text, whitespace-trimmed, **1–2000
+  characters** (runes, not bytes; blank → 400, longer → 400, unknown JSON field → 400); nothing is parsed or
+  rendered server-side — no HTML, no markdown — so **the client escapes what it displays**. A comment
+  addressed through the wrong photo (`{uid}` is not the comment's) is **404, not 403**, so the endpoint cannot
+  be used to probe which comment UIDs exist. `GET /photos/{uid}` carries **`comment_count`** (always present,
+  0 when there are none) so the detail can badge the thread without fetching it; it resolves through the bulk
+  `CountsAmong` with a single UID, so the count can never quietly become a per-item query. Every mutation
+  writes an audit entry (`comment.create` / `comment.update` / `comment.delete`) **in the same transaction**
+  as the change, targeting the **photo** with the comment's UID in `details.comment_uid`. Purging a photo
+  removes its thread (FK `ON DELETE CASCADE`); deleting a user leaves their comments in place, authorless
+  (`ON DELETE SET NULL`) and therefore editable by nobody. **MCP deliberately exposes no comment tool** (see
+  [`MCP.md`](MCP.md)). Table `photo_comments` (migration `0052_photo_comments.sql`); 503 when no comments
+  backend is wired.
 - **Jobs API (`/api/v1`, `internal/jobsapi`, maintainer-only via `RequireMaintainer`):**
   `GET /jobs/stats` → `{by_state,by_type,total}`; `GET /jobs` → `{jobs,limit,offset}`
   (recent/dead-letter listing, query `state`/`limit`/`offset`, invalid → 400);

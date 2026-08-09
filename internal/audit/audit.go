@@ -96,6 +96,21 @@ const (
 	// action). It never touches the original; the regenerated sizes are listed in
 	// the entry's details.
 	ActionPhotoThumbnail = "photo.thumbnail"
+	// ActionCommentCreate records a user writing a comment on a photo. The photo
+	// is the target and the new comment's UID is in the entry's details — every
+	// role may comment, including viewers, so the trail is the only record of who
+	// said what.
+	ActionCommentCreate = "comment.create"
+	// ActionCommentUpdate records a user rewriting the body of their own comment.
+	// The photo is the target and the comment's UID is in the details; the
+	// previous body is not kept, so the entry records that an edit happened, not
+	// what it replaced.
+	ActionCommentUpdate = "comment.update"
+	// ActionCommentDelete records removing a comment — by its author, or by an
+	// admin removing anyone's. The delete is soft (the row survives with
+	// deleted_at stamped), so this entry plus the row is a complete account of
+	// what was said and who took it down.
+	ActionCommentDelete = "comment.delete"
 	// ActionAlbumCreate records creating an album.
 	ActionAlbumCreate = "album.create"
 	// ActionAlbumUpdate records editing an album's metadata.

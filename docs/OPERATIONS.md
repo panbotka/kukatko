@@ -303,11 +303,13 @@ the binary that destroys the library on purpose. This deployment has **no S3 bac
 there is nothing to re-import from either: a misfire is now **unrecoverable**. The guards below are the
 feature, not decoration.
 
-**What it deletes.** The 25 catalogue tables — `photos`, `photo_files`, `albums`, `album_photos`, `labels`,
+**What it deletes.** The 28 catalogue tables — `photos`, `photo_files`, `albums`, `album_photos`, `labels`,
 `photo_labels`, `subjects`, `markers`, `faces`, `face_clusters`, `face_detections`, `face_confirmations`,
-`embeddings`, `photo_phashes`, `photo_places`, `photo_edits`, `import_runs`, `import_failures`, `jobs`, the
+`embeddings`, `photo_phashes`, `photo_places`, `photo_edits`, `photo_comments`, `photoprism_aliases`,
+`import_runs`, `import_failures`, `jobs`, the
 per-user curation (`user_favorites`, `user_ratings`, `saved_searches`) and the rejection/dismissal tables
-(`face_rejections`, `label_rejections`, `duplicate_dismissals`) — in **one** `TRUNCATE … RESTART IDENTITY`
+(`face_rejections`, `label_rejections`, `duplicate_dismissals`, `duplicate_marker_dismissals`) — in **one**
+`TRUNCATE … RESTART IDENTITY`
 (no `CASCADE`: every FK between them is inside the list, so a future table that references one of them and was
 not classified makes Postgres refuse the statement instead of silently widening the blast radius). In the store
 it deletes the `YYYY/MM` originals, the `thumb/` thumbnails and the `sidecars/` metadata, plus the local
@@ -714,9 +716,12 @@ long-running and belong on the machine where the instance runs — so they remai
   jobs, default 1), `cooldown` (min. spacing between packets, default 5m). `ErrInvalidWake` validation:
   enabled requires a valid MAC + at least one target (`broadcast_addr`/`interface`).
 - **Rate-limit keys (`ratelimit.*`, `internal/ratelimit`):** per-client-IP token-bucket limits on
-  heavy endpoints. Sections `upload`/`bulk`/`tiles`, each `{rate_per_sec, burst}`;
-  defaults 5/30, 2/10, 50/200; `rate_per_sec ≤ 0` disables the rule (middleware no-op). Env e.g.
-  `KUKATKO_RATELIMIT_UPLOAD_RATE_PER_SEC`. Login has its own limiter (`auth.login_rate_*`), the geocode
+  heavy endpoints. Sections `upload`/`bulk`/`comment`/`tiles`, each `{rate_per_sec, burst}`;
+  defaults 5/30, 2/10, 0.5/10, 50/200; `rate_per_sec ≤ 0` disables the rule (middleware no-op). Env e.g.
+  `KUKATKO_RATELIMIT_UPLOAD_RATE_PER_SEC`. **`comment` (POST `/photos/{uid}/comments`) is keyed by the
+  authenticated user**, not by IP (`Limiter.KeyedMiddleware`, mounted *inside* the auth guard so the
+  principal is on the context): a household shares one address, and throttling everyone's conversation
+  because one person is chatty would be wrong. Login has its own limiter (`auth.login_rate_*`), the geocode
   proxy too (`maps.*`).
 - **Maps/geocode keys (`maps.*`, `internal/config`):** `mapy_api_key` (server-side, env
   `MAPY_API_KEY`; empty → the tile/rgeocode proxy 503s, the `places` job is not registered, and `/process/places`
