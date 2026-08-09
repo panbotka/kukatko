@@ -159,6 +159,12 @@ export function LeaderboardPage() {
               <th scope="col" className="text-end">
                 {t('leaderboard.columns.total')}
               </th>
+              {/* The habit, not the score: a run of days with at least one
+                  decision. The backend computes it (it is not narrowed by the
+                  window), so the board only renders it. */}
+              <th scope="col" className="text-end">
+                {t('leaderboard.columns.streak')}
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -205,6 +211,20 @@ export function LeaderboardPage() {
                   <td className="text-end">{entry.yes_count}</td>
                   <td className="text-end">{entry.no_count}</td>
                   <td className="text-end fw-semibold">{entry.total}</td>
+                  <td className="text-end" data-testid="leaderboard-streak">
+                    {entry.streak_days > 0 ? (
+                      <span
+                        className="kk-streak"
+                        title={t('leaderboard.streakTitle', { count: entry.streak_days })}
+                      >
+                        <Icon name="fire" />
+                        {entry.streak_days}
+                      </span>
+                    ) : (
+                      // A dash, not a zero: nobody is on a run of nought days.
+                      <span className="text-secondary">—</span>
+                    )}
+                  </td>
                 </tr>
               )
             })}

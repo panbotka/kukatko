@@ -123,6 +123,7 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
       { keys: ['→', 'y'], descriptionKey: 'shortcuts.review.yes' },
       { keys: ['←', 'n'], descriptionKey: 'shortcuts.review.no' },
       { keys: ['Space', '↓'], descriptionKey: 'shortcuts.review.skip' },
+      { keys: ['↵'], descriptionKey: 'shortcuts.review.next' },
       { keys: ['z', 'Ctrl+Z'], descriptionKey: 'shortcuts.review.undo' },
       { keys: ['o'], descriptionKey: 'shortcuts.review.open' },
       { keys: ['Esc'], descriptionKey: 'shortcuts.review.leave' },

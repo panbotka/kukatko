@@ -1924,7 +1924,12 @@ here.
   a failed **„načíst další"** is reported inline exactly as on `/duplicates`; tests
   `DuplicateMarkersPage.test.tsx` (with the repo's standard `react-virtuoso` mock) + `lib/duplicateMarkers.test.ts`,
   `ReviewPage` = `/review` (editor/admin, a top-level link **Třídění** right next to Nahrát) a **sorting
-  game**: one question across **the whole screen**, in **five flavours** — „Je na fotce **Tomáš Kozák**?"
+  game played in rounds**: one card across **the whole screen** at a time, ~10 questions to a round with a
+  visible position (**4/10**), a **combo** of consecutive answers, roughly one card per round that asks nothing,
+  and a small card between rounds offering another. The page names what it is showing (`Stage` =
+  `question`/`breather`/`round-summary`/`session-summary`/`loading`/`error`/`empty`) instead of inferring it in
+  three places, because each of those states has its own keyboard rules.
+  The question comes in **five flavours** — „Je na fotce **Tomáš Kozák**?"
   (face) · „Sedí k fotce štítek **Ostatky**?" (label) · „Byla tahle fotka pořízena v **Brně**?" (place, over a
   location the estimator guessed) · „Je to **stejná fotka**?" (duplicate, the two photos side by side) · „Je na
   téhle fotce opravdu **Tomáš Kozák**?" (outlier, a face already assigned to him but far from his centroid).
@@ -1980,8 +1985,33 @@ here.
   the next card is **always already in memory** (`useReviewGame` refills in the background, `useImagePreloader`
   decodes `PRELOAD_AHEAD = 4` photos ahead), so between cards **a spinner never flashes**;
   an unsaved answer isn't lost — it sits in an alert with **Uložit znovu**/**Zahodit**, undo has its own
-  alert with retry; the session shows a **counter of answered + remaining** and a thin progress bar
-  (no score, streaks or confetti — the reward is a tidy library);
+  alert with retry; **leaving mid-round loses nothing**, because every answer was persisted on its own the
+  moment it was given.
+  **On touch the three answers are also a swipe** (`useReviewSwipe` on the stage): right Ano, left Ne, down
+  Nevím, with the card following the finger (`.review-game__card`, an inline `translate`+`rotate` at
+  `DRAG_TILT = 1/24 °/px`) and the verdict **named before the finger lifts**. The wrapper fills the stage
+  exactly, so the frame inside still caps itself against `100cqh` and the face geometry is untouched by the
+  gesture layer; the buttons and every keyboard shortcut are unchanged — the swipe is purely additive.
+  **The header carries the round**, not just a tally: the position `4/10` (with **Dnešní mix** in front of it on
+  the day's first round), the ⚡ combo from `COMBO_FLOOR = 2` up (one answer is not a run), the 🔥 day-streak from
+  `useReviewStreak`, and the session counter (hidden below `sm`, where the room is not there); the hairline bar
+  under the header tracks **the round**, because a session has no end to measure against.
+  **The cards that ask nothing** (`components/review/ReviewBreather.tsx`): `BreatherCard` = „jen pro radost", a
+  photo somebody favourited or rated highly with its title and year, and `RevealCard` = the payoff of a face just
+  confirmed („**Alois Skoták** má teď 27 fotek · nejstarší 1962") with a link into that person's gallery. Both
+  render into the game's own three-part body, so the fullscreen rules hold; both are dismissed by **any key** or
+  the Pokračovat button (`RESERVED_KEYS` — Esc, `z`, `o`, `?` — keep their own meanings) and **neither moves the
+  round position, the combo or any total**. The answer keys reach `answer()` first and no-op there, which is what
+  lets → both dismiss a breather and continue into the next round unambiguously.
+  **The cards that close something** (`ReviewSummary.tsx`): `RoundSummaryCard` = the round's Ano/Ne/Nevím split
+  and one primary action — **Ještě kolo?**, or „Zobrazit souhrn" once the backend is dry — which **Enter/Space/→**
+  press; finishing the day's first round adds **Pro dnešek splněno**, a fact about the day and not a locked door
+  (the button still offers another round). `SessionSummaryCard` = the totals plus a **mosaic of up to 12 photos
+  the player touched**, each a link into the library; it is shown when the queue runs out **and** when the player
+  leaves with something to show for the session (Esc/✕ once opens it, again leaves — a player who answered
+  nothing is never shown a summary of nothing). `MilestoneBurst` = the 10/25/50 celebration: a small badge over
+  the game that clears itself after `MILESTONE_MS = 2600`, `aria-live="polite"`, **no sound**, nothing to
+  dismiss and nothing that moves the card underneath;
   **the player chooses what is asked about** — `SourceToggle`, a three-state `ButtonGroup` **Oboje · Lidé ·
   Štítky** in the header (glyph + label, the label hidden below `md`, so on a tablet down it is three glyphs
   with an `aria-label`) whose state lives in the **`?source=` query param** (`parseSource` degrades an unknown
@@ -2015,16 +2045,31 @@ here.
   halves with different sources and both sizes, an outlier question whose crop's `data-thumb-size` is asserted
   to be a `fit_*` with the box drawn inside it and the context photo beside it, the same →/←/spacebar controls
   answering and **skipping** all three, undo routing a duplicate/outlier confirmation to its own un-confirm
-  endpoint, and the undo button staying **disabled** across a place verdict) + two `review.css` guards for the overlay
-  (its corner placement above the veil, and a 44 px full-strength target under `@media (hover: none)`, which
-  jsdom evaluates for nobody — read out of the shipped stylesheet like the `app.css` guards in `src/styles/`),
+  endpoint, and the undo button staying **disabled** across a place verdict; and for the round game: the
+  position counting through the round and the round closing into a summary of what was **played**, Enter opening
+  the next round, „Dnešní mix" titling the day's first and „Pro dnešek splněno" not closing the game, the combo
+  a skip breaks and an **undo restores**, a breather that moves **no** counter and answers nothing, a reveal card
+  linking to the person, the 10-answer celebration, the streak read from the caller's own leaderboard row — and
+  the game playing on when that read **fails** — a session left mid-round closing with a summary + a mosaic
+  while both answers stayed persisted, no summary for a player who answered nothing, the three swipe directions,
+  the hint naming the verdict mid-drag while answering nothing, a short drag and a **second finger** deciding
+  nothing, and the whole keyboard — `o`, `y`, `n`, spacebar — surviving the gesture layer) + four `review.css`
+  guards (the overlay's corner placement above the veil and its 44 px full-strength target under
+  `@media (hover: none)`, which jsdom evaluates for nobody; the drag wrapper being exactly the size of the stage,
+  so `100cqh` still measures what the face box was normalised against; and the swipe verdict staying off the
+  answer row and `pointer-events: none` — read out of the shipped stylesheet like the `app.css` guards in
+  `src/styles/`) + `lib/reviewRounds.test.ts` (breather placement, the reveal's one-slot-per-round rule, the
+  milestone edges and the local-day daily flag, including storage that throws) + `lib/gestures.test.ts`,
   `LeaderboardPage` = `/leaderboard` (**any logged-in user** — reading aggregates is not a write, so the
   **Žebříček** link is seen by a viewer too; since 2026-08-07 it is the last entry of the „Procházet"
   dropdown rather than a top-level slot beside **Třídění** — one player and 38 answers on the live instance
   did not earn a place next to Knihovna and Alba. **Inside `Layout`**, not
   fullscreen) a **competitive sorting leaderboard** over `GET /review/leaderboard` (`fetchLeaderboard(window)`):
   who decided the most in the review game. A sorted table (`react-bootstrap` `Table`) **Pořadí · Hráč · Ano ·
-  Ne · Celkem**, the top 3 carry a **medal** (`Icon` `trophy-fill`/`award-fill` + a color class
+  Ne · Celkem · Série**, where **Série** is the 🔥 day-streak the API already computes (`streak_days`, deliberately
+  **not** narrowed by the window — a streak is a fact about the habit, not about the slice being shown), so the
+  board only **renders** it; nobody on a run gets a dash rather than a `0`, which would read like a score.
+  The top 3 carry a **medal** (`Icon` `trophy-fill`/`award-fill` + a color class
   `kk-medal--{gold,silver,bronze}` in `app.css`, decorative — the rank number is beside it via
   `visually-hidden`, so a screen reader hears the placing), **the logged-in user's row is highlighted**
   (a match on `useAuth().user.uid`; `kk-leaderboard-row--me` = a `--kk-accent-subtle` tint + a „Vy" badge,
@@ -2042,7 +2087,8 @@ here.
   a non-admin sees only the name without a click-through. i18n `leaderboard.*` (cs/en). Tests: `LeaderboardPage.test.tsx`
   (sorted standings + the Ano/Ne split, highlighting of one's own row, switching the window changes the query param and
   refetches, the empty state with a link to `/review`, top-3 medals, a not-on-board hint, **admin click-through /
-  non-admin plain name**, and the two viewer cases: **no CTA in the empty state** and **no not-on-board line**),
+  non-admin plain name**, the two viewer cases: **no CTA in the empty state** and **no not-on-board line**, and
+  the streak column rendering a run and a dash for nobody on one),
   `StatsPage` = `/stats` (**any logged-in user** — read-only aggregate counts, so no role gate, like the
   leaderboard; reachable from the **user menu** and the phone drawer's account section) the **library
   statistics** over `GET /system/stats` (`useLibraryStats`), modelled on photo-sorter's status page: five
@@ -2178,6 +2224,14 @@ so Zpět and the Ponechat levou/obě/pravou buttons never hide under a notch or 
   down the ladder on a 404. **`fit_*` only**: the bbox is normalised against the full frame, so cropping a
   centre-cropped `tile_*` lands beside the face. The context photo is not decoration — a face out of its scene
   is how a curator mistakes one wedding for another)
+  + `ReviewBreather` (`BreatherCard`/`RevealCard` — the two cards a round carries that **ask nothing**: a photo
+  „jen pro radost" with its title and year and the reason it was picked, and the payoff of a face just confirmed
+  with a link into that person's gallery. Both render the game's own three-part body, so a pause is still a full
+  screen, just one with no verdict on it)
+  + `ReviewSummary` (`RoundSummaryCard`/`SessionSummaryCard`/`MilestoneBurst` — what closes a round, what closes
+  a session, and the 10/25/50 badge. The tally lines are one shared `Tallies`, so the round card and the session
+  card can never drift apart in what Ano/Ne/Nevím look like; the session mosaic is capped at 12 tiles, because
+  a souvenir that grows into the library again stops being one)
   + `review.css` (a fullscreen **flex column** `review-game`: top bar /
   progress / **question** / stage / actions — text **above** the photo; the stage is `flex: 1 1 0` +
   `container-type: size` + `overflow: hidden`, so its height **is** the remainder after the chrome (basis 0 →
@@ -2188,6 +2242,13 @@ so Zpět and the Ponechat levou/obě/pravou buttons never hide under a notch or 
   the font; `review-photo__box` frame, a progress bar, `kbd` badges, a touch variant of the actions;
   `review-duplicate`/`review-outlier` are rows inside that same stage, so both inherit "the photo takes what is
   left" and both **stack into a column below `sm`**, where a phone has no width for two frames;
+  `review-game__card` is the swipe wrapper — exactly the size of the stage, so `100cqh` keeps measuring what the
+  face box was normalised against, with the spring-back transition **suppressed mid-drag** so the card tracks the
+  finger 1:1 — and `review-game__verdict` is the drag's answer badge, pinned to the **top** of the stage
+  (the three buttons own the bottom) and `pointer-events: none`; `review-game__round`/`__combo`/`__streak` are
+  the header's counters (tabular figures, so a number does not jitter as it counts) and `review-summary`/
+  `review-milestone` the closing cards and the celebration, whose animation `prefers-reduced-motion` drops
+  together with the card's;
 mounted **outside `Layout`** as well, so it adds its own **safe-area insets**: the side ones once on
 `.review-game`, `safe-area-inset-top` added to the header's padding and `-bottom` to the actions row
 — and to `review-game__center`, which owns the bottom edge in the loading/error/empty states —
@@ -2651,9 +2712,22 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   the selection **sequentially** and **acknowledges partial failure** (`bulkState{running,current,total,failed}`,
   cancellable): the already removed ones stay removed, the errors are counted and reported, not rolled back
   or swallowed. New `faces` (a different person/threshold) reset everything and abandon a running run;
-  `useReviewGame()` = the engine of the sorting game (`/review`): a local queue of questions filled **in the background**
-  (`fetchReviewQueue`; a refill as soon as it drops to `REFILL_AT = 3`, deduplication against **all** ids already
-  seen, so the batch boundary is invisible), **optimistic** answers (`answer` moves the UI
+  `useReviewGame()` = the engine of the sorting game (`/review`): **one round at a time**. A fetch is exactly one
+  round (`fetchReviewQueue`, deduplication against **all** ids already seen), laid out as **cards** by
+  `lib/reviewRounds` — the questions plus the round's breathers, which answer nothing. Consuming the last card
+  closes the round into a `RoundSummary` (a snapshot, so the between-rounds card reports what was **played**, not
+  what is left) and starts loading the next one **behind** that card, which is what makes „Ještě kolo?" instant
+  while the pause is real; the refill first **awaits the in-flight answers**, because the backend mints the next
+  round only once the current one is answered and would otherwise hand the same one back. The hook also owns the
+  session's own bookkeeping: `round` (index/size/`played`/tallies/`daily`/`last`), `combo` (consecutive answers —
+  a skip resets it, an undo restores what it was), `session` (the yes/no/skip split), `touched` (the photos
+  decided about, capped at `TOUCHED_LIMIT = 24` for the closing mosaic), `milestone` (10/25/50, via
+  `milestoneCrossed`) and the **daily-mix flag** in `localStorage` (`dailyMixDone`/`markDailyMixDone`, keyed on
+  the **local** day — a UTC key would flip over mid-evening). A `reveal` on an answer response is spliced into
+  the round in flight by `insertReveal`: it takes the next **breather** slot if there is one, otherwise a slot of
+  its own right behind the card on screen, and only ever **one per round**. `advance()` moves past a card that
+  asks nothing and deliberately touches **no** counter — a pause that scored points would not be a pause.
+  Answers stay **optimistic** (`answer` moves the UI
   immediately and the request finishes in the background; a failure falls into `failed` for an explicit retry — it never blocks
   the rhythm nor silently loses a verdict) and a **single-step undo**. The queue has its **source of truth in a ref**, not
   in state: two answers can fit into one render (arrows at speed) and reading the head from state would
@@ -2677,6 +2751,18 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   in flight during the switch is recognised by the `source` the response **echoes** and dropped; because the
   refill effect already ran behind the in-flight latch, dropping it also **bumps a reload key**, otherwise
   nothing would ever fetch the source the player actually chose;
+  `useReviewSwipe({onVerdict,enabled})` = the game's **touch input**: right Ano, left Ne, down Nevím (the pure
+  decision is `swipeVerdict` in `lib/gestures`, in the directions the arrow keys already use, so the two input
+  methods can never disagree). It returns the live `offset` the card is translated by, the `hint` — the verdict
+  the drag is heading for, already at `VERDICT_HINT_THRESHOLD = 24 px`, far below the committing
+  `VERDICT_THRESHOLD = 64 px`, because a gesture whose outcome only shows **after** it fires is one nobody dares
+  use on real photos — and `dragging`. An **upward** drag decides nothing (there is no fourth answer, and up is
+  how a phone is scrolled), a gesture that starts on a control (the corner anchor, a button) is ignored unless it
+  opts in with `data-swipe-surface`, and a second finger abandons it: two fingers on a photo is a pinch. Only
+  touch handlers are bound, so mouse and keyboard are untouched;
+  `useReviewStreak()` = the 🔥 day-streak for the game header, read from the caller's own row on
+  `GET /review/leaderboard` (`streak_days`) — **render only**, there is no second source of truth. A failure is
+  silence (0, which renders as nothing at all): flavour must never be able to stop the game;
   `useFavorite(uid,initial,onChange?)` = an **optimistic** per-user favorite toggle over `favoritePhoto`
   (`PUT`/`DELETE …/favorite`), rollback on an error, ignores a concurrent toggle, resyncs on a change of
   `uid`/the server state; the optional `onChange` reports **every** flip of its own (optimistic and rolled-back,
@@ -3281,12 +3367,15 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   **One request is one round**: `ReviewQueue.round` (`ReviewRound` = `{index,size,remaining,kinds?,sure,band,
   entities,last}`) says which round of the session the `questions` array is, how long it was minted and what it
   is made of — the numbers are frozen at mint time, so they are what a between-rounds summary should show, not
-  what is left. Re-fetching before answering returns the **same** round, so the existing dedup-by-id refill in
-  `useReviewGame` keeps working unchanged. `ReviewQueue.breathers` (`ReviewBreather[]`, absent when empty) are
+  what is left. Re-fetching before answering returns the **same** round, so the dedup-by-id refill in
+  `useReviewGame` cannot lose questions — and, for the same reason, the refill for the **next** round waits for
+  the in-flight answers first. `ReviewQueue.breathers` (`ReviewBreather[]`, absent when empty) are
   **not questions**: a photo somebody rated or favourited, tagged `BREATHER_KIND` and carrying no id the answer
   endpoint would accept — render them differently and never offer Ano/Ne on one.
   `ReviewAnswerResult.reveal` (`ReviewReveal`) rides back on `result: 'assigned'` only, with the person's photo
-  count and year span. And **the leaderboard**
+  count and year span. Both become cards through `lib/reviewRounds` (`ReviewCard`, `buildRoundCards`,
+  `insertReveal`), which is also where the milestone and daily-mix arithmetic lives, DOM-free and unit-tested.
+  And **the leaderboard**
   `fetchLeaderboard(window,signal)` over `GET /review/leaderboard?window=all|7d|today` →
   `Leaderboard{window,caller_uid,entries:LeaderboardEntry[]}` (`LeaderboardEntry` =
   `{user_uid,display_name,yes_count,no_count,total,streak_days,is_me}`, ordered by the backend by `total`;

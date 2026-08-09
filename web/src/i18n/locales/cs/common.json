@@ -195,7 +195,8 @@
       "player": "Hráč",
       "yes": "Ano",
       "no": "Ne",
-      "total": "Celkem"
+      "total": "Celkem",
+      "streak": "Série"
     },
     "you": "Vy",
     "loading": "Načítám žebříček…",
@@ -212,7 +213,11 @@
       "hint": "Zatím nejste na žebříčku.",
       "action": "Začněte třídit"
     },
-    "viewDecisions": "Zobrazit rozhodnutí hráče {{name}}"
+    "viewDecisions": "Zobrazit rozhodnutí hráče {{name}}",
+    "streakTitle_one": "{{count}} den v řadě",
+    "streakTitle_few": "{{count}} dny v řadě",
+    "streakTitle_many": "{{count}} dne v řadě",
+    "streakTitle_other": "{{count}} dní v řadě"
   },
   "stats": {
     "title": "Statistiky knihovny",
@@ -1115,7 +1120,8 @@
       "skip": "Nevím — přeskočit otázku",
       "undo": "Vrátit poslední odpověď",
       "open": "Otevřít posuzovanou fotku v nové záložce",
-      "leave": "Ukončit třídění"
+      "leave": "Ukončit třídění",
+      "next": "Další kolo / pokračovat na kartě bez otázky"
     },
     "compare": {
       "keepLeft": "Ponechat levou fotku (pravá se archivuje)",
@@ -2750,6 +2756,52 @@
     },
     "place": {
       "hint": "Místo jsme odhadli z fotek pořízených poblíž v čase."
+    },
+    "round": {
+      "title": "Kolo {{index}}",
+      "daily": "Dnešní mix",
+      "position": "{{position}}/{{size}}"
+    },
+    "comboTitle": "Kolik odpovědí máš v řadě. Nevím sérii přeruší.",
+    "streakTitle_one": "{{count}} den v řadě s odpovědí",
+    "streakTitle_few": "{{count}} dny v řadě s odpovědí",
+    "streakTitle_many": "{{count}} dne v řadě s odpovědí",
+    "streakTitle_other": "{{count}} dní v řadě s odpovědí",
+    "milestone_one": "{{count}} odpověď!",
+    "milestone_few": "{{count}} odpovědi!",
+    "milestone_many": "{{count}} odpovědi!",
+    "milestone_other": "{{count}} odpovědí!",
+    "breather": {
+      "joy": "jen pro radost",
+      "continue": "Pokračovat",
+      "favorite": "Tuhle fotku má někdo v oblíbených.",
+      "rated": "Tuhle fotku někdo ohodnotil vysoko."
+    },
+    "reveal": {
+      "tag": "právě přibylo",
+      "title_one": "{{name}} má teď {{count}} fotku",
+      "title_few": "{{name}} má teď {{count}} fotky",
+      "title_many": "{{name}} má teď {{count}} fotky",
+      "title_other": "{{name}} má teď {{count}} fotek",
+      "span": "nejstarší {{oldest}} · nejnovější {{newest}}",
+      "oldest": "nejstarší {{year}}",
+      "open": "Zobrazit fotky, kde je {{name}}"
+    },
+    "summary": {
+      "title": "Kolo hotovo",
+      "confirmed": "Ano",
+      "rejected": "Ne",
+      "skipped": "Nevím",
+      "again": "Ještě kolo?",
+      "finish": "Zobrazit souhrn",
+      "dailyDone": "Pro dnešek splněno",
+      "loadingNext": "Chystám další kolo…"
+    },
+    "session": {
+      "eyebrow": "konec hry",
+      "title": "Díky za třídění!",
+      "mosaic": "Fotky, které máš za sebou",
+      "close": "Zavřít"
     }
   },
   "announcement": {
