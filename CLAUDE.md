@@ -122,6 +122,8 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/reviewapi` — `GET /review/queue`, `POST /review/answer` (RequireWrite)
 - `internal/savedsearch` — per-user saved searches ("smart albums")
 - `internal/savedsearchapi` — `/saved-searches`, everything scoped to the owner (foreign → 404)
+- `internal/searchhistory` — each user's recent search queries: upsert-on-record, capped ring of 20, strictly per-user
+- `internal/searchhistoryapi` — `/search-history` (list/record/clear), every operation scoped to the acting user
 - `internal/server` — chi HTTP server, graceful shutdown, `New(addr, WithAPI(...))`
 - `internal/sidecar` — reads metadata next to the media (Google Takeout `.json`, Apple `.xmp`), pairs it with files and resolves precedence vs. EXIF
 - `internal/sidecarexport` — **writes** the metadata sidecar: the versioned YAML format + its atomic write to storage, so the catalogue survives losing the DB. Not `internal/sidecar` (that reads foreign ones)

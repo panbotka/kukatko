@@ -1010,9 +1010,20 @@ here.
   `ErrorState` with Retry); the field speaks **the search language**
   (`q` = free text + `klíč:hodnota` filters, grammar in docs/API.md „Vyhledávací jazyk (q=)“;
   parsed exclusively by the backend): the input is `SearchQueryInput` (`components/search/`) — a combobox
-  with **filter-key autocomplete** (suggestions from `lib/queryLanguage.ts` `suggestFilterKeys`/
-  `applyFilterKey` + `FILTER_KEYS`; arrows + Enter/Tab accept `klíč:`, Esc closes, values are
-  never completed), beside the label `SearchQueryHelp` (a `?` button → a modal holding
+  whose dropdown offers, depending on where the caret is, exactly one of **three panels** (drawn by the
+  presentational `SearchSuggestions`): **nedávno hledané** while the box is focused and empty
+  (`useSearchHistory`, `search.history.*`, with its own „Vymazat historii" action; **no panel at all** when the
+  history is empty — the page autofocuses this box, so a first-time reader would otherwise meet an empty
+  popover over the filters), **filter keys** while the trailing token could still become one (`suggestFilterKeys`/
+  `applyFilterKey` + `FILTER_KEYS`), and **filter values** once a completable key is typed
+  (`suggestFilterValues`/`matchFilterValues`/`applyFilterValue`, lists from `useFilterValues`).
+  Only `album:`, `label:`, `person:`/`subject:` complete values — a number or a date has no list to propose;
+  matching is **prefix + diacritics-insensitive** (`lib/text` `foldText`) and ranked by photo count, the picked
+  value is inserted **properly quoted** (`quoteFilterValue`) with a trailing space, and a value token with no
+  match still opens the dropdown with „Nic neodpovídá" rather than vanishing mid-word. Arrows move,
+  Enter/Tab accept, Esc closes — but **Enter with nothing highlighted belongs to the form**: only the key panel
+  pre-selects its first row (`INITIAL_ACTIVE`), because a bare `ca` is not a search anyone means to run while
+  `person:Anna` is. Beside the label sits `SearchQueryHelp` (a `?` button → a modal holding
   **`SearchQueryReference`** — the reference lives in its own component because `/help`'s Search chapter
   renders the same tables inline, so the syntax has one source of truth; operators and filters
   with examples, rows from `QUERY_HELP_ROWS`/`QUERY_HELP_OPERATORS`, texts `search.help.*` cs+en; the
@@ -2178,7 +2189,13 @@ here.
   its second line says what the id was and — via `states` — whether the photo is archived/hidden/private/a stack
   variant, and an id that names nothing is stated in words above the rows instead of being offered as a row.
   The backend `/search/global` doesn't return `Místa` groups, so the palette
-  doesn't show them. Keys `searchCommand.*`, `globalSearch.groups.*`, `globalSearch.direct.*`; in the shortcut
+  doesn't show them. **With the field still empty it offers the reader's own nedávno hledané**
+  (`useSearchHistory`, only fetched while the palette is actually open on an empty field) instead of the idle
+  hint: ordinary rows navigating to `/search?q=…`, so the palette's contract holds unchanged — the first is
+  highlighted and Enter opens it, which makes „otevřít paletu, Enter" repeat the last search — and the group's
+  heading (a `SearchGroup.action`, the one part of an eyebrow that is *not* `aria-hidden`, styled
+  `kukatko-search-group__action`) carries „Vymazat historii". With no history the idle hint stays.
+  Keys `searchCommand.*`, `search.history.*`, `globalSearch.groups.*`, `globalSearch.direct.*`; in the shortcut
   help the group `shortcuts.groups.global`). Both surfaces share `lib/directHit.ts` — the label maps
   `DIRECT_KIND_LABEL`/`DIRECT_VIA_LABEL`/`DIRECT_STATE_LABEL`, the icon map `DIRECT_TARGET_ICON` and the pure
   `directHitSecondary`/`directHitTitle` — so the palette and the search page never drift apart on what an id
@@ -2556,7 +2573,29 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   change, cancels in-flight + ignores stale — the basis for `TimelineScrubber`); `useGlobalSearch(query,
   debounceMs?)` = a debounced (default 250 ms) grouped global-search loader over `globalSearch`
   (`status` idle/loading/ready/error + `result`, an empty query → idle without a request, cancels in-flight +
-  ignores stale — the basis for `GlobalSearchSections`); `usePlaceSearch(query,debounceMs?)` =
+  ignores stale — the basis for `GlobalSearchSections`);
+  `useSearchHistory(active)` = the loader of the reader's **nedávno hledané** → `{entries,loading,clear}`:
+  `active` means "the dropdown could be on screen right now", and the list is (re)fetched on **every**
+  activation — the history lives server-side precisely so another device can extend it, and re-reading it each
+  time the dropdown opens is what makes that visible; nothing is fetched while it cannot be seen, so a page
+  that merely *has* a search box pays nothing. `clear()` empties the list **locally first** and posts behind it
+  (the whole point of the action is that the list is gone) and bumps the same `latest` seq ref the loads are
+  checked against, so an in-flight load cannot repopulate what was just cleared; a failed load leaves the list
+  empty rather than surfacing an error (a box that cannot offer history is a plainer box, and an empty dropdown
+  is what a first-time user sees anyway). `useRecordSearch(query,delayMs?)` = the write side: it posts `query`
+  once it has stopped changing for **2 s** — far longer than the page's own 350 ms input debounce, because the
+  page *runs* a query as soon as typing pauses, so every prefix of a slowly typed word is a real search and
+  remembering them all would fill the history with `sv`, `sva`, `svat`; a blank query records nothing, the same
+  query is never posted twice from one mount, and failures are swallowed (a missed entry is not worth an error
+  in front of somebody who is searching). `useFilterValues(facet,debounceMs?)` = the value lists behind the
+  search box's value autocomplete → `FilterValue[]` (`{name,count}`) for `album`/`label`/`person`: nothing is
+  fetched until a facet is actually asked for, each facet is fetched **at most once** per mount (the lists are
+  catalogue-wide, so matching as the reader types is pure client-side work and **no keystroke costs a
+  request**) and the fetch itself is debounced 200 ms on top, so a `key:` typed and deleted again costs nothing
+  at all; album titles are taken **raw** rather than through `albumDisplayTitle` (the query matches the stored
+  title — a localised name would insert a value that finds nothing) and people are counted by photos, not
+  markers; a failure leaves the facet empty and uncached, so returning to the same key retries.
+  `usePlaceSearch(query,debounceMs?)` =
   a debounced (default 300 ms) loader of the place typeahead over `searchPlaces` (`status`
   idle/loading/ready/**error**/**unavailable** + `places`, cancels in-flight + ignores stale —
   the basis for `PlaceSearch`); it mirrors `useGlobalSearch` with two differences that follow from the fact that a
@@ -3279,7 +3318,11 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `savedSearches.ts` = the saved-searches client: `fetchSavedSearches`/`createSavedSearch(name,params)`/
   `updateSavedSearch(uid,{name?,params?})`/`deleteSavedSearch(uid)` over `/api/v1/saved-searches`, the types
   `SavedSearch`/`SavedSearchParams` (= the verbatim URL view state `Record<string,string>`)/
-  `SavedSearchUpdate`; `announcement.ts` = the instance-wide announcement client: `fetchAnnouncement()`/
+  `SavedSearchUpdate`;
+  `searchHistory.ts` = the search-history client: `fetchSearchHistory()`/`recordSearch(query)`/
+  `clearSearchHistory()` over `/api/v1/search-history` + `SEARCH_HISTORY_LIMIT` (20) and the type
+  `SearchHistoryEntry{query,searched_at}`; it sends no owner and addresses nothing — every call is about the
+  signed-in user's own history; `announcement.ts` = the instance-wide announcement client: `fetchAnnouncement()`/
   `setAnnouncement(message,level)`/`clearAnnouncement()` over `/api/v1/announcement`, the types `Announcement`
   (`{message, level?, author_uid?, updated_at?}`, an empty `message` = nothing published)/`AnnouncementLevel`
   (`'info'|'warning'`); `search.ts` = the grouped **global search** client: `globalSearch(q,signal)` over

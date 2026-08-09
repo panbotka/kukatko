@@ -599,6 +599,14 @@
     },
     "unknownTokens": "I don't understand these filters (searching them as plain text):",
     "keySuggestions": "Filter suggestions",
+    "valueSuggestions": "Value suggestions",
+    "values": {
+      "empty": "Nothing matches"
+    },
+    "history": {
+      "label": "Recent searches",
+      "clear": "Clear history"
+    },
     "help": {
       "open": "Search query language help",
       "close": "Close",

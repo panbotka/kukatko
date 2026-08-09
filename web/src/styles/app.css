@@ -1669,8 +1669,14 @@ body {
   margin-top: var(--kk-space-2);
 }
 
-/* The group heading is an eyebrow: a quiet, wide-tracked label the eye skims. */
+/* The group heading is an eyebrow: a quiet, wide-tracked label the eye skims.
+   The recent-searches group puts its "forget these" action on the same line, so
+   the eyebrow is a row rather than a bare label. */
 .kukatko-search-group__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--kk-space-3);
   padding: var(--kk-space-1) var(--kk-space-2);
   margin: 0;
   color: var(--kk-text-muted);
@@ -1678,6 +1684,26 @@ body {
   font-weight: 600;
   letter-spacing: var(--kk-tracking-wide);
   text-transform: uppercase;
+}
+
+/* The eyebrow's own action. It borrows the heading's voice entirely — same size,
+   tracking, caps — so it reads as part of the label rather than a button dropped
+   into it; only the hover underline says it can be pressed. */
+.kukatko-search-group__action {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.kukatko-search-group__action:hover,
+.kukatko-search-group__action:focus-visible {
+  color: var(--kk-accent);
+  text-decoration: underline;
 }
 
 /* One result row. The active row (moved by the arrow keys, tracked via

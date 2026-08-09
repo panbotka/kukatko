@@ -1,10 +1,11 @@
 import type { ParseKeys, TFunction } from 'i18next'
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import Modal from 'react-bootstrap/Modal'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 
 import { useGlobalSearch } from '../../hooks/useGlobalSearch'
+import { useSearchHistory } from '../../hooks/useSearchHistory'
 import { albumDisplayTitle } from '../../i18n/albumNames'
 import { localizeCountryNames } from '../../i18n/countryNames'
 import {
@@ -57,6 +58,12 @@ interface SearchGroup {
   key: string
   /** i18n key for the visible heading, or `undefined` for the top action row. */
   headingKey?: ParseKeys
+  /**
+   * An action rendered on the heading's own line — the recent-searches group's
+   * "forget these". It is a real control, so unlike the heading text it is not
+   * hidden from assistive tech.
+   */
+  action?: ReactNode
   items: SearchItem[]
 }
 
@@ -121,13 +128,47 @@ function buildDirectGroup(
 }
 
 /**
+ * The palette group for the reader's recent searches, or null when there are
+ * none. It is what an empty palette offers instead of an idle hint: the queries
+ * come from the server, so the phone offers what was typed on the laptop.
+ *
+ * Each row navigates to the full search for that query — running it is what the
+ * palette's rows do, and the palette itself is not a query-language editor.
+ */
+function buildHistoryGroup(
+  queries: readonly string[],
+  clear: () => void,
+  t: TFunction,
+): SearchGroup | null {
+  if (queries.length === 0) {
+    return null
+  }
+  return {
+    key: 'history',
+    headingKey: 'search.history.label',
+    action: (
+      // Not aria-hidden, unlike the heading beside it: this one does something.
+      <button type="button" className="kukatko-search-group__action" onClick={clear}>
+        {t('search.history.clear')}
+      </button>
+    ),
+    items: queries.map((query, index) => ({
+      id: `sc-opt-history-${index}`,
+      to: `/search?${new URLSearchParams({ q: query }).toString()}`,
+      primary: query,
+      icon: 'clock-history',
+    })),
+  }
+}
+
+/**
  * Builds the ordered, grouped palette rows for a query and its (possibly still
  * loading) result. A resolved UID lookup comes first — pasting an id is an exact
  * reference and Enter should open it. Then the "search everything" action, so a
  * user who just types and presses Enter lands on the full search page; the entity
  * groups (photos, people, albums, labels — the groups the global-search endpoint
- * returns) follow when they arrive. An empty query yields no rows (the idle hint
- * shows instead).
+ * returns) follow when they arrive. An empty query yields no rows; the caller
+ * offers the recent searches (or the idle hint) instead.
  */
 function buildGroups(
   query: string,
@@ -264,6 +305,12 @@ interface DialogProps {
  * for the focus trap, backdrop and Escape-to-close. Open/closed state and the
  * query live here in component state only — never in the URL — so opening the
  * palette and picking a result leaves the browser's Back behaviour untouched.
+ *
+ * With the field still empty it offers the reader's own recent searches instead of
+ * the idle hint, each row running that search on the search page. They are ordinary
+ * rows, so the palette's contract holds unchanged: the first is highlighted, Enter
+ * opens it — which makes "open the palette, press Enter" repeat the last search —
+ * and the group's heading carries the action that forgets them all.
  */
 function SearchCommandDialog({ show, onClose }: DialogProps) {
   const { t, i18n } = useTranslation()
@@ -274,11 +321,22 @@ function SearchCommandDialog({ show, onClose }: DialogProps) {
   const [query, setQuery] = useState('')
   const [activeIndex, setActiveIndex] = useState(0)
   const { status, result } = useGlobalSearch(query)
+  // Recent searches stand in for the idle hint, and are only fetched while the
+  // palette is actually open on an empty field.
+  const history = useSearchHistory(show && query.trim() === '')
 
-  const groups = useMemo(
-    () => buildGroups(query, result, i18n.language, t),
-    [query, result, i18n.language, t],
-  )
+  const groups = useMemo(() => {
+    const built = buildGroups(query, result, i18n.language, t)
+    if (built.length > 0) {
+      return built
+    }
+    const historyGroup = buildHistoryGroup(
+      history.entries.map((entry) => entry.query),
+      history.clear,
+      t,
+    )
+    return historyGroup === null ? [] : [historyGroup]
+  }, [query, result, i18n.language, t, history.entries, history.clear])
   const flat = useMemo(() => groups.flatMap((group) => group.items), [groups])
 
   // A new query resets the cursor to the top row; a shrinking result set clamps
@@ -352,11 +410,11 @@ function SearchCommandDialog({ show, onClose }: DialogProps) {
   // With a query typed, the listbox always carries at least the "search
   // everything" action row (entity groups stream in beneath it), so the palette
   // only falls back to a plain message when there is genuinely nothing to act on:
-  // an empty field (idle) or a failed request (error).
+  // an empty field with no history to offer (idle), or a failed request (error).
   let message: string | null = null
-  if (trimmed === '') {
+  if (trimmed === '' && flat.length === 0) {
     message = t('searchCommand.idle')
-  } else if (status === 'error') {
+  } else if (trimmed !== '' && status === 'error') {
     message = t('searchCommand.error')
   }
   const listboxOpen = message === null && flat.length > 0
@@ -433,8 +491,11 @@ function SearchCommandDialog({ show, onClose }: DialogProps) {
           {groups.map((group) => (
             <li key={group.key} className="kukatko-search-group" role="presentation">
               {group.headingKey !== undefined && (
-                <div className="kukatko-search-group__heading" aria-hidden="true">
-                  {t(group.headingKey)}
+                <div className="kukatko-search-group__heading">
+                  {/* The label is decoration — the group's rows name themselves —
+                      while an action beside it is not, so only the text is hidden. */}
+                  <span aria-hidden="true">{t(group.headingKey)}</span>
+                  {group.action}
                 </div>
               )}
               <ul role="presentation" className="list-unstyled mb-0">

@@ -1925,7 +1925,36 @@ to `## Package map` in `CLAUDE.md`.
   name → 400), `DELETE /saved-searches/{uid}` → 204; **ownership isolation** — the shared helper
   `ownedSearch` loads the row and compares `owner_uid` with the actor, a foreign one (even a non-existent one) → **404** (never
   reveals someone else's search); the body `DisallowUnknownFields` + 1 MiB limit, sentinel `ErrNotFound`→404;
-  mounted by `server.WithAPI` (`buildSavedSearchAPI` in `cmd/kukatko/savedsearch.go`)), `internal/announcement/`
+  mounted by `server.WithAPI` (`buildSavedSearchAPI` in `cmd/kukatko/savedsearch.go`)),
+  `internal/searchhistory/`
+  (the DB layer for **each user's recent searches** — the short ordered list of what somebody actually
+  searched for, kept server-side so a query composed on a laptop is offered on the phone; the
+  `search_history` table in migration `0056_search_history.sql`: `user_uid` FK users `ON DELETE CASCADE`,
+  `query TEXT NOT NULL CHECK (char_length BETWEEN 1 AND 500)`, `searched_at TIMESTAMPTZ DEFAULT now()`,
+  **PK `(user_uid, query)`** (which is what makes recording an idempotent upsert) + the index
+  `(user_uid, searched_at DESC)`; `MaxEntries = 20`, `MaxQueryLength = 500`, `Normalize(query)` (trims,
+  caps at 500 **characters** and trims what the cut left, `""` for a whitespace-only query — it deliberately
+  does *not* fold case or collapse inner whitespace: the string is handed back to the search box verbatim,
+  and collapsing spaces would change `title:"a  b"`), `Entry{Query,SearchedAt}`;
+  `Store` = `NewStore(pool)`: `Record(ctx,userUID,query)` (normalize → `ErrEmptyQuery` for a blank one →
+  `INSERT … ON CONFLICT (user_uid, query) DO UPDATE SET searched_at = now()` **then** the prune, both in
+  **one transaction** so no reader sees a history past the cap; the prune keeps the newest `MaxEntries`
+  identified **by query** rather than by timestamp, since the PK is unique per user while two rows written in
+  one transaction share `now()`), `List(ctx,userUID)` (newest first, `LIMIT MaxEntries`, tie-broken by query —
+  the same total order the prune uses), `Clear(ctx,userUID)` (idempotent);
+  **deduplication is on the exact trimmed text** — "Praha" and "praha" are two entries, because folding
+  them would mean choosing which spelling the user gets handed back; there is **no retention job**, the
+  per-write prune bounds the table by the number of accounts), `internal/searchhistoryapi/`
+  (the HTTP API over it: the `Store` interface (a subset of `searchhistory.Store`) → unit-testable with a fake;
+  `NewAPI(Config{Store,RequireAuth})`+`RegisterRoutes` mounts `/search-history` **all behind `RequireAuth`**
+  and **scoped to the logged-in user** (`auth.UserFromContext`) — there is no path parameter and no owner in
+  any body, so there is nothing to tamper with: `GET` → `{searches:[{query,searched_at}]}` (an empty history is
+  `[]`, never `null`), `POST {query}` → **204** (no body: the client already knows what it searched for, and the
+  refreshed list is only wanted when the dropdown next opens, which is a GET), `DELETE` → 204 (idempotent);
+  a blank query → 400 both in `decodeRecord` and via the store's `ErrEmptyQuery`, the body
+  `DisallowUnknownFields` + an 8 KiB limit; **not audited** — a private per-user convenience list is not a
+  library mutation; mounted by `server.WithAPI` (`buildSearchHistoryAPI` in `cmd/kukatko/searchhistory.go`)),
+  `internal/announcement/`
   (the DB layer for **a single instance-wide announcement** — a short message the administrator publishes and every
   logged-in user sees as a banner at the top; the single-row `announcements` table in migration
   `0039_announcement.sql`: `id BOOLEAN PK DEFAULT true CHECK (id)` (a single-row invariant → publish is

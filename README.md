@@ -45,7 +45,12 @@ It is **not** for you if you are looking for:
   `dovolená camera:"Canon EOS R6" iso:100-400 faces:2`, `label:cat|dog`, `taken:2024-05`,
   `near:<uid>`. The same language works in the library's own search field, which offers the same
   `?` cheat sheet, points out a filter it did not understand, and flags the facet pickers the query
-  has already set. The time axis is one control, not two: a **period filter** offering the decades
+  has already set. The box also remembers: focus it empty and it offers **what you searched for
+  before** — kept per account on the server, so a query composed on the laptop is one keystroke away
+  on the phone, and the command palette offers the same list — while typing `person:`, `label:` or
+  `album:` completes the **actual names in your library**, diacritics-insensitively and quoted
+  correctly, so a filter is a couple of letters rather than a spelling exercise.
+  The time axis is one control, not two: a **period filter** offering the decades
   the library holds, each expandable to its years, with exact dates underneath — so "the sixties",
   "before 1950" and "summer 2019" are all a click or two away, and the picker shows the period a
   `year:` in the search box has already set instead of contradicting it. Faces are detected,

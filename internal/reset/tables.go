@@ -56,6 +56,7 @@ var catalogueTables = []string{
 	"photoprism_aliases",
 	"photos",
 	"saved_searches",
+	"search_history",
 	"subjects",
 	"user_favorites",
 	"user_ratings",

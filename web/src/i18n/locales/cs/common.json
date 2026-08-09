@@ -603,6 +603,14 @@
     },
     "unknownTokens": "Těmto filtrům nerozumím (hledám je jako obyčejný text):",
     "keySuggestions": "Návrhy filtrů",
+    "valueSuggestions": "Návrhy hodnot",
+    "values": {
+      "empty": "Nic neodpovídá"
+    },
+    "history": {
+      "label": "Nedávno hledané",
+      "clear": "Vymazat historii"
+    },
     "help": {
       "open": "Nápověda k vyhledávacímu jazyku",
       "close": "Zavřít",

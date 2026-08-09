@@ -2,11 +2,16 @@ import { describe, expect, it } from 'vitest'
 
 import {
   applyFilterKey,
+  applyFilterValue,
   FACET_QUERY_KEYS,
   facetQueryTokens,
   FILTER_KEYS,
+  type FilterValue,
+  matchFilterValues,
   queryFilterTokens,
+  quoteFilterValue,
   suggestFilterKeys,
+  suggestFilterValues,
 } from './queryLanguage'
 
 describe('suggestFilterKeys', () => {
@@ -149,5 +154,198 @@ describe('facetQueryTokens', () => {
   it('is empty when the query leaves the facet alone', () => {
     const tokens = queryFilterTokens('year:1965')
     expect(facetQueryTokens(tokens, FACET_QUERY_KEYS.album)).toBe('')
+  })
+})
+
+describe('suggestFilterValues', () => {
+  it('offers values for a completable key being typed', () => {
+    const s = suggestFilterValues('person:an')
+    expect(s?.facet).toBe('person')
+    expect(s?.prefix).toBe('an')
+    // The value starts right after the colon, so the replacement swallows it all.
+    expect(s?.start).toBe(7)
+  })
+
+  it('offers the whole list right after the colon', () => {
+    const s = suggestFilterValues('svatba album:')
+    expect(s?.facet).toBe('album')
+    expect(s?.prefix).toBe('')
+    expect(s?.start).toBe(13)
+  })
+
+  it('treats subject: as person:, its alias in the language', () => {
+    expect(suggestFilterValues('subject:jar')?.facet).toBe('person')
+  })
+
+  it('completes inside an unterminated quote, where spaces need it most', () => {
+    const s = suggestFilterValues('album:"Léto 2')
+    expect(s?.facet).toBe('album')
+    expect(s?.prefix).toBe('Léto 2')
+    // Anchored on the colon, so the opening quote is replaced rather than doubled.
+    expect(s?.start).toBe(6)
+  })
+
+  it('starts a fresh value after an OR separator', () => {
+    const s = suggestFilterValues('label:cat|do')
+    expect(s?.prefix).toBe('do')
+    expect(s?.start).toBe(10)
+  })
+
+  it('keeps a leading negation out of the value', () => {
+    const s = suggestFilterValues('label:!blu')
+    expect(s?.prefix).toBe('blu')
+    expect(s?.start).toBe(7)
+  })
+
+  it('returns null for keys whose values nothing can propose', () => {
+    for (const input of ['iso:10', 'year:196', 'favorite:y', 'camera:Can']) {
+      expect(suggestFilterValues(input), input).toBeNull()
+    }
+  })
+
+  it('returns null once the caret has left the token', () => {
+    expect(suggestFilterValues('person:Anna ')).toBeNull()
+    expect(suggestFilterValues('album:"Léto 2024" ')).toBeNull()
+  })
+
+  it('returns null for free text and an empty input', () => {
+    for (const input of ['', '   ', 'svatba', 'per', '-person:Anna']) {
+      expect(suggestFilterValues(input), input).toBeNull()
+    }
+  })
+
+  it('never fires at the same time as a key suggestion', () => {
+    for (const input of ['per', 'person:an', 'lab', 'label:']) {
+      const both = suggestFilterKeys(input) !== null && suggestFilterValues(input) !== null
+      expect(both, input).toBe(false)
+    }
+  })
+})
+
+describe('quoteFilterValue', () => {
+  it('leaves a plain value bare', () => {
+    expect(quoteFilterValue('Anna')).toBe('Anna')
+    expect(quoteFilterValue('Nováková-Anna')).toBe('Nováková-Anna')
+  })
+
+  it('quotes a value holding spaces', () => {
+    expect(quoteFilterValue('Léto 2024')).toBe('"Léto 2024"')
+  })
+
+  it('quotes a value holding an operator character', () => {
+    expect(quoteFilterValue('cat|dog')).toBe('"cat|dog"')
+    expect(quoteFilterValue('star*')).toBe('"star*"')
+    expect(quoteFilterValue('!bang')).toBe('"!bang"')
+    expect(quoteFilterValue('-dash')).toBe('"-dash"')
+  })
+
+  it('escapes quotes and backslashes inside the quoted form', () => {
+    expect(quoteFilterValue('say "hi"')).toBe('"say \\"hi\\""')
+    expect(quoteFilterValue('back\\slash')).toBe('"back\\\\slash"')
+  })
+
+  it('renders an empty value as an empty quoted string', () => {
+    expect(quoteFilterValue('')).toBe('""')
+  })
+})
+
+describe('applyFilterValue', () => {
+  it('completes the value and leaves the caret on a fresh token', () => {
+    const input = 'person:an'
+    const s = suggestFilterValues(input)
+    expect(s).not.toBeNull()
+    if (s) {
+      expect(applyFilterValue(input, s, 'Anna')).toBe('person:Anna ')
+    }
+  })
+
+  it('quotes a value with spaces and swallows the opening quote already typed', () => {
+    const input = 'svatba album:"Léto 2'
+    const s = suggestFilterValues(input)
+    expect(s).not.toBeNull()
+    if (s) {
+      expect(applyFilterValue(input, s, 'Léto 2024')).toBe('svatba album:"Léto 2024" ')
+    }
+  })
+
+  it('keeps the earlier alternatives of an OR list', () => {
+    const input = 'label:cat|do'
+    const s = suggestFilterValues(input)
+    expect(s).not.toBeNull()
+    if (s) {
+      expect(applyFilterValue(input, s, 'dog')).toBe('label:cat|dog ')
+    }
+  })
+
+  it('keeps a negation in front of the completed value', () => {
+    const input = 'label:!blu'
+    const s = suggestFilterValues(input)
+    expect(s).not.toBeNull()
+    if (s) {
+      expect(applyFilterValue(input, s, 'blurry')).toBe('label:!blurry ')
+    }
+  })
+
+  it('round-trips through the token scanner as one filter', () => {
+    const input = 'album:"Léto 2'
+    const s = suggestFilterValues(input)
+    expect(s).not.toBeNull()
+    if (s) {
+      const completed = applyFilterValue(input, s, 'Léto | 2024')
+      // Whatever the title holds, the query language must read it back as ONE
+      // album filter — the pipe sits inside the quotes, so it is a character of
+      // the title rather than an OR between two of them.
+      expect(queryFilterTokens(completed).get('album')).toEqual(['album:"Léto | 2024"'])
+    }
+  })
+})
+
+describe('matchFilterValues', () => {
+  const values: FilterValue[] = [
+    { name: 'Anna', count: 12 },
+    { name: 'Anna Marie', count: 40 },
+    { name: 'Aneta', count: 3 },
+    { name: 'Božena', count: 90 },
+    { name: 'Náměstí', count: 5 },
+  ]
+
+  it('prefix-matches and ranks by photo count', () => {
+    expect(matchFilterValues(values, 'an').map((v) => v.name)).toEqual([
+      'Anna Marie',
+      'Anna',
+      'Aneta',
+    ])
+  })
+
+  it('ignores case and diacritics on both sides', () => {
+    expect(matchFilterValues(values, 'namesti').map((v) => v.name)).toEqual(['Náměstí'])
+    expect(matchFilterValues(values, 'BOŽ').map((v) => v.name)).toEqual(['Božena'])
+  })
+
+  it('matches everything for an empty prefix, most-used first', () => {
+    expect(matchFilterValues(values, '')[0].name).toBe('Božena')
+    expect(matchFilterValues(values, '')).toHaveLength(values.length)
+  })
+
+  it('matches on the prefix, not anywhere in the name', () => {
+    expect(matchFilterValues(values, 'marie')).toEqual([])
+  })
+
+  it('keeps only the busiest of two values that fold to the same name', () => {
+    const dupes: FilterValue[] = [
+      { name: 'Léto', count: 2 },
+      { name: 'leto', count: 9 },
+    ]
+    expect(matchFilterValues(dupes, 'l')).toEqual([{ name: 'leto', count: 9 }])
+  })
+
+  it('caps the list at the requested limit', () => {
+    expect(matchFilterValues(values, '', 2)).toHaveLength(2)
+  })
+
+  it('never mutates the list it was given', () => {
+    const original = [...values]
+    matchFilterValues(values, '')
+    expect(values).toEqual(original)
   })
 })

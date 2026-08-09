@@ -15,8 +15,16 @@ vi.mock('../../services/search', async (importOriginal) => {
   return { ...actual, globalSearch: vi.fn() }
 })
 
+vi.mock('../../services/searchHistory', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../services/searchHistory')>()
+  return { ...actual, fetchSearchHistory: vi.fn(), clearSearchHistory: vi.fn() }
+})
+
 const { globalSearch } = await import('../../services/search')
 const searchMock = vi.mocked(globalSearch)
+const { fetchSearchHistory, clearSearchHistory } = await import('../../services/searchHistory')
+const historyMock = vi.mocked(fetchSearchHistory)
+const clearHistoryMock = vi.mocked(clearSearchHistory)
 
 /** Builds a minimal Photo for the palette's Photos group. */
 function photo(overrides: Partial<Photo> = {}): Photo {
@@ -77,6 +85,8 @@ beforeEach(async () => {
   await i18n.changeLanguage('en')
   searchMock.mockReset()
   searchMock.mockResolvedValue(RESULT)
+  historyMock.mockResolvedValue([])
+  clearHistoryMock.mockResolvedValue()
 })
 
 describe('SearchCommand', () => {
@@ -264,5 +274,49 @@ describe('SearchCommand', () => {
     ).toBeInTheDocument()
     // No "go to" row is offered for something that does not exist.
     expect(screen.queryByText('Go to')).not.toBeInTheDocument()
+  })
+
+  it('offers the reader’s recent searches while the field is empty', async () => {
+    const user = userEvent.setup()
+    historyMock.mockResolvedValue([
+      { query: 'svatba 1974', searched_at: '2026-08-09T12:00:00Z' },
+      { query: 'person:Anna', searched_at: '2026-08-08T12:00:00Z' },
+    ])
+    renderCommand()
+    await user.click(screen.getByRole('button', { name: 'Search' }))
+
+    // The idle hint gives way to the rows, newest first, under their own heading.
+    const first = await screen.findByRole('option', { name: /svatba 1974/ })
+    expect(screen.getByText('Recent searches')).toBeInTheDocument()
+    expect(screen.getAllByRole('option')[0]).toBe(first)
+    expect(screen.getByRole('option', { name: /person:Anna/ })).toBeInTheDocument()
+
+    // A row runs that search — the palette's rows navigate, and this one is a query.
+    await user.keyboard('{Enter}')
+    expect(screen.getByTestId('loc')).toHaveTextContent('/search?q=svatba+1974')
+  })
+
+  it('keeps the idle hint when there is no history to offer', async () => {
+    const user = userEvent.setup()
+    renderCommand()
+    await user.click(screen.getByRole('button', { name: 'Search' }))
+
+    await waitFor(() => {
+      expect(historyMock).toHaveBeenCalled()
+    })
+    expect(screen.getByText('Start typing to search across your library.')).toBeInTheDocument()
+    expect(screen.queryByRole('option')).not.toBeInTheDocument()
+  })
+
+  it('forgets the recent searches from the palette', async () => {
+    const user = userEvent.setup()
+    historyMock.mockResolvedValue([{ query: 'svatba 1974', searched_at: '2026-08-09T12:00:00Z' }])
+    renderCommand()
+    await user.click(screen.getByRole('button', { name: 'Search' }))
+    await screen.findByRole('option', { name: /svatba 1974/ })
+
+    await user.click(screen.getByRole('button', { name: 'Clear history' }))
+    expect(clearHistoryMock).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('option')).not.toBeInTheDocument()
   })
 })
