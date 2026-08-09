@@ -1595,7 +1595,15 @@ here.
   gallery; refetch the gallery on success) — in selection mode a tile is one
   selection target, so the tile's „set as cover" steps aside, like the heart/stars on a library tile,
   and the action moves onto the bar as an `extraActions` entry (enabled at exactly 1 selected), so it
-  stays reachable; the person's own header controls stay visible during a selection,
+  stays reachable; the person's own header controls stay visible during a selection.
+  The page also carries the **two repairs for a mis-catalogued person**, both editors-only (a viewer sees
+  neither): in the header **Sloučit s jinou osobou** → `MergeSubjectModal`, and on the batch bar
+  **Přesunout k jiné osobě** (a second `extraActions` entry, any selection ≥ 1) → `MoveFacesModal`. Both
+  dialogs are mounted **only while open** — unlike `SubjectEditModal` above, each loads the whole people
+  list to pick from, and a page that never opens them must not pay for it. After a merge the page toasts
+  and `navigate(…, {replace: true})`s to the keeper: its own subject no longer exists, and Back must not
+  lead to a page that can never load again. After a move it clears the selection and refetches (the moved
+  photos have left this gallery),
   `ClustersPage` = `/people/clusters` (editor/admin) a review queue of unnamed clusters:
   `ClusterCard` (a representative + samples + removal of a strayed face + one-shot naming
   of the whole cluster) in a `Row`/`Col` grid, optimistic removal after naming;
@@ -2095,6 +2103,25 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   glyph stands in), the place name, the photo-count badge; the preview is `alt=""` — the row's own text
   already names the place);
   `components/people/` = `SubjectTile`/`SubjectPhotoTile`/`SubjectEditModal`,
+  `SubjectSummary` (one person, small: the `subjectTileImage` picture, the name and both counts — built for
+  the merge confirmation, where the question "are these two the same person, and which record is the
+  substantial one" is answered by the pictures and the photo counts, never by two names),
+  `MergeSubjectModal` (**two steps on purpose**: a pick — an `AddAutocomplete` over everyone *else*
+  (`useSubjects`, photo count in the hint) and deliberately **without** `onCreate`, since merging into
+  somebody who does not exist is a rename with extra steps — then a confirmation putting both
+  `SubjectSummary`s side by side with "Bude smazána"/"Zůstane" and a warning that it cannot be undone; a
+  **Zpět na výběr** link so a wrong keeper is one click from being changed, `POST /subjects/{uid}/merge` on
+  confirm, an inline error keeps the dialog open, and neither the backdrop nor Escape dismisses a merge in
+  flight),
+  `MoveFacesModal` (the split, opened from the batch bar: pick or **type a new name**, then the run —
+  per picked photo `GET /photos/{uid}/faces` → `lib/moveFaces.ts` `moveRequests` → one
+  `POST /photos/{uid}/faces/assign` per marker the person holds there. Deliberately **not** a bulk
+  endpoint: going through the ordinary assign path keeps the assignment state machine, the faces cache, the
+  marker's reviewed flag and the audit trail identical to everywhere else, and a half-finished run leaves
+  the photos it reached correctly assigned. Sequential, so a run naming a new person has the first
+  assignment create them and the rest find them by slug; a `ProgressBar` while it runs (undismissable), then
+  a report counting **photos** — plus what was skipped (no reassignable face there) and what failed, since a
+  run that moved fewer photos than were picked has to say so),
   `FaceCrop` (**the preferred** face crop: an `<img>` with a `fit_*` source from `lib/faceSource.ts`
   `faceSourceSize` (the whole frame — `tile_*` is a centred square on which the crop would miss the face;
   the size **scales with how small the face is**: a fixed one would give a 13px smudge instead of
@@ -2808,6 +2835,12 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   the URL), `clampOutlierThresholdPercent` (default **0 = show everything**; a non-zero default would silently
   hide faces), `distancePercent` (deliberately **not** similarity — on this page a bigger number
   means „further from the person", which is the quantity being judged) and `OUTLIER_LIMIT`=200;
+  `moveFaces.ts` = the pure half of the split (`MoveFacesModal`): `moveRequests(faces, sourceUid, target)`
+  → one `assign_person` request per marker the person holds on that photo. Only a face **carrying a
+  marker** can move (a bare detection has nothing to reassign), and a marker no detection claimed — which
+  the backend hands a **negative** `face_index` — moves without one, since that index names no face row and
+  sending it would ask the backend to cache the link onto a slot that does not exist; plus `MoveSummary`
+  (moved markers, photos, skipped, failed), `EMPTY_MOVE_SUMMARY` and `movedNothing`;
   `coordinates.ts` = a pure tolerant coordinate parser for the location picker: `parseCoordinates(input)`
   → `{ok:true,value:{lat,lng}}` | `{ok:false,error:'empty'|'format'|'range'}` (decimal degrees /
   DMS / degrees-decimal-minutes, a comma/space separator, ±/the hemispheres N/S/E/W, unicode primes/`''`,
@@ -3003,9 +3036,11 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `{uid,file_name,media_type,file_mime,file_width,file_height,file_size,is_primary,thumb_url?,download_url?}`/`PhotoAlbumRef`/
   `PhotoLabelRef`/`PhotoUploaderRef`/`PhotoMetadataUpdate`/`PhotoEdit`; `people.ts` = the People/face client: subjects
   `fetchSubjects`/`fetchSubject`/`createSubject`/`updateSubject`/`deleteSubject`/
+  `mergeSubject(sourceUid,keeperUid)` (`POST /subjects/{uid}/merge` — the path subject is the one merged
+  away and deleted; irreversible, so the caller confirms first)/
   `fetchSubjectPhotos`, faces `fetchFaces`/`assignFace`, clusters `fetchClusters`/
   `assignCluster`/`removeClusterFace`, outliers `fetchOutliers`; the types `Subject`/`SubjectCount`/
-  `SubjectInput`/`SubjectType`/`Bbox`/`FaceView`/`FacesResponse`/`AssignRequest`/`Suggestion`/
+  `SubjectInput`/`SubjectType`/`MergeResult`/`Bbox`/`FaceView`/`FacesResponse`/`AssignRequest`/`Suggestion`/
   `ClusterView`/`ExampleFace`/`ClusterAssignRequest`/`RemoveFaceRequest`/`OutlierResult`/
   `OutlierFace`; it shares `ApiError`+`buildPhotoQuery` from `auth.ts`/`photos.ts`);
   `faces.ts` = the client of the „find a person among untagged photos" search:

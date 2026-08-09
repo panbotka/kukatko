@@ -501,7 +501,22 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   magnet for find-or-create-by-name lookups, which is exactly the catch-all `docs/OPERATIONS.md` §
   `maintenance nameless-subjects` describes); `GET /subjects/{uid}` (RequireAuth) →
   the subject (404); `PATCH /subjects/{uid}` (RequireWrite) → editing the same fields (404/400);
-  `DELETE /subjects/{uid}` (RequireWrite) → 204 (the markers are detached server-side); `GET
+  `DELETE /subjects/{uid}` (RequireWrite) → 204 (the markers are detached server-side);
+  `POST /subjects/{uid}/merge` (RequireWrite) `{keeper_uid}` → `{keeper_uid,source_uid,markers_moved,
+  faces_moved,confirmations_moved,rejections_moved,rejections_dropped,dismissals_moved,shared_photos}` —
+  **the path subject is merged into the keeper and deleted**, in one transaction, with one `subject.merge`
+  audit entry naming both (the source's name survives nowhere else: a merge cannot be undone). Everything
+  the source carried moves — markers, the faces cache, confirmations, rejections, repeated-marker
+  dismissals — and the keeper's *empty* fields are filled from it (`favorite`/`private` OR-ed, `notes` and
+  `cover_photo_uid` only when it has none). Three rules cover the disagreements, all in
+  [`PACKAGES.md`](PACKAGES.md) § `internal/people`: **markers are never deduplicated** (a photo carrying
+  both people keeps both markers and becomes a repeated-marker group `GET /duplicate-markers` surfaces —
+  `shared_photos` counts them), **a positive record beats a rejection** (a rejection contradicting an
+  assignment or a confirmation is dropped, from whichever side — `rejections_dropped` counts them), and a
+  dismissal is **not** carried onto a photo the merge itself turns into a group. `keeper_uid` missing → 400,
+  either subject unknown → 404, a subject merged into itself → 400. Like a rename or a delete, a merge does
+  **not** rewrite the affected photos' metadata sidecars; `POST /process/sidecars?all=true` does.
+  Not exposed over MCP. `GET
   /subjects/{uid}/photos` (RequireAuth) → a paginated gallery of the subject's photos
   `{photos,total,limit,offset,next_offset}` (newest-first, non-archived only, `limit`≤500). Mounted
   by `server.WithAPI` (`buildPeopleAPI` in `cmd/kukatko/people.go`). The subject's photo records

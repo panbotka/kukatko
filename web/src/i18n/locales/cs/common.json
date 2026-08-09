@@ -438,7 +438,8 @@
       "subject": {
         "create": "Vytvoření osoby",
         "delete": "Smazání osoby",
-        "update": "Úprava osoby"
+        "update": "Úprava osoby",
+        "merge": "Sloučení osob"
       },
       "user": {
         "create": "Vytvoření uživatele",
@@ -1243,6 +1244,48 @@
       "notes": "Poznámky",
       "cancel": "Zrušit",
       "save": "Uložit"
+    },
+    "merge": {
+      "action": "Sloučit s jinou osobou",
+      "title": "Sloučit osoby",
+      "pickHint": "Vyber osobu, do které se {{name}} sloučí. Přejdou na ni všechny fotky, obličeje i dřívější rozhodnutí.",
+      "pickLabel": "Sloučit do…",
+      "roleSource": "Bude smazána",
+      "roleKeeper": "Zůstane",
+      "faceCount_one": "{{count}} obličej",
+      "faceCount_few": "{{count}} obličeje",
+      "faceCount_many": "{{count}} obličeje",
+      "faceCount_other": "{{count}} obličejů",
+      "warning": "{{source}} bude smazána a všechno, co nesla, přejde na osobu {{keeper}}. Tohle nejde vzít zpět.",
+      "confirm": "Sloučit",
+      "cancel": "Zrušit",
+      "back": "Zpět na výběr",
+      "error": "Sloučení se nepodařilo. Zkus to prosím znovu.",
+      "merged": "{{source}} sloučena do osoby {{keeper}}."
+    },
+    "move": {
+      "action": "Přesunout k jiné osobě",
+      "title": "Přesunout k jiné osobě",
+      "hint_one": "{{count}} vybraná fotka. Obličej, který je na ní označený jako {{name}}, přejde na vybranou osobu.",
+      "hint_few": "{{count}} vybrané fotky. Obličeje, které jsou na nich označené jako {{name}}, přejdou na vybranou osobu.",
+      "hint_many": "{{count}} vybrané fotky. Obličeje, které jsou na nich označené jako {{name}}, přejdou na vybranou osobu.",
+      "hint_other": "{{count}} vybraných fotek. Obličeje, které jsou na nich označené jako {{name}}, přejdou na vybranou osobu.",
+      "pickLabel": "Přesunout k…",
+      "running": "Přesouvám k osobě {{name}}…",
+      "done_one": "Přesunuta {{count}} fotka k osobě {{name}}.",
+      "done_few": "Přesunuty {{count}} fotky k osobě {{name}}.",
+      "done_many": "Přesunuty {{count}} fotky k osobě {{name}}.",
+      "done_other": "Přesunuto {{count}} fotek k osobě {{name}}.",
+      "skipped_one": "{{count}} fotka přeskočena — nebyl na ní obličej této osoby, který by šel přesunout.",
+      "skipped_few": "{{count}} fotky přeskočeny — nebyl na nich obličej této osoby, který by šel přesunout.",
+      "skipped_many": "{{count}} fotky přeskočeny — nebyl na nich obličej této osoby, který by šel přesunout.",
+      "skipped_other": "{{count}} fotek přeskočeno — nebyl na nich obličej této osoby, který by šel přesunout.",
+      "failed_one": "{{count}} fotku se nepodařilo přesunout, zůstala u původní osoby.",
+      "failed_few": "{{count}} fotky se nepodařilo přesunout, zůstaly u původní osoby.",
+      "failed_many": "{{count}} fotky se nepodařilo přesunout, zůstaly u původní osoby.",
+      "failed_other": "{{count}} fotek se nepodařilo přesunout, zůstaly u původní osoby.",
+      "cancel": "Zrušit",
+      "close": "Zavřít"
     }
   },
   "clusters": {

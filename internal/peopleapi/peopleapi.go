@@ -53,6 +53,12 @@ type SubjectStore interface {
 	// DeleteSubjectAudited removes a subject (auditing the change), or returns
 	// people.ErrSubjectNotFound.
 	DeleteSubjectAudited(ctx context.Context, uid string, entry audit.Entry) error
+	// MergeSubjectsAudited merges the source subject into the keeper and deletes
+	// it (auditing the change), or returns people.ErrSubjectNotFound /
+	// people.ErrMergeIntoSelf.
+	MergeSubjectsAudited(
+		ctx context.Context, sourceUID, keeperUID string, entry audit.Entry,
+	) (people.MergeResult, error)
 	// ListPhotoUIDsBySubject returns the subject's photo UIDs, newest first.
 	ListPhotoUIDsBySubject(ctx context.Context, subjectUID string) ([]string, error)
 }
@@ -109,6 +115,7 @@ func NewAPI(cfg Config) *API {
 //	GET    /subjects/{uid}         RequireAuth   one subject
 //	PATCH  /subjects/{uid}         RequireWrite  edit a subject's fields
 //	DELETE /subjects/{uid}         RequireWrite  delete a subject
+//	POST   /subjects/{uid}/merge   RequireWrite  merge the subject into a keeper
 //	GET    /subjects/{uid}/photos  RequireAuth   a subject's photos (paginated)
 //
 // Flat patterns (rather than a mounted subrouter) are used so this group can
@@ -120,6 +127,7 @@ func (a *API) RegisterRoutes(r chi.Router) {
 	r.With(a.requireAuth).Get("/subjects/{uid}", a.handleGet)
 	r.With(a.requireWrite).Patch("/subjects/{uid}", a.handleUpdate)
 	r.With(a.requireWrite).Delete("/subjects/{uid}", a.handleDelete)
+	r.With(a.requireWrite).Post("/subjects/{uid}/merge", a.handleMerge)
 	r.With(a.requireAuth).Get("/subjects/{uid}/photos", a.handlePhotos)
 }
 
@@ -159,13 +167,13 @@ func writeError(w http.ResponseWriter, status int, message string) {
 }
 
 // subjectStatus maps a store error to the HTTP status and client message used for
-// subject mutations: a missing subject is 404, an invalid type is 400, anything
-// else is a 500 with a generic message.
+// subject mutations: a missing subject is 404, an invalid type or a merge into
+// itself is 400, anything else is a 500 with a generic message.
 func subjectStatus(err error) (int, string) {
 	switch {
 	case errors.Is(err, people.ErrSubjectNotFound):
 		return http.StatusNotFound, err.Error()
-	case errors.Is(err, people.ErrInvalidType):
+	case errors.Is(err, people.ErrInvalidType), errors.Is(err, people.ErrMergeIntoSelf):
 		return http.StatusBadRequest, err.Error()
 	default:
 		return http.StatusInternalServerError, "subject operation failed"

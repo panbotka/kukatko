@@ -8,7 +8,7 @@ import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
 import { GRID_COLUMNS_MAX } from '../lib/gridDensity'
 import { readGridScroll, writeGridScroll } from '../lib/gridScroll'
-import { type Subject } from '../services/people'
+import { type Subject, type SubjectCount } from '../services/people'
 import { type Photo, type PhotoListResponse } from '../services/photos'
 
 import { albumOption, BATCH_ACTIONS } from '../test/batchBar'
@@ -23,6 +23,10 @@ vi.mock('../services/people', async (importOriginal) => {
     fetchSubjectPhotos: vi.fn(),
     updateSubject: vi.fn(),
     fetchOutliers: vi.fn(),
+    fetchSubjects: vi.fn(),
+    mergeSubject: vi.fn(),
+    fetchFaces: vi.fn(),
+    assignFace: vi.fn(),
   }
 })
 
@@ -36,14 +40,26 @@ vi.mock('../services/bulk', async (importOriginal) => {
   return { ...actual, bulkUpdatePhotos: vi.fn() }
 })
 
-const { fetchSubject, fetchSubjectPhotos, updateSubject, fetchOutliers } =
-  await import('../services/people')
+const {
+  fetchSubject,
+  fetchSubjectPhotos,
+  updateSubject,
+  fetchOutliers,
+  fetchSubjects,
+  mergeSubject,
+  fetchFaces,
+  assignFace,
+} = await import('../services/people')
 const { bulkUpdatePhotos } = await import('../services/bulk')
 const { fetchAlbums, fetchLabels } = await import('../services/organize')
 const fetchSubjectMock = vi.mocked(fetchSubject)
 const fetchPhotosMock = vi.mocked(fetchSubjectPhotos)
 const updateSubjectMock = vi.mocked(updateSubject)
 const outliersMock = vi.mocked(fetchOutliers)
+const subjectsMock = vi.mocked(fetchSubjects)
+const mergeMock = vi.mocked(mergeSubject)
+const facesMock = vi.mocked(fetchFaces)
+const assignMock = vi.mocked(assignFace)
 const bulkMock = vi.mocked(bulkUpdatePhotos)
 const albumsMock = vi.mocked(fetchAlbums)
 const labelsMock = vi.mocked(fetchLabels)
@@ -88,6 +104,11 @@ function subject(): Subject {
   }
 }
 
+/** The same person as `subject()`, in the counted shape `GET /subjects` returns. */
+function subjectCount(uid: string, name: string): SubjectCount {
+  return { ...subject(), uid, slug: name.toLowerCase(), name, marker_count: 2, photo_count: 2 }
+}
+
 function auth(canWrite: boolean): AuthContextValue {
   return {
     status: 'authenticated',
@@ -129,6 +150,10 @@ beforeEach(async () => {
   fetchPhotosMock.mockReset()
   updateSubjectMock.mockReset()
   outliersMock.mockReset()
+  subjectsMock.mockReset()
+  mergeMock.mockReset()
+  facesMock.mockReset()
+  assignMock.mockReset()
   bulkMock.mockReset()
   albumsMock.mockReset()
   labelsMock.mockReset()
@@ -143,6 +168,8 @@ beforeEach(async () => {
   })
   albumsMock.mockResolvedValue([])
   labelsMock.mockResolvedValue([])
+  subjectsMock.mockResolvedValue([subjectCount('sj_1', 'Jana'), subjectCount('sj_2', 'Jana K.')])
+  assignMock.mockResolvedValue(undefined)
 })
 
 describe('SubjectPage', () => {
@@ -194,6 +221,91 @@ describe('SubjectPage', () => {
     await screen.findByRole('link', { name: 'a.jpg' })
     expect(screen.queryByRole('button', { name: 'Select a.jpg' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'More edits' })).not.toBeInTheDocument()
+    // The two repairs are writes on somebody else's catalogue; a read-only
+    // viewer is not offered either of them.
+    expect(
+      screen.queryByRole('button', { name: 'Merge into another person' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('merges this person into another and lands on the survivor', async () => {
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    mergeMock.mockResolvedValue({
+      keeper_uid: 'sj_2',
+      source_uid: 'sj_1',
+      markers_moved: 2,
+      faces_moved: 2,
+      confirmations_moved: 0,
+      rejections_moved: 0,
+      rejections_dropped: 0,
+      dismissals_moved: 0,
+      shared_photos: 0,
+    })
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByRole('heading', { name: 'Jana' })
+    await user.click(screen.getByRole('button', { name: 'Merge into another person' }))
+
+    const dialog = await screen.findByRole('dialog')
+    await user.type(within(dialog).getByRole('combobox', { name: 'Merge into…' }), 'Jana K')
+    await user.click(await screen.findByRole('option', { name: /Jana K\./ }))
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Merge' }))
+
+    await waitFor(() => {
+      expect(mergeMock).toHaveBeenCalledWith('sj_1', 'sj_2')
+    })
+    // The page's own subject is gone, so the page has to follow the keeper
+    // rather than sit on a record that can never load again.
+    await waitFor(() => {
+      expect(fetchSubjectMock).toHaveBeenCalledWith('sj_2', expect.anything())
+    })
+  })
+
+  it('moves the picked photos to another person from the batch bar', async () => {
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    facesMock.mockResolvedValue({
+      photo_uid: 'a',
+      width: 1000,
+      height: 800,
+      orientation: 1,
+      faces: [
+        {
+          face_index: 0,
+          bbox: [0.1, 0.1, 0.2, 0.2],
+          det_score: 0.9,
+          action: 'already_done',
+          marker_uid: 'mk1',
+          subject_uid: 'sj_1',
+          suggestions: [],
+        },
+      ],
+    })
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    await user.click(screen.getByRole('button', { name: 'Select a.jpg' }))
+    await user.click(screen.getByRole('button', { name: 'Move to another person' }))
+
+    const dialog = await screen.findByRole('dialog')
+    await user.type(within(dialog).getByRole('combobox', { name: 'Move to…' }), 'Jana K')
+    await user.click(await screen.findByRole('option', { name: /Jana K\./ }))
+
+    await waitFor(() => {
+      expect(assignMock).toHaveBeenCalledWith('a', {
+        action: 'assign_person',
+        marker_uid: 'mk1',
+        subject_uid: 'sj_2',
+        subject_name: undefined,
+        face_index: 0,
+      })
+    })
+    // The photo has left this gallery, so the selection it was picked in must
+    // not survive the move.
+    await waitFor(() => {
+      expect(screen.queryByText('1 selected')).not.toBeInTheDocument()
+    })
   })
 
   it('offers the on-page similarity-candidate section to editors', async () => {

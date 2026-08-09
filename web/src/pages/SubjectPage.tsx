@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
-import { useLocation, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
 import { BackLink } from '../components/BackLink'
@@ -12,10 +12,13 @@ import { GridDensityControl } from '../components/library/GridDensityControl'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { type BatchExtraAction, BatchActionBar } from '../components/organize/BatchActionBar'
 import { Candidates } from '../components/people/Candidates'
+import { MergeSubjectModal } from '../components/people/MergeSubjectModal'
+import { MoveFacesModal } from '../components/people/MoveFacesModal'
 import { Outliers } from '../components/people/Outliers'
 import { SubjectEditModal } from '../components/people/SubjectEditModal'
 import { SubjectPhotoTile } from '../components/people/SubjectPhotoTile'
 import { Skeleton } from '../components/Skeleton'
+import { useToast } from '../components/toast/ToastContext'
 import { useBulkEdit } from '../hooks/useBulkEdit'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useGridDensity } from '../hooks/useGridDensity'
@@ -66,15 +69,25 @@ type State =
  * is available here too, and the gallery refetches afterwards, since the edit
  * may have taken photos out of it. Every tile carries the library's corner
  * selection checkmark from the outset (no "enter selection mode" step).
+ *
+ * The two repairs for a mis-catalogued person live here as well, because this is
+ * the page where either problem is noticed. "Merge into another person" is for
+ * the same person filed twice; "Move to another person", on the batch bar, is for
+ * the photos in this gallery that are somebody else. Both are editors-only: a
+ * viewer sees neither.
  */
 export function SubjectPage() {
   const { t } = useTranslation()
   const { canWrite } = useAuth()
   const { density } = useGridDensity()
   const location = useLocation()
+  const navigate = useNavigate()
+  const toast = useToast()
   const { uid = '' } = useParams<{ uid: string }>()
   const [state, setState] = useState<State>({ status: 'loading' })
   const [editing, setEditing] = useState(false)
+  const [merging, setMerging] = useState(false)
+  const [moving, setMoving] = useState(false)
   const [coverBusy, setCoverBusy] = useState(false)
 
   const [reloadKey, reload] = useReloadKey()
@@ -196,6 +209,9 @@ export function SubjectPage() {
   // A tile hides its own set-cover button once the gallery turns into selection
   // targets, so the action moves onto the batch bar for the duration — it stays
   // reachable, and like the album's it waits for a selection of exactly one.
+  // "Move to another person" joins it there because it is the same gesture: the
+  // photos that are somebody else's are noticed while looking at this gallery,
+  // and picking them is how you say which ones.
   const extraActions = useMemo<BatchExtraAction[]>(
     () => [
       {
@@ -207,6 +223,14 @@ export function SubjectPage() {
           // Guarded by `disabled` above: exactly one photo is picked here.
           const [photoUid] = [...selection.selected]
           void setCover(photoUid)
+        },
+      },
+      {
+        id: 'move-faces',
+        icon: 'people',
+        label: t('subject.move.action'),
+        onClick: () => {
+          setMoving(true)
         },
       },
     ],
@@ -271,15 +295,29 @@ export function SubjectPage() {
               expose it through the FilterBar. */}
           <GridDensityControl />
           {canWrite && (
-            <Button
-              variant="outline-secondary"
-              size="sm"
-              onClick={() => {
-                setEditing(true)
-              }}
-            >
-              {t('subject.editButton')}
-            </Button>
+            <>
+              <Button
+                variant="outline-secondary"
+                size="sm"
+                onClick={() => {
+                  setEditing(true)
+                }}
+              >
+                {t('subject.editButton')}
+              </Button>
+              {/* The repair for the same person catalogued twice. It sits in the
+                  header rather than behind the gallery because it is about the
+                  record, not about any photo in it. */}
+              <Button
+                variant="outline-secondary"
+                size="sm"
+                onClick={() => {
+                  setMerging(true)
+                }}
+              >
+                {t('subject.merge.action')}
+              </Button>
+            </>
           )}
         </div>
       </div>
@@ -371,6 +409,48 @@ export function SubjectPage() {
           onSaved={(updated) => {
             setState({ status: 'ready', subject: updated })
             setEditing(false)
+          }}
+        />
+      )}
+
+      {/* Both dialogs are mounted only while open: each loads the whole people
+          list to pick from, and a page that never opens them must not pay for
+          it. Neither has state worth keeping between openings. */}
+      {canWrite && merging && (
+        <MergeSubjectModal
+          subject={subject}
+          show
+          onHide={() => {
+            setMerging(false)
+          }}
+          onMerged={(keeper) => {
+            setMerging(false)
+            toast.show({
+              message: t('subject.merge.merged', { source: subject.name, keeper: keeper.name }),
+              variant: 'success',
+            })
+            // This page's subject no longer exists, so staying on it would show
+            // "this person is gone". Replace the entry rather than push one:
+            // Back must not lead to a page that can never load again.
+            void navigate(`/people/${keeper.uid}`, { replace: true })
+          }}
+        />
+      )}
+
+      {canWrite && moving && (
+        <MoveFacesModal
+          sourceUid={subject.uid}
+          sourceName={subject.name}
+          photoUids={bulk.photoUids}
+          show
+          onHide={() => {
+            setMoving(false)
+          }}
+          onMoved={() => {
+            // The moved photos have left this gallery, so the selection would
+            // hold identifiers it no longer shows. Clear it and refetch.
+            selection.clear()
+            reload()
           }}
         />
       )}

@@ -3,6 +3,7 @@ package peopleapi_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -19,21 +20,27 @@ import (
 // fakeSubjects is an in-memory SubjectStore for handler tests. The various err
 // fields force a specific error from the matching method.
 type fakeSubjects struct {
-	list       []people.SubjectCount
-	subject    people.Subject
-	photoUIDs  []string
-	created    people.Subject
-	updated    people.Subject
-	listErr    error
-	getErr     error
-	createErr  error
-	updateErr  error
-	deleteErr  error
-	photosErr  error
-	lastUpdate people.SubjectUpdate
-	lastCreate people.Subject
-	deletedUID string
-	lastEntry  audit.Entry
+	list      []people.SubjectCount
+	subject   people.Subject
+	byUID     map[string]people.Subject
+	photoUIDs []string
+	created   people.Subject
+	updated   people.Subject
+	merged    people.MergeResult
+	listErr   error
+	getErr    error
+	createErr error
+	updateErr error
+	deleteErr error
+	mergeErr  error
+	photosErr error
+
+	lastUpdate  people.SubjectUpdate
+	lastCreate  people.Subject
+	deletedUID  string
+	mergeSource string
+	mergeKeeper string
+	lastEntry   audit.Entry
 }
 
 // ListSubjects returns the canned subject list or error.
@@ -41,9 +48,21 @@ func (f *fakeSubjects) ListSubjects(_ context.Context) ([]people.SubjectCount, e
 	return f.list, f.listErr
 }
 
-// GetSubjectByUID returns the canned subject or error.
-func (f *fakeSubjects) GetSubjectByUID(_ context.Context, _ string) (people.Subject, error) {
-	return f.subject, f.getErr
+// GetSubjectByUID returns the subject registered under uid when the fake was
+// given a map (the merge handler looks two different subjects up), otherwise the
+// single canned subject, or the canned error.
+func (f *fakeSubjects) GetSubjectByUID(_ context.Context, uid string) (people.Subject, error) {
+	if f.getErr != nil {
+		return people.Subject{}, f.getErr
+	}
+	if f.byUID == nil {
+		return f.subject, nil
+	}
+	subj, ok := f.byUID[uid]
+	if !ok {
+		return people.Subject{}, people.ErrSubjectNotFound
+	}
+	return subj, nil
 }
 
 // CreateSubjectAudited records the input and audit entry and returns the canned
@@ -72,6 +91,17 @@ func (f *fakeSubjects) DeleteSubjectAudited(_ context.Context, uid string, entry
 	f.deletedUID = uid
 	f.lastEntry = entry
 	return f.deleteErr
+}
+
+// MergeSubjectsAudited records both uids and the audit entry and returns the
+// canned merge result or error.
+func (f *fakeSubjects) MergeSubjectsAudited(
+	_ context.Context, sourceUID, keeperUID string, entry audit.Entry,
+) (people.MergeResult, error) {
+	f.mergeSource = sourceUID
+	f.mergeKeeper = keeperUID
+	f.lastEntry = entry
+	return f.merged, f.mergeErr
 }
 
 // ListPhotoUIDsBySubject returns the canned UID slice or error.
@@ -342,6 +372,118 @@ func TestHandleDelete_ok(t *testing.T) {
 	}
 	if subjects.lastEntry.Action != audit.ActionSubjectDelete || subjects.lastEntry.Details["name"] != "Alice" {
 		t.Errorf("delete audit entry = %+v, want subject.delete recording name Alice", subjects.lastEntry)
+	}
+}
+
+// mergePair returns a fake holding the two subjects a merge names, so the
+// handler's two lookups both resolve.
+func mergePair() *fakeSubjects {
+	return &fakeSubjects{byUID: map[string]people.Subject{
+		"su_a": {UID: "su_a", Name: "Alice", Type: people.SubjectPerson},
+		"su_b": {UID: "su_b", Name: "Alena", Type: people.SubjectPerson},
+	}}
+}
+
+// TestHandleMerge_ok merges the path subject into the keeper, echoes the store's
+// counts and records both names on the audit entry — the source is deleted by the
+// merge, so the trail is the only place its name survives.
+func TestHandleMerge_ok(t *testing.T) {
+	t.Parallel()
+	subjects := mergePair()
+	subjects.merged = people.MergeResult{
+		KeeperUID: "su_b", SourceUID: "su_a", MarkersMoved: 7, SharedPhotos: 1,
+	}
+	rec := do(t, newServer(subjects, fakePhotos{}), http.MethodPost, "/subjects/su_a/merge",
+		`{"keeper_uid":"su_b"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if subjects.mergeSource != "su_a" || subjects.mergeKeeper != "su_b" {
+		t.Errorf("merged %q into %q, want su_a into su_b", subjects.mergeSource, subjects.mergeKeeper)
+	}
+	var got people.MergeResult
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.MarkersMoved != 7 || got.SharedPhotos != 1 {
+		t.Errorf("body mismatch: %+v", got)
+	}
+	entry := subjects.lastEntry
+	if entry.Action != audit.ActionSubjectMerge || entry.TargetUID != "su_b" {
+		t.Errorf("merge audit entry = %+v, want subject.merge targeting su_b", entry)
+	}
+	if entry.Details["source_name"] != "Alice" || entry.Details["keeper_name"] != "Alena" {
+		t.Errorf("merge audit details = %+v, want both names recorded", entry.Details)
+	}
+}
+
+// TestHandleMerge_intoSelf rejects merging a subject into itself before the store
+// is reached — the request describes nothing and would delete the very subject it
+// claims to keep.
+func TestHandleMerge_intoSelf(t *testing.T) {
+	t.Parallel()
+	subjects := mergePair()
+	rec := do(t, newServer(subjects, fakePhotos{}), http.MethodPost, "/subjects/su_a/merge",
+		`{"keeper_uid":"su_a"}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+	if subjects.mergeKeeper != "" {
+		t.Errorf("store was called with keeper %q, want no call", subjects.mergeKeeper)
+	}
+}
+
+// TestHandleMerge_missingKeeper answers 400 for a body naming no keeper and 404
+// when the named keeper does not exist.
+func TestHandleMerge_missingKeeper(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		body string
+		want int
+	}{
+		{name: "empty", body: `{"keeper_uid":"  "}`, want: http.StatusBadRequest},
+		{name: "unknown", body: `{"keeper_uid":"su_zz"}`, want: http.StatusNotFound},
+		{name: "unknown field", body: `{"keeper":"su_b"}`, want: http.StatusBadRequest},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			subjects := mergePair()
+			rec := do(t, newServer(subjects, fakePhotos{}), http.MethodPost, "/subjects/su_a/merge", tc.body)
+			if rec.Code != tc.want {
+				t.Fatalf("status = %d, want %d", rec.Code, tc.want)
+			}
+			if subjects.mergeKeeper != "" {
+				t.Errorf("store was called with keeper %q, want no call", subjects.mergeKeeper)
+			}
+		})
+	}
+}
+
+// TestHandleMerge_storeError maps a store failure onto its status: a missing
+// subject is 404, anything else 500.
+func TestHandleMerge_storeError(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		err  error
+		want int
+	}{
+		{name: "not found", err: people.ErrSubjectNotFound, want: http.StatusNotFound},
+		{name: "failed", err: errors.New("boom"), want: http.StatusInternalServerError},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			subjects := mergePair()
+			subjects.mergeErr = tc.err
+			rec := do(t, newServer(subjects, fakePhotos{}), http.MethodPost, "/subjects/su_a/merge",
+				`{"keeper_uid":"su_b"}`)
+			if rec.Code != tc.want {
+				t.Fatalf("status = %d, want %d", rec.Code, tc.want)
+			}
+		})
 	}
 }
 

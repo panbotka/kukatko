@@ -979,7 +979,32 @@ to `## Package map` in `CLAUDE.md`.
   (drawn label boxes aren't faces), `invalid=FALSE` (rejected false-positives aren't returned),
   a non-zero box and photo dimensions, and a visible photo as with the count. It also carries the photo's `width/height/orientation`
   — the client crops the region itself and without the frame would distort it)/
-  `DeleteSubject` (the FK detaches the markers, clears the faces cache)/**the nameless-subject repair**
+  `DeleteSubject` (the FK detaches the markers, clears the faces cache)/**the merge of two subjects**
+  (`internal/people/merge.go`) `MergeSubjectsAudited(sourceUID,keeperUID,entry)` → `MergeResult`
+  (the repair for one person catalogued twice, all in **one transaction**: it takes a row lock on both
+  subjects (`WHERE uid = $1 OR uid = $2 ORDER BY uid FOR UPDATE`, one statement so two merges naming the
+  same pair in opposite directions queue instead of deadlocking), notes the photos carrying a marker of
+  **both** (while the markers still tell them apart), repoints `markers` and the denormalized `faces`
+  cache (`subject_uid`+`subject_name`, no FK there — this package is what keeps it in step), carries
+  `face_confirmations`, `face_rejections` and `duplicate_marker_dismissals` over
+  (`INSERT … SELECT … ON CONFLICT DO NOTHING`, keeping who said it and when), fills the keeper's **empty**
+  fields from the source (`favorite`/`private` OR-ed — a merge must not undo a favorite or weaken a
+  privacy flag — `notes`/`cover_photo_uid` only when the keeper has none, its own values never
+  overwritten), deletes the source (whose CASCADEs sweep the feedback rows the merge deliberately left)
+  and writes the `subject.merge` audit entry on the same tx. **Three rules decide the disagreements.**
+  (1) **Markers are never deduplicated**: a photo that carried a marker of each keeps both, so no region
+  and no assignment is thrown away — it simply becomes a repeated-marker group for `internal/dupmarkers`
+  to settle, and their number is reported as `SharedPhotos`. (2) **A positive record beats a rejection**,
+  whichever side it came from: the keeper's "not them" for a face the source is assigned to or has
+  confirmed is deleted (this runs **before** the assignments move — naming the source is what identifies
+  those rows), and a rejection of the source's is not carried onto a face the keeper is assigned to or
+  has confirmed. A rejection only ever *excludes a face from a search*, while an assignment is a
+  statement about the library, so a surviving contradiction could only hide a face the merged person
+  demonstrably owns. (3) A **repeated-marker dismissal is not carried onto a shared photo** — that group
+  is new, nobody has judged it, and a dismissal about a different pair of boxes would hide exactly the
+  duplicates the merge just made. `ErrMergeIntoSelf` and `ErrSubjectNotFound` are returned before
+  anything is written; ordering is load-bearing throughout and `mergeSubjectsTx` documents it step by
+  step)/**the nameless-subject repair**
   (`internal/people/nameless.go`) `ListNamelessSubjects` (every subject whose `NameSlug` is `""`, with its
   marker and face counts — the **dry run**; the predicate stays in Go so the repair cannot drift from the
   guard the importers use)/`SnapshotSubject(uid)` (the same snapshot **read-only** — the half the admin HTTP
@@ -1481,20 +1506,27 @@ to `## Package map` in `CLAUDE.md`.
   `internal/peopleapi/`
   (a read/curation HTTP API over subjects (people/animals/other) — the basis of the People UI: the interfaces
   `SubjectStore` (a subset of `people.Store`: `ListSubjects`/`GetSubjectByUID`/`CreateSubjectAudited`/
-  `UpdateSubjectAudited`/`DeleteSubjectAudited`/`ListPhotoUIDsBySubject` — each mutation takes an `audit.Entry`
-  built in `auditEntry` (`subject.create`/`update`/`delete`, actor from the auth context, details name/type;
-  `DELETE` first loads the subject for the details and a clean 404)) and `PhotoStore` (`photos.Store.ListByUIDs`)
+  `UpdateSubjectAudited`/`DeleteSubjectAudited`/`MergeSubjectsAudited`/`ListPhotoUIDsBySubject` — each mutation
+  takes an `audit.Entry`
+  built in `auditEntry` (`subject.create`/`update`/`delete`/`merge`, actor from the auth context, details
+  name/type; `DELETE` first loads the subject for the details and a clean 404)) and `PhotoStore`
+  (`photos.Store.ListByUIDs`)
   → unit-testable with fakes without a DB; `NewAPI(Config{Subjects,Photos,RequireAuth,RequireWrite})`+
   `RegisterRoutes` mounts **flat** paths (not a mounted subrouter, so they coexist with
   `outlierapi`'s `GET /subjects/{uid}/outliers` without a chi Mount conflict): `GET /subjects`
   (RequireAuth, `{subjects:[SubjectCount]}` with marker **and** photo counts), `POST /subjects` (RequireWrite,
   create → 201, name/type validation), `GET /subjects/{uid}` (RequireAuth), `PATCH /subjects/{uid}`
   (RequireWrite, editing name/type/favorite/private/notes/cover_photo_uid), `DELETE /subjects/{uid}`
-  (RequireWrite → 204), `GET /subjects/{uid}/photos` (RequireAuth, a paginated gallery of the subject's photos
+  (RequireWrite → 204), `POST /subjects/{uid}/merge` (RequireWrite, `{keeper_uid}` → `people.MergeResult`;
+  the **path** subject is the one merged away and deleted. `handleMerge` loads **both** subjects first, so a
+  missing one is a 404 before any mutation and the audit details keep the source's name — the source is gone
+  by the time anyone reads the trail, and a merge has no undo. Merging a subject into itself is refused here,
+  before the store, so the answer is the same 400 whether or not the uid exists),
+  `GET /subjects/{uid}/photos` (RequireAuth, a paginated gallery of the subject's photos
   `{photos,total,limit,offset,next_offset}` — `ListPhotoUIDsBySubject` (distinct non-invalid
   markers, non-archived, newest-first) → page → `ListByUIDs` → reorder by the uid order); body
-  decode `DisallowUnknownFields` + 1 MiB limit + empty name → 400; sentinels mapped
-  `ErrSubjectNotFound`→404/`ErrInvalidType`→400; mounted by the eighth `server.WithAPI`
+  decode `DisallowUnknownFields` + 1 MiB limit + empty name (or empty `keeper_uid`) → 400; sentinels mapped
+  `ErrSubjectNotFound`→404/`ErrInvalidType`+`ErrMergeIntoSelf`→400; mounted by the eighth `server.WithAPI`
   (`buildPeopleAPI` in `cmd/kukatko/people.go`)), `internal/organize/`
   (the DB layer for **organization** — albums, labels, **per-user favorites** (replacing the global
   `photos.favorite` from photo-sorter) and **per-user ratings** (0–5 stars + a personal flag none/pick/reject/eye);
