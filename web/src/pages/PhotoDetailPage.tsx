@@ -1041,6 +1041,7 @@ export function PhotoDetailPage() {
                 photoUid={photo.uid}
                 faces={faces}
                 canWrite={canWrite}
+                takenAt={photo.taken_at}
                 hovered={hoveredFace}
                 onHover={setHoveredFace}
                 onClose={toggleFaces}

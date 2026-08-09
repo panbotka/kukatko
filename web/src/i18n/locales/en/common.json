@@ -1203,6 +1203,16 @@
     "noPhotos": "This person has no photos yet.",
     "loadMore": "Load more",
     "loadingMore": "Loading…",
+    "lifeSpan": "Life span: {{span}}",
+    "age_one": "~{{count}} yr",
+    "age_other": "~{{count}} yrs",
+    "decades": {
+      "label": "Jump to a decade",
+      "jumpTo": "Go to {{decade}}",
+      "undated": "Undated",
+      "count_one": "{{count}} photo",
+      "count_other": "{{count}} photos"
+    },
     "type": {
       "person": "Person",
       "pet": "Pet",
@@ -1217,6 +1227,11 @@
       "error": "Could not save. Check the name and try again.",
       "name": "Name",
       "type": "Type",
+      "birthYear": "Year of birth",
+      "deathYear": "Year of death",
+      "yearPlaceholder": "e.g. 1923",
+      "yearsHint": "Optional. A year is enough — photos then show an approximate age.",
+      "yearsError": "Those years cannot be right. Birth must fall between 1800 and this year, and a death cannot precede it.",
       "favorite": "Favorite",
       "private": "Private",
       "notes": "Notes",

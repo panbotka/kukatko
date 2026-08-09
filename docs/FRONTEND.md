@@ -1570,10 +1570,14 @@ here.
   an explicit `cover_photo_uid` always wins (a decision overrides a guess), otherwise `cover_face` from the API
   (marker selection see `listSubjectsSQL`) `padBbox(0.3)` + `squareCrop` → `FaceCrop`, and without
   a usable face a placeholder remains (`people.noCover`) — the app doesn't invent a face,
-  `SubjectPage` = `/people/:uid` a person's page: a header (name/type + edit via
+  `SubjectPage` = `/people/:uid` a person's page: a header (name/**life span**/type + edit via
   `SubjectEditModal` — the page keeps it mounted, so the dialog **re-seeds every field (and clears the
   error) each time it opens**: a cancelled edit is really discarded and a failed save's message doesn't
-  greet the next opening — + the shared `GridDensityControl` **Dlaždic na řádek** — a view preference
+  greet the next opening; the dialog also carries the two **year** fields, shown **only for
+  `type='person'`** (a pet has no life span to read) but always submitted, so a mistaken
+  reclassification loses nothing, and pre-validated in place (`lifeYearsValid`, 1800…this year,
+  death ≥ birth) so a typo is answered without a round trip — the backend stays the authority —
+  + the shared `GridDensityControl` **Dlaždic na řádek** — a view preference
   open to anyone who sees the page, not just editors; the grid carries `data-density` for tests and
   holds the shared `GRID_GAP_PX` like the other galleries), a paginated gallery (`useSubjectPhotos` +
   `SubjectPhotoTile` with a „set as cover" action for editors — now a **quiet icon-only disk** in the corner
@@ -1582,7 +1586,10 @@ here.
   `image-fill`); behavior unchanged — the same `onSetCover` handler and `PATCH /subjects/{uid}`.
   The tile also carries the library's **corner selection checkmark** (`.kk-tile__check`, props
   `selectable`/`selectFirst`/`selected`/`anySelected`) from the outset for an editor, and the
-  cover disk only steps aside at `selectFirst` — i.e. once something is picked), and
+  cover disk only steps aside at `selectFirst` — i.e. once something is picked; plus, in the one free
+  corner, the **age** plate `age` = `approximateAge(photo.taken_at, subject.birth_year)`
+  (`.kk-tile__age`, always visible and never a target — it is read, not pressed, and a fact shown only
+  on hover is a fact no phone ever sees)), and
   two review sections for editors only: `Candidates` („Možná je i zde" — untagged photos where the person
   is present by face resemblance, to confirm/reject; the search is **explicit** via a button, not
   on-load) and below it `Outliers` (suspicious assignments); the tiles carry a **person
@@ -1596,6 +1603,16 @@ here.
   selection target, so the tile's „set as cover" steps aside, like the heart/stars on a library tile,
   and the action moves onto the bar as an `extraActions` entry (enabled at exactly 1 selected), so it
   stays reachable; the person's own header controls stay visible during a selection.
+  The gallery is also read **by decade** (`lib/photoDecades` `groupPhotosByDecade` → one section per
+  decade of `taken_at`, the undated ones last in a section of their own): `SubjectDecadeNav` above it is
+  one tick per decade with its count, jumping to that section's heading (`decadeAnchorId`, whose
+  `scroll-margin-top` clears the sticky navbar). It wears the **library timeline rail's** vocabulary
+  (short mark, dim text, the label at full strength, the current tick emphasised) but not its
+  `position: fixed`: this belongs to one section of a page that also has a header and two review panels.
+  Both the nav and the headings appear only from **two** decades up — one destination is furniture, not a
+  way around — and both cover the photos **loaded so far**, since a decade nobody has paged in is not
+  somewhere a reader can be sent. The set-cover PATCH sends `birth_year`/`death_year` back unchanged:
+  `PATCH /subjects/{uid}` rewrites the whole record, so omitting them would erase them.
   The page also carries the **two repairs for a mis-catalogued person**, both editors-only (a viewer sees
   neither): in the header **Sloučit s jinou osobou** → `MergeSubjectModal`, and on the batch bar
   **Přesunout k jiné osobě** (a second `extraActions` entry, any selection ≥ 1) → `MoveFacesModal`. Both
@@ -2103,6 +2120,9 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   glyph stands in), the place name, the photo-count badge; the preview is `alt=""` — the row's own text
   already names the place);
   `components/people/` = `SubjectTile`/`SubjectPhotoTile`/`SubjectEditModal`,
+  `SubjectDecadeNav` (a person's gallery in decades — one tick per decade of the loaded photos, with its
+  count, jumping to that section; renders **nothing** below two decades. The library rail's look at the
+  grain a life is remembered in — see `SubjectPage` above),
   `SubjectSummary` (one person, small: the `subjectTileImage` picture, the name and both counts — built for
   the merge confirmation, where the question "are these two the same person, and which record is the
   substantial one" is answered by the pictures and the photo counts, never by two names),
@@ -2167,7 +2187,12 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `FaceCrop` of that face** (`padBbox(0.25)`+`squareCrop`, `label=""` because the row's own label names the person;
   the generic person icon stands in while `faces.frame` is null, i.e. only during loading) + a colored status chip:
   the person's name (green), or
-  **Bez jména** (yellow) — the same two states as the boxes. The row used to read `Obličej #N` and nothing else,
+  **Bez jména** (yellow) — the same two states as the boxes — and, beside it, **how old that person was here**
+  (`approximateAge` over the photo's `takenAt` prop and the subject's `birth_year`, looked up in the subject
+  list the panel already loads for its typeahead; absent whenever nothing can be said). It rides beside the
+  name rather than inside it — the name is what the row is keyed on, the age is what *this* photograph adds —
+  and it is folded into the row's `aria-label` too, since that label replaces the button's content.
+  The row used to read `Obličej #N` and nothing else,
   which meant naming anybody started with hunting a tiny numeric badge somewhere on the photo — the words are gone,
   the crop answers "who" by being looked at, and the bare number stayed as the tie to the box. A row whose face has **no embedding**
   (`hasEmbedding` = a negative `face_index`, i.e. a marker with no face row behind it) also carries a small muted
@@ -2655,7 +2680,17 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   „2019"), `groupYearsIntoDecades`, `parseYearRange`/`periodFromQuery` (the shapes the backend's number range
   accepts: `1965`, `1960-1969`, `1960-`, `-1949`) and `formatPeriod`. UTC is what makes a picked decade
   return exactly what the year facet counted: EXIF times are read as UTC wall clock and the DB session is
-  pinned to UTC, so `date_part('year', taken_at)` and these bounds agree by construction) +
+  pinned to UTC, so `date_part('year', taken_at)` and these bounds agree by construction);
+  `lib/lifeYears.ts` (pure: `captureYear` (the **UTC** year of an ISO capture time — a local reading would
+  move a New Year's Eve photograph into the wrong decade), `approximateAge(takenAt, birthYear)` = the plain
+  difference of two years, `null` whenever nothing can be said: no date, no birth year, a photo dated
+  **before** the birth, or an age past `MAX_PLAUSIBLE_AGE` (120) — an absurd number beside a face would
+  present a data error as a fact — and `formatLifeSpan` → „1923–1998" / „*1923" / „†1998" / `null`;
+  the labels themselves are i18n (`subject.age` with a plural count, „~23 let" / „~23 yrs"));
+  `lib/photoDecades.ts` (pure, built on `period`'s `decadeOf` so the decade **filter** and this decade
+  **grouping** can never disagree: `groupPhotosByDecade` (one section per decade in order of first
+  appearance, the undated in their own; never re-sorts, and a decade appearing twice is merged so the
+  navigation lists each exactly once), `formatDecade` and `decadeAnchorId`) +
   `LIBRARY_PATH` (= `/`, the library's canonical route — **the library is the home page**; every link
   in the app points here, `/library` is only a redirect for old links) +
   the **multi-selection of the `album`/`label`/`person` facets**: each key carries a **comma-joined list of UIDs** (urlState

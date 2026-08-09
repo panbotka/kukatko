@@ -18,12 +18,13 @@ const maxSlugAttempts = 1000
 // subjectColumns is the canonical, ordered column list for subject reads, matched
 // by scanSubject.
 const subjectColumns = "uid, slug, name, type, favorite, private, notes, " +
-	"cover_photo_uid, created_at, updated_at"
+	"cover_photo_uid, birth_year, death_year, created_at, updated_at"
 
 // insertSubjectSQL inserts a subject and returns the stored row.
 const insertSubjectSQL = `
-INSERT INTO subjects (uid, slug, name, type, favorite, private, notes, cover_photo_uid)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+INSERT INTO subjects (uid, slug, name, type, favorite, private, notes, cover_photo_uid,
+                      birth_year, death_year)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 RETURNING ` + subjectColumns
 
 // scanSubject reads one subject row in subjectColumns order, wrapping any scan
@@ -32,7 +33,8 @@ func scanSubject(row pgx.Row) (Subject, error) {
 	var subj Subject
 	if err := row.Scan(
 		&subj.UID, &subj.Slug, &subj.Name, &subj.Type, &subj.Favorite,
-		&subj.Private, &subj.Notes, &subj.CoverPhotoUID, &subj.CreatedAt, &subj.UpdatedAt,
+		&subj.Private, &subj.Notes, &subj.CoverPhotoUID, &subj.BirthYear, &subj.DeathYear,
+		&subj.CreatedAt, &subj.UpdatedAt,
 	); err != nil {
 		return Subject{}, fmt.Errorf("people: scanning subject: %w", err)
 	}
@@ -52,7 +54,8 @@ func (s *Store) CreateSubject(ctx context.Context, subj Subject) (Subject, error
 		prepared.Slug = slug
 		return scanSubject(s.pool.QueryRow(ctx, insertSubjectSQL,
 			prepared.UID, prepared.Slug, prepared.Name, prepared.Type, prepared.Favorite,
-			prepared.Private, prepared.Notes, prepared.CoverPhotoUID))
+			prepared.Private, prepared.Notes, prepared.CoverPhotoUID,
+			prepared.BirthYear, prepared.DeathYear))
 	})
 }
 
@@ -60,13 +63,16 @@ func (s *Store) CreateSubject(ctx context.Context, subj Subject) (Subject, error
 // generated UID when none is set, returning the prepared subject and the base slug
 // derived from its name. It is shared by CreateSubject and CreateSubjectAudited so
 // both apply identical validation and UID rules. It returns ErrInvalidType for an
-// unrecognised type.
+// unrecognised type, or ErrInvalidLifeYears for an impossible birth/death year.
 func prepareSubjectInsert(subj Subject) (Subject, string, error) {
 	if subj.Type == "" {
 		subj.Type = SubjectPerson
 	}
 	if !subj.Type.valid() {
 		return Subject{}, "", fmt.Errorf("%w: subject type %q", ErrInvalidType, subj.Type)
+	}
+	if err := checkLifeYears(subj.BirthYear, subj.DeathYear); err != nil {
+		return Subject{}, "", err
 	}
 	if subj.UID == "" {
 		uid, err := newSubjectUID()
@@ -127,20 +133,36 @@ func (s *Store) getSubject(ctx context.Context, col, val string) (Subject, error
 const updateSubjectSQL = `
 UPDATE subjects SET
     slug = $2, name = $3, type = $4, favorite = $5, private = $6,
-    notes = $7, cover_photo_uid = $8, updated_at = now()
+    notes = $7, cover_photo_uid = $8, birth_year = $9, death_year = $10, updated_at = now()
 WHERE uid = $1
 RETURNING ` + subjectColumns
 
-// UpdateSubject applies upd to the subject identified by uid: it re-slugs from the
-// new name (kept unique), rewrites the editable fields, and refreshes the cached
-// subject_name on the photo's faces. It returns ErrSubjectNotFound if no such
-// subject exists, or ErrInvalidType for an unrecognised type.
-func (s *Store) UpdateSubject(ctx context.Context, uid string, upd SubjectUpdate) (Subject, error) {
+// prepareSubjectUpdate defaults and validates upd before either update path
+// touches the database, so UpdateSubject and UpdateSubjectAudited reject exactly
+// the same edits. It returns ErrInvalidType for an unrecognised type and
+// ErrInvalidLifeYears for an impossible birth/death year.
+func prepareSubjectUpdate(upd SubjectUpdate) (SubjectUpdate, error) {
 	if upd.Type == "" {
 		upd.Type = SubjectPerson
 	}
 	if !upd.Type.valid() {
-		return Subject{}, fmt.Errorf("%w: subject type %q", ErrInvalidType, upd.Type)
+		return SubjectUpdate{}, fmt.Errorf("%w: subject type %q", ErrInvalidType, upd.Type)
+	}
+	if err := checkLifeYears(upd.BirthYear, upd.DeathYear); err != nil {
+		return SubjectUpdate{}, err
+	}
+	return upd, nil
+}
+
+// UpdateSubject applies upd to the subject identified by uid: it re-slugs from the
+// new name (kept unique), rewrites the editable fields, and refreshes the cached
+// subject_name on the photo's faces. It returns ErrSubjectNotFound if no such
+// subject exists, ErrInvalidType for an unrecognised type, or ErrInvalidLifeYears
+// for an impossible birth/death year.
+func (s *Store) UpdateSubject(ctx context.Context, uid string, upd SubjectUpdate) (Subject, error) {
+	upd, err := prepareSubjectUpdate(upd)
+	if err != nil {
+		return Subject{}, err
 	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -170,7 +192,7 @@ func updateSubjectTx(ctx context.Context, tx pgx.Tx, uid string, upd SubjectUpda
 	updated, err := insertWithUniqueSlug(base, func(slug string) (Subject, error) {
 		return scanSubject(tx.QueryRow(ctx, updateSubjectSQL,
 			uid, slug, upd.Name, upd.Type, upd.Favorite,
-			upd.Private, upd.Notes, upd.CoverPhotoUID))
+			upd.Private, upd.Notes, upd.CoverPhotoUID, upd.BirthYear, upd.DeathYear))
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Subject{}, ErrSubjectNotFound
@@ -231,7 +253,8 @@ WITH best_face AS (
     ORDER BY m.subject_uid, m.w * m.h DESC, m.score DESC, m.uid
 )
 SELECT s.uid, s.slug, s.name, s.type, s.favorite, s.private, s.notes,
-       s.cover_photo_uid, s.created_at, s.updated_at, COUNT(p.uid) AS marker_count,
+       s.cover_photo_uid, s.birth_year, s.death_year, s.created_at, s.updated_at,
+       COUNT(p.uid) AS marker_count,
        COUNT(DISTINCT p.uid) AS photo_count,
        bf.photo_uid, bf.x, bf.y, bf.w, bf.h,
        bf.file_width, bf.file_height, bf.file_orientation
@@ -256,7 +279,8 @@ func scanSubjectCount(row pgx.Row) (SubjectCount, error) {
 	var width, height, orientation *int
 	if err := row.Scan(
 		&sc.UID, &sc.Slug, &sc.Name, &sc.Type, &sc.Favorite, &sc.Private,
-		&sc.Notes, &sc.CoverPhotoUID, &sc.CreatedAt, &sc.UpdatedAt, &sc.MarkerCount,
+		&sc.Notes, &sc.CoverPhotoUID, &sc.BirthYear, &sc.DeathYear, &sc.CreatedAt,
+		&sc.UpdatedAt, &sc.MarkerCount,
 		&sc.PhotoCount, &photoUID, &x, &y, &w, &h, &width, &height, &orientation,
 	); err != nil {
 		return SubjectCount{}, fmt.Errorf("people: scanning subject count: %w", err)

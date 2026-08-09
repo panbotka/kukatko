@@ -12,6 +12,7 @@ package people
 
 import (
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -30,7 +31,53 @@ var (
 	// ErrInvalidBounds indicates a marker bounding box with a coordinate outside
 	// the normalised 0..1 range.
 	ErrInvalidBounds = errors.New("people: marker bounds out of range")
+	// ErrInvalidLifeYears indicates a birth/death year outside the accepted range
+	// or a death that precedes the birth.
+	ErrInvalidLifeYears = errors.New("people: invalid birth or death year")
 )
+
+// MinLifeYear is the earliest birth or death year a subject may carry. It sits
+// well below photography itself, so a mistyped year (198, 19) is rejected while
+// every person a photo archive can hold still fits. Mirrored by the SQL CHECK
+// constraints of migration 0051.
+const MinLifeYear = 1800
+
+// validateLifeYears reports whether the optional birth and death years are a
+// combination worth storing, given nowYear as "today". A nil year is unknown and
+// always allowed — an archive is mostly people whose dates nobody wrote down.
+//
+// The rules are: both years lie within [MinLifeYear, nowYear] (a year in the
+// future is a typo, not a fact), and a death does not precede the birth. It
+// returns ErrInvalidLifeYears, wrapped with what was wrong, for anything else.
+//
+// The upper bound is passed in rather than read from the clock so the rule can
+// be tested at a fixed "now"; callers pass time.Now().Year().
+func validateLifeYears(birth, death *int, nowYear int) error {
+	for _, y := range []struct {
+		name  string
+		value *int
+	}{{name: "birth_year", value: birth}, {name: "death_year", value: death}} {
+		if y.value == nil {
+			continue
+		}
+		if *y.value < MinLifeYear || *y.value > nowYear {
+			return fmt.Errorf("%w: %s %d is outside %d..%d",
+				ErrInvalidLifeYears, y.name, *y.value, MinLifeYear, nowYear)
+		}
+	}
+	if birth != nil && death != nil && *death < *birth {
+		return fmt.Errorf("%w: death_year %d precedes birth_year %d",
+			ErrInvalidLifeYears, *death, *birth)
+	}
+	return nil
+}
+
+// checkLifeYears validates the optional birth and death years against the
+// current calendar year. It is the one entry point the store's write paths call,
+// so "not in the future" always means the same thing.
+func checkLifeYears(birth, death *int) error {
+	return validateLifeYears(birth, death, time.Now().Year())
+}
 
 // SubjectType classifies a subject, mirrored by the SQL CHECK constraint on
 // subjects.type.
@@ -90,8 +137,20 @@ type Subject struct {
 	Private       bool        `json:"private"`
 	Notes         string      `json:"notes"`
 	CoverPhotoUID *string     `json:"cover_photo_uid,omitempty"`
-	CreatedAt     time.Time   `json:"created_at"`
-	UpdatedAt     time.Time   `json:"updated_at"`
+	// BirthYear and DeathYear are the person's life span, nil when unknown —
+	// which is the normal case. They carry a year rather than a date because a
+	// year is what anybody actually knows about the people in a family archive,
+	// and an age derived from them is an approximation the UI marks as one.
+	//
+	// They are meant for SubjectPerson, but nothing rejects them on another type:
+	// the type is editable, and refusing a save because a person was
+	// reclassified would punish the reclassification, not the data. They are
+	// serialised without omitempty so "unknown" arrives at the client as an
+	// explicit null rather than as a missing key.
+	BirthYear *int      `json:"birth_year"`
+	DeathYear *int      `json:"death_year"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // SubjectFace is the face automatically picked to illustrate a subject on the
@@ -139,6 +198,8 @@ type SubjectCount struct {
 
 // SubjectUpdate carries the user-editable fields applied by Store.UpdateSubject.
 // Name is re-slugged on change; CoverPhotoUID clears (sets NULL) when nil.
+// BirthYear and DeathYear clear (set NULL) when nil, like CoverPhotoUID: the
+// update rewrites the whole editable set, so an omitted year means "unknown".
 type SubjectUpdate struct {
 	Name          string      `json:"name"`
 	Type          SubjectType `json:"type"`
@@ -146,6 +207,8 @@ type SubjectUpdate struct {
 	Private       bool        `json:"private"`
 	Notes         string      `json:"notes"`
 	CoverPhotoUID *string     `json:"cover_photo_uid"`
+	BirthYear     *int        `json:"birth_year"`
+	DeathYear     *int        `json:"death_year"`
 }
 
 // Marker is a normalised region on one photo, optionally assigned to a subject.

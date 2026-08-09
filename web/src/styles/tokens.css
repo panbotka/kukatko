@@ -864,6 +864,31 @@
   }
 }
 
+/* ---- Age on a person's tile -------------------------------------------
+ * Roughly how old the person was on this photograph, in the tile's bottom-end
+ * corner — the one corner no other affordance uses (top-start selection check,
+ * bottom-start cover disc), so it never has to hide or take turns with them.
+ *
+ * Always visible, unlike the two controls around it: it is not something to
+ * press but something to read, and a fact revealed only on hover is a fact
+ * nobody on a phone ever sees. It is plated rather than merely coloured because
+ * it lies over an arbitrary photograph, where light text is not text.
+ */
+.kk-tile__age {
+  position: absolute;
+  right: var(--kk-space-1);
+  bottom: var(--kk-space-1);
+  z-index: 2;
+  padding: 0.05rem 0.4rem;
+  border-radius: var(--kk-radius-sm);
+  background-color: rgb(0 0 0 / 55%);
+  color: #fff;
+  font-size: var(--kk-font-size-caption);
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 /* ---- Back link --------------------------------------------------------- */
 
 /*

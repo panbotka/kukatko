@@ -359,6 +359,62 @@ func TestHandleUpdate_invalidType(t *testing.T) {
 	}
 }
 
+// TestHandleUpdate_lifeYears carries the two optional years through to the store
+// and records their transition in the audit trail. A `null` is a real value here
+// — it clears the year — so it has to reach the update as a nil pointer rather
+// than be dropped as an absent field.
+func TestHandleUpdate_lifeYears(t *testing.T) {
+	t.Parallel()
+	subjects := &fakeSubjects{
+		subject: people.Subject{
+			UID: "su_a", Name: "Jarmila", Type: people.SubjectPerson, DeathYear: new(1998),
+		},
+		updated: people.Subject{UID: "su_a", Name: "Jarmila", BirthYear: new(1923)},
+	}
+	rec := do(t, newServer(subjects, fakePhotos{}), http.MethodPatch, "/subjects/su_a",
+		`{"name":"Jarmila","type":"person","birth_year":1923,"death_year":null}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if subjects.lastUpdate.BirthYear == nil || *subjects.lastUpdate.BirthYear != 1923 {
+		t.Errorf("update birth year = %v, want 1923", subjects.lastUpdate.BirthYear)
+	}
+	if subjects.lastUpdate.DeathYear != nil {
+		t.Errorf("update death year = %v, want nil (the null clears it)", subjects.lastUpdate.DeathYear)
+	}
+	changes := changeMap(t, subjects.lastEntry)
+	if _, ok := changes["birth_year"]; !ok {
+		t.Errorf("birth_year missing from the recorded changes: %v", changes)
+	}
+	if _, ok := changes["death_year"]; !ok {
+		t.Errorf("death_year missing from the recorded changes: %v", changes)
+	}
+}
+
+// TestHandleUpdate_invalidLifeYears maps the life-year sentinel to 400, so a
+// death before a birth (or a year in the future) is a client error rather than a
+// 500 the user can do nothing about.
+func TestHandleUpdate_invalidLifeYears(t *testing.T) {
+	t.Parallel()
+	subjects := &fakeSubjects{updateErr: people.ErrInvalidLifeYears}
+	rec := do(t, newServer(subjects, fakePhotos{}), http.MethodPatch, "/subjects/su_a",
+		`{"name":"Jarmila","type":"person","birth_year":1998,"death_year":1923}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
+// TestHandleCreate_invalidLifeYears maps the same sentinel to 400 on create.
+func TestHandleCreate_invalidLifeYears(t *testing.T) {
+	t.Parallel()
+	subjects := &fakeSubjects{createErr: people.ErrInvalidLifeYears}
+	rec := do(t, newServer(subjects, fakePhotos{}), http.MethodPost, "/subjects",
+		`{"name":"Jarmila","type":"person","birth_year":1799}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
 // TestHandleDelete_ok answers 204 and records the deleted UID.
 func TestHandleDelete_ok(t *testing.T) {
 	t.Parallel()

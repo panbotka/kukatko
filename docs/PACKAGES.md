@@ -948,7 +948,8 @@ to `## Package map` in `CLAUDE.md`.
   (the DB layer for **subjects** (people/animals/other) and **markers** (face/label regions on
   photos), tables `subjects`/`markers` in migration `0008_subjects_markers.sql`: `subjects`
   = `uid PK` (prefix `su`), `slug UNIQUE`, `name`, `type IN (person|pet|other)`, `favorite`,
-  `private`, `notes`, `cover_photo_uid` (FK photos `ON DELETE SET NULL`), timestamps; `markers` =
+  `private`, `notes`, `cover_photo_uid` (FK photos `ON DELETE SET NULL`),
+  `birth_year`/`death_year` (nullable INTEGER, migration `0051`), timestamps; `markers` =
   `uid PK` (prefix `mk`), `photo_uid` (FK photos `ON DELETE CASCADE`), `subject_uid` (FK
   subjects `ON DELETE SET NULL`), `type IN (face|label)`, a normalized bbox `x,y,w,h`
   DOUBLE PRECISION (0..1 display space, like `faces.bbox`), `score`, `invalid`, `reviewed`,
@@ -964,7 +965,16 @@ to `## Package map` in `CLAUDE.md`.
   it — in production that collected 16 532 markers on a single fake person (fixed in the importers of the
   day and in `facematch`; `peopleapi` rejects such a name with 400; the repair for existing
   data is `kukatko maintenance nameless-subjects`, see [`OPERATIONS.md`](OPERATIONS.md))/
-  `UpdateSubject`(re-slugging + refresh of the `faces.subject_name` cache)/`ListSubjects` (ordered by
+  `UpdateSubject`(re-slugging + refresh of the `faces.subject_name` cache)/
+  — **the life span** `BirthYear`/`DeathYear *int` (nil = nobody recorded it, which is the normal case;
+  plain years, because a year is what anybody knows about the people in a family archive, and every age
+  derived from them is shown as an approximation). Both write paths run them through
+  `validateLifeYears(birth,death,nowYear)` → `ErrInvalidLifeYears`: each known year within
+  `MinLifeYear`(=1800)…**the current year**, and `death >= birth`. The clock-independent half is also a
+  SQL CHECK (`>= 1800`, `death >= birth`); the "not in the future" half **cannot** be, since a CHECK may
+  only use immutable expressions. Nothing ties the years to `type='person'` — the type is editable, and a
+  constraint firing on an unrelated reclassification would break a harmless edit. `SubjectUpdate` rewrites
+  them like every other field, so a nil **clears**/`ListSubjects` (ordered by
   name, with **two** counts over the same non-invalid markers on visible photos: `MarkerCount` =
   `COUNT(p.uid)`, what the face tools mean, and `PhotoCount` = `COUNT(DISTINCT p.uid)`, what the
   people index shows — they part company when one photo carries several markers of the same subject,
@@ -990,7 +1000,9 @@ to `## Package map` in `CLAUDE.md`.
   (`INSERT … SELECT … ON CONFLICT DO NOTHING`, keeping who said it and when), fills the keeper's **empty**
   fields from the source (`favorite`/`private` OR-ed — a merge must not undo a favorite or weaken a
   privacy flag — `notes`/`cover_photo_uid` only when the keeper has none, its own values never
-  overwritten), deletes the source (whose CASCADEs sweep the feedback rows the merge deliberately left)
+  overwritten; `birth_year`/`death_year` as a **pair**, onto a keeper carrying neither, since filling
+  them separately could pair one person's birth with another's death and trip the `death >= birth`
+  CHECK, aborting the whole merge), deletes the source (whose CASCADEs sweep the feedback rows the merge deliberately left)
   and writes the `subject.merge` audit entry on the same tx. **Three rules decide the disagreements.**
   (1) **Markers are never deduplicated**: a photo that carried a marker of each keeps both, so no region
   and no assignment is thrown away — it simply becomes a repeated-marker group for `internal/dupmarkers`

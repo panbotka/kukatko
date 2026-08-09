@@ -171,6 +171,8 @@ function subject(uid: string, name: string, photoCount: number): SubjectCount {
     type: 'person',
     favorite: false,
     notes: '',
+    birth_year: null,
+    death_year: null,
     private: false,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',

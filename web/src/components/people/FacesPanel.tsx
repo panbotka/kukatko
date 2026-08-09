@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
 import Card from 'react-bootstrap/Card'
@@ -9,6 +9,7 @@ import { useSubjects } from '../../hooks/useSubjects'
 import { type UseFacesResult } from '../../hooks/useFaces'
 import { padBbox, squareCrop } from '../../lib/faceGeometry'
 import { type FaceState, faceState, hasEmbedding } from '../../lib/faceState'
+import { approximateAge } from '../../lib/lifeYears'
 import { type FaceView } from '../../services/people'
 import { ENTITY_STYLE } from '../entityStyle'
 import { Icon } from '../Icon'
@@ -38,6 +39,12 @@ export interface FacesPanelProps {
   faces: UseFacesResult
   /** Whether the viewer may assign people (editors and admins). */
   canWrite: boolean
+  /**
+   * The photo's capture time (ISO), or undefined when it has none. With it — and
+   * a named person whose birth year is known — each row can say roughly how old
+   * they were here. Without it the rows simply carry no age.
+   */
+  takenAt?: string
   /** The `face_index` hovered on the photo, or null. Highlights its row. */
   hovered: number | null
   /**
@@ -94,6 +101,7 @@ export function FacesPanel({
   photoUid,
   faces,
   canWrite,
+  takenAt,
   hovered,
   onHover,
   onClose,
@@ -104,6 +112,29 @@ export function FacesPanel({
   const selected = faces.selected
   const frame = faces.frame
   const listRef = useRef<HTMLDivElement>(null)
+
+  // Birth year by subject uid, so a row can date the face it shows without a
+  // lookup per render. The subject list is already loaded here for the assign
+  // control, so this costs nothing extra.
+  const birthYears = useMemo(() => {
+    const byUID = new Map<string, number>()
+    for (const subject of subjects) {
+      if (subject.birth_year !== null) {
+        byUID.set(subject.uid, subject.birth_year)
+      }
+    }
+    return byUID
+  }, [subjects])
+
+  /**
+   * Roughly how old the named person was on this photograph, or null when it
+   * cannot be said — the face is unnamed, nobody recorded a birth year, the
+   * photo has no date, or the two do not admit an age (see `approximateAge`).
+   */
+  const faceAge = (face: FaceView): number | null => {
+    const birthYear = face.subject_uid === undefined ? undefined : birthYears.get(face.subject_uid)
+    return approximateAge(takenAt, birthYear)
+  }
 
   /**
    * The row's leading picture: a crop of the actual face, or the generic person
@@ -186,6 +217,12 @@ export function FacesPanel({
             const isSelected = selected?.face_index === face.face_index
             const embedded = hasEmbedding(face)
             const chip = state === 'named' ? (face.subject_name ?? '') : t('faces.state.unnamed')
+            const age = faceAge(face)
+            // An editor's row is a button whose aria-label replaces its content,
+            // so the age has to travel inside that label or a screen reader
+            // never hears it. Composed here rather than as a second key: it is
+            // the same sentence with one more clause.
+            const rowName = age === null ? chip : `${chip}, ${t('subject.age', { count: age })}`
             const row = (
               <>
                 {/* The cross-reference to the photo, drawn like the badge on the
@@ -193,6 +230,15 @@ export function FacesPanel({
                 <span className="badge text-bg-dark flex-shrink-0">{number}</span>
                 {faceGlyph(face)}
                 <span className={`badge text-truncate ${STATE_CHIP[state]}`}>{chip}</span>
+                {/* How old they were here, once somebody has recorded when this
+                    person was born. It rides beside the name rather than in it,
+                    because the name is what the row is keyed on and the age is
+                    what this particular photograph adds to it. */}
+                {age !== null && (
+                  <span className="small opacity-75 flex-shrink-0">
+                    {t('subject.age', { count: age })}
+                  </span>
+                )}
                 {!embedded && (
                   // The row of a `canWrite` viewer is a button whose aria-label
                   // replaces its content, so it says this in its own label instead;
@@ -219,8 +265,8 @@ export function FacesPanel({
                     aria-pressed={isSelected}
                     aria-label={
                       embedded
-                        ? t('faces.row.select', { number, name: chip })
-                        : t('faces.row.selectNoEmbedding', { number, name: chip })
+                        ? t('faces.row.select', { number, name: rowName })
+                        : t('faces.row.selectNoEmbedding', { number, name: rowName })
                     }
                     data-face-state={state}
                     data-embedding={embedded ? undefined : 'none'}

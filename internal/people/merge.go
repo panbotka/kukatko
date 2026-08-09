@@ -133,12 +133,22 @@ ON CONFLICT (photo_uid, subject_uid) DO NOTHING`
 // overwriting one it already has: the two flags are OR-ed (a merge must not undo
 // a "favorite" or weaken a "private"), and the notes and cover are filled only
 // when the keeper has none.
+//
+// The life years travel for the same reason as the notes — the duplicate record
+// is often the one somebody bothered to date — but they travel as a **pair**,
+// and only onto a keeper that carries neither. Filling them one at a time could
+// combine one person's birth with another's death, which is both a lie and a
+// violation of the death >= birth CHECK, and the failed constraint would take
+// the whole merge down with it. Both CASE expressions read the pre-update row,
+// so they always agree on whether the pair moves.
 const fillKeeperSQL = `
 UPDATE subjects SET
     favorite = favorite OR $2,
     private = private OR $3,
     notes = CASE WHEN notes = '' THEN $4 ELSE notes END,
     cover_photo_uid = COALESCE(cover_photo_uid, $5),
+    birth_year = CASE WHEN birth_year IS NULL AND death_year IS NULL THEN $6 ELSE birth_year END,
+    death_year = CASE WHEN birth_year IS NULL AND death_year IS NULL THEN $7 ELSE death_year END,
     updated_at = now()
 WHERE uid = $1`
 
@@ -356,10 +366,12 @@ func moveFeedback(
 
 // fillKeeper fills the keeper's empty fields from the source. It never overwrites
 // a value the keeper already carries — the keeper is the person the user chose to
-// keep, so its own record wins wherever it says anything.
+// keep, so its own record wins wherever it says anything. The birth/death years
+// move together or not at all; see fillKeeperSQL.
 func fillKeeper(ctx context.Context, tx pgx.Tx, source, keeper Subject) error {
 	if _, err := tx.Exec(ctx, fillKeeperSQL,
 		keeper.UID, source.Favorite, source.Private, source.Notes, source.CoverPhotoUID,
+		source.BirthYear, source.DeathYear,
 	); err != nil {
 		return fmt.Errorf("people: filling keeper %s from %s: %w", keeper.UID, source.UID, err)
 	}

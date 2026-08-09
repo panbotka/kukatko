@@ -99,6 +99,8 @@ function subject(): Subject {
     favorite: false,
     private: false,
     notes: '',
+    birth_year: null,
+    death_year: null,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
   }
@@ -624,6 +626,208 @@ describe('SubjectPage', () => {
 
     // Every other photo still offers the plain (settable) affordance.
     expect(screen.getByRole('button', { name: 'Set as cover' })).toBeInTheDocument()
+  })
+})
+
+describe('SubjectPage life data', () => {
+  /** A photo with a capture date, which is what an age and a decade need. */
+  function dated(uid: string, takenAt: string): Photo {
+    return { ...photo(uid, `${uid}.jpg`), taken_at: takenAt }
+  }
+
+  it('shows a closed life span beside the name', async () => {
+    fetchSubjectMock.mockResolvedValue({ ...subject(), birth_year: 1923, death_year: 1998 })
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    renderPage()
+
+    await screen.findByRole('heading', { level: 1, name: 'Jana' })
+    expect(screen.getByText('1923–1998')).toBeInTheDocument()
+  })
+
+  it('shows a born-in mark while only the birth year is known', async () => {
+    fetchSubjectMock.mockResolvedValue({ ...subject(), birth_year: 1923 })
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    renderPage()
+
+    await screen.findByRole('heading', { level: 1, name: 'Jana' })
+    expect(screen.getByText('*1923')).toBeInTheDocument()
+  })
+
+  it('shows no life span for a person nobody dated', async () => {
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    renderPage()
+
+    await screen.findByRole('heading', { level: 1, name: 'Jana' })
+    expect(screen.queryByText(/^\*?\d{4}/)).not.toBeInTheDocument()
+  })
+
+  it('says roughly how old the person was on each dated photo', async () => {
+    fetchSubjectMock.mockResolvedValue({ ...subject(), birth_year: 1923 })
+    fetchPhotosMock.mockResolvedValue(
+      page([dated('a', '1946-05-01T00:00:00Z'), dated('b', '1968-05-01T00:00:00Z')]),
+    )
+    renderPage()
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    expect(screen.getByText('~23 yrs')).toBeInTheDocument()
+    expect(screen.getByText('~45 yrs')).toBeInTheDocument()
+  })
+
+  it('shows no age on a photo dated before the birth, or on an undated one', async () => {
+    fetchSubjectMock.mockResolvedValue({ ...subject(), birth_year: 1923 })
+    fetchPhotosMock.mockResolvedValue(
+      page([dated('a', '1910-05-01T00:00:00Z'), photo('b', 'b.jpg')]),
+    )
+    renderPage()
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    expect(screen.queryByText(/yrs?$/)).not.toBeInTheDocument()
+  })
+
+  it('shows no age at all for a person with no birth year', async () => {
+    fetchPhotosMock.mockResolvedValue(page([dated('a', '1946-05-01T00:00:00Z')]))
+    renderPage()
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    expect(screen.queryByText(/yrs?$/)).not.toBeInTheDocument()
+  })
+
+  it('groups the gallery by decade and jumps to the one that is picked', async () => {
+    const scrollIntoView = vi.fn()
+    vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(scrollIntoView)
+    fetchPhotosMock.mockResolvedValue(
+      page([
+        dated('a', '1968-05-01T00:00:00Z'),
+        dated('b', '1962-05-01T00:00:00Z'),
+        dated('c', '1951-05-01T00:00:00Z'),
+        photo('d', 'd.jpg'),
+      ]),
+    )
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    const nav = screen.getByRole('navigation', { name: 'Jump to a decade' })
+    // One tick per decade the loaded photos fall in, newest first, plus the
+    // undated tail — with how much each holds.
+    expect(
+      within(nav)
+        .getAllByRole('button')
+        .map((b) => b.textContent),
+    ).toEqual(['1960–19692', '1950–19591', 'Undated1'])
+    // The sections it jumps between carry the same headings.
+    expect(screen.getByRole('heading', { level: 3, name: /1950–1959/ })).toBeInTheDocument()
+
+    await user.click(within(nav).getByRole('button', { name: 'Go to 1950–1959' }))
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'start' })
+    expect(within(nav).getByRole('button', { name: 'Go to 1950–1959' })).toHaveAttribute(
+      'aria-current',
+      'true',
+    )
+  })
+
+  it('edits the two years and sends them with the rest of the record', async () => {
+    fetchSubjectMock.mockResolvedValue({ ...subject(), birth_year: 1923 })
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    updateSubjectMock.mockResolvedValue({ ...subject(), birth_year: 1923, death_year: 1998 })
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByRole('heading', { level: 1, name: 'Jana' })
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByLabelText('Year of birth')).toHaveValue(1923)
+    await user.type(within(dialog).getByLabelText('Year of death'), '1998')
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(updateSubjectMock).toHaveBeenCalledWith(
+        'sj_1',
+        expect.objectContaining({ birth_year: 1923, death_year: 1998 }),
+      )
+    })
+    expect(await screen.findByText('1923–1998')).toBeInTheDocument()
+  })
+
+  it('clears a year rather than keeping the stored one when the field is emptied', async () => {
+    fetchSubjectMock.mockResolvedValue({ ...subject(), birth_year: 1923, death_year: 1998 })
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    updateSubjectMock.mockResolvedValue(subject())
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByRole('heading', { level: 1, name: 'Jana' })
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.clear(within(dialog).getByLabelText('Year of birth'))
+    await user.clear(within(dialog).getByLabelText('Year of death'))
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(updateSubjectMock).toHaveBeenCalledWith(
+        'sj_1',
+        expect.objectContaining({ birth_year: null, death_year: null }),
+      )
+    })
+  })
+
+  it('refuses a death before the birth in place, without a request', async () => {
+    fetchSubjectMock.mockResolvedValue({ ...subject(), birth_year: 1998 })
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByRole('heading', { level: 1, name: 'Jana' })
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.type(within(dialog).getByLabelText('Year of death'), '1923')
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+    expect(await within(dialog).findByText(/Those years cannot be right/)).toBeInTheDocument()
+    expect(updateSubjectMock).not.toHaveBeenCalled()
+  })
+
+  it('offers the year fields only for a person — a pet has no life span to read', async () => {
+    fetchSubjectMock.mockResolvedValue({ ...subject(), type: 'pet' })
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByRole('heading', { level: 1, name: 'Jana' })
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).queryByLabelText('Year of birth')).not.toBeInTheDocument()
+  })
+
+  it('keeps the life span when only the cover changes', async () => {
+    fetchSubjectMock.mockResolvedValue({ ...subject(), birth_year: 1923, death_year: 1998 })
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    updateSubjectMock.mockResolvedValue({ ...subject(), birth_year: 1923, death_year: 1998 })
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    await user.click(screen.getByRole('button', { name: 'Set as cover' }))
+
+    // PATCH rewrites the whole record, so a cover change that omitted the years
+    // would quietly erase them.
+    await waitFor(() => {
+      expect(updateSubjectMock).toHaveBeenCalledWith(
+        'sj_1',
+        expect.objectContaining({ cover_photo_uid: 'a', birth_year: 1923, death_year: 1998 }),
+      )
+    })
+  })
+
+  it('leaves a single-decade gallery undivided — one destination is no navigation', async () => {
+    fetchPhotosMock.mockResolvedValue(
+      page([dated('a', '1968-05-01T00:00:00Z'), dated('b', '1962-05-01T00:00:00Z')]),
+    )
+    renderPage()
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    expect(screen.queryByRole('navigation', { name: 'Jump to a decade' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { level: 3, name: /1960–1969/ })).not.toBeInTheDocument()
   })
 })
 

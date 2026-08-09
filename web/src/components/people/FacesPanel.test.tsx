@@ -47,19 +47,44 @@ function facesResult(overrides: Partial<UseFacesResult> = {}): UseFacesResult {
 const onHover = vi.fn()
 const onClose = vi.fn()
 
-function renderPanel(faces: UseFacesResult, canWrite = true, hovered: number | null = null) {
+function renderPanel(
+  faces: UseFacesResult,
+  canWrite = true,
+  hovered: number | null = null,
+  takenAt?: string,
+) {
   return render(
     <I18nextProvider i18n={i18n}>
       <FacesPanel
         photoUid="ph_1"
         faces={faces}
         canWrite={canWrite}
+        takenAt={takenAt}
         hovered={hovered}
         onHover={onHover}
         onClose={onClose}
       />
     </I18nextProvider>,
   )
+}
+
+/** A named person the panel's subject list can resolve a face's uid against. */
+function namedSubject(birthYear: number | null): people.SubjectCount {
+  return {
+    uid: 'su_9',
+    slug: 'alice',
+    name: 'Alice',
+    type: 'person',
+    favorite: false,
+    private: false,
+    notes: '',
+    birth_year: birthYear,
+    death_year: null,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+    marker_count: 12,
+    photo_count: 10,
+  }
 }
 
 beforeEach(async () => {
@@ -343,6 +368,8 @@ describe('FacesPanel', () => {
         favorite: false,
         private: false,
         notes: '',
+        birth_year: null,
+        death_year: null,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
         marker_count: 12,
@@ -413,5 +440,39 @@ describe('FacesPanel', () => {
   it('reports a failed assignment', () => {
     renderPanel(facesResult({ faces: [faceView()], actionError: true }))
     expect(screen.getByRole('alert')).toHaveTextContent('Could not save the assignment.')
+  })
+
+  it('says roughly how old a named person was on this photo', async () => {
+    fetchSubjectsMock.mockResolvedValue([namedSubject(1923)])
+    const face = faceView({ face_index: 0, marker_uid: 'mk_1', subject_uid: 'su_9' })
+    renderPanel(facesResult({ faces: [face] }), true, null, '1946-05-01T00:00:00Z')
+
+    // The row is a button whose aria-label replaces its content, so the age has
+    // to be in both: read on screen, and heard by a screen reader.
+    expect(await screen.findByText('~23 yrs')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /~23 yrs/ })).toBeInTheDocument()
+  })
+
+  it('shows no age when the person has no birth year or the photo has no date', async () => {
+    fetchSubjectsMock.mockResolvedValue([namedSubject(null)])
+    const face = faceView({ face_index: 0, marker_uid: 'mk_1', subject_uid: 'su_9' })
+    const { unmount } = renderPanel(
+      facesResult({ faces: [face] }),
+      true,
+      null,
+      '1946-05-01T00:00:00Z',
+    )
+    await waitFor(() => {
+      expect(fetchSubjectsMock).toHaveBeenCalled()
+    })
+    expect(screen.queryByText(/yrs?$/)).not.toBeInTheDocument()
+    unmount()
+
+    fetchSubjectsMock.mockResolvedValue([namedSubject(1923)])
+    renderPanel(facesResult({ faces: [face] }))
+    await waitFor(() => {
+      expect(fetchSubjectsMock).toHaveBeenCalledTimes(2)
+    })
+    expect(screen.queryByText(/yrs?$/)).not.toBeInTheDocument()
   })
 })

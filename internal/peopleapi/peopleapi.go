@@ -167,13 +167,16 @@ func writeError(w http.ResponseWriter, status int, message string) {
 }
 
 // subjectStatus maps a store error to the HTTP status and client message used for
-// subject mutations: a missing subject is 404, an invalid type or a merge into
-// itself is 400, anything else is a 500 with a generic message.
+// subject mutations: a missing subject is 404, an invalid type, an impossible
+// birth/death year or a merge into itself is 400, anything else is a 500 with a
+// generic message.
 func subjectStatus(err error) (int, string) {
 	switch {
 	case errors.Is(err, people.ErrSubjectNotFound):
 		return http.StatusNotFound, err.Error()
-	case errors.Is(err, people.ErrInvalidType), errors.Is(err, people.ErrMergeIntoSelf):
+	case errors.Is(err, people.ErrInvalidType),
+		errors.Is(err, people.ErrInvalidLifeYears),
+		errors.Is(err, people.ErrMergeIntoSelf):
 		return http.StatusBadRequest, err.Error()
 	default:
 		return http.StatusInternalServerError, "subject operation failed"
