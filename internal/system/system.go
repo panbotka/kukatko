@@ -9,11 +9,14 @@
 // the aggregation is unit-testable with fakes, and the HTTP layer lives in
 // internal/systemapi.
 //
-// Alongside that maintainer view it aggregates the library statistics — the
-// instance-wide photo/embedding/face/people counts every signed-in user may see
-// (see Library and Service.LibraryStats). Both aggregations memoise their
-// expensive part for a short TTL so a polled page cannot turn into a query
-// storm.
+// Alongside that maintainer view it aggregates the library statistics every
+// signed-in user may see: the instance-wide photo/embedding/face/people counts
+// (Library, Service.LibraryStats) and the chart series behind them — photos per
+// year, arrivals per month, top cameras, storage by media type and by year of
+// addition (Charts, Service.LibraryCharts). Every aggregation memoises its
+// expensive part so a polled page cannot turn into a query storm; how long for
+// depends on how fast the numbers move (see defaultLibraryTTL and
+// defaultChartsTTL).
 package system
 
 import (
@@ -215,6 +218,9 @@ type Config struct {
 	// makes LibraryStats fail rather than panic, so a caller that only needs
 	// Collect may leave it unset.
 	Library LibraryCounter
+	// Charts supplies the chart aggregates behind LibraryCharts. A nil Charts makes
+	// LibraryCharts fail rather than panic, on the same terms as Library.
+	Charts ChartCounter
 	// OriginalsPath is the on-disk root of the stored originals.
 	OriginalsPath string
 	// CachePath is the on-disk root of the derived cache (thumbnails).
@@ -223,7 +229,10 @@ type Config struct {
 	StorageTTL time.Duration
 	// LibraryTTL memoises the library counts; non-positive uses the default.
 	LibraryTTL time.Duration
-	// Clock supplies the current time for both caches; nil uses time.Now.
+	// ChartsTTL memoises the chart aggregates; non-positive uses the default,
+	// which is deliberately much longer than LibraryTTL (see defaultChartsTTL).
+	ChartsTTL time.Duration
+	// Clock supplies the current time for every cache; nil uses time.Now.
 	Clock func() time.Time
 }
 
@@ -240,7 +249,8 @@ type Service struct {
 	geocode      GeocodeReporter
 	imports      ImportLister
 	storage      *storageCache
-	library      *libraryCache
+	library      *snapshotCache[Library]
+	charts       *snapshotCache[Charts]
 }
 
 // New constructs a Service from cfg.
@@ -256,6 +266,7 @@ func New(cfg Config) *Service {
 		imports:      cfg.Imports,
 		storage:      newStorageCache(cfg.OriginalsPath, cfg.CachePath, cfg.StorageTTL, cfg.Clock),
 		library:      newLibraryCache(cfg.Library, cfg.LibraryTTL, cfg.Clock),
+		charts:       newChartsCache(cfg.Charts, cfg.ChartsTTL, cfg.Clock),
 	}
 }
 
@@ -264,7 +275,17 @@ func New(cfg Config) *Service {
 // as an error rather than inline: a caller must show the reader that the numbers
 // are unavailable instead of rendering zeroes as if they were real counts.
 func (s *Service) LibraryStats(ctx context.Context) (Library, error) {
-	return s.library.counts(ctx)
+	return s.library.get(ctx)
+}
+
+// LibraryCharts returns the chart aggregates behind the statistics page —
+// photos per year, arrivals per month, the top cameras and the storage
+// breakdowns — gap-filled and memoised for a longer TTL than the counts, because
+// a century-long histogram does not move in five minutes. Like LibraryStats it
+// reports a failure as an error: a chart drawn from an unavailable aggregation
+// would be indistinguishable from an empty library.
+func (s *Service) LibraryCharts(ctx context.Context) (Charts, error) {
+	return s.charts.get(ctx)
 }
 
 // Collect gathers the full status snapshot. Database reachability and storage

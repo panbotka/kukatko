@@ -222,6 +222,62 @@
     "subtitle": "How big the library is and how much of it has already been processed.",
     "loading": "Loading the statistics…",
     "error": "Failed to load the library statistics.",
+    "charts": {
+      "loading": "Loading the charts…",
+      "error": "Failed to load the library charts.",
+      "photos_one": "{{formatted}} photo",
+      "photos_other": "{{formatted}} photos",
+      "coverage": {
+        "title": "How far along the library is",
+        "hint": "How many photos already know where they were taken, can be searched by content, and have a name on a face.",
+        "gps": "Photos with a known place",
+        "content": "Photos searchable by content",
+        "faces": "Faces with a name",
+        "meter": "{{label}}: {{done}} of {{total}} ({{percent}})"
+      },
+      "years": {
+        "title": "Photos by the year they were taken",
+        "hint": "The library's whole history. Click a bar to open that year in the library.",
+        "summary": "Photos by the year they were taken, {{from}} to {{to}}. Photos in total: {{total}}. The busiest year is {{peakYear}}: {{peak}}.",
+        "bar": "{{year}}: {{photos}}",
+        "link": "Show photos taken in {{year}}",
+        "empty": "No photo has a known capture date yet."
+      },
+      "added": {
+        "title": "Added to the library",
+        "hint": "How many photos arrived over the last twelve months.",
+        "summary": "Photos added to the library over the last {{months}} months. Photos in total: {{total}}. The busiest month is {{peakMonth}}: {{peak}}.",
+        "bar": "{{month}}: {{photos}}"
+      },
+      "cameras": {
+        "title": "Most used cameras",
+        "hint": "The ten cameras behind the most photos. Click one to open it in the library.",
+        "summary": "The most used cameras, {{cameras}} of them ranked. The most photos come from {{top}}: {{photos}}.",
+        "bar": "{{camera}}: {{photos}}",
+        "link": "Show photos taken with {{camera}}",
+        "empty": "No photo names a camera yet."
+      },
+      "storage": {
+        "title": "Size by media type",
+        "hint": "How much room the originals of each kind take up.",
+        "summary": "Library size by media type, {{total}} in total.",
+        "bar": "{{media}}: {{size}}, {{photos}}",
+        "total": "{{total}} in total",
+        "media": {
+          "image": "Photos",
+          "live": "Live photos",
+          "video": "Videos",
+          "raw": "RAW"
+        }
+      },
+      "growth": {
+        "title": "Library growth",
+        "hint": "How much room the library took at the end of each year, by when the photos were added.",
+        "summary": "Library growth by the year photos were added, {{from}} to {{to}}. At the end of {{to}} it held {{total}}.",
+        "bar": "{{year}}: {{total}} in total, {{added}} added",
+        "empty": "Nothing has been added to the library yet."
+      }
+    },
     "groups": {
       "photos": "Photos",
       "content": "Search by content",

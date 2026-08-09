@@ -474,7 +474,10 @@ to `## Package map` in `CLAUDE.md`.
   embedded preview); **exception: TIFF magic doesn't carry RAW** — most RAW containers are TIFF-based
   (`II*`/`MM*`), so the RAW **extension** takes precedence over TIFF magic and the file goes through embedded-preview,
   not as a flat TIFF; otherwise RAW is chosen only when magic recognizes nothing (other RAW headers) → falls back to
-  the extension; `IsSupportedFormat`;
+  the extension; `IsSupportedFormat`; `RAWExtensions()` exports that RAW set (lowercase, no dot, sorted) —
+  because an upload is gated on `IsSupportedFormat` it is exactly the set of RAW files that can be in the
+  catalogue, which is how `internal/system` splits the library's storage by media type without keeping a second
+  list that would drift;
   **decompression-bomb guard** `EnforcePixelBound(path,maxPixels)` peeks `image.DecodeConfig` and
   returns `ErrImageTooLarge` when `width×height` exceeds the cap (before the caller's full decode
   allocates the bitmap); `maxPixels<=0` disables it and an unreadable header is left to the caller's
@@ -2711,8 +2714,9 @@ to `## Package map` in `CLAUDE.md`.
   `BackupReporter` (`backup.Service.Status`, **nil = not configured**)/`MapsReporter`
   (`mapy.Health.Snapshot`, **nil = no mapy.com key**)/`GeocodeReporter`
   (`placesjob.WindowBudget.Snapshot`, **nil = no mapy.com key**) → unit-testable with fakes
-  without a DB; `Service` = `New(Config{DB,Embeddings,EmbeddingURL,Jobs,Backup,Maps,Geocode,Imports,Library,
-  OriginalsPath,CachePath,StorageTTL,LibraryTTL,Clock})`; **`Collect(ctx) (Status,error)`** gathers `Status{Version,Database,
+  without a DB; `Service` = `New(Config{DB,Embeddings,EmbeddingURL,Jobs,Backup,Maps,Geocode,Imports,Library,Charts,
+  OriginalsPath,CachePath,StorageTTL,LibraryTTL,ChartsTTL,Clock})`; **`Collect(ctx) (Status,error)`** gathers
+  `Status{Version,Database,
   Embeddings,Jobs,Backup,Imports,Storage,Maps,Geocode}`: embeddings online/offline, the queue (by_state/by_type/total/
   dead_letter/pending_embeddings = queued+running `image_embed`/`face_detect`), the backup state+last
   result, the last import per source, the storage (the size of the originals+cache by a walk, free/total space via
@@ -2735,20 +2739,50 @@ to `## Package map` in `CLAUDE.md`.
   semi-joins on the `embeddings` PK / the unique `faces`, one CTE for the album types),
   **`LibraryStats(ctx) (Library,error)`** returns
   `Library{Photos,Videos,LivePhotos,Images,PhotosLive,PhotosArchived,PhotosWith(out)Embedding,PhotosWith(out)Faces,
-  PhotosGeocoded,PhotosPendingGeocode,Embeddings,Faces,Subjects,SubjectsPerson/Pet/Other,Markers,
+  PhotosWithGPS,PhotosGeocoded,PhotosPendingGeocode,Embeddings,Faces,FacesAssigned,Subjects,
+  SubjectsPerson/Pet/Other,Markers,
   MarkersAssigned/Unassigned,Albums,AlbumsManual/Folder/Moment/State/Month,Labels}`
   — the store returns **only raw counts**, the derived values (the live split, `Images` = total − video − live
   because the `media_type` index deliberately excludes the majority value, + the coverage gaps, clamped to 0) are computed by
   `Library.derive()`; `PhotosGeocoded` counts `photo_places` rows **with** coordinates (a row without them
   only records a GPS-less photo as processed) and `PhotosPendingGeocode` the live geotagged photos with no row
-  at all — the outstanding metered mapy.com spend; `libraryCache` memoizes for `defaultLibraryTTL` 30 s and **caches only a success**
+  at all — the outstanding metered mapy.com spend; `PhotosWithGPS` (photos with coordinates of their own, whatever
+  the source — the numerator of the "on the map" coverage meter, deliberately **not** `PhotosGeocoded`) and
+  `FacesAssigned` (detected faces that name a subject — unlike `MarkersAssigned` it excludes hand-drawn label
+  boxes) are the two counts the coverage meters need; `newLibraryCache` memoizes for `defaultLibraryTTL` 30 s and
+  **caches only a success**
   (an error goes out, the page must not render zeros as real counts); a nil `Library` → `errNoLibraryCounter`
-  instead of a panic), `internal/systemapi/`
-  (the HTTP API over the system state: the `StatusCollector` interface (`Collect`+`LibraryStats`, satisfied by
+  instead of a panic;
+  beside the counts it aggregates the **chart series** of the same statistics page: `ChartCounter`
+  (`AggregateCharts(ctx,since)`, satisfied by the same `Store`) runs five grouped queries in
+  `store_charts.go` — capture years, arrivals per month (bounded by `since`, so the range predicate stays
+  sargable on `idx_photos_live_created_at`), the top `topCameras`=10 cameras (make+model grouped, folded into a
+  display name by `cameraName`, the bare model kept for the library's `camera` filter), the bytes per media
+  bucket (image/live/video + **raw**, recognized by the extension list `imgconvert.RAWExtensions()` and carved
+  out of the images so the buckets stay disjoint) and the bytes per year of addition; every query counts the
+  **browsable** library (`archived_at IS NULL`, so a bar matches the library view it links to) and buckets time
+  **in UTC** (`AT TIME ZONE 'UTC'`, so buckets do not shift with the server's zone); the generic `collect[T]`
+  helper is the single query/scan/iterate loop behind all five;
+  **`LibraryCharts(ctx) (Charts,error)`** returns `Charts{PhotosByYear,AddedByMonth,TopCameras,StorageByMedia,
+  StorageByYear}` after `Charts.fill(now)` turns the raw series into drawable ones — empty years restored on both
+  year axes (a histogram whose gaps are merely missing draws a lie), the month window padded to exactly
+  `monthWindow`=12 months ending with the current one, every media bucket present in `mediaBuckets` order, the
+  running `CumulativeBytes` accumulated, and every slice non-nil (`[]`, never `null`); memoized by
+  `newChartsCache` for `defaultChartsTTL` **5 min** — ten times the counts' TTL, because a century-long histogram
+  does not move in five minutes and these aggregates are the more expensive of the two — off the **same clock**
+  the month window is derived from, so a cached snapshot's twelve months are the twelve that were current when it
+  was computed; a nil `Charts` → `errNoChartCounter`; both memoizations are the one generic `snapshotCache[T]`
+  (`cache.go`, success-only, never serving past its TTL) — the storage-usage cache deliberately stays its own,
+  because it caches failures too), `internal/systemapi/`
+  (the HTTP API over the system state: the `StatusCollector` interface (`Collect`+`LibraryStats`+`LibraryCharts`,
+  satisfied by
   `*system.Service`, fakeable); `NewAPI(Config{Service,RequireMaintainer,RequireAuth})`+`RegisterRoutes`
-  mounts `GET /system/status` behind `RequireMaintainer` (the snapshot; a failed collect → 500) and
+  mounts `GET /system/status` behind `RequireMaintainer` (the snapshot; a failed collect → 500),
   `GET /system/stats` behind `RequireAuth` (the library counts for **every logged-in user**; a failed aggregation → 500,
-  never a body of zeros); always mounted
+  never a body of zeros) and `GET /system/stats/charts` behind `RequireAuth` (the chart series; a failed
+  aggregation → 500, never empty series, which would draw as an empty library) — two endpoints rather than one
+  because the counts are cheap and are what an import is watched with, while the charts are heavier and change
+  slowly, so they get their own longer memoization and never hold the numbers back; always mounted
   (`buildSystemAPI` in `cmd/kukatko/system.go`, which builds its own stateless embeddings client just for the
   Healthy probe, shares the pool for the job/import/library stores, and passes the backup service nil-safely; mounted
   in `appendOpsAPIs` next to backup/restore)), `internal/capabilitiesapi/`

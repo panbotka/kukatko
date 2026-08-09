@@ -5,7 +5,9 @@
 // the build version. GET /system/stats is open to every signed-in user and
 // returns the library statistics — the instance-wide photo/embedding/face/people
 // counts — because knowing how big and how processed the library is, is not an
-// operations secret. It depends on the system service for data and on the auth
+// operations secret; GET /system/stats/charts serves those same readers the
+// series behind the counts (photos per year, arrivals per month, top cameras,
+// storage). It depends on the system service for data and on the auth
 // subsystem only for the two route guards, injected as middleware. The dashboard
 // polls these endpoints; quick actions reuse the existing
 // jobs/backup/import/maintenance APIs.
@@ -23,13 +25,15 @@ import (
 )
 
 // StatusCollector is the subset of system.Service the API needs: gathering one
-// status snapshot and the library counts. It is an interface so the API can be
-// tested with a fake.
+// status snapshot, the library counts and the chart series over them. It is an
+// interface so the API can be tested with a fake.
 type StatusCollector interface {
 	// Collect gathers the full system-status snapshot.
 	Collect(ctx context.Context) (system.Status, error)
 	// LibraryStats gathers the instance-wide library counts.
 	LibraryStats(ctx context.Context) (system.Library, error)
+	// LibraryCharts gathers the chart series behind the statistics page.
+	LibraryCharts(ctx context.Context) (system.Charts, error)
 }
 
 // API exposes the system status over HTTP. The route guards are supplied by the
@@ -65,12 +69,14 @@ func NewAPI(cfg Config) *API {
 // RegisterRoutes mounts the system endpoints onto r, which the caller has scoped
 // under the API base path (for example /api/v1):
 //
-//	GET /system/status  aggregated operational status snapshot (maintainer)
-//	GET /system/stats   instance-wide library counts (any signed-in user)
+//	GET /system/status        aggregated operational status snapshot (maintainer)
+//	GET /system/stats         instance-wide library counts (any signed-in user)
+//	GET /system/stats/charts  the chart series over those counts (any signed-in user)
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.Route("/system", func(r chi.Router) {
 		r.With(a.requireMaintainer).Get("/status", a.handleStatus)
 		r.With(a.requireAuth).Get("/stats", a.handleStats)
+		r.With(a.requireAuth).Get("/stats/charts", a.handleStatsCharts)
 	})
 }
 
@@ -95,6 +101,21 @@ func (a *API) handleStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, stats)
+}
+
+// handleStatsCharts returns the chart series behind the statistics page. It is a
+// separate endpoint from /system/stats on purpose: the counts are cheap and are
+// what an import is watched with, while these aggregates are heavier and change
+// slowly, so they get their own longer memoisation and never hold up the numbers.
+// A failed aggregation is answered with 500 rather than empty series, which would
+// draw as an empty library.
+func (a *API) handleStatsCharts(w http.ResponseWriter, r *http.Request) {
+	charts, err := a.service.LibraryCharts(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "collecting library charts failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, charts)
 }
 
 // errorBody is the JSON body returned for error responses.

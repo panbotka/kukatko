@@ -181,8 +181,10 @@ export interface LibraryStats {
   photos_with_faces: number
   photos_without_embedding: number
   photos_without_faces: number
+  photos_with_gps: number
   embeddings: number
   faces: number
+  faces_assigned: number
   subjects: number
   subjects_person: number
   subjects_pet: number
@@ -192,6 +194,63 @@ export interface LibraryStats {
   markers_unassigned: number
   albums: number
   labels: number
+}
+
+/** One bar of the capture-year histogram (`system.YearPhotos`). */
+export interface YearPhotos {
+  year: number
+  photos: number
+}
+
+/** One bar of the "added to the library" chart (`system.MonthPhotos`). */
+export interface MonthPhotos {
+  /** The calendar month as `YYYY-MM` — a bucket label, not a timestamp. */
+  month: string
+  photos: number
+}
+
+/** One bar of the top-cameras chart (`system.CameraPhotos`). */
+export interface CameraPhotos {
+  /** Display name, the make and model folded into one ("Canon EOS 5D"). */
+  camera: string
+  /** The bare `camera_model`, which is what the library's `camera` filter matches. */
+  model: string
+  photos: number
+}
+
+/** One slice of the storage-by-media breakdown (`system.MediaStorage`). */
+export interface MediaStorage {
+  /** The bucket: `image`, `live`, `video` or `raw`. */
+  media: string
+  photos: number
+  bytes: number
+}
+
+/** One bar of the library-growth chart (`system.YearStorage`). */
+export interface YearStorage {
+  /** The year the photos were **added** in, not the year they were taken. */
+  year: number
+  photos: number
+  bytes: number
+  /** The library's size at the end of that year; derived by the backend. */
+  cumulative_bytes: number
+}
+
+/**
+ * The chart series behind the statistics page (`system.Charts`), a separate
+ * endpoint from the counts above: heavier to aggregate, slower to change, and
+ * cached for longer server-side, so the cheap numbers are never held up by them.
+ *
+ * Every series covers the **browsable** library (the trash is excluded
+ * throughout), is gap-filled and ascending, and is never null — so a chart can
+ * walk it as a time axis without reconstructing the missing buckets.
+ */
+export interface LibraryCharts {
+  photos_by_year: YearPhotos[]
+  added_by_month: MonthPhotos[]
+  top_cameras: CameraPhotos[]
+  storage_by_media: MediaStorage[]
+  storage_by_year: YearStorage[]
 }
 
 /** One job from the admin listing (`jobs.Job`); only the id is needed here. */
@@ -217,6 +276,17 @@ export async function fetchSystemStatus(signal?: AbortSignal): Promise<SystemSta
  */
 export async function fetchLibraryStats(signal?: AbortSignal): Promise<LibraryStats> {
   return getJSON<LibraryStats>('/system/stats', signal)
+}
+
+/**
+ * Fetches the chart series behind the statistics page. Open to the same readers
+ * as {@link fetchLibraryStats} and deliberately a second request: the counts
+ * render as soon as they arrive, while these heavier aggregates fill the charts
+ * in behind them. It throws {@link ApiError} when the backend cannot aggregate,
+ * so callers show an error rather than an empty-looking library.
+ */
+export async function fetchLibraryCharts(signal?: AbortSignal): Promise<LibraryCharts> {
+  return getJSON<LibraryCharts>('/system/stats/charts', signal)
 }
 
 /**

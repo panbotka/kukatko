@@ -224,6 +224,64 @@
     "subtitle": "Jak velká knihovna je a kolik z ní je už zpracováno.",
     "loading": "Načítám statistiky…",
     "error": "Statistiky knihovny se nepodařilo načíst.",
+    "charts": {
+      "loading": "Načítám grafy…",
+      "error": "Grafy knihovny se nepodařilo načíst.",
+      "photos_one": "{{formatted}} fotka",
+      "photos_few": "{{formatted}} fotky",
+      "photos_many": "{{formatted}} fotky",
+      "photos_other": "{{formatted}} fotek",
+      "coverage": {
+        "title": "Jak je knihovna zpracovaná",
+        "hint": "Kolik fotek už zná své místo, umí se hledat podle obsahu a má u obličeje jméno.",
+        "gps": "Fotky se známým místem",
+        "content": "Fotky prohledatelné podle obsahu",
+        "faces": "Obličeje se jménem",
+        "meter": "{{label}}: {{done}} z {{total}} ({{percent}})"
+      },
+      "years": {
+        "title": "Fotky podle roku pořízení",
+        "hint": "Celá historie knihovny. Kliknutím na sloupec se rok otevře v knihovně.",
+        "summary": "Fotky podle roku pořízení, {{from}} až {{to}}. Celkem fotek: {{total}}. Nejvíc v roce {{peakYear}}: {{peak}}.",
+        "bar": "{{year}}: {{photos}}",
+        "link": "Zobrazit fotky z roku {{year}}",
+        "empty": "Zatím tu není žádná fotka se známým datem pořízení."
+      },
+      "added": {
+        "title": "Přírůstky knihovny",
+        "hint": "Kolik fotek přibylo za posledních dvanáct měsíců.",
+        "summary": "Přírůstky knihovny za posledních {{months}} měsíců. Celkem fotek: {{total}}. Nejvíc {{peakMonth}}: {{peak}}.",
+        "bar": "{{month}}: {{photos}}"
+      },
+      "cameras": {
+        "title": "Nejčastější fotoaparáty",
+        "hint": "Deset přístrojů s nejvíc fotkami. Kliknutím se otevřou v knihovně.",
+        "summary": "Nejčastější fotoaparáty, v žebříčku je jich {{cameras}}. Nejvíc fotek má {{top}}: {{photos}}.",
+        "bar": "{{camera}}: {{photos}}",
+        "link": "Zobrazit fotky z {{camera}}",
+        "empty": "Zatím tu není žádná fotka se známým fotoaparátem."
+      },
+      "storage": {
+        "title": "Velikost podle typu",
+        "hint": "Kolik místa zabírají originály jednotlivých druhů.",
+        "summary": "Velikost knihovny podle typu média, celkem {{total}}.",
+        "bar": "{{media}}: {{size}}, {{photos}}",
+        "total": "Celkem {{total}}",
+        "media": {
+          "image": "Fotky",
+          "live": "Živé fotky",
+          "video": "Videa",
+          "raw": "RAW"
+        }
+      },
+      "growth": {
+        "title": "Růst knihovny",
+        "hint": "Kolik knihovna zabírala na konci každého roku, podle data přidání.",
+        "summary": "Růst knihovny podle roku přidání, {{from}} až {{to}}. Na konci roku {{to}} zabírala {{total}}.",
+        "bar": "{{year}}: celkem {{total}}, přibylo {{added}}",
+        "empty": "Do knihovny zatím nic nepřibylo."
+      }
+    },
     "groups": {
       "photos": "Fotky",
       "content": "Vyhledávání podle obsahu",

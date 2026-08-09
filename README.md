@@ -126,7 +126,11 @@ favourites and ratings, bulk editing — including re-dating a whole shelf of sc
 grain you actually know ("1974", "the seventies"), which is then shown as that period and never as a
 day nobody claimed — multi-upload from a phone, duplicate detection, a trash with
 retention, accounts with four roles, a durable audit trail, S3 backup with a restore runbook, and
-import from any folder on disk — a Google Takeout export included, sidecars and all. Every view
+import from any folder on disk — a Google Takeout export included, sidecars and all. There is also a
+statistics page that answers what the library actually looks like: how many photos were taken in each
+year of its 1905–2026 span (click a bar and that year opens in the library), how many arrived in each
+of the last twelve months, which cameras took most of it, what it costs in bytes by media type and how
+that grew — plus how far along the processing is, as three plain progress rows. Every view
 lives in the URL and every browser tab is named after what it shows (`Svatba 1965 · Kukátko`), so
 Back, a second tab, a bookmark and the history list all work the way the rest of the web does.
 

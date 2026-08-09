@@ -138,17 +138,28 @@ export function formatDateTimeMinutes(value: string | number | Date, locale: str
  * bad bucket never surfaces a wrong label.
  */
 export function formatMonth(year: number, month: number, locale: string): string {
+  const name = formatMonthName(year, month, locale)
+  return name === '' ? '' : `${name} ${year}`
+}
+
+/**
+ * Formats a 1-based calendar month (`month` in 1–12) as the locale's short month
+ * name alone, e.g. `2026, 1, 'en'` → `"Jan"` and `'cs'` → `"led"`. It is the
+ * name half of {@link formatMonth}, exported on its own for a chart axis where
+ * the year is already said in the label above it and repeating it on every tick
+ * would not fit. An out-of-range month renders as an empty string.
+ */
+export function formatMonthName(year: number, month: number, locale: string): string {
   if (!Number.isInteger(month) || month < 1 || month > 12) {
     return ''
   }
   // Build the date from parts (day 1, local midnight) so the short month name is
-  // stable regardless of the host timezone; only the month name is localised,
-  // the year is appended verbatim.
+  // stable regardless of the host timezone.
   const date = new Date(year, month - 1, 1)
   if (Number.isNaN(date.getTime())) {
     return ''
   }
-  return `${date.toLocaleDateString(locale, { month: 'short' })} ${year}`
+  return date.toLocaleDateString(locale, { month: 'short' })
 }
 
 /**

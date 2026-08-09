@@ -52,6 +52,17 @@ func seedFace(t *testing.T, db *database.DB, photoUID string, index int) {
 	}
 }
 
+// seedFaceSubject names an already-seeded face. That is what the faces-assigned
+// coverage count measures — a detected face somebody has put a name to — as
+// opposed to a marker, which may also be a hand-drawn label box.
+func seedFaceSubject(t *testing.T, db *database.DB, photoUID string, index int, subjectUID string) {
+	t.Helper()
+	const stmt = `UPDATE faces SET subject_uid = $3 WHERE photo_uid = $1 AND face_index = $2`
+	if _, err := db.Pool().Exec(t.Context(), stmt, photoUID, index, subjectUID); err != nil {
+		t.Fatalf("assign face %s/%d: %v", photoUID, index, err)
+	}
+}
+
 // seedSubject inserts one subject of the given kind (person, pet, other).
 func seedSubject(t *testing.T, db *database.DB, uid, kind string) {
 	t.Helper()
@@ -131,8 +142,8 @@ func seedLabel(t *testing.T, db *database.DB, uid string) {
 //	p10 image, archived, GPS, not geocoded — archived, so not backlog
 //	p11 image, live,     no GPS, recorded as processed without coordinates
 //
-// plus three subjects (one of each kind), four markers (two named), three albums
-// of three different types and three labels.
+// plus three subjects (one of each kind), one of p1's two faces named, four
+// markers (two named), three albums of three different types and three labels.
 func seedLibrary(t *testing.T, db *database.DB) {
 	t.Helper()
 	seedPhoto(t, db, "p1", "image", false)
@@ -156,6 +167,8 @@ func seedLibrary(t *testing.T, db *database.DB) {
 	seedSubject(t, db, "s1", "person")
 	seedSubject(t, db, "s2", "pet")
 	seedSubject(t, db, "s3", "other")
+
+	seedFaceSubject(t, db, "p1", 0, "s1")
 
 	seedMarker(t, db, "m1", "p1", "s1")
 	seedMarker(t, db, "m2", "p1", "s2")
@@ -212,10 +225,12 @@ func TestLibraryStats_CountsFixture(t *testing.T) {
 		PhotosWithFaces:        3,
 		PhotosWithoutEmbedding: 7,
 		PhotosWithoutFaces:     8,
+		PhotosWithGPS:          3,
 		PhotosGeocoded:         1,
 		PhotosPendingGeocode:   1,
 		Embeddings:             4,
 		Faces:                  4,
+		FacesAssigned:          1,
 		Subjects:               3,
 		SubjectsPerson:         1,
 		SubjectsPet:            1,

@@ -6,18 +6,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
-import type { LibraryStats } from '../services/system'
+import type { LibraryCharts, LibraryStats } from '../services/system'
 
 import { StatsPage } from './StatsPage'
 
-// Mock the system service so the page's single data source is controlled.
+// Mock the system service so both of the page's data sources are controlled.
 vi.mock('../services/system', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/system')>()
-  return { ...actual, fetchLibraryStats: vi.fn() }
+  return { ...actual, fetchLibraryStats: vi.fn(), fetchLibraryCharts: vi.fn() }
 })
 
-const { fetchLibraryStats } = await import('../services/system')
+const { fetchLibraryStats, fetchLibraryCharts } = await import('../services/system')
 const fetchMock = vi.mocked(fetchLibraryStats)
+const chartsMock = vi.mocked(fetchLibraryCharts)
 
 /** A full counts fixture, in the shape the backend derives them. */
 function stats(overrides: Partial<LibraryStats> = {}): LibraryStats {
@@ -30,8 +31,10 @@ function stats(overrides: Partial<LibraryStats> = {}): LibraryStats {
     photos_with_faces: 14567,
     photos_without_embedding: 218,
     photos_without_faces: 5743,
+    photos_with_gps: 12186,
     embeddings: 20092,
     faces: 112806,
+    faces_assigned: 84604,
     subjects: 42,
     subjects_person: 38,
     subjects_pet: 3,
@@ -41,6 +44,40 @@ function stats(overrides: Partial<LibraryStats> = {}): LibraryStats {
     markers_unassigned: 150,
     albums: 12,
     labels: 27,
+    ...overrides,
+  }
+}
+
+/**
+ * Chart series in the shape the backend fills them: gap-filled years, a full
+ * twelve-month window, every media bucket, and the running storage total.
+ */
+function charts(overrides: Partial<LibraryCharts> = {}): LibraryCharts {
+  return {
+    photos_by_year: [
+      { year: 1905, photos: 12 },
+      { year: 1906, photos: 0 },
+      { year: 1907, photos: 40 },
+    ],
+    added_by_month: [
+      { month: '2025-09', photos: 100 },
+      { month: '2025-10', photos: 0 },
+      { month: '2025-11', photos: 250 },
+    ],
+    top_cameras: [
+      { camera: 'Canon EOS 5D', model: 'Canon EOS 5D', photos: 800 },
+      { camera: 'Apple iPhone 13', model: 'iPhone 13', photos: 400 },
+    ],
+    storage_by_media: [
+      { media: 'image', photos: 20, bytes: 4096 },
+      { media: 'live', photos: 0, bytes: 0 },
+      { media: 'video', photos: 2, bytes: 2048 },
+      { media: 'raw', photos: 1, bytes: 1024 },
+    ],
+    storage_by_year: [
+      { year: 2025, photos: 10, bytes: 4096, cumulative_bytes: 4096 },
+      { year: 2026, photos: 13, bytes: 3072, cumulative_bytes: 7168 },
+    ],
     ...overrides,
   }
 }
@@ -79,6 +116,8 @@ beforeEach(async () => {
   await i18n.changeLanguage('en')
   fetchMock.mockReset()
   fetchMock.mockResolvedValue(stats())
+  chartsMock.mockReset()
+  chartsMock.mockResolvedValue(charts())
 })
 
 describe('StatsPage', () => {
@@ -188,6 +227,94 @@ describe('StatsPage', () => {
       expect(fetchMock).toHaveBeenCalledTimes(2)
     })
     expect(await screen.findByTestId('stat-headline-photos')).toHaveTextContent('20,310')
+  })
+
+  it('draws the four charts with their key numbers in the accessible name', async () => {
+    renderPage()
+
+    expect(
+      await screen.findByRole('group', {
+        name: 'Photos by the year they were taken, 1905 to 1907. Photos in total: 52. The busiest year is 1907: 40.',
+      }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('img', {
+        name: 'Photos added to the library over the last 3 months. Photos in total: 350. The busiest month is Nov 2025: 250.',
+      }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('group', {
+        name: 'The most used cameras, 2 of them ranked. The most photos come from Canon EOS 5D: 800.',
+      }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('img', { name: 'Library size by media type, 7.0 KB in total.' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('img', {
+        name: 'Library growth by the year photos were added, 2025 to 2026. At the end of 2026 it held 7.0 KB.',
+      }),
+    ).toBeInTheDocument()
+  })
+
+  it('opens a year of the histogram in the library, through the period filter', async () => {
+    renderPage()
+
+    const bar = await screen.findByRole('link', { name: 'Show photos taken in 1907' })
+    expect(bar).toHaveAttribute('href', '/?taken_after=1907-01-01&taken_before=1907-12-31')
+    // An empty year leads nowhere: there would be nothing behind the link.
+    expect(screen.queryByRole('link', { name: 'Show photos taken in 1906' })).toBeNull()
+  })
+
+  it('opens a camera in the library through its own filter', async () => {
+    renderPage()
+
+    expect(
+      await screen.findByRole('link', { name: 'Show photos taken with Apple iPhone 13' }),
+    ).toHaveAttribute('href', '/?camera=iPhone+13')
+  })
+
+  it('reports the coverage shares beside the counts', async () => {
+    renderPage()
+
+    // 12 186 of 20 310 photos know where they were taken.
+    expect(await screen.findByTestId('coverage-gps')).toHaveTextContent('60%')
+    expect(screen.getByTestId('coverage-content')).toHaveTextContent('98.9%')
+    expect(screen.getByTestId('coverage-faces')).toHaveTextContent('75%')
+  })
+
+  it('keeps the counts readable when only the charts fail', async () => {
+    chartsMock.mockRejectedValue(new Error('boom'))
+    renderPage()
+
+    expect(await screen.findByText('Failed to load the library charts.')).toBeInTheDocument()
+    // The counts came from the other endpoint and are unaffected.
+    expect(screen.getByTestId('stat-headline-photos')).toHaveTextContent('20,310')
+    expect(screen.queryByTestId('library-charts')).not.toBeInTheDocument()
+  })
+
+  it('retries only the charts from their own error state', async () => {
+    const user = userEvent.setup()
+    chartsMock.mockRejectedValueOnce(new Error('boom'))
+    renderPage()
+
+    const error = await screen.findByTestId('error-state')
+    await user.click(within(error).getByRole('button', { name: /try again/i }))
+
+    await waitFor(() => {
+      expect(chartsMock).toHaveBeenCalledTimes(2)
+    })
+    expect(await screen.findByTestId('library-charts')).toBeInTheDocument()
+    // The counts were never refetched: the two endpoints fail and retry apart.
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('says so instead of drawing an empty frame when a series has nothing in it', async () => {
+    chartsMock.mockResolvedValue(charts({ photos_by_year: [], top_cameras: [] }))
+    renderPage()
+
+    expect(await screen.findByText('No photo has a known capture date yet.')).toBeInTheDocument()
+    expect(screen.getByText('No photo names a camera yet.')).toBeInTheDocument()
   })
 
   it('groups the numbers in the active language', async () => {

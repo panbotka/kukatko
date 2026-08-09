@@ -118,7 +118,7 @@ func TestLibraryCache_MemoisesWithinTTL(t *testing.T) {
 	counter := &fakeCounter{counts: Library{Photos: 10, PhotosWithEmbedding: 4}}
 	cache := newLibraryCache(counter, time.Minute, func() time.Time { return now })
 
-	first, err := cache.counts(t.Context())
+	first, err := cache.get(t.Context())
 	if err != nil {
 		t.Fatalf("first counts: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestLibraryCache_MemoisesWithinTTL(t *testing.T) {
 	}
 
 	now = now.Add(30 * time.Second)
-	second, err := cache.counts(t.Context())
+	second, err := cache.get(t.Context())
 	if err != nil {
 		t.Fatalf("second counts: %v", err)
 	}
@@ -148,12 +148,12 @@ func TestLibraryCache_RecomputesAfterTTL(t *testing.T) {
 	counter := &fakeCounter{counts: Library{Photos: 1}}
 	cache := newLibraryCache(counter, time.Minute, func() time.Time { return now })
 
-	if _, err := cache.counts(t.Context()); err != nil {
+	if _, err := cache.get(t.Context()); err != nil {
 		t.Fatalf("first counts: %v", err)
 	}
 	now = now.Add(2 * time.Minute)
 	counter.counts = Library{Photos: 2}
-	got, err := cache.counts(t.Context())
+	got, err := cache.get(t.Context())
 	if err != nil {
 		t.Fatalf("second counts: %v", err)
 	}
@@ -175,7 +175,7 @@ func TestLibraryCache_ErrorIsReturnedNotCached(t *testing.T) {
 	counter := &fakeCounter{err: wantErr}
 	cache := newLibraryCache(counter, time.Minute, nil)
 
-	got, err := cache.counts(t.Context())
+	got, err := cache.get(t.Context())
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("counts error = %v, want %v", err, wantErr)
 	}
@@ -185,7 +185,7 @@ func TestLibraryCache_ErrorIsReturnedNotCached(t *testing.T) {
 
 	counter.err = nil
 	counter.counts = Library{Photos: 3}
-	recovered, err := cache.counts(t.Context())
+	recovered, err := cache.get(t.Context())
 	if err != nil {
 		t.Fatalf("counts after recovery: %v", err)
 	}
