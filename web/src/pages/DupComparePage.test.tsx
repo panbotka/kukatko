@@ -58,6 +58,7 @@ function group(id: string, keeper: string, ...others: string[]): DuplicateGroup 
     id,
     reason: 'phash',
     keeper_uid: keeper,
+    confirmed: false,
     members: [member(keeper, 4000, 3000), ...others.map((u) => member(u, 1000, 750))],
   }
 }

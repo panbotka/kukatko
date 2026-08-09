@@ -172,6 +172,33 @@ export async function undismissDuplicate(
 }
 
 /**
+ * Records a duplicate confirmation via `POST /feedback/duplicate-confirmations`:
+ * "yes, this really is the same photo twice". It merges nothing and archives
+ * nothing — merging stays an explicit act on the duplicates page, with a preview
+ * in front of it — but a confirmed group is ranked first there, as the one where
+ * the judgement has already been made. Idempotent and unordered, like the
+ * dismissal it mirrors.
+ */
+export async function confirmDuplicate(
+  req: DuplicateDismissal,
+  signal?: AbortSignal,
+): Promise<void> {
+  await send('POST', '/feedback/duplicate-confirmations', req, signal)
+}
+
+/**
+ * Withdraws a duplicate confirmation via `DELETE /feedback/duplicate-confirmations`,
+ * the inverse of {@link confirmDuplicate}, dropping the group back to being a
+ * machine guess. Also idempotent.
+ */
+export async function unconfirmDuplicate(
+  req: DuplicateDismissal,
+  signal?: AbortSignal,
+): Promise<void> {
+  await send('DELETE', '/feedback/duplicate-confirmations', req, signal)
+}
+
+/**
  * A "this person really is marked more than once here" dismissal
  * (`feedbackapi.markerDismissalInput`): the photo and the person on it. Recorded
  * from the repeated-marker review's "leave it be", for the genuine cases — a

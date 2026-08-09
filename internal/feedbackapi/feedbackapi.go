@@ -50,6 +50,12 @@ type Store interface {
 	// UndismissDuplicate takes a duplicate dismissal back, idempotently and
 	// audited.
 	UndismissDuplicate(ctx context.Context, key feedback.DuplicateDismissalKey, entry audit.Entry) error
+	// ConfirmDuplicate records that two photos really ARE the same shot,
+	// idempotently and audited. It merges nothing.
+	ConfirmDuplicate(ctx context.Context, key feedback.DuplicateConfirmationKey, entry audit.Entry) error
+	// UnconfirmDuplicate takes a duplicate confirmation back, idempotently and
+	// audited.
+	UnconfirmDuplicate(ctx context.Context, key feedback.DuplicateConfirmationKey, entry audit.Entry) error
 	// DismissDuplicateMarkers records that a person really IS marked more than
 	// once on a photo, idempotently and audited.
 	DismissDuplicateMarkers(
@@ -94,6 +100,8 @@ func NewAPI(cfg Config) *API {
 //	DELETE /feedback/face-confirmations    RequireWrite  take a face confirmation back
 //	POST   /feedback/duplicate-dismissals  RequireWrite  settle a pair as not duplicates
 //	DELETE /feedback/duplicate-dismissals  RequireWrite  take a duplicate dismissal back
+//	POST   /feedback/duplicate-confirmations  RequireWrite  settle a pair as the same shot
+//	DELETE /feedback/duplicate-confirmations  RequireWrite  take that confirmation back
 //	POST   /feedback/duplicate-marker-dismissals  RequireWrite  settle "she really is
 //	                                                            marked twice here"
 //	DELETE /feedback/duplicate-marker-dismissals  RequireWrite  take that back
@@ -111,6 +119,8 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.With(a.requireWrite).Delete("/face-confirmations", a.handleFaceUnconfirm)
 		r.With(a.requireWrite).Post("/duplicate-dismissals", a.handleDuplicateDismiss)
 		r.With(a.requireWrite).Delete("/duplicate-dismissals", a.handleDuplicateUndismiss)
+		r.With(a.requireWrite).Post("/duplicate-confirmations", a.handleDuplicateConfirm)
+		r.With(a.requireWrite).Delete("/duplicate-confirmations", a.handleDuplicateUnconfirm)
 		r.With(a.requireWrite).Post("/duplicate-marker-dismissals", a.handleMarkerDismiss)
 		r.With(a.requireWrite).Delete("/duplicate-marker-dismissals", a.handleMarkerUndismiss)
 	})

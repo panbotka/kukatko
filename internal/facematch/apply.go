@@ -124,7 +124,10 @@ func assignDetails(req AssignRequest, subject people.Subject) map[string]any {
 }
 
 // unassignDetails builds the audit details for clearing a face's subject: the
-// photo, the affected marker and, when present, the linked face index.
+// photo, the affected marker and, when present, the linked face index and the
+// caller's `via` marker. The via matters here for the same reason it does on an
+// assignment: detaching a wrongly assigned face is how the review game's outlier
+// check records a "no", and the leaderboard counts decisions by their audit row.
 func unassignDetails(req AssignRequest) map[string]any {
 	details := map[string]any{
 		"action":     req.Action,
@@ -133,6 +136,9 @@ func unassignDetails(req AssignRequest) map[string]any {
 	}
 	if req.FaceIndex != nil {
 		details["face_index"] = *req.FaceIndex
+	}
+	if req.Via != "" {
+		details["via"] = req.Via
 	}
 	return details
 }

@@ -896,7 +896,19 @@ long-running and belong on the machine where the instance runs — so they remai
   batch takes at most this many per entity and never asks about the same one more than **twice in a row** while
   another entity still has a question waiting. With the default batch of 20 that forces a rebuild to draw on at
   least five different people or labels — lower it for more variety at the cost of a costlier rebuild (a batch
-  must be filled from more sources), raise it for the opposite. Every rebuild logs the result at debug level
+  must be filled from more sources), raise it for the opposite.
+  `outlier_budget` / `outlier_threshold` (**defaults 4 / 0.5**) belong to the **outlier check** — the question
+  "is this really X?" over a face already assigned to X but sitting far from X's centroid. Ranking one person
+  loads every face assigned to them and scores it against a trimmed centroid, which is the most expensive
+  per-person read the game does, so the window is smaller than `face_budget`; the cursor rotates, so successive
+  rebuilds cover everybody. The threshold is how far a face must sit (cosine distance) before it is worth
+  asking about: two people's embeddings sit around 1.0, so 0.5 is comfortably past "a bad photo of the right
+  person". Lower it to hear about borderline assignments too — at the cost of a game that mostly asks about
+  correct ones, which is precisely how a player learns to answer yes without looking. The other two new
+  question kinds have no keys of their own: the **place check** follows `location_estimate.enabled` (no
+  estimator, no estimates to rule on) and the **duplicate check** follows `duplicate.enabled` and its
+  thresholds, the same switch that makes `GET /duplicates` answer 503 — so the game and the page can never
+  disagree about whether duplicates exist. Every rebuild logs the result at debug level
   (`review: queue rebuilt` with `questions`/`entities`/`longest_run`/`sure`/`band`). Apart from the budgets, the
   review does not take the face side with its own keys — it runs through sweep/candidates and their
   `sweep.*`/`candidates.*` limits (**and the memory bound lives there**: the queue asks for the whole window

@@ -27,6 +27,14 @@ export interface DuplicateGroup {
   id: string
   reason: DuplicateReason
   keeper_uid: string
+  /**
+   * A human has already answered "yes, this is the same photo twice" about one
+   * of this group's pairs — from the review game's duplicate check, or by
+   * confirming the pair directly. It changes nothing about detection; it is why
+   * the backend sorts this group **first**, as the one where merging is a
+   * decision already made rather than one still to be judged.
+   */
+  confirmed: boolean
   members: DuplicateMember[]
 }
 

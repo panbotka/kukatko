@@ -59,8 +59,31 @@ async function postJSON<T>(path: string, body: unknown, signal?: AbortSignal): P
   return (await res.json()) as T
 }
 
-/** What a question asks about: a face↔person match or a photo↔label match. */
-export type ReviewKind = 'face' | 'label'
+/**
+ * What a question asks about (`review.Kind`):
+ *
+ * - `face` — is this unnamed face a given person?
+ * - `label` — should this photo carry a given label?
+ * - `place` — was this photo taken where the geo-estimator guessed?
+ * - `duplicate` — are these two near-identical photos the same shot?
+ * - `outlier` — is this face, already assigned to X, really X?
+ *
+ * The last three check work the machine already *did*, so their answers settle
+ * something rather than merely teaching a search. None of them destroys
+ * anything: the duplicate check records an opinion and never merges.
+ */
+export type ReviewKind = 'face' | 'label' | 'place' | 'duplicate' | 'outlier'
+
+/** The estimated location a place question is about (`review.PlaceGuess`). */
+export interface ReviewPlaceGuess {
+  /** The most specific name of the place — never empty. */
+  name: string
+  country?: string
+  city?: string
+  place_name?: string
+  lat: number
+  lng: number
+}
 
 /** The player's verdict on one question. */
 export type ReviewAnswer = 'yes' | 'no' | 'skip'
@@ -89,18 +112,29 @@ export interface ReviewQuestion {
   confidence: number
   /** The full catalog record with media URLs stamped. */
   photo: Photo
-  /** The person under question (face questions only). */
+  /** The person under question (face and outlier questions). */
   subject?: Subject
-  /** The face's per-photo slot (face questions only). */
+  /** The face's per-photo slot (face and outlier questions). */
   face_index?: number
-  /** The face's bounding box (face questions only). */
+  /** The face's bounding box (face and outlier questions). */
   bbox?: ReviewFaceBox
   /** What confirming would do (face questions only). */
   action?: 'create_marker' | 'assign_person'
-  /** The existing marker a yes would assign (`assign_person` questions only). */
+  /**
+   * The marker the answer acts on: the one a face yes would assign, or the one
+   * an outlier no would detach the person from.
+   */
   marker_uid?: string
   /** The label under question (label questions only). */
   label?: Label
+  /** The estimated location under question (place questions only). */
+  place?: ReviewPlaceGuess
+  /** The second photo of the pair (duplicate questions only). */
+  other?: Photo
+  /** The duplicate group the pair belongs to (duplicate questions only). */
+  group_id?: string
+  /** The face's cosine distance from its person's centroid (outlier questions). */
+  distance?: number
 }
 
 /**
@@ -144,7 +178,10 @@ export interface ReviewQueue {
 
 /** Response body of `POST /review/answer` (`review.AnswerResult`). */
 export interface ReviewAnswerResult {
-  /** One of assigned, labeled, rejected, skipped, already_answered or gone. */
+  /**
+   * What the answer wrote: assigned, labeled, confirmed, cleared, detached,
+   * rejected, skipped, already_answered or gone.
+   */
   result: string
   answered: number
   remaining: number

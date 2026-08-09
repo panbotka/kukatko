@@ -227,9 +227,9 @@ func parseReviewFilter(q queryValues, filter *audit.Filter) error {
 	switch decision := q.Get("decision"); decision {
 	case "":
 	case decisionYes:
-		filter.Actions = []string{audit.ActionFaceAssign, audit.ActionLabelAttach}
+		filter.Actions = audit.ReviewYesActions()
 	case decisionNo:
-		filter.Actions = []string{audit.ActionFaceReject, audit.ActionLabelReject}
+		filter.Actions = audit.ReviewNoActions()
 	default:
 		return errors.New("decision filter only supports 'yes' or 'no'")
 	}

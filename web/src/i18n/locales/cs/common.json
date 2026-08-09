@@ -2326,7 +2326,9 @@
         "title": "Hotovo",
         "hint": "Všechny nalezené dvojice máte vyřešené."
       }
-    }
+    },
+    "confirmed": "Potvrzeno",
+    "confirmedTitle": "Někdo už při třídění potvrdil, že jde o stejnou fotku. Proto je skupina nahoře."
   },
   "duplicateMarkers": {
     "title": "Vícenásobné značky",
@@ -2671,7 +2673,10 @@
   "review": {
     "question": {
       "face": "Je na fotce <strong>{{name}}</strong>?",
-      "label": "Sedí k fotce štítek <strong>{{name}}</strong>?"
+      "label": "Sedí k fotce štítek <strong>{{name}}</strong>?",
+      "place": "Byla tahle fotka pořízena v <strong>{{name}}</strong>?",
+      "duplicate": "Je to <strong>stejná fotka</strong>?",
+      "outlier": "Je na téhle fotce opravdu <strong>{{name}}</strong>?"
     },
     "confidence": "Jistota {{percent}} %",
     "photoAlt": "Posuzovaná fotka",
@@ -2731,6 +2736,20 @@
       "retryAnswers": "Uložit znovu",
       "dismiss": "Zahodit",
       "undo": "Odpověď se nepodařilo vrátit."
+    },
+    "duplicate": {
+      "hint": "Porovnej obě fotky vedle sebe. Nic se nesloučí — jen si poznamenáme tvůj názor.",
+      "altFirst": "První fotka z dvojice",
+      "altSecond": "Druhá fotka z dvojice",
+      "dimensions": "{{width}} × {{height}} px"
+    },
+    "outlier": {
+      "hint": "Výřez obličeje, vedle něj celá fotka pro kontext.",
+      "faceAlt": "Posuzovaný obličej",
+      "contextAlt": "Celá fotka, na které obličej je"
+    },
+    "place": {
+      "hint": "Místo jsme odhadli z fotek pořízených poblíž v čase."
     }
   },
   "announcement": {

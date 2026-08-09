@@ -82,7 +82,7 @@ func TestQueue_monotonyBaseline(t *testing.T) {
 	// baseline: what is measured is informativeness plus the kind interleave.
 	f.svc.orderQuestions(mat.faceQs.band, tierBand)
 	f.svc.orderQuestions(mat.labelQs.band, tierBand)
-	old := interleave(mat.faceQs.band, mat.labelQs.band)
+	old := interleaveKinds([][]Question{mat.faceQs.band, mat.labelQs.band})
 	batch := old[:min(DefaultQueueSize, len(old))]
 	run := longestEntityRun(batch)
 	t.Logf("baseline: a batch of %d asks about %d entities, longest run %d\n%s",

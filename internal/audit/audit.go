@@ -38,6 +38,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -64,6 +65,15 @@ const (
 	// ActionDuplicateUndismiss records a user taking a duplicate dismissal back,
 	// letting the pair be offered for review again.
 	ActionDuplicateUndismiss = "duplicate.undismiss"
+	// ActionDuplicateConfirm records a user settling a duplicate pair as "yes,
+	// this is the same photo twice". Like the dismissal it records an opinion and
+	// merges nothing — the merge stays an explicit, separate act on the duplicates
+	// page — but the group it belongs to can now be ranked as human-confirmed. The
+	// canonical pair is the target and the details.
+	ActionDuplicateConfirm = "duplicate.confirm"
+	// ActionDuplicateUnconfirm records a user taking a duplicate confirmation
+	// back, so the group drops back to being a machine guess.
+	ActionDuplicateUnconfirm = "duplicate.unconfirm"
 	// ActionDuplicateMarkerDismiss records a user settling a repeated-marker
 	// group as "this person really is marked twice on this photo" (a double
 	// exposure, a mirror, a photo of a photo). Like the duplicate dismissal it
@@ -76,6 +86,18 @@ const (
 	ActionDuplicateMarkerUndismiss = "duplicate_marker.undismiss"
 	// ActionPhotoUpdate records a single-photo metadata edit (PATCH).
 	ActionPhotoUpdate = "photo.update"
+	// ActionLocationConfirm records a user accepting an estimated location ("yes,
+	// this photo was taken there"): the coordinates stay and location_source is
+	// promoted from 'estimate' to 'manual', so nothing downstream still presents
+	// them as a guess. It is a distinct action rather than a photo.update so the
+	// decision is countable — the review leaderboard and the decision view read
+	// the action, not the diff.
+	ActionLocationConfirm = "location.confirm"
+	// ActionLocationReject records a user throwing an estimated location away
+	// ("no, it was not taken there"): the coordinates are cleared and
+	// location_source is stamped 'manual', the tombstone that keeps the estimator
+	// from handing the same guess back on the next backfill.
+	ActionLocationReject = "location.reject"
 	// ActionPhotoArchive records moving a photo to the trash (soft delete).
 	ActionPhotoArchive = "photo.archive"
 	// ActionPhotoUnarchive records restoring a photo from the trash.
@@ -222,6 +244,59 @@ const (
 	// recorded in the entry's details.
 	ActionLibraryReset = "library.reset"
 )
+
+// ViaReview is the details.via marker every decisive review-game answer carries.
+// It is what tells a review decision apart from the same action performed on an
+// ordinary curation page, and it is the predicate of the partial index behind
+// the leaderboard (migration 0037).
+const ViaReview = "review"
+
+// The review game's decision vocabulary, shared by everything that has to agree
+// on it: the leaderboard aggregation (internal/review), the admin decision view
+// (internal/auditapi) and the frontend's own labels. It is one list rather than
+// three copies because a new question type has to be countable the moment it is
+// answerable — the leaderboard silently under-counting a whole question type is
+// exactly the drift a shared list prevents.
+//
+// The buckets are "the player said yes" and "the player said no", not "this
+// wrote data" — a confirmation records only an opinion, and that is still a
+// decision the player made.
+var (
+	// reviewYesActions are the confirmations: assign a face, attach a label,
+	// vouch for an assigned face (outlier check), accept an estimated location
+	// (place check) and settle a pair as really duplicate (duplicate check).
+	reviewYesActions = []string{
+		ActionFaceAssign, ActionLabelAttach, ActionFaceConfirm,
+		ActionLocationConfirm, ActionDuplicateConfirm,
+	}
+	// reviewNoActions are the rejections: reject a face guess, reject a label
+	// guess, detach a wrongly assigned face (outlier check), throw an estimated
+	// location away (place check) and settle a pair as genuinely different
+	// (duplicate check).
+	reviewNoActions = []string{
+		ActionFaceReject, ActionLabelReject, ActionFaceUnassign,
+		ActionLocationReject, ActionDuplicateDismiss,
+	}
+)
+
+// ReviewYesActions returns, in a fresh slice, the audit actions a review "yes"
+// can produce.
+func ReviewYesActions() []string {
+	return slices.Clone(reviewYesActions)
+}
+
+// ReviewNoActions returns, in a fresh slice, the audit actions a review "no" can
+// produce.
+func ReviewNoActions() []string {
+	return slices.Clone(reviewNoActions)
+}
+
+// ReviewDecisionActions returns, in a fresh slice, every action a review answer
+// can produce — the union of the two buckets, which is what bounds a scan that
+// counts decisions of either kind.
+func ReviewDecisionActions() []string {
+	return append(ReviewYesActions(), reviewNoActions...)
+}
 
 // insertSQL appends one audit entry. It is shared by Store.Record and the
 // package-level Write so the column order stays in one place.
@@ -400,8 +475,8 @@ type Filter struct {
 	// (face.assign + label.attach) of the review decision view.
 	Actions []string
 	// ReviewOnly restricts to the review game's decisive answers: audit rows
-	// tagged details.via = "review" (face.assign, label.attach, face.reject,
-	// label.reject). It backs the admin per-user decision view.
+	// tagged details.via = ViaReview. Which actions those are is
+	// ReviewDecisionActions. It backs the admin per-user decision view.
 	ReviewOnly bool
 	// Since restricts to entries created at or after this instant.
 	Since *time.Time

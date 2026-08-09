@@ -654,3 +654,119 @@ func TestDuplicateMarkerDismissalRejectsBadKeys(t *testing.T) {
 		t.Fatalf("row count after rejected keys = %d, want 0", n)
 	}
 }
+
+// TestDuplicateConfirmationLifecycle checks the positive verdict on a duplicate
+// pair: idempotent in either argument order, readable back, reversible, stored
+// canonically, and attributed to the user who made it — the mirror of the
+// dismissal lifecycle above.
+//
+// The one thing it must NOT do is anything to the photos. Confirming that two
+// files are the same shot and deciding which copy survives are different acts,
+// and only the second destroys something; the review game records the first and
+// never the second.
+func TestDuplicateConfirmationLifecycle(t *testing.T) {
+	f := newFixtures(t)
+	ctx := t.Context()
+	a := f.makePhoto(t, "dupconf_a")
+	b := f.makePhoto(t, "dupconf_b")
+	key := feedback.DuplicateConfirmationKey{PhotoUID: a, OtherUID: b}
+	reversed := feedback.DuplicateConfirmationKey{PhotoUID: b, OtherUID: a}
+	entry := audit.Entry{Action: audit.ActionDuplicateConfirm, TargetType: "photos", TargetUID: a}
+
+	for _, k := range []feedback.DuplicateConfirmationKey{key, key, reversed} {
+		if err := f.feedback.ConfirmDuplicate(ctx, k, entry); err != nil {
+			t.Fatalf("ConfirmDuplicate(%v): %v", k, err)
+		}
+	}
+	if n := f.count(t, "SELECT count(*) FROM duplicate_confirmations"); n != 1 {
+		t.Fatalf("row count after three confirmations = %d, want 1", n)
+	}
+	for _, k := range []feedback.DuplicateConfirmationKey{key, reversed} {
+		if ok, err := f.feedback.IsDuplicateConfirmed(ctx, k); err != nil || !ok {
+			t.Fatalf("IsDuplicateConfirmed(%v) = %v, %v, want true, nil", k, ok, err)
+		}
+	}
+	// Neither photo was touched: no archive, no delete, no merge.
+	if n := f.count(t, "SELECT count(*) FROM photos WHERE archived_at IS NOT NULL"); n != 0 {
+		t.Fatalf("archived photos = %d, want 0 — a confirmation must never merge", n)
+	}
+
+	pairs, err := f.feedback.ConfirmedDuplicatePairs(ctx)
+	if err != nil {
+		t.Fatalf("ConfirmedDuplicatePairs: %v", err)
+	}
+	if len(pairs) != 1 {
+		t.Fatalf("bulk lookup returned %d pairs, want 1", len(pairs))
+	}
+	lo, hi := a, b
+	if hi < lo {
+		lo, hi = hi, lo
+	}
+	if pairs[0].PhotoUID != lo || pairs[0].OtherUID != hi {
+		t.Fatalf("bulk pair = (%s, %s), want the canonical (%s, %s)",
+			pairs[0].PhotoUID, pairs[0].OtherUID, lo, hi)
+	}
+
+	if err := f.feedback.UnconfirmDuplicate(ctx, reversed, entry); err != nil {
+		t.Fatalf("UnconfirmDuplicate: %v", err)
+	}
+	if ok, _ := f.feedback.IsDuplicateConfirmed(ctx, key); ok {
+		t.Fatalf("IsDuplicateConfirmed after unconfirm = true, want false")
+	}
+	if err := f.feedback.UnconfirmDuplicate(ctx, key, entry); err != nil {
+		t.Fatalf("UnconfirmDuplicate (repeat): %v", err)
+	}
+}
+
+// TestDuplicateConfirmationRejectsBadKeys checks the impossible keys are refused
+// with the sentinels the HTTP layer maps to 400/404 rather than writing a row.
+func TestDuplicateConfirmationRejectsBadKeys(t *testing.T) {
+	f := newFixtures(t)
+	ctx := t.Context()
+	photo := f.makePhoto(t, "dupconf_bad")
+	entry := audit.Entry{Action: audit.ActionDuplicateConfirm, TargetType: "photos", TargetUID: photo}
+
+	same := feedback.DuplicateConfirmationKey{PhotoUID: photo, OtherUID: photo}
+	if err := f.feedback.ConfirmDuplicate(ctx, same, entry); !errors.Is(err, feedback.ErrSamePhoto) {
+		t.Fatalf("ConfirmDuplicate(self) = %v, want ErrSamePhoto", err)
+	}
+	partial := feedback.DuplicateConfirmationKey{PhotoUID: photo}
+	if err := f.feedback.ConfirmDuplicate(ctx, partial, entry); !errors.Is(err, feedback.ErrEmptyKey) {
+		t.Fatalf("ConfirmDuplicate(partial) = %v, want ErrEmptyKey", err)
+	}
+	ghost := feedback.DuplicateConfirmationKey{PhotoUID: photo, OtherUID: "ph_nonexistent00000000000"}
+	if err := f.feedback.ConfirmDuplicate(ctx, ghost, entry); !errors.Is(err, feedback.ErrTargetNotFound) {
+		t.Fatalf("ConfirmDuplicate(ghost) = %v, want ErrTargetNotFound", err)
+	}
+	if n := f.count(t, "SELECT count(*) FROM duplicate_confirmations"); n != 0 {
+		t.Fatalf("rows after three refused keys = %d, want 0", n)
+	}
+}
+
+// TestDuplicateConfirmationAudited checks the audit row is written in the same
+// transaction as the confirmation and the actor lands on the row itself.
+func TestDuplicateConfirmationAudited(t *testing.T) {
+	f := newFixtures(t)
+	ctx := t.Context()
+	a := f.makePhoto(t, "dupconf_audit_a")
+	b := f.makePhoto(t, "dupconf_audit_b")
+	user := f.makeUser(t, "usr_dupconfirm00000000", "dupconfirmer")
+	key := feedback.DuplicateConfirmationKey{PhotoUID: a, OtherUID: b}
+	entry := audit.Entry{
+		Action: audit.ActionDuplicateConfirm, TargetType: "photos", TargetUID: a, ActorUID: user,
+	}
+
+	if err := f.feedback.ConfirmDuplicate(ctx, key, entry); err != nil {
+		t.Fatalf("ConfirmDuplicate: %v", err)
+	}
+	if n := f.count(t,
+		"SELECT count(*) FROM audit_log WHERE action = $1", audit.ActionDuplicateConfirm,
+	); n != 1 {
+		t.Fatalf("audit rows for a confirmation = %d, want 1", n)
+	}
+	if n := f.count(t,
+		"SELECT count(*) FROM duplicate_confirmations WHERE confirmed_by = $1", user,
+	); n != 1 {
+		t.Fatalf("confirmations attributed to the actor = %d, want 1", n)
+	}
+}

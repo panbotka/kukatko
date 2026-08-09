@@ -85,33 +85,45 @@ func (s *Service) needsRebuild(sess *session, src Source) bool {
 
 // material is what one rebuild collected before ordering and interleaving.
 type material struct {
-	// faceQs and labelQs are the two sources' candidates, each still split by
-	// confidence tier because the tiers are ordered differently and mixed by a
-	// ratio (see tiers.go).
+	// faceQs and labelQs are the two guess-checking sources' candidates, each
+	// still split by confidence tier because the tiers are ordered differently
+	// and mixed by a ratio (see tiers.go).
 	faceQs  tiered
 	labelQs tiered
-	// subjectsTotal and labelsTotal are the library-wide source counts (not the
-	// window's), so the empty-queue reason stays exact. A source the selection
-	// excluded is never scanned, so its count stays zero — reasonFor only reads
-	// the counts of the sources that were actually asked for.
-	subjectsTotal int
-	labelsTotal   int
+	// placeQs, dupQs and outlierQs are the three checks over work the machine
+	// already did. They carry no tier: their confidences are not points on one
+	// comparable scale, so each arrives already ordered by its own notion of
+	// "most worth asking" (see extras.go).
+	placeQs   []Question
+	dupQs     []Question
+	outlierQs []Question
+	// subjectsTotal, labelsTotal, placesTotal, dupsTotal and outlierSubjects are
+	// the library-wide source counts (not the windows'), so the empty-queue
+	// reason stays exact. A source the selection excluded is never scanned, so
+	// its count stays zero — reasonFor only reads the counts of the sources that
+	// were actually asked for.
+	subjectsTotal   int
+	labelsTotal     int
+	placesTotal     int
+	dupsTotal       int
+	outlierSubjects int
 	// degraded reports that the rebuild deadline cut a scan short, so the totals
 	// may undercount and "no sources" must not be concluded from them.
 	degraded bool
 }
 
-// questions is how many questions the round collected across both sources and
+// questions is how many questions the round collected across every source and
 // both tiers.
 func (m material) questions() int {
-	return m.faceQs.len() + m.labelQs.len()
+	return m.faceQs.len() + m.labelQs.len() + len(m.placeQs) + len(m.dupQs) + len(m.outlierQs)
 }
 
 // sources is how many things the round found worth scanning at all, library-wide
-// — named subjects plus labels the game may ask about. Zero means another
-// rotation would scan the same nothing, so it is the signal to stop rotating.
+// — named subjects, labels the game may ask about, estimated locations and
+// duplicate groups. Zero means another rotation would scan the same nothing, so
+// it is the signal to stop rotating.
 func (m material) sources() int {
-	return m.subjectsTotal + m.labelsTotal
+	return m.subjectsTotal + m.labelsTotal + m.placesTotal + m.dupsTotal + m.outlierSubjects
 }
 
 // rebuild recomputes the session's queue from the current library state for the
@@ -133,14 +145,18 @@ func (s *Service) rebuild(ctx context.Context, sess *session, src Source, need i
 	if err != nil {
 		return err
 	}
-	faceQs := s.compose(mat.faceQs, sess)
-	labelQs := s.compose(mat.labelQs, sess)
 	// Each source is spread before the merge, not after. Interleaving only ever
-	// inserts questions of the other kind between two of the same kind, and a
-	// face question and a label question are never about the same entity, so any
-	// run in the merged queue is a run inside one source: bounding the sources
-	// bounds the queue.
-	sess.queue = capQueue(interleave(spread(faceQs, maxSameEntityRun), spread(labelQs, maxSameEntityRun)))
+	// inserts questions of another kind between two of the same kind, and two
+	// questions of different kinds are never about the same entity, so any run in
+	// the merged queue is a run inside one source: bounding the sources bounds
+	// the queue.
+	sess.queue = capQueue(interleaveKinds([][]Question{
+		spread(s.compose(mat.faceQs, sess), maxSameEntityRun),
+		spread(s.compose(mat.labelQs, sess), maxSameEntityRun),
+		spread(s.composePlain(mat.placeQs, sess), maxSameEntityRun),
+		spread(s.composePlain(mat.dupQs, sess), maxSameEntityRun),
+		spread(s.composePlain(mat.outlierQs, sess), maxSameEntityRun),
+	}))
 	sess.hasQueue = true
 	sess.source = src
 	sess.builtAt = s.now()
@@ -231,7 +247,44 @@ func (s *Service) collect(buildCtx, ctx context.Context, src Source, need int) (
 		}
 		mat.labelQs, mat.labelsTotal = labelQs, labelsTotal
 	}
+	if err := s.collectChecks(buildCtx, ctx, src, need, &mat); err != nil {
+		return material{}, err
+	}
 	return mat, nil
+}
+
+// collectChecks gathers the three checks over already-applied machine work.
+// Each is independent of the others and of the two guess searches, so one of
+// them running out of time degrades that kind alone: the round is marked
+// degraded (its totals can no longer prove the library is empty) and the batch
+// is served from whatever the rest produced.
+func (s *Service) collectChecks(
+	buildCtx, ctx context.Context, src Source, need int, mat *material,
+) error {
+	if !src.wantsChecks() {
+		return nil
+	}
+	checks := []struct {
+		collect func(context.Context, int) ([]Question, int, error)
+		into    *[]Question
+		total   *int
+	}{
+		{s.placeQuestions, &mat.placeQs, &mat.placesTotal},
+		{s.duplicateQuestions, &mat.dupQs, &mat.dupsTotal},
+		{s.outlierQuestions, &mat.outlierQs, &mat.outlierSubjects},
+	}
+	for _, check := range checks {
+		questions, total, err := check.collect(buildCtx, need)
+		if err != nil {
+			if !s.tolerateDeadline(ctx, err) {
+				return err
+			}
+			mat.degraded = true
+			continue
+		}
+		*check.into, *check.total = questions, total
+	}
+	return nil
 }
 
 // compose turns one source's collected material into the ordered, blended,
@@ -245,6 +298,13 @@ func (s *Service) compose(mat tiered, sess *session) []Question {
 	s.orderQuestions(sure, tierSure)
 	s.orderQuestions(band, tierBand)
 	return capEntities(blend(sure, band, s.sureShare), s.maxPerEntity)
+}
+
+// composePlain is compose for a tier-less kind: the collector already ordered
+// its questions by its own notion of "most worth asking", so all that is left is
+// dropping what the session has settled and enforcing the per-entity share.
+func (s *Service) composePlain(questions []Question, sess *session) []Question {
+	return capEntities(excludeSeen(questions, sess), s.maxPerEntity)
 }
 
 // tolerateDeadline reports whether err is the rebuild's own deadline firing —
@@ -604,29 +664,84 @@ func (s *Service) orderQuestions(questions []Question, which tier) {
 	})
 }
 
-// interleave merges the two ordered kinds into one sequence, spreading the
-// sparser kind evenly through the denser one — roughly alternating when counts
-// match, skewed toward the kind with more candidates otherwise. Positions are
-// compared as exact integer rationals ((2i+1)/2·len) so the merge is
-// deterministic with no floating-point or randomness involved.
+// interleaveKinds merges the ordered per-kind lists into one sequence, spreading
+// the sparser kinds evenly through the denser ones — roughly round-robin when
+// the counts match, skewed toward whichever kind has more candidates otherwise.
 //
-// It takes from each list in order and never reorders within one, so a run of
-// one entity in the merged sequence is a run inside one of the inputs: whatever
-// bound spread put on the sources survives the merge (and the later truncation
-// to a batch, which only ever keeps a prefix).
-func interleave(faceQs, labelQs []Question) []Question {
-	merged := make([]Question, 0, len(faceQs)+len(labelQs))
-	fi, li := 0, 0
-	for fi < len(faceQs) && li < len(labelQs) {
-		if (2*fi+1)*len(labelQs) <= (2*li+1)*len(faceQs) {
-			merged = append(merged, faceQs[fi])
-			fi++
-		} else {
-			merged = append(merged, labelQs[li])
-			li++
+// This is what stops any one kind dominating a session, and it does so
+// positionally rather than in aggregate. A batch is a *prefix* of the built
+// queue, so a queue that merely ends up evenly mixed overall could still open
+// with twenty duplicate pairs in a row. Every list contributes at most `need`
+// candidates (each collector stops there), so with k kinds supplying material a
+// batch of n holds about n/k of each — and when only one kind has anything left,
+// it fills the batch alone, which is the right degradation: an exhausted library
+// should not withhold the work it still has.
+//
+// A list's i-th element is placed at the exact rational (2i+1)/(2·len), so the
+// merge is deterministic with no floating point and no randomness: positions are
+// compared by integer cross-multiplication and ties go to the earlier kind in
+// Kinds. It takes from each list in order and never reorders within one, so a
+// run of one entity in the merged sequence is a run inside one of the inputs —
+// whatever bound spread put on the sources survives the merge, and the later
+// truncation to a batch only ever keeps a prefix.
+func interleaveKinds(lists [][]Question) []Question {
+	total, cursors := 0, make([]int, len(lists))
+	for _, list := range lists {
+		total += len(list)
+	}
+	merged := make([]Question, 0, total)
+	for range total {
+		pick := nextKind(lists, cursors)
+		merged = append(merged, lists[pick][cursors[pick]])
+		cursors[pick]++
+	}
+	return merged
+}
+
+// nextKind returns the index of the list whose next unconsumed question sits
+// earliest in the merged order. It compares (2i+1)/(2·len) fractions by integer
+// cross-multiplication — a·d < c·b for a/b < c/d with positive denominators —
+// so the comparison is exact and the result reproducible. At most one question
+// per list is inspected per step, and there are five lists, so the linear scan
+// is free.
+func nextKind(lists [][]Question, cursors []int) int {
+	best, bestNum, bestDen := -1, 0, 0
+	for k, list := range lists {
+		if cursors[k] >= len(list) {
+			continue
+		}
+		num, den := 2*cursors[k]+1, 2*len(list)
+		if best < 0 || num*bestDen < bestNum*den {
+			best, bestNum, bestDen = k, num, den
 		}
 	}
-	merged = append(merged, faceQs[fi:]...)
-	merged = append(merged, labelQs[li:]...)
-	return merged
+	return best
+}
+
+// sortByConfidence orders a tier-less kind's questions most-confident first,
+// with the stable question id as the deterministic tie-break. It is what the
+// duplicate check wants: the pair the detector is surest about is the one a
+// player can settle in a glance.
+func sortByConfidence(questions []Question) {
+	sort.SliceStable(questions, func(i, j int) bool {
+		if questions[i].Confidence != questions[j].Confidence {
+			return questions[i].Confidence > questions[j].Confidence
+		}
+		return questions[i].ID < questions[j].ID
+	})
+}
+
+// sortBySuspicion orders outlier questions most-suspicious first — furthest from
+// the person's centroid — with the stable question id as the tie-break. It is
+// deliberately the opposite of sortByConfidence: the confident tier's logic does
+// not apply to a check over an assignment somebody already made, where the whole
+// value is in the faces that look wrong. It matches the /outliers page's own
+// ranking, so the same face is the first question in either place.
+func sortBySuspicion(questions []Question) {
+	sort.SliceStable(questions, func(i, j int) bool {
+		if questions[i].Distance != questions[j].Distance {
+			return questions[i].Distance > questions[j].Distance
+		}
+		return questions[i].ID < questions[j].ID
+	})
 }

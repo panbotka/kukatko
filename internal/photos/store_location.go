@@ -154,6 +154,73 @@ func (s *Store) ListLocatedNeighbours(ctx context.Context, from, to time.Time) (
 	return out, nil
 }
 
+// listEstimatedLocationsSQL selects the photos whose coordinates the estimator
+// guessed and nobody has ruled on yet — the work list of the place check.
+//
+// The guards mirror the candidate scan's, for the same reasons: an archived or
+// hidden photo never reaches the map or the places hierarchy, which is the only
+// thing an estimated location was ever for, so asking a human about one spends
+// attention on nothing. The %s placeholders receive the paging clause.
+//
+// The order is by uid, so a rotating window is a stable slice rather than a
+// shuffling one, and it rides the primary key.
+var listEstimatedLocationsSQL = `SELECT ` + photoColumns + ` FROM photos
+	WHERE location_source = 'estimate'
+	  AND lat IS NOT NULL AND lng IS NOT NULL
+	  AND archived_at IS NULL
+	  AND NOT hidden_from_library
+	ORDER BY uid
+	LIMIT $1 OFFSET $2`
+
+// countEstimatedLocationsSQL counts the same set listEstimatedLocationsSQL
+// pages through, so a caller can rotate a window over it without reading it all.
+const countEstimatedLocationsSQL = `SELECT count(*) FROM photos
+	WHERE location_source = 'estimate'
+	  AND lat IS NOT NULL AND lng IS NOT NULL
+	  AND archived_at IS NULL
+	  AND NOT hidden_from_library`
+
+// ListEstimatedLocations returns the non-archived, non-hidden photos whose
+// location the estimator guessed, ordered by uid, as one window of at most limit
+// rows starting at offset. A non-positive limit returns nothing (the caller
+// asked for no work), a negative offset is treated as zero.
+func (s *Store) ListEstimatedLocations(ctx context.Context, offset, limit int) ([]Photo, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	rows, err := s.pool.Query(ctx, listEstimatedLocationsSQL, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("photos: listing estimated locations: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]Photo, 0, limit)
+	for rows.Next() {
+		photo, scanErr := scanPhoto(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		out = append(out, photo)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("photos: iterating estimated locations: %w", err)
+	}
+	return out, nil
+}
+
+// CountEstimatedLocations returns how many photos carry an estimated location
+// awaiting a verdict — the size of the set ListEstimatedLocations pages through.
+func (s *Store) CountEstimatedLocations(ctx context.Context) (int, error) {
+	var total int
+	if err := s.pool.QueryRow(ctx, countEstimatedLocationsSQL).Scan(&total); err != nil {
+		return 0, fmt.Errorf("photos: counting estimated locations: %w", err)
+	}
+	return total, nil
+}
+
 // setEstimatedLocationSQL writes an estimate only onto a photo that still has no
 // location and no decision. The WHERE clause repeats the candidate guards rather
 // than trusting the caller's earlier read: between listing a candidate and

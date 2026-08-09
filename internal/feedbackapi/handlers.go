@@ -135,6 +135,50 @@ func (a *API) handleDuplicateUndismiss(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handleDuplicateConfirm records that the two photos in the request body really
+// ARE the same shot and answers 204. It merges nothing and archives nothing — it
+// records the agreement, which the duplicates page ranks on. The pair is
+// unordered and the write is idempotent, so confirming twice, in either argument
+// order, is a no-op. A malformed body, a missing identifier or a pair naming the
+// same photo twice answers 400; a non-existent photo answers 404.
+func (a *API) handleDuplicateConfirm(w http.ResponseWriter, r *http.Request) {
+	in, err := decodeDuplicateDismissal(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	key := in.toConfirmationKey()
+	entry := a.auditEntry(r, audit.ActionDuplicateConfirm, "photos", key.PhotoUID,
+		map[string]any{"other_uid": key.OtherUID})
+	if err := a.store.ConfirmDuplicate(r.Context(), key, entry); err != nil {
+		status, msg := rejectionStatus(err)
+		writeError(w, status, msg)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleDuplicateUnconfirm takes back the duplicate confirmation in the request
+// body and answers 204, dropping the group back to being a machine guess.
+// Un-confirming a pair that was never confirmed is a no-op. A malformed body or
+// a missing identifier answers 400.
+func (a *API) handleDuplicateUnconfirm(w http.ResponseWriter, r *http.Request) {
+	in, err := decodeDuplicateDismissal(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	key := in.toConfirmationKey()
+	entry := a.auditEntry(r, audit.ActionDuplicateUnconfirm, "photos", key.PhotoUID,
+		map[string]any{"other_uid": key.OtherUID})
+	if err := a.store.UnconfirmDuplicate(r.Context(), key, entry); err != nil {
+		status, msg := rejectionStatus(err)
+		writeError(w, status, msg)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // handleMarkerDismiss records that the person in the request body really IS marked
 // more than once on the given photo — a double exposure, a mirror, a photo of a
 // photo — and answers 204, so the repeated-marker review stops offering the group.

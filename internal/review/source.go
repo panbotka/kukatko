@@ -74,6 +74,21 @@ func (s Source) wantsLabels() bool {
 	return s.orBoth() != SourcePeople
 }
 
+// wantsChecks reports whether the source includes the three checks over work the
+// machine already did — the place, duplicate and outlier questions.
+//
+// They ride with SourceBoth alone, and the toggle deliberately stays three
+// buttons wide. "People" and "Labels" are promises about what the player will be
+// asked ("stop asking me about faces"), and a place or duplicate question is
+// neither; folding them under either one would break the promise, while a
+// six-way toggle would spend the game's simplest control on question types that
+// run out quickly. The default selection is both, so the new checks are on by
+// default and a player who wants to concentrate on people or labels turns them
+// off together with the other kind.
+func (s Source) wantsChecks() bool {
+	return s.orBoth() == SourceBoth
+}
+
 // reasonFor explains an empty queue in terms of what the rebuild actually
 // scanned. A source the player restricted the game to and that holds nothing is
 // a different message from a library with no sources at all ("there is nothing
@@ -97,7 +112,10 @@ func reasonFor(src Source, mat material) string {
 			return ReasonNoLabels
 		}
 	case SourceBoth:
-		if mat.subjectsTotal == 0 && mat.labelsTotal == 0 {
+		// The three checks count as sources here: a library with no named people
+		// and no labels but a backlog of estimated locations is not one where
+		// "name some people first" is useful advice.
+		if mat.sources() == 0 {
 			return ReasonNoSources
 		}
 	}

@@ -449,8 +449,16 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   omits even `Archive` and `Location`, which the bulk service otherwise supports. Mounted by `server.WithAPI`
   (`buildMCPAPI` in `cmd/kukatko/mcp.go`). In detail: [`docs/MCP.md`](MCP.md).
 - **Review game API (`/api/v1`, `internal/reviewapi`, editor/admin via `RequireWrite`):** a "game" for
-  tidying up the library — one question at a time ("Is this Tomáš?", "Should this photo have the label Ostatky?"),
-  answer yes/no/skip. Questions are mixed from **two confidence tiers** (confidence = 1 − cosine distance):
+  tidying up the library — one question at a time, answer yes/no/skip. There are **five kinds of question**:
+  `face` ("Is this Tomáš?"), `label` ("Should this photo have the label Ostatky?"), `place` ("Was this photo
+  taken in Brno?" over a location the geo-estimator guessed), `duplicate` ("Is this the same photo?" over a
+  near-duplicate pair, shown side by side) and `outlier` ("Is this really Tomáš?" over a face already assigned
+  to him but sitting far from his centroid). The first two check guesses about things nobody had decided; the
+  last three check guesses the machine already **acted on** — a coordinate written onto a photo, a pair the
+  detector linked, an assignment somebody made — which no other page lists as questions. None of them destroys
+  anything: **the duplicate check NEVER merges**, the outlier check detaches through the ordinary assign state
+  machine (the marker survives) and the place check only moves a coordinate the estimator invented.
+  The face and label questions are mixed from **two confidence tiers** (confidence = 1 − cosine distance):
   `review.sure_share` of a batch (default 0.70) from the **confident tier** (confidence ≥ `review.sure_min`,
   default 0.80 — the answer is almost always a one-click yes, and a yes is real work done), the rest from the
   **uncertainty band** (`review.band_min ≤ confidence < review.band_max`, default 0.45–0.75 — where a human
@@ -461,21 +469,35 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   the next one, so the queue only reports "nothing" for a genuinely empty library. `GET
   /review/queue?source=both|people|labels&limit=N` (source empty → `both`, unknown → 400; limit empty/0 →
   `review.queue_size`, cap 100, non-numeric/negative → 400) → `{questions:[{id,kind:
-  "face"|"label",tier:"sure"|"band",confidence,photo,subject?,face_index?,bbox?{relative,pixel},action?
-  ("create_marker"|"assign_person"),marker_uid?,label?}],source,answered,remaining,reason?}`; `id` is
-  **stable, derived from content** (`face:<photo>:<index>:<subject>` / `label:<photo>:<label>`),
+  "face"|"label"|"place"|"duplicate"|"outlier",tier?:"sure"|"band",confidence,photo,subject?,face_index?,
+  bbox?{relative,pixel},action?("create_marker"|"assign_person"),marker_uid?,label?,
+  place?{name,country?,city?,place_name?,lat,lng},other?,group_id?,distance?}],source,answered,remaining,reason?}`.
+  `place` carries the guessed location and the most specific name it geocoded to (a photo with no cached place is
+  **not asked about** — a pair of decimal degrees is not a place anybody can answer about); `other` is the second
+  photo of a duplicate pair and `group_id` its group; `distance` is an outlier face's cosine distance from its
+  person's centroid. `tier` is absent on the three new kinds — their confidences are not points on one comparable
+  scale, so each carries its own ordering instead (duplicates surest-first, outliers **most suspicious** first,
+  places by uid). `id` is
+  **stable, derived from content** (`face:<photo>:<index>:<subject>` / `label:<photo>:<label>` /
+  `place:<photo>` / `duplicate:<photo>:<other>`, the pair ordered smaller-uid-first so one pair is one question /
+  `outlier:<photo>:<index>:<subject>`),
   `tier` says which tier the question came from (the UI asks the same question either way; it is there so the
   mix can be observed), `bbox` relative 0..1 **and** pixels (honouring EXIF orientation), the queue is
   **deterministic** for a given library state (within a tier: the band by distance from its centre, the
-  confident tier by confidence descending, tie-break id; then the tier blend; face/label questions are
-  **interleaved** proportionally, no `rand`). On top of that order the batch is **spread across the entities it
+  confident tier by confidence descending, tie-break id; then the tier blend; **all five kinds are
+  interleaved** proportionally — each list's i-th question is placed at the exact rational (2i+1)/(2·len) and the
+  earliest position wins, so with k kinds supplying material a batch of n holds about n/k of each and **no kind
+  can dominate a session**; a kind that is the only one left fills the batch alone, because an exhausted library
+  should not withhold the work it has. No `rand` anywhere). On top of that order the batch is **spread across the entities it
   asks about**, so the game does not turn into an interrogation: at most `review.max_per_entity` (default 4)
   questions about one person or label per batch, and never more than **two in a row** about the same one while
   another entity still has a question waiting — the variation is a deterministic reordering of the
   informativeness order, not randomness. **`source` decides what the game asks about** — only faces
   (`people`), only labels (`labels`) or both interleaved (`both`, the default) — and it is applied **inside the
   rebuild**, not as a filter on its result: a labels-only queue never runs the subject sweep at all (the scans
-  are the whole cost of a rebuild, and a subject sweep hydrates a full photo record per match). The applied
+  are the whole cost of a rebuild, and a subject sweep hydrates a full photo record per match). **The three new
+  kinds ride with `both` only** — "people" and "labels" are promises about what the game will ask, and a place
+  question would break either one; the toggle deliberately stays three buttons wide rather than six. The applied
   source is echoed back in `source`, so a client can recognise a batch that arrived after the player switched.
   A label whose `review_enabled` is false is **not asked about and not even searched** (see Labels below).
   The queue is **cached per user *and per source*** (`review.cache_ttl`, default 60 s) — a batch fetch does not
@@ -486,12 +508,22 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   "no_people_no_labels"`; the chosen source itself is empty → `reason:"no_people"` / `"no_labels"` (only for a
   restricted source; the untouched source is never counted); sources exist, but the band is empty →
   `reason:"no_candidates"`.
-  `POST /review/answer` with `{question_id,answer:"yes"|"no"|"skip"}` → `{result,answered,remaining}`.
-  **yes** on a face goes through the **existing** assign state machine (the same path as
-  `POST /photos/{uid}/faces/assign`; the action is derived from the face's current state — a marker exists →
-  `assign_person`, otherwise `create_marker` with the stored bbox), yes on a label via `AttachLabelAudited`
-  (source `manual`); **no** writes a **permanent rejection** into `internal/feedback` (the question never comes
-  back and the negative-exemplar rule kills similar candidates); **skip** = "don't know" — the question is not
+  `POST /review/answer` with `{question_id,answer:"yes"|"no"|"skip"}` → `{result,answered,remaining}`
+  (`result` ∈ assigned / labeled / confirmed / cleared / detached / rejected / skipped / already_answered / gone).
+  Every verdict routes through a write path that already exists elsewhere; the package opens none of its own:
+  **face** yes → the **existing** assign state machine (the same path as `POST /photos/{uid}/faces/assign`; the
+  action is derived from the face's current state — a marker exists → `assign_person`, otherwise `create_marker`
+  with the stored bbox), no → a face rejection; **label** yes → `AttachLabelAudited` (source `manual`), no → a
+  label rejection; **place** yes → the coordinates stay and `location_source` is promoted `estimate` → `manual`,
+  no → the coordinates are cleared and `manual` is stamped as the **tombstone** that stops the nightly backfill
+  handing the same guess back (both through `photos.UpdateMetadataAudited`, read-modify-write against the live
+  row, so a photo edited meanwhile is not clobbered and one whose location is no longer an estimate is left
+  alone); **duplicate** yes → a `duplicate_confirmations` row (which ranks the group first on `/duplicates`),
+  no → the existing dismissal that drops the edge from every later scan — **neither merges**; **outlier** yes →
+  a `face_confirmations` row (the same set `/outliers` excludes, so the two views agree), no → `unassign_person`
+  through the assign state machine, re-reading the marker so a face detached meanwhile resolves to `gone`.
+  A rejection is **permanent** (the question never comes back and the negative-exemplar rule kills similar
+  candidates); **skip** = "don't know" — the question is not
   offered again in this session, but is **not recorded** (a restart may bring it back; skip is not a rejection).
   Answers are **idempotent** (`result:"already_answered"`, no second write or duplicate
   marker) and audited in the same transaction as the mutation (via the reused write paths). A deleted
@@ -502,11 +534,15 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   **Leaderboard** `GET /review/leaderboard?window=all|7d|today` (default `all`, other value → 400)
   gated by **`RequireAuth`** — it returns only aggregated counts + names, so **every authenticated user**
   sees it (even a viewer), not just an editor. It ranks players by the number of **decisions** in the review
-  game, sourced from durable audit rows with `details.via = "review"`: **yes** = `face.assign` + `label.attach`,
-  **no** = `face.reject` + `label.reject`; **skip** records nothing, so on principle it does not count. Because
-  of this, a review face confirmation (`face.assign`) now carries `via:review` (until now the only one of the four
-  actions missing it — it goes through facematch `Service.Apply`, which assembles the audit itself; ordinary
-  assignments stay unmarked). The response `{window,caller_uid,entries:[{user_uid,display_name,yes_count,no_count,total,
+  game, sourced from durable audit rows with `details.via = "review"`. Which actions those are is
+  **`audit.ReviewYesActions()` / `ReviewNoActions()`** — one shared list, so a new question type becomes
+  countable (here and in the admin decision view, `GET /audit?via=review&decision=yes|no`) the moment its write
+  path is wired: **yes** = `face.assign` + `label.attach` + `face.confirm` + `location.confirm` +
+  `duplicate.confirm`, **no** = `face.reject` + `label.reject` + `face.unassign` + `location.reject` +
+  `duplicate.dismiss`; **skip** records nothing, so on principle it does not count. Because
+  of this, a review face confirmation (`face.assign`) and an outlier detach (`face.unassign`) carry `via:review`
+  (they go through facematch `Service.Apply`, which assembles the audit itself; ordinary assignments and
+  detaches stay unmarked, so the same action performed on a curation page is never counted). The response `{window,caller_uid,entries:[{user_uid,display_name,yes_count,no_count,total,
   is_me}]}` is sorted (total desc → yes desc → display_name), only users with ≥1 decision in the window
   (zero = absent), a NULL actor (a deleted user) is omitted, `is_me`/`caller_uid` mark one's own
   row. The windows are computed from `created_at` (7 d = a sliding 7×24 h, today = midnight of the day). Served by
@@ -666,7 +702,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
 - **Feedback / Rejections API (`/api/v1`, `internal/feedbackapi`):** persisted feedback —
   a user's "no" (and now also "yes") to a face↔subject or photo↔label estimate, and its undo.
   **Feedback is an opinion — it never mutates** the underlying data (does not detach a marker, remove a label,
-  archive anything). Eight endpoints, all **RequireWrite** (editor/admin, viewer 403): `POST /feedback/face-rejections`
+  archive anything). Ten endpoints, all **RequireWrite** (editor/admin, viewer 403): `POST /feedback/face-rejections`
   `{photo_uid,face_index,subject_uid}` → 204 (rejects "this face is NOT this person"),
   `DELETE /feedback/face-rejections` (same body) → 204 (undo); `POST /feedback/label-rejections`
   `{photo_uid,label_uid}` → 204 (rejects "this photo should NOT have this label"),
@@ -675,6 +711,13 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   and `DELETE /feedback/face-confirmations` (same body) → 204;
   `POST /feedback/duplicate-dismissals` `{photo_uid,other_uid}` → 204 ("these two photos are NOT
   duplicates") and `DELETE /feedback/duplicate-dismissals` (same body) → 204 (undo);
+  `POST /feedback/duplicate-confirmations` (same body) → 204 ("yes, this really IS the same photo twice")
+  and `DELETE /feedback/duplicate-confirmations` (same body) → 204 (undo) — the positive mirror of the
+  dismissal, written by the review game's duplicate check. It **merges nothing**: agreeing that two files are
+  one shot and deciding which copy survives are different acts, and only the second destroys anything. What it
+  buys is ranking — `GET /duplicates` marks a group holding a confirmed pair `confirmed:true` and sorts it
+  **first**, above the machine's own suspicions, as the one where merging is a decision already made
+  (`duplicate_confirmations`, migration `0054`, ordered-pair CHECK with `COLLATE "C"` from the start);
   `POST /feedback/duplicate-marker-dismissals` `{photo_uid,subject_uid}` → 204 ("this person really IS
   marked more than once on this photo" — a double exposure, a mirror, a photo of a photo) and
   `DELETE /feedback/duplicate-marker-dismissals` (same body) → 204 (undo). The latter keys the **(photo,
@@ -956,8 +999,11 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   groups of likely duplicates from pHash Hamming distance (`duplicate.phash_max_diff`,
   banded-LSH) **and/or** embedding cosine distance (`duplicate.embedding_max_dist`, HNSW), merged by
   union-find into connected components (no O(n²) scan). Each group carries members (thumbnail/dimensions/
-  size/`taken_at`/distances) + `reason` (phash/embedding/both) + a suggested `keeper_uid`
-  (highest resolution → largest → oldest → uid); ordered largest-first, `limit`≤100, invalid →
+  size/`taken_at`/distances) + `reason` (phash/embedding/both) + `confirmed` (a human has answered "yes, the
+  same shot" about one of its pairs, via the review game or `POST /feedback/duplicate-confirmations`) + a
+  suggested `keeper_uid`
+  (highest resolution → largest → oldest → uid); ordered **confirmed-first**, then largest, then newest keeper,
+  then id — confirmation outranks size because it is the only key here that is not a guess. `limit`≤100, invalid →
   400, scan fails → 500. The listing **only reads**; when `duplicate.enabled=false` the `GET` route answers 503.
   `POST /duplicates/merge` (`internal/dupmerge`, `RequireWrite`) `{keeper_uid,member_uids[],dry_run?}` →
   `{keeper_uid,albums_added,labels_added,people_added,metadata_filled[],archived,dry_run}`: in **one

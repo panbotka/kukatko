@@ -1924,8 +1924,14 @@ here.
   a failed **„načíst další"** is reported inline exactly as on `/duplicates`; tests
   `DuplicateMarkersPage.test.tsx` (with the repo's standard `react-virtuoso` mock) + `lib/duplicateMarkers.test.ts`,
   `ReviewPage` = `/review` (editor/admin, a top-level link **Třídění** right next to Nahrát) a **sorting
-  game**: one question („Je na fotce **Tomáš Kozák**?" / „Sedí k fotce štítek **Ostatky**?")
-  across **the whole screen** — the page is **outside `Layout`** (no navbar, like `/slideshow`), because
+  game**: one question across **the whole screen**, in **five flavours** — „Je na fotce **Tomáš Kozák**?"
+  (face) · „Sedí k fotce štítek **Ostatky**?" (label) · „Byla tahle fotka pořízena v **Brně**?" (place, over a
+  location the estimator guessed) · „Je to **stejná fotka**?" (duplicate, the two photos side by side) · „Je na
+  téhle fotce opravdu **Tomáš Kozák**?" (outlier, a face already assigned to him but far from his centroid).
+  `QUESTION_KEYS`, `questionName`, `QuestionHint` and `QuestionStage` are the four places a kind is branched
+  on, and nowhere else: the header, the progress, the three buttons and every keyboard shortcut are
+  **identical for all five**, because a game whose controls change under the player is not a game.
+  The page is — the page is **outside `Layout`** (no navbar, like `/slideshow`), because
   nothing but the photo should compete for attention; the order is **the question above the photo** (header/progress →
   question + hint + confidence → photo → actions) and the whole thing **always fits in the viewport**: it doesn't scroll
   vertically or horizontally, on a short display (a phone in landscape) the **photo** shrinks — text and buttons
@@ -1936,8 +1942,27 @@ here.
   being asked „is this Alice?" about the wrong face is worse than being asked a moment later; the face frame via
   `padBbox`+`faceBoxStyle` from `lib/faceGeometry` with **~30 %
   padding**, because you can't recognize a face from a tight crop, + a gentle dimming of the surroundings), the question
-  `QuestionText` (`Trans` with `<strong>` around the name/label — an i18n **template**, not string concatenation)
-  and the confidence `ConfidenceHint` (a muted % + a bar: context, not the answer); three actions **Ano · Ne ·
+  `QuestionText` (`Trans` with `<strong>` around the name/label/place — an i18n **template**, not string
+  concatenation; the duplicate question interpolates nothing, the two photos *are* the question)
+  and the confidence `ConfidenceHint` (a muted % + a bar: context, not the answer) — **except on a place
+  question**, which shows none: the estimator either found neighbours that cluster tightly or refused, so there
+  is no score behind the guess and printing one would be a lie. The two new stages:
+  **`ReviewDuplicate`** (`components/review/ReviewDuplicate.tsx`) = the pair **side by side** with each copy's
+  file name and pixel size under it — side by side because the whole question is a comparison and a pair the
+  eye has to scroll between cannot be compared, and the numbers because two exports of one shot often differ in
+  nothing a thumbnail can show; both halves are `flex: 1 1 0` (equal, since a bigger frame for one copy reads as
+  a verdict on it) at `DUPLICATE_PREVIEW_SIZE = fit_1280` — **the whole frame, never a `tile_*`**, which would
+  centre-crop away exactly the edges where a crop or a rotation gives itself away — and each carries the same
+  corner anchor out to its own photo. **`ReviewOutlier`** (`ReviewOutlier.tsx`) = the **face crop** big, with the
+  whole photo beside it for context: a crop rather than a rectangle on the full frame, because „is this really
+  Anna?" over a wedding group where Anna is forty pixels across is unanswerable (the /outliers page settled that
+  argument, and this reuses its geometry — `padBbox` 40 % → `cropImageStyle`, the box outlined by
+  `faceMarkerStyle`, the source picked per face by `lib/faceSource` at `OUTLIER_TARGET_PX` and the **review**
+  limits, degrading down the ladder on a 404). **The crop is cut from a `fit_*` preview and never a `tile_*`**:
+  a tile is a centre-cropped square, i.e. a different frame from the one the bbox was normalised against, so
+  cropping one lands beside the face on anything but a square photo. The full photo stays beside it because a
+  face out of its scene is also how a curator gets it wrong. Below `sm` both stages stack into a column, which
+  the stage's `flex: 1 1 0` absorbs. Three actions **Ano · Ne ·
   Nevím** are real buttons (large, at the bottom, thumb-reachable on touch), **but the keyboard is the
   primary interface**: `→`/`y` yes, `←`/`n` no, **spacebar**/`↓` don't know, `z` and **Ctrl/Cmd+Z** undo
   (the chord binds outside `useKeyboardShortcuts`, which deliberately ignores modifiers), `o` open the photo
@@ -1966,7 +1991,15 @@ here.
   header breaks *there* and not under the help button) — three more buttons don't fit next to the counter at
   360 px, and the row of chrome must stay readable; the ~40 px is taken from the photo, which the stage
   absorbs by design. `useReviewGame(source)` rebuilds from the new source rather than filtering the cards in
-  hand; states (all through `EmptyQueue`): an **empty library** (`no_people_no_labels` → „nejdřív pojmenuj
+  hand. The toggle stays **three** buttons: the three new kinds ride with **Oboje** (the default), because
+  „Lidé" and „Štítky" are promises about what will be asked and a place question breaks either one, while six
+  buttons would spend the game's simplest control on question types that run out quickly.
+  **Undo is offered for four kinds of answer and honestly withheld for the fifth**: every other verdict has an
+  inverse endpoint that restores the previous state exactly, but nothing can mark a location an *estimate*
+  again, so after a place verdict `useReviewGame` holds no undo target and the button stays disabled — writing
+  the old coordinates back as a *manual* decision would not be the old state but a different one, silently
+  attributed to the user (the fix for a mis-answered place is the photo's own page, where placing a pin *is* the
+  decision it claims to be). States (all through `EmptyQueue`): an **empty library** (`no_people_no_labels` → „nejdřív pojmenuj
   lidi / založ štítky" with links to `/people` and `/labels`) is **distinct from an empty chosen source**
   (`no_people`/`no_labels` → „hra se ptá jen na lidi/štítky, ale…" + a link to `/people`/`/labels` **and** a
   button that moves the toggle to the other one) and from an **empty queue** (`no_candidates` → „vše
@@ -1977,7 +2010,12 @@ here.
   the place, the empty states differently, the URL drives the fetched source, a toggle rebuilds the game and
   lands in the URL, a batch that arrives after the switch is dropped, the photo anchor's `href` on a face **and**
   on a label question plus its `target`/`rel`, a click on it neither answers nor advances, and `o` opens without
-  answering while `y`/`n` still answer — the key-collision regression) + two `review.css` guards for the overlay
+  answering while `y`/`n` still answer — the key-collision regression; plus, for the three new kinds: a place
+  question named after the guessed place **with no confidence line**, a duplicate question rendering **two**
+  halves with different sources and both sizes, an outlier question whose crop's `data-thumb-size` is asserted
+  to be a `fit_*` with the box drawn inside it and the context photo beside it, the same →/←/spacebar controls
+  answering and **skipping** all three, undo routing a duplicate/outlier confirmation to its own un-confirm
+  endpoint, and the undo button staying **disabled** across a place verdict) + two `review.css` guards for the overlay
   (its corner placement above the veil, and a 44 px full-strength target under `@media (hover: none)`, which
   jsdom evaluates for nobody — read out of the shipped stylesheet like the `app.css` guards in `src/styles/`),
   `LeaderboardPage` = `/leaderboard` (**any logged-in user** — reading aggregates is not a write, so the
@@ -2130,6 +2168,16 @@ so Zpět and the Ponechat levou/obě/pravou buttons never hide under a notch or 
   `@media (hover: none)`. The one price of a fixed corner: a face pinned into that same corner has the plate over
   ~1500 px² of its padded box (~0.2 % of the frame, verified in the harness) — accepted, because a control that
   hops between corners per card is worse than a rare, small overlap)
+  + `ReviewDuplicate` (the duplicate check's stage: the pair **side by side**, halves `flex: 1 1 0` so neither
+  copy is implicitly favoured, `DUPLICATE_PREVIEW_SIZE = fit_1280` **never a `tile_*`** — a centre-cropped
+  square hides exactly the edges where two exports of one shot differ — each with its file name and pixel size
+  under it and the same corner anchor out to its own photo; a broken preview degrades to an icon per half)
+  + `ReviewOutlier` (the outlier check's stage: the **face crop** large plus the whole photo beside it, the
+  /outliers page's geometry reused — `padBbox` 40 % → `cropImageStyle`, the box outlined by `faceMarkerStyle`,
+  the source picked per face by `lib/faceSource` at `OUTLIER_TARGET_PX` with the **review** limits and stepping
+  down the ladder on a 404. **`fit_*` only**: the bbox is normalised against the full frame, so cropping a
+  centre-cropped `tile_*` lands beside the face. The context photo is not decoration — a face out of its scene
+  is how a curator mistakes one wedding for another)
   + `review.css` (a fullscreen **flex column** `review-game`: top bar /
   progress / **question** / stage / actions — text **above** the photo; the stage is `flex: 1 1 0` +
   `container-type: size` + `overflow: hidden`, so its height **is** the remainder after the chrome (basis 0 →
@@ -2138,6 +2186,8 @@ so Zpět and the Ponechat levou/obě/pravou buttons never hide under a notch or 
   (max-height: 500px)` tightens the paddings on a **phone in landscape** (wide → no width query catches it,
   and yet it has the least room) and `clamp(…, min(3.5vw, 5dvh), …)` on the question holds the same for
   the font; `review-photo__box` frame, a progress bar, `kbd` badges, a touch variant of the actions;
+  `review-duplicate`/`review-outlier` are rows inside that same stage, so both inherit "the photo takes what is
+  left" and both **stack into a column below `sm`**, where a phone has no width for two frames;
 mounted **outside `Layout`** as well, so it adds its own **safe-area insets**: the side ones once on
 `.review-game`, `safe-area-inset-top` added to the header's padding and `-bottom` to the actions row
 — and to `review-game__center`, which owns the bottom edge in the loading/error/empty states —
@@ -2610,7 +2660,14 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   answer the same card twice. `undo` goes through the **inverse** write paths (`unassign_person`,
   DELETE feedback-rejection, detaching a label), because `POST /review/answer` is **idempotent per
   question** — and for the same reason a **re**-answer to a restored question is sent via the direct paths
-  (`sendDirect`), otherwise it would no-op as `already_answered`; undo first **waits for the in-flight**
+  (`sendDirect`), otherwise it would no-op as `already_answered`. Both cover all five kinds: a duplicate verdict
+  reverses through `unconfirmDuplicate`/`undismissDuplicate`, an outlier yes through `unconfirmFace` and an
+  outlier no by **re-assigning** to the marker it detached the person from (the marker survives the detach —
+  that is exactly why the outlier "no" goes through `unassign_person` rather than invalidating anything).
+  **`isUndoable` withholds undo from a place verdict alone**, and says why: no write path can mark a location an
+  *estimate* again, so the only "undo" available would write the old coordinates back as a *manual* decision —
+  a different state, silently attributed to the user. The answer is therefore not held as the undo target at
+  all, leaving the button disabled instead of offering a lie; undo first **waits for the in-flight**
   request, so the inverse doesn't overtake the answer it is undoing, and a `create_marker`-yes looks up the created
   marker via `fetchFaces`, so a possible later re-yes is an `assign_person` on **the same** marker,
   not a duplicate. `useReviewGame(source)` takes **what the game asks about** (`both`/`people`/`labels`, owned by

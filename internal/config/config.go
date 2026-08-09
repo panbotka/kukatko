@@ -502,6 +502,18 @@ type ReviewConfig struct {
 	// (a batch has to be filled from more people and labels); higher means the
 	// opposite. A non-positive value falls back to the default.
 	MaxPerEntity int `mapstructure:"max_per_entity"`
+	// OutlierBudget caps how many subjects one queue rebuild ranks for outliers
+	// ("is this really X?" over a face already assigned to X). Ranking a subject
+	// loads every face assigned to them and scores it against a trimmed
+	// centroid, so it is the most expensive per-entity read of the five question
+	// kinds. A non-positive value falls back to the default.
+	OutlierBudget int `mapstructure:"outlier_budget"`
+	// OutlierThreshold is the minimum cosine distance from a person's centroid a
+	// face must have before the game asks about it. Lower it to hear about
+	// borderline assignments too, at the cost of a game that mostly asks about
+	// correct ones — which is how a player learns to answer yes without looking.
+	// A value outside (0, 2) falls back to the default.
+	OutlierThreshold float64 `mapstructure:"outlier_threshold"`
 }
 
 // AuthConfig holds the credentials used to bootstrap the initial admin account
@@ -916,6 +928,8 @@ func setReviewDefaults(v *viper.Viper) {
 	v.SetDefault("review.label_budget", 6)
 	v.SetDefault("review.build_timeout", "15s")
 	v.SetDefault("review.max_per_entity", 4)
+	v.SetDefault("review.outlier_budget", 4)
+	v.SetDefault("review.outlier_threshold", 0.5)
 }
 
 func setMapsDefaults(v *viper.Viper) {

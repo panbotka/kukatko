@@ -42,17 +42,28 @@ package review
 // it starts to feel like the same question.
 const maxSameEntityRun = 2
 
-// questionEntity returns what a question is about: the subject for a face
-// question, the label for a label question. It is the identity a player
+// questionEntity returns what a question is about: the subject for a face or
+// outlier question, the label for a label question, the named place for a place
+// question, the group for a duplicate question. It is the identity a player
 // perceives as "this again" — the photo is different every time, the entity is
-// what gets repetitive. The kind is part of the key so a subject and a label
-// that happen to share a uid can never collide.
+// what gets repetitive. The kind of entity is part of the key, so a subject and
+// a label that happen to share a uid can never collide.
+//
+// Face and outlier questions share a key on purpose: "is this Anna?" and "is
+// this really Anna?" are both about Anna, and a batch that asked four of each
+// would be eight questions about one person. A place question keys on the place
+// *name* rather than the photo, because ten photos guessed into the same village
+// are one repetition, not ten different ones.
 func questionEntity(q Question) string {
 	switch {
 	case q.Subject != nil:
-		return string(KindFace) + ":" + q.Subject.UID
+		return "subject:" + q.Subject.UID
 	case q.Label != nil:
 		return string(KindLabel) + ":" + q.Label.UID
+	case q.Place != nil && q.Place.Name != "":
+		return string(KindPlace) + ":" + q.Place.Name
+	case q.GroupID != "":
+		return string(KindDuplicate) + ":" + q.GroupID
 	default:
 		return string(q.Kind)
 	}

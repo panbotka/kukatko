@@ -66,6 +66,16 @@ It is **not** for you if you are looking for:
   is measured server-side and forgiving — reloading the page or wandering off to an album and back
   does not reset it, only a real absence does — so the summary stays put while you read it, closes
   for good when you close it, and never greets a brand-new account with its own library as news.
+- **Tidying up is a game you can play one keypress at a time.** Everything the machine guesses at
+  ends up as a single yes/no question on a full screen — is this Tomáš? does this label fit? was
+  this taken in Brno? is this the same photo twice? is the person tagged here really her? — with
+  Ano · Ne · Nevím under it and the arrow keys doing the work. The last three of those check things
+  the machine did not merely guess but **acted on**: a location inferred from neighbouring photos, a
+  pair the duplicate detector linked, a face already filed under somebody. Those are the mistakes
+  that otherwise sit unnoticed, because nothing else lists them as questions. Every answer goes
+  through the same write paths the ordinary pages use, so it is audited and undoable — and the game
+  never merges, never deletes and never invalidates anything on its own. A leaderboard counts who
+  has answered the most, because a shared library is tidied by more than one person.
 - **A library an AI agent can use.** Kukátko can expose itself as an **MCP server**, so an agent
   searches and organizes the library directly ("find all of grandma's photos from the sixties and
   put them in an album"). Off by default, authenticated with an ordinary API token, bound by the
