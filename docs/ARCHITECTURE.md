@@ -264,6 +264,23 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
     like any other one without a date and the meaning is carried by the note. The note lives only with the flag — if the
     flag is cleared, `internal/photoapi` deletes the note (it never stays with a date presented as a fact).
     It does **not** fall into the `photos.fts` full-text (it's a dating note, not a title).
+  - **Date precision** (migration `0055_photos_taken_at_precision.sql`): `taken_at_precision`
+    (`TEXT NOT NULL DEFAULT 'day'`, CHECK `day|month|year|decade`) — how fine the date was **stated**,
+    which is a different question from whether it is a guess (`taken_at_estimated`, above). It exists
+    because the bulk editor can date a whole shelf of scans at once ("somewhere in 1974"), and `taken_at`
+    is the only anchor the timeline, the period filter, the year facets and `year:` read, so a period must
+    still be stored as a concrete instant.
+    **The convention: the anchor is the first instant of the stated period, in UTC** — 1 January for a
+    year and for a decade, the 1st for a month. UTC is not incidental: the year facets derive
+    `date_part('year', taken_at)` in UTC and the period bounds are read as UTC days, so anchoring there is
+    what makes a photo dated "1974" land in the 1974 bucket rather than in December 1973.
+    Whatever writes a `taken_at` writes the matching precision: `internal/bulkapi` from the stated grain
+    (and raises `taken_at_estimated` for anything coarser than a day — a period picked for fifty scans is
+    a guess by nature), `internal/photoapi` back to `day` whenever its date-and-time field sets one.
+    Presentation must consult it (`web/src/lib/takenDate.ts`): a year-precision photo reads "1974", never
+    the 1 January it is anchored at — the anchor is a storage decision, and printing it back would invent
+    a day nobody claimed. Carried in the metadata sidecar as `temporal.precision` (format version 3).
+    No index: it is never a filter or a sort key.
   - **Location source** (migration `0033_photos_location_source.sql`): `location_source`
     (`TEXT NOT NULL DEFAULT ''`, the vocabulary mirrors `taken_at_source` — `exif` / `manual` / `estimate` /
     empty), plus a partial index `idx_photos_location_estimate_candidates ON photos(taken_at) WHERE

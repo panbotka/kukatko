@@ -112,6 +112,43 @@ func TestMergeUpdate(t *testing.T) {
 		}
 	})
 
+	t.Run("an unrelated edit keeps a coarse date's grain", func(t *testing.T) {
+		t.Parallel()
+		// The update overwrites the whole row, so a photo the bulk editor dated
+		// "1974" must not come back a day-precision 1 January because someone typed
+		// a caption on it.
+		coarse := base
+		coarse.TakenAtPrecision = photos.TakenAtPrecisionYear
+		present := map[string]struct{}{"title": {}}
+		got, err := mergeUpdate(coarse, present, updateBody{Title: new("New")})
+		if err != nil {
+			t.Fatalf("mergeUpdate: %v", err)
+		}
+		if got.TakenAtPrecision != photos.TakenAtPrecisionYear {
+			t.Errorf("TakenAtPrecision = %q, want it carried over", got.TakenAtPrecision)
+		}
+	})
+
+	t.Run("typing a date states a day", func(t *testing.T) {
+		t.Parallel()
+		// The field is a date-and-time picker: the instant typed into it is a claim
+		// about a day, and leaving the row at "year" would go on hiding it.
+		coarse := base
+		coarse.TakenAtPrecision = photos.TakenAtPrecisionYear
+		typed := time.Date(1974, 6, 14, 10, 30, 0, 0, time.UTC)
+		present := map[string]struct{}{"taken_at": {}}
+		got, err := mergeUpdate(coarse, present, updateBody{TakenAt: &typed})
+		if err != nil {
+			t.Fatalf("mergeUpdate: %v", err)
+		}
+		if got.TakenAtPrecision != photos.TakenAtPrecisionDay {
+			t.Errorf("TakenAtPrecision = %q, want day", got.TakenAtPrecision)
+		}
+		if got.TakenAtSource != photos.TakenAtSourceManual {
+			t.Errorf("TakenAtSource = %q, want manual", got.TakenAtSource)
+		}
+	})
+
 	t.Run("ai_note overwritten while notes unchanged", func(t *testing.T) {
 		t.Parallel()
 		present := map[string]struct{}{"ai_note": {}}

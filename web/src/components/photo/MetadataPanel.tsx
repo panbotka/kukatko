@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next'
 import { type Coordinates, formatCoordinates, parseCoordinates } from '../../lib/coordinates'
 import { formatDateTimeMinutes } from '../../lib/format'
 import { joinKeywords, sameKeywords, splitAiNote, splitKeywords } from '../../lib/photoFacts'
+import { formatTakenPeriod } from '../../lib/takenDate'
 import { type Place } from '../../services/map'
 import { type PhotoDetail, type PhotoMetadataUpdate, updatePhoto } from '../../services/photos'
 import { Icon } from '../Icon'
@@ -365,8 +366,23 @@ export function MetadataPanel({ photo, canWrite, onUpdated, footer }: MetadataPa
   // the field counts as filled and is what a copy of the row reads like — while an
   // estimated date is *rendered* by CaptureDate, with the marker as a badge and the
   // note beside it.
+  //
+  // A date stated at a coarser grain than a day is shown as that grain and no
+  // finer: "1974", not the 1 January 1974 it is anchored at. The anchor is a
+  // storage decision — it is what makes the photo sort and filter into 1974 —
+  // and printing it back would be the app inventing a day nobody claimed.
+  const takenAtPeriod = formatTakenPeriod(
+    photo.taken_at,
+    photo.taken_at_precision,
+    t,
+    i18n.language,
+  )
   const takenAtText =
-    photo.taken_at !== undefined ? formatDateTimeMinutes(photo.taken_at, i18n.language) : ''
+    takenAtPeriod !== ''
+      ? takenAtPeriod
+      : photo.taken_at !== undefined
+        ? formatDateTimeMinutes(photo.taken_at, i18n.language)
+        : ''
   const isEstimated = pristineEstimated
   const captureDateText = isEstimated
     ? [t('photo.metadata.estimatedMarker'), takenAtText, pristineNote]
@@ -641,6 +657,16 @@ export function MetadataPanel({ photo, canWrite, onUpdated, footer }: MetadataPa
               setTakenAt(event.target.value)
             }}
           />
+          {/* This field is an instant, so a date stated as a whole period shows up
+              in it as the day it is anchored at — which is not a day anyone
+              claimed. Saying so is the honest way round: the alternative is a
+              reader who believes the app knows the day, or one who "corrects" the
+              anchor by hand and quietly loses the period. */}
+          {takenAtPeriod !== '' && (
+            <Form.Text className="text-secondary">
+              {t('photo.metadata.takenAtPeriodHint', { period: takenAtPeriod })}
+            </Form.Text>
+          )}
         </Form.Group>
         {/* The approximate date: the flag, and — only while it is set — the note
             that says what the estimate rests on. An empty note on a photo whose

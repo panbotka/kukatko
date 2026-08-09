@@ -78,6 +78,40 @@ const (
 // it (internal/exif).
 const TakenAtSourceManual = "manual"
 
+// The recognised taken_at_precision values, mirrored by the SQL CHECK on
+// photos.taken_at_precision (migration 0055). They record how fine the capture
+// date was actually stated: a date nobody can pin closer than "somewhere in
+// 1974" is stored as the first instant of that period in UTC — taken_at stays
+// the single anchor the timeline, the period filter, the year facets and the
+// query language read — and the precision is what stops the presentation layer
+// reading that anchor back as a day someone claimed.
+//
+// Precision is not the same thing as Photo.TakenAtEstimated: this says how
+// coarse the statement is, the flag says whether it is a guess at all.
+const (
+	// TakenAtPrecisionDay is a real date, the default and what every row means
+	// unless something says otherwise.
+	TakenAtPrecisionDay = "day"
+	// TakenAtPrecisionMonth is a month and year; the anchor is its first day.
+	TakenAtPrecisionMonth = "month"
+	// TakenAtPrecisionYear is a bare year; the anchor is its 1 January.
+	TakenAtPrecisionYear = "year"
+	// TakenAtPrecisionDecade is a decade; the anchor is 1 January of its first year.
+	TakenAtPrecisionDecade = "decade"
+)
+
+// ValidTakenAtPrecision reports whether p is one of the recognised
+// taken_at_precision values, so a caller can reject a bad one before the SQL
+// CHECK does.
+func ValidTakenAtPrecision(p string) bool {
+	switch p {
+	case TakenAtPrecisionDay, TakenAtPrecisionMonth, TakenAtPrecisionYear, TakenAtPrecisionDecade:
+		return true
+	default:
+		return false
+	}
+}
+
 // Photo is one catalogued image or video. Mutable text fields are plain strings
 // (the columns default to the empty string in SQL); genuinely optional values
 // use pointers so
@@ -119,6 +153,13 @@ type Photo struct {
 	// meaning; the note is only kept while the flag is set.
 	TakenAtEstimated bool   `json:"taken_at_estimated"`
 	TakenAtNote      string `json:"taken_at_note"`
+	// TakenAtPrecision is how fine TakenAt was stated — day, month, year or decade
+	// (see the TakenAtPrecision* constants). A coarser grain than a day means
+	// TakenAt is the first instant of the stated period in UTC, so it keeps sorting
+	// and filtering into that period while the UI shows only what was claimed. The
+	// zero value read from a pre-0055 row is the empty string; every stored row
+	// carries "day" or better.
+	TakenAtPrecision string `json:"taken_at_precision"`
 
 	Title string `json:"title"`
 	// TitleEdited marks the title as owned by the user rather than by the import: it
@@ -320,9 +361,14 @@ type MetadataUpdate struct {
 	TakenAtSource    string     `json:"taken_at_source"`
 	TakenAtEstimated bool       `json:"taken_at_estimated"`
 	TakenAtNote      string     `json:"taken_at_note"`
-	Lat              *float64   `json:"lat"`
-	Lng              *float64   `json:"lng"`
-	Altitude         *float64   `json:"altitude"`
+	// TakenAtPrecision is the date's grain (see Photo.TakenAtPrecision). Like
+	// TakenAtSource it is written on every metadata update, so a caller that changes
+	// taken_at must set it to match — an empty value is normalised to "day" by the
+	// store rather than tripping the column's CHECK.
+	TakenAtPrecision string   `json:"taken_at_precision"`
+	Lat              *float64 `json:"lat"`
+	Lng              *float64 `json:"lng"`
+	Altitude         *float64 `json:"altitude"`
 	// LocationSource is the provenance of Lat/Lng. It is written on every metadata
 	// update, so a caller that moves or clears a location must set it to match (see
 	// photoapi's merge, which stamps "manual" whenever the user touches either).

@@ -101,7 +101,14 @@ to `## Package map` in `CLAUDE.md`.
   `taken_at_note`, editable → also in `MetadataUpdate`): the date is an **estimate**, not a fact, plus
   free text explaining what the estimate rests on. `TakenAt` remains the sole anchor of sorting/timeline/filters —
   the flag is presentation, not a second date axis; the note lives only alongside the flag
-  (`internal/photoapi` clears it when the flag is dropped)),
+  (`internal/photoapi` clears it when the flag is dropped);
+  **date precision** `TakenAtPrecision string` (JSON/column `taken_at_precision`, the
+  `TakenAtPrecision{Day,Month,Year,Decade}` constants + `ValidTakenAtPrecision`, editable → also in
+  `MetadataUpdate`): how fine the date was **stated**, a different question from whether it is a guess.
+  Anything coarser than `day` means `TakenAt` is the **first instant of that period in UTC**, so the photo
+  sorts and filters into it while presentation shows only what was claimed; the store normalises an empty
+  value to `day` on write (`takenAtPrecisionOrDay`) rather than tripping the column's CHECK, so a caller
+  built by hand cannot invent a grain),
   `MediaType` image/video/live, `FileRole` original/sidecar/edited, UID generator prefix `ph`,
   `Store` over pgx with
   `Create`/`GetByUID`/`GetByFileHash`/`GetByPhotoprismUID`/`GetByPhotoprismFileHash`
@@ -2061,7 +2068,8 @@ to `## Package map` in `CLAUDE.md`.
   (bulk metadata editing: `Service` = `NewService(pool, maxBatch)` with `Apply(ctx, actorUID,
   photoUIDs, ops Operations) (Result, error)` — **the whole batch in a single transaction** with an audit
   record; `Operations` = the optional fields `AddAlbums`/`RemoveAlbums`/`AddLabels`/`RemoveLabels`,
-  `Title`/`Description *string` (nil=unchanged, ""=clear), `Location *Location`+`ClearLocation`,
+  `Title`/`Description *string` (nil=unchanged, ""=clear), **`TakenAt *TakenAt{At,Precision}`**,
+  `Location *Location`+`ClearLocation`,
   `Archive`/`Hide`/`Favorite *bool` (`Hide` = `photos.hidden_from_library`, the operation the
   hide-from-library feature actually needs — the real use is fifty document scans at once),
   **`Rating *int` (0–5) + `Flag *string` (none/pick/reject/eye)**;
@@ -2075,12 +2083,20 @@ to `## Package map` in `CLAUDE.md`.
   error rolls the whole batch back; an archive operation additionally calls `photos.LeaveStackTx` for each
   archived photo **in the same transaction**, so archiving a stack's primary does not hide its still-live
   siblings behind the `(stack_uid IS NULL OR stack_primary)` gate (an unarchive leaves stacks untouched);
+  a set-taken-date operation writes `taken_at` (`At`, always the **first instant of the stated period in
+  UTC**), `taken_at_source='manual'`, `taken_at_precision` and `taken_at_estimated` = "the grain is coarser
+  than a day" — an exact date instead lowers that flag and clears `taken_at_note` with it (0029's invariant:
+  a note only lives beside a date presented as a guess); it never touches the original file or its EXIF;
   `Summary()` (audit details) + `IsEmpty()`), `internal/bulkapi/`
   (HTTP over `bulk.Service`: the `Service` interface (Apply) — fakeable; `NewAPI(Config{Service,
   RequireWrite})`+`RegisterRoutes` mounts `POST /photos/bulk` behind `RequireWrite`; the body
   `{photo_uids,operations}` via `operationsInput` with **set/clear pairs as separate keys**
   (unambiguous, a `set_*`+`clear_*` / `archive`+`unarchive` conflict → 400), `set_caption`→title,
   **`set_rating` (0–5) / `set_flag` (none/pick/reject/eye)** with validation → 400,
+  **`set_taken_at {precision,value}`** where the value's shape follows the precision
+  (`day`/`1974-06-14`, `month`/`1974-06`, `year`/`1974`, `decade`/`1970` — a year mid-decade rounds down),
+  parsed in UTC by `resolveTakenAt` to the period's first instant; no time of day (the operation is for
+  scans, where the hour is never known); an unknown precision or a value that does not parse at it → 400,
   coordinate validation, `DisallowUnknownFields` (an unknown operation → 400) + 4 MiB limit; errors mapped
   `ErrNoPhotos`/`ErrNoOperations`/`ErrAlbum/LabelNotFound`→400, `ErrBatchTooLarge`→413, otherwise 500;
   per-photo errors return 200 with the detail in the body; mounted by a further `server.WithAPI`
@@ -2440,8 +2456,10 @@ to `## Package map` in `CLAUDE.md`.
   Not to be confused with `internal/sidecar`, which reads *foreign* sidecars (Google Takeout `.json`, Apple `.xmp`) during
   an import — this package only **writes**, and only its own format. `Document` = a versioned, grouped
   schema (`version`/`generated_at`/`identity`/`descriptive`/`temporal`/`spatial`/`technical`/
-  `curation`/`edit`), `Version = 2` (v2 added `curation.hidden_from_library` — additive, but still a bump,
-  because a reader that ignored the key would un-hide every hidden photo on restore);
+  `curation`/`edit`), `Version = 3` (v2 added `curation.hidden_from_library` — additive, but still a bump,
+  because a reader that ignored the key would un-hide every hidden photo on restore; v3 added
+  `temporal.precision`, omitted at the ordinary `day` grain, for the same reason: a reader that ignored it
+  would restore "somewhere in the seventies" as a photo taken on 1 January 1970);
   `Build(Input) Document` is a **pure function** (no I/O, no
   clock — the caller collects the collaborators), `Marshal`/`Unmarshal` add/ignore the header comment
   that explains **why there are no embeddings in the file** (large, binary, cheap to recompute from

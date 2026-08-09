@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { useThumbSrc } from '../../hooks/useThumbSrc'
 import { formatDate, formatDuration } from '../../lib/format'
 import { photoLabel } from '../../lib/photoTitle'
+import { formatTakenPeriod } from '../../lib/takenDate'
 import { type Photo } from '../../services/photos'
 import { FadeInImage } from '../FadeInImage'
 import { Icon } from '../Icon'
@@ -110,8 +111,16 @@ export function PhotoTile({
   const label = photoLabel(photo, i18n.language)
   // The tile shows no date of its own; the only one it carries is in the alt text,
   // and an estimated date is marked there too ("cca 1950") so it cannot be read as
-  // a known one. The grid itself goes on sorting by taken_at exactly as before.
-  const takenDate = photo.taken_at ? formatDate(photo.taken_at, i18n.language) : ''
+  // a known one. A date stated as a whole period reads as that period ("1974"),
+  // never as the day it is anchored at. The grid itself goes on sorting by
+  // taken_at exactly as before.
+  const takenPeriod = formatTakenPeriod(photo.taken_at, photo.taken_at_precision, t, i18n.language)
+  const takenDate =
+    takenPeriod !== ''
+      ? takenPeriod
+      : photo.taken_at
+        ? formatDate(photo.taken_at, i18n.language)
+        : ''
   const taken =
     takenDate !== '' && photo.taken_at_estimated === true
       ? `${t('photo.metadata.estimatedMarker')} ${takenDate}`

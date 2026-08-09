@@ -127,6 +127,11 @@ func temporalOf(p photos.Photo) Temporal {
 		Estimated:     p.TakenAtEstimated,
 		Note:          p.TakenAtNote,
 	}
+	// The ordinary day precision is left out: it is what an absent key means, and
+	// writing it on every one of tens of thousands of sidecars would be noise.
+	if p.TakenAtPrecision != photos.TakenAtPrecisionDay {
+		t.Precision = p.TakenAtPrecision
+	}
 	if p.TakenAt != nil {
 		utc := p.TakenAt.UTC()
 		t.TakenAt = &utc

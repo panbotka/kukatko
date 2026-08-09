@@ -144,6 +144,7 @@ func metadataChanges(before photos.Photo, after photos.MetadataUpdate) *audit.Ch
 	changes.Add("taken_at", before.TakenAt, after.TakenAt)
 	changes.Add("taken_at_estimated", before.TakenAtEstimated, after.TakenAtEstimated)
 	changes.Add("taken_at_note", before.TakenAtNote, after.TakenAtNote)
+	changes.Add("taken_at_precision", before.TakenAtPrecision, after.TakenAtPrecision)
 	changes.Add("lat", before.Lat, after.Lat)
 	changes.Add("lng", before.Lng, after.Lng)
 	changes.Add("location_source", before.LocationSource, after.LocationSource)
@@ -216,6 +217,9 @@ func mergeUpdate(current photos.Photo, present map[string]struct{}, body updateB
 		TakenAtSource:    current.TakenAtSource,
 		TakenAtEstimated: current.TakenAtEstimated,
 		TakenAtNote:      current.TakenAtNote,
+		// Carried through so editing another field never coarsens (or sharpens) the
+		// date's grain; applyTakenAt resets it when this request actually sets a date.
+		TakenAtPrecision: current.TakenAtPrecision,
 		Lat:              current.Lat,
 		Lng:              current.Lng,
 		Altitude:         current.Altitude,
@@ -306,8 +310,15 @@ const locationSourceManual = photos.LocationSourceManual
 
 // applyTakenAt sets or clears the capture time and tracks its source: a provided
 // time is marked "manual", clearing it resets the source to "unknown".
+//
+// Either way the date's grain goes back to a plain day. This field is a
+// date-and-time picker: whatever the photo's stored precision was — a year set
+// in the bulk editor, say — typing an instant into it states one, and leaving
+// the row at "year" would go on hiding the very day the user just chose. A
+// coarser grain is set through the bulk editor's period field, not here.
 func applyTakenAt(update *photos.MetadataUpdate, takenAt *time.Time) {
 	update.TakenAt = takenAt
+	update.TakenAtPrecision = photos.TakenAtPrecisionDay
 	if takenAt != nil {
 		update.TakenAtSource = photos.TakenAtSourceManual
 	} else {

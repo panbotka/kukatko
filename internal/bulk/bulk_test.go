@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestOperations_IsEmpty verifies an operation set with no requested change is
@@ -26,6 +27,11 @@ func TestOperations_IsEmpty(t *testing.T) {
 		{"favorite", Operations{Favorite: new(false)}, false},
 		{"rating", Operations{Rating: new(4)}, false},
 		{"flag", Operations{Flag: new("pick")}, false},
+		{
+			"taken at",
+			Operations{TakenAt: &TakenAt{At: time.Unix(0, 0).UTC(), Precision: "year"}},
+			false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -50,10 +56,12 @@ func TestOperations_Summary(t *testing.T) {
 		Hide:          new(true),
 		Rating:        new(5),
 		Flag:          new("reject"),
+		TakenAt:       &TakenAt{At: time.Date(1974, time.January, 1, 0, 0, 0, 0, time.UTC), Precision: "year"},
 	}
 	summary := ops.Summary()
 	for _, key := range []string{
 		"add_albums", "remove_labels", "description", "clear_location", "hide", "rating", "flag",
+		"taken_at",
 	} {
 		if _, ok := summary[key]; !ok {
 			t.Errorf("Summary() missing key %q in %v", key, summary)
@@ -112,6 +120,37 @@ func TestOperations_photoColumnUpdate(t *testing.T) {
 			wantOK:     true,
 			wantArgs:   2, // uid + the boolean, bound rather than literal
 			wantSubstr: []string{"hidden_from_library = $2"},
+		},
+		{
+			// A coarse grain is a guess by nature, so it raises the estimate flag; the
+			// note is left alone, since it still describes a date that is one.
+			name: "set a year",
+			ops: Operations{
+				TakenAt: &TakenAt{
+					At:        time.Date(1974, time.January, 1, 0, 0, 0, 0, time.UTC),
+					Precision: "year",
+				},
+			},
+			wantOK:   true,
+			wantArgs: 5, // uid + taken_at + source + precision + estimated
+			wantSubstr: []string{
+				"taken_at = $2", "taken_at_source = $3",
+				"taken_at_precision = $4", "taken_at_estimated = $5",
+			},
+		},
+		{
+			// The opposite claim: an exact date is a fact, so the flag comes down and
+			// the dating note goes with it.
+			name: "set an exact date",
+			ops: Operations{
+				TakenAt: &TakenAt{
+					At:        time.Date(1974, time.June, 14, 0, 0, 0, 0, time.UTC),
+					Precision: "day",
+				},
+			},
+			wantOK:     true,
+			wantArgs:   6, // ... + taken_at_note = ''
+			wantSubstr: []string{"taken_at_precision = $4", "taken_at_note = $6"},
 		},
 		{
 			name:       "unhide alongside an archive toggle",

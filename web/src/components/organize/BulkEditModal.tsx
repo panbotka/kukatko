@@ -1,3 +1,4 @@
+import type { TFunction } from 'i18next'
 import { useEffect, useMemo, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
@@ -9,7 +10,15 @@ import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 
 import { useAuth } from '../../auth/AuthContext'
+import { formatDate } from '../../lib/format'
 import { pendingName, pendingOptions, pendingValue } from '../../lib/pendingCreate'
+import { DECADE_YEARS, decadeOf } from '../../lib/period'
+import {
+  formatDecade,
+  formatTakenPeriod,
+  TAKEN_PRECISIONS,
+  type TakenPrecision,
+} from '../../lib/takenDate'
 import { ApiError } from '../../services/auth'
 import { type BulkOperations, type BulkResult, bulkUpdatePhotos } from '../../services/bulk'
 import {
@@ -85,6 +94,18 @@ interface FormState {
   removeLabels: string[]
   descriptionMode: SetClearMode
   description: string
+  /**
+   * The grain a new capture date is stated at, `''` for no change. It is the
+   * field's mode *and* the precision sent, because how much of a date you can
+   * state and how much of it may be shown are the same question.
+   */
+  takenAtMode: '' | TakenPrecision
+  /**
+   * The date itself, shaped by {@link FormState.takenAtMode}: `1974-06-14`,
+   * `1974-06`, `1974`, or a decade's first year `1970`. Reset whenever the mode
+   * changes — a day left over in a year field is not a year.
+   */
+  takenAt: string
   locationMode: SetClearMode
   lat: string
   lng: string
@@ -105,6 +126,8 @@ const EMPTY_FORM: FormState = {
   removeLabels: [],
   descriptionMode: '',
   description: '',
+  takenAtMode: '',
+  takenAt: '',
   locationMode: '',
   lat: '',
   lng: '',
@@ -120,13 +143,75 @@ const EMPTY_FORM: FormState = {
  */
 const LARGE_SELECTION = 50
 
+/** The shape a date value must have at each grain, mirroring the backend's. */
+const TAKEN_AT_PATTERNS: Record<TakenPrecision, RegExp> = {
+  day: /^\d{4}-\d{2}-\d{2}$/,
+  month: /^\d{4}-\d{2}$/,
+  year: /^\d{4}$/,
+  decade: /^\d{4}$/,
+}
+
+/** The earliest year the date field offers: photography is not older than this. */
+const FIRST_PHOTO_YEAR = 1826
+
+/**
+ * The first instant of the period the date field states, as the ISO stamp the
+ * period formatters read, or `''` when the field does not hold a value of the
+ * shape its grain requires. It is both the validity check and the value used to
+ * render the period back to the reader, so the two can never disagree.
+ */
+function takenAtInstant(mode: TakenPrecision, value: string): string {
+  if (!TAKEN_AT_PATTERNS[mode].test(value)) {
+    return ''
+  }
+  switch (mode) {
+    case 'day':
+      return `${value}T00:00:00Z`
+    case 'month':
+      return `${value}-01T00:00:00Z`
+    default:
+      return `${value}-01-01T00:00:00Z`
+  }
+}
+
+/**
+ * The date the form states, in the words the summary and the confirmation use:
+ * "14. 6. 1974", "červen 1974", "rok 1974", "léta 1970–1979". The grain is named
+ * — a bare "1974" beside "Set the capture date" would leave the reader guessing
+ * whether they are about to stamp a year or a New Year's Day on fifty photos.
+ * Returns `''` for an unusable value, so a caller can treat it as "nothing to
+ * say yet".
+ */
+function takenAtPhrase(mode: TakenPrecision, value: string, t: TFunction, locale: string): string {
+  const instant = takenAtInstant(mode, value)
+  if (instant === '') {
+    return ''
+  }
+  switch (mode) {
+    case 'day':
+      return t('bulkEdit.takenAt.phrase.day', { value: formatDate(instant, locale) })
+    case 'month':
+      return t('bulkEdit.takenAt.phrase.month', {
+        value: formatTakenPeriod(instant, 'month', t, locale),
+      })
+    case 'year':
+      return t('bulkEdit.takenAt.phrase.year', { value })
+    default:
+      return t('bulkEdit.takenAt.phrase.decade', { value: formatDecade(Number(value), t) })
+  }
+}
+
 /**
  * Builds the {@link BulkOperations} payload from the form, or returns the
- * `'invalid-coords'` / `'empty'` sentinel when set-location coordinates do not
- * parse or no operation was chosen. Set/clear pairs map to the distinct wire
- * keys the backend expects; the whole batch stays a single `POST /photos/bulk`.
+ * `'invalid-coords'` / `'invalid-taken-at'` / `'empty'` sentinel when
+ * set-location coordinates do not parse, the capture date does not match the
+ * grain it was stated at, or no operation was chosen. Set/clear pairs map to the
+ * distinct wire keys the backend expects; the whole batch stays a single
+ * `POST /photos/bulk`.
  */
-function buildOperations(form: FormState): BulkOperations | 'invalid-coords' | 'empty' {
+function buildOperations(
+  form: FormState,
+): BulkOperations | 'invalid-coords' | 'invalid-taken-at' | 'empty' {
   const ops: BulkOperations = {}
   if (form.addAlbums.length > 0) {
     ops.add_to_albums = form.addAlbums
@@ -144,6 +229,12 @@ function buildOperations(form: FormState): BulkOperations | 'invalid-coords' | '
     ops.set_description = form.description
   } else if (form.descriptionMode === 'clear') {
     ops.clear_description = true
+  }
+  if (form.takenAtMode !== '') {
+    if (takenAtInstant(form.takenAtMode, form.takenAt) === '') {
+      return 'invalid-taken-at'
+    }
+    ops.set_taken_at = { precision: form.takenAtMode, value: form.takenAt }
   }
   if (form.locationMode === 'set') {
     const lat = Number(form.lat)
@@ -195,7 +286,7 @@ function buildOperations(form: FormState): BulkOperations | 'invalid-coords' | '
  * operation which is itself per-user.
  */
 export function BulkEditModal({ show, photoUids, onHide, onDone, prefill }: BulkEditModalProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { canWrite } = useAuth()
   const [load, setLoad] = useState<LoadState>({ status: 'loading' })
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
@@ -314,7 +405,7 @@ export function BulkEditModal({ show, photoUids, onHide, onDone, prefill }: Bulk
         }
       }
       const ops = buildOperations(resolved)
-      if (ops === 'empty' || ops === 'invalid-coords') {
+      if (ops === 'empty' || ops === 'invalid-coords' || ops === 'invalid-taken-at') {
         // Unreachable: apply() validated the same form, and resolving pending
         // entries only swaps values. The guard merely narrows the union.
         return
@@ -346,13 +437,25 @@ export function BulkEditModal({ show, photoUids, onHide, onDone, prefill }: Bulk
       setError(t('bulkEdit.location.invalid'))
       return
     }
-    if (!skipConfirm && photoUids.length > LARGE_SELECTION) {
+    if (ops === 'invalid-taken-at') {
+      setError(t('bulkEdit.takenAt.invalid'))
+      return
+    }
+    // Two things ask for a second look. A batch larger than LARGE_SELECTION is no
+    // longer a slip of the mouse. And a capture date is confirmed at any size:
+    // it overwrites the one fact the whole library is ordered by, on photos whose
+    // old date is not shown in this dialog, so "which date, on how many photos"
+    // has to be said out loud before it happens rather than discovered afterwards.
+    if (!skipConfirm && (photoUids.length > LARGE_SELECTION || ops.set_taken_at !== undefined)) {
       setError(null)
       setConfirming(true)
       return
     }
     void send(form)
   }
+
+  const takenAtText =
+    form.takenAtMode === '' ? '' : takenAtPhrase(form.takenAtMode, form.takenAt, t, i18n.language)
 
   return (
     <Modal show={show} onHide={onHide} centered scrollable fullscreen="sm-down">
@@ -400,7 +503,12 @@ export function BulkEditModal({ show, photoUids, onHide, onDone, prefill }: Bulk
                 {confirming && (
                   <Alert variant="danger" className="mt-3 mb-0">
                     <p className="mb-2">
-                      {t('bulkEdit.confirm.body', { count: photoUids.length })}
+                      {takenAtText !== ''
+                        ? t('bulkEdit.confirm.takenAt', {
+                            date: takenAtText,
+                            count: photoUids.length,
+                          })
+                        : t('bulkEdit.confirm.body', { count: photoUids.length })}
                     </p>
                     <div className="d-flex flex-wrap gap-2">
                       <Button
@@ -629,6 +737,7 @@ function BulkEditForm({
             }}
           />
         )}
+        <TakenAtField form={form} busy={busy} onChange={onChange} />
       </Section>
 
       <Section title={t('bulkEdit.sections.location')}>
@@ -761,6 +870,125 @@ function BulkEditForm({
   )
 }
 
+/**
+ * The capture-date field: the grain first, then a control shaped for that grain.
+ *
+ * The grain leads because it is the actual decision. A box of scans is dated
+ * "1974" or "the seventies" far more often than to the day, and a form that
+ * opened with a date picker would make the honest answer the awkward one — the
+ * reason those photos carry the scanner's own date in the first place. Each
+ * grain then gets the narrowest control that can state it, so an unknowable day
+ * cannot be typed in by accident: a decade is a list, a year a bounded number, a
+ * month and a day their native pickers.
+ *
+ * Nothing here writes to the files. The originals and their EXIF are untouched;
+ * this is the catalogue's own date.
+ */
+function TakenAtField({
+  form,
+  busy,
+  onChange,
+}: {
+  form: FormState
+  busy: boolean
+  onChange: (patch: Partial<FormState>) => void
+}) {
+  const { t } = useTranslation()
+  // Newest first: the library's own decades are far likelier than the 1830s.
+  const decades = useMemo(() => {
+    const newest = decadeOf(new Date().getUTCFullYear())
+    const out: number[] = []
+    for (let decade = newest; decade >= FIRST_PHOTO_YEAR; decade -= DECADE_YEARS) {
+      out.push(decade)
+    }
+    return out
+  }, [])
+  const thisYear = new Date().getUTCFullYear()
+
+  return (
+    <>
+      <Form.Group controlId="bulk-taken-at-mode" className="mt-3">
+        <Form.Label className="kk-text-caption mb-1">{t('bulkEdit.takenAt.label')}</Form.Label>
+        <Form.Select
+          value={form.takenAtMode}
+          disabled={busy}
+          onChange={(e) => {
+            // The value's shape follows the grain, so a leftover from the previous
+            // grain ("1974-06-14" in a year field) is cleared rather than reshaped.
+            onChange({ takenAtMode: e.target.value as FormState['takenAtMode'], takenAt: '' })
+          }}
+        >
+          <option value="">{t('bulkEdit.takenAt.noChange')}</option>
+          {TAKEN_PRECISIONS.map((precision) => (
+            <option key={precision} value={precision}>
+              {t(`bulkEdit.takenAt.grain.${precision}` as const)}
+            </option>
+          ))}
+        </Form.Select>
+        <Form.Text className="kk-text-caption">{t('bulkEdit.takenAt.hint')}</Form.Text>
+      </Form.Group>
+      {form.takenAtMode === 'day' && (
+        <Form.Control
+          className="mt-2"
+          type="date"
+          value={form.takenAt}
+          disabled={busy}
+          aria-label={t('bulkEdit.takenAt.grain.day')}
+          onChange={(e) => {
+            onChange({ takenAt: e.target.value })
+          }}
+        />
+      )}
+      {form.takenAtMode === 'month' && (
+        <Form.Control
+          className="mt-2"
+          type="month"
+          value={form.takenAt}
+          disabled={busy}
+          aria-label={t('bulkEdit.takenAt.grain.month')}
+          placeholder="1974-06"
+          onChange={(e) => {
+            onChange({ takenAt: e.target.value })
+          }}
+        />
+      )}
+      {form.takenAtMode === 'year' && (
+        <Form.Control
+          className="mt-2"
+          type="number"
+          min={FIRST_PHOTO_YEAR}
+          max={thisYear}
+          value={form.takenAt}
+          disabled={busy}
+          aria-label={t('bulkEdit.takenAt.grain.year')}
+          placeholder="1974"
+          onChange={(e) => {
+            onChange({ takenAt: e.target.value })
+          }}
+        />
+      )}
+      {form.takenAtMode === 'decade' && (
+        <Form.Select
+          className="mt-2"
+          value={form.takenAt}
+          disabled={busy}
+          aria-label={t('bulkEdit.takenAt.grain.decade')}
+          onChange={(e) => {
+            onChange({ takenAt: e.target.value })
+          }}
+        >
+          <option value="">{t('bulkEdit.takenAt.pickDecade')}</option>
+          {decades.map((decade) => (
+            <option key={decade} value={String(decade)}>
+              {formatDecade(decade, t)}
+            </option>
+          ))}
+        </Form.Select>
+      )}
+    </>
+  )
+}
+
 /** One line of the pending-change summary. */
 interface ChangeLine {
   /** Stable React key. */
@@ -787,7 +1015,7 @@ function PendingChanges({
   labels: LabelCount[]
   photoCount: number
 }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
 
   const lines: ChangeLine[] = []
   // A pending creation reads as its name — the entry will exist by the time
@@ -839,6 +1067,20 @@ function PendingChanges({
     lines.push({
       id: 'description',
       text: t('bulkEdit.summary.clearDescription'),
+      destructive: true,
+    })
+  }
+  if (form.takenAtMode !== '') {
+    const phrase = takenAtPhrase(form.takenAtMode, form.takenAt, t, i18n.language)
+    lines.push({
+      id: 'takenAt',
+      text:
+        phrase !== ''
+          ? t('bulkEdit.summary.setTakenAt', { date: phrase })
+          : t('bulkEdit.summary.setTakenAtPending'),
+      // Overwriting a date loses the old one, and the old one may have been the
+      // real thing on some of the selection — the one line here that warrants the
+      // danger key without deleting anything.
       destructive: true,
     })
   }

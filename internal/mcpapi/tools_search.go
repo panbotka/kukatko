@@ -496,6 +496,7 @@ func toPhotoDetail(p photos.Photo) photoDetail {
 		TakenAt:          formatTime(p.TakenAt),
 		TakenAtEstimated: p.TakenAtEstimated,
 		TakenAtNote:      p.TakenAtNote,
+		TakenAtPrecision: coarsePrecision(p.TakenAtPrecision),
 		MediaType:        string(p.MediaType),
 		FileName:         p.FileName,
 		FileSize:         p.FileSize,

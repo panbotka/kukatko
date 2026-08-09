@@ -501,4 +501,96 @@ describe('BulkEditModal', () => {
       })
     })
   })
+  it('confirms the scope of a capture date before applying it, whatever the selection size', async () => {
+    bulkMock.mockResolvedValue(result({ total: 2, updated: 2 }))
+    const user = userEvent.setup()
+    // Two photos: well under the size that triggers the generic confirmation, so
+    // what is proved here is that a date is confirmed on its own account.
+    renderModal(['ph1', 'ph2'])
+
+    await user.selectOptions(await screen.findByLabelText('Capture date'), 'year')
+    await user.type(screen.getByLabelText('Year only'), '1974')
+
+    // The summary states the change in prose before anything is sent.
+    expect(screen.getByText('Set the capture date to the year 1974')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+    // Nothing has been sent yet: the scope has to be read back first.
+    expect(bulkMock).not.toHaveBeenCalled()
+    expect(
+      screen.getByText(
+        'Set the year 1974 on 2 photos? Their current capture dates are overwritten.',
+      ),
+    ).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Yes, apply to 2 photos' }))
+    await waitFor(() => {
+      expect(bulkMock).toHaveBeenCalledWith(['ph1', 'ph2'], {
+        set_taken_at: { precision: 'year', value: '1974' },
+      })
+    })
+    // And the result says how many photos actually changed.
+    expect(await screen.findByText(/2 updated/)).toBeInTheDocument()
+  })
+
+  it('sends each grain in the shape the backend expects', async () => {
+    const cases = [
+      { grain: 'day', field: 'Exact date', value: '1974-06-14' },
+      { grain: 'month', field: 'Month and year', value: '1974-06' },
+    ] as const
+    for (const { grain, field, value } of cases) {
+      bulkMock.mockReset()
+      bulkMock.mockResolvedValue(result({ total: 2, updated: 2 }))
+      const user = userEvent.setup()
+      const view = renderModal()
+
+      await user.selectOptions(await screen.findByLabelText('Capture date'), grain)
+      await user.type(screen.getByLabelText(field), value)
+      await user.click(screen.getByRole('button', { name: 'Apply' }))
+      await user.click(screen.getByRole('button', { name: 'Yes, apply to 2 photos' }))
+
+      await waitFor(() => {
+        expect(bulkMock).toHaveBeenCalledWith(['ph1', 'ph2'], {
+          set_taken_at: { precision: grain, value },
+        })
+      })
+      view.unmount()
+    }
+  })
+
+  it('offers decades as a list and sends the decade’s first year', async () => {
+    bulkMock.mockResolvedValue(result({ total: 2, updated: 2 }))
+    const user = userEvent.setup()
+    renderModal()
+
+    await user.selectOptions(await screen.findByLabelText('Capture date'), 'decade')
+    // A decade is picked, never typed: its label names the whole span so nobody
+    // has to work out whether "1970" means the year or the ten years after it.
+    await user.selectOptions(screen.getByLabelText('Decade'), '1970')
+    expect(screen.getByRole('option', { name: '1970–1979' })).toBeInTheDocument()
+    expect(screen.getByText('Set the capture date to 1970–1979')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+    await user.click(screen.getByRole('button', { name: 'Yes, apply to 2 photos' }))
+
+    await waitFor(() => {
+      expect(bulkMock).toHaveBeenCalledWith(['ph1', 'ph2'], {
+        set_taken_at: { precision: 'decade', value: '1970' },
+      })
+    })
+  })
+
+  it('refuses a grain with no date rather than sending half an operation', async () => {
+    const user = userEvent.setup()
+    renderModal()
+
+    await user.selectOptions(await screen.findByLabelText('Capture date'), 'year')
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+    expect(
+      screen.getByText('Fill in the capture date for the grain you picked.'),
+    ).toBeInTheDocument()
+    expect(bulkMock).not.toHaveBeenCalled()
+  })
 })

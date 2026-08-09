@@ -56,6 +56,7 @@ func fullDocument() Document {
 			TakenAtSource: "exif",
 			Estimated:     true,
 			Note:          "kolem roku 1950",
+			Precision:     "year",
 		},
 		Spatial: &Spatial{
 			Lat:      new(50.0755),

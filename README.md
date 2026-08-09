@@ -117,7 +117,9 @@ saying underneath what it actually is, and each read from its oldest end or turn
 switch; an album spanning more than a couple of years gets the same timeline rail the library has — and
 labels, videos (range streaming, live photos), a map that says out loud how much of the library
 carries a location at all, browsing by place with a preview photo on every row, a slideshow, per-user
-favourites and ratings, bulk editing, multi-upload from a phone, duplicate detection, a trash with
+favourites and ratings, bulk editing — including re-dating a whole shelf of scans at once, at the
+grain you actually know ("1974", "the seventies"), which is then shown as that period and never as a
+day nobody claimed — multi-upload from a phone, duplicate detection, a trash with
 retention, accounts with four roles, a durable audit trail, S3 backup with a restore runbook, and
 import from any folder on disk — a Google Takeout export included, sidecars and all. Every view
 lives in the URL and every browser tab is named after what it shows (`Svatba 1965 · Kukátko`), so
