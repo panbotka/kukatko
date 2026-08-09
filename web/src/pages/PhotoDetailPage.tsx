@@ -11,6 +11,7 @@ import { FavoriteToggle } from '../components/library/FavoriteButton'
 import { FlagControl } from '../components/library/FlagControl'
 import { RatingStars } from '../components/library/RatingStars'
 import { SimilarPhotos } from '../components/library/SimilarPhotos'
+import { CommentsPanel } from '../components/photo/CommentsPanel'
 import { EditPanel } from '../components/photo/EditPanel'
 import { LivePhoto } from '../components/photo/LivePhoto'
 import { MetadataPanel } from '../components/photo/MetadataPanel'
@@ -30,6 +31,7 @@ import { useFaces } from '../hooks/useFaces'
 import { useFavorite } from '../hooks/useFavorite'
 import { useImageFrame } from '../hooks/useImageFrame'
 import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
+import { useKeyboardInset } from '../hooks/useKeyboardInset'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { usePhotoNeighbors } from '../hooks/usePhotoNeighbors'
 import { usePinchZoom } from '../hooks/usePinchZoom'
@@ -140,7 +142,7 @@ export function PhotoDetailPage() {
   const { t, i18n } = useTranslation()
   const toast = useToast()
   const { uid = '' } = useParams<{ uid: string }>()
-  const { canWrite, downloadToken } = useAuth()
+  const { canWrite, downloadToken, user, isAdmin } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -171,6 +173,10 @@ export function PhotoDetailPage() {
   // button is disabled and cannot be double-fired.
   const [hidePending, setHidePending] = useState(false)
   const faces = useFaces(uid)
+  // How far the on-screen keyboard reaches up the window, so the phone's bottom
+  // sheet can lift clear of it — otherwise tapping into the comment composer puts
+  // the composer behind the very keyboard that is meant to fill it.
+  const keyboardInset = useKeyboardInset()
   // Phone width moves the curation loop from the top bar into the bottom dock.
   // The choice is made in JS rather than by a pair of CSS display rules, so the
   // controls exist exactly ONCE in the DOM: a second, hidden copy would give
@@ -594,6 +600,16 @@ export function PhotoDetailPage() {
   const setPhoto = (updated: PhotoDetail): void => {
     setState({ status: 'ready', photo: updated, edit })
   }
+
+  // The conversation's size, as the detail response reported it — and thereafter as
+  // the open thread reports it, so posting or deleting a comment re-badges the
+  // toggle immediately instead of waiting for the next load of the photo.
+  const commentCount = photo.comment_count ?? 0
+  const setCommentCount = (count: number): void => {
+    if (count !== commentCount) {
+      setPhoto({ ...photo, comment_count: count })
+    }
+  }
   // Stack mutations always refresh the photo being viewed (not the member that was
   // mutated), so the variants strip and the member-count reflect the change.
   const reloadPhoto = async (): Promise<void> => {
@@ -867,6 +883,9 @@ export function PhotoDetailPage() {
       aria-label={t('photo.viewer.label')}
       data-chrome={chrome.visible ? 'visible' : 'hidden'}
       data-panel={panelOpen ? 'open' : 'closed'}
+      // The phone's bottom sheet reads this to lift clear of the on-screen
+      // keyboard; it is 0px on every desktop browser, so nothing moves there.
+      style={{ '--kk-keyboard-inset': `${keyboardInset}px` } as CSSProperties}
     >
       {/* The persistent way out: top-left, never fades with the chrome, so Esc
           always has a visible twin the pointer can find. Returns to the
@@ -935,14 +954,27 @@ export function PhotoDetailPage() {
               <Icon name="sliders" />
             </button>
           )}
+          {/* The info toggle carries the conversation's count. A thread nobody can
+              see from the outside is a thread nobody joins, so the number rides the
+              one control that opens it — and it is in the accessible name too, not
+              only in the little disc, which a screen reader would never read out. */}
           <button
             type="button"
-            className="kk-viewer__btn kk-viewer__btn--icon"
+            className="kk-viewer__btn kk-viewer__btn--icon kk-viewer__btn--badged"
             aria-pressed={infoActive}
-            aria-label={t('photo.viewer.info')}
+            aria-label={
+              commentCount > 0
+                ? t('photo.viewer.infoWithComments', { count: commentCount })
+                : t('photo.viewer.info')
+            }
             onClick={togglePanel}
           >
             <Icon name="info-circle" />
+            {commentCount > 0 && (
+              <span className="kk-viewer__btn-badge" aria-hidden="true">
+                {commentCount > 99 ? '99+' : commentCount}
+              </span>
+            )}
           </button>
         </div>
       </div>
@@ -1075,6 +1107,28 @@ export function PhotoDetailPage() {
                   onEditFace={editFace}
                 />
               </section>
+
+              {/* The conversation sits right under the people, because that is what
+                  it is usually about ("who is the boy on the left?"). Everybody who
+                  is signed in may write here — viewers included — which is the one
+                  deliberate exception to the read-only rule.
+
+                  It mounts only while the drawer is actually open, unlike the rest
+                  of this view. Paging through a hundred photos with the drawer shut
+                  would otherwise fetch a hundred threads nobody asked to read — and
+                  the empty result would overwrite the count the detail payload
+                  already gave the badge. Shut, the badge speaks for the thread;
+                  open, the thread speaks for itself. */}
+              {panelOpen && (
+                <section className="kk-viewer__section">
+                  <CommentsPanel
+                    photoUid={photo.uid}
+                    currentUserUid={user?.uid ?? null}
+                    canModerate={isAdmin}
+                    onCountChange={setCommentCount}
+                  />
+                </section>
+              )}
 
               {photo.stack_members !== undefined && photo.stack_members.length > 1 && (
                 <section className="kk-viewer__section">

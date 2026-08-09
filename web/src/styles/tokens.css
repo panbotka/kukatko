@@ -268,6 +268,28 @@
   --kk-entity-person-bg: #c23b6b; /* rose   — people */
   --kk-entity-fg: #fff;
 
+  /* ---- Avatar tones ---------------------------------------------------
+     The palette an initial-circle avatar picks from. Kukátko stores no
+     profile pictures — it stores photographs — so a person in a conversation
+     is the first letter of their name in a coloured disc, and the colour is a
+     pure function of that name (`lib/avatarIdentity.ts`). One person is then
+     the same colour on every photo and in every session with nothing stored
+     anywhere, which is what turns the colour into recognition rather than
+     decoration.
+
+     Eight hues, well apart from one another, each carrying white text at
+     ≥ 5:1. The colour is never the only signal: the name is always written
+     out beside the disc, and the disc itself is `aria-hidden`. */
+  --kk-avatar-0-bg: #6244c5; /* violet */
+  --kk-avatar-1-bg: #0b7a64; /* teal   */
+  --kk-avatar-2-bg: #c23b6b; /* rose   */
+  --kk-avatar-3-bg: #2c6fb2; /* azure  */
+  --kk-avatar-4-bg: #8a5a2b; /* amber  */
+  --kk-avatar-5-bg: #3f7d20; /* green  */
+  --kk-avatar-6-bg: #a03c8f; /* magenta */
+  --kk-avatar-7-bg: #0f6f8c; /* cyan   */
+  --kk-avatar-fg: #fff;
+
   /* ---- Typography scale -----------------------------------------------
      A small modular scale (~1.2–1.25 per step): display / page-title /
      section-title / body / caption. Components use the classes below and never
@@ -997,6 +1019,65 @@
 
 .kk-entity-person {
   background-color: var(--kk-entity-person-bg) !important;
+}
+
+/* ---- Initial-circle avatar --------------------------------------------- */
+
+/*
+ * A person as a coloured disc with the first letter of their name — the
+ * stand-in for a profile picture in a library that has none (see
+ * `components/InitialAvatar.tsx`). The tone class is chosen from the name, so
+ * the same person keeps the same colour everywhere.
+ *
+ * `flex-shrink: 0` is load-bearing: in a comment row the disc sits beside a
+ * body that can be arbitrarily long, and without it the circle would be
+ * squeezed into an ellipse by the text next to it.
+ */
+.kk-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  color: var(--kk-avatar-fg);
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1;
+  user-select: none;
+}
+
+.kk-avatar--tone-0 {
+  background-color: var(--kk-avatar-0-bg);
+}
+
+.kk-avatar--tone-1 {
+  background-color: var(--kk-avatar-1-bg);
+}
+
+.kk-avatar--tone-2 {
+  background-color: var(--kk-avatar-2-bg);
+}
+
+.kk-avatar--tone-3 {
+  background-color: var(--kk-avatar-3-bg);
+}
+
+.kk-avatar--tone-4 {
+  background-color: var(--kk-avatar-4-bg);
+}
+
+.kk-avatar--tone-5 {
+  background-color: var(--kk-avatar-5-bg);
+}
+
+.kk-avatar--tone-6 {
+  background-color: var(--kk-avatar-6-bg);
+}
+
+.kk-avatar--tone-7 {
+  background-color: var(--kk-avatar-7-bg);
 }
 
 /* ---- Appear ------------------------------------------------------------ */

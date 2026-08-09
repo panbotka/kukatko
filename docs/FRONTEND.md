@@ -1368,7 +1368,65 @@ here.
   a „nic neodpovídá" state, ~44px tap targets, ARIA combobox/listbox; an optional `onCreate` prop adds
   a „Vytvořit «dotaz»" row — `createAndAttachLabel` does `createLabel` + `attachLabel`, matches the name via
   `foldedEquals`, so it just attaches an existing label instead of colliding on the slug; albums are
-  not created here — type/cover/privacy belong on the Alba page). **2. Popis a místo**
+  not created here — type/cover/privacy belong on the Alba page).
+  **1b. Komentáře** (`CommentsPanel`, `components/photo/`, **NEW**) = **the conversation around the photo**,
+  mounted directly under the people because that is what it is usually about („kdo je ten kluk vlevo?").
+  It is the social half of the archive: most of what a family knows about an old photograph is not metadata
+  anybody will ever type into a form, it comes out when someone recognises something and says so. So joining
+  in is deliberately cheap — **every signed-in role may post, viewers included** (backend
+  `RequireAuth`, not `RequireWrite`, see [`API.md`](API.md)), and the composer is therefore **never hidden
+  from a viewer**; it is the one place in the app where a viewer writes. The panel takes
+  `photoUid` + `currentUserUid` + `canModerate` as **props, not from `useAuth`** (like `PeoplePanel`'s
+  `canWrite`), so it renders in a test with no auth provider. Structure: an eyebrow heading that becomes the
+  **pluralised count** once there is one (`photo.comments.count`, `_one/_few/_many/_other` — Czech needs
+  three forms: 1 komentář / 2 komentáře / 5 komentářů), the thread **oldest first** (a conversation reads
+  forwards) as a `<ul>` of `CommentItem`, and the composer. **Empty state invites the first remark**
+  („Napiš, co o téhle fotce víš…") rather than reporting an absence. **`InitialAvatar`**
+  (`components/`, **NEW**) draws a person as **the first letter of their name in a coloured disc** — the
+  stand-in for a profile picture in a library that stores photographs, not avatars, and never fetches an
+  external asset (no gravatar-style lookup leaking who reads what). Both the letter and the colour are pure
+  functions of the name (`lib/avatarIdentity`: `avatarInitial` takes the first **grapheme** via
+  `Intl.Segmenter` and `toLocaleUpperCase`s it — „šárka" → „Š" — with `'?'` for a blank name;
+  `avatarTone` is an FNV-1a hash mod `AVATAR_TONE_COUNT`, case- and whitespace-folded), so one person keeps
+  one colour on every photo, in every session, for every reader, with nothing stored anywhere — that is what
+  makes it recognition rather than decoration. The eight hues are theme tokens
+  (`--kk-avatar-0-bg`…`--kk-avatar-7-bg` + `--kk-avatar-fg` in `styles/tokens.css`, each carrying white
+  text at ≥ 5:1, next to the entity hues); the disc is `aria-hidden` because the name is always written out
+  beside it. **`CommentItem`** renders
+  `InitialAvatar` + author + `formatRelativeTime` (`lib/relativeTime`, `Intl.RelativeTimeFormat`
+  `numeric: 'auto'` + `style: 'narrow'` → „před 2 h", „včera"; the absolute stamp survives as the `<time>`'s
+  `title`) + an „upraveno" marker when `edited_at` is set + the body with **`white-space: pre-wrap`** — the
+  backend parses nothing, so the client renders text, never HTML/markdown. **Edit is in place** (a textarea
+  replacing the body; a modal for fixing a typo would hide the conversation the remark belongs to), **only
+  on the reader's own comment**; **delete** is the author's *or* an admin's (`canModerate`) and always goes
+  through **one** `ConfirmModal` owned by the panel, not one per row. An admin therefore removes but never
+  rewrites — the backend answers 403 to an admin's PATCH, and the UI says the same thing by only offering
+  „Smazat". A comment whose author's account is gone reads as „Smazaný uživatel" (the row survives
+  authorless) and nobody may touch it. Writes go through **`hooks/useComments`** (`status`/`comments`/`count`/
+  `busy`/`failure` + `post`/`edit`/`remove`): it applies **the record the server returns**, not an optimistic
+  local guess — the server owns the uid, the timestamps and the author name — and classifies a failure into
+  `throttled` (429, the per-user `ratelimit.comment` → „komentáře jdou moc rychle po sobě"), `forbidden`
+  (403/404) or `failed`; **a rejected post keeps the text in the box**, so nothing anyone typed is thrown
+  away. The **count badge** rides the viewer's own info toggle (`.kk-viewer__btn--badged` +
+  `.kk-viewer__btn-badge`, capped at „99+"), seeded from `PhotoDetail.comment_count` and thereafter fed by
+  the open thread's `onCountChange`, so posting or deleting re-badges **without a second GET of the photo**;
+  the number is in the button's **accessible name** too (`photo.viewer.infoWithComments`, pluralised), since
+  the little disc is `aria-hidden` and a screen reader would never reach it. The panel **mounts only while
+  the drawer is open** (`{panelOpen && …}`, unlike the rest of the info view): paging through a hundred
+  photos with the drawer shut would otherwise fetch a hundred threads nobody asked to read, and the empty
+  result would overwrite the count the detail payload already gave the badge. **Enter posts, Shift+Enter
+  breaks the line** (in the composer and in the in-place editor) — the convention every chat has already
+  taught the reader — with the send button kept for touch and for anyone who does not know it.
+  On a **phone** the thread lives in the existing bottom sheet, and the sheet **lifts clear of the on-screen
+  keyboard**: a phone keyboard does not shrink the layout viewport (on iOS it slides over it), so a sheet at
+  `bottom: 0` would put the composer *behind* the keyboard meant to fill it. `hooks/useKeyboardInset`
+  measures the gap between the layout and the visual viewport (`visualViewport` `resize`+`scroll`; 0 under an
+  80 px noise floor, 0 while pinch-zoomed past 1.05, 0 where there is no `visualViewport` at all — jsdom and
+  every desktop browser), `PhotoDetailPage` publishes it as `--kk-keyboard-inset` on the viewer root and the
+  phone media query reads it into the sheet's `bottom`. Covered by `CommentsPanel.test.tsx` (thread, post,
+  Enter vs Shift+Enter, viewer posts, edit own, delete-with-confirm, admin moderation, empty state, count
+  reported upwards, 429, Czech plural), `useKeyboardInset.test.tsx` and four badge tests in
+  `PhotoDetailPage.test.tsx`. **2. Popis a místo**
   (`sections.caption`) = `MetadataPanel` = title/description/ai_note/notes/taken_at/location
   **read-only until the editor clicks a field** — each field is its own inline edit affordance
   (`EditableField` = the whole row is an „Upravit «pole»" button with a pencil icon and a muted „Přidat…"
@@ -3006,6 +3064,20 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `photo.download_url` from the payload — only the server can sign a URL. `thumbUrl(uid,size)` remains for a
   size the payload doesn't carry (the lightbox, the editor's canvas, a cover by UID) and `downloadUrl(uid,…)`
   for **rendering a non-destructive edit**, which only the application can do;
+  `comments.ts` (**NEW**) = the per-photo comment client: `fetchComments(photoUid,signal)` over
+  `GET /api/v1/photos/{uid}/comments` → `PhotoComment[]` **oldest first** (an empty thread — and a photo
+  that does not exist — is an empty array, not a 404), `createComment(photoUid,body,signal)` over `POST`
+  (201; **guarded by `RequireAuth`, not `RequireWrite`**, so a viewer may post — the one documented
+  exception to the read-only rule — and rate-limited per user, 429), `updateComment(photoUid,uid,body,signal)`
+  over `PATCH` (**author only**; an admin gets 403 — moderation removes, it does not rewrite) and
+  `deleteComment(photoUid,uid,signal)` over `DELETE` (204, author **or** admin; soft server-side, so a
+  second delete is 404). The type `PhotoComment{uid,photo_uid,author_uid,author_name,body,created_at,
+  edited_at?}` — `author_uid`/`author_name` are **empty** for a comment whose author's account is gone —
+  and `MAX_COMMENT_LENGTH` (2000 characters, mirroring `comments.MaxBodyLen`, which the composer's
+  `maxLength` enforces so an over-long body is prevented rather than rejected). **Bodies are plain text**:
+  nothing is parsed or sanitised server-side, so the client escapes what it displays (React does — no
+  `dangerouslySetInnerHTML` anywhere near a body). `PhotoDetail.comment_count` on the detail payload feeds
+  the badge without fetching the thread;
   `organize.ts` = the Albums/Labels client: albums `fetchAlbums`/`fetchAlbum`/`createAlbum`/`updateAlbum`/
   `deleteAlbum`/`addAlbumPhotos`/`removeAlbumPhotos`, labels `fetchLabels`/
   `fetchLabel`/`createLabel`/`updateLabel`/`deleteLabel`/`attachLabel`/`detachLabel`; the types

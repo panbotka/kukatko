@@ -325,6 +325,44 @@
   padding: 0;
 }
 
+/* A round toggle that carries a count (the info button and its comment thread).
+   The disc is positioned against the button, so it must establish the containing
+   block; `overflow` stays visible so the badge may overhang the pill's edge. */
+.kk-viewer__btn--badged {
+  position: relative;
+}
+
+/* The count itself. Decorative — `aria-hidden` — because the number is already in
+   the button's accessible name, where a screen reader will actually reach it. It
+   takes the accent's solid tone rather than `danger`: a conversation is something
+   to join, not a problem to clear. */
+.kk-viewer__btn-badge {
+  position: absolute;
+  top: -0.15rem;
+  right: -0.15rem;
+  min-width: 1.15rem;
+  height: 1.15rem;
+  padding: 0 0.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--kk-radius-pill);
+  background: var(--kk-accent-solid);
+  border: 1px solid var(--kk-surface-page);
+  color: var(--kk-on-accent, #fff);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1;
+}
+
+/* On the pressed toggle the accent fill is already the button's own, so the badge
+   inverts to stay a distinct disc rather than melting into it. */
+.kk-viewer__btn[aria-pressed='true'] .kk-viewer__btn-badge {
+  background: var(--kk-surface-page);
+  color: var(--kk-text);
+  border-color: var(--kk-accent);
+}
+
 /* ---- Flag toggles: held back from the library ------------------------ */
 
 /* A *flag* toggle (hidden from the library, archived into the trash) is the one
@@ -579,6 +617,103 @@
   }
 }
 
+/* ---- Comments: the conversation around the photo --------------------- */
+
+.kk-comments__list {
+  list-style: none;
+  margin: 0 0 var(--kk-space-3);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--kk-space-3);
+}
+
+.kk-comment {
+  display: flex;
+  gap: var(--kk-space-2);
+  align-items: flex-start;
+}
+
+.kk-comment__main {
+  /* `min-width: 0` lets a long unbroken word wrap instead of stretching the flex
+     row (and with it the whole drawer) past its width. */
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.kk-comment__meta {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--kk-space-2);
+  margin: 0;
+  font-size: var(--kk-font-size-caption);
+  line-height: var(--kk-line-height-caption);
+}
+
+.kk-comment__author {
+  font-weight: 600;
+  color: var(--kk-text);
+}
+
+.kk-comment__time,
+.kk-comment__edited {
+  color: var(--kk-text-muted);
+}
+
+.kk-comment__edited {
+  font-style: italic;
+}
+
+/* The body is plain text and stays plain text — the backend parses nothing, so
+   `pre-wrap` honours the writer's own line breaks and `break-word` keeps a pasted
+   URL from widening the drawer. */
+.kk-comment__body {
+  margin: 0.15rem 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  color: var(--kk-text);
+}
+
+.kk-comment__actions,
+.kk-comment__edit-actions {
+  display: flex;
+  gap: var(--kk-space-2);
+  align-items: center;
+}
+
+.kk-comment__edit-actions {
+  margin-top: var(--kk-space-2);
+}
+
+/* The row's own affordances are quiet by design: they sit under every comment the
+   reader owns, and a thread of ten would otherwise be a wall of buttons. */
+.kk-comment__action {
+  padding: 0;
+  font-size: var(--kk-font-size-caption);
+  text-decoration: none;
+}
+
+.kk-comment__action--danger {
+  color: var(--bs-danger);
+}
+
+.kk-comments__state,
+.kk-comments__empty {
+  margin: 0 0 var(--kk-space-3);
+  color: var(--kk-text-muted);
+}
+
+.kk-comments__composer {
+  display: flex;
+  gap: var(--kk-space-2);
+  align-items: flex-end;
+}
+
+.kk-comments__send {
+  flex: 0 0 auto;
+}
+
 /* ---- Phone: the drawer is a bottom sheet ----------------------------- */
 
 /* Below `md` there is no room *beside* a photo — a 26rem drawer on a 393px phone
@@ -632,6 +767,17 @@
 
   .kk-viewer__panel.is-open {
     transform: translateY(0);
+  }
+
+  /* The sheet rides above the on-screen keyboard. A phone keyboard does not
+     shrink the layout viewport — on iOS it simply slides over it — so a sheet
+     anchored to `bottom: 0` ends up BEHIND the keyboard the moment the reader
+     taps into the comment composer, typing into a box they cannot see. The page
+     measures the gap between the layout and visual viewports (`useKeyboardInset`)
+     and publishes it here; it is 0px with no keyboard up, and on every desktop
+     browser, so nothing moves unless a keyboard is actually covering the sheet. */
+  .kk-viewer__panel {
+    bottom: var(--kk-keyboard-inset, 0px);
   }
 
   /* The photo yields exactly the sheet's height and keeps the rest of the screen.

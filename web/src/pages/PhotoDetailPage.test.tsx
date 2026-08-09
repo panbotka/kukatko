@@ -65,6 +65,11 @@ vi.mock('../services/people', async (importOriginal) => {
   return { ...actual, fetchFaces: vi.fn(), assignFace: vi.fn() }
 })
 
+vi.mock('../services/comments', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/comments')>()
+  return { ...actual, fetchComments: vi.fn(), createComment: vi.fn() }
+})
+
 const {
   fetchPhoto,
   fetchEdit,
@@ -84,6 +89,9 @@ const { fetchAlbums, fetchLabels, addAlbumPhotos, removeAlbumPhotos, attachLabel
 const { fetchFaces, assignFace } = await import('../services/people')
 const fetchFacesMock = vi.mocked(fetchFaces)
 const assignFaceMock = vi.mocked(assignFace)
+const { fetchComments, createComment } = await import('../services/comments')
+const fetchCommentsMock = vi.mocked(fetchComments)
+const createCommentMock = vi.mocked(createComment)
 
 const fetchPhotoMock = vi.mocked(fetchPhoto)
 const fetchEditMock = vi.mocked(fetchEdit)
@@ -319,6 +327,7 @@ beforeEach(async () => {
   window.localStorage.removeItem('kukatko.faces.overlay')
   fetchFacesMock.mockResolvedValue(facesResponse(0))
   assignFaceMock.mockResolvedValue(undefined)
+  fetchCommentsMock.mockResolvedValue([])
   fetchPhotoMock.mockResolvedValue(photo())
   fetchEditMock.mockResolvedValue(NEUTRAL)
   fetchPhotosMock.mockResolvedValue(page(['a', 'b', 'c']))
@@ -1903,5 +1912,62 @@ describe('PhotoDetailPage — immersive viewer', () => {
       screen.queryByRole('button', { name: 'Select face #1: No name' }),
     ).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Name this face')).not.toBeInTheDocument()
+  })
+})
+
+describe('PhotoDetailPage comment badge', () => {
+  it('badges the info toggle with the thread size, in the name as well as the disc', async () => {
+    fetchPhotoMock.mockResolvedValue(photo({ comment_count: 3 }))
+    renderPage()
+
+    const toggle = await screen.findByRole('button', { name: 'Info – 3 comments' })
+    expect(within(toggle).getByText('3')).toBeInTheDocument()
+  })
+
+  it('leaves the toggle unbadged when nobody has said anything', async () => {
+    renderPage()
+
+    const toggle = await screen.findByRole('button', { name: 'Info' })
+    expect(within(toggle).queryByText('0')).not.toBeInTheDocument()
+  })
+
+  it('caps the disc at 99+ while the name keeps the real number', async () => {
+    fetchPhotoMock.mockResolvedValue(photo({ comment_count: 120 }))
+    renderPage()
+
+    const toggle = await screen.findByRole('button', { name: 'Info – 120 comments' })
+    expect(within(toggle).getByText('99+')).toBeInTheDocument()
+  })
+
+  it('re-badges after a comment is posted, without reloading the photo', async () => {
+    const user = userEvent.setup()
+    fetchPhotoMock.mockResolvedValue(photo({ comment_count: 1 }))
+    fetchCommentsMock.mockResolvedValue([
+      {
+        uid: 'cm_1',
+        photo_uid: 'b',
+        author_uid: 'u1',
+        author_name: 'U',
+        body: 'The barn is still standing here.',
+        created_at: '2026-01-02T10:00:00Z',
+      },
+    ])
+    createCommentMock.mockResolvedValue({
+      uid: 'cm_2',
+      photo_uid: 'b',
+      author_uid: 'u1',
+      author_name: 'U',
+      body: 'And that is the well.',
+      created_at: '2026-01-02T11:00:00Z',
+    })
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: 'Info – 1 comment' }))
+    await user.type(await screen.findByLabelText('New comment'), 'And that is the well.')
+    await user.click(screen.getByRole('button', { name: 'Post comment' }))
+
+    // The count comes from the open thread, not from a second GET of the photo.
+    expect(await screen.findByRole('button', { name: 'Info – 2 comments' })).toBeInTheDocument()
+    expect(fetchPhotoMock).toHaveBeenCalledTimes(1)
   })
 })
