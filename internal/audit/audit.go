@@ -167,6 +167,12 @@ const (
 	// ActionSubjectDelete records deleting a subject; its name and type are listed
 	// in the details so the trail identifies what was removed.
 	ActionSubjectDelete = "subject.delete"
+	// ActionSubjectMerge records merging one subject into another: everything the
+	// source carried moves to the keeper and the source is deleted. The keeper is
+	// the target; the source's uid and name, and the counts of what moved, are in
+	// the details — a merge cannot be undone, so the trail is the only record that
+	// the merged-away person ever existed.
+	ActionSubjectMerge = "subject.merge"
 	// ActionUserCreate records creating a user account.
 	ActionUserCreate = "user.create"
 	// ActionUserUpdate records editing a user account.

@@ -50,7 +50,10 @@ It is **not** for you if you are looking for:
   "before 1950" and "summer 2019" are all a click or two away, and the picker shows the period a
   `year:` in the search box has already set instead of contradicting it. Faces are detected,
   clustered, and matched to named people; nothing is ever assigned automatically — the machine
-  narrows the list, a human confirms.
+  narrows the list, a human confirms. And because a catalogue of people goes wrong in exactly two
+  ways, a person's page carries the repair for each: **merge** the same person filed twice into one
+  record (everything they carried moves over, nothing is deduplicated away), and **move** the photos
+  in their gallery that turn out to be somebody else to whoever they really are.
 - **A library an AI agent can use.** Kukátko can expose itself as an **MCP server**, so an agent
   searches and organizes the library directly ("find all of grandma's photos from the sixties and
   put them in an album"). Off by default, authenticated with an ordinary API token, bound by the

@@ -438,7 +438,8 @@
       "subject": {
         "create": "Person created",
         "delete": "Person deleted",
-        "update": "Person edited"
+        "update": "Person edited",
+        "merge": "People merged"
       },
       "user": {
         "create": "User created",
@@ -1221,6 +1222,38 @@
       "notes": "Notes",
       "cancel": "Cancel",
       "save": "Save"
+    },
+    "merge": {
+      "action": "Merge into another person",
+      "title": "Merge people",
+      "pickHint": "Choose the person {{name}} will be merged into. Every photo, face and earlier decision moves to them.",
+      "pickLabel": "Merge into…",
+      "roleSource": "Will be deleted",
+      "roleKeeper": "Will be kept",
+      "faceCount_one": "{{count}} face",
+      "faceCount_other": "{{count}} faces",
+      "warning": "{{source}} will be deleted and everything they carried moves to {{keeper}}. This cannot be undone.",
+      "confirm": "Merge",
+      "cancel": "Cancel",
+      "back": "Back to the pick",
+      "error": "The merge failed. Please try again.",
+      "merged": "{{source}} merged into {{keeper}}."
+    },
+    "move": {
+      "action": "Move to another person",
+      "title": "Move to another person",
+      "hint_one": "{{count}} photo selected. The face marked as {{name}} on it moves to the person you pick.",
+      "hint_other": "{{count}} photos selected. The faces marked as {{name}} on them move to the person you pick.",
+      "pickLabel": "Move to…",
+      "running": "Moving to {{name}}…",
+      "done_one": "Moved {{count}} photo to {{name}}.",
+      "done_other": "Moved {{count}} photos to {{name}}.",
+      "skipped_one": "{{count}} photo skipped — it carried no face of this person to move.",
+      "skipped_other": "{{count}} photos skipped — they carried no face of this person to move.",
+      "failed_one": "{{count}} photo could not be moved; it stays with the current person.",
+      "failed_other": "{{count}} photos could not be moved; they stay with the current person.",
+      "cancel": "Cancel",
+      "close": "Close"
     }
   },
   "clusters": {

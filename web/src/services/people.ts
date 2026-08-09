@@ -190,6 +190,46 @@ export async function deleteSubject(uid: string, signal?: AbortSignal): Promise<
 }
 
 /**
+ * What a merge moved, mirroring `people.MergeResult`. The source subject is gone
+ * by the time this arrives — a merge cannot be undone — so these counts (and the
+ * audit entry behind them) are the only account of what it did.
+ */
+export interface MergeResult {
+  keeper_uid: string
+  source_uid: string
+  markers_moved: number
+  faces_moved: number
+  confirmations_moved: number
+  rejections_moved: number
+  /** Rejections discarded because the merged person is assigned to that face. */
+  rejections_dropped: number
+  dismissals_moved: number
+  /**
+   * Photos that carried a marker of both people. Both markers are kept, so each
+   * such photo becomes a repeated-marker group for the review page to settle.
+   */
+  shared_photos: number
+}
+
+/**
+ * Merges the subject `sourceUid` into `keeperUid`: everything the source carried
+ * moves to the keeper and the source is deleted. Irreversible — the caller must
+ * confirm first.
+ */
+export async function mergeSubject(
+  sourceUid: string,
+  keeperUid: string,
+  signal?: AbortSignal,
+): Promise<MergeResult> {
+  return sendJSON<MergeResult>(
+    'POST',
+    `/subjects/${encodeURIComponent(sourceUid)}/merge`,
+    { keeper_uid: keeperUid },
+    signal,
+  )
+}
+
+/**
  * Fetches a page of a subject's photos via `GET /subjects/{uid}/photos`. The
  * shape matches the library list so it can drive the same paginated grid hook.
  */

@@ -156,6 +156,81 @@ func subjectDetails(name string, subjectType people.SubjectType) map[string]any 
 	return map[string]any{"name": name, "type": string(subjectType)}
 }
 
+// mergeInput is the JSON body of the merge endpoint: which subject survives. The
+// subject named in the path is the one merged away.
+type mergeInput struct {
+	KeeperUID string `json:"keeper_uid"`
+}
+
+// handleMerge merges the subject identified by the path UID into the keeper named
+// in the body and answers the result counts. Both subjects are loaded first so
+// the audit entry records the two names — the source is gone by the time anyone
+// reads the trail, and a merge cannot be undone, so its name is only preserved
+// here — and so a missing subject answers 404 before any mutation. A malformed
+// body or a subject merged into itself answers 400.
+func (a *API) handleMerge(w http.ResponseWriter, r *http.Request) {
+	uid := chi.URLParam(r, "uid")
+	in, err := decodeMergeInput(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	source, keeper, ok := a.loadMergePair(w, r, uid, in.KeeperUID)
+	if !ok {
+		return
+	}
+	entry := a.auditEntry(r, audit.ActionSubjectMerge, keeper.UID, mergeDetails(source, keeper))
+	result, err := a.subjects.MergeSubjectsAudited(r.Context(), source.UID, keeper.UID, entry)
+	if err != nil {
+		status, msg := subjectStatus(err)
+		writeError(w, status, msg)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+// loadMergePair loads the two subjects a merge names, so the handler can answer
+// 404 (and record both names) before the store opens a transaction. Merging a
+// subject into itself is caught here rather than by the store, so the answer is
+// the same 400 whether or not the uid exists.
+//
+// It writes the error response itself and reports false, rather than handing the
+// error back: the caller has nothing to add to it, and every store error here
+// maps through subjectStatus exactly as it does in the other handlers.
+func (a *API) loadMergePair(
+	w http.ResponseWriter, r *http.Request, sourceUID, keeperUID string,
+) (source, keeper people.Subject, ok bool) {
+	if sourceUID == keeperUID {
+		writeError(w, http.StatusBadRequest, people.ErrMergeIntoSelf.Error())
+		return people.Subject{}, people.Subject{}, false
+	}
+	for _, load := range []struct {
+		uid  string
+		into *people.Subject
+	}{{uid: sourceUID, into: &source}, {uid: keeperUID, into: &keeper}} {
+		subj, err := a.subjects.GetSubjectByUID(r.Context(), load.uid)
+		if err != nil {
+			status, msg := subjectStatus(err)
+			writeError(w, status, msg)
+			return people.Subject{}, people.Subject{}, false
+		}
+		*load.into = subj
+	}
+	return source, keeper, true
+}
+
+// mergeDetails builds the audit details for a merge: who was merged away (uid,
+// name and type) and who survived. The keeper is the entry's target.
+func mergeDetails(source, keeper people.Subject) map[string]any {
+	return map[string]any{
+		"source_uid":  source.UID,
+		"source_name": source.Name,
+		"source_type": string(source.Type),
+		"keeper_uid":  keeper.UID,
+		"keeper_name": keeper.Name,
+	}
+}
+
 // handlePhotos returns the requested page of the subject's photos, newest first,
 // plus the total and next-page offset for infinite scroll. Invalid pagination
 // answers 400.
