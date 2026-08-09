@@ -1644,6 +1644,10 @@
     "viewer": {
       "label": "Prohlížeč fotek",
       "info": "Informace",
+      "infoWithComments_one": "Informace – {{count}} komentář",
+      "infoWithComments_few": "Informace – {{count}} komentáře",
+      "infoWithComments_many": "Informace – {{count}} komentáře",
+      "infoWithComments_other": "Informace – {{count}} komentářů",
       "closeInfo": "Zavřít informace",
       "actions": "Akce s fotkou"
     },
@@ -1654,6 +1658,32 @@
     "sections": {
       "organize": "Uspořádání",
       "caption": "Popis a místo"
+    },
+    "comments": {
+      "title": "Komentáře",
+      "count_one": "{{count}} komentář",
+      "count_few": "{{count}} komentáře",
+      "count_many": "{{count}} komentáře",
+      "count_other": "{{count}} komentářů",
+      "loading": "Načítání komentářů…",
+      "loadFailed": "Komentáře se nepodařilo načíst.",
+      "empty": "Napiš, co o téhle fotce víš…",
+      "placeholder": "Napiš komentář…",
+      "inputLabel": "Nový komentář",
+      "submit": "Odeslat komentář",
+      "submitHint": "Enter odešle, Shift+Enter odřádkuje",
+      "edit": "Upravit",
+      "editLabel": "Úprava komentáře",
+      "save": "Uložit",
+      "cancel": "Zrušit",
+      "delete": "Smazat",
+      "deleteTitle": "Smazat komentář?",
+      "deleteBody": "Komentář z fotky zmizí a vrátit to nejde.",
+      "edited": "upraveno",
+      "unknownAuthor": "Smazaný uživatel",
+      "throttled": "Moment — komentáře jdou moc rychle po sobě. Zkus to za chvilku.",
+      "forbidden": "Tenhle komentář už upravit ani smazat nejde.",
+      "failed": "Komentář se nepodařilo uložit. Zkus to prosím znovu."
     },
     "video": {
       "label": "Přehrávač videa",

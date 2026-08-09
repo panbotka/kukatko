@@ -531,6 +531,12 @@ export interface PhotoDetail extends Photo {
    * among them), the primary first. Absent/empty for an unstacked photo.
    */
   stack_members?: StackMember[]
+  /**
+   * How many live comments the photo carries. Always present on a detail response
+   * (0 when there are none) so the viewer can badge the conversation without
+   * fetching the thread; optional here only so older fixtures stay valid.
+   */
+  comment_count?: number
 }
 
 /**

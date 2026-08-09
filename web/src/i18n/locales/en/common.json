@@ -1576,6 +1576,8 @@
     "viewer": {
       "label": "Photo viewer",
       "info": "Info",
+      "infoWithComments_one": "Info – {{count}} comment",
+      "infoWithComments_other": "Info – {{count}} comments",
       "closeInfo": "Close info",
       "actions": "Photo actions"
     },
@@ -1586,6 +1588,30 @@
     "sections": {
       "organize": "Organize",
       "caption": "Caption & place"
+    },
+    "comments": {
+      "title": "Comments",
+      "count_one": "{{count}} comment",
+      "count_other": "{{count}} comments",
+      "loading": "Loading comments…",
+      "loadFailed": "The comments could not be loaded.",
+      "empty": "Say what you know about this photo…",
+      "placeholder": "Write a comment…",
+      "inputLabel": "New comment",
+      "submit": "Post comment",
+      "submitHint": "Enter posts, Shift+Enter adds a line",
+      "edit": "Edit",
+      "editLabel": "Edit comment",
+      "save": "Save",
+      "cancel": "Cancel",
+      "delete": "Delete",
+      "deleteTitle": "Delete this comment?",
+      "deleteBody": "The comment disappears from the photo, and that cannot be undone.",
+      "edited": "edited",
+      "unknownAuthor": "Deleted user",
+      "throttled": "Steady on — comments are coming too fast. Try again in a moment.",
+      "forbidden": "This comment can no longer be edited or deleted.",
+      "failed": "The comment could not be saved. Please try again."
     },
     "video": {
       "label": "Video player",
