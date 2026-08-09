@@ -62,6 +62,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/capabilitiesapi` — all-authenticated `GET /capabilities` (instance feature flags, e.g. `semantic_search`)
 - `internal/cluster` — auto-clustering of unassigned faces (union-find over HNSW neighbors)
 - `internal/clusterapi` — `/faces/clusters` (list, assign, remove-face)
+- `internal/comments` — per-photo comment threads: plain text, soft delete, audited in the mutation's transaction; every role may write (viewers included), the endpoints live in `internal/photoapi`
 - `internal/config` — typed configuration, Viper, `Load()`
 - `internal/ctl` — **client** of the own API for `kukatko ctl`: contexts (kubectl-style), Bearer token, table/JSON output
 - `internal/database` — pgxpool wrapper, embedded migration runner, pgvector types
@@ -105,7 +106,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/people` — subjects (people/animals/other) and markers; keeps the `faces` cache consistent
 - `internal/peopleapi` — `/subjects` + a subject's photo gallery
 - `internal/phash` — perceptual hashes (pHash via DCT, dHash gradient)
-- `internal/photoapi` — read/curation API over the catalog: list, search, media, edit, faces, rating
+- `internal/photoapi` — read/curation API over the catalog: list, search, media, edit, faces, rating, comments
 - `internal/photoedit` — applies non-destructive edits (crop/rotate/brightness/contrast), pure-Go
 - `internal/photos` — **the photo-catalog core**, `Store` over pgx; dedup on SHA256 `file_hash`
 - `internal/places` — cache of reverse-geocoded places (side table `photo_places`)

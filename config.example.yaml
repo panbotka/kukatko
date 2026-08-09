@@ -647,15 +647,24 @@ metrics:
 # replenish per second up to burst, and a request with an empty bucket gets HTTP
 # 429 with a Retry-After header. The defaults are generous enough for normal
 # human/UI use and only bite under flooding. Set a rule's rate_per_sec to 0 to
-# disable it. Login throttling lives under auth.login_rate_*; the geocode proxy
-# keeps its own credit-protecting limiter under maps.*. Override individual keys
-# with e.g. KUKATKO_RATELIMIT_UPLOAD_RATE_PER_SEC.
+# disable it. The one exception is `comment`, keyed by the authenticated user
+# instead: a household shares one address, and throttling everyone's
+# conversation because one person is chatty would be wrong. Login throttling
+# lives under auth.login_rate_*; the geocode proxy keeps its own
+# credit-protecting limiter under maps.*. Override individual keys with e.g.
+# KUKATKO_RATELIMIT_UPLOAD_RATE_PER_SEC.
 ratelimit:
   upload: # POST /upload (multipart ingest)
     rate_per_sec: 5
     burst: 30
   bulk: # POST /photos/bulk (batch metadata edits)
     rate_per_sec: 2
+    burst: 10
+  # POST /photos/{uid}/comments (writing a comment) — keyed by user, not IP.
+  # A person types a comment every few seconds at most; the burst covers a
+  # flurry of short replies without letting a script fill a thread.
+  comment:
+    rate_per_sec: 0.5
     burst: 10
   tiles: # GET /map/tiles/... (mapy.com tile proxy)
     rate_per_sec: 50

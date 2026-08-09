@@ -703,8 +703,39 @@ to `## Package map` in `CLAUDE.md`.
   (satisfied by `places.Store.GetPlace`): `writeDetail` attaches `place{country,region,city,place_name}`
   from the `photo_places` cache — **cache-read only, the detail never geocodes** (mapy.com credits are
   metered; the on-demand lookup stays in `mapsapi`), nil-safe just like the uploader and also omitted for a
-  "processed" marker (a row with all levels empty); and `EditService`/`edit.go`+`media_edit.go`
-  (`GET`/`PUT /photos/{uid}/edit`, download honours the edit via `internal/photoedit`)), `internal/photoedit/`
+  "processed" marker (a row with all levels empty); `EditService`/`edit.go`+`media_edit.go`
+  (`GET`/`PUT /photos/{uid}/edit`, download honours the edit via `internal/photoedit`); and the **comment
+  thread** (`comments.go`, over the `CommentStore` interface satisfied by `comments.Store`):
+  `GET`/`POST /photos/{uid}/comments` + `PATCH`/`DELETE /photos/{uid}/comments/{commentUID}`, all four behind
+  **`RequireAuth`** — the create deliberately so, a viewer may comment, see docs/API.md — with the per-user
+  throttle (`Config.CommentRateLimit`, nil = none, resolved by `commentThrottle`) mounted *inside* the auth
+  guard; the pure predicates `canEditComment` (author only) / `canDeleteComment` (author **or**
+  `Role.IsAdmin()`) hold the authorization decision and are made against the **stored** row —
+  `resolveComment` reads it first and answers 404 when it belongs to a different photo than the path names,
+  so the route cannot be used to probe which comment UIDs exist; `writeDetail` stamps **`comment_count`** via
+  `commentCount`, which asks the bulk `CountsAmong` for the one UID so the detail can never grow an N+1)),
+  `internal/comments/`
+  (the store behind those endpoints — the `photo_comments` table from migration `0052_photo_comments.sql`:
+  `uid PK` (prefix `cm`), `photo_uid` FK **CASCADE** (purging a photo takes its thread with it), `author_uid`
+  FK **SET NULL** (a comment outlives its author's account: authorless, and thereafter editable by nobody),
+  `body TEXT` with `CHECK (char_length(body) BETWEEN 1 AND 2000)` mirroring `normalizeBody` (trim →
+  `ErrEmptyBody`/`ErrBodyTooLong`, counted in **runes**, so a Czech comment gets the same allowance as an
+  English one), `created_at`, `edited_at` (NULL until the first edit — that is what lets a client mark a
+  comment as edited without comparing timestamps) and `deleted_at` (NULL while live), plus the partial index
+  `(photo_uid, created_at) WHERE deleted_at IS NULL` serving both the thread read and its count;
+  `NewStore(pool)` → `List(photoUID)` (live only, oldest first, `author_name` resolved by a LEFT JOIN on
+  `users`: `display_name`, fallback `username`, empty for a deleted account, so one query renders a thread),
+  `CountsAmong(photoUIDs)` (one `GROUP BY`; deliberately the bulk shape even though the detail asks about one
+  photo, so a per-photo count cannot be written by accident), `Get(uid)` and
+  `Create`/`Update`/`Delete` — each a CTE that mutates and reads the row back with its author in one
+  round-trip, run through the shared `mutateAudited`: begin → mutate → `audit.Write` on the **same
+  transaction** → commit, so a comment that exists always has a record of who wrote it;
+  `entryWithComment` stamps the affected comment's UID into `details.comment_uid` (the audit target stays the
+  **photo**) on a **copy** of the caller's details map. **Delete is soft** — `deleted_at` is stamped, the row
+  stays, every read filters it out — so deleting twice, or editing a deleted comment, is `ErrNotFound` rather
+  than a silent success. A body is plain text in and plain text out: nothing is parsed, rendered or sanitised
+  server-side, so the client escapes what it displays. `translateMutation` maps no-rows → `ErrNotFound` and a
+  `photo_uid` foreign-key violation → `ErrPhotoNotFound`), `internal/photoedit/`
   (**CGO-free application of a non-destructive edit** to a decoded image for download/preview: `Apply(img,
   photos.Edit) image.Image` applies **crop** (normalized `[x,y,w,h]` 0..1), **rotation** 0/90/180/270
   and **brightness/contrast** (a linear scale around 0.5, maps 1:1 to the frontend CSS `brightness(1+b)`/
@@ -2557,7 +2588,12 @@ to `## Package map` in `CLAUDE.md`.
   (8192), so it needs no external goroutine; mounted as the outermost middleware ahead of auth on
   `POST /upload` (ingest), `POST /photos/bulk` (bulkapi), `POST /import/*` (importapi) and
   `GET /map/tiles/...` (mapsapi) — the limits come from the `ratelimit.*` config; login and geocode have their own
-  limiters), `internal/obs/`
+  limiters. `KeyedMiddleware(keyFn)` is the same middleware with the bucket key chosen by the caller instead
+  of the IP; `Middleware` is now `KeyedMiddleware(clientIP)`. It exists for `POST /photos/{uid}/comments`,
+  which is throttled **per user** and therefore mounted *inside* the auth guard (the principal is only on the
+  context once auth has run) — a household behind one NAT is one address but many people. A key function
+  returning `""` is not special-cased: every such request shares one bucket, the safe reading of "no identity
+  to attribute this to"), `internal/obs/`
   (structured logging + request-scoped plumbing: a slog **JSON** handler at a configurable
   level (`ParseLevel`/`NewLogger`/`Setup`, `log.level`, an invalid level → an error at startup),
   a **redaction `ReplaceAttr` hook** (`redactAttr`) blanks the value of every attribute whose key carries a

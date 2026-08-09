@@ -22,6 +22,8 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/panbotka/kukatko/internal/auth"
+	"github.com/panbotka/kukatko/internal/comments"
+	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/embedding"
 	"github.com/panbotka/kukatko/internal/organize"
@@ -52,6 +54,8 @@ type env struct {
 	embedder *fakeEmbedder
 	organize *organize.Store
 	places   *places.Store
+	comments *comments.Store
+	db       *database.DB
 }
 
 // fakeEmbedder is a controllable photoapi.TextEmbedder for the search tests: it
@@ -118,6 +122,7 @@ func newEnvWithMedia(t *testing.T, media storage.Storage) *env {
 	vectorStore := vectors.NewStore(db.Pool())
 	organizeStore := organize.NewStore(db.Pool())
 	placeStore := places.NewStore(db.Pool())
+	commentStore := comments.NewStore(db.Pool())
 	embedder := &fakeEmbedder{byQuery: map[string][]float32{}}
 	api := photoapi.NewAPI(photoapi.Config{
 		Store:       store,
@@ -130,6 +135,7 @@ func newEnvWithMedia(t *testing.T, media storage.Storage) *env {
 		Organizer:   organizeStore,
 		Users:       authStore,
 		Places:      placeStore,
+		Comments:    commentStore,
 		Stacker:     stacks.New(store, stacks.Config{Enabled: true, Rules: stacks.RuleSet{BaseName: true}}),
 		Purger: trash.New(trash.Config{
 			Photos:      store,
@@ -152,7 +158,7 @@ func newEnvWithMedia(t *testing.T, media storage.Storage) *env {
 	return &env{
 		server: server, authSvc: authSvc, store: store,
 		fs: fs, vectors: vectorStore, embedder: embedder, organize: organizeStore,
-		places: placeStore,
+		places: placeStore, comments: commentStore, db: db,
 	}
 }
 

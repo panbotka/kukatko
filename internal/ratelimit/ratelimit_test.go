@@ -155,6 +155,68 @@ func TestMiddleware_limitsByIP(t *testing.T) {
 	}
 }
 
+// TestKeyedMiddleware_limitsByKey verifies the keyed middleware buckets by the
+// key the caller derives — here a header standing in for the authenticated user —
+// so two people sharing one client address keep separate allowances.
+func TestKeyedMiddleware_limitsByKey(t *testing.T) {
+	t.Parallel()
+
+	l := New(0.0001, 2) // tiny refill so the burst does not replenish mid-test
+	handler := l.KeyedMiddleware(func(r *http.Request) string {
+		return r.Header.Get("X-User")
+	})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	do := func(user string) int {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/photos/ph_1/comments", nil)
+		// One shared address: only the key must decide.
+		req.RemoteAddr = "10.0.0.1:5555"
+		req.Header.Set("X-User", user)
+		handler.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	for i := range 2 {
+		if got := do("us_1"); got != http.StatusOK {
+			t.Fatalf("request %d for us_1: got %d, want 200", i, got)
+		}
+	}
+	if got := do("us_1"); got != http.StatusTooManyRequests {
+		t.Fatalf("third request for us_1: got %d, want 429", got)
+	}
+	if got := do("us_2"); got != http.StatusOK {
+		t.Fatalf("us_2 behind the same address: got %d, want 200", got)
+	}
+}
+
+// TestKeyedMiddleware_passthroughWhenDisabled verifies a disabled limiter's keyed
+// middleware forwards every request without ever calling the key function.
+func TestKeyedMiddleware_passthroughWhenDisabled(t *testing.T) {
+	t.Parallel()
+
+	l := New(0, 1)
+	keyed := 0
+	handler := l.KeyedMiddleware(func(*http.Request) string {
+		keyed++
+		return "us_1"
+	})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	for i := range 5 {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/x", nil)
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("request %d got %d, want 200", i, rec.Code)
+		}
+	}
+	if keyed != 0 {
+		t.Errorf("key function called %d times on a disabled limiter, want 0", keyed)
+	}
+}
+
 // TestClientIP verifies extraction of the host portion with and without a port.
 func TestClientIP(t *testing.T) {
 	t.Parallel()

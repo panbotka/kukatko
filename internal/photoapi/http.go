@@ -49,12 +49,16 @@ type API struct {
 	purger          Purger
 	stacker         Stacker
 	sidecar         SidecarEnqueuer
+	comments        CommentStore
 	retentionDays   int
 	videoTranscode  bool
 	requireAuth     func(http.Handler) http.Handler
 	requireWrite    func(http.Handler) http.Handler
 	requireAdmin    func(http.Handler) http.Handler
 	requireDownload func(http.Handler) http.Handler
+	// commentRateLimit throttles comment creation per user; nil means no throttle
+	// (see commentThrottle).
+	commentRateLimit func(http.Handler) http.Handler
 }
 
 // Config bundles the dependencies of NewAPI. Every field is required.
@@ -115,6 +119,15 @@ type Config struct {
 	// Sidecar schedules a rewrite of a photo's metadata sidecar after an edit. When
 	// nil no sidecar is scheduled and the edit still succeeds.
 	Sidecar SidecarEnqueuer
+	// Comments backs the per-photo comment thread endpoints and the
+	// comment_count on the detail response. When nil those endpoints answer 503
+	// and the detail reports a zero count.
+	Comments CommentStore
+	// CommentRateLimit throttles comment creation. It is mounted inside the auth
+	// guard so it can key on the acting user rather than the client IP — a
+	// household behind one address is many people. A nil value disables
+	// throttling.
+	CommentRateLimit func(http.Handler) http.Handler
 	// RetentionDays is the trash retention window reported by the trash-info
 	// endpoint so the UI can show the auto-purge countdown.
 	RetentionDays int
@@ -136,7 +149,8 @@ type Config struct {
 	RequireDownload func(http.Handler) http.Handler
 }
 
-// NewAPI returns an API from cfg.
+// NewAPI returns an API from cfg. A nil CommentRateLimit disables throttling of
+// comment creation.
 func NewAPI(cfg Config) *API {
 	return &API{
 		store:           cfg.Store,
@@ -156,13 +170,32 @@ func NewAPI(cfg Config) *API {
 		purger:          cfg.Purger,
 		stacker:         cfg.Stacker,
 		sidecar:         cfg.Sidecar,
+		comments:        cfg.Comments,
 		retentionDays:   cfg.RetentionDays,
 		videoTranscode:  cfg.VideoTranscode,
 		requireAuth:     cfg.RequireAuth,
 		requireWrite:    cfg.RequireWrite,
 		requireAdmin:    cfg.RequireAdmin,
 		requireDownload: cfg.RequireDownload,
+
+		commentRateLimit: cfg.CommentRateLimit,
 	}
+}
+
+// commentThrottle returns the comment-creation throttle, or a pass-through when
+// none is configured — an unthrottled instance, and a zero-value API built
+// directly by a test, must still be able to register the route.
+func (a *API) commentThrottle() func(http.Handler) http.Handler {
+	if a.commentRateLimit == nil {
+		return passthroughMiddleware
+	}
+	return a.commentRateLimit
+}
+
+// passthroughMiddleware is a no-op middleware used when no rate limiter is
+// configured.
+func passthroughMiddleware(next http.Handler) http.Handler {
+	return next
 }
 
 // RegisterRoutes mounts the photo endpoints onto r, which the caller has scoped
@@ -196,6 +229,10 @@ func NewAPI(cfg Config) *API {
 //	DELETE /photos/{uid}/favorite     RequireAuth      unfavorite (current user)
 //	PUT    /photos/{uid}/rating       RequireAuth      set rating/flag (current user)
 //	DELETE /photos/{uid}/rating       RequireAuth      clear rating/flag (current user)
+//	GET    /photos/{uid}/comments     RequireAuth      the photo's comment thread
+//	POST   /photos/{uid}/comments     RequireAuth      write a comment (+ per-user rate limit)
+//	PATCH  /photos/{uid}/comments/{commentUID}  RequireAuth  edit own comment
+//	DELETE /photos/{uid}/comments/{commentUID}  RequireAuth  delete own (admin: any)
 //	POST   /photos/{uid}/purge        RequireAdmin     permanent delete (confirm)
 //	GET    /favorites                 RequireAuth      current user's favorites
 //	GET    /trash/info                RequireAuth      retention window (countdown)
@@ -219,6 +256,14 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.With(a.requireAuth).Delete("/{uid}/favorite", a.handleRemoveFavorite)
 		r.With(a.requireAuth).Put("/{uid}/rating", a.handleSetRating)
 		r.With(a.requireAuth).Delete("/{uid}/rating", a.handleClearRating)
+		// Every comment route is RequireAuth, the create one deliberately so: a
+		// viewer may join the conversation even though they may not curate the
+		// library. The rate limiter sits *inside* the guard so it can key on the
+		// acting user, which is only on the context once auth has run.
+		r.With(a.requireAuth).Get("/{uid}/comments", a.handleListComments)
+		r.With(a.requireAuth, a.commentThrottle()).Post("/{uid}/comments", a.handleCreateComment)
+		r.With(a.requireAuth).Patch("/{uid}/comments/{commentUID}", a.handleUpdateComment)
+		r.With(a.requireAuth).Delete("/{uid}/comments/{commentUID}", a.handleDeleteComment)
 		r.With(a.requireWrite).Post("/{uid}/faces/assign", a.handleFaceAssign)
 		r.With(a.requireWrite).Patch("/{uid}", a.handleUpdate)
 		r.With(a.requireAuth).Get("/{uid}/edit", a.handleGetEdit)
@@ -465,6 +510,10 @@ type photoDetail struct {
 	// StackMembers is the variants strip: every file of this photo's stack (this
 	// photo among them), the primary first. It is omitted for an unstacked photo.
 	StackMembers []stackMember `json:"stack_members,omitempty"`
+	// CommentCount is how many live comments the photo carries, so the detail can
+	// badge the thread without fetching it. It is always present (0 for a photo
+	// with no comments, and for an instance with no comments backend wired).
+	CommentCount int `json:"comment_count"`
 }
 
 // handleDetail returns a photo's full detail, including its file list and the
@@ -486,7 +535,8 @@ func (a *API) handleDetail(w http.ResponseWriter, r *http.Request) {
 
 // writeDetail assembles and writes the full photoDetail body for photo: its stored
 // files, the caller's per-user annotations (is_favorite, rating, flag) and media
-// URLs, its album/label memberships, its resolved uploader and its cached place.
+// URLs, its album/label memberships, its resolved uploader, its cached place and
+// the size of its comment thread.
 //
 // Every endpoint answering with a single photo the detail view then holds must go
 // through here, not write the bare photos.Photo: the client replaces the detail it
@@ -513,11 +563,17 @@ func (a *API) writeDetail(w http.ResponseWriter, r *http.Request, userUID string
 		writeError(w, http.StatusInternalServerError, "fetching stack members failed")
 		return
 	}
+	commentCount, err := a.commentCount(r.Context(), photo.UID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "counting comments failed")
+		return
+	}
 	writeJSON(w, http.StatusOK, photoDetail{
 		photoView: views[0], Files: files, Albums: albums, Labels: labels,
 		Uploader:     a.resolveUploader(r.Context(), photo.UploadedBy),
 		Place:        a.resolvePlace(r.Context(), photo.UID),
 		StackMembers: members,
+		CommentCount: commentCount,
 	})
 }
 
