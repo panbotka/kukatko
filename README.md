@@ -59,6 +59,13 @@ It is **not** for you if you are looking for:
   span beside their name ("1923–1998"), roughly how old they were on every dated photograph
   ("~23 let", never a negative or absurd number), and a jump straight to the decade you meant. In an
   archive spanning 1905–2026 that is the difference between a pile of pictures and a biography.
+- **It tells you what you missed.** A family library is shared, so somebody else's evening of
+  uploading is invisible to whoever opens the app next. Come back after a while and the library
+  greets you with what happened while you were away: how many photos arrived (one click to see
+  them), which albums were started, who was newly named, how many comments were written. A "visit"
+  is measured server-side and forgiving — reloading the page or wandering off to an album and back
+  does not reset it, only a real absence does — so the summary stays put while you read it, closes
+  for good when you close it, and never greets a brand-new account with its own library as news.
 - **A library an AI agent can use.** Kukátko can expose itself as an **MCP server**, so an agent
   searches and organizes the library directly ("find all of grandma's photos from the sixties and
   put them in an album"). Off by default, authenticated with an ordinary API token, bound by the

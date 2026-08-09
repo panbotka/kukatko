@@ -168,6 +168,23 @@ here.
   mirrors `faceOverlayPref.ts`) — dismissing hides the current message, but a newly published one (new `updated_at`)
   **shows again** (not a plain boolean); empty message / loading / already dismissed → renders nothing; texts
   `announcement.*` (cs/en)),
+  `WhatsNewPanel` (`components/library/`, **"what's new since your last visit"** — the digest above the
+  library grid, rendered by `LibraryPage` **before `FilterBar`** because it is about the library as a whole,
+  not about the current view. A shared family library otherwise makes somebody else's evening of uploading
+  invisible to the next person who opens the app; this is the one place that says so, and it is deliberately
+  four lines rather than a second timeline competing with the real one. Via `useWhatsNew` + a dismissible
+  `<Alert variant="info">` with a `clock-history` `Icon`, a `whatsNew.since` sub-line through
+  `formatDateTimeMinutes`, then one `<li>` per non-zero group: **`whatsNew.photos` links to `/?sort=added`**
+  (recently added, not the capture-time timeline — a scan of 1962 negatives is *new* but not *recent*),
+  albums link to `/albums/{uid}` and people to `/people/{uid}` via the shared `DigestLine`, which after the
+  server's 6 links appends a plain **non-linked** `whatsNew.more` tail (no page lists "albums created since
+  Tuesday"); comments are a count, not a link. **Dismiss is keyed on the digest's `since`** in localStorage
+  (`lib/whatsNewDismissal.ts`: `readDismissedWhatsNew`/`writeDismissedWhatsNew`, mirrors
+  `announcementDismissal.ts`) — `since` is constant for the length of a visit, so closing the panel closes it
+  for **this** visit through every reload and every walk around the app, and the next visit's fresh `since`
+  brings it back. Loading / `has_news:false` / already dismissed → renders nothing; **every role sees it**,
+  viewers included. Texts `whatsNew.*` (cs/en, with the Czech plural categories `_one/_few/_many/_other`
+  so 1 fotka / 2 fotky / 5 fotek all read correctly). Tests: `WhatsNewPanel.test.tsx`),
   `JobStateLegend` (**shared legend of job-queue states**: a compact `dl` with a bold term + a quiet
   one-sentence explanation of each state, so an admin understands without hovering; both the labels and the explanations come from a
   shared i18n block `jobStates.labels.*`/`jobStates.descriptions.*`, so the wording is identical on
@@ -2391,6 +2408,11 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `AnnouncementBanner`: fetch on mount + refetch after ~60 s, **pauses on a hidden tab** and refreshes immediately
   on return, swallows a failure and returns `null` (the banner hides), on unmount it cancels the timer and the in-flight request (mirrors
   `useJobStats`);
+  `useWhatsNew()` = a loader of the returning-reader digest over `fetchWhatsNew` (`GET /whats-new`) for
+  `WhatsNewPanel`: **fetches exactly once per mount and never polls** — not a performance choice but a
+  correctness one, because the request is what stamps the visit server-side and a digest that reloaded
+  itself would change under the reader's eyes; swallows a failure and stays `null` (the panel hides), aborts
+  the in-flight request on unmount;
   `useLibraryStats(enabled=true)` = a loader of the library statistics over `fetchLibraryStats` (`GET /system/stats`)
   → `{state,reload}` with the state `loading|error|ready`: it **surfaces an error explicitly** (never swallows it into zeroes —
   an empty library and an unavailable count must not look the same), an aborted request (unmount/retry) is not an error,
@@ -3016,7 +3038,12 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `services/` (`health.ts`, `capabilities.ts` = `fetchCapabilities(signal)` over `GET /api/v1/capabilities`
   → `Capabilities{semantic_search, version?: VersionInfo{version,commit}}` (it sends the session cookie,
   `credentials:'same-origin'`; `version` is optional on the client because it is absent before the first
-  answer and after a failed one, not because the endpoint may omit it), `auth.ts` = login/logout/me/changePassword, the types
+  answer and after a failed one, not because the endpoint may omit it),
+  `whatsNew.ts` = `fetchWhatsNew(signal)` over `GET /api/v1/whats-new` → `WhatsNew{has_news, since?,
+  photos?, comments?, albums?:WhatsNewAlbum[], album_count?, people?:WhatsNewPerson[], person_count?}`
+  (`has_news` is the only flag to branch on — false covers both a first-ever visit and an empty one;
+  the request **writes** server-side, stamping the reader's visit, so it is issued once per library-home
+  load and **never polled**), `auth.ts` = login/logout/me/changePassword, the types
   `User`/`Role` (the strict ladder `viewer < editor < admin < maintainer`)/`AuthSession`, `ApiError` with a
   status, `isNotFound(err)` (a 404 = "there is no such thing", which the detail pages tell apart from a failed
   load so a link out of the audit log to something deleted explains itself),

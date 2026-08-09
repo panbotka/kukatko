@@ -332,7 +332,8 @@ func buildServices(
 // readAPIOptions builds the server options for the read/curation API groups that
 // depend only on the shared pool and the auth guard: per-subject face outliers,
 // the people (subject) catalogue, albums and labels, the places browse hierarchy,
-// per-user saved searches, the grouped global search and the audit log. Route
+// per-user saved searches, the announcement banner, the returning-reader digest,
+// the grouped global search and the audit log. Route
 // groups mount on distinct paths, so their relative order does not matter.
 // Splitting them out keeps buildServices within the function-length limit.
 //
@@ -374,6 +375,7 @@ func readAPIOptions(
 		server.WithAPI(buildPlacesAPI(db, authAPI).RegisterRoutes),
 		server.WithAPI(buildSavedSearchAPI(db, authAPI).RegisterRoutes),
 		server.WithAPI(buildAnnouncementAPI(db, authAPI).RegisterRoutes),
+		server.WithAPI(buildWhatsNewAPI(db, authAPI).RegisterRoutes),
 		server.WithAPI(buildGlobalSearchAPI(db, authAPI, mediaStore).RegisterRoutes),
 		server.WithAPI(buildAuditAPI(db, authAPI).RegisterRoutes),
 	}
