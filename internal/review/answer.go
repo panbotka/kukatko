@@ -66,7 +66,35 @@ func (s *Service) Answer(
 	if err != nil {
 		return AnswerResult{}, err
 	}
-	return sess.consume(questionID, result, result != resultGone), nil
+	res := sess.consume(questionID, result, result != resultGone)
+	res.Reveal = s.revealFor(ctx, ref, result)
+	return res, nil
+}
+
+// revealFor reads the small payoff a confirmed face assignment carries back —
+// how many photos that person is now on, and how far their collection reaches.
+// Every other outcome, and every failure to read it, yields nil: the reveal is a
+// reward, and a reward that can 500 the write it follows is a liability. The
+// write has already happened by the time this runs, so the numbers include it.
+func (s *Service) revealFor(ctx context.Context, ref questionRef, result string) *Reveal {
+	if s.stats == nil || ref.Kind != KindFace || result != resultAssigned {
+		return nil
+	}
+	stats, err := s.stats.SubjectStats(ctx, ref.SubjectUID)
+	if err != nil {
+		if !errors.Is(err, people.ErrSubjectNotFound) {
+			s.log.WarnContext(ctx, "review: reading the answer reveal failed",
+				"subject_uid", ref.SubjectUID, "error", err)
+		}
+		return nil
+	}
+	return &Reveal{
+		SubjectUID: stats.UID,
+		Name:       stats.Name,
+		PhotoCount: stats.PhotoCount,
+		OldestYear: stats.OldestYear,
+		NewestYear: stats.NewestYear,
+	}
 }
 
 // apply performs the durable write for a yes/no answer and names the outcome.

@@ -5,9 +5,9 @@ import { type Photo } from './photos'
 
 /**
  * Review-game client, mirroring `internal/reviewapi`: `GET /review/queue` hands
- * the player a batch of one-at-a-time yes/no/skip questions targeted at the
- * uncertainty band, `POST /review/answer` applies one verdict through the
- * existing write paths. The session cookie is sent automatically (same-origin);
+ * the player one *round* of one-at-a-time yes/no/skip questions — composed for
+ * variety rather than sorted, see {@link ReviewRound} — and `POST /review/answer`
+ * applies one verdict through the existing write paths. The session cookie is sent automatically (same-origin);
  * every call throws {@link ApiError} on a non-OK response.
  */
 
@@ -160,9 +160,64 @@ export const REASON_NO_LABELS = 'no_labels'
 /** Sources exist but no candidate currently falls into the uncertainty band. */
 export const REASON_NO_CANDIDATES = 'no_candidates'
 
+/**
+ * The round a batch of questions forms (`review.RoundInfo`). One request is one
+ * round — `questions` *is* the round — so there are no boundary markers inside
+ * it; this says which round it is and what it is made of.
+ *
+ * The composition counts are fixed when the round is minted, so a between-rounds
+ * summary reports what the player just played rather than what is left of it.
+ */
+export interface ReviewRound {
+  /** The round's 1-based number within this session. */
+  index: number
+  /** How many questions the round was minted with. */
+  size: number
+  /** How many are still unanswered — the length of `questions`. */
+  remaining: number
+  /** How many questions of each kind the round holds. */
+  kinds?: Partial<Record<ReviewKind, number>>
+  /** Confident-tier and uncertainty-band counts; untiered kinds count as neither. */
+  sure: number
+  band: number
+  /** How many distinct people, labels, places and duplicate groups it asks about. */
+  entities: number
+  /** True when nothing is queued behind this round. */
+  last: boolean
+}
+
+/** The `kind` every breather card carries (`review.BreatherKind`). */
+export const BREATHER_KIND = 'breather'
+
+/**
+ * A non-question card the game shows alongside a round (`review.Breather`): a
+ * photo somebody rated highly or favourited, with its title and year, and
+ * nothing to answer.
+ *
+ * It arrives *outside* `questions` and has no id the answer endpoint accepts, so
+ * it can never be mistaken for a question — render it differently and do not
+ * offer Ano/Ne on it.
+ */
+export interface ReviewBreather {
+  /** Always {@link BREATHER_KIND}. */
+  kind: string
+  /** The full catalog record with media URLs stamped. */
+  photo: Photo
+  /** The photo's title, falling back to its file name. */
+  title: string
+  /** The capture year; absent for an undated photo. */
+  year?: number
+  /** Why it was picked: `favorite` or `rated`. */
+  reason: string
+}
+
 /** Response body of `GET /review/queue` (`review.QueueResult`). */
 export interface ReviewQueue {
   questions: ReviewQuestion[]
+  /** Where this round sits in the session and what it is made of. */
+  round: ReviewRound
+  /** The round's non-question cards; absent when there are none. */
+  breathers?: ReviewBreather[]
   /** The applied source, echoed back so a stale batch is recognisable. */
   source: ReviewSource
   /** How many questions this session answered so far. */
@@ -176,6 +231,20 @@ export interface ReviewQueue {
   reason?: string
 }
 
+/**
+ * What a confirmed face assignment reveals about the person (`review.Reveal`):
+ * how many photos they are on now and how far their collection reaches. Present
+ * only on `result: "assigned"`, and absent whenever it could not be read — the
+ * write has already happened either way.
+ */
+export interface ReviewReveal {
+  subject_uid: string
+  name: string
+  photo_count: number
+  oldest_year?: number
+  newest_year?: number
+}
+
 /** Response body of `POST /review/answer` (`review.AnswerResult`). */
 export interface ReviewAnswerResult {
   /**
@@ -185,6 +254,8 @@ export interface ReviewAnswerResult {
   result: string
   answered: number
   remaining: number
+  /** The payoff of a confirmed face assignment; absent for every other outcome. */
+  reveal?: ReviewReveal
 }
 
 /**
@@ -245,6 +316,12 @@ export interface LeaderboardEntry {
   no_count: number
   /** `yes_count + no_count`, the value the board is ranked on. */
   total: number
+  /**
+   * The player's current run of consecutive days with at least one decision,
+   * ending today or yesterday (the day is not over yet); 0 when no run is alive.
+   * It is not narrowed by the window — a streak is a fact about the habit.
+   */
+  streak_days: number
   /** True for the authenticated caller's own row. */
   is_me: boolean
 }

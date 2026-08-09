@@ -310,9 +310,27 @@ review:
   # hard questions is load-bearing — do not set this above ~0.85. A value outside
   # (0, 1) falls back to the default.
   sure_share: 0.70
-  # Default number of questions per queue batch (the UI prefetches to stay instant
-  # between answers). Set to 0 (or below) to fall back to the default.
+  # How many questions one rebuild gathers into the pool a round is mixed from.
+  # This is material, not a response length: several rounds come out of one pool,
+  # so the expensive vector searches run once per pool rather than once per round.
+  # Set to 0 (or below) to fall back to the default.
   queue_size: 20
+  # How many questions one round holds — and therefore how long a queue response
+  # is, since one request is one round. The response also carries the round's
+  # number and composition, for the between-rounds summary. Ten is short enough
+  # that finishing a round is a decision a player makes several times an evening;
+  # raise it for longer sittings, lower it for a game played in the gaps. A
+  # request may still send its own ?limit (cap 100). Set to 0 (or below) to fall
+  # back to the default.
+  round_size: 10
+  # How many questions about one person or one label a single round may hold.
+  # This is the round's own variety cap, deliberately tighter than
+  # max_per_entity below: that one bounds the pool a rebuild gathers, this one
+  # bounds what a player actually sits through. It is a preference, not a wall —
+  # a library with only one named person still gets a full round, because a round
+  # that came back empty rather than repetitive would be worse. Set to 0 (or
+  # below) to fall back to the default.
+  round_max_per_entity: 3
   # How long a built queue is served from the per-user cache before the expensive
   # candidate searches run again. Answers update the cached queue in place, so the
   # session counter stays cheap. Set to 0 (or below) to fall back to the default.

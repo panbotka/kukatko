@@ -33,6 +33,22 @@ type session struct {
 	builtAt time.Time
 	// reason explains an empty queue (ReasonNoSources / ReasonNoCandidates).
 	reason string
+	// roundLen is how many questions at the head of queue form the current
+	// round. The round is not held apart from the pool: it *is* the pool's head,
+	// which keeps one list to answer against and makes "the round shrinks as it
+	// is answered" fall out of the same bookkeeping as everything else.
+	roundLen int
+	// round summarises the current round as it was minted, so a summary shown
+	// between rounds reports what the player played rather than what is left.
+	round RoundInfo
+	// roundSeq counts the rounds minted this session. It seeds the mixer, so two
+	// consecutive rounds over an unchanged pool differ from each other.
+	roundSeq int
+	// breathers are the current round's non-question cards.
+	breathers []Breather
+	// albums is the album membership of the pool's photos, read once per rebuild
+	// for the mixer's album rule; nil means the rule is off.
+	albums map[string][]string
 	// answered marks question ids already answered yes/no (or found gone).
 	answered map[string]bool
 	// skipped marks question ids shelved for this session.
@@ -74,7 +90,9 @@ func (sess *session) seen(questionID string) bool {
 
 // consume records the outcome of one answer under the session lock: it marks
 // the question seen, drops it from the cached queue, and bumps the counter for
-// countable (yes/no) outcomes answered for the first time.
+// countable (yes/no) outcomes answered for the first time. A question dropped
+// from inside the current round shortens the round too, which is what makes the
+// next batch fetch serve the rest of it rather than mint a new one.
 func (sess *session) consume(questionID, result string, countIt bool) AnswerResult {
 	sess.mu.Lock()
 	defer sess.mu.Unlock()
@@ -86,8 +104,30 @@ func (sess *session) consume(questionID, result string, countIt bool) AnswerResu
 		}
 		sess.answered[questionID] = true
 	}
-	sess.queue = dropQuestion(sess.queue, questionID)
+	sess.dropFromQueue(questionID)
 	return AnswerResult{Result: result, Answered: sess.answeredCount, Remaining: len(sess.queue)}
+}
+
+// dropFromQueue removes one question from the cached queue, shrinking the round
+// when the question was part of it. The caller holds sess.mu.
+func (sess *session) dropFromQueue(questionID string) {
+	for i, q := range sess.queue {
+		if q.ID != questionID {
+			continue
+		}
+		sess.queue = append(sess.queue[:i:i], sess.queue[i+1:]...)
+		if i < sess.roundLen {
+			sess.roundLen--
+		}
+		return
+	}
+}
+
+// albumsOf reports which albums a photo belongs to, as the last rebuild read it.
+// It is the mixer's album lookup; an unknown photo (or no album store) simply
+// yields nothing, which switches the rule off for that pair.
+func (sess *session) albumsOf(photoUID string) []string {
+	return sess.albums[photoUID]
 }
 
 // alreadyAnswered reports whether the question was already answered yes/no in
@@ -96,14 +136,4 @@ func (sess *session) alreadyAnswered(questionID string) bool {
 	sess.mu.Lock()
 	defer sess.mu.Unlock()
 	return sess.answered[questionID]
-}
-
-// dropQuestion returns queue without the given question, preserving order.
-func dropQuestion(queue []Question, questionID string) []Question {
-	for i, q := range queue {
-		if q.ID == questionID {
-			return append(queue[:i:i], queue[i+1:]...)
-		}
-	}
-	return queue
 }

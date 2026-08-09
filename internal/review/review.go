@@ -57,6 +57,22 @@
 // entity still has a question waiting; see variety.go for both rules and why
 // they are shaped that way.
 //
+// All of that produces a *pool*. What the player is served is a round mixed out
+// of it: RoundSize questions (10 by default) chosen one slot at a time so that
+// consecutive questions differ in the ways a player actually notices — the
+// person or label they are about, the kind of question, the tier, the album the
+// photo is in, the moment it was taken, its era. One request is one round, and
+// QueueResult.Round says which round it is and what it is made of, for the
+// between-rounds summary. The rules are penalties rather than prohibitions, so a
+// one-sided pool still yields a full round; see mixer.go.
+//
+// A round may also carry a Breather: a photo somebody already rated or
+// favourited, with its title and year and nothing to answer (breathers.go). It
+// travels outside the questions array and carries a kind of its own, so it can
+// never be mistaken for a question. And a yes that confirms a face assignment
+// answers with a small Reveal — how many photos that person is on now, and how
+// far back their collection reaches.
+//
 // What the game asks about is the player's choice: people, labels or both (see
 // source.go). The selection is pushed into the rebuild rather than applied to
 // its output, so a player who only wants label questions never pays for the
@@ -174,6 +190,18 @@ const (
 	// against a trimmed centroid, which is the most expensive per-entity read of
 	// the five kinds, so the window is smaller than the face sweep's.
 	DefaultOutlierBudget = 4
+	// DefaultRoundSize is how many questions one round holds. Ten, because a
+	// round has to be short enough that finishing one is a decision the player
+	// makes several times an evening rather than a commitment they weigh up
+	// once — and because the between-rounds summary is only interesting if it
+	// arrives often enough to notice.
+	DefaultRoundSize = 10
+	// DefaultRoundMaxPerEntity is how many questions about one subject or label a
+	// single round may hold. Three of ten, deliberately tighter than
+	// MaxPerEntity's share of the whole pool: the pool is material a rebuild
+	// gathered, the round is what a player actually sits through, and the
+	// monotony complaint was always about the second.
+	DefaultRoundMaxPerEntity = 3
 	// DefaultOutlierThreshold is the minimum cosine distance from a person's
 	// centroid a face must have before the game asks about it. Two embeddings of
 	// different people sit around 1.0, so half of that is comfortably past "this
@@ -347,10 +375,84 @@ type PlaceGuess struct {
 	Lng float64 `json:"lng"`
 }
 
-// QueueResult is one batch of questions plus the session counters.
+// RoundInfo describes the round a batch belongs to. One request is one round —
+// the questions array *is* the round — so a client needs no boundary markers
+// inside it: Index says which round this is, Size how long it was minted, and
+// Remaining how much of it is still unanswered, which is what tells a client
+// whether it is starting a round or resuming one it already showed.
+//
+// The composition counts are the between-rounds summary: what the round asked
+// about and in what mix. They are the round's own numbers, fixed when it was
+// minted, so a summary shown at the end of a round reports what the player just
+// played rather than what is left of it.
+type RoundInfo struct {
+	// Index is the round's 1-based number within this session.
+	Index int `json:"index"`
+	// Size is how many questions the round was minted with.
+	Size int `json:"size"`
+	// Remaining is how many of them are still unanswered — the length of the
+	// questions array in this response.
+	Remaining int `json:"remaining"`
+	// Kinds counts the round's questions per kind ("face", "label", …).
+	Kinds map[string]int `json:"kinds,omitempty"`
+	// Sure and Band count the round's confident-tier and uncertainty-band
+	// questions. The three kinds that carry no tier count toward neither.
+	Sure int `json:"sure"`
+	Band int `json:"band"`
+	// Entities is how many distinct people, labels, places and duplicate groups
+	// the round asked about — the number the variety rules exist to raise.
+	Entities int `json:"entities"`
+	// Last reports that nothing is queued beyond this round, so a client can tell
+	// "take a breath" from "that was everything for now".
+	Last bool `json:"last"`
+}
+
+// Breather is a non-question card the game can show alongside a round: a photo
+// somebody already liked, with its title and year, and nothing to answer.
+//
+// It is carried outside the questions array and tagged with a Kind of its own so
+// no client can mistake one for a question, and it has no id the answer endpoint
+// would accept. See breathers.go for why the game has one at all.
+type Breather struct {
+	// Kind is always BreatherKind.
+	Kind string `json:"kind"`
+	// Photo is the full catalog record with media URLs stamped.
+	Photo photos.Photo `json:"photo"`
+	// Title is the photo's title, falling back to its file name.
+	Title string `json:"title"`
+	// Year is the capture year, omitted for an undated photo.
+	Year int `json:"year,omitempty"`
+	// Reason says why the photo qualified: BreatherReasonFavorite or
+	// BreatherReasonRated.
+	Reason string `json:"reason"`
+}
+
+// Reveal is the small payoff a confirmed face assignment carries back: what the
+// player just added to, in the person's own terms. It is read after the write,
+// from one indexed query, and its absence is never an error — a reveal that
+// could not be read simply is not shown.
+type Reveal struct {
+	// SubjectUID and Name identify the person the answer assigned a face to.
+	SubjectUID string `json:"subject_uid"`
+	Name       string `json:"name"`
+	// PhotoCount is how many visible photos they now appear on.
+	PhotoCount int `json:"photo_count"`
+	// OldestYear and NewestYear span their dated photos; both zero when none of
+	// their photos carries a date.
+	OldestYear int `json:"oldest_year,omitempty"`
+	NewestYear int `json:"newest_year,omitempty"`
+}
+
+// QueueResult is one round of questions plus the session counters.
 type QueueResult struct {
-	// Questions is the batch, most informative first.
+	// Questions is the round, mixed for variety (see mixer.go).
 	Questions []Question `json:"questions"`
+	// Round describes the round the questions form: where it sits in the session
+	// and what it is made of.
+	Round RoundInfo `json:"round"`
+	// Breathers are the round's non-question cards, empty when the library has
+	// nothing worth pausing on (or no breather source is wired).
+	Breathers []Breather `json:"breathers,omitempty"`
 	// Source is the applied question source, echoed back so a client can tell a
 	// batch built for the selection it is showing from one that is already stale.
 	Source Source `json:"source"`
@@ -376,6 +478,9 @@ type AnswerResult struct {
 	Answered int `json:"answered"`
 	// Remaining estimates how many questions are still queued.
 	Remaining int `json:"remaining"`
+	// Reveal is present only when the answer confirmed a face assignment: what
+	// the person's collection looks like now that it holds one more photo.
+	Reveal *Reveal `json:"reveal,omitempty"`
 }
 
 // Sweeper scans face candidates over a bounded window of the named subjects;
@@ -481,6 +586,31 @@ type PhotoStore interface {
 	ListByUIDs(ctx context.Context, uids []string) ([]photos.Photo, error)
 }
 
+// AlbumMembership reports which albums a set of photos belongs to;
+// *organize.Store satisfies it. The mixer uses it for one rule only — do not put
+// two questions about photos from the same album next to each other — so a nil
+// one (or a lookup that fails) switches that rule off and changes nothing else.
+type AlbumMembership interface {
+	// AlbumUIDsForPhotos returns the album uids of each given photo; photos in no
+	// album are absent from the map.
+	AlbumUIDsForPhotos(ctx context.Context, photoUIDs []string) (map[string][]string, error)
+}
+
+// BreatherSource picks the photos a round's breather card can show;
+// *review.BreatherStore satisfies it. A nil one simply means no breathers.
+type BreatherSource interface {
+	// PickBreathers returns up to limit high-rated or favourited photos for the
+	// user, at most one per era and newest era first.
+	PickBreathers(ctx context.Context, userUID string, limit int) ([]BreatherPick, error)
+}
+
+// SubjectStatsReader reads one person's headline numbers for the answer reveal;
+// *people.Store satisfies it. A nil one switches the reveal off.
+type SubjectStatsReader interface {
+	// SubjectStats returns the subject's visible photo count and year span.
+	SubjectStats(ctx context.Context, subjectUID string) (people.SubjectStats, error)
+}
+
 // Assigner applies the existing face-assignment state machine; *facematch.Service
 // satisfies it.
 type Assigner interface {
@@ -518,6 +648,14 @@ type Config struct {
 	// Photos hydrates the photo records of duplicate and outlier questions; nil
 	// switches both of those checks off.
 	Photos PhotoStore
+	// Albums reports the album membership the mixer spreads a round over; nil
+	// switches that one variety rule off.
+	Albums AlbumMembership
+	// Breathers picks the round's non-question cards; nil switches them off.
+	Breathers BreatherSource
+	// Stats reads the person behind a confirmed assignment for the answer's
+	// reveal; nil switches the reveal off.
+	Stats SubjectStatsReader
 	// Media stamps thumbnail/download URLs onto the photos the three new
 	// question kinds carry. A nil builder yields the application's own routes.
 	Media *mediaurl.Builder
@@ -533,8 +671,15 @@ type Config struct {
 	// SureShare is the fraction of a batch drawn from the confident tier; a
 	// value outside (0, 1) falls back to the default.
 	SureShare float64
-	// QueueSize is the default batch size for Queue.
+	// QueueSize is how many questions one rebuild gathers into the pool a round
+	// is mixed from.
 	QueueSize int
+	// RoundSize is how many questions one round holds — the default size of a
+	// Queue response.
+	RoundSize int
+	// RoundMaxPerEntity caps how many questions about one subject or label a
+	// single round may hold.
+	RoundMaxPerEntity int
 	// CacheTTL is how long a built queue is reused before rebuilding.
 	CacheTTL time.Duration
 	// MaxLabels caps how many labels one rebuild considers.
@@ -575,14 +720,20 @@ type Service struct {
 	outliers   OutlierRanker
 	subjects   SubjectLister
 	photos     PhotoStore
+	albums     AlbumMembership
+	breathers  BreatherSource
+	stats      SubjectStatsReader
 	media      *mediaurl.Builder
 	log        *slog.Logger
 
-	bandMin          float64
-	bandMax          float64
-	sureMin          float64
-	sureShare        float64
-	queueSize        int
+	bandMin           float64
+	bandMax           float64
+	sureMin           float64
+	sureShare         float64
+	queueSize         int
+	roundSize         int
+	roundMaxPerEntity int
+
 	cacheTTL         time.Duration
 	maxLabels        int
 	labelConcurrency int
@@ -704,6 +855,9 @@ func New(cfg Config) *Service {
 		outliers:         cfg.Outliers,
 		subjects:         cfg.Subjects,
 		photos:           cfg.Photos,
+		albums:           cfg.Albums,
+		breathers:        cfg.Breathers,
+		stats:            cfg.Stats,
 		media:            cfg.Media,
 		log:              cfg.Log,
 		bandMin:          cfg.BandMin,
@@ -711,6 +865,7 @@ func New(cfg Config) *Service {
 		sureMin:          cfg.SureMin,
 		sureShare:        cfg.SureShare,
 		queueSize:        orDefaultInt(cfg.QueueSize, DefaultQueueSize),
+		roundSize:        orDefaultInt(cfg.RoundSize, DefaultRoundSize),
 		cacheTTL:         cfg.CacheTTL,
 		maxLabels:        orDefaultInt(cfg.MaxLabels, DefaultMaxLabels),
 		labelConcurrency: orDefaultInt(cfg.LabelConcurrency, DefaultLabelConcurrency),
@@ -718,6 +873,9 @@ func New(cfg Config) *Service {
 		labelBudget:      orDefaultInt(cfg.LabelBudget, DefaultLabelBudget),
 		buildTimeout:     cfg.BuildTimeout,
 		maxPerEntity:     orDefaultInt(cfg.MaxPerEntity, DefaultMaxPerEntity),
+		roundMaxPerEntity: orDefaultInt(
+			cfg.RoundMaxPerEntity, DefaultRoundMaxPerEntity,
+		),
 		outlierBudget:    orDefaultInt(cfg.OutlierBudget, DefaultOutlierBudget),
 		outlierThreshold: cfg.OutlierThreshold,
 		now:              cfg.Now,

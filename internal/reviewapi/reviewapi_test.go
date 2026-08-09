@@ -386,3 +386,131 @@ func TestRegisterRoutes_writeGuardApplied(t *testing.T) {
 		t.Error("RequireWrite middleware was never applied")
 	}
 }
+
+// The round metadata, the breather cards, the answer reveal and the leaderboard
+// streak all reach the client as extra fields on bodies that already existed.
+// These tests read the raw JSON rather than decoding back into the Go types,
+// because the thing that can break is the wire shape: a client that has never
+// heard of rounds must still find `questions` where it always was.
+
+func TestHandleQueue_carriesTheRoundAndItsBreathers(t *testing.T) {
+	t.Parallel()
+	svc := &fakeService{queueRes: review.QueueResult{
+		Questions: []review.Question{{ID: "label:p1:l1", Kind: review.KindLabel}},
+		Round: review.RoundInfo{
+			Index: 2, Size: 10, Remaining: 1, Sure: 7, Band: 3, Entities: 6,
+			Kinds: map[string]int{"face": 6, "label": 4}, Last: true,
+		},
+		Breathers: []review.Breather{{
+			Kind: review.BreatherKind, Title: "Svatba", Year: 1998,
+			Reason: review.BreatherReasonFavorite,
+		}},
+	}}
+	server := newServer(t, svc)
+	var got map[string]any
+	if status := doJSON(t, http.MethodGet, server.URL+"/review/queue", "", &got); status != http.StatusOK {
+		t.Fatalf("status = %d, want 200", status)
+	}
+	round, ok := got["round"].(map[string]any)
+	if !ok {
+		t.Fatalf("body has no round object: %+v", got)
+	}
+	for key, want := range map[string]float64{
+		"index": 2, "size": 10, "remaining": 1, "sure": 7, "band": 3, "entities": 6,
+	} {
+		if round[key] != want {
+			t.Errorf("round.%s = %v, want %v", key, round[key], want)
+		}
+	}
+	if round["last"] != true {
+		t.Errorf("round.last = %v, want true", round["last"])
+	}
+	breathers, ok := got["breathers"].([]any)
+	if !ok || len(breathers) != 1 {
+		t.Fatalf("body has no breathers array: %+v", got["breathers"])
+	}
+	card, _ := breathers[0].(map[string]any)
+	if card["kind"] != review.BreatherKind || card["title"] != "Svatba" || card["year"] != float64(1998) {
+		t.Errorf("breather = %+v, want the typed card with its title and year", card)
+	}
+	// The questions array is untouched, which is what keeps an older client working.
+	if questions, ok := got["questions"].([]any); !ok || len(questions) != 1 {
+		t.Errorf("questions = %+v, want the one scripted question", got["questions"])
+	}
+}
+
+func TestHandleQueue_omitsBreathersWhenThereAreNone(t *testing.T) {
+	t.Parallel()
+	server := newServer(t, &fakeService{})
+	var got map[string]any
+	if status := doJSON(t, http.MethodGet, server.URL+"/review/queue", "", &got); status != http.StatusOK {
+		t.Fatalf("status = %d, want 200", status)
+	}
+	if _, ok := got["breathers"]; ok {
+		t.Errorf("breathers = %v, want the field omitted entirely", got["breathers"])
+	}
+}
+
+func TestHandleAnswer_carriesTheReveal(t *testing.T) {
+	t.Parallel()
+	svc := &fakeService{answerRes: review.AnswerResult{
+		Result: "assigned", Answered: 3, Remaining: 9,
+		Reveal: &review.Reveal{
+			SubjectUID: "s1", Name: "Anna", PhotoCount: 42, OldestYear: 1961, NewestYear: 2019,
+		},
+	}}
+	server := newServer(t, svc)
+	var got map[string]any
+	body := `{"question_id":"face:p1:0:s1","answer":"yes"}`
+	if status := doJSON(t, http.MethodPost, server.URL+"/review/answer", body, &got); status != http.StatusOK {
+		t.Fatalf("status = %d, want 200", status)
+	}
+	reveal, ok := got["reveal"].(map[string]any)
+	if !ok {
+		t.Fatalf("body has no reveal object: %+v", got)
+	}
+	if reveal["name"] != "Anna" || reveal["photo_count"] != float64(42) ||
+		reveal["oldest_year"] != float64(1961) || reveal["newest_year"] != float64(2019) {
+		t.Errorf("reveal = %+v, want Anna's numbers", reveal)
+	}
+}
+
+func TestHandleAnswer_omitsTheRevealWhenThereIsNone(t *testing.T) {
+	t.Parallel()
+	server := newServer(t, &fakeService{answerRes: review.AnswerResult{Result: "rejected"}})
+	var got map[string]any
+	body := `{"question_id":"face:p1:0:s1","answer":"no"}`
+	if status := doJSON(t, http.MethodPost, server.URL+"/review/answer", body, &got); status != http.StatusOK {
+		t.Fatalf("status = %d, want 200", status)
+	}
+	if _, ok := got["reveal"]; ok {
+		t.Errorf("reveal = %v, want the field omitted entirely", got["reveal"])
+	}
+}
+
+func TestHandleLeaderboard_carriesTheStreak(t *testing.T) {
+	t.Parallel()
+	lb := &fakeLeaderboard{entries: []review.LeaderboardEntry{
+		{UserUID: "u1", DisplayName: "Alice", YesCount: 3, NoCount: 1, Total: 4, StreakDays: 5},
+		{UserUID: "u2", DisplayName: "Bob", YesCount: 1, NoCount: 0, Total: 1},
+	}}
+	server := serveConfig(t, Config{Leaderboard: lb})
+	var got map[string]any
+	if status := doJSON(t, http.MethodGet, server.URL+"/review/leaderboard", "", &got); status != http.StatusOK {
+		t.Fatalf("status = %d, want 200", status)
+	}
+	entries, ok := got["entries"].([]any)
+	if !ok || len(entries) != 2 {
+		t.Fatalf("entries = %+v, want the two scripted rows", got["entries"])
+	}
+	first, _ := entries[0].(map[string]any)
+	second, _ := entries[1].(map[string]any)
+	if first["streak_days"] != float64(5) {
+		t.Errorf("first row streak_days = %v, want 5", first["streak_days"])
+	}
+	// A player with no live run reports zero rather than nothing, so the client
+	// never has to tell "no streak" from "the server does not know".
+	if second["streak_days"] != float64(0) {
+		t.Errorf("second row streak_days = %v, want 0", second["streak_days"])
+	}
+}

@@ -3277,10 +3277,21 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `answerReview(questionId,answer,signal)` over `POST /review/answer` (idempotent; the types
   `ReviewQuestion`/`ReviewQueue`/`ReviewAnswer` — `ReviewQuestion.tier` = `'sure'|'band'`, which confidence
   tier the question came from; the UI asks the same question either way, it is carried so the mix can be
-  observed; the basis for `useReviewGame`), and **the leaderboard**
+  observed; the basis for `useReviewGame`).
+  **One request is one round**: `ReviewQueue.round` (`ReviewRound` = `{index,size,remaining,kinds?,sure,band,
+  entities,last}`) says which round of the session the `questions` array is, how long it was minted and what it
+  is made of — the numbers are frozen at mint time, so they are what a between-rounds summary should show, not
+  what is left. Re-fetching before answering returns the **same** round, so the existing dedup-by-id refill in
+  `useReviewGame` keeps working unchanged. `ReviewQueue.breathers` (`ReviewBreather[]`, absent when empty) are
+  **not questions**: a photo somebody rated or favourited, tagged `BREATHER_KIND` and carrying no id the answer
+  endpoint would accept — render them differently and never offer Ano/Ne on one.
+  `ReviewAnswerResult.reveal` (`ReviewReveal`) rides back on `result: 'assigned'` only, with the person's photo
+  count and year span. And **the leaderboard**
   `fetchLeaderboard(window,signal)` over `GET /review/leaderboard?window=all|7d|today` →
   `Leaderboard{window,caller_uid,entries:LeaderboardEntry[]}` (`LeaderboardEntry` =
-  `{user_uid,display_name,yes_count,no_count,total,is_me}`, ordered by the backend by `total`),
+  `{user_uid,display_name,yes_count,no_count,total,streak_days,is_me}`, ordered by the backend by `total`;
+  `streak_days` = the player's current run of consecutive days with a decision, **not** narrowed by the
+  window),
   the type `LeaderboardWindow` = `'all'|'7d'|'today'` + `LEADERBOARD_WINDOWS` (the toggle's order);
   the basis for `LeaderboardPage`;
   `map.ts` = the map client: `fetchMapPhotos(params,signal)` over `GET /api/v1/map/photos`

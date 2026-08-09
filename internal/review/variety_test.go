@@ -103,21 +103,21 @@ func TestQueue_noEntityRepeatsMoreThanTheRunCap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
-	if len(res.Questions) != DefaultQueueSize {
-		t.Fatalf("batch = %d questions, want a full batch of %d", len(res.Questions), DefaultQueueSize)
+	if len(res.Questions) != DefaultRoundSize {
+		t.Fatalf("round = %d questions, want a full round of %d", len(res.Questions), DefaultRoundSize)
 	}
 	// The counterpart of the baseline's number, on the same fixture.
-	t.Logf("spread: a batch of %d asks about %d entities, longest run %d\n%s",
+	t.Logf("spread: a round of %d asks about %d entities, longest run %d\n%s",
 		len(res.Questions), countEntities(res.Questions),
 		longestEntityRun(res.Questions), describe(res.Questions))
 	if got := longestEntityRun(res.Questions); got > maxSameEntityRun {
 		t.Errorf("longest run of one entity = %d, want at most %d:\n%s",
 			got, maxSameEntityRun, describe(res.Questions))
 	}
-	// A batch of 20 with a share of 4 has to come from at least five entities; the
-	// run cap alone would be satisfied by ping-ponging between two of them.
-	if want := DefaultQueueSize / DefaultMaxPerEntity; countEntities(res.Questions) < want {
-		t.Errorf("batch asks about %d entities, want at least %d:\n%s",
+	// A round of 10 with a per-round share of 3 has to come from at least four
+	// entities; the run cap alone would be satisfied by ping-ponging between two.
+	if want := DefaultRoundSize / DefaultRoundMaxPerEntity; countEntities(res.Questions) < want {
+		t.Errorf("round asks about %d entities, want at least %d:\n%s",
 			countEntities(res.Questions), want, describe(res.Questions))
 	}
 }

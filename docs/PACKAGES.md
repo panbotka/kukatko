@@ -1010,7 +1010,10 @@ to `## Package map` in `CLAUDE.md`.
   `COUNT(p.uid)`, what the face tools mean, and `PhotoCount` = `COUNT(DISTINCT p.uid)`, what the
   people index shows — they part company when one photo carries several markers of the same subject,
   and `PhotoCount` is exactly the length of `ListPhotoUIDsBySubject`, so a "N photos" badge keeps its
-  promise about the gallery behind it; plus
+  promise about the gallery behind it; `SubjectStats(uid)` (`stats.go`) answers the same two numbers plus the
+  **year span** (`OldestYear`/`NewestYear`, both 0 for a wholly undated person) for **one** subject, with the
+  same joins so it cannot become a third opinion — a primary-key lookup plus `idx_markers_subject_uid`, cheap
+  enough for the review game's per-answer reveal, `ErrSubjectNotFound` for an unknown uid; plus
   `CoverFace *SubjectFace` = the face that illustrates the subject in the people grid when it has no
   `cover_photo_uid` — the `best_face` CTE in `listSubjectsSQL` takes per subject a `DISTINCT ON` with
   the order **`w*h DESC, score DESC, uid`**: the tile is a square zoomed from the crop of the cache
@@ -1404,9 +1407,42 @@ to `## Package map` in `CLAUDE.md`.
   other kinds. Writes via `Assigner` (`*facematch.Service`),
   `OrganizeStore.AttachLabelAudited`, the `PlaceReviewer`'s own accept/reject and
   `FeedbackStore.RejectFace/RejectLabel/ConfirmFace/ConfirmDuplicate/DismissDuplicate`; `New(Config{...,BandMin,
-  BandMax,SureMin,SureShare,QueueSize,CacheTTL,MaxLabels,LabelConcurrency,FaceBudget,LabelBudget,BuildTimeout,
-  MaxPerEntity,OutlierBudget,OutlierThreshold,Now})` (an invalid band → the default pair 0.45/0.75, `Now` = a
-  test hook).
+  BandMax,SureMin,SureShare,QueueSize,RoundSize,RoundMaxPerEntity,CacheTTL,MaxLabels,LabelConcurrency,
+  FaceBudget,LabelBudget,BuildTimeout,MaxPerEntity,OutlierBudget,OutlierThreshold,Now})` (an invalid band → the
+  default pair 0.45/0.75, `Now` = a test hook). Three further dependencies are **read-only extras**, each
+  optional and each switched off by a nil: `Albums` (`AlbumMembership`, satisfied by `*organize.Store` →
+  `AlbumUIDsForPhotos`) feeds the mixer's album rule, `Breathers` (`BreatherSource`, satisfied by
+  `*review.BreatherStore`) picks the round's non-question card, and `Stats` (`SubjectStatsReader`, satisfied by
+  `*people.Store` → `SubjectStats`) reads the answer reveal. **None of them can fail a round or an answer** —
+  every failure is logged and degrades to "that extra is absent".
+  **The rounds (`mixer.go`) — a playlist, not a sorted list.** Everything above produces a *pool*
+  (`QueueSize`, default 20); what a player is served is a **round** mixed out of it (`RoundSize`, default 10,
+  `review.round_size`), and **one request is one round**. `mixRound(pool,mixConfig,albumLookup) → (round,rest)`
+  fills the round a slot at a time, scoring every unplaced question against what the round already holds and
+  taking the cheapest. The penalty weights are powers of two an order of magnitude apart, so a rule never
+  trades against a more important one: `costEntityCap` (over `RoundMaxPerEntity`, default 3,
+  `review.round_max_per_entity`) > `costEntityRun` (a third in a row about one entity) > `costKindRun`/
+  `costKindRepeat` > `costTier` (the tier the running confident share does not want — this is what
+  *interleaves* the tiers instead of blocking them, while keeping `SureShare` over the round) > `costAlbum` >
+  `costMoment` (within `nearMoment`, 10 min — the same burst) > `costEra` (the same decade) > `costOpening`.
+  **Nothing is forbidden outright**: a pool of one person, or of one afternoon, still yields a full round,
+  because the rules are preferences over a total order and there is no way for them to return an empty round
+  while a question exists. Ties go to the earlier position in the pool's informativeness order, so variety is
+  never bought with a less relevant question. The only seeded choice is the round's opening kind
+  (`roundSeed(userUID,sequence)`), which keeps the mixer a pure function of (pool, config, seed) — so a
+  **re-fetch before answering returns the same round** and the variety tests can assert against `mixRound`
+  directly. The round is the *head of the pool* rather than a second list (`session.roundLen`), so answering
+  shortens it through the same bookkeeping as everything else, and `roundSummary` freezes its composition
+  (`RoundInfo{Index,Size,Remaining,Kinds,Sure,Band,Entities,Last}`) at mint time for the between-rounds summary.
+  **The breather (`breathers.go`)** is the one card in a round that asks nothing: `BreatherStore.PickBreathers`
+  (a `DISTINCT ON (decade)` over `photos` × `user_ratings`/`user_favorites`, rating ≥ 4 or favourited, newest
+  era first, the library's own visibility rules applied) yields one candidate per era; the round takes its turn
+  out of that list, so consecutive rounds show different decades. It is carried **outside** `questions`, typed
+  `BreatherKind`, and has **no id the answer endpoint would accept**.
+  **The reveal (`answer.go`, `revealFor`)** rides back on a `resultAssigned` face answer only: `people.Store.
+  SubjectStats` (one aggregate keyed on `subjects.uid` + `idx_markers_subject_uid`, the same visibility rule
+  `listSubjectsSQL` applies) gives the person's photo count and year span, read **after** the write so it
+  includes it. A missing subject or a failed read yields no reveal, never an error.
   **The three new checks (`extras.go`) — checking what the machine already acted on.** The first two kinds
   clean up guesses about things nobody had decided; these clean up guesses the machine *wrote*: a coordinate on a
   photo, a pair the detector linked, an assignment somebody made. No other page lists those as questions, which
@@ -1597,7 +1633,13 @@ to `## Package map` in `CLAUDE.md`.
   remembers the file; a skip writes nothing, so it isn't counted — with the windows `WindowAllTime`/
   `WindowWeek`/`WindowToday` (`ParseWindow` maps `?window=`, empty → all, other → `ErrInvalidWindow`;
   `windowCutoff` computes the bound from `created_at`), a NULL actor is skipped, ordered total desc → yes desc →
-  `display_name` (fallback to `username`); so that a review face confirmation also lands in the leaderboard,
+  `display_name` (fallback to `username`), each row carrying **`StreakDays`** — the player's current run of
+  consecutive days with a decision, ending today *or yesterday* (the day is not over yet), computed by a second
+  query that is deliberately **not** narrowed by the window. `streak.go` reduces the same `via:review` rows to
+  the distinct hours each user was active in over `streakLookback` (400 days) and folds them into local days in
+  Go (`currentStreak`/`distinctDays`/`startOfDay`), which is where the day arithmetic is testable; the hour
+  reduction is exact for any zone whose offset from UTC is a whole number of hours. **No new table** — the
+  audit trail already holds it. So that a review face confirmation also lands in the leaderboard,
   `applyFaceYes` sends `AssignRequest.Via = "review"` into facematch `Service.Apply` (until now the only
   unmarked of the four actions). Unit tests `ParseWindow`/`windowCutoff` + an integration test of windows, the yes/no
   split, ordering, NULL-actor/non-review exclusion; for the partial index see migration `0037`),
@@ -1689,7 +1731,11 @@ to `## Package map` in `CLAUDE.md`.
   with counts → `[]AlbumCount`, cap limit — the basis of `globalsearchapi`)/
   `DeleteAlbum`/`AddPhoto` (idempotent, no position — `ON CONFLICT DO NOTHING`)/`RemovePhoto`
   (idempotent)/`SetCover` (set/clear cover)/`ListPhotoUIDs`
-  (chronologically: `COALESCE(taken_at, created_at), photo_uid` via a JOIN on `photos`); **labels** `CreateLabel`/`GetLabelByUID`/`GetLabelBySlug`/`UpdateLabel`
+  (chronologically: `COALESCE(taken_at, created_at), photo_uid` via a JOIN on `photos`)/`AlbumsForPhoto`
+  (one photo's albums, with titles, for the photo detail chips)/`AlbumUIDsForPhotos(uids)` (the batch
+  reverse of it over `idx_album_photos_photo_uid`: album **uids only**, `map[photoUID][]albumUID`, a photo in
+  no album simply absent — the review mixer asks "were these two photos in the same album?" for a whole pool at
+  once and needs no titles); **labels** `CreateLabel`/`GetLabelByUID`/`GetLabelBySlug`/`UpdateLabel`
   (re-slug; also writes `LabelUpdate.ReviewEnabled` **unconditionally**, so a caller meaning "leave it alone"
   carries the current value across — `internal/organizeapi` does exactly that for a body omitting the field)/
   `ListLabels` (with counts, ordered priority DESC)/`SearchLabels(q,limit)` (accent/case-insensitive
