@@ -51,6 +51,15 @@ export interface SubjectPhotoTileProps {
    * Empty/undefined links to the bare detail route.
    */
   detailQuery?: string
+  /**
+   * Roughly how old the person was when this photo was taken, or `null` when it
+   * cannot be said — no birth year, no capture date, or a combination that
+   * cannot be true (see `lib/lifeYears` `approximateAge`). A number renders as a
+   * quiet „~23 let" plate in the tile's bottom-end corner; `null` renders
+   * nothing, which is what makes a partly-dated gallery readable rather than
+   * pockmarked with question marks.
+   */
+  age?: number | null
 }
 
 /**
@@ -75,6 +84,7 @@ export function SubjectPhotoTile({
   anySelected = false,
   onToggleSelect,
   detailQuery,
+  age = null,
 }: SubjectPhotoTileProps) {
   const { t, i18n } = useTranslation()
   const label = photoLabel(photo, i18n.language)
@@ -174,6 +184,9 @@ export function SubjectPhotoTile({
           <Icon name={isCover ? 'image-fill' : 'image'} />
         </button>
       )}
+      {/* The one thing on the tile that is read rather than pressed, so it is
+          always shown and never a target. It sits in the only free corner. */}
+      {age !== null && <span className="kk-tile__age">{t('subject.age', { count: age })}</span>}
     </div>
   )
 }

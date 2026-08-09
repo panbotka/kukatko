@@ -27,6 +27,12 @@ type subjectInput struct {
 	Private       bool               `json:"private"`
 	Notes         string             `json:"notes"`
 	CoverPhotoUID *string            `json:"cover_photo_uid"`
+	// BirthYear and DeathYear are the person's life span; null (or omitted) means
+	// unknown and clears whatever was stored, exactly like CoverPhotoUID — this
+	// body rewrites the whole editable set. The store validates the range and the
+	// ordering (people.ErrInvalidLifeYears → 400).
+	BirthYear *int `json:"birth_year"`
+	DeathYear *int `json:"death_year"`
 }
 
 // photosResponse is the paginated JSON body returned by the subject-photos
@@ -125,6 +131,8 @@ func subjectChanges(before people.Subject, after people.SubjectUpdate) *audit.Ch
 	changes.Add("private", before.Private, after.Private)
 	changes.Add("notes", before.Notes, after.Notes)
 	changes.Add("cover_photo_uid", before.CoverPhotoUID, after.CoverPhotoUID)
+	changes.Add("birth_year", before.BirthYear, after.BirthYear)
+	changes.Add("death_year", before.DeathYear, after.DeathYear)
 	return changes
 }
 
@@ -276,6 +284,8 @@ func (in subjectInput) toSubject() people.Subject {
 		Private:       in.Private,
 		Notes:         in.Notes,
 		CoverPhotoUID: in.CoverPhotoUID,
+		BirthYear:     in.BirthYear,
+		DeathYear:     in.DeathYear,
 	}
 }
 
@@ -288,6 +298,8 @@ func (in subjectInput) toUpdate() people.SubjectUpdate {
 		Private:       in.Private,
 		Notes:         in.Notes,
 		CoverPhotoUID: in.CoverPhotoUID,
+		BirthYear:     in.BirthYear,
+		DeathYear:     in.DeathYear,
 	}
 }
 

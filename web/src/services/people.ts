@@ -90,6 +90,15 @@ export interface Subject {
   private: boolean
   notes: string
   cover_photo_uid?: string
+  /**
+   * The year the person was born, `null` when unknown — which is the normal
+   * case. A year rather than a date, because a year is what anybody actually
+   * knows about the people in a family archive; every age derived from it is an
+   * approximation and shown as one (`lib/lifeYears`).
+   */
+  birth_year: number | null
+  /** The year the person died, `null` when unknown (or still alive). */
+  death_year: number | null
   created_at: string
   updated_at: string
 }
@@ -157,6 +166,15 @@ export interface SubjectInput {
   private: boolean
   notes: string
   cover_photo_uid: string | null
+  /**
+   * Birth year, `null` for unknown. The body rewrites the whole editable set, so
+   * `null` **clears** a stored year rather than leaving it alone — every caller
+   * has to send what the subject should end up with. The backend rejects a year
+   * outside 1800…this year, or a death before the birth, with a 400.
+   */
+  birth_year: number | null
+  /** Death year, `null` for unknown; cleared by `null` exactly like the birth. */
+  death_year: number | null
 }
 
 /** Lists every subject with its photo and marker counts, ordered by name. */

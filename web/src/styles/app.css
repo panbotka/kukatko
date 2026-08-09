@@ -1168,6 +1168,100 @@ body {
   }
 }
 
+/* Decade navigation on a person's page (`SubjectDecadeNav`) and the headings of
+   the sections it jumps to. A person's gallery spans a life, so it is read by
+   decade; this is the library timeline's gesture at that grain.
+
+   It borrows the rail's vocabulary deliberately — a short mark, dim text, full
+   strength for the label and for the current tick — so the two read as one idea
+   at two scales. What it does not borrow is the rail's `position: fixed`: this
+   belongs to one section of a page that also has a header and two review panels,
+   and a fixed rail would lie across all of them. It is a horizontal strip above
+   the gallery instead, scrolling sideways on a phone rather than wrapping into a
+   block that pushes the photographs off the screen. */
+.kk-decade-nav {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: var(--kk-space-2);
+  overflow-x: auto;
+  padding-bottom: var(--kk-space-1);
+  margin-bottom: var(--kk-space-3);
+  scrollbar-width: thin;
+}
+
+.kk-decade-tick {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--kk-space-1);
+  flex-shrink: 0;
+  padding: 0.2rem var(--kk-space-2);
+  border: 0;
+  border-radius: var(--kk-radius-pill);
+  background: none;
+  color: var(--bs-secondary-color, rgba(255, 255, 255, 0.6));
+  font-size: var(--kk-font-size-caption);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.kk-decade-tick__mark {
+  display: inline-block;
+  width: 1.1rem;
+  height: 2px;
+  border-radius: 1px;
+  background: currentColor;
+  transition:
+    width var(--kk-duration-fast) var(--kk-ease-standard),
+    height var(--kk-duration-fast) var(--kk-ease-standard);
+}
+
+/* The range is the reading; the count beside it is context, so it stays dim even
+   while the tick is lit. */
+.kk-decade-tick__label {
+  color: var(--bs-emphasis-color, #fff);
+  font-weight: 600;
+}
+
+.kk-decade-tick__count {
+  opacity: 0.7;
+}
+
+.kk-decade-tick:hover,
+.kk-decade-tick:focus-visible,
+.kk-decade-tick.active {
+  color: var(--bs-emphasis-color, #fff);
+  background-color: var(--bs-secondary-bg, rgb(255 255 255 / 8%));
+}
+
+.kk-decade-tick.active .kk-decade-tick__mark {
+  width: 1.4rem;
+  height: 3px;
+}
+
+/* The heading the navigation lands on. `scroll-margin-top` clears the sticky
+   navbar: without it a jump puts the heading exactly under the bar, and the
+   decade the reader asked for opens one row down and looks like the wrong one. */
+.kk-decade-heading {
+  display: flex;
+  align-items: baseline;
+  gap: var(--kk-space-2);
+  margin: var(--kk-space-4) 0 var(--kk-space-2);
+  font-size: var(--kk-font-size-body);
+  font-weight: 600;
+  scroll-margin-top: calc(var(--kukatko-navbar-height) + var(--kk-space-3));
+}
+
+.kk-decade-heading:first-of-type {
+  margin-top: 0;
+}
+
+.kk-decade-heading__count {
+  color: var(--bs-secondary-color, rgba(255, 255, 255, 0.6));
+  font-size: var(--kk-font-size-caption);
+  font-weight: 400;
+}
+
 /* Library filter bar. The search field is the visual anchor (it grows to fill
    the header row); advanced filters live in a collapsible panel / offcanvas and
    surface as removable chips. These rules only cover what Bootstrap utilities

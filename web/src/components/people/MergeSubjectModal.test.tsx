@@ -27,6 +27,8 @@ function source(): Subject {
     favorite: false,
     private: false,
     notes: '',
+    birth_year: null,
+    death_year: null,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
   }
@@ -42,6 +44,8 @@ function counted(uid: string, name: string, photos: number): SubjectCount {
     favorite: false,
     private: false,
     notes: '',
+    birth_year: null,
+    death_year: null,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
     marker_count: photos + 1,

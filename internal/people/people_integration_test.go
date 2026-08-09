@@ -7,6 +7,7 @@ import (
 	"errors"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
@@ -165,6 +166,123 @@ func TestSubjectInvalidType(t *testing.T) {
 	}
 	if _, err := store.UpdateSubject(ctx, created.UID, people.SubjectUpdate{Name: "Y", Type: "alien"}); !errors.Is(err, people.ErrInvalidType) {
 		t.Fatalf("UpdateSubject bad type = %v, want ErrInvalidType", err)
+	}
+}
+
+// TestSubjectLifeYearsRoundTrip stores a life span, reads it back through every
+// path that returns a subject (get, list) and then clears it — the update
+// rewrites the whole editable set, so a nil year has to mean "forget this one"
+// rather than "leave it alone".
+func TestSubjectLifeYearsRoundTrip(t *testing.T) {
+	store, _, _, _ := newStores(t)
+	ctx := t.Context()
+
+	created, err := store.CreateSubject(ctx, people.Subject{
+		Name: "Jarmila", BirthYear: new(1923), DeathYear: new(1998),
+	})
+	if err != nil {
+		t.Fatalf("CreateSubject: %v", err)
+	}
+	assertLifeYears(t, "created", created, 1923, 1998)
+
+	fetched, err := store.GetSubjectByUID(ctx, created.UID)
+	if err != nil {
+		t.Fatalf("GetSubjectByUID: %v", err)
+	}
+	assertLifeYears(t, "fetched", fetched, 1923, 1998)
+
+	listed, err := store.ListSubjects(ctx)
+	if err != nil {
+		t.Fatalf("ListSubjects: %v", err)
+	}
+	if len(listed) != 1 {
+		t.Fatalf("ListSubjects returned %d subjects, want 1", len(listed))
+	}
+	assertLifeYears(t, "listed", listed[0].Subject, 1923, 1998)
+
+	// Only the birth year is known now: the death has to come back as unknown,
+	// not as the value it used to hold.
+	half, err := store.UpdateSubject(ctx, created.UID, people.SubjectUpdate{
+		Name: "Jarmila", BirthYear: new(1923),
+	})
+	if err != nil {
+		t.Fatalf("UpdateSubject clearing the death year: %v", err)
+	}
+	if half.BirthYear == nil || *half.BirthYear != 1923 || half.DeathYear != nil {
+		t.Fatalf("after clearing the death year = %v/%v, want 1923/nil",
+			half.BirthYear, half.DeathYear)
+	}
+
+	cleared, err := store.UpdateSubject(ctx, created.UID, people.SubjectUpdate{Name: "Jarmila"})
+	if err != nil {
+		t.Fatalf("UpdateSubject clearing both years: %v", err)
+	}
+	if cleared.BirthYear != nil || cleared.DeathYear != nil {
+		t.Fatalf("after clearing both = %v/%v, want nil/nil",
+			cleared.BirthYear, cleared.DeathYear)
+	}
+}
+
+// assertLifeYears fails the test unless subj carries exactly the given years.
+func assertLifeYears(t *testing.T, where string, subj people.Subject, birth, death int) {
+	t.Helper()
+	if subj.BirthYear == nil || *subj.BirthYear != birth {
+		t.Errorf("%s birth year = %v, want %d", where, subj.BirthYear, birth)
+	}
+	if subj.DeathYear == nil || *subj.DeathYear != death {
+		t.Errorf("%s death year = %v, want %d", where, subj.DeathYear, death)
+	}
+}
+
+// TestSubjectLifeYearsValidation checks that both write paths refuse the years
+// that cannot be true — too early, in the future, or a death before the birth —
+// and that neither leaves the stored record changed.
+func TestSubjectLifeYearsValidation(t *testing.T) {
+	store, _, _, _ := newStores(t)
+	ctx := t.Context()
+
+	nextYear := time.Now().Year() + 1
+	bad := []struct {
+		name  string
+		birth *int
+		death *int
+	}{
+		{name: "birth before 1800", birth: new(1799)},
+		{name: "birth in the future", birth: new(nextYear)},
+		{name: "death in the future", death: new(nextYear)},
+		{name: "death before birth", birth: new(1998), death: new(1923)},
+	}
+
+	created, err := store.CreateSubject(ctx, people.Subject{Name: "Ludmila", BirthYear: new(1930)})
+	if err != nil {
+		t.Fatalf("CreateSubject: %v", err)
+	}
+
+	for _, tt := range bad {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := store.CreateSubject(ctx, people.Subject{
+				Name: "Rejected " + tt.name, BirthYear: tt.birth, DeathYear: tt.death,
+			})
+			if !errors.Is(err, people.ErrInvalidLifeYears) {
+				t.Errorf("CreateSubject = %v, want ErrInvalidLifeYears", err)
+			}
+			_, err = store.UpdateSubject(ctx, created.UID, people.SubjectUpdate{
+				Name: "Ludmila", BirthYear: tt.birth, DeathYear: tt.death,
+			})
+			if !errors.Is(err, people.ErrInvalidLifeYears) {
+				t.Errorf("UpdateSubject = %v, want ErrInvalidLifeYears", err)
+			}
+		})
+	}
+
+	// A rejected edit must not have touched the stored record on its way out.
+	after, err := store.GetSubjectByUID(ctx, created.UID)
+	if err != nil {
+		t.Fatalf("GetSubjectByUID: %v", err)
+	}
+	if after.BirthYear == nil || *after.BirthYear != 1930 || after.DeathYear != nil {
+		t.Fatalf("after the rejected edits = %v/%v, want 1930/nil",
+			after.BirthYear, after.DeathYear)
 	}
 }
 

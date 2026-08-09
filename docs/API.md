@@ -495,12 +495,22 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   without the frame would distort it. **An explicit `cover_photo_uid` always wins**, `cover_face` is only a
   fallback;
   `POST /subjects` (RequireWrite) → 201 creates a subject from `{name,type,favorite,private,notes,
-  cover_photo_uid?}` (empty name / unknown type → 400; a name that identifies **nobody** — punctuation or
+  cover_photo_uid?,birth_year?,death_year?}` (empty name / unknown type → 400; a name that identifies **nobody** — punctuation or
   symbols alone, no letter and no digit — is also 400 `subject name must contain a letter or a digit`: it has
   no slug of its own, would be stored under the shared fallback slug, read as unnamed everywhere and act as a
   magnet for find-or-create-by-name lookups, which is exactly the catch-all `docs/OPERATIONS.md` §
   `maintenance nameless-subjects` describes); `GET /subjects/{uid}` (RequireAuth) →
   the subject (404); `PATCH /subjects/{uid}` (RequireWrite) → editing the same fields (404/400);
+  **`birth_year`/`death_year` are the person's life span** — plain years, `null` (or omitted) for the usual
+  "nobody recorded it". Like every other field of this body they are **rewritten**, not patched: a `null`
+  **clears** a stored year, so a caller that changes only the cover must send the years it read back or it
+  erases them. Validation (`people.validateLifeYears`, 400 `people: invalid birth or death year`):
+  each known year within **1800…the current year** — a year in the future is a typo, not a fact — and
+  `death_year >= birth_year` when both are set. Nothing ties them to `type='person'`, though only the UI
+  for a person offers them: the type is editable, and refusing a save because somebody was reclassified
+  would punish the reclassification. The `>= 1800` and `death >= birth` halves are also SQL CHECKs
+  (migration `0051`); the "not in the future" half is Go-only, because a CHECK may not read the clock.
+  Both appear in the `subject.update` audit entry's `changes` diff like any other edited field;
   `DELETE /subjects/{uid}` (RequireWrite) → 204 (the markers are detached server-side);
   `POST /subjects/{uid}/merge` (RequireWrite) `{keeper_uid}` → `{keeper_uid,source_uid,markers_moved,
   faces_moved,confirmations_moved,rejections_moved,rejections_dropped,dismissals_moved,shared_photos}` —
@@ -508,7 +518,10 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   audit entry naming both (the source's name survives nowhere else: a merge cannot be undone). Everything
   the source carried moves — markers, the faces cache, confirmations, rejections, repeated-marker
   dismissals — and the keeper's *empty* fields are filled from it (`favorite`/`private` OR-ed, `notes` and
-  `cover_photo_uid` only when it has none). Three rules cover the disagreements, all in
+  `cover_photo_uid` only when it has none). `birth_year`/`death_year` travel as a **pair**, and only onto a
+  keeper carrying **neither**: filling them one at a time could pair one person's birth with another's
+  death, which is both a lie and a `death >= birth` CHECK violation — and a failed constraint would take
+  the whole merge with it. Three rules cover the disagreements, all in
   [`PACKAGES.md`](PACKAGES.md) § `internal/people`: **markers are never deduplicated** (a photo carrying
   both people keeps both markers and becomes a repeated-marker group `GET /duplicate-markers` surfaces —
   `shared_photos` counts them), **a positive record beats a rejection** (a rejection contradicting an

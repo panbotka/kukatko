@@ -54,6 +54,11 @@ It is **not** for you if you are looking for:
   ways, a person's page carries the repair for each: **merge** the same person filed twice into one
   record (everything they carried moves over, nothing is deduplicated away), and **move** the photos
   in their gallery that turn out to be somebody else to whoever they really are.
+- **A person's gallery reads as a life.** Give somebody a birth (and, if it applies, a death) year —
+  both optional, and a year is all anybody usually knows — and their page becomes a timeline: the
+  span beside their name ("1923–1998"), roughly how old they were on every dated photograph
+  ("~23 let", never a negative or absurd number), and a jump straight to the decade you meant. In an
+  archive spanning 1905–2026 that is the difference between a pile of pictures and a biography.
 - **A library an AI agent can use.** Kukátko can expose itself as an **MCP server**, so an agent
   searches and organizes the library directly ("find all of grandma's photos from the sixties and
   put them in an album"). Off by default, authenticated with an ordinary API token, bound by the

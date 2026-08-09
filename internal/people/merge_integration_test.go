@@ -342,6 +342,62 @@ func TestMergeSubjects_conflictingFeedback(t *testing.T) {
 	}
 }
 
+// TestMergeSubjects_lifeYearsTravelAsAPair checks the merge's rule for the
+// birth/death years: they fill a keeper that carries neither, and a keeper that
+// already knows one of them keeps its own pair untouched. Filling them
+// separately could pair one person's birth with another's death — which the
+// death >= birth CHECK would reject, taking the whole merge with it.
+func TestMergeSubjects_lifeYearsTravelAsAPair(t *testing.T) {
+	env := newMergeEnv(t)
+	ctx := t.Context()
+	actor := makeUser(t, env.db, "usr_life", "life")
+
+	dated := func(name string, birth, death *int) people.Subject {
+		t.Helper()
+		subj, err := env.people.CreateSubject(ctx, people.Subject{
+			Name: name, BirthYear: birth, DeathYear: death,
+		})
+		if err != nil {
+			t.Fatalf("CreateSubject %s: %v", name, err)
+		}
+		return subj
+	}
+
+	// The keeper knows nothing, the source knows both years: the pair moves.
+	source := dated("Marie (dup)", new(1923), new(1998))
+	keeper := dated("Marie", nil, nil)
+	if _, err := env.people.MergeSubjectsAudited(ctx, source.UID, keeper.UID,
+		mergeEntry(actor, source.UID, keeper.UID)); err != nil {
+		t.Fatalf("MergeSubjectsAudited: %v", err)
+	}
+	filled, err := env.people.GetSubjectByUID(ctx, keeper.UID)
+	if err != nil {
+		t.Fatalf("GetSubjectByUID: %v", err)
+	}
+	if filled.BirthYear == nil || *filled.BirthYear != 1923 ||
+		filled.DeathYear == nil || *filled.DeathYear != 1998 {
+		t.Errorf("keeper years after the merge = %v/%v, want 1923/1998",
+			filled.BirthYear, filled.DeathYear)
+	}
+
+	// The keeper knows when it was born; the source's death year must not be
+	// grafted onto it, as it would claim a death six years before that birth.
+	source2 := dated("Josef (dup)", new(1910), new(1929))
+	keeper2 := dated("Josef", new(1935), nil)
+	if _, err := env.people.MergeSubjectsAudited(ctx, source2.UID, keeper2.UID,
+		mergeEntry(actor, source2.UID, keeper2.UID)); err != nil {
+		t.Fatalf("MergeSubjectsAudited into a dated keeper: %v", err)
+	}
+	kept, err := env.people.GetSubjectByUID(ctx, keeper2.UID)
+	if err != nil {
+		t.Fatalf("GetSubjectByUID: %v", err)
+	}
+	if kept.BirthYear == nil || *kept.BirthYear != 1935 || kept.DeathYear != nil {
+		t.Errorf("dated keeper's years after the merge = %v/%v, want 1935/nil",
+			kept.BirthYear, kept.DeathYear)
+	}
+}
+
 // TestMergeSubjects_rejected checks the two refusals — merging a subject into
 // itself and naming a subject that does not exist — and that a refused merge
 // changes nothing and writes no audit row.

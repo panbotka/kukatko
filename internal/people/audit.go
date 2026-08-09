@@ -120,7 +120,8 @@ func insertAuditedAttempt[T any](
 // transaction, so the subject and the record of who created it commit atomically
 // (the durable-audit convention; see internal/audit). entry's TargetUID defaults
 // to the subject's generated UID. It behaves like CreateSubject otherwise (unique
-// slug, ErrInvalidType for a bad type).
+// slug, ErrInvalidType for a bad type, ErrInvalidLifeYears for an impossible
+// birth/death year).
 func (s *Store) CreateSubjectAudited(ctx context.Context, subj Subject, entry audit.Entry) (Subject, error) {
 	prepared, base, err := prepareSubjectInsert(subj)
 	if err != nil {
@@ -133,7 +134,8 @@ func (s *Store) CreateSubjectAudited(ctx context.Context, subj Subject, entry au
 		prepared.Slug = slug
 		return scanSubject(tx.QueryRow(ctx, insertSubjectSQL,
 			prepared.UID, prepared.Slug, prepared.Name, prepared.Type, prepared.Favorite,
-			prepared.Private, prepared.Notes, prepared.CoverPhotoUID))
+			prepared.Private, prepared.Notes, prepared.CoverPhotoUID,
+			prepared.BirthYear, prepared.DeathYear))
 	})
 }
 
@@ -141,15 +143,14 @@ func (s *Store) CreateSubjectAudited(ctx context.Context, subj Subject, entry au
 // entry in the same transaction. entry's TargetUID defaults to uid. It behaves like
 // UpdateSubject otherwise — re-slugging from the new name, refreshing the cached
 // subject_name on the photo's faces, and returning ErrSubjectNotFound (writing no
-// audit row) if no such subject exists, or ErrInvalidType for a bad type.
+// audit row) if no such subject exists, ErrInvalidType for a bad type, or
+// ErrInvalidLifeYears for an impossible birth/death year.
 func (s *Store) UpdateSubjectAudited(
 	ctx context.Context, uid string, upd SubjectUpdate, entry audit.Entry,
 ) (Subject, error) {
-	if upd.Type == "" {
-		upd.Type = SubjectPerson
-	}
-	if !upd.Type.valid() {
-		return Subject{}, fmt.Errorf("%w: subject type %q", ErrInvalidType, upd.Type)
+	upd, err := prepareSubjectUpdate(upd)
+	if err != nil {
+		return Subject{}, err
 	}
 	if entry.TargetUID == "" {
 		entry.TargetUID = uid
@@ -157,7 +158,8 @@ func (s *Store) UpdateSubjectAudited(
 	base := Slugify(upd.Name)
 	updated, err := insertAuditedWithUniqueSlug(ctx, s.pool, base, entry, func(tx pgx.Tx, slug string) (Subject, error) {
 		row, err := scanSubject(tx.QueryRow(ctx, updateSubjectSQL,
-			uid, slug, upd.Name, upd.Type, upd.Favorite, upd.Private, upd.Notes, upd.CoverPhotoUID))
+			uid, slug, upd.Name, upd.Type, upd.Favorite, upd.Private, upd.Notes,
+			upd.CoverPhotoUID, upd.BirthYear, upd.DeathYear))
 		if err != nil {
 			return Subject{}, err
 		}

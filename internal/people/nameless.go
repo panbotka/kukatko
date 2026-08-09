@@ -75,7 +75,8 @@ func (s *Store) ListNamelessSubjects(ctx context.Context) ([]NamelessSubject, er
 		var ns NamelessSubject
 		if err := rows.Scan(
 			&ns.UID, &ns.Slug, &ns.Name, &ns.Type, &ns.Favorite, &ns.Private,
-			&ns.Notes, &ns.CoverPhotoUID, &ns.CreatedAt, &ns.UpdatedAt,
+			&ns.Notes, &ns.CoverPhotoUID, &ns.BirthYear, &ns.DeathYear,
+			&ns.CreatedAt, &ns.UpdatedAt,
 			&ns.MarkerCount, &ns.FaceCount,
 		); err != nil {
 			return nil, fmt.Errorf("people: scanning subject with counts: %w", err)
@@ -203,8 +204,8 @@ func snapshotSubjectTx(ctx context.Context, tx pgx.Tx, uid string) (SubjectSnaps
 // disambiguated.
 const restoreSubjectSQL = `
 INSERT INTO subjects (uid, slug, name, type, favorite, private, notes,
-                      cover_photo_uid, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                      cover_photo_uid, birth_year, death_year, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 RETURNING ` + subjectColumns
 
 // RestoreSubject puts a snapshot back: it re-inserts the subject, re-assigns the
@@ -234,7 +235,8 @@ func (s *Store) RestoreSubject(ctx context.Context, snap SubjectSnapshot, entry 
 			// it for the slug unique violation that drives the next attempt.
 			restored, err := scanSubject(tx.QueryRow(ctx, restoreSubjectSQL,
 				subj.UID, slug, subj.Name, subj.Type, subj.Favorite, subj.Private,
-				subj.Notes, subj.CoverPhotoUID, timeOrNow(subj.CreatedAt), timeOrNow(subj.UpdatedAt)))
+				subj.Notes, subj.CoverPhotoUID, subj.BirthYear, subj.DeathYear,
+				timeOrNow(subj.CreatedAt), timeOrNow(subj.UpdatedAt)))
 			if err != nil {
 				return Subject{}, err
 			}

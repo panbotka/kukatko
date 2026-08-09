@@ -15,6 +15,7 @@ import { Candidates } from '../components/people/Candidates'
 import { MergeSubjectModal } from '../components/people/MergeSubjectModal'
 import { MoveFacesModal } from '../components/people/MoveFacesModal'
 import { Outliers } from '../components/people/Outliers'
+import { SubjectDecadeNav } from '../components/people/SubjectDecadeNav'
 import { SubjectEditModal } from '../components/people/SubjectEditModal'
 import { SubjectPhotoTile } from '../components/people/SubjectPhotoTile'
 import { Skeleton } from '../components/Skeleton'
@@ -28,6 +29,8 @@ import { useSubjectPhotos } from '../hooks/useSubjectPhotos'
 import { DETAIL_DEFAULTS, detailQueryString } from '../lib/detailView'
 import { GRID_GAP_PX, gridTemplateColumns } from '../lib/gridDensity'
 import { gridScrollKey, readGridScroll } from '../lib/gridScroll'
+import { approximateAge, formatLifeSpan } from '../lib/lifeYears'
+import { decadeAnchorId, formatDecade, groupPhotosByDecade } from '../lib/photoDecades'
 import { isNotFound } from '../services/auth'
 import { fetchSubject, type Subject, updateSubject } from '../services/people'
 
@@ -89,6 +92,9 @@ export function SubjectPage() {
   const [merging, setMerging] = useState(false)
   const [moving, setMoving] = useState(false)
   const [coverBusy, setCoverBusy] = useState(false)
+  // The decade the reader last jumped to, so the navigation can say where it
+  // sent them. `undefined` is "nowhere yet"; `null` is the undated section.
+  const [activeDecade, setActiveDecade] = useState<number | null | undefined>(undefined)
 
   const [reloadKey, reload] = useReloadKey()
   // Where the gallery was left, so opening a photo and coming back — Back, or the
@@ -181,6 +187,9 @@ export function SubjectPage() {
       const subject = state.subject
       setCoverBusy(true)
       try {
+        // PATCH rewrites the whole editable set, so every field the dialog owns
+        // has to be sent back as it stands — including the life years, which a
+        // cover change would otherwise silently clear.
         const updated = await updateSubject(subject.uid, {
           name: subject.name,
           type: subject.type,
@@ -188,6 +197,8 @@ export function SubjectPage() {
           private: subject.private,
           notes: subject.notes,
           cover_photo_uid: photoUid,
+          birth_year: subject.birth_year,
+          death_year: subject.death_year,
         })
         setState({ status: 'ready', subject: updated })
       } catch {
@@ -237,6 +248,23 @@ export function SubjectPage() {
     [t, coverBusy, selection.count, selection.selected, setCover],
   )
 
+  // The gallery split by the decade each photo was taken in. A person's page
+  // spans a life, so the decade is the grain it is remembered at; the sections
+  // are what the decade navigation jumps between. They cover the photos loaded
+  // so far — the gallery pages, and a decade nobody has loaded is not somewhere
+  // a reader can be sent.
+  const decadeSections = useMemo(() => groupPhotosByDecade(photos), [photos])
+  // One decade is not a division: the gallery then renders as one plain grid, as
+  // it always did, and the navigation renders nothing.
+  const grouped = decadeSections.length > 1
+
+  const jumpToDecade = useCallback((decade: number | null) => {
+    setActiveDecade(decade)
+    // The heading carries `scroll-margin-top` for the sticky navbar, so `start`
+    // lands the decade below the bar rather than behind it.
+    document.getElementById(decadeAnchorId(decade))?.scrollIntoView({ block: 'start' })
+  }, [])
+
   // The tab carries the person's name — "Jarmila · Kukátko" — which is what makes
   // a history entry or a second tab worth anything here. It sits above the early
   // returns because a hook may not be called conditionally; while the record
@@ -278,6 +306,7 @@ export function SubjectPage() {
   }
 
   const { subject } = state
+  const lifeSpan = formatLifeSpan(subject.birth_year, subject.death_year)
 
   return (
     <>
@@ -285,6 +314,15 @@ export function SubjectPage() {
         <div className="d-flex align-items-center gap-2">
           <BackLink to={PEOPLE_PATH} label={t('subject.back')} />
           <h1 className="kk-page-title mb-0">{subject.name}</h1>
+          {/* The life span beside the name, when anybody recorded it: „1923–1998",
+              or „*1923" while only the birth is known. It is not a badge — it is
+              part of who this page is about, and reads as the dates under a
+              portrait rather than as another chip to scan past. */}
+          {lifeSpan !== null && (
+            <span className="text-secondary" aria-label={t('subject.lifeSpan', { span: lifeSpan })}>
+              {lifeSpan}
+            </span>
+          )}
           <Badge bg="secondary">{t(`subject.type.${subject.type}`)}</Badge>
         </div>
         {/* The subject's own actions stay put during a selection: the batch bar
@@ -328,33 +366,50 @@ export function SubjectPage() {
       {status === 'ready' && photos.length === 0 && <EmptyState title={t('subject.noPhotos')} />}
       {photos.length > 0 && (
         <>
-          <div
-            data-density={String(density)}
-            style={{
-              display: 'grid',
-              gridTemplateColumns: gridTemplateColumns(density),
-              gap: `${GRID_GAP_PX}px`,
-            }}
-          >
-            {photos.map((photo) => (
-              <SubjectPhotoTile
-                key={photo.uid}
-                photo={photo}
-                isCover={subject.cover_photo_uid === photo.uid}
-                canSetCover={canWrite}
-                busy={coverBusy}
-                onSetCover={(photoUid) => {
-                  void setCover(photoUid)
+          <SubjectDecadeNav sections={decadeSections} active={activeDecade} onJump={jumpToDecade} />
+          {decadeSections.map((section) => (
+            <section key={decadeAnchorId(section.decade)}>
+              {/* Only a gallery that really spans decades is divided into them:
+                  a heading over the one and only section would name the whole
+                  page after its own contents. */}
+              {grouped && (
+                <h3 id={decadeAnchorId(section.decade)} className="kk-decade-heading">
+                  <span>{formatDecade(section.decade) ?? t('subject.decades.undated')}</span>
+                  <span className="kk-decade-heading__count">
+                    {t('subject.decades.count', { count: section.photos.length })}
+                  </span>
+                </h3>
+              )}
+              <div
+                data-density={String(density)}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: gridTemplateColumns(density),
+                  gap: `${GRID_GAP_PX}px`,
                 }}
-                selectable={selectable}
-                selectFirst={selectable && selecting}
-                selected={selection.selected.has(photo.uid)}
-                anySelected={selecting}
-                onToggleSelect={selection.toggle}
-                detailQuery={detailQuery}
-              />
-            ))}
-          </div>
+              >
+                {section.photos.map((photo) => (
+                  <SubjectPhotoTile
+                    key={photo.uid}
+                    photo={photo}
+                    isCover={subject.cover_photo_uid === photo.uid}
+                    canSetCover={canWrite}
+                    busy={coverBusy}
+                    onSetCover={(photoUid) => {
+                      void setCover(photoUid)
+                    }}
+                    selectable={selectable}
+                    selectFirst={selectable && selecting}
+                    selected={selection.selected.has(photo.uid)}
+                    anySelected={selecting}
+                    onToggleSelect={selection.toggle}
+                    detailQuery={detailQuery}
+                    age={approximateAge(photo.taken_at, subject.birth_year)}
+                  />
+                ))}
+              </div>
+            </section>
+          ))}
           {hasMore && (
             <div className="text-center mt-3">
               <Button
