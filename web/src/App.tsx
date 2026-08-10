@@ -77,8 +77,10 @@ export function AppRoutes() {
           {/* The photo library is the homepage: the catalog is what the app is
               for, so it greets the user rather than hiding one click away. */}
           <Route path="/" element={<LibraryPage />} />
-          {/* Retired route, kept so old links and bookmarks resolve. */}
-          <Route path="/library" element={<LibraryRedirect />} />
+          {/* Retired route, kept so old links and bookmarks resolve. The splat
+              also catches the addresses inherited from the PhotoPrism instance
+              this one replaced, which lived under `/library/…`. */}
+          <Route path="/library/*" element={<LibraryRedirect />} />
           <Route path="/favorites" element={<FavoritesPage />} />
           <Route path="/albums" element={<AlbumsPage />} />
           <Route path="/albums/:uid" element={<AlbumDetailPage />} />

@@ -920,8 +920,12 @@ here.
   album/label by title, not UID) and offers to clear them with one button,
   without filters „Zatím tu nejsou žádné fotky" with a CTA to `/upload` (editor/admin; a viewer gets only
   an explanatory sentence), distinguished via `hasActiveFilters(view)`,
-  `LibraryRedirect` = a shim for the retired route `/library`: `<Navigate replace>` to `/` with the
-  `search`+`hash` preserved literally (old bookmarks and links work, `replace` prevents a Back bounce),
+  `LibraryRedirect` = a shim for the retired route `/library` **and its whole subtree**
+  (`/library/*`): `<Navigate replace>` to `/` with the `search`+`hash` preserved literally
+  (old bookmarks and links work, `replace` prevents a Back bounce); the subtree catches the addresses
+  inherited from the **PhotoPrism** instance whose domain this one took over — PhotoPrism kept its
+  entire UI under `/library/…`, so `/library/login` and friends used to hit the 404 page, and did so
+  *after* a successful sign-in (the guard returns the visitor to the address they asked for),
   plus **the timeline** (`TimelineScrubber`) beside the grid for quick jumps to a month — the grid
   is a **window** over the whole result (`useWindowedPhotos`; `gridRef`+`onRangeChanged` drive both the
   highlighted month and `ensureRange`), so a jump is `scrollToIndex({index,align:'start'})` to the month's
@@ -1886,7 +1890,8 @@ here.
   as a measured one would let the map claim a precision it doesn't have; the feed's **`coverage`** member is
   stated in words by `MapFilterBar` (`map.coverage`, counts grouped through `formatCount`) — a map holding
   11 % of a library and saying nothing reads as broken rather than sparse — and an **editor** additionally gets
-  `map.coverageAction`, a link to `/library?has_gps=false`, the photos a location can be set on (never a
+  `map.coverageAction`, a link to `` `${LIBRARY_PATH}?has_gps=false` `` (= `/?has_gps=false`; an in-app
+  link never detours through the retired `/library`), the photos a location can be set on (never a
   button that would run an estimate over the library on their behalf); a viewer is told the same number and
   sent nowhere,
   `PlacesPage` = `/places` browsing the library by locality: a single `fetchPlaces()` fetch pulls
@@ -3093,7 +3098,7 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   appearance, the undated in their own; never re-sorts, and a decade appearing twice is merged so the
   navigation lists each exactly once), `formatDecade` and `decadeAnchorId`) +
   `LIBRARY_PATH` (= `/`, the library's canonical route — **the library is the home page**; every link
-  in the app points here, `/library` is only a redirect for old links) +
+  in the app points here, `/library/*` is only a redirect for old links) +
   the **multi-selection of the `album`/`label`/`person` facets**: each key carries a **comma-joined list of UIDs** (urlState
   stores each key as a single string, a comma doesn't occur in a UID) — the helpers `parseFilterList`/
   `joinFilterList`/`addToFilterList`/`removeFilterList` (sic `removeFromFilterList`) encode the list;
@@ -3914,8 +3919,9 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   because `/capabilities` is behind `RequireAuth`). `/login` is public, the rest is under `RequireAuth`; `/slideshow` and
   the immersive `/photos/:uid` are under `RequireAuth` but **outside `Layout`** (fullscreen without the navbar),
   the rest is under `Layout`
-  (**`/` = `LibraryPage`** — the library is the home page; `/library` → `LibraryRedirect`
-  (a `replace` redirect to `/` with the query string preserved),
+  (**`/` = `LibraryPage`** — the library is the home page; `/library/*` → `LibraryRedirect`
+  (a `replace` redirect to `/` with the query string preserved, the splat also covering the
+  inherited PhotoPrism addresses),
   `/favorites`, `/albums`, `/albums/:uid`, `/labels`, `/labels/:uid`, `/search`, `/saved`, `/map`,
   `/places`, `/people`,
   `/people/:uid`, `/account`, `/help`; `/upload`, `/people/clusters`, `/faces`, `/recognition`, `/trash` and
