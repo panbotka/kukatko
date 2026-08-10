@@ -52,6 +52,7 @@ describe('HelpPage', () => {
       'Duplicates',
       'Map & places',
       'Deleting & the trash',
+      'Adding photos from your phone',
       'User roles',
       'Your account',
     ]) {

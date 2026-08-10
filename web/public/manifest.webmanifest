@@ -12,6 +12,31 @@
   "theme_color": "#15130f",
   "background_color": "#15130f",
   "categories": ["photo", "productivity", "utilities"],
+  "share_target": {
+    "action": "/share-target",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url",
+      "files": [
+        {
+          "name": "files",
+          "accept": ["image/*", "video/*"]
+        }
+      ]
+    }
+  },
+  "shortcuts": [
+    {
+      "name": "Nahrát fotky",
+      "short_name": "Nahrát",
+      "description": "Přidat do knihovny fotky a videa",
+      "url": "/upload",
+      "icons": [{ "src": "/icons/kukatko-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ],
   "icons": [
     {
       "src": "/icons/kukatko-192.png",

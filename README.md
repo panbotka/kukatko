@@ -125,6 +125,15 @@ It is **not** for you if you are looking for:
   scrubbing a video is untouched. When a new version is deployed, the running app keeps the version
   it started with and offers a refresh instead of swapping the ground under you.
 
+- **On Android, photos arrive through the share sheet.** Pick a few shots in the gallery, tap Share,
+  choose Kukátko: the app opens on the upload page with those files already queued, ready for an
+  album and a label before you send them. Sign in first if you have to — the photos wait for you and
+  are still there afterwards. A view-only account is told why it cannot upload rather than left
+  guessing, and anything that isn't a photo or a video is named and left out instead of failing
+  halfway. iPhones cannot do this — Safari has no support for sharing into web apps, and Kukátko
+  does not pretend otherwise: there the installed app opens instantly, the picker reaches the photo
+  library, and a photo copied in Photos can simply be pasted onto the upload page.
+
 Around that sit the ordinary things a library needs and Kukátko has: albums — each covered by a
 collage of four of its photos, so two albums drawn from the same afternoon don't look alike, each
 saying underneath what it actually is, and each read from its oldest end or turned round with one

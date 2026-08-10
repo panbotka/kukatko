@@ -432,7 +432,10 @@ here.
   `headerActions.overflow`. Adopted by `AlbumDetailPage`; any other detail header can take it as-is.
   Tests: `HeaderActions.test.tsx`);
   `components/upload/` = `DropZone` (a drag-and-drop zone + file input `multiple`
-  `accept="image/*,video/*"` → the mobile gallery + a **Vyfotit** button `capture="environment"`),
+  `accept` = `lib/mediaFiles` `PICKER_ACCEPT` (`image/*,video/*` + every known extension, so a picker
+  does not hide RAW/HEIC) → the mobile gallery + a **Vyfotit** button `capture="environment"`, and a
+  footnote naming the third way in, **paste** — the page listens for it via `usePasteFiles`, but nothing
+  on screen would otherwise say so),
   `UploadProgressHeader` (**a prominent sticky** header for the whole batch: „done / total", **one**
   overall progress bar weighted even by the partial `progress` of in-flight files — `barLabel` for a11y —,
   a live breakdown of the uploaded/duplicate/failed/remaining counts; on completion it switches to a **completed
@@ -1072,7 +1075,23 @@ here.
   settle **all** recognized photos (new **and** duplicate `resolvedUids`) are assigned
   by a single `POST /photos/bulk` (state „přiřazuji…“, success, or a **retryable** error — the photos are
   uploaded, only the assignment failed); with no selection no call is made, and a pick made **after**
-  the batch has finished re-runs the assignment with the current selection,
+  the batch has finished re-runs the assignment with the current selection.
+  Two more ways in besides the picker: **paste** anywhere on the page (`usePasteFiles`) and
+  **`?share=<id>`**, the phone's share sheet — the files are already in the browser's cache by then, so
+  the page collects them (`pwa/shareTarget` `collectSharedFiles`), queues them like any other selection
+  (same limits, same progress, same albums/labels — nothing uploads until the user presses start) and
+  drops the parameter (`replace`) so a reload cannot ask for a share already spent. A `collected` ref
+  makes the collection one-shot, since StrictMode invokes the effect twice and collecting **consumes**
+  the cache entries. It then says what it took (`share.notice.staged`, a Czech plural), what it left out
+  by name (`share.notice.rejected`) or that the share held nothing usable (`share.notice.empty`),
+  `ShareTargetPage` = `/share-target`, where the share sheet lands (see the PWA section below): a junction,
+  not a destination — an editor with a staged share is `Navigate`d (`replace`) to `/upload?share=<id>`,
+  a **viewer** gets a plain explanation that their account may not upload and their files are discarded
+  on the spot (`discardSharedFiles`) rather than left to expire, and **no id at all** — a worker that
+  could not read the POST, or none installed, so the server answered it with the shell — gets the honest
+  „the files did not come through" plus a link to the picker. It sits inside `RequireAuth` but **outside**
+  the editor gate, so an unauthenticated sharer goes through login and comes back to this exact URL,
+  which is what makes a share survive the round trip,
   `ImportPage` = `/import` (maintainer only) the import console, now **read-only**: the background queue
   state (`GET /jobs/stats`), the recorded per-photo/per-file failures (`GET /import/failures`) and a
   **run history** table (`import_runs`: source/start/end/status/counts/error) — rendered through the
@@ -2592,6 +2611,10 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `createdUids` (new ones only) for the link into the library
   and `resolvedUids` (new **and** duplicate photos) for the post-upload assignment; it auto-drains
   the queue with an effect after `start`/retry, and cancels running uploads on unmount;
+  `usePasteFiles(onFiles)` = hands the page every file pasted into it, listening on `window` so the
+  gesture works anywhere (not only over the drop zone) and acting **only** when the clipboard actually
+  carries files, so pasting text into the album/label pickers stays ordinary pasting. It is the shortest
+  route from an iPhone's camera roll into the library, iOS having no share target at all;
   `useUploadOrganize` = a choice of albums/labels for the whole upload batch + their assignment: it loads the catalogues
   of albums and labels (`fetchAlbums`/`fetchLabels`), holds the selection (inline creation as a `create:` marker
   as in `BulkEditModal`, shared helpers `lib/pendingCreate`), `runAssign(uids)` first creates
@@ -3241,6 +3264,14 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   the canonical `"49.123400, 16.567800"` (it round-trips through the parser, but it is a **display, lossy**
   format — `16.7083583333333` → `16.708358`, which is why an unchanged coordinate isn't sent in the PATCH
   at all) — shared with the `MetadataPanel` picker;
+  `mediaFiles.ts` = the one place the app decides „this is a photo or a video": `MEDIA_EXTENSIONS` (the
+  browser-native images, HEIC/HEIF, the RAW of every usual vendor, the phone/camcorder video containers),
+  `PICKER_ACCEPT` (`image/*,video/*` + all of them as `.ext`, the `accept` a picker gets) and the pure
+  `isMediaFile({name,type})` (the MIME type when it says image/video, **otherwise the extension** — a file
+  manager, a messenger or a cloud drive routinely hands a photo over as `application/octet-stream`, and
+  RAW/HEIC usually as nothing at all). Deliberately generous: the backend has the last word and
+  drag-and-drop bypasses the list entirely, so a missing entry can only hide a file the user meant to add.
+  Shared by `DropZone` (the picker) and `pwa/shareTarget` (the triage of a share);
   `kenBurns.ts` = the pure `kenBurnsMotion(uid,intervalMs)` → the endpoints of a slow zoom+pan across the whole
   frame (`durationMs` = the interval, so the animation lasts exactly one slide) + `kenBurnsStyle(…)` →
   the `--kb-*` custom properties for `slideshow.css` + `panLimit(scale)`. The parameters (8 directions × zoom
@@ -3919,3 +3950,39 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   runs the **real rendered worker** in a `node:vm` scope with fake caches (precache, cache hits,
   every bypass rule, eviction refetch, the activate/skip-waiting handshake),
   `src/pwa/register.test.ts` covers the registration branches, `PwaStatus.test.tsx` the UI.
+  **(5) Share target — photos straight from the phone's share sheet (Android/Chromium).** The manifest
+  declares `share_target` (`action: /share-target`, `POST`, `multipart/form-data`, a `files` field
+  accepting `image/*`+`video/*`), so an **installed** Kukátko appears in the system share sheet for photos
+  and videos; a `shortcuts` entry points at `/upload` for a long-press straight to uploading.
+  `src/pwa/shareContract.ts` is the contract both halves obey — the paths, the `files` field, the
+  `share` query parameter, the `kukatko-share` cache, the `/__kukatko-share__/<id>/<index>` key shape, the
+  two headers (`x-kukatko-share-name`, url-escaped, and `x-kukatko-share-modified`), `SHARE_TTL_MS` (24 h)
+  and `parseShareEntry`/`shareIdStamp`/`isShareExpired`. It is deliberately **DOM-free**: the worker is
+  un-bundled JS and cannot import it, so `build/pwa.test.ts` — typechecked without the DOM lib — imports
+  it and drives the **real** worker against it, which is what keeps the halves from drifting.
+  The worker's fetch handler answers exactly one non-GET: that POST. It reads the form, writes each file
+  into its own entry of the **`kukatko-share` cache** (not the shell cache, whose name prefix `activate`
+  prunes — a deployment landing mid-share must not eat the photos), mints the id as
+  `<Date.now()>-<sequence>` (the timestamp **is** the expiry bookkeeping) and answers **303** to
+  `GET /share-target?share=<id>`; the POST body itself is consumed once and never cached, and a staging
+  failure still redirects, just without an id. `ShareTargetPage` then triages (see its entry above) and
+  `UploadPage` collects. `src/pwa/shareTarget.ts` is the browser half: `collectSharedFiles(id)` rebuilds
+  the `File`s from the staged responses **in share order**, deletes them as it goes (a share is handed
+  over exactly once) and sweeps out any *other* share past the TTL on the way — the only place abandoned
+  shares are cleaned up; it never rejects (no Cache Storage, no cache, a foreign entry, a failing quota
+  all mean „no files"). `partitionSharedFiles` splits the result through `lib/mediaFiles`, so anything
+  that is not a photo or a video is **named** on the page instead of queued to fail on the server, and
+  `discardSharedFiles(id)` is the viewer's path. The share id rides in the URL, so the login round trip
+  keeps it (`LoginPage` returns to `pathname + search`, not the pathname alone) and the files simply wait
+  in the cache. With **no worker installed** the POST reaches Go, whose SPA fallback ignores the method
+  (`internal/web`, tested) and answers with the shell — the same page, saying the files did not arrive.
+  **iOS has no Web Share Target** (verified at implementation time against MDN's browser-compat data and
+  webstatus.dev: Chrome/Edge only, WebKit bug 194593 open), and it is not faked: there the honest path is
+  the installed app opening instantly from the precached shell with **Nahrát already in the bottom tab
+  bar** (`MobileTabBar`, one thumb-reach from wherever it opened), the photo-library picker, and **paste**
+  (`usePasteFiles`) — which the Help chapter `help.sections.sharing` spells out in both languages.
+  Tests: the share half of `build/pwa.test.ts` (staging, headers, ordering, per-share ids, the ignored
+  title/text parts, the failure redirect, cross-origin and other-path POSTs left alone, survival of an
+  activate) plus a manifest contract block; `src/pwa/shareTarget.test.ts`, `ShareTargetPage.test.tsx`,
+  the share cases in `UploadPage.test.tsx` (including the StrictMode double-invoke) and
+  `usePasteFiles.test.tsx`.

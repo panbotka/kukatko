@@ -79,6 +79,34 @@ func TestSPAHandler_fallsBackToIndexForClientRoute(t *testing.T) {
 	}
 }
 
+// TestSPAHandler_fallsBackToIndexForSharePost verifies the share target's POST
+// resolves to the index document like any other client route.
+//
+// That POST is normally intercepted by the service worker (it stages the shared
+// files and redirects), so it only reaches the server when no worker is
+// installed to catch it — a first run, or a browser that dropped the
+// registration. Answering it with the SPA lands the user on the share page,
+// which says the files did not come through and offers the picker; a 405 would
+// show a bare error instead. Method-gating the fallback would break that, hence
+// the test.
+func TestSPAHandler_fallsBackToIndexForSharePost(t *testing.T) {
+	t.Parallel()
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(
+		context.Background(), http.MethodPost, "/share-target", strings.NewReader("files=..."),
+	)
+	req.Header.Set("Content-Type", "multipart/form-data; boundary=x")
+	SPAHandler(newTestDist()).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if got := rec.Body.String(); !strings.Contains(got, "id=root") {
+		t.Errorf("body = %q, want the index document", got)
+	}
+}
+
 // TestSPAHandler_missingAssetReturns404 verifies a missing file under assets/
 // fails loudly with 404 rather than serving the SPA index document.
 func TestSPAHandler_missingAssetReturns404(t *testing.T) {

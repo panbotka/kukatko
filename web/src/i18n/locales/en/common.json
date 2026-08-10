@@ -163,6 +163,10 @@
         "title": "Deleting & the trash",
         "body": "Deleting has two steps. Archiving is reversible – the photo moves to the trash and you can restore it any time. Permanent deletion removes the photo for good. Archived photos are also removed from the trash automatically once the retention period passes, so the trash keeps itself tidy.\nPermanent deletion and emptying the trash are reserved for admins."
       },
+      "sharing": {
+        "title": "Adding photos from your phone",
+        "body": "On Android it works straight from the gallery: pick the photos, tap Share and choose Kukátko. The app opens on the upload page with those files already queued — look them over, give the batch an album and labels if you like, and upload as usual. The one condition is that Kukátko is added to the home screen (installed); otherwise it does not appear in the share sheet.\niPhone cannot do this yet — Safari has no support for sharing into web apps, and there is no honest way to fake it. Add photos on the upload page instead: the Choose files button opens the photo library, or copy a photo in Photos and paste it here. Adding Kukátko to the home screen still pays off: it then opens straight away, even with no signal.\nUploading needs the editor role or higher. A view-only account is told why its shared photos were not added. Only photos and videos can be shared; anything else is left out and listed on the page."
+      },
       "import": {
         "title": "Importing the library",
         "body": "Photos come into Kukátko by importing from your existing library. The import is incremental and non-destructive – it only adds new items and never touches the originals. It is run by maintainers."
@@ -1939,6 +1943,7 @@
       "hint": "or choose them from your device",
       "browse": "Choose files",
       "camera": "Take a photo",
+      "paste": "You can also copy a photo and paste it here (Ctrl+V).",
       "ariaInput": "Choose photos or videos to upload",
       "ariaCamera": "Take a photo with the camera"
     },
@@ -1994,6 +1999,23 @@
       "assignError": "Uploaded, but adding to albums and labels failed: {{message}}",
       "assignErrorGeneric": "Uploaded, but adding to albums and labels failed.",
       "retry": "Retry"
+    }
+  },
+  "share": {
+    "title": "Shared photos",
+    "notice": {
+      "staged_one": "1 shared file is ready. Check it and upload.",
+      "staged_other": "{{count}} shared files are ready. Check them and upload.",
+      "empty": "That share contained no photos or videos.",
+      "rejected": "These files are not photos or videos, so they were left out: {{names}}"
+    },
+    "missing": {
+      "message": "The shared files did not reach us. Please pick them by hand on the upload page.",
+      "action": "Go to upload"
+    },
+    "forbidden": {
+      "message": "Your account can only view the library, not add to it, so the shared files were discarded. Ask an administrator for the editor role if you need to upload.",
+      "action": "Back to the library"
     }
   },
   "slideshow": {

@@ -39,6 +39,7 @@ import { ReviewDecisionsPage } from './pages/ReviewDecisionsPage'
 import { ReviewPage } from './pages/ReviewPage'
 import { SavedSearchesPage } from './pages/SavedSearchesPage'
 import { SearchPage } from './pages/SearchPage'
+import { ShareTargetPage } from './pages/ShareTargetPage'
 import { SlideshowPage } from './pages/SlideshowPage'
 import { StatsPage } from './pages/StatsPage'
 import { SubjectPage } from './pages/SubjectPage'
@@ -92,6 +93,11 @@ export function AppRoutes() {
           {/* The sorting competition standings: read-only aggregate counts, so
               any signed-in role may watch the game — no write gate. */}
           <Route path="/leaderboard" element={<LeaderboardPage />} />
+          {/* Where the phone's share sheet lands. Deliberately outside the
+              editor gate: it has to greet a viewer with an explanation of its
+              own (their shared photos are discarded, not silently dropped),
+              and it forwards an editor to /upload with the staged share. */}
+          <Route path="/share-target" element={<ShareTargetPage />} />
           {/* Uploading and cluster review are write actions: editors and admins only. */}
           <Route element={<RequireRole role="editor" />}>
             <Route path="/upload" element={<UploadPage />} />

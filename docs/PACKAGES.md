@@ -2987,7 +2987,11 @@ to `## Package map` in `CLAUDE.md`.
   type of `.webmanifest` to `application/manifest+json`, since `mime.TypeByExtension` reads the
   host's mime database and on most hosts has no answer for it, which would leave `net/http` sniffing
   the manifest as `text/plain`. Everything outside `assets/` — the worker, the manifest, the icons —
-  is served `Cache-Control: no-cache`, which is what lets a deployment replace the worker).
+  is served `Cache-Control: no-cache`, which is what lets a deployment replace the worker. A third
+  rule is the absence of one: the fallback **ignores the request method**, so the share target's
+  `POST /share-target` — normally intercepted by the service worker, and reaching the server only when
+  none is installed — is answered with the shell and lands on the page that explains the shared files
+  did not arrive, where a 405 would show a bare protocol error).
   Details: [`docs/DEVELOPMENT.md`](DEVELOPMENT.md).
 
 - **Remote CLI client (`internal/ctl`):** the client half of `kukatko ctl` — the one piece of the tree that
