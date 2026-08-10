@@ -905,6 +905,70 @@ export function videoUrl(uid: string, downloadToken?: string | null): string {
 }
 
 /**
+ * A video's scrub-preview storyboard as `GET /api/v1/photos/{uid}/storyboard`
+ * reports it. Mirrors the backend `storyboardResponse`.
+ *
+ * `status` is the only field always present:
+ * - `ready` — the sprite exists and the grid fields describe it;
+ * - `pending` — generation was just scheduled; ask again shortly;
+ * - `unavailable` — this photo will never have one (a still, a live photo, a
+ *   clip of unknown length, or a host with no ffmpeg). Stop asking.
+ *
+ * The grid fields are omitted while pending or unavailable, so a client that
+ * reads `status` first can never place a preview against a zero grid.
+ */
+export interface Storyboard {
+  status: 'ready' | 'pending' | 'unavailable'
+  columns?: number
+  rows?: number
+  count?: number
+  tile_width?: number
+  tile_height?: number
+  interval_ms?: number
+}
+
+/**
+ * Asks whether a video's scrub-preview sprite is ready, scheduling its
+ * generation in the background when it is not
+ * (`GET /api/v1/photos/{uid}/storyboard`).
+ *
+ * The GET is what schedules the work, deliberately: previews are for whoever is
+ * watching, viewers included, and the queue dedups per photo so asking on every
+ * playback costs nothing. Call it when playback starts — never for a list of
+ * photos, which would enqueue a full decode per video in the library.
+ *
+ * @throws ApiError with `status` 404 (no such photo) or 5xx.
+ */
+export async function fetchStoryboard(uid: string, signal?: AbortSignal): Promise<Storyboard> {
+  const res = await fetch(`${API_BASE}/photos/${encodeURIComponent(uid)}/storyboard`, {
+    credentials: 'same-origin',
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+  return (await res.json()) as Storyboard
+}
+
+/**
+ * Builds the URL of a video's storyboard sprite — the JPEG grid of frames the
+ * player samples for its scrub preview. The browser sends the session cookie for
+ * same-origin requests; an optional download token is appended for cookie-less
+ * contexts, like the CSS background the preview is painted with.
+ *
+ * The sprite is served by the application (it is cache-only derived media, never
+ * published to the object store), so unlike a thumbnail this address is always
+ * this route.
+ */
+export function storyboardSpriteUrl(uid: string, downloadToken?: string | null): string {
+  const url = `${API_BASE}/photos/${encodeURIComponent(uid)}/storyboard/sprite`
+  if (downloadToken !== undefined && downloadToken !== null && downloadToken !== '') {
+    return `${url}?t=${encodeURIComponent(downloadToken)}`
+  }
+  return url
+}
+
+/**
  * Toggles whether the current user has favorited a photo via
  * `PUT /api/v1/photos/{uid}/favorite` (favorite) or `DELETE …` (unfavorite).
  * Both are idempotent and resolve with no body (204). Favoriting is a personal

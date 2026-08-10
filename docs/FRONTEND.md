@@ -1231,7 +1231,8 @@ here.
   The photo is centered, `object-fit: contain` at the **largest fit without cropping** over a **warm near-black
   backdrop** (`--kk-viewer-backdrop`), reflecting the saved non-destructive edit (a live draft while the Úpravy
   panel is open) — for a **video** `VideoPlayer` instead of the image, for a **live photo** `LivePhoto` (both have
-  their own native fullscreen; the image viewer doesn't open for them). The style is in
+  their own fullscreen — the player's own button, the live photo's native one; the image viewer doesn't open for
+  them). The style is in
   `components/photo/viewer.css`, the `--kk-viewer-*` tokens (backdrop, chrome/dock scrim, z-index) in
   `tokens.css`. **It replaced the old click-opens-lightbox** — `Lightbox` and `lightbox.css` were removed
   and absorbed here.
@@ -1641,6 +1642,35 @@ here.
   (`stack.setPrimary` → `setStackPrimary`) / **Vyjmout ze skupiny** (`stack.unstack` → `unstackMember`)
   and **Zrušit skupinu** (`stack.unstackAll` → `unstackAll`). It is rendered by `PhotoDetailPage` **in the drawer**,
   only when `stack_members` has **≥ 2** items; its actions reload the displayed photo;
+  `VideoPlayer` (`components/photo/`) = **the video stage of the detail page**: a plain `<video>` streamed from the
+  range-capable `/photos/{uid}/video` (so the browser seeks) with **Kukátko's own control bar** under it —
+  play/pause, **±10 s skips**, the scrubbable `VideoScrubber` timeline, a **speed menu** (0.5/1/1.25/1.5/2×),
+  mute and fullscreen. The native `controls` are deliberately **gone**, for exactly one reason: a native timeline
+  exposes no hover position, so the scrub preview — the point of the feature — would have nowhere to hang.
+  The chosen speed is remembered **for the session** (`sessionStorage`, `lib/videoPlayback`) and re-applied to
+  every clip, since `playbackRate` resets with each new element. **Keyboard:** `K` play/pause, `J`/`L` ∓10 s,
+  `<`/`>` step the speed — via `useKeyboardShortcuts` with `enabled` = "the player contains the focused element,
+  **or** the clip is playing", so those keys stay free for the rest of the page. **The arrow keys are left alone
+  on purpose**: on this page they page between photos, and a video that hijacked them would break browsing to
+  serve a control that has its own buttons — the focused timeline is where arrows seek. All the buttons carry
+  `kukatko-tap-target`, so speed and skips are finger-sized on touch. A decode failure still falls back to the
+  download link. `VideoScrubber` (`components/photo/`) = the timeline: a click/drag-to-seek rail exposed as
+  `role="slider"` (so ←/→ seek ±5 s and PageUp/Down ±60 s once it has focus, without the player claiming those
+  keys globally), plus the **hover preview** — a frame from the clip's storyboard sprite, drawn by offsetting one
+  JPEG as a CSS background (`storyboardTileStyle`), so following the cursor costs **no request at all**. The
+  preview is **mouse-only** (`pointerType === 'mouse'`): on a touchscreen the finger doing the scrubbing sits
+  exactly where the preview would appear, so it would hide the frame it is meant to reveal — touch keeps the full
+  drag-to-seek. A clip with no storyboard (pending, or never) shows the time bubble alone: the preview degrades,
+  the scrubbing does not. `hooks/useStoryboard(uid, enabled)` fetches it **lazily** — nothing is asked until
+  playback starts, because the request is what schedules the render server-side and a grid of videos asking on
+  mount would enqueue a full decode each; a `pending` answer is re-polled 4× at 5 s and then given up on (the
+  sprite arrives on the next playback), and **every failure is swallowed** so a missing preview is never an error
+  on screen. `lib/videoPlayback` holds the pure half — `PLAYBACK_RATES`/`SKIP_SECONDS`, the session-storage
+  read/write and `stepPlaybackRate` (clamped, an unknown current rate treated as 1×), `seekTarget` (clamped into
+  `[0, duration]`, only below zero while the duration is unknown), `formatPlaybackTime` (`m:ss`, `h:mm:ss` past
+  an hour, never `NaN`), `playbackFraction`, `storyboardTileIndex`/`storyboardTileStyle` (mirroring
+  `storyboard.Spec.TileIndex` on the server), `previewOffset` (keeps the bubble inside the track) and
+  `positionFromPointer`;
   `components/photo/` also carries `MetaField` (one read-only labelled `<dt>`/`<dd>` row inside
   a `<dl className="row">` group, an empty value = nothing; an optional `title` = a tooltip over the shortened
   value and `children` = a rich value (chips/badge/copy button), a row with `children` renders

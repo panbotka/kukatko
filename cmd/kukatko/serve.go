@@ -301,15 +301,18 @@ func buildServices(
 	if err != nil {
 		return nil, backgroundServices{}, err
 	}
+	// One storyboard service for both readers: the photo API answers "is there a
+	// scrub preview" (and schedules it), the worker renders what it scheduled.
+	storyboardSvc := buildStoryboardService(cfg, db, mediaStore, enqueuer)
 	photoAPI := buildPhotoAPI(cfg, db, authAPI, mediaStore, vectorStore, embedClient, matchSvc,
-		trashSvc, sidecarSched, reg)
+		trashSvc, sidecarSched, storyboardSvc, reg)
 	clusterAPI, clusterSvc := buildClusterAPI(cfg, db, authAPI, matchSvc)
 	mapsAPI, err := buildMapsAPI(cfg, db, authAPI, mapsHealth)
 	if err != nil {
 		return nil, backgroundServices{}, err
 	}
 	jobWorker, jobAPI, processAPI, maintenanceAPI, err := buildJobs(cfg, db, jobStore, authAPI, enqueuer,
-		embedSvc, faceSvc, clusterSvc, reg, geocodeBudget)
+		embedSvc, faceSvc, clusterSvc, storyboardSvc, reg, geocodeBudget)
 	if err != nil {
 		return nil, backgroundServices{}, err
 	}

@@ -618,8 +618,11 @@ lost on restart).
   stops claiming and leaves abandoned in-flight jobs to the queue for recovery — except a deferral
   (`RetryAfterError`), which is still written so it never burns a retry attempt. The queue state is read via the **admin Jobs API**
   (`internal/jobsapi`: `GET /jobs/stats`, `GET /jobs`, `POST /jobs/{id}/requeue`); the UI polls it.
-- **Job types:** `thumbnail`, `places`, `metadata`, `sidecar` (run locally on the Pi, immediately),
-  `image_embed`, `face_detect` (require the box), `pp_import`, `ps_migrate`, `backup`.
+- **Job types:** `thumbnail`, `places`, `metadata`, `sidecar`, `storyboard` (run locally on the Pi,
+  immediately), `image_embed`, `face_detect` (require the box), `pp_import`, `ps_migrate`, `backup`.
+  `storyboard` is the odd one out in *when* it is scheduled: it renders a video's scrub-preview sprite
+  (one ffmpeg pass over the clip) and is enqueued **lazily, on the first playback of that video** — never
+  for the library at large, because most clips are never watched. See `internal/storyboardjob`.
 - **Box offline:** the embeddings client checks the sidecar's availability before processing (health check).
   When the box is offline, `image_embed`/`face_detect` jobs stay `queued` with `run_after`
   pushed out (backoff), upload and browsing work without restriction. Once the box comes up the queue

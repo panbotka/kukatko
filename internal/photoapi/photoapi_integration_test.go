@@ -26,12 +26,15 @@ import (
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/embedding"
+	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/photoapi"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/places"
 	"github.com/panbotka/kukatko/internal/stacks"
 	"github.com/panbotka/kukatko/internal/storage"
+	"github.com/panbotka/kukatko/internal/storyboard"
+	"github.com/panbotka/kukatko/internal/storyboardjob"
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/trash"
 	"github.com/panbotka/kukatko/internal/vectors"
@@ -56,6 +59,12 @@ type env struct {
 	places   *places.Store
 	comments *comments.Store
 	db       *database.DB
+	// jobs is the real queue the storyboard status endpoint schedules into, so a
+	// test can assert what a request actually enqueued.
+	jobs *jobs.Store
+	// storyboards is the real sprite generator behind the storyboard endpoints; a
+	// test plants a sprite in its cache to move a photo from pending to ready.
+	storyboards *storyboard.Generator
 }
 
 // fakeEmbedder is a controllable photoapi.TextEmbedder for the search tests: it
@@ -124,6 +133,11 @@ func newEnvWithMedia(t *testing.T, media storage.Storage) *env {
 	placeStore := places.NewStore(db.Pool())
 	commentStore := comments.NewStore(db.Pool())
 	embedder := &fakeEmbedder{byQuery: map[string][]float32{}}
+	jobStore := jobs.NewStore(db.Pool())
+	// The storyboard endpoints run against the real generator and the real queue:
+	// the pending/ready transition is a cache fact and the scheduling a queue fact,
+	// and a fake for either would test the fake.
+	storyboards := storyboard.New(fs, t.TempDir())
 	api := photoapi.NewAPI(photoapi.Config{
 		Store:       store,
 		Storage:     mediaStore,
@@ -142,6 +156,14 @@ func newEnvWithMedia(t *testing.T, media storage.Storage) *env {
 			Storage:     fs,
 			Thumbnailer: thumb.New(fs, t.TempDir()),
 		}),
+		Storyboards: storyboardjob.New(storyboardjob.Config{
+			Photos:    store,
+			Generator: storyboards,
+			Enqueuer:  jobs.NewEnqueuer(jobStore),
+			// Pin ffmpeg present: the endpoint contract under test is the
+			// pending/ready transition, not whether this host can render.
+			FFmpegAvailable: func() bool { return true },
+		}),
 		RequireAuth:     authAPI.RequireAuth,
 		RequireWrite:    authAPI.RequireWrite,
 		RequireAdmin:    authAPI.RequireAdmin,
@@ -159,6 +181,7 @@ func newEnvWithMedia(t *testing.T, media storage.Storage) *env {
 		server: server, authSvc: authSvc, store: store,
 		fs: fs, vectors: vectorStore, embedder: embedder, organize: organizeStore,
 		places: placeStore, comments: commentStore, db: db,
+		jobs: jobStore, storyboards: storyboards,
 	}
 }
 

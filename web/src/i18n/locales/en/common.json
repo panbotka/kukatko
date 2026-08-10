@@ -1194,6 +1194,7 @@
       "global": "Global",
       "grid": "Photo grid",
       "detail": "Photo detail",
+      "video": "Video player",
       "faceSearch": "Person search",
       "outliers": "Possible mistakes",
       "review": "Review",
@@ -1215,6 +1216,12 @@
       "faces": "Show / hide faces",
       "info": "Show / hide info",
       "back": "Step back: the selection, then the info panel, then out to the list"
+    },
+    "video": {
+      "playPause": "Play / pause the video",
+      "skip": "Skip 10 s back / forward",
+      "speed": "Slow down / speed up playback",
+      "arrows": "Arrows keep paging between photos, even during playback — seek with the focused timeline instead"
     },
     "faceSearch": {
       "move": "Move focus between cards",
@@ -1710,7 +1717,17 @@
       "unsupported": "This video cannot be played in your browser.",
       "downloadInstead": "Download the video",
       "live": "Live",
-      "livePlay": "Hold or hover to play the motion clip"
+      "livePlay": "Hold or hover to play the motion clip",
+      "play": "Play",
+      "pause": "Pause",
+      "skipBack": "Back {{seconds}} s",
+      "skipForward": "Forward {{seconds}} s",
+      "speed": "Playback speed",
+      "rate": "{{rate}}×",
+      "mute": "Mute",
+      "unmute": "Unmute",
+      "fullscreen": "Fullscreen",
+      "seek": "Video timeline"
     },
     "metadata": {
       "formLabel": "Edit photo metadata",

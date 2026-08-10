@@ -50,6 +50,7 @@ type API struct {
 	stacker         Stacker
 	sidecar         SidecarEnqueuer
 	comments        CommentStore
+	storyboards     StoryboardService
 	retentionDays   int
 	videoTranscode  bool
 	requireAuth     func(http.Handler) http.Handler
@@ -123,6 +124,10 @@ type Config struct {
 	// comment_count on the detail response. When nil those endpoints answer 503
 	// and the detail reports a zero count.
 	Comments CommentStore
+	// Storyboards backs the video scrub-preview endpoints (status + sprite). When
+	// nil the status endpoint reports "unavailable" and the sprite route answers
+	// 404, so the player simply shows no preview — never an error.
+	Storyboards StoryboardService
 	// CommentRateLimit throttles comment creation. It is mounted inside the auth
 	// guard so it can key on the acting user rather than the client IP — a
 	// household behind one address is many people. A nil value disables
@@ -171,6 +176,7 @@ func NewAPI(cfg Config) *API {
 		stacker:         cfg.Stacker,
 		sidecar:         cfg.Sidecar,
 		comments:        cfg.Comments,
+		storyboards:     cfg.Storyboards,
 		retentionDays:   cfg.RetentionDays,
 		videoTranscode:  cfg.VideoTranscode,
 		requireAuth:     cfg.RequireAuth,
@@ -223,6 +229,8 @@ func passthroughMiddleware(next http.Handler) http.Handler {
 //	POST   /photos/{uid}/regenerate-thumbnail RequireWrite  rebuild thumbnail + pHash
 //	GET    /photos/{uid}/thumb/{size} RequireDownload  cached thumbnail (or 302)
 //	GET    /photos/{uid}/video        RequireDownload  video stream (range/206, or 302)
+//	GET    /photos/{uid}/storyboard   RequireAuth      scrub-preview status (+ lazy enqueue)
+//	GET    /photos/{uid}/storyboard/sprite RequireDownload  scrub-preview sprite (JPEG)
 //	GET    /photos/{uid}/download     RequireDownload  original file (or 302)
 //	POST   /photos/download-zip       RequireDownload  ZIP of originals (selection/album)
 //	PUT    /photos/{uid}/favorite     RequireAuth      favorite (current user)
@@ -280,6 +288,8 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.With(a.requireAdmin).Post("/{uid}/purge", a.handlePurge)
 		r.With(a.requireDownload).Get("/{uid}/thumb/{size}", a.handleThumb)
 		r.With(a.requireDownload).Get("/{uid}/video", a.handleVideo)
+		r.With(a.requireAuth).Get("/{uid}/storyboard", a.handleStoryboard)
+		r.With(a.requireDownload).Get("/{uid}/storyboard/sprite", a.handleStoryboardSprite)
 		r.With(a.requireDownload).Get("/{uid}/download", a.handleDownload)
 	})
 }

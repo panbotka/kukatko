@@ -802,3 +802,168 @@
     overflow-y: visible;
   }
 }
+
+/* ---- Video player ----------------------------------------------------- */
+
+/* The player is one column: the picture, then our own control bar under it.
+   The bar is ours rather than the browser's because a native timeline exposes
+   no hover position, and without that there is nowhere to hang the scrub
+   preview. `position: relative` anchors the preview bubble to the player. */
+.kk-video {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.kk-video__media {
+  display: block;
+  max-width: 100%;
+  max-height: 70vh;
+  min-height: 0;
+  object-fit: contain;
+  cursor: pointer;
+  background: #000;
+}
+
+/* Fullscreen puts the container itself in the top layer, so the picture has to
+   grow into it and the bar has to stay on top of the picture rather than under
+   a 70vh cap that no longer means anything. */
+.kk-video:fullscreen {
+  justify-content: center;
+  background: #000;
+}
+
+.kk-video:fullscreen .kk-video__media {
+  max-height: none;
+  flex: 1 1 auto;
+}
+
+.kk-video__controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kk-space-1);
+  padding: var(--kk-space-2) var(--kk-space-2) var(--kk-space-1);
+  background: rgb(0 0 0 / 55%);
+}
+
+.kk-video__buttons {
+  display: flex;
+  align-items: center;
+  gap: var(--kk-space-1);
+  flex-wrap: wrap;
+}
+
+.kk-video__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--kk-radius-sm);
+  background: transparent;
+  color: #fff;
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0.25rem 0.5rem;
+}
+
+.kk-video__button:hover,
+.kk-video__button:focus-visible {
+  background: rgb(255 255 255 / 15%);
+}
+
+.kk-video__time {
+  color: rgb(255 255 255 / 85%);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.875rem;
+  padding-inline: var(--kk-space-1);
+  white-space: nowrap;
+}
+
+/* The speed control reads as a value, not a link: no underline, no link colour,
+   and a fixed-width numeric so switching 1× → 1.25× does not shift the bar. */
+.kk-video__speed.btn.btn-link {
+  color: #fff;
+  text-decoration: none;
+  font-variant-numeric: tabular-nums;
+  padding-inline: var(--kk-space-2);
+}
+
+/* ---- Timeline --------------------------------------------------------- */
+
+.kk-video__timeline {
+  position: relative;
+  padding-block: var(--kk-space-2);
+}
+
+/* A slim rail with a generous parent padding block: the hit area is finger-sized
+   even though the line itself is 4px, which is what makes dragging it work on a
+   phone without a fat bar eating the picture. */
+.kk-video__track {
+  position: relative;
+  height: 4px;
+  border-radius: var(--kk-radius-pill);
+  background: rgb(255 255 255 / 30%);
+  cursor: pointer;
+  touch-action: none;
+}
+
+.kk-video__track:focus-visible {
+  outline: 2px solid var(--kk-accent, #fff);
+  outline-offset: 4px;
+}
+
+.kk-video__progress {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--kk-accent, #fff);
+}
+
+/* The scrub preview: a frame from the storyboard sprite with its timestamp,
+   centred on the cursor and floating just above the rail. It is decorative
+   (`aria-hidden`) and must never intercept the drag it is describing. */
+.kk-video__preview {
+  position: absolute;
+  bottom: 100%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--kk-radius-sm);
+  background: rgb(0 0 0 / 80%);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.kk-video__preview-frame {
+  display: block;
+  border-radius: 2px;
+  background-repeat: no-repeat;
+}
+
+.kk-video__preview-time {
+  color: #fff;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+/* Inside the viewer the player is picture + bar, and the picture must yield the
+   bar's height rather than push it off the bottom of a short window. That needs a
+   definite height to shrink against: `max-height: 100%` alone resolves to nothing
+   here, because the stage's flex line is sized by its content. So the media slot
+   takes the stage's height when it holds a player (and only then — a still or a
+   live photo shrink-wraps as before), the player fills it, and the pair stays
+   centred while the video's `min-height: 0` lets it give way. */
+.kk-viewer__media:has(.kk-video) {
+  height: 100%;
+}
+
+.kk-viewer__media .kk-video {
+  height: 100%;
+  justify-content: center;
+}

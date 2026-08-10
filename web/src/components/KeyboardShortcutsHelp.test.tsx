@@ -33,6 +33,17 @@ describe('KeyboardShortcutsHelp', () => {
     expect(screen.getByText('Open the focused photo')).toBeInTheDocument()
   })
 
+  it('documents the video-player keys and that the arrows still page photos', async () => {
+    renderHelp()
+    fireEvent.keyDown(document, { key: '?' })
+    await screen.findByRole('dialog')
+
+    expect(screen.getByText('Video player')).toBeInTheDocument()
+    expect(screen.getByText('Skip 10 s back / forward')).toBeInTheDocument()
+    expect(screen.getByText('Play / pause the video')).toBeInTheDocument()
+    expect(screen.getByText(/Arrows keep paging between photos/)).toBeInTheDocument()
+  })
+
   it('opens the overlay from the keyboard-icon button', async () => {
     const user = userEvent.setup()
     renderHelp()

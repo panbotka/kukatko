@@ -607,7 +607,8 @@ long-running and belong on the machine where the instance runs — so they remai
 - **Storage keys (`storage.*`, `internal/storage`):** `backend` (`fs` **default** = local disk /
   `r2` = a private Cloudflare R2 bucket; an unknown value → `ErrInvalidStorageBackend` at startup),
   `originals_path` (the originals root, `fs` only), `cache_path` (derived artifacts — thumbnails,
-  video posters), `temp_path` (default `/var/lib/kukatko/tmp`; `r2` stages uploads through it
+  video posters, and the `storyboard/` scrub-preview sprites, which live **only** here and are never
+  uploaded to the bucket), `temp_path` (default `/var/lib/kukatko/tmp`; `r2` stages uploads through it
   and materializes objects for tools that only accept a file name — the **single largest
   file** must fit there, not the library). `KUKATKO_STORAGE_BACKEND`/`_ORIGINALS_PATH`/`_CACHE_PATH`/
   `_TEMP_PATH`.
@@ -682,7 +683,7 @@ long-running and belong on the machine where the instance runs — so they remai
 - **Worker keys (`worker.*`, `internal/config` + `internal/worker`):** the in-process background
   worker that drains the job queue inside `kukatko serve`. `count` (**default 2**) sizes the **shared
   pool** — the goroutines that drain every job type *without* a `type_count` entry (`thumbnail`,
-  `metadata`, `places`, `sidecar`, `pp_import`, …). All of that is local CPU/IO work, so size it by the
+  `metadata`, `places`, `sidecar`, `storyboard`, `pp_import`, …). All of that is local CPU/IO work, so size it by the
   host's cores. `type_count` is a **map of job type → slots**: a type named there gets its **own
   dedicated pool** of that many goroutines and stops competing for the shared pool's slots. That split
   is the whole point — **`image_embed`/`face_detect` call the embeddings sidecar on the GPU box, which
