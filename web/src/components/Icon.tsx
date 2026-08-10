@@ -51,6 +51,7 @@ export type IconName =
   | 'image-fill'
   | 'images'
   | 'info-circle'
+  | 'key'
   | 'lightning-charge-fill'
   | 'lock-fill'
   | 'magic'

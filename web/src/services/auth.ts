@@ -166,6 +166,106 @@ export async function changePassword(
 export const MIN_PASSWORD_LENGTH = 8
 
 /**
+ * A personal API token, mirroring the backend `auth.APIToken` JSON shape. It is
+ * a long-lived bearer credential for non-interactive clients (the `kukatko ctl`
+ * CLI, scripts, agents) that inherits its owner's role — there is no second
+ * permission system behind it.
+ *
+ * The plaintext secret is **not** part of this record: the server keeps only a
+ * SHA-256 hash and discloses the credential exactly once, in the create
+ * response. `expires_at` is absent on a token that never expires, `last_used_at`
+ * on one that has never authenticated a request (and it is rewritten at most
+ * once a minute, so it is "roughly when", not an access log).
+ */
+export interface ApiToken {
+  id: string
+  user_uid: string
+  name: string
+  created_at: string
+  expires_at?: string
+  last_used_at?: string
+  revoked_at?: string
+}
+
+/** Response body of `POST /api/v1/auth/tokens`. */
+export interface CreatedApiToken {
+  token: ApiToken
+  /** The plaintext `kkt_…` credential — returned once and never again. */
+  secret: string
+}
+
+/** Response body of `GET /api/v1/auth/tokens`. */
+interface ApiTokensResponse {
+  tokens: ApiToken[]
+}
+
+/**
+ * Longest token name the backend accepts (`apiTokenNameMaxLen` in
+ * `internal/auth`). Mirrored here so the input stops at the limit instead of
+ * letting a long name travel to the server only to come back a 400.
+ */
+export const API_TOKEN_NAME_MAX_LENGTH = 100
+
+/**
+ * Lists the signed-in user's own API tokens, newest first. The backend scopes
+ * the listing to the caller, so this never sends an owner, and it includes
+ * revoked and expired tokens — filtering those is the caller's decision.
+ *
+ * @throws ApiError on any non-OK status.
+ */
+export async function fetchApiTokens(signal?: AbortSignal): Promise<ApiToken[]> {
+  const res = await fetch(`${API_BASE}/auth/tokens`, {
+    method: 'GET',
+    credentials: 'same-origin',
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+  const body = (await res.json()) as ApiTokensResponse
+  return body.tokens
+}
+
+/**
+ * Mints a named API token for the signed-in user and returns it together with
+ * its plaintext secret — the only time the secret is ever disclosed.
+ *
+ * @throws ApiError with `status` 400 (empty name), 429 (the creation rate limit,
+ *   shared with login) or 403 (a role that may not mint tokens).
+ */
+export async function createApiToken(name: string, signal?: AbortSignal): Promise<CreatedApiToken> {
+  const res = await fetch(`${API_BASE}/auth/tokens`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify({ name }),
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+  return (await res.json()) as CreatedApiToken
+}
+
+/**
+ * Revokes one of the signed-in user's tokens. Revocation is idempotent — an
+ * already-revoked token still answers 204 — and somebody else's token is
+ * reported as a 404, never a 403.
+ *
+ * @throws ApiError with `status` 404 (no such token of the caller's) or 5xx.
+ */
+export async function revokeApiToken(id: string, signal?: AbortSignal): Promise<void> {
+  const res = await fetch(`${API_BASE}/auth/tokens/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    credentials: 'same-origin',
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+}
+
+/**
  * Relative rank of each role on the strict privilege ladder; higher means more
  * privileges. Every capability below is expressed as a threshold on this rank,
  * so the ladder is the single source of truth for "at least this role".

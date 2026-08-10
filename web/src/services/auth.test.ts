@@ -5,11 +5,14 @@ import {
   canImport,
   canWrite,
   changePassword,
+  createApiToken,
+  fetchApiTokens,
   fetchMe,
   isAdmin,
   isMaintainer,
   login,
   logout,
+  revokeApiToken,
   roleAtLeast,
   type Role,
 } from './auth'
@@ -108,6 +111,60 @@ describe('changePassword', () => {
   it('throws ApiError on 401 (wrong current password)', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ error: 'wrong' }, 401)))
     await expect(changePassword('bad', 'newpassword')).rejects.toMatchObject({ status: 401 })
+  })
+})
+
+describe('API tokens', () => {
+  const TOKEN = {
+    id: 'at1',
+    user_uid: 'u1',
+    name: 'backup cli',
+    created_at: '2026-02-01T10:00:00Z',
+  }
+
+  it('unwraps the token list', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ tokens: [TOKEN] }, 200))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(fetchApiTokens()).resolves.toEqual([TOKEN])
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/auth/tokens')
+  })
+
+  it('posts the name and returns the once-only secret', async () => {
+    const body = { token: TOKEN, secret: 'kkt_at1_s3cret' }
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(body, 201))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(createApiToken('backup cli')).resolves.toEqual(body)
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(init.method).toBe('POST')
+    expect(init.body).toBe(JSON.stringify({ name: 'backup cli' }))
+  })
+
+  it('throws ApiError with status 429 when token creation is rate limited', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ error: 'too many' }, 429)))
+
+    const error = await createApiToken('backup cli').catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(ApiError)
+    expect((error as ApiError).status).toBe(429)
+  })
+
+  it('deletes by id and resolves on 204', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(revokeApiToken('at 1')).resolves.toBeUndefined()
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    // The id travels in the path, so it is escaped rather than pasted in raw.
+    expect(url).toBe('/api/v1/auth/tokens/at%201')
+    expect(init.method).toBe('DELETE')
+  })
+
+  it('throws ApiError with status 404 for somebody else’s token', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ error: 'not found' }, 404)))
+    await expect(revokeApiToken('at9')).rejects.toMatchObject({ status: 404 })
   })
 })
 
