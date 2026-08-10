@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Kukátko's app identity — the master source icon. Every PNG under this
+  directory (and web/public/favicon-*.png, apple-touch-icon.png, favicon.ico) is
+  rendered from this file by scripts/icons.sh; edit the SVG, re-run the script,
+  commit both.
+
+  The motif is a door peephole ("kukátko"), read head-on: a warm metal plate
+  ring, a dark bezel, an azure glass lens with a highlight, and the dark
+  aperture you actually look through. It carries the app's own palette rather
+  than stock Bootswatch — the warm near-black surface ramp and the single cool
+  accent of the `kk-surface-*` / `kk-accent` tokens in web/src/styles/tokens.css
+  — so the installed icon reads as the same product as the app behind it, and
+  stays legible on a dark home screen.
+
+  (An XML comment may not contain a double hyphen, hence the token names above
+  are written without their CSS custom-property prefix.)
+
+  The whole motif fits inside a circle of radius 190 around the centre, i.e.
+  inside the 40%-of-width safe circle (204.8) a maskable icon must respect, so
+  kukatko-maskable.svg is this same artwork on a full-bleed square.
+-->
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 512 512"
+  width="512"
+  height="512"
+  role="img"
+  aria-label="Kukátko"
+>
+  <defs>
+    <linearGradient id="kk-plate" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1f1b16" />
+      <stop offset="1" stop-color="#15130f" />
+    </linearGradient>
+    <radialGradient id="kk-lens" cx="0.36" cy="0.3" r="0.82">
+      <stop offset="0" stop-color="#b3dbfb" />
+      <stop offset="0.42" stop-color="#5fb0f2" />
+      <stop offset="1" stop-color="#22588e" />
+    </radialGradient>
+  </defs>
+
+  <!-- The plate the peephole is set into: the app's page surface, rounded like an app icon. -->
+  <rect width="512" height="512" rx="112" fill="url(#kk-plate)" />
+
+  <!-- Metal ring of the peephole housing. -->
+  <circle cx="256" cy="256" r="182" fill="none" stroke="#423b31" stroke-width="16" />
+  <!-- Bezel: the sunken well between the housing and the glass. -->
+  <circle cx="256" cy="256" r="150" fill="#100e0b" />
+  <!-- The lens itself. -->
+  <circle cx="256" cy="256" r="122" fill="url(#kk-lens)" />
+  <circle cx="256" cy="256" r="119" fill="none" stroke="#100e0b" stroke-width="6" opacity="0.45" />
+  <!-- The aperture you look through. -->
+  <circle cx="256" cy="256" r="52" fill="#100e0b" />
+  <!-- Highlights on the glass: one bright, one faint, so it reads as curved glass. -->
+  <circle cx="188" cy="188" r="24" fill="#ffffff" opacity="0.85" />
+  <circle cx="315" cy="321" r="11" fill="#ffffff" opacity="0.3" />
+</svg>

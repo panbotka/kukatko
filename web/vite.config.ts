@@ -1,6 +1,8 @@
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vitest/config'
 
+import { pwaPlugin } from './build/pwa'
+
 // The Vite build writes into the Go embed directory so `go build` captures the
 // compiled SPA into the binary. In dev, API calls are proxied to the Go server.
 // The backend target defaults to :8080 but can be overridden with KUKATKO_DEV_API
@@ -8,7 +10,9 @@ import { defineConfig } from 'vitest/config'
 const apiTarget = process.env.KUKATKO_DEV_API ?? 'http://localhost:8080'
 
 export default defineConfig({
-  plugins: [react()],
+  // pwaPlugin only applies to `vite build`: it emits /sw.js with the precache
+  // manifest of the finished bundle (see build/pwa.ts).
+  plugins: [react(), pwaPlugin()],
   build: {
     outDir: '../internal/web/static/dist',
     emptyOutDir: true,

@@ -1054,6 +1054,10 @@ fails the whole scrape.
   container `kukatko-minio`, named volume `kukatko-minio-data`, `--restart unless-stopped`, 1 GB cap,
   API `127.0.0.1:18100` + console `:18101`, buckets `kukatko-dev` and `kukatko-test*`; idempotent,
   and `--env` prints the block `.secrets/db.env` needs — see `docs/DEVELOPMENT.md`), `clean`, `help`.
+  Outside `make`: **`scripts/icons.sh`** re-renders the app identity (PWA icons, favicons,
+  `apple-touch-icon.png`, `favicon.ico`) from the two committed source SVGs in `web/public/icons/`
+  using headless Chromium plus ImageMagick, and is run **by hand** after editing either SVG — the
+  outputs are committed, so no build step ever generates or downloads an asset.
   Frontend-only targets: `web-deps` (`npm ci`, guarded by the stamp file
   `web/node_modules/.kukatko-npm-ci-stamp` that depends on `web/package-lock.json`, so it is
   reinstalled only when the lockfile changes), `web-build`, `web-fmt`, `web-fmt-check`, `web-lint`,

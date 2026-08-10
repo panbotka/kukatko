@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"testing/fstest"
 )
@@ -12,9 +13,12 @@ import (
 // handler can be exercised without an actual frontend compile.
 func newTestDist() fstest.MapFS {
 	return fstest.MapFS{
-		"index.html":           {Data: []byte("<!doctype html><div id=root></div>")},
-		"assets/app-abc123.js": {Data: []byte("console.log('app')")},
-		"favicon.svg":          {Data: []byte("<svg/>")},
+		"index.html":            {Data: []byte("<!doctype html><div id=root></div>")},
+		"assets/app-abc123.js":  {Data: []byte("console.log('app')")},
+		"favicon.svg":           {Data: []byte("<svg/>")},
+		"sw.js":                 {Data: []byte("self.addEventListener('fetch', () => {})")},
+		"manifest.webmanifest":  {Data: []byte(`{"name":"Kukátko"}`)},
+		"icons/kukatko-192.png": {Data: []byte("\x89PNG\r\n\x1a\n")},
 	}
 }
 
@@ -84,6 +88,111 @@ func TestSPAHandler_missingAssetReturns404(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
+// TestSPAHandler_servesServiceWorkerAtRootScope verifies /sw.js is served as a
+// script with a revalidating cache policy, which is what lets a deployment
+// replace the worker (and with it the precached shell).
+func TestSPAHandler_servesServiceWorkerAtRootScope(t *testing.T) {
+	t.Parallel()
+
+	rec := doGet(t, SPAHandler(newTestDist()), "/sw.js")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/javascript") {
+		t.Errorf("Content-Type = %q, want text/javascript", ct)
+	}
+	if cc := rec.Header().Get("Cache-Control"); cc != "no-cache" {
+		t.Errorf("Cache-Control = %q, want no-cache", cc)
+	}
+}
+
+// TestSPAHandler_missingServiceWorkerReturns404 verifies a build without a
+// worker answers /sw.js with 404 rather than with the index document, which the
+// browser would reject as a script with an unhelpful MIME error.
+func TestSPAHandler_missingServiceWorkerReturns404(t *testing.T) {
+	t.Parallel()
+
+	dist := newTestDist()
+	delete(dist, "sw.js")
+
+	rec := doGet(t, SPAHandler(dist), "/sw.js")
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
+// TestSPAHandler_servesWebManifestAsManifestType verifies the web app manifest
+// is served with a media type a browser accepts for one. The Go mime table
+// takes its answer from the host, and on most hosts it has none for
+// .webmanifest, so the type has to be pinned by this package.
+func TestSPAHandler_servesWebManifestAsManifestType(t *testing.T) {
+	t.Parallel()
+
+	rec := doGet(t, SPAHandler(newTestDist()), "/manifest.webmanifest")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/manifest+json" {
+		t.Errorf("Content-Type = %q, want application/manifest+json", ct)
+	}
+}
+
+// TestContentTypeFor covers the pinned overrides, the platform-known types and
+// the unknown extension that must fall through to content sniffing.
+func TestContentTypeFor(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		ext  string
+		want string
+	}{
+		{name: "pinned web manifest", ext: ".webmanifest", want: "application/manifest+json"},
+		{name: "pinned lookup is case-insensitive", ext: ".WEBMANIFEST", want: "application/manifest+json"},
+		{name: "platform type for png", ext: ".png", want: "image/png"},
+		{name: "unknown extension yields nothing", ext: ".kukatko", want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := contentTypeFor(tt.ext); got != tt.want {
+				t.Errorf("contentTypeFor(%q) = %q, want %q", tt.ext, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestServedVerbatim covers which paths refuse the SPA fallback: fingerprinted
+// bundles and the service worker, but not the app's own client-side routes.
+func TestServedVerbatim(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		path string
+		want bool
+	}{
+		{name: "fingerprinted bundle", path: "assets/app-abc123.js", want: true},
+		{name: "service worker", path: "sw.js", want: true},
+		{name: "web manifest may fall back", path: "manifest.webmanifest", want: false},
+		{name: "client-side route", path: "albums/42", want: false},
+		{name: "index document", path: "index.html", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := servedVerbatim(tt.path); got != tt.want {
+				t.Errorf("servedVerbatim(%q) = %v, want %v", tt.path, got, tt.want)
+			}
+		})
 	}
 }
 

@@ -4,6 +4,7 @@ import { AuthProvider } from './auth/AuthProvider'
 import { RequireAuth, RequireImport, RequireRole } from './auth/ProtectedRoute'
 import { CapabilitiesProvider } from './capabilities/CapabilitiesProvider'
 import { Layout } from './components/Layout'
+import { PwaStatus } from './components/pwa/PwaStatus'
 import { ToastProvider } from './components/toast/ToastProvider'
 import { ACTIVITY_PATH } from './lib/activityView'
 import { AccountPage } from './pages/AccountPage'
@@ -159,6 +160,10 @@ export function App() {
             <AppRoutes />
           </CapabilitiesProvider>
         </AuthProvider>
+        {/* Outside the auth gate and outside the layout shell: the service
+            worker registers on every page load, and "you are offline" has to
+            reach the login screen and the immersive routes as well. */}
+        <PwaStatus />
       </ToastProvider>
     </BrowserRouter>
   )

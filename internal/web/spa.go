@@ -22,6 +22,21 @@ const assetsPrefix = "assets/"
 // any client-side route that does not map to a real embedded file.
 const indexFile = "index.html"
 
+// serviceWorkerFile is the progressive-web-app service worker the frontend build
+// emits at the root of dist (see web/build/pwa.ts). It shares the fingerprinted
+// assets' no-fallback rule: a worker script answered with the index document
+// fails registration with a confusing MIME error instead of a plain 404.
+const serviceWorkerFile = "sw.js"
+
+// extraContentTypes pins the media type of extensions the Go mime table cannot
+// be trusted to know. mime.TypeByExtension consults the operating system's mime
+// database, so its answer differs between a developer's box and the server, and
+// for .webmanifest it is commonly empty — which leaves net/http sniffing the
+// manifest as text/plain, a type no browser accepts for one.
+var extraContentTypes = map[string]string{
+	".webmanifest": "application/manifest+json",
+}
+
 // Handler returns the SPA HTTP handler backed by the embedded frontend build.
 // If the embedded filesystem cannot be initialised (which should not happen for
 // a correctly built binary), it returns a handler that reports HTTP 500 so the
@@ -50,11 +65,29 @@ func SPAHandler(dist fs.FS) http.Handler {
 		if serveFile(w, dist, name) {
 			return
 		}
-		if !strings.HasPrefix(name, assetsPrefix) && serveFile(w, dist, indexFile) {
+		if !servedVerbatim(name) && serveFile(w, dist, indexFile) {
 			return
 		}
 		http.NotFound(w, r)
 	})
+}
+
+// servedVerbatim reports whether name must resolve to a real file or to nothing
+// at all, never to the index document: the fingerprinted bundles under assets/
+// and the service worker. Everything else is a candidate for the SPA fallback.
+func servedVerbatim(name string) bool {
+	return strings.HasPrefix(name, assetsPrefix) || name == serviceWorkerFile
+}
+
+// contentTypeFor returns the media type to serve a file with, given its
+// extension (including the leading dot), or the empty string when neither the
+// pinned overrides nor the platform mime table knows it and sniffing should
+// decide.
+func contentTypeFor(ext string) string {
+	if pinned, ok := extraContentTypes[strings.ToLower(ext)]; ok {
+		return pinned
+	}
+	return mime.TypeByExtension(ext)
 }
 
 // serveFile writes the named file from fsys to w with a content type derived
@@ -73,7 +106,7 @@ func serveFile(w http.ResponseWriter, fsys fs.FS, name string) bool {
 		return false
 	}
 
-	if ct := mime.TypeByExtension(path.Ext(name)); ct != "" {
+	if ct := contentTypeFor(path.Ext(name)); ct != "" {
 		w.Header().Set("Content-Type", ct)
 	}
 	if strings.HasPrefix(name, assetsPrefix) {

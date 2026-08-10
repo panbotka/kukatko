@@ -2824,5 +2824,13 @@
     "people": "Newly named:",
     "more_one": "and {{count}} more",
     "more_other": "and {{count}} more"
+  },
+  "pwa": {
+    "offline": "You are offline. Kukátko shows only what it has stored.",
+    "update": {
+      "message": "A new version of Kukátko is available.",
+      "action": "Reload",
+      "dismiss": "Not now"
+    }
   }
 }

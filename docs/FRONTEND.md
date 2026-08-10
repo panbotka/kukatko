@@ -3874,3 +3874,48 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `/healthz`+`/api` → `:8080`), `eslint.config.js` (strict typed, plus a test-file-only
   `no-restricted-syntax` that bans `vi.restoreAllMocks()`), `.prettierrc.json`,
   `tsconfig*.json`.
+
+  **Installable PWA (`web/build/`, `src/pwa/`, `components/pwa/`).** The app installs to a phone
+  home screen and opens standalone. Four pieces:
+  **(1) Identity.** `public/icons/kukatko.svg` is the master icon — an original door-peephole motif
+  (metal ring, dark bezel, azure lens with a glint, the aperture in the middle) painted in the app's
+  own tokens: the warm near-black surface ramp and the single cool accent, so the launcher icon and
+  the app read as one product. `kukatko-maskable.svg` is the same artwork full-bleed (no rescaling
+  needed — the motif's outer edge sits at r=190, inside the 204.8 safe circle a maskable icon must
+  respect). Every raster is **generated and committed** by `scripts/icons.sh` (headless Chromium →
+  crop; ImageMagick only for the crop and `favicon.ico`): `icons/kukatko-{192,512}.png`,
+  `icons/kukatko-maskable-{192,512}.png`, `apple-touch-icon.png` (180, from the maskable master —
+  iOS masks it itself and composites onto black), `favicon-{16,32}.png`, `favicon.ico`. Nothing is
+  fetched at runtime and `vite.svg` is gone.
+  **(2) Manifest.** `public/manifest.webmanifest`: name/short_name „Kukátko", `lang: cs`,
+  `display: standalone`, `id`/`start_url`/`scope` `/`, `theme_color` = `background_color` =
+  `#15130f` (= `--kk-surface-page`), the five icons above incl. both maskable purposes. `index.html`
+  links it together with the favicon set, `apple-touch-icon`, the `theme-color` meta and the iOS
+  standalone metas (`apple-mobile-web-app-{capable,status-bar-style,title}`; `black-translucent`
+  matches the `viewport-fit=cover` + safe-area insets the layout already assumes).
+  **(3) Service worker.** `build/service-worker.js` is the template — plain JS, not bundled;
+  `build/pwa.ts` (`pwaPlugin`, `apply: 'build'`) substitutes its two placeholders at
+  `generateBundle` and emits `/sw.js` unhashed at the output root. `buildPrecacheManifest` derives
+  the shell (index.html + every content-hashed bundle asset) from the finished bundle;
+  `cacheNameFor` hashes that manifest into the cache name, so an unchanged shell keeps its cache and
+  a changed one gets a fresh one that `activate` swaps to after pruning the old. The fetch handler
+  is a **whitelist**: it answers navigations from the precached shell and precached asset paths from
+  the cache (refetching an evicted entry), and calls `respondWith` for **nothing else** — non-GET,
+  cross-origin (signed R2 media), ranged (video scrubbing) and anything under `/api/`, `/healthz`,
+  `/metrics` fall through exactly as with no worker installed. Files copied from `public/` are not
+  precached.
+  **(4) Registration and update flow.** `src/pwa/register.ts` — `registerServiceWorker({enabled,
+  onUpdateReady, reload})` registers `/sw.js` at scope `/` once per load; `enabled: false` (dev)
+  actively **unregisters** leftovers so a dev server is never shadowed by a production shell. Install
+  never calls `skipWaiting`, so a deployment parks in "waiting" and the page keeps the shell its
+  assets match; the module reports it via `onUpdateReady` (only when `controller` exists — a first
+  install supersedes nothing), re-checks `registration.update()` whenever the tab returns to the
+  foreground, and `applyServiceWorkerUpdate()` posts `SKIP_WAITING` and reloads once on
+  `controllerchange`. `src/pwa/usePwaStatus.ts` wraps that plus `online`/`offline` events;
+  `components/pwa/PwaStatus.tsx` renders the two ambient alerts (i18n `pwa.offline`,
+  `pwa.update.*`) in a fixed bottom stack (`.kk-pwa-status`, z-index 1090 = under the toasts, clears
+  `--kk-tabbar-height`). It is mounted in `App` **outside** `AuthProvider` and outside `Layout`, so
+  it also reaches the login screen and the shell-less immersive routes. Tests: `build/pwa.test.ts`
+  runs the **real rendered worker** in a `node:vm` scope with fake caches (precache, cache hits,
+  every bypass rule, eviction refetch, the activate/skip-waiting handshake),
+  `src/pwa/register.test.ts` covers the registration branches, `PwaStatus.test.tsx` the UI.

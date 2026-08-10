@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The maskable variant of kukatko.svg: the same artwork on a full-bleed square,
+  so a launcher can crop it to whatever shape it likes (circle, squircle,
+  rounded square) without eating into the motif.
+
+  No rescaling is needed: the peephole's outermost edge is the metal ring at
+  r=182 plus half its 16px stroke, i.e. r=190, which already sits inside the
+  safe circle a maskable icon must respect (radius 40% of the width = 204.8).
+  Keep the two files in sync by hand — the only intended difference is the
+  missing corner radius on the background rect.
+
+  Also the source of apple-touch-icon.png: iOS applies its own mask and does not
+  want transparent corners, so the full-bleed square is the right master there
+  too. See scripts/icons.sh.
+-->
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 512 512"
+  width="512"
+  height="512"
+  role="img"
+  aria-label="Kukátko"
+>
+  <defs>
+    <linearGradient id="kk-plate" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1f1b16" />
+      <stop offset="1" stop-color="#15130f" />
+    </linearGradient>
+    <radialGradient id="kk-lens" cx="0.36" cy="0.3" r="0.82">
+      <stop offset="0" stop-color="#b3dbfb" />
+      <stop offset="0.42" stop-color="#5fb0f2" />
+      <stop offset="1" stop-color="#22588e" />
+    </radialGradient>
+  </defs>
+
+  <rect width="512" height="512" fill="url(#kk-plate)" />
+
+  <circle cx="256" cy="256" r="182" fill="none" stroke="#423b31" stroke-width="16" />
+  <circle cx="256" cy="256" r="150" fill="#100e0b" />
+  <circle cx="256" cy="256" r="122" fill="url(#kk-lens)" />
+  <circle cx="256" cy="256" r="119" fill="none" stroke="#100e0b" stroke-width="6" opacity="0.45" />
+  <circle cx="256" cy="256" r="52" fill="#100e0b" />
+  <circle cx="188" cy="188" r="24" fill="#ffffff" opacity="0.85" />
+  <circle cx="315" cy="321" r="11" fill="#ffffff" opacity="0.3" />
+</svg>

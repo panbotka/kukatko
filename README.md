@@ -116,6 +116,15 @@ It is **not** for you if you are looking for:
   tap — is on the phone too, as a narrow strip of years along the right edge that fades to a hint
   when you are not using it.
 
+- **It installs like an app.** On a phone, "Add to Home Screen" puts Kukátko on the home screen
+  with its own icon and opens it without browser chrome — a peephole in a warm near-black plate,
+  the same palette as the app behind it. A service worker keeps the app shell on the device, so it
+  opens straight away and still opens with no signal at all, saying plainly that you are offline
+  rather than failing blankly. It deliberately caches **nothing** else: photos, videos and every
+  API call go to the network exactly as they would without it, so nothing you see is ever stale and
+  scrubbing a video is untouched. When a new version is deployed, the running app keeps the version
+  it started with and offers a refresh instead of swapping the ground under you.
+
 Around that sit the ordinary things a library needs and Kukátko has: albums — each covered by a
 collage of four of its photos, so two albums drawn from the same afternoon don't look alike, each
 saying underneath what it actually is, and each read from its oldest end or turned round with one

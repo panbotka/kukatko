@@ -2954,5 +2954,13 @@
     "more_few": "a {{count}} další",
     "more_many": "a {{count}} dalšího",
     "more_other": "a {{count}} dalších"
+  },
+  "pwa": {
+    "offline": "Jsi offline. Kukátko zobrazí jen to, co má uložené.",
+    "update": {
+      "message": "Je k dispozici nová verze Kukátka.",
+      "action": "Načíst znovu",
+      "dismiss": "Teď ne"
+    }
   }
 }
