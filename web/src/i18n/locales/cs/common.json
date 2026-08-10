@@ -182,6 +182,10 @@
       "account": {
         "title": "Váš účet",
         "body": "V sekci Můj účet (v menu vpravo nahoře pod vaším jménem) změníte heslo, přepnete jazyk aplikace a uvidíte svoji roli. Je to i místo, kde zjistíte, jestli aplikace běží v pořádku."
+      },
+      "apiTokens": {
+        "title": "API tokeny",
+        "body": "API token je heslo pro programy. Když chcete, aby se do Kukátka dostal váš skript, příkazová řádka kukatko ctl nebo nějaký pomocník, vytvoříte mu vlastní token a svoje heslo mu nedáváte.\nTokeny najdete v sekci Můj účet → API tokeny. Tajný kód se ukáže jedinkrát, hned při vytvoření — zkopírujte si ho a uložte na bezpečné místo, protože podruhé ho nikdo nezobrazí. Token má přesně stejná práva jako vy sami, takže s ním zacházejte jako s heslem. Když už ho nepotřebujete nebo se dostal do nepovolaných rukou, zneplatněte ho — okamžitě přestane fungovat."
       }
     }
   },
@@ -413,6 +417,46 @@
       "title": "Moje aktivita",
       "hint": "Přehled toho, co jste v Kukátku udělali — od nejnovějšího. Hodí se, když víte, že jste něco odklikli špatně, a potřebujete to najít.",
       "link": "Zobrazit moji aktivitu"
+    },
+    "apiTokens": {
+      "title": "API tokeny",
+      "intro": "Token slouží k tomu, aby se za vás mohl přihlásit skript nebo příkazová řádka — bez zadávání hesla. Má přesně stejná práva jako vy.",
+      "loading": "Načítám tokeny…",
+      "loadError": "Tokeny se nepodařilo načíst.",
+      "forbidden": "Vaše role nemůže vytvářet API tokeny. Pokud je potřebujete, požádejte správce.",
+      "empty": {
+        "title": "Zatím žádné tokeny",
+        "hint": "API token je heslo pro programy — přihlásí se jím do Kukátka skript, příkazová řádka nebo pomocník, aniž by znal vaše heslo.",
+        "link": "Jak se tokeny používají"
+      },
+      "nameLabel": "Název nového tokenu",
+      "namePlaceholder": "Např. zálohovací skript",
+      "nameHint": "Název je jen pro vás — podle něj poznáte, který token komu patří.",
+      "create": "Vytvořit token",
+      "createError": {
+        "name": "Zadejte název tokenu.",
+        "rateLimited": "Tokenů vzniklo za krátkou chvíli příliš mnoho. Zkuste to prosím za chvíli.",
+        "generic": "Token se nepodařilo vytvořit. Zkuste to prosím znovu."
+      },
+      "created": {
+        "title": "Token „{{name}}“ je vytvořený",
+        "warning": "Zkopírujte si ho hned teď — víckrát se už nezobrazí. Uložený je jen jeho otisk, ne token samotný.",
+        "secretLabel": "Tajný token",
+        "copy": "Kopírovat",
+        "copied": "Zkopírováno",
+        "dismiss": "Mám zkopírováno"
+      },
+      "createdAt": "Vytvořen {{date}}",
+      "lastUsed": "Naposledy použit {{date}}",
+      "neverUsed": "Zatím nepoužit",
+      "expiresAt": "Platí do {{date}}",
+      "expired": "Vypršel",
+      "revoke": "Zneplatnit",
+      "revokeNamed": "Zneplatnit token {{name}}",
+      "revokeError": "Token se nepodařilo zneplatnit. Zkuste to prosím znovu.",
+      "confirmTitle": "Zneplatnit token?",
+      "confirmBody": "Token „{{name}}“ okamžitě přestane fungovat a všechno, co se jím přihlašuje, se odmlčí. Vrátit to nejde — museli byste vytvořit nový.",
+      "confirmAction": "Zneplatnit token"
     }
   },
   "activity": {

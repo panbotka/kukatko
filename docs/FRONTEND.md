@@ -870,11 +870,31 @@ here.
   in front of the photos nor in a prime spot in the bar; **plus the way to `MyActivityPage`** (the
   `account.activity.*` card linking to `ACTIVITY_PATH`) — "what I did" is a fact about the signed-in user, so its
   entry point lives here rather than as another item in the already crowded nav bar,
+  **plus `ApiTokensCard`** (`components/account/`, below the password — the other credential this one user
+  owns): the personal `kkt_…` bearer tokens a script, `kukatko ctl` or an agent signs in with, until now
+  reachable only by `curl`. It lists the caller's own tokens (name, the public prefix `kkt_<id>_…` so a token
+  found in some config can be matched to a row, when it was made, when it was last seen — or „Zatím nepoužit"
+  — and an expiry, badged once it has passed), mints one from a name field, and revokes one behind a
+  `ConfirmModal` that **names the token**. A **revoked token is not shown at all** (the API keeps the full
+  history; a credential that can never authenticate again is not a row worth reading), and revoking removes
+  the row optimistically, restoring it with an alert if the request fails. A fresh secret appears **once**, in
+  a `warning` alert with a read-only field (select-on-focus + a copy button that flips to „Zkopírováno") and
+  the sentence that it will never be shown again; dismissing it is final. The list then refreshes, so the new
+  token stands among the others. Errors are told apart: 400 → name it, 429 → the creation rate limit (shared
+  with login) explained as "try again in a moment", anything else generic; a load failure gets an `ErrorState`
+  with retry. **A 403 — on the listing or on the creation — switches the whole section to a read-only
+  explanation** (`account.apiTokens.forbidden`) instead of leaving a form that answers every submit with an
+  error; every token endpoint is behind plain `RequireAuth` today, so this is the guard for a backend that
+  changes its mind, not a client-side role gate. Texts in `account.apiTokens.*`, the empty state links to the
+  help chapter via `API_TOKENS_HELP_HREF` = `/help#help-api-tokens`,
   `HelpPage` = **user help** (route `/help`, **no role gate** — every logged-in user sees it;
   the link is in the user menu under the name, the item „Nápověda" with a `question-circle` icon): a reading column
   with a short **table of contents** at the top and an `Accordion` (collapsible sections, open by default) that in plain
   language explains browsing, search, albums, labels, favorites/rating, people and faces, duplicates,
-  shot variants (stacks), the map and places, deletion+trash, import and **roles** (what each role may do). Texts
+  shot variants (stacks), the map and places, deletion+trash, import, **roles** (what each role may do), the
+  account, and **API tokens** (`help.sections.apiTokens.*`, id `api-tokens` → the anchor `#help-api-tokens`
+  the account page's empty state links to: what a token is, that its secret is shown exactly once, that it
+  carries the reader's own permissions, and to revoke one that is no longer needed). Texts
   in the new top-level namespace `help.*` (cs/en); the first `Accordion` in the app. The **Search chapter
   teaches the query language** (`SearchQueryChapter`): `help.sections.search.queryTitle`/`queryIntro`, three
   ready-made queries as a `<dl>` (`QUERY_EXAMPLES` — literal query text, the same in both languages, one
@@ -3360,7 +3380,14 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   load so a link out of the audit log to something deleted explains itself),
   `roleAtLeast`, `canWrite` (editor+), `isAdmin` (admin+), `isMaintainer` (maintainer) and
   `canImport` (= maintainer; import is an operational capability) — all via `ROLE_RANK` mirroring the backend's
-  `internal/auth/role.go`; `MIN_PASSWORD_LENGTH`; `photos.ts` = `fetchPhotos(params,signal)` over `GET /api/v1/photos`
+  `internal/auth/role.go`; `MIN_PASSWORD_LENGTH`; **and the personal API tokens**
+  (`fetchApiTokens(signal)` / `createApiToken(name,signal)` / `revokeApiToken(id,signal)` over
+  `GET`/`POST`/`DELETE /api/v1/auth/tokens[/{id}]`, the types `ApiToken{id,user_uid,name,created_at,
+  expires_at?,last_used_at?,revoked_at?}` and `CreatedApiToken{token,secret}` — **`secret` arrives once and
+  only once**, the server keeps nothing but its hash — plus `API_TOKEN_NAME_MAX_LENGTH` = 100 mirroring the
+  backend's `apiTokenNameMaxLen`; the listing is scoped server-side to the caller and **includes revoked and
+  expired tokens**, so hiding the dead ones is the caller's decision);
+  `photos.ts` = `fetchPhotos(params,signal)` over `GET /api/v1/photos`
   (filters/sorting/pagination → `PhotoListResponse{photos,total,limit,offset,next_offset}`),
   `searchPhotos(params,mode?,signal)` over `GET /api/v1/search` (the mode
   `fulltext`/`semantic`/`hybrid`, the response additionally has `mode`+`degraded`),

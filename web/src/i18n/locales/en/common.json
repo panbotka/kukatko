@@ -182,6 +182,10 @@
       "account": {
         "title": "Your account",
         "body": "In My account (in the menu at the top right under your name) you change your password, switch the app language, and see your role. It is also where you can check whether the app is running fine."
+      },
+      "apiTokens": {
+        "title": "API tokens",
+        "body": "An API token is a password for programs. When you want a script of yours, the kukatko ctl command line or some helper to reach Kukátko, you create a token for it instead of handing over your password.\nTokens live in My account → API tokens. The secret is shown exactly once, right when the token is created — copy it and keep it somewhere safe, because nobody can show it again. A token carries exactly your own permissions, so treat it like a password. When you no longer need it, or it ended up in the wrong hands, revoke it: it stops working at once."
       }
     }
   },
@@ -409,6 +413,46 @@
       "title": "My activity",
       "hint": "A list of what you have done in Kukátko, newest first. Useful when you know you clicked something wrong and need to find it.",
       "link": "Show my activity"
+    },
+    "apiTokens": {
+      "title": "API tokens",
+      "intro": "A token lets a script or the command line sign in as you, without your password. It carries exactly your permissions.",
+      "loading": "Loading tokens…",
+      "loadError": "The tokens could not be loaded.",
+      "forbidden": "Your role cannot create API tokens. Ask an administrator if you need one.",
+      "empty": {
+        "title": "No tokens yet",
+        "hint": "An API token is a password for programs — a script, the command line or a helper signs in to Kukátko with it, without ever knowing your password.",
+        "link": "How tokens are used"
+      },
+      "nameLabel": "Name of the new token",
+      "namePlaceholder": "e.g. backup script",
+      "nameHint": "The name is only for you — it is how you tell which token belongs to what.",
+      "create": "Create token",
+      "createError": {
+        "name": "Enter a name for the token.",
+        "rateLimited": "Too many tokens were created in a short while. Please try again in a moment.",
+        "generic": "The token could not be created. Please try again."
+      },
+      "created": {
+        "title": "Token “{{name}}” created",
+        "warning": "Copy it right now — it will never be shown again. Only its fingerprint is stored, never the token itself.",
+        "secretLabel": "Secret token",
+        "copy": "Copy",
+        "copied": "Copied",
+        "dismiss": "I have copied it"
+      },
+      "createdAt": "Created {{date}}",
+      "lastUsed": "Last used {{date}}",
+      "neverUsed": "Never used",
+      "expiresAt": "Valid until {{date}}",
+      "expired": "Expired",
+      "revoke": "Revoke",
+      "revokeNamed": "Revoke token {{name}}",
+      "revokeError": "The token could not be revoked. Please try again.",
+      "confirmTitle": "Revoke the token?",
+      "confirmBody": "The token “{{name}}” stops working immediately and anything signing in with it goes silent. This cannot be undone — you would have to create a new one.",
+      "confirmAction": "Revoke token"
     }
   },
   "activity": {

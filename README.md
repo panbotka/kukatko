@@ -144,8 +144,10 @@ carries a location at all, browsing by place with a preview photo on every row, 
 favourites and ratings, bulk editing — including re-dating a whole shelf of scans at once, at the
 grain you actually know ("1974", "the seventies"), which is then shown as that period and never as a
 day nobody claimed — multi-upload from a phone, duplicate detection, a trash with
-retention, accounts with four roles, a durable audit trail, S3 backup with a restore runbook, and
-import from any folder on disk — a Google Takeout export included, sidecars and all. There is also a
+retention, accounts with four roles, personal API tokens a script or the CLI signs in with (made and
+revoked on your own account page, the secret shown exactly once and never again), a durable audit
+trail, S3 backup with a restore runbook, and import from any folder on disk — a Google Takeout export
+included, sidecars and all. There is also a
 statistics page that answers what the library actually looks like: how many photos were taken in each
 year of its 1905–2026 span (click a bar and that year opens in the library), how many arrived in each
 of the last twelve months, which cameras took most of it, what it costs in bytes by media type and how

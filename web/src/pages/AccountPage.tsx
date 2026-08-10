@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
+import { ApiTokensCard } from '../components/account/ApiTokensCard'
 import { Icon } from '../components/Icon'
 import { LanguageSwitcher } from '../components/LanguageSwitcher'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
@@ -63,6 +64,10 @@ function errorKeyFor(error: unknown): AccountErrorKey {
  * It is also the way to {@link MyActivityPage} — the user's own history of
  * actions. That entry point lives here rather than in the navigation: the bar is
  * crowded already, and "what I did" belongs with the rest of what is mine.
+ *
+ * The last section is {@link ApiTokensCard} — the personal API tokens a script
+ * or the CLI authenticates with. It sits beside the password because it is the
+ * same kind of thing: a credential of this one user, on the page about them.
  */
 export function AccountPage() {
   const { t } = useTranslation()
@@ -169,7 +174,7 @@ export function AccountPage() {
           </Card.Body>
         </Card>
 
-        <Card text="light">
+        <Card text="light" className="mb-4">
           <Card.Body>
             <Card.Title as="h2" className="kk-section-title mb-3">
               {t('account.changePassword')}
@@ -265,6 +270,10 @@ export function AccountPage() {
             </Form>
           </Card.Body>
         </Card>
+
+        {/* The other credential a user owns, next to the password: the tokens
+            that let a script or the CLI act as them. */}
+        <ApiTokensCard />
 
         <div className="text-secondary small mt-4 d-flex align-items-center gap-2 flex-wrap">
           <ApiStatusBadge state={health} />

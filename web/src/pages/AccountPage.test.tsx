@@ -15,8 +15,17 @@ vi.mock('../services/health', async (importOriginal) => {
   return { ...actual, fetchHealth: vi.fn() }
 })
 
+// The API-tokens section loads the caller's tokens on mount; it has its own
+// tests, so here it only has to answer without reaching for the network.
+vi.mock('../services/auth', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/auth')>()
+  return { ...actual, fetchApiTokens: vi.fn() }
+})
+
 const { fetchHealth } = await import('../services/health')
 const healthMock = vi.mocked(fetchHealth)
+const { fetchApiTokens } = await import('../services/auth')
+const tokensMock = vi.mocked(fetchApiTokens)
 
 const OK_HEALTH: HealthResponse = { status: 'ok', version: { version: '1.2.3', commit: 'abcdef0' } }
 
@@ -49,6 +58,8 @@ beforeEach(async () => {
   await i18n.changeLanguage('en')
   healthMock.mockReset()
   healthMock.mockResolvedValue(OK_HEALTH)
+  tokensMock.mockReset()
+  tokensMock.mockResolvedValue([])
 })
 
 afterEach(() => {
@@ -92,6 +103,15 @@ describe('AccountPage activity section', () => {
       'href',
       '/account/activity',
     )
+  })
+})
+
+describe('AccountPage API tokens section', () => {
+  it('carries the API-tokens section beside the password', async () => {
+    renderAccount()
+
+    expect(await screen.findByRole('heading', { name: 'API tokens' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Name of the new token')).toBeInTheDocument()
   })
 })
 

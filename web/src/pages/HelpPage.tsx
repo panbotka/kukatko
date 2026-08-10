@@ -111,6 +111,12 @@ const SECTIONS: HelpSection[] = [
     titleKey: 'help.sections.account.title',
     bodyKey: 'help.sections.account.body',
   },
+  {
+    id: 'api-tokens',
+    icon: 'key',
+    titleKey: 'help.sections.apiTokens.title',
+    bodyKey: 'help.sections.apiTokens.body',
+  },
 ]
 
 /**
