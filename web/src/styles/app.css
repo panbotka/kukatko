@@ -2215,3 +2215,41 @@ body {
 .kk-multiline {
   white-space: pre-wrap;
 }
+
+/* --------------------------------------------------------------------------
+   Installed-app status (offline / update ready)
+   -------------------------------------------------------------------------- */
+
+/* The PWA's two ambient messages (see components/pwa/PwaStatus). They are fixed
+   to the bottom edge rather than dropped into the page flow, because the
+   component is mounted at the app root and therefore also renders over the
+   shell-less routes (viewer, slideshow, review), where nothing must shift.
+
+   The bottom offset clears the phone tab bar the same way the timeline rail
+   does — `--kk-tabbar-height` is 0 wherever the bar is not mounted — and the
+   z-index sits just under the toast stack (1100), so a toast raised by the same
+   action still lands on top. `width: min(…)` keeps the stack readable on a
+   phone and from getting wider than a paragraph on a desktop. */
+.kk-pwa-status {
+  position: fixed;
+  inset-inline: 0;
+  bottom: calc(1rem + var(--kk-tabbar-height) + env(safe-area-inset-bottom, 0px));
+  z-index: 1090;
+  display: flex;
+  flex-direction: column;
+  gap: var(--kk-space-2);
+  align-items: center;
+  /* The stack is an overlay: only the alerts themselves take pointer events, so
+     the grid underneath stays scrollable and clickable around them. */
+  pointer-events: none;
+}
+
+.kk-pwa-status__item {
+  display: flex;
+  gap: var(--kk-space-2);
+  align-items: center;
+  width: min(34rem, calc(100vw - 2rem));
+  margin-bottom: 0;
+  box-shadow: var(--kk-shadow-3);
+  pointer-events: auto;
+}

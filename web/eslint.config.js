@@ -41,6 +41,19 @@ export default tseslint.config(
     },
   },
   {
+    // The service worker template is plain JavaScript on purpose: it is not
+    // bundled, it is read and string-substituted by build/pwa.ts and emitted as
+    // /sw.js. Lint it as a classic script in the worker global scope, or `self`,
+    // `caches` and `fetch` all read as undefined globals.
+    files: ['build/service-worker.js'],
+    extends: [js.configs.recommended],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'script',
+      globals: globals.serviceworker,
+    },
+  },
+  {
     // `restoreMocks: true` in vite.config.ts already restores every mock before
     // each test. Calling `vi.restoreAllMocks()` from a test file as well empties
     // the module mocks while the tree is still mounted; RTL's `cleanup()` then

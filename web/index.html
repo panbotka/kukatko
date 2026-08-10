@@ -13,10 +13,42 @@
 <html lang="cs" data-bs-theme="dark">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="color-scheme" content="dark" />
     <title>Kukátko</title>
+
+    <!--
+      App identity. Every file below is rendered from web/public/icons/kukatko.svg
+      by scripts/icons.sh and copied verbatim into the bundle by Vite; nothing is
+      fetched at runtime. The SVG is the icon browsers prefer; the PNGs cover the
+      clients that cannot take one (and /favicon.ico the ones that ask blindly).
+    -->
+    <link rel="icon" type="image/svg+xml" href="/icons/kukatko.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
+    <link rel="alternate icon" href="/favicon.ico" sizes="32x32" />
+
+    <!--
+      Installable PWA. theme-color matches the manifest's and the app's page
+      surface (--kk-surface-page in web/src/styles/tokens.css), so the system UI
+      around a standalone window is the same near-black as the app itself.
+    -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#15130f" />
+    <meta name="application-name" content="Kukátko" />
+
+    <!--
+      iOS ignores the manifest for "Add to Home Screen": it wants its own
+      apple-touch-icon (180×180, full-bleed — it applies its own mask and
+      composites onto black), its own standalone flag and its own title. The
+      black-translucent status bar lets the app paint under it, which is what the
+      viewport-fit=cover + safe-area insets above already assume.
+    -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Kukátko" />
   </head>
   <body>
     <div id="root"></div>

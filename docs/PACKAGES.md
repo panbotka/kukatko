@@ -2981,7 +2981,14 @@ to `## Package map` in `CLAUDE.md`.
   (the SPA fallback handler `web.Handler()`/`SPAHandler` + the `internal/web/static` embed
   `//go:embed all:dist/*`; the Vite build writes into `internal/web/static/dist`, which is
   gitignored except for the committed `.gitkeep`, so that the embed compiles even without a built
-  frontend). Details: [`docs/DEVELOPMENT.md`](DEVELOPMENT.md).
+  frontend. Two rules serve the PWA: `servedVerbatim` keeps `sw.js` — like everything under
+  `assets/` — **out of the SPA fallback**, because a worker script answered with the index document
+  fails registration with a MIME error instead of a plain 404; and `contentTypeFor` pins the media
+  type of `.webmanifest` to `application/manifest+json`, since `mime.TypeByExtension` reads the
+  host's mime database and on most hosts has no answer for it, which would leave `net/http` sniffing
+  the manifest as `text/plain`. Everything outside `assets/` — the worker, the manifest, the icons —
+  is served `Cache-Control: no-cache`, which is what lets a deployment replace the worker).
+  Details: [`docs/DEVELOPMENT.md`](DEVELOPMENT.md).
 
 - **Remote CLI client (`internal/ctl`):** the client half of `kukatko ctl` — the one piece of the tree that
   Kukátko calls **over HTTP as a foreign server**, not through the DB and the disk. It has nothing in common with `internal/config`

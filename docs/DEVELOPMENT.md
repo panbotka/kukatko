@@ -44,6 +44,40 @@ npm run format:check    # Prettier
 npm run test            # Vitest + React Testing Library
 ```
 
+### The PWA: icons and re-checking installability
+
+The app installs to a home screen. Its identity is committed, never generated at build time:
+`web/public/icons/kukatko.svg` (and the full-bleed `kukatko-maskable.svg`) is the master, and
+every PNG plus `favicon.ico` is rendered from it by
+
+```bash
+./scripts/icons.sh     # headless Chromium → crop; re-run after editing either SVG, commit the output
+```
+
+The service worker is emitted only by a **production** build (`web/build/pwa.ts`), so `npm run
+dev` has no worker at all — registration is gated on `import.meta.env.PROD` and the disabled
+branch unregisters leftovers. To exercise the real thing, serve a built binary and open it over
+`http://localhost` (Chromium treats localhost as a secure origin) or over HTTPS; then, in
+DevTools:
+
+- **Application → Manifest** — Chromium lists the parsed manifest and every error it found
+  (must be none), plus the icon previews.
+- **Application → Service Workers** — `/sw.js` must be *activated and running*, with the page
+  listed as a client.
+- **Application → Cache Storage** — one `kukatko-shell-<hash>` cache holding `/index.html` and
+  the build's hashed assets, and nothing else.
+- **Install app** in the address bar (or the ⋮ menu) — its presence *is* Chromium's
+  installability verdict; the `beforeinstallprompt` event fires for the same reason.
+- **Network → Offline**, then reload: the app must still paint, the navigation's `deliveryType`
+  must read `cache-storage`, and any `/api/…` request must fail (the worker deliberately never
+  answers those, see `docs/FRONTEND.md`).
+
+The same checks can be run headless over CDP — `Page.getAppManifest` returns Chromium's own
+error list, `Page.addScriptToEvaluateOnNewDocument` can install a `beforeinstallprompt`
+listener before the document runs, and `Network.emulateNetworkConditions {offline: true}` cuts
+the network (note it does **not** flip `navigator.onLine`, so the in-app offline banner has to
+be driven by dispatching the `offline` event).
+
 ## CLI
 
 ```bash
