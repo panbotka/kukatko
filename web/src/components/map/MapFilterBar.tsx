@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 import { formatCount } from '../../lib/format'
+import { LIBRARY_PATH } from '../../lib/libraryView'
 import { hasActiveMapFilters, MAP_DEFAULTS, type MapView } from '../../lib/mapView'
 import { type SetUrlState } from '../../lib/urlState'
 import { type MapCoverage, type Mapset, MAPSETS } from '../../services/map'
@@ -17,8 +18,14 @@ import { type MapCoverage, type Mapset, MAPSETS } from '../../services/map'
  * set — open a photo, place it on the picker map — so the link hands over the
  * exact working set rather than an admin button that would run an estimate over
  * the whole library behind the user's back.
+ *
+ * Built from {@link LIBRARY_PATH}, not the retired `/library`: an in-app link has
+ * to point at the library's own route. The redirect that still catches `/library`
+ * is there for bookmarks minted before the swap (and for the addresses inherited
+ * from the PhotoPrism instance whose domain this one took over) — not a detour
+ * for the app's own navigation.
  */
-const NO_LOCATION_LIBRARY = '/library?has_gps=false'
+const NO_LOCATION_LIBRARY = `${LIBRARY_PATH}?has_gps=false`
 
 /** Props for {@link MapFilterBar}. */
 export interface MapFilterBarProps {

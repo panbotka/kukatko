@@ -3,9 +3,18 @@ import { Navigate, useLocation } from 'react-router-dom'
 import { LIBRARY_PATH } from '../lib/libraryView'
 
 /**
- * Compatibility shim for the retired `/library` route: the library now lives at
- * {@link LIBRARY_PATH} (`/`). Bookmarks, shared links and saved searches minted
- * before the swap still carry `/library`, so this forwards them to the homepage.
+ * Compatibility shim for `/library` **and everything under it**: the library now
+ * lives at {@link LIBRARY_PATH} (`/`), so this forwards the whole retired branch
+ * to the homepage.
+ *
+ * Two generations of dead links land here. Kukátko's own bookmarks, shared links
+ * and saved searches minted before the library became the homepage carry a bare
+ * `/library`. Deeper ones are inherited: this instance took over the domain that
+ * used to serve PhotoPrism, which kept its entire UI under `/library/…`, so
+ * browser history and address-bar autocomplete keep aiming at addresses like
+ * `/library/login`. Those used to fall through to the 404 page — and, worst of
+ * all, *after* a successful sign-in, because the route guard stashes the address
+ * you asked for and login faithfully returns you to it.
  *
  * The search and hash are passed through verbatim — including keys the library
  * view does not know — so an old link's filters, sort and any extra params

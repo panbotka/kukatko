@@ -196,6 +196,30 @@ describe('routing', () => {
     expect(screen.getByTestId('search')).toBeEmptyDOMElement()
   })
 
+  it('redirects the inherited PhotoPrism login address to the library', async () => {
+    // The instance took over the domain PhotoPrism used to serve, and PhotoPrism
+    // kept its whole UI under `/library/…` — so browser history, bookmarks and
+    // address-bar autocomplete still aim there. `/library/login` is the one
+    // returning users land on first, and it used to greet them with the 404 page
+    // *after* a successful sign-in (the guard faithfully returns you to the
+    // address you asked for).
+    renderRoutes(['/library/login'])
+
+    await waitFor(() => {
+      expect(screen.getByTestId('pathname')).toHaveTextContent(/^\/$/)
+    })
+    expect(await screen.findByRole('heading', { name: 'Library' })).toBeInTheDocument()
+  })
+
+  it('redirects a deep PhotoPrism link of any shape, query and all', async () => {
+    renderRoutes(['/library/albums/at9lxuqxpogaaba1?q=svatba'])
+
+    await waitFor(() => {
+      expect(screen.getByTestId('pathname')).toHaveTextContent(/^\/$/)
+    })
+    expect(screen.getByTestId('search')).toHaveTextContent('?q=svatba')
+  })
+
   it('names the browser tab after the route, and re-names it on navigation', async () => {
     // Browser history is how "the photo I saw last week" is found again, so each
     // entry has to be labelled with the page it is — and, crucially, stop being

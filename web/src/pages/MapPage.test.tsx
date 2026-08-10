@@ -216,7 +216,9 @@ describe('MapPage coverage', () => {
     renderMap()
 
     await user.click(await screen.findByRole('link', { name: 'Fill in locations' }))
-    expect(screen.getByTestId('location')).toHaveTextContent('/library?has_gps=false')
+    // The library's own route, not the retired `/library` one: an in-app link
+    // must not detour through the redirect kept for old bookmarks.
+    expect(screen.getByTestId('location')).toHaveTextContent('/?has_gps=false')
   })
 
   it('states the coverage to a viewer but sends them nowhere', async () => {

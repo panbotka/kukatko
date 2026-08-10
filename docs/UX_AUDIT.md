@@ -114,8 +114,9 @@ implemented**, per the task's conservative-changes rule.
   demoted to a muted footer. 🔴🟡
 - ✅ **Done (follow-up):** the card grid is gone too. `/` now renders the **photo library** —
   the thing the app is for — so the photos greet the user instead of a menu of links to them.
-  `/library` survives as a replacing redirect (query string preserved) for old bookmarks, the
-  navbar's Knihovna entry points at `/`, and the health badge + build version moved to
+  `/library/*` survives as a replacing redirect (query string preserved) for old bookmarks — both
+  Kukátko's own and the ones inherited from PhotoPrism, whose whole UI lived under `/library/…` —
+  the navbar's Knihovna entry points at `/`, and the health badge + build version moved to
   `/account`. An empty catalog gets its own empty state pointing at Upload, distinct from the
   "no photos match these filters" one. `App.test.tsx` covers the routing.
 
@@ -135,7 +136,7 @@ implemented**, per the task's conservative-changes rule.
 
 ## Library & browse
 
-### Library (`/library`)
+### Library (`/`)
 - **Clarity:** Title + filter bar + virtualized grid; browsing tiles is self-evident. The header
   actions (Slideshow / Save view / Select) are all `outline-secondary size="sm"` — **nothing reads
   as the page's primary action**, though for a browse screen the content _is_ the action.
