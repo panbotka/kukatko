@@ -13,7 +13,7 @@ import {
   LIBRARY_GRID_SCOPE,
   maxColumnsForViewport,
   maxColumnsForWidth,
-  OUTLIER_GRID_SCOPE,
+  REVIEW_GRID_SCOPE,
   readStoredDensity,
   sanitizeDensity,
   stepDensity,
@@ -280,8 +280,8 @@ describe('clampColumnsToWidth', () => {
   it('clamps a second scope by the same viewport rules', () => {
     // The ceiling is a property of the screen, not of the grid: a review card at
     // eight columns on a phone is as unusable as a library thumbnail.
-    expect(clampColumnsToWidth(8, 393, OUTLIER_GRID_SCOPE)).toBe(3)
-    expect(clampColumnsToWidth(8, 1440, OUTLIER_GRID_SCOPE)).toBe(8)
+    expect(clampColumnsToWidth(8, 393, REVIEW_GRID_SCOPE)).toBe(3)
+    expect(clampColumnsToWidth(8, 1440, REVIEW_GRID_SCOPE)).toBe(8)
   })
 })
 
@@ -304,24 +304,24 @@ describe('gridTemplateColumns', () => {
 })
 
 describe('grid density scopes', () => {
-  it('keeps the library and the outlier review on separate keys', () => {
+  it('keeps the library and the review tools on separate keys', () => {
     // Browsing a wall of photographs and judging whether a 4 %-wide face is the
     // right person are different jobs at different comfortable densities. One
     // shared number would mean every trip to /outliers re-densifies the library.
-    expect(OUTLIER_GRID_SCOPE.storageKey).not.toBe(LIBRARY_GRID_SCOPE.storageKey)
+    expect(REVIEW_GRID_SCOPE.storageKey).not.toBe(LIBRARY_GRID_SCOPE.storageKey)
 
     writeDensity(9, LIBRARY_GRID_SCOPE)
-    writeDensity(2, OUTLIER_GRID_SCOPE)
+    writeDensity(2, REVIEW_GRID_SCOPE)
 
     expect(readStoredDensity(LIBRARY_GRID_SCOPE)).toBe(9)
-    expect(readStoredDensity(OUTLIER_GRID_SCOPE)).toBe(2)
+    expect(readStoredDensity(REVIEW_GRID_SCOPE)).toBe(2)
   })
 
   it('defaults every function to the library, the grid that had this first', () => {
     writeDensity(7)
     expect(window.localStorage.getItem(LIBRARY_GRID_SCOPE.storageKey)).toBe('7')
     expect(readStoredDensity()).toBe(7)
-    expect(readStoredDensity(OUTLIER_GRID_SCOPE)).toBeNull()
+    expect(readStoredDensity(REVIEW_GRID_SCOPE)).toBeNull()
   })
 
   it('seeds a review grid sparser than a library grid on the same screen', () => {
@@ -329,7 +329,7 @@ describe('grid density scopes', () => {
     // library's tile would open the page at roughly twice the density anyone wants.
     setViewportWidth(1400)
     const library = initialColumns(LIBRARY_GRID_SCOPE)
-    const review = initialColumns(OUTLIER_GRID_SCOPE)
+    const review = initialColumns(REVIEW_GRID_SCOPE)
     expect(review).toBeLessThan(library)
     expect(review).toBeGreaterThanOrEqual(GRID_COLUMNS_MIN)
   })
@@ -337,6 +337,6 @@ describe('grid density scopes', () => {
   it('gives the review grid one column on the narrowest phone', () => {
     // The 16rem card cannot shrink into the ~296px a 320px phone leaves inside the
     // layout container, so the seed must not put two of them side by side.
-    expect(initialColumnsForWidth(320, OUTLIER_GRID_SCOPE)).toBe(1)
+    expect(initialColumnsForWidth(320, REVIEW_GRID_SCOPE)).toBe(1)
   })
 })

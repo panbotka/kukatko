@@ -6,7 +6,7 @@ import {
   GRID_COLUMNS_MIN,
   initialColumnsForWidth,
   LIBRARY_GRID_SCOPE,
-  OUTLIER_GRID_SCOPE,
+  REVIEW_GRID_SCOPE,
 } from '../lib/gridDensity'
 
 import { useGridDensity } from './useGridDensity'
@@ -142,7 +142,7 @@ describe('useGridDensity', () => {
 
   it('keeps a second scope on its own number', () => {
     const library = renderHook(() => useGridDensity(LIBRARY_GRID_SCOPE))
-    const review = renderHook(() => useGridDensity(OUTLIER_GRID_SCOPE))
+    const review = renderHook(() => useGridDensity(REVIEW_GRID_SCOPE))
 
     act(() => {
       library.result.current.setDensity(9)
@@ -150,8 +150,8 @@ describe('useGridDensity', () => {
 
     expect(library.result.current.density).toBe(9)
     // Woken by the same listener set, but reading its own key: unmoved.
-    expect(review.result.current.density).toBe(initialColumnsForWidth(1024, OUTLIER_GRID_SCOPE))
-    expect(window.localStorage.getItem(OUTLIER_GRID_SCOPE.storageKey)).not.toBe('9')
+    expect(review.result.current.density).toBe(initialColumnsForWidth(1024, REVIEW_GRID_SCOPE))
+    expect(window.localStorage.getItem(REVIEW_GRID_SCOPE.storageKey)).not.toBe('9')
   })
 
   it('clamps a desktop density down on a phone without touching the stored value', () => {
@@ -204,18 +204,18 @@ describe('useGridDensity', () => {
 
   it('clamps the review grid by the same viewport rules', () => {
     setViewportWidth(393)
-    window.localStorage.setItem(OUTLIER_GRID_SCOPE.storageKey, '8')
-    const { result } = renderHook(() => useGridDensity(OUTLIER_GRID_SCOPE))
+    window.localStorage.setItem(REVIEW_GRID_SCOPE.storageKey, '8')
+    const { result } = renderHook(() => useGridDensity(REVIEW_GRID_SCOPE))
 
     expect(result.current.density).toBe(3)
-    expect(window.localStorage.getItem(OUTLIER_GRID_SCOPE.storageKey)).toBe('8')
+    expect(window.localStorage.getItem(REVIEW_GRID_SCOPE.storageKey)).toBe('8')
   })
 
   it('does not thrash when the scope is passed as a fresh object each render', () => {
     // A call site that inlines `{…}` would otherwise re-run the seeding effect on
     // every render — the memo keys on the fields, not the object's identity.
-    const { result, rerender } = renderHook(() => useGridDensity({ ...OUTLIER_GRID_SCOPE }))
-    const seeded = initialColumnsForWidth(1024, OUTLIER_GRID_SCOPE)
+    const { result, rerender } = renderHook(() => useGridDensity({ ...REVIEW_GRID_SCOPE }))
+    const seeded = initialColumnsForWidth(1024, REVIEW_GRID_SCOPE)
     expect(result.current.density).toBe(seeded)
 
     act(() => {

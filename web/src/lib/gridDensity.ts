@@ -68,20 +68,20 @@ export const GRID_COLUMN_CAPS: readonly GridColumnCap[] = [
 ]
 
 /**
- * The width an outlier-review tile targets when its column count is seeded from
- * the screen: the 16rem the grid was hard-coded to before it had a control. A
- * face you are asked to judge needs far more room than a library thumbnail, so
+ * The width a review tile targets when its column count is seeded from the
+ * screen: the 16rem every review grid was hard-coded to before it had a control.
+ * A face you are asked to judge needs far more room than a library thumbnail, so
  * seeding it from the library's 140 px would open the page at twice the density
  * anyone wants.
  */
-export const OUTLIER_TILE_MIN_PX = 256
+export const REVIEW_TILE_MIN_PX = 256
 
 /**
- * The gap between outlier-review cards, in pixels (Bootstrap's `gap-3`). Unlike
- * the library's hairline these are cards with buttons in them, so they need real
+ * The gap between review cards, in pixels (Bootstrap's `gap-3`). Unlike the
+ * library's hairline these are cards with buttons in them, so they need real
  * gutters — the grid is a worksheet, not a wall of photographs.
  */
-export const OUTLIER_GAP_PX = 16
+export const REVIEW_GAP_PX = 16
 
 /**
  * Which grid a density belongs to. A scope is the whole per-grid contract: where
@@ -109,16 +109,25 @@ export const LIBRARY_GRID_SCOPE: GridDensityScope = {
 }
 
 /**
- * The `/outliers` review grid, deliberately on its **own** key. Browsing a
- * library and judging whether a 4 %-wide face is the right person are different
- * jobs at different comfortable densities: sharing one number would mean every
- * trip to `/outliers` re-densifies the library on the way back, and every trip
- * back re-densifies the review. The control is shared; the preference is not.
+ * The review tools' grid — `/faces`, `/recognition`, `/expand`, `/outliers`,
+ * `/people/clusters` and the two duplicate screens — on **one** key of its own,
+ * separate from the library's.
+ *
+ * Separate from the library, because browsing a library and judging whether a
+ * 4 %-wide face is the right person are different jobs at different comfortable
+ * densities: sharing one number would mean every trip to a review tool
+ * re-densifies the library on the way back, and every trip back re-densifies the
+ * review.
+ *
+ * One key across the tools, because they are the *same* job wearing different
+ * names. Setting the columns once and finding them again in the next tool is the
+ * whole point; a per-tool preference would mean re-tuning the same grid six
+ * times to work through one afternoon's suggestions.
  */
-export const OUTLIER_GRID_SCOPE: GridDensityScope = {
-  storageKey: 'kukatko.outliers.density',
-  tileMinPx: OUTLIER_TILE_MIN_PX,
-  gapPx: OUTLIER_GAP_PX,
+export const REVIEW_GRID_SCOPE: GridDensityScope = {
+  storageKey: 'kukatko.review.density',
+  tileMinPx: REVIEW_TILE_MIN_PX,
+  gapPx: REVIEW_GAP_PX,
 }
 
 /**

@@ -2754,6 +2754,12 @@
     "photoAlt": "Photo under review",
     "faceHint": "The face under review is highlighted with a frame.",
     "openPhoto": "Open the photo in a new tab",
+    "lightbox": {
+      "title": "Enlarged photo",
+      "close": "Close",
+      "prev": "Previous photo",
+      "next": "Next photo"
+    },
     "actions": {
       "yes": "Yes",
       "no": "No",

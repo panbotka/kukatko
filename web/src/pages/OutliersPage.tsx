@@ -20,7 +20,7 @@ import { useReloadKey } from '../hooks/useReloadKey'
 import { useOutlierReview } from '../hooks/useOutlierReview'
 import { useSelection } from '../hooks/useSelection'
 import { useSubjects } from '../hooks/useSubjects'
-import { gridTemplateColumns, OUTLIER_GRID_SCOPE } from '../lib/gridDensity'
+import { gridTemplateColumns, REVIEW_GRID_SCOPE } from '../lib/gridDensity'
 import { isTypingElement } from '../lib/ratingHotkeys'
 import {
   clampOutlierThresholdPercent,
@@ -74,8 +74,8 @@ function nextActionableIndex(items: OutlierItem[], fromIndex: number): number {
  * want to hunt. Each card is a **context crop** with the face outlined, because a
  * tight crop is unjudgeable, and carries the two opposite verdicts: ✓ unassigns,
  * ✗ vouches for the face so it is never offered again. How many cards fit across
- * is the user's call, via the library's `GridDensityControl` on this grid's own
- * stored count (`OUTLIER_GRID_SCOPE`). A selection with
+ * is the user's call, via the library's `GridDensityControl` on the count shared
+ * by every review tool (`REVIEW_GRID_SCOPE`). A selection with
  * shift-range and Ctrl/Cmd+A drives a bulk unassign, and the whole grid is
  * keyboard-drivable (arrows/`hjkl`, `y`/Enter, `n`, `x`) — photo-sorter's
  * equivalent page had none of this and was its weakest. Editor-only. See
@@ -177,7 +177,7 @@ export function OutliersPage() {
   const gridRef = useRef<HTMLDivElement>(null)
   // How many cards fit across, on the review grid's own stored count — the
   // library's density is a browsing preference and would fight this one.
-  const { density } = useGridDensity(OUTLIER_GRID_SCOPE)
+  const { density } = useGridDensity(REVIEW_GRID_SCOPE)
 
   // A fresh query drops the highlight: it would otherwise point at a stale card.
   // Keyed on the *response*, deliberately — not on the working list, which gets a
@@ -390,9 +390,9 @@ export function OutliersPage() {
             <div className="flex-grow-1">
               <OutlierStats result={result} shown={items.length} />
             </div>
-            {/* The library's stepper, driving the review grid's own stored count —
-                see OUTLIER_GRID_SCOPE for why the two numbers are separate. */}
-            {items.length > 0 && <GridDensityControl scope={OUTLIER_GRID_SCOPE} />}
+            {/* The library's stepper, driving the count every review tool shares —
+                see REVIEW_GRID_SCOPE for why it is not the library's number. */}
+            {items.length > 0 && <GridDensityControl scope={REVIEW_GRID_SCOPE} />}
           </div>
 
           {selection.active && (
@@ -451,7 +451,7 @@ export function OutliersPage() {
                  the width the count is *seeded* from on a device's first visit. */
               style={{
                 gridTemplateColumns: gridTemplateColumns(density),
-                gap: `${String(OUTLIER_GRID_SCOPE.gapPx)}px`,
+                gap: `${String(REVIEW_GRID_SCOPE.gapPx)}px`,
               }}
             >
               {items.map((item, index) => (
