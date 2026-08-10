@@ -32,6 +32,10 @@ config.local.*
 /.devdata/
 /kukatko.log
 
+# Local Claude Code setup (personal slash commands; they reference private
+# deployment repos, so they stay out of the project history).
+.claude/
+
 # Editor / OS
 .DS_Store
 .idea/
