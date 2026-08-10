@@ -6,6 +6,7 @@ import (
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/storyboard"
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/trash"
 )
@@ -29,9 +30,12 @@ func buildTrashService(cfg *config.Config, db *database.DB) (*trash.Service, err
 		return nil, err
 	}
 	return trash.New(trash.Config{
-		Photos:        photos.NewStore(db.Pool()),
-		Storage:       store,
-		Thumbnailer:   thumb.New(store, cfg.Storage.CachePath),
+		Photos:      photos.NewStore(db.Pool()),
+		Storage:     store,
+		Thumbnailer: thumb.New(store, cfg.Storage.CachePath),
+		// A purged video's scrub-preview sprite is derived media keyed by the same
+		// file hash, so it goes with the thumbnails rather than outliving them.
+		Storyboards:   storyboard.New(store, cfg.Storage.CachePath),
 		RetentionDays: cfg.Trash.RetentionDays,
 	}), nil
 }

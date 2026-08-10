@@ -19,6 +19,7 @@ import (
 	"github.com/panbotka/kukatko/internal/placesjob"
 	"github.com/panbotka/kukatko/internal/processapi"
 	"github.com/panbotka/kukatko/internal/sidecarjob"
+	"github.com/panbotka/kukatko/internal/storyboardjob"
 	"github.com/panbotka/kukatko/internal/thumbjob"
 	"github.com/panbotka/kukatko/internal/worker"
 )
@@ -45,7 +46,7 @@ import (
 func buildJobs(
 	cfg *config.Config, db *database.DB, store *jobs.Store, authAPI *auth.API, enqueuer *jobs.Enqueuer,
 	embedSvc *embedjob.Service, faceSvc *facejob.Service, clusterSvc *cluster.Service,
-	reg *metrics.Registry, geocodeBudget *placesjob.WindowBudget,
+	storyboardSvc *storyboardjob.Service, reg *metrics.Registry, geocodeBudget *placesjob.WindowBudget,
 ) (*worker.Worker, *jobsapi.API, *processapi.API, *maintenanceapi.API, error) {
 	thumbSvc, maintenanceSvc, err := buildMaintenanceAndThumb(cfg, db, enqueuer, embedSvc, faceSvc, reg)
 	if err != nil {
@@ -67,6 +68,7 @@ func buildJobs(
 	registry := buildRegistry(registryServices{
 		embed: embedSvc, face: faceSvc, thumb: thumbSvc, meta: metaSvc,
 		places: placesSvc, sidecar: sidecarSvc, nameless: namelessSvc,
+		storyboard: storyboardSvc,
 	})
 
 	w := worker.New(worker.Config{
@@ -111,13 +113,14 @@ func buildJobs(
 // registryServices bundles the job handlers buildRegistry wires, so the
 // registration list is one parameter rather than seven.
 type registryServices struct {
-	embed    *embedjob.Service
-	face     *facejob.Service
-	thumb    *thumbjob.Service
-	meta     *metajob.Service
-	places   *placesjob.Service
-	sidecar  *sidecarjob.Service
-	nameless *namelessjob.Service
+	embed      *embedjob.Service
+	face       *facejob.Service
+	thumb      *thumbjob.Service
+	meta       *metajob.Service
+	places     *placesjob.Service
+	sidecar    *sidecarjob.Service
+	nameless   *namelessjob.Service
+	storyboard *storyboardjob.Service
 }
 
 // buildRegistry returns the worker registry with every configured handler
@@ -134,6 +137,7 @@ func buildRegistry(svc registryServices) *worker.Registry {
 	registry.Register(jobs.TypeMetadata, svc.meta.Handle)
 	registry.Register(jobs.TypeNamelessDetach, svc.nameless.HandleDetach)
 	registry.Register(jobs.TypeNamelessRestore, svc.nameless.HandleRestore)
+	registry.Register(jobs.TypeStoryboard, svc.storyboard.Handle)
 	if svc.places != nil {
 		registry.Register(jobs.TypePlaces, svc.places.Handle)
 	}

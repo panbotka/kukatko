@@ -1170,6 +1170,7 @@
       "global": "Globální",
       "grid": "Mřížka fotek",
       "detail": "Detail fotky",
+      "video": "Přehrávač videa",
       "faceSearch": "Hledání osoby",
       "outliers": "Možné chyby",
       "review": "Třídění",
@@ -1191,6 +1192,12 @@
       "faces": "Zobrazit / skrýt obličeje",
       "info": "Zobrazit / skrýt informace",
       "back": "Krok zpět: výběr, poté informační panel, poté ven na seznam"
+    },
+    "video": {
+      "playPause": "Přehrát / pozastavit video",
+      "skip": "Skok o 10 s zpět / vpřed",
+      "speed": "Zpomalit / zrychlit přehrávání",
+      "arrows": "Šipky i při přehrávání listují mezi fotkami — přetoč přehrávač zaměřenou časovou osou"
     },
     "faceSearch": {
       "move": "Přesun zaměření mezi kartami",
@@ -1788,7 +1795,17 @@
       "unsupported": "Toto video nelze v prohlížeči přehrát.",
       "downloadInstead": "Stáhnout video",
       "live": "Živá fotka",
-      "livePlay": "Podržením nebo najetím přehrajete pohyblivou část"
+      "livePlay": "Podržením nebo najetím přehrajete pohyblivou část",
+      "play": "Přehrát",
+      "pause": "Pozastavit",
+      "skipBack": "O {{seconds}} s zpět",
+      "skipForward": "O {{seconds}} s vpřed",
+      "speed": "Rychlost přehrávání",
+      "rate": "{{rate}}×",
+      "mute": "Ztlumit",
+      "unmute": "Zrušit ztlumení",
+      "fullscreen": "Celá obrazovka",
+      "seek": "Časová osa videa"
     },
     "metadata": {
       "formLabel": "Úprava metadat fotky",

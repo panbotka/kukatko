@@ -65,6 +65,14 @@ func (e *Enqueuer) EnqueueMetadata(ctx context.Context, photoUID string) error {
 	return e.enqueuePhotoJob(ctx, TypeMetadata, photoUID)
 }
 
+// EnqueueStoryboard schedules generation of the photo's scrub-preview sprite. A
+// pre-existing active job for the same photo is a no-op (nil error), which is what
+// makes the player's "ask on every playback" free: the first request schedules the
+// render and every later one is absorbed while it is queued or running.
+func (e *Enqueuer) EnqueueStoryboard(ctx context.Context, photoUID string) error {
+	return e.enqueuePhotoJob(ctx, TypeStoryboard, photoUID)
+}
+
 // SidecarDebounce is how long a sidecar job waits before it may run. It is the
 // coalescing window: the dedup index keeps at most one queued sidecar job per
 // photo, so every edit landing within this window of the first one is absorbed by

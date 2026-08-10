@@ -247,6 +247,21 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   for inline HTML5 playback, or redirects to the Worker, which serves Range directly from R2 (dropping the
   requirement of a seekable local file); an optional on-the-fly transcode of non-web-friendly codecs via
   the `video.transcode` config (default off) feeds `ffmpeg` a signed URL directly (`ffmpeg` reads http(s)).
+  **Scrub previews** (`internal/photoapi/storyboard.go`, `internal/storyboard` + `internal/storyboardjob`):
+  `GET /photos/{uid}/storyboard` (**RequireAuth** — whoever may watch may see the previews, viewers included)
+  answers **always 200** for a photo that exists, with `{status}` ∈ `ready|pending|unavailable` and — **only when
+  `ready`** — the sprite's grid `{columns,rows,count,tile_width,tile_height,interval_ms}` (omitted otherwise, so a
+  client that reads `status` first can never place a preview against a zero grid). It is **a GET that schedules
+  work**, deliberately: a `pending` answer enqueues the `storyboard` job (queue dedup ⇒ asking on every playback
+  costs nothing), while a POST would either be denied to viewers or duplicate the read. `unavailable` is permanent
+  (a still, a live photo, a clip of unknown length, no ffmpeg) and means "stop asking"; no wiring at all also
+  answers `unavailable` rather than 503 — a video without scrub thumbnails is not a broken page. A missing photo
+  → 404. `GET /photos/{uid}/storyboard/sprite` (session/`?t=` token, like every other media route) **streams**
+  the sprite JPEG (`Cache-Control: private, max-age=31536000, immutable`, `ETag "<file_hash>-sb"`, `304`);
+  every reason there is no sprite — not generated yet, not a video, unknown duration, unknown photo — is a
+  **404**, which the player reads as "no preview" and nothing worse. The sprite is **cache-only derived media**
+  (never published to the object store), so this route is always where the bytes come from — the client
+  builds the address rather than reading it off a payload.
   **Bulk ZIP download** (`internal/photoapi/zip.go`): `POST /photos/download-zip`
   (session/`?t=` token — **the same authorization as a single download**, whoever may download one may
   download more) **streams a ZIP of originals** straight to the response (`archive/zip`, `Store` method —

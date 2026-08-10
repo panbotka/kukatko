@@ -120,7 +120,8 @@ Around that sit the ordinary things a library needs and Kukátko has: albums —
 collage of four of its photos, so two albums drawn from the same afternoon don't look alike, each
 saying underneath what it actually is, and each read from its oldest end or turned round with one
 switch; an album spanning more than a couple of years gets the same timeline rail the library has — and
-labels, videos (range streaming, live photos), a map that says out loud how much of the library
+labels, videos (range streaming, live photos, and a player with playback speed, ±10 s skips and
+frame previews under the cursor as you scrub), a map that says out loud how much of the library
 carries a location at all, browsing by place with a preview photo on every row, a slideshow, per-user
 favourites and ratings, bulk editing — including re-dating a whole shelf of scans at once, at the
 grain you actually know ("1974", "the seventies"), which is then shown as that period and never as a

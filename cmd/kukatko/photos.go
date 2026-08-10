@@ -17,6 +17,7 @@ import (
 	"github.com/panbotka/kukatko/internal/places"
 	"github.com/panbotka/kukatko/internal/ratelimit"
 	"github.com/panbotka/kukatko/internal/storage"
+	"github.com/panbotka/kukatko/internal/storyboardjob"
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/thumbjob"
 	"github.com/panbotka/kukatko/internal/vectors"
@@ -50,11 +51,14 @@ func buildFaceMatch(cfg *config.Config, db *database.DB) *facematch.Service {
 // half of search; embedder is the sidecar client that embeds query text for
 // semantic and hybrid search. faceSvc backs the /photos/{uid}/faces endpoints.
 // store is the shared originals backend, which also decides whether the media
-// routes stream bytes or redirect to signed edge URLs.
+// routes stream bytes or redirect to signed edge URLs. storyboards backs the
+// video scrub-preview routes (status + sprite) and is the same service the worker
+// renders through.
 func buildPhotoAPI(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, store storage.Storage,
 	similar photoapi.SimilarSearcher, embedder photoapi.TextEmbedder, faceSvc *facematch.Service,
-	purger photoapi.Purger, sidecar sidecarScheduler, reg *metrics.Registry,
+	purger photoapi.Purger, sidecar sidecarScheduler, storyboards *storyboardjob.Service,
+	reg *metrics.Registry,
 ) *photoapi.API {
 	thumbnailer := thumb.New(store, cfg.Storage.CachePath, thumbOptions(cfg, reg)...)
 	photoStore := photos.NewStore(db.Pool())
@@ -103,6 +107,7 @@ func buildPhotoAPI(
 		// role (viewers included), so the throttle keys on the user rather than
 		// the client IP — see photoapi.handleCreateComment.
 		Comments:         comments.NewStore(db.Pool()),
+		Storyboards:      storyboards,
 		CommentRateLimit: commentLimit.KeyedMiddleware(commentRateKey),
 		RetentionDays:    cfg.Trash.RetentionDays,
 		VideoTranscode:   cfg.Video.Transcode,

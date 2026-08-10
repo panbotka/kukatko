@@ -78,6 +78,12 @@ const (
 	// originals that holds its metadata and curation, so the catalogue can be
 	// rebuilt from storage alone. It runs locally. See internal/sidecarexport.
 	TypeSidecar = "sidecar"
+	// TypeStoryboard renders a video's scrub-preview sprite — the grid of frames
+	// the player shows next to the cursor while its timeline is hovered. It runs
+	// locally (one ffmpeg pass over the clip) and is enqueued lazily, on the first
+	// playback of a video, never for the library at large. See
+	// internal/storyboardjob.
+	TypeStoryboard = "storyboard"
 	// TypeBackup runs a backup.
 	TypeBackup = "backup"
 	// TypeNamelessDetach detaches one nameless catch-all subject: the subject row

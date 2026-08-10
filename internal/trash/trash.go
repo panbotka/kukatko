@@ -23,6 +23,7 @@ import (
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/sidecarexport"
+	"github.com/panbotka/kukatko/internal/storyboard"
 	"github.com/panbotka/kukatko/internal/thumb"
 )
 
@@ -87,6 +88,16 @@ type ThumbStore interface {
 	Remove(hash string) error
 }
 
+// StoryboardStore is the subset of the storyboard generator the purge needs:
+// removing the cached scrub-preview sprite of a video by its file hash. It is
+// optional — a wiring without it simply leaves the sprite behind, which is
+// regenerable derived media and never catalogue state.
+type StoryboardStore interface {
+	// Remove deletes the cached storyboard sprite for the given file hash. A hash
+	// that never had one is not an error.
+	Remove(hash string) error
+}
+
 // RemoteRemover deletes a backup object from a configured remote (S3-compatible)
 // store. It is optional: when no remote backup is configured the purge skips it
 // entirely. The key is the object's relative path, matching the original's
@@ -113,6 +124,9 @@ type Config struct {
 	Storage FileStorage
 	// Thumbnailer removes cached thumbnails from disk.
 	Thumbnailer ThumbStore
+	// Storyboards, when non-nil, removes a purged video's cached scrub-preview
+	// sprite so no derived media outlives its original.
+	Storyboards StoryboardStore
 	// Remote, when non-nil, deletes the corresponding backup objects.
 	Remote RemoteRemover
 	// RetentionDays is how long an archived photo is kept before the scheduled
@@ -130,6 +144,7 @@ type Service struct {
 	photos        PhotoStore
 	storage       FileStorage
 	thumbnailer   ThumbStore
+	storyboards   StoryboardStore
 	remote        RemoteRemover
 	retentionDays int
 	batchSize     int
@@ -154,6 +169,7 @@ func New(cfg Config) *Service {
 		photos:        cfg.Photos,
 		storage:       cfg.Storage,
 		thumbnailer:   cfg.Thumbnailer,
+		storyboards:   cfg.Storyboards,
 		remote:        cfg.Remote,
 		retentionDays: cfg.RetentionDays,
 		batchSize:     batch,
@@ -302,10 +318,28 @@ func (s *Service) deleteArtifacts(ctx context.Context, file photos.PhotoFile) er
 	if err := s.thumbnailer.Remove(file.FileHash); err != nil && !errors.Is(err, thumb.ErrInvalidHash) {
 		return fmt.Errorf("removing thumbnails for %s: %w", file.FileHash, err)
 	}
+	if err := s.deleteStoryboard(file.FileHash); err != nil {
+		return err
+	}
 	if s.remote != nil {
 		if err := s.remote.Remove(ctx, file.FilePath); err != nil {
 			return fmt.Errorf("removing remote object %s: %w", file.FilePath, err)
 		}
+	}
+	return nil
+}
+
+// deleteStoryboard removes the purged file's cached scrub-preview sprite. It is a
+// no-op when no storyboard store is wired, and a malformed hash (the same
+// condition that skips thumbnail removal) is skipped rather than failing the
+// purge: the sprite is regenerable derived media, and an unrelated hash problem
+// must not strand the row.
+func (s *Service) deleteStoryboard(fileHash string) error {
+	if s.storyboards == nil {
+		return nil
+	}
+	if err := s.storyboards.Remove(fileHash); err != nil && !errors.Is(err, storyboard.ErrInvalidHash) {
+		return fmt.Errorf("removing storyboard for %s: %w", fileHash, err)
 	}
 	return nil
 }

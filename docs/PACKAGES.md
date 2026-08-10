@@ -2558,6 +2558,41 @@ to `## Package map` in `CLAUDE.md`.
   resumable**: the marker is stamped the moment the job finishes, so an interrupted run picks up exactly where
   it stopped, and a second run over an exhausted library enqueues **zero** jobs — even for a photo whose file
   has no IPTC tags at all ("we looked and there was nothing there" is a finished photo, not a pending one)),
+  `internal/storyboard/`
+  (the **scrub-preview sprite** of a video: one JPEG holding a row-major grid of evenly spaced frames, which the
+  player offsets as a CSS background to show the frame under the cursor. `Spec{Columns,Rows,Count,TileWidth,
+  TileHeight,IntervalMs}` is the layout and `Plan(durationMs,width,height)` computes it — a **full** grid
+  (`Count = Columns×Rows`, never a ragged last row): 10 columns, `rows = clamp(round(duration/2s)/10, 1, 10)`,
+  so a 20 s clip is one row of ten and anything from ~3.5 min up is the 10×10 ceiling with a proportionally
+  longer interval; `IntervalMs = duration/Count`, the tile is 160 px wide (never upscaled past the source),
+  the height follows the source aspect ratio rounded to an **even** number (ffmpeg's scaler rejects odd sides)
+  and unknown dimensions fall back to 16:9. `duration <= 0` → `ErrNoDuration`, the "this clip will never have
+  one" signal. `Spec.TileIndex(positionMs)` is the position→tile mapping, stated (and tested) here so the
+  client mirrors a contract rather than a guess. **Storage is cache-only**, in the thumbnail cache's sharded
+  layout under its own prefix — `storyboard/<aa>/<bb>/<cc>/<hash>_sb.jpg`, `CacheSubdir` exported for the wipe —
+  and deliberately **never uploaded to the object store**: it adds no bucket prefix and nothing to the
+  orphan-sweep contract, and a pruned cache costs one background job. `Generator` = `New(storage,cacheDir)` with
+  `Path`/`Exists`/`Open`/`Remove`/`Generate(ctx,hash,srcRelPath,spec)`; `Generate` is **idempotent** (a cached
+  sprite returns immediately, without even materializing the source), materializes the original (ffmpeg needs a
+  real file), renders via `FFmpegArgs` — `fps=1000/<interval>,scale=W:H,tile=CxR` plus `-frames:v 1`, the
+  rational fps avoiding any float formatting — into a temp file and **renames it into place**, so no reader ever
+  sees a partial JPEG and a failed run leaves nothing behind. `ErrNotGenerated` (not there yet — the ordinary
+  answer, not a failure), `ErrGenerateFailed` (ffmpeg ran, produced nothing usable), `ErrInvalidHash`,
+  and a wrapped `video.ErrFFmpegMissing`. The end-to-end test synthesizes a clip with ffmpeg and asserts the
+  sprite's pixel dimensions **are** the grid the `Spec` promised),
+  `internal/storyboardjob/`
+  (the worker handler and read service for storyboards — the **when** to `internal/storyboard`'s *how*.
+  Generation is **lazy and per-video**: nothing enqueues the library, because a sprite costs one full decode and
+  most videos are never watched. `Status(ctx,uid)` answers `StateReady` (+ the `Spec`), `StatePending` — and
+  schedules the job, the queue's per-photo dedup absorbing every later ask — or `StateUnavailable`, which is
+  permanent and tells the client to stop: a still, a **live photo** (its motion clip is a hover preview with no
+  scrubbable timeline, so a storyboard would be a decode spent on a control that is never shown), a clip of
+  unknown length, a wiring with no `Enqueuer`, or a host with no ffmpeg (`FFmpegAvailable`, injectable so tests
+  do not depend on the machine). `Open(ctx,uid)` yields the sprite bytes + `Spec`, `FileHash(ctx,uid)` the ETag
+  source. `Handle` = `worker.HandlerFunc` (payload `{photo_uid}`, empty → `ErrMissingPhotoUID` dead-letter),
+  registered in `serve` on `jobs.TypeStoryboard`; `Generate(uid)` renders one, and a photo that **cannot** have a
+  storyboard is a quiet no-op rather than a dead-letter — the job was scheduled from a state that no longer holds.
+  All behind `PhotoStore`/`Generator`/`Enqueuer` → unit-testable with no ffmpeg and no disk),
   `internal/maintenanceapi/`
   (a maintainer-only HTTP API over maintenance: the interfaces `Service` (Scan+Repair, satisfied by `*maintenance.Service`,
   nil → 503) and `AuditPurger` (`PurgeOlderThan`+`Record`, satisfied by `*audit.Store`, nil → 503);

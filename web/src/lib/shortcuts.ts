@@ -84,6 +84,15 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
     ],
   },
   {
+    titleKey: 'shortcuts.groups.video',
+    entries: [
+      { keys: ['k'], descriptionKey: 'shortcuts.video.playPause' },
+      { keys: ['j', 'l'], descriptionKey: 'shortcuts.video.skip' },
+      { keys: ['<', '>'], descriptionKey: 'shortcuts.video.speed' },
+      { keys: ['←', '→'], descriptionKey: 'shortcuts.video.arrows' },
+    ],
+  },
+  {
     titleKey: 'shortcuts.groups.faceSearch',
     entries: [
       {
