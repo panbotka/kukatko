@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../i18n'
-import { initialColumns, LIBRARY_GRID_SCOPE, OUTLIER_GRID_SCOPE } from '../lib/gridDensity'
+import { initialColumns, LIBRARY_GRID_SCOPE, REVIEW_GRID_SCOPE } from '../lib/gridDensity'
 import { type OutlierFace, type OutlierResult, type SubjectCount } from '../services/people'
 import { readCss } from '../test/css'
 
@@ -115,7 +115,7 @@ describe('OutliersPage', () => {
   })
 
   it('renders the column count stored for the review grid', async () => {
-    window.localStorage.setItem(OUTLIER_GRID_SCOPE.storageKey, '4')
+    window.localStorage.setItem(REVIEW_GRID_SCOPE.storageKey, '4')
     outliersMock.mockResolvedValue(makeResult([face()]))
     const { container } = renderPage()
     await screen.findByTestId('outlier-card')
@@ -134,15 +134,15 @@ describe('OutliersPage', () => {
     const { container } = renderPage()
     await screen.findByTestId('outlier-card')
 
-    const seeded = initialColumns(OUTLIER_GRID_SCOPE)
+    const seeded = initialColumns(REVIEW_GRID_SCOPE)
     expect(gridElement(container)).toHaveAttribute('data-density', String(seeded))
-    expect(window.localStorage.getItem(OUTLIER_GRID_SCOPE.storageKey)).toBe(String(seeded))
+    expect(window.localStorage.getItem(REVIEW_GRID_SCOPE.storageKey)).toBe(String(seeded))
     // …and the library's own preference is left exactly where it was.
     expect(window.localStorage.getItem(LIBRARY_GRID_SCOPE.storageKey)).toBe('10')
   })
 
   it('re-columns the grid from the density stepper and persists the choice', async () => {
-    window.localStorage.setItem(OUTLIER_GRID_SCOPE.storageKey, '2')
+    window.localStorage.setItem(REVIEW_GRID_SCOPE.storageKey, '2')
     const user = userEvent.setup()
     outliersMock.mockResolvedValue(makeResult([face()]))
     const { container } = renderPage()
@@ -154,7 +154,7 @@ describe('OutliersPage', () => {
       expect(gridElement(container)).toHaveAttribute('data-density', '3')
     })
     expect(gridElement(container).style.gridTemplateColumns).toBe('repeat(3, 1fr)')
-    expect(window.localStorage.getItem(OUTLIER_GRID_SCOPE.storageKey)).toBe('3')
+    expect(window.localStorage.getItem(REVIEW_GRID_SCOPE.storageKey)).toBe('3')
     // The library's density is a separate preference and must not have moved.
     expect(window.localStorage.getItem(LIBRARY_GRID_SCOPE.storageKey)).toBeNull()
   })
@@ -178,7 +178,7 @@ describe('OutliersPage', () => {
     // whatever the tile's size — one column or ten, it neither vanishes nor
     // wanders out of the frame.
     for (const density of ['1', '5', '10']) {
-      window.localStorage.setItem(OUTLIER_GRID_SCOPE.storageKey, density)
+      window.localStorage.setItem(REVIEW_GRID_SCOPE.storageKey, density)
       outliersMock.mockResolvedValue(makeResult([face()]))
       const view = renderPage()
       const box = await screen.findByTestId('outlier-bbox')

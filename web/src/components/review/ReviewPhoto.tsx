@@ -1,12 +1,7 @@
-import { useEffect, useState } from 'react'
-import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
-
-import { useImageFrame } from '../../hooks/useImageFrame'
-import { faceBoxStyle, padBbox } from '../../lib/faceGeometry'
 import { type Bbox } from '../../services/people'
-import { type Photo, thumbUrl } from '../../services/photos'
-import { Icon } from '../Icon'
+import { type Photo } from '../../services/photos'
+
+import { ReviewStage } from './ReviewStage'
 
 /**
  * The stage's preview size. `fit_*` (whole frame), never a square `tile_*`,
@@ -37,105 +32,26 @@ export interface ReviewPhotoProps {
 }
 
 /**
- * 3:2 is the stage's shape while nothing better is known — a landscape frame is
- * the commonest shot, and the point of a fallback here is only that the stage
- * never collapses to zero height.
- */
-const FALLBACK_RATIO = 1.5
-
-/**
- * The review game's photo stage: the full frame as large as the space left
- * under the question allows, with the face under question marked by a
- * generously padded rectangle and a gentle dim over everything outside it. The
- * frame is width-driven with `aspect-ratio` and capped against the stage's own
- * height in container-query units, so the normalised box lines up with no pixel
- * measurement (the {@link CandidateFaceImage} approach, scaled to a full
- * screen). A quiet corner anchor leads out to the photo's own page, so anything
- * worth keeping or sharing can be taken along.
+ * The review game's photo stage: a {@link ReviewStage} at the game's preview
+ * size, fed from the catalogue row.
  *
- * The shape comes from {@link useImageFrame}: the loaded preview's own natural
- * size, with the catalogue row only as the estimate that keeps the stage from
- * resizing under the question. The rectangle waits for the measurement — against
- * a row with a transposed dimension pair it would mark the wrong part of the
- * photo, and being asked „is this Alice?" about the wrong face is worse than
- * being asked a moment later.
+ * The stage itself — the measured frame, the padded rectangle, the corner anchor
+ * out to the photo's page — is shared with the review tools' lightbox, so the
+ * game and the tools cannot drift apart. What stays here is only the game's own
+ * vocabulary: it thinks in {@link Photo} rows, the stage thinks in a photo's uid
+ * and dimensions.
  */
 export function ReviewPhoto({ photo, href, bbox, alt }: ReviewPhotoProps) {
-  const { t } = useTranslation()
-  const [failed, setFailed] = useState(false)
-  const stage = useImageFrame({
-    source: photo.uid,
-    width: photo.file_width,
-    height: photo.file_height,
-    orientation: photo.file_orientation ?? 0,
-  })
-
-  // A new photo is a clean slate for the load-failure flag.
-  useEffect(() => {
-    setFailed(false)
-  }, [photo.uid])
-
-  const ratio = stage.ratio ?? FALLBACK_RATIO
-  // `100cqh` is the stage's real height (it is a size container), so the frame
-  // caps itself against the room that is actually left after the question and
-  // the buttons — never against an estimate that drifts when they grow.
-  const frameStyle = {
-    aspectRatio: String(ratio),
-    maxWidth: `min(100%, calc(100cqh * ${String(ratio)}))`,
-  }
-
   return (
-    <div className="review-photo" style={frameStyle}>
-      {failed ? (
-        <div className="d-flex align-items-center justify-content-center w-100 h-100 text-secondary">
-          <Icon name="images" />
-        </div>
-      ) : (
-        <img
-          {...stage.imgProps}
-          src={thumbUrl(photo.uid, REVIEW_PREVIEW_SIZE)}
-          alt={alt}
-          decoding="async"
-          onError={() => {
-            setFailed(true)
-          }}
-          className="review-photo__img"
-        />
-      )}
-      {bbox !== undefined && stage.measured && (
-        <div
-          className="position-absolute top-0 start-0 w-100 h-100"
-          style={{ pointerEvents: 'none' }}
-          aria-hidden="true"
-        >
-          <span
-            className="review-photo__box"
-            style={faceBoxStyle(padBbox(bbox))}
-            data-testid="review-bbox"
-          />
-        </div>
-      )}
-      {/* The way out to the photo itself. A real anchor, not a click handler:
-          the point is to *get the URL* — right-click → copy link address,
-          Ctrl/Cmd+click, middle-click — and only an `href` can give that. It
-          opens in a new tab because the queue lives in memory (`useReviewGame`):
-          navigating away would throw the whole run away, and the player wants to
-          set a photo aside, not leave the game. It sits in the frame's corner
-          rather than being the whole preview: the preview carries the face
-          rectangle, and a click into it must never be ambiguous. Answering stays
-          the easiest thing on the screen — this is one small, quiet target. */}
-      <Link
-        to={href}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="review-photo__open"
-        aria-label={t('review.openPhoto')}
-        title={t('review.openPhoto')}
-        data-testid="review-open-photo"
-      >
-        <Icon name="box-arrow-up-right" />
-        <kbd className="review-game__kbd">o</kbd>
-      </Link>
-    </div>
+    <ReviewStage
+      photoUid={photo.uid}
+      fileWidth={photo.file_width}
+      fileHeight={photo.file_height}
+      orientation={photo.file_orientation ?? 0}
+      size={REVIEW_PREVIEW_SIZE}
+      bbox={bbox}
+      href={href}
+      alt={alt}
+    />
   )
 }

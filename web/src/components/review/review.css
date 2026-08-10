@@ -751,3 +751,26 @@
     transition: none;
   }
 }
+
+/* --- The review tools' lightbox -------------------------------------------
+   The overlay that answers „I am not sure" on /faces, /recognition, /outliers
+   and their siblings. It reuses `.review-photo` above, so the stage only needs
+   the room and the coordinate system the game's stage already gets: a size
+   container with a definite height, which is what `ReviewStage`'s `100cqh` cap
+   measures itself against. Without `container-type: size` here the frame would
+   fall back to its width alone and a tall photo would overflow the viewport. */
+.review-lightbox__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-height: 0;
+}
+
+.review-lightbox__stage {
+  container-type: size;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

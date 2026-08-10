@@ -693,8 +693,9 @@ here.
   `FilterBar` and in the header of `SubjectPage` (a person's gallery), it changes all photo grids in the app
   at once — and because it is only a view preference, **it is not write-gated** (a viewer sees it too);
   the `scope?` prop says **which** count it moves (default `LIBRARY_GRID_SCOPE` = the photo library);
-  `/outliers` hands it `OUTLIER_GRID_SCOPE`, so the review grid gets the same control on its **own**
-  number — the same control, a separate preference, see `lib/gridDensity`;
+  every review tool (`/faces`, `/recognition`, `/expand`, `/outliers`, `/people/clusters` and the two
+  duplicate screens) hands it `REVIEW_GRID_SCOPE`, so they all get the same control on **one** number of
+  their own — separate from the library's, shared between themselves, see `lib/gridDensity`;
   `PhotoTile`+`PhotoGrid` support
   **a modern multi-select in the style of photo apps** (props `selectable`/`selectFirst`/`selected`/
   `anySelected`/`onToggleSelect`, or `selection`): each tile carries a **round check
@@ -1989,8 +1990,9 @@ here.
   message** (a face recognized while the box was offline can't be checked and is **not** in the list — say it
   aloud, otherwise an empty list reads as "clean"), a capped message at `OUTLIER_LIMIT`,
   a `meaningful:false` message); a grid of **large** `OutlierCard` whose **column count the user picks**
-  — the shared `GridDensityControl` beside the statistics, on `OUTLIER_GRID_SCOPE`, i.e. **its own**
-  localStorage key (`kukatko.outliers.density`): browsing a wall of photos and judging a 4%-wide face are
+  — the shared `GridDensityControl` beside the statistics, on `REVIEW_GRID_SCOPE`, i.e. the review tools'
+  **own** localStorage key (`kukatko.review.density`, shared with every other review tool but **not** with
+  the library): browsing a wall of photos and judging a 4%-wide face are
   two different jobs, one shared number would re-densify the library on every trip here (the former
   hard-coded `minmax(16rem, 1fr)` survives only as the tile the first count is **seeded** from, so a phone
   starts at one column); ↑/↓ therefore jump a row by the pinned count, without measuring the DOM: the **context
@@ -2338,8 +2340,12 @@ so Zpět and the Ponechat levou/obě/pravou buttons never hide under a notch or 
   (a summary row with a vote-rule explanation above `PhotoGrid`; per-tile overlays via `tileExtras`:
   a % similarity badge (`pe-none`), a match-count badge at `match_count > 1`, a ✗ button only when
   the caller supplies `onReject`; after the user empties the grid, a „vše zpracováno" message);
-  `components/review/` = `ReviewPhoto` (the sorting game's stage: **the whole frame** of the photo at
-  `REVIEW_PREVIEW_SIZE` (`fit_1280`, **exported** — the page preloads exactly this URL) as
+  `components/review/` = `ReviewStage` (the photo stage shared by the sorting game **and the review
+  tools' lightbox**, so the two cannot drift; `ReviewPhoto` is the game's thin adapter over it, mapping a
+  `Photo` row to the stage's uid + dimensions and pinning
+  `REVIEW_PREVIEW_SIZE` (`fit_1280`, **exported** — the page preloads exactly this URL). It imports
+  `review.css` itself, so a tool that opens the lightbox cannot end up with an unstyled stage. **The whole
+  frame** of the photo as
   large as **the space left under the question** allows; the frame is **width-driven** via `aspectRatio` +
   `maxWidth: min(100%, calc(100cqh * ratio))`, where `100cqh` is the **actual** height of the stage (it is a
   `container-type: size` container) — so the frame is capped by the real remainder of the column, **not by a guess**,
@@ -2357,6 +2363,15 @@ so Zpět and the Ponechat levou/obě/pravou buttons never hide under a notch or 
   `@media (hover: none)`. The one price of a fixed corner: a face pinned into that same corner has the plate over
   ~1500 px² of its padded box (~0.2 % of the frame, verified in the harness) — accepted, because a control that
   hops between corners per card is worse than a rare, small overlap)
+  + `ReviewLightbox` (**the review tools' answer to „I am not sure"**: a fullscreen react-bootstrap `Modal`
+  around a `ReviewStage`, opened by clicking a card's photo in a tool's grid, with that card's own
+  decision buttons repeated in the footer as `children` so a closer look costs no trip back; `←`/`→`
+  step through the list the card came from — disabled at the ends, never wrapping — and the caption
+  (`title`) repeats what the card said. Keys go through the shared `useKeyboardShortcuts`, **not** the
+  modal's own handling (`keyboard={false}`), so `Esc`, the arrows and `o` live in one map with the rest of
+  the app's shortcuts and can be asserted at the document level; it holds no review state, it renders what
+  it is handed and calls back. `.review-lightbox__stage` is `container-type: size`, which is what the
+  stage's `100cqh` cap measures against — without it a tall photo would overflow the viewport)
   + `ReviewDuplicate` (the duplicate check's stage: the pair **side by side**, halves `flex: 1 1 0` so neither
   copy is implicitly favoured, `DUPLICATE_PREVIEW_SIZE = fit_1280` **never a `tile_*`** — a centre-cropped
   square hides exactly the edges where two exports of one shot differ — each with its file name and pixel size
@@ -2594,7 +2609,15 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   actually sent as, `Layout`/`MobileNavDrawer`/`HelpPage` for the version:
   the shell holds it once, so no menu open ever costs a request and the number cannot disagree with the
   binary that serves the page — a version baked into this bundle would drift the moment either side is
-  rebuilt alone), `hooks/` (`usePaginatedPhotos` = a shared
+  rebuilt alone), `hooks/` (`useLightbox(items)` = **which item of a review list is enlarged**, behind
+  every tool's `ReviewLightbox`: it holds the **index**, never the item — a review list is rebuilt on
+  every decision, so a remembered object would leave the overlay showing a copy the grid behind it has
+  already updated — reads `items[index]` per render, closes itself when the list shrinks past the open
+  item (rejecting the last candidate), steps with `next`/`prev` that **stop at both ends** (`hasNext`/
+  `hasPrev` disable the controls; wrapping would read as a stuck control rather than as "that was the
+  last one"), and gives the focus back on close to the element that opened it — the card, so a keyboard
+  user is not dropped at the top of the document after every look;
+  `usePaginatedPhotos` = a shared
   paginated infinite-scroll loader over an arbitrary `PageFetcher`: it accumulates pages,
   `loadMore`/`retry`, reset+refetch **with a skeleton** when the query/`key`/`enabled` changes, cancels
   in-flight requests and ignores stale responses, and also exposes `mode`/`degraded`; `enabled:false`

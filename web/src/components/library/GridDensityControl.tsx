@@ -15,8 +15,8 @@ import { Icon } from '../Icon'
 export interface GridDensityControlProps {
   /**
    * Which grid this stepper drives, and therefore which stored count it moves.
-   * Defaults to the photo library — pass `OUTLIER_GRID_SCOPE` for `/outliers`,
-   * which keeps its own number.
+   * Defaults to the photo library — pass `REVIEW_GRID_SCOPE` on the review
+   * tools, which share one number of their own.
    */
   scope?: GridDensityScope
 }

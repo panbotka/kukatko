@@ -2867,6 +2867,12 @@
     "photoAlt": "Posuzovaná fotka",
     "faceHint": "Posuzovaná tvář je zvýrazněná rámečkem.",
     "openPhoto": "Otevřít fotku v nové záložce",
+    "lightbox": {
+      "title": "Zvětšená fotka",
+      "close": "Zavřít",
+      "prev": "Předchozí fotka",
+      "next": "Další fotka"
+    },
     "actions": {
       "yes": "Ano",
       "no": "Ne",
