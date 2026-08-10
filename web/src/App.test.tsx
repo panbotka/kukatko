@@ -153,6 +153,17 @@ describe('routing', () => {
     expect(fetchPhotosMock).not.toHaveBeenCalled()
   })
 
+  it('lets a viewer reach the share landing, which explains itself', async () => {
+    // The share target sits outside the editor gate on purpose: a viewer must
+    // be told their shared photos cannot be uploaded (and have them discarded),
+    // not handed the generic refusal of a route they never typed.
+    renderRoutes(['/share-target?share=abc'])
+
+    expect(await screen.findByTestId('share-target-page')).toBeInTheDocument()
+    expect(screen.queryByTestId('forbidden-page')).not.toBeInTheDocument()
+    expect(screen.getByTestId('pathname')).toHaveTextContent('/share-target')
+  })
+
   it('leaves Back pointing at wherever the refused user came from', async () => {
     const user = userEvent.setup()
     renderRoutes(['/nowhere', '/duplicates'])

@@ -163,6 +163,10 @@
         "title": "Mazání a koš",
         "body": "Mazání má dva stupně. Archivace je vratná – fotka se přesune do koše a kdykoli ji odtud vrátíte. Trvalé smazání fotku odstraní nadobro. Archivované fotky se navíc po uplynutí retenční doby z koše automaticky smažou, takže se koš sám udržuje.\nTrvalé mazání a vysypání koše je vyhrazené správcům (adminům)."
       },
+      "sharing": {
+        "title": "Přidávání fotek z telefonu",
+        "body": "Na Androidu to jde přímo z galerie: vyberte snímky, dejte Sdílet a zvolte Kukátko. Aplikace se otevře na stránce Nahrát s vybranými soubory ve frontě — projdete je, můžete jim rovnou vybrat album a štítky a nahrajete je jako každé jiné. Podmínka je jediná: Kukátko musí být přidané na plochu (nainstalované), jinak se v nabídce sdílení neobjeví.\niPhone tohle zatím neumí — Safari sdílení do webových aplikací nepodporuje a předstírat to nejde. Fotky proto přidáte na stránce Nahrát: tlačítko Vybrat soubory otevře knihovnu fotek, nebo snímek zkopírujete ve Fotkách a tady ho vložíte. Když si Kukátko přidáte na plochu, otevře se rovnou a rychle, i bez signálu.\nNahrávat mohou účty s rolí editora a vyšší. Prohlížejícímu účtu Kukátko sdílené fotky nepřidá a řekne proč. Sdílet lze jen fotky a videa; co jimi není, zůstane stranou a stránka to vypíše."
+      },
       "import": {
         "title": "Import knihovny",
         "body": "Fotky do Kukátka přicházejí importem ze stávající knihovny. Import je přírůstkový a nedestruktivní – přidává jen nové položky a s originály nijak nehýbe. Spouštějí ho správci systému (maintaineři)."
@@ -2017,6 +2021,7 @@
       "hint": "nebo je vyberte ze zařízení",
       "browse": "Vybrat soubory",
       "camera": "Vyfotit",
+      "paste": "Fotku můžete taky zkopírovat a tady ji vložit (Ctrl+V).",
       "ariaInput": "Vyberte fotky nebo videa k nahrání",
       "ariaCamera": "Vyfotit fotoaparátem"
     },
@@ -2072,6 +2077,24 @@
       "assignError": "Nahráno, ale přidání do alb a štítků selhalo: {{message}}",
       "assignErrorGeneric": "Nahráno, ale přidání do alb a štítků selhalo.",
       "retry": "Zkusit znovu"
+    }
+  },
+  "share": {
+    "title": "Sdílené fotky",
+    "notice": {
+      "staged_one": "Ze sdílení je připraven 1 soubor. Zkontrolujte ho a nahrajte.",
+      "staged_few": "Ze sdílení jsou připraveny {{count}} soubory. Zkontrolujte je a nahrajte.",
+      "staged_other": "Ze sdílení je připraveno {{count}} souborů. Zkontrolujte je a nahrajte.",
+      "empty": "Ve sdílení nebyly žádné fotky ani videa.",
+      "rejected": "Tyhle soubory neumíme přidat, nejsou to fotky ani videa: {{names}}"
+    },
+    "missing": {
+      "message": "Sdílené soubory k nám nedorazily. Vyberte je prosím ručně na stránce Nahrát.",
+      "action": "Přejít na nahrávání"
+    },
+    "forbidden": {
+      "message": "Váš účet je jen pro prohlížení, fotky do knihovny přidávat nemůže. Sdílené soubory jsme proto zahodili. Chcete-li nahrávat, požádejte správce o roli editora.",
+      "action": "Zpět do knihovny"
     }
   },
   "slideshow": {

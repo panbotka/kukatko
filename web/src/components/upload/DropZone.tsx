@@ -2,6 +2,8 @@ import { useId, useRef, useState, type DragEvent } from 'react'
 import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
 
+import { PICKER_ACCEPT } from '../../lib/mediaFiles'
+
 /** Props for {@link DropZone}. */
 export interface DropZoneProps {
   /** Receives files chosen via the picker, the camera, or drag-and-drop. */
@@ -9,48 +11,17 @@ export interface DropZoneProps {
 }
 
 /**
- * Accept filter for the picker. `image/*,video/*` groups the phone gallery, but
- * many browsers hide RAW and HEIC because they are not labelled `image/*`, so we
- * additionally list those extensions explicitly (RAW vendors, HEIC/HEIF, plus
- * BMP/GIF/TIFF). It is only a hint — drag-and-drop and the backend still accept
- * any file — so a broad list can only reveal more, never reject.
- */
-const ACCEPT = [
-  'image/*',
-  'video/*',
-  '.heic',
-  '.heif',
-  '.bmp',
-  '.gif',
-  '.tif',
-  '.tiff',
-  '.cr2',
-  '.cr3',
-  '.nef',
-  '.nrw',
-  '.arw',
-  '.srf',
-  '.dng',
-  '.raf',
-  '.orf',
-  '.rw2',
-  '.pef',
-  '.srw',
-  '.3fr',
-  '.iiq',
-  '.x3f',
-  '.kdc',
-  '.mrw',
-  '.mef',
-].join(',')
-
-/**
  * File selection surface: a large drag-and-drop target plus a hidden file input
  * triggered by a touch-friendly button. On mobile the input opens the gallery
  * (`accept` groups images/videos and also names RAW/HEIC extensions so they are
- * not hidden, `multiple`); a second button opens the camera directly via the
- * `capture` attribute. Fully keyboard- and screen-reader accessible — the label
- * is wired to the input and the drop target is a button.
+ * not hidden — see `lib/mediaFiles` — and `multiple` allows a whole batch); a
+ * second button opens the camera directly via the `capture` attribute. Fully
+ * keyboard- and screen-reader accessible — the label is wired to the input and
+ * the drop target is a button.
+ *
+ * The footnote points at the third way in, pasting, which is the one that
+ * carries an iPhone's camera roll here: the page listens for it (see
+ * `hooks/usePasteFiles`), but nothing on screen would otherwise say so.
  */
 export function DropZone({ onFiles }: DropZoneProps) {
   const { t } = useTranslation()
@@ -106,7 +77,7 @@ export function DropZone({ onFiles }: DropZoneProps) {
         id={inputId}
         type="file"
         className="visually-hidden"
-        accept={ACCEPT}
+        accept={PICKER_ACCEPT}
         multiple
         aria-label={t('upload.dropzone.ariaInput')}
         onChange={(event) => {
@@ -139,6 +110,8 @@ export function DropZone({ onFiles }: DropZoneProps) {
           event.target.value = ''
         }}
       />
+
+      <p className="text-secondary small mt-2 mb-0">{t('upload.dropzone.paste')}</p>
     </div>
   )
 }

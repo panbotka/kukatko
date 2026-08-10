@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
+import { useSearchParams } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
 import { DropZone } from '../components/upload/DropZone'
@@ -10,12 +11,15 @@ import { UploadList } from '../components/upload/UploadList'
 import { UploadOrganize } from '../components/upload/UploadOrganize'
 import { UploadProgressHeader } from '../components/upload/UploadProgressHeader'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import { usePasteFiles } from '../hooks/usePasteFiles'
 import { useUploadOrganize } from '../hooks/useUploadOrganize'
 import { useUploadQueue } from '../hooks/useUploadQueue'
+import { SHARE_PARAM } from '../pwa/shareContract'
+import { collectSharedFiles, type SharedFiles } from '../pwa/shareTarget'
 
 /**
- * Multiupload page: drag or pick many files (gallery/camera on mobile), review
- * the queue, upload with a prominent sticky overall-progress header and a
+ * Multiupload page: drag, paste or pick many files (gallery/camera on mobile),
+ * review the queue, upload with a prominent sticky overall-progress header and a
  * virtualized per-file list, retry failures (whole-batch or per file, and an
  * errors-only filter to find them in a big batch), and jump to the freshly added
  * photos in the library. Before uploading, the user may pick albums and labels
@@ -25,6 +29,11 @@ import { useUploadQueue } from '../hooks/useUploadQueue'
  * label only after the batch has finished re-runs that assignment with the
  * current selection. Every state and label is
  * translated (cs/en) and the controls are sized for touch.
+ *
+ * `?share=<id>` is how photos arrive from the phone's share sheet: the files are
+ * already staged in the browser's cache by then (see `pwa/shareContract.ts`), so
+ * the page collects them into the ordinary queue — same limits, same progress,
+ * same albums and labels — and says what it took and what it could not.
  */
 export function UploadPage() {
   const { t } = useTranslation()
@@ -57,6 +66,48 @@ export function UploadPage() {
     retryAssign,
     resetAssign,
   } = useUploadOrganize()
+
+  // Pasting is the third way in beside the picker and drag-and-drop, and the
+  // only quick one on an iPhone (no share target there — see shareContract.ts).
+  const addPasted = useCallback(
+    (files: File[]) => {
+      addFiles(files)
+    },
+    [addFiles],
+  )
+  usePasteFiles(addPasted)
+
+  const [searchParams, setSearchParams] = useSearchParams()
+  const shareId = searchParams.get(SHARE_PARAM)
+  const [shared, setShared] = useState<SharedFiles | null>(null)
+  // Ids already handed to `collectSharedFiles`. Collecting consumes the cache
+  // entries, so a second pass would find nothing and report an empty share —
+  // which StrictMode's double-invoked effect would otherwise do every time.
+  const collected = useRef(new Set<string>())
+
+  useEffect(() => {
+    if (shareId === null || shareId === '' || collected.current.has(shareId)) {
+      return
+    }
+    collected.current.add(shareId)
+    void collectSharedFiles(shareId).then((result) => {
+      if (result.accepted.length > 0) {
+        addFiles(result.accepted)
+      }
+      setShared(result)
+      // Drop the parameter once the share is in hand: a reload would otherwise
+      // look like a second share that has already been consumed. `replace` so
+      // Back does not walk into the spent URL either.
+      setSearchParams(
+        (previous) => {
+          const next = new URLSearchParams(previous)
+          next.delete(SHARE_PARAM)
+          return next
+        },
+        { replace: true },
+      )
+    })
+  }, [shareId, addFiles, setSearchParams])
 
   // Once every file has settled, assign the whole batch to the chosen albums and
   // labels — but only when something is chosen and at least one photo resolved.
@@ -101,6 +152,26 @@ export function UploadPage() {
     <>
       <h1 className="kk-page-title mb-1">{t('upload.title')}</h1>
       <p className="text-secondary">{t('upload.subtitle')}</p>
+
+      {shared !== null && (
+        <>
+          {shared.accepted.length > 0 && (
+            <Alert variant="info" aria-live="polite">
+              {t('share.notice.staged', { count: shared.accepted.length })}
+            </Alert>
+          )}
+          {shared.accepted.length === 0 && shared.rejected.length === 0 && (
+            <Alert variant="warning" aria-live="polite">
+              {t('share.notice.empty')}
+            </Alert>
+          )}
+          {shared.rejected.length > 0 && (
+            <Alert variant="warning" aria-live="polite">
+              {t('share.notice.rejected', { names: shared.rejected.join(', ') })}
+            </Alert>
+          )}
+        </>
+      )}
 
       <DropZone onFiles={addFiles} />
 

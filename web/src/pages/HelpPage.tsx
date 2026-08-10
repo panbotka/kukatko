@@ -88,6 +88,12 @@ const SECTIONS: HelpSection[] = [
     bodyKey: 'help.sections.deleting.body',
   },
   {
+    id: 'sharing',
+    icon: 'cloud-arrow-up',
+    titleKey: 'help.sections.sharing.title',
+    bodyKey: 'help.sections.sharing.body',
+  },
+  {
     id: 'import',
     icon: 'box-arrow-in-down',
     titleKey: 'help.sections.import.title',

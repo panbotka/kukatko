@@ -55,6 +55,12 @@ func Handler() http.Handler {
 // to index.html for non-asset paths so client-side routing works on deep links.
 // A missing file under the assets/ prefix yields 404 rather than the index
 // document, so a stale asset URL fails loudly instead of returning HTML.
+//
+// The fallback deliberately ignores the request method. The share target's POST
+// (/share-target, see web/src/pwa/shareContract.ts) is normally answered by the
+// service worker and only reaches the server when none is installed; handing it
+// the SPA lands the user on the page that explains the shared files did not
+// arrive, where a 405 would show a bare protocol error.
 func SPAHandler(dist fs.FS) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		name := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")

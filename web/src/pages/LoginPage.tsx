@@ -15,7 +15,24 @@ import { ApiError } from '../services/auth'
 
 /** Shape of the history state set by the route guard on redirect to login. */
 interface LocationState {
-  from?: { pathname?: string }
+  from?: { pathname?: string; search?: string }
+}
+
+/**
+ * Rebuilds the address the guard bounced the visitor off, query string and all.
+ *
+ * The search matters: it is where the app keeps view state (filters, sorting,
+ * paging), and it is how a share from the phone's share sheet names the files
+ * waiting in the cache — `/share-target?share=<id>`. Dropping it used to mean a
+ * shared batch of photos was lost the moment the sharer turned out to be signed
+ * out. Falls back to the library when there is nothing stashed.
+ */
+function returnTo(state: LocationState | null): string {
+  const pathname = state?.from?.pathname
+  if (pathname === undefined || pathname === '') {
+    return '/'
+  }
+  return `${pathname}${state?.from?.search ?? ''}`
 }
 
 type LoginErrorKey = 'login.errorInvalid' | 'login.errorRateLimited' | 'login.errorGeneric'
@@ -55,7 +72,7 @@ export function LoginPage() {
   const [validated, setValidated] = useState(false)
   const [submit, setSubmit] = useState<SubmitState>({ status: 'idle' })
 
-  const from = (location.state as LocationState | null)?.from?.pathname ?? '/'
+  const from = returnTo(location.state as LocationState | null)
 
   // If an already-authenticated user lands on /login, bounce them onward.
   useEffect(() => {

@@ -1,6 +1,6 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { type ReactNode } from 'react'
+import { StrictMode, type ReactNode } from 'react'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -52,14 +52,22 @@ vi.mock('../services/organize', async (importOriginal) => {
     createLabel: vi.fn(),
   }
 })
+// The share arrives through the browser's Cache Storage, which jsdom has none
+// of; the collection itself is covered in src/pwa/shareTarget.test.ts.
+vi.mock('../pwa/shareTarget', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../pwa/shareTarget')>()
+  return { ...actual, collectSharedFiles: vi.fn() }
+})
 
 const { uploadFile } = await import('../services/upload')
 const { bulkUpdatePhotos } = await import('../services/bulk')
 const { fetchAlbums, fetchLabels } = await import('../services/organize')
+const { collectSharedFiles } = await import('../pwa/shareTarget')
 const uploadMock = vi.mocked(uploadFile)
 const bulkMock = vi.mocked(bulkUpdatePhotos)
 const albumsMock = vi.mocked(fetchAlbums)
 const labelsMock = vi.mocked(fetchLabels)
+const collectMock = vi.mocked(collectSharedFiles)
 
 function file(name: string): File {
   return new File(['data'], name, { type: 'image/jpeg' })
@@ -119,11 +127,11 @@ function auth(): AuthContextValue {
   } as unknown as AuthContextValue
 }
 
-function renderPage() {
+function renderPage(url = '/upload') {
   return render(
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={auth()}>
-        <MemoryRouter>
+        <MemoryRouter initialEntries={[url]}>
           <UploadPage />
         </MemoryRouter>
       </AuthContext.Provider>
@@ -155,6 +163,7 @@ beforeEach(async () => {
   bulkMock.mockReset()
   albumsMock.mockReset().mockResolvedValue([albumSummary('al1', 'Trip')])
   labelsMock.mockReset().mockResolvedValue([labelCount('lb1', 'Sunset')])
+  collectMock.mockReset().mockResolvedValue({ accepted: [], rejected: [] })
 })
 
 describe('UploadPage', () => {
@@ -393,6 +402,93 @@ describe('UploadPage', () => {
     // And back to all.
     await user.click(screen.getByRole('button', { name: 'Show all' }))
     expect(screen.getByText('a.jpg')).toBeInTheDocument()
+  })
+
+  it('takes files pasted anywhere on the page', async () => {
+    renderPage()
+
+    // The paste route is what carries an iPhone's camera roll here, since iOS
+    // has no share target at all. jsdom has no clipboard that can hold a file,
+    // so the event is built by hand.
+    const event = new Event('paste')
+    Object.defineProperty(event, 'clipboardData', { value: { files: [file('pasted.jpg')] } })
+    await act(async () => {
+      window.dispatchEvent(event)
+      await Promise.resolve()
+    })
+
+    expect(screen.getByText('pasted.jpg')).toBeInTheDocument()
+    expect(screen.getByText('Queued')).toBeInTheDocument()
+  })
+
+  it('stages files shared from the phone into the ordinary queue', async () => {
+    collectMock.mockResolvedValue({
+      accepted: [file('shared-a.jpg'), file('shared-b.jpg')],
+      rejected: [],
+    })
+    const user = userEvent.setup()
+    renderPage('/upload?share=1700000000000-1')
+
+    expect(await screen.findByText('shared-a.jpg')).toBeInTheDocument()
+    expect(screen.getByText('shared-b.jpg')).toBeInTheDocument()
+    expect(collectMock).toHaveBeenCalledWith('1700000000000-1')
+    expect(screen.getByText('2 shared files are ready. Check them and upload.')).toBeInTheDocument()
+
+    // Nothing is uploaded behind the user's back — the share is staged, and the
+    // ordinary start button (with the ordinary limits) sends it.
+    expect(uploadMock).not.toHaveBeenCalled()
+    uploadMock.mockResolvedValue(created('ph1'))
+    await user.click(screen.getByRole('button', { name: 'Upload (2)' }))
+
+    await waitFor(() => {
+      expect(uploadMock).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  it('names the shared files it cannot take, and queues the rest', async () => {
+    collectMock.mockResolvedValue({ accepted: [file('a.jpg')], rejected: ['smlouva.pdf'] })
+    renderPage('/upload?share=abc')
+
+    expect(await screen.findByText('a.jpg')).toBeInTheDocument()
+    expect(
+      screen.getByText('These files are not photos or videos, so they were left out: smlouva.pdf'),
+    ).toBeInTheDocument()
+  })
+
+  it('says so when a share turned out to hold no photos at all', async () => {
+    collectMock.mockResolvedValue({ accepted: [], rejected: [] })
+    renderPage('/upload?share=abc')
+
+    expect(await screen.findByText('That share contained no photos or videos.')).toBeInTheDocument()
+    expect(screen.queryByTestId('upload-list')).not.toBeInTheDocument()
+  })
+
+  it('collects a share exactly once, even under a double-invoked effect', async () => {
+    // Collecting consumes the cache entries, so a second pass would find nothing
+    // and report an empty share. StrictMode — which the app really runs under —
+    // mounts every effect twice, so this is the scenario, not a hypothetical.
+    collectMock.mockResolvedValue({ accepted: [file('a.jpg')], rejected: [] })
+    render(
+      <StrictMode>
+        <I18nextProvider i18n={i18n}>
+          <AuthContext.Provider value={auth()}>
+            <MemoryRouter initialEntries={['/upload?share=abc']}>
+              <UploadPage />
+            </MemoryRouter>
+          </AuthContext.Provider>
+        </I18nextProvider>
+      </StrictMode>,
+    )
+
+    expect(await screen.findByText('a.jpg')).toBeInTheDocument()
+    expect(collectMock).toHaveBeenCalledTimes(1)
+    expect(screen.getByText('1 shared file is ready. Check it and upload.')).toBeInTheDocument()
+  })
+
+  it('does not go looking for a share when the page was opened without one', () => {
+    renderPage()
+
+    expect(collectMock).not.toHaveBeenCalled()
   })
 
   it('shows a completed summary and retries failed files from it', async () => {

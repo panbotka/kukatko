@@ -27,6 +27,16 @@
  * recognise falls through untouched (no respondWith call), so the browser does
  * exactly what it would do with no service worker installed at all.
  *
+ * # The one exception: the share target
+ *
+ * A POST to /share-target is the phone's share sheet handing photos over (the
+ * manifest's `share_target`). It is the only non-GET the worker answers, and it
+ * is not cached: the body is consumed once, each file is stashed in a cache of
+ * its own for the app to collect, and the browser is redirected to a GET the
+ * page can render. The whole contract — paths, field and header names, the id
+ * format — is documented in src/pwa/shareContract.ts, which build/pwa.test.ts
+ * imports to hold this file to it.
+ *
  * # Updates
  *
  * Install does NOT call skipWaiting: a freshly deployed worker parks in
@@ -57,6 +67,36 @@ const BYPASS_PREFIXES = ['/api/', '/healthz', '/metrics']
 
 /** Membership test for the precache manifest, built once per worker start. */
 const PRECACHE_SET = new Set(PRECACHE)
+
+/**
+ * The share target's action — where the share sheet POSTs, and where the worker
+ * redirects afterwards for the app to pick the files up. Mirrors
+ * SHARE_TARGET_PATH in src/pwa/shareContract.ts.
+ */
+const SHARE_TARGET_PATH = '/share-target'
+
+/** The manifest's file field; mirrors SHARE_FILES_FIELD. */
+const SHARE_FILES_FIELD = 'files'
+
+/** Query parameter naming the staged share; mirrors SHARE_PARAM. */
+const SHARE_PARAM = 'share'
+
+/**
+ * Where staged files live. Deliberately *not* prefixed with CACHE_PREFIX: the
+ * activate handler prunes shell caches, and a deployment landing between a share
+ * and its collection must not delete the user's photos. Mirrors SHARE_CACHE.
+ */
+const SHARE_CACHE = 'kukatko-share'
+
+/** Key prefix of one staged file: `<prefix><id>/<index>`. Mirrors SHARE_ENTRY_PREFIX. */
+const SHARE_ENTRY_PREFIX = '/__kukatko-share__/'
+
+/** Headers carrying what a Response cannot: the file's name and mtime. */
+const SHARE_NAME_HEADER = 'x-kukatko-share-name'
+const SHARE_MODIFIED_HEADER = 'x-kukatko-share-modified'
+
+/** Distinguishes shares minted in the same millisecond by one worker. */
+let shareSequence = 0
 
 /** Last-resort body when a navigation misses both the network and the cache. */
 const OFFLINE_BODY = 'Kukátko je offline. / Kukátko is offline.'
@@ -135,6 +175,83 @@ async function shellResponse(request) {
   }
 }
 
+/**
+ * Reports whether a request is the share sheet handing files over: a same-origin
+ * POST to the manifest's share_target action.
+ */
+function isShareSubmission(request, origin) {
+  if (request.method !== 'POST') {
+    return false
+  }
+  let url
+  try {
+    url = new URL(request.url)
+  } catch {
+    return false
+  }
+  return url.origin === origin && url.pathname === SHARE_TARGET_PATH
+}
+
+/**
+ * Mints an id for one share as `<epoch ms>-<sequence>`. The timestamp is not
+ * decoration: the page reads it back out of the cache key to expire shares that
+ * were never collected (see shareContract.ts).
+ */
+function nextShareId() {
+  shareSequence += 1
+  return Date.now() + '-' + shareSequence
+}
+
+/**
+ * Writes every file of a share into the share cache under its own key and
+ * returns the share's id. The file's name and modification time travel as
+ * headers, since a Response body carries neither.
+ *
+ * Non-file parts (a shared title, text or URL) are ignored: Kukátko is being
+ * asked to store photos, and there is nowhere to put a sentence.
+ */
+async function stageShare(request) {
+  const form = await request.formData()
+  const id = nextShareId()
+  const cache = await caches.open(SHARE_CACHE)
+  const parts = form.getAll(SHARE_FILES_FIELD)
+  let index = 0
+  for (const part of parts) {
+    if (typeof part === 'string') {
+      continue
+    }
+    const headers = {
+      'Content-Type': part.type || 'application/octet-stream',
+    }
+    headers[SHARE_NAME_HEADER] = encodeURIComponent(part.name || 'shared-' + index)
+    headers[SHARE_MODIFIED_HEADER] = String(part.lastModified || 0)
+    await cache.put(SHARE_ENTRY_PREFIX + id + '/' + index, new Response(part, { headers }))
+    index += 1
+  }
+  return id
+}
+
+/**
+ * Answers the share POST. The response is always a 303 back to the share page,
+ * so the browser ends up on a GET the app can render (a POST navigation would
+ * re-submit on reload, and its body is single-use anyway).
+ *
+ * If staging fails — storage full, a payload the browser will not parse — the
+ * redirect simply carries no share id, and the page then says the files did not
+ * come through and offers the picker. Losing the photos silently, or answering
+ * with an error document, would both be worse.
+ */
+async function receiveShare(request) {
+  let target = SHARE_TARGET_PATH
+  try {
+    target =
+      SHARE_TARGET_PATH + '?' + SHARE_PARAM + '=' + encodeURIComponent(await stageShare(request))
+  } catch {
+    // Fall through with the bare path.
+  }
+  return Response.redirect(new URL(target, self.location.origin).toString(), 303)
+}
+
 self.addEventListener('install', (event) => {
   // No skipWaiting: see the header comment on the update flow.
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE)))
@@ -163,6 +280,12 @@ self.addEventListener('message', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const request = event.request
+  // The share sheet's POST: consumed here, never cached, answered with a
+  // redirect to the page that picks the files up.
+  if (isShareSubmission(request, self.location.origin)) {
+    event.respondWith(receiveShare(request))
+    return
+  }
   if (!isHandled(request, self.location.origin)) {
     return
   }
