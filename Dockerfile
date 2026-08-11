@@ -74,6 +74,17 @@ WORKDIR /app
 COPY --from=backend /kukatko /app/kukatko
 RUN chown nobody /app/kukatko && chmod 0500 /app/kukatko
 
+# The data directories exist in the IMAGE, owned by the runtime user, even
+# though they are meant to be mounted over. That ownership is what a fresh
+# named volume inherits when Docker initializes it: mount a volume onto a path
+# the image does not have and the mountpoint is created root-owned instead,
+# which the unprivileged process below then cannot write — the library fails on
+# the first upload. Pre-creating them makes `docker run -v kukatko-originals:…`
+# work with no chown on the host (bind mounts still carry the host's ownership;
+# chown them to uid 65534, see docs/OPERATIONS.md).
+RUN mkdir -p /var/lib/kukatko/originals /var/lib/kukatko/cache /var/lib/kukatko/tmp \
+    && chown -R nobody /var/lib/kukatko
+
 # Run unprivileged. The library/cache/temp paths are supplied at runtime as
 # mounted volumes owned by this user (see .env.example / docs/OPERATIONS.md).
 USER nobody
