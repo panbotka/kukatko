@@ -1,8 +1,8 @@
-// Package embedjob wires CLIP image embedding into Kukátko's background job
+// Package embedjob wires image embedding into Kukátko's background job
 // system and exposes the embedding-backed queries built on top of it.
 //
 // Its centrepiece is the image_embed job handler: given a photo uid it loads a
-// decodable preview, asks the embeddings sidecar for the 768-dim CLIP vector and
+// decodable preview, asks the embeddings sidecar for the image vector and
 // stores it in the vectors layer. The handler is idempotent (a photo that
 // already has an embedding is skipped) and offline-aware: when the sidecar is
 // unreachable the job is deferred — requeued without burning a retry attempt —
@@ -37,7 +37,7 @@ const (
 	// DefaultPreviewSize is the thumbnail rendered (if missing) and sent to the
 	// sidecar for embedding. A medium fit thumbnail decodes uniformly for HEIC,
 	// RAW and video posters and is far cheaper to ship to the box than the
-	// original; CLIP downsamples to a small square regardless.
+	// original; the image tower downsamples to a small square regardless.
 	DefaultPreviewSize = "fit_720"
 	// DefaultOfflineRetryDelay is how long an image_embed job waits before
 	// becoming runnable again after the sidecar was found offline.
@@ -173,7 +173,7 @@ func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 	return s.Embed(ctx, p.PhotoUID)
 }
 
-// Embed computes and stores the CLIP image embedding for photoUID. It is
+// Embed computes and stores the image embedding for photoUID. It is
 // idempotent: a photo that already has an embedding returns nil without calling
 // the sidecar. When the sidecar is offline it returns a worker.RetryAfter error
 // so the job is requeued without consuming a retry attempt; any other sidecar or

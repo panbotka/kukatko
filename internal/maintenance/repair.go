@@ -21,7 +21,7 @@ var ErrOrphanImportUnavailable = errors.New("maintenance: orphan import not conf
 type RepairOptions struct {
 	// Thumbnails regenerates missing thumbnails.
 	Thumbnails bool `json:"thumbnails"`
-	// Embeddings backfills missing CLIP image embeddings.
+	// Embeddings backfills missing image embeddings.
 	Embeddings bool `json:"embeddings"`
 	// Faces backfills missing face detections.
 	Faces bool `json:"faces"`

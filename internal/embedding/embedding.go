@@ -1,8 +1,7 @@
 // Package embedding is Kukátko's HTTP client to the external embeddings service
-// (the inference sidecar that runs on the GPU box). It speaks the same contract
-// as photo-sorter: image and text embeddings share a 768-dimensional CLIP space
-// and face detection returns 512-dimensional ArcFace embeddings with pixel
-// bounding boxes.
+// (the inference sidecar that runs on the GPU box). Image and text embeddings
+// share a 1152-dimensional SigLIP 2 space and face detection returns
+// 512-dimensional ArcFace embeddings with pixel bounding boxes.
 //
 // The box is frequently offline, so the client is built to fail gracefully:
 // transport failures and gateway-style HTTP statuses are reported as the
@@ -33,11 +32,14 @@ import (
 	"time"
 )
 
-// Default dimensions and endpoints for the shared CLIP/ArcFace sidecar contract.
+// Default dimensions and endpoints for the shared SigLIP/ArcFace sidecar contract.
 const (
-	// DefaultImageDim is the dimensionality of CLIP image and text embeddings.
-	DefaultImageDim = 768
-	// DefaultFaceDim is the dimensionality of ArcFace face embeddings.
+	// DefaultImageDim is the dimensionality of SigLIP 2 image and text embeddings.
+	// It moved from CLIP ViT-L-14's 768 together with the stored column width (see
+	// migration 0057) and vectors.ImageDim; the three only make sense in step.
+	DefaultImageDim = 1152
+	// DefaultFaceDim is the dimensionality of ArcFace face embeddings. Faces come
+	// from a different model and did not change with the image tower.
 	DefaultFaceDim = 512
 
 	// DefaultRequestTimeout bounds a single image/face embedding request; GPU
@@ -96,12 +98,12 @@ type Face struct {
 // Client is the embeddings sidecar contract. It is an interface so callers can
 // substitute a fake in tests without any real network or box.
 type Client interface {
-	// ImageEmbedding computes the CLIP embedding of an image streamed from img.
+	// ImageEmbedding computes the image embedding of an image streamed from img.
 	// It returns the vector together with the model and pretrained tags reported
 	// by the service.
 	ImageEmbedding(ctx context.Context, img io.Reader) (embedding []float32, model, pretrained string, err error)
-	// TextEmbedding computes the CLIP embedding of a text query in the same
-	// shared space as image embeddings.
+	// TextEmbedding computes the embedding of a text query in the same shared
+	// space as image embeddings.
 	TextEmbedding(ctx context.Context, text string) (embedding []float32, model, pretrained string, err error)
 	// FaceEmbeddings detects faces in the image streamed from img and returns one
 	// Face per detection along with the model tag.
@@ -250,7 +252,7 @@ type faceEnvelope struct {
 	Faces      []faceItem `json:"faces"`
 }
 
-// ImageEmbedding computes the CLIP embedding of the image streamed from img by
+// ImageEmbedding computes the image embedding of the image streamed from img by
 // POSTing a multipart "file" part to /embed/image. It validates that the
 // returned vector matches the configured image dimensionality.
 func (c *HTTPClient) ImageEmbedding(
@@ -263,7 +265,7 @@ func (c *HTTPClient) ImageEmbedding(
 	return c.parseEmbedding(body, c.imageDim, endpointImage)
 }
 
-// TextEmbedding computes the CLIP embedding of text by POSTing JSON {"text":...}
+// TextEmbedding computes the embedding of text by POSTing JSON {"text":...}
 // to /embed/text. It validates the returned dimensionality. Unlike the image and
 // face endpoints this one answers an interactive search, so it is bounded by the
 // much shorter text timeout: the caller degrades to full-text on failure, and a
@@ -362,6 +364,68 @@ func (c *HTTPClient) Healthy(ctx context.Context) bool {
 	}
 	_ = resp.Body.Close()
 	return true
+}
+
+// SidecarHealth is the part of the sidecar's GET /health answer Kukátko acts on:
+// which image model is loaded and how wide the vectors it returns are. The
+// service publishes it precisely so a model swap can be noticed — the swap from
+// CLIP ViT-L-14 to SigLIP 2 changed the width from 768 to 1152, and a Kukátko
+// still configured for the old width meets it as every image_embed job failing
+// with the non-transient ErrDimMismatch and semantic search silently answering
+// from full text.
+type SidecarHealth struct {
+	// Model and Pretrained are the open_clip tags of the loaded image tower, e.g.
+	// "ViT-SO400M-14-SigLIP2-378" and "webli".
+	Model, Pretrained string
+	// Dim is the width of the vectors /embed/image and /embed/text return. It is
+	// zero when the sidecar reports no dimension (an older build), which callers
+	// must read as "unknown" rather than as a mismatch.
+	Dim int
+	// Precision is the inference precision tag, e.g. "fp16". Informational only.
+	Precision string
+}
+
+// healthResponse is the GET /health body. Only the image-tower block is decoded;
+// the sidecar still names that block "clip" although the model behind it is now
+// SigLIP 2, and the face block is a separate model this check does not police.
+type healthResponse struct {
+	Clip struct {
+		Model      string `json:"model"`
+		Pretrained string `json:"pretrained"`
+		Dim        int    `json:"dim"`
+		Precision  string `json:"precision"`
+	} `json:"clip"`
+}
+
+// Health fetches GET /health and returns the image tower the sidecar currently
+// serves. It is the richer sibling of Healthy: same route, same short timeout,
+// but the body is parsed instead of discarded. Errors are classified exactly as
+// for the embedding endpoints — ErrUnavailable for an offline box (the normal
+// state here), ErrBadResponse for an answer that is not the expected JSON — so a
+// caller can tell "cannot check" from "checked, and it disagrees".
+func (c *HTTPClient) Health(ctx context.Context) (SidecarHealth, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.healthTimeout)
+	defer cancel()
+
+	reqURL := c.baseURL.JoinPath(c.healthPath)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL.String(), nil)
+	if err != nil {
+		return SidecarHealth{}, fmt.Errorf("%s: build request: %w", c.healthPath, err)
+	}
+	body, err := c.do(req, c.healthPath)
+	if err != nil {
+		return SidecarHealth{}, err
+	}
+	var resp healthResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return SidecarHealth{}, fmt.Errorf("%s: %w: %w", c.healthPath, ErrBadResponse, err)
+	}
+	return SidecarHealth{
+		Model:      resp.Clip.Model,
+		Pretrained: resp.Clip.Pretrained,
+		Dim:        resp.Clip.Dim,
+		Precision:  resp.Clip.Precision,
+	}, nil
 }
 
 // postJSON marshals payload as JSON and POSTs it to endpoint within timeout,

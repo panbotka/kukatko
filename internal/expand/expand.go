@@ -3,7 +3,7 @@
 // that were missed ("show me photos that look like the ones already on the label
 // Ostatky"). It is the collection-level counterpart of the per-photo similarity
 // endpoint GET /photos/{uid}/similar: instead of one query vector it votes over
-// every member's CLIP image embedding, unions the neighbours, and returns the
+// every member's image embedding, unions the neighbours, and returns the
 // photos several members agree on that are not in the collection yet.
 //
 // The search is per-photo kNN unioned with voting, deliberately NOT a mean-of-the-
@@ -71,7 +71,7 @@ const (
 	// ReasonEmpty means the collection has no photos at all.
 	ReasonEmpty = "empty_collection"
 	// ReasonNoEmbeddings means the collection has photos but none of the sampled
-	// source photos has a CLIP embedding yet (the sidecar is often offline).
+	// source photos has an image embedding yet (the sidecar is often offline).
 	ReasonNoEmbeddings = "no_source_embeddings"
 )
 

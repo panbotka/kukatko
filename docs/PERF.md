@@ -25,9 +25,13 @@ Reproduce with the commands in each section.
 The image and face HNSW indexes (`internal/database/migrations/0006_embeddings.sql`)
 use `halfvec` (float16) with `halfvec_cosine_ops` and build params `m = 16`,
 `ef_construction = 200` — the inherited tuning, validated as a good
-recall/memory trade-off for normalised CLIP/ArcFace vectors. `halfvec` halves
+recall/memory trade-off for normalised SigLIP/ArcFace vectors. `halfvec` halves
 the HNSW index memory versus `vector` (float32) at negligible recall loss on
-normalised vectors, which is material on the Pi.
+normalised vectors, which is material on the Pi. The image index was rebuilt
+unchanged — same name, opclass and build params — by
+`0057_embeddings_siglip2.sql`, which only widened the vectors underneath it from
+768 to 1152 when the sidecar swapped CLIP for SigLIP 2. Expect roughly 1.5× the
+index memory per photo for the same reason.
 
 ### Query-time `ef_search`
 

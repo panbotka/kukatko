@@ -102,7 +102,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `GET /search?q=&mode=` (authenticated) — **semantic + hybrid search**, `mode` =
   `fulltext`|`semantic`|`hybrid` (default `hybrid`, unknown → 400): **fulltext** = Czech-aware
   full-text over `fts tsvector` (dictionary `simple` + `unaccent`, ranking `ts_rank`
-  title>description>notes>file_name); **semantic** = `q` → CLIP embedding via sidecar →
+  title>description>notes>file_name); **semantic** = `q` → SigLIP 2 embedding via sidecar →
   cosine HNSW over `embeddings`, ranked by similarity; **hybrid** = a fusion of both via
   **Reciprocal Rank Fusion (k=60)**, deduplicated. All modes honour the other list filters + pagination,
   the response is a list + `mode` + `degraded`; `q` is required (empty → 400); **box offline** →

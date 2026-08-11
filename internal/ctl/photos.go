@@ -39,7 +39,7 @@ const (
 const (
 	// SearchFulltext ranks by Czech-aware full-text relevance only.
 	SearchFulltext = "fulltext"
-	// SearchSemantic ranks by CLIP vector similarity to the embedded query.
+	// SearchSemantic ranks by image-vector similarity to the embedded query.
 	SearchSemantic = "semantic"
 	// SearchHybrid fuses the two rankings with Reciprocal Rank Fusion.
 	SearchHybrid = "hybrid"

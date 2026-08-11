@@ -225,7 +225,7 @@ export interface PhotoListResponse {
 
 /**
  * Search ranking mode for `GET /search` (`internal/photoapi`): `fulltext` ranks
- * by Czech-aware full-text relevance, `semantic` by CLIP vector similarity to the
+ * by Czech-aware full-text relevance, `semantic` by image-vector similarity to the
  * embedded query, and `hybrid` (the default) fuses the two with Reciprocal Rank
  * Fusion.
  */

@@ -107,6 +107,9 @@ func runServe(cmd *cobra.Command) error {
 	if err := startBackgroundServices(ctx, cfg, db, bg, backupSvc, reachChecker); err != nil {
 		return err
 	}
+	// One-off, off the startup path: which image model the sidecar actually serves,
+	// and whether its vector width still matches what this binary stores.
+	go verifyEmbeddingDim(ctx, cfg, logger)
 
 	apis = append(apis, observabilityOptions(reg, logger)...)
 

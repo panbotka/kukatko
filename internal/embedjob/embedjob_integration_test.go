@@ -113,7 +113,7 @@ func (h *harness) storeJPEG(t *testing.T, name string) photos.Photo {
 	return created
 }
 
-// imageVec builds a 768-dim vector with index 0 set so the response is non-empty
+// imageVec builds an image vector with index 0 set so the response is non-empty
 // and correctly sized.
 func imageVec() []float32 {
 	v := make([]float32, embedding.DefaultImageDim)
@@ -179,7 +179,7 @@ func TestEmbed_computesStoresAndIsIdempotent(t *testing.T) {
 		t.Fatalf("GetEmbedding: %v", err)
 	}
 	if len(got.Vector) != vectors.ImageDim || got.Model != "ViT-B-32" || got.Pretrained != "laion2b" {
-		t.Errorf("stored embedding = %+v, want 768-dim ViT-B-32/laion2b", got)
+		t.Errorf("stored embedding = %+v, want %d-dim ViT-B-32/laion2b", got, vectors.ImageDim)
 	}
 	if calls.Load() != 1 {
 		t.Fatalf("sidecar calls = %d, want 1", calls.Load())
