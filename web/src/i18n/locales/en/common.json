@@ -2739,7 +2739,8 @@
       "matches_one": "Matches {{count}} source photo",
       "matches_other": "Matches {{count}} source photos",
       "matchesValue": "{{count}}×",
-      "reject": "Never offer for this label"
+      "reject": "Never offer for this label",
+      "photoAlt": "Candidate photo"
     }
   },
   "review": {
@@ -2759,6 +2760,9 @@
       "close": "Close",
       "prev": "Previous photo",
       "next": "Next photo"
+    },
+    "card": {
+      "enlarge": "Enlarge the photo"
     },
     "actions": {
       "yes": "Yes",

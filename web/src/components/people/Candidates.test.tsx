@@ -1,10 +1,11 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../../i18n'
+import { REVIEW_GRID_SCOPE } from '../../lib/gridDensity'
 import { type Candidate, type CandidateResult } from '../../services/faces'
 import { type Photo } from '../../services/photos'
 
@@ -90,6 +91,7 @@ function renderSection(onAssigned = vi.fn()) {
 
 beforeEach(async () => {
   await i18n.changeLanguage('en')
+  window.localStorage.clear()
   searchMock.mockReset()
   rejectMock.mockReset().mockResolvedValue(undefined)
   assignMock.mockReset().mockResolvedValue(undefined)
@@ -212,6 +214,55 @@ describe('Candidates', () => {
 
     await user.click(screen.getByRole('button', { name: /Find suggestions/i }))
     expect(await screen.findByText('No new suggestions')).toBeInTheDocument()
+  })
+
+  it('opens at the density set on the other review tools, and steps with it', async () => {
+    window.localStorage.setItem(REVIEW_GRID_SCOPE.storageKey, '2')
+    searchMock.mockResolvedValue(makeResult([makeCandidate('p1', 'create_marker')]))
+    const user = userEvent.setup()
+    renderSection()
+
+    await user.click(screen.getByRole('button', { name: /Find suggestions/i }))
+    await screen.findByTestId('candidate-card')
+
+    const grid = document.querySelector<HTMLElement>('[data-density]')
+    expect(grid?.style.gridTemplateColumns).toBe('repeat(2, 1fr)')
+
+    await user.click(screen.getByRole('button', { name: 'More tiles per row' }))
+
+    await waitFor(() => {
+      expect(document.querySelector<HTMLElement>('[data-density]')?.style.gridTemplateColumns).toBe(
+        'repeat(3, 1fr)',
+      )
+    })
+  })
+
+  it('enlarges a suggestion, and confirming from the overlay assigns and reloads', async () => {
+    searchMock.mockResolvedValue(makeResult([makeCandidate('p1', 'create_marker')]))
+    const user = userEvent.setup()
+    const { onAssigned } = renderSection()
+
+    await user.click(screen.getByRole('button', { name: /Find suggestions/i }))
+    await screen.findByTestId('candidate-card')
+
+    await user.click(screen.getByRole('button', { name: 'Enlarge the photo' }))
+
+    const overlay = await screen.findByRole('dialog')
+    fireEvent.click(within(overlay).getByRole('button', { name: /it's this person/i }))
+
+    await waitFor(() => {
+      expect(assignMock).toHaveBeenCalledWith('p1', {
+        action: 'create_marker',
+        face_index: 0,
+        bbox: [0.1, 0.1, 0.3, 0.3],
+        subject_uid: 'sj_1',
+      })
+    })
+    expect(onAssigned).toHaveBeenCalled()
+    // The confirmed card leaves the list, and with it the overlay it was showing.
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
   })
 
   it('links to the full /faces workspace pre-filled with this subject', () => {

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { type ReactNode } from 'react'
 import { I18nextProvider } from 'react-i18next'
@@ -246,6 +246,53 @@ describe('ExpandPage', () => {
     await user.click(screen.getByRole('button', { name: 'Never offer for this label' }))
     await screen.findByText('The rejection could not be saved; the photo stays in the results.')
     expect(screen.getByRole('link', { name: 'p1.jpg' })).toBeInTheDocument()
+  })
+
+  it('enlarges a candidate, and the overlay carries the tile’s own ✗', async () => {
+    const user = userEvent.setup()
+    searchMock.mockResolvedValue(
+      makeResult('label', 'lb1', [candidate('p1', 0.9, 2), candidate('p2', 0.8, 2)]),
+    )
+    renderPage('/expand?type=label&source=lb1')
+
+    await screen.findByRole('link', { name: 'p1.jpg' })
+    await user.click(screen.getAllByRole('button', { name: 'Enlarge the photo' })[0])
+
+    const overlay = await screen.findByRole('dialog')
+    // The whole frame, never the grid's square tile — a centre-cropped thumbnail
+    // is what the judgement cannot be made from.
+    expect(within(overlay).getByRole('img', { name: 'Candidate photo' })).toHaveAttribute(
+      'src',
+      expect.stringContaining('fit_1280'),
+    )
+    expect(within(overlay).getByTestId('review-open-photo')).toHaveAttribute('href', '/photos/p1')
+
+    await user.click(within(overlay).getByRole('button', { name: 'Never offer for this label' }))
+
+    expect(rejectMock).toHaveBeenCalledWith({ photo_uid: 'p1', label_uid: 'lb1' })
+    await waitFor(() => {
+      expect(screen.queryByRole('link', { name: 'p1.jpg' })).toBeNull()
+    })
+  })
+
+  it('offers no ✗ in the overlay for an album, which has no rejection model', async () => {
+    const user = userEvent.setup()
+    searchMock.mockResolvedValue(makeResult('album', 'al1', [candidate('p1', 0.9, 2)]))
+    renderPage('/expand?type=album&source=al1')
+
+    await screen.findByRole('link', { name: 'p1.jpg' })
+    await user.click(screen.getByRole('button', { name: 'Enlarge the photo' }))
+
+    const overlay = await screen.findByRole('dialog')
+    expect(within(overlay).queryByRole('button', { name: 'Never offer for this label' })).toBeNull()
+  })
+
+  it('shows the review tools’ density stepper over the results', async () => {
+    searchMock.mockResolvedValue(makeResult('album', 'al1', [candidate('p1', 0.9, 2)]))
+    renderPage('/expand?type=album&source=al1')
+
+    await screen.findByRole('link', { name: 'p1.jpg' })
+    expect(screen.getByRole('button', { name: 'More tiles per row' })).toBeInTheDocument()
   })
 
   it('explains a collection whose photos have no embeddings, apart from "no results"', async () => {

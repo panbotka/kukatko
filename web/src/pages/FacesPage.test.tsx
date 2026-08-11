@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../i18n'
+import { REVIEW_GRID_SCOPE } from '../lib/gridDensity'
 import { type Candidate, type CandidateResult } from '../services/faces'
 import { type Photo } from '../services/photos'
 import { frameRatio, loadImageAs } from '../test/imageFrame'
@@ -93,8 +94,18 @@ function renderPage(entry = '/faces') {
   )
 }
 
+/** The results grid — the element carrying the pinned column count. */
+function gridElement(): HTMLElement {
+  const el = document.querySelector<HTMLElement>('[data-density]')
+  if (el === null) {
+    throw new Error('results grid not rendered')
+  }
+  return el
+}
+
 beforeEach(async () => {
   await i18n.changeLanguage('en')
+  window.localStorage.clear()
   searchMock.mockReset()
   rejectMock.mockReset().mockResolvedValue(undefined)
   subjectsMock.mockReset().mockResolvedValue([])
@@ -304,6 +315,78 @@ describe('FacesPage results', () => {
     })
     // The one failure is reported; the other stays confirmed (not rolled back).
     expect(await screen.findByText('1 confirmation failed.')).toBeInTheDocument()
+  })
+
+  it('renders the pinned column count and moves with the stepper', async () => {
+    window.localStorage.setItem(REVIEW_GRID_SCOPE.storageKey, '3')
+    searchMock.mockResolvedValue(makeResult([makeCandidate('p1', 'create_marker')]))
+    renderPage('/faces?subject=su_1')
+    await screen.findByTestId('candidate-card')
+
+    expect(gridElement().style.gridTemplateColumns).toBe('repeat(3, 1fr)')
+
+    fireEvent.click(screen.getByRole('button', { name: 'More tiles per row' }))
+
+    await waitFor(() => {
+      expect(gridElement().style.gridTemplateColumns).toBe('repeat(4, 1fr)')
+    })
+    // Persisted on the review tools' shared key, so the next tool opens at it.
+    expect(window.localStorage.getItem(REVIEW_GRID_SCOPE.storageKey)).toBe('4')
+  })
+
+  it('enlarges a candidate, and confirming from the overlay writes what the card writes', async () => {
+    searchMock.mockResolvedValue(
+      makeResult([makeCandidate('p1', 'create_marker'), makeCandidate('p2', 'create_marker')]),
+    )
+    renderPage('/faces?subject=su_1')
+    await screen.findAllByTestId('candidate-card')
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Enlarge the photo' })[0])
+
+    const overlay = await screen.findByRole('dialog')
+    expect(within(overlay).getByAltText('Photo with the candidate face')).toBeInTheDocument()
+    // The way out to the photo's own page is the stage's corner anchor.
+    expect(within(overlay).getByTestId('review-open-photo')).toHaveAttribute('href', '/photos/p1')
+
+    fireEvent.click(within(overlay).getByRole('button', { name: /it's this person/i }))
+
+    await waitFor(() => {
+      expect(assignMock).toHaveBeenCalledWith('p1', {
+        action: 'create_marker',
+        face_index: 0,
+        bbox: [0.1, 0.1, 0.3, 0.3],
+        subject_uid: 'su_1',
+      })
+    })
+  })
+
+  it('gives the overlay the keyboard: the grid does not decide underneath it', async () => {
+    searchMock.mockResolvedValue(
+      makeResult([makeCandidate('p1', 'create_marker'), makeCandidate('p2', 'create_marker')]),
+    )
+    renderPage('/faces?subject=su_1')
+    await screen.findAllByTestId('candidate-card')
+
+    fireEvent.keyDown(document.body, { key: 'ArrowRight' }) // focus the first card
+    fireEvent.click(screen.getAllByRole('button', { name: 'Enlarge the photo' })[1])
+    await screen.findByRole('dialog')
+
+    // `y` would confirm the focused card if the page were still listening.
+    fireEvent.keyDown(document.body, { key: 'y' })
+    expect(assignMock).not.toHaveBeenCalled()
+
+    // Escape closes the overlay and the grid takes the keyboard back.
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+    fireEvent.keyDown(document.body, { key: 'y' })
+    await waitFor(() => {
+      expect(assignMock).toHaveBeenCalledWith(
+        'p1',
+        expect.objectContaining({ action: 'create_marker' }),
+      )
+    })
   })
 
   it('filters the grid by tab', async () => {

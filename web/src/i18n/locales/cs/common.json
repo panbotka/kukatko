@@ -2852,7 +2852,8 @@
       "matches_many": "Odpovídá {{count}} zdrojovým fotkám",
       "matches_other": "Odpovídá {{count}} zdrojovým fotkám",
       "matchesValue": "{{count}}×",
-      "reject": "Nenabízet pro tento štítek"
+      "reject": "Nenabízet pro tento štítek",
+      "photoAlt": "Nabízená fotka"
     }
   },
   "review": {
@@ -2872,6 +2873,9 @@
       "close": "Zavřít",
       "prev": "Předchozí fotka",
       "next": "Další fotka"
+    },
+    "card": {
+      "enlarge": "Zvětšit fotku"
     },
     "actions": {
       "yes": "Ano",

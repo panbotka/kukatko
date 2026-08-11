@@ -1,9 +1,10 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../i18n'
+import { REVIEW_GRID_SCOPE } from '../lib/gridDensity'
 import { type Candidate } from '../services/faces'
 import { type Photo } from '../services/photos'
 import { type Subject } from '../services/people'
@@ -103,6 +104,7 @@ function startScan() {
 
 beforeEach(async () => {
   await i18n.changeLanguage('en')
+  window.localStorage.clear()
   streamMock.mockReset()
   rejectMock.mockReset().mockResolvedValue(undefined)
   assignMock.mockReset().mockResolvedValue(undefined)
@@ -175,6 +177,62 @@ describe('RecognitionPage', () => {
     expect(assignMock).toHaveBeenCalledWith('p2', expect.anything())
     await waitFor(() => {
       expect(screen.queryByTestId('person-sweep-card')).not.toBeInTheDocument()
+    })
+  })
+
+  it('pins every person’s grid to the shared review column count', async () => {
+    window.localStorage.setItem(REVIEW_GRID_SCOPE.storageKey, '2')
+    const alice = makeSubject('su_alice', 'Alice')
+    streamMock.mockImplementation((_params, onMessage) => {
+      onMessage(personMessage(alice, [makeCandidate('p1')]))
+      onMessage(summaryMessage())
+      return Promise.resolve()
+    })
+
+    renderPage()
+    startScan()
+    await screen.findByTestId('person-sweep-card')
+
+    const grid = document.querySelector<HTMLElement>('[data-density]')
+    expect(grid?.style.gridTemplateColumns).toBe('repeat(2, 1fr)')
+
+    fireEvent.click(screen.getByRole('button', { name: 'More tiles per row' }))
+
+    await waitFor(() => {
+      expect(document.querySelector<HTMLElement>('[data-density]')?.style.gridTemplateColumns).toBe(
+        'repeat(3, 1fr)',
+      )
+    })
+  })
+
+  it('enlarges one person’s candidate and confirms it for that person', async () => {
+    const alice = makeSubject('su_alice', 'Alice')
+    const bob = makeSubject('su_bob', 'Bob')
+    streamMock.mockImplementation((_params, onMessage) => {
+      onMessage(personMessage(alice, [makeCandidate('p1')]))
+      onMessage(personMessage(bob, [makeCandidate('p2')]))
+      onMessage(summaryMessage())
+      return Promise.resolve()
+    })
+
+    renderPage()
+    startScan()
+    await screen.findAllByTestId('person-sweep-card')
+
+    // Bob's card, not Alice's: the verdict must reach the person it was opened on.
+    fireEvent.click(screen.getAllByRole('button', { name: 'Enlarge the photo' })[1])
+    const overlay = await screen.findByRole('dialog')
+    // The overlay belongs to one person's block, so there is nowhere to step.
+    expect(within(overlay).getByRole('button', { name: 'Next photo' })).toBeDisabled()
+    expect(within(overlay).getByRole('button', { name: 'Previous photo' })).toBeDisabled()
+
+    fireEvent.click(within(overlay).getByRole('button', { name: /it's this person/i }))
+
+    await waitFor(() => {
+      expect(assignMock).toHaveBeenCalledWith(
+        'p2',
+        expect.objectContaining({ subject_uid: 'su_bob' }),
+      )
     })
   })
 

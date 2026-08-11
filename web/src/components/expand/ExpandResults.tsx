@@ -4,8 +4,10 @@ import { useTranslation } from 'react-i18next'
 import { type VirtuosoGridHandle } from 'react-virtuoso'
 
 import { similarityPercent } from '../../lib/expandSearch'
+import { REVIEW_GRID_SCOPE } from '../../lib/gridDensity'
 import { type ExpandCandidate, type ExpandResult } from '../../services/expand'
 import { type Photo } from '../../services/photos'
+import { GridDensityControl } from '../library/GridDensityControl'
 import { PhotoGrid, type PhotoGridSelection } from '../library/PhotoGrid'
 import { Icon } from '../Icon'
 
@@ -30,6 +32,8 @@ export interface ExpandResultsProps {
   gridRef?: React.Ref<VirtuosoGridHandle>
   /** Index of the tile carrying the keyboard focus highlight, or -1. */
   focusedIndex?: number
+  /** Opens the candidate at this index of `candidates` in the review lightbox. */
+  onEnlarge: (index: number) => void
 }
 
 /** A callback that changes nothing: the result grid has no further pages. */
@@ -39,21 +43,41 @@ function noop() {
 
 /**
  * The per-tile overlay of one candidate: the similarity percentage, a vote
- * badge when more than one source photo matched it, and — when the collection
- * models rejections — the ✗ that persists "never offer this again". The badges
- * are `pe-none` so they never swallow a click meant for the tile.
+ * badge when more than one source photo matched it, the ⤢ that enlarges the
+ * photo without leaving the results, and — when the collection models
+ * rejections — the ✗ that persists "never offer this again". The badges are
+ * `pe-none` so they never swallow a click meant for the tile.
+ *
+ * The enlarge control is a corner button rather than the tile itself, unlike the
+ * card-based review tools: these tiles are the library's, and a tile-click means
+ * "open this photo" everywhere else in the app. Two meanings on one gesture is
+ * exactly what the shared review UX exists to avoid, so „look closer" gets its
+ * own control and „leave for the photo" keeps the one it has.
  */
 function CandidateExtras({
   candidate,
   onReject,
+  onEnlarge,
 }: {
   candidate: ExpandCandidate
   onReject?: (photoUid: string) => void
+  onEnlarge: () => void
 }) {
   const { t } = useTranslation()
   const percent = similarityPercent(candidate.similarity)
   return (
     <>
+      <Button
+        variant="dark"
+        size="sm"
+        className="position-absolute top-0 start-0 m-1 d-flex align-items-center p-1 lh-1 opacity-75"
+        title={t('review.card.enlarge')}
+        aria-label={t('review.card.enlarge')}
+        onClick={onEnlarge}
+        data-testid="review-enlarge"
+      >
+        <Icon name="arrows-angle-expand" />
+      </Button>
       <span className="position-absolute bottom-0 end-0 m-1 d-flex gap-1 pe-none">
         {candidate.match_count > 1 && (
           <span
@@ -106,23 +130,33 @@ export function ExpandResults({
   onReject,
   gridRef,
   focusedIndex = -1,
+  onEnlarge,
 }: ExpandResultsProps) {
   const { t } = useTranslation()
 
   const byUid = useMemo(
-    () => new Map(candidates.map((candidate) => [candidate.photo.uid, candidate])),
+    () =>
+      new Map(candidates.map((candidate, index) => [candidate.photo.uid, { candidate, index }])),
     [candidates],
   )
   const photos = useMemo(() => candidates.map((candidate) => candidate.photo), [candidates])
   const tileExtras = useCallback(
     (photo: Photo) => {
-      const candidate = byUid.get(photo.uid)
-      if (candidate === undefined) {
+      const found = byUid.get(photo.uid)
+      if (found === undefined) {
         return null
       }
-      return <CandidateExtras candidate={candidate} onReject={onReject} />
+      return (
+        <CandidateExtras
+          candidate={found.candidate}
+          onReject={onReject}
+          onEnlarge={() => {
+            onEnlarge(found.index)
+          }}
+        />
+      )
     },
-    [byUid, onReject],
+    [byUid, onReject, onEnlarge],
   )
 
   return (
@@ -140,6 +174,13 @@ export function ExpandResults({
           <span className="fw-semibold">
             {t('expand.summary.results', { count: candidates.length })}
           </span>
+          {/* The stepper on the review tools' shared count: this is a judging
+              grid, not the browsing wall, and it moves with the other tools. */}
+          {candidates.length > 0 && (
+            <span className="ms-auto">
+              <GridDensityControl scope={REVIEW_GRID_SCOPE} />
+            </span>
+          )}
         </div>
         <div className="kk-text-caption text-secondary mt-2">
           <p className="mb-0">{t('expand.summary.voteRule', { count: result.min_match_count })}</p>
@@ -168,6 +209,7 @@ export function ExpandResults({
           gridRef={gridRef}
           focusedIndex={focusedIndex}
           tileExtras={tileExtras}
+          scope={REVIEW_GRID_SCOPE}
         />
       )}
     </>

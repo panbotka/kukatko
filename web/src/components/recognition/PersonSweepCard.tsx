@@ -3,6 +3,7 @@ import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
 
 import { candidateKey } from '../../lib/candidateReview'
+import { gridTemplateColumns, REVIEW_GRID_SCOPE } from '../../lib/gridDensity'
 import { focusKey, type PersonState, personActionableCount } from '../../lib/recognitionSweep'
 import { type Candidate } from '../../services/faces'
 import { CandidateCard } from '../faces/CandidateCard'
@@ -30,6 +31,10 @@ export interface PersonSweepCardProps {
   onConfirmAll: () => void
   /** Stops a running "confirm all". */
   onCancelConfirmAll: () => void
+  /** How many cards sit side by side — the review tools' shared column count. */
+  density: number
+  /** Enlarges the candidate at this index of *this person's* list. */
+  onEnlarge: (index: number) => void
 }
 
 /**
@@ -47,6 +52,8 @@ export function PersonSweepCard({
   onReject,
   onConfirmAll,
   onCancelConfirmAll,
+  density,
+  onEnlarge,
 }: PersonSweepCardProps) {
   const { t } = useTranslation()
   const actionable = personActionableCount(person)
@@ -81,10 +88,17 @@ export function PersonSweepCard({
       </div>
 
       <div
-        className="d-grid gap-3"
-        style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(16rem, 1fr))' }}
+        className="d-grid"
+        data-density={density}
+        /* The column count is the user's, on the number every review tool shares
+           — the grid used to be a fixed `minmax(16rem, 1fr)`, which survives only
+           as the width that count is seeded from on a device's first visit. */
+        style={{
+          gridTemplateColumns: gridTemplateColumns(density),
+          gap: `${String(REVIEW_GRID_SCOPE.gapPx)}px`,
+        }}
       >
-        {person.items.map((item) => (
+        {person.items.map((item, index) => (
           <CandidateCard
             key={candidateKey(item.candidate)}
             item={item}
@@ -94,6 +108,9 @@ export function PersonSweepCard({
             }}
             onReject={() => {
               onReject(item.candidate)
+            }}
+            onEnlarge={() => {
+              onEnlarge(index)
             }}
           />
         ))}

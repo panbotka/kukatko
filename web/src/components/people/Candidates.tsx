@@ -6,12 +6,23 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 import { useCandidateReview } from '../../hooks/useCandidateReview'
+import { useGridDensity } from '../../hooks/useGridDensity'
+import { useLightbox } from '../../hooks/useLightbox'
 import { candidateKey, isActionable } from '../../lib/candidateReview'
-import { percentToDistance, THRESHOLD_DEFAULT_PERCENT } from '../../lib/faceThreshold'
+import {
+  distanceToPercent,
+  percentToDistance,
+  THRESHOLD_DEFAULT_PERCENT,
+} from '../../lib/faceThreshold'
+import { gridTemplateColumns, REVIEW_GRID_SCOPE } from '../../lib/gridDensity'
 import { type CandidateResult, searchCandidates } from '../../services/faces'
 import { CandidateCard } from '../faces/CandidateCard'
 import { EmptyState } from '../EmptyState'
 import { Icon } from '../Icon'
+import { GridDensityControl } from '../library/GridDensityControl'
+import { CandidateDecisions } from '../review/CandidateDecisions'
+import { candidateStage } from '../review/candidateStage'
+import { ReviewLightbox } from '../review/ReviewLightbox'
 
 /** Props for {@link Candidates}. */
 export interface CandidatesProps {
@@ -98,6 +109,9 @@ export function Candidates({ subjectUid, onAssigned }: CandidatesProps) {
   // A confirmed card leaves the list, a rejected one is already gone: show only the
   // faces still awaiting a verdict (or whose confirm errored and can be retried).
   const visible = review.items.filter(isActionable)
+  const { density } = useGridDensity(REVIEW_GRID_SCOPE)
+  const lightbox = useLightbox(visible)
+  const enlarged = lightbox.item
 
   let body: ReactNode = null
   if (result !== null) {
@@ -133,10 +147,17 @@ export function Candidates({ subjectUid, onAssigned }: CandidatesProps) {
     } else {
       body = (
         <div
-          className="d-grid gap-3"
-          style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(14rem, 1fr))' }}
+          className="d-grid"
+          data-density={density}
+          /* The user's own column count, shared with every other review tool —
+             the fixed `minmax(14rem, 1fr)` this grid had survives only as the
+             width that count is seeded from on a device's first visit. */
+          style={{
+            gridTemplateColumns: gridTemplateColumns(density),
+            gap: `${String(REVIEW_GRID_SCOPE.gapPx)}px`,
+          }}
         >
-          {visible.map((item) => (
+          {visible.map((item, index) => (
             <CandidateCard
               key={candidateKey(item.candidate)}
               item={item}
@@ -147,6 +168,9 @@ export function Candidates({ subjectUid, onAssigned }: CandidatesProps) {
               }}
               onReject={() => {
                 review.reject(item.candidate)
+              }}
+              onEnlarge={() => {
+                lightbox.open(index)
               }}
             />
           ))}
@@ -181,6 +205,13 @@ export function Candidates({ subjectUid, onAssigned }: CandidatesProps) {
         >
           {t('candidates.reviewAll')}
         </Link>
+        {/* The same stepper and the same stored count as the full workspace, so
+            the density set on /faces is the density this section opens at. */}
+        {visible.length > 0 && (
+          <span className="ms-auto">
+            <GridDensityControl scope={REVIEW_GRID_SCOPE} />
+          </span>
+        )}
       </div>
 
       {review.actionError !== null && (
@@ -198,6 +229,31 @@ export function Candidates({ subjectUid, onAssigned }: CandidatesProps) {
         <p className="text-secondary small mb-0">{t('candidates.error')}</p>
       )}
       {body}
+
+      {enlarged !== null && (
+        <ReviewLightbox
+          stage={candidateStage(enlarged.candidate, t('faceSearch.card.photoAlt'))}
+          title={t('faceSearch.card.match', {
+            percent: distanceToPercent(enlarged.candidate.distance),
+          })}
+          onClose={lightbox.close}
+          onPrev={lightbox.prev}
+          onNext={lightbox.next}
+          hasPrev={lightbox.hasPrev}
+          hasNext={lightbox.hasNext}
+        >
+          <CandidateDecisions
+            item={enlarged}
+            onConfirm={() => {
+              review.confirm(enlarged.candidate)
+              onAssigned?.()
+            }}
+            onReject={() => {
+              review.reject(enlarged.candidate)
+            }}
+          />
+        </ReviewLightbox>
+      )}
     </section>
   )
 }
