@@ -24,7 +24,7 @@ Reproduce with the commands in each section.
 
 The image and face HNSW indexes (`internal/database/migrations/0006_embeddings.sql`)
 use `halfvec` (float16) with `halfvec_cosine_ops` and build params `m = 16`,
-`ef_construction = 200` — the photo-sorter tuning, validated as a good
+`ef_construction = 200` — the inherited tuning, validated as a good
 recall/memory trade-off for normalised CLIP/ArcFace vectors. `halfvec` halves
 the HNSW index memory versus `vector` (float32) at negligible recall loss on
 normalised vectors, which is material on the Pi.
@@ -522,11 +522,11 @@ oom-kill: constraint=CONSTRAINT_NONE ... global_oom
 ```
 
 `global_oom` on a 15 GB VPS with no swap and no container memory limit means this
-was never Kukátko's problem alone — photoprism, mariadb and the embeddings
+was never Kukátko's problem alone — the old stack, its database and the embeddings
 sidecar were all in the blast radius. A logged-in user clicking through
 `/review` could take the whole box down.
 
-**Attribution — measured, not guessed.** The PhotoPrism import (then still in the
+**Attribution — measured, not guessed.** The one-off import (then still in the
 binary) was sampled every 15 s for a whole `--full` run and peaked at **33 MB**,
 so it was not the importer;
 the idle serve process holds 45–60 MB. The log at that minute carries
@@ -736,7 +736,7 @@ the query's `WHERE` clause breaks nothing — it just silently costs 9× again.
   ORDINALITY` does use the partial index and collapses them to one — but at
   0.8 s wall for 4.3 s of database CPU the concurrency already hides them, so it
   would buy latency the request does not spend. Not done.
-- **One query over a centroid**, which is what photo-sorter is assumed to have
+- **One query over a centroid**, which is what the previous system is assumed to have
   done. It would be a single query, but it collapses a person's several
   appearances into one point and there is no widening radius that provably covers
   the exemplars' union: for face embeddings the angular triangle inequality gives

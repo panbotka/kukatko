@@ -119,7 +119,7 @@ to `## Package map` in `CLAUDE.md`.
   `MediaType` image/video/live, `FileRole` original/sidecar/edited, UID generator prefix `ph`,
   `Store` over pgx with
   `Create`/`GetByUID`/`GetByFileHash`/`GetByPhotoprismUID`/`GetByPhotoprismFileHash`
-  (the identity of a single SOURCE FILE, not of a source photo: a PhotoPrism photo made of several
+  (the identity of a single SOURCE FILE, not of a source photo: a source photo made of several
   files — a RAW next to its JPEG — becomes one row per file grouped in one stack, and only the
   displayable one carries the `photoprism_uid`, so a sibling is found again by its own SHA1 alone;
   partial index from `0045`)/`GetByPhotosorterUID`/`SetPhotoprismRef`
@@ -159,7 +159,7 @@ to `## Package map` in `CLAUDE.md`.
   is always stamped — the file was read, whatever it said. Nothing outside `fileMetadataColumns` is
   touched: captions, `taken_at`, GPS, ratings and curation data are out of scope. `ErrPhotoNotFound`)/
   **`ApplyImportMetadata(ctx,uid,ImportMetadata) (changed,error)`**
-  (the write side of an **import from a foreign catalog** (it carried the PhotoPrism `Details` block and
+  (the write side of an **import from a foreign catalog** (it carried the source system's `Details` block and
   the file-technical fields of a photo detail) onto a photo already in the catalog. Differs from
   `FillFileMetadata` in **precedence**: the source **owns** its fields, so a non-empty value overrides what
   is in the photo (just like camera/exposure from the first import) — `subject`/`keywords`/`artist`/
@@ -235,7 +235,7 @@ to `## Package map` in `CLAUDE.md`.
   `?all=true`), the **orientation-geometry repair** (`store_geometry.go`):
   `ListDimensionMismatches()` → `[]DimensionMismatch{UID,StoredWidth,StoredHeight,Orientation,RawWidth,RawHeight}`
   = quarter-turned photos (`file_orientation` 5–8) whose columns hold their own file's dimensions **transposed**,
-  i.e. the displayed frame instead of the stored one — the PhotoPrism-derived import defect that letterboxed the
+  i.e. the displayed frame instead of the stored one — the import defect that letterboxed the
   viewer and drifted the face boxes. The raw pair is read out of the `exif` jsonb document
   (`ImageWidth`/`ExifImageWidth`/`PixelXDimension` + the height equivalents, each `jsonb_typeof`-checked so a
   non-numeric value degrades to "unknown" instead of aborting the query with a cast error), so **the comparison
@@ -538,7 +538,7 @@ to `## Package map` in `CLAUDE.md`.
   **Exported normalizers for importers**: `NormalizeKeywords(raw) string` (a foreign comma/semicolon
   list → exactly the shape the own extraction stores: trim, junk gone, dedup, order preserved,
   joined by commas) and `CodecToken(s) string` (any codec spelling — `HEIC`, `image/x-canon-cr2`,
-  PhotoPrism's `jpeg` — → a token for `image_codec`, otherwise empty). The retired PhotoPrism import ran
+  a source system's `jpeg` — → a token for `image_codec`, otherwise empty). The retired importers ran
   every value through these so an imported photo had its columns in the **same vocabulary** as an extracted
   one — a column that after extraction says `jpeg` and after import `JPEG` isn't one column, but two.
   **Orientation geometry** (`geometry.go`): `QuarterTurn(orientation) bool` (5–8 — the only values that
@@ -546,8 +546,8 @@ to `## Package map` in `CLAUDE.md`.
   („displayed") pair **back** to the file's stored one. It exists because the whole geometry stack —
   `internal/thumb` (which decodes the untouched original and applies the tag itself), the frontend's
   `displayFrame`, `facejob.NormalizeBBox` — reads `photos.file_width`/`file_height` as the bytes on disk with
-  `file_orientation` still to be applied. PhotoPrism does the opposite (`MediaFile.Width()` swaps the sides for
-  5–8), so the retired importers de-oriented on the way in; without it the pair contradicted
+  `file_orientation` still to be applied. A source catalogue reported the opposite (already-oriented
+  dimensions for 5–8), so the retired importers de-oriented on the way in; without it the pair contradicted
   itself and every consumer rotated a second time. The transform is **its own inverse**), `internal/phash/`
   (perceptual hashes, **CGO-free**: `Compute(img) Hashes{Phash,Dhash int64}` — **pHash** via
   a 2-D DCT 32×32 → low-freq 8×8 block with a median-without-DC threshold, **dHash** gradient 9×8; `Distance(a,b)`
@@ -777,7 +777,7 @@ to `## Package map` in `CLAUDE.md`.
   grows, the photo stays in the trash for retry), only a cancelled ctx aborts; `RunPurge(ctx, interval)` =
   scheduled cleanup (immediately + every interval, disabled when retention ≤ 0) for the `serve` goroutine),
   `internal/jobs/`
-  (a persistent job queue in Postgres, **the main robustness gain over photo-sorter** —
+  (a persistent job queue in Postgres, **the main robustness gain over the previous system** —
   jobs survive a restart, retry, dedup, wait when the box is offline; the `jobs` table in migration
   `0005_jobs.sql`: `state` queued/running/done/failed/dead, `priority`, `payload` JSONB,
   `attempts`/`max_attempts` (default 5), `run_after` backoff, `locked_by`/`locked_at`; indexes
@@ -878,7 +878,7 @@ to `## Package map` in `CLAUDE.md`.
   (recent/dead-letter listing, query `state`/`limit`≤500/`offset`, invalid → 400),
   `POST /jobs/{id}/requeue` (dead/failed → queued; 404 missing, 409 non-requeueable);
   the frontend polls, no SSE), `internal/embedding/`
-  (an HTTP client to the inference sidecar on the **box**, the same contract as photo-sorter, all behind
+  (an HTTP client to the inference sidecar on the **box** — `kozaktomas/image-embeddings`, all behind
   the `Client` interface (fakeable in tests): `New(Config{BaseURL,ImageDim,FaceDim,
   RequestTimeout,TextTimeout,DialTimeout,HealthTimeout,HealthPath,HTTPClient})` → `*HTTPClient`; `ImageEmbedding(ctx,
   img io.Reader)`/`TextEmbedding(ctx,text)` → a 768-dim CLIP vector + `model`/`pretrained`
@@ -967,7 +967,7 @@ to `## Package map` in `CLAUDE.md`.
   helper with `SaveFaces`), `FacesDetected(uid)` (does a row exist?), `ListPhotosMissingFaces(limit)`
   (uids of photos with no `face_detections` row, like `ListPhotosMissingEmbedding`); FK
   `ON DELETE CASCADE` — deleting a photo
-  deletes embeddings, faces and face_detections, fixing the photo-sorter gap with orphans;
+  deletes embeddings, faces and face_detections, fixing the orphan gap the previous system had;
   **orientation geometry** (`geometry.go` + `facerepair.go`), the faces half of
   `maintenance repair --dimensions`: a face row whose cached `photo_width`/`photo_height` are its photo's stored
   pair **swapped** is the fingerprint of the defect, but those rows are **not all in one coordinate space** —
@@ -1105,7 +1105,7 @@ to `## Package map` in `CLAUDE.md`.
   **IoU geometry** `IoU(a,b [4]float64)` (a pure function, Intersection-over-Union of normalized
   boxes `[x,y,w,h]`); **`matchMarkers`** (`pairing.go`, pure) pairs a photo's faces with its **face**
   markers (ignores `invalid`) **exclusively**: it scores every (face,marker) pair reaching
-  `IoU ≥ faces.iou_threshold` (default 0.1, mirrors photo-sorter), sorts them by descending IoU and
+  `IoU ≥ faces.iou_threshold` (default 0.1, carried over unchanged), sorts them by descending IoU and
   takes them greedily while both sides are free, so **one marker is claimed by at most one face**
   (ties break on face index, then marker uid, so consecutive requests reach the same pairing instead of
   rewriting the cache back and forth); the per-face "best marker" search it replaces was not exclusive
@@ -1170,7 +1170,7 @@ to `## Package map` in `CLAUDE.md`.
   stores it via `vectors.RecordFaceDetection`; the original (not the thumbnail) because the sidecar (InsightFace)
   rotates by EXIF itself and returns the bbox in display pixels; **bbox conversion** `normalizeBBox` pixel
   `[x1,y1,x2,y2]` → normalized `[x,y,w,h]` (0..1) by the photo dimensions and **EXIF orientation** (swap of
-  width/height for orientations 5–8), mirrors the photo-sorter logic; **det_score filter**
+  width/height for orientations 5–8), carried over unchanged; **det_score filter**
   (`faces.min_det_score`, default 0.5, `<=0` disables) drops weak detections, reindexes the survivors
   contiguously; **idempotent** (a photo with a `face_detections` row is skipped; zero faces is still
   recorded), **box offline** → `worker.RetryAfter(5 min)`; `BackfillFaces(ctx)` enqueues
@@ -1196,7 +1196,7 @@ to `## Package map` in `CLAUDE.md`.
   forces a re-read of every non-archived photo; `MetadataBackfiller` optional — nil → 503;
   local, works even with the box offline)), `internal/cluster/`
   (face auto-clustering: groups **not-yet-assigned faces** (without a subject) into clusters of the same
-  person, so a whole cluster can be named in one go (a key UX improvement over photo-sorter's per-face naming);
+  person, so a whole cluster can be named in one go (a key UX improvement over naming faces one at a time);
   the `face_clusters` table (migration `0010_face_clusters.sql`: `uid` PK prefix `fc`,
   `centroid halfvec(512)` cosine, `size`, `model`, timestamps) + cache column `faces.cluster_uid` FK
   `ON DELETE SET NULL`; all behind the interfaces `FaceSearcher` (a subset of `vectors.Store`) and `FaceAssigner`
@@ -1231,7 +1231,7 @@ to `## Package map` in `CLAUDE.md`.
   400/404/409 per the sentinels; mounted in `serve` (`buildClusterAPI` in `cmd/kukatko/clusters.go`,
   which shares the `facematch.Service` from `buildFaceMatch`)), `internal/outliers/`
   (per-person outlier detection of faces: reveals probably **misassigned faces**
-  by ordering them by distance from the centroid of the person's embeddings, mirrors photo-sorter; all behind the interfaces
+  by ordering them by distance from the centroid of the person's embeddings, carried over unchanged; all behind the interfaces
   `FaceStore` (a subset of `vectors.Store`) and `PeopleStore` (a subset of `people.Store`) →
   unit-testable with fakes without a DB; `Service` = `New(Config{Faces,People,Feedback})`;
   **`Outliers(ctx,subjectUID,opts)`** (backing `GET /subjects/{uid}/outliers`) verifies the subject
@@ -1349,7 +1349,7 @@ to `## Package map` in `CLAUDE.md`.
   store→panic, nil `Media` is OK. **`Album(ctx,uid,Request)`** / **`Label(ctx,uid,Request)`** share
   one core `find`, differing only in how the source set is resolved (validation via `GetAlbumByUID`/
   `GetLabelByUID` → `organize.ErrAlbumNotFound`/`ErrLabelNotFound`; membership via `ListPhotoUIDs`/
-  `ListPhotoUIDsByLabel` — **natively, no PhotoPrism**; a label additionally `LabelRejectionsForLabel`).
+  `ListPhotoUIDsByLabel` — **native, no foreign catalog**; a label additionally `LabelRejectionsForLabel`).
   The core: **samples** the sources down to `SourceCap` (`sampleSource`, a deterministic even stride, reports
   `source_capped`); loads the sample's embeddings (`GetEmbedding`, `ErrEmbeddingNotFound` is **skipped and
   counted**, not an error — the box is often offline); for each source `FindSimilar` with **bounded concurrency**
@@ -1700,7 +1700,7 @@ to `## Package map` in `CLAUDE.md`.
   `ErrSubjectNotFound`→404/`ErrInvalidType`+`ErrMergeIntoSelf`→400; mounted by the eighth `server.WithAPI`
   (`buildPeopleAPI` in `cmd/kukatko/people.go`)), `internal/organize/`
   (the DB layer for **organization** — albums, labels, **per-user favorites** (replacing the global
-  `photos.favorite` from photo-sorter) and **per-user ratings** (0–5 stars + a personal flag none/pick/reject/eye);
+  the old global `photos.favorite`) and **per-user ratings** (0–5 stars + a personal flag none/pick/reject/eye);
   tables `albums`/`album_photos`/`labels`/`photo_labels`/
   `user_favorites` in migration `0011_albums_labels_favorites.sql` and `user_ratings` in migration
   `0016_user_ratings.sql`: **`albums`** = `uid PK`
@@ -1823,7 +1823,7 @@ to `## Package map` in `CLAUDE.md`.
   (`buildOrganizeAPI` in `cmd/kukatko/organize.go`, sharing one `organize.Store` for both albums and labels)),
   `internal/feedback/`
   (the DB layer for **persisted rejections** (negative feedback) — a permanent user "no" to a face↔subject
-  or photo↔label guess; it closes the photo-sorter gap where a rejection wasn't kept and the same
+  or photo↔label guess; it closes the gap where a rejection wasn't kept and the same
   wrong face was offered endlessly, so the review work never shrank; tables `face_rejections`/
   `label_rejections` in migration `0031_feedback_rejections.sql`: `face_rejections` keyed by the face identity
   (`photo_uid`+`face_index`, as in `internal/facematch` and the `faces` table) + `subject_uid`,
@@ -2061,7 +2061,7 @@ to `## Package map` in `CLAUDE.md`.
   the spec terms `user/entity/metadata`); **the key pattern** `Write(ctx, exec, Entry)` writes through
   the `Execer` interface (satisfied by the pool **and** `pgx.Tx`), so the audit row runs in the **same
   transaction** as the mutation — it commits/rolls back with it (ARCHITECTURE §5.1/§11/§12 "audit log
-  durable", a fix of photo-sorter's after-commit gap); `Entry{ActorUID,Action,TargetType,TargetUID,
+  durable", a fix of the previous system's after-commit gap); `Entry{ActorUID,Action,TargetType,TargetUID,
   Details,IP,UserAgent}` (an empty UID/IP/UA → SQL NULL, nil details → `{}`); **the handler convention**
   `Meta` + `FromRequest(r, actorUID)` (the actor from the auth context, IP from `X-Forwarded-For`/`X-Real-IP`/
   `RemoteAddr`, UA from the header) → `(Meta).Entry(action, targetType, targetUID, details)` builds
@@ -2261,9 +2261,9 @@ to `## Package map` in `CLAUDE.md`.
   `photosorter_feeds`), `started_at`/`finished_at TIMESTAMPTZ`, `status TEXT`
   CHECK `running|done|failed`, `high_watermark TIMESTAMPTZ`, `counts JSONB`
   `{imported,updated,skipped,failed}`, `last_error TEXT`. **Only `folder` is still written**: the
-  PhotoPrism/photo-sorter migration finished in August 2026 and its importers were removed, so its
+  one-off import finished in August 2026 and its importers were removed, so its
   runs — and the watermarks they stamped — are now a **provenance record** the table keeps and every
-  reader still decodes. The types `Source` (`SourcePhotoPrism`/`SourcePhotoSorter`/
+  reader still decodes. The legacy `Source` values (`SourcePhotoPrism`/`SourcePhotoSorter`/
   `SourcePhotoSorterFeeds`/`SourceFolder` + `Valid()` + `AllSources()`, both reading one package-level
   list so the predicate a writer validates against and the enumeration a reporter iterates — the system
   status, the `/metrics` import gauges — cannot drift apart; both hand out a **copy**)/`Status`
@@ -2379,7 +2379,7 @@ to `## Package map` in `CLAUDE.md`.
   (`buildRestoreAPI` in `cmd/kukatko/restore.go`)), `internal/maintenance/`
   (**library integrity check & repair** — it keeps a large, long-lived library consistent:
   it reveals drift between the catalogue and the files on disk and fills in/regenerates derived data; it mirrors
-  photo-sorter's `cache build-thumbs`, but is broader and safer (**it never deletes originals** — that is the
+  the previous system's `cache build-thumbs`, but is broader and safer (**it never deletes originals** — that is the
   job of the trash/purge), idempotent, with repairs going through the persistent job queue; all behind the interfaces
   `PhotoCatalog` (`CountPhotos`/`ListPrimaryFiles`/`ListFilePaths`/`ListPhotosMissingPhash`/
   `ListDimensionMismatches`/`RepairDimensions`,
@@ -2539,8 +2539,8 @@ to `## Package map` in `CLAUDE.md`.
   (the worker handler of the `metadata` job — it **re-reads a photo's original** and fills in the columns whose
   authority is the file itself: the IPTC/XMP credits (`subject`/`keywords`/`artist`/`copyright`/`license`)
   and the file-technical ones (`software`/`color_profile`/`image_codec`/`camera_serial`/`projection`/
-  `original_name`). It exists because of photos that came into being **before the extraction did**: rows from the PhotoPrism
-  import, from the photo-sorter migration and everything uploaded before `internal/exif` could read these tags —
+  `original_name`). It exists because of photos that came into being **before the extraction did**: rows from the
+  one-off imports and everything uploaded before `internal/exif` could read these tags —
   the originals still lie in storage, so the metadata still **can** be read. All behind the interfaces
   `PhotoStore`/`Extractor`/`PhotoLister`/`Enqueuer` (`StorageExtractor` = `storage.Materialize` +
   `exif.Extract`, works for **local FS and R2**, and always cleans the temp copy up) → unit-testable without
@@ -2851,7 +2851,7 @@ to `## Package map` in `CLAUDE.md`.
   with the aliases `subject:`→`person:`, `keyword:`→`keywords:`; the bool keys include
   `hidden:` (photos hidden from the library — like `archived:`, using it lifts the store's default scope,
   so `hidden:yes` is the way back to a hidden photo); the id key **`uid:`** names exactly one photo — by its own
-  uid **or** by the PhotoPrism uid it was imported under, one key for both because the two shapes cannot collide
+  uid **or** by the source uid it was imported under, one key for both because the two shapes cannot collide
   — and lifts the live-only, visible-only **and** stack-primary scopes at once (`uidLookup` in
   `store_list.go`), because naming an id is explicit intent and silence about a photo that exists is the one
   useless answer; **an unknown key or an invalid value
@@ -2869,7 +2869,7 @@ to `## Package map` in `CLAUDE.md`.
   the substring filters `Search`/`?camera=`/`?lens=` in `store_list.go`). The package also owns the **uid
   router** (`uidref.go`, pure, no I/O): `ClassifyUID(token) (UIDRef, bool)` reads a uid's two-letter prefix and
   says what it names — `ph` photo, `al` album, `lb` label, `su` subject (`EntityPerson`), `st` stack, `mk`
-  marker, all 26 characters of lowercase base32, plus `pt` = a **PhotoPrism** photo uid at 16 characters of
+  marker, all 26 characters of lowercase base32, plus `pt` = an **imported** photo uid at 16 characters of
   base36, a length that keeps the two families apart; `FindUID(input)` returns the first uid-shaped word of an
   input, so an id pasted with a word beside it is still recognised. A token with an **unknown** prefix is
   deliberately **not** accepted — probing every table per keystroke buys nothing. `internal/globalsearchapi`
@@ -2983,7 +2983,7 @@ to `## Package map` in `CLAUDE.md`.
   is mounted by `serve` on `/metrics` (the middleware skips that path, a scrape does not instrument itself),
   the observation methods `JobStarted`/`JobFinished`/`ObserveEmbeddingCall`/`SetEmbeddingUp`/
   `SetImportProgress`/`ObserveThumbnail`/`GeocodeCreditSpent` and `Middleware(routeOf)` are handed to the subsystems that
-  emit the events; it mirrors photo-sorter's lightweight approach — one namespace, limited label sets;
+  emit the events; it keeps the lightweight approach — one namespace, limited label sets;
   tunables in the `metrics.*` config), `internal/web/`
   (the SPA fallback handler `web.Handler()`/`SPAHandler` + the `internal/web/static` embed
   `//go:embed all:dist/*`; the Vite build writes into `internal/web/static/dist`, which is

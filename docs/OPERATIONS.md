@@ -226,19 +226,21 @@ kukatko storage migrate-to-r2 --concurrency 4                # upload, leave ori
 kukatko storage migrate-to-r2 --delete-local                 # upload and clean up after itself
 ```
 
-### Retired: the PhotoPrism / photo-sorter migration
+### Retired: the one-off importers
 
-`kukatko import photoprism`, `kukatko import photosorter-feeds`, `kukatko migrate photosorter` and
-`kukatko import verify` are **gone**, together with the `POST /api/v1/import/{photoprism,photosorter,
-photosorter-feeds}` triggers and `GET /api/v1/import/verify`. The migration closed on 2026-08-05 with a
-COMPLETE reconciliation and will not be run again; keeping ~20 000 lines of importer alive to prove it
-was not worth it. See [`MIGRATION_PLAN.md`](MIGRATION_PLAN.md) and
-[`MIGRATION_AUDIT.md`](MIGRATION_AUDIT.md) for what it did.
+This library was originally filled by importers written for the two systems that held it before.
+They ran once, reconciled COMPLETE on 2026-08-05, and were deleted — some 20 000 lines kept alive
+only to prove a finished job. **`kukatko import dir` is the only import there is**, and the
+`POST /api/v1/import/*` triggers and `GET /api/v1/import/verify` are gone with them.
 
-What stays: the `import_runs`/`import_failures` history (`GET /api/v1/import/runs`,
-`GET /api/v1/import/failures`, the `/import` page) including the migration's own rows, and the
-`photos.photoprism_uid`/`photoprism_file_hash`/`photosorter_uid` columns — they are live data, not
-leftovers: `uid:pt…` search resolves through them and every metadata sidecar carries them.
+What stays is live data, not leftovers:
+
+- the `import_runs`/`import_failures` history (`GET /api/v1/import/runs`, `GET /api/v1/import/failures`,
+  the `/import` page), including those first runs as provenance;
+- the `photos.photoprism_uid`/`photoprism_file_hash`/`photosorter_uid` columns and the
+  `photoprism_aliases` table. **Do not drop them** — `uid:pt…` search resolves through them and every
+  metadata sidecar carries them. They are named after where the identifier came from, which is the
+  only reason those names appear in the schema at all.
 
 An old `config.yaml` or unit file may still set `import.photoprism.*`, `import.photosorter.*` or
 `ratelimit.import.*`. Nothing maps onto those keys any more and Viper ignores them silently, so a
@@ -297,11 +299,9 @@ minutes of index maintenance. Watch the job queue on the same page for progress.
 ### `kukatko maintenance reset` — the guarded library wipe
 
 Empties this instance's library — every catalogue table and every object the configured store owns
-(`internal/reset`). It was **phase 1 of [`MIGRATION_PLAN.md`](MIGRATION_PLAN.md)** and is the only command in
-the binary that destroys the library on purpose. This deployment has **no S3 backup**
-([`READINESS_AUDIT.md`](READINESS_AUDIT.md) §4), and since the migration closed and its importers were removed
-there is nothing to re-import from either: a misfire is now **unrecoverable**. The guards below are the
-feature, not decoration.
+(`internal/reset`). It is the only command in the binary that destroys the library on purpose. This
+deployment has **no S3 backup**, and the only way back is re-walking the folders the library was
+imported from: a misfire is **unrecoverable**. The guards below are the feature, not decoration.
 
 **What it deletes.** The 28 catalogue tables — `photos`, `photo_files`, `albums`, `album_photos`, `labels`,
 `photo_labels`, `subjects`, `markers`, `faces`, `face_clusters`, `face_detections`, `face_confirmations`,

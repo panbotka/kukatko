@@ -752,7 +752,7 @@
         "codec": "Image or video codec.",
         "orientation": "Portrait, landscape, square, panorama (yes/no).",
         "faces": "Face count (faces:3 = at least three); face:new = a face nobody named yet.",
-        "uid": "One photo by its own ID (or by its PhotoPrism ID). It finds it even when archived or hidden."
+        "uid": "One photo by its own ID (or by the source ID it was imported under). It finds it even when archived or hidden."
       }
     }
   },
@@ -775,12 +775,12 @@
         "person": "person ID",
         "marker": "marker ID",
         "stack": "stack ID",
-        "photoprism": "PhotoPrism ID"
+        "photoprism": "source ID"
       },
       "via": {
         "marker": "the photo it sits on",
         "stack": "the stack's primary photo",
-        "photoprism": "the photo imported from PhotoPrism"
+        "photoprism": "the photo imported under that source ID"
       },
       "state": {
         "archived": "archived",
@@ -1908,8 +1908,8 @@
       "hasAudioYes": "Yes",
       "hasAudioNo": "No",
       "fps": "Frame rate",
-      "photoprismUid": "PhotoPrism UID",
-      "photosorterUid": "photo-sorter UID",
+      "photoprismUid": "Source UID",
+      "photosorterUid": "Source UID (second import)",
       "regenerateThumb": "Regenerate thumbnail",
       "regeneratingThumb": "Regenerating…",
       "regenerateThumbSuccess": "Thumbnail regenerated",
@@ -2123,15 +2123,15 @@
   },
   "import": {
     "title": "Import",
-    "intro": "History of import runs and the failures they recorded. Imports are started from the command line only: `kukatko import dir` reads a directory on the server’s disk. The PhotoPrism and photo-sorter migration finished in August 2026 and was removed — its runs stay in the history as the record of where the library came from.",
+    "intro": "History of import runs and the failures they recorded. Imports are started from the command line only: `kukatko import dir` reads a directory on the server’s disk. The one-off import the library was built from finished in August 2026 and was removed — its runs stay in the history as the record of where the library came from.",
     "maintainerOnly": "This page is available to system maintainers only.",
     "loading": "Loading imports…",
     "error": "Failed to load import status.",
     "source": {
-      "photoprism": "PhotoPrism",
-      "photosorter": "Photo-sorter",
+      "photoprism": "Legacy catalogue",
+      "photosorter": "Legacy vector layer",
       "folder": "Folder on disk",
-      "photosorter_feeds": "Photo-sorter (feeds)"
+      "photosorter_feeds": "Legacy vector layer (feeds)"
     },
     "counts": {
       "imported": "New",

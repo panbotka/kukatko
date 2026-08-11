@@ -61,7 +61,7 @@ These safe, global improvements were applied in the same session as this audit:
 5. **Empty-state consistency.** The subject page's "no photos" state was a bare left-aligned
    paragraph; it now uses the same centered friendly block as every other empty state.
 6. **Plain-language wording** (cs + en), removing developer jargon from user-facing copy:
-   - `home.subtitle` — dropped the internal "PhotoPrism replacement" comparison.
+   - `home.subtitle` — dropped the internal "replacement for X" comparison.
    - `search.degraded` — removed "the inference service is offline / semantic / full-text"
      jargon → "Search by content is temporarily unavailable… Showing text-based results."
    - `clusters.empty.hint` — dropped "detected and clustered" → "once the app recognizes faces".
@@ -108,14 +108,14 @@ implemented**, per the task's conservative-changes rule.
 
 ### Home (`/`)
 - **Was the biggest single issue.** The landing page's centerpiece was "Backend status /
-  Version / Commit `<hash>`" plus a "PhotoPrism replacement" subtitle — the most intimidating,
+  Version / Commit `<hash>`" plus a "replacement for X" subtitle — the most intimidating,
   least actionable screen for a non-technical user, with **no primary navigation at all**.
 - ✅ **Done (first pass):** rewritten as a welcome with destination cards; technical status
   demoted to a muted footer. 🔴🟡
 - ✅ **Done (follow-up):** the card grid is gone too. `/` now renders the **photo library** —
   the thing the app is for — so the photos greet the user instead of a menu of links to them.
   `/library/*` survives as a replacing redirect (query string preserved) for old bookmarks — both
-  Kukátko's own and the ones inherited from PhotoPrism, whose whole UI lived under `/library/…` —
+  Kukátko's own and the ones inherited from the previous instance, whose whole UI lived under `/library/…` —
   the navbar's Knihovna entry points at `/`, and the health badge + build version moved to
   `/account`. An empty catalog gets its own empty state pointing at Upload, distinct from the
   "no photos match these filters" one. `App.test.tsx` covers the routing.
@@ -264,7 +264,7 @@ implemented**, per the task's conservative-changes rule.
   DMS coordinate help) and previously "Geotag" (✅ reworded). The EXIF terms are legitimate for a
   photo app but could get tooltips. 📋 ⚪⚪ — **verified still open (2026-08-05)**, plus three
   harder leaks found by using the page: `AI_MODEL: gemini-2.5-flash` rendered as part of the
-  auto description, literal `Unknown` for camera/lens, and a raw SHA256 + PhotoPrism UID +
+  auto description, literal `Unknown` for camera/lens, and a raw SHA256 + source UID +
   lat/long. See `UX_RESEARCH.md` **N12** and **N26**. ✅ fixed 2026-08-08 for the first two:
   the model trailer is split off the description (and named in Technical details instead) and a
   stored `Unknown` renders no row at all.
@@ -340,7 +340,7 @@ on unexplained jargon that even a non-developer admin will struggle with.
 - **Intimidation (highest raw-error risk):** the run-history table renders **`run.last_error`
   verbatim** in red — the one place a raw server/stack error reaches the UI, contradicting the
   sanitize-everything approach everywhere else. 📋 Truncate + wrap in a friendly "Import failed —
-  details" disclosure. 🔴🟡 Jargon: "dead jobs", "embeddings", "photo-sorter migration",
+  details" disclosure. 🔴🟡 Jargon: "dead jobs", "embeddings", "the migration",
   "background processing queue". 📋 Add plain-language explanations / tooltips. 🟡🟡
 - **Consistency:** first-run confirmation used a native `window.confirm` with un-localized
   OK/Cancel, vs. Trash's styled modal. ✅ **Done:** now the shared `ConfirmModal`; its confirm

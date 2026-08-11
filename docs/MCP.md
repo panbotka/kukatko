@@ -79,7 +79,7 @@ objects is unusable. Hence:
 
 | Tool | What it does |
 | --- | --- |
-| `search_photos` | The main entry point. Free text + the **search language** (`person:babicka year:1960-1969 -album:dovolena`), plus exact scoping via `album_uid` / `label_uid` / `person_uid`, `sort`, `order`, `limit`, `offset`. Returns a compact page + `total` + `remaining`. `uid:` names one photo by its own id or its PhotoPrism id and reaches it even when archived, hidden or a stack variant. |
+| `search_photos` | The main entry point. Free text + the **search language** (`person:babicka year:1960-1969 -album:dovolena`), plus exact scoping via `album_uid` / `label_uid` / `person_uid`, `sort`, `order`, `limit`, `offset`. Returns a compact page + `total` + `remaining`. `uid:` names one photo by its own id or the source id it was imported under, and reaches it even when archived, hidden or a stack variant. |
 | `get_photo` | A single photo in detail: texts, date, location, exposure, the caller's favorite/rating + **the albums, labels and people** it carries. |
 | `find_similar_photos` | Visually similar photos (kNN over embeddings), with the distance. If embeddings are missing it says so. |
 | `list_albums`, `list_labels`, `list_subjects` | Catalogs with counts, optionally filtered by `name`. Used to turn **a name a human said into the `uid`** the other tools want. A subject carries both `face_count` (recognised faces) and `photo_count` (photos the person appears on) — one photo can hold several of their faces, so they are not the same number. |

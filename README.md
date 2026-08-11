@@ -156,9 +156,10 @@ were written.
   `PATH`, for EXIF, video posters and playback, HEIC, and RAW previews. Without them those formats
   degrade; everything else works. `vipsthumbnail` (libvips) is optional too and only makes
   thumbnailing faster.
-- **Optional: an embeddings service** for semantic search and face recognition — see
-  [below](#semantic-search-and-faces-optional). Everything except those two features works without
-  it.
+- **Optional: an embeddings service** for semantic search and face recognition —
+  [`kozaktomas/image-embeddings`](https://github.com/kozaktomas/image-embeddings) is the one this
+  instance runs; see [below](#semantic-search-and-faces-optional). Everything except those two
+  features works without it, and it is allowed to be offline.
 
 ## Getting it running
 
@@ -272,21 +273,64 @@ keeping and losing the capture dates, captions and GPS of a Google Photos export
 
 ## Semantic search and faces (optional)
 
-The two "smart" features need an inference service that Kukátko does **not** ship: a small HTTP
-sidecar wrapping CLIP (image + text, 768-dim) and InsightFace (512-dim), pointed at by
-`KUKATKO_EMBEDDING_URL`. It is deliberately a separate process so it can live on a machine with a GPU
-— one that is allowed to be powered off, since the queue simply waits.
+The two "smart" features need one thing Kukátko deliberately does not contain: a neural network.
+Models are a different kind of dependency — a GPU, a couple of gigabytes of weights, a Python
+runtime — and putting them inside the binary would make the binary a lie. So they live in a separate
+HTTP service, and Kukátko is a client of it.
 
-Anything answering these three endpoints will do:
+**[`kozaktomas/image-embeddings`](https://github.com/kozaktomas/image-embeddings)** is that service:
+a small FastAPI app around **OpenCLIP ViT-L-14** and **InsightFace buffalo_l**, with a Dockerfile
+and a GPU deployment guide. It is what this instance runs.
+
+```bash
+git clone https://github.com/kozaktomas/image-embeddings && cd image-embeddings
+docker build -t image-embeddings .
+docker run -d -p 8000:8000 --name embeddings image-embeddings
+```
+
+Then point Kukátko at it — `KUKATKO_EMBEDDING_URL=http://embeddings:8000` when both run in the same
+Docker network, or the address of whatever machine holds the GPU.
+
+### How the two features actually work
+
+**Semantic search** rests on CLIP being trained to put a picture and its description in the *same*
+768-dimensional space. Every photo is embedded once, on upload (`POST /embed/image`), and the vector
+is stored in a `halfvec` column with an HNSW cosine index. When you search, your words are embedded
+by the same model (`POST /embed/text`) and the query becomes "give me the nearest vectors" — plain
+SQL. That is why "sunset over water" finds the photo nobody ever titled, and why **similar photos**
+is the same query with a photo's own vector as the needle. The default hybrid mode runs full-text
+alongside it and merges, so exact words still win when you use them.
+
+**Faces** are a second, unrelated model. `POST /embed/face` returns one 512-dimensional vector per
+detected face plus its bounding box, and those vectors go into their own indexed column. Recognition
+is then arithmetic on distances, and Kukátko deliberately stops short of acting on it:
+
+- an unnamed face's nearest neighbours among **named** faces become *suggestions*, never assignments;
+- faces nobody has named are grouped into **clusters** by union-find over their nearest neighbours,
+  so you can name twenty photos of the same stranger in one go;
+- a named person's faces have a centroid, and the ones sitting far from it are surfaced as
+  **outliers** — that is how a misfiled face gets found;
+- "not this person" is remembered as a **rejection**, so a wrong guess stays refused instead of
+  coming back every sweep.
+
+Nothing above writes an identity on its own. The machine narrows twenty thousand photos to one
+question, and a human answers it — which is the whole design, not a missing feature.
+
+**Without the service**, upload, browsing, full-text search, albums, labels, places, video and
+everything else work as usual. `image_embed` and `face_detect` jobs simply queue in Postgres and
+drain whenever the service comes back, so a GPU box that is powered off most of the time is a
+supported setup rather than an outage. Search says so instead of pretending: semantic and hybrid
+fall back to full-text and mark the result `degraded`.
+
+Anything answering the same three endpoints will do — the contract is three JSON shapes:
 
 - `POST /embed/image` — multipart, field `file` → `{ "dim": 768, "embedding": [...] }`
 - `POST /embed/text` — JSON `{ "text": "..." }` → the same shape, in the same vector space
 - `POST /embed/face` — multipart, field `file` →
   `{ "faces_count": N, "faces": [{ "dim": 512, "embedding": [...], "bbox": [x1,y1,x2,y2], "det_score": 0.9 }] }`
 
-Without it, upload, browsing, full-text search, albums, labels, places, video and everything else
-work as usual; `image_embed`/`face_detect` jobs queue up and drain whenever the service appears. The
-exact contract is in [`docs/ARCHITECTURE.md` §6.1](docs/ARCHITECTURE.md).
+Details, including how a bounding box is normalized against EXIF orientation, are in
+[`docs/ARCHITECTURE.md` §6](docs/ARCHITECTURE.md).
 
 **Maps** are the other optional integration: set `MAPY_API_KEY` (a [mapy.com](https://developer.mapy.com/)
 REST key) and the map view lights up. The key stays server-side — tiles and geocoding are proxied,

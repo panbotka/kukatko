@@ -3,25 +3,25 @@
 **Version:** 0.1 (draft) · **Date:** 2026-06-25 · **Status:** implemented, in active development (M0–M7)
 
 This document is the binding design of the Kukátko system. It draws on the design doc (feature
-list), on an analysis of the reference project **photo-sorter** (by the same author), and on a
-verified survey of the real interfaces (PhotoPrism API, mapy.com REST API, pgvector on ARM, the
-inference sidecar). Cited sources are in section [§17 Reference](#17-reference).
+list), on the author's earlier photo-management work, and on a verified survey of the real
+interfaces (mapy.com REST API, pgvector on ARM, the inference sidecar). Cited sources are in
+section [§17 Reference](#17-reference).
 
 ---
 
 ## 1. Purpose and scope
 
-Kukátko is a standalone application for managing a personal/family photo library. It is meant to
-replace PhotoPrism while also bringing over the "smart" features from photo-sorter (embeddings,
-faces, semantic search, similar photos) — but with **better usability and robustness**, because
-photo-sorter is hard to use.
+Kukátko is a standalone application for managing a personal/family photo library: the everyday
+catalogue (albums, labels, people, places, videos) and the "smart" layer on top of it (embeddings,
+face recognition, semantic search, similar photos) in one binary, with **usability and robustness**
+as the point — earlier attempts at this had the features and were still hard to use.
 
 **What is in scope (from the design doc):**
 
 - Simple storage: originals + thumbnails on disk, pgvector as the relational DB.
-- Full metadata as in PhotoPrism: GPS, labels, albums, people.
-- Import from PhotoPrism + **incremental** re-import. *(Done 08/2026, then removed — [§9](#9-import-from-photoprism-s11--retired).)*
-- Image and face embeddings (like photo-sorter).
+- Full metadata: GPS, labels, albums, people.
+- Import of an existing library + **incremental** re-import. *(Done 08/2026, then removed — [§9](#9-the-one-off-importers-s11s12--retired).)*
+- Image and face embeddings.
 - Design per [Bootswatch Superhero](https://bootswatch.com/superhero/), with a focus on usability.
 - Slideshow on labels/albums — configurable transition effect and speed.
 - Reliable "back" (including on a filter).
@@ -32,31 +32,31 @@ photo-sorter is hard to use.
 - Everything as a single executable binary, frontend included.
 - Backup to S3 (originals + DB dump) as part of the running process.
 - Configuration via YAML + env variables.
-- Text search (both semantic and full-text) like photo-sorter.
-- People recognition + similar photos (like the sorter, better UX).
+- Text search, both semantic and full-text.
+- People recognition + similar photos.
 - Working multi-upload, including uploads from the mobile gallery.
 - Bilingual: Czech (default) + English.
 - Full phone/tablet support.
 - Filters and sorting everywhere (library, albums, labels).
-- Photo detail = a combination of PhotoPrism + photo-sorter (metadata/editing, faces, similar).
-- **Videos** (mp4/mov/live photos as in PhotoPrism) — storage, poster + thumbnails via `ffmpeg`,
+- Photo detail = metadata/editing, faces and similar photos on one page.
+- **Videos** (mp4/mov/live photos) — storage, poster + thumbnails via `ffmpeg`,
   playback/streaming (range requests). Embedding on the poster frame
   (which also makes videos searchable).
 - **Duplicate management** — review of similar/duplicate photos (pHash + embedding) and bulk cleanup.
 
 **What is out of scope:**
 
-- **Photo book creation** (deliberately not carried over from photo-sorter — LaTeX stack, complexity).
-- Public sharing / share links are not a priority (can be added later; PhotoPrism doesn't target them either).
+- **Photo book creation** — deliberately not built (a LaTeX stack, and a project of its own).
+- Public sharing / share links are not a priority (they can be added later).
 
 ---
 
 ## 2. Guiding principles
 
-1. **Inspiration, not a copy.** From photo-sorter we take the proven contracts and data schema,
-   but we fix its pain points (see [§15](#15-what-we-do-differently-from-photo-sorter)).
-2. **PhotoPrism was primary** until the cutover; the import was read-only and repeatable, and ran in
-   parallel without disturbing it. Done in 08/2026 — see [§9](#9-import-from-photoprism-s11--retired).
+1. **Inspiration, not a copy.** The proven contracts and data schema of the author's earlier
+   photo-management work are taken over; its pain points are fixed (see [§15](#15-what-we-do-differently)).
+2. **The previous system stayed primary** until the cutover; the import was read-only and repeatable,
+   and ran in parallel without disturbing it. Done in 08/2026 — see [§9](#9-the-one-off-importers-s11s12--retired).
 3. **Pi-first, the box as an accelerator.** The app runs on a Raspberry Pi (ARM64, limited RAM).
    Compute-heavy inference (CLIP, faces) runs on a powerful machine (the box with an NVIDIA GPU,
    on Tailscale), which **is not always powered on**. Everything must work even when the box is offline.
@@ -120,8 +120,7 @@ Each subsystem has one purpose, a clear interface, and can be tested independent
 | S8 | **Organization** | Albums, labels, bulk metadata editing, per-user favorites. |
 | S9 | **Maps** | mapy.com proxy (tile + reverse geocode), GeoJSON for the map, client-side clustering. |
 | S10 | **Auth** | Users viewer/editor/admin/maintainer (ladder), bcrypt, sliding sessions, rate-limit, audit. |
-| S11 | ~~**Import (PhotoPrism)**~~ | Done and removed in 08/2026 — see [§9](#9-import-from-photoprism-s11--retired). |
-| S12 | ~~**Migration (photo-sorter)**~~ | Done and removed in 08/2026 — see [§10](#10-migration-from-photo-sorter-s12--retired). |
+| S11–S12 | ~~**The one-off importers**~~ | Done and removed in 08/2026 — see [§9](#9-the-one-off-importers-s11s12--retired). |
 | S13 | **Backup** | S3-compatible backup of originals + `pg_dump`, scheduled, in-process. |
 | S14 | **Frontend (SPA)** | React/Bootstrap Superhero, i18n, mobile/tablet, back/history, slideshow, detail. |
 | S15 | **Config & ops** | YAML+env configuration, Prometheus metrics, audit log, CLI (Cobra). |
@@ -130,13 +129,14 @@ Each subsystem has one purpose, a clear interface, and can be tested independent
 
 ## 4. Tech stack
 
-The choices draw on photo-sorter (proven) and on research ([§17](#17-reference)).
+The choices draw on what was already proven in the author's earlier photo-management work, and on
+research ([§17](#17-reference)).
 
 ### Backend
-- **Go**, a single static binary, **`CGO_ENABLED=0`** (like photo-sorter — keeps deployment
-  simple, shell-out to CLI tools for HEIC/RAW instead of CGO libraries).
-- HTTP router **chi/v5**; CLI **Cobra**; configuration **Viper** (YAML + env — photo-sorter has
-  only env, Kukátko adds YAML per the requirement).
+- **Go**, a single static binary, **`CGO_ENABLED=0`** (keeps deployment simple: shell-out to CLI
+  tools for HEIC/RAW instead of CGO libraries).
+- HTTP router **chi/v5**; CLI **Cobra**; configuration **Viper** (YAML + env, so a deployment is
+  not env-only).
 - DB access: `pgx` (pool) + `pgvector-go`.
 
 ### Database
@@ -145,12 +145,11 @@ The choices draw on photo-sorter (proven) and on research ([§17](#17-reference)
   in shared-postgres — if it's missing, that's the first M0 task (`CREATE EXTENSION vector`).
 - **Vectors: `halfvec` (float16) + HNSW + `vector_cosine_ops`.** Half-precision halves the index
   memory at <1 % recall loss on normalized embeddings — crucial on the Pi.
-- Migrations: SQL files in `embed.FS`, auto-applied at startup in lexicographic order
-  (adopted from photo-sorter).
+- Migrations: SQL files in `embed.FS`, auto-applied at startup in lexicographic order.
 
 ### Frontend
 - **React 19 + TypeScript + Vite**, embedded into the binary via `//go:embed all:dist/*`,
-  SPA fallback to `index.html` (like photo-sorter).
+  SPA fallback to `index.html`.
 - **react-bootstrap + Bootswatch Superhero** theme (dark). Rich interactions (slideshow, crop,
   infinite scroll) → React is necessary over vanilla Bootstrap.
 - **i18next** (cz default, en). **Leaflet** + `Leaflet.markercluster` for the map.
@@ -169,11 +168,12 @@ The choices draw on photo-sorter (proven) and on research ([§17](#17-reference)
   vs GB thanks to shrink-on-load. The default is pure-Go.)
 
 ### Inference sidecar (on the box)
-- **Reuse the existing service on the box.** Kukátko doesn't build a new sidecar — it calls the **existing
-  embeddings service running on the box** (same models as photo-sorter → 1:1 compatibility).
-  The address is in the configuration (`embedding.url`); when the box is offline, jobs wait in the queue
+- **Kukátko does not build a sidecar — it is a client of one.** The reference implementation is
+  [`kozaktomas/image-embeddings`](https://github.com/kozaktomas/image-embeddings) (FastAPI over
+  OpenCLIP + InsightFace), normally running on the GPU box. The address is in the configuration
+  (`embedding.url`); when the box is offline, jobs wait in the queue
   (see [§8](#8-asynchronni-joby--box-offline)). For the contract see [§6.1](#61-kontrakt-sidecaru).
-- Models (same as photo-sorter): **CLIP ViT-L/14** (image+text, 768-dim),
+- Models: **CLIP ViT-L/14** (image+text, 768-dim),
   **InsightFace `buffalo_l`** (ArcFace, 512-dim). Note: pretrained packs are typically
   *non-commercial/research* — OK for personal use.
 
@@ -218,29 +218,30 @@ The choices draw on photo-sorter (proven) and on research ([§17](#17-reference)
 
 ## 5. Data model
 
-The schema follows on from photo-sorter (compatibility for migration) with changes for Kukátko.
+The schema follows on from the library's previous shape, so the import could be a 1:1 carry-over,
+with changes for Kukátko.
 UID = `VARCHAR(32)`, generated by the application (prefix + random suffix). `file_hash` = SHA256 hex.
 Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, in R2 the object key directly.
 
-### 5.1 Key tables (adopted from photo-sorter, modified)
+### 5.1 Key tables
 
 - **`photos`** — `uid PK`, `file_hash UNIQUE` (SHA256), `file_path`, `file_name/size/mime`,
   `file_width/height/orientation`, `taken_at` + `taken_at_source`, `title/description/notes`,
   `ai_note` (free text from external AI classification, `NOT NULL DEFAULT ''`, editable, in full-text),
   `lat/lng/altitude`, `camera_make/model`, `lens_model`, `iso/aperture/exposure/focal_length`,
-  `exif JSONB`, `private` (**legacy** — it was written by the PhotoPrism/photo-sorter import and
-  nothing writes it any more; the application neither filters nor edits it), `archived_at`,
+  `exif JSONB`, `private` (**legacy** — written by the one-off importers and by nothing since;
+  the application neither filters nor edits it), `archived_at`,
   `uploaded_by`, timestamps.
   - **IPTC/XMP + technical file metadata** (migration `0027_photos_iptc_metadata.sql`, all
     `NOT NULL DEFAULT ''`, or `false` respectively): **editable** `subject` (IPTC headline — what the photo
-    is about; full-text weight B), `keywords` (IPTC keywords **verbatim**, comma-separated per PhotoPrism's
-    format; full-text weight C — **these are not labels**, `internal/organize` stays unchanged),
+    is about; full-text weight B), `keywords` (IPTC keywords **verbatim**, comma-separated;
+    full-text weight C — **these are not labels**, `internal/organize` stays unchanged),
     `artist`, `copyright`, `license`, `scan` (`BOOLEAN` — a scan of a paper photo, not a camera shot);
     **machine-derived** (stored and served, but not edited) `software` (firmware/Lightroom/scanner),
     `color_profile` (ICC), `image_codec` (**still** compression: jpeg/heic/avif — `video_codec`/
     `audio_codec` are separate), `camera_serial`, `original_name` (the file name before import;
     `file_name` is the name in the storage layout), `projection` (`equirectangular` for panoramas).
-    Populating from EXIF and mapping from the PhotoPrism import are separate tasks — existing rows have
+    Populating from EXIF and mapping them at import were separate tasks — existing rows have
     defaults.
   - **Hidden from the library** (migration `0049_photos_hidden_from_library.sql`):
     `hidden_from_library BOOLEAN NOT NULL DEFAULT false` keeps a photo out of the firehose — the grid
@@ -330,9 +331,10 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
     it also included archived ones). Detection is driven by `internal/stacks` (synchronous, idempotent, incremental
     global grouping, triggered by the admin `POST /process/stacks`).
   **New columns for Kukátko:**
-  - `photoprism_uid VARCHAR(32)` — PhotoUID from PhotoPrism (dedup + increment).
-  - `photoprism_file_hash VARCHAR(40)` — file SHA1 from PhotoPrism (download mapping).
-  - `photosorter_uid VARCHAR(32)` — UID from photo-sorter (migration).
+  - **Provenance ids** — `photoprism_uid VARCHAR(32)`, `photoprism_file_hash VARCHAR(40)` (a source
+    file's SHA1) and `photosorter_uid VARCHAR(32)`. They are named after the systems the library was
+    imported from, and they are **live data**: `uid:pt…` search resolves through them and every
+    metadata sidecar carries them. Never drop them.
   - **Video** (migration `0004_video.sql`): `media_type IN (image|video|live)` (default `image`,
     partial index for "videos only"), `duration_ms`, `video_codec`, `audio_codec`, `has_audio`,
     `fps`. Populated for videos via `internal/video.Probe` (ffprobe → exiftool fallback);
@@ -343,7 +345,7 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
 - **`photo_files`** — originals + derivatives, `role IN (original|sidecar|edited)`, `is_primary`.
 - **`photoprism_aliases`** — `photoprism_uid PK` → `photo_uid` (many-to-one, `ON DELETE CASCADE`),
   `photoprism_file_hash`: the source photos that collapsed onto a row already holding their exact
-  content (see §5.3).
+  content (see §5.3). Provenance like the columns above, and equally live.
 - **`photo_phashes`** — `phash/dhash BIGINT` (near-duplicate detection).
 - **`photo_edits`** — non-destructive edits (crop/rotation/brightness/contrast), 0..1 coordinates.
 - **`embeddings`** — `photo_uid PK`, `embedding halfvec(768)`, `model`, `pretrained`, `dim`;
@@ -405,17 +407,17 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
   )
   -- index on (state, run_after, priority); dedup unique on (type, payload->>'photo_uid') WHERE state IN (queued,running)
   ```
-- **`import_runs`** — import history: source (`photoprism`/`photosorter`/`photosorter_feeds`/**`folder`**
-  = `kukatko import dir`, migration `0026`), high-watermark, counts, time. Only `folder` is still
-  written — a folder has no source time, so it records no watermark and idempotency is done by the
-  content SHA256. The other three are the finished migration, kept as the provenance record.
+- **`import_runs`** — import history: source (**`folder`** = `kukatko import dir`, migration `0026`,
+  plus three legacy values written by the retired one-off importers), high-watermark, counts, time.
+  Only `folder` is still written — a folder has no source time, so it records no watermark and
+  idempotency is done by the content SHA256. The rest is kept as the provenance record.
 - **`face_rejections` / `label_rejections`** — persisted **negative feedback** (migration
   `0031_feedback_rejections.sql`, package `internal/feedback`). A permanent user "no": *this
   face is NOT this person* (`face_rejections`: `photo_uid`+`face_index`+`subject_uid`) and *this photo
   should NOT have this label* (`label_rejections`: `photo_uid`+`label_uid`). Both carry `rejected_by`
   (FK users `ON DELETE SET NULL`) and `rejected_at`; **UNIQUE natural key** (rejecting twice is a no-op,
   not an error); FK to photos/subjects/labels `ON DELETE CASCADE` cleans up after deletion. **A design
-  decision the next iteration must not undo:** photo-sorter **never kept** rejections,
+  decision the next iteration must not undo:** the previous system **never kept** rejections,
   so the same wrong face was offered forever and review work never shrank — Kukátko stores it
   durably, so that every review/search feature can exclude it. **A rejection is an OPINION, not
   a mutation** — it never deletes a face, detaches a marker, or removes a label. `face_rejections`
@@ -430,19 +432,19 @@ These columns were the import's dedup keys; they are now **the record of where e
 and they stay. `uid:pt…` search resolves through the first two, and `internal/sidecarexport` writes all
 of them into the sidecar next to every original, so dropping a column would silently break both.
 
-| Source | Key in the source | Storage in Kukátko | Purpose |
-|-------|----------------|-------------------|------|
-| PhotoPrism | PhotoUID (16 chars) | `photos.photoprism_uid` | provenance; the target of `uid:pt…` search |
-| PhotoPrism | PhotoUID of a DUPLICATE | `photoprism_aliases.photoprism_uid` | a source photo whose content is already catalogued |
-| PhotoPrism | Files[].Hash (SHA1) | `photos.photoprism_file_hash` | provenance of a single source file (a RAW sibling) |
-| photo-sorter | `photos.uid` | `photos.photosorter_uid` | provenance of a photo that came via photo-sorter |
+| Id in the source system | Storage in Kukátko | Purpose |
+|----------------|-------------------|------|
+| photo uid, 16 chars (`pt…`) | `photos.photoprism_uid` | provenance; the target of `uid:pt…` search |
+| photo uid of a DUPLICATE | `photoprism_aliases.photoprism_uid` | a source photo whose content is already catalogued |
+| a source file's SHA1 | `photos.photoprism_file_hash` | provenance of a single source file (a RAW sibling) |
+| photo uid of the second system | `photos.photosorter_uid` | provenance of a photo that came through it |
 
-> **Note:** PhotoPrism uses **SHA1** for the file hash, Kukátko uses **SHA256**. The import computed its
-> own SHA256 after downloading (that is what dedup ran on) and kept the PP SHA1 only for lookup. The
-> migration from photo-sorter, by contrast, shared SHA256, so dedup there was direct.
+> **Note:** the first source system hashed files with **SHA1**, Kukátko uses **SHA256**. The import
+> computed its own SHA256 after downloading (that is what dedup ran on) and kept the SHA1 only for
+> lookup. The second source shared SHA256, so dedup there was direct.
 
-> **`photos.photoprism_uid` is 1:1 and cannot express a duplicated source photo.** PhotoPrism indexes the
-> same bytes as two photos; `photos.file_hash` is UNIQUE, so the second one gets no row, and the row that
+> **`photos.photoprism_uid` is 1:1 and cannot express a duplicated source photo.** The source system
+> indexed the same bytes as two photos; `photos.file_hash` is UNIQUE, so the second one gets no row, and the row that
 > holds its content already wears the first one's uid. **`photoprism_aliases`** (migration `0046`:
 > `photoprism_uid` PK → `photo_uid` many-to-one, `ON DELETE CASCADE`) records that collapse, so the second
 > uid still resolves — to the surviving row — and the duplicate's albums, labels and markers are attached
@@ -458,7 +460,8 @@ of them into the sidecar next to every original, so dropping a column would sile
 
 ### 6.1 Sidecar contract
 
-Same as photo-sorter (`EMBEDDING_URL`, offline-aware by default). HTTP:
+One HTTP service, offline-aware by default; the reference implementation is
+[`kozaktomas/image-embeddings`](https://github.com/kozaktomas/image-embeddings):
 
 - **`POST /embed/image`** — multipart, field `file`. Response:
   `{ "dim": 768, "embedding": [float32×768], "model": "...", "pretrained": "ViT-L-14" }`
@@ -470,7 +473,7 @@ Same as photo-sorter (`EMBEDDING_URL`, offline-aware by default). HTTP:
                  "bbox": [x1,y1,x2,y2] /*px*/, "det_score": 0.0..1.0 } ] }
   ```
   Pixel `[x1,y1,x2,y2]` are converted on write to normalized `[x,y,w,h]` (0..1) according to
-  the dimensions and EXIF orientation (logic adopted from photo-sorter).
+  the dimensions and EXIF orientation.
 
 ### 6.2 Search
 
@@ -527,7 +530,7 @@ Same as photo-sorter (`EMBEDDING_URL`, offline-aware by default). HTTP:
 
 ## 7. People and faces
 
-Workflow (improved UX over photo-sorter):
+Workflow:
 
 1. After import/upload the `face_detect` job → sidecar `/embed/face` → save into `faces`.
 2. **Auto-clustering:** similar faces are grouped by vector (HNSW + threshold / connected components),
@@ -603,7 +606,7 @@ keeps the aggregation cheap.
 
 ## 8. Asynchronous jobs and "box offline"
 
-This is the main robustness improvement over photo-sorter (which has in-memory jobs + SSE,
+This is the main robustness improvement over the previous system (in-memory jobs + SSE,
 lost on restart).
 
 - **Persistent queue in Postgres** (`jobs`). The worker takes work via
@@ -666,7 +669,7 @@ atomic write) and `internal/sidecarjob` (job handler + backfill). **The whole fo
 in **one single place**: in Postgres. The S3 backup is good, but it is **one mechanism**, and a backup
 that quietly fails for three months you discover on the day you need it. The sidecar is a second mechanism of a **different
 kind**: curation data sits *next to the photo it describes*, in a text file that any tool can read,
-on the same storage as the original. PhotoPrism's answer to the same problem.
+on the same storage as the original.
 
 **Key decisions:**
 
@@ -698,31 +701,23 @@ on the same storage as the original. PhotoPrism's answer to the same problem.
 
 ---
 
-## 9. Import from PhotoPrism (S11) — retired
+## 9. The one-off importers (S11–S12) — retired
 
-## 10. Migration from photo-sorter (S12) — retired
+**Done and gone.** This library was first filled by importers written for the two systems that held
+it before. They closed on 2026-08-05 with a COMPLETE reconciliation (`photos`, faces, albums, labels
+and people all reconciled without a gap), and the ~20 000 lines that carried them — four importer
+packages, three source clients, the `import`/`migrate`/`verify` subcommands they added, the
+`POST /import/*` triggers and their `import.*` configuration — were removed in August 2026. Kukátko
+is the primary system and imports from nothing but the disk.
 
-**Both are done and both are gone.** The migration ran from the design in this section, closed on
-2026-08-05 with a COMPLETE reconciliation (`photos`, faces, albums, labels and people all reconciled
-without a gap), and the ~20 000 lines that carried it — `internal/ppimport`, `internal/psimport`,
-`internal/psfeedsimport`, `internal/importverify`, the `internal/photoprism`/`internal/photosorter`/
-`internal/psfeeds` clients, the `import photoprism` / `import photosorter-feeds` /
-`migrate photosorter` / `import verify` commands, the `POST /import/*` triggers and the
-`import.photoprism.*`/`import.photosorter.*` configuration — were removed in August 2026. Kukátko is
-now the primary system and imports nothing from either.
-
-What the migration actually did, field by field, and what it deliberately dropped is recorded in
-[`MIGRATION_AUDIT.md`](MIGRATION_AUDIT.md); how it was run, in [`MIGRATION_PLAN.md`](MIGRATION_PLAN.md).
-Both are kept as the historical record.
-
-**What outlived it** (and must not be mistaken for leftovers):
+**What outlived them** (and must not be mistaken for leftovers):
 
 - `photos.photoprism_uid`, `photos.photoprism_file_hash`, `photos.photosorter_uid` and the
   `photoprism_aliases` table — the provenance of 20 647 photos, the target of `uid:pt…` search
   (`internal/globalsearchapi`), and part of every metadata sidecar written next to an original
   (`internal/sidecarexport`), i.e. of 25 791 files in object storage. See [§5.3](#53-identity-mapping-provenance).
-- The `import_runs`/`import_failures` rows the migration wrote, and the
-  `photoprism`/`photosorter`/`photosorter_feeds` values of `importer.Source` needed to read them.
+- The `import_runs`/`import_failures` rows they wrote, and the three legacy values of
+  `importer.Source` needed to read them.
 - The one import that remains: **`kukatko import dir`** (`internal/dirimport`), which walks a
   directory on the server's disk — a Google Takeout export included — and ingests it through the same
   pipeline as a browser upload.
@@ -735,15 +730,15 @@ Both are kept as the historical record.
   `editor` up, `maintainer` is the top (operations: imports/maintenance/backup/…). Bcrypt cost 12.
   Bootstrap the admin via env (`BOOTSTRAP_ADMIN_*`) on a clean install.
 - **Sessions:** an opaque token in an HttpOnly + SameSite=Strict cookie; a separate `download_token`.
-  **Improvements over photo-sorter:**
+  **Improvements over the previous system:**
   - **Sliding expiry** — extension on activity (an active user doesn't get dropped after 30 days).
   - **A password change revokes the user's other sessions.**
-  - **Rate-limit on `/auth/login`** (brute-force protection; photo-sorter has it only on share links).
+  - **Rate-limit on `/auth/login`** (brute-force protection).
   - **Rate-limit on demanding endpoints** (`internal/ratelimit`) — a per-client-IP token-bucket
     (`ratelimit.*` config) on `POST /upload`, `POST /photos/bulk`, `POST /import/*` and
     `GET /map/tiles/...`, so that a single client can't swamp the server; an empty bucket → 429. The limiter runs
     before the auth check and can be turned off (`rate_per_sec ≤ 0`).
-- **Durable audit log** — written to `audit_log` in the **same transaction** as the mutation (photo-sorter
+- **Durable audit log** — written to `audit_log` in the **same transaction** as the mutation (the previous system
   writes only after commit → loss on a crash).
 - **The Mapy.com key** is never sent to the browser — tile/geocode requests go through the
   **backend proxy** (see §12 Maps).
@@ -775,7 +770,7 @@ Both are kept as the historical record.
   is in **URL query params** + History API. Browser back restores the previous filter; the server is
   stateless with respect to view state. Sharing a URL = sharing a view.
 - **Library:** a virtualized grid (`react-virtuoso`), infinite scroll, filters+sorting.
-- **Photo detail** (a combination of PP + photo-sorter): preview + metadata (view/edit),
+- **Photo detail:** preview + metadata (view/edit),
   EXIF, GPS/mini-map, **faces** (boxes, assigning people), **similar photos**, labels, albums,
   favorites, non-destructive edits (crop/rotate/brightness/contrast).
 - **Bulk editing:** select multiple photos → albums, labels, captions, location, favorites.
@@ -787,7 +782,7 @@ Both are kept as the historical record.
 ## 14. Configuration, build and operations (S15)
 
 ### Configuration
-- **YAML + env override** (Viper). Keys (based on photo-sorter, extended): `database.url`,
+- **YAML + env override** (Viper). Keys: `database.url`,
   `storage.originals_path`, `storage.cache_path`, `embedding.url`/`dim`, `web.port`/`host`/
   `session_secret`, `auth.bootstrap_admin_*`, `maps.mapy_api_key`, `backup.s3.{endpoint,
   region,bucket,access_key,secret_key,path_style}`, `backup.schedule`, `duplicate.*`,
@@ -825,13 +820,16 @@ Both are kept as the historical record.
 - Runbook (fresh machine → install → restore → verify): [`docs/RESTORE.md`](RESTORE.md).
 
 ### Observability
-- **Prometheus** metrics (like photo-sorter), `audit_log`, structured logs.
+- **Prometheus** metrics, `audit_log`, structured logs.
 
 ---
 
-## 15. What we do differently from photo-sorter
+## 15. What we do differently
 
-| photo-sorter pain point | Solution in Kukátko |
+The pain points below are the ones the author's earlier photo-management app had; fixing them is
+most of why Kukátko exists.
+
+| Pain point | Solution in Kukátko |
 |----------------------|------------------|
 | In-memory jobs, lost on restart | Persistent queue in Postgres (`jobs`, SKIP LOCKED, retry, dead-letter) |
 | No rate-limit on login | Rate-limit on `/auth/login` |
@@ -851,31 +849,20 @@ Both are kept as the historical record.
 
 1. **pgvector in `shared-postgres`** — is `CREATE EXTENSION vector` available? (blocking for M0)
 2. **`halfvec`** requires pgvector ≥ 0.7 — verify the version; otherwise fall back to `vector` (float32).
-3. **PhotoPrism `updated:` filter** — does it also catch changes to metadata alone? (verify empirically against
-   a real instance; fallback `added:` + watermark.)
-4. **PhotoPrism token bug** (#4665) — verify that the access token works on `/api/v1/photos`
-   with the correct scope and `Content-Type`.
-5. **Mapy.com key** — a binding to a domain/referrer is not documented; keep the key server-side.
+3. **Mapy.com key** — a binding to a domain/referrer is not documented; keep the key server-side.
 6. **Pi HW** — the real speed of pure-Go thumbnails and HEIC on the target Pi; possibly enable
    the `vipsthumbnail` shell-out. Measure the HNSW index build (maintenance_work_mem) on the Pi vs a build
    on the box/shared server.
-7. **Inference models** — confirm photo-sorter's exact CLIP checkpoint (the `pretrained` field),
-   so the embeddings migration matches 1:1 (the same space).
+5. **Inference models** — the CLIP checkpoint and its `pretrained` field must stay pinned: change the
+   checkpoint and every stored embedding is in a different space.
 
 ---
 
 ## 17. Reference
 
-**photo-sorter (local):** `internal/fingerprint/embedding.go` (sidecar contract),
-`internal/database/postgres/migrations/032_native_photo_management.sql` (schema),
-`internal/config/config.go`, `internal/thumb/thumb.go`, `internal/web/handlers/process.go`,
-`.goreleaser.yaml`, `deb/photo-sorter.service`.
-
-**PhotoPrism API:** [REST API intro](https://docs.photoprism.app/developer-guide/api/) ·
-[Client Authentication](https://docs.photoprism.app/developer-guide/api/auth/) ·
-[Search Filters](https://docs.photoprism.app/user-guide/search/filters/) ·
-[internal/api routes](https://pkg.go.dev/github.com/photoprism/photoprism/internal/api) ·
-[uid.go](https://github.com/photoprism/photoprism/blob/develop/pkg/rnd/uid.go).
+**Embeddings sidecar:** [`kozaktomas/image-embeddings`](https://github.com/kozaktomas/image-embeddings)
+— FastAPI over OpenCLIP ViT-L-14 (768-dim image + text) and InsightFace `buffalo_l` (512-dim faces);
+`server.py` is the contract in [§6.1](#61-kontrakt-sidecaru).
 
 **mapy.com:** [REST API](https://developer.mapy.com/rest-api-mapy-cz/) ·
 [Map tiles](https://github.com/mapycom/developer/blob/master/docs/rest-api/map-tiles.md) ·
@@ -905,7 +892,7 @@ Detailed tasks are created in the **botka** system. The milestones are ordered f
   embeddings, similar photos, semantic + full-text (hybrid) search.
 - **M3 — People:** face jobs, markers/subjects, IoU matching, auto-clustering, suggestions, assignment UX, outliers, people pages.
 - **M4 — Organization:** albums, labels, bulk metadata editing, per-user favorites, the map (mapy.com proxy), slideshow.
-- **M5 — Import/migration:** PhotoPrism API import + originals + increment (PP UID); migration from photo-sorter (PS UID, 1:1 embeddings). **Done 08/2026, then removed** — see [§9](#9-import-from-photoprism-s11--retired).
+- **M5 — Import/migration:** the one-off import of the existing library (originals, increment, 1:1 embeddings). **Done 08/2026, then removed** — see [§9](#9-the-one-off-importers-s11s12--retired).
 - **M6 — Backup & ops:** S3 backup (originals + dump), durable audit, rate-limiting, metrics, optional WoL auto-wake (`internal/wake`), hardening.
 - **M7 — Polish:** photo detail (PP+PS combo), mobile/tablet, i18n completeness, slideshow effects, performance, non-destructive edits.
 
@@ -917,7 +904,7 @@ Robustness and extensibility are a first-class goal. Every task (including auton
 follow these rules; **a task is not done with red lint or tests.**
 
 ### 19.1 Linting (Go)
-- **golangci-lint v2**, configuration **`.golangci.yml` adopted and adapted from photo-sorter**
+- **golangci-lint v2**, configuration **`.golangci.yml`**
   (a strict set of ~40+ linters: `revive`, `gosec`, `errcheck`, `errorlint`, `wrapcheck`,
   `cyclop`, `gocognit`, `funlen`, `dupl`, `goconst`, `gocritic`, `prealloc`, `sqlclosecheck`,
   `bodyclose`, `noctx`, `testifylint`, `thelper`, `usetesting`, `nilerr`, `lll` (120),
