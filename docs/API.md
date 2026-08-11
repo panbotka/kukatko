@@ -688,6 +688,16 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   do not look stale). The endpoint only **enqueues** the jobs, the worker writes the files; the run is idempotent
   (over a library with current sidecars it schedules zero) and an interrupted run catches up. **503** when
   `sidecar.enabled: false`. The CLI counterpart: `kukatko sidecar backfill [--all]`.
+  `POST /process/ocr` → `{enqueued}` (backfill `ocr` for photos the text recogniser has **never seen**, via
+  `ocrjob.BackfillOCR`; "never seen" = `photos.ocr_at IS NULL`, restricted to non-archived photos that are not
+  videos — OCR runs on stills only, there is no poster-frame recognition). Optional `?all=true` schedules
+  **every non-archived still** (a forced full re-run — how the library picks up a better recognition model).
+  The endpoint only **enqueues**; the worker calls the sidecar's `POST /ocr/image` over each photo's `fit_1920`
+  preview and writes `ocr_text`/`ocr_model`/`ocr_at`. An empty reading is a **success** that is still recorded,
+  so a photograph with no writing in it stops being a candidate instead of returning on every run. The run is
+  idempotent (the queue dedupes per photo) and resumable. It needs the embeddings box, which is usually
+  offline: the jobs then wait in the queue — enqueueing never blocks on it. **503** when
+  `embedding.ocr.enabled: false`.
   `POST /process/stacks` → `{created}` (detection and grouping of photos into stacks over the whole library via
   `stacks.Service.DetectStacks`; **synchronous**, the candidates are **only the not-yet-stacked non-archived**
   photos, so a re-run is idempotent and does not break a manual or an existing stack; **503** when
@@ -1271,6 +1281,7 @@ put a photo taken minutes either side of New Year in the same year.
 | `title:` `description:` `notes:` | text | the corresponding photo column (substring, `*` wildcard) |
 | `filename:` | text | the file name |
 | `keywords:` (alias `keyword:`) | text | IPTC keywords |
+| `text:` | text | the text a recogniser read **inside** the photo (`photos.ocr_text`): a sign, a shop front, a scanned page. Substring, `*` wildcard, and **accent-insensitive** unlike its siblings — the latin recogniser routinely returns a Czech word without its diacritics, so `text:pouť` must still find a sign read as "Pout" |
 | `album:` | text | album membership by **name** (substring) or exact UID |
 | `label:` | text | a label by **name** or UID |
 | `person:` (alias `subject:`) | text | a subject by **name** or UID, via non-invalid markers |

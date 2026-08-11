@@ -19,6 +19,19 @@ type JobEnqueuer interface {
 	EnqueueFaceDetect(ctx context.Context, photoUID string) error
 }
 
+// OCREnqueuer schedules text recognition for a freshly catalogued still — the
+// `ocr` job that reads what a sign, a shop front or a scanned page in the photo
+// says and stores it for search. It is separate from JobEnqueuer for the same
+// reason SidecarEnqueuer is: OCR has its own config switch, and when it is off no
+// `ocr` handler is registered, so a job enqueued anyway would sit in the queue
+// forever. A nil OCREnqueuer is how that off state reaches the pipeline.
+//
+// It is satisfied by jobs.Enqueuer.
+type OCREnqueuer interface {
+	// EnqueueOCR schedules text recognition for photoUID.
+	EnqueueOCR(ctx context.Context, photoUID string) error
+}
+
 // SidecarEnqueuer schedules the metadata sidecar of a freshly catalogued photo —
 // the YAML file in storage holding its metadata and curation. It is separate from
 // JobEnqueuer because it is separately switchable: the sidecar export has its own

@@ -129,6 +129,11 @@ func (f *fakeClient) FaceEmbeddings(_ context.Context, _ io.Reader) ([]embedding
 	return nil, "", nil
 }
 
+// ImageOCR is unused in these tests.
+func (f *fakeClient) ImageOCR(_ context.Context, _ io.Reader, _ float64) (embedding.OCRResult, error) {
+	return embedding.OCRResult{}, nil
+}
+
 // Healthy is unused in these tests.
 func (f *fakeClient) Healthy(_ context.Context) bool { return true }
 

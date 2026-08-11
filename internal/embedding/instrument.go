@@ -15,6 +15,8 @@ const (
 	OpText = "text"
 	// OpFace is the face-detection/embedding operation.
 	OpFace = "face"
+	// OpOCR is the text-recognition operation.
+	OpOCR = "ocr"
 )
 
 // Observer receives latency and availability signals from an instrumented
@@ -77,6 +79,17 @@ func (i *instrumentedClient) FaceEmbeddings(
 	faces, model, err = i.inner.FaceEmbeddings(ctx, img)
 	i.record(OpFace, time.Since(start), err)
 	return faces, model, err //nolint:wrapcheck // decorator returns inner error verbatim
+}
+
+// ImageOCR times the wrapped call and reports its outcome before returning the
+// inner result unchanged.
+func (i *instrumentedClient) ImageOCR(
+	ctx context.Context, img io.Reader, minConfidence float64,
+) (OCRResult, error) {
+	start := time.Now()
+	result, err := i.inner.ImageOCR(ctx, img, minConfidence)
+	i.record(OpOCR, time.Since(start), err)
+	return result, err //nolint:wrapcheck // decorator returns inner error verbatim
 }
 
 // Healthy probes the wrapped client and mirrors the result onto the up gauge.

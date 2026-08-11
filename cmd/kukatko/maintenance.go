@@ -171,6 +171,7 @@ func buildMaintenanceService(
 		Photos:      photoStore,
 		Thumbnailer: thumbnailer,
 		Enqueuer:    enqueuer,
+		OCR:         ocrEnqueuerOrNil(cfg, enqueuer),
 		Duplicate:   cfg.Duplicate,
 		MaxFileSize: cfg.Upload.MaxFileSizeBytes(),
 		MaxPixels:   cfg.Thumb.MaxPixels,

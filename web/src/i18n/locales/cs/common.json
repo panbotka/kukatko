@@ -738,6 +738,7 @@
         "text": "Název, popis a poznámky fotky.",
         "filename": "Název souboru.",
         "keywords": "Klíčová slova z IPTC.",
+        "photoText": "Text přečtený přímo ve fotce (cedule, výloha, naskenovaná stránka). Nezáleží na diakritice — rozpoznávání ji často ztratí.",
         "album": "Fotky v albu (podle názvu nebo UID).",
         "label": "Fotky se štítkem (podle názvu nebo UID).",
         "person": "Fotky s osobou (podle jména nebo UID).",

@@ -65,6 +65,7 @@ const (
 	endpointImage = "/embed/image"
 	endpointText  = "/embed/text"
 	endpointFace  = "/embed/face"
+	endpointOCR   = "/ocr/image"
 )
 
 var (
@@ -108,6 +109,9 @@ type Client interface {
 	// FaceEmbeddings detects faces in the image streamed from img and returns one
 	// Face per detection along with the model tag.
 	FaceEmbeddings(ctx context.Context, img io.Reader) (faces []Face, model string, err error)
+	// ImageOCR reads the text printed in the image streamed from img. A
+	// non-positive minConfidence leaves the service's own default in place.
+	ImageOCR(ctx context.Context, img io.Reader, minConfidence float64) (OCRResult, error)
 	// Healthy reports whether the sidecar is currently reachable. It is a cheap
 	// probe used to decide whether to attempt embedding jobs at all.
 	Healthy(ctx context.Context) bool
@@ -453,6 +457,16 @@ func (c *HTTPClient) postJSON(
 // the response body or a classified error. The body is streamed through an
 // io.Pipe so the image is never buffered whole in memory.
 func (c *HTTPClient) postMultipart(ctx context.Context, endpoint string, img io.Reader) ([]byte, error) {
+	return c.postMultipartFields(ctx, endpoint, img, nil)
+}
+
+// postMultipartFields is postMultipart with extra scalar form fields (the OCR
+// endpoint's min_confidence). They are written before the file part so the
+// service has them in hand by the time the image starts arriving; a nil or empty
+// map produces exactly the body postMultipart sends.
+func (c *HTTPClient) postMultipartFields(
+	ctx context.Context, endpoint string, img io.Reader, fields map[string]string,
+) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.requestTimeout)
 	defer cancel()
 
@@ -462,7 +476,7 @@ func (c *HTTPClient) postMultipart(ctx context.Context, endpoint string, img io.
 
 	pipeReader, pipeWriter := io.Pipe()
 	writer := multipart.NewWriter(pipeWriter)
-	go streamFilePart(pipeWriter, writer, buffered, contentType)
+	go streamFilePart(pipeWriter, writer, buffered, contentType, fields)
 
 	reqURL := c.baseURL.JoinPath(endpoint)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL.String(), pipeReader)
@@ -474,10 +488,18 @@ func (c *HTTPClient) postMultipart(ctx context.Context, endpoint string, img io.
 	return c.do(req, endpoint)
 }
 
-// streamFilePart writes a single "file" multipart part with the given content
-// type, copying src into it, then closes the writer and pipe. Any error is
-// propagated to the HTTP request via the pipe.
-func streamFilePart(pw *io.PipeWriter, writer *multipart.Writer, src io.Reader, contentType string) {
+// streamFilePart writes the scalar fields (if any) followed by a single "file"
+// multipart part with the given content type, copying src into it, then closes
+// the writer and pipe. Any error is propagated to the HTTP request via the pipe.
+func streamFilePart(
+	pw *io.PipeWriter, writer *multipart.Writer, src io.Reader, contentType string, fields map[string]string,
+) {
+	for name, value := range fields {
+		if err := writer.WriteField(name, value); err != nil {
+			_ = pw.CloseWithError(err)
+			return
+		}
+	}
 	header := make(textproto.MIMEHeader)
 	header.Set("Content-Disposition", `form-data; name="file"; filename="image.jpg"`)
 	header.Set("Content-Type", contentType)

@@ -54,6 +54,7 @@ export const FILTER_KEYS = [
   'square',
   'subject',
   'taken',
+  'text',
   'title',
   'type',
   'uid',
@@ -471,6 +472,7 @@ export type QueryHelpRowId =
   | 'uid'
   | 'filename'
   | 'keywords'
+  | 'photoText'
   | 'album'
   | 'label'
   | 'person'
@@ -511,6 +513,7 @@ export const QUERY_HELP_ROWS: QueryHelpRow[] = [
   { id: 'uid', keys: 'uid:', example: 'uid:ph7lpul2io09bcg2rvp2rljsr6' },
   { id: 'filename', keys: 'filename:', example: 'filename:IMG_*' },
   { id: 'keywords', keys: 'keywords:', example: 'keywords:beach' },
+  { id: 'photoText', keys: 'text:', example: 'text:veselice' },
   { id: 'album', keys: 'album:', example: 'album:"Léto 2024"' },
   { id: 'label', keys: 'label:', example: 'label:cat|dog' },
   { id: 'person', keys: 'person: subject:', example: 'person:Anna' },

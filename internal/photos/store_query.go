@@ -178,6 +178,7 @@ var queryCondBuilders = map[query.Key]condBuilder{
 	query.KeyNotes:       likeCond("notes"),
 	query.KeyFilename:    likeCond("file_name"),
 	query.KeyKeywords:    likeCond("keywords"),
+	query.KeyText:        unaccentLikeCond("ocr_text"),
 	query.KeyLens:        likeCond("lens_model"),
 	query.KeyCamera:      cameraCond,
 	query.KeyCodec:       codecCond,
@@ -219,6 +220,24 @@ var queryCondBuilders = map[query.Key]condBuilder{
 func likeCond(column string) condBuilder {
 	return func(v query.Value, env condEnv) (string, bool) {
 		return column + " ILIKE " + env.bind(likePattern(v.TextPattern())), true
+	}
+}
+
+// unaccentLikeCond builds a case- *and* accent-insensitive pattern match against
+// one column, folding both sides through immutable_unaccent.
+//
+// Its siblings above use a plain ILIKE, and the divergence is on purpose. This
+// one serves ocr_text, whose content nobody typed: the recogniser reads Latin
+// script and routinely returns a Czech word stripped of its diacritics ("Pouť
+// 2026" on a real sign comes back as "Pout 2026"). Matching a user's correctly
+// spelled `text:pouť` against that with ILIKE would find nothing, and the reader
+// would conclude the photo is not in the library rather than that the recogniser
+// dropped a háček. Both sides are folded, so the search works whichever of the
+// two is missing its accents.
+func unaccentLikeCond(column string) condBuilder {
+	return func(v query.Value, env condEnv) (string, bool) {
+		p := env.bind(likePattern(v.TextPattern()))
+		return "immutable_unaccent(" + column + ") ILIKE immutable_unaccent(" + p + ")", true
 	}
 }
 

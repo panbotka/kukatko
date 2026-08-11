@@ -292,6 +292,32 @@ type EmbeddingConfig struct {
 	// showing text results beats making the reader wait for semantic ones.
 	TextTimeout time.Duration `mapstructure:"text_timeout"`
 	Wake        WakeConfig    `mapstructure:"wake"`
+	// OCR configures reading the text printed inside a photo. It lives under
+	// embedding because it is the same service on the same box — there is no
+	// second URL to point at.
+	OCR OCRConfig `mapstructure:"ocr"`
+}
+
+// OCRConfig tunes the `ocr` job: reading the text printed *in* a photo (a street
+// sign, a shop front, a scanned page) so search can find the photo by what it
+// says. It is served by the embeddings sidecar's /ocr/image endpoint, so it needs
+// no URL of its own and inherits embedding.request_timeout.
+type OCRConfig struct {
+	// Enabled turns text recognition on. When false the feature is fully inert:
+	// no `ocr` handler is registered, no job is enqueued on upload, and
+	// POST /process/ocr answers 503. Whatever text was already recognised stays
+	// stored and stays searchable.
+	Enabled bool `mapstructure:"enabled"`
+	// MinConfidence is the per-block confidence floor handed to the recogniser;
+	// blocks it is less sure about than this are dropped before the text is
+	// assembled. A non-positive value leaves the service's own default (0.5) in
+	// place.
+	MinConfidence float64 `mapstructure:"min_confidence"`
+	// PreviewSize is the thumbnail size sent to the recogniser. It is bigger than
+	// the one image embedding uses on purpose: the image tower downsamples to a
+	// small square anyway, while OCR needs the pixels — small print on signs and
+	// in newspapers is simply not there at fit_720.
+	PreviewSize string `mapstructure:"preview_size"`
 }
 
 // WakeConfig optionally wakes the embeddings box via Wake-on-LAN when embedding
@@ -1015,6 +1041,13 @@ func setEmbeddingDefaults(v *viper.Viper) {
 	v.SetDefault("embedding.wake.interface", "")
 	v.SetDefault("embedding.wake.min_queue", 1)
 	v.SetDefault("embedding.wake.cooldown", "5m")
+	// Text recognition is on by default: it is the same service on the same box,
+	// it degrades exactly as embedding does when the box is off, and a library
+	// nobody switched it on for is one where searching for what a sign says
+	// silently finds nothing.
+	v.SetDefault("embedding.ocr.enabled", true)
+	v.SetDefault("embedding.ocr.min_confidence", 0.5)      // the service's own default
+	v.SetDefault("embedding.ocr.preview_size", "fit_1920") // fit_720 loses small print
 }
 
 // setStacksDefaults registers the stacking defaults. It is split out of
@@ -1048,7 +1081,7 @@ func setMCPDefaults(v *viper.Viper) {
 // regardless — a YAML block replaces this map instead of merging into it.
 func setWorkerDefaults(v *viper.Viper) {
 	v.SetDefault("worker.count", 2)
-	v.SetDefault("worker.type_count", map[string]int{"image_embed": 1, "face_detect": 1})
+	v.SetDefault("worker.type_count", map[string]int{"image_embed": 1, "face_detect": 1, "ocr": 1})
 	v.SetDefault("worker.poll_interval", "2s")
 	v.SetDefault("worker.stale_after", "5m")
 	v.SetDefault("worker.stale_scan_interval", "1m")

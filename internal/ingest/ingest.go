@@ -120,6 +120,9 @@ type Config struct {
 	// Sidecar — the export switched off — schedules none, and the upload still
 	// succeeds.
 	Sidecar SidecarEnqueuer
+	// OCR schedules text recognition for a freshly catalogued still. A nil OCR —
+	// the feature switched off — schedules none, and the upload still succeeds.
+	OCR OCREnqueuer
 	// Duplicate gates and tunes near-duplicate warnings.
 	Duplicate config.DuplicateConfig
 	// MaxFileSize caps a single uploaded file in bytes; 0 means unlimited.
@@ -143,6 +146,7 @@ type Service struct {
 	thumbs      *thumb.Thumbnailer
 	enqueuer    JobEnqueuer
 	sidecar     SidecarEnqueuer
+	ocr         OCREnqueuer
 	dup         config.DuplicateConfig
 	maxFileSize int64
 	maxPixels   int64
@@ -161,6 +165,7 @@ func New(cfg Config) *Service {
 		thumbs:      cfg.Thumbnailer,
 		enqueuer:    enq,
 		sidecar:     cfg.Sidecar,
+		ocr:         cfg.OCR,
 		dup:         cfg.Duplicate,
 		maxFileSize: cfg.MaxFileSize,
 		maxPixels:   cfg.MaxPixels,
@@ -387,7 +392,7 @@ func (s *Service) postProcess(ctx context.Context, photo photos.Photo) []Warning
 	warnings := slices.Concat(
 		s.computePhash(ctx, photo),
 		s.generateThumbnails(ctx, photo),
-		s.enqueueJobs(ctx, photo.UID),
+		s.enqueueJobs(ctx, photo),
 	)
 	if len(warnings) == 0 {
 		return nil
@@ -479,9 +484,12 @@ func (s *Service) generateThumbnails(ctx context.Context, photo photos.Photo) []
 	return nil
 }
 
-// enqueueJobs schedules the image-embedding, face-detection and metadata-sidecar
-// jobs, reporting a warning per failed enqueue. With the default NopEnqueuer the
-// first two always succeed; a nil Sidecar skips the third.
+// enqueueJobs schedules the image-embedding, face-detection, text-recognition and
+// metadata-sidecar jobs, reporting a warning per failed enqueue. With the default
+// NopEnqueuer the first two always succeed; a nil OCR or Sidecar skips its own.
+//
+// OCR is scheduled for stills only — a video's poster frame is deliberately not
+// read — so a clip leaves the queue exactly as it found it.
 //
 // The sidecar is scheduled for a photo that has no curation yet on purpose: it
 // gives the photo a file from the moment it is catalogued, so a library that is
@@ -489,16 +497,21 @@ func (s *Service) generateThumbnails(ctx context.Context, photo photos.Photo) []
 // a database. The alternative — wait for the first edit — leaves exactly the
 // never-edited photos, the ones nobody would notice were undescribed, with
 // nothing.
-func (s *Service) enqueueJobs(ctx context.Context, photoUID string) []Warning {
+func (s *Service) enqueueJobs(ctx context.Context, photo photos.Photo) []Warning {
 	var warnings []Warning
-	if err := s.enqueuer.EnqueueImageEmbed(ctx, photoUID); err != nil {
+	if err := s.enqueuer.EnqueueImageEmbed(ctx, photo.UID); err != nil {
 		warnings = append(warnings, Warning{Code: warnEnqueueFailed, Message: err.Error()})
 	}
-	if err := s.enqueuer.EnqueueFaceDetect(ctx, photoUID); err != nil {
+	if err := s.enqueuer.EnqueueFaceDetect(ctx, photo.UID); err != nil {
 		warnings = append(warnings, Warning{Code: warnEnqueueFailed, Message: err.Error()})
+	}
+	if s.ocr != nil && photo.MediaType != photos.MediaVideo {
+		if err := s.ocr.EnqueueOCR(ctx, photo.UID); err != nil {
+			warnings = append(warnings, Warning{Code: warnEnqueueFailed, Message: err.Error()})
+		}
 	}
 	if s.sidecar != nil {
-		if err := s.sidecar.EnqueueSidecar(ctx, photoUID); err != nil {
+		if err := s.sidecar.EnqueueSidecar(ctx, photo.UID); err != nil {
 			warnings = append(warnings, Warning{Code: warnEnqueueFailed, Message: err.Error()})
 		}
 	}

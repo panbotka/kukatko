@@ -142,6 +142,12 @@ func TestParse_table(t *testing.T) {
 		{"filename wildcard", "filename:IMG_*", "filters=[filename=text:IMG_*]"},
 		{"keywords", "keywords:beach", "filters=[keywords=text:beach]"},
 		{"keyword alias", "keyword:beach", "filters=[keywords=text:beach]"},
+		{"ocr text", "text:veselice", "filters=[text=text:veselice]"},
+		{"ocr text quoted", `text:"pouť 2026"`, "filters=[text=text:pouť 2026]"},
+		{"ocr text wildcard", "text:VESEL*", "filters=[text=text:VESEL*]"},
+		{"ocr text negated", "text:!reklama", "filters=[text=!text:reklama]"},
+		{"ocr text with free text", "svatba text:kostel",
+			"terms=[t(svatba)] filters=[text=text:kostel]"},
 
 		// --- Organisation ---
 		{"album quoted", `album:"Léto 2024"`, "filters=[album=text:Léto 2024]"},

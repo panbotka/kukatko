@@ -42,6 +42,12 @@ func (e *Enqueuer) EnqueueFaceDetect(ctx context.Context, photoUID string) error
 	return e.enqueuePhotoJob(ctx, TypeFaceDetect, photoUID)
 }
 
+// EnqueueOCR schedules text recognition for the photo identified by photoUID. A
+// pre-existing active job for the same photo is a no-op (nil error).
+func (e *Enqueuer) EnqueueOCR(ctx context.Context, photoUID string) error {
+	return e.enqueuePhotoJob(ctx, TypeOCR, photoUID)
+}
+
 // EnqueueThumbnail schedules thumbnail regeneration (and pHash recompute when
 // missing) for the photo identified by photoUID. A pre-existing active job for
 // the same photo is a no-op (nil error). It backs the library-maintenance

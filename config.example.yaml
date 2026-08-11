@@ -167,6 +167,24 @@ embedding:
     min_queue: 1
     # Minimum delay between successive magic packets, so a sleeping box is not spammed.
     cooldown: 5m
+  # Reading the text printed *in* a photo (a street sign, a shop front, a scanned
+  # page) so search can find the photo by what it says. It is served by the same
+  # sidecar on the same box as the embeddings above, so it needs no URL of its
+  # own and inherits request_timeout.
+  ocr:
+    # Turn text recognition on. When false the feature is fully inert: no `ocr`
+    # job handler is registered, uploads enqueue none, and POST /process/ocr
+    # answers 503. Text recognised earlier stays stored and stays searchable.
+    enabled: true
+    # Per-block confidence floor: blocks the recogniser is less sure about than
+    # this are dropped before the text is assembled. 0 leaves the service's own
+    # default (0.5) in place.
+    min_confidence: 0.5
+    # Thumbnail size sent to the recogniser. Bigger than the fit_720 used for
+    # embedding on purpose — the image tower downsamples to a small square
+    # anyway, while OCR needs the pixels; small print on signs and in newspapers
+    # is simply not there at fit_720.
+    preview_size: fit_1920
 
 faces:
   # Minimum detector confidence (det_score) a detected face must have to be
@@ -638,13 +656,14 @@ worker:
   # Per-job-type concurrency. A type named here gets its own pool of that many
   # slots and stops competing for the `count` pool, so a scarce remote
   # dependency never serialises local work. Values <= 0 are ignored.
-  # image_embed and face_detect call the embeddings sidecar on the GPU box,
+  # image_embed, face_detect and ocr call the embeddings sidecar on the GPU box,
   # which serves one request at a time; they stay at one slot each even if this
   # block is replaced (a YAML map replaces the default, it does not merge), so
   # raising them has to be an explicit, deliberate entry.
   type_count:
     image_embed: 1
     face_detect: 1
+    ocr: 1
   # How long an idle worker waits before polling the queue again when empty.
   poll_interval: 2s
   # Lock age past which a running job is presumed abandoned (its worker died)

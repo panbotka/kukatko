@@ -74,6 +74,11 @@ const (
 	// the file itself is the authority on (IPTC/XMP credit fields, image codec,
 	// colour profile, …). It runs locally.
 	TypeMetadata = "metadata"
+	// TypeOCR reads the text printed in a photo (a sign, a shop front, a scanned
+	// page) and stores it so search can find the photo by what it says. Like
+	// TypeImageEmbed it calls the embeddings sidecar on the GPU box, and it runs
+	// for stills only — never for a video's poster frame. See internal/ocrjob.
+	TypeOCR = "ocr"
 	// TypeSidecar writes a photo's metadata sidecar — the YAML file next to the
 	// originals that holds its metadata and curation, so the catalogue can be
 	// rebuilt from storage alone. It runs locally. See internal/sidecarexport.

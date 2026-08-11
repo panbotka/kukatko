@@ -81,6 +81,21 @@ type MetadataBackfiller interface {
 	BackfillMetadata(ctx context.Context, all bool) (int, error)
 }
 
+// OCRBackfiller enqueues an `ocr` job for every photo the text recogniser has
+// never seen. It is satisfied by ocrjob.Service. When all is true it schedules
+// every non-archived still instead (a forced full re-run, which is how a library
+// picks up a better recognition model). OCR jobs call the embeddings sidecar on
+// the GPU box, so the backfill schedules work that drains only while the box is
+// up — the enqueue itself never blocks on it. A nil OCRBackfiller disables the
+// /process/ocr endpoint (it answers 503), which is what the embedding.ocr.enabled
+// switch turns off.
+type OCRBackfiller interface {
+	// BackfillOCR enqueues an `ocr` job for every photo never recognised (or, when
+	// all is true, for every non-archived still) and returns how many were
+	// scheduled.
+	BackfillOCR(ctx context.Context, all bool) (int, error)
+}
+
 // SidecarBackfiller enqueues a sidecar job for every photo whose metadata sidecar
 // is missing or stale. It is satisfied by sidecarjob.Service. When all is true it
 // schedules every non-archived photo instead (a forced full re-run), which is how
@@ -131,6 +146,7 @@ type API struct {
 	thumbBackfiller   ThumbnailBackfiller
 	metaBackfiller    MetadataBackfiller
 	sidecarBackfill   SidecarBackfiller
+	ocrBackfiller     OCRBackfiller
 	stacksDetector    StacksDetector
 	locationEstim     LocationEstimator
 	requireMaintainer func(http.Handler) http.Handler
@@ -154,6 +170,8 @@ type Config struct {
 	MetadataBackfiller MetadataBackfiller
 	// SidecarBackfiller runs the metadata-sidecar export backfill.
 	SidecarBackfiller SidecarBackfiller
+	// OCRBackfiller runs the text-recognition backfill.
+	OCRBackfiller OCRBackfiller
 	// StacksDetector runs the automatic stack-detection pass.
 	StacksDetector StacksDetector
 	// LocationEstimator runs the missing-location estimation pass.
@@ -172,6 +190,7 @@ func NewAPI(cfg Config) *API {
 		thumbBackfiller:   cfg.ThumbnailBackfiller,
 		metaBackfiller:    cfg.MetadataBackfiller,
 		sidecarBackfill:   cfg.SidecarBackfiller,
+		ocrBackfiller:     cfg.OCRBackfiller,
 		stacksDetector:    cfg.StacksDetector,
 		locationEstim:     cfg.LocationEstimator,
 		requireMaintainer: cfg.RequireMaintainer,
@@ -189,6 +208,7 @@ func NewAPI(cfg Config) *API {
 //	                                             re-run, ?dry_run=true only counts)
 //	POST /process/metadata    RequireMaintainer  backfill unread file metadata (?all=true forces a full re-read)
 //	POST /process/sidecars    RequireMaintainer  backfill missing metadata sidecars (?all=true forces a full re-run)
+//	POST /process/ocr         RequireMaintainer  backfill un-recognised photo text (?all=true forces a full re-run)
 //	POST /process/stacks      RequireMaintainer  detect and form stacks over the library
 //	POST /process/locations   RequireMaintainer  estimate missing locations from same-day photos
 func (a *API) RegisterRoutes(r chi.Router) {
@@ -200,6 +220,7 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.With(a.requireMaintainer).Post("/thumbnails", a.handleBackfillThumbnails)
 		r.With(a.requireMaintainer).Post("/metadata", a.handleBackfillMetadata)
 		r.With(a.requireMaintainer).Post("/sidecars", a.handleBackfillSidecars)
+		r.With(a.requireMaintainer).Post("/ocr", a.handleBackfillOCR)
 		r.With(a.requireMaintainer).Post("/stacks", a.handleDetectStacks)
 		r.With(a.requireMaintainer).Post("/locations", a.handleEstimateLocations)
 	})
@@ -235,6 +256,23 @@ func (a *API) handleBackfillSidecars(w http.ResponseWriter, r *http.Request) {
 	enqueued, err := a.sidecarBackfill.BackfillSidecars(r.Context(), queryFlag(r, "all"))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "backfilling sidecars failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, backfillResponse{Enqueued: enqueued})
+}
+
+// handleBackfillOCR enqueues `ocr` jobs for every photo the text recogniser has
+// never seen and reports how many were scheduled. With ?all=true it schedules
+// every non-archived still (a forced full re-run with the current model). It
+// answers 503 when OCR is switched off.
+func (a *API) handleBackfillOCR(w http.ResponseWriter, r *http.Request) {
+	if a.ocrBackfiller == nil {
+		writeError(w, http.StatusServiceUnavailable, "OCR not available")
+		return
+	}
+	enqueued, err := a.ocrBackfiller.BackfillOCR(r.Context(), queryFlag(r, "all"))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "backfilling OCR failed")
 		return
 	}
 	writeJSON(w, http.StatusOK, backfillResponse{Enqueued: enqueued})

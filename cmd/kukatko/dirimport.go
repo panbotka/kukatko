@@ -363,11 +363,13 @@ func buildDirImportService(cfg *config.Config, db *database.DB, concurrency int)
 	pool := db.Pool()
 	photoStore := photos.NewStore(pool)
 	organizeStore := organize.NewStore(pool)
+	enqueuer := jobs.NewEnqueuer(jobs.NewStore(pool))
 	ingestSvc := ingest.New(ingest.Config{
 		Storage:     store,
 		Photos:      photoStore,
 		Thumbnailer: thumb.New(store, cfg.Storage.CachePath, thumbOptions(cfg, nil)...),
-		Enqueuer:    jobs.NewEnqueuer(jobs.NewStore(pool)),
+		Enqueuer:    enqueuer,
+		OCR:         ocrEnqueuerOrNil(cfg, enqueuer),
 		Duplicate:   cfg.Duplicate,
 		MaxFileSize: cfg.Upload.MaxFileSizeBytes(),
 		MaxPixels:   cfg.Thumb.MaxPixels,
