@@ -6,10 +6,9 @@ import (
 
 // newImportCmd builds the "import" subcommand group and its only child, the dir
 // import, which ingests a directory of originals from disk. It is the ops/cron
-// entry point that does not need the server running.
-//
-// The migration from PhotoPrism and photo-sorter used to live here too; it
-// finished in August 2026 and its code is gone (see docs/MIGRATION_PLAN.md).
+// entry point that does not need the server running, and the only import there
+// is: the one-off importers that filled this library initially were removed once
+// they had done their job.
 func newImportCmd() *cobra.Command {
 	importCmd := &cobra.Command{
 		Use:   "import",

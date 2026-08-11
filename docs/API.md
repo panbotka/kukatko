@@ -144,7 +144,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   chips, via the `PhotoOrganizer` interface / `organize.Store.AlbumsForPhoto`+`LabelsForPhoto`; a nil
   organizer → empty arrays) and **`uploader`** `{uid,name}` — who uploaded the photo, the name resolved
   server-side via `UserResolver` (`auth.Store.GetUserByUID`; `name` = `display_name`, fallback
-  `username`); omitted (`omitempty`) for photos without `uploaded_by` (imports from PhotoPrism/photo-sorter),
+  `username`); omitted (`omitempty`) for photos without `uploaded_by` (the one-off imports),
   and also when the user cannot be resolved — resolution is **only on the detail**, list/search do not
   resolve a per-photo uploader (no N+1);
   and **`place`** `{country,region,city,place_name}` — the photo's **cached** reverse geocoding from
@@ -417,7 +417,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   and `GET /labels/{uid}/similar` with query `?threshold=&limit=` (`threshold` = max cosine distance,
   default `expand.max_distance` = 0.30, i.e. 70 % similarity; `limit` default `expand.limit`, cap
   `expand.max_limit`; non-numeric / negative → 400). Membership is resolved **natively** (`internal/organize`),
-  **no PhotoPrism call**. Response `{kind,collection_uid,source_photo_count,source_photos_sampled,
+  **no call to any foreign system**. Response `{kind,collection_uid,source_photo_count,source_photos_sampled,
   source_photos_with_embedding,source_capped,source_cap,min_match_count,threshold,limit,result_count,
   reason?,candidates:[{photo,distance,similarity,match_count}]}`. The algorithm: **per-photo kNN + voting**
   (not the average of the collection's embeddings — a collection is not a single visual concept); `match_count` =
@@ -671,7 +671,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   size of what was just started is visible in the response.
   `POST /process/metadata` → `{enqueued}` (backfill `metadata` for photos whose **file has never
   been read** into the IPTC/XMP and file-technical columns, via `metajob.BackfillMetadata`; "unread"
-  = `photos.metadata_extracted_at IS NULL`, which are rows from a PhotoPrism import, a photo-sorter migration
+  = `photos.metadata_extracted_at IS NULL`, which are rows from the one-off imports
   and everything uploaded before extraction). Optional `?all=true` schedules **every non-archived photo**
   (a forced re-read of the whole library — this catches up fields the new extractor has learned to read).
   The job is a pure **gap-filler**: it fills only columns that are still empty, so an empty extraction
@@ -885,7 +885,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   names and returned as `direct`, and the four-way fuzzy fan-out is **skipped** (the groups come back as `[]`) —
   a uid matches no title, name or full text anyway, so this replaces the fan-out rather than adding a fifth query.
   Recognised prefixes (`query.ClassifyUID`, 26 characters unless noted): `ph` photo, `al` album, `lb` label,
-  `su` subject, `st` stack, `mk` marker, and `pt` = a **PhotoPrism** photo uid (16 characters). An id with an
+  `su` subject, `st` stack, `mk` marker, and `pt` = an **imported** photo uid (16 characters). An id with an
   unknown prefix is **not** probed against every table. The id may be the whole `q` or one word of it.
   `direct` = `{uid, kind, found, target_kind?, target_uid?, title?, photo?, cover?, states?}`: `kind` is what the
   id itself names, `target_kind`/`target_uid` what to open — a `mk…` resolves to the photo it sits on, an `st…`
@@ -958,7 +958,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `{runs,limit,offset}` — a page of `import_runs` newest-started-first (query `limit`≤200/`offset`,
   invalid → 400). The only source still written is **`folder`** (`kukatko import dir`,
   `internal/dirimport`), which reads a directory on the server's disk and is therefore started **only
-  from the CLI**. The other sources in the history — `photoprism`, `photosorter`, `photosorter_feeds` —
+  from the CLI**. The three legacy sources in the history — `photoprism`, `photosorter`, `photosorter_feeds` —
   are the migration that closed in August 2026; its importers were removed and its runs stay as the
   catalogue's provenance record, so every reader must keep decoding them.
   A run's `counts` object is `{imported,updated,skipped,deduplicated,failed}`: **`deduplicated`** counts SOURCE
@@ -972,7 +972,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `stage` ∈ `photo|file|marker|album_member|label|thumbnail|embedding|faces|phash|edit|metadata`), with the
   filters `?source=`/`?run_id=`/`?unresolved=true` and paging `?limit=`(≤200)/`?offset=` (invalid → 400;
   an unknown source → 400).
-  **Removed with the migration:** `POST /import/photoprism`, `POST /import/photosorter`,
+  **Removed with the one-off importers:** `POST /import/photoprism`, `POST /import/photosorter`,
   `POST /import/photosorter-feeds` and `GET /import/verify` (the completeness reconciliation) are gone —
   they now 404. Mounted by `buildImportAPI` in `cmd/kukatko/import.go`. The frontend (`ImportPage`) polls
   `GET /import/runs` + `GET /jobs/stats` + `GET /import/failures`.
@@ -1034,7 +1034,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   run through the job queue (thumbnail/pHash via the `thumbnail` job, embeddings/faces backfill), and **never
   delete originals**. `dimensions` is the exception that writes the catalogue directly, in two halves. It
   rewrites the pixel dimensions of quarter-turned photos whose columns hold the **displayed** frame instead of
-  the stored one (the PhotoPrism-derived import defect that letterboxed the viewer and drifted the face boxes),
+  the stored one (the import defect that letterboxed the viewer and drifted the face boxes),
   each row corrected from **the file's own EXIF document** rather than from a guess about where it came from
   (`transposed_dimensions` is that half's dry run). It then corrects the face boxes recorded against the same
   transposed frame — **not** with one blind transform: those rows are not all in the same coordinate space, so
@@ -1150,7 +1150,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   polls every 5 s and offers quick actions (requeue dead-letter, trigger backup, links to import/maintenance).
 - **Library statistics (`/api/v1`, `internal/systemapi` + `internal/system`, **every authenticated
   user** via `RequireAuth`):** `GET /system/stats` → instance-wide counts of the catalogue, modelled on
-  photo-sorter's status page: `{photos,videos,live_photos,images,photos_live,photos_archived,
+  the previous system's status page: `{photos,videos,live_photos,images,photos_live,photos_archived,
   photos_with_embedding,photos_with_faces,photos_without_embedding,photos_without_faces,photos_with_gps,
   photos_geocoded,
   photos_pending_geocode,embeddings,faces,faces_assigned,subjects,subjects_person,subjects_pet,
@@ -1266,7 +1266,7 @@ put a photo taken minutes either side of New Year in the same year.
 
 | Filter | Value | Matches |
 | --- | --- | --- |
-| `uid:` | a photo's UID **or** its PhotoPrism UID | exactly one photo, by its own id or by the `pt…` id it was imported under (`photos.photoprism_uid` and `photoprism_aliases`). It **removes the default live-only, visible-only and stack-primary scopes**, so an archived, hidden or stacked photo is found — naming an id is explicit intent. One key covers both id shapes because they cannot collide (26 vs 16 characters) |
+| `uid:` | a photo's UID **or** the source UID it was imported under | exactly one photo, by its own id or by the `pt…` id it was imported under (`photos.photoprism_uid` and `photoprism_aliases`). It **removes the default live-only, visible-only and stack-primary scopes**, so an archived, hidden or stacked photo is found — naming an id is explicit intent. One key covers both id shapes because they cannot collide (26 vs 16 characters) |
 | `title:` `description:` `notes:` | text | the corresponding photo column (substring, `*` wildcard) |
 | `filename:` | text | the file name |
 | `keywords:` (alias `keyword:`) | text | IPTC keywords |

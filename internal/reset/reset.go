@@ -1,17 +1,16 @@
 // Package reset implements the guarded wipe of a Kukátko library: every
 // catalogue table emptied and every object the store owns deleted, so the
 // library can be re-imported from scratch. It is what `kukatko maintenance
-// reset` runs, and it is phase 1 of the cutover runbook in
-// docs/MIGRATION_PLAN.md.
+// reset` runs.
 //
 // # Why the guards are the feature
 //
 // This package deletes on purpose, and the deployment it was written for has no
-// backup of its own (docs/READINESS_AUDIT.md §4: S3 backup and the restore
-// rehearsal were waived by an explicit owner decision). It used to have one
-// rollback left — re-importing from PhotoPrism — and that is gone too: the
-// migration finished in August 2026 and its importers were removed. A misfire is
-// now simply unrecoverable. So the interesting part of this package is not the
+// backup of its own (S3 backup and the restore rehearsal were waived by an
+// explicit owner decision). It has no rollback left either: everything the
+// library holds arrived through `kukatko import dir`, and re-walking those
+// folders is the only way back. A misfire is simply unrecoverable, so the
+// interesting part of this package is not the
 // truncation, which is one statement, but everything that has to be true before
 // it runs:
 //

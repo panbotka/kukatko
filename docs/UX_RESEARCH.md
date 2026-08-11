@@ -88,7 +88,7 @@ dopad/pracnost — nahoře je to, co se vyplatí udělat první.
 | [N23](#n23) ✅ | Mapa je světlá v tmavé aplikaci a `Místa` jsou jeden řádek | 🟡 | 🟡 | `MapPage`, `PlacesPage` |
 | [N24](#n24) | Detail alba nemá časovou osu ani popis | ⚪ | ⚪ | `AlbumDetailPage` |
 | [N25](#n25) | Prázdné hledání hlásí „Počet fotek: 0" | ⚪ | ⚪ | `SearchPage` |
-| [N26](#n26) | Technické údaje ukazují SHA256, PhotoPrism UID a souřadnice | ⚪ | ⚪ | `TechnicalDetails` |
+| [N26](#n26) | Technické údaje ukazují SHA256, zdrojové UID a souřadnice | ⚪ | ⚪ | `TechnicalDetails` |
 
 ---
 
@@ -373,7 +373,7 @@ karet. Podle `GET /api/v1/albums?limit=1000` jich je **438** a mají pole `type`
 
 Z toho **239 alb** se jmenuje anglicky ve tvaru `January 2026`, `May 2026`, `April
 2026`. Šest je prázdných a taky anglických (`Pets`, `Nature & Landscape`,
-`Bays, Capes & Beaches` — zbytky kategorií z PhotoPrismu). Dalších 34 má méně než
+`Bays, Capes & Beaches` — zbytky kategorií z původního katalogu). Dalších 34 má méně než
 tři fotky.
 
 Nejnázornější příklad: album **„January 2026" obsahuje 2 305 fotek s rozsahem
@@ -597,7 +597,7 @@ Informace):
    AI_MODEL: gemini-2.5-flash
    ```
    V API je to součást pole `ai_note`, kde je model připojený k textu dvěma
-   odřádkováními při importu z photo-sorteru. UI to vypisuje 1 : 1.
+   odřádkováními při jednorázovém importu. UI to vypisuje 1 : 1.
 
 2. V **Technických údajích** stojí „Fotoaparát: **Unknown**", „Objektiv:
    **Unknown**" — v API je opravdu uložený řetězec `Unknown` (ne prázdno), takže se
@@ -1159,21 +1159,21 @@ návštěvě hledání čte část lidí jako „v knihovně nic není".
 ---
 
 <a id="n26"></a>
-### N26 — Technické údaje ukazují SHA256, PhotoPrism UID a souřadnice ⚪ ⚪
+### N26 — Technické údaje ukazují SHA256, zdrojové UID a souřadnice ⚪ ⚪
 
 **Co se stalo.** Rozbalené „Technické údaje" u fotky obsahují vedle užitečných věcí
 (rozměry, velikost, formát, datum) také:
 
 - „Formát: JPEG" **a zároveň** „Kodek obrazu: jpeg" — dvakrát totéž,
 - „Otisk (SHA256): 414a4fc8c2b2…",
-- sekci **PŮVOD** s řádkem „PhotoPrism UID: pt8qxy9y3nuwqef2",
+- sekci **PŮVOD** s řádkem „Zdrojové UID: pt8qxy9y3nuwqef2",
 - v panelu Informace pod mapkou surové souřadnice „49.39322, 16.70869".
 
 **Proč to vadí.** Nic z toho uživatel nepoužije a všechno to zvyšuje pocit, že je
 aplikace pro techniky. `UX_AUDIT.md` má „raw file paths / UIDs" jako nález na
 administrátorských stránkách; tady je to na detailu každé fotky.
 
-**Návrh.** „Kodek obrazu" sloučit s „Formát". Otisk a PhotoPrism UID schovat
+**Návrh.** „Kodek obrazu" sloučit s „Formát". Otisk a zdrojové UID schovat
 za rozbalovací „Pro vývojáře" (nebo je odstranit spolu s odstraněním importu —
 ten úkol je už ve frontě). Souřadnice nahradit názvem místa a číslo nechat jen
 jako titulek při najetí.

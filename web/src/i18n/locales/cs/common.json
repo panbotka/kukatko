@@ -758,7 +758,7 @@
         "codec": "Kodek obrázku či videa.",
         "orientation": "Na výšku, na šířku, čtverec, panorama (yes/no).",
         "faces": "Počet tváří (faces:3 = aspoň tři); face:new = zatím nepřiřazená tvář.",
-        "uid": "Jedna fotka podle svého ID (nebo podle ID z PhotoPrismu). Najde ji i archivovanou nebo skrytou."
+        "uid": "Jedna fotka podle svého ID (nebo podle ID z původního katalogu). Najde ji i archivovanou nebo skrytou."
       }
     }
   },
@@ -781,12 +781,12 @@
         "person": "ID osoby",
         "marker": "ID značky",
         "stack": "ID skupiny",
-        "photoprism": "ID z PhotoPrismu"
+        "photoprism": "ID z původního katalogu"
       },
       "via": {
         "marker": "fotka, na které je",
         "stack": "hlavní fotka skupiny",
-        "photoprism": "fotka naimportovaná z PhotoPrismu"
+        "photoprism": "fotka naimportovaná z původního katalogu"
       },
       "state": {
         "archived": "archivovaná",
@@ -1986,8 +1986,8 @@
       "hasAudioYes": "Ano",
       "hasAudioNo": "Ne",
       "fps": "Snímková frekvence",
-      "photoprismUid": "PhotoPrism UID",
-      "photosorterUid": "photo-sorter UID",
+      "photoprismUid": "Zdrojové UID",
+      "photosorterUid": "Zdrojové UID (druhý import)",
       "regenerateThumb": "Přegenerovat náhled",
       "regeneratingThumb": "Přegenerovávám…",
       "regenerateThumbSuccess": "Náhled přegenerován",
@@ -2202,15 +2202,15 @@
   },
   "import": {
     "title": "Import",
-    "intro": "Historie importních běhů a jejich chyb. Spouští se jen z příkazové řádky: `kukatko import dir` načte složku ze serverového disku. Migrace z PhotoPrismu a photo-sorteru skončila v srpnu 2026 a byla odstraněna — její běhy zůstávají v historii jako záznam o původu knihovny.",
+    "intro": "Historie importních běhů a jejich chyb. Spouští se jen z příkazové řádky: `kukatko import dir` načte složku ze serverového disku. Jednorázový import, kterým knihovna vznikla, skončil v srpnu 2026 a byl odstraněn — jeho běhy zůstávají v historii jako záznam o původu knihovny.",
     "maintainerOnly": "Tato stránka je dostupná pouze správcům systému.",
     "loading": "Načítání importů…",
     "error": "Stav importu se nepodařilo načíst.",
     "source": {
-      "photoprism": "PhotoPrism",
-      "photosorter": "Photo-sorter",
+      "photoprism": "Původní katalog",
+      "photosorter": "Původní vektorová vrstva",
       "folder": "Složka z disku",
-      "photosorter_feeds": "Photo-sorter (feedy)"
+      "photosorter_feeds": "Původní vektorová vrstva (feedy)"
     },
     "counts": {
       "imported": "Nové",

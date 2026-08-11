@@ -7,11 +7,10 @@ This file holds **only rules and a signpost**. Descriptive details (packages, en
 components, config keys) live in `docs/` and you read them only when you need them.
 
 ## What it is
-Kukátko = a standalone photo/video management app, a replacement for PhotoPrism (combines
-PhotoPrism + photo-sorter features, more robust). Full design: `docs/ARCHITECTURE.md`. Phase:
-in production, active development via autonomous tasks. The migration from PhotoPrism and
-photo-sorter closed in August 2026 and its importers were removed; the only import left is
-`kukatko import dir`.
+Kukátko = a standalone, self-hosted photo/video library for a family archive: one Go binary, one
+PostgreSQL database, originals as files on disk. Full design: `docs/ARCHITECTURE.md`. Phase:
+in production, active development via autonomous tasks. The one-off importers that first filled the
+library were removed in August 2026; the only import left is `kukatko import dir`.
 
 ## Tech stack (binding)
 - **Backend: Go**, a single static binary, **`CGO_ENABLED=0`**. Module `github.com/panbotka/kukatko`.
@@ -40,7 +39,6 @@ Open **one** document based on what you're touching. Don't read them all preempt
 | Performance (thumbnails, vips, HNSW `ef_search`, indexes) | [`docs/PERF.md`](docs/PERF.md) |
 | Restore from backup / disaster recovery | [`docs/RESTORE.md`](docs/RESTORE.md) |
 | UX decisions and audit | [`docs/UX_AUDIT.md`](docs/UX_AUDIT.md) |
-| The finished migration (PhotoPrism + photo-sorter) — what came across, what was dropped | [`docs/MIGRATION_AUDIT.md`](docs/MIGRATION_AUDIT.md) |
 | Security audit — findings, severities, attack scenarios | [`docs/SECURITY_AUDIT.md`](docs/SECURITY_AUDIT.md) |
 
 ## Package map
@@ -157,7 +155,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - **`CLAUDE.md` holds only rules and a signpost.** Descriptive details belong in `docs/`.
   The 300-line limit is enforced by `make docs-budget`. Don't circumvent it — move text to the right document.
 - For Go code **use the `golang-developer` skill**.
-- **`.golangci.yml` is strict** (inherited from photo-sorter). Don't weaken it. `//nolint` only
+- **`.golangci.yml` is strict.** Don't weaken it. `//nolint` only
   with justification.
 - **Tests are mandatory for every change:** unit tests for logic; **integration tests** for DB/HTTP
   against a real test DB. New behavior = new/updated tests. Goal: an extensible app that the next
@@ -189,15 +187,17 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
   (no orphans).
 
 ## Key patterns
-- **The embeddings sidecar is NOT built.** Kukátko calls the existing service on the **box** (same
-  models as photo-sorter → 1:1 migration) at a configurable `embedding.url`. **The box is often
+- **The embeddings sidecar is NOT built.** Kukátko is a client of an external service
+  (`kozaktomas/image-embeddings`: CLIP + InsightFace) at a configurable `embedding.url`, normally on
+  the GPU **box**. **The box is often
   offline** → jobs (`image_embed`, `face_detect`) wait in a **persistent queue** in Postgres, upload
   and browsing work without it. External dependencies (sidecar, mapy.com, S3) always
   behind an interface → fake/mock in tests.
 - **"Back always works":** view state (filters/sorting/search/page) lives in **URL query params**
   + History API.
-- **Provenance:** `photos.photoprism_uid`, `photoprism_file_hash` and `photosorter_uid` are live
-  data, not import leftovers — they back uid search and every metadata sidecar. Never drop them.
+- **Provenance:** `photos.photoprism_uid`, `photoprism_file_hash`, `photosorter_uid` and the
+  `photoprism_aliases` table are live data, not import leftovers — they back uid search (`uid:pt…`)
+  and every metadata sidecar. Never drop them; the names only record where an id came from.
 - **Per-user favorites** (not global). **Keep the mapy.com key server-side** (backend proxy).
 - Stream large files (upload/download/video) — don't hold them entirely in RAM.
 
@@ -226,7 +226,7 @@ commit. Always, at the end of every task, in this order:
    `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`
 
 ## Out of scope
-- **Photo book** (not carried over from photo-sorter).
+- **Photo book** — deliberately not built.
 - Public sharing / share links are not a priority.
 
 ## Language

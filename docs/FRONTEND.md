@@ -470,6 +470,8 @@ here.
   leaks the heart onto the tiles (and `onFavoriteChange` its flips back to the page); an optional `gridRef` (imperative `scrollToIndex`
   handle) + `onRangeChanged` (the visible range) for the timeline; it takes its column template from
   `useGridDensity` → `lib/gridDensity` `gridTemplateColumns`, the DOM carries `data-density` for tests.
+  **Which** stored count (and gutter) it follows is the optional `scope` prop — the library's by default,
+  `REVIEW_GRID_SCOPE` on `/expand` — threaded to the inner `List` through virtuoso's `context`.
   A density change **only restyles** the existing `<div>` — virtuoso re-measures the tiles, scroll and selection
   survive because the grid is neither keyed nor remounted. Where the reader is in it is reported through
   **`onStateChanged(state)`** and put back through **`restoreStateFrom`** (virtuoso's own `GridStateSnapshot`:
@@ -924,7 +926,7 @@ here.
   `LibraryRedirect` = a shim for the retired route `/library` **and its whole subtree**
   (`/library/*`): `<Navigate replace>` to `/` with the `search`+`hash` preserved literally
   (old bookmarks and links work, `replace` prevents a Back bounce); the subtree catches the addresses
-  inherited from the **PhotoPrism** instance whose domain this one took over — PhotoPrism kept its
+  inherited from the **previous instance** whose domain this one took over — it kept its
   entire UI under `/library/…`, so `/library/login` and friends used to hit the 404 page, and did so
   *after* a successful sign-in (the guard returns the visitor to the address they asked for),
   plus **the timeline** (`TimelineScrubber`) beside the grid for quick jumps to a month — the grid
@@ -1127,7 +1129,7 @@ here.
   source photos whose content was already catalogued under another source photo). It polls every 3 s and
   is self-gated on `canImport` (= maintainer).
   There is **nothing to start from the page**: the only import left is `kukatko import dir`, which reads a
-  directory on the server's disk and therefore runs from the CLI, and the PhotoPrism/photo-sorter migration
+  directory on the server's disk and therefore runs from the CLI, and the one-off import
   closed in August 2026 and was removed together with its start buttons and its completeness-check card.
   Its runs stay in the history as the catalogue's provenance record, so `RunSource` in `services/import.ts`
   is `'folder' | 'photoprism' | 'photosorter' | 'photosorter_feeds'` and each has a label under
@@ -1401,7 +1403,7 @@ here.
   it stretched, so the **frames drifted apart**.)
   Taking the frame from the image is what makes the viewer immune to the **other** half of that invariant, which
   is on the backend: `file_width`/`file_height` **must be the stored,
-  pre-rotation dimensions**, because `displayFrame` is what applies the orientation to them. PhotoPrism
+  pre-rotation dimensions**, because `displayFrame` is what applies the orientation to them. The source catalogue
   reports its own dimensions with the tag **already applied**, so the import that took them verbatim
   stored a pair the frontend rotated a second time — the figure got the transposed aspect ratio, „contain"
   letterboxed the photo inside it, and every percentage box drifted off the faces (85 photos with a marker,
@@ -1644,7 +1646,7 @@ here.
   fact about the machinery belongs. All **read-only** (editing belongs in `MetadataPanel`);
   **a field with no value doesn't render at all** (`MetaField` returns `null`) and **an empty group also
   doesn't render** — a photo with poor metadata is not a wall of dashes. „No value" includes the importers'
-  **`Unknown`**: PhotoPrism stores the literal word in `camera_model`/`lens_model` for a scan that never
+  **`Unknown`**: the source catalogue stored the literal word in `camera_model`/`lens_model` for a scan that never
   had a camera, so `MetaField` runs every value through `metaValue` (`lib/photoFacts`) and drops
   `Unknown`/blank alike — one rule, every row, no „Fotoaparát: Unknown" in the middle of a Czech table.
   `TechnicalDetails`'s own `has()` asks `metaValue` the same question about a whole group (so a heading
@@ -1828,7 +1830,9 @@ here.
   from `useImageFrame`, i.e. the loaded preview, and the rectangle waits for that measurement (`candidate-frame`
   is the wrapper, and the row is only the estimate keeping the card's height still); color/badge/rectangle share
   one code via the bucket `new`/`assign`/
-  `done` in `lib/candidateReview`); ✓ confirms (`assignFace`, `create_marker` vs `assign_person` per the
+  `done` in `lib/candidateReview`; the **photo is the way into the lightbox** — it is wrapped in
+  `EnlargeButton`, so a click enlarges rather than navigates, and leaving for the photo's page stays the
+  stage's corner anchor inside the overlay); ✓ confirms (`assignFace`, `create_marker` vs `assign_person` per the
   candidate's `marker_uid`) **optimistically in place** (the card flips, the grid doesn't reload), ✗
   **permanently rejects** via `rejectFace` (`services/feedback`) and removes the card; **keyboard** (arrows/
   `jkhl` move, `y`/`Enter` confirm, `n` reject — both gated by `isActionable`, so `n` on a **done** card
@@ -1836,7 +1840,12 @@ here.
   contradiction; focus jumps to the next actionable card — registered
   in the `?` help via `shortcuts.groups.faceSearch`), „Potvrdit vše (n)" steps through the active tab's actionable cards
   sequentially with a live `current/total`, cancelably, **a partial failure doesn't roll back** and reports
-  what failed — the review state is held by `useCandidateReview`; config (person/threshold/limit/tab) in the URL,
+  what failed — the review state is held by `useCandidateReview`; the grid is the user's own column count on
+  **`REVIEW_GRID_SCOPE`** with a `GridDensityControl` in the results header (the old fixed `minmax(16rem, 1fr)`
+  survives only as the width that count is *seeded* from), and a click on a photo opens `ReviewLightbox` over
+  the **active tab's** list with `CandidateDecisions` (the very ✓/✗ handlers the card calls) in the footer —
+  while it is open `useKeyboardShortcuts` is `enabled: false`, so grid movement never fights the overlay's arrows;
+  config (person/threshold/limit/tab) in the URL,
   states empty/no-faces/no-embeddings/zero-matches/loading,
   `RecognitionPage` = `/recognition` (editor/admin, a link in „Nástrojích") a **recognition sweep**
   „projdi všechny a najdi shody mezi neoznačenými obličeji": the config panel (a **confidence** slider in
@@ -1852,7 +1861,11 @@ here.
   a flat `focusSequence` across people, `y`/`Enter` confirm, `n` reject — reuse
   `useKeyboardShortcuts` + `shortcuts.groups.faceSearch`); global stats (to handle / already
   assigned / people with matches) from `summary`, a `capped` notice, a **clean empty state** after a scan with no
-  matches („všechny obličeje jsou přiřazené"); config (confidence/limit) in the URL; **it never auto-confirms**,
+  matches („všechny obličeje jsou přiřazené"); every person's grid runs on the shared **`REVIEW_GRID_SCOPE`** count
+  with one `GridDensityControl` beside the stats (all blocks move together), and a click on a photo opens
+  `ReviewLightbox` **scoped to that one person's block** — ←/→ never step from Alice's list into Bob's, because the
+  footer's verdict is written for the person the overlay was opened on; config (confidence/limit) in the URL;
+  **it never auto-confirms**,
   `ExpandPage` = `/expand` (editor/admin, a top-level link **Rozšířit** by albums/labels) „rozšiř album
   nebo štítek o vizuálně podobné fotky": the config panel `ExpandSearchForm` (an **Album|Štítek** toggle
   (`ToggleButtonGroup`), collection selection via `AddAutocomplete` — options from `lib/expandSearch`
@@ -1865,7 +1878,11 @@ here.
   („Fotka musí odpovídat alespoň {{n}} zdrojovým fotkám" + „Řazeno podle počtu shod, pak podle
   podobnosti", for `source_capped` also a sample) above the **standard `PhotoGrid`** (no grid fork);
   the tile carries via `tileExtras` a **% similarity** and, at `match_count > 1`, a badge of the **match count**,
-  a click opens the photo detail as in the library; **selection = the library model** (`useBulkEdit` +
+  a click opens the photo detail as in the library — and a corner **⤢** enlarges the candidate in `ReviewLightbox`
+  (`fit_1280`, the label's ✗ repeated in the footer) instead: these are the library's tiles, where a click already
+  means „open this photo", so „look closer" gets its own control rather than a second meaning on the same gesture;
+  the grid runs on **`REVIEW_GRID_SCOPE`** (`PhotoGrid`'s `scope` prop) with a `GridDensityControl` in the summary
+  row, because this is a judging grid and must not re-densify the library on the way back; **selection = the library model** (`useBulkEdit` +
   `SelectionStart`/`SelectionBar`/„Vybrat vše"/Shift+click range/Esc), `BulkEditControl`
   with **`prefill` = the expanded collection**, so Apply adds right away; on success via
   `BulkEditOutcome` **the added photos leave the grid in place** (without a refetch and scroll jump,
@@ -1873,7 +1890,7 @@ here.
   (only **labels** — albums have no rejection model, so it isn't offered) **permanently rejects** via
   `rejectLabel` (`services/feedback`) optimistically with rollback + an alert on failure; the **keyboard**
   like the library (`useGridKeyboardNavigation`: arrows/`hjkl`, Enter opens, `x` selects, Esc clears the
-  selection); config (type/collection/threshold/limit) in the URL (Back/refresh restores the search); states
+  selection — suspended while the lightbox is open, which owns the arrows then); config (type/collection/threshold/limit) in the URL (Back/refresh restores the search); states
   idle/loading/error/**no-embeddings** (its own message — embeddings are computed once the box is online;
   distinct from zero-matches)/empty-collection/zero-matches (advises lowering the threshold)/all-handled,
   `MapPage` = `/map` a map view: geotagged photos as clustered markers over mapy.com
@@ -2203,7 +2220,7 @@ here.
   the streak column rendering a run and a dash for nobody on one),
   `StatsPage` = `/stats` (**any logged-in user** — read-only aggregate counts, so no role gate, like the
   leaderboard; reachable from the **user menu** and the phone drawer's account section) the **library
-  statistics** over `GET /system/stats` (`useLibraryStats`), modelled on photo-sorter's status page: five
+  statistics** over `GET /system/stats` (`useLibraryStats`), modelled on the previous system's status page: five
   cards (`LibraryStatsCards`, shared with `SystemStatusPage`) — **Fotky** (celkem, z toho videa, v knihovně,
   v koši), **Vyhledávání podle obsahu** (připravených fotek, zbývá zpracovat), **Obličeje** (nalezených, fotek
   s/bez), **Lidé a zvířata** (subjekty po druhu, pojmenované/nepojmenované obličeje) and **Alba a štítky**.
@@ -2337,8 +2354,9 @@ so Zpět and the Ponechat levou/obě/pravou buttons never hide under a notch or 
   `components/expand/` = `ExpandSearchForm` (the `/expand` config panel: an Album|Štítek toggle,
   an `AddAutocomplete` collection picker with the photo count in the hint, a percentage threshold slider with bookends,
   limit, a Hledat submit button — purely controlled, the state is held by the page) + `ExpandResults`
-  (a summary row with a vote-rule explanation above `PhotoGrid`; per-tile overlays via `tileExtras`:
-  a % similarity badge (`pe-none`), a match-count badge at `match_count > 1`, a ✗ button only when
+  (a summary row with a vote-rule explanation + the review `GridDensityControl` above a `PhotoGrid` scoped to
+  `REVIEW_GRID_SCOPE`; per-tile overlays via `tileExtras`: a % similarity badge (`pe-none`), a match-count badge
+  at `match_count > 1`, a corner **⤢** that calls `onEnlarge(index)`, and a ✗ button only when
   the caller supplies `onReject`; after the user empties the grid, a „vše zpracováno" message);
   `components/review/` = `ReviewStage` (the photo stage shared by the sorting game **and the review
   tools' lightbox**, so the two cannot drift; `ReviewPhoto` is the game's thin adapter over it, mapping a
@@ -2372,6 +2390,15 @@ so Zpět and the Ponechat levou/obě/pravou buttons never hide under a notch or 
   the app's shortcuts and can be asserted at the document level; it holds no review state, it renders what
   it is handed and calls back. `.review-lightbox__stage` is `container-type: size`, which is what the
   stage's `100cqh` cap measures against — without it a tall photo would overflow the viewport)
+  + `EnlargeButton` (**the one gesture into the lightbox**: a photo in a review grid wrapped in a real
+  `<button>` — keyboard-reachable, `aria-label` = `review.card.enlarge`, `.review-enlarge` in `review.css`
+  strips it to nothing but a `zoom-in` cursor and a focus ring. A button, not a link, deliberately:
+  enlarging produces no URL worth copying, and „leave for the photo's page" is already the stage's corner anchor)
+  + `candidateStage(candidate, alt)` (one face candidate → `ReviewStageProps`: `fit_1280`, the face bbox,
+  `href` to `/photos/{uid}` — shared by `/faces`, `/recognition` and a subject page's `Candidates`, so none of
+  the three can hand the stage a square tile or forget the way out)
+  + `CandidateDecisions` (the ✓/✗ pair for the lightbox's footer, on the **same handlers the card calls**, with
+  words instead of the card's bare icons; a `done` candidate shows the done state rather than a second assign)
   + `ReviewDuplicate` (the duplicate check's stage: the pair **side by side**, halves `flex: 1 1 0` so neither
   copy is implicitly favoured, `DUPLICATE_PREVIEW_SIZE = fit_1280` **never a `tile_*`** — a centre-cropped
   square hides exactly the edges where two exports of one shot differ — each with its file name and pixel size
@@ -2565,7 +2592,10 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   a **Najít návrhy** button → `searchCandidates` with the default threshold `THRESHOLD_DEFAULT_PERCENT` and
   limit 60, reusing `useCandidateReview`+`CandidateCard` without a fork; ✓ confirms via `assignFace`
   and `onAssigned` reloads the gallery, ✗ rejects via `rejectFace`, both optimistically, and a confirmed/
-  rejected card disappears from the list; `no_faces`/`no_embeddings`/empty have an explanation; an
+  rejected card disappears from the list; the grid is the shared `REVIEW_GRID_SCOPE` count with its
+  `GridDensityControl` in the section header, and a click on a photo opens `ReviewLightbox` with
+  `CandidateDecisions` in the footer — so the density and the gesture are the same here as in the full
+  workspace; `no_faces`/`no_embeddings`/empty have an explanation; an
   **Otevřít celý nástroj** link to `/faces?subject={uid}`), `Outliers` (a ranking of suspicious faces
   with a one-tap unassign on the person's page + a **Projít všechny** link to `/outliers?subject={uid}`, where
   the full sweep version lives; each face is a `FaceCrop` — a `fit_*` source picked per face, padded and
@@ -3021,7 +3051,7 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `useImageFrame({source,width,height,orientation})` → `{frame,measured,aspectRatio,ratio,imgProps}` =
   **the frame a face box is positioned against, taken from the loaded image**. Wherever a box is drawn over a
   full-frame photo the wrapper *is* the box's coordinate system (the box is percentages of it), so the wrapper
-  must sit exactly on the rendered pixels — and the catalogue row cannot be trusted for that: the PhotoPrism
+  must sit exactly on the rendered pixels — and the catalogue row cannot be trusted for that: the imported
   import stored already-oriented dimensions that `displayFrame` rotates a **second** time, so ~8.6 % of the
   library carries a transposed pair (`phqale6fftf3a3v5tn17vtfd3d`: stored 3000x4000 + orientation 6 over a
   portrait file → a 4/3 wrapper around a 3/4 image, every box's x/width stretched by 1.78, one of the three
@@ -3243,7 +3273,7 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   + `isNamed` + `hasEmbedding`; one source of truth for the colors in the overlay, `FacesPanel` and `PeoplePanel`.
   **Why two and not three:** it used to split the unnamed half by whether a marker already covered the face
   (`unassigned` yellow „Bez osoby" / `unmatched` red „Nepojmenovaný" — the labels were also the wrong way round).
-  That split is PhotoPrism's bookkeeping (boxes) meeting Kukátko's detector (vectors): `internal/facematch` handles
+  That split is the imported bookkeeping (boxes) meeting Kukátko's detector (vectors): `internal/facematch` handles
   both in one step (`create_marker` creates the marker *and* assigns, `assign_person` assigns to the existing one),
   so naming either one is the same single click and only the verb the backend picks differs — while the marker-less
   half is **82 % of the library** (94 194 of 115 457 faces, 2026-08-03) and was drawn in the color that means
@@ -3944,7 +3974,7 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   the rest is under `Layout`
   (**`/` = `LibraryPage`** — the library is the home page; `/library/*` → `LibraryRedirect`
   (a `replace` redirect to `/` with the query string preserved, the splat also covering the
-  inherited PhotoPrism addresses),
+  inherited addresses),
   `/favorites`, `/albums`, `/albums/:uid`, `/labels`, `/labels/:uid`, `/search`, `/saved`, `/map`,
   `/places`, `/people`,
   `/people/:uid`, `/account`, `/help`; `/upload`, `/people/clusters`, `/faces`, `/recognition`, `/trash` and

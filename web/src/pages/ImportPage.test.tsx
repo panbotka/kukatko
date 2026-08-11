@@ -161,9 +161,9 @@ describe('ImportPage', () => {
     expect(await screen.findByText('Run history')).toBeInTheDocument()
     // Every retired source still has a label — a raw i18n key in the provenance
     // record would be worse than useless.
-    expect(screen.getByText('PhotoPrism')).toBeInTheDocument()
-    expect(screen.getByText('Photo-sorter')).toBeInTheDocument()
-    expect(screen.getByText('Photo-sorter (feeds)')).toBeInTheDocument()
+    expect(screen.getByText('Legacy catalogue')).toBeInTheDocument()
+    expect(screen.getByText('Legacy vector layer')).toBeInTheDocument()
+    expect(screen.getByText('Legacy vector layer (feeds)')).toBeInTheDocument()
     expect(screen.getByText('connection refused')).toBeInTheDocument()
 
     // A wide viewport keeps the familiar six-column table.
