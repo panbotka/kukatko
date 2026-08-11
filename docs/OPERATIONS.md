@@ -1098,7 +1098,12 @@ and an example `.env.example`.
      and `tzdata`. **No `libvips`** — `thumb.engine` is pure-Go by default. Runs as **nonroot**
      (`nobody`), `EXPOSE 8080` (= `web.port` default), `STOPSIGNAL SIGTERM` (graceful drain),
      `ENTRYPOINT` the binary + `CMD ["serve"]`. Mount the library/cache/tmp as volumes
-     (`/var/lib/kukatko/{originals,cache,tmp}`).
+     (`/var/lib/kukatko/{originals,cache,tmp}`). Those three directories are **created in the image
+     and chowned to `nobody`** on purpose: a fresh named volume inherits the ownership of the path it
+     is mounted onto, and a mountpoint the image does not have is created **root-owned**, which the
+     unprivileged process cannot write (the first upload fails with a permission error). With them
+     pre-created, `-v kukatko-originals:/var/lib/kukatko/originals` just works. A **bind** mount keeps
+     the host directory's ownership instead, so `chown -R 65534 ./originals` on the host first.
 - **Publishing (`docker-publish.yml`) to `ghcr.io/panbotka/kukatko`** (image = `${{ github.repository }}`),
   authentication via the built-in `GITHUB_TOKEN` (permission `packages: write`), **no other secrets**.
   Triggers: push to `main`, a push of a `v*.*.*` tag, and a `pull_request` to `main` (**a PR only builds, never

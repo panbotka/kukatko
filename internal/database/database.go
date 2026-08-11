@@ -4,9 +4,11 @@
 //
 // Embeddings are stored directly in PostgreSQL as pgvector halfvec columns, so
 // every pooled connection registers the vector/halfvec/sparsevec types on
-// connect. The `vector` and `unaccent` extensions are expected to be present
-// (they are installed by migration 0001 and pre-provisioned on the shared
-// Postgres instance).
+// connect. That makes the `vector` extension a precondition of the pool rather
+// than of the schema: New installs it over a plain connection before the pool is
+// built (see ensureVectorExtension), so a brand-new database comes up. The
+// `unaccent` extension has no such constraint and is installed by migration 0001
+// along with a second, idempotent CREATE EXTENSION for `vector`.
 package database
 
 import (
@@ -25,6 +27,11 @@ import (
 type DB struct {
 	pool *pgxpool.Pool
 }
+
+// vectorExtension is the PostgreSQL extension providing the vector/halfvec
+// types. Every pooled connection registers those types on connect, so it is the
+// one extension that has to exist before the pool does — see ensureVectorExtension.
+const vectorExtension = "vector"
 
 // sessionTimeZone is the time zone every pooled connection runs in. Calendar
 // arithmetic in SQL (date_part('year', taken_at), make_timestamptz(…)) resolves
@@ -47,6 +54,16 @@ func New(ctx context.Context, cfg config.DatabaseConfig) (*DB, error) {
 	}
 	applyPoolLimits(poolCfg, cfg)
 	pinSessionTimeZone(poolCfg)
+
+	// This has to happen before the pool exists, not in a migration. The pool's
+	// AfterConnect registers the pgvector types, and on a database that has never
+	// been migrated there are none to register — so every connection fails with
+	// "vector type not found in the database" and the migration that would have
+	// created the extension can never run over the pool. A fresh install would
+	// deadlock on itself; one plain connection breaks the cycle.
+	if err := ensureVectorExtension(ctx, poolCfg.ConnConfig); err != nil {
+		return nil, err
+	}
 	poolCfg.AfterConnect = registerVectorTypes
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
@@ -60,6 +77,55 @@ func New(ctx context.Context, cfg config.DatabaseConfig) (*DB, error) {
 		return nil, err
 	}
 	return db, nil
+}
+
+// ensureVectorExtension installs the pgvector extension when the database does
+// not have it yet, over a single short-lived connection opened from connCfg —
+// which must be a config WITHOUT the pgvector AfterConnect hook, since that hook
+// is exactly what cannot succeed yet. Migration 0001 creates the extension too;
+// this is the copy that runs early enough for the pool to come up at all, and
+// the two are idempotent with respect to each other.
+//
+// A database that already has the extension issues no CREATE EXTENSION at all,
+// only a catalog read, so an instance whose role may not create extensions (a
+// managed Postgres, a pre-provisioned shared server) is unaffected. It returns a
+// wrapped error if the connection cannot be opened, the catalog cannot be read,
+// or the extension is missing and cannot be created.
+func ensureVectorExtension(ctx context.Context, connCfg *pgx.ConnConfig) error {
+	conn, err := pgx.ConnectConfig(ctx, connCfg.Copy())
+	if err != nil {
+		return fmt.Errorf("connecting to check the %s extension: %w", vectorExtension, err)
+	}
+	// The close must outlive a cancelled ctx, otherwise a shutdown mid-startup
+	// leaks the connection until the server times it out.
+	defer func() { _ = conn.Close(context.WithoutCancel(ctx)) }()
+
+	return ensureExtension(ctx, conn, vectorExtension)
+}
+
+// ensureExtension installs the named PostgreSQL extension into the connected
+// database unless pg_extension already lists it, and reports nothing else — an
+// already-installed extension is a no-op. CREATE EXTENSION takes an identifier
+// rather than a bind parameter, so name is quoted as one; callers pass a
+// constant. It returns a wrapped error naming the extension if the catalog read
+// or the creation fails, the latter typically meaning the server does not ship
+// the extension or the role may not create it.
+func ensureExtension(ctx context.Context, conn *pgx.Conn, name string) error {
+	const query = "SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = $1)"
+
+	var installed bool
+	if err := conn.QueryRow(ctx, query, name).Scan(&installed); err != nil {
+		return fmt.Errorf("checking whether the %s extension is installed: %w", name, err)
+	}
+	if installed {
+		return nil
+	}
+
+	if _, err := conn.Exec(ctx, "CREATE EXTENSION IF NOT EXISTS "+pgx.Identifier{name}.Sanitize()); err != nil {
+		return fmt.Errorf("creating the %s extension (the server must ship it and the role "+
+			"must be allowed to CREATE EXTENSION): %w", name, err)
+	}
+	return nil
 }
 
 // registerVectorTypes registers the pgvector types on a freshly established

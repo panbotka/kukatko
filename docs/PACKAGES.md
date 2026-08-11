@@ -14,6 +14,13 @@ to `## Package map` in `CLAUDE.md`.
   param, overriding the DSN) so SQL calendar arithmetic (`date_part('year', taken_at)`,
   `make_timestamptz`) shares one reference frame with the UTC boundaries the Go side builds —
   `year:`/`?year=`/histograms and `taken:` then agree on a photo taken around New Year;
+  **the `vector` extension is bootstrapped before the pool exists** (`ensureVectorExtension` →
+  `ensureExtension`, one plain connection from the same DSN): the pool's `AfterConnect` registers the
+  pgvector types, so on a never-migrated database every connection fails with `vector type not found
+  in the database` and migration `0001`, which creates the extension, can never run over that pool —
+  a fresh install would deadlock on itself. An already-installed extension issues **no**
+  `CREATE EXTENSION` at all, only a `pg_extension` read, so a managed/shared instance whose role may
+  not create extensions is unaffected;
   SQL migrations in `internal/database/migrations/*.sql`), `internal/database/dbtest/`
   (integration test harness: `dbtest.New(t)`, `dbtest.TruncateAll`), `internal/auth/`
   (authentication/authorization: `Role` viewer/editor/admin/maintainer + `authorize`, bcrypt cost 12

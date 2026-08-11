@@ -44,10 +44,10 @@ nfpms:
     homepage: https://github.com/panbotka/kukatko
     maintainer: Tomas Kozak <kozak@talko.cz>
     description: |
-      Kukátko — self-contained photo and video management application and a
-      robust replacement for PhotoPrism. Single Go binary with an embedded
-      React web UI, backed by PostgreSQL + pgvector, with semantic and
-      full-text search, face recognition, and an external embeddings service.
+      Kukátko — a self-hosted photo and video library for a personal or family
+      archive. Single Go binary with an embedded React web UI, backed by
+      PostgreSQL + pgvector, with semantic and full-text search, face
+      recognition, and an optional external embeddings service.
     license: MIT
     section: misc
     priority: optional
