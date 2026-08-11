@@ -44,6 +44,12 @@ const (
 	KeyFilename Key = "filename"
 	// KeyKeywords matches the verbatim IPTC keywords (text).
 	KeyKeywords Key = "keywords"
+	// KeyText matches the text a recogniser read *inside* the photo — a sign, a
+	// shop front, a scanned page (text). It is deliberately its own key rather
+	// than folded into description:/notes:: OCR output is machine-read and noisy,
+	// and someone hunting for the photo of a particular shop wants to say so
+	// rather than have every caption search silently widened.
+	KeyText Key = "text"
 	// KeyAlbum matches photos in an album by title or UID (text).
 	KeyAlbum Key = "album"
 	// KeyLabel matches photos carrying a label by name or UID (text).
@@ -162,6 +168,7 @@ var specs = map[Key]spec{
 	KeyNotes:       {kind: KindText},
 	KeyFilename:    {kind: KindText},
 	KeyKeywords:    {kind: KindText},
+	KeyText:        {kind: KindText},
 	KeyAlbum:       {kind: KindText},
 	KeyLabel:       {kind: KindText},
 	KeyPerson:      {kind: KindText},

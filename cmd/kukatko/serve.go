@@ -283,7 +283,7 @@ func buildServices(
 	// The sidecar scheduler every mutating API enqueues through: the real queue
 	// enqueuer, or a no-op when the metadata sidecar export is switched off.
 	sidecarSched := sidecarSchedulerFor(cfg, enqueuer)
-	ingestAPI, err := buildIngest(cfg, db, authAPI, enqueuer, sidecarSched, reg)
+	ingestAPI, err := buildIngest(cfg, db, authAPI, enqueuer, sidecarSched, ocrEnqueuerOrNil(cfg, enqueuer), reg)
 	if err != nil {
 		return nil, backgroundServices{}, err
 	}
@@ -315,7 +315,7 @@ func buildServices(
 		return nil, backgroundServices{}, err
 	}
 	jobWorker, jobAPI, processAPI, maintenanceAPI, err := buildJobs(cfg, db, jobStore, authAPI, enqueuer,
-		embedSvc, faceSvc, clusterSvc, storyboardSvc, reg, geocodeBudget)
+		embedSvc, faceSvc, clusterSvc, storyboardSvc, embedClient, reg, geocodeBudget)
 	if err != nil {
 		return nil, backgroundServices{}, err
 	}

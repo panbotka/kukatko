@@ -885,6 +885,11 @@ to `## Package map` in `CLAUDE.md`.
   (`POST /embed/image` multipart `file` streamed via `io.Pipe` / `POST /embed/text` JSON
   `{text}`), `FaceEmbeddings(ctx,img)` → `[]Face` (512-dim embedding, `BBox [4]float64`
   in px `[x1,y1,x2,y2]`, `DetScore`)+`model` (`POST /embed/face` multipart `file`),
+  `ImageOCR(ctx,img,minConfidence)` → `OCRResult{Text,Blocks,Lang,Model}` (`POST /ocr/image` multipart
+  `file` + the optional scalar field `min_confidence`, omitted when non-positive so the service's own
+  default applies — PP-OCRv5 via RapidOCR, latin model; `Text` is the blocks joined by newlines in
+  reading order, `Blocks[]{Text,BBox,Confidence}` are returned but **not persisted** anywhere, and an
+  image with no text at all is a normal empty result, not an error),
   `Healthy(ctx) bool` (probe `GET /health`, any HTTP response = the box is reachable, only a
   transport-error/timeout = offline), `Health(ctx)` → `SidecarHealth{Model,Pretrained,Dim,Precision}`
   (the same route with the body parsed — the `clip` block of `/health`, `Dim==0` = the sidecar
@@ -2570,6 +2575,34 @@ to `## Package map` in `CLAUDE.md`.
   resumable**: the marker is stamped the moment the job finishes, so an interrupted run picks up exactly where
   it stopped, and a second run over an exhausted library enqueues **zero** jobs — even for a photo whose file
   has no IPTC tags at all ("we looked and there was nothing there" is a finished photo, not a pending one)),
+  `internal/ocrjob/`
+  (the worker handler of the `ocr` job — it **reads the text printed in a photo** (a street sign, a shop
+  front, a scanned page, a banner over a stage) and stores it, so the library's search finds the photo by
+  what it says. One call to the sidecar's `POST /ocr/image` over the photo's **`fit_1920`** preview: the
+  size is a deliberate departure from the `fit_720` embedding uses, because small print on a sign or in a
+  newspaper simply is not there at 720 px, while the image tower downsamples to a small square anyway. All
+  behind the interfaces `PhotoStore`/`Recognizer`/`Previewer`/`PhotoLister`/`Enqueuer` → unit-testable
+  without a network, DB or disk; `Service` = `New(Config{Photos,Client,Previewer,Lister?,Enqueuer?,
+  PreviewSize?,MinConfidence?,OfflineRetryDelay?,Logger?})` (panics on a nil mandatory collaborator;
+  `Lister`/`Enqueuer` optional — they turn the backfill on), `Handle` = `worker.HandlerFunc` (payload
+  `{photo_uid}`, empty → `ErrMissingPhotoUID` dead-letter), registered in `serve` on `jobs.TypeOCR` (only
+  when `embedding.ocr.enabled`). **`Recognize(uid)`** asks the previewer for the image **by photo** rather
+  than reaching into the thumbnail cache (on an object-store backend a preview routinely has no cache file
+  behind it — the mistake that once left every `image_embed` job dead-lettering with "thumbnail not
+  cached"), then writes `photos.SaveOCR`. Two behaviours carry the design: an **empty reading is a
+  success** that is still recorded (most photographs have no writing in them, and "we looked and found
+  nothing" is what stops every backfill from re-scheduling the whole library forever — the marker is
+  `ocr_at`, not an empty `ocr_text`), and it **never short-circuits on "already done"**, unlike
+  `embedjob.Embed`, because a forced re-run with a better model exists precisely to replace an older
+  reading. A **video is a logged skip** (a nil error): OCR runs on stills only, there is no poster-frame
+  recognition, and failing would dead-letter work that was never meant to happen. An offline box →
+  `worker.RetryAfter(OfflineRetryDelay, err)`, i.e. requeued **without burning an attempt**, exactly as
+  `image_embed` behaves; every other sidecar/DB failure is returned so the queue retries. The **backfill**
+  `BackfillOCR(ctx,all) (int,error)` (the basis of `POST /process/ocr`): a job per photo the recogniser has
+  never seen (`ListPhotosMissingOCR` = `ocr_at IS NULL`, non-archived, not a video), or — when `all` — per
+  non-archived still (`ListActiveImageUIDs`, the forced full re-run); enqueue via `Enqueuer.EnqueueOCR` (a
+  dedup no-op), `ErrBackfillUnavailable` without `Lister`/`Enqueuer`. It only enqueues — at the measured
+  ~4.4 photos/s on the box a whole library is a long queue drain, not a request),
   `internal/storyboard/`
   (the **scrub-preview sprite** of a video: one JPEG holding a row-major grid of evenly spaced frames, which the
   player offsets as a CSS background to show the frame under the cursor. `Spec{Columns,Rows,Count,TileWidth,
@@ -2853,7 +2886,10 @@ to `## Package map` in `CLAUDE.md`.
   (`800-`, `-200`), `*` as a wildcard in text (**an escaped or quoted asterisk is a literal** —
   `title:foo\*bar` searches for an asterisk); the filter registry `specs` (Key → Kind
   text/number/date/bool/enum/id/count + bound validation: rating 0–5, month 1–12, year 1000–9999, …)
-  with the aliases `subject:`→`person:`, `keyword:`→`keywords:`; the bool keys include
+  with the aliases `subject:`→`person:`, `keyword:`→`keywords:`; **`text:`** matches the text a recogniser
+  read *inside* the photo (`photos.ocr_text`) and is deliberately its own key rather than folded into
+  `description:`/`notes:` — OCR output is machine-read and noisy, and someone hunting for the photo of a
+  particular shop wants to say so; the bool keys include
   `hidden:` (photos hidden from the library — like `archived:`, using it lifts the store's default scope,
   so `hidden:yes` is the way back to a hidden photo); the id key **`uid:`** names exactly one photo — by its own
   uid **or** by the source uid it was imported under, one key for both because the two shapes cannot collide

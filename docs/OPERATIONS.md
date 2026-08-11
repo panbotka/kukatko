@@ -686,8 +686,8 @@ long-running and belong on the machine where the instance runs — so they remai
   `metadata`, `places`, `sidecar`, `storyboard`, `pp_import`, …). All of that is local CPU/IO work, so size it by the
   host's cores. `type_count` is a **map of job type → slots**: a type named there gets its **own
   dedicated pool** of that many goroutines and stops competing for the shared pool's slots. That split
-  is the whole point — **`image_embed`/`face_detect` call the embeddings sidecar on the GPU box, which
-  serves one request at a time**, and before per-type pools existed the single global slot that
+  is the whole point — **`image_embed`/`face_detect`/`ocr` call the embeddings sidecar on the GPU box,
+  which serves one request at a time**, and before per-type pools existed the single global slot that
   protected it also serialised every thumbnail on the box. They stay at **one slot each even when
   `type_count` does not mention them** (a YAML map *replaces* the default, it does not merge into it),
   so running several against the box is only ever an explicit entry; values ≤ 0 are ignored and a type
@@ -718,6 +718,23 @@ long-running and belong on the machine where the instance runs — so they remai
   query — the one interactive call — because search degrades to full-text when it expires and text
   results now beat semantic results later. Env: `KUKATKO_EMBEDDING_URL`, `_DIAL_TIMEOUT`,
   `_REQUEST_TIMEOUT`, `_TEXT_TIMEOUT`.
+- **Text-recognition keys (`embedding.ocr.*`, `internal/ocrjob`):** reading the text printed *in* a
+  photo — a street sign, a shop front, a scanned page — so search finds the photo by what it says. It
+  is served by the **same** sidecar on the same box as the embeddings above, which is why it has no URL
+  of its own and inherits `request_timeout`. `enabled` (bool, **default true**): when false the feature
+  is fully inert — no `ocr` handler is registered, uploads enqueue no job, and `POST /process/ocr`
+  answers 503; text recognised earlier stays stored and stays searchable. `min_confidence` (**default
+  0.5**, the service's own) is the per-block confidence floor: blocks the recogniser is less sure about
+  are dropped before the text is assembled; a non-positive value sends nothing and lets the service
+  decide. `preview_size` (**default `fit_1920`**) is the thumbnail sent to the recogniser — bigger than
+  the `fit_720` used for embedding on purpose, because the image tower downsamples to a small square
+  anyway while OCR needs the pixels; `fit_720` loses the small print on signs and in newspapers, which
+  is the whole point. The recognised text lands in `photos.ocr_text` (searchable at the **lowest**
+  full-text weight `D`, below `file_name`'s siblings and far below a real title) with `ocr_model` and
+  `ocr_at`; `ocr_at IS NULL` is what the backfill reads as "never looked at", so an empty reading is
+  recorded rather than skipped. Throughput on the box is ~4.4 photos/s on CUDA, so a library-wide
+  backfill is a long queue drain — and the box being offline is the normal case, in which the jobs
+  simply wait. Env: `KUKATKO_EMBEDDING_OCR_ENABLED`, `_OCR_MIN_CONFIDENCE`, `_OCR_PREVIEW_SIZE`.
 - **Wake-on-LAN keys (`embedding.wake.*`, `internal/wake`):** `enabled` (bool, **default false** —
   the feature is fully inert), `mac` (the box's MAC, **required and parsed during validation** when enabled),
   `broadcast_addr` (the UDP broadcast target, default `255.255.255.255:9`), `interface` (the NIC for the raw

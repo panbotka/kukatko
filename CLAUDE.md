@@ -98,6 +98,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/metrics` — Prometheus registry + collectors (DB pool, queue depth)
 - `internal/namelessjob` — the nameless catch-all subject repair as queue work: the undo-file format shared with the CLI, the report/schedule service, the `nameless_detach`/`nameless_restore` handlers
 - `internal/obs` — structured logging (JSON slog to stderr)
+- `internal/ocrjob` — worker handler `ocr` + backfill: reads the text printed in a photo via the sidecar and stores it for search; stills only, an empty reading is a recorded success
 - `internal/organize` — albums, labels, **per-user** favorites and ratings
 - `internal/organizeapi` — `/albums`, `/labels`
 - `internal/outlierapi` — `GET /subjects/{uid}/outliers`

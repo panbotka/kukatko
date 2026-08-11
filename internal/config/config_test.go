@@ -90,6 +90,9 @@ func TestLoad_defaults(t *testing.T) {
 		{"embedding.wake.broadcast_addr", cfg.Embedding.Wake.BroadcastAddr, "255.255.255.255:9"},
 		{"embedding.wake.min_queue", cfg.Embedding.Wake.MinQueue, 1},
 		{"embedding.wake.cooldown", cfg.Embedding.Wake.Cooldown, 5 * time.Minute},
+		{"embedding.ocr.enabled", cfg.Embedding.OCR.Enabled, true},
+		{"embedding.ocr.min_confidence", cfg.Embedding.OCR.MinConfidence, 0.5},
+		{"embedding.ocr.preview_size", cfg.Embedding.OCR.PreviewSize, "fit_1920"},
 		{"faces.min_det_score", cfg.Faces.MinDetScore, 0.5},
 		{"faces.iou_threshold", cfg.Faces.IoUThreshold, 0.1},
 		{"faces.suggestion_limit", cfg.Faces.SuggestionLimit, 5},
@@ -193,7 +196,7 @@ func TestLoad_defaults(t *testing.T) {
 	// A map does not belong in the comparable table above. This one is worth
 	// pinning anyway: the sidecar-bound job types must be serialised out of the
 	// box, because they hit the single-request-at-a-time embeddings box.
-	wantTypes := map[string]int{"image_embed": 1, "face_detect": 1}
+	wantTypes := map[string]int{"image_embed": 1, "face_detect": 1, "ocr": 1}
 	if !maps.Equal(cfg.Worker.TypeCount, wantTypes) {
 		t.Errorf("worker.type_count = %v, want %v", cfg.Worker.TypeCount, wantTypes)
 	}
@@ -245,6 +248,8 @@ func TestLoad_envOverridesDefaults(t *testing.T) {
 	t.Setenv("KUKATKO_THUMB_MAX_PIXELS", "500000000")
 	t.Setenv("KUKATKO_MAPS_GEOCODE_BUDGET", "250")
 	t.Setenv("KUKATKO_MAPS_GEOCODE_BUDGET_WINDOW", "6h")
+	t.Setenv("KUKATKO_EMBEDDING_OCR_ENABLED", "false")
+	t.Setenv("KUKATKO_EMBEDDING_OCR_MIN_CONFIDENCE", "0.8")
 
 	cfg, err := Load("")
 	if err != nil {
@@ -273,6 +278,14 @@ func TestLoad_envOverridesDefaults(t *testing.T) {
 	}
 	if cfg.Sidecar.Enabled {
 		t.Error("sidecar.enabled = true, want false")
+	}
+	// Text recognition is the switch an operator flips when the box is busy or
+	// the readings are noisy, so both of its knobs must be reachable by env.
+	if cfg.Embedding.OCR.Enabled {
+		t.Error("embedding.ocr.enabled = true, want false")
+	}
+	if cfg.Embedding.OCR.MinConfidence != 0.8 {
+		t.Errorf("embedding.ocr.min_confidence = %v, want 0.8", cfg.Embedding.OCR.MinConfidence)
 	}
 	if cfg.Duplicate.EmbeddingMaxDist != 0.1 {
 		t.Errorf("duplicate.embedding_max_dist = %v, want 0.1", cfg.Duplicate.EmbeddingMaxDist)

@@ -14,6 +14,7 @@ type fakeClient struct {
 	imageErr  error
 	textErr   error
 	faceErr   error
+	ocrErr    error
 	healthy   bool
 	lastImage bool
 }
@@ -32,6 +33,11 @@ func (c *fakeClient) TextEmbedding(context.Context, string) ([]float32, string, 
 // FaceEmbeddings returns no faces and the configured error.
 func (c *fakeClient) FaceEmbeddings(context.Context, io.Reader) ([]Face, string, error) {
 	return nil, "m", c.faceErr
+}
+
+// ImageOCR returns a fixed reading and the configured error.
+func (c *fakeClient) ImageOCR(context.Context, io.Reader, float64) (OCRResult, error) {
+	return OCRResult{Text: "t", Model: "m"}, c.ocrErr
 }
 
 // Healthy returns the configured health.
@@ -86,6 +92,42 @@ func TestInstrument_recordsImageCall(t *testing.T) {
 	}
 	if !obs.up {
 		t.Error("expected sidecar marked up after a successful call")
+	}
+}
+
+// TestInstrument_recordsOCRCall verifies text recognition reports under its own
+// operation label and passes the inner result through untouched.
+func TestInstrument_recordsOCRCall(t *testing.T) {
+	t.Parallel()
+
+	obs := &recordingObserver{}
+	c := Instrument(&fakeClient{}, obs)
+
+	result, err := c.ImageOCR(context.Background(), strings.NewReader("x"), 0.5)
+	if err != nil {
+		t.Fatalf("ImageOCR: %v", err)
+	}
+	if result.Text != "t" || result.Model != "m" {
+		t.Errorf("result = %+v, want the inner result unchanged", result)
+	}
+	if obs.op != OpOCR || obs.err != nil || obs.calls != 1 {
+		t.Errorf("observed op=%q err=%v calls=%d, want ocr/nil/1", obs.op, obs.err, obs.calls)
+	}
+	if !obs.up {
+		t.Error("expected sidecar marked up after a successful call")
+	}
+}
+
+// TestInstrument_ocrUnavailableMarksDown verifies an offline box seen through the
+// OCR call moves the same up gauge every other operation does.
+func TestInstrument_ocrUnavailableMarksDown(t *testing.T) {
+	t.Parallel()
+
+	obs := &recordingObserver{}
+	c := Instrument(&fakeClient{ocrErr: ErrUnavailable}, obs)
+	_, _ = c.ImageOCR(context.Background(), strings.NewReader("x"), 0.5)
+	if !obs.upSet || obs.up {
+		t.Errorf("up = %v (set %v), want the sidecar marked down", obs.up, obs.upSet)
 	}
 }
 

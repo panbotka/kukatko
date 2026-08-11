@@ -8,14 +8,17 @@ import (
 	"github.com/panbotka/kukatko/internal/cluster"
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/database"
+	"github.com/panbotka/kukatko/internal/embedding"
 	"github.com/panbotka/kukatko/internal/embedjob"
 	"github.com/panbotka/kukatko/internal/facejob"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/jobsapi"
+	"github.com/panbotka/kukatko/internal/maintenance"
 	"github.com/panbotka/kukatko/internal/maintenanceapi"
 	"github.com/panbotka/kukatko/internal/metajob"
 	"github.com/panbotka/kukatko/internal/metrics"
 	"github.com/panbotka/kukatko/internal/namelessjob"
+	"github.com/panbotka/kukatko/internal/ocrjob"
 	"github.com/panbotka/kukatko/internal/placesjob"
 	"github.com/panbotka/kukatko/internal/processapi"
 	"github.com/panbotka/kukatko/internal/sidecarjob"
@@ -40,36 +43,26 @@ import (
 // photo's original into the IPTC/XMP and file-technical columns, and backing the
 // metadata backfill), the metadata sidecar export service (nil when the export is
 // switched off; it registers the `sidecar` job that writes each photo's curation
-// to a YAML file in storage and backs the sidecar backfill) and the
-// library-maintenance service/API, since all are part of the job subsystem; a
-// build failure for any of them is returned as an error.
+// to a YAML file in storage and backs the sidecar backfill), the text-recognition
+// service (nil when OCR is off; it registers the `ocr` job that reads what a
+// photo's signs say and backs the OCR backfill, reusing embedClient because it is
+// the same sidecar on the same box) and the library-maintenance service/API,
+// since all are part of the job subsystem; a build failure for any of them is
+// returned as an error.
 func buildJobs(
 	cfg *config.Config, db *database.DB, store *jobs.Store, authAPI *auth.API, enqueuer *jobs.Enqueuer,
 	embedSvc *embedjob.Service, faceSvc *facejob.Service, clusterSvc *cluster.Service,
-	storyboardSvc *storyboardjob.Service, reg *metrics.Registry, geocodeBudget *placesjob.WindowBudget,
+	storyboardSvc *storyboardjob.Service, embedClient embedding.Client, reg *metrics.Registry,
+	geocodeBudget *placesjob.WindowBudget,
 ) (*worker.Worker, *jobsapi.API, *processapi.API, *maintenanceapi.API, error) {
-	thumbSvc, maintenanceSvc, err := buildMaintenanceAndThumb(cfg, db, enqueuer, embedSvc, faceSvc, reg)
-	if err != nil {
-		return nil, nil, nil, nil, err
-	}
-	placesSvc, err := buildPlacesServiceOrNil(cfg, db, enqueuer, geocodeBudget, reg)
-	if err != nil {
-		return nil, nil, nil, nil, err
-	}
-	metaSvc, err := buildMetaService(cfg, db, enqueuer)
-	if err != nil {
-		return nil, nil, nil, nil, err
-	}
-	sidecarSvc, err := buildSidecarServiceOrNil(cfg, db, enqueuer)
-	if err != nil {
-		return nil, nil, nil, nil, err
-	}
-	namelessSvc := buildNamelessService(db, store)
-	registry := buildRegistry(registryServices{
-		embed: embedSvc, face: faceSvc, thumb: thumbSvc, meta: metaSvc,
-		places: placesSvc, sidecar: sidecarSvc, nameless: namelessSvc,
-		storyboard: storyboardSvc,
+	svcs, maintenanceSvc, err := buildJobServices(jobServiceDeps{
+		cfg: cfg, db: db, store: store, enqueuer: enqueuer, embed: embedSvc, face: faceSvc,
+		storyboard: storyboardSvc, embedClient: embedClient, geocodeBudget: geocodeBudget, reg: reg,
 	})
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	registry := buildRegistry(svcs)
 
 	w := worker.New(worker.Config{
 		Queue:             store,
@@ -86,19 +79,21 @@ func buildJobs(
 	// Pass the places backfiller as a nil interface (not a typed nil pointer) when
 	// it is not configured, so processapi's nil check disables /process/places.
 	var placesBF processapi.PlacesBackfiller
-	if placesSvc != nil {
-		placesBF = placesSvc
+	if svcs.places != nil {
+		placesBF = svcs.places
 	}
 	procAPI := processapi.NewAPI(processapi.Config{
 		Backfiller:          embedSvc,
 		FaceBackfiller:      faceSvc,
 		Reclusterer:         clusterSvc,
 		PlacesBackfiller:    placesBF,
-		ThumbnailBackfiller: thumbSvc,
-		MetadataBackfiller:  metaSvc,
+		ThumbnailBackfiller: svcs.thumb,
+		MetadataBackfiller:  svcs.meta,
 		// A nil interface (not a typed-nil pointer) disables /process/sidecars when
 		// the metadata sidecar export is off.
-		SidecarBackfiller: sidecarBackfillerOrNil(sidecarSvc),
+		SidecarBackfiller: sidecarBackfillerOrNil(svcs.sidecar),
+		// Likewise a nil interface disables /process/ocr when text recognition is off.
+		OCRBackfiller: ocrBackfillerOrNil(svcs.ocr),
 		// A nil interface (not a typed-nil pointer) disables /process/stacks when
 		// the stacking feature is off.
 		StacksDetector: stacksDetectorOrNil(cfg, db),
@@ -107,11 +102,60 @@ func buildJobs(
 		LocationEstimator: locationEstimatorOrNil(cfg, db, enqueuer),
 		RequireMaintainer: authAPI.RequireMaintainer,
 	})
-	return w, jobAPI, procAPI, buildMaintenanceAPI(maintenanceSvc, namelessSvc, db, authAPI), nil
+	return w, jobAPI, procAPI, buildMaintenanceAPI(maintenanceSvc, svcs.nameless, db, authAPI), nil
+}
+
+// jobServiceDeps bundles what buildJobServices needs, so the construction step
+// takes one parameter rather than ten.
+type jobServiceDeps struct {
+	cfg           *config.Config
+	db            *database.DB
+	store         *jobs.Store
+	enqueuer      *jobs.Enqueuer
+	embed         *embedjob.Service
+	face          *facejob.Service
+	storyboard    *storyboardjob.Service
+	embedClient   embedding.Client
+	geocodeBudget *placesjob.WindowBudget
+	reg           *metrics.Registry
+}
+
+// buildJobServices constructs every handler the worker registry needs, returning
+// them bundled together with the library-maintenance service (which shares the
+// thumbnail service's construction and is not a job handler itself). The
+// config-gated ones — places, sidecar, OCR — come back nil when their feature is
+// switched off; buildRegistry then registers no handler for them, which is what
+// keeps a job of a type nothing can claim from ever being enqueued.
+func buildJobServices(d jobServiceDeps) (registryServices, *maintenance.Service, error) {
+	thumbSvc, maintenanceSvc, err := buildMaintenanceAndThumb(d.cfg, d.db, d.enqueuer, d.embed, d.face, d.reg)
+	if err != nil {
+		return registryServices{}, nil, err
+	}
+	placesSvc, err := buildPlacesServiceOrNil(d.cfg, d.db, d.enqueuer, d.geocodeBudget, d.reg)
+	if err != nil {
+		return registryServices{}, nil, err
+	}
+	metaSvc, err := buildMetaService(d.cfg, d.db, d.enqueuer)
+	if err != nil {
+		return registryServices{}, nil, err
+	}
+	sidecarSvc, err := buildSidecarServiceOrNil(d.cfg, d.db, d.enqueuer)
+	if err != nil {
+		return registryServices{}, nil, err
+	}
+	ocrSvc, err := buildOCRServiceOrNil(d.cfg, d.db, d.enqueuer, d.embedClient, d.reg)
+	if err != nil {
+		return registryServices{}, nil, err
+	}
+	return registryServices{
+		embed: d.embed, face: d.face, thumb: thumbSvc, meta: metaSvc,
+		places: placesSvc, sidecar: sidecarSvc, ocr: ocrSvc,
+		nameless: buildNamelessService(d.db, d.store), storyboard: d.storyboard,
+	}, maintenanceSvc, nil
 }
 
 // registryServices bundles the job handlers buildRegistry wires, so the
-// registration list is one parameter rather than seven.
+// registration list is one parameter rather than nine.
 type registryServices struct {
 	embed      *embedjob.Service
 	face       *facejob.Service
@@ -119,13 +163,14 @@ type registryServices struct {
 	meta       *metajob.Service
 	places     *placesjob.Service
 	sidecar    *sidecarjob.Service
+	ocr        *ocrjob.Service
 	nameless   *namelessjob.Service
 	storyboard *storyboardjob.Service
 }
 
 // buildRegistry returns the worker registry with every configured handler
 // registered. The always-available handlers register unconditionally; the
-// config-gated ones (places, sidecar) register only when their service was
+// config-gated ones (places, sidecar, ocr) register only when their service was
 // built, because an unregistered type is never claimed — so a job of a type with
 // no handler would sit queued forever.
 func buildRegistry(svc registryServices) *worker.Registry {
@@ -143,6 +188,9 @@ func buildRegistry(svc registryServices) *worker.Registry {
 	}
 	if svc.sidecar != nil {
 		registry.Register(jobs.TypeSidecar, svc.sidecar.Handle)
+	}
+	if svc.ocr != nil {
+		registry.Register(jobs.TypeOCR, svc.ocr.Handle)
 	}
 	return registry
 }

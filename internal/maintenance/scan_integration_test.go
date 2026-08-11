@@ -56,6 +56,10 @@ func (stubClient) FaceEmbeddings(context.Context, io.Reader) ([]embedding.Face, 
 	return nil, "", nil
 }
 
+func (stubClient) ImageOCR(context.Context, io.Reader, float64) (embedding.OCRResult, error) {
+	return embedding.OCRResult{}, nil
+}
+
 func (stubClient) Healthy(context.Context) bool { return true }
 
 // diskScanner adapts backup.DiskOriginals to maintenance.DiskScanner.

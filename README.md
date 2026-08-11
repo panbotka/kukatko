@@ -45,6 +45,12 @@ photo-book tool (deliberately out of scope), or a product with support and a rel
   orientation, rating, favourite. `person:`, `label:` and `album:` autocomplete the **actual names in
   your library**, diacritics-insensitively and quoted correctly; a `?` cheat sheet is one keypress
   away, and a filter the parser did not understand is pointed out instead of silently ignored.
+- **The text in the picture is searchable too** — a street sign, a shop front, a race number, a
+  scanned newspaper page. Every photo is run through a text recogniser and what it says becomes part
+  of the search index, so typing *veselice* also finds the photo whose only claim to the word is
+  painted on a board in the background. It ranks *below* a real title, never above one, and `text:` is
+  there when you want to search the signs and nothing else. (Print, not handwriting — no engine here
+  reads Czech cursive.)
 - **A time axis shaped like memory** — a period filter offering the decades your library actually
   holds, each expanding to its years and then to exact dates, plus a timeline rail that jumps twenty
   thousand photos to 1965 in one tap (on the phone too).
@@ -316,18 +322,27 @@ is then arithmetic on distances, and Kukátko deliberately stops short of acting
 Nothing above writes an identity on its own. The machine narrows twenty thousand photos to one
 question, and a human answers it — which is the whole design, not a missing feature.
 
+**Text in photos** is a third use of the same service: `POST /ocr/image` reads what a photo's signs,
+shop fronts and scanned pages say, and the text is stored on the photo and folded into the full-text
+index at the lowest weight — findable, but never outranking something a person actually wrote. It runs
+on stills only (no video poster frames), an image with no writing in it is recorded as exactly that so
+it is never re-examined, and `embedding.ocr.enabled: false` turns the whole thing off.
+
 **Without the service**, upload, browsing, full-text search, albums, labels, places, video and
-everything else work as usual. `image_embed` and `face_detect` jobs simply queue in Postgres and
+everything else work as usual. `image_embed`, `face_detect` and `ocr` jobs simply queue in Postgres and
 drain whenever the service comes back, so a GPU box that is powered off most of the time is a
 supported setup rather than an outage. Search says so instead of pretending: semantic and hybrid
 fall back to full-text and mark the result `degraded`.
 
-Anything answering the same three endpoints will do — the contract is three JSON shapes:
+Anything answering the same four endpoints will do — the contract is four JSON shapes:
 
 - `POST /embed/image` — multipart, field `file` → `{ "dim": 1152, "embedding": [...] }`
 - `POST /embed/text` — JSON `{ "text": "..." }` → the same shape, in the same vector space
 - `POST /embed/face` — multipart, field `file` →
   `{ "faces_count": N, "faces": [{ "dim": 512, "embedding": [...], "bbox": [x1,y1,x2,y2], "det_score": 0.9 }] }`
+- `POST /ocr/image` — multipart, field `file` (+ optional `min_confidence`) →
+  `{ "text": "...", "blocks_count": N, "blocks": [{ "text": "...", "bbox": [x1,y1,x2,y2], "confidence": 0.99 }],
+  "lang": "latin", "model": "..." }` — a photo with no text is an ordinary `200` with an empty result
 
 Details, including how a bounding box is normalized against EXIF orientation, are in
 [`docs/ARCHITECTURE.md` §6](docs/ARCHITECTURE.md).

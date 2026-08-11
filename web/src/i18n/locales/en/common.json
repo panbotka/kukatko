@@ -732,6 +732,7 @@
         "text": "The photo's title, description and notes.",
         "filename": "The file name.",
         "keywords": "IPTC keywords.",
+        "photoText": "Text read out of the photo itself (a sign, a shop front, a scanned page). Accents are ignored — the recogniser often loses them.",
         "album": "Photos in an album (by title or UID).",
         "label": "Photos carrying a label (by name or UID).",
         "person": "Photos with a person (by name or UID).",

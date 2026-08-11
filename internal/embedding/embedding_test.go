@@ -567,6 +567,9 @@ func (staticClient) TextEmbedding(context.Context, string) ([]float32, string, s
 func (staticClient) FaceEmbeddings(context.Context, io.Reader) ([]Face, string, error) {
 	return nil, "fake", nil
 }
+func (staticClient) ImageOCR(context.Context, io.Reader, float64) (OCRResult, error) {
+	return OCRResult{Model: "fake"}, nil
+}
 func (staticClient) Healthy(context.Context) bool { return true }
 
 func TestClient_fakeable(t *testing.T) {
