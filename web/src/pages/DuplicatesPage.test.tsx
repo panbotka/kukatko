@@ -1,10 +1,11 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../i18n'
+import { REVIEW_GRID_SCOPE } from '../lib/gridDensity'
 import {
   type DuplicateGroup,
   type DuplicatesResponse,
@@ -78,6 +79,7 @@ function renderPage() {
 
 beforeEach(async () => {
   await i18n.changeLanguage('en')
+  window.localStorage.clear()
   fetchMock.mockReset()
   mergeMock.mockReset()
 })
@@ -144,6 +146,62 @@ describe('DuplicatesPage', () => {
         member_uids: ['ph_keep', 'ph_dup'],
         dry_run: true,
       })
+    })
+  })
+
+  it('enlarges a member to the whole frame and picks the keeper from the overlay', async () => {
+    const user = userEvent.setup()
+    fetchMock.mockResolvedValue(page([group('g1', 'ph_keep', 'ph_dup')]))
+    mergeMock.mockResolvedValue(preview('ph_dup', true))
+    renderPage()
+    await screen.findByRole('img', { name: 'ph_keep.jpg' })
+
+    // The tile is a 224px square — the click enlarges rather than navigating.
+    await user.click(screen.getAllByRole('button', { name: 'Enlarge the photo' })[1])
+    const overlay = await screen.findByRole('dialog')
+    expect(within(overlay).getByRole('img', { name: 'ph_dup.jpg' })).toHaveAttribute(
+      'src',
+      expect.stringContaining('fit_1280'),
+    )
+    expect(within(overlay).getByTestId('review-open-photo')).toHaveAttribute(
+      'href',
+      '/photos/ph_dup',
+    )
+
+    await user.click(within(overlay).getByRole('button', { name: 'Keep this' }))
+    await user.click(within(overlay).getByRole('button', { name: 'Close' }))
+    await user.click(screen.getByRole('button', { name: 'Keep best & merge' }))
+
+    // The overlay's verdict is the card's: the merge previews that keeper.
+    await waitFor(() => {
+      expect(mergeMock).toHaveBeenCalledWith({
+        keeper_uid: 'ph_dup',
+        member_uids: ['ph_keep', 'ph_dup'],
+        dry_run: true,
+      })
+    })
+  })
+
+  it('sizes the members inside a group from the review density stepper', async () => {
+    const user = userEvent.setup()
+    window.localStorage.setItem(REVIEW_GRID_SCOPE.storageKey, '2')
+    fetchMock.mockResolvedValue(page([group('g1', 'ph_keep', 'ph_dup')]))
+    renderPage()
+    await screen.findByRole('img', { name: 'ph_keep.jpg' })
+
+    const grid = document.querySelector<HTMLElement>('[data-density]')
+    expect(grid?.style.gridTemplateColumns).toBe('repeat(2, 1fr)')
+    // A member tile carries a filename, its dimensions and a radio label, whose
+    // min-content width is what `1fr` takes as its automatic minimum — without
+    // this class the tracks outgrow the row on a phone and scroll the page.
+    expect(grid).toHaveClass('kk-review-grid')
+
+    await user.click(screen.getByRole('button', { name: 'More tiles per row' }))
+
+    await waitFor(() => {
+      expect(document.querySelector<HTMLElement>('[data-density]')?.style.gridTemplateColumns).toBe(
+        'repeat(3, 1fr)',
+      )
     })
   })
 

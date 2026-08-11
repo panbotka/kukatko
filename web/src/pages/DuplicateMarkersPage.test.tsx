@@ -6,6 +6,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, expect, it, vi } from 'vitest'
 
 import i18n from '../i18n'
+import { REVIEW_GRID_SCOPE } from '../lib/gridDensity'
 import { ApiError } from '../services/auth'
 import { type DuplicateMarkerGroup, type DuplicateMarkersResponse } from '../services/dupmarkers'
 import { frameRatio, loadImageAs } from '../test/imageFrame'
@@ -102,6 +103,7 @@ function cards() {
 
 beforeEach(async () => {
   await i18n.changeLanguage('en')
+  window.localStorage.clear()
   fetchMock.mockReset()
   keepMock.mockReset()
   invalidMock.mockReset()
@@ -330,4 +332,66 @@ it('appends the next page without losing what is already reviewed', async () => 
     expect(cards()).toHaveLength(2)
   })
   expect(fetchMock.mock.lastCall?.[0]).toEqual({ limit: 20, offset: 20 })
+})
+
+it('enlarges a numbered crop to the whole frame and keeps it from the overlay', async () => {
+  const user = userEvent.setup()
+  fetchMock.mockResolvedValue(page([group('p1', 'Marie', 3)]))
+  keepMock.mockResolvedValue({
+    photo_uid: 'p1',
+    subject_uid: 's-Marie',
+    keep_marker_uid: 'p1-m2',
+    detached: ['p1-m1', 'p1-m3'],
+  })
+  renderPage()
+  await waitFor(() => {
+    expect(cards()).toHaveLength(1)
+  })
+
+  // The crops are the small pictures the verdict cannot be read from.
+  await user.click(within(cards()[0]).getAllByRole('button', { name: 'Enlarge the photo' })[1])
+
+  const overlay = await screen.findByRole('dialog')
+  expect(within(overlay).getByRole('img', { name: 'Close-up of the box' })).toHaveAttribute(
+    'src',
+    expect.stringContaining('fit_1280'),
+  )
+  expect(within(overlay).getByTestId('review-open-photo')).toHaveAttribute('href', '/photos/p1')
+
+  // The footer carries the crop's own two actions, on the same write paths.
+  await user.click(within(overlay).getByRole('button', { name: 'Keep #2' }))
+
+  await waitFor(() => {
+    expect(keepMock).toHaveBeenCalledWith({
+      photo_uid: 'p1',
+      subject_uid: 's-Marie',
+      keep_marker_uid: 'p1-m2',
+    })
+  })
+})
+
+it('sizes the crops inside a finding from the review density stepper', async () => {
+  const user = userEvent.setup()
+  window.localStorage.setItem(REVIEW_GRID_SCOPE.storageKey, '2')
+  fetchMock.mockResolvedValue(page([group('p1', 'Marie', 3)]))
+  renderPage()
+  await waitFor(() => {
+    expect(cards()).toHaveLength(1)
+  })
+
+  expect(document.querySelector<HTMLElement>('[data-density]')?.style.gridTemplateColumns).toBe(
+    'repeat(2, 1fr)',
+  )
+  // A crop sits above two decision buttons, whose min-content width is what
+  // `1fr` takes as its automatic minimum — without this class the tracks outgrow
+  // the row on a phone and scroll the page sideways.
+  expect(document.querySelector('[data-density]')).toHaveClass('kk-review-grid')
+
+  await user.click(screen.getByRole('button', { name: 'More tiles per row' }))
+
+  await waitFor(() => {
+    expect(document.querySelector<HTMLElement>('[data-density]')?.style.gridTemplateColumns).toBe(
+      'repeat(3, 1fr)',
+    )
+  })
 })

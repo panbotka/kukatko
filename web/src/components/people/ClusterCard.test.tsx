@@ -1,6 +1,7 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
+import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../../i18n'
@@ -27,12 +28,14 @@ function cluster(): ClusterView {
 function renderCard(onRemoveFace = vi.fn()) {
   render(
     <I18nextProvider i18n={i18n}>
-      <ClusterCard
-        cluster={cluster()}
-        busy={false}
-        onAssign={vi.fn()}
-        onRemoveFace={onRemoveFace}
-      />
+      <MemoryRouter>
+        <ClusterCard
+          cluster={cluster()}
+          busy={false}
+          onAssign={vi.fn()}
+          onRemoveFace={onRemoveFace}
+        />
+      </MemoryRouter>
     </I18nextProvider>,
   )
   return {
@@ -62,6 +65,42 @@ describe('ClusterCard', () => {
     await user.click(button)
 
     expect(onRemoveFace).toHaveBeenCalledWith({ photo_uid: 'p2', face_index: 2 })
+  })
+
+  it('enlarges a 48px sample to the whole photo and detaches it from there', async () => {
+    // A 48px square cut from a tile is not something anyone can answer „is this
+    // the same person?" from — so the crop opens the frame it came from.
+    const user = userEvent.setup()
+    const { onRemoveFace } = renderCard()
+
+    // [0] is the representative, [1] the sample.
+    await user.click(screen.getAllByRole('button', { name: 'Enlarge the photo' })[1])
+
+    const overlay = await screen.findByRole('dialog')
+    expect(within(overlay).getByRole('img', { name: 'Sample face' })).toHaveAttribute(
+      'src',
+      expect.stringContaining('fit_1280'),
+    )
+    expect(within(overlay).getByTestId('review-open-photo')).toHaveAttribute('href', '/photos/p2')
+
+    await user.click(
+      within(overlay).getByRole('button', { name: 'Remove this face from the group' }),
+    )
+
+    expect(onRemoveFace).toHaveBeenCalledWith({ photo_uid: 'p2', face_index: 2 })
+  })
+
+  it('offers no detach for the representative, exactly as the card does not', async () => {
+    const user = userEvent.setup()
+    renderCard()
+
+    await user.click(screen.getAllByRole('button', { name: 'Enlarge the photo' })[0])
+
+    const overlay = await screen.findByRole('dialog')
+    expect(within(overlay).getByTestId('review-open-photo')).toHaveAttribute('href', '/photos/p1')
+    expect(
+      within(overlay).queryByRole('button', { name: 'Remove this face from the group' }),
+    ).toBeNull()
   })
 
   it('leaves the remove control sized by the stylesheet, next to its sample', () => {

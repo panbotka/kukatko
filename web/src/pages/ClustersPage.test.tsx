@@ -5,7 +5,9 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../i18n'
+import { REVIEW_GRID_SCOPE } from '../lib/gridDensity'
 import { type ClusterView } from '../services/people'
+import { readCss, ruleBody } from '../test/css'
 
 import { ClustersPage } from './ClustersPage'
 
@@ -61,6 +63,7 @@ function renderPage() {
 
 beforeEach(async () => {
   await i18n.changeLanguage('en')
+  window.localStorage.clear()
   fetchMock.mockReset()
   assignMock.mockReset()
   assignMock.mockResolvedValue(undefined)
@@ -101,6 +104,43 @@ describe('ClustersPage', () => {
     await waitFor(() => {
       expect(assignMock).toHaveBeenCalledWith('fc_1', { subject_uid: 'su_a' })
     })
+  })
+
+  it('columns the cluster grid from the review density stepper', async () => {
+    window.localStorage.setItem(REVIEW_GRID_SCOPE.storageKey, '2')
+    fetchMock.mockResolvedValue(clusters())
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByText('4 faces')
+
+    const grid = document.querySelector<HTMLElement>('[data-density]')
+    expect(grid?.style.gridTemplateColumns).toBe('repeat(2, 1fr)')
+
+    await user.click(screen.getByRole('button', { name: 'More tiles per row' }))
+
+    await waitFor(() => {
+      expect(document.querySelector<HTMLElement>('[data-density]')?.style.gridTemplateColumns).toBe(
+        'repeat(3, 1fr)',
+      )
+    })
+    // The count is the one every review tool shares, not a private one.
+    expect(window.localStorage.getItem(REVIEW_GRID_SCOPE.storageKey)).toBe('3')
+  })
+
+  it('keeps the pinned column count from being widened by a card', async () => {
+    // `1fr` takes its automatic minimum from the item's min-content width, and a
+    // cluster card carries a name field and a button — so on the three columns a
+    // phone is capped to, the tracks would outgrow the row and scroll the whole
+    // page sideways. The guard is the pair: the class on the grid, and the rule
+    // that class stands for.
+    fetchMock.mockResolvedValue(clusters())
+    renderPage()
+    await screen.findByText('4 faces')
+
+    expect(document.querySelector('[data-density]')).toHaveClass('kk-review-grid')
+    expect(ruleBody(readCss('src/components/review/review.css'), /\.kk-review-grid > \*/)).toMatch(
+      /min-width:\s*0/,
+    )
   })
 
   it('shows the empty state when no clusters await review', async () => {

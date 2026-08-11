@@ -5,14 +5,20 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 import { useImageFrame } from '../../hooks/useImageFrame'
+import { useLightbox } from '../../hooks/useLightbox'
 import { groupKey } from '../../lib/duplicateMarkers'
 import { faceBoxStyle } from '../../lib/faceGeometry'
 import { formatDate } from '../../lib/format'
+import { gridTemplateColumns, REVIEW_GRID_SCOPE } from '../../lib/gridDensity'
 import { type DuplicateMarkerGroup } from '../../services/dupmarkers'
 import { thumbUrl } from '../../services/photos'
 import { Icon } from '../Icon'
+import { EnlargeButton } from '../review/EnlargeButton'
+import { ReviewLightbox } from '../review/ReviewLightbox'
 
 import { DuplicateMarkerCrop } from './DuplicateMarkerCrop'
+
+import '../review/review.css'
 
 /**
  * The thumbnail the whole-photo preview is cut from. It is a `fit_*` size, so it
@@ -35,6 +41,8 @@ export interface DuplicateMarkerGroupCardProps {
   onInvalid: (group: DuplicateMarkerGroup, markerUid: string) => void
   /** Records "this really is them twice" and hides the finding for good. */
   onDismiss: (group: DuplicateMarkerGroup) => void
+  /** How many numbered crops sit side by side — the review tools' shared count. */
+  density: number
 }
 
 /**
@@ -60,8 +68,14 @@ export function DuplicateMarkerGroupCard({
   onKeep,
   onInvalid,
   onDismiss,
+  density,
 }: DuplicateMarkerGroupCardProps) {
   const { t, i18n } = useTranslation()
+  // The overlay walks this photo's boxes: one frame, one box at a time, big
+  // enough to tell which of three faces is actually her. Same list, same order
+  // and same numbers as the crops below the preview.
+  const lightbox = useLightbox(group.markers)
+  const enlarged = lightbox.item
   // The preview's frame *is* the coordinate system of the boxes over it, so it
   // comes from the loaded preview rather than from the catalogue row (which, on a
   // photo imported with already-oriented dimensions, is transposed and would throw
@@ -141,18 +155,37 @@ export function DuplicateMarkerGroupCard({
             ))}
         </div>
 
-        <div className="row row-cols-2 row-cols-md-3 row-cols-lg-4 g-3">
+        <div
+          className="d-grid kk-review-grid"
+          data-density={density}
+          /* The row of crops is what is worth making bigger on this page: the
+             page is a list of findings and the judging happens inside one. The
+             responsive 2/3/4 columns are now the user's own count, and
+             `kk-review-grid` is what keeps that count honest: a crop sits above
+             two decision buttons, so without it the `1fr` tracks would grow to
+             their labels and run off the side of a phone. */
+          style={{
+            gridTemplateColumns: gridTemplateColumns(density),
+            gap: `${String(REVIEW_GRID_SCOPE.gapPx)}px`,
+          }}
+        >
           {group.markers.map((marker, index) => (
-            <div key={marker.uid} className="col">
+            <div key={marker.uid}>
               <div className="d-flex flex-column gap-2 h-100">
                 <div className="position-relative">
-                  <DuplicateMarkerCrop
-                    photoUid={group.photo_uid}
-                    marker={marker}
-                    width={group.width}
-                    height={group.height}
-                    orientation={group.orientation}
-                  />
+                  <EnlargeButton
+                    onEnlarge={() => {
+                      lightbox.open(index)
+                    }}
+                  >
+                    <DuplicateMarkerCrop
+                      photoUid={group.photo_uid}
+                      marker={marker}
+                      width={group.width}
+                      height={group.height}
+                      orientation={group.orientation}
+                    />
+                  </EnlargeButton>
                   <Badge
                     bg="warning"
                     text="dark"
@@ -192,6 +225,53 @@ export function DuplicateMarkerGroupCard({
           ))}
         </div>
       </Card.Body>
+
+      {enlarged !== null && (
+        <ReviewLightbox
+          stage={{
+            photoUid: group.photo_uid,
+            fileWidth: group.width,
+            fileHeight: group.height,
+            orientation: group.orientation,
+            size: PREVIEW_SIZE,
+            bbox: enlarged.bbox,
+            href: `/photos/${group.photo_uid}`,
+            alt: t('duplicateMarkers.card.cropAlt'),
+          }}
+          title={t('duplicateMarkers.card.keep', { index: lightbox.index + 1 })}
+          onClose={lightbox.close}
+          onPrev={lightbox.prev}
+          onNext={lightbox.next}
+          hasPrev={lightbox.hasPrev}
+          hasNext={lightbox.hasNext}
+        >
+          <Button
+            variant="outline-success"
+            disabled={busy}
+            className="d-flex align-items-center gap-1"
+            onClick={() => {
+              onKeep(group, enlarged.uid)
+              lightbox.close()
+            }}
+          >
+            <Icon name="check-lg" />
+            {t('duplicateMarkers.card.keep', { index: lightbox.index + 1 })}
+          </Button>
+          <Button
+            variant="outline-light"
+            disabled={busy}
+            className="d-flex align-items-center gap-1"
+            title={t('duplicateMarkers.card.invalidTitle')}
+            onClick={() => {
+              onInvalid(group, enlarged.uid)
+              lightbox.close()
+            }}
+          >
+            <Icon name="x-lg" />
+            {t('duplicateMarkers.card.invalid')}
+          </Button>
+        </ReviewLightbox>
+      )}
 
       <Card.Footer className="d-flex flex-wrap align-items-center gap-2">
         <span className="small text-secondary">{t('duplicateMarkers.card.hint')}</span>
