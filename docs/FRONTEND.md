@@ -2018,12 +2018,17 @@ here.
   no pixel measurement), a distance badge in **%**, the question „Je to chyba?" and two **opposite**
   answers to it: **✓ „Ano, odebrat"** → `assignFace` `unassign_person`, **✗ „Ne, je to {{name}}"** →
   `confirmFace` (`services/feedback`) — **mind the polarity, it is not `rejectFace`**; both flip
-  the card **in place** (the card doesn't disappear → the grid doesn't reshuffle under the cursor); **selection** via
+  the card **in place** (the card doesn't disappear → the grid doesn't reshuffle under the cursor);
+  **a click on the crop enlarges the whole photo** (`fit_1280` with the face marked) in `ReviewLightbox`, the
+  same two verdicts repeated in its footer — a crop is what raises the doubt, the frame around it is what
+  settles it; that replaced the card's small „Otevřít fotku" text link, whose job the stage's corner anchor
+  does now, exactly as on every other tool; **selection** via
   `useSelection` (Shift+click a range, **Ctrl/Cmd+A** bound separately — the shared hook ignores modifiers
   — and only when the grid owns the page, so it doesn't steal the browser's select-all in a field) +
   `SelectionBar` with a **bulk removal** that goes sequentially and **acknowledges partial failure**
   (progress + an error count, the done ones stay done); the **keyboard** (`shortcuts.groups.outliers`):
-  arrows/`hjkl` move, `y`/Enter remove, `n` confirm, `x` select, Esc clears the selection→focus —
+  arrows/`hjkl` move, `y`/Enter remove, `n` confirm, `x` select, Esc clears the selection→focus — **all of it
+  suspended while the lightbox is open**, which then owns the arrows and `Esc` —
   and **focus moves after a verdict to the next undecided card** (`nextActionableIndex`; the focus reset therefore
   hangs on the **answer**, not on the working list that changes with every verdict —
   otherwise the move would be discarded after every decision); states idle („vyber osobu")/loading/error/
@@ -2603,7 +2608,9 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   the whole frame, so on anything but a square photo the crop landed **beside** the face; and being a CSS
   background it also loaded for every face at once, however far down the page the section sits),
   `OutlierCard`/`OutlierControls`/`OutlierStats` (the building blocks of `/outliers`: a card with a **context
-  crop** (30 % around the bbox, `padBbox`+`cropImageStyle`+`faceMarkerStyle`), the question „Je to chyba?"
+  crop** (30 % around the bbox, `padBbox`+`cropImageStyle`+`faceMarkerStyle`) wrapped in `EnlargeButton`
+  (stretched over the frame with `position-absolute`, because the picture inside is absolutely positioned and
+  a flow wrapper would have no height, and therefore nothing to click), the question „Je to chyba?"
   and two opposite verdicts (✓ remove / ✗ confirm), a selection checkbox and a focus ring; a config
   strip with a person picker and a percentage threshold; statistics including the **`no_embedding`** message).
   Two things the card does **not** hard-code: **which thumbnail the crop is cut from** — `lib/faceSource`

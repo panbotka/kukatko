@@ -1683,7 +1683,6 @@
       "distance": "Distance {{percent}} %",
       "distanceTitle": "Distance from this person's average look — the higher, the more suspicious",
       "select": "Select face",
-      "openPhoto": "Open photo",
       "question": "Is this a mistake?",
       "removed": "Removed",
       "confirmed": "Confirmed as correct",

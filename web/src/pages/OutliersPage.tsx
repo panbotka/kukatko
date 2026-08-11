@@ -13,9 +13,11 @@ import { SelectionBar } from '../components/organize/SelectionBar'
 import { OutlierCard } from '../components/people/OutlierCard'
 import { OutlierControls } from '../components/people/OutlierControls'
 import { OutlierStats } from '../components/people/OutlierStats'
+import { ReviewLightbox } from '../components/review/ReviewLightbox'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useGridDensity } from '../hooks/useGridDensity'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
+import { useLightbox } from '../hooks/useLightbox'
 import { useReloadKey } from '../hooks/useReloadKey'
 import { useOutlierReview } from '../hooks/useOutlierReview'
 import { useSelection } from '../hooks/useSelection'
@@ -23,7 +25,9 @@ import { useSubjects } from '../hooks/useSubjects'
 import { gridTemplateColumns, REVIEW_GRID_SCOPE } from '../lib/gridDensity'
 import { isTypingElement } from '../lib/ratingHotkeys'
 import {
+  canUnassign,
   clampOutlierThresholdPercent,
+  distancePercent,
   isActionable,
   OUTLIER_LIMIT,
   OUTLIER_THRESHOLD_DEFAULT_PERCENT,
@@ -32,6 +36,13 @@ import {
   outlierThresholdDistance,
 } from '../lib/outlierReview'
 import { fetchOutliers, type OutlierResult } from '../services/people'
+
+/**
+ * The preview the overlay asks for: `fit_*` (the whole frame), never a square
+ * `tile_*` — the face rectangle is placed in coordinates of the full photo, so a
+ * centre-cropped tile would draw it somewhere else entirely.
+ */
+const OUTLIER_LIGHTBOX_SIZE = 'fit_1280'
 
 /** The page's fetch state for the outlier query. */
 type State =
@@ -175,6 +186,10 @@ export function OutliersPage() {
 
   const [focusedIndex, setFocusedIndex] = useState(-1)
   const gridRef = useRef<HTMLDivElement>(null)
+  // The card shows a context crop; the overlay shows the whole photo it was cut
+  // from, which is the thing the „is this really them?" question is settled on.
+  const lightbox = useLightbox(items)
+  const enlarged = lightbox.item
   // How many cards fit across, on the review grid's own stored count — the
   // library's density is a browsing preference and would fight this one.
   const { density } = useGridDensity(REVIEW_GRID_SCOPE)
@@ -259,7 +274,10 @@ export function OutliersPage() {
     decideFocused('confirm')
   }, [decideFocused])
 
-  const gridEnabled = state.status === 'ready' && items.length > 0 && !review.bulkState.running
+  // The overlay owns the keyboard while it is up: its arrows step photos, and
+  // the grid's would move the highlight (and the selection) out from under it.
+  const gridEnabled =
+    state.status === 'ready' && items.length > 0 && !review.bulkState.running && !lightbox.isOpen
 
   useKeyboardShortcuts(
     {
@@ -471,11 +489,72 @@ export function OutliersPage() {
                   onConfirm={() => {
                     review.confirm(item.face)
                   }}
+                  onEnlarge={() => {
+                    lightbox.open(index)
+                  }}
                 />
               ))}
             </div>
           )}
         </>
+      )}
+
+      {enlarged !== null && (
+        <ReviewLightbox
+          stage={{
+            photoUid: enlarged.face.photo_uid,
+            fileWidth: enlarged.face.width,
+            fileHeight: enlarged.face.height,
+            orientation: enlarged.face.orientation,
+            // The whole frame, not the card's crop: the crop is what raised the
+            // doubt, the surroundings are what settle it.
+            size: OUTLIER_LIGHTBOX_SIZE,
+            bbox: enlarged.face.bbox,
+            href: `/photos/${enlarged.face.photo_uid}`,
+            alt: t('outliersPage.card.photoAlt'),
+          }}
+          title={t('outliersPage.card.distance', {
+            percent: distancePercent(enlarged.face.distance),
+          })}
+          onClose={lightbox.close}
+          onPrev={lightbox.prev}
+          onNext={lightbox.next}
+          hasPrev={lightbox.hasPrev}
+          hasNext={lightbox.hasNext}
+        >
+          {isActionable(enlarged) ? (
+            <>
+              <Button
+                variant="outline-danger"
+                className="d-flex align-items-center gap-1"
+                disabled={!canUnassign(enlarged.face)}
+                title={canUnassign(enlarged.face) ? undefined : t('outliersPage.card.noMarker')}
+                onClick={() => {
+                  review.unassign(enlarged.face)
+                }}
+              >
+                <Icon name="check-lg" />
+                {t('outliersPage.card.unassign')}
+              </Button>
+              <Button
+                variant="outline-light"
+                className="d-flex align-items-center gap-1"
+                onClick={() => {
+                  review.confirm(enlarged.face)
+                }}
+              >
+                <Icon name="x-lg" />
+                {t('outliersPage.card.confirm', { name: subjectName })}
+              </Button>
+            </>
+          ) : (
+            <span className="text-secondary">
+              {enlarged.status === 'removed'
+                ? t('outliersPage.card.removed')
+                : t('outliersPage.card.confirmed')}
+            </span>
+          )}
+        </ReviewLightbox>
       )}
     </>
   )

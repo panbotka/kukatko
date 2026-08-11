@@ -4,7 +4,6 @@ import Button from 'react-bootstrap/Button'
 import Card from 'react-bootstrap/Card'
 import Form from 'react-bootstrap/Form'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { cropImageStyle, displayFrame, faceMarkerStyle, padBbox } from '../../lib/faceGeometry'
 import {
@@ -17,6 +16,7 @@ import {
 import { canUnassign, distancePercent, type OutlierItem, outlierKey } from '../../lib/outlierReview'
 import { thumbUrl } from '../../services/photos'
 import { Icon } from '../Icon'
+import { EnlargeButton } from '../review/EnlargeButton'
 
 import './outliers.css'
 
@@ -41,6 +41,8 @@ export interface OutlierCardProps {
   onUnassign: () => void
   /** ✗ "no, this really is them" — records the confirmation. */
   onConfirm: () => void
+  /** Opens this face's whole photo in the review lightbox. */
+  onEnlarge: () => void
 }
 
 /**
@@ -67,6 +69,12 @@ export interface OutlierCardProps {
  * answer to it: ✓ agrees and unassigns the person, ✗ disagrees and vouches for
  * the face. Both verdicts flip the card **in place** rather than removing it, so
  * the grid never reflows mid-review.
+ *
+ * A crop is still a crop, so **the crop is the way into the lightbox**: a click
+ * enlarges the whole photo, with the same two verdicts in the overlay's footer.
+ * That replaced a small „Otevřít fotku" text link under the picture — the hand
+ * looks for that affordance *on the photo*, and getting to the photo's own page
+ * is now the stage's corner anchor, the same control every other tool has.
  */
 export function OutlierCard({
   item,
@@ -77,6 +85,7 @@ export function OutlierCard({
   onSelect,
   onUnassign,
   onConfirm,
+  onEnlarge,
 }: OutlierCardProps) {
   const { t } = useTranslation()
   const { face, status } = item
@@ -123,29 +132,38 @@ export function OutlierCard({
       }}
     >
       <div className="position-relative overflow-hidden rounded-top" style={frameStyle}>
-        <img
-          src={thumbUrl(face.photo_uid, source)}
-          data-testid="outlier-photo"
-          data-thumb-size={source}
-          alt={t('outliersPage.card.photoAlt')}
-          loading="lazy"
-          decoding="async"
-          style={{ ...cropImageStyle(crop), objectFit: 'cover', opacity: decided ? 0.5 : 1 }}
-          onError={() => {
-            // The size is missing from the object store (a publishing backend
-            // redirects rather than generating), so step down the ladder instead
-            // of leaving a broken image where a face should be.
-            const next = smallerFaceSource(source)
-            if (next !== null) {
-              setDegraded({ from: preferred, size: next })
-            }
-          }}
-        />
-        <span
-          className="kk-face-marker"
-          style={faceMarkerStyle(face.bbox, crop)}
-          data-testid="outlier-bbox"
-        />
+        {/* The button *is* the crop: it is stretched over the frame rather than
+            wrapping it in flow, because the picture inside is absolutely
+            positioned (`cropImageStyle`) and would leave a flow wrapper with no
+            height at all — and therefore nothing to click. */}
+        <EnlargeButton
+          onEnlarge={onEnlarge}
+          className="position-absolute top-0 start-0 w-100 h-100"
+        >
+          <img
+            src={thumbUrl(face.photo_uid, source)}
+            data-testid="outlier-photo"
+            data-thumb-size={source}
+            alt={t('outliersPage.card.photoAlt')}
+            loading="lazy"
+            decoding="async"
+            style={{ ...cropImageStyle(crop), objectFit: 'cover', opacity: decided ? 0.5 : 1 }}
+            onError={() => {
+              // The size is missing from the object store (a publishing backend
+              // redirects rather than generating), so step down the ladder instead
+              // of leaving a broken image where a face should be.
+              const next = smallerFaceSource(source)
+              if (next !== null) {
+                setDegraded({ from: preferred, size: next })
+              }
+            }}
+          />
+          <span
+            className="kk-face-marker"
+            style={faceMarkerStyle(face.bbox, crop)}
+            data-testid="outlier-bbox"
+          />
+        </EnlargeButton>
         <Badge
           bg="warning"
           text="dark"
@@ -173,17 +191,6 @@ export function OutlierCard({
       </div>
 
       <Card.Body className="d-flex flex-column gap-2 p-2">
-        <div className="d-flex align-items-center gap-2">
-          <Link
-            to={`/photos/${face.photo_uid}`}
-            className="small text-decoration-none"
-            title={t('outliersPage.card.openPhoto')}
-          >
-            <Icon name="eye" className="me-1" />
-            {t('outliersPage.card.openPhoto')}
-          </Link>
-        </div>
-
         {status === 'removed' && (
           <span className="text-success d-flex align-items-center gap-1 small">
             <Icon name="check-lg" />

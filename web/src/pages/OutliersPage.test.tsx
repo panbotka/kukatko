@@ -210,6 +210,85 @@ describe('OutliersPage', () => {
     expect(rule).not.toMatch(/box-shadow:\s*0 0 0/)
   })
 
+  it('enlarges the whole photo from the crop, with the verdicts in the overlay', async () => {
+    const user = userEvent.setup()
+    outliersMock.mockResolvedValue(makeResult([face()]))
+    renderPage()
+    await screen.findByTestId('outlier-card')
+
+    // The card no longer carries a text link out — the picture is the control.
+    expect(screen.queryByRole('link', { name: /Open photo/i })).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Enlarge the photo' }))
+
+    const overlay = await screen.findByRole('dialog')
+    // The whole frame with the face marked, never the card's context crop.
+    expect(within(overlay).getByRole('img', { name: /face under review/i })).toHaveAttribute(
+      'src',
+      expect.stringContaining('fit_1280'),
+    )
+    // And the way out to the photo's own page, in the stage's corner.
+    expect(within(overlay).getByTestId('review-open-photo')).toHaveAttribute('href', '/photos/ph1')
+
+    await user.click(within(overlay).getByRole('button', { name: /Yes, remove/ }))
+
+    await waitFor(() => {
+      expect(assignMock).toHaveBeenCalledWith('ph1', {
+        action: 'unassign_person',
+        marker_uid: 'mk1',
+      })
+    })
+  })
+
+  it('hands the keyboard to the overlay while it is open', async () => {
+    const user = userEvent.setup()
+    outliersMock.mockResolvedValue(makeResult([face(), face({ photo_uid: 'ph2' })]))
+    renderPage()
+    await screen.findAllByTestId('outlier-card')
+
+    await user.click(screen.getAllByRole('button', { name: 'Enlarge the photo' })[0])
+    await screen.findByRole('dialog')
+
+    // `y` would unassign the focused card if the grid were still listening.
+    fireEvent.keyDown(document.body, { key: 'ArrowRight' })
+    fireEvent.keyDown(document.body, { key: 'y' })
+    expect(assignMock).not.toHaveBeenCalled()
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+    fireEvent.keyDown(document.body, { key: 'ArrowRight' })
+    fireEvent.keyDown(document.body, { key: 'y' })
+    await waitFor(() => {
+      expect(assignMock).toHaveBeenCalled()
+    })
+  })
+
+  it('steps through the results from inside the overlay, stopping at the ends', async () => {
+    const user = userEvent.setup()
+    outliersMock.mockResolvedValue(makeResult([face(), face({ photo_uid: 'ph2' })]))
+    renderPage()
+    await screen.findAllByTestId('outlier-card')
+
+    await user.click(screen.getAllByRole('button', { name: 'Enlarge the photo' })[0])
+    const overlay = await screen.findByRole('dialog')
+    expect(within(overlay).getByRole('button', { name: 'Previous photo' })).toBeDisabled()
+    expect(within(overlay).getByTestId('review-open-photo')).toHaveAttribute('href', '/photos/ph1')
+
+    fireEvent.keyDown(document, { key: 'ArrowRight' })
+
+    await waitFor(() => {
+      expect(within(screen.getByRole('dialog')).getByTestId('review-open-photo')).toHaveAttribute(
+        'href',
+        '/photos/ph2',
+      )
+    })
+    // The last one: forward stops rather than wrapping back to the first.
+    expect(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Next photo' }),
+    ).toBeDisabled()
+  })
+
   it('cuts a small face from a larger thumbnail than a big one', async () => {
     // The complaint this exists for: a hard-coded fit_720 leaves a 2 %-wide face
     // ~35 px across before a 7× upscale into the card. The source is chosen per
