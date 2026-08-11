@@ -700,8 +700,16 @@ long-running and belong on the machine where the instance runs — so they remai
   `_STALE_SCAN_INTERVAL`; `type_count` is a map, so it is set in YAML only (the safe defaults mean an
   env-only deployment never needs it).
 - **Embedding-sidecar keys (`embedding.*`, `internal/embedding`):** `url` (default
-  `http://localhost:8000`), `image_dim`/`face_dim` (768/512) plus three timeouts, all built into
-  every client through `embeddingClientConfig` in `cmd/kukatko`. `dial_timeout` (**default 3s**)
+  `http://localhost:8000`), `image_dim`/`face_dim` (**1152**/512) plus three timeouts, all built into
+  every client through `embeddingClientConfig` in `cmd/kukatko`. `image_dim` is not a tuning knob:
+  it must equal the width of the stored `embeddings.embedding` column, so moving it means a
+  migration plus a full re-embed (that is what migration `0057` did when the sidecar swapped CLIP
+  ViT-L-14 for SigLIP 2 so400m/14 and the width went 768 → 1152). `serve` therefore reads the
+  sidecar's `GET /health` once at startup, in the background, and logs
+  `embedding: sidecar image dimension differs from configured image_dim` naming both values when
+  `clip.dim` disagrees — otherwise a mismatch only shows up as every `image_embed` job failing with
+  a non-transient dimension error and semantic search quietly degrading to full text. An offline
+  box (the normal state) logs nothing above debug. `dial_timeout` (**default 3s**)
   bounds *opening* the connection: the box is usually powered off, that shows up as a dial nobody
   answers, and Go's stock transport would sit on it for 30 s — this is the ceiling on what any call
   pays to find out the sidecar is not there. `request_timeout` (**default 60s**) bounds one

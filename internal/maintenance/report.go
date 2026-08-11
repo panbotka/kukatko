@@ -30,7 +30,7 @@ type Report struct {
 	OrphanFiles Finding `json:"orphan_files"`
 	// MissingThumbnails are photos whose representative thumbnail is not cached.
 	MissingThumbnails Finding `json:"missing_thumbnails"`
-	// MissingEmbeddings are photos with no CLIP image embedding yet.
+	// MissingEmbeddings are photos with no image embedding yet.
 	MissingEmbeddings Finding `json:"missing_embeddings"`
 	// MissingFaces are photos that have never had face detection run.
 	MissingFaces Finding `json:"missing_faces"`

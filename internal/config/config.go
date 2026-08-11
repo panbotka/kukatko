@@ -416,7 +416,7 @@ type SweepConfig struct {
 }
 
 // ExpandConfig tunes the "expand a collection" search: for an album or a label it
-// votes each member photo's CLIP-embedding neighbours together and surfaces the
+// votes each member photo's image-embedding neighbours together and surfaces the
 // photos several members agree on that are not in the collection yet, so a
 // half-tagged library can be finished.
 type ExpandConfig struct {
@@ -1002,7 +1002,7 @@ func setThumbDefaults(v *viper.Viper) {
 // setDefaults to keep each function within the length budget.
 func setEmbeddingDefaults(v *viper.Viper) {
 	v.SetDefault("embedding.url", "http://localhost:8000")
-	v.SetDefault("embedding.image_dim", 768)
+	v.SetDefault("embedding.image_dim", 1152) // SigLIP 2 so400m/14; was 768 under CLIP ViT-L-14
 	v.SetDefault("embedding.face_dim", 512)
 	v.SetDefault("embedding.dial_timeout", "3s")
 	v.SetDefault("embedding.request_timeout", "60s") // queue work on a cold GPU

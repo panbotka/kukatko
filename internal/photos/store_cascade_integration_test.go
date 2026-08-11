@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/database"
+	"github.com/panbotka/kukatko/internal/vectors"
 )
 
 // zerosHalfvec returns a pgvector halfvec literal of n zero components, e.g.
@@ -64,7 +65,8 @@ func TestDeletePhoto_cascadesAllDependents(t *testing.T) {
 	exec(`INSERT INTO photo_files (photo_uid, file_path, role) VALUES ($1, '2023/06/casc.jpg', 'original')`, uid)
 	exec(`INSERT INTO photo_phashes (photo_uid, phash, dhash) VALUES ($1, 1, 2)`, uid)
 	exec(`INSERT INTO photo_edits (photo_uid, rotation) VALUES ($1, 90)`, uid)
-	exec(`INSERT INTO embeddings (photo_uid, embedding) VALUES ($1, '`+zerosHalfvec(768)+`'::halfvec(768))`, uid)
+	exec(`INSERT INTO embeddings (photo_uid, embedding) VALUES ($1, '`+
+		zerosHalfvec(vectors.ImageDim)+`'::halfvec(1152))`, uid)
 	exec(`INSERT INTO faces (photo_uid, face_index, embedding, bbox, cluster_uid)
 	      VALUES ($1, 0, '`+zerosHalfvec(512)+`'::halfvec(512), '{0,0,1,1}', 'fc_casc')`, uid)
 	exec(`INSERT INTO face_detections (photo_uid, face_count, model) VALUES ($1, 1, 'm')`, uid)

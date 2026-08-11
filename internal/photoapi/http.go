@@ -83,7 +83,7 @@ type Config struct {
 	// Similar backs the similar-photos endpoint and the vector half of semantic
 	// and hybrid search. When nil those modes degrade to full-text search.
 	Similar SimilarSearcher
-	// Embedder embeds the query text into the CLIP vector space for semantic and
+	// Embedder embeds the query text into the image vector space for semantic and
 	// hybrid search. When nil, or when it reports the sidecar unavailable, those
 	// modes degrade gracefully to full-text search with a degraded flag.
 	Embedder TextEmbedder
@@ -371,8 +371,8 @@ func pageResponse(params photos.ListParams, list []photoView, total int) listRes
 // The `q` parameter carries the search text (required; empty or whitespace-only
 // yields 400) in the search query language: free text mixed with key:value
 // filters. Full-text matching of the free text is Czech-aware and diacritics-
-// insensitive; semantic matching embeds it via the sidecar and ranks by CLIP
-// vector similarity; hybrid fuses the two with Reciprocal Rank Fusion. The
+// insensitive; semantic matching embeds it via the sidecar and ranks by vector
+// similarity; hybrid fuses the two with Reciprocal Rank Fusion. The
 // parsed filters constrain the result set in every mode, alongside every list
 // filter (date range, GPS, camera, …) and the limit/offset pagination; the
 // `sort`/`order` params are ignored because results are always ranked. A query

@@ -11,7 +11,7 @@ import (
 	"github.com/panbotka/kukatko/internal/photos"
 )
 
-// TextEmbedder embeds a text query into the CLIP vector space shared with image
+// TextEmbedder embeds a text query into the vector space shared with image
 // embeddings, so a natural-language query can be matched against photo vectors.
 // It is an interface so photoapi depends on the behaviour, not the embedding
 // client's construction; embedding.Client (and a test fake) satisfies it.
@@ -29,7 +29,7 @@ type searchMode string
 const (
 	// modeFulltext ranks by Czech-aware full-text relevance only.
 	modeFulltext searchMode = "fulltext"
-	// modeSemantic ranks by CLIP vector similarity to the embedded query.
+	// modeSemantic ranks by image-vector similarity to the embedded query.
 	modeSemantic searchMode = "semantic"
 	// modeHybrid fuses the full-text and semantic rankings with RRF (the default).
 	modeHybrid searchMode = "hybrid"
@@ -164,7 +164,7 @@ func (a *API) degradedFulltext(ctx context.Context, params photos.ListParams) (s
 	return res, err
 }
 
-// embedQuery embeds the query text into the CLIP space. It returns ok=false (and
+// embedQuery embeds the query text into the shared space. It returns ok=false (and
 // no error) when no embedder is configured or any embedding error occurs — an
 // unavailable sidecar is the expected case (the box is often offline), and other
 // embedding failures also degrade to full-text rather than failing the whole

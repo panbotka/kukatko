@@ -79,7 +79,7 @@ func TestLoad_defaults(t *testing.T) {
 		{"web.host", cfg.Web.Host, "0.0.0.0"},
 		{"web.port", cfg.Web.Port, 8080},
 		{"embedding.url", cfg.Embedding.URL, "http://localhost:8000"},
-		{"embedding.image_dim", cfg.Embedding.ImageDim, 768},
+		{"embedding.image_dim", cfg.Embedding.ImageDim, 1152},
 		{"embedding.face_dim", cfg.Embedding.FaceDim, 512},
 		{"embedding.dial_timeout", cfg.Embedding.DialTimeout, 3 * time.Second},
 		{"embedding.request_timeout", cfg.Embedding.RequestTimeout, 60 * time.Second},

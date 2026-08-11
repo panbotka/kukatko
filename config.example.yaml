@@ -127,9 +127,14 @@ web:
 embedding:
   # URL of the external embedding service (runs on the box; may be offline).
   url: "http://localhost:8000"
-  # Dimensionality of image embeddings produced by the service.
-  image_dim: 768
-  # Dimensionality of face embeddings produced by the service.
+  # Dimensionality of image embeddings produced by the service (SigLIP 2
+  # so400m/14 @378). It must match the width of the stored `embeddings.embedding`
+  # column, so changing it means a migration and a full re-embed, not a setting.
+  # The server checks the running service's /health at startup and warns when the
+  # two disagree.
+  image_dim: 1152
+  # Dimensionality of face embeddings produced by the service (InsightFace — a
+  # different model, unaffected by the image tower).
   face_dim: 512
   # How long to wait for the connection to the service to open. The box is
   # usually off, and an unanswered dial is exactly what that looks like, so this

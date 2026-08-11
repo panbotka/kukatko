@@ -58,7 +58,7 @@ as the point — earlier attempts at this had the features and were still hard t
 2. **The previous system stayed primary** until the cutover; the import was read-only and repeatable,
    and ran in parallel without disturbing it. Done in 08/2026 — see [§9](#9-the-one-off-importers-s11s12--retired).
 3. **Pi-first, the box as an accelerator.** The app runs on a Raspberry Pi (ARM64, limited RAM).
-   Compute-heavy inference (CLIP, faces) runs on a powerful machine (the box with an NVIDIA GPU,
+   Compute-heavy inference (image embeddings, faces) runs on a powerful machine (the box with an NVIDIA GPU,
    on Tailscale), which **is not always powered on**. Everything must work even when the box is offline.
 4. **Visible early.** The milestones are ordered so that a usable UI appears as soon as possible,
    which is then iterated on.
@@ -95,8 +95,8 @@ as the point — earlier attempts at this had the features and were still hard t
                                      │ Tailscale (HTTP), only when the box is powered on
                           ┌──────────▼───────────┐
                           │ box (x86, RTX GPU)    │
-                          │ embeddings sidecar    │  /embed/image  (CLIP 768)
-                          │ (FastAPI + ONNX)      │  /embed/text   (CLIP 768)
+                          │ embeddings sidecar    │  /embed/image  (SigLIP 2 1152)
+                          │ (FastAPI + ONNX)      │  /embed/text   (SigLIP 2 1152)
                           │                       │  /embed/face   (InsightFace 512)
                           └───────────────────────┘
 
@@ -115,7 +115,7 @@ Each subsystem has one purpose, a clear interface, and can be tested independent
 | S3 | **Thumbnailer** | Thumbnail generation on the Pi (pure-Go + shell-out for HEIC/RAW). |
 | S4 | **Job queue** | Persistent queue in Postgres; retry; survives restart; graceful when the box is offline. |
 | S5 | **Embeddings client** | HTTP client for the sidecar (image/text/face); availability detection; backoff. |
-| S6 | **Search** | Full-text (tsvector+unaccent) + semantic (CLIP) hybrid; filters/sorting; similar photos. |
+| S6 | **Search** | Full-text (tsvector+unaccent) + semantic (SigLIP 2) hybrid; filters/sorting; similar photos. |
 | S7 | **People** | Face detection/embedding, IoU marker matching, subjects, suggestions, auto-clustering, outliers. |
 | S8 | **Organization** | Albums, labels, bulk metadata editing, per-user favorites. |
 | S9 | **Maps** | mapy.com proxy (tile + reverse geocode), GeoJSON for the map, client-side clustering. |
@@ -173,9 +173,11 @@ research ([§17](#17-reference)).
   OpenCLIP + InsightFace), normally running on the GPU box. The address is in the configuration
   (`embedding.url`); when the box is offline, jobs wait in the queue
   (see [§8](#8-asynchronni-joby--box-offline)). For the contract see [§6.1](#61-kontrakt-sidecaru).
-- Models: **CLIP ViT-L/14** (image+text, 768-dim),
-  **InsightFace `buffalo_l`** (ArcFace, 512-dim). Note: pretrained packs are typically
-  *non-commercial/research* — OK for personal use.
+- Models: **SigLIP 2 so400m/14 @378** (`ViT-SO400M-14-SigLIP2-378` / `webli`, image+text,
+  **1152-dim**, Apache 2.0), **InsightFace `buffalo_l`** (ArcFace, 512-dim — a different model,
+  unaffected by an image-tower swap). The image tower was CLIP ViT-L/14 (768-dim) until 08/2026;
+  see migration `0057`. Note: InsightFace's pretrained packs are *non-commercial/research* — OK
+  for personal use.
 
 ### Storage of originals (`storage.backend`)
 - **Two backends behind one `storage.Storage` interface**, switched by a single configuration
@@ -348,7 +350,7 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
   content (see §5.3). Provenance like the columns above, and equally live.
 - **`photo_phashes`** — `phash/dhash BIGINT` (near-duplicate detection).
 - **`photo_edits`** — non-destructive edits (crop/rotation/brightness/contrast), 0..1 coordinates.
-- **`embeddings`** — `photo_uid PK`, `embedding halfvec(768)`, `model`, `pretrained`, `dim`;
+- **`embeddings`** — `photo_uid PK`, `embedding halfvec(1152)`, `model`, `pretrained`, `dim`;
   HNSW `halfvec_cosine_ops` (m=16, ef_construction=200).
 - **`faces`** — `id BIGSERIAL`, `photo_uid`, `face_index`, `embedding halfvec(512)`,
   `bbox float8[4]` (normalized [x,y,w,h] 0..1), `det_score`, cache `marker_uid/subject_uid/
@@ -464,8 +466,8 @@ One HTTP service, offline-aware by default; the reference implementation is
 [`kozaktomas/image-embeddings`](https://github.com/kozaktomas/image-embeddings):
 
 - **`POST /embed/image`** — multipart, field `file`. Response:
-  `{ "dim": 768, "embedding": [float32×768], "model": "...", "pretrained": "ViT-L-14" }`
-- **`POST /embed/text`** — JSON `{ "text": "..." }`. Response as above (768-dim, shared space).
+  `{ "dim": 1152, "embedding": [float32×1152], "model": "...", "pretrained": "webli" }`
+- **`POST /embed/text`** — JSON `{ "text": "..." }`. Response as above (1152-dim, shared space).
 - **`POST /embed/face`** — multipart, field `file`. Response:
   ```
   { "faces_count": N, "model": "...",
@@ -486,7 +488,7 @@ One HTTP service, offline-aware by default; the reference implementation is
   Diacritic-insensitive ("deti" = "Děti"). Sorted by `ts_rank` (`photos.Store.Search`).
   The generated column is rewritten by `ALTER COLUMN fts SET EXPRESSION` (most recently
   `0027_photos_iptc_metadata.sql`) — Postgres recomputes the vector for all rows and rebuilds the GIN index itself.
-- **Semantic (text→photo):** text → sidecar `/embed/text` (768-dim CLIP) → HNSW cosine over
+- **Semantic (text→photo):** text → sidecar `/embed/text` (1152-dim SigLIP 2) → HNSW cosine over
   `embeddings` (`vectors.Store.FindSimilar`). The candidates are then filtered by the list filters via
   `photos.Store.FilterUIDs` (structural filters, ignores full-text) and sorted by distance.
 - **Hybrid:** the full-text and semantic rankings are merged by **Reciprocal Rank Fusion (RRF)** —
@@ -853,15 +855,18 @@ most of why Kukátko exists.
 6. **Pi HW** — the real speed of pure-Go thumbnails and HEIC on the target Pi; possibly enable
    the `vipsthumbnail` shell-out. Measure the HNSW index build (maintenance_work_mem) on the Pi vs a build
    on the box/shared server.
-5. **Inference models** — the CLIP checkpoint and its `pretrained` field must stay pinned: change the
-   checkpoint and every stored embedding is in a different space.
+5. **Inference models** — the image checkpoint and its `pretrained` field must stay pinned: change the
+   checkpoint and every stored embedding is in a different space. That happened once, deliberately,
+   in 08/2026 (CLIP ViT-L-14 → SigLIP 2 so400m/14): migration `0057` empties `embeddings`, widens the
+   column and the library is re-embedded from scratch. `serve` warns at startup when the sidecar's
+   `/health` reports a `clip.dim` other than the configured `embedding.image_dim`.
 
 ---
 
 ## 17. Reference
 
 **Embeddings sidecar:** [`kozaktomas/image-embeddings`](https://github.com/kozaktomas/image-embeddings)
-— FastAPI over OpenCLIP ViT-L-14 (768-dim image + text) and InsightFace `buffalo_l` (512-dim faces);
+— FastAPI over SigLIP 2 so400m/14 (1152-dim image + text) and InsightFace `buffalo_l` (512-dim faces);
 `server.py` is the contract in [§6.1](#61-kontrakt-sidecaru).
 
 **mapy.com:** [REST API](https://developer.mapy.com/rest-api-mapy-cz/) ·

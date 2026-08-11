@@ -35,7 +35,7 @@ photo-book tool (deliberately out of scope), or a product with support and a rel
 
 ### Finding things
 
-- **Three search modes in one box** — full-text, semantic (CLIP image/text embeddings), or a hybrid
+- **Three search modes in one box** — full-text, semantic (SigLIP 2 image/text embeddings), or a hybrid
   of both, which is the default. Semantic search finds a picture by what it *looks like*, so an
   untitled, untagged, undescribed photo is still reachable.
 - **A query language** that mixes free text with `key:value` filters in the same field:
@@ -119,7 +119,7 @@ were written.
 
 - **One executable.** A single static Go binary (`CGO_ENABLED=0`) with the whole React frontend
   embedded in it. No app server, no separate frontend deployment, no Node.js at runtime.
-- **Postgres is the only datastore — vectors included.** CLIP image embeddings and face embeddings
+- **Postgres is the only datastore — vectors included.** Image embeddings and face embeddings
   live in `pgvector` columns (`halfvec` + HNSW cosine), so a similarity search is an ordinary SQL
   query. There is no second database to run, back up, or keep in sync.
 - **The GPU machine may be switched off.** Embedding and face detection are delegated over HTTP to a
@@ -279,7 +279,7 @@ runtime — and putting them inside the binary would make the binary a lie. So t
 HTTP service, and Kukátko is a client of it.
 
 **[`kozaktomas/image-embeddings`](https://github.com/kozaktomas/image-embeddings)** is that service:
-a small FastAPI app around **OpenCLIP ViT-L-14** and **InsightFace buffalo_l**, with a Dockerfile
+a small FastAPI app around **SigLIP 2 so400m/14** and **InsightFace buffalo_l**, with a Dockerfile
 and a GPU deployment guide. It is what this instance runs.
 
 ```bash
@@ -293,8 +293,8 @@ Docker network, or the address of whatever machine holds the GPU.
 
 ### How the two features actually work
 
-**Semantic search** rests on CLIP being trained to put a picture and its description in the *same*
-768-dimensional space. Every photo is embedded once, on upload (`POST /embed/image`), and the vector
+**Semantic search** rests on SigLIP 2 being trained to put a picture and its description in the
+*same* 1152-dimensional space. Every photo is embedded once, on upload (`POST /embed/image`), and the vector
 is stored in a `halfvec` column with an HNSW cosine index. When you search, your words are embedded
 by the same model (`POST /embed/text`) and the query becomes "give me the nearest vectors" — plain
 SQL. That is why "sunset over water" finds the photo nobody ever titled, and why **similar photos**
@@ -324,7 +324,7 @@ fall back to full-text and mark the result `degraded`.
 
 Anything answering the same three endpoints will do — the contract is three JSON shapes:
 
-- `POST /embed/image` — multipart, field `file` → `{ "dim": 768, "embedding": [...] }`
+- `POST /embed/image` — multipart, field `file` → `{ "dim": 1152, "embedding": [...] }`
 - `POST /embed/text` — JSON `{ "text": "..." }` → the same shape, in the same vector space
 - `POST /embed/face` — multipart, field `file` →
   `{ "faces_count": N, "faces": [{ "dim": 512, "embedding": [...], "bbox": [x1,y1,x2,y2], "det_score": 0.9 }] }`

@@ -30,7 +30,7 @@ func NewEnqueuer(store *Store) *Enqueuer {
 	return &Enqueuer{store: store}
 }
 
-// EnqueueImageEmbed schedules CLIP embedding for the photo identified by
+// EnqueueImageEmbed schedules image embedding for the photo identified by
 // photoUID. A pre-existing active job for the same photo is a no-op (nil error).
 func (e *Enqueuer) EnqueueImageEmbed(ctx context.Context, photoUID string) error {
 	return e.enqueuePhotoJob(ctx, TypeImageEmbed, photoUID)

@@ -469,15 +469,100 @@ func TestHealthy(t *testing.T) {
 	})
 }
 
+// healthBody is the sidecar's GET /health envelope as the tests serve it: the
+// image-tower block the client parses plus a sibling key it must ignore.
+const healthBody = `{"status":"ok",` +
+	`"clip":{"model":"ViT-SO400M-14-SigLIP2-378","pretrained":"webli","dim":1152,"precision":"fp16"},` +
+	`"face":{"model":"buffalo_l","dim":512}}`
+
+// serveHealth starts a test server answering the health path with body under
+// status, and returns a client pointed at it.
+func serveHealth(t *testing.T, status int, body string) *HTTPClient {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != DefaultHealthPath {
+			t.Errorf("path = %s, want %s", r.URL.Path, DefaultHealthPath)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_, _ = io.WriteString(w, body)
+	}))
+	t.Cleanup(srv.Close)
+	return newTestClient(t, srv.URL)
+}
+
+func TestHealth_reportsImageTower(t *testing.T) {
+	t.Parallel()
+	got, err := serveHealth(t, http.StatusOK, healthBody).Health(context.Background())
+	if err != nil {
+		t.Fatalf("Health: %v", err)
+	}
+	want := SidecarHealth{
+		Model: "ViT-SO400M-14-SigLIP2-378", Pretrained: "webli", Dim: 1152, Precision: "fp16",
+	}
+	if got != want {
+		t.Errorf("Health = %+v, want %+v", got, want)
+	}
+}
+
+// TestHealth_missingClipBlock covers an older sidecar that publishes no image
+// dimension: the call succeeds and Dim stays zero, so the caller reads "unknown"
+// rather than "mismatch" and does not warn about a model it cannot see.
+func TestHealth_missingClipBlock(t *testing.T) {
+	t.Parallel()
+	got, err := serveHealth(t, http.StatusOK, `{"status":"ok"}`).Health(context.Background())
+	if err != nil {
+		t.Fatalf("Health: %v", err)
+	}
+	if got.Dim != 0 || got.Model != "" {
+		t.Errorf("Health = %+v, want the zero SidecarHealth", got)
+	}
+}
+
+func TestHealth_errors(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		status  int
+		body    string
+		wantErr error
+	}{
+		{"malformed json", http.StatusOK, "not json", ErrBadResponse},
+		{"gateway status", http.StatusServiceUnavailable, "", ErrUnavailable},
+		{"unexpected status", http.StatusNotFound, "", ErrBadResponse},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := serveHealth(t, tt.status, tt.body).Health(context.Background())
+			if !errors.Is(err, tt.wantErr) {
+				t.Errorf("Health error = %v, want %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestHealth_offline pins the classification the startup check leans on: an
+// unreachable box — the normal state here — is ErrUnavailable, not a mismatch.
+func TestHealth_offline(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	url := srv.URL
+	srv.Close()
+	if _, err := newTestClient(t, url).Health(context.Background()); !errors.Is(err, ErrUnavailable) {
+		t.Errorf("Health error = %v, want ErrUnavailable", err)
+	}
+}
+
 // staticClient is a trivial Client implementation proving the interface is
 // fakeable without any network.
 type staticClient struct{}
 
 func (staticClient) ImageEmbedding(context.Context, io.Reader) ([]float32, string, string, error) {
-	return makeVec(768), "fake", "fake", nil
+	return makeVec(DefaultImageDim), "fake", "fake", nil
 }
 func (staticClient) TextEmbedding(context.Context, string) ([]float32, string, string, error) {
-	return makeVec(768), "fake", "fake", nil
+	return makeVec(DefaultImageDim), "fake", "fake", nil
 }
 func (staticClient) FaceEmbeddings(context.Context, io.Reader) ([]Face, string, error) {
 	return nil, "fake", nil
@@ -491,7 +576,7 @@ func TestClient_fakeable(t *testing.T) {
 		t.Error("fake Healthy = false")
 	}
 	v, _, _, err := c.ImageEmbedding(context.Background(), strings.NewReader("x"))
-	if err != nil || len(v) != 768 {
+	if err != nil || len(v) != DefaultImageDim {
 		t.Errorf("fake ImageEmbedding = %d, %v", len(v), err)
 	}
 }

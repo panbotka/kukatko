@@ -881,14 +881,17 @@ to `## Package map` in `CLAUDE.md`.
   (an HTTP client to the inference sidecar on the **box** — `kozaktomas/image-embeddings`, all behind
   the `Client` interface (fakeable in tests): `New(Config{BaseURL,ImageDim,FaceDim,
   RequestTimeout,TextTimeout,DialTimeout,HealthTimeout,HealthPath,HTTPClient})` → `*HTTPClient`; `ImageEmbedding(ctx,
-  img io.Reader)`/`TextEmbedding(ctx,text)` → a 768-dim CLIP vector + `model`/`pretrained`
+  img io.Reader)`/`TextEmbedding(ctx,text)` → a 1152-dim SigLIP 2 vector + `model`/`pretrained`
   (`POST /embed/image` multipart `file` streamed via `io.Pipe` / `POST /embed/text` JSON
   `{text}`), `FaceEmbeddings(ctx,img)` → `[]Face` (512-dim embedding, `BBox [4]float64`
   in px `[x1,y1,x2,y2]`, `DetScore`)+`model` (`POST /embed/face` multipart `file`),
   `Healthy(ctx) bool` (probe `GET /health`, any HTTP response = the box is reachable, only a
-  transport-error/timeout = offline); **box offline-aware typed errors** `ErrUnavailable`
+  transport-error/timeout = offline), `Health(ctx)` → `SidecarHealth{Model,Pretrained,Dim,Precision}`
+  (the same route with the body parsed — the `clip` block of `/health`, `Dim==0` = the sidecar
+  reports none; `cmd/kukatko`'s `verifyEmbeddingDim` runs it once at startup and warns when `Dim`
+  differs from the configured `image_dim`); **box offline-aware typed errors** `ErrUnavailable`
   (transport failed / status 502/503/504, retryable — helper `IsUnavailable`) vs `ErrBadResponse`
-  (a malformed response) vs `ErrDimMismatch` (dimension validation 768/512) vs `ErrInvalidURL`; a cancelled
+  (a malformed response) vs `ErrDimMismatch` (dimension validation 1152/512) vs `ErrInvalidURL`; a cancelled
   context is not passed off as unavailability; per-request timeouts via context — image/face 60 s (queue
   work on a cold GPU, generous on purpose), **text 5 s** (`TextEmbedding` answers an interactive search,
   which degrades to full-text on failure, so waiting longer is strictly worse than the results it already
@@ -900,10 +903,11 @@ to `## Package map` in `CLAUDE.md`.
   (the DB layer for embeddings and faces, **stored directly in Postgres** as `halfvec` (float16)
   columns with HNSW cosine indexes — tables `embeddings`/`faces` in migration `0006_embeddings.sql`;
   `halfvec` instead of `vector` halves the HNSW index memory at a negligible recall loss on
-  normalized CLIP/ArcFace vectors (important on the Pi); `Store` = `NewStore(pool)` over
+  normalized SigLIP/ArcFace vectors (important on the Pi); `Store` = `NewStore(pool)` over
   the shared pgx pool:
   `SaveEmbedding`(upsert)/`GetEmbedding`(`ErrEmbeddingNotFound`)/`FindSimilar(vec,limit,maxDistance)`
-  for 768-dim image embeddings, `SaveFaces`(idempotent replace in a transaction)/`ListFaces`/
+  for 1152-dim image embeddings (768 until migration `0057` swapped the image tower),
+  `SaveFaces`(idempotent replace in a transaction)/`ListFaces`/
   `ListFacesBySubject(subjectUID)` (faces with the given `subject_uid`, ordered `(photo_uid,
   face_index)` — the basis of outlier detection; shares `queryFaces`/`scanFace` with `ListFaces`)/
   `SampleFacesBySubject(subjectUID,limit)` → `SubjectFaces{Faces,Total,Photos}` (the **bounded** read of the
@@ -951,9 +955,9 @@ to `## Package map` in `CLAUDE.md`.
   (a nearest-neighbour margin test: a candidate closer to some **rejected** exemplar than to its
   nearest **accepted** one is "negative" and drops out of the results; without rejections **a no-op in O(1)**;
   equal distances = survives (deterministic, "strictly closer to the rejected one" drops out); a shared
-  scoring helper for both faces (ArcFace) and labels (CLIP), so the feature packages don't merely hide one
+  scoring helper for both faces (ArcFace) and labels (image embeddings), so the feature packages don't merely hide one
   rejected row but learn something); sentinels
-  `ErrEmbeddingNotFound`/`ErrDimMismatch` (validation 768/512)/
+  `ErrEmbeddingNotFound`/`ErrDimMismatch` (validation 1152/512)/
   `ErrFaceIndexTaken` (UNIQUE `(photo_uid,face_index)`); `ListPhotosMissingEmbedding(limit)` =
   uids of non-archived photos without an embedding (LEFT JOIN, newest first, `limit<=0`=all) for
   backfill; `FindDuplicatePairs(neighbours,maxDist)` = near-duplicate pairs by embedding cosine
@@ -1144,7 +1148,7 @@ to `## Package map` in `CLAUDE.md`.
   `ErrMissingMarker`/`ErrMissingSubject`, a missing photo/marker/subject → 404 in the HTTP layer
   (`photoapi.FaceService` interface + handlers in `internal/photoapi/faces.go`); tunables in
   `faces.*` config), `internal/embedjob/`
-  (wiring of the CLIP embedding into the queue + embedding queries, all behind the interfaces
+  (wiring of the image embedding into the queue + embedding queries, all behind the interfaces
   `PhotoStore`/`VectorStore`/`Previewer`/`Enqueuer`+`embedding.Client`: `Service` =
   `New(Config{Photos,Vectors,Client,Previewer,Enqueuer,PreviewSize,OfflineRetryDelay,
   DuplicateMaxDist})`; **the `image_embed` handler** `Handle`(=`worker.HandlerFunc`, registered
@@ -1153,7 +1157,7 @@ to `## Package map` in `CLAUDE.md`.
   asked for by photo, never resolved out of the thumbnail cache by hash, because on the object-store backend a
   published preview routinely has no cache file (that mistake dead-lettered every `image_embed` job on R2, see
   `internal/thumb`) —
-  sends `ImageEmbedding` to the sidecar, stores a 768-dim `halfvec` via `vectors.SaveEmbedding`+`model`/
+  sends `ImageEmbedding` to the sidecar, stores a 1152-dim `halfvec` via `vectors.SaveEmbedding`+`model`/
   `pretrained`; **idempotent** (a photo with an embedding is skipped without calling the sidecar), **box
   offline** (`embedding.IsUnavailable`) → `worker.RetryAfter(5 min)` (deferral without burning an attempt),
   any other error a normal retry; `BackfillEmbeddings(ctx)` enqueues `image_embed` for every photo without

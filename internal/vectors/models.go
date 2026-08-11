@@ -4,10 +4,10 @@
 // against an HNSW cosine index rather than a call to an external vector store.
 //
 // halfvec (float16) is used instead of vector (float32) because, on the
-// normalised CLIP/ArcFace embeddings the embeddings sidecar produces, the recall
-// loss is negligible while the HNSW index uses roughly half the memory — which
-// matters on the Pi. Distance is cosine throughout, expressed with the pgvector
-// `<=>` operator; a smaller distance means a closer match.
+// normalised SigLIP/ArcFace embeddings the embeddings sidecar produces, the
+// recall loss is negligible while the HNSW index uses roughly half the memory —
+// which matters on the Pi. Distance is cosine throughout, expressed with the
+// pgvector `<=>` operator; a smaller distance means a closer match.
 //
 // The Store borrows the shared pgx pool (it owns no connection) and registers no
 // types of its own: database.New already registers the pgvector codecs on every
@@ -22,12 +22,16 @@ import (
 )
 
 // Embedding dimensions for the two embedding spaces Kukátko stores. They match
-// the embeddings sidecar contract (CLIP image/text and ArcFace faces) and the
-// halfvec column widths in migration 0006.
+// the embeddings sidecar contract (SigLIP 2 image/text and ArcFace faces) and the
+// halfvec column widths in migrations 0006 and 0057.
 const (
-	// ImageDim is the dimensionality of a CLIP image embedding.
-	ImageDim = 768
-	// FaceDim is the dimensionality of an ArcFace face embedding.
+	// ImageDim is the dimensionality of a SigLIP 2 image embedding. It guards both
+	// SaveEmbedding and the search path, so it must stay in step with the
+	// embeddings column width and with embedding.DefaultImageDim: the three moved
+	// together from CLIP ViT-L-14's 768 in migration 0057.
+	ImageDim = 1152
+	// FaceDim is the dimensionality of an ArcFace face embedding. Faces come from a
+	// different model (InsightFace) and did not change with the image tower.
 	FaceDim = 512
 )
 
@@ -56,12 +60,12 @@ var (
 	ErrFaceIndexTaken = errors.New("vectors: duplicate face index for photo")
 )
 
-// Embedding is a single image embedding row: one CLIP vector per photo plus the
-// model tags reported by the sidecar.
+// Embedding is a single image embedding row: one SigLIP 2 vector per photo plus
+// the model tags reported by the sidecar.
 type Embedding struct {
 	// PhotoUID is the owning photo's uid and the table's primary key.
 	PhotoUID string
-	// Vector is the ImageDim-element CLIP embedding.
+	// Vector is the ImageDim-element image embedding.
 	Vector []float32
 	// Model and Pretrained are the sidecar's model identifiers, stored so a later
 	// model change can be detected and re-embedded.

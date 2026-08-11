@@ -62,7 +62,7 @@ const (
 // docs/ARCHITECTURE.md §8. image_embed and face_detect require the embeddings
 // box; the rest run locally.
 const (
-	// TypeImageEmbed computes the CLIP image embedding for a photo.
+	// TypeImageEmbed computes the image embedding for a photo.
 	TypeImageEmbed = "image_embed"
 	// TypeFaceDetect runs face detection and clustering for a photo.
 	TypeFaceDetect = "face_detect"

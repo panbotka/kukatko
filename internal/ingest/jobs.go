@@ -3,7 +3,7 @@ package ingest
 import "context"
 
 // JobEnqueuer schedules the asynchronous post-ingest work for a freshly created
-// photo: the CLIP image embedding (image_embed) and face detection
+// photo: the image embedding (image_embed) and face detection
 // (face_detect). Ingest depends only on this narrow interface so the upload
 // pipeline does not have to know how — or whether — the queue is implemented.
 //
@@ -11,7 +11,7 @@ import "context"
 // service on the build box, which is frequently offline; uploads and browsing
 // must keep working regardless, so the jobs wait in a persistent Postgres queue.
 type JobEnqueuer interface {
-	// EnqueueImageEmbed schedules CLIP embedding for the photo identified by
+	// EnqueueImageEmbed schedules image embedding for the photo identified by
 	// photoUID.
 	EnqueueImageEmbed(ctx context.Context, photoUID string) error
 	// EnqueueFaceDetect schedules face detection for the photo identified by

@@ -5,6 +5,7 @@ package vectors_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/database"
@@ -109,13 +110,68 @@ func TestGetEmbedding_notFound(t *testing.T) {
 	}
 }
 
-// TestSaveEmbedding_dimMismatch checks vector-length validation.
+// legacyImageDim is the image-embedding width Kukátko stored before migration
+// 0057 swapped the sidecar's image tower from CLIP ViT-L-14 to SigLIP 2. It is
+// written out rather than derived so the "wrong width" cases below stay wrong
+// even if ImageDim moves again.
+const legacyImageDim = 768
+
+// TestSaveEmbedding_dimMismatch checks vector-length validation, including the
+// case a model swap actually produces: a vector of the *previous* model's width.
+// A stale sidecar (or a stale embedding.image_dim) must be refused outright — a
+// 768-dim vector says nothing about where the photo sits in the 1152-dim space,
+// so storing it would poison every later similarity search rather than fail loudly.
 func TestSaveEmbedding_dimMismatch(t *testing.T) {
 	store, photoStore, _ := newStore(t)
-	uid := makePhoto(t, photoStore, "embdim")
-	_, err := store.SaveEmbedding(t.Context(), vectors.Embedding{PhotoUID: uid, Vector: []float32{1, 2, 3}})
-	if !errors.Is(err, vectors.ErrDimMismatch) {
-		t.Fatalf("SaveEmbedding short vector = %v, want ErrDimMismatch", err)
+	tests := []struct {
+		name string
+		vec  []float32
+	}{
+		{"short vector", []float32{1, 2, 3}},
+		{"previous model's width", make([]float32, legacyImageDim)},
+		{"one element too many", make([]float32, vectors.ImageDim+1)},
+		{"face width", make([]float32, vectors.FaceDim)},
+	}
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			uid := makePhoto(t, photoStore, "embdim"+string(rune('a'+i)))
+			_, err := store.SaveEmbedding(t.Context(), vectors.Embedding{PhotoUID: uid, Vector: tt.vec})
+			if !errors.Is(err, vectors.ErrDimMismatch) {
+				t.Fatalf("SaveEmbedding %d-element vector = %v, want ErrDimMismatch", len(tt.vec), err)
+			}
+		})
+	}
+}
+
+// TestEmbeddingsColumnWidth pins what migration 0057 left behind: the stored
+// column really is halfvec(1152) and the HNSW cosine index over it still exists.
+// Without this the width lives only in Go constants, and a migration that half
+// applied would show up as a runtime failure per photo instead of a failed test.
+func TestEmbeddingsColumnWidth(t *testing.T) {
+	_, _, db := newStore(t)
+	ctx := t.Context()
+
+	// pgvector encodes the declared dimension in atttypmod.
+	var typmod int
+	if err := db.Pool().QueryRow(ctx, `
+		SELECT a.atttypmod FROM pg_attribute a
+		WHERE a.attrelid = 'embeddings'::regclass AND a.attname = 'embedding'`).Scan(&typmod); err != nil {
+		t.Fatalf("reading embeddings.embedding typmod: %v", err)
+	}
+	if typmod != vectors.ImageDim {
+		t.Errorf("embeddings.embedding = halfvec(%d), want halfvec(%d)", typmod, vectors.ImageDim)
+	}
+
+	var indexDef string
+	if err := db.Pool().QueryRow(ctx, `
+		SELECT indexdef FROM pg_indexes
+		WHERE tablename = 'embeddings' AND indexname = 'idx_embeddings_hnsw'`).Scan(&indexDef); err != nil {
+		t.Fatalf("reading idx_embeddings_hnsw: %v", err)
+	}
+	for _, want := range []string{"USING hnsw", "halfvec_cosine_ops", "m='16'", "ef_construction='200'"} {
+		if !strings.Contains(indexDef, want) {
+			t.Errorf("idx_embeddings_hnsw = %q, want it to contain %q", indexDef, want)
+		}
 	}
 }
 
@@ -157,11 +213,28 @@ func TestFindSimilar(t *testing.T) {
 	}
 }
 
-// TestFindSimilar_dimMismatch checks query-vector validation.
+// TestFindSimilar_dimMismatch checks query-vector validation on the search path,
+// including a query at the previous model's width. That is the shape a stale
+// sidecar hands semantic search, and it must be refused before it reaches SQL:
+// pgvector would otherwise raise a raw type error, and a query embedded by a
+// different model would rank the library by nothing at all.
 func TestFindSimilar_dimMismatch(t *testing.T) {
 	store, _, _ := newStore(t)
-	if _, err := store.FindSimilar(t.Context(), []float32{1}, 5, 0); !errors.Is(err, vectors.ErrDimMismatch) {
-		t.Fatalf("FindSimilar short query = %v, want ErrDimMismatch", err)
+	tests := []struct {
+		name string
+		vec  []float32
+	}{
+		{"short query", []float32{1}},
+		{"previous model's width", make([]float32, legacyImageDim)},
+		{"one element too many", make([]float32, vectors.ImageDim+1)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := store.FindSimilar(t.Context(), tt.vec, 5, 0)
+			if !errors.Is(err, vectors.ErrDimMismatch) {
+				t.Fatalf("FindSimilar %d-element query = %v, want ErrDimMismatch", len(tt.vec), err)
+			}
+		})
 	}
 }
 
