@@ -4,9 +4,11 @@ import { useTranslation } from 'react-i18next'
 
 import { type CandidateReview } from '../../hooks/useCandidateReview'
 import { candidateKey, type FilterTab, type ReviewItem } from '../../lib/candidateReview'
+import { gridTemplateColumns, REVIEW_GRID_SCOPE } from '../../lib/gridDensity'
 import { type CandidateResult } from '../../services/faces'
 import { EmptyState } from '../EmptyState'
 import { Icon } from '../Icon'
+import { GridDensityControl } from '../library/GridDensityControl'
 
 import { CandidateCard } from './CandidateCard'
 import { CandidateFilterTabs } from './CandidateFilterTabs'
@@ -31,14 +33,22 @@ export interface CandidateResultsProps {
   actionableCount: number
   /** Grid element ref, used by the page for column count and scroll-into-view. */
   gridRef: RefObject<HTMLDivElement | null>
+  /** How many cards sit side by side — the review tools' shared column count. */
+  density: number
+  /** Opens the card at this index of `visible` in the lightbox. */
+  onEnlarge: (index: number) => void
 }
 
 /**
  * CandidateResults renders the outcome of a completed candidate search. For the
  * structural empty cases it explains why there is nothing to do (the subject has no
  * faces, its faces have no embeddings yet, or nothing matched). Otherwise it shows
- * the stats, the filter tabs, the batch "confirm all" control, the colour legend and
- * the grid of large candidate cards.
+ * the stats, the filter tabs, the batch "confirm all" control, the density stepper,
+ * the colour legend and the grid of large candidate cards.
+ *
+ * How many cards fit across is the user's, on the count every review tool shares
+ * (`REVIEW_GRID_SCOPE`) — the grid used to be a fixed `minmax(16rem, 1fr)`, which
+ * survives only as the width that count is seeded from on a device's first visit.
  */
 export function CandidateResults({
   result,
@@ -49,6 +59,8 @@ export function CandidateResults({
   focusedIndex,
   actionableCount,
   gridRef,
+  density,
+  onEnlarge,
 }: CandidateResultsProps) {
   const { t } = useTranslation()
 
@@ -93,7 +105,10 @@ export function CandidateResults({
           onSelect={onSelectTab}
           disabled={running}
         />
-        <div className="ms-auto">
+        <div className="ms-auto d-flex flex-wrap align-items-center gap-3">
+          {/* The library's stepper, on the review tools' own stored count — see
+              REVIEW_GRID_SCOPE for why it is not the library's number. */}
+          <GridDensityControl scope={REVIEW_GRID_SCOPE} />
           {running ? (
             <Button variant="outline-secondary" onClick={review.cancelConfirmAll}>
               <Icon name="x-lg" /> {t('faceSearch.confirmAll.progress', { current, total })}
@@ -119,8 +134,12 @@ export function CandidateResults({
       ) : (
         <div
           ref={gridRef}
-          className="d-grid gap-3 mt-3"
-          style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(16rem, 1fr))' }}
+          className="d-grid mt-3"
+          data-density={density}
+          style={{
+            gridTemplateColumns: gridTemplateColumns(density),
+            gap: `${String(REVIEW_GRID_SCOPE.gapPx)}px`,
+          }}
         >
           {visible.map((item, index) => (
             <CandidateCard
@@ -132,6 +151,9 @@ export function CandidateResults({
               }}
               onReject={() => {
                 review.reject(item.candidate)
+              }}
+              onEnlarge={() => {
+                onEnlarge(index)
               }}
             />
           ))}

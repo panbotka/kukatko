@@ -774,3 +774,26 @@
   align-items: center;
   justify-content: center;
 }
+
+/* --- The way into the lightbox -------------------------------------------
+   A photo in a review grid, wrapped in a button (`EnlargeButton`). Everything
+   here is a reset: the picture the card drew must look exactly as it did, so
+   the button contributes no box of its own — only the zoom cursor that says
+   what the click does, and a focus ring, because on a keyboard this wrapper is
+   the only way into the overlay. */
+.review-enlarge {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+  cursor: zoom-in;
+}
+
+.review-enlarge:focus-visible {
+  outline: 2px solid var(--bs-primary);
+  outline-offset: 2px;
+}

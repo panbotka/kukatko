@@ -12,6 +12,7 @@ import {
 } from '../../lib/candidateReview'
 import { distanceToPercent } from '../../lib/faceThreshold'
 import { Icon } from '../Icon'
+import { EnlargeButton } from '../review/EnlargeButton'
 
 import { CandidateFaceImage } from './CandidateFaceImage'
 
@@ -25,6 +26,8 @@ export interface CandidateCardProps {
   onConfirm: () => void
   /** Rejects the candidate (persists "not this person" and removes the card). */
   onReject: () => void
+  /** Opens this candidate in the review lightbox. */
+  onEnlarge: () => void
 }
 
 /**
@@ -33,10 +36,21 @@ export interface CandidateCardProps {
  * the match percentage (and how many source photos voted for it), and the ✓ / ✗
  * controls. Confirming flips it to the done state in place; the ✗ removes it.
  *
+ * The photo is the way into the lightbox: a small preview is where a judgement
+ * gets made blind, so a click on it enlarges the frame instead of asking the user
+ * to leave and come back. Getting *to* the photo's page stays the corner anchor's
+ * job inside the overlay — see `EnlargeButton`.
+ *
  * The card carries `data-candidate-key` and `data-focused` so the page can scroll the
  * focused card into view and tests can address it, without threading a ref down.
  */
-export function CandidateCard({ item, focused, onConfirm, onReject }: CandidateCardProps) {
+export function CandidateCard({
+  item,
+  focused,
+  onConfirm,
+  onReject,
+  onEnlarge,
+}: CandidateCardProps) {
   const { t } = useTranslation()
   const { candidate, status } = item
   const bucket = bucketOf(item)
@@ -58,16 +72,18 @@ export function CandidateCard({ item, focused, onConfirm, onReject }: CandidateC
       }}
     >
       <div className="position-relative">
-        <CandidateFaceImage
-          photoUid={candidate.photo.uid}
-          orientation={candidate.photo.file_orientation ?? 1}
-          fileWidth={candidate.photo.file_width}
-          fileHeight={candidate.photo.file_height}
-          bbox={candidate.bbox.relative}
-          variant={variant}
-          done={done}
-          alt={t('faceSearch.card.photoAlt')}
-        />
+        <EnlargeButton onEnlarge={onEnlarge}>
+          <CandidateFaceImage
+            photoUid={candidate.photo.uid}
+            orientation={candidate.photo.file_orientation ?? 1}
+            fileWidth={candidate.photo.file_width}
+            fileHeight={candidate.photo.file_height}
+            bbox={candidate.bbox.relative}
+            variant={variant}
+            done={done}
+            alt={t('faceSearch.card.photoAlt')}
+          />
+        </EnlargeButton>
         <Badge bg={variant} className="position-absolute top-0 start-0 m-2">
           {t(BUCKET_LABEL_KEY[bucket])}
         </Badge>

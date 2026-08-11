@@ -9,9 +9,14 @@ import { CandidateSearchForm } from '../components/faces/CandidateSearchForm'
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
 import { Icon } from '../components/Icon'
+import { CandidateDecisions } from '../components/review/CandidateDecisions'
+import { candidateStage } from '../components/review/candidateStage'
+import { ReviewLightbox } from '../components/review/ReviewLightbox'
 import { useCandidateReview } from '../hooks/useCandidateReview'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import { useGridDensity } from '../hooks/useGridDensity'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
+import { useLightbox } from '../hooks/useLightbox'
 import { useSubjects } from '../hooks/useSubjects'
 import {
   candidateKey,
@@ -23,9 +28,11 @@ import {
 } from '../lib/candidateReview'
 import {
   clampThresholdPercent,
+  distanceToPercent,
   percentToDistance,
   THRESHOLD_DEFAULT_PERCENT,
 } from '../lib/faceThreshold'
+import { REVIEW_GRID_SCOPE } from '../lib/gridDensity'
 import { type CandidateResult, searchCandidates } from '../services/faces'
 
 /** The page's fetch state for the candidate search. */
@@ -169,6 +176,10 @@ export function FacesPage() {
     [visible, focusedKey],
   )
   const actionableCount = useMemo(() => visible.filter(isActionable).length, [visible])
+  // The overlay steps through exactly the list the grid is showing — the active
+  // tab's, not the whole result's, so ←/→ never wander off the filter.
+  const lightbox = useLightbox(visible)
+  const { density } = useGridDensity(REVIEW_GRID_SCOPE)
 
   // Keep the focused card in view as the keyboard moves the selection.
   useEffect(() => {
@@ -263,8 +274,16 @@ export function FacesPage() {
       Enter: confirmFocused,
       n: rejectFocused,
     },
-    { enabled: state.status === 'ready' && !review.confirmAllState.running },
+    {
+      // While the overlay is up it owns the keyboard: its arrows step photos,
+      // and grid movement underneath would move the selection out from under it.
+      enabled: state.status === 'ready' && !review.confirmAllState.running && !lightbox.isOpen,
+    },
   )
+
+  // Narrowed once, here: inside the JSX the handlers close over it, and only a
+  // local const stays narrowed for TypeScript through a closure.
+  const enlarged = lightbox.item
 
   return (
     <>
@@ -322,7 +341,33 @@ export function FacesPage() {
           focusedIndex={focusedIndex}
           actionableCount={actionableCount}
           gridRef={gridRef}
+          density={density}
+          onEnlarge={lightbox.open}
         />
+      )}
+
+      {enlarged !== null && (
+        <ReviewLightbox
+          stage={candidateStage(enlarged.candidate, t('faceSearch.card.photoAlt'))}
+          title={t('faceSearch.card.match', {
+            percent: distanceToPercent(enlarged.candidate.distance),
+          })}
+          onClose={lightbox.close}
+          onPrev={lightbox.prev}
+          onNext={lightbox.next}
+          hasPrev={lightbox.hasPrev}
+          hasNext={lightbox.hasNext}
+        >
+          <CandidateDecisions
+            item={enlarged}
+            onConfirm={() => {
+              review.confirm(enlarged.candidate)
+            }}
+            onReject={() => {
+              review.reject(enlarged.candidate)
+            }}
+          />
+        </ReviewLightbox>
       )}
     </>
   )

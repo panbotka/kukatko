@@ -15,9 +15,11 @@ import { BulkEditControl } from '../components/organize/BulkEditControl'
 import { type BulkEditOutcome, type BulkEditPrefill } from '../components/organize/BulkEditModal'
 import { SelectionBar } from '../components/organize/SelectionBar'
 import { SelectionStart } from '../components/organize/SelectionStart'
+import { ReviewLightbox } from '../components/review/ReviewLightbox'
 import { useBulkEdit } from '../hooks/useBulkEdit'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useGridKeyboardNavigation } from '../hooks/useGridKeyboardNavigation'
+import { useLightbox } from '../hooks/useLightbox'
 import {
   clampExpandLimit,
   clampExpandThresholdPercent,
@@ -25,6 +27,7 @@ import {
   EXPAND_THRESHOLD_DEFAULT_PERCENT,
   expandSources,
   expandThresholdDistance,
+  similarityPercent,
 } from '../lib/expandSearch'
 import { type ExpandKind, type ExpandResult, searchSimilar } from '../services/expand'
 import { rejectLabel } from '../services/feedback'
@@ -297,9 +300,15 @@ export function ExpandPage() {
   }, [])
   const searchKey =
     result === null ? '' : `${result.kind}:${result.collection_uid}:${String(result.threshold)}`
+  // „I am not sure about this one" without leaving the results: the tile's ⤢
+  // enlarges the full frame over the page, with the same ✗ the tile carries.
+  const lightbox = useLightbox(candidates)
+  const enlarged = lightbox.item
   const { focusedIndex } = useGridKeyboardNavigation({
     count: candidates.length,
-    enabled: state.status === 'ready' && candidates.length > 0,
+    // The overlay owns the keyboard while it is up — its arrows step photos, and
+    // the grid's would move the highlight out from under it.
+    enabled: state.status === 'ready' && candidates.length > 0 && !lightbox.isOpen,
     resetKey: searchKey,
     getColumns,
     scrollToIndex: scrollFocusIntoView,
@@ -421,8 +430,47 @@ export function ExpandPage() {
             onReject={result.kind === 'label' ? handleReject : undefined}
             gridRef={gridRef}
             focusedIndex={focusedIndex}
+            onEnlarge={lightbox.open}
           />
         </div>
+      )}
+
+      {enlarged !== null && (
+        <ReviewLightbox
+          stage={{
+            photoUid: enlarged.photo.uid,
+            fileWidth: enlarged.photo.file_width,
+            fileHeight: enlarged.photo.file_height,
+            orientation: enlarged.photo.file_orientation ?? 0,
+            // The whole frame, never the grid's square tile: a centre-cropped
+            // thumbnail is precisely what a "does this belong here?" judgement
+            // cannot be made from.
+            size: 'fit_1280',
+            href: `/photos/${enlarged.photo.uid}`,
+            alt: t('expand.tile.photoAlt'),
+          }}
+          title={t('expand.tile.similarityValue', {
+            percent: similarityPercent(enlarged.similarity),
+          })}
+          onClose={lightbox.close}
+          onPrev={lightbox.prev}
+          onNext={lightbox.next}
+          hasPrev={lightbox.hasPrev}
+          hasNext={lightbox.hasNext}
+        >
+          {result?.kind === 'label' && (
+            <Button
+              variant="outline-danger"
+              className="d-flex align-items-center gap-1"
+              onClick={() => {
+                handleReject(enlarged.photo.uid)
+              }}
+            >
+              <Icon name="x-lg" />
+              {t('expand.tile.reject')}
+            </Button>
+          )}
+        </ReviewLightbox>
       )}
     </>
   )

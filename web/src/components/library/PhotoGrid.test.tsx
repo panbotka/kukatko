@@ -5,7 +5,12 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../../i18n'
-import { gridTemplateColumns, initialColumns } from '../../lib/gridDensity'
+import {
+  type GridDensityScope,
+  gridTemplateColumns,
+  initialColumns,
+  REVIEW_GRID_SCOPE,
+} from '../../lib/gridDensity'
 import type { Photo } from '../../services/photos'
 
 import { GridDensityControl } from './GridDensityControl'
@@ -39,17 +44,18 @@ function photo(uid: string): Photo {
 const PHOTOS = ['a', 'b', 'c', 'd'].map(photo)
 
 /** Renders the grid, optionally alongside the density control that drives it. */
-function renderGrid(withControl = false) {
+function renderGrid(withControl = false, scope?: GridDensityScope) {
   return render(
     <I18nextProvider i18n={i18n}>
       <MemoryRouter>
-        {withControl && <GridDensityControl />}
+        {withControl && <GridDensityControl scope={scope} />}
         <PhotoGrid
           photos={PHOTOS}
           loadingMore={false}
           moreError={false}
           onEndReached={vi.fn()}
           onRetry={vi.fn()}
+          scope={scope}
         />
       </MemoryRouter>
     </I18nextProvider>,
@@ -132,5 +138,35 @@ describe('PhotoGrid', () => {
     expect(gridElement()).toBe(before)
     expect(gridElement().style.gridTemplateColumns).toBe(gridTemplateColumns(4))
     expect(window.localStorage.getItem(STORAGE_KEY)).toBe('4')
+  })
+
+  it('follows the review tools’ own count when scoped to them', () => {
+    // /expand is a judging grid, not the browsing wall: it must not move when the
+    // library's density does, and its gutters are the review tools' wider ones.
+    window.localStorage.setItem(STORAGE_KEY, '2')
+    window.localStorage.setItem(REVIEW_GRID_SCOPE.storageKey, '7')
+
+    renderGrid(false, REVIEW_GRID_SCOPE)
+
+    expect(gridElement()).toHaveAttribute('data-density', '7')
+    expect(gridElement().style.gridTemplateColumns).toBe(gridTemplateColumns(7))
+    expect(gridElement().style.gap).toBe(`${String(REVIEW_GRID_SCOPE.gapPx)}px`)
+    // The library's own number is untouched by the review stepper.
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('2')
+  })
+
+  it('moves a review-scoped grid with the review stepper, not the library one', async () => {
+    window.localStorage.setItem(STORAGE_KEY, '2')
+    window.localStorage.setItem(REVIEW_GRID_SCOPE.storageKey, '3')
+    const user = userEvent.setup()
+    renderGrid(true, REVIEW_GRID_SCOPE)
+
+    await user.click(screen.getByRole('button', { name: 'More tiles per row' }))
+
+    await waitFor(() => {
+      expect(gridElement()).toHaveAttribute('data-density', '4')
+    })
+    expect(window.localStorage.getItem(REVIEW_GRID_SCOPE.storageKey)).toBe('4')
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('2')
   })
 })

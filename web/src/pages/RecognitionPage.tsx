@@ -10,10 +10,18 @@ import { useSearchParams } from 'react-router-dom'
 
 import { EmptyState } from '../components/EmptyState'
 import { Icon } from '../components/Icon'
+import { GridDensityControl } from '../components/library/GridDensityControl'
 import { PersonSweepCard } from '../components/recognition/PersonSweepCard'
+import { CandidateDecisions } from '../components/review/CandidateDecisions'
+import { candidateStage } from '../components/review/candidateStage'
+import { ReviewLightbox } from '../components/review/ReviewLightbox'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import { useGridDensity } from '../hooks/useGridDensity'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
+import { useLightbox } from '../hooks/useLightbox'
 import { useSweepReview } from '../hooks/useSweepReview'
+import { distanceToPercent } from '../lib/faceThreshold'
+import { REVIEW_GRID_SCOPE } from '../lib/gridDensity'
 import {
   clampConfidencePercent,
   focusSequence,
@@ -67,6 +75,19 @@ export function RecognitionPage() {
     () => review.people.reduce((sum, person) => sum + personActionableCount(person), 0),
     [review.people],
   )
+
+  const { density } = useGridDensity(REVIEW_GRID_SCOPE)
+  // The overlay belongs to **one person's block**, not to the whole sweep: ←/→
+  // stepping past Alice's last candidate into Bob's would silently change the
+  // question the buttons answer. A person cleared away empties this list, which
+  // is exactly when the overlay should close — `useLightbox` does that itself.
+  const [enlargedSubject, setEnlargedSubject] = useState<string | null>(null)
+  const enlargedItems = useMemo(
+    () => review.people.find((person) => person.subject.uid === enlargedSubject)?.items ?? [],
+    [review.people, enlargedSubject],
+  )
+  const lightbox = useLightbox(enlargedItems)
+  const enlarged = lightbox.item
 
   // Keep the focused card in view as the keyboard moves the selection.
   useEffect(() => {
@@ -136,7 +157,11 @@ export function RecognitionPage() {
       Enter: confirmFocused,
       n: rejectFocused,
     },
-    { enabled: review.people.length > 0 && review.confirmAll === null },
+    {
+      // The overlay owns the keyboard while it is up: its arrows step photos, and
+      // the page's would move the highlight out from under it.
+      enabled: review.people.length > 0 && review.confirmAll === null && !lightbox.isOpen,
+    },
   )
 
   return (
@@ -234,7 +259,10 @@ export function RecognitionPage() {
       )}
 
       {review.summary !== null && (
-        <div className="d-flex flex-wrap gap-3 mb-4 text-secondary" data-testid="sweep-stats">
+        <div
+          className="d-flex flex-wrap align-items-center gap-3 mb-4 text-secondary"
+          data-testid="sweep-stats"
+        >
           <span>{t('recognition.stats.actionable', { count: liveActionable })}</span>
           <span>{t('recognition.stats.people', { count: review.people.length })}</span>
           <span>
@@ -246,6 +274,13 @@ export function RecognitionPage() {
                 shown: review.summary.people_scanned,
                 total: review.summary.subjects_total,
               })}
+            </span>
+          )}
+          {/* The library's stepper on the review tools' shared count — every
+              person's grid below moves together, which is the point. */}
+          {review.people.length > 0 && (
+            <span className="ms-auto">
+              <GridDensityControl scope={REVIEW_GRID_SCOPE} />
             </span>
           )}
         </div>
@@ -297,8 +332,37 @@ export function RecognitionPage() {
             review.confirmAllForPerson(person.subject.uid)
           }}
           onCancelConfirmAll={review.cancelConfirmAll}
+          density={density}
+          onEnlarge={(index) => {
+            setEnlargedSubject(person.subject.uid)
+            lightbox.open(index)
+          }}
         />
       ))}
+
+      {enlarged !== null && enlargedSubject !== null && (
+        <ReviewLightbox
+          stage={candidateStage(enlarged.candidate, t('faceSearch.card.photoAlt'))}
+          title={t('faceSearch.card.match', {
+            percent: distanceToPercent(enlarged.candidate.distance),
+          })}
+          onClose={lightbox.close}
+          onPrev={lightbox.prev}
+          onNext={lightbox.next}
+          hasPrev={lightbox.hasPrev}
+          hasNext={lightbox.hasNext}
+        >
+          <CandidateDecisions
+            item={enlarged}
+            onConfirm={() => {
+              review.confirm(enlargedSubject, enlarged.candidate)
+            }}
+            onReject={() => {
+              review.reject(enlargedSubject, enlarged.candidate)
+            }}
+          />
+        </ReviewLightbox>
+      )}
     </>
   )
 }

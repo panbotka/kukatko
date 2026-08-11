@@ -11,17 +11,23 @@ import {
 } from 'react-virtuoso'
 
 import { useGridDensity } from '../../hooks/useGridDensity'
-import { GRID_GAP_PX, gridTemplateColumns } from '../../lib/gridDensity'
+import {
+  type GridDensityScope,
+  gridTemplateColumns,
+  LIBRARY_GRID_SCOPE,
+} from '../../lib/gridDensity'
 import { type Photo } from '../../services/photos'
 import { Skeleton } from '../Skeleton'
 
 import { PhotoTile } from './PhotoTile'
 
-/** State the footer needs, threaded to the virtuoso components via `context`. */
+/** State the footer and the grid need, threaded to the virtuoso components via `context`. */
 interface GridContext {
   loadingMore: boolean
   moreError: boolean
   onRetry: () => void
+  /** Which stored column count this grid follows (see {@link PhotoGridProps.scope}). */
+  scope: GridDensityScope
 }
 
 /**
@@ -30,14 +36,24 @@ interface GridContext {
  * a concrete count in 1..GRID_COLUMNS_MAX, so there is no width-driven "auto"
  * fallback to defer to.
  *
+ * *Which* count it follows comes from the grid's scope, handed down through
+ * virtuoso's `context`: the library's own by default, the review tools' shared
+ * one on `/expand`, which is a review workspace rather than a browsing wall.
+ *
  * Changing the density only restyles this element — virtuoso re-measures the
  * resized tiles and keeps the scroll position, and the page keeps its selection.
  */
 const List = forwardRef<
   HTMLDivElement,
-  { style?: React.CSSProperties; className?: string; children?: React.ReactNode }
->(function List({ style, className, children, ...props }, ref) {
-  const { density } = useGridDensity()
+  {
+    style?: React.CSSProperties
+    className?: string
+    children?: React.ReactNode
+    context?: GridContext
+  }
+>(function List({ style, className, children, context, ...props }, ref) {
+  const scope = context?.scope ?? LIBRARY_GRID_SCOPE
+  const { density } = useGridDensity(scope)
   return (
     <div
       ref={ref}
@@ -50,7 +66,7 @@ const List = forwardRef<
       style={{
         display: 'grid',
         gridTemplateColumns: gridTemplateColumns(density),
-        gap: `${GRID_GAP_PX}px`,
+        gap: `${String(scope.gapPx)}px`,
         ...style,
       }}
     >
@@ -199,6 +215,13 @@ export interface PhotoGridProps {
    * whenever it changes, so the page can remember where the reader was.
    */
   onStateChanged?: (state: GridStateSnapshot) => void
+  /**
+   * Which stored column count (and gutter) this grid follows. Defaults to the
+   * photo library's — pass `REVIEW_GRID_SCOPE` where the grid is a review
+   * workspace rather than a browsing wall, so it moves with the other review
+   * tools instead of re-densifying the library on the way back.
+   */
+  scope?: GridDensityScope
 }
 
 /**
@@ -234,6 +257,7 @@ export function PhotoGrid({
   tileExtras,
   restoreStateFrom,
   onStateChanged,
+  scope = LIBRARY_GRID_SCOPE,
 }: PhotoGridProps) {
   // Shift+click selects the contiguous range between the anchor and the clicked
   // tile; the grid supplies its own photo order so pages need no extra wiring.
@@ -262,7 +286,7 @@ export function PhotoGrid({
       ref={gridRef}
       useWindowScroll
       data={photos}
-      context={{ loadingMore, moreError, onRetry }}
+      context={{ loadingMore, moreError, onRetry, scope }}
       endReached={onEndReached}
       rangeChanged={onRangeChanged}
       restoreStateFrom={restoreStateFrom}
