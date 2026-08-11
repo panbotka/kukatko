@@ -415,7 +415,8 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
 - **Expand-a-collection API (`/api/v1`, `internal/expandapi`, editor/admin via `RequireWrite`):**
   "find photos similar to a whole album / label" — filling out a half-tagged collection. `GET /albums/{uid}/similar`
   and `GET /labels/{uid}/similar` with query `?threshold=&limit=` (`threshold` = max cosine distance,
-  default `expand.max_distance` = 0.30, i.e. 70 % similarity; `limit` default `expand.limit`, cap
+  default `expand.max_distance` = 0.20, i.e. 80 % similarity — re-derived for SigLIP 2, it was 0.30 under
+  CLIP ViT-L-14 (see [`THRESHOLDS.md`](THRESHOLDS.md)); `limit` default `expand.limit`, cap
   `expand.max_limit`; non-numeric / negative → 400). Membership is resolved **natively** (`internal/organize`),
   **no call to any foreign system**. Response `{kind,collection_uid,source_photo_count,source_photos_sampled,
   source_photos_with_embedding,source_capped,source_cap,min_match_count,threshold,limit,result_count,

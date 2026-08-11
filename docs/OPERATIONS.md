@@ -772,6 +772,17 @@ long-running and belong on the machine where the instance runs — so they remai
   /process/stacks` (like the other `/process/*`) runs detection over the whole library via
   `stacks.Service.DetectStacks` and returns `{created}`; the candidates are only so-far-unstacked, unarchived
   photos, so a re-run is idempotent. With `stacks.enabled: false` it responds 503.
+- **Duplicate keys (`duplicate.*`, `internal/config` + `internal/duplicates`/`internal/embedjob`):**
+  near-duplicate detection, the `GET /duplicates` review page and the non-blocking "this looks like an
+  existing photo" warning on upload. `enabled` (bool, **default true**) is the master switch — with it off
+  `GET /duplicates` answers **503** and the review game skips duplicate questions. `phash_max_diff`
+  (**default 8**) — the maximum perceptual-hash Hamming distance, in bits, for two photos to be linked;
+  a negative value disables pHash linking. `embedding_max_dist` (**default 0.028**) — the maximum
+  embedding cosine distance for the same; `<= 0` disables embedding linking. **The distance is
+  model-specific**: it was 0.05 while the image tower was CLIP ViT-L-14 and 0.028 is the SigLIP 2 value
+  that flags the same number of pairs on the same photos — the measurement, and the method to repeat it
+  after the next model change, are in [`THRESHOLDS.md`](THRESHOLDS.md). Env:
+  `KUKATKO_DUPLICATE_ENABLED`, `_PHASH_MAX_DIFF`, `_EMBEDDING_MAX_DIST`.
 - **Sidecar keys (`sidecar.*`, `internal/config` + `internal/sidecarexport`/`internal/sidecarjob`):**
   **Metadata sidecars** — a YAML file per photo next to the originals in storage (`sidecars/<original
   key>.yml`) with its metadata and curation data (caption, description, who is in the photo along with the
@@ -858,7 +869,8 @@ long-running and belong on the machine where the instance runs — so they remai
   `_MAX_SUBJECTS`.
 - **Expand keys (`expand.*`, `internal/config` + `internal/expand`):** tunes **collection expansion**
   "find photos similar to an album / label" (`GET /albums/{uid}/similar`, `GET /labels/{uid}/similar`).
-  `max_distance` (**default 0.30**, the UI shows it as 70 % similarity) — the default max cosine distance
+  `max_distance` (**default 0.20**, the UI shows it as 80 % similarity; it was 0.30 under CLIP ViT-L-14 and
+  was re-derived for SigLIP 2 — the measurement is in [`THRESHOLDS.md`](THRESHOLDS.md)) — the default max cosine distance
   of a candidate from the source photo when the request does not send it, **and** the baseline for the vote rule; `limit` (**default
   50**) — the default number of returned candidates; `max_limit` (**default 200**) — a cap on the `?limit` request;
   `search_limit` (**default 200**) — how many nearest photos the kNN of each source photo returns before

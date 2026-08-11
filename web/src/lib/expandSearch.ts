@@ -4,17 +4,25 @@
  * the source-picker ordering. Kept out of the components so the maths and the
  * ordering rules are unit-testable without rendering anything.
  *
- * The threshold UI speaks percent (a "how similar must it be" dial) and reuses
- * the face-search slider's 20–80 range and its percent↔distance conversion
- * (`lib/faceThreshold`); only the default differs. Expanding a collection wants
- * precision first (70 %, the backend's own default distance of 0.30), where the
- * face hunt casts a wider net (50 %).
+ * The threshold UI speaks percent (a "how similar must it be" dial) and borrows
+ * the percent↔distance conversion from `lib/faceThreshold`, but not its 20–80
+ * range: faces and photos are two different embedding models with two different
+ * distance scales, and since the image tower became SigLIP 2 the face slider's
+ * stops mean nothing here. This dial has its own range, read off the library's
+ * own distances — at 65 % (distance 0.35) about 18 % of all photo pairs already
+ * qualify, which is the widest net still worth offering, and 90 % (0.10) is as
+ * tight as "similar" gets before it means "the same shot". The default 80 % is
+ * the backend's own `expand.max_distance` of 0.20; see docs/THRESHOLDS.md.
  */
 
-import { percentToDistance, THRESHOLD_MAX_PERCENT, THRESHOLD_MIN_PERCENT } from './faceThreshold'
+import { percentToDistance } from './faceThreshold'
 
+/** Loosest similarity the expand slider offers (widest net, most results). */
+export const EXPAND_THRESHOLD_MIN_PERCENT = 65
+/** Tightest similarity the expand slider offers (best matches only). */
+export const EXPAND_THRESHOLD_MAX_PERCENT = 90
 /** Where the expand threshold slider starts: precise matches first. */
-export const EXPAND_THRESHOLD_DEFAULT_PERCENT = 70
+export const EXPAND_THRESHOLD_DEFAULT_PERCENT = 80
 
 /** Smallest accepted result cap. */
 export const EXPAND_LIMIT_MIN = 1
@@ -26,18 +34,18 @@ export const EXPAND_LIMIT_DEFAULT = 50
 /**
  * clampExpandThresholdPercent keeps a percentage inside the slider's supported
  * range, guarding against an out-of-range value arriving from a URL query
- * parameter. A non-numeric value falls back to the expand default (70 %), not
+ * parameter. A non-numeric value falls back to the expand default (80 %), not
  * the face-search one.
  */
 export function clampExpandThresholdPercent(percent: number): number {
   if (!Number.isFinite(percent)) {
     return EXPAND_THRESHOLD_DEFAULT_PERCENT
   }
-  if (percent < THRESHOLD_MIN_PERCENT) {
-    return THRESHOLD_MIN_PERCENT
+  if (percent < EXPAND_THRESHOLD_MIN_PERCENT) {
+    return EXPAND_THRESHOLD_MIN_PERCENT
   }
-  if (percent > THRESHOLD_MAX_PERCENT) {
-    return THRESHOLD_MAX_PERCENT
+  if (percent > EXPAND_THRESHOLD_MAX_PERCENT) {
+    return EXPAND_THRESHOLD_MAX_PERCENT
   }
   return percent
 }
@@ -45,8 +53,8 @@ export function clampExpandThresholdPercent(percent: number): number {
 /**
  * expandThresholdDistance converts the slider's percentage into the cosine
  * distance the expand endpoints accept, rounded to four decimals so the value
- * survives a round-trip through the URL without float noise (70 % → 0.3, not
- * 0.30000000000000004).
+ * survives a round-trip through the URL without float noise (80 % → 0.2, not
+ * 0.19999999999999996).
  */
 export function expandThresholdDistance(percent: number): number {
   return Number(percentToDistance(percent).toFixed(4))

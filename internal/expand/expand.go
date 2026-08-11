@@ -30,14 +30,21 @@ import (
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
-// Defaults tune the search when a config value is non-positive. They mirror what
-// works in photo-sorter: a 0.30 cosine distance (shown as 70 % similarity), 50
-// results capped at 200, a generous per-source over-fetch, and a source-set cap so
-// a huge album does not run thousands of kNN queries.
+// Defaults tune the search when a config value is non-positive: a 0.20 cosine
+// distance (shown as 80 % similarity), 50 results capped at 200, a generous
+// per-source over-fetch, and a source-set cap so a huge album does not run
+// thousands of kNN queries.
 const (
 	// DefaultMaxDistance is the fallback maximum cosine distance a candidate may sit
 	// from a source photo, and the baseline the vote rule scales against.
-	DefaultMaxDistance = 0.30
+	//
+	// It was 0.30 while the image tower was CLIP ViT-L-14, the value photo-sorter
+	// used. SigLIP 2 packs the same neighbourhood into a shorter distance, so the
+	// number had to be re-derived rather than carried over: 0.20 is the distance at
+	// which a photo admits as many library neighbours as 0.30 did before (measured
+	// on 1447 randomly sampled photos, median 0.201, IQR 0.173–0.224). The method,
+	// and why a duplicate threshold scaled differently, are in docs/THRESHOLDS.md.
+	DefaultMaxDistance = 0.20
 	// DefaultLimit is the fallback number of candidates returned.
 	DefaultLimit = 50
 	// DefaultMaxLimit caps a request's own limit so one call cannot ask for an

@@ -608,7 +608,9 @@ type TrashConfig struct {
 	RetentionDays int `mapstructure:"retention_days"`
 }
 
-// DuplicateConfig holds thresholds for duplicate detection.
+// DuplicateConfig holds thresholds for duplicate detection. EmbeddingMaxDist is
+// model-specific and was re-derived for SigLIP 2 — see docs/THRESHOLDS.md for the
+// measurement behind its default and the method to repeat after a model change.
 type DuplicateConfig struct {
 	Enabled          bool    `mapstructure:"enabled"`
 	PhashMaxDiff     int     `mapstructure:"phash_max_diff"`
@@ -912,7 +914,7 @@ func setSweepDefaults(v *viper.Viper) {
 // keeps a huge album from running thousands of kNN queries, and the concurrency
 // bound on per-source searches.
 func setExpandDefaults(v *viper.Viper) {
-	v.SetDefault("expand.max_distance", 0.30)
+	v.SetDefault("expand.max_distance", 0.20)
 	v.SetDefault("expand.limit", 50)
 	v.SetDefault("expand.max_limit", 200)
 	v.SetDefault("expand.search_limit", 200)
@@ -1069,7 +1071,7 @@ func setOpsDefaults(v *viper.Viper) {
 
 	v.SetDefault("duplicate.enabled", true)
 	v.SetDefault("duplicate.phash_max_diff", 8)
-	v.SetDefault("duplicate.embedding_max_dist", 0.05)
+	v.SetDefault("duplicate.embedding_max_dist", 0.028)
 
 	setStacksDefaults(v)
 	setMCPDefaults(v)
