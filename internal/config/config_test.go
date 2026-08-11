@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/panbotka/kukatko/internal/expand"
 )
 
 // setMinimalEnv clears every variable Load reads and then sets just the required
@@ -104,7 +106,7 @@ func TestLoad_defaults(t *testing.T) {
 		{"candidates.max_candidates", cfg.Candidates.MaxCandidates, 500},
 		{"sweep.concurrency", cfg.Sweep.Concurrency, 4},
 		{"sweep.max_subjects", cfg.Sweep.MaxSubjects, 500},
-		{"expand.max_distance", cfg.Expand.MaxDistance, 0.30},
+		{"expand.max_distance", cfg.Expand.MaxDistance, 0.20},
 		{"expand.limit", cfg.Expand.Limit, 50},
 		{"expand.max_limit", cfg.Expand.MaxLimit, 200},
 		{"expand.search_limit", cfg.Expand.SearchLimit, 200},
@@ -126,7 +128,9 @@ func TestLoad_defaults(t *testing.T) {
 		{"trash.retention_days", cfg.Trash.RetentionDays, 365},
 		{"duplicate.enabled", cfg.Duplicate.Enabled, true},
 		{"duplicate.phash_max_diff", cfg.Duplicate.PhashMaxDiff, 8},
-		{"duplicate.embedding_max_dist", cfg.Duplicate.EmbeddingMaxDist, 0.05},
+		// Model-specific: re-derived when the image tower became SigLIP 2, see
+		// docs/THRESHOLDS.md. It was 0.05 while the embeddings were CLIP ViT-L-14.
+		{"duplicate.embedding_max_dist", cfg.Duplicate.EmbeddingMaxDist, 0.028},
 		{"stacks.enabled", cfg.Stacks.Enabled, true},
 		{"stacks.rules.base_name", cfg.Stacks.Rules.BaseName, true},
 		{"stacks.rules.sequential_copy", cfg.Stacks.Rules.SequentialCopy, true},
@@ -1045,5 +1049,30 @@ func TestLoad_locationEstimateValidation(t *testing.T) {
 				t.Fatalf("Load returned error: %v", err)
 			}
 		})
+	}
+}
+
+// TestLoad_embeddingThresholdsMatchPackageDefaults pins the two image-embedding
+// distance defaults to the package-level fallbacks that stand in for them when a
+// config value is non-positive. The pair only makes sense together: they are the
+// same threshold reached by two routes, and a model change has to move both (the
+// derivation lives in docs/THRESHOLDS.md).
+func TestLoad_embeddingThresholdsMatchPackageDefaults(t *testing.T) {
+	setMinimalEnv(t)
+
+	cfg, err := Load(filepath.Join(t.TempDir(), "does-not-exist.yaml"))
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.Expand.MaxDistance != expand.DefaultMaxDistance {
+		t.Errorf("expand.max_distance = %v, want expand.DefaultMaxDistance (%v)",
+			cfg.Expand.MaxDistance, expand.DefaultMaxDistance)
+	}
+	// The duplicate threshold has no package-level twin, but it must stay well
+	// inside the expand one: "the same photo twice" is a strictly tighter claim
+	// than "belongs in the same album", whatever the model's scale.
+	if cfg.Duplicate.EmbeddingMaxDist >= cfg.Expand.MaxDistance {
+		t.Errorf("duplicate.embedding_max_dist = %v, want below expand.max_distance (%v)",
+			cfg.Duplicate.EmbeddingMaxDist, cfg.Expand.MaxDistance)
 	}
 }

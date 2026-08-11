@@ -97,6 +97,11 @@ type Config struct {
 	PhashMaxDiff int
 	// EmbeddingMaxDist is the maximum embedding cosine distance for two photos to
 	// be linked. A non-positive value disables embedding grouping.
+	//
+	// The number belongs to the model that produced the embeddings and does not
+	// survive a model change: 0.05 under CLIP ViT-L-14 and 0.028 under SigLIP 2
+	// flag the same pairs. docs/THRESHOLDS.md records both measurements and how to
+	// repeat them.
 	EmbeddingMaxDist float64
 	// Neighbours caps the embedding neighbours scanned per photo; non-positive
 	// uses defaultNeighbours.

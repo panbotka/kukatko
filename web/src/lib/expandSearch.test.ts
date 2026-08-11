@@ -7,6 +7,8 @@ import {
   EXPAND_LIMIT_MAX,
   EXPAND_LIMIT_MIN,
   EXPAND_THRESHOLD_DEFAULT_PERCENT,
+  EXPAND_THRESHOLD_MAX_PERCENT,
+  EXPAND_THRESHOLD_MIN_PERCENT,
   expandSources,
   expandThresholdDistance,
   similarityPercent,
@@ -28,18 +30,22 @@ describe('expandThresholdDistance', () => {
   })
 
   it('maps the default percentage to the backend default distance', () => {
-    expect(expandThresholdDistance(EXPAND_THRESHOLD_DEFAULT_PERCENT)).toBe(0.3)
+    // expand.max_distance, re-derived for SigLIP 2 (docs/THRESHOLDS.md).
+    expect(expandThresholdDistance(EXPAND_THRESHOLD_DEFAULT_PERCENT)).toBe(0.2)
   })
 })
 
 describe('clampExpandThresholdPercent', () => {
   it('keeps in-range values', () => {
-    expect(clampExpandThresholdPercent(55)).toBe(55)
+    expect(clampExpandThresholdPercent(75)).toBe(75)
   })
 
-  it('clamps to the slider bounds', () => {
-    expect(clampExpandThresholdPercent(5)).toBe(20)
-    expect(clampExpandThresholdPercent(95)).toBe(80)
+  it('clamps to the expand slider bounds, not the face search ones', () => {
+    expect(clampExpandThresholdPercent(5)).toBe(EXPAND_THRESHOLD_MIN_PERCENT)
+    expect(clampExpandThresholdPercent(95)).toBe(EXPAND_THRESHOLD_MAX_PERCENT)
+    // 50 % is the face hunt's default and used to be a legal expand value; the
+    // image space is tighter now and the dial no longer goes there.
+    expect(clampExpandThresholdPercent(50)).toBe(EXPAND_THRESHOLD_MIN_PERCENT)
   })
 
   it('falls back to the expand default for a non-numeric value', () => {

@@ -1349,7 +1349,8 @@ to `## Package map` in `CLAUDE.md`.
   in it; all behind the interfaces `VectorStore` (`vectors.Store`), `OrganizeStore` (`organize.Store`),
   `FeedbackStore` (`feedback.Store`) and `PhotoStore` (`photos.Store`) → unit-testable with fakes without a DB;
   `Service` = `New(Config{Vectors,Organize,Feedback,Photos,Media,MaxDistance,Limit,MaxLimit,SearchLimit,
-  SourceCap,Concurrency})`, tunables default via the `Default*` constants (0.30/50/200/200/500/8), nil
+  SourceCap,Concurrency})`, tunables default via the `Default*` constants (0.20/50/200/200/500/8 —
+  `DefaultMaxDistance` is model-specific and was re-derived for SigLIP 2, see `THRESHOLDS.md`), nil
   store→panic, nil `Media` is OK. **`Album(ctx,uid,Request)`** / **`Label(ctx,uid,Request)`** share
   one core `find`, differing only in how the source set is resolved (validation via `GetAlbumByUID`/
   `GetLabelByUID` → `organize.ErrAlbumNotFound`/`ErrLabelNotFound`; membership via `ListPhotoUIDs`/

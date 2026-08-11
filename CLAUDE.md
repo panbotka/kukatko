@@ -37,6 +37,7 @@ Open **one** document based on what you're touching. Don't read them all preempt
 | Architecture, data model, milestones, testing strategy | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
 | Local development, frontend build, embed | [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) |
 | Performance (thumbnails, vips, HNSW `ef_search`, indexes) | [`docs/PERF.md`](docs/PERF.md) |
+| A cosine-distance threshold — its value, its measurement, how to re-derive it | [`docs/THRESHOLDS.md`](docs/THRESHOLDS.md) |
 | Restore from backup / disaster recovery | [`docs/RESTORE.md`](docs/RESTORE.md) |
 | UX decisions and audit | [`docs/UX_AUDIT.md`](docs/UX_AUDIT.md) |
 | Security audit — findings, severities, attack scenarios | [`docs/SECURITY_AUDIT.md`](docs/SECURITY_AUDIT.md) |
@@ -211,6 +212,7 @@ commit. Always, at the end of every task, in this order:
    - new/changed HTTP endpoint → `docs/API.md`
    - new/changed frontend component, hook, page, service → `docs/FRONTEND.md`
    - new config key → `docs/OPERATIONS.md` **and** `config.example.yaml`
+   - changed cosine-distance threshold → `docs/THRESHOLDS.md`, **with the measurement that produced it**
    - new CLI subcommand or `make` target → `docs/OPERATIONS.md`
    - large architectural change → `docs/ARCHITECTURE.md`
    - user-visible feature → `README.md`

@@ -500,7 +500,8 @@ One HTTP service, offline-aware by default; the reference implementation is
   fall back to plain full-text and the response sets `degraded: true` (the UI informs the user of this).
   Upload and browsing keep working without the box.
 - **Similar photos:** HNSW over `embeddings` (`embedding <=> $vec`), a distance threshold for
-  "duplicates" (~0.05) and "similar" (a higher threshold).
+  "duplicates" (0.028) and "similar" (a higher one, 0.20). Both belong to the model that produced the
+  vectors and are re-derived when it changes — the measurements are in [`THRESHOLDS.md`](THRESHOLDS.md).
 - **HNSW parameters:** `m=16`, `ef_construction=200`, query `SET LOCAL hnsw.ef_search=100`
   (never ≥400 — the planner falls back to a seq scan). Cosine metric (embeddings are L2-normalized).
 - **Search among unassigned faces only** (`vectors.FindSimilarUnassignedFaceCandidates`,

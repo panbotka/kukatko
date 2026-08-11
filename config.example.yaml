@@ -266,10 +266,13 @@ expand:
   # vector — and never writes: adding the found photos goes through POST /photos/bulk.
   #
   # Default maximum cosine distance a candidate may sit from a source photo, shown in
-  # the UI as 1 - distance (0.30 → 70 % similarity). A request may send its own
+  # the UI as 1 - distance (0.20 → 80 % similarity). A request may send its own
   # threshold; this is the fallback and the baseline the vote rule scales against.
   # Set to 0 (or below) to fall back to the default.
-  max_distance: 0.30
+  #
+  # Model-specific. It was 0.30 under CLIP ViT-L-14; 0.20 is the SigLIP 2 distance
+  # that admits the same number of neighbours per photo (docs/THRESHOLDS.md).
+  max_distance: 0.20
   # Default number of candidates returned when a request omits ?limit. Set to 0 (or
   # below) to fall back to the default.
   limit: 50
@@ -488,7 +491,10 @@ duplicate:
   # near-duplicate of an existing photo (a non-blocking warning on the result).
   phash_max_diff: 8
   # Maximum embedding cosine distance to treat images as duplicates.
-  embedding_max_dist: 0.05
+  #
+  # Model-specific. It was 0.05 under CLIP ViT-L-14; 0.028 is the SigLIP 2 distance
+  # that flags the same number of pairs on the same photos (docs/THRESHOLDS.md).
+  embedding_max_dist: 0.028
 
 # Stacks: group the several files of one shot (RAW+JPEG, exported edits, an
 # iPhone Live Photo's still+clip) into one library item with a visible primary

@@ -11,13 +11,11 @@ import {
   clampExpandLimit,
   EXPAND_LIMIT_MAX,
   EXPAND_LIMIT_MIN,
+  EXPAND_THRESHOLD_MAX_PERCENT,
+  EXPAND_THRESHOLD_MIN_PERCENT,
   type ExpandSource,
 } from '../../lib/expandSearch'
-import {
-  THRESHOLD_MAX_PERCENT,
-  THRESHOLD_MIN_PERCENT,
-  THRESHOLD_STEP_PERCENT,
-} from '../../lib/faceThreshold'
+import { THRESHOLD_STEP_PERCENT } from '../../lib/faceThreshold'
 import { type ExpandKind } from '../../services/expand'
 import { AddAutocomplete } from '../photo/AddAutocomplete'
 import { Icon } from '../Icon'
@@ -160,8 +158,8 @@ export function ExpandSearchForm({
           </Form.Label>
           <Form.Range
             id="expand-threshold"
-            min={THRESHOLD_MIN_PERCENT}
-            max={THRESHOLD_MAX_PERCENT}
+            min={EXPAND_THRESHOLD_MIN_PERCENT}
+            max={EXPAND_THRESHOLD_MAX_PERCENT}
             step={THRESHOLD_STEP_PERCENT}
             value={thresholdPercent}
             onChange={(event) => {

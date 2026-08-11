@@ -1888,8 +1888,10 @@ here.
   nebo štítek o vizuálně podobné fotky": the config panel `ExpandSearchForm` (an **Album|Štítek** toggle
   (`ToggleButtonGroup`), collection selection via `AddAutocomplete` — options from `lib/expandSearch`
   `expandSources` **sorted by photo count descending, empty collections omitted**, the count in `hint` —,
-  a threshold in **percent** 20–80 % step 5 **default 70 %** with bookends „Více výsledků"↔„Lepší shody"
-  (range/conversion shared with `lib/faceThreshold`, `expandThresholdDistance` trims float noise for the URL),
+  a threshold in **percent** 65–90 % step 5 **default 80 %** with bookends „Více výsledků"↔„Lepší shody"
+  (the range is `lib/expandSearch`'s own — the photo and face embedding spaces have different scales, see
+  `docs/THRESHOLDS.md`; only the conversion and the step come from `lib/faceThreshold`, and
+  `expandThresholdDistance` trims float noise for the URL),
   limit 1–200 default 50 (`clampExpandLimit`), a Hledat button — the search is **explicit**, not
   live-on-drag); calls `searchSimilar()` (`services/expand`); results = `ExpandResults`: a summary
   row (source photos / with embedding / min. matches / found) + a **vote-rule explanation**
@@ -3358,8 +3360,10 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   step 1, default 75) + `clampConfidencePercent`, `PersonState`, `personActionableCount`/`hasActionable`
   (a person's card disappears when `hasActionable` is false), and a **flat keyboard focus sequence** across
   people (`FocusEntry`, `focusKey`, `focusSequence` = actionable cards only, `nextFocusKey`);
-  `expandSearch.ts` = the pure logic of `/expand`: the default threshold **70 %** (`EXPAND_THRESHOLD_DEFAULT_PERCENT`,
-  it shares the range/step with `faceThreshold`) + `clampExpandThresholdPercent`, `expandThresholdDistance`
+  `expandSearch.ts` = the pure logic of `/expand`: the threshold dial **65–90 %, default 80 %**
+  (`EXPAND_THRESHOLD_MIN_PERCENT`/`_MAX_PERCENT`/`_DEFAULT_PERCENT` — its **own** range, read off the photo
+  embedding space and matching the backend's `expand.max_distance` of 0.20; only the step and the
+  percent↔distance conversion come from `faceThreshold`) + `clampExpandThresholdPercent`, `expandThresholdDistance`
   (percent → distance, `toFixed(4)` trims the float noise for the URL), limit 1–200 default 50
   (`clampExpandLimit`), `ExpandSource` + `expandSources` (the picker: without empty collections, ordered by
   photo count descending, tiebreak by name) and `similarityPercent` (a candidate's similarity → whole %);
