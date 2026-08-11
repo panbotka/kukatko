@@ -1810,14 +1810,32 @@ here.
   photos have left this gallery),
   `ClustersPage` = `/people/clusters` (editor/admin) a review queue of unnamed clusters:
   `ClusterCard` (a representative + samples + removal of a strayed face + one-shot naming
-  of the whole cluster) in a `Row`/`Col` grid, optimistic removal after naming;
+  of the whole cluster) in the **review tools' density grid** — `useGridDensity(REVIEW_GRID_SCOPE)` +
+  `GridDensityControl` beside the title, `gridTemplateColumns(density)` in place of the responsive
+  1/2/3 `Row`/`Col` it had, which survives only as the width the count is *seeded* from; the grid also
+  carries **`kk-review-grid`** (`components/review/review.css` → `min-width: 0` on its children),
+  without which a card's name field and button would set the `1fr` tracks' automatic minimum and
+  push the grid off the side of a phone at the three columns a narrow viewport is capped to —
+  the other half of that is inside the card, which now survives **any** track width: the
+  representative row and the naming row wrap, the name field is `flex-basis: 0` (its own
+  `width: 100%` would otherwise push the submit onto its own line at every width) and the submit
+  is `text-break`, so its longest word cannot set a floor under the card either;
+  the title row is `flex-md-nowrap`, because a flex line is laid out from each item's *max-content*
+  width and the subtitle's is a whole sentence — with wrapping left on the stepper always dropped
+  to a second line and `justify-content-between` never applied; optimistic removal after naming;
   the per-sample ✕ is sized by **`components/people/clusters.css`**, not inline — on a fine
   pointer it stays the compact 18px badge in the crop's corner, on `pointer: coarse` it drops
   **out of the corner** into a full-width row under the 48px sample (`position: static`,
   ≥ 2.75rem in both dimensions, the sample becomes a flex column), because the app-wide touch
   floor (`.btn { min-height: 2.75rem }`) caps only the height and turned the inline 18px square
   into a tall red sliver over the very face being judged; pinned by `ClusterCard.test.tsx`
-  (behavior + both pointer layouts read out of the stylesheet via `test/css.ts`),
+  (behavior + both pointer layouts read out of the stylesheet via `test/css.ts`);
+  **every crop in the card enlarges** — the representative and each sample are wrapped in
+  `EnlargeButton`, and a click opens the cluster's own faces in `ReviewLightbox` at `fit_1280`
+  with the face marked, ←/→ walking representative-then-samples in the order the card draws them
+  (48–72px squares are exactly what „is this the same person?" cannot be answered from); the
+  overlay's footer repeats the sample's ✕ so a stray face can be detached from the picture that
+  revealed it, and carries none for the representative, which the card does not offer either,
   `FacesPage` = `/faces` (editor/admin, a link in „Nástrojích") „najdi osobu mezi neotagovanými
   fotkami": the config panel `CandidateSearchForm` (person selection via `AddAutocomplete` with the photo count
   in `hint`, a threshold in **percent** 20–80 % with bookends „Více výsledků"↔„Lepší shody", limit, a
@@ -1970,7 +1988,12 @@ here.
   `busyGroupId === group.id`), because until the preview resolves there is no modal or backdrop and a
   click on another group would overwrite `busyGroupId` and discard the merge already under way;
   each card offers **„Porovnat vedle sebe"** → `DupComparePage`,
-  because a 224px tile is enough to recognize a group, not to decide within it,
+  because a 224px tile is enough to recognize a group, not to decide within it;
+  the **member grid inside a card** is the one the page's `GridDensityControl` sizes
+  (`useGridDensity(REVIEW_GRID_SCOPE)` on the page, `density` down to each `DuplicateGroupCard`) —
+  the page is a list of groups and the judging happens *within* one, so the row of members is the
+  thing worth making bigger, not the list; the title row is `flex-md-nowrap` for the same reason
+  as `/people/clusters`,
   `DupComparePage` = `/duplicates/compare?pair=<levá>|<pravá>` (editor/admin, **fullscreen outside
   `Layout`** like `/review` — two photos with a navbar around them are two too-small photos) the decision „kterou
   z těch dvou": from `fetchDuplicates` (one page of groups) it builds a `buildPairQueue` **queue of pairs** —
@@ -2046,6 +2069,14 @@ here.
   row cannot stretch them off the faces — and one
   numbered `DuplicateMarkerCrop` close-up per box below it (the same 30 % context crop as `/outliers`, its source
   size picked per marker by `lib/faceSource`); the numbers are the join between the two halves.
+  **Each crop enlarges** — wrapped in `EnlargeButton`, a click opens `ReviewLightbox` on that marker's box over
+  the whole `fit_1280` frame, ←/→ walking the finding's own markers in the numbered order, and the footer
+  repeating that box's **„Nechat #n"** / **„Není tu obličej"** on the same handlers the card uses (both close the
+  overlay, since either answer changes the finding under it). The **row of crops inside a finding** is what the
+  page's `GridDensityControl` sizes (`useGridDensity(REVIEW_GRID_SCOPE)`, `density` down to each card) — the page
+  is a queue of questions and the judging happens within one; the grid carries `kk-review-grid` so two decision
+  buttons under a crop cannot widen the `1fr` tracks past the row, and the title row is `flex-md-nowrap`, both
+  exactly as on `/people/clusters`.
   Three decisions, all explicit: **„Nechat #n"** → `keepMarker` (the others are **detached**, not deleted — on a
   group shot the box belongs to whoever stood next to her), **„Není tu obličej"** → `invalidateMarker`, and
   **„Nechat být"** → `dismissDuplicateMarkers` (persistent, `POST /feedback/duplicate-marker-dismissals`, for the
@@ -2344,7 +2375,12 @@ here.
   `trashCountdown` + restore/delete actions + selection in selection mode);
   `components/duplicates/` = `DuplicateGroupCard` (a group card: members side by side with a preview/
   dimensions/size/`taken_at`/distances, a radio selection of the keeper (the suggested one by default), a `reason` badge,
-  actions **Ponechat nejlepší a sloučit** (`onResolve` → preview) / **Není duplikát**, a busy state) +
+  actions **Ponechat nejlepší a sloučit** (`onResolve` → preview) / **Není duplikát**, a busy state; the member
+  row is a `kk-review-grid` columned by the `density` prop the page passes down, and a **click on a tile enlarges
+  instead of navigating** — `EnlargeButton` around the thumbnail, `ReviewLightbox` on the group's members at
+  `fit_1280` (never the tile's centre-cropped `tile_224`, which hides the very edges two versions differ at),
+  ←/→ within the group, a **„Ponechat tuto"** in the footer setting the same local `keeperUid` the radio does;
+  leaving for a photo's own page is the stage's corner anchor, so judging a group no longer costs you the group) +
   `MergeConfirmModal` (a confirmation dialog: a summary of what moves to the keeper + how many copies are archived,
   an optional `note` below it — `DupComparePage` uses it to say that the copy is archived and not deleted, Potvrdit/Zrušit,
   a busy spinner) + `CompareStage` (two photos side by side, below `md` stacked; both render **the same**

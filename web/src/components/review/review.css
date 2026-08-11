@@ -797,3 +797,16 @@
   outline: 2px solid var(--bs-primary);
   outline-offset: 2px;
 }
+
+/* --- The review tools' density grid ---------------------------------------
+   Pairs with `gridTemplateColumns(density)`: the tracks are `1fr`, whose
+   automatic minimum is the *item's* min-content width, not zero. A tile that
+   carries text — a filename, „4608×3456 · 6.8 MB", a „Ponechat tuto" radio —
+   is therefore wider than a third of a phone's screen, and the tracks grow past
+   the container rather than dividing it, scrolling the whole page sideways at
+   the three columns a narrow viewport is capped to. `min-width: 0` gives the
+   count back its promise: exactly N equal tracks, with the text inside a tile
+   wrapping or truncating as the tile's own styling says. */
+.kk-review-grid > * {
+  min-width: 0;
+}

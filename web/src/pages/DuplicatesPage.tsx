@@ -9,8 +9,11 @@ import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
 import { DuplicateGroupCard } from '../components/duplicates/DuplicateGroupCard'
 import { MergeConfirmModal } from '../components/duplicates/MergeConfirmModal'
+import { GridDensityControl } from '../components/library/GridDensityControl'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import { useGridDensity } from '../hooks/useGridDensity'
+import { REVIEW_GRID_SCOPE } from '../lib/gridDensity'
 import { ApiError } from '../services/auth'
 import {
   type DuplicateGroup,
@@ -56,6 +59,9 @@ export function DuplicatesPage() {
   const { t } = useTranslation()
   useDocumentTitle(t('duplicates.title'))
   const [groups, setGroups] = useState<DuplicateGroup[]>([])
+  // The stepper here sizes the **members inside a group**, not the list of
+  // groups: this page is a list of questions and the judging happens within one.
+  const { density } = useGridDensity(REVIEW_GRID_SCOPE)
   const [status, setStatus] = useState<Status>('loading')
   const [nextOffset, setNextOffset] = useState<number | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -178,9 +184,21 @@ export function DuplicatesPage() {
 
   return (
     <>
-      <div className="mb-3">
-        <h1 className="kk-page-title mb-1">{t('duplicates.title')}</h1>
-        <p className="text-secondary mb-0">{t('duplicates.subtitle')}</p>
+      {/* `flex-md-nowrap` is what actually puts the stepper beside the title: a
+          flex line is laid out from each item's *max-content* width, and the
+          subtitle's is a whole paragraph, so with wrapping left on at every width
+          the control always dropped to a second line and sat at its left edge —
+          `justify-content-between` never got to do anything. Below `md` the wrap
+          is right, and there the control belongs under the text rather than
+          squeezed beside it. */}
+      <div className="mb-3 d-flex flex-wrap flex-md-nowrap align-items-start justify-content-between gap-3">
+        <div>
+          <h1 className="kk-page-title mb-1">{t('duplicates.title')}</h1>
+          <p className="text-secondary mb-0">{t('duplicates.subtitle')}</p>
+        </div>
+        {status === 'ready' && groups.length > 0 && (
+          <GridDensityControl scope={REVIEW_GRID_SCOPE} />
+        )}
       </div>
 
       {resultMessage !== null && (
@@ -235,6 +253,7 @@ export function DuplicatesPage() {
               void beginResolve(g, keeperUid)
             }}
             onDismiss={dismiss}
+            density={density}
           />
         ))}
 
