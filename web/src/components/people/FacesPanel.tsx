@@ -182,6 +182,7 @@ export function FacesPanel({
           size="sm"
           className="p-0 text-reset text-decoration-none"
           aria-label={t('faces.panel.closePanel')}
+          title={t('faces.panel.closePanel')}
           onClick={onClose}
         >
           <Icon name="x-lg" />

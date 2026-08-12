@@ -862,6 +862,13 @@ export function MetadataPanel({ photo, canWrite, onUpdated, footer }: MetadataPa
     )
   }
 
+  // The location row's pencil stands alone (the fields above carry theirs inside
+  // a labelled row), so the sentence naming the field is composed once and worn
+  // as both its accessible name and its hover tooltip.
+  const editLocationLabel = t('photo.metadata.editField', {
+    field: t('photo.metadata.location'),
+  })
+
   return (
     <div>
       <EditableField
@@ -914,7 +921,8 @@ export function MetadataPanel({ photo, canWrite, onUpdated, footer }: MetadataPa
               variant="link"
               size="sm"
               className="p-0 text-decoration-none lh-1"
-              aria-label={t('photo.metadata.editField', { field: t('photo.metadata.location') })}
+              aria-label={editLocationLabel}
+              title={editLocationLabel}
               onClick={startEditing}
             >
               <Icon name="pencil" />

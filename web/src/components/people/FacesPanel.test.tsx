@@ -104,6 +104,13 @@ describe('FacesPanel', () => {
       }),
     )
 
+    // The header's X is the panel's one icon-only control, so it answers the
+    // mouse with the same sentence it gives a screen reader.
+    expect(screen.getByRole('button', { name: 'Close the faces panel' })).toHaveAttribute(
+      'title',
+      'Close the faces panel',
+    )
+
     const unnamed = screen.getByRole('button', { name: 'Select face #1: No name' })
     expect(unnamed).toHaveAttribute('data-face-state', 'unnamed')
     expect(unnamed).toHaveTextContent('No name')

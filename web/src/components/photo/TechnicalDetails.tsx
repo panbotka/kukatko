@@ -382,6 +382,7 @@ export function TechnicalDetails({
                       size="sm"
                       className="p-0 lh-1 text-decoration-none"
                       aria-label={t('photo.technical.copyHash')}
+                      title={t('photo.technical.copyHash')}
                       onClick={() => {
                         void copyHash()
                       }}

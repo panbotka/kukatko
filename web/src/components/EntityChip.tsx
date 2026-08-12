@@ -71,7 +71,14 @@ export function EntityChip({ kind, to, children, className, remove }: EntityChip
       <Link to={to} className={`${row} text-white text-decoration-none`}>
         {label}
       </Link>
-      <CloseButton variant="white" aria-label={remove.label} onClick={remove.onRemove} />
+      <CloseButton
+        variant="white"
+        aria-label={remove.label}
+        // The same sentence again as the mouse's hover hint: an X on a chip is a
+        // guess until it says which chip it detaches.
+        title={remove.label}
+        onClick={remove.onRemove}
+      />
     </span>
   )
 }

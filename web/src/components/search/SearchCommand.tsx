@@ -483,6 +483,7 @@ function SearchCommandDialog({ show, onClose }: DialogProps) {
             type="button"
             className="btn-close"
             aria-label={t('searchCommand.clear')}
+            title={t('searchCommand.clear')}
             onClick={() => {
               setQuery('')
               inputRef.current?.focus()

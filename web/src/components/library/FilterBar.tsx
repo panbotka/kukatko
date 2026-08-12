@@ -379,6 +379,8 @@ export function FilterBar<T extends LibraryView>({
             // shared entity convention; every other filter keeps the neutral
             // primary chip so colour stays reserved for "which entity is this".
             const entity = chip.kind === undefined ? undefined : ENTITY_STYLE[chip.kind]
+            // Named once, worn twice: the accessible name and the hover hint.
+            const removeLabel = t('library.filters.removeFilter', { name: chip.label })
             return (
               <span
                 key={chip.key}
@@ -391,7 +393,8 @@ export function FilterBar<T extends LibraryView>({
                 <button
                   type="button"
                   className="btn-close btn-close-white ms-2"
-                  aria-label={t('library.filters.removeFilter', { name: chip.label })}
+                  aria-label={removeLabel}
+                  title={removeLabel}
                   onClick={() => {
                     push(chip.clear)
                   }}

@@ -443,7 +443,12 @@ describe('FilterBar facets', () => {
     expect(screen.getByText('Album: Holidays')).toBeInTheDocument()
     expect(screen.getByText('Album: Náměstí')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Remove filter: Album: Holidays' }))
+    const remove = screen.getByRole('button', { name: 'Remove filter: Album: Holidays' })
+    // Every chip carries its own X, so the hover hint has to say which filter
+    // this one drops — the same sentence the accessible name carries.
+    expect(remove).toHaveAttribute('title', 'Remove filter: Album: Holidays')
+
+    await user.click(remove)
     expect(onChange).toHaveBeenCalledWith({ album: 'al_2' })
   })
 

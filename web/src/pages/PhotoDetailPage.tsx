@@ -610,6 +610,7 @@ export function PhotoDetailPage() {
           type="button"
           className="kk-viewer__btn kk-viewer__btn--icon kk-viewer__back"
           aria-label={t('photo.back')}
+          title={t('photo.back')}
           onClick={close}
         >
           <Icon name="arrow-left" />
@@ -761,6 +762,19 @@ export function PhotoDetailPage() {
   // layouts cannot drift apart: they are the same element tree driving the same
   // handlers, not two copies kept in sync by hand. Touch gets the larger glyphs
   // (the dock's own CSS lifts each button to the 44px finger floor).
+  //
+  // The archive glyph does not move with its state (see the note at the button),
+  // so the sentence that does is composed once and worn twice: as the accessible
+  // name and as the tooltip the mouse gets.
+  const archiveLabel = archived ? t('photo.archive.restore') : t('batch.archive')
+  // The same once-and-twice for the two chrome toggles whose sentence is not a
+  // constant: the faces toggle switches on its own state, the info toggle counts
+  // the conversation behind it.
+  const facesToggleLabel = showFaces ? t('faces.hide') : t('faces.toggle')
+  const infoToggleLabel =
+    commentCount > 0
+      ? t('photo.viewer.infoWithComments', { count: commentCount })
+      : t('photo.viewer.info')
   const curation = (
     <>
       <RatingStars
@@ -790,7 +804,8 @@ export function PhotoDetailPage() {
           <button
             type="button"
             className={flagBtnClass(archived)}
-            aria-label={archived ? t('photo.archive.restore') : t('batch.archive')}
+            aria-label={archiveLabel}
+            title={archiveLabel}
             aria-pressed={archived}
             disabled={archivePending}
             onClick={() => {
@@ -960,6 +975,7 @@ export function PhotoDetailPage() {
         type="button"
         className="kk-viewer__btn kk-viewer__btn--icon kk-viewer__back"
         aria-label={t('photo.back')}
+        title={t('photo.back')}
         onClick={close}
       >
         <Icon name="arrow-left" />
@@ -998,7 +1014,8 @@ export function PhotoDetailPage() {
               ref={facesToggleRef}
               className="kk-viewer__btn kk-viewer__btn--icon"
               aria-pressed={showFaces}
-              aria-label={showFaces ? t('faces.hide') : t('faces.toggle')}
+              aria-label={facesToggleLabel}
+              title={facesToggleLabel}
               onClick={toggleFaces}
             >
               <Icon name="person-bounding-box" />
@@ -1011,6 +1028,7 @@ export function PhotoDetailPage() {
               className="kk-viewer__btn kk-viewer__btn--icon"
               aria-pressed={showEdit}
               aria-label={t('photo.edit.title')}
+              title={t('photo.edit.title')}
               onClick={toggleEdit}
             >
               <Icon name="sliders" />
@@ -1025,11 +1043,8 @@ export function PhotoDetailPage() {
             ref={infoToggleRef}
             className="kk-viewer__btn kk-viewer__btn--icon kk-viewer__btn--badged"
             aria-pressed={infoActive}
-            aria-label={
-              commentCount > 0
-                ? t('photo.viewer.infoWithComments', { count: commentCount })
-                : t('photo.viewer.info')
-            }
+            aria-label={infoToggleLabel}
+            title={infoToggleLabel}
             onClick={togglePanel}
           >
             <Icon name="info-circle" />
@@ -1064,6 +1079,7 @@ export function PhotoDetailPage() {
           replace
           className="kk-viewer__btn kk-viewer__btn--icon kk-viewer__nav kk-viewer__nav--prev"
           aria-label={t('photo.prev')}
+          title={t('photo.prev')}
         >
           <Icon name="chevron-left" />
         </Link>
@@ -1074,6 +1090,7 @@ export function PhotoDetailPage() {
           replace
           className="kk-viewer__btn kk-viewer__btn--icon kk-viewer__nav kk-viewer__nav--next"
           aria-label={t('photo.next')}
+          title={t('photo.next')}
         >
           <Icon name="chevron-right" />
         </Link>
@@ -1122,6 +1139,7 @@ export function PhotoDetailPage() {
               type="button"
               className="kk-viewer__btn kk-viewer__btn--icon"
               aria-label={t('photo.viewer.closeInfo')}
+              title={t('photo.viewer.closeInfo')}
               onClick={closePanel}
             >
               <Icon name="x-lg" />

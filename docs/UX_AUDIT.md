@@ -496,6 +496,18 @@ on unexplained jargon that even a non-developer admin will struggle with.
     through one shared `useDocumentTitle` hook (`<page> · Kukátko`, i18n'd separator and all), a
     detail page uses the data it already holds (photo, person, album, label, query), and leaving a
     page restores the bare app name so no title is ever stale. See `FRONTEND.md`.
+12. **New (2026-08-12) — half the icon buttons said nothing when hovered.** An icon-only control is
+    a guess until it is pressed, and roughly half of them already answered the mouse with a native
+    `title` while the rest stayed silent — which is which looked random. The quiet ones clustered
+    where they were most missed: the photo viewer (back, archive/restore, the faces and edit
+    toggles, prev/next, close info) and the slideshow's whole control row, plus the metadata,
+    faces, people and edit panels, the filter and period chips, the timeline rail and the decade
+    nav. Screen readers were never the problem — no icon-only control was found without an
+    `aria-label`; this was purely the sighted mouse user's hover. ✅ **Done (2026-08-12).** Every
+    icon-only `<Button>`/`<button>`, link and `Dropdown.Toggle` now carries a `title` saying the
+    same thing as its `aria-label`, out of the same `t()` call — state-switching and interpolated
+    labels included — while the `aria-label` stays, because a phone shows no tooltip at all.
+    Buttons with visible text were deliberately left alone. See `FRONTEND.md` (`Icon`).
 
 ---
 

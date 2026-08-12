@@ -310,7 +310,12 @@ describe('TechnicalDetails developer section', () => {
     expect(screen.getByText(`${'a'.repeat(12)}…`)).toBeInTheDocument()
     expect(screen.getByText('Hash (SHA256)').nextElementSibling).toHaveAttribute('title', hash)
 
-    await user.click(screen.getByRole('button', { name: 'Copy the hash' }))
+    // The clipboard glyph beside it has a tooltip of its own — the field's title
+    // is the hash, the button's is what pressing it does.
+    const copy = screen.getByRole('button', { name: 'Copy the hash' })
+    expect(copy).toHaveAttribute('title', 'Copy the hash')
+
+    await user.click(copy)
     await expect(navigator.clipboard.readText()).resolves.toBe(hash)
   })
 

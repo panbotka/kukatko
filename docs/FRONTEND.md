@@ -237,7 +237,18 @@ here.
   `role="img"`, or as `role="group"` when their marks link somewhere so those links stay reachable),
   `Icon` (**the app's single icon set**: a bootstrap-icons glyph as `<i class="bi bi-{name}">`,
   the font is imported globally in `main.tsx`; the `IconName` union holds the dictionary of used icons, so a typo
-  is a compile error; always `aria-hidden` beside a visible label),
+  is a compile error; always `aria-hidden` beside a visible label. **Every control whose visible content is
+  one of these glyphs and nothing else carries a `title` as well** — a `<Button>`/`<button>`, an icon-only
+  `Link`/`<a>`/`Nav.Link`, a `Dropdown.Toggle` — and that `title` is the **same string as the `aria-label`,
+  out of the same `t()` call**: the interpolated ones (`{ name }`, `{ decade }`, the timeline's month) and
+  the ones that switch on state (play/pause, show/hide faces, archive/restore, enter/exit fullscreen) switch
+  in both, bound to a local rather than translated twice. The `aria-label` **stays** — a phone shows no
+  tooltip at all, so the accessible name has to keep standing on its own — and a control with visible text
+  gets none, since repeating the words already printed on it is noise. Two deliberate exceptions: a natively
+  `disabled` button never shows a `title` (Bootstrap's `.btn:disabled` kills its pointer events), which is
+  why `ReasonedButton` switches off with `aria-disabled` + `kk-btn-inert` instead; and the viewer's hidden
+  toggle keeps its longer `photo.hidden.*Hint` tooltip, which says more than its label does. Swept over all
+  of `web/src` on 2026-08-12 — from here the rule rides on review, not on a lint rule),
   `components/toast/` = **app-wide toast** (`ToastContext` holds the context + hook `useToast()` +
   types; `ToastProvider` is the component) — a single provider **in `App` around `AppRoutes`**, hosting
   `ToastContainer` (react-bootstrap, `position="top-center"`, `.kk-toast-stack` `z-index:1100`

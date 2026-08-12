@@ -383,26 +383,32 @@ export function MultiSelect({
 
       {chips.length > 0 && (
         <ul className="list-unstyled d-flex flex-wrap gap-1 mt-2 mb-0">
-          {chips.map((chip) => (
-            <li key={chip.value}>
-              <span
-                className={`badge rounded-pill kk-chip ${
-                  destructive === true ? 'text-bg-danger' : 'text-bg-secondary'
-                }`}
-              >
-                <span className="text-truncate">{chip.label}</span>
-                <button
-                  type="button"
-                  className="btn-close btn-close-white ms-1"
-                  disabled={disabled}
-                  aria-label={t('multiSelect.remove', { name: chip.label })}
-                  onClick={() => {
-                    remove(chip.value)
-                  }}
-                />
-              </span>
-            </li>
-          ))}
+          {chips.map((chip) => {
+            // One sentence, two props: the accessible name and the mouse's hover
+            // hint say the same thing, so it is interpolated once.
+            const removeLabel = t('multiSelect.remove', { name: chip.label })
+            return (
+              <li key={chip.value}>
+                <span
+                  className={`badge rounded-pill kk-chip ${
+                    destructive === true ? 'text-bg-danger' : 'text-bg-secondary'
+                  }`}
+                >
+                  <span className="text-truncate">{chip.label}</span>
+                  <button
+                    type="button"
+                    className="btn-close btn-close-white ms-1"
+                    disabled={disabled}
+                    aria-label={removeLabel}
+                    title={removeLabel}
+                    onClick={() => {
+                      remove(chip.value)
+                    }}
+                  />
+                </span>
+              </li>
+            )
+          })}
         </ul>
       )}
     </div>

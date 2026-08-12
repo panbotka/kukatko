@@ -50,6 +50,10 @@ export function GridDensityControl({ scope = LIBRARY_GRID_SCOPE }: GridDensityCo
         variant="outline-secondary"
         disabled={density <= GRID_COLUMNS_MIN}
         aria-label={t('library.density.fewer')}
+        // Only ever seen at the steps where the button still works: a natively
+        // disabled button takes no pointer events, so at the floor the tooltip
+        // stays away — which is the same story the greying already tells.
+        title={t('library.density.fewer')}
         onClick={() => {
           setDensity(stepDensity(density, -1, scope))
         }}
@@ -73,6 +77,7 @@ export function GridDensityControl({ scope = LIBRARY_GRID_SCOPE }: GridDensityCo
         variant="outline-secondary"
         disabled={density >= maxColumns}
         aria-label={t('library.density.more')}
+        title={t('library.density.more')}
         onClick={() => {
           setDensity(stepDensity(density, 1, scope))
         }}

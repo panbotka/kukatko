@@ -61,6 +61,12 @@ describe('EditPanel rotation', () => {
     expect(screen.getByRole('button', { name: 'Rotate left' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Rotate right' })).toBeInTheDocument()
     expect(screen.getByText('0°')).toBeInTheDocument()
+    // And the header's X, the panel's third icon-only control, answers a hover
+    // with the same sentence rather than with nothing.
+    expect(screen.getByRole('button', { name: 'Close the edits panel' })).toHaveAttribute(
+      'title',
+      'Close the edits panel',
+    )
   })
 
   it('gives both icon buttons a finger-sized hit area on touch', () => {

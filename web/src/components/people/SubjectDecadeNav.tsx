@@ -47,13 +47,17 @@ export function SubjectDecadeNav({ sections, active, onJump }: SubjectDecadeNavP
         const range = formatDecade(section.decade)
         const label = range ?? t('subject.decades.undated')
         const isActive = active !== undefined && active === section.decade
+        // The tick prints the decade, not what pressing it does — so the verb
+        // travels in one sentence given to both the screen reader and the mouse.
+        const jumpLabel = t('subject.decades.jumpTo', { decade: label })
         return (
           <button
             key={label}
             type="button"
             className={`kk-decade-tick${isActive ? ' active' : ''}`}
             aria-current={isActive ? 'true' : undefined}
-            aria-label={t('subject.decades.jumpTo', { decade: label })}
+            aria-label={jumpLabel}
+            title={jumpLabel}
             onClick={() => {
               onJump(section.decade)
             }}

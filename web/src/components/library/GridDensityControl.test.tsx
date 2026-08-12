@@ -58,6 +58,17 @@ describe('GridDensityControl', () => {
     const user = userEvent.setup()
     renderControl()
 
+    // Two bare glyphs, − and +: the tooltip is the only thing that tells a mouse
+    // them apart before pressing one.
+    expect(screen.getByRole('button', { name: 'More tiles per row' })).toHaveAttribute(
+      'title',
+      'More tiles per row',
+    )
+    expect(screen.getByRole('button', { name: 'Fewer tiles per row' })).toHaveAttribute(
+      'title',
+      'Fewer tiles per row',
+    )
+
     await user.click(screen.getByRole('button', { name: 'More tiles per row' }))
 
     expect(window.localStorage.getItem(STORAGE_KEY)).toBe('5')
