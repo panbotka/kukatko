@@ -401,6 +401,11 @@ export function LibraryPage() {
             <TimelineScrubber
               params={params}
               activeIndex={rangeStart}
+              // The rail is fixed and has to start below whatever this page has
+              // put above the grid — the digest, an announcement banner, a
+              // wrapped filter row — so it measures the grid rather than
+              // assuming a header height.
+              gridWrapRef={gridWrapRef}
               anchor={anchor}
               onJump={jumpTo}
             />

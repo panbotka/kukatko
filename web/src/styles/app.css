@@ -1117,12 +1117,27 @@ body {
   }
 
   .kukatko-timeline {
-    /* Start below the phone header. The rail is fixed, so at the top of the page
+    /* Start where the grid starts. The rail is fixed, so at the top of the page
        it would otherwise lie across the Filters button and the count beside it,
-       and a tap aimed at the button would jump the grid to 2014 instead. 6rem is
-       that header: the field row, the count line under it, and the gaps around
-       them. Below it the rail has only photographs underneath. */
-    top: calc(var(--kukatko-navbar-height) + env(safe-area-inset-top, 0px) + 6rem);
+       and a tap aimed at the button would jump the grid to 2014 instead. This
+       used to be a constant 6rem — the height of the filter row and nothing else
+       — which held only as long as the filter row was the first thing on the
+       page. It is not: the „Co je nového" digest and an instance-wide
+       announcement both render above it, and either pushes Filtry down under the
+       rail (measured on production: 40 of the button's 104px, 38 % of it, taking
+       the tap and scrolling the library to 142 192px). So the top edge is
+       measured instead of assumed — `--kukatko-timeline-top` is the grid's own
+       top edge, published by `TimelineScrubber` on mount, scroll and resize. The
+       `max()` is the floor: once the header has scrolled away the rail runs up to
+       just below the sticky navbar and no further. The fallback keeps a rail
+       rendered without a grid to measure where it used to be. */
+    top: max(
+      calc(var(--kukatko-navbar-height) + env(safe-area-inset-top, 0px) + 0.5rem),
+      var(
+        --kukatko-timeline-top,
+        calc(var(--kukatko-navbar-height) + env(safe-area-inset-top, 0px) + 6rem)
+      )
+    );
     width: 2.5rem;
     opacity: 0.55;
     transition:
