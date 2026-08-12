@@ -9,6 +9,12 @@ import { Icon, type IconName } from '../Icon'
  * It matches the counts cards above it ({@link import('../LibraryStatsCards')}),
  * so the page reads as one dashboard rather than as a grid of counts with
  * pictures bolted underneath.
+ *
+ * The card takes the height of its chart and stops. It used to be stretched to
+ * the height of whatever shared its row, which is tidy only while the two hold
+ * comparable things: a ten-row list of cameras is half a screen taller than a
+ * column chart, and matching it left the chart's card padded out with hundreds of
+ * pixels of empty space that read as a panel which had failed to finish drawing.
  */
 export function ChartCard({
   title,
@@ -22,7 +28,7 @@ export function ChartCard({
   children: ReactNode
 }) {
   return (
-    <Card className="h-100">
+    <Card>
       <Card.Body>
         <h3 className="kk-text-eyebrow text-secondary d-flex align-items-center gap-2 mb-1">
           <Icon name={icon} />

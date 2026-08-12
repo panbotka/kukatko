@@ -259,7 +259,9 @@
         "title": "Přírůstky knihovny",
         "hint": "Kolik fotek přibylo za posledních dvanáct měsíců.",
         "summary": "Přírůstky knihovny za posledních {{months}} měsíců. Celkem fotek: {{total}}. Nejvíc {{peakMonth}}: {{peak}}.",
-        "bar": "{{month}}: {{photos}}"
+        "bar": "{{month}}: {{photos}}",
+        "empty": "Za posledních {{months}} měsíců do knihovny nic nepřibylo.",
+        "single": "Jediný měsíc s přírůstkem za posledních {{months}} měsíců: {{month}}."
       },
       "cameras": {
         "title": "Nejčastější fotoaparáty",
@@ -287,7 +289,8 @@
         "hint": "Kolik knihovna zabírala na konci každého roku, podle data přidání.",
         "summary": "Růst knihovny podle roku přidání, {{from}} až {{to}}. Na konci roku {{to}} zabírala {{total}}.",
         "bar": "{{year}}: celkem {{total}}, přibylo {{added}}",
-        "empty": "Do knihovny zatím nic nepřibylo."
+        "empty": "Do knihovny zatím nic nepřibylo.",
+        "single": "Jediný rok, kdy do knihovny něco přibylo: {{year}}, celkem {{photos}}."
       }
     },
     "groups": {

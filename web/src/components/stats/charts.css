@@ -136,6 +136,16 @@ a.kk-chart-col:focus-visible .kk-chart-bar {
   font-size: var(--kk-font-size-caption);
 }
 
+/* A chart replaced by the figure it would have drawn: the value on the page's
+   own display step, the sentence naming its bucket underneath. It takes the
+   height of its two lines and no more — a card that stands the number up to the
+   height of a taller neighbour would be back to a wall of empty space. */
+.kk-chart-statement {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kk-space-1);
+}
+
 @media (pointer: coarse) {
   /* A finger needs more than a hairline to land on a year. */
   .kk-chart-col,
