@@ -109,9 +109,12 @@ $(WEB_DEPS_STAMP): $(WEB_DIR)/package-lock.json $(WEB_DIR)/package.json
 	@touch $@
 
 ## web-build: Build the frontend into internal/web/static/dist for embedding.
+## The build restores the tracked dist/.gitkeep itself (web/build/gitkeep.ts), so
+## every caller — this target, scripts/dev.sh, the Dockerfile, the goreleaser
+## before-hook — leaves the working tree clean and binaries keep an honest
+## +dirty stamp.
 web-build: web-deps
 	cd $(WEB_DIR) && npm run build
-	printf '' > internal/web/static/dist/.gitkeep
 
 ## web-fmt: Format frontend sources with Prettier.
 web-fmt: web-deps

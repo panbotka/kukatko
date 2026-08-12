@@ -3029,7 +3029,8 @@ to `## Package map` in `CLAUDE.md`.
   (the SPA fallback handler `web.Handler()`/`SPAHandler` + the `internal/web/static` embed
   `//go:embed all:dist/*`; the Vite build writes into `internal/web/static/dist`, which is
   gitignored except for the committed `.gitkeep`, so that the embed compiles even without a built
-  frontend. Two rules serve the PWA: `servedVerbatim` keeps `sw.js` — like everything under
+  frontend — the build empties that directory and restores the placeholder afterwards
+  (`web/build/gitkeep.ts`), because a deleted tracked file makes Go stamp the binary `+dirty`. Two rules serve the PWA: `servedVerbatim` keeps `sw.js` — like everything under
   `assets/` — **out of the SPA fallback**, because a worker script answered with the index document
   fails registration with a MIME error instead of a plain 404; and `contentTypeFor` pins the media
   type of `.webmanifest` to `application/manifest+json`, since `mime.TypeByExtension` reads the

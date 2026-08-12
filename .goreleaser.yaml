@@ -8,6 +8,12 @@ before:
     # current frontend (go:embed captures internal/web/static/dist).
     - go mod tidy
     - sh -c "cd web && npm ci && npm run build"
+    # goreleaser checks the git state before these hooks run, so whatever they
+    # leave behind ships unnoticed — that is how every binary up to v0.8.0 was
+    # stamped v0.8.0+dirty (the Vite build deleted the tracked
+    # internal/web/static/dist/.gitkeep; web/build/gitkeep.ts restores it now).
+    # Stop the release rather than publish a binary that misreports its origin.
+    - ./scripts/assert-clean-tree.sh
 
 builds:
   - id: kukatko

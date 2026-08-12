@@ -1,6 +1,7 @@
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vitest/config'
 
+import { gitkeepPlugin } from './build/gitkeep'
 import { pwaPlugin } from './build/pwa'
 
 // The Vite build writes into the Go embed directory so `go build` captures the
@@ -10,9 +11,12 @@ import { pwaPlugin } from './build/pwa'
 const apiTarget = process.env.KUKATKO_DEV_API ?? 'http://localhost:8080'
 
 export default defineConfig({
-  // pwaPlugin only applies to `vite build`: it emits /sw.js with the precache
-  // manifest of the finished bundle (see build/pwa.ts).
-  plugins: [react(), pwaPlugin()],
+  // Both extra plugins only apply to `vite build`: pwaPlugin emits /sw.js with
+  // the precache manifest of the finished bundle (see build/pwa.ts), and
+  // gitkeepPlugin puts the tracked dist/.gitkeep back after emptyOutDir wiped
+  // it — a deleted tracked file is what stamped release binaries +dirty (see
+  // build/gitkeep.ts).
+  plugins: [react(), pwaPlugin(), gitkeepPlugin()],
   build: {
     outDir: '../internal/web/static/dist',
     emptyOutDir: true,

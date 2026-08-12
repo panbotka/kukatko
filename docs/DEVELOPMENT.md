@@ -34,7 +34,9 @@ Superhero, react-router-dom, i18next with Czech default). `npm run build` output
 `internal/web/static/dist`; Go embeds that directory (`//go:embed all:dist/*`) and serves it
 with an SPA fallback (unknown non-asset paths → `index.html`; fingerprinted files under
 `/assets/` get an immutable cache). A committed `internal/web/static/dist/.gitkeep` keeps the
-embed directive valid on a fresh checkout before any build. Dev loop:
+embed directive valid on a fresh checkout before any build; the build wipes that directory and
+then puts the placeholder back (`build/gitkeep.ts`), so a frontend build never leaves a deleted
+tracked file behind — that deletion is what used to stamp binaries `+dirty`. Dev loop:
 
 ```bash
 cd web && npm install   # once
