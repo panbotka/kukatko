@@ -11,7 +11,9 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
+	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/photos"
 )
 
@@ -99,6 +101,113 @@ func TestEdit_putForbiddenForViewer(t *testing.T) {
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("viewer PUT edit status = %d, want 403", resp.StatusCode)
+	}
+}
+
+// putEdit saves an edit for a photo and fails the test unless it is accepted.
+func putEdit(t *testing.T, client *http.Client, base, uid string, edit map[string]any) {
+	t.Helper()
+	body, err := json.Marshal(edit)
+	if err != nil {
+		t.Fatalf("marshal edit: %v", err)
+	}
+	resp := mustDo(t, client, http.MethodPut, base+"/api/v1/photos/"+uid+"/edit", body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("PUT edit status = %d, want 200", resp.StatusCode)
+	}
+}
+
+// thumbnailJobPayloads returns the payload of every queued/running thumbnail job,
+// so a test can assert both that the rebuild was scheduled and that it asks for
+// the forced rebuild rather than the skip-what-is-cached repair.
+func thumbnailJobPayloads(t *testing.T, e *env) []struct {
+	PhotoUID string `json:"photo_uid"`
+	Force    bool   `json:"force"`
+} {
+	t.Helper()
+	all, err := e.jobs.List(t.Context(), jobs.ListOptions{Limit: 50})
+	if err != nil {
+		t.Fatalf("listing jobs: %v", err)
+	}
+	var out []struct {
+		PhotoUID string `json:"photo_uid"`
+		Force    bool   `json:"force"`
+	}
+	for _, job := range all {
+		if job.Type != jobs.TypeThumbnail {
+			continue
+		}
+		var decoded struct {
+			PhotoUID string `json:"photo_uid"`
+			Force    bool   `json:"force"`
+		}
+		if err := json.Unmarshal(job.Payload, &decoded); err != nil {
+			t.Fatalf("decode thumbnail payload %q: %v", job.Payload, err)
+		}
+		out = append(out, decoded)
+	}
+	return out
+}
+
+// TestEdit_putAuditsAndRebuildsThumbnails verifies the two consequences a saved
+// edit must have beyond the photo_edits row: an audit entry attributed to the
+// acting user and carrying the rotation, and a forced thumbnail job so the library
+// grid stops showing the previous rendering.
+func TestEdit_putAuditsAndRebuildsThumbnails(t *testing.T) {
+	env := newEnv(t)
+	client, _ := env.login(t, "edit_audit", auth.RoleEditor)
+	photo := env.seedPhoto(t, photos.Photo{Title: "p"}, "p.jpg", 15, 25, 35)
+
+	putEdit(t, client, env.server.URL, photo.UID, map[string]any{"rotation": 270})
+
+	rows, err := audit.NewStore(env.db.Pool()).List(t.Context(),
+		audit.Filter{Action: audit.ActionPhotoEdit})
+	if err != nil {
+		t.Fatalf("listing audit: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("photo.edit audit rows = %d, want 1", len(rows))
+	}
+	entry := rows[0]
+	if entry.TargetType != "photos" || entry.TargetUID == nil || *entry.TargetUID != photo.UID {
+		t.Errorf("audit target = %s/%v, want photos/%s", entry.TargetType, entry.TargetUID, photo.UID)
+	}
+	if entry.ActorUID == nil || *entry.ActorUID == "" {
+		t.Error("audit entry has no actor")
+	}
+	// JSONB numbers decode as float64.
+	if got, ok := entry.Details["rotation"].(float64); !ok || got != 270 {
+		t.Errorf("audit details rotation = %v, want 270", entry.Details["rotation"])
+	}
+
+	payloads := thumbnailJobPayloads(t, env)
+	if len(payloads) != 1 {
+		t.Fatalf("thumbnail jobs = %d, want 1", len(payloads))
+	}
+	if payloads[0].PhotoUID != photo.UID || !payloads[0].Force {
+		t.Errorf("thumbnail job = %+v, want a forced rebuild of %s", payloads[0], photo.UID)
+	}
+}
+
+// TestEdit_neutralSaveRebuildsThumbnails verifies resetting an edit is not a
+// special case: the neutral edit is audited and schedules the same forced rebuild,
+// because the cache is keyed by the original's hash and would otherwise keep
+// serving the rotation the user just took back.
+func TestEdit_neutralSaveRebuildsThumbnails(t *testing.T) {
+	env := newEnv(t)
+	client, _ := env.login(t, "edit_reset", auth.RoleEditor)
+	photo := env.seedPhoto(t, photos.Photo{Title: "p"}, "p.jpg", 16, 26, 36)
+
+	putEdit(t, client, env.server.URL, photo.UID,
+		map[string]any{"rotation": 0, "brightness": 0, "contrast": 0})
+
+	if got := env.countAuditAction(t, audit.ActionPhotoEdit); got != 1 {
+		t.Errorf("photo.edit audit rows = %d, want 1 (a reset is an edit too)", got)
+	}
+	payloads := thumbnailJobPayloads(t, env)
+	if len(payloads) != 1 || !payloads[0].Force {
+		t.Errorf("thumbnail jobs = %+v, want one forced rebuild", payloads)
 	}
 }
 

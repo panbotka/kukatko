@@ -40,7 +40,13 @@ import { useSwipeNavigation } from '../hooks/useSwipeNavigation'
 import { backHref, DETAIL_DEFAULTS, detailQueryString, detailToParams } from '../lib/detailView'
 import { readFaceOverlay, writeFaceOverlay } from '../lib/faceOverlayPref'
 import { formatDateTimeMinutes } from '../lib/format'
-import { editPreviewStyle, editTransform, isIdentityEdit, NEUTRAL_EDIT } from '../lib/photoEdit'
+import {
+  editPreviewStyle,
+  editTransform,
+  hasCrop,
+  isIdentityEdit,
+  NEUTRAL_EDIT,
+} from '../lib/photoEdit'
 import { photoDisplayTitle, photoTitleText, titleSource } from '../lib/photoTitle'
 import { isTypingElement, ratingHotkey } from '../lib/ratingHotkeys'
 import { toMode } from '../lib/searchView'
@@ -292,12 +298,12 @@ export function PhotoDetailPage() {
   // While a neighbour loads the faces are keyed on the target photo, so they must
   // not be drawn over the still-displayed previous one.
   const loadingNext = ready !== null && ready.uid !== uid
-  // A non-identity preview rules the whole face UI out: FaceOverlay places its
-  // boxes in percentages of the (aspect-ratio-framed) figure, while the preview's
-  // transform moves the rendered pixels underneath them — so the boxes would miss
-  // the faces. Rather than draw them wrong, the faces stand down.
-  const facesAvailable =
-    isStill && !loadingNext && faces.faces.length > 0 && isIdentityEdit(previewEdit)
+  // A CROP rules the whole face UI out: it leaves a frame the boxes were never
+  // measured against, so every rectangle would be off its face — rather than draw
+  // them wrong, the faces stand down. A rotation does not: FaceOverlay maps its
+  // boxes through it and follows the turned photo. Brightness and contrast move no
+  // pixels at all.
+  const facesAvailable = isStill && !loadingNext && faces.faces.length > 0 && !hasCrop(previewEdit)
   const showFaces = facesAvailable && sidePanel === 'faces'
   // Edits are for stills only — the backend never re-renders a video edit, and the
   // player carries no preview surface to apply them to.
@@ -910,6 +916,11 @@ export function PhotoDetailPage() {
             // estimate a box can sit off its face and then jump when the real
             // frame lands. The layer itself stays, so the faces view is up.
             measured={stage.measured}
+            // The boxes follow the preview: the image carries the same rotation as
+            // a CSS transform, and the ratio is what lets a quarter-turned layer
+            // find the box the turned photo actually occupies.
+            rotation={previewEdit.rotation}
+            frameRatio={stage.ratio}
             selected={faces.selected?.face_index ?? null}
             hovered={hoveredFace}
             onSelect={(faceIndex) => {

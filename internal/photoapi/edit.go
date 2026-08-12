@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/photos"
 )
 
@@ -55,6 +58,13 @@ func (a *API) handleGetEdit(w http.ResponseWriter, r *http.Request) {
 // handlePutEdit validates and stores the non-destructive edit for the photo named
 // in the path, returning the persisted edit (with its updated_at). A malformed or
 // out-of-range body is 400 and a missing photo 404. Editor/admin only.
+//
+// A stored edit has three consequences beyond the row, all after the write and all
+// best-effort: it is audited (photo.edit), the metadata sidecar is rescheduled, and
+// a forced thumbnail rebuild is enqueued so the derived thumbnails — and with them
+// the library grid, the search results and the map popovers — show the photo the
+// way the user turned it. Saving the neutral edit is deliberately no special case:
+// a reset has to leave correct thumbnails behind too.
 func (a *API) handlePutEdit(w http.ResponseWriter, r *http.Request) {
 	uid := chi.URLParam(r, "uid")
 
@@ -87,7 +97,13 @@ func (a *API) handlePutEdit(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "saving edit failed")
 		return
 	}
+	a.recordEditAudit(r, edit)
 	a.enqueueSidecar(r.Context(), uid)
+	// The cache is keyed by the original's file hash and cannot notice that the
+	// photo now renders differently, so the rebuild has to be asked for — for the
+	// neutral edit as much as for a rotation, since resetting an edit leaves the
+	// previous rendering cached exactly the same way.
+	a.enqueueThumbnailRebuild(r.Context(), uid)
 
 	stored, err := a.store.GetEdit(r.Context(), uid)
 	if err != nil {
@@ -95,6 +111,35 @@ func (a *API) handlePutEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, stored)
+}
+
+// recordEditAudit best-effort records a saved edit in the audit trail,
+// attributing it to the acting user (resolved from the request context by the
+// RequireWrite guard) and carrying the whole edit as details, so the trail says
+// what the photo now renders as and not merely that something changed.
+//
+// It records after the write rather than inside it because Store.SetEdit exposes
+// no transaction to join — the same position handleRegenerateThumbnail records
+// from. A recording failure is logged and swallowed: the edit is saved, and
+// answering with an error would tell the user their rotation was lost when it was
+// not. When no recorder is wired it is a no-op.
+func (a *API) recordEditAudit(r *http.Request, edit photos.Edit) {
+	if a.audit == nil {
+		return
+	}
+	user, _ := auth.UserFromContext(r.Context())
+	details := map[string]any{
+		"rotation":   edit.Rotation,
+		"brightness": edit.Brightness,
+		"contrast":   edit.Contrast,
+		"crop":       edit.CropX != nil,
+	}
+	entry := audit.FromRequest(r, user.UID).Entry(
+		audit.ActionPhotoEdit, "photos", edit.PhotoUID, details,
+	)
+	if err := a.audit.Record(r.Context(), entry); err != nil {
+		log.Printf("photoapi: recording edit audit for %s: %v", edit.PhotoUID, err)
+	}
 }
 
 // decodeEdit reads and decodes the edit request body, rejecting an oversized

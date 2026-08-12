@@ -36,7 +36,7 @@ func buildOCRServiceOrNil(
 	return ocrjob.New(ocrjob.Config{
 		Photos:        photoStore,
 		Client:        client,
-		Previewer:     thumb.New(store, cfg.Storage.CachePath, thumbOptions(cfg, reg)...),
+		Previewer:     thumb.New(store, cfg.Storage.CachePath, thumbOptions(cfg, reg, db)...),
 		Lister:        photoStore,
 		Enqueuer:      enqueuer,
 		PreviewSize:   cfg.Embedding.OCR.PreviewSize,

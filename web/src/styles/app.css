@@ -199,6 +199,33 @@ body {
   --bs-btn-focus-shadow-rgb: 95, 176, 242;
 }
 
+/* The quiet action — the app's commonest button (rotate, cancel, "show more").
+   Bootswatch bakes BOTH its label and its border as the theme's grey-blue #4e5d6c,
+   which is the very colour it also bakes into `--bs-card-bg`: inside a card the
+   label sits at contrast 1.00 on its own background — the reported "the text is
+   the same colour as its background", and an invisible control rather than a
+   merely dim one. Re-point the label at the body text and the border at a
+   translucent tint of it, measured to clear 4.5:1 for the text and 3:1 for the
+   outline on the navy card as well as on the near-black page, and deepen it on
+   hover so it reads as pressable. The hover/active fill is a translucent scrim
+   rather than a surface token on purpose: it has to work on both of those very
+   different backgrounds, and a *lighter* fill would push the white label back under
+   4.5:1 on the card it is lightening. The disabled state keeps the muted text so an
+   inert control still recedes. */
+.btn-outline-secondary {
+  --bs-btn-color: var(--bs-body-color);
+  --bs-btn-border-color: color-mix(in srgb, var(--kk-text) 60%, transparent);
+  --bs-btn-hover-color: var(--bs-body-color);
+  --bs-btn-hover-bg: rgb(0 0 0 / 22%);
+  --bs-btn-hover-border-color: color-mix(in srgb, var(--kk-text) 80%, transparent);
+  --bs-btn-active-color: var(--bs-body-color);
+  --bs-btn-active-bg: rgb(0 0 0 / 34%);
+  --bs-btn-active-border-color: color-mix(in srgb, var(--kk-text) 80%, transparent);
+  --bs-btn-disabled-color: var(--bs-secondary-color);
+  --bs-btn-disabled-border-color: color-mix(in srgb, var(--kk-text) 30%, transparent);
+  --bs-btn-focus-shadow-rgb: 95, 176, 242;
+}
+
 /* Checkbox / radio in the checked state (and checkbox indeterminate) — baked
    literals, so set the fill and border directly. The white glyph stays legible. */
 .form-check-input:checked,

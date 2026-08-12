@@ -1982,25 +1982,33 @@ describe('PhotoDetailPage — immersive viewer', () => {
       expect(screen.queryByRole('button', { name: 'Rotate right' })).not.toBeInTheDocument()
     })
 
-    it('stands the faces down while the preview is edited, and brings them back', async () => {
+    it('keeps the faces on a rotated photo — the boxes follow the turn', async () => {
+      fetchFacesMock.mockResolvedValue(facesResponse(2))
+      // A photo saved rotated: FaceOverlay maps its boxes through the rotation, so
+      // turning a photo upright no longer costs the reader their face rectangles.
+      fetchEditMock.mockResolvedValue({ ...NEUTRAL, rotation: 90 })
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      expect(await screen.findByRole('button', { name: 'Show faces' })).toBeInTheDocument()
+      fireEvent.keyDown(document, { key: 'm' })
+      expect(await screen.findByTestId('face-overlay')).toBeInTheDocument()
+    })
+
+    it('stands the faces down for a crop, and brings them back when it is off', async () => {
       const user = userEvent.setup()
       fetchFacesMock.mockResolvedValue(facesResponse(2))
-      // A photo stored rotated: the boxes are placed in percentages of the upright
-      // image, so over this preview they would miss the faces. The face UI is
-      // offered at all only while the preview is untouched.
-      fetchEditMock.mockResolvedValue({ ...NEUTRAL, rotation: 90 })
       renderPage()
       await screen.findByRole('heading', { name: 'Beach' })
       await screen.findByRole('button', { name: 'Edits' })
 
-      expect(screen.queryByRole('button', { name: 'Show faces' })).not.toBeInTheDocument()
-      expect(screen.queryByTestId('face-overlay')).not.toBeInTheDocument()
-      fireEvent.keyDown(document, { key: 'm' })
-      expect(screen.queryByTestId('face-overlay')).not.toBeInTheDocument()
-
-      saveEditMock.mockResolvedValue(NEUTRAL)
+      // A crop leaves a frame the boxes were never measured against, so every
+      // rectangle would be off its face: the face UI stands down while it is on.
       await user.click(screen.getByRole('button', { name: 'Edits' }))
-      await user.click(screen.getByRole('button', { name: 'Reset to original' }))
+      await user.click(screen.getByRole('checkbox', { name: 'Crop' }))
+      expect(screen.queryByRole('button', { name: 'Show faces' })).not.toBeInTheDocument()
+
+      await user.click(screen.getByRole('checkbox', { name: 'Crop' }))
       expect(await screen.findByRole('button', { name: 'Show faces' })).toBeInTheDocument()
     })
   })

@@ -469,6 +469,19 @@ to `## Package map` in `CLAUDE.md`.
   `GridSize` (`tile_500`) is the size the grid renders and that `thumb_url` carries in the payload;
   decode once per photo, parallel encode of the sizes (errgroup, default `GOMAXPROCS`,
   bound via `thumb.concurrency`);
+  **the photo's saved edit is rendered in** (`WithEdits(EditResolver)`, `resolveEdit`): a thumbnailer wired with an
+  edit resolver (`*photos.Store`, i.e. `GetEdit`) asks once per generation and applies `photoedit.Apply` after the
+  EXIF orientation and before any resize — the same composition as the edited download — so a photo the user turned
+  upright is upright in the library grid, in search results and in the map popovers, not only in the viewer. The
+  option is **wired at every `thumb.New` site** (`cmd/kukatko/obs.go` `thumbOptions(cfg,reg,db)`), because all of them
+  write into the one cache keyed by the *original's* file hash: a site left without it would publish the unedited
+  rendering under the key the rest of the process reads. A non-identity edit **skips the vips fast path** —
+  `vipsthumbnail` renders the file as it lies on disk and cannot apply the edit. `photos.ErrEditNotFound` (the answer
+  for almost every photo) and a photo with no uid mean "unedited"; **any other resolver error fails the generation**,
+  since caching the unedited rendering under the edited key is a wrong thumbnail nothing would ever notice. And
+  because the key does not depend on the edit, **a changed edit must force a rebuild** — that is what the `thumbnail`
+  job's `force` flag and `photoapi`'s enqueue on `PUT …/edit` are for; the pHash deliberately stays the original's
+  (see `internal/thumbjob`);
   **decompression-bomb guard**: `WithMaxPixels(px)` (config `thumb.max_pixels`, default 200 MP) makes
   `decodeAndOrient` call `imgconvert.EnforcePixelBound` before the full decode, so a source whose
   `width×height` exceeds the cap fails with `imgconvert.ErrImageTooLarge` instead of allocating a
@@ -740,7 +753,12 @@ to `## Package map` in `CLAUDE.md`.
   from the `photo_places` cache — **cache-read only, the detail never geocodes** (mapy.com credits are
   metered; the on-demand lookup stays in `mapsapi`), nil-safe just like the uploader and also omitted for a
   "processed" marker (a row with all levels empty); `EditService`/`edit.go`+`media_edit.go`
-  (`GET`/`PUT /photos/{uid}/edit`, download honours the edit via `internal/photoedit`); and the **comment
+  (`GET`/`PUT /photos/{uid}/edit`, download honours the edit via `internal/photoedit`; a saved edit also
+  **audits** `photo.edit` through the same `AuditRecorder` as the thumbnail action — after the write, because
+  `Store.SetEdit` exposes no transaction to join — and **enqueues a forced thumbnail rebuild** through the
+  `ThumbnailEnqueuer` interface (`jobs.Enqueuer.EnqueueThumbnailRebuild`, nil-safe), so the grid stops showing
+  the previous rendering; both are best-effort, exactly like `enqueueSidecar`, and the **neutral** edit is no
+  special case — a reset audits and rebuilds too); and the **comment
   thread** (`comments.go`, over the `CommentStore` interface satisfied by `comments.Store`):
   `GET`/`POST /photos/{uid}/comments` + `PATCH`/`DELETE /photos/{uid}/comments/{commentUID}`, all four behind
   **`RequireAuth`** — the create deliberately so, a viewer may comment, see docs/API.md — with the per-user
@@ -832,7 +850,13 @@ to `## Package map` in `CLAUDE.md`.
   `face_detect`/`thumbnail`/`places`/`metadata`/`pp_import`/`ps_migrate`/`backup`; `Enqueuer` =
   `NewEnqueuer(store)`
   implements `ingest.JobEnqueuer` (`EnqueueImageEmbed`/`EnqueueFaceDetect`/`EnqueueThumbnail`/
-  `EnqueuePlaces`/`EnqueueMetadata`, `ErrDuplicate`=no-op)),
+  `EnqueuePlaces`/`EnqueueMetadata`, `ErrDuplicate`=no-op);
+  `EnqueueThumbnailRebuild` is the **forced** thumbnail enqueue (payload `{photo_uid,force:true}`, handled by
+  `thumbjob`): what a changed rendering — a saved or reset non-destructive edit — schedules, since the thumbnail
+  cache is keyed by the original's hash and would otherwise serve the previous rendering forever. The flag rides in
+  the payload so **dedup is unchanged** (`idx_jobs_dedup` keys on type + `photo_uid`): at most one active thumbnail
+  job per photo, which does mean a plain job already queued absorbs the forced one — acceptable, since the photo is
+  scheduled for thumbnailing either way and the next edit schedules a fresh forced job),
   `internal/worker/`
   (the in-process background worker runtime, **the main queue execution loop**: `Registry` =
   `NewRegistry()`+`Register(type, HandlerFunc)`+`Handler`/`Types` (panics on an empty type/nil
@@ -2102,7 +2126,7 @@ to `## Package map` in `CLAUDE.md`.
   every editing path uses it (photo PATCH + MCP `photo.update`, album/label/subject update),
   so the log shows `old caption` → `new caption`; **bulk editing in `internal/bulk` is deliberately
   left out** (one `UPDATE` over many photos without loading the old rows — a SELECT-before-UPDATE would
-  double the queries per batch), it keeps its original summary in details; action constants `ActionPhotosBulk`/`ActionPhoto{Update,Archive,Unarchive,Purge}`/
+  double the queries per batch), it keeps its original summary in details; action constants `ActionPhotosBulk`/`ActionPhoto{Update,Edit,Archive,Unarchive,Purge}`/
   `ActionAlbum{Create,Update,Delete}`/`ActionLabel{Create,Update,Delete}`/`ActionFaceAssign`/
   `ActionUser{Create,Update,Disable,Password}`/`ActionAuditPurge`; `Store` = `NewStore(pool)` with `Record(ctx,Entry)`
   (its own connection) and **filtered reads** `List(ctx,Filter)`/`Count(ctx,Filter)` (`Filter{ActorUID,
@@ -2501,8 +2525,14 @@ to `## Package map` in `CLAUDE.md`.
   `Decoder` (`StorageDecoder` = `storage.Materialize`+`imgconvert.EnsureDecodable`, fakeable) →
   unit-testable without a disk; `Service` = `New(Config{Photos,Thumbnailer,Decoder,Lister?,Enqueuer?})`
   (panics on a nil mandatory collaborator; `Lister`/`Enqueuer` optional — they turn the backfill on),
-  `Handle`=`worker.HandlerFunc` (payload `{photo_uid}`, empty → `ErrMissingPhotoUID` dead-letter),
+  `Handle`=`worker.HandlerFunc` (payload `{photo_uid,force?}`, empty uid → `ErrMissingPhotoUID` dead-letter),
   `Regenerate(uid)`/`ensurePhash` idempotent; registered in `serve` on `jobs.TypeThumbnail`.
+  The payload's **`force` flag** routes the job to `ForceRegenerate` instead: the repair skips a size already cached,
+  which is right when the cache is merely incomplete and wrong when the photo's *rendering* changed, since nothing
+  about the cache key records the edit. It is what `jobs.Enqueuer.EnqueueThumbnailRebuild` schedules from `PUT
+  …/photos/{uid}/edit`. The pHash it recomputes stays the **original's**, not the edited rendering's — a perceptual
+  hash exists to recognise two copies of one shot, and turning one of them upright must not stop it matching the
+  other, so a rotation changes the grid and deliberately leaves duplicate detection where it was.
   The **force path** `ForceRegenerate(uid) ([]string,error)` is the on-demand counterpart (the basis of the service
   action "regenerate thumbnail" in `photoapi`): it **overwrites** every thumbnail (`Thumbnailer.RegenerateAll`,
   an atomic overwrite) and **always** recomputes the pHash (`recomputePhash`, shared with `ensurePhash`), returning

@@ -27,6 +27,36 @@ type ThumbnailRegenerator interface {
 	ForceRegenerate(ctx context.Context, photoUID string) ([]string, error)
 }
 
+// ThumbnailEnqueuer schedules a rebuild of a photo's derived thumbnails through
+// the job queue — the asynchronous counterpart of ThumbnailRegenerator, for the
+// paths that change what a photo *renders as* rather than asking for a rebuild
+// outright (saving a non-destructive edit). It is satisfied by jobs.Enqueuer.
+//
+// A nil ThumbnailEnqueuer disables the scheduling: an edit still saves and the
+// viewer still renders it, but the cached thumbnails keep the previous rendering
+// until something else rebuilds them.
+type ThumbnailEnqueuer interface {
+	// EnqueueThumbnailRebuild schedules a forced thumbnail rebuild for photoUID,
+	// overwriting the sizes already cached.
+	EnqueueThumbnailRebuild(ctx context.Context, photoUID string) error
+}
+
+// enqueueThumbnailRebuild schedules a forced rebuild of the photo's thumbnails
+// after its rendering changed, and — like enqueueSidecar, whose reasoning it
+// shares — is best-effort: a failure is logged and swallowed, never returned. It
+// must run after the edit has been written, since the job re-reads the edit; and
+// it must never fail the save, because the edit is safely stored either way and
+// what a lost enqueue costs is a stale thumbnail, which the next edit or a
+// maintenance run repairs.
+func (a *API) enqueueThumbnailRebuild(ctx context.Context, photoUID string) {
+	if a.thumbnails == nil || photoUID == "" {
+		return
+	}
+	if err := a.thumbnails.EnqueueThumbnailRebuild(ctx, photoUID); err != nil {
+		log.Printf("photoapi: enqueuing thumbnail rebuild for %s: %v", photoUID, err)
+	}
+}
+
 // AuditRecorder appends an audit entry outside any mutation transaction, used for
 // actions (like thumbnail regeneration) that are not themselves a database
 // mutation on the photo row, so there is no transaction to join. It is satisfied

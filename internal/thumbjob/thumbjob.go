@@ -151,12 +151,19 @@ func New(cfg Config) *Service {
 // jobPayload is the JSON shape of a thumbnail job's payload.
 type jobPayload struct {
 	PhotoUID string `json:"photo_uid"`
+	// Force asks for the rebuild rather than the repair: every size is re-encoded,
+	// overwriting what is cached. The repair path skips a size already on disk,
+	// which is right when the cache is merely incomplete and wrong when the photo's
+	// *rendering* changed — a saved or reset non-destructive edit — because nothing
+	// about the cache key records the edit. See jobs.Enqueuer.EnqueueThumbnailRebuild.
+	Force bool `json:"force"`
 }
 
 // Handle is the worker.HandlerFunc for thumbnail jobs: it decodes the photo uid
-// from the job payload and regenerates the photo's derived data. A malformed or
-// empty payload is a permanent error (the job dead-letters rather than retrying a
-// payload that can never succeed).
+// from the job payload and regenerates the photo's derived data — repairing what
+// is missing, or (with the payload's force flag) rebuilding every size over the
+// cached one. A malformed or empty payload is a permanent error (the job
+// dead-letters rather than retrying a payload that can never succeed).
 func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 	var p jobPayload
 	if err := json.Unmarshal(job.Payload, &p); err != nil {
@@ -164,6 +171,10 @@ func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 	}
 	if p.PhotoUID == "" {
 		return ErrMissingPhotoUID
+	}
+	if p.Force {
+		_, err := s.ForceRegenerate(ctx, p.PhotoUID)
+		return err
 	}
 	return s.Regenerate(ctx, p.PhotoUID)
 }
@@ -329,6 +340,12 @@ func (s *Service) ensurePhash(ctx context.Context, photo photos.Photo) error {
 // stores them, overwriting any hashes already present. It backs both the repair
 // path (ensurePhash, only when absent) and the force path (ForceRegenerate,
 // always), so the caller decides whether a recompute is needed.
+//
+// The hash describes the **original**, not the edited rendering the thumbnails now
+// carry: a perceptual hash exists to recognise two copies of the same shot, and
+// turning one of them upright in the editor must not stop it matching the other.
+// So a rotation changes what the grid shows and deliberately leaves the pHash — and
+// with it duplicate detection — exactly where it was.
 func (s *Service) recomputePhash(ctx context.Context, photo photos.Photo) error {
 	img, cleanup, err := s.decoder.DecodeOriginal(ctx, photo)
 	if err != nil {

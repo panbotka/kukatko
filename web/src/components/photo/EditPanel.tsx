@@ -5,7 +5,7 @@ import Card from 'react-bootstrap/Card'
 import Form from 'react-bootstrap/Form'
 import { useTranslation } from 'react-i18next'
 
-import { hasCrop, NEUTRAL_EDIT, rotateRight } from '../../lib/photoEdit'
+import { hasCrop, NEUTRAL_EDIT, rotateLeft, rotateRight } from '../../lib/photoEdit'
 import { type PhotoEdit, saveEdit } from '../../services/photos'
 import { Icon } from '../Icon'
 
@@ -118,16 +118,41 @@ export function EditPanel({ uid, edit, onChange, onSaved, onClose }: EditPanelPr
           </Alert>
         )}
 
+        {/* Turning a photo upright is the edit people reach for most, so it leads
+            the panel as a pair of icon buttons — one per direction, because a
+            single "rotate right" makes a 90° mistake cost three more presses. The
+            icon is decorative and the direction lives in the button's accessible
+            label (`Icon` is always aria-hidden); the current angle is spelled out
+            beside them, so a reader can tell 0° from 360° worth of presses.
+            An icon-only `btn-sm` is ~32px wide — the app-wide coarse-pointer floor
+            lifts every `.btn` to 44px *tall* but not wide, so these two carry
+            `kukatko-tap-target-touch` to square off on a phone, where this panel is
+            a bottom sheet under the thumb. */}
         <div className="d-flex align-items-center gap-2 mb-3">
           <span className="small text-secondary">{t('photo.edit.rotation')}</span>
           <Button
             variant="outline-secondary"
             size="sm"
+            className="kukatko-tap-target-touch"
+            aria-label={t('photo.edit.rotateLeft')}
+            title={t('photo.edit.rotateLeft')}
+            onClick={() => {
+              onChange((prev) => ({ ...prev, rotation: rotateLeft(prev.rotation) }))
+            }}
+          >
+            <Icon name="arrow-counterclockwise" />
+          </Button>
+          <Button
+            variant="outline-secondary"
+            size="sm"
+            className="kukatko-tap-target-touch"
+            aria-label={t('photo.edit.rotateRight')}
+            title={t('photo.edit.rotateRight')}
             onClick={() => {
               onChange((prev) => ({ ...prev, rotation: rotateRight(prev.rotation) }))
             }}
           >
-            {t('photo.edit.rotateRight')}
+            <Icon name="arrow-clockwise" />
           </Button>
           <span className="small">{edit.rotation}°</span>
         </div>

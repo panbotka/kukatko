@@ -350,6 +350,9 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
   content (see §5.3). Provenance like the columns above, and equally live.
 - **`photo_phashes`** — `phash/dhash BIGINT` (near-duplicate detection).
 - **`photo_edits`** — non-destructive edits (crop/rotation/brightness/contrast), 0..1 coordinates.
+  The original file is never rewritten: the edit is rendered at run time — into the download
+  (`internal/photoedit`) **and into the thumbnails**, which a saved edit rebuilds through a forced
+  `thumbnail` job, so the whole library shows the photo the way its owner turned it.
 - **`embeddings`** — `photo_uid PK`, `embedding halfvec(1152)`, `model`, `pretrained`, `dim`;
   HNSW `halfvec_cosine_ops` (m=16, ef_construction=200).
 - **`faces`** — `id BIGSERIAL`, `photo_uid`, `face_index`, `embedding halfvec(512)`,

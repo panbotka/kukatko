@@ -7,6 +7,12 @@
 // orientation is applied automatically so every thumbnail is in display
 // orientation.
 //
+// A thumbnailer wired with an EditResolver (WithEdits) also renders the photo's
+// saved non-destructive edit into every size, so the library grid shows a photo
+// the way its owner turned it rather than the way the camera wrote it. The cache
+// key is the *original's* hash and knows nothing of the edit, so a changed edit
+// has to force a rebuild — the thumbnail job's force flag is that path.
+//
 // Derived images live under the configured cache root in a SHA256-sharded tree
 //
 //	thumb/<aa>/<bb>/<cc>/<hash>_<size>.jpg
@@ -46,6 +52,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/panbotka/kukatko/internal/photoedit"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/storage"
 )
@@ -106,6 +113,10 @@ type Thumbnailer struct {
 	// decompression bomb cannot OOM a worker. 0 disables the cap. See
 	// WithMaxPixels.
 	maxPixels int64
+	// edits reads the photo's stored non-destructive edit so the thumbnail is
+	// rendered the way the library shows the photo, or nil when the thumbnailer
+	// renders originals verbatim. See WithEdits.
+	edits EditResolver
 	// observer receives per-size generation timing; never nil after New.
 	observer Observer
 }
@@ -123,6 +134,16 @@ type nopObserver struct{}
 
 // ObserveThumbnail does nothing.
 func (nopObserver) ObserveThumbnail(time.Duration) {}
+
+// EditResolver reads the non-destructive edit stored for a photo — the rotation,
+// brightness/contrast and crop the user saved in the editor. It is satisfied by
+// *photos.Store, and its ErrEditNotFound is the ordinary answer for the vast
+// majority of a library: a photo nobody has edited.
+type EditResolver interface {
+	// GetEdit returns the photo's stored edit, or photos.ErrEditNotFound when it
+	// has none.
+	GetEdit(ctx context.Context, photoUID string) (photos.Edit, error)
+}
 
 // Option customises a Thumbnailer at construction time.
 type Option func(*Thumbnailer)
@@ -155,6 +176,25 @@ func WithConcurrency(n int) Option {
 func WithMaxPixels(n int64) Option {
 	return func(t *Thumbnailer) {
 		t.maxPixels = n
+	}
+}
+
+// WithEdits makes the thumbnailer render a photo through its stored
+// non-destructive edit, so a thumbnail shows what the viewer and the download
+// show — a photo the user turned upright is upright in the library grid too. A
+// nil resolver is ignored, leaving the thumbnailer rendering originals verbatim.
+//
+// Wire it wherever thumbnails are *generated*, not only in the job handler: every
+// engine writes into the one cache keyed by the photo's file hash, so a path that
+// generated the unedited rendering would publish a thumbnail contradicting the
+// rest of the application. Since the cache key does not depend on the edit,
+// changing an edit must force a rebuild (see the thumbnail job's force flag) —
+// nothing here notices a stale cache file on its own.
+func WithEdits(r EditResolver) Option {
+	return func(t *Thumbnailer) {
+		if r != nil {
+			t.edits = r
+		}
 	}
 }
 
@@ -378,6 +418,13 @@ func (t *Thumbnailer) generate(
 		return result, nil
 	}
 
+	// What the library shows: the photo's saved rotation/crop/colour adjustment,
+	// resolved before any pixels are read so the engine choice can depend on it.
+	edit, err := t.resolveEdit(ctx, photo.UID)
+	if err != nil {
+		return nil, err
+	}
+
 	// Both engines shell out to tools that take a filename, so the original has to
 	// exist as a local file for the rest of this call. Materializing it once here
 	// keeps a remote backend from fetching the same original twice when vips
@@ -390,15 +437,35 @@ func (t *Thumbnailer) generate(
 
 	// Fast path: shell out to vipsthumbnail for directly-supported originals. On
 	// any failure it returns false and we fall through to the pure-Go engine, so
-	// output never depends on vips succeeding — only speed does.
-	if t.tryVips(ctx, photo, src, needed, result) {
+	// output never depends on vips succeeding — only speed does. An edited photo
+	// skips it: vipsthumbnail renders the file as it is on disk and has no way to
+	// apply the edit, so speed there would cost correctness.
+	if photoedit.IsIdentity(edit) && t.tryVips(ctx, photo, src, needed, result) {
 		return result, nil
 	}
 
-	img, err := decodeAndOrient(ctx, src, photo.FileOrientation, t.maxPixels)
-	if err != nil {
+	if err := t.encodePureGo(ctx, photo, src, edit, needed, result); err != nil {
 		return nil, err
 	}
+	return result, nil
+}
+
+// encodePureGo is the pure-Go engine: it decodes the materialized original once,
+// orients it, renders the photo's non-destructive edit into it, and writes every
+// needed size in parallel (bounded by the configured concurrency) to the paths
+// result already holds. The edit is applied after the orientation and before any
+// resize, exactly as the edited download composes them, so a thumbnail is a
+// scaled-down copy of what the viewer shows rather than a second interpretation of
+// the edit.
+func (t *Thumbnailer) encodePureGo(
+	ctx context.Context, photo photos.Photo, src string,
+	edit photos.Edit, needed []string, result map[string]string,
+) error {
+	img, err := decodeAndOrient(ctx, src, photo.FileOrientation, t.maxPixels)
+	if err != nil {
+		return err
+	}
+	img = photoedit.Apply(img, edit)
 
 	group, gctx := errgroup.WithContext(ctx)
 	group.SetLimit(t.workers)
@@ -411,9 +478,34 @@ func (t *Thumbnailer) generate(
 		})
 	}
 	if err := group.Wait(); err != nil {
-		return nil, fmt.Errorf("thumb: generate sizes: %w", err)
+		return fmt.Errorf("thumb: generate sizes: %w", err)
 	}
-	return result, nil
+	return nil
+}
+
+// resolveEdit returns the photo's stored non-destructive edit, or the neutral
+// (zero-value) edit when the thumbnailer was built without an EditResolver, the
+// photo has no uid to ask about, or nothing has been saved for it — which is the
+// answer for almost every photo in a library.
+//
+// A resolver that fails for any other reason fails the whole generation. That is
+// deliberate: the alternative is to cache the unedited rendering under the same
+// key an edited one would take, which no later run would notice or correct, so a
+// transient database error would leave a permanently wrong thumbnail behind. A
+// returned error instead makes the job retry and the on-demand request fail
+// loudly.
+func (t *Thumbnailer) resolveEdit(ctx context.Context, photoUID string) (photos.Edit, error) {
+	if t.edits == nil || photoUID == "" {
+		return photos.Edit{}, nil
+	}
+	edit, err := t.edits.GetEdit(ctx, photoUID)
+	if err != nil {
+		if errors.Is(err, photos.ErrEditNotFound) {
+			return photos.Edit{}, nil
+		}
+		return photos.Edit{}, fmt.Errorf("thumb: reading edit for %s: %w", photoUID, err)
+	}
+	return edit, nil
 }
 
 // plan resolves which of the requested sizes actually have to be encoded, and

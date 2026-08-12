@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
-import { displayFrame, padBbox, readingOrder, squareCrop } from './faceGeometry'
+import {
+  displayFrame,
+  padBbox,
+  readingOrder,
+  rotateBbox,
+  rotatedFrameStyle,
+  squareCrop,
+} from './faceGeometry'
 
 import { type Bbox } from '../services/people'
 
@@ -202,5 +209,81 @@ describe('squareCrop', () => {
     const crop = squareCrop(padBbox([0.4, 0.4, 0.1, 0.2], 0.3), frame)
     const px = pixels(crop, frame)
     expect(px.w).toBeCloseTo(px.h, 6)
+  })
+})
+
+describe('rotateBbox', () => {
+  // A box in the top-left quarter, deliberately not square so a wrong turn shows
+  // up as a transposed side rather than only as a moved corner.
+  const box: Bbox = [0.1, 0.2, 0.3, 0.4]
+
+  it('leaves an upright photo alone', () => {
+    expect(rotateBbox(box, 0)).toEqual(box)
+  })
+
+  it('turns a quarter clockwise: the top-left corner becomes the top-right one', () => {
+    expect(rotateBbox(box, 90)).toEqual([1 - 0.2 - 0.4, 0.1, 0.4, 0.3])
+  })
+
+  it('mirrors a half turn through the centre and keeps the frame shape', () => {
+    expect(rotateBbox(box, 180)).toEqual([1 - 0.1 - 0.3, 1 - 0.2 - 0.4, 0.3, 0.4])
+  })
+
+  it('turns three quarters clockwise (a quarter counter-clockwise)', () => {
+    expect(rotateBbox(box, 270)).toEqual([0.2, 1 - 0.1 - 0.3, 0.4, 0.3])
+  })
+
+  it('comes back to itself after four quarter turns', () => {
+    let turned = box
+    for (let i = 0; i < 4; i += 1) {
+      turned = rotateBbox(turned, 90)
+    }
+    // Per component: four turns are four subtractions, so the round trip lands
+    // within floating-point noise rather than exactly on the original.
+    for (const [i, side] of turned.entries()) {
+      expect(side).toBeCloseTo(box[i], 10)
+    }
+  })
+
+  it('normalises a full or negative turn rather than dropping the box', () => {
+    expect(rotateBbox(box, 360)).toEqual(box)
+    expect(rotateBbox(box, -90)).toEqual(rotateBbox(box, 270))
+  })
+
+  it('ignores an angle that is not a quarter turn', () => {
+    // The backend's allow-list means this cannot be stored; a box drawn wrong
+    // would be worse than one drawn upright.
+    expect(rotateBbox(box, 45)).toEqual(box)
+  })
+})
+
+describe('rotatedFrameStyle', () => {
+  it('fills the wrapper when the photo is upright or half-turned', () => {
+    const filled = { left: 0, top: 0, width: '100%', height: '100%' }
+    expect(rotatedFrameStyle(0, 2)).toEqual(filled)
+    expect(rotatedFrameStyle(180, 2)).toEqual(filled)
+  })
+
+  it('takes the turned photo’s box for a quarter turn, centred on the wrapper', () => {
+    // A wrapper twice as wide as it is tall paints its quarter-turned photo half as
+    // wide and twice as tall, about the same centre.
+    for (const rotation of [90, 270]) {
+      expect(rotatedFrameStyle(rotation, 2)).toEqual({
+        left: '50%',
+        top: '50%',
+        width: '50%',
+        height: '200%',
+        transform: 'translate(-50%, -50%)',
+      })
+    }
+  })
+
+  it('falls back to filling the wrapper when the ratio is unusable', () => {
+    const filled = { left: 0, top: 0, width: '100%', height: '100%' }
+    // NaN percentages would drop every box off the page; a slightly wrong box is
+    // the lesser failure.
+    expect(rotatedFrameStyle(90, undefined)).toEqual(filled)
+    expect(rotatedFrameStyle(90, 0)).toEqual(filled)
+    expect(rotatedFrameStyle(90, Number.NaN)).toEqual(filled)
   })
 })

@@ -32,9 +32,24 @@ export function isIdentityEdit(edit: PhotoEdit): boolean {
   return !hasCrop(edit) && edit.rotation === 0 && edit.brightness === 0 && edit.contrast === 0
 }
 
+/**
+ * Turns a rotation by `quarters` quarter turns, positive clockwise, and
+ * normalises the result into the 0/90/180/270 the backend accepts — including for
+ * a negative turn, where a plain `%` in JavaScript would yield -90 and the save
+ * would be rejected.
+ */
+export function rotateBy(rotation: number, quarters: number): number {
+  return (((rotation + quarters * 90) % 360) + 360) % 360
+}
+
 /** Returns the next clockwise quarter-turn rotation after the given one. */
 export function rotateRight(rotation: number): number {
-  return (rotation + 90) % 360
+  return rotateBy(rotation, 1)
+}
+
+/** Returns the next counter-clockwise quarter-turn rotation after the given one. */
+export function rotateLeft(rotation: number): number {
+  return rotateBy(rotation, -1)
 }
 
 /**

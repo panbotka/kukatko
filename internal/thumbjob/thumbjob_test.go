@@ -218,6 +218,78 @@ func TestHandlePayload(t *testing.T) {
 	}
 }
 
+// forcedPayload builds a thumbnail job payload for uid that asks for the forced
+// rebuild rather than the repair.
+func forcedPayload(t *testing.T, uid string) json.RawMessage {
+	t.Helper()
+	raw, err := json.Marshal(map[string]any{"photo_uid": uid, "force": true})
+	if err != nil {
+		t.Fatalf("marshal forced payload: %v", err)
+	}
+	return raw
+}
+
+// TestHandleForcedPayloadRebuilds verifies the payload's force flag routes the job
+// to the rebuild (RegenerateAll, which overwrites the cached sizes) rather than to
+// the repair (GenerateAll, which skips them). It is what makes a saved edit
+// actually reach the grid: the cache is keyed by the original's hash, so a repair
+// would find every size present and change nothing.
+func TestHandleForcedPayloadRebuilds(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		payload    json.RawMessage
+		wantGen    int
+		wantRegen  int
+		wantPhash  bool
+		wantDecode bool
+	}{
+		// The repair path leaves an existing pHash alone, so it never decodes.
+		{name: "plain payload repairs", payload: payload(t, "ph1"), wantGen: 1},
+		{
+			name: "forced payload rebuilds", payload: forcedPayload(t, "ph1"),
+			wantRegen: 1, wantPhash: true, wantDecode: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			p := &fakePhotos{hasPhash: true}
+			th := &fakeThumbs{}
+			d := &fakeDecoder{}
+			svc := newService(p, th, d)
+
+			if err := svc.Handle(context.Background(), jobs.Job{Payload: tt.payload}); err != nil {
+				t.Fatalf("Handle: %v", err)
+			}
+			if th.calls != tt.wantGen || th.regenCalls != tt.wantRegen {
+				t.Errorf("GenerateAll/RegenerateAll calls = %d/%d, want %d/%d",
+					th.calls, th.regenCalls, tt.wantGen, tt.wantRegen)
+			}
+			if p.setCalled != tt.wantPhash || d.called != tt.wantDecode {
+				t.Errorf("pHash stored = %v / decoded = %v, want %v / %v",
+					p.setCalled, d.called, tt.wantPhash, tt.wantDecode)
+			}
+		})
+	}
+}
+
+// TestHandleForcedPayloadPropagatesFailure verifies a failed rebuild is returned
+// (so the job retries) rather than swallowed by the force branch's discarded size
+// list.
+func TestHandleForcedPayloadPropagatesFailure(t *testing.T) {
+	t.Parallel()
+	th := &fakeThumbs{regenErr: errors.New("boom")}
+	svc := newService(&fakePhotos{hasPhash: true}, th, &fakeDecoder{})
+
+	err := svc.Handle(context.Background(), jobs.Job{Payload: forcedPayload(t, "ph1")})
+	if !errors.Is(err, ErrRegenerateFailed) {
+		t.Errorf("Handle err = %v, want it to wrap ErrRegenerateFailed", err)
+	}
+}
+
 // TestHandleMissingUID verifies an empty uid maps to ErrMissingPhotoUID.
 func TestHandleMissingUID(t *testing.T) {
 	t.Parallel()

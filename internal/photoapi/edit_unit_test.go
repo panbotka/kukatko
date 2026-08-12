@@ -1,10 +1,14 @@
 package photoapi
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/panbotka/kukatko/internal/photos"
 )
 
 // decodeEditBody runs decodeEdit over a raw JSON string via a test request.
@@ -83,6 +87,74 @@ func TestValidateEdit(t *testing.T) {
 			}
 		})
 	}
+}
+
+// fakeThumbnailEnqueuer is a ThumbnailEnqueuer recording the forced rebuilds it
+// was asked for, and optionally failing them.
+type fakeThumbnailEnqueuer struct {
+	uids []string
+	err  error
+}
+
+// EnqueueThumbnailRebuild records photoUID and returns the preset error.
+func (f *fakeThumbnailEnqueuer) EnqueueThumbnailRebuild(_ context.Context, photoUID string) error {
+	f.uids = append(f.uids, photoUID)
+	return f.err
+}
+
+// TestEnqueueThumbnailRebuild covers the three shapes of the best-effort enqueue:
+// it schedules the rebuild, it is a no-op without an enqueuer or a uid (a zero-value
+// API built by a test must not panic), and a failing enqueuer is swallowed — the
+// edit is already saved, and reporting an error would say the rotation was lost.
+func TestEnqueueThumbnailRebuild(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		enqueuer *fakeThumbnailEnqueuer
+		uid      string
+		wantUIDs []string
+	}{
+		{name: "schedules the rebuild", enqueuer: &fakeThumbnailEnqueuer{}, uid: "ph1", wantUIDs: []string{"ph1"}},
+		{name: "no enqueuer wired", enqueuer: nil, uid: "ph1"},
+		{name: "empty uid asks nothing", enqueuer: &fakeThumbnailEnqueuer{}, uid: ""},
+		{
+			name:     "a failure is swallowed",
+			enqueuer: &fakeThumbnailEnqueuer{err: errors.New("queue down")},
+			uid:      "ph1",
+			wantUIDs: []string{"ph1"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			api := &API{}
+			if tt.enqueuer != nil {
+				api.thumbnails = tt.enqueuer
+			}
+			api.enqueueThumbnailRebuild(t.Context(), tt.uid)
+			if tt.enqueuer == nil {
+				return
+			}
+			if len(tt.enqueuer.uids) != len(tt.wantUIDs) {
+				t.Fatalf("enqueued %v, want %v", tt.enqueuer.uids, tt.wantUIDs)
+			}
+			for i, uid := range tt.wantUIDs {
+				if tt.enqueuer.uids[i] != uid {
+					t.Errorf("enqueued[%d] = %q, want %q", i, tt.enqueuer.uids[i], uid)
+				}
+			}
+		})
+	}
+}
+
+// TestRecordEditAudit_noRecorder confirms the audit is optional: an API without a
+// recorder saves the edit and records nothing rather than panicking.
+func TestRecordEditAudit_noRecorder(t *testing.T) {
+	t.Parallel()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPut, "/photos/p1/edit", nil)
+	(&API{}).recordEditAudit(req, photos.Edit{PhotoUID: "p1", Rotation: 90})
 }
 
 func TestEditedFileName(t *testing.T) {

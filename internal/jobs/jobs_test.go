@@ -72,16 +72,20 @@ func TestClaimSQL(t *testing.T) {
 // fakeEnqueuer is a photoEnqueuer stub recording the last enqueue and returning a
 // preset result, used to unit-test the Enqueuer adapter without a database.
 type fakeEnqueuer struct {
-	err      error
-	lastType string
-	lastOpts EnqueueOptions
-	calls    int
+	err         error
+	lastType    string
+	lastPayload json.RawMessage
+	lastOpts    EnqueueOptions
+	calls       int
 }
 
 // Enqueue records the call and returns the preset error.
-func (f *fakeEnqueuer) Enqueue(_ context.Context, jobType string, _ json.RawMessage, opts EnqueueOptions) (Job, error) {
+func (f *fakeEnqueuer) Enqueue(
+	_ context.Context, jobType string, payload json.RawMessage, opts EnqueueOptions,
+) (Job, error) {
 	f.calls++
 	f.lastType = jobType
+	f.lastPayload = payload
 	f.lastOpts = opts
 	if f.err != nil {
 		return Job{}, f.err
@@ -111,6 +115,68 @@ func TestEnqueueSidecar_debounces(t *testing.T) {
 	}
 	if want := pinned.Add(SidecarDebounce); !fake.lastOpts.RunAfter.Equal(want) {
 		t.Errorf("RunAfter = %v, want %v (now + SidecarDebounce)", *fake.lastOpts.RunAfter, want)
+	}
+}
+
+// TestEnqueueThumbnail_plainVsRebuild verifies the two thumbnail enqueues differ
+// only in the payload's force flag: both are TypeThumbnail carrying the photo_uid
+// the dedup index keys on (so a forced job dedupes against a plain one), and only
+// the rebuild asks the handler to overwrite what is already cached.
+func TestEnqueueThumbnail_plainVsRebuild(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		enqueue   func(*Enqueuer) error
+		wantForce bool
+	}{
+		{
+			name:      "repair leaves cached sizes alone",
+			enqueue:   func(e *Enqueuer) error { return e.EnqueueThumbnail(context.Background(), "ph1") },
+			wantForce: false,
+		},
+		{
+			name:      "rebuild forces every size",
+			enqueue:   func(e *Enqueuer) error { return e.EnqueueThumbnailRebuild(context.Background(), "ph1") },
+			wantForce: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			fake := &fakeEnqueuer{}
+			if err := tt.enqueue(&Enqueuer{store: fake}); err != nil {
+				t.Fatalf("enqueue: %v", err)
+			}
+			if fake.lastType != TypeThumbnail {
+				t.Errorf("lastType = %q, want %q", fake.lastType, TypeThumbnail)
+			}
+			var decoded struct {
+				PhotoUID string `json:"photo_uid"`
+				Force    bool   `json:"force"`
+			}
+			if err := json.Unmarshal(fake.lastPayload, &decoded); err != nil {
+				t.Fatalf("unmarshal payload %q: %v", fake.lastPayload, err)
+			}
+			if decoded.PhotoUID != "ph1" {
+				t.Errorf("payload photo_uid = %q, want ph1", decoded.PhotoUID)
+			}
+			if decoded.Force != tt.wantForce {
+				t.Errorf("payload force = %v, want %v", decoded.Force, tt.wantForce)
+			}
+		})
+	}
+}
+
+// TestEnqueueThumbnailRebuild_duplicateIsSuccess confirms the forced enqueue keeps
+// the adapter's idempotency: a photo whose thumbnail job is already active is a
+// no-op rather than an error the edit endpoint would log.
+func TestEnqueueThumbnailRebuild_duplicateIsSuccess(t *testing.T) {
+	t.Parallel()
+	fake := &fakeEnqueuer{err: ErrDuplicate}
+	if err := (&Enqueuer{store: fake}).EnqueueThumbnailRebuild(context.Background(), "ph1"); err != nil {
+		t.Errorf("EnqueueThumbnailRebuild on a duplicate = %v, want nil", err)
 	}
 }
 

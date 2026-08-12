@@ -29,7 +29,7 @@ func buildIngest(
 	if err != nil {
 		return nil, err
 	}
-	thumbnailer := thumb.New(store, cfg.Storage.CachePath, thumbOptions(cfg, reg)...)
+	thumbnailer := thumb.New(store, cfg.Storage.CachePath, thumbOptions(cfg, reg, db)...)
 	photoStore := photos.NewStore(db.Pool())
 
 	svc := ingest.New(ingest.Config{

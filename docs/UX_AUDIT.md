@@ -463,7 +463,12 @@ on unexplained jargon that even a non-developer admin will struggle with.
    low side, especially over `bg-dark` overlays (Map, Slideshow empties). 📋 Audit contrast; consider
    a slightly lighter muted token. 🟡🟡 — **partially verified (2026-08-05)**: the inactive map
    style tabs are hard to read; the two empty-state cases named here have data in production and
-   could not be checked.
+   could not be checked. — **the worst case is fixed (2026-08-12)**: `.btn-outline-secondary` (85 call
+   sites, the app's quiet action) was Bootswatch's `#4e5d6c` label on the `#4e5d6c` card Bootswatch also
+   bakes — contrast **1.00**, an invisible control, reported from the photo editor. `app.css` now re-points
+   the label and the border; measured 5.6:1 text / 3.2:1 outline on a card, 15.4:1 / 6.1:1 on the page.
+   The **card surface itself is still Superhero navy**, because that `--bs-card-bg` is baked on the `.card`
+   selector and the tokens' re-pin cannot reach it — a separate, app-wide change, not done here.
 8. **Heading hierarchy** is otherwise consistent (`h1.h3` titles, `h2.h5/h6` sections) after the
    photo-detail fix. ✅
 9. **New (2026-08-05) — RBAC is invisible.** Routes a role cannot use redirect silently to the

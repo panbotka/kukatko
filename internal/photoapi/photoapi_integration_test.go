@@ -21,6 +21,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/comments"
 	"github.com/panbotka/kukatko/internal/database"
@@ -142,15 +143,20 @@ func newEnvWithMedia(t *testing.T, media storage.Storage) *env {
 		Store:       store,
 		Storage:     mediaStore,
 		Thumbnailer: thumb.New(fs, t.TempDir()),
-		Similar:     vectorStore,
-		Embedder:    embedder,
-		Favorites:   organizeStore,
-		Ratings:     organizeStore,
-		Organizer:   organizeStore,
-		Users:       authStore,
-		Places:      placeStore,
-		Comments:    commentStore,
-		Stacker:     stacks.New(store, stacks.Config{Enabled: true, Rules: stacks.RuleSet{BaseName: true}}),
+		// The real trail and the real queue: what a saved edit records and what it
+		// schedules are both facts about those two, and a fake for either would
+		// leave the wiring untested.
+		Audit:      audit.NewStore(db.Pool()),
+		Thumbnails: jobs.NewEnqueuer(jobStore),
+		Similar:    vectorStore,
+		Embedder:   embedder,
+		Favorites:  organizeStore,
+		Ratings:    organizeStore,
+		Organizer:  organizeStore,
+		Users:      authStore,
+		Places:     placeStore,
+		Comments:   commentStore,
+		Stacker:    stacks.New(store, stacks.Config{Enabled: true, Rules: stacks.RuleSet{BaseName: true}}),
 		Purger: trash.New(trash.Config{
 			Photos:      store,
 			Storage:     fs,

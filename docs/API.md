@@ -165,7 +165,13 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `GET /photos/{uid}/edit` (authenticated) → the stored `photos.Edit` (crop/rotation 0-90-180-270/brightness/contrast,
   an unedited photo → a neutral edit) and `PUT /photos/{uid}/edit` (editor/admin) writes the edit into
   `photo_edits` (bounds validation; the original is never changed — `GET …/download` **renders it at run time**
-  via `photoedit.Apply` unless the caller passes `?original=true`);
+  via `photoedit.Apply` unless the caller passes `?original=true`). A saved edit also **audits**
+  (`photo.edit`, the whole edit in the details) and **enqueues a forced `thumbnail` job**
+  (`jobs.Enqueuer.EnqueueThumbnailRebuild`), so the derived thumbnails are rebuilt from the edited
+  rendering and the library grid shows the photo the way its owner turned it. Saving the **neutral** edit
+  is not a special case: it audits and rebuilds too, which is what makes a reset restore the original
+  rendering everywhere rather than only in the viewer. Both are best-effort — a failure is logged, never
+  returned, the edit is stored either way;
   `PATCH /photos/{uid}` (editor/admin) partial edit of
   metadata — `title/description/notes/ai_note/taken_at/lat/lng` (null clears a nullable, coordinate
   validation) **+ approximate date** `taken_at_estimated` (bool — the date is an estimate, not a fact) and
