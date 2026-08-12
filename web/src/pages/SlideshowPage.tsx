@@ -7,6 +7,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
 import { Slideshow, SLIDESHOW_PREVIEW_SIZE } from '../components/slideshow/Slideshow'
+import { SlideshowNotice } from '../components/slideshow/SlideshowNotice'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useImagePreloader } from '../hooks/useImagePreloader'
 import { usePaginatedPhotos } from '../hooks/usePaginatedPhotos'
@@ -220,19 +221,22 @@ export function SlideshowPage() {
   // Only a show with nothing to show waits behind the spinner. Toggling shuffle
   // reloads the list from its first page, and blanking the running show for that
   // would be a restart in all but name — the carried photos keep it on screen.
+  //
+  // The wait says what it is waiting for, out loud rather than only to a screen
+  // reader: a black screen with a spinner and no words on it is how a slow first
+  // page reads as a broken slideshow.
   if (status === 'loading' && playlist.length === 0) {
     return (
-      <div className="slideshow d-flex align-items-center justify-content-center">
-        <Spinner animation="border" role="status" className="text-light">
-          <span className="visually-hidden">{t('slideshow.loading')}</span>
-        </Spinner>
-      </div>
+      <SlideshowNotice onClose={exit}>
+        <Spinner animation="border" role="status" className="text-light" />
+        <p className="mb-0">{t('slideshow.loading')}</p>
+      </SlideshowNotice>
     )
   }
 
   if (status === 'error') {
     return (
-      <div className="slideshow d-flex align-items-center justify-content-center p-4">
+      <SlideshowNotice onClose={exit}>
         <ErrorState
           title={t('slideshow.error.load')}
           onRetry={retry}
@@ -242,13 +246,13 @@ export function SlideshowPage() {
             </Button>
           }
         />
-      </div>
+      </SlideshowNotice>
     )
   }
 
   if (playlist.length === 0) {
     return (
-      <div className="slideshow d-flex flex-column align-items-center justify-content-center text-light p-4">
+      <SlideshowNotice onClose={exit}>
         <EmptyState
           title={t('slideshow.empty.title')}
           hint={t('slideshow.empty.hint')}
@@ -258,7 +262,7 @@ export function SlideshowPage() {
             </Button>
           }
         />
-      </div>
+      </SlideshowNotice>
     )
   }
 

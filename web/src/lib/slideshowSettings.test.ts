@@ -6,6 +6,7 @@ import {
   SLIDESHOW_DEFAULTS,
   SLIDESHOW_INTERVALS_MS,
   type SlideshowSettings,
+  transitionDurationMs,
   writeSettings,
 } from './slideshowSettings'
 
@@ -168,5 +169,37 @@ describe('readSettings', () => {
       showDescription: true,
       showDate: true,
     })
+  })
+})
+
+describe('transitionDurationMs', () => {
+  it('runs the comfortable duration at the default speed', () => {
+    expect(transitionDurationMs('fade', 5000)).toBe(600)
+    expect(transitionDurationMs('slide', 5000)).toBe(450)
+    expect(transitionDurationMs('kenburns', 5000)).toBe(600)
+  })
+
+  it('never animates the effect that is meant not to', () => {
+    expect(transitionDurationMs('none', 5000)).toBe(0)
+    expect(transitionDurationMs('none', 1000)).toBe(0)
+  })
+
+  it('caps the transition at a quarter of the shortest slides', () => {
+    // At 1 s a 600 ms fade is most of the slide: the show never settles and the
+    // photo is always still arriving.
+    expect(transitionDurationMs('fade', 1000)).toBe(250)
+    expect(transitionDurationMs('slide', 1000)).toBe(250)
+    expect(transitionDurationMs('fade', 2000)).toBe(500)
+  })
+
+  it('leaves the comfortable speeds alone', () => {
+    for (const ms of SLIDESHOW_INTERVALS_MS.filter((ms) => ms >= 3000)) {
+      expect(transitionDurationMs('fade', ms)).toBe(600)
+    }
+  })
+
+  it('falls back to the comfortable duration for a nonsense interval', () => {
+    expect(transitionDurationMs('fade', 0)).toBe(600)
+    expect(transitionDurationMs('fade', Number.NaN)).toBe(600)
   })
 })

@@ -1,8 +1,9 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { CHROME_IDLE_MS } from '../../hooks/useIdleChrome'
 import i18n from '../../i18n'
 import { kenBurnsMotion } from '../../lib/kenBurns'
 import {
@@ -29,6 +30,46 @@ function stubReducedMotion(matches: boolean): void {
       dispatchEvent: vi.fn(),
     })),
   )
+}
+
+/**
+ * Installs the Fullscreen API jsdom does not implement. The player leaves its
+ * fullscreen control out where the browser cannot honour it (iOS Safari), so
+ * without this the button under test would not be rendered at all.
+ */
+function stubFullscreenApi(): void {
+  Object.defineProperty(Element.prototype, 'requestFullscreen', {
+    configurable: true,
+    writable: true,
+    value: vi.fn().mockResolvedValue(undefined),
+  })
+  Object.defineProperty(document, 'exitFullscreen', {
+    configurable: true,
+    writable: true,
+    value: vi.fn().mockResolvedValue(undefined),
+  })
+  Object.defineProperty(document, 'fullscreenEnabled', { configurable: true, value: true })
+}
+
+/** Puts the environment back to a browser without the Fullscreen API. */
+function removeFullscreenApi(): void {
+  Reflect.deleteProperty(Element.prototype, 'requestFullscreen')
+  Reflect.deleteProperty(document, 'exitFullscreen')
+  Reflect.deleteProperty(document, 'fullscreenEnabled')
+}
+
+/** The chrome layer (controls, close, progress) of the rendered player. */
+function chrome(): HTMLElement {
+  const element = document.querySelector<HTMLElement>('.slideshow__chrome')
+  if (element === null) {
+    throw new Error('the player rendered no chrome layer')
+  }
+  return element
+}
+
+/** Whether the chrome is currently on screen. */
+function chromeVisible(): boolean {
+  return !chrome().hasAttribute('inert')
 }
 
 function photo(uid: string, name: string, title = '', mime = 'image/jpeg'): Photo {
@@ -93,10 +134,12 @@ async function openSettings(user: ReturnType<typeof userEvent.setup>): Promise<v
 
 beforeEach(async () => {
   await i18n.changeLanguage('en')
+  stubFullscreenApi()
 })
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  removeFullscreenApi()
 })
 
 describe('Slideshow', () => {
@@ -373,6 +416,240 @@ describe('Slideshow', () => {
     expect(props.onNext).toHaveBeenCalled()
   })
 
+  it('leaves the fullscreen control out where the browser cannot honour it', () => {
+    // iOS Safari fullscreens a <video> and nothing else: the button would be
+    // there, be pressed, and do nothing.
+    removeFullscreenApi()
+    setup()
+
+    expect(screen.queryByRole('button', { name: 'Fullscreen' })).not.toBeInTheDocument()
+    // The controls that do work are all still there.
+    expect(screen.getByRole('button', { name: 'Next' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument()
+  })
+
+  it('does not toggle playback when Space activates a focused control', () => {
+    const props = setup()
+    const next = screen.getByRole('button', { name: 'Next' })
+    next.focus()
+
+    fireEvent.keyDown(next, { key: ' ' })
+
+    // The button gets its own press; the player must not also pause the show,
+    // which would leave the reader a slide on and stopped after one keystroke.
+    expect(props.onToggle).not.toHaveBeenCalled()
+  })
+
+  it('navigates with the page keys a presentation remote sends', () => {
+    const props = setup()
+
+    fireEvent.keyDown(window, { key: 'PageDown' })
+    expect(props.onNext).toHaveBeenCalledTimes(1)
+
+    fireEvent.keyDown(window, { key: 'PageUp' })
+    expect(props.onPrev).toHaveBeenCalledTimes(1)
+  })
+
+  it('closes the settings panel with Escape before it closes the show', async () => {
+    const user = userEvent.setup()
+    const props = setup()
+
+    await openSettings(user)
+    expect(screen.getByLabelText('Speed')).toBeInTheDocument()
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+    // Escape peels one layer: the panel goes, the show stays.
+    expect(screen.queryByLabelText('Speed')).not.toBeInTheDocument()
+    expect(props.onExit).not.toHaveBeenCalled()
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(props.onExit).toHaveBeenCalledTimes(1)
+  })
+
+  it('caps the transition against the speed, so a 1 s show is not all fade', () => {
+    const { container, rerender } = render(
+      <I18nextProvider i18n={i18n}>
+        <Slideshow {...makeProps({ settings: settings({ effect: 'fade', intervalMs: 5000 }) })} />
+      </I18nextProvider>,
+    )
+    const stage = container.querySelector<HTMLElement>('.slideshow')
+
+    expect(stage?.style.getPropertyValue('--slideshow-transition')).toBe('600ms')
+
+    rerender(
+      <I18nextProvider i18n={i18n}>
+        <Slideshow {...makeProps({ settings: settings({ effect: 'fade', intervalMs: 1000 }) })} />
+      </I18nextProvider>,
+    )
+    expect(stage?.style.getPropertyValue('--slideshow-transition')).toBe('250ms')
+  })
+
+  describe('the chrome over the photograph', () => {
+    beforeEach(() => {
+      vi.useFakeTimers()
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    /** Lets the idle countdown run out. */
+    function idle(): void {
+      act(() => {
+        vi.advanceTimersByTime(CHROME_IDLE_MS)
+      })
+    }
+
+    it('takes the controls off the picture once nothing has happened', () => {
+      setup()
+      expect(chromeVisible()).toBe(true)
+
+      idle()
+
+      // Gone from sight *and* from the keyboard: an invisible bar that still
+      // caught Tab stops would be worse than one that stayed.
+      expect(chromeVisible()).toBe(false)
+      expect(document.querySelector('.slideshow')).toHaveClass('slideshow--idle')
+    })
+
+    it('brings them back when the mouse moves, and not when a finger swipes', () => {
+      setup()
+      idle()
+      expect(chromeVisible()).toBe(false)
+
+      fireEvent.pointerMove(screen.getByRole('region'), { pointerType: 'touch' })
+      expect(chromeVisible()).toBe(false)
+
+      fireEvent.pointerMove(screen.getByRole('region'), { pointerType: 'mouse' })
+      expect(chromeVisible()).toBe(true)
+    })
+
+    it('brings them back on any key press', () => {
+      setup()
+      idle()
+
+      fireEvent.keyDown(window, { key: 'ArrowRight' })
+      expect(chromeVisible()).toBe(true)
+    })
+
+    it('spends the first Tab bringing the controls back, so they can be tabbed to', () => {
+      setup()
+      idle()
+
+      const prevented = !fireEvent.keyDown(window, { key: 'Tab' })
+      expect(chromeVisible()).toBe(true)
+      expect(prevented).toBe(true)
+
+      // Once they are on screen Tab is the browser's again.
+      const second = !fireEvent.keyDown(window, { key: 'Tab' })
+      expect(second).toBe(false)
+    })
+
+    it('lets a tap ask for the controls and a second tap dismiss them', () => {
+      const props = setup()
+      const region = screen.getByRole('region')
+      idle()
+      expect(chromeVisible()).toBe(false)
+
+      // A finger that stays put: the only way a touch screen can ask.
+      fireEvent.touchStart(region, { changedTouches: [{ clientX: 100, clientY: 300 }] })
+      fireEvent.touchEnd(region, { changedTouches: [{ clientX: 103, clientY: 302 }] })
+      expect(chromeVisible()).toBe(true)
+      expect(props.onNext).not.toHaveBeenCalled()
+      expect(props.onPrev).not.toHaveBeenCalled()
+
+      fireEvent.touchStart(region, { changedTouches: [{ clientX: 100, clientY: 300 }] })
+      fireEvent.touchEnd(region, { changedTouches: [{ clientX: 100, clientY: 300 }] })
+      expect(chromeVisible()).toBe(false)
+    })
+
+    it('does not mistake a swipe for a tap', () => {
+      const props = setup()
+      const region = screen.getByRole('region')
+      idle()
+
+      fireEvent.touchStart(region, { changedTouches: [{ clientX: 200, clientY: 100 }] })
+      fireEvent.touchEnd(region, { changedTouches: [{ clientX: 100, clientY: 105 }] })
+
+      expect(props.onNext).toHaveBeenCalledTimes(1)
+      // Steering the show is not asking for the buttons.
+      expect(chromeVisible()).toBe(false)
+    })
+
+    it('ignores a second finger, which is a pinch and not a swipe', () => {
+      const props = setup()
+      const region = screen.getByRole('region')
+
+      fireEvent.touchStart(region, {
+        touches: [
+          { clientX: 200, clientY: 100 },
+          { clientX: 260, clientY: 140 },
+        ],
+        changedTouches: [{ clientX: 260, clientY: 140 }],
+      })
+      fireEvent.touchEnd(region, { changedTouches: [{ clientX: 100, clientY: 105 }] })
+
+      expect(props.onNext).not.toHaveBeenCalled()
+    })
+
+    it('keeps the controls while the settings panel is open', () => {
+      setup()
+      fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
+
+      idle()
+      idle()
+
+      // A panel that timed out from under the hand editing it is a trap.
+      expect(chromeVisible()).toBe(true)
+      expect(screen.getByLabelText('Speed')).toBeInTheDocument()
+    })
+
+    it('keeps the controls while the mouse rests on them', () => {
+      setup()
+      const bar = document.querySelector('.slideshow__controls')
+      if (bar === null) {
+        throw new Error('the player rendered no control bar')
+      }
+
+      fireEvent.pointerOver(bar, { pointerType: 'mouse' })
+      idle()
+      expect(chromeVisible()).toBe(true)
+
+      fireEvent.pointerOut(bar, { pointerType: 'mouse', relatedTarget: document.body })
+      idle()
+      expect(chromeVisible()).toBe(false)
+    })
+
+    it('does not let the mouse leaving cancel a hold the keyboard still needs', () => {
+      setup()
+      const next = screen.getByRole('button', { name: 'Next' })
+
+      // Clicking a control leaves it focused; the mouse then wanders off the
+      // bar. If that cancelled the hold, the chrome would go inert under the
+      // focused button and drop the focus with it.
+      fireEvent.pointerOver(next, { pointerType: 'mouse' })
+      fireEvent.focus(next)
+      fireEvent.pointerOut(next, { pointerType: 'mouse', relatedTarget: document.body })
+
+      idle()
+      expect(chromeVisible()).toBe(true)
+    })
+
+    it('keeps the controls while the keyboard is inside them', () => {
+      setup()
+      const next = screen.getByRole('button', { name: 'Next' })
+      fireEvent.focus(next)
+
+      idle()
+      expect(chromeVisible()).toBe(true)
+
+      // Focus leaves: the countdown starts again from there.
+      fireEvent.blur(next)
+      idle()
+      expect(chromeVisible()).toBe(false)
+    })
+  })
+
   describe('the caption over the photo', () => {
     const described = [
       {
@@ -415,17 +692,29 @@ describe('Slideshow', () => {
       expect(screen.queryByText('b.jpg')).not.toBeInTheDocument()
     })
 
-    it('stays out of the control bar, so fading the chrome could never take it', () => {
-      const { container } = render(
-        <I18nextProvider i18n={i18n}>
-          <Slideshow {...makeProps({ photos: described, index: 0 })} />
-        </I18nextProvider>,
-      )
+    it('stays out of the chrome, so fading the chrome does not take it', () => {
+      vi.useFakeTimers()
+      try {
+        const { container } = render(
+          <I18nextProvider i18n={i18n}>
+            <Slideshow {...makeProps({ photos: described, index: 0 })} />
+          </I18nextProvider>,
+        )
 
-      const meta = container.querySelector('.slideshow__meta')
-      expect(meta).not.toBeNull()
-      expect(meta?.closest('.slideshow__controls')).toBeNull()
-      expect(meta?.closest('.slideshow__caption')).toBeNull()
+        const meta = container.querySelector('.slideshow__meta')
+        expect(meta).not.toBeNull()
+        expect(meta?.closest('.slideshow__chrome')).toBeNull()
+
+        // And it is still there once the controls have gone: what the photo is
+        // must not depend on the mouse having moved recently.
+        act(() => {
+          vi.advanceTimersByTime(CHROME_IDLE_MS)
+        })
+        expect(chromeVisible()).toBe(false)
+        expect(screen.getByText('Wedding')).toBeInTheDocument()
+      } finally {
+        vi.useRealTimers()
+      }
     })
 
     it('states a coarse date as the period it was stated as', () => {
