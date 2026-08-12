@@ -912,9 +912,13 @@ to `## Package map` in `CLAUDE.md`.
   `Reachable() bool` (never blocks, false before the first probe and for a disabled checker); `Tick(ctx)`
   = one probe + storing the result (logs only a state change, no-op for disabled, so it never touches
   a nil Health); `Run(ctx,interval)` = immediately + every interval in its own goroutine, disabled → returns
-  immediately. **Disabled** = `Enabled:false` (built when `embedding.url` is empty) → always
-  unreachable, no probe. It is used by `internal/capabilitiesapi` as the source of `semantic_search`;
-  started by `cmd/kukatko/capabilities.go` after 60 s alongside the other background services),
+  immediately. **Disabled** = `Enabled:false` (built when neither `embedding.text_url` nor
+  `embedding.url` is set) → always unreachable, no probe. It is used by `internal/capabilitiesapi` as
+  the source of `semantic_search`; started by `cmd/kukatko/capabilities.go` after 60 s alongside the
+  other background services. It is the **one** probe that follows `embedding.text_url` when set
+  (`buildReachabilityChecker` overrides the client's `BaseURL` with it): the flag is about semantic
+  search, not about the box, and probing a sleeping box would grey the semantic mode out in the UI
+  while the search itself answers fine — whereas `internal/wake`'s probe must stay on the box),
   `internal/jobsapi/`
   (a maintainer-only HTTP API over the queue: `NewAPI(Config{Store,RequireMaintainer})`+`RegisterRoutes`
   mounts `/jobs`; `GET /jobs/stats` (counts by_state/by_type+total), `GET /jobs`
@@ -922,7 +926,7 @@ to `## Package map` in `CLAUDE.md`.
   `POST /jobs/{id}/requeue` (dead/failed → queued; 404 missing, 409 non-requeueable);
   the frontend polls, no SSE), `internal/embedding/`
   (an HTTP client to the inference sidecar on the **box** — `kozaktomas/image-embeddings`, all behind
-  the `Client` interface (fakeable in tests): `New(Config{BaseURL,ImageDim,FaceDim,
+  the `Client` interface (fakeable in tests): `New(Config{BaseURL,TextBaseURL,ImageDim,FaceDim,
   RequestTimeout,TextTimeout,DialTimeout,HealthTimeout,HealthPath,HTTPClient})` → `*HTTPClient`; `ImageEmbedding(ctx,
   img io.Reader)`/`TextEmbedding(ctx,text)` → a 1152-dim SigLIP 2 vector + `model`/`pretrained`
   (`POST /embed/image` multipart `file` streamed via `io.Pipe` / `POST /embed/text` JSON
@@ -947,7 +951,14 @@ to `## Package map` in `CLAUDE.md`.
   and that shows up as a dial nobody answers, where the stock `http.DefaultTransport` would sit for 30 s;
   an injected `HTTPClient` keeps its own transport. All three are configurable (`embedding.dial_timeout`/
   `request_timeout`/`text_timeout`, applied at every construction site through `embeddingClientConfig` in
-  `cmd/kukatko`); never holds the whole image in RAM), `internal/vectors/`
+  `cmd/kukatko`); never holds the whole image in RAM. **`TextBaseURL` (config `embedding.text_url`,
+  empty = same host) routes `/embed/text` — and nothing else — to a second instance of the service**
+  (`endpointURL` picks the host per endpoint, so a new endpoint lands on `BaseURL` by default): the box
+  is a desktop that is usually off, which queue work tolerates and an interactive search does not, so
+  production sends the query to an always-on CPU text-only container while images, faces and OCR stay
+  on the box (a text-only instance answers those with 503). `Healthy`/`Health` deliberately stay on
+  `BaseURL` — `internal/wake` reads that probe, and an always-on green light would mean the magic
+  packet is never sent and the embedding queue waits forever), `internal/vectors/`
   (the DB layer for embeddings and faces, **stored directly in Postgres** as `halfvec` (float16)
   columns with HNSW cosine indexes — tables `embeddings`/`faces` in migration `0006_embeddings.sql`;
   `halfvec` instead of `vector` halves the HNSW index memory at a negligible recall loss on

@@ -9,7 +9,9 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -232,6 +234,152 @@ func TestTextEmbedding_success(t *testing.T) {
 	}
 	if len(got) != 4 {
 		t.Errorf("len = %d, want 4", len(got))
+	}
+}
+
+// routeRecorder is a stand-in sidecar instance that records the paths it was
+// asked for and answers every route the client knows with a well-formed body, so
+// a test can tell which of two instances a call actually reached.
+type routeRecorder struct {
+	url string
+
+	mu    sync.Mutex
+	paths []string
+}
+
+// newRouteRecorder starts a recording sidecar and stops it when the test ends.
+func newRouteRecorder(t *testing.T) *routeRecorder {
+	t.Helper()
+	rec := &routeRecorder{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec.mu.Lock()
+		rec.paths = append(rec.paths, r.URL.Path)
+		rec.mu.Unlock()
+		switch r.URL.Path {
+		case endpointFace:
+			_ = json.NewEncoder(w).Encode(faceEnvelope{Model: "arcface"})
+		case endpointOCR:
+			_ = json.NewEncoder(w).Encode(ocrEnvelope{Model: "ocr"})
+		default:
+			_ = json.NewEncoder(w).Encode(embeddingResponse{Dim: 4, Embedding: makeVec(4), Model: "siglip"})
+		}
+	}))
+	t.Cleanup(srv.Close)
+	rec.url = srv.URL
+	return rec
+}
+
+// seen returns the paths recorded so far, in order.
+func (r *routeRecorder) seen() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.paths)
+}
+
+// callEveryEndpoint exercises each route of the client in a fixed order, failing
+// the test on any error so a routing assertion never reads an empty recorder.
+func callEveryEndpoint(t *testing.T, c *HTTPClient) {
+	t.Helper()
+	ctx := context.Background()
+	if _, _, _, err := c.TextEmbedding(ctx, "a cat"); err != nil {
+		t.Fatalf("TextEmbedding: %v", err)
+	}
+	if _, _, _, err := c.ImageEmbedding(ctx, strings.NewReader("JPEGDATA")); err != nil {
+		t.Fatalf("ImageEmbedding: %v", err)
+	}
+	if _, _, err := c.FaceEmbeddings(ctx, strings.NewReader("JPEGDATA")); err != nil {
+		t.Fatalf("FaceEmbeddings: %v", err)
+	}
+	if _, err := c.ImageOCR(ctx, strings.NewReader("JPEGDATA"), 0); err != nil {
+		t.Fatalf("ImageOCR: %v", err)
+	}
+	if !c.Healthy(ctx) {
+		t.Fatal("Healthy = false, want true")
+	}
+}
+
+// TestClient_textBaseURLRoutesOnlyText pins the split a second, always-on text
+// instance depends on: the search query goes there, everything else stays on the
+// box. The health probe is the load-bearing half — internal/wake reads it to
+// decide whether to send a magic packet, so a green light from the text instance
+// would leave the box asleep and the embedding queue stuck behind it forever.
+func TestClient_textBaseURLRoutesOnlyText(t *testing.T) {
+	t.Parallel()
+	box := newRouteRecorder(t)
+	text := newRouteRecorder(t)
+	c, err := New(Config{
+		BaseURL:        box.url,
+		TextBaseURL:    text.url,
+		ImageDim:       4,
+		FaceDim:        3,
+		RequestTimeout: 2 * time.Second,
+		HealthTimeout:  500 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	callEveryEndpoint(t, c)
+
+	wantText := []string{endpointText}
+	if got := text.seen(); !slices.Equal(got, wantText) {
+		t.Errorf("text instance saw %v, want %v", got, wantText)
+	}
+	wantBox := []string{endpointImage, endpointFace, endpointOCR, DefaultHealthPath}
+	if got := box.seen(); !slices.Equal(got, wantBox) {
+		t.Errorf("box saw %v, want %v", got, wantBox)
+	}
+}
+
+// TestClient_textFallsBackToBaseURL covers the state every deployment starts in:
+// no text URL configured means one host answers everything, exactly as before.
+func TestClient_textFallsBackToBaseURL(t *testing.T) {
+	t.Parallel()
+	box := newRouteRecorder(t)
+	c := newTestClient(t, box.url)
+	if c.textURL != c.baseURL {
+		t.Errorf("textURL = %v, want the base URL %v", c.textURL, c.baseURL)
+	}
+
+	callEveryEndpoint(t, c)
+
+	want := []string{endpointText, endpointImage, endpointFace, endpointOCR, DefaultHealthPath}
+	if got := box.seen(); !slices.Equal(got, want) {
+		t.Errorf("box saw %v, want %v", got, want)
+	}
+}
+
+func TestNew_textBaseURLValidation(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		textURL  string
+		wantHost string
+		wantErr  error
+	}{
+		{"empty falls back to the base host", "", "box:8000", nil},
+		{"valid http", "http://embeddings-text:8000", "embeddings-text:8000", nil},
+		{"valid https trailing slash", "https://text.example/", "text.example", nil},
+		{"missing scheme", "embeddings-text:8000", "", ErrInvalidURL},
+		{"missing host", "http://", "", ErrInvalidURL},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			c, err := New(Config{BaseURL: "http://box:8000", TextBaseURL: tt.textURL})
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("New(text=%q) err = %v, want %v", tt.textURL, err, tt.wantErr)
+			}
+			if tt.wantErr != nil {
+				return
+			}
+			if got := c.textURL.Host; got != tt.wantHost {
+				t.Errorf("text host = %q, want %q", got, tt.wantHost)
+			}
+			if c.baseURL.Host != "box:8000" {
+				t.Errorf("base host = %q, want box:8000 (text URL must not move it)", c.baseURL.Host)
+			}
+		})
 	}
 }
 

@@ -716,8 +716,21 @@ long-running and belong on the machine where the instance runs — so they remai
   image/face embedding; those are queue work on a possibly cold GPU, so it stays generous and never
   delays a request a person is waiting on. `text_timeout` (**default 5s**) bounds embedding a search
   query — the one interactive call — because search degrades to full-text when it expires and text
-  results now beat semantic results later. Env: `KUKATKO_EMBEDDING_URL`, `_DIAL_TIMEOUT`,
-  `_REQUEST_TIMEOUT`, `_TEXT_TIMEOUT`.
+  results now beat semantic results later. `text_url` (**default empty**) sends *only* `/embed/text`
+  to a second instance of the same service and is what makes semantic search work while the box
+  sleeps: production points it at the CPU text-only container next to the app
+  (`KUKATKO_EMBEDDING_TEXT_URL: "http://embeddings-text:8000"`, measured p50 0.43 s — 50× the box's
+  0.0086 s and still far inside `text_timeout`, cosine agreement with the box 0.999999), while
+  `/embed/image`, `/embed/face` and `/ocr/image` keep going to `url` because a text-only instance
+  answers them with 503. Empty means "one host answers everything", which is what an unsplit
+  deployment gets. The **health probe stays on `url`** with them: it is what `internal/wake` reads to
+  decide whether to send a magic packet, and a probe pointed at an always-on instance would report a
+  green light forever, leaving the box asleep and the `image_embed`/`face_detect` queue stuck behind
+  it. The one probe that does follow `text_url` is the `GET /capabilities` reachability checker
+  (`buildReachabilityChecker`), because that flag is about semantic search rather than about the box —
+  pointed at a sleeping box it would grey the semantic mode out in the UI while the search itself
+  works. Env: `KUKATKO_EMBEDDING_URL`, `_TEXT_URL`, `_DIAL_TIMEOUT`, `_REQUEST_TIMEOUT`,
+  `_TEXT_TIMEOUT`.
 - **Text-recognition keys (`embedding.ocr.*`, `internal/ocrjob`):** reading the text printed *in* a
   photo — a street sign, a shop front, a scanned page — so search finds the photo by what it says. It
   is served by the **same** sidecar on the same box as the embeddings above, which is why it has no URL

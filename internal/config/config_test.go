@@ -83,6 +83,9 @@ func TestLoad_defaults(t *testing.T) {
 		{"web.host", cfg.Web.Host, "0.0.0.0"},
 		{"web.port", cfg.Web.Port, 8080},
 		{"embedding.url", cfg.Embedding.URL, "http://localhost:8000"},
+		// Empty by default: one host answers everything until a deployment splits
+		// the interactive text call off onto an always-on instance.
+		{"embedding.text_url", cfg.Embedding.TextURL, ""},
 		{"embedding.image_dim", cfg.Embedding.ImageDim, 1152},
 		{"embedding.face_dim", cfg.Embedding.FaceDim, 512},
 		{"embedding.dial_timeout", cfg.Embedding.DialTimeout, 3 * time.Second},
@@ -240,6 +243,7 @@ func TestLoad_envOverridesDefaults(t *testing.T) {
 	t.Setenv("KUKATKO_WEB_HOST", "127.0.0.1")
 	t.Setenv("KUKATKO_DATABASE_MAX_OPEN_CONNS", "50")
 	t.Setenv("KUKATKO_EMBEDDING_URL", "http://box:9000")
+	t.Setenv("KUKATKO_EMBEDDING_TEXT_URL", "http://embeddings-text:8000")
 	t.Setenv("KUKATKO_EMBEDDING_TEXT_TIMEOUT", "2s")
 	t.Setenv("KUKATKO_DUPLICATE_ENABLED", "false")
 	t.Setenv("KUKATKO_SIDECAR_ENABLED", "false")
@@ -269,6 +273,12 @@ func TestLoad_envOverridesDefaults(t *testing.T) {
 	}
 	if cfg.Embedding.URL != "http://box:9000" {
 		t.Errorf("embedding.url = %q, want http://box:9000", cfg.Embedding.URL)
+	}
+	// The second host for the search query is set per deployment (the VPS has one,
+	// a laptop does not) and is delivered as an environment variable, so an empty
+	// default must not swallow it.
+	if cfg.Embedding.TextURL != "http://embeddings-text:8000" {
+		t.Errorf("embedding.text_url = %q, want http://embeddings-text:8000", cfg.Embedding.TextURL)
 	}
 	// The search-facing timeout is the one an operator tunes when the box is slow
 	// but reachable, so it must be reachable from the environment too.

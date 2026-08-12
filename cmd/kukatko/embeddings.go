@@ -24,12 +24,24 @@ import (
 func embeddingClientConfig(cfg *config.Config) embedding.Config {
 	return embedding.Config{
 		BaseURL:        cfg.Embedding.URL,
+		TextBaseURL:    cfg.Embedding.TextURL,
 		ImageDim:       cfg.Embedding.ImageDim,
 		FaceDim:        cfg.Embedding.FaceDim,
 		DialTimeout:    cfg.Embedding.DialTimeout,
 		RequestTimeout: cfg.Embedding.RequestTimeout,
 		TextTimeout:    cfg.Embedding.TextTimeout,
 	}
+}
+
+// textEmbeddingURL returns the host that answers /embed/text: the dedicated
+// embedding.text_url when one is configured, otherwise the main sidecar URL.
+// Callers that care about semantic search specifically — rather than about the
+// box — ask this instead of reading cfg.Embedding.URL.
+func textEmbeddingURL(cfg *config.Config) string {
+	if cfg.Embedding.TextURL != "" {
+		return cfg.Embedding.TextURL
+	}
+	return cfg.Embedding.URL
 }
 
 // buildEmbedService assembles the embedding subsystem: the configured original

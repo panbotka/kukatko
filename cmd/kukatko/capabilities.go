@@ -25,11 +25,20 @@ const capabilitiesCheckInterval = time.Minute
 // advertised); otherwise it reuses the same lightweight embedding client
 // construction as the other services for its cheap Healthy probe. A configuration
 // error surfaces only for a malformed URL.
+//
+// It probes the host that answers /embed/text, which is what the flag is about:
+// with embedding.text_url pointing at an always-on text instance, semantic search
+// keeps working while the GPU box sleeps, and probing the box would wrongly grey
+// the mode out. This is the one health probe that follows the text URL — the one
+// internal/wake reads must stay on the box, or the box would never be woken.
 func buildReachabilityChecker(cfg *config.Config) (*reachability.Checker, error) {
-	if cfg.Embedding.URL == "" {
+	textURL := textEmbeddingURL(cfg)
+	if textURL == "" {
 		return reachability.New(reachability.Config{}), nil
 	}
-	client, err := embedding.New(embeddingClientConfig(cfg))
+	clientCfg := embeddingClientConfig(cfg)
+	clientCfg.BaseURL = textURL
+	client, err := embedding.New(clientCfg)
 	if err != nil {
 		return nil, fmt.Errorf("capabilities: building embedding health client: %w", err)
 	}
