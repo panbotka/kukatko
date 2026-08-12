@@ -1454,6 +1454,22 @@ here.
   outrank the media query that undoes it. The breakpoint is `useIsNarrowViewport`'s, so the sheet and the
   curation dock cannot disagree about what a phone is. Guarded by `PhotoDetailPage.test.tsx` (geometry read out of
   `viewer.css`, glyphs in the DOM) and verified in a real browser at 393 × 852.
+  **Shut, the drawer must not hold the keyboard.** It slides out rather than unmounting, so every one of its
+  controls stays laid out — and a laid-out control is a tabbable one: on production at 1440 px, Tab left the
+  visible chrome and landed on „Zavřít informace" **inside** the shut panel, whereupon the browser scrolled the
+  photograph 416 px off screen to reveal it (`.kk-viewer` is a scroll container — `scrollWidth` 1856 >
+  `clientWidth` 1440) and kept it there for 17 more stops. The panel was `aria-hidden` the whole time it held that
+  focus, which made it a **WCAG 4.1.2** violation as well: a screen reader announces nothing from there. The fix is
+  **`inert={!panelOpen}` on the `<aside>`** — the whole subtree leaves the tab order **and** the accessibility
+  tree — plus **`visibility: hidden`** in `viewer.css` for a browser too old for `inert`, transitioned at `0s`
+  but **delayed by the slide's own duration**, which is what keeps the drawer visible the whole way out. It covers
+  the **faces and edit views too**: those are views *of* this one drawer, not panels of their own (it is the only
+  element on this screen that closes by transform). Because an inert subtree drops the focus it holds onto
+  `<body>` — where the next Tab restarts at the top of the page — **every** close path goes through one
+  `closePanel()`, which notes whether focus was inside the drawer first and then hands it to the toggle that
+  reopens the view just closed (`focus({ preventScroll: true })`: scrolling to reveal a control is the very jolt
+  this is about). Guarded by `PhotoDetailPage.test.tsx` („the shut drawer and the keyboard" — jsdom implements
+  neither `inert` nor layout, so the tests read the DOM condition a browser acts on: an `inert` ancestor).
   Its content is **the same components as before, only in the drawer instead of below
   the photo** (the `OrganizeBadges` „filed under" strip above the photo is gone — albums/labels are in Uspořádání).
   **The drawer's sections**

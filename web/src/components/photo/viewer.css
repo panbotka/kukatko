@@ -526,7 +526,18 @@
   border-left: 1px solid var(--kk-surface-border);
   box-shadow: var(--kk-shadow-3);
   transform: translateX(100%);
-  transition: transform var(--kk-duration-base) var(--kk-ease-standard);
+  /* Shut, the drawer is only pushed off screen — it stays laid out, so without
+     this its controls kept the keyboard: Tab walked into a panel nobody can see
+     and the browser scrolled the photograph off screen to reveal it. JSX marks the
+     shut drawer `inert`, which is the real fix (tab order AND accessibility tree);
+     `visibility` says the same thing to a browser too old for `inert`, and is the
+     one hiding switch that does NOT break the slide — it is transitioned at 0s but
+     DELAYED by the slide's own duration, so the drawer stays visible the whole way
+     out and only then goes away. */
+  visibility: hidden;
+  transition:
+    transform var(--kk-duration-base) var(--kk-ease-standard),
+    visibility 0s linear var(--kk-duration-base);
   /* The drawer scrolls its own content; keep that scroll from chaining to the
      locked page underneath. */
   touch-action: pan-y;
@@ -535,6 +546,12 @@
 
 .kk-viewer__panel.is-open {
   transform: translateX(0);
+  /* On the way in there is nothing to wait for: it must be visible from the first
+     frame of the slide, so no delay here. */
+  visibility: visible;
+  transition:
+    transform var(--kk-duration-base) var(--kk-ease-standard),
+    visibility 0s;
 }
 
 .kk-viewer__panel-head {

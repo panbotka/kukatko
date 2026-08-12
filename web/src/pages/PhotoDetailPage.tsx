@@ -86,6 +86,14 @@ type State =
 type SidePanel = 'faces' | 'edit' | null
 
 /**
+ * Which of the top bar's three view toggles owns what the drawer currently shows.
+ * Shutting the drawer takes the keyboard out of it (it goes `inert`), so whatever
+ * focus it held has to land somewhere — and the control that reopens the very view
+ * just closed is the one place that is never a surprise.
+ */
+type PanelToggle = 'info' | 'faces' | 'edit'
+
+/**
  * The classes of a *flag toggle* — a control over a flag that holds the photo
  * back from the library (hidden from it, or archived into the trash) — for the
  * flag's current value.
@@ -308,6 +316,47 @@ export function PhotoDetailPage() {
   // alongside faces or edits just because the drawer happens to be open.
   const infoActive = panelOpen && showInfo
 
+  // The drawer itself and the three toggles that open its views. A shut drawer is
+  // `inert` (see the `<aside>` below), and a browser blurs whatever is focused
+  // inside a subtree that goes inert — leaving focus on `<body>`, where the next
+  // Tab restarts at the top of the page. So a close that came from INSIDE the
+  // drawer hands the keyboard back to the toggle that reopens it.
+  const panelRef = useRef<HTMLElement | null>(null)
+  const infoToggleRef = useRef<HTMLButtonElement | null>(null)
+  const facesToggleRef = useRef<HTMLButtonElement | null>(null)
+  const editToggleRef = useRef<HTMLButtonElement | null>(null)
+  // Set by `closePanel` when the close came from inside the drawer; read and
+  // cleared by the effect below, once the drawer has actually shut.
+  const returnFocusRef = useRef<PanelToggle | null>(null)
+  const shownToggle: PanelToggle = showFaces ? 'faces' : showEdit ? 'edit' : 'info'
+
+  // The ONE way to shut the drawer — its own ✕, the view toggles, Escape all go
+  // through here — so the focus hand-off can never be forgotten by one of them.
+  const closePanel = (): void => {
+    const inside = panelRef.current?.contains(document.activeElement) ?? false
+    returnFocusRef.current = inside ? shownToggle : null
+    setPanelOpen(false)
+  }
+
+  useEffect(() => {
+    const toggle = returnFocusRef.current
+    if (panelOpen || toggle === null) {
+      return
+    }
+    returnFocusRef.current = null
+    const toggles: Record<PanelToggle, HTMLButtonElement | null> = {
+      info: infoToggleRef.current,
+      faces: facesToggleRef.current,
+      edit: editToggleRef.current,
+    }
+    // The faces/edit toggle can be gone by the time we get here (a photo with no
+    // faces, a viewer's read-only bar); the info toggle is always in the bar, so it
+    // is the fallback. `preventScroll`, because scrolling to reveal a control is the
+    // very jolt this panel's focus handling exists to prevent.
+    const target = toggles[toggle] ?? infoToggleRef.current
+    target?.focus({ preventScroll: true })
+  }, [panelOpen])
+
   // Faces and edits share the drawer's lead slot, so showing either one closes the
   // other; opening either opens the drawer (their panels live inside it).
   const openFaces = (): void => {
@@ -326,7 +375,7 @@ export function PhotoDetailPage() {
       setSidePanel(null)
       writeFaceOverlay(false)
       faces.select(null)
-      setPanelOpen(false)
+      closePanel()
       return
     }
     openFaces()
@@ -348,7 +397,7 @@ export function PhotoDetailPage() {
     if (sidePanel === 'edit') {
       setSidePanel(null)
       setEditDraft(null)
-      setPanelOpen(false)
+      closePanel()
       return
     }
     setSidePanel('edit')
@@ -362,7 +411,7 @@ export function PhotoDetailPage() {
   // sense there); from the info view already showing, it toggles the drawer shut.
   const togglePanel = (): void => {
     if (panelOpen && sidePanel === null) {
-      setPanelOpen(false)
+      closePanel()
       return
     }
     setSidePanel(null)
@@ -452,7 +501,7 @@ export function PhotoDetailPage() {
         return
       }
       if (panelOpen || sidePanel !== null) {
-        setPanelOpen(false)
+        closePanel()
         setSidePanel(null)
         setEditDraft(null)
         return
@@ -935,6 +984,7 @@ export function PhotoDetailPage() {
           {facesAvailable && (
             <button
               type="button"
+              ref={facesToggleRef}
               className="kk-viewer__btn kk-viewer__btn--icon"
               aria-pressed={showFaces}
               aria-label={showFaces ? t('faces.hide') : t('faces.toggle')}
@@ -946,6 +996,7 @@ export function PhotoDetailPage() {
           {canWrite && isStill && (
             <button
               type="button"
+              ref={editToggleRef}
               className="kk-viewer__btn kk-viewer__btn--icon"
               aria-pressed={showEdit}
               aria-label={t('photo.edit.title')}
@@ -960,6 +1011,7 @@ export function PhotoDetailPage() {
               only in the little disc, which a screen reader would never read out. */}
           <button
             type="button"
+            ref={infoToggleRef}
             className="kk-viewer__btn kk-viewer__btn--icon kk-viewer__btn--badged"
             aria-pressed={infoActive}
             aria-label={
@@ -1033,9 +1085,22 @@ export function PhotoDetailPage() {
           exactly that space, so the photo stays visible — and there is no scrim
           over it, so it stays pannable too. */}
       <aside
+        ref={panelRef}
         className={`kk-viewer__panel${panelOpen ? ' is-open' : ''}`}
         aria-label={t('photo.viewer.info')}
         aria-hidden={!panelOpen}
+        // Shut, the drawer slides off screen — it does not unmount — so every one
+        // of its controls stays laid out, and a laid-out control is a tabbable one.
+        // Tab walked straight into a panel nobody can see, and the browser scrolled
+        // the photograph clean off the screen to reveal it, for 17 stops. `inert`
+        // takes the whole subtree out of the tab order AND out of the accessibility
+        // tree, which is also what makes the `aria-hidden` above honest: focusable
+        // content inside `aria-hidden` is a WCAG 4.1.2 violation, because a screen
+        // reader announces nothing while focus sits there. `visibility: hidden` in
+        // the stylesheet says the same thing to a browser too old for `inert`.
+        // This covers the faces and edit views too — they are views OF this one
+        // drawer, not panels of their own.
+        inert={!panelOpen}
       >
         {/* The generic drawer header belongs to the info view; the faces and edit
             panels carry their own header + close, so it would only duplicate them. */}
@@ -1046,9 +1111,7 @@ export function PhotoDetailPage() {
               type="button"
               className="kk-viewer__btn kk-viewer__btn--icon"
               aria-label={t('photo.viewer.closeInfo')}
-              onClick={() => {
-                setPanelOpen(false)
-              }}
+              onClick={closePanel}
             >
               <Icon name="x-lg" />
             </button>

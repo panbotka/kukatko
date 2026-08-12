@@ -271,6 +271,13 @@ implemented**, per the task's conservative-changes rule.
 - **New (2026-08-05), mobile only:** the faces and info panels are full-viewport opaque sheets on
   a phone, so the photo they describe is completely hidden, and the viewer's close button
   overlaps the panel title. See `UX_RESEARCH.md` **N6**.
+- **Keyboard (2026-08-12):** on a photo opened without the info drawer, Tab walked into the *shut*
+  drawer (tab 14 of 30, „Zavřít informace") and the browser scrolled the photograph 416 px off
+  screen to reveal controls nobody can see, then kept it there for 17 more stops — while the panel
+  was `aria-hidden`, i.e. a WCAG 4.1.2 violation too. ✅ **Done (2026-08-12):** the shut drawer is
+  `inert` (plus `visibility: hidden` for older browsers), and closing it from inside hands focus
+  back to the toggle that reopens it. Same element carries the faces and edit views, so both are
+  fixed with it. 🔴 ⚪
 
 ### Upload (`/upload`)
 - **The model to copy.** Full-size primary/secondary buttons, proper h1→h2 hierarchy, friendly
