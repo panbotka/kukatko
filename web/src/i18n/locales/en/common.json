@@ -2114,6 +2114,24 @@
     "speed": {
       "label": "Speed",
       "seconds": "{{seconds}} s"
+    },
+    "dialog": {
+      "title": "Slideshow",
+      "start": "Start",
+      "duration": "The show will take about {{duration}}.",
+      "durationRepeat": "One pass takes about {{duration}}, then the show starts again."
+    },
+    "repeat": {
+      "label": "Repeat"
+    },
+    "shuffle": {
+      "label": "Shuffle"
+    },
+    "captions": {
+      "label": "Show over the photo",
+      "title": "Title",
+      "description": "Description",
+      "date": "Date taken"
     }
   },
   "duration": {

@@ -294,6 +294,17 @@ pagination O(page) instead of O(offset), but it is a response-shape/contract
 change and is intentionally **out of scope** for this behaviour-preserving pass;
 it is noted here as the next step if deep-scroll latency ever becomes an issue.
 
+### The random order (`?sort=random`, the slideshow's shuffle)
+
+`ORDER BY md5(uid || $seed)` is deliberately **not** index-backed: the value is
+computed per row and the whole filtered set is sorted, so a shuffled page costs a
+scan plus a sort where a dated page costs a bounded index walk. That is accepted
+rather than optimised away, because it is what a shuffle *is* — a permutation
+nothing can have pre-sorted — and because of who asks for it: one reader starting
+one slideshow, a handful of pages over the evening, never the grid and never a
+background job. If the library ever grows to where this is felt, the fix is a
+materialised shuffle key, not an index on a digest of a per-request seed.
+
 ### The album index (`GET /api/v1/albums`)
 
 **Symptom (production, 2026-08-02).** The endpoint took **32.8 s** to return

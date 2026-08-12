@@ -111,6 +111,16 @@ func TestOrderClause(t *testing.T) {
 			params: ListParams{Sort: SortByRating},
 			want:   "taken_at DESC NULLS LAST, uid DESC",
 		},
+		{
+			name:   "random sort orders on a digest of the uid and the bound seed",
+			params: ListParams{Sort: SortByRandom, Seed: "s7"},
+			want:   "md5(uid || $1), uid",
+		},
+		{
+			name:   "a random order has no direction to reverse",
+			params: ListParams{Sort: SortByRandom, Seed: "s7", Order: OrderAsc},
+			want:   "md5(uid || $1), uid",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -609,6 +619,23 @@ func TestBuildSearchQuery(t *testing.T) {
 		// fts(WHERE) + fts(rank) + limit + offset, with the default limit applied.
 		if len(args) != 4 || args[2] != defaultListLimit {
 			t.Errorf("args = %v, want default limit %d at index 2", args, defaultListLimit)
+		}
+	})
+
+	// A shuffled slideshow replaying a search wants the random order, not the
+	// relevance ranking — and the same random order on every page.
+	t.Run("the random sort replaces the relevance ranking", func(t *testing.T) {
+		t.Parallel()
+		query, args := buildSearchQuery(ListParams{FullText: "x", Sort: SortByRandom, Seed: "s7"})
+		if !strings.Contains(query, "ORDER BY md5(uid || $2), uid") {
+			t.Errorf("query missing the seeded random order: %q", query)
+		}
+		if strings.Contains(query, "ts_rank") {
+			t.Errorf("a shuffled search must not rank by relevance: %q", query)
+		}
+		// fts(WHERE) + seed + limit + offset; the query is bound once now.
+		if len(args) != 4 || args[1] != "s7" {
+			t.Errorf("args = %v, want the seed bound at index 1", args)
 		}
 	})
 }

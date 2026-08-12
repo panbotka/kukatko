@@ -38,6 +38,13 @@ const (
 	// arbitrary end. It backs the album view, which is always presented oldest
 	// first; it is not offered as a public sort alias.
 	SortByChronology SortField = "chronology"
+	// SortByRandom orders by a pseudo-random permutation of the result set
+	// derived from the photo uid and ListParams.Seed. It is what the slideshow's
+	// shuffle plays: one seed yields one order, identical on every page, so
+	// paging through a shuffled show neither repeats a photo nor drops one — the
+	// failure a per-request random order would guarantee. It is not a column, so
+	// the requested direction does not apply to it.
+	SortByRandom SortField = "random"
 )
 
 // sortColumns maps each accepted SortField to its physical column. Lookups
@@ -181,6 +188,12 @@ type ListParams struct {
 	// Order selects the ordering direction; anything other than OrderAsc means
 	// descending.
 	Order SortOrder
+	// Seed makes SortByRandom reproducible: the random order is a function of the
+	// photo uid and this string alone, so every page of one shuffled show sees
+	// the same permutation and a different seed reshuffles it. Ignored by every
+	// other sort. The empty string is a perfectly usable seed — it just names one
+	// fixed permutation.
+	Seed string
 	// Limit caps the number of rows; values <= 0 use defaultListLimit.
 	Limit int
 	// Offset skips the given number of rows for pagination.
@@ -650,13 +663,25 @@ func buildCountQuery(params ListParams) (string, []any) {
 // reusing the WHERE placeholder, keeping each builder self-contained; the bound
 // value is identical, so the planner still sees one query. All caller values are
 // bound as parameters.
+//
+// SortByRandom is the one sort a ranked search honours: a shuffled slideshow
+// replaying a search asked for a random order outright, and ranking it by
+// relevance instead would quietly ignore that. Every other sort leaves the
+// full-text ranking alone, which is what a search is for.
 func buildSearchQuery(params ListParams) (string, []any) {
 	where, args := buildWhere(params)
+	bind := func(value any) string {
+		args = append(args, value)
+		return "$" + strconv.Itoa(len(args))
+	}
 	query := "SELECT " + photoColumns + " FROM photos WHERE " + strings.Join(where, " AND ")
 
-	args = append(args, params.FullText)
-	rank := "ts_rank(fts, " + tsQueryExpr("$"+strconv.Itoa(len(args))) + ")"
-	query += " ORDER BY " + rank + " DESC, uid DESC"
+	if params.Sort == SortByRandom {
+		query += " ORDER BY " + orderClause(params, bind)
+	} else {
+		rank := "ts_rank(fts, " + tsQueryExpr(bind(params.FullText)) + ")"
+		query += " ORDER BY " + rank + " DESC, uid DESC"
+	}
 
 	limit := params.Limit
 	if limit <= 0 {
@@ -678,11 +703,20 @@ func buildSearchQuery(params ListParams) (string, []any) {
 // the RatedBy user's star rating via a correlated subquery over user_ratings
 // (unrated photos sort last), binding the user UID through bind; it falls back
 // to the default when RatedBy is nil, since a rating is always scoped to the
-// current caller.
+// current caller. The random sort orders on a digest of the uid and the seed,
+// which is what makes a shuffled show pageable.
 func orderClause(params ListParams, bind func(any) string) string {
 	direction := "DESC"
 	if params.Order == OrderAsc {
 		direction = "ASC"
+	}
+	if params.Sort == SortByRandom {
+		// md5 over uid||seed spreads the result set uniformly and depends on
+		// nothing but those two values, so every page of one seed sees the same
+		// permutation and the next seed sees another. The uid tiebreaker guards
+		// only the astronomically unlikely digest collision, keeping the order
+		// total. A random order has no direction, so the requested one is ignored.
+		return "md5(uid || " + bind(params.Seed) + "), uid"
 	}
 	if params.Sort == SortByChronology {
 		// COALESCE never yields NULL here (created_at is NOT NULL), so no NULLS

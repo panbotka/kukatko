@@ -49,7 +49,27 @@ describe('useSlideshow', () => {
     expect(result.current.index).toBe(2)
   })
 
-  it('wraps to the first photo at the end when there are no more pages', () => {
+  it('wraps to the first photo at the end when repeating', () => {
+    const { result } = renderHook(() =>
+      useSlideshow({ length: 2, intervalMs: 1000, hasMore: false, repeat: true }),
+    )
+
+    act(() => {
+      vi.advanceTimersByTime(1000)
+    })
+    expect(result.current.index).toBe(1)
+    expect(result.current.pass).toBe(0)
+
+    act(() => {
+      vi.advanceTimersByTime(1000)
+    })
+    expect(result.current.index).toBe(0)
+    // The wrap is a new pass, which is what tells the page its per-pass
+    // bookkeeping (what has been seen) starts over.
+    expect(result.current.pass).toBe(1)
+  })
+
+  it('stops on the last photo when it does not repeat', () => {
     const { result } = renderHook(() =>
       useSlideshow({ length: 2, intervalMs: 1000, hasMore: false }),
     )
@@ -60,9 +80,30 @@ describe('useSlideshow', () => {
     expect(result.current.index).toBe(1)
 
     act(() => {
-      vi.advanceTimersByTime(1000)
+      vi.advanceTimersByTime(5000)
     })
+    // The show ends here: the last photo stays on screen and playback pauses,
+    // rather than quietly starting the whole evening again.
+    expect(result.current.index).toBe(1)
+    expect(result.current.playing).toBe(false)
+    expect(result.current.pass).toBe(0)
+  })
+
+  it('lets a manual next wrap even without repeat', () => {
+    const { result } = renderHook(() =>
+      useSlideshow({ length: 2, intervalMs: 100000, autoPlay: false }),
+    )
+
+    act(() => {
+      result.current.next()
+    })
+    act(() => {
+      result.current.next()
+    })
+
+    // That is the reader steering, not the show running on past its end.
     expect(result.current.index).toBe(0)
+    expect(result.current.pass).toBe(1)
   })
 
   it('does not auto-advance while paused, and resumes on play', () => {

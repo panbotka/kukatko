@@ -2116,7 +2116,15 @@ here.
   or **`searchPhotos` when the URL carries `mode`** (otherwise `q` would only substring-filter and a
   different set would play), driven by `useSlideshow` +
   `useSlideshowSettings`, `total` from the server is passed to `Slideshow` (the countdown counts the whole show, not just
-  the loaded pages), renders loading/empty/error states or `Slideshow`; **its own frame
+  the loaded pages; the last non-zero total stands in while a reorder reloads, so the position readout
+  doesn't blink „5 ze 5"), renders loading/empty/error states or `Slideshow` — the loading state only
+  when there is genuinely nothing to show, since a shuffle toggle reloads the list and blanking the
+  running show for that would be a restart in all but name; **shuffle is ordered by the server**:
+  `sort: 'random'` + a `seed` generated once per show (`newShuffleSeed`, `useState`), so the whole set
+  is reachable and its pages neither overlap nor drop photos, and the **playlist** is
+  `playlistOf(carried, photos)` with `seen`/`carried` kept per pass (`extendSeen`, reset when
+  `useSlideshow`'s `pass` increments) — that is what makes a mid-show toggle reorder only what is still
+  to come; **its own frame
   preloading**: `preloadWindow(index,length)` → URLs at `SLIDESHOW_PREVIEW_SIZE` → `useImagePreloader`
   (`prime` in an effect), whose `statusOf` goes back into `useSlideshow` as `readiness`, so
   auto-advance waits until the next frame is decoded; exit → `navigate(-1)`
@@ -2682,14 +2690,17 @@ mounted **outside `Layout`** as well, so it adds its own **safe-area insets**: t
 including inside the `max-height: 500px` block, which re-declares exactly those paddings);
   `components/slideshow/` = `Slideshow` (a presentation fullscreen stage: the current photo at preview
   size `SLIDESHOW_PREVIEW_SIZE` (`fit_1920`, **exported** — the page has to preload exactly
-  this URL), previous/play-pause/next/fullscreen/settings/close controls + a caption +
-  **progress** (`slideshow.progress` → „snímek 7 ze 40"; counted against the server's `total`, not against
-  the loaded pages — the remaining time no longer lives here); keys ←/→ / spacebar / Esc / F
+  this URL), previous/play-pause/next/fullscreen/settings/close controls + a header bar carrying
+  **only the progress** (`slideshow.progress` → „snímek 7 ze 40"; counted against the server's `total`, not against
+  the loaded pages — neither the remaining time nor the title lives there any more: the header says
+  where you are in the show, the photo says what it is); keys ←/→ / spacebar / Esc / F
   and a touch swipe; the Fullscreen API is feature-detected;
-  the settings panel = a choice of effect + speed and **beside the speed an estimate of the remaining time**
+  the settings panel renders the shared `SlideshowSettingsForm` and **beside the speed an estimate of the remaining time**
   (`slideshow.remaining` → „zbývá 2 min 45 s"; `slideshowRemainingMs(index, total, intervalMs)` — it follows
   the index as well as the chosen speed, so it counts down and reacts to a speed change at once, sticks to the server's
   `total` (no flicker while paging) and freezes on pause; it disappears when the show ends);
+  a change of any setting **resumes rather than restarts** — one `onSettingsChange(patch)` prop, the
+  index and the photo on screen are kept;
   the **`kenburns`** effect additionally writes inline
   `--kb-*` custom properties from `lib/kenBurns` onto the `<img>` (transform endpoints + `--kb-duration` = the interval) —
   it activates **only for images**, a video frame and a user with `prefers-reduced-motion`
@@ -2697,10 +2708,25 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `slideshow-fade`/`slideshow-slide`/`slideshow-kenburns` (`object-fit: cover`, `var()` is substituted
   before interpolation, so both transforms interpolate as an identical `translate() scale()` list),
   `@media (prefers-reduced-motion: reduce)` as a second safeguard, fullscreen layout)
+  + `SlideshowCaption` (what the photo **is**, laid over the picture: title, capture date
+  (`lib/takenDate` `formatTakenLabel`, so a coarse date reads „1974" and an estimate is marked) and
+  description, each shown only when its toggle is on **and** the photo carries the value — an empty
+  field renders nothing, not a blank line. Deliberately its own element, outside the header and the
+  control bar, so a later fade of the chrome could never take the caption with it; its own scrim +
+  text-shadow (white on snow is the case designed for), bounded width and the description clamped to
+  three lines, so a long note cannot grow over the photo)
+  + `SlideshowSettingsForm` (**the one** settings form — transition, speed, repeat, shuffle and the
+  three caption toggles — rendered by both the start dialog and the running player, so neither can
+  offer a setting the other lacks; `settings` down, a patch back up, `idPrefix` keeps the control ids
+  apart, optional `speedNote` for the player's remaining-time readout)
   + `SlideshowStart` (**a shared** Promítání button for the library / album / label / search:
-  just `slideshowHref(scope,view)`. **No length estimate before starting** — it moved into the player
-  beside the speed, where it tracks progress; the grid still passes the `count` prop (it has it from `total`), but
-  the component doesn't render it);
+  the ordinary click opens a **settings dialog** (`SlideshowSettingsForm` pre-filled from
+  `readSettings()`, plus **how long the show will take** at the chosen speed — `slideshowDurationMs(count,
+  intervalMs)`, restated as „jedno kolo trvá…, pak se spustí znovu" with repeat on) and only starts on
+  confirmation, which is when the settings are persisted: dismissing it starts nothing and changes
+  nothing, because the dialog edits a **draft**. It stays an `<a href>` to `slideshowHref(scope,view)`,
+  so a modified click (ctrl/cmd/shift/middle) still opens the player directly with the settings last
+  saved; the `count` prop is what the estimate is computed from — an absent count shows none);
   `components/map/` = `LeafletMap` (an imperative Leaflet bridge: a tile layer on the **backend
   proxy** `/api/v1/map/tiles/{mapset}/{z}/{x}/{y}{r}` (the key stays server-side, `{r}`→`@2x` on retina),
   the **mandatory mapy.com elements** — the attribution „© Seznam.cz a.s. a další" → `/copyright` and a clickable
@@ -3284,11 +3310,14 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   and the caller renders a placeholder. A new `thumbUrl` prop (a new page of results) resets the retry budget.
   It is solved this way, **not with a long TTL** — a short lifetime is the whole point of signing. Used by
   `PhotoTile` and `TrashCard`;
-  `useSlideshow({length,hasMore,intervalMs,autoPlay?,onLoadMore?,readiness?,maxHoldMs?})` = the control of the
-  slideshow: it owns `index`+`playing`+`holding`, `next`/`prev`/`play`/`pause`/`toggle`/`goTo`,
+  `useSlideshow({length,hasMore,intervalMs,repeat?,autoPlay?,onLoadMore?,readiness?,maxHoldMs?})` = the control of the
+  slideshow: it owns `index`+`playing`+`holding`+`pass`, `next`/`prev`/`play`/`pause`/`toggle`/`goTo`,
   wrap-around, prefetch of `PRELOAD_AHEAD` pages ahead
   via `onLoadMore` (at the end with another page it waits instead of looping), an empty set = a no-op, a clamp of the
-  index when the set shrinks. **Auto-advance is guarded by `readiness(index)`**: an elapsed interval
+  index when the set shrinks. **`repeat`** (default `false`) decides the end: with it the show wraps to
+  the first photo and `pass` (the round counter — what tells the page its per-pass bookkeeping starts
+  over) increments; without it auto-advance **stops** on the last photo, leaving it on screen with
+  playback paused. A manual `next` from the end wraps either way — that is the reader steering. **Auto-advance is guarded by `readiness(index)`**: an elapsed interval
   doesn't switch the slide but starts a *hold* — it switches the moment the next frame is `ready` (decoded),
   after `maxHoldMs` (default `MAX_HOLD_MS` = 10 s) it switches anyway, and a slide with `error` is **skipped**
   (a broken frame doesn't block the show). Manual navigation and a pause cancel the hold (manual never waits, a resume
@@ -3305,8 +3334,10 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   empty space this whole thing exists for); `decode()` is feature-detected (jsdom doesn't have it →
   a fallback to `onload`/`onerror`). A late `decode()` of an already released image is ignored. The statuses live
   in state → `statusOf` changes identity on every settle, so an effect can depend on it;
-  `useSlideshowSettings` = a persistent effect+speed over
-  `lib/slideshowSettings` (read once on mount, the setters write into localStorage, sanitization);
+  `useSlideshowSettings` = the persistent slideshow preferences over
+  `lib/slideshowSettings` (read once on mount, one `update(patch)` writes into localStorage,
+  sanitization). The **start dialog does not use it** — it edits a draft and persists on confirmation,
+  so dismissing it changes nothing;
   `useGridDensity()` → `{density,setDensity,maxColumns,storedDensity}` = the photo grid's density (**always a
   concrete column count 1…10**, no `'auto'` mode) over `useSyncExternalStore` on top of `lib/gridDensity`. localStorage is
   **the single source of truth** (no in-memory copy): the snapshot is a primitive (a column count, or `null`
@@ -3419,11 +3450,16 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   grain is an ordinary date, the safe reading); `formatTakenPeriod(takenAt, precision, t, locale)` → „1974",
   „červen 1974", „1970–1979", and `''` for a plain date so the caller falls back to its own date rendering;
   `formatDecade` names a decade as the span „1970–1979" in both languages — the same shape `lib/period`'s
-  `formatPeriod` writes for a picked decade, so the filter and the caption cannot disagree). The anchor is
+  `formatPeriod` writes for a picked decade, so the filter and the caption cannot disagree;
+  `formatTakenLabel(photo, t, locale)` is the **one form anything showing a date to a reader wants** —
+  the period when the grain is coarse, otherwise the locale's date, prefixed with the estimate marker
+  („cca") when the date is a guess, and `''` when there is no capture time at all, which callers render
+  as nothing rather than as a placeholder; the three rules belong together, since applying two of them
+  would claim a precision or a certainty the catalogue never had). The anchor is
   read in **UTC**, the zone it was stored in: read locally, a photo dated
   „1974" would be 31 December 1973 west of Greenwich and would contradict the year facet it sits in. Used by
   `MetadataPanel` (the read-only capture-date row + a `Form.Text` in the edit form saying which period the
-  instant in the field stands for), `PhotoTile` (the alt text) and `BulkEditModal`);
+  instant in the field stands for), `PhotoTile` (the alt text), `SlideshowCaption` and `BulkEditModal`);
   `lib/lifeYears.ts` (pure: `captureYear` (the **UTC** year of an ISO capture time — a local reading would
   move a New Year's Eve photograph into the wrong decade), `approximateAge(takenAt, birthYear)` = the plain
   difference of two years, `null` whenever nothing can be said: no date, no birth year, a photo dated
@@ -3675,13 +3711,26 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   (`kukatko.outliers.density`, `OUTLIER_TILE_MIN_PX` 256 = the 16rem card, `OUTLIER_GAP_PX` 16 = `gap-3`):
   **a shared control, a separate number**, because a density for browsing photographs is not one for judging
   faces — and a review card seeded from the library's 140px would open at twice the density anyone wants;
-  `slideshowSettings.ts` = the `SlideshowSettings{effect,intervalMs}` type + `SlideshowEffect`
+  `slideshowSettings.ts` = the `SlideshowSettings{effect,intervalMs,repeat,shuffle,showTitle,
+  showDescription,showDate}` type + `SlideshowEffect`
   (`fade`/`slide`/`kenburns`/`none`) + the offers `SLIDESHOW_EFFECTS`/`SLIDESHOW_INTERVALS_MS` (1/2/3/5/10/15/30 s)
-  + `SLIDESHOW_DEFAULTS` (`fade`, 5 s)
+  + `SLIDESHOW_DEFAULTS` (`fade`, 5 s, no repeat, no shuffle, **all three captions on** — a family show
+  whose photos arrive nameless and undated is what they exist to fix, while repeat and shuffle change
+  what the show *is* and are the reader's to ask for)
   + the pure `readSettings`/`writeSettings`/`sanitizeSettings` (localStorage `kukatko.slideshow.settings`,
   sanitization of the effect + the interval **snapped to the nearest offered value** — an interval stored earlier
   that is no longer on offer (7 s) thus neither falls through the cracks nor renders an empty item; on an equal
-  distance the shorter one wins; a fallback to the defaults on an error/unavailable storage);
+  distance the shorter one wins; every flag is validated as a **boolean**, so settings written before
+  repeat/shuffle/captions existed migrate to the defaults and a tampered `"false"` cannot mean „on";
+  a fallback to the defaults on an error/unavailable storage);
+  `slideshowPlaylist.ts` = the pure order bookkeeping of a running show: `newShuffleSeed()` (a short
+  random token, the one impure line, held for the life of the show) + `playlistOf(carried, loaded)`
+  (the photos seen so far, in the order seen, followed by every loaded photo still to come — with
+  nothing carried it returns `loaded` itself, so the ordinary show pays nothing) + `extendSeen(seen,
+  playlist, index)` (grows the seen list to cover the cursor, never shrinks — stepping back revisits a
+  photo, it does not un-see it). Together they are what makes **shuffle toggled mid-show** reorder only
+  the future: the server reloads the list from page one in the new order, and the seen photos are held
+  in front of it and filtered out of it, so the photo on screen stays and nothing repeats;
   `slideshowView.ts` = the pure `slideshowHref(scope,view)` (builds `/slideshow?…` from a `LibraryView` via
   `writeUrlState` + the scope `album`/`label`/`mode`, omitting the default filters — the slideshow's launch link;
   `mode` is written even when it equals the default, because `SlideshowPage` reads its **presence** as

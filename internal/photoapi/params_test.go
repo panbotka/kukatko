@@ -111,6 +111,24 @@ func TestParseListParams_valid(t *testing.T) {
 			},
 		},
 		{
+			name:  "sort random carries its seed",
+			query: "sort=random&seed=s7",
+			check: func(t *testing.T, p photos.ListParams) {
+				if p.Sort != photos.SortByRandom || p.Seed != "s7" {
+					t.Errorf("sort/seed = %v/%q, want random/s7", p.Sort, p.Seed)
+				}
+			},
+		},
+		{
+			name:  "a seed without the random sort is inert",
+			query: "sort=newest&seed=s7",
+			check: func(t *testing.T, p photos.ListParams) {
+				if p.Sort != photos.SortByTakenAt || p.Seed != "s7" {
+					t.Errorf("sort/seed = %v/%q, want taken_at/s7", p.Sort, p.Seed)
+				}
+			},
+		},
+		{
 			name:  "archived true",
 			query: "archived=true",
 			check: func(t *testing.T, p photos.ListParams) {
@@ -326,6 +344,7 @@ func TestParseListParams_albumForcesChronology(t *testing.T) {
 		{name: "explicit order reverses it", query: "album=al1&order=desc", want: photos.OrderDesc},
 		{name: "sort key ignored, its order kept", query: "album=al1&sort=size", want: photos.OrderDesc},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
@@ -348,6 +367,19 @@ func TestParseListParams_albumForcesChronology(t *testing.T) {
 		}
 		if p.Sort != photos.SortByTakenAt || p.Order != photos.OrderDesc {
 			t.Errorf("sort = %s/%s, want taken_at/desc", p.Sort, p.Order)
+		}
+	})
+
+	// A shuffled slideshow of an album asked for the order to be abandoned; the
+	// chronology override must not quietly put it back.
+	t.Run("a shuffled album stays shuffled", func(t *testing.T) {
+		t.Parallel()
+		p, err := parse(t, "album=al1&sort=random&seed=s7")
+		if err != nil {
+			t.Fatalf("parseListParams error: %v", err)
+		}
+		if p.Sort != photos.SortByRandom || p.Seed != "s7" {
+			t.Errorf("sort/seed = %s/%q, want random/s7", p.Sort, p.Seed)
 		}
 	})
 }
@@ -376,6 +408,7 @@ func TestParseListParams_invalid(t *testing.T) {
 		{name: "non-integer min_rating", query: "min_rating=many"},
 		{name: "unknown flag", query: "flag=star"},
 		{name: "flag none rejected as filter", query: "flag=none"},
+		{name: "over-long seed", query: "seed=" + strings.Repeat("s", maxSeedLength+1)},
 	}
 
 	for _, tt := range tests {

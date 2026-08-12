@@ -3,26 +3,32 @@ import { useCallback, useState } from 'react'
 import {
   readSettings,
   sanitizeSettings,
-  type SlideshowEffect,
   type SlideshowSettings,
   writeSettings,
 } from '../lib/slideshowSettings'
 
-/** Result of {@link useSlideshowSettings}: the current settings plus setters. */
+/** Result of {@link useSlideshowSettings}: the current settings plus one setter. */
 export interface UseSlideshowSettingsResult {
   /** The current (persisted, sanitised) preferences. */
   settings: SlideshowSettings
-  /** Sets the transition effect and persists it. */
-  setEffect: (effect: SlideshowEffect) => void
-  /** Sets the auto-advance interval (ms) and persists it. */
-  setIntervalMs: (intervalMs: number) => void
+  /**
+   * Applies a patch to the settings and persists the result. One setter rather
+   * than one per field, because the settings form edits them all and every
+   * change takes the same route: sanitise, store, apply from the current slide on.
+   */
+  update: (patch: Partial<SlideshowSettings>) => void
 }
 
 /**
- * Reads the persisted slideshow preferences once on mount and exposes setters
- * that update state and write back to localStorage, so the user's chosen effect
- * and speed survive reloads and other slideshows. Values are sanitised on every
- * write, so an out-of-range update can never corrupt the stored settings.
+ * Reads the persisted slideshow preferences once on mount and exposes a setter
+ * that updates state and writes back to localStorage, so the user's chosen
+ * effect, speed, repeat/shuffle and captions survive reloads and other
+ * slideshows. Values are sanitised on every write, so an out-of-range update can
+ * never corrupt the stored settings.
+ *
+ * The start dialog deliberately does *not* use this hook: it edits a draft and
+ * persists it only when the reader confirms, so dismissing the dialog changes
+ * nothing.
  */
 export function useSlideshowSettings(): UseSlideshowSettingsResult {
   const [settings, setSettings] = useState<SlideshowSettings>(() => readSettings())
@@ -35,18 +41,5 @@ export function useSlideshowSettings(): UseSlideshowSettingsResult {
     })
   }, [])
 
-  const setEffect = useCallback(
-    (effect: SlideshowEffect) => {
-      update({ effect })
-    },
-    [update],
-  )
-  const setIntervalMs = useCallback(
-    (intervalMs: number) => {
-      update({ intervalMs })
-    },
-    [update],
-  )
-
-  return { settings, setEffect, setIntervalMs }
+  return { settings, update }
 }

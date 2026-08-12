@@ -1,10 +1,13 @@
 package photoapi
 
 import (
+	"cmp"
 	"context"
 	"fmt"
+	"hash/fnv"
 	"log"
 	"maps"
+	"slices"
 	"sort"
 
 	"github.com/panbotka/kukatko/internal/embedding"
@@ -125,7 +128,7 @@ func (a *API) semanticSearch(ctx context.Context, query string, params photos.Li
 	if err != nil {
 		return searchResult{}, err
 	}
-	page := paginateUIDs(ranked, params.Offset, effectiveLimit(params))
+	page := paginateUIDs(shuffled(ranked, params), params.Offset, effectiveLimit(params))
 	return searchResult{photos: resolvePhotos(page, byUID), total: len(ranked)}, nil
 }
 
@@ -152,7 +155,7 @@ func (a *API) hybridSearch(ctx context.Context, query string, params photos.List
 	}
 
 	fused, byUID := fuse(ftList, semUIDs, semByUID)
-	page := paginateUIDs(fused, params.Offset, effectiveLimit(params))
+	page := paginateUIDs(shuffled(fused, params), params.Offset, effectiveLimit(params))
 	return searchResult{photos: resolvePhotos(page, byUID), total: len(fused)}, nil
 }
 
@@ -255,6 +258,45 @@ func fuseRRF(lists ...[]string) []string {
 		return uids[i] > uids[j]
 	})
 	return uids
+}
+
+// shuffled returns uids in the pseudo-random order params asks for, and the
+// input untouched for every other sort. The semantic and hybrid rankings are
+// ordered in Go rather than by the database, so a shuffled slideshow replaying
+// such a search has to be reordered here — otherwise shuffle would be a no-op on
+// the one search mode that never reaches the SQL ORDER BY.
+//
+// The order depends on the uid and the seed alone, which is the same guarantee
+// the SQL path gets from ordering on a digest of the two: every page of one
+// shuffled show sees the same permutation, so paging neither repeats nor drops a
+// photo. The digest is a different function from the database's, and deliberately
+// so — the two never order the same result set.
+func shuffled(uids []string, params photos.ListParams) []string {
+	if params.Sort != photos.SortByRandom {
+		return uids
+	}
+	out := slices.Clone(uids)
+	slices.SortFunc(out, func(a, b string) int {
+		if d := cmp.Compare(seedHash(a, params.Seed), seedHash(b, params.Seed)); d != 0 {
+			return d
+		}
+		// Equal digests are a collision, not equal photos: fall back to the uid so
+		// the order stays total (and identical on the next page).
+		return cmp.Compare(a, b)
+	})
+	return out
+}
+
+// seedHash is the FNV-1a digest of a photo uid under a shuffle seed: the value
+// the random order sorts on. FNV is not a cryptographic hash and does not need
+// to be — nothing here resists an adversary, it only has to spread uids evenly
+// and depend on nothing but its two inputs.
+func seedHash(uid, seed string) uint64 {
+	h := fnv.New64a()
+	// hash.Hash.Write never returns an error, as its own contract states.
+	_, _ = h.Write([]byte(uid))
+	_, _ = h.Write([]byte(seed))
+	return h.Sum64()
 }
 
 // paginateUIDs returns the window of uids for the page at offset with the given

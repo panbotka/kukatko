@@ -2,9 +2,9 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 import { useThumbSrc } from '../../hooks/useThumbSrc'
-import { formatDate, formatDuration } from '../../lib/format'
+import { formatDuration } from '../../lib/format'
 import { photoLabel } from '../../lib/photoTitle'
-import { formatTakenPeriod } from '../../lib/takenDate'
+import { formatTakenLabel } from '../../lib/takenDate'
 import { type Photo } from '../../services/photos'
 import { FadeInImage } from '../FadeInImage'
 import { Icon } from '../Icon'
@@ -114,17 +114,7 @@ export function PhotoTile({
   // a known one. A date stated as a whole period reads as that period ("1974"),
   // never as the day it is anchored at. The grid itself goes on sorting by
   // taken_at exactly as before.
-  const takenPeriod = formatTakenPeriod(photo.taken_at, photo.taken_at_precision, t, i18n.language)
-  const takenDate =
-    takenPeriod !== ''
-      ? takenPeriod
-      : photo.taken_at
-        ? formatDate(photo.taken_at, i18n.language)
-        : ''
-  const taken =
-    takenDate !== '' && photo.taken_at_estimated === true
-      ? `${t('photo.metadata.estimatedMarker')} ${takenDate}`
-      : takenDate
+  const taken = formatTakenLabel(photo, t, i18n.language)
   const alt = taken !== '' ? `${label} — ${taken}` : label
 
   const inner = (

@@ -83,6 +83,44 @@ describe('sanitizeSettings', () => {
       SLIDESHOW_DEFAULTS.effect,
     )
   })
+
+  it('keeps every flag the caller set', () => {
+    expect(
+      sanitizeSettings({
+        effect: 'fade',
+        intervalMs: 5000,
+        repeat: true,
+        shuffle: true,
+        showTitle: false,
+        showDescription: false,
+        showDate: false,
+      }),
+    ).toEqual({
+      effect: 'fade',
+      intervalMs: 5000,
+      repeat: true,
+      shuffle: true,
+      showTitle: false,
+      showDescription: false,
+      showDate: false,
+    })
+  })
+
+  it('falls back to each flag default when it is missing or not a boolean', () => {
+    // Settings persisted before repeat/shuffle/captions existed carry none of
+    // them; a tampered value may carry the string "false", which is truthy.
+    const migrated = sanitizeSettings(stored('{"effect":"slide","intervalMs":3000}'))
+    expect(migrated).toEqual({
+      ...SLIDESHOW_DEFAULTS,
+      effect: 'slide',
+      intervalMs: 3000,
+    })
+
+    const tampered = sanitizeSettings(stored('{"shuffle":"false","showTitle":1,"repeat":null}'))
+    expect(tampered.shuffle).toBe(SLIDESHOW_DEFAULTS.shuffle)
+    expect(tampered.showTitle).toBe(SLIDESHOW_DEFAULTS.showTitle)
+    expect(tampered.repeat).toBe(SLIDESHOW_DEFAULTS.repeat)
+  })
 })
 
 describe('readSettings', () => {
@@ -106,9 +144,29 @@ describe('readSettings', () => {
     expect(SLIDESHOW_INTERVALS_MS).toContain(settings.intervalMs)
   })
 
-  it('round-trips through writeSettings', () => {
-    writeSettings({ effect: 'none', intervalMs: 15000 })
+  it('round-trips every field through writeSettings', () => {
+    const settings: SlideshowSettings = {
+      effect: 'none',
+      intervalMs: 15000,
+      repeat: true,
+      shuffle: true,
+      showTitle: false,
+      showDescription: true,
+      showDate: false,
+    }
 
-    expect(readSettings()).toEqual({ effect: 'none', intervalMs: 15000 })
+    writeSettings(settings)
+
+    expect(readSettings()).toEqual(settings)
+  })
+
+  it('defaults to captions on, played once through in the view order', () => {
+    expect(readSettings()).toMatchObject({
+      repeat: false,
+      shuffle: false,
+      showTitle: true,
+      showDescription: true,
+      showDate: true,
+    })
   })
 })

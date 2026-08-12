@@ -21,25 +21,31 @@ describe('useSlideshowSettings', () => {
     expect(result.current.settings).toEqual(SLIDESHOW_DEFAULTS)
   })
 
-  it('persists the effect and speed and survives a remount', () => {
+  it('persists every setting and survives a remount', () => {
     const first = renderHook(() => useSlideshowSettings())
 
     act(() => {
-      first.result.current.setEffect('slide')
-      first.result.current.setIntervalMs(3000)
+      first.result.current.update({ effect: 'slide' })
+      first.result.current.update({ intervalMs: 3000 })
+      first.result.current.update({ repeat: true, shuffle: true, showDescription: false })
     })
 
-    expect(first.result.current.settings).toEqual({ effect: 'slide', intervalMs: 3000 })
+    const expected = {
+      ...SLIDESHOW_DEFAULTS,
+      effect: 'slide',
+      intervalMs: 3000,
+      repeat: true,
+      shuffle: true,
+      showDescription: false,
+    }
+    expect(first.result.current.settings).toEqual(expected)
 
     // A fresh hook (e.g. after a reload) reads the persisted preference back.
     const second = renderHook(() => useSlideshowSettings())
-    expect(second.result.current.settings).toEqual({ effect: 'slide', intervalMs: 3000 })
+    expect(second.result.current.settings).toEqual(expected)
 
     // And it really went to localStorage.
-    expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? '{}')).toEqual({
-      effect: 'slide',
-      intervalMs: 3000,
-    })
+    expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? '{}')).toEqual(expected)
   })
 
   it('sanitises invalid persisted values back to defaults', () => {
