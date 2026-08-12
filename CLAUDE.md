@@ -154,6 +154,8 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
   ends as `needs_review`. **`check` never changes files** (it only verifies formatting;
   `make fmt` applies it), so after a successful run `git status --short` is empty.
   The race detector lives in `make test-race` (runs in CI), not in the gate.
+  **`make check-box` runs that same gate on the build box** (~10× faster, uncommitted work
+  included, secrets never synced) — an accelerator, same target, same exit code.
 - **`CLAUDE.md` holds only rules and a signpost.** Descriptive details belong in `docs/`.
   The 300-line limit is enforced by `make docs-budget`. Don't circumvent it — move text to the right document.
 - For Go code **use the `golang-developer` skill**.

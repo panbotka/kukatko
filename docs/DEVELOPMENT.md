@@ -181,6 +181,7 @@ make test             # Go unit tests (CGO off, no race, no DB) + Vitest
 make test-race        # Go unit tests under the race detector (CGO_ENABLED=1)
 make test-integration # integration tests (requires KUKATKO_TEST_DATABASE_URL)
 make check            # docs-budget + fmt-check + lint + typecheck + test  ← the quality gate
+make check-box        # the same gate, run on the build box (24 threads) — ~10× faster
 make build            # frontend build + compile the static binary into bin/
 make dev-storage      # start the local MinIO (dev runtime + S3 integration tests)
 make clean            # remove build artifacts (binary, embedded dist, web build)
@@ -216,6 +217,13 @@ Two checks deliberately live outside the gate so committing stays fast:
 `web-deps` is guarded by a stamp file (`web/node_modules/.kukatko-npm-ci-stamp`) that depends
 on `web/package-lock.json`, so `npm ci` reruns only when the lockfile changes.
 
+While iterating, run the gate on the build box instead: **`make check-box`**
+(`scripts/check-on-box.sh`) syncs the working tree — uncommitted work included, secrets never —
+to `ssh box` and runs the same `make check` there on 24 threads, exiting with the remote exit
+code. Measured 2026-08-12: **434 s here, 66 s there.** It wakes the box if it is asleep and
+fails loudly if it cannot reach it; the integration suite has no remote equivalent, because its
+database is on this Pi. Details and knobs: `docs/OPERATIONS.md`.
+
 ### Wall time
 
 Measured end to end on the Raspberry Pi dev box with warm Go/golangci/npm caches:
@@ -225,9 +233,11 @@ Measured end to end on the Raspberry Pi dev box with warm Go/golangci/npm caches
 | before this change | 173 s |
 | after, first run | 133 s |
 | after, immediate rerun | 130 s |
+| the same gate on 2026-08-12, after the suite grew to 2734 tests | 434 s |
 
 Both "after" runs had an up-to-date stamp, so neither reran `npm ci`; a lockfile change adds
-that back as a one-off (~7 s).
+that back as a one-off (~7 s). The last row is why `make check-box` exists: unchanged target,
+a suite that outgrew four cores — the box runs the same 434 s in 66 s.
 
 Where the ~40 s went: the race detector (`CGO_ENABLED=1 go test -race ./...` takes 48 s against
 14 s for the cache-sharing `CGO_ENABLED=0 go test ./...`), `npm ci` (7 s), and the duplicate
