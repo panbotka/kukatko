@@ -255,7 +255,9 @@
         "title": "Added to the library",
         "hint": "How many photos arrived over the last twelve months.",
         "summary": "Photos added to the library over the last {{months}} months. Photos in total: {{total}}. The busiest month is {{peakMonth}}: {{peak}}.",
-        "bar": "{{month}}: {{photos}}"
+        "bar": "{{month}}: {{photos}}",
+        "empty": "Nothing arrived in the library over the last {{months}} months.",
+        "single": "The only month with arrivals in the last {{months}} months: {{month}}."
       },
       "cameras": {
         "title": "Most used cameras",
@@ -283,7 +285,8 @@
         "hint": "How much room the library took at the end of each year, by when the photos were added.",
         "summary": "Library growth by the year photos were added, {{from}} to {{to}}. At the end of {{to}} it held {{total}}.",
         "bar": "{{year}}: {{total}} in total, {{added}} added",
-        "empty": "Nothing has been added to the library yet."
+        "empty": "Nothing has been added to the library yet.",
+        "single": "The only year anything was added: {{year}}, {{photos}} in total."
       }
     },
     "groups": {

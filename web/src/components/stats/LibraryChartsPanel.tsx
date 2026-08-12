@@ -10,6 +10,7 @@ import type { CameraPhotos, LibraryCharts, MediaStorage } from '../../services/s
 
 import { BarList, type BarDatum } from './BarList'
 import { ChartCard } from './ChartCard'
+import { ChartStatement } from './ChartStatement'
 import { ColumnChart, type ColumnDatum } from './ColumnChart'
 
 /** How often the capture-year axis carries a label: one per decade. */
@@ -23,8 +24,15 @@ const YEAR_TICK = 10
  * Each chart is one measure, so each is one shape and one colour; what a bar
  * means is written beside it or under it, never carried by a hue. Every chart
  * states its key numbers in an `aria-label`, so the page can be read without
- * seeing a single bar, and a chart with nothing to show says so in a sentence
- * instead of drawing an empty frame.
+ * seeing a single bar, and a chart with nothing to show — or with nothing to
+ * compare, see {@link ChartStatement} — says so in a sentence instead of drawing
+ * an empty frame or a lone bar.
+ *
+ * The four smaller panels are paired by the shape they draw rather than by the
+ * measure they carry: the two time axes share a row, the two lists of named
+ * things share the next. A ten-row list is half a screen taller than a chart, and
+ * pairing one with the other used to leave the chart's card padded out with
+ * several hundred pixels of nothing.
  */
 export function LibraryChartsPanel({ charts }: { charts: LibraryCharts }) {
   const { t } = useTranslation()
@@ -49,6 +57,15 @@ export function LibraryChartsPanel({ charts }: { charts: LibraryCharts }) {
         </Col>
         <Col>
           <ChartCard
+            title={t('stats.charts.growth.title')}
+            icon="bar-chart"
+            hint={t('stats.charts.growth.hint')}
+          >
+            <StorageByYear charts={charts} />
+          </ChartCard>
+        </Col>
+        <Col>
+          <ChartCard
             title={t('stats.charts.cameras.title')}
             icon="image"
             hint={t('stats.charts.cameras.hint')}
@@ -63,15 +80,6 @@ export function LibraryChartsPanel({ charts }: { charts: LibraryCharts }) {
             hint={t('stats.charts.storage.hint')}
           >
             <StorageByMedia charts={charts} />
-          </ChartCard>
-        </Col>
-        <Col>
-          <ChartCard
-            title={t('stats.charts.growth.title')}
-            icon="bar-chart"
-            hint={t('stats.charts.growth.hint')}
-          >
-            <StorageByYear charts={charts} />
           </ChartCard>
         </Col>
       </Row>
@@ -124,15 +132,43 @@ function PhotosByYear({ charts }: { charts: LibraryCharts }) {
  * Arrivals over the last twelve months — the chart that answers "are we still
  * importing?". The window is fixed by the backend, so a quiet month is a visible
  * gap rather than a month that silently left the axis.
+ *
+ * A window with at most one month in it is not drawn. A library filled by a
+ * single import — which is how this one, and most family archives, begin — has
+ * exactly that shape, and eleven zeroes beside one full-height bar is a card
+ * spent saying "nothing happened" eleven times. The one month and its count are
+ * stated instead, and a window with nothing in it says so outright. Two busy
+ * months are already a comparison, so the chart returns the moment the data has
+ * something to compare: nothing here knows anything about this instance.
  */
 function AddedByMonth({ charts }: { charts: LibraryCharts }) {
   const { t, i18n } = useTranslation()
   const months = charts.added_by_month
+  const filled = months.filter((month) => month.photos > 0)
+  if (filled.length === 0) {
+    return (
+      <p className="kk-chart-empty mb-0">
+        {t('stats.charts.added.empty', { months: months.length })}
+      </p>
+    )
+  }
+  if (filled.length === 1) {
+    const [year, index] = monthParts(filled[0].month)
+    return (
+      <ChartStatement
+        value={photoCount(t, i18n.language, filled[0].photos)}
+        note={t('stats.charts.added.single', {
+          months: months.length,
+          month: formatMonth(year, index, i18n.language),
+        })}
+        testId="chart-added-statement"
+      />
+    )
+  }
+  // Two filled months at least, so both reductions have something to start from.
   const total = months.reduce((sum, month) => sum + month.photos, 0)
-  const peak = months.reduce(
-    (best, month) => (month.photos > best.photos ? month : best),
-    months[0] ?? { month: '', photos: 0 },
-  )
+  const peak = filled.reduce((best, month) => (month.photos > best.photos ? month : best))
+  const [peakYear, peakIndex] = monthParts(peak.month)
   const data: ColumnDatum[] = months.map((month) => {
     const [year, index] = monthParts(month.month)
     return {
@@ -153,7 +189,7 @@ function AddedByMonth({ charts }: { charts: LibraryCharts }) {
       ariaLabel={t('stats.charts.added.summary', {
         months: months.length,
         total: formatCount(total, i18n.language),
-        peakMonth: monthLabel(peak.month, i18n.language),
+        peakMonth: formatMonth(peakYear, peakIndex, i18n.language),
         peak: formatCount(peak.photos, i18n.language),
       })}
     />
@@ -238,12 +274,31 @@ function StorageByMedia({ charts }: { charts: LibraryCharts }) {
  * bars are the running total, so the shape is the library's size over time; what
  * a single year added rides along in the bar's hover text, because two scales on
  * one axis would only be readable by accident.
+ *
+ * Growth needs two years to be growth. One year is one bar, and one bar scaled
+ * against itself is a solid rectangle the width of the card — which reads as
+ * software that failed to draw a chart rather than as a library that is a year
+ * old. That year is stated instead. A library that really did grow over five
+ * years still gets its chart; the rule is the length of the series, not what is
+ * known about this instance.
  */
 function StorageByYear({ charts }: { charts: LibraryCharts }) {
   const { t, i18n } = useTranslation()
   const years = charts.storage_by_year
   if (years.length === 0) {
     return <p className="kk-chart-empty mb-0">{t('stats.charts.growth.empty')}</p>
+  }
+  if (years.length === 1) {
+    return (
+      <ChartStatement
+        value={formatBytes(years[0].cumulative_bytes, i18n.language)}
+        note={t('stats.charts.growth.single', {
+          year: years[0].year,
+          photos: photoCount(t, i18n.language, years[0].photos),
+        })}
+        testId="chart-growth-statement"
+      />
+    )
   }
   const last = years[years.length - 1]
   const data: ColumnDatum[] = years.map((year) => ({
@@ -295,15 +350,6 @@ function mediaLabel(t: TFunction, bucket: MediaStorage): string {
 function monthParts(month: string): [number, number] {
   const [year, index] = month.split('-')
   return [Number(year), Number(index)]
-}
-
-/** A `YYYY-MM` bucket as a localised "led 2026", or empty for a missing bucket. */
-function monthLabel(month: string, locale: string): string {
-  if (month === '') {
-    return ''
-  }
-  const [year, index] = monthParts(month)
-  return formatMonth(year, index, locale)
 }
 
 /**

@@ -226,8 +226,12 @@ here.
   behind the meters), `CoverageMeters` (the three shares as ARIA `meter` rows over the **counts**, so it needs
   no second request; an untouched whole reads 0 %, never a division by zero. Every row divides two numbers the
   cards already show at the cards' own grain — the faces row is `faces_assigned / faces`, i.e. the faces
-  card's headline over the sum of its two face rows), `ChartCard` (the card shell
-  matching `LibraryStatsCards`) and `LibraryChartsPanel` (the four charts assembled from
+  card's headline over the sum of its two face rows), `ChartCard` (the card shell matching
+  `LibraryStatsCards`; it takes the height of **its own** content and is never stretched to its row-mate —
+  `h-100` beside the ten-row camera list left the shorter panel padded out with hundreds of pixels of nothing),
+  `ChartStatement` (**what a card holds when its series has no chart in it**: the figure the chart would have
+  been scaled to, on `.kk-display` with proportional figures, over a caption naming the one bucket it fell in;
+  plain text, so it carries no `aria-label`) and `LibraryChartsPanel` (the four charts assembled from
   `GET /system/stats/charts`, with every label, tooltip, empty-state sentence and `aria-label` summary from
   `stats.charts.*`). Both primitives take a summary `ariaLabel` carrying the chart's key numbers and render as
   `role="img"`, or as `role="group"` when their marks link somewhere so those links stay reachable),
@@ -2327,17 +2331,25 @@ here.
   reads as 0 % rather than a division by zero. `LibraryChartsPanel` then draws four charts
   (`ChartCard` shells matching the counts cards): **fotky podle roku pořízení** (the full history, 1905→today,
   full width — clicking a bar opens that year in the library through the period filter,
-  `?taken_after=YYYY-01-01&taken_before=YYYY-12-31`; an empty year links nowhere), **přírůstky knihovny**
-  (the last 12 months, month names localised via `formatMonthName`), **nejčastější fotoaparáty** (top 10,
-  each linking to `?camera=<model>`) and the two storage charts (**velikost podle typu**
-  image/live/video/RAW, **růst knihovny** as the running total by year of addition).
+  `?taken_after=YYYY-01-01&taken_before=YYYY-12-31`; an empty year links nowhere), then two rows **paired by
+  the shape they draw, not by the measure**: the time axes **přírůstky knihovny** (the last 12 months, month
+  names localised via `formatMonthName`) + **růst knihovny** (the running total by year of addition), and under
+  them the lists of named things **nejčastější fotoaparáty** (top 10, each linking to `?camera=<model>`) +
+  **velikost podle typu** (image/live/video/RAW). Pairing a 9rem chart with a ten-row list is what used to
+  leave a card half empty.
   All of it is **plain CSS over the app's tokens** (`charts.css`) — no charting dependency: `ColumnChart` for
   the time axes, `BarList` for the named things. One measure per chart means **one colour** per chart (the
   accent); what a bar means is written beside it, never carried by a hue. Each chart states its key numbers in
   an `aria-label` (`role="img"`, or `role="group"` when its bars link somewhere so the links stay reachable),
   empty buckets draw a baseline tick so a time axis reads as continuous, a one-photo year keeps a 2 % floor so
   it is never drawn as empty, and a series with nothing in it says so in a sentence instead of drawing an empty
-  frame. On a phone the year plot scrolls sideways rather than shrinking a century into hairlines, and a coarse
+  frame. **A series with nothing to compare is not drawn either** (`ChartStatement`), and the rule is the shape
+  of the data alone, so a library that really did grow over five years keeps its chart: growth of a **single
+  year** is stated as its size + „Jediný rok, kdy do knihovny něco přibylo…", an arrivals window with **one
+  non-zero month** as its count + „Jediný měsíc s přírůstkem…" instead of eleven zero-height bars beside one
+  full-height one, and a window with **no** arrivals as a plain sentence. A library filled by one import — the
+  ordinary way one starts — has exactly those two shapes, and the lone bar read as broken software.
+  On a phone the year plot scrolls sideways rather than shrinking a century into hairlines, and a coarse
   pointer widens the columns.
   i18n `stats.*` incl. `stats.charts.*` (cs/en, localised month names and a pluralised „N fotek"). Tests:
   `StatsPage.test.tsx` (loaded counts with separators + group
@@ -2347,6 +2359,9 @@ here.
   names, **a viewer sees the two write links as plain numbers**, the error state without a zero grid, retry,
   cs grouping, **the four charts' accessible names with their key numbers, the year and camera click-throughs,
   the coverage shares, charts failing alone and retrying alone, the empty-series sentences**),
+  `LibraryChartsPanel.test.tsx` (**the degenerate series shapes**: a one-year growth series and a one-month
+  arrivals window stated instead of drawn, an empty window said outright, both charts back the moment a second
+  year/month carries something, no card wearing `h-100`, and the row pairing),
   `ColumnChart.test.tsx` / `BarList.test.tsx` / `CoverageMeters.test.tsx` (the primitives over fixture data:
   bar scaling and the small-value floor, empty buckets, link vs image roles, the meters' percentages —
   including the faces share dividing by the two halves the card adds up — and their zero whole),
