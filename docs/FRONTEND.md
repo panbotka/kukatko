@@ -317,6 +317,19 @@ here.
   it stands in for, and the panel would jump as one list fills while the other stays empty —
   there a muted single-line caption stays (`text-secondary small`). Blocks appear via
   `.kk-appear`, which `prefers-reduced-motion` turns off. Tests: `EmptyState.test.tsx`),
+  `EntityChip` (**the shared album/label/person chip**: a pill badge in the entity's `ENTITY_STYLE` hue with its
+  leading glyph, linking to that entity's scoped list, plus an optional editor's remove X. Props `kind`, `to`,
+  `children` (the name, optionally with a count beside it), `className?` (e.g. `fw-normal`), `remove?` =
+  `{label, onRemove}` (the label names what leaves, not merely „odebrat"). **The pill is the link**, not a small
+  `<a>` inside a decorative pill: measured on production (390 × 844, coarse pointer) the photo panel's album chip
+  was a 79.1 × 12.0px link inside a 111 × 20.9px pill, because the touch floor in `app.css` lists `.btn` and its
+  kind and a `.badge` is none of them. The anchor now carries the pill's own classes with the glyph inside it, so
+  the floor's `a.badge` rule lifts the **whole chip** to 44px on a coarse pointer (and leaves it compact on a
+  mouse). With a remove control the pill cannot *be* the anchor — an `<a>` may not contain a button — so it is a
+  span whose link is its direct child and stretches over its full height (`.badge > a`), with the X trimming it at
+  the end. One shape for all three call sites: `OrganizePanel` (with the remove for editors), `OrganizeBadges`
+  (the read-only strip) and the label hits of `GlobalSearchSections`. Tests: `EntityChip.test.tsx` (the shape the
+  floor keys on) + `styles/tapTargets.test.ts` (the rule itself)),
   `ErrorState` (**shared failed-load placeholder** = the error twin of `EmptyState`:
   the same centered column (classes `.kk-empty-state*`), but the medallion is colored `danger`
   (`.kk-empty-state--error`) and carries an `exclamation-triangle` icon via `Icon`, plus `role="alert"`,
@@ -1553,7 +1566,9 @@ here.
   itself**: an editor's click on a chip calls `onEditFace` → the page turns on faces and selects that
   face in `FacesPanel`, so assignment lives in exactly one place. A viewer sees named
   people read-only; named = a rose chip, an unnamed detection = a neutral chip); albums/labels/people have
-  a distinct color via `ENTITY_STYLE` (`components/entityStyle`). Adding runs through
+  a distinct color via `ENTITY_STYLE` (`components/entityStyle`), and an album/label chip is the shared
+  `EntityChip` (the pill itself is the link, so the whole chip is one 44px target on a phone — the editor's
+  remove X only trims it). Adding runs through
   **`AddAutocomplete`** (a type-to-filter combobox over react-bootstrap primitives,
   **case/accent-insensitive** via `lib/text` `foldedIncludes`, keyboard ↑/↓/Enter/Esc + click,
   a „nic neodpovídá" state, ~44px tap targets, ARIA combobox/listbox; an optional `onCreate` prop adds
@@ -2471,7 +2486,9 @@ here.
   `savedSearchHref`, „Spravovat" → `/saved`, loading/empty/error states inside the menu);
   `components/search/` = `GlobalSearchSections` (a compact cross-entity section above the photo grid of the
   search page: via `useGlobalSearch(query)` it pulls the grouped `GET /search/global` and renders
-  chips of matching **albums/people/labels** linking to the entity; independent of the photo fulltext/semantic
+  chips of matching **albums/people/labels** linking to the entity (an album/person hit is a pill with a
+  `ChipThumb` cover, a label hit is the shared `EntityChip` — the pill *is* the link there, so a phone gets a
+  44px target instead of a 12px one); independent of the photo fulltext/semantic
   search below it, renders nothing until at least one non-photo match arrives — an empty query /
   an in-progress search / a photos-only match adds no chrome. **A pasted uid replaces the chips** with
   `DirectHitBanner`: a „Přejít na" card linking straight to the resolved photo/album/label/person, or — when the
@@ -4042,7 +4059,8 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   **once** in `components/entityStyle.ts` (`ENTITY_STYLE`) and it is read by every place where an entity
   is shown as a chip: the library's active filter chips (`FilterBar`), a photo's organize panel
   (`OrganizePanel`), the strip of badges above a photo (`OrganizeBadges`) and `GlobalSearchSections` — the color
-  language is thus consistent, not one-off.
+  language is thus consistent, not one-off. A chip that **links** is the shared `EntityChip`, which puts the
+  colour and the glyph on the anchor itself, so the whole pill is also the tap target.
   Color is **only a supplement**: a chip always carries a text label and a guiding icon as well (album `collection` /
   tag `tags` / person `person-circle`), so that the distinction survives for the color-blind; white text has a contrast
   of ≥ 5:1 on a near-black background. Neutral filters (year, rating, flag…) stay `text-bg-primary`;
@@ -4087,6 +4105,14 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   (every closing X — the announcement banner, modal/offcanvas headers, toasts, clearing the query in the palette —
   grows as a `border-box`, so only the hitbox grows and the glyph stays `1em`; the exception is `.badge
   .btn-close`, i.e. the X inside a pill chip, where the target is the chip itself and 44px would tear the pill apart)
+  + **a pill chip that links** (`a.badge` and — for a chip that pairs its link with a remove X — `.badge:has(> a)`:
+  the list above is by class and a `.badge` is none of those, so the photo panel's album chip stayed 79.1 × 12.0px
+  inside a 111 × 20.9px pill on a phone, under even WCAG 2.2 SC 2.5.8's 24px. The pill gets `min-height: 2.75rem`,
+  drops its block padding and stretches the link inside it (`.badge > a`), so the whole chip
+  is the target while the type, the hue and the inline padding stay the desktop chip's — a chip is secondary
+  metadata, not a button competing with the panel's actions. Keyed on the tag rather than on yet another class, so
+  the next component that renders a chip that links inherits the target instead of repeating the bug; the shape it
+  keys on is `EntityChip`)
   + a bigger `.form-check-input`
   + **`.kk-face-box::after`** (a face frame in `FaceOverlay` is a `<button>` exactly the size of the bbox — it isn't
   a `.btn`, so the floor doesn't catch it, and the box itself can't be enlarged, otherwise the outline would slide off the face; it therefore gets

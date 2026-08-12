@@ -235,8 +235,8 @@ describe('OrganizePanel autocomplete', () => {
       canWrite: false,
     })
 
-    const albumChip = screen.getByRole('link', { name: 'Holidays' }).closest('span')
-    const labelChip = screen.getByRole('link', { name: 'sunset' }).closest('span')
+    const albumChip = screen.getByRole('link', { name: 'Holidays' })
+    const labelChip = screen.getByRole('link', { name: 'sunset' })
 
     // Albums and tags carry the same hue classes as the library filter chips, so
     // the colour language is consistent across the app — and the two differ.
@@ -244,6 +244,28 @@ describe('OrganizePanel autocomplete', () => {
     expect(labelChip).toHaveClass('kk-entity-tag')
     expect(albumChip).not.toHaveClass('kk-entity-tag')
     expect(labelChip).not.toHaveClass('kk-entity-album')
+    // A viewer's chip has no remove control, so the pill is the link itself —
+    // the whole chip is the tap target `app.css` lifts to the finger floor
+    // (`EntityChip`), not a small link inside a decorative pill.
+    expect(albumChip).toHaveClass('badge')
+    expect(labelChip).toHaveClass('badge')
+  })
+
+  it('keeps the pill one target when an editor gets a remove X', () => {
+    renderPanel({
+      photo: photo({ albums: [{ uid: 'a1', title: 'Holidays' }] }),
+    })
+
+    // With a remove control the pill cannot be the anchor — an `<a>` may not
+    // contain a button — so it wraps the link, which stays its direct child so
+    // the coarse-pointer rule stretches it over the pill's full height.
+    const link = screen.getByRole('link', { name: 'Holidays' })
+    const pill = link.parentElement
+    expect(pill).toHaveClass('badge', 'kk-entity-album')
+    expect(link.matches('.badge > a')).toBe(true)
+    expect(screen.getByRole('button', { name: 'Remove from album Holidays' }).parentElement).toBe(
+      pill,
+    )
   })
 
   it('hides the add controls from viewers', async () => {

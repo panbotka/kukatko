@@ -47,7 +47,9 @@ These safe, global improvements were applied in the same session as this audit:
    hit area changes and the glyph stays as small as it looks; the X inside a pill chip
    (`.badge .btn-close`) is exempt, because there the chip is the target and 44 px would burst
    the pill. This is the single highest-leverage fix for the pervasive `size="sm"` touch
-   problem found on almost every page.
+   problem found on almost every page. _Extended 2026-08-12:_ a chip that **links** clears the
+   floor too (`a.badge`, `.badge:has(> a)`, the link inside stretched by `.badge > a`) — the list
+   above is by class, so an album/label chip stayed 12 px tall; see **Photo detail** below.
 2. **Friendly landing page.** The landing page previously led with a **backend health check,
    version number and a raw git commit hash** — pure developer jargon as the very first screen.
    It became a welcome with large, labelled cards linking to the main destinations, and the
@@ -321,6 +323,22 @@ implemented**, per the task's conservative-changes rule.
   `inert` (plus `visibility: hidden` for older browsers), and closing it from inside hands focus
   back to the toggle that reopens it. Same element carries the faces and edit views, so both are
   fixed with it. 🔴 ⚪
+- **Touch (2026-08-12):** the album/label chips in the info sheet were the one place the app's 44 px
+  floor did not reach. Measured on production at 390 × 844 with a genuinely coarse pointer: the
+  chip's `<a>` was **79.1 × 12.0 px** (`padding: 0`, `font-size: 12px`) inside a **111 × 20.9 px**
+  pill — both under WCAG 2.2 SC 2.5.8's 24 px, let alone the app's own 44 px — while every other
+  control in the viewer measured 44 × 44 or 52 × 52. The floor missed them because it enumerates
+  classes (`.btn`, `.nav-link`, …) and a `.badge` is none of them. ✅ **Done (2026-08-12):** the
+  chips are the shared `EntityChip`, whose **pill is the link** (the read-only strip's shape), and
+  the floor gained `a.badge` / `.badge:has(> a)` — keyed on the tag, so the next chip that links
+  inherits the target. Only the box grows: the type, the hue and the inline padding are the desktop
+  chip's, because a chip is secondary metadata, not a button competing with the panel's actions.
+  Verified in Chromium at 390 × 844 with `pointer: coarse` forced over a persistent CDP session
+  (`agent-browser set device` does not set it) and confirmed by `matchMedia` in the same evaluation:
+  **every chip 44 px tall** — a viewer's 113.1 × 44 where the pill *is* the link, an editor's 135.1
+  × 44 pill whose link stretches the full 44 px beside the remove X — and the link answering
+  `elementFromPoint` across the pill (46/50 sampled points, the misses being the rounded corners).
+  The same page with `pointer: fine` still draws the 20.9 px pill: the desktop chip, unchanged. 🔴 ⚪
 
 ### Upload (`/upload`)
 - **The model to copy.** Full-size primary/secondary buttons, proper h1→h2 hierarchy, friendly

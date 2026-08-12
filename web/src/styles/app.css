@@ -900,6 +900,37 @@ body {
     min-height: 0;
   }
 
+  /* …which only holds while the chip itself *is* a target. The list above is by
+     class — `.btn`, `.nav-link`, `.dropdown-item` — and a `.badge` is none of
+     them, so a pill chip that links kept the height its 0.75em type gives it:
+     measured on production (390 × 844, coarse pointer) the photo panel's album
+     chip was a 79.1 × 12.0px `<a>` inside a 111 × 20.9px pill, both under even
+     WCAG 2.2 SC 2.5.8's 24px floor. Keying on the tag rather than on yet another
+     class is what closes it at the source: the next chip that links inherits the
+     target without repeating the fix.
+
+     Grow the box, not the type. Font size, hue and inline padding are untouched,
+     so a chip still reads as the secondary metadata it is — an album name, not a
+     button competing with the panel's actions; it simply carries a finger-sized
+     box now. The pill also drops its block padding and stretches the link inside
+     it, so a chip that pairs its link with a remove X (`EntityChip` with a
+     `remove` — there the pill cannot *be* the `<a>`, which may not contain a
+     button) hands the link the pill's full height rather than a band across its
+     middle. A fine pointer keeps the compact chip a mouse can already hit. */
+  a.badge,
+  .badge:has(> a) {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+    padding-block: 0;
+  }
+
+  .badge > a {
+    display: inline-flex;
+    align-items: center;
+    align-self: stretch;
+  }
+
   /* Checkboxes/radios are the tightest hit areas of all — enlarge the control
      itself so it is tappable without hunting for the exact pixel. */
   .form-check-input {

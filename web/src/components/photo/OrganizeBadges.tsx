@@ -1,8 +1,6 @@
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
-import { ENTITY_STYLE } from '../entityStyle'
-import { Icon } from '../Icon'
+import { EntityChip } from '../EntityChip'
 
 import { albumDisplayTitle } from '../../i18n/albumNames'
 import { type PhotoAlbumRef, type PhotoLabelRef } from '../../services/photos'
@@ -24,9 +22,10 @@ export interface OrganizeBadgesProps {
  * Purely informative: the badges carry no remove/add controls — adding and
  * removing memberships stays exclusively in {@link OrganizePanel}. Both read the
  * very same `photo.albums`/`photo.labels` arrays, so an edit down there shows up
- * here immediately with no second fetch. Each badge links to its scoped list and
- * uses the shared `ENTITY_STYLE` colour + glyph, so it looks identical to the
- * Organize chips. Renders nothing when the photo has neither albums nor labels.
+ * here immediately with no second fetch. Both also render the very same
+ * {@link EntityChip}, so the strip and the Organize chips cannot drift apart in
+ * colour, glyph or tap target. Renders nothing when the photo has neither albums
+ * nor labels.
  */
 export function OrganizeBadges({ albums, labels }: OrganizeBadgesProps) {
   const { t, i18n } = useTranslation()
@@ -35,12 +34,8 @@ export function OrganizeBadges({ albums, labels }: OrganizeBadgesProps) {
     return null
   }
 
-  // The pill is the link itself (no nested control), so the whole badge — glyph
-  // included — is one tap target; `flex-wrap` lets the strip run onto more lines
-  // instead of scrolling the page sideways.
-  const pill = (kind: 'album' | 'tag') =>
-    `badge rounded-pill ${ENTITY_STYLE[kind].className} d-inline-flex align-items-center gap-1 text-white text-decoration-none`
-
+  // `flex-wrap` lets the strip run onto more lines instead of scrolling the page
+  // sideways — on a phone the chips are finger-sized, so a full row is few.
   return (
     <nav
       aria-label={t('photo.sections.organize')}
@@ -48,16 +43,14 @@ export function OrganizeBadges({ albums, labels }: OrganizeBadgesProps) {
       className="d-flex flex-wrap gap-2 mb-3"
     >
       {albums.map((album) => (
-        <Link key={album.uid} to={`/albums/${album.uid}`} className={pill('album')}>
-          <Icon name={ENTITY_STYLE.album.icon} />
+        <EntityChip key={album.uid} kind="album" to={`/albums/${album.uid}`}>
           {albumDisplayTitle(album.title, i18n.language)}
-        </Link>
+        </EntityChip>
       ))}
       {labels.map((label) => (
-        <Link key={label.uid} to={`/labels/${label.uid}`} className={pill('tag')}>
-          <Icon name={ENTITY_STYLE.tag.icon} />
+        <EntityChip key={label.uid} kind="tag" to={`/labels/${label.uid}`}>
           {label.name}
-        </Link>
+        </EntityChip>
       ))}
     </nav>
   )
