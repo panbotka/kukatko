@@ -40,6 +40,7 @@ export type IconName =
   | 'eye-slash'
   | 'files'
   | 'fire'
+  | 'funnel'
   | 'geo-alt'
   | 'github'
   | 'grid-3x3-gap-fill'

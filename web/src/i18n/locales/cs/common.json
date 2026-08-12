@@ -720,6 +720,7 @@
     "unknownTokens": "Těmto filtrům nerozumím (hledám je jako obyčejný text):",
     "keySuggestions": "Návrhy filtrů",
     "valueSuggestions": "Návrhy hodnot",
+    "suggestions": "Návrhy",
     "values": {
       "empty": "Nic neodpovídá"
     },

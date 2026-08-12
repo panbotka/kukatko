@@ -46,6 +46,18 @@ vi.mock('../services/bulk', async (importOriginal) => {
   return { ...actual, bulkUpdatePhotos: vi.fn() }
 })
 
+// The box's own recent searches: stubbed so what the page decides to remember is
+// observable, and so the dropdown never reaches for the network.
+vi.mock('../services/searchHistory', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/searchHistory')>()
+  return {
+    ...actual,
+    fetchSearchHistory: vi.fn(),
+    recordSearch: vi.fn(),
+    clearSearchHistory: vi.fn(),
+  }
+})
+
 // The cross-entity sections run their own global search; stub it to an empty
 // result so this suite stays focused on the photo grid (see GlobalSearchSections
 // tests for the sections themselves).
@@ -70,6 +82,10 @@ const labelsMock = vi.mocked(fetchLabels)
 
 const { globalSearch } = await import('../services/search')
 const globalSearchMock = vi.mocked(globalSearch)
+
+const { fetchSearchHistory, recordSearch } = await import('../services/searchHistory')
+const historyMock = vi.mocked(fetchSearchHistory)
+const recordMock = vi.mocked(recordSearch)
 
 function photo(uid: string, name: string): Photo {
   return {
@@ -150,6 +166,10 @@ beforeEach(async () => {
   // search resolves to `undefined` and leaks an unhandled rejection.
   globalSearchMock.mockReset()
   globalSearchMock.mockResolvedValue({ query: '', albums: [], labels: [], people: [], photos: [] })
+  historyMock.mockReset()
+  historyMock.mockResolvedValue([])
+  recordMock.mockReset()
+  recordMock.mockResolvedValue()
 })
 
 afterEach(() => {
@@ -387,6 +407,83 @@ describe('SearchPage', () => {
     })
     expect(searchMock.mock.calls.map(([params]) => params.q)).not.toContain('svatba uid:')
     expect(searchMock.mock.calls.at(-1)?.[0].q).toBe('svatba u')
+  })
+
+  it('remembers nothing of a query that was only typed', async () => {
+    vi.useFakeTimers()
+    searchMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    renderSearch('/search')
+
+    // Typed in bursts, with a pause long enough for each prefix to run as its own
+    // search — which is exactly how `sva` used to end up in the history beside
+    // `svatba`. Nothing here was submitted, so nothing is remembered.
+    fireEvent.change(screen.getByLabelText('Search term'), { target: { value: 'sva' } })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4000)
+    })
+    fireEvent.change(screen.getByLabelText('Search term'), { target: { value: 'svatba' } })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10000)
+    })
+
+    expect(searchMock.mock.calls.map(([params]) => params.q)).toContain('sva')
+    expect(recordMock).not.toHaveBeenCalled()
+  })
+
+  it('remembers a submitted query, exactly once', async () => {
+    searchMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    const user = userEvent.setup()
+    renderSearch('/search')
+
+    const input = screen.getByLabelText('Search term')
+    await user.type(input, 'svatba')
+    expect(recordMock).not.toHaveBeenCalled()
+
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => {
+      expect(recordMock).toHaveBeenCalledTimes(1)
+    })
+    expect(recordMock.mock.calls[0][0]).toBe('svatba')
+
+    // The search the debounce runs behind the submit is the same query; it must
+    // not be counted a second time.
+    await waitFor(() => {
+      expect(screen.getByTestId('search')).toHaveTextContent('q=svatba')
+    })
+    expect(recordMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('remembers a recent search picked from the box, moving it back to the front', async () => {
+    searchMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    historyMock.mockResolvedValue([
+      { query: 'svatba 1974', searched_at: '2026-08-09T12:00:00Z' },
+      { query: 'hory', searched_at: '2026-08-08T12:00:00Z' },
+    ])
+    const user = userEvent.setup()
+    renderSearch('/search')
+
+    // The page focuses the box on arrival, so the history is already offered.
+    await user.click(await screen.findByRole('option', { name: 'svatba 1974' }))
+
+    expect(screen.getByLabelText('Search term')).toHaveValue('svatba 1974')
+    await waitFor(() => {
+      expect(recordMock).toHaveBeenCalledTimes(1)
+    })
+    expect(recordMock.mock.calls[0][0]).toBe('svatba 1974')
+  })
+
+  it('offers a remembered search back for the prefix being typed', async () => {
+    searchMock.mockResolvedValue(page([]))
+    historyMock.mockResolvedValue([{ query: 'svatba 1974', searched_at: '2026-08-09T12:00:00Z' }])
+    const user = userEvent.setup()
+    renderSearch('/search')
+
+    await user.type(screen.getByLabelText('Search term'), 's')
+
+    // `s` also prefixes two filter keys; the reader's own search comes first.
+    const options = await screen.findAllByRole('option')
+    expect(options[0]).toHaveTextContent('svatba 1974')
   })
 
   it('shows the empty state when nothing matches', async () => {

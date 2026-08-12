@@ -53,10 +53,12 @@ const SEARCH_DEBOUNCE_MS = 350
  *
  * This page also owns saved searches: the header pairs a "save this view" button
  * with the {@link SavedSearchesDropdown} that lists, applies and manages them.
- * Alongside them, every query that actually runs here is remembered per user and
- * offered back by {@link SearchQueryInput} whenever the box is focused and empty —
- * saved searches are the ones worth naming, the history the ones merely worth
- * repeating.
+ * Alongside them, every query the reader *submits* here — Enter, or picking one
+ * of them again — is remembered per user and offered back by
+ * {@link SearchQueryInput} whenever the box is focused: saved searches are the
+ * ones worth naming, the history the ones merely worth repeating. The searches
+ * the debounce runs along the way are not submissions and are not remembered,
+ * or a hesitation mid-word would leave its prefix in the history for good.
  *
  * Editors can multi-select results straight away — the corner checkmark is
  * offered from the outset, as on the library — and picking one raises the
@@ -123,10 +125,11 @@ export function SearchPage() {
   const [savingView, setSavingView] = useState(false)
 
   // Remember what was searched for, so the box can offer it back — here and on
-  // whatever device the reader picks up next. It watches the URL query, which is
-  // the one that actually ran, never the keystrokes; the hook waits for it to
-  // settle so a query typed in bursts is remembered once, not as its prefixes.
-  useRecordSearch(view.q)
+  // whatever device the reader picks up next. Only a submitted query is recorded
+  // (Enter below, or picking a recent search), never the query that merely ran:
+  // typing pauses commit to the URL and search, so watching that would remember
+  // every prefix the reader hesitated on.
+  const recordSearch = useRecordSearch()
 
   // Keep the input in sync when the URL query changes from elsewhere (a saved
   // search, Back/Forward, a shared link).
@@ -197,6 +200,9 @@ export function SearchPage() {
           e.preventDefault()
           // Commit immediately on submit, bypassing the debounce.
           setView({ q: text }, { replace: true })
+          // Enter is the reader saying this is the query they meant — the one
+          // act worth remembering, out of the several searches their typing ran.
+          recordSearch(text)
         }}
       >
         <Row className="g-2 align-items-end">
@@ -215,8 +221,10 @@ export function SearchPage() {
                 onChange={setText}
                 onRun={(next) => {
                   // Picking a recent search runs it at once: it is a whole query,
-                  // so waiting out the typing debounce would only feel slow.
+                  // so waiting out the typing debounce would only feel slow. It
+                  // is also a submit, so it moves back to the front of the ring.
                   setView({ q: next }, { replace: true })
+                  recordSearch(next)
                 }}
               />
             </Form.Group>
