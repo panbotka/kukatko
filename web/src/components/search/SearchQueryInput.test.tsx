@@ -323,8 +323,36 @@ describe('SearchQueryInput — value suggestions', () => {
     await user.type(screen.getByRole('combobox'), 'ca')
     const list = await screen.findByRole('listbox', { name: 'Filter suggestions' })
     expect(list).toBeInTheDocument()
-    // Key completion pre-selects its first row, so Enter accepts it.
+    // Tab is the completion key, so it accepts the first row untouched.
+    await user.keyboard('{Tab}')
+    expect(screen.getByRole('combobox')).toHaveValue('camera:')
+  })
+
+  it('completes a filter key arrowed into, on Enter', async () => {
+    const user = userEvent.setup()
+    renderInput()
+
+    await user.type(screen.getByRole('combobox'), 'ca')
+    await screen.findByRole('listbox', { name: 'Filter suggestions' })
+
+    await user.keyboard('{ArrowDown}')
+    expect(screen.getAllByRole('option')[0]).toHaveAttribute('aria-selected', 'true')
     await user.keyboard('{Enter}')
     expect(screen.getByRole('combobox')).toHaveValue('camera:')
+  })
+
+  it('submits a phrase verbatim when its last token merely looks like a filter key', async () => {
+    const user = userEvent.setup()
+    renderInput()
+
+    // Czech is full of words and endings that prefix an English filter key —
+    // here `u` prefixes `uid`. Nothing was highlighted, so Enter must run the
+    // typed query, not rewrite it into `svatba uid:`.
+    await user.type(screen.getByRole('combobox'), 'svatba u')
+    await screen.findByRole('listbox', { name: 'Filter suggestions' })
+
+    await user.keyboard('{Enter}')
+    expect(screen.getByRole('combobox')).toHaveValue('svatba u')
+    expect(screen.getByTestId('ran').textContent).toBe('svatba u')
   })
 })

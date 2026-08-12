@@ -362,10 +362,31 @@ describe('SearchPage', () => {
     await user.type(input, 'c')
     await screen.findByRole('listbox', { name: 'Filter suggestions' })
 
-    // ArrowDown moves from camera: to city:, Enter accepts it (not submit).
-    await user.keyboard('{ArrowDown}{Enter}')
+    // ArrowDown highlights camera:, a second one moves to city:, Enter accepts
+    // the highlighted row (rather than submitting).
+    await user.keyboard('{ArrowDown}{ArrowDown}{Enter}')
 
     expect(input).toHaveValue('city:')
+  })
+
+  it('searches for the typed phrase even when its tail prefixes a filter key', async () => {
+    searchMock.mockResolvedValue(page([]))
+    const user = userEvent.setup()
+    renderSearch()
+
+    const input = screen.getByLabelText('Search term')
+    await user.type(input, 'svatba u')
+    // `u` prefixes `uid`, so the key panel is up — untouched, so Enter is the
+    // reader's own submit and neither the box nor the URL may be rewritten.
+    await screen.findByRole('listbox', { name: 'Filter suggestions' })
+    await user.keyboard('{Enter}')
+
+    expect(input).toHaveValue('svatba u')
+    await waitFor(() => {
+      expect(screen.getByTestId('search')).toHaveTextContent('q=svatba+u')
+    })
+    expect(searchMock.mock.calls.map(([params]) => params.q)).not.toContain('svatba uid:')
+    expect(searchMock.mock.calls.at(-1)?.[0].q).toBe('svatba u')
   })
 
   it('shows the empty state when nothing matches', async () => {

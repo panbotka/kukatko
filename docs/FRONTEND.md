@@ -1065,9 +1065,11 @@ here.
   matching is **prefix + diacritics-insensitive** (`lib/text` `foldText`) and ranked by photo count, the picked
   value is inserted **properly quoted** (`quoteFilterValue`) with a trailing space, and a value token with no
   match still opens the dropdown with „Nic neodpovídá" rather than vanishing mid-word. Arrows move,
-  Enter/Tab accept, Esc closes — but **Enter with nothing highlighted belongs to the form**: only the key panel
-  pre-selects its first row (`INITIAL_ACTIVE`), because a bare `ca` is not a search anyone means to run while
-  `person:Anna` is. Beside the label sits `SearchQueryHelp` (a `?` button → a modal holding
+  Enter/Tab accept, Esc closes — but **Enter with nothing highlighted belongs to the form**, and **no panel
+  rests on a row**: a highlight exists only once the reader has arrowed into the list, so `svatba u` + Enter
+  searches for those two words instead of completing `u` into `uid:` — Czech words and endings prefix the
+  English keys constantly (`po`→`portrait:`, `ta`→`taken:`, `la`→`label:`). **Tab** is the completion key and
+  accepts the first row untouched. Beside the label sits `SearchQueryHelp` (a `?` button → a modal holding
   **`SearchQueryReference`** — the reference lives in its own component because `/help`'s Search chapter
   renders the same tables inline, so the syntax has one source of truth; operators and filters
   with examples, rows from `QUERY_HELP_ROWS`/`QUERY_HELP_OPERATORS`, texts `search.help.*` cs+en; the

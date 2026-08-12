@@ -45,19 +45,6 @@ type Panel =
   | { kind: 'keys'; options: SuggestionOption[]; suggestion: KeySuggestion }
   | { kind: 'values'; options: SuggestionOption[]; suggestion: ValueSuggestion }
 
-/**
- * Where the highlight starts when a panel opens.
- *
- * Key completion pre-selects its first row: a bare `ca` is not a search anyone
- * means to run, so Enter completing it to `camera:` is the helpful reading. A
- * fully typed value and a recent search are the opposite — `person:Anna` + Enter
- * means "search for that", and Enter on a freshly focused empty box must not run
- * whatever happens to sit at the top of the history. Those panels therefore start
- * with nothing highlighted, and Enter falls through to the form until the reader
- * arrows into the list (Tab still completes the first row).
- */
-const INITIAL_ACTIVE: Record<Panel['kind'], number> = { history: -1, keys: 0, values: -1 }
-
 /** The accessible name of each panel's listbox. */
 const PANEL_LABEL_KEY: Record<Panel['kind'], ParseKeys> = {
   history: 'search.history.label',
@@ -80,12 +67,13 @@ const PANEL_LABEL_KEY: Record<Panel['kind'], ParseKeys> = {
  *   `album:`, `label:`, `person:`/`subject:` complete: a number or a date has no
  *   list to propose from.
  *
- * ArrowUp/Down move, Enter or Tab accept, Escape closes. Enter with nothing
- * highlighted belongs to the surrounding form, so the box never swallows a search
- * the reader meant to run. Nothing here blocks typing: the value lists are
- * fetched at most once per facet and matched client-side, so no keystroke costs a
- * request, and a facet with nothing to offer still opens the dropdown with a
- * "nothing matches" line rather than vanishing mid-word.
+ * ArrowUp/Down move, Tab or Enter accept, Escape closes. Tab is the completion
+ * key and takes the first row untouched; Enter with nothing highlighted belongs
+ * to the surrounding form, so the box never swallows a search the reader meant
+ * to run. Nothing here blocks typing: the value lists are fetched at most once
+ * per facet and matched client-side, so no keystroke costs a request, and a
+ * facet with nothing to offer still opens the dropdown with a "nothing matches"
+ * line rather than vanishing mid-word.
  */
 export function SearchQueryInput({
   id,
@@ -160,12 +148,15 @@ export function SearchQueryInput({
     return null
   }, [open, empty, history.entries, keySuggestion, matches, valueSuggestion])
 
-  // An untouched highlight rests wherever the panel wants it; either way it is
-  // clamped into the rows, so it can never point past a list that shrank as the
-  // reader typed.
+  // No panel rests on a row: the highlight exists only once the reader has put it
+  // there, which is what keeps Enter theirs. `svatba u` + Enter must search for
+  // those two words rather than complete `u` into `uid:` — Czech words and
+  // endings prefix these English keys constantly — just as `person:Anna` must not
+  // turn into the busier name on top, and Enter on a freshly focused box must not
+  // run the newest recent search. Once moved, the index is clamped into the rows,
+  // so it can never point past a list that shrank as the reader typed.
   const count = panel === null ? 0 : panel.options.length
-  const resting = panel === null ? -1 : INITIAL_ACTIVE[panel.kind]
-  const activeIndex = count === 0 ? -1 : Math.min(moved ?? resting, count - 1)
+  const activeIndex = moved === null || count === 0 ? -1 : Math.min(moved, count - 1)
   const listboxId = `${id}-suggestions`
   const listboxOpen = count > 0
 
