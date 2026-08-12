@@ -1085,7 +1085,8 @@ fails the whole scrape.
   the R2-backend tests additionally want `KUKATKO_TEST_S3_ENDPOINT` — without it they are skipped,
   see `docs/DEVELOPMENT.md`), `check` (the gate = `docs-budget` + `fmt-check` + `lint` +
   `web-typecheck` + `test`; **rewrites nothing**, after a successful run `git status --short` is
-  empty), `build` (frontend build + `CGO_ENABLED=0` → `bin/kukatko`), `dev` (smart rebuild + run on
+  empty), `check-box` (that same gate, executed on the build box — see below),
+  `build` (frontend build + `CGO_ENABLED=0` → `bin/kukatko`), `dev` (smart rebuild + run on
   `:6480` via `scripts/dev.sh`, `DEV_ARGS=--force` for a full rebuild), `dev-storage`
   (`scripts/dev-storage.sh` — the local MinIO the dev runtime *and* the S3 integration tests share:
   container `kukatko-minio`, named volume `kukatko-minio-data`, `--restart unless-stopped`, 1 GB cap,
@@ -1112,6 +1113,50 @@ fails the whole scrape.
   `postinstall.sh`/`preremove.sh`/`postremove.sh` (user + `/var/lib/kukatko/{originals,cache}`).
   Apt deps: `libimage-exiftool-perl`, `libheif-examples|libheif-bin`, `dcraw`, `ffmpeg`,
   `postgresql-client`, `ca-certificates`; **no texlive**.
+
+### `make check-box` — the gate on the build box
+
+`make check` on the Pi is dominated by work four cores cannot parallelise away — ESLint and the
+2734-test Vitest suite. Measured on 2026-08-12 with warm caches: **434 s on the Pi, 66 s on the
+build box** (`ssh box`, 24 threads, 62 GB), 114 s for the very first run including the toolchain
+bootstrap. `make check-box` (`scripts/check-on-box.sh`) syncs the working tree there and runs
+the same target remotely, streaming the output back.
+
+- **It is an accelerator, not a second gate.** The script runs `make check` — the whole target,
+  never a subset — and **exits with the remote exit code**, so a red gate on the box is a red
+  gate locally. `make check` keeps its meaning as the binding gate.
+- **What is synced:** the working tree, *including uncommitted work* (`rsync -a --delete`, so a
+  file deleted here disappears there). **`.secrets/` is never synced** — the gate is unit tests
+  only, so it needs no credentials, and the box has no business holding this instance's DSNs or
+  API keys. Also excluded: `.git/`, `bin/`, `.devdata/`, `.shots/`, `web/node_modules/`, the Vite
+  and embed build outputs (`internal/web/static/dist/.gitkeep` is re-included — without a file
+  there `//go:embed all:dist/*` does not compile), `*.local.yaml` and `.env*`. About 20 MB
+  initially, a delta afterwards.
+- **Concurrency.** Several Claude sessions share this Pi and may run the target at once, often
+  from the same checkout, so the remote directory must not be a single shared path. Each run
+  claims one of `KUKATKO_BOX_SLOTS` workspaces (`~/.cache/kukatko-check/<origin-host>-wsN/src`)
+  through an `flock` held for its whole life; with all of them busy it waits rather than
+  clobbering a neighbour. The lock lives on the Pi because that is where every run starts, and
+  the workspace name carries the origin host so another machine gets its own set. Two runs
+  launched together took `pi-ws1`/`pi-ws2` and finished green in 75 s and 99 s.
+- **One-time bootstrap, done by the script.** The box has Node 22 but no Go and no
+  golangci-lint. The script installs the Go minor version from `go.mod` (resolved to the current
+  patch release via `go.dev/dl/?mode=json`) and the golangci-lint version pinned in
+  `.github/workflows/ci.yml` into `~/.cache/kukatko-check/toolchain`, under a lock so two
+  workspaces cannot race into a half-extracted `GOROOT`, and runs `npm ci` in the workspace.
+  Re-runs reuse all of it: the Go module/build caches and the npm cache are shared across
+  workspaces, `node_modules` lives in the workspace and survives the sync. `rm -rf
+  ~/.cache/kukatko-check` on the box is a complete uninstall.
+- **The box is not always on.** The script sends a wake-on-LAN packet (`boxon`) and polls SSH
+  for `KUKATKO_BOX_WAKE_TIMEOUT` seconds (default 300). It never hangs: on timeout it says the
+  gate did *not* run and that `make check` is the local fallback, and exits non-zero.
+- **Integration tests stay local.** Their database lives on the Pi, so `make test-integration`
+  has no remote equivalent and the script says so at the end of a green run.
+- **Environment:** `KUKATKO_BOX_HOST` (default `box` — `~/.ssh/config` sets the user; the
+  `ssh box@box` form from the global CLAUDE.md does not authenticate), `KUKATKO_BOX_ROOT`
+  (remote cache dir relative to the remote `$HOME`, default `.cache/kukatko-check`),
+  `KUKATKO_BOX_SLOTS` (default 4), `KUKATKO_BOX_WAKE_TIMEOUT`, `KUKATKO_BOX_LOCK_WAIT`
+  (default 1800 s of waiting for a busy workspace).
 
 ## Docker image — container build and publishing to GHCR
 

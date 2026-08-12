@@ -14,7 +14,7 @@ WEB_DIR  := web
 WEB_DEPS_STAMP := $(WEB_DIR)/node_modules/.kukatko-npm-ci-stamp
 
 .PHONY: help fmt fmt-check vet lint lint-fix typecheck test test-race test-integration \
-        check build dev dev-storage clean docs-budget \
+        check check-box build dev dev-storage clean docs-budget \
         web-deps web-build web-fmt web-fmt-check web-lint web-test web-typecheck
 
 ## help: List available make targets.
@@ -83,6 +83,14 @@ test-integration:
 ## Non-mutating by construction: a successful run leaves `git status --short` empty.
 ## Ordered cheapest-first so the fastest check fails fastest.
 check: docs-budget fmt-check lint web-typecheck test
+
+## check-box: Run that same gate on the build box (24 threads) against a synced
+## copy of this working tree, uncommitted work included. An accelerator, not a
+## second gate: it runs `make check`, never a subset, and exits with the remote
+## exit code. `check` stays the binding target. Integration tests have no remote
+## equivalent — their database lives on the Pi. See scripts/check-on-box.sh.
+check-box:
+	./scripts/check-on-box.sh
 
 ## docs-budget: Fail if CLAUDE.md grew beyond its rules+index budget.
 docs-budget:
