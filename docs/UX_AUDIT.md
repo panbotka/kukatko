@@ -167,6 +167,18 @@ implemented**, per the task's conservative-changes rule.
   A phone rail replaces the hiding: a 2.5 rem strip of year labels on the right edge (the grid
   reserves the lane, so it covers no tile and steals no tap), faint at rest and at full strength —
   plated, with the month bubble — for 1.6 s after any scroll or touch. ✅
+- **The rail covered the Filtry button — fixed (2026-08-12):** the lane holds for the *tiles*, but
+  the rail is `position: fixed` and started at a constant 6 rem below the navbar, which is the height
+  of the filter row **and nothing else**. Anything above that row moved it under the rail: on the
+  arrival screen the „Co je nového" digest pushed **Filtry** to y=194–242 while the rail began at 148
+  — 40 px of overlap, 38 % of the button — and a tap at (378, 218), visually inside it, hit a year
+  tick and scrolled the library to 142 192 px (measured on production, 390 × 844, coarse pointer).
+  An instance announcement renders into the same slot, which would have made it permanent rather than
+  once per visit. The rail now **measures** the grid box it scrubs (`gridWrapRef` → `useGridTop` →
+  `--kukatko-timeline-top`) and starts there, so whatever the page puts above the grid moves the rail
+  down with it; once the header has scrolled away a CSS `max()` floor keeps it just below the navbar.
+  Verified in Chromium at 390 × 844 with the digest, with an announcement, with both and with
+  neither: `document.elementFromPoint` over the whole filter row returns the row's own controls. ✅
 
 ### Favorites (`/favorites`)
 - Simplest, cleanest page. Excellent action-guiding empty state ("Tap the heart on a photo…").

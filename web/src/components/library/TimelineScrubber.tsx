@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  type CSSProperties,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { useTimeline } from '../../hooks/useTimeline'
@@ -32,6 +41,76 @@ const DRAG_THRESHOLD_PX = 3
  */
 const IDLE_MS = 1600
 
+/**
+ * The style the rail carries: the measured top edge of the grid, published as a
+ * custom property the phone stylesheet starts the rail at (see
+ * {@link useGridTop}).
+ */
+type RailStyle = CSSProperties & Record<'--kukatko-timeline-top', string>
+
+/**
+ * Tracks the grid's top edge in viewport coordinates, so the fixed rail can start
+ * where the grid does instead of at a constant offset.
+ *
+ * The constant was the bug: the phone rail began 6 rem below the navbar, which is
+ * the height of a filter row and nothing else. Anything the page renders above
+ * the grid — the „Co je nového" digest on the first visit of the day, an
+ * instance-wide announcement (permanently, while it is published), a filter row
+ * that wrapped onto another line — pushes the filter row down *under* the rail,
+ * and then a tap aimed at **Filtry** lands on a year tick and throws the grid a
+ * hundred thousand pixels away. Measuring removes the assumption: whatever
+ * precedes the grid, the rail begins below it.
+ *
+ * The answer is clamped at 0 rather than allowed to go negative — once the header
+ * has scrolled off the top the rail is free to run up to its floor (which the
+ * stylesheet, not this hook, decides: the sticky navbar), and the clamp is also
+ * what stops every further scroll frame from re-rendering the rail with a more
+ * negative number. Measurement itself is coalesced into an animation frame.
+ *
+ * Returns null until the first measurement, and for a rail rendered without a
+ * grid to measure; the stylesheet then falls back to the old constant.
+ */
+function useGridTop(gridWrapRef: RefObject<HTMLElement | null>): number | null {
+  const [top, setTop] = useState<number | null>(null)
+  // A layout effect, so the first measurement is published before the browser
+  // paints: a rail that is briefly in the wrong place is a rail that can briefly
+  // take the wrong tap.
+  useLayoutEffect(() => {
+    const grid = gridWrapRef.current
+    if (grid === null) {
+      return
+    }
+    let frame = 0
+    const measure = (): void => {
+      frame = 0
+      setTop(Math.max(0, Math.round(grid.getBoundingClientRect().top)))
+    }
+    const schedule = (): void => {
+      if (frame === 0) {
+        frame = window.requestAnimationFrame(measure)
+      }
+    }
+    measure()
+    window.addEventListener('scroll', schedule, { passive: true })
+    window.addEventListener('resize', schedule)
+    // What moves the grid is what is rendered *above* it, not the grid itself, so
+    // the page body is what has to be watched: the digest arriving, an
+    // announcement being published or dismissed, the filter row re-wrapping.
+    // (ResizeObserver is absent in jsdom; the measurement above still runs.)
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(schedule) : null
+    observer?.observe(document.body)
+    return () => {
+      if (frame !== 0) {
+        window.cancelAnimationFrame(frame)
+      }
+      window.removeEventListener('scroll', schedule)
+      window.removeEventListener('resize', schedule)
+      observer?.disconnect()
+    }
+  }, [gridWrapRef])
+  return top
+}
+
 /** A month the rail asks the grid to jump to. */
 export interface TimelineJump {
   /**
@@ -56,6 +135,15 @@ export interface TimelineScrubberProps {
   params: PhotoListParams
   /** The first visible photo index in the grid, used to highlight the current month. */
   activeIndex: number
+  /**
+   * The element wrapping the grid the rail scrubs. The rail is `position: fixed`
+   * and on a phone it lies over the page rather than in a margin beside it, so it
+   * has to know where the page's own header ends. It publishes this element's
+   * measured top edge as `--kukatko-timeline-top` and the phone stylesheet starts
+   * the rail there — see {@link useGridTop}. Required, so that a page cannot
+   * render the rail without saying what it must stay below.
+   */
+  gridWrapRef: RefObject<HTMLElement | null>
   /**
    * The month (`YYYY-MM`) the view is anchored to, from the URL. Once the
    * timeline is loaded the rail resolves it to a grid index and jumps there
@@ -113,17 +201,21 @@ export interface TimelineScrubberProps {
  * scrolling under it, or a finger on it — wakes it for {@link IDLE_MS}, opaque,
  * plated for legibility and showing the month bubble. That awake/asleep state is
  * the `is-active` class; everything it means is CSS, and on desktop it means
- * nothing at all.
+ * nothing at all. Where the phone rail *starts* is measured, not assumed: it
+ * publishes the grid's own top edge and begins there, so nothing the page renders
+ * above the grid can end up underneath it — see {@link useGridTop}.
  */
 export function TimelineScrubber({
   params,
   activeIndex,
+  gridWrapRef,
   anchor = '',
   minSpanMonths = 0,
   onJump,
 }: TimelineScrubberProps) {
   const { t, i18n } = useTranslation()
   const { buckets, total, status } = useTimeline(params)
+  const gridTop = useGridTop(gridWrapRef)
   // The rail element is state, not a ref: its height decides how much of the
   // timeline can be drawn, so mounting it has to trigger a measuring render.
   const [rail, setRail] = useState<HTMLElement | null>(null)
@@ -322,6 +414,9 @@ export function TimelineScrubber({
     <nav
       ref={setRail}
       className={`kukatko-timeline${awake ? ' is-active' : ''}`}
+      style={
+        gridTop === null ? undefined : ({ '--kukatko-timeline-top': `${gridTop}px` } as RailStyle)
+      }
       aria-label={t('library.timeline.label')}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}

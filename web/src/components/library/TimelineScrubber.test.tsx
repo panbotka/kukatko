@@ -1,10 +1,12 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { useCallback, useRef } from 'react'
 import { I18nextProvider } from 'react-i18next'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../../i18n'
 import { type PhotoListParams, type Timeline } from '../../services/photos'
+import { declarations, readCss, ruleBody } from '../../test/css'
 import { realisticTimeline } from '../../test/timeline'
 
 import { type TimelineJump, TimelineScrubber } from './TimelineScrubber'
@@ -61,22 +63,75 @@ function centres(elements: Element[], height = RAIL_HEIGHT_PX): number[] {
   return elements.map((el) => (parseFloat((el as HTMLElement).style.top) / 100) * height)
 }
 
-function renderScrubber(props: {
+/**
+ * The default filters, as one stable object: a fresh one on every render would be
+ * a new filter to `useTimeline`, which refetches and unmounts the rail mid-test.
+ */
+const DEFAULT_PARAMS: PhotoListParams = { sort: 'newest' }
+
+/** A grid box `gridTop` pixels down the viewport, the size jsdom never computes. */
+function gridRectAt(gridTop: number): DOMRect {
+  return {
+    x: 0,
+    y: gridTop,
+    top: gridTop,
+    left: 0,
+    right: 350,
+    bottom: gridTop + 400,
+    width: 350,
+    height: 400,
+    toJSON: () => ({}),
+  }
+}
+
+interface HarnessProps {
   params?: PhotoListParams
   activeIndex?: number
   anchor?: string
+  /**
+   * Where the grid box starts in viewport coordinates — that is, what everything
+   * the page renders above the grid adds up to. Changing it between renders is
+   * the page scrolling or its header growing; the rail re-measures on the scroll
+   * or resize that follows, as it does in a browser.
+   */
+  gridTop?: number
   onJump?: (jump: TimelineJump) => void
-}) {
-  return render(
+}
+
+/**
+ * Renders the rail the way a page does: a grid box first, the rail after it,
+ * with the ref between them. The rail measures that box, so a test can put the
+ * page's header height into `gridTop` and read back where the rail decided to
+ * start.
+ */
+function Harness({ params, activeIndex, anchor, gridTop = 0, onJump }: HarnessProps) {
+  const gridWrapRef = useRef<HTMLDivElement>(null)
+  // The latest geometry, read at measure time rather than captured, so the ref
+  // callback stays stable across renders.
+  const topRef = useRef(gridTop)
+  topRef.current = gridTop
+  const attachGrid = useCallback((node: HTMLDivElement | null) => {
+    if (node !== null) {
+      node.getBoundingClientRect = () => gridRectAt(topRef.current)
+    }
+    gridWrapRef.current = node
+  }, [])
+  return (
     <I18nextProvider i18n={i18n}>
+      <div ref={attachGrid} data-testid="grid" />
       <TimelineScrubber
-        params={props.params ?? { sort: 'newest' }}
-        activeIndex={props.activeIndex ?? 0}
-        anchor={props.anchor}
-        onJump={props.onJump ?? vi.fn()}
+        params={params ?? DEFAULT_PARAMS}
+        activeIndex={activeIndex ?? 0}
+        gridWrapRef={gridWrapRef}
+        anchor={anchor}
+        onJump={onJump ?? vi.fn()}
       />
-    </I18nextProvider>,
+    </I18nextProvider>
   )
+}
+
+function renderScrubber(props: HarnessProps) {
+  return render(<Harness {...props} />)
 }
 
 /** The grid indexes a spy was asked to jump to, in call order. */
@@ -113,15 +168,7 @@ describe('TimelineScrubber', () => {
     })
     expect(fetchMock.mock.calls[0][0]).toMatchObject({ camera: 'Canon' })
 
-    rerender(
-      <I18nextProvider i18n={i18n}>
-        <TimelineScrubber
-          params={{ sort: 'newest', camera: 'Nikon' }}
-          activeIndex={0}
-          onJump={vi.fn()}
-        />
-      </I18nextProvider>,
-    )
+    rerender(<Harness params={{ sort: 'newest', camera: 'Nikon' }} />)
 
     await waitFor(() => {
       const last = fetchMock.mock.calls[fetchMock.mock.calls.length - 1][0]
@@ -142,11 +189,7 @@ describe('TimelineScrubber', () => {
     )
 
     // Scrolling to index 5 lands inside the second bucket (cumulative 3..7).
-    rerender(
-      <I18nextProvider i18n={i18n}>
-        <TimelineScrubber params={{ sort: 'newest' }} activeIndex={5} onJump={vi.fn()} />
-      </I18nextProvider>,
-    )
+    rerender(<Harness activeIndex={5} />)
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Jump to Jan 2026' })).toHaveAttribute(
@@ -302,16 +345,7 @@ describe('TimelineScrubber', () => {
     })
     // Re-rendering with the same anchor must not jump again — otherwise every
     // render would yank a reader who has since scrolled away back to the month.
-    rerender(
-      <I18nextProvider i18n={i18n}>
-        <TimelineScrubber
-          params={{ sort: 'newest' }}
-          activeIndex={7}
-          anchor="2026-01"
-          onJump={onJump}
-        />
-      </I18nextProvider>,
-    )
+    rerender(<Harness activeIndex={7} anchor="2026-01" onJump={onJump} />)
     expect(onJump).toHaveBeenCalledTimes(1)
   })
 
@@ -332,6 +366,86 @@ describe('TimelineScrubber', () => {
       expect(fetchMock).toHaveBeenCalled()
     })
     expect(screen.queryByRole('navigation')).not.toBeInTheDocument()
+  })
+})
+
+/**
+ * Where the phone rail begins. It is `position: fixed`, so nothing in the layout
+ * keeps it off the page's own header — it used to start a constant 6 rem below
+ * the navbar, which is the height of the filter row **and nothing else**.
+ *
+ * The regression this guards: on the library's arrival screen the „Co je nového"
+ * digest renders above the filter row and pushed **Filtry** down to y=194–242
+ * (measured on production, 390×844), while the rail still began at y=148 — across
+ * 40 px of the button, 38 % of it. A tap at (378, 218), visually inside the
+ * button, hit a year tick and scrolled the library to 142 192 px instead of
+ * opening the drawer. An instance-wide announcement renders into the same slot,
+ * which would make that permanent rather than once per visit.
+ */
+describe('TimelineScrubber placement', () => {
+  const FILTERS_BOTTOM_WITH_DIGEST = 242
+  const GRID_TOP_WITH_DIGEST = 250
+
+  /** Where the rendered rail says it starts. */
+  function railTop(): string {
+    return screen.getByRole('navigation').style.getPropertyValue('--kukatko-timeline-top')
+  }
+
+  it('starts at the grid, whatever the page rendered above it', async () => {
+    fetchMock.mockResolvedValue(TIMELINE)
+    // The arrival screen: digest, then the filter row, then the grid.
+    const { unmount } = renderScrubber({ gridTop: GRID_TOP_WITH_DIGEST })
+
+    await screen.findByRole('navigation')
+    expect(railTop()).toBe(`${GRID_TOP_WITH_DIGEST}px`)
+    // The button the tap was aimed at is above the rail's first pixel, which is
+    // the whole point: no part of the filter row can be under it.
+    expect(parseFloat(railTop())).toBeGreaterThanOrEqual(FILTERS_BOTTOM_WITH_DIGEST)
+    unmount()
+
+    // The same page without the digest — the case that used to work — still puts
+    // the rail at the grid rather than at the old constant.
+    renderScrubber({ gridTop: 125 })
+    await waitFor(() => {
+      expect(railTop()).toBe('125px')
+    })
+  })
+
+  it('follows the header as it scrolls away, and stops at zero', async () => {
+    fetchMock.mockResolvedValue(TIMELINE)
+    const { rerender } = renderScrubber({ gridTop: GRID_TOP_WITH_DIGEST })
+    await screen.findByRole('navigation')
+
+    // A short scroll: the header is still on screen, so the rail follows it up.
+    rerender(<Harness gridTop={90} />)
+    fireEvent.scroll(window)
+    await waitFor(() => {
+      expect(railTop()).toBe('90px')
+    })
+
+    // Once the header is off the top the answer clamps to 0 — the stylesheet's
+    // own floor takes over from there, and the clamp is what stops every further
+    // scroll frame from re-rendering the rail with a more negative number.
+    rerender(<Harness gridTop={-4200} />)
+    fireEvent.scroll(window)
+    await waitFor(() => {
+      expect(railTop()).toBe('0px')
+    })
+  })
+
+  it('is what the phone stylesheet positions the rail by', () => {
+    const css = readCss('src/styles/app.css')
+    const phone = ruleBody(css, /\.kukatko-timeline\s*(?=\{)/, /--kukatko-timeline-top/)
+    expect(phone).toBeDefined()
+    // Whitespace-stripped: the declaration is long enough that the formatter
+    // wraps it, and where it wraps is not what is being asserted.
+    const top = (declarations(phone ?? '').get('top') ?? '').replace(/\s+/g, '')
+    // The measurement decides where the rail starts…
+    expect(top).toContain('var(--kukatko-timeline-top')
+    // …down to a floor just under the sticky navbar, for when the header has
+    // scrolled away and the measurement reads 0.
+    expect(top).toContain('max(')
+    expect(top).toContain('var(--kukatko-navbar-height)')
   })
 })
 
@@ -381,11 +495,7 @@ describe('TimelineScrubber wakefulness', () => {
 
     // The visible range moving *is* the scroll signal — the rail needs no
     // listener of its own to notice.
-    rerender(
-      <I18nextProvider i18n={i18n}>
-        <TimelineScrubber params={params} activeIndex={5} onJump={vi.fn()} />
-      </I18nextProvider>,
-    )
+    rerender(<Harness params={params} activeIndex={5} />)
     expect(screen.getByRole('navigation')).toHaveClass('is-active')
   })
 

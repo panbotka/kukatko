@@ -262,6 +262,10 @@ export function AlbumDetailPage() {
   // overlays the right edge, where the tiles' own controls are — and it hides
   // itself on an album too short in time to need one.
   const gridRef = useRef<VirtuosoGridHandle>(null)
+  // The grid's wrapper, which is where the fixed rail starts on a phone: an album
+  // page has a header of its own above the grid, and its height is not a constant
+  // the rail may assume (the description wraps, the cover row comes and goes).
+  const gridWrapRef = useRef<HTMLDivElement>(null)
   const [rangeStart, setRangeStart] = useState(0)
   const onRangeChanged = useCallback(
     (range: ListRange) => {
@@ -413,6 +417,7 @@ export function AlbumDetailPage() {
       {status === 'ready' && photos.length > 0 && (
         <>
           <div
+            ref={gridWrapRef}
             // On a phone the fixed timeline rail has no page margin to hang in,
             // so the grid gives it a lane of its own along the right edge (CSS,
             // phone widths only) — without it the rail lies over the right
@@ -442,6 +447,7 @@ export function AlbumDetailPage() {
             <TimelineScrubber
               params={params}
               activeIndex={rangeStart}
+              gridWrapRef={gridWrapRef}
               anchor={anchor}
               minSpanMonths={TIMELINE_MIN_MONTHS}
               onJump={jumpTo}

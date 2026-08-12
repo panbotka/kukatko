@@ -514,8 +514,17 @@ here.
   to be `display:none`, which left the device photos are actually browsed on with nothing but scrolling
   to cross a 369 000 px list. There (`styles/app.css` `@media (max-width: 575.98px)`) it is a 2.5 rem
   strip on the right edge showing **only its year labels** (each on its own plate — it lies over
-  photographs, not beside them), starting 6 rem below the navbar so it can't take a tap meant for the
-  **Filtry** button. It **sleeps**: at rest a 0.55-opacity scale, and any activity — the grid scrolling
+  photographs, not beside them), **starting where the grid starts** so it can't take a tap meant for
+  the **Filtry** button: the rail measures the page's grid box (the required **`gridWrapRef`** prop,
+  `useGridTop` — on mount in a layout effect, then on scroll/resize and a `ResizeObserver` on the
+  body, coalesced into an animation frame) and publishes its viewport top as `--kukatko-timeline-top`,
+  which the phone rule consumes as `top: max(navbar-floor, var(--kukatko-timeline-top, …))`. It used
+  to be a constant 6 rem below the navbar — the height of the filter row *and nothing else* — so the
+  „Co je nového" digest (`WhatsNewPanel`) or an `AnnouncementBanner` pushed **Filtry** down under the
+  rail and a tap on it jumped the grid by 142 192 px instead of opening the drawer (2026-08-12,
+  390 × 844). The measurement is clamped at 0, so once the header has scrolled away the `max()` floor
+  — just below the sticky navbar — takes over and further scrolling re-renders nothing.
+  It **sleeps**: at rest a 0.55-opacity scale, and any activity — the grid scrolling
   under it (`activeIndex` moving, no listener of its own) or a finger on it — sets `is-active` for
   `IDLE_MS` (1.6 s), which brings it to full strength, backs it with a blurred plate and reveals the month
   bubble. The state is a class; everything it *means* is CSS, so on desktop it means nothing. `LibraryPage`
