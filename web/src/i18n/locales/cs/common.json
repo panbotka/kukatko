@@ -2195,6 +2195,24 @@
     "speed": {
       "label": "Rychlost",
       "seconds": "{{seconds}} s"
+    },
+    "dialog": {
+      "title": "Promítání",
+      "start": "Spustit",
+      "duration": "Promítání potrvá asi {{duration}}.",
+      "durationRepeat": "Jedno kolo trvá asi {{duration}}, pak se promítání spustí znovu."
+    },
+    "repeat": {
+      "label": "Dokola"
+    },
+    "shuffle": {
+      "label": "Náhodné pořadí"
+    },
+    "captions": {
+      "label": "Zobrazit přes fotku",
+      "title": "Název",
+      "description": "Popis",
+      "date": "Datum pořízení"
     }
   },
   "duration": {

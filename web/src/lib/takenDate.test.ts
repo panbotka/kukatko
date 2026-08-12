@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import i18n from '../i18n'
 
-import { formatDecade, formatTakenPeriod, isCoarsePrecision } from './takenDate'
+import { formatDecade, formatTakenLabel, formatTakenPeriod, isCoarsePrecision } from './takenDate'
 
 /**
  * {@link formatTakenPeriod} through the app's own translations, so the
@@ -86,5 +86,31 @@ describe('formatDecade', () => {
 
   it('does not let number formatting group the years', () => {
     expect(formatDecade(1970, i18n.t)).not.toContain(' ')
+  })
+})
+
+describe('formatTakenLabel', () => {
+  const label = (photo: Parameters<typeof formatTakenLabel>[0]): string =>
+    formatTakenLabel(photo, i18n.t, 'en')
+
+  it('shows an ordinary date as the locale writes it', () => {
+    expect(label({ taken_at: '1974-06-14T10:30:00Z' })).toBe('6/14/1974')
+  })
+
+  it('shows a coarse date as the period it was stated as', () => {
+    // Never "1 January 1974" — a day nobody ever claimed.
+    expect(label({ taken_at: '1974-01-01T00:00:00Z', taken_at_precision: 'year' })).toBe('1974')
+  })
+
+  it('marks an estimate so it cannot be read as a record', () => {
+    expect(label({ taken_at: '1950-06-14T00:00:00Z', taken_at_estimated: true })).toBe(
+      `${i18n.t('photo.metadata.estimatedMarker')} 6/14/1950`,
+    )
+  })
+
+  it('says nothing at all for a photo with no capture time', () => {
+    expect(label({})).toBe('')
+    // Not even the marker: there is nothing to qualify.
+    expect(label({ taken_at_estimated: true })).toBe('')
   })
 })

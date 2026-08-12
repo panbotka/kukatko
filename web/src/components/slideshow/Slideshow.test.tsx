@@ -5,7 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../../i18n'
 import { kenBurnsMotion } from '../../lib/kenBurns'
-import { SLIDESHOW_INTERVALS_MS, type SlideshowSettings } from '../../lib/slideshowSettings'
+import {
+  SLIDESHOW_DEFAULTS,
+  SLIDESHOW_INTERVALS_MS,
+  type SlideshowSettings,
+} from '../../lib/slideshowSettings'
 import { type Photo } from '../../services/photos'
 
 import { Slideshow, type SlideshowProps } from './Slideshow'
@@ -50,7 +54,12 @@ function photo(uid: string, name: string, title = '', mime = 'image/jpeg'): Phot
 }
 
 const PHOTOS = [photo('a', 'a.jpg', 'Beach'), photo('b', 'b.jpg'), photo('c', 'c.jpg')]
-const SETTINGS: SlideshowSettings = { effect: 'fade', intervalMs: 5000 }
+const SETTINGS: SlideshowSettings = { ...SLIDESHOW_DEFAULTS }
+
+/** The default settings with a patch, for the many single-field variations. */
+function settings(patch: Partial<SlideshowSettings> = {}): SlideshowSettings {
+  return { ...SLIDESHOW_DEFAULTS, ...patch }
+}
 
 function makeProps(overrides: Partial<SlideshowProps> = {}): SlideshowProps {
   return {
@@ -62,8 +71,7 @@ function makeProps(overrides: Partial<SlideshowProps> = {}): SlideshowProps {
     onPrev: vi.fn(),
     onToggle: vi.fn(),
     onExit: vi.fn(),
-    onEffectChange: vi.fn(),
-    onIntervalChange: vi.fn(),
+    onSettingsChange: vi.fn(),
     ...overrides,
   }
 }
@@ -92,13 +100,14 @@ afterEach(() => {
 })
 
 describe('Slideshow', () => {
-  it('shows the current photo and its position, with no time in the caption', () => {
+  it('shows the current photo and its position, with no time in the header', () => {
     setup({ index: 0 })
     const img = screen.getByRole('img')
     expect(img).toHaveAttribute('alt', 'Beach')
     expect(img).toHaveAttribute('src', expect.stringContaining('/photos/a/thumb/'))
-    // The caption carries only the position now; the remaining time moved to the
-    // settings panel, so nothing reads "… left" until that panel is open.
+    // The header bar carries only the position: the remaining time moved to the
+    // settings panel, so nothing reads "… left" until that panel is open, and
+    // what the photo *is* moved onto the photo itself.
     expect(screen.getByText('slide 1 of 3')).toBeInTheDocument()
     expect(screen.queryByText(/left/)).not.toBeInTheDocument()
   })
@@ -121,7 +130,9 @@ describe('Slideshow', () => {
     const user = userEvent.setup()
     const { rerender } = render(
       <I18nextProvider i18n={i18n}>
-        <Slideshow {...makeProps({ index: 0, settings: { effect: 'fade', intervalMs: 5000 } })} />
+        <Slideshow
+          {...makeProps({ index: 0, settings: settings({ effect: 'fade', intervalMs: 5000 }) })}
+        />
       </I18nextProvider>,
     )
     await openSettings(user)
@@ -129,7 +140,9 @@ describe('Slideshow', () => {
 
     rerender(
       <I18nextProvider i18n={i18n}>
-        <Slideshow {...makeProps({ index: 0, settings: { effect: 'fade', intervalMs: 10000 } })} />
+        <Slideshow
+          {...makeProps({ index: 0, settings: settings({ effect: 'fade', intervalMs: 10000 }) })}
+        />
       </I18nextProvider>,
     )
     // The panel stays open and the estimate follows the new speed immediately.
@@ -157,7 +170,7 @@ describe('Slideshow', () => {
   })
 
   it('applies the active transition effect to the image', () => {
-    setup({ settings: { effect: 'slide', intervalMs: 5000 } })
+    setup({ settings: settings({ effect: 'slide', intervalMs: 5000 }) })
     const img = screen.getByRole('img')
     expect(img).toHaveClass('slideshow__image--slide')
     expect(img).toHaveAttribute('data-effect', 'slide')
@@ -215,10 +228,29 @@ describe('Slideshow', () => {
     await user.click(screen.getByRole('button', { name: 'Settings' }))
 
     await user.selectOptions(screen.getByLabelText('Transition'), 'slide')
-    expect(props.onEffectChange).toHaveBeenCalledWith('slide')
+    expect(props.onSettingsChange).toHaveBeenCalledWith({ effect: 'slide' })
 
     await user.selectOptions(screen.getByLabelText('Speed'), '3000')
-    expect(props.onIntervalChange).toHaveBeenCalledWith(3000)
+    expect(props.onSettingsChange).toHaveBeenCalledWith({ intervalMs: 3000 })
+  })
+
+  it('offers repeat, shuffle and the caption toggles mid-show, like the start dialog', async () => {
+    const user = userEvent.setup()
+    const props = setup({ settings: settings({ shuffle: false, showDate: true }) })
+
+    await openSettings(user)
+
+    // Everything the dialog offers is offered here too — the running player must
+    // not be the poor relation of the one that starts the show.
+    for (const name of ['Repeat', 'Shuffle', 'Title', 'Description', 'Date taken']) {
+      expect(screen.getByRole('checkbox', { name })).toBeInTheDocument()
+    }
+
+    await user.click(screen.getByRole('checkbox', { name: 'Shuffle' }))
+    expect(props.onSettingsChange).toHaveBeenCalledWith({ shuffle: true })
+
+    await user.click(screen.getByRole('checkbox', { name: 'Date taken' }))
+    expect(props.onSettingsChange).toHaveBeenCalledWith({ showDate: false })
   })
 
   it('labels every speed option with its own number of seconds', async () => {
@@ -252,7 +284,7 @@ describe('Slideshow', () => {
 
   it('preselects the active interval so the stored speed is visible', async () => {
     const user = userEvent.setup()
-    setup({ settings: { effect: 'fade', intervalMs: 15000 } })
+    setup({ settings: settings({ effect: 'fade', intervalMs: 15000 }) })
 
     await user.click(screen.getByRole('button', { name: 'Settings' }))
 
@@ -266,11 +298,11 @@ describe('Slideshow', () => {
     await user.click(screen.getByRole('button', { name: 'Settings' }))
 
     await user.selectOptions(screen.getByLabelText('Transition'), 'kenburns')
-    expect(props.onEffectChange).toHaveBeenCalledWith('kenburns')
+    expect(props.onSettingsChange).toHaveBeenCalledWith({ effect: 'kenburns' })
   })
 
   it('drives the Ken Burns animation from the photo uid and the interval', () => {
-    setup({ settings: { effect: 'kenburns', intervalMs: 10000 } })
+    setup({ settings: settings({ effect: 'kenburns', intervalMs: 10000 }) })
     const img = screen.getByRole('img')
     const motion = kenBurnsMotion('a', 10000)
 
@@ -282,37 +314,37 @@ describe('Slideshow', () => {
   })
 
   it('follows the interval setting with the animation duration', () => {
-    setup({ settings: { effect: 'kenburns', intervalMs: 3000 } })
+    setup({ settings: settings({ effect: 'kenburns', intervalMs: 3000 }) })
     expect(screen.getByRole('img').style.getPropertyValue('--kb-duration')).toBe('3000ms')
 
     cleanup()
-    setup({ settings: { effect: 'kenburns', intervalMs: 30000 } })
+    setup({ settings: settings({ effect: 'kenburns', intervalMs: 30000 }) })
     expect(screen.getByRole('img').style.getPropertyValue('--kb-duration')).toBe('30000ms')
   })
 
   it('gives the same photo the same motion on every replay', () => {
-    setup({ settings: { effect: 'kenburns', intervalMs: 5000 } })
+    setup({ settings: settings({ effect: 'kenburns', intervalMs: 5000 }) })
     const first = screen.getByRole('img').getAttribute('style')
 
     cleanup()
-    setup({ settings: { effect: 'kenburns', intervalMs: 5000 } })
+    setup({ settings: settings({ effect: 'kenburns', intervalMs: 5000 }) })
 
     expect(screen.getByRole('img').getAttribute('style')).toBe(first)
   })
 
   it('gives different photos different motion', () => {
-    setup({ index: 0, settings: { effect: 'kenburns', intervalMs: 5000 } })
+    setup({ index: 0, settings: settings({ effect: 'kenburns', intervalMs: 5000 }) })
     const first = screen.getByRole('img').getAttribute('style')
 
     cleanup()
-    setup({ index: 1, settings: { effect: 'kenburns', intervalMs: 5000 } })
+    setup({ index: 1, settings: settings({ effect: 'kenburns', intervalMs: 5000 }) })
 
     expect(screen.getByRole('img').getAttribute('style')).not.toBe(first)
   })
 
   it('disables Ken Burns under prefers-reduced-motion, leaving a static slide', () => {
     stubReducedMotion(true)
-    setup({ settings: { effect: 'kenburns', intervalMs: 5000 } })
+    setup({ settings: settings({ effect: 'kenburns', intervalMs: 5000 }) })
     const img = screen.getByRole('img')
 
     expect(img).not.toHaveClass('slideshow__image--kenburns')
@@ -324,7 +356,7 @@ describe('Slideshow', () => {
     setup({
       photos: [photo('v', 'clip.mp4', 'Clip', 'video/mp4')],
       index: 0,
-      settings: { effect: 'kenburns', intervalMs: 5000 },
+      settings: settings({ effect: 'kenburns', intervalMs: 5000 }),
     })
     const img = screen.getByRole('img')
 
@@ -339,5 +371,77 @@ describe('Slideshow', () => {
     fireEvent.touchStart(region, { changedTouches: [{ clientX: 200, clientY: 100 }] })
     fireEvent.touchEnd(region, { changedTouches: [{ clientX: 100, clientY: 105 }] })
     expect(props.onNext).toHaveBeenCalled()
+  })
+
+  describe('the caption over the photo', () => {
+    const described = [
+      {
+        ...photo('d', 'd.jpg', 'Wedding'),
+        description: 'The whole family on the church steps.',
+        taken_at: '1974-06-15T10:00:00Z',
+      },
+    ]
+
+    it('says what the photo is when every caption is on', () => {
+      setup({ photos: described, index: 0 })
+
+      expect(screen.getByText('Wedding')).toBeInTheDocument()
+      expect(screen.getByText('The whole family on the church steps.')).toBeInTheDocument()
+      expect(screen.getByText('6/15/1974')).toBeInTheDocument()
+    })
+
+    it('shows only what is switched on', () => {
+      setup({
+        photos: described,
+        index: 0,
+        settings: settings({ showDescription: false, showDate: false }),
+      })
+
+      expect(screen.getByText('Wedding')).toBeInTheDocument()
+      expect(screen.queryByText('The whole family on the church steps.')).not.toBeInTheDocument()
+      expect(screen.queryByText('6/15/1974')).not.toBeInTheDocument()
+    })
+
+    it('shows nothing at all for a photo that has nothing to say', () => {
+      // b.jpg is untitled, undescribed and undated: an empty field must show
+      // nothing — not a blank line, not a placeholder, not the file name.
+      const { container } = render(
+        <I18nextProvider i18n={i18n}>
+          <Slideshow {...makeProps({ index: 1 })} />
+        </I18nextProvider>,
+      )
+
+      expect(container.querySelector('.slideshow__meta')).toBeNull()
+      expect(screen.queryByText('b.jpg')).not.toBeInTheDocument()
+    })
+
+    it('stays out of the control bar, so fading the chrome could never take it', () => {
+      const { container } = render(
+        <I18nextProvider i18n={i18n}>
+          <Slideshow {...makeProps({ photos: described, index: 0 })} />
+        </I18nextProvider>,
+      )
+
+      const meta = container.querySelector('.slideshow__meta')
+      expect(meta).not.toBeNull()
+      expect(meta?.closest('.slideshow__controls')).toBeNull()
+      expect(meta?.closest('.slideshow__caption')).toBeNull()
+    })
+
+    it('states a coarse date as the period it was stated as', () => {
+      setup({
+        photos: [
+          {
+            ...photo('y', 'y.jpg'),
+            taken_at: '1974-01-01T00:00:00Z',
+            taken_at_precision: 'year',
+          },
+        ],
+        index: 0,
+      })
+
+      // Never "1 January 1974": a day nobody ever claimed.
+      expect(screen.getByText('1974')).toBeInTheDocument()
+    })
   })
 })

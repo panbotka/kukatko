@@ -208,7 +208,10 @@ to `## Package map` in `CLAUDE.md`.
   user's rating via a correlated subquery over `user_ratings`, `NULLS LAST` — unrated last; active
   only with `RatedBy`) **+ `chronology`** (`SortByChronology`: `COALESCE(taken_at, created_at)` — a complete,
   stable chronological order, an undated photo falls back to its upload time; internal sort for
-  the album view, not a public sort alias), pagination limit/offset; `Count` shares
+  the album view, not a public sort alias) **+ `random`** (`SortByRandom`: `ORDER BY md5(uid || Seed)`,
+  the pseudo-random order the slideshow's shuffle plays — a function of the photo and `ListParams.Seed`
+  alone, so one seed is one permutation on every page and paging through a shuffled show neither
+  repeats a photo nor drops one; the direction does not apply), pagination limit/offset; `Count` shares
   the `buildWhere` filters for `total`)/`Search` (Czech-aware fulltext over the generated `fts
   tsvector` column: `ListParams.FullText` via `websearch_to_tsquery('simple',
   immutable_unaccent(q))`, ordered by `ts_rank` (title>description>notes>file_name),
@@ -686,10 +689,14 @@ to `## Package map` in `CLAUDE.md`.
   (reversible soft-delete) stays `RequireWrite`, `GET /trash/info` `RequireAuth` — `RegisterRoutes` mounts `/photos`
   **, `GET /photos/timeline`, **`GET /photos/years`**, `GET /search` and `GET /favorites`**; `parseListParams`
   validates the query → `photos.ListParams` (`limit`≤500/`offset`, `sort`
-  newest/oldest/taken_at/added/title/size**/rating** + `order` — **an `album` scope pins the sort key**
+  newest/oldest/taken_at/added/title/size**/rating**`/random` + `order` — **an `album` scope pins the sort key**
   to `SortByChronology` and takes only the **direction** from the request (`asc` unless it explicitly
   asked to descend: `sort=newest` or `order=desc`), so an album is always chronological but can be read
-  from either end; the defaults of other views are unchanged),
+  from either end; the defaults of other views are unchanged. **`random` is the one exemption** from that
+  pin (a shuffle is an outright request to abandon the order, not a stale sort key) and pairs with
+  **`seed`** (free text, ≤ 64 chars, longer → 400) → `ListParams.Seed`; `search.go`'s `shuffled` applies
+  the same permutation to the semantic/hybrid uid rankings, which are ordered in Go and would otherwise
+  ignore the shuffle entirely),
   `archived` false/true/only,
   `has_gps`, `taken_after`/`taken_before`, `camera`, `lens`, `uploader`, `q`, **`year` (four-digit
   1000–9999) → `Year`**, **`album`/`label`

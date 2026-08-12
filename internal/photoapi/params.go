@@ -41,7 +41,15 @@ var sortAliases = map[string]sortSpec{
 	"title":    {photos.SortByTitle, photos.OrderAsc},
 	"size":     {photos.SortBySize, photos.OrderDesc},
 	"rating":   {photos.SortByRating, photos.OrderDesc},
+	// The order the slideshow's shuffle plays. It has no direction of its own —
+	// the permutation comes from the seed — so the alias just names ascending.
+	"random": {photos.SortByRandom, photos.OrderAsc},
 }
+
+// maxSeedLength caps the shuffle seed a request may carry. The seed only ever
+// has to name one permutation, so a handful of characters is plenty; the cap
+// keeps an arbitrarily long string out of the digest computed per candidate row.
+const maxSeedLength = 64
 
 // parseListParams turns the request's query string into validated photos.List
 // parameters. Every recognised filter, sort and pagination value is range- and
@@ -74,25 +82,33 @@ func parseListParams(q url.Values) (photos.ListParams, []string, error) {
 	if err != nil {
 		return photos.ListParams{}, nil, err
 	}
-	// An album scope is always presented chronologically: the sort *field* is
-	// pinned to the capture time whatever key the query asks for, so an album is
-	// never shown by title or file size. Only the direction is the reader's to
-	// choose — an album spanning a lifetime is as often read from its newest end
-	// as from its oldest — so an explicitly requested descending sort
-	// (?sort=newest, or ?order=desc) is honoured and everything else, an absent
-	// sort included, stays oldest-first. The override lives here — where the album
-	// scope enters the shared list path — so the endpoint's defaults stay
-	// untouched for every other view. It fires whenever at least one album is
-	// selected (the filter now accepts several, combined with AND). Photos with no
-	// capture time fall back to their upload time inside SortByChronology, keeping
-	// the order total.
-	if len(params.AlbumUIDs) > 0 {
-		params.Sort = photos.SortByChronology
-		if params.Order != photos.OrderDesc {
-			params.Order = photos.OrderAsc
-		}
-	}
+	applyAlbumChronology(&params)
 	return params, unknown, nil
+}
+
+// applyAlbumChronology pins an album-scoped listing to chronological order. The
+// sort *field* becomes the capture time whatever key the query asks for, so an
+// album is never shown by title or file size. Only the direction is the reader's
+// to choose — an album spanning a lifetime is as often read from its newest end
+// as from its oldest — so an explicitly requested descending sort (?sort=newest,
+// or ?order=desc) is honoured and everything else, an absent sort included, stays
+// oldest-first. The override lives on the parse path — where the album scope
+// enters the shared list path — so the endpoint's defaults stay untouched for
+// every other view. It fires whenever at least one album is selected (the filter
+// accepts several, combined with AND). Photos with no capture time fall back to
+// their upload time inside SortByChronology, keeping the order total.
+//
+// The random order is the one exemption: it is not a sort key somebody left in
+// the URL but an outright request to abandon the order (the slideshow's shuffle),
+// so pinning it back to chronology would silently ignore it.
+func applyAlbumChronology(params *photos.ListParams) {
+	if len(params.AlbumUIDs) == 0 || params.Sort == photos.SortByRandom {
+		return
+	}
+	params.Sort = photos.SortByChronology
+	if params.Order != photos.OrderDesc {
+		params.Order = photos.OrderAsc
+	}
 }
 
 // applyQuery parses the free-form q parameter through the search query
@@ -193,9 +209,11 @@ func applyPagination(q url.Values, params *photos.ListParams) error {
 	return nil
 }
 
-// applySort validates and applies the sort and order query parameters, mapping
-// the public sort alias to a column and direction and letting order override the
-// alias's default direction.
+// applySort validates and applies the sort, order and seed query parameters,
+// mapping the public sort alias to a column and direction and letting order
+// override the alias's default direction. The seed belongs to the ordering too:
+// it is what makes ?sort=random reproducible across the pages of one shuffled
+// slideshow, and every other sort ignores it.
 func applySort(q url.Values, params *photos.ListParams) error {
 	if raw := q.Get("sort"); raw != "" {
 		spec, ok := sortAliases[raw]
@@ -212,6 +230,12 @@ func applySort(q url.Values, params *photos.ListParams) error {
 		default:
 			return fmt.Errorf("unknown order %q (want asc or desc)", raw)
 		}
+	}
+	if raw := q.Get("seed"); raw != "" {
+		if len(raw) > maxSeedLength {
+			return fmt.Errorf("seed is too long: %d characters exceed the limit of %d", len(raw), maxSeedLength)
+		}
+		params.Seed = raw
 	}
 	return nil
 }

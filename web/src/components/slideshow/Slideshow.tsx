@@ -1,20 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Button from 'react-bootstrap/Button'
 import Card from 'react-bootstrap/Card'
-import Form from 'react-bootstrap/Form'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 
 import { usePrefersReducedMotion } from '../../hooks/usePrefersReducedMotion'
 import { formatDuration, slideshowRemainingMs } from '../../lib/duration'
 import { kenBurnsStyle } from '../../lib/kenBurns'
-import {
-  SLIDESHOW_EFFECTS,
-  SLIDESHOW_INTERVALS_MS,
-  type SlideshowEffect,
-  type SlideshowSettings,
-} from '../../lib/slideshowSettings'
+import { type SlideshowEffect, type SlideshowSettings } from '../../lib/slideshowSettings'
 import { type Photo, thumbUrl } from '../../services/photos'
+
+import { SlideshowCaption } from './SlideshowCaption'
+import { SlideshowSettingsForm } from './SlideshowSettingsForm'
 
 import './slideshow.css'
 
@@ -53,10 +50,12 @@ export interface SlideshowProps {
   onToggle: () => void
   /** Leave the slideshow (returns to the prior view). */
   onExit: () => void
-  /** Change the transition effect (persisted by the caller). */
-  onEffectChange: (effect: SlideshowEffect) => void
-  /** Change the auto-advance interval, in ms (persisted by the caller). */
-  onIntervalChange: (intervalMs: number) => void
+  /**
+   * Change any of the settings (persisted by the caller). One handler for the
+   * whole form: every change — speed, captions, shuffle — applies to the show
+   * that is running, from the current slide onward, and none of them restarts it.
+   */
+  onSettingsChange: (patch: Partial<SlideshowSettings>) => void
   /** Whether a further page is being loaded in the background (shows a spinner). */
   loadingMore?: boolean
 }
@@ -83,10 +82,21 @@ function isFormControl(target: EventTarget | null): boolean {
  * transition, an always-available control bar (previous / play-pause / next /
  * fullscreen / settings) and a close button. It wires keyboard (← → for nav,
  * space to play/pause, Esc to exit or leave fullscreen) and touch (horizontal
- * swipe) controls, and exposes the effect/speed pickers. All controls and labels
- * are translated; the photo set, index and playback state are owned by the
- * caller — including the preloading of upcoming slides, which the page drives so
- * it can hold the advance until the next image has decoded.
+ * swipe) controls. All controls and labels are translated; the photo set, index
+ * and playback state are owned by the caller — including the preloading of
+ * upcoming slides, which the page drives so it can hold the advance until the
+ * next image has decoded.
+ *
+ * Its settings panel is the same {@link SlideshowSettingsForm} the start dialog
+ * shows, so everything the reader could choose before the show they can change
+ * during it, and the two cannot drift apart. Changing anything resumes rather
+ * than restarts: the photo on screen stays, the position in the list is kept, and
+ * the new setting applies from here on.
+ *
+ * What each photo *is* — its title, description and date — is laid over the
+ * picture by {@link SlideshowCaption}, deliberately outside this component's
+ * chrome. The header bar keeps only the position in the show, which is a fact
+ * about the show rather than about the photograph.
  */
 export function Slideshow({
   photos,
@@ -98,8 +108,7 @@ export function Slideshow({
   onPrev,
   onToggle,
   onExit,
-  onEffectChange,
-  onIntervalChange,
+  onSettingsChange,
   loadingMore = false,
 }: SlideshowProps) {
   const { t } = useTranslation()
@@ -260,9 +269,11 @@ export function Slideshow({
         ✕
       </Button>
 
+      {/* The header bar answers "where am I in the show?" and nothing else. What
+          the photo is belongs to the photo, not to the chrome — see the caption
+          below the stage. */}
       <div className="slideshow__caption">
-        <span className="text-truncate">{current.title || current.file_name}</span>
-        <span className="flex-shrink-0 text-nowrap">
+        <span className="flex-shrink-0 text-nowrap ms-auto">
           {t('slideshow.progress', { current: index + 1, total: playCount })}
         </span>
       </div>
@@ -287,46 +298,17 @@ export function Slideshow({
         )}
       </div>
 
+      <SlideshowCaption photo={current} settings={settings} />
+
       {showSettings && (
         <Card bg="dark" text="light" className="slideshow__settings">
-          <Card.Body className="d-grid gap-3">
-            <Form.Group controlId="slideshow-effect">
-              <Form.Label className="small mb-1">{t('slideshow.effect.label')}</Form.Label>
-              <Form.Select
-                size="sm"
-                value={settings.effect}
-                onChange={(e) => {
-                  onEffectChange(e.target.value as SlideshowEffect)
-                }}
-              >
-                {SLIDESHOW_EFFECTS.map((effect) => (
-                  <option key={effect} value={effect}>
-                    {t(`slideshow.effect.${effect}`)}
-                  </option>
-                ))}
-              </Form.Select>
-            </Form.Group>
-            <Form.Group controlId="slideshow-speed">
-              <div className="d-flex justify-content-between align-items-baseline gap-2 mb-1">
-                <Form.Label className="small mb-0">{t('slideshow.speed.label')}</Form.Label>
-                <span className="small text-secondary text-nowrap">
-                  {t('slideshow.remaining', { remaining })}
-                </span>
-              </div>
-              <Form.Select
-                size="sm"
-                value={String(settings.intervalMs)}
-                onChange={(e) => {
-                  onIntervalChange(Number(e.target.value))
-                }}
-              >
-                {SLIDESHOW_INTERVALS_MS.map((ms) => (
-                  <option key={ms} value={ms}>
-                    {t('slideshow.speed.seconds', { seconds: Math.round(ms / 1000) })}
-                  </option>
-                ))}
-              </Form.Select>
-            </Form.Group>
+          <Card.Body>
+            <SlideshowSettingsForm
+              settings={settings}
+              onChange={onSettingsChange}
+              idPrefix="slideshow-player"
+              speedNote={t('slideshow.remaining', { remaining })}
+            />
           </Card.Body>
         </Card>
       )}

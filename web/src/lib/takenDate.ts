@@ -1,5 +1,6 @@
 import type { TFunction } from 'i18next'
 
+import { formatDate } from './format'
 import { DECADE_YEARS, decadeOf } from './period'
 
 /**
@@ -82,4 +83,32 @@ export function formatDecade(decade: number, t: TFunction): string {
     from: String(decade),
     to: String(decade + DECADE_YEARS - 1),
   })
+}
+
+/** The capture-time fields {@link formatTakenLabel} reads from a photo. */
+export interface TakenSource {
+  taken_at?: string
+  taken_at_precision?: string
+  taken_at_estimated?: boolean
+}
+
+/**
+ * When a photo was taken, in the one form anything showing a date to a reader
+ * wants: the stated period when the date is coarse ("1974", "1970–1979"),
+ * otherwise the locale's date, and prefixed with the estimate marker ("cca") when
+ * the date is a guess rather than a record. `''` when the photo has no capture
+ * time at all, which callers render as nothing rather than as a placeholder.
+ *
+ * The three rules — period before day, estimate marked, absence honest — belong
+ * together: a caption that applied two of them would quietly claim a precision or
+ * a certainty the catalogue never had.
+ */
+export function formatTakenLabel(photo: TakenSource, t: TFunction, locale: string): string {
+  const period = formatTakenPeriod(photo.taken_at, photo.taken_at_precision, t, locale)
+  const date =
+    period !== '' ? period : photo.taken_at !== undefined ? formatDate(photo.taken_at, locale) : ''
+  if (date === '' || photo.taken_at_estimated !== true) {
+    return date
+  }
+  return `${t('photo.metadata.estimatedMarker')} ${date}`
 }

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { CapabilitiesContext } from '../capabilities/CapabilitiesContext'
 import i18n from '../i18n'
+import { SLIDESHOW_DEFAULTS, writeSettings } from '../lib/slideshowSettings'
 import { type Photo, type PhotoListResponse } from '../services/photos'
 
 import { SlideshowPage } from './SlideshowPage'
@@ -157,5 +158,66 @@ describe('SlideshowPage', () => {
       ) as { effect?: string }
       expect(stored.effect).toBe('slide')
     })
+  })
+
+  it('asks the server for a random order, under one seed, when shuffle is on', async () => {
+    writeSettings({ ...SLIDESHOW_DEFAULTS, shuffle: true })
+    fetchMock.mockResolvedValue(
+      page([photo('a', 'a.jpg'), photo('b', 'b.jpg')], { total: 40, next_offset: 2 }),
+    )
+    renderPage('/slideshow?album=al1')
+
+    await screen.findByRole('img')
+    // Shuffling only what has loaded would over-represent the first page; the
+    // whole set is only reachable through the server's own random order.
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.length).toBeGreaterThan(1)
+    })
+    const seeds = new Set(fetchMock.mock.calls.map(([params]) => params.seed))
+    expect(fetchMock.mock.calls[0][0].sort).toBe('random')
+    expect(fetchMock.mock.calls[0][0].seed).toBeTruthy()
+    // One seed for the life of the show: pages of two different permutations
+    // would overlap and drop whatever fell between them.
+    expect(seeds.size).toBe(1)
+  })
+
+  it('plays the view order, with no seed, when shuffle is off', async () => {
+    fetchMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    renderPage('/slideshow?sort=oldest')
+
+    await screen.findByRole('img')
+    expect(fetchMock.mock.calls[0][0].sort).toBe('oldest')
+    expect(fetchMock.mock.calls[0][0].seed).toBeUndefined()
+  })
+
+  it('keeps the photo on screen when shuffle is turned on mid-show', async () => {
+    const ordered = [photo('a', 'a.jpg'), photo('b', 'b.jpg'), photo('c', 'c.jpg')]
+    // The reshuffled list comes back in another order, leading with a photo the
+    // reader has already seen.
+    const shuffledOrder = [photo('c', 'c.jpg'), photo('a', 'a.jpg'), photo('b', 'b.jpg')]
+    fetchMock.mockImplementation((params) =>
+      Promise.resolve(page(params.sort === 'random' ? shuffledOrder : ordered)),
+    )
+    const user = userEvent.setup()
+    renderPage('/slideshow')
+
+    await screen.findByRole('img')
+    await user.click(screen.getByRole('button', { name: 'Next' }))
+    expect(screen.getByRole('img')).toHaveAttribute('src', expect.stringContaining('/photos/b/'))
+
+    await user.click(screen.getByRole('button', { name: 'Settings' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Shuffle' }))
+
+    // Resumed, not restarted: the same photo, at the same position in the show.
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([params]) => params.sort === 'random')).toBe(true)
+    })
+    expect(screen.getByRole('img')).toHaveAttribute('src', expect.stringContaining('/photos/b/'))
+    expect(screen.getByText('slide 2 of 3')).toBeInTheDocument()
+
+    // And what is still to come is the new order minus what has been seen: c,
+    // never a and b again before it.
+    await user.click(screen.getByRole('button', { name: 'Next' }))
+    expect(screen.getByRole('img')).toHaveAttribute('src', expect.stringContaining('/photos/c/'))
   })
 })

@@ -246,6 +246,15 @@ export type EffectiveSearchMode = SearchMode | 'filter'
  */
 export type PhotoSort = 'newest' | 'oldest' | 'added' | 'title' | 'size' | 'rating'
 
+/**
+ * Every order the list endpoint accepts: the sorts a grid offers, plus the
+ * `random` one the slideshow's shuffle plays. `random` is deliberately not a
+ * {@link PhotoSort} — it belongs to no picker and is never part of a view's URL
+ * state; it is a pseudo-random permutation of the result set, keyed by
+ * {@link PhotoListParams.seed}, which is what makes a shuffled show pageable.
+ */
+export type PhotoOrder = PhotoSort | 'random'
+
 /** Archive-state selector: hide archived (default), include them, or only them. */
 export type ArchivedFilter = 'false' | 'true' | 'only'
 
@@ -257,7 +266,15 @@ export type ArchivedFilter = 'false' | 'true' | 'only'
 export interface PhotoListParams {
   limit?: number
   offset?: number
-  sort?: PhotoSort
+  sort?: PhotoOrder
+  /**
+   * Seed for `sort: 'random'`, ignored by every other order. The permutation is a
+   * function of the photo uid and this string, so a caller paging through a
+   * random order must repeat the same seed on every request — a seed that
+   * changed between pages would deal a fresh shuffle each time, overlapping the
+   * pages and dropping whatever fell between them.
+   */
+  seed?: string
   archived?: ArchivedFilter
   /** Tri-state filter: 'true', 'false', or '' / undefined for no filter. */
   has_gps?: string
@@ -383,6 +400,7 @@ export function buildPhotoQuery(params: PhotoListParams): URLSearchParams {
   set('limit', params.limit)
   set('offset', params.offset)
   set('sort', params.sort)
+  set('seed', params.seed)
   set('archived', params.archived)
   set('has_gps', params.has_gps)
   set('camera', params.camera)

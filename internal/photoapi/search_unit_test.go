@@ -183,3 +183,57 @@ func uidsOf(list []photos.Photo) []string {
 	}
 	return out
 }
+
+// TestShuffled_permutesTheWholeSetOnce checks the shuffle a ranked search plays:
+// the order is a permutation (every uid once, none added), it depends only on the
+// uid and the seed — so paging a shuffled show cannot repeat or drop a photo —
+// and another seed reorders it.
+func TestShuffled_permutesTheWholeSetOnce(t *testing.T) {
+	t.Parallel()
+
+	uids := []string{"pt_a", "pt_b", "pt_c", "pt_d", "pt_e", "pt_f", "pt_g", "pt_h"}
+	random := func(seed string) photos.ListParams {
+		return photos.ListParams{Sort: photos.SortByRandom, Seed: seed}
+	}
+
+	got := shuffled(uids, random("s7"))
+	if len(got) != len(uids) {
+		t.Fatalf("shuffled = %v, want %d uids", got, len(uids))
+	}
+	seen := make(map[string]int, len(got))
+	for _, uid := range got {
+		seen[uid]++
+	}
+	for _, uid := range uids {
+		if seen[uid] != 1 {
+			t.Errorf("uid %q appears %d times, want exactly once", uid, seen[uid])
+		}
+	}
+
+	// Stable for the life of the show: the next page of the same seed must see
+	// the same order, or pages would overlap and drop photos between them.
+	if again := shuffled(uids, random("s7")); !reflect.DeepEqual(got, again) {
+		t.Errorf("same seed gave %v then %v, want one stable order", got, again)
+	}
+	// A different show is a different order (with eight uids a coincidence is
+	// possible in principle but not for these two fixed seeds).
+	if other := shuffled(uids, random("other")); reflect.DeepEqual(got, other) {
+		t.Errorf("seeds s7 and other both gave %v, want different orders", got)
+	}
+	// It is a shuffle, not a sort: it must not simply hand back the input.
+	if reflect.DeepEqual(got, uids) {
+		t.Errorf("shuffled = %v, want an order different from the input", got)
+	}
+}
+
+// TestShuffled_leavesEveryOtherSortAlone checks that a search that did not ask
+// for the random order keeps its ranking untouched.
+func TestShuffled_leavesEveryOtherSortAlone(t *testing.T) {
+	t.Parallel()
+
+	uids := []string{"pt_c", "pt_a", "pt_b"}
+	got := shuffled(uids, photos.ListParams{Sort: photos.SortByTakenAt, Seed: "s7"})
+	if !reflect.DeepEqual(got, uids) {
+		t.Errorf("shuffled = %v, want the ranking untouched %v", got, uids)
+	}
+}

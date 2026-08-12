@@ -42,6 +42,14 @@ export interface UseSlideshowOptions {
   hasMore?: boolean
   /** Auto-advance interval, in milliseconds. */
   intervalMs: number
+  /**
+   * Whether the show starts again at the first photo once the last has played.
+   * Defaults to false: auto-advance then stops on the last slide, leaving it on
+   * screen and the show paused. It governs auto-advance only — a manual next
+   * from the end still wraps, as prev from the start always has, because that is
+   * the reader steering rather than the show running on.
+   */
+  repeat?: boolean
   /** Whether playback starts automatically. Defaults to true. */
   autoPlay?: boolean
   /** Requests the next page when the cursor nears the loaded end. */
@@ -67,6 +75,13 @@ export interface UseSlideshowResult {
   playing: boolean
   /** True while the interval has elapsed but the next slide is not ready yet. */
   holding: boolean
+  /**
+   * How many times the show has wrapped from the last photo back to the first —
+   * i.e. which pass through the list is running. It changes only on a forward
+   * wrap, so a caller keeping per-pass bookkeeping (which photos have been seen
+   * *this* time round) knows exactly when to start it over.
+   */
+  pass: number
   /** Advances to the next photo (loads more / wraps to the first at the end). */
   next: () => void
   /** Goes back to the previous photo (wraps to the last loaded at the start). */
@@ -142,12 +157,18 @@ function advanceTarget(
  * ahead) and, when it reaches the very end with more pages pending, waits for
  * them instead of wrapping. A manual next/prev resets the auto-advance timer,
  * and a set of fewer than two photos neither holds nor advances.
+ *
+ * What happens at the very end is the reader's choice: with `repeat` the show
+ * wraps to the first photo and {@link UseSlideshowResult.pass} counts the round,
+ * and without it auto-advance stops there, holding the last photo on screen with
+ * playback paused.
  */
 export function useSlideshow(options: UseSlideshowOptions): UseSlideshowResult {
   const {
     length,
     hasMore = false,
     intervalMs,
+    repeat = false,
     autoPlay = true,
     onLoadMore,
     readiness = ALWAYS_READY,
@@ -156,6 +177,8 @@ export function useSlideshow(options: UseSlideshowOptions): UseSlideshowResult {
 
   const [index, setIndex] = useState(0)
   const [playing, setPlaying] = useState(autoPlay)
+  // Which pass through the list is running; bumped on every forward wrap.
+  const [pass, setPass] = useState(0)
   // `holding`: the interval elapsed and we are waiting on the next image.
   // `timedOut`: that wait hit `maxHoldMs`, so the next check advances anyway.
   const [holding, setHolding] = useState(false)
@@ -169,6 +192,8 @@ export function useSlideshow(options: UseSlideshowOptions): UseSlideshowResult {
   indexRef.current = index
   const hasMoreRef = useRef(hasMore)
   hasMoreRef.current = hasMore
+  const repeatRef = useRef(repeat)
+  repeatRef.current = repeat
   const onLoadMoreRef = useRef(onLoadMore)
   onLoadMoreRef.current = onLoadMore
 
@@ -177,23 +202,31 @@ export function useSlideshow(options: UseSlideshowOptions): UseSlideshowResult {
     setTimedOut(false)
   }, [])
 
+  // Manual next reads the cursor from the ref rather than through a functional
+  // update, because wrapping is not only a new index: it starts a new pass, and
+  // that has to be announced outside the updater rather than as a side effect
+  // inside one. Discrete events (click, keydown) flush before the next arrives,
+  // so the ref is current for each of them.
   const next = useCallback(() => {
     endHold()
-    setIndex((i) => {
-      const len = lengthRef.current
-      if (len === 0) {
-        return 0
-      }
-      if (i + 1 < len) {
-        return i + 1
-      }
-      // At the loaded end: wait for more pages if any, otherwise wrap around.
-      if (hasMoreRef.current) {
-        onLoadMoreRef.current?.()
-        return i
-      }
-      return 0
-    })
+    const len = lengthRef.current
+    if (len === 0) {
+      return
+    }
+    const i = indexRef.current
+    if (i + 1 < len) {
+      setIndex(i + 1)
+      return
+    }
+    // At the loaded end: wait for more pages if any, otherwise wrap around.
+    // A manual next wraps whatever `repeat` says — that is the reader steering,
+    // not the show running on past its end.
+    if (hasMoreRef.current) {
+      onLoadMoreRef.current?.()
+      return
+    }
+    setIndex(0)
+    setPass((p) => p + 1)
   }, [endHold])
 
   const prev = useCallback(() => {
@@ -251,11 +284,19 @@ export function useSlideshow(options: UseSlideshowOptions): UseSlideshowResult {
     }
     const id = window.setTimeout(() => {
       const i = indexRef.current
-      // At the loaded end with more pages coming, ask for them and stay put;
-      // this effect re-arms once `length` grows.
-      if (i + 1 >= lengthRef.current && hasMoreRef.current) {
-        onLoadMoreRef.current?.()
-        return
+      if (i + 1 >= lengthRef.current) {
+        // At the loaded end with more pages coming, ask for them and stay put;
+        // this effect re-arms once `length` grows.
+        if (hasMoreRef.current) {
+          onLoadMoreRef.current?.()
+          return
+        }
+        // The last photo of a show that does not repeat: stop here, leaving it on
+        // screen. Pausing rather than freezing means the play button restarts it.
+        if (!repeatRef.current) {
+          setPlaying(false)
+          return
+        }
       }
       setHolding(true)
     }, intervalMs)
@@ -293,6 +334,10 @@ export function useSlideshow(options: UseSlideshowOptions): UseSlideshowResult {
       return
     }
     setIndex(target)
+    // Landing back on the first photo from anywhere else is the wrap: a new pass.
+    if (target === 0 && index !== 0) {
+      setPass((p) => p + 1)
+    }
     endHold()
   }, [playing, holding, timedOut, index, length, readiness, endHold])
 
@@ -310,5 +355,5 @@ export function useSlideshow(options: UseSlideshowOptions): UseSlideshowResult {
     }
   }, [index, length])
 
-  return { index, playing, holding, next, prev, play, pause, toggle, goTo }
+  return { index, playing, holding, pass, next, prev, play, pause, toggle, goTo }
 }

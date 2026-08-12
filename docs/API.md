@@ -84,6 +84,15 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   complete and stable) whatever `sort` the query asks for, and only the **direction** is the caller's —
   an explicitly descending request (`?sort=newest`, or `?order=desc`) reverses it, everything else, an
   absent `sort` included, stays oldest-first. The endpoint's defaults for other views are unchanged;
+  **`?sort=random&seed=…` plays a pseudo-random order** — what the slideshow's shuffle asks for. The
+  permutation is `md5(uid || seed)`, so it depends on nothing but the photo and the seed: repeating the
+  seed on every request means the pages of one shuffled show never overlap and never drop a photo
+  between them, and a new seed deals a new order. `seed` is free-form text, max 64 characters
+  (longer → 400), and is ignored by every other sort; `order` does not apply (a random order has no
+  direction). It is the **one sort an album scope does not override** — a shuffle is an outright request
+  to abandon the order, not a stale sort key — and the one sort `GET /search` honours instead of its
+  relevance ranking (`fulltext` orders by the same digest; `semantic`/`hybrid`, ranked in Go, permute
+  their fused result the same way before paginating);
   `GET /photos/timeline` (authenticated) — a **monthly date histogram** of the library (backing the
   year/month scrubber): accepts the **same filters** as `GET /photos` via `parseListParams`, response
   `{buckets:[{year,month,count,cumulative}],total}`, `cumulative` = the number of photos **before** the
