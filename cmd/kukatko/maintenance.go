@@ -115,7 +115,7 @@ func buildThumbService(
 	if err != nil {
 		return nil, err
 	}
-	thumbnailer := thumb.New(store, cfg.Storage.CachePath, thumbOptions(cfg, reg)...)
+	thumbnailer := thumb.New(store, cfg.Storage.CachePath, thumbOptions(cfg, reg, db)...)
 	photoStore := photos.NewStore(db.Pool())
 	svc := thumbjob.New(thumbjob.Config{
 		Photos:      photoStore,
@@ -164,7 +164,7 @@ func buildMaintenanceService(
 	if err != nil {
 		return nil, err
 	}
-	thumbnailer := thumb.New(store, cfg.Storage.CachePath, thumbOptions(cfg, reg)...)
+	thumbnailer := thumb.New(store, cfg.Storage.CachePath, thumbOptions(cfg, reg, db)...)
 	photoStore := photos.NewStore(db.Pool())
 	ingestSvc := ingest.New(ingest.Config{
 		Storage:     store,

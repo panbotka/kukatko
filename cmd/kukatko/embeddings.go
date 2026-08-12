@@ -46,7 +46,7 @@ func buildEmbedService(
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	thumbnailer := thumb.New(store, cfg.Storage.CachePath, thumbOptions(cfg, reg)...)
+	thumbnailer := thumb.New(store, cfg.Storage.CachePath, thumbOptions(cfg, reg, db)...)
 	photoStore := photos.NewStore(db.Pool())
 	vectorStore := vectors.NewStore(db.Pool())
 

@@ -49,6 +49,7 @@ type API struct {
 	purger          Purger
 	stacker         Stacker
 	sidecar         SidecarEnqueuer
+	thumbnails      ThumbnailEnqueuer
 	comments        CommentStore
 	storyboards     StoryboardService
 	retentionDays   int
@@ -120,6 +121,10 @@ type Config struct {
 	// Sidecar schedules a rewrite of a photo's metadata sidecar after an edit. When
 	// nil no sidecar is scheduled and the edit still succeeds.
 	Sidecar SidecarEnqueuer
+	// Thumbnails schedules a forced thumbnail rebuild after a saved non-destructive
+	// edit, so the library grid shows the photo as the user turned it. When nil the
+	// edit still saves and the cached thumbnails keep the previous rendering.
+	Thumbnails ThumbnailEnqueuer
 	// Comments backs the per-photo comment thread endpoints and the
 	// comment_count on the detail response. When nil those endpoints answer 503
 	// and the detail reports a zero count.
@@ -175,6 +180,7 @@ func NewAPI(cfg Config) *API {
 		purger:          cfg.Purger,
 		stacker:         cfg.Stacker,
 		sidecar:         cfg.Sidecar,
+		thumbnails:      cfg.Thumbnails,
 		comments:        cfg.Comments,
 		storyboards:     cfg.Storyboards,
 		retentionDays:   cfg.RetentionDays,

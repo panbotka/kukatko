@@ -1,7 +1,7 @@
 import { type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { faceBoxStyle } from '../../lib/faceGeometry'
+import { faceBoxStyle, rotateBbox, rotatedFrameStyle } from '../../lib/faceGeometry'
 import { type FaceState, faceState } from '../../lib/faceState'
 import { type FaceView } from '../../services/people'
 
@@ -30,6 +30,21 @@ export interface FaceOverlayProps {
    * whose rows still report the pairing. Defaults false.
    */
   readOnly?: boolean
+  /**
+   * The rotation the photo under the boxes is being shown at, in clockwise
+   * degrees (0/90/180/270) — the saved or in-progress edit's rotation. The boxes
+   * are mapped through it, so they follow the photo instead of staying with the
+   * pixels the detector saw. Defaults to 0 (upright).
+   */
+  rotation?: number
+  /**
+   * The wrapper's `width / height`, needed only for a quarter turn: it is what
+   * says how big the turned photo's box is in percentages of the wrapper it
+   * overflows. Pass the measured frame's ratio (`useImageFrame`); omitting it on a
+   * quarter turn leaves the layer filling the wrapper, which places the boxes
+   * loosely rather than not at all.
+   */
+  frameRatio?: number
   /**
    * Whether the wrapper the boxes are positioned against is the **measured**
    * frame of the loaded image (`useImageFrame`) rather than a provisional
@@ -85,6 +100,14 @@ const CHROME: CSSProperties = { pointerEvents: 'none', whiteSpace: 'nowrap' }
  * tap (which focuses the box) and the keyboard both light the matching row,
  * where hover alone would never fire on touch.
  *
+ * **A rotated photo keeps its boxes.** Detection ran on the upright original, so
+ * a photo turned in the editor has every bbox mapped through that rotation
+ * (`rotateBbox`) and the layer itself given the turned photo's box
+ * (`rotatedFrameStyle`) — the rectangles land on the faces, and because only the
+ * coordinates turn, each box's number and name stay upright and readable. A crop
+ * is the one adjustment the boxes cannot follow (the frame it leaves is not the
+ * frame they were measured against), and the viewer keeps the face UI off then.
+ *
  * **The layer draws nothing until its wrapper is the measured image**
  * (`measured`). Percentages are only as good as the box they are percentages of,
  * and a wrapper sized from the catalogue row can be the wrong shape — better a
@@ -98,14 +121,21 @@ export function FaceOverlay({
   onHover,
   readOnly = false,
   measured = true,
+  rotation = 0,
+  frameRatio,
 }: FaceOverlayProps) {
   const { t } = useTranslation()
   const drawn = measured ? faces : []
 
   return (
     <div
-      className="position-absolute top-0 start-0 w-100 h-100"
-      style={{ pointerEvents: 'none' }}
+      // The layer IS the rendered photo's box, which for a quarter turn is not the
+      // wrapper's box — hence inline geometry rather than `w-100 h-100`, whose
+      // `!important` would win over it. The layer is rotated only in shape, never
+      // by a `rotate()`: the boxes carry the rotation in their coordinates, so
+      // their numbers and names stay the right way up.
+      className="position-absolute"
+      style={{ ...rotatedFrameStyle(rotation, frameRatio), pointerEvents: 'none' }}
       data-testid="face-overlay"
     >
       {drawn.map((face, position) => {
@@ -116,9 +146,11 @@ export function FaceOverlay({
         const isActive = isSelected || isHovered
         const label =
           state === 'named' ? (face.subject_name ?? '') : t('faces.unnamed', { index: number })
+        // Where the box lands on the photo as it is currently shown.
+        const bbox = rotateBbox(face.bbox, rotation)
         // A box hugging the bottom edge would have its name label clipped away by
         // the photo container's overflow — flip the label above the box instead.
-        const bottomEdge = face.bbox[1] + face.bbox[3] > 0.9
+        const bottomEdge = bbox[1] + bbox[3] > 0.9
 
         return (
           <button
@@ -139,7 +171,7 @@ export function FaceOverlay({
             onBlur={() => onHover?.(null)}
             className="kk-face-box position-absolute p-0"
             style={{
-              ...faceBoxStyle(face.bbox),
+              ...faceBoxStyle(bbox),
               borderStyle: 'solid',
               borderWidth: isActive ? 3 : 2,
               borderColor: isSelected ? 'var(--bs-primary)' : STATE_COLOR[state],

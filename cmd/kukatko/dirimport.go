@@ -367,7 +367,7 @@ func buildDirImportService(cfg *config.Config, db *database.DB, concurrency int)
 	ingestSvc := ingest.New(ingest.Config{
 		Storage:     store,
 		Photos:      photoStore,
-		Thumbnailer: thumb.New(store, cfg.Storage.CachePath, thumbOptions(cfg, nil)...),
+		Thumbnailer: thumb.New(store, cfg.Storage.CachePath, thumbOptions(cfg, nil, db)...),
 		Enqueuer:    enqueuer,
 		OCR:         ocrEnqueuerOrNil(cfg, enqueuer),
 		Duplicate:   cfg.Duplicate,

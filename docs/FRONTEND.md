@@ -1473,10 +1473,21 @@ here.
   faces/edits **closes** the drawer (it is not "show metadata"). In the faces/edits view the header is carried by
   its own panel (`FacesPanel`/`EditPanel` have a title + close), so the generic header
   „Informace" (`.kk-viewer__panel-head`) glows **only in the info view**. The same `sidePanel` drives the boxes and the faces
-  panel, so they can't diverge. **The whole faces UI stands
-  (the button and `m`) only when the preview is the identity** (`isIdentityEdit(previewEdit)` in `facesAvailable`):
-  the transform of a live or saved edit shifts the rendered pixels under boxes positioned in percentages of the wrapper
-  — the frames would miss the faces, so they'd rather not draw and come back once the preview is neutral again.
+  panel, so they can't diverge. **A crop — and only a crop — stands the whole faces UI down**
+  (`!hasCrop(previewEdit)` in `facesAvailable`): it leaves a frame the boxes were never measured against, so every
+  frame would miss its face; the UI comes back the moment the crop is off again. A **rotation no longer costs the
+  reader their frames**: `FaceOverlay` takes the preview's `rotation` (and the measured frame's `ratio`) and maps
+  every bbox through it — `rotateBbox` turns the coordinates, `rotatedFrameStyle` gives the layer the box the turned
+  photo actually paints (for a quarter turn the wrapper's height by its width, centred, since the wrapper keeps the
+  *unrotated* aspect ratio). Only the coordinates turn, never the layer via a `rotate()`, so a box's number and name
+  stay upright — verified pixel-exact for all four rotations against the real figure geometry. Brightness and
+  contrast move no pixels and never mattered.
+  **Known limit of that trade:** the boxes drawn *over the photo* follow a rotation, but everything that **crops a
+  square tile** out of a `fit_*` thumbnail by bbox (`FacesPanel`'s rows, `Clusters`, `Outliers`,
+  `DuplicateMarkerCrop`, `Review`) does not — since a saved edit is now baked into the thumbnails, those crops land
+  on the wrong part of a *rotated* photo. Detection data is deliberately left alone (`face_detect` is not re-run),
+  and only a handful of photos are ever rotated, so the crops were left for a task of their own: each of those
+  readers would need the photo's edit, which the faces/cluster payloads do not carry.
   **Watch out — a load-bearing invariant:** `FaceOverlay` positions boxes in **percentages** of the `.kk-viewer__figure` wrapper,
   whose box **must sit exactly on the rendered image**. So the figure gets an **inline `aspect-ratio`**
   from `useImageFrame` — **the loaded image's own `naturalWidth`/`naturalHeight`** (post-orientation), with the
@@ -1769,7 +1780,16 @@ here.
   (`aria-pressed`) in the action bar; turning it on **opens the drawer** and mounts the panel at its head (the same
   one `sidePanel` as faces, see above), the header carries a title + a closing **`x-lg`**
   (`photo.edit.closePanel`). Rotation/brightness/contrast/
-  crop, `PUT /photos/{uid}/edit` via `saveEdit` — which sends **only the edit itself** (`rotation`/
+  crop — rotation leading the panel as **two icon buttons**, `arrow-counterclockwise` and `arrow-clockwise`
+  (`rotateLeft`/`rotateRight`), each labelled by its direction because the `Icon` glyph is decorative
+  (`aria-hidden`), with the current angle spelled out beside them. Two directions rather than the single
+  „Otočit doprava" it used to be: one wrong turn otherwise costs three more presses. Each carries
+  `kukatko-tap-target-touch`, since an icon-only `btn-sm` is ~32 px wide and the app-wide coarse floor lifts a
+  `.btn` to 44 px tall but **not** wide — and on a phone this panel is a bottom sheet under the thumb. They are
+  `outline-secondary` like the rest of the panel's quiet actions — a variant Bootswatch bakes in the very colour it
+  also bakes into `--bs-card-bg`, so its label used to sit at contrast **1.00** on the card and the control was
+  literally invisible; `app.css` re-points the variant (measured: 5.6:1 text / 3.2:1 outline on the card,
+  15.4:1 / 6.1:1 on the page). `PUT /photos/{uid}/edit` via `saveEdit` — which sends **only the edit itself** (`rotation`/
   `brightness`/`contrast`/`crop_*`): the `PhotoEdit` type also serves as the GET response and additionally carries
   `photo_uid`/`updated_at`, but the PUT body decodes **strictly**, so sending the returned object
   straight back = 400 „malformed JSON body" (this used to crash the save; a missing crop field is
@@ -1842,7 +1862,9 @@ here.
   `formatBytes(bytes, locale?)` (locale = decimal comma) and `formatByteCount` (the exact byte count
   for the tooltip); `lib/photoEdit` = pure helpers
   edit→CSS (`editPreviewStyle`/`editFilter`/`editTransform`/`cropClipPath`/`isIdentityEdit`/
-  `rotateRight`/`hasCrop`/`NEUTRAL_EDIT`),
+  `hasCrop`/`NEUTRAL_EDIT`) and the quarter-turn arithmetic `rotateBy(rotation,quarters)` with its two
+  named directions `rotateLeft`/`rotateRight` — it normalises into the 0/90/180/270 the API accepts, which is
+  what a counter-clockwise turn needs (a plain `%` would yield `-90` and the save would be rejected),
   `PeoplePage` = `/people` a people index: a responsive, **virtualized** `SubjectTile` grid
   (`TileGrid`, minTile 140 / gap 12 — the skeleton's geometry) with its own **`PeopleFilterBar`** over
   the pure `lib/peopleBrowse`: a name search (folded, so `nemcova` finds `Němcová` — the library's
@@ -2755,7 +2777,10 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   it mounts as the last child of the `position-relative` wrapper tight around the `<img>`. Its `measured` prop
   (default `true`) says whether that wrapper is the **measured** image (`useImageFrame`) or still an estimate;
   while it is `false` the layer renders **empty**, because percentages are only as good as the box they are
-  percentages of. The layer is
+  percentages of. Its `rotation`/`frameRatio` props (default upright) follow a **rotated** preview: every bbox goes
+  through `rotateBbox` and the layer's own geometry through `rotatedFrameStyle`, which is why the layer carries
+  **inline** `left/top/width/height` instead of `w-100 h-100` — the sizing utilities are `!important` and would win
+  over it. The layer is
   click-through, pointer events are caught only by the boxes (and with `readOnly` not even by those; the box's number and name tag have
   `pointer-events:none`, otherwise they would steal the click and break the swipe). A box carries `.kk-face-box` = an invisible
   44px hitbox on `pointer: coarse` (see app.css below), so even a small face can be hit on a phone, and it reports
@@ -3519,7 +3544,13 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   color**, only a mark on the panel row + a note in `FaceAssignPanel`, because it decides whether automation can
   ever reach the face at all;
   `faceGeometry.ts` = the pure `faceBoxStyle` (a normalized bbox → absolute `left/top/width/height`
-  in %, for the overlay) + `readingOrder` (a list of anything carrying a `bbox` → the order the eye crosses the
+  in %, for the overlay) + the rotation pair `rotateBbox(bbox, rotation)` (a bbox measured on the upright photo →
+  the same box in the frame of that photo turned N degrees **clockwise**; a quarter turn swaps `w`/`h`, anything but
+  90/180/270 passes through unchanged) and `rotatedFrameStyle(rotation, ratio)` (the layer that box is a percentage
+  **of**: the wrapper itself for 0°/180°, and for a quarter turn `100/ratio` × `100*ratio` percent centred by a
+  translate — the box the rotated image paints over a wrapper that keeps the unrotated aspect ratio; an unusable
+  ratio falls back to filling the wrapper, since `NaN` percentages would drop every box off the page)
+  + `readingOrder` (a list of anything carrying a `bbox` → the order the eye crosses the
   photo: the top row left to right, then the row below. One greedy pass down the photo assigns faces to **row bands** —
   a face joins the open band when its vertical centre is within **half the taller box** of the band's **topmost**
   member, i.e. the boxes genuinely overlap. Anchoring on the topmost member, not on the face last added, is what
@@ -4131,6 +4162,15 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `.btn-primary`/`.btn-outline-primary`, `.form-check-input:checked`/indeterminate, the `.form-range`
   thumb, `.progress-bar` (+ the track as a well), `.dropdown-menu` (a warm overlay + the active item),
   the `.list-group` active row and the `.navbar.kukatko-navbar` active link;
+  **the quiet action** `.btn-outline-secondary` (the app's commonest button — rotate, cancel, „zobrazit více",
+  85 call sites): Bootswatch bakes its label *and* its border as the theme grey-blue `#4e5d6c`, which it also bakes
+  into `--bs-card-bg` **on the `.card` selector itself** — so the tokens' `--bs-card-bg` re-pin never applies, cards
+  really are that navy, and inside one the button's label sat at contrast **1.00** on its own background: the
+  reported „the text is the same colour as its background". The label is re-pointed at `--bs-body-color` and the
+  border at a 60 % tint of `--kk-text`, with a translucent **dark** scrim on hover/active — a *lighter* fill would
+  push the white label back under 4.5:1 on the card it lightens. Measured in the browser (blended, incl. alpha):
+  5.6:1 text / 3.2:1 outline on the card and 15.4:1 / 6.1:1 on the page, so both clear AA for text and the 3:1 for
+  the control's own boundary;
   **a slim translucent navbar** `.kukatko-navbar` (it sits ABOVE the scrolling content: the fill `--kk-header-bg`
   = the page's tone at 72 % + `backdrop-filter: blur(--kk-header-blur)` frosts whatever scrolls beneath it,
   a hairline bottom line `--kk-header-border`; an `@supports not (backdrop-filter…)` fallback to the full

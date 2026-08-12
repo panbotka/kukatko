@@ -541,6 +541,7 @@
       },
       "photo": {
         "archive": "Photo moved to the trash",
+        "edit": "Photo image adjusted",
         "hide": "Photo hidden from the library",
         "purge": "Photo permanently deleted",
         "thumbnail": "Photo thumbnail regenerated",
@@ -1963,6 +1964,7 @@
       "title": "Edits",
       "closePanel": "Close the edits panel",
       "rotation": "Rotation",
+      "rotateLeft": "Rotate left",
       "rotateRight": "Rotate right",
       "brightness": "Brightness",
       "contrast": "Contrast",

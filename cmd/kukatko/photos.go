@@ -51,16 +51,18 @@ func buildFaceMatch(cfg *config.Config, db *database.DB) *facematch.Service {
 // half of search; embedder is the sidecar client that embeds query text for
 // semantic and hybrid search. faceSvc backs the /photos/{uid}/faces endpoints.
 // store is the shared originals backend, which also decides whether the media
-// routes stream bytes or redirect to signed edge URLs. storyboards backs the
-// video scrub-preview routes (status + sprite) and is the same service the worker
+// routes stream bytes or redirect to signed edge URLs. thumbnails is the queue
+// adapter a saved non-destructive edit schedules its thumbnail rebuild through, so
+// the grid stops showing the previous rendering. storyboards backs the video
+// scrub-preview routes (status + sprite) and is the same service the worker
 // renders through.
 func buildPhotoAPI(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, store storage.Storage,
 	similar photoapi.SimilarSearcher, embedder photoapi.TextEmbedder, faceSvc *facematch.Service,
-	purger photoapi.Purger, sidecar sidecarScheduler, storyboards *storyboardjob.Service,
-	reg *metrics.Registry,
+	purger photoapi.Purger, sidecar sidecarScheduler, thumbnails photoapi.ThumbnailEnqueuer,
+	storyboards *storyboardjob.Service, reg *metrics.Registry,
 ) *photoapi.API {
-	thumbnailer := thumb.New(store, cfg.Storage.CachePath, thumbOptions(cfg, reg)...)
+	thumbnailer := thumb.New(store, cfg.Storage.CachePath, thumbOptions(cfg, reg, db)...)
 	photoStore := photos.NewStore(db.Pool())
 	organizeStore := organize.NewStore(db.Pool())
 	// The detail endpoint resolves a photo's uploader UID to a display name via
@@ -89,14 +91,17 @@ func buildPhotoAPI(
 		Thumbnailer: thumbnailer,
 		Regenerator: regenerator,
 		Sidecar:     sidecar,
-		Audit:       audit.NewStore(db.Pool()),
-		Similar:     similar,
-		Embedder:    embedder,
-		Faces:       faceSvc,
-		Favorites:   organizeStore,
-		Ratings:     organizeStore,
-		Organizer:   organizeStore,
-		Users:       userStore,
+		// Saving an edit changes what the photo renders as; the cache is keyed by the
+		// original's hash and needs telling.
+		Thumbnails: thumbnails,
+		Audit:      audit.NewStore(db.Pool()),
+		Similar:    similar,
+		Embedder:   embedder,
+		Faces:      faceSvc,
+		Favorites:  organizeStore,
+		Ratings:    organizeStore,
+		Organizer:  organizeStore,
+		Users:      userStore,
 		// The detail response carries the photo's cached place. This is a read of
 		// the photo_places cache the `places` job fills — the detail endpoint never
 		// geocodes, so opening a photo costs no mapy.com credit.

@@ -91,6 +91,7 @@ const ACTION_LABEL_KEYS: Record<string, ParseKeys> = {
   'library.reset': 'activity.actions.library.reset',
   'marker.invalidate': 'activity.actions.marker.invalidate',
   'photo.archive': 'activity.actions.photo.archive',
+  'photo.edit': 'activity.actions.photo.edit',
   'photo.hide': 'activity.actions.photo.hide',
   'photo.purge': 'activity.actions.photo.purge',
   'photo.thumbnail': 'activity.actions.photo.thumbnail',

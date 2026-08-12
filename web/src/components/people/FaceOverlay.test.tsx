@@ -214,6 +214,67 @@ describe('FaceOverlay', () => {
     expect(box).toHaveStyle({ left: '50%', top: '50%', width: '20%', height: '20%' })
   })
 
+  it('turns every box with the photo, so the rectangles stay on the faces', () => {
+    // Detection ran on the upright original; a quarter turn clockwise moves the
+    // top-left corner to the top-right, so [x, y, w, h] becomes
+    // [1 - y - h, x, h, w] — here [0.1, 0.2, 0.3, 0.4] → [0.4, 0.1, 0.4, 0.3].
+    render(
+      <I18nextProvider i18n={i18n}>
+        <FaceOverlay
+          faces={faces()}
+          selected={null}
+          onSelect={vi.fn()}
+          rotation={90}
+          frameRatio={2}
+        />
+      </I18nextProvider>,
+    )
+
+    expect(screen.getByRole('button', { name: 'Unnamed face 1' })).toHaveStyle({
+      left: '40%',
+      top: '10%',
+      width: '40%',
+      height: '30%',
+    })
+    // The layer takes the turned photo's own box — the wrapper's height by its
+    // width, centred — since that is what the rotated image paints over.
+    expect(screen.getByTestId('face-overlay')).toHaveStyle({
+      left: '50%',
+      top: '50%',
+      width: '50%',
+      height: '200%',
+      transform: 'translate(-50%, -50%)',
+    })
+  })
+
+  it('keeps the numbers and names upright on a turned photo', () => {
+    // The layer is never given a `rotate()`: the rotation lives in the boxes'
+    // coordinates, so a 180° photo does not hand the reader upside-down text.
+    render(
+      <I18nextProvider i18n={i18n}>
+        <FaceOverlay
+          faces={faces()}
+          selected={1}
+          onSelect={vi.fn()}
+          rotation={180}
+          frameRatio={2}
+        />
+      </I18nextProvider>,
+    )
+
+    const layer = screen.getByTestId('face-overlay')
+    expect(layer).not.toHaveStyle({ transform: 'rotate(180deg)' })
+    // A half turn keeps the frame's shape, so the layer simply fills the wrapper.
+    expect(layer).toHaveStyle({ width: '100%', height: '100%' })
+    // [0.5, 0.5, 0.2, 0.2] mirrored through the centre.
+    expect(screen.getByRole('button', { name: 'Alice' })).toHaveStyle({
+      left: '30%',
+      top: '30%',
+      width: '20%',
+      height: '20%',
+    })
+  })
+
   it('draws no box while the frame under it is still provisional', () => {
     render(
       <I18nextProvider i18n={i18n}>

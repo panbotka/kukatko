@@ -545,6 +545,7 @@
       },
       "photo": {
         "archive": "Přesun fotky do koše",
+        "edit": "Úprava obrazu fotky",
         "hide": "Skrytí fotky z knihovny",
         "purge": "Trvalé smazání fotky",
         "thumbnail": "Přegenerování náhledu fotky",
@@ -2043,6 +2044,7 @@
       "title": "Úpravy",
       "closePanel": "Zavřít panel úprav",
       "rotation": "Otočení",
+      "rotateLeft": "Otočit doleva",
       "rotateRight": "Otočit doprava",
       "brightness": "Jas",
       "contrast": "Kontrast",

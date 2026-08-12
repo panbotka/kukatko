@@ -119,6 +119,12 @@ const (
 	// action). It never touches the original; the regenerated sizes are listed in
 	// the entry's details.
 	ActionPhotoThumbnail = "photo.thumbnail"
+	// ActionPhotoEdit records saving a photo's non-destructive edit (rotation,
+	// brightness, contrast, crop). The original file is never rewritten, so the
+	// entry is the only record that the library's rendering of the photo changed:
+	// the whole saved edit is carried in the details, and a reset to the neutral
+	// edit is audited exactly like any other value.
+	ActionPhotoEdit = "photo.edit"
 	// ActionCommentCreate records a user writing a comment on a photo. The photo
 	// is the target and the new comment's UID is in the entry's details — every
 	// role may comment, including viewers, so the trail is the only record of who

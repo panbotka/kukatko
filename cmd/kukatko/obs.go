@@ -6,11 +6,13 @@ import (
 	"time"
 
 	"github.com/panbotka/kukatko/internal/config"
+	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/embedding"
 	"github.com/panbotka/kukatko/internal/importer"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/metrics"
 	"github.com/panbotka/kukatko/internal/organize"
+	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/placesjob"
 	"github.com/panbotka/kukatko/internal/system"
 	"github.com/panbotka/kukatko/internal/thumb"
@@ -20,13 +22,24 @@ import (
 // thumbOptions returns the thumbnailer options shared by every thumb.New call
 // site: generation-timing instrumentation when reg is non-nil, the configured
 // per-photo encode concurrency, the decode pixel cap that rejects a
-// decompression bomb before it can OOM a worker, and the vips engine when
-// thumb.engine is "vips" (resolved on PATH; a no-op when the binary is missing).
-// It keeps the engine selection and instrumentation consistent across the process.
-func thumbOptions(cfg *config.Config, reg *metrics.Registry) []thumb.Option {
+// decompression bomb before it can OOM a worker, the photo's saved
+// non-destructive edit (so every size renders what the viewer shows), and the
+// vips engine when thumb.engine is "vips" (resolved on PATH; a no-op when the
+// binary is missing). It keeps the engine selection and instrumentation
+// consistent across the process.
+//
+// The edit resolver is part of that consistency and not an optional extra: every
+// thumbnailer writes into the one cache keyed by the original's file hash, so a
+// call site left without it would publish the unedited rendering of an edited
+// photo under the key the rest of the process reads. db may be nil only where no
+// database is open at all.
+func thumbOptions(cfg *config.Config, reg *metrics.Registry, db *database.DB) []thumb.Option {
 	var opts []thumb.Option
 	if reg != nil {
 		opts = append(opts, thumb.WithObserver(reg))
+	}
+	if db != nil {
+		opts = append(opts, thumb.WithEdits(photos.NewStore(db.Pool())))
 	}
 	if cfg.Thumb.Concurrency > 0 {
 		opts = append(opts, thumb.WithConcurrency(cfg.Thumb.Concurrency))

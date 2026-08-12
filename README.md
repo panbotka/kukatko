@@ -91,7 +91,9 @@ Albums (each covered by a collage of four of its photos, so two albums from the 
 look alike) · labels · per-user favourites and ratings · comments · bulk editing, including re-dating
 a whole shelf of scans at the grain you actually know ("1974", "the seventies") · duplicate detection
 with a side-by-side compare and a merge that keeps every album, label and person · RAW+JPEG and
-edited-variant stacks (grouped, never merged) · non-destructive crop/rotate/brightness/contrast ·
+edited-variant stacks (grouped, never merged) · non-destructive crop/brightness/contrast and a rotation
+either way, which the whole library follows — the thumbnails are rebuilt from the turned photo, so the grid
+shows it the way you turned it, and the face frames turn with it ·
 a trash with retention · a slideshow · and a statistics page that answers what the library really
 looks like — photos per year across its whole span, arrivals per month, which cameras took most of
 it, what it costs in bytes, and how far along the processing is.

@@ -56,6 +56,26 @@ func (e *Enqueuer) EnqueueThumbnail(ctx context.Context, photoUID string) error 
 	return e.enqueuePhotoJob(ctx, TypeThumbnail, photoUID)
 }
 
+// EnqueueThumbnailRebuild schedules a *forced* thumbnail rebuild for the photo
+// identified by photoUID: unlike EnqueueThumbnail, the handler overwrites the
+// sizes already cached instead of skipping them. It is what a change to the
+// photo's rendering — saving or resetting a non-destructive edit — schedules,
+// because the cache is keyed by the original's file hash and would otherwise keep
+// serving the previous rendering forever.
+//
+// The forced flag rides in the payload, so dedup (keyed on type + photo_uid) is
+// unchanged: at most one active thumbnail job per photo. A plain thumbnail job
+// already queued for the same photo therefore absorbs this one, and the rebuild
+// then depends on that job — which is acceptable, since the photo is scheduled for
+// thumbnailing either way and a later edit schedules a fresh forced job.
+func (e *Enqueuer) EnqueueThumbnailRebuild(ctx context.Context, photoUID string) error {
+	payload, err := forcedPhotoPayload(photoUID)
+	if err != nil {
+		return err
+	}
+	return e.enqueuePayload(ctx, TypeThumbnail, photoUID, payload, EnqueueOptions{})
+}
+
 // EnqueuePlaces schedules reverse geocoding for the photo identified by photoUID.
 // A pre-existing active job for the same photo is a no-op (nil error). It backs
 // the place backfill that fills the location cache for geotagged photos.
@@ -130,6 +150,15 @@ func (e *Enqueuer) enqueuePhotoJobOpts(
 	if err != nil {
 		return err
 	}
+	return e.enqueuePayload(ctx, jobType, photoUID, payload, opts)
+}
+
+// enqueuePayload enqueues a job of jobType carrying an already-built payload,
+// swallowing ErrDuplicate so the call is idempotent per photo. photoUID is used
+// only to describe the failure.
+func (e *Enqueuer) enqueuePayload(
+	ctx context.Context, jobType, photoUID string, payload json.RawMessage, opts EnqueueOptions,
+) error {
 	if _, err := e.store.Enqueue(ctx, jobType, payload, opts); err != nil {
 		if errors.Is(err, ErrDuplicate) {
 			return nil
@@ -145,6 +174,18 @@ func photoPayload(uid string) (json.RawMessage, error) {
 	raw, err := json.Marshal(map[string]string{"photo_uid": uid})
 	if err != nil {
 		return nil, fmt.Errorf("jobs: marshaling photo payload: %w", err)
+	}
+	return raw, nil
+}
+
+// forcedPhotoPayload builds the {"photo_uid": uid, "force": true} payload of a
+// job that must redo work already done. It keeps the `photo_uid` key the dedup
+// index reads, so a forced job dedupes against a plain one exactly as two plain
+// jobs would.
+func forcedPhotoPayload(uid string) (json.RawMessage, error) {
+	raw, err := json.Marshal(map[string]any{"photo_uid": uid, "force": true})
+	if err != nil {
+		return nil, fmt.Errorf("jobs: marshaling forced photo payload: %w", err)
 	}
 	return raw, nil
 }

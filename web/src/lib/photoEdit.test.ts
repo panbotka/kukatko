@@ -10,6 +10,8 @@ import {
   hasCrop,
   isIdentityEdit,
   NEUTRAL_EDIT,
+  rotateBy,
+  rotateLeft,
   rotateRight,
 } from './photoEdit'
 
@@ -42,6 +44,20 @@ describe('photoEdit helpers', () => {
     expect(rotateRight(0)).toBe(90)
     expect(rotateRight(90)).toBe(180)
     expect(rotateRight(270)).toBe(0)
+  })
+
+  it('rotates counter-clockwise by quarter turns and never goes negative', () => {
+    expect(rotateLeft(90)).toBe(0)
+    expect(rotateLeft(180)).toBe(90)
+    // The wrap the backend's allow-list depends on: -90 would be rejected.
+    expect(rotateLeft(0)).toBe(270)
+  })
+
+  it('turns by any number of quarters in either direction', () => {
+    expect(rotateBy(0, 2)).toBe(180)
+    expect(rotateBy(0, -2)).toBe(180)
+    expect(rotateBy(90, 4)).toBe(90)
+    expect(rotateBy(90, -5)).toBe(0)
   })
 
   it('builds a brightness/contrast filter matching the backend rendering', () => {
