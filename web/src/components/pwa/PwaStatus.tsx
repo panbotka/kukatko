@@ -17,6 +17,14 @@ import { Icon } from '../Icon'
  * Nothing renders while the app is online and up to date, so the common case
  * costs one `null`. Registering the service worker happens here too, by way of
  * {@link usePwaStatus}.
+ *
+ * The offline wording is held to what the worker actually caches, which is the
+ * app shell and nothing else — `index.html`, the hashed bundles, the fonts. It
+ * deliberately never touches `/api/`, so no photo, album or search result
+ * survives the connection (see public/service-worker.js). The banner used to
+ * promise "only what it has stored", which read as an offline library; every
+ * page under it then failed to load. It now says the app opens and the library
+ * does not.
  */
 export function PwaStatus() {
   const { t } = useTranslation()

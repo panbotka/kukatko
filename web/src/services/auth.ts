@@ -50,6 +50,25 @@ export class ApiError extends Error {
 }
 
 /**
+ * Error meaning the request never reached the backend at all: a device with no
+ * network, a DNS or TLS failure, a dropped connection, a server not listening.
+ * `fetch` rejects with a bare `TypeError` for every one of those, which at the
+ * call site is indistinguishable from a mistake in the call itself — so each
+ * request in this module goes through `apiFetch`, which re-throws it as this.
+ *
+ * The distinction is not cosmetic: "we could not ask" is not "the answer was
+ * no". Without it an unreachable backend reached the reader as a rejected
+ * password on the login form and as a signed-out session in `AuthProvider`, so a
+ * phone with no signal accused its owner of forgetting a password they knew.
+ */
+export class NetworkError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options)
+    this.name = 'NetworkError'
+  }
+}
+
+/**
  * True when a rejected call means "there is no such thing" (HTTP 404) rather
  * than "the request failed". A detail page uses it to tell a purged photo or a
  * deleted album apart from a broken connection: one is gone for good, the other
@@ -81,18 +100,42 @@ async function readErrorMessage(res: Response): Promise<string> {
 }
 
 /**
+ * Performs one call against the auth API, translating a transport-level
+ * rejection into a {@link NetworkError} so callers can tell an unreachable
+ * backend from one that answered.
+ *
+ * An abort passes through untouched: callers cancel on unmount and must keep
+ * recognising `AbortError`, since their own cancellation is not an outage.
+ */
+async function apiFetch(path: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(`${API_BASE}${path}`, init)
+  } catch (error: unknown) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error
+    }
+    throw new NetworkError(
+      error instanceof Error ? error.message : 'the server could not be reached',
+      { cause: error },
+    )
+  }
+}
+
+/**
  * Authenticates with username + password. On success the backend sets the
  * HttpOnly session cookie and returns the user plus a download token.
  *
  * @throws ApiError with `status` 401 (bad credentials), 429 (rate limited),
  *   400 (malformed) or 5xx so the caller can render the matching message.
+ * @throws NetworkError when the request never reached the backend, which the
+ *   login form must say out loud instead of blaming the password.
  */
 export async function login(
   username: string,
   password: string,
   signal?: AbortSignal,
 ): Promise<AuthSession> {
-  const res = await fetch(`${API_BASE}/auth/login`, {
+  const res = await apiFetch('/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'same-origin',
@@ -107,7 +150,7 @@ export async function login(
 
 /** Ends the current session. Idempotent: the backend always returns 204. */
 export async function logout(signal?: AbortSignal): Promise<void> {
-  const res = await fetch(`${API_BASE}/auth/logout`, {
+  const res = await apiFetch('/auth/logout', {
     method: 'POST',
     credentials: 'same-origin',
     signal,
@@ -122,9 +165,11 @@ export async function logout(signal?: AbortSignal): Promise<void> {
  *
  * @returns the session, or `null` when no valid session exists (HTTP 401).
  * @throws ApiError on any other non-OK status.
+ * @throws NetworkError when the backend could not be reached, which is *not* the
+ *   same as `null`: the visitor may well still be signed in.
  */
 export async function fetchMe(signal?: AbortSignal): Promise<AuthSession | null> {
-  const res = await fetch(`${API_BASE}/auth/me`, {
+  const res = await apiFetch('/auth/me', {
     method: 'GET',
     credentials: 'same-origin',
     signal,
@@ -150,7 +195,7 @@ export async function changePassword(
   newPassword: string,
   signal?: AbortSignal,
 ): Promise<void> {
-  const res = await fetch(`${API_BASE}/auth/password`, {
+  const res = await apiFetch('/auth/password', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'same-origin',
@@ -214,7 +259,7 @@ export const API_TOKEN_NAME_MAX_LENGTH = 100
  * @throws ApiError on any non-OK status.
  */
 export async function fetchApiTokens(signal?: AbortSignal): Promise<ApiToken[]> {
-  const res = await fetch(`${API_BASE}/auth/tokens`, {
+  const res = await apiFetch('/auth/tokens', {
     method: 'GET',
     credentials: 'same-origin',
     signal,
@@ -234,7 +279,7 @@ export async function fetchApiTokens(signal?: AbortSignal): Promise<ApiToken[]> 
  *   shared with login) or 403 (a role that may not mint tokens).
  */
 export async function createApiToken(name: string, signal?: AbortSignal): Promise<CreatedApiToken> {
-  const res = await fetch(`${API_BASE}/auth/tokens`, {
+  const res = await apiFetch('/auth/tokens', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'same-origin',
@@ -255,7 +300,7 @@ export async function createApiToken(name: string, signal?: AbortSignal): Promis
  * @throws ApiError with `status` 404 (no such token of the caller's) or 5xx.
  */
 export async function revokeApiToken(id: string, signal?: AbortSignal): Promise<void> {
-  const res = await fetch(`${API_BASE}/auth/tokens/${encodeURIComponent(id)}`, {
+  const res = await apiFetch(`/auth/tokens/${encodeURIComponent(id)}`, {
     method: 'DELETE',
     credentials: 'same-origin',
     signal,

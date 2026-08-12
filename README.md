@@ -110,8 +110,9 @@ it, what it costs in bytes, and how far along the processing is.
 The phone is the first screen, not the leftover one: the library's header there is the search field
 and a Filters button, with sort, density and the pickers folded into a drawer. **"Add to Home
 Screen"** installs it with its own icon and no browser chrome; a service worker keeps the app shell
-on the device so it opens instantly and says plainly that you are offline instead of failing
-blankly — it caches nothing else, so nothing you see is ever stale. On **Android**, Kukátko is a
+on the device so it opens instantly. It caches nothing else, so nothing you see is ever stale — and
+it says exactly that: opening the app with no signal gets you a page explaining that the photos need
+a connection, not a login form that then blames your password. On **Android**, Kukátko is a
 share target: pick shots in the gallery, tap Share, and the upload page opens with them queued.
 
 ### It tells you what you missed

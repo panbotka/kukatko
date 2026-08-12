@@ -388,7 +388,9 @@
     "passwordRequired": "Please enter your password.",
     "errorInvalid": "Invalid username or password.",
     "errorRateLimited": "Too many login attempts. Please try again later.",
-    "errorGeneric": "Sign in failed. Please try again."
+    "errorOffline": "Kukátko could not reach the server, so nothing has judged your sign-in. Your password is probably fine — check your connection and try again.",
+    "errorGeneric": "Sign in failed. Please try again.",
+    "offlineNotice": "Kukátko cannot reach the server right now. Signing in will work once you are back online."
   },
   "account": {
     "title": "My account",
@@ -2129,6 +2131,13 @@
     },
     "back": "Back to the library"
   },
+  "offline": {
+    "title": "Kukátko cannot reach the server",
+    "message": "This looks like a connection problem. The app itself opens offline, but photos and library data have to come from the server.",
+    "notSignedOut": "It is not a sign-out either: nothing could check your session, so nothing has ended it. Try again once the connection is back.",
+    "retry": "Try again",
+    "retrying": "Trying…"
+  },
   "import": {
     "title": "Import",
     "intro": "History of import runs and the failures they recorded. Imports are started from the command line only: `kukatko import dir` reads a directory on the server’s disk. The one-off import the library was built from finished in August 2026 and was removed — its runs stay in the history as the record of where the library came from.",
@@ -2910,7 +2919,7 @@
     "more_other": "and {{count}} more"
   },
   "pwa": {
-    "offline": "You are offline. Kukátko shows only what it has stored.",
+    "offline": "You are offline. Kukátko opens, but photos and the library need a connection.",
     "update": {
       "message": "A new version of Kukátko is available.",
       "action": "Reload",

@@ -86,6 +86,7 @@ export type IconName =
   | 'unlock'
   | 'volume-mute-fill'
   | 'volume-up-fill'
+  | 'wifi-off'
   | 'wrench-adjustable'
   | 'x-lg'
 

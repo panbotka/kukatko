@@ -1,7 +1,14 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 
 import * as authService from '../services/auth'
-import { canImport, canWrite, isAdmin, isMaintainer, type AuthSession } from '../services/auth'
+import {
+  canImport,
+  canWrite,
+  isAdmin,
+  isMaintainer,
+  NetworkError,
+  type AuthSession,
+} from '../services/auth'
 
 import { AuthContext, type AuthContextValue, type AuthStatus } from './AuthContext'
 
@@ -16,6 +23,9 @@ const INITIAL_STATE: AuthState = { status: 'loading', session: null }
  * Provides authentication state to the app. On mount it loads the current
  * session from `GET /auth/me`, then exposes `login`/`logout`/`refresh` plus
  * derived role helpers through {@link useAuth}.
+ *
+ * It publishes four statuses, not three: a backend it could not reach is
+ * reported as `unreachable`, never as signed out. See {@link AuthStatus}.
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>(INITIAL_STATE)
@@ -24,22 +34,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setState({ status: session ? 'authenticated' : 'unauthenticated', session })
   }, [])
 
-  useEffect(() => {
-    const controller = new AbortController()
-    authService
-      .fetchMe(controller.signal)
-      .then(applySession)
-      .catch((error: unknown) => {
+  /**
+   * Reads `GET /auth/me` and files the outcome under the right status.
+   *
+   * The catch is where the two kinds of failure part company. A
+   * {@link NetworkError} means the question never reached the server, so nothing
+   * is known about the session and the app must say so — `unreachable`. Anything
+   * else (a 5xx, a body that would not parse) *did* come from the server, so the
+   * old "treat it as signed out and let the UI recover" behaviour still stands.
+   *
+   * Aborts are ours: the mount effect cancels on unmount, and that is not news.
+   */
+  const loadSession = useCallback(
+    async (signal?: AbortSignal) => {
+      try {
+        applySession(await authService.fetchMe(signal))
+      } catch (error: unknown) {
         if (error instanceof DOMException && error.name === 'AbortError') {
           return
         }
-        // Treat an unreachable backend as signed out so the UI can recover.
-        applySession(null)
-      })
+        setState({
+          status: error instanceof NetworkError ? 'unreachable' : 'unauthenticated',
+          session: null,
+        })
+      }
+    },
+    [applySession],
+  )
+
+  useEffect(() => {
+    const controller = new AbortController()
+    void loadSession(controller.signal)
     return () => {
       controller.abort()
     }
-  }, [applySession])
+  }, [loadSession])
 
   const login = useCallback(
     async (username: string, password: string) => {
@@ -57,10 +86,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [applySession])
 
-  const refresh = useCallback(async () => {
-    const session = await authService.fetchMe()
-    applySession(session)
-  }, [applySession])
+  const refresh = useCallback(() => loadSession(), [loadSession])
 
   const value = useMemo<AuthContextValue>(() => {
     const user = state.session?.user ?? null

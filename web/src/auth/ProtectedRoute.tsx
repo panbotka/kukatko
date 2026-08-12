@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
 
 import { ForbiddenPage } from '../pages/ForbiddenPage'
+import { OfflinePage } from '../pages/OfflinePage'
 import { type GuardRole, roleAtLeast } from '../services/auth'
 
 import { useAuth } from './AuthContext'
@@ -24,6 +25,12 @@ function FullPageSpinner() {
  * resolved, unauthenticated visitors are redirected to `/login` with the
  * originally requested location stashed in history state so login can return
  * them there.
+ *
+ * A backend that could not be reached is the exception, and gets the
+ * {@link OfflinePage} in place of the route. Bouncing it to `/login` was a
+ * double lie: the visitor had not been signed out, and the form they landed on
+ * could not succeed — every attempt came back as "wrong username or password",
+ * which is how a lost signal came to read as a forgotten one.
  */
 export function RequireAuth() {
   const { status } = useAuth()
@@ -31,6 +38,9 @@ export function RequireAuth() {
 
   if (status === 'loading') {
     return <FullPageSpinner />
+  }
+  if (status === 'unreachable') {
+    return <OfflinePage />
   }
   if (status !== 'authenticated') {
     return <Navigate to="/login" replace state={{ from: location }} />

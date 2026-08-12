@@ -894,7 +894,16 @@ here.
   prefills the add fields on each opening (`/expand` puts the expanded collection there); `onDone` receives
   **`BulkEditOutcome{operations,result}`** — what apply actually sent and per-photo results — so
   the page can edit the list in place instead of refetching),
-  `pages/` (`LoginPage`, `AccountPage` = identity/role, **the Jazyk section** (`LanguageSwitcher` +
+  `pages/` (`LoginPage` (username + password in a Superhero card; `errorKeyFor` maps the failure to
+  a sentence — 401 → `login.errorInvalid`, 429 → `login.errorRateLimited`, **`NetworkError` →
+  `login.errorOffline`**, anything else → `login.errorGeneric`. The network branch is the one that
+  matters: a request that never left the device had nothing judge the credentials, and the generic
+  "sign in failed, try again" used to land there, so an offline phone told its owner to retype a
+  password they had not forgotten. When `useAuth().status` is already `unreachable` the card shows
+  `login.offlineNotice` up front (a `role="status"` warning, `data-testid="login-offline-notice"`,
+  yielding to a submit error once there is one) **and drops `autoFocus`** — raising the phone
+  keyboard for a form that cannot succeed is an invitation to type),
+  `AccountPage` = identity/role, **the Jazyk section** (`LanguageSwitcher` +
   a hint, `account.language*`) and changing your own password, **plus the app's technical status**
   (`GET /healthz` badge + version, without the commit hash) in a small muted row at the bottom — status and language
   came here from elsewhere (from the home page and the navbar respectively): they belong where the user looks for them, not
@@ -2393,6 +2402,21 @@ here.
   why it is unconditional. i18n `forbidden.*` (cs/en). Tests: `ForbiddenPage.test.tsx` (the sentence
   names the role actually demanded, the way out points at `/`, the Czech default),
   plus the guard-level checks in `ProtectedRoute.test.tsx` and `App.test.tsx` below),
+  `OfflinePage` (**no route of its own** either — `RequireAuth` renders it in place of the route when
+  `useAuth().status` is `unreachable`, i.e. the session probe failed at the transport and whether the
+  visitor is signed in is simply not known. It replaces a redirect to `/login`, which was the worst
+  answer available: the reader had not been signed out, the form could not reach a server to check
+  anything, and every attempt came back "invalid username or password" — that is how a lost signal
+  came to read as a forgotten password. Same shape as `ForbiddenPage` (a `wifi-off` glyph, a heading,
+  two sentences, one control) and the same reason for rendering rather than navigating — the URL
+  stays on the route asked for, so a retry lands on the page the reader wanted. The copy is held to
+  what the shell cache actually holds: the app opens, the photos and the library do not
+  (`offline.message`). `offline.notSignedOut` is worded to be true either way — *nothing checked the
+  session, so nothing ended it*, rather than the stronger "you are still signed in", which nobody on
+  this screen is in a position to know. The button awaits
+  `useAuth().refresh()`, which never rejects — a still-unreachable backend re-files the same status
+  and the button comes back. i18n `offline.*` (cs/en). Tests: `OfflinePage.test.tsx` (the wording,
+  the retry, the button freeing itself) plus `ProtectedRoute.test.tsx` and `App.coldLaunch.test.tsx`),
   `components/savedsearch/` = `SaveSearchModal` (a modal for naming when saving a new view
   or renaming an existing saved search; a saved search is **personal**, like the favourite heart, so
   nothing here is role-gated and a viewer saves views like anyone else. Both footer buttons are
@@ -2729,10 +2753,21 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   built **only** of the element's own `border` + `inset` shadows (dark/warning/dark), which the card's
   `overflow: hidden` therefore cannot clip; the strokes are absolute px, so they don't thin out at ten columns);
   `auth/` (`AuthContext`/`useAuth` + `AuthProvider` = boot `GET /auth/me`,
-  exposes `user`/`role`/`login`/`logout`/`refresh`/`canWrite`/`isAdmin` (admin+)/`isMaintainer`/`canImport`; `ProtectedRoute` =
+  exposes `status`/`user`/`role`/`login`/`logout`/`refresh`/`canWrite`/`isAdmin` (admin+)/`isMaintainer`/`canImport`.
+  **`AuthStatus` has four values, not three**: `loading` | `authenticated` | `unauthenticated` |
+  **`unreachable`** — the last meaning the probe never got an answer, so the session is unknown. Only a
+  `NetworkError` (a transport failure, see `services/auth.ts`) files as `unreachable`; anything that
+  *did* come from the server (a 5xx, an unparseable body) keeps the older "treat it as signed out so the
+  UI can recover" behaviour, because there the difference is not knowable. Collapsing the two was the
+  bug: the installed app cold-launches from the shell cache with no network, `GET /auth/me` fails at the
+  transport, and every screen downstream then acted as if the session had ended. `refresh()` re-runs the
+  same probe and **never rejects** — it re-files a status instead, which is what lets `OfflinePage`
+  simply `await` it; `ProtectedRoute` =
   the `RequireAuth` + `RequireRole` + `RequireImport` route guards. `RequireAuth` still **redirects** —
   signing in is the missing step and `/login` is where you take it, with the requested location stashed
-  in history state. The two *authorization* guards do not: a role that is too low gets `ForbiddenPage`
+  in history state — **except on `unreachable`, which gets `OfflinePage` in place of the route**: there
+  is no missing step to take, and the form would only mistranslate the outage into a rejected password.
+  The two *authorization* guards do not redirect either: a role that is too low gets `ForbiddenPage`
   **rendered in place of the route** (`RequireRole` passes its own threshold, `RequireImport` passes
   `maintainer`). They used to `<Navigate to="/" replace>`, which dropped the user on a page they had not
   asked for, with no explanation and without the address — a shared link to `/duplicates` opened the
@@ -3546,7 +3581,15 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   the request **writes** server-side, stamping the reader's visit, so it is issued once per library-home
   load and **never polled**), `auth.ts` = login/logout/me/changePassword, the types
   `User`/`Role` (the strict ladder `viewer < editor < admin < maintainer`)/`AuthSession`, `ApiError` with a
-  status, `isNotFound(err)` (a 404 = "there is no such thing", which the detail pages tell apart from a failed
+  status, **`NetworkError`** (the request never reached the backend — no network, DNS/TLS, a dropped
+  connection, nothing listening. `fetch` rejects with a bare `TypeError` for all of those, which at the
+  call site is indistinguishable from a bug in the call, so **every request in this module goes through
+  the private `apiFetch`**, which re-throws it as `NetworkError` with the original as `cause`. An
+  `AbortError` passes through untouched — the caller's own cancellation is not an outage. Callers need
+  the difference because "we could not ask" is not "the answer was no": `LoginPage` and `AuthProvider`
+  both branch on it, and without it an unreachable backend reached the reader as a rejected password and
+  as a signed-out session),
+  `isNotFound(err)` (a 404 = "there is no such thing", which the detail pages tell apart from a failed
   load so a link out of the audit log to something deleted explains itself),
   `roleAtLeast`, `canWrite` (editor+), `isAdmin` (admin+), `isMaintainer` (maintainer) and
   `canImport` (= maintainer; import is an operational capability) — all via `ROLE_RANK` mirroring the backend's
@@ -4097,7 +4140,13 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   maintainer)). **A role-gated route a user may not enter renders `ForbiddenPage` on that very URL** —
   no redirect, so the address bar, a reload and Back all keep pointing at what was asked for
   (`App.test.tsx` covers the fullscreen `/review`, the in-shell `/upload` — where the library must *not*
-  fetch behind the refusal — and Back off `/duplicates`). Config:
+  fetch behind the refusal — and Back off `/duplicates`). **A guarded route with an unreachable backend
+  renders `OfflinePage` on that URL** for the same reason. `App.coldLaunch.test.tsx` is the one suite
+  that mounts the real `App` (`BrowserRouter` and all) rather than `AppRoutes`, because the offline
+  defect lived in how the three providers compose, not in any one of them: it opens the app at `/` and
+  at `/login` with every request failing at the transport and asserts the reader gets an explanation
+  rather than a login form, that the `PwaStatus` banner does reach `/login`, and that the login
+  warning holds even when `navigator.onLine` lies and says `true`. Config:
   `vite.config.ts` (the build → `../internal/web/static/dist`, vitest jsdom, **`restoreMocks: true`** =
   the single place mocks are restored, the dev proxy
   `/healthz`+`/api` → `:8080`), `eslint.config.js` (strict typed, plus a test-file-only
@@ -4154,7 +4203,21 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `components/pwa/PwaStatus.tsx` renders the two ambient alerts (i18n `pwa.offline`,
   `pwa.update.*`) in a fixed bottom stack (`.kk-pwa-status`, z-index 1090 = under the toasts, clears
   `--kk-tabbar-height`). It is mounted in `App` **outside** `AuthProvider` and outside `Layout`, so
-  it also reaches the login screen and the shell-less immersive routes. Tests: `build/pwa.test.ts`
+  it also reaches the login screen and the shell-less immersive routes — verified, not merely
+  intended: `App.coldLaunch.test.tsx` mounts the real `App` at `/login` with the network down and
+  asserts the banner is there. **`pwa.offline` is held to what the worker actually caches**, which is
+  the app shell and nothing else — it never touches `/api/`, so no photo, album or search result
+  survives the connection. It used to read "shows only what it has stored", which promised an offline
+  library; every page under the banner then failed to load. It now says the app opens and the library
+  needs a connection. One thing to know before debugging this banner: **`Network.emulateNetworkConditions`
+  is scoped to the CDP target it was issued on**, so a document created in a *new* target after the
+  network was "cut" loads normally and reads `navigator.onLine === true`. Measured on 2026-08-12 with
+  `agent-browser`: same tab → `false`, a tab opened afterwards → `true`, page fully loaded. So a report
+  of "offline but the banner did not appear" from a devtools-emulated session is very likely the
+  harness, not this code — reproduce it with a real radio off. `navigator.onLine` is nevertheless a
+  weak signal on its own (a captive portal or a downed server is "online" by definition), which is why
+  the auth path never consults it and branches on the failed probe instead (`AuthStatus.unreachable`).
+  Tests: `build/pwa.test.ts`
   runs the **real rendered worker** in a `node:vm` scope with fake caches (precache, cache hits,
   every bypass rule, eviction refetch, the activate/skip-waiting handshake),
   `src/pwa/register.test.ts` covers the registration branches, `PwaStatus.test.tsx` the UI.

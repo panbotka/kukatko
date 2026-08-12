@@ -90,6 +90,23 @@ describe('RequireAuth', () => {
     expect(screen.getByRole('status')).toBeInTheDocument()
     expect(screen.queryByText('secret content')).not.toBeInTheDocument()
   })
+
+  it('explains an unreachable backend instead of sending anyone to the login form', () => {
+    // Redirecting here was the bug: the visitor was never signed out, and the
+    // form they landed on could not reach a server, so it answered every attempt
+    // with "invalid username or password".
+    renderApp(authValue('unreachable'), 'auth')
+
+    expect(screen.getByTestId('offline-page')).toHaveTextContent(/cannot reach the server/i)
+    expect(screen.queryByText('login page')).not.toBeInTheDocument()
+    expect(screen.queryByText('secret content')).not.toBeInTheDocument()
+  })
+
+  it('keeps the URL on the route asked for, so a retry lands on the right page', () => {
+    renderApp(authValue('unreachable'), 'auth')
+
+    expect(screen.getByTestId('pathname')).toHaveTextContent('/secret')
+  })
 })
 
 describe('RequireRole', () => {

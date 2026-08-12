@@ -2,8 +2,18 @@ import { createContext, useContext } from 'react'
 
 import { canImport, canWrite, isAdmin, isMaintainer, type Role, type User } from '../services/auth'
 
-/** Lifecycle of the auth session: still loading, signed in, or signed out. */
-export type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated'
+/**
+ * Lifecycle of the auth session: still loading, signed in, signed out — or
+ * `unreachable`, meaning the backend never answered, so whether the visitor is
+ * signed in is simply not known.
+ *
+ * `unreachable` exists because collapsing it into `unauthenticated` lied to the
+ * reader. The installed app cold-launches from the service-worker cache with no
+ * network, `GET /auth/me` fails at the transport, and every screen downstream
+ * then acted as if the session had ended: the guard bounced them to a login form
+ * no server could answer, which blamed their password for the outage.
+ */
+export type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated' | 'unreachable'
 
 /** Value exposed by {@link AuthProvider} via the {@link useAuth} hook. */
 export interface AuthContextValue {
@@ -28,7 +38,14 @@ export interface AuthContextValue {
   canImport: boolean
   login: (username: string, password: string) => Promise<void>
   logout: () => Promise<void>
-  /** Re-fetches the session from the backend (e.g. after role changes). */
+  /**
+   * Re-reads the session from the backend — after a role change, or when the
+   * offline screen offers to try again.
+   *
+   * It never rejects: an unreachable backend lands in the `unreachable` status
+   * rather than in the caller's `catch`, which is the whole point of telling the
+   * two failures apart.
+   */
   refresh: () => Promise<void>
 }
 
