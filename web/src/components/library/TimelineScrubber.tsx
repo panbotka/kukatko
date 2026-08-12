@@ -10,11 +10,14 @@ import {
 } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { useCoarsePointer } from '../../hooks/useCoarsePointer'
 import { useTimeline } from '../../hooks/useTimeline'
 import { formatMonth } from '../../lib/format'
 import { type PhotoListParams, type TimelineBucket } from '../../services/photos'
 
 import {
+  LABEL_MIN_GAP_PX,
+  TOUCH_TARGET_PX,
   anchorOf,
   bucketKey,
   buildRail,
@@ -22,6 +25,7 @@ import {
   rankForFraction,
   rankForIndex,
   spanMonths,
+  touchTargets,
 } from './timelineRail'
 
 /**
@@ -204,6 +208,19 @@ export interface TimelineScrubberProps {
  * nothing at all. Where the phone rail *starts* is measured, not assumed: it
  * publishes the grid's own top edge and begins there, so nothing the page renders
  * above the grid can end up underneath it — see {@link useGridTop}.
+ *
+ * **On a coarse pointer the rail is thinned for a thumb, not for an eye.** Its
+ * ticks were sized by what a *mouse* can hit: on production (390×844) that meant
+ * 31 year ticks 16 px tall at a 20 px pitch and 62 month ticks 5 px tall — 93
+ * buttons in a 40 px strip, against a fingertip of 34–45 px, on the app's
+ * primary way across time on a phone. So where the pointer is coarse the rail is
+ * built with a label gap of {@link TOUCH_TARGET_PX} and only its year ticks are
+ * controls, each a 44 px box (`app.css`, `@media (pointer: coarse)`); the ticks
+ * between them keep being drawn as the scale's texture but are `aria-hidden`,
+ * unfocusable and click-through, so a press there reaches the rail and scrubs.
+ * Nothing becomes unreachable — {@link touchTargets} hands each surviving target
+ * the months of the ticks it replaced — and a mouse still gets the dense rail it
+ * can aim at.
  */
 export function TimelineScrubber({
   params,
@@ -216,6 +233,7 @@ export function TimelineScrubber({
   const { t, i18n } = useTranslation()
   const { buckets, total, status } = useTimeline(params)
   const gridTop = useGridTop(gridWrapRef)
+  const coarse = useCoarsePointer()
   // The rail element is state, not a ref: its height decides how much of the
   // timeline can be drawn, so mounting it has to trigger a measuring render.
   const [rail, setRail] = useState<HTMLElement | null>(null)
@@ -272,7 +290,17 @@ export function TimelineScrubber({
     }
   }, [rail])
 
-  const ticks = useMemo(() => buildRail(buckets, railHeight), [buckets, railHeight])
+  const ticks = useMemo(
+    () => buildRail(buckets, railHeight, coarse ? TOUCH_TARGET_PX : LABEL_MIN_GAP_PX),
+    [buckets, railHeight, coarse],
+  )
+  // Which of the drawn ticks is a control, keyed by tick. On a fine pointer that
+  // is all of them; on a coarse one only the year ticks, each carrying the months
+  // of the small ticks it stands in front of.
+  const targets = useMemo(
+    () => new Map((coarse ? touchTargets(ticks) : ticks).map((tick) => [tick.key, tick])),
+    [coarse, ticks],
+  )
   const activeRank = useMemo(() => rankForIndex(buckets, activeIndex), [buckets, activeIndex])
   const activeBucket = activeRank >= 0 ? buckets[activeRank] : undefined
 
@@ -433,27 +461,48 @@ export function TimelineScrubber({
         </span>
       )}
       {ticks.map((tick) => {
-        const active = activeRank >= tick.firstRank && activeRank <= tick.lastRank
-        const collapsed = tick.firstRank !== tick.lastRank
+        const target = targets.get(tick.key)
+        // The range the element stands for: its own, or — for a target that
+        // replaced the small ticks after it — theirs as well.
+        const range = target ?? tick
+        const active = activeRank >= range.firstRank && activeRank <= range.lastRank
+        const className = `kukatko-timeline-tick${tick.year === null ? '' : ' has-year'}${active ? ' active' : ''}`
+        if (target === undefined) {
+          // A tick too small to be tapped (see {@link touchTargets}): it stays on
+          // the rail as the scale's texture and nothing else — no role, no focus
+          // stop, and click-through, so the press lands on the rail and scrubs
+          // instead of being swallowed by a 5 px button.
+          return (
+            <span
+              key={tick.key}
+              className={`${className} is-decorative`}
+              style={{ top: `${tick.top}%` }}
+              aria-hidden="true"
+            >
+              <span className="kukatko-timeline-mark" />
+            </span>
+          )
+        }
+        const collapsed = range.firstRank !== range.lastRank
         return (
           <button
             key={tick.key}
             type="button"
-            className={`kukatko-timeline-tick${tick.year === null ? '' : ' has-year'}${active ? ' active' : ''}`}
+            className={className}
             style={{ top: `${tick.top}%` }}
             aria-current={active ? 'true' : undefined}
             aria-label={
               collapsed
                 ? t('library.timeline.jumpToRange', {
-                    from: formatMonth(tick.oldest.year, tick.oldest.month, i18n.language),
-                    to: formatMonth(tick.newest.year, tick.newest.month, i18n.language),
+                    from: formatMonth(range.oldest.year, range.oldest.month, i18n.language),
+                    to: formatMonth(range.newest.year, range.newest.month, i18n.language),
                   })
                 : t('library.timeline.jumpTo', {
-                    month: formatMonth(tick.newest.year, tick.newest.month, i18n.language),
+                    month: formatMonth(range.newest.year, range.newest.month, i18n.language),
                   })
             }
             onClick={(event) => {
-              handleTickClick(event, tick.target)
+              handleTickClick(event, range.target)
             }}
           >
             <span className="kukatko-timeline-mark" aria-hidden="true" />

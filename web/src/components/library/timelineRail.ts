@@ -17,6 +17,22 @@ export const TICK_MIN_GAP_PX = 6
 export const LABEL_MIN_GAP_PX = 20
 
 /**
+ * The app's finger-target floor in pixels (2.75rem, the same 44 px every other
+ * coarse-pointer rule in `app.css` uses), and therefore the minimum distance
+ * between two year labels on a rail that is going to be *tapped*.
+ *
+ * A rail thinned for a mouse is unusable with a thumb: on production (390×844)
+ * it drew 31 year ticks 16 px tall at a 20 px pitch and 62 month ticks 5 px
+ * tall, against a fingertip of 34–45 px. Nothing about that is rescuable by CSS
+ * alone — 44 px targets at a 20 px pitch simply overlap — so the *layout* has to
+ * know: pass this as `buildRail`'s label gap and its labelled ticks come out a
+ * finger apart, which is what lets each of them carry a 44 px box that touches
+ * its neighbours without covering them. See {@link touchTargets} for what
+ * happens to the ticks in between.
+ */
+export const TOUCH_TARGET_PX = 44
+
+/**
  * Rail height assumed before the first measurement lands — and in environments
  * without layout, such as jsdom. It only has to be in the right order of
  * magnitude: the first paint is already thinned sensibly and the ResizeObserver
@@ -143,17 +159,26 @@ export interface RailTick {
 /**
  * Decides what the rail can actually show at `heightPx` pixels tall: it collapses
  * runs of month buckets into ticks no closer than {@link TICK_MIN_GAP_PX} and
- * prints a year label only where it clears the previous one by
- * {@link LABEL_MIN_GAP_PX}. Both are pure functions of the measured height, so a
- * library of 12 buckets renders all of them and one of 441 renders as many as fit
- * — a dozen readable years beat 103 illegible ones.
+ * prints a year label only where it clears the previous one by `labelGapPx`.
+ * Both are pure functions of the measured height, so a library of 12 buckets
+ * renders all of them and one of 441 renders as many as fit — a dozen readable
+ * years beat 103 illegible ones.
+ *
+ * `labelGapPx` defaults to {@link LABEL_MIN_GAP_PX}, which is what a year label
+ * needs to be *read*. A rail that is going to be **tapped** asks for
+ * {@link TOUCH_TARGET_PX} instead: there the labels are also the hit areas, so
+ * the gap that matters is a fingertip, not a line of text.
  *
  * The returned ticks partition the buckets: every bucket falls in exactly one
  * tick's `[firstRank, lastRank]` range, so nothing becomes unreachable and the
  * active month always highlights some tick. `heightPx <= 0` (not measured yet)
  * falls back to {@link FALLBACK_RAIL_HEIGHT_PX}.
  */
-export function buildRail(buckets: TimelineBucket[], heightPx: number): RailTick[] {
+export function buildRail(
+  buckets: TimelineBucket[],
+  heightPx: number,
+  labelGapPx: number = LABEL_MIN_GAP_PX,
+): RailTick[] {
   const count = buckets.length
   if (count === 0) {
     return []
@@ -190,7 +215,7 @@ export function buildRail(buckets: TimelineBucket[], heightPx: number): RailTick
     const topPx = topFraction * height
     // A label is worth printing when it names a year no earlier label already
     // named and there is room for it below the previous one.
-    const labelled = target.year !== lastLabelYear && topPx - lastLabelTop >= LABEL_MIN_GAP_PX
+    const labelled = target.year !== lastLabelYear && topPx - lastLabelTop >= labelGapPx
     if (labelled) {
       lastLabelTop = topPx
       lastLabelYear = target.year
@@ -220,14 +245,62 @@ export function buildRail(buckets: TimelineBucket[], heightPx: number): RailTick
       if (ticks[i].year === null) {
         continue
       }
-      if (
-        tops[ticks.length - 1] - tops[i] < LABEL_MIN_GAP_PX ||
-        ticks[i].year === final.target.year
-      ) {
+      if (tops[ticks.length - 1] - tops[i] < labelGapPx || ticks[i].year === final.target.year) {
         ticks[i].year = null
       }
       break
     }
   }
   return ticks
+}
+
+/** The bucket's month as one comparable number, for ordering by date. */
+function monthIndex(bucket: TimelineBucket): number {
+  return bucket.year * 12 + bucket.month
+}
+
+/**
+ * Reduces a rail to the ticks a **finger** can hit: its labelled ones, each
+ * extended to own the buckets of the unlabelled ticks that follow it in rail
+ * order.
+ *
+ * Built with a label gap of {@link TOUCH_TARGET_PX}, a rail's labelled ticks are
+ * a fingertip apart and can each carry a 44 px box. The ticks between them stay
+ * drawn — they are the scale's texture, the thing that makes the rail read as a
+ * ruler rather than as a list of years — but they are 5 px tall and must not be
+ * controls: a target that small is a mis-tap, and on this rail a mis-tap is a
+ * jump of tens of thousands of pixels with no undo but scrolling back.
+ *
+ * Extending the ranges is what keeps that honest. The returned ticks still
+ * **partition** the buckets — every month falls in exactly one of them — so
+ * dropping the small ticks costs no reachability: a target that swallowed three
+ * of them jumps to the first month of the range and names the whole range
+ * (`oldest`/`newest`, which is what the "Jump to <from> – <to>" label reads), and
+ * the active month still highlights exactly one target. What it costs is
+ * precision: a tap lands on a range where it used to land on a month, and the
+ * drag — which reads the rail's position directly, not its ticks — keeps the
+ * month grain for a reader who wants it.
+ *
+ * The first tick of a rail is always labelled (`buildRail` prints a label
+ * wherever one fits, and nothing precedes the first), so in practice no tick is
+ * ever orphaned before the first target; a rail that somehow began unlabelled
+ * would promote its first tick rather than drop it.
+ */
+export function touchTargets(ticks: RailTick[]): RailTick[] {
+  const targets: RailTick[] = []
+  for (const tick of ticks) {
+    if (tick.year !== null || targets.length === 0) {
+      // A copy: `buildRail`'s output is memoized by its caller and must not be
+      // rewritten under it.
+      targets.push({ ...tick })
+      continue
+    }
+    const leader = targets[targets.length - 1]
+    leader.lastRank = tick.lastRank
+    leader.newest =
+      monthIndex(tick.newest) > monthIndex(leader.newest) ? tick.newest : leader.newest
+    leader.oldest =
+      monthIndex(tick.oldest) < monthIndex(leader.oldest) ? tick.oldest : leader.oldest
+  }
+  return targets
 }

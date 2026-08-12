@@ -1152,8 +1152,17 @@ body {
     -webkit-backdrop-filter: blur(var(--kk-header-blur));
   }
 
-  /* The year label is the tick: its plate is the mark. */
+  /* The year label is the tick: its plate is the mark. The plate is painted on
+     the label, not on the button around it, because on a coarse pointer that
+     button grows to a 44px finger target (see the `pointer: coarse` block
+     below) — a plate that size would be a column of black boxes over the
+     photographs, where what is wanted is a small year floating in a big
+     tappable box. */
   .kukatko-timeline-tick.has-year {
+    padding: 0;
+  }
+
+  .kukatko-timeline-tick.has-year .kukatko-timeline-year {
     padding: 0.1rem 0.3rem;
     border-radius: var(--kk-radius-sm);
     background-color: rgb(0 0 0 / 55%);
@@ -1180,6 +1189,54 @@ body {
 
   .kukatko-timeline.is-active .kukatko-timeline-current {
     opacity: 1;
+  }
+}
+
+/* The rail's own finger targets.
+
+   The rail is the app's primary way across time on a phone — a stray hit throws
+   the grid tens of thousands of pixels with no undo but scrolling back — and its
+   ticks were sized by what a *mouse* can hit. Measured on production (390×844,
+   with a genuinely coarse pointer): 31 year ticks of 39.8 × 16.2px at a 20.2px
+   pitch and 62 month ticks of 16.0 × 5.2px, i.e. 93 buttons in a 40px strip
+   against a fingertip of 34–45px. WCAG 2.2 SC 2.5.8 asks for 24 × 24 and the
+   spacing exception cannot rescue a 20px pitch: 24px circles centred on adjacent
+   ticks intersect.
+
+   CSS alone could not fix it either — 44px boxes at a 20px pitch overlap, and
+   the one that answers would not be the one under the finger. So the thinning is
+   done in the layout (`timelineRail.buildRail` with `TOUCH_TARGET_PX` as its
+   label gap, which puts the year ticks a fingertip apart) and this block gives
+   each of them the box: 2.75rem square, the same floor as every other coarse
+   control in this file. The small ticks in between stay drawn as the scale's
+   texture and are rendered as `aria-hidden` spans (`.is-decorative`), so they
+   are neither focusable nor tappable; `pointer-events: none` also lets a press
+   there through to the rail, which then scrubs at the month grain a tap has
+   given up. A fine pointer keeps the dense rail it can aim at. */
+@media (pointer: coarse) {
+  .kukatko-timeline-tick:not(.is-decorative) {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
+
+  .kukatko-timeline-tick.is-decorative {
+    pointer-events: none;
+  }
+}
+
+/* A 44px target has to fit inside the rail: a wider button with `right: 0` would
+   hang over the photographs to the left of it and take taps meant for a tile.
+   So on a phone the strip — and the lane the grid leaves for it — grow from
+   2.5rem to the target's own width. Two tiles of 167px instead of 169px is what
+   the extra 4px costs; it is scoped to coarse pointers, so a narrow *desktop*
+   window keeps the slimmer rail its mouse does not need widened. */
+@media (max-width: 575.98px) and (pointer: coarse) {
+  .kukatko-grid-timeline-lane {
+    padding-right: 2.75rem;
+  }
+
+  .kukatko-timeline {
+    width: 2.75rem;
   }
 }
 

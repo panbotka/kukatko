@@ -450,6 +450,144 @@ describe('TimelineScrubber placement', () => {
 })
 
 /**
+ * The rail as a **touch** control.
+ *
+ * Measured on production (390×844, with a genuinely coarse pointer active): 31
+ * year ticks of 39.8 × 16.2 px at a 20.2 px pitch and 62 month ticks of
+ * 16.0 × 5.2 px — 93 buttons in a 40 px strip, against a fingertip of 34–45 px,
+ * on the app's primary way across time on a phone. WCAG 2.2 SC 2.5.8 asks for
+ * 24 × 24 and its spacing exception cannot rescue a 20 px pitch either: 24 px
+ * circles centred on adjacent ticks intersect. A mis-tap here is a jump of tens
+ * of thousands of pixels with no undo but scrolling back.
+ *
+ * The fix has two halves and either alone is a lie: the *positions* (year ticks a
+ * fingertip apart, the small ones demoted to decoration) and the *boxes*
+ * (2.75 rem, and no hit area at all for the decoration). jsdom computes no
+ * layout, so they can only be pinned separately — what is below is the layout
+ * half; the boxes are read straight out of `app.css` by
+ * `styles/tapTargets.test.ts`, where the app's other coarse-pointer floors are
+ * guarded.
+ */
+describe('TimelineScrubber touch targets', () => {
+  /** The app's finger-target floor, and so the minimum pitch of the rail's controls. */
+  const TOUCH_TARGET_PX = 44
+
+  const realMatchMedia = window.matchMedia
+
+  /** Points `window.matchMedia` at a device whose primary pointer is a finger. */
+  function setCoarsePointer(coarse: boolean): void {
+    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+      matches: coarse && query.includes('pointer: coarse'),
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }))
+  }
+
+  afterEach(() => {
+    // Reassigning `window.matchMedia` outlives mock restoration, so put the
+    // shared stub back by hand.
+    window.matchMedia = realMatchMedia
+  })
+
+  /** Renders the realistic library's rail and waits for its ticks. */
+  async function renderRail(onJump = vi.fn()) {
+    stubRailGeometry()
+    const timeline = realisticTimeline()
+    fetchMock.mockResolvedValue(timeline)
+    const { container } = renderScrubber({ onJump })
+    await screen.findByRole('navigation')
+    await waitFor(() => {
+      expect(container.querySelectorAll('.kukatko-timeline-tick').length).toBeGreaterThan(0)
+    })
+    return { container, timeline, onJump }
+  }
+
+  it('spaces its controls by a fingertip, and gives the rest of the rail none', async () => {
+    setCoarsePointer(true)
+    const { container } = await renderRail()
+
+    const buttons = [...container.querySelectorAll('button.kukatko-timeline-tick')]
+    // Every control is a year tick: the 5px month ticks are no longer buttons.
+    expect(buttons.length).toBeGreaterThanOrEqual(8)
+    expect(buttons.every((el) => el.classList.contains('has-year'))).toBe(true)
+    expect(container.querySelectorAll('button.kukatko-timeline-tick:not(.has-year)')).toHaveLength(
+      0,
+    )
+
+    // …and they are far enough apart that a 44px box centred on each touches its
+    // neighbours without covering them. This is the assertion the old rail could
+    // not pass at any box size: its labels sat 20px apart.
+    const tops = centres(buttons)
+    const gaps = tops.slice(1).map((top, index) => top - tops[index])
+    expect(Math.min(...gaps)).toBeGreaterThan(TOUCH_TARGET_PX - 1e-9)
+
+    // The ticks between them stay drawn — the rail still reads as a ruler — but
+    // they are decoration: no role, no name, no focus stop.
+    const decorative = [...container.querySelectorAll('.kukatko-timeline-tick.is-decorative')]
+    expect(decorative.length).toBeGreaterThan(0)
+    expect(decorative.every((el) => el.tagName === 'SPAN')).toBe(true)
+    expect(decorative.every((el) => el.getAttribute('aria-hidden') === 'true')).toBe(true)
+    expect(screen.getAllByRole('button')).toHaveLength(buttons.length)
+  })
+
+  it('keeps both ends of the archive one tap away, and every month in between', async () => {
+    setCoarsePointer(true)
+    const user = userEvent.setup()
+    const { container, timeline, onJump } = await renderRail()
+    const oldest = timeline.buckets[timeline.buckets.length - 1]
+
+    const buttons = [...container.querySelectorAll('button.kukatko-timeline-tick')]
+    await user.click(buttons[buttons.length - 1])
+    expect(onJump).toHaveBeenCalledWith({
+      index: oldest.cumulative,
+      month: `${String(oldest.year)}-06`,
+      replace: false,
+    })
+    onJump.mockClear()
+    await user.click(buttons[0])
+    expect(jumpedIndexes(onJump)).toEqual([0])
+
+    // A tap that lands between two controls is not lost: it reaches the rail,
+    // which scrubs at the month grain the tap itself gave up.
+    onJump.mockClear()
+    const [decorative] = container.querySelectorAll('.kukatko-timeline-tick.is-decorative')
+    expect(decorative).toBeDefined()
+    fireEvent.pointerDown(decorative, { clientY: 300, pointerId: 1 })
+    fireEvent.pointerUp(decorative, { clientY: 300, pointerId: 1 })
+    expect(onJump).toHaveBeenCalledTimes(1)
+  })
+
+  it('names the whole range a control now stands for', async () => {
+    setCoarsePointer(true)
+    const { container } = await renderRail()
+
+    // A control that swallowed the small ticks after it says so, rather than
+    // announcing one month and jumping into a range of them.
+    const ranges = [...container.querySelectorAll('button.kukatko-timeline-tick')].filter((el) =>
+      (el.getAttribute('aria-label') ?? '').includes('–'),
+    )
+    expect(ranges.length).toBeGreaterThan(0)
+  })
+
+  it('leaves the dense rail to the pointer that can aim at it', async () => {
+    setCoarsePointer(false)
+    const { container } = await renderRail()
+
+    // A mouse keeps a button per drawn tick, month ticks included: this is the
+    // precision the fix must not take away from the desktop.
+    const buttons = container.querySelectorAll('button.kukatko-timeline-tick')
+    const labelled = container.querySelectorAll('button.kukatko-timeline-tick.has-year')
+    expect(buttons.length).toBeGreaterThan(labelled.length)
+    expect(container.querySelectorAll('.is-decorative')).toHaveLength(0)
+  })
+})
+
+/**
  * The awake/asleep state (`is-active`), which is what makes the rail usable on a
  * phone: there it lies over the photographs rather than beside them, so it is a
  * faint scale at rest and only comes to full strength — plated, with the month
