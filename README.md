@@ -108,7 +108,9 @@ it, what it costs in bytes, and how far along the processing is.
 ### On a phone
 
 The phone is the first screen, not the leftover one: the library's header there is the search field
-and a Filters button, with sort, density and the pickers folded into a drawer. **"Add to Home
+and a Filters button, with sort, density and the pickers folded into a drawer, and the map is the
+map — its base-layer tabs, dates and archive switch fold away the same way, so seven tenths of the
+screen is the map itself rather than the controls above it. **"Add to Home
 Screen"** installs it with its own icon and no browser chrome; a service worker keeps the app shell
 on the device so it opens instantly. It caches nothing else, so nothing you see is ever stale — and
 it says exactly that: opening the app with no signal gets you a page explaining that the photos need

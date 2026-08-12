@@ -96,13 +96,28 @@ export function mapsetFromView(view: MapView): Mapset {
   return toMapset(view.mapset)
 }
 
+/**
+ * How many photo filters differ from their default. This is the number the
+ * phone's Filters button wears as a badge: with every control folded into a
+ * drawer, it is the only thing that says the map is showing a subset — so it
+ * counts the filters the URL can carry, `album` and `label` included, not just
+ * the three the bar has controls for.
+ *
+ * The map viewport (centre/zoom) and the mapset are deliberately not counted:
+ * neither narrows the set of photos.
+ */
+export function activeMapFilterCount(view: MapView): number {
+  const active = [
+    view.taken_after !== '',
+    view.taken_before !== '',
+    view.archived !== MAP_DEFAULTS.archived,
+    view.album !== '',
+    view.label !== '',
+  ]
+  return active.filter((set) => set).length
+}
+
 /** Reports whether any photo filter differs from its default. */
 export function hasActiveMapFilters(view: MapView): boolean {
-  return (
-    view.taken_after !== '' ||
-    view.taken_before !== '' ||
-    view.archived !== MAP_DEFAULTS.archived ||
-    view.album !== '' ||
-    view.label !== ''
-  )
+  return activeMapFilterCount(view) > 0
 }

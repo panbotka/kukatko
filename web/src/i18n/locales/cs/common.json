@@ -1292,6 +1292,7 @@
     "title": "Mapa",
     "count": "Fotek na mapě: {{count}}",
     "coverage": "Na mapě je {{located}} z {{total}} fotek — u ostatních není uložená poloha.",
+    "coverageShort": "{{located}} z {{total}} na mapě",
     "coverageAction": "Doplnit polohu",
     "loading": "Načítání fotek…",
     "thumbAlt": "Fotka na mapě",
@@ -1305,11 +1306,17 @@
       "aerial": "Letecká"
     },
     "filters": {
+      "toggle": "Filtry",
       "label": "Filtry mapy",
       "takenAfter": "Pořízeno od",
       "takenBefore": "Pořízeno do",
       "archived": "Archiv",
-      "clear": "Zrušit filtry"
+      "clear": "Zrušit filtry",
+      "apply_one": "Zobrazit {{shown}} fotku na mapě",
+      "apply_few": "Zobrazit {{shown}} fotky na mapě",
+      "apply_many": "Zobrazit {{shown}} fotky na mapě",
+      "apply_other": "Zobrazit {{shown}} fotek na mapě",
+      "applyEmpty": "Žádné fotky s polohou — zavřít"
     },
     "archived": {
       "hide": "Skrýt archiv",

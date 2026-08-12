@@ -2022,7 +2022,15 @@ here.
   `map.coverageAction`, a link to `` `${LIBRARY_PATH}?has_gps=false` `` (= `/?has_gps=false`; an in-app
   link never detours through the retired `/library`), the photos a location can be set on (never a
   button that would run an estimate over the library on their behalf); a viewer is told the same number and
-  sent nowhere,
+  sent nowhere;
+  **on a phone the page spends one row on everything that is not the map** (`useIsNarrowViewport`):
+  the three mapset tabs, the two date pickers, the archive select and the coverage sentence stacked to
+  382 px of a 853 px screen — 45 % of the viewport gone before the map began — so they fold into
+  `MapFilterBar`'s drawer and the page lays the title and that one Filters button out side by side
+  (`d-flex justify-content-between`, the pair wrapping onto two lines below ~360 px). The heading
+  **stays visible** here, unlike `LibraryPage`'s: the map is not a tab-bar destination, so its `h1` is
+  the only thing that says where the reader is. The map keeps its `70dvh`, which on a 390×853 phone
+  now starts at y=121 and needs no scroll — **597 px, 70 % of the screen**, up from ~417 px,
   `PlacesPage` = `/places` browsing the library by locality: a single `fetchPlaces()` fetch pulls
   the countries→cities hierarchy with counts and per-place `cover_uid`; a **drill in the URL**
   (`?country=&city=` via `useUrlState` over
@@ -2655,8 +2663,22 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   turns water orange, and toggled imperatively because Leaflet stamps its own classes onto that element),
   `MapFilterBar` (a basemap toggle
   basic/outdoor/aerial — inactive buttons are `outline-light`, since Superhero's `secondary` navy on this
-  page's near-black reads as disabled — + date from/to, archived, private, the coverage sentence with the
-  editor's "fill in locations" link, clear filters);
+  page's near-black reads as disabled — + date from/to, archived, the coverage sentence with the
+  editor's "fill in locations" link, clear filters. **Two layouts, one set of controls**
+  (`MapsetSwitch`/`PhotoFilters` take a `stacked` flag, and exactly one layout is rendered, so no control
+  is ever in the document twice): on desktop everything sits above the map as before; on a phone
+  (`useIsNarrowViewport`) the bar is **one `Filters` button** — `outline-primary`, `primary` once open or
+  filtered, badged with `activeMapFilterCount(view)` (`lib/mapView`: the five photo filters the URL can
+  carry, `album`/`label` included, never the mapset or the viewport) — opening an `Offcanvas` that holds
+  the basemap group, the dates and the archive select, all at the 44 px touch floor
+  (`.kukatko-map-filter-panel`). It closes on the same sticky-footer pattern the library drawer uses
+  (`.kukatko-filter-footer`): a primary button carrying the live marker count (`map.filters.apply`, the
+  figure grouped by `formatCount` so it matches the coverage line above it; `map.filters.applyEmpty` at
+  zero, since "Show 0 photos" reads as a broken promise) plus a non-closing "clear filters" when there is
+  something to clear. The **coverage statement survives the fold** — it is the one thing on the page that
+  says the map is partial: `CoverageStatement` states it short beside the button (`map.coverageShort`,
+  "2 378 z 20 636 na mapě") and in full inside the drawer, where the editor's link lives; only one
+  instance per layout is `aria-live`, so a filter change is announced once);
   `components/places/` = `PlaceRow` (one row of the place browse list: a fixed square preview well
   (`.kk-place-row__media`, sunken so a place with nothing to draw is an empty well and not a hole; a map-pin
   glyph stands in), the place name, the photo-count badge; the preview is `alt=""` — the row's own text

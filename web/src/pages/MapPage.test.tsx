@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter, useLocation } from 'react-router-dom'
@@ -242,6 +242,164 @@ describe('MapPage coverage', () => {
     renderMap()
 
     expect(await screen.findByText('Photos on the map: 1')).toBeInTheDocument()
+  })
+})
+
+/**
+ * Points `window.matchMedia` at a fixed phone/desktop answer. The shared test
+ * setup stubs a non-matching (desktop) `matchMedia`, which is what every test
+ * above runs on — they are therefore the guard that the desktop layout is
+ * unchanged; a phone-width test overrides it so the page takes its narrow
+ * branch.
+ */
+function mockViewport(narrow: boolean): void {
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches: narrow,
+    media: query,
+    onchange: null,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  }))
+}
+
+/**
+ * Opens the phone drawer and returns its panel. An open Offcanvas is a portal
+ * and the page's own controls are siblings in the same document (not
+ * `aria-hidden`), so anything asserted *about the drawer* has to be scoped to
+ * this element with `within()`.
+ */
+async function openMapFilterDrawer(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: /Filters/ }))
+  return screen.findByRole('dialog')
+}
+
+/**
+ * The phone layout. The page used to spend 382 px of a 853 px screen — three
+ * mapset tabs, two date pickers, an archive select and a two-line coverage
+ * sentence — before the map began. These tests hold the fold to its two
+ * promises: nothing but the title, one button and the short coverage stands
+ * above the map, and every control that left is reachable in the drawer.
+ */
+describe('MapPage narrow viewport (phone)', () => {
+  afterEach(() => {
+    // Restore the shared desktop default so later tests never inherit a phone.
+    mockViewport(false)
+  })
+
+  it('leaves the header with the title, one button and the coverage in short', async () => {
+    mockViewport(true)
+    fetchMock.mockResolvedValue(collection([feature('ph1'), feature('ph2')], 20906))
+    renderMap()
+
+    await screen.findByRole('link', { name: 'ph1' })
+
+    // The map is not a tab-bar destination, so the heading is the only thing
+    // that says where the reader is and stays visible…
+    expect(screen.getByRole('heading', { level: 1, name: 'Map' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Filters/ })).toBeInTheDocument()
+    // …with the coverage shortened to fit beside the button, still saying the
+    // map holds a fraction of the library.
+    expect(screen.getByText('2 of 20,906 on the map')).toBeInTheDocument()
+
+    // What no longer costs the map a row: the three mapset tabs, the two date
+    // pickers and the archive select.
+    expect(screen.queryByRole('button', { name: 'Aerial' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Taken from')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Taken until')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Archived')).not.toBeInTheDocument()
+  })
+
+  it('reveals every control inside the drawer, still writing through to the URL', async () => {
+    mockViewport(true)
+    fetchMock.mockResolvedValue(collection([feature('ph1')]))
+    const user = userEvent.setup()
+    renderMap()
+
+    await screen.findByRole('link', { name: 'ph1' })
+    const drawer = await openMapFilterDrawer(user)
+
+    // The controls are not merely somewhere on the page — they are inside the
+    // drawer, which is the only place a phone can reach them now.
+    expect(within(drawer).getByLabelText('Taken from')).toBeInTheDocument()
+    expect(within(drawer).getByLabelText('Taken until')).toBeInTheDocument()
+    await user.click(within(drawer).getByRole('button', { name: 'Aerial' }))
+    await waitFor(() => {
+      expect(screen.getByTestId('leaflet-map')).toHaveAttribute('data-mapset', 'aerial')
+    })
+
+    await user.selectOptions(within(drawer).getByLabelText('Archived'), 'only')
+    await waitFor(() => {
+      expect(screen.getByTestId('location')).toHaveTextContent('archived=only')
+    })
+    const lastParams = fetchMock.mock.calls[fetchMock.mock.calls.length - 1][0]
+    expect(lastParams.archived).toBe('only')
+  })
+
+  it('badges the shut drawer with how many filters are narrowing the map', async () => {
+    mockViewport(true)
+    fetchMock.mockResolvedValue(collection([feature('ph1')]))
+    renderMap('/map?taken_after=2019-06-01&archived=only')
+
+    await screen.findByRole('link', { name: 'ph1' })
+    // Two filters are on and every control is hidden: without the badge the
+    // reader has no way to tell a sparse map from a filtered one.
+    expect(screen.getByRole('button', { name: 'Filters 2' })).toBeInTheDocument()
+  })
+
+  it('carries the full coverage sentence and the editor link into the drawer', async () => {
+    mockViewport(true)
+    fetchMock.mockResolvedValue(collection([feature('ph1')], 10))
+    const user = userEvent.setup()
+    renderMap()
+
+    await screen.findByRole('link', { name: 'ph1' })
+    const drawer = await openMapFilterDrawer(user)
+
+    expect(
+      within(drawer).getByText('1 of 10 photos are on the map — the rest have no location stored.'),
+    ).toBeInTheDocument()
+    await user.click(within(drawer).getByRole('link', { name: 'Fill in locations' }))
+    expect(screen.getByTestId('location')).toHaveTextContent('/?has_gps=false')
+  })
+
+  it('closes the drawer on a footer that already says what the filters left', async () => {
+    mockViewport(true)
+    fetchMock.mockResolvedValue(collection([feature('ph1'), feature('ph2')]))
+    const user = userEvent.setup()
+    renderMap()
+
+    await screen.findByRole('link', { name: 'ph1' })
+    const drawer = await openMapFilterDrawer(user)
+
+    // The count is read *inside* the drawer, before the trip back out.
+    const apply = within(drawer).getByRole('button', { name: 'Show 2 photos on the map' })
+    await user.click(apply)
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+  })
+
+  it('offers a way out even when the filters leave nothing on the map', async () => {
+    mockViewport(true)
+    fetchMock.mockResolvedValue(collection([], 10))
+    const user = userEvent.setup()
+    renderMap('/map?taken_after=2030-01-01')
+
+    await screen.findByText('No geotagged photos')
+    const drawer = await openMapFilterDrawer(user)
+
+    // "Show 0 photos" would read as a broken promise; the way out stays, and
+    // clearing the filters is offered beside it without closing the drawer.
+    expect(
+      within(drawer).getByRole('button', { name: 'No located photos — close' }),
+    ).toBeInTheDocument()
+    await user.click(within(drawer).getByRole('button', { name: 'Clear filters' }))
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(screen.getByTestId('location')).not.toHaveTextContent('taken_after')
   })
 })
 
