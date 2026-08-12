@@ -549,7 +549,21 @@ here.
   bubble. The state is a class; everything it *means* is CSS, so on desktop it means nothing. `LibraryPage`
   reserves the strip as grid padding (`.kukatko-grid-timeline-lane`, phone widths only, while the scrubber
   is shown) — a phone has no container margin for the rail to hang in, and without the lane it would cover
-  the right column's favourite hearts and take their taps), `FilterBar`
+  the right column's favourite hearts and take their taps.
+  **On a coarse pointer the rail is thinned for a thumb, not for an eye** (`useCoarsePointer`, so a tablet
+  gets it and a narrow desktop window does not): `buildRail` is called with `TOUCH_TARGET_PX` (44) as its
+  label gap instead of `LABEL_MIN_GAP_PX` (20), which puts the year ticks a fingertip apart, and only those
+  ticks are controls — `touchTargets(ticks)` keeps the labelled ones and hands each the months of the small
+  ticks that follow it, so the controls still **partition** the buckets and no month becomes unreachable
+  (the aria-label then names the whole range, „Jump to <from> – <to>"). The rest keep being drawn as the
+  scale's texture but render as `<span class="…is-decorative" aria-hidden>`: no role, no name, no focus
+  stop, and `pointer-events: none`, so a press there reaches the rail and scrubs at the month grain a tap
+  gave up. `app.css` `@media (pointer: coarse)` then gives each control a 2.75 rem box and the phone strip
+  + lane grow to 2.75 rem so a 44 px control fits inside them (`right: 0` — a wider one would hang over the
+  tiles and take their taps). It used to draw 93 buttons in a 40 px strip — 31 year ticks of 39.8 × 16.2 px
+  at a 20.2 px pitch and 62 month ticks of 16.0 × 5.2 px, where a fingertip is 34–45 px and a mis-tap is a
+  jump of tens of thousands of pixels (2026-08-12, 390 × 844, `pointer: coarse` forced over CDP); it now
+  draws 17 controls of 44 × 44 px no closer than 44.1 px, and a mouse still gets all 114 ticks), `FilterBar`
   (**a redesign for a calm default state + progressive disclosure**: on desktop the header holds a prominent
   search field (the visual anchor, the largest element), sort (incl. **by rating**),
   `GridDensityControl` and a
@@ -684,10 +698,16 @@ here.
   = binary search from a photo index back to its month, `spanMonths(buckets)` = the calendar months
   between the two ends counting both (the album page's threshold for showing a rail at all — it measures
   the *span*, not the buckets, so two photos 116 years apart span 116 years), and
-  `buildRail(buckets, heightPx)` → `RailTick[]`,
+  `buildRail(buckets, heightPx, labelGapPx = LABEL_MIN_GAP_PX)` → `RailTick[]`,
   which collapses month ticks and thins year labels to what the measured height fits; the ticks
   **partition** the buckets, so nothing becomes unreachable and the active month always highlights
-  a tick — the invariants are tested directly against a ~460-bucket, 122-year fixture),
+  a tick — the invariants are tested directly against a ~460-bucket, 122-year fixture.
+  A rail that will be **tapped** passes `TOUCH_TARGET_PX` (44, the app's finger floor) as the label gap —
+  there the labels are also the hit areas, so what has to fit between two of them is a fingertip, not a
+  line of text — and then `touchTargets(ticks)` reduces it to the ticks that can carry a 44 px box: the
+  labelled ones, each extended to own the buckets of the unlabelled ticks after it (so the result still
+  partitions, and `oldest`/`newest` name the whole swallowed range by date). It copies rather than
+  rewrites, because `buildRail`'s output is memoized by the component),
   `SimilarPhotos` (a reusable horizontally scrollable strip
   of similar photos over `GET /photos/{uid}/similar` via `fetchSimilar`, links to the detail,
   empty-friendly + loading/error, refetch on `uid` change),
@@ -3243,7 +3263,14 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   of the viewer's curatorial loop from the top bar to the bottom dock within thumb's reach);
   `usePrefersReducedMotion()` = follows `(prefers-reduced-motion: reduce)` via `matchMedia`
   (removes `change`, a missing/broken `matchMedia` → `false`) — the caller **omits** a decorative animation,
-  it doesn't shorten it)),
+  it doesn't shorten it);
+  `useCoarsePointer()` = follows `(pointer: coarse)` via `matchMedia` (the query itself is the app's single
+  spelling of it, `lib/mapGestures.COARSE_POINTER_QUERY`; removes `change`, a missing/broken `matchMedia`
+  → „fine"). The **layout-independent** half of the app's two responsive questions: `useIsNarrowViewport`
+  answers *how much room is there*, this one *how precisely can it be pointed at* — a tablet is wide and
+  still touched, a 500 px desktop window is narrow and still has a mouse. Asked by a control whose **hit
+  area** has to grow in a way CSS alone cannot deliver: `TimelineScrubber` thins its rail to 44 px targets
+  by it)),
   `lib/` (`gestures.ts` = **pure, DOM-free decision helpers for touch gestures** shared by
   `useSwipeNavigation`/`usePinchZoom` (and therefore **directly unit-testable** without jsdom touch sequences):
   `swipeAction(dx,dy,{threshold,ratio})` → `'prev'|'next'|null` (left = next, right = prev, a threshold +

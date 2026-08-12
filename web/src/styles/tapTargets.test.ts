@@ -145,6 +145,66 @@ describe('coarse-pointer touch-target floor', () => {
 })
 
 /**
+ * The library's timeline rail is the app's primary way across time on a phone,
+ * and it sized its ticks for a mouse: measured on production (390×844, coarse
+ * pointer) it drew 31 year ticks of 39.8 × 16.2px at a 20.2px pitch and 62 month
+ * ticks of 16.0 × 5.2px — 93 buttons in a 40px strip, where a mis-tap throws the
+ * grid tens of thousands of pixels with no undo but scrolling back.
+ *
+ * None of that was fixable here alone: 44px boxes at a 20px pitch overlap, so
+ * the pitch is the rail layout's job (`timelineRail.TOUCH_TARGET_PX`, pinned in
+ * `components/library/TimelineScrubber.test.tsx`) and the boxes are this file's.
+ */
+describe('the timeline rail on a coarse pointer', () => {
+  const css = readCss('src/styles/app.css')
+  const coarse = ruleBody(css, /@media\s*\(pointer:\s*coarse\)/, /\.kukatko-timeline-tick/) ?? ''
+
+  it('gives every tick that is still a control a 44px box', () => {
+    const tick = declarations(
+      ruleBody(coarse, /\.kukatko-timeline-tick:not\(\.is-decorative\)\s*(?=\{)/) ?? '',
+    )
+    expect(lengthPx(tick.get('min-width'))).toBeGreaterThanOrEqual(TOUCH_FLOOR_PX)
+    expect(lengthPx(tick.get('min-height'))).toBeGreaterThanOrEqual(TOUCH_FLOOR_PX)
+  })
+
+  it('leaves the ticks between them no hit area at all', () => {
+    // They are drawn as the scale's texture and rendered `aria-hidden`; being
+    // click-through as well is what lets a press there reach the rail, which
+    // scrubs at the month grain a tap has given up.
+    const texture = declarations(
+      ruleBody(coarse, /\.kukatko-timeline-tick\.is-decorative\s*(?=\{)/) ?? '',
+    )
+    expect(texture.get('pointer-events')).toBe('none')
+  })
+
+  it('widens the phone strip so a 44px control fits inside it', () => {
+    // The ticks are `right: 0` inside the rail, so a control wider than the strip
+    // would hang over the photographs and take taps meant for a tile. The lane
+    // the grid leaves has to grow with it, or the rail covers the grid instead.
+    const phone =
+      ruleBody(
+        css,
+        /@media\s*\(max-width:\s*575\.98px\)\s*and\s*\(pointer:\s*coarse\)/,
+        /\.kukatko-timeline/,
+      ) ?? ''
+    const rail = declarations(ruleBody(phone, /\.kukatko-timeline\s*(?=\{)/) ?? '')
+    expect(lengthPx(rail.get('width'))).toBeGreaterThanOrEqual(TOUCH_FLOOR_PX)
+    const lane = declarations(ruleBody(phone, /\.kukatko-grid-timeline-lane\s*(?=\{)/) ?? '')
+    expect(lengthPx(lane.get('padding-right'))).toBeGreaterThanOrEqual(TOUCH_FLOOR_PX)
+    // …and no wider: the rail is a strip beside the grid, not a column over it.
+    expect(lengthPx(rail.get('width'))).toBeLessThan(TOUCH_FLOOR_PX * 2)
+  })
+
+  it('leaves the rail dense for a fine pointer', () => {
+    // The floor is scoped to coarse pointers: a mouse keeps the tick per month it
+    // can aim at, which is the rail's finest grain.
+    const base = declarations(ruleBody(css, /\.kukatko-timeline-tick\s*(?=\{)/) ?? '')
+    expect(base.has('min-height')).toBe(false)
+    expect(base.has('min-width')).toBe(false)
+  })
+})
+
+/**
  * Leaflet ships its own control sizing (26px, 30px with `leaflet-touch`) and no
  * theme hooks, so the map's buttons sit far below the floor the rest of the app
  * holds to unless `app.css` reaches in by Leaflet's class names. jsdom loads no

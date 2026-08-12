@@ -179,6 +179,29 @@ implemented**, per the task's conservative-changes rule.
   down with it; once the header has scrolled away a CSS `max()` floor keeps it just below the navbar.
   Verified in Chromium at 390 × 844 with the digest, with an announcement, with both and with
   neither: `document.elementFromPoint` over the whole filter row returns the row's own controls. ✅
+- **The rail's own targets were 16 px and 5 px tall — fixed (2026-08-12):** having stopped covering
+  other people's buttons, the rail was still unusable as its own control. It sized its ticks for a
+  *mouse* and handed them to a thumb: measured on production at 390 × 844 with a genuinely coarse
+  pointer, **31 year ticks of 39.8 × 16.2 px at a 20.2 px pitch and 62 month ticks of 16.0 × 5.2 px**
+  — 93 buttons in a 40 px strip, against a fingertip of 34–45 px. WCAG 2.2 SC 2.5.8 (AA) asks for
+  24 × 24, and its spacing exception cannot rescue a 20 px pitch: 24 px circles centred on adjacent
+  ticks intersect. On a rail where a mis-tap is a jump of tens of thousands of pixels with no undo
+  but scrolling back, that is the app's primary way across time on a phone.
+  CSS alone could not fix it — 44 px boxes at a 20 px pitch overlap, and the one *under* the finger
+  would not be the one that answers — so the thinning moved into the layout: on a coarse pointer
+  (`useCoarsePointer`) `buildRail` spaces its year labels by `TOUCH_TARGET_PX` instead of by a line of
+  text, and only those ticks stay controls (`touchTargets` hands each of them the months of the small
+  ticks it replaced, so no month becomes unreachable). The ticks in between keep being drawn — the
+  rail still reads as a ruler — but as `aria-hidden`, unfocusable, click-through decoration, so a
+  press there reaches the rail and scrubs at the month grain a tap has given up. A mouse keeps the
+  dense rail it can aim at.
+  Verified in Chromium at 390 × 844 with `pointer: coarse` forced over a persistent CDP session
+  (`agent-browser set device` does not set it; the overrides are per-client and revert on
+  disconnect) and confirmed by `matchMedia('(pointer: coarse)')` in the same evaluation:
+  **17 controls, every one 44 × 44 px, none closer than 44.1 px**, each winning
+  `document.elementFromPoint` at its own centre; 97 decorative ticks, all `aria-hidden` and all
+  falling through to the rail; the strip and the lane the grid leaves for it both 44 px. The same
+  page with `pointer: fine` still draws 114 ticks of 16.2 px / 5.2 px — the desktop rail, unchanged. ✅
 
 ### Favorites (`/favorites`)
 - Simplest, cleanest page. Excellent action-guiding empty state ("Tap the heart on a photo…").
