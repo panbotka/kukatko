@@ -60,7 +60,7 @@ func (s *Service) Queue(ctx context.Context, userUID string, src Source, limit i
 	sess.mu.Lock()
 	defer sess.mu.Unlock()
 	if s.needsRebuild(sess, src) {
-		if err := s.rebuild(ctx, sess, src, max(s.queueSize, size)); err != nil {
+		if err := s.rebuild(ctx, sess, userUID, src, max(s.queueSize, size)); err != nil {
 			return QueueResult{}, err
 		}
 	}
@@ -100,6 +100,7 @@ func (s *Service) ensureRound(ctx context.Context, sess *session, userUID string
 		MaxPerRound: s.roundMaxPerEntity,
 		MaxRun:      maxSameEntityRun,
 		SureShare:   s.sureShare,
+		Shares:      s.shares,
 		Seed:        roundSeed(userUID, seq),
 	}
 	round, rest := mixRound(sess.queue, cfg, sess.albumsOf)
@@ -186,10 +187,18 @@ func (m material) sources() int {
 // The whole rebuild shares one deadline. That is what lets it rotate on an empty
 // round without turning a slow library into a request that never answers: the
 // rounds spend one BuildTimeout between them, not one each.
-func (s *Service) rebuild(ctx context.Context, sess *session, src Source, need int) error {
+func (s *Service) rebuild(
+	ctx context.Context, sess *session, userUID string, src Source, need int,
+) error {
+	started := s.now()
 	buildCtx, cancel := context.WithTimeout(ctx, s.buildTimeout)
 	defer cancel()
 
+	// The skip memory is read before the material is composed, not after, because
+	// it decides which questions may be asked at all — and it is read once per
+	// pool rather than once per question, which is what keeps "don't ask me about
+	// this person" free.
+	sess.skips = s.loadSkipMemory(ctx, userUID)
 	mat, err := s.collectRotating(buildCtx, ctx, src, need)
 	if err != nil {
 		return err
@@ -199,17 +208,23 @@ func (s *Service) rebuild(ctx context.Context, sess *session, src Source, need i
 	// questions of different kinds are never about the same entity, so any run in
 	// the merged queue is a run inside one source: bounding the sources bounds
 	// the queue.
-	sess.queue = capQueue(interleaveKinds([][]Question{
+	//
+	// The per-entity cap is then applied once more over the merged pool. Each
+	// source caps itself already, but a face question and an outlier question
+	// about one person are two sources and one entity — the player sees the same
+	// face twice as often as the cap promises — and it is exactly that doubling
+	// which used to let one person own a round.
+	sess.queue = capQueue(capEntities(interleaveKinds([][]Question{
 		spread(s.compose(mat.faceQs, sess), maxSameEntityRun),
 		spread(s.compose(mat.labelQs, sess), maxSameEntityRun),
 		spread(s.composePlain(mat.placeQs, sess), maxSameEntityRun),
 		spread(s.composePlain(mat.dupQs, sess), maxSameEntityRun),
 		spread(s.composePlain(mat.outlierQs, sess), maxSameEntityRun),
-	}))
+	}), s.maxPerEntity))
 	sess.hasQueue = true
 	sess.source = src
 	sess.builtAt = s.now()
-	sess.reason = reasonFor(src, mat)
+	sess.reason = reasonFor(src, s.shares, mat)
 	// A fresh pool has no round in it yet, and the album membership of the old
 	// pool's photos says nothing about this one's.
 	sess.roundLen = 0
@@ -217,7 +232,8 @@ func (s *Service) rebuild(ctx context.Context, sess *session, src Source, need i
 	sure, band := tierCounts(sess.queue)
 	s.log.DebugContext(ctx, "review: queue rebuilt", "questions", len(sess.queue),
 		"source", string(src), "entities", countEntities(sess.queue),
-		"longest_run", longestEntityRun(sess.queue), "sure", sure, "band", band)
+		"longest_run", longestEntityRun(sess.queue), "sure", sure, "band", band,
+		"took", sess.builtAt.Sub(started))
 	return nil
 }
 
@@ -309,7 +325,7 @@ func roundIsFinal(mat material, buildCtx context.Context) bool {
 // not to read as an empty library.
 func (s *Service) collect(buildCtx, ctx context.Context, src Source, need int) (material, error) {
 	var mat material
-	if src.wantsFaces() {
+	if src.wantsFaces() && s.shares.enabled(KindFace) {
 		faceQs, subjectsTotal, err := s.faceQuestions(buildCtx, need)
 		if err != nil {
 			if !s.tolerateDeadline(ctx, err) {
@@ -319,7 +335,7 @@ func (s *Service) collect(buildCtx, ctx context.Context, src Source, need int) (
 		}
 		mat.faceQs, mat.subjectsTotal = faceQs, subjectsTotal
 	}
-	if src.wantsLabels() {
+	if src.wantsLabels() && s.shares.enabled(KindLabel) {
 		labelQs, labelsTotal, err := s.labelQuestions(buildCtx, need)
 		if err != nil {
 			if !s.tolerateDeadline(ctx, err) {
@@ -347,15 +363,23 @@ func (s *Service) collectChecks(
 		return nil
 	}
 	checks := []struct {
+		kind    Kind
 		collect func(context.Context, int) ([]Question, int, error)
 		into    *[]Question
 		total   *int
 	}{
-		{s.placeQuestions, &mat.placeQs, &mat.placesTotal},
-		{s.duplicateQuestions, &mat.dupQs, &mat.dupsTotal},
-		{s.outlierQuestions, &mat.outlierQs, &mat.outlierSubjects},
+		{KindPlace, s.placeQuestions, &mat.placeQs, &mat.placesTotal},
+		{KindDuplicate, s.duplicateQuestions, &mat.dupQs, &mat.dupsTotal},
+		{KindOutlier, s.outlierQuestions, &mat.outlierQs, &mat.outlierSubjects},
 	}
 	for _, check := range checks {
+		// A kind the operator gave no share is not scanned at all — that is where
+		// the budget for the wider face scan comes from — and its total stays zero,
+		// which is what keeps the empty-queue reason from pointing at a source
+		// nobody switched on.
+		if !s.shares.enabled(check.kind) {
+			continue
+		}
 		questions, total, err := check.collect(buildCtx, need)
 		if err != nil {
 			if !s.tolerateDeadline(ctx, err) {
@@ -375,8 +399,8 @@ func (s *Service) collectChecks(
 // the two are blended in the configured ratio, and the per-entity share is
 // enforced across the result.
 func (s *Service) compose(mat tiered, sess *session) []Question {
-	sure := excludeSeen(mat.sure, sess)
-	band := excludeSeen(mat.band, sess)
+	sure := s.excludeSeen(mat.sure, sess)
+	band := s.excludeSeen(mat.band, sess)
 	s.orderQuestions(sure, tierSure)
 	s.orderQuestions(band, tierBand)
 	return capEntities(blend(sure, band, s.sureShare), s.maxPerEntity)
@@ -386,7 +410,7 @@ func (s *Service) compose(mat tiered, sess *session) []Question {
 // its questions by its own notion of "most worth asking", so all that is left is
 // dropping what the session has settled and enforcing the per-entity share.
 func (s *Service) composePlain(questions []Question, sess *session) []Question {
-	return capEntities(excludeSeen(questions, sess), s.maxPerEntity)
+	return capEntities(s.excludeSeen(questions, sess), s.maxPerEntity)
 }
 
 // tolerateDeadline reports whether err is the rebuild's own deadline firing —
@@ -704,11 +728,17 @@ func capQueue(questions []Question) []Question {
 	return questions[:maxQueued]
 }
 
-// excludeSeen drops questions the session already answered or skipped.
-func excludeSeen(questions []Question, sess *session) []Question {
+// excludeSeen drops the questions this player is not to be asked: the ones the
+// session already answered or shelved, and the ones a persisted "I don't know"
+// has muted (see skips.go). The two are separate on purpose — the session set
+// shelves any kind of question until the tab is closed, the memory silences one
+// person for one player across restarts — and a question only has to fail either
+// to be dropped.
+func (s *Service) excludeSeen(questions []Question, sess *session) []Question {
+	policy, now := s.skipPolicy(), s.now()
 	kept := questions[:0]
 	for _, q := range questions {
-		if !sess.seen(q.ID) {
+		if !sess.seen(q.ID) && !sess.skips.silences(q, policy, now) {
 			kept = append(kept, q)
 		}
 	}

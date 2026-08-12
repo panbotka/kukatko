@@ -3,8 +3,13 @@ package review
 // Per-user session state: the cached queue plus the answered/skipped sets that
 // keep questions from repeating. Everything here is in-memory by design — the
 // durable outcomes of the game (assignments, labels, rejections) live in the
-// underlying stores, so losing a session on restart only forgets skips and the
-// session counter.
+// underlying stores, so losing a session on restart only forgets which questions
+// were shelved for it and the session counter.
+//
+// One thing used to be lost with it that should not have been: "I don't know"
+// about a person. That now has a durable home of its own (skips.go); what the
+// session still owns is the shelf — a question put aside for this sitting,
+// whatever its kind.
 //
 // Only the cached queue belongs to one question source; the answered/skipped
 // sets and the counters span all of them, because a skipped question is skipped
@@ -49,6 +54,11 @@ type session struct {
 	// albums is the album membership of the pool's photos, read once per rebuild
 	// for the mixer's album rule; nil means the rule is off.
 	albums map[string][]string
+	// skips is the player's persisted "I don't know" memory as the last rebuild
+	// read it: which people they have given up on and on which photos. It is
+	// cached with the pool rather than re-read per question, and a nil one
+	// silences nothing (see skips.go).
+	skips SkipMemory
 	// answered marks question ids already answered yes/no (or found gone).
 	answered map[string]bool
 	// skipped marks question ids shelved for this session.

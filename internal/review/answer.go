@@ -14,9 +14,13 @@ package review
 //     machine the /outliers page uses (the marker survives, only the person is
 //     detached).
 //
-// Skip only touches session state. Every decisive answer carries `via: review`
-// in its audit details, which is what makes it countable on the leaderboard and
-// findable in the admin decision view.
+// Skip touches session state and, on the two kinds that name a person, the
+// persisted skip memory (skips.go) — and nothing else. It never becomes a
+// feedback rejection, never narrows a candidate search and never appears in the
+// audit trail: the audit records what happened to the library, and a player
+// saying "I don't know" is a fact about the player. Every decisive answer, by
+// contrast, carries `via: review` in its audit details, which is what makes it
+// countable on the leaderboard and findable in the admin decision view.
 
 import (
 	"context"
@@ -54,6 +58,12 @@ func (s *Service) Answer(
 	sess := s.session(userUID)
 	switch answer {
 	case AnswerSkip:
+		// The shelf and the memory are both written: the session stops offering
+		// this question for this sitting, the memory counts a "don't know" about
+		// the person so the game eventually stops asking this player about them at
+		// all. Nothing about either reaches the catalogue — a skip is not a
+		// rejection, and the two must never be conflated.
+		s.recordSkip(ctx, userUID, ref)
 		return sess.consume(questionID, resultSkipped, false), nil
 	case AnswerYes, AnswerNo:
 	default:

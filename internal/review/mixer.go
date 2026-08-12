@@ -17,19 +17,30 @@ package review
 // against what the round already holds, and the cheapest one goes next. The
 // score is a sum of penalties, each one a rule the round would rather not break:
 //
-//   - a third question in a row about one entity, or more than MaxPerRound of
-//     them in the whole round (the two hard rules, weighted far above the rest);
-//   - the same kind as the previous question, and worse, as the previous two;
+//   - more than MaxPerRound questions about one entity in the whole round (the
+//     hardest rule, weighted far above the rest);
+//   - a kind other than the one the configured kind shares are furthest behind
+//     on (see kinds.go);
 //   - the tier the running confident share does not currently want;
 //   - a photo from an album the previous photo was also in;
 //   - a photo taken within nearMoment of the previous one — the same burst;
 //   - a photo from the same era as the previous one.
 //
-// Nothing is forbidden outright. A pool with one subject in it, or ten photos
-// from one wedding, still yields a full round: every candidate is merely
+// One rule is a refusal rather than a price: no more than MaxRun questions in a
+// row about one person, label, place or duplicate group. Pricing it is what let
+// the complaint this file exists to answer come back. The price sat below the
+// per-entity ceiling, so as soon as every entity in the pool had taken its three
+// questions the cheapest candidate was whichever *also* broke the run — and the
+// game asked about one person five times running. A candidate that would break
+// it is now simply not considered, for as long as any other entity has a
+// question left.
+//
+// Everything else is forbidden nothing, and even the run limit stands down for a
+// pool that has run down to one entity: a library with a single person still in
+// question has to be playable. A pool with one subject in it, or ten photos from
+// one wedding, therefore still yields a full round — every candidate is merely
 // expensive, and the cheapest expensive one wins. That is what "degrade
-// gracefully" means here — the rules are preferences over a total order, so
-// there is no way for them to produce an empty round while a question exists.
+// gracefully" means here.
 //
 // Ties are broken by how deep in the informativeness order a candidate sits, so
 // variety is never bought with a less relevant question when an equally
@@ -37,12 +48,13 @@ package review
 // from the decision boundary, confident tier surest first, see queue.go) and
 // that order survives everywhere the variety rules do not override it.
 //
-// The seed picks which kind the round tries to open with — enough that two
-// players working one library do not get the same opening, and cheap because it
-// only ever decides between candidates that are otherwise equal. Everything else
-// is a pure function of (pool, config), which is what makes a re-fetch before
-// answering return the same round rather than a different one, and what lets the
-// tests assert the rules above.
+// The seed picks which kind the round tries to open with. It does so by
+// breaking ties inside the kind rule rather than as a rule of its own, so it
+// only ever decides between kinds the configured shares want equally — which at
+// the first slot of an evenly weighted game is all of them, and in a game
+// weighted 95/5 is none. Everything else is a pure function of (pool, config),
+// which is what makes a re-fetch before answering return the same round rather
+// than a different one, and what lets the tests assert the rules above.
 
 import (
 	"hash/fnv"
@@ -73,15 +85,16 @@ const (
 // lesser rules a candidate breaks at once. Read top to bottom, this list *is*
 // the priority of the variety rules.
 const (
-	// costEntityCap is the round's per-entity ceiling — the hardest rule, since
-	// exceeding it is what turns a round back into an interrogation.
+	// costEntityCap is the round's per-entity ceiling — the hardest rule that is
+	// still a preference, since exceeding it is what turns a round back into an
+	// interrogation. The run limit sits above it and is not priced at all: it is
+	// enforced by refusing the candidate outright.
 	costEntityCap = 1 << 20
-	// costEntityRun is a third consecutive question about one entity.
-	costEntityRun = 1 << 16
-	// costKindRun is a third consecutive question of one kind, costKindRepeat a
-	// second. Both apply together, so a run is always dearer than a repeat.
-	costKindRun    = 1 << 12
-	costKindRepeat = 1 << 10
+	// costKind is drawing from a kind other than the one the configured shares
+	// are furthest behind on. It sits above the tier rule because the kind is the
+	// coarser property: a player notices "this is the face game" long before they
+	// notice how many of the questions were easy ones.
+	costKind = 1 << 12
 	// costTier is drawing from the tier the running confident share does not want.
 	costTier = 1 << 8
 	// costAlbum, costMoment and costEra are the photo-spread rules, in the order
@@ -90,10 +103,6 @@ const (
 	costAlbum  = 1 << 6
 	costMoment = 1 << 5
 	costEra    = 1 << 3
-	// costOpening is not opening the round with the kind the seed chose. It is
-	// the cheapest rule of all: it only ever decides between candidates that are
-	// otherwise equal, which is exactly what an opening should be.
-	costOpening = 1 << 1
 )
 
 // albumLookup reports which albums a photo belongs to. A nil lookup — no album
@@ -109,14 +118,19 @@ type mixConfig struct {
 	// MaxPerRound is how many questions about one entity may enter the round;
 	// non-positive switches the cap off.
 	MaxPerRound int
-	// MaxRun is how many questions in a row may be about one entity;
-	// non-positive switches the run rule off.
+	// MaxRun is how many questions in a row may be about one entity; non-positive
+	// switches the run rule off. It is a refusal, not a price: a candidate that
+	// would exceed it is not considered while any other entity has a question.
 	MaxRun int
 	// SureShare is the fraction of the round's *tiered* questions that should
 	// come from the confident tier.
 	SureShare float64
-	// Seed picks which kind the round opens with. The mixer is deterministic
-	// given it.
+	// Shares is the configured weight of each question kind, normalised. An empty
+	// one switches the kind rule off, which is what the tests that care about
+	// nothing else do.
+	Shares kindShares
+	// Seed picks which kind the round opens with, by breaking ties in what the
+	// shares want. The mixer is deterministic given it.
 	Seed uint64
 }
 
@@ -128,12 +142,18 @@ type mixer struct {
 	// open is the kind the round tries to start with, chosen from the kinds the
 	// pool actually holds.
 	open Kind
-	// counts is how many questions about each entity the round already holds.
+	// shares is the configured mix narrowed to the kinds this pool holds, so a
+	// share reserved for a kind with no material does not pace the ones that have
+	// some.
+	shares kindShares
+	// counts is how many questions about each entity the round already holds,
+	// kinds the same per question kind — the running mix the shares are measured
+	// against.
 	counts map[string]int
-	// last and prev are the two questions placed most recently; placed says how
-	// many of them are real.
+	kinds  map[Kind]int
+	// last is the question placed most recently; placed says whether it is real
+	// and how far into the round the mixer is.
 	last   Question
-	prev   Question
 	placed int
 	// run is how many consecutive questions the round ends with about last's
 	// entity.
@@ -149,7 +169,9 @@ func newMixer(pool []Question, cfg mixConfig, albums albumLookup) *mixer {
 		cfg:    cfg,
 		albums: albums,
 		open:   openingKind(pool, cfg.Seed),
+		shares: cfg.Shares.presentIn(pool),
 		counts: make(map[string]int, len(pool)),
+		kinds:  make(map[Kind]int, len(Kinds)),
 	}
 }
 
@@ -183,15 +205,26 @@ func mixRound(pool []Question, cfg mixConfig, albums albumLookup) (round, rest [
 	return round, rest
 }
 
-// best returns the index of the cheapest unplaced candidate, ties going to
-// whichever sits earlier in the pool's informativeness order. It is called once
-// per slot and scans the whole pool, which is bounded by maxQueued, so a round
-// costs a few thousand integer comparisons — nothing next to the vector searches
-// that produced the pool in the first place.
+// best returns the index of the cheapest candidate that does not extend the
+// round's run of one entity past MaxRun, falling back to the cheapest of all
+// when every unplaced question belongs to that entity. Ties go to whichever
+// sits earlier in the pool's informativeness order. It is called once per slot
+// and scans the whole pool, which is bounded by maxQueued, so a round costs a
+// few thousand integer comparisons — nothing next to the vector searches that
+// produced the pool in the first place.
 func (m *mixer) best(pool []Question, taken []bool) int {
+	if idx := m.cheapest(pool, taken, true); idx >= 0 {
+		return idx
+	}
+	return m.cheapest(pool, taken, false)
+}
+
+// cheapest returns the index of the lowest-cost unplaced candidate, optionally
+// refusing the ones that would break the run limit.
+func (m *mixer) cheapest(pool []Question, taken []bool, keepRun bool) int {
 	best, bestCost := -1, 0
 	for i, q := range pool {
-		if taken[i] {
+		if taken[i] || (keepRun && m.breaksRun(q)) {
 			continue
 		}
 		if cost := m.cost(q); best < 0 || cost < bestCost {
@@ -201,44 +234,60 @@ func (m *mixer) best(pool []Question, taken []bool) int {
 	return best
 }
 
+// breaksRun reports whether q would make the round's run of consecutive
+// questions about one entity longer than MaxRun.
+//
+// It is a refusal rather than a price, and that is the whole fix. As a price it
+// sat *below* the round's per-entity ceiling, so the moment every entity in the
+// pool had taken its three questions, the cheapest candidate was whichever also
+// broke the run — and the game asked about one person five times running. As a
+// refusal it holds for as long as any other entity has a question left, which is
+// what it always claimed to do. Only a pool that has run down to a single entity
+// falls through to the fallback, because a library with one person still in
+// question has to be playable.
+func (m *mixer) breaksRun(q Question) bool {
+	return m.cfg.MaxRun > 0 && m.placed > 0 && m.run >= m.cfg.MaxRun &&
+		questionEntity(q) == questionEntity(m.last)
+}
+
 // cost sums every variety rule q would break if it went into the next slot.
 func (m *mixer) cost(q Question) int {
 	return m.entityCost(q) + m.kindCost(q.Kind) + m.tierCost(q.Tier) +
-		m.photoCost(q.Photo) + m.openingCost(q.Kind)
+		m.photoCost(q.Photo)
 }
 
-// entityCost charges the two hard rules: the round's per-entity ceiling and the
-// run of consecutive questions about one subject, label, place or duplicate
-// group. Both are charged, not enforced, so a pool that offers only one entity
-// still fills a round.
+// entityCost charges the round's per-entity ceiling: how many questions about
+// one subject, label, place or duplicate group the whole round may hold. Unlike
+// the run limit it is charged rather than enforced, so a pool that offers only
+// one entity still fills as much of a round as the run limit allows.
 func (m *mixer) entityCost(q Question) int {
-	entity := questionEntity(q)
-	cost := 0
-	if m.cfg.MaxPerRound > 0 && m.counts[entity] >= m.cfg.MaxPerRound {
-		cost += costEntityCap
+	if m.cfg.MaxPerRound > 0 && m.counts[questionEntity(q)] >= m.cfg.MaxPerRound {
+		return costEntityCap
 	}
-	if m.cfg.MaxRun > 0 && m.placed > 0 && m.run >= m.cfg.MaxRun &&
-		entity == questionEntity(m.last) {
-		cost += costEntityRun
-	}
-	return cost
+	return 0
 }
 
-// kindCost charges repeating the previous question's kind, and charges again
-// when the two before it were the same — the difference between "two face
-// questions in a row" and "the game has become the face game".
+// kindCost charges drawing from a kind other than the one the configured shares
+// are currently furthest behind on. It is the same positional rule the tier
+// blend uses, applied to the operator's answer to "what is this game about":
+// with the default shares — faces and nothing else — every face question is free
+// and anything else is not, so a pool that still holds a stale kind cannot push
+// it in front of the one the game is for.
 //
-// A second question of one kind is deliberately cheap: switching kind switches
-// the whole card layout, and doing it every single question is its own kind of
-// tiring. It is the third that reads as a cluster.
+// It also carries the seed. Which kind the round opens with used to be a
+// penalty of its own, the cheapest of all; now that the kinds have a configured
+// mix that would be a rule fighting a louder rule, so the seed instead breaks
+// ties inside this one — it picks between kinds the shares want equally, and
+// otherwise has no say.
+//
+// Empty shares switch the rule off entirely, which is what a mixer driven
+// straight from a test wants: it then has no opinion about kinds and the
+// remaining rules decide.
 func (m *mixer) kindCost(kind Kind) int {
-	if m.placed == 0 || m.last.Kind != kind {
+	if len(m.shares) == 0 || m.shares.wanted(m.kinds, m.placed, m.open) == kind {
 		return 0
 	}
-	if m.placed > 1 && m.prev.Kind == kind {
-		return costKindRun + costKindRepeat
-	}
-	return costKindRepeat
+	return costKind
 }
 
 // tierCost charges drawing from the tier the round does not currently want. The
@@ -286,16 +335,6 @@ func (m *mixer) photoCost(photo photos.Photo) int {
 	return cost
 }
 
-// openingCost charges the first slot for not being the kind the seed picked. It
-// applies to that slot alone: which kind a round opens with is the cheapest way
-// to make two rounds over an unchanged library feel like two rounds.
-func (m *mixer) openingCost(kind Kind) int {
-	if m.placed > 0 || m.open == "" || kind == m.open {
-		return 0
-	}
-	return costOpening
-}
-
 // sharesAlbum reports whether two photos sit in a common album.
 func (m *mixer) sharesAlbum(photoUID, otherUID string) bool {
 	if m.albums == nil {
@@ -322,13 +361,14 @@ func (m *mixer) place(q Question) {
 		m.run = 1
 	}
 	m.counts[entity]++
+	m.kinds[q.Kind]++
 	switch q.Tier {
 	case string(tierSure):
 		m.sure++
 	case string(tierBand):
 		m.band++
 	}
-	m.prev, m.last = m.last, q
+	m.last = q
 	m.placed++
 }
 

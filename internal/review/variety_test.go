@@ -322,6 +322,73 @@ func TestQuestionEntity_kindsNeverCollide(t *testing.T) {
 	}
 }
 
+// TestQueue_onePersonDominatingTheLibraryDoesNotOwnTheRound is the reported
+// defect at the level the player meets it: one person with far more unnamed
+// lookalikes than anybody else — the shape a real family library takes, where a
+// parent appears on half the photos — and the round still has to move on after
+// two questions about them.
+//
+// It is deliberately a Queue test rather than a mixer one. The fix has two
+// halves and only this level exercises both: the pool cap keeps that person from
+// filling the pool across the kinds, and the mixer refuses (rather than prices)
+// the third question in a row about them.
+func TestQueue_onePersonDominatingTheLibraryDoesNotOwnTheRound(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, func(f *fixture) {
+		f.sweeper.people = []*sweep.Person{
+			scannedPerson("everywhere", distancesOf(nearMid(40, 0.0005))...),
+		}
+		// A handful of people with a couple of candidates each, as far from the
+		// decision boundary as the band allows — so informativeness alone would put
+		// every one of the dominant person's forty questions ahead of them.
+		for i := range 4 {
+			f.sweeper.people = append(f.sweeper.people,
+				scannedPerson(fmt.Sprintf("occasional%d", i), distancesOf(nearMid(2, 0.14))...))
+		}
+	})
+	res, err := f.svc.Queue(context.Background(), "user", SourcePeople, 0)
+	if err != nil {
+		t.Fatalf("Queue: %v", err)
+	}
+	if len(res.Questions) != DefaultRoundSize {
+		t.Fatalf("round = %d questions, want a full round of %d",
+			len(res.Questions), DefaultRoundSize)
+	}
+	if got := longestEntityRun(res.Questions); got > maxSameEntityRun {
+		t.Errorf("longest run of one person = %d, want at most %d:\n%s",
+			got, maxSameEntityRun, describe(res.Questions))
+	}
+	if got := res.Round.Kinds[string(KindFace)]; got != DefaultRoundSize {
+		t.Errorf("round holds %d face questions of %d, want it to be about people",
+			got, DefaultRoundSize)
+	}
+}
+
+// TestCapEntities_countsAPersonAcrossKinds pins the other half of that fix. A
+// face question and an outlier question about one person are two sources and one
+// person: capping each source on its own let the player be asked about them
+// twice as often as the share promises, which is what the pool-wide cap in
+// rebuild exists to stop.
+func TestCapEntities_countsAPersonAcrossKinds(t *testing.T) {
+	t.Parallel()
+	subject := scannedPerson("anna", 0.4).Subject
+	pool := make([]Question, 0, 8)
+	for _, kind := range []Kind{KindFace, KindOutlier} {
+		for i := range 4 {
+			pool = append(pool, Question{
+				ID:      fmt.Sprintf("%s-anna-%d", kind, i),
+				Kind:    kind,
+				Subject: &subject,
+			})
+		}
+	}
+	capped := capEntities(pool, DefaultMaxPerEntity)
+	if len(capped) != DefaultMaxPerEntity {
+		t.Errorf("one person contributed %d questions across two kinds, want the share of %d: %v",
+			len(capped), DefaultMaxPerEntity, idsOf(capped))
+	}
+}
+
 func TestCapQueue_backstop(t *testing.T) {
 	t.Parallel()
 	// The per-entity share keeps a real queue far below this, but the memory

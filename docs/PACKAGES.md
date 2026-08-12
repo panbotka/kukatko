@@ -1489,8 +1489,37 @@ to `## Package map` in `CLAUDE.md`.
   `OrganizeStore.AttachLabelAudited`, the `PlaceReviewer`'s own accept/reject and
   `FeedbackStore.RejectFace/RejectLabel/ConfirmFace/ConfirmDuplicate/DismissDuplicate`; `New(Config{...,BandMin,
   BandMax,SureMin,SureShare,QueueSize,RoundSize,RoundMaxPerEntity,CacheTTL,MaxLabels,LabelConcurrency,
-  FaceBudget,LabelBudget,BuildTimeout,MaxPerEntity,OutlierBudget,OutlierThreshold,Now})` (an invalid band → the
-  default pair 0.45/0.75, `Now` = a test hook). Three further dependencies are **read-only extras**, each
+  FaceBudget,LabelBudget,BuildTimeout,MaxPerEntity,OutlierBudget,OutlierThreshold,KindShares,
+  SkipMuteThreshold,SkipMuteCooldown,Now})` (an invalid band → the
+  default pair 0.45/0.75, `Now` = a test hook).
+  **What the game is about (`kinds.go`) — configuration, not an accident.** `kindShares` is one weight per
+  kind (`review.kind_shares.*`, **default `face: 1` and nothing else**), normalised over the enabled ones;
+  `newKindShares` drops non-positive entries and falls back to faces when everything is off. It decides three
+  things: a kind at zero is **never scanned** (`collect`/`collectChecks` skip it, so its total stays 0 and
+  `reasonFor` cannot name it), the round mixer prefers whichever kind its running share is furthest behind on
+  (`wanted`, the same positional rule `blend` uses for the tiers), and `presentIn` narrows the shares to the
+  kinds a pool actually holds so a share reserved for a kind with no material does not pace the ones that have
+  some. What a share deliberately does **not** do is shrink a collector's target: every enabled kind still
+  gathers a full pool's worth, so a kind that is the only one with material fills the pool alone. Restoring the
+  mix the game started as is `face: 0.95, label: 0.05`; only the ratios matter, so `19 / 1` says the same.
+  **Remembering "I don't know" (`skips.go`, `skipstore.go`, migration `0059`).** Yes and no leave a durable
+  trace of their own; "don't know" left none, so a restart forgot it and the game asked again. A skip on a
+  **face or outlier** question is now written per (user, subject, photo) through the optional `SkipStore`
+  (`*review.SkipRecorder`; a nil one leaves skips session-scoped as before), and the whole mute is *derived*
+  from those rows — there is no second state table. `SkipMuteThreshold` (default 3, `review.skip_mute_threshold`)
+  skips about one person mute them for that player; two are forgiven, because the first couple are far more
+  often an unclear photo than an unknown face. `mutePolicy.muteFor` puts the mute's start at the newest skip
+  and its length at `SkipMuteCooldown` (default 168 h, `review.skip_mute_cooldown`) **doubled once per skip past
+  the threshold**, capped at a year — so a re-skip after the pause expires mutes for longer rather than for the
+  same short wait. `SkipMemory.silences` then drops a question when the photo was itself skipped for that
+  person (silent for good — that is the "not asked about before" rule the post-mute retry needs) or when the
+  mute holds **and** the photo was already in the library when it began, so a newly imported face of that person
+  is asked about at once. The memory is read once per rebuild (`loadSkipMemory`, cached on the session) and
+  applied in `excludeSeen` beside the session's own shelf. It is strictly **per user**, it is **best effort** on
+  write (a game answered at one keypress per second must not fail because a row could not be written), and it
+  reaches **nothing** in the catalogue: never a `feedback` rejection, never a narrowing of `candidates`/`sweep`,
+  never an identity change, and deliberately **not in the audit trail** — the audit records what happened to the
+  library, and a player saying "I don't know" is a fact about the player. Three further dependencies are **read-only extras**, each
   optional and each switched off by a nil: `Albums` (`AlbumMembership`, satisfied by `*organize.Store` →
   `AlbumUIDsForPhotos`) feeds the mixer's album rule, `Breathers` (`BreatherSource`, satisfied by
   `*review.BreatherStore`) picks the round's non-question card, and `Stats` (`SubjectStatsReader`, satisfied by
@@ -1502,15 +1531,22 @@ to `## Package map` in `CLAUDE.md`.
   fills the round a slot at a time, scoring every unplaced question against what the round already holds and
   taking the cheapest. The penalty weights are powers of two an order of magnitude apart, so a rule never
   trades against a more important one: `costEntityCap` (over `RoundMaxPerEntity`, default 3,
-  `review.round_max_per_entity`) > `costEntityRun` (a third in a row about one entity) > `costKindRun`/
-  `costKindRepeat` > `costTier` (the tier the running confident share does not want — this is what
+  `review.round_max_per_entity`) > `costKind` (a kind other than the one the configured shares are furthest
+  behind on) > `costTier` (the tier the running confident share does not want — this is what
   *interleaves* the tiers instead of blocking them, while keeping `SureShare` over the round) > `costAlbum` >
-  `costMoment` (within `nearMoment`, 10 min — the same burst) > `costEra` (the same decade) > `costOpening`.
-  **Nothing is forbidden outright**: a pool of one person, or of one afternoon, still yields a full round,
-  because the rules are preferences over a total order and there is no way for them to return an empty round
-  while a question exists. Ties go to the earlier position in the pool's informativeness order, so variety is
-  never bought with a less relevant question. The only seeded choice is the round's opening kind
-  (`roundSeed(userUID,sequence)`), which keeps the mixer a pure function of (pool, config, seed) — so a
+  `costMoment` (within `nearMoment`, 10 min — the same burst) > `costEra` (the same decade).
+  **One rule is a refusal rather than a price**: `MaxRun` (= `maxSameEntityRun`, 2) consecutive questions about
+  one entity. Pricing it was the bug — the price sat *below* `costEntityCap`, so once every entity in the round
+  had had its three questions the cheapest candidate was whichever also continued a run, and one person got
+  asked about five times running. `mixer.breaksRun` now removes such a candidate from consideration
+  (`cheapest(…, keepRun: true)`), falling back to the whole pool only when every unplaced question belongs to
+  that entity. **Everything else is forbidden nothing**: a pool of one person, or of one afternoon, still yields
+  a full round, because the remaining rules are preferences over a total order and there is no way for them to
+  return an empty round while a question exists. Ties go to the earlier position in the pool's informativeness
+  order, so variety is never bought with a less relevant question. The only seeded choice is the round's opening
+  kind (`roundSeed(userUID,sequence)`), and it is expressed as the tie-break inside `kindShares.wanted` rather
+  than as a rule of its own — so it decides only between kinds the shares want equally, which keeps the mixer a
+  pure function of (pool, config, seed) — so a
   **re-fetch before answering returns the same round** and the variety tests can assert against `mixRound`
   directly. The round is the *head of the pool* rather than a second list (`session.roundLen`), so answering
   shortens it through the same bookkeeping as everything else, and `roundSummary` freezes its composition
@@ -1610,7 +1646,9 @@ to `## Package map` in `CLAUDE.md`.
   else remains (a one-subject library stays playable). It runs **per source before `interleave`**: interleaving
   only inserts the other kind between two of the same kind and a face and a label are never the same entity, so
   bounding the sources bounds the queue. `questionEntity` keys on kind+uid, so a subject and a label sharing a
-  uid never collide.
+  uid never collide. `capEntities` runs **once more over the merged pool** (`rebuild`), because a face question
+  and an outlier question about one person are two sources and one entity: capping each source alone let one
+  person claim twice the share, which is what allowed a pool a round could not be mixed out of.
   **The source is the player's choice (`source.go`)** — `SourceBoth` (default), `SourcePeople`, `SourceLabels`;
   the three new checks ride with `SourceBoth` alone (`wantsChecks`): "people" and "labels" are promises about
   what the game will ask, and a place or duplicate question breaks either one, while a six-way toggle would
@@ -1623,11 +1661,14 @@ to `## Package map` in `CLAUDE.md`.
   `QueueResult.Source` echoes what was applied.
   The queue is **cached
   per user _and per source_** (`CacheTTL`) and the session holds `answered`/`skipped` sets + a counter (in-memory,
-  idle-pruned after 12 h; skip is **deliberately** only session-scoped — "I don't know" is not "no"). Those sets
+  idle-pruned after 12 h; the shelf is session-scoped, while a skip about a *person* also goes to the persisted
+  memory above — it is still never a "no"). Those sets
   span all sources (a skip is about the question, not about the toggle), but the cached queue does not:
   `needsRebuild` compares `sess.source`, so a **switch always rebuilds** — a warm cache handing back the
   questions the player just turned off is indistinguishable from a broken toggle. An empty library → `reason:
-  "no_people_no_labels"`, an empty **chosen** source → `"no_people"`/`"no_labels"` (`reasonFor`; only for a
+  "no_people_no_labels"`, or the single enabled kind's own reason when the shares narrow the game to one
+  (`soleKindReason`: a faces-only game says `"no_people"`, not "no people and no labels"); an empty **chosen**
+  source → `"no_people"`/`"no_labels"` (`reasonFor`; only for a
   restricted source, because the unscanned side's total is 0 by construction, and never after a
   degraded rebuild), neither tier producing anything → `"no_candidates"` (all non-error).
   **Infinite means degrading, not stopping.** Running out of one tier fills from the other (both scans see the
@@ -1637,7 +1678,10 @@ to `## Package map` in `CLAUDE.md`.
   *window* is not an empty library, and only a genuinely empty one may report so.
   **A rebuild is bounded — the game asks one question at a time, so it must never cost a library-wide
   work list** (it did: 250 s for 105 subjects on production, see `docs/PERF.md` §3). Faces go through
-  `Sweeper.Scan` with `Window{Offset: cursor, Budget: FaceBudget}` (default 8 subjects), labels through a
+  `Sweeper.Scan` with `Window{Offset: cursor, Budget: FaceBudget}` (default **24** subjects — 8 until the kind
+  shares arrived, raised because most subjects have nothing unassigned left and a window of eight regularly
+  produced candidates from one or two people; the dropped label scan pays for it, measured 375 ms → 141 ms per
+  cold rebuild against +26 ms in the worst unproductive window), labels through a
   `LabelConcurrency`-sized chunked loop over a rotating window of `LabelBudget` labels (default 6); both
   stop as soon as the batch holds `limit` candidates, and `BuildTimeout` (default 15 s) caps the whole
   rebuild — a deadline serves a **partial** queue with a logged warning instead of a 500 and never reports
@@ -1689,11 +1733,23 @@ to `## Package map` in `CLAUDE.md`.
   and `tiers_test.go` (the measured mix within a stated ±0.15, the mix holding in every prefix, a configurable
   `SureShare`, either tier exhausted degrading to the other, an empty window rotating while a genuinely empty
   library does not, surest-first ordering, the per-entity share counting both tiers together, a switched-off
-  label neither asked about nor searched, plus `blend`/`capEntities`/`tierOf`/fallback unit tables),
+  label neither asked about nor searched, plus `blend`/`capEntities`/`tierOf`/fallback unit tables)
+  and `kinds_test.go` (the faces-only default, a share of zero switching a kind off and never being asked,
+  relative weights normalising, a 95/5 game landing on 5 labels in 100 slots, `presentIn` ignoring kinds the
+  pool lacks, and **the run limit holding over a pool one subject dominates** — the reported defect, asserted
+  from both pool orders)
+  and `skips_test.go` (two skips forgiven, the third muting for the cooldown, every further skip doubling the
+  wait and the doubling capped, a skipped photo silent for good while a photo added after the mute is not,
+  outlier questions covered by a person's mute and label questions not, only the person-naming kinds recorded,
+  and a skip still counting when the memory write fails),
   integration tests over real
   sweep+candidates+expand+facematch+feedback+DB, incl. `queue_scale_integration_test.go` (105 named
   subjects, an instrumented face store counting the kNN queries, and a bounded-vs-unbounded content
-  comparison) and `extras_integration_test.go` (each new kind's yes and no over real stores, asserting the
+  comparison), `skips_integration_test.go` (every case starting a **fresh service** between the skips and the
+  queue, i.e. a restart: three skips muting a person, the mute surviving that restart while another player's
+  queue is untouched, a skip writing neither a `face_rejections` row nor an audit entry nor an assignment, a
+  photo imported after the mute still being asked about, the post-cooldown retry landing only on faces never
+  shown before, and a fourth skip re-muting for twice as long) and `extras_integration_test.go` (each new kind's yes and no over real stores, asserting the
   **whole** effect of one answer and not merely the intended one: a place accept keeps the coordinates and
   clears the estimate without touching the neighbouring metadata, a reject leaves the tombstone that keeps the
   photo out of the backfill's candidate set, a duplicate yes confirms **and archives nothing**, a duplicate no
@@ -2490,8 +2546,8 @@ to `## Package map` in `CLAUDE.md`.
   [`docs/MIGRATION_PLAN.md`](MIGRATION_PLAN.md) had nothing to run before: it empties every catalogue table and
   every object the store owns so the library can be re-imported from scratch. The deployment has **no S3 backup**
   ([`READINESS_AUDIT.md`](READINESS_AUDIT.md) §4), so the guards *are* the package and the truncation is the easy
-  part. **Two explicit table lists** in `tables.go` — `catalogueTables` (26, wiped, incl. `photoprism_aliases`
-  from `0046`) and `preservedTables` (6:
+  part. **Two explicit table lists** in `tables.go` — `catalogueTables` (27, wiped, incl. `photoprism_aliases`
+  from `0046` and `review_skips` from `0059`) and `preservedTables` (6:
   `users`/`sessions`/`api_tokens`/`announcements`/`audit_log`/`schema_migrations`, never touched), exported as
   `CatalogueTables()`/`PreservedTables()`; an allowlist rather than "everything except", because a forgotten
   entry in the first merely survives while a forgotten entry in an exclusion list would be **destroyed**.

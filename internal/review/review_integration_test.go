@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"testing"
+	"time"
 
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/candidates"
@@ -57,6 +58,12 @@ func newReviewHarness(t *testing.T) *reviewHarness {
 // service composes a fresh review service over the harness stores — a fresh
 // instance means a cold cache and empty sessions, like a server restart.
 func (h *reviewHarness) service() *review.Service {
+	return h.serviceAt(nil)
+}
+
+// serviceAt is service with the clock overridden, for the tests that have to
+// stand on the far side of a cooling-off period. A nil clock means time.Now.
+func (h *reviewHarness) serviceAt(now func() time.Time) *review.Service {
 	candSvc := candidates.New(candidates.Config{
 		Faces: h.vectors, People: h.people, Feedback: h.feedback, Photos: h.photos,
 		Media:       mediaurl.NewBuilder(nil),
@@ -70,14 +77,43 @@ func (h *reviewHarness) service() *review.Service {
 	})
 	matchSvc := facematch.New(facematch.Config{Photos: h.photos, Faces: h.vectors, People: h.people})
 	return review.New(review.Config{
-		Sweeper:  sweepSvc,
-		Expander: expandSvc,
-		Organize: h.organize,
-		Faces:    h.vectors,
-		Feedback: h.feedback,
-		Assigner: matchSvc,
-		BandMin:  0.45, BandMax: 0.75,
+		Sweeper:    sweepSvc,
+		Expander:   expandSvc,
+		Organize:   h.organize,
+		Faces:      h.vectors,
+		Feedback:   h.feedback,
+		Assigner:   matchSvc,
+		Skips:      review.NewSkipRecorder(h.db.Pool()),
+		KindShares: allKinds(),
+		BandMin:    0.45, BandMax: 0.75,
+		Now: now,
 	})
+}
+
+// allKinds switches every question kind on with equal weight. The production
+// default is faces alone (see review.kind_shares), but most of these tests are
+// about machinery that all five kinds share — the tiers, the rotation, the
+// reasons — and would quietly stop exercising four of them under it. The share
+// rules themselves are tested against explicit weights.
+func allKinds() map[review.Kind]float64 {
+	shares := make(map[review.Kind]float64, len(review.Kinds))
+	for _, kind := range review.Kinds {
+		shares[kind] = 1
+	}
+	return shares
+}
+
+// user creates an account the game can be played as. The persisted skip memory
+// is keyed by user, so a test about it needs real rows behind the foreign key.
+func (h *reviewHarness) user(t *testing.T, uid string) string {
+	t.Helper()
+	_, err := h.db.Pool().Exec(context.Background(),
+		`INSERT INTO users (uid, username, password_hash, role) VALUES ($1, $2, 'x', 'editor')`,
+		uid, uid)
+	if err != nil {
+		t.Fatalf("creating user %s: %v", uid, err)
+	}
+	return uid
 }
 
 // vec builds a FaceDim face vector from index→value overrides.

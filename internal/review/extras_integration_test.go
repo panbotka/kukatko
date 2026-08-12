@@ -69,9 +69,10 @@ func (h *reviewHarness) checksService() *review.Service {
 		Outliers: outliers.New(outliers.Config{
 			Faces: h.vectors, People: h.people, Feedback: h.feedback,
 		}),
-		Subjects: h.people,
-		Photos:   h.photos,
-		BandMin:  0.45, BandMax: 0.75,
+		Subjects:   h.people,
+		Photos:     h.photos,
+		KindShares: allKinds(),
+		BandMin:    0.45, BandMax: 0.75,
 	})
 }
 

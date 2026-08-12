@@ -78,9 +78,14 @@ photo-book tool (deliberately out of scope), or a product with support and a rel
 Everything the machine guesses at ends up as a single yes/no question on a full screen — is this
 Tomáš? does this label fit? was this taken in Brno? is this the same photo twice? is the person
 tagged here really her? — with **Ano · Ne · Nevím** (yes · no · don't know) underneath and the arrow
-keys doing the work; on a phone the three answers are a swipe. Questions come in rounds of ten,
-deliberately mixed by person, kind, difficulty and era, so a session never feels like an
-interrogation about one person. Every answer goes through the same write paths the ordinary pages
+keys doing the work; on a phone the three answers are a swipe. Out of the box the game is about
+people — which kinds it asks, and in what proportion, is a config setting rather than an accident of
+how much the machine happened to guess at. Questions come in rounds of ten, deliberately mixed by
+person, kind, difficulty and era, and never more than two in a row about the same person, so a
+session never feels like an interrogation. "Don't know" is listened to: say it three times about one
+person and the game stops asking *you* about them for a while, then tries once more on a face you
+have never been shown — never on the ones you already gave up on, and never as a statement that it
+is not them. Every answer goes through the same write paths the ordinary pages
 use, so it is audited and undoable — and the game never merges, deletes or invalidates anything on
 its own. A leaderboard counts who has answered the most and how many days in a row, because a shared
 library is tidied by more than one person.

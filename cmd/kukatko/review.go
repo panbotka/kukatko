@@ -55,6 +55,7 @@ func buildReviewAPI(
 		Faces:      vectorStore,
 		Feedback:   feedback.NewStore(db.Pool()),
 		Assigner:   matchSvc,
+		Skips:      review.NewSkipRecorder(db.Pool()),
 		Places:     buildPlaceReviewerOrNil(cfg, db),
 		Duplicates: buildReviewDuplicatesOrNil(cfg, db, vectorStore),
 		Outliers:   buildOutlierService(db),
@@ -83,6 +84,9 @@ func buildReviewAPI(
 		MaxPerEntity:      cfg.Review.MaxPerEntity,
 		OutlierBudget:     cfg.Review.OutlierBudget,
 		OutlierThreshold:  cfg.Review.OutlierThreshold,
+		KindShares:        reviewKindShares(cfg.Review.KindShares),
+		SkipMuteThreshold: cfg.Review.SkipMuteThreshold,
+		SkipMuteCooldown:  cfg.Review.SkipMuteCooldown,
 	})
 	return reviewapi.NewAPI(reviewapi.Config{
 		Service:      svc,
@@ -90,6 +94,19 @@ func buildReviewAPI(
 		RequireWrite: authAPI.RequireWrite,
 		RequireAuth:  authAPI.RequireAuth,
 	})
+}
+
+// reviewKindShares maps the typed config block onto the weights the review
+// package reads. The mapping is spelled out rather than reflected so adding a
+// question kind cannot silently forget to give it a share — the compiler asks.
+func reviewKindShares(shares config.ReviewKindShares) map[review.Kind]float64 {
+	return map[review.Kind]float64{
+		review.KindFace:      shares.Face,
+		review.KindLabel:     shares.Label,
+		review.KindPlace:     shares.Place,
+		review.KindDuplicate: shares.Duplicate,
+		review.KindOutlier:   shares.Outlier,
+	}
 }
 
 // buildPlaceReviewerOrNil returns the reviewer behind the game's place check, or
