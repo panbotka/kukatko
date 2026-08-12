@@ -1,7 +1,8 @@
 /* Fullscreen slideshow stage and transitions. The container fills the viewport
-   with a black backdrop; controls fade in on hover / interaction. The transition
-   classes animate the freshly mounted <img> (it is remounted via React `key` on
-   every slide change), so each effect plays once per slide. */
+   with a black backdrop; the chrome over it fades out while nothing happens and
+   comes back on any input (see `useIdleChrome`). The transition classes animate
+   the freshly mounted <img> (it is remounted via React `key` on every slide
+   change), so each effect plays once per slide. */
 
 .slideshow {
   position: fixed;
@@ -33,12 +34,16 @@
   -webkit-user-drag: none;
 }
 
+/* The transition durations come from the root as `--slideshow-transition`,
+   which `transitionDurationMs` caps against the chosen speed: at the 1 s speed
+   the comfortable 600 ms would be most of the slide, and a photo that is still
+   arriving when the next one starts reads as stutter, not as a cross-fade. */
 .slideshow__image--fade {
-  animation: slideshow-fade 600ms ease;
+  animation: slideshow-fade var(--slideshow-transition, 600ms) ease;
 }
 
 .slideshow__image--slide {
-  animation: slideshow-slide 450ms ease;
+  animation: slideshow-slide var(--slideshow-transition, 450ms) ease;
 }
 
 @keyframes slideshow-fade {
@@ -79,7 +84,7 @@
   transform-origin: center;
   will-change: transform;
   animation:
-    slideshow-fade 600ms ease,
+    slideshow-fade var(--slideshow-transition, 600ms) ease,
     slideshow-kenburns var(--kb-duration, 5000ms) linear both;
 }
 
@@ -107,18 +112,60 @@
   }
 }
 
-/* The header bar: where you are in the show. It and the close button sit BEFORE
-   the stage in the DOM, so without a z-index the photo — which fills the stage
-   under `kenburns`, and reaches the corners under any wide crop — paints over
-   them and the position readout simply is not there. */
-.slideshow__caption {
+/* Everything that is not the photograph: the position readout, the close button,
+   the control bar and the settings panel, in one layer over the stage.
+
+   A slideshow runs for an evening, and chrome that never leaves spends that
+   evening taking pixels from the picture — so the layer fades out when nothing
+   has happened for a few seconds and comes back on any input. The fade rides on
+   the app's own duration token, which the token layer already collapses to 1 ms
+   under `prefers-reduced-motion`.
+
+   `visibility` is switched (delayed until the fade has finished) rather than
+   opacity alone: an invisible bar that still catches clicks and Tab stops would
+   be worse than one that stays. The component also marks the layer `inert`.
+
+   The layer itself is transparent to the pointer so a swipe or a tap on the
+   picture is not swallowed by the empty space between the buttons; each control
+   takes its own events back. */
+.slideshow__chrome {
   position: absolute;
-  z-index: 1;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  opacity: 1;
+  visibility: visible;
+  transition:
+    opacity var(--kk-duration-base, 200ms) ease,
+    visibility 0s;
+}
+
+.slideshow--idle .slideshow__chrome {
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity var(--kk-duration-base, 200ms) ease,
+    visibility 0s var(--kk-duration-base, 200ms);
+}
+
+/* With the controls gone the mouse pointer is the last piece of interface left
+   on the photograph — and on a projector it is the one nobody can explain away.
+   It comes back with them, on the first movement. */
+.slideshow--idle {
+  cursor: none;
+}
+
+/* The header bar: where you are in the show. */
+.slideshow__progress {
+  position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  /* The right padding clears the close button, which shares this corner. */
-  padding: 1rem 3.5rem 1rem 1.25rem;
+  /* The right padding clears the close button, which shares this corner; the
+     safe-area insets keep the readout out of a notch (the player is mounted
+     outside the app shell, so it owns its own insets). */
+  padding: calc(1rem + env(safe-area-inset-top, 0px)) calc(3.5rem + env(safe-area-inset-right, 0px))
+    1rem calc(1.25rem + env(safe-area-inset-left, 0px));
   color: #fff;
   background: linear-gradient(to bottom, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0));
   pointer-events: none;
@@ -132,20 +179,56 @@
   bottom: 0;
   left: 0;
   right: 0;
-  padding: 1rem 1.25rem calc(1rem + env(safe-area-inset-bottom, 0px));
+  padding: 1rem calc(1.25rem + env(safe-area-inset-right, 0px))
+    calc(1rem + env(safe-area-inset-bottom, 0px)) calc(1.25rem + env(safe-area-inset-left, 0px));
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
   flex-wrap: wrap;
   background: linear-gradient(to top, rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0));
+  pointer-events: auto;
 }
 
 .slideshow__close {
   position: absolute;
-  z-index: 1;
-  top: 0.75rem;
-  right: 0.75rem;
+  top: calc(0.75rem + env(safe-area-inset-top, 0px));
+  right: calc(0.75rem + env(safe-area-inset-right, 0px));
+  pointer-events: auto;
+}
+
+/* Play/pause is the control the reader reaches for first, and the theme's
+   `.btn-light` renders it white on pale grey (#fff on #abb6c2 — 1.9 : 1, the
+   least legible control in the player). Give it what every other player gives
+   it: a near-white face with a near-black glyph (about 16 : 1), which also makes
+   it the one control that reads as primary in a row of dark ones. Superhero
+   bakes those colours as literal declarations rather than through the
+   `--bs-btn-*` properties, so this has to out-specify `.btn-light` rather than
+   re-point a variable. */
+.slideshow__controls .slideshow__play,
+.slideshow__controls .slideshow__play:hover,
+.slideshow__controls .slideshow__play:focus-visible,
+.slideshow__controls .slideshow__play:active {
+  color: #10161c;
+  background-color: #eef2f6;
+  border-color: #eef2f6;
+}
+
+.slideshow__controls .slideshow__play:hover,
+.slideshow__controls .slideshow__play:focus-visible {
+  background-color: #fff;
+  border-color: #fff;
+}
+
+/* Every control here is a bare glyph, and the app-wide touch floor only gives
+   them their height — a 22 × 44 px "previous" is half a finger wide. Square them
+   off at the finger target on a coarse pointer, as the header's icon-only
+   controls already are. A fine pointer keeps the compact bar it can aim at. */
+@media (pointer: coarse) {
+  .slideshow__controls .btn,
+  .slideshow__close {
+    min-width: 2.75rem;
+  }
 }
 
 .slideshow__settings {
@@ -160,14 +243,15 @@
      the space above the controls. Scroll it rather than let it run off screen. */
   max-height: calc(100vh - 8rem);
   overflow-y: auto;
-  /* Above the caption, which shares the bottom of the stage. */
-  z-index: 2;
+  pointer-events: auto;
 }
 
 /* What the photo IS — title, date, description — laid over the picture itself.
 
-   It is its own element, not part of the header or the control bar: if the
-   chrome ever learns to fade out, the caption must not go with it.
+   It is its own element, outside the chrome layer above: when the controls fade
+   out the caption stays, because a show whose photos stop saying what they are
+   the moment the mouse goes still would be worse than one that never said
+   anything.
 
    Legibility cannot be left to the photo underneath (white text on a snowfield
    is the case to design for), so the block carries its own scrim and a shadow
@@ -177,8 +261,8 @@
 .slideshow__meta {
   position: absolute;
   z-index: 1;
-  left: 1.25rem;
-  bottom: 4.75rem;
+  left: calc(1.25rem + env(safe-area-inset-left, 0px));
+  bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px));
   max-width: min(36rem, 55%);
   padding: 0.5rem 0.75rem;
   border-radius: 0.5rem;
@@ -221,7 +305,21 @@
 
 @media (max-width: 575.98px) {
   .slideshow__meta {
-    right: 1.25rem;
+    right: calc(1.25rem + env(safe-area-inset-right, 0px));
     max-width: none;
   }
+}
+
+/* The loading / empty / error panel (`SlideshowNotice`): the same black stage,
+   but with its way out always on screen — nothing is playing, so there is no
+   photograph for the chrome to be in the way of. */
+.slideshow__notice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 1.5rem;
+  color: #fff;
+  text-align: center;
 }

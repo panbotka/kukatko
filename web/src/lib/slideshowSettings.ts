@@ -59,6 +59,45 @@ export const SLIDESHOW_DEFAULTS: SlideshowSettings = {
   showDate: true,
 }
 
+/**
+ * How long the transition into a slide runs at a comfortable speed, per effect,
+ * in milliseconds. `kenburns` cross-fades like `fade` (its pan is a separate
+ * animation, as long as the slide itself), and `none` does not animate at all.
+ */
+const TRANSITION_MS: Readonly<Record<SlideshowEffect, number>> = {
+  fade: 600,
+  slide: 450,
+  kenburns: 600,
+  none: 0,
+}
+
+/**
+ * The largest share of one slide its entrance animation may take. A transition
+ * is meant to join two photographs, not to be the thing on screen: past roughly
+ * a quarter of the slide it stops reading as a join and starts reading as the
+ * picture never quite arriving.
+ */
+const TRANSITION_SHARE = 0.25
+
+/**
+ * How long the transition into a slide should run at the chosen speed.
+ *
+ * The comfortable durations above are written for the 5 s default, where 600 ms
+ * of cross-fade is a tenth of the slide. At the fastest offered speed the same
+ * 600 ms is *most* of the 1 s the photo gets: the show never settles, every
+ * frame is caught mid-fade, and what looks like stutter is really a transition
+ * that has no room. So the duration is capped at {@link TRANSITION_SHARE} of the
+ * interval — 250 ms at 1 s, 500 ms at 2 s, and the full 600 ms from 3 s up,
+ * where there was never a problem.
+ */
+export function transitionDurationMs(effect: SlideshowEffect, intervalMs: number): number {
+  const base = TRANSITION_MS[effect]
+  if (!Number.isFinite(intervalMs) || intervalMs <= 0) {
+    return base
+  }
+  return Math.min(base, Math.round(intervalMs * TRANSITION_SHARE))
+}
+
 /** localStorage key under which the preferences are persisted. */
 const STORAGE_KEY = 'kukatko.slideshow.settings'
 

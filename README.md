@@ -103,7 +103,9 @@ a trash with retention · a slideshow that asks how you want to watch before it 
 transition, the speed and how long the whole thing will take, repeat, shuffle (a random order the
 server deals, so it covers the library and not just the first page), and whether each photo says its
 title, its date and its description over the picture, all of it changeable mid-show without losing
-your place · and a statistics page that answers what the library really
+your place — and once it is running the controls get out of the way: they fade a few seconds after
+the last mouse move, key or tap, taking the cursor with them, and come back the moment you ask
+(a tap on the picture is how you ask on a phone) · and a statistics page that answers what the library really
 looks like — photos per year across its whole span, arrivals per month, which cameras took most of
 it, what it costs in bytes, and how far along the processing is.
 

@@ -2117,7 +2117,9 @@ here.
   different set would play), driven by `useSlideshow` +
   `useSlideshowSettings`, `total` from the server is passed to `Slideshow` (the countdown counts the whole show, not just
   the loaded pages; the last non-zero total stands in while a reorder reloads, so the position readout
-  doesn't blink „5 ze 5"), renders loading/empty/error states or `Slideshow` — the loading state only
+  doesn't blink „5 ze 5"), renders loading/empty/error states (all three through `SlideshowNotice`, so each
+  has a way out of a route that has no navbar; the wait **says what it is waiting for out loud**, not only to a
+  screen reader) or `Slideshow` — the loading state only
   when there is genuinely nothing to show, since a shuffle toggle reloads the list and blanking the
   running show for that would be a restart in all but name; **shuffle is ordered by the server**:
   `sort: 'random'` + a `seed` generated once per show (`newShuffleSeed`, `useState`), so the whole set
@@ -2693,8 +2695,26 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   this URL), previous/play-pause/next/fullscreen/settings/close controls + a header bar carrying
   **only the progress** (`slideshow.progress` → „snímek 7 ze 40"; counted against the server's `total`, not against
   the loaded pages — neither the remaining time nor the title lives there any more: the header says
-  where you are in the show, the photo says what it is); keys ←/→ / spacebar / Esc / F
-  and a touch swipe; the Fullscreen API is feature-detected;
+  where you are in the show, the photo says what it is);
+  **the chrome is a guest on the photograph**: all of it (close, progress, settings panel, control bar) lives in
+  **one `.slideshow__chrome` layer** which `useIdleChrome` fades out after 3 s of nothing — with the mouse
+  cursor (`cursor: none`) — and brings back on a mouse move, on **any key**, or on a **tap**; while it is away it is
+  `inert` + `visibility: hidden`, so it catches neither a click nor a Tab stop, and it is **held** open whenever
+  it is being used (settings panel open, a *mouse* pointer over it, focus inside it — a touch pointer never
+  holds it, it would never leave). The caption stays **outside** that layer, deliberately: a show whose
+  photos stop saying what they are the moment the mouse goes still is worse than one that never said anything;
+  keys ←/→ (and **PageUp/PageDown**, which is what a presentation remote sends) / spacebar (**skipped when a
+  button has focus** — one press would otherwise both activate it and toggle playback) / **Esc peeling one
+  layer at a time** (the settings panel, then fullscreen, then the show) / F, plus **Tab**, whose first press
+  while the chrome is hidden only brings it back (there is nothing to tab *to* otherwise — that is how a
+  keyboard reaches controls that can hide);
+  touch is **two** gestures: a horizontal swipe past `SWIPE_THRESHOLD` (50 px) changes the photo, a finger that
+  stayed within `TAP_SLOP` (10 px) toggles the chrome — the only way a touch screen can ask for controls that
+  are not permanently on screen — and the gap between the two is a deliberate dead zone; a second finger
+  (pinch) and a touch that starts **on the chrome** are ignored;
+  the Fullscreen API is feature-detected **and the control is left out entirely where the browser cannot honour
+  it** (iOS Safari fullscreens only a `<video>`; a button that visibly does nothing is worse than no button),
+  and a rejected `requestFullscreen()`/`exitFullscreen()` is swallowed rather than left as an unhandled rejection;
   the settings panel renders the shared `SlideshowSettingsForm` and **beside the speed an estimate of the remaining time**
   (`slideshow.remaining` → „zbývá 2 min 45 s"; `slideshowRemainingMs(index, total, intervalMs)` — it follows
   the index as well as the chosen speed, so it counts down and reacts to a speed change at once, sticks to the server's
@@ -2704,10 +2724,19 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   the **`kenburns`** effect additionally writes inline
   `--kb-*` custom properties from `lib/kenBurns` onto the `<img>` (transform endpoints + `--kb-duration` = the interval) —
   it activates **only for images**, a video frame and a user with `prefers-reduced-motion`
-  (`usePrefersReducedMotion`) get a static frame without animation) + `slideshow.css` (keyframes
+  (`usePrefersReducedMotion`) get a static frame without animation);
+  the entrance animations run for `transitionDurationMs(effect,intervalMs)`, published as
+  `--slideshow-transition` on the root, so the 1 s speed is not mostly fade) + `slideshow.css` (keyframes
   `slideshow-fade`/`slideshow-slide`/`slideshow-kenburns` (`object-fit: cover`, `var()` is substituted
   before interpolation, so both transforms interpolate as an identical `translate() scale()` list),
-  `@media (prefers-reduced-motion: reduce)` as a second safeguard, fullscreen layout)
+  `@media (prefers-reduced-motion: reduce)` as a second safeguard, fullscreen layout, the chrome's own
+  opacity/visibility transition on `--kk-duration-base` (which the token layer already collapses to 1 ms under
+  reduced motion), **`env(safe-area-inset-*)` on all four edges** (the route is mounted outside `Layout`, so the
+  close button and the progress own their insets too — not just the bottom bar), a `pointer: coarse` floor of
+  **2.75 rem `min-width`** on every control (the app-wide floor only gives them their *height*: „previous" was a
+  22 × 44 px target, measured on a real coarse pointer) and `.slideshow__play`, which re-colours the play/pause
+  button because the theme's `.btn-light` renders it white on pale grey — 2.06 : 1, the least legible control
+  in the player; near-black on near-white is 16.18 : 1)
   + `SlideshowCaption` (what the photo **is**, laid over the picture: title, capture date
   (`lib/takenDate` `formatTakenLabel`, so a coarse date reads „1974" and an estimate is marked) and
   description, each shown only when its toggle is on **and** the photo carries the value — an empty
@@ -2715,6 +2744,11 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   control bar, so a later fade of the chrome could never take the caption with it; its own scrim +
   text-shadow (white on snow is the case designed for), bounded width and the description clamped to
   three lines, so a long note cannot grow over the photo)
+  + `SlideshowNotice` (**the black stage with something other than a photograph on it** — the show loading,
+  empty or failed. The route has no navbar and no Back link, so the panel carries the way out itself: the same
+  close button in the same corner as the player's, plus **Esc** (the player that listens for it is not mounted
+  yet in those states — a slow first page used to be a black screen with a spinner and nothing to press). It
+  never hides: with nothing playing there is no picture for it to be in the way of)
   + `SlideshowSettingsForm` (**the one** settings form — transition, speed, repeat, shuffle and the
   three caption toggles — rendered by both the start dialog and the running player, so neither can
   offer a setting the other lacks; `settings` down, a patch back up, `idPrefix` keeps the control ids
@@ -3380,6 +3414,13 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   it removes `change`, a missing/broken `matchMedia` → „wide"; the single source of truth for the filter
   offcanvas, the default grid density, the collapse of `BatchActionBar` and `HeaderActions` into the „…" overflow menu on a phone, and the move
   of the viewer's curatorial loop from the top bar to the bottom dock within thumb's reach);
+  `useIdleChrome({delayMs,held})` → `{visible,wake,toggle}` = **when a player's controls are on screen**:
+  visible on mount, hidden after `CHROME_IDLE_MS` (3 s) of nothing, back on `wake()` (a mouse move, any key) and
+  toggled by `toggle()` (a tap — a finger has no „movement" to report, so the tap *is* the request). `held`
+  pins them and stops the countdown (a panel open, the pointer resting on them, focus inside them) and
+  releasing it starts a **fresh** countdown, so nothing ever times out from under a hand. Only `visible` is
+  state — `wake()` on every mouse move sets `true` on an already-`true` state, which React bails out of, and
+  the timer lives in a ref;
   `usePrefersReducedMotion()` = follows `(prefers-reduced-motion: reduce)` via `matchMedia`
   (removes `change`, a missing/broken `matchMedia` → `false`) — the caller **omits** a decorative animation,
   it doesn't shorten it);
@@ -3722,7 +3763,13 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   that is no longer on offer (7 s) thus neither falls through the cracks nor renders an empty item; on an equal
   distance the shorter one wins; every flag is validated as a **boolean**, so settings written before
   repeat/shuffle/captions existed migrate to the defaults and a tampered `"false"` cannot mean „on";
-  a fallback to the defaults on an error/unavailable storage);
+  a fallback to the defaults on an error/unavailable storage)
+  + `transitionDurationMs(effect,intervalMs)` = **how long the entrance into a slide may run at the chosen
+  speed**: the comfortable 600 ms (fade / the Ken Burns cross-fade) or 450 ms (slide), capped at a **quarter
+  of the interval** — at the 1 s speed the full 600 ms is most of the slide, the show never settles and
+  every frame is caught mid-fade, which is what „the transition stutters" actually is; 250 ms at 1 s,
+  500 ms at 2 s, unchanged from 3 s up. `none` is always 0. The player publishes it as
+  `--slideshow-transition` on the stage's root, where `slideshow.css` reads it;
   `slideshowPlaylist.ts` = the pure order bookkeeping of a running show: `newShuffleSeed()` (a short
   random token, the one impure line, held for the life of the show) + `playlistOf(carried, loaded)`
   (the photos seen so far, in the order seen, followed by every loaded photo still to come — with

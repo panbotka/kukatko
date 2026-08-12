@@ -143,6 +143,35 @@ describe('SlideshowPage', () => {
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument()
   })
 
+  it('says what it is waiting for, and leaves a way out, while photos load', async () => {
+    // The route is mounted outside the app shell: with no navbar and no Back
+    // link, a slow first page used to be a black screen with a spinner, no
+    // words and nothing to press.
+    let resolve = (): void => undefined
+    fetchMock.mockReturnValue(
+      new Promise<PhotoListResponse>((r) => {
+        resolve = () => {
+          r(page([photo('a', 'a.jpg')]))
+        }
+      }),
+    )
+    renderPage('/slideshow?album=al1')
+
+    expect(screen.getByText('Loading photos…')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument()
+
+    resolve()
+    await screen.findByRole('img')
+  })
+
+  it('offers the same way out of the empty and the failed show', async () => {
+    fetchMock.mockResolvedValue(page([]))
+    renderPage('/slideshow?album=al1')
+
+    await screen.findByText('No photos to play')
+    expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument()
+  })
+
   it('persists the chosen effect to localStorage from the settings panel', async () => {
     fetchMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
     const user = userEvent.setup()
