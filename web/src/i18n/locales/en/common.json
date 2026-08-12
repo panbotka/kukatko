@@ -1843,6 +1843,7 @@
       "clearLocation": "Clear location",
       "location": "Location",
       "editField": "Edit {{field}}",
+      "editInfo": "Edit information",
       "edit": "Edit",
       "save": "Save",
       "cancel": "Cancel",

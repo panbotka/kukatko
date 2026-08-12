@@ -197,12 +197,14 @@ function renderHarness(initial: PhotoDetail) {
 }
 
 /**
- * Enters the shared caption form via a per-field edit affordance. There is no
- * global "Edit" button any more — each field is its own inline edit control — so
- * clicking any of them (here the title's) reveals the whole form.
+ * Enters the shared caption form the way an editor always can: the panel's own
+ * "Edit information" button. Each filled-in field is an inline edit control of its
+ * own too, but a field the photo has nothing for is not rendered at all — so the
+ * entrance the tests share has to be the one that does not depend on the fixture
+ * having a title.
  */
 async function startEditing(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole('button', { name: 'Edit Title' }))
+  await user.click(screen.getByRole('button', { name: 'Edit information' }))
 }
 
 /**
@@ -394,36 +396,104 @@ describe('MetadataPanel location picker', () => {
 })
 
 describe('MetadataPanel per-field editing', () => {
-  it('exposes a discoverable inline edit affordance for each caption field', () => {
-    // The whole point of the rework: no hidden global "Edit" button — every
-    // caption field is its own editable control an editor can find in place.
-    renderPanel({ photo: photo({ title: 'Beach', description: '', ai_note: 'cat' }) })
+  it('exposes a discoverable inline edit affordance for each caption field it shows', () => {
+    // Every field the photo answers with is its own editable control an editor
+    // can find in place, and the panel carries one more way in that names the
+    // whole form.
+    renderPanel({ photo: photo({ title: 'Beach', description: 'Sunny', ai_note: 'cat' }) })
 
     expect(screen.getByRole('button', { name: 'Edit Title' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Edit Description' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Edit Automatic description' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Edit Location' })).toBeInTheDocument()
-    // No single global "Edit" button remains.
-    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Edit information' })).toBeInTheDocument()
   })
 
-  it('prompts an empty field with what that field is for, not a generic "add…"', () => {
-    renderPanel({ photo: photo({ title: 'Beach', description: '' }) })
-    // Title carries a value; the empty description invites adding one — in words
-    // about descriptions.
-    const description = screen.getByRole('button', { name: 'Edit Description' })
-    expect(description).toHaveTextContent('What is happening here, and why it is worth remembering')
-    expect(description).not.toHaveTextContent('Add…')
+  it('leaves an empty field out of the panel an editor reads', () => {
+    // The regression this guards: an empty description answered with the
+    // instructions for writing one, so the facts the photo did carry were read
+    // through a hedge of prompts.
+    renderPanel({ photo: photo({ title: 'Beach', description: '', ai_note: '', notes: '' }) })
+
     expect(screen.getByRole('button', { name: 'Edit Title' })).toHaveTextContent('Beach')
+    expect(screen.queryByRole('button', { name: 'Edit Description' })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Edit Automatic description' }),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Edit Notes' })).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('What is happening here, and why it is worth remembering'),
+    ).not.toBeInTheDocument()
   })
 
-  it('gives every empty field its own prompt rather than one repeated placeholder', () => {
-    // The regression this guards: four fields sharing one "Add…" is a column of
-    // identical grey text that says nothing about any of them.
+  it('leaves an empty field out of the panel a viewer reads', () => {
+    renderPanel({
+      canWrite: false,
+      photo: photo({ title: 'Beach', description: '', ai_note: '', notes: '' }),
+    })
+
+    expect(screen.getByText('Beach')).toBeInTheDocument()
+    expect(screen.queryByText('Description')).not.toBeInTheDocument()
+    expect(screen.queryByText('Notes')).not.toBeInTheDocument()
+  })
+
+  it('counts an imported "Unknown" as an empty field, like the rest of the panel', () => {
+    // `metaValue` — what the technical details' MetaField calls — drops it, and a
+    // second, looser rule here is how a description imported as "Unknown" came to
+    // render as if someone had written it.
+    renderPanel({ photo: photo({ title: 'Beach', description: 'Unknown', notes: '  ' }) })
+
+    expect(screen.queryByRole('button', { name: 'Edit Description' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Unknown')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Edit Notes' })).not.toBeInTheDocument()
+  })
+
+  it('keeps a way into editing on a photo that says nothing at all', async () => {
+    // With every field row gone the only entrance left was the location row's
+    // pencil — a pencil next to the word "Location" that in fact opens a form
+    // editing every field. The panel's own button says what it opens.
+    const user = userEvent.setup()
+    renderPanel({
+      photo: photo({
+        title: '',
+        description: '',
+        ai_note: '',
+        notes: '',
+        taken_at: undefined,
+        lat: undefined,
+        lng: undefined,
+      }),
+    })
+
+    const entry = screen.getByRole('button', { name: 'Edit information' })
+    expect(entry).toHaveAttribute('title', 'Edit information')
+
+    await user.click(entry)
+    expect(screen.getByRole('form', { name: 'Edit photo metadata' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Title')).toHaveValue('')
+  })
+
+  it('offers every field with its prompt while editing, empty ones included', async () => {
+    // The prompts are not deleted, they moved to where they are acted on. Each
+    // says what its own field is for: four fields sharing one "Add…" would be a
+    // column of identical grey text that says nothing about any of them.
+    const user = userEvent.setup()
     renderPanel({ photo: photo({ title: '', description: '', ai_note: '', notes: '' }) })
-    const prompts = (['Title', 'Description', 'Automatic description', 'Notes'] as const).map(
-      (field) => screen.getByRole('button', { name: `Edit ${field}` }).textContent,
-    )
+    await startEditing(user)
+
+    for (const field of ['Title', 'Description', 'Automatic description', 'Notes'] as const) {
+      expect(screen.getByLabelText(field)).toHaveValue('')
+    }
+    const prompts = [
+      "For example “Christmas at Grandma's”",
+      'What is happening here, and why it is worth remembering',
+      'A description the computer added to the photo by itself',
+      'Anything you want to jot down about this photo',
+      'For example 24 December 1998 — even a guess beats nothing',
+    ]
+    for (const prompt of prompts) {
+      expect(screen.getByText(prompt)).toBeInTheDocument()
+    }
     expect(new Set(prompts).size).toBe(prompts.length)
   })
 
@@ -635,7 +705,7 @@ describe('MetadataPanel saving', () => {
     const user = userEvent.setup()
     renderHarness(current)
 
-    await user.click(screen.getByRole('button', { name: 'Edit Description' }))
+    await startEditing(user)
     await user.type(screen.getByLabelText('Description'), 'Sunny day')
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
@@ -1132,12 +1202,14 @@ describe('MetadataPanel multi-line values', () => {
     expect(screen.getByLabelText('Automatic description')).toHaveValue(AI_NOTE)
   })
 
-  it('still prompts an empty field in italics', () => {
+  it('leaves an empty field out rather than keeping its breaks', () => {
+    // Where a prompt used to stand in for a missing value there is now nothing —
+    // so there is no row here whose whitespace could be preserved at all.
     renderPanel({ photo: photo({ description: '' }) })
 
-    const prompt = screen.getByText('What is happening here, and why it is worth remembering')
-    expect(prompt).toHaveClass('fst-italic')
-    // A one-line prompt has no breaks to keep, so it is not a multi-line value.
-    expect(getComputedStyle(prompt).whiteSpace).not.toBe('pre-wrap')
+    expect(
+      screen.queryByText('What is happening here, and why it is worth remembering'),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Edit Description' })).not.toBeInTheDocument()
   })
 })
