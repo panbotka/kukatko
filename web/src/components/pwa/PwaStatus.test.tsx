@@ -50,7 +50,7 @@ function announceUpdate(): void {
 }
 
 /** The English copy the assertions below read, so a wording change fails loudly. */
-const OFFLINE_TEXT = 'You are offline. Kukátko shows only what it has stored.'
+const OFFLINE_TEXT = 'You are offline. Kukátko opens, but photos and the library need a connection.'
 const UPDATE_TEXT = 'A new version of Kukátko is available.'
 
 beforeEach(async () => {

@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
-import { ApiError } from '../services/auth'
+import { ApiError, NetworkError } from '../services/auth'
 
 import { LoginPage } from './LoginPage'
 
@@ -144,5 +144,57 @@ describe('LoginPage', () => {
     await user.click(screen.getByRole('button', { name: 'Sign in' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/too many login attempts/i)
+  })
+
+  it('blames the connection, not the password, when the request never left the device', async () => {
+    // A phone with no signal: fetch rejects, nothing judged the credentials. The
+    // generic "sign in failed, please try again" used to land here and send the
+    // reader off to retype a password they had not forgotten.
+    const user = userEvent.setup()
+    const login = vi.fn().mockRejectedValue(new NetworkError('Failed to fetch'))
+    renderLogin(authValue({ login }))
+
+    await user.type(screen.getByLabelText('Username'), 'alice')
+    await user.type(screen.getByLabelText('Password'), 'secret')
+    await user.click(screen.getByRole('button', { name: 'Sign in' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/could not reach the server/i)
+    expect(alert).toHaveTextContent(/your password is probably fine/i)
+    // Emphatically not the credentials message, and not the generic one.
+    expect(alert).not.toHaveTextContent(/invalid username or password/i)
+    expect(alert).not.toHaveTextContent(/sign in failed/i)
+  })
+
+  it('warns up front when the session probe already found the backend unreachable', async () => {
+    renderLogin(authValue({ status: 'unreachable' }))
+
+    expect(await screen.findByTestId('login-offline-notice')).toHaveTextContent(
+      /cannot reach the server right now/i,
+    )
+  })
+
+  it('keeps its hands off the keyboard while the backend is unreachable', () => {
+    // autoFocus raises the phone's keyboard. Doing that for a form that cannot
+    // succeed is an invitation to type a password nothing will check.
+    const { unmount } = renderLogin(authValue({ status: 'unreachable' }))
+    expect(screen.getByLabelText('Username')).not.toHaveFocus()
+    unmount()
+
+    renderLogin(authValue())
+    expect(screen.getByLabelText('Username')).toHaveFocus()
+  })
+
+  it('replaces the standing warning with the message for the attempt just made', async () => {
+    const user = userEvent.setup()
+    const login = vi.fn().mockRejectedValue(new NetworkError('Failed to fetch'))
+    renderLogin(authValue({ status: 'unreachable', login }))
+
+    await user.type(screen.getByLabelText('Username'), 'alice')
+    await user.type(screen.getByLabelText('Password'), 'secret')
+    await user.click(screen.getByRole('button', { name: 'Sign in' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/could not reach the server/i)
+    expect(screen.queryByTestId('login-offline-notice')).not.toBeInTheDocument()
   })
 })

@@ -10,8 +10,9 @@ import { useTranslation } from 'react-i18next'
 import { useLocation, useNavigate } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
+import { Icon } from '../components/Icon'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
-import { ApiError } from '../services/auth'
+import { ApiError, NetworkError } from '../services/auth'
 
 /** Shape of the history state set by the route guard on redirect to login. */
 interface LocationState {
@@ -35,15 +36,29 @@ function returnTo(state: LocationState | null): string {
   return `${pathname}${state?.from?.search ?? ''}`
 }
 
-type LoginErrorKey = 'login.errorInvalid' | 'login.errorRateLimited' | 'login.errorGeneric'
+type LoginErrorKey =
+  | 'login.errorInvalid'
+  | 'login.errorRateLimited'
+  | 'login.errorOffline'
+  | 'login.errorGeneric'
 
 type SubmitState =
   | { status: 'idle' }
   | { status: 'submitting' }
   | { status: 'error'; messageKey: LoginErrorKey }
 
-/** Maps a failed login to the i18n key of the message to show the user. */
+/**
+ * Maps a failed login to the i18n key of the message to show the user.
+ *
+ * The network branch comes first and matters most. A {@link NetworkError} means
+ * the credentials never left the device, so nothing judged them; falling through
+ * to the generic "sign in failed, try again" was how an offline phone told its
+ * owner to retype a password that was perfectly correct.
+ */
 function errorKeyFor(error: unknown): LoginErrorKey {
+  if (error instanceof NetworkError) {
+    return 'login.errorOffline'
+  }
   if (error instanceof ApiError) {
     if (error.status === 401) {
       return 'login.errorInvalid'
@@ -57,8 +72,16 @@ function errorKeyFor(error: unknown): LoginErrorKey {
 
 /**
  * Login page: a Superhero-styled card with username + password. Validates that
- * both fields are filled, surfaces invalid-credentials and rate-limit errors,
- * and on success redirects to the originally requested route (or home).
+ * both fields are filled, surfaces invalid-credentials, rate-limit and
+ * unreachable-backend errors, and on success redirects to the originally
+ * requested route (or home).
+ *
+ * A guarded route with no backend now shows the offline page instead of sending
+ * anyone here, but this address is still reachable on its own — a bookmark, or
+ * the installed app reopening on the screen it was last left on. So when the
+ * session probe has already found the server unreachable, the form says so up
+ * front and keeps its hands off the keyboard: `autoFocus` raising the phone's
+ * keyboard for a form that cannot succeed is an invitation to type.
  */
 export function LoginPage() {
   const { t } = useTranslation()
@@ -97,6 +120,9 @@ export function LoginPage() {
   }
 
   const submitting = submit.status === 'submitting'
+  // The session probe already tried and failed to reach the backend, so this
+  // form has nothing to talk to — until it does.
+  const unreachable = authStatus === 'unreachable'
 
   return (
     <Row className="justify-content-center">
@@ -106,6 +132,16 @@ export function LoginPage() {
             <Card.Title as="h1" className="kk-page-title mb-4 text-center">
               {t('login.title')}
             </Card.Title>
+
+            {/* The warning yields to a submit error: once they have pressed the
+                button, the sentence about that attempt is the more useful one,
+                and both say the same thing anyway. */}
+            {unreachable && submit.status !== 'error' && (
+              <Alert variant="warning" role="status" data-testid="login-offline-notice">
+                <Icon name="wifi-off" className="me-2" />
+                {t('login.offlineNotice')}
+              </Alert>
+            )}
 
             {submit.status === 'error' && (
               <Alert variant="danger" role="alert">
@@ -126,7 +162,7 @@ export function LoginPage() {
                   type="text"
                   name="username"
                   autoComplete="username"
-                  autoFocus
+                  autoFocus={!unreachable}
                   required
                   value={username}
                   onChange={(event) => {

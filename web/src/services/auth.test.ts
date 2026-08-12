@@ -12,6 +12,7 @@ import {
   isMaintainer,
   login,
   logout,
+  NetworkError,
   revokeApiToken,
   roleAtLeast,
   type Role,
@@ -69,6 +70,51 @@ describe('login', () => {
     const error = await login('alice', 'secret').catch((e: unknown) => e)
     expect(error).toBeInstanceOf(ApiError)
     expect((error as ApiError).status).toBe(429)
+  })
+
+  it('throws NetworkError, not ApiError, when the request never reached the backend', async () => {
+    // What fetch does with no network: a bare TypeError, no status to read.
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')))
+
+    const error = await login('alice', 'secret').catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(NetworkError)
+    // Not an ApiError: there is no status, because nothing answered. The login
+    // form leans on exactly this to avoid blaming the password.
+    expect(error).not.toBeInstanceOf(ApiError)
+  })
+})
+
+describe('transport failures', () => {
+  it('reports an unreachable backend as NetworkError on every auth call', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')))
+
+    await expect(fetchMe()).rejects.toBeInstanceOf(NetworkError)
+    await expect(logout()).rejects.toBeInstanceOf(NetworkError)
+    await expect(changePassword('old', 'newpassword')).rejects.toBeInstanceOf(NetworkError)
+    await expect(fetchApiTokens()).rejects.toBeInstanceOf(NetworkError)
+  })
+
+  it('lets an abort through untouched instead of dressing it as an outage', async () => {
+    // Callers cancel in flight on unmount and must keep recognising AbortError;
+    // their own cancellation is not the server going away.
+    const abort = new DOMException('The operation was aborted.', 'AbortError')
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(abort))
+
+    const error = await fetchMe().catch((e: unknown) => e)
+
+    expect(error).toBe(abort)
+    expect(error).not.toBeInstanceOf(NetworkError)
+  })
+
+  it('keeps the underlying failure as the error cause', async () => {
+    const cause = new TypeError('Failed to fetch')
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(cause))
+
+    const error = await fetchMe().catch((e: unknown) => e)
+
+    expect((error as NetworkError).cause).toBe(cause)
+    expect((error as NetworkError).name).toBe('NetworkError')
   })
 })
 

@@ -392,7 +392,9 @@
     "passwordRequired": "Zadejte heslo.",
     "errorInvalid": "Nesprávné uživatelské jméno nebo heslo.",
     "errorRateLimited": "Příliš mnoho pokusů o přihlášení. Zkuste to prosím za chvíli.",
-    "errorGeneric": "Přihlášení se nezdařilo. Zkuste to prosím znovu."
+    "errorOffline": "Kukátko se nedovolalo serveru, přihlášení tedy nikdo neposoudil. Heslo je nejspíš v pořádku — zkontrolujte připojení a zkuste to znovu.",
+    "errorGeneric": "Přihlášení se nezdařilo. Zkuste to prosím znovu.",
+    "offlineNotice": "Kukátko se teď nedovolá serveru. Přihlásit se půjde, až budete zase online."
   },
   "account": {
     "title": "Můj účet",
@@ -2208,6 +2210,13 @@
     },
     "back": "Zpět do knihovny"
   },
+  "offline": {
+    "title": "Kukátko se nedovolá serveru",
+    "message": "Vypadá to na výpadek připojení. Aplikace se otevře i offline, ale fotky a data knihovny musí přijít ze serveru.",
+    "notSignedOut": "Odhlášení to není: přihlášení nemá kdo ověřit, takže ani neskončilo. Až bude spojení zpátky, zkuste to znovu.",
+    "retry": "Zkusit znovu",
+    "retrying": "Zkouším…"
+  },
   "import": {
     "title": "Import",
     "intro": "Historie importních běhů a jejich chyb. Spouští se jen z příkazové řádky: `kukatko import dir` načte složku ze serverového disku. Jednorázový import, kterým knihovna vznikla, skončil v srpnu 2026 a byl odstraněn — jeho běhy zůstávají v historii jako záznam o původu knihovny.",
@@ -3041,7 +3050,7 @@
     "more_other": "a {{count}} dalších"
   },
   "pwa": {
-    "offline": "Jsi offline. Kukátko zobrazí jen to, co má uložené.",
+    "offline": "Jsi offline. Kukátko se otevře, ale fotky a knihovna potřebují připojení.",
     "update": {
       "message": "Je k dispozici nová verze Kukátka.",
       "action": "Načíst znovu",
