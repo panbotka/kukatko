@@ -31,7 +31,7 @@ package review
 // stays reproducible for a fixed library state and a fixed pair of cursors.
 
 // maxSameEntityRun is how many questions in a row may be about the same subject
-// or the same label while another entity still has a question waiting.
+// or the same label.
 //
 // It is a constant rather than a config key because it is a property of the
 // game, not an operational trade-off: unlike maxPerEntity it costs nothing to
@@ -40,6 +40,14 @@ package review
 // just done ("that is the same evening, so yes, that is Anna again"), which is
 // the one repetition that helps rather than bores. The third in a row is where
 // it starts to feel like the same question.
+//
+// The number never changed; what changed is that it now fires. Here in spread it
+// always did — a source with another entity left is reordered around it — but
+// the round mixer priced the same rule *below* the round's per-entity ceiling,
+// so once every entity had taken its three questions the cheapest candidate was
+// whichever also broke the run, and one person got five in a row. The mixer now
+// refuses such a candidate outright (see mixer.breaksRun), and the pool-wide
+// per-entity cap keeps one person from filling the pool in the first place.
 const maxSameEntityRun = 2
 
 // questionEntity returns what a question is about: the subject for a face or

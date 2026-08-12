@@ -133,6 +133,17 @@ func TestLoad_defaults(t *testing.T) {
 		// The variety rule: a batch of 20 questions therefore draws on at least
 		// five different people or labels instead of interrogating one of them.
 		{"review.max_per_entity", cfg.Review.MaxPerEntity, 4},
+		// The game is about people: faces are the only kind switched on, which is
+		// also what pays for the wider face scan below.
+		{"review.kind_shares.face", cfg.Review.KindShares.Face, 1.0},
+		{"review.kind_shares.label", cfg.Review.KindShares.Label, 0.0},
+		{"review.kind_shares.place", cfg.Review.KindShares.Place, 0.0},
+		{"review.kind_shares.duplicate", cfg.Review.KindShares.Duplicate, 0.0},
+		{"review.kind_shares.outlier", cfg.Review.KindShares.Outlier, 0.0},
+		{"review.face_budget", cfg.Review.FaceBudget, 24},
+		{"review.label_budget", cfg.Review.LabelBudget, 6},
+		{"review.skip_mute_threshold", cfg.Review.SkipMuteThreshold, 3},
+		{"review.skip_mute_cooldown", cfg.Review.SkipMuteCooldown, 7 * 24 * time.Hour},
 		{"trash.retention_days", cfg.Trash.RetentionDays, 365},
 		{"duplicate.enabled", cfg.Duplicate.Enabled, true},
 		{"duplicate.phash_max_diff", cfg.Duplicate.PhashMaxDiff, 8},
@@ -456,6 +467,49 @@ func TestLoad_reviewRoundEnvOverrides(t *testing.T) {
 	}
 	if cfg.Review.RoundMaxPerEntity != 2 {
 		t.Errorf("review.round_max_per_entity = %d, want 2", cfg.Review.RoundMaxPerEntity)
+	}
+}
+
+// TestLoad_reviewKindSharesEnvOverrides covers the keys that decide what the
+// game is about. Every kind is defaulted, so setting one share alone means what
+// it looks like: the 95 % faces / 5 % labels the game started as is two keys,
+// and the three checks stay switched off because nobody asked for them.
+func TestLoad_reviewKindSharesEnvOverrides(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("KUKATKO_REVIEW_KIND_SHARES_FACE", "0.95")
+	t.Setenv("KUKATKO_REVIEW_KIND_SHARES_LABEL", "0.05")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	shares := cfg.Review.KindShares
+	if shares.Face != 0.95 || shares.Label != 0.05 {
+		t.Errorf("kind_shares face/label = %v/%v, want 0.95/0.05", shares.Face, shares.Label)
+	}
+	if shares.Place != 0 || shares.Duplicate != 0 || shares.Outlier != 0 {
+		t.Errorf("kind_shares place/duplicate/outlier = %v/%v/%v, want all off — a share "+
+			"nobody set must not be inherited from another kind",
+			shares.Place, shares.Duplicate, shares.Outlier)
+	}
+}
+
+// TestLoad_reviewSkipMuteEnvOverrides covers the two keys behind "I don't know":
+// how many of them quiet a person, and for how long the first time.
+func TestLoad_reviewSkipMuteEnvOverrides(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("KUKATKO_REVIEW_SKIP_MUTE_THRESHOLD", "5")
+	t.Setenv("KUKATKO_REVIEW_SKIP_MUTE_COOLDOWN", "48h")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.Review.SkipMuteThreshold != 5 {
+		t.Errorf("review.skip_mute_threshold = %d, want 5", cfg.Review.SkipMuteThreshold)
+	}
+	if cfg.Review.SkipMuteCooldown != 48*time.Hour {
+		t.Errorf("review.skip_mute_cooldown = %v, want 48h", cfg.Review.SkipMuteCooldown)
 	}
 }
 

@@ -147,7 +147,12 @@ func TestQueue_faceWorkDoesNotScaleWithSubjectCount(t *testing.T) {
 
 func TestQueue_rotatesThroughSubjectsAcrossRebuilds(t *testing.T) {
 	t.Parallel()
+	// A budget small enough that it, rather than the pool filling up, is what
+	// ends each window: the assertion is about the cursor, and a scan that
+	// stopped early because it had enough would move it by a different amount.
+	const budget = 5
 	f := newFixture(t, func(f *fixture) {
+		f.faceBudget = budget
 		for i := range 20 {
 			f.sweeper.people = append(f.sweeper.people, scannedPerson(fmt.Sprintf("subj%02d", i), 0.4))
 		}
@@ -161,13 +166,13 @@ func TestQueue_rotatesThroughSubjectsAcrossRebuilds(t *testing.T) {
 		*f.now = f.now.Add(2 * DefaultCacheTTL) // force a rebuild
 		offsets = append(offsets, f.sweeper.windows[len(f.sweeper.windows)-1].Offset)
 	}
-	if fmt.Sprint(offsets) != fmt.Sprint([]int{0, DefaultFaceBudget, 2 * DefaultFaceBudget}) {
+	if fmt.Sprint(offsets) != fmt.Sprint([]int{0, budget, 2 * budget}) {
 		t.Fatalf("window offsets = %v, want successive windows — a bounded scan that never "+
 			"rotates would ignore the rest of the library forever", offsets)
 	}
-	if f.sweeper.visited != 3*DefaultFaceBudget {
+	if f.sweeper.visited != 3*budget {
 		t.Errorf("subjects visited = %d, want %d (%d per rebuild)",
-			f.sweeper.visited, 3*DefaultFaceBudget, DefaultFaceBudget)
+			f.sweeper.visited, 3*budget, budget)
 	}
 }
 

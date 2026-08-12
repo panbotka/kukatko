@@ -583,6 +583,45 @@ type ReviewConfig struct {
 	// correct ones — which is how a player learns to answer yes without looking.
 	// A value outside (0, 2) falls back to the default.
 	OutlierThreshold float64 `mapstructure:"outlier_threshold"`
+	// KindShares says which kinds of question the game may ask and in what
+	// proportion. It is the answer to "what is this game about", and the default
+	// is faces alone.
+	KindShares ReviewKindShares `mapstructure:"kind_shares"`
+	// SkipMuteThreshold is how many "I don't know" answers about one person mute
+	// that person for that player. A non-positive value falls back to the default.
+	SkipMuteThreshold int `mapstructure:"skip_mute_threshold"`
+	// SkipMuteCooldown is how long the first mute lasts before the game may ask
+	// about that person once more, on a photo the player has not been asked about
+	// before. Every further skip doubles it. A non-positive value falls back to
+	// the default.
+	SkipMuteCooldown time.Duration `mapstructure:"skip_mute_cooldown"`
+}
+
+// ReviewKindShares is the relative weight of each review-game question kind.
+// Only the ratios matter, so 0.95/0.05 and 19/1 say the same thing; a kind at
+// zero is switched off entirely, which means it is never scanned and therefore
+// costs a rebuild nothing. That is where the budget for a wider face scan comes
+// from, and it is why the empty-queue reason can never point at a kind the
+// operator switched off.
+//
+// A set where every weight is non-positive falls back to faces alone rather than
+// leaving a game that can ask nothing.
+type ReviewKindShares struct {
+	// Face is the "is this <person>?" question over an unnamed face — the game's
+	// reason to exist, and the only kind switched on by default.
+	Face float64 `mapstructure:"face"`
+	// Label is the "does <label> fit this photo?" question. The game began as
+	// roughly 95 % faces to 5 % labels; that is `face: 0.95, label: 0.05`.
+	Label float64 `mapstructure:"label"`
+	// Place is the "was this taken in <place>?" question over an estimated
+	// location. It also needs location_estimate.enabled.
+	Place float64 `mapstructure:"place"`
+	// Duplicate is the "is this the same photo?" question over a near-duplicate
+	// pair. It also needs duplicate.enabled.
+	Duplicate float64 `mapstructure:"duplicate"`
+	// Outlier is the "is this really <person>?" question over a face already
+	// assigned to them but sitting far from their centroid.
+	Outlier float64 `mapstructure:"outlier"`
 }
 
 // AuthConfig holds the credentials used to bootstrap the initial admin account
@@ -985,15 +1024,24 @@ func setExpandDefaults(v *viper.Viper) {
 	v.SetDefault("expand.concurrency", 8)
 }
 
-// setReviewDefaults registers the review game defaults: the uncertainty band
-// (roughly "the system is 45–75 % sure"), the confident tier above 80 % and the
-// 70 % of a batch drawn from it, the size of the pool a rebuild gathers and of
-// the round mixed out of it, the per-user
+// setReviewDefaults registers the review game defaults: which kinds of question
+// the game asks and in what share (faces, and nothing else), the uncertainty
+// band (roughly "the system is 45–75 % sure"), the confident tier above 80 % and
+// the 70 % of a batch drawn from it, the size of the pool a rebuild gathers and
+// of the round mixed out of it, the per-user
 // queue cache window, the bounds on the label fan-out, the per-rebuild work
 // budgets plus the deadline that keep one batch of questions off the library's
-// growth curve, and the share of a pool and of a round a single person or label
-// may claim.
+// growth curve, the share of a pool and of a round a single person or label may
+// claim, and how many "I don't know"s about one person quiet them for a player.
 func setReviewDefaults(v *viper.Viper) {
+	// Every kind is defaulted, not just the enabled one, so a config that sets a
+	// single share (say label: 0.05) means exactly what it looks like instead of
+	// inheriting whatever the others happened to be.
+	v.SetDefault("review.kind_shares.face", 1.0)
+	v.SetDefault("review.kind_shares.label", 0.0)
+	v.SetDefault("review.kind_shares.place", 0.0)
+	v.SetDefault("review.kind_shares.duplicate", 0.0)
+	v.SetDefault("review.kind_shares.outlier", 0.0)
 	v.SetDefault("review.band_min", 0.45)
 	v.SetDefault("review.band_max", 0.75)
 	v.SetDefault("review.sure_min", 0.80)
@@ -1004,12 +1052,14 @@ func setReviewDefaults(v *viper.Viper) {
 	v.SetDefault("review.cache_ttl", "60s")
 	v.SetDefault("review.max_labels", 200)
 	v.SetDefault("review.label_concurrency", 2)
-	v.SetDefault("review.face_budget", 8)
+	v.SetDefault("review.face_budget", 24)
 	v.SetDefault("review.label_budget", 6)
 	v.SetDefault("review.build_timeout", "15s")
 	v.SetDefault("review.max_per_entity", 4)
 	v.SetDefault("review.outlier_budget", 4)
 	v.SetDefault("review.outlier_threshold", 0.5)
+	v.SetDefault("review.skip_mute_threshold", 3)
+	v.SetDefault("review.skip_mute_cooldown", "168h")
 }
 
 func setMapsDefaults(v *viper.Viper) {

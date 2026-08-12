@@ -334,6 +334,28 @@ review:
   # photo carry label Y?" — mixed from two confidence tiers. Confidence is
   # 1 - cosine distance.
   #
+  # What the game asks about, and in what proportion. One weight per question
+  # kind; only the ratios matter, so 19/1 and 0.95/0.05 say the same thing. A
+  # kind at zero is switched off entirely — it is never scanned, so it costs a
+  # rebuild nothing, and an empty queue can never explain itself by naming it.
+  #
+  # The default is one line: the game is about people. That is also what pays for
+  # the wider face_budget below — on a test library of 105 subjects and 20
+  # labels, dropping the label scan took a cold rebuild from 375 ms to 141 ms,
+  # while the wider face window costs at most 26 ms more when a window turns out
+  # to have nothing in it.
+  #
+  # To restore the mix the game started as, set face: 0.95 and label: 0.05. The
+  # three checks over work the machine already did need their own switch too:
+  # place also follows location_estimate.enabled, duplicate also follows
+  # duplicate.enabled. A set where every weight is zero falls back to faces.
+  kind_shares:
+    face: 1.0
+    label: 0.0
+    place: 0.0
+    duplicate: 0.0
+    outlier: 0.0
+  #
   # The uncertainty band, band_min <= confidence < band_max: the candidates the
   # system is genuinely unsure about, where a human answer teaches it the most.
   # Below band_min the guess is noise and the question demoralising, so nothing
@@ -394,7 +416,13 @@ review:
   # successive rebuilds walk the whole library. Raise it for a broader mix of
   # people per batch, at the cost of a slower first load. Set to 0 (or below) to
   # fall back to the default.
-  face_budget: 8
+  #
+  # Twenty-four, up from eight. Most subjects have nothing unassigned left, so a
+  # window of eight regularly produced candidates from only one or two people —
+  # and a round mixed from two people keeps coming back to them however good the
+  # variety rules are. The scan still stops the moment the pool is full, so a
+  # productive library costs exactly what it did before.
+  face_budget: 24
   # The same bound for the label side (each label search is itself a per-member kNN
   # fan-out). Set to 0 (or below) to fall back to the default.
   label_budget: 6
@@ -426,6 +454,20 @@ review:
   # mostly asks about correct ones, which is how a player learns to answer yes
   # without looking. Set to 0 (or outside 0..2) to fall back to the default.
   outlier_threshold: 0.5
+  # "I don't know", remembered. How many skips about one person quiet them for
+  # the player who skipped them. Three, because two are forgiven: the first
+  # couple of skips are far more often an unclear photo than a face somebody
+  # genuinely cannot place. Set to 0 (or below) to fall back to the default.
+  skip_mute_threshold: 3
+  # How long that quiet lasts before the game tries once more — and then only on
+  # a face the player has never been shown, since the photos they gave up on stay
+  # silent for good. Every further skip doubles the wait, so a person somebody
+  # will never place is asked about ever less often instead of every week for
+  # ever; a photo the library gained after the mute is asked about straight away.
+  # The mute is strictly per user and never becomes a rejection: it says "don't
+  # ask me this", never "this is not that person". Go duration string; set to 0
+  # (or below) to fall back to the default.
+  skip_mute_cooldown: "168h"
 
 auth:
   # Credentials used to create the initial admin account on first run.

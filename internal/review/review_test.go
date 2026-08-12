@@ -245,6 +245,21 @@ type fixture struct {
 	queueSize      int
 	roundSize      int
 	roundPerEntity int
+	// faceBudget overrides how many subjects one rebuild may scan (0 = the
+	// package default), so a test about the rotation can make the budget — rather
+	// than the fixture's subject count — the thing that bounds a window.
+	faceBudget int
+	// shares overrides Config.KindShares. It defaults to every kind switched on
+	// and equally weighted (see allKinds) rather than to the production default of
+	// faces alone, because almost every test in this package is about something
+	// other than the mix — the tiers, the rotation, the reasons — and would
+	// quietly stop exercising the other four kinds if the fixture inherited it.
+	// The share rules themselves are tested against explicit weights.
+	shares map[Kind]float64
+	// skips backs the persisted "I don't know" memory; nil is the "not wired"
+	// case, which is also how the Service ships to an operator without a database
+	// behind the game.
+	skips *fakeSkips
 	// albums, breathers and stats back the three read-only extras — the mixer's
 	// album rule, the round's breather card and the answer reveal. They stay nil
 	// unless a test wires them, which is also the "not wired" case the Service
@@ -272,6 +287,9 @@ func newFixture(t *testing.T, mutate func(*fixture)) *fixture {
 	if mutate != nil {
 		mutate(f)
 	}
+	if f.shares == nil {
+		f.shares = allKinds()
+	}
 	cfg := Config{
 		Sweeper:           f.sweeper,
 		Expander:          f.expander,
@@ -285,7 +303,12 @@ func newFixture(t *testing.T, mutate func(*fixture)) *fixture {
 		QueueSize:         f.queueSize,
 		RoundSize:         f.roundSize,
 		RoundMaxPerEntity: f.roundPerEntity,
+		FaceBudget:        f.faceBudget,
+		KindShares:        f.shares,
 		Now:               func() time.Time { return *f.now },
+	}
+	if f.skips != nil {
+		cfg.Skips = f.skips
 	}
 	// A nil interface, not a typed nil: the Service tests `== nil` to decide
 	// whether the extra is wired at all.
@@ -301,6 +324,45 @@ func newFixture(t *testing.T, mutate func(*fixture)) *fixture {
 	}
 	f.svc = New(cfg)
 	return f
+}
+
+// allKinds is the shares map that switches every question kind on with equal
+// weight — the game as it behaved before the mix was configurable.
+func allKinds() map[Kind]float64 {
+	shares := make(map[Kind]float64, len(Kinds))
+	for _, kind := range Kinds {
+		shares[kind] = 1
+	}
+	return shares
+}
+
+// fakeSkips is an in-memory skip memory: it records what the game asked it to
+// remember and hands back whatever a test seeded, so the mute rules can be
+// driven without a database.
+type fakeSkips struct {
+	// memory is the seeded history, keyed by user uid.
+	memory map[string]SkipMemory
+	// recorded is every (user, subject, photo) triple the game wrote, in order.
+	recorded [][3]string
+	// err fails both operations, for the degradation paths.
+	err error
+}
+
+// RecordSkip appends the triple to the write log.
+func (f *fakeSkips) RecordSkip(_ context.Context, userUID, subjectUID, photoUID string) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.recorded = append(f.recorded, [3]string{userUID, subjectUID, photoUID})
+	return nil
+}
+
+// SkipMemory returns the seeded history of one user.
+func (f *fakeSkips) SkipMemory(_ context.Context, userUID string) (SkipMemory, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.memory[userUID], nil
 }
 
 // fakeAlbums serves scripted album membership.

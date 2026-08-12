@@ -581,16 +581,33 @@ and reproduction require the same queue for the same library state) and is cache
 (`review.cache_ttl`). Answers go **exclusively through the existing write paths** (the assign state machine,
 `AttachLabelAudited`, feedback) — review has no write path of its own.
 
-The game asks **five kinds** of question, not two. Face and label check guesses about things nobody had
+The game knows **five kinds** of question, not two. Face and label check guesses about things nobody had
 decided; **place**, **duplicate** and **outlier** check guesses the machine already *acted on* — a coordinate
 the geo-estimator wrote onto a photo, a pair the duplicate detector linked, a face somebody filed under a
 person. Those are the errors that otherwise sit in a library unseen, because no page lists them as questions,
 and each of the three composes an existing read-only service (`geoestimate.Reviewer`, `duplicates.Service`,
 `outliers.Service`) exactly as the first two compose sweep and expand. The tiers do not apply to them — their
-confidences are not points on one comparable scale — so each carries its own ordering, and **all five kinds are
-merged proportionally** so that no kind can own a session: every collector stops at the batch size, so with
-k kinds supplying material a batch holds roughly 1/k of each, while a kind that is the only one left still
-fills the batch (an exhausted library must not withhold the work it has).
+confidences are not points on one comparable scale — so each carries its own ordering.
+
+**Which of the five the game asks, and in what proportion, is configuration** (`review.kind_shares`), not
+something that falls out of how much material each search happened to return. The default is one line long —
+faces, and nothing else — because that is what the game is for; restoring the mix it began as is
+`face: 0.95, label: 0.05`. A kind at zero is never scanned, which is what buys the wider face window the
+variety rules need, and it is not a source an empty queue can name either. What the shares do *not* do is
+starve a collector: every enabled kind still gathers a full pool's worth, so a kind that is the only one with
+material fills the pool alone — an exhausted library must not withhold the work it has.
+
+**"I don't know" is remembered.** Yes and no leave a durable trace of their own, so the game never repeats
+them; "don't know" left none, and a restart put the same unrecognisable face back on the screen. A skip on a
+question about a person is now written per (user, subject, photo) in `review_skips` (migration `0059`), and
+three of them about one person quiet that person for that player. The whole mute is derived from those rows —
+when it began is the newest skip, how long it lasts is the cooling-off period doubled once per skip past the
+threshold — so there is no second state table to keep in step. It is a **pause, not a verdict**: the photos
+themselves stay silent for good, but past the cooling-off period the game tries once more on a face that
+player has never been shown, and a photo the library gained after the mute is never suppressed. It is
+strictly **per user**, and it is emphatically **not a rejection** — nothing about it reaches the catalogue,
+narrows a candidate search or changes an identity, and it stays out of the audit trail, because the audit
+records what happened to the library and a player's uncertainty is a fact about the player.
 The rule that answers open no new write path holds for all of them, and one consequence is deliberate and
 absolute: **the game never merges duplicates, never deletes a photo and never invalidates a marker.** A
 duplicate "yes" records an opinion (`duplicate_confirmations`, migration `0054`) that ranks the group first on

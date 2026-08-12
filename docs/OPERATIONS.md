@@ -939,7 +939,23 @@ long-running and belong on the machine where the instance runs — so they remai
   `KUKATKO_EXPAND_MAX_DISTANCE`, `_LIMIT`, `_MAX_LIMIT`, `_SEARCH_LIMIT`, `_SOURCE_CAP`, `_CONCURRENCY`.
 - **Review keys (`review.*`, `internal/config` + `internal/review`):** tunes the **review game**
   (`GET /review/queue`, `POST /review/answer`) — one question at a time over candidates the
-  system is unsure about. `band_min` / `band_max` (**default 0.45 / 0.75**) — the **uncertainty band**: a
+  system is unsure about.
+  `kind_shares.{face,label,place,duplicate,outlier}` (**default 1 / 0 / 0 / 0 / 0**) — **what the
+  game is about**. One weight per question kind; only the ratios matter, so `19 / 1` and
+  `0.95 / 0.05` say the same thing, and every kind is defaulted so setting one share alone means
+  what it looks like. A kind at zero is switched off *entirely*: it is never scanned, so it costs a
+  rebuild nothing, and it is not a source the empty-queue reason can name — a game configured down
+  to faces that has run out of faces says `no_people`, not `no_people_no_labels`. The default
+  leaves the queue to faces because that is what the game is for; restoring the mix it started as
+  is `face: 0.95, label: 0.05`, and the `place` / `duplicate` kinds still need their own
+  subsystem switched on as well (`location_estimate.enabled`, `duplicate.enabled`). A set where
+  every weight is non-positive falls back to faces alone rather than to a game that can ask
+  nothing. **This is also what pays for the wider `face_budget` below:** measured on a test library
+  of 105 named subjects and 20 labels of 20 members, a cold rebuild went from **375 ms** (8 face
+  kNN + 6 label similarity fan-outs) to **141 ms** (10 face kNN, no label scan), while the widened
+  face window costs at most **+26 ms** — 47 ms → 73 ms — in the worst case where a whole window of
+  subjects turns out to have nothing left to ask about.
+  `band_min` / `band_max` (**default 0.45 / 0.75**) — the **uncertainty band**: a
   candidate with confidence (= 1 − cosine distance) in `[band_min, band_max)` is a hard question, where a human
   answer teaches the system the most; below `band_min` the guess is noise and nothing is ever asked.
   An invalid band (outside (0,1), min ≥ max) falls back to the default **pair**.
@@ -973,12 +989,16 @@ long-running and belong on the machine where the instance runs — so they remai
   expensive vector searches run again (answers edit the queue in-place, the session counter is cheap).
   `max_labels` (**default 200**) — a cap on how many labels one rebuild considers. `label_concurrency`
   (**default 2**) — how many label-similarity searches run at once (each already fans out internally; on a
-  RAM-constrained box keep it low). `face_budget` / `label_budget` (**default 8 / 6**) — how many named
+  RAM-constrained box keep it low). `face_budget` / `label_budget` (**default 24 / 6**) — how many named
   subjects and how many labels **one rebuild may scan**. These are the bound that keeps the endpoint off the
   library's growth curve: building the queue used to run the whole recognition sweep inside the request, which
   on 105 named subjects took 250 s and meant `/review` never loaded (`docs/PERF.md` §3). A rebuild stops
   earlier still once the batch is full, and the cursor rotates, so successive rebuilds walk the rest of the
   library; raise a budget for a broader mix of people or labels per batch at the cost of a slower first load.
+  The face budget was **8 until the kind shares arrived**, and the reason it is now 24 is variety rather than
+  coverage: most subjects have nothing unassigned left in the band, so a window of eight regularly produced
+  candidates from one or two people — and a pool drawn from two people cannot be mixed into a round that does
+  not keep coming back to them, whatever the variety rules say.
   `build_timeout` (**default 15s**) — the hard cap on one rebuild, the backstop behind both budgets: a rebuild
   that runs out of time serves what it has (logged as `review: queue rebuild hit its deadline`) rather than
   holding the request open. `max_per_entity` (**default 4**) — **the variety knob**: how many questions about
@@ -987,7 +1007,13 @@ long-running and belong on the machine where the instance runs — so they remai
   batch takes at most this many per entity and never asks about the same one more than **twice in a row** while
   another entity still has a question waiting. With the default batch of 20 that forces a rebuild to draw on at
   least five different people or labels — lower it for more variety at the cost of a costlier rebuild (a batch
-  must be filled from more sources), raise it for the opposite.
+  must be filled from more sources), raise it for the opposite. The share is counted **across the kinds**: a
+  person's unnamed faces and their outliers are two searches and one person, and capping each search on its own
+  let the game ask about them twice as often as this promises. The "twice in a row" limit is likewise a
+  **refusal, not a preference** — it used to be priced below `round_max_per_entity`, so once every person in a
+  round had had their three questions the cheapest next question was whichever also continued a run, which is
+  how one person got asked about five times running. It stands down only for a pool that has run down to a
+  single person, because a library with one person left in question still has to be playable.
   `outlier_budget` / `outlier_threshold` (**defaults 4 / 0.5**) belong to the **outlier check** — the question
   "is this really X?" over a face already assigned to X but sitting far from X's centroid. Ranking one person
   loads every face assigned to them and scores it against a trimmed centroid, which is the most expensive
@@ -996,11 +1022,22 @@ long-running and belong on the machine where the instance runs — so they remai
   asking about: two people's embeddings sit around 1.0, so 0.5 is comfortably past "a bad photo of the right
   person". Lower it to hear about borderline assignments too — at the cost of a game that mostly asks about
   correct ones, which is precisely how a player learns to answer yes without looking. The other two new
-  question kinds have no keys of their own: the **place check** follows `location_estimate.enabled` (no
-  estimator, no estimates to rule on) and the **duplicate check** follows `duplicate.enabled` and its
-  thresholds, the same switch that makes `GET /duplicates` answer 503 — so the game and the page can never
-  disagree about whether duplicates exist. Every rebuild logs the result at debug level
-  (`review: queue rebuilt` with `questions`/`entities`/`longest_run`/`sure`/`band`). Apart from the budgets, the
+  question kinds have no budget keys of their own: on top of their `kind_shares` weight the **place check**
+  follows `location_estimate.enabled` (no estimator, no estimates to rule on) and the **duplicate check**
+  follows `duplicate.enabled` and its thresholds, the same switch that makes `GET /duplicates` answer 503 — so
+  the game and the page can never disagree about whether duplicates exist.
+  `skip_mute_threshold` / `skip_mute_cooldown` (**defaults 3 / 168h**) are **"I don't know", remembered**. A
+  skip on a face question is written to `review_skips` per (user, subject, photo); the threshold is how many of
+  them about one person quiet that person for the player who skipped them, and the cooldown how long the first
+  quiet lasts. Two skips are forgiven, because the first couple are far more often an unclear photo than a face
+  somebody genuinely cannot place. The mute is a **pause, not a verdict**: past the cooldown the game tries
+  once more, but only on a face that player has never been shown (the photos they gave up on stay silent for
+  good), a photo the library gained *after* the mute is never suppressed, and every further skip doubles the
+  wait — capped at a year — so a person somebody will never place is asked about ever less often rather than
+  every week for ever. It is strictly **per user**, and it reaches nothing in the catalogue: a skip never
+  becomes a face rejection, never narrows the candidate search or the sweep, and is deliberately absent from
+  the audit trail. Every rebuild logs the result at debug level
+  (`review: queue rebuilt` with `questions`/`entities`/`longest_run`/`sure`/`band`/`took`). Apart from the budgets, the
   review does not take the face side with its own keys — it runs through sweep/candidates and their
   `sweep.*`/`candidates.*` limits (**and the memory bound lives there**: the queue asks for the whole window
   from the confident tier down to `band_min`, so `candidates.max_exemplars`/`max_candidates` and the
@@ -1009,7 +1046,9 @@ long-running and belong on the machine where the instance runs — so they remai
   page** (`labels.review_enabled`, default on), not an operator setting. A non-positive value for any key falls
   back to the default. Env:
   `KUKATKO_REVIEW_BAND_MIN`, `_BAND_MAX`, `_SURE_MIN`, `_SURE_SHARE`, `_QUEUE_SIZE`, `_CACHE_TTL`,
-  `_MAX_LABELS`, `_LABEL_CONCURRENCY`, `_FACE_BUDGET`, `_LABEL_BUDGET`, `_BUILD_TIMEOUT`, `_MAX_PER_ENTITY`.
+  `_MAX_LABELS`, `_LABEL_CONCURRENCY`, `_FACE_BUDGET`, `_LABEL_BUDGET`, `_BUILD_TIMEOUT`, `_MAX_PER_ENTITY`,
+  `_KIND_SHARES_FACE` (and `_LABEL`/`_PLACE`/`_DUPLICATE`/`_OUTLIER`), `_SKIP_MUTE_THRESHOLD`,
+  `_SKIP_MUTE_COOLDOWN`.
 
 ### `maps.user_agent` — restricting the mapy.com key to a User-Agent
 

@@ -24,6 +24,7 @@ func testMix(size int) mixConfig {
 		MaxPerRound: DefaultRoundMaxPerEntity,
 		MaxRun:      maxSameEntityRun,
 		SureShare:   DefaultSureShare,
+		Shares:      newKindShares(allKinds()),
 	}
 }
 
@@ -157,9 +158,11 @@ func TestMixRound_capsOneEntitysShareOfTheRound(t *testing.T) {
 
 func TestMixRound_capIsAPreferenceNotAWall(t *testing.T) {
 	t.Parallel()
-	// The degradation case: a pool that is one person and nothing else. Every
-	// candidate breaks both hard rules, so the cheapest one still has to be
-	// served — a library with one named person must stay playable.
+	// The degradation case: a pool that is one person and nothing else. The run
+	// limit is a refusal rather than a price, but it stands down when every
+	// remaining candidate is about the same entity — a library with one named
+	// person must stay playable, and a round that came back two questions long
+	// every time would not be.
 	pool := make([]Question, 0, 8)
 	for i := range 8 {
 		pool = append(pool, faceQ("anna", i, tierSure))

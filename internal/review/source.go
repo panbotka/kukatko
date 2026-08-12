@@ -95,7 +95,12 @@ func (s Source) wantsChecks() bool {
 // left in what you chose" vs "name some people first"), and neither may be
 // concluded from a scan the deadline cut short — a degraded rebuild undercounts
 // by construction.
-func reasonFor(src Source, mat material) string {
+// A kind the operator switched off in review.kind_shares is never scanned, so
+// its total stays zero and it can never be the source an empty queue points at.
+// That is the honest reading of "there is nothing left": a game configured down
+// to faces which has run out of faces says so, rather than naming a kind it
+// would not have asked about anyway.
+func reasonFor(src Source, shares kindShares, mat material) string {
 	if mat.degraded {
 		return ReasonNoCandidates
 	}
@@ -116,8 +121,23 @@ func reasonFor(src Source, mat material) string {
 		// and no labels but a backlog of estimated locations is not one where
 		// "name some people first" is useful advice.
 		if mat.sources() == 0 {
-			return ReasonNoSources
+			return soleKindReason(shares)
 		}
 	}
 	return ReasonNoCandidates
+}
+
+// soleKindReason names the empty source of a game configured down to one kind.
+// With every kind but faces switched off, "you have named nobody yet" is exact
+// advice, where the two-sided "no people and no labels" would send the operator
+// looking for a labels page the game does not use.
+func soleKindReason(shares kindShares) string {
+	switch {
+	case shares.only(KindFace):
+		return ReasonNoPeople
+	case shares.only(KindLabel):
+		return ReasonNoLabels
+	default:
+		return ReasonNoSources
+	}
 }

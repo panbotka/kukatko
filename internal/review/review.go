@@ -42,20 +42,26 @@
 // the three checks over already-applied work have no single comparable
 // confidence axis, so each carries its own ordering (see extras.go).
 //
-// All five kinds are then interleaved deterministically, each spread through the
-// others in proportion to how much material it has. That merge, not a quota, is
-// what stops one kind owning a session: every collector stops at `need`
-// candidates, so with k kinds supplying material a batch of n holds about n/k of
-// each — and a kind that is the only one left still fills the batch, because an
-// exhausted library should not withhold the work it does have.
+// Which of the five the game may ask about, and in what proportion, is
+// configuration: review.kind_shares carries one weight per kind, and the default
+// is one line long — faces, and nothing else, because that is what the game is
+// for. A kind at zero is never scanned, so switching one off pays for the wider
+// face scan the rest of the game needs; the enabled ones size their own
+// collectors and are preferred by the round mixer in proportion to their share.
+// See kinds.go. Within a kind the questions are then spread through the others
+// so no kind arrives in a block — a kind that is the only one left still fills
+// the batch, because an exhausted library should not withhold the work it does
+// have.
 //
 // Informativeness alone does not make the game playable, though. One label that
 // matches half the library supplies hundreds of band candidates and used to fill
 // a whole batch by itself — twenty questions in a row about the same label. A
-// batch therefore takes at most MaxPerEntity questions about any one subject or
-// label, and asks no more than maxSameEntityRun of them in a row while another
-// entity still has a question waiting; see variety.go for both rules and why
-// they are shaped that way.
+// pool therefore holds at most MaxPerEntity questions about any one subject or
+// label *across every kind* — a person's unnamed faces and their outliers are
+// the same person to a player — and a round never asks about one entity more
+// than maxSameEntityRun times in a row while any other entity still has a
+// question waiting. The mixer refuses such a candidate rather than pricing it,
+// which is what makes that promise hold. See variety.go and mixer.go.
 //
 // All of that produces a *pool*. What the player is served is a round mixed out
 // of it: RoundSize questions (10 by default) chosen one slot at a time so that
@@ -108,11 +114,17 @@
 // merges duplicates, never deletes a photo and never invalidates a marker.
 //
 // Built queues are cached per user for CacheTTL so a batch fetch does not rerun
-// the vector searches, and answered or skipped questions are tracked
-// in an in-memory session: a skip lasts for the session (an idle session is
-// pruned after sessionIdleTTL, and a restart forgets skips — deliberately, since
-// "don't know" is not "no"), while yes/no answers persist through the underlying
-// stores and never come back.
+// the vector searches, and answered or skipped questions are tracked in an
+// in-memory session: a skip shelves a question for the session (an idle session
+// is pruned after sessionIdleTTL), while yes/no answers persist through the
+// underlying stores and never come back.
+//
+// A skip on a *face* is remembered beyond the session as well. Three "don't
+// know"s about one person mute that person for that player for a cooling-off
+// period, and the photos they were skipped on stay silent for good, so the game
+// stops asking a player to name somebody they have already said they cannot
+// place. It is per user, it is a pause rather than a verdict, and it reaches
+// nothing in the catalogue: a skip is never a rejection. See skips.go.
 package review
 
 import (
@@ -168,7 +180,16 @@ const (
 	// the bound that keeps the queue off the library's growth curve: the cost of
 	// a rebuild is subjects × exemplars × faces, so the subject count is the only
 	// factor a batch of questions has no business paying for.
-	DefaultFaceBudget = 8
+	//
+	// Twenty-four, raised from eight, and the raise is what the default kind
+	// shares pay for. A window of eight regularly yielded candidates from only
+	// one or two people — most subjects have nothing unassigned left in the band
+	// — and a pool drawn from two people cannot be mixed into a round that does
+	// not keep coming back to them. The scan still stops the moment the pool is
+	// full, so a library where the first few subjects are productive costs
+	// exactly what it did before; the wider window only buys more chances when
+	// they are not.
+	DefaultFaceBudget = 24
 	// DefaultLabelBudget is how many labels one rebuild may scan, for the same
 	// reason (each label search is itself a per-member kNN fan-out).
 	DefaultLabelBudget = 6
@@ -634,6 +655,10 @@ type Config struct {
 	Feedback FeedbackStore
 	// Assigner applies yes answers on faces and no answers on outliers.
 	Assigner Assigner
+	// Skips remembers a player's "I don't know" about a person across sessions;
+	// nil switches the persisted memory off and leaves skips shelved for the
+	// current session only.
+	Skips SkipStore
 	// Places supplies and settles the estimated-location questions; nil switches
 	// the place check off.
 	Places PlaceReviewer
@@ -702,6 +727,17 @@ type Config struct {
 	// OutlierThreshold is the minimum centroid distance a face must have to be
 	// worth asking about; non-positive means DefaultOutlierThreshold.
 	OutlierThreshold float64
+	// KindShares is the weight of each question kind — which kinds the game may
+	// ask about and in what proportion. A kind at zero or absent is switched off
+	// entirely; a set that switches everything off falls back to faces only.
+	KindShares map[Kind]float64
+	// SkipMuteThreshold is how many "don't know" answers about one person mute
+	// them for that player; non-positive means DefaultSkipMuteThreshold.
+	SkipMuteThreshold int
+	// SkipMuteCooldown is how long the first mute lasts before the game may ask
+	// about that person once more, doubling with every further skip;
+	// non-positive means DefaultSkipMuteCooldown.
+	SkipMuteCooldown time.Duration
 	// Now overrides the clock in tests; nil means time.Now.
 	Now func() time.Time
 }
@@ -715,6 +751,7 @@ type Service struct {
 	faces      FaceStore
 	feedback   FeedbackStore
 	assigner   Assigner
+	skips      SkipStore
 	places     PlaceReviewer
 	duplicates DuplicateFinder
 	outliers   OutlierRanker
@@ -743,7 +780,12 @@ type Service struct {
 	maxPerEntity     int
 	outlierBudget    int
 	outlierThreshold float64
-	now              func() time.Time
+
+	shares            kindShares
+	skipMuteThreshold int
+	skipMuteCooldown  time.Duration
+
+	now func() time.Time
 
 	mu       sync.Mutex
 	sessions map[string]*session
@@ -850,6 +892,7 @@ func New(cfg Config) *Service {
 		faces:            cfg.Faces,
 		feedback:         cfg.Feedback,
 		assigner:         cfg.Assigner,
+		skips:            cfg.Skips,
 		places:           cfg.Places,
 		duplicates:       cfg.Duplicates,
 		outliers:         cfg.Outliers,
@@ -876,10 +919,13 @@ func New(cfg Config) *Service {
 		roundMaxPerEntity: orDefaultInt(
 			cfg.RoundMaxPerEntity, DefaultRoundMaxPerEntity,
 		),
-		outlierBudget:    orDefaultInt(cfg.OutlierBudget, DefaultOutlierBudget),
-		outlierThreshold: cfg.OutlierThreshold,
-		now:              cfg.Now,
-		sessions:         make(map[string]*session),
+		outlierBudget:     orDefaultInt(cfg.OutlierBudget, DefaultOutlierBudget),
+		outlierThreshold:  cfg.OutlierThreshold,
+		shares:            newKindShares(cfg.KindShares),
+		skipMuteThreshold: orDefaultInt(cfg.SkipMuteThreshold, DefaultSkipMuteThreshold),
+		skipMuteCooldown:  cfg.SkipMuteCooldown,
+		now:               cfg.Now,
+		sessions:          make(map[string]*session),
 	}
 	svc.applyFallbacks()
 	return svc
@@ -913,6 +959,9 @@ func (s *Service) applyFallbacks() {
 	}
 	if s.buildTimeout <= 0 {
 		s.buildTimeout = DefaultBuildTimeout
+	}
+	if s.skipMuteCooldown <= 0 {
+		s.skipMuteCooldown = DefaultSkipMuteCooldown
 	}
 	if s.now == nil {
 		s.now = time.Now

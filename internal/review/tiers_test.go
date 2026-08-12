@@ -191,10 +191,12 @@ func TestQueue_exhaustedBandDegradesToTheConfidentTier(t *testing.T) {
 func TestQueue_emptyWindowRotatesInsteadOfReportingNothingToDo(t *testing.T) {
 	t.Parallel()
 	// Twelve subjects, only the last of which has anything to ask about. One
-	// rebuild scans FaceBudget (8) of them, so the first window comes back empty
-	// — and an empty *window* is not an empty library. The rebuild has to rotate
-	// to the next one rather than telling the player there is nothing left.
+	// rebuild scans a budget of eight of them, so the first window comes back
+	// empty — and an empty *window* is not an empty library. The rebuild has to
+	// rotate to the next one rather than telling the player there is nothing
+	// left.
 	f := newFixture(t, func(f *fixture) {
+		f.faceBudget = 8
 		for i := range 11 {
 			f.sweeper.people = append(f.sweeper.people, scannedPerson(fmt.Sprintf("subj%02d", i)))
 		}
