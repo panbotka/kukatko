@@ -19,6 +19,24 @@ func captureLogger(buf *bytes.Buffer) *slog.Logger {
 	return slog.New(slog.NewJSONHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 }
 
+// TestEmbeddingClientConfig_carriesTextURL guards the one line that connects the
+// config key to the client: without it embedding.text_url would be accepted,
+// documented and silently ignored, and every search would keep waiting on the box.
+func TestEmbeddingClientConfig_carriesTextURL(t *testing.T) {
+	t.Parallel()
+	cfg := &config.Config{}
+	cfg.Embedding.URL = "http://box:8000"
+	cfg.Embedding.TextURL = "http://embeddings-text:8000"
+
+	got := embeddingClientConfig(cfg)
+	if got.BaseURL != "http://box:8000" {
+		t.Errorf("BaseURL = %q, want the box", got.BaseURL)
+	}
+	if got.TextBaseURL != "http://embeddings-text:8000" {
+		t.Errorf("TextBaseURL = %q, want the text instance", got.TextBaseURL)
+	}
+}
+
 // TestLogEmbeddingDim covers the three outcomes of the startup comparison. The
 // mismatch case is the one that matters operationally: it must be a warning and
 // it must name both widths, because that line is the only place the swap is

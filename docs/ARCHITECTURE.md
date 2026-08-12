@@ -173,6 +173,11 @@ research ([§17](#17-reference)).
   OpenCLIP + InsightFace), normally running on the GPU box. The address is in the configuration
   (`embedding.url`); when the box is offline, jobs wait in the queue
   (see [§8](#8-asynchronni-joby--box-offline)). For the contract see [§6.1](#61-kontrakt-sidecaru).
+- **One call may go elsewhere:** embedding the *search query* is the only sidecar call a person waits
+  on, and waiting for a sleeping desktop is not an option, so `embedding.text_url` can point
+  `/embed/text` at a second, always-on instance of the same service in text-only mode (production runs
+  one on the VPS next to the app, ~0.43 s on CPU, cosine agreement with the box 0.999999). Everything
+  else — images, faces, OCR and the **health probe auto-wake reads** — stays on `embedding.url`.
 - Models: **SigLIP 2 so400m/14 @378** (`ViT-SO400M-14-SigLIP2-378` / `webli`, image+text,
   **1152-dim**, Apache 2.0), **InsightFace `buffalo_l`** (ArcFace, 512-dim — a different model,
   unaffected by an image-tower swap). The image tower was CLIP ViT-L/14 (768-dim) until 08/2026;
@@ -663,8 +668,10 @@ lost on restart).
   `GET /api/v1/capabilities` (`internal/capabilitiesapi`, `{semantic_search}`), which the frontend polls
   to show/hide the semantic-search option depending on whether the box is online. It is **purely
   presentational**: search degrades to full-text on its own (`degraded=true`), so the safe default
-  "unavailable" only hides the option, it never breaks the flow. When `embedding.url` is not set, the loop
-  is inert and the flag is always `false`.
+  "unavailable" only hides the option, it never breaks the flow. It probes the host that answers
+  `/embed/text` — `embedding.text_url` when configured, otherwise `embedding.url` — because the flag is
+  about semantic search, not about the box; auto-wake's probe stays on the box. When neither is set,
+  the loop is inert and the flag is always `false`.
 
 ### 8.1 Metadata sidecars — curation data independent of the database
 

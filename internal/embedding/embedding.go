@@ -13,6 +13,11 @@
 // Everything sits behind the Client interface so tests can substitute a fake
 // without any real network or box, and uploads stream through io.Pipe so a whole
 // image is never buffered in memory.
+//
+// One call can be sent somewhere else: /embed/text serves interactive search and
+// may be pointed at a second, always-on instance of the same service via
+// Config.TextBaseURL, while image, face, OCR and health traffic stays on the box
+// (see Config.TextBaseURL and Healthy for why the split stops there).
 package embedding
 
 import (
@@ -122,6 +127,14 @@ type Client interface {
 type Config struct {
 	// BaseURL is the root URL of the sidecar, e.g. "http://box:8000".
 	BaseURL string
+	// TextBaseURL optionally routes /embed/text to a second instance of the
+	// service, leaving images, faces, OCR and the health probe on BaseURL. It
+	// exists because those two groups have opposite needs: image and face work is
+	// queued and can wait for the GPU box to be woken, while embedding a search
+	// query is the one call a reader waits on, so it wants a host that is always
+	// up (a CPU text-only instance next to the app). An empty value means "same
+	// host as everything else" and is the state every deployment starts in.
+	TextBaseURL string
 	// ImageDim is the expected image/text embedding size (default DefaultImageDim).
 	ImageDim int
 	// FaceDim is the expected face embedding size (default DefaultFaceDim).
@@ -148,6 +161,7 @@ type Config struct {
 // HTTPClient is the production Client backed by the sidecar's HTTP API.
 type HTTPClient struct {
 	baseURL        *url.URL
+	textURL        *url.URL
 	imageDim       int
 	faceDim        int
 	requestTimeout time.Duration
@@ -160,21 +174,22 @@ type HTTPClient struct {
 // compile-time assertion that HTTPClient satisfies Client.
 var _ Client = (*HTTPClient)(nil)
 
-// New builds an HTTPClient from cfg. It returns ErrInvalidURL if BaseURL is not a
-// valid HTTP(S) URL with a host.
+// New builds an HTTPClient from cfg. It returns ErrInvalidURL if BaseURL — or a
+// non-empty TextBaseURL — is not a valid HTTP(S) URL with a host.
 func New(cfg Config) (*HTTPClient, error) {
-	parsed, err := url.Parse(strings.TrimSuffix(cfg.BaseURL, "/"))
+	parsed, err := parseServiceURL(cfg.BaseURL)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrInvalidURL, err)
+		return nil, err
 	}
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return nil, fmt.Errorf("%w: scheme %q must be http or https", ErrInvalidURL, parsed.Scheme)
-	}
-	if parsed.Host == "" {
-		return nil, fmt.Errorf("%w: missing host", ErrInvalidURL)
+	textURL := parsed
+	if cfg.TextBaseURL != "" {
+		if textURL, err = parseServiceURL(cfg.TextBaseURL); err != nil {
+			return nil, fmt.Errorf("text base url: %w", err)
+		}
 	}
 	return &HTTPClient{
 		baseURL:        parsed,
+		textURL:        textURL,
 		imageDim:       orDefaultInt(cfg.ImageDim, DefaultImageDim),
 		faceDim:        orDefaultInt(cfg.FaceDim, DefaultFaceDim),
 		requestTimeout: orDefaultDuration(cfg.RequestTimeout, DefaultRequestTimeout),
@@ -184,6 +199,35 @@ func New(cfg Config) (*HTTPClient, error) {
 		client: orDefaultHTTPClient(
 			cfg.HTTPClient, orDefaultDuration(cfg.DialTimeout, DefaultDialTimeout)),
 	}, nil
+}
+
+// parseServiceURL parses raw as the root URL of a sidecar instance, tolerating a
+// trailing slash. It returns ErrInvalidURL unless the result is an HTTP(S) URL
+// carrying a host.
+func parseServiceURL(raw string) (*url.URL, error) {
+	parsed, err := url.Parse(strings.TrimSuffix(raw, "/"))
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrInvalidURL, err)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return nil, fmt.Errorf("%w: scheme %q must be http or https", ErrInvalidURL, parsed.Scheme)
+	}
+	if parsed.Host == "" {
+		return nil, fmt.Errorf("%w: missing host", ErrInvalidURL)
+	}
+	return parsed, nil
+}
+
+// endpointURL resolves endpoint against the host that serves it. Only /embed/text
+// may live elsewhere (see Config.TextBaseURL); everything else — images, faces,
+// OCR — must stay on baseURL, because a text-only instance answers those with a
+// 503. New endpoints therefore land on baseURL by default, which is the safe
+// side of this decision.
+func (c *HTTPClient) endpointURL(endpoint string) *url.URL {
+	if endpoint == endpointText {
+		return c.textURL.JoinPath(endpoint)
+	}
+	return c.baseURL.JoinPath(endpoint)
 }
 
 // orDefaultInt returns v when positive, otherwise def.
@@ -273,7 +317,9 @@ func (c *HTTPClient) ImageEmbedding(
 // to /embed/text. It validates the returned dimensionality. Unlike the image and
 // face endpoints this one answers an interactive search, so it is bounded by the
 // much shorter text timeout: the caller degrades to full-text on failure, and a
-// long wait is strictly worse than results it could already have shown.
+// long wait is strictly worse than results it could already have shown. For the
+// same reason it is the only call that may be routed to a second host — see
+// Config.TextBaseURL.
 func (c *HTTPClient) TextEmbedding(
 	ctx context.Context, text string,
 ) (embedding []float32, model, pretrained string, err error) {
@@ -353,6 +399,12 @@ func (c *HTTPClient) toFace(f faceItem) (Face, error) {
 // path within the health timeout. Any HTTP response (even a non-2xx one) counts
 // as reachable, since the goal is to detect whether the box is online; only a
 // transport failure or timeout is treated as offline.
+//
+// It probes BaseURL even when a separate TextBaseURL is configured, and must
+// keep doing so: this is the probe internal/wake reads to decide whether to send
+// a magic packet. Pointed at an always-on text instance it would report a green
+// light forever, no packet would ever be sent, and the image_embed/face_detect
+// queue would wait behind it indefinitely.
 func (c *HTTPClient) Healthy(ctx context.Context) bool {
 	ctx, cancel := context.WithTimeout(ctx, c.healthTimeout)
 	defer cancel()
@@ -406,7 +458,8 @@ type healthResponse struct {
 // but the body is parsed instead of discarded. Errors are classified exactly as
 // for the embedding endpoints — ErrUnavailable for an offline box (the normal
 // state here), ErrBadResponse for an answer that is not the expected JSON — so a
-// caller can tell "cannot check" from "checked, and it disagrees".
+// caller can tell "cannot check" from "checked, and it disagrees". Like Healthy
+// it asks BaseURL: the model it reports on is the image tower, which lives there.
 func (c *HTTPClient) Health(ctx context.Context) (SidecarHealth, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.healthTimeout)
 	defer cancel()
@@ -444,7 +497,7 @@ func (c *HTTPClient) postJSON(
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	reqURL := c.baseURL.JoinPath(endpoint)
+	reqURL := c.endpointURL(endpoint)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL.String(), bytes.NewReader(raw))
 	if err != nil {
 		return nil, fmt.Errorf("%s: build request: %w", endpoint, err)
@@ -478,7 +531,7 @@ func (c *HTTPClient) postMultipartFields(
 	writer := multipart.NewWriter(pipeWriter)
 	go streamFilePart(pipeWriter, writer, buffered, contentType, fields)
 
-	reqURL := c.baseURL.JoinPath(endpoint)
+	reqURL := c.endpointURL(endpoint)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL.String(), pipeReader)
 	if err != nil {
 		_ = pipeReader.CloseWithError(err)

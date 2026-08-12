@@ -298,7 +298,16 @@ func (w WebConfig) TrustedProxySet() (*clientip.Set, error) {
 // EmbeddingConfig points at the external embedding service and records the
 // vector dimensions it produces.
 type EmbeddingConfig struct {
-	URL      string `mapstructure:"url"`
+	URL string `mapstructure:"url"`
+	// TextURL optionally sends only the text-embedding call (the search query) to
+	// a second instance of the service; empty means "the same host as everything
+	// else". The split exists because the main URL points at a desktop GPU box
+	// that is usually powered off: queue work waits for it happily, but a search
+	// query cannot, and a small always-on CPU instance answers that one call in
+	// well under the text timeout. Image, face and OCR calls keep going to URL —
+	// a text-only instance rejects them — and so does the health probe the
+	// Wake-on-LAN logic reads.
+	TextURL  string `mapstructure:"text_url"`
 	ImageDim int    `mapstructure:"image_dim"`
 	FaceDim  int    `mapstructure:"face_dim"`
 	// DialTimeout bounds opening the connection to the sidecar. The box is
@@ -1058,6 +1067,10 @@ func setThumbDefaults(v *viper.Viper) {
 // setDefaults to keep each function within the length budget.
 func setEmbeddingDefaults(v *viper.Viper) {
 	v.SetDefault("embedding.url", "http://localhost:8000")
+	// Empty on purpose: no second host by default, so an existing deployment keeps
+	// sending every call to embedding.url. The key is still registered because
+	// AutomaticEnv only sees keys that have one.
+	v.SetDefault("embedding.text_url", "")
 	v.SetDefault("embedding.image_dim", 1152) // SigLIP 2 so400m/14; was 768 under CLIP ViT-L-14
 	v.SetDefault("embedding.face_dim", 512)
 	v.SetDefault("embedding.dial_timeout", "3s")

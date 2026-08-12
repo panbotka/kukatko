@@ -139,6 +139,13 @@ web:
 embedding:
   # URL of the external embedding service (runs on the box; may be offline).
   url: "http://localhost:8000"
+  # Optional second instance that answers ONLY /embed/text — the search query,
+  # the one call a person waits for. Empty (the default) means the URL above
+  # answers everything. Point it at an always-on text-only instance and semantic
+  # search keeps working while the box sleeps; images, faces, OCR and the health
+  # probe stay on `url` (a text-only instance answers those with 503, and the
+  # health probe is what Wake-on-LAN reads to decide the box needs waking).
+  text_url: ""
   # Dimensionality of image embeddings produced by the service (SigLIP 2
   # so400m/14 @378). It must match the width of the stored `embeddings.embedding`
   # column, so changing it means a migration and a full re-embed, not a setting.
