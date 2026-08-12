@@ -302,6 +302,29 @@ function stageFigure(): HTMLElement | null {
   return document.querySelector<HTMLElement>('.kk-viewer__figure')
 }
 
+/** The metadata drawer, whose contents stay mounted while it is shut. */
+function drawer(container: HTMLElement): HTMLElement {
+  const el = container.querySelector<HTMLElement>('.kk-viewer__panel')
+  if (el === null) {
+    throw new Error('drawer not found')
+  }
+  return el
+}
+
+/** What a browser lets the keyboard reach by the elements' own native rules. */
+const FOCUSABLE = 'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])'
+
+/**
+ * The drawer's controls the keyboard can still walk into. jsdom implements neither
+ * `inert` nor layout, so this reads the same DOM condition a browser acts on: an
+ * `inert` ancestor takes a whole subtree out of the tab order.
+ */
+function tabbableInDrawer(container: HTMLElement): HTMLElement[] {
+  return [...drawer(container).querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
+    (el) => el.closest('[inert]') === null && !el.hasAttribute('disabled'),
+  )
+}
+
 /**
  * Reports the stage preview as loaded at the given natural size — jsdom fetches
  * nothing, so this is the only way the viewer learns the shape of what it renders.
@@ -1194,6 +1217,101 @@ describe('PhotoDetailPage — immersive viewer', () => {
       ).toBeTruthy()
       // The location map is embedded in the caption & place block.
       expect(screen.getByTestId('map')).toBeInTheDocument()
+    })
+  })
+
+  /**
+   * The shut drawer and the keyboard. It slides out rather than unmounting, so all
+   * of its controls stay laid out — and a laid-out control is a tabbable one.
+   * Measured on production at 1440px: Tab left the visible chrome and landed on
+   * "Close info" INSIDE the shut panel, the browser scrolled the photograph 416px
+   * off screen to reveal it, and kept it there for 17 more stops. Two defects in
+   * one, because the panel is `aria-hidden` the whole time it holds that focus —
+   * a WCAG 4.1.2 violation, as a screen reader announces nothing from there.
+   */
+  describe('the shut drawer and the keyboard', () => {
+    it('keeps every control of the shut drawer out of the tab order', async () => {
+      const { container } = renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      // Shut, but fully mounted: there ARE controls in there — that is the whole
+      // problem, and an assertion about "no reachable control" would otherwise pass
+      // on an empty panel and prove nothing.
+      expect(drawer(container).querySelectorAll(FOCUSABLE).length).toBeGreaterThan(0)
+      expect(drawer(container)).toHaveAttribute('inert')
+      expect(tabbableInDrawer(container)).toHaveLength(0)
+    })
+
+    it('gives the panel back to the keyboard when it opens', async () => {
+      const user = userEvent.setup()
+      const { container } = renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+      await openInfo(user)
+
+      expect(drawer(container)).not.toHaveAttribute('inert')
+      expect(tabbableInDrawer(container).length).toBeGreaterThan(0)
+      expect(screen.getByRole('button', { name: 'Close info' })).toBeInTheDocument()
+    })
+
+    it('hands focus back to the info toggle when closed from inside itself', async () => {
+      const user = userEvent.setup()
+      const { container } = renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+      await openInfo(user)
+
+      // The ✕ lives in the drawer, so shutting it takes the focused control away
+      // with it. Focus must land on the toggle that brings the panel back, not on
+      // <body>, where the next Tab would restart at the top of the page.
+      await user.click(screen.getByRole('button', { name: 'Close info' }))
+      expect(drawer(container)).toHaveAttribute('inert')
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Info' })).toHaveFocus()
+      })
+    })
+
+    it('leaves the keyboard alone when the drawer is shut from the chrome', async () => {
+      const user = userEvent.setup()
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+      await openInfo(user)
+
+      // Closing from the top bar: focus is already on a visible control, so nothing
+      // is moved out from under the reader.
+      await openInfo(user)
+      expect(screen.getByRole('button', { name: 'Info' })).toHaveFocus()
+    })
+
+    it('takes the faces view — the same drawer — out of the tab order too', async () => {
+      const user = userEvent.setup()
+      fetchFacesMock.mockResolvedValue(facesResponse(2))
+      const { container } = renderPage()
+      await user.click(await screen.findByRole('button', { name: 'Show faces' }))
+      expect(drawer(container)).not.toHaveAttribute('inert')
+
+      // Faces are a VIEW of this one drawer, not a panel of their own, so closing
+      // them shuts the same element — and the same fix covers them.
+      await user.click(screen.getByRole('button', { name: 'Close the faces panel' }))
+      expect(drawer(container)).toHaveAttribute('inert')
+      expect(tabbableInDrawer(container)).toHaveLength(0)
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Show faces' })).toHaveFocus()
+      })
+    })
+
+    it('hides the shut drawer in CSS too, without cutting its slide-out', () => {
+      // `inert` is the fix; `visibility: hidden` is the same rule for a browser too
+      // old for it — and the one hiding switch that can be delayed past the slide,
+      // so the drawer is still seen leaving.
+      const css = readCss('src/components/photo/viewer.css')
+      const panel = declarations(ruleBody(css, /\.kk-viewer__panel\s*(?=\{)/) ?? '')
+      expect(panel.get('visibility')).toBe('hidden')
+      expect(panel.get('transition')).toContain('visibility 0s linear var(--kk-duration-base)')
+
+      const open = declarations(ruleBody(css, /\.kk-viewer__panel\.is-open\s*(?=\{)/) ?? '')
+      expect(open.get('visibility')).toBe('visible')
+      // No delay on the way in: it must be visible from the first frame.
+      expect(open.get('transition')).toContain('visibility 0s')
+      expect(open.get('transition')).not.toContain('visibility 0s linear')
     })
   })
 
