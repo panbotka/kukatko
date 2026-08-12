@@ -60,21 +60,16 @@ func validateUsername(username string) error {
 // Login verifies username/password and, on success, creates and returns a new
 // session together with the authenticated user. Every failure mode (unknown
 // user, wrong password, disabled account) returns ErrInvalidCredentials so the
-// caller cannot distinguish them; query and hashing failures are returned
+// caller cannot distinguish them — neither by the error nor by how long the
+// attempt took, see checkLoginPassword; query and hashing failures are returned
 // wrapped. The caller is responsible for login rate limiting.
 func (s *Service) Login(ctx context.Context, username, password string) (Session, User, error) {
 	user, err := s.store.GetUserByUsername(ctx, normalizeUsername(username))
-	if err != nil {
-		if errors.Is(err, ErrUserNotFound) {
-			return Session{}, User{}, ErrInvalidCredentials
-		}
+	if err != nil && !errors.Is(err, ErrUserNotFound) {
 		return Session{}, User{}, err
 	}
-	if user.Disabled {
-		return Session{}, User{}, ErrInvalidCredentials
-	}
-	if err := CheckPassword(user.PasswordHash, password); err != nil {
-		return Session{}, User{}, ErrInvalidCredentials
+	if err := checkLoginPassword(user, err == nil, password); err != nil {
+		return Session{}, User{}, err
 	}
 
 	sess, err := s.createSession(ctx, user)

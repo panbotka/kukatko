@@ -123,6 +123,18 @@ web:
   # Mark session cookies as Secure (HTTPS-only). Keep false for plain-HTTP local
   # development; enable when running behind a TLS-terminating reverse proxy.
   secure_cookies: false
+  # Which peers may rename the client with a forwarding header (X-Forwarded-For,
+  # X-Real-Ip). Only a request arriving *from* one of these networks has its
+  # header believed; from anyone else the socket address wins, so a caller cannot
+  # hand itself a fresh rate-limit bucket per request or forge an audit-trail IP.
+  # Entries: a CIDR block, a single address, or the keywords "loopback"
+  # (127.0.0.0/8, ::1) and "private" (10/8, 172.16/12, 192.168/16, fc00::/7 —
+  # deliberately not the 100.64/10 Tailscale range, which carries clients).
+  # An empty list ([]) trusts nothing; note that an *empty* environment variable
+  # reads as unset, so clearing the list has to be done here in YAML.
+  # As an env var, comma-separated:
+  #   KUKATKO_WEB_TRUSTED_PROXIES="loopback,10.8.0.0/24"
+  trusted_proxies: ["loopback", "private"]
 
 embedding:
   # URL of the external embedding service (runs on the box; may be offline).

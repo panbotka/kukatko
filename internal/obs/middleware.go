@@ -9,6 +9,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+
+	"github.com/panbotka/kukatko/internal/clientip"
 )
 
 // metricsPath is skipped by AccessLog so scrape traffic does not flood the log.
@@ -108,7 +110,10 @@ func logRequest(
 		slog.Int("status", ww.Status()),
 		slog.Int("bytes", ww.BytesWritten()),
 		slog.Float64("duration_ms", float64(elapsed.Microseconds())/1000.0),
-		slog.String("remote_ip", r.RemoteAddr),
+		// The resolved client address (internal/clientip), not the raw RemoteAddr:
+		// the same value the rate limiters and the audit trail key on, so a log
+		// line and an audit row about one request name the same machine.
+		slog.String("remote_ip", clientip.FromRequest(r)),
 	}
 	if uid := userOf(ctx); uid != "" {
 		attrs = append(attrs, slog.String("user", uid))

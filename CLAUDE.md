@@ -59,6 +59,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/candidates` — "find a person among untagged photos": per-exemplar kNN over unassigned faces + voting, rejection/negative-exemplar/size filters, action classification; read-only
 - `internal/candidatesapi` — `POST /subjects/{uid}/candidates` (RequireWrite)
 - `internal/capabilitiesapi` — all-authenticated `GET /capabilities` (instance feature flags, e.g. `semantic_search`)
+- `internal/clientip` — who a request came from: a forwarding header is believed only from a configured trusted proxy, otherwise the socket peer wins; one address for the limiters, the audit trail and the access log
 - `internal/cluster` — auto-clustering of unassigned faces (union-find over HNSW neighbors)
 - `internal/clusterapi` — `/faces/clusters` (list, assign, remove-face)
 - `internal/comments` — per-photo comment threads: plain text, soft delete, audited in the mutation's transaction; every role may write (viewers included), the endpoints live in `internal/photoapi`

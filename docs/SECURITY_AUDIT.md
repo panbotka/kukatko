@@ -20,6 +20,13 @@ unencrypted S3 dump), an out-of-date build toolchain (10 stdlib vulns from `govu
 and several low/info hardening + config-hygiene notes. `npm audit` is clean (0
 vulnerabilities). Nothing here required a code change — this report only documents.
 
+**Status since the audit** (the summary above is the 2026-07-14 snapshot; each finding's own
+section is authoritative). Fixed: **SEC-001** (HIGH, the trusted-proxy allow-list + the
+per-username login budget) and **SEC-006** (the login timing oracle) on **2026-08-12** — they were
+the only two reachable *anonymously*, and they composed into one working online password-guessing
+chain, so they were closed together. **SEC-015** and **SEC-016** were fixed earlier. Everything else
+below is open as written.
+
 > **Severity scale:** critical / high / medium / low / info. A weakness that is not
 > reachable from the HTTP layer with attacker input is rated **info** unless a concrete,
 > plausible non-HTTP attacker (e.g. a leaked backup) makes it exploitable, in which case it
@@ -29,9 +36,9 @@ vulnerabilities). Nothing here required a code change — this report only docum
 
 ## Findings
 
-### SEC-001 — HIGH — Client-controlled IP header defeats the login brute-force limiter (and forges audit/access-log IPs)
+### SEC-001 — HIGH — **FIXED** — Client-controlled IP header defeats the login brute-force limiter (and forges audit/access-log IPs)
 
-- **Where:**
+- **Where (before the fix):**
   - `internal/server/server.go:89` — `router.Use(middleware.RealIP)` applied unconditionally,
     with no trusted-proxy allow-list.
   - `internal/auth/handlers_auth.go:69` — login limiter key = `normalizeUsername(username) + "|" + clientIP(r)`.
@@ -56,13 +63,35 @@ vulnerabilities). Nothing here required a code change — this report only docum
   reverse proxy. The same spoofing writes attacker-chosen source IPs into every audit-trail
   row and access-log line (forensic/attribution integrity), and bypasses the per-IP throttles
   on `/upload`, `/photos/bulk`, `/import/*`, and `/map/tiles`.
-- **Suggested fix:** Do not trust client IP headers unconditionally. Either (a) drop
-  `middleware.RealIP` and key the limiters + audit IP on the real transport peer
-  (`r.RemoteAddr`), or (b) only honour `RealIP` when the direct peer is inside a configured
-  trusted-proxy CIDR allow-list, and have Traefik strip inbound
-  `True-Client-IP`/`X-Real-IP`/`X-Forwarded-For` and set them itself. Additionally add an
-  **IP-independent per-username failure counter** so one account cannot be brute-forced
-  regardless of source IP.
+- **Fix (2026-08-12):** option (b), plus the suggested per-username counter, so neither
+  half alone has to hold.
+  1. **`internal/clientip`** (new package) replaces `middleware.RealIP`.
+     `clientip.Middleware` (`internal/clientip/clientip.go:144-152`, mounted at
+     `internal/server/server.go:117`) resolves the client address **once** per request and puts it
+     on the context; `clientip.FromRequest` reads it back. A forwarding header is honoured **only**
+     when the socket peer is in the configured trusted set (`resolve`, `:181-195`): the
+     `X-Forwarded-For` chain is then walked right-to-left and the first hop that is not itself a
+     trusted proxy wins (`rightmostUntrusted`, `:203-218`). From anyone else the socket address
+     wins. `True-Client-IP` — the header chi checked *first*, which nothing in this deployment sets
+     or strips — is **never** read at all. Without the middleware, `FromRequest` falls back to the
+     socket peer, so a handler mounted on another router fails safe.
+  2. **The trusted set is configuration:** `web.trusted_proxies`
+     (`internal/config/config.go:277-297`), default `["loopback", "private"]`, validated at startup
+     (`ErrInvalidTrustedProxy`). The `100.64/10` Tailscale range is deliberately excluded: a tailnet
+     carries clients, not proxies. Deployment notes in `docs/OPERATIONS.md` §Configuration keys.
+  3. **One address everywhere:** the limiter key (`internal/ratelimit/ratelimit.go:187-193`), the
+     login key (`internal/auth/handlers_auth.go:48-54,100-106`), the audit row
+     (`internal/audit/audit.go:344-352`) and the access log's `remote_ip`
+     (`internal/obs/middleware.go:113-116`) all read `clientip.FromRequest`, so forensics and
+     throttling can no longer disagree — and neither can be forged.
+  4. **An IP-independent per-username budget** (`internal/auth/handlers_auth.go:108-121`,
+     `internal/auth/http.go:17-24,63-73`): every login attempt is charged to the per-(username, IP)
+     bucket *and* to a per-username one of `3 × auth.login_rate_limit` over the same window. Even if
+     addresses ever became forgeable again, one account cannot be guessed at faster than that.
+  Tests: `internal/clientip/clientip_test.go` (resolution table, rotating headers → one address),
+  `internal/server/trustedproxy_test.go` (a forged header cannot refill a real limiter's bucket; a
+  trusted proxy's header still gives each client its own), `internal/auth/login_limit_test.go`
+  (the login key, the per-username budget).
 
 ### SEC-002 — MEDIUM — Unbounded upload → disk-exhaustion DoS (default config ships with no cap)
 
@@ -146,19 +175,28 @@ vulnerabilities). Nothing here required a code change — this report only docum
   `X-Frame-Options: DENY` (or CSP `frame-ancestors 'none'`), a conservative CSP for the SPA,
   and HSTS when `secure_cookies` is on.
 
-### SEC-006 — LOW — Username enumeration via a login timing oracle
+### SEC-006 — LOW — **FIXED** — Username enumeration via a login timing oracle
 
-- **Where:** `internal/auth/service.go:52-65` (`Login`). The unknown-user and disabled-user
-  branches return `ErrInvalidCredentials` **before** any bcrypt call, while a valid enabled
-  user runs `bcrypt.CompareHashAndPassword` (~250 ms at cost 12).
+- **Where (before the fix):** `internal/auth/service.go:52-65` (`Login`). The unknown-user and
+  disabled-user branches returned `ErrInvalidCredentials` **before** any bcrypt call, while a valid
+  enabled user ran `bcrypt.CompareHashAndPassword` (~250 ms at cost 12).
 - **Attack scenario:** An **anonymous** attacker POSTs `/api/v1/auth/login` with candidate
   usernames and a dummy password and measures response latency: ~250 ms ⇒ a valid, active
   account; sub-millisecond ⇒ nonexistent or disabled. This enumerates valid admin/editor
-  usernames, which feeds directly into SEC-001's unlimited guessing. (Note: the *error text*
-  is correctly generic — this is purely a timing side-channel.)
-- **Suggested fix:** On the not-found / disabled branches, run a dummy
-  `bcrypt.CompareHashAndPassword` against a fixed dummy hash so every login path takes constant
-  time.
+  usernames, which fed directly into SEC-001's unlimited guessing. (Note: the *error text*
+  was correctly generic even then — this was purely a timing side-channel.)
+- **Fix (2026-08-12):** `Login` (`internal/auth/service.go:60-84`) no longer branches before the
+  comparison; it hands the lookup's outcome to **`checkLoginPassword`**
+  (`internal/auth/login_password.go:40-48`), which runs **exactly one** bcrypt comparison on every
+  path — against the account's hash when the username resolved, against `dummyPasswordHash()` when
+  it did not — and only then decides. The dummy hash is minted **through `HashPassword`**
+  (`login_password.go:21-27`), so it always carries the same work factor as real accounts; a
+  cheaper stand-in would silently restore the oracle, which is why
+  `TestDummyPasswordHash_matchesProductionCost` asserts `bcrypt.Cost` equals `hashCost`.
+  `TestCheckLoginPassword_timingIsIndistinguishable` measures all three failure branches (unknown,
+  disabled, wrong password): 320.9 / 321.0 / 320.8 ms on the ARM dev box at cost 12, against a
+  tolerance of 2× — the failure it exists to catch is a branch skipping bcrypt entirely, which is
+  three orders of magnitude off.
 
 ### SEC-007 — LOW — Session cookie `Secure` flag is off by default
 
@@ -179,8 +217,8 @@ vulnerabilities). Nothing here required a code change — this report only docum
   only; there is no `ReadTimeout`, `WriteTimeout`, or `IdleTimeout`.
 - **Attack scenario:** A slow client (a slow request body on `/upload`, or a slow reader on a
   large download/transcode) holds a connection and its goroutine open indefinitely
-  (Slowloris-on-body). Combined with SEC-001's throttle bypass, an attacker can accumulate
-  many such connections to exhaust server resources. Uploads are auth-gated, which limits who
+  (Slowloris-on-body). Combined with SEC-001's throttle bypass (since fixed), an attacker can
+  accumulate many such connections to exhaust server resources. Uploads are auth-gated, which limits who
   can trigger the body variant.
 - **Suggested fix:** Set bounded `ReadTimeout`/`WriteTimeout`/`IdleTimeout` (or per-route
   timeouts that still accommodate large streaming transfers).
@@ -290,7 +328,7 @@ vulnerabilities). Nothing here required a code change — this report only docum
      cannot evict — and thereby clear — an active block. The per-(username, IP) throttling
      is otherwise unchanged.
 - **Not addressed here:** the optional IP-independent per-username failure counter suggested
-  under SEC-001 remains open.
+  under SEC-001 — since added, see SEC-001's fix note.
 
 ### SEC-016 — MEDIUM — **FIXED** — Irreversible loss of all maintainer (operations) capability
 
@@ -395,8 +433,8 @@ Silence is not evidence; these areas were examined and are clean.
   `audit.Write(ctx, tx, entry)` → `Commit`, so the audit row commits/rolls back with the
   mutation and cannot be suppressed. `actor_uid` comes from the auth context (unforgeable). No
   plaintext passwords or tokens are persisted (`internal/auth/handlers_admin.go:164` passes
-  `nil` details; token entries store only the token *name*). (The audit `ip` field is forgeable
-  — folded into SEC-001.)
+  `nil` details; token entries store only the token *name*). (The audit `ip` field was forgeable
+  — folded into SEC-001, fixed there.)
 - **SSRF (map tile proxy) — clean.** `internal/mapsapi` + `internal/mapy`: `mapset` is
   allow-listed, `z`/`x`/`y` parsed as non-negative ints, the upstream URL is built with
   `url.JoinPath` (escapes segments) off a fixed config base; the API key is header-only.

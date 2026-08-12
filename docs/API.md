@@ -32,7 +32,13 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   reaches the rate limiter, so the public endpoint cannot be flooded with oversized limiter keys.
   **Sliding session expiry**
   (`auth.session_ttl` up to the cap `auth.session_max_lifetime`), **login rate-limit**
-  (`auth.login_rate_limit`/`auth.login_rate_window` → 429), **bootstrap admin** from
+  (`auth.login_rate_limit`/`auth.login_rate_window` → 429 — counted per (username, client IP) **and**,
+  independently of the address, per username at 3× that budget over the same window, so an attacker who
+  moves between addresses still runs out; the address comes from `internal/clientip`, i.e. the socket
+  peer unless `web.trusted_proxies` says the peer is a proxy, never from a header the caller picked).
+  A login **fails in the same time** whichever way it fails — unknown user, disabled account and wrong
+  password all run one bcrypt comparison — so response latency does not reveal which usernames exist.
+  **Bootstrap admin** from
   `auth.bootstrap_admin_username/password`. In addition, the middleware `RequireAuthOrDownloadToken`
   (session cookie or `?t=download_token` via `Service.AuthenticateDownloadToken` →
   `Store.GetSessionByDownloadToken`) for media without a cookie.

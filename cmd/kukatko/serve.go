@@ -17,6 +17,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/backup"
+	"github.com/panbotka/kukatko/internal/clientip"
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/facematch"
@@ -113,6 +114,8 @@ func runServe(cmd *cobra.Command) error {
 
 	apis = append(apis, observabilityOptions(reg, logger)...)
 
+	apis = append(apis, server.WithTrustedProxies(trustedProxies(cfg, logger)))
+
 	addr := net.JoinHostPort(cfg.Web.Host, strconv.Itoa(cfg.Web.Port))
 	srv := server.New(addr, apis...)
 	cmd.Printf("kukatko %s listening on %s\n", version.Get(), srv.Addr())
@@ -178,6 +181,31 @@ func logThumbEngine(logger *slog.Logger, cfg *config.Config) {
 	}
 	logger.Warn("thumbnail engine vips requested but vipsthumbnail not found on PATH; using pure-Go",
 		"binary", cfg.Thumb.VipsBinary)
+}
+
+// trustedProxies resolves web.trusted_proxies into the matcher the HTTP server
+// keys the client address on, and records at startup which of the two regimes is
+// active — an operator debugging "why is every request from the same IP" (proxy
+// outside the list) or "why did the limiter not fire" (list too wide) should not
+// have to read the config to find out.
+//
+// The value was validated during config.Load, so a parse failure here can only
+// mean that guarantee was weakened. It degrades in the safe direction, trusting
+// nobody, rather than failing a start that would otherwise succeed.
+func trustedProxies(cfg *config.Config, logger *slog.Logger) *clientip.Set {
+	set, err := cfg.Web.TrustedProxySet()
+	if err != nil {
+		logger.Error("web.trusted_proxies did not parse; trusting no proxy, forwarding headers are ignored",
+			"error", err)
+		return nil
+	}
+	if set.Empty() {
+		logger.Warn("no trusted proxies configured; forwarding headers are ignored " +
+			"and every request is attributed to the address it was dialled from")
+		return set
+	}
+	logger.Info("trusted proxies", "networks", cfg.Web.TrustedProxies)
+	return set
 }
 
 // registerDBPoolMetrics installs the pgx pool collector on reg, a no-op when

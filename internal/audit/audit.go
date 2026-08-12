@@ -36,7 +36,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
 	"slices"
 	"strings"
@@ -44,6 +43,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/panbotka/kukatko/internal/clientip"
 )
 
 // Action labels classify audit entries. They are stored verbatim in the action
@@ -342,10 +343,12 @@ type Meta struct {
 
 // FromRequest builds a Meta from r and the actorUID resolved by the caller from
 // the auth context. The audit package must not depend on internal/auth, so the
-// actor UID is passed in rather than read here. The client IP prefers the first
-// X-Forwarded-For hop, then X-Real-IP, then the request's RemoteAddr host.
+// actor UID is passed in rather than read here. The client IP is the address
+// resolved by internal/clientip — the socket peer unless a trusted proxy named
+// the real client — so a row records where the request came from and not what
+// its sender wished to claim.
 func FromRequest(r *http.Request, actorUID string) Meta {
-	return Meta{ActorUID: actorUID, IP: clientIP(r), UserAgent: r.UserAgent()}
+	return Meta{ActorUID: actorUID, IP: clientip.FromRequest(r), UserAgent: r.UserAgent()}
 }
 
 // Entry stamps the meta's actor/IP/User-Agent onto a new Entry with the given
@@ -360,26 +363,6 @@ func (m Meta) Entry(action, targetType, targetUID string, details map[string]any
 		IP:         m.IP,
 		UserAgent:  m.UserAgent,
 	}
-}
-
-// clientIP extracts the originating client IP from r, preferring proxy headers
-// (X-Forwarded-For first hop, then X-Real-IP) and falling back to the RemoteAddr
-// host. It returns an empty string when no address can be determined.
-func clientIP(r *http.Request) string {
-	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-		first, _, _ := strings.Cut(fwd, ",")
-		if ip := strings.TrimSpace(first); ip != "" {
-			return ip
-		}
-	}
-	if realIP := strings.TrimSpace(r.Header.Get("X-Real-IP")); realIP != "" {
-		return realIP
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return strings.TrimSpace(r.RemoteAddr)
-	}
-	return host
 }
 
 // Record is a stored audit entry as read back from the table.

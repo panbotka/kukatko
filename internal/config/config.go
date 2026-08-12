@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"github.com/spf13/viper"
+
+	"github.com/panbotka/kukatko/internal/clientip"
 )
 
 const (
@@ -41,6 +43,9 @@ var (
 	ErrMissingDatabaseURL = errors.New("config: database.url is required (set KUKATKO_DATABASE_URL)")
 	// ErrInvalidWebPort indicates web.port is outside the valid TCP range.
 	ErrInvalidWebPort = errors.New("config: web.port must be between 1 and 65535")
+	// ErrInvalidTrustedProxy indicates an entry of web.trusted_proxies is neither
+	// a CIDR block, an address, nor a known keyword.
+	ErrInvalidTrustedProxy = errors.New("config: web.trusted_proxies holds an entry that is not a network")
 	// ErrInvalidPoolSize indicates the connection-pool sizes are inconsistent.
 	ErrInvalidPoolSize = errors.New("config: invalid database connection-pool sizing")
 	// ErrInvalidEmbeddingDim indicates an embedding dimension is not positive.
@@ -270,6 +275,24 @@ type WebConfig struct {
 	// SecureCookies marks session cookies as Secure (HTTPS-only). Leave false
 	// for plain-HTTP local development; enable behind a TLS-terminating proxy.
 	SecureCookies bool `mapstructure:"secure_cookies"`
+	// TrustedProxies lists the networks whose requests may carry a forwarding
+	// header (`X-Forwarded-For`, `X-Real-Ip`) that renames the client. Entries are
+	// CIDR blocks, single addresses, or the keywords `loopback` and `private`; an
+	// empty list means no header is ever believed and every caller is attributed
+	// to the address it dialled from. Anything not in the list is a client, not a
+	// proxy, so its headers are ignored — which is what stops a caller handing
+	// itself a fresh rate-limit bucket per request. See internal/clientip.
+	TrustedProxies []string `mapstructure:"trusted_proxies"`
+}
+
+// TrustedProxySet parses TrustedProxies into the matcher the HTTP server keys
+// on, returning an error naming the first unusable entry.
+func (w WebConfig) TrustedProxySet() (*clientip.Set, error) {
+	set, err := clientip.ParseSet(w.TrustedProxies)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrInvalidTrustedProxy, err)
+	}
+	return set, nil
 }
 
 // EmbeddingConfig points at the external embedding service and records the
@@ -867,6 +890,11 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("web.session_secret", "")
 	v.SetDefault("web.allowed_origins", []string{})
 	v.SetDefault("web.secure_cookies", false)
+	// Loopback and the RFC 1918 ranges: a reverse proxy sits on the same host or
+	// the same private network, never out on the public internet. Everything else
+	// — including the Tailscale CGNAT range, which carries clients — has its
+	// forwarding headers ignored.
+	v.SetDefault("web.trusted_proxies", []string{clientip.KeywordLoopback, clientip.KeywordPrivate})
 
 	setEmbeddingDefaults(v)
 
@@ -1153,6 +1181,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Web.Port < 1 || c.Web.Port > maxPort {
 		return fmt.Errorf("%w: got %d", ErrInvalidWebPort, c.Web.Port)
+	}
+	if _, err := c.Web.TrustedProxySet(); err != nil {
+		return err
 	}
 	if c.Database.MaxIdleConns > c.Database.MaxOpenConns {
 		return fmt.Errorf("%w: max_idle_conns (%d) exceeds max_open_conns (%d)",

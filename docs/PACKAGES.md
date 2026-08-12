@@ -6,7 +6,8 @@ to `## Package map` in `CLAUDE.md`.
 
 <!-- BODY BEGIN -->
 - **Layout:** `cmd/kukatko/` (thin Cobra entrypoint: root + `serve` + `migrate` + `version`),
-  `internal/server/` (chi HTTP server, graceful shutdown), `internal/version/`
+  `internal/server/` (chi HTTP server, graceful shutdown, `WithTrustedProxies` →
+  `clientip.Middleware` in place of chi's `middleware.RealIP`), `internal/version/`
   (ldflags-injectable `Version`/`Commit`), `internal/config/` (typed configuration,
   Viper, `Load()`), `internal/database/` (pgxpool wrapper `DB` with `Ping`/`Close`/`Pool`,
   embedded migration runner `Migrate`, pgvector types registered on every connection,
@@ -71,6 +72,24 @@ to `## Package map` in `CLAUDE.md`.
   memory is bounded without waiting for the hourly `Cleanup` tick. Eviction ranks by a per-key
   `lastSeen` that is refreshed even on *blocked* attempts, so flooding fresh keys cannot evict, and
   thereby clear, an active block.
+  **Two login budgets** (`handlers_auth.go`, `allowLoginAttempt`): every attempt is charged to the
+  per-(username, address) bucket `loginLimitKey` = `username|clientIP(r)` **and** to a second, address-blind
+  per-username one (`usernameLimiter`, derived in `usernameLimiterFor` as `usernameLimitFactor` = 3 × the
+  per-IP budget over the same window; `APIConfig.UsernameLimiter` overrides it). The address half is only
+  worth anything because it comes from `internal/clientip` and not from a header the caller picked; the
+  username half is what remains if that ever stops being true, since it cannot be escaped by moving. It is
+  the looser of the two on purpose — it is also the one an attacker could aim at somebody else's account to
+  lock them out, and a person mistyping their own password meets the per-IP limit long before it. A
+  successful login resets both. Both are pruned by `RunMaintenance`.
+  **Login takes the same time however it fails** (`login_password.go`, SEC-006): `checkLoginPassword` runs
+  **exactly one** bcrypt comparison on every path — against the account's hash when the username resolved,
+  against `dummyPasswordHash()` (minted once through `HashPassword`, so at the *same* work factor real
+  accounts use; a cheaper stand-in would restore the leak) when it did not — and only then decides. The
+  early returns it replaced answered an unknown or disabled account in microseconds against ~250 ms for a
+  real one, which told an anonymous caller which usernames exist.
+  `TestCheckLoginPassword_timingIsIndistinguishable` compares the fastest of a few runs per branch within a
+  factor of two: the failure worth catching is a branch that skips bcrypt entirely, which is three orders of
+  magnitude off, not one that is 30 % slower.
   **User-management audit** (`store_user_audit.go`): admin handlers call the audited variants
   `Service.CreateUserAudited`/`UpdateUserAudited`/`SetUserDisabledAudited`/`ResetPasswordAudited`,
   which via `Store.CreateUserAudited`/`UpdateUserProfileAudited`/`SetUserDisabledAudited`/
@@ -2073,8 +2092,9 @@ to `## Package map` in `CLAUDE.md`.
   transaction** as the mutation — it commits/rolls back with it (ARCHITECTURE §5.1/§11/§12 "audit log
   durable", a fix of the previous system's after-commit gap); `Entry{ActorUID,Action,TargetType,TargetUID,
   Details,IP,UserAgent}` (an empty UID/IP/UA → SQL NULL, nil details → `{}`); **the handler convention**
-  `Meta` + `FromRequest(r, actorUID)` (the actor from the auth context, IP from `X-Forwarded-For`/`X-Real-IP`/
-  `RemoteAddr`, UA from the header) → `(Meta).Entry(action, targetType, targetUID, details)` builds
+  `Meta` + `FromRequest(r, actorUID)` (the actor from the auth context, IP from `clientip.FromRequest` — the
+  socket peer unless a *trusted* proxy named the client, so the trail records where a request came from and
+  not what its sender claimed; UA from the header) → `(Meta).Entry(action, targetType, targetUID, details)` builds
   the rest of the entry; **the `changes` convention for edits** (`changes.go`): `ChangeSet` = `NewChangeSet()` +
   `Add(field, old, new)` (skips unchanged fields via `reflect.DeepEqual`, compares pointers by
   value) → `Map()`/`StampInto(details)` writes under the key `ChangesKey` (`"changes"`) a map
@@ -2919,7 +2939,8 @@ to `## Package map` in `CLAUDE.md`.
   (a reusable **per-key token-bucket rate limiter** + HTTP middleware for expensive endpoints:
   `New(ratePerSec, burst)` → `Allow(key)` (lazy refill, a bucket per key) / `Cleanup`/`RunMaintenance`
   (cleaning up fully refilled buckets) / `Middleware` (chi-compatible, keyed by the **client IP** via
-  `clientIP` from `RemoteAddr` — chi's `RealIP` fills it from `X-Forwarded-For`/`X-Real-IP`; an empty bucket →
+  `clientIP` = `clientip.FromRequest` — the address `internal/clientip` resolved, **not** a header the caller
+  chose, so nobody mints a fresh bucket per request; an empty bucket →
   **429** + `Retry-After`); `ratePerSec ≤ 0` → a **disabled** limiter (Allow always true, Middleware a
   no-op — the endpoint is switched off cleanly by config); memory-bounded by an opportunistic cleanup at `maxBuckets`
   (8192), so it needs no external goroutine; mounted as the outermost middleware ahead of auth on
@@ -2930,7 +2951,22 @@ to `## Package map` in `CLAUDE.md`.
   which is throttled **per user** and therefore mounted *inside* the auth guard (the principal is only on the
   context once auth has run) — a household behind one NAT is one address but many people. A key function
   returning `""` is not special-cased: every such request shares one bucket, the safe reading of "no identity
-  to attribute this to"), `internal/obs/`
+  to attribute this to"), `internal/clientip/`
+  (**who a request actually came from** — the one answer the rate limiters, the audit trail and the access log
+  all key on. A forwarding header is request data like any other, so chi's `middleware.RealIP`, which believed
+  `True-Client-IP`/`X-Real-IP`/`X-Forwarded-For` from **anybody**, let an anonymous caller rotate a header and
+  hand itself a fresh limiter bucket per request — the brute-force bypass of SEC-001. This package replaces it:
+  `Set` (a list of trusted-proxy networks; `ParseSet` accepts CIDR blocks, single addresses and the keywords
+  `loopback`/`private` — the latter deliberately **without** the `100.64/10` Tailscale range, which carries
+  clients rather than proxies; a nil/empty `Set` trusts nothing), `Middleware(set)` (resolves the address once
+  per request onto the context), `FromRequest(r)` (reads it back) and `Peer(r)` (the socket host, headers
+  ignored). Resolution: the socket peer, unless that peer is in the set, in which case the `X-Forwarded-For`
+  chain is walked **right-to-left** and the first hop that is not itself a trusted proxy wins (all-trusted →
+  the leftmost; no chain → `X-Real-Ip`; nothing parseable → the peer). `True-Client-IP` and the vendor
+  variants are never read at all — no proxy here sets them, and a header nobody writes is one nobody has to be
+  trusted about. `FromRequest` **without** the middleware falls back to the socket peer, so a handler mounted
+  on another router (a test) fails safe rather than open. Mounted by `internal/server` right after
+  `RequestID`, configured from `web.trusted_proxies`), `internal/obs/`
   (structured logging + request-scoped plumbing: a slog **JSON** handler at a configurable
   level (`ParseLevel`/`NewLogger`/`Setup`, `log.level`, an invalid level → an error at startup),
   a **redaction `ReplaceAttr` hook** (`redactAttr`) blanks the value of every attribute whose key carries a

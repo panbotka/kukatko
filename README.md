@@ -227,7 +227,10 @@ docker compose up -d      # migrations run on start; the admin account is create
 ```
 
 Then open <http://localhost:8080> and sign in. Behind a TLS-terminating reverse proxy, add
-`KUKATKO_WEB_SECURE_COOKIES: "true"`.
+`KUKATKO_WEB_SECURE_COOKIES: "true"`. The proxy also has to be inside `web.trusted_proxies`
+(default: loopback + the private ranges, which covers a proxy on the same host or Docker network)
+or Kukátko will attribute every request to the proxy itself — it only believes an
+`X-Forwarded-For` that came *from* a listed network, so nobody else can pick their own address.
 
 ### Debian / Ubuntu package
 
