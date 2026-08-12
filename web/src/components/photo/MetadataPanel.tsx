@@ -7,7 +7,13 @@ import { useTranslation } from 'react-i18next'
 
 import { type Coordinates, formatCoordinates, parseCoordinates } from '../../lib/coordinates'
 import { formatDateTimeMinutes } from '../../lib/format'
-import { joinKeywords, sameKeywords, splitAiNote, splitKeywords } from '../../lib/photoFacts'
+import {
+  joinKeywords,
+  metaValue,
+  sameKeywords,
+  splitAiNote,
+  splitKeywords,
+} from '../../lib/photoFacts'
 import { formatTakenPeriod } from '../../lib/takenDate'
 import { type Place } from '../../services/map'
 import { type PhotoDetail, type PhotoMetadataUpdate, updatePhoto } from '../../services/photos'
@@ -88,12 +94,6 @@ function initialCoordText(photo: PhotoDetail): string {
 interface EditableFieldProps {
   /** The (already translated) field label. */
   label: string
-  /**
-   * The (already translated) prompt shown in place of an empty value: what this
-   * field is for, or an example of what belongs in it. It must not restate the
-   * label — a row reading "Description / Add…" has said the same nothing twice.
-   */
-  prompt: string
   /** The current value, or empty/undefined for an unset field. */
   value: string | undefined
   /**
@@ -112,18 +112,25 @@ interface EditableFieldProps {
 /**
  * One caption field in read-only form. For an editor the whole row is a button —
  * so the field itself is the edit affordance, with an accessible "Edit «label»"
- * name — that opens the shared caption form. A viewer sees the value alone (and an
- * empty field renders nothing, so read-only panels stay free of blank rows).
+ * name — that opens the shared caption form. A viewer sees the value alone.
  *
  * The pencil sits against the label rather than out at the right margin. Parked at
  * the margin it was a column of identical glyphs metres from the thing each one
  * edits, and the reader had to trace a line across the card to pair them up;
  * beside the label it is unambiguous which field it belongs to.
  *
- * An empty field shows its own prompt, not a generic "add…". Four fields sharing
- * one placeholder is a column of identical grey text that tells the reader nothing
- * about what any of them is for or why they would fill it in — which is exactly
- * the moment they most need telling.
+ * **An empty field renders nothing — for every role, the editor included.** The
+ * panel's reading state is what the photo says about itself; a photo with no
+ * description used to answer with the instructions for writing one, so the few
+ * facts it did carry were read through a hedge of prompts. The prompts are not
+ * gone, they moved to where they are acted on: the edit form offers every field,
+ * empty ones included, each under its own prompt. The way into that form no longer
+ * depends on any field being filled in either — see the panel's edit button.
+ *
+ * What counts as empty is {@link metaValue}'s rule, the one the technical details'
+ * `MetaField` already applies: absent, blank, and the importers' literal `Unknown`
+ * are all nothing to read. Deciding it twice is how a description imported as
+ * `Unknown` came to render here as if it were content.
  *
  * Every one of these fields is typed into a `<textarea>`, so a value comes back
  * with the line breaks its author put there and `.kk-multiline` keeps them
@@ -132,9 +139,11 @@ interface EditableFieldProps {
  * never rewritten into markup — so `text-break` stays with it to keep one long
  * unbroken token from setting the width of the panel.
  */
-function EditableField({ label, prompt, value, display, canWrite, onEdit }: EditableFieldProps) {
+function EditableField({ label, value, display, canWrite, onEdit }: EditableFieldProps) {
   const { t } = useTranslation()
-  const hasValue = value !== undefined && value.trim() !== ''
+  if (metaValue(value) === undefined) {
+    return null
+  }
   const shown = display ?? value
 
   if (canWrite) {
@@ -149,20 +158,11 @@ function EditableField({ label, prompt, value, display, canWrite, onEdit }: Edit
           {label}
           <Icon name="pencil" />
         </span>
-        <span
-          className={
-            hasValue ? 'd-block text-break kk-multiline' : 'd-block text-secondary fst-italic'
-          }
-        >
-          {hasValue ? shown : prompt}
-        </span>
+        <span className="d-block text-break kk-multiline">{shown}</span>
       </button>
     )
   }
 
-  if (!hasValue) {
-    return null
-  }
   return (
     <div className="mb-2">
       <div className="small text-secondary">{label}</div>
@@ -599,14 +599,22 @@ export function MetadataPanel({ photo, canWrite, onUpdated, footer }: MetadataPa
             {t('photo.metadata.saveError')}
           </Alert>
         )}
+        {/* Each field carries its prompt here rather than in the reading state:
+            what a field is for is worth saying where it is filled in, and an
+            empty one is still offered — the form is the one place where every
+            field is present whether the photo has it or not. */}
         <Form.Group className="mb-2" controlId="photo-title">
           <Form.Label className="small text-secondary mb-1">{t('photo.metadata.title')}</Form.Label>
           <Form.Control
             value={title}
+            aria-describedby="photo-title-prompt"
             onChange={(event) => {
               setTitle(event.target.value)
             }}
           />
+          <Form.Text id="photo-title-prompt" className="text-secondary d-block">
+            {t('photo.metadata.titlePrompt')}
+          </Form.Text>
         </Form.Group>
         <Form.Group className="mb-2" controlId="photo-description">
           <Form.Label className="small text-secondary mb-1">
@@ -616,10 +624,14 @@ export function MetadataPanel({ photo, canWrite, onUpdated, footer }: MetadataPa
             as="textarea"
             rows={2}
             value={description}
+            aria-describedby="photo-description-prompt"
             onChange={(event) => {
               setDescription(event.target.value)
             }}
           />
+          <Form.Text id="photo-description-prompt" className="text-secondary d-block">
+            {t('photo.metadata.descriptionPrompt')}
+          </Form.Text>
         </Form.Group>
         <Form.Group className="mb-2" controlId="photo-ai-note">
           <Form.Label className="small text-secondary mb-1">
@@ -629,10 +641,14 @@ export function MetadataPanel({ photo, canWrite, onUpdated, footer }: MetadataPa
             as="textarea"
             rows={2}
             value={aiNote}
+            aria-describedby="photo-ai-note-prompt"
             onChange={(event) => {
               setAiNote(event.target.value)
             }}
           />
+          <Form.Text id="photo-ai-note-prompt" className="text-secondary d-block">
+            {t('photo.metadata.aiNotePrompt')}
+          </Form.Text>
         </Form.Group>
         <Form.Group className="mb-2" controlId="photo-notes">
           <Form.Label className="small text-secondary mb-1">{t('photo.metadata.notes')}</Form.Label>
@@ -640,10 +656,14 @@ export function MetadataPanel({ photo, canWrite, onUpdated, footer }: MetadataPa
             as="textarea"
             rows={2}
             value={notes}
+            aria-describedby="photo-notes-prompt"
             onChange={(event) => {
               setNotes(event.target.value)
             }}
           />
+          <Form.Text id="photo-notes-prompt" className="text-secondary d-block">
+            {t('photo.metadata.notesPrompt')}
+          </Form.Text>
         </Form.Group>
         <Form.Group className="mb-2" controlId="photo-taken-at">
           <Form.Label className="small text-secondary mb-1">
@@ -653,10 +673,14 @@ export function MetadataPanel({ photo, canWrite, onUpdated, footer }: MetadataPa
             type="datetime-local"
             step={1}
             value={takenAt}
+            aria-describedby="photo-taken-at-prompt"
             onChange={(event) => {
               setTakenAt(event.target.value)
             }}
           />
+          <Form.Text id="photo-taken-at-prompt" className="text-secondary d-block">
+            {t('photo.metadata.takenAtPrompt')}
+          </Form.Text>
           {/* This field is an instant, so a date stated as a whole period shows up
               in it as the day it is anchored at — which is not a day anyone
               claimed. Saying so is the honest way round: the alternative is a
@@ -868,33 +892,52 @@ export function MetadataPanel({ photo, canWrite, onUpdated, footer }: MetadataPa
   const editLocationLabel = t('photo.metadata.editField', {
     field: t('photo.metadata.location'),
   })
+  // The way into the form that does not depend on the photo already saying
+  // something. Every field row disappears once it is empty, so on a photo with no
+  // metadata at all the only remaining entrance was the location row's pencil — a
+  // pencil next to the word "Location" that in fact opens a form editing every
+  // field, which is not a promise anyone would read there. This button names what
+  // it opens, sits above the fields whether or not there are any, and carries the
+  // sentence as both its label and its tooltip.
+  const editInfoLabel = t('photo.metadata.editInfo')
 
   return (
     <div>
+      {canWrite && (
+        <div className="d-flex justify-content-end mb-2">
+          <Button
+            type="button"
+            variant="outline-secondary"
+            size="sm"
+            className="kukatko-tap-target"
+            title={editInfoLabel}
+            onClick={startEditing}
+          >
+            <Icon name="pencil" className="me-1" />
+            {editInfoLabel}
+          </Button>
+        </div>
+      )}
       <EditableField
         label={t('photo.metadata.title')}
-        prompt={t('photo.metadata.titlePrompt')}
         value={photo.title}
         canWrite={canWrite}
         onEdit={startEditing}
       />
       <EditableField
         label={t('photo.metadata.description')}
-        prompt={t('photo.metadata.descriptionPrompt')}
         value={photo.description}
         canWrite={canWrite}
         onEdit={startEditing}
       />
       <EditableField
         label={t('photo.metadata.aiNote')}
-        prompt={t('photo.metadata.aiNotePrompt')}
         value={aiNoteText}
         canWrite={canWrite}
         onEdit={startEditing}
       />
       <EditableField
         label={t('photo.metadata.takenAt')}
-        prompt={t('photo.metadata.takenAtPrompt')}
         value={captureDateText}
         display={isEstimated ? <CaptureDate date={takenAtText} note={pristineNote} /> : undefined}
         canWrite={canWrite}
@@ -902,7 +945,6 @@ export function MetadataPanel({ photo, canWrite, onUpdated, footer }: MetadataPa
       />
       <EditableField
         label={t('photo.metadata.notes')}
-        prompt={t('photo.metadata.notesPrompt')}
         value={photo.notes}
         canWrite={canWrite}
         onEdit={startEditing}

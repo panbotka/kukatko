@@ -1657,9 +1657,22 @@ here.
   `PhotoDetailPage.test.tsx`. **2. Popis a místo**
   (`sections.caption`) = `MetadataPanel` = title/description/ai_note/notes/taken_at/location
   **read-only until the editor clicks a field** — each field is its own inline edit affordance
-  (`EditableField` = the whole row is an „Upravit «pole»" button with a pencil icon and a muted „Přidat…"
-  placeholder on an empty field), **no hidden global „Upravit"** at the bottom (that was this task's
-  fix — discoverability of editing the title/description/AI note). **A value written on more than one line
+  (`EditableField` = the whole row is an „Upravit «pole»" button with a pencil icon). **An empty field
+  renders nothing at all — for every role, the editor included:** the reading state is what the photo says
+  about itself, and a photo with no description used to answer with the instructions for writing one
+  („Co se na fotce děje a proč stojí za zapamatování"), so the few facts it did carry were read through a
+  hedge of prompts. The `*Prompt` strings are not deleted, they moved to where they are acted on — **the edit
+  form offers every field, empty ones included, each under its own prompt** as a `Form.Text` wired to the
+  input by `aria-describedby` (`photo-title-prompt` … `photo-taken-at-prompt`; the date field is the reason
+  it is help text and not a `placeholder` — `datetime-local` never shows one). What counts as empty is
+  decided once, by `lib/photoFacts` **`metaValue`** — the same rule `MetaField` applies, so absent, blank and
+  the importers' literal `Unknown` are all nothing to read (a description imported as `Unknown` used to
+  render here as content, because `EditableField` had its own looser `value.trim() !== ''`).
+  Because the rows disappear, the way into the form cannot be one of them: the panel carries **an
+  always-present „Upravit informace" button** at its head (outline, pencil + label, `title` = the same
+  sentence) so a photo with no metadata whatsoever is as easy to start filling in as one that already has a
+  title — previously the only entrance left was the location row's pencil, which promises to edit the
+  location and in fact opens the whole form. **A value written on more than one line
   stays on more than one line:** every one of those fields is typed into a `<textarea>` and comes back with
   the breaks its author made, but HTML collapses them into spaces — so the photo book's two-line description
   („Fotokniha 2026 - str. 135 p. 2" and the caption underneath it) rendered as one sentence, and the

@@ -1923,6 +1923,7 @@
       "clearLocation": "Vymazat polohu",
       "location": "Poloha",
       "editField": "Upravit: {{field}}",
+      "editInfo": "Upravit informace",
       "edit": "Upravit",
       "save": "Uložit",
       "cancel": "Zrušit",
