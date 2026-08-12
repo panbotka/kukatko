@@ -852,6 +852,7 @@
     "title": "Map",
     "count": "Photos on the map: {{count}}",
     "coverage": "{{located}} of {{total}} photos are on the map — the rest have no location stored.",
+    "coverageShort": "{{located}} of {{total}} on the map",
     "coverageAction": "Fill in locations",
     "loading": "Loading photos…",
     "thumbAlt": "Photo on the map",
@@ -865,11 +866,15 @@
       "aerial": "Aerial"
     },
     "filters": {
+      "toggle": "Filters",
       "label": "Map filters",
       "takenAfter": "Taken from",
       "takenBefore": "Taken until",
       "archived": "Archived",
-      "clear": "Clear filters"
+      "clear": "Clear filters",
+      "apply_one": "Show {{shown}} photo on the map",
+      "apply_other": "Show {{shown}} photos on the map",
+      "applyEmpty": "No located photos — close"
     },
     "archived": {
       "hide": "Hide archived",

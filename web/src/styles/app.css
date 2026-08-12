@@ -1425,9 +1425,13 @@ body {
   background-color: var(--bs-dropdown-bg);
 }
 
-/* Controls inside the advanced panel are finger-friendly (44px minimum). */
+/* Controls inside a filter panel are finger-friendly (44px minimum) — the
+   library's advanced panel and the map page's phone drawer alike, since both are
+   the same surface reached the same way. */
 .kukatko-filter-panel .form-control,
-.kukatko-filter-panel .form-select {
+.kukatko-filter-panel .form-select,
+.kukatko-map-filter-panel .form-control,
+.kukatko-map-filter-panel .form-select {
   min-height: 2.75rem;
 }
 
@@ -1962,6 +1966,27 @@ body {
      map would collapse to nothing, so land it on the `vh` equivalent. A caller
      passing a fixed height (the detail mini-map, the picker) overrides both. */
   height: 70vh;
+}
+
+/* The map page's control bar. Its bottom rhythm lives here rather than in an
+   `mb-3` utility because the two layouts want different things: on desktop the
+   1rem the utility gave it, above a bar of stacked control rows; on a phone
+   nothing at all, because there the bar is a single Filters button that the
+   page's own header row holds beside the title — and that row owns the gap down
+   to the map. */
+.kukatko-map-filter-bar {
+  margin-bottom: var(--kk-space-4);
+}
+
+@media (max-width: 767.98px) {
+  .kukatko-map-filter-bar {
+    margin-bottom: 0;
+    /* The page container carries no horizontal padding on a phone — the photo
+       grid and this map are deliberately full-bleed — so the coverage line
+       would otherwise end on the very last pixel column. The bar keeps itself
+       off the edge; the map below it still runs the full width. */
+    padding-right: var(--kk-space-2);
+  }
 }
 
 /* The "use two fingers to move the map" hint. It appears after a one-finger drag

@@ -10,6 +10,7 @@ import { ErrorState } from '../components/ErrorState'
 import { LeafletMap } from '../components/map/LeafletMap'
 import { MapFilterBar } from '../components/map/MapFilterBar'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
 import { useMapPhotos } from '../hooks/useMapPhotos'
 import {
   MAP_DEFAULTS,
@@ -46,12 +47,22 @@ const TILE_FAILURE_MESSAGES = {
  * all, which the filter bar states in words; on this collection the map speaks
  * for about one photo in nine, and saying so is the difference between a sparse
  * map and a map that looks broken.
+ *
+ * On a phone the page spends **one row** on everything that is not the map. The
+ * three mapset tabs, the two date pickers, the archive select and the coverage
+ * sentence used to stack to 382 px of a 853 px screen — 45 % of the viewport
+ * gone before the map began — so they fold into {@link MapFilterBar}'s drawer
+ * and the page puts what is left, the title and that one button, side by side.
+ * The heading stays visible here (unlike the library's, which the bottom tab bar
+ * names): the map is not a tab, so this `h1` is the only thing that says where
+ * the reader is.
  */
 export function MapPage() {
   const { t } = useTranslation()
   useDocumentTitle(t('map.title'))
   const navigate = useNavigate()
   const { canWrite } = useAuth()
+  const narrow = useIsNarrowViewport()
   const [view, setView] = useUrlState<MapView>(MAP_DEFAULTS)
   const [tileFailure, setTileFailure] = useState<TileFailure | null>(null)
   const [warningDismissed, setWarningDismissed] = useState(false)
@@ -127,18 +138,34 @@ export function MapPage() {
     setWarningDismissed(false)
   }, [mapset])
 
+  const filterBar = (
+    <MapFilterBar
+      view={view}
+      onChange={setView}
+      mapset={mapset}
+      count={features.length}
+      coverage={coverage}
+      canWrite={canWrite}
+    />
+  )
+
   return (
     <>
-      <h1 className="kk-page-title mb-3">{t('map.title')}</h1>
-
-      <MapFilterBar
-        view={view}
-        onChange={setView}
-        mapset={mapset}
-        count={features.length}
-        coverage={coverage}
-        canWrite={canWrite}
-      />
+      {narrow ? (
+        // One row for the whole page header: the title on the left, the bar —
+        // which on a phone is a single Filters button plus the short coverage —
+        // on the right, wrapping under the title only on a screen too narrow for
+        // the pair.
+        <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+          <h1 className="kk-page-title mb-0">{t('map.title')}</h1>
+          {filterBar}
+        </div>
+      ) : (
+        <>
+          <h1 className="kk-page-title mb-3">{t('map.title')}</h1>
+          {filterBar}
+        </>
+      )}
 
       {status === 'error' ? (
         <ErrorState title={t('map.error.load')} onRetry={retry} />

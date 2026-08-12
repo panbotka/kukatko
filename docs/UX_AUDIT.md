@@ -253,6 +253,14 @@ implemented**, per the task's conservative-changes rule.
   style tabs ("Turistická", "Letecká") do read as low-contrast, which supports backlog item #10.
 - **New (2026-08-05):** the tile layer itself is light inside the dark app, and only 11 % of the
   library is on the map with no explanation. See `UX_RESEARCH.md` **N23**.
+- **The phone screen — fixed (2026-08-12):** measured on production at 390 × 853, the controls above
+  the map — three mapset tabs, two date pickers, an archive select and a two-line coverage sentence —
+  came to **382 px, 44.8 % of the viewport**, leaving the map a minority of the screen. It was
+  [N19](UX_RESEARCH.md#n19) again, on the page the library had already been cured of it. Now, below
+  `md`: one row holding the title and a badged Filtry button, the controls in the drawer, and the
+  coverage in short beside the button (in full, with the editor's link, inside the drawer). The map
+  starts at **121 px** and is **597 px, 70 % of the screen**, with no scrolling at all. The heading
+  stays visible here — unlike the library's, the map is not a tab-bar destination. ✅
 
 ---
 
