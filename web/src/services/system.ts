@@ -169,8 +169,14 @@ export interface SystemStatus {
  * The library-statistics snapshot (`system.Library`): instance-wide counts of
  * what the catalogue holds and how much of it has been processed. Unlike the
  * status snapshot above it is readable by every signed-in user, not just
- * maintainers. `photos_without_embedding` / `photos_without_faces` are the
- * coverage gaps the backend derives, so the page never has to subtract by hand.
+ * maintainers. `photos_without_embedding` / `photos_without_faces` /
+ * `faces_unassigned` are the coverage gaps the backend derives, so the page
+ * never has to subtract by hand.
+ *
+ * Three counts describe faces and only two of them share a grain: `faces` is
+ * every detection (`faces_assigned + faces_unassigned`), while `markers` is the
+ * boxes drawn on photos (`markers_assigned + markers_unassigned`). The two
+ * families overlap and must never be added across.
  */
 export interface LibraryStats {
   photos: number
@@ -185,6 +191,7 @@ export interface LibraryStats {
   embeddings: number
   faces: number
   faces_assigned: number
+  faces_unassigned: number
   subjects: number
   subjects_person: number
   subjects_pet: number

@@ -1170,8 +1170,8 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   the previous system's status page: `{photos,videos,live_photos,images,photos_live,photos_archived,
   photos_with_embedding,photos_with_faces,photos_without_embedding,photos_without_faces,photos_with_gps,
   photos_geocoded,
-  photos_pending_geocode,embeddings,faces,faces_assigned,subjects,subjects_person,subjects_pet,
-  subjects_other,markers,
+  photos_pending_geocode,embeddings,faces,faces_assigned,faces_unassigned,subjects,subjects_person,
+  subjects_pet,subjects_other,markers,
   markers_assigned,markers_unassigned,albums,albums_manual,albums_folder,albums_moment,albums_state,
   albums_month,labels}`.
   Never per-user and never a `maintenance scan` tree walk — a single query of cheap `COUNT(*)`s
@@ -1183,9 +1183,15 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `photos_with_gps` (photos carrying coordinates of their own, whatever the source) and `faces_assigned`
   (detected faces that name a subject — unlike `markers_assigned` it excludes hand-drawn label boxes) are the
   numerators of the statistics page's three coverage meters; the third is `photos_with_embedding`.
+  **Faces and markers are two grains and never add across:** `faces` is one row per detection
+  (`faces_assigned + faces_unassigned`, so the halves always make the whole), `markers` is the boxes drawn on
+  photos (`markers_assigned + markers_unassigned`) — the sets overlap and most detections never became a
+  marker. `faces_unassigned` is the library's actual naming backlog, exactly what the review game, the
+  clustering and the candidate search work over (`faces.subject_uid IS NULL`); `markers_unassigned` is not.
   The derived values — `photos_live`, `images` (total minus the other two media types, because the
   `media_type` index deliberately excludes the majority value) and the coverage gaps
-  `photos_without_embedding` / `photos_without_faces` / `markers_unassigned` — are computed by the service
+  `photos_without_embedding` / `photos_without_faces` / `faces_unassigned` / `markers_unassigned` — are
+  computed by the service
   from the raw counts (clamped at 0) and are what makes the endpoint useful during import verification;
   `photos_without_faces` cannot distinguish "not yet detected" from "genuinely no face". A failed
   aggregation → **500** (never a body of zeroes, which would read as an empty library). Deliberately

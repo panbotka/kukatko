@@ -25,6 +25,12 @@ interface Coverage {
  * behind it, so the answer does not depend on seeing the bar. A whole with
  * nothing in it (no faces detected yet) reads as 0 %, never as a division by
  * zero or as full coverage.
+ *
+ * Every row divides two numbers the cards above already show, at the cards' own
+ * grain: the faces row is `faces_assigned / faces`, which is the faces card's
+ * headline over the sum of that card's two face rows. The card and the meter
+ * therefore cannot disagree — they used to, by a factor of six, because the card
+ * measured markers while the meter measured detections.
  */
 export function CoverageMeters({ stats }: { stats: LibraryStats }) {
   const { t, i18n } = useTranslation()

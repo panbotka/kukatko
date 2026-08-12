@@ -2839,7 +2839,7 @@ to `## Package map` in `CLAUDE.md`.
   semi-joins on the `embeddings` PK / the unique `faces`, one CTE for the album types),
   **`LibraryStats(ctx) (Library,error)`** returns
   `Library{Photos,Videos,LivePhotos,Images,PhotosLive,PhotosArchived,PhotosWith(out)Embedding,PhotosWith(out)Faces,
-  PhotosWithGPS,PhotosGeocoded,PhotosPendingGeocode,Embeddings,Faces,FacesAssigned,Subjects,
+  PhotosWithGPS,PhotosGeocoded,PhotosPendingGeocode,Embeddings,Faces,FacesAssigned,FacesUnassigned,Subjects,
   SubjectsPerson/Pet/Other,Markers,
   MarkersAssigned/Unassigned,Albums,AlbumsManual/Folder/Moment/State/Month,Labels}`
   — the store returns **only raw counts**, the derived values (the live split, `Images` = total − video − live
@@ -2849,7 +2849,12 @@ to `## Package map` in `CLAUDE.md`.
   at all — the outstanding metered mapy.com spend; `PhotosWithGPS` (photos with coordinates of their own, whatever
   the source — the numerator of the "on the map" coverage meter, deliberately **not** `PhotosGeocoded`) and
   `FacesAssigned` (detected faces that name a subject — unlike `MarkersAssigned` it excludes hand-drawn label
-  boxes) are the two counts the coverage meters need; `newLibraryCache` memoizes for `defaultLibraryTTL` 30 s and
+  boxes) are the two counts the coverage meters need; **faces and markers are two grains that never add
+  across** — `Faces` = `FacesAssigned` + `FacesUnassigned` (one row per detection) while `Markers` =
+  `MarkersAssigned` + `MarkersUnassigned` (boxes drawn on photos), the sets overlap and most detections never
+  became a marker, so `FacesUnassigned` (derived, `faces.subject_uid IS NULL`) is the naming backlog the review
+  game / clustering / candidate search actually work over and `MarkersUnassigned` is not;
+  `newLibraryCache` memoizes for `defaultLibraryTTL` 30 s and
   **caches only a success**
   (an error goes out, the page must not render zeros as real counts); a nil `Library` → `errNoLibraryCounter`
   instead of a panic;

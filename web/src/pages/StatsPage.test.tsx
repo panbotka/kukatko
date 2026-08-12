@@ -35,6 +35,7 @@ function stats(overrides: Partial<LibraryStats> = {}): LibraryStats {
     embeddings: 20092,
     faces: 112806,
     faces_assigned: 84604,
+    faces_unassigned: 28202,
     subjects: 42,
     subjects_person: 38,
     subjects_pet: 3,
@@ -131,8 +132,9 @@ describe('StatsPage', () => {
     // Headline numbers: grouped for the active locale, never raw JSON.
     expect(await screen.findByTestId('stat-headline-photos')).toHaveTextContent('20,310')
     expect(screen.getByTestId('stat-headline-content')).toHaveTextContent('20,092')
-    expect(screen.getByTestId('stat-headline-faces')).toHaveTextContent('112,806')
+    expect(screen.getByTestId('stat-headline-faces')).toHaveTextContent('84,604')
     expect(screen.getByTestId('stat-headline-people')).toHaveTextContent('42')
+    expect(screen.getByTestId('stat-headline-markers')).toHaveTextContent('900')
     expect(screen.getByTestId('stat-headline-collections')).toHaveTextContent('12')
 
     // Every group renders under its own heading.
@@ -141,6 +143,7 @@ describe('StatsPage', () => {
       'Search by content',
       'Faces',
       'People and animals',
+      'Markers on photos',
       'Albums and labels',
     ]) {
       expect(screen.getByRole('heading', { name })).toBeInTheDocument()
@@ -162,19 +165,56 @@ describe('StatsPage', () => {
 
     expect(await screen.findByTestId('stat-content-pending')).toHaveTextContent('218')
     expect(screen.getByTestId('stat-faces-without-faces')).toHaveTextContent('5,743')
-    expect(screen.getByTestId('stat-people-unnamed')).toHaveTextContent('150')
+    expect(screen.getByTestId('stat-faces-unnamed')).toHaveTextContent('28,202')
     // The photo breakdown carries the trash and the video count too.
     expect(screen.getByTestId('stat-photos-archived')).toHaveTextContent('9')
     expect(screen.getByTestId('stat-photos-videos')).toHaveTextContent('118')
   })
 
+  it('keeps the faces card and the faces meter on one grain, so they agree', async () => {
+    renderPage()
+
+    // The card leads with the named faces and breaks out the nameless ones; the
+    // two are halves of the same whole and add up to the detections.
+    expect(await screen.findByTestId('stat-headline-faces')).toHaveTextContent('84,604')
+    expect(screen.getByTestId('stat-faces-unnamed')).toHaveTextContent('28,202')
+    expect(screen.getByText(/Named and unnamed together come to 112,806/)).toBeInTheDocument()
+
+    // The meter divides those very numbers: 84 604 / 112 806 = 75 %. It used to
+    // divide detections while the card counted markers, which put two answers to
+    // the same question two inches apart.
+    expect(screen.getByTestId('coverage-faces')).toHaveTextContent('75%')
+    expect(
+      screen.getByRole('meter', { name: 'Faces with a name: 84,604 of 112,806 (75%)' }),
+    ).toBeInTheDocument()
+  })
+
+  it('keeps the markers apart from the faces, as a different kind of thing', async () => {
+    renderPage()
+
+    // Markers are a card of their own and their own two halves add up to their
+    // own total — nothing here invites adding them to a face count.
+    expect(await screen.findByTestId('stat-headline-markers')).toHaveTextContent('900')
+    expect(screen.getByTestId('stat-markers-named')).toHaveTextContent('750')
+    expect(screen.getByTestId('stat-markers-unnamed')).toHaveTextContent('150')
+    expect(screen.getByText(/does not add up with those numbers/)).toBeInTheDocument()
+
+    // The people card is only about people now: no marker count wearing the word
+    // "face", which is what made 4 671 + 16 586 look like a face partition.
+    const cards = screen.getByTestId('library-stats')
+    expect(within(cards).queryByText('Named faces')).toBeNull()
+    expect(within(cards).queryByText('Unnamed faces')).toBeNull()
+  })
+
   it('turns the numbers that mean work into links to where that work happens', async () => {
     renderPage()
 
-    const unnamed = within(await screen.findByTestId('stat-people-unnamed')).getByRole('link', {
+    const unnamed = within(await screen.findByTestId('stat-faces-unnamed')).getByRole('link', {
       name: 'Name faces in the review game',
     })
-    expect(unnamed).toHaveTextContent('150')
+    // The review game works over the nameless detections, so that is the number
+    // the link carries — not the marker count it used to hang off.
+    expect(unnamed).toHaveTextContent('28,202')
     expect(unnamed).toHaveAttribute('href', '/review')
 
     // The library's own "no faces" filter, so the destination is an ordinary
@@ -197,8 +237,8 @@ describe('StatsPage', () => {
 
     // Both destinations write (naming a face, emptying the trash), so a viewer
     // reads the plain number instead of being sent to a forbidden page.
-    expect(await screen.findByTestId('stat-people-unnamed')).toHaveTextContent('150')
-    expect(within(screen.getByTestId('stat-people-unnamed')).queryByRole('link')).toBeNull()
+    expect(await screen.findByTestId('stat-faces-unnamed')).toHaveTextContent('28,202')
+    expect(within(screen.getByTestId('stat-faces-unnamed')).queryByRole('link')).toBeNull()
     expect(within(screen.getByTestId('stat-photos-archived')).queryByRole('link')).toBeNull()
     // The library is open to every role, so that link survives.
     expect(

@@ -231,6 +231,7 @@ func TestLibraryStats_CountsFixture(t *testing.T) {
 		Embeddings:             4,
 		Faces:                  4,
 		FacesAssigned:          1,
+		FacesUnassigned:        3,
 		Subjects:               3,
 		SubjectsPerson:         1,
 		SubjectsPet:            1,
@@ -282,7 +283,7 @@ func TestCountLibrary_RawCountsLeaveDerivedZero(t *testing.T) {
 		t.Errorf("counts = %+v, want photos 11 / with embedding 4", got)
 	}
 	if got.PhotosLive != 0 || got.Images != 0 || got.PhotosWithoutEmbedding != 0 ||
-		got.PhotosWithoutFaces != 0 || got.MarkersUnassigned != 0 {
+		got.PhotosWithoutFaces != 0 || got.FacesUnassigned != 0 || got.MarkersUnassigned != 0 {
 		t.Errorf("counts = %+v, want the derived fields left at zero", got)
 	}
 }
