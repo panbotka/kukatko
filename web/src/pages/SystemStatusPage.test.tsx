@@ -44,6 +44,7 @@ function libraryStats(overrides: Partial<LibraryStats> = {}): LibraryStats {
     embeddings: 1200,
     faces: 3000,
     faces_assigned: 2100,
+    faces_unassigned: 900,
     subjects: 7,
     subjects_person: 6,
     subjects_pet: 1,

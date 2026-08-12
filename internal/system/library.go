@@ -81,13 +81,23 @@ type Library struct {
 	PhotosPendingGeocode int `json:"photos_pending_geocode"`
 	// Embeddings is the total number of image-embedding rows.
 	Embeddings int `json:"embeddings"`
-	// Faces is the total number of detected-face rows across all photos.
+	// Faces is the total number of detected-face rows across all photos: one row
+	// per face the detector found on a photo, strangers and crowds included. It is
+	// the whole of the face grain — Faces = FacesAssigned + FacesUnassigned — and
+	// the denominator of the "how many faces have a name?" coverage meter.
 	Faces int `json:"faces"`
 	// FacesAssigned is how many of those detected faces name a subject. Unlike
 	// MarkersAssigned it counts faces the detector found rather than regions of
 	// every kind (a marker may also be a hand-drawn label box), which is what makes
 	// it the honest numerator of the "how many faces have a name?" coverage meter.
 	FacesAssigned int `json:"faces_assigned"`
+	// FacesUnassigned is the naming backlog: detected faces that still name nobody
+	// (faces.subject_uid IS NULL). It is exactly the set the review game, the
+	// clustering and the candidate search work over, so it — not MarkersUnassigned,
+	// which counts regions of every kind and only ever covered part of the library
+	// — is what "still to name" means. Derived from Faces and FacesAssigned, so the
+	// two halves of the face grain always add up to the whole.
+	FacesUnassigned int `json:"faces_unassigned"`
 	// Subjects is the total number of named subjects (people, animals, other).
 	Subjects int `json:"subjects"`
 	// SubjectsPerson is how many subjects are people.
@@ -96,11 +106,16 @@ type Library struct {
 	SubjectsPet int `json:"subjects_pet"`
 	// SubjectsOther is how many subjects are neither a person nor an animal.
 	SubjectsOther int `json:"subjects_other"`
-	// Markers is the total number of markers (face and label regions).
+	// Markers is the total number of markers (face and label regions). A marker is
+	// a box drawn on a photo — around a face somebody named, or one carried over
+	// from the imported library — which is a different thing from a detection: the
+	// marker and face counts overlap but never add up, and most detections never
+	// became a marker.
 	Markers int `json:"markers"`
 	// MarkersAssigned is how many markers name a subject.
 	MarkersAssigned int `json:"markers_assigned"`
-	// MarkersUnassigned is how many markers are still nameless. Derived.
+	// MarkersUnassigned is how many markers are still nameless. Derived. It is not
+	// the library's naming backlog — see FacesUnassigned for that.
 	MarkersUnassigned int `json:"markers_unassigned"`
 	// Albums is the total number of albums, of every type.
 	Albums int `json:"albums"`
@@ -122,14 +137,15 @@ type Library struct {
 
 // derive fills in the values that follow from the raw counts rather than from
 // their own query: the live/archived split, the plain-image share of the media
-// types, the two coverage gaps and the unassigned markers. Each difference is
-// clamped at zero so a snapshot taken while rows are being written concurrently
-// can never report a negative gap.
+// types, the two coverage gaps, the nameless faces and the unassigned markers.
+// Each difference is clamped at zero so a snapshot taken while rows are being
+// written concurrently can never report a negative gap.
 func (l Library) derive() Library {
 	l.PhotosLive = nonNegative(l.Photos - l.PhotosArchived)
 	l.Images = nonNegative(l.Photos - l.Videos - l.LivePhotos)
 	l.PhotosWithoutEmbedding = nonNegative(l.Photos - l.PhotosWithEmbedding)
 	l.PhotosWithoutFaces = nonNegative(l.Photos - l.PhotosWithFaces)
+	l.FacesUnassigned = nonNegative(l.Faces - l.FacesAssigned)
 	l.MarkersUnassigned = nonNegative(l.Markers - l.MarkersAssigned)
 	return l
 }

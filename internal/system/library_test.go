@@ -22,9 +22,9 @@ func (f *fakeCounter) CountLibrary(context.Context) (Library, error) {
 }
 
 // TestLibraryDerive checks every derived value: the live/archived split, the
-// plain-image share of the media types, both coverage gaps and the unassigned
-// markers, including the clamp that keeps a snapshot taken mid-write from
-// reporting a negative count.
+// plain-image share of the media types, both coverage gaps, the nameless faces
+// and the unassigned markers, including the clamp that keeps a snapshot taken
+// mid-write from reporting a negative count.
 func TestLibraryDerive(t *testing.T) {
 	t.Parallel()
 
@@ -37,13 +37,26 @@ func TestLibraryDerive(t *testing.T) {
 			name: "gaps are the difference from the total",
 			raw: Library{
 				Photos: 100, PhotosArchived: 7, PhotosWithEmbedding: 90,
-				PhotosWithFaces: 40, Markers: 30, MarkersAssigned: 12,
+				PhotosWithFaces: 40, Faces: 250, FacesAssigned: 30,
+				Markers: 30, MarkersAssigned: 12,
 			},
 			want: Library{
 				Photos: 100, Images: 100, PhotosArchived: 7, PhotosLive: 93,
 				PhotosWithEmbedding: 90, PhotosWithoutEmbedding: 10,
 				PhotosWithFaces: 40, PhotosWithoutFaces: 60,
+				Faces: 250, FacesAssigned: 30, FacesUnassigned: 220,
 				Markers: 30, MarkersAssigned: 12, MarkersUnassigned: 18,
+			},
+		},
+		{
+			name: "the two halves of the face grain add up to the whole",
+			raw: Library{
+				Photos: 10, PhotosWithFaces: 10, Faces: 115461, FacesAssigned: 4395,
+			},
+			want: Library{
+				Photos: 10, Images: 10, PhotosLive: 10, PhotosWithoutEmbedding: 10,
+				PhotosWithFaces: 10, Faces: 115461, FacesAssigned: 4395,
+				FacesUnassigned: 111066,
 			},
 		},
 		{
@@ -60,22 +73,24 @@ func TestLibraryDerive(t *testing.T) {
 			name: "full coverage leaves no gap",
 			raw: Library{
 				Photos: 5, PhotosWithEmbedding: 5, PhotosWithFaces: 5,
-				Markers: 2, MarkersAssigned: 2,
+				Faces: 8, FacesAssigned: 8, Markers: 2, MarkersAssigned: 2,
 			},
 			want: Library{
 				Photos: 5, Images: 5, PhotosLive: 5, PhotosWithEmbedding: 5, PhotosWithFaces: 5,
-				Markers: 2, MarkersAssigned: 2,
+				Faces: 8, FacesAssigned: 8, Markers: 2, MarkersAssigned: 2,
 			},
 		},
 		{
 			name: "an inconsistent snapshot clamps at zero, never negative",
 			raw: Library{
 				Photos: 3, Videos: 9, PhotosArchived: 4, PhotosWithEmbedding: 4,
-				PhotosWithFaces: 9, Markers: 1, MarkersAssigned: 2,
+				PhotosWithFaces: 9, Faces: 2, FacesAssigned: 5,
+				Markers: 1, MarkersAssigned: 2,
 			},
 			want: Library{
 				Photos: 3, Videos: 9, PhotosArchived: 4, PhotosWithEmbedding: 4,
-				PhotosWithFaces: 9, Markers: 1, MarkersAssigned: 2,
+				PhotosWithFaces: 9, Faces: 2, FacesAssigned: 5,
+				Markers: 1, MarkersAssigned: 2,
 			},
 		},
 		{

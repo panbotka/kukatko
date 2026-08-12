@@ -190,16 +190,29 @@ here.
   shared i18n block `jobStates.labels.*`/`jobStates.descriptions.*`, so the wording is identical on
   `MaintenancePage` and `SystemStatusPage`; the `states` prop controls order and selection — Maintenance omits
   `pending`, System adds it. Tests: `JobStateLegend.test.tsx`),
-  `LibraryStatsCards` (**the shared rendering of the library counts** `GET /system/stats`: five
-  `Card`s in a responsive `Row` — photos, vyhledávání podle obsahu, faces, people, collections — each with a
+  `LibraryStatsCards` (**the shared rendering of the library counts** `GET /system/stats`: six
+  `Card`s in a responsive `Row` — photos, vyhledávání podle obsahu, obličeje, lidé a zvířata, značky na
+  fotkách, alba a štítky — each with a
   headline number (`kk-display`) over its breakdown (`dl`), every value through `formatCount` for the active
-  language; a **coverage gap** row (zbývá zpracovat / bez obličeje / nepojmenované) turns `text-warning` while
+  language; a **coverage gap** row (zbývá zpracovat / bez jména / fotek bez obličeje) turns `text-warning`
+  while
   non-zero. The vocabulary is the family's, not the pipeline's: the card that named the embedding now says what
   it buys (**Vyhledávání podle obsahu**, headline = `photos_with_embedding`, row = `photos_without_embedding`).
+  **One card, one grain, and the grain adds up.** A face is one detection on one photo, so **Obličeje** leads
+  with `faces_assigned` and breaks out `faces_unassigned`; the two make `faces`, which is exactly what the
+  faces coverage meter divides by, so card and meter cannot disagree. A marker is a box drawn on a photo, a
+  smaller and overlapping set, so `markers` / `markers_assigned` / `markers_unassigned` live on a card of
+  their own. Both cards close with an optional `note` (`StatNote` → `StatNoteText`, quiet caption under the
+  `dl`, `{{total}}` interpolated through `formatCount`) saying what the numbers add up to and which
+  neighbouring count they must not be added to — before this split all three counts wore the word "obličej",
+  read as a partition and did not add up (4 671 + 16 586 ≠ 115 461, and the card implied 22 % where the meter
+  said 3,8 %).
   A count that stands for work to be done is a **`Link`** (`text-reset text-decoration-underline`, so it keeps
   the row's colour and gains an underline; `aria-label`/`title` name the destination, since "16 585" names
-  nothing): v koši → `/trash`, fotky bez obličeje → the library's own filter `/?q=faces%3A0`, nepojmenované
-  obličeje → `/review`. The two write destinations are gated on `useAuth().canWrite` and render as plain text
+  nothing): v koši → `/trash`, fotky bez obličeje → the library's own filter `/?q=faces%3A0`, obličeje bez
+  jména → `/review` (the review game works over the nameless **detections**, which is why the link hangs off
+  `faces_unassigned` and not off a marker count). The two write destinations are gated on `useAuth().canWrite`
+  and render as plain text
   for a viewer — never a link that would bounce them (N13). The caller still owns loading/errors/retry, so
   `StatsPage` and `SystemStatusPage`'s Knihovna section cannot drift apart or double-fetch),
   `components/stats/` = **the charts of the statistics dashboard**, plain CSS over the app's tokens
@@ -211,7 +224,9 @@ here.
   hairlines), `BarList` (a horizontal bar list for named things — cameras, media buckets — with the name and
   the value written out beside every bar, which is what keeps identity off the colour; it is also the track
   behind the meters), `CoverageMeters` (the three shares as ARIA `meter` rows over the **counts**, so it needs
-  no second request; an untouched whole reads 0 %, never a division by zero), `ChartCard` (the card shell
+  no second request; an untouched whole reads 0 %, never a division by zero. Every row divides two numbers the
+  cards already show at the cards' own grain — the faces row is `faces_assigned / faces`, i.e. the faces
+  card's headline over the sum of its two face rows), `ChartCard` (the card shell
   matching `LibraryStatsCards`) and `LibraryChartsPanel` (the four charts assembled from
   `GET /system/stats/charts`, with every label, tooltip, empty-state sentence and `aria-label` summary from
   `stats.charts.*`). Both primitives take a summary `ariaLabel` carrying the chart's key numbers and render as
@@ -2285,14 +2300,20 @@ here.
   the streak column rendering a run and a dash for nobody on one),
   `StatsPage` = `/stats` (**any logged-in user** — read-only aggregate counts, so no role gate, like the
   leaderboard; reachable from the **user menu** and the phone drawer's account section) the **library
-  statistics** over `GET /system/stats` (`useLibraryStats`), modelled on the previous system's status page: five
+  statistics** over `GET /system/stats` (`useLibraryStats`), modelled on the previous system's status page: six
   cards (`LibraryStatsCards`, shared with `SystemStatusPage`) — **Fotky** (celkem, z toho videa, v knihovně,
-  v koši), **Vyhledávání podle obsahu** (připravených fotek, zbývá zpracovat), **Obličeje** (nalezených, fotek
-  s/bez), **Lidé a zvířata** (subjekty po druhu, pojmenované/nepojmenované obličeje) and **Alba a štítky**.
+  v koši), **Vyhledávání podle obsahu** (připravených fotek, zbývá zpracovat), **Obličeje** (se jménem, bez
+  jména, fotek s/bez), **Lidé a zvířata** (subjekty po druhu), **Značky na fotkách** (celkem, se jménem, bez
+  jména) and **Alba a štítky**.
   Each card leads with its headline number (`kk-display`) and breaks it down beneath; **every number is grouped
   for the active language** (`formatCount`, cs „20 310" / en „20,310" — never raw JSON), and the **coverage
-  gaps** (zbývá zpracovat / bez obličeje / nepojmenované) are highlighted while non-zero — that is what the page
-  is opened for while verifying an import. Because **everyone** reads this page it carries **no pipeline
+  gaps** (zbývá zpracovat / obličejů bez jména / fotek bez obličeje) are highlighted while non-zero — that is
+  what the page
+  is opened for while verifying an import. **No two counts on the page invite an addition that does not
+  work:** the faces card's two halves make the detections total (spelled out in the card's closing sentence),
+  the markers card's two halves make its headline, and the sentence under the markers says they are a
+  different kind of thing from a face and do not add up with one. Because **everyone** reads this page it
+  carries **no pipeline
   jargon** (no „embedding" anywhere) and the highlighted numbers **lead somewhere** — `/trash`, the library at
   `?q=faces:0`, `/review` — with the write-gated ones hidden from a viewer (see `LibraryStatsCards`). A failed
   load shows `ErrorState` + retry and **renders no grid of zeroes**, so an unavailable count never reads as an
@@ -2320,13 +2341,15 @@ here.
   pointer widens the columns.
   i18n `stats.*` incl. `stats.charts.*` (cs/en, localised month names and a pluralised „N fotek"). Tests:
   `StatsPage.test.tsx` (loaded counts with separators + group
-  headings, no „embedding" in the grid, the derived gaps, the three links with their hrefs and accessible
+  headings, no „embedding" in the grid, the derived gaps, **the faces card and the faces meter answering with
+  the same numbers on the same grain**, **the markers standing apart with no count wearing the word "face"**,
+  the three links with their hrefs and accessible
   names, **a viewer sees the two write links as plain numbers**, the error state without a zero grid, retry,
   cs grouping, **the four charts' accessible names with their key numbers, the year and camera click-throughs,
   the coverage shares, charts failing alone and retrying alone, the empty-series sentences**),
   `ColumnChart.test.tsx` / `BarList.test.tsx` / `CoverageMeters.test.tsx` (the primitives over fixture data:
-  bar scaling and the small-value floor, empty buckets, link vs image roles, the meters' percentages and
-  their zero whole),
+  bar scaling and the small-value floor, empty buckets, link vs image roles, the meters' percentages —
+  including the faces share dividing by the two halves the card adds up — and their zero whole),
   `ReviewDecisionsPage` = `/audit/reviews` (admin **or** maintainer, `RequireRole role="admin"`)
   an **overview of one user's review decisions** (reachable by clicking through from the leaderboard): over `GET /audit`
   with `?via=review&user=…` (`fetchAuditLog`). At the top the user's name + their **Ano/Ne/Celkem** tally

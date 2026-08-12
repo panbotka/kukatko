@@ -53,6 +53,16 @@ interface StatRow {
   link?: StatLink
 }
 
+/**
+ * A sentence closing a card, for the one thing a column of numbers cannot say
+ * about itself: how its counts relate to another card's. `total`, when given, is
+ * interpolated as `{{total}}` and grouped for the active language.
+ */
+interface StatNote {
+  key: ParseKeys
+  total?: number
+}
+
 /** One card: a headline count with its breakdown beneath. */
 interface StatGroup {
   id: string
@@ -61,19 +71,30 @@ interface StatGroup {
   headlineKey: ParseKeys
   headline: number
   rows: StatRow[]
+  note?: StatNote
 }
 
 /**
- * Lays the counts out as five cards, each leading with the number that answers
+ * Lays the counts out as six cards, each leading with the number that answers
  * its question ("how many photos?", "how many can I search by content?") and
  * breaking it down underneath. The order follows the pipeline: what was
- * imported, what can be searched by content, what has faces, who was named, how
- * it is organised.
+ * imported, what can be searched by content, which faces were found, who was
+ * named, what is drawn on the photos, how it is organised.
  *
  * The wording is the family's, not the pipeline's: the card that used to be
  * titled "Embeddingy" and count embedding rows now says what an embedding buys
  * the reader — searching photos by what is in them — and leads with the photos
  * that are ready for it. Nothing about the numbers changed; the vocabulary did.
+ *
+ * Faces and markers are two different things and each card keeps to one of them.
+ * A **face** is one detection on one photo; the faces card leads with the faces
+ * that have a name, its gap row is the faces that do not, and the two add up to
+ * everything the detector found — which is exactly the whole the faces coverage
+ * meter divides by, so the card and the meter answer the same question with the
+ * same numbers. A **marker** is a box drawn on a photo; that count is smaller,
+ * overlaps the detections and never adds up with them, so it lives on a card of
+ * its own with a sentence saying so. Before this split all three counts were
+ * labelled "obličej", read as a partition and did not add up.
  */
 function groupsFor(stats: LibraryStats): StatGroup[] {
   return [
@@ -113,9 +134,16 @@ function groupsFor(stats: LibraryStats): StatGroup[] {
       id: 'faces',
       titleKey: 'stats.groups.faces',
       icon: 'person-bounding-box',
-      headlineKey: 'stats.faces',
-      headline: stats.faces,
+      headlineKey: 'stats.facesNamed',
+      headline: stats.faces_assigned,
       rows: [
+        {
+          key: 'unnamed',
+          labelKey: 'stats.facesUnnamed',
+          value: stats.faces_unassigned,
+          gap: true,
+          link: { to: '/review', labelKey: 'stats.links.unnamed', needsWrite: true },
+        },
         { key: 'with-faces', labelKey: 'stats.withFaces', value: stats.photos_with_faces },
         {
           key: 'without-faces',
@@ -125,6 +153,7 @@ function groupsFor(stats: LibraryStats): StatGroup[] {
           link: { to: NO_FACES_HREF, labelKey: 'stats.links.withoutFaces' },
         },
       ],
+      note: { key: 'stats.facesNote', total: stats.faces },
     },
     {
       id: 'people',
@@ -136,15 +165,19 @@ function groupsFor(stats: LibraryStats): StatGroup[] {
         { key: 'person', labelKey: 'stats.subjectsPerson', value: stats.subjects_person },
         { key: 'pet', labelKey: 'stats.subjectsPet', value: stats.subjects_pet },
         { key: 'other', labelKey: 'stats.subjectsOther', value: stats.subjects_other },
-        { key: 'named', labelKey: 'stats.markersAssigned', value: stats.markers_assigned },
-        {
-          key: 'unnamed',
-          labelKey: 'stats.markersUnassigned',
-          value: stats.markers_unassigned,
-          gap: true,
-          link: { to: '/review', labelKey: 'stats.links.unnamed', needsWrite: true },
-        },
       ],
+    },
+    {
+      id: 'markers',
+      titleKey: 'stats.groups.markers',
+      icon: 'bounding-box',
+      headlineKey: 'stats.markers',
+      headline: stats.markers,
+      rows: [
+        { key: 'named', labelKey: 'stats.markersAssigned', value: stats.markers_assigned },
+        { key: 'unnamed', labelKey: 'stats.markersUnassigned', value: stats.markers_unassigned },
+      ],
+      note: { key: 'stats.markersNote' },
     },
     {
       id: 'collections',
@@ -185,6 +218,23 @@ function StatValue({ row, canWrite }: { row: StatRow; canWrite: boolean }) {
 }
 
 /**
+ * The sentence closing a card. It is the card's only prose, so it says only what
+ * the numbers cannot: what they add up to, or which neighbouring count they must
+ * not be added to.
+ */
+function StatNoteText({ note }: { note: StatNote }) {
+  const { t, i18n } = useTranslation()
+  if (note.total === undefined) {
+    return <p className="text-secondary kk-text-caption mt-3 mb-0">{t(note.key)}</p>
+  }
+  return (
+    <p className="text-secondary kk-text-caption mt-3 mb-0">
+      {t(note.key, { total: formatCount(note.total, i18n.language) })}
+    </p>
+  )
+}
+
+/**
  * The library counts as a grid of cards — the shared rendering of
  * `GET /system/stats`, used both by the statistics page and by the System page's
  * Library section, so the two can never drift apart or double-fetch a second
@@ -193,6 +243,8 @@ function StatValue({ row, canWrite }: { row: StatRow; canWrite: boolean }) {
  * are highlighted while non-zero, and the counts that have somewhere to lead
  * (the trash, photos with nobody on them, faces still to name) are links —
  * gated on the reader's role, so nobody is offered an action they cannot take.
+ * A card whose counts could be mistaken for a neighbour's closes with a sentence
+ * saying how the two relate (see {@link groupsFor}).
  */
 export function LibraryStatsCards({ stats }: { stats: LibraryStats }) {
   const { t, i18n } = useTranslation()
@@ -226,6 +278,7 @@ export function LibraryStatsCards({ stats }: { stats: LibraryStats }) {
                   </Fragment>
                 ))}
               </dl>
+              {group.note !== undefined && <StatNoteText note={group.note} />}
             </Card.Body>
           </Card>
         </Col>

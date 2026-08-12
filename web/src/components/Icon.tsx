@@ -17,6 +17,7 @@ export type IconName =
   | 'award-fill'
   | 'bar-chart'
   | 'bookmarks'
+  | 'bounding-box'
   | 'box-arrow-in-down'
   | 'box-arrow-right'
   | 'box-arrow-up-right'

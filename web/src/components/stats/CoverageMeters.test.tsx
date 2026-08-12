@@ -22,6 +22,7 @@ function stats(overrides: Partial<LibraryStats> = {}): LibraryStats {
     embeddings: 900,
     faces: 400,
     faces_assigned: 300,
+    faces_unassigned: 100,
     subjects: 5,
     subjects_person: 4,
     subjects_pet: 1,
@@ -65,8 +66,19 @@ describe('CoverageMeters', () => {
     ).toHaveAttribute('aria-valuenow', '60')
   })
 
+  it('divides the faces meter by the two halves the faces card adds up', () => {
+    // The card shows 300 named and 100 nameless; the meter must divide by their
+    // sum, not by a marker count, or the two disagree on the same screen.
+    renderMeters({ faces: 4671 + 16586, faces_assigned: 4671, faces_unassigned: 16586 })
+
+    expect(screen.getByTestId('coverage-faces')).toHaveTextContent('22%')
+    expect(
+      screen.getByRole('meter', { name: 'Faces with a name: 4,671 of 21,257 (22%)' }),
+    ).toHaveAttribute('aria-valuenow', '22')
+  })
+
   it('reads an untouched whole as 0 %, not as a division by zero', () => {
-    renderMeters({ faces: 0, faces_assigned: 0 })
+    renderMeters({ faces: 0, faces_assigned: 0, faces_unassigned: 0 })
 
     expect(screen.getByTestId('coverage-faces')).toHaveTextContent('0%')
     expect(screen.getByRole('meter', { name: /Faces with a name/ })).toHaveAttribute(
