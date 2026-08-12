@@ -714,6 +714,7 @@
     "unknownTokens": "I don't understand these filters (searching them as plain text):",
     "keySuggestions": "Filter suggestions",
     "valueSuggestions": "Value suggestions",
+    "suggestions": "Suggestions",
     "values": {
       "empty": "Nothing matches"
     },

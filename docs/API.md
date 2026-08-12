@@ -843,9 +843,12 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `DisallowUnknownFields` + a 1 MiB limit. The `saved_searches` table (migration `0017_saved_searches.sql`).
   Mounted by `server.WithAPI` (`buildSavedSearchAPI` in `cmd/kukatko/savedsearch.go`).
 - **Search History API (`/api/v1`, `internal/searchhistoryapi` + `internal/searchhistory`, authenticated via
-  `RequireAuth`):** each user's **recent searches** — the short ordered list the search box and the command
-  palette offer back while they are empty. It lives server-side, not in the browser, so a query composed on a
-  laptop is offered on the phone. `GET /search-history` → `{searches:[{query,searched_at}]}`, most recent
+  `RequireAuth`):** each user's **recent searches** — the short ordered list the search box offers back (whole
+  while it is empty, as prefix matches once something is typed) and the command palette offers while empty. It
+  lives server-side, not in the browser, so a query composed on a laptop is offered on the phone. Only a query
+  the reader **submitted** is posted — Enter, picking a recent one, running one from the palette — never one a
+  typing pause merely ran, or the capped ring would fill with prefixes of itself (`useRecordSearch` in
+  `web/src/hooks/useSearchHistory.ts`). `GET /search-history` → `{searches:[{query,searched_at}]}`, most recent
   first, at most **20** (`searchhistory.MaxEntries`); an empty history is `[]`, never `null`, so a client always
   parses one shape. `POST /search-history` `{query}` → **204** with no body (the caller already knows what it
   searched for; the refreshed list is only wanted when the dropdown next opens, which is a GET). `DELETE

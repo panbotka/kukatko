@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 
 import { useGlobalSearch } from '../../hooks/useGlobalSearch'
-import { useSearchHistory } from '../../hooks/useSearchHistory'
+import { useRecordSearch, useSearchHistory } from '../../hooks/useSearchHistory'
 import { albumDisplayTitle } from '../../i18n/albumNames'
 import { localizeCountryNames } from '../../i18n/countryNames'
 import {
@@ -50,6 +50,12 @@ interface SearchItem {
   circle?: boolean
   /** A glyph shown when there is no thumbnail (the action row, labels, gaps). */
   icon?: IconName
+  /**
+   * Set on the rows that *run a search* rather than open an entity — "search
+   * everything" and the recent searches. Opening one is a deliberate submit, so
+   * the query is remembered (or moved back to the front of the ring).
+   */
+  query?: string
 }
 
 /** A titled block of {@link SearchItem}s (Photos / People / Albums / Labels). */
@@ -157,6 +163,7 @@ function buildHistoryGroup(
       to: `/search?${new URLSearchParams({ q: query }).toString()}`,
       primary: query,
       icon: 'clock-history',
+      query,
     })),
   }
 }
@@ -192,6 +199,7 @@ function buildGroups(
           to: `/search?${searchAll}`,
           primary: t('searchCommand.seeAll', { query: trimmed }),
           icon: 'search',
+          query: trimmed,
         },
       ],
     },
@@ -311,6 +319,10 @@ interface DialogProps {
  * rows, so the palette's contract holds unchanged: the first is highlighted, Enter
  * opens it — which makes "open the palette, press Enter" repeat the last search —
  * and the group's heading carries the action that forgets them all.
+ *
+ * Opening a row that *runs* a search — "search everything", or a recent one — records that
+ * query. It is the palette's one deliberate submit: what it hands the search page arrives
+ * there as a URL, which that page rightly refuses to remember on its own.
  */
 function SearchCommandDialog({ show, onClose }: DialogProps) {
   const { t, i18n } = useTranslation()
@@ -324,6 +336,7 @@ function SearchCommandDialog({ show, onClose }: DialogProps) {
   // Recent searches stand in for the idle hint, and are only fetched while the
   // palette is actually open on an empty field.
   const history = useSearchHistory(show && query.trim() === '')
+  const recordSearch = useRecordSearch()
 
   const groups = useMemo(() => {
     const built = buildGroups(query, result, i18n.language, t)
@@ -362,10 +375,16 @@ function SearchCommandDialog({ show, onClose }: DialogProps) {
       if (item === undefined) {
         return
       }
+      // Opening a row that runs a search is that search being submitted — the
+      // palette has no other moment at which one is, and the search page it
+      // lands on only sees a query arriving in the URL.
+      if (item.query !== undefined) {
+        recordSearch(item.query)
+      }
       onClose()
       void navigate(item.to)
     },
-    [navigate, onClose],
+    [navigate, onClose, recordSearch],
   )
 
   function onInputKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {

@@ -4,7 +4,11 @@ import { Icon, type IconName } from '../Icon'
 
 /** One row the search box's dropdown offers. */
 export interface SuggestionOption {
-  /** Stable React key — the value the row stands for. */
+  /**
+   * Stable React key. One list can mix kinds of row — a recent search beside the
+   * filter keys it shares a prefix with — so the caller names them per kind
+   * rather than by the bare value, which two kinds could both carry.
+   */
   key: string
   /** The row's visible text. */
   label: string

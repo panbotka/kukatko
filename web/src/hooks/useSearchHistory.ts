@@ -7,17 +7,6 @@ import {
   type SearchHistoryEntry,
 } from '../services/searchHistory'
 
-/**
- * How long a query must sit unchanged before it counts as "actually searched".
- *
- * It is deliberately far longer than the search page's own 350 ms input
- * debounce. The page commits — and therefore runs — a query as soon as typing
- * pauses, so every prefix of a slowly typed word is a real search; remembering
- * them all would fill the history with `sv`, `sva`, `svat`. Waiting until the
- * query has genuinely stopped changing records the one the reader meant.
- */
-const RECORD_DELAY_MS = 2000
-
 /** State returned by {@link useSearchHistory}. */
 export interface SearchHistoryState {
   /** The recent searches, most recent first; empty while loading or on failure. */
@@ -30,7 +19,8 @@ export interface SearchHistoryState {
 
 /**
  * Loads the signed-in user's recent searches, for the dropdown the search box
- * shows while it is focused and empty.
+ * shows while it is focused — empty, and as prefix matches once something is
+ * typed.
  *
  * `active` is "the dropdown could be on screen right now". The list is fetched
  * when it turns true and refetched on every later activation: the history lives
@@ -94,41 +84,41 @@ export function useSearchHistory(active: boolean): SearchHistoryState {
 }
 
 /**
- * Remembers `query` as a search the user ran, once it has stopped changing for
- * {@link RECORD_DELAY_MS}.
+ * The write side of the history: returns `record(query)`, to be called when the
+ * reader has actually **submitted** a query.
  *
- * The caller passes the query that was *executed* — on the search page that is
- * the one committed to the URL, not the keystrokes — and this hook adds the
- * settling delay on top, so a query typed in bursts is recorded once rather than
- * as each of its prefixes. A blank query records nothing, and the same query is
- * never posted twice in a row from one mount.
+ * Deliberately not driven by the query that is running. The search page runs a
+ * query as soon as typing pauses, so watching what ran means remembering every
+ * prefix of a slowly typed word — a four-second hesitation mid-word is enough to
+ * put `sva` in the ring next to `svatba`, and a couple of hesitant sessions fill
+ * the (capped) ring with prefixes of itself. Only a deliberate act records:
+ * Enter, picking a recent search, running one from the command palette. The
+ * caller knows which of its events those are; a timer never can.
+ *
+ * A blank query records nothing, and the same query is not posted twice in a row
+ * from one mount, so leaning on Enter costs one request. The post is not tied to
+ * the caller's lifetime — running a search from the palette navigates away
+ * immediately, and an aborted record would be no record at all.
  *
  * Failures are swallowed: a history that missed an entry is not worth an error in
  * front of someone who is searching.
  */
-export function useRecordSearch(query: string, delayMs: number = RECORD_DELAY_MS): void {
-  const trimmed = query.trim()
-  // What was last posted, so a re-render (or a Back that lands on the same query)
-  // does not record it again.
+export function useRecordSearch(): (query: string) => void {
+  // What was last posted, so a double Enter (or picking the recent search that is
+  // already in the box) does not send it again.
   const lastRecorded = useRef<string | null>(null)
 
-  useEffect(() => {
+  return useCallback((query: string) => {
+    const trimmed = query.trim()
     if (trimmed === '' || trimmed === lastRecorded.current) {
       return
     }
-    const controller = new AbortController()
-    const timer = setTimeout(() => {
-      lastRecorded.current = trimmed
-      recordSearch(trimmed, controller.signal).catch(() => {
-        // Silent, and forget it was tried: the next visit may well succeed.
-        if (lastRecorded.current === trimmed) {
-          lastRecorded.current = null
-        }
-      })
-    }, delayMs)
-    return () => {
-      clearTimeout(timer)
-      controller.abort()
-    }
-  }, [trimmed, delayMs])
+    lastRecorded.current = trimmed
+    recordSearch(trimmed).catch(() => {
+      // Silent, and forget it was tried: the next submit may well succeed.
+      if (lastRecorded.current === trimmed) {
+        lastRecorded.current = null
+      }
+    })
+  }, [])
 }

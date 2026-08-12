@@ -217,6 +217,101 @@ describe('SearchQueryInput — recent searches', () => {
   })
 })
 
+describe('SearchQueryInput — history while typing', () => {
+  it('offers the reader’s own searches for a typed prefix, above the filter keys', async () => {
+    const user = userEvent.setup()
+    historyMock.mockResolvedValue([entry('svatba'), entry('sníh'), entry('hory')])
+    renderInput()
+
+    await user.type(screen.getByRole('combobox'), 's')
+
+    // `s` alone used to offer two English filter keys and nothing else; the two
+    // remembered queries come first, and only then the completions. `snih`
+    // matches `sníh`, as everywhere else in the box.
+    const options = await screen.findAllByRole('option')
+    expect(options.map((option) => option.textContent)).toEqual([
+      'svatba',
+      'sníh',
+      'square:',
+      'subject:',
+    ])
+    // Mixed rows say so, rather than claiming to be one kind or the other.
+    expect(screen.getByRole('listbox', { name: 'Suggestions' })).toBeInTheDocument()
+  })
+
+  it('runs a remembered search picked from under a typed prefix', async () => {
+    const user = userEvent.setup()
+    historyMock.mockResolvedValue([entry('svatba 1974')])
+    renderInput()
+
+    await user.type(screen.getByRole('combobox'), 'sva')
+    await user.click(await screen.findByRole('option', { name: 'svatba 1974' }))
+
+    expect(screen.getByRole('combobox')).toHaveValue('svatba 1974')
+    expect(screen.getByTestId('ran')).toHaveTextContent('svatba 1974')
+  })
+
+  it('keeps Tab on the completion, not on the recent search above it', async () => {
+    const user = userEvent.setup()
+    historyMock.mockResolvedValue([entry('camera obscura')])
+    renderInput()
+
+    await user.type(screen.getByRole('combobox'), 'ca')
+    await screen.findByRole('option', { name: 'camera obscura' })
+
+    // Tab completes the word into a filter key; running a whole remembered query
+    // is not what anyone reaching for the completion key asked for.
+    await user.keyboard('{Tab}')
+    expect(screen.getByRole('combobox')).toHaveValue('camera:')
+    expect(screen.getByTestId('ran')).toBeEmptyDOMElement()
+  })
+
+  it('does not offer back the query already typed, nor the ones that do not match', async () => {
+    const user = userEvent.setup()
+    historyMock.mockResolvedValue([entry('svatba'), entry('hory')])
+    renderInput()
+
+    await user.type(screen.getByRole('combobox'), 'svatba')
+
+    await waitFor(() => {
+      expect(historyMock).toHaveBeenCalled()
+    })
+    expect(screen.queryByRole('option')).not.toBeInTheDocument()
+  })
+
+  it('leaves “forget these” to a dropdown that is only history', async () => {
+    const user = userEvent.setup()
+    historyMock.mockResolvedValue([entry('camera obscura')])
+    renderInput()
+
+    // `ca` also completes into filter keys, so the clear action would read as
+    // clearing those too.
+    await user.type(screen.getByRole('combobox'), 'ca')
+    await screen.findByRole('option', { name: 'camera obscura' })
+    expect(screen.queryByRole('button', { name: /Clear history/ })).not.toBeInTheDocument()
+
+    // `camera o` completes into nothing, so the list is history alone.
+    await user.type(screen.getByRole('combobox'), 'mera o')
+    await screen.findByRole('option', { name: 'camera obscura' })
+    expect(screen.getByRole('button', { name: /Clear history/ })).toBeInTheDocument()
+  })
+
+  it('still leaves Enter to the form with history on offer', async () => {
+    const user = userEvent.setup()
+    historyMock.mockResolvedValue([entry('svatba 1974')])
+    renderInput()
+
+    await user.type(screen.getByRole('combobox'), 'sva')
+    await screen.findByRole('option', { name: 'svatba 1974' })
+
+    // Nothing highlighted: Enter searches for what was typed, it does not swap in
+    // the remembered query sitting on top.
+    await user.keyboard('{Enter}')
+    expect(screen.getByRole('combobox')).toHaveValue('sva')
+    expect(screen.getByTestId('ran')).toHaveTextContent('sva')
+  })
+})
+
 describe('SearchQueryInput — value suggestions', () => {
   it('offers people for person: and inserts the picked name', async () => {
     const user = userEvent.setup()

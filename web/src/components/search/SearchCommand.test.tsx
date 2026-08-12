@@ -17,13 +17,20 @@ vi.mock('../../services/search', async (importOriginal) => {
 
 vi.mock('../../services/searchHistory', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../services/searchHistory')>()
-  return { ...actual, fetchSearchHistory: vi.fn(), clearSearchHistory: vi.fn() }
+  return {
+    ...actual,
+    fetchSearchHistory: vi.fn(),
+    recordSearch: vi.fn(),
+    clearSearchHistory: vi.fn(),
+  }
 })
 
 const { globalSearch } = await import('../../services/search')
 const searchMock = vi.mocked(globalSearch)
-const { fetchSearchHistory, clearSearchHistory } = await import('../../services/searchHistory')
+const { fetchSearchHistory, recordSearch, clearSearchHistory } =
+  await import('../../services/searchHistory')
 const historyMock = vi.mocked(fetchSearchHistory)
+const recordHistoryMock = vi.mocked(recordSearch)
 const clearHistoryMock = vi.mocked(clearSearchHistory)
 
 /** Builds a minimal Photo for the palette's Photos group. */
@@ -86,6 +93,7 @@ beforeEach(async () => {
   searchMock.mockReset()
   searchMock.mockResolvedValue(RESULT)
   historyMock.mockResolvedValue([])
+  recordHistoryMock.mockResolvedValue()
   clearHistoryMock.mockResolvedValue()
 })
 
@@ -294,6 +302,35 @@ describe('SearchCommand', () => {
     // A row runs that search — the palette's rows navigate, and this one is a query.
     await user.keyboard('{Enter}')
     expect(screen.getByTestId('loc')).toHaveTextContent('/search?q=svatba+1974')
+    // Running it again is what moves it back to the front of the ring.
+    expect(recordHistoryMock).toHaveBeenCalledWith('svatba 1974')
+  })
+
+  it('remembers a search run from the palette, which the page it lands on cannot', async () => {
+    const user = userEvent.setup()
+    renderCommand()
+    await user.click(screen.getByRole('button', { name: 'Search' }))
+    await user.type(await screen.findByRole('combobox'), 'beach')
+
+    // The "search everything" row is the palette's deliberate submit; the search
+    // page only ever sees the query arrive in the URL.
+    await user.click(await screen.findByRole('option', { name: /Search all photos for/ }))
+
+    expect(screen.getByTestId('loc')).toHaveTextContent('/search?q=beach')
+    expect(recordHistoryMock).toHaveBeenCalledTimes(1)
+    expect(recordHistoryMock.mock.calls[0][0]).toBe('beach')
+  })
+
+  it('remembers nothing when the palette opens an entity instead of running a search', async () => {
+    const user = userEvent.setup()
+    renderCommand()
+    await user.click(screen.getByRole('button', { name: 'Search' }))
+    await user.type(await screen.findByRole('combobox'), 'beach')
+
+    await user.click(await screen.findByRole('option', { name: /Beach trip/ }))
+
+    expect(screen.getByTestId('loc')).toHaveTextContent('/albums/al1')
+    expect(recordHistoryMock).not.toHaveBeenCalled()
   })
 
   it('keeps the idle hint when there is no history to offer', async () => {

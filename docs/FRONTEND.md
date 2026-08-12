@@ -1091,13 +1091,23 @@ here.
   `ErrorState` with Retry); the field speaks **the search language**
   (`q` = free text + `klíč:hodnota` filters, grammar in docs/API.md „Vyhledávací jazyk (q=)“;
   parsed exclusively by the backend): the input is `SearchQueryInput` (`components/search/`) — a combobox
-  whose dropdown offers, depending on where the caret is, exactly one of **three panels** (drawn by the
-  presentational `SearchSuggestions`): **nedávno hledané** while the box is focused and empty
-  (`useSearchHistory`, `search.history.*`, with its own „Vymazat historii" action; **no panel at all** when the
-  history is empty — the page autofocuses this box, so a first-time reader would otherwise meet an empty
-  popover over the filters), **filter keys** while the trailing token could still become one (`suggestFilterKeys`/
-  `applyFilterKey` + `FILTER_KEYS`), and **filter values** once a completable key is typed
+  whose dropdown draws (via the presentational `SearchSuggestions`) **one list mixing up to two kinds of row**:
+  **nedávno hledané** whenever the box is focused — the whole history while it is empty, and once something is
+  typed those entries that **start with it** (folded via `foldText`, so `snih` finds `sníh`, minus the one that
+  *is* it, at most `HISTORY_MATCH_LIMIT`=5), because a reader who searched for `svatba` last week typing `s`
+  was previously offered `square:`/`subject:` and nothing of their own (`useSearchHistory`, now active on
+  focus rather than only on an empty box, so matching costs no request per keystroke) — followed by
+  **filter keys** while the trailing token could still become one (`suggestFilterKeys`/
+  `applyFilterKey` + `FILTER_KEYS`), or **filter values** once a completable key is typed
   (`suggestFilterValues`/`matchFilterValues`/`applyFilterValue`, lists from `useFilterValues`).
+  History rows come **first** and wear `clock-history`, completions follow wearing `funnel` (keys) or their
+  photo count (values) — a query already run is a stronger proposal than a word half-way to a filter, and the
+  glyph says which is which; the listbox names itself `search.history.label`/`search.keySuggestions`/
+  `search.valueSuggestions` when it holds one kind and `search.suggestions` („Návrhy") when it mixes them.
+  „Vymazat historii" (`search.history.clear`) rides only a list that is **nothing but** history — under rows
+  that also complete filters it would read as clearing those. **No panel at all** when there is nothing to
+  offer — the page autofocuses this box, so a first-time reader would otherwise meet an empty popover over the
+  filters.
   Only `album:`, `label:`, `person:`/`subject:` complete values — a number or a date has no list to propose;
   matching is **prefix + diacritics-insensitive** (`lib/text` `foldText`) and ranked by photo count, the picked
   value is inserted **properly quoted** (`quoteFilterValue`) with a trailing space, and a value token with no
@@ -1106,7 +1116,10 @@ here.
   rests on a row**: a highlight exists only once the reader has arrowed into the list, so `svatba u` + Enter
   searches for those two words instead of completing `u` into `uid:` — Czech words and endings prefix the
   English keys constantly (`po`→`portrait:`, `ta`→`taken:`, `la`→`label:`). **Tab** is the completion key and
-  accepts the first row untouched. Beside the label sits `SearchQueryHelp` (a `?` button → a modal holding
+  accepts the first **completion** untouched, skipping the recent searches above it (a whole query is not
+  something to complete a word into; with only history on offer Tab leaves the field as usual), while a
+  highlight the reader put on a history row is honoured. Beside the label sits `SearchQueryHelp`
+  (a `?` button → a modal holding
   **`SearchQueryReference`** — the reference lives in its own component because `/help`'s Search chapter
   renders the same tables inline, so the syntax has one source of truth; operators and filters
   with examples, rows from `QUERY_HELP_ROWS`/`QUERY_HELP_OPERATORS`, texts `search.help.*` cs+en; the
@@ -1127,7 +1140,10 @@ here.
   so the slideshow plays **the search results**, not the library filtered by the substring `q`)
   and **the single entry point to saved searches**
   (`SavedSearchesDropdown` — list, open, „Spravovat" → `/saved`) beside the **Uložit pohled** button
-  (`SaveSearchModal` — `params` carries `mode` too, so restoration targets `/search`),
+  (`SaveSearchModal` — `params` carries `mode` too, so restoration targets `/search`);
+  the page **remembers a query only when it is submitted** — the form's `onSubmit` (Enter) and `onRun`
+  (a recent search picked from the box) both call `recordSearch` from `useRecordSearch`, while the searches
+  the 350 ms debounce runs along the way are not submissions and are not remembered;
   plus for editors **hover-select** over the results → the shared **`BatchActionBar`** (the library's
   full set of actions, `onSelectAll`; on success the search
   replays via `reloadKey`); changing `q`/`mode` is a different result set, so it **leaves selection mode**
@@ -2456,6 +2472,9 @@ here.
   highlighted and Enter opens it, which makes „otevřít paletu, Enter" repeat the last search — and the group's
   heading (a `SearchGroup.action`, the one part of an eyebrow that is *not* `aria-hidden`, styled
   `kukatko-search-group__action`) carries „Vymazat historii". With no history the idle hint stays.
+  The rows that *run a search* — „Hledat vše" and the recent ones — carry `SearchItem.query`, and opening one
+  **records it** (`useRecordSearch`): it is the palette's one deliberate submit, and what it hands the search
+  page arrives there as a URL, which that page rightly refuses to remember on its own.
   Keys `searchCommand.*`, `search.history.*`, `globalSearch.groups.*`, `globalSearch.direct.*`; in the shortcut
   help the group `shortcuts.groups.global`). Both surfaces share `lib/directHit.ts` — the label maps
   `DIRECT_KIND_LABEL`/`DIRECT_VIA_LABEL`/`DIRECT_STATE_LABEL`, the icon map `DIRECT_TARGET_ICON` and the pure
@@ -2896,19 +2915,24 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   (`status` idle/loading/ready/error + `result`, an empty query → idle without a request, cancels in-flight +
   ignores stale — the basis for `GlobalSearchSections`);
   `useSearchHistory(active)` = the loader of the reader's **nedávno hledané** → `{entries,loading,clear}`:
-  `active` means "the dropdown could be on screen right now", and the list is (re)fetched on **every**
+  `active` means "the dropdown could be on screen right now" (the search box passes plain *focused*, since it
+  now matches the list against what is typed too), and the list is (re)fetched on **every**
   activation — the history lives server-side precisely so another device can extend it, and re-reading it each
   time the dropdown opens is what makes that visible; nothing is fetched while it cannot be seen, so a page
   that merely *has* a search box pays nothing. `clear()` empties the list **locally first** and posts behind it
   (the whole point of the action is that the list is gone) and bumps the same `latest` seq ref the loads are
   checked against, so an in-flight load cannot repopulate what was just cleared; a failed load leaves the list
   empty rather than surfacing an error (a box that cannot offer history is a plainer box, and an empty dropdown
-  is what a first-time user sees anyway). `useRecordSearch(query,delayMs?)` = the write side: it posts `query`
-  once it has stopped changing for **2 s** — far longer than the page's own 350 ms input debounce, because the
-  page *runs* a query as soon as typing pauses, so every prefix of a slowly typed word is a real search and
-  remembering them all would fill the history with `sv`, `sva`, `svat`; a blank query records nothing, the same
-  query is never posted twice from one mount, and failures are swallowed (a missed entry is not worth an error
-  in front of somebody who is searching). `useFilterValues(facet,debounceMs?)` = the value lists behind the
+  is what a first-time user sees anyway). `useRecordSearch()` = the write side, and it is **imperative**: it
+  returns `record(query)`, called at the moments the reader actually **submits** — Enter on the search form,
+  picking a recent search, opening a palette row that runs one. Nothing watches the query that is *running*:
+  the page runs one as soon as typing pauses, so a four-second hesitation mid-word used to put `sva` in the
+  ring beside `svatba`, and a couple of hesitant sessions filled the (20-entry) ring with prefixes of itself —
+  no settling delay can tell a pause from an intent, and the caller knows which of its events is a submit. A
+  blank query records nothing, the same query is not posted twice **in a row** from one mount (leaning on
+  Enter costs one request; re-running an older query still moves it back to the front), the post is **not**
+  bound to the caller's lifetime (the palette navigates away the same tick, and an aborted record is no
+  record), and failures are swallowed *and forgotten*, so the next submit retries. `useFilterValues(facet,debounceMs?)` = the value lists behind the
   search box's value autocomplete → `FilterValue[]` (`{name,count}`) for `album`/`label`/`person`: nothing is
   fetched until a facet is actually asked for, each facet is fetched **at most once** per mount (the lists are
   catalogue-wide, so matching as the reader types is pure client-side work and **no keystroke costs a
