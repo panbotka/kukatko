@@ -17,6 +17,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"github.com/panbotka/kukatko/internal/clientip"
 	"github.com/panbotka/kukatko/internal/version"
 	"github.com/panbotka/kukatko/internal/web"
 )
@@ -43,6 +44,7 @@ type Server struct {
 	apiGroups      []func(chi.Router)
 	middlewares    []func(http.Handler) http.Handler
 	metricsHandler http.Handler
+	trustedProxies *clientip.Set
 }
 
 // Option customises a Server during construction.
@@ -59,12 +61,22 @@ func WithAPI(register func(r chi.Router)) Option {
 }
 
 // WithMiddleware appends observability (or other) middlewares applied to every
-// route after the built-in RequestID/RealIP and before Recoverer. They run in
-// the order given; pass the metrics middleware and the structured access logger
-// here. Multiple WithMiddleware options compose.
+// route after the built-in RequestID/client-IP resolution and before Recoverer.
+// They run in the order given; pass the metrics middleware and the structured
+// access logger here. Multiple WithMiddleware options compose.
 func WithMiddleware(mw ...func(http.Handler) http.Handler) Option {
 	return func(s *Server) {
 		s.middlewares = append(s.middlewares, mw...)
+	}
+}
+
+// WithTrustedProxies names the networks whose requests may carry a forwarding
+// header that renames the client (see internal/clientip). Without it — and with
+// an empty set — every request is attributed to the address it was dialled from,
+// so no client can pick its own rate-limit bucket or audit-trail IP.
+func WithTrustedProxies(trusted *clientip.Set) Option {
+	return func(s *Server) {
+		s.trustedProxies = trusted
 	}
 }
 
@@ -85,9 +97,6 @@ func New(addr string, opts ...Option) *Server {
 	}
 
 	router := chi.NewRouter()
-	router.Use(middleware.RequestID)
-	router.Use(middleware.RealIP)
-
 	srv := &Server{
 		router: router,
 		httpServer: &http.Server{
@@ -99,9 +108,16 @@ func New(addr string, opts ...Option) *Server {
 	for _, opt := range opts {
 		opt(srv)
 	}
+	router.Use(middleware.RequestID)
+	// Client-IP resolution replaces chi's middleware.RealIP, which believed
+	// X-Forwarded-For/True-Client-IP from anyone: it honours a forwarding header
+	// only from a configured trusted proxy (SEC-001). It runs first so every
+	// limiter, the access log and the audit trail see the same trustworthy
+	// address.
+	router.Use(clientip.Middleware(srv.trustedProxies))
 	// Observability middlewares (metrics, structured access log) are injected via
-	// WithMiddleware so they see the RequestID/RealIP already set; Recoverer runs
-	// innermost so the access log records the recovered 500.
+	// WithMiddleware so they see the RequestID and resolved client IP already set;
+	// Recoverer runs innermost so the access log records the recovered 500.
 	for _, mw := range srv.middlewares {
 		router.Use(mw)
 	}

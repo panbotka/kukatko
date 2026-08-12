@@ -13,10 +13,11 @@ package ratelimit
 import (
 	"context"
 	"encoding/json"
-	"net"
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/panbotka/kukatko/internal/clientip"
 )
 
 // Limiter is a concurrency-safe token-bucket rate limiter keyed by an arbitrary
@@ -142,7 +143,7 @@ func (l *Limiter) RunMaintenance(ctx context.Context, interval time.Duration) {
 	}
 }
 
-// Middleware returns net/http middleware that rate-limits requests by client IP,
+// Middleware returns net/http middleware that rate-limits requests by resolved client IP,
 // responding 429 with a JSON error and a Retry-After header when the caller's
 // bucket is empty. A disabled limiter returns next unchanged, so an opted-out
 // endpoint pays zero per-request overhead.
@@ -183,14 +184,10 @@ func writeTooManyRequests(w http.ResponseWriter) {
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": "rate limit exceeded"})
 }
 
-// clientIP returns the best-effort client IP for r. chi's RealIP middleware
-// rewrites RemoteAddr from X-Forwarded-For/X-Real-IP upstream, so the host part
-// of RemoteAddr is the real client address behind a trusted proxy. When
-// RemoteAddr carries no port (already a bare address) it is returned as-is.
+// clientIP returns the bucket key for a per-IP limit: the address resolved by
+// internal/clientip, which is the socket peer unless a *trusted* proxy named a
+// different client in a forwarding header. A caller cannot spread itself over
+// many buckets by rotating a header of its own.
 func clientIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
+	return clientip.FromRequest(r)
 }

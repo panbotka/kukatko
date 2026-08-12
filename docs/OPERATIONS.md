@@ -749,6 +749,33 @@ long-running and belong on the machine where the instance runs — so they remai
   principal is on the context): a household shares one address, and throttling everyone's conversation
   because one person is chatty would be wrong. Login has its own limiter (`auth.login_rate_*`), the geocode
   proxy too (`maps.*`).
+- **Login keys (`auth.login_rate_limit`, `auth.login_rate_window`):** default **10 failed attempts per
+  (username, client IP) within 15m**, then 429; a successful login clears the count. Every attempt is
+  charged to a **second, IP-independent per-username budget** as well — `login_rate_limit × 3` over the same
+  window (30/15m by default), not separately configurable. That one is what an attacker cannot walk away
+  from by changing address, and it is deliberately the looser of the two: somebody mistyping their own
+  password from one machine hits the per-IP limit first and never meets it, while somebody aiming at
+  another person's account to lock them out has to spend three times as much to do it. Both are in-memory
+  and per process, so a restart clears them. `KUKATKO_AUTH_LOGIN_RATE_LIMIT`/`_LOGIN_RATE_WINDOW`.
+- **Trusted proxies (`web.trusted_proxies`, `internal/clientip`):** which peers may rename the client with a
+  forwarding header. Default **`["loopback", "private"]`** = `127.0.0.0/8`, `::1`, `10/8`, `172.16/12`,
+  `192.168/16`, `fc00::/7`. Entries are CIDR blocks, single addresses, or those two keywords; an unparseable
+  entry fails startup with `ErrInvalidTrustedProxy`. Env: `KUKATKO_WEB_TRUSTED_PROXIES="loopback,10.8.0.0/24"`
+  (comma-separated). **A list set here replaces the default, it does not extend it** — and because viper reads
+  an *empty* environment variable as unset, emptying the list has to be written in YAML (`trusted_proxies: []`).
+  Only a request that arrives **from** one of these networks has its `X-Forwarded-For`/`X-Real-Ip` believed;
+  from anyone else the socket address wins. `True-Client-IP` and the vendor variants are **never** read, from
+  anybody. The resolved address is what the rate limiters key on, what the audit trail records and what the
+  access log's `remote_ip` reports — one value, so a log line and an audit row about the same request name the
+  same machine.
+  **Deployment:** the VPS runs the container behind Traefik on a shared Docker network, so the peer address
+  the app sees is the proxy's `172.x` bridge address — already inside the `private` default, and **no config
+  change is needed there**. Check it after any topology change: if `remote_ip` in the access log is the same
+  address for every request, the real proxy is outside the trusted set and everyone shares one rate-limit
+  bucket; if it is an address a caller could have chosen, the set is too wide. A proxy on another host, or one
+  reached over the tailnet (`100.64/10`, deliberately **not** trusted by default — a tailnet carries clients,
+  not proxies), has to be added explicitly. Front ends should also strip inbound `X-Forwarded-For` and set it
+  themselves; with this list in place a forged one from an untrusted peer is ignored either way.
 - **Maps/geocode keys (`maps.*`, `internal/config`):** `mapy_api_key` (server-side, env
   `MAPY_API_KEY`; empty → the tile/rgeocode proxy 503s, the `places` job is not registered, and `/process/places`
   returns 503), `user_agent` (see below), `base_url` (default `https://api.mapy.com`), and a reverse-geocode

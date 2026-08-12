@@ -5,8 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net"
 	"net/http"
+
+	"github.com/panbotka/kukatko/internal/clientip"
 )
 
 // maxBodyBytes bounds the size of decoded JSON request bodies to guard against
@@ -44,21 +45,19 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) error {
 	return nil
 }
 
-// clientIP returns the request's client IP without the port, falling back to the
-// raw RemoteAddr when it has no port. chi's RealIP middleware has already
-// resolved proxy headers into RemoteAddr.
+// clientIP returns the address the request is attributed to: the socket peer,
+// unless a *trusted* proxy named a different client in a forwarding header (see
+// internal/clientip). Keying the login limiter on this rather than on a header
+// anyone can set is what makes the per-IP half of the key mean anything.
 func clientIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
+	return clientip.FromRequest(r)
 }
 
 // handleLogin authenticates a username/password, enforces login rate limiting
-// per username+IP, and on success sets the session cookie and returns the user
-// plus download token. It responds 400 (bad body or over-long username), 429
-// (rate limited), 401 (bad credentials), or 500 (server error).
+// both per username+IP and per username alone, and on success sets the session
+// cookie and returns the user plus download token. It responds 400 (bad body or
+// over-long username), 429 (rate limited), 401 (bad credentials), or 500 (server
+// error).
 //
 // The username length is checked before it is used, so this public endpoint
 // cannot be flooded with oversized usernames to grow the rate limiter's keys.
@@ -75,8 +74,8 @@ func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	key := username + "|" + clientIP(r)
-	if !a.limiter.Allow(key, a.now()) {
+	key := loginLimitKey(username, r)
+	if !a.allowLoginAttempt(key, username) {
 		writeError(w, http.StatusTooManyRequests, "too many login attempts; try again later")
 		return
 	}
@@ -93,8 +92,33 @@ func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a.limiter.Reset(key)
+	a.usernameLimiter.Reset(username)
 	a.setSessionCookie(w, sess.Token, sess.ExpiresAt)
 	writeJSON(w, http.StatusOK, loginResponse{User: user, DownloadToken: sess.DownloadToken})
+}
+
+// loginLimitKey is the bucket key of the per-(username, address) login budget.
+// The address half comes from clientIP, so a caller that rotates a forwarding
+// header keeps hitting the same bucket instead of minting a fresh one per
+// request (SEC-001).
+func loginLimitKey(username string, r *http.Request) string {
+	return username + "|" + clientIP(r)
+}
+
+// allowLoginAttempt records one login attempt against both budgets and reports
+// whether it may proceed. The per-(username, IP) budget is the narrow one; the
+// per-username budget is what an attacker cannot escape by changing address,
+// which — now that a forwarding header no longer decides that address (SEC-001)
+// — means it cannot be escaped at all.
+//
+// Both budgets are charged whenever the request gets that far, so an attacker
+// spreading over many addresses still burns the account's budget, and a
+// successful login clears both.
+func (a *API) allowLoginAttempt(key, username string) bool {
+	now := a.now()
+	perAddress := a.limiter.Allow(key, now)
+	perUsername := a.usernameLimiter.Allow(username, now)
+	return perAddress && perUsername
 }
 
 // handleLogout deletes the current session and clears the cookie. It is

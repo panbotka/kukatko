@@ -12,10 +12,10 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
+	"github.com/panbotka/kukatko/internal/clientip"
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 )
@@ -47,7 +47,9 @@ func newTokenEnv(t *testing.T, createLimit int) *tokenEnv {
 	})
 
 	r := chi.NewRouter()
-	r.Use(middleware.RealIP)
+	// Mirrors the real server: a forwarding header is only believed from a
+	// trusted proxy, and this harness trusts none.
+	r.Use(clientip.Middleware(nil))
 	r.Route("/api/v1", func(r chi.Router) {
 		api.RegisterRoutes(r)
 		r.With(api.RequireAuth).Get("/probe/auth", probeOK)

@@ -3,8 +3,10 @@ package config
 import (
 	"errors"
 	"maps"
+	"net/netip"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -505,6 +507,90 @@ func TestLoad_invalidWebPort(t *testing.T) {
 	_, err := Load("")
 	if !errors.Is(err, ErrInvalidWebPort) {
 		t.Fatalf("Load error = %v, want ErrInvalidWebPort", err)
+	}
+}
+
+// TestLoad_trustedProxiesDefault pins the shipped default: a reverse proxy is
+// on the same host or the same private network, so those two ranges — and
+// nothing else — may rename the client in a forwarding header.
+func TestLoad_trustedProxiesDefault(t *testing.T) {
+	setMinimalEnv(t)
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	want := []string{"loopback", "private"}
+	if !slices.Equal(cfg.Web.TrustedProxies, want) {
+		t.Fatalf("web.trusted_proxies = %v, want %v", cfg.Web.TrustedProxies, want)
+	}
+	set, err := cfg.Web.TrustedProxySet()
+	if err != nil {
+		t.Fatalf("TrustedProxySet returned error: %v", err)
+	}
+	if !set.Contains(netip.MustParseAddr("172.18.0.2")) {
+		t.Error("the default set does not trust a Docker-network proxy")
+	}
+	if set.Contains(netip.MustParseAddr("203.0.113.7")) {
+		t.Error("the default set trusts a public address; forwarding headers would be forgeable")
+	}
+}
+
+// TestLoad_trustedProxiesEnvOverride verifies the list parses from a
+// comma-separated environment variable, the form a deployment sets it in.
+func TestLoad_trustedProxiesEnvOverride(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("KUKATKO_WEB_TRUSTED_PROXIES", "loopback,10.8.0.0/24")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	set, err := cfg.Web.TrustedProxySet()
+	if err != nil {
+		t.Fatalf("TrustedProxySet returned error: %v", err)
+	}
+	if !set.Contains(netip.MustParseAddr("10.8.0.9")) {
+		t.Error("the configured block is not trusted")
+	}
+	if set.Contains(netip.MustParseAddr("192.168.1.1")) {
+		t.Error("an override still trusts the built-in private ranges; it must replace them, not extend them")
+	}
+}
+
+// TestLoad_trustedProxiesEmptyTrustsNothing verifies an explicitly empty list is
+// honoured — the strictest setting, for an instance exposed directly. It has to
+// be written in YAML: viper reads an empty environment variable as "unset", so
+// KUKATKO_WEB_TRUSTED_PROXIES="" leaves the default in place.
+func TestLoad_trustedProxiesEmptyTrustsNothing(t *testing.T) {
+	setMinimalEnv(t)
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("web:\n  trusted_proxies: []\n"), 0o600); err != nil {
+		t.Fatalf("writing config: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	set, err := cfg.Web.TrustedProxySet()
+	if err != nil {
+		t.Fatalf("TrustedProxySet returned error: %v", err)
+	}
+	if !set.Empty() {
+		t.Errorf("web.trusted_proxies = %v, want an empty set", cfg.Web.TrustedProxies)
+	}
+}
+
+// TestLoad_invalidTrustedProxy verifies a typo fails startup instead of silently
+// trusting nothing (or, worse, something else).
+func TestLoad_invalidTrustedProxy(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("KUKATKO_WEB_TRUSTED_PROXIES", "loopback,proxy.example.com")
+
+	_, err := Load("")
+	if !errors.Is(err, ErrInvalidTrustedProxy) {
+		t.Fatalf("Load error = %v, want ErrInvalidTrustedProxy", err)
 	}
 }
 

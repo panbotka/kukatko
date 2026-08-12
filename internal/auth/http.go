@@ -14,22 +14,37 @@ import (
 // session token.
 const sessionCookieName = "kukatko_session"
 
+// usernameLimitFactor scales the per-(username, IP) failure budget into the
+// IP-independent per-username one when the caller does not supply its own
+// limiter. The per-username counter is what survives an attacker moving between
+// addresses, but it is also the one an attacker can aim at somebody else's
+// account to lock them out, so it is deliberately looser than the per-IP budget
+// rather than equal to it: a person mistyping their own password from one
+// machine hits the per-IP limit first and never learns this one exists.
+const usernameLimitFactor = 3
+
 // API exposes the auth domain over HTTP: it registers the /auth and admin
 // /users routes and provides the RBAC middleware. It bundles the service, the
-// login rate limiter, and cookie settings.
+// two login rate limiters, and cookie settings.
 type API struct {
-	svc           *Service
-	limiter       *Limiter
-	secureCookies bool
-	now           func() time.Time
+	svc             *Service
+	limiter         *Limiter
+	usernameLimiter *Limiter
+	secureCookies   bool
+	now             func() time.Time
 }
 
 // APIConfig configures NewAPI.
 type APIConfig struct {
 	// Service is the auth domain service (required).
 	Service *Service
-	// Limiter throttles login attempts (required).
+	// Limiter throttles login attempts per (username, client IP) — and, reused,
+	// API-token minting per (user, client IP) (required).
 	Limiter *Limiter
+	// UsernameLimiter throttles login attempts per username regardless of where
+	// they come from. Optional: when nil, NewAPI derives one from Limiter with a
+	// budget usernameLimitFactor times as large over the same window.
+	UsernameLimiter *Limiter
 	// SecureCookies marks the session cookie Secure (HTTPS-only).
 	SecureCookies bool
 }
@@ -37,14 +52,27 @@ type APIConfig struct {
 // NewAPI returns an API from cfg, using time.Now as its clock.
 func NewAPI(cfg APIConfig) *API {
 	return &API{
-		svc:           cfg.Service,
-		limiter:       cfg.Limiter,
-		secureCookies: cfg.SecureCookies,
-		now:           time.Now,
+		svc:             cfg.Service,
+		limiter:         cfg.Limiter,
+		usernameLimiter: usernameLimiterFor(cfg),
+		secureCookies:   cfg.SecureCookies,
+		now:             time.Now,
 	}
 }
 
-// RunMaintenance periodically prunes the login rate limiter's stale keys until
+// usernameLimiterFor returns the per-username limiter cfg asks for, deriving one
+// from the per-IP limiter when the caller supplied none.
+func usernameLimiterFor(cfg APIConfig) *Limiter {
+	if cfg.UsernameLimiter != nil {
+		return cfg.UsernameLimiter
+	}
+	if cfg.Limiter == nil {
+		return NewLimiter(usernameLimitFactor, time.Minute)
+	}
+	return NewLimiter(cfg.Limiter.max*usernameLimitFactor, cfg.Limiter.window)
+}
+
+// RunMaintenance periodically prunes both login rate limiters' stale keys until
 // ctx is canceled. It is meant to run in its own goroutine alongside the
 // service's session cleanup.
 func (a *API) RunMaintenance(ctx context.Context, interval time.Duration) {
@@ -55,7 +83,9 @@ func (a *API) RunMaintenance(ctx context.Context, interval time.Duration) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			a.limiter.Cleanup(a.now())
+			now := a.now()
+			a.limiter.Cleanup(now)
+			a.usernameLimiter.Cleanup(now)
 		}
 	}
 }

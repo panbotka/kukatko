@@ -3,7 +3,9 @@
 package auth_test
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -13,9 +15,9 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/panbotka/kukatko/internal/auth"
+	"github.com/panbotka/kukatko/internal/clientip"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 )
 
@@ -27,8 +29,17 @@ type httpEnv struct {
 }
 
 // newHTTPEnv builds the HTTP test environment with a small login rate limit so
-// the throttling test is fast.
+// the throttling test is fast. It trusts no proxy, so a forwarding header is
+// ignored and every request is attributed to the loopback address the test
+// client dials from.
 func newHTTPEnv(t *testing.T, loginLimit int) *httpEnv {
+	t.Helper()
+	return newHTTPEnvWithProxies(t, loginLimit, nil)
+}
+
+// newHTTPEnvWithProxies is newHTTPEnv with an explicit trusted-proxy list, so a
+// test can decide whether the X-Forwarded-For it sends is believed.
+func newHTTPEnvWithProxies(t *testing.T, loginLimit int, trusted []string) *httpEnv {
 	t.Helper()
 	db := dbtest.New(t)
 	dbtest.TruncateAll(t, db)
@@ -38,8 +49,13 @@ func newHTTPEnv(t *testing.T, loginLimit int) *httpEnv {
 	limiter := auth.NewLimiter(loginLimit, time.Minute)
 	api := auth.NewAPI(auth.APIConfig{Service: svc, Limiter: limiter})
 
+	trustedSet, err := clientip.ParseSet(trusted)
+	if err != nil {
+		t.Fatalf("ParseSet(%v): %v", trusted, err)
+	}
+
 	r := chi.NewRouter()
-	r.Use(middleware.RealIP)
+	r.Use(clientip.Middleware(trustedSet))
 	r.Route("/api/v1", func(r chi.Router) {
 		api.RegisterRoutes(r)
 		r.With(api.RequireWrite).Get("/probe/write", probeOK)
@@ -93,6 +109,35 @@ func (e *httpEnv) do(t *testing.T, client *http.Client, method, path, body strin
 		t.Fatalf("reading body: %v", err)
 	}
 	return resp.StatusCode, data
+}
+
+// doWithHeaders is do with extra request headers, so a test can pretend to be
+// (or to come through) a particular client address.
+func (e *httpEnv) doWithHeaders(t *testing.T, client *http.Client,
+	method, path, body string, headers map[string]string,
+) int {
+	t.Helper()
+	var rdr io.Reader
+	if body != "" {
+		rdr = strings.NewReader(body)
+	}
+	req, err := http.NewRequestWithContext(t.Context(), method, e.server.URL+path, rdr)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	for name, value := range headers {
+		req.Header.Set(name, value)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("%s %s: %v", method, path, err)
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	return resp.StatusCode
 }
 
 // loginJSON builds a login request body.
@@ -271,6 +316,114 @@ func TestHTTP_loginRateLimited(t *testing.T) {
 	if status, _ := env.do(t, client, http.MethodPost, "/api/v1/auth/login",
 		loginJSON("target", testPassword)); status != http.StatusTooManyRequests {
 		t.Errorf("throttled correct-login status = %d, want 429", status)
+	}
+}
+
+// TestHTTP_loginLimitSurvivesAForgedForwardingHeader is SEC-001 end to end: the
+// attack was to rotate a client-controlled IP header so every guess landed in a
+// fresh limiter bucket. With no trusted proxy configured the header is ignored,
+// so the budget for the one address the attacker really has runs out.
+func TestHTTP_loginLimitSurvivesAForgedForwardingHeader(t *testing.T) {
+	env := newHTTPEnv(t, 3)
+	env.mustCreate(t, "target", auth.RoleViewer)
+	client := newClient(t)
+
+	for i := range 3 {
+		forged := fmt.Sprintf("10.0.0.%d", i)
+		headers := map[string]string{
+			"X-Forwarded-For": forged,
+			"X-Real-Ip":       forged,
+			"True-Client-IP":  forged,
+		}
+		if status := env.doWithHeaders(t, client, http.MethodPost, "/api/v1/auth/login",
+			loginJSON("target", "wrong"), headers); status != http.StatusUnauthorized {
+			t.Fatalf("attempt %d status = %d, want 401", i+1, status)
+		}
+	}
+	headers := map[string]string{
+		"X-Forwarded-For": "10.0.0.99",
+		"X-Real-Ip":       "10.0.0.99",
+		"True-Client-IP":  "10.0.0.99",
+	}
+	if status := env.doWithHeaders(t, client, http.MethodPost, "/api/v1/auth/login",
+		loginJSON("target", "wrong"), headers); status != http.StatusTooManyRequests {
+		t.Errorf("4th attempt from a freshly claimed address: status = %d, want 429", status)
+	}
+}
+
+// TestHTTP_loginPerUsernameBudgetOutlastsChangingClients covers the other guard:
+// behind a trusted proxy each forwarded client legitimately gets its own bucket,
+// so an attacker who could pick a new one per request would never exhaust one —
+// the per-username budget (3× the per-IP limit) is what stops them.
+func TestHTTP_loginPerUsernameBudgetOutlastsChangingClients(t *testing.T) {
+	const perIPLimit = 2
+	env := newHTTPEnvWithProxies(t, perIPLimit, []string{"loopback"})
+	env.mustCreate(t, "target", auth.RoleViewer)
+	client := newClient(t)
+
+	// Every attempt claims a different client, and the proxy is trusted, so the
+	// per-(username, IP) budget is never spent.
+	budget := perIPLimit * 3
+	for i := range budget {
+		headers := map[string]string{"X-Forwarded-For": fmt.Sprintf("203.0.113.%d", i)}
+		if status := env.doWithHeaders(t, client, http.MethodPost, "/api/v1/auth/login",
+			loginJSON("target", "wrong"), headers); status != http.StatusUnauthorized {
+			t.Fatalf("attempt %d status = %d, want 401", i+1, status)
+		}
+	}
+	headers := map[string]string{"X-Forwarded-For": "203.0.113.200"}
+	if status := env.doWithHeaders(t, client, http.MethodPost, "/api/v1/auth/login",
+		loginJSON("target", "wrong"), headers); status != http.StatusTooManyRequests {
+		t.Errorf("attempt %d from yet another client: status = %d, want 429", budget+1, status)
+	}
+
+	// The account is throttled, not the endpoint: another username still answers.
+	env.mustCreate(t, "bystander", auth.RoleViewer)
+	if status := env.doWithHeaders(t, client, http.MethodPost, "/api/v1/auth/login",
+		loginJSON("bystander", testPassword), headers); status != http.StatusOK {
+		t.Errorf("an unrelated account: status = %d, want 200", status)
+	}
+}
+
+// TestHTTP_loginFailsIdenticallyForUnknownAndDisabled is SEC-006 at the HTTP
+// level: the three ways a login can fail must be indistinguishable in the
+// response. (The *timing* half is measured in the unit test
+// TestCheckLoginPassword_timingIsIndistinguishable, which runs at the production
+// bcrypt cost; this build deliberately hashes cheaply.)
+func TestHTTP_loginFailsIdenticallyForUnknownAndDisabled(t *testing.T) {
+	env := newHTTPEnv(t, 50)
+	client := newClient(t)
+
+	disabled := env.mustCreate(t, "gone", auth.RoleViewer)
+	if _, err := env.svc.SetUserDisabled(t.Context(), disabled.UID, true); err != nil {
+		t.Fatalf("SetUserDisabled: %v", err)
+	}
+	env.mustCreate(t, "present", auth.RoleViewer)
+
+	attempts := []struct {
+		name     string
+		username string
+		password string
+	}{
+		{name: "unknown user", username: "nobody", password: testPassword},
+		{name: "disabled user", username: "gone", password: testPassword},
+		{name: "wrong password", username: "present", password: "not-the-password"},
+	}
+	var first []byte
+	for i, attempt := range attempts {
+		status, body := env.do(t, client, http.MethodPost, "/api/v1/auth/login",
+			loginJSON(attempt.username, attempt.password))
+		if status != http.StatusUnauthorized {
+			t.Errorf("%s: status = %d, want 401", attempt.name, status)
+		}
+		if i == 0 {
+			first = body
+			continue
+		}
+		if !bytes.Equal(body, first) {
+			t.Errorf("%s: body = %s, want the same body as the unknown-user attempt (%s)",
+				attempt.name, body, first)
+		}
 	}
 }
 

@@ -2,27 +2,43 @@ package audit
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/panbotka/kukatko/internal/clientip"
 )
 
-// TestClientIP verifies the client IP is taken from proxy headers first
-// (X-Forwarded-For first hop, then X-Real-IP) and falls back to the RemoteAddr
-// host with the port stripped.
-func TestClientIP(t *testing.T) {
+// TestFromRequest_ip verifies the audited IP is the address internal/clientip
+// resolved — the socket peer for an untrusted caller, however it decorates its
+// request with forwarding headers, and the forwarded client only when a trusted
+// proxy is what dialled us (SEC-001: the trail must record where a request came
+// from, not what its sender claimed).
+func TestFromRequest_ip(t *testing.T) {
 	t.Parallel()
+
+	trusted, err := clientip.ParseSet([]string{"loopback"})
+	if err != nil {
+		t.Fatalf("ParseSet: %v", err)
+	}
 
 	tests := []struct {
 		name       string
 		xff        string
 		realIP     string
 		remoteAddr string
+		resolve    bool // run the request through the client-IP middleware
 		want       string
 	}{
-		{name: "forwarded-for first hop wins", xff: "203.0.113.7, 10.0.0.1", remoteAddr: "10.0.0.9:5555", want: "203.0.113.7"},
-		{name: "real-ip used when no forwarded-for", realIP: "198.51.100.4", remoteAddr: "10.0.0.9:5555", want: "198.51.100.4"},
-		{name: "remote addr host fallback", remoteAddr: "192.0.2.5:42000", want: "192.0.2.5"},
+		{name: "forged forwarded-for ignored", xff: "203.0.113.7, 10.0.0.1", remoteAddr: "192.0.2.9:5555",
+			resolve: true, want: "192.0.2.9"},
+		{name: "forged real-ip ignored", realIP: "198.51.100.4", remoteAddr: "192.0.2.9:5555",
+			resolve: true, want: "192.0.2.9"},
+		{name: "trusted proxy names the client", xff: "203.0.113.7", remoteAddr: "127.0.0.1:5555",
+			resolve: true, want: "203.0.113.7"},
+		{name: "without the middleware the peer wins", xff: "203.0.113.7", remoteAddr: "192.0.2.5:42000",
+			want: "192.0.2.5"},
 		{name: "remote addr without port", remoteAddr: "192.0.2.6", want: "192.0.2.6"},
 		{name: "empty everything", want: ""},
 	}
@@ -34,10 +50,18 @@ func TestClientIP(t *testing.T) {
 				r.Header.Set("X-Forwarded-For", tt.xff)
 			}
 			if tt.realIP != "" {
-				r.Header.Set("X-Real-IP", tt.realIP)
+				r.Header.Set("X-Real-Ip", tt.realIP)
 			}
-			if got := clientIP(r); got != tt.want {
-				t.Errorf("clientIP() = %q, want %q", got, tt.want)
+			got := ""
+			if tt.resolve {
+				clientip.Middleware(trusted)(http.HandlerFunc(func(_ http.ResponseWriter, req *http.Request) {
+					got = FromRequest(req, "us-actor").IP
+				})).ServeHTTP(httptest.NewRecorder(), r)
+			} else {
+				got = FromRequest(r, "us-actor").IP
+			}
+			if got != tt.want {
+				t.Errorf("FromRequest().IP = %q, want %q", got, tt.want)
 			}
 		})
 	}
