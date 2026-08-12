@@ -4066,6 +4066,16 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `no-restricted-syntax` that bans `vi.restoreAllMocks()`), `.prettierrc.json`,
   `tsconfig*.json`.
 
+  **`build/gitkeep.ts` (`gitkeepPlugin`, `apply: 'build'`).** `emptyOutDir: true` wipes
+  `internal/web/static/dist` — including the **tracked** `.gitkeep` that keeps `//go:embed
+  all:dist/*` compiling on a fresh clone. A deleted tracked file is a modified working tree to Go's
+  VCS stamping, which is why every release binary up to v0.8.0 reported `v0.8.0+dirty`. The plugin
+  writes the empty placeholder back at `closeBundle` (after Vite has emptied the directory and
+  written the bundle), so every build path — `make web-build`, `scripts/dev.sh`, the Dockerfile, the
+  goreleaser before-hook — leaves the checkout clean from one place. `build/gitkeep.test.ts` runs a
+  real `vite build` over a scratch project (hence `// @vitest-environment node`: esbuild refuses to
+  run under jsdom) and asserts the stale output is gone while the placeholder is back.
+
   **Installable PWA (`web/build/`, `src/pwa/`, `components/pwa/`).** The app installs to a phone
   home screen and opens standalone. Four pieces:
   **(1) Identity.** `public/icons/kukatko.svg` is the master icon — an original door-peephole motif

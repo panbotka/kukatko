@@ -135,9 +135,10 @@ if [[ "$FORCE" == false && "$need_npm" == false && -f "$DIST_INDEX" ]]; then
 fi
 if [[ "$need_web" == true ]]; then
   echo "dev.sh: building frontend…"
+  # The build puts the tracked internal/web/static/dist/.gitkeep back after Vite
+  # wipes dist/ (web/build/gitkeep.ts), so the embed stays valid and the working
+  # tree stays clean.
   (cd web && npm run build)
-  # `make web-build` re-creates this after Vite wipes dist/; keep the embed valid.
-  printf '' >internal/web/static/dist/.gitkeep
 fi
 
 # A rebuilt SPA changes the embedded assets, so the binary must be rebuilt too.

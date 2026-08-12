@@ -1108,7 +1108,14 @@ fails the whole scrape.
   pointing at an ephemeral CI DB). `.github/workflows/release.yml`
   (tag `v*.*.*`) runs **goreleaser** (`.goreleaser.yaml`): `CGO_ENABLED=0` for arm64+amd64,
   version/commit via ldflags into `internal/version`, frontend build in the before-hook, **.deb**
-  via nfpm. `deb/`: `kukatko.service` (systemd, user `kukatko`, `EnvironmentFile`,
+  via nfpm. **Provenance:** goreleaser validates the git state *before* its before-hooks, so
+  whatever they leave behind used to ship unnoticed — the Vite build deleted the tracked
+  `internal/web/static/dist/.gitkeep` and Go's VCS stamping wrote `v0.8.0+dirty` into every
+  published binary. The Vite build now restores that placeholder itself (`web/build/gitkeep.ts`),
+  and the last before-hook, **`./scripts/assert-clean-tree.sh`** (runnable by hand), fails the
+  release if the tree is dirty for any other reason. Nothing disables VCS stamping: a binary built
+  from a genuinely modified tree is still stamped `+dirty`, which is again a signal that says
+  something. `deb/`: `kukatko.service` (systemd, user `kukatko`, `EnvironmentFile`,
   `Restart=always`), `kukatko.env` (dpkg conffile `config|noreplace`),
   `postinstall.sh`/`preremove.sh`/`postremove.sh` (user + `/var/lib/kukatko/{originals,cache}`).
   Apt deps: `libimage-exiftool-perl`, `libheif-examples|libheif-bin`, `dcraw`, `ffmpeg`,
