@@ -11,6 +11,7 @@ import {
   directHitTitle,
 } from '../../lib/directHit'
 import { directHitRoute, type GlobalSearchDirect, hasEntityMatches } from '../../services/search'
+import { EntityChip } from '../EntityChip'
 import { ENTITY_STYLE } from '../entityStyle'
 import { FadeInImage } from '../FadeInImage'
 import { Icon } from '../Icon'
@@ -164,16 +165,18 @@ export function GlobalSearchSections({ query }: { query: string }) {
             {t('globalSearch.groups.labels')}
           </h2>
           <div className="d-flex flex-wrap gap-2">
+            {/* The pill is the link (see EntityChip): a link wrapped *around* a
+                badge left a 12px-tall target on a phone. */}
             {result.labels.map((label) => (
-              <Link key={label.uid} to={`/labels/${label.uid}`} className="text-decoration-none">
-                <span
-                  className={`badge rounded-pill ${ENTITY_STYLE.tag.className} fw-normal d-inline-flex align-items-center gap-1`}
-                >
-                  <Icon name={ENTITY_STYLE.tag.icon} />
-                  {label.name}
-                  <span className="ms-1 opacity-75">{label.photo_count}</span>
-                </span>
-              </Link>
+              <EntityChip
+                key={label.uid}
+                kind="tag"
+                to={`/labels/${label.uid}`}
+                className="fw-normal"
+              >
+                {label.name}
+                <span className="ms-1 opacity-75">{label.photo_count}</span>
+              </EntityChip>
             ))}
           </div>
         </div>

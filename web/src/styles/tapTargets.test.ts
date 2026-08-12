@@ -145,6 +145,64 @@ describe('coarse-pointer touch-target floor', () => {
 })
 
 /**
+ * A pill chip that links — the photo panel's album and label chips, the "filed
+ * under" strip above the photo, a label hit in the search palette — was the one
+ * control the floor above did not reach: the list is by class, and a `.badge` is
+ * neither a `.btn` nor a `.nav-link`. Measured on production (390 × 844, coarse
+ * pointer) the album chip was a 79.1 × 12.0px `<a>` inside a 111 × 20.9px pill,
+ * under even WCAG 2.2 SC 2.5.8's 24px floor.
+ *
+ * The fix is keyed on the tag, not on a new class, so the next component that
+ * renders a chip that links inherits the target instead of repeating the bug.
+ * That the chips *are* those elements — the anchor is the pill — is pinned in
+ * `components/EntityChip.test.tsx`.
+ */
+describe('a pill chip that links, on a coarse pointer', () => {
+  const css = readCss('src/styles/app.css')
+  const coarse = ruleBody(css, /@media\s*\(pointer:\s*coarse\)/, /a\.badge/) ?? ''
+  const chip = declarations(ruleBody(coarse, /a\.badge,/) ?? '')
+
+  it('lifts the pill itself to the floor', () => {
+    expect(lengthPx(chip.get('min-height'))).toBeGreaterThanOrEqual(TOUCH_FLOOR_PX)
+    // Without flex centering the name rides the baseline of a box that is now
+    // twice as tall as its type.
+    expect(chip.get('display')).toBe('inline-flex')
+    expect(chip.get('align-items')).toBe('center')
+  })
+
+  it('grows the box and not the type', () => {
+    // A chip is secondary metadata — "which album is this photo from?" — so it
+    // must not turn into a button competing with the panel's actions. Only the
+    // hit area changes: the hue, the weight and the width the name gets are the
+    // desktop chip's.
+    for (const grown of ['font-size', 'font-weight', 'padding-inline', 'padding']) {
+      expect(chip.has(grown)).toBe(false)
+    }
+  })
+
+  it('hands the whole pill to the link a remove X shares it with', () => {
+    // An `<a>` may not contain a button, so an editor's chip is a span around
+    // the link. The pill drops its block padding and the link stretches, or the
+    // target would be a band across the middle of a 44px pill.
+    expect(lengthPx(chip.get('padding-block'))).toBe(0)
+    const link = declarations(ruleBody(coarse, /\.badge > a\s*(?=\{)/) ?? '')
+    expect(link.get('align-self')).toBe('stretch')
+    expect(link.get('display')).toBe('inline-flex')
+    expect(link.get('align-items')).toBe('center')
+  })
+
+  it('leaves the chip compact for a mouse', () => {
+    // These are the sheet's only rules for a linked badge, and both live in the
+    // coarse block read above — with a mouse the chip stays the compact pill it
+    // has always been, which is dense enough to read a hundred of.
+    expect(css.match(/a\.badge/g)).toHaveLength(1)
+    expect(css.match(/\.badge > a/g)).toHaveLength(1)
+    expect(coarse).toContain('a.badge')
+    expect(coarse).toContain('.badge > a')
+  })
+})
+
+/**
  * The library's timeline rail is the app's primary way across time on a phone,
  * and it sized its ticks for a mouse: measured on production (390×844, coarse
  * pointer) it drew 31 year ticks of 39.8 × 16.2px at a 20.2px pitch and 62 month

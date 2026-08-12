@@ -1,11 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
-import CloseButton from 'react-bootstrap/CloseButton'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
-import { ENTITY_STYLE } from '../entityStyle'
-import { Icon } from '../Icon'
+import { EntityChip } from '../EntityChip'
 
 import { foldedEquals } from '../../lib/text'
 import {
@@ -33,8 +30,9 @@ export interface OrganizePanelProps {
 }
 
 /**
- * The albums & labels panel: the photo's current album and label chips (each
- * linking to its scoped list), with inline add (a type-to-filter autocomplete
+ * The albums & labels panel: the photo's current album and label chips (each an
+ * {@link EntityChip} linking to its scoped list — the same chip the read-only
+ * strip above the photo draws), with inline add (a type-to-filter autocomplete
  * over the remaining albums/labels — see {@link AddAutocomplete}) and remove
  * controls for editors. Mutations call the organize API and update the photo's
  * memberships in place. Viewers see the chips read-only.
@@ -172,24 +170,23 @@ export function OrganizePanel({ photo, canWrite, onChanged }: OrganizePanelProps
           <span className="text-secondary small">{t('photo.organize.noAlbums')}</span>
         )}
         {photo.albums.map((album) => (
-          <span
+          <EntityChip
             key={album.uid}
-            className={`badge rounded-pill ${ENTITY_STYLE.album.className} d-inline-flex align-items-center gap-1`}
+            kind="album"
+            to={`/albums/${album.uid}`}
+            remove={
+              canWrite
+                ? {
+                    label: t('photo.organize.removeAlbum', { name: album.title }),
+                    onRemove: () => {
+                      removeAlbum(album.uid)
+                    },
+                  }
+                : undefined
+            }
           >
-            <Icon name={ENTITY_STYLE.album.icon} />
-            <Link to={`/albums/${album.uid}`} className="text-white text-decoration-none">
-              {album.title}
-            </Link>
-            {canWrite && (
-              <CloseButton
-                variant="white"
-                aria-label={t('photo.organize.removeAlbum', { name: album.title })}
-                onClick={() => {
-                  removeAlbum(album.uid)
-                }}
-              />
-            )}
-          </span>
+            {album.title}
+          </EntityChip>
         ))}
       </div>
       {canWrite && albumOptions.length > 0 && (
@@ -208,24 +205,23 @@ export function OrganizePanel({ photo, canWrite, onChanged }: OrganizePanelProps
           <span className="text-secondary small">{t('photo.organize.noLabels')}</span>
         )}
         {photo.labels.map((label) => (
-          <span
+          <EntityChip
             key={label.uid}
-            className={`badge rounded-pill ${ENTITY_STYLE.tag.className} d-inline-flex align-items-center gap-1`}
+            kind="tag"
+            to={`/labels/${label.uid}`}
+            remove={
+              canWrite
+                ? {
+                    label: t('photo.organize.removeLabel', { name: label.name }),
+                    onRemove: () => {
+                      removeLabel(label.uid)
+                    },
+                  }
+                : undefined
+            }
           >
-            <Icon name={ENTITY_STYLE.tag.icon} />
-            <Link to={`/labels/${label.uid}`} className="text-white text-decoration-none">
-              {label.name}
-            </Link>
-            {canWrite && (
-              <CloseButton
-                variant="white"
-                aria-label={t('photo.organize.removeLabel', { name: label.name })}
-                onClick={() => {
-                  removeLabel(label.uid)
-                }}
-              />
-            )}
-          </span>
+            {label.name}
+          </EntityChip>
         ))}
       </div>
       {/* Unlike albums, the label field stays even with no options — it creates. */}
