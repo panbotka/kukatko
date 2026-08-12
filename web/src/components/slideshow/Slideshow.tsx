@@ -234,6 +234,12 @@ export function Slideshow({
     settings.effect === 'kenburns' && !kenBurns ? 'none' : settings.effect
   const effectClass = EFFECT_CLASS[appliedEffect]
 
+  // The player's controls are bare glyphs — ✕ ‹ ▶ › ⛶ ⚙ — so each one's sentence
+  // is composed once here and worn twice: as the accessible name and as the
+  // tooltip a mouse gets on hover. The two that switch on state switch in both.
+  const playLabel = playing ? t('slideshow.pause') : t('slideshow.play')
+  const fullscreenLabel = isFullscreen ? t('slideshow.exitFullscreen') : t('slideshow.fullscreen')
+
   return (
     <div
       ref={containerRef}
@@ -248,6 +254,7 @@ export function Slideshow({
         size="sm"
         className="slideshow__close"
         aria-label={t('slideshow.close')}
+        title={t('slideshow.close')}
         onClick={onExit}
       >
         ✕
@@ -329,6 +336,7 @@ export function Slideshow({
           variant="dark"
           size="sm"
           aria-label={t('slideshow.prev')}
+          title={t('slideshow.prev')}
           onClick={onPrev}
           disabled={photos.length === 0}
         >
@@ -337,7 +345,8 @@ export function Slideshow({
         <Button
           variant="light"
           size="sm"
-          aria-label={playing ? t('slideshow.pause') : t('slideshow.play')}
+          aria-label={playLabel}
+          title={playLabel}
           onClick={onToggle}
           disabled={photos.length === 0}
         >
@@ -347,6 +356,7 @@ export function Slideshow({
           variant="dark"
           size="sm"
           aria-label={t('slideshow.next')}
+          title={t('slideshow.next')}
           onClick={onNext}
           disabled={photos.length === 0}
         >
@@ -355,7 +365,8 @@ export function Slideshow({
         <Button
           variant="dark"
           size="sm"
-          aria-label={isFullscreen ? t('slideshow.exitFullscreen') : t('slideshow.fullscreen')}
+          aria-label={fullscreenLabel}
+          title={fullscreenLabel}
           onClick={toggleFullscreen}
         >
           ⛶
@@ -364,6 +375,7 @@ export function Slideshow({
           variant={showSettings ? 'secondary' : 'dark'}
           size="sm"
           aria-label={t('slideshow.settings')}
+          title={t('slideshow.settings')}
           aria-pressed={showSettings}
           onClick={() => {
             setShowSettings((s) => !s)

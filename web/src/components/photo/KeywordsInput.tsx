@@ -68,22 +68,28 @@ export function KeywordsInput({ id, label, value, onChange, maxRunes }: Keywords
       </Form.Label>
       {value.length > 0 && (
         <div className="d-flex flex-wrap gap-2 mb-2">
-          {value.map((keyword) => (
-            <span
-              key={keyword}
-              className={`badge rounded-pill ${ENTITY_STYLE.tag.className} d-inline-flex align-items-center gap-1`}
-            >
-              <Icon name={ENTITY_STYLE.tag.icon} />
-              {keyword}
-              <CloseButton
-                variant="white"
-                aria-label={t('photo.metadata.removeKeyword', { name: keyword })}
-                onClick={() => {
-                  onChange(value.filter((current) => current !== keyword))
-                }}
-              />
-            </span>
-          ))}
+          {value.map((keyword) => {
+            // One interpolation, both audiences: the accessible name and the
+            // tooltip that tells a mouse which keyword this X drops.
+            const removeLabel = t('photo.metadata.removeKeyword', { name: keyword })
+            return (
+              <span
+                key={keyword}
+                className={`badge rounded-pill ${ENTITY_STYLE.tag.className} d-inline-flex align-items-center gap-1`}
+              >
+                <Icon name={ENTITY_STYLE.tag.icon} />
+                {keyword}
+                <CloseButton
+                  variant="white"
+                  aria-label={removeLabel}
+                  title={removeLabel}
+                  onClick={() => {
+                    onChange(value.filter((current) => current !== keyword))
+                  }}
+                />
+              </span>
+            )
+          })}
         </div>
       )}
       <Form.Control

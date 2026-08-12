@@ -253,6 +253,9 @@ function DecadeRow({
   const { t } = useTranslation()
   const range = `${group.decade}–${group.decade + DECADE_YEARS - 1}`
   const selected = span?.from === group.decade && span.to === group.decade + DECADE_YEARS - 1
+  // A bare chevron beside a decade could unfold anything; the sentence is
+  // interpolated once and worn as both the accessible name and the hover hint.
+  const yearsLabel = t('library.filters.decadeYears', { range })
   return (
     <li>
       <div className="d-flex align-items-center">
@@ -272,7 +275,8 @@ function DecadeRow({
           type="button"
           className="btn btn-link text-body-secondary px-2 flex-shrink-0"
           aria-expanded={expanded}
-          aria-label={t('library.filters.decadeYears', { range })}
+          aria-label={yearsLabel}
+          title={yearsLabel}
           onClick={onToggle}
         >
           <Icon name={expanded ? 'chevron-up' : 'chevron-down'} />

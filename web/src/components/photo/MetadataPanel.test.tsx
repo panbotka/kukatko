@@ -265,6 +265,12 @@ describe('MetadataPanel location picker', () => {
   it('prefills the coordinate field in canonical decimal degrees', async () => {
     const user = userEvent.setup()
     renderPanel()
+    // The location row's pencil stands alone beside its label, so it names the
+    // field it edits for the mouse as well as for a screen reader.
+    expect(screen.getByRole('button', { name: 'Edit Location' })).toHaveAttribute(
+      'title',
+      'Edit Location',
+    )
     await startEditing(user)
     expect(screen.getByLabelText('Coordinates')).toHaveValue('50.080000, 14.420000')
     expect(screen.getByTestId('marker')).toHaveTextContent('50.08,14.42')

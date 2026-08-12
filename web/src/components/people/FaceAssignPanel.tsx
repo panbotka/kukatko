@@ -99,6 +99,7 @@ export function FaceAssignPanel({
           size="sm"
           onClick={onClose}
           aria-label={t('faces.panel.close')}
+          title={t('faces.panel.close')}
         >
           ✕
         </Button>

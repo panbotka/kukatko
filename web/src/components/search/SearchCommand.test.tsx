@@ -161,6 +161,12 @@ describe('SearchCommand', () => {
     for (const heading of ['Photos', 'People', 'Albums', 'Labels']) {
       expect(screen.getByText(heading)).toBeInTheDocument()
     }
+    // The X that appears beside a typed query is icon-only, so it says what it
+    // does to the mouse as well as to a screen reader.
+    expect(screen.getByRole('button', { name: 'Clear search' })).toHaveAttribute(
+      'title',
+      'Clear search',
+    )
   })
 
   it('opens the highlighted entity on Enter after arrowing down', async () => {

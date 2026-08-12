@@ -167,6 +167,12 @@ describe('Slideshow', () => {
     const user = userEvent.setup()
     const props = setup()
 
+    // Every control here is a bare glyph — ✕ ‹ ❚❚ › ⛶ ⚙ — so each one hands the
+    // mouse the same sentence its accessible name carries.
+    for (const name of ['Next', 'Previous', 'Pause', 'Close', 'Fullscreen', 'Settings']) {
+      expect(screen.getByRole('button', { name })).toHaveAttribute('title', name)
+    }
+
     await user.click(screen.getByRole('button', { name: 'Next' }))
     expect(props.onNext).toHaveBeenCalled()
 
@@ -182,7 +188,8 @@ describe('Slideshow', () => {
 
   it('shows a play label when paused', () => {
     setup({ playing: false })
-    expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument()
+    // The tooltip switches with the state exactly as the accessible name does.
+    expect(screen.getByRole('button', { name: 'Play' })).toHaveAttribute('title', 'Play')
   })
 
   it('handles arrow / space / escape keyboard controls', () => {

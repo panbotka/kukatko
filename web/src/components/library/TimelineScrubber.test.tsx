@@ -153,6 +153,9 @@ describe('TimelineScrubber', () => {
 
     const jan = await screen.findByRole('button', { name: 'Jump to Jan 2026' })
     expect(screen.getByRole('button', { name: 'Jump to Feb 2026' })).toBeInTheDocument()
+    // A tick prints at most a year, so hovering one has to say which month it
+    // lands on — the same sentence the accessible name carries.
+    expect(jan).toHaveAttribute('title', 'Jump to Jan 2026')
 
     await user.click(jan)
     // A deliberate click pushes its month onto the history, so Back undoes it.

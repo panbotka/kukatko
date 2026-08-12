@@ -63,7 +63,12 @@ describe('EntityChip', () => {
       </EntityChip>,
     )
 
-    await user.click(screen.getByRole('button', { name: 'Remove from Holidays' }))
+    const remove = screen.getByRole('button', { name: 'Remove from Holidays' })
+    // The X says the same thing to the mouse: an icon-only control with no
+    // tooltip is a guess until it is pressed.
+    expect(remove).toHaveAttribute('title', 'Remove from Holidays')
+
+    await user.click(remove)
     expect(onRemove).toHaveBeenCalledTimes(1)
   })
 })

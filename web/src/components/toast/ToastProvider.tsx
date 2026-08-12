@@ -73,6 +73,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                 type="button"
                 className="btn-close btn-close-white ms-2"
                 aria-label={t('toast.close')}
+                title={t('toast.close')}
                 onClick={() => {
                   dismiss(toast.id)
                 }}

@@ -81,6 +81,12 @@ describe('MultiSelect', () => {
 
     expect(screen.getByRole('button', { name: 'Remove Trips' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Remove Weddings' })).toBeInTheDocument()
+    // The chip's X carries its sentence for the mouse too, not only for a
+    // screen reader — the same string, from the same translation call.
+    expect(screen.getByRole('button', { name: 'Remove Trips' })).toHaveAttribute(
+      'title',
+      'Remove Trips',
+    )
     // Only the still-unchosen option is offered.
     expect(screen.getAllByRole('option')).toHaveLength(1)
     expect(screen.getByRole('option', { name: 'Léto' })).toBeInTheDocument()

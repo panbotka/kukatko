@@ -103,6 +103,7 @@ export function EditPanel({ uid, edit, onChange, onSaved, onClose }: EditPanelPr
           size="sm"
           className="p-0 text-reset text-decoration-none"
           aria-label={t('photo.edit.closePanel')}
+          title={t('photo.edit.closePanel')}
           onClick={onClose}
         >
           <Icon name="x-lg" />

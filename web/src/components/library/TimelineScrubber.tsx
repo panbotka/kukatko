@@ -484,6 +484,17 @@ export function TimelineScrubber({
           )
         }
         const collapsed = range.firstRank !== range.lastRank
+        // A tick shows at most a year, and a mark on a rail says nothing about
+        // where it lands — so the month (or the range a crowded tick swallowed)
+        // is composed once and given to the screen reader and the mouse alike.
+        const jumpLabel = collapsed
+          ? t('library.timeline.jumpToRange', {
+              from: formatMonth(range.oldest.year, range.oldest.month, i18n.language),
+              to: formatMonth(range.newest.year, range.newest.month, i18n.language),
+            })
+          : t('library.timeline.jumpTo', {
+              month: formatMonth(range.newest.year, range.newest.month, i18n.language),
+            })
         return (
           <button
             key={tick.key}
@@ -491,16 +502,8 @@ export function TimelineScrubber({
             className={className}
             style={{ top: `${tick.top}%` }}
             aria-current={active ? 'true' : undefined}
-            aria-label={
-              collapsed
-                ? t('library.timeline.jumpToRange', {
-                    from: formatMonth(range.oldest.year, range.oldest.month, i18n.language),
-                    to: formatMonth(range.newest.year, range.newest.month, i18n.language),
-                  })
-                : t('library.timeline.jumpTo', {
-                    month: formatMonth(range.newest.year, range.newest.month, i18n.language),
-                  })
-            }
+            aria-label={jumpLabel}
+            title={jumpLabel}
             onClick={(event) => {
               handleTickClick(event, range.target)
             }}

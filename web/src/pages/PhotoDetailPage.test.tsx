@@ -458,11 +458,16 @@ describe('PhotoDetailPage — immersive viewer', () => {
       // An editor sees Archive; clicking it calls the archive service for this
       // photo and, on success, keeps the user on the page with the control now
       // offering Restore (the photo is in the trash).
+      // The box glyph does not move with the state, so the tooltip has to — and
+      // it says the same thing as the accessible name, on both sides of the flip.
+      expect(screen.getByRole('button', { name: 'Archive' })).toHaveAttribute('title', 'Archive')
+
       await user.click(screen.getByRole('button', { name: 'Archive' }))
       await waitFor(() => {
         expect(archivePhotoMock).toHaveBeenCalledWith('b')
       })
-      expect(await screen.findByRole('button', { name: 'Restore' })).toBeInTheDocument()
+      const restore = await screen.findByRole('button', { name: 'Restore' })
+      expect(restore).toHaveAttribute('title', 'Restore')
       expect(screen.queryByRole('button', { name: 'Archive' })).not.toBeInTheDocument()
     })
 
@@ -754,6 +759,24 @@ describe('PhotoDetailPage — immersive viewer', () => {
       expect(screen.getByRole('button', { name: 'Back to the list' })).toBeInTheDocument()
       expect(await screen.findByRole('link', { name: 'Previous photo' })).toBeInTheDocument()
       expect(screen.getByRole('link', { name: 'Next photo' })).toBeInTheDocument()
+
+      // The viewer is nothing but icons, so each of them answers a hovering
+      // mouse with the same sentence its accessible name carries.
+      for (const name of ['Show faces', 'Edits', 'Info']) {
+        expect(within(bar).getByRole('button', { name })).toHaveAttribute('title', name)
+      }
+      expect(screen.getByRole('button', { name: 'Back to the list' })).toHaveAttribute(
+        'title',
+        'Back to the list',
+      )
+      expect(screen.getByRole('link', { name: 'Previous photo' })).toHaveAttribute(
+        'title',
+        'Previous photo',
+      )
+      expect(screen.getByRole('link', { name: 'Next photo' })).toHaveAttribute(
+        'title',
+        'Next photo',
+      )
 
       const dock = screen.getByRole('group', { name: 'Photo actions' })
       expect(within(dock).queryByRole('button', { name: 'Info' })).not.toBeInTheDocument()
