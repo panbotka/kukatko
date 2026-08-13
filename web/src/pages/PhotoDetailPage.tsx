@@ -1,4 +1,4 @@
-import { type CSSProperties, useEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Button from 'react-bootstrap/Button'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
@@ -50,6 +50,7 @@ import {
 import { photoDisplayTitle, photoTitleText, titleSource } from '../lib/photoTitle'
 import { isTypingElement, ratingHotkey } from '../lib/ratingHotkeys'
 import { toMode } from '../lib/searchView'
+import { isFormModalOpen } from '../lib/shortcuts'
 import { readUrlState } from '../lib/urlState'
 import { isNotFound } from '../services/auth'
 import {
@@ -236,24 +237,73 @@ export function PhotoDetailPage() {
   // The neighbour's detail URL, carrying the originating order/scope so prev/next
   // keeps paging the same list, plus the drawer's open state so it stays open (or
   // shut) as you step through photos.
-  const neighborTo = (neighbor: string): string => {
-    const params = new URLSearchParams(detailQuery)
-    if (panelOpen) {
-      params.set('info', '1')
-    }
-    const query = params.toString()
-    return query === '' ? `/photos/${neighbor}` : `/photos/${neighbor}?${query}`
-  }
+  const neighborTo = useCallback(
+    (neighbor: string): string => {
+      const params = new URLSearchParams(detailQuery)
+      if (panelOpen) {
+        params.set('info', '1')
+      }
+      const query = params.toString()
+      return query === '' ? `/photos/${neighbor}` : `/photos/${neighbor}?${query}`
+    },
+    [detailQuery, panelOpen],
+  )
 
   // Page to a neighbour (prev/next) preserving the originating list order. Shared
-  // by the on-image ‹/› arrows, the ←/→ keys and the touch swipe/pinch so all
-  // navigate identically (same URL/state, same stop-at-ends semantics). Replace,
-  // so paging never grows the history stack the close button pops.
-  const goToNeighbor = (neighbor: string | null): void => {
-    if (neighbor !== null) {
-      void navigate(neighborTo(neighbor), { replace: true })
+  // by the on-image ‹/› arrows (which pass a known uid) and, through `step`, by
+  // the ←/→ keys and the touch swipe/pinch, so all navigate identically (same
+  // URL/state, same stop-at-ends semantics). Replace, so paging never grows the
+  // history stack the close button pops.
+  const goToNeighbor = useCallback(
+    (neighbor: string | null): void => {
+      if (neighbor !== null) {
+        void navigate(neighborTo(neighbor), { replace: true })
+      }
+    },
+    [navigate, neighborTo],
+  )
+
+  // A direction pressed before the list order was known, kept until it lands. A
+  // photo opened directly — a shared link, a refresh, Back or Forward — takes a
+  // moment to find its place in the list, and an arrow pressed in that window used
+  // to be dropped on the floor. The keys then looked dead until the answer
+  // happened to arrive between two presses, which read as "you have to click into
+  // the page first"; remembering the direction makes them work from the first
+  // frame instead.
+  const [pendingStep, setPendingStep] = useState<'prev' | 'next' | null>(null)
+
+  // Page one photo in `direction`, or remember the press while the neighbours are
+  // still being resolved. At a genuine list end there is nowhere to go and the key
+  // stays a no-op, exactly as before.
+  const step = (direction: 'prev' | 'next'): void => {
+    const target = direction === 'prev' ? neighbors.prev : neighbors.next
+    if (target === null && neighbors.pending) {
+      setPendingStep(direction)
+      return
     }
+    goToNeighbor(target)
   }
+
+  // A remembered press is honoured the instant the neighbours arrive, and is
+  // re-checked against the same guard the shortcut hook applies before it fires:
+  // the wait is long enough for the user to have moved on, and a photo swapping
+  // out from under a half-typed comment is what that guard exists to prevent.
+  useEffect(() => {
+    if (pendingStep === null || neighbors.pending) {
+      return
+    }
+    setPendingStep(null)
+    if (isTypingElement(document.activeElement) || isFormModalOpen()) {
+      return
+    }
+    goToNeighbor(pendingStep === 'prev' ? neighbors.prev : neighbors.next)
+  }, [pendingStep, neighbors.pending, neighbors.prev, neighbors.next, goToNeighbor])
+
+  // Forgetting a remembered press when the photo changes keeps a step reached
+  // another way (the on-image arrow, a swipe) from being paged twice.
+  useEffect(() => {
+    setPendingStep(null)
+  }, [uid])
 
   // Close the viewer, returning to the originating list. Prefer stepping back
   // through history (`navigate(-1)`) so the browser restores the grid's exact
@@ -460,7 +510,7 @@ export function PhotoDetailPage() {
   const swipe = useSwipeNavigation({
     enabled: isStill && (showFaces || showEdit),
     onSwipe: (direction) => {
-      goToNeighbor(direction === 'next' ? neighbors.next : neighbors.prev)
+      step(direction === 'next' ? 'next' : 'prev')
     },
   })
 
@@ -472,9 +522,9 @@ export function PhotoDetailPage() {
     resetKey: uid,
     onSwipe: (direction) => {
       if (direction === 'next') {
-        goToNeighbor(neighbors.next)
+        step('next')
       } else {
-        goToNeighbor(neighbors.prev)
+        step('prev')
       }
     },
   })
@@ -485,10 +535,10 @@ export function PhotoDetailPage() {
   // suppresses these while typing, which keeps `m`/`i` out of the name field.
   useKeyboardShortcuts({
     ArrowLeft: () => {
-      goToNeighbor(neighbors.prev)
+      step('prev')
     },
     ArrowRight: () => {
-      goToNeighbor(neighbors.next)
+      step('next')
     },
     f: () => {
       favorite.toggle()
