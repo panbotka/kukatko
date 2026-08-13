@@ -1679,6 +1679,120 @@ describe('PhotoDetailPage — immersive viewer', () => {
       })
     })
 
+    it('pages on an arrow pressed before the list order has arrived', async () => {
+      // A photo opened directly — a shared link, a refresh, Back/Forward — has to
+      // find its place in the list first, and that walk takes a moment. An arrow
+      // pressed in that window used to be dropped, so the keys read as dead until
+      // the user did something else that happened to take long enough.
+      let resolveList!: (res: PhotoListResponse) => void
+      fetchPhotosMock.mockReturnValue(
+        new Promise<PhotoListResponse>((resolve) => {
+          resolveList = resolve
+        }),
+      )
+
+      renderPage(true, '/photos/b?sort=oldest')
+      await screen.findByRole('heading', { name: 'Beach' })
+      // Still resolving: there is not even an on-screen arrow to click yet.
+      expect(screen.queryByRole('link', { name: 'Next photo' })).not.toBeInTheDocument()
+
+      fireEvent.keyDown(document, { key: 'ArrowRight' })
+      expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/b')
+
+      resolveList(page(['a', 'b', 'c']))
+      await waitFor(() => {
+        expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/c')
+      })
+    })
+
+    it('pages back on a left arrow pressed before the list order has arrived', async () => {
+      let resolveList!: (res: PhotoListResponse) => void
+      fetchPhotosMock.mockReturnValue(
+        new Promise<PhotoListResponse>((resolve) => {
+          resolveList = resolve
+        }),
+      )
+
+      renderPage(true, '/photos/b?sort=oldest')
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      fireEvent.keyDown(document, { key: 'ArrowLeft' })
+      resolveList(page(['a', 'b', 'c']))
+      await waitFor(() => {
+        expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/a')
+      })
+    })
+
+    it('drops a remembered arrow when the answer lands while a text field has focus', async () => {
+      // The wait is long enough for the user to give up on the key and start
+      // writing instead; a photo swapping out from under a caret is exactly what
+      // the shortcut guard exists to prevent, so it is re-checked on arrival.
+      let resolveList!: (res: PhotoListResponse) => void
+      fetchPhotosMock.mockReturnValue(
+        new Promise<PhotoListResponse>((resolve) => {
+          resolveList = resolve
+        }),
+      )
+
+      renderPage(true, '/photos/b?sort=oldest')
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      fireEvent.keyDown(document, { key: 'ArrowRight' })
+
+      // Stands in for the comment composer / caption field: the guard is one
+      // predicate over `document.activeElement`, and this focuses a real one
+      // without dragging the whole drawer into a keyboard test.
+      const composer = document.createElement('textarea')
+      document.body.append(composer)
+      composer.focus()
+
+      resolveList(page(['a', 'b', 'c']))
+      await waitFor(() => {
+        expect(screen.getByRole('link', { name: 'Next photo' })).toBeInTheDocument()
+      })
+      expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/b')
+      composer.remove()
+    })
+
+    it('leaves a right arrow at the end of the list a no-op, now and later', async () => {
+      // "There is no next photo" must not be remembered as "we do not know yet",
+      // or the last photo would jump the moment anything else refreshed.
+      fetchPhotosMock.mockResolvedValue(page(['a', 'b', 'c']))
+      renderPage(true, '/photos/c?sort=oldest')
+      await screen.findByRole('link', { name: 'Previous photo' })
+      expect(screen.queryByRole('link', { name: 'Next photo' })).not.toBeInTheDocument()
+
+      fireEvent.keyDown(document, { key: 'ArrowRight' })
+      await waitFor(() => {
+        expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/c')
+      })
+    })
+
+    it('re-points the arrows at once when paging, without re-walking the list', async () => {
+      // The neighbour pair belongs to one photo. While a fresh walk was in flight
+      // the previous photo's pair stayed on screen, so "next" pointed at the photo
+      // already open and a second press went nowhere.
+      fetchPhotosMock.mockResolvedValue(page(['a', 'b', 'c', 'd']))
+      renderPage(true, '/photos/b?sort=oldest')
+      await screen.findByRole('heading', { name: 'Beach' })
+      await screen.findByRole('link', { name: 'Next photo' })
+      const walked = fetchPhotosMock.mock.calls.length
+
+      fireEvent.keyDown(document, { key: 'ArrowRight' })
+      await waitFor(() => {
+        expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/c')
+      })
+      expect(screen.getByRole('link', { name: 'Next photo' }).getAttribute('href')).toContain(
+        '/photos/d',
+      )
+      expect(fetchPhotosMock.mock.calls.length).toBe(walked)
+
+      fireEvent.keyDown(document, { key: 'ArrowRight' })
+      await waitFor(() => {
+        expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/d')
+      })
+    })
+
     it('keeps the current photo mounted while a neighbour loads, then swaps in place', async () => {
       let resolveNext!: (p: PhotoDetail) => void
       const pendingNext = new Promise<PhotoDetail>((resolve) => {

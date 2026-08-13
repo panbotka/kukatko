@@ -1457,7 +1457,18 @@ here.
   **prev/next** = `<Link replace>` `‹`/`›` carrying scope+filters from the URL (`detailQuery`) **and `info`**,
   respecting the source listing's order (`usePhotoNeighbors` over `neighborParams`+`mode` — `GET
   /photos`, or `GET /search` when the detail came from a search, in the mode `useSearchMode` resolves so a
-  bookmarked `mode=hybrid` link doesn't spend the sidecar timeout on neighbours; stop at the ends); **touch**:
+  bookmarked `mode=hybrid` link doesn't spend the sidecar timeout on neighbours; stop at the ends).
+  A **directly opened** photo (a link, F5, Back/Forward) must first be *found* in that list — a page walk of
+  a second or more on a big library — so `PhotoNeighbors` carries **`pending`**, keeping "not known yet"
+  apart from "there is no such neighbour", and an arrow pressed in that window is **remembered**
+  (`pendingStep`) and paged the instant the answer lands, re-checked on arrival against the same
+  typing/`isFormModalOpen` guard the shortcut hook applies. Without it the keys were silently dropped
+  until the walk happened to finish between two presses, which read as *"you have to click into the page
+  first"* — while `i`/`m`/`f`, which need no list order, worked straight away. The walked order is **kept
+  per list identity** and stepping is answered from it (no refetch; a photo at the scanned tail resumes
+  from the last offset instead of re-walking), so the arrows re-point with the photo rather than leaving
+  the previous one's pair up — a `›` aimed at the photo already on screen was a second press that went
+  nowhere. **touch**:
   `usePinchZoom` (pinch/double-tap zoom + pan + swipe on a plain still) or `useSwipeNavigation`
   (swipe when faces/edit are on, where zoom is off so the transform doesn't shift the boxes/preview);
   neighbor preload (`new Image()` on `fit_1920`). **Paging without a full-page flicker** — only the first
@@ -3072,6 +3083,17 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   re-runs the search within a minute. Read by `usePhotoSearch`, `usePhotoNeighbors`, `SlideshowPage` and
   `SearchPage` (which additionally stamps the **effective** mode into the tiles' `detailQuery` and the
   slideshow scope, so nothing downstream re-asks for the unavailable mode);
+  `usePhotoNeighbors(uid,params,enabled?,mode?)` → `{prev,next,pending}` = the prev/next photo of `uid`
+  **in the originating list's order**: it pages `GET /photos` (or `GET /search` in the `useSearchMode`-resolved
+  `mode`) from the top, accumulating uids until `uid` and its follower are located, bounded by `MAX_PAGES` (50).
+  **`pending` is the third answer** — "still walking", as distinct from a `null` that means "there is no such
+  neighbour" — because that walk is the whole latency of a **deep-linked** photo (28 requests / ~3.5 s measured on
+  the live library) and `PhotoDetailPage` needs the two apart to know whether an arrow key is worth remembering
+  (see the viewer above) or is simply a list end. The scanned stretch is **kept between renders** keyed by list
+  identity (`params`+`mode`): stepping to a neighbour is answered from it without a request, and a photo at the
+  scanned tail **resumes** from the last offset instead of re-walking. A fresh walk reports `pending` rather than
+  leaving the previous photo's pair standing — those uids belong to the photo before, not this one. In-flight
+  requests abort on a `uid`/`params` change or unmount; `enabled: false` reports no neighbours without fetching;
   `useUploadQueue` = the upload queue: `addFiles` (dedup on name+size+mtime)/`removeItem`/
   `start`/`retry`/`retryFailed`/`clear`, a concurrency ceiling `MAX_CONCURRENT_UPLOADS` (3),
   per-file status+progress, a summary of counts + `progress` (the **overall** fraction of the batch 0–1 weighted by
