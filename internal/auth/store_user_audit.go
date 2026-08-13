@@ -13,19 +13,25 @@ import (
 // transaction, so the new account and the record of who created it commit
 // atomically (the durable-audit convention; see internal/audit). entry's
 // TargetUID defaults to u.UID. It returns ErrUsernameTaken on a duplicate
-// username, or a wrapped error otherwise.
+// username, ErrSubjectNotFound when u.SubjectUID names no subject, or a wrapped
+// error otherwise.
 func (s *Store) CreateUserAudited(ctx context.Context, u User, entry audit.Entry) error {
-	const q = `INSERT INTO users (uid, username, display_name, email, password_hash, role, disabled, note)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
+	const q = `INSERT INTO users
+			(uid, username, display_name, email, password_hash, role, disabled, note, subject_uid)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
 	if entry.TargetUID == "" {
 		entry.TargetUID = u.UID
 	}
 	return s.inAuditedTx(ctx, entry, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, q,
-			u.UID, u.Username, u.DisplayName, u.Email, u.PasswordHash, u.Role, u.Disabled, u.Note)
+			u.UID, u.Username, u.DisplayName, u.Email, u.PasswordHash, u.Role, u.Disabled, u.Note,
+			normalizeSubjectUID(u.SubjectUID))
 		if err != nil {
 			if isUniqueViolation(err) {
 				return ErrUsernameTaken
+			}
+			if isForeignKeyViolation(err) {
+				return ErrSubjectNotFound
 			}
 			return fmt.Errorf("auth: inserting user: %w", err)
 		}
@@ -37,9 +43,10 @@ func (s *Store) CreateUserAudited(ctx context.Context, u User, entry audit.Entry
 // identified by uid and writes entry in the same transaction, returning the
 // refreshed user. See CreateUserAudited for the atomicity guarantee. entry's
 // TargetUID defaults to uid. It returns ErrUserNotFound if no such user exists,
-// or ErrLastMaintainer when the change would leave the instance without a single
-// enabled maintainer (see withMaintainerGuard); in either case nothing changes
-// and no audit row is written.
+// ErrSubjectNotFound when in.SubjectUID names no subject, or ErrLastMaintainer
+// when the change would leave the instance without a single enabled maintainer
+// (see withMaintainerGuard); in every case nothing changes and no audit row is
+// written.
 func (s *Store) UpdateUserProfileAudited(
 	ctx context.Context, uid string, in UpdateUserInput, entry audit.Entry,
 ) (User, error) {
@@ -47,7 +54,8 @@ func (s *Store) UpdateUserProfileAudited(
 		entry.TargetUID = uid
 	}
 	return s.updateUserReturningAudited(ctx, entry, updateUserProfileQuery,
-		uid, in.DisplayName, in.Email, in.Role, in.Disabled, in.Note)
+		uid, in.DisplayName, in.Email, in.Role, in.Disabled, in.Note,
+		normalizeSubjectUID(in.SubjectUID))
 }
 
 // SetUserDisabledAudited flips the disabled flag for the user identified by uid,

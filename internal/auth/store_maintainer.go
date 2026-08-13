@@ -111,14 +111,18 @@ func (s *Store) inGuardedTx(ctx context.Context, mutate func(pgx.Tx) error) erro
 }
 
 // scanUpdatedUser runs an "UPDATE ... RETURNING userColumns" statement on tx and
-// returns the refreshed user, translating pgx.ErrNoRows into ErrUserNotFound. It
-// is shared by the guarded profile-update and disable writes, audited or not,
+// returns the refreshed user, translating pgx.ErrNoRows into ErrUserNotFound and
+// a foreign-key violation — only subject_uid has one — into ErrSubjectNotFound.
+// It is shared by the guarded profile-update and disable writes, audited or not,
 // which differ only in their SQL and arguments.
 func scanUpdatedUser(ctx context.Context, tx pgx.Tx, query string, args ...any) (User, error) {
 	user, err := scanUser(tx.QueryRow(ctx, query, args...))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return User{}, ErrUserNotFound
+		}
+		if isForeignKeyViolation(err) {
+			return User{}, ErrSubjectNotFound
 		}
 		return User{}, err
 	}

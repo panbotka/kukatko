@@ -4,6 +4,7 @@ import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { AuthContext, type AuthContextValue } from '../../auth/AuthContext'
 import i18n from '../../i18n'
 import { type WhatsNew } from '../../services/whatsNew'
 
@@ -35,13 +36,27 @@ const FULL_DIGEST: WhatsNew = {
   person_count: 1,
 }
 
+/**
+ * A signed-in session, optionally linked to a person of the library — which is
+ * what decides whether the "new photos of you" line can appear at all.
+ */
+function auth(subjectUid: string | null = null): AuthContextValue {
+  return {
+    status: 'authenticated',
+    user: { uid: 'u1', username: 'u', display_name: 'User One', subject_uid: subjectUid },
+    role: 'viewer',
+  } as unknown as AuthContextValue
+}
+
 /** Renders the panel within the i18n provider and a router (it renders links). */
-function renderPanel() {
+function renderPanel(subjectUid: string | null = null) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <MemoryRouter>
-        <WhatsNewPanel />
-      </MemoryRouter>
+      <AuthContext.Provider value={auth(subjectUid)}>
+        <MemoryRouter>
+          <WhatsNewPanel />
+        </MemoryRouter>
+      </AuthContext.Provider>
     </I18nextProvider>,
   )
 }
@@ -165,5 +180,34 @@ describe('WhatsNewPanel', () => {
       expect(await screen.findByRole('link', { name: want })).toBeInTheDocument()
       view.unmount()
     }
+  })
+})
+
+describe('WhatsNewPanel — new photos of you', () => {
+  it('names the reader’s own new photos and links to their scoped grid', async () => {
+    fetchMock.mockResolvedValue({ ...FULL_DIGEST, mine_photos: 2 })
+    renderPanel('sub123')
+
+    const mine = await screen.findByRole('link', { name: '2 new photos of you' })
+    // The person facet, in recently-added order like the total above it.
+    expect(mine).toHaveAttribute('href', '/?person=sub123&sort=added')
+  })
+
+  it('says nothing when none of the new photos is of the reader', async () => {
+    fetchMock.mockResolvedValue({ ...FULL_DIGEST, mine_photos: 0 })
+    renderPanel('sub123')
+
+    expect(await screen.findByText("What's new")).toBeInTheDocument()
+    expect(screen.queryByText(/new photos of you/)).not.toBeInTheDocument()
+  })
+
+  it('says nothing for an account that has not named a person', async () => {
+    // The backend cannot count "photos of you" without the link, so it reports
+    // none; the panel must not invent a line — or a link — out of that.
+    fetchMock.mockResolvedValue({ ...FULL_DIGEST, mine_photos: 0 })
+    renderPanel(null)
+
+    expect(await screen.findByText("What's new")).toBeInTheDocument()
+    expect(screen.queryByText(/new photos of you/)).not.toBeInTheDocument()
   })
 })

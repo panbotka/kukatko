@@ -2,7 +2,7 @@ import { type SyntheticEvent, useState } from 'react'
 import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
 
-import { InitialAvatar } from '../InitialAvatar'
+import { PersonAvatar } from '../PersonAvatar'
 import { formatDateTimeMinutes } from '../../lib/format'
 import { formatRelativeTime } from '../../lib/relativeTime'
 import { MAX_COMMENT_LENGTH, type PhotoComment } from '../../services/comments'
@@ -30,6 +30,12 @@ export interface CommentItemProps {
  * backend stores exactly what was typed and parses nothing, so the client must not
  * either. `white-space: pre-wrap` in the stylesheet keeps the writer's own line
  * breaks without inventing any other syntax.
+ *
+ * The avatar beside it is {@link PersonAvatar}: an account that has said which
+ * person of the library it is shows that person's cover photo, and everything
+ * else — no link, or a linked person with no cover photo — shows the coloured
+ * initial. That is where "linking an account publishes that face" becomes
+ * visible, which is why the account page says so before the link is made.
  *
  * Editing happens **in place**, in a textarea that replaces the body — a modal for
  * fixing a typo would hide the conversation the remark belongs to. Deleting does
@@ -68,7 +74,10 @@ export function CommentItem({
 
   return (
     <li className="kk-comment">
-      <InitialAvatar name={authorName} />
+      {/* A face when the author's account has said which person of the library
+          it is *and* that person has a cover photo; the coloured initial — the
+          common case — otherwise. */}
+      <PersonAvatar name={authorName} photoUid={comment.author_photo_uid} />
       <div className="kk-comment__main">
         <p className="kk-comment__meta">
           <span className="kk-comment__author">{authorName}</span>

@@ -34,6 +34,17 @@ to `## Package map` in `CLAUDE.md`.
   `API` = HTTP handlers + RBAC middleware
   `RequireAuth`/`RequireWrite`/`RequireAdmin`/`RequireMaintainer`/`RequireImport` +
   `RegisterRoutes`; sessions and users in migration `0002_auth.sql`.
+  **`users.subject_uid`** (migration `0060_users_subject.sql`) is the person of the library an account
+  belongs to: nullable, **not** unique (several accounts may legitimately be the same person), FK
+  `users_subject_uid_fkey` → `subjects(uid)` **ON DELETE SET NULL** (deleting a person never deletes an
+  account), with a partial index on the linked rows for that cleanup. The constraint is **named
+  explicitly** because `kukatko maintenance reset` has to drop and restore it around its truncation — see
+  `internal/reset`. It is carried on `auth.User` as `SubjectUID *string` and — unlike `Note` — **is**
+  serialised into the login/`/auth/me` payloads, deliberately: the client needs it for the "my photos"
+  entry, for `person:me` and for the account's avatar. `Store.SetUserSubject` is the self-service write
+  behind `PUT /auth/subject` (outside the maintainer guard: the link carries no permission), while the
+  admin create/update paths take it as part of the replaced profile and record it in their audit entries;
+  a UID naming no subject surfaces as `ErrSubjectNotFound` (SQLSTATE 23503 → 400).
   **Strict role ladder** viewer < editor < admin < maintainer (migration `0036_role_maintainer.sql`
   redefines the CHECK on `users.role` and drops the `ai` role that `0023_role_ai.sql` had added earlier; `ai`
   accounts are promoted to maintainer): every role inherits the rights of the lower ones. `viewer` only reads; `editor` writes media/metadata;
@@ -198,6 +209,11 @@ to `## Package map` in `CLAUDE.md`.
   `markers` per subject, `invalid = FALSE`) — the basis of `GET /photos?person=` and the person filter facet,
   plus **place scope** `Country`/`City` (exact match via one correlated `EXISTS` over `photo_places`)
   — the basis of `GET /photos?country=&city=`,
+  plus **`MatchNone`**, which short-circuits `whereClauses` to a single `FALSE` and so makes every list,
+  count and aggregation over those params come back empty. It exists for a scope that is well-formed but
+  cannot be satisfied — `person:me` asked by an account with no linked person — where dropping the filter
+  would silently widen the query to the whole library and "no photos of you" is the answer the reader
+  actually asked for,
   plus **per-user favorite scope** `FavoriteOf` via a correlated `EXISTS` over `user_favorites`
   — the basis of `GET /photos?favorite=true` and `GET /favorites`,
   plus **per-user rating filters** `RatedBy` (the current user's uid, scopes annotation/filters/sorting)
@@ -706,6 +722,12 @@ to `## Package map` in `CLAUDE.md`.
   → `MinRating`/`Flag`; invalid → 400) + `favoriteRequested` parses `favorite=true`
   → the handler sets per-user `FavoriteOf` to the current user; the list/search/favorites handlers
   set `RatedBy` to the current user, so `min_rating`/`flag`/`sort=rating` are scoped to them;
+  `personme.go`'s **`applyPersonMe`** then resolves `person:me` against the caller's linked subject —
+  called by the list, search, favorites, timeline **and** years handlers, so the token means the same
+  thing on the grid and on the aggregations beside it. An unlinked caller gets
+  `photos.ListParams.MatchNone` (an empty page rather than the whole library) and the notice
+  `person_me_unlinked`; `pageHints{unknown,notices}` carries both that and `unknown_tokens` through the
+  four write-the-page helpers, so a path cannot stamp one and forget the other;
   the list returns `{photos,total,limit,offset,next_offset}` (each photo annotated with `is_favorite`
   + per-user `rating`/`flag` via the shared `annotate`: `FavoriteStore.FavoritedAmong` +
   `RatingStore.RatingsAmong`, a photo with no row = rating 0 / flag `none`) for infinite scroll;
@@ -785,7 +807,10 @@ to `## Package map` in `CLAUDE.md`.
   comment as edited without comparing timestamps) and `deleted_at` (NULL while live), plus the partial index
   `(photo_uid, created_at) WHERE deleted_at IS NULL` serving both the thread read and its count;
   `NewStore(pool)` → `List(photoUID)` (live only, oldest first, `author_name` resolved by a LEFT JOIN on
-  `users`: `display_name`, fallback `username`, empty for a deleted account, so one query renders a thread),
+  `users`: `display_name`, fallback `username`, empty for a deleted account, so one query renders a thread —
+  and `author_photo_uid` by a second LEFT JOIN through `users.subject_uid` onto `subjects.cover_photo_uid`,
+  so the thread can draw the author's face where it would otherwise draw a letter; it is NULL for an
+  authorless comment, an unlinked account and a linked person with no cover photo, which is the common case),
   `CountsAmong(photoUIDs)` (one `GROUP BY`; deliberately the bulk shape even though the detail asks about one
   photo, so a per-photo count cannot be written by accident), `Get(uid)` and
   `Create`/`Update`/`Delete` — each a CTE that mutates and reads the row back with its author in one
@@ -2123,14 +2148,19 @@ to `## Package map` in `CLAUDE.md`.
   is not a profile edit. Since only this read stamps the heartbeat, "inactivity" means precisely
   "the library home was not opened". `Store` = `NewStore(pool)` (+ `WithGap(d)`, a copy with a shorter
   threshold **for tests** — production never calls it): `Summary(ctx, userUID, now)` → `Summary{HasNews,
-  Since, Photos, Comments, Albums[]{UID,Title}, AlbumCount, People[]{UID,Name}, PersonCount}`, the sentinel
+  Since, Photos, MinePhotos, Comments, Albums[]{UID,Title}, AlbumCount, People[]{UID,Name}, PersonCount}`, the sentinel
   `ErrUserNotFound` when the account vanished mid-request. It rotates the visit in **one** atomic
   `UPDATE … RETURNING` (two tabs loading at the same instant cannot both rotate: the second waits on the row
   lock and then sees a `last_seen_at` that is already now), then counts. **What counts:** photos under the
   library grid's own base filter (`archived_at IS NULL AND (stack_uid IS NULL OR stack_primary) AND NOT
   hidden_from_library` — so the number printed equals the number of tiles the link opens), live comments
   (`deleted_at IS NULL`), **hand-curated** albums only (`type = 'album'`; an import mints folder/moment/month
-  groupings by the hundred) and **named** subjects only (`name <> ''`). Albums and people are capped at
+  groupings by the hundred) and **named** subjects only (`name <> ''`). **`MinePhotos`** is the one line
+  about the reader rather than about the library: the same photo predicate narrowed by a non-invalid marker
+  naming the account's linked person, read out of the very `UPDATE … RETURNING` that stamps the visit (the
+  row is already being written, so the link costs no second round trip) and skipped entirely for an
+  unlinked account or a visit with no new photos at all. Being a strict subset of `Photos` it can never be
+  the only news, so `counts.empty()` — and therefore `HasNews` — ignores it. Albums and people are capped at
   `MaxItems` (**6**) links while the counts report the true totals. A `HasNews false` (zero-value) `Summary`
   covers both "first visit" and "nothing happened" so the client branches on one flag. Every count is an
   indexed range over a creation timestamp (`idx_albums_created_at`, `idx_subjects_created_at`,
@@ -2575,6 +2605,14 @@ to `## Package map` in `CLAUDE.md`.
   operator was aiming at something this run cannot reach), the **store emptied before the catalogue** (the catalogue is where
   the object keys come from), and only then `TRUNCATE … RESTART IDENTITY` (**no CASCADE**) plus
   `audit.Write(ActionLibraryReset)` **in one transaction**, then a re-count → `Result{Before,After,Storage}`.
+  That transaction opens with the wipe's one piece of surgery (`unlinkAccounts`): drop
+  `users_subject_uid_fkey`, null every `users.subject_uid`, truncate, put the constraint straight back.
+  `users` is preserved and therefore outside the TRUNCATE list, and Postgres refuses to truncate a table an
+  unlisted table references — structurally, whatever the rows say — so that one foreign key would fail the
+  whole wipe, and CASCADE (which would take the accounts) is the one escape this command must never use.
+  DDL is transactional, so a failure anywhere puts the constraint back with everything else. Nulling the
+  column is also simply true: the person that link named is about to stop existing. Every account keeps its
+  credentials, role, note and history — the link is the only thing a preserved account loses.
   Any object that fails to delete skips the truncation and returns `ErrStorageIncomplete` — the catalogue is
   the only remaining record of what those objects are, and the whole run is idempotent, so the answer is to fix
   the store and repeat. `keys.go` owns the scope: `classifyKey` recognises exactly `YYYY/MM/<name>` (an anchored
@@ -3044,7 +3082,20 @@ to `## Package map` in `CLAUDE.md`.
   input, so an id pasted with a word beside it is still recognised. A token with an **unknown** prefix is
   deliberately **not** accepted — probing every table per keystroke buys nothing. `internal/globalsearchapi`
   routes a pasted id with it. The user-facing grammar: docs/API.md
-  "Search language (q=)"), `internal/ratelimit/`
+  "Search language (q=)". **`person:me` is deliberately *not* resolved here** — the parser knows nothing
+  about who is asking, which is what keeps a filter's meaning independent of the request that carried it;
+  see `internal/personme`), `internal/personme/`
+  (resolution of the one word of the query language that means something different to every caller:
+  **`person:me`**. `Resolve(filters, linkedSubjectUID) (used, resolved bool)` rewrites every `person:`
+  alternative whose text is exactly `me` — the negated `!me` included — to the caller's linked subject UID
+  (both `Text` and `Pattern`, so the compiled LIKE cannot still match a person *named* "me"), in place.
+  `resolved` is false only when the token was used by an account with **no** link, which the caller answers
+  with an empty result and a reason: `internal/photoapi` sets `photos.ListParams.MatchNone` and returns the
+  notice `person_me_unlinked`, the MCP search tool returns an error naming the fix. Never "everything", never
+  a free-text search for the word "me". The **collision** with a subject actually called "me" is decided for
+  the token, but only in its exact lower-case spelling: `person:Me` stays an ordinary (case-insensitive) name
+  match, and a UID always reaches a subject that no name can shadow. Pure, no I/O, no `auth` dependency —
+  it takes the linked UID, not a user), `internal/ratelimit/`
   (a reusable **per-key token-bucket rate limiter** + HTTP middleware for expensive endpoints:
   `New(ratePerSec, burst)` → `Allow(key)` (lazy refill, a bucket per key) / `Cleanup`/`RunMaintenance`
   (cleaning up fully refilled buckets) / `Middleware` (chi-compatible, keyed by the **client IP** via

@@ -39,7 +39,10 @@ func (s *Store) WithGap(gap time.Duration) *Store {
 // $3 is the cutoff (now minus the gap) rather than an interval, so the
 // comparison is a plain timestamp one and the gap stays a Go-side decision.
 // RETURNING reads the post-update reference, which is exactly the "since" of the
-// digest about to be built.
+// digest about to be built, and the account's linked person, which decides
+// whether the digest can have a "new photos of you" line at all. The link rides
+// along on this statement because the row is already being written: asking for
+// it separately would be a second round trip for one nullable column.
 const rotateVisitSQL = `
 UPDATE users
 SET last_seen_at = $2,
@@ -48,28 +51,41 @@ SET last_seen_at = $2,
         ELSE visit_reference_at
     END
 WHERE uid = $1
-RETURNING visit_reference_at`
+RETURNING visit_reference_at, subject_uid`
 
-// rotateVisit records that userUID is here at now and returns the reference
-// point of the visit this read belongs to.
+// visit is what one summary read learns about the account it belongs to: the
+// reference point of this visit, and the person the account says it is.
+type visit struct {
+	// since is the digest's "since", zero when the account has no reference point.
+	since time.Time
+	// subjectUID is the account's linked person, nil when it has named none.
+	subjectUID *string
+}
+
+// rotateVisit records that userUID is here at now and returns the visit this
+// read belongs to.
 //
-// The returned time is zero when the account has no reference point yet, which
+// The returned since is zero when the account has no reference point yet, which
 // is every account's first read: there is no "away" to report on. It returns
 // ErrUserNotFound when no row matched, i.e. the account was deleted between
 // authenticating the request and stamping the visit.
-func (s *Store) rotateVisit(ctx context.Context, userUID string, now time.Time) (time.Time, error) {
-	var reference *time.Time
-	err := s.pool.QueryRow(ctx, rotateVisitSQL, userUID, now, now.Add(-s.gap)).Scan(&reference)
+func (s *Store) rotateVisit(ctx context.Context, userUID string, now time.Time) (visit, error) {
+	var (
+		reference *time.Time
+		subject   *string
+	)
+	err := s.pool.QueryRow(ctx, rotateVisitSQL, userUID, now, now.Add(-s.gap)).Scan(&reference, &subject)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return time.Time{}, ErrUserNotFound
+		return visit{}, ErrUserNotFound
 	}
 	if err != nil {
-		return time.Time{}, fmt.Errorf("whatsnew: stamping visit: %w", err)
+		return visit{}, fmt.Errorf("whatsnew: stamping visit: %w", err)
 	}
-	if reference == nil {
-		return time.Time{}, nil
+	v := visit{subjectUID: subject}
+	if reference != nil {
+		v.since = *reference
 	}
-	return *reference, nil
+	return v, nil
 }
 
 // countsSQL counts everything the digest reports, in one round trip. Each
@@ -94,13 +110,38 @@ SELECT
     (SELECT count(*) FROM subjects
         WHERE created_at > $1 AND name <> '')`
 
+// minePhotosSQL counts the new photographs the reader themselves is on. It is
+// the photo predicate of countsSQL — the library grid's own base filter, so the
+// number matches the tiles the line opens — narrowed by a marker naming the
+// reader's linked person. Rejected markers (invalid) do not count, exactly as
+// they do not in the person: filter or on the person's own gallery.
+//
+// It is a second statement rather than a fifth subquery because it runs only for
+// a linked account, which most are not.
+const minePhotosSQL = `
+SELECT count(*) FROM photos p
+WHERE p.created_at > $1
+  AND p.archived_at IS NULL
+  AND (p.stack_uid IS NULL OR p.stack_primary)
+  AND NOT p.hidden_from_library
+  AND EXISTS (SELECT 1 FROM markers m
+      WHERE m.photo_uid = p.uid AND m.subject_uid = $2 AND m.invalid = FALSE)`
+
 // countSince returns how many photos, comments, hand-curated albums and named
-// people were created after since.
-func (s *Store) countSince(ctx context.Context, since time.Time) (counts, error) {
+// people were created after since, and — for an account linked to a person — how
+// many of those photos that person is on. An unlinked account skips the second
+// query entirely and reports zero.
+func (s *Store) countSince(ctx context.Context, since time.Time, subjectUID *string) (counts, error) {
 	var c counts
 	if err := s.pool.QueryRow(ctx, countsSQL, since).
 		Scan(&c.photos, &c.comments, &c.albums, &c.people); err != nil {
 		return counts{}, fmt.Errorf("whatsnew: counting changes: %w", err)
+	}
+	if subjectUID == nil || c.photos == 0 {
+		return c, nil
+	}
+	if err := s.pool.QueryRow(ctx, minePhotosSQL, since, *subjectUID).Scan(&c.mine); err != nil {
+		return counts{}, fmt.Errorf("whatsnew: counting new photos of the reader: %w", err)
 	}
 	return c, nil
 }
@@ -176,25 +217,25 @@ func (s *Store) listPeople(ctx context.Context, since time.Time) ([]Person, erro
 //
 // It returns ErrUserNotFound when the account no longer exists.
 func (s *Store) Summary(ctx context.Context, userUID string, now time.Time) (Summary, error) {
-	since, err := s.rotateVisit(ctx, userUID, now)
+	v, err := s.rotateVisit(ctx, userUID, now)
 	if err != nil {
 		return Summary{}, err
 	}
-	if since.IsZero() {
+	if v.since.IsZero() {
 		return Summary{}, nil
 	}
-	c, err := s.countSince(ctx, since)
+	c, err := s.countSince(ctx, v.since, v.subjectUID)
 	if err != nil {
 		return Summary{}, err
 	}
 	if c.empty() {
 		return Summary{}, nil
 	}
-	albums, people, err := s.lists(ctx, since, c)
+	albums, people, err := s.lists(ctx, v.since, c)
 	if err != nil {
 		return Summary{}, err
 	}
-	return newSummary(since, c, albums, people), nil
+	return newSummary(v.since, c, albums, people), nil
 }
 
 // lists fetches the album and people links the digest names, skipping either

@@ -58,9 +58,21 @@ type Comment struct {
 	AuthorUID string `json:"author_uid"`
 	// AuthorName is the author's display name, falling back to the username, as
 	// resolved by the store — so a client renders a name without a second lookup.
-	AuthorName string    `json:"author_name"`
-	Body       string    `json:"body"`
-	CreatedAt  time.Time `json:"created_at"`
+	AuthorName string `json:"author_name"`
+	// AuthorPhotoUID is the cover photo of the person the author's account says
+	// it is, so the thread can show a face where it would otherwise draw the
+	// first letter of a name. It is nil in every case but the fully-set one: no
+	// account, no linked person, or a linked person nobody has chosen a cover
+	// photo for — which is the common case, and why the client must always keep
+	// its initial-letter fallback.
+	//
+	// Linking an account to a person is what publishes that face here, which is
+	// stated where the link is set. It is a cover photo, chosen by hand on the
+	// person's page, and is shown to every reader of the thread — the same
+	// readers who can already open that person's page.
+	AuthorPhotoUID *string   `json:"author_photo_uid,omitempty"`
+	Body           string    `json:"body"`
+	CreatedAt      time.Time `json:"created_at"`
 	// EditedAt is nil until the author first rewrites the body, which is what
 	// lets a client mark a comment as edited without comparing timestamps.
 	EditedAt *time.Time `json:"edited_at,omitempty"`

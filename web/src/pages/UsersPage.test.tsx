@@ -25,7 +25,14 @@ vi.mock('../services/users', async (importOriginal) => {
   }
 })
 
+vi.mock('../services/people', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/people')>()
+  return { ...actual, fetchSubjects: vi.fn() }
+})
+
 const { fetchUsers, createUser, setUserDisabled, updateUser } = await import('../services/users')
+const { fetchSubjects } = await import('../services/people')
+const fetchSubjectsMock = vi.mocked(fetchSubjects)
 const fetchUsersMock = vi.mocked(fetchUsers)
 const createUserMock = vi.mocked(createUser)
 const setUserDisabledMock = vi.mocked(setUserDisabled)
@@ -116,6 +123,8 @@ beforeEach(async () => {
   await i18n.changeLanguage('en')
   fetchUsersMock.mockReset()
   fetchUsersMock.mockResolvedValue([])
+  fetchSubjectsMock.mockReset()
+  fetchSubjectsMock.mockResolvedValue([])
   createUserMock.mockReset()
   setUserDisabledMock.mockReset()
   updateUserMock.mockReset()
@@ -246,13 +255,13 @@ describe('UsersPage', () => {
     }
   })
 
-  it('keeps the full eight-column table on a wide viewport', async () => {
+  it('keeps the full nine-column table on a wide viewport', async () => {
     fetchUsersMock.mockResolvedValue([user()])
     renderPage()
 
     expect(await screen.findByText('ada')).toBeInTheDocument()
     const table = screen.getByRole('table')
-    expect(within(table).getAllByRole('columnheader')).toHaveLength(8)
+    expect(within(table).getAllByRole('columnheader')).toHaveLength(9)
     // No card stack alongside it: only one of the two layouts is ever in the DOM.
     expect(screen.queryByRole('listitem')).toBeNull()
   })
@@ -548,6 +557,55 @@ describe('UsersPage', () => {
     expect(dialogEl).not.toHaveClass('modal-fullscreen-sm-down')
     expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: 'Disable' })).toBeInTheDocument()
+  })
+
+  it('names the person an account is linked to, and an em dash when it is not', async () => {
+    fetchSubjectsMock.mockResolvedValue([
+      { uid: 'sub1', slug: 'jarmila', name: 'Jarmila', photo_count: 12 },
+    ] as never)
+    fetchUsersMock.mockResolvedValue([
+      user({ uid: 'u1', username: 'ada', subject_uid: 'sub1' }),
+      user({ uid: 'u2', username: 'bob' }),
+    ])
+    renderPage()
+
+    // The people arrive on their own request, so the name replaces the UID a
+    // beat after the roster renders.
+    expect(await screen.findByText('Jarmila')).toBeInTheDocument()
+    const rows = screen.getAllByRole('row')
+    // Row 0 is the header; the roster is ordered as the backend returned it, and
+    // the person is the fifth column (after username, name, role and state).
+    expect(within(rows[1]).getAllByRole('cell')[4]).toHaveTextContent('Jarmila')
+    expect(within(rows[2]).getAllByRole('cell')[4]).toHaveTextContent('—')
+  })
+
+  it('lets an administrator link an account to a person, and says what that does', async () => {
+    const actor = userEvent.setup()
+    fetchSubjectsMock.mockResolvedValue([
+      { uid: 'sub1', slug: 'jarmila', name: 'Jarmila', photo_count: 12 },
+    ] as never)
+    fetchUsersMock.mockResolvedValue([user()])
+    updateUserMock.mockResolvedValue(user({ subject_uid: 'sub1' }))
+    renderPage()
+
+    expect(await screen.findByText('ada')).toBeInTheDocument()
+    await actor.click(screen.getByRole('button', { name: 'Edit' }))
+    const dialog = await screen.findByRole('dialog')
+
+    // The consequence is on the form, next to the field that causes it.
+    expect(within(dialog).getByText(/cover photo is then shown/i)).toBeInTheDocument()
+
+    // The role select is a combobox too, so name the field.
+    await actor.type(within(dialog).getByRole('combobox', { name: 'Find a person' }), 'Jar')
+    await actor.click(await within(dialog).findByRole('option', { name: /Jarmila/ }))
+    await actor.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(updateUserMock).toHaveBeenCalledWith(
+        'u1',
+        expect.objectContaining({ subject_uid: 'sub1' }),
+      )
+    })
   })
 
   it('does not offer deleting a user', async () => {

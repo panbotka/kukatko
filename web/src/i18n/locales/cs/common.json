@@ -91,7 +91,8 @@
       "review": "Projít návrhy jeden po druhém",
       "outliers": "Najít obličeje přiřazené omylem",
       "leaderboard": "Zobrazit žebříček třídění",
-      "stats": "Zobrazit statistiky knihovny"
+      "stats": "Zobrazit statistiky knihovny",
+      "myPhotos": "Zobrazit fotky, na kterých jsem"
     },
     "expand": "Rozšířit",
     "review": "Třídění",
@@ -105,7 +106,8 @@
       "account": "Účet"
     },
     "stats": "Statistiky",
-    "versionTitle": "Verze aplikace"
+    "versionTitle": "Verze aplikace",
+    "myPhotos": "Moje fotky"
   },
   "help": {
     "title": "Nápověda",
@@ -467,6 +469,15 @@
       "confirmTitle": "Zneplatnit token?",
       "confirmBody": "Token „{{name}}“ okamžitě přestane fungovat a všechno, co se jím přihlašuje, se odmlčí. Vrátit to nejde — museli byste vytvořit nový.",
       "confirmAction": "Zneplatnit token"
+    },
+    "subject": {
+      "title": "Kdo jsem v knihovně",
+      "hint": "Vyber osobu z knihovny, která jsi ty. Díky tomu ti appka umí ukázat fotky, na kterých jsi, a ve vyhledávání funguje person:me.",
+      "publishWarning": "Pozor: až osobu vybereš, bude se u všech tvých komentářů zobrazovat její profilová fotka — uvidí ji každý, kdo si fotku otevře. Značka „soukromá osoba“ dnes nic neskrývá.",
+      "pickLabel": "Najít osobu",
+      "clear": "Zrušit propojení",
+      "unknownPerson": "Propojená osoba už v knihovně není.",
+      "error": "Propojení se nepodařilo uložit. Zkus to prosím znovu."
     }
   },
   "activity": {
@@ -753,7 +764,7 @@
         "photoText": "Text přečtený přímo ve fotce (cedule, výloha, naskenovaná stránka). Nezáleží na diakritice — rozpoznávání ji často ztratí.",
         "album": "Fotky v albu (podle názvu nebo UID).",
         "label": "Fotky se štítkem (podle názvu nebo UID).",
-        "person": "Fotky s osobou (podle jména nebo UID).",
+        "person": "Fotky s osobou (podle jména nebo UID). `person:me` je osoba, kterou jsi ty — podle nastavení na Mém účtu.",
         "state": "Oblíbené, soukromé a archivované (yes/no).",
         "hidden": "Skryté z knihovny (yes/no) — jediná cesta zpátky ke skryté fotce.",
         "rating": "Vaše hodnocení hvězdičkami, 0–5.",
@@ -773,7 +784,9 @@
         "faces": "Počet tváří (faces:3 = aspoň tři); face:new = zatím nepřiřazená tvář.",
         "uid": "Jedna fotka podle svého ID (nebo podle ID z původního katalogu). Najde ji i archivovanou nebo skrytou."
       }
-    }
+    },
+    "personMeUnlinked": "Filtr person:me hledá osobu, kterou jsi ty — a tvůj účet zatím žádnou osobu nemá nastavenou, takže nic nenašel.",
+    "personMeUnlinkedLink": "Nastavit na Mém účtu"
   },
   "globalSearch": {
     "sectionsLabel": "Odpovídající alba, štítky a lidé",
@@ -2731,7 +2744,8 @@
       "note": "Poznámka",
       "lastLogin": "Poslední přihlášení",
       "created": "Vytvořen",
-      "actions": "Akce"
+      "actions": "Akce",
+      "subject": "Osoba"
     },
     "state": {
       "enabled": "Aktivní",
@@ -2751,7 +2765,12 @@
       "noteHint": "Interní poznámka viditelná pouze administrátorům.",
       "cancel": "Zrušit",
       "submitCreate": "Vytvořit",
-      "submitSave": "Uložit"
+      "submitSave": "Uložit",
+      "subject": "Osoba v knihovně",
+      "subjectPick": "Najít osobu",
+      "subjectClear": "Zrušit",
+      "subjectUnknown": "Neznámá osoba",
+      "subjectHint": "Kdo z knihovny tento účet je. Profilová fotka té osoby se pak zobrazuje u komentářů účtu. Nepovinné."
     },
     "password": {
       "title": "Změnit heslo uživatele {{username}}",
@@ -3076,7 +3095,11 @@
     "more_one": "a {{count}} další",
     "more_few": "a {{count}} další",
     "more_many": "a {{count}} dalšího",
-    "more_other": "a {{count}} dalších"
+    "more_other": "a {{count}} dalších",
+    "minePhotos_one": "{{count}} nová fotka, na které jsi ty",
+    "minePhotos_few": "{{count}} nové fotky, na kterých jsi ty",
+    "minePhotos_many": "{{count}} nové fotky, na kterých jsi ty",
+    "minePhotos_other": "{{count}} nových fotek, na kterých jsi ty"
   },
   "pwa": {
     "offline": "Jsi offline. Kukátko se otevře, ale fotky a knihovna potřebují připojení.",

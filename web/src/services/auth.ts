@@ -27,6 +27,13 @@ export interface User {
   created_at: string
   updated_at: string
   last_login_at?: string
+  /**
+   * The person of the library this account belongs to, or null when nobody has
+   * said. It is what makes "my photos", `person:me` and the account's own face
+   * on a comment possible; almost every account has none, so every reader of it
+   * has to work without it.
+   */
+  subject_uid?: string | null
 }
 
 /** Successful auth response body (`POST /auth/login`, `GET /auth/me`). */
@@ -205,6 +212,32 @@ export async function changePassword(
   if (!res.ok) {
     throw new ApiError(res.status, await readErrorMessage(res))
   }
+}
+
+/**
+ * Says which person of the library the signed-in user is, or takes it back when
+ * `subjectUid` is null (`PUT /api/v1/auth/subject`).
+ *
+ * It is self-service: the account written to is the session's, never one named
+ * in the body. Setting it publishes that person's cover photo — when they have
+ * one — next to everything this account has written, which is why the form that
+ * calls this says so.
+ *
+ * @returns the refreshed user, so the caller can re-render without a round trip.
+ * @throws ApiError with `status` 400 when the UID names nobody in the library.
+ */
+export async function setMySubject(subjectUid: string | null, signal?: AbortSignal): Promise<User> {
+  const res = await apiFetch('/auth/subject', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify({ subject_uid: subjectUid }),
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+  return (await res.json()) as User
 }
 
 /** Minimum password length enforced by the backend (`internal/auth`). */

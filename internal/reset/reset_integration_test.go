@@ -135,6 +135,11 @@ func (e *resetEnv) seedLibrary(t *testing.T) {
 	e.exec(t, `INSERT INTO import_runs (source, status) VALUES ('photoprism', 'done')`)
 	e.exec(t, `INSERT INTO user_favorites (user_uid, photo_uid) VALUES ($1,$2)`,
 		"usr000000001", "pht000000001")
+	// A person, and an account that says it is that person: the one pointer a
+	// preserved table holds into the library being wiped.
+	e.exec(t, `INSERT INTO subjects (uid, slug, name, type) VALUES ($1,$2,$3,'person')`,
+		"sbj000000001", "babicka", "Babička")
+	e.exec(t, `UPDATE users SET subject_uid = $1 WHERE uid = $2`, "sbj000000001", "usr000000001")
 }
 
 // writeObject writes a placeholder object into the store at key.

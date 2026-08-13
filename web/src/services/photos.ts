@@ -221,6 +221,15 @@ export interface PhotoListResponse {
    * every token parsed.
    */
   unknown_tokens?: string[]
+  /**
+   * Machine-readable reasons the page is what it is, for the cases where an
+   * empty result is a decision rather than an absence. The only code today is
+   * `person_me_unlinked`: the caller filtered on `person:me` without their
+   * account having said which person they are, so the server answered with
+   * nothing rather than silently widening the query to the whole library.
+   * Absent when there is nothing to say.
+   */
+  notices?: string[]
 }
 
 /**

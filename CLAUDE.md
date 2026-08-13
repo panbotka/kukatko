@@ -106,6 +106,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/outliers` — per-person outlier detection of faces (distance from centroid)
 - `internal/people` — subjects (people/animals/other) and markers; keeps the `faces` cache consistent
 - `internal/peopleapi` — `/subjects` + a subject's photo gallery
+- `internal/personme` — resolves `person:me` to the caller's linked subject; pure, so `internal/query` stays caller-blind
 - `internal/phash` — perceptual hashes (pHash via DCT, dHash gradient)
 - `internal/photoapi` — read/curation API over the catalog: list, search, media, edit, faces, rating, comments
 - `internal/photoedit` — applies non-destructive edits (crop/rotate/brightness/contrast), pure-Go

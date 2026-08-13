@@ -15,6 +15,7 @@ import { type TimelineJump, TimelineScrubber } from '../components/library/Timel
 import { WhatsNewPanel } from '../components/library/WhatsNewPanel'
 import { BatchActionBar } from '../components/organize/BatchActionBar'
 import { SaveSearchModal } from '../components/savedsearch/SaveSearchModal'
+import { QueryNoticesAlert } from '../components/search/QueryNoticesAlert'
 import { UnknownFiltersAlert } from '../components/search/UnknownFiltersAlert'
 import { SlideshowStart } from '../components/slideshow/SlideshowStart'
 import { useBulkEdit } from '../hooks/useBulkEdit'
@@ -95,10 +96,8 @@ export function LibraryPage() {
   // The grid is a *window* over the result, not a growing prefix of it: `photos`
   // is as long as the whole library with holes where pages are not loaded, so any
   // position is reachable in one scroll plus one fetch.
-  const { photos, total, status, moreError, unknownTokens, ensureRange, retry } = useWindowedPhotos(
-    params,
-    { reloadKey },
-  )
+  const { photos, total, status, moreError, unknownTokens, notices, ensureRange, retry } =
+    useWindowedPhotos(params, { reloadKey })
   const facets = useLibraryFacets(params)
   // Hover-select: every tile carries a corner checkmark for a writer, with no
   // explicit "enter selection mode" step, and the floating batch bar rises the
@@ -329,6 +328,10 @@ export function LibraryPage() {
           it degraded to free text, so say which token fell through instead of
           letting an empty grid blame the library. */}
       <UnknownFiltersAlert tokens={unknownTokens} />
+      {/* And an empty grid that is a decision rather than an absence — `person:me`
+          from an account that has not said who it is — says so, with the way to
+          fix it. */}
+      <QueryNoticesAlert notices={notices} />
 
       {status === 'loading' && <GridSkeleton />}
 

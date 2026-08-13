@@ -39,6 +39,10 @@ var (
 	// ErrNoteTooLong indicates the user note exceeds MaxNoteLen characters. Its
 	// message names the offending field so it can be surfaced verbatim in a 400.
 	ErrNoteTooLong = errors.New("auth: note must be at most 1000 characters")
+	// ErrSubjectNotFound indicates the subject_uid a create or update carried
+	// names no person in the library. It is a rejected input rather than a
+	// missing account, so callers answer it with 400 and not 404.
+	ErrSubjectNotFound = errors.New("auth: no such person in the library")
 	// ErrUsernameTooLong indicates the username exceeds MaxUsernameLen
 	// characters. Its message names the offending field so it can be surfaced
 	// verbatim in a 400.
@@ -75,6 +79,21 @@ type User struct {
 	// User verbatim. The admin-only user endpoints re-add it explicitly via
 	// adminUserResponse.
 	Note string `json:"-"`
+	// SubjectUID names the person of the library this account belongs to, or is
+	// nil when nobody has said. Several accounts may name the same subject (a
+	// shared family login and a personal one are both that person), and deleting
+	// the subject clears it back to nil, so every reader has to survive an absent
+	// link — which is also the common case.
+	//
+	// Unlike Note it *is* serialised, and that is a deliberate decision rather
+	// than an oversight: the client cannot render the "my photos" entry, resolve
+	// `person:me` in a link or draw the account's face without knowing it, and it
+	// is the caller's own fact about themselves. Where Note is an administrator's
+	// private remark about somebody, this is that somebody's own answer to "who
+	// am I here?" — and the admin listings show it for the same reason they show a
+	// role. It is a subject UID, never anything the subject keeps private: what
+	// may be seen of that person is decided by the people endpoints, not here.
+	SubjectUID *string `json:"subject_uid"`
 }
 
 // Session is an authenticated session bound to a user. Token is the opaque value

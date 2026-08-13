@@ -65,6 +65,7 @@ export type IconName =
   | 'person-check'
   | 'person-circle'
   | 'person-gear'
+  | 'person-hearts'
   | 'person-lines-fill'
   | 'play-fill'
   | 'plus-lg'

@@ -10,6 +10,7 @@ import "github.com/go-chi/chi/v5"
 //	POST   /auth/logout           public (idempotent)
 //	GET    /auth/me               RequireAuth
 //	POST   /auth/password         RequireAuth
+//	PUT    /auth/subject          RequireAuth
 //	POST   /auth/tokens           RequireAuth
 //	GET    /auth/tokens           RequireAuth
 //	DELETE /auth/tokens/{id}      RequireAuth
@@ -24,6 +25,10 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.Post("/logout", a.handleLogout)
 		r.With(a.RequireAuth).Get("/me", a.handleMe)
 		r.With(a.RequireAuth).Post("/password", a.handlePassword)
+		// Self-service and self-scoped: the account it changes is the session's,
+		// so it needs no role beyond being signed in — a viewer is as much a
+		// person in the photographs as a maintainer is.
+		r.With(a.RequireAuth).Put("/subject", a.handleSubject)
 		r.Route("/tokens", func(r chi.Router) {
 			r.Use(a.RequireAuth)
 			r.Post("/", a.handleCreateAPIToken)

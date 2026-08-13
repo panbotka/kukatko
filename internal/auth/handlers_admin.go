@@ -31,6 +31,9 @@ type createUserRequest struct {
 	Email       string `json:"email"`
 	Role        Role   `json:"role"`
 	Note        string `json:"note"`
+	// SubjectUID optionally says, at creation time, which person of the library
+	// the account is; omitted or null leaves it unlinked.
+	SubjectUID *string `json:"subject_uid"`
 }
 
 // updateUserRequest is the JSON body of PATCH /admin/users/{uid}; it replaces the
@@ -43,6 +46,9 @@ type updateUserRequest struct {
 	Role        Role    `json:"role"`
 	Disabled    bool    `json:"disabled"`
 	Note        *string `json:"note"`
+	// SubjectUID is part of the replaced profile, not a partial update like the
+	// note: an omitted or null value clears the account's link to a person.
+	SubjectUID *string `json:"subject_uid"`
 }
 
 // adminUserResponse is the admin-only JSON view of a user: every field User
@@ -118,6 +124,8 @@ func writeCreateUserError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, ErrNoteTooLong.Error())
 	case errors.Is(err, ErrUsernameTooLong):
 		writeError(w, http.StatusBadRequest, ErrUsernameTooLong.Error())
+	case errors.Is(err, ErrSubjectNotFound):
+		writeError(w, http.StatusBadRequest, ErrSubjectNotFound.Error())
 	default:
 		writeError(w, http.StatusInternalServerError, "could not create user")
 	}
@@ -135,8 +143,16 @@ func (a *API) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	actor, _ := UserFromContext(r.Context())
+	// The link is recorded as it will stand after the update — the UID, or an
+	// explicit null when the administrator has just unlinked the account. Saying
+	// who somebody else is (or is no longer) is a change to their account, so it
+	// belongs in the trail beside the role and the disabled flag.
 	entry := adminAuditMeta(r).Entry(audit.ActionUserUpdate, userTargetType, uid,
-		map[string]any{"role": string(req.Role), "disabled": req.Disabled})
+		map[string]any{
+			"role":        string(req.Role),
+			"disabled":    req.Disabled,
+			"subject_uid": normalizeSubjectUID(req.SubjectUID),
+		})
 	user, err := a.svc.UpdateUserAudited(r.Context(), uid, UpdateUserInput(req), actor.Role, entry)
 	if err != nil {
 		writeUserMutationError(w, err, "could not update user")
@@ -205,6 +221,8 @@ func writeUserMutationError(w http.ResponseWriter, err error, fallback string) {
 		writeError(w, http.StatusBadRequest, "invalid role (want viewer, editor, admin, or maintainer)")
 	case errors.Is(err, ErrNoteTooLong):
 		writeError(w, http.StatusBadRequest, ErrNoteTooLong.Error())
+	case errors.Is(err, ErrSubjectNotFound):
+		writeError(w, http.StatusBadRequest, ErrSubjectNotFound.Error())
 	case errors.Is(err, ErrUserNotFound):
 		writeError(w, http.StatusNotFound, "user not found")
 	default:

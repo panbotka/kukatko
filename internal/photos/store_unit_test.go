@@ -660,3 +660,37 @@ func TestBuildCountQuery(t *testing.T) {
 		t.Errorf("args = %v, want [us123]", args)
 	}
 }
+
+// TestMatchNone verifies that an unsatisfiable scope compiles to a query that
+// matches nothing, on every path, and that it drops the other filters rather
+// than AND-ing a contradiction onto them.
+func TestMatchNone(t *testing.T) {
+	t.Parallel()
+
+	t.Run("the list matches nothing", func(t *testing.T) {
+		t.Parallel()
+		query, args := buildListQuery(ListParams{MatchNone: true, UploadedBy: "us123"})
+		if !strings.Contains(query, "WHERE FALSE") {
+			t.Errorf("query missing the impossible filter: %q", query)
+		}
+		// uploaded_by is also a SELECT column, so look for it as a filter.
+		if strings.Contains(query, "uploaded_by = $") {
+			t.Errorf("an impossible query should bind nothing else: %q", query)
+		}
+		// Only LIMIT and OFFSET stay bound.
+		if len(args) != 2 {
+			t.Errorf("args = %v, want [limit offset]", args)
+		}
+	})
+
+	t.Run("the count matches nothing", func(t *testing.T) {
+		t.Parallel()
+		query, args := buildCountQuery(ListParams{MatchNone: true})
+		if !strings.Contains(query, "WHERE FALSE") {
+			t.Errorf("count query missing the impossible filter: %q", query)
+		}
+		if len(args) != 0 {
+			t.Errorf("args = %v, want none", args)
+		}
+	})
+}

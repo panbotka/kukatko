@@ -3,6 +3,7 @@ import Alert from 'react-bootstrap/Alert'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
+import { useAuth } from '../../auth/AuthContext'
 import { useWhatsNew } from '../../hooks/useWhatsNew'
 import { formatDateTimeMinutes } from '../../lib/format'
 import { LIBRARY_PATH } from '../../lib/libraryView'
@@ -81,7 +82,16 @@ function DigestLine({
 export function WhatsNewPanel() {
   const { t, i18n } = useTranslation()
   const summary = useWhatsNew()
+  const { user } = useAuth()
   const [dismissedSince, setDismissedSince] = useState<string>(() => readDismissedWhatsNew())
+  // Where "N new photos of you" goes: the reader's own person, in recently-added
+  // order like the line above it. The count came from the same link the server
+  // read off this account, so the two always describe the same photographs.
+  const linked = user?.subject_uid
+  const mineHref =
+    linked === null || linked === undefined || linked === ''
+      ? null
+      : `${LIBRARY_PATH}?person=${encodeURIComponent(linked)}&sort=added`
 
   if (!summary?.has_news) {
     return null
@@ -92,6 +102,7 @@ export function WhatsNewPanel() {
   }
 
   const photos = summary.photos ?? 0
+  const minePhotos = summary.mine_photos ?? 0
   const comments = summary.comments ?? 0
   const albumTotal = summary.album_count ?? 0
   const personTotal = summary.person_count ?? 0
@@ -132,6 +143,16 @@ export function WhatsNewPanel() {
             {photos > 0 && (
               <li>
                 <Link to={RECENTLY_ADDED_HREF}>{t('whatsNew.photos', { count: photos })}</Link>
+              </li>
+            )}
+            {/* The one line of the digest that is about the reader rather than
+                about the library. It appears only for an account that has said
+                which person it is, and only when some of the new photographs
+                are of that person — an empty "0 new photos of you" would be
+                noise, and for most readers this line simply never exists. */}
+            {minePhotos > 0 && mineHref !== null && (
+              <li>
+                <Link to={mineHref}>{t('whatsNew.minePhotos', { count: minePhotos })}</Link>
               </li>
             )}
             {albumTotal > 0 && (
