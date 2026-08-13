@@ -38,6 +38,18 @@
      one, the home-indicator inset where there is not. */
   --kk-bottom-edge: max(env(safe-area-inset-bottom, 0px), var(--kk-tabbar-height));
 
+  /* The lane along the right edge that the timeline rail owns: the rail itself,
+     wide enough to hold a four-digit year label, plus the lane its current-month
+     bubble hangs in to the left of it (the bubble's own margin included — the
+     widest label any locale prints, `May 2026`, measures 72px). The page reserves
+     this out of its own width whenever a rail is mounted, so nothing of the
+     content ever ends up underneath either — see `.kukatko-page` and
+     `.kukatko-timeline` below. Below `sm` the phone arranges the rail its own way
+     and reserves nothing here. */
+  --kk-timeline-rail-width: 4.25rem;
+  --kk-timeline-bubble-width: 5.75rem;
+  --kk-timeline-lane: calc(var(--kk-timeline-rail-width) + var(--kk-timeline-bubble-width));
+
   /* Bottom clearance a photo grid reserves while the floating batch bar is up, so
      its last row can always scroll fully clear of the bar — however many actions
      it shows or how it wraps. `--kk-batch-bar-height` is published live by
@@ -1045,6 +1057,35 @@ body {
   opacity: 1;
 }
 
+/* The page's column: everything in normal flow (the routed content and the
+   footer), minus the lane the timeline rail owns along the right edge.
+
+   The rail is `position: fixed` at the viewport's right edge, and the content is
+   a Bootstrap container whose `max-width` steps at each breakpoint. Between two
+   steps the container keeps growing with the window while its max-width does
+   not, so its right edge walks under the rail — measured at 992–1111, 1200–1291
+   and 1400–1471px, worst at 1000px, where the rail covered 48 % of the last tile
+   in a row and half of the Filters button, and took the clicks meant for them.
+   The bubble reached further still: at nearly every desktop width it lay over the
+   „Uložit pohled" button, because it hangs to the left of a rail that starts
+   right below the navbar. Trusting the container's own margin to be wide enough
+   is what failed; the phone has always reserved the lane instead (see
+   `.kukatko-grid-timeline-lane` below), and this is that idea at every other
+   width.
+
+   The reservation sits on the page rather than on the container so the container
+   stays centred: it centres in what is left, which leaves exactly the same gap on
+   its left as between its right edge and the lane. And it is conditional on a
+   rail being *mounted* (`:has`) rather than on a page saying it renders one — the
+   rail itself declines to render for a timeline that is loading, empty or too
+   short in time to be worth a scale of months, and a lane held open for a rail
+   that is not there is a page pushed off centre for nothing. */
+@media (min-width: 576px) {
+  .kukatko-page:has(.kukatko-timeline) {
+    padding-right: calc(var(--kk-timeline-lane) + env(safe-area-inset-right, 0px));
+  }
+}
+
 /* Timeline scrubber: a thin, fixed vertical date rail pinned to the right edge,
    below the sticky navbar. It overlays the viewport (does not take grid space),
    so a loading/empty timeline renders nothing without shifting the grid. Ticks
@@ -1063,7 +1104,7 @@ body {
   /* The rail runs to the bottom edge, so on a phone it has to stop above the
      fixed tab bar — otherwise its oldest ticks sit behind the tabs, unreachable. */
   bottom: calc(1rem + var(--kk-tabbar-height));
-  width: 4.25rem;
+  width: var(--kk-timeline-rail-width);
   z-index: 1018;
   touch-action: none;
   user-select: none;
@@ -1131,12 +1172,22 @@ body {
    wide enough to hold a year label (see `.kukatko-timeline`), the label no longer
    spills into this lane, and this margin then opens a clear gap between the rail's
    left edge and the bubble. Together they make the bubble and the year ticks
-   incapable of overlapping, even at a year boundary where both fall on one row. */
+   incapable of overlapping, even at a year boundary where both fall on one row.
+
+   The lane is `--kk-timeline-bubble-width` wide — margin included — and the page
+   reserves it along with the rail's own width (see `.kukatko-page` above). The
+   `max-width` is what keeps that reservation honest: whatever a locale prints
+   here, the bubble cannot grow past the lane held open for it and out over the
+   photographs. It is set above the widest month label any locale produces (72px),
+   so it never actually truncates one. */
 .kukatko-timeline-current {
   position: absolute;
   right: 100%;
   transform: translateY(-50%);
   margin-right: var(--kk-space-3);
+  max-width: calc(var(--kk-timeline-bubble-width) - var(--kk-space-3));
+  overflow: hidden;
+  text-overflow: ellipsis;
   padding: 0.05rem 0.45rem;
   border-radius: var(--kk-radius-sm);
   background: var(--bs-primary, var(--kk-accent-solid));
