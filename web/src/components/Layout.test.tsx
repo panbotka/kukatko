@@ -151,6 +151,20 @@ describe('Layout navbar', () => {
     expect(container.querySelector('main.kukatko-main')).not.toBeNull()
   })
 
+  it('puts everything in flow inside the page column the timeline lane is cut from', () => {
+    // The fixed timeline rail is given a lane out of this element's width
+    // (`.kukatko-page:has(.kukatko-timeline)`), which only keeps the rail off the
+    // content while the content is actually inside it — the footer included, since
+    // the rail runs to the bottom of the viewport. The navbar stays outside: the
+    // rail comes to rest below it.
+    const { container } = renderLayout(auth())
+    const page = container.querySelector('.kukatko-page')
+    expect(page).not.toBeNull()
+    expect(page?.querySelector('main.kukatko-main')).not.toBeNull()
+    expect(page?.querySelector('footer.kukatko-footer')).not.toBeNull()
+    expect(page?.querySelector('.kukatko-navbar')).toBeNull()
+  })
+
   it('carries no logo and no wordmark, on either viewport', () => {
     // Width is the bar's scarce resource: the brand is gone entirely, mark and
     // wordmark alike, rather than being juggled by display utilities.

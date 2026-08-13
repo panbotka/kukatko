@@ -358,16 +358,24 @@ export function Layout() {
           }}
         />
       )}
-      {/* A phone pays for its top padding out of the first screen — on the
-          library that gap sits directly above the photographs — so it gets one
-          step less of it and `md`+ keeps the full 1.5rem. */}
-      <Container as="main" className="pt-3 pt-md-4 pb-4 kukatko-main">
-        <AnnouncementBanner />
-        <Outlet />
-      </Container>
-      <Footer>
-        <JobQueueBadges />
-      </Footer>
+      {/* Everything that lives in normal flow — the routed page and the footer —
+          shares one column, so the fixed timeline rail can be given a lane out of
+          the page's own width instead of lying across its right edge (see
+          `.kukatko-page` in `app.css`; the reservation follows the rail being
+          mounted, so a page without one is untouched). The navbar stays outside
+          it: the rail comes to rest below the bar and never reaches it. */}
+      <div className="kukatko-page">
+        {/* A phone pays for its top padding out of the first screen — on the
+            library that gap sits directly above the photographs — so it gets one
+            step less of it and `md`+ keeps the full 1.5rem. */}
+        <Container as="main" className="pt-3 pt-md-4 pb-4 kukatko-main">
+          <AnnouncementBanner />
+          <Outlet />
+        </Container>
+        <Footer>
+          <JobQueueBadges />
+        </Footer>
+      </div>
       {/* Phone only: the everyday destinations as a fixed bottom strip, so they
           do not cost a hamburger open-then-tap. Renders nothing on `md`+, where
           the top bar above is already the whole navigation. */}

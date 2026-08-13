@@ -155,7 +155,9 @@ here.
   flex row: operator + GitHub on the left, `children` fills the right side (today the admin job-queue
   badge); `.kukatko-footer` shares safe-area padding with `.kukatko-main` — which carries
   `pt-3 pt-md-4 pb-4`, one step less top padding on a phone, where that gap comes straight out of the
-  first screen),
+  first screen. Both live inside one **`.kukatko-page`** column (everything `Layout` renders in normal
+  flow; the navbar and the tab bar stay outside it), which is what the timeline rail's lane is cut from —
+  see `TimelineScrubber` below),
   `JobQueueBadges` (right side of the footer: a compact badge with the job-queue state **for maintainers only**
   — the `/jobs` endpoint is a maintainer-only operational capability; via `useAuth().isMaintainer` +
   `useJobStats` — a non-maintainer renders nothing and **makes no request**.
@@ -556,7 +558,22 @@ here.
   year labels **never overlap** even at a year boundary (where they fall onto one line); the overlay is
   `position: fixed`, so a loading/empty timeline renders nothing and
   doesn't shift the layout; on the library only for
-  the default newest sort. It **runs whichever way its grid does** — the backend returns the histogram in
+  the default newest sort.
+  **The page holds a lane open for it** (`.kukatko-page:has(.kukatko-timeline)` in `app.css`, `sm` and up).
+  The rail is fixed at the viewport's right edge while the content is a Bootstrap container whose
+  `max-width` steps at each breakpoint, so just above every step the container's right edge walked *under*
+  the rail — measured at 992–1111, 1200–1291 and 1400–1471 px, worst at 1000 px, where the rail covered
+  48 % of the last tile in a row and half of the **Filtry** button and took the clicks meant for them,
+  while the bubble lay over **Uložit pohled** at nearly every desktop width. So the `.kukatko-page` column
+  reserves `--kk-timeline-lane` — `--kk-timeline-rail-width` (4.25 rem, a four-digit year plus its mark) +
+  `--kk-timeline-bubble-width` (5.75 rem, the bubble's own margin included and its `max-width` capped to
+  it, above the 72 px of the widest month label any locale prints) — whenever a rail is **mounted**:
+  `:has`, not a page-level flag, because the rail itself declines to render for a timeline that is loading,
+  empty or too short in time, and a lane held open for a rail that is not there is a page pushed off centre
+  for nothing. The container then centres in what is left, which leaves the same gap on its left as between
+  its right edge and the lane. Guarded by `styles/timelineLane.test.ts`, which rebuilds the container
+  geometry out of the stylesheet, pins it against the overlap measured in the browser before the fix, and
+  sweeps every width from 576 to 3840 px — one width proves nothing, the bug lived *between* breakpoints. It **runs whichever way its grid does** — the backend returns the histogram in
   the grid's own order, so an album read oldest-first gets a rail whose top is its first month (nothing
   here assumes newest-first beyond the order the buckets arrive in; only what a collapsed tick is
   *called* is resolved by date). **`minSpanMonths`** renders no rail at all below a given span
