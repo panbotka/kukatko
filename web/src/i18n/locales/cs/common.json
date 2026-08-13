@@ -305,8 +305,12 @@
     },
     "photos": "Fotek celkem",
     "videos": "Z toho videí",
-    "live": "V knihovně",
+    "live": "Mimo koš",
     "archived": "V koši",
+    "hidden": "Skrytých z knihovny",
+    "stacked": "Variant ve skupinách",
+    "listed": "Vidíte v Knihovně",
+    "photosNote": "Knihovna ukazuje míň fotek, než kolik jich je mimo koš: nezobrazuje skryté fotky ani vedlejší varianty ve skupinách — RAW i další podoby jednoho záběru se schovají pod hlavní fotku. Po jejich odečtení zbývá {{total}}, a přesně to je počet, který uvidíte v Knihovně.",
     "contentReady": "Fotek připravených k hledání podle obsahu",
     "contentPending": "Zbývá zpracovat",
     "facesNamed": "Obličejů se jménem",
@@ -327,7 +331,9 @@
     "links": {
       "trash": "Otevřít koš",
       "withoutFaces": "Zobrazit v knihovně fotky bez obličeje",
-      "unnamed": "Pojmenovat obličeje v třídění"
+      "unnamed": "Pojmenovat obličeje v třídění",
+      "hidden": "Zobrazit fotky skryté z knihovny",
+      "library": "Otevřít knihovnu"
     }
   },
   "reviewDecisions": {

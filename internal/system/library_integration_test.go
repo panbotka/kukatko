@@ -7,6 +7,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
+	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/system"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
@@ -118,6 +119,26 @@ VALUES ($1, $2, CASE WHEN $3 THEN 50.08 ELSE NULL END, CASE WHEN $3 THEN 14.44 E
 	}
 }
 
+// seedHidden hides an already-seeded photo from the library, the state that
+// keeps a photo in the catalogue but out of the grid's firehose.
+func seedHidden(t *testing.T, db *database.DB, uid string) {
+	t.Helper()
+	const stmt = `UPDATE photos SET hidden_from_library = true WHERE uid = $1`
+	if _, err := db.Pool().Exec(t.Context(), stmt, uid); err != nil {
+		t.Fatalf("hide photo %s: %v", uid, err)
+	}
+}
+
+// seedStackMember files an already-seeded photo into a stack, as its primary
+// (the one member the grid shows) or as a sibling folded away behind it.
+func seedStackMember(t *testing.T, db *database.DB, uid, stackUID string, primary bool) {
+	t.Helper()
+	const stmt = `UPDATE photos SET stack_uid = $2, stack_primary = $3 WHERE uid = $1`
+	if _, err := db.Pool().Exec(t.Context(), stmt, uid, stackUID, primary); err != nil {
+		t.Fatalf("stack photo %s: %v", uid, err)
+	}
+}
+
 // seedLabel inserts one label.
 func seedLabel(t *testing.T, db *database.DB, uid string) {
 	t.Helper()
@@ -141,6 +162,11 @@ func seedLabel(t *testing.T, db *database.DB, uid string) {
 //	p9  image, live,     GPS, not geocoded yet — the backlog
 //	p10 image, archived, GPS, not geocoded — archived, so not backlog
 //	p11 image, live,     no GPS, recorded as processed without coordinates
+//	p12 image, live,     hidden from the library
+//	p13 image, live,     the primary of stack st1 — the one the grid lists
+//	p14 image, live,     a sibling folded away behind p13
+//	p15 image, live,     hidden AND a sibling in stack st2 — counted once, as hidden
+//	p16 image, live,     the primary of stack st2
 //
 // plus three subjects (one of each kind), one of p1's two faces named, four
 // markers (two named), three albums of three different types and three labels.
@@ -163,6 +189,7 @@ func seedLibrary(t *testing.T, db *database.DB) {
 	seedFace(t, db, "p5", 0)
 
 	seedPlaces(t, db)
+	seedVisibility(t, db)
 
 	seedSubject(t, db, "s1", "person")
 	seedSubject(t, db, "s2", "pet")
@@ -201,6 +228,24 @@ func seedPlaces(t *testing.T, db *database.DB) {
 	seedPlace(t, db, "p11", false)
 }
 
+// seedVisibility adds the half of the fixture that explains why the library grid
+// lists fewer photos than the catalogue holds: one hidden photo, one stack whose
+// sibling is folded away, and one photo that is both hidden and a stack sibling —
+// which the two deductions must count once, not twice.
+func seedVisibility(t *testing.T, db *database.DB) {
+	t.Helper()
+	for _, uid := range []string{"p12", "p13", "p14", "p15", "p16"} {
+		seedPhoto(t, db, uid, "image", false)
+	}
+
+	seedHidden(t, db, "p12")
+	seedStackMember(t, db, "p13", "st1", true)
+	seedStackMember(t, db, "p14", "st1", false)
+	seedHidden(t, db, "p15")
+	seedStackMember(t, db, "p15", "st2", false)
+	seedStackMember(t, db, "p16", "st2", true)
+}
+
 // TestLibraryStats_CountsFixture asserts every count and every derived coverage
 // gap against a seeded fixture whose numbers are known by construction.
 func TestLibraryStats_CountsFixture(t *testing.T) {
@@ -215,16 +260,19 @@ func TestLibraryStats_CountsFixture(t *testing.T) {
 	}
 
 	want := system.Library{
-		Photos:                 11,
+		Photos:                 16,
 		Videos:                 2,
 		LivePhotos:             1,
-		Images:                 8,
-		PhotosLive:             8,
+		Images:                 13,
+		PhotosLive:             13,
 		PhotosArchived:         3,
+		PhotosHidden:           2,
+		PhotosStacked:          1,
+		PhotosListed:           10,
 		PhotosWithEmbedding:    4,
 		PhotosWithFaces:        3,
-		PhotosWithoutEmbedding: 7,
-		PhotosWithoutFaces:     8,
+		PhotosWithoutEmbedding: 12,
+		PhotosWithoutFaces:     13,
 		PhotosWithGPS:          3,
 		PhotosGeocoded:         1,
 		PhotosPendingGeocode:   1,
@@ -247,6 +295,38 @@ func TestLibraryStats_CountsFixture(t *testing.T) {
 	}
 	if got != want {
 		t.Errorf("LibraryStats() = %+v, want %+v", got, want)
+	}
+}
+
+// TestLibraryStats_ListedMatchesTheLibraryGrid is the point of the whole
+// breakdown: PhotosListed must be the number the library page prints as "Počet
+// fotek", not an approximation of it. It counts the fixture both ways — through
+// the statistics aggregation and through the listing the grid itself uses — and
+// requires them to agree, so a future filter added to one and not the other
+// fails here instead of putting two different totals on two screens.
+func TestLibraryStats_ListedMatchesTheLibraryGrid(t *testing.T) {
+	db := dbtest.New(t)
+	dbtest.TruncateAll(t, db)
+	seedLibrary(t, db)
+
+	svc := system.New(system.Config{Library: system.NewStore(db.Pool())})
+	stats, err := svc.LibraryStats(t.Context())
+	if err != nil {
+		t.Fatalf("LibraryStats: %v", err)
+	}
+	grid, err := photos.NewStore(db.Pool()).Count(t.Context(), photos.ListParams{})
+	if err != nil {
+		t.Fatalf("counting the library listing: %v", err)
+	}
+
+	if stats.PhotosListed != grid {
+		t.Errorf("photos listed = %d, want the library grid's %d", stats.PhotosListed, grid)
+	}
+	// And the deductions that explain the gap add the grid's count back up to the
+	// live library, which is exactly what the statistics card writes out.
+	if stats.PhotosListed+stats.PhotosHidden+stats.PhotosStacked != stats.PhotosLive {
+		t.Errorf("listed %d + hidden %d + stacked %d != live %d",
+			stats.PhotosListed, stats.PhotosHidden, stats.PhotosStacked, stats.PhotosLive)
 	}
 }
 
@@ -279,11 +359,17 @@ func TestCountLibrary_RawCountsLeaveDerivedZero(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CountLibrary: %v", err)
 	}
-	if got.Photos != 11 || got.PhotosWithEmbedding != 4 {
-		t.Errorf("counts = %+v, want photos 11 / with embedding 4", got)
+	if got.Photos != 16 || got.PhotosWithEmbedding != 4 {
+		t.Errorf("counts = %+v, want photos 16 / with embedding 4", got)
 	}
-	if got.PhotosLive != 0 || got.Images != 0 || got.PhotosWithoutEmbedding != 0 ||
-		got.PhotosWithoutFaces != 0 || got.FacesUnassigned != 0 || got.MarkersUnassigned != 0 {
+	// The two visibility deductions are counted, not derived: the store reads
+	// them, and reads them as disjoint sets (p15 is hidden and a stack sibling).
+	if got.PhotosHidden != 2 || got.PhotosStacked != 1 {
+		t.Errorf("counts = %+v, want hidden 2 / stacked away 1", got)
+	}
+	if got.PhotosLive != 0 || got.PhotosListed != 0 || got.Images != 0 ||
+		got.PhotosWithoutEmbedding != 0 || got.PhotosWithoutFaces != 0 ||
+		got.FacesUnassigned != 0 || got.MarkersUnassigned != 0 {
 		t.Errorf("counts = %+v, want the derived fields left at zero", got)
 	}
 }

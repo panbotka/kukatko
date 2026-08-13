@@ -218,12 +218,22 @@ here.
   neighbouring count they must not be added to — before this split all three counts wore the word "obličej",
   read as a partition and did not add up (4 671 + 16 586 ≠ 115 461, and the card implied 22 % where the meter
   said 3,8 %).
-  A count that stands for work to be done is a **`Link`** (`text-reset text-decoration-underline`, so it keeps
+  **Fotky walks the total down to the count the Knihovna itself reports.** The page said „V knihovně 20 890"
+  while the library grid said „Počet fotek: 20 619" and nothing explained the 271: the grid drops the photos
+  hidden from the library and the non-primary members of a stack. Both are rows of their own now
+  (`photos_hidden`, `photos_stacked`) between **Mimo koš** (`photos_live`) and **Vidíte v Knihovně**
+  (`photos_listed`); the three parts are disjoint and add back up to `photos_live`, and the card's `note`
+  says why the subtraction happens. Nothing is recomputed in the component — the backend reports all four —
+  and `stats.live` reads **Mimo koš** rather than the „V knihovně" that contradicted the grid.
+  A count that stands for work to be done, or that a reader may want to check against another screen, is a
+  **`Link`** (`text-reset text-decoration-underline`, so it keeps
   the row's colour and gains an underline; `aria-label`/`title` name the destination, since "16 585" names
   nothing): v koši → `/trash`, fotky bez obličeje → the library's own filter `/?q=faces%3A0`, obličeje bez
   jména → `/review` (the review game works over the nameless **detections**, which is why the link hangs off
-  `faces_unassigned` and not off a marker count). The two write destinations are gated on `useAuth().canWrite`
-  and render as plain text
+  `faces_unassigned` and not off a marker count), skrytých → `/?q=hidden%3Ayes` (the documented way back to a
+  hidden photo, ungated: hiding is an edit, reading the hidden ones is not) and vidíte v Knihovně → the
+  library itself, so the number can be checked where it is disputed. The two write destinations are gated on
+  `useAuth().canWrite` and render as plain text
   for a viewer — never a link that would bounce them (N13). The caller still owns loading/errors/retry, so
   `StatsPage` and `SystemStatusPage`'s Knihovna section cannot drift apart or double-fetch),
   `components/stats/` = **the charts of the statistics dashboard**, plain CSS over the app's tokens
@@ -2498,8 +2508,10 @@ here.
   `StatsPage` = `/stats` (**any logged-in user** — read-only aggregate counts, so no role gate, like the
   leaderboard; reachable from the **user menu** and the phone drawer's account section) the **library
   statistics** over `GET /system/stats` (`useLibraryStats`), modelled on the previous system's status page: six
-  cards (`LibraryStatsCards`, shared with `SystemStatusPage`) — **Fotky** (celkem, z toho videa, v knihovně,
-  v koši), **Vyhledávání podle obsahu** (připravených fotek, zbývá zpracovat), **Obličeje** (se jménem, bez
+  cards (`LibraryStatsCards`, shared with `SystemStatusPage`) — **Fotky** (celkem, z toho videa, v koši, mimo
+  koš, z toho skrytých, z toho variant ve skupinách, vidíte v Knihovně — the walk from the catalogue down to
+  the count the library grid shows), **Vyhledávání podle obsahu** (připravených fotek, zbývá zpracovat),
+  **Obličeje** (se jménem, bez
   jména, fotek s/bez), **Lidé a zvířata** (subjekty po druhu), **Značky na fotkách** (celkem, se jménem, bez
   jména) and **Alba a štítky**.
   Each card leads with its headline number (`kk-display`) and breaks it down beneath; **every number is grouped

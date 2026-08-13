@@ -242,6 +242,13 @@ func TestSystemStats_ViewerAllowedAnonymousRejected(t *testing.T) {
 		t.Errorf("with %d + without %d embedding != total %d",
 			got.PhotosWithEmbedding, got.PhotosWithoutEmbedding, got.Photos)
 	}
+	// The same for the split that explains the library grid's smaller number:
+	// what the grid lists plus the hidden photos plus the stacked-away siblings
+	// is the whole live library, so the statistics page can show the subtraction.
+	if got.PhotosListed+got.PhotosHidden+got.PhotosStacked != got.PhotosLive {
+		t.Errorf("listed %d + hidden %d + stacked %d != live %d",
+			got.PhotosListed, got.PhotosHidden, got.PhotosStacked, got.PhotosLive)
+	}
 }
 
 // do issues an HTTP request with the optional JSON body and returns the response.

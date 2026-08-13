@@ -1216,6 +1216,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
 - **Library statistics (`/api/v1`, `internal/systemapi` + `internal/system`, **every authenticated
   user** via `RequireAuth`):** `GET /system/stats` → instance-wide counts of the catalogue, modelled on
   the previous system's status page: `{photos,videos,live_photos,images,photos_live,photos_archived,
+  photos_hidden,photos_stacked,photos_listed,
   photos_with_embedding,photos_with_faces,photos_without_embedding,photos_without_faces,photos_with_gps,
   photos_geocoded,
   photos_pending_geocode,embeddings,faces,faces_assigned,faces_unassigned,subjects,subjects_person,
@@ -1226,6 +1227,17 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   (`system.Store.CountLibrary`), memoized for **30 s** like the storage block. `photos_archived` is
   exactly the trash (a photo is soft-deleted by stamping `archived_at`; there is no second trash state),
   and `videos`/`live_photos`/`images` are the three `media_type` values (`images` derived, see below).
+  **`photos_live` is not what the library grid lists** — that is `photos_listed`, and the three counts
+  between them say why: `photos_live = photos_listed + photos_hidden + photos_stacked`, where
+  `photos_hidden` is the not-archived photos the user hid (`hidden_from_library`) and `photos_stacked` the
+  not-archived, **not-hidden** non-primary stack members (`stack_uid IS NOT NULL AND NOT stack_primary`) —
+  the RAW sibling or edited variant the grid shows once, behind the stack's primary. The stacked count
+  excludes the hidden ones **on purpose**: the parts are disjoint, so the subtraction is exact and no photo
+  is deducted twice. The two predicates mirror `photos.hiddenClauses` / `photos.stackClauses`, so
+  `photos_listed` equals what `photos.Store.Count` answers with default `ListParams` — i.e. the „Počet
+  fotek" the library page prints. They exist because the statistics page reported 20 890 where the grid said
+  20 619 with nothing to explain the difference; `/stats` now shows the whole walk down (see
+  `docs/FRONTEND.md`, `LibraryStatsCards`).
   `photos_geocoded` counts photos with a cached place resolved from coordinates, `photos_pending_geocode`
   the live geotagged photos that still have none — the outstanding, metered mapy.com spend.
   `photos_with_gps` (photos carrying coordinates of their own, whatever the source) and `faces_assigned`
@@ -1236,8 +1248,8 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   photos (`markers_assigned + markers_unassigned`) — the sets overlap and most detections never became a
   marker. `faces_unassigned` is the library's actual naming backlog, exactly what the review game, the
   clustering and the candidate search work over (`faces.subject_uid IS NULL`); `markers_unassigned` is not.
-  The derived values — `photos_live`, `images` (total minus the other two media types, because the
-  `media_type` index deliberately excludes the majority value) and the coverage gaps
+  The derived values — `photos_live`, `photos_listed`, `images` (total minus the other two media types,
+  because the `media_type` index deliberately excludes the majority value) and the coverage gaps
   `photos_without_embedding` / `photos_without_faces` / `faces_unassigned` / `markers_unassigned` — are
   computed by the service
   from the raw counts (clamped at 0) and are what makes the endpoint useful during import verification;

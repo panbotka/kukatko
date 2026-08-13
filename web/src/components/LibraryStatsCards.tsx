@@ -21,6 +21,14 @@ import { Icon, type IconName } from './Icon'
 const NO_FACES_HREF = `${LIBRARY_PATH}?q=${encodeURIComponent('faces:0')}`
 
 /**
+ * The photos hidden from the library, written in the same query language —
+ * `hidden:yes` is the documented way back to a hidden photo, so the count that
+ * explains part of the library's smaller number also leads to the photos behind
+ * it. Open to every role: hiding is an edit, reading the hidden photos is not.
+ */
+const HIDDEN_HREF = `${LIBRARY_PATH}?q=${encodeURIComponent('hidden:yes')}`
+
+/**
  * Where a count leads when it is clicked. `needsWrite` marks a destination only
  * an editor may open (the review game, the trash): a viewer sees the number as
  * plain text rather than a link that would bounce them off a page they are not
@@ -55,8 +63,9 @@ interface StatRow {
 
 /**
  * A sentence closing a card, for the one thing a column of numbers cannot say
- * about itself: how its counts relate to another card's. `total`, when given, is
- * interpolated as `{{total}}` and grouped for the active language.
+ * about itself: how its counts relate to another card's, or to another screen's.
+ * `total`, when given, is the one number the sentence spells out — interpolated
+ * as `{{total}}` and grouped for the active language.
  */
 interface StatNote {
   key: ParseKeys
@@ -86,6 +95,14 @@ interface StatGroup {
  * the reader — searching photos by what is in them — and leads with the photos
  * that are ready for it. Nothing about the numbers changed; the vocabulary did.
  *
+ * The photos card walks the total down to the number the library grid reports,
+ * because those two disagreed with nothing on the page to explain it: the
+ * catalogue holds more photos than the grid lists, and the difference is the
+ * photos the user hid plus the variants folded behind a stack's primary. Each is
+ * a row of its own — the hidden ones link to `hidden:yes`, the result links to
+ * the library itself — and the closing sentence says why the subtraction
+ * happens. No number is computed here: the backend reports all four.
+ *
  * Faces and markers are two different things and each card keeps to one of them.
  * A **face** is one detection on one photo; the faces card leads with the faces
  * that have a name, its gap row is the faces that do not, and the two add up to
@@ -106,14 +123,28 @@ function groupsFor(stats: LibraryStats): StatGroup[] {
       headline: stats.photos,
       rows: [
         { key: 'videos', labelKey: 'stats.videos', value: stats.videos },
-        { key: 'live', labelKey: 'stats.live', value: stats.photos_live },
         {
           key: 'archived',
           labelKey: 'stats.archived',
           value: stats.photos_archived,
           link: { to: '/trash', labelKey: 'stats.links.trash', needsWrite: true },
         },
+        { key: 'live', labelKey: 'stats.live', value: stats.photos_live },
+        {
+          key: 'hidden',
+          labelKey: 'stats.hidden',
+          value: stats.photos_hidden,
+          link: { to: HIDDEN_HREF, labelKey: 'stats.links.hidden' },
+        },
+        { key: 'stacked', labelKey: 'stats.stacked', value: stats.photos_stacked },
+        {
+          key: 'listed',
+          labelKey: 'stats.listed',
+          value: stats.photos_listed,
+          link: { to: LIBRARY_PATH, labelKey: 'stats.links.library' },
+        },
       ],
+      note: { key: 'stats.photosNote', total: stats.photos_listed },
     },
     {
       id: 'content',

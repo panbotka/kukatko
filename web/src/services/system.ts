@@ -177,12 +177,23 @@ export interface SystemStatus {
  * every detection (`faces_assigned + faces_unassigned`), while `markers` is the
  * boxes drawn on photos (`markers_assigned + markers_unassigned`). The two
  * families overlap and must never be added across.
+ *
+ * Four counts describe how many photos there are, and only the last of them is
+ * the number the library grid reports: `photos` is the whole catalogue,
+ * `photos_live` is it without the trash, and `photos_listed` is `photos_live`
+ * minus `photos_hidden` and `photos_stacked` — the photos the user hid and the
+ * variants folded behind a stack's primary. The three parts are disjoint and add
+ * back up to `photos_live`, which is what lets the statistics page show the
+ * subtraction instead of leaving the reader to wonder why two screens disagree.
  */
 export interface LibraryStats {
   photos: number
   videos: number
   photos_live: number
   photos_archived: number
+  photos_hidden: number
+  photos_stacked: number
+  photos_listed: number
   photos_with_embedding: number
   photos_with_faces: number
   photos_without_embedding: number
