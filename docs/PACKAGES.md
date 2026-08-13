@@ -2980,13 +2980,19 @@ to `## Package map` in `CLAUDE.md`.
   subselects `countLibrarySQL`, **not** a `maintenance scan` over the tree; partial indexes for archived/video/live,
   semi-joins on the `embeddings` PK / the unique `faces`, one CTE for the album types),
   **`LibraryStats(ctx) (Library,error)`** returns
-  `Library{Photos,Videos,LivePhotos,Images,PhotosLive,PhotosArchived,PhotosWith(out)Embedding,PhotosWith(out)Faces,
+  `Library{Photos,Videos,LivePhotos,Images,PhotosLive,PhotosArchived,PhotosHidden,PhotosStacked,PhotosListed,
+  PhotosWith(out)Embedding,PhotosWith(out)Faces,
   PhotosWithGPS,PhotosGeocoded,PhotosPendingGeocode,Embeddings,Faces,FacesAssigned,FacesUnassigned,Subjects,
   SubjectsPerson/Pet/Other,Markers,
   MarkersAssigned/Unassigned,Albums,AlbumsManual/Folder/Moment/State/Month,Labels}`
   — the store returns **only raw counts**, the derived values (the live split, `Images` = total − video − live
   because the `media_type` index deliberately excludes the majority value, + the coverage gaps, clamped to 0) are computed by
-  `Library.derive()`; `PhotosGeocoded` counts `photo_places` rows **with** coordinates (a row without them
+  `Library.derive()`; **`PhotosListed` is the number the library grid reports**, `PhotosLive` is not:
+  `PhotosLive` = `PhotosListed` + `PhotosHidden` (not archived, `hidden_from_library`) + `PhotosStacked` (not
+  archived, **not hidden**, a non-primary stack member) — three disjoint parts whose predicates mirror
+  `photos.hiddenClauses`/`photos.stackClauses`, so the walk down lands exactly on `photos.Store.Count` with
+  default `ListParams` and `/stats` can say why it and the library disagree instead of leaving the reader
+  to work it out; `PhotosGeocoded` counts `photo_places` rows **with** coordinates (a row without them
   only records a GPS-less photo as processed) and `PhotosPendingGeocode` the live geotagged photos with no row
   at all — the outstanding metered mapy.com spend; `PhotosWithGPS` (photos with coordinates of their own, whatever
   the source — the numerator of the "on the map" coverage meter, deliberately **not** `PhotosGeocoded`) and

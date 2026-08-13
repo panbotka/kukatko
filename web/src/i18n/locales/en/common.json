@@ -301,8 +301,12 @@
     },
     "photos": "Photos in total",
     "videos": "Of which videos",
-    "live": "In the library",
+    "live": "Not in the trash",
     "archived": "In the trash",
+    "hidden": "Hidden from the library",
+    "stacked": "Variants in a stack",
+    "listed": "Shown in the library",
+    "photosNote": "The library shows fewer photos than are outside the trash: it leaves out the hidden ones and the variants stacked away — the RAW and the other versions of one shot hide behind the stack's primary photo. Take those off and {{total}} are left, which is exactly the count the library reports.",
     "contentReady": "Photos ready to search by content",
     "contentPending": "Still to process",
     "facesNamed": "Faces with a name",
@@ -323,7 +327,9 @@
     "links": {
       "trash": "Open the trash",
       "withoutFaces": "Show photos without a face in the library",
-      "unnamed": "Name faces in the review game"
+      "unnamed": "Name faces in the review game",
+      "hidden": "Show the photos hidden from the library",
+      "library": "Open the library"
     }
   },
   "reviewDecisions": {

@@ -54,6 +54,24 @@ type Library struct {
 	// PhotosArchived is how many photos are soft-deleted, i.e. sitting in the
 	// trash awaiting the retention purge.
 	PhotosArchived int `json:"photos_archived"`
+	// PhotosHidden is how many not-archived photos the user hid from the library
+	// (photos.hidden_from_library). They are still in the catalogue and still
+	// reachable through an album, a label, the favorites or an explicit
+	// hidden:yes search — they are only kept out of the firehose — which is why
+	// they count towards PhotosLive but not towards PhotosListed.
+	PhotosHidden int `json:"photos_hidden"`
+	// PhotosStacked is how many not-archived, not-hidden photos are a non-primary
+	// member of a stack: the RAW sibling or the edited variant of a shot that the
+	// grid shows once, under the stack's primary. Counted with the hidden ones
+	// excluded so that the three parts of PhotosLive never overlap and the
+	// subtraction in derive is exact.
+	PhotosStacked int `json:"photos_stacked"`
+	// PhotosListed is the number the library grid reports — the photos left after
+	// the trash, the hidden ones and the stacked-away siblings are taken out, i.e.
+	// exactly what photos.Store.Count answers with default ListParams. It is the
+	// one count on this page a reader can check against another screen, so it is
+	// reported rather than left for them to work out. Derived.
+	PhotosListed int `json:"photos_listed"`
 	// PhotosWithEmbedding is how many photos have an image embedding.
 	PhotosWithEmbedding int `json:"photos_with_embedding"`
 	// PhotosWithFaces is how many photos have at least one detected face.
@@ -136,12 +154,14 @@ type Library struct {
 }
 
 // derive fills in the values that follow from the raw counts rather than from
-// their own query: the live/archived split, the plain-image share of the media
-// types, the two coverage gaps, the nameless faces and the unassigned markers.
-// Each difference is clamped at zero so a snapshot taken while rows are being
-// written concurrently can never report a negative gap.
+// their own query: the live/archived split, the photos the library grid actually
+// lists, the plain-image share of the media types, the two coverage gaps, the
+// nameless faces and the unassigned markers. Each difference is clamped at zero
+// so a snapshot taken while rows are being written concurrently can never report
+// a negative gap.
 func (l Library) derive() Library {
 	l.PhotosLive = nonNegative(l.Photos - l.PhotosArchived)
+	l.PhotosListed = nonNegative(l.PhotosLive - l.PhotosHidden - l.PhotosStacked)
 	l.Images = nonNegative(l.Photos - l.Videos - l.LivePhotos)
 	l.PhotosWithoutEmbedding = nonNegative(l.Photos - l.PhotosWithEmbedding)
 	l.PhotosWithoutFaces = nonNegative(l.Photos - l.PhotosWithFaces)

@@ -12,6 +12,15 @@ import (
 // is deliberately not the maintenance scan, which walks the whole originals tree:
 // the statistics page must stay cheap enough to open on a whim.
 //
+// The two counts that explain why the library grid lists fewer photos than the
+// catalogue holds — the hidden ones and the stacked-away siblings — mirror the
+// listing's own default filters (photos.hiddenClauses, photos.stackClauses)
+// exactly, so the subtraction in Library.derive lands on the number the grid
+// reports. They are counted as disjoint sets (the stacked count excludes the
+// hidden ones), because two overlapping deductions would subtract a photo twice.
+// The stacked one rides the partial idx_photos_stack_uid, which covers exactly
+// the minority of rows that belong to a stack.
+//
 // The archived, video and live-photo predicates hit the partial indexes created
 // for exactly these minorities (idx_photos_archived_at, idx_photos_media_type);
 // plain images are not counted at all but derived from the total in Library.derive,
@@ -41,6 +50,10 @@ SELECT
     (SELECT count(*) FROM photos WHERE media_type = 'video'),
     (SELECT count(*) FROM photos WHERE media_type = 'live'),
     (SELECT count(*) FROM photos WHERE archived_at IS NOT NULL),
+    (SELECT count(*) FROM photos WHERE archived_at IS NULL AND hidden_from_library),
+    (SELECT count(*) FROM photos
+        WHERE archived_at IS NULL AND NOT hidden_from_library
+          AND stack_uid IS NOT NULL AND NOT stack_primary),
     (SELECT count(*) FROM photos p WHERE EXISTS (SELECT 1 FROM embeddings e WHERE e.photo_uid = p.uid)),
     (SELECT count(*) FROM photos p WHERE EXISTS (SELECT 1 FROM faces f WHERE f.photo_uid = p.uid)),
     (SELECT count(*) FROM photos WHERE lat IS NOT NULL AND lng IS NOT NULL),
@@ -86,6 +99,8 @@ func (s *Store) CountLibrary(ctx context.Context) (Library, error) {
 		&counts.Videos,
 		&counts.LivePhotos,
 		&counts.PhotosArchived,
+		&counts.PhotosHidden,
+		&counts.PhotosStacked,
 		&counts.PhotosWithEmbedding,
 		&counts.PhotosWithFaces,
 		&counts.PhotosWithGPS,

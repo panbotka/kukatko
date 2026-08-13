@@ -22,9 +22,9 @@ func (f *fakeCounter) CountLibrary(context.Context) (Library, error) {
 }
 
 // TestLibraryDerive checks every derived value: the live/archived split, the
-// plain-image share of the media types, both coverage gaps, the nameless faces
-// and the unassigned markers, including the clamp that keeps a snapshot taken
-// mid-write from reporting a negative count.
+// photos the library grid lists, the plain-image share of the media types, both
+// coverage gaps, the nameless faces and the unassigned markers, including the
+// clamp that keeps a snapshot taken mid-write from reporting a negative count.
 func TestLibraryDerive(t *testing.T) {
 	t.Parallel()
 
@@ -41,11 +41,26 @@ func TestLibraryDerive(t *testing.T) {
 				Markers: 30, MarkersAssigned: 12,
 			},
 			want: Library{
-				Photos: 100, Images: 100, PhotosArchived: 7, PhotosLive: 93,
+				Photos: 100, Images: 100, PhotosArchived: 7, PhotosLive: 93, PhotosListed: 93,
 				PhotosWithEmbedding: 90, PhotosWithoutEmbedding: 10,
 				PhotosWithFaces: 40, PhotosWithoutFaces: 60,
 				Faces: 250, FacesAssigned: 30, FacesUnassigned: 220,
 				Markers: 30, MarkersAssigned: 12, MarkersUnassigned: 18,
+			},
+		},
+		{
+			// The production numbers the statistics page was reported over: the
+			// page said 20 890 while the library grid said 20 619, and the 271
+			// missing photos are exactly the hidden ones plus the stacked-away
+			// siblings. Both counts are now reported, so the page can say so.
+			name: "the grid count is the live library minus the hidden and the stacked away",
+			raw: Library{
+				Photos: 20906, PhotosArchived: 16, PhotosHidden: 30, PhotosStacked: 241,
+			},
+			want: Library{
+				Photos: 20906, Images: 20906, PhotosArchived: 16,
+				PhotosLive: 20890, PhotosHidden: 30, PhotosStacked: 241, PhotosListed: 20619,
+				PhotosWithoutEmbedding: 20906, PhotosWithoutFaces: 20906,
 			},
 		},
 		{
@@ -54,8 +69,9 @@ func TestLibraryDerive(t *testing.T) {
 				Photos: 10, PhotosWithFaces: 10, Faces: 115461, FacesAssigned: 4395,
 			},
 			want: Library{
-				Photos: 10, Images: 10, PhotosLive: 10, PhotosWithoutEmbedding: 10,
-				PhotosWithFaces: 10, Faces: 115461, FacesAssigned: 4395,
+				Photos: 10, Images: 10, PhotosLive: 10, PhotosListed: 10,
+				PhotosWithoutEmbedding: 10,
+				PhotosWithFaces:        10, Faces: 115461, FacesAssigned: 4395,
 				FacesUnassigned: 111066,
 			},
 		},
@@ -66,7 +82,8 @@ func TestLibraryDerive(t *testing.T) {
 			},
 			want: Library{
 				Photos: 20, Videos: 3, LivePhotos: 2, Images: 15,
-				PhotosLive: 20, PhotosWithoutEmbedding: 20, PhotosWithoutFaces: 20,
+				PhotosLive: 20, PhotosListed: 20,
+				PhotosWithoutEmbedding: 20, PhotosWithoutFaces: 20,
 			},
 		},
 		{
@@ -76,8 +93,20 @@ func TestLibraryDerive(t *testing.T) {
 				Faces: 8, FacesAssigned: 8, Markers: 2, MarkersAssigned: 2,
 			},
 			want: Library{
-				Photos: 5, Images: 5, PhotosLive: 5, PhotosWithEmbedding: 5, PhotosWithFaces: 5,
+				Photos: 5, Images: 5, PhotosLive: 5, PhotosListed: 5,
+				PhotosWithEmbedding: 5, PhotosWithFaces: 5,
 				Faces: 8, FacesAssigned: 8, Markers: 2, MarkersAssigned: 2,
+			},
+		},
+		{
+			name: "more deductions than live photos clamps the grid count at zero",
+			raw: Library{
+				Photos: 4, PhotosArchived: 1, PhotosHidden: 2, PhotosStacked: 5,
+			},
+			want: Library{
+				Photos: 4, Images: 4, PhotosArchived: 1, PhotosLive: 3,
+				PhotosHidden: 2, PhotosStacked: 5,
+				PhotosWithoutEmbedding: 4, PhotosWithoutFaces: 4,
 			},
 		},
 		{
@@ -236,12 +265,13 @@ func TestServiceLibraryStats_NoCounter(t *testing.T) {
 }
 
 // TestServiceLibraryStats_Derives verifies the service returns the counter's
-// numbers with the derived gaps filled in.
+// numbers with the derived gaps filled in, the library-grid count among them.
 func TestServiceLibraryStats_Derives(t *testing.T) {
 	t.Parallel()
 
 	svc := New(Config{Library: &fakeCounter{counts: Library{
-		Photos: 20, PhotosArchived: 2, PhotosWithEmbedding: 18, PhotosWithFaces: 11,
+		Photos: 20, PhotosArchived: 2, PhotosHidden: 1, PhotosStacked: 3,
+		PhotosWithEmbedding: 18, PhotosWithFaces: 11,
 	}}})
 	got, err := svc.LibraryStats(t.Context())
 	if err != nil {
@@ -249,5 +279,8 @@ func TestServiceLibraryStats_Derives(t *testing.T) {
 	}
 	if got.PhotosLive != 18 || got.PhotosWithoutEmbedding != 2 || got.PhotosWithoutFaces != 9 {
 		t.Errorf("stats = %+v, want live 18 / no-embedding 2 / no-faces 9", got)
+	}
+	if got.PhotosListed != 14 {
+		t.Errorf("photos listed = %d, want 14 (18 live − 1 hidden − 3 stacked away)", got.PhotosListed)
 	}
 }

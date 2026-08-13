@@ -27,6 +27,9 @@ function stats(overrides: Partial<LibraryStats> = {}): LibraryStats {
     videos: 118,
     photos_live: 20301,
     photos_archived: 9,
+    photos_hidden: 30,
+    photos_stacked: 241,
+    photos_listed: 20030,
     photos_with_embedding: 20092,
     photos_with_faces: 14567,
     photos_without_embedding: 218,
@@ -169,6 +172,41 @@ describe('StatsPage', () => {
     // The photo breakdown carries the trash and the video count too.
     expect(screen.getByTestId('stat-photos-archived')).toHaveTextContent('9')
     expect(screen.getByTestId('stat-photos-videos')).toHaveTextContent('118')
+  })
+
+  it('walks the total down to the count the library itself reports', async () => {
+    renderPage()
+
+    // The card no longer stops at "in the library" and leaves the reader to
+    // wonder why the library grid says something smaller: both deductions are
+    // spelled out and the result is the number the grid reports.
+    expect(await screen.findByTestId('stat-photos-live')).toHaveTextContent('20,301')
+    expect(screen.getByTestId('stat-photos-hidden')).toHaveTextContent('30')
+    expect(screen.getByTestId('stat-photos-stacked')).toHaveTextContent('241')
+    expect(screen.getByTestId('stat-photos-listed')).toHaveTextContent('20,030')
+
+    // 20 301 − 30 − 241 = 20 030, and the sentence says why, in prose rather
+    // than as a tooltip.
+    expect(
+      screen.getByText(/Take those off and 20,030 are left, which is exactly the count/),
+    ).toBeInTheDocument()
+  })
+
+  it('leads from the two deductions to the photos behind them', async () => {
+    renderPage(false)
+
+    // Hiding a photo is an edit, reading the hidden ones is not, so even a
+    // viewer gets the way back — the documented hidden:yes search.
+    expect(
+      within(await screen.findByTestId('stat-photos-hidden')).getByRole('link', {
+        name: 'Show the photos hidden from the library',
+      }),
+    ).toHaveAttribute('href', '/?q=hidden%3Ayes')
+    expect(
+      within(screen.getByTestId('stat-photos-listed')).getByRole('link', {
+        name: 'Open the library',
+      }),
+    ).toHaveAttribute('href', '/')
   })
 
   it('keeps the faces card and the faces meter on one grain, so they agree', async () => {

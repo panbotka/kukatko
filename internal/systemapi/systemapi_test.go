@@ -113,6 +113,7 @@ func TestHandleStats_OK(t *testing.T) {
 	counts := system.Library{
 		Photos: 20310, PhotosWithEmbedding: 20092, PhotosWithoutEmbedding: 218,
 		Faces: 112806, PhotosWithFaces: 14567,
+		PhotosLive: 20301, PhotosHidden: 30, PhotosStacked: 241, PhotosListed: 20030,
 	}
 	r := newRouter(fakeCollector{library: counts})
 
