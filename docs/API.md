@@ -6,14 +6,32 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
 <!-- BODY BEGIN -->
 - **Auth API (`/api/v1`):** `POST /auth/login` (set HttpOnly+SameSite=Strict cookie + opaque
   `download_token`), `POST /auth/logout`, `GET /auth/me`, `POST /auth/password` (revokes other
-  sessions). Admin-only: `GET|POST /admin/users`, `PATCH /admin/users/{uid}`,
+  sessions), `PUT /auth/subject`. Admin-only: `GET|POST /admin/users`, `PATCH /admin/users/{uid}`,
   `POST /admin/users/{uid}/disable`, `POST /admin/users/{uid}/password` (reset revokes all of the
   user's sessions). Responses of the admin user endpoints carry a free-form **`note`** alongside
   `display_name` (an admin note on why the account exists / who it is). Both fields are optional,
   defaulting to the empty string. A `note` longer than **1000 characters** (runes, not bytes) → 400
   with a message naming the field. `PATCH` gives `note` **partial-update** semantics: an omitted key
   leaves the stored note unchanged, `""` clears it. **Only an admin reads `note`** — it is never in the
-  `POST /auth/login` or `GET /auth/me` payload. Roles: a **strict ladder** viewer < editor < admin <
+  `POST /auth/login` or `GET /auth/me` payload.
+  **Which person the account is:** every user payload — login, `/auth/me` and the admin listings —
+  carries **`subject_uid`**, the subject of the library this account belongs to, or `null`. Unlike
+  `note` it *is* in the login and `/auth/me` payloads, deliberately: the client cannot render the
+  "my photos" entry, resolve `person:me` in a link or draw the account's face without it, and it is
+  the caller's own fact about themselves. **Several accounts may name the same subject** (a shared
+  family login and a personal one are both that person), and **deleting the subject clears the link**
+  (`ON DELETE SET NULL`), so every reader must survive `null` — the common case.
+  Self-service: **`PUT /auth/subject`** (`RequireAuth`, any role) with `{"subject_uid": "sub…"}` or
+  `{"subject_uid": null}` → 200 with the refreshed user; the account written to is **the session's**,
+  never one named in the body. A UID naming no subject → **400**. It writes **no audit entry**,
+  following `POST /auth/password`: the trail records what was done *to* an account by somebody else.
+  Admin: `POST /admin/users` and `PATCH /admin/users/{uid}` accept `subject_uid` as part of the
+  **replaced** profile (unlike `note`, an omitted or null value **clears** the link), 400 for an
+  unknown subject, and both record it in the `user.create`/`user.update` audit details.
+  Linking an account **publishes that person's cover photo** next to every comment the account has
+  written (see the comment thread below); the surfaces that set it say so. A subject's `private` flag
+  gates no reading today and is unchanged by this.
+  Roles: a **strict ladder** viewer < editor < admin <
   maintainer (each inherits the rights of the lower ones): viewer read-only, editor adds writing of
   media/metadata, admin governance (user management, audit log, permanent deletion / emptying the
   trash), maintainer operations (imports, maintenance, system, backup/restore, jobs, process).
@@ -129,6 +147,9 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   a `q` made only of negative terms (`-word`) is forced to `fulltext` (there is nothing to embed). Filters
   the language did not understand are left alone (searched as text) and the response returns them in
   `unknown_tokens: []string` (also on `GET /photos`), so the UI can offer a gentle hint;
+  a query the server understood but **cannot satisfy** (today only `person:me` from an account with no
+  linked person) comes back **empty** with the reason in `notices: []string` (`person_me_unlinked`),
+  never widened to the whole library;
   both list and search carry per-photo `is_favorite` **+ per-user `rating`/`flag`** for the current user,
   `?favorite=true` scopes the list to their favourites, **`?min_rating=n` / `?flag=pick|reject|eye` / `?sort=rating`**
   scoped to them (a photo without a row = rating 0 / flag `none`);
@@ -320,9 +341,14 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
 - **Comments API (`/api/v1`, `internal/photoapi` + `internal/comments`):** per-photo comment threads — the
   family conversation around a picture ("who is the boy on the left?", "this was the summer before the barn
   burned down"). `GET /photos/{uid}/comments` (authenticated) →
-  `{comments:[{uid,photo_uid,author_uid,author_name,body,created_at,edited_at?}]}`, **oldest first** (a
+  `{comments:[{uid,photo_uid,author_uid,author_name,author_photo_uid?,body,created_at,edited_at?}]}`, **oldest first** (a
   conversation reads forwards), `author_name` resolved server-side (display name, fallback username) so a
-  thread needs no second lookup; a photo with no comments — or one that does not exist — is an empty array,
+  thread needs no second lookup; **`author_photo_uid`** is the cover photo of the person the author's
+  account is linked to (`users.subject_uid` → `subjects.cover_photo_uid`, one LEFT JOIN in the same
+  statement), so the client can draw a face instead of an initial. It is **absent** for an authorless
+  comment, an unlinked account, and a linked person with no cover photo — the common case, which is why
+  the initials fallback is the normal rendering rather than an error path.
+  A photo with no comments — or one that does not exist — is an empty array,
   not a 404. `POST /photos/{uid}/comments` `{body}` → **201** with the created comment; guarded by
   **`RequireAuth`, not `RequireWrite` — the one deliberate exception to the read-only rule: a viewer may
   comment.** Commenting is social participation, not curation of the library (a viewer still cannot retitle a
@@ -892,7 +918,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `cmd/kukatko/announcement.go`).
 - **What's New API (`/api/v1`, `internal/whatsnewapi` + `internal/whatsnew`, authenticated via
   `RequireAuth`):** the digest behind the **"what's new since your last visit"** panel on the library home.
-  `GET /whats-new` → `200 {has_news, since?, photos, comments, albums:[{uid,title}], album_count,
+  `GET /whats-new` → `200 {has_news, since?, photos, mine_photos, comments, albums:[{uid,title}], album_count,
   people:[{uid,name}], person_count}`. **`has_news` is the only flag the client branches on** — it is false
   (and everything else absent or zero) for a **first-ever visit** and for a visit that found nothing, and in
   both cases no panel is shown; a vanished account is reported the same way, so the endpoint returns 200 in
@@ -905,7 +931,11 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   threshold). It must therefore be issued **once per library-home load and never polled**. Counts mirror the
   library grid (live, non-hidden, stack-primary photos; live comments; hand-curated albums; named subjects
   only) and `albums`/`people` are capped at 6 links while `album_count`/`person_count` report the true
-  totals. Mounted by `server.WithAPI` (`buildWhatsNewAPI` in `cmd/kukatko/whatsnew.go`).
+  totals. **`mine_photos`** counts how many of those new photos the reader themselves is on, via the
+  subject their account is linked to (`users.subject_uid`, read in the same statement that stamps the
+  visit) and a non-invalid marker. It is **0** both for an unlinked account and for a visit where none
+  of the new photographs was of them, and the client shows no line for it either way; being a subset of
+  `photos` it can never be the only news, so it does not affect `has_news`. Mounted by `server.WithAPI` (`buildWhatsNewAPI` in `cmd/kukatko/whatsnew.go`).
 - **Global Search API (`/api/v1`, `internal/globalsearchapi`, authenticated via `RequireAuth`):**
   grouped **cross-entity search** for the navbar quick-results and the search page. `GET /search/global?q=` →
   `{query, albums:[{uid,title,cover,photo_count}], labels:[{uid,name,photo_count}],
@@ -1298,6 +1328,16 @@ using the wildcard. Keys are case-insensitive (`ISO:100` = `iso:100`). **An unkn
 an error**: the whole token is searched as ordinary text (so `foo:bar` still finds a photo by its caption)
 and the response returns it in `unknown_tokens`, so the UI can show a hint. `*` is the **only** wildcard —
 SQL's `%` and `_` always match themselves, in a filter value, in free text and in its `-term` negation alike.
+**`person:me` — the caller's own person.** `me` in a `person:`/`subject:` value resolves to the subject
+the caller's account is linked to, so it composes with everything else (`person:me year:1998`) and can be
+saved as a smart album. It is resolved **outside** `internal/query` (which stays a pure parser with no
+notion of a caller) by `internal/personme`, called by the photo API's list/search/timeline/years handlers
+and by the MCP search tool. A caller with **no linked person** gets an **empty** result plus the reason
+`person_me_unlinked` in `notices` — never everything, and never a free-text search for the word "me";
+the MCP tool answers with an error naming the fix instead. **The collision with a person actually called
+"me" is resolved in favour of the token**, but only in its exact lower-case spelling: `person:Me` or
+`person:ME` is an ordinary (case-insensitive) name match that still finds a subject named "me", and any
+subject is always reachable by UID (`person:<uid>`), which no name can shadow.
 Every **fractional** bound (`f:1.8`, `f:1.8-2.8`, `f:1.8-`) is tolerated within ±0.005 due to the rounding of
 single-precision EXIF columns; whole-number bounds stay exact. Capture-time filters resolve in **UTC**
 (the connection pool pins the session zone), so `year:`, `?year=`, `taken:` and the year/timeline histograms
@@ -1314,7 +1354,7 @@ put a photo taken minutes either side of New Year in the same year.
 | `text:` | text | the text a recogniser read **inside** the photo (`photos.ocr_text`): a sign, a shop front, a scanned page. Substring, `*` wildcard, and **accent-insensitive** unlike its siblings — the latin recogniser routinely returns a Czech word without its diacritics, so `text:pouť` must still find a sign read as "Pout" |
 | `album:` | text | album membership by **name** (substring) or exact UID |
 | `label:` | text | a label by **name** or UID |
-| `person:` (alias `subject:`) | text | a subject by **name** or UID, via non-invalid markers |
+| `person:` (alias `subject:`) | text | a subject by **name** or UID, via non-invalid markers. The exact lower-case value **`me`** is reserved: it means the person the caller's own account is linked to (`users.subject_uid`) — see below |
 | `favorite:` `private:` `archived:` | `yes\|no` | per-user favourite / private / archived; `archived:` **removes the default live-only scope** |
 | `hidden:` | `yes\|no` | hidden from the library (`photos.hidden_from_library`); like `archived:` it **removes the default visible-only scope**, so `hidden:yes` is the documented way back to a hidden photo |
 | `rating:` | `0-5`, ranges | the current user's rating; no row = 0, so `rating:0` finds the unrated |

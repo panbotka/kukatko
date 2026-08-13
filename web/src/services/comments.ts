@@ -41,6 +41,14 @@ export interface PhotoComment {
   author_uid: string
   /** The author's display name (falling back to the username), resolved server-side. */
   author_name: string
+  /**
+   * The cover photo of the person the author's account says it is, so the thread
+   * can show a face instead of a letter. Absent in every incomplete case — no
+   * account, no linked person, or a linked person with no cover photo chosen,
+   * which is the common one — so the initials fallback is the normal rendering,
+   * not an error path.
+   */
+  author_photo_uid?: string
   body: string
   created_at: string
   /** Set once the author has rewritten the body; absent on a never-edited comment. */

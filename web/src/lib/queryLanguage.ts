@@ -516,7 +516,7 @@ export const QUERY_HELP_ROWS: QueryHelpRow[] = [
   { id: 'photoText', keys: 'text:', example: 'text:veselice' },
   { id: 'album', keys: 'album:', example: 'album:"Léto 2024"' },
   { id: 'label', keys: 'label:', example: 'label:cat|dog' },
-  { id: 'person', keys: 'person: subject:', example: 'person:Anna' },
+  { id: 'person', keys: 'person: subject:', example: 'person:me' },
   { id: 'state', keys: 'favorite: private: archived:', example: 'favorite:yes' },
   { id: 'hidden', keys: 'hidden:', example: 'hidden:yes' },
   { id: 'rating', keys: 'rating:', example: 'rating:4-5' },

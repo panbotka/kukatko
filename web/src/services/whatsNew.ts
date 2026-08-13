@@ -36,6 +36,13 @@ export interface WhatsNew {
    */
   since?: string
   photos?: number
+  /**
+   * How many of those new photos the reader themselves is on, counted from the
+   * person their account is linked to. Zero — and no line in the panel — both
+   * for an unlinked account and for a visit where none of the new photographs
+   * was of them.
+   */
+  mine_photos?: number
   comments?: number
   albums?: WhatsNewAlbum[]
   album_count?: number

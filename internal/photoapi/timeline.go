@@ -43,6 +43,11 @@ func (a *API) handleTimeline(w http.ResponseWriter, r *http.Request) {
 	// Scope the per-user rating filters to the caller so min_rating/flag select
 	// the same photos here as they do in GET /photos.
 	params.RatedBy = &user.UID
+	// `person:me` has to mean the same person here as it does in the grid this
+	// histogram accompanies; an unresolvable one leaves the buckets empty, which
+	// is exactly what the grid beside it shows. The reason has nowhere to go in
+	// an aggregation — the list reports it.
+	applyPersonMe(&params, user)
 
 	timeline, err := a.store.TimelineBuckets(r.Context(), params)
 	if err != nil {

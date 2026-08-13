@@ -91,7 +91,8 @@
       "review": "Go through the suggestions one at a time",
       "outliers": "Find faces assigned by mistake",
       "leaderboard": "Show the sorting leaderboard",
-      "stats": "Show the library statistics"
+      "stats": "Show the library statistics",
+      "myPhotos": "Show the photos I am on"
     },
     "expand": "Expand",
     "review": "Review",
@@ -105,7 +106,8 @@
       "account": "Account"
     },
     "stats": "Statistics",
-    "versionTitle": "App version"
+    "versionTitle": "App version",
+    "myPhotos": "My photos"
   },
   "help": {
     "title": "Help",
@@ -463,6 +465,15 @@
       "confirmTitle": "Revoke the token?",
       "confirmBody": "The token “{{name}}” stops working immediately and anything signing in with it goes silent. This cannot be undone — you would have to create a new one.",
       "confirmAction": "Revoke token"
+    },
+    "subject": {
+      "title": "Who I am in the library",
+      "hint": "Pick the person of the library that is you. The app can then show you the photos you are on, and person:me works in a search.",
+      "publishWarning": "Note: once you pick a person, their cover photo is shown next to every comment you have written — everybody who opens the photo sees it. The \"private person\" flag hides nothing today.",
+      "pickLabel": "Find a person",
+      "clear": "Unlink",
+      "unknownPerson": "The linked person is no longer in the library.",
+      "error": "The link could not be saved. Please try again."
     }
   },
   "activity": {
@@ -747,7 +758,7 @@
         "photoText": "Text read out of the photo itself (a sign, a shop front, a scanned page). Accents are ignored — the recogniser often loses them.",
         "album": "Photos in an album (by title or UID).",
         "label": "Photos carrying a label (by name or UID).",
-        "person": "Photos with a person (by name or UID).",
+        "person": "Photos with a person (by name or UID). `person:me` is the person that is you, as set on My account.",
         "state": "Favorites, private and archived (yes/no).",
         "hidden": "Hidden from the library (yes/no) — the way back to a hidden photo.",
         "rating": "Your star rating, 0–5.",
@@ -767,7 +778,9 @@
         "faces": "Face count (faces:3 = at least three); face:new = a face nobody named yet.",
         "uid": "One photo by its own ID (or by the source ID it was imported under). It finds it even when archived or hidden."
       }
-    }
+    },
+    "personMeUnlinked": "The person:me filter looks for the person that is you — and your account has not said which person that is, so it found nothing.",
+    "personMeUnlinkedLink": "Set it on My account"
   },
   "globalSearch": {
     "sectionsLabel": "Matching albums, labels and people",
@@ -2622,7 +2635,8 @@
       "note": "Note",
       "lastLogin": "Last login",
       "created": "Created",
-      "actions": "Actions"
+      "actions": "Actions",
+      "subject": "Person"
     },
     "state": {
       "enabled": "Enabled",
@@ -2642,7 +2656,12 @@
       "noteHint": "Internal note, visible to administrators only.",
       "cancel": "Cancel",
       "submitCreate": "Create",
-      "submitSave": "Save"
+      "submitSave": "Save",
+      "subject": "Person in the library",
+      "subjectPick": "Find a person",
+      "subjectClear": "Clear",
+      "subjectUnknown": "Unknown person",
+      "subjectHint": "Which person of the library this account is. That person’s cover photo is then shown next to the account’s comments. Optional."
     },
     "password": {
       "title": "Change the password of {{username}}",
@@ -2943,7 +2962,9 @@
     "albums": "New albums:",
     "people": "Newly named:",
     "more_one": "and {{count}} more",
-    "more_other": "and {{count}} more"
+    "more_other": "and {{count}} more",
+    "minePhotos_one": "{{count}} new photo of you",
+    "minePhotos_other": "{{count}} new photos of you"
   },
   "pwa": {
     "offline": "You are offline. Kukátko opens, but photos and the library need a connection.",

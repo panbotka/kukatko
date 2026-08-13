@@ -13,7 +13,14 @@ import { Layout } from './Layout'
 
 /** Builds an auth context value with the given capabilities. */
 function auth(
-  opts: { canWrite?: boolean; isAdmin?: boolean; isMaintainer?: boolean; logout?: () => void } = {},
+  opts: {
+    canWrite?: boolean
+    isAdmin?: boolean
+    isMaintainer?: boolean
+    logout?: () => void
+    /** The person of the library this account says it is; omitted means none. */
+    subjectUid?: string
+  } = {},
 ): AuthContextValue {
   const { canWrite = false, isMaintainer = false } = opts
   // A maintainer is admin-or-higher, so it satisfies isAdmin too.
@@ -21,7 +28,13 @@ function auth(
   const role = isMaintainer ? 'maintainer' : isAdmin ? 'admin' : canWrite ? 'editor' : 'viewer'
   return {
     status: 'authenticated',
-    user: { uid: 'u1', username: 'u', display_name: 'User One', role },
+    user: {
+      uid: 'u1',
+      username: 'u',
+      display_name: 'User One',
+      role,
+      subject_uid: opts.subjectUid ?? null,
+    },
     role,
     downloadToken: null,
     canWrite: canWrite || isAdmin,
@@ -426,5 +439,27 @@ describe('mobile nav drawer stylesheet', () => {
     const active = rule(/\.kk-navdrawer__link\.active\s*(?=\{)/)
     expect(active.get('background-color')).toBe('var(--kk-accent-subtle)')
     expect(active.get('color')).toBe('var(--kk-accent)')
+  })
+})
+
+describe('MobileNavDrawer — my photos', () => {
+  it('offers the entry only once the account names a person', async () => {
+    const user = userEvent.setup()
+    renderShell(auth())
+    const drawer = await openDrawer(user)
+
+    expect(within(drawer).queryByRole('link', { name: 'My photos' })).not.toBeInTheDocument()
+  })
+
+  it('points the entry at the linked person, in the account section', async () => {
+    const user = userEvent.setup()
+    renderShell(auth({ subjectUid: 'sub123' }))
+    const drawer = await openDrawer(user)
+
+    const account = within(drawer).getByRole('region', { name: 'Account' })
+    expect(within(account).getByRole('link', { name: 'My photos' })).toHaveAttribute(
+      'href',
+      '/?person=sub123',
+    )
   })
 })

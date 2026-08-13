@@ -1,4 +1,4 @@
-import { type SyntheticEvent, useCallback, useEffect, useId, useState } from 'react'
+import { type SyntheticEvent, useCallback, useEffect, useId, useMemo, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
@@ -15,7 +15,9 @@ import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
 import { ReasonedButton } from '../components/ReasonedButton'
 import { RecordTable, type RecordColumn } from '../components/RecordTable'
+import { AddAutocomplete } from '../components/photo/AddAutocomplete'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import { useSubjects } from '../hooks/useSubjects'
 import { formatDate, formatDateTime } from '../lib/format'
 import { ApiError, MIN_PASSWORD_LENGTH, type Role } from '../services/auth'
 import {
@@ -108,6 +110,7 @@ const SKELETON_CELLS: { column: string; width: number }[] = [
   { column: 'displayName', width: 7 },
   { column: 'role', width: 4 },
   { column: 'state', width: 4 },
+  { column: 'subject', width: 6 },
   { column: 'note', width: 8 },
   { column: 'lastLogin', width: 6 },
   { column: 'created', width: 6 },
@@ -153,6 +156,86 @@ function UsersSkeleton() {
  */
 const MODAL_FORM_CLASS = 'd-flex flex-column overflow-hidden'
 
+/**
+ * The account's link to a person of the library, as one form field: the app's
+ * ordinary subject typeahead when nothing is chosen, and the chosen name with a
+ * "clear" beside it once something is.
+ *
+ * It cannot create a person. An account belongs to somebody the library already
+ * knows, and minting an empty subject from a user dialog would leave a record
+ * with no photographs on it.
+ *
+ * The warning under it is not decoration: linking publishes that person's cover
+ * photo beside everything the account writes, and an administrator setting it
+ * for somebody else is the one who needs to know that.
+ */
+function SubjectField({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: string | null
+  disabled: boolean
+  onChange: (uid: string | null) => void
+}) {
+  const { t } = useTranslation()
+  const { subjects, loading } = useSubjects()
+  const chosen = subjects.find((candidate) => candidate.uid === value)
+
+  return (
+    <Form.Group className="mb-3" controlId="user-subject">
+      <Form.Label>{t('users.form.subject')}</Form.Label>
+      {value === null ? (
+        <AddAutocomplete
+          id="user-subject-picker"
+          label={t('users.form.subjectPick')}
+          disabled={loading || disabled}
+          options={subjects.map((candidate) => ({
+            uid: candidate.uid,
+            label: candidate.name,
+            hint: String(candidate.photo_count),
+          }))}
+          onAdd={onChange}
+        />
+      ) : (
+        <div className="d-flex align-items-center gap-2 flex-wrap mb-1">
+          <span>{chosen === undefined ? t('users.form.subjectUnknown') : chosen.name}</span>
+          <Button
+            type="button"
+            variant="link"
+            size="sm"
+            disabled={disabled}
+            onClick={() => {
+              onChange(null)
+            }}
+          >
+            {t('users.form.subjectClear')}
+          </Button>
+        </div>
+      )}
+      <Form.Text className="text-secondary">{t('users.form.subjectHint')}</Form.Text>
+    </Form.Group>
+  )
+}
+
+/**
+ * Renders one account's linked person for the roster: the person's name, an em
+ * dash when there is no link, and the bare UID in the moment between the roster
+ * arriving and the people list arriving (or if that list failed) — a raw id is
+ * ugly, but claiming "nobody" would be wrong.
+ *
+ * A link whose subject has been deleted cannot happen: the database clears it.
+ * It is a plain function of the already-loaded name map rather than a component
+ * with a hook, so a roster of thirty accounts still costs exactly one request
+ * for the people.
+ */
+function linkedPersonLabel(subjectUid: string | null | undefined, names: Map<string, string>) {
+  if (subjectUid === null || subjectUid === undefined || subjectUid === '') {
+    return '—'
+  }
+  return names.get(subjectUid) ?? subjectUid
+}
+
 /** Props shared by the create and edit dialogs. */
 interface UserFormModalProps {
   /** The row being edited, or null to create a new user. */
@@ -194,6 +277,7 @@ function UserFormModal({ user, isMaintainer, onHide, onSaved }: UserFormModalPro
   const [displayName, setDisplayName] = useState(user?.display_name ?? '')
   const [role, setRole] = useState<Role>(user?.role ?? 'viewer')
   const [note, setNote] = useState(user?.note ?? '')
+  const [subjectUid, setSubjectUid] = useState<string | null>(user?.subject_uid ?? null)
   const [validated, setValidated] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<FormError | null>(null)
@@ -218,6 +302,7 @@ function UserFormModal({ user, isMaintainer, onHide, onSaved }: UserFormModalPro
             email: '',
             role,
             note,
+            subject_uid: subjectUid,
           })
         : await updateUser(user.uid, {
             display_name: displayName,
@@ -227,6 +312,7 @@ function UserFormModal({ user, isMaintainer, onHide, onSaved }: UserFormModalPro
             role,
             disabled: user.disabled,
             note,
+            subject_uid: subjectUid,
           })
       onSaved(saved)
     } catch (err) {
@@ -348,6 +434,12 @@ function UserFormModal({ user, isMaintainer, onHide, onSaved }: UserFormModalPro
               disabled={submitting}
             />
           </Form.Group>
+
+          {/* Which person of the library this account is. An administrator sets
+              it here for somebody else; the user sets their own on the account
+              page. Both publish that person's face beside the account's
+              comments, which is why the field says so. */}
+          <SubjectField value={subjectUid} disabled={submitting} onChange={setSubjectUid} />
 
           <Form.Group controlId="user-note">
             <Form.Label>{t('users.form.note')}</Form.Label>
@@ -684,6 +776,13 @@ export function UsersPage() {
   const { t, i18n } = useTranslation()
   useDocumentTitle(t('users.title'))
   const { isAdmin, isMaintainer, user: me } = useAuth()
+  // The people, once for the whole roster, so the "linked person" column can
+  // print a name instead of a UID without costing a request per row.
+  const { subjects } = useSubjects()
+  const subjectNames = useMemo(
+    () => new Map(subjects.map((subject) => [subject.uid, subject.name])),
+    [subjects],
+  )
   const [state, setState] = useState<State>({ status: 'loading' })
   const [dialog, setDialog] = useState<Dialog>({ kind: 'none' })
   const [toggling, setToggling] = useState(false)
@@ -801,6 +900,12 @@ export function UsersPage() {
           {user.disabled ? t('users.state.disabled') : t('users.state.enabled')}
         </Badge>
       ),
+    },
+    {
+      key: 'subject',
+      header: t('users.columns.subject'),
+      cellClassName: 'text-break',
+      cell: (user) => linkedPersonLabel(user.subject_uid, subjectNames),
     },
     {
       key: 'note',

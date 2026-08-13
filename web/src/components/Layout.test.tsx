@@ -12,7 +12,14 @@ import { Layout } from './Layout'
 
 /** Builds an auth context value with the given capabilities. */
 function auth(
-  opts: { canWrite?: boolean; isAdmin?: boolean; isMaintainer?: boolean; role?: string } = {},
+  opts: {
+    canWrite?: boolean
+    isAdmin?: boolean
+    isMaintainer?: boolean
+    role?: string
+    /** The person of the library this account says it is; omitted means none. */
+    subjectUid?: string
+  } = {},
 ): AuthContextValue {
   const { canWrite = false, isMaintainer = false } = opts
   // A maintainer is admin-or-higher, so it satisfies isAdmin too.
@@ -21,7 +28,13 @@ function auth(
     opts.role ?? (isMaintainer ? 'maintainer' : isAdmin ? 'admin' : canWrite ? 'editor' : 'viewer')
   return {
     status: 'authenticated',
-    user: { uid: 'u1', username: 'u', display_name: 'User One', role },
+    user: {
+      uid: 'u1',
+      username: 'u',
+      display_name: 'User One',
+      role,
+      subject_uid: opts.subjectUid ?? null,
+    },
     role,
     downloadToken: null,
     canWrite: canWrite || isAdmin,
@@ -419,6 +432,26 @@ describe('Layout navbar', () => {
     const stats = screen.getByRole('link', { name: 'Statistics' })
     expect(stats).toHaveAttribute('href', '/stats')
     expect(stats).toHaveAttribute('title', 'Show the library statistics')
+  })
+
+  it('offers "my photos" in the user menu only once the account names a person', async () => {
+    const user = userEvent.setup()
+    // An unlinked account: the entry would lead to a person-scoped grid of
+    // nobody, so it is not offered at all.
+    renderLayout(auth())
+    await user.click(screen.getByRole('button', { name: 'User One' }))
+    expect(screen.queryByRole('link', { name: 'My photos' })).not.toBeInTheDocument()
+  })
+
+  it('points "my photos" at the linked person\'s scoped grid', async () => {
+    const user = userEvent.setup()
+    renderLayout(auth({ subjectUid: 'sub123' }))
+
+    await user.click(screen.getByRole('button', { name: 'User One' }))
+
+    const mine = screen.getByRole('link', { name: 'My photos' })
+    expect(mine).toHaveAttribute('href', '/?person=sub123')
+    expect(mine).toHaveAttribute('title', 'Show the photos I am on')
   })
 
   it('prints the build version in the user menu, above sign-out', async () => {

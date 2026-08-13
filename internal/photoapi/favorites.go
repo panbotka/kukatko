@@ -198,17 +198,19 @@ func (a *API) handleFavorites(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	params.FavoriteOf = user.UID
-	a.writeFavoritePage(w, r, user.UID, params, unknown)
+	notices := applyPersonMe(&params, user)
+	a.writeFavoritePage(w, r, user.UID, params, pageHints{unknown: unknown, notices: notices})
 }
 
 // writeFavoritePage runs the favorites-scoped list and writes the annotated page.
 // It is shared by GET /favorites and the favorite=true branch of GET /photos. It
 // scopes the per-user rating filters and the rating sort to the caller by binding
 // RatedBy here, so min_rating/flag and sort=rating apply for any list request.
-// unknown carries the q query-language tokens that were not understood, reported
-// back on the page so the UI can hint at them.
+// hints carry what the query language had to say about itself — the tokens that
+// were not understood and the reasons behind a deliberately empty page — and are
+// stamped onto the response so the UI can explain the result.
 func (a *API) writeFavoritePage(
-	w http.ResponseWriter, r *http.Request, userUID string, params photos.ListParams, unknown []string,
+	w http.ResponseWriter, r *http.Request, userUID string, params photos.ListParams, hints pageHints,
 ) {
 	params.RatedBy = &userUID
 	list, err := a.store.List(r.Context(), params)
@@ -227,7 +229,7 @@ func (a *API) writeFavoritePage(
 		return
 	}
 	resp := pageResponse(params, views, total)
-	resp.UnknownTokens = unknown
+	hints.stamp(&resp)
 	writeJSON(w, http.StatusOK, resp)
 }
 

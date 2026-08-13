@@ -18,6 +18,11 @@
 // So a visit is defined server-side by two timestamps on the account (migration
 // 0053_user_visits):
 //
+// The digest also reports how many of the new photographs the reader is on,
+// which is the one line of it that is about them rather than about the library.
+// It needs the account's linked person (users.subject_uid), read in the same
+// statement that stamps the visit — see [Store.Summary].
+//
 //   - last_seen_at is stamped to now on every summary read. It is a heartbeat:
 //     while the reader is around, it keeps moving.
 //   - visit_reference_at is the digest's "since". It moves only when a new visit
@@ -91,10 +96,16 @@ type Person struct {
 // Albums and People are capped at [MaxItems] entries while AlbumCount and
 // PersonCount report the true totals, so a digest can honestly say "8 new
 // people" and still link only the first six.
+// MinePhotos is how many of those new photos the reader themselves is on. It is
+// zero — and the client shows no line for it — both for an account that has not
+// said which person it is and for a visit where none of the new photographs was
+// of them; an empty "0 new photos of you" is noise, and the digest is already
+// telling them how many arrived in total.
 type Summary struct {
 	HasNews     bool      `json:"has_news"`
 	Since       time.Time `json:"since,omitzero"`
 	Photos      int       `json:"photos"`
+	MinePhotos  int       `json:"mine_photos"`
 	Comments    int       `json:"comments"`
 	Albums      []Album   `json:"albums,omitempty"`
 	AlbumCount  int       `json:"album_count"`
@@ -102,13 +113,17 @@ type Summary struct {
 	PersonCount int       `json:"person_count"`
 }
 
-// counts holds the four "how many since" numbers, kept together so the assembly
-// of a Summary is a pure function of them.
+// counts holds the "how many since" numbers, kept together so the assembly of a
+// Summary is a pure function of them.
 type counts struct {
 	photos   int
 	comments int
 	albums   int
 	people   int
+	// mine counts the new photos the reader appears on. It is a subset of photos
+	// — same base predicate, plus a marker naming the reader's linked person — so
+	// it can never be the only thing that happened, and empty() ignores it.
+	mine int
 }
 
 // empty reports whether nothing at all happened since the reference point, which
@@ -129,6 +144,7 @@ func newSummary(since time.Time, c counts, albums []Album, people []Person) Summ
 		HasNews:     true,
 		Since:       since,
 		Photos:      c.photos,
+		MinePhotos:  c.mine,
 		Comments:    c.comments,
 		Albums:      albums,
 		AlbumCount:  c.albums,

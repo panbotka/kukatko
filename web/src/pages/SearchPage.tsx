@@ -18,6 +18,7 @@ import { SavedSearchesDropdown } from '../components/savedsearch/SavedSearchesDr
 import { GlobalSearchSections } from '../components/search/GlobalSearchSections'
 import { SearchQueryHelp } from '../components/search/SearchQueryHelp'
 import { SearchQueryInput } from '../components/search/SearchQueryInput'
+import { QueryNoticesAlert } from '../components/search/QueryNoticesAlert'
 import { UnknownFiltersAlert } from '../components/search/UnknownFiltersAlert'
 import { SlideshowStart } from '../components/slideshow/SlideshowStart'
 import { useBulkEdit } from '../hooks/useBulkEdit'
@@ -97,6 +98,7 @@ export function SearchPage() {
     status,
     degraded,
     unknownTokens,
+    notices,
     loadingMore,
     moreError,
     loadMore,
@@ -278,6 +280,7 @@ export function SearchPage() {
       <GlobalSearchSections query={view.q} />
 
       <UnknownFiltersAlert tokens={unknownTokens} />
+      <QueryNoticesAlert notices={notices} />
 
       {status === 'idle' && (
         <div className="text-center text-secondary py-5">

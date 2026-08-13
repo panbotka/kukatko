@@ -198,6 +198,16 @@ type ListParams struct {
 	Limit int
 	// Offset skips the given number of rows for pagination.
 	Offset int
+	// MatchNone, when true, makes the query match nothing at all — every list,
+	// count and aggregation over these params comes back empty.
+	//
+	// It exists because a caller can name a scope that is well-formed but cannot
+	// possibly be satisfied: `person:me` asked by an account that has not said
+	// which person it is. Dropping the token would silently widen the query to the
+	// whole library, and the difference between "no photos of you" and "here is
+	// everything" is exactly the difference the reader cares about. The honest
+	// answer is an empty page, which the HTTP layer accompanies with the reason.
+	MatchNone bool
 }
 
 // List returns photos matching params, ordered and paginated as requested. The
@@ -327,6 +337,12 @@ func buildWhere(params ListParams) (where []string, args []any) {
 // buildSearchQuery (which needs to interleave its own binds for the ts_rank
 // ordering), so the filter set stays identical across list, count and search.
 func whereClauses(params ListParams, bind func(any) string) []string {
+	if params.MatchNone {
+		// An unsatisfiable scope short-circuits the whole clause set: nothing
+		// matches, so every other filter is beside the point and the planner gets
+		// a constant it can prove false without touching a row.
+		return []string{"FALSE"}
+	}
 	where := archivedClauses(params)
 	where = append(where, stackClauses(params)...)
 	where = append(where, hiddenClauses(params)...)

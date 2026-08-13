@@ -1048,6 +1048,15 @@
   user-select: none;
 }
 
+/* The photographic avatar: the same circle, filled by a picture instead of a
+   letter. `object-fit: cover` keeps a face centred whatever the crop's aspect,
+   and the neutral background is what shows while the thumbnail is still in
+   flight — a hole in a comment thread would read as a broken layout. */
+.kk-avatar--photo {
+  background-color: var(--kk-surface-1);
+  object-fit: cover;
+}
+
 .kk-avatar--tone-0 {
   background-color: var(--kk-avatar-0-bg);
 }

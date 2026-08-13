@@ -15,6 +15,7 @@ import {
   BROWSE_GROUP,
   GOVERNANCE_GROUP,
   HELP_ITEM,
+  myPhotosItem,
   type NavEntry,
   type NavGroup,
   OPERATIONS_GROUP,
@@ -86,6 +87,10 @@ export function MobileNavDrawer({
   // user menu prints it. It comes from the capabilities the shell already holds,
   // so opening the drawer costs no request.
   const version = formatVersion(useCapabilities().version)
+  // "My photos", offered only to an account that has said which person of the
+  // library it is — the same gate the desktop user menu applies, from the same
+  // builder, so the two menus cannot drift.
+  const myPhotos = myPhotosItem(user?.subject_uid)
 
   // Each of the bar's dropdowns becomes one section, unfolded, behind the very
   // same role gate — a closed gate drops the whole section, exactly as it drops
@@ -170,6 +175,7 @@ export function MobileNavDrawer({
               {t('nav.sections.account')}
             </h2>
             {renderRow(ACCOUNT_ITEM)}
+            {myPhotos && renderRow(myPhotos)}
             {renderRow(STATS_ITEM)}
             {renderRow(HELP_ITEM)}
             <KeyboardShortcutsHelp variant="row" />

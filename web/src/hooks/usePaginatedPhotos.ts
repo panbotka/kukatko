@@ -94,6 +94,13 @@ export interface UsePaginatedPhotosResult {
   /** Query-language tokens the server did not understand (for the inline hint). */
   unknownTokens: string[]
   /**
+   * Machine-readable reasons the page is what it is, as the server reported them
+   * in `notices` — currently only `person_me_unlinked`, an empty result because
+   * the caller asked for `person:me` without their account having said which
+   * person that is. The caller turns each code into a sentence.
+   */
+  notices: string[]
+  /**
    * True while a background reload (a `reloadKey` bump) refetches the loaded
    * pages. The current photos stay visible throughout, so this only lets a caller
    * show an optional non-blocking "refreshing" affordance; `status` stays `ready`.
@@ -130,6 +137,7 @@ interface Data {
   mode?: EffectiveSearchMode
   degraded: boolean
   unknownTokens: string[]
+  notices: string[]
 }
 
 const INITIAL: Data = {
@@ -143,6 +151,7 @@ const INITIAL: Data = {
   error: false,
   degraded: false,
   unknownTokens: [],
+  notices: [],
 }
 
 /** Idle state used while the list is disabled: nothing loaded, nothing loading. */
@@ -243,6 +252,7 @@ export function usePaginatedPhotos(
           mode: res.mode,
           degraded: res.degraded ?? false,
           unknownTokens: res.unknown_tokens ?? [],
+          notices: res.notices ?? [],
         }))
       })
       .catch((err: unknown) => {
@@ -343,6 +353,7 @@ export function usePaginatedPhotos(
         mode: res.mode,
         degraded: res.degraded ?? false,
         unknownTokens: res.unknown_tokens ?? [],
+        notices: res.notices ?? [],
       }))
     })()
   }, [])
@@ -417,6 +428,7 @@ export function usePaginatedPhotos(
     mode: data.mode,
     degraded: data.degraded,
     unknownTokens: data.unknownTokens,
+    notices: data.notices,
     reloading: data.reloading,
     loadMore,
     retry,

@@ -398,3 +398,94 @@ func TestVisitsAreIndependentPerUser(t *testing.T) {
 		t.Fatalf("bob photos = %d, want 1", got.Photos)
 	}
 }
+
+// markPerson puts a valid face marker for a subject on a photo, which is what
+// makes that person "on" it everywhere in the app.
+func (e *env) markPerson(t *testing.T, uid, photoUID, subjectUID string) {
+	t.Helper()
+	e.exec(t, `INSERT INTO markers (uid, photo_uid, subject_uid, type, x, y, w, h)
+	           VALUES ($1, $2, $3, 'face', 0.1, 0.1, 0.2, 0.2)`, uid, photoUID, subjectUID)
+}
+
+// linkAccount points a user account at a person of the library.
+func (e *env) linkAccount(t *testing.T, username, subjectUID string) {
+	t.Helper()
+	e.exec(t, `UPDATE users SET subject_uid = $2 WHERE username = $1`, username, subjectUID)
+}
+
+// TestMinePhotosCountsOnlyTheReader: the digest's "new photos of you" line
+// counts exactly the new photographs the reader's linked person is on, and says
+// nothing at all for an account that has not said who it is.
+func TestMinePhotosCountsOnlyTheReader(t *testing.T) {
+	env := newEnv(t)
+	env.insertSubject(t, "sub-me", "Babička", env.now.Add(-time.Hour))
+	env.insertSubject(t, "sub-other", "Dědeček", env.now.Add(-time.Hour))
+
+	linked := env.login(t, "linked", auth.RoleViewer)
+	unlinked := env.login(t, "unlinked", auth.RoleViewer)
+	env.linkAccount(t, "linked", "sub-me")
+	// The first read of each account establishes its reference point.
+	env.summary(t, linked)
+	env.summary(t, unlinked)
+
+	env.advance(2 * testGap)
+	env.insertPhoto(t, "ph-mine", env.now.Add(-time.Minute))
+	env.insertPhoto(t, "ph-theirs", env.now.Add(-time.Minute))
+	env.markPerson(t, "mk-mine", "ph-mine", "sub-me")
+	env.markPerson(t, "mk-theirs", "ph-theirs", "sub-other")
+
+	got := env.summary(t, linked)
+	if got.Photos != 2 {
+		t.Fatalf("linked reader sees %d new photos, want 2", got.Photos)
+	}
+	if got.MinePhotos != 1 {
+		t.Errorf("mine_photos = %d, want 1 — only the photo the reader is on", got.MinePhotos)
+	}
+
+	if got = env.summary(t, unlinked); got.MinePhotos != 0 {
+		t.Errorf("an unlinked reader's mine_photos = %d, want 0", got.MinePhotos)
+	}
+}
+
+// TestMinePhotosIgnoresRejectedMarkers: a marker somebody rejected does not put
+// the reader on a photo, exactly as it does not for the person: filter.
+func TestMinePhotosIgnoresRejectedMarkers(t *testing.T) {
+	env := newEnv(t)
+	env.insertSubject(t, "sub-me", "Babička", env.now.Add(-time.Hour))
+	linked := env.login(t, "linked", auth.RoleViewer)
+	env.linkAccount(t, "linked", "sub-me")
+	env.summary(t, linked)
+
+	env.advance(2 * testGap)
+	env.insertPhoto(t, "ph-1", env.now.Add(-time.Minute))
+	env.markPerson(t, "mk-1", "ph-1", "sub-me")
+	env.exec(t, `UPDATE markers SET invalid = TRUE WHERE uid = 'mk-1'`)
+
+	if got := env.summary(t, linked); got.MinePhotos != 0 {
+		t.Errorf("mine_photos = %d, want 0 for a rejected marker", got.MinePhotos)
+	}
+}
+
+// TestMinePhotosSurvivesTheSubjectBeingDeleted: removing the person clears the
+// link, and the digest goes back to reporting nothing about the reader rather
+// than failing.
+func TestMinePhotosSurvivesTheSubjectBeingDeleted(t *testing.T) {
+	env := newEnv(t)
+	env.insertSubject(t, "sub-me", "Babička", env.now.Add(-time.Hour))
+	linked := env.login(t, "linked", auth.RoleViewer)
+	env.linkAccount(t, "linked", "sub-me")
+	env.summary(t, linked)
+
+	env.advance(2 * testGap)
+	env.insertPhoto(t, "ph-1", env.now.Add(-time.Minute))
+	env.markPerson(t, "mk-1", "ph-1", "sub-me")
+	env.exec(t, `DELETE FROM subjects WHERE uid = 'sub-me'`)
+
+	got := env.summary(t, linked)
+	if !got.HasNews || got.Photos != 1 {
+		t.Fatalf("digest = %+v, want the new photo still reported", got)
+	}
+	if got.MinePhotos != 0 {
+		t.Errorf("mine_photos = %d, want 0 once the person is gone", got.MinePhotos)
+	}
+}

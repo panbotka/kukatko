@@ -73,6 +73,11 @@ export interface CreateUserBody {
   email: string
   role: Role
   note: string
+  /**
+   * Which person of the library the new account is, or null for none — which is
+   * the default and the usual answer.
+   */
+  subject_uid: string | null
 }
 
 /**
@@ -87,6 +92,12 @@ export interface UpdateUserBody {
   role: Role
   disabled: boolean
   note: string
+  /**
+   * The person of the library this account is. Part of the replaced profile like
+   * the rest of this body, so null unlinks the account rather than leaving the
+   * stored link alone.
+   */
+  subject_uid: string | null
 }
 
 /**
@@ -162,6 +173,9 @@ export async function setUserDisabled(
       role: user.role,
       disabled: false,
       note: user.note,
+      // The update replaces the whole profile, so the link has to be echoed
+      // back: re-enabling an account must not quietly forget who it is.
+      subject_uid: user.subject_uid ?? null,
     },
     signal,
   )

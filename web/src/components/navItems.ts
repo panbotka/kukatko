@@ -212,6 +212,32 @@ export const ACCOUNT_ITEM: NavEntry = {
 }
 
 /**
+ * "My photos": the library scoped to the person the signed-in account says it
+ * is. Built rather than declared, because the destination depends on *who* is
+ * asking — the subject UID is part of the route.
+ *
+ * It lives in the user menu beside the account entry, not in the bar: the
+ * inline row is the app's scarcest space and already runs long for an editor,
+ * while "mine" belongs with the rest of what is mine. It is offered **only** to
+ * an account that has set the link (see {@link myPhotosItem} returning null) —
+ * an entry that leads to an empty grid is worse than no entry.
+ */
+export function myPhotosItem(subjectUid: string | null | undefined): NavEntry | null {
+  if (subjectUid === null || subjectUid === undefined || subjectUid === '') {
+    return null
+  }
+  return {
+    // The person facet of the library grid, the same one a person's page links
+    // to — so "my photos" is an ordinary scoped view with every filter, sort and
+    // the Back button working as they do everywhere else.
+    to: `${LIBRARY_PATH}?person=${encodeURIComponent(subjectUid)}`,
+    labelKey: 'nav.myPhotos',
+    titleKey: 'nav.titles.myPhotos',
+    icon: 'person-hearts',
+  }
+}
+
+/**
  * The library-statistics page, in the user menu beside the account and help
  * entries. It lives there rather than in a role-gated group because the counts
  * are open to every signed-in role — the menu the whole app shares is the one

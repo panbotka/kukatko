@@ -600,6 +600,50 @@ func (s *Service) clearThumbCache(hashes []string, opts Options, result *Storage
 	return nil
 }
 
+// The wipe's one piece of surgery, in three statements around the truncation.
+//
+// users.subject_uid is the only pointer a preserved table holds into the library:
+// the person an account says it is. Postgres refuses to TRUNCATE a table that an
+// unlisted table references — structurally, whatever the rows say — so that one
+// foreign key would make the whole wipe fail, and TRUNCATE … CASCADE, which would
+// take the accounts with it, is the one escape this command must never use.
+//
+// So the constraint is dropped, the column is nulled, the catalogue is truncated
+// and the constraint goes straight back, all inside the transaction that also
+// writes the audit entry. Postgres makes DDL transactional, so a failure anywhere
+// in that sequence rolls the constraint back into place along with everything
+// else; there is no window in which the database is left without it.
+//
+// Nulling the column is also what the truth requires rather than a way round the
+// error: the person that link named is about to stop existing. Everything that
+// makes an account an account — credentials, role, note, its history — survives
+// untouched.
+//
+// The constraint is named in migration 0060; renaming it there without renaming
+// it here breaks the reset.
+const (
+	// dropSubjectFKSQL removes the foreign key for the duration of the wipe.
+	dropSubjectFKSQL = `ALTER TABLE users DROP CONSTRAINT users_subject_uid_fkey`
+	// clearUserSubjectsSQL unlinks every account from the person it named.
+	clearUserSubjectsSQL = `UPDATE users SET subject_uid = NULL WHERE subject_uid IS NOT NULL`
+	// restoreSubjectFKSQL puts the foreign key back, against the now-empty table.
+	restoreSubjectFKSQL = `ALTER TABLE users ADD CONSTRAINT users_subject_uid_fkey
+		FOREIGN KEY (subject_uid) REFERENCES subjects (uid) ON DELETE SET NULL`
+)
+
+// unlinkAccounts clears the accounts' links to people and lifts the foreign key
+// that would otherwise refuse the truncation, on tx so it commits or rolls back
+// with the wipe itself.
+func unlinkAccounts(ctx context.Context, tx pgx.Tx) error {
+	if _, err := tx.Exec(ctx, dropSubjectFKSQL); err != nil {
+		return fmt.Errorf("reset: lifting the accounts' link constraint: %w", err)
+	}
+	if _, err := tx.Exec(ctx, clearUserSubjectsSQL); err != nil {
+		return fmt.Errorf("reset: clearing the accounts' linked people: %w", err)
+	}
+	return nil
+}
+
 // truncate empties every catalogue table and writes the audit entry in the same
 // transaction, so the wipe and its record commit together or not at all.
 //
@@ -607,7 +651,8 @@ func (s *Service) clearThumbCache(hashes []string, opts Options, result *Storage
 // catalogue tables is inside the list, so the statement succeeds as written; if a
 // future migration adds a table that references one of them without being
 // classified here, Postgres refuses the statement instead of quietly extending
-// the blast radius.
+// the blast radius. The single reference from outside the list is cleared first —
+// see clearUserSubjectsSQL.
 func (s *Service) truncate(ctx context.Context, opts Options, before Counts, stored StorageResult) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -615,12 +660,18 @@ func (s *Service) truncate(ctx context.Context, opts Options, before Counts, sto
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	if err := unlinkAccounts(ctx, tx); err != nil {
+		return err
+	}
 	quoted := make([]string, 0, len(catalogueTables))
 	for _, name := range catalogueTables {
 		quoted = append(quoted, pgx.Identifier{name}.Sanitize())
 	}
 	if _, err := tx.Exec(ctx, "TRUNCATE TABLE "+strings.Join(quoted, ", ")+" RESTART IDENTITY"); err != nil {
 		return fmt.Errorf("reset: truncating the catalogue: %w", err)
+	}
+	if _, err := tx.Exec(ctx, restoreSubjectFKSQL); err != nil {
+		return fmt.Errorf("reset: restoring the accounts' link constraint: %w", err)
 	}
 	if err := audit.Write(ctx, tx, s.auditEntry(opts, before, stored)); err != nil {
 		return fmt.Errorf("reset: recording the wipe: %w", err)

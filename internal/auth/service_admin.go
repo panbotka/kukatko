@@ -35,6 +35,9 @@ type CreateUserInput struct {
 	Email       string
 	Role        Role
 	Note        string
+	// SubjectUID optionally names the person of the library this account is;
+	// nil (or empty) leaves the account unlinked, which is the default.
+	SubjectUID *string
 }
 
 // UpdateUserInput holds the mutable profile fields for an admin user update.
@@ -49,6 +52,11 @@ type UpdateUserInput struct {
 	Role        Role
 	Disabled    bool
 	Note        *string
+	// SubjectUID is the person of the library this account is. Unlike Note it is
+	// part of the profile the update *replaces*, so nil clears the link — an
+	// administrator who unlinks somebody does it by sending no subject, exactly
+	// as they clear a display name by sending none.
+	SubjectUID *string
 }
 
 // validateNote returns ErrNoteTooLong when note exceeds MaxNoteLen. Length is
@@ -168,6 +176,11 @@ func (s *Service) CreateUserAudited(
 	}
 	entry.Details["username"] = user.Username
 	entry.Details["role"] = string(user.Role)
+	if uid := normalizeSubjectUID(user.SubjectUID); uid != nil {
+		// Only when it was actually set: an account created without a link has
+		// nothing to say here, and a null in every entry reads as noise.
+		entry.Details["subject_uid"] = *uid
+	}
 	if err := s.store.CreateUserAudited(ctx, user, entry); err != nil {
 		return User{}, err
 	}
@@ -207,7 +220,20 @@ func (s *Service) prepareNewUser(in CreateUserInput) (User, error) {
 		Role:         in.Role,
 		PasswordHash: hash,
 		Note:         in.Note,
+		SubjectUID:   in.SubjectUID,
 	}, nil
+}
+
+// SetUserSubject records which person of the library the account identified by
+// uid is, or clears the link when subjectUID is nil or empty. It is the
+// self-service path behind the account page, so it records no audit entry — the
+// same bargain Service.ChangePassword strikes for a user acting on their own
+// account; the administrator's path through UpdateUserAudited is audited.
+//
+// It returns the refreshed user, ErrUserNotFound when the account does not
+// exist, or ErrSubjectNotFound when the UID names nobody.
+func (s *Service) SetUserSubject(ctx context.Context, uid string, subjectUID *string) (User, error) {
+	return s.store.SetUserSubject(ctx, uid, subjectUID)
 }
 
 // ListUsers returns every user ordered by username.

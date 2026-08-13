@@ -280,3 +280,55 @@ func countOf(counts []reset.TableCount, table string) int64 {
 	}
 	return -1
 }
+
+// TestExecute_keepsTheAccountButNotItsPerson pins the one thing a preserved
+// account does lose. users.subject_uid points into the subjects table the wipe
+// empties, so the reset nulls it in the same transaction — Postgres would
+// otherwise refuse the CASCADE-free truncation outright. Everything that makes
+// the account an account is untouched.
+func TestExecute_keepsTheAccountButNotItsPerson(t *testing.T) {
+	env := newResetEnv(t)
+	env.seedLibrary(t)
+
+	var linked string
+	if err := env.db.Pool().QueryRow(t.Context(),
+		`SELECT subject_uid FROM users WHERE uid = 'usr000000001'`).Scan(&linked); err != nil {
+		t.Fatalf("reading the seeded link: %v", err)
+	}
+	if linked != "sbj000000001" {
+		t.Fatalf("seeded link = %q, want sbj000000001", linked)
+	}
+
+	pre, err := env.svc.Preflight(t.Context(), reset.Options{})
+	if err != nil {
+		t.Fatalf("Preflight: %v", err)
+	}
+	if _, err = env.svc.Execute(t.Context(), env.executeOptions(), pre.Counts); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var (
+		username string
+		role     string
+		hash     string
+		subject  *string
+	)
+	if err := env.db.Pool().QueryRow(t.Context(),
+		`SELECT username, role, password_hash, subject_uid FROM users WHERE uid = 'usr000000001'`).
+		Scan(&username, &role, &hash, &subject); err != nil {
+		t.Fatalf("reading the account after the wipe: %v", err)
+	}
+	if username != "operator" || role != "maintainer" || hash != "hash" {
+		t.Errorf("account after the wipe = %s/%s/%s, want operator/maintainer/hash", username, role, hash)
+	}
+	if subject != nil {
+		t.Errorf("linked person after the wipe = %q, want none — that person no longer exists", *subject)
+	}
+
+	// The constraint the wipe lifted is back: a link into a library that no
+	// longer holds that person is still refused.
+	if _, err := env.db.Pool().Exec(t.Context(),
+		`UPDATE users SET subject_uid = 'sbj000000001' WHERE uid = 'usr000000001'`); err == nil {
+		t.Error("linking to a deleted person succeeded; the foreign key was not restored")
+	}
+}

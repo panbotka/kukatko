@@ -33,6 +33,13 @@ type changePasswordRequest struct {
 	NewPassword     string `json:"new_password"`
 }
 
+// subjectRequest is the JSON body of PUT /auth/subject: which person of the
+// library the caller is. A null (or empty) subject_uid clears the link, which is
+// how a user says "never mind, that is not me".
+type subjectRequest struct {
+	SubjectUID *string `json:"subject_uid"`
+}
+
 // decodeJSON reads a JSON request body into dst, enforcing a size limit and
 // rejecting unknown fields. It returns an error suitable for a 400 response.
 func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) error {
@@ -143,6 +150,43 @@ func (a *API) handleMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, loginResponse{User: p.user, DownloadToken: p.session.DownloadToken})
+}
+
+// handleSubject records which person of the library the caller is, or clears
+// that link when the body carries no subject. It is self-service — a user may
+// only ever say this about their own account, and the acting account is taken
+// from the session rather than from the body, so there is nothing to point at
+// somebody else.
+//
+// It responds 200 with the refreshed user (the client re-renders the "my photos"
+// entry and the avatar from it), 400 for a bad body or a subject that does not
+// exist, 404 if the account has since been deleted, or 500.
+//
+// The change is deliberately not audited, following POST /auth/password: the
+// audit trail records what was done *to* an account by somebody else, and an
+// administrator setting this for a user does write an entry.
+func (a *API) handleSubject(w http.ResponseWriter, r *http.Request) {
+	p, ok := principalFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+	var req subjectRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	user, err := a.svc.SetUserSubject(r.Context(), p.user.UID, req.SubjectUID)
+	switch {
+	case err == nil:
+		writeJSON(w, http.StatusOK, user)
+	case errors.Is(err, ErrSubjectNotFound):
+		writeError(w, http.StatusBadRequest, ErrSubjectNotFound.Error())
+	case errors.Is(err, ErrUserNotFound):
+		writeError(w, http.StatusNotFound, "user not found")
+	default:
+		writeError(w, http.StatusInternalServerError, "could not save the linked person")
+	}
 }
 
 // handlePassword changes the authenticated user's password and invalidates their

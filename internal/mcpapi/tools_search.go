@@ -11,9 +11,18 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/panbotka/kukatko/internal/people"
+	"github.com/panbotka/kukatko/internal/personme"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/query"
 	"github.com/panbotka/kukatko/internal/vectors"
+)
+
+// errPersonMeUnlinked is what an agent gets for `person:me` when the token's own
+// user has never said which person of the library they are. It names the fix,
+// because the agent's next move is to tell its human where to set it.
+var errPersonMeUnlinked = errors.New(
+	"person:me needs this token's user to be linked to a person; " +
+		"set it on the account page, or name the person directly (person:<name or uid>)",
 )
 
 // queryLanguageHelp documents the search filter language inline in the tool
@@ -29,7 +38,8 @@ const queryLanguageHelp = `Free words match the title, description, notes and fi
 	`face:new, favorite:yes|no, rating:0-5, flag:pick|reject|eye, archived:yes|no, private:yes|no, ` +
 	`portrait:, landscape:, square:, panorama:, filename:, keywords:, ` +
 	`uid:<photo-uid or PhotoPrism-uid>. ` +
-	`favorite:, rating: and flag: mean the calling token's own user. ` +
+	`favorite:, rating: and flag: mean the calling token's own user, and person:me means the person ` +
+	`that user's account is linked to (an error when it is linked to none). ` +
 	`uid: names exactly one photo and finds it even when archived, hidden or a stack variant. ` +
 	`Example: person:babicka year:1960-1969 -album:dovolena`
 
@@ -175,6 +185,13 @@ func (a *API) searchParams(c caller, in searchPhotosIn) (photos.ListParams, bool
 	if n := parsed.Complexity(); n > query.MaxComplexity {
 		return photos.ListParams{}, false,
 			fmt.Errorf("query is too complex: %d conditions exceed the limit of %d", n, query.MaxComplexity)
+	}
+	// `person:me` means the person the token's own account says it is, exactly as
+	// it does in the web UI. An agent whose user has never linked an account to a
+	// person gets told so: silently returning the whole library instead would be
+	// the one answer that reads as a fact and is not one.
+	if _, resolved := personme.Resolve(parsed.Filters, c.user.SubjectUID); !resolved {
+		return photos.ListParams{}, false, errPersonMeUnlinked
 	}
 	params := photos.ListParams{
 		QueryFilters: parsed.Filters,

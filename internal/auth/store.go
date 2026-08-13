@@ -14,6 +14,9 @@ import (
 // uniqueViolation is the PostgreSQL SQLSTATE for a unique-constraint violation.
 const uniqueViolation = "23505"
 
+// foreignKeyViolation is the PostgreSQL SQLSTATE for a foreign-key violation.
+const foreignKeyViolation = "23503"
+
 // Store is the database access layer for users and sessions. It owns no
 // connection; it borrows the shared pgx pool supplied at construction.
 type Store struct {
@@ -30,7 +33,8 @@ func NewStore(pool *pgxpool.Pool) *Store {
 // nullable in the schema, so it is coalesced to the empty string here and the Go
 // model can keep it a plain string.
 const userColumns = `uid, username, display_name, email, password_hash, role,
-	disabled, created_at, updated_at, last_login_at, COALESCE(note, '') AS note`
+	disabled, created_at, updated_at, last_login_at, COALESCE(note, '') AS note,
+	subject_uid`
 
 // scanUser reads one user row in userColumns order from a pgx.Row (a single-row
 // QueryRow result or a row during iteration), returning a wrapped error on
@@ -39,7 +43,7 @@ func scanUser(row pgx.Row) (User, error) {
 	var u User
 	if err := row.Scan(
 		&u.UID, &u.Username, &u.DisplayName, &u.Email, &u.PasswordHash, &u.Role,
-		&u.Disabled, &u.CreatedAt, &u.UpdatedAt, &u.LastLoginAt, &u.Note,
+		&u.Disabled, &u.CreatedAt, &u.UpdatedAt, &u.LastLoginAt, &u.Note, &u.SubjectUID,
 	); err != nil {
 		return User{}, fmt.Errorf("auth: scanning user: %w", err)
 	}
@@ -53,17 +57,43 @@ func isUniqueViolation(err error) bool {
 	return errors.As(err, &pgErr) && pgErr.Code == uniqueViolation
 }
 
+// isForeignKeyViolation reports whether err is a PostgreSQL foreign-key
+// violation (SQLSTATE 23503). The only foreign key a user row carries is
+// subject_uid, so it always means the named person does not exist.
+func isForeignKeyViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == foreignKeyViolation
+}
+
+// normalizeSubjectUID maps an empty-string link to nil, so a client that clears
+// the field by sending "" means the same thing as one that sends null: no link.
+// A stored empty string would be a UID that matches no subject, which the
+// foreign key rejects anyway — turning it into "no link" is the only reading
+// that is not an error message about a field the user just emptied.
+func normalizeSubjectUID(uid *string) *string {
+	if uid != nil && *uid == "" {
+		return nil
+	}
+	return uid
+}
+
 // CreateUser inserts u (its CreatedAt/UpdatedAt are assigned by the database
 // defaults and not read back). It returns ErrUsernameTaken if the username
-// already exists, or a wrapped error otherwise.
+// already exists, ErrSubjectNotFound if u.SubjectUID names no subject, or a
+// wrapped error otherwise.
 func (s *Store) CreateUser(ctx context.Context, u User) error {
-	const q = `INSERT INTO users (uid, username, display_name, email, password_hash, role, disabled, note)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
+	const q = `INSERT INTO users
+			(uid, username, display_name, email, password_hash, role, disabled, note, subject_uid)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
 	_, err := s.pool.Exec(ctx, q,
-		u.UID, u.Username, u.DisplayName, u.Email, u.PasswordHash, u.Role, u.Disabled, u.Note)
+		u.UID, u.Username, u.DisplayName, u.Email, u.PasswordHash, u.Role, u.Disabled, u.Note,
+		normalizeSubjectUID(u.SubjectUID))
 	if err != nil {
 		if isUniqueViolation(err) {
 			return ErrUsernameTaken
+		}
+		if isForeignKeyViolation(err) {
+			return ErrSubjectNotFound
 		}
 		return fmt.Errorf("auth: inserting user: %w", err)
 	}
@@ -125,7 +155,16 @@ func (s *Store) ListUsers(ctx context.Context) ([]User, error) {
 // overwrites it. COALESCE keeps that branch in SQL, so a nil note needs no
 // separate statement.
 const updateUserProfileQuery = `UPDATE users SET display_name = $2, email = $3, role = $4, disabled = $5,
-		note = COALESCE($6::text, note), updated_at = now()
+		note = COALESCE($6::text, note), subject_uid = $7, updated_at = now()
+	WHERE uid = $1 RETURNING ` + userColumns
+
+// setUserSubjectQuery points one account at a person of the library, or clears
+// the link when the argument is NULL, and returns the refreshed row.
+//
+// It leaves updated_at alone on purpose. The user-administration screens read
+// that column as "an administrator edited this profile", and somebody saying who
+// they are on their own account page is not that.
+const setUserSubjectQuery = `UPDATE users SET subject_uid = $2
 	WHERE uid = $1 RETURNING ` + userColumns
 
 // setUserDisabledQuery flips the disabled flag of one user and returns the
@@ -140,7 +179,30 @@ const setUserDisabledQuery = `UPDATE users SET disabled = $2, updated_at = now()
 // now() by the statement.
 func (s *Store) UpdateUserProfile(ctx context.Context, uid string, in UpdateUserInput) (User, error) {
 	return s.updateUserReturningGuarded(ctx, updateUserProfileQuery,
-		uid, in.DisplayName, in.Email, in.Role, in.Disabled, in.Note)
+		uid, in.DisplayName, in.Email, in.Role, in.Disabled, in.Note,
+		normalizeSubjectUID(in.SubjectUID))
+}
+
+// SetUserSubject points the account identified by uid at the subject named by
+// subjectUID, or clears the link when subjectUID is nil (or empty). It is the
+// self-service write behind the account page and returns the refreshed user,
+// ErrUserNotFound if no such account exists, or ErrSubjectNotFound when the UID
+// names no person in the library.
+//
+// It is deliberately outside the maintainer guard: the link carries no
+// permission and cannot strand the instance.
+func (s *Store) SetUserSubject(ctx context.Context, uid string, subjectUID *string) (User, error) {
+	user, err := scanUser(s.pool.QueryRow(ctx, setUserSubjectQuery, uid, normalizeSubjectUID(subjectUID)))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return User{}, ErrUserNotFound
+		}
+		if isForeignKeyViolation(err) {
+			return User{}, ErrSubjectNotFound
+		}
+		return User{}, err
+	}
+	return user, nil
 }
 
 // SetUserDisabled flips the disabled flag for the user identified by uid, bumps

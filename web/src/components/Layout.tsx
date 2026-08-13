@@ -27,6 +27,7 @@ import {
   BROWSE_GROUP,
   GOVERNANCE_GROUP,
   HELP_ITEM,
+  myPhotosItem,
   type NavEntry,
   type NavGroup,
   OPERATIONS_GROUP,
@@ -109,6 +110,10 @@ export function Layout() {
   // mix of bare `NavLink`s and raw `Dropdown` items does not reliably emit — so
   // the menu stayed open over the page it had just navigated to.
   const [expanded, setExpanded] = useState(false)
+  // "My photos", offered only to an account that has said which person of the
+  // library it is. An entry that leads nowhere is worse than no entry, so an
+  // unlinked account simply does not get one.
+  const myPhotos = myPhotosItem(user?.subject_uid)
 
   // Close the collapsed menu on every navigation, whatever control was tapped
   // (top-level link, group dropdown item, or user menu item all change the
@@ -272,6 +277,21 @@ export function Layout() {
                       <Icon name={ACCOUNT_ITEM.icon} />
                       {t(ACCOUNT_ITEM.labelKey)}
                     </NavDropdown.Item>
+                    {/* The photos the signed-in person is on. It hangs off the
+                        user menu because it is a fact about them, not another
+                        way of browsing the library — and because the bar has no
+                        room left. */}
+                    {myPhotos && (
+                      <NavDropdown.Item
+                        as={Link}
+                        to={myPhotos.to}
+                        title={t(myPhotos.titleKey)}
+                        className="d-flex align-items-center gap-2"
+                      >
+                        <Icon name={myPhotos.icon} />
+                        {t(myPhotos.labelKey)}
+                      </NavDropdown.Item>
+                    )}
                     {/* The library statistics: open to every signed-in role, so
                         they hang off the user menu rather than a gated group. */}
                     <NavDropdown.Item

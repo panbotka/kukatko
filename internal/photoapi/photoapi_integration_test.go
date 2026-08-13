@@ -319,6 +319,7 @@ type listResp struct {
 	Mode          string         `json:"mode"`
 	Degraded      bool           `json:"degraded"`
 	UnknownTokens []string       `json:"unknown_tokens"`
+	Notices       []string       `json:"notices"`
 }
 
 // getList fetches the list endpoint with the given query and decodes the body.

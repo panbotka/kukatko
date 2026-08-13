@@ -35,11 +35,17 @@ func NewStore(pool *pgxpool.Pool) *Store {
 // display name (fall back to the username) and for a deleted account (no u row).
 const commentColumns = `c.uid, c.photo_uid, COALESCE(c.author_uid, ''),
 	COALESCE(NULLIF(u.display_name, ''), u.username, ''),
+	s.cover_photo_uid,
 	c.body, c.created_at, c.edited_at`
 
-// authorJoin resolves a comment's author to a user row. It is a LEFT JOIN because
-// author_uid is ON DELETE SET NULL: losing the account must not lose the comment.
-const authorJoin = ` LEFT JOIN users u ON u.uid = c.author_uid`
+// authorJoin resolves a comment's author to a user row, and that account to the
+// person it says it is. Both are LEFT JOINs, and for different reasons: the user
+// because author_uid is ON DELETE SET NULL (losing the account must not lose the
+// comment), the subject because almost no account is linked to one and a linked
+// one usually has no cover photo either. The join is here rather than in a second
+// query so one statement still yields everything a thread needs to render.
+const authorJoin = ` LEFT JOIN users u ON u.uid = c.author_uid` +
+	` LEFT JOIN subjects s ON s.uid = u.subject_uid`
 
 // listSQL reads one photo's live comments oldest first — a conversation reads
 // forwards — with the UID as a stable tie-break for comments written in the same
@@ -273,7 +279,7 @@ type rowScanner interface {
 // stays wrapped so pgx.ErrNoRows and constraint violations remain classifiable.
 func scanComment(row rowScanner) (Comment, error) {
 	var c Comment
-	if err := row.Scan(&c.UID, &c.PhotoUID, &c.AuthorUID, &c.AuthorName,
+	if err := row.Scan(&c.UID, &c.PhotoUID, &c.AuthorUID, &c.AuthorName, &c.AuthorPhotoUID,
 		&c.Body, &c.CreatedAt, &c.EditedAt); err != nil {
 		return Comment{}, fmt.Errorf("scanning comment row: %w", err)
 	}

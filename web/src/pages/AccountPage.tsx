@@ -12,6 +12,7 @@ import { Link } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
 import { ApiTokensCard } from '../components/account/ApiTokensCard'
+import { MySubjectCard } from '../components/account/MySubjectCard'
 import { Icon } from '../components/Icon'
 import { LanguageSwitcher } from '../components/LanguageSwitcher'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
@@ -60,6 +61,11 @@ function errorKeyFor(error: unknown): AccountErrorKey {
  * status line — backend reachability and the build version. That detail used to
  * greet everyone on the landing page; it lives here now, where a curious user
  * goes looking for it, rather than in front of the photos.
+ *
+ * Above those sits {@link MySubjectCard}: which person of the library this
+ * account belongs to. It is the one setting here that changes what *other*
+ * people see — the linked person's face appears beside this account's comments —
+ * so the card says so before the field rather than after the save.
  *
  * It is also the way to {@link MyActivityPage} — the user's own history of
  * actions. That entry point lives here rather than in the navigation: the bar is
@@ -163,6 +169,11 @@ export function AccountPage() {
             </Link>
           </Card.Body>
         </Card>
+
+        {/* Who this account is in the photographs. It sits directly under the
+            identity card because it is part of the same answer: the first block
+            says which account this is, this one says which person. */}
+        <MySubjectCard />
 
         <Card text="light" className="mb-4">
           <Card.Body>

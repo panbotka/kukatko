@@ -410,3 +410,95 @@ func TestAuthorDeleted(t *testing.T) {
 		t.Errorf("author = %q/%q, want both empty (ON DELETE SET NULL)", got.AuthorUID, got.AuthorName)
 	}
 }
+
+// makeSubject inserts a person, optionally with a cover photo, and returns its
+// uid.
+func (f *fixture) makeSubject(t *testing.T, uid, name, coverPhotoUID string) string {
+	t.Helper()
+	var cover *string
+	if coverPhotoUID != "" {
+		cover = &coverPhotoUID
+	}
+	_, err := f.db.Pool().Exec(context.Background(),
+		`INSERT INTO subjects (uid, slug, name, type, cover_photo_uid)
+		 VALUES ($1, $2, $3, 'person', $4)`, uid, uid, name, cover)
+	if err != nil {
+		t.Fatalf("creating subject %s: %v", uid, err)
+	}
+	return uid
+}
+
+// linkUser points an account at a person of the library.
+func (f *fixture) linkUser(t *testing.T, userUID, subjectUID string) {
+	t.Helper()
+	if _, err := f.users.SetUserSubject(context.Background(), userUID, &subjectUID); err != nil {
+		t.Fatalf("linking %s to %s: %v", userUID, subjectUID, err)
+	}
+}
+
+// TestAuthorPhoto_onlyWhenTheLinkedPersonHasACover verifies what a thread shows
+// for an author's face: the cover photo of the person their account says it is,
+// and nothing at all in every incomplete case — no account, no linked person, or
+// a linked person nobody has chosen a cover photo for, which is the common one.
+func TestAuthorPhoto_onlyWhenTheLinkedPersonHasACover(t *testing.T) {
+	f := newFixture(t)
+	photo := f.makePhoto(t, "thread")
+	cover := f.makePhoto(t, "cover")
+
+	withCover := f.makeUser(t, "us_cover", "babicka", "Babička")
+	f.linkUser(t, withCover, f.makeSubject(t, "sub_cover", "Babička", cover.UID))
+
+	noCover := f.makeUser(t, "us_nocover", "dedecek", "Dědeček")
+	f.linkUser(t, noCover, f.makeSubject(t, "sub_nocover", "Dědeček", ""))
+
+	unlinked := f.makeUser(t, "us_plain", "soused", "Soused")
+
+	f.mustCreate(t, photo.UID, withCover, "to jsem já")
+	f.mustCreate(t, photo.UID, noCover, "a to já")
+	f.mustCreate(t, photo.UID, unlinked, "a já nikdo")
+
+	list, err := f.comments.List(context.Background(), photo.UID)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(list) != 3 {
+		t.Fatalf("thread has %d comments, want 3", len(list))
+	}
+	if list[0].AuthorPhotoUID == nil || *list[0].AuthorPhotoUID != cover.UID {
+		t.Errorf("linked author's photo = %v, want %s", list[0].AuthorPhotoUID, cover.UID)
+	}
+	if list[1].AuthorPhotoUID != nil {
+		t.Errorf("a person with no cover photo yielded %q, want none", *list[1].AuthorPhotoUID)
+	}
+	if list[2].AuthorPhotoUID != nil {
+		t.Errorf("an unlinked author yielded %q, want none", *list[2].AuthorPhotoUID)
+	}
+}
+
+// TestAuthorPhoto_clearedWithTheSubject verifies the thread survives the person
+// being deleted from the library: the link goes, the comment stays, and the face
+// falls back to nothing rather than to a dangling photo reference.
+func TestAuthorPhoto_clearedWithTheSubject(t *testing.T) {
+	f := newFixture(t)
+	photo := f.makePhoto(t, "thread")
+	cover := f.makePhoto(t, "cover")
+	author := f.makeUser(t, "us_1", "babicka", "Babička")
+	f.linkUser(t, author, f.makeSubject(t, "sub_1", "Babička", cover.UID))
+	f.mustCreate(t, photo.UID, author, "to jsem já")
+
+	if _, err := f.db.Pool().Exec(context.Background(),
+		`DELETE FROM subjects WHERE uid = 'sub_1'`); err != nil {
+		t.Fatalf("deleting the subject: %v", err)
+	}
+
+	list, err := f.comments.List(context.Background(), photo.UID)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(list) != 1 || list[0].AuthorName != "Babička" {
+		t.Fatalf("thread = %+v, want the comment intact", list)
+	}
+	if list[0].AuthorPhotoUID != nil {
+		t.Errorf("author photo = %q, want none once the person is gone", *list[0].AuthorPhotoUID)
+	}
+}

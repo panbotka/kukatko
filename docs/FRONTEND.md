@@ -88,7 +88,12 @@ here.
   lives in `components/navItems.ts`** (`NavEntry`/`NavGroup`, `PRIMARY_ITEMS`, `BROWSE_GROUP`, `TOOLS_GROUP`,
   `OPERATIONS_GROUP`, `GOVERNANCE_GROUP`, `REVIEW_ITEM`, `UPLOAD_ITEM`, `ACCOUNT_ITEM`,
   `STATS_ITEM`, `HELP_ITEM`, `pathMatches`), so the bar and the phone drawer below read **the same list with the same role
-  gates** and cannot drift apart. On a phone the `Navbar` is **controlled**
+  gates** and cannot drift apart. One entry is **built rather than declared**: `myPhotosItem(subjectUid)`
+  ("Moje fotky") returns `null` for an account that has not said which person of the library it is, and
+  otherwise a `NavEntry` pointing at that person's scoped grid (`/?person=<uid>`). It is offered **only**
+  when the link is set — an entry that leads to a grid of nobody is worse than no entry — and it lives in
+  the **user menu** (beside `ACCOUNT_ITEM`, and in the drawer's "Můj účet" section) rather than in the bar:
+  the inline row is the app's scarcest space and "mine" belongs with the rest of what is mine. On a phone the `Navbar` is **controlled**
   (an `expanded` state + `onToggle`); a `useEffect` on the `useLocation` pathname resets it to closed on
   **every navigation**, so tapping any item — top-level link, group-dropdown item, or user-menu item —
   auto-closes the burger instead of leaving it open over the page. Logout closes it explicitly (a handler,
@@ -176,6 +181,10 @@ here.
   `<Alert variant="info">` with a `clock-history` `Icon`, a `whatsNew.since` sub-line through
   `formatDateTimeMinutes`, then one `<li>` per non-zero group: **`whatsNew.photos` links to `/?sort=added`**
   (recently added, not the capture-time timeline — a scan of 1962 negatives is *new* but not *recent*),
+  a **„N nových fotek, na kterých jsi ty"** line follows it when `mine_photos > 0` *and* the reader's
+  account names a person (`useAuth().user.subject_uid`), linking to that person's grid in the same
+  recently-added order (`/?person=<uid>&sort=added`); zero, or an unlinked account, renders **no line at
+  all** — an empty "0 new photos of you" is noise, and for most readers this line simply never exists;
   albums link to `/albums/{uid}` and people to `/people/{uid}` via the shared `DigestLine`, which after the
   server's 6 links appends a plain **non-linked** `whatsNew.more` tail (no page lists "albums created since
   Tuesday"); comments are a count, not a link. **Dismiss is keyed on the digest's `since`** in localStorage
@@ -954,6 +963,17 @@ here.
   in front of the photos nor in a prime spot in the bar; **plus the way to `MyActivityPage`** (the
   `account.activity.*` card linking to `ACTIVITY_PATH`) — "what I did" is a fact about the signed-in user, so its
   entry point lives here rather than as another item in the already crowded nav bar,
+  **plus `MySubjectCard`** (`components/account/`, directly under the identity card — the first block says
+  which *account* this is, this one says which *person*): the account's link to a subject of the library.
+  Nothing is chosen → the app's ordinary subject typeahead (`AddAutocomplete` over `useSubjects`, the same
+  shape as naming a face or merging two people, and deliberately **without** `onCreate`: an account belongs
+  to somebody the library already knows). Something is chosen → the name, linked to that person's page, and
+  an „Zrušit propojení" button. Above the empty field — **before** the decision, not after the save — sits a
+  warning that linking **publishes that person's cover photo next to every comment the account has written**,
+  and that the „soukromá osoba" flag hides nothing today. Saving goes through `setMySubject`
+  (`PUT /auth/subject`) and then `useAuth().refresh()`, because the menu entry and the avatar both read the
+  link off the session rather than off this card. A link whose person has since been deleted reads as
+  „Propojená osoba už v knihovně není" instead of a blank. Tests: `MySubjectCard.test.tsx`,
   **plus `ApiTokensCard`** (`components/account/`, below the password — the other credential this one user
   owns): the personal `kkt_…` bearer tokens a script, `kukatko ctl` or an agent signs in with, until now
   reachable only by `curl`. It lists the caller's own tokens (name, the public prefix `kkt_<id>_…` so a token
@@ -1174,6 +1194,13 @@ here.
   and `unknown_tokens` from the response (`PhotoListResponse.unknown_tokens` → `usePaginatedPhotos`
   returns `unknownTokens`) → `UnknownFiltersAlert`, a non-blocking info hint „těmto filtrům nerozumím“ above
   the grid — the same component, and therefore the same wording, the library raises under its own filter bar;
+  beside it **`QueryNoticesAlert`** (`components/search/`) renders the response's `notices` — the reason an
+  understood query was answered with **nothing** rather than with everything. The only code today is
+  `person_me_unlinked` (`person:me` from an account that has not said which person it is), shown as a
+  sentence plus the one link that fixes it (`/account`); an **unknown code is ignored**, never printed raw,
+  so a client older than the server does not show the reader an identifier. Both hooks
+  (`usePaginatedPhotos`, `useWindowedPhotos`) carry `notices` alongside `unknownTokens`, so the library grid
+  and the search page explain an empty result identically. Tests: `QueryNoticesAlert.test.tsx`;
   a pure filter query returns `mode: "filter"` (`EffectiveSearchMode`); the tiles carry the search scope in the detail link
   (`detailQuery` with `q`+`mode`) → Esc/Back from a photo returns to the search (sorted results, not the library with `q`
   as a substring) and prev/next pages the same results, plus above the grid a **cross-entity section**
@@ -1281,13 +1308,16 @@ here.
   over `setAnnouncement`/`clearAnnouncement`, prefill of the current message via `fetchAnnouncement`, feedback via
   the same dismissible `ActionNotice` `<Alert>` pattern; loading/error/notice states, self-gated on `isMaintainer`,
   `UsersPage` = `/users` (admin **or** maintainer, `isAdmin`) **account management**: a user table (username, full name, role,
-  status, note, last login, created) over `GET /admin/users` — rendered through the shared `RecordTable`, so on a
-  phone the eight columns become **one stacked card per account** and the three row actions
+  status, **person**, note, last login, created) over `GET /admin/users` — rendered through the shared `RecordTable`, so on a
+  phone the nine columns become **one stacked card per account** and the three row actions
   a full-width button row on the card instead of a sideways scroll away; the note column is `multiline`
   (it is written in a `<textarea>`, so its line breaks survive both layouts); the actions column is
   `cardHidden` and comes back through `cardActions` (`UserActions`, prop `stacked` = the card's grid items
-  vs. the table cell's inline cluster) —, the dialogs **Nový uživatel**
-  (username/password/role/name/note) and **Upravit** (role/name/note; username is `readOnly`
+  vs. the table cell's inline cluster); the **person** column prints the name of the subject the account is
+  linked to, resolved through **one** `useSubjects` fetch for the whole roster (`linkedPersonLabel` is a plain
+  function of that map, not a component with a hook, so thirty rows still cost one request) and an em dash
+  when there is no link —, the dialogs **Nový uživatel**
+  (username/password/role/name/**person**/note) and **Upravit** (role/name/**person**/note; username is `readOnly`
   `plaintext` — the backend cannot change it), **Změnit heslo** for another user (logs them out of all
   devices; the hash is never rendered anywhere) and **Povolit/Zakázat** behind a confirmation dialog
   (`setUserDisabled`). **The two form dialogs are `scrollable fullscreen="sm-down"`** — on a phone the long
@@ -1299,6 +1329,10 @@ here.
   off-screen anyway — the utility classes make it a shrinkable flex column (a scroll container's automatic
   minimum size is 0) and hand the cap through. The **Povolit/Zakázat** question follows `ConfirmModal` instead:
   `scrollable`, but a centred card on every screen — it has no inputs, so no keyboard can reach it.
+  Both form dialogs carry **`SubjectField`**: the same subject typeahead as the account page (pick-only, no
+  `onCreate`) when nothing is linked, the chosen name with a „Zrušit" beside it once something is, and a hint
+  saying that the linked person's cover photo then appears next to the account's comments. It is part of the
+  **replaced** profile, so clearing it in the dialog unlinks the account.
   **Your own row has an off toggle** + a short explanation of why
   (`users.selfDisableHint`), **deletion is not offered** — an account is retired by disabling it, so the history
   (photos, ratings, audit) stays whole. **The maintainer boundary** (mirrors the backend
@@ -1609,7 +1643,14 @@ here.
   **pluralised count** once there is one (`photo.comments.count`, `_one/_few/_many/_other` — Czech needs
   three forms: 1 komentář / 2 komentáře / 5 komentářů), the thread **oldest first** (a conversation reads
   forwards) as a `<ul>` of `CommentItem`, and the composer. **Empty state invites the first remark**
-  („Napiš, co o téhle fotce víš…") rather than reporting an absence. **`InitialAvatar`**
+  („Napiš, co o téhle fotce víš…") rather than reporting an absence. **`PersonAvatar`**
+  (`components/`) is what a thread actually draws: the **cover photo of the person the author's account is
+  linked to** (`author_photo_uid` on the comment → `thumbUrl(uid, 'tile_224')`, no download token — the
+  browser sends the session cookie with a same-origin `<img>`), falling back to `InitialAvatar` when there
+  is no link, no cover photo, or the image fails to load. The fallback is the **normal** case, not an error
+  path: most accounts name no person and most people have no hand-picked cover, so the letter has to look
+  like a design rather than a hole. `.kk-avatar--photo` fills the same circle with `object-fit: cover` over
+  a neutral surface. Tests: `PersonAvatar.test.tsx`. **`InitialAvatar`**
   (`components/`, **NEW**) draws a person as **the first letter of their name in a coloured disc** — the
   stand-in for a profile picture in a library that stores photographs, not avatars, and never fetches an
   external asset (no gravatar-style lookup leaking who reads what). Both the letter and the colour are pure
@@ -1621,7 +1662,7 @@ here.
   (`--kk-avatar-0-bg`…`--kk-avatar-7-bg` + `--kk-avatar-fg` in `styles/tokens.css`, each carrying white
   text at ≥ 5:1, next to the entity hues); the disc is `aria-hidden` because the name is always written out
   beside it. **`CommentItem`** renders
-  `InitialAvatar` + author + `formatRelativeTime` (`lib/relativeTime`, `Intl.RelativeTimeFormat`
+  `PersonAvatar` + author + `formatRelativeTime` (`lib/relativeTime`, `Intl.RelativeTimeFormat`
   `numeric: 'auto'` + `style: 'narrow'` → „před 2 h", „včera"; the absolute stamp survives as the `<time>`'s
   `title`) + an „upraveno" marker when `edited_at` is set + the body with **`white-space: pre-wrap`** — the
   backend parses nothing, so the client renders text, never HTML/markdown. **Edit is in place** (a textarea
@@ -3834,7 +3875,10 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   load so a link out of the audit log to something deleted explains itself),
   `roleAtLeast`, `canWrite` (editor+), `isAdmin` (admin+), `isMaintainer` (maintainer) and
   `canImport` (= maintainer; import is an operational capability) — all via `ROLE_RANK` mirroring the backend's
-  `internal/auth/role.go`; `MIN_PASSWORD_LENGTH`; **and the personal API tokens**
+  `internal/auth/role.go`; `MIN_PASSWORD_LENGTH`; **`setMySubject(subjectUid|null, signal)`**
+  over `PUT /api/v1/auth/subject` → the refreshed `User` (which person of the library the signed-in user is;
+  the account written to is always the session's, and `User.subject_uid` is what the "my photos" entry, the
+  `person:me` filter and the comment avatar all read); **and the personal API tokens**
   (`fetchApiTokens(signal)` / `createApiToken(name,signal)` / `revokeApiToken(id,signal)` over
   `GET`/`POST`/`DELETE /api/v1/auth/tokens[/{id}]`, the types `ApiToken{id,user_uid,name,created_at,
   expires_at?,last_used_at?,revoked_at?}` and `CreatedApiToken{token,secret}` — **`secret` arrives once and
@@ -4099,7 +4143,10 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   enable → a `PATCH` with `disabled:false`, there is no dedicated endpoint) and `resetUserPassword(uid,pwd,signal)`
   (`POST /{uid}/password`, 204, it logs out all of the target's sessions); the constants `ROLES`
   (`viewer`/`editor`/`admin`/`maintainer`, ascending along the ladder)/`MAX_NOTE_LENGTH`,
-  the types `AdminUser`/`CreateUserBody`/`UpdateUserBody`; the password hash has nowhere to leak — the backend
+  the types `AdminUser`/`CreateUserBody`/`UpdateUserBody` — both bodies carry **`subject_uid: string | null`**
+  (which person of the library the account is), and because `PATCH` replaces the profile, `null` **clears**
+  the link rather than leaving it alone, which is why `setUserDisabled`'s re-enabling `PATCH` echoes the
+  row's own link back; the password hash has nowhere to leak — the backend
   doesn't serialize it and no type has a field for it,
   `audit.ts` = the audit client over `GET /api/v1/audit`: `fetchAuditLog(params,signal)` →
   `AuditListResponse{entries,total,limit,offset,next_offset}`, `buildAuditQuery` serializes the filters

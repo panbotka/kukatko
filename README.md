@@ -72,6 +72,14 @@ photo-book tool (deliberately out of scope), or a product with support and a rel
 - A catalogue of people goes wrong in exactly two ways and both have a repair: **merge** the same
   person filed twice into one record, and **move** the photos that turn out to be somebody else to
   whoever they really are.
+- **Your account can say which of those people is you.** Set it once, on your own account page (an
+  administrator can set it for somebody when creating the account), and the library starts answering
+  questions it could not before: a "My photos" entry that opens the pictures you are on, `person:me`
+  in a search — so `person:me year:1998` works and can be saved as a smart album — a line in the
+  "what's new" digest counting the new photographs *you* are in, and your face instead of a letter
+  beside everything you have written. Several accounts may be the same person (a household login and
+  a personal one both are), deleting a person from the library never harms an account, and the page
+  where you set it says out loud that it puts your face on your comments.
 
 ### Tidying up, as a game
 

@@ -97,6 +97,25 @@ describe('CommentsPanel', () => {
     expect(screen.getByText('2 comments')).toBeInTheDocument()
   })
 
+  it('shows the author’s linked face, and the initial when there is none', async () => {
+    fetchCommentsMock.mockResolvedValue([
+      // An account linked to a person who has a cover photo: that face is what
+      // the thread shows, which is the whole reason the account page warns
+      // before the link is made.
+      comment({ author_photo_uid: 'ph_cover' }),
+      // Everything else — no link, or a linked person with no cover photo —
+      // keeps the coloured initial. This is the common case, not a failure.
+      comment({ uid: 'cm_2', author_uid: 'usr_petr', author_name: 'Petr' }),
+    ])
+    renderPanel()
+
+    const items = await screen.findAllByRole('listitem')
+    const face = within(items[0]).getByRole('presentation', { hidden: true })
+    expect(face.getAttribute('src')).toBe('/api/v1/photos/ph_cover/thumb/tile_224')
+    expect(within(items[1]).queryByRole('presentation', { hidden: true })).not.toBeInTheDocument()
+    expect(within(items[1]).getByText('P')).toBeInTheDocument()
+  })
+
   it('marks an edited comment as edited', async () => {
     fetchCommentsMock.mockResolvedValue([comment({ edited_at: new Date().toISOString() })])
     renderPanel()

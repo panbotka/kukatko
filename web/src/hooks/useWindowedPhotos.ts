@@ -51,6 +51,13 @@ export interface UseWindowedPhotosResult {
    */
   unknownTokens: string[]
   /**
+   * Machine-readable reasons the page is what it is, as the backend reported
+   * them in `notices` — currently only `person_me_unlinked`, an empty grid
+   * because the caller asked for `person:me` without their account having said
+   * which person that is. The caller turns each code into a sentence.
+   */
+  notices: string[]
+  /**
    * Declares which absolute index range the grid is showing; the hook loads the
    * pages covering it (plus {@link WINDOW_PREFETCH_PAGES} on each side) and drops
    * pages that have drifted out of the window. Cheap and idempotent — call it on
@@ -78,6 +85,7 @@ interface WindowState {
   status: ListStatus
   moreError: boolean
   unknownTokens: string[]
+  notices: string[]
 }
 
 const INITIAL: WindowState = {
@@ -86,6 +94,7 @@ const INITIAL: WindowState = {
   status: 'loading',
   moreError: false,
   unknownTokens: [],
+  notices: [],
 }
 
 /**
@@ -201,6 +210,7 @@ export function useWindowedPhotos(
             // Every page of one query carries the same verdict on `q`, so
             // whichever answers last is as good as the first.
             unknownTokens: res.unknown_tokens ?? [],
+            notices: res.notices ?? [],
           }
         })
       })
@@ -333,6 +343,7 @@ export function useWindowedPhotos(
     status: state.status,
     moreError: state.moreError,
     unknownTokens: state.unknownTokens,
+    notices: state.notices,
     ensureRange,
     retry,
   }

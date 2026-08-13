@@ -67,7 +67,12 @@ var catalogueTables = []string{
 //
 // The accounts and their credentials (users, sessions, api_tokens) stay, because
 // a wipe that locks the operator out of the instance they just wiped is not a
-// reset but an outage. schema_migrations stays, because the schema is not being
+// reset but an outage. The one thing a preserved account does lose is the person
+// it said it was: users.subject_uid points into the subjects table that is about
+// to be emptied, so the wipe nulls it in the same transaction (see
+// clearUserSubjectsSQL). Everything that makes the account an account —
+// credentials, role, note, its history — is untouched.
+// schema_migrations stays, because the schema is not being
 // rebuilt — dropping it would make the next start re-apply every migration.
 // announcements stays, because the banner describes the instance, not the
 // library. And audit_log stays, because the record of the deletion is the only

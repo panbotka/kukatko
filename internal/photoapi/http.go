@@ -322,13 +322,36 @@ type listResponse struct {
 	// hint instead of the query silently narrowing to nothing. Omitted when
 	// every token parsed.
 	UnknownTokens []string `json:"unknown_tokens,omitempty"`
+	// Notices are machine-readable reasons the page is what it is, for the cases
+	// where an empty result is a *decision* rather than an absence — currently
+	// only "person_me_unlinked", the caller asking for `person:me` without having
+	// said which person they are. The client renders its own sentence for each
+	// code; the server does not send prose. Omitted when there is nothing to say.
+	Notices []string `json:"notices,omitempty"`
+}
+
+// pageHints are the non-fatal things a listing has to tell the client about the
+// query it just ran: the filter-shaped tokens that were not understood, and the
+// reasons behind a deliberately empty page. They travel together because every
+// write path that stamps one stamps the other, and threading two slices through
+// four helpers only makes it easier to forget one.
+type pageHints struct {
+	unknown []string
+	notices []string
+}
+
+// stamp copies the hints onto a response.
+func (h pageHints) stamp(resp *listResponse) {
+	resp.UnknownTokens = h.unknown
+	resp.Notices = h.notices
 }
 
 // handleList parses the query filters, returns the matching page of photos (each
 // annotated with the current user's is_favorite flag) plus the total count and the
 // next-page offset for infinite scroll. The favorite=true filter scopes the list to
-// the caller's own favorites. Invalid filter, sort or pagination values are answered
-// with 400.
+// the caller's own favorites, and `person:me` in q scopes it to the person the
+// caller's account says it is. Invalid filter, sort or pagination values are
+// answered with 400.
 func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 	params, unknown, err := parseListParams(r.URL.Query())
 	if err != nil {
@@ -348,7 +371,8 @@ func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 	if favorite {
 		params.FavoriteOf = user.UID
 	}
-	a.writeFavoritePage(w, r, user.UID, params, unknown)
+	notices := applyPersonMe(&params, user)
+	a.writeFavoritePage(w, r, user.UID, params, pageHints{unknown: unknown, notices: notices})
 }
 
 // pageResponse builds the paginated listResponse for a page of photo views,
@@ -412,6 +436,8 @@ func (a *API) handleSearch(w http.ResponseWriter, r *http.Request) {
 	// Scope the per-user rating filters, the query language's per-user filters
 	// and the rating sort to the caller.
 	params.RatedBy = &user.UID
+	notices := applyPersonMe(&params, user)
+	hints := pageHints{unknown: unknown, notices: notices}
 	// The ranked search matches free text through the full-text vector; the
 	// substring filter and its negations belong to the list path only.
 	parsed := query.Parse(raw)
@@ -420,7 +446,7 @@ func (a *API) handleSearch(w http.ResponseWriter, r *http.Request) {
 
 	free := parsed.FreeText()
 	if strings.TrimSpace(free) == "" {
-		a.writeFilterPage(w, r, user.UID, params, unknown)
+		a.writeFilterPage(w, r, user.UID, params, hints)
 		return
 	}
 	// q's free text is the full-text query here, not the list's substring
@@ -431,15 +457,15 @@ func (a *API) handleSearch(w http.ResponseWriter, r *http.Request) {
 		// Only negated terms remain: nothing to embed, rank by full text alone.
 		mode = modeFulltext
 	}
-	a.writeRankedSearch(w, r, user.UID, mode, plain, params, unknown)
+	a.writeRankedSearch(w, r, user.UID, mode, plain, params, hints)
 }
 
 // writeRankedSearch runs the ranked search in the given mode and writes the
-// annotated page, stamping the effective mode, the degraded flag and the
-// unknown query-language tokens onto the response.
+// annotated page, stamping the effective mode, the degraded flag and the query
+// hints onto the response.
 func (a *API) writeRankedSearch(
 	w http.ResponseWriter, r *http.Request, userUID string,
-	mode searchMode, plain string, params photos.ListParams, unknown []string,
+	mode searchMode, plain string, params photos.ListParams, hints pageHints,
 ) {
 	result, err := a.runSearch(r.Context(), mode, plain, params)
 	if err != nil {
@@ -454,7 +480,7 @@ func (a *API) writeRankedSearch(
 	resp := pageResponse(params, views, result.total)
 	resp.Mode = string(mode)
 	resp.Degraded = result.degraded
-	resp.UnknownTokens = unknown
+	hints.stamp(&resp)
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -463,7 +489,7 @@ func (a *API) writeRankedSearch(
 // applied — and deliberately never touches the embedding sidecar, since there
 // is no text to embed or rank. The response reports mode `filter`.
 func (a *API) writeFilterPage(
-	w http.ResponseWriter, r *http.Request, userUID string, params photos.ListParams, unknown []string,
+	w http.ResponseWriter, r *http.Request, userUID string, params photos.ListParams, hints pageHints,
 ) {
 	list, err := a.store.List(r.Context(), params)
 	if err != nil {
@@ -482,7 +508,7 @@ func (a *API) writeFilterPage(
 	}
 	resp := pageResponse(params, views, total)
 	resp.Mode = string(modeFilter)
-	resp.UnknownTokens = unknown
+	hints.stamp(&resp)
 	writeJSON(w, http.StatusOK, resp)
 }
 
