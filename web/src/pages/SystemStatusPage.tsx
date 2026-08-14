@@ -1,3 +1,4 @@
+import type { ParseKeys } from 'i18next'
 import { useCallback, useEffect, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Badge from 'react-bootstrap/Badge'
@@ -12,11 +13,12 @@ import { Link } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
 import { ErrorState } from '../components/ErrorState'
-import { JobStateLegend, type JobStateKey } from '../components/JobStateLegend'
-import { LibraryStatsCards } from '../components/LibraryStatsCards'
+import { JobQueuePanel } from '../components/system/JobQueuePanel'
+import { LibraryOverview } from '../components/system/LibraryOverview'
+import { RemainingWorkPanel } from '../components/system/RemainingWorkPanel'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
-import { useLibraryStats } from '../hooks/useLibraryStats'
 import { formatBytes, formatDateTime } from '../lib/format'
+import { formatRelativeTime } from '../lib/relativeTime'
 import {
   clearAnnouncement,
   fetchAnnouncement,
@@ -34,7 +36,6 @@ import {
   type EmbeddingsStatus,
   type GeocodeStatus,
   type ImportsStatus,
-  type JobsStatus,
   type MapsState,
   type MapsStatus,
   type StorageStatus,
@@ -44,20 +45,6 @@ import {
 
 /** How often the status snapshot is re-polled while the page is open. */
 const POLL_INTERVAL_MS = 5000
-
-/**
- * The job-queue states explained beneath the queue badges, in display order.
- * Includes `pending` (work waiting on the AI box), which the System page shows
- * and the Maintenance page does not.
- */
-const SYSTEM_JOB_STATES: readonly JobStateKey[] = [
-  'total',
-  'queued',
-  'running',
-  'failed',
-  'dead',
-  'pending',
-]
 
 /** Fetch lifecycle of the system-status page. */
 type State = { status: 'loading' } | { status: 'error' } | { status: 'ready'; data: SystemStatus }
@@ -228,79 +215,42 @@ function MapsCard({ maps, geocode }: { maps: MapsStatus; geocode: GeocodeStatus 
   )
 }
 
-/** The job-queue depth card with the dead-letter requeue quick action. */
-function JobsCard({
-  jobs,
-  onRequeue,
-  requeuing,
-}: {
-  jobs: JobsStatus
-  onRequeue: () => void
-  requeuing: boolean
-}) {
-  const { t } = useTranslation()
+/**
+ * How long ago something happened, as a muted line — "před 3 h" / "3h ago" — with
+ * the exact stamp in the tooltip. The age is what a health readout is read for
+ * ("is the backup recent?"), the timestamp is what it is checked with.
+ */
+function AgeLine({ at, labelKey }: { at: string; labelKey: ParseKeys }) {
+  const { t, i18n } = useTranslation()
   return (
-    <Card className="h-100">
-      <Card.Body>
-        <h2 className="kk-section-title mb-1">{t('system.jobs.title')}</h2>
-        <p className="text-secondary small">{t('system.jobs.intro')}</p>
-        <div className="d-flex gap-2 flex-wrap mb-3">
-          <Badge bg="primary">
-            {t('system.jobs.total')}: {jobs.total}
-          </Badge>
-          <Badge bg="secondary">
-            {t('system.jobs.queued')}: {jobs.by_state.queued ?? 0}
-          </Badge>
-          <Badge bg="info">
-            {t('system.jobs.running')}: {jobs.by_state.running ?? 0}
-          </Badge>
-          <Badge bg="warning" text="dark">
-            {t('system.jobs.failed')}: {jobs.by_state.failed ?? 0}
-          </Badge>
-          <Badge bg="dark">
-            {t('system.jobs.dead')}: {jobs.dead_letter}
-          </Badge>
-          <Badge bg="secondary">
-            {t('system.jobs.pending')}: {jobs.pending_embeddings}
-          </Badge>
-        </div>
-        <JobStateLegend states={SYSTEM_JOB_STATES} />
-        <Button
-          className="mt-3"
-          variant="outline-primary"
-          size="sm"
-          disabled={jobs.dead_letter === 0 || requeuing}
-          onClick={onRequeue}
-        >
-          {requeuing && <Spinner animation="border" size="sm" role="status" className="me-2" />}
-          {t('system.jobs.requeue')}
-        </Button>
-      </Card.Body>
-    </Card>
+    <div className="text-secondary small" title={formatTimestamp(at, i18n.language)}>
+      {t(labelKey)}: {formatRelativeTime(at, i18n.language)}
+    </div>
   )
 }
 
 /** Renders the most recent folder-import run, or a "never" placeholder. */
 function ImportRunLine({ run }: { run: ImportRun | null }) {
-  const { t, i18n } = useTranslation()
+  const { t } = useTranslation()
+  if (!run) {
+    return (
+      <div className="mb-2">
+        <span className="fw-semibold">{t('import.source.folder')}</span>:{' '}
+        <span className="text-secondary small">{t('system.imports.never')}</span>
+      </div>
+    )
+  }
+  const at = run.finished_at ?? run.started_at
   return (
     <div className="mb-2">
       <span className="fw-semibold">{t('import.source.folder')}</span>:{' '}
-      {run ? (
-        <>
-          <Badge
-            bg={run.status === 'done' ? 'success' : run.status === 'failed' ? 'danger' : 'info'}
-          >
-            {t(`import.status.${run.status}`)}
-          </Badge>{' '}
-          <span className="text-secondary small">
-            {formatTimestamp(run.finished_at ?? run.started_at, i18n.language)} ·{' '}
-            {t('import.counts.imported')} {run.counts.imported}
-          </span>
-        </>
-      ) : (
-        <span className="text-secondary small">{t('system.imports.never')}</span>
-      )}
+      <Badge bg={run.status === 'done' ? 'success' : run.status === 'failed' ? 'danger' : 'info'}>
+        {t(`import.status.${run.status}`)}
+      </Badge>{' '}
+      <span className="text-secondary small">
+        {t('import.counts.imported')} {run.counts.imported}
+      </span>
+      <AgeLine at={at} labelKey="system.imports.age" />
     </div>
   )
 }
@@ -370,6 +320,9 @@ function BackupCard({
                 t('system.backup.never')
               )}
             </div>
+            {backup.last_finished_at !== undefined && (
+              <AgeLine at={backup.last_finished_at} labelKey="system.backup.age" />
+            )}
           </div>
         )}
         <div className="mt-auto pt-2">
@@ -388,8 +341,15 @@ function BackupCard({
   )
 }
 
-/** The storage-usage card. */
-function StorageCard({ storage }: { storage: StorageStatus }) {
+/**
+ * The server's disk. Deliberately titled as the server's disk rather than as
+ * "storage": on this instance the originals live in an object store, so the
+ * originals directory measured here holds next to nothing while the library
+ * itself weighs tens of gigabytes — which is what the catalogue's own storage
+ * card in the Library section reports. Two different questions, two different
+ * cards, each saying which one it answers.
+ */
+function ServerDiskCard({ storage }: { storage: StorageStatus }) {
   const { t } = useTranslation()
   return (
     <Card className="h-100">
@@ -405,38 +365,9 @@ function StorageCard({ storage }: { storage: StorageStatus }) {
           <dt className="col-6 text-secondary fw-normal">{t('system.storage.total')}</dt>
           <dd className="col-6 text-end mb-0">{formatBytes(storage.total_bytes)}</dd>
         </dl>
+        <p className="text-secondary kk-text-caption mt-3 mb-0">{t('system.storage.note')}</p>
       </Card.Body>
     </Card>
-  )
-}
-
-/**
- * The Library section: the same instance-wide counts the statistics page shows,
- * from the same `GET /system/stats` endpoint — the dashboard adds no second data
- * source and no second aggregation. It owns its own fetch state so a failure
- * here (or a slow count on a large library) degrades this section alone and
- * leaves the operational cards above untouched; the counts never render as
- * zeroes when they could not be read.
- */
-function LibrarySection() {
-  const { t } = useTranslation()
-  const { state, reload } = useLibraryStats()
-  return (
-    <section className="mb-4" aria-labelledby="system-library-title">
-      <h2 id="system-library-title" className="kk-section-title mb-1">
-        {t('system.library.title')}
-      </h2>
-      <p className="text-secondary small">{t('system.library.intro')}</p>
-      {state.status === 'loading' && (
-        <div className="d-flex justify-content-center py-4">
-          <Spinner animation="border" role="status">
-            <span className="visually-hidden">{t('stats.loading')}</span>
-          </Spinner>
-        </div>
-      )}
-      {state.status === 'error' && <ErrorState title={t('stats.error')} onRetry={reload} />}
-      {state.status === 'ready' && <LibraryStatsCards stats={state.data} />}
-    </section>
   )
 }
 
@@ -591,20 +522,24 @@ function AnnouncementCard() {
 }
 
 /**
- * Admin-only system-status dashboard: a single, auto-refreshing view of the
- * running instance's operational health — database and embeddings-sidecar
- * reachability, job-queue depth and dead-letter backlog, the backup subsystem,
- * the last import per source, on-disk storage usage, and the map provider's
- * state — with quick actions to requeue the dead-letter jobs, trigger a backup,
- * and jump to the import and maintenance flows. When the embeddings box is
- * offline, the queued embedding work is surfaced so it is clear the backlog
- * resumes once the box returns; when mapy.com is rejecting the API key, that is
- * called out here rather than left to show up as a grey map.
+ * Admin-only dashboard of the running instance, auto-refreshing from one
+ * snapshot, read top to bottom the way the questions are actually asked:
  *
- * Above the operational cards it also renders the {@link LibrarySection}: the
- * library statistics, read from the same endpoint as the all-users statistics
- * page, so "how much is still unprocessed" is answered where an operator is
- * already looking.
+ *  1. **Library** — what is in it, what arrived recently, what it weighs.
+ *  2. **Remaining work** — the backlogs, each linking to the screen it is worked
+ *     through on.
+ *  3. **Job queue** — the background work broken down by type *and* state, with
+ *     a per-type dead-letter requeue.
+ *  4. **Health** — the operational cards: database and embeddings-sidecar
+ *     reachability, the backup and last import with their ages, the map provider
+ *     (a rejected mapy.com key shows up here rather than only as a grey map), the
+ *     geocode credit budget, the server's disk and the build version.
+ *  5. The announcement compose box, last: publishing a banner is a rare errand,
+ *     not what the page is opened for, and it used to sit above everything.
+ *
+ * Every number comes from the single `GET /system/status` snapshot — the page
+ * does no arithmetic of its own — so nothing here can drift from what the backend
+ * counted.
  */
 export function SystemStatusPage() {
   const { t } = useTranslation()
@@ -612,7 +547,9 @@ export function SystemStatusPage() {
   const { isMaintainer } = useAuth()
   const [state, setState] = useState<State>({ status: 'loading' })
   const [notice, setNotice] = useState<ActionNotice | null>(null)
-  const [requeuing, setRequeuing] = useState(false)
+  // The requeue in flight: a job type, `''` for the whole dead letter, null for
+  // none. One piece of state, because only one requeue may run at a time.
+  const [requeuing, setRequeuing] = useState<string | null>(null)
   const [triggering, setTriggering] = useState(false)
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
@@ -641,19 +578,22 @@ export function SystemStatusPage() {
     }
   }, [isMaintainer, refresh])
 
-  const handleRequeue = useCallback(async () => {
-    setRequeuing(true)
-    setNotice(null)
-    try {
-      const count = await requeueDeadLetterJobs()
-      setNotice({ kind: 'success', message: t('system.jobs.requeued', { n: count }) })
-      await refresh()
-    } catch {
-      setNotice({ kind: 'error', message: t('system.jobs.requeueError') })
-    } finally {
-      setRequeuing(false)
-    }
-  }, [refresh, t])
+  const handleRequeue = useCallback(
+    async (jobType?: string) => {
+      setRequeuing(jobType ?? '')
+      setNotice(null)
+      try {
+        const count = await requeueDeadLetterJobs(jobType)
+        setNotice({ kind: 'success', message: t('system.jobs.requeued', { n: count }) })
+        await refresh()
+      } catch {
+        setNotice({ kind: 'error', message: t('system.jobs.requeueError') })
+      } finally {
+        setRequeuing(null)
+      }
+    },
+    [refresh, t],
+  )
 
   const handleBackup = useCallback(async () => {
     setTriggering(true)
@@ -694,8 +634,6 @@ export function SystemStatusPage() {
         </Alert>
       )}
 
-      <AnnouncementCard />
-
       {state.status === 'loading' && (
         <div className="d-flex justify-content-center py-5">
           <Spinner animation="border" role="status">
@@ -715,8 +653,17 @@ export function SystemStatusPage() {
 
       {state.status === 'ready' && (
         <>
-          <QuickActions />
-          <LibrarySection />
+          <LibraryOverview library={state.data.library} />
+          <RemainingWorkPanel remaining={state.data.remaining} />
+          <JobQueuePanel
+            jobs={state.data.jobs}
+            onRequeue={(jobType) => {
+              void handleRequeue(jobType)
+            }}
+            requeuing={requeuing}
+          />
+          <h2 className="kk-section-title mb-1">{t('system.dashboard.healthTitle')}</h2>
+          <p className="text-secondary small">{t('system.dashboard.healthIntro')}</p>
           <Row className="g-3" xs={1} md={2} lg={3}>
             <Col>
               <DatabaseCard database={state.data.database} />
@@ -725,15 +672,6 @@ export function SystemStatusPage() {
               <EmbeddingsCard
                 embeddings={state.data.embeddings}
                 pending={state.data.jobs.pending_embeddings}
-              />
-            </Col>
-            <Col>
-              <JobsCard
-                jobs={state.data.jobs}
-                onRequeue={() => {
-                  void handleRequeue()
-                }}
-                requeuing={requeuing}
               />
             </Col>
             <Col>
@@ -749,7 +687,7 @@ export function SystemStatusPage() {
               <ImportsCard imports={state.data.imports} />
             </Col>
             <Col>
-              <StorageCard storage={state.data.storage} />
+              <ServerDiskCard storage={state.data.storage} />
             </Col>
             <Col>
               <MapsCard maps={state.data.maps} geocode={state.data.geocode} />
@@ -758,8 +696,11 @@ export function SystemStatusPage() {
               <VersionCard version={state.data.version} />
             </Col>
           </Row>
+          <QuickActions />
         </>
       )}
+
+      <AnnouncementCard />
     </>
   )
 }

@@ -462,6 +462,31 @@ func (s *Store) Requeue(ctx context.Context, id int64) (Job, error) {
 	return s.requeueInStates(ctx, id, []string{string(StateDead), string(StateFailed)})
 }
 
+// RequeueAllDead resets every dead-lettered job back to 'queued' with a fresh
+// attempt budget, runnable immediately, and returns how many were requeued. With
+// no types it requeues the whole dead letter; with types it requeues only those
+// job types, which is what lets an operator retry the one thing that broke (the
+// OCR jobs that died while the box was down) without also retrying everything
+// else that has ever been given up on.
+//
+// It is one UPDATE rather than a listing followed by a requeue per row: a
+// dead letter of thousands is exactly the case this exists for, and it must not
+// turn into thousands of round trips.
+func (s *Store) RequeueAllDead(ctx context.Context, types ...string) (int, error) {
+	const q = `UPDATE jobs SET
+			state = 'queued', attempts = 0, last_error = '', run_after = now(),
+			locked_by = NULL, locked_at = NULL, updated_at = now()
+		WHERE state = 'dead' AND (cardinality($1::text[]) = 0 OR type = ANY($1))`
+	if types == nil {
+		types = []string{}
+	}
+	tag, err := s.pool.Exec(ctx, q, types)
+	if err != nil {
+		return 0, fmt.Errorf("jobs: requeuing dead jobs: %w", err)
+	}
+	return int(tag.RowsAffected()), nil
+}
+
 // requeueInStates resets the job identified by id to a fresh 'queued' state when
 // its current state is one of states, returning the refreshed job. It returns
 // ErrJobNotFound if no job has that id, or ErrNotDead if the job is in some

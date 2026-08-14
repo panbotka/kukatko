@@ -232,6 +232,54 @@ func TestRequeueEndpoint(t *testing.T) {
 	}
 }
 
+// TestRequeueDeadEndpoint verifies POST /jobs/requeue-dead empties the dead
+// letter in one call, that `type` narrows it to one kind of work, and that it is
+// a maintainer surface like the rest of the queue API.
+func TestRequeueDeadEndpoint(t *testing.T) {
+	env := newEnv(t)
+	maint := env.login(t, "maint", auth.RoleMaintainer)
+	env.deadLetter(t, "c")
+	env.enqueue(t, jobs.TypeThumbnail, "d", jobs.EnqueueOptions{})
+
+	// A type nothing died under requeues nothing and leaves the dead letter alone.
+	if got := requeueDead(t, maint, env.baseURL+"/api/v1/jobs/requeue-dead?type=thumbnail"); got != 0 {
+		t.Errorf("requeue-dead(thumbnail) = %d, want 0", got)
+	}
+	if dead := listJobs(t, maint, env.baseURL+"/api/v1/jobs?state=dead"); len(dead) != 1 {
+		t.Errorf("dead letter after a non-matching requeue = %d jobs, want 1", len(dead))
+	}
+
+	if got := requeueDead(t, maint, env.baseURL+"/api/v1/jobs/requeue-dead?type=image_embed"); got != 1 {
+		t.Errorf("requeue-dead(image_embed) = %d, want 1", got)
+	}
+	if dead := listJobs(t, maint, env.baseURL+"/api/v1/jobs?state=dead"); len(dead) != 0 {
+		t.Errorf("dead letter after the requeue = %d jobs, want 0", len(dead))
+	}
+
+	editor := env.login(t, "editor", auth.RoleEditor)
+	resp := do(t, editor, http.MethodPost, env.baseURL+"/api/v1/jobs/requeue-dead", nil)
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("requeue-dead status for an editor = %d, want 403", resp.StatusCode)
+	}
+}
+
+// requeueDead POSTs the bulk requeue at url and returns how many jobs it says it
+// put back onto the queue.
+func requeueDead(t *testing.T, client *http.Client, url string) int {
+	t.Helper()
+	resp := do(t, client, http.MethodPost, url, nil)
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("requeue-dead status = %d, want 200", resp.StatusCode)
+	}
+	var body struct {
+		Requeued int `json:"requeued"`
+	}
+	decode(t, resp, &body)
+	return body.Requeued
+}
+
 // listJobs GETs url with the given client and returns the decoded jobs slice.
 func listJobs(t *testing.T, client *http.Client, url string) []jobs.Job {
 	t.Helper()

@@ -7,13 +7,17 @@ import (
 	"github.com/panbotka/kukatko/internal/backup"
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/database"
+	"github.com/panbotka/kukatko/internal/duplicates"
 	"github.com/panbotka/kukatko/internal/embedding"
+	"github.com/panbotka/kukatko/internal/feedback"
 	"github.com/panbotka/kukatko/internal/importer"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/mapy"
+	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/placesjob"
 	"github.com/panbotka/kukatko/internal/system"
 	"github.com/panbotka/kukatko/internal/systemapi"
+	"github.com/panbotka/kukatko/internal/vectors"
 )
 
 // buildSystemAPI assembles the system API: the maintainer-only status dashboard
@@ -54,8 +58,9 @@ func buildSystemAPI(
 		geocodeReporter = geocodeBudget
 	}
 
-	// One store answers both library aggregations (the counts and the chart
-	// series), so the two can never be built from different catalogues.
+	// One store answers all three library aggregations (the counts, the chart
+	// series and the dashboard), so they can never be built from different
+	// catalogues.
 	pool := db.Pool()
 	libraryStore := system.NewStore(pool)
 	svc := system.New(system.Config{
@@ -69,6 +74,8 @@ func buildSystemAPI(
 		Imports:       importer.NewStore(pool),
 		Library:       libraryStore,
 		Charts:        libraryStore,
+		Dashboard:     libraryStore,
+		Duplicates:    buildSystemDuplicatesOrNil(cfg, db),
 		OriginalsPath: cfg.Storage.OriginalsPath,
 		CachePath:     cfg.Storage.CachePath,
 	})
@@ -78,4 +85,30 @@ func buildSystemAPI(
 		RequireAuth:       authAPI.RequireAuth,
 	})
 	return api, svc, nil
+}
+
+// buildSystemDuplicatesOrNil returns the near-duplicate detector behind the
+// dashboard's duplicates tile, or a nil interface when duplicate detection is
+// switched off in config — the same switch that makes GET /duplicates answer
+// 503, so the tile and the page can never disagree about whether duplicates are
+// detected at all.
+//
+// It is built from the same config as buildDuplicatesAPI's detector rather than
+// shared with it (the two APIs are assembled in different phases of serve), the
+// way the review game's detector already is. The dashboard never scans on a
+// request: internal/system runs this in the background and reports when it last
+// finished.
+func buildSystemDuplicatesOrNil(cfg *config.Config, db *database.DB) system.DuplicateCounter {
+	if !cfg.Duplicate.Enabled {
+		return nil
+	}
+	photoStore := photos.NewStore(db.Pool())
+	return duplicates.New(duplicates.Config{
+		Photos:           photoStore,
+		Phashes:          photoStore,
+		Embeddings:       vectors.NewStore(db.Pool()),
+		Feedback:         feedback.NewStore(db.Pool()),
+		PhashMaxDiff:     cfg.Duplicate.PhashMaxDiff,
+		EmbeddingMaxDist: cfg.Duplicate.EmbeddingMaxDist,
+	})
 }

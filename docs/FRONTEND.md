@@ -210,7 +210,32 @@ here.
   one-sentence explanation of each state, so an admin understands without hovering; both the labels and the explanations come from a
   shared i18n block `jobStates.labels.*`/`jobStates.descriptions.*`, so the wording is identical on
   `MaintenancePage` and `SystemStatusPage`; the `states` prop controls order and selection — Maintenance omits
-  `pending`, System adds it. Tests: `JobStateLegend.test.tsx`),
+  `pending` and `done`, System adds both (its queue table has a `done` column, because without it a row's
+  states would not add up to its lifetime total). Tests: `JobStateLegend.test.tsx`),
+  `components/system/` = **the admin dashboard's three sections**, all rendered from the single
+  `GET /system/status` snapshot the page already polls (no second fetch, no arithmetic of their own):
+  `StatTile`/`StatTileGrid` (**the dashboard's number tile** — a big `kk-display` value over its label, 2 per
+  row on a phone up to 5 on a wide screen; a tile that has a view behind it makes the **whole card** the click
+  target (`stretched-link` over the label, so the accessible name is the label and not "16 585") and a tile
+  with nowhere to go stays plain text rather than offering a link that lands somewhere unrelated; a `gap` tile
+  is `text-warning` **only while non-zero**, because a cleared backlog is the goal, not a warning),
+  `LibraryOverview` (**what is in the library**: ten tiles — fotky, z toho videa, v koši, skryté, soukromé,
+  alba, štítky, osoby, obličeje, embeddingy, the first five linking to `/`, `/?q=type%3Avideo`, `/trash`,
+  `/?q=hidden%3Ayes`, `/?q=private%3Ayes` — plus two cards: **Nedávno nahráno** (24 h / 7 / 30 / 365 days,
+  counted by when a photo *arrived*, which is why the note says so) and **Velikost podle katalogu**
+  (knihovna / koš / odvozená data), the one storage figure that is meaningful when the originals live in an
+  object store; the header links on to `/stats` for the processing statistics),
+  `RemainingWorkPanel` (**what is still to do**: obličeje beze jména → `/review`, shluky → `/people/clusters`,
+  bez data, bez souřadnic → `/?q=geo%3Ano`, bez místa, bez rozpoznání textu, duplicitní značky →
+  `/duplicate-markers`, skupiny duplicit → `/duplicates`; the duplicates tile is the only one that renders
+  **`—` plus "hledá se na pozadí…"** until the backend's background scan has an answer, and "zjištěno <age>"
+  once it has — an unavailable scan must not read as "no duplicates"),
+  `JobQueuePanel` (**the queue by type × state**: one row per job type with queued/running/failed/dead/done
+  columns and its lifetime "celkem kdy" total, rows ordered dead-letter first then busiest then by name so the
+  order is stable between two polls; a row with a dead letter carries its **own requeue button**, and the
+  whole-dead-letter button sits below with the shared `JobStateLegend`. The lifetime numbers are captioned as
+  history — this replaced a badge row where `image_embed: 41 594` against 20 930 photos read as a backlog when
+  it was a one-off re-embedding. An empty queue renders a sentence, not an empty table),
   `LibraryStatsCards` (**the shared rendering of the library counts** `GET /system/stats`: six
   `Card`s in a responsive `Row` — photos, vyhledávání podle obsahu, obličeje, lidé a zvířata, značky na
   fotkách, alba a štítky — each with a
@@ -244,8 +269,9 @@ here.
   hidden photo, ungated: hiding is an edit, reading the hidden ones is not) and vidíte v Knihovně → the
   library itself, so the number can be checked where it is disputed. The two write destinations are gated on
   `useAuth().canWrite` and render as plain text
-  for a viewer — never a link that would bounce them (N13). The caller still owns loading/errors/retry, so
-  `StatsPage` and `SystemStatusPage`'s Knihovna section cannot drift apart or double-fetch),
+  for a viewer — never a link that would bounce them (N13). The caller still owns loading/errors/retry. It is
+  the statistics page's rendering only: `SystemStatusPage` answers a different question ("what is in the
+  library?") from the dashboard half of its own snapshot, see `components/system/LibraryOverview`),
   `components/stats/` = **the charts of the statistics dashboard**, plain CSS over the app's tokens
   (`charts.css`), no charting dependency: `ColumnChart` (a column histogram of one measure over a time axis —
   each bar scaled against the chart's tallest with a **2 % floor** so a one-photo year is never drawn as
@@ -1375,25 +1401,31 @@ here.
   undo direction is a file picker (`restoreNamelessSubjects(file)` → `POST …/restore`, 400 → „not a usable undo
   file"); both destructive halves run in the job queue, so their `Alert`s report what was **scheduled** and
   point at the queue card below; self-gated on `isMaintainer`,
-  `SystemStatusPage` = `/system` (maintainer only) a **system-status dashboard**: auto-refresh (polling 5 s)
-  `GET /system/status` → a card grid (DB, embeddings, job queue, backup, imports, storage,
-  **maps**, version) plus the **Knihovna section** (`LibrarySection` over `useLibraryStats` →
-  `LibraryStatsCards`, the same `GET /system/stats` the all-users `StatsPage` reads — no second data source,
-  no second aggregation; it owns its own fetch state, so a failed count degrades that section alone and the
-  operational cards keep rendering), with **quick actions** — *requeue dead jobs* (`requeueDeadLetterJobs`: list dead →
-  per-job `POST /jobs/{id}/requeue`), *run a backup* (`POST /backup`), links to the import history
-  (`/import`) and the maintenance check (`/maintenance`); the **imports card** reports the last
-  `kukatko import dir` run (`imports.folder`) — the only import that can still happen; **box offline** + pending embeddings → a highlighted
-  message „doženou se po návratu"; **the Mapy card** (`MapsCard` over `status.maps`) shows the latest
+  `SystemStatusPage` = `/system` (maintainer only) the **admin dashboard**: auto-refresh (polling 5 s)
+  `GET /system/status`, read top to bottom in the order the questions are asked — **Knihovna**
+  (`LibraryOverview`), **Zbývá udělat** (`RemainingWorkPanel`), **Fronta úloh** (`JobQueuePanel`) and only
+  then **Zdraví systému**, the card grid (DB, embeddings, backup, imports, **disk serveru**, **maps**,
+  version). Everything comes from that one snapshot: there is no second fetch and no arithmetic in the page,
+  so nothing on it can drift from what the backend counted. **Quick actions** — *requeue the dead letter*
+  (`requeueDeadLetterJobs(jobType?)` → one `POST /jobs/requeue-dead`, whole or per type from the queue row),
+  *run a backup* (`POST /backup`), a link to the maintenance check (`/maintenance`), and the import history
+  (`/import`) from the imports card. The **imports and backup cards** report **how long ago** they last ran
+  (`AgeLine`, `formatRelativeTime` with the exact stamp in the `title`) — an age is what a health readout is
+  read for; the **imports card** reports the last `kukatko import dir` run (`imports.folder`), the only import
+  that can still happen; the **disk card** is titled *Disk serveru* and says so in a caption, because it used
+  to read as the library's size while reporting an almost empty originals directory (prod keeps the originals
+  in R2 — what the library weighs is in the Knihovna section); **box offline** + pending embeddings → a
+  highlighted message „doženou se po návratu"; **the Mapy card** (`MapsCard` over `status.maps`) shows the latest
   mapy.com status — `key_rejected` in red + what to do about it (swap the key in the mapy.com console), degradation
   in yellow, without a key „Nenastaveno" — and beneath it the **geocode credit line** (`GeocodeCredits` over
   `status.geocode`, the same metered mapy.com account): `spent / limit` for the current budget window plus when
   it refills, the numbers in yellow and the label switched to „Rozpočet vyčerpán, obnoví se" once nothing is
   left (the queued `places` jobs then wait for that instant instead of failing); it renders nothing when
-  `budget_enabled` is false, i.e. no cap is configured; the job queue card carries the shared `JobStateLegend`
-  (total/queued/running/failed/**dead**/**pending** = „Čeká na box") with a plain-language explanation of
-  each state (`jobStates.*` + `system.jobs.intro`); it also carries **the Oznámení card** (`AnnouncementCard`,
-  gated `isMaintainer`) — a textarea + a level `<select>` (info/warning) + **Zveřejnit**/**Zrušit oznámení**
+  `budget_enabled` is false, i.e. no cap is configured; the queue panel carries the shared `JobStateLegend`
+  (queued/running/failed/**dead**/done/**pending** = „Čeká na box") with a plain-language explanation of
+  each state (`jobStates.*` + `system.jobs.intro`); **last on the page** comes the Oznámení card
+  (`AnnouncementCard`, gated `isMaintainer`) — it used to sit above everything, which put a rare errand
+  where the dashboard belongs — a textarea + a level `<select>` (info/warning) + **Zveřejnit**/**Zrušit oznámení**
   over `setAnnouncement`/`clearAnnouncement`, prefill of the current message via `fetchAnnouncement`, feedback via
   the same dismissible `ActionNotice` `<Alert>` pattern; loading/error/notice states, self-gated on `isMaintainer`,
   `UsersPage` = `/users` (admin **or** maintainer, `isAdmin`) **account management**: a user table (username, full name, role,
@@ -2574,7 +2606,7 @@ here.
   `StatsPage` = `/stats` (**any logged-in user** — read-only aggregate counts, so no role gate, like the
   leaderboard; reachable from the **user menu** and the phone drawer's account section) the **library
   statistics** over `GET /system/stats` (`useLibraryStats`), modelled on the previous system's status page: six
-  cards (`LibraryStatsCards`, shared with `SystemStatusPage`) — **Fotky** (celkem, z toho videa, v koši, mimo
+  cards (`LibraryStatsCards`, this page's own rendering) — **Fotky** (celkem, z toho videa, v koši, mimo
   koš, z toho skrytých, z toho variant ve skupinách, vidíte v Knihovně — the walk from the catalogue down to
   the count the library grid shows), **Vyhledávání podle obsahu** (připravených fotek, zbývá zpracovat),
   **Obličeje** (se jménem, bez
@@ -3217,8 +3249,8 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `useLibraryStats(enabled=true)` = a loader of the library statistics over `fetchLibraryStats` (`GET /system/stats`)
   → `{state,reload}` with the state `loading|error|ready`: it **surfaces an error explicitly** (never swallows it into zeroes —
   an empty library and an unavailable count must not look the same), an aborted request (unmount/retry) is not an error,
-  `reload` repeats the fetch (the retry in `ErrorState`); one source for `StatsPage` and the Library section
-  on `SystemStatusPage` (the aggregation is memoized on the backend, two readers = one query);
+  `reload` repeats the fetch (the retry in `ErrorState`); `StatsPage` is its reader (`SystemStatusPage` used to
+  be the second, and now reads the dashboard half of `/system/status` instead);
   `useLibraryCharts(enabled=true)` = its sibling over `fetchLibraryCharts` (`GET /system/stats/charts`) with the
   same shape and the same rules — a **separate** hook, and therefore a separate request, state and retry,
   because the charts are the heavier aggregation and must never hold the counts back or take the page down
@@ -4246,10 +4278,12 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   (the same readers, deliberately a **second** request so the cheap counts are never held up by the heavier
   series; the arrays come gap-filled and never `null`), `triggerBackup(signal)` over `POST /api/v1/backup`
   (409/503 → ApiError),
-  `requeueDeadLetterJobs(signal)` (it lists `GET /jobs?state=dead` → a per-job `POST /jobs/{id}/requeue`,
-  returns the count, 404/409 skip); the types `SystemStatus`/`LibraryStats`/`LibraryCharts` (+ its
+  `requeueDeadLetterJobs(jobType?,signal)` (one `POST /jobs/requeue-dead`, optionally `?type=`, → the number
+  requeued; it used to list `GET /jobs?state=dead` and `POST` a requeue per row, which a dead letter of
+  thousands makes hopeless); the types `SystemStatus`/`LibraryStats`/`LibraryCharts` (+ its
   `YearPhotos`/`MonthPhotos`/`CameraPhotos`/`MediaStorage`/`YearStorage`)/`DatabaseStatus`/
-  `EmbeddingsStatus`/`JobsStatus`/
+  `EmbeddingsStatus`/`JobsStatus` (whose `by_type_state` is the queue breakdown the dashboard renders, while
+  `by_type`/`total` are lifetime tallies)/`LibrarySummary`/`Uploads`/`RemainingWork`/`DuplicateScan`/
   `BackupStatus`/`ImportsStatus`/`StorageStatus`/`MapsStatus`/`MapsState`/`GeocodeStatus`/`VersionInfo`; it shares
   `ApiError` from `auth.ts` and `ImportRun` from `import.ts`,
   `users.ts` = the admin account-management client over `/api/v1/admin/users`: `fetchUsers(signal)` → `AdminUser[]`

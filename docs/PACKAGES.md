@@ -876,7 +876,10 @@ to `## Package map` in `CLAUDE.md`.
   helpers `CountsByState`/`CountsByType`/`CountsByTypeState` (the `(type,state)` breakdown keyed by the
   comparable `TypeState`; one `GROUP BY type, state` answers all three `/metrics` queue-depth families, so
   a scrape runs one query instead of one per dimension)/`ListDead`/`RequeueDead`/`Requeue` (dead **and**
-  failed → queued, for the admin endpoint)/`List`(`ListOptions{State,Limit,Offset}`, ordered
+  failed → queued, for the admin endpoint)/`RequeueAllDead(ctx, types...)` (the **bulk** requeue behind
+  `POST /jobs/requeue-dead`: one `UPDATE` over the whole dead letter, or only the given job types, returning
+  how many rows moved — the dashboard used to list the dead jobs and requeue one row per round trip, which is
+  hopeless for a dead letter of thousands)/`List`(`ListOptions{State,Limit,Offset}`, ordered
   updated_at DESC, limit cap 500, for the admin listing)/`Get`; sentinels
   `ErrDuplicate`/`ErrNoJobs`/`ErrJobNotFound`/`ErrLockLost`/`ErrNotDead`; **job types** `image_embed`/
   `face_detect`/`thumbnail`/`places`/`metadata`/`pp_import`/`ps_migrate`/`backup`; `Enqueuer` =
@@ -2867,7 +2870,10 @@ to `## Package map` in `CLAUDE.md`.
   whole component (the curator answered about the group they were shown), and `sortGroups` puts confirmed groups
   **first**: confirmation is the only ordering key here that is not a guess, so it outranks size. Groups then
   ordered largest-first/newest-keeper/id,
-  `limit` clamped to `[1,100]`; it only reads, **never mutates** (resolution goes through `dupmerge`); archived
+  `limit` clamped to `[1,100]`; **`CountGroups(ctx)`** = the same scan reduced to `Result.Total` (detection is
+  derived state, so there is no cheaper way to count it) — which is why its one caller, the admin dashboard's
+  duplicates tile, runs it in the background and never on a request (`system.DuplicateScan`);
+  it only reads, **never mutates** (resolution goes through `dupmerge`); archived
   photos are not scanned (`ListActivePhashes` filters `archived_at IS NULL`)), `internal/dupmerge/`
   (**the transactional merge of a near-duplicate group into the keeper** — the mutating counterpart of the read-only `duplicates`;
   `Service=NewService(pool)`, `Merge(ctx,Input{KeeperUID,MemberUIDs,ActorUID})→Result{albums_added,
@@ -2952,15 +2958,20 @@ to `## Package map` in `CLAUDE.md`.
   (the aggregation of the instance's operational state for the admin **system-status dashboard** — no new data, just
   a merge of the existing subsystems; all behind the small interfaces `DBPinger` (`database.DB`)/
   `EmbeddingHealth` (`embedding.Client.Healthy`)/`JobCounter`
-  (`jobs.Store.CountsByState`/`CountsByType`/`CountPending`)/`ImportLister` (`importer.Store.LatestRun`)/
+  (`jobs.Store.CountsByTypeState`/`CountPending`)/`ImportLister` (`importer.Store.LatestRun`)/
   `BackupReporter` (`backup.Service.Status`, **nil = not configured**)/`MapsReporter`
   (`mapy.Health.Snapshot`, **nil = no mapy.com key**)/`GeocodeReporter`
-  (`placesjob.WindowBudget.Snapshot`, **nil = no mapy.com key**) → unit-testable with fakes
+  (`placesjob.WindowBudget.Snapshot`, **nil = no mapy.com key**)/`DashboardCounter` (`Store.CountDashboard`)/
+  `DuplicateCounter` (`duplicates.Service.CountGroups`, **nil = detection off**) → unit-testable with fakes
   without a DB; `Service` = `New(Config{DB,Embeddings,EmbeddingURL,Jobs,Backup,Maps,Geocode,Imports,Library,Charts,
-  OriginalsPath,CachePath,StorageTTL,LibraryTTL,ChartsTTL,Clock})`; **`Collect(ctx) (Status,error)`** gathers
+  Dashboard,Duplicates,OriginalsPath,CachePath,StorageTTL,LibraryTTL,ChartsTTL,DashboardTTL,DuplicateTTL,
+  DuplicateTimeout,Clock})`; **`Collect(ctx) (Status,error)`** gathers
   `Status{Version,Database,
-  Embeddings,Jobs,Backup,Imports,Storage,Maps,Geocode}`: embeddings online/offline, the queue (by_state/by_type/total/
-  dead_letter/pending_embeddings = queued+running `image_embed`/`face_detect`), the backup state+last
+  Embeddings,Jobs,Backup,Imports,Storage,Maps,Geocode,Library,Remaining}`: embeddings online/offline, the queue
+  (**one** `CountsByTypeState` scan folded into `ByTypeState` + the `ByState`/`ByType`/`Total` sums over it, so the
+  three views cannot disagree; `ByType`/`Total` are **lifetime** tallies because the queue keeps finished jobs —
+  the UI labels them "ever run" — while `dead_letter` and `pending_embeddings` = queued+running
+  `image_embed`/`face_detect` are the actionable ones), the backup state+last
   result, the last import per source, the storage (the size of the originals+cache by a walk, free/total space via
   `statfs` through `golang.org/x/sys/unix`, **memoized** by `storageCache` for `defaultStorageTTL` 30 s so that
   polling does not keep walking the tree), DB reachability (`Ping`, a **sanitized** error), **maps**
@@ -2975,6 +2986,25 @@ to `## Package map` in `CLAUDE.md`.
   best-effort; **`LatestRuns(ctx)`** → the newest run of **every** `importer.AllSources()` keyed by source
   (a source that never ran is **absent**, not a zero run), which `collectImports` picks the dashboard's two
   migration paths out of and `/metrics` exports whole — one implementation, not two;
+  the **dashboard half** of the same snapshot answers the two questions the page is opened with, from one
+  `Store.CountDashboard` round trip (`store_dashboard.go`, scalar subselects like `countLibrarySQL`) memoized by
+  `newDashboardCache` for `defaultDashboardTTL` 30 s: `LibrarySummary{Photos,Videos,Trashed,Hidden,Private,
+  Uploads{Day,Week,Month,Year},Albums,Labels,People,Faces,Embeddings,LibraryBytes,TrashBytes,DerivedBytes}` —
+  `Photos` is the browsable catalogue (= `Library.PhotosLive`), the uploads are counted on `created_at` against
+  the **database** clock (so the four windows of one snapshot agree) and include archived photos, and the two byte
+  sums are the catalogue's own `sum(file_size)`, which is the only meaningful size when the originals live in an
+  object store and the disk walk therefore measures nothing; `DerivedBytes` is filled from
+  `StorageUsage.CacheBytes` because derived media is never in the catalogue — and
+  `RemainingWork{FacesUnassigned,Clusters,PhotosWithoutTakenAt,PhotosWithoutGPS,PhotosWithoutPlace,
+  PhotosWithoutOCR,DuplicateMarkers,Duplicates}`, cheap SQL throughout (the OCR predicate matches
+  `idx_photos_ocr_pending` exactly; `DuplicateMarkers` mirrors `dupmarkers.GroupMarkers` — valid face markers of a
+  named subject on a live photo, grouped by (photo,subject), minus the dismissed pairs) **except**
+  `Duplicates`: `DuplicateScan{Configured,Available,Groups,ComputedAt}` comes from `asyncCache[int]`
+  (`async.go`), which never computes on the request path — a read returns the last finished scan and schedules
+  the next one in the background under its own timeout (`defaultDuplicateTTL` 15 min /
+  `defaultDuplicateTimeout` 2 min, a failure keeping the last good value and backing off a whole TTL), because the
+  near-duplicate scan is the one aggregation here that walks the HNSW index; `Available:false` means "no answer
+  yet", not zero groups, and a failed scan never fails the snapshot;
   alongside the operational snapshot it also aggregates the **library statistics** for every logged-in user:
   `LibraryCounter` (`CountLibrary`, satisfied by its own `Store` = `NewStore(pool)` — a single query of scalar
   subselects `countLibrarySQL`, **not** a `maintenance scan` over the tree; partial indexes for archived/video/live,
@@ -3030,7 +3060,8 @@ to `## Package map` in `CLAUDE.md`.
   (the HTTP API over the system state: the `StatusCollector` interface (`Collect`+`LibraryStats`+`LibraryCharts`,
   satisfied by
   `*system.Service`, fakeable); `NewAPI(Config{Service,RequireMaintainer,RequireAuth})`+`RegisterRoutes`
-  mounts `GET /system/status` behind `RequireMaintainer` (the snapshot; a failed collect → 500),
+  mounts `GET /system/status` behind `RequireMaintainer` (the whole dashboard snapshot — the operational
+  sections plus `Library`/`Remaining`; a failed collect → 500),
   `GET /system/stats` behind `RequireAuth` (the library counts for **every logged-in user**; a failed aggregation → 500,
   never a body of zeros) and `GET /system/stats/charts` behind `RequireAuth` (the chart series; a failed
   aggregation → 500, never empty series, which would draw as an empty library) — two endpoints rather than one

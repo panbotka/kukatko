@@ -2539,7 +2539,8 @@
       "running": "Running",
       "failed": "Failed",
       "dead": "Dead",
-      "pending": "Waiting on box"
+      "pending": "Waiting on box",
+      "done": "Done"
     },
     "descriptions": {
       "total": "Every job on record, including ones that have already finished.",
@@ -2547,12 +2548,13 @@
       "running": "Currently being processed.",
       "failed": "Permanent, non-retryable failures (usually 0 — ordinary failures retry and then end up as “Dead”).",
       "dead": "The job failed even after all attempts were used up (default max 5) and was set aside. It will not run again on its own — it must be manually requeued (the “Requeue dead-letter jobs” button on the System status page). A high count usually means a job type keeps failing, or the box was unreachable for a long time.",
-      "pending": "Jobs for the AI box (embeddings and face detection) waiting in the queue for the box to come back online."
+      "pending": "Jobs for the AI box (embeddings and face detection) waiting in the queue for the box to come back online.",
+      "done": "Finished successfully. These rows stay in the queue table, which is why a job type's lifetime total can be far larger than the library it processed."
     }
   },
   "system": {
     "title": "System status",
-    "subtitle": "Operational health of the running instance — database, embeddings, job queue, backups, imports and storage.",
+    "subtitle": "What is in the library, what is still to do, and how the running instance is doing — the queue, backups, imports and the services it depends on.",
     "maintainerOnly": "This page is available to system maintainers only.",
     "loading": "Loading status…",
     "error": "Failed to load the system status.",
@@ -2572,7 +2574,7 @@
     },
     "jobs": {
       "title": "Job queue",
-      "intro": "The background job queue that processes repairs and data backfills. Dead jobs can be requeued with the button below.",
+      "intro": "Background work, by type and state. The queue keeps finished jobs, so only the queued, running and dead columns say anything about a backlog.",
       "total": "Total",
       "queued": "Queued",
       "running": "Running",
@@ -2581,12 +2583,19 @@
       "pending": "Waiting on box",
       "requeue": "Requeue dead-letter jobs",
       "requeued": "Requeued {{n}} jobs.",
-      "requeueError": "Failed to requeue the dead-letter jobs."
+      "requeueError": "Failed to requeue the dead-letter jobs.",
+      "type": "Job type",
+      "lifetime": "Ever run",
+      "lifetimeNote": "“Ever run” counts every job on record, finished ones included — {{total}} in total. It is history, not a backlog.",
+      "requeueColumn": "Requeue",
+      "requeueType": "Requeue",
+      "empty": "The queue is empty — nothing has been enqueued yet."
     },
     "imports": {
       "title": "Imports",
       "never": "never run",
-      "history": "Import history"
+      "history": "Import history",
+      "age": "When"
     },
     "backup": {
       "title": "Backup",
@@ -2600,14 +2609,16 @@
       "trigger": "Trigger backup",
       "triggered": "Backup started in the background.",
       "triggerConflict": "A backup is already running.",
-      "triggerError": "Failed to trigger the backup."
+      "triggerError": "Failed to trigger the backup.",
+      "age": "When"
     },
     "storage": {
-      "title": "Storage",
+      "title": "Server disk",
       "originals": "Originals",
       "cache": "Cache",
       "free": "Free space",
-      "total": "Total capacity"
+      "total": "Total capacity",
+      "note": "The server's own disk. When the originals live in an object store this holds almost none of them — what the library weighs is in the Library section above."
     },
     "actions": {
       "title": "Quick actions:",
@@ -2633,6 +2644,55 @@
     "library": {
       "title": "Library",
       "intro": "How much of the catalogue has been processed — the same counts as the statistics page."
+    },
+    "dashboard": {
+      "libraryTitle": "Library",
+      "libraryIntro": "What the catalogue holds right now.",
+      "libraryStatsLink": "Full statistics",
+      "remainingTitle": "Remaining work",
+      "remainingIntro": "Backlogs waiting to be worked through. Zero is the goal; a highlighted number links to the screen where it is dealt with.",
+      "healthTitle": "Health",
+      "healthIntro": "The state of the instance and the services it depends on."
+    },
+    "tiles": {
+      "photos": "Photos in the library",
+      "videos": "of which videos",
+      "trashed": "In the trash",
+      "hidden": "Hidden",
+      "private": "Private",
+      "albums": "Albums",
+      "labels": "Labels",
+      "people": "People",
+      "faces": "Detected faces",
+      "embeddings": "Embeddings"
+    },
+    "uploads": {
+      "title": "Uploaded recently",
+      "day": "Last 24 hours",
+      "week": "Last 7 days",
+      "month": "Last 30 days",
+      "year": "Last 365 days",
+      "note": "Counted by when a photo entered the library, not by when it was taken. The windows overlap: everything in the last 24 hours is also in the last 7 days."
+    },
+    "catalogueStorage": {
+      "title": "Storage (per the catalogue)",
+      "library": "Library",
+      "trash": "Trash",
+      "derived": "Derived media",
+      "note": "The sum of the originals' recorded sizes — this is what the library weighs wherever the files are stored. Derived media (thumbnails, video posters) is measured in the local cache."
+    },
+    "remaining": {
+      "facesUnassigned": "Faces without a name",
+      "clusters": "Clusters to name",
+      "withoutTakenAt": "Without a date",
+      "withoutGps": "Without coordinates",
+      "withoutPlace": "Without a place",
+      "withoutOcr": "Without text recognition",
+      "duplicateMarkers": "Duplicate markers",
+      "duplicates": "Duplicate groups",
+      "duplicatesPending": "Scanning in the background…",
+      "duplicatesOff": "Duplicate detection is off.",
+      "duplicatesScanned": "Scanned {{age}}"
     }
   },
   "users": {

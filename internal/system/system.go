@@ -1,6 +1,6 @@
 // Package system aggregates the operational health of the running kukatko
 // instance into a single snapshot for the admin status dashboard: embeddings
-// sidecar reachability, job-queue depth and dead-letter backlog, the backup
+// sidecar reachability, the job queue broken down by type and state, the backup
 // subsystem state, the last import run per source, on-disk storage usage,
 // database reachability, the map provider's last observed state (so a mapy.com
 // key that is being rejected is visible without opening the map) and the
@@ -8,6 +8,15 @@
 // while it happens), plus the build version. It depends on small interfaces so
 // the aggregation is unit-testable with fakes, and the HTTP layer lives in
 // internal/systemapi.
+//
+// The same snapshot answers the two questions an operator actually opens the
+// page with — what is in the library (LibrarySummary: the browsable catalogue,
+// the trash, what arrived recently, what it all weighs by the catalogue's own
+// arithmetic) and what is still to do (RemainingWork: nameless faces, clusters
+// waiting for a name, the metadata and OCR gaps, the duplicates). Both come from
+// one CountDashboard round trip, except the near-duplicate scan, which is far
+// too expensive for a polled endpoint and is therefore refreshed in the
+// background and reported with the time it was taken (see DuplicateScan).
 //
 // Alongside that maintainer view it aggregates the library statistics every
 // signed-in user may see: the instance-wide photo/embedding/face/people counts
@@ -55,10 +64,10 @@ type EmbeddingHealth interface {
 // JobCounter exposes the queue aggregates the dashboard needs. It is satisfied
 // by *jobs.Store.
 type JobCounter interface {
-	// CountsByState returns the number of jobs in each lifecycle state.
-	CountsByState(ctx context.Context) (map[jobs.State]int, error)
-	// CountsByType returns the number of jobs of each type.
-	CountsByType(ctx context.Context) (map[string]int, error)
+	// CountsByTypeState returns the number of jobs per (type, state) pair. The
+	// per-state and per-type totals are sums over it, so one scan of the queue
+	// answers the whole breakdown.
+	CountsByTypeState(ctx context.Context) (map[jobs.TypeState]int, error)
 	// CountPending returns how many jobs of the given types are queued or
 	// running.
 	CountPending(ctx context.Context, types ...string) (int, error)
@@ -113,12 +122,24 @@ type Embeddings struct {
 }
 
 // Jobs is the queue-depth section of the status snapshot.
+//
+// Every number here counts rows in the queue table, which keeps finished jobs:
+// ByType and Total are therefore lifetime tallies ("jobs ever run"), not queue
+// depth. That distinction is the whole point of ByTypeState — an `image_embed`
+// total of 41 594 against 20 930 photos says nothing about a backlog, it says a
+// re-embedding once happened — so the breakdown is what the dashboard reads and
+// the totals are only ever shown labelled as history.
 type Jobs struct {
 	// ByState is the number of jobs per lifecycle state (queued/running/...).
 	ByState map[string]int `json:"by_state"`
-	// ByType is the number of jobs per type (image_embed/face_detect/...).
+	// ByType is the number of jobs of each type over the queue's whole history.
 	ByType map[string]int `json:"by_type"`
-	// Total is the grand total across all states.
+	// ByTypeState is the queue broken down by type and then by state, the outer
+	// key being the job type. A pair with no jobs is absent rather than zero, so a
+	// caller wanting a dense matrix fills the gaps itself.
+	ByTypeState map[string]map[string]int `json:"by_type_state"`
+	// Total is the grand total across all states, i.e. every job ever enqueued
+	// that has not been pruned.
 	Total int `json:"total"`
 	// DeadLetter is the number of jobs that exhausted their retries.
 	DeadLetter int `json:"dead_letter"`
@@ -180,17 +201,21 @@ type Geocode struct {
 	ResetsAt *time.Time `json:"resets_at,omitempty"`
 }
 
-// Status is the full system-status snapshot returned by GET /system/status.
+// Status is the full system-status snapshot returned by GET /system/status: the
+// dashboard's two content sections (what is in the library, what is still to do)
+// followed by the operational ones (queue, backup, imports, disk, providers).
 type Status struct {
-	Version    version.Info  `json:"version"`
-	Database   Database      `json:"database"`
-	Embeddings Embeddings    `json:"embeddings"`
-	Jobs       Jobs          `json:"jobs"`
-	Backup     backup.Status `json:"backup"`
-	Imports    Imports       `json:"imports"`
-	Storage    StorageUsage  `json:"storage"`
-	Maps       Maps          `json:"maps"`
-	Geocode    Geocode       `json:"geocode"`
+	Version    version.Info   `json:"version"`
+	Database   Database       `json:"database"`
+	Embeddings Embeddings     `json:"embeddings"`
+	Jobs       Jobs           `json:"jobs"`
+	Backup     backup.Status  `json:"backup"`
+	Imports    Imports        `json:"imports"`
+	Storage    StorageUsage   `json:"storage"`
+	Maps       Maps           `json:"maps"`
+	Geocode    Geocode        `json:"geocode"`
+	Library    LibrarySummary `json:"library"`
+	Remaining  RemainingWork  `json:"remaining"`
 }
 
 // Config bundles the dependencies of New. Backup may be nil (no destination
@@ -221,6 +246,14 @@ type Config struct {
 	// Charts supplies the chart aggregates behind LibraryCharts. A nil Charts makes
 	// LibraryCharts fail rather than panic, on the same terms as Library.
 	Charts ChartCounter
+	// Dashboard supplies the library summary and the remaining-work counts behind
+	// Collect. A nil Dashboard makes Collect fail rather than report zeroes as if
+	// they were an empty library.
+	Dashboard DashboardCounter
+	// Duplicates counts the near-duplicate groups; nil leaves that one tile
+	// reported as not configured. It is scanned in the background, never on the
+	// request path (see DuplicateScan).
+	Duplicates DuplicateCounter
 	// OriginalsPath is the on-disk root of the stored originals.
 	OriginalsPath string
 	// CachePath is the on-disk root of the derived cache (thumbnails).
@@ -232,6 +265,15 @@ type Config struct {
 	// ChartsTTL memoises the chart aggregates; non-positive uses the default,
 	// which is deliberately much longer than LibraryTTL (see defaultChartsTTL).
 	ChartsTTL time.Duration
+	// DashboardTTL memoises the dashboard aggregates; non-positive uses the
+	// default.
+	DashboardTTL time.Duration
+	// DuplicateTTL is how long a duplicate scan's answer stays good enough before
+	// a fresh scan is scheduled; non-positive uses the default.
+	DuplicateTTL time.Duration
+	// DuplicateTimeout bounds one background duplicate scan; non-positive uses the
+	// default.
+	DuplicateTimeout time.Duration
 	// Clock supplies the current time for every cache; nil uses time.Now.
 	Clock func() time.Time
 }
@@ -251,6 +293,8 @@ type Service struct {
 	storage      *storageCache
 	library      *snapshotCache[Library]
 	charts       *snapshotCache[Charts]
+	dashboard    *snapshotCache[Dashboard]
+	duplicates   *asyncCache[int]
 }
 
 // New constructs a Service from cfg.
@@ -267,6 +311,9 @@ func New(cfg Config) *Service {
 		storage:      newStorageCache(cfg.OriginalsPath, cfg.CachePath, cfg.StorageTTL, cfg.Clock),
 		library:      newLibraryCache(cfg.Library, cfg.LibraryTTL, cfg.Clock),
 		charts:       newChartsCache(cfg.Charts, cfg.ChartsTTL, cfg.Clock),
+		dashboard:    newDashboardCache(cfg.Dashboard, cfg.DashboardTTL, cfg.Clock),
+		duplicates: newDuplicateCache(
+			cfg.Duplicates, cfg.DuplicateTTL, cfg.DuplicateTimeout, cfg.Clock),
 	}
 }
 
@@ -290,8 +337,10 @@ func (s *Service) LibraryCharts(ctx context.Context) (Charts, error) {
 
 // Collect gathers the full status snapshot. Database reachability and storage
 // usage are best-effort (a down database or an unreadable directory is reported
-// inline, not as an error); only a failure to read the queue aggregates or the
-// import history — which require a working database — is returned as an error.
+// inline, not as an error); only a failure to read the queue aggregates, the
+// dashboard counts or the import history — all of which require a working
+// database — is returned as an error, because rendering those as zeroes would
+// describe an empty library rather than an unavailable one.
 func (s *Service) Collect(ctx context.Context) (Status, error) {
 	jobsStatus, err := s.collectJobs(ctx)
 	if err != nil {
@@ -301,9 +350,17 @@ func (s *Service) Collect(ctx context.Context) (Status, error) {
 	if err != nil {
 		return Status{}, err
 	}
+	dashboard, err := s.dashboard.get(ctx)
+	if err != nil {
+		return Status{}, err
+	}
 	// Storage usage is best-effort: a missing or unreadable directory must not
 	// fail the whole readout, so the measurement error is intentionally dropped.
 	storageUsage, _ := s.storage.usage(ctx)
+	// The two numbers the catalogue cannot count itself: the derived media is a
+	// filesystem measurement, the duplicate groups a background scan.
+	dashboard.Library.DerivedBytes = storageUsage.CacheBytes
+	dashboard.Remaining.Duplicates = s.collectDuplicates()
 	return Status{
 		Version:    version.Get(),
 		Database:   s.collectDatabase(ctx),
@@ -314,37 +371,43 @@ func (s *Service) Collect(ctx context.Context) (Status, error) {
 		Storage:    storageUsage,
 		Maps:       s.collectMaps(),
 		Geocode:    s.collectGeocode(),
+		Library:    dashboard.Library,
+		Remaining:  dashboard.Remaining,
 	}, nil
 }
 
-// collectJobs reads the queue aggregates and folds them into the Jobs section,
-// deriving the grand total, the dead-letter count and the embedding backlog.
+// collectJobs reads the queue breakdown and folds it into the Jobs section. One
+// scan of the queue answers all of it: the per-state and per-type tallies are
+// sums over the (type, state) matrix, so the three views can never disagree.
 func (s *Service) collectJobs(ctx context.Context) (Jobs, error) {
-	byState, err := s.jobs.CountsByState(ctx)
+	byTypeState, err := s.jobs.CountsByTypeState(ctx)
 	if err != nil {
-		return Jobs{}, fmt.Errorf("counting jobs by state: %w", err)
-	}
-	byType, err := s.jobs.CountsByType(ctx)
-	if err != nil {
-		return Jobs{}, fmt.Errorf("counting jobs by type: %w", err)
+		return Jobs{}, fmt.Errorf("counting jobs by type and state: %w", err)
 	}
 	pending, err := s.jobs.CountPending(ctx, jobs.TypeImageEmbed, jobs.TypeFaceDetect)
 	if err != nil {
 		return Jobs{}, fmt.Errorf("counting pending embedding jobs: %w", err)
 	}
-	state := make(map[string]int, len(byState))
-	total := 0
-	for key, count := range byState {
-		state[string(key)] = count
-		total += count
-	}
-	return Jobs{
-		ByState:           state,
-		ByType:            byType,
-		Total:             total,
-		DeadLetter:        state[string(jobs.StateDead)],
+	status := Jobs{
+		ByState:           make(map[string]int),
+		ByType:            make(map[string]int),
+		ByTypeState:       make(map[string]map[string]int),
 		PendingEmbeddings: pending,
-	}, nil
+	}
+	for key, count := range byTypeState {
+		state := string(key.State)
+		status.ByState[state] += count
+		status.ByType[key.Type] += count
+		states, ok := status.ByTypeState[key.Type]
+		if !ok {
+			states = make(map[string]int)
+			status.ByTypeState[key.Type] = states
+		}
+		states[state] = count
+		status.Total += count
+	}
+	status.DeadLetter = status.ByState[string(jobs.StateDead)]
+	return status, nil
 }
 
 // LatestRuns returns the most recent run of every recognised import source,

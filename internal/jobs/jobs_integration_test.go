@@ -354,6 +354,81 @@ func TestRetryBackoffDeadLetter(t *testing.T) {
 	}
 }
 
+// markDead forces a job into the dead letter without waiting out its retry
+// budget, which is what the bulk requeue operates on.
+func markDead(t *testing.T, db *database.DB, id int64) {
+	t.Helper()
+	_, err := db.Pool().Exec(t.Context(),
+		"UPDATE jobs SET state = 'dead', attempts = 5, last_error = 'boom' WHERE id = $1", id)
+	if err != nil {
+		t.Fatalf("dead-lettering job %d: %v", id, err)
+	}
+}
+
+// TestRequeueAllDead verifies the bulk requeue: with no types it empties the
+// whole dead letter in one statement, with a type it retries only that kind of
+// work, and either way it leaves the jobs that were never dead alone.
+func TestRequeueAllDead(t *testing.T) {
+	store, db := newStore(t)
+	ctx := t.Context()
+
+	embed, err := store.Enqueue(ctx, jobs.TypeImageEmbed, photoPayload(t, "p1"), jobs.EnqueueOptions{})
+	if err != nil {
+		t.Fatalf("enqueue embed: %v", err)
+	}
+	ocr, err := store.Enqueue(ctx, jobs.TypeOCR, photoPayload(t, "p2"), jobs.EnqueueOptions{})
+	if err != nil {
+		t.Fatalf("enqueue ocr: %v", err)
+	}
+	live, err := store.Enqueue(ctx, jobs.TypeThumbnail, photoPayload(t, "p3"), jobs.EnqueueOptions{})
+	if err != nil {
+		t.Fatalf("enqueue thumbnail: %v", err)
+	}
+	markDead(t, db, embed.ID)
+	markDead(t, db, ocr.ID)
+
+	// One type only: the OCR job comes back, the embedding one stays dead.
+	requeued, err := store.RequeueAllDead(ctx, jobs.TypeOCR)
+	if err != nil {
+		t.Fatalf("RequeueAllDead(ocr): %v", err)
+	}
+	if requeued != 1 {
+		t.Errorf("RequeueAllDead(ocr) = %d, want 1", requeued)
+	}
+	refreshed, err := store.Get(ctx, ocr.ID)
+	if err != nil {
+		t.Fatalf("Get(ocr): %v", err)
+	}
+	if refreshed.State != jobs.StateQueued || refreshed.Attempts != 0 || refreshed.LastError != "" {
+		t.Errorf("requeued ocr job = %+v, want queued with a fresh attempt budget", refreshed)
+	}
+
+	// No types: the rest of the dead letter follows, and only it.
+	requeued, err = store.RequeueAllDead(ctx)
+	if err != nil {
+		t.Fatalf("RequeueAllDead(): %v", err)
+	}
+	if requeued != 1 {
+		t.Errorf("RequeueAllDead() = %d, want the 1 remaining dead job", requeued)
+	}
+	counts, err := store.CountsByState(ctx)
+	if err != nil {
+		t.Fatalf("CountsByState: %v", err)
+	}
+	if counts[jobs.StateDead] != 0 || counts[jobs.StateQueued] != 3 {
+		t.Errorf("counts = %+v, want an empty dead letter and 3 queued", counts)
+	}
+	// The job that was never dead was not touched by either call.
+	untouched, err := store.Get(ctx, live.ID)
+	if err != nil {
+		t.Fatalf("Get(thumbnail): %v", err)
+	}
+	if !untouched.UpdatedAt.Equal(live.UpdatedAt) {
+		t.Errorf("thumbnail job updated_at moved from %v to %v, want it left alone",
+			live.UpdatedAt, untouched.UpdatedAt)
+	}
+}
+
 // TestRequeueDeadErrors verifies the sentinels for a missing job and a
 // non-dead job.
 func TestRequeueDeadErrors(t *testing.T) {

@@ -2650,7 +2650,8 @@
       "running": "Běží",
       "failed": "Selhalo",
       "dead": "Mrtvé",
-      "pending": "Čeká na box"
+      "pending": "Čeká na box",
+      "done": "Hotovo"
     },
     "descriptions": {
       "total": "Počet všech úloh v evidenci, včetně už dokončených.",
@@ -2658,12 +2659,13 @@
       "running": "Právě se zpracovávají.",
       "failed": "Trvalé, neopakovatelné chyby (obvykle 0 — běžné chyby se zkoušejí znovu a případně skončí jako „Mrtvé“).",
       "dead": "Úloha selhala i po vyčerpání všech pokusů (výchozí max 5) a byla odložena mimo frontu. Sama se už nespustí — je nutné ji ručně znovu zařadit (tlačítko „Znovu zařadit mrtvé úlohy“ na stránce Stav systému). Vysoký počet obvykle znamená, že nějaký typ úlohy opakovaně selhává, nebo byl box dlouho nedostupný.",
-      "pending": "Úlohy pro AI box (embeddingy a detekce obličejů), které čekají ve frontě, než se box vrátí online."
+      "pending": "Úlohy pro AI box (embeddingy a detekce obličejů), které čekají ve frontě, než se box vrátí online.",
+      "done": "Úspěšně dokončené úlohy. Zůstávají v tabulce fronty, a proto může být celoživotní součet u typu úlohy mnohem vyšší než počet fotek, které zpracoval."
     }
   },
   "system": {
     "title": "Stav systému",
-    "subtitle": "Provozní zdraví běžící instance — databáze, embeddingy, fronta úloh, zálohy, importy a úložiště.",
+    "subtitle": "Co je v knihovně, co zbývá udělat a jak se daří běžící instanci — fronta úloh, zálohy, importy a služby, na kterých závisí.",
     "maintainerOnly": "Tato stránka je dostupná pouze správcům systému.",
     "loading": "Načítání stavu…",
     "error": "Stav systému se nepodařilo načíst.",
@@ -2683,7 +2685,7 @@
     },
     "jobs": {
       "title": "Fronta úloh",
-      "intro": "Fronta úloh na pozadí, která zpracovává opravy a doplňování dat. Mrtvé úlohy můžete znovu zařadit tlačítkem níže.",
+      "intro": "Práce na pozadí podle typu a stavu. Fronta si nechává i dokončené úlohy, takže o nedodělcích vypovídají jen sloupce ve frontě, běží a mrtvé.",
       "total": "Celkem",
       "queued": "Ve frontě",
       "running": "Běží",
@@ -2692,12 +2694,19 @@
       "pending": "Čeká na box",
       "requeue": "Znovu zařadit mrtvé úlohy",
       "requeued": "Znovu zařazeno úloh: {{n}}.",
-      "requeueError": "Mrtvé úlohy se nepodařilo znovu zařadit."
+      "requeueError": "Mrtvé úlohy se nepodařilo znovu zařadit.",
+      "type": "Typ úlohy",
+      "lifetime": "Celkem kdy",
+      "lifetimeNote": "„Celkem kdy“ počítá všechny evidované úlohy včetně dokončených — dohromady {{total}}. Je to historie, ne nedodělky.",
+      "requeueColumn": "Znovu zařadit",
+      "requeueType": "Znovu zařadit",
+      "empty": "Fronta je prázdná — zatím se nic nezařadilo."
     },
     "imports": {
       "title": "Importy",
       "never": "zatím neproběhl",
-      "history": "Historie importů"
+      "history": "Historie importů",
+      "age": "Kdy"
     },
     "backup": {
       "title": "Záloha",
@@ -2711,14 +2720,16 @@
       "trigger": "Spustit zálohu",
       "triggered": "Záloha byla spuštěna na pozadí.",
       "triggerConflict": "Záloha už běží.",
-      "triggerError": "Zálohu se nepodařilo spustit."
+      "triggerError": "Zálohu se nepodařilo spustit.",
+      "age": "Kdy"
     },
     "storage": {
-      "title": "Úložiště",
+      "title": "Disk serveru",
       "originals": "Originály",
       "cache": "Cache",
       "free": "Volné místo",
-      "total": "Celková kapacita"
+      "total": "Celková kapacita",
+      "note": "Vlastní disk serveru. Když originály leží v objektovém úložišti, není tu skoro nic — kolik váží knihovna, najdeš v sekci Knihovna výše."
     },
     "actions": {
       "title": "Rychlé akce:",
@@ -2744,6 +2755,55 @@
     "library": {
       "title": "Knihovna",
       "intro": "Kolik z katalogu je zpracováno — stejná čísla jako na stránce statistik."
+    },
+    "dashboard": {
+      "libraryTitle": "Knihovna",
+      "libraryIntro": "Co katalog právě teď obsahuje.",
+      "libraryStatsLink": "Kompletní statistiky",
+      "remainingTitle": "Zbývá udělat",
+      "remainingIntro": "Nedodělky čekající na zpracování. Cílem je nula; zvýrazněné číslo vede na obrazovku, kde se to řeší.",
+      "healthTitle": "Zdraví systému",
+      "healthIntro": "Stav instance a služeb, na kterých závisí."
+    },
+    "tiles": {
+      "photos": "Fotek v knihovně",
+      "videos": "z toho videí",
+      "trashed": "V koši",
+      "hidden": "Skrytých",
+      "private": "Soukromých",
+      "albums": "Alb",
+      "labels": "Štítků",
+      "people": "Osob",
+      "faces": "Nalezených obličejů",
+      "embeddings": "Embeddingů"
+    },
+    "uploads": {
+      "title": "Nedávno nahráno",
+      "day": "Za 24 hodin",
+      "week": "Za 7 dní",
+      "month": "Za 30 dní",
+      "year": "Za 365 dní",
+      "note": "Počítá se podle toho, kdy fotka přibyla do knihovny, ne kdy byla vyfocena. Období se překrývají: co přibylo za 24 hodin, je i v posledních 7 dnech."
+    },
+    "catalogueStorage": {
+      "title": "Velikost podle katalogu",
+      "library": "Knihovna",
+      "trash": "Koš",
+      "derived": "Odvozená data",
+      "note": "Součet velikostí originálů, jak je má zapsané katalog — tolik knihovna váží bez ohledu na to, kde soubory leží. Odvozená data (náhledy, plakáty videí) se měří v místní cache."
+    },
+    "remaining": {
+      "facesUnassigned": "Obličejů beze jména",
+      "clusters": "Shluků k pojmenování",
+      "withoutTakenAt": "Bez data pořízení",
+      "withoutGps": "Bez souřadnic",
+      "withoutPlace": "Bez místa",
+      "withoutOcr": "Bez rozpoznání textu",
+      "duplicateMarkers": "Duplicitních značek",
+      "duplicates": "Skupin duplicit",
+      "duplicatesPending": "Hledá se na pozadí…",
+      "duplicatesOff": "Hledání duplicit je vypnuté.",
+      "duplicatesScanned": "Zjištěno {{age}}"
     }
   },
   "users": {

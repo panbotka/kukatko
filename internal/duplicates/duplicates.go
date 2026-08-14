@@ -209,6 +209,19 @@ func (s *Service) FindGroups(ctx context.Context, limit, offset int) (Result, er
 	return paginate(groups, limit, offset), nil
 }
 
+// CountGroups returns how many duplicate groups the catalogue currently holds.
+// It is the same scan FindGroups runs — detection is derived state and there is
+// no cheaper way to count it — so a caller must treat it as expensive and never
+// put it on a request path (the admin dashboard scans in the background, see
+// internal/system.DuplicateScan).
+func (s *Service) CountGroups(ctx context.Context) (int, error) {
+	result, err := s.FindGroups(ctx, 1, 0)
+	if err != nil {
+		return 0, err
+	}
+	return result.Total, nil
+}
+
 // buildGraph loads the pHash entries and embedding pairs and links them into a
 // union-find, returning the populated graph. The user's dismissed pairs are
 // registered before either linking step, so a dismissed edge is never drawn in the
