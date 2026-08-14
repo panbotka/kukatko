@@ -11,7 +11,13 @@ import { useTranslation } from 'react-i18next'
 
 import { useAuth } from '../../auth/AuthContext'
 import { formatDate } from '../../lib/format'
-import { pendingName, pendingOptions, pendingValue } from '../../lib/pendingCreate'
+import {
+  hasPending,
+  pendingName,
+  pendingOptions,
+  pendingValue,
+  resolvePending,
+} from '../../lib/pendingCreate'
 import { DECADE_YEARS, decadeOf } from '../../lib/period'
 import {
   formatDecade,
@@ -31,6 +37,17 @@ import {
 } from '../../services/organize'
 import { MultiSelect, type MultiSelectOption } from '../MultiSelect'
 import { PlaceSearch } from '../photo/PlaceSearch'
+
+/**
+ * The error text for an album or label the form could not create — a duplicate
+ * name, write access withdrawn — quoting the server's own reason next to the
+ * name. A failure with nothing to quote falls back to the generic apply error.
+ */
+function createErrorMessage(name: string, error: unknown, t: TFunction): string {
+  return error instanceof ApiError && error.message !== ''
+    ? t('bulkEdit.createError', { name, message: error.message })
+    : t('bulkEdit.applyError')
+}
 
 /**
  * What a successful apply actually did: the operations that were sent (after
@@ -332,40 +349,29 @@ export function BulkEditModal({ show, photoUids, onHide, onDone, prefill }: Bulk
   }
 
   /**
-   * Creates one pending entry and swaps its fresh UID into the form (and the
-   * option list), so a later failure retries the batch without re-creating it.
-   * Returns the resolved add list.
+   * Creates the album `name` and folds it into the loaded catalog, so its chip
+   * reads by name and the field stops offering to create it. Answers with the
+   * fresh UID for {@link resolvePending}.
    */
-  async function resolveOne(
-    kind: 'album' | 'label',
-    values: string[],
-    value: string,
-    name: string,
-  ): Promise<string[]> {
-    let uid: string
-    if (kind === 'album') {
-      const album = await createAlbum({ title: name, description: '', private: false })
-      uid = album.uid
-      setLoad((prev) =>
-        prev.status === 'ready'
-          ? { ...prev, albums: [...prev.albums, { ...album, photo_count: 0 }] }
-          : prev,
-      )
-    } else {
-      const label = await createLabel({ name, priority: 0 })
-      uid = label.uid
-      setLoad((prev) =>
-        prev.status === 'ready'
-          ? { ...prev, labels: [...prev.labels, { ...label, photo_count: 0 }] }
-          : prev,
-      )
-    }
-    const resolved = values.map((current) => (current === value ? uid : current))
-    setForm((prev) => ({
-      ...prev,
-      [kind === 'album' ? 'addAlbums' : 'addLabels']: resolved,
-    }))
-    return resolved
+  async function createAlbumNamed(name: string): Promise<string> {
+    const album = await createAlbum({ title: name, description: '', private: false })
+    setLoad((prev) =>
+      prev.status === 'ready'
+        ? { ...prev, albums: [...prev.albums, { ...album, photo_count: 0 }] }
+        : prev,
+    )
+    return album.uid
+  }
+
+  /** The label counterpart of {@link createAlbumNamed}. */
+  async function createLabelNamed(name: string): Promise<string> {
+    const label = await createLabel({ name, priority: 0 })
+    setLoad((prev) =>
+      prev.status === 'ready'
+        ? { ...prev, labels: [...prev.labels, { ...label, photo_count: 0 }] }
+        : prev,
+    )
+    return label.uid
   }
 
   /**
@@ -380,31 +386,27 @@ export function BulkEditModal({ show, photoUids, onHide, onDone, prefill }: Bulk
   async function send(current: FormState) {
     setBusy(true)
     setError(null)
-    let created = false
+    // Whether the batch is preceded by creations at all; read off the form before
+    // resolving, because afterwards every marker is a real UID.
+    const created = hasPending(current.addAlbums) || hasPending(current.addLabels)
     try {
-      let resolved = current
-      for (const kind of ['album', 'label'] as const) {
-        const key = kind === 'album' ? 'addAlbums' : 'addLabels'
-        for (const value of current[key]) {
-          const name = pendingName(value)
-          if (name === null) {
-            continue
-          }
-          try {
-            resolved = { ...resolved, [key]: await resolveOne(kind, resolved[key], value, name) }
-            created = true
-          } catch (err: unknown) {
-            // Duplicate name, permission denied: the server names the problem.
-            setError(
-              err instanceof ApiError && err.message !== ''
-                ? t('bulkEdit.createError', { name, message: err.message })
-                : t('bulkEdit.applyError'),
-            )
-            return
-          }
-        }
+      const albums = await resolvePending(current.addAlbums, createAlbumNamed)
+      setForm((prev) => ({ ...prev, addAlbums: albums.values }))
+      if (albums.status === 'failed') {
+        setError(createErrorMessage(albums.name, albums.error, t))
+        return
       }
-      const ops = buildOperations(resolved)
+      const labels = await resolvePending(current.addLabels, createLabelNamed)
+      setForm((prev) => ({ ...prev, addLabels: labels.values }))
+      if (labels.status === 'failed') {
+        setError(createErrorMessage(labels.name, labels.error, t))
+        return
+      }
+      const ops = buildOperations({
+        ...current,
+        addAlbums: albums.values,
+        addLabels: labels.values,
+      })
       if (ops === 'empty' || ops === 'invalid-coords' || ops === 'invalid-taken-at') {
         // Unreachable: apply() validated the same form, and resolving pending
         // entries only swaps values. The guard merely narrows the union.

@@ -9,8 +9,9 @@ import type { MultiSelectOption } from '../components/MultiSelect'
  * label behind: the consumer first creates the pending entries, swaps their fresh
  * UIDs in, and only then submits.
  *
- * Shared by the grid-selection bulk edit (`BulkEditModal`) and the upload page's
- * album/label picker (`useUploadOrganize`), so both offer identical inline-create
+ * Shared by the batch action bar's album/label pickers (`BatchActionBar`), the
+ * grid-selection bulk edit (`BulkEditModal`) and the upload page's album/label
+ * picker (`useUploadOrganize`), so all three offer identical inline-create
  * behaviour.
  */
 const CREATE_PREFIX = 'create:'
@@ -34,4 +35,55 @@ export function pendingOptions(selected: string[]): MultiSelectOption[] {
     const name = pendingName(value)
     return name === null ? [] : [{ value, label: name }]
   })
+}
+
+/** Whether `values` still holds a name that has to be created before it is usable. */
+export function hasPending(values: string[]): boolean {
+  return values.some((value) => pendingName(value) !== null)
+}
+
+/**
+ * Outcome of {@link resolvePending}. Both branches carry `values`: on a failure
+ * it is the list with the entries created *so far* already swapped in, so the
+ * caller can write it back and a retry never creates the same album twice.
+ */
+export type PendingResolution =
+  | { status: 'resolved'; values: string[] }
+  | {
+      status: 'failed'
+      values: string[]
+      /** The name whose creation failed. */
+      name: string
+      /** Whatever `create` rejected with — typically an `ApiError`. */
+      error: unknown
+    }
+
+/**
+ * Turns every `create:` marker in `values` into a real entry: each pending name
+ * is handed to `create`, which is expected to create it and answer with its
+ * fresh UID, and that UID replaces the marker. Real UIDs pass through untouched,
+ * so a list with nothing pending resolves without a single request.
+ *
+ * Creation runs one at a time and stops at the first failure — the server names
+ * the problem (a duplicate title, permission denied) and repeating it for every
+ * remaining name would only bury it.
+ */
+export async function resolvePending(
+  values: string[],
+  create: (name: string) => Promise<string>,
+): Promise<PendingResolution> {
+  let resolved = values
+  for (const value of values) {
+    const name = pendingName(value)
+    if (name === null) {
+      continue
+    }
+    try {
+      const uid = await create(name)
+      resolved = resolved.map((current) => (current === value ? uid : current))
+    } catch (error: unknown) {
+      return { status: 'failed', values: resolved, name, error }
+    }
+  }
+  return { status: 'resolved', values: resolved }
 }

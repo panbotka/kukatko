@@ -887,7 +887,17 @@ here.
   gets the whole screen so the field + its options clear the keyboard, options
   lazy from `fetchAlbums`/`fetchLabels` — the effect keys **only on `picker`** (+ a retry counter), never on
   `options.status`, otherwise writing `loading`/`ready` would re-run the effect and **abort its own fetch**;
-  "already loaded" is held by `useRef`, a retry after an error bumps the counter, cache per session), **Oblíbené**, **Archivovat**, **Stáhnout**
+  "already loaded" is held by `useRef`, a retry after an error bumps the counter, cache per session.
+  Both **add** fields also **create**: `onCreate` (only for `useAuth().canWrite` — a viewer just picks)
+  appends **„Vytvořit «název»“** for a name no album/label carries, which is where a new album usually
+  starts ("these forty photos are Ostatky 2022"). The pick is held as a `create:` marker
+  (`lib/pendingCreate`, shared with `BulkEditModal` and `UploadOrganize`) and turned into a real album/label
+  **only on Použít**, via `resolvePending` → `POST /albums`/`POST /labels`, whose fresh UID is swapped into
+  the field and the cached options before the batch goes — so closing the picker creates nothing and a retry
+  after a failed batch never makes a second album of that name. A failed creation names it in a danger toast
+  (`batch.createError` / `batch.createErrorUnknown`), skips the batch and **keeps the photo selection**.
+  The **remove** labels field never creates — a label that does not exist cannot be taken off a photo),
+  **Oblíbené**, **Archivovat**, **Stáhnout**
   (`DownloadZipButton`), **Seskupit** (`StackSelectedControl`) and **Další úpravy** (the whole
   `BulkEditModal`); each metadata action runs **as a single `POST /photos/bulk`** via `bulkUpdatePhotos`,
   success/failure reported by a **toast** (`useToast`): success clears the selection and reloads the grid (`bulk.finish`),
@@ -935,11 +945,12 @@ here.
   **„Vytvořit «název»“** for a name that fold-insensitively matches nothing existing — only for
   users with write permission (`useAuth().canWrite`). A new item appears immediately as a chip
   (value `create:<název>`, `CREATE_PREFIX` — the colon doesn't occur in a base32 UID; the shared
-  helpers `pendingValue`/`pendingName`/`pendingOptions` live in `lib/pendingCreate` and are also used by
+  helpers `pendingValue`/`pendingName`/`pendingOptions`/`hasPending`/`resolvePending` live in
+  `lib/pendingCreate` and are also used by `BatchActionBar` and
   `useUploadOrganize`) and **is created
-  only on Apply**: first `POST /albums`/`POST /labels` (defaults: empty description, non-private;
-  priority 0), the fresh UID is swapped into the form and options — so a retry doesn't create a duplicate — and
-  only then does the batch go; a canceled dialog creates nothing. A failed creation prints the server's message
+  only on Apply**: `resolvePending` first does `POST /albums`/`POST /labels` (defaults: empty description,
+  non-private; priority 0), the fresh UID is swapped into the form and options — so a retry doesn't create a
+  duplicate — and only then does the batch go; a canceled dialog creates nothing. A failed creation prints the server's message
   (`bulkEdit.createError`) and doesn't send the batch, the selection stays; when the batch fails only after creation,
   `bulkEdit.createdButApplyFailed` says the items already exist and only the assignment failed),
   **Metadata** (set/clear the description + **Datum pořízení**, `TakenAtField`), **Poloha**
@@ -1666,9 +1677,13 @@ here.
   **`AddAutocomplete`** (a type-to-filter combobox over react-bootstrap primitives,
   **case/accent-insensitive** via `lib/text` `foldedIncludes`, keyboard ↑/↓/Enter/Esc + click,
   a „nic neodpovídá" state, ~44px tap targets, ARIA combobox/listbox; an optional `onCreate` prop adds
-  a „Vytvořit «dotaz»" row — `createAndAttachLabel` does `createLabel` + `attachLabel`, matches the name via
-  `foldedEquals`, so it just attaches an existing label instead of colliding on the slug; albums are
-  not created here — type/cover/privacy belong on the Alba page).
+  a „Vytvořit «dotaz»" row — `createAndAttachLabel` does `createLabel` + `attachLabel` and
+  `createAndAddAlbum` does `createAlbum` + `addAlbumPhotos` (album defaults: empty description, non-private
+  — type/cover/privacy stay editable on the Alba page), both matching the name via `foldedEquals` so they
+  reuse an existing entry instead of colliding on the slug. **Both fields therefore stay mounted even with an
+  empty option list** — that is the only way to get the first album/label. The create row is offered only for
+  a name that really does not exist: an entry the photo already carries is out of `options`, so it is handed
+  over separately as **`existingNames`**, which suppresses the offer without putting it back in the list).
   **1b. Komentáře** (`CommentsPanel`, `components/photo/`, **NEW**) = **the conversation around the photo**,
   mounted directly under the people because that is what it is usually about („kdo je ten kluk vlevo?").
   It is the social half of the archive: most of what a family knows about an old photograph is not metadata

@@ -31,6 +31,13 @@ export interface AddAutocompleteProps {
    * user can retry. Leave unset for a pick-only field.
    */
   onCreate?: (name: string) => Promise<boolean>
+  /**
+   * Names that exist but are deliberately not offered — an album the photo is
+   * already in, a label it already carries. They are excluded from the options
+   * (picking them again would be a no-op) yet creating them would collide with
+   * the entry that exists, so typing one offers neither row.
+   */
+  existingNames?: readonly string[]
   /** Accessible name / placeholder for the field (e.g. "Add to album"). */
   label: string
   /** Unique id tying the visually-hidden label, input and listbox together. */
@@ -58,7 +65,10 @@ const MAX_SUGGESTIONS = 50
  * option gets a trailing "create «query»" row, so a photo can be given a label
  * that does not exist yet — including the very first one, when the option list
  * is empty. Without it the field only picks, and a non-empty query that filters
- * everything out shows a "nothing matches" row instead.
+ * everything out shows a "nothing matches" row instead. The offer is measured
+ * against {@link AddAutocompleteProps.existingNames} as well, so a name that
+ * merely dropped out of the options (the photo already carries it) is never
+ * offered for creation.
  *
  * Built on react-bootstrap primitives (no extra dependency) with
  * combobox/listbox ARIA roles and ~44px tap targets.
@@ -67,6 +77,7 @@ export function AddAutocomplete({
   options,
   onAdd,
   onCreate,
+  existingNames,
   label,
   id,
   disabled,
@@ -86,12 +97,15 @@ export function AddAutocomplete({
     [options, text],
   )
 
-  // Creating is offered only for a name no option already carries; the create
-  // row sits after the suggestions, so its index is `suggestions.length`.
+  // Creating is offered only for a name nothing already carries — neither an
+  // offered option nor an entry held back because the photo has it — so the row
+  // never promises to create what exists. The create row sits after the
+  // suggestions, so its index is `suggestions.length`.
   const canCreate =
     onCreate !== undefined &&
     trimmed !== '' &&
-    !options.some((option) => foldedEquals(option.label, trimmed))
+    !options.some((option) => foldedEquals(option.label, trimmed)) &&
+    !(existingNames ?? []).some((name) => foldedEquals(name, trimmed))
   const rowCount = suggestions.length + (canCreate ? 1 : 0)
 
   // A dropdown is only shown once the user has typed something.

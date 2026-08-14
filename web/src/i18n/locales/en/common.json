@@ -1254,6 +1254,8 @@
     "apply": "Apply",
     "cancel": "Cancel",
     "optionsError": "Could not load the list. Please try again.",
+    "createError": "Could not create “{{name}}”: {{message}}",
+    "createErrorUnknown": "Could not create “{{name}}”. Please try again.",
     "retry": "Try again",
     "applied_one": "Applied to {{count}} photo",
     "applied_other": "Applied to {{count}} photos",

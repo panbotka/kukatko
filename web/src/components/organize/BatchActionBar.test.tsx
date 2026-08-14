@@ -9,7 +9,7 @@ import { type UseBulkEditResult } from '../../hooks/useBulkEdit'
 import i18n from '../../i18n'
 import { ApiError } from '../../services/auth'
 import { type BulkResult } from '../../services/bulk'
-import { type AlbumCount, type LabelCount } from '../../services/organize'
+import { type Album, type AlbumCount, type Label, type LabelCount } from '../../services/organize'
 import { ToastProvider } from '../toast/ToastProvider'
 
 import { BatchActionBar, type BatchExtraAction } from './BatchActionBar'
@@ -20,14 +20,23 @@ vi.mock('../../services/bulk', async (importOriginal) => {
 })
 vi.mock('../../services/organize', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../services/organize')>()
-  return { ...actual, fetchAlbums: vi.fn(), fetchLabels: vi.fn() }
+  return {
+    ...actual,
+    fetchAlbums: vi.fn(),
+    fetchLabels: vi.fn(),
+    createAlbum: vi.fn(),
+    createLabel: vi.fn(),
+  }
 })
 
 const { bulkUpdatePhotos } = await import('../../services/bulk')
-const { fetchAlbums, fetchLabels } = await import('../../services/organize')
+const { fetchAlbums, fetchLabels, createAlbum, createLabel } =
+  await import('../../services/organize')
 const bulkMock = vi.mocked(bulkUpdatePhotos)
 const albumsMock = vi.mocked(fetchAlbums)
 const labelsMock = vi.mocked(fetchLabels)
+const createAlbumMock = vi.mocked(createAlbum)
+const createLabelMock = vi.mocked(createLabel)
 
 /** A bulk result with `updated` photos touched and nothing skipped/errored. */
 function result(updated: number): BulkResult {
@@ -126,10 +135,17 @@ const editorAuth: AuthContextValue = {
   refresh: vi.fn(),
 }
 
-function renderBar(bulk: UseBulkEditResult, extraActions?: BatchExtraAction[]) {
+/** A viewer auth context — read-only, so nothing may be created inline. */
+const viewerAuth: AuthContextValue = { ...editorAuth, role: 'viewer', canWrite: false }
+
+function renderBar(
+  bulk: UseBulkEditResult,
+  extraActions?: BatchExtraAction[],
+  auth: AuthContextValue = editorAuth,
+) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <AuthContext.Provider value={editorAuth}>
+      <AuthContext.Provider value={auth}>
         <ToastProvider>
           <MemoryRouter>
             <BatchActionBar bulk={bulk} onSelectAll={vi.fn()} extraActions={extraActions} />
@@ -148,6 +164,8 @@ beforeEach(() => {
   bulkMock.mockReset()
   albumsMock.mockReset()
   labelsMock.mockReset()
+  createAlbumMock.mockReset()
+  createLabelMock.mockReset()
 })
 
 describe('BatchActionBar', () => {
@@ -306,6 +324,181 @@ describe('BatchActionBar', () => {
     // The second attempt succeeds and the picker renders its options.
     expect(await screen.findByLabelText('Add to albums')).toBeInTheDocument()
     expect(albumsMock).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('BatchActionBar inline creation', () => {
+  const createdAlbum: Album = {
+    uid: 'al9',
+    slug: 'ostatky-2022',
+    title: 'Ostatky 2022',
+    description: '',
+    type: 'album',
+    private: false,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  }
+  const createdLabel: Label = {
+    uid: 'la9',
+    slug: 'ostatky',
+    name: 'Ostatky',
+    priority: 0,
+    review_enabled: true,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  }
+
+  it('creates the typed album and adds the whole selection to it in one apply', async () => {
+    const bulk = makeBulk()
+    albumsMock.mockResolvedValue([album('al1', 'Trip')])
+    labelsMock.mockResolvedValue([])
+    createAlbumMock.mockResolvedValue(createdAlbum)
+    bulkMock.mockResolvedValue(result(2))
+    const user = userEvent.setup()
+    renderBar(bulk)
+
+    await user.click(screen.getByRole('button', { name: 'Add to album' }))
+    await user.type(await screen.findByLabelText('Add to albums'), 'Ostatky 2022')
+    await user.click(await screen.findByRole('option', { name: 'Create “Ostatky 2022”' }))
+
+    // The pick is held as the typed name until the apply — abandoning the picker
+    // must not leave an empty album behind.
+    expect(createAlbumMock).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Remove Ostatky 2022' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+    await waitFor(() => {
+      expect(createAlbumMock).toHaveBeenCalledWith({
+        title: 'Ostatky 2022',
+        description: '',
+        private: false,
+      })
+    })
+    // The batch goes out with the album's fresh UID, never the pending marker.
+    expect(bulkMock).toHaveBeenCalledWith(['a', 'b'], { add_to_albums: ['al9'] })
+    expect(await screen.findByText('Applied to 2 photos')).toBeInTheDocument()
+    expect(bulk.finish).toHaveBeenCalledTimes(1)
+  })
+
+  it('creates the typed label and applies it alongside an existing one', async () => {
+    const bulk = makeBulk()
+    albumsMock.mockResolvedValue([])
+    labelsMock.mockResolvedValue([label('la1', 'Beach')])
+    createLabelMock.mockResolvedValue(createdLabel)
+    bulkMock.mockResolvedValue(result(2))
+    const user = userEvent.setup()
+    renderBar(bulk)
+
+    await user.click(screen.getByRole('button', { name: 'Labels' }))
+    const field = await screen.findByLabelText('Add labels')
+    await user.type(field, 'Beach{Enter}')
+    await user.type(field, 'Ostatky')
+    await user.click(await screen.findByRole('option', { name: 'Create “Ostatky”' }))
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+    await waitFor(() => {
+      expect(createLabelMock).toHaveBeenCalledWith({ name: 'Ostatky', priority: 0 })
+    })
+    expect(bulkMock).toHaveBeenCalledWith(['a', 'b'], { add_labels: ['la1', 'la9'] })
+  })
+
+  it('offers to create only a name no album carries', async () => {
+    const bulk = makeBulk()
+    albumsMock.mockResolvedValue([album('al1', 'Dovolená')])
+    labelsMock.mockResolvedValue([])
+    const user = userEvent.setup()
+    renderBar(bulk)
+
+    await user.click(screen.getByRole('button', { name: 'Add to album' }))
+    // Case and accents fold, so this names the album that exists.
+    await user.type(await screen.findByLabelText('Add to albums'), 'dovolena')
+
+    const listbox = await screen.findByRole('listbox', { name: 'Add to albums' })
+    const options = within(listbox).getAllByRole('option')
+    expect(options).toHaveLength(1)
+    expect(options[0]).toHaveTextContent('Dovolená')
+  })
+
+  it('never offers to create a label to remove', async () => {
+    const bulk = makeBulk()
+    albumsMock.mockResolvedValue([])
+    labelsMock.mockResolvedValue([label('la1', 'Beach')])
+    const user = userEvent.setup()
+    renderBar(bulk)
+
+    await user.click(screen.getByRole('button', { name: 'Labels' }))
+    await user.type(await screen.findByLabelText('Remove labels'), 'Ostatky')
+
+    // A label that does not exist cannot be taken off a photo.
+    const listbox = await screen.findByRole('listbox', { name: 'Remove labels' })
+    expect(within(listbox).queryByRole('option')).toBeNull()
+    expect(within(listbox).getByText('No matches.')).toBeInTheDocument()
+  })
+
+  it('keeps the selection and the typed name when the album cannot be created', async () => {
+    const bulk = makeBulk()
+    albumsMock.mockResolvedValue([])
+    labelsMock.mockResolvedValue([])
+    createAlbumMock.mockRejectedValue(new ApiError(409, 'album title already used'))
+    const user = userEvent.setup()
+    renderBar(bulk)
+
+    await user.click(screen.getByRole('button', { name: 'Add to album' }))
+    await user.type(await screen.findByLabelText('Add to albums'), 'Ostatky 2022')
+    await user.click(await screen.findByRole('option', { name: 'Create “Ostatky 2022”' }))
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+    expect(
+      await screen.findByText('Could not create “Ostatky 2022”: album title already used'),
+    ).toBeInTheDocument()
+    // Nothing was applied, the picker stays open with the pick, and the photo
+    // selection survives so the apply can simply be retried.
+    expect(bulkMock).not.toHaveBeenCalled()
+    expect(bulk.finish).not.toHaveBeenCalled()
+    expect(bulk.selection.clear).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Remove Ostatky 2022' })).toBeInTheDocument()
+  })
+
+  it('creates each album only once when a failed batch is retried', async () => {
+    const bulk = makeBulk()
+    albumsMock.mockResolvedValue([])
+    labelsMock.mockResolvedValue([])
+    createAlbumMock.mockResolvedValue(createdAlbum)
+    bulkMock.mockRejectedValueOnce(new ApiError(500, 'boom'))
+    bulkMock.mockResolvedValueOnce(result(2))
+    const user = userEvent.setup()
+    renderBar(bulk)
+
+    await user.click(screen.getByRole('button', { name: 'Add to album' }))
+    await user.type(await screen.findByLabelText('Add to albums'), 'Ostatky 2022')
+    await user.click(await screen.findByRole('option', { name: 'Create “Ostatky 2022”' }))
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(await screen.findByText('boom')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+    await waitFor(() => {
+      expect(bulkMock).toHaveBeenCalledTimes(2)
+    })
+    // The first apply swapped the marker for the real UID, so the retry reuses
+    // the album instead of creating a second one of the same name.
+    expect(createAlbumMock).toHaveBeenCalledTimes(1)
+    expect(bulkMock).toHaveBeenLastCalledWith(['a', 'b'], { add_to_albums: ['al9'] })
+  })
+
+  it('does not offer creation to a viewer', async () => {
+    albumsMock.mockResolvedValue([album('al1', 'Trip')])
+    labelsMock.mockResolvedValue([])
+    const user = userEvent.setup()
+    renderBar(makeBulk(), undefined, viewerAuth)
+
+    await user.click(screen.getByRole('button', { name: 'Add to album' }))
+    await user.type(await screen.findByLabelText('Add to albums'), 'Ostatky 2022')
+
+    // A viewer may not create an album, so the row is simply absent.
+    expect(await screen.findByText('No matches.')).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: /Create/ })).toBeNull()
   })
 })
 
