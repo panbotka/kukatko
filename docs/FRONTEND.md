@@ -164,7 +164,17 @@ here.
   One badge per non-empty `queued`/`running`/`failed`/`dead` state from `by_state` (the terminal `done`
   is deliberately omitted), `failed`/`dead` carry `bg="danger"` so they catch the eye; when everything is zero,
   a single quiet `idle` badge. A failed request silently hides the badge — the footer never breaks; texts
-  `footer.jobs.*` (cs/en)),
+  `footer.jobs.*` (cs/en).
+  The whole row is **one `<Link to="/system">`** — the queue is a panel of the system-status page, the
+  frontend has no `/jobs` route — so „ve frontě 16“ leads where it can be acted on instead of being a
+  dead number. One link for the row, not one per badge: a single destination earns a single tab stop, and
+  a real anchor is tab-reachable and Enter-activatable without any key handling. `text-decoration-none`
+  keeps the badges looking exactly as they did (a badge sets its own colour; the underline was the only
+  thing the anchor added). The link carries an explicit `aria-label` = `title` (`footer.jobs.link`,
+  e.g. „Fronta úloh: ve frontě 16, běží 1 — otevřít Stav systému“) so its accessible name names the queue,
+  its state **and** the destination rather than announcing bare counts. The audience matches the target:
+  the badges render for `isMaintainer`, which is the very predicate `/system`'s `RequireRole role="maintainer"`
+  guard uses, so nobody is offered a link to a page that would answer them with `ForbiddenPage`),
   `AnnouncementBanner` (**instance-wide announcement at the top of the content**: in `Layout` right **before `<Outlet/>`**,
   so every logged-in user sees it on every page **inside the shell**; routes **outside `Layout`**
   (`/photos/:uid`, `/slideshow`, `/review`, `/duplicates/compare`) have no banner — immersive views,

@@ -1,5 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
@@ -45,11 +47,20 @@ function stats(byState: Record<string, number>): JobStats {
   return { by_state: byState, by_type: {}, total }
 }
 
+/**
+ * Renders the badges as the footer does, inside a router with a stand-in for the
+ * system-status page so a real navigation can be observed.
+ */
 function renderBadges(role: TestRole) {
   return render(
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={auth(role)}>
-        <JobQueueBadges />
+        <MemoryRouter initialEntries={['/']}>
+          <Routes>
+            <Route path="/" element={<JobQueueBadges />} />
+            <Route path="/system" element={<p>system status page</p>} />
+          </Routes>
+        </MemoryRouter>
       </AuthContext.Provider>
     </I18nextProvider>,
   )
@@ -63,7 +74,9 @@ beforeEach(async () => {
 describe('JobQueueBadges', () => {
   it('renders nothing and issues no request for a non-maintainer (viewer or admin)', () => {
     // The /jobs stats endpoint is a maintainer-only operations capability, so even
-    // a governance admin sees nothing and triggers no request.
+    // a governance admin sees nothing and triggers no request. That is also the
+    // threshold guarding the `/system` route the badges link to, so nobody is
+    // offered a link to a page that would answer them with "forbidden".
     statsMock.mockResolvedValue(stats({ queued: 3 }))
     for (const role of ['viewer', 'admin'] as const) {
       const { container, unmount } = renderBadges(role)
@@ -95,6 +108,47 @@ describe('JobQueueBadges', () => {
     renderBadges('maintainer')
     expect(await screen.findByText('idle')).toBeInTheDocument()
     expect(screen.queryByText(/queued/)).not.toBeInTheDocument()
+  })
+
+  it('links the badges to the system-status page that holds the queue', async () => {
+    statsMock.mockResolvedValue(stats({ queued: 16 }))
+    renderBadges('maintainer')
+    const link = await screen.findByRole('link')
+    expect(link).toHaveAttribute('href', '/system')
+    // The badge itself is inside the link — the whole row is one destination.
+    expect(link).toContainElement(screen.getByText('queued 16'))
+  })
+
+  it('names the queue, its state and the destination, so the label stands alone', async () => {
+    statsMock.mockResolvedValue(stats({ queued: 16, running: 1 }))
+    renderBadges('maintainer')
+    // Not just the bare numbers a screen reader would otherwise announce.
+    expect(
+      await screen.findByRole('link', {
+        name: 'Job queue: queued 16, running 1 — open System status',
+      }),
+    ).toBeInTheDocument()
+  })
+
+  it('labels the idle row too', async () => {
+    statsMock.mockResolvedValue(stats({}))
+    renderBadges('maintainer')
+    expect(
+      await screen.findByRole('link', { name: 'Job queue: idle — open System status' }),
+    ).toBeInTheDocument()
+  })
+
+  it('is reachable by keyboard and opens the page on Enter', async () => {
+    const user = userEvent.setup()
+    statsMock.mockResolvedValue(stats({ queued: 16 }))
+    renderBadges('maintainer')
+    const link = await screen.findByRole('link')
+
+    await user.tab()
+    expect(link).toHaveFocus()
+    await user.keyboard('{Enter}')
+
+    expect(screen.getByText('system status page')).toBeInTheDocument()
   })
 
   it('hides the badges silently when the request rejects', async () => {

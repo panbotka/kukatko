@@ -23,7 +23,7 @@
     "github": "GitHub",
     "githubTitle": "Zobrazit zdrojový kód projektu na GitHubu",
     "jobs": {
-      "title": "Fronta úloh",
+      "link": "Fronta úloh: {{summary}} — otevřít Stav systému",
       "idle": "nečinné",
       "queued": "ve frontě",
       "running": "běží",
