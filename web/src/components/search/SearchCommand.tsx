@@ -44,8 +44,14 @@ interface SearchItem {
   secondary?: string
   /** An optional trailing count (an album's / label's photo tally). */
   count?: number
-  /** A cover/avatar photo UID to show as a thumbnail, when the entity has one. */
-  thumbUid?: string
+  /**
+   * Where to fetch the row's thumbnail, when there is one to draw. Entity hits
+   * carry the address the backend minted for their cover (already the medallion
+   * size, and signed when the library sits behind a media Worker); a photo row
+   * builds its own from the uid. Absent — or failing to load — the row falls
+   * back to {@link SearchItem.icon}.
+   */
+  thumbSrc?: string
   /** Renders the thumbnail as a circle (people) rather than a rounded square. */
   circle?: boolean
   /** A glyph shown when there is no thumbnail (the action row, labels, gaps). */
@@ -125,7 +131,10 @@ function buildDirectGroup(
         to: route,
         primary: directHitTitle(direct),
         secondary: directHitSecondary(direct, t),
-        thumbUid: direct.target_kind === 'photo' ? direct.target_uid : direct.cover,
+        thumbSrc:
+          direct.target_kind === 'photo' && direct.target_uid !== undefined
+            ? thumbUrl(direct.target_uid, RESULT_THUMB_SIZE)
+            : direct.thumb_url,
         circle: direct.target_kind === 'person',
         icon: DIRECT_TARGET_ICON[direct.target_kind],
       },
@@ -227,7 +236,7 @@ function buildGroups(
           photo.file_name,
         ),
         secondary: formatPhotoDate(photo.taken_at, lang),
-        thumbUid: photo.uid,
+        thumbSrc: thumbUrl(photo.uid, RESULT_THUMB_SIZE),
         icon: 'images',
       })),
     })
@@ -240,7 +249,7 @@ function buildGroups(
         id: `sc-opt-person-${person.uid}`,
         to: `/people/${person.uid}`,
         primary: person.name,
-        thumbUid: person.cover,
+        thumbSrc: person.thumb_url,
         circle: true,
         icon: 'person-circle',
       })),
@@ -255,7 +264,7 @@ function buildGroups(
         to: `/albums/${album.uid}`,
         primary: album.title === '' ? untitled : albumDisplayTitle(album.title, lang),
         count: album.photo_count,
-        thumbUid: album.cover,
+        thumbSrc: album.thumb_url,
         icon: 'collection',
       })),
     })
@@ -269,6 +278,7 @@ function buildGroups(
         to: `/labels/${label.uid}`,
         primary: label.name,
         count: label.photo_count,
+        thumbSrc: label.thumb_url,
         icon: 'tags',
       })),
     })
@@ -276,25 +286,39 @@ function buildGroups(
   return groups
 }
 
-/** The leading thumbnail or glyph medallion for one result row. */
+/**
+ * The leading medallion of one result row: the entity's own picture when it has
+ * one, and the kind's glyph when it does not.
+ *
+ * A photograph is what tells one album — or label, or person — from another at a
+ * glance, so every row that *can* show one does. The glyph is the fallback and
+ * has to stay one: an entity with no photo behind it, and an image that never
+ * arrives, must both land on it rather than on an empty hole, and the two boxes
+ * are the same size so a row never changes height when they swap.
+ */
 function ResultMedia({ item }: { item: SearchItem }) {
-  if (item.thumbUid !== undefined && item.thumbUid !== '') {
+  // A src that fails to load falls back to the glyph. Keyed on the src itself, so
+  // a row reused for a different entity as the query changes gets a fresh try.
+  const [failedSrc, setFailedSrc] = useState<string | null>(null)
+  const circle = item.circle === true ? ' kukatko-search-option__thumb--circle' : ''
+
+  if (item.thumbSrc !== undefined && item.thumbSrc !== '' && item.thumbSrc !== failedSrc) {
     return (
       <FadeInImage
-        src={thumbUrl(item.thumbUid, RESULT_THUMB_SIZE)}
+        src={item.thumbSrc}
+        // Decoration: the row names the entity right beside it, so a screen
+        // reader reading the picture too would only say everything twice.
         alt=""
-        className={`kukatko-search-option__thumb${
-          item.circle === true ? ' kukatko-search-option__thumb--circle' : ''
-        }`}
+        aria-hidden="true"
+        className={`kukatko-search-option__thumb${circle}`}
+        onError={() => {
+          setFailedSrc(item.thumbSrc ?? null)
+        }}
       />
     )
   }
   return (
-    <span
-      className={`kukatko-search-option__icon${
-        item.circle === true ? ' kukatko-search-option__thumb--circle' : ''
-      }`}
-    >
+    <span className={`kukatko-search-option__icon${circle}`}>
       <Icon name={item.icon ?? 'search'} />
     </span>
   )

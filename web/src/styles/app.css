@@ -1708,6 +1708,21 @@ body {
   text-decoration: none;
 }
 
+/* The label's own picture, leading the chip. It is inset towards the pill's edge
+   because the link's horizontal padding is sized for text, and a square sitting
+   that far in reads as floating rather than as part of the chip. Fixed size and
+   a sunken well behind it, so a chip is the same height before and after its
+   thumbnail arrives. */
+.kk-label-chip__thumb {
+  flex-shrink: 0;
+  width: 1.5rem;
+  height: 1.5rem;
+  margin-inline-start: calc(-1 * var(--kk-space-2));
+  border-radius: var(--kk-radius-sm);
+  background-color: var(--kk-surface-sunken);
+  object-fit: cover;
+}
+
 /* User data, so it may be long or unbroken: it truncates instead of widening the
    chip past the container. */
 .kk-label-chip__name {

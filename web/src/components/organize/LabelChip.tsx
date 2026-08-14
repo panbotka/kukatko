@@ -1,9 +1,19 @@
+import { useState } from 'react'
 import Dropdown from 'react-bootstrap/Dropdown'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 import { type LabelCount } from '../../services/organize'
+import { thumbUrl } from '../../services/photos'
+import { FadeInImage } from '../FadeInImage'
 import { Icon } from '../Icon'
+
+/**
+ * Thumbnail size for a chip's preview. The medallion is a couple of dozen pixels
+ * across and a cloud draws a hundred of them at once, so it takes the smallest
+ * square tile — the same one the command palette's rows use.
+ */
+const CHIP_THUMB_SIZE = 'tile_100'
 
 /**
  * What an editor can do to a label from the cloud, plus which label is currently
@@ -44,9 +54,18 @@ export interface LabelChipProps {
  * A label the game skips still says so without opening the menu: it carries a
  * muted `slash-circle` beside its name, so the state stays visible at a glance
  * the way the switch used to make it.
+ *
+ * A label that has photos leads with one of them — the same preview an album
+ * tile draws, at chip size — because a wall of a hundred identical pills is a
+ * wall of text, and "Dovolená 2016" says far less than the picture behind it. A
+ * label with no photo (and one whose thumbnail fails to arrive) simply keeps the
+ * plain pill: there is no gap to fill, a chip is not a fixed-height row.
  */
 export function LabelChip({ label, actions }: LabelChipProps) {
   const { t } = useTranslation()
+  const [thumbFailed, setThumbFailed] = useState(false)
+  const cover = label.cover_uid
+  const showThumb = cover !== undefined && cover !== '' && !thumbFailed
   const skipped = actions !== undefined && !label.review_enabled
   // The count is a bare number on screen and the glyph says nothing out loud, so
   // the link spells both out for a screen reader instead.
@@ -61,6 +80,19 @@ export function LabelChip({ label, actions }: LabelChipProps) {
       {/* The name may be long user data, so it truncates rather than stretching
           the chip past the cloud; the count keeps its own width beside it. */}
       <Link to={`/labels/${label.uid}`} className="kk-label-chip__link" aria-label={accessibleName}>
+        {showThumb && (
+          // Decoration: the link is named after the label, so a screen reader
+          // reading the picture too would only say the same thing twice.
+          <FadeInImage
+            src={thumbUrl(cover, CHIP_THUMB_SIZE)}
+            alt=""
+            aria-hidden="true"
+            className="kk-label-chip__thumb"
+            onError={() => {
+              setThumbFailed(true)
+            }}
+          />
+        )}
         <span className="kk-label-chip__name">{label.name}</span>
         {skipped && (
           <span className="kk-label-chip__skipped" title={t('labels.review.off')}>

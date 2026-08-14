@@ -189,6 +189,16 @@ type LabelCount struct {
 	Label
 	// PhotoCount is the number of photos the label is attached to.
 	PhotoCount int `json:"photo_count"`
+	// CoverUID is the photo that stands for the label: its newest visible one, so
+	// the labels index can draw a preview rather than the same tag glyph a hundred
+	// times over. It is derived and never stored — a label has no cover to pick by
+	// hand — and is nil for a label on no visible photo.
+	//
+	// Only ListLabels fills it, in one batched query over the whole listing (see
+	// Store.LabelCovers). A row from SearchLabels leaves it nil: the search
+	// endpoint also needs the cover's file hash to mint a media URL, so it reads
+	// the covers itself instead of deriving them twice.
+	CoverUID *string `json:"cover_uid,omitempty"`
 }
 
 // LabelUpdate carries the user-editable fields applied by Store.UpdateLabel.

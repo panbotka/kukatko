@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -16,6 +17,7 @@ import (
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/thumb"
 )
 
 // These tests run only under `make test-integration` against the database named
@@ -38,17 +40,23 @@ type globalHit struct {
 	Query  string     `json:"query"`
 	Direct *directHit `json:"direct"`
 	Albums []struct {
-		UID        string `json:"uid"`
-		Title      string `json:"title"`
-		PhotoCount int    `json:"photo_count"`
+		UID        string  `json:"uid"`
+		Title      string  `json:"title"`
+		Cover      *string `json:"cover"`
+		ThumbURL   string  `json:"thumb_url"`
+		PhotoCount int     `json:"photo_count"`
 	} `json:"albums"`
 	Labels []struct {
-		UID  string `json:"uid"`
-		Name string `json:"name"`
+		UID      string  `json:"uid"`
+		Name     string  `json:"name"`
+		Cover    *string `json:"cover"`
+		ThumbURL string  `json:"thumb_url"`
 	} `json:"labels"`
 	People []struct {
-		UID  string `json:"uid"`
-		Name string `json:"name"`
+		UID      string  `json:"uid"`
+		Name     string  `json:"name"`
+		Cover    *string `json:"cover"`
+		ThumbURL string  `json:"thumb_url"`
 	} `json:"people"`
 	Photos []struct {
 		UID   string `json:"uid"`
@@ -356,5 +364,123 @@ func TestGlobalSearch_emptyQuery(t *testing.T) {
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", resp.StatusCode)
+	}
+}
+
+// newCoverEnv seeds a filled and an empty album, label and subject — the filled
+// ones all pointing at one photo — and returns a running server over the real
+// stores. Every fixture's name contains "cover", so one query reaches all six.
+func newCoverEnv(t *testing.T) *httptest.Server {
+	t.Helper()
+	db := dbtest.New(t)
+	dbtest.TruncateAll(t, db)
+	ctx := context.Background()
+
+	organizeStore := organize.NewStore(db.Pool())
+	peopleStore := people.NewStore(db.Pool())
+	photoStore := photos.NewStore(db.Pool())
+
+	photo, err := photoStore.Create(ctx, photos.Photo{
+		Title: "Beach", FileHash: "cov-1", FilePath: "2024/01/cov.jpg", FileName: "cov.jpg",
+	})
+	if err != nil {
+		t.Fatalf("Create photo: %v", err)
+	}
+	album, err := organizeStore.CreateAlbum(ctx, organize.Album{Title: "Cover album"})
+	if err != nil {
+		t.Fatalf("CreateAlbum: %v", err)
+	}
+	if err := organizeStore.AddPhoto(ctx, album.UID, photo.UID); err != nil {
+		t.Fatalf("AddPhoto: %v", err)
+	}
+	if _, err := organizeStore.CreateAlbum(ctx, organize.Album{Title: "Cover empty album"}); err != nil {
+		t.Fatalf("CreateAlbum: %v", err)
+	}
+	label, err := organizeStore.CreateLabel(ctx, organize.Label{Name: "coverful"})
+	if err != nil {
+		t.Fatalf("CreateLabel: %v", err)
+	}
+	if err := organizeStore.AttachLabel(ctx, photo.UID, label.UID, organize.SourceManual, 0); err != nil {
+		t.Fatalf("AttachLabel: %v", err)
+	}
+	if _, err := organizeStore.CreateLabel(ctx, organize.Label{Name: "coverless"}); err != nil {
+		t.Fatalf("CreateLabel: %v", err)
+	}
+	subject, err := peopleStore.CreateSubject(ctx, people.Subject{Name: "Cover Alice"})
+	if err != nil {
+		t.Fatalf("CreateSubject: %v", err)
+	}
+	if _, err := peopleStore.CreateMarker(ctx, people.Marker{
+		PhotoUID: photo.UID, SubjectUID: &subject.UID, Type: people.MarkerFace,
+		X: 0.1, Y: 0.1, W: 0.2, H: 0.2,
+	}); err != nil {
+		t.Fatalf("CreateMarker: %v", err)
+	}
+	if _, err := peopleStore.CreateSubject(ctx, people.Subject{Name: "Cover Nobody"}); err != nil {
+		t.Fatalf("CreateSubject: %v", err)
+	}
+
+	api := globalsearchapi.NewAPI(globalsearchapi.Config{
+		Organizer: organizeStore, People: peopleStore, Photos: photoStore,
+		Limit: 10, RequireAuth: passthrough,
+	})
+	r := chi.NewRouter()
+	r.Route("/api/v1", api.RegisterRoutes)
+	return httptest.NewServer(r)
+}
+
+// TestGlobalSearch_entityCovers verifies an album, a label and a person that hold
+// photos all come back with the photo standing for them and the address to draw
+// it from, and that the empty ones carry neither — the client's cue to fall back
+// to its glyph rather than to a broken image.
+func TestGlobalSearch_entityCovers(t *testing.T) {
+	srv := newCoverEnv(t)
+	defer srv.Close()
+
+	got := getGlobal(t, srv.URL+"/api/v1/search/global?q=cover")
+	if len(got.Albums) != 2 || len(got.Labels) != 2 || len(got.People) != 2 {
+		t.Fatalf("groups = %d albums / %d labels / %d people, want 2 of each",
+			len(got.Albums), len(got.Labels), len(got.People))
+	}
+
+	// The filled fixtures sort first in every group ("Cover album" before "Cover
+	// empty album", "coverful" before "coverless", "Cover Alice" before "Cover
+	// Nobody"), so index 0 is the one that has photos and index 1 the one without.
+	filled := []struct {
+		kind     string
+		cover    *string
+		thumbURL string
+	}{
+		{"album", got.Albums[0].Cover, got.Albums[0].ThumbURL},
+		{"label", got.Labels[0].Cover, got.Labels[0].ThumbURL},
+		{"person", got.People[0].Cover, got.People[0].ThumbURL},
+	}
+	for _, tc := range filled {
+		if tc.cover == nil || *tc.cover == "" {
+			t.Errorf("%s with photos has no cover", tc.kind)
+			continue
+		}
+		if !strings.Contains(tc.thumbURL, *tc.cover) || !strings.Contains(tc.thumbURL, thumb.AvatarSize) {
+			t.Errorf("%s thumb_url = %q, want the %s medallion of %s",
+				tc.kind, tc.thumbURL, thumb.AvatarSize, *tc.cover)
+		}
+	}
+
+	empty := []struct {
+		kind     string
+		cover    *string
+		thumbURL string
+	}{
+		{"album", got.Albums[1].Cover, got.Albums[1].ThumbURL},
+		{"label", got.Labels[1].Cover, got.Labels[1].ThumbURL},
+		{"person", got.People[1].Cover, got.People[1].ThumbURL},
+	}
+	for _, tc := range empty {
+		if tc.cover != nil {
+			t.Errorf("empty %s has cover %q, want none", tc.kind, *tc.cover)
+		}
+		if tc.thumbURL != "" {
+			t.Errorf("empty %s has thumb_url %q, want none", tc.kind, tc.thumbURL)
+		}
 	}
 }

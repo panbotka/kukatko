@@ -485,7 +485,9 @@ to `## Package map` in `CLAUDE.md`.
   the one for the other is what dead-lettered **every** `image_embed` job after the move to R2 — the thumbnail
   job published the preview, `Generate` rightly declined to re-encode it, and the handler then failed on the
   cache file that had never existed (spec `task-08a84c07`);
-  `GridSize` (`tile_500`) is the size the grid renders and that `thumb_url` carries in the payload;
+  `GridSize` (`tile_500`) is the size the grid renders and that `thumb_url` carries in the payload,
+  `AvatarSize` (`tile_100`) the one a compact row's medallion takes — the command palette's album/label/person
+  previews, two dozen of which would otherwise fetch a grid page's worth of bytes;
   decode once per photo, parallel encode of the sizes (errgroup, default `GOMAXPROCS`,
   bound via `thumb.concurrency`);
   **the photo's saved edit is rendered in** (`WithEdits(EditResolver)`, `resolveEdit`): a thumbnailer wired with an
@@ -1179,7 +1181,13 @@ to `## Package map` in `CLAUDE.md`.
   transaction, because a unique violation aborts the transaction it happens in)/`ListPhotoUIDsBySubject` (distinct
   uids of non-archived photos with a non-invalid marker of the subject, newest-first — the basis of the subject's
   gallery in `peopleapi`)/`SearchSubjects(q,limit)` (accent/case-insensitive ILIKE over
-  `immutable_unaccent(name)`, cap limit — the basis of `globalsearchapi`); **markers** `CreateMarker`
+  `immutable_unaccent(name)`, cap limit — the basis of `globalsearchapi`)/`SubjectCovers(uids)` (`covers.go`;
+  → `map[uid]Cover{PhotoUID,FileHash}`, the photo standing for each named subject, resolved for the **whole
+  batch in one query**: a `DISTINCT ON` over the batch's non-invalid markers, newest-first by
+  `COALESCE(taken_at, created_at)`, restricted to the photos the subject's gallery shows and overridden by a
+  hand-picked `cover_photo_uid`. It is a whole **photo**, not the `SubjectFace` the people index crops — a
+  medallion drawn from a face crop of a small tile is mush; a subject on no visible photo is absent from the
+  map); **markers** `CreateMarker`
   (validation of type/`0..1` bounds, optionally a subject right away → faces cache)/`GetMarkerByUID`/
   `ListMarkersByPhoto`/`AssignSubject`+`UnassignSubject` (in a transaction they update the
   denormalized **faces cache** `marker_uid`/`subject_uid`/`subject_name` via
@@ -1910,8 +1918,11 @@ to `## Package map` in `CLAUDE.md`.
   once and needs no titles); **labels** `CreateLabel`/`GetLabelByUID`/`GetLabelBySlug`/`UpdateLabel`
   (re-slug; also writes `LabelUpdate.ReviewEnabled` **unconditionally**, so a caller meaning "leave it alone"
   carries the current value across — `internal/organizeapi` does exactly that for a body omitting the field)/
-  `ListLabels` (with counts, ordered priority DESC)/`SearchLabels(q,limit)` (accent/case-insensitive
-  ILIKE over `immutable_unaccent(name)`, with counts, cap limit — the basis of `globalsearchapi`)/`DeleteLabel`/
+  `ListLabels` (with counts, ordered priority DESC, plus each label's `CoverUID` from one batched
+  `LabelCovers` call over the whole listing)/`SearchLabels(q,limit)` (accent/case-insensitive
+  ILIKE over `immutable_unaccent(name)`, with counts, cap limit — the basis of `globalsearchapi`;
+  leaves `CoverUID` nil, the search endpoint reads the covers itself because it also needs their file
+  hashes)/`DeleteLabel`/
   `AttachLabel` (idempotent upsert source/uncertainty)/`DetachLabel` (idempotent)/`ListPhotoUIDsByLabel`; **favorites**
   `AddFavorite`/`RemoveFavorite` (both idempotent)/`IsFavorite`/`ListFavorites` (per-user,
   newest-first)/`FavoritedAmong` (from a set of photo uids returns the per-user subset of favorites as a
@@ -1929,6 +1940,15 @@ to `## Package map` in `CLAUDE.md`.
   default governs and a zero-valued struct literal can never create a label the game silently ignores, and
   switching it off is an explicit `UpdateLabel`. Every label read path carries it (`labelColumns`, the two
   count projections, `LabelsForPhoto`, `PhotoLabelsForPhoto`);
+  **covers** (`covers.go`) `AlbumCovers(uids)`/`LabelCovers(uids)` → `map[uid]Cover{PhotoUID,FileHash}`:
+  the photo standing for each named album/label, resolved for the **whole batch in one query** (a
+  `DISTINCT ON` over the batch's membership rows, never a correlated `ORDER BY … LIMIT 1` per entity — the
+  same trap `listAlbumsSQL` documents), ranked newest-first by `COALESCE(taken_at, created_at)` with the uid
+  breaking ties and restricted to the photos the entity's own grid shows (not archived, not
+  `hidden_from_library`, not a non-primary stack member); an album's hand-picked `cover_photo_uid` wins over
+  the derivation and is honoured whatever state its photo is in, a label has none to pick. An entity with
+  nothing to show is **absent from the map**, and the file hash rides along so a caller can address the
+  thumbnail without fetching the photo row (`internal/mediaurl`, `globalsearchapi`, the labels index);
   types `AlbumType`/`LabelSource`/`RatingFlag` (none/pick/reject/eye)
   mirror the SQL CHECKs, a slug helper with a per-kind
   fallback (`album`/`label`); sentinels `ErrAlbumNotFound`/`ErrLabelNotFound`/`ErrPhotoNotFound`/
@@ -2180,18 +2200,29 @@ to `## Package map` in `CLAUDE.md`.
   `internal/globalsearchapi/`
   (a grouped **global search** HTTP API across entities — the basis of the navbar quick-results and the cross-entity section
   of the search page: the small interfaces `Organizer` (`SearchAlbums`/`SearchLabels` + `GetAlbumByUID`/
-  `GetLabelByUID`, satisfied by `organize.Store`), `PeopleSearcher` (`SearchSubjects` + `GetSubjectByUID`/
-  `GetMarkerByUID`, satisfied by `people.Store`) and `PhotoSearcher` (`Search` + `GetByUID`/
+  `GetLabelByUID` + `AlbumCovers`/`LabelCovers`, satisfied by `organize.Store`), `PeopleSearcher`
+  (`SearchSubjects` + `GetSubjectByUID`/`GetMarkerByUID` + `SubjectCovers`, satisfied by
+  `people.Store`) and `PhotoSearcher` (`Search` + `GetByUID`/
   `GetByPhotoprismUID`/`GetByPhotoprismAlias`/`ListStackMembers`, satisfied by
   `photos.Store` — reusing the existing fulltext via `ListParams.FullText`) → unit-testable with fakes;
   `NewAPI(Config{Organizer,People,Photos,Limit,RequireAuth})`+`RegisterRoutes` mounts
   `GET /search/global?q=` behind `RequireAuth`: handles each group separately (`SearchAlbums`/`SearchLabels`/
   `SearchSubjects` capped at `Limit`, default `defaultGroupLimit` 8; photos via fulltext with `Limit`),
-  returns a grouped envelope `{query, albums:[{uid,title,cover,photo_count}], labels:[{uid,name,photo_count}],
-  people:[{uid,name,cover}], photos:[…usual photo shape…]}` (each group always a non-nil array); an empty/
-  whitespace `q` → 400, a store error → 500; **the uid branch** (`direct.go`): when `query.FindUID` recognises an
+  returns a grouped envelope `{query, albums:[{uid,title,cover?,thumb_url?,photo_count}],
+  labels:[{uid,name,cover?,thumb_url?,photo_count}], people:[{uid,name,cover?,thumb_url?}],
+  photos:[…usual photo shape…]}` (each group always a non-nil array); an empty/
+  whitespace `q` → 400, a store error → 500; **every entity hit carries its picture** (`covers.go`): after the
+  searches, each group is stamped in **one batched cover lookup per group** (`AlbumCovers`/`LabelCovers`/
+  `SubjectCovers` — eight hits cost one query each, never one per row; an empty group asks for no uids and so
+  touches no database) with `cover` (the photo standing for it) and `thumb_url` (its medallion at
+  `thumb.AvatarSize`, minted through `internal/mediaurl` exactly as a photo hit's `thumb_url` is, so a
+  published bucket yields a signed edge URL). The pair is set **together or not at all**, and an entity with no
+  photo behind it carries neither — the client's cue to draw its own glyph rather than a gap; **the uid branch**
+  (`direct.go`): when `query.FindUID` recognises an
   id in `q`, the id is resolved against the one table its prefix names and returned as `direct`
-  `{uid,kind,found,target_kind?,target_uid?,title?,photo?,cover?,states?}`, and the fuzzy fan-out is **skipped**
+  `{uid,kind,found,target_kind?,target_uid?,title?,photo?,cover?,thumb_url?,states?}` (the same cover pair, read
+  with the same batch call asked for one uid, so a pasted id draws the picture a typed name would), and the
+  fuzzy fan-out is **skipped**
   (the groups serialise as `[]`) — it replaces the four searches instead of becoming a fifth, since a uid matches
   no title, name or full text anyway; a `mk…` resolves to the photo it sits on, an `st…` to the stack's primary
   (`ListStackMembers` orders it first), a `pt…` through `photos.photoprism_uid` and then the

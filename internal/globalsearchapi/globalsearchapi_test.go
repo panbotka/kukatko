@@ -6,6 +6,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -13,6 +15,7 @@ import (
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/thumb"
 )
 
 // fakeSearcher is an in-memory implementation of every store interface the
@@ -32,6 +35,15 @@ type fakeSearcher struct {
 	// searched counts the fuzzy fan-out calls, so a test can assert the uid
 	// branch replaced them instead of adding a fifth query.
 	searched int
+	// albumCovers, labelCovers and subjectCovers are the canned batch cover
+	// lookups; coverCalls counts them, so a test can assert a whole group is
+	// resolved in one call rather than one per hit.
+	albumCovers   map[string]organize.Cover
+	labelCovers   map[string]organize.Cover
+	subjectCovers map[string]people.Cover
+	coverCalls    int
+	// coverUIDs records the uids each cover lookup was asked for, keyed by group.
+	coverUIDs map[string][]string
 	// byUID and friends back the direct lookups.
 	byUID        map[string]photos.Photo
 	byPPUID      map[string]photos.Photo
@@ -120,6 +132,36 @@ func lookupPhoto(m map[string]photos.Photo, uid string) (photos.Photo, error) {
 	return photo, nil
 }
 
+// AlbumCovers returns the canned album covers, recording the batch it was asked
+// for.
+func (f *fakeSearcher) AlbumCovers(_ context.Context, uids []string) (map[string]organize.Cover, error) {
+	f.recordCovers("albums", uids)
+	return f.albumCovers, f.err
+}
+
+// LabelCovers returns the canned label covers, recording the batch it was asked for.
+func (f *fakeSearcher) LabelCovers(_ context.Context, uids []string) (map[string]organize.Cover, error) {
+	f.recordCovers("labels", uids)
+	return f.labelCovers, f.err
+}
+
+// SubjectCovers returns the canned subject covers, recording the batch it was
+// asked for.
+func (f *fakeSearcher) SubjectCovers(_ context.Context, uids []string) (map[string]people.Cover, error) {
+	f.recordCovers("people", uids)
+	return f.subjectCovers, f.err
+}
+
+// recordCovers notes one cover lookup: which group, which uids, and one more
+// call against the total.
+func (f *fakeSearcher) recordCovers(group string, uids []string) {
+	f.coverCalls++
+	if f.coverUIDs == nil {
+		f.coverUIDs = map[string][]string{}
+	}
+	f.coverUIDs[group] = uids
+}
+
 // SearchLabels returns the canned labels or error.
 func (f *fakeSearcher) SearchLabels(_ context.Context, _ string, _ int) ([]organize.LabelCount, error) {
 	return f.labels, f.err
@@ -173,10 +215,11 @@ func TestHandleGlobal_grouped(t *testing.T) {
 	t.Parallel()
 	cover := "ph-cover"
 	f := &fakeSearcher{
-		albums:   []organize.AlbumCount{{Album: organize.Album{UID: "al1", Title: "Dovolená", CoverPhotoUID: &cover}, PhotoCount: 3}},
-		labels:   []organize.LabelCount{{Label: organize.Label{UID: "lb1", Name: "sunset"}, PhotoCount: 7}},
-		subjects: []people.Subject{{UID: "su1", Name: "Tomáš", CoverPhotoUID: &cover}},
-		photos:   []photos.Photo{{UID: "ph1"}},
+		albums:      []organize.AlbumCount{{Album: organize.Album{UID: "al1", Title: "Dovolená"}, PhotoCount: 3}},
+		labels:      []organize.LabelCount{{Label: organize.Label{UID: "lb1", Name: "sunset"}, PhotoCount: 7}},
+		subjects:    []people.Subject{{UID: "su1", Name: "Tomáš"}},
+		photos:      []photos.Photo{{UID: "ph1"}},
+		albumCovers: map[string]organize.Cover{"al1": {PhotoUID: cover, FileHash: "hash"}},
 	}
 	srv := newTestServer(f, 0)
 	defer srv.Close()
@@ -208,6 +251,108 @@ func TestHandleGlobal_grouped(t *testing.T) {
 	}
 	if len(body.Photos) != 1 || body.Photos[0].UID != "ph1" {
 		t.Fatalf("photos = %+v, want one ph1", body.Photos)
+	}
+}
+
+// TestHandleGlobal_stampsEntityCovers verifies every entity group carries the
+// photo standing for each hit and the address to draw it from, that a hit with
+// no cover carries neither (so the client falls back to its glyph), and that a
+// whole group is resolved in one batch call rather than one per row.
+func TestHandleGlobal_stampsEntityCovers(t *testing.T) {
+	t.Parallel()
+	f := &fakeSearcher{
+		albums: []organize.AlbumCount{
+			{Album: organize.Album{UID: "al1", Title: "Beach"}, PhotoCount: 3},
+			{Album: organize.Album{UID: "al2", Title: "Empty"}},
+		},
+		labels: []organize.LabelCount{
+			{Label: organize.Label{UID: "lb1", Name: "sunset"}, PhotoCount: 7},
+			{Label: organize.Label{UID: "lb2", Name: "unused"}},
+		},
+		subjects: []people.Subject{{UID: "su1", Name: "Tomáš"}, {UID: "su2", Name: "Nobody"}},
+		albumCovers: map[string]organize.Cover{
+			"al1": {PhotoUID: "ph-al", FileHash: "ha"},
+		},
+		labelCovers: map[string]organize.Cover{
+			"lb1": {PhotoUID: "ph-lb", FileHash: "hb"},
+		},
+		subjectCovers: map[string]people.Cover{
+			"su1": {PhotoUID: "ph-su", FileHash: "hc"},
+		},
+	}
+	srv := newTestServer(f, 0)
+	defer srv.Close()
+
+	resp := getGlobal(t, srv.URL+"/api/v1/search/global?q=beach")
+	defer func() { _ = resp.Body.Close() }()
+	var body response
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	// Every kind gets the same pair: the cover uid and a thumbnail address, the
+	// latter minted at the medallion size rather than the grid size.
+	assertCover(t, "album", body.Albums[0].Cover, body.Albums[0].ThumbURL, "ph-al")
+	assertCover(t, "label", body.Labels[0].Cover, body.Labels[0].ThumbURL, "ph-lb")
+	assertCover(t, "person", body.People[0].Cover, body.People[0].ThumbURL, "ph-su")
+
+	// …and a hit the lookup had nothing for carries neither half of it.
+	assertNoCover(t, "album", body.Albums[1].Cover, body.Albums[1].ThumbURL)
+	assertNoCover(t, "label", body.Labels[1].Cover, body.Labels[1].ThumbURL)
+	assertNoCover(t, "person", body.People[1].Cover, body.People[1].ThumbURL)
+
+	// One lookup per group, not one per hit: six rows, three calls.
+	if f.coverCalls != 3 {
+		t.Errorf("cover lookups = %d, want 3 (one per group)", f.coverCalls)
+	}
+	for group, want := range map[string][]string{
+		"albums": {"al1", "al2"}, "labels": {"lb1", "lb2"}, "people": {"su1", "su2"},
+	} {
+		if !slices.Equal(f.coverUIDs[group], want) {
+			t.Errorf("%s cover lookup asked for %v, want the whole batch %v", group, f.coverUIDs[group], want)
+		}
+	}
+}
+
+// assertCover checks a hit carries the expected cover uid and a thumbnail
+// address at the medallion size.
+func assertCover(t *testing.T, kind string, cover *string, thumbURL, wantUID string) {
+	t.Helper()
+	if cover == nil || *cover != wantUID {
+		t.Errorf("%s cover = %v, want %q", kind, cover, wantUID)
+	}
+	if !strings.Contains(thumbURL, thumb.AvatarSize) {
+		t.Errorf("%s thumb_url = %q, want the %s medallion", kind, thumbURL, thumb.AvatarSize)
+	}
+}
+
+// assertNoCover checks a hit with nothing to show carries neither half of the
+// cover pair, so the client draws its own glyph instead of a broken image.
+func assertNoCover(t *testing.T, kind string, cover *string, thumbURL string) {
+	t.Helper()
+	if cover != nil {
+		t.Errorf("%s without a cover has cover = %q, want none", kind, *cover)
+	}
+	if thumbURL != "" {
+		t.Errorf("%s without a cover has thumb_url = %q, want none", kind, thumbURL)
+	}
+}
+
+// TestHandleGlobal_emptyGroupAsksForNoCovers verifies a group that matched
+// nothing is asked for no uids, which is what lets the store answer it without
+// touching the database.
+func TestHandleGlobal_emptyGroupAsksForNoCovers(t *testing.T) {
+	t.Parallel()
+	f := &fakeSearcher{}
+	srv := newTestServer(f, 0)
+	defer srv.Close()
+
+	resp := getGlobal(t, srv.URL+"/api/v1/search/global?q=nothing")
+	defer func() { _ = resp.Body.Close() }()
+	for group, uids := range f.coverUIDs {
+		if len(uids) != 0 {
+			t.Errorf("%s cover lookup asked for %v on an empty group", group, uids)
+		}
 	}
 }
 

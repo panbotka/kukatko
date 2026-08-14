@@ -150,9 +150,13 @@ LEFT JOIN photos p ON p.uid = pl.photo_uid AND p.archived_at IS NULL
 GROUP BY l.uid
 ORDER BY l.priority DESC, l.name, l.uid`
 
-// ListLabels returns every label together with how many photos carry it, ordered
-// by priority then name. A store with no labels yields an empty slice and a nil
-// error.
+// ListLabels returns every label together with how many photos carry it and the
+// photo that stands for it, ordered by priority then name. A store with no
+// labels yields an empty slice and a nil error.
+//
+// The covers are resolved in a second, batched query over the whole listing
+// rather than per label (see stampLabelCovers), so drawing previews costs two
+// queries whatever the library holds.
 func (s *Store) ListLabels(ctx context.Context) ([]LabelCount, error) {
 	rows, err := s.pool.Query(ctx, listLabelsSQL)
 	if err != nil {
@@ -171,7 +175,27 @@ func (s *Store) ListLabels(ctx context.Context) ([]LabelCount, error) {
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("organize: iterating labels: %w", err)
 	}
-	return out, nil
+	return s.stampLabelCovers(ctx, out)
+}
+
+// stampLabelCovers fills CoverUID on every label in list from one batched cover
+// lookup, leaving a label with no visible photo untouched (nil). It returns list
+// itself, so a caller can return its result directly.
+func (s *Store) stampLabelCovers(ctx context.Context, list []LabelCount) ([]LabelCount, error) {
+	uids := make([]string, 0, len(list))
+	for _, lc := range list {
+		uids = append(uids, lc.UID)
+	}
+	covers, err := s.LabelCovers(ctx, uids)
+	if err != nil {
+		return nil, err
+	}
+	for i := range list {
+		if cover, ok := covers[list[i].UID]; ok {
+			list[i].CoverUID = &cover.PhotoUID
+		}
+	}
+	return list, nil
 }
 
 // deleteLabelRow deletes the label identified by uid using e (a pool or a

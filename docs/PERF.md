@@ -419,6 +419,41 @@ which logs the cause via `slog.ErrorContext` before writing the (unchanged)
 client response; 4xx stays unlogged, since the caller is already told what was
 wrong with the request.
 
+### The entity covers (`GET /search/global`, `GET /labels`)
+
+Since 2026-08-14 an album, a label and a person hit all carry the photo that
+stands for them, so the command palette draws pictures instead of three copies of
+the same grey glyph. The derivation is the same "pick one row per group" question
+the album index answers, asked about a batch of at most a few hundred rows, and
+it is deliberately written the way the section above prescribes: a **`DISTINCT
+ON` over the batch's membership rows only** (`organize.Store.AlbumCovers` /
+`LabelCovers`, `people.Store.SubjectCovers`), never a correlated `ORDER BY …
+LIMIT 1` per entity. One statement answers the whole group, so the endpoint
+cannot fall into an N+1 as the top-N grows.
+
+The `array_agg` shape the album index uses is not available here: these are not
+the listing's own aggregation but a lookup of their own, and materialising an
+array per entity to read `[1]` would be strictly more work than the sort.
+
+**Measured** against production (20 659 visible photos, 113 labels, 21 297
+markers, `EXPLAIN (ANALYZE, BUFFERS)` inside the `pgvector` container):
+
+| statement | rows asked for | time | shared blocks |
+| --- | --- | --- | --- |
+| `AlbumCovers` | 8 albums | 38 ms | 2 501 |
+| `SubjectCovers` | 8 subjects | 21 ms | 606 |
+| `LabelCovers` | 8 labels | 76 ms | 2 538 |
+| `LabelCovers` | **all 113** labels (the `/labels` listing) | 97 ms | 4 596 |
+
+The cost is dominated by one sequential scan of `photos` for the join — the
+planner prefers it to thousands of primary-key probes — which is the same 2 455
+blocks the album index reads and four orders of magnitude away from the 17.3M
+the correlated lookup cost. `GET /labels` pays this as a **second** query beside
+`listLabelsSQL` (roughly doubling that endpoint) rather than folding the cover
+into the listing's aggregate; the one derivation shared with global search is
+worth more than the saved scan, because two implementations of "the newest photo
+carrying this label" would drift.
+
 
 ### The review queue (`GET /api/v1/review/queue`)
 

@@ -252,3 +252,66 @@ func TestDirect_storeError(t *testing.T) {
 		t.Fatalf("status = %d, want 500", resp.StatusCode)
 	}
 }
+
+// TestDirect_carriesCover verifies a pasted album, label or person id comes back
+// with the same preview a typed name would have got: the cover uid and where to
+// draw it from. A label has no cover of its own, so this is also what proves the
+// derived one reaches the uid branch.
+func TestDirect_carriesCover(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		uid     string
+		prepare func(*fakeSearcher)
+		wantUID string
+	}{
+		{
+			name: "album",
+			uid:  albumUID,
+			prepare: func(f *fakeSearcher) {
+				f.albumCovers = map[string]organize.Cover{albumUID: {PhotoUID: "ph-al", FileHash: "ha"}}
+			},
+			wantUID: "ph-al",
+		},
+		{
+			name: "label",
+			uid:  labelUID,
+			prepare: func(f *fakeSearcher) {
+				f.labelCovers = map[string]organize.Cover{labelUID: {PhotoUID: "ph-lb", FileHash: "hb"}}
+			},
+			wantUID: "ph-lb",
+		},
+		{
+			name: "person",
+			uid:  personUID,
+			prepare: func(f *fakeSearcher) {
+				f.subjectCovers = map[string]people.Cover{personUID: {PhotoUID: "ph-su", FileHash: "hc"}}
+			},
+			wantUID: "ph-su",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			f := newDirectFake()
+			tc.prepare(f)
+			body := getDirect(t, f, tc.uid)
+			if body.Direct == nil {
+				t.Fatalf("direct = nil, want the %s", tc.name)
+			}
+			assertCover(t, tc.name, body.Direct.Cover, body.Direct.ThumbURL, tc.wantUID)
+		})
+	}
+}
+
+// TestDirect_withoutCover verifies an entity the cover lookup had nothing for
+// carries neither half of the pair, so the client draws its glyph rather than a
+// broken image.
+func TestDirect_withoutCover(t *testing.T) {
+	t.Parallel()
+	body := getDirect(t, newDirectFake(), labelUID)
+	if body.Direct == nil {
+		t.Fatal("direct = nil, want the label")
+	}
+	assertNoCover(t, "label", body.Direct.Cover, body.Direct.ThumbURL)
+}
