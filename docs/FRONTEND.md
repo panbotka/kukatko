@@ -7,11 +7,15 @@ here.
 <!-- BODY BEGIN -->
 - **Frontend layout:** `web/` (Vite + React 19 + TS): `web/src/` with `components/`
   (`Layout` = navbar shell with a user menu (Můj účet, **Statistiky** `/stats`, **Nápověda** `/help`,
-  **the build version**, Odhlásit se; the version is a `NavDropdown.ItemText` with `kk-menu-version`
-  — muted caption-sized text above the divider, deliberately **not** an `Item`: it takes no click and no
+  **the build version**, the **„Správa" section**, Odhlásit se; the version is a `NavDropdown.ItemText` with `kk-menu-version`
+  — muted caption-sized text closing the account block, deliberately **not** an `Item`: it takes no click and no
   focus while arrowing through the menu. Its value is `formatVersion(useCapabilities().version)`, so it
   costs no request when the menu opens and simply isn't rendered until (or unless) the capabilities call
-  answers; the commit belongs to `/help`, the menu is too narrow for it) + role-gated
+  answers; the commit belongs to `/help`, the menu is too narrow for it. **„Správa"** is a `NavDropdown.Divider`
+  + a `NavDropdown.Header` (`kk-menu-section` — the drawer's uppercase caption label, so both widths name
+  the block the same way) + the `adminItems({isAdmin, isMaintainer})` entries, rendered by `renderMenuItem`
+  like every other entry of the menu; it sits **between the account block and Odhlásit se**, and the whole
+  block — divider and heading included — is skipped when the list comes back empty) + role-gated
   nav with a **visible hierarchy based on
   how often an ordinary person uses an item**: the everyday loop (browsing, sorting, adding photos) is
   loud and immediate, while admin/power-user tooling is present but quieter. It leads with **Knihovna** `/` (= the home
@@ -32,15 +36,23 @@ here.
   `canWrite`) is the bar's **single call-to-action** — a filled pill (`kukatko-nav-cta`, prop `cta`
   in `renderLink`) so adding photos stands out. After it a **divider** (`kukatko-nav-divider` — a vertical
   hairline in the inline bar ≥ md, horizontal in the collapsed burger menu; drawn only when a role
-  actually has something behind it) separates the quieter power-user/admin cluster: the editor dropdown **Nástroje** (`nav.tools`,
-  `TOOLS_GROUP`, entirely gated on `canWrite`) now leads with **Rozšířit** `/expand` (a power-user tool that used to
+  actually has something behind it) separates the quieter power-user cluster — since 2026-08-14 that is the
+  editor dropdown **Nástroje** (`nav.tools`,
+  `TOOLS_GROUP`, entirely gated on `canWrite`) and nothing else: it leads with **Rozšířit** `/expand` (a power-user tool that used to
   shout top-level next to albums/labels) + **Najít osobu** `/faces` + **Rozpoznávání** `/recognition` +
-  **Možné chyby** `/outliers` + **Duplikáty** `/duplicates` + **Koš** `/trash`; the operations dropdown
-  **Provoz** (`nav.operations`, `OPERATIONS_GROUP`, entirely gated on `isMaintainer`) gathers **Import**
-  `/import` (formerly a standalone top-level item; import is now an operational capability — it belongs to the maintainer,
-  not out in the open) + **Údržba** `/maintenance` + **Systém** `/system`; the governance dropdown **Správa**
-  (`nav.admin`, `GOVERNANCE_GROUP`, entirely gated on `isAdmin` = admin **or** maintainer) gathers
-  **Uživatelé** `/users` + **Audit** `/audit`. The role model is a strict ladder
+  **Možné chyby** `/outliers` + **Duplikáty** `/duplicates` + **Koš** `/trash`. **Administration is no longer
+  in the bar at all**: the two dropdowns that used to follow Nástroje — **Provoz** (`nav.operations`,
+  `OPERATIONS_GROUP`, `isMaintainer`: import, maintenance, system) and **Správa** (`nav.admin`,
+  `GOVERNANCE_GROUP`, `isAdmin`: users, audit) — are merged into **one „Správa" section of the user menu**
+  (see `ADMIN_ITEMS` below and the user dropdown further down). They belong to the signed-in identity
+  rather than to browsing the library, and the two toggles were spending the row's scarcest resource:
+  with them a maintainer's inline bar overran its container below 1400px, which is what the merge fixes.
+  **Measured** (Chromium over the real `Layout`, Czech labels, maintainer = the widest role; the two
+  toggles reconstructed in place for the before-shot): „Provoz" is **109px** and „Správa" **108px**, so the
+  inline row drops from **1003px to 786px — 217px narrower**. At **1280px** (container 1140px) the collapse
+  needed 1171px before, ran 31px past the container and scrolled the document 21px sideways; after it is
+  1068px and nothing overflows. At **1400px** (container 1320px) the bar fit before and fits after — with
+  those same 217px more room to spare. The role model is a strict ladder
   `viewer < editor < admin < maintainer` (see `services/auth.ts` below).
   **The bar carries no brand — no mark, no wordmark, no logo home link.** It used to open with one
   (`Navbar.Brand` + a `binoculars-fill` mark + the „Kukátko" wordmark), but width is this row's scarce
@@ -81,14 +93,19 @@ here.
   Every item and every dropdown toggle carries an **icon** (`Icon`) and a **`title` describing the action**, not
   the noun („Zobrazit alba", not „Alba"; keys `nav.titles.*`); icons are decorative
   (`aria-hidden`) beside the visible text label. A dropdown is hidden entirely when the user has
-  all of its items hidden (Tools/Admin for a viewer); the parent menu has an **active state** (`active`
+  all of its items hidden (Tools for a viewer); the parent menu has an **active state** (`active`
   prop) when the current route is one of its children (`pathMatches` also honors a detail sub-path like
   `/albums/{uid}`) — it is built from `Dropdown`+`Dropdown.Toggle as={NavLink}` (not `NavDropdown`, which
   consumes the `title` prop for the toggle's content, leaving none for the tooltip). **The whole item registry
   lives in `components/navItems.ts`** (`NavEntry`/`NavGroup`, `PRIMARY_ITEMS`, `BROWSE_GROUP`, `TOOLS_GROUP`,
-  `OPERATIONS_GROUP`, `GOVERNANCE_GROUP`, `REVIEW_ITEM`, `UPLOAD_ITEM`, `ACCOUNT_ITEM`,
+  `ADMIN_ITEMS`/`adminItems()`, `REVIEW_ITEM`, `UPLOAD_ITEM`, `ACCOUNT_ITEM`,
   `STATS_ITEM`, `HELP_ITEM`, `pathMatches`), so the bar and the phone drawer below read **the same list with the same role
-  gates** and cannot drift apart. One entry is **built rather than declared**: `myPhotosItem(subjectUid)`
+  gates** and cannot drift apart. The administration entries are the one registry that is **not** a
+  `NavGroup`: `ADMIN_ITEMS` is a flat list of `AdminEntry` (a `NavEntry` + a `gate` of `'maintainer'` or
+  `'admin'`) in menu order — Import, Údržba, Systém, Uživatelé, Audit — and `adminItems({isAdmin,
+  isMaintainer})` returns just the ones a role clears. **The gate is per item, never on the section**: a
+  maintainer gets all five, an admin only Uživatelé + Audit, an editor/viewer an empty list and therefore
+  no section at all (no orphan heading, no stray divider). One entry is **built rather than declared**: `myPhotosItem(subjectUid)`
   ("Moje fotky") returns `null` for an account that has not said which person of the library it is, and
   otherwise a `NavEntry` pointing at that person's scoped grid (`/?person=<uid>`). It is offered **only**
   when the link is set — an entry that leads to a grid of nobody is worse than no entry — and it lives in
@@ -112,12 +129,17 @@ here.
   (`nav.closeMenu`) and the title `nav.menu`. The body is **labelled sections**, each a `<section>` +
   `<h2>` heading (so it is a named `region` for assistive tech and for tests): **Hlavní**
   (`nav.sections.main` — Knihovna/Alba/Štítky/Hledání + Třídění and Nahrát when `canWrite`,
-  the last keeping the bar's filled CTA look), **Procházet**, the `canWrite` **Nástroje**, the `isMaintainer`
-  **Provoz**, the `isAdmin` **Správa**, and **Účet** (`nav.sections.account` — Můj účet, Nápověda, the
-  keyboard-shortcuts overlay, **the build version** and Odhlásit se, i.e. the user dropdown unfolded; the
-  version is a plain `<p class="kk-navdrawer__version">` above the sign-out button — no row, no tap target,
-  same `formatVersion(useCapabilities().version)` value the bar shows). A closed role gate drops the
-  whole section, exactly as it drops the dropdown in the bar. Rows are 3rem (48px) tap targets with the icon +
+  the last keeping the bar's filled CTA look), **Procházet**, the `canWrite` **Nástroje**,
+  and **Účet** (`nav.sections.account` — Můj účet, Nápověda, the
+  keyboard-shortcuts overlay, **the build version**, the **„Správa" group** and Odhlásit se, i.e. the user dropdown unfolded; the
+  version is a plain `<p class="kk-navdrawer__version">` above them — no row, no tap target,
+  same `formatVersion(useCapabilities().version)` value the bar shows). **„Správa" is a nested
+  `<section>` + `<h3>` inside Účet** (`kk-navdrawer__subsection`, fenced by a hairline above *and* below so
+  sign-out stays out of it), holding the same `adminItems()` rows in the same place the desktop user menu
+  holds them — between the account rows and sign-out. Promoting it to a top-level section would have put it
+  *after* sign-out and taught two different menus at the two widths; the merge of the former Provoz +
+  Správa sections happened on 2026-08-14. A closed role gate drops the
+  whole section (and an empty `adminItems()` the whole group), exactly as it drops the dropdown in the bar. Rows are 3rem (48px) tap targets with the icon +
   label + `nav.titles.*` tooltip, the same accent-tinted „you are here" pill as the bar and the tab bar
   (`NavLink`, `end`-matched for the library root), and each row also closes the drawer `onClick` — the
   pathname effect covers navigation, the handler additionally covers re-tapping the route you are already on.
@@ -133,7 +155,7 @@ here.
   drawer use the page's own noun „Hledání"; it took the slot **Štítky** `/labels` used to hold, which keeps its
   row in the drawer: on a phone searching had no entry at all, while browsing by label is the rarer errand),
   **Nahrát** `/upload` (gated on `canWrite` — a viewer gets three). Browse / Třídění /
-  Nástroje / Provoz / Správa deliberately stay in the burger menu: the bar earns its permanent strip only by
+  Nástroje / Správa deliberately stay in the burger menu: the bar earns its permanent strip only by
   being short enough to hit blind. Each tab is a `NavLink` with a decorative `Icon` above a short label plus the
   same `nav.titles.*` action tooltip as the navbar, an `active` accent-tinted pill matching the top bar's
   „you are here", and a 2.75rem (44px) touch target; the landmark is labelled `nav.tabBar` (cs/en).

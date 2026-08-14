@@ -325,7 +325,7 @@ describe('Layout navbar', () => {
     }
   })
 
-  it('hides the Tools/Operations/Admin groups and Upload from viewers', async () => {
+  it('hides the Tools group, the admin section and Upload from viewers', async () => {
     const user = userEvent.setup()
     renderLayout(auth({ canWrite: false, isAdmin: false }))
 
@@ -333,51 +333,81 @@ describe('Layout navbar', () => {
     await user.click(screen.getByRole('button', { name: 'Browse' }))
     expect(screen.getByRole('link', { name: 'Favorites' })).toBeInTheDocument()
 
-    // None of the role-gated groups render, and the write-only Upload entry — plus
-    // Import, which now lives inside the maintainer Operations group — stay hidden.
+    // The editor group does not render, nor the write-only Upload entry.
     expect(screen.queryByRole('button', { name: 'Tools' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Operations' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Admin' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Upload' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Import' })).not.toBeInTheDocument()
+
+    // And the user menu carries no administration: no heading, no divider left
+    // hanging over nothing, none of the five destinations.
+    await user.click(screen.getByRole('button', { name: 'User One' }))
+    expect(screen.queryByText('Admin')).not.toBeInTheDocument()
+    for (const name of ['Import', 'Maintenance', 'System', 'Users', 'Audit']) {
+      expect(screen.queryByRole('link', { name })).not.toBeInTheDocument()
+    }
   })
 
-  it('gives an admin governance (Users/Audit) but withholds the maintainer Operations group', async () => {
-    const user = userEvent.setup()
-    // An admin is not a maintainer, so operations stay out of reach.
-    renderLayout(auth({ canWrite: true, isAdmin: true }))
-
-    // Upload is a prominent top-level CTA for any writer.
-    expect(screen.getByRole('link', { name: 'Upload' })).toBeInTheDocument()
-
-    // The editor Tools dropdown is present.
-    await user.click(screen.getByRole('button', { name: 'Tools' }))
-    expect(screen.getByRole('link', { name: 'Trash' })).toBeInTheDocument()
-
-    // The governance Admin dropdown groups Users and Audit — nothing operational.
-    await user.click(screen.getByRole('button', { name: 'Admin' }))
-    expect(screen.getByRole('link', { name: 'Users' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Audit' })).toBeInTheDocument()
-
-    // The operations dropdown (import, maintenance, system) is maintainer-only.
-    expect(screen.queryByRole('button', { name: 'Operations' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Import' })).not.toBeInTheDocument()
-  })
-
-  it('shows the maintainer Operations group with import, maintenance and system', async () => {
+  it('keeps the administration out of the bar entirely', async () => {
     const user = userEvent.setup()
     renderLayout(auth({ canWrite: true, isMaintainer: true }))
 
-    // Import is no longer a top-level link; it lives inside Operations.
+    // The two dropdowns that used to eat this row's width are gone; what is left
+    // behind the divider is the editor's Tools.
+    expect(screen.queryByRole('button', { name: 'Operations' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Admin' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Tools' })).toBeInTheDocument()
+
+    // None of the administration destinations is reachable from the bar itself —
+    // they only appear once the user menu is opened.
     expect(screen.queryByRole('link', { name: 'Import' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Users' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'User One' }))
+    expect(screen.getByRole('link', { name: 'Import' })).toBeInTheDocument()
+  })
 
-    await user.click(screen.getByRole('button', { name: 'Operations' }))
-    expect(screen.getByRole('link', { name: 'Import' })).toHaveAttribute('href', '/import')
-    expect(screen.getByRole('link', { name: 'Maintenance' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'System' })).toBeInTheDocument()
+  it('gives a maintainer the whole admin section, above sign-out', async () => {
+    const user = userEvent.setup()
+    renderLayout(auth({ canWrite: true, isMaintainer: true }))
 
-    // A maintainer is admin-or-higher, so governance stays available too.
-    expect(screen.getByRole('button', { name: 'Admin' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'User One' }))
+
+    // One labelled section, in ladder order: operations first, governance after.
+    const heading = screen.getByText('Admin')
+    expect(heading).toHaveClass('dropdown-header')
+    const links = ['Import', 'Maintenance', 'System', 'Users', 'Audit'].map((name) =>
+      screen.getByRole('link', { name }),
+    )
+    expect(links.map((link) => link.getAttribute('href'))).toEqual([
+      '/import',
+      '/maintenance',
+      '/system',
+      '/users',
+      '/audit',
+    ])
+    expect(links[0]).toHaveAttribute('title', 'Run a photo import')
+    expect(links[0].querySelector('i.bi.bi-box-arrow-in-down')).not.toBeNull()
+
+    // It sits between the account block and the one destructive action.
+    expect(precedes(screen.getByRole('link', { name: 'Help' }), heading)).toBe(true)
+    for (const link of links) {
+      expect(precedes(heading, link)).toBe(true)
+      expect(precedes(link, screen.getByRole('button', { name: 'Sign out' }))).toBe(true)
+    }
+  })
+
+  it('gates the admin section per item: an admin gets governance, not operations', async () => {
+    const user = userEvent.setup()
+    // An admin is not a maintainer, so operations stay out of reach — but the
+    // section itself is not withheld along with them.
+    renderLayout(auth({ canWrite: true, isAdmin: true }))
+
+    await user.click(screen.getByRole('button', { name: 'User One' }))
+
+    expect(screen.getByText('Admin')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Users' })).toHaveAttribute('href', '/users')
+    expect(screen.getByRole('link', { name: 'Audit' })).toHaveAttribute('href', '/audit')
+    for (const name of ['Import', 'Maintenance', 'System']) {
+      expect(screen.queryByRole('link', { name })).not.toBeInTheDocument()
+    }
   })
 
   it('makes Upload the bar’s single filled call-to-action', () => {

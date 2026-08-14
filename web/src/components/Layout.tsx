@@ -24,13 +24,12 @@ import { MOBILE_MENU_ID, MobileNavDrawer } from './MobileNavDrawer'
 import { MobileTabBar } from './MobileTabBar'
 import {
   ACCOUNT_ITEM,
+  adminItems,
   BROWSE_GROUP,
-  GOVERNANCE_GROUP,
   HELP_ITEM,
   myPhotosItem,
   type NavEntry,
   type NavGroup,
-  OPERATIONS_GROUP,
   pathMatches,
   PRIMARY_ITEMS,
   REVIEW_ITEM,
@@ -48,12 +47,20 @@ import { SearchCommand } from './search/SearchCommand'
  * The bar carries a deliberate hierarchy rather than one flat row of equals. The
  * everyday loop leads: **Knihovna**, **Alba**, **Štítky**, **Hledání**, the
  * "Procházet" browse dropdown, the "Třídění" review game, and — as the one filled
- * call-to-action — **Nahrát**. A thin divider then sets off the quieter power-user and admin
- * cluster: the "Nástroje" tools dropdown (which now also holds the expand tool),
- * the maintainer-only "Provoz" operations dropdown (import, maintenance, system),
- * and the admin-or-higher "Správa" governance dropdown (users, audit). The
- * role-gated groups are hidden entirely from roles that cannot use any of their
- * children, and the divider only appears when at least one item follows it.
+ * call-to-action — **Nahrát**. A thin divider then sets off the quieter power-user
+ * cluster: the "Nástroje" tools dropdown (which now also holds the expand tool).
+ * It is hidden entirely from roles that cannot use any of its children, and the
+ * divider only appears when at least one item follows it.
+ *
+ * **Administration is not in the bar at all.** What used to be two more dropdowns
+ * here — the maintainer-only "Provoz" (import, maintenance, system) and the
+ * admin-or-higher "Správa" (users, audit) — is one "Správa" section inside the
+ * user menu below, between the account block and sign-out. Those destinations
+ * belong to the signed-in identity rather than to browsing the library, and the
+ * two toggles were spending the row's scarcest resource: with both of them a
+ * maintainer's inline bar overran its container below 1400px. The role gating is
+ * unchanged and stays **per item** (see `adminItems`), so an admin who is not a
+ * maintainer still reaches only users and audit.
  *
  * The bar deliberately carries **no logo and no wordmark**. Width is the scarce
  * resource here, not identity: for an editor or a maintainer the inline row of
@@ -114,6 +121,10 @@ export function Layout() {
   // library it is. An entry that leads nowhere is worse than no entry, so an
   // unlinked account simply does not get one.
   const myPhotos = myPhotosItem(user?.subject_uid)
+  // The user menu's "Správa" section, filtered per item rather than as a whole:
+  // empty for a viewer or an editor, two entries for an admin, all five for a
+  // maintainer.
+  const admin = adminItems({ isAdmin, isMaintainer })
 
   // Close the collapsed menu on every navigation, whatever control was tapped
   // (top-level link, group dropdown item, or user menu item all change the
@@ -168,6 +179,26 @@ export function Layout() {
         <Icon name={entry.icon} />
         {t(entry.labelKey)}
       </Nav.Link>
+    )
+  }
+
+  /**
+   * Renders one entry of the user menu: icon, label, action tooltip. A plain
+   * `Link` rather than a `NavLink` — the menu is closed while you are on the page
+   * it points at, so an active highlight in there would never be seen.
+   */
+  function renderMenuItem(entry: NavEntry) {
+    return (
+      <NavDropdown.Item
+        key={entry.to}
+        as={Link}
+        to={entry.to}
+        title={t(entry.titleKey)}
+        className="d-flex align-items-center gap-2"
+      >
+        <Icon name={entry.icon} />
+        {t(entry.labelKey)}
+      </NavDropdown.Item>
     )
   }
 
@@ -244,19 +275,14 @@ export function Layout() {
                     hidden from viewers. */}
                 {canWrite && renderLink(UPLOAD_ITEM, { cta: true })}
 
-                {/* A divider fences off the quieter power-user / admin cluster, but
-                    only when the current role actually has something below it. */}
-                {(canWrite || isAdmin) && (
-                  <div className="kukatko-nav-divider" aria-hidden="true" />
-                )}
+                {/* A divider fences off the quieter power-user cluster, but only
+                    when the current role actually has something below it. */}
+                {canWrite && <div className="kukatko-nav-divider" aria-hidden="true" />}
 
                 {/* Editor-only tools (expand, faces, duplicates, …); hidden from
-                    viewers. */}
+                    viewers. The administration that used to follow it here now
+                    hangs off the user menu instead. */}
                 {canWrite && renderGroup(TOOLS_GROUP)}
-                {/* Maintainer-only operations (import, maintenance, system). */}
-                {isMaintainer && renderGroup(OPERATIONS_GROUP)}
-                {/* Governance (users, audit); admin or higher. */}
-                {isAdmin && renderGroup(GOVERNANCE_GROUP)}
               </Nav>
               <Nav className="align-items-center">
                 <KeyboardShortcutsHelp />
@@ -268,54 +294,21 @@ export function Layout() {
                     title={user.display_name || user.username}
                     id="user-menu"
                   >
-                    <NavDropdown.Item
-                      as={Link}
-                      to={ACCOUNT_ITEM.to}
-                      title={t(ACCOUNT_ITEM.titleKey)}
-                      className="d-flex align-items-center gap-2"
-                    >
-                      <Icon name={ACCOUNT_ITEM.icon} />
-                      {t(ACCOUNT_ITEM.labelKey)}
-                    </NavDropdown.Item>
+                    {renderMenuItem(ACCOUNT_ITEM)}
                     {/* The photos the signed-in person is on. It hangs off the
                         user menu because it is a fact about them, not another
                         way of browsing the library — and because the bar has no
                         room left. */}
-                    {myPhotos && (
-                      <NavDropdown.Item
-                        as={Link}
-                        to={myPhotos.to}
-                        title={t(myPhotos.titleKey)}
-                        className="d-flex align-items-center gap-2"
-                      >
-                        <Icon name={myPhotos.icon} />
-                        {t(myPhotos.labelKey)}
-                      </NavDropdown.Item>
-                    )}
+                    {myPhotos && renderMenuItem(myPhotos)}
                     {/* The library statistics: open to every signed-in role, so
                         they hang off the user menu rather than a gated group. */}
-                    <NavDropdown.Item
-                      as={Link}
-                      to={STATS_ITEM.to}
-                      title={t(STATS_ITEM.titleKey)}
-                      className="d-flex align-items-center gap-2"
-                    >
-                      <Icon name={STATS_ITEM.icon} />
-                      {t(STATS_ITEM.labelKey)}
-                    </NavDropdown.Item>
-                    <NavDropdown.Item
-                      as={Link}
-                      to={HELP_ITEM.to}
-                      title={t(HELP_ITEM.titleKey)}
-                      className="d-flex align-items-center gap-2"
-                    >
-                      <Icon name={HELP_ITEM.icon} />
-                      {t(HELP_ITEM.labelKey)}
-                    </NavDropdown.Item>
-                    {/* The build, as a plain line of text above the divider: an
-                        `ItemText` is not a menu item, so it neither takes focus
-                        when arrowing through the menu nor invites a click. The
-                        full form — with the commit — lives on the help page. */}
+                    {renderMenuItem(STATS_ITEM)}
+                    {renderMenuItem(HELP_ITEM)}
+                    {/* The build, as a plain line of text closing the account
+                        block: an `ItemText` is not a menu item, so it neither
+                        takes focus when arrowing through the menu nor invites a
+                        click. The full form — with the commit — lives on the
+                        help page. */}
                     {version && (
                       <NavDropdown.ItemText
                         className="kk-menu-version"
@@ -323,6 +316,19 @@ export function Layout() {
                       >
                         {version}
                       </NavDropdown.ItemText>
+                    )}
+                    {/* Administration, once two dropdowns of its own in the bar:
+                        one labelled section between the account block and
+                        sign-out. Rendered only for the entries the role actually
+                        clears, so a viewer sees neither heading nor divider. */}
+                    {admin.length > 0 && (
+                      <>
+                        <NavDropdown.Divider />
+                        <NavDropdown.Header className="kk-menu-section">
+                          {t('nav.admin')}
+                        </NavDropdown.Header>
+                        {admin.map((entry) => renderMenuItem(entry))}
+                      </>
                     )}
                     <NavDropdown.Divider />
                     <NavDropdown.Item

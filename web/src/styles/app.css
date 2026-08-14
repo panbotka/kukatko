@@ -317,6 +317,16 @@ body {
   font-size: var(--kk-font-size-caption);
 }
 
+/* The „Správa" heading inside the user menu. It wears the phone drawer's section
+   label — quiet, uppercase, small — so the one menu the two widths share names
+   its blocks the same way. */
+.kk-menu-section {
+  font-size: var(--kk-font-size-caption);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
 /* The selected list-group row takes the accent fill (its white label stays AA). */
 .list-group {
   --bs-list-group-active-bg: var(--kk-accent-solid);
@@ -816,6 +826,20 @@ body {
 .kk-navdrawer__section + .kk-navdrawer__section {
   padding-top: var(--kk-space-4);
   border-top: 1px solid var(--kk-header-border);
+}
+
+/* The one nested group in the drawer: „Správa" inside the account block. It is
+   fenced on both sides so it reads as a block of its own — the hairline above
+   ends the account rows, the one below keeps sign-out out of it — without being
+   promoted to a section, which would move it past sign-out. */
+.kk-navdrawer__subsection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kk-space-1);
+  margin-block: var(--kk-space-3);
+  padding-block: var(--kk-space-3);
+  border-top: 1px solid var(--kk-header-border);
+  border-bottom: 1px solid var(--kk-header-border);
 }
 
 .kk-navdrawer__heading {
