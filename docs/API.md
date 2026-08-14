@@ -379,7 +379,12 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `GET /jobs/stats` → `{by_state,by_type,total}`; `GET /jobs` → `{jobs,limit,offset}`
   (recent/dead-letter listing, query `state`/`limit`/`offset`, invalid → 400);
   `POST /jobs/{id}/requeue` → refreshed job (dead/failed → queued; 404 missing, 409
-  non-requeueable). The frontend polls (no SSE). Mounted by `server.WithAPI`
+  non-requeueable);
+  `POST /jobs/requeue-dead` → `{requeued}` — the **bulk** requeue, optionally narrowed by the query
+  parameter `type` to one job type (an unknown type matches nothing and answers `0`, exactly like an
+  already-empty dead letter). One `UPDATE` (`jobs.Store.RequeueAllDead`), because the case it exists for is
+  a dead letter of thousands: the System page used to list the dead jobs and `POST` a requeue per row.
+  The frontend polls (no SSE). Mounted by `server.WithAPI`
   (`buildJobs` in `cmd/kukatko/jobs.go`), which registers the handlers `image_embed`
   (`embedjob.Service`), `face_detect` (`facejob.Service`) and — when the mapy.com key is set —
   `places` (`placesjob.Service`, `buildPlacesServiceOrNil` in `cmd/kukatko/places.go`), and also
@@ -1192,12 +1197,33 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   Mounted always by `buildDupMarkersAPI` (`cmd/kukatko/dupmarkers.go`), sharing the photo API's
   `facematch.Service`. The UI is `/duplicate-markers` (`DuplicateMarkersPage`, editor/admin).
 - **System status API (`/api/v1`, `internal/systemapi` + `internal/system`, maintainer-only via
-  `RequireMaintainer`):** `GET /system/status` → one aggregated snapshot of operational health:
-  `{version,database{reachable,error?},embeddings{online,url},jobs{by_state,by_type,total,dead_letter,
-  pending_embeddings},backup (=backup.Status),imports{folder (=importer.Run|null)},
+  `RequireMaintainer`):** `GET /system/status` → one aggregated snapshot behind the whole admin dashboard —
+  what is in the library, what is still to do, and how the instance is doing:
+  `{version,database{reachable,error?},embeddings{online,url},jobs{by_state,by_type,by_type_state,total,
+  dead_letter,pending_embeddings},backup (=backup.Status),imports{folder (=importer.Run|null)},
   storage{originals_bytes,cache_bytes,free_bytes,total_bytes},
   maps{configured,state,degraded,detail?,checked_at?},
-  geocode{configured,budget_enabled,limit,spent,remaining,window_seconds,resets_at?}}`. `maps` = the last observed mapy.com state
+  geocode{configured,budget_enabled,limit,spent,remaining,window_seconds,resets_at?},
+  library{photos,videos,trashed,hidden,private,uploads{day,week,month,year},albums,labels,people,faces,
+  embeddings,library_bytes,trash_bytes,derived_bytes},
+  remaining{faces_unassigned,clusters,photos_without_taken_at,photos_without_gps,photos_without_place,
+  photos_without_ocr,duplicate_markers,duplicates{configured,available,groups,computed_at?}}}`.
+  `jobs.by_type_state` (type → state → count) is what the dashboard renders; `by_type`/`total` are
+  **lifetime** tallies, because the queue table keeps finished jobs — `image_embed: 41 594` against 20 930
+  photos described a one-off re-embedding, not a backlog, which is why the UI labels them "ever run". All
+  three views are sums over **one** `jobs.Store.CountsByTypeState` scan, so they cannot disagree.
+  `library` is the browsable catalogue (`trashed` is **not** part of `photos`; `hidden`/`private` are), its
+  `uploads` windows are counted on `created_at` against the database clock and include archived photos, and
+  `library_bytes`/`trash_bytes` are the **catalogue's** `sum(file_size)` — the number that is meaningful when
+  the originals live in an object store and the server's disk (`storage`, clearly labelled as the server disk
+  in the UI) holds none of them. `derived_bytes` is the one measured value, `storage.cache_bytes`.
+  `remaining` is the backlogs, all cheap SQL except `duplicates`: the near-duplicate scan is far too
+  expensive for a polled endpoint, so it is refreshed **in the background** (15 min TTL, 2 min timeout,
+  `duplicates.Service.CountGroups`) and reported with `available` + `computed_at`; `available:false` means
+  "no answer yet" and `groups` is then not a count of zero. `configured:false` = duplicate detection is off
+  (`duplicate.enabled`), the same switch that makes `GET /duplicates` answer 503.
+  `library` + the SQL half of `remaining` are one query (`system.Store.CountDashboard`) memoized for 30 s.
+  `maps` = the last observed mapy.com state
   from the proxy (`mapy.Health`, no probe of its own): `state` ∈ `unknown|ok|key_rejected|rate_limited|
   unavailable|error`, `degraded=true` for all except `ok`/`unknown` — **a rejected key (403) is
   visible here**, not only as a grey map; `detail` is sanitized (never the key). `geocode` = the
@@ -1210,9 +1236,11 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   A merge of existing subsystems
   (embeddings health, the job queue, backup status, the last import per source via
   `importer.Store.LatestRun`, disk usage, a DB ping); storage is memoized for 30 s. Collect fails (the DB
-  for the queue/imports) → 500; an unavailable DB/storage is inline best-effort. Mounted **always**
+  for the queue/imports/dashboard counts) → 500; an unavailable DB/storage is inline best-effort, and a
+  failed duplicate scan leaves the tile unavailable rather than failing the snapshot. Mounted **always**
   (`buildSystemAPI` in `cmd/kukatko/system.go`). The admin UI **System** (`/system`, `SystemStatusPage`)
-  polls every 5 s and offers quick actions (requeue dead-letter, trigger backup, links to import/maintenance).
+  polls every 5 s and offers quick actions (requeue the dead letter whole or per type, trigger backup, links
+  to import/maintenance).
 - **Library statistics (`/api/v1`, `internal/systemapi` + `internal/system`, **every authenticated
   user** via `RequireAuth`):** `GET /system/stats` → instance-wide counts of the catalogue, modelled on
   the previous system's status page: `{photos,videos,live_photos,images,photos_live,photos_archived,
@@ -1256,9 +1284,11 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `photos_without_faces` cannot distinguish "not yet detected" from "genuinely no face". A failed
   aggregation → **500** (never a body of zeroes, which would read as an empty library). Deliberately
   **not** part of `/system/status` and it does not loosen that endpoint's maintainer guard. Mounted
-  **always** (`buildSystemAPI`). The frontend renders it on **Statistiky** (`/stats`, all roles) and as the
-  Library section of `SystemStatusPage`, from this one endpoint. The same aggregation also backs the
-  `kukatko_library_*` gauges on `/metrics` (see `docs/OPERATIONS.md` § Prometheus metrics), so the two
+  **always** (`buildSystemAPI`). The frontend renders it on **Statistiky** (`/stats`, all roles);
+  `SystemStatusPage` does **not** read it — its Library section comes from the dashboard half of
+  `/system/status`, which answers a different question ("what is in the library?" rather than "how much of
+  it is processed?") from the same store, so the shared counts still agree. The same aggregation also backs
+  the `kukatko_library_*` gauges on `/metrics` (see `docs/OPERATIONS.md` § Prometheus metrics), so the two
   cannot disagree — one query, two readers.
 - **Library charts (`/api/v1`, `internal/systemapi` + `internal/system`, **every authenticated user** via
   `RequireAuth`):** `GET /system/stats/charts` → the series the statistics page draws over those counts:

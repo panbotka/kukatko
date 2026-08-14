@@ -5,9 +5,9 @@ import { useTranslation } from 'react-i18next'
  * buckets shown as badges on the Maintenance and System pages, not the raw
  * backend `jobs.state` values: `total` and `pending` are aggregates the backend
  * derives (every job on record, and work waiting on the AI box), while
- * `queued`/`running`/`failed`/`dead` map to real lifecycle states.
+ * `queued`/`running`/`failed`/`dead`/`done` map to real lifecycle states.
  */
-export type JobStateKey = 'total' | 'queued' | 'running' | 'failed' | 'dead' | 'pending'
+export type JobStateKey = 'total' | 'queued' | 'running' | 'failed' | 'dead' | 'done' | 'pending'
 
 /** Props for {@link JobStateLegend}. */
 interface JobStateLegendProps {

@@ -27,28 +27,46 @@ type fakeHealth struct{ online bool }
 // Healthy returns the configured online flag.
 func (f fakeHealth) Healthy(context.Context) bool { return f.online }
 
-// fakeJobs is a JobCounter backed by static maps and a pending count.
+// fakeJobs is a JobCounter backed by a static (type, state) breakdown and a
+// pending count.
 type fakeJobs struct {
-	byState map[jobs.State]int
-	byType  map[string]int
-	pending int
-	err     error
+	byTypeState map[jobs.TypeState]int
+	pending     int
+	err         error
 }
 
-// CountsByState returns the configured per-state counts or error.
-func (f fakeJobs) CountsByState(context.Context) (map[jobs.State]int, error) {
-	return f.byState, f.err
-}
-
-// CountsByType returns the configured per-type counts or error.
-func (f fakeJobs) CountsByType(context.Context) (map[string]int, error) {
-	return f.byType, f.err
+// CountsByTypeState returns the configured breakdown or error.
+func (f fakeJobs) CountsByTypeState(context.Context) (map[jobs.TypeState]int, error) {
+	return f.byTypeState, f.err
 }
 
 // CountPending returns the configured pending count or error.
 func (f fakeJobs) CountPending(context.Context, ...string) (int, error) {
 	return f.pending, f.err
 }
+
+// fakeDashboard is a DashboardCounter returning a fixed aggregation or error.
+type fakeDashboard struct {
+	dashboard Dashboard
+	err       error
+	calls     int
+}
+
+// CountDashboard returns the configured aggregation or error, counting calls so
+// a test can assert the memoisation.
+func (f *fakeDashboard) CountDashboard(context.Context) (Dashboard, error) {
+	f.calls++
+	return f.dashboard, f.err
+}
+
+// fakeDuplicates is a DuplicateCounter returning a fixed group count or error.
+type fakeDuplicates struct {
+	groups int
+	err    error
+}
+
+// CountGroups returns the configured group count or error.
+func (f fakeDuplicates) CountGroups(context.Context) (int, error) { return f.groups, f.err }
 
 // fakeImports is an ImportLister returning a fixed run per source.
 type fakeImports struct {
@@ -106,10 +124,17 @@ func healthyConfig(originals string) Config {
 		DB:         fakeDB{},
 		Embeddings: fakeHealth{online: true},
 		Jobs: fakeJobs{
-			byState: map[jobs.State]int{jobs.StateQueued: 3, jobs.StateDead: 2},
-			byType:  map[string]int{jobs.TypeImageEmbed: 4},
+			byTypeState: map[jobs.TypeState]int{
+				{Type: jobs.TypeImageEmbed, State: jobs.StateQueued}: 3,
+				{Type: jobs.TypeImageEmbed, State: jobs.StateDead}:   1,
+				{Type: jobs.TypeThumbnail, State: jobs.StateDead}:    1,
+			},
 			pending: 5,
 		},
+		Dashboard: &fakeDashboard{dashboard: Dashboard{
+			Library:   LibrarySummary{Photos: 20, Videos: 2, Trashed: 3, LibraryBytes: 4096},
+			Remaining: RemainingWork{FacesUnassigned: 9, Clusters: 2},
+		}},
 		Imports: fakeImports{runs: map[importer.Source]importer.Run{
 			importer.SourceFolder: {ID: 7, Source: importer.SourceFolder, Status: importer.StatusDone},
 			// A finished migration run is still in the table; the dashboard section
@@ -148,6 +173,17 @@ func TestCollect_Aggregates(t *testing.T) {
 	}
 	if status.Jobs.ByState["queued"] != 3 {
 		t.Errorf("jobs.by_state[queued] = %d, want 3", status.Jobs.ByState["queued"])
+	}
+	// The three views are sums over one breakdown, so they must agree: the two
+	// dead jobs are one per type, and the lifetime per-type tally adds its states.
+	if status.Jobs.ByTypeState[jobs.TypeImageEmbed]["queued"] != 3 ||
+		status.Jobs.ByTypeState[jobs.TypeThumbnail]["dead"] != 1 {
+		t.Errorf("jobs.by_type_state = %+v, want image_embed queued 3 / thumbnail dead 1",
+			status.Jobs.ByTypeState)
+	}
+	if status.Jobs.ByType[jobs.TypeImageEmbed] != 4 {
+		t.Errorf("jobs.by_type[image_embed] = %d, want 4 (3 queued + 1 dead)",
+			status.Jobs.ByType[jobs.TypeImageEmbed])
 	}
 	if !status.Backup.Configured || !status.Backup.Running {
 		t.Errorf("backup = %+v, want configured + running", status.Backup)
@@ -348,6 +384,142 @@ func TestCollect_JobError(t *testing.T) {
 
 	if _, err := New(cfg).Collect(t.Context()); err == nil {
 		t.Error("Collect with failing job counter = nil error, want error")
+	}
+}
+
+// TestCollect_DashboardSections verifies the two content sections are folded
+// into the snapshot and that the one number the catalogue cannot count itself —
+// what the derived media weighs — comes from the filesystem measurement rather
+// than from the aggregation.
+func TestCollect_DashboardSections(t *testing.T) {
+	t.Parallel()
+
+	cache := t.TempDir()
+	writeFile(t, filepath.Join(cache, "thumb.jpg"), 300)
+	cfg := healthyConfig(t.TempDir())
+	cfg.CachePath = cache
+
+	status, err := New(cfg).Collect(t.Context())
+	if err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if status.Library.Photos != 20 || status.Library.Trashed != 3 {
+		t.Errorf("library = %+v, want 20 photos / 3 trashed", status.Library)
+	}
+	if status.Library.DerivedBytes != 300 {
+		t.Errorf("library.derived_bytes = %d, want the measured cache size 300",
+			status.Library.DerivedBytes)
+	}
+	if status.Remaining.FacesUnassigned != 9 || status.Remaining.Clusters != 2 {
+		t.Errorf("remaining = %+v, want 9 nameless faces / 2 clusters", status.Remaining)
+	}
+}
+
+// TestCollect_DashboardMemoised verifies the dashboard aggregation is computed
+// once per TTL however often the page is polled: a status endpoint refreshing
+// every few seconds must not re-run the counts on every request.
+func TestCollect_DashboardMemoised(t *testing.T) {
+	t.Parallel()
+
+	counter := &fakeDashboard{dashboard: Dashboard{Library: LibrarySummary{Photos: 1}}}
+	cfg := healthyConfig(t.TempDir())
+	cfg.Dashboard = counter
+	cfg.Clock = func() time.Time { return time.Unix(0, 0) }
+
+	svc := New(cfg)
+	for range 3 {
+		if _, err := svc.Collect(t.Context()); err != nil {
+			t.Fatalf("Collect: %v", err)
+		}
+	}
+	if counter.calls != 1 {
+		t.Errorf("dashboard counted %d times over 3 polls, want 1", counter.calls)
+	}
+}
+
+// TestCollect_DashboardError verifies a failing dashboard aggregation fails the
+// whole collection: a section of zeroes would read as an empty library rather
+// than as an unavailable count.
+func TestCollect_DashboardError(t *testing.T) {
+	t.Parallel()
+
+	cfg := healthyConfig(t.TempDir())
+	cfg.Dashboard = &fakeDashboard{err: errors.New("db down")}
+
+	if _, err := New(cfg).Collect(t.Context()); err == nil {
+		t.Error("Collect with a failing dashboard counter = nil error, want error")
+	}
+}
+
+// TestCollect_DuplicatesNotConfigured verifies an instance with duplicate
+// detection switched off reports the tile as not configured rather than as a
+// finished scan that found nothing.
+func TestCollect_DuplicatesNotConfigured(t *testing.T) {
+	t.Parallel()
+
+	status, err := New(healthyConfig(t.TempDir())).Collect(t.Context())
+	if err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	scan := status.Remaining.Duplicates
+	if scan.Configured || scan.Available || scan.ComputedAt != nil {
+		t.Errorf("duplicates = %+v, want the not-configured zero value", scan)
+	}
+}
+
+// TestCollect_DuplicatesScannedInBackground verifies the scan never runs on the
+// request path: the first snapshot reports "no answer yet" and only a later one,
+// after the background scan has finished, carries the count and its timestamp.
+func TestCollect_DuplicatesScannedInBackground(t *testing.T) {
+	t.Parallel()
+
+	cfg := healthyConfig(t.TempDir())
+	cfg.Duplicates = fakeDuplicates{groups: 12}
+	svc := New(cfg)
+	// Run the scheduled scan inline so the test does not race the goroutine; the
+	// point under test is that Collect itself does not compute it.
+	svc.duplicates.spawn = func(f func()) { f() }
+
+	first, err := svc.Collect(t.Context())
+	if err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if !first.Remaining.Duplicates.Configured || first.Remaining.Duplicates.Available {
+		t.Errorf("first duplicates = %+v, want configured but not yet available",
+			first.Remaining.Duplicates)
+	}
+
+	second, err := svc.Collect(t.Context())
+	if err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	scan := second.Remaining.Duplicates
+	if !scan.Available || scan.Groups != 12 || scan.ComputedAt == nil {
+		t.Errorf("second duplicates = %+v, want 12 groups with a timestamp", scan)
+	}
+}
+
+// TestCollect_DuplicateScanFailureKeepsSnapshot verifies a failing scan does not
+// fail the status readout: every other number is still worth showing, and the
+// tile simply reports no answer.
+func TestCollect_DuplicateScanFailureKeepsSnapshot(t *testing.T) {
+	t.Parallel()
+
+	cfg := healthyConfig(t.TempDir())
+	cfg.Duplicates = fakeDuplicates{err: errors.New("scan failed")}
+	svc := New(cfg)
+	svc.duplicates.spawn = func(f func()) { f() }
+
+	if _, err := svc.Collect(t.Context()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	status, err := svc.Collect(t.Context())
+	if err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if status.Remaining.Duplicates.Available {
+		t.Errorf("duplicates = %+v, want unavailable after a failed scan",
+			status.Remaining.Duplicates)
 	}
 }
 

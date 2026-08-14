@@ -61,6 +61,19 @@ async function postVoid(path: string, signal?: AbortSignal): Promise<void> {
   }
 }
 
+/** Issues a POST and parses the JSON body, throwing ApiError on a non-OK status. */
+async function postJSON<T>(path: string, signal?: AbortSignal): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+  return (await res.json()) as T
+}
+
 /** Database reachability section (`system.Database`). */
 export interface DatabaseStatus {
   reachable: boolean
@@ -73,10 +86,18 @@ export interface EmbeddingsStatus {
   url: string
 }
 
-/** Job-queue depth section (`system.Jobs`). */
+/**
+ * Job-queue section (`system.Jobs`). The queue table keeps finished jobs, so
+ * `by_type` and `total` are lifetime tallies ("jobs ever run") rather than queue
+ * depth — only `by_type_state` says what is actually waiting, which is why it is
+ * what the dashboard renders and the totals are only ever shown labelled as
+ * history.
+ */
 export interface JobsStatus {
   by_state: Record<string, number | undefined>
   by_type: Record<string, number | undefined>
+  /** Per job type, its counts per lifecycle state; absent pairs mean zero. */
+  by_type_state: Record<string, Record<string, number | undefined> | undefined>
   total: number
   dead_letter: number
   pending_embeddings: number
@@ -152,6 +173,74 @@ export interface GeocodeStatus {
   resets_at?: string
 }
 
+/** How much arrived recently (`system.Uploads`); the windows nest. */
+export interface Uploads {
+  day: number
+  week: number
+  month: number
+  year: number
+}
+
+/**
+ * The dashboard's library summary (`system.LibrarySummary`): what is in the
+ * library, what is kept out of it, what arrived recently and what it all weighs.
+ *
+ * `photos` is the browsable catalogue — the trash is `trashed` and is NOT part of
+ * it — while `hidden` and `private` are subsets of `photos` (both are in the
+ * library, just kept out of the grid or marked private).
+ *
+ * The two byte sums are the **catalogue's** arithmetic over the originals'
+ * recorded sizes, which is a different question from {@link StorageStatus}'s
+ * measurement of the server's disk: this instance keeps its originals in an
+ * object store, so the disk holds none of them. `derived_bytes` is the exception
+ * — derived media is never in the catalogue, so that one is measured.
+ */
+export interface LibrarySummary {
+  photos: number
+  videos: number
+  trashed: number
+  hidden: number
+  private: number
+  uploads: Uploads
+  albums: number
+  labels: number
+  people: number
+  faces: number
+  embeddings: number
+  library_bytes: number
+  trash_bytes: number
+  derived_bytes: number
+}
+
+/**
+ * The near-duplicate scan's last answer (`system.DuplicateScan`). It is the one
+ * dashboard number that is not counted while the request is served: the scan is
+ * far too expensive for a polled endpoint, so the backend refreshes it in the
+ * background. `available` false means "no answer yet" — `groups` is then not a
+ * count of zero and must not be rendered as one.
+ */
+export interface DuplicateScan {
+  configured: boolean
+  available: boolean
+  groups: number
+  computed_at?: string
+}
+
+/**
+ * The dashboard's remaining-work section (`system.RemainingWork`): the backlogs
+ * of human and machine work. Every number is one where zero is the good value.
+ */
+export interface RemainingWork {
+  faces_unassigned: number
+  clusters: number
+  photos_without_taken_at: number
+  photos_without_gps: number
+  photos_without_place: number
+  photos_without_ocr: number
+  duplicate_markers: number
+  duplicates: DuplicateScan
+}
+
 /** The full system-status snapshot (`system.Status`). */
 export interface SystemStatus {
   version: VersionInfo
@@ -163,6 +252,8 @@ export interface SystemStatus {
   storage: StorageStatus
   maps: MapsStatus
   geocode: GeocodeStatus
+  library: LibrarySummary
+  remaining: RemainingWork
 }
 
 /**
@@ -271,14 +362,9 @@ export interface LibraryCharts {
   storage_by_year: YearStorage[]
 }
 
-/** One job from the admin listing (`jobs.Job`); only the id is needed here. */
-interface JobSummary {
-  id: number
-}
-
-/** Response body of `GET /api/v1/jobs`. */
-interface JobListResponse {
-  jobs: JobSummary[]
+/** Response body of `POST /api/v1/jobs/requeue-dead`. */
+interface RequeueDeadResponse {
+  requeued: number
 }
 
 /** Fetches the aggregated system-status snapshot. */
@@ -316,26 +402,19 @@ export async function triggerBackup(signal?: AbortSignal): Promise<void> {
 }
 
 /**
- * Requeues every dead-lettered job back onto the queue and returns how many were
- * requeued. It lists the dead-letter jobs, then requeues each one; a job that has
- * meanwhile been requeued by someone else (404/409) is skipped rather than
- * failing the whole action.
+ * Requeues dead-lettered jobs back onto the queue and returns how many went
+ * back. With no `jobType` it empties the whole dead letter; with one it retries
+ * only that kind of work, so the one thing that broke can be retried without also
+ * retrying everything ever given up on.
+ *
+ * It is a single call: the backend does it in one statement, which matters
+ * because the case this exists for is a dead letter of thousands.
  */
-export async function requeueDeadLetterJobs(signal?: AbortSignal): Promise<number> {
-  const list = await getJSON<JobListResponse>('/jobs?state=dead&limit=500', signal)
-  let requeued = 0
-  for (const job of list.jobs) {
-    try {
-      await postVoid(`/jobs/${String(job.id)}/requeue`, signal)
-      requeued += 1
-    } catch (err) {
-      // A job already requeued elsewhere (404/409) is fine to skip; anything else
-      // aborts so the admin sees the failure.
-      if (err instanceof ApiError && (err.status === 404 || err.status === 409)) {
-        continue
-      }
-      throw err
-    }
-  }
-  return requeued
+export async function requeueDeadLetterJobs(
+  jobType?: string,
+  signal?: AbortSignal,
+): Promise<number> {
+  const query = jobType === undefined ? '' : `?type=${encodeURIComponent(jobType)}`
+  const body = await postJSON<RequeueDeadResponse>(`/jobs/requeue-dead${query}`, signal)
+  return body.requeued
 }

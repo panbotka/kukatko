@@ -47,13 +47,15 @@ func NewAPI(cfg Config) *API {
 // RegisterRoutes mounts the job endpoints onto r, which the caller has scoped
 // under the API base path (for example /api/v1). Every route requires maintainer:
 //
-//	GET  /jobs/stats        aggregate counts by state and type
-//	GET  /jobs              recent jobs (optionally filtered by state)
-//	POST /jobs/{id}/requeue requeue a failed or dead-lettered job
+//	GET  /jobs/stats         aggregate counts by state and type
+//	GET  /jobs               recent jobs (optionally filtered by state)
+//	POST /jobs/requeue-dead  requeue the whole dead letter, or one job type
+//	POST /jobs/{id}/requeue  requeue a failed or dead-lettered job
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.Route("/jobs", func(r chi.Router) {
 		r.With(a.requireMaintainer).Get("/stats", a.handleStats)
 		r.With(a.requireMaintainer).Get("/", a.handleList)
+		r.With(a.requireMaintainer).Post("/requeue-dead", a.handleRequeueDead)
 		r.With(a.requireMaintainer).Post("/{id}/requeue", a.handleRequeue)
 	})
 }
@@ -128,6 +130,30 @@ func (a *API) handleRequeue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, job)
+}
+
+// requeueDeadResponse is the JSON body of the bulk requeue: how many dead jobs
+// went back onto the queue.
+type requeueDeadResponse struct {
+	Requeued int `json:"requeued"`
+}
+
+// handleRequeueDead resets the dead letter back onto the queue and reports how
+// many jobs that was. An optional `type` query parameter narrows it to one job
+// type, so an operator can retry the one thing that broke rather than everything
+// ever given up on; an unknown type simply matches nothing and answers 0, which
+// is the same thing as a dead letter that no longer holds any.
+func (a *API) handleRequeueDead(w http.ResponseWriter, r *http.Request) {
+	var types []string
+	if jobType := r.URL.Query().Get("type"); jobType != "" {
+		types = append(types, jobType)
+	}
+	requeued, err := a.store.RequeueAllDead(r.Context(), types...)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "requeuing dead jobs failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, requeueDeadResponse{Requeued: requeued})
 }
 
 // writeRequeueError maps a requeue store error to an HTTP response: 404 for a

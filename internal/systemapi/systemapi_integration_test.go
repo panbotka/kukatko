@@ -19,6 +19,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/clientip"
+	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/importer"
 	"github.com/panbotka/kukatko/internal/jobs"
@@ -46,6 +47,7 @@ type env struct {
 	authSvc *auth.Service
 	jobs    *jobs.Store
 	runs    *importer.Store
+	db      *database.DB
 }
 
 // newEnv builds the HTTP test environment over a freshly truncated database. The
@@ -68,6 +70,7 @@ func newEnv(t *testing.T) *env {
 		t.Fatalf("seed originals: %v", err)
 	}
 
+	libraryStore := system.NewStore(db.Pool())
 	svc := system.New(system.Config{
 		DB:            db,
 		Embeddings:    offlineHealth{},
@@ -75,7 +78,8 @@ func newEnv(t *testing.T) *env {
 		Jobs:          jobStore,
 		Backup:        nil,
 		Imports:       runStore,
-		Library:       system.NewStore(db.Pool()),
+		Library:       libraryStore,
+		Dashboard:     libraryStore,
 		OriginalsPath: originals,
 		CachePath:     filepath.Join(originals, "missing-cache"),
 	})
@@ -95,7 +99,7 @@ func newEnv(t *testing.T) *env {
 	})
 	server := httptest.NewServer(r)
 	t.Cleanup(server.Close)
-	return &env{baseURL: server.URL, authSvc: authSvc, jobs: jobStore, runs: runStore}
+	return &env{baseURL: server.URL, authSvc: authSvc, jobs: jobStore, runs: runStore, db: db}
 }
 
 // login creates a user with the given role and returns a cookie-bearing client.
@@ -181,6 +185,63 @@ func TestSystemStatus_Aggregates(t *testing.T) {
 	}
 	if got.Version.Version == "" {
 		t.Error("version empty, want a build version")
+	}
+	// The dashboard sections travel in the same snapshot: an empty catalogue means
+	// zeroes everywhere, and the duplicates tile reports "not configured" rather
+	// than a scan that found nothing.
+	if got.Library.Photos != 0 || got.Library.LibraryBytes != 0 {
+		t.Errorf("library = %+v, want an empty catalogue", got.Library)
+	}
+	if got.Remaining.Duplicates.Configured || got.Remaining.Duplicates.Available {
+		t.Errorf("duplicates = %+v, want not configured", got.Remaining.Duplicates)
+	}
+}
+
+// TestSystemStatus_LibrarySection verifies the dashboard's library summary is
+// read from the same catalogue the rest of the app browses: a seeded photo shows
+// up in the browsable count with its size, and an archived one in the trash.
+func TestSystemStatus_LibrarySection(t *testing.T) {
+	env := newEnv(t)
+	maint := env.login(t, "maint", auth.RoleMaintainer)
+
+	seedStatusPhoto(t, env.db, "live1", 1500, false)
+	seedStatusPhoto(t, env.db, "gone1", 700, true)
+
+	resp := do(t, maint, http.MethodGet, env.baseURL+"/api/v1/system/status", nil)
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var got system.Status
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatalf("decoding body: %v", err)
+	}
+
+	if got.Library.Photos != 1 || got.Library.Trashed != 1 {
+		t.Errorf("library = %+v, want 1 browsable / 1 trashed", got.Library)
+	}
+	if got.Library.LibraryBytes != 1500 || got.Library.TrashBytes != 700 {
+		t.Errorf("library bytes = %d / trash %d, want 1500 / 700",
+			got.Library.LibraryBytes, got.Library.TrashBytes)
+	}
+	if got.Library.Uploads.Day != 2 {
+		t.Errorf("uploads.day = %d, want both freshly seeded photos", got.Library.Uploads.Day)
+	}
+	if got.Remaining.PhotosWithoutTakenAt != 1 || got.Remaining.PhotosWithoutGPS != 1 {
+		t.Errorf("remaining = %+v, want the one browsable photo in both backlogs", got.Remaining)
+	}
+}
+
+// seedStatusPhoto inserts one photo of the given size, archived or not.
+func seedStatusPhoto(t *testing.T, db *database.DB, uid string, size int64, archived bool) {
+	t.Helper()
+	const stmt = `
+INSERT INTO photos (uid, file_hash, file_path, file_name, file_size, archived_at)
+VALUES ($1, $2, $3, $4, $5, CASE WHEN $6 THEN now() ELSE NULL END)`
+	_, err := db.Pool().Exec(t.Context(), stmt,
+		uid, "hash-"+uid, "2026/08/"+uid+".jpg", uid+".jpg", size, archived)
+	if err != nil {
+		t.Fatalf("seed photo %s: %v", uid, err)
 	}
 }
 
