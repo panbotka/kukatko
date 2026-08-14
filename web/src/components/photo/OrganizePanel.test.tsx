@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../../i18n'
 import { ApiError } from '../../services/auth'
-import { type AlbumCount, type Label, type LabelCount } from '../../services/organize'
+import { type Album, type AlbumCount, type Label, type LabelCount } from '../../services/organize'
 import { type PhotoDetail } from '../../services/photos'
 
 import { OrganizePanel } from './OrganizePanel'
@@ -20,16 +20,18 @@ vi.mock('../../services/organize', async (importOriginal) => {
     fetchLabels: vi.fn(),
     addAlbumPhotos: vi.fn(),
     attachLabel: vi.fn(),
+    createAlbum: vi.fn(),
     createLabel: vi.fn(),
   }
 })
 
-const { fetchAlbums, fetchLabels, addAlbumPhotos, attachLabel, createLabel } =
+const { fetchAlbums, fetchLabels, addAlbumPhotos, attachLabel, createAlbum, createLabel } =
   await import('../../services/organize')
 const fetchAlbumsMock = vi.mocked(fetchAlbums)
 const fetchLabelsMock = vi.mocked(fetchLabels)
 const addAlbumPhotosMock = vi.mocked(addAlbumPhotos)
 const attachLabelMock = vi.mocked(attachLabel)
+const createAlbumMock = vi.mocked(createAlbum)
 const createLabelMock = vi.mocked(createLabel)
 
 function album(uid: string, title: string): AlbumCount {
@@ -155,7 +157,12 @@ describe('OrganizePanel autocomplete', () => {
     const input = await screen.findByRole('combobox', { name: 'Add to album' })
     await user.type(input, 'holi')
 
-    expect(await screen.findByText('No matches.')).toBeInTheDocument()
+    // The album the photo is in is not offered again; only the create row for
+    // the (genuinely new) typed name remains.
+    const listbox = await screen.findByRole('listbox', { name: 'Add to album' })
+    expect(within(listbox).queryByRole('option', { name: 'Holidays' })).toBeNull()
+    expect(within(listbox).getAllByRole('option')).toHaveLength(1)
+    expect(within(listbox).getByRole('option', { name: 'Create “holi”' })).toBeInTheDocument()
   })
 
   it('adds the photo to a clicked album, updates chips and clears the input', async () => {
@@ -392,9 +399,10 @@ describe('OrganizePanel label creation', () => {
     expect(createLabelMock).not.toHaveBeenCalled()
   })
 
-  it('attaches an already-known label rather than creating a duplicate slug', async () => {
-    // The label exists but is hidden from the options because the photo has it;
-    // re-typing its name must not collide on the unique slug server-side.
+  it('never offers to create a label the photo already carries', async () => {
+    // The label exists but is hidden from the options because the photo has it.
+    // Offering "Create «sunset»" there would promise a second label of that name
+    // and collide on the unique slug server-side, so nothing is offered at all.
     attachLabelMock.mockResolvedValue(undefined)
     const user = userEvent.setup()
     renderStatefulPanel(photo({ labels: [{ uid: 'l1', name: 'sunset' }] }))
@@ -402,10 +410,106 @@ describe('OrganizePanel label creation', () => {
     const input = await screen.findByRole('combobox', { name: 'Add label' })
     await user.type(input, 'sunset{Enter}')
 
-    await waitFor(() => {
-      expect(input).toHaveValue('')
-    })
+    expect(await screen.findByText('No matches.')).toBeInTheDocument()
     expect(createLabelMock).not.toHaveBeenCalled()
     expect(attachLabelMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('OrganizePanel album creation', () => {
+  const created: Album = {
+    uid: 'a9',
+    slug: 'ostatky-2022',
+    title: 'Ostatky 2022',
+    description: '',
+    type: 'album',
+    private: false,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  }
+
+  it('creates the album and puts the photo in it when the catalog holds none', async () => {
+    fetchAlbumsMock.mockResolvedValue([])
+    createAlbumMock.mockResolvedValue(created)
+    addAlbumPhotosMock.mockResolvedValue(['p1'])
+    const user = userEvent.setup()
+    renderStatefulPanel()
+
+    // An empty catalog must not hide the field — it is the only way to start.
+    const input = await screen.findByRole('combobox', { name: 'Add to album' })
+    await user.type(input, 'Ostatky 2022')
+    await user.click(await screen.findByRole('option', { name: 'Create “Ostatky 2022”' }))
+
+    await waitFor(() => {
+      expect(createAlbumMock).toHaveBeenCalledWith({
+        title: 'Ostatky 2022',
+        description: '',
+        private: false,
+      })
+    })
+    expect(addAlbumPhotosMock).toHaveBeenCalledWith('a9', ['p1'])
+    expect(await screen.findByRole('link', { name: 'Ostatky 2022' })).toHaveAttribute(
+      'href',
+      '/albums/a9',
+    )
+    expect(input).toHaveValue('')
+  })
+
+  it('creates from the keyboard when the create row is the only suggestion', async () => {
+    fetchAlbumsMock.mockResolvedValue([])
+    createAlbumMock.mockResolvedValue(created)
+    addAlbumPhotosMock.mockResolvedValue(['p1'])
+    const user = userEvent.setup()
+    renderStatefulPanel()
+
+    const input = await screen.findByRole('combobox', { name: 'Add to album' })
+    await user.type(input, 'Ostatky 2022{Enter}')
+
+    await waitFor(() => {
+      expect(addAlbumPhotosMock).toHaveBeenCalledWith('a9', ['p1'])
+    })
+  })
+
+  it('surfaces the error and keeps the typed name when creating fails', async () => {
+    fetchAlbumsMock.mockResolvedValue([])
+    createAlbumMock.mockRejectedValue(new ApiError(409, 'album already exists'))
+    const user = userEvent.setup()
+    renderStatefulPanel()
+
+    const input = await screen.findByRole('combobox', { name: 'Add to album' })
+    await user.type(input, 'Ostatky 2022')
+    await user.click(await screen.findByRole('option', { name: 'Create “Ostatky 2022”' }))
+
+    expect(await screen.findByText('Could not save the change.')).toBeInTheDocument()
+    expect(addAlbumPhotosMock).not.toHaveBeenCalled()
+    expect(input).toHaveValue('Ostatky 2022')
+  })
+
+  it('offers the existing album instead of creating a same-named duplicate', async () => {
+    const user = userEvent.setup()
+    renderStatefulPanel()
+
+    const input = await screen.findByRole('combobox', { name: 'Add to album' })
+    await user.type(input, 'holidays')
+
+    const listbox = await screen.findByRole('listbox', { name: 'Add to album' })
+    const options = within(listbox).getAllByRole('option')
+    expect(options).toHaveLength(1)
+    expect(options[0]).toHaveTextContent('Holidays')
+    expect(createAlbumMock).not.toHaveBeenCalled()
+  })
+
+  it('never offers to create an album the photo is already in', async () => {
+    const user = userEvent.setup()
+    renderStatefulPanel(photo({ albums: [{ uid: 'a1', title: 'Holidays' }] }))
+
+    const input = await screen.findByRole('combobox', { name: 'Add to album' })
+    await user.type(input, 'holidays{Enter}')
+
+    // The album is held out of the options because the photo is in it; offering
+    // to create it would promise a second album of the same name.
+    expect(await screen.findByText('No matches.')).toBeInTheDocument()
+    expect(createAlbumMock).not.toHaveBeenCalled()
+    expect(addAlbumPhotosMock).not.toHaveBeenCalled()
   })
 })

@@ -9,6 +9,7 @@ import {
   addAlbumPhotos,
   type AlbumCount,
   attachLabel,
+  createAlbum,
   createLabel,
   detachLabel,
   fetchAlbums,
@@ -37,10 +38,11 @@ export interface OrganizePanelProps {
  * controls for editors. Mutations call the organize API and update the photo's
  * memberships in place. Viewers see the chips read-only.
  *
- * The label field also creates: typing a name no label carries offers to create
- * and attach it in one action, so a catalog with zero labels can still get its
- * first one. The album field only picks — albums carry a type, cover and privacy
- * flag that belong on the Albums page.
+ * Both fields also create: typing a name nothing carries offers to create the
+ * album/label and attach the photo in one action, so a catalog with zero albums
+ * or zero labels can still get its first one. The new album takes the defaults
+ * the Albums page would give it — a plain, public album with no description —
+ * which stay editable there.
  */
 export function OrganizePanel({ photo, canWrite, onChanged }: OrganizePanelProps) {
   const { t } = useTranslation()
@@ -80,6 +82,11 @@ export function OrganizePanel({ photo, canWrite, onChanged }: OrganizePanelProps
       .filter((label) => !members.has(label.uid))
       .map((label) => ({ uid: label.uid, label: label.name }))
   }, [labels, photo.labels])
+
+  // What the photo already carries: held out of the options above, and named
+  // here so typing one of them is not offered for creation either.
+  const memberAlbumTitles = useMemo(() => photo.albums.map((album) => album.title), [photo.albums])
+  const memberLabelNames = useMemo(() => photo.labels.map((label) => label.name), [photo.labels])
 
   /** Runs a mutation with the busy/error plumbing; reports whether it succeeded. */
   async function run(action: () => Promise<PhotoDetail>): Promise<boolean> {
@@ -133,13 +140,35 @@ export function OrganizePanel({ photo, canWrite, onChanged }: OrganizePanelProps
   }
 
   /**
+   * Creates the album `name` and puts the photo in it in one action, then
+   * reports success so the field can clear (or keep the text on failure).
+   *
+   * The field only offers to create a name nothing in the loaded catalog carries,
+   * but this does not lean on that: an album of that name that is known here is
+   * reused rather than duplicated under a second, colliding slug.
+   */
+  function createAndAddAlbum(name: string): Promise<boolean> {
+    return run(async () => {
+      const existing = albums.find((candidate) => foldedEquals(candidate.title, name))
+      const album =
+        existing ?? (await createAlbum({ title: name, description: '', private: false }))
+      if (existing === undefined) {
+        setAlbums((current) => [...current, { ...album, photo_count: 0 }])
+      }
+      if (photo.albums.some((current) => current.uid === album.uid)) {
+        return photo
+      }
+      await addAlbumPhotos(album.uid, [photo.uid])
+      return { ...photo, albums: [...photo.albums, { uid: album.uid, title: album.title }] }
+    })
+  }
+
+  /**
    * Creates the label `name` and attaches it to the photo in one action, then
    * reports success so the field can clear (or keep the text on failure).
    *
-   * A label of that name may already exist and merely be missing from the
-   * options because the photo carries it, or because the list was fetched before
-   * someone else created it; attach the existing one rather than colliding on
-   * its unique slug.
+   * As with {@link createAndAddAlbum}, a label of that name that is already known
+   * here is attached rather than created a second time.
    */
   function createAndAttachLabel(name: string): Promise<boolean> {
     return run(async () => {
@@ -189,13 +218,16 @@ export function OrganizePanel({ photo, canWrite, onChanged }: OrganizePanelProps
           </EntityChip>
         ))}
       </div>
-      {canWrite && albumOptions.length > 0 && (
+      {/* Like the label field, this stays even with no options — it creates. */}
+      {canWrite && (
         <AddAutocomplete
           id="organize-add-album"
           label={t('photo.organize.addAlbum')}
           options={albumOptions}
+          existingNames={memberAlbumTitles}
           disabled={busy}
           onAdd={addAlbum}
+          onCreate={createAndAddAlbum}
         />
       )}
 
@@ -224,12 +256,12 @@ export function OrganizePanel({ photo, canWrite, onChanged }: OrganizePanelProps
           </EntityChip>
         ))}
       </div>
-      {/* Unlike albums, the label field stays even with no options — it creates. */}
       {canWrite && (
         <AddAutocomplete
           id="organize-add-label"
           label={t('photo.organize.addLabel')}
           options={labelOptions}
+          existingNames={memberLabelNames}
           disabled={busy}
           onAdd={addLabel}
           onCreate={createAndAttachLabel}

@@ -101,7 +101,9 @@ library is tidied by more than one person.
 ### The everyday library
 
 Albums (each covered by a collage of four of its photos, so two albums from the same afternoon don't
-look alike) · labels · per-user favourites and ratings · comments · bulk editing, including re-dating
+look alike; a new one can be started straight from a selection — "these forty photos are Ostatky 2022" —
+or from a single photo, without leaving for the Albums page) · labels · per-user favourites and ratings ·
+comments · bulk editing, including re-dating
 a whole shelf of scans at the grain you actually know ("1974", "the seventies") · duplicate detection
 with a side-by-side compare and a merge that keeps every album, label and person · RAW+JPEG and
 edited-variant stacks (grouped, never merged) · non-destructive crop/brightness/contrast and a rotation

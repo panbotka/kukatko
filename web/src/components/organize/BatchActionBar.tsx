@@ -1,3 +1,4 @@
+import type { TFunction } from 'i18next'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Button from 'react-bootstrap/Button'
 import Dropdown from 'react-bootstrap/Dropdown'
@@ -5,11 +6,20 @@ import Modal from 'react-bootstrap/Modal'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 
+import { useAuth } from '../../auth/AuthContext'
 import { type UseBulkEditResult } from '../../hooks/useBulkEdit'
 import { useIsNarrowViewport } from '../../hooks/useIsNarrowViewport'
+import { pendingOptions, pendingValue, resolvePending } from '../../lib/pendingCreate'
 import { ApiError } from '../../services/auth'
 import { type BulkOperations, bulkUpdatePhotos } from '../../services/bulk'
-import { type AlbumCount, fetchAlbums, fetchLabels, type LabelCount } from '../../services/organize'
+import {
+  type AlbumCount,
+  createAlbum,
+  createLabel,
+  fetchAlbums,
+  fetchLabels,
+  type LabelCount,
+} from '../../services/organize'
 import { Icon, type IconName } from '../Icon'
 import { MultiSelect, type MultiSelectOption } from '../MultiSelect'
 import { useToast } from '../toast/ToastContext'
@@ -36,6 +46,19 @@ function albumOption(album: AlbumCount): MultiSelectOption {
 /** Maps a label to a picker option (value = uid, shown by name + count). */
 function labelOption(label: LabelCount): MultiSelectOption {
   return { value: label.uid, label: label.name, count: label.photo_count }
+}
+
+/**
+ * The toast text for an album/label the picker could not create. The server
+ * usually says why — a title already taken, write access withdrawn — and that
+ * reason is what the reader can act on, so it is quoted next to the name; a
+ * silent failure (a network drop, a 5xx with no body) falls back to asking for
+ * a retry.
+ */
+function createFailureMessage(name: string, error: unknown, t: TFunction): string {
+  return error instanceof ApiError && error.message.trim() !== ''
+    ? t('batch.createError', { name, message: error.message })
+    : t('batch.createErrorUnknown', { name })
 }
 
 /**
@@ -123,6 +146,12 @@ function BarAction({
  * The bar renders only while something is selected — the page mounts it under
  * that condition — so it never appears empty.
  *
+ * The album and label pickers create as well as pick: a name no album or label
+ * carries yet offers to be created, which is how a new album usually starts
+ * ("these forty photos are Ostatky 2022"). Creation is deferred to the apply, so
+ * closing the picker never leaves an empty album behind, and only an editor is
+ * offered it — a viewer picks from what exists.
+ *
  * Every photo list shows this same bar, so the batch vocabulary does not change
  * from page to page; a page that owns actions of its own (an album's set-cover /
  * remove-from-album) hands them over as `extraActions` and they join the bar
@@ -131,6 +160,7 @@ function BarAction({
 export function BatchActionBar({ bulk, onSelectAll, extraActions }: BatchActionBarProps) {
   const { t } = useTranslation()
   const { show } = useToast()
+  const { canWrite } = useAuth()
   const [busy, setBusy] = useState(false)
   const [picker, setPicker] = useState<Picker>(null)
   const [options, setOptions] = useState<OptionsState>({ status: 'idle' })
@@ -226,12 +256,14 @@ export function BatchActionBar({ bulk, onSelectAll, extraActions }: BatchActionB
     resetPickerFields()
   }, [resetPickerFields])
 
-  // Applies one operation set to the whole selection in a single request. On
+  // Sends one operation set for the whole selection in a single request. On
   // success it reports the count, clears the selection and reloads the grid; on
   // failure it surfaces the server's reason and leaves the selection untouched.
-  const applyOps = useCallback(
+  // It never rejects — every outcome is a toast — so a caller only has to await
+  // it. Busy is the caller's, because a picker apply is busy from the first
+  // creation, not from this request.
+  const sendOps = useCallback(
     async (ops: BulkOperations) => {
-      setBusy(true)
       try {
         const result = await bulkUpdatePhotos(bulk.photoUids, ops)
         show({ variant: 'success', message: t('batch.applied', { count: result.counts.updated }) })
@@ -242,29 +274,106 @@ export function BatchActionBar({ bulk, onSelectAll, extraActions }: BatchActionB
         const message =
           err instanceof ApiError && err.message.trim() !== '' ? err.message : t('batch.error')
         show({ variant: 'danger', message })
-      } finally {
-        setBusy(false)
       }
     },
     [bulk, resetPickerFields, show, t],
   )
 
+  // The bar's one-click actions (favorite, archive): nothing to resolve first.
+  const applyOps = useCallback(
+    (ops: BulkOperations) => {
+      void (async () => {
+        setBusy(true)
+        try {
+          await sendOps(ops)
+        } finally {
+          setBusy(false)
+        }
+      })()
+    },
+    [sendOps],
+  )
+
+  /**
+   * Creates the album `name` and folds it into the cached options, so its chip
+   * reads by name and the field stops offering to create it again. Answers with
+   * the fresh UID for {@link resolvePending}.
+   */
+  const createAlbumNamed = useCallback(async (name: string): Promise<string> => {
+    const album = await createAlbum({ title: name, description: '', private: false })
+    setOptions((prev) =>
+      prev.status === 'ready'
+        ? { ...prev, albums: [...prev.albums, albumOption({ ...album, photo_count: 0 })] }
+        : prev,
+    )
+    return album.uid
+  }, [])
+
+  /** The label counterpart of {@link createAlbumNamed}. */
+  const createLabelNamed = useCallback(async (name: string): Promise<string> => {
+    const label = await createLabel({ name, priority: 0 })
+    setOptions((prev) =>
+      prev.status === 'ready'
+        ? { ...prev, labels: [...prev.labels, labelOption({ ...label, photo_count: 0 })] }
+        : prev,
+    )
+    return label.uid
+  }, [])
+
+  /**
+   * Applies the open picker. Names typed into the add fields that no album or
+   * label carries yet are held as `create:` markers, so they are created first —
+   * the bulk endpoint only accepts identifiers that exist. A creation failure
+   * names the entry, stops before the batch and keeps everything as it was: the
+   * picker open, the typed names in place (with the ones already created swapped
+   * to their real UIDs, so a retry never makes a second album of that name) and
+   * the photo selection untouched.
+   */
   const applyPicker = useCallback(() => {
-    if (picker === 'album') {
-      void applyOps({ add_to_albums: addAlbums })
-      return
-    }
-    if (picker === 'label') {
-      const ops: BulkOperations = {}
-      if (addLabels.length > 0) {
-        ops.add_labels = addLabels
+    void (async () => {
+      setBusy(true)
+      try {
+        if (picker === 'album') {
+          const albums = await resolvePending(addAlbums, createAlbumNamed)
+          setAddAlbums(albums.values)
+          if (albums.status === 'failed') {
+            show({ variant: 'danger', message: createFailureMessage(albums.name, albums.error, t) })
+            return
+          }
+          await sendOps({ add_to_albums: albums.values })
+          return
+        }
+        if (picker === 'label') {
+          const labels = await resolvePending(addLabels, createLabelNamed)
+          setAddLabels(labels.values)
+          if (labels.status === 'failed') {
+            show({ variant: 'danger', message: createFailureMessage(labels.name, labels.error, t) })
+            return
+          }
+          const ops: BulkOperations = {}
+          if (labels.values.length > 0) {
+            ops.add_labels = labels.values
+          }
+          if (removeLabels.length > 0) {
+            ops.remove_labels = removeLabels
+          }
+          await sendOps(ops)
+        }
+      } finally {
+        setBusy(false)
       }
-      if (removeLabels.length > 0) {
-        ops.remove_labels = removeLabels
-      }
-      void applyOps(ops)
-    }
-  }, [picker, applyOps, addAlbums, addLabels, removeLabels])
+    })()
+  }, [
+    picker,
+    sendOps,
+    show,
+    t,
+    addAlbums,
+    addLabels,
+    removeLabels,
+    createAlbumNamed,
+    createLabelNamed,
+  ])
 
   const pickerHasChanges =
     picker === 'album'
@@ -310,7 +419,7 @@ export function BatchActionBar({ bulk, onSelectAll, extraActions }: BatchActionB
       icon="heart"
       label={t('batch.favorite')}
       onClick={() => {
-        void applyOps({ set_favorite: true })
+        applyOps({ set_favorite: true })
       }}
       disabled={busy}
     />
@@ -321,7 +430,7 @@ export function BatchActionBar({ bulk, onSelectAll, extraActions }: BatchActionB
       label={t('batch.archive')}
       danger
       onClick={() => {
-        void applyOps({ archive: true })
+        applyOps({ archive: true })
       }}
       disabled={busy}
     />
@@ -428,11 +537,20 @@ export function BatchActionBar({ bulk, onSelectAll, extraActions }: BatchActionB
             <MultiSelect
               id="batch-add-albums"
               label={t('batch.albumField')}
-              options={options.albums}
+              // The pending creations join the options so their chips read as the
+              // typed name instead of a raw `create:` marker.
+              options={[...options.albums, ...pendingOptions(addAlbums)]}
               selected={addAlbums}
               onChange={setAddAlbums}
               placeholder={t('batch.albumPlaceholder')}
               disabled={busy}
+              onCreate={
+                canWrite
+                  ? (name) => {
+                      setAddAlbums((prev) => [...prev, pendingValue(name)])
+                    }
+                  : undefined
+              }
             />
           )}
           {options.status === 'ready' && picker === 'label' && (
@@ -440,13 +558,21 @@ export function BatchActionBar({ bulk, onSelectAll, extraActions }: BatchActionB
               <MultiSelect
                 id="batch-add-labels"
                 label={t('batch.labelAddField')}
-                options={options.labels}
+                options={[...options.labels, ...pendingOptions(addLabels)]}
                 selected={addLabels}
                 onChange={setAddLabels}
                 placeholder={t('batch.labelPlaceholder')}
                 disabled={busy}
+                onCreate={
+                  canWrite
+                    ? (name) => {
+                        setAddLabels((prev) => [...prev, pendingValue(name)])
+                      }
+                    : undefined
+                }
               />
               <div className="mt-3">
+                {/* No create here: a label that does not exist cannot be removed. */}
                 <MultiSelect
                   id="batch-remove-labels"
                   label={t('batch.labelRemoveField')}

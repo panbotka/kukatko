@@ -1223,6 +1223,8 @@
     "apply": "Použít",
     "cancel": "Zrušit",
     "optionsError": "Seznam se nepodařilo načíst. Zkuste to prosím znovu.",
+    "createError": "«{{name}}» se nepodařilo vytvořit: {{message}}",
+    "createErrorUnknown": "«{{name}}» se nepodařilo vytvořit. Zkuste to prosím znovu.",
     "retry": "Zkusit znovu",
     "applied_one": "Použito na {{count}} fotku",
     "applied_few": "Použito na {{count}} fotky",
