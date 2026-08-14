@@ -2111,6 +2111,21 @@
       "ariaInput": "Vyberte fotky nebo videa k nahrání",
       "ariaCamera": "Vyfotit fotoaparátem"
     },
+    "step": {
+      "aria": "Krok {{index}}:",
+      "pick": {
+        "title": "Vyberte soubory",
+        "hint": "Přetáhněte je sem, vyberte je ze zařízení, nebo je vložte ze schránky.",
+        "picked_one": "vybrán {{count}} soubor",
+        "picked_few": "vybrány {{count}} soubory",
+        "picked_other": "vybráno {{count}} souborů"
+      },
+      "upload": {
+        "title": "Nahrajte je",
+        "hint": "Každý soubor se nahrává zvlášť — když jeden selže, ostatní pokračují.",
+        "empty": "Vyberte nahoře soubory a objeví se tady připravené k nahrání."
+      }
+    },
     "queue": {
       "heading": "Vybrané soubory"
     },
@@ -2153,6 +2168,12 @@
     "organize": {
       "heading": "Přidat do alb a štítků",
       "hint": "Vybraná alba a štítky se přidají ke každé fotce v tomto nahrání.",
+      "hintCount_one": "Nepovinné. Co tu vyberete, přidáme k {{count}} souboru v této dávce.",
+      "hintCount_few": "Nepovinné. Co tu vyberete, přidáme ke všem {{count}} souborům v této dávce.",
+      "hintCount_other": "Nepovinné. Co tu vyberete, přidáme ke všem {{count}} souborům v této dávce.",
+      "recapLabel": "Tato dávka dostane:",
+      "recapEmpty": "žádné album ani štítek",
+      "recapEdit": "Změnit",
       "albums": "Alba",
       "labels": "Štítky",
       "albumsPlaceholder": "Filtrovat nebo vytvořit album…",

@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
-import { fileExtension, isMediaFile, MEDIA_EXTENSIONS, PICKER_ACCEPT } from './mediaFiles'
+import {
+  fileExtension,
+  isMediaFile,
+  MEDIA_EXTENSIONS,
+  PICKER_ACCEPT,
+  previewKind,
+} from './mediaFiles'
 
 describe('fileExtension', () => {
   it.each([
@@ -32,6 +38,36 @@ describe('isMediaFile', () => {
     expect(isMediaFile({ name: 'smlouva.pdf', type: 'application/pdf' })).toBe(false)
     expect(isMediaFile({ name: 'notes.txt', type: 'text/plain' })).toBe(false)
     expect(isMediaFile({ name: 'archive', type: '' })).toBe(false)
+  })
+})
+
+describe('previewKind', () => {
+  it('names the images a browser paints on its own', () => {
+    expect(previewKind({ name: 'a.JPG', type: 'image/jpeg' })).toBe('image')
+    expect(previewKind({ name: 'a.png', type: '' })).toBe('image')
+    // No extension to go on: the MIME type decides.
+    expect(previewKind({ name: 'clipboard', type: 'image/webp' })).toBe('image')
+  })
+
+  it('names a video, whose first frame the client cannot decode', () => {
+    expect(previewKind({ name: 'clip.MOV', type: '' })).toBe('video')
+    expect(previewKind({ name: 'whatever', type: 'video/mp4' })).toBe('video')
+  })
+
+  it('refuses to promise a preview of HEIC, TIFF or RAW', () => {
+    // The upload queue draws a placeholder for these; an `<img>` pointed at one
+    // only ever ends at the broken-image glyph.
+    expect(previewKind({ name: 'IMG_0042.HEIC', type: 'image/heic' })).toBe('none')
+    expect(previewKind({ name: 'scan.tif', type: 'image/tiff' })).toBe('none')
+    expect(previewKind({ name: 'DSC_1000.nef', type: '' })).toBe('none')
+    // A sender mislabelling a RAW file as a JPEG must not talk us into it: the
+    // extension is the more reliable of the two, so it wins.
+    expect(previewKind({ name: 'DSC_1000.cr3', type: 'image/jpeg' })).toBe('none')
+  })
+
+  it('says nothing can be previewed of a file that is not media at all', () => {
+    expect(previewKind({ name: 'smlouva.pdf', type: 'application/pdf' })).toBe('none')
+    expect(previewKind({ name: 'archive', type: '' })).toBe('none')
   })
 })
 

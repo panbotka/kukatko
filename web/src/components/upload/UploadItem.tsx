@@ -6,6 +6,8 @@ import { useTranslation } from 'react-i18next'
 import { type QueueItemStatus, type UploadQueueItem } from '../../hooks/useUploadQueue'
 import { type UploadWarning } from '../../services/upload'
 
+import { UploadThumb } from './UploadThumb'
+
 /** Props for {@link UploadItem}. */
 export interface UploadItemProps {
   item: UploadQueueItem
@@ -70,10 +72,16 @@ function WarningLine({ warning }: { warning: UploadWarning }) {
 }
 
 /**
- * A single queued file: name and size, a live progress bar while uploading, a
+ * A single queued file: a **local preview** of the picked file (see
+ * {@link UploadThumb} — the browser paints it from the `File` itself, nothing is
+ * uploaded to get it), its name and size, a live progress bar while uploading, a
  * status badge, any non-fatal warnings, and contextual actions (remove a file
  * that has not started or finished; retry a failed one). Touch targets are
  * full-size buttons for mobile use.
+ *
+ * The preview is what turns the queue from a list of file names into something a
+ * user can actually check before uploading: on a phone, picked-from-the-gallery
+ * names (`IMG_4821.HEIC`) say nothing about which photos are in the batch.
  *
  * Rendered as a self-contained raised card rather than a `ListGroup.Item` so it
  * sits correctly inside the virtualized list (react-virtuoso positions each row
@@ -87,62 +95,64 @@ export function UploadItem({ item, onRemove, onRetry }: UploadItemProps) {
 
   return (
     <div
-      className={`kk-surface p-3 d-flex flex-column gap-2${errored ? ' border border-danger' : ''}`}
+      className={`kk-surface p-3 d-flex align-items-start gap-3${errored ? ' border border-danger' : ''}`}
     >
-      <div className="d-flex align-items-center justify-content-between gap-2">
-        <div className="text-truncate">
-          <span className="fw-semibold text-truncate d-inline-block align-bottom">
-            {item.file.name}
-          </span>
-          <span className="text-secondary small ms-2">{formatBytes(item.file.size)}</span>
+      <UploadThumb file={item.file} status={item.status} progress={item.progress} />
+
+      <div className="flex-grow-1 kk-min-w-0 d-flex flex-column gap-2">
+        <div className="d-flex align-items-start justify-content-between gap-2">
+          <div className="kk-min-w-0">
+            <div className="fw-semibold text-truncate">{item.file.name}</div>
+            <div className="text-secondary small">{formatBytes(item.file.size)}</div>
+          </div>
+          <Badge bg={BADGE_VARIANT[item.status]} className="flex-shrink-0">
+            {t(statusLabel(item.status))}
+          </Badge>
         </div>
-        <Badge bg={BADGE_VARIANT[item.status]} className="flex-shrink-0">
-          {t(statusLabel(item.status))}
-        </Badge>
-      </div>
 
-      {item.status === 'uploading' && (
-        <ProgressBar
-          now={percent}
-          label={`${String(percent)}%`}
-          animated
-          aria-label={t('upload.status.uploading')}
-        />
-      )}
-
-      {item.status === 'error' && item.error !== undefined && item.error !== '' && (
-        <div className="small text-danger">{item.error}</div>
-      )}
-
-      {item.warnings?.map((warning, index) => (
-        <WarningLine key={`${warning.code}-${String(index)}`} warning={warning} />
-      ))}
-
-      <div className="d-flex gap-2">
-        {item.status === 'error' && (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline-primary"
-            onClick={() => {
-              onRetry(item.id)
-            }}
-          >
-            {t('upload.actions.retry')}
-          </Button>
+        {item.status === 'uploading' && (
+          <ProgressBar
+            now={percent}
+            label={`${String(percent)}%`}
+            animated
+            aria-label={t('upload.status.uploading')}
+          />
         )}
-        {item.status !== 'uploading' && (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline-secondary"
-            onClick={() => {
-              onRemove(item.id)
-            }}
-          >
-            {t('upload.actions.remove')}
-          </Button>
+
+        {item.status === 'error' && item.error !== undefined && item.error !== '' && (
+          <div className="small text-danger">{item.error}</div>
         )}
+
+        {item.warnings?.map((warning, index) => (
+          <WarningLine key={`${warning.code}-${String(index)}`} warning={warning} />
+        ))}
+
+        <div className="d-flex gap-2">
+          {item.status === 'error' && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline-primary"
+              onClick={() => {
+                onRetry(item.id)
+              }}
+            >
+              {t('upload.actions.retry')}
+            </Button>
+          )}
+          {item.status !== 'uploading' && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline-secondary"
+              onClick={() => {
+                onRemove(item.id)
+              }}
+            >
+              {t('upload.actions.remove')}
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   )

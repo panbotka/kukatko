@@ -520,16 +520,37 @@ here.
   does not hide RAW/HEIC) → the mobile gallery + a **Vyfotit** button `capture="environment"`, and a
   footnote naming the third way in, **paste** — the page listens for it via `usePasteFiles`, but nothing
   on screen would otherwise say so),
+  `UploadStep` (**one numbered stage** of the flow: a `.kk-upload-step__marker` disc with the numeral
+  (`aria-hidden`, the heading carries a visually hidden „Krok 2:" instead, so the digit is not read twice),
+  a heading, an optional hint line and an optional right-aligned status — the page is three of these and
+  nothing else, which is what makes the order readable),
   `UploadProgressHeader` (**a prominent sticky** header for the whole batch: „done / total", **one**
   overall progress bar weighted even by the partial `progress` of in-flight files — `barLabel` for a11y —,
   a live breakdown of the uploaded/duplicate/failed/remaining counts; on completion it switches to a **completed
-  summary** with a link into the library and one-click retry-failed), `UploadItem` (a queue row as
-  a standalone `kk-surface` card: name+size, progress bar, status badge, near-duplicate
-  warning, remove/retry actions; a failed row has `border-danger`), `UploadList` (**a virtualized**
+  summary** with a link into the library and one-click retry-failed; plus, being the one thing that stays on
+  screen, the **batch's album/label recap** (`organize` = names + `onEdit`) — chips of what step 2 chose and
+  a **Změnit** button back to it. The picker itself deliberately does **not** move in here: the bar is a
+  stacking context, so the `MultiSelect`'s fixed overlay would be trapped in its layer 1019 and sink back
+  under the tab bar), `UploadItem` (a queue row as
+  a standalone `kk-surface` card: **a local `UploadThumb` preview**, name+size, progress bar, status badge,
+  near-duplicate warning, remove/retry actions; a failed row has `border-danger`),
+  `UploadThumb` (the row's preview, painted by the browser from the picked `File` — **no upload, no server**:
+  a fixed square (3.5rem, 4.5rem from `sm`) so virtuoso measures a stable row height, the object URL created
+  on mount and **revoked on unmount**, so only the rows on screen hold one and clearing the queue hands them
+  back; only what an `<img>` paints is loaded (`lib/mediaFiles` `previewKind`) — a video gets a play glyph,
+  HEIC/TIFF/RAW a picture glyph, and an `onError` falls back to the same placeholder; the frame is tinted by
+  state `.kk-upload-thumb--<status>` with the live % over an in-flight file and a warning glyph over a failed
+  one, all `aria-hidden` because the badge says the same in words),
+  `UploadList` (**a virtualized**
   `Virtuoso useWindowScroll` list of rows, gaps via `pb-2`, so 100+ files stay snappy on
-  mobile), `UploadOrganize` (two searchable `MultiSelect`s for **albums**
+  mobile. Tests: `UploadList.test.tsx` — rows, previews, placeholders, revocation, state tint), `UploadOrganize`
+  (two searchable `MultiSelect`s for **albums**
   and **labels** that apply to the whole batch, with inline creation of a new item via `onCreate`; empty
-  by default, driven by `useUploadOrganize`); `components/library/` = `PhotoTile`
+  by default, driven by `useUploadOrganize`. The heading and the batch-wide sentence are the step's,
+  not its own), and beside it the component-free `organizeSelection.ts` = `UPLOAD_ALBUMS_FIELD_ID`
+  (the album field's id, which the page focuses on the jump back) + `organizeSelectionNames`
+  (selection → human names for the recap, a `create:` marker reading as the typed name);
+  `components/library/` = `PhotoTile`
   (a square lazy-load tile → `/photos/{uid}` in the **hero-first** style: no border, no shadow, and
   with a minimal radius `--kk-radius-tile`, so the library is a dense wall of images; **stack badge**
   (the group's member count at top right — an `images` icon + `stack_count`, `library.tile.stackCount`,
@@ -1277,15 +1298,25 @@ here.
   full set of actions, `onSelectAll`; on success the search
   replays via `reloadKey`); changing `q`/`mode` is a different result set, so it **leaves selection mode**
   (filters that only narrow the same search keep the selection, just as in the library),
-  `UploadPage` = multi-upload (drag-and-drop + gallery/camera on mobile, **mobile-first**):
-  `DropZone` above a **sticky** `UploadProgressHeader` (the batch's overall progress) and a virtualized
-  `UploadList` (`UploadItem` rows), start/clear controls + a **jen neúspěšné** toggle (the filter
+  `UploadPage` = multi-upload (drag-and-drop + gallery/camera on mobile, **mobile-first**), laid out as
+  **three numbered `UploadStep`s in the order they happen** — ① vyberte soubory (`DropZone`, plus the share
+  notices and, once something is queued, a „vybráno N souborů" status), ② přidat do alb a štítků
+  (`UploadOrganize`), ③ nahrajte je. All three are on screen from the first visit, an empty ③ saying what
+  will appear there: a stage that only materialises after the previous one cannot be read as a sequence.
+  ③ holds a **sticky** `UploadProgressHeader` (the batch's overall progress) and a virtualized
+  `UploadList` (`UploadItem` rows, each with a **local preview** of the picked file), start/clear controls
+  + a **jen neúspěšné** toggle (the filter
   `showErrorsOnly` for failed files); a completed summary + a link to the newly uploaded photos
-  (`/?sort=added`, via `LIBRARY_PATH` in the header) and retry-failed are in `UploadProgressHeader`; above the queue
-  `UploadOrganize` — before uploading you can pick **albums and labels** for the whole batch, and after all files
+  (`/?sort=added`, via `LIBRARY_PATH` in the header) and retry-failed are in `UploadProgressHeader`.
+  ② is **batch-wide and says so**: its hint counts the queue („přidáme ke všem 57 souborům"), and because a
+  50-file queue scrolls the picker off screen, the sticky header of ③ **restates the choice as chips** with a
+  **Změnit** button that scrolls the album field to the middle of the viewport and focuses it
+  (`block: 'center'` clears both sticky bars; `preventScroll` so the focus does not fight the smooth scroll).
+  Before uploading you can pick **albums and labels** for the whole batch, and after all files
   settle **all** recognized photos (new **and** duplicate `resolvedUids`) are assigned
   by a single `POST /photos/bulk` (state „přiřazuji…“, success, or a **retryable** error — the photos are
-  uploaded, only the assignment failed); with no selection no call is made, and a pick made **after**
+  uploaded, only the assignment failed); those three notices live **inside ②**, beside the picker they are
+  about, rather than under a hundred queue rows. With no selection no call is made, and a pick made **after**
   the batch has finished re-runs the assignment with the current selection.
   Two more ways in besides the picker: **paste** anywhere on the page (`usePasteFiles`) and
   **`?share=<id>`**, the phone's share sheet — the files are already in the browser's cache by then, so

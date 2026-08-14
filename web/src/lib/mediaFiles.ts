@@ -13,30 +13,21 @@
  */
 
 /**
- * Extensions (lower case, no dot) of the media kinds Kukátko ingests: common
- * web/phone images, the HEIC/HEIF an iPhone produces, the RAW formats of the
- * usual camera vendors, and the video containers a phone or a camcorder writes.
- *
- * Extensions matter because MIME types cannot be relied on: a phone gallery
- * hands over `image/*` and `video/*`, but a file manager, a messenger or a
- * cloud-drive share routinely labels the very same photo `application/octet-stream`
- * — and RAW and HEIC are commonly typed as nothing at all.
+ * Images an `<img>` paints on its own, with no decoder and no server round trip
+ * — which is exactly the set the upload queue can preview locally from the
+ * picked `File` (see {@link previewKind}).
  */
-export const MEDIA_EXTENSIONS = [
-  // Images the browser itself understands.
-  'jpg',
-  'jpeg',
-  'png',
-  'gif',
-  'webp',
-  'avif',
-  'bmp',
-  'tif',
-  'tiff',
-  // Phone-camera images.
-  'heic',
-  'heif',
-  // RAW, by vendor.
+const BROWSER_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'bmp'] as const
+
+/**
+ * Images the library ingests but a browser will not display: TIFF, which only
+ * Safari paints, and the HEIC/HEIF an iPhone produces, which nothing but Safari
+ * decodes. The backend converts them (`internal/imgconvert`); the client cannot.
+ */
+const DECODED_IMAGE_EXTENSIONS = ['tif', 'tiff', 'heic', 'heif'] as const
+
+/** RAW, by vendor — never previewable in a browser either. */
+const RAW_EXTENSIONS = [
   'cr2',
   'cr3',
   'nef',
@@ -56,7 +47,10 @@ export const MEDIA_EXTENSIONS = [
   'kdc',
   'mrw',
   'mef',
-  // Video containers.
+] as const
+
+/** The video containers a phone or a camcorder writes. */
+const VIDEO_EXTENSIONS = [
   'mp4',
   'm4v',
   'mov',
@@ -71,6 +65,23 @@ export const MEDIA_EXTENSIONS = [
   '3g2',
   'wmv',
   'flv',
+] as const
+
+/**
+ * Extensions (lower case, no dot) of the media kinds Kukátko ingests: common
+ * web/phone images, the HEIC/HEIF an iPhone produces, the RAW formats of the
+ * usual camera vendors, and the video containers a phone or a camcorder writes.
+ *
+ * Extensions matter because MIME types cannot be relied on: a phone gallery
+ * hands over `image/*` and `video/*`, but a file manager, a messenger or a
+ * cloud-drive share routinely labels the very same photo `application/octet-stream`
+ * — and RAW and HEIC are commonly typed as nothing at all.
+ */
+export const MEDIA_EXTENSIONS = [
+  ...BROWSER_IMAGE_EXTENSIONS,
+  ...DECODED_IMAGE_EXTENSIONS,
+  ...RAW_EXTENSIONS,
+  ...VIDEO_EXTENSIONS,
 ] as const
 
 /** The extensions as a set, for a cheap membership test. */
@@ -112,4 +123,57 @@ export function isMediaFile(file: NamedFile): boolean {
     return true
   }
   return EXTENSION_SET.has(fileExtension(file.name))
+}
+
+/**
+ * What a preview of a file can show *before* it is uploaded: `image` when the
+ * browser paints it from an object URL, `video` for a clip (whose first frame
+ * would need decoding the container, so the queue draws a play glyph instead),
+ * and `none` for HEIC/TIFF/RAW — everything only the server's converter opens.
+ */
+export type PreviewKind = 'image' | 'video' | 'none'
+
+/** Extension → kind, for the two kinds a local preview distinguishes. */
+const BROWSER_IMAGE_SET: ReadonlySet<string> = new Set<string>(BROWSER_IMAGE_EXTENSIONS)
+const VIDEO_SET: ReadonlySet<string> = new Set<string>(VIDEO_EXTENSIONS)
+
+/** The MIME types an `<img>` paints, for a file whose name carries no extension. */
+const BROWSER_IMAGE_TYPES: ReadonlySet<string> = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'image/avif',
+  'image/bmp',
+])
+
+/** The kind a MIME type alone implies, when the file name says nothing. */
+function kindFromType(type: string): PreviewKind {
+  if (BROWSER_IMAGE_TYPES.has(type)) {
+    return 'image'
+  }
+  return type.startsWith('video/') ? 'video' : 'none'
+}
+
+/**
+ * Decides how a picked file can be previewed locally. The extension decides
+ * first — for the same reason {@link isMediaFile} leans on it, senders label
+ * files carelessly — and the MIME type is the fallback for a name without one.
+ * Anything unrecognised is `none`: drawing a placeholder is cheap, while an
+ * `<img>` pointed at a RAW file only ever ends in a broken-image glyph.
+ */
+export function previewKind(file: NamedFile): PreviewKind {
+  const extension = fileExtension(file.name)
+  if (BROWSER_IMAGE_SET.has(extension)) {
+    return 'image'
+  }
+  if (VIDEO_SET.has(extension)) {
+    return 'video'
+  }
+  if (extension !== '') {
+    // A known-but-undecodable extension (HEIC, RAW) must not fall through to a
+    // MIME type its sender guessed at, e.g. `image/heic` labelled `image/jpeg`.
+    return EXTENSION_SET.has(extension) ? 'none' : kindFromType(file.type)
+  }
+  return kindFromType(file.type)
 }

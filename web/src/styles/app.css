@@ -2505,3 +2505,116 @@ body {
   box-shadow: var(--kk-shadow-3);
   pointer-events: auto;
 }
+
+/* ---- Upload flow --------------------------------------------------------
+   The page is three numbered steps — pick files, organise the batch, start —
+   and the marker is what makes the sequence readable at a glance: a small
+   filled disc carrying the numeral, aligned with the step's heading. It is a
+   flex item that must never shrink, otherwise a long Czech heading squeezes the
+   digit into an oval. */
+
+.kk-upload-step__marker {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--kk-radius-pill);
+  background-color: var(--kk-surface-raised);
+  border: 1px solid var(--kk-surface-border);
+  color: var(--bs-primary);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+/* The batch's album/label recap inside the sticky progress header. A hairline
+   above it, rather than a whole `<hr>`, keeps the bar as short as it can be —
+   it is the one thing on screen while a hundred rows scroll past. */
+.kk-upload-recap {
+  border-top: 1px solid var(--kk-surface-border);
+}
+
+/* One picked album/label. A batch may carry a dozen; each is allowed to wrap to
+   its own line but never to stretch the bar sideways. */
+.kk-upload-recap__chip {
+  max-width: 12rem;
+}
+
+/* ---- Upload queue thumbnail --------------------------------------------
+   The local preview of a picked file: a fixed square so react-virtuoso measures
+   a stable row height (an image of unknown aspect ratio would otherwise resize
+   the row the moment it decodes) and so a long queue scans as an even column.
+   The sunken well is what a thumbnail loads into everywhere else in the app, so
+   an undecodable file (HEIC, RAW) or a video reads as a deliberate placeholder
+   rather than as a hole. */
+
+.kk-upload-thumb {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  overflow: hidden;
+  border-radius: var(--kk-radius-sm);
+  background-color: var(--kk-surface-sunken);
+  /* The status ring. Each state overrides the colour below, so the frame says
+     queued / uploading / done / duplicate / failed before a badge is read. A
+     border, not an inset shadow: the picture fills the padding box and would
+     paint straight over a shadow, leaving the tint visible on placeholders
+     only — which is precisely the rows that need it least. */
+  border: 2px solid var(--kk-surface-border);
+}
+
+@media (min-width: 576px) {
+  .kk-upload-thumb {
+    width: 4.5rem;
+    height: 4.5rem;
+  }
+}
+
+.kk-upload-thumb__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.kk-upload-thumb__icon {
+  color: var(--kk-text-muted);
+  font-size: 1.25rem;
+}
+
+/* What is happening to this file, drawn over the picture: the live percentage
+   while it uploads, a warning glyph when it failed. Both are `aria-hidden` —
+   the row's badge and progress bar carry the same state in words. */
+.kk-upload-thumb__overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgb(0 0 0 / 55%);
+  color: #fff;
+  font-size: var(--kk-font-size-caption);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.kk-upload-thumb--uploading {
+  border-color: var(--bs-info);
+}
+
+.kk-upload-thumb--created {
+  border-color: var(--bs-success);
+}
+
+.kk-upload-thumb--duplicate {
+  border-color: var(--bs-warning);
+}
+
+.kk-upload-thumb--error {
+  border-color: var(--bs-danger);
+}
