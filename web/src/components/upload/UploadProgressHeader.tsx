@@ -7,6 +7,14 @@ import { Link } from 'react-router-dom'
 import { type UploadSummary } from '../../hooks/useUploadQueue'
 import { LIBRARY_PATH } from '../../lib/libraryView'
 
+/** The batch-wide album/label choice, echoed in the sticky header. */
+export interface UploadOrganizeRecap {
+  /** Human names of everything chosen, albums first (may be empty). */
+  names: string[]
+  /** Brings the picker back on screen and puts the caret in it. */
+  onEdit: () => void
+}
+
 /** Props for {@link UploadProgressHeader}. */
 export interface UploadProgressHeaderProps {
   /** Aggregate status counts across the whole batch. */
@@ -19,6 +27,57 @@ export interface UploadProgressHeaderProps {
   hasCreated: boolean
   /** Re-queues every failed file in the batch. */
   onRetryFailed: () => void
+  /** The batch's albums/labels; omitted while the picker has nothing to show. */
+  organize?: UploadOrganizeRecap
+}
+
+/**
+ * The batch's album/label choice, restated inside the sticky bar with one tap
+ * back to the picker.
+ *
+ * This is what keeps step 2 usable once step 3 is long: with fifty files queued
+ * the picker is scrolled far above the rows the reader is looking at, and until
+ * now nothing on screen said what the batch would be tagged with — or offered a
+ * way back short of scrolling to the top by hand.
+ *
+ * It is text and a button on purpose. The picker itself must **not** move in
+ * here: `.kukatko-sticky-toolbar` is a stacking context, so the `MultiSelect`'s
+ * fixed suggestion overlay would be trapped in the bar's own layer (1019) and
+ * sink back under the mobile tab bar — exactly the bug that was just fixed.
+ */
+function OrganizeRecap({ names, onEdit }: UploadOrganizeRecap) {
+  const { t } = useTranslation()
+  return (
+    <div className="d-flex flex-wrap align-items-center gap-2 mt-2 pt-2 kk-upload-recap">
+      <span className="kk-text-caption text-secondary">{t('upload.organize.recapLabel')}</span>
+      {names.length === 0 ? (
+        <span className="kk-text-caption text-secondary fst-italic">
+          {t('upload.organize.recapEmpty')}
+        </span>
+      ) : (
+        // Keyed by position too: an album and a label may well carry the same
+        // name ("Dovolená"), and a bare name key would then collide.
+        names.map((name, index) => (
+          <Badge
+            key={`${name}-${String(index)}`}
+            bg="secondary"
+            className="text-truncate kk-upload-recap__chip"
+          >
+            {name}
+          </Badge>
+        ))
+      )}
+      <Button
+        type="button"
+        size="sm"
+        variant="outline-secondary"
+        className="ms-auto"
+        onClick={onEdit}
+      >
+        {t('upload.organize.recapEdit')}
+      </Button>
+    </div>
+  )
 }
 
 /**
@@ -58,6 +117,10 @@ function CountsBreakdown({
  * watching on a phone as the per-file list scrolls beneath it. Once every file
  * settles it flips to a clear completed summary with the library link and a
  * one-tap retry for any failures.
+ *
+ * Being the one thing that stays on screen while the queue scrolls, it also
+ * carries the batch's album/label choice ({@link OrganizeRecap}) — the state of
+ * step 2, kept reachable from anywhere in step 3.
  */
 export function UploadProgressHeader({
   summary,
@@ -65,6 +128,7 @@ export function UploadProgressHeader({
   isComplete,
   hasCreated,
   onRetryFailed,
+  organize,
 }: UploadProgressHeaderProps) {
   const { t } = useTranslation()
 
@@ -123,6 +187,8 @@ export function UploadProgressHeader({
           <CountsBreakdown summary={summary} remaining={remaining} showRemaining />
         </>
       )}
+
+      {organize !== undefined && <OrganizeRecap names={organize.names} onEdit={organize.onEdit} />}
     </div>
   )
 }

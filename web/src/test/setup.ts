@@ -66,6 +66,28 @@ if (typeof Element !== 'undefined') {
   proto.hasPointerCapture ??= () => false
 }
 
+// jsdom implements no Blob URL store, so `URL.createObjectURL` is missing
+// entirely and a component that previews a picked file locally — the upload
+// queue's thumbnails — would throw on mount. Hand out a unique `blob:` URL and
+// let revoking forget it; a test can assert the `src` and spy on the revoke,
+// which is all there is to observe without a real image decoder.
+if (typeof URL !== 'undefined' && typeof URL.createObjectURL !== 'function') {
+  let issued = 0
+  Object.defineProperty(URL, 'createObjectURL', {
+    writable: true,
+    configurable: true,
+    value: (): string => {
+      issued += 1
+      return `blob:kukatko/${String(issued)}`
+    },
+  })
+  Object.defineProperty(URL, 'revokeObjectURL', {
+    writable: true,
+    configurable: true,
+    value: (): void => undefined,
+  })
+}
+
 // jsdom does not implement scrollIntoView, which keyboard-driven grids call to keep
 // the focused item on screen. Provide an inert stub so that production code can call
 // it unconditionally.

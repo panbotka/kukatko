@@ -2031,6 +2031,20 @@
       "ariaInput": "Choose photos or videos to upload",
       "ariaCamera": "Take a photo with the camera"
     },
+    "step": {
+      "aria": "Step {{index}}:",
+      "pick": {
+        "title": "Pick the files",
+        "hint": "Drag them in, choose them from your device, or paste them.",
+        "picked_one": "{{count}} file picked",
+        "picked_other": "{{count}} files picked"
+      },
+      "upload": {
+        "title": "Upload them",
+        "hint": "Every file is uploaded on its own — a failure never stops the rest.",
+        "empty": "Pick some files above and they show up here, ready to upload."
+      }
+    },
     "queue": {
       "heading": "Selected files"
     },
@@ -2073,6 +2087,11 @@
     "organize": {
       "heading": "Add to albums and labels",
       "hint": "Chosen albums and labels are applied to every photo in this upload.",
+      "hintCount_one": "Optional. What you choose here is added to the {{count}} file in this batch.",
+      "hintCount_other": "Optional. What you choose here is added to all {{count}} files in this batch.",
+      "recapLabel": "This batch gets:",
+      "recapEmpty": "no album or label",
+      "recapEdit": "Change",
       "albums": "Albums",
       "labels": "Labels",
       "albumsPlaceholder": "Filter or create an album…",

@@ -7,6 +7,8 @@ import { pendingOptions, pendingValue } from '../../lib/pendingCreate'
 import { type AlbumCount, type LabelCount } from '../../services/organize'
 import { MultiSelect, type MultiSelectOption } from '../MultiSelect'
 
+import { UPLOAD_ALBUMS_FIELD_ID } from './organizeSelection'
+
 /** Props for {@link UploadOrganize}. */
 export interface UploadOrganizeProps {
   /** Fetch lifecycle of the album/label catalogs. */
@@ -42,6 +44,11 @@ function labelOption(label: LabelCount): MultiSelectOption {
  * create it inline — the pick is held as a `create:` marker and only turned into
  * a real album/label when the finished batch is assigned. Empty by default, so
  * an upload with nothing chosen behaves exactly as before.
+ *
+ * The heading and the sentence saying the choice is **batch-wide** (counted
+ * against the queue: "added to all 57 files") belong to the surrounding
+ * {@link import('./UploadStep').UploadStep} — this component is the two fields
+ * and nothing else, so the step owns its framing in one place.
  */
 export function UploadOrganize({
   load,
@@ -66,10 +73,7 @@ export function UploadOrganize({
   )
 
   return (
-    <div className="kk-surface p-3 mb-4">
-      <h2 className="kk-text-eyebrow text-secondary mb-1">{t('upload.organize.heading')}</h2>
-      <p className="kk-text-caption text-secondary mb-3">{t('upload.organize.hint')}</p>
-
+    <div className="kk-surface p-3">
       {load.status === 'loading' && (
         <div className="d-flex align-items-center gap-2 text-secondary kk-text-caption">
           <Spinner animation="border" role="status" size="sm">
@@ -87,7 +91,7 @@ export function UploadOrganize({
         <div className="row g-3">
           <div className="col-12 col-md-6">
             <MultiSelect
-              id="upload-albums"
+              id={UPLOAD_ALBUMS_FIELD_ID}
               label={t('upload.organize.albums')}
               placeholder={t('upload.organize.albumsPlaceholder')}
               options={albumOptions}

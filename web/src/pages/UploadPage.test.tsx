@@ -167,6 +167,88 @@ beforeEach(async () => {
 })
 
 describe('UploadPage', () => {
+  it('lays the flow out as three numbered steps, in order', async () => {
+    renderPage()
+    // The catalogs land a tick later; step 2 shows a spinner until they do.
+    await screen.findByRole('combobox', { name: 'Albums' })
+
+    const steps = screen.getAllByTestId('upload-step')
+    expect(steps).toHaveLength(3)
+
+    // The order is the flow: pick files → organise the batch → start. Each step
+    // says its number to a screen reader too, not only in the drawn marker.
+    expect(within(steps[0]).getByRole('heading', { level: 2 })).toHaveAccessibleName(
+      'Step 1: Pick the files',
+    )
+    expect(within(steps[1]).getByRole('heading', { level: 2 })).toHaveAccessibleName(
+      'Step 2: Add to albums and labels',
+    )
+    expect(within(steps[2]).getByRole('heading', { level: 2 })).toHaveAccessibleName(
+      'Step 3: Upload them',
+    )
+
+    // …and each step actually holds its own controls, so the numbering is not
+    // decoration over an unchanged pile.
+    expect(within(steps[0]).getByLabelText('Choose photos or videos to upload')).toBeInTheDocument()
+    expect(within(steps[1]).getByRole('combobox', { name: 'Albums' })).toBeInTheDocument()
+    expect(
+      within(steps[2]).getByText('Pick some files above and they show up here, ready to upload.'),
+    ).toBeInTheDocument()
+  })
+
+  it('says the album and label choice covers the whole batch, counted', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    expect(
+      screen.getByText('Chosen albums and labels are applied to every photo in this upload.'),
+    ).toBeInTheDocument()
+
+    await pickFiles(user, [file('a.jpg'), file('b.jpg')])
+
+    expect(
+      screen.getByText('Optional. What you choose here is added to all 2 files in this batch.'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('2 files picked')).toBeInTheDocument()
+  })
+
+  it('previews every picked file locally, without uploading anything', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await pickFiles(user, [file('a.jpg'), file('b.jpg')])
+
+    const thumbs = screen.getAllByTestId('upload-thumb')
+    expect(thumbs).toHaveLength(2)
+    for (const thumb of thumbs) {
+      expect(within(thumb).getByRole('presentation', { hidden: true })).toHaveAttribute(
+        'src',
+        expect.stringMatching(/^blob:/),
+      )
+    }
+    expect(uploadMock).not.toHaveBeenCalled()
+  })
+
+  it('keeps the batch-wide choice in the sticky header, one tap from the picker', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await pickFiles(user, [file('a.jpg')])
+    // The recap only appears once there is a picker to go back to.
+    await screen.findByRole('combobox', { name: 'Albums' })
+    const header = screen.getByTestId('upload-progress-header')
+    expect(within(header).getByText('no album or label')).toBeInTheDocument()
+
+    // With a long queue the picker is scrolled far above the rows in view, so
+    // the sticky header is the only place that can still show the choice.
+    await selectOption(user, 'Albums', 'Trip')
+    expect(within(header).getByText('Trip')).toBeInTheDocument()
+
+    // And the way back to it is a tap, which lands in the field itself.
+    await user.click(within(header).getByRole('button', { name: 'Change' }))
+    expect(screen.getByRole('combobox', { name: 'Albums' })).toHaveFocus()
+  })
+
   it('queues selected files and shows them with a queued status', async () => {
     const user = userEvent.setup()
     renderPage()
