@@ -12,13 +12,12 @@ import { Icon } from './Icon'
 import { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp'
 import {
   ACCOUNT_ITEM,
+  adminItems,
   BROWSE_GROUP,
-  GOVERNANCE_GROUP,
   HELP_ITEM,
   myPhotosItem,
   type NavEntry,
   type NavGroup,
-  OPERATIONS_GROUP,
   PRIMARY_ITEMS,
   REVIEW_ITEM,
   STATS_ITEM,
@@ -61,11 +60,16 @@ interface DrawerSection {
  *
  * **The set of items and their role gating is exactly the navbar's**, because
  * both read the same registries in `navItems.ts`: the everyday block, Procházet,
- * the editor-only Nástroje, the maintainer-only Provoz, the admin-only Správa,
- * and the account block that stands in for the user menu (account, the library
- * statistics, help, the keyboard-shortcuts overlay and sign-out). A section whose
- * role gate is closed
- * is not rendered at all, exactly as its dropdown is not rendered in the bar.
+ * the editor-only Nástroje, and the account block that stands in for the user
+ * menu (account, the library statistics, help, the keyboard-shortcuts overlay,
+ * the **Správa** group and sign-out). A section whose role gate is closed is not
+ * rendered at all, exactly as its dropdown is not rendered in the bar.
+ *
+ * Správa is a group *inside* the account block rather than a section of its own,
+ * because that is where the desktop keeps it too: one labelled group in the user
+ * menu, between the account entries and sign-out, holding what used to be the
+ * bar's two admin dropdowns. Its rows are gated one by one (`adminItems`), so an
+ * admin who is not a maintainer gets the two governance rows and nothing else.
  *
  * Mounted by {@link Layout} only below the breakpoint, so the desktop DOM keeps a
  * single set of nav links; navigating closes it (both via `Layout`'s pathname
@@ -91,6 +95,9 @@ export function MobileNavDrawer({
   // library it is — the same gate the desktop user menu applies, from the same
   // builder, so the two menus cannot drift.
   const myPhotos = myPhotosItem(user?.subject_uid)
+  // The administration rows of the account block, per-item gated exactly as the
+  // desktop user menu gates them; empty means the group is not rendered at all.
+  const admin = adminItems({ isAdmin, isMaintainer })
 
   // Each of the bar's dropdowns becomes one section, unfolded, behind the very
   // same role gate — a closed gate drops the whole section, exactly as it drops
@@ -98,8 +105,6 @@ export function MobileNavDrawer({
   const groups: { open: boolean; group: NavGroup }[] = [
     { open: true, group: BROWSE_GROUP },
     { open: canWrite, group: TOOLS_GROUP },
-    { open: isMaintainer, group: OPERATIONS_GROUP },
-    { open: isAdmin, group: GOVERNANCE_GROUP },
   ]
 
   // The everyday block leads (it is what the bar shows loudest), then the browse
@@ -166,9 +171,10 @@ export function MobileNavDrawer({
         ))}
 
         {/* The user menu, unfolded: the same account and help destinations, the
-            keyboard-shortcuts overlay that lives in the bar beside them, and
-            sign-out — which dismisses through a handler, not a route change.
-            Gated on a signed-in user exactly as the bar's user dropdown is. */}
+            keyboard-shortcuts overlay that lives in the bar beside them, the
+            Správa group and sign-out — which dismisses through a handler, not a
+            route change. Gated on a signed-in user exactly as the bar's user
+            dropdown is. */}
         {user && (
           <section className="kk-navdrawer__section" aria-labelledby="kk-navdrawer-account">
             <h2 id="kk-navdrawer-account" className="kk-navdrawer__heading">
@@ -186,6 +192,19 @@ export function MobileNavDrawer({
               <p className="kk-navdrawer__version" title={t('nav.versionTitle')}>
                 {version}
               </p>
+            )}
+            {/* Administration: one labelled group between the account rows and
+                sign-out, in the same place the desktop user menu puts it. A
+                nested `section` rather than a top-level one, because it belongs
+                to the account block — and because promoting it would put it
+                *after* sign-out, teaching a different order than the bar. */}
+            {admin.length > 0 && (
+              <section className="kk-navdrawer__subsection" aria-labelledby="kk-navdrawer-admin">
+                <h3 id="kk-navdrawer-admin" className="kk-navdrawer__heading">
+                  {t('nav.admin')}
+                </h3>
+                {admin.map((item) => renderRow(item))}
+              </section>
             )}
             <button
               type="button"

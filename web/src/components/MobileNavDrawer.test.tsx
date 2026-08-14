@@ -139,20 +139,40 @@ describe('MobileNavDrawer', () => {
 
     // Every block names itself, and the name is the accessible name of the
     // region its rows live in — that is what makes the menu scannable.
-    for (const name of ['Main', 'Browse', 'Tools', 'Operations', 'Admin', 'Account']) {
+    for (const name of ['Main', 'Browse', 'Tools', 'Account']) {
       expect(within(drawer).getByRole('heading', { level: 2, name })).toBeInTheDocument()
       expect(within(drawer).getByRole('region', { name })).toBeInTheDocument()
     }
-    // Each destination sits inside its own section, not in one undifferentiated
-    // stack: Trash is a tool, Import is operations.
+    // Administration is one group *inside* the account block, as it is inside the
+    // desktop user menu — a labelled sub-region, not a section of its own.
+    const account = within(drawer).getByRole('region', { name: 'Account' })
+    expect(within(account).getByRole('heading', { level: 3, name: 'Admin' })).toBeInTheDocument()
+    const admin = within(account).getByRole('region', { name: 'Admin' })
+    // Each destination sits inside its own block, not in one undifferentiated
+    // stack: Trash is a tool, Import is administration.
     const tools = within(drawer).getByRole('region', { name: 'Tools' })
     expect(within(tools).getByRole('link', { name: 'Trash' })).toBeInTheDocument()
     expect(within(tools).queryByRole('link', { name: 'Import' })).not.toBeInTheDocument()
+    expect(within(admin).getByRole('link', { name: 'Import' })).toHaveAttribute('href', '/import')
+    // And there is no separate Operations block left to teach a second menu.
+    expect(within(drawer).queryByRole('region', { name: 'Operations' })).not.toBeInTheDocument()
+  })
+
+  it('keeps the admin group between the account rows and sign-out', async () => {
+    const user = userEvent.setup()
+    renderShell(auth({ isMaintainer: true }))
+    const drawer = await openDrawer(user)
+
+    const admin = within(drawer).getByRole('region', { name: 'Admin' })
+    const help = within(drawer).getByRole('link', { name: 'Help' })
+    const logout = within(drawer).getByRole('button', { name: 'Sign out' })
+
+    expect(help.compareDocumentPosition(admin) & Node.DOCUMENT_POSITION_FOLLOWING).toBeGreaterThan(
+      0,
+    )
     expect(
-      within(within(drawer).getByRole('region', { name: 'Operations' })).getByRole('link', {
-        name: 'Import',
-      }),
-    ).toHaveAttribute('href', '/import')
+      admin.compareDocumentPosition(logout) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeGreaterThan(0)
   })
 
   it('gives search a labelled row and files saved searches under Browse', async () => {
@@ -185,8 +205,9 @@ describe('MobileNavDrawer', () => {
     renderShell(auth({ isMaintainer: true }))
     const drawer = await openDrawer(user)
 
-    // The whole navbar, drawer-shaped: the everyday block, browse, the three
-    // role-gated clusters and the account block that replaces the user menu.
+    // The whole navbar, drawer-shaped: the everyday block, browse, the editor's
+    // tools and the account block that replaces the user menu — administration
+    // included, at the end of it exactly as the desktop menu carries it.
     expect(drawerHrefs(drawer)).toEqual([
       '/',
       '/albums',
@@ -207,14 +228,14 @@ describe('MobileNavDrawer', () => {
       '/duplicate-markers',
       '/duplicates',
       '/trash',
+      '/account',
+      '/stats',
+      '/help',
       '/import',
       '/maintenance',
       '/system',
       '/users',
       '/audit',
-      '/account',
-      '/stats',
-      '/help',
     ])
     // The keyboard-shortcuts overlay and sign-out ride along as rows, so nothing
     // the bar offers is lost on a phone.
@@ -270,6 +291,8 @@ describe('MobileNavDrawer', () => {
     for (const name of ['Tools', 'Operations', 'Admin']) {
       expect(within(drawer).queryByRole('region', { name })).not.toBeInTheDocument()
     }
+    // No orphan heading either: a viewer's account block ends where it always did.
+    expect(within(drawer).queryByRole('heading', { name: 'Admin' })).not.toBeInTheDocument()
     // Browse and the account block stay — they are available to every role.
     expect(within(drawer).getByRole('region', { name: 'Browse' })).toBeInTheDocument()
     expect(drawerHrefs(drawer)).toEqual([
@@ -294,10 +317,13 @@ describe('MobileNavDrawer', () => {
     renderShell(auth({ canWrite: true, isAdmin: true }))
     const drawer = await openDrawer(user)
 
-    expect(within(drawer).getByRole('region', { name: 'Admin' })).toBeInTheDocument()
-    expect(within(drawer).getByRole('link', { name: 'Users' })).toHaveAttribute('href', '/users')
-    expect(within(drawer).queryByRole('region', { name: 'Operations' })).not.toBeInTheDocument()
-    expect(within(drawer).queryByRole('link', { name: 'Import' })).not.toBeInTheDocument()
+    // The group is gated row by row, so an admin gets it — with two rows in it.
+    const admin = within(drawer).getByRole('region', { name: 'Admin' })
+    expect(within(admin).getByRole('link', { name: 'Users' })).toHaveAttribute('href', '/users')
+    expect(within(admin).getByRole('link', { name: 'Audit' })).toHaveAttribute('href', '/audit')
+    for (const name of ['Import', 'Maintenance', 'System']) {
+      expect(within(drawer).queryByRole('link', { name })).not.toBeInTheDocument()
+    }
   })
 
   it('closes itself when the user taps a destination', async () => {
@@ -430,6 +456,11 @@ describe('mobile nav drawer stylesheet', () => {
     const between = rule(/\.kk-navdrawer__section \+ \.kk-navdrawer__section\s*(?=\{)/)
     expect(between.get('border-top')).toContain('1px solid')
     expect(between.get('padding-top')).toBe('var(--kk-space-4)')
+    // The nested admin group is fenced on both sides instead: the rule above ends
+    // the account rows, the one below keeps sign-out out of the group.
+    const sub = rule(/\.kk-navdrawer__subsection\s*(?=\{)/)
+    expect(sub.get('border-top')).toContain('1px solid')
+    expect(sub.get('border-bottom')).toContain('1px solid')
     // The body is the scroller when the menu outgrows the screen, and it keeps
     // that scroll to itself instead of chaining it to the page behind.
     expect(rule(/\.kk-navdrawer__body\s*(?=\{)/).get('overscroll-behavior')).toBe('contain')

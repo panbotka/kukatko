@@ -4,13 +4,7 @@ import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import {
-  BROWSE_GROUP,
-  GOVERNANCE_GROUP,
-  OPERATIONS_GROUP,
-  PRIMARY_ITEMS,
-  TOOLS_GROUP,
-} from '../components/navItems'
+import { ADMIN_ITEMS, BROWSE_GROUP, PRIMARY_ITEMS, TOOLS_GROUP } from '../components/navItems'
 import i18n from '../i18n'
 import { ACTIVITY_PATH } from '../lib/activityView'
 import { type AuditListResponse, type AuditRecord } from '../services/audit'
@@ -178,16 +172,16 @@ describe('MyActivityPage', () => {
 
 describe('own-activity navigation', () => {
   it('stays out of the navigation groups, the admin one above all', () => {
-    const groups = [BROWSE_GROUP, TOOLS_GROUP, OPERATIONS_GROUP, GOVERNANCE_GROUP]
-    for (const group of groups) {
-      for (const item of group.items) {
-        expect(item.to).not.toBe(ACTIVITY_PATH)
-      }
+    for (const item of [...BROWSE_GROUP.items, ...TOOLS_GROUP.items, ...ADMIN_ITEMS]) {
+      expect(item.to).not.toBe(ACTIVITY_PATH)
     }
     for (const item of PRIMARY_ITEMS) {
       expect(item.to).not.toBe(ACTIVITY_PATH)
     }
-    // The admin audit log is a different page and stays where it was.
-    expect(GOVERNANCE_GROUP.items.map((item) => item.to)).toContain('/audit')
+    // The admin audit log is a different page and stays where it was: behind the
+    // admin gate, now in the user menu's "Správa" section.
+    expect(ADMIN_ITEMS.filter((item) => item.gate === 'admin').map((item) => item.to)).toContain(
+      '/audit',
+    )
   })
 })

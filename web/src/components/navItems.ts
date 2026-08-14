@@ -134,48 +134,77 @@ export const TOOLS_GROUP: NavGroup = {
 }
 
 /**
- * The maintainer-only "Provoz" (Operations) group, gated behind `isMaintainer`.
- * It gathers the operational tools at the top of the role ladder — import,
- * library maintenance and system status. Import lives here rather than top-level:
- * it is no longer an off-ladder capability, it needs the maintainer role like the
- * rest of operations.
+ * Which role unlocks one entry of the "Správa" section: `maintainer` for the
+ * operational entries, `admin` for the governance ones (admin *or* higher, so a
+ * maintainer clears it too).
  */
-export const OPERATIONS_GROUP: NavGroup = {
-  id: 'nav-operations',
-  labelKey: 'nav.operations',
-  titleKey: 'nav.titles.operations',
-  icon: 'sliders',
-  items: [
-    {
-      to: '/import',
-      labelKey: 'nav.import',
-      titleKey: 'nav.titles.import',
-      icon: 'box-arrow-in-down',
-    },
-    {
-      to: '/maintenance',
-      labelKey: 'nav.maintenance',
-      titleKey: 'nav.titles.maintenance',
-      icon: 'wrench-adjustable',
-    },
-    { to: '/system', labelKey: 'nav.system', titleKey: 'nav.titles.system', icon: 'activity' },
-  ],
+export type AdminGate = 'maintainer' | 'admin'
+
+/** One entry of the "Správa" section, carrying the role that unlocks it. */
+export interface AdminEntry extends NavEntry {
+  gate: AdminGate
 }
 
 /**
- * The governance "Správa" (Admin) group, gated behind `isAdmin` (admin or
- * higher). It holds the account and audit administration — the powers an admin
- * has that stop short of operations.
+ * The "Správa" (Admin) section of the user menu — what used to be two separate
+ * dropdowns in the bar: the maintainer's "Provoz" (import, maintenance, system)
+ * and the admin's "Správa" (users, audit). Both belong to the signed-in identity
+ * rather than to browsing the library, and both spent the bar's scarcest
+ * resource, width — for a maintainer the inline row overflowed its container
+ * below 1400px. Folded into one labelled section of the user dropdown, in ladder
+ * order: operations first, governance after.
+ *
+ * The gate is **per item**, not on the section: an admin who is not a maintainer
+ * gets only Uživatelé and Audit, and a role that clears neither gate gets no
+ * section at all (see {@link adminItems}).
  */
-export const GOVERNANCE_GROUP: NavGroup = {
-  id: 'nav-governance',
-  labelKey: 'nav.admin',
-  titleKey: 'nav.titles.admin',
-  icon: 'shield-lock',
-  items: [
-    { to: '/users', labelKey: 'nav.users', titleKey: 'nav.titles.users', icon: 'person-gear' },
-    { to: '/audit', labelKey: 'nav.audit', titleKey: 'nav.titles.audit', icon: 'clock-history' },
-  ],
+export const ADMIN_ITEMS: AdminEntry[] = [
+  {
+    to: '/import',
+    labelKey: 'nav.import',
+    titleKey: 'nav.titles.import',
+    icon: 'box-arrow-in-down',
+    gate: 'maintainer',
+  },
+  {
+    to: '/maintenance',
+    labelKey: 'nav.maintenance',
+    titleKey: 'nav.titles.maintenance',
+    icon: 'wrench-adjustable',
+    gate: 'maintainer',
+  },
+  {
+    to: '/system',
+    labelKey: 'nav.system',
+    titleKey: 'nav.titles.system',
+    icon: 'activity',
+    gate: 'maintainer',
+  },
+  {
+    to: '/users',
+    labelKey: 'nav.users',
+    titleKey: 'nav.titles.users',
+    icon: 'person-gear',
+    gate: 'admin',
+  },
+  {
+    to: '/audit',
+    labelKey: 'nav.audit',
+    titleKey: 'nav.titles.audit',
+    icon: 'clock-history',
+    gate: 'admin',
+  },
+]
+
+/**
+ * The entries of {@link ADMIN_ITEMS} the given roles may actually reach, in menu
+ * order. An empty result means the section is not rendered at all — no orphan
+ * heading, no stray divider — which is what a viewer and an editor get.
+ */
+export function adminItems(roles: { isAdmin: boolean; isMaintainer: boolean }): NavEntry[] {
+  return ADMIN_ITEMS.filter((entry) =>
+    entry.gate === 'maintainer' ? roles.isMaintainer : roles.isAdmin,
+  )
 }
 
 /**
