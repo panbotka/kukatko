@@ -5,6 +5,7 @@ import { I18nextProvider } from 'react-i18next'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../i18n'
+import { readCss, zIndexOf } from '../test/css'
 
 import { MultiSelect, type MultiSelectOption } from './MultiSelect'
 
@@ -208,6 +209,44 @@ describe('MultiSelect', () => {
     const listbox = screen.getByRole('listbox', { name: 'Albums' })
     expect(listbox).toHaveStyle({ position: 'fixed' })
     expect(screen.getByRole('option', { name: 'Weddings' })).toBeInTheDocument()
+  })
+
+  it('paints the desktop overlay above a page that has its own sticky toolbar', async () => {
+    mockViewport(false)
+    const user = userEvent.setup()
+    render(
+      <>
+        {/* What `/upload` puts on the page the moment a file is queued
+            (`UploadProgressHeader`) — and what used to cover the suggestions. */}
+        <div className="kukatko-sticky-toolbar">Uploading…</div>
+        <Harness />
+      </>,
+    )
+
+    await user.type(screen.getByLabelText('Albums'), 'we')
+
+    // The overlay takes its layer from the app's scale by class instead of
+    // inheriting Bootstrap's `.dropdown-menu` 1000, which any sticky bar beats.
+    const listbox = screen.getByRole('listbox', { name: 'Albums' })
+    expect(listbox).toHaveClass('kk-overlay-menu')
+    // jsdom loads no stylesheet, so what the class is worth is read out of the
+    // shipped one: it has to win over the toolbar rendered above.
+    const css = readCss('src/styles/app.css')
+    expect(zIndexOf(css, /\.kk-overlay-menu\s*(?=\{)/)).toBeGreaterThan(
+      zIndexOf(css, /\.kukatko-sticky-toolbar\s*(?=\{)/),
+    )
+  })
+
+  it('keeps the overlay inside the dialog band so a modal still covers it', () => {
+    const css = readCss('src/styles/app.css')
+    const menu = zIndexOf(css, /\.kk-overlay-menu\s*(?=\{)/)
+    // Above every layer of in-page chrome the app draws itself…
+    expect(menu).toBeGreaterThan(zIndexOf(css, /\.kk-tabbar\s*(?=\{)/))
+    expect(menu).toBeGreaterThan(zIndexOf(css, /\.kk-batch-dock\s*(?=\{)/))
+    // …and below Bootstrap's first dialog layer (offcanvas backdrop, 1040), so a
+    // menu open in a modal cannot outrank the backdrop if the modal ever stops
+    // being its own stacking context.
+    expect(menu).toBeLessThan(1040)
   })
 
   it('flows the suggestions inside the scroll on a phone so they clear the keyboard', async () => {

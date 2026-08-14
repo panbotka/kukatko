@@ -60,6 +60,38 @@
   --kk-batch-clearance: calc(
     var(--kk-batch-bar-height, 0px) + var(--kk-bottom-edge) + var(--kk-space-4) + var(--kk-space-3)
   );
+
+  /* ---- Layering scale ---------------------------------------------------
+     Every layer the app draws for itself, named once here so no component has
+     to invent a number of its own. The values are chosen against Bootstrap's
+     ladder, which owns everything between and above them:
+
+       1018  timeline rail            over the grid, under everything sticky
+       1019  in-page sticky toolbars  come to rest just below…
+       1020  the sticky navbar        (Bootstrap `.sticky-top` — not ours to set)
+       1025  mobile bottom tab bar    above the rail, which stops short of it
+       1030  floating batch dock      above the tab bar it rises over
+       1035  overlay menus            above all of the page chrome above
+       ----  1040/1045 offcanvas, 1050/1055 modal: Bootstrap's dialog band
+       1080  immersive viewer         `--kk-viewer-z` (tokens.css), owns its route
+       1090  PWA offline/update note  ambient, still under…
+       1100  toast stack              `.kk-toast-stack` (tokens.css)
+
+     An overlay menu — a `MultiSelect`'s fixed suggestion list — tops the
+     page-chrome band because it is opened from a field that any of those bars
+     may cover (the upload queue's sticky progress header is exactly that case),
+     and a menu you cannot see is a menu you cannot use. Bootstrap's own
+     `.dropdown-menu` is 1000, i.e. under every bar here, which is why such a
+     menu has to name a layer rather than take the default. It deliberately
+     stops *below* the dialog band: a dialog opened over the page must cover the
+     menu, and a menu inside a modal must never be able to outrank the modal's
+     backdrop. */
+  --kk-timeline-z: 1018;
+  --kk-sticky-toolbar-z: 1019;
+  --kk-tabbar-z: 1025;
+  --kk-batch-dock-z: 1030;
+  --kk-overlay-menu-z: 1035;
+  --kk-pwa-status-z: 1090;
 }
 
 html {
@@ -432,14 +464,28 @@ body {
   }
 }
 
-/* In-page sticky toolbars (selection bar, future filter bars) rest just below
-   the sticky navbar — including any top safe-area inset — rather than sliding
-   under it. The navbar keeps a higher stacking context (Bootstrap `.sticky-top`
-   is z-index 1020), so this bar layers correctly beneath it. */
+/* In-page sticky toolbars (selection bar, upload progress, future filter bars)
+   rest just below the sticky navbar — including any top safe-area inset —
+   rather than sliding under it. The navbar keeps a higher stacking context
+   (Bootstrap `.sticky-top` is z-index 1020), so this bar layers correctly
+   beneath it. See the layering scale at the top of this file. */
 .kukatko-sticky-toolbar {
   position: sticky;
   top: calc(var(--kukatko-navbar-height) + env(safe-area-inset-top, 0px));
-  z-index: 1019;
+  z-index: var(--kk-sticky-toolbar-z);
+}
+
+/* A menu that floats over the page out of its own flow — today the desktop
+   suggestion list of `MultiSelect`, which is `position: fixed` and measured off
+   its input so a scrollable modal body cannot clip it. Being fixed is not
+   enough: it also has to out-layer whatever page chrome the field sits under,
+   and Bootstrap's `.dropdown-menu` default (1000) loses to every sticky bar in
+   the app — on `/upload` the queue's sticky progress header covered the album
+   suggestions outright. This class is the layer, so the component states no
+   number; the ordering (and why it stops below the dialog band) is documented
+   with the scale at the top of this file. */
+.kk-overlay-menu {
+  z-index: var(--kk-overlay-menu-z);
 }
 
 /* Floating batch action bar: a frosted command bar that rises from the bottom
@@ -459,7 +505,7 @@ body {
   left: 50%;
   bottom: calc(var(--kk-bottom-edge) + var(--kk-space-4));
   transform: translateX(-50%);
-  z-index: 1030;
+  z-index: var(--kk-batch-dock-z);
   width: min(100% - 2 * var(--kk-space-3), 56rem);
   display: flex;
   flex-direction: column;
@@ -630,7 +676,7 @@ body {
   right: 0;
   bottom: 0;
   left: 0;
-  z-index: 1025;
+  z-index: var(--kk-tabbar-z);
   display: flex;
   align-items: stretch;
   justify-content: space-around;
@@ -1105,7 +1151,7 @@ body {
      fixed tab bar — otherwise its oldest ticks sit behind the tabs, unreachable. */
   bottom: calc(1rem + var(--kk-tabbar-height));
   width: var(--kk-timeline-rail-width);
-  z-index: 1018;
+  z-index: var(--kk-timeline-z);
   touch-action: none;
   user-select: none;
 }
@@ -2440,7 +2486,7 @@ body {
   position: fixed;
   inset-inline: 0;
   bottom: calc(1rem + var(--kk-tabbar-height) + env(safe-area-inset-bottom, 0px));
-  z-index: 1090;
+  z-index: var(--kk-pwa-status-z);
   display: flex;
   flex-direction: column;
   gap: var(--kk-space-2);

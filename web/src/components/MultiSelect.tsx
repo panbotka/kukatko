@@ -301,13 +301,19 @@ export function MultiSelect({
           aria-label={label}
           aria-multiselectable="true"
           // Phone: an in-flow block (`position-static`) inside the modal's scroll,
-          // so the field and its options stay reachable above the keyboard.
+          // so the field and its options stay reachable above the keyboard. No
+          // layer to claim — a static box does not stack, and the keyboard is the
+          // browser's own surface.
           // Desktop: a fixed overlay measured off the input, escaping any
           // scrollable modal body that would clip an in-flow or absolute child.
+          // `.kk-overlay-menu` raises it over the page's own sticky chrome:
+          // Bootstrap's `.dropdown-menu` is z-index 1000, which loses to every
+          // sticky bar in the app (the upload queue's progress header covered
+          // these suggestions). The number lives with the scale in `app.css`.
           className={
             narrow
               ? 'dropdown-menu show position-static w-100 mt-1 shadow-sm overflow-auto'
-              : 'dropdown-menu show shadow overflow-auto'
+              : 'dropdown-menu show shadow overflow-auto kk-overlay-menu'
           }
           style={
             narrow

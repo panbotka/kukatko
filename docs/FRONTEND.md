@@ -316,7 +316,17 @@ here.
   (escaping any `overflow: auto` `.modal-body` — the bulk pickers and `BulkEditModal` both nest it in
   one), sized to its content up to `min(50vh, room-below)` and scrolling only its own options beyond
   that; on a phone it flows **in the modal's own scroll** (`position-static`), keeping the field and
-  its options reachable **above the on-screen keyboard**. The `destructive` prop tints the label and chips into the danger key, so a removal never looks
+  its options reachable **above the on-screen keyboard**. The desktop overlay also carries
+  **`.kk-overlay-menu`**, which lifts it off Bootstrap's `.dropdown-menu` z-index (1000 — under every
+  sticky bar the app draws) onto the app's own **layering scale** (the `--kk-*-z` block on `:root` in
+  `app.css`: timeline rail 1018 < sticky toolbar 1019 < navbar 1020 < tab bar 1025 < batch dock 1030
+  < **overlay menu 1035** < Bootstrap's dialog band 1040+). Without it `/upload`'s sticky progress
+  header (`.kukatko-sticky-toolbar`, 1019) painted over the open album list and swallowed its clicks —
+  measured with `elementFromPoint`, the two rows overlapping the header hit the header, not the option.
+  The layer deliberately stops **below** 1040, so a dialog opened over the page still covers the menu and
+  a menu inside a modal can never outrank the modal backdrop (the modal is its own stacking context in
+  any case, which is why the same class changes nothing in `BulkEditModal` or the bulk pickers). Phone
+  keeps no layer at all — a `position: static` box does not stack. The `destructive` prop tints the label and chips into the danger key, so a removal never looks
   like an addition. By default it **creates no items** — it only picks from those it receives (mirrors
   `AddAutocomplete` and `SearchableSelect`); with an optional `onCreate(name)` it appends a
   **„Vytvořit «dotaz»“** row to the list, only when a non-empty trimmed query fold-insensitively (case,
@@ -4491,8 +4501,11 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   the timeline rail only ever broke on a distribution like this, a development-sized library makes any
   layout look fine, so every test that has to prove the rail stays legible starts from this one),
   `test/css.ts` (reading and mini-parsing stylesheets from tests: `readCss` / `ruleBody` / `declarations`
-  / `installRule` — jsdom evaluates neither `env()` nor media queries, so CSS-only rules are guarded by reading the
-  file; `installRule(path, selector)` goes one step further and hands **the real rule body** to the jsdom
+  / `zIndexOf` / `installRule` — jsdom evaluates neither `env()` nor media queries, so CSS-only rules are
+  guarded by reading the file; `zIndexOf(css, prelude)` answers what layer a rule really claims, resolving
+  a `var(--kk-*-z)` reference against the sheet's own `:root` scale (jsdom computes no custom properties),
+  so two layers can be compared by what the app actually ships — used by `MultiSelect.test.tsx` and
+  `MobileTabBar.test.tsx`; `installRule(path, selector)` goes one step further and hands **the real rule body** to the jsdom
   document (returning the function that removes it again), so a component test can assert what an element
   *computes to* — `getComputedStyle(el).whiteSpace` — instead of which class name it carries: it then fails
   both when the element loses the class and when `app.css` stops declaring the rule (`MetadataPanel.test.tsx`,

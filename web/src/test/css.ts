@@ -93,3 +93,32 @@ export function declarations(body: string): Map<string, string> {
   }
   return out
 }
+
+/**
+ * The numeric `z-index` the rule matching `prelude` declares, with the app's
+ * layering scale resolved: the ladder lives as `--kk-z-*` custom properties on
+ * `:root` (see the "Layering scale" block in `app.css`), and jsdom computes
+ * neither stylesheets nor custom properties, so a `var(--kk-z-…)` reference is
+ * looked back up in the same sheet. Lets a test compare two layers by what the
+ * app actually ships instead of by a number copied into the test.
+ */
+export function zIndexOf(css: string, prelude: RegExp, contains?: RegExp): number {
+  const body = ruleBody(css, prelude, contains)
+  if (body === undefined) {
+    throw new Error(`rule not found: ${prelude.source}`)
+  }
+  const declared = declarations(body).get('z-index')
+  if (declared === undefined) {
+    throw new Error(`rule declares no z-index: ${prelude.source}`)
+  }
+  const token = /^var\((--[\w-]+)\)$/.exec(declared)
+  if (token === null) {
+    return Number(declared)
+  }
+  const root = ruleBody(css, /:root\s*(?=\{)/, new RegExp(`${token[1]}\\s*:`))
+  const value = root === undefined ? undefined : declarations(root).get(token[1])
+  if (value === undefined) {
+    throw new Error(`no :root declaration for ${token[1]}`)
+  }
+  return Number(value)
+}

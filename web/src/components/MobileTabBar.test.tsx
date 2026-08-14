@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
-import { declarations, readCss, ruleBody } from '../test/css'
+import { declarations, readCss, ruleBody, zIndexOf } from '../test/css'
 
 import { Layout } from './Layout'
 import { MobileTabBar } from './MobileTabBar'
@@ -265,9 +265,11 @@ describe('mobile tab bar stylesheet', () => {
     // …and the scroll clearance a selecting page reserves grows with it, so the
     // last photo row still scrolls clear of both bars.
     expect(root.get('--kk-batch-clearance')).toContain('var(--kk-bottom-edge)')
-    // The dock also has to win the paint order where the two ever meet.
-    const barZ = Number(rule(/\.kk-tabbar\s*(?=\{)/, /position/).get('z-index'))
-    const dockZ = Number(rule(/\.kk-batch-dock\s*(?=\{)/, /position/).get('z-index'))
+    // The dock also has to win the paint order where the two ever meet. Both
+    // read their layer from the stylesheet's `--kk-*-z` scale, so compare the
+    // resolved values rather than the `var()` references.
+    const barZ = zIndexOf(css, /\.kk-tabbar\s*(?=\{)/, /position/)
+    const dockZ = zIndexOf(css, /\.kk-batch-dock\s*(?=\{)/, /position/)
     expect(barZ).toBeLessThan(dockZ)
   })
 
