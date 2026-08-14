@@ -55,8 +55,13 @@ type directHit struct {
 	// target is a photo. It lets the client show the thumbnail without a second
 	// request.
 	Photo *photos.Photo `json:"photo,omitempty"`
-	// Cover is the album's or person's cover photo uid, when it has one.
+	// Cover is the uid of the photo standing for a non-photo target — an album's,
+	// a label's or a person's — when it has one.
 	Cover *string `json:"cover,omitempty"`
+	// ThumbURL is where a client fetches that cover's medallion. It is set
+	// together with Cover and never on its own, so a client either has both or
+	// draws its own glyph.
+	ThumbURL string `json:"thumb_url,omitempty"`
 	// States names the non-default states the resolved photo is in (archived,
 	// hidden, private, stack_member). It is empty for a photo in the ordinary
 	// library view and for every non-photo target.
@@ -83,14 +88,21 @@ func (a *API) resolveDirect(ctx context.Context, ref query.UIDRef) (*directHit, 
 }
 
 // resolveAlbum fills hit from the album with its uid, leaving Found false when
-// there is none.
+// there is none. The cover comes from the same batch lookup the fuzzy groups
+// use, asked for this one uid, so a pasted id draws the picture a typed name
+// would have.
 func (a *API) resolveAlbum(ctx context.Context, hit *directHit) error {
 	album, err := a.organizer.GetAlbumByUID(ctx, hit.UID)
 	if err != nil {
 		return skipNotFound(err, organize.ErrAlbumNotFound)
 	}
 	hit.Found, hit.TargetKind, hit.TargetUID = true, string(query.EntityAlbum), album.UID
-	hit.Title, hit.Cover = album.Title, album.CoverPhotoUID
+	hit.Title = album.Title
+	covers, err := a.organizer.AlbumCovers(ctx, []string{album.UID})
+	if err != nil {
+		return fmt.Errorf("globalsearchapi: reading album cover %s: %w", album.UID, err)
+	}
+	a.stampDirect(hit, covers[album.UID].PhotoUID, covers[album.UID].FileHash)
 	return nil
 }
 
@@ -102,6 +114,11 @@ func (a *API) resolveLabel(ctx context.Context, hit *directHit) error {
 	}
 	hit.Found, hit.TargetKind, hit.TargetUID = true, string(query.EntityLabel), label.UID
 	hit.Title = label.Name
+	covers, err := a.organizer.LabelCovers(ctx, []string{label.UID})
+	if err != nil {
+		return fmt.Errorf("globalsearchapi: reading label cover %s: %w", label.UID, err)
+	}
+	a.stampDirect(hit, covers[label.UID].PhotoUID, covers[label.UID].FileHash)
 	return nil
 }
 
@@ -112,8 +129,24 @@ func (a *API) resolvePerson(ctx context.Context, hit *directHit) error {
 		return skipNotFound(err, people.ErrSubjectNotFound)
 	}
 	hit.Found, hit.TargetKind, hit.TargetUID = true, string(query.EntityPerson), subject.UID
-	hit.Title, hit.Cover = subject.Name, subject.CoverPhotoUID
+	hit.Title = subject.Name
+	covers, err := a.people.SubjectCovers(ctx, []string{subject.UID})
+	if err != nil {
+		return fmt.Errorf("globalsearchapi: reading subject cover %s: %w", subject.UID, err)
+	}
+	a.stampDirect(hit, covers[subject.UID].PhotoUID, covers[subject.UID].FileHash)
 	return nil
+}
+
+// stampDirect puts a resolved cover onto a direct hit, doing nothing when the
+// entity has none — an absent map entry reads back as the zero cover, and an
+// empty photo uid is what says so.
+func (a *API) stampDirect(hit *directHit, photoUID, fileHash string) {
+	if photoUID == "" {
+		return
+	}
+	hit.Cover = &photoUID
+	hit.ThumbURL = a.coverThumb(photoUID, fileHash)
 }
 
 // resolvePhotoRef fills hit from whichever photo the id stands for: the photo

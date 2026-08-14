@@ -956,11 +956,16 @@ here.
   dashed toggle chip (`aria-expanded` + `aria-controls`) showing the shared prefix and **how many
   labels** hide behind it; expanded, it takes a whole line (`.kk-label-cloud__group`) with its members
   in their own boxed list, so an open `Dum…` cannot be mistaken for the cloud continuing),
-  `LabelChip` (one label: a pill (`.kk-label-chip`) carrying the name (truncates — user data),
+  `LabelChip` (one label: a pill (`.kk-label-chip`) carrying **the label's own photo** (`.kk-label-chip__thumb`,
+  the `cover_uid` the listing derives, drawn at `tile_100` — the same preview an album tile shows, at chip
+  size, because a wall of a hundred identical pills says far less than the pictures behind them; a label with no
+  photo, and one whose thumbnail fails to load, simply keeps the plain pill — a chip is not a fixed-height row,
+  so there is no gap to fill), the name (truncates — user data),
   the photo count and, for an editor, the "…" actions `Dropdown`. Its `LabelChipActions` prop bundles
   rename/delete/toggle-review + `savingUID`, and its **absence** is what makes the chip read-only for
   a viewer. The link's `aria-label` spells out the bare count and the skip state, which the glyphs say
-  nothing about. On a coarse pointer the whole pill grows to 44px rather than the menu being exempted
+  nothing about, and the preview stays out of it (`alt=""` + `aria-hidden`, lazy): the link is already named
+  after the label. On a coarse pointer the whole pill grows to 44px rather than the menu being exempted
   from the floor — see `styles/tapTargets.test.ts`),
   `AlbumEditModal` (create/rename an album: name/description/private), `LabelEditModal` (create/rename
   a label: name/priority), `SelectionBar` (a sticky selection toolbar: count +
@@ -2767,6 +2772,12 @@ here.
   „Hledat vše" action, so Enter opens the thing instead of running a text search that could never match an id);
   its second line says what the id was and — via `states` — whether the photo is archived/hidden/private/a stack
   variant, and an id that names nothing is stated in words above the rows instead of being offered as a row.
+  **Every row leads with the entity's own picture** (`ResultMedia`): an album, a label and a person all draw the
+  cover the endpoint stamped onto the hit (`SearchItem.thumbSrc` = the hit's `thumb_url`, already the medallion
+  size and signed where the library sits behind a media Worker), a photo row builds its own from the uid. The
+  kind's glyph is the fallback and stays one — an entity with no photo behind it **and** an image that fails to
+  load both land on it, in a box of the same size, so a row never changes height and never shows a hole. The
+  previews are decoration (`alt=""` + `aria-hidden`, lazy): the row names the entity beside them.
   The backend `/search/global` doesn't return `Místa` groups, so the palette
   doesn't show them. **With the field still empty it offers the reader's own nedávno hledané**
   (`useSearchHistory`, only fetched while the palette is actually open on an empty field) instead of the idle
@@ -4118,7 +4129,9 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `Album`/`AlbumCount`/`AlbumInput`/`AlbumType`/`Label`/`LabelCount`/`LabelInput` (`Label.review_enabled` =
   whether the review game may ask about the label; `LabelInput.review_enabled` is **optional**, because
   omitting it means "leave it as it is" — the rename modal and the labels page's switch each send only what
-  they know, so neither can clobber the other's field);
+  they know, so neither can clobber the other's field; `LabelCount.cover_uid` is the photo standing for the
+  label — its newest visible one, derived by the backend, absent for a label on no visible photo, and carried
+  only by the *listing*: a label out of a global search brings its own cover pair instead);
   `savedSearches.ts` = the saved-searches client: `fetchSavedSearches`/`createSavedSearch(name,params)`/
   `updateSavedSearch(uid,{name?,params?})`/`deleteSavedSearch(uid)` over `/api/v1/saved-searches`, the types
   `SavedSearch`/`SavedSearchParams` (= the verbatim URL view state `Record<string,string>`)/
@@ -4133,12 +4146,16 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `GET /api/v1/search/global` → `GlobalSearchResult{query,direct?,albums,labels,people,photos}` (top-N per
   group, each always an array) + the pure helpers `hasEntityMatches`/`isEmptyResult`/`directHitRoute`, the types
   `GlobalSearchAlbum`/`GlobalSearchLabel`/`GlobalSearchPerson`/`GlobalSearchResult` +
-  `GlobalSearchDirect{uid,kind,found,target_kind?,target_uid?,title?,photo?,cover?,states?}` with
+  `GlobalSearchDirect{uid,kind,found,target_kind?,target_uid?,title?,photo?,cover?,thumb_url?,states?}` with
   `GlobalSearchUidKind`/`GlobalSearchTargetKind`/`GlobalSearchPhotoState`. **`direct` is the answer to a pasted
   id**: present only for a query that names an entity by its uid, and then every group is empty (the backend
   resolves the id instead of fuzzy-searching); `directHitRoute` maps a resolved hit to its page
   (`/photos|/albums|/labels|/people`) and returns `null` when the id named nothing — which is why
-  `isEmptyResult` is **false** for an unresolved hit: an unknown id is something to say, not silence. Separate
+  `isEmptyResult` is **false** for an unresolved hit: an unknown id is something to say, not silence. Every
+  entity hit (and a direct one) extends `GlobalSearchCover{cover?,thumb_url?}` — the photo standing for it and
+  where to fetch that photo's medallion, set **together or not at all**. Prefer `thumb_url`: it is already the
+  small square size a row wants, and it is the *signed* address when the library sits behind a media Worker.
+  Separate
   from the photo `searchPhotos` (fulltext/semantic/hybrid), the basis for `GlobalSearchSections`; `bulk.ts` =
   `bulkUpdatePhotos(uids,ops)` over `POST /photos/bulk` (a bulk edit of the selection), the types
   `BulkOperations` (add/remove an album+label, set/clear the caption+description+location,

@@ -64,9 +64,27 @@ const MARKER_UID = 'mk7lpul2io09bcg2rvp2rljsr6'
 
 const RESULT: GlobalSearchResult = {
   query: 'beach',
-  albums: [{ uid: 'al1', title: 'Beach trip', cover: 'ph9', photo_count: 12 }],
-  labels: [{ uid: 'lb1', name: 'beachy', photo_count: 40 }],
-  people: [{ uid: 'su1', name: 'Beatrice', cover: 'ph3' }],
+  albums: [
+    {
+      uid: 'al1',
+      title: 'Beach trip',
+      cover: 'ph9',
+      thumb_url: '/api/v1/photos/ph9/thumb/tile_100',
+      photo_count: 12,
+    },
+  ],
+  labels: [
+    {
+      uid: 'lb1',
+      name: 'beachy',
+      cover: 'ph8',
+      thumb_url: '/api/v1/photos/ph8/thumb/tile_100',
+      photo_count: 40,
+    },
+  ],
+  people: [
+    { uid: 'su1', name: 'Beatrice', cover: 'ph3', thumb_url: '/api/v1/photos/ph3/thumb/tile_100' },
+  ],
   photos: [photo()],
 }
 
@@ -361,5 +379,63 @@ describe('SearchCommand', () => {
     await user.click(screen.getByRole('button', { name: 'Clear history' }))
     expect(clearHistoryMock).toHaveBeenCalledTimes(1)
     expect(screen.queryByRole('option')).not.toBeInTheDocument()
+  })
+  it('draws the entity behind each album, label and person row', async () => {
+    const user = userEvent.setup()
+    renderCommand()
+    await user.click(screen.getByRole('button', { name: 'Search' }))
+    await user.type(await screen.findByRole('combobox'), 'beach')
+    await screen.findByRole('option', { name: /Beach trip/ })
+
+    // The three entity kinds used to share one grey glyph; now each row leads
+    // with its own photo, taken from the address the backend minted for it.
+    for (const [name, src] of [
+      [/Beach trip/, '/api/v1/photos/ph9/thumb/tile_100'],
+      [/beachy/, '/api/v1/photos/ph8/thumb/tile_100'],
+      [/Beatrice/, '/api/v1/photos/ph3/thumb/tile_100'],
+    ] as const) {
+      const img = screen.getByRole('option', { name }).querySelector('img')
+      expect(img).toHaveAttribute('src', src)
+      // Decoration beside a row that already names the entity, and it must not
+      // hold up the palette.
+      expect(img).toHaveAttribute('aria-hidden', 'true')
+      expect(img).toHaveAttribute('alt', '')
+      expect(img).toHaveAttribute('loading', 'lazy')
+    }
+  })
+
+  it('falls back to the kind glyph for an entity with no photo behind it', async () => {
+    const user = userEvent.setup()
+    searchMock.mockResolvedValue({
+      ...RESULT,
+      labels: [{ uid: 'lb2', name: 'beachless', photo_count: 0 }],
+    })
+    renderCommand()
+    await user.click(screen.getByRole('button', { name: 'Search' }))
+    await user.type(await screen.findByRole('combobox'), 'beach')
+
+    const row = await screen.findByRole('option', { name: /beachless/ })
+    expect(row.querySelector('img')).toBeNull()
+    expect(row.querySelector('i.bi.bi-tags')).not.toBeNull()
+  })
+
+  it('falls back to the kind glyph when a preview fails to load', async () => {
+    const user = userEvent.setup()
+    renderCommand()
+    await user.click(screen.getByRole('button', { name: 'Search' }))
+    await user.type(await screen.findByRole('combobox'), 'beach')
+    const row = await screen.findByRole('option', { name: /Beach trip/ })
+
+    const img = row.querySelector('img')
+    if (img === null) {
+      throw new Error('expected the album row to draw its cover')
+    }
+    // A thumbnail that never arrives must not leave a hole where the medallion
+    // was: the row falls back to the same glyph a coverless album gets.
+    fireEvent.error(img)
+    await waitFor(() => {
+      expect(row.querySelector('img')).toBeNull()
+    })
+    expect(row.querySelector('i.bi.bi-collection')).not.toBeNull()
   })
 })

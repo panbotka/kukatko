@@ -25,6 +25,13 @@ type sizeSpec struct {
 // client directly rather than making it follow a redirect per tile.
 const GridSize = "tile_500"
 
+// AvatarSize is the smallest square tile: what a compact row draws its
+// medallion from, which today is the command palette's album / label / person
+// previews. It is a constant of its own rather than GridSize because those
+// medallions are a couple of dozen pixels across, and a palette that stamped the
+// grid size would fetch a grid page's worth of bytes to draw two dozen of them.
+const AvatarSize = "tile_100"
+
 // sizes is the read-only registry of thumbnail sizes. Callers reference a size
 // by its string name (e.g. "fit_1920"). The set is intentionally small and
 // easy to extend: add an entry here and its slot in sizeOrder and every part of

@@ -795,7 +795,10 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `{photo_uids:[…]}` (removes) — both return the current **chronological** order `{photo_uids:[…]}`,
   404 for a missing album/photo. There is no manual album ordering: `PATCH /albums/{uid}/order` was
   removed (→ 404) and an album always displays from the oldest photo (see Photos API). **Labels** `GET /labels`
-  (RequireAuth) → `{labels:[{...label, photo_count}]}` (ordered by priority DESC); `POST /labels`
+  (RequireAuth) → `{labels:[{...label, photo_count, cover_uid?}]}` (ordered by priority DESC), where `cover_uid`
+  is the photo standing for the label — its newest visible one, derived exactly as the global-search hits' cover
+  is and in **one batched query** for the whole listing (`organize.Store.LabelCovers`), absent for a label on no
+  visible photo; a label has no cover to pick by hand. `POST /labels`
   (RequireWrite) → 201 from `{name,priority?}` (empty name → 400); `GET /labels/{uid}`
   (RequireAuth, 404); `PATCH /labels/{uid}` (RequireWrite, name/priority/review_enabled); `DELETE /labels/{uid}`
   (RequireWrite → 204); attaching `POST /labels/{uid}/photos` `{photo_uid,source?,uncertainty?}`
@@ -943,21 +946,32 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `photos` it can never be the only news, so it does not affect `has_news`. Mounted by `server.WithAPI` (`buildWhatsNewAPI` in `cmd/kukatko/whatsnew.go`).
 - **Global Search API (`/api/v1`, `internal/globalsearchapi`, authenticated via `RequireAuth`):**
   grouped **cross-entity search** for the navbar quick-results and the search page. `GET /search/global?q=` →
-  `{query, albums:[{uid,title,cover,photo_count}], labels:[{uid,name,photo_count}],
-  people:[{uid,name,cover}], photos:[…usual photo shape…]}` — albums/labels/people matched by
+  `{query, albums:[{uid,title,cover?,thumb_url?,photo_count}], labels:[{uid,name,cover?,thumb_url?,photo_count}],
+  people:[{uid,name,cover?,thumb_url?}], photos:[…usual photo shape…]}` — albums/labels/people matched by
   name/description **accent- and case-insensitive** (`immutable_unaccent` + ILIKE via the store methods
   `SearchAlbums`/`SearchLabels`/`SearchSubjects`), photos via the **existing full text** (`photos.Store.
   Search` over the `fts` tsvector). Each group is capped at a small top-N (default 8, `Config.Limit`), the arrays
   are always non-nil. An empty/whitespace `q` → 400, a store error → 500. The existing `GET /search` (per-user
   photo fulltext/semantic/hybrid) stays unchanged. Mounted by `server.WithAPI` (`buildGlobalSearchAPI`
   in `cmd/kukatko/globalsearch.go`, sharing the organize/people/photos store).
+  **Every entity hit carries its picture**, `cover` (the photo standing for it) and `thumb_url` (where to fetch
+  that photo's medallion, `thumb.AvatarSize` = `tile_100`, stamped through `internal/mediaurl` exactly like a
+  photo hit's — so a published bucket yields a signed edge URL). The two are set **together or not at all**, and
+  an entity with nothing to show carries neither, which is the client's cue to draw its own glyph. An album uses
+  its hand-picked cover and otherwise its newest visible photo; a **label and a person get a derived** one — the
+  newest photo carrying that label / showing that person (`COALESCE(taken_at, created_at)` descending, uid
+  breaking ties), never an archived, hidden or non-primary-stack photo. Each group's covers are resolved in **one
+  query for the whole group** (`organize.Store.AlbumCovers`/`LabelCovers`, `people.Store.SubjectCovers`), so the
+  previews cost three queries whatever the top-N holds — never one per row.
   **A `q` that carries a UID takes a different branch:** the id is resolved against the one table its prefix
   names and returned as `direct`, and the four-way fuzzy fan-out is **skipped** (the groups come back as `[]`) —
   a uid matches no title, name or full text anyway, so this replaces the fan-out rather than adding a fifth query.
   Recognised prefixes (`query.ClassifyUID`, 26 characters unless noted): `ph` photo, `al` album, `lb` label,
   `su` subject, `st` stack, `mk` marker, and `pt` = an **imported** photo uid (16 characters). An id with an
   unknown prefix is **not** probed against every table. The id may be the whole `q` or one word of it.
-  `direct` = `{uid, kind, found, target_kind?, target_uid?, title?, photo?, cover?, states?}`: `kind` is what the
+  `direct` = `{uid, kind, found, target_kind?, target_uid?, title?, photo?, cover?, thumb_url?, states?}`, the
+  cover pair being the same one the fuzzy groups carry (a pasted id draws the picture a typed name would):
+  `kind` is what the
   id itself names, `target_kind`/`target_uid` what to open — a `mk…` resolves to the photo it sits on, an `st…`
   to the stack's primary, a `pt…` through `photos.photoprism_uid` and then `photoprism_aliases`. A well-formed id
   that matches nothing comes back with `found: false` rather than an empty result set. The lookups are **unscoped**

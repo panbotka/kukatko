@@ -32,28 +32,41 @@ async function readErrorMessage(res: Response): Promise<string> {
   return res.statusText || `request failed: ${res.status}`
 }
 
+/**
+ * The preview an entity hit carries: the photo standing for it and where to
+ * fetch that photo's medallion. The backend fills both or neither (see
+ * `internal/globalsearchapi`), so a hit with nothing to show is one with no
+ * `cover` — the caller's cue to draw a glyph rather than a broken image.
+ *
+ * `thumb_url` is already the small square size a compact row wants, and it is
+ * the *signed* address when the library lives behind a media Worker, so prefer
+ * it over building a URL from `cover` by hand.
+ */
+interface GlobalSearchCover {
+  /** UID of the photo standing for the entity, if it has one. */
+  cover?: string
+  /** Where to fetch that photo's medallion; present exactly when `cover` is. */
+  thumb_url?: string
+}
+
 /** A single album match: enough to link to and render a compact row/card. */
-export interface GlobalSearchAlbum {
+export interface GlobalSearchAlbum extends GlobalSearchCover {
   uid: string
   title: string
-  /** UID of the album's cover photo, if it has one (for a thumbnail). */
-  cover?: string
   photo_count: number
 }
 
 /** A single label match. */
-export interface GlobalSearchLabel {
+export interface GlobalSearchLabel extends GlobalSearchCover {
   uid: string
   name: string
   photo_count: number
 }
 
 /** A single person/subject match. */
-export interface GlobalSearchPerson {
+export interface GlobalSearchPerson extends GlobalSearchCover {
   uid: string
   name: string
-  /** UID of the subject's cover photo, if it has one (for an avatar). */
-  cover?: string
 }
 
 /** What a pasted UID names, as reported by the backend's direct hit. */
@@ -81,7 +94,7 @@ export type GlobalSearchPhotoState = 'archived' | 'hidden' | 'private' | 'stack_
  * marker → its photo, a stack → its primary, a PhotoPrism id → the catalogue
  * photo holding it).
  */
-export interface GlobalSearchDirect {
+export interface GlobalSearchDirect extends GlobalSearchCover {
   uid: string
   kind: GlobalSearchUidKind
   found: boolean
@@ -89,7 +102,6 @@ export interface GlobalSearchDirect {
   target_uid?: string
   title?: string
   photo?: Photo
-  cover?: string
   states?: GlobalSearchPhotoState[]
 }
 

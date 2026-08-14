@@ -217,6 +217,16 @@ export interface Label {
 /** A label paired with how many photos carry it (`organize.LabelCount`). */
 export interface LabelCount extends Label {
   photo_count: number
+  /**
+   * UID of the photo standing for the label — its newest visible one — so the
+   * labels index can draw a preview instead of a hundred identical chips. It is
+   * derived by the backend and absent for a label on no visible photo; a label
+   * has no cover to pick by hand.
+   *
+   * Only the label *listing* carries it. A label arriving from a global search
+   * carries its own cover pair instead (see `services/search`).
+   */
+  cover_uid?: string
 }
 
 /**

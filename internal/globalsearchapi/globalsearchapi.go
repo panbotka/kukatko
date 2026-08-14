@@ -53,6 +53,12 @@ type Organizer interface {
 	GetAlbumByUID(ctx context.Context, uid string) (organize.Album, error)
 	// GetLabelByUID resolves one label by its uid, or organize.ErrLabelNotFound.
 	GetLabelByUID(ctx context.Context, uid string) (organize.Label, error)
+	// AlbumCovers returns the cover photo of every named album, in one query for
+	// the whole batch. Albums with no cover are absent from the map.
+	AlbumCovers(ctx context.Context, uids []string) (map[string]organize.Cover, error)
+	// LabelCovers returns the cover photo of every named label, in one query for
+	// the whole batch. Labels with no cover are absent from the map.
+	LabelCovers(ctx context.Context, uids []string) (map[string]organize.Cover, error)
 }
 
 // PeopleSearcher is the subset of people.Store the endpoint needs: name search
@@ -66,6 +72,9 @@ type PeopleSearcher interface {
 	// GetMarkerByUID resolves one marker by its uid, or people.ErrMarkerNotFound.
 	// A marker id stands for the photo it sits on.
 	GetMarkerByUID(ctx context.Context, uid string) (people.Marker, error)
+	// SubjectCovers returns the cover photo of every named subject, in one query
+	// for the whole batch. Subjects with no cover are absent from the map.
+	SubjectCovers(ctx context.Context, uids []string) (map[string]people.Cover, error)
 }
 
 // PhotoSearcher is the subset of photos.Store the endpoint needs: the existing
@@ -145,25 +154,35 @@ func (a *API) RegisterRoutes(r chi.Router) {
 }
 
 // albumHit is a single album match: enough to link to and render a row.
+//
+// Cover and ThumbURL are filled together or not at all (see covers.go): the uid
+// of the photo standing for the album, and where a client fetches that photo's
+// medallion. An album with nothing to show carries neither, which is the
+// client's cue to draw its own glyph.
 type albumHit struct {
 	UID        string  `json:"uid"`
 	Title      string  `json:"title"`
 	Cover      *string `json:"cover,omitempty"`
+	ThumbURL   string  `json:"thumb_url,omitempty"`
 	PhotoCount int     `json:"photo_count"`
 }
 
-// labelHit is a single label match.
+// labelHit is a single label match, with the same cover pair as an album hit.
 type labelHit struct {
-	UID        string `json:"uid"`
-	Name       string `json:"name"`
-	PhotoCount int    `json:"photo_count"`
+	UID        string  `json:"uid"`
+	Name       string  `json:"name"`
+	Cover      *string `json:"cover,omitempty"`
+	ThumbURL   string  `json:"thumb_url,omitempty"`
+	PhotoCount int     `json:"photo_count"`
 }
 
-// subjectHit is a single person/subject match.
+// subjectHit is a single person/subject match, with the same cover pair as an
+// album hit.
 type subjectHit struct {
-	UID   string  `json:"uid"`
-	Name  string  `json:"name"`
-	Cover *string `json:"cover,omitempty"`
+	UID      string  `json:"uid"`
+	Name     string  `json:"name"`
+	Cover    *string `json:"cover,omitempty"`
+	ThumbURL string  `json:"thumb_url,omitempty"`
 }
 
 // response is the grouped global-search JSON envelope. Every group is a non-nil
@@ -251,23 +270,43 @@ func (a *API) handleFuzzy(w http.ResponseWriter, r *http.Request, query string) 
 	}
 	a.media.Decorate(matchedPhotos)
 
-	writeJSON(w, http.StatusOK, response{
+	out := response{
 		Query:  query,
 		Albums: toAlbumHits(albums),
 		Labels: toLabelHits(labels),
 		People: toSubjectHits(subjects),
 		Photos: matchedPhotos,
-	})
+	}
+	if err := a.stampCovers(ctx, &out); err != nil {
+		writeError(w, http.StatusInternalServerError, "reading covers failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// stampCovers gives each entity group the photo that stands for its hits, and
+// the address to draw it from. It is three batched lookups — one per group, each
+// answering the group's whole top-N in a single query — so an album, a label and
+// a person cost the same three queries whether they matched one row or eight.
+func (a *API) stampCovers(ctx context.Context, out *response) error {
+	if err := a.stampAlbumCovers(ctx, out.Albums); err != nil {
+		return err
+	}
+	if err := a.stampLabelCovers(ctx, out.Labels); err != nil {
+		return err
+	}
+	return a.stampSubjectCovers(ctx, out.People)
 }
 
 // toAlbumHits projects album search rows onto the wire shape, always returning a
-// non-nil slice.
+// non-nil slice. The cover is deliberately not taken from the row's hand-picked
+// Album.CoverPhotoUID: covers are stamped afterwards for the whole group at once
+// (see stampAlbumCovers), which honours that same choice and falls back to the
+// album's newest photo when nobody made one.
 func toAlbumHits(rows []organize.AlbumCount) []albumHit {
 	out := make([]albumHit, 0, len(rows))
 	for _, a := range rows {
-		out = append(out, albumHit{
-			UID: a.UID, Title: a.Title, Cover: a.CoverPhotoUID, PhotoCount: a.PhotoCount,
-		})
+		out = append(out, albumHit{UID: a.UID, Title: a.Title, PhotoCount: a.PhotoCount})
 	}
 	return out
 }
@@ -283,11 +322,12 @@ func toLabelHits(rows []organize.LabelCount) []labelHit {
 }
 
 // toSubjectHits projects subject search rows onto the wire shape, always
-// returning a non-nil slice.
+// returning a non-nil slice. The cover is stamped afterwards for the whole group
+// (see stampSubjectCovers), for the same reason as an album's.
 func toSubjectHits(rows []people.Subject) []subjectHit {
 	out := make([]subjectHit, 0, len(rows))
 	for _, s := range rows {
-		out = append(out, subjectHit{UID: s.UID, Name: s.Name, Cover: s.CoverPhotoUID})
+		out = append(out, subjectHit{UID: s.UID, Name: s.Name})
 	}
 	return out
 }
