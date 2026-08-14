@@ -1,6 +1,7 @@
 import type { ParseKeys } from 'i18next'
 import Badge from 'react-bootstrap/Badge'
 import { useTranslation } from 'react-i18next'
+import { Link } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
 import { useJobStats } from '../hooks/useJobStats'
@@ -29,12 +30,31 @@ const BADGE_STATES: BadgeState[] = [
 ]
 
 /**
+ * Where the badges lead. The queue itself is a panel inside the system-status
+ * page — the frontend has no route of its own for it — so that page is the
+ * destination that actually shows what the counts stand for.
+ */
+const QUEUE_ROUTE = '/system'
+
+/**
  * The right-hand footer status area: compact badges summarising the background
- * job queue for maintainers. The `/jobs` stats endpoint is a maintainer-only
- * operations capability, so everyone below sees nothing and — because
- * {@link useJobStats} only polls when enabled — issues no request. A failing
- * request hides the badges silently. When every tracked state is empty a single
- * quiet "idle" badge stands in for a row of zeros.
+ * job queue for maintainers, wrapped in one link to {@link QUEUE_ROUTE}. The
+ * `/jobs` stats endpoint is a maintainer-only operations capability, so everyone
+ * below sees nothing and — because {@link useJobStats} only polls when enabled —
+ * issues no request. That is the same threshold the `/system` route is guarded
+ * by (`RequireRole role="maintainer"`, i.e. `roleAtLeast(role, 'maintainer')` —
+ * the very predicate behind `isMaintainer`), so the link is only ever offered to
+ * someone the page will actually open for. A failing request hides the badges
+ * silently. When every tracked state is empty a single quiet "idle" badge stands
+ * in for a row of zeros.
+ *
+ * The whole row is one link rather than one link per badge: it is a single
+ * destination, so it earns a single tab stop, and being a real anchor makes it
+ * keyboard-reachable and Enter-activatable for free. `text-decoration-none`
+ * keeps the badges looking exactly as they did as plain text — the underline is
+ * the only thing an anchor would have added, since a badge sets its own colour.
+ * The counts alone would read as bare numbers out of context, so the link
+ * carries an explicit label naming the queue, its state and where it leads.
  */
 export function JobQueueBadges() {
   const { t } = useTranslation()
@@ -50,10 +70,18 @@ export function JobQueueBadges() {
     count: stats.by_state[entry.state] ?? 0,
   })).filter((entry) => entry.count > 0)
 
+  const summary =
+    active.length === 0
+      ? t('footer.jobs.idle')
+      : active.map((entry) => `${t(entry.labelKey)} ${String(entry.count)}`).join(', ')
+  const label = t('footer.jobs.link', { summary })
+
   return (
-    <span
-      className="d-inline-flex flex-wrap align-items-center gap-1"
-      title={t('footer.jobs.title')}
+    <Link
+      to={QUEUE_ROUTE}
+      className="d-inline-flex flex-wrap align-items-center gap-1 text-decoration-none"
+      title={label}
+      aria-label={label}
     >
       {active.length === 0 ? (
         <Badge bg="secondary" className="fw-normal">
@@ -66,6 +94,6 @@ export function JobQueueBadges() {
           </Badge>
         ))
       )}
-    </span>
+    </Link>
   )
 }

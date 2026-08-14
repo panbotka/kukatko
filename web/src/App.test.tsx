@@ -57,6 +57,20 @@ const viewerAuth = {
   refresh: vi.fn(),
 } as unknown as AuthContextValue
 
+/**
+ * A signed-in admin: every governance power, but not the top of the ladder — the
+ * operations routes (`/system` among them) stay closed. Used to pin down who the
+ * footer's job-queue badges may link there.
+ */
+const adminAuth = {
+  ...viewerAuth,
+  user: { uid: 'u2', username: 'a', display_name: 'A', role: 'admin' },
+  role: 'admin',
+  canWrite: true,
+  isAdmin: true,
+  isMaintainer: false,
+} as unknown as AuthContextValue
+
 /** Surfaces the resolved location and offers a Back control. */
 function LocationProbe() {
   const { pathname, search } = useLocation()
@@ -77,11 +91,11 @@ function LocationProbe() {
   )
 }
 
-/** Mounts the real route table at `entries[index]`, signed in as a viewer. */
-function renderRoutes(entries: string[], index = entries.length - 1) {
+/** Mounts the real route table at `entries[index]`, signed in as `auth`. */
+function renderRoutes(entries: string[], index = entries.length - 1, auth = viewerAuth) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <AuthContext.Provider value={viewerAuth}>
+      <AuthContext.Provider value={auth}>
         <MemoryRouter initialEntries={entries} initialIndex={index}>
           <AppRoutes />
           <LocationProbe />
@@ -151,6 +165,17 @@ describe('routing', () => {
     // The library never loads behind the refusal — the guard replaced the route,
     // it did not navigate away from it.
     expect(fetchPhotosMock).not.toHaveBeenCalled()
+  })
+
+  it('keeps /system for maintainers, the audience the footer queue badge links there', async () => {
+    // The footer's job-queue badges are a link to /system and are rendered for
+    // `isMaintainer` only. This is the other end of that promise: an admin — the
+    // nearest role below — is refused here, so nobody is offered a link to a page
+    // that would answer them with a refusal.
+    renderRoutes(['/system'], 0, adminAuth)
+
+    expect(await screen.findByTestId('forbidden-page')).toHaveTextContent(/maintainer role/i)
+    expect(screen.getByTestId('pathname')).toHaveTextContent('/system')
   })
 
   it('lets a viewer reach the share landing, which explains itself', async () => {

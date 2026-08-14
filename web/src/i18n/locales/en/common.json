@@ -23,7 +23,7 @@
     "github": "GitHub",
     "githubTitle": "View the project's source code on GitHub",
     "jobs": {
-      "title": "Job queue",
+      "link": "Job queue: {{summary}} — open System status",
       "idle": "idle",
       "queued": "queued",
       "running": "running",
