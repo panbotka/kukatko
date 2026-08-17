@@ -1,7 +1,8 @@
 import { type ReactNode, useState } from 'react'
 import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
-import { useTranslation } from 'react-i18next'
+import { Trans, useTranslation } from 'react-i18next'
+import { Link } from 'react-router-dom'
 
 import {
   formatByteCount,
@@ -10,6 +11,7 @@ import {
   formatDateTimeMinutes,
   formatDuration,
 } from '../../lib/format'
+import { uploaderHref } from '../../lib/libraryView'
 import {
   aspectRatio,
   fileFormat,
@@ -211,10 +213,9 @@ export function TechnicalDetails({
   // one group and a timestamp in another. A photo with no uploader did not
   // arrive from nobody: it was imported, and saying so beats an empty dash.
   const addedAt = formatDateTimeMinutes(photo.created_at, locale)
-  const upload =
-    photo.uploader !== undefined && photo.uploader.name !== ''
-      ? t('photo.technical.uploadedBy', { name: photo.uploader.name, at: addedAt })
-      : t('photo.technical.uploadedByImport', { at: addedAt })
+  const uploader =
+    photo.uploader !== undefined && photo.uploader.name !== '' ? photo.uploader : undefined
+  const upload = t('photo.technical.uploadedByImport', { at: addedAt })
 
   const hasPhotoGroup =
     [
@@ -373,7 +374,28 @@ export function TechnicalDetails({
           )}
 
           <MetaGroup title={t('photo.technical.groups.origin')}>
-            <MetaField label={t('photo.technical.upload')} value={upload} />
+            {uploader === undefined ? (
+              <MetaField label={t('photo.technical.upload')} value={upload} />
+            ) : (
+              <MetaField label={t('photo.technical.upload')}>
+                {/* The name is a link into the library filtered to that person:
+                    the shortest path from "who brought this" to "show me
+                    everything they brought". Only the name is the link — the
+                    moment it arrived is part of the same sentence but not part
+                    of the question. */}
+                <Trans
+                  i18nKey="photo.technical.uploadedBy"
+                  values={{ name: uploader.name, at: addedAt }}
+                  components={{
+                    // Not <link>: that is a void element to the HTML parser
+                    // behind Trans, which would drop the name inside it.
+                    uploader: (
+                      <Link to={uploaderHref(uploader.uid)} className="text-decoration-none" />
+                    ),
+                  }}
+                />
+              </MetaField>
+            )}
           </MetaGroup>
 
           {hasDeveloperGroup && (

@@ -202,7 +202,8 @@ to `## Package map` in `CLAUDE.md`.
   **nothing** (not even `updated_at`), so a re-import is a true no-op. It does not touch captions, `taken_at`,
   GPS, ratings, favorites, or `ai_note`. `ErrPhotoNotFound`)/
   `Archive`/`Unarchive`/`Delete`/`List`+`Count` (filters archived/
-  uploader/has-GPS/date-range `taken_after`+`taken_before`/camera/lens/substring search +
+  uploader (`UploadedBy` a user uid, or **`NoUploader`** = `uploaded_by IS NULL`, the imported photos;
+  `NoUploader` wins over `UploadedBy` the way `OnlyArchived` wins over `IncludeArchived`)/has-GPS/date-range `taken_after`+`taken_before`/camera/lens/substring search +
   **album/label scope** `AlbumUID`/`LabelUID` via a correlated `EXISTS` over `album_photos`/`photo_labels`
   — the basis of the shared scoped listing of an album's/label's photos through `GET /photos?album=`/`?label=`,
   plus **person/subject scope** `SubjectUIDs` (multi, AND combination: one correlated `EXISTS` over
@@ -257,6 +258,13 @@ to `## Package map` in `CLAUDE.md`.
   `buildWhere` with `List`/`Count`, so a bucket's count = exactly what `List` returns for the same filters
   plus that year; `params.Sort`/`Order`/pagination are ignored, photos without `taken_at` don't fall into
   buckets, but `Total` (via `Count`) includes them — the basis of `photoapi`'s year facet),
+  `UploaderBuckets(params)` (who uploaded the matching photos, `[]UploaderBucket{UID,Username,
+  DisplayName,Count}` in `store_uploaders.go` — one `GROUP BY uploaded_by` ordered count desc, uid asc,
+  the names resolved by a `LEFT JOIN users` **outside** the aggregating subquery, since the shared filters
+  name photo columns unqualified and `users` carries columns of those very names; shares `buildWhere` with
+  `List`/`Count`, so a bucket's count = exactly what `List` returns for the same filters plus that uploader;
+  the photos with **no** uploader are their own bucket (empty `UID`), so the counts add up to `Count`
+  — the basis of `photoapi`'s uploader facet),
   plus `CreateFile`/`ListFiles`,
   `ListArchivedUIDs(before,limit,offset)` (uids of archived photos oldest-archived-first,
   `before` nil = all / non-nil = only `archived_at <= before` retention cutoff — the basis of trash/purge),
@@ -728,9 +736,10 @@ to `## Package map` in `CLAUDE.md`.
   → `MinRating`/`Flag`; invalid → 400) + `favoriteRequested` parses `favorite=true`
   → the handler sets per-user `FavoriteOf` to the current user; the list/search/favorites handlers
   set `RatedBy` to the current user, so `min_rating`/`flag`/`sort=rating` are scoped to them;
-  `personme.go`'s **`applyPersonMe`** then resolves `person:me` against the caller's linked subject —
-  called by the list, search, favorites, timeline **and** years handlers, so the token means the same
-  thing on the grid and on the aggregations beside it. An unlinked caller gets
+  `personme.go`'s **`applyMeTokens`** then resolves both caller-dependent tokens — `person:me` against the
+  caller's linked subject and `uploader:me` against their own account — in one call, made by the list,
+  search, favorites, timeline **and** facet handlers, so the tokens mean the same
+  thing on the grid and on the aggregations beside it and a new handler cannot half-resolve them. An unlinked caller gets
   `photos.ListParams.MatchNone` (an empty page rather than the whole library) and the notice
   `person_me_unlinked`; `pageHints{unknown,notices}` carries both that and `unknown_tokens` through the
   four write-the-page helpers, so a path cannot stamp one and forget the other;
@@ -757,6 +766,14 @@ to `## Package map` in `CLAUDE.md`.
   → `photos.Store.YearBuckets` → `{years:[{year,count}],total}`; takes the same filters as the list
   (incl. per-user `FavoriteOf`/`RatedBy`), but **zeroes out `params.Year` itself** — a facet must not narrow
   its own offering; an invalid param → 400;
+  `GET /photos/uploaders` (`handleUploaders`, `uploaders.go`) = **who uploaded into the current view**, for
+  the filter bar's uploader control → `photos.Store.UploaderBuckets` → `{uploaders:[{uid,name,count}]}`,
+  largest contribution first; takes the same filters as the list (incl. per-user `FavoriteOf`/`RatedBy` and
+  the `q` language), but **zeroes out the uploader filter itself** (`UploadedBy`+`NoUploader`) for the same
+  reason years zeroes `Year`; the photos with no uploader are one entry with an empty `uid` **and** an empty
+  `name` — naming that group ("imported") is the client's job, only it knows the reader's language; every
+  other entry is named by `uploaderName` (display name, falling back to the username), the same rule the
+  detail's `uploader` object uses; an invalid param → 400;
   `GET /search?q=&mode=` (`handleSearch`, `search.go`) = **semantic + hybrid search**,
   `mode` = `fulltext`|`semantic`|`hybrid` (default `hybrid`, unknown → 400), `q` required
   (empty/whitespace → 400): **fulltext** orders by `ts_rank` via `store.Search`; **semantic**
@@ -3179,11 +3196,12 @@ to `## Package map` in `CLAUDE.md`.
   input, so an id pasted with a word beside it is still recognised. A token with an **unknown** prefix is
   deliberately **not** accepted — probing every table per keystroke buys nothing. `internal/globalsearchapi`
   routes a pasted id with it. The user-facing grammar: docs/API.md
-  "Search language (q=)". **`person:me` is deliberately *not* resolved here** — the parser knows nothing
-  about who is asking, which is what keeps a filter's meaning independent of the request that carried it;
+  "Search language (q=)". **`person:me` and `uploader:me` are deliberately *not* resolved here** — the parser
+  knows nothing about who is asking, which is what keeps a filter's meaning independent of the request that
+  carried it (`uploader:none`, which says nothing about the caller, is compiled by the store instead);
   see `internal/personme`), `internal/personme/`
-  (resolution of the one word of the query language that means something different to every caller:
-  **`person:me`**. `Resolve(filters, linkedSubjectUID) (used, resolved bool)` rewrites every `person:`
+  (resolution of the words of the query language that mean something different to every caller:
+  **`person:me`** and **`uploader:me`**. `Resolve(filters, linkedSubjectUID) (used, resolved bool)` rewrites every `person:`
   alternative whose text is exactly `me` — the negated `!me` included — to the caller's linked subject UID
   (both `Text` and `Pattern`, so the compiled LIKE cannot still match a person *named* "me"), in place.
   `resolved` is false only when the token was used by an account with **no** link, which the caller answers
@@ -3191,7 +3209,11 @@ to `## Package map` in `CLAUDE.md`.
   notice `person_me_unlinked`, the MCP search tool returns an error naming the fix. Never "everything", never
   a free-text search for the word "me". The **collision** with a subject actually called "me" is decided for
   the token, but only in its exact lower-case spelling: `person:Me` stays an ordinary (case-insensitive) name
-  match, and a UID always reaches a subject that no name can shadow. Pure, no I/O, no `auth` dependency —
+  match, and a UID always reaches a subject that no name can shadow.
+  `ResolveUploader(filters, callerUID)` is the simpler twin for `uploader:me`: it rewrites the token to the
+  **account making the request**, which every surface that resolves it has in hand, so it cannot fail and
+  reports nothing; an empty `callerUID` is left alone rather than rewritten, since an empty uid would
+  compile to a pattern matching every uploader. Pure, no I/O, no `auth` dependency —
   it takes the linked UID, not a user), `internal/ratelimit/`
   (a reusable **per-key token-bucket rate limiter** + HTTP middleware for expensive endpoints:
   `New(ratePerSec, burst)` → `Allow(key)` (lazy refill, a bucket per key) / `Cleanup`/`RunMaintenance`

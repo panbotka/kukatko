@@ -198,7 +198,7 @@ func (a *API) handleFavorites(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	params.FavoriteOf = user.UID
-	notices := applyPersonMe(&params, user)
+	notices := applyMeTokens(&params, user)
 	a.writeFavoritePage(w, r, user.UID, params, pageHints{unknown: unknown, notices: notices})
 }
 

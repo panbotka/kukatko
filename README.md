@@ -54,6 +54,11 @@ photo-book tool (deliberately out of scope), or a product with support and a rel
 - **A time axis shaped like memory** — a period filter offering the decades your library actually
   holds, each expanding to its years and then to exact dates, plus a timeline rail that jumps twenty
   thousand photos to 1965 in one tap (on the phone too).
+- **Filter by who brought the photos in** — after a family event several people upload into the same
+  album; the filter bar offers that album's contributors with their counts (and the imported photos as a
+  group of their own), so one person's share is one click, ready to select and download. `uploader:me`,
+  `uploader:none` and a plain `uploader:tomas` say the same thing in the search box, and a photo's
+  "Uploaded by" line links straight to everything that person contributed.
 - **Saved searches** ("smart albums") and a per-account search history, so a query composed on the
   laptop is one keystroke away on the phone. Every view lives in the URL: Back, a second tab, and a
   bookmark all behave the way the rest of the web does.

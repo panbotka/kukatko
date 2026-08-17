@@ -327,6 +327,13 @@ export interface PhotoListParams {
    */
   person?: string
   /**
+   * Scope the listing to what one account uploaded (`uploader` query param): a
+   * user UID, or the reserved value `'none'` for the photos with no uploader at
+   * all — the ones an import brought in, which the uploader facet offers as its
+   * "imported" group. Empty / undefined means no scope.
+   */
+  uploader?: string
+  /**
    * Scope the listing to photos in this country (`country` query param, exact
    * match against the reverse-geocoded place). Empty / undefined means no scope.
    */
@@ -419,6 +426,7 @@ export function buildPhotoQuery(params: PhotoListParams): URLSearchParams {
   setList('album', params.album)
   setList('label', params.label)
   setList('person', params.person)
+  set('uploader', params.uploader)
   set('country', params.country)
   set('city', params.city)
   set('favorite', params.favorite)
@@ -1545,6 +1553,58 @@ export async function fetchPhotoYears(
     throw new ApiError(res.status, await readErrorMessage(res))
   }
   return (await res.json()) as YearsResponse
+}
+
+/**
+ * One uploader of the photos in the current view, with how many of them are
+ * theirs (`photos.UploaderBucket`). Backs the library's uploader facet.
+ *
+ * The photos nobody uploaded — the ones an import brought in — are a bucket of
+ * their own, with an empty `uid` **and** an empty `name`: naming that group is
+ * the client's job, because only the client knows the reader's language.
+ */
+export interface UploaderBucket {
+  /** The uploader's user UID, `''` for the imported photos. */
+  uid: string
+  /** The uploader's display name (or username), `''` for the imported photos. */
+  name: string
+  /** How many photos of the current view are theirs. */
+  count: number
+}
+
+/** The uploader facet of the current view (`GET /api/v1/photos/uploaders`). */
+export interface UploadersResponse {
+  uploaders: UploaderBucket[]
+}
+
+/**
+ * Fetches who uploaded the photos of the current view, largest contribution
+ * first, each with its count, via `GET /api/v1/photos/uploaders` — the option
+ * list behind the library's uploader filter.
+ *
+ * It accepts the same filter params as {@link fetchPhotos}, and the counts
+ * respect them, so in an event album it lists that event's contributors rather
+ * than every account on the instance. The caller drops the `uploader` scope
+ * first — a facet must not narrow its own options; see `useUploaders` — and
+ * sort/order and pagination are ignored here as well.
+ *
+ * @throws ApiError with `status` 400 (invalid filter) or 5xx so the caller can
+ *   render the matching message.
+ */
+export async function fetchPhotoUploaders(
+  params: PhotoListParams,
+  signal?: AbortSignal,
+): Promise<UploadersResponse> {
+  const query = buildPhotoQuery(params)
+  const res = await fetch(`${API_BASE}/photos/uploaders?${query.toString()}`, {
+    method: 'GET',
+    credentials: 'same-origin',
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+  return (await res.json()) as UploadersResponse
 }
 
 /** Thumbnail size used for library grid tiles — a square crop, high enough DPI. */

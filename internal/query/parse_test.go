@@ -157,6 +157,17 @@ func TestParse_table(t *testing.T) {
 		{"label mixed not", "label:cat|!dog", "filters=[label=text:cat|!text:dog]"},
 		{"person", "person:Anna", "filters=[person=text:Anna]"},
 		{"subject alias", "subject:Anna", "filters=[person=text:Anna]"},
+		// The two reserved uploader values are ordinary text to the parser: `me`
+		// is resolved by the caller (internal/personme) and `none` compiled by the
+		// store, so neither may change what parsing produces.
+		{"uploader", "uploader:tomas", "filters=[uploader=text:tomas]"},
+		{"uploader me stays text", "uploader:me", "filters=[uploader=text:me]"},
+		{"uploader none stays text", "uploader:none", "filters=[uploader=text:none]"},
+		{"uploader not none", "uploader:!none", "filters=[uploader=!text:none]"},
+		{"uploader wildcard", "uploader:tom*", "filters=[uploader=text:tom*]"},
+		{"uploader or", "uploader:tomas|anna", "filters=[uploader=text:tomas|text:anna]"},
+		{"uploader quoted", `uploader:"Jan Novák"`, "filters=[uploader=text:Jan Novák]"},
+		{"uploader key is case-insensitive", "Uploader:me", "filters=[uploader=text:me]"},
 		{"favorite yes", "favorite:yes", "filters=[favorite=bool:true]"},
 		{"favorite true", "favorite:true", "filters=[favorite=bool:true]"},
 		{"favorite no", "favorite:no", "filters=[favorite=bool:false]"},
@@ -332,6 +343,8 @@ func TestParse_textPattern(t *testing.T) {
 		{"backslash is escaped", `title:a\\b`, `a\b`, `a\\b`},
 		{"no star needs no escape", "title:cat", "cat", "cat"},
 		{"like metacharacters stay verbatim", "title:a_b%c", "a_b%c", "a_b%c"},
+		{"uploader wildcard", "uploader:tom*", "tom*", "tom*"},
+		{"uploader escaped star is literal", `uploader:tom\*`, "tom*", `tom\*`},
 	}
 
 	for _, tt := range tests {

@@ -8,8 +8,10 @@ import {
   periodOf,
   periodPatch,
   removeFromFilterList,
+  UPLOADER_NONE,
 } from '../../lib/libraryView'
 import { ANY_PERIOD, formatPeriod, isAnyPeriod } from '../../lib/period'
+import { type UploaderBucket } from '../../services/photos'
 import { type EntityKind } from '../entityStyle'
 
 /** A single active-filter descriptor, rendered as a removable chip. */
@@ -38,6 +40,14 @@ export interface BuildChipsOptions {
    */
   facets?: LibraryFacets
   /**
+   * The uploader facet, used to name the chosen uploader rather than show their
+   * UID. It is separate from {@link BuildChipsOptions.facets} because the
+   * uploader filter survives on pages whose grid is already scoped (an album),
+   * where the album/label/person pickers are dropped. Omitted (or missing the
+   * entry) falls back to the raw UID, so a chip is never blank.
+   */
+  uploaders?: readonly UploaderBucket[]
+  /**
    * Whether to include the free-text query. The filter bar leaves it out — it has
    * its own visible input, and on the search page it belongs to the page — while
    * the empty state names it, because a reader looking at zero results needs to
@@ -60,7 +70,7 @@ export function buildChips(
   locale: string,
   options: BuildChipsOptions = {},
 ): FilterChip[] {
-  const { facets, includeQuery = false } = options
+  const { facets, uploaders, includeQuery = false } = options
   const chips: FilterChip[] = []
   const bool = (v: string) => t(v === 'true' ? 'library.triState.yes' : 'library.triState.no')
 
@@ -113,6 +123,15 @@ export function buildChips(
       kind: 'person',
     })
   }
+  // Who put the photos here. The imported group is a filter like any other, so
+  // it gets a chip too — named, not shown as the reserved word behind it.
+  if (view.uploader !== '') {
+    chips.push({
+      key: 'uploader',
+      label: `${t('library.filters.uploader')}: ${uploaderChipName(view.uploader, uploaders, t)}`,
+      clear: { uploader: '' },
+    })
+  }
   if (view.favorite === 'true') {
     chips.push({
       key: 'favorite',
@@ -162,4 +181,22 @@ export function buildChips(
     })
   }
   return chips
+}
+
+/**
+ * How an uploader filter is worded on its chip: the reserved "imported" group by
+ * its own name, an uploader by the name the facet reported, and — when the facet
+ * has not loaded (or the account is gone) — the raw UID, so the chip still says
+ * which filter is on and can still be removed.
+ */
+function uploaderChipName(
+  uid: string,
+  uploaders: readonly UploaderBucket[] | undefined,
+  t: TFunction,
+): string {
+  if (uid === UPLOADER_NONE) {
+    return t('library.filters.uploaderImported')
+  }
+  const uploader = uploaders?.find((candidate) => candidate.uid === uid)
+  return uploader === undefined || uploader.name === '' ? uid : uploader.name
 }

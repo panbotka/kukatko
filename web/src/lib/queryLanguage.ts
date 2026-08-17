@@ -58,6 +58,7 @@ export const FILTER_KEYS = [
   'title',
   'type',
   'uid',
+  'uploader',
   'year',
 ] as const
 
@@ -217,6 +218,7 @@ export const FACET_QUERY_KEYS = {
   album: ['album'],
   label: ['label'],
   person: ['person', 'subject'],
+  uploader: ['uploader'],
 } as const
 
 /**
@@ -476,6 +478,7 @@ export type QueryHelpRowId =
   | 'album'
   | 'label'
   | 'person'
+  | 'uploader'
   | 'state'
   | 'hidden'
   | 'rating'
@@ -517,6 +520,7 @@ export const QUERY_HELP_ROWS: QueryHelpRow[] = [
   { id: 'album', keys: 'album:', example: 'album:"Léto 2024"' },
   { id: 'label', keys: 'label:', example: 'label:cat|dog' },
   { id: 'person', keys: 'person: subject:', example: 'person:me' },
+  { id: 'uploader', keys: 'uploader:', example: 'uploader:me' },
   { id: 'state', keys: 'favorite: private: archived:', example: 'favorite:yes' },
   { id: 'hidden', keys: 'hidden:', example: 'hidden:yes' },
   { id: 'rating', keys: 'rating:', example: 'rating:4-5' },

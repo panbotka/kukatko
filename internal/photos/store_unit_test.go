@@ -188,6 +188,21 @@ func TestBuildListQuery(t *testing.T) {
 		}
 	})
 
+	t.Run("no-uploader filter needs no bind and wins over a named uploader", func(t *testing.T) {
+		t.Parallel()
+		query, args := buildListQuery(ListParams{NoUploader: true, UploadedBy: "us123"})
+		if !strings.Contains(query, "uploaded_by IS NULL") {
+			t.Errorf("query missing no-uploader filter: %q", query)
+		}
+		if strings.Contains(query, "uploaded_by = $") {
+			t.Errorf("named uploader must not be filtered alongside the no-uploader one: %q", query)
+		}
+		// Only LIMIT and OFFSET are bound: the NULL test carries no value.
+		if len(args) != 2 {
+			t.Errorf("args = %v, want [limit offset]", args)
+		}
+	})
+
 	t.Run("date range, gps, camera, lens and search bind params", func(t *testing.T) {
 		t.Parallel()
 		after := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)

@@ -1,5 +1,5 @@
-// Package personme resolves the one word of the search query language that
-// means something different to every caller: `person:me`.
+// Package personme resolves the words of the search query language that mean
+// something different to every caller: `person:me` and `uploader:me`.
 //
 // # Why it is not in internal/query
 //
@@ -31,7 +31,8 @@ package personme
 import "github.com/panbotka/kukatko/internal/query"
 
 // Token is the value of the person: filter (and of its subject: alias) that
-// names the caller rather than naming somebody.
+// names the caller rather than naming somebody. The uploader: filter reserves
+// the same word for the same reason — see ResolveUploader.
 const Token = "me"
 
 // Resolve rewrites every `person:me` alternative in filters to the subject
@@ -67,4 +68,38 @@ func Resolve(filters []query.Filter, linked *string) (used, resolved bool) {
 		}
 	}
 	return used, !used || linked != nil
+}
+
+// ResolveUploader rewrites every `uploader:me` alternative in filters to
+// callerUID — the account making the request — in place, so the photos store
+// compiles it into an exact match on the uploader's UID, which no username can
+// shadow. A negated alternative (`uploader:!me`) is rewritten the same way, so
+// "everything that is not mine" works too — including, as the compiled negation
+// implies, the photos nobody uploaded at all.
+//
+// It has nothing to report and cannot fail, which is what makes it the simpler
+// twin of Resolve: `me` here is the account that authenticated the request, and
+// every surface that resolves the token has that account in hand — where
+// person:me depends on a link the account may never have made. An empty
+// callerUID (no such surface exists today) is therefore left alone rather than
+// rewritten: an empty UID would compile to a name pattern matching every
+// uploader, and answering "everyone" to "me" is the one answer that is never
+// right.
+func ResolveUploader(filters []query.Filter, callerUID string) {
+	if callerUID == "" {
+		return
+	}
+	for i := range filters {
+		if filters[i].Key != query.KeyUploader {
+			continue
+		}
+		values := filters[i].Values
+		for j := range values {
+			if values[j].Text != Token {
+				continue
+			}
+			values[j].Text = callerUID
+			values[j].Pattern = callerUID
+		}
+	}
 }

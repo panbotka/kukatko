@@ -66,15 +66,18 @@ func newEnv(t *testing.T) *env {
 	faceSvc := facematch.New(facematch.Config{Photos: photoStore, Faces: vectorStore, People: peopleStore})
 
 	api := photoapi.NewAPI(photoapi.Config{
-		Store:           photoStore,
-		Storage:         fs,
-		Thumbnailer:     thumb.New(fs, t.TempDir()),
-		Similar:         vectorStore,
-		Faces:           faceSvc,
-		RequireAuth:     authAPI.RequireAuth,
-		RequireWrite:    authAPI.RequireWrite,
-		RequireAdmin:    authAPI.RequireAdmin,
-		RequireDownload: authAPI.RequireAuthOrDownloadToken,
+		Store:        photoStore,
+		Storage:      fs,
+		Thumbnailer:  thumb.New(fs, t.TempDir()),
+		Similar:      vectorStore,
+		Faces:        faceSvc,
+		RequireAuth:  authAPI.RequireAuth,
+		RequireWrite: authAPI.RequireWrite,
+		RequireAdmin: authAPI.RequireAdmin,
+		// Every guard the routes name has to be here: chi panics on a nil
+		// middleware, so one missing guard takes the whole env down at mount time.
+		RequireMaintainer: authAPI.RequireMaintainer,
+		RequireDownload:   authAPI.RequireAuthOrDownloadToken,
 	})
 
 	r := chi.NewRouter()

@@ -231,6 +231,7 @@ func passthroughMiddleware(next http.Handler) http.Handler {
 //	GET    /photos                    RequireAuth      list with filters/sort/page
 //	GET    /photos/timeline           RequireAuth      month date buckets (histogram)
 //	GET    /photos/years              RequireAuth      capture years with counts (facet)
+//	GET    /photos/uploaders          RequireAuth      who uploaded, with counts (facet)
 //	GET    /photos/{uid}              RequireAuth      full detail
 //	GET    /photos/{uid}/similar      RequireAuth      visually similar photos
 //	GET    /photos/{uid}/faces        RequireAuth      faces + assignment + suggestions
@@ -280,6 +281,7 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.With(a.requireAuth).Get("/", a.handleList)
 		r.With(a.requireAuth).Get("/timeline", a.handleTimeline)
 		r.With(a.requireAuth).Get("/years", a.handleYears)
+		r.With(a.requireAuth).Get("/uploaders", a.handleUploaders)
 		r.With(a.requireAuth).Get("/{uid}", a.handleDetail)
 		r.With(a.requireAuth).Get("/{uid}/similar", a.handleSimilar)
 		r.With(a.requireAuth).Get("/{uid}/faces", a.handleFaces)
@@ -389,7 +391,7 @@ func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 	if favorite {
 		params.FavoriteOf = user.UID
 	}
-	notices := applyPersonMe(&params, user)
+	notices := applyMeTokens(&params, user)
 	a.writeFavoritePage(w, r, user.UID, params, pageHints{unknown: unknown, notices: notices})
 }
 
@@ -454,7 +456,7 @@ func (a *API) handleSearch(w http.ResponseWriter, r *http.Request) {
 	// Scope the per-user rating filters, the query language's per-user filters
 	// and the rating sort to the caller.
 	params.RatedBy = &user.UID
-	notices := applyPersonMe(&params, user)
+	notices := applyMeTokens(&params, user)
 	hints := pageHints{unknown: unknown, notices: notices}
 	// The ranked search matches free text through the full-text vector; the
 	// substring filter and its negations belong to the list path only.
@@ -658,11 +660,7 @@ func (a *API) resolveUploader(ctx context.Context, uploadedBy *string) *uploader
 	if err != nil {
 		return nil
 	}
-	name := user.DisplayName
-	if name == "" {
-		name = user.Username
-	}
-	return &uploaderRef{UID: user.UID, Name: name}
+	return &uploaderRef{UID: user.UID, Name: uploaderName(user.DisplayName, user.Username)}
 }
 
 // photoMemberships returns the photo's album and label chips for the detail

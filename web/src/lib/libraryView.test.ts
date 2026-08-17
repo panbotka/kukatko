@@ -9,6 +9,8 @@ import {
   periodOf,
   periodPatch,
   removeFromFilterList,
+  UPLOADER_NONE,
+  uploaderHref,
   viewToParams,
 } from './libraryView'
 import { ANY_PERIOD } from './period'
@@ -56,6 +58,12 @@ describe('viewToParams multi-value facets', () => {
     expect(params.person).toBe('su_1,su_2')
   })
 
+  it('carries the uploader — a person or the imported group — through to the params', () => {
+    expect(viewToParams({ ...LIBRARY_DEFAULTS, uploader: 'us_1' }).uploader).toBe('us_1')
+    expect(viewToParams({ ...LIBRARY_DEFAULTS, uploader: UPLOADER_NONE }).uploader).toBe('none')
+    expect(viewToParams(LIBRARY_DEFAULTS).uploader).toBe('')
+  })
+
   it('carries the favorites toggle through to the list params', () => {
     expect(viewToParams({ ...LIBRARY_DEFAULTS, favorite: 'true' }).favorite).toBe('true')
     expect(viewToParams(LIBRARY_DEFAULTS).favorite).toBe('')
@@ -101,6 +109,16 @@ describe('hasActiveFilters', () => {
     expect(hasActiveFilters({ ...LIBRARY_DEFAULTS, label: 'lb_1' })).toBe(true)
     expect(hasActiveFilters({ ...LIBRARY_DEFAULTS, person: 'su_1' })).toBe(true)
     expect(hasActiveFilters(LIBRARY_DEFAULTS)).toBe(false)
+  })
+
+  it('treats a picked uploader as an active filter', () => {
+    expect(hasActiveFilters({ ...LIBRARY_DEFAULTS, uploader: 'us_1' })).toBe(true)
+    expect(hasActiveFilters({ ...LIBRARY_DEFAULTS, uploader: UPLOADER_NONE })).toBe(true)
+  })
+
+  it('links to the library filtered by one uploader', () => {
+    expect(uploaderHref('us_1')).toBe('/?uploader=us_1')
+    expect(uploaderHref(UPLOADER_NONE)).toBe('/?uploader=none')
   })
 
   it('treats the favorites toggle as an active filter', () => {
