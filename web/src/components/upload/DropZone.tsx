@@ -1,32 +1,31 @@
-import { useId, useRef, useState, type DragEvent } from 'react'
-import Button from 'react-bootstrap/Button'
+import { useId, useState, type DragEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { PICKER_ACCEPT } from '../../lib/mediaFiles'
 
 /** Props for {@link DropZone}. */
 export interface DropZoneProps {
-  /** Receives files chosen via the picker, the camera, or drag-and-drop. */
+  /** Receives files dropped on the zone or chosen through it. */
   onFiles: (files: File[]) => void
 }
 
 /**
- * File selection surface: a large drag-and-drop target plus a hidden file input
- * triggered by a touch-friendly button. On mobile the input opens the gallery
+ * The first stage's one surface: a large target that takes a drag-and-drop on a
+ * desktop and a tap on a phone, both opening the same multi-file picker
  * (`accept` groups images/videos and also names RAW/HEIC extensions so they are
- * not hidden — see `lib/mediaFiles` — and `multiple` allows a whole batch); a
- * second button opens the camera directly via the `capture` attribute. Fully
- * keyboard- and screen-reader accessible — the label is wired to the input and
- * the drop target is a button.
+ * not hidden — see `lib/mediaFiles`).
  *
- * The footnote points at the third way in, pasting, which is the one that
- * carries an iPhone's camera roll here: the page listens for it (see
- * `hooks/usePasteFiles`), but nothing on screen would otherwise say so.
+ * Whatever it is given starts uploading at once, so the copy promises that
+ * rather than a further step, and there is no start button under it to look for.
+ * The camera and the labelled "choose photos" button live in the stage's action
+ * bar, which is the one place a control is guaranteed to be reachable without
+ * scrolling; this zone is the affordance, not the only way in. The footnote
+ * names the third way, pasting, which the page listens for (see
+ * `hooks/usePasteFiles`) but nothing on screen would otherwise mention.
  */
 export function DropZone({ onFiles }: DropZoneProps) {
   const { t } = useTranslation()
   const inputId = useId()
-  const cameraInputRef = useRef<HTMLInputElement>(null)
   const [dragActive, setDragActive] = useState(false)
 
   const emit = (list: FileList | null): void => {
@@ -52,26 +51,20 @@ export function DropZone({ onFiles }: DropZoneProps) {
   }
 
   return (
-    <div className="mb-4">
+    <div>
       {/* The label is the drop target and opens the picker on click/keyboard. */}
       <label
         htmlFor={inputId}
-        className={`d-flex flex-column align-items-center justify-content-center text-center rounded border border-2 border-dashed p-4 p-md-5 ${
-          dragActive ? 'border-primary bg-primary bg-opacity-10' : 'border-secondary'
-        }`}
-        style={{ cursor: 'pointer', minHeight: '10rem' }}
+        className={`kk-upload-drop${dragActive ? ' kk-upload-drop--active' : ''}`}
         onDrop={handleDrop}
         onDragOver={handleDragOver}
         onDragEnter={handleDragOver}
         onDragLeave={handleDragLeave}
       >
-        <span className="kk-section-title mb-1">
-          {dragActive ? t('upload.dropzone.active') : t('upload.dropzone.headline')}
+        <span className="kk-upload-drop__headline">
+          {dragActive ? t('upload.pick.drop') : t('upload.pick.headline')}
         </span>
-        <span className="text-secondary mb-3">{t('upload.dropzone.hint')}</span>
-        <span className="btn btn-primary btn-lg" aria-hidden="true">
-          {t('upload.dropzone.browse')}
-        </span>
+        <span className="text-secondary">{t('upload.pick.dropHint')}</span>
       </label>
       <input
         id={inputId}
@@ -79,7 +72,7 @@ export function DropZone({ onFiles }: DropZoneProps) {
         className="visually-hidden"
         accept={PICKER_ACCEPT}
         multiple
-        aria-label={t('upload.dropzone.ariaInput')}
+        aria-label={t('upload.pick.ariaInput')}
         onChange={(event) => {
           emit(event.target.files)
           // Reset so picking the same file again re-fires change.
@@ -87,31 +80,7 @@ export function DropZone({ onFiles }: DropZoneProps) {
         }}
       />
 
-      {/* Dedicated camera capture for mobile; harmless on desktop. */}
-      <div className="d-grid d-sm-block mt-2">
-        <Button
-          type="button"
-          variant="outline-secondary"
-          size="lg"
-          onClick={() => cameraInputRef.current?.click()}
-        >
-          {t('upload.dropzone.camera')}
-        </Button>
-      </div>
-      <input
-        ref={cameraInputRef}
-        type="file"
-        className="visually-hidden"
-        accept="image/*"
-        capture="environment"
-        aria-label={t('upload.dropzone.ariaCamera')}
-        onChange={(event) => {
-          emit(event.target.files)
-          event.target.value = ''
-        }}
-      />
-
-      <p className="text-secondary small mt-2 mb-0">{t('upload.dropzone.paste')}</p>
+      <p className="kk-text-caption text-secondary mt-3 mb-0">{t('upload.pick.paste')}</p>
     </div>
   )
 }

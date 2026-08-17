@@ -368,8 +368,9 @@ here.
   **`.kk-overlay-menu`**, which lifts it off Bootstrap's `.dropdown-menu` z-index (1000 — under every
   sticky bar the app draws) onto the app's own **layering scale** (the `--kk-*-z` block on `:root` in
   `app.css`: timeline rail 1018 < sticky toolbar 1019 < navbar 1020 < tab bar 1025 < batch dock 1030
-  < **overlay menu 1035** < Bootstrap's dialog band 1040+). Without it `/upload`'s sticky progress
-  header (`.kukatko-sticky-toolbar`, 1019) painted over the open album list and swallowed its clicks —
+  < **overlay menu 1035** < Bootstrap's dialog band 1040+). Without it the sticky bar under `/upload`'s
+  album picker (1019 — the progress header of the day, `.kk-upload-rail` now) painted over the open
+  album list and swallowed its clicks —
   measured with `elementFromPoint`, the two rows overlapping the header hit the header, not the option.
   The layer deliberately stops **below** 1040, so a dialog opened over the page still covers the menu and
   a menu inside a modal can never outrank the modal backdrop (the modal is its own stacking context in
@@ -381,7 +382,12 @@ here.
   diacritics, edge whitespace) matches **no** option — selected ones included — so it never
   offers a duplicate; Enter with nothing highlighted creates only when nothing else matches. What creating
   means is up to the caller (typically it registers the name and picks the value for it via
-  `options`+`selected`); for a reader without write permission, `onCreate` is simply not passed),
+  `options`+`selected`); for a reader without write permission, `onCreate` is simply not passed.
+  Creating — unlike picking, which keeps the list up so you can take several — **closes the list and
+  blurs the field**, which on a phone is what dismisses the on-screen keyboard: the name did not exist,
+  so there is nothing left to choose from the list it was typed into. Without that the list stayed up
+  over the keyboard with a blank query and the whole thing read as „nothing happened"; the new chip
+  below the field is the confirmation),
   `photo/PlaceSearch` (**place autocomplete by name** = the third route to a photo's location alongside
   coordinates and a map click — for a scanned photo you know *Veselí nad Moravou*, not the numbers, and hunting
   that point by panning the map is a nuisance. `{id,onPick,disabled?}`, `onPick(place)` receives a `Place` and
@@ -563,23 +569,30 @@ here.
   squares off to the 44px floor on `pointer: coarse` (guarded by `styles/tapTargets.test.ts`). i18n
   `headerActions.overflow`. Adopted by `AlbumDetailPage`; any other detail header can take it as-is.
   Tests: `HeaderActions.test.tsx`);
-  `components/upload/` = `DropZone` (a drag-and-drop zone + file input `multiple`
-  `accept` = `lib/mediaFiles` `PICKER_ACCEPT` (`image/*,video/*` + every known extension, so a picker
-  does not hide RAW/HEIC) → the mobile gallery + a **Vyfotit** button `capture="environment"`, and a
-  footnote naming the third way in, **paste** — the page listens for it via `usePasteFiles`, but nothing
-  on screen would otherwise say so),
-  `UploadStep` (**one numbered stage** of the flow: a `.kk-upload-step__marker` disc with the numeral
-  (`aria-hidden`, the heading carries a visually hidden „Krok 2:" instead, so the digit is not read twice),
-  a heading, an optional hint line and an optional right-aligned status — the page is three of these and
-  nothing else, which is what makes the order readable),
-  `UploadProgressHeader` (**a prominent sticky** header for the whole batch: „done / total", **one**
-  overall progress bar weighted even by the partial `progress` of in-flight files — `barLabel` for a11y —,
-  a live breakdown of the uploaded/duplicate/failed/remaining counts; on completion it switches to a **completed
-  summary** with a link into the library and one-click retry-failed; plus, being the one thing that stays on
-  screen, the **batch's album/label recap** (`organize` = names + `onEdit`) — chips of what step 2 chose and
-  a **Změnit** button back to it. The picker itself deliberately does **not** move in here: the bar is a
-  stacking context, so the `MultiSelect`'s fixed overlay would be trapped in its layer 1019 and sink back
-  under the tab bar), `UploadItem` (a queue row as
+  `components/upload/` = `DropZone` (the pick stage's one surface: a drag-and-drop target that is also
+  one big tap target opening the picker, `accept` = `lib/mediaFiles` `PICKER_ACCEPT` (`image/*,video/*`
+  + every known extension, so a picker does not hide RAW/HEIC) `multiple`, styled `.kk-upload-drop`
+  — sunken, dashed hairline, because it is a hole to put photos into rather than a button. Whatever it
+  is given uploads at once, so the copy promises that and there is nothing under it to press. A footnote
+  names the third way in, **paste** — the page listens for it via `usePasteFiles`, but nothing on screen
+  would otherwise say so),
+  `PickFilesButton` (a real, thumb-sized button with its `<input type=file>` hidden behind it: the
+  gallery, the camera (`camera` → `capture="environment"` + `accept="image/*"`) and **Přidat další
+  soubory** are all this one component, so no entry point can forget that picking *is* starting),
+  `UploadActionBar` (**the flow's one action area** — `.kk-upload-rail`. Every stage ends in it and it
+  carries both what is happening and what to do next; the progress is drawn as the bar's own **top edge
+  filling up** (a real `role=progressbar` with `barLabel` + `aria-valuenow`) beside the „7 / 20" count in
+  tabular numerals and what is left. `position: sticky` (not `fixed`): it sits at the end of the page's
+  own flow while the content is short and pins to the bottom edge — clear of the mobile tab bar via
+  `--kk-bottom-edge` — as soon as it is not, so nothing reserves clearance for it and it behaves the same
+  on a phone and on a desktop. Children are given **primary last**: lowest (nearest the thumb) stacked on
+  a phone, rightmost in a row from `sm` up. Guarded by `styles/uploadRail.test.ts`),
+  `UploadStagePick` / `UploadStageUploading` / `UploadStageDone` (the three stages, see `UploadPage`),
+  `UploadQueuePanel` (**the per-file list, demoted**: a disclosure closed by default with the
+  uploaded/duplicate/failed badges standing in for it, since fifty rows nobody reads are exactly what
+  used to push the progress and the picker off a phone screen. It **opens itself the moment a file
+  fails** — that is where the reason, the per-file **Opakovat** and the **jen neúspěšné** filter are —
+  and wraps `UploadList`), `UploadItem` (a queue row as
   a standalone `kk-surface` card: **a local `UploadThumb` preview**, name+size, progress bar, status badge,
   near-duplicate warning, remove/retry actions; a failed row has `border-danger`),
   `UploadThumb` (the row's preview, painted by the browser from the picked `File` — **no upload, no server**:
@@ -594,10 +607,13 @@ here.
   mobile. Tests: `UploadList.test.tsx` — rows, previews, placeholders, revocation, state tint), `UploadOrganize`
   (two searchable `MultiSelect`s for **albums**
   and **labels** that apply to the whole batch, with inline creation of a new item via `onCreate`; empty
-  by default, driven by `useUploadOrganize`. The heading and the batch-wide sentence are the step's,
-  not its own), and beside it the component-free `organizeSelection.ts` = `UPLOAD_ALBUMS_FIELD_ID`
-  (the album field's id, which the page focuses on the jump back) + `organizeSelectionNames`
-  (selection → human names for the recap, a `create:` marker reading as the typed name);
+  by default, driven by `useUploadOrganize`. Shown **inside** the uploading stage (choosing where the
+  photos belong is what there is to do while they go up) and again in the done stage; both carry their
+  own heading and framing sentence, so this is the two fields and nothing else. Their `row g-3` is the
+  **only** width-dependent thing in the flow — side by side from `md`, stacked below it),
+  and beside it the component-free `organizeSelection.ts` = `UPLOAD_ALBUMS_FIELD_ID`
+  (the album field's id, kept as one literal) + `organizeSelectionNames`
+  (selection → human names for the outcome sentence, a `create:` marker reading as the typed name);
   `components/library/` = `PhotoTile`
   (a square lazy-load tile → `/photos/{uid}` in the **hero-first** style: no border, no shadow, and
   with a minimal radius `--kk-radius-tile`, so the library is a dense wall of images; **stack badge**
@@ -1371,30 +1387,36 @@ here.
   replays via `reloadKey`); changing `q`/`mode` is a different result set, so it **leaves selection mode**
   (filters that only narrow the same search keep the selection, just as in the library),
   `UploadPage` = multi-upload (drag-and-drop + gallery/camera on mobile, **mobile-first**), laid out as
-  **three numbered `UploadStep`s in the order they happen** — ① vyberte soubory (`DropZone`, plus the share
-  notices and, once something is queued, a „vybráno N souborů" status), ② přidat do alb a štítků
-  (`UploadOrganize`), ③ nahrajte je. All three are on screen from the first visit, an empty ③ saying what
-  will appear there: a stage that only materialises after the previous one cannot be read as a sequence.
-  ③ holds a **sticky** `UploadProgressHeader` (the batch's overall progress) and a virtualized
-  `UploadList` (`UploadItem` rows, each with a **local preview** of the picked file), start/clear controls
-  + a **jen neúspěšné** toggle (the filter
-  `showErrorsOnly` for failed files); a completed summary + a link to the newly uploaded photos
-  (`/?sort=added`, via `LIBRARY_PATH` in the header) and retry-failed are in `UploadProgressHeader`.
-  ② is **batch-wide and says so**: its hint counts the queue („přidáme ke všem 57 souborům"), and because a
-  50-file queue scrolls the picker off screen, the sticky header of ③ **restates the choice as chips** with a
-  **Změnit** button that scrolls the album field to the middle of the viewport and focuses it
-  (`block: 'center'` clears both sticky bars; `preventScroll` so the focus does not fight the smooth scroll).
-  Before uploading you can pick **albums and labels** for the whole batch, and after all files
-  settle **all** recognized photos (new **and** duplicate `resolvedUids`) are assigned
-  by a single `POST /photos/bulk` (state „přiřazuji…“, success, or a **retryable** error — the photos are
-  uploaded, only the assignment failed); those three notices live **inside ②**, beside the picker they are
-  about, rather than under a hundred queue rows. With no selection no call is made, and a pick made **after**
-  the batch has finished re-runs the assignment with the current selection.
+  **one stage on screen at a time**, and the upload **starts by itself**. The stage is not a mode anyone
+  sets — it is read off the queue: empty → ① *vybrat*, files not all settled → ② *nahrávám*, everything
+  settled → ③ *hotovo*. So nothing can be out of sync: picking files puts bytes on the wire and moves the
+  page in one step, adding more mid-flight keeps it where it is, removing the last file (or **Nahrát další**,
+  which only empties the queue) walks it back to ①.
+  ① `UploadStagePick` = the headline, the `DropZone`, and an `UploadActionBar` with **Vyfotit** +
+  **Vybrat fotky**. No album fields, no queue, no empty third step explaining itself.
+  ② `UploadStageUploading` = the album/label picker (`UploadOrganize`) as the body — the one useful thing
+  to do while the bytes go up — with the demoted `UploadQueuePanel` under it, and the batch's progress in
+  the action bar together with **Přidat další soubory**.
+  ③ `UploadStageDone` = **one sentence** of outcome („Nahráno 20 fotek, přidáno do: Pouť 2026.“) and one
+  primary action, **Zobrazit je v knihovně** (`/?sort=added`, via `LIBRARY_PATH`), with **Nahrát další**
+  beside it. The sentence only claims the album once the assignment has actually come back; a batch with
+  failures **leads with the failures**, makes **Opakovat neúspěšné** the primary action and brings the
+  per-file list back (that is where the reason, the per-file retry and the errors-only filter are). A batch
+  that landed in no album says so and offers the picker rather than leaving the photos untagged; with
+  *nothing* landed there is no picker and no „everything else is in your library" — neither would be true.
+  **Nahrát další keeps the chosen albums and labels**: the next batch is almost always more of the same event.
+  This works with no new backend behaviour because `useUploadOrganize` assigns when the batch **settles**
+  and re-arms on every change: all recognized photos (new **and** duplicate `resolvedUids`) go in one
+  `POST /photos/bulk`, so a pick made *during* the upload — or after it finished — is applied just the same
+  (state „přiřazuji…“ and a **retryable** error live in ③, since the photos are uploaded and only the
+  assignment failed). With no selection no call is made.
+  Leaving mid-upload loses the queue, which lives only in this tab, so `useLeaveGuard` holds an in-app link
+  back behind a `ConfirmModal` and lets the browser warn on a tab close.
   Two more ways in besides the picker: **paste** anywhere on the page (`usePasteFiles`) and
   **`?share=<id>`**, the phone's share sheet — the files are already in the browser's cache by then, so
-  the page collects them (`pwa/shareTarget` `collectSharedFiles`), queues them like any other selection
-  (same limits, same progress, same albums/labels — nothing uploads until the user presses start) and
-  drops the parameter (`replace`) so a reload cannot ask for a share already spent. A `collected` ref
+  the page collects them (`pwa/shareTarget` `collectSharedFiles`) into the ordinary queue, which lands it
+  **directly in ②, already uploading**, and drops the parameter (`replace`) so a reload cannot ask for a
+  share already spent. A `collected` ref
   makes the collection one-shot, since StrictMode invokes the effect twice and collecting **consumes**
   the cache entries. It then says what it took (`share.notice.staged`, a Czech plural), what it left out
   by name (`share.notice.rejected`) or that the share held nothing usable (`share.notice.empty`),
@@ -3283,12 +3305,28 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   leaving the previous photo's pair standing — those uids belong to the photo before, not this one. In-flight
   requests abort on a `uid`/`params` change or unmount; `enabled: false` reports no neighbours without fetching;
   `useUploadQueue` = the upload queue: `addFiles` (dedup on name+size+mtime)/`removeItem`/
-  `start`/`retry`/`retryFailed`/`clear`, a concurrency ceiling `MAX_CONCURRENT_UPLOADS` (3),
+  `retry`/`retryFailed`/`clear`, a concurrency ceiling `MAX_CONCURRENT_UPLOADS` (3),
   per-file status+progress, a summary of counts + `progress` (the **overall** fraction of the batch 0–1 weighted by
   the partial progress of running files, terminal files = done → a smooth overall bar),
   `createdUids` (new ones only) for the link into the library
-  and `resolvedUids` (new **and** duplicate photos) for the post-upload assignment; it auto-drains
-  the queue with an effect after `start`/retry, and cancels running uploads on unmount;
+  and `resolvedUids` (new **and** duplicate photos) for the post-upload assignment.
+  **The queue starts itself** — there is no `start`: an effect tops the in-flight uploads up to the cap
+  whenever the queue changes, so a file is uploading the moment it is added, retried, or freed by
+  another one finishing, and adding files to a running batch appends to it rather than restarting it.
+  That is what lets `/upload` put the album picker *in* the wait instead of in front of it. Running
+  uploads are cancelled on unmount;
+  `useLeaveGuard(active)` = holds a navigation back while a page has unsaved browser-only work, and
+  asks the browser to warn on a tab close. Two mechanisms, because the browser owns only one of them:
+  a `beforeunload` listener (bare `preventDefault()` — the deprecated `returnValue` adds nothing and the
+  linter rejects it; the wording is the browser's own) and a **capture-phase `click` listener** that
+  catches an anchor before react-router's handler, `preventDefault()`s it (a `Link` bails on an
+  already-prevented event) and remembers the target so `confirm()` can navigate to it after the fact.
+  The app has no data router, so `useBlocker` is unavailable — and a click listener also catches the
+  plain `<a>`s of the footer and the tab bar, which a router-level blocker would not. Returns
+  `{asking, confirm, cancel}`, which `/upload` renders as a `ConfirmModal`. Deliberately *not* held:
+  a modified click (new tab), an explicit `target`, a `download`, an external origin, a link back to
+  the page we are on, and any navigation made in code — none of them destroys the queue. Tests:
+  `useLeaveGuard.test.tsx`;
   `usePasteFiles(onFiles)` = hands the page every file pasted into it, listening on `window` so the
   gesture works anywhere (not only over the drop zone) and acting **only** when the clipboard actually
   carries files, so pasting text into the album/label pickers stays ordinary pasting. It is the shortest

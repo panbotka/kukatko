@@ -54,14 +54,13 @@ beforeEach(() => {
 })
 
 describe('useUploadQueue', () => {
-  it('adds files as queued items and skips duplicates', () => {
+  it('adds files as items and skips duplicates', () => {
     const { result: hook } = renderHook(() => useUploadQueue())
 
     act(() => {
       hook.current.addFiles([file('a.jpg'), file('b.jpg')])
     })
     expect(hook.current.items).toHaveLength(2)
-    expect(hook.current.items.every((i) => i.status === 'queued')).toBe(true)
 
     // Re-adding the same files (same name/size/mtime) is a no-op.
     act(() => {
@@ -70,7 +69,7 @@ describe('useUploadQueue', () => {
     expect(hook.current.items).toHaveLength(2)
   })
 
-  it('removes a queued file before upload', () => {
+  it('removes a file from the queue, aborting it if it is in flight', () => {
     const { result: hook } = renderHook(() => useUploadQueue())
     act(() => {
       hook.current.addFiles([file('a.jpg'), file('b.jpg')])
@@ -82,12 +81,46 @@ describe('useUploadQueue', () => {
     expect(hook.current.items.map((i) => i.file.name)).toEqual(['b.jpg'])
   })
 
-  it('does not upload until start is called', () => {
+  it('starts uploading the moment files are added — there is no start step', () => {
     const { result: hook } = renderHook(() => useUploadQueue())
     act(() => {
       hook.current.addFiles([file('a.jpg')])
     })
-    expect(uploadMock).not.toHaveBeenCalled()
+    expect(uploadMock).toHaveBeenCalledTimes(1)
+    expect(hook.current.items[0].status).toBe('uploading')
+  })
+
+  it('appends files to a running batch instead of restarting it', async () => {
+    const { result: hook } = renderHook(() => useUploadQueue())
+    act(() => {
+      hook.current.addFiles([file('a.jpg'), file('b.jpg'), file('c.jpg')])
+    })
+    expect(uploadMock).toHaveBeenCalledTimes(MAX_CONCURRENT_UPLOADS)
+
+    // Two more while the first three are in flight: nothing is aborted, they
+    // simply queue up behind the cap.
+    act(() => {
+      hook.current.addFiles([file('d.jpg'), file('e.jpg')])
+    })
+    expect(uploadMock).toHaveBeenCalledTimes(MAX_CONCURRENT_UPLOADS)
+    expect(hook.current.summary).toMatchObject({
+      total: 5,
+      uploading: MAX_CONCURRENT_UPLOADS,
+      queued: 5 - MAX_CONCURRENT_UPLOADS,
+    })
+
+    // And a freed slot goes to a newcomer, not to a restarted file.
+    await settle(0, result('created', 'ph1'))
+    await waitFor(() => {
+      expect(uploadMock).toHaveBeenCalledTimes(MAX_CONCURRENT_UPLOADS + 1)
+    })
+    expect(hook.current.items.map((i) => i.file.name)).toEqual([
+      'a.jpg',
+      'b.jpg',
+      'c.jpg',
+      'd.jpg',
+      'e.jpg',
+    ])
   })
 
   it('caps concurrent uploads and starts the next as each finishes', async () => {
@@ -100,10 +133,6 @@ describe('useUploadQueue', () => {
         file('d.jpg'),
         file('e.jpg'),
       ])
-    })
-
-    act(() => {
-      hook.current.start()
     })
 
     // Only the cap runs at once; the rest stay queued.
@@ -124,10 +153,6 @@ describe('useUploadQueue', () => {
       hook.current.addFiles([file('a.jpg')])
     })
     act(() => {
-      hook.current.start()
-    })
-
-    act(() => {
       pending[0].options.onProgress?.(0.42)
     })
     expect(hook.current.items[0].progress).toBeCloseTo(0.42)
@@ -139,10 +164,6 @@ describe('useUploadQueue', () => {
     act(() => {
       hook.current.addFiles([file('a.jpg'), file('b.jpg'), file('c.jpg')])
     })
-    act(() => {
-      hook.current.start()
-    })
-
     await settle(0, result('created', 'ph1'))
     await settle(1, result('duplicate', 'ph2'))
     await settle(2, { filename: 'c', status: 500, outcome: 'error', error: 'boom' })
@@ -162,13 +183,7 @@ describe('useUploadQueue', () => {
     act(() => {
       hook.current.addFiles([file('a.jpg'), file('b.jpg')])
     })
-    // Nothing sent yet.
-    expect(hook.current.progress).toBe(0)
-
-    act(() => {
-      hook.current.start()
-    })
-    // Both uploading at 0% — still nothing completed.
+    // Both uploading at 0% — nothing completed yet.
     expect(hook.current.progress).toBe(0)
 
     // One file half-sent contributes its fraction: (0.5 + 0) / 2 = 0.25.
@@ -194,10 +209,6 @@ describe('useUploadQueue', () => {
     act(() => {
       hook.current.addFiles([file('a.jpg')])
     })
-    act(() => {
-      hook.current.start()
-    })
-
     await act(async () => {
       pending[0].reject(new Error('network'))
       await Promise.resolve()
@@ -222,10 +233,6 @@ describe('useUploadQueue', () => {
     act(() => {
       hook.current.addFiles([file('a.jpg')])
     })
-    act(() => {
-      hook.current.start()
-    })
-
     await settle(0, {
       filename: 'a.jpg',
       status: 201,

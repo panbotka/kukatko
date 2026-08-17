@@ -2049,38 +2049,28 @@
   },
   "upload": {
     "title": "Upload",
-    "subtitle": "Add photos and videos to your library.",
-    "dropzone": {
+    "pick": {
+      "title": "Add photos to your library",
+      "lead": "Choosing them starts the upload right away — there is nothing else to press.",
       "headline": "Drag photos here",
-      "active": "Drop the files to add them",
-      "hint": "or choose them from your device",
-      "browse": "Choose files",
+      "drop": "Drop them and the upload starts",
+      "dropHint": "or tap to choose them from your device",
+      "choose": "Choose photos",
       "camera": "Take a photo",
+      "more": "Add more files",
       "paste": "You can also copy a photo and paste it here (Ctrl+V).",
       "ariaInput": "Choose photos or videos to upload",
       "ariaCamera": "Take a photo with the camera"
     },
-    "step": {
-      "aria": "Step {{index}}:",
-      "pick": {
-        "title": "Pick the files",
-        "hint": "Drag them in, choose them from your device, or paste them.",
-        "picked_one": "{{count}} file picked",
-        "picked_other": "{{count}} files picked"
-      },
-      "upload": {
-        "title": "Upload them",
-        "hint": "Every file is uploaded on its own — a failure never stops the rest.",
-        "empty": "Pick some files above and they show up here, ready to upload."
-      }
+    "running": {
+      "title": "Uploading…",
+      "lead": "Keep this page open. While you wait, choose where these photos belong."
     },
     "queue": {
-      "heading": "Selected files"
+      "heading": "Files in this batch ({{total}})"
     },
     "actions": {
-      "start": "Upload ({{count}})",
-      "retryFailed": "Retry failed",
-      "clear": "Clear all",
+      "retryFailed": "Retry the failed files",
       "remove": "Remove",
       "retry": "Retry"
     },
@@ -2092,15 +2082,12 @@
       "error": "Failed"
     },
     "progress": {
-      "uploading": "Uploading…",
-      "ready": "Ready to upload",
       "barLabel": "Overall upload progress",
       "count": "{{done}} / {{total}}",
       "uploaded": "{{count}} uploaded",
       "duplicate": "{{count}} duplicate",
       "failed": "{{count}} failed",
-      "remaining": "{{count}} remaining",
-      "summary": "{{created}} uploaded, {{duplicate}} duplicates, {{error}} failed"
+      "remaining": "{{count}} left"
     },
     "filter": {
       "showErrors": "Show failed only ({{count}})",
@@ -2110,17 +2097,24 @@
       "near_duplicate": "Looks similar to a photo already in the library."
     },
     "done": {
-      "title": "Upload complete.",
-      "viewLibrary": "View in library"
+      "uploaded_one": "{{count}} photo uploaded.",
+      "uploaded_other": "{{count}} photos uploaded.",
+      "uploadedTo_one": "{{count}} photo uploaded, added to {{names}}.",
+      "uploadedTo_other": "{{count}} photos uploaded, added to {{names}}.",
+      "allDuplicates_one": "{{count}} file was already in your library.",
+      "allDuplicates_other": "All {{count}} files were already in your library.",
+      "duplicates_one": "{{count}} file was already in your library.",
+      "duplicates_other": "{{count}} files were already in your library.",
+      "failed_one": "{{count}} file did not upload.",
+      "failed_other": "{{count}} files did not upload.",
+      "failedHint": "Everything else is in your library. Retry the ones that failed.",
+      "noAlbum": "These photos are not in any album or label yet. Choose one and we will add them.",
+      "viewLibrary": "Show them in the library",
+      "uploadMore": "Upload more"
     },
     "organize": {
-      "heading": "Add to albums and labels",
-      "hint": "Chosen albums and labels are applied to every photo in this upload.",
-      "hintCount_one": "Optional. What you choose here is added to the {{count}} file in this batch.",
-      "hintCount_other": "Optional. What you choose here is added to all {{count}} files in this batch.",
-      "recapLabel": "This batch gets:",
-      "recapEmpty": "no album or label",
-      "recapEdit": "Change",
+      "heading": "Albums and labels",
+      "hint": "What you choose here is added to every photo in this batch.",
       "albums": "Albums",
       "labels": "Labels",
       "albumsPlaceholder": "Filter or create an album…",
@@ -2131,6 +2125,13 @@
       "assignError": "Uploaded, but adding to albums and labels failed: {{message}}",
       "assignErrorGeneric": "Uploaded, but adding to albums and labels failed.",
       "retry": "Retry"
+    },
+    "leave": {
+      "title": "Leave while the upload is running?",
+      "body_one": "{{count}} file is still uploading. Leaving this page stops it, and it will not be in your library.",
+      "body_other": "{{count}} files are still uploading. Leaving this page stops them, and they will not be in your library.",
+      "stay": "Stay here",
+      "confirm": "Leave and stop uploading"
     }
   },
   "share": {

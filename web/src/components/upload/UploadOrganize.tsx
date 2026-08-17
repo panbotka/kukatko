@@ -45,10 +45,14 @@ function labelOption(label: LabelCount): MultiSelectOption {
  * a real album/label when the finished batch is assigned. Empty by default, so
  * an upload with nothing chosen behaves exactly as before.
  *
- * The heading and the sentence saying the choice is **batch-wide** (counted
- * against the queue: "added to all 57 files") belong to the surrounding
- * {@link import('./UploadStep').UploadStep} — this component is the two fields
- * and nothing else, so the step owns its framing in one place.
+ * It is shown inside the *uploading* stage (choosing where the photos belong is
+ * what there is to do while they go up) and again in the *done* stage, where a
+ * batch that ended up in no album says so. Both stages carry their own heading
+ * and framing sentence — this component is the two fields and nothing else.
+ *
+ * The two fields share a row from `md` up and stack below it. That is the only
+ * width-dependent thing in the whole flow: everything else reads the same on a
+ * phone and on a desktop.
  */
 export function UploadOrganize({
   load,

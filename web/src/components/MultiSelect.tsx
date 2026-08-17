@@ -192,12 +192,20 @@ export function MultiSelect({
     }
   }
 
+  // Creating is the one pick that ends the interaction: the name did not exist,
+  // so there is nothing left to choose from the list it was typed into. Close it
+  // and hand focus back, which on a phone is what dismisses the on-screen
+  // keyboard — without that, the list stays up over the keyboard, the query is
+  // blank again, and the whole thing reads as "nothing happened". The new chip
+  // below the field is the confirmation.
   function create() {
     if (onCreate === undefined) {
       return
     }
     setQuery('')
     setActiveIndex(-1)
+    setOpen(false)
+    inputRef.current?.blur()
     onCreate(trimmed)
   }
 
