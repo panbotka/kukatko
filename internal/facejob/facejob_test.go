@@ -32,8 +32,7 @@ func (f *fakePhotoStore) GetByUID(_ context.Context, uid string) (photos.Photo, 
 // recordedDetection captures one RecordFaceDetection call.
 type recordedDetection struct {
 	photoUID string
-	faces    []vectors.Face
-	model    string
+	det      vectors.Detection
 }
 
 // fakeVectorStore is an in-memory VectorStore for unit tests.
@@ -51,12 +50,12 @@ func (f *fakeVectorStore) FacesDetected(_ context.Context, uid string) (bool, er
 
 // RecordFaceDetection records the call and marks the photo detected.
 func (f *fakeVectorStore) RecordFaceDetection(
-	_ context.Context, uid string, faces []vectors.Face, model string,
+	_ context.Context, uid string, det vectors.Detection,
 ) error {
 	if f.recordErr != nil {
 		return f.recordErr
 	}
-	f.recorded = append(f.recorded, recordedDetection{photoUID: uid, faces: faces, model: model})
+	f.recorded = append(f.recorded, recordedDetection{photoUID: uid, det: det})
 	if f.detected == nil {
 		f.detected = make(map[string]bool)
 	}
@@ -69,19 +68,27 @@ func (f *fakeVectorStore) ListPhotosMissingFaces(_ context.Context, _ int) ([]st
 	return append([]string(nil), f.missing...), nil
 }
 
-// fakeSource is an ImageSource serving a fixed payload.
+// fakeSource is an ImageSource serving a fixed payload in a fixed frame. The
+// frame is what a real StorageSource measures on the upright bytes it sends, so a
+// test sets it to the frame it wants the boxes divided by — deliberately unrelated
+// to the photo's stored pair, which must not enter the conversion.
 type fakeSource struct {
-	openErr error
-	opened  int
+	openErr       error
+	opened        int
+	width, height int
 }
 
-// OpenDecodable returns a fixed in-memory reader or openErr.
-func (f *fakeSource) OpenDecodable(_ context.Context, _ photos.Photo) (io.ReadCloser, error) {
+// OpenUpright returns a fixed in-memory reader with the configured frame, or openErr.
+func (f *fakeSource) OpenUpright(_ context.Context, _ photos.Photo) (UprightImage, error) {
 	if f.openErr != nil {
-		return nil, f.openErr
+		return UprightImage{}, f.openErr
 	}
 	f.opened++
-	return io.NopCloser(strings.NewReader("jpeg-bytes")), nil
+	return UprightImage{
+		Reader: io.NopCloser(strings.NewReader("jpeg-bytes")),
+		Width:  f.width,
+		Height: f.height,
+	}, nil
 }
 
 // fakeClient is an embedding.Client returning canned face detections.
@@ -165,7 +172,7 @@ func TestDetect_success(t *testing.T) {
 	client := &fakeClient{model: "buffalo_l", faces: []embedding.Face{
 		detection(0.99, [4]float64{100, 50, 300, 150}),
 	}}
-	src := &fakeSource{}
+	src := &fakeSource{width: 1000, height: 500}
 	svc := newService(t, ps, vs, client, src, &fakeEnqueuer{})
 
 	if err := svc.Detect(context.Background(), "ph1"); err != nil {
@@ -175,10 +182,14 @@ func TestDetect_success(t *testing.T) {
 		t.Fatalf("recorded %d detections, want 1", len(vs.recorded))
 	}
 	rec := vs.recorded[0]
-	if rec.photoUID != "ph1" || rec.model != "buffalo_l" || len(rec.faces) != 1 {
+	if rec.photoUID != "ph1" || rec.det.Model != "buffalo_l" || len(rec.det.Faces) != 1 {
 		t.Fatalf("recorded = %+v, want ph1/buffalo_l/1 face", rec)
 	}
-	face := rec.faces[0]
+	if rec.det.FrameWidth != 1000 || rec.det.FrameHeight != 500 {
+		t.Errorf("recorded frame = %dx%d, want the frame that was sent (1000x500)",
+			rec.det.FrameWidth, rec.det.FrameHeight)
+	}
+	face := rec.det.Faces[0]
 	if face.FaceIndex != 0 || face.DetScore != 0.99 || face.Model != "buffalo_l" {
 		t.Errorf("face metadata = %+v, want index 0 / score 0.99 / buffalo_l", face)
 	}
@@ -197,7 +208,7 @@ func TestDetect_idempotentSkip(t *testing.T) {
 
 	vs := &fakeVectorStore{detected: map[string]bool{"ph1": true}}
 	client := &fakeClient{}
-	src := &fakeSource{}
+	src := &fakeSource{width: 100, height: 100}
 	svc := newService(t, &fakePhotoStore{}, vs, client, src, &fakeEnqueuer{})
 
 	if err := svc.Detect(context.Background(), "ph1"); err != nil {
@@ -229,12 +240,12 @@ func TestDetect_filtersLowScore(t *testing.T) {
 		detection(0.80, [4]float64{0, 0, 10, 10}), // keep
 		detection(0.49, [4]float64{0, 0, 10, 10}), // drop (below 0.5)
 	}}
-	svc := newService(t, ps, vs, client, &fakeSource{}, &fakeEnqueuer{})
+	svc := newService(t, ps, vs, client, &fakeSource{width: 100, height: 100}, &fakeEnqueuer{})
 
 	if err := svc.Detect(context.Background(), "ph1"); err != nil {
 		t.Fatalf("Detect: %v", err)
 	}
-	faces := vs.recorded[0].faces
+	faces := vs.recorded[0].det.Faces
 	if len(faces) != 2 {
 		t.Fatalf("stored %d faces, want 2 after filtering", len(faces))
 	}
@@ -259,14 +270,14 @@ func TestDetect_disabledFilterKeepsAll(t *testing.T) {
 		detection(0.01, [4]float64{0, 0, 10, 10}),
 	}}
 	svc := New(Config{
-		Photos: ps, Vectors: vs, Client: client, Source: &fakeSource{},
+		Photos: ps, Vectors: vs, Client: client, Source: &fakeSource{width: 100, height: 100},
 		Enqueuer: &fakeEnqueuer{}, MinDetScore: -1,
 	})
 
 	if err := svc.Detect(context.Background(), "ph1"); err != nil {
 		t.Fatalf("Detect: %v", err)
 	}
-	if got := len(vs.recorded[0].faces); got != 2 {
+	if got := len(vs.recorded[0].det.Faces); got != 2 {
 		t.Errorf("stored %d faces, want 2 (filter disabled)", got)
 	}
 }
@@ -279,12 +290,12 @@ func TestDetect_noFacesStillRecords(t *testing.T) {
 	ps := &fakePhotoStore{photos: map[string]photos.Photo{"ph1": {UID: "ph1"}}}
 	vs := &fakeVectorStore{}
 	client := &fakeClient{model: "buffalo_l"}
-	svc := newService(t, ps, vs, client, &fakeSource{}, &fakeEnqueuer{})
+	svc := newService(t, ps, vs, client, &fakeSource{width: 800, height: 600}, &fakeEnqueuer{})
 
 	if err := svc.Detect(context.Background(), "ph1"); err != nil {
 		t.Fatalf("Detect: %v", err)
 	}
-	if len(vs.recorded) != 1 || len(vs.recorded[0].faces) != 0 {
+	if len(vs.recorded) != 1 || len(vs.recorded[0].det.Faces) != 0 {
 		t.Fatalf("recorded = %+v, want one zero-face detection", vs.recorded)
 	}
 	if !vs.detected["ph1"] {

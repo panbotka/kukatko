@@ -110,6 +110,27 @@ type Face struct {
 	Orientation int
 }
 
+// Detection is one completed face-detection run over a photo, as recorded by
+// RecordFaceDetection: the faces found (possibly none, which is a result too), the
+// sidecar's model tag, and the frame of the image the detector was given.
+//
+// The frame is part of the record rather than derivable from the photo because it
+// is what the faces' boxes are normalised against. It is in display orientation —
+// the face_detect job rotates before sending, since the sidecar ignores EXIF — so
+// for a quarter-turned photo it is the stored pair exchanged. A zero frame means
+// the caller could not measure one and is stored as NULL, indistinguishable from
+// the detections that predate the columns.
+type Detection struct {
+	// Faces are the faces to store, replacing the photo's previous ones.
+	Faces []Face
+	// Model is the sidecar's face model identifier.
+	Model string
+	// FrameWidth and FrameHeight are the pixel dimensions of the image the detector
+	// saw.
+	FrameWidth  int
+	FrameHeight int
+}
+
 // Match is one image-embedding similarity hit: the photo and its cosine distance
 // to the query vector (smaller is closer).
 type Match struct {

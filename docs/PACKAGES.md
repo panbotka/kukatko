@@ -530,7 +530,12 @@ to `## Package map` in `CLAUDE.md`.
   (idempotent, skips missing ones — thumbnail cleanup on photo purge); sentinels
   `ErrUnknownSize`/`ErrInvalidHash`/`ErrNotCached`;
   `SizeNames()`/`IsValidSize`), `internal/imgconvert/`
-  (HEIC/RAW/video → a decodable JPEG, **shell-out**: `EnsureDecodable(ctx,path)` →
+  (**`Orient(img, orientation) image.Image`** (`orient.go`) is the one implementation of the EXIF
+  orientation pixel transform in the codebase — 2–4 mirror/flip, 5–8 exchange the sides, `<=1` and `>8`
+  are no-ops; `internal/thumb` applies it before rendering and `internal/facejob` before handing an image
+  to the sidecar, which reads no EXIF. Two copies of a mapping this fiddly drift, and a box detected in one
+  frame then divided by another is exactly how faces end up beside faces.
+  HEIC/RAW/video → a decodable JPEG, **shell-out**: `EnsureDecodable(ctx,path)` →
   (path, cleanup, err); **pure-Go passthrough** JPEG/PNG/WebP/**BMP/GIF/TIFF** (animated GIF →
   first frame; the decoders are registered by a blank import in `imgconvert`, `ingest` and `thumb`), **HEIC** via `heif-convert`
   to a temp JPEG, **RAW** (cr2/cr3/nef/nrw/arw/srf/dng/raf/orf/rw2/pef/srw/3fr/iiq/x3f/kdc/mrw/mef)
@@ -613,7 +618,12 @@ to `## Package map` in `CLAUDE.md`.
   `displayFrame`, `facejob.NormalizeBBox` — reads `photos.file_width`/`file_height` as the bytes on disk with
   `file_orientation` still to be applied. A source catalogue reported the opposite (already-oriented
   dimensions for 5–8), so the retired importers de-oriented on the way in; without it the pair contradicted
-  itself and every consumer rotated a second time. The transform is **its own inverse**), `internal/phash/`
+  itself and every consumer rotated a second time. The transform is **its own inverse**.
+  `FileOrientation(path) int` (`orientation.go`) reads **only** the orientation tag, pure-Go and with no
+  shell-out, returning 1–8 or 0 when the file says nothing. It answers the one question a caller has about
+  bytes it is about to hand to something that ignores EXIF — does this still need turning? — and it has to be
+  asked of those bytes, not of the catalogue: an `imgconvert` intermediate may already carry the rotation in
+  its pixels, and applying the original's tag on top would turn the picture twice), `internal/phash/`
   (perceptual hashes, **CGO-free**: `Compute(img) Hashes{Phash,Dhash int64}` — **pHash** via
   a 2-D DCT 32×32 → low-freq 8×8 block with a median-without-DC threshold, **dHash** gradient 9×8; `Distance(a,b)`
   = Hamming distance via `bits.OnesCount64`; near-dup = a small distance), `internal/ingest/`
@@ -1082,11 +1092,23 @@ to `## Package map` in `CLAUDE.md`.
   O(n²) scan; `maxDist<=0`→no pairs; a read-only tx with `hnsw.ef_search`) — the basis of
   `internal/duplicates`; **face-detection tracking** in the `face_detections` table (migration
   `0009_face_detections.sql`: `photo_uid PK` FK `ON DELETE CASCADE`, `face_count`, `model`,
-  `detected_at`) — because `faces` can have zero rows, it is the only way to distinguish a photo
-  with no faces from an unprocessed one; `RecordFaceDetection(uid,faces,model)` (atomically replaces the photo's
+  `detected_at`, + `detect_width`/`detect_height` from `0061_face_detection_frame.sql`) — because `faces`
+  can have zero rows, it is the only way to distinguish a photo
+  with no faces from an unprocessed one; `RecordFaceDetection(uid, Detection{Faces,Model,FrameWidth,FrameHeight})`
+  (atomically replaces the photo's
   faces **and** upserts the `face_detections` row — even for zero faces; shares the `replaceFaces` tx
   helper with `SaveFaces`), `FacesDetected(uid)` (does a row exist?), `ListPhotosMissingFaces(limit)`
-  (uids of photos with no `face_detections` row, like `ListPhotosMissingEmbedding`); FK
+  (uids of photos with no `face_detections` row, like `ListPhotosMissingEmbedding`);
+  **the detection frame** (`Detection.FrameWidth`/`FrameHeight` → `detect_width`/`detect_height`, a
+  non-positive value stored as NULL) is the pixel size of the image the detector actually **saw**, in display
+  orientation because `facejob` rotates before sending. It turns "which frame is this bbox normalised against?"
+  from an assumption into evidence, and gives the sideways defect a fingerprint (`sideways.go`):
+  `ListSidewaysDetections()` = quarter-turned, non-square photos whose detection has **no** recorded frame
+  (everything written before `0061`, all of which ran sideways) or a frame equal to the photo's raw pair, newest
+  first — read-only, the dry run of `maintenance repair --sideways-faces`; `ClearFaceDetection(uid)` deletes the
+  detection record (keeping the face rows, which the next detection replaces wholesale) so the photo counts as
+  unprocessed and is detected again. A detection recorded against the display frame never matches, so the
+  repair converges and re-runs as a no-op; FK
   `ON DELETE CASCADE` — deleting a photo
   deletes embeddings, faces and face_detections, fixing the orphan gap the previous system had;
   **orientation geometry** (`geometry.go` + `facerepair.go`), the faces half of
@@ -1290,14 +1312,26 @@ to `## Package map` in `CLAUDE.md`.
   `PhotoStore`/`VectorStore`/`ImageSource`/`Enqueuer`+`embedding.Client`: `Service` =
   `New(Config{Photos,Vectors,Client,Source,Enqueuer,OfflineRetryDelay,MinDetScore})`; **the
   `face_detect` handler** `Handle`(=`worker.HandlerFunc`, registered in `serve`) → from the payload
-  `{"photo_uid"}` loads the photo, opens the **full-resolution decodable original** via
-  `StorageSource` (= `storage.Materialize` + `imgconvert.EnsureDecodable` behind the interface
+  `{"photo_uid"}` loads the photo, opens the **full-resolution UPRIGHT original** via
+  `StorageSource.OpenUpright` (= `storage.Materialize` + `imgconvert.EnsureDecodable` behind the interface
   `Materializer`, HEIC/RAW/video are converted, `Close` frees the temp and the materialized original),
   sends `FaceEmbeddings` to the sidecar (512-dim + pixel bbox + det_score) and
-  stores it via `vectors.RecordFaceDetection`; the original (not the thumbnail) because the sidecar (InsightFace)
-  rotates by EXIF itself and returns the bbox in display pixels; **bbox conversion** `normalizeBBox` pixel
-  `[x1,y1,x2,y2]` → normalized `[x,y,w,h]` (0..1) by the photo dimensions and **EXIF orientation** (swap of
-  width/height for orientations 5–8), carried over unchanged; **det_score filter**
+  stores it via `vectors.RecordFaceDetection(uid, vectors.Detection{Faces,Model,FrameWidth,FrameHeight})`;
+  the original (not the thumbnail) so the detector sees every pixel there is.
+  **The sidecar does NOT apply EXIF** — measured against the running service: one production iPhone original
+  with `orientation=6` returned 2 misshapen boxes as it lay and 6 face-shaped ones pre-rotated, a second
+  returned 0 against 2 — so **this package owns the rotation**: `OpenUpright` reads the orientation tag of
+  **the file it is about to send** (`exif.FileOrientation`, never the catalogue — an `imgconvert` copy may
+  already have the rotation in its pixels), and for a tag > 1 decodes, applies `imgconvert.Orient` and
+  re-encodes a JPEG with no EXIF at all (`NewStorageSource(storage, maxPixels)`, cap = `thumb.max_pixels`
+  via `imgconvert.EnforcePixelBound`, over the cap = a visible job failure, not a sideways send); a file with
+  no tag is streamed byte-for-byte, so the common case pays nothing. It returns `UprightImage{Reader,Width,
+  Height}` whose frame is **measured on those very bytes**, and **bbox conversion**
+  `NormalizeBBox(bbox, frameWidth, frameHeight)` divides pixel `[x1,y1,x2,y2]` → normalized `[x,y,w,h]`
+  (0..1) by exactly that frame — no orientation enters the conversion, which is what makes the old defect
+  (divide by the stored pair swapped, while the pixels were in the raw frame) unrepresentable; the photo's
+  stored pair/orientation are still copied onto the face row as the render hints they always were;
+  **det_score filter**
   (`faces.min_det_score`, default 0.5, `<=0` disables) drops weak detections, reindexes the survivors
   contiguously; **idempotent** (a photo with a `face_detections` row is skipped; zero faces is still
   recorded), **box offline** → `worker.RetryAfter(5 min)`; `BackfillFaces(ctx)` enqueues
@@ -2622,10 +2656,10 @@ to `## Package map` in `CLAUDE.md`.
   `PhotoCatalog` (`CountPhotos`/`ListPrimaryFiles`/`ListFilePaths`/`ListPhotosMissingPhash`/
   `ListDimensionMismatches`/`RepairDimensions`,
   satisfied by `photos.Store`)/`VectorCatalog` (`ListPhotosMissingEmbedding`/`ListPhotosMissingFaces`/
-  `PlanFaceBoxRepair`/`ApplyFaceBoxRepair`/`ListDuplicateFaceMarkers`,
-  `vectors.Store`)/`OriginalStore` (`Stat`, `storage.Storage`)/`DiskScanner` (`List`, an adapter over
+  `PlanFaceBoxRepair`/`ApplyFaceBoxRepair`/`ListDuplicateFaceMarkers`/`ListSidewaysDetections`/
+  `ClearFaceDetection`, `vectors.Store`)/`OriginalStore` (`Stat`, `storage.Storage`)/`DiskScanner` (`List`, an adapter over
   `backup.DiskOriginals`)/`ThumbChecker` (`HasThumbnail`, `NewThumbCache` over `thumb.Thumbnailer`)/
-  `Enqueuer` (`EnqueueThumbnail`, `jobs.Enqueuer`)/`EmbedBackfiller` (`embedjob.Service`)/
+  `Enqueuer` (`EnqueueThumbnail`+`EnqueueFaceDetect`, `jobs.Enqueuer`)/`EmbedBackfiller` (`embedjob.Service`)/
   `FaceBackfiller` (`facejob.Service`)/`FaceCache` (`ClearSurplusLinks`, `facematch.Service` — which owns
   the face↔marker pairing rules the cache has to agree with)/`OrphanImporter` (optional, nil turns the
   orphan import off) →
@@ -2633,11 +2667,12 @@ to `## Package map` in `CLAUDE.md`.
   (panics on a nil mandatory collaborator; default `SampleLimit` 20); **`Scan(ctx)`** (read-only) returns
   `Report{Photos,FilesInDB,OriginalsOnDisk,MissingOriginals,OrphanFiles,MissingThumbnails,
   MissingEmbeddings,MissingFaces,MissingPhashes,TransposedDimensions,TransposedFaceBoxes,
-  DuplicateFaceMarkers}` — each class is a
+  DuplicateFaceMarkers,SidewaysFaceDetections}` — each class is a
   `Finding{Count,Samples}`
   (a count + a limited sample of identifiers); `representativeThumbSize`=`tile_224` is the proxy for the presence of
   thumbnails, an orphan = a file on disk with no `photo_files.file_path` (the `orphanKeys` set-diff), `Report.Clean()`;
-  **`Repair(ctx,RepairOptions{Thumbnails,Embeddings,Faces,Phashes,ImportOrphans,Dimensions,FaceMarkers})`** (each opt-in,
+  **`Repair(ctx,RepairOptions{Thumbnails,Embeddings,Faces,Phashes,ImportOrphans,Dimensions,FaceMarkers,
+  SidewaysFaces})`** (each opt-in,
   idempotent, in a fixed order) → `RepairResult` with the scheduling counts: thumbnails/phashes enqueue
   `thumbnail` jobs (`EnqueueThumbnail`), embeddings/faces call the backfill, the orphan import goes through the
   upload pipeline (a per-orphan failure is counted without aborting); `ErrOrphanImportUnavailable` when the
@@ -2658,7 +2693,16 @@ to `## Package map` in `CLAUDE.md`.
   which re-derives that photo's exclusive pairing and clears the cached link of every face claiming a marker
   another face won → `FaceLinksCleared`. It only ever nulls three columns on a face row: no face and no marker
   is deleted, and a marker with a single face link is untouched — the genuinely **duplicated markers** an import
-  created are a different problem and must not be swept up here), `internal/reset/`
+  created are a different problem and must not be swept up here.
+  **`SidewaysFaces`** is the repair for the quarter-turned photos the sidecar detected **on their side** (it reads
+  no EXIF and `facejob` used to send the original untouched): `vectors.ListSidewaysDetections` is its dry run
+  (`SidewaysFaceDetections`), and per photo it clears the detection record and enqueues `face_detect`
+  (`ClearFaceDetection` → `EnqueueFaceDetect` → `SidewaysFacesEnqueued`), in that order — clearing is what makes
+  the photo eligible again, since the job would otherwise take its idempotent skip. It cannot be a coordinate fix
+  the way `Dimensions` is: a detector looking at a sideways picture also **missed** faces on it, and no arithmetic
+  recovers a face that was never found. The existing face rows stay until the new detection replaces them
+  wholesale (the sidecar's box is usually asleep, and boxes in the wrong frame still beat none while the queue
+  waits), and a photo re-detected upright drops out of the scan, so a re-run is a no-op), `internal/reset/`
   (**the guarded library wipe** — what `kukatko maintenance reset` runs and what phase 1 of
   [`docs/MIGRATION_PLAN.md`](MIGRATION_PLAN.md) had nothing to run before: it empties every catalogue table and
   every object the store owns so the library can be re-imported from scratch. The deployment has **no S3 backup**

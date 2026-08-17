@@ -37,12 +37,16 @@ type RepairOptions struct {
 	// the same marker, the pairing is re-derived and every face but the one it
 	// awards the marker to has its cached link cleared.
 	FaceMarkers bool `json:"face_markers"`
+	// SidewaysFaces re-detects the quarter-turned photos whose face detection ran on
+	// a sideways image: their detection record is cleared and a face_detect job
+	// enqueued, so the fixed job runs on an upright image.
+	SidewaysFaces bool `json:"sideways_faces"`
 }
 
 // Any reports whether at least one repair is selected.
 func (o RepairOptions) Any() bool {
 	return o.Thumbnails || o.Embeddings || o.Faces || o.Phashes ||
-		o.ImportOrphans || o.Dimensions || o.FaceMarkers
+		o.ImportOrphans || o.Dimensions || o.FaceMarkers || o.SidewaysFaces
 }
 
 // RepairResult reports what each selected repair scheduled or did. Enqueue counts
@@ -76,6 +80,10 @@ type RepairResult struct {
 	// FaceLinksCleared is the number of face rows whose surplus claim on a marker
 	// another face won was cleared.
 	FaceLinksCleared int `json:"face_links_cleared"`
+	// SidewaysFacesEnqueued is the number of quarter-turned photos whose sideways
+	// detection was cleared and re-detection scheduled. The jobs wait in the queue
+	// while the sidecar's box sleeps, so this counts photos scheduled, not re-detected.
+	SidewaysFacesEnqueued int `json:"sideways_faces_enqueued"`
 }
 
 // Repair runs the selected repairs and returns what each scheduled or did. It is
@@ -106,7 +114,48 @@ func (s *Service) Repair(ctx context.Context, opts RepairOptions) (RepairResult,
 	if err := s.repairFaceMarkers(ctx, opts, &res); err != nil {
 		return res, err
 	}
+	if err := s.repairSidewaysFaces(ctx, opts, &res); err != nil {
+		return res, err
+	}
 	return res, nil
+}
+
+// repairSidewaysFaces re-detects the quarter-turned photos whose face detection ran
+// on a sideways image, when that repair is selected.
+//
+// Per photo it clears the detection record and enqueues a face_detect job, in that
+// order: clearing first is what makes the photo eligible again (the job takes an
+// idempotent skip on a photo already recorded as detected), and the enqueue is a
+// no-op when a job is already queued. The photo's existing face rows are left
+// alone until the new detection replaces them wholesale — the sidecar lives on a
+// box that is usually asleep, and boxes that are known to be in the wrong frame
+// are still better than none while the queue waits.
+//
+// Unlike `repair --dimensions` this cannot be a coordinate fix: a detector that saw
+// a sideways picture also missed faces on it, and no arithmetic recovers a face
+// that was never found. Re-running is harmless — a photo re-detected upright no
+// longer matches the scan.
+func (s *Service) repairSidewaysFaces(ctx context.Context, opts RepairOptions, res *RepairResult) error {
+	if !opts.SidewaysFaces {
+		return nil
+	}
+	uids, err := s.vectors.ListSidewaysDetections(ctx)
+	if err != nil {
+		return fmt.Errorf("maintenance: listing sideways face detections: %w", err)
+	}
+	for _, uid := range uids {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return fmt.Errorf("maintenance: sideways-face repair interrupted: %w", ctxErr)
+		}
+		if _, clearErr := s.vectors.ClearFaceDetection(ctx, uid); clearErr != nil {
+			return fmt.Errorf("maintenance: clearing sideways detection of %s: %w", uid, clearErr)
+		}
+		if err := s.enqueuer.EnqueueFaceDetect(ctx, uid); err != nil {
+			return fmt.Errorf("maintenance: enqueuing re-detection for %s: %w", uid, err)
+		}
+		res.SidewaysFacesEnqueued++
+	}
+	return nil
 }
 
 // repairFaceMarkers clears the surplus face↔marker links reported by the scan,

@@ -51,7 +51,8 @@ configuration key both here **and** into `config.example.yaml`.
   **`maintenance nameless-subjects`** (reports — and with `--apply --undo-file` detaches — subjects whose name
   identifies nobody, the importer-minted catch-all; dry run by default, reversible via `--undo`; see below) and
   `maintenance repair` with the flags
-  `--thumbnails`/`--embeddings`/`--faces`/`--phashes`/`--import-orphans`/`--dimensions`/`--face-markers`
+  `--thumbnails`/`--embeddings`/`--faces`/`--phashes`/`--import-orphans`/`--dimensions`/`--face-markers`/
+  `--sideways-faces`
   (each opt-in; thumbnails/phashes enqueue `thumbnail` jobs drained by a running server's worker,
   embeddings/faces backfill, orphan import synchronously via the upload pipeline; `--dimensions` writes the
   catalogue directly — it rewrites the pixel dimensions of quarter-turned photos whose columns hold the
@@ -73,7 +74,16 @@ configuration key both here **and** into `config.example.yaml`.
   line counts the markers more than one face row still caches, sampled by marker uid — and it only ever nulls
   `marker_uid`/`subject_uid`/`subject_name` on the losing faces: no face row and no marker is deleted, and a
   marker with a single face link is left alone, so genuinely duplicated markers from an import are not swept
-  up by it. A re-run is a no-op;
+  up by it. A re-run is a no-op.
+  `--sideways-faces` is the third face repair and the only one that re-runs detection instead of moving
+  numbers: the embeddings sidecar reads no EXIF, so a quarter-turned photo sent as it lies on disk was detected
+  **on its side** — the boxes it returned are in a frame nobody displays and the faces it missed on a turned
+  picture are simply not there, which no coordinate math recovers. It clears the `face_detections` record of
+  every quarter-turned photo whose recorded detection frame is not the displayed one and enqueues `face_detect`
+  for it, printing `sideways faces re-detected=N`; the jobs **wait in the queue while the sidecar's box sleeps**,
+  so N is photos scheduled, not photos re-detected. Its **dry run is `maintenance scan`** (the `sideways faces`
+  line and samples), the photos' existing face rows are kept until the new detection replaces them wholesale,
+  and a photo re-detected upright drops out of the finding for good, so a re-run is a no-op;
   a no-op without any flag;
   the **retention purge of old audit logs** is separate, only via HTTP/UI, not the CLI — the maintainer calls
   `POST /api/v1/maintenance/audit/purge` `{older_than_days}` (`internal/maintenanceapi`), which deletes audit
@@ -672,7 +682,9 @@ long-running and belong on the machine where the instance runs — so they remai
   rejected (`imgconvert.ErrImageTooLarge`) before its RGBA bitmap is allocated, so a decompression
   bomb or an enormous panorama fails its thumbnail/pHash job instead of OOMing a worker on the shared
   box (a 30000×30000 image is ~3.6 GB; 200 MP is ~800 MB peak at ~4 bytes/pixel). The same cap guards
-  both thumbnail generation **and** the ingest-time perceptual-hash decode; `0`/negative disables it.
+  thumbnail generation, the ingest-time perceptual-hash decode **and** the face detector's upright rotation
+  (`facejob` rasterizes an original that still carries an EXIF orientation in order to turn it before sending it
+  to the sidecar, which reads no EXIF); `0`/negative disables it.
   `KUKATKO_THUMB_ENGINE`/`_VIPS_BINARY`/`_CONCURRENCY`/`_MAX_PIXELS`. `serve` logs the active engine +
   warns when `vips` is missing on PATH. See `docs/PERF.md`.
 - **Video keys (`video.*`, `internal/config`):** `transcode` (bool, **default false**) — enables

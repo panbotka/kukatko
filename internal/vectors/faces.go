@@ -113,24 +113,28 @@ func (s *Store) SaveFaces(ctx context.Context, photoUID string, faces []Face) er
 }
 
 // upsertFaceDetectionSQL records (or refreshes) the face-detection event for a
-// photo, overwriting the previous count/model/timestamp on re-detection.
+// photo, overwriting the previous count/model/frame/timestamp on re-detection.
+// Overwriting the frame is what lets a re-detection retire a row recorded against
+// a sideways one.
 const upsertFaceDetectionSQL = `
-INSERT INTO face_detections (photo_uid, face_count, model, detected_at)
-VALUES ($1, $2, $3, now())
+INSERT INTO face_detections (photo_uid, face_count, model, detect_width, detect_height, detected_at)
+VALUES ($1, $2, $3, $4, $5, now())
 ON CONFLICT (photo_uid) DO UPDATE SET
-    face_count  = EXCLUDED.face_count,
-    model       = EXCLUDED.model,
-    detected_at = now()`
+    face_count    = EXCLUDED.face_count,
+    model         = EXCLUDED.model,
+    detect_width  = EXCLUDED.detect_width,
+    detect_height = EXCLUDED.detect_height,
+    detected_at   = now()`
 
 // RecordFaceDetection stores the detected faces for photoUID and marks the photo
 // as face-detected in one transaction: existing faces are replaced and a
-// face_detections row is upserted with the face count and model. Recording the
-// detection even when faces is empty is what lets a photo with no faces be told
-// apart from one that was never processed, so the job stays idempotent and the
-// backfill skips it. Vectors are validated against FaceDim (ErrDimMismatch) and a
-// duplicate face_index yields ErrFaceIndexTaken.
-func (s *Store) RecordFaceDetection(ctx context.Context, photoUID string, faces []Face, model string) error {
-	if err := validateFaceDims(faces); err != nil {
+// face_detections row is upserted with the face count, the model and the frame the
+// detector saw. Recording the detection even when det.Faces is empty is what lets a
+// photo with no faces be told apart from one that was never processed, so the job
+// stays idempotent and the backfill skips it. Vectors are validated against FaceDim
+// (ErrDimMismatch) and a duplicate face_index yields ErrFaceIndexTaken.
+func (s *Store) RecordFaceDetection(ctx context.Context, photoUID string, det Detection) error {
+	if err := validateFaceDims(det.Faces); err != nil {
 		return err
 	}
 	tx, err := s.pool.Begin(ctx)
@@ -139,10 +143,11 @@ func (s *Store) RecordFaceDetection(ctx context.Context, photoUID string, faces 
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	if err := replaceFaces(ctx, tx, photoUID, faces); err != nil {
+	if err := replaceFaces(ctx, tx, photoUID, det.Faces); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, upsertFaceDetectionSQL, photoUID, len(faces), model); err != nil {
+	if _, err := tx.Exec(ctx, upsertFaceDetectionSQL, photoUID, len(det.Faces), det.Model,
+		positiveOrNil(det.FrameWidth), positiveOrNil(det.FrameHeight)); err != nil {
 		return fmt.Errorf("recording face detection for %s: %w", photoUID, err)
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -181,6 +186,16 @@ ORDER BY p.created_at DESC, p.uid DESC%s`
 // backfill, which enqueues a face_detect job per returned uid.
 func (s *Store) ListPhotosMissingFaces(ctx context.Context, limit int) ([]string, error) {
 	return s.queryPhotoUIDs(ctx, listMissingFacesSQL, limit)
+}
+
+// positiveOrNil returns a pointer to n, or nil when n is not a usable pixel
+// dimension. A frame the caller could not measure is therefore stored as NULL —
+// "not recorded" — rather than as a zero that would read like a measurement.
+func positiveOrNil(n int) *int {
+	if n <= 0 {
+		return nil
+	}
+	return &n
 }
 
 // validateFaceDims returns ErrDimMismatch if any face's vector does not have

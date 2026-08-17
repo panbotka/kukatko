@@ -58,6 +58,10 @@ type fakeVectors struct {
 	// duplicateMarkers are the markers cached on more than one face, which the scan
 	// reports and the face-marker repair re-matches.
 	duplicateMarkers []vectors.DuplicateFaceMarker
+	// sideways are the quarter-turned photos whose face detection ran on a sideways
+	// image; clearedDetections records the ones the repair reset.
+	sideways          []string
+	clearedDetections []string
 }
 
 func (f *fakeVectors) ListPhotosMissingEmbedding(context.Context, int) ([]string, error) {
@@ -85,6 +89,13 @@ func (f *fakeVectors) ApplyFaceBoxRepair(
 }
 func (f *fakeVectors) ListDuplicateFaceMarkers(context.Context) ([]vectors.DuplicateFaceMarker, error) {
 	return f.duplicateMarkers, nil
+}
+func (f *fakeVectors) ListSidewaysDetections(context.Context) ([]string, error) {
+	return f.sideways, nil
+}
+func (f *fakeVectors) ClearFaceDetection(_ context.Context, photoUID string) (bool, error) {
+	f.clearedDetections = append(f.clearedDetections, photoUID)
+	return true, nil
 }
 
 // fakeFaceCache records the photos whose surplus face↔marker links were cleared
@@ -120,11 +131,20 @@ type fakeThumbs struct{ have map[string]bool }
 
 func (f fakeThumbs) HasThumbnail(hash string) (bool, error) { return f.have[hash], nil }
 
-// fakeEnqueuer records the photo uids it was asked to schedule thumbnail jobs for.
-type fakeEnqueuer struct{ thumbnail []string }
+// fakeEnqueuer records the photo uids it was asked to schedule jobs for, per job
+// type.
+type fakeEnqueuer struct {
+	thumbnail  []string
+	faceDetect []string
+}
 
 func (f *fakeEnqueuer) EnqueueThumbnail(_ context.Context, uid string) error {
 	f.thumbnail = append(f.thumbnail, uid)
+	return nil
+}
+
+func (f *fakeEnqueuer) EnqueueFaceDetect(_ context.Context, uid string) error {
+	f.faceDetect = append(f.faceDetect, uid)
 	return nil
 }
 

@@ -17,6 +17,11 @@ import (
 // face-detection backfill. enqueuer is the shared queue adapter the backfill
 // schedules jobs through; vectorStore and client are shared with the embedding
 // subsystem.
+//
+// thumb.max_pixels is passed through as the decode ceiling: an image that still
+// carries an EXIF orientation has to be rasterized to be turned upright before the
+// sidecar (which ignores EXIF) sees it, and that is the same pure-Go decode the cap
+// already governs for thumbnails and pHashes.
 func buildFaceService(
 	cfg *config.Config, db *database.DB, enqueuer *jobs.Enqueuer,
 	vectorStore *vectors.Store, client embedding.Client,
@@ -29,7 +34,7 @@ func buildFaceService(
 		Photos:      photos.NewStore(db.Pool()),
 		Vectors:     vectorStore,
 		Client:      client,
-		Source:      facejob.NewStorageSource(store),
+		Source:      facejob.NewStorageSource(store, cfg.Thumb.MaxPixels),
 		Enqueuer:    enqueuer,
 		MinDetScore: cfg.Faces.MinDetScore,
 	})

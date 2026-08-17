@@ -1,12 +1,17 @@
 // Package facejob wires face detection into Kukátko's background job system.
 //
-// Its centrepiece is the face_detect job handler: given a photo uid it opens a
-// decodable copy of the original image, asks the embeddings sidecar to detect and
-// embed faces, converts each pixel bounding box to a normalized display-space box
-// and stores the faces. The full-resolution original is sent (not a downscaled
-// preview) because the sidecar auto-rotates by EXIF and reports pixel boxes in
-// display space; normalizing those against the photo's stored dimensions only
-// lines up when the detected image and the stored dimensions share a scale.
+// Its centrepiece is the face_detect job handler: given a photo uid it opens an
+// UPRIGHT copy of the original image, asks the embeddings sidecar to detect and
+// embed faces, normalizes each returned pixel box against the frame of the very
+// image it sent, and stores the faces together with that frame.
+//
+// The upright part is the invariant of this package, not a detail: the sidecar
+// does not read EXIF, so an image sent with its orientation tag unapplied is
+// detected sideways — faces are missed outright and the boxes that do come back
+// are in a frame nobody displays. This package therefore owns the rotation
+// (StorageSource.OpenUpright) and normalizes against the frame it measured on the
+// bytes it sent (UprightImage), which leaves no orientation reasoning anywhere in
+// the conversion. The full-resolution image is sent, not a downscaled preview.
 //
 // The handler is idempotent — a photo whose detection has already been recorded
 // is skipped without calling the sidecar — and offline-aware: when the box is
@@ -24,7 +29,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"time"
 
 	"github.com/panbotka/kukatko/internal/embedding"
@@ -60,19 +64,20 @@ type VectorStore interface {
 	// the photo (used for the idempotent skip).
 	FacesDetected(ctx context.Context, photoUID string) (bool, error)
 	// RecordFaceDetection stores the detected faces and marks the photo processed
-	// in one transaction.
-	RecordFaceDetection(ctx context.Context, photoUID string, faces []vectors.Face, model string) error
+	// in one transaction, recording the frame the detector saw along with them.
+	RecordFaceDetection(ctx context.Context, photoUID string, det vectors.Detection) error
 	// ListPhotosMissingFaces returns uids of non-archived photos that have never
 	// had face detection run (limit <= 0 returns all).
 	ListPhotosMissingFaces(ctx context.Context, limit int) ([]string, error)
 }
 
-// ImageSource opens a decodable copy of a photo's original image. It is satisfied
-// by StorageSource, which converts HEIC/RAW/video as needed.
+// ImageSource opens an upright copy of a photo's original image. It is satisfied
+// by StorageSource, which converts HEIC/RAW/video and rotates as needed.
 type ImageSource interface {
-	// OpenDecodable opens a JPEG/PNG/WebP stream for photo. The caller owns the
-	// returned reader and must close it.
-	OpenDecodable(ctx context.Context, photo photos.Photo) (io.ReadCloser, error)
+	// OpenUpright opens a JPEG/PNG/WebP stream for photo whose pixels are already in
+	// display orientation, together with the frame those pixels measure. The caller
+	// owns the returned reader and must close it.
+	OpenUpright(ctx context.Context, photo photos.Photo) (UprightImage, error)
 }
 
 // Enqueuer schedules face_detect jobs for the backfill. It is satisfied by
@@ -92,7 +97,7 @@ type Config struct {
 	Vectors VectorStore
 	// Client is the embeddings sidecar client.
 	Client embedding.Client
-	// Source opens the decodable original sent to the sidecar.
+	// Source opens the upright original sent to the sidecar.
 	Source ImageSource
 	// Enqueuer schedules backfill jobs.
 	Enqueuer Enqueuer
@@ -183,7 +188,7 @@ func (s *Service) Detect(ctx context.Context, photoUID string) error {
 		return fmt.Errorf("facejob: loading photo %s: %w", photoUID, err)
 	}
 
-	faces, model, err := s.detectFaces(ctx, photo)
+	detection, err := s.detectFaces(ctx, photo)
 	if err != nil {
 		if embedding.IsUnavailable(err) {
 			// RetryAfter is our own worker control-flow signal, not a foreign error
@@ -193,41 +198,64 @@ func (s *Service) Detect(ctx context.Context, photoUID string) error {
 		return err
 	}
 
-	stored := s.buildFaces(photo, faces, model)
-	if err := s.vectors.RecordFaceDetection(ctx, photoUID, stored, model); err != nil {
+	if err := s.vectors.RecordFaceDetection(ctx, photoUID, vectors.Detection{
+		Faces:       s.buildFaces(photo, detection),
+		Model:       detection.model,
+		FrameWidth:  detection.frameWidth,
+		FrameHeight: detection.frameHeight,
+	}); err != nil {
 		return fmt.Errorf("facejob: recording faces for %s: %w", photoUID, err)
 	}
 	return nil
 }
 
-// detectFaces opens the photo's decodable original and streams it to the sidecar,
-// returning the detected faces and the sidecar's model tag. The sidecar error
-// (including the offline ErrUnavailable) is returned wrapped so callers can
-// classify it with embedding.IsUnavailable.
-func (s *Service) detectFaces(
-	ctx context.Context, photo photos.Photo,
-) (faces []embedding.Face, model string, err error) {
-	reader, err := s.source.OpenDecodable(ctx, photo)
-	if err != nil {
-		return nil, "", fmt.Errorf("facejob: opening image for %s: %w", photo.UID, err)
-	}
-	defer func() { _ = reader.Close() }()
+// detectionResult is one completed sidecar call: the faces it returned, its model tag
+// and the frame of the image it was given. The frame travels with the faces
+// because every box in them is in it — it is what the boxes are normalized
+// against and what is recorded alongside them, and separating the two is what
+// made the boxes wrong in the first place.
+type detectionResult struct {
+	faces                   []embedding.Face
+	model                   string
+	frameWidth, frameHeight int
+}
 
-	faces, model, err = s.client.FaceEmbeddings(ctx, reader)
+// detectFaces opens the photo's upright original and streams it to the sidecar,
+// returning the detections together with the frame that was sent. The sidecar
+// error (including the offline ErrUnavailable) is returned wrapped so callers can
+// classify it with embedding.IsUnavailable.
+func (s *Service) detectFaces(ctx context.Context, photo photos.Photo) (detectionResult, error) {
+	upright, err := s.source.OpenUpright(ctx, photo)
 	if err != nil {
-		return nil, "", fmt.Errorf("facejob: detecting faces in %s: %w", photo.UID, err)
+		return detectionResult{}, fmt.Errorf("facejob: opening image for %s: %w", photo.UID, err)
 	}
-	return faces, model, nil
+	defer func() { _ = upright.Reader.Close() }()
+
+	faces, model, err := s.client.FaceEmbeddings(ctx, upright.Reader)
+	if err != nil {
+		return detectionResult{}, fmt.Errorf("facejob: detecting faces in %s: %w", photo.UID, err)
+	}
+	return detectionResult{
+		faces:       faces,
+		model:       model,
+		frameWidth:  upright.Width,
+		frameHeight: upright.Height,
+	}, nil
 }
 
 // buildFaces converts the sidecar's detections into vectors.Face rows: it drops
 // faces below the configured det_score floor, normalizes each pixel bounding box
-// to display space using the photo's dimensions and EXIF orientation, and assigns
-// contiguous face indexes so filtered gaps never collide on the UNIQUE
-// (photo_uid, face_index) constraint.
-func (s *Service) buildFaces(photo photos.Photo, detected []embedding.Face, model string) []vectors.Face {
-	out := make([]vectors.Face, 0, len(detected))
-	for _, f := range detected {
+// against the frame of the image that was sent, and assigns contiguous face
+// indexes so filtered gaps never collide on the UNIQUE (photo_uid, face_index)
+// constraint.
+//
+// The box is divided by the detection's own frame; the photo's stored pair and
+// orientation are only copied onto the row as the render hints they have always
+// been (raw dimensions, raw tag — see vectors.Face). Keeping the two roles apart
+// is what this signature exists for: mixing them is what moved the boxes.
+func (s *Service) buildFaces(photo photos.Photo, det detectionResult) []vectors.Face {
+	out := make([]vectors.Face, 0, len(det.faces))
+	for _, f := range det.faces {
 		if f.DetScore < s.minDetScore {
 			continue
 		}
@@ -235,9 +263,9 @@ func (s *Service) buildFaces(photo photos.Photo, detected []embedding.Face, mode
 			PhotoUID:    photo.UID,
 			FaceIndex:   len(out),
 			Vector:      f.Embedding,
-			BBox:        NormalizeBBox(f.BBox, photo.FileWidth, photo.FileHeight, photo.FileOrientation),
+			BBox:        NormalizeBBox(f.BBox, det.frameWidth, det.frameHeight),
 			DetScore:    f.DetScore,
-			Model:       model,
+			Model:       det.model,
 			PhotoWidth:  photo.FileWidth,
 			PhotoHeight: photo.FileHeight,
 			Orientation: photo.FileOrientation,
