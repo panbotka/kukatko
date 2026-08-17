@@ -70,6 +70,47 @@ func TestIsSupportedFormat(t *testing.T) {
 	}
 }
 
+// TestIsRAWName covers every vendor spelling the callers actually meet — a bare
+// file name, a whole path, mixed case — plus the non-RAW media that must not be
+// mistaken for one (a JPEG, a HEIC, a video, a name with no extension at all).
+func TestIsRAWName(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		want bool
+	}{
+		{"IMG_0001.CR2", true},
+		{"IMG_0001.cr3", true},
+		{"shot.nef", true},
+		{"shot.arw", true},
+		{"shot.dng", true},
+		{"shot.raf", true},
+		{"2026/08/deadbeef.rw2", true},
+		{"holiday.jpg", false},
+		{"holiday.jpeg", false},
+		{"phone.heic", false},
+		{"clip.mp4", false},
+		{"README", false},
+		{"", false},
+	}
+	for _, tc := range tests {
+		if got := IsRAWName(tc.name); got != tc.want {
+			t.Errorf("IsRAWName(%q) = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestIsRAWName_matchesRAWExtensions pins the name check to the one RAW list, so
+// a vendor added to extFormats cannot start answering false here.
+func TestIsRAWName_matchesRAWExtensions(t *testing.T) {
+	t.Parallel()
+	for _, ext := range RAWExtensions() {
+		if !IsRAWName("photo." + ext) {
+			t.Errorf("IsRAWName(%q) = false, want true for a listed RAW extension", "photo."+ext)
+		}
+	}
+}
+
 // TestDetectFormat exercises extension/magic agreement, magic overriding a wrong
 // extension (including a JPEG misnamed .dng), and RAW detection falling through to
 // the extension when the magic bytes match nothing recognised.

@@ -254,6 +254,7 @@ func passthroughMiddleware(next http.Handler) http.Handler {
 //	GET    /photos/{uid}/storyboard/sprite RequireDownload  scrub-preview sprite (JPEG)
 //	GET    /photos/{uid}/download     RequireDownload  original file (or 302)
 //	POST   /photos/download-zip       RequireDownload  ZIP of originals (selection/album)
+//	POST   /photos/share-manifest     RequireDownload  what a selection is as files (share sheet)
 //	PUT    /photos/{uid}/favorite     RequireAuth      favorite (current user)
 //	DELETE /photos/{uid}/favorite     RequireAuth      unfavorite (current user)
 //	PUT    /photos/{uid}/rating       RequireAuth      set rating/flag (current user)
@@ -275,6 +276,7 @@ func (a *API) RegisterRoutes(r chi.Router) {
 	r.With(a.requireAdmin).Post("/trash/purge-older", a.handlePurgeOlder)
 	r.Route("/photos", func(r chi.Router) {
 		r.With(a.requireDownload).Post("/download-zip", a.handleDownloadZip)
+		r.With(a.requireDownload).Post("/share-manifest", a.handleShareManifest)
 		r.With(a.requireAuth).Get("/", a.handleList)
 		r.With(a.requireAuth).Get("/timeline", a.handleTimeline)
 		r.With(a.requireAuth).Get("/years", a.handleYears)

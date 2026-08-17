@@ -779,14 +779,24 @@ export async function saveEdit(
  * which already points at the object store when that is where it lives. This
  * route stays the only way to fetch a *rendered edit*, which only the application
  * can produce.
+ *
+ * Pass `proxy: true` when the page itself has to *read* the bytes rather than hand
+ * the address to the browser: the route then streams them instead of redirecting
+ * to the object store, and the response stays same-origin and readable. That is
+ * what sharing photos into the phone's library needs (see `services/share.ts`); an
+ * `<a download>` or an `<img>` must not ask for it, because it moves every byte
+ * through the application for nothing.
  */
 export function downloadUrl(
   uid: string,
-  options: { original?: boolean; token?: string | null } = {},
+  options: { original?: boolean; token?: string | null; proxy?: boolean } = {},
 ): string {
   const query = new URLSearchParams()
   if (options.original === true) {
     query.set('original', 'true')
+  }
+  if (options.proxy === true) {
+    query.set('proxy', 'true')
   }
   if (options.token !== undefined && options.token !== null && options.token !== '') {
     query.set('t', options.token)
@@ -950,13 +960,28 @@ export async function fetchSimilar(
  * editor canvas, a cover addressed by UID alone. For a grid tile, read
  * {@link Photo.thumb_url} off the payload instead: it already points wherever the
  * media actually lives, whereas this route may cost the browser a redirect there.
+ *
+ * `proxy: true` forces the route to stream the JPEG instead of redirecting to the
+ * object store, for the one caller that must read the bytes in the page rather than
+ * paint them: sharing a RAW photo into the phone's library as its preview (see
+ * `services/share.ts`). An `<img>` never wants it — a redirect is cheaper for
+ * everyone.
  */
-export function thumbUrl(uid: string, size: string, downloadToken?: string | null): string {
+export function thumbUrl(
+  uid: string,
+  size: string,
+  downloadToken?: string | null,
+  options: { proxy?: boolean } = {},
+): string {
   const url = `${API_BASE}/photos/${encodeURIComponent(uid)}/thumb/${encodeURIComponent(size)}`
+  const params: string[] = []
   if (downloadToken !== undefined && downloadToken !== null && downloadToken !== '') {
-    return `${url}?t=${encodeURIComponent(downloadToken)}`
+    params.push(`t=${encodeURIComponent(downloadToken)}`)
   }
-  return url
+  if (options.proxy === true) {
+    params.push('proxy=true')
+  }
+  return params.length === 0 ? url : `${url}?${params.join('&')}`
 }
 
 /**

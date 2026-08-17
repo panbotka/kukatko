@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"strconv"
-	"strings"
 
 	// Image format decoders registered for image.Decode: originals may be JPEG,
 	// PNG, WebP, BMP, GIF or TIFF (HEIC/RAW are converted to a decodable JPEG by
@@ -60,7 +59,7 @@ func (a *API) maybeServeEdited(w http.ResponseWriter, r *http.Request, photo pho
 	etag := strconv.Quote(photo.FileHash + "-edit")
 	w.Header().Set("Content-Type", "image/jpeg")
 	w.Header().Set("Cache-Control", originalCacheControl)
-	w.Header().Set("Content-Disposition", contentDisposition(editedFileName(photo.FileName)))
+	w.Header().Set("Content-Disposition", contentDisposition(jpegFileName(photo.FileName)))
 	streamMedia(w, r, bytes.NewReader(data), etag, int64(len(data)))
 	return true
 }
@@ -103,17 +102,4 @@ func (a *API) renderEdited(ctx context.Context, photo photos.Photo, edit photos.
 		return nil, fmt.Errorf("photoapi: encoding edited image: %w", err)
 	}
 	return buf.Bytes(), nil
-}
-
-// editedFileName derives the download filename for an edited image: the original
-// base name with a .jpg extension, since the edited image is always re-encoded as
-// JPEG regardless of the original format.
-func editedFileName(name string) string {
-	if name == "" {
-		return "download.jpg"
-	}
-	if idx := strings.LastIndex(name, "."); idx > 0 {
-		return name[:idx] + ".jpg"
-	}
-	return name + ".jpg"
 }

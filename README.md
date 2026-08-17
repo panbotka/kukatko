@@ -149,6 +149,13 @@ it says exactly that: opening the app with no signal gets you a page explaining 
 a connection, not a login form that then blames your password. On **Android**, Kukátko is a
 share target: pick shots in the gallery, tap Share, and the upload page opens with them queued.
 
+It works the other way round too: **somebody else uploaded the photos and you want yours in your own
+phone**. Filter, select, tap Share, and the originals go to the phone's share sheet — iOS offers
+"Save Images" into Apple Photos, Android offers Google Photos. A big selection is handed over in
+batches of twenty (a phone has a finite amount of memory), each with its own tap, and a RAW file goes
+as its largest JPEG preview, because that is what a phone library can actually show. On a desktop the
+button is not there and the ZIP download beside it is the answer.
+
 ### It tells you what you missed
 
 A family library is shared, so somebody else's evening of uploading is invisible to whoever opens the

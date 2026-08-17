@@ -2146,6 +2146,19 @@
       "action": "Back to the library"
     }
   },
+  "sharePhotos": {
+    "action": "Share",
+    "preparing": "Preparing…",
+    "fetching": "Preparing {{done}} of {{total}}",
+    "handing": "Handing over to the phone…",
+    "nextBatch": "Share batch {{index}} of {{total}}",
+    "progress": "Shared {{done}} of {{total}} batches",
+    "error": "The share could not be prepared. Please try again.",
+    "tooManyError": "Too many photos for one share. Pick fewer and try again.",
+    "fileError_one": "{{name}} could not be loaded.",
+    "fileError_other": "{{count}} photos could not be loaded, {{name}} among them.",
+    "sheetError": "The share sheet would not open. Please try again."
+  },
   "slideshow": {
     "start": "Slideshow",
     "title": "Photo slideshow",

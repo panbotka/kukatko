@@ -156,26 +156,3 @@ func TestRecordEditAudit_noRecorder(t *testing.T) {
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodPut, "/photos/p1/edit", nil)
 	(&API{}).recordEditAudit(req, photos.Edit{PhotoUID: "p1", Rotation: 90})
 }
-
-func TestEditedFileName(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name string
-		in   string
-		want string
-	}{
-		{name: "jpg keeps base", in: "beach.jpg", want: "beach.jpg"},
-		{name: "heic becomes jpg", in: "IMG_1234.heic", want: "IMG_1234.jpg"},
-		{name: "no extension gets jpg", in: "scan", want: "scan.jpg"},
-		{name: "empty falls back", in: "", want: "download.jpg"},
-		{name: "leading dot is not an extension", in: ".hidden", want: ".hidden.jpg"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			if got := editedFileName(tt.in); got != tt.want {
-				t.Errorf("editedFileName(%q) = %q, want %q", tt.in, got, tt.want)
-			}
-		})
-	}
-}

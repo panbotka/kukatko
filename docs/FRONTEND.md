@@ -1025,6 +1025,18 @@ here.
   (`download.zipTooMany`), otherwise generic (`download.zipError`); `photoUids` = the current selection,
   `albumUid` (+ `name` = the album title) = the whole album; **available to a viewer too** (a download is not a write),
   disabled when there is nothing to download. Inserted into the library's `SelectionBar` and into the album header),
+  `SharePhotosButton` (**share the selection into the phone's own library**, beside the ZIP: `photoUids` (a
+  selection, or the single photo of `PhotoDetailPage`) → the phone's share sheet, where iOS offers "Save Images"
+  into Apple Photos and Android offers Google Photos — the answer to "someone else uploaded these and I want mine
+  in my phone". It **renders nothing at all** where the browser cannot hand files over (desktop Firefox, Linux, an
+  insecure origin — `navigator.canShare({files})` asked with a real probe file), because a control that throws on
+  tap is worse than none, and the ZIP download beside it stays the answer there; **available to a viewer too**,
+  gated exactly like the ZIP (`RequireDownload`), disabled at an empty selection. All the state is
+  `usePhotoShare`; this component only says what it is doing — a spinner and **„Připravuji 12 z 20"** while a batch
+  downloads (originals over a mobile connection are not instant), **„Sdílet dávku 2 z 5"** plus a live „Sdíleno 1
+  z 5 dávek" between batches (each needs its own tap), and one sentence in `role="alert"` for a photo that would
+  not load / an over-cap selection / a sheet that refused. A cancelled sheet says nothing. i18n `sharePhotos.*`,
+  tests `SharePhotosButton.test.tsx` + the wiring in `BatchActionBar.test.tsx`),
   `StackSelectedControl` (a **Seskupit vybrané** button (`selection.stack`) on the batch bar — so on
   every photo list, not just the library — **editor/admin only** (absent, never greyed, for a viewer); a
   `ReasonedButton` that stays off until **≥ 2** photos are selected and tells the reader which of the two
@@ -3410,6 +3422,25 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   in place — `/expand`); the selection mode survives, so after a success you can keep selecting right away and no
   stale UID is left in it. A failed apply **leaves the selection alone**. The page wires only
   `gridSelection` (and `SelectionStart` in the explicit mode), the rest is handled by `BulkEditControl`;
+  `usePhotoShare(photoUids)` = **handing photos to the phone's own share sheet** (iOS "Save Images" → Apple
+  Photos, Android → Google Photos): `{supported, status, error, busy, share()}`. `share()` asks
+  `fetchShareManifest` what the selection is as files, splits it with `splitShareBatches` and fetches **one batch
+  at a time** (`fetchShareFile`) into `navigator.share({files})`. The arithmetic and the browser check are pure and
+  live in **`lib/photoShare`**: `SHARE_MAX_FILES` = 20 files and `SHARE_MAX_BYTES` ≈ 300 MB per handoff (whichever
+  is reached first; a file over the whole budget gets a batch of its own rather than being dropped, so nothing is
+  ever truncated), plus `SHARE_PREVIEW_SIZES`, `canSharePhotoFiles` and `isShareAbort` — tests
+  `photoShare.test.ts`. `supported` is `canSharePhotoFiles()` probed
+  **once per mount** — the component renders nothing when it is false, and `share()` fetches nothing either.
+  `status` = `idle` | `manifest` | `fetching {batch,batches,done,total}` | `sharing` | **`waiting
+  {batch,batches}`**, and that last one shapes the whole feature: a share sheet may only be opened from a **fresh
+  user gesture** (iOS throws otherwise), so a multi-batch selection is never chained — the sequence pauses and the
+  button asks for the next tap. Files live only for their own batch, so a 400-photo selection never holds 400
+  files at once. `error` is **structured, not a message** (`{kind:'manifest'|'tooMany'|'fetch'|'sheet'}`, `fetch`
+  carrying `{name,count}`) so the hook needs no `t`; a cancelled sheet (`isShareAbort`) ends the sequence
+  **quietly** and is not an error at all, a photo that will not download is skipped, named, and the remaining
+  batches stay shareable, and a sheet that refuses for another reason keeps the sequence **on the same batch** so
+  the next tap retries it instead of skipping its photos. A changed selection clears a stale message but never
+  disturbs a sequence already under way — those batches were asked for. Tests `usePhotoShare.test.tsx`;
   `useReloadKey()` = `[key, reload]`, a string counter for a photo list's `reloadKey` — a single `reload()`
   replays the list **in the background** (a refetch of the first page without blanking into a skeleton, the photos stay
   pinned); `reload` is stable and goes straight into `useBulkEdit({onEdited})`;
@@ -4216,6 +4247,17 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   …/download-zip`, it reads the response as a `Blob` and downloads it via a temporary object URL — the archive's
   name is assembled by the client (`name`.zip or `kukatko-photos-<date>.zip`, the client computes the `date` and
   sends it to the server as well), throws `ApiError` (413 = over the ceiling); the type `ZipDownloadRequest`),
+  `downloadUrl`/`thumbUrl` additionally take **`{proxy:true}`**, which asks the media route to *stream* instead of
+  redirecting to the object store — only for a caller that must **read** the bytes in the page (see `share.ts`); an
+  `<a download>` or an `<img>` must never ask for it, it would move every byte through the application for nothing;
+  `share.ts` = the client of sharing photos **out** of the library into the phone's own (not to be confused with
+  the PWA share target, which shares files *in*): `fetchShareManifest(photoUids,signal)`
+  (`POST /photos/share-manifest` → `ShareManifestFile[]` = `{uid,name,mime,size,preview}`, throws `ApiError`,
+  413 = over the cap) and `fetchShareFile(file,signal)` → a real **`File`** named and typed as the manifest says,
+  which is what makes the photo land in Apple/Google Photos under its own name instead of as an anonymous blob.
+  Both fetches ask for `proxy=true`: a **RAW** (`preview`) walks `SHARE_PREVIEW_SIZES` (`fit_3840` → `fit_2560` →
+  `fit_1920` → `fit_1280`) and takes the largest that answers, everything else takes
+  `download?original=true`; tests `share.test.ts`),
   **stacks** `stackPhotos(photoUids,signal)` (`POST …/photos/stack` — a manual grouping of the selection → the `PhotoDetail`
   of the new primary), `setStackPrimary(uid,signal)` (`POST …/{uid}/stack/primary`),
   `unstackMember(uid,signal)` (`POST …/{uid}/unstack`) and `unstackAll(uid,signal)`

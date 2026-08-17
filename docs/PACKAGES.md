@@ -537,7 +537,11 @@ to `## Package map` in `CLAUDE.md`.
   the extension; `IsSupportedFormat`; `RAWExtensions()` exports that RAW set (lowercase, no dot, sorted) —
   because an upload is gated on `IsSupportedFormat` it is exactly the set of RAW files that can be in the
   catalogue, which is how `internal/system` splits the library's storage by media type without keeping a second
-  list that would drift;
+  list that would drift; `IsRAWName(name)` answers the same question **for a name alone** (a bare file name or a
+  path, case-insensitive, opening nothing) — for a caller holding only a catalogue row: `photoapi`'s share manifest
+  decides by it whether a photo reaches a phone as its original or as a JPEG preview. It is a weaker witness than
+  `DetectFormat` (a JPEG misnamed `.dng` answers true), so use it only where a wrong answer is a worse
+  *presentation*, never where it would corrupt a conversion;
   **decompression-bomb guard** `EnforcePixelBound(path,maxPixels)` peeks `image.DecodeConfig` and
   returns `ErrImageTooLarge` when `width×height` exceeds the cap (before the caller's full decode
   allocates the bitmap); `maxPixels<=0` disables it and an unreadable header is left to the caller's

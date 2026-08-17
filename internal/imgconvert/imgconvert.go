@@ -112,6 +112,21 @@ func RAWExtensions() []string {
 	return out
 }
 
+// IsRAWName reports whether name — a bare file name or a whole path — carries a
+// camera RAW extension, case-insensitively. It is the same set RAWExtensions
+// lists, decided on the name alone: unlike DetectFormat it opens nothing, so a
+// caller holding only a catalogue row (photos.file_name) can classify it without
+// touching storage.
+//
+// A name is a weaker witness than the bytes — a JPEG misnamed .dng answers true
+// here while DetectFormat would call it a JPEG — so use it only where a wrong
+// answer is merely a worse presentation, never where it would corrupt a
+// conversion. The share manifest is such a caller: it decides whether a photo is
+// handed to a phone as its original or as a JPEG preview.
+func IsRAWName(name string) bool {
+	return formatByExt(name) == FormatRAW
+}
+
 // IsSupportedFormat reports whether the pipeline can ingest a file with this
 // extension — a directly decodable image, a convertible HEIC/RAW, or a video.
 // The extension may include or omit the leading dot and is case-insensitive.

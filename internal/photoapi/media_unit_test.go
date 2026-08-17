@@ -125,3 +125,59 @@ func TestContentDisposition_noNewline(t *testing.T) {
 		t.Errorf("contentDisposition leaked a newline: %q", got)
 	}
 }
+
+// TestJPEGFileName covers the naming of every JPEG this API renders on the fly —
+// an edited image and a RAW original's shared preview — including the nameless
+// row and a dot-file, where a naive split would eat the whole name.
+func TestJPEGFileName(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "jpg keeps base", in: "beach.jpg", want: "beach.jpg"},
+		{name: "heic becomes jpg", in: "IMG_1234.heic", want: "IMG_1234.jpg"},
+		{name: "raw becomes jpg", in: "IMG_1234.CR2", want: "IMG_1234.jpg"},
+		{name: "no extension gets jpg", in: "scan", want: "scan.jpg"},
+		{name: "empty falls back", in: "", want: "download.jpg"},
+		{name: "leading dot is not an extension", in: ".hidden", want: ".hidden.jpg"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := jpegFileName(tt.in); got != tt.want {
+				t.Errorf("jpegFileName(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestWantsProxy proves the media routes only stream through the application when
+// the caller says so explicitly, in any spelling Go's bool parser accepts, and that
+// a missing or unparsable value leaves the redirect in place.
+func TestWantsProxy(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		query string
+		want  bool
+	}{
+		{query: "", want: false},
+		{query: "proxy=true", want: true},
+		{query: "proxy=1", want: true},
+		{query: "proxy=false", want: false},
+		{query: "proxy=", want: false},
+		{query: "proxy=yes", want: false},
+		{query: "original=true", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.query, func(t *testing.T) {
+			t.Parallel()
+			req := httptest.NewRequestWithContext(
+				t.Context(), http.MethodGet, "/photos/p1/download?"+tt.query, nil)
+			if got := wantsProxy(req); got != tt.want {
+				t.Errorf("wantsProxy(?%s) = %v, want %v", tt.query, got, tt.want)
+			}
+		})
+	}
+}
