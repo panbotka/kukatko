@@ -72,6 +72,7 @@ export type IconName =
   | 'question-circle'
   | 'search'
   | 'send'
+  | 'share'
   | 'skip-backward-fill'
   | 'skip-forward-fill'
   | 'shield-lock'

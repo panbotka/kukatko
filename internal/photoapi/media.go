@@ -30,6 +30,23 @@ const originalCacheControl = "private, max-age=31536000, immutable"
 // expires, so a cached redirect would eventually send the client to a 403.
 const redirectCacheControl = "private, no-store"
 
+// wantsProxy reports whether the caller asked for the media bytes to be streamed
+// through this application rather than being answered with a redirect to a signed
+// object-store URL (?proxy=true on a media route).
+//
+// It exists for the one thing a redirect makes impossible: a page that must *read*
+// the bytes itself. `fetch()` follows the 302 to the media domain, and without CORS
+// on that domain the response is opaque — so sharing a photo into the phone's own
+// library (which needs File objects in the page, see the share manifest in
+// share.go) would silently fail. Proxying is the same act of granting access the
+// redirect performs, only with this application in the path, so it is never a wider
+// permission than the route's guard already gave; it only costs bandwidth, which is
+// why it is opt-in per request instead of the default.
+func wantsProxy(r *http.Request) bool {
+	proxy, _ := strconv.ParseBool(r.URL.Query().Get("proxy"))
+	return proxy
+}
+
 // redirectToMedia sends the client to the signed, short-lived URL at which the
 // edge Worker serves the object, transferring no media bytes through this
 // application. It is only ever reached after the caller has been authorized to
@@ -49,9 +66,11 @@ func redirectToMedia(w http.ResponseWriter, r *http.Request, target string) {
 //
 // When the storage backend publishes its objects the route instead redirects to
 // the thumbnail's signed URL, so old links and bookmarks keep working without
-// this application ever touching the bytes. On that path the route neither
-// generates the thumbnail nor uploads it: it assumes the object already sits in
-// the bucket under thumb.RelPath's key.
+// this application ever touching the bytes — unless the caller asked for
+// ?proxy=true (see wantsProxy), which forces the streaming branch below so a page
+// can read the JPEG itself. On the redirect path the route neither generates the
+// thumbnail nor uploads it: it assumes the object already sits in the bucket under
+// thumb.RelPath's key.
 //
 // Two writers keep the object there. thumb.Thumbnailer uploads every size it
 // generates to the bucket under thumb.RelPath's key whenever the backend
@@ -77,7 +96,7 @@ func (a *API) handleThumb(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if signed := a.media.ThumbObject(photo.FileHash, size); signed != "" {
+	if signed := a.media.ThumbObject(photo.FileHash, size); signed != "" && !wantsProxy(r) {
 		redirectToMedia(w, r, signed)
 		return
 	}
@@ -136,9 +155,10 @@ func (a *API) handleDownload(w http.ResponseWriter, r *http.Request) {
 // serveOriginal streams the photo's stored original file as an attachment,
 // answering 404 when the file is gone from storage and 500 on any other open
 // error. When the storage backend publishes its objects it redirects to the
-// original's signed URL instead, and the bytes never pass through here.
+// original's signed URL instead, and the bytes never pass through here — unless
+// the caller asked for ?proxy=true (see wantsProxy), which streams them anyway.
 func (a *API) serveOriginal(w http.ResponseWriter, r *http.Request, photo photos.Photo) {
-	if signed := a.media.Object(photo.FilePath); signed != "" {
+	if signed := a.media.Object(photo.FilePath); signed != "" && !wantsProxy(r) {
 		redirectToMedia(w, r, signed)
 		return
 	}
@@ -179,6 +199,25 @@ func contentDisposition(name string) string {
 		clean = "download"
 	}
 	return fmt.Sprintf("attachment; filename=%q", clean)
+}
+
+// jpegFileName derives the name a JPEG rendering of the photo is handed over
+// under: the original's base name with a .jpg extension, since the rendering is
+// always re-encoded as JPEG whatever the original format was. It falls back to
+// "download.jpg" for a nameless row.
+//
+// Two callers need exactly this: the on-the-fly render of a non-destructive edit
+// (maybeServeEdited) and the JPEG preview a RAW original is shared as (the share
+// manifest). A phone library shown "IMG_0001.cr2" containing JPEG bytes is the
+// kind of lie that ends in an unopenable file, so the name follows the bytes.
+func jpegFileName(name string) string {
+	if name == "" {
+		return "download.jpg"
+	}
+	if idx := strings.LastIndex(name, "."); idx > 0 {
+		return name[:idx] + ".jpg"
+	}
+	return name + ".jpg"
 }
 
 // streamMedia writes reader to the response, honouring conditional requests via

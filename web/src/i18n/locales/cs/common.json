@@ -2231,6 +2231,20 @@
       "action": "Zpět do knihovny"
     }
   },
+  "sharePhotos": {
+    "action": "Sdílet",
+    "preparing": "Připravuji…",
+    "fetching": "Připravuji {{done}} z {{total}}",
+    "handing": "Předávám do telefonu…",
+    "nextBatch": "Sdílet dávku {{index}} z {{total}}",
+    "progress": "Sdíleno {{done}} z {{total}} dávek",
+    "error": "Sdílení se nepodařilo připravit. Zkus to prosím znovu.",
+    "tooManyError": "Příliš mnoho fotek na jedno sdílení. Vyber jich méně a zkus to znovu.",
+    "fileError_one": "Fotku {{name}} se nepodařilo načíst.",
+    "fileError_few": "{{count}} fotky se nepodařilo načíst, mezi nimi {{name}}.",
+    "fileError_other": "{{count}} fotek se nepodařilo načíst, mezi nimi {{name}}.",
+    "sheetError": "Sdílení se nepodařilo otevřít. Zkus to prosím znovu."
+  },
   "slideshow": {
     "start": "Promítání",
     "title": "Promítání fotek",

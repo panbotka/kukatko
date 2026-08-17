@@ -281,7 +281,8 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   expires → see `useThumbSrc` in `docs/FRONTEND.md`;
   `GET /photos/{uid}/thumb/{size}` and `/download` (session/`?t=` token) **stream** the media
   (`Cache-Control`/`ETag`/`304`), or — when the backend publishes objects — answer with a **`302` redirect**
-  to a signed URL (`Cache-Control: private, no-store`, so the cache does not outlive the signature); the routes
+  to a signed URL (`Cache-Control: private, no-store`, so the cache does not outlive the signature), unless
+  **`?proxy=true`** asks for the streaming branch anyway (see the share manifest below); the routes
   remain, so old links and bookmarks keep working. The streaming branch of `/thumb/{size}` reads the size
   through `thumb.OpenOrGenerate` (local cache → the published object → generate), so it also answers on a
   backend that publishes objects but mints no signed URL, where the thumbnail may exist only in the bucket. `GET /photos/{uid}/video` (session/`?t=` token) streams
@@ -320,6 +321,27 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   per request (`maxZipFiles`), above which **413** before the first byte of the archive; a request with no
   photos → 400. Always **streams via `storage.Open`** (even on a publishing backend — a single archive cannot be
   assembled from redirects, unlike a single `/download`).
+  **Share manifest** (`internal/photoapi/share.go`): `POST /photos/share-manifest`
+  (session/`?t=` token — **the same authorization as a single download**; naming a file is a step towards
+  fetching it, and the fetch goes through that same guard) answers what a selection *is as files*, for handing
+  them to the phone's own share sheet (iOS "Save Images" → Apple Photos, Android → Google Photos). Body
+  `{photo_uids}` (the client's selection order, a UID resolving to nothing is **silently skipped**), answer
+  `{files:[{uid,name,mime,size,preview}]}`. It exists because the page holds **UIDs, not photos** — a selection
+  outlives the grid rows it was made from — while the batching it must do needs each file's name, type and size;
+  one request answers for the whole selection instead of one detail fetch per photo. `name` is de-duplicated
+  within the manifest by the ZIP's own rules (`sanitizeEntryName` + `uniqueEntryName`, so two `IMG_0001.jpg`
+  arrive as two files), `preview` marks a **RAW original** (`imgconvert.IsRAWName`) to be fetched as its largest
+  cached JPEG instead — a phone library handles a CR2 badly — and is then named `.jpg` and typed `image/jpeg`,
+  with `size` staying the *original's* (an upper bound, so a batch can only come out smaller than the budget).
+  Cap **1000 files** (`maxShareFiles` = `maxZipFiles`) → **413**; a selection resolving to nothing → 400. It
+  deliberately returns **no URLs**: the client already addresses originals and previews, and must be free to
+  retry a preview at a smaller size. **`?proxy=true` on `/photos/{uid}/download` and `/photos/{uid}/thumb/{size}`**
+  is what makes those bytes fetchable by the page: it suppresses the redirect branch and streams through the
+  application, because `fetch` follows a 302 to the media domain and then refuses to let the page read it (an
+  opaque cross-origin response is the most likely way this feature would silently fail). It is a choice of
+  *transport only* — the route's guard is unchanged, and proxying is the same grant of access the signed URL
+  performs — so it stays opt-in per request rather than the default, which would move every byte through the
+  application for an `<img>` that only wanted to paint it.
   **Authorization guards discovery:** a signed URL is minted only into a response the caller was already
   entitled to, so it never reveals an archived photo. Unlike the earlier design with a public
   bucket, the archive is a **real security boundary** (see the doc comment of `internal/mediaurl`).

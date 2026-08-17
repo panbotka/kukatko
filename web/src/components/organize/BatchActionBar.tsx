@@ -26,6 +26,7 @@ import { useToast } from '../toast/ToastContext'
 
 import { BulkEditModal } from './BulkEditModal'
 import { DownloadZipButton } from './DownloadZipButton'
+import { SharePhotosButton } from './SharePhotosButton'
 import { StackSelectedControl } from './StackSelectedControl'
 
 /** Which lightweight picker (if any) is open over the bar. */
@@ -436,6 +437,10 @@ export function BatchActionBar({ bulk, onSelectAll, extraActions }: BatchActionB
     />
   )
   const downloadControl = <DownloadZipButton photoUids={bulk.photoUids} variant="outline-light" />
+  // Beside the ZIP, and gated the same way (both go through RequireDownload), but
+  // only where the browser can actually hand files to a share sheet — on a desktop
+  // it renders nothing and the ZIP stays the answer.
+  const shareControl = <SharePhotosButton photoUids={bulk.photoUids} variant="outline-light" />
   const stackControl = <StackSelectedControl bulk={bulk} variant="outline-light" />
   const moreAction = (
     <BarAction icon="sliders" label={t('batch.more')} onClick={bulk.open} disabled={busy} />
@@ -488,6 +493,7 @@ export function BatchActionBar({ bulk, onSelectAll, extraActions }: BatchActionB
                   {favoriteAction}
                   {archiveAction}
                   {downloadControl}
+                  {shareControl}
                   {stackControl}
                   {moreAction}
                   {extras}
@@ -503,6 +509,7 @@ export function BatchActionBar({ bulk, onSelectAll, extraActions }: BatchActionB
             {favoriteAction}
             {archiveAction}
             {downloadControl}
+            {shareControl}
             {stackControl}
             {moreAction}
             {extras}

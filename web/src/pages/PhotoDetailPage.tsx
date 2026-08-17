@@ -23,6 +23,7 @@ import { StackStrip } from '../components/photo/StackStrip'
 import { TechnicalDetails } from '../components/photo/TechnicalDetails'
 import { VideoPlayer } from '../components/photo/VideoPlayer'
 import './../components/photo/viewer.css'
+import { SharePhotosButton } from '../components/organize/SharePhotosButton'
 import { FaceOverlay } from '../components/people/FaceOverlay'
 import { FacesPanel } from '../components/people/FacesPanel'
 import { useToast } from '../components/toast/ToastContext'
@@ -890,6 +891,11 @@ export function PhotoDetailPage() {
     </>
   )
 
+  // The share control speaks in selections; on a detail page the selection is the
+  // one photo on screen. A fresh array per render costs nothing — the hook reads it
+  // by value, not by identity.
+  const sharePhotoUids = [photo.uid]
+
   const basePoster = thumbUrl(photo.uid, PREVIEW_SIZE, downloadToken)
   // The thumb URL is built from the UID (stable), so a regenerated thumbnail would
   // otherwise be masked by the browser cache. Append a version once the user
@@ -1327,6 +1333,9 @@ export function PhotoDetailPage() {
                     {t('photo.downloadEdited')}
                   </Button>
                 )}
+                {/* Straight into Fotky/Photos on a phone, next to the download that
+                    is the only answer on a desktop (where it renders nothing). */}
+                <SharePhotosButton photoUids={sharePhotoUids} variant="outline-secondary" />
               </section>
 
               <section className="kk-viewer__section">

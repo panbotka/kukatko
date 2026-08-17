@@ -570,3 +570,35 @@ describe('BatchActionBar on a narrow (phone) screen', () => {
     expect(bulk.finish).toHaveBeenCalledTimes(1)
   })
 })
+
+/**
+ * Sharing the selection into the phone's own library sits beside the ZIP download —
+ * but only where the browser can actually hand files to a share sheet. jsdom, like a
+ * desktop Firefox, cannot, which is why every other test in this file sees no such
+ * button at all.
+ */
+describe('BatchActionBar share action', () => {
+  afterEach(() => {
+    Reflect.deleteProperty(navigator, 'share')
+    Reflect.deleteProperty(navigator, 'canShare')
+  })
+
+  it('offers it beside the ZIP download where files can be shared', () => {
+    Object.defineProperty(navigator, 'share', { value: vi.fn(), configurable: true })
+    Object.defineProperty(navigator, 'canShare', { value: () => true, configurable: true })
+
+    renderBar(makeBulk())
+
+    const bar = screen.getByRole('toolbar', { name: 'Batch actions' })
+    expect(within(bar).getByRole('button', { name: 'Share' })).toBeInTheDocument()
+    expect(within(bar).getByRole('button', { name: 'Download ZIP' })).toBeInTheDocument()
+  })
+
+  it('renders nothing at all where the browser cannot share files', () => {
+    renderBar(makeBulk())
+
+    expect(screen.queryByRole('button', { name: 'Share' })).not.toBeInTheDocument()
+    // The ZIP download is still the answer there.
+    expect(screen.getByRole('button', { name: 'Download ZIP' })).toBeInTheDocument()
+  })
+})
