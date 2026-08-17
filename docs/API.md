@@ -337,6 +337,26 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   first) `{uid, file_name, media_type, file_mime, file_width, file_height, file_size, is_primary, thumb_url,
   download_url}` (a strip of variants), omitted for a non-stacked photo (distinct from `files`, which are the
   `photo_files` of a single row).
+  **Processing** (`internal/photoapi/processing.go`, the `ProcessingService` interface =
+  `processing.Service`, **nil → the detail omits the block and the endpoint answers 503**):
+  `GET /photos/{uid}` carries **`processing`** — one entry per per-photo computation, in the fixed order
+  `metadata`, `thumbnail`, `image_embed`, `face_detect`, `ocr`, `places`, `sidecar`
+  (`storyboard` is deliberately absent: it is rendered lazily on first playback and leaves no persisted
+  evidence). Each entry is `{step, state, at?, error?, face_count?, text_found?}`. The state is decided by
+  **persisted evidence first** (`photos.metadata_extracted_at`, a `photo_phashes` row, an `embeddings` row,
+  a `face_detections` row, `photos.ocr_at`, a `photo_places` row **with coordinates**,
+  `photos.sidecar_written_at`) → `done` with `at`; then by the **queue** (`jobs` for this `photo_uid` and
+  type) → `running`/`queued`/`failed`, where `failed` covers a dead job **and** one whose last attempt
+  errored, carrying its `last_error` as `error`; then `skipped` for a step that cannot apply (`places`
+  without GPS, `face_detect`/`ocr` on a video, or a feature switched off instance-wide — no worker handler
+  is registered for it); otherwise `pending`. `face_detect` adds `face_count` and `ocr` adds `text_found`
+  on a done step, so a result that legitimately found nothing does not read as a gap. The whole array costs
+  **two round trips** (one for the evidence, one for `jobs.Store.UnfinishedForPhoto`), never an N+1.
+  `POST /photos/{uid}/process/{step}` (**maintainer** via `RequireMaintainer` — scheduling background work
+  is operations, not curation) enqueues that one step for that one photo through the shared
+  `jobs.Enqueuer`, so the dedup index makes a double click harmless, and answers **200** with the step's new
+  state (the same entry shape) — 400 unknown step (including `storyboard`), 404 missing photo, **409** the
+  step does not apply to this photo, 503 unwired.
   Mounted by the third `server.WithAPI` (`buildPhotoAPI` in `cmd/kukatko/photos.go`).
 - **Comments API (`/api/v1`, `internal/photoapi` + `internal/comments`):** per-photo comment threads — the
   family conversation around a picture ("who is the boy on the left?", "this was the summer before the barn

@@ -120,11 +120,12 @@ func TestRegenerateThumbnailRBAC(t *testing.T) {
 		t.Parallel()
 		fake := &fakeRegenerator{}
 		api := &API{
-			regenerator:     fake,
-			requireAuth:     regenPass,
-			requireWrite:    regenDeny,
-			requireAdmin:    regenPass,
-			requireDownload: regenPass,
+			regenerator:       fake,
+			requireAuth:       regenPass,
+			requireWrite:      regenDeny,
+			requireAdmin:      regenPass,
+			requireMaintainer: regenPass,
+			requireDownload:   regenPass,
 		}
 		r := chi.NewRouter()
 		api.RegisterRoutes(r)
@@ -143,11 +144,12 @@ func TestRegenerateThumbnailRBAC(t *testing.T) {
 		t.Parallel()
 		fake := &fakeRegenerator{sizes: []string{"tile_500"}}
 		api := &API{
-			regenerator:     fake,
-			requireAuth:     regenPass,
-			requireWrite:    regenPass,
-			requireAdmin:    regenPass,
-			requireDownload: regenPass,
+			regenerator:       fake,
+			requireAuth:       regenPass,
+			requireWrite:      regenPass,
+			requireAdmin:      regenPass,
+			requireMaintainer: regenPass,
+			requireDownload:   regenPass,
 		}
 		r := chi.NewRouter()
 		api.RegisterRoutes(r)

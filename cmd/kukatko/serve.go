@@ -336,7 +336,7 @@ func buildServices(
 	// scrub preview" (and schedules it), the worker renders what it scheduled.
 	storyboardSvc := buildStoryboardService(cfg, db, mediaStore, enqueuer)
 	photoAPI := buildPhotoAPI(cfg, db, authAPI, mediaStore, vectorStore, embedClient, matchSvc,
-		trashSvc, sidecarSched, enqueuer, storyboardSvc, reg)
+		trashSvc, sidecarSched, enqueuer, storyboardSvc, jobStore, enqueuer, reg)
 	clusterAPI, clusterSvc := buildClusterAPI(cfg, db, authAPI, matchSvc)
 	mapsAPI, err := buildMapsAPI(cfg, db, authAPI, mapsHealth)
 	if err != nil {

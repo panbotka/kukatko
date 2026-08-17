@@ -419,6 +419,46 @@ func (s *Store) CountPending(ctx context.Context, types ...string) (int, error) 
 	return n, nil
 }
 
+// unfinishedForPhotoSQL selects, per job type, the newest job for one photo that
+// has not completed — the row that says whether the work is waiting, running or
+// broken. Done jobs are excluded because completed work is read from its own
+// evidence, not from the queue; and only the newest row per type is kept, so a
+// job re-enqueued after an earlier one was dead-lettered speaks for its type
+// rather than the corpse behind it.
+const unfinishedForPhotoSQL = "SELECT DISTINCT ON (type) " + jobColumns + " FROM jobs " +
+	"WHERE payload ->> 'photo_uid' = $1 AND state <> 'done' ORDER BY type, id DESC"
+
+// UnfinishedForPhoto returns the newest unfinished job per type for the photo
+// identified by photoUID — at most one row per job type, in type order. It backs
+// the per-photo processing report, which needs the queue's side of the story in
+// a single round trip rather than one query per step.
+func (s *Store) UnfinishedForPhoto(ctx context.Context, photoUID string) ([]Job, error) {
+	rows, err := s.pool.Query(ctx, unfinishedForPhotoSQL, photoUID)
+	if err != nil {
+		return nil, fmt.Errorf("jobs: listing unfinished jobs for %s: %w", photoUID, err)
+	}
+	defer rows.Close()
+	list := make([]Job, 0, len(photoStepTypes))
+	for rows.Next() {
+		job, err := scanJob(rows)
+		if err != nil {
+			return nil, err
+		}
+		list = append(list, job)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("jobs: iterating unfinished jobs for %s: %w", photoUID, err)
+	}
+	return list, nil
+}
+
+// photoStepTypes is only a capacity hint for UnfinishedForPhoto: the per-photo
+// job types, so the usual result fits without a reallocation.
+var photoStepTypes = []string{
+	TypeMetadata, TypeThumbnail, TypeImageEmbed, TypeFaceDetect,
+	TypeOCR, TypePlaces, TypeSidecar, TypeStoryboard,
+}
+
 // ListDead returns dead-lettered jobs, most recently updated first, for the admin
 // dead-letter view. A non-positive limit defaults to defaultDeadListLimit.
 func (s *Store) ListDead(ctx context.Context, limit, offset int) ([]Job, error) {

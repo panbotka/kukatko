@@ -9,12 +9,14 @@ import (
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/facematch"
+	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/metrics"
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photoapi"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/places"
+	"github.com/panbotka/kukatko/internal/processing"
 	"github.com/panbotka/kukatko/internal/ratelimit"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/storyboardjob"
@@ -55,12 +57,14 @@ func buildFaceMatch(cfg *config.Config, db *database.DB) *facematch.Service {
 // adapter a saved non-destructive edit schedules its thumbnail rebuild through, so
 // the grid stops showing the previous rendering. storyboards backs the video
 // scrub-preview routes (status + sprite) and is the same service the worker
-// renders through.
+// renders through. enqueuer is the queue adapter the per-photo processing repair
+// schedules a single step through.
 func buildPhotoAPI(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, store storage.Storage,
 	similar photoapi.SimilarSearcher, embedder photoapi.TextEmbedder, faceSvc *facematch.Service,
 	purger photoapi.Purger, sidecar sidecarScheduler, thumbnails photoapi.ThumbnailEnqueuer,
-	storyboards *storyboardjob.Service, reg *metrics.Registry,
+	storyboards *storyboardjob.Service, jobStore *jobs.Store, enqueuer *jobs.Enqueuer,
+	reg *metrics.Registry,
 ) *photoapi.API {
 	thumbnailer := thumb.New(store, cfg.Storage.CachePath, thumbOptions(cfg, reg, db)...)
 	photoStore := photos.NewStore(db.Pool())
@@ -111,15 +115,48 @@ func buildPhotoAPI(
 		// Per-photo comment threads. Writing one is open to every authenticated
 		// role (viewers included), so the throttle keys on the user rather than
 		// the client IP — see photoapi.handleCreateComment.
-		Comments:         comments.NewStore(db.Pool()),
-		Storyboards:      storyboards,
-		CommentRateLimit: commentLimit.KeyedMiddleware(commentRateKey),
-		RetentionDays:    cfg.Trash.RetentionDays,
-		VideoTranscode:   cfg.Video.Transcode,
-		RequireAuth:      authAPI.RequireAuth,
-		RequireWrite:     authAPI.RequireWrite,
-		RequireAdmin:     authAPI.RequireAdmin,
-		RequireDownload:  authAPI.RequireAuthOrDownloadToken,
+		Comments:    comments.NewStore(db.Pool()),
+		Storyboards: storyboards,
+		// What the library has already computed about a photo, and the maintainer's
+		// per-step repair for the one it missed.
+		Processing:        buildProcessingService(cfg, db, jobStore, enqueuer),
+		CommentRateLimit:  commentLimit.KeyedMiddleware(commentRateKey),
+		RetentionDays:     cfg.Trash.RetentionDays,
+		VideoTranscode:    cfg.Video.Transcode,
+		RequireAuth:       authAPI.RequireAuth,
+		RequireWrite:      authAPI.RequireWrite,
+		RequireAdmin:      authAPI.RequireAdmin,
+		RequireMaintainer: authAPI.RequireMaintainer,
+		RequireDownload:   authAPI.RequireAuthOrDownloadToken,
+	})
+}
+
+// buildProcessingService assembles the per-photo processing report and its
+// single-step repair over the shared pool and the shared queue.
+//
+// The disabled steps are exactly the config-gated worker handlers of
+// buildRegistry: with the feature off no handler is registered, so a job of that
+// type would sit queued forever. Telling the service about them keeps the report
+// honest (the step reads as skipped, not as a gap) and stops "run now" from
+// filling the queue with work that can never drain.
+func buildProcessingService(
+	cfg *config.Config, db *database.DB, jobStore *jobs.Store, enqueuer *jobs.Enqueuer,
+) *processing.Service {
+	var disabled []processing.Step
+	if !cfg.Embedding.OCR.Enabled {
+		disabled = append(disabled, processing.StepOCR)
+	}
+	if !cfg.Sidecar.Enabled {
+		disabled = append(disabled, processing.StepSidecar)
+	}
+	if cfg.Maps.MapyAPIKey == "" {
+		disabled = append(disabled, processing.StepPlaces)
+	}
+	return processing.New(processing.Config{
+		Evidence: processing.NewStore(db.Pool()),
+		Jobs:     jobStore,
+		Enqueuer: enqueuer,
+		Disabled: disabled,
 	})
 }
 

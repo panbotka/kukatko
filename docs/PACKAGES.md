@@ -1300,7 +1300,32 @@ to `## Package map` in `CLAUDE.md`.
   `POST /process/metadata` → `{enqueued}` runs `metajob.BackfillMetadata(all)` (backfill of `metadata`
   for photos whose file has never been read = `metadata_extracted_at IS NULL`; `?all=true`
   forces a re-read of every non-archived photo; `MetadataBackfiller` optional — nil → 503;
-  local, works even with the box offline)), `internal/cluster/`
+  local, works even with the box offline)), `internal/processing/`
+  (the same question as `processapi` asked about **one photo**: what has the library already computed about
+  it, and schedule the one step it missed. `Step` values **are** the `internal/jobs` type constants (no
+  parallel vocabulary), `Steps` fixes the report order `metadata`, `thumbnail`, `image_embed`, `face_detect`,
+  `ocr`, `places`, `sidecar`, and `ParseStep` is the untrusted-input boundary; `storyboard` is deliberately
+  **not** a step — it is rendered lazily on first playback into the local derived-media cache and leaves no
+  persisted evidence, so it has no honest state to report and nothing a button could usefully schedule ahead
+  of a viewer pressing play. `Store` = `NewStore(pool)`: `Evidence(photoUID)` reads the whole evidence in
+  **one** query — `photos.media_type`/`lat`/`lng`/`metadata_extracted_at`/`ocr_at`/`ocr_text`/
+  `sidecar_written_at` plus four LEFT JOINs on the PK-keyed side tables `photo_phashes`, `embeddings`,
+  `face_detections` (also the `face_count`) and `photo_places`; the place column is **conditional**
+  (`lat IS NOT NULL AND lng IS NOT NULL`) because `photo_places` also holds the coordinate-less marker the
+  geocoder writes for a photo with no GPS, and that records that there was nothing to do rather than a place.
+  `Service` = `New(Config{Evidence,Jobs,Enqueuer,Disabled})` (panics on a nil collaborator):
+  `Report(photoUID)` = evidence + `jobs.Store.UnfinishedForPhoto` (**two** round trips, never an N+1) →
+  `[]Status{Step,State,At?,Error?,FaceCount?,TextFound?}`; the precedence is landed evidence → the queue →
+  skipped → pending, so work that has landed is `done` however the queue looks, work in flight beats "will
+  not run", and only an absence with nothing behind it is `pending`. `jobState` maps a queue row: running
+  wins over its own previous error, a dead job **and** a queued one carrying a `last_error` (a retry pending
+  after a failure) are both `failed` with that text. `Disabled` carries the steps whose feature is off
+  instance-wide (`ocr`, `sidecar`, `places` — exactly the config-gated handlers of `buildRegistry`); with no
+  handler registered a job of that type would sit queued forever, so those read as `skipped` and `Run`
+  refuses them. `Run(photoUID,step)` validates, refuses an inapplicable step (`ErrStepNotApplicable`) and an
+  unknown one (`ErrUnknownStep`), then dispatches to the step's own `jobs.Enqueuer` method (keeping the
+  sidecar's debounce) and answers with the step's new state; the queue's dedup index makes a double click
+  harmless. Read-only apart from that one enqueue — it never runs the work itself), `internal/cluster/`
   (face auto-clustering: groups **not-yet-assigned faces** (without a subject) into clusters of the same
   person, so a whole cluster can be named in one go (a key UX improvement over naming faces one at a time);
   the `face_clusters` table (migration `0010_face_clusters.sql`: `uid` PK prefix `fc`,

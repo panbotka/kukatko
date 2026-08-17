@@ -296,7 +296,7 @@ func TestStoryboardRoutesAreGuarded(t *testing.T) {
 			path: "/photos/ph_1/storyboard",
 			api: &API{
 				requireAuth: regenDeny, requireWrite: regenPass,
-				requireAdmin: regenPass, requireDownload: regenPass,
+				requireAdmin: regenPass, requireMaintainer: regenPass, requireDownload: regenPass,
 			},
 		},
 		{
@@ -304,7 +304,7 @@ func TestStoryboardRoutesAreGuarded(t *testing.T) {
 			path: "/photos/ph_1/storyboard/sprite",
 			api: &API{
 				requireAuth: regenPass, requireWrite: regenPass,
-				requireAdmin: regenPass, requireDownload: regenDeny,
+				requireAdmin: regenPass, requireMaintainer: regenPass, requireDownload: regenDeny,
 			},
 		},
 	}

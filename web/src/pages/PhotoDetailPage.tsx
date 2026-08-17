@@ -18,6 +18,7 @@ import { MetadataPanel } from '../components/photo/MetadataPanel'
 import { OrganizePanel } from '../components/photo/OrganizePanel'
 import { PhotoFlagBadges } from '../components/photo/PhotoFlagBadges'
 import { PeoplePanel } from '../components/photo/PeoplePanel'
+import { ProcessingPanel } from '../components/photo/ProcessingPanel'
 import { StackStrip } from '../components/photo/StackStrip'
 import { TechnicalDetails } from '../components/photo/TechnicalDetails'
 import { VideoPlayer } from '../components/photo/VideoPlayer'
@@ -157,7 +158,7 @@ export function PhotoDetailPage() {
   const { t, i18n } = useTranslation()
   const toast = useToast()
   const { uid = '' } = useParams<{ uid: string }>()
-  const { canWrite, downloadToken, user, isAdmin } = useAuth()
+  const { canWrite, downloadToken, user, isAdmin, isMaintainer } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -1283,6 +1284,17 @@ export function PhotoDetailPage() {
                     onUnstackAll={handleUnstackAll}
                     detailQuery={detailQuery}
                   />
+                </section>
+              )}
+
+              {/* What the library has already computed about this photo. It is a
+                  visible block of its own, not a row inside the collapsed
+                  technical card: "why does this photo not come up in search?" is
+                  a question worth answering without an extra click. */}
+              {photo.processing !== undefined && photo.processing.length > 0 && (
+                <section className="kk-viewer__section">
+                  <p className="kk-text-eyebrow mb-2">{t('photo.sections.processing')}</p>
+                  <ProcessingPanel uid={photo.uid} steps={photo.processing} canRun={isMaintainer} />
                 </section>
               )}
 

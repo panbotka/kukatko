@@ -115,6 +115,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/placesapi` — `GET /places` (hierarchy of countries → cities with counts)
 - `internal/placesjob` — worker handler `places` (reverse geocode, rate-limited due to credits)
 - `internal/processapi` — maintainer-only `/process/*` backfills (embeddings, faces, clusters, places)
+- `internal/processing` — what has already been computed about **one** photo (evidence first, queue second) + scheduling the one step it missed
 - `internal/query` — pure parser of the search query language (`q=`): free text + key:value filters → AST; unknown tokens degrade to free text; compiled to SQL in `internal/photos`
 - `internal/ratelimit` — per-key token-bucket limiter + HTTP middleware
 - `internal/reachability` — cached background probe of the embeddings sidecar (atomic flag for `/capabilities`)

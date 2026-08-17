@@ -119,6 +119,15 @@ the last mouse move, key or tap, taking the cursor with them, and come back the 
 looks like — photos per year across its whole span, arrivals per month, which cameras took most of
 it, what it costs in bytes, and how far along the processing is.
 
+A photo's detail says the same thing about **itself**: which of the background computations —
+metadata, thumbnails, the semantic fingerprint, faces, text in the picture, the place, the metadata
+sidecar — have already run, which are waiting or being worked on right now, and which failed and why.
+So "why doesn't this photo come up in search?" has an answer instead of a shrug: the AI box is
+offline and the job is queued. A step that ran and found nothing — no face, no text — says so, rather
+than pretending to be a gap. A maintainer can run any missing step for that one photo on the spot.
+Right under it, the photo states how it got here as one fact: who uploaded it and when, or simply
+that it was imported.
+
 ### Places and video
 
 - A **map** with clustering that says out loud how much of the library carries a location at all,
