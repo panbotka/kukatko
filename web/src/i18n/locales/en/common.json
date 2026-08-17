@@ -1768,7 +1768,8 @@
     },
     "sections": {
       "organize": "Organize",
-      "caption": "Caption & place"
+      "caption": "Caption & place",
+      "processing": "Processing"
     },
     "comments": {
       "title": "Comments",
@@ -1838,8 +1839,6 @@
       "removeKeyword": "Remove keyword {{name}}",
       "scan": "Scan",
       "scanHelp": "A scan of a physical photo, not a camera capture.",
-      "uploadedBy": "Uploaded by",
-      "uploaderUnknown": "—",
       "camera": "Camera",
       "lens": "Lens",
       "aperture": "Aperture",
@@ -1930,7 +1929,6 @@
       "colorProfile": "Colour profile",
       "fileHash": "Hash (SHA256)",
       "copyHash": "Copy the hash",
-      "createdAt": "Added to the library",
       "updatedAt": "Last modified",
       "altitude": "Altitude",
       "country": "Country",
@@ -1951,7 +1949,10 @@
       "regenerateThumbSuccess": "Thumbnail regenerated",
       "regenerateThumbUndecodable": "The original is missing or cannot be decoded.",
       "regenerateThumbError": "Could not regenerate the thumbnail.",
-      "takenAtExact": "Exact capture time"
+      "takenAtExact": "Exact capture time",
+      "upload": "Upload",
+      "uploadedBy": "{{name}} · {{at}}",
+      "uploadedByImport": "Imported · {{at}}"
     },
     "organize": {
       "albums": "Albums",
@@ -2013,7 +2014,34 @@
       "shown": "Photo is back in the library",
       "error": "The action could not be completed."
     },
-    "untitled": "Untitled"
+    "untitled": "Untitled",
+    "processing": {
+      "title": "Processing",
+      "steps": {
+        "metadata": "Metadata from the file",
+        "thumbnail": "Thumbnails",
+        "image_embed": "Semantic fingerprint",
+        "face_detect": "Face detection",
+        "ocr": "Text in the photo",
+        "places": "Place lookup",
+        "sidecar": "Metadata sidecar"
+      },
+      "states": {
+        "done": "Done",
+        "running": "Running",
+        "queued": "Waiting in the queue",
+        "failed": "Failed",
+        "skipped": "Not applicable",
+        "pending": "Not run yet"
+      },
+      "faceCount_one": "{{count}} face",
+      "faceCount_other": "{{count}} faces",
+      "textFound": "text found",
+      "textNone": "no text",
+      "runNow": "Run now",
+      "runError": "Could not schedule the step.",
+      "runNotApplicable": "This step does not apply to this photo."
+    }
   },
   "upload": {
     "title": "Upload",

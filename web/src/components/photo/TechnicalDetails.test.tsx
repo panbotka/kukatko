@@ -151,22 +151,26 @@ describe('TechnicalDetails', () => {
     expect(screen.queryByText('EOS R5')).not.toBeInTheDocument()
   })
 
-  it('shows the resolved uploader when expanded', async () => {
+  it('states the upload as one fact — who, and when', async () => {
     renderDetails({ uploader: { uid: 'u1', name: 'Camera Man' } })
 
-    // The uploader is an intrinsic reference fact, so it lives here with the EXIF.
-    expect(screen.queryByText('Uploaded by')).not.toBeInTheDocument()
+    // The upload is an intrinsic reference fact, so it lives here with the EXIF.
+    expect(screen.queryByText('Upload')).not.toBeInTheDocument()
     await expand()
-    expect(screen.getByText('Uploaded by')).toBeInTheDocument()
-    expect(screen.getByText('Camera Man')).toBeInTheDocument()
+    const label = screen.getByText('Upload')
+    expect(label.nextElementSibling).toHaveTextContent('Camera Man')
+    // The moment it arrived belongs to the same sentence, not to another group.
+    expect(label.nextElementSibling).toHaveTextContent(/2026/)
+    expect(screen.queryByText('Added to the library')).not.toBeInTheDocument()
   })
 
-  it('falls back to a neutral uploader value when none is set', async () => {
+  it('reads a photo with no uploader as imported, not as a dash', async () => {
     renderDetails()
 
     await expand()
-    const label = screen.getByText('Uploaded by')
-    expect(label.nextElementSibling).toHaveTextContent('—')
+    const label = screen.getByText('Upload')
+    expect(label.nextElementSibling).toHaveTextContent(/Imported/)
+    expect(label.nextElementSibling).not.toHaveTextContent('—')
   })
 
   it('shows the regenerate-thumbnail button to editors when expanded', async () => {
@@ -246,7 +250,6 @@ describe('TechnicalDetails groups', () => {
     expect(screen.getByText('12.0 MP')).toBeInTheDocument()
     expect(screen.getByText('Rotated 90° right')).toBeInTheDocument()
     expect(screen.getByText('Display P3')).toBeInTheDocument()
-    expect(screen.getByText('Added to the library')).toBeInTheDocument()
     expect(screen.getByText('Last modified')).toBeInTheDocument()
 
     // Location — the coordinate and the cached place, no geocode in sight.
@@ -256,9 +259,9 @@ describe('TechnicalDetails groups', () => {
     expect(screen.getByText('Brno')).toBeInTheDocument()
     expect(screen.getByText('Špilberk')).toBeInTheDocument()
 
-    // Origin — who put the photo here. The import UIDs are one click further
-    // down, in the developer section.
-    expect(screen.getByText('Camera Man')).toBeInTheDocument()
+    // Origin — how the photo got here, as one sentence. The import UIDs are one
+    // click further down, in the developer section.
+    expect(screen.getByText('Upload').nextElementSibling).toHaveTextContent('Camera Man')
     await user.click(screen.getByRole('button', { name: 'For developers' }))
     expect(screen.getByText('pp-123')).toBeInTheDocument()
     expect(screen.getByText('ps-456')).toBeInTheDocument()

@@ -1977,8 +1977,13 @@ here.
   color profile, added/changed), **Poloha**
   (coordinates, `altitude`, + a **cached** `place` from the detail — country/region/city/place; **no
   on-demand geocoding**, only `PhotoLocation` does that on demand), **Video** (only `media_type`
-  `video`/`live`: duration `m:ss`, codecs, audio yes/no, fps) and **Původ** (Nahrál/a
-  `photo.metadata.uploadedBy` from `photo.uploader.name`, fallback `—` `uploaderUnknown`). Last comes
+  `video`/`live`: duration `m:ss`, codecs, audio yes/no, fps) and **Původ** — a single row **Nahrání**
+  (`photo.technical.upload`) stating the upload as **one fact**, who and when:
+  `photo.technical.uploadedBy` (`{{name}} · {{at}}`) from `photo.uploader.name` and
+  `formatDateTimeMinutes(created_at)`, or `photo.technical.uploadedByImport` („Importováno · …") for a
+  photo with no uploader — an imported item arrived from an import, not from nobody, and a bare `—` said
+  neither. `created_at` therefore no longer has its own row in **Soubor**: the name and the moment are one
+  sentence, not two rows in two groups. Last comes
   **Pro vývojáře** (`DeveloperGroup`, `photo.technical.groups.developer`) — a group that looks like the
   others but whose heading *is* its chevron toggle (`aria-expanded`/`aria-controls`), **closed on first
   render** and skipped entirely when it would be empty: the shortened **SHA256** (full value in `title`,
@@ -2003,7 +2008,24 @@ here.
   or an error (422 = „originál chybí nebo ho nelze dekódovat", otherwise a generic message); on success
   it calls `onThumbnailRegenerated`, which in `PhotoDetailPage` **bumps `thumbVersion`** and appends
   `?v=` to `poster` (the thumb URL is built from the UID, thus stable → a cache-bust forces loading the new
-  thumbnail without a hard reload). A viewer doesn't see the button. **Edits are the drawer's lead slot** — they belong
+  thumbnail without a hard reload). A viewer doesn't see the button.
+  **Zpracování** (`ProcessingPanel`, `components/photo/`) is a **visible block of the drawer**, not a row
+  inside the collapsed Technické údaje: „proč se tahle fotka nenajde ve vyhledávání?" deserves an answer
+  without an extra click. `PhotoDetailPage` renders it as its own `kk-viewer__section` (eyebrow
+  `photo.sections.processing`) right above Technické údaje, only when the detail carries `photo.processing`.
+  One row per step (`photo.processing.steps.*`, the backend's fixed order): a state glyph + the step's name
+  + a muted line saying where it stands. **`done` reads calmly** — a green `check-lg` and the moment it ran
+  (`formatDateTimeMinutes`), because a library where everything has been computed should not look like a
+  wall of ticks demanding attention; `queued` (`clock-history`, info), `running` (`arrow-clockwise`,
+  primary), `failed` (`exclamation-triangle`, danger, with the job's `error` text under the row), `pending`
+  (`dash-lg`) and `skipped` (`slash-circle`) are each visually distinct. A step that ran and **found
+  nothing** says so as a result, never as a gap: `face_count` („0 obličejů") and `text_found`
+  („žádný text"). **A maintainer** (`isMaintainer`, not `canWrite` — scheduling background work is
+  operations) additionally gets a **Spustit** button on every step that is neither `done` nor `skipped`; it
+  calls `runProcessingStep(uid, step)` (POST `/photos/{uid}/process/{step}`) and **replaces that one row**
+  with the state the response returns, so nothing is re-fetched. A 409 says the step does not apply to this
+  photo, anything else a generic message, both in a `role="alert"` line under the list. Nobody but a
+  maintainer sees the buttons. **Edits are the drawer's lead slot** — they belong
   to the photo they edit, so `EditPanel` (editor/admin, still only) is opened by the **Úpravy** button
   (`aria-pressed`) in the action bar; turning it on **opens the drawer** and mounts the panel at its head (the same
   one `sidePanel` as faces, see above), the header carries a title + a closing **`x-lg`**
@@ -4091,6 +4113,10 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `regenerateThumbnail(uid,signal)` over `POST /api/v1/photos/{uid}/regenerate-thumbnail`
   (an editor/admin service action, synchronous, `RegenerateThumbnailResult{status,sizes}`, 422 =
   the original is undecodable; the basis for `RegenerateThumbnailButton`),
+  `runProcessingStep(uid,step,signal)` over `POST /api/v1/photos/{uid}/process/{step}` (a **maintainer**
+  action scheduling one per-photo computation, idempotent, resolves with that step's new
+  `PhotoProcessing`, 409 = the step does not apply to this photo; the basis for `ProcessingPanel`), the
+  types `ProcessingStep`/`ProcessingState`/`PhotoProcessing` and `PhotoDetail.processing`,
   `hidePhoto(uid)`/`unhidePhoto(uid)` (`POST …/hide`/`…/unhide`, editor/admin, set/clear
   `Photo.hidden_from_library` — library visibility, **not** the trash and not `private`),
   **the trash** `unarchivePhoto(uid)` (`POST …/unarchive` restore), `purgePhoto(uid)` (`POST …/purge?confirm=true`

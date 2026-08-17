@@ -32,6 +32,7 @@ import (
 	"github.com/panbotka/kukatko/internal/photoapi"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/places"
+	"github.com/panbotka/kukatko/internal/processing"
 	"github.com/panbotka/kukatko/internal/stacks"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/storyboard"
@@ -170,10 +171,19 @@ func newEnvWithMedia(t *testing.T, media storage.Storage) *env {
 			// pending/ready transition, not whether this host can render.
 			FFmpegAvailable: func() bool { return true },
 		}),
-		RequireAuth:     authAPI.RequireAuth,
-		RequireWrite:    authAPI.RequireWrite,
-		RequireAdmin:    authAPI.RequireAdmin,
-		RequireDownload: authAPI.RequireAuthOrDownloadToken,
+		// The real evidence reader over the real queue: what has been computed about
+		// a photo is a fact about the database, and a fake for either side would
+		// leave the query — the whole point of the report — untested.
+		Processing: processing.New(processing.Config{
+			Evidence: processing.NewStore(db.Pool()),
+			Jobs:     jobStore,
+			Enqueuer: jobs.NewEnqueuer(jobStore),
+		}),
+		RequireAuth:       authAPI.RequireAuth,
+		RequireWrite:      authAPI.RequireWrite,
+		RequireAdmin:      authAPI.RequireAdmin,
+		RequireMaintainer: authAPI.RequireMaintainer,
+		RequireDownload:   authAPI.RequireAuthOrDownloadToken,
 	})
 
 	r := chi.NewRouter()

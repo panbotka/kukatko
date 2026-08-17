@@ -556,12 +556,60 @@ export interface StackMember {
   download_url?: string
 }
 
+/**
+ * One per-photo computation the library runs in the background. The names are
+ * the backend's job types (`internal/jobs`), in the order the detail page shows
+ * them. `storyboard` is deliberately not among them: a video's scrub preview is
+ * rendered lazily on first playback and leaves no persisted evidence, so it has
+ * no state to report.
+ */
+export type ProcessingStep =
+  | 'metadata'
+  | 'thumbnail'
+  | 'image_embed'
+  | 'face_detect'
+  | 'ocr'
+  | 'places'
+  | 'sidecar'
+
+/**
+ * What a step's row says about the work: it landed (`done`), a worker has it
+ * (`running`), it waits in the queue (`queued`), the last attempt errored
+ * (`failed`), it can never apply to this photo or its feature is off
+ * (`skipped`), or it has simply never run (`pending`).
+ */
+export type ProcessingState = 'done' | 'running' | 'queued' | 'failed' | 'skipped' | 'pending'
+
+/**
+ * One entry of a photo detail's `processing` array. `at` is when the evidence
+ * was recorded and is present only for `done`; `error` is the last failure's
+ * message and only for `failed`. The two step-specific fields say what a
+ * completed step actually produced, so a legitimately empty result does not read
+ * as a gap: `face_count` on `face_detect` (0 = looked at, no face) and
+ * `text_found` on `ocr` (false = read, no text).
+ */
+export interface PhotoProcessing {
+  step: ProcessingStep
+  state: ProcessingState
+  at?: string
+  error?: string
+  face_count?: number
+  text_found?: boolean
+}
+
 export interface PhotoDetail extends Photo {
   files: PhotoFile[]
   albums: PhotoAlbumRef[]
   labels: PhotoLabelRef[]
   uploader?: PhotoUploaderRef
   place?: PhotoPlace
+  /**
+   * What the library has already computed about the photo — one entry per step,
+   * in a fixed order. Absent when the instance wires no processing service (and
+   * on older fixtures), which the UI reads as "nothing to show" rather than as an
+   * empty report.
+   */
+  processing?: PhotoProcessing[]
   /**
    * The stack's variants strip: every file of this photo's stack (this photo
    * among them), the primary first. Absent/empty for an unstacked photo.
@@ -1052,6 +1100,34 @@ export async function regenerateThumbnail(
     throw new ApiError(res.status, await readErrorMessage(res))
   }
   return (await res.json()) as RegenerateThumbnailResult
+}
+
+/**
+ * Schedules one per-photo computation via
+ * `POST /api/v1/photos/{uid}/process/{step}` and resolves with that step's new
+ * state, so the caller can update the row without re-fetching the photo.
+ *
+ * It is the repair for a photo the pipeline missed: maintainers only, and
+ * idempotent — the queue's dedup index absorbs a request for work already
+ * waiting or running, so a double click schedules it once.
+ *
+ * @throws ApiError with `status` 400 (not a known step), 403 (not a
+ *   maintainer), 404 (no such photo), 409 (the step cannot apply to this photo),
+ *   503 (processing unwired) or 5xx.
+ */
+export async function runProcessingStep(
+  uid: string,
+  step: ProcessingStep,
+  signal?: AbortSignal,
+): Promise<PhotoProcessing> {
+  const res = await fetch(
+    `${API_BASE}/photos/${encodeURIComponent(uid)}/process/${encodeURIComponent(step)}`,
+    { method: 'POST', credentials: 'same-origin', signal },
+  )
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+  return (await res.json()) as PhotoProcessing
 }
 
 /**

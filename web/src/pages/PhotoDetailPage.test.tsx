@@ -1244,6 +1244,59 @@ describe('PhotoDetailPage — immersive viewer', () => {
   })
 
   /**
+   * What the library has computed about this photo is a visible block of the
+   * drawer, not a row inside the collapsed technical card: "why does this photo
+   * not come up in search?" deserves an answer without an extra click.
+   */
+  describe('processing block', () => {
+    it('lists the steps without expanding the technical card', async () => {
+      fetchPhotoMock.mockResolvedValue(
+        photo({
+          processing: [
+            { step: 'metadata', state: 'done', at: '2026-08-17T10:00:00Z' },
+            { step: 'image_embed', state: 'queued' },
+            { step: 'places', state: 'skipped' },
+          ],
+        }),
+      )
+      const user = userEvent.setup()
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+      await openInfo(user)
+
+      expect(screen.getByText('Metadata from the file')).toBeInTheDocument()
+      expect(screen.getByText('Waiting in the queue')).toBeInTheDocument()
+      // Still collapsed: the block stands on its own.
+      expect(screen.getByRole('button', { name: 'Technical details' })).toHaveAttribute(
+        'aria-expanded',
+        'false',
+      )
+    })
+
+    it('renders nothing when the instance reports no processing', async () => {
+      const user = userEvent.setup()
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+      await openInfo(user)
+
+      expect(screen.queryByText('Metadata from the file')).not.toBeInTheDocument()
+    })
+
+    it('offers no run button to a non-maintainer', async () => {
+      fetchPhotoMock.mockResolvedValue(
+        photo({ processing: [{ step: 'image_embed', state: 'queued' }] }),
+      )
+      const user = userEvent.setup()
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+      await openInfo(user)
+
+      expect(screen.getByText('Waiting in the queue')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /run now/i })).not.toBeInTheDocument()
+    })
+  })
+
+  /**
    * The shut drawer and the keyboard. It slides out rather than unmounting, so all
    * of its controls stay laid out — and a laid-out control is a tabbable one.
    * Measured on production at 1440px: Tab left the visible chrome and landed on

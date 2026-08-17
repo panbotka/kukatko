@@ -21,6 +21,7 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/mediaurl"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/processing"
 	"github.com/panbotka/kukatko/internal/query"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
@@ -34,30 +35,34 @@ type API struct {
 	storage storage.Storage
 	// media mints the client-facing thumb/download addresses stamped onto every
 	// photo payload, and tells the media routes whether to redirect or stream.
-	media           *mediaurl.Builder
-	thumbnailer     *thumb.Thumbnailer
-	regenerator     ThumbnailRegenerator
-	audit           AuditRecorder
-	similar         SimilarSearcher
-	embedder        TextEmbedder
-	faces           FaceService
-	favorites       FavoriteStore
-	ratings         RatingStore
-	organizer       PhotoOrganizer
-	users           UserResolver
-	places          PlaceResolver
-	purger          Purger
-	stacker         Stacker
-	sidecar         SidecarEnqueuer
-	thumbnails      ThumbnailEnqueuer
-	comments        CommentStore
-	storyboards     StoryboardService
-	retentionDays   int
-	videoTranscode  bool
-	requireAuth     func(http.Handler) http.Handler
-	requireWrite    func(http.Handler) http.Handler
-	requireAdmin    func(http.Handler) http.Handler
-	requireDownload func(http.Handler) http.Handler
+	media          *mediaurl.Builder
+	thumbnailer    *thumb.Thumbnailer
+	regenerator    ThumbnailRegenerator
+	audit          AuditRecorder
+	similar        SimilarSearcher
+	embedder       TextEmbedder
+	faces          FaceService
+	favorites      FavoriteStore
+	ratings        RatingStore
+	organizer      PhotoOrganizer
+	users          UserResolver
+	places         PlaceResolver
+	purger         Purger
+	stacker        Stacker
+	sidecar        SidecarEnqueuer
+	thumbnails     ThumbnailEnqueuer
+	comments       CommentStore
+	storyboards    StoryboardService
+	processing     ProcessingService
+	retentionDays  int
+	videoTranscode bool
+	requireAuth    func(http.Handler) http.Handler
+	requireWrite   func(http.Handler) http.Handler
+	requireAdmin   func(http.Handler) http.Handler
+	// requireMaintainer guards the per-photo processing repair, which schedules
+	// background work and is therefore an operations action rather than curation.
+	requireMaintainer func(http.Handler) http.Handler
+	requireDownload   func(http.Handler) http.Handler
 	// commentRateLimit throttles comment creation per user; nil means no throttle
 	// (see commentThrottle).
 	commentRateLimit func(http.Handler) http.Handler
@@ -133,6 +138,10 @@ type Config struct {
 	// nil the status endpoint reports "unavailable" and the sprite route answers
 	// 404, so the player simply shows no preview — never an error.
 	Storyboards StoryboardService
+	// Processing backs the detail response's account of what has been computed
+	// about the photo and the maintainer's per-step "run now". When nil the detail
+	// omits the block and that endpoint answers 503.
+	Processing ProcessingService
 	// CommentRateLimit throttles comment creation. It is mounted inside the auth
 	// guard so it can key on the acting user rather than the client IP — a
 	// household behind one address is many people. A nil value disables
@@ -154,6 +163,9 @@ type Config struct {
 	// single archived photo, empty the whole trash). Emptying the trash destroys
 	// originals, so it is tightened above write to admins (and maintainers).
 	RequireAdmin func(http.Handler) http.Handler
+	// RequireMaintainer guards the per-photo processing repair, which schedules
+	// background work on the queue — operations, not curation.
+	RequireMaintainer func(http.Handler) http.Handler
 	// RequireDownload guards media endpoints, accepting a session cookie or a
 	// download token so cookie-less <img>/<video> tags work.
 	RequireDownload func(http.Handler) http.Handler
@@ -163,32 +175,34 @@ type Config struct {
 // comment creation.
 func NewAPI(cfg Config) *API {
 	return &API{
-		store:           cfg.Store,
-		storage:         cfg.Storage,
-		media:           mediaurl.NewBuilder(cfg.Storage),
-		thumbnailer:     cfg.Thumbnailer,
-		regenerator:     cfg.Regenerator,
-		audit:           cfg.Audit,
-		similar:         cfg.Similar,
-		embedder:        cfg.Embedder,
-		faces:           cfg.Faces,
-		favorites:       cfg.Favorites,
-		ratings:         cfg.Ratings,
-		organizer:       cfg.Organizer,
-		users:           cfg.Users,
-		places:          cfg.Places,
-		purger:          cfg.Purger,
-		stacker:         cfg.Stacker,
-		sidecar:         cfg.Sidecar,
-		thumbnails:      cfg.Thumbnails,
-		comments:        cfg.Comments,
-		storyboards:     cfg.Storyboards,
-		retentionDays:   cfg.RetentionDays,
-		videoTranscode:  cfg.VideoTranscode,
-		requireAuth:     cfg.RequireAuth,
-		requireWrite:    cfg.RequireWrite,
-		requireAdmin:    cfg.RequireAdmin,
-		requireDownload: cfg.RequireDownload,
+		store:             cfg.Store,
+		storage:           cfg.Storage,
+		media:             mediaurl.NewBuilder(cfg.Storage),
+		thumbnailer:       cfg.Thumbnailer,
+		regenerator:       cfg.Regenerator,
+		audit:             cfg.Audit,
+		similar:           cfg.Similar,
+		embedder:          cfg.Embedder,
+		faces:             cfg.Faces,
+		favorites:         cfg.Favorites,
+		ratings:           cfg.Ratings,
+		organizer:         cfg.Organizer,
+		users:             cfg.Users,
+		places:            cfg.Places,
+		purger:            cfg.Purger,
+		stacker:           cfg.Stacker,
+		sidecar:           cfg.Sidecar,
+		thumbnails:        cfg.Thumbnails,
+		comments:          cfg.Comments,
+		storyboards:       cfg.Storyboards,
+		processing:        cfg.Processing,
+		retentionDays:     cfg.RetentionDays,
+		videoTranscode:    cfg.VideoTranscode,
+		requireAuth:       cfg.RequireAuth,
+		requireWrite:      cfg.RequireWrite,
+		requireAdmin:      cfg.RequireAdmin,
+		requireMaintainer: cfg.RequireMaintainer,
+		requireDownload:   cfg.RequireDownload,
 
 		commentRateLimit: cfg.CommentRateLimit,
 	}
@@ -233,6 +247,7 @@ func passthroughMiddleware(next http.Handler) http.Handler {
 //	POST   /photos/{uid}/unstack      RequireWrite     remove this member from its stack
 //	POST   /photos/{uid}/unstack-all  RequireWrite     dissolve the whole stack
 //	POST   /photos/{uid}/regenerate-thumbnail RequireWrite  rebuild thumbnail + pHash
+//	POST   /photos/{uid}/process/{step} RequireMaintainer  schedule one computation
 //	GET    /photos/{uid}/thumb/{size} RequireDownload  cached thumbnail (or 302)
 //	GET    /photos/{uid}/video        RequireDownload  video stream (range/206, or 302)
 //	GET    /photos/{uid}/storyboard   RequireAuth      scrub-preview status (+ lazy enqueue)
@@ -291,6 +306,7 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.With(a.requireWrite).Post("/{uid}/unstack", a.handleUnstackMember)
 		r.With(a.requireWrite).Post("/{uid}/unstack-all", a.handleUnstackAll)
 		r.With(a.requireWrite).Post("/{uid}/regenerate-thumbnail", a.handleRegenerateThumbnail)
+		r.With(a.requireMaintainer).Post("/{uid}/process/{step}", a.handleRunProcessingStep)
 		r.With(a.requireAdmin).Post("/{uid}/purge", a.handlePurge)
 		r.With(a.requireDownload).Get("/{uid}/thumb/{size}", a.handleThumb)
 		r.With(a.requireDownload).Get("/{uid}/video", a.handleVideo)
@@ -556,6 +572,11 @@ type photoDetail struct {
 	// badge the thread without fetching it. It is always present (0 for a photo
 	// with no comments, and for an instance with no comments backend wired).
 	CommentCount int `json:"comment_count"`
+	// Processing is the account of what the library has already computed about the
+	// photo — one entry per step, in a fixed order. It is omitted when no
+	// processing service is wired or the report could not be read; the photo is
+	// worth showing either way.
+	Processing []processing.Status `json:"processing,omitempty"`
 }
 
 // handleDetail returns a photo's full detail, including its file list and the
@@ -577,8 +598,8 @@ func (a *API) handleDetail(w http.ResponseWriter, r *http.Request) {
 
 // writeDetail assembles and writes the full photoDetail body for photo: its stored
 // files, the caller's per-user annotations (is_favorite, rating, flag) and media
-// URLs, its album/label memberships, its resolved uploader, its cached place and
-// the size of its comment thread.
+// URLs, its album/label memberships, its resolved uploader, its cached place, the
+// size of its comment thread and what has been computed about it.
 //
 // Every endpoint answering with a single photo the detail view then holds must go
 // through here, not write the bare photos.Photo: the client replaces the detail it
@@ -616,6 +637,7 @@ func (a *API) writeDetail(w http.ResponseWriter, r *http.Request, userUID string
 		Place:        a.resolvePlace(r.Context(), photo.UID),
 		StackMembers: members,
 		CommentCount: commentCount,
+		Processing:   a.resolveProcessing(r.Context(), photo.UID),
 	})
 }
 

@@ -3,7 +3,13 @@ import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
 
-import { formatByteCount, formatBytes, formatDateTime, formatDuration } from '../../lib/format'
+import {
+  formatByteCount,
+  formatBytes,
+  formatDateTime,
+  formatDateTimeMinutes,
+  formatDuration,
+} from '../../lib/format'
 import {
   aspectRatio,
   fileFormat,
@@ -201,11 +207,14 @@ export function TechnicalDetails({
     : undefined
   const fps = photo.fps !== undefined ? `${formatNumber(photo.fps, locale, 2)} fps` : undefined
 
-  // Origin — who put the photo here, and which library it came from.
-  const uploader =
+  // Origin — how the photo got here, stated as one fact rather than as a name in
+  // one group and a timestamp in another. A photo with no uploader did not
+  // arrive from nobody: it was imported, and saying so beats an empty dash.
+  const addedAt = formatDateTimeMinutes(photo.created_at, locale)
+  const upload =
     photo.uploader !== undefined && photo.uploader.name !== ''
-      ? photo.uploader.name
-      : t('photo.metadata.uploaderUnknown')
+      ? t('photo.technical.uploadedBy', { name: photo.uploader.name, at: addedAt })
+      : t('photo.technical.uploadedByImport', { at: addedAt })
 
   const hasPhotoGroup =
     [
@@ -336,10 +345,6 @@ export function TechnicalDetails({
               <MetaField label={t('photo.technical.orientation')} value={orientationLabel} />
               <MetaField label={t('photo.technical.colorProfile')} value={photo.color_profile} />
               <MetaField
-                label={t('photo.technical.createdAt')}
-                value={formatDateTime(photo.created_at, locale)}
-              />
-              <MetaField
                 label={t('photo.technical.updatedAt')}
                 value={formatDateTime(photo.updated_at, locale)}
               />
@@ -368,7 +373,7 @@ export function TechnicalDetails({
           )}
 
           <MetaGroup title={t('photo.technical.groups.origin')}>
-            <MetaField label={t('photo.metadata.uploadedBy')} value={uploader} />
+            <MetaField label={t('photo.technical.upload')} value={upload} />
           </MetaGroup>
 
           {hasDeveloperGroup && (

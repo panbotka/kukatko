@@ -1846,7 +1846,8 @@
     },
     "sections": {
       "organize": "Uspořádání",
-      "caption": "Popis a místo"
+      "caption": "Popis a místo",
+      "processing": "Zpracování"
     },
     "comments": {
       "title": "Komentáře",
@@ -1918,8 +1919,6 @@
       "removeKeyword": "Odebrat klíčové slovo: {{name}}",
       "scan": "Sken",
       "scanHelp": "Sken fyzické fotky, ne snímek z fotoaparátu.",
-      "uploadedBy": "Nahrál/a",
-      "uploaderUnknown": "—",
       "camera": "Fotoaparát",
       "lens": "Objektiv",
       "aperture": "Clona",
@@ -2010,7 +2009,6 @@
       "colorProfile": "Barevný profil",
       "fileHash": "Otisk (SHA256)",
       "copyHash": "Zkopírovat otisk",
-      "createdAt": "Přidáno do knihovny",
       "updatedAt": "Naposledy změněno",
       "altitude": "Nadmořská výška",
       "country": "Země",
@@ -2031,7 +2029,10 @@
       "regenerateThumbSuccess": "Náhled přegenerován",
       "regenerateThumbUndecodable": "Originál chybí nebo ho nelze dekódovat.",
       "regenerateThumbError": "Náhled se nepodařilo přegenerovat.",
-      "takenAtExact": "Přesný čas pořízení"
+      "takenAtExact": "Přesný čas pořízení",
+      "upload": "Nahrání",
+      "uploadedBy": "{{name}} · {{at}}",
+      "uploadedByImport": "Importováno · {{at}}"
     },
     "organize": {
       "albums": "Alba",
@@ -2093,7 +2094,36 @@
       "shown": "Fotka je zase v knihovně",
       "error": "Akci se nepodařilo provést."
     },
-    "untitled": "Bez názvu"
+    "untitled": "Bez názvu",
+    "processing": {
+      "title": "Zpracování",
+      "steps": {
+        "metadata": "Metadata ze souboru",
+        "thumbnail": "Náhledy",
+        "image_embed": "Sémantický otisk",
+        "face_detect": "Rozpoznání obličejů",
+        "ocr": "Text ve fotce",
+        "places": "Určení místa",
+        "sidecar": "Záložní soubor metadat"
+      },
+      "states": {
+        "done": "Hotovo",
+        "running": "Právě probíhá",
+        "queued": "Čeká ve frontě",
+        "failed": "Selhalo",
+        "skipped": "Neprovádí se",
+        "pending": "Zatím neproběhlo"
+      },
+      "faceCount_one": "{{count}} obličej",
+      "faceCount_few": "{{count}} obličeje",
+      "faceCount_many": "{{count}} obličeje",
+      "faceCount_other": "{{count}} obličejů",
+      "textFound": "text nalezen",
+      "textNone": "žádný text",
+      "runNow": "Spustit",
+      "runError": "Krok se nepodařilo naplánovat.",
+      "runNotApplicable": "Tenhle krok se pro tuhle fotku neprovádí."
+    }
   },
   "upload": {
     "title": "Nahrát",
