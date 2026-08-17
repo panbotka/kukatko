@@ -47,9 +47,10 @@ func (a *API) handleYears(w http.ResponseWriter, r *http.Request) {
 	// Scope the per-user rating filters to the caller so min_rating/flag select
 	// the same photos here as they do in GET /photos.
 	params.RatedBy = &user.UID
-	// The facet counts the same photos the grid lists, so `person:me` resolves
-	// here too; an unresolvable one yields no years, matching an empty grid.
-	applyPersonMe(&params, user)
+	// The facet counts the same photos the grid lists, so the caller-dependent
+	// tokens resolve here too; an unresolvable `person:me` yields no years,
+	// matching an empty grid.
+	applyMeTokens(&params, user)
 	// The facet offers every year, whichever one is currently selected.
 	params.Year = nil
 

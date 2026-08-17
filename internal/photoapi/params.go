@@ -290,7 +290,7 @@ func applyFilters(q url.Values, params *photos.ListParams) error {
 
 	params.Camera = q.Get("camera")
 	params.Lens = q.Get("lens")
-	params.UploadedBy = q.Get("uploader")
+	params.UploadedBy, params.NoUploader = uploaderFilter(q.Get("uploader"))
 	// Album and label are multi-valued: repeated params (?album=a&album=b) select
 	// several, combined with AND downstream. A single value still yields a
 	// one-element slice, so the historical ?album=<uid> form keeps working.
@@ -302,6 +302,19 @@ func applyFilters(q url.Values, params *photos.ListParams) error {
 	params.Country = q.Get("country")
 	params.City = q.Get("city")
 	return nil
+}
+
+// uploaderFilter reads the uploader= parameter: a user UID scopes the listing to
+// what that account uploaded, and the reserved value "none" — the same word the
+// query language's uploader:none uses, so the reader learns it once — scopes it
+// to the photos with no uploader at all, which is the uploader facet's
+// "imported" group as a filter. An empty value adds no filter, and no UID can
+// collide with the reserved word: a user UID is 26 characters beginning "us".
+func uploaderFilter(raw string) (uid string, none bool) {
+	if raw == query.UploaderNone {
+		return "", true
+	}
+	return raw, false
 }
 
 // nonEmptyValues returns values with the empty strings dropped, so a repeated

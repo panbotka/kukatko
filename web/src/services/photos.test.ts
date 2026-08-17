@@ -88,6 +88,14 @@ describe('buildPhotoQuery', () => {
     expect(query.getAll('label')).toEqual(['lb_1'])
   })
 
+  it('sends the uploader scope, the imported group included', () => {
+    expect(buildPhotoQuery({ uploader: 'us_1' }).get('uploader')).toBe('us_1')
+    // The reserved word for "no uploader", spelled the same here as in the
+    // query language.
+    expect(buildPhotoQuery({ uploader: 'none' }).get('uploader')).toBe('none')
+    expect(buildPhotoQuery({ uploader: '' }).has('uploader')).toBe(false)
+  })
+
   it('drops empty segments and emits nothing for an empty list', () => {
     const query = buildPhotoQuery({ album: 'al_1,,al_2,', label: '' })
     expect(query.getAll('album')).toEqual(['al_1', 'al_2'])

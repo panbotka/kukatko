@@ -65,6 +65,13 @@ export type LibraryView = {
    */
   person: string
   /**
+   * Uploader filter: '' (anyone), a user UID, or the reserved `'none'` for the
+   * photos with no uploader — the ones an import brought in. A single value, not
+   * a list: a photo has exactly one uploader, so two of them could only ever
+   * match nothing.
+   */
+  uploader: string
+  /**
    * Favorites filter: '' (any) or 'true' to keep only the current user's
    * favorites. A two-state toggle — the backend only scopes on 'true', so there is
    * no "not favorited" value — wired into the URL like every other filter.
@@ -87,6 +94,25 @@ export type LibraryView = {
 }
 
 /**
+ * The reserved {@link LibraryView.uploader} value naming the photos with no
+ * uploader at all — the ones an import brought in rather than somebody's upload.
+ * It is the same word the backend's `uploader=` param and the query language's
+ * `uploader:none` use, so the URL, the API and the search box spell the group
+ * one way; no user UID can collide with it (a UID is 26 characters starting
+ * "us").
+ */
+export const UPLOADER_NONE = 'none'
+
+/**
+ * The library filtered to what one account uploaded — the shortest path from a
+ * photo's "Uploaded by" row to everything that person contributed. Pass
+ * {@link UPLOADER_NONE} for the imported photos.
+ */
+export function uploaderHref(uid: string): string {
+  return `${LIBRARY_PATH}?uploader=${encodeURIComponent(uid)}`
+}
+
+/**
  * Default view: newest first, archived hidden, no filters. Declared at module
  * scope so the urlState setter keeps a stable identity, and so values equal to a
  * default are omitted from the URL (keeping it minimal and shareable).
@@ -101,6 +127,7 @@ export const LIBRARY_DEFAULTS: LibraryView = {
   album: '',
   label: '',
   person: '',
+  uploader: '',
   favorite: '',
   taken_after: '',
   taken_before: '',
@@ -250,6 +277,7 @@ export function viewToParams(view: LibraryView): PhotoListParams {
     album: view.album,
     label: view.label,
     person: view.person,
+    uploader: view.uploader,
     favorite: view.favorite,
     taken_after: period.from,
     taken_before: takenBeforeParam(period.to),
@@ -276,6 +304,7 @@ export function hasActiveFilters(
     view.album !== '' ||
     view.label !== '' ||
     view.person !== '' ||
+    view.uploader !== '' ||
     view.favorite !== '' ||
     view.min_rating !== '' ||
     view.flag !== ''

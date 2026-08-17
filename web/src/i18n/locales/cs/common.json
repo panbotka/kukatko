@@ -625,6 +625,9 @@
       "anyLabel": "Libovolný štítek",
       "person": "Osoba",
       "anyPerson": "Libovolná osoba",
+      "uploader": "Kdo nahrál",
+      "anyUploader": "Kdokoli",
+      "uploaderImported": "Importované",
       "favorite": "Oblíbené",
       "sort": "Řazení",
       "archived": "Archiv",
@@ -768,6 +771,7 @@
         "album": "Fotky v albu (podle názvu nebo UID).",
         "label": "Fotky se štítkem (podle názvu nebo UID).",
         "person": "Fotky s osobou (podle jména nebo UID). `person:me` je osoba, kterou jsi ty — podle nastavení na Mém účtu.",
+        "uploader": "Kdo fotku nahrál (podle uživatelského jména nebo jména účtu, bez ohledu na diakritiku). `uploader:me` jsi ty, `uploader:none` jsou importované fotky.",
         "state": "Oblíbené, soukromé a archivované (yes/no).",
         "hidden": "Skryté z knihovny (yes/no) — jediná cesta zpátky ke skryté fotce.",
         "rating": "Vaše hodnocení hvězdičkami, 0–5.",
@@ -2031,7 +2035,7 @@
       "regenerateThumbError": "Náhled se nepodařilo přegenerovat.",
       "takenAtExact": "Přesný čas pořízení",
       "upload": "Nahrání",
-      "uploadedBy": "{{name}} · {{at}}",
+      "uploadedBy": "<uploader>{{name}}</uploader> · {{at}}",
       "uploadedByImport": "Importováno · {{at}}"
     },
     "organize": {

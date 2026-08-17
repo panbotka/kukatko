@@ -25,6 +25,7 @@ import { useGridScrollMemory } from '../hooks/useGridScrollMemory'
 import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
 import { useLibraryFacets } from '../hooks/useLibraryFacets'
 import { useReloadKey } from '../hooks/useReloadKey'
+import { useUploaders } from '../hooks/useUploaders'
 import { useWindowedPhotos } from '../hooks/useWindowedPhotos'
 import { detailQueryString } from '../lib/detailView'
 import { gridScrollKey } from '../lib/gridScroll'
@@ -99,6 +100,9 @@ export function LibraryPage() {
   const { photos, total, status, moreError, unknownTokens, notices, ensureRange, retry } =
     useWindowedPhotos(params, { reloadKey })
   const facets = useLibraryFacets(params)
+  // Who contributed to what is on screen — the option list behind the uploader
+  // filter, counted under the rest of the view like every other facet.
+  const uploaders = useUploaders(params)
   // Hover-select: every tile carries a corner checkmark for a writer, with no
   // explicit "enter selection mode" step, and the floating batch bar rises the
   // moment anything is picked.
@@ -263,7 +267,11 @@ export function LibraryPage() {
   // there — the quick-filter text included, unlike the bar's own chips — and be
   // able to drop them all in one click. Clearing keeps the sort: it narrows
   // nothing, so resetting it would be a surprise.
-  const activeFilters = buildChips(view, t, i18n.language, { facets, includeQuery: true })
+  const activeFilters = buildChips(view, t, i18n.language, {
+    facets,
+    uploaders,
+    includeQuery: true,
+  })
   const clearFilters = () => {
     setView({ ...LIBRARY_DEFAULTS, sort: view.sort })
   }
@@ -319,6 +327,7 @@ export function LibraryPage() {
         onChange={setView}
         total={total}
         facets={facets}
+        uploaders={uploaders}
         showFavorite
         searchHref={searchHref(view)}
         mobileActions={narrow ? viewActions : undefined}

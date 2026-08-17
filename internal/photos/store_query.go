@@ -185,6 +185,7 @@ var queryCondBuilders = map[query.Key]condBuilder{
 	query.KeyAlbum:       albumCond,
 	query.KeyLabel:       labelCond,
 	query.KeyPerson:      personCond,
+	query.KeyUploader:    uploaderCond,
 	query.KeyCountry:     placeCond("country"),
 	query.KeyCity:        placeCond("city"),
 	query.KeyGeo:         geoCond,
@@ -291,6 +292,35 @@ func personCond(v query.Value, env condEnv) (string, bool) {
 	return "EXISTS (SELECT 1 FROM markers m JOIN subjects s ON s.uid = m.subject_uid " +
 		"WHERE m.photo_uid = photos.uid AND m.invalid = FALSE " +
 		"AND (s.name ILIKE " + p + " OR s.uid = " + uid + "))", true
+}
+
+// uploaderCond matches who put the photo in the library: the uploading
+// account's username or display name by pattern, or its exact UID — the same
+// "name or UID" shape albumCond and personCond have, over a correlated EXISTS on
+// users. `uploader:me` never reaches here: it is rewritten to the caller's own
+// UID before compiling (internal/personme), and a UID is what the exact arm
+// matches.
+//
+// The reserved value `none` is not a name at all; it selects the photos with no
+// uploader, which is how an imported item is found (and how the uploader facet's
+// "imported" group is filtered). Negating it (`uploader:!none`) yields the
+// photos somebody did upload: `IS NULL` is never itself unknown, so the
+// NULL-safe wrapper around the negation changes nothing here.
+//
+// The name arms are folded through immutable_unaccent on both sides, unlike
+// albumCond's plain ILIKE: a person typing `uploader:tomas` is naming a
+// colleague from memory, not spelling a stored value, and "Tomáš" has to answer
+// to it.
+func uploaderCond(v query.Value, env condEnv) (string, bool) {
+	if v.Text == query.UploaderNone {
+		return "photos.uploaded_by IS NULL", true
+	}
+	p := env.bind(likePattern(v.TextPattern()))
+	uid := env.bind(v.Text)
+	return "EXISTS (SELECT 1 FROM users u WHERE u.uid = photos.uploaded_by AND (" +
+		"immutable_unaccent(u.username) ILIKE immutable_unaccent(" + p + ") OR " +
+		"immutable_unaccent(u.display_name) ILIKE immutable_unaccent(" + p + ") OR " +
+		"u.uid = " + uid + "))", true
 }
 
 // placeCond builds a match against one photo_places column (country or city).

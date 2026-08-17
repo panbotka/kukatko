@@ -36,10 +36,12 @@ const queryLanguageHelp = `Free words match the title, description, notes and fi
 	`other numbers take ranges like year:1960-1969), country:, city:, geo:yes|no, near:<photo-uid>, ` +
 	`dist:<km>, camera:, lens:, iso:, f:, mm:, mp:, type:image|video|live, faces:yes|no or a count, ` +
 	`face:new, favorite:yes|no, rating:0-5, flag:pick|reject|eye, archived:yes|no, private:yes|no, ` +
-	`portrait:, landscape:, square:, panorama:, filename:, keywords:, ` +
+	`portrait:, landscape:, square:, panorama:, filename:, keywords:, uploader: (by username, ` +
+	`display name or uid; uploader:none are the imported photos, which nobody uploaded), ` +
 	`uid:<photo-uid or PhotoPrism-uid>. ` +
-	`favorite:, rating: and flag: mean the calling token's own user, and person:me means the person ` +
-	`that user's account is linked to (an error when it is linked to none). ` +
+	`favorite:, rating: and flag: mean the calling token's own user, person:me means the person ` +
+	`that user's account is linked to (an error when it is linked to none), and uploader:me means ` +
+	`what that user uploaded. ` +
 	`uid: names exactly one photo and finds it even when archived, hidden or a stack variant. ` +
 	`Example: person:babicka year:1960-1969 -album:dovolena`
 
@@ -193,6 +195,10 @@ func (a *API) searchParams(c caller, in searchPhotosIn) (photos.ListParams, bool
 	if _, resolved := personme.Resolve(parsed.Filters, c.user.SubjectUID); !resolved {
 		return photos.ListParams{}, false, errPersonMeUnlinked
 	}
+	// `uploader:me` is the same promise about the other end of the photo: what
+	// the token's own account put in the library. It cannot fail — the account is
+	// the one that authenticated this call.
+	personme.ResolveUploader(parsed.Filters, c.user.UID)
 	params := photos.ListParams{
 		QueryFilters: parsed.Filters,
 		// Scope the query language's per-user filters (favorite:, rating:, flag:)

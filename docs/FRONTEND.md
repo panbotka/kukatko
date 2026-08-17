@@ -761,6 +761,13 @@ here.
   on the search page, **`sortOptions`** narrows the sort list to given values **in the given order**
   (the album page passes `ALBUM_SORTS` = oldest/newest, its sort key being pinned server-side; omitted =
   all six), `showDensity` hides density in the trash (card-based, not a photo grid),
+  **`uploaders`** (from `useUploaders`) adds a **Kdo nahrál** select to the panel — the contributors to the
+  *current* view, largest first, each with its count, „Kdokoli" at rest and **„Importované"** for the photos
+  nobody uploaded (`view.uploader` = a user uid or the reserved `UPLOADER_NONE`); it is a **single** choice,
+  not an add-picker like album/label/person, because a photo has exactly one uploader. It rides in its own
+  prop rather than in `facets` precisely so a grid already scoped to one album — where the entity pickers are
+  dropped — still offers it: „several people uploaded into this album, show me one person's share" is the
+  case it exists for. Like the primary pickers it admits when `uploader:` in `q` has taken it over,
   **`showFavorite`** enables the **Oblíbené** toggle in the panel (a two-state select „Vše"/„Jen oblíbené"
   → `view.favorite` `''`/`'true'`, the backend scopes only to `true`; the library enables it so you can
   combine „oblíbené + album + období" in the main grid, the Oblíbené page doesn't — it's already scoped)
@@ -1991,7 +1998,11 @@ here.
   on-demand geocoding**, only `PhotoLocation` does that on demand), **Video** (only `media_type`
   `video`/`live`: duration `m:ss`, codecs, audio yes/no, fps) and **Původ** — a single row **Nahrání**
   (`photo.technical.upload`) stating the upload as **one fact**, who and when:
-  `photo.technical.uploadedBy` (`{{name}} · {{at}}`) from `photo.uploader.name` and
+  `photo.technical.uploadedBy` (`<uploader>{{name}}</uploader> · {{at}}`, rendered through `Trans` so the
+  **name is a `Link` to `uploaderHref(uploader.uid)`** — the shortest path from „who brought this" to
+  „show me everything they brought", with the moment left plain text; the tag is `<uploader>`, not `<link>`,
+  which the HTML parser behind `Trans` treats as a void element and would drop the name inside)
+  from `photo.uploader.name` and
   `formatDateTimeMinutes(created_at)`, or `photo.technical.uploadedByImport` („Importováno · …") for a
   photo with no uploader — an imported item arrived from an import, not from nobody, and a bare `—` said
   neither. `created_at` therefore no longer has its own row in **Soubor**: the name and the moment are one
@@ -3333,7 +3344,13 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   in-flight requests are cancelled by `AbortController` when `params` change/on unmount, and the years response is additionally
   checked against the `latestYears` seq ref (an abort is a no-op once the response is already on the wire), so that a
   slow response doesn't overwrite a newer one — otherwise a few wrong counts would flash in the facet after a year change
-  (the caller memoizes `params` from the URL state); `useTimeline(params)` = a one-off loader
+  (the caller memoizes `params` from the URL state);
+  `useUploaders(params)` = the same loader for the **uploader** facet → `UploaderBucket[]` over
+  `fetchPhotoUploaders`: the same refetch-on-filter-change, the same abort + `latest` seq ref, the same
+  „a failure empties the list" rule, and the same self-narrowing guard — it **strips `uploader` from the
+  request**, so whichever contributor is picked the control keeps offering all of them. It is a hook of its
+  own rather than a field of `LibraryFacets` because the pages that need it are not only the library:
+  `AlbumDetailPage` passes `facets` to nothing and this to `FilterBar`; `useTimeline(params)` = a one-off loader
   of the monthly date histogram over `fetchTimeline` (`buckets`/`total`/`status`, refetch when the filters
   change, cancels in-flight + ignores stale — the basis for `TimelineScrubber`); `useGlobalSearch(query,
   debounceMs?)` = a debounced (default 250 ms) grouped global-search loader over `globalSearch`
@@ -3789,6 +3806,9 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   navigation lists each exactly once), `formatDecade` and `decadeAnchorId`) +
   `LIBRARY_PATH` (= `/`, the library's canonical route — **the library is the home page**; every link
   in the app points here, `/library/*` is only a redirect for old links) +
+  `UPLOADER_NONE` (`'none'`, the reserved „no uploader" value — the same word the API param and the query
+  language use, so the URL, the request and the search box spell the group one way) + `uploaderHref(uid)`
+  (the library filtered to one account's uploads, the target of the detail's **Nahrání** row) +
   the **multi-selection of the `album`/`label`/`person` facets**: each key carries a **comma-joined list of UIDs** (urlState
   stores each key as a single string, a comma doesn't occur in a UID) — the helpers `parseFilterList`/
   `joinFilterList`/`addToFilterList`/`removeFilterList` (sic `removeFromFilterList`) encode the list;
@@ -3796,10 +3816,10 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   people (AND). The whole selection round-trips through the URL query, so Back restores it;
   `viewToParams` (sanitizes sort/archived/**year** — `toYear` lets only a four-digit year through, a hand-written/stale
   URL degrades to „no filter" instead of a backend 400 —, passes `min_rating`/`flag`,
-  the `favorite` toggle and the comma-joined UIDs of the `album`/`label`/`person` facets through unchanged — `buildPhotoQuery`
+  the `favorite` toggle, the single-valued `uploader` and the comma-joined UIDs of the `album`/`label`/`person` facets through unchanged — `buildPhotoQuery`
   expands them into repeated parameters `?album=a&album=b`, which the backend ANDs; an unknown UID simply matches
   nothing; the `sort` union additionally has `rating`) + `hasActiveFilters` (`{ignoreQuery}` on the search page,
-  a non-empty album/label/person list or `favorite` = an active filter, it covers rating/flag and the facets) —
+  a non-empty album/label/person list, a picked `uploader` or `favorite` = an active filter, it covers rating/flag and the facets) —
   the mapping of the URL state onto the API params; `ratingHotkeys.ts` = the pure `ratingHotkey(key)` (`0`–`5` →
   a rating, `p`/`r`/`v` → a personal flag 👍/👎/👁 (stored pick/reject/eye), otherwise null) + `isTypingElement(target)` (input/textarea/select/
   contenteditable → the hotkey is skipped) — shared by the photo detail and a focused tile;
@@ -4132,7 +4152,12 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `fetchPhotoYears(params,signal)` over `GET /api/v1/photos/years` → `YearsResponse{years,total}`
   (a year histogram, the same filters as the list; sort/pagination are ignored, and the caller drops the
   period first), the types `YearsResponse`/`YearBucket{year,count}` — the basis for the decades the
-  period filter offers (`useLibraryFacets`);
+  period filter offers (`useLibraryFacets`),
+  `fetchPhotoUploaders(params,signal)` over `GET /api/v1/photos/uploaders` → `UploadersResponse{uploaders}`
+  (who uploaded into the current view, largest first, the same filters as the list; the caller drops the
+  `uploader` scope first), the types `UploadersResponse`/`UploaderBucket{uid,name,count}` — where the
+  imported photos are the entry with an **empty `uid` and an empty `name`**, which the client words itself
+  („Importované") — the basis for the uploader control (`useUploaders`);
   `PhotoListParams` scopes the time axis **only** through `taken_after`/`taken_before` (the backend's
   single-year `year` param has no caller here — one filter, one representation), `buildPhotoQuery`
   serializes them,

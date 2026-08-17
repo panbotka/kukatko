@@ -210,7 +210,14 @@ func (e *env) login(t *testing.T, username string, role auth.Role) (*http.Client
 	}); err != nil {
 		t.Fatalf("CreateUser(%s): %v", username, err)
 	}
+	return e.loginAs(t, username)
+}
 
+// loginAs signs an already created user in — the half of login a test needs when
+// it made the account itself to know its UID (to attribute an upload to it, say)
+// or to give it a display name.
+func (e *env) loginAs(t *testing.T, username string) (*http.Client, string) {
+	t.Helper()
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		t.Fatalf("cookiejar.New: %v", err)

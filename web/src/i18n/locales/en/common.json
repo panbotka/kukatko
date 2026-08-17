@@ -621,6 +621,9 @@
       "anyLabel": "Any label",
       "person": "Person",
       "anyPerson": "Any person",
+      "uploader": "Uploaded by",
+      "anyUploader": "Anyone",
+      "uploaderImported": "Imported",
       "favorite": "Favorites",
       "sort": "Sort",
       "archived": "Archived",
@@ -762,6 +765,7 @@
         "album": "Photos in an album (by title or UID).",
         "label": "Photos carrying a label (by name or UID).",
         "person": "Photos with a person (by name or UID). `person:me` is the person that is you, as set on My account.",
+        "uploader": "Who uploaded the photo (by username or account name, accents ignored). `uploader:me` is you, `uploader:none` are the imported photos.",
         "state": "Favorites, private and archived (yes/no).",
         "hidden": "Hidden from the library (yes/no) — the way back to a hidden photo.",
         "rating": "Your star rating, 0–5.",
@@ -1951,7 +1955,7 @@
       "regenerateThumbError": "Could not regenerate the thumbnail.",
       "takenAtExact": "Exact capture time",
       "upload": "Upload",
-      "uploadedBy": "{{name}} · {{at}}",
+      "uploadedBy": "<uploader>{{name}}</uploader> · {{at}}",
       "uploadedByImport": "Imported · {{at}}"
     },
     "organize": {

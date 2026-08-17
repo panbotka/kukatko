@@ -94,6 +94,12 @@ type ListParams struct {
 	// UploadedBy, when non-empty, restricts the result to photos uploaded by the
 	// given user UID.
 	UploadedBy string
+	// NoUploader, when true, restricts the result to photos with no uploader at
+	// all (uploaded_by IS NULL) — the items an import brought in rather than
+	// somebody's upload. It is the uploader facet's "imported" group expressed as
+	// a filter, and it takes precedence over UploadedBy, which names a person the
+	// same listing cannot also be missing.
+	NoUploader bool
 	// TakenAfter, when non-nil, keeps photos whose taken_at is at or after it.
 	// Photos with an unknown capture time (NULL taken_at) are excluded.
 	TakenAfter *time.Time
@@ -540,10 +546,15 @@ func hiddenClauses(params ListParams) []string {
 }
 
 // scalarClauses returns the equality and range filters (uploader, date range),
-// binding each value through bind.
+// binding each value through bind. The two uploader filters are exclusive:
+// NoUploader wins, the way OnlyArchived wins over IncludeArchived, since a
+// listing cannot be both "uploaded by that person" and "uploaded by nobody".
 func scalarClauses(params ListParams, bind func(any) string) []string {
 	var where []string
-	if params.UploadedBy != "" {
+	switch {
+	case params.NoUploader:
+		where = append(where, "uploaded_by IS NULL")
+	case params.UploadedBy != "":
 		where = append(where, "uploaded_by = "+bind(params.UploadedBy))
 	}
 	if params.TakenAfter != nil {

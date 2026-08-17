@@ -13,16 +13,22 @@ import (
 // every other code in this API makes.
 const noticePersonMeUnlinked = "person_me_unlinked"
 
-// applyPersonMe resolves the query language's `person:me` against user's linked
-// subject (see internal/personme) and returns the notices the response should
-// carry.
+// applyMeTokens resolves the query language's two caller-dependent values
+// against user — `person:me` against their linked subject and `uploader:me`
+// against their own account (see internal/personme) — and returns the notices
+// the response should carry.
+//
+// The two live in one function because they must never be resolved apart: every
+// handler that parses the query language calls this, so both tokens mean the
+// same thing on the grid, the search, the timeline and the facets, and adding a
+// handler cannot half-resolve them.
 //
 // When the caller has no linked person the request cannot be satisfied, so
 // params.MatchNone is set — the page comes back empty rather than silently
-// widening to the whole library — and the returned notice says why. Every
-// handler that parses the query language calls this, so the token means the same
-// thing on the grid, the search, the timeline and the year facet.
-func applyPersonMe(params *photos.ListParams, user auth.User) []string {
+// widening to the whole library — and the returned notice says why. `uploader:me`
+// has no such failure: it names the account that authenticated the request.
+func applyMeTokens(params *photos.ListParams, user auth.User) []string {
+	personme.ResolveUploader(params.QueryFilters, user.UID)
 	used, resolved := personme.Resolve(params.QueryFilters, user.SubjectUID)
 	if !used || resolved {
 		return nil

@@ -199,3 +199,76 @@ func TestTextClauses_escapesLikeMetacharacters(t *testing.T) {
 		t.Errorf("search %v and its negation %v bind different patterns", args[2], args[3])
 	}
 }
+
+// TestUploaderCond compiles the query language's uploader: filter: a name (or a
+// UID) becomes an accent-folded match against the users table, the reserved
+// `none` becomes the no-uploader test with nothing bound, and negating either
+// keeps the NULL-safe wrapper — so `uploader:!none` really is "somebody
+// uploaded this".
+func TestUploaderCond(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		input    string
+		contains []string
+		absent   []string
+		args     []any
+	}{
+		{
+			name:  "a name matches username or display name, accent-insensitively",
+			input: "uploader:tomas",
+			contains: []string{
+				"EXISTS (SELECT 1 FROM users u WHERE u.uid = photos.uploaded_by",
+				"immutable_unaccent(u.username) ILIKE immutable_unaccent($1)",
+				"immutable_unaccent(u.display_name) ILIKE immutable_unaccent($1)",
+				"u.uid = $2",
+			},
+			args: []any{"%tomas%", "tomas"},
+		},
+		{
+			name:     "a wildcard anchors the pattern",
+			input:    "uploader:tom*",
+			contains: []string{"immutable_unaccent(u.username) ILIKE immutable_unaccent($1)"},
+			args:     []any{"tom%", "tom*"},
+		},
+		{
+			name:     "none is the no-uploader test and binds nothing",
+			input:    "uploader:none",
+			contains: []string{"photos.uploaded_by IS NULL"},
+			absent:   []string{"FROM users u"},
+			args:     nil,
+		},
+		{
+			name:     "negated none keeps the NULL-safe wrapper",
+			input:    "uploader:!none",
+			contains: []string{"NOT COALESCE((photos.uploaded_by IS NULL), FALSE)"},
+			args:     nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			sql, args := buildCountQuery(ListParams{QueryFilters: query.Parse(tt.input).Filters})
+			for _, want := range tt.contains {
+				if !strings.Contains(sql, want) {
+					t.Errorf("query missing %q: %q", want, sql)
+				}
+			}
+			for _, unwanted := range tt.absent {
+				if strings.Contains(sql, unwanted) {
+					t.Errorf("query should not contain %q: %q", unwanted, sql)
+				}
+			}
+			if len(args) != len(tt.args) {
+				t.Fatalf("args = %v, want %v", args, tt.args)
+			}
+			for i, want := range tt.args {
+				if args[i] != want {
+					t.Errorf("arg %d = %v, want %v", i, args[i], want)
+				}
+			}
+		})
+	}
+}

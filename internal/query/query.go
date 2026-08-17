@@ -121,6 +121,13 @@ const (
 	KeySquare Key = "square"
 	// KeyPanorama keeps photos at least 1.9× wider than tall (yes/no).
 	KeyPanorama Key = "panorama"
+	// KeyUploader matches who put the photo in the library, by the uploading
+	// account's username or display name (text). Two exact lower-case values are
+	// reserved: `me` is the caller's own account — resolved outside this parser,
+	// like person:me (see internal/personme), so the language stays caller-blind
+	// — and `none` are the photos with no uploader at all, the ones an import
+	// brought in (see UploaderNone).
+	KeyUploader Key = "uploader"
 	// KeyFaces matches the face count: yes/no, a minimum, or a range.
 	KeyFaces Key = "faces"
 	// KeyFace matches face states; the only value is new (unassigned face).
@@ -203,9 +210,17 @@ var specs = map[Key]spec{
 	KeyLandscape:   {kind: KindBool},
 	KeySquare:      {kind: KindBool},
 	KeyPanorama:    {kind: KindBool},
+	KeyUploader:    {kind: KindText},
 	KeyFaces:       {kind: KindCount, lo: 0, hi: 1000, integer: true},
 	KeyFace:        {kind: KindEnum, enum: []string{"new"}},
 }
+
+// UploaderNone is the reserved uploader: value that means "no uploader at all":
+// the photos an import brought in rather than somebody's upload. It is a plain
+// text value to the parser — the photos store compiles it into an
+// "uploaded_by IS NULL" condition — because, unlike `me`, it says nothing about
+// who is asking. A user actually named "none" stays reachable by their UID.
+const UploaderNone = "none"
 
 // aliases maps alternative spellings the user may type to their canonical key.
 var aliases = map[string]Key{

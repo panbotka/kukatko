@@ -132,6 +132,18 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   Backed by `photos.Store.YearBuckets` (shares `buildWhere` with `List`/`Count`), invalid param → 400;
   the `?year=YYYY` filter on `GET /photos` (a four-digit year 1000–9999, otherwise 400) keeps only photos
   taken in that calendar year — photos with an unknown `taken_at` never match;
+  `GET /photos/uploaders` (authenticated) — **who uploaded into the current view** (backing the filters'
+  **uploader control**): accepts the **same filters** as `GET /photos` via `parseListParams`, response
+  `{uploaders:[{uid,name,count}]}`, **largest contribution first** (ties by uid). In an event album it
+  therefore lists that event's contributors, not every account on the instance. The photos with **no**
+  uploader are reported as their own entry (`uid: ""`, `name: ""` — the client names the group), so the
+  counts add up to what the grid shows. `name` is the uploader's display name, falling back to their
+  username. The `uploader` filter is **the only one ignored** — a facet must not narrow its own offering;
+  `sort`/`order` and pagination are ignored (always grouped by uploader).
+  Backed by `photos.Store.UploaderBuckets` (shares `buildWhere` with `List`/`Count`), invalid param → 400;
+  the `?uploader=` filter on `GET /photos` takes a **user UID**, or the reserved value **`none`** for the
+  photos with no uploader at all (the imported ones) — the same word the query language's `uploader:none`
+  uses, and no UID can collide with it;
   `GET /search?q=&mode=` (authenticated) — **semantic + hybrid search**, `mode` =
   `fulltext`|`semantic`|`hybrid` (default `hybrid`, unknown → 400): **fulltext** = Czech-aware
   full-text over `fts tsvector` (dictionary `simple` + `unaccent`, ranking `ts_rank`
@@ -1436,6 +1448,11 @@ the MCP tool answers with an error naming the fix instead. **The collision with 
 "me" is resolved in favour of the token**, but only in its exact lower-case spelling: `person:Me` or
 `person:ME` is an ordinary (case-insensitive) name match that still finds a subject named "me", and any
 subject is always reachable by UID (`person:<uid>`), which no name can shadow.
+**`uploader:me` — what the caller uploaded.** The same word under the uploader key, resolved the same way
+(`internal/personme`, `ResolveUploader`) against the **account making the request** rather than a person it
+is linked to — so it cannot fail and needs no notice; every other spelling (`uploader:Me`) is an ordinary
+name match. `uploader:none` is not caller-dependent at all and is compiled by the photos store into
+"no uploader".
 Every **fractional** bound (`f:1.8`, `f:1.8-2.8`, `f:1.8-`) is tolerated within ±0.005 due to the rounding of
 single-precision EXIF columns; whole-number bounds stay exact. Capture-time filters resolve in **UTC**
 (the connection pool pins the session zone), so `year:`, `?year=`, `taken:` and the year/timeline histograms
@@ -1453,6 +1470,7 @@ put a photo taken minutes either side of New Year in the same year.
 | `album:` | text | album membership by **name** (substring) or exact UID |
 | `label:` | text | a label by **name** or UID |
 | `person:` (alias `subject:`) | text | a subject by **name** or UID, via non-invalid markers. The exact lower-case value **`me`** is reserved: it means the person the caller's own account is linked to (`users.subject_uid`) — see below |
+| `uploader:` | text | who uploaded the photo, by the account's **username or display name** (substring, `*` wildcard, and **accent-insensitive** like `text:` — a name is typed from memory, so `uploader:tomas` finds "Tomáš") or by exact UID. Two exact lower-case values are reserved: **`me`** is the caller's own account (see below) and **`none`** are the photos with **no** uploader, the ones an import brought in — so `uploader:!none` is everything somebody did upload |
 | `favorite:` `private:` `archived:` | `yes\|no` | per-user favourite / private / archived; `archived:` **removes the default live-only scope** |
 | `hidden:` | `yes\|no` | hidden from the library (`photos.hidden_from_library`); like `archived:` it **removes the default visible-only scope**, so `hidden:yes` is the documented way back to a hidden photo |
 | `rating:` | `0-5`, ranges | the current user's rating; no row = 0, so `rating:0` finds the unrated |

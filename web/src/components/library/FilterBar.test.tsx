@@ -12,6 +12,7 @@ import { LIBRARY_DEFAULTS, type LibraryView } from '../../lib/libraryView'
 import { type SetUrlState } from '../../lib/urlState'
 import { type AlbumCount, type LabelCount } from '../../services/organize'
 import { type SubjectCount } from '../../services/people'
+import { type UploaderBucket } from '../../services/photos'
 
 import { FilterBar } from './FilterBar'
 
@@ -21,6 +22,7 @@ interface BarProps {
   showSort?: boolean
   showDensity?: boolean
   facets?: LibraryFacets
+  uploaders?: readonly UploaderBucket[]
   showFavorite?: boolean
   searchHref?: string
   /** The `semantic_search` capability the bar reads; defaults to available. */
@@ -118,6 +120,17 @@ const FACETS: LibraryFacets = {
   labels: [label('lb_1', 'Beach', 7), label('lb_2', 'Portrait', 2)],
   subjects: [subject('su_1', 'Alice', 9), subject('su_2', 'Bob', 5)],
 }
+
+/**
+ * The uploader facet, as `useUploaders` would deliver it: the contributors to
+ * the current view, largest first, with the imported photos as the nameless
+ * bucket the control has to word itself.
+ */
+const UPLOADERS: readonly UploaderBucket[] = [
+  { uid: 'us_1', name: 'Tomáš Novák', count: 12 },
+  { uid: 'us_2', name: 'Anna', count: 3 },
+  { uid: '', name: '', count: 2 },
+]
 
 /** Opens the advanced-filter panel so its controls become reachable. */
 async function openPanel(user: ReturnType<typeof userEvent.setup>) {
@@ -885,6 +898,83 @@ describe('FilterBar advanced controls', () => {
       'Rejected',
       'To look at later',
     ])
+  })
+
+  it('offers the contributors to the current view, with their counts', async () => {
+    const user = userEvent.setup()
+    renderBar(LIBRARY_DEFAULTS, vi.fn(), { uploaders: UPLOADERS })
+
+    await openPanel(user)
+    const options = within(screen.getByLabelText('Uploaded by')).getAllByRole('option')
+    // Largest contribution first, "anyone" at rest, and the photos nobody
+    // uploaded named rather than shown as the reserved word behind them.
+    expect(options.map((o) => o.textContent)).toEqual([
+      'Anyone',
+      'Tomáš Novák (12)',
+      'Anna (3)',
+      'Imported (2)',
+    ])
+  })
+
+  it('pushes the picked uploader to the view state', async () => {
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    renderBar(LIBRARY_DEFAULTS, onChange, { uploaders: UPLOADERS })
+
+    await openPanel(user)
+    await user.selectOptions(screen.getByLabelText('Uploaded by'), 'us_1')
+    expect(onChange).toHaveBeenCalledWith({ uploader: 'us_1' })
+  })
+
+  it('picks the imported photos through the reserved value', async () => {
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    renderBar(LIBRARY_DEFAULTS, onChange, { uploaders: UPLOADERS })
+
+    await openPanel(user)
+    await user.selectOptions(screen.getByLabelText('Uploaded by'), 'none')
+    expect(onChange).toHaveBeenCalledWith({ uploader: 'none' })
+  })
+
+  it('omits the uploader control on a page that offers no facet', async () => {
+    const user = userEvent.setup()
+    renderBar(LIBRARY_DEFAULTS, vi.fn())
+
+    await openPanel(user)
+    expect(screen.queryByLabelText('Uploaded by')).not.toBeInTheDocument()
+  })
+
+  it('admits when the query has already taken the uploader over', async () => {
+    const user = userEvent.setup()
+    renderBar({ ...LIBRARY_DEFAULTS, q: 'uploader:tomas' }, vi.fn(), { uploaders: UPLOADERS })
+
+    await openPanel(user)
+    const select = screen.getByLabelText('Uploaded by')
+    expect(within(select).getAllByRole('option')[0]).toHaveTextContent('Set by the query')
+    expect(screen.getByText('uploader:tomas')).toBeInTheDocument()
+  })
+
+  it('names the chosen uploader on its chip, and the imported group by name', () => {
+    const { rerender } = renderBar({ ...LIBRARY_DEFAULTS, uploader: 'us_1' }, vi.fn(), {
+      uploaders: UPLOADERS,
+    })
+    expect(screen.getByText('Uploaded by: Tomáš Novák')).toBeInTheDocument()
+
+    rerender(barTree({ ...LIBRARY_DEFAULTS, uploader: 'none' }, vi.fn(), { uploaders: UPLOADERS }))
+    expect(screen.getByText('Uploaded by: Imported')).toBeInTheDocument()
+  })
+
+  it('keeps a picked uploader on offer when the rest of the view excludes them', async () => {
+    const user = userEvent.setup()
+    // `us_9` uploaded nothing that survives the other filters, so the facet does
+    // not report them — but the filter is on, and a select reading "Anyone" over
+    // a grid narrowed to one person would be the control lying about the results.
+    renderBar({ ...LIBRARY_DEFAULTS, uploader: 'us_9' }, vi.fn(), { uploaders: UPLOADERS })
+
+    await openPanel(user)
+    const select = screen.getByLabelText<HTMLSelectElement>('Uploaded by')
+    expect(select.value).toBe('us_9')
+    expect(within(select).getByRole('option', { name: 'us_9 (0)' })).toBeInTheDocument()
   })
 
   it('replaces history for live-typed free-text input', async () => {

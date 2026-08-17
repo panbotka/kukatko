@@ -22,10 +22,12 @@ import {
   parseFilterList,
   periodOf,
   periodPatch,
+  UPLOADER_NONE,
 } from '../../lib/libraryView'
 import { periodFromQuery } from '../../lib/period'
 import { FACET_QUERY_KEYS, facetQueryTokens, queryFilterTokens } from '../../lib/queryLanguage'
 import { type SetUrlState } from '../../lib/urlState'
+import { type UploaderBucket } from '../../services/photos'
 import { ENTITY_STYLE } from '../entityStyle'
 import { Icon } from '../Icon'
 import { SearchQueryHelp } from '../search/SearchQueryHelp'
@@ -86,6 +88,14 @@ export interface FilterBarProps<T extends LibraryView> {
    */
   facets?: LibraryFacets
   /**
+   * Who uploaded the photos of the current view, with their counts — the option
+   * list behind the uploader control. Passed separately from `facets` because it
+   * outlives them: a page scoped to one album drops the album/label/person
+   * pickers but is exactly where "show me what this person contributed" is
+   * asked. Omit (or pass an empty list) and no uploader control is rendered.
+   */
+  uploaders?: readonly UploaderBucket[]
+  /**
    * Whether to show the favorites toggle. Off by default: pages already scoped to
    * favorites (the Favorites page) would only offer a redundant, conflicting
    * control. The library opts in so "favorites + album + period" can be combined
@@ -118,9 +128,9 @@ export interface FilterBarProps<T extends LibraryView> {
  * Album, Label, Person, the ways photos are actually found — sits below it in
  * its own always-visible four-across row (the three entity pickers only when the
  * page supplies `facets`). The remaining filters (camera, archived, favorites,
- * location, min rating, flag) live in a collapsible panel, so the resting state
- * stays uncluttered — the favorites toggle only when the page opts in via
- * `showFavorite`.
+ * location, min rating, flag, uploader) live in a collapsible panel, so the
+ * resting state stays uncluttered — the favorites toggle only when the page opts
+ * in via `showFavorite`, the uploader only when the page supplies `uploaders`.
  *
  * **On a phone the header is the search field and the Filters button, and
  * nothing else.** Photos are browsed mostly on phones, which is where the app
@@ -173,6 +183,7 @@ export function FilterBar<T extends LibraryView>({
   sortOptions,
   showDensity = true,
   facets,
+  uploaders,
   showFavorite = false,
   searchHref,
   mobileActions,
@@ -191,7 +202,7 @@ export function FilterBar<T extends LibraryView>({
     onChange(patch as Partial<T>, { replace: true })
   }
 
-  const chips = buildChips(view, t, i18n.language, { facets })
+  const chips = buildChips(view, t, i18n.language, { facets, uploaders })
   const clearVisible = hasActiveFilters(view, { ignoreQuery: !showSearch })
   // Which filters the query itself already sets. The pickers below would
   // otherwise keep reading "any period" while `year:1960-1969` in the box has
@@ -237,7 +248,14 @@ export function FilterBar<T extends LibraryView>({
           <hr className="my-3" />
         </>
       )}
-      <AdvancedFilters view={view} push={push} replace={replace} showFavorite={showFavorite} />
+      <AdvancedFilters
+        view={view}
+        push={push}
+        replace={replace}
+        showFavorite={showFavorite}
+        uploaders={uploaders}
+        queryFilters={queryFilters}
+      />
       {narrow && searchNote !== null && (
         <>
           <hr className="my-3" />
@@ -875,11 +893,15 @@ function AdvancedFilters({
   push,
   replace,
   showFavorite,
+  uploaders,
+  queryFilters,
 }: {
   view: LibraryView
   push: (patch: Partial<LibraryView>) => void
   replace: (patch: Partial<LibraryView>) => void
   showFavorite: boolean
+  uploaders: readonly UploaderBucket[] | undefined
+  queryFilters: ReadonlyMap<string, string[]>
 }) {
   const { t } = useTranslation()
   return (
@@ -968,6 +990,19 @@ function AdvancedFilters({
         </Form.Group>
       </Col>
 
+      {uploaders !== undefined && uploaders.length > 0 && (
+        <Col xs={12} sm={6} lg={3}>
+          <UploaderSelect
+            value={view.uploader}
+            uploaders={uploaders}
+            fromQuery={facetQueryTokens(queryFilters, FACET_QUERY_KEYS.uploader)}
+            onChange={(uploader) => {
+              push({ uploader })
+            }}
+          />
+        </Col>
+      )}
+
       <Col xs={12} sm={6}>
         <Form.Group controlId="library-camera">
           <Form.Label className="small mb-1">{t('library.filters.camera')}</Form.Label>
@@ -983,6 +1018,81 @@ function AdvancedFilters({
       </Col>
     </Row>
   )
+}
+
+/**
+ * Who uploaded the photos: "anyone" at rest, then one option per contributor to
+ * the current view — named, with their count, largest contribution first — and
+ * the imported photos as a group of their own where the facet reports them.
+ *
+ * The options come from the facet rather than from the account list, so after an
+ * event the control offers that event's contributors instead of every account on
+ * the instance, and each count is what picking it will actually show. It is a
+ * single choice, not a multi-select like the album/label/person pickers: a photo
+ * has exactly one uploader, so two of them could only ever match nothing.
+ *
+ * Like the pickers in the primary row it admits when the search box has already
+ * taken the filter over (`uploader:tomas` typed into the query), rather than
+ * resting on "anyone" over a grid that holds one person's photos.
+ */
+function UploaderSelect({
+  value,
+  uploaders,
+  fromQuery,
+  onChange,
+}: {
+  value: string
+  uploaders: readonly UploaderBucket[]
+  fromQuery: string
+  onChange: (value: string) => void
+}) {
+  const { t } = useTranslation()
+  // A picked uploader who contributes nothing to the *rest* of the view — every
+  // photo of theirs excluded by another filter — is not in the facet, and a
+  // select whose value matches no option would silently read "anyone" over a
+  // filtered grid. They are offered at zero instead: the count is the honest
+  // answer, and the control keeps saying which filter is on.
+  const offered = uploaders.some((uploader) => uploaderValue(uploader.uid) === value)
+    ? uploaders
+    : [...uploaders, { uid: value === UPLOADER_NONE ? '' : value, name: '', count: 0 }]
+  return (
+    <Form.Group controlId="library-uploader">
+      <Form.Label className="small mb-1">{t('library.filters.uploader')}</Form.Label>
+      <Form.Select
+        value={value}
+        aria-describedby={fromQuery === '' ? undefined : 'library-uploader-from-query'}
+        onChange={(e) => {
+          onChange(e.target.value)
+        }}
+      >
+        <option value="">
+          {fromQuery === ''
+            ? t('library.filters.anyUploader')
+            : t('library.filters.setByQueryOption')}
+        </option>
+        {(value === '' ? uploaders : offered).map((uploader) => (
+          <option key={uploaderValue(uploader.uid)} value={uploaderValue(uploader.uid)}>
+            {/* The imported group has no name of its own — only the reader's
+                language has one for it; an uploader the facet could not name
+                falls back to their uid rather than to a blank row. */}
+            {uploader.uid === ''
+              ? t('library.filters.uploaderImported')
+              : uploader.name || uploader.uid}{' '}
+            ({uploader.count})
+          </option>
+        ))}
+      </Form.Select>
+      <QueryOverrideNote id="library-uploader-from-query" tokens={fromQuery} />
+    </Form.Group>
+  )
+}
+
+/**
+ * The URL value one facet entry stands for: the uploader's uid, or the reserved
+ * word for the group the facet reports without one (the imported photos).
+ */
+function uploaderValue(uid: string): string {
+  return uid === '' ? UPLOADER_NONE : uid
 }
 
 /** A reusable any/yes/no select for tri-state boolean filters. */

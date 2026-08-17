@@ -25,6 +25,7 @@ import { useBulkEdit } from '../hooks/useBulkEdit'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useGridScrollMemory } from '../hooks/useGridScrollMemory'
 import { useReloadKey } from '../hooks/useReloadKey'
+import { useUploaders } from '../hooks/useUploaders'
 import { useWindowedPhotos } from '../hooks/useWindowedPhotos'
 import { detailQueryString } from '../lib/detailView'
 import { gridScrollKey } from '../lib/gridScroll'
@@ -145,6 +146,9 @@ export function AlbumDetailPage() {
     reloadKey,
   })
   const gridScroll = useGridScrollMemory({ key: scrollKey })
+  // Who contributed to *this album*: after an event several people upload into
+  // the same one, and this is what narrows the grid to one person's share.
+  const uploaders = useUploaders(params)
 
   // Hover-select: a writer's tiles carry the corner checkmark from the outset,
   // so the toolbar below keys off what is picked rather than an explicit mode.
@@ -404,7 +408,13 @@ export function AlbumDetailPage() {
 
       {/* An album is always chronological — the backend pins the sort key — so
           the selector offers the two directions and nothing else. */}
-      <FilterBar view={view} onChange={setView} total={total} sortOptions={ALBUM_SORTS} />
+      <FilterBar
+        view={view}
+        onChange={setView}
+        total={total}
+        sortOptions={ALBUM_SORTS}
+        uploaders={uploaders}
+      />
 
       {status === 'loading' && <GridSkeleton />}
 

@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
+import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../../i18n'
@@ -71,13 +72,16 @@ function fullPhoto(overrides: Partial<PhotoDetail> = {}): PhotoDetail {
 
 function renderDetails(overrides: Partial<PhotoDetail> = {}, canWrite = false) {
   return render(
-    <I18nextProvider i18n={i18n}>
-      <TechnicalDetails
-        photo={photo(overrides)}
-        canWrite={canWrite}
-        onThumbnailRegenerated={vi.fn()}
-      />
-    </I18nextProvider>,
+    // A router because the uploader's name is a link into the filtered library.
+    <MemoryRouter>
+      <I18nextProvider i18n={i18n}>
+        <TechnicalDetails
+          photo={photo(overrides)}
+          canWrite={canWrite}
+          onThumbnailRegenerated={vi.fn()}
+        />
+      </I18nextProvider>
+    </MemoryRouter>,
   )
 }
 
@@ -91,13 +95,15 @@ async function expand() {
 /** Renders a photo carrying every field, expanded. */
 function renderFull(overrides: Partial<PhotoDetail> = {}) {
   return render(
-    <I18nextProvider i18n={i18n}>
-      <TechnicalDetails
-        photo={fullPhoto(overrides)}
-        canWrite={false}
-        onThumbnailRegenerated={vi.fn()}
-      />
-    </I18nextProvider>,
+    <MemoryRouter>
+      <I18nextProvider i18n={i18n}>
+        <TechnicalDetails
+          photo={fullPhoto(overrides)}
+          canWrite={false}
+          onThumbnailRegenerated={vi.fn()}
+        />
+      </I18nextProvider>
+    </MemoryRouter>,
   )
 }
 
@@ -162,6 +168,16 @@ describe('TechnicalDetails', () => {
     // The moment it arrived belongs to the same sentence, not to another group.
     expect(label.nextElementSibling).toHaveTextContent(/2026/)
     expect(screen.queryByText('Added to the library')).not.toBeInTheDocument()
+  })
+
+  it('links the uploader to everything they contributed', async () => {
+    renderDetails({ uploader: { uid: 'u1', name: 'Camera Man' } })
+
+    await expand()
+    const link = screen.getByRole('link', { name: 'Camera Man' })
+    expect(link).toHaveAttribute('href', '/?uploader=u1')
+    // Only the name is the link; the moment it arrived stays plain text.
+    expect(link).not.toHaveTextContent(/2026/)
   })
 
   it('reads a photo with no uploader as imported, not as a dash', async () => {

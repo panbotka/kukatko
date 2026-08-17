@@ -205,6 +205,27 @@ func TestParseListParams_valid(t *testing.T) {
 				if p.Camera != "Canon" || p.Lens != "RF" || p.UploadedBy != "us123" || p.Search != "beach" {
 					t.Errorf("text filters mismapped: %+v", p)
 				}
+				if p.NoUploader {
+					t.Errorf("uploader=us123 must scope to that account, not to the imported photos: %+v", p)
+				}
+			},
+		},
+		{
+			name:  "the reserved uploader value scopes to the imported photos",
+			query: "uploader=none",
+			check: func(t *testing.T, p photos.ListParams) {
+				if !p.NoUploader || p.UploadedBy != "" {
+					t.Errorf("uploader=none mismapped: NoUploader=%v UploadedBy=%q", p.NoUploader, p.UploadedBy)
+				}
+			},
+		},
+		{
+			name:  "an absent uploader filters nothing",
+			query: "camera=Canon",
+			check: func(t *testing.T, p photos.ListParams) {
+				if p.NoUploader || p.UploadedBy != "" {
+					t.Errorf("absent uploader added a filter: NoUploader=%v UploadedBy=%q", p.NoUploader, p.UploadedBy)
+				}
 			},
 		},
 		{
