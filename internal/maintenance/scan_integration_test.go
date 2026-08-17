@@ -115,7 +115,7 @@ func newHarness(t *testing.T) *harness {
 	})
 	faceSvc := facejob.New(facejob.Config{
 		Photos: photoStore, Vectors: vectorStore, Client: stubClient{},
-		Source: facejob.NewStorageSource(store), Enqueuer: enqueuer,
+		Source: facejob.NewStorageSource(store, 0), Enqueuer: enqueuer,
 	})
 
 	svc := maintenance.New(maintenance.Config{

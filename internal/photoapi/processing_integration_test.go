@@ -118,7 +118,8 @@ func TestDetailProcessing_evidenceReadsDone(t *testing.T) {
 	}
 	// A detection that found nothing: the photo was looked at, and that is a
 	// success with a face count of zero, not a gap.
-	if err := env.vectors.RecordFaceDetection(t.Context(), photo.UID, nil, "face-model"); err != nil {
+	if err := env.vectors.RecordFaceDetection(t.Context(), photo.UID,
+		vectors.Detection{Model: "face-model", FrameWidth: photo.FileWidth, FrameHeight: photo.FileHeight}); err != nil {
 		t.Fatalf("RecordFaceDetection: %v", err)
 	}
 	if err := env.store.SaveOCR(t.Context(), photo.UID, photos.OCR{Text: "", Model: "ocr-model"}); err != nil {

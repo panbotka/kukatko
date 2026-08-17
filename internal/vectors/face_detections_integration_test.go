@@ -20,7 +20,7 @@ func TestRecordFaceDetection_storesFacesAndMarksProcessed(t *testing.T) {
 		sampleFace(0, faceVec(map[int]float32{0: 1})),
 		sampleFace(1, faceVec(map[int]float32{1: 1})),
 	}
-	if err := store.RecordFaceDetection(ctx, uid, faces, "buffalo_l"); err != nil {
+	if err := store.RecordFaceDetection(ctx, uid, vectors.Detection{Faces: faces, Model: "buffalo_l"}); err != nil {
 		t.Fatalf("RecordFaceDetection: %v", err)
 	}
 
@@ -34,6 +34,44 @@ func TestRecordFaceDetection_storesFacesAndMarksProcessed(t *testing.T) {
 	}
 }
 
+// TestRecordFaceDetection_persistsTheFrame verifies the detection frame survives a
+// round trip and that an unmeasurable frame is stored as NULL rather than zero: a
+// zero would read like a measurement and would not be distinguishable from the
+// detections written before the columns existed.
+func TestRecordFaceDetection_persistsTheFrame(t *testing.T) {
+	store, photoStore, db := newStore(t)
+	ctx := t.Context()
+
+	measured := makePhoto(t, photoStore, "fd_frame")
+	if err := store.RecordFaceDetection(ctx, measured, vectors.Detection{
+		Model: "buffalo_l", FrameWidth: 3000, FrameHeight: 4000,
+	}); err != nil {
+		t.Fatalf("RecordFaceDetection measured: %v", err)
+	}
+	var width, height *int
+	row := db.Pool().QueryRow(ctx,
+		"SELECT detect_width, detect_height FROM face_detections WHERE photo_uid = $1", measured)
+	if err := row.Scan(&width, &height); err != nil {
+		t.Fatalf("reading the recorded frame: %v", err)
+	}
+	if width == nil || height == nil || *width != 3000 || *height != 4000 {
+		t.Errorf("recorded frame = %v x %v, want 3000x4000", width, height)
+	}
+
+	unmeasured := makePhoto(t, photoStore, "fd_noframe")
+	if err := store.RecordFaceDetection(ctx, unmeasured, vectors.Detection{Model: "buffalo_l"}); err != nil {
+		t.Fatalf("RecordFaceDetection unmeasured: %v", err)
+	}
+	row = db.Pool().QueryRow(ctx,
+		"SELECT detect_width, detect_height FROM face_detections WHERE photo_uid = $1", unmeasured)
+	if err := row.Scan(&width, &height); err != nil {
+		t.Fatalf("reading the unmeasured frame: %v", err)
+	}
+	if width != nil || height != nil {
+		t.Errorf("unmeasured frame = %v x %v, want NULL x NULL", width, height)
+	}
+}
+
 // TestRecordFaceDetection_zeroFaces marks a photo with no faces as processed, so
 // it is distinguishable from a never-processed photo.
 func TestRecordFaceDetection_zeroFaces(t *testing.T) {
@@ -41,7 +79,7 @@ func TestRecordFaceDetection_zeroFaces(t *testing.T) {
 	ctx := t.Context()
 	uid := makePhoto(t, photoStore, "fd_zero")
 
-	if err := store.RecordFaceDetection(ctx, uid, nil, "buffalo_l"); err != nil {
+	if err := store.RecordFaceDetection(ctx, uid, vectors.Detection{Model: "buffalo_l"}); err != nil {
 		t.Fatalf("RecordFaceDetection: %v", err)
 	}
 	if got, _ := store.ListFaces(ctx, uid); len(got) != 0 {
@@ -60,15 +98,15 @@ func TestRecordFaceDetection_idempotentReplace(t *testing.T) {
 	ctx := t.Context()
 	uid := makePhoto(t, photoStore, "fd_replace")
 
-	if err := store.RecordFaceDetection(ctx, uid, []vectors.Face{
+	if err := store.RecordFaceDetection(ctx, uid, vectors.Detection{Faces: []vectors.Face{
 		sampleFace(0, faceVec(map[int]float32{0: 1})),
 		sampleFace(1, faceVec(map[int]float32{1: 1})),
-	}, "buffalo_l"); err != nil {
+	}, Model: "buffalo_l"}); err != nil {
 		t.Fatalf("RecordFaceDetection first: %v", err)
 	}
-	if err := store.RecordFaceDetection(ctx, uid, []vectors.Face{
+	if err := store.RecordFaceDetection(ctx, uid, vectors.Detection{Faces: []vectors.Face{
 		sampleFace(0, faceVec(map[int]float32{2: 1})),
-	}, "buffalo_l"); err != nil {
+	}, Model: "buffalo_l"}); err != nil {
 		t.Fatalf("RecordFaceDetection second: %v", err)
 	}
 	if got, _ := store.ListFaces(ctx, uid); len(got) != 1 {
@@ -101,7 +139,7 @@ func TestListPhotosMissingFaces(t *testing.T) {
 	missing := makePhoto(t, photoStore, "fd_missing")
 	archived := makePhoto(t, photoStore, "fd_archived")
 
-	if err := store.RecordFaceDetection(ctx, processed, nil, "buffalo_l"); err != nil {
+	if err := store.RecordFaceDetection(ctx, processed, vectors.Detection{Model: "buffalo_l"}); err != nil {
 		t.Fatalf("RecordFaceDetection: %v", err)
 	}
 	if _, err := photoStore.Archive(ctx, archived); err != nil {
@@ -124,7 +162,7 @@ func TestFaceDetectionCascadeDelete(t *testing.T) {
 	ctx := t.Context()
 	uid := makePhoto(t, photoStore, "fd_cascade")
 
-	if err := store.RecordFaceDetection(ctx, uid, nil, "buffalo_l"); err != nil {
+	if err := store.RecordFaceDetection(ctx, uid, vectors.Detection{Model: "buffalo_l"}); err != nil {
 		t.Fatalf("RecordFaceDetection: %v", err)
 	}
 	if err := photoStore.Delete(ctx, uid); err != nil {

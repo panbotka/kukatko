@@ -113,7 +113,7 @@ func TestFaceBoxRepair_turnsARawSpaceBoxOntoTheFace(t *testing.T) {
 		transposedFace(1, displaySpaceBBox),
 		correctRow,
 	}
-	if err := store.RecordFaceDetection(ctx, uid, faces, "buffalo_l"); err != nil {
+	if err := store.RecordFaceDetection(ctx, uid, vectors.Detection{Faces: faces, Model: "buffalo_l"}); err != nil {
 		t.Fatalf("RecordFaceDetection: %v", err)
 	}
 	turned := vectors.RotateRawBBox(rawSpaceBBox, rawOrientation)
@@ -183,8 +183,8 @@ func TestFaceBoxRepair_leavesRowsWithoutEvidenceForALaterRun(t *testing.T) {
 	ctx := t.Context()
 	uid := makeRotatedPhoto(t, photoStore, "rot_blind")
 
-	if err := store.RecordFaceDetection(ctx, uid,
-		[]vectors.Face{transposedFace(0, rawSpaceBBox)}, "buffalo_l"); err != nil {
+	if err := store.RecordFaceDetection(ctx, uid, vectors.Detection{
+		Faces: []vectors.Face{transposedFace(0, rawSpaceBBox)}, Model: "buffalo_l"}); err != nil {
 		t.Fatalf("RecordFaceDetection: %v", err)
 	}
 
@@ -237,7 +237,8 @@ func TestFaceBoxRepair_ignoresUnrotatedPhotos(t *testing.T) {
 	}
 	face := transposedFace(0, rawSpaceBBox)
 	face.Orientation = 1
-	if err := store.RecordFaceDetection(ctx, created.UID, []vectors.Face{face}, "buffalo_l"); err != nil {
+	if err := store.RecordFaceDetection(ctx, created.UID,
+		vectors.Detection{Faces: []vectors.Face{face}, Model: "buffalo_l"}); err != nil {
 		t.Fatalf("RecordFaceDetection: %v", err)
 	}
 	addMarker(t, db, created.UID, "mk_upright", rawSpaceBBox)

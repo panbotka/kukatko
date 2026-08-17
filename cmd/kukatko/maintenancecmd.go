@@ -73,6 +73,10 @@ func newMaintenanceRepairCmd() *cobra.Command {
 	cmd.Flags().Bool("face-markers", false,
 		"clear surplus face-to-marker links so one marker is claimed by at most one "+
 			"face; 'maintenance scan' is its dry run")
+	cmd.Flags().Bool("sideways-faces", false,
+		"re-detect quarter-turned photos whose face detection ran on a sideways image "+
+			"(clears the detection record and enqueues face_detect); "+
+			"'maintenance scan' is its dry run")
 	return cmd
 }
 
@@ -155,6 +159,13 @@ func printScanReport(cmd *cobra.Command, report maintenance.Report) {
 	if len(report.TransposedFaceBoxes.Samples) > 0 {
 		cmd.Printf("    e.g. %v\n", report.TransposedFaceBoxes.Samples)
 	}
+	// The dry run of `repair --sideways-faces`: quarter-turned photos whose faces were
+	// detected on a sideways image, so both their boxes and what the detector found
+	// are suspect. Sampled by photo uid.
+	cmd.Printf("  sideways faces:     %d\n", report.SidewaysFaceDetections.Count)
+	if len(report.SidewaysFaceDetections.Samples) > 0 {
+		cmd.Printf("    e.g. %v\n", report.SidewaysFaceDetections.Samples)
+	}
 	// Likewise the dry run of `repair --face-markers`, sampled by marker uid.
 	cmd.Printf("  dup face markers:   %d\n", report.DuplicateFaceMarkers.Count)
 	if len(report.DuplicateFaceMarkers.Samples) > 0 {
@@ -174,7 +185,7 @@ func runMaintenanceRepair(cmd *cobra.Command) error {
 	}
 	if !opts.Any() {
 		cmd.Println("no repair selected; pass --thumbnails, --embeddings, --faces, --phashes, " +
-			"--import-orphans, --dimensions or --face-markers")
+			"--import-orphans, --dimensions, --face-markers or --sideways-faces")
 		return nil
 	}
 	svc, cleanup, err := openMaintenanceService(cmd)
@@ -194,6 +205,8 @@ func runMaintenanceRepair(cmd *cobra.Command) error {
 	cmd.Printf("dimensions fixed=%d face boxes fixed=%d left alone=%d\n",
 		result.DimensionsFixed, result.FaceBoxesFixed, result.FaceBoxesSkipped)
 	cmd.Printf("surplus face links cleared=%d\n", result.FaceLinksCleared)
+	cmd.Printf("sideways faces re-detected=%d (queued; they run once the sidecar's box is awake)\n",
+		result.SidewaysFacesEnqueued)
 	return nil
 }
 
@@ -209,6 +222,7 @@ func repairOptionsFromFlags(cmd *cobra.Command) (maintenance.RepairOptions, erro
 		"import-orphans": &opts.ImportOrphans,
 		"dimensions":     &opts.Dimensions,
 		"face-markers":   &opts.FaceMarkers,
+		"sideways-faces": &opts.SidewaysFaces,
 	} {
 		val, err := flags.GetBool(name)
 		if err != nil {

@@ -156,7 +156,7 @@ func (h *harness) newService(client embedding.Client) *facejob.Service {
 		Photos:            h.photos,
 		Vectors:           h.vectors,
 		Client:            client,
-		Source:            facejob.NewStorageSource(h.storage),
+		Source:            facejob.NewStorageSource(h.storage, 0),
 		Enqueuer:          jobs.NewEnqueuer(h.jobs),
 		OfflineRetryDelay: 5 * time.Minute,
 		MinDetScore:       0.5,
@@ -279,7 +279,7 @@ func TestBackfillFaces_enqueuesOnlyUnprocessed(t *testing.T) {
 	processed := h.storeJPEG(t, "already")
 	missing1 := h.storeJPEG(t, "missing-1")
 	missing2 := h.storeJPEG(t, "missing-2")
-	if err := h.vectors.RecordFaceDetection(ctx, processed.UID, nil, "buffalo_l"); err != nil {
+	if err := h.vectors.RecordFaceDetection(ctx, processed.UID, vectors.Detection{Model: "buffalo_l"}); err != nil {
 		t.Fatalf("seed detection: %v", err)
 	}
 

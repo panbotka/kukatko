@@ -558,10 +558,16 @@ Workflow:
    API — the outlier layer does not mutate.
 7. **People pages:** overview, cover, counts, occurrences.
 
-Coordinates: `faces.bbox` normalized [x,y,w,h] (0..1, display space, EXIF-aware);
-`markers` likewise 0..1. Conversion from the sidecar's pixels is handled by a helper (`facejob.normalizeBBox`) with a side swap
-for orientation 5–8 (the sidecar/InsightFace rotates the image per EXIF, so `face_detect` sends
-the **full-resolution original**, not a thumbnail, so that the bbox scale matches the stored dimensions).
+Coordinates: `faces.bbox` normalized [x,y,w,h] (0..1, display space); `markers` likewise 0..1.
+**The sidecar (InsightFace) does not apply EXIF**, so `face_detect` sends an image that needs no
+applying: `facejob.StorageSource.OpenUpright` turns the **full-resolution original** (not a thumbnail)
+into display orientation by the tag *that file* carries and reports the frame it measured on the bytes
+it sent, and `facejob.NormalizeBBox` divides the returned pixel box by exactly that frame — so no
+orientation enters the conversion at all. Sending the original untouched instead is what put every
+quarter-turned photo's boxes beside its faces, and made the detector miss faces it could not recognise
+sideways; both are why the frame is now recorded (`face_detections.detect_width/detect_height`,
+migration 0061) and why the repair for the affected rows is a **re-detection**
+(`maintenance repair --sideways-faces`) rather than arithmetic.
 The `face_detect` job (`internal/facejob`) is **idempotent** via the `face_detections` table
 (migration 0009): one row per processed photo distinguishes a photo with no faces from one not yet
 processed (`faces` may have zero rows). Weak detections are filtered by the `faces.min_det_score` threshold.

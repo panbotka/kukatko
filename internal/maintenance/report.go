@@ -57,6 +57,15 @@ type Report struct {
 	// misleads everything that reads faces.subject_uid. Listing them is the dry run
 	// of `maintenance repair --face-markers`.
 	DuplicateFaceMarkers Finding `json:"duplicate_face_markers"`
+	// SidewaysFaceDetections are quarter-turned photos whose recorded face detection
+	// ran on a sideways image: the sidecar does not apply EXIF, so until the
+	// face_detect job rotated before sending, the detector saw those photos on their
+	// side. Their boxes are in a frame nobody displays and the faces the detector
+	// missed on a turned picture are absent outright, which is why listing them is the
+	// dry run of `maintenance repair --sideways-faces` (a re-detection) and not of a
+	// coordinate fix. A photo whose detection is recorded against the display frame
+	// never appears here, so the count goes to zero and stays there.
+	SidewaysFaceDetections Finding `json:"sideways_face_detections"`
 }
 
 // Clean reports whether the scan found no problems at all, i.e. every Finding has
@@ -70,7 +79,8 @@ func (r Report) Clean() bool {
 		r.MissingPhashes.Count == 0 &&
 		r.TransposedDimensions.Count == 0 &&
 		r.TransposedFaceBoxes.Count == 0 &&
-		r.DuplicateFaceMarkers.Count == 0
+		r.DuplicateFaceMarkers.Count == 0 &&
+		r.SidewaysFaceDetections.Count == 0
 }
 
 // findingCollector accumulates affected identifiers while iterating, counting

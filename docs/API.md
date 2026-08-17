@@ -1161,12 +1161,15 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
 - **Maintenance API (`/api/v1`, `internal/maintenanceapi`, maintainer-only via `RequireMaintainer`):**
   the library's integrity check & repairs. `GET /maintenance/scan` → `Report` (counts + samples:
   `missing_originals`/`orphan_files`/`missing_thumbnails`/`missing_embeddings`/`missing_faces`/
-  `missing_phashes`/`transposed_dimensions`/`transposed_face_boxes`/`duplicate_face_markers` + the totals
+  `missing_phashes`/`transposed_dimensions`/`transposed_face_boxes`/`duplicate_face_markers`/
+  `sideways_face_detections` + the totals
   `photos`/`files_in_db`/`originals_on_disk`);
   `POST /maintenance/repair`
-  `{thumbnails,embeddings,faces,phashes,import_orphans,dimensions,face_markers}` (each opt-in) → `RepairResult`
+  `{thumbnails,embeddings,faces,phashes,import_orphans,dimensions,face_markers,sideways_faces}` (each opt-in)
+  → `RepairResult`
   with scheduling counts (`*_enqueued` + `orphans_imported/skipped/failed` +
-  `dimensions_fixed`/`face_boxes_fixed`/`face_boxes_skipped`/`face_links_cleared`);
+  `dimensions_fixed`/`face_boxes_fixed`/`face_boxes_skipped`/`face_links_cleared`/
+  `sideways_faces_enqueued`);
   `DisallowUnknownFields`, an empty selection →
   400, an orphan import without an importer → 503 (`ErrOrphanImportUnavailable`). The repairs are idempotent and
   run through the job queue (thumbnail/pHash via the `thumbnail` job, embeddings/faces backfill), and **never
@@ -1188,7 +1191,15 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `faces.subject_uid`. The repair re-derives each affected photo's exclusive pairing and clears the cached
   `marker_uid`/`subject_uid`/`subject_name` of every face but the one the pairing awards the marker to
   (`face_links_cleared`); it deletes no face and no marker, and leaves a marker with a single face link alone —
-  genuinely duplicated **markers** from an import are a different problem. `POST /maintenance/audit/purge` `{older_than_days}` (a positive integer of days,
+  genuinely duplicated **markers** from an import are a different problem. `sideways_faces` is the third
+  face repair, and the only one that re-runs detection: the embeddings sidecar reads no EXIF, so a
+  quarter-turned photo sent as it lies on disk was detected **on its side** — its boxes are in a frame nobody
+  displays and the faces the detector missed on a turned picture are simply absent. `sideways_face_detections`
+  (quarter-turned photos whose recorded detection frame is not the displayed one, sampled by photo uid) is the
+  dry run; the repair clears each photo's detection record and enqueues `face_detect`
+  (`sideways_faces_enqueued`), so the fixed job re-detects it on an upright image once the sidecar's box is
+  awake. The face rows are kept until that detection replaces them, nothing is deleted, and a photo re-detected
+  upright leaves the finding for good. `POST /maintenance/audit/purge` `{older_than_days}` (a positive integer of days,
   1..36500) deletes audit entries older than `now − older_than_days` (`audit.Store.PurgeOlderThan`,
   a single `DELETE` via `idx_audit_log_created_at`) → `{deleted,older_than_days,cutoff}`;
   a missing/non-positive/excessive window or an unknown field → 400, an unwired audit store → 503. The

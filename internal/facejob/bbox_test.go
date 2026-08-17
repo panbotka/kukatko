@@ -16,70 +16,95 @@ func bboxClose(a, b [4]float64) bool {
 	return true
 }
 
-// TestNormalizeBBox_orientations checks the pixel→normalized conversion across
-// all eight EXIF orientations. Orientations 1–4 keep the file dimensions;
-// orientations 5–8 are the 90°/270° rotations, where the display dimensions are
-// the file dimensions swapped, so the same relative box maps from a swapped pixel
-// box. Every case is chosen to land on the same normalized [0.1, 0.1, 0.2, 0.2].
-func TestNormalizeBBox_orientations(t *testing.T) {
+// TestNormalizeBBox_dividesByTheFrameItWasGiven checks that the conversion divides
+// by the frame passed in and nothing else — the same pixel box normalises
+// differently in a landscape and a portrait frame, and identically for two photos
+// whose orientation differs but whose sent frame is the same.
+func TestNormalizeBBox_dividesByTheFrameItWasGiven(t *testing.T) {
 	t.Parallel()
 
-	const (
-		fileWidth  = 1000
-		fileHeight = 500
-	)
-	want := [4]float64{0.1, 0.1, 0.2, 0.2}
-
 	tests := []struct {
-		name        string
-		orientation int
-		bbox        [4]float64 // pixel [x1, y1, x2, y2] in display space
+		name          string
+		bbox          [4]float64
+		width, height int
+		want          [4]float64
 	}{
-		// Display dimensions equal file dimensions (1000x500).
-		{"orientation 1 (normal)", 1, [4]float64{100, 50, 300, 150}},
-		{"orientation 2 (mirror h)", 2, [4]float64{100, 50, 300, 150}},
-		{"orientation 3 (180)", 3, [4]float64{100, 50, 300, 150}},
-		{"orientation 4 (mirror v)", 4, [4]float64{100, 50, 300, 150}},
-		// Display dimensions are swapped (500x1000).
-		{"orientation 5 (transpose)", 5, [4]float64{50, 100, 150, 300}},
-		{"orientation 6 (rotate 90 cw)", 6, [4]float64{50, 100, 150, 300}},
-		{"orientation 7 (transverse)", 7, [4]float64{50, 100, 150, 300}},
-		{"orientation 8 (rotate 270 cw)", 8, [4]float64{50, 100, 150, 300}},
+		{"landscape frame", [4]float64{100, 50, 300, 150}, 1000, 500, [4]float64{0.1, 0.1, 0.2, 0.2}},
+		{"portrait frame", [4]float64{50, 100, 150, 300}, 500, 1000, [4]float64{0.1, 0.1, 0.2, 0.2}},
+		{"exact quarters", [4]float64{200, 150, 600, 450}, 800, 600, [4]float64{0.25, 0.25, 0.5, 0.5}},
+		{"same box, other frame", [4]float64{200, 150, 600, 450}, 600, 800,
+			[4]float64{1.0 / 3, 0.1875, 2.0 / 3, 0.375}},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := NormalizeBBox(tt.bbox, fileWidth, fileHeight, tt.orientation)
-			if !bboxClose(got, want) {
-				t.Errorf("NormalizeBBox(%v, %d, %d, %d) = %v, want %v",
-					tt.bbox, fileWidth, fileHeight, tt.orientation, got, want)
+			got := NormalizeBBox(tt.bbox, tt.width, tt.height)
+			if !bboxClose(got, tt.want) {
+				t.Errorf("NormalizeBBox(%v, %d, %d) = %v, want %v",
+					tt.bbox, tt.width, tt.height, got, tt.want)
 			}
 		})
 	}
 }
 
-// TestNormalizeBBox_exactValues verifies the raw arithmetic for a non-square
-// portrait box under orientation 1 and the corresponding swap under orientation 6.
-func TestNormalizeBBox_exactValues(t *testing.T) {
+// TestNormalizeBBox_faceShapedInEveryOrientation is the regression guard for the
+// production bug: on a quarter-turned photo the boxes came back 2.4 times wider
+// than tall because they were divided by a frame the detector never saw.
+//
+// It runs the whole path a detection takes for all four orientations that matter
+// (1, 3, 6, 8): an upright frame is produced from the photo's stored pair, the
+// detector's pixel box is expressed in that frame, and the normalised box must come
+// out face-shaped (taller than wide by the same ratio in every case). A frame taken
+// from the stored pair instead — the old behaviour, kept here as the control — fails
+// that for 6 and 8.
+func TestNormalizeBBox_faceShapedInEveryOrientation(t *testing.T) {
 	t.Parallel()
 
-	// Orientation 1: display 800x600. Box [200,150,600,450] → [0.25,0.25,0.5,0.5].
-	got := NormalizeBBox([4]float64{200, 150, 600, 450}, 800, 600, 1)
-	if want := [4]float64{0.25, 0.25, 0.5, 0.5}; !bboxClose(got, want) {
-		t.Errorf("orientation 1: got %v, want %v", got, want)
-	}
+	// The photo as stored: a landscape frame with a quarter-turn tag for 6 and 8.
+	const rawWidth, rawHeight = 5712, 4284
+	// A face in the displayed picture: 400 px wide, 528 px tall (0.76 as wide as
+	// tall), somewhere near the middle of whatever frame is displayed.
+	const faceW, faceH = 400.0, 528.0
 
-	// Orientation 6: file 800x600 → display 600x800. Box [150,200,450,600] →
-	// [0.25,0.25,0.5,0.5].
-	got = NormalizeBBox([4]float64{150, 200, 450, 600}, 800, 600, 6)
-	if want := [4]float64{0.25, 0.25, 0.5, 0.5}; !bboxClose(got, want) {
-		t.Errorf("orientation 6: got %v, want %v", got, want)
+	for _, orientation := range []int{1, 3, 6, 8} {
+		t.Run(orientationName(orientation), func(t *testing.T) {
+			t.Parallel()
+
+			frameW, frameH := rawWidth, rawHeight
+			if orientation >= 5 {
+				frameW, frameH = rawHeight, rawWidth
+			}
+			bbox := [4]float64{1000, 1200, 1000 + faceW, 1200 + faceH}
+
+			got := NormalizeBBox(bbox, frameW, frameH)
+			ratio := (got[2] * float64(frameW)) / (got[3] * float64(frameH))
+			if math.Abs(ratio-faceW/faceH) > 1e-9 {
+				t.Errorf("orientation %d: normalised box has pixel ratio %.3f, want %.3f (%v)",
+					orientation, ratio, faceW/faceH, got)
+			}
+			if got[0] < 0 || got[1] < 0 || got[0]+got[2] > 1 || got[1]+got[3] > 1 {
+				t.Errorf("orientation %d: box %v falls outside the frame", orientation, got)
+			}
+		})
+	}
+}
+
+// orientationName labels a subtest with the orientation's meaning.
+func orientationName(orientation int) string {
+	switch orientation {
+	case 3:
+		return "orientation 3 (180)"
+	case 6:
+		return "orientation 6 (rotate 90 cw)"
+	case 8:
+		return "orientation 8 (rotate 270 cw)"
+	default:
+		return "orientation 1 (normal)"
 	}
 }
 
 // TestNormalizeBBox_degenerate returns the box unchanged when a dimension is
-// non-positive, so a missing/zero stored dimension never yields NaN or Inf.
+// non-positive, so an unmeasurable frame never yields NaN or Inf.
 func TestNormalizeBBox_degenerate(t *testing.T) {
 	t.Parallel()
 
@@ -95,7 +120,7 @@ func TestNormalizeBBox_degenerate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := NormalizeBBox(box, tt.width, tt.height, 1); got != box {
+			if got := NormalizeBBox(box, tt.width, tt.height); got != box {
 				t.Errorf("NormalizeBBox with %s = %v, want unchanged %v", tt.name, got, box)
 			}
 		})

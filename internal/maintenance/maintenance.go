@@ -68,6 +68,13 @@ type VectorCatalog interface {
 	ApplyFaceBoxRepair(ctx context.Context, plans []vectors.FaceBoxPlan) (int64, error)
 	// ListDuplicateFaceMarkers returns the markers cached on more than one face row.
 	ListDuplicateFaceMarkers(ctx context.Context) ([]vectors.DuplicateFaceMarker, error)
+	// ListSidewaysDetections returns the uids of quarter-turned photos whose recorded
+	// face detection ran on a sideways image. It is read-only, hence the dry run of
+	// the sideways-faces repair.
+	ListSidewaysDetections(ctx context.Context) ([]string, error)
+	// ClearFaceDetection removes a photo's face-detection record so detection runs
+	// again, reporting whether there was one to remove.
+	ClearFaceDetection(ctx context.Context, photoUID string) (bool, error)
 }
 
 // FaceCache re-derives a photo's denormalised face↔marker cache. It is satisfied
@@ -110,12 +117,16 @@ type ThumbChecker interface {
 	HasThumbnail(fileHash string) (bool, error)
 }
 
-// Enqueuer schedules thumbnail regeneration jobs (which also recompute a missing
-// pHash). It is satisfied by *jobs.Enqueuer.
+// Enqueuer schedules the per-photo jobs the repairs need: thumbnail regeneration
+// (which also recomputes a missing pHash) and face detection. It is satisfied by
+// *jobs.Enqueuer.
 type Enqueuer interface {
 	// EnqueueThumbnail schedules thumbnail regeneration for the photo identified by
 	// photoUID, treating a pre-existing active job as a no-op.
 	EnqueueThumbnail(ctx context.Context, photoUID string) error
+	// EnqueueFaceDetect schedules face detection for photoUID, treating a
+	// pre-existing active job as a no-op.
+	EnqueueFaceDetect(ctx context.Context, photoUID string) error
 }
 
 // EmbedBackfiller enqueues image_embed jobs for photos missing an embedding. It
@@ -257,20 +268,37 @@ func (s *Service) Scan(ctx context.Context) (Report, error) {
 	if err != nil {
 		return Report{}, err
 	}
+	sideways, err := s.scanSidewaysDetections(ctx)
+	if err != nil {
+		return Report{}, err
+	}
 	return Report{
-		Photos:               photoCount,
-		FilesInDB:            filesInDB,
-		OriginalsOnDisk:      originalsOnDisk,
-		MissingOriginals:     missingOriginals,
-		OrphanFiles:          findingFrom(orphans, s.sampleLimit),
-		MissingThumbnails:    missingThumbs,
-		MissingEmbeddings:    derived.embeddings,
-		MissingFaces:         derived.faces,
-		MissingPhashes:       derived.phashes,
-		TransposedDimensions: dimensions,
-		TransposedFaceBoxes:  faceBoxes,
-		DuplicateFaceMarkers: duplicateMarkers,
+		Photos:                 photoCount,
+		FilesInDB:              filesInDB,
+		OriginalsOnDisk:        originalsOnDisk,
+		MissingOriginals:       missingOriginals,
+		OrphanFiles:            findingFrom(orphans, s.sampleLimit),
+		MissingThumbnails:      missingThumbs,
+		MissingEmbeddings:      derived.embeddings,
+		MissingFaces:           derived.faces,
+		MissingPhashes:         derived.phashes,
+		TransposedDimensions:   dimensions,
+		TransposedFaceBoxes:    faceBoxes,
+		DuplicateFaceMarkers:   duplicateMarkers,
+		SidewaysFaceDetections: sideways,
 	}, nil
+}
+
+// scanSidewaysDetections turns the quarter-turned photos whose face detection ran
+// on a sideways image into a Finding sampled by photo uid. It is the dry run of
+// `maintenance repair --sideways-faces`: every uid it counts is one that repair
+// re-detects.
+func (s *Service) scanSidewaysDetections(ctx context.Context) (Finding, error) {
+	uids, err := s.vectors.ListSidewaysDetections(ctx)
+	if err != nil {
+		return Finding{}, fmt.Errorf("maintenance: listing sideways face detections: %w", err)
+	}
+	return findingFrom(uids, s.sampleLimit), nil
 }
 
 // scanFaceBoxes turns the faces half of the dimension repair into a Finding: the
