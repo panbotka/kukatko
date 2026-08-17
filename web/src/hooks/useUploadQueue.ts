@@ -68,12 +68,15 @@ export interface UseUploadQueueResult {
    * the chosen albums just like a fresh one.
    */
   resolvedUids: string[]
-  /** Adds files to the queue, skipping ones already present (name + size + mtime). */
+  /**
+   * Adds files to the queue, skipping ones already present (name + size +
+   * mtime), and starts uploading them — there is no separate start step. Adding
+   * to a running batch appends to it: the files in flight are untouched and the
+   * newcomers drain through the same concurrency cap behind them.
+   */
   addFiles: (files: FileList | File[]) => void
   /** Removes a file from the queue, aborting it first if it is uploading. */
   removeItem: (id: string) => void
-  /** Begins uploading all queued files, respecting the concurrency cap. */
-  start: () => void
   /** Re-queues a single failed file. */
   retry: (id: string) => void
   /** Re-queues every failed file. */
@@ -108,10 +111,11 @@ function statusFor(outcome: UploadFileResult['outcome']): QueueItemStatus {
 
 /**
  * Manages a queue of files uploaded with per-file progress and a bounded number
- * of concurrent requests. The queue drains automatically once {@link start} (or
- * a retry) marks files runnable: an effect tops up in-flight uploads to the cap
- * whenever the queue changes, so newly added or retried files flow through
- * without extra orchestration.
+ * of concurrent requests. **The queue starts itself**: an effect tops up
+ * in-flight uploads to the cap whenever the queue changes, so a file is
+ * uploading the moment it is added, retried, or freed by another one finishing.
+ * There is no start step to press — picking the files *is* the start, which is
+ * what lets the page put the album picker in the wait instead of before it.
  *
  * Failures never abort the batch — each file's outcome is captured on its item
  * — mirroring the backend's per-file semantics.
@@ -126,9 +130,6 @@ export function useUploadQueue(): UseUploadQueueResult {
 
   // Live request controllers, keyed by item id, for cancellation.
   const controllers = useRef(new Map<string, AbortController>())
-  // The queue only drains after the user starts it (or retries); adding files
-  // alone leaves them queued for review.
-  const startedRef = useRef(false)
 
   /** Applies a partial update to a single item by id. */
   const patch = useCallback((id: string, changes: Partial<UploadQueueItem>): void => {
@@ -140,9 +141,6 @@ export function useUploadQueue(): UseUploadQueueResult {
   const startUploadRef = useRef<(item: UploadQueueItem) => void>(() => undefined)
 
   const pump = useCallback((): void => {
-    if (!startedRef.current) {
-      return
-    }
     const current = itemsRef.current
     const active = current.filter((item) => item.status === 'uploading').length
     let free = MAX_CONCURRENT_UPLOADS - active
@@ -200,7 +198,8 @@ export function useUploadQueue(): UseUploadQueueResult {
   startUploadRef.current = startUpload
 
   // Top up in-flight uploads whenever the queue changes (a file finished, was
-  // added, or retried). Idempotent: it only starts files still `queued`.
+  // added, or retried). Idempotent: it only starts files still `queued`, which
+  // is also why nothing else has to "start" the batch.
   useEffect(() => {
     pump()
   }, [items, pump])
@@ -231,13 +230,7 @@ export function useUploadQueue(): UseUploadQueueResult {
     setItems((prev) => prev.filter((item) => item.id !== id))
   }, [])
 
-  const start = useCallback((): void => {
-    startedRef.current = true
-    pump()
-  }, [pump])
-
   const retry = useCallback((id: string): void => {
-    startedRef.current = true
     setItems((prev) =>
       prev.map((item) =>
         item.id === id && item.status === 'error'
@@ -248,7 +241,6 @@ export function useUploadQueue(): UseUploadQueueResult {
   }, [])
 
   const retryFailed = useCallback((): void => {
-    startedRef.current = true
     setItems((prev) =>
       prev.map((item) =>
         item.status === 'error'
@@ -263,7 +255,6 @@ export function useUploadQueue(): UseUploadQueueResult {
       controller.abort()
     })
     controllers.current.clear()
-    startedRef.current = false
     setItems([])
   }, [])
 
@@ -347,7 +338,6 @@ export function useUploadQueue(): UseUploadQueueResult {
     resolvedUids,
     addFiles,
     removeItem,
-    start,
     retry,
     retryFailed,
     clear,

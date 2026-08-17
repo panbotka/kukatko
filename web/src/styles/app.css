@@ -79,7 +79,7 @@
 
      An overlay menu — a `MultiSelect`'s fixed suggestion list — tops the
      page-chrome band because it is opened from a field that any of those bars
-     may cover (the upload queue's sticky progress header is exactly that case),
+     may cover (`/upload`'s album picker sits right above the action rail),
      and a menu you cannot see is a menu you cannot use. Bootstrap's own
      `.dropdown-menu` is 1000, i.e. under every bar here, which is why such a
      menu has to name a layer rather than take the default. It deliberately
@@ -490,8 +490,9 @@ body {
    its input so a scrollable modal body cannot clip it. Being fixed is not
    enough: it also has to out-layer whatever page chrome the field sits under,
    and Bootstrap's `.dropdown-menu` default (1000) loses to every sticky bar in
-   the app — on `/upload` the queue's sticky progress header covered the album
-   suggestions outright. This class is the layer, so the component states no
+   the app — on `/upload` the sticky bar under the album picker (the progress
+   header of the day, the action rail now) covered its suggestions outright.
+   This class is the layer, so the component states no
    number; the ordering (and why it stops below the dialog band) is documented
    with the scale at the top of this file. */
 .kk-overlay-menu {
@@ -2546,39 +2547,153 @@ body {
 }
 
 /* ---- Upload flow --------------------------------------------------------
-   The page is three numbered steps — pick files, organise the batch, start —
-   and the marker is what makes the sequence readable at a glance: a small
-   filled disc carrying the numeral, aligned with the step's heading. It is a
-   flex item that must never shrink, otherwise a long Czech heading squeezes the
-   digit into an oval. */
+   One stage on screen at a time — pick, uploading, done — each a plain column
+   on a single rhythm. Nothing in here is width-dependent except the picker's two
+   fields: the complaint this layout answers was entirely about a phone, and a
+   separate mobile layout would only have split the problem in two. */
 
-.kk-upload-step__marker {
-  flex: 0 0 auto;
-  display: inline-flex;
+.kk-upload-stage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kk-space-5);
+}
+
+/* The pick surface. Sunken rather than raised, because it is a hole to put
+   photos into; the dashed hairline says "not a button" while the whole box is
+   still one tap target opening the picker. */
+.kk-upload-drop {
+  display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  width: 1.75rem;
-  height: 1.75rem;
-  border-radius: var(--kk-radius-pill);
-  background-color: var(--kk-surface-raised);
+  gap: var(--kk-space-1);
+  min-height: 12rem;
+  padding: var(--kk-space-6) var(--kk-space-4);
+  text-align: center;
+  cursor: pointer;
+  border: 2px dashed var(--kk-surface-border);
+  border-radius: var(--kk-radius-md);
+  background-color: var(--kk-surface-sunken);
+  transition:
+    border-color var(--kk-duration-base) var(--kk-ease-standard),
+    background-color var(--kk-duration-base) var(--kk-ease-standard);
+}
+
+.kk-upload-drop:hover,
+.kk-upload-drop:focus-within {
+  border-color: var(--bs-primary);
+}
+
+.kk-upload-drop--active {
+  border-color: var(--bs-primary);
+  background-color: var(--kk-accent-subtle);
+}
+
+.kk-upload-drop__headline {
+  font-size: var(--kk-font-size-section-title);
+  line-height: var(--kk-line-height-section-title);
+  font-weight: 600;
+}
+
+/* The finished batch's sentence. Set at page-title size because in the last
+   stage it *is* the page — the outcome, not a heading over one. */
+.kk-upload-outcome {
+  font-size: var(--kk-font-size-page-title);
+  line-height: var(--kk-line-height-page-title);
+  font-weight: 600;
+  letter-spacing: var(--kk-tracking-tight);
+}
+
+/* ---- The upload action rail ---------------------------------------------
+   The flow's one action area: every stage ends in it, and it carries both what
+   is happening and what to do next. The two used to be in different places —
+   a start button under the picker, the progress in a sticky header far above —
+   so on a phone whichever one mattered was the one the queue had just pushed
+   off screen.
+
+   `sticky`, not `fixed`: it sits at the end of the page's own flow while the
+   content is short and pins to the bottom edge as soon as it is not, so nothing
+   has to reserve clearance for it and it behaves identically on a phone and on
+   a desktop. The offset clears whatever already owns the bottom edge — the
+   mobile tab bar, or the bare home-indicator inset where there is none. It
+   takes the in-page sticky layer, below the tab bar it stops short of and well
+   below the `MultiSelect` overlay the picker above it opens. */
+.kk-upload-rail {
+  position: sticky;
+  bottom: calc(var(--kk-bottom-edge) + var(--kk-space-3));
+  z-index: var(--kk-sticky-toolbar-z);
+  overflow: hidden;
   border: 1px solid var(--kk-surface-border);
-  color: var(--bs-primary);
+  border-radius: var(--kk-radius-md);
+  background-color: var(--kk-surface-1);
+  box-shadow: var(--kk-shadow-3);
+}
+
+/* The progress is the rail's own top edge filling up. A full-width rule reads
+   as a level at three pixels, and spending no more than that on it keeps the
+   count beside it the thing you actually read. */
+.kk-upload-rail__track {
+  height: 3px;
+  background-color: var(--kk-surface-sunken);
+}
+
+.kk-upload-rail__fill {
+  height: 100%;
+  background-color: var(--bs-primary);
+  transition: width var(--kk-duration-base) var(--kk-ease-standard);
+}
+
+.kk-upload-rail__body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--kk-space-2) var(--kk-space-4);
+  padding: var(--kk-space-3);
+}
+
+.kk-upload-rail__status {
+  display: flex;
+  align-items: baseline;
+  gap: var(--kk-space-2);
+}
+
+.kk-upload-rail__count {
+  font-size: var(--kk-font-size-section-title);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  line-height: 1;
 }
 
-/* The batch's album/label recap inside the sticky progress header. A hairline
-   above it, rather than a whole `<hr>`, keeps the bar as short as it can be —
-   it is the one thing on screen while a hundred rows scroll past. */
-.kk-upload-recap {
-  border-top: 1px solid var(--kk-surface-border);
+/* The actions stack full-width on a phone with the primary **last** — lowest,
+   nearest the thumb — and line up along the rail's right edge once there is
+   room. Same DOM either way; only the axis changes. */
+.kk-upload-rail__actions {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--kk-space-2);
+  margin-left: auto;
 }
 
-/* One picked album/label. A batch may carry a dozen; each is allowed to wrap to
-   its own line but never to stretch the bar sideways. */
-.kk-upload-recap__chip {
-  max-width: 12rem;
+.kk-upload-rail__actions > * {
+  width: 100%;
+}
+
+@media (min-width: 576px) {
+  .kk-upload-rail__actions {
+    flex: 0 1 auto;
+    flex-direction: row;
+    justify-content: flex-end;
+  }
+
+  .kk-upload-rail__actions > * {
+    width: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kk-upload-rail__fill {
+    transition: none;
+  }
 }
 
 /* ---- Upload queue thumbnail --------------------------------------------

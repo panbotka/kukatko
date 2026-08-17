@@ -2131,39 +2131,28 @@
   },
   "upload": {
     "title": "Nahrát",
-    "subtitle": "Přidejte do knihovny fotky a videa.",
-    "dropzone": {
+    "pick": {
+      "title": "Přidejte fotky do knihovny",
+      "lead": "Jakmile je vyberete, nahrávání začne — nic dalšího mačkat nemusíte.",
       "headline": "Přetáhněte fotky sem",
-      "active": "Pusťte soubory pro přidání",
-      "hint": "nebo je vyberte ze zařízení",
-      "browse": "Vybrat soubory",
+      "drop": "Pusťte je a nahrávání začne",
+      "dropHint": "nebo klepněte a vyberte je v zařízení",
+      "choose": "Vybrat fotky",
       "camera": "Vyfotit",
+      "more": "Přidat další soubory",
       "paste": "Fotku můžete taky zkopírovat a tady ji vložit (Ctrl+V).",
       "ariaInput": "Vyberte fotky nebo videa k nahrání",
       "ariaCamera": "Vyfotit fotoaparátem"
     },
-    "step": {
-      "aria": "Krok {{index}}:",
-      "pick": {
-        "title": "Vyberte soubory",
-        "hint": "Přetáhněte je sem, vyberte je ze zařízení, nebo je vložte ze schránky.",
-        "picked_one": "vybrán {{count}} soubor",
-        "picked_few": "vybrány {{count}} soubory",
-        "picked_other": "vybráno {{count}} souborů"
-      },
-      "upload": {
-        "title": "Nahrajte je",
-        "hint": "Každý soubor se nahrává zvlášť — když jeden selže, ostatní pokračují.",
-        "empty": "Vyberte nahoře soubory a objeví se tady připravené k nahrání."
-      }
+    "running": {
+      "title": "Nahrávám…",
+      "lead": "Nechte stránku otevřenou. Než to doběhne, vyberte, kam fotky patří."
     },
     "queue": {
-      "heading": "Vybrané soubory"
+      "heading": "Soubory v této dávce ({{total}})"
     },
     "actions": {
-      "start": "Nahrát ({{count}})",
       "retryFailed": "Opakovat neúspěšné",
-      "clear": "Vymazat vše",
       "remove": "Odebrat",
       "retry": "Opakovat"
     },
@@ -2175,15 +2164,14 @@
       "error": "Selhalo"
     },
     "progress": {
-      "uploading": "Nahrávání…",
-      "ready": "Připraveno k nahrání",
       "barLabel": "Celkový průběh nahrávání",
       "count": "{{done}} / {{total}}",
       "uploaded": "{{count}} nahráno",
       "duplicate": "{{count}} duplikát",
       "failed": "{{count}} selhalo",
-      "remaining": "{{count}} čeká",
-      "summary": "{{created}} nahráno, {{duplicate}} duplikátů, {{error}} selhalo"
+      "remaining_one": "zbývá {{count}}",
+      "remaining_few": "zbývají {{count}}",
+      "remaining_other": "zbývá {{count}}"
     },
     "filter": {
       "showErrors": "Jen neúspěšné ({{count}})",
@@ -2193,18 +2181,29 @@
       "near_duplicate": "Vypadá podobně jako fotka, která už je v knihovně."
     },
     "done": {
-      "title": "Nahrávání dokončeno.",
-      "viewLibrary": "Zobrazit v knihovně"
+      "uploaded_one": "Nahrána {{count}} fotka.",
+      "uploaded_few": "Nahrány {{count}} fotky.",
+      "uploaded_other": "Nahráno {{count}} fotek.",
+      "uploadedTo_one": "Nahrána {{count}} fotka, přidána do: {{names}}.",
+      "uploadedTo_few": "Nahrány {{count}} fotky, přidány do: {{names}}.",
+      "uploadedTo_other": "Nahráno {{count}} fotek, přidáno do: {{names}}.",
+      "allDuplicates_one": "{{count}} soubor už v knihovně byl.",
+      "allDuplicates_few": "Všechny {{count}} soubory už v knihovně byly.",
+      "allDuplicates_other": "Všech {{count}} souborů už v knihovně bylo.",
+      "duplicates_one": "{{count}} soubor už v knihovně byl.",
+      "duplicates_few": "{{count}} soubory už v knihovně byly.",
+      "duplicates_other": "{{count}} souborů už v knihovně bylo.",
+      "failed_one": "{{count}} soubor se nenahrál.",
+      "failed_few": "{{count}} soubory se nenahrály.",
+      "failed_other": "{{count}} souborů se nenahrálo.",
+      "failedHint": "Všechno ostatní je v knihovně. Neúspěšné zkuste znovu.",
+      "noAlbum": "Tyhle fotky zatím nejsou v žádném albu ani pod štítkem. Vyberte je a přidáme je tam.",
+      "viewLibrary": "Zobrazit je v knihovně",
+      "uploadMore": "Nahrát další"
     },
     "organize": {
-      "heading": "Přidat do alb a štítků",
-      "hint": "Vybraná alba a štítky se přidají ke každé fotce v tomto nahrání.",
-      "hintCount_one": "Nepovinné. Co tu vyberete, přidáme k {{count}} souboru v této dávce.",
-      "hintCount_few": "Nepovinné. Co tu vyberete, přidáme ke všem {{count}} souborům v této dávce.",
-      "hintCount_other": "Nepovinné. Co tu vyberete, přidáme ke všem {{count}} souborům v této dávce.",
-      "recapLabel": "Tato dávka dostane:",
-      "recapEmpty": "žádné album ani štítek",
-      "recapEdit": "Změnit",
+      "heading": "Alba a štítky",
+      "hint": "Co tu vyberete, přidáme ke každé fotce v této dávce.",
       "albums": "Alba",
       "labels": "Štítky",
       "albumsPlaceholder": "Filtrovat nebo vytvořit album…",
@@ -2215,6 +2214,14 @@
       "assignError": "Nahráno, ale přidání do alb a štítků selhalo: {{message}}",
       "assignErrorGeneric": "Nahráno, ale přidání do alb a štítků selhalo.",
       "retry": "Zkusit znovu"
+    },
+    "leave": {
+      "title": "Odejít během nahrávání?",
+      "body_one": "Nahrává se ještě {{count}} soubor. Když stránku opustíte, nahrávání se zastaví a v knihovně nebude.",
+      "body_few": "Nahrávají se ještě {{count}} soubory. Když stránku opustíte, nahrávání se zastaví a v knihovně nebudou.",
+      "body_other": "Nahrává se ještě {{count}} souborů. Když stránku opustíte, nahrávání se zastaví a v knihovně nebudou.",
+      "stay": "Zůstat tady",
+      "confirm": "Odejít a zastavit nahrávání"
     }
   },
   "share": {

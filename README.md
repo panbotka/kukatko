@@ -152,7 +152,20 @@ Screen"** installs it with its own icon and no browser chrome; a service worker 
 on the device so it opens instantly. It caches nothing else, so nothing you see is ever stale — and
 it says exactly that: opening the app with no signal gets you a page explaining that the photos need
 a connection, not a login form that then blames your password. On **Android**, Kukátko is a
-share target: pick shots in the gallery, tap Share, and the upload page opens with them queued.
+share target: pick shots in the gallery, tap Share, and the upload page opens with them already
+going up.
+
+**Uploading is one thing on screen at a time, and it starts by itself.** An empty page asks one
+question — which photos — and answering it *is* the start: there is no upload button to find. The
+page then becomes the wait, with how far along the batch is pinned to the bottom edge next to the one
+control that stage has, and the albums and labels for the whole batch right there, because choosing
+where the photos belong is what there is to do while they go up. Picking an album halfway through, or
+after everything has landed, works the same. At the end you get a sentence — "Nahráno 20 fotek,
+přidáno do: Pouť 2026" — and one button into the library; **Nahrát další** goes back for the next
+batch keeping the albums, since it is nearly always the same event. If files failed, that is what the
+sentence leads with and retrying them is the button. The per-file list is still there with its retry,
+its remove and its errors-only filter — folded away, and it unfolds itself the moment something
+fails.
 
 It works the other way round too: **somebody else uploaded the photos and you want yours in your own
 phone**. Filter, select, tap Share, and the originals go to the phone's share sheet — iOS offers

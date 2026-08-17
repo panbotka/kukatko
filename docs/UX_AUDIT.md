@@ -341,8 +341,46 @@ implemented**, per the task's conservative-changes rule.
   The same page with `pointer: fine` still draws the 20.9 px pill: the desktop chip, unchanged. 🔴 ⚪
 
 ### Upload (`/upload`)
-- **The model to copy.** Full-size primary/secondary buttons, proper h1→h2 hierarchy, friendly
-  DropZone, `aria-live` progress summary, reassuring near-duplicate wording. No issues.
+- **Rebuilt as one stage at a time (2026-08-17).** The three-numbered-steps page read fine on a
+  desktop and failed the only test that matters — uploading from an iPhone. All three steps were on
+  screen at once, so the start button sat below a block a fifty-file queue had already pushed past
+  the fold, the progress lived in a sticky header in a different part of the page from the control
+  that produced it, and creating an album inline left the suggestion list open over the keyboard with
+  a cleared query, which reads as „nothing happened". ✅
+- **The decision: the stage is derived, not set.** Empty queue → *pick*; files not all settled →
+  *uploading*; everything settled → *done*. Nothing to keep in sync, and no way to be in the wrong
+  stage. **Picking files is the start** — `useUploadQueue` drains itself, so there is no start button
+  anywhere and the album picker moves *into* the wait instead of standing in front of it. That costs
+  no backend change: the assignment already ran on settle and re-armed on every selection change, so
+  a pick made while the photos upload (or after they finish) lands the same.
+- **The decision: one action area, at the bottom edge.** Every stage ends in `UploadActionBar`
+  (`.kk-upload-rail`), which carries both the progress — drawn as the bar's own top rule filling up —
+  and the stage's primary action. `position: sticky`, not `fixed`: it sits in the page's flow while the
+  content is short and pins clear of the tab bar (`--kk-bottom-edge`) as soon as it is not, so it is the
+  same component and the same behaviour on a phone and on a desktop. Only the picker's two fields
+  change with width (side by side from `md`). Guarded by `styles/uploadRail.test.ts`.
+- **The decision: the per-file list is demoted, and comes back on failure.** Closed by default with
+  three outcome badges standing in for it — but it opens itself the moment a file fails, because that
+  is the one time the rows are worth reading (the reason, the per-file retry, the errors-only filter).
+- **Copy is the outcome, not a table.** Stage three is one sentence („Nahráno 20 fotek, přidáno do:
+  Pouť 2026.") and one primary action. A batch with failures leads with the failures and makes retry
+  primary; a batch that ended in no album says so and offers the picker; a batch where *nothing*
+  landed gets neither a picker nor „všechno ostatní je v knihovně", because neither would be true.
+  **Nahrát další** keeps the albums and labels — the next batch is more of the same event.
+- **The queue is browser state, so leaving is guarded** (`useLeaveGuard`): an in-app link asks first,
+  a tab close gets the browser's own warning. Not covered: the Back button and programmatic
+  navigation — the app has no data router, so the guard is a capture-phase click listener on anchors.
+- **Verified on a real narrow viewport**, not only in jsdom: Chromium at 402 × 874 (iPhone 16 Pro
+  emulation) against a throwaway instance on the test DB. Stage 1 fits with no scrolling (document
+  874 px = viewport), both rail buttons 376 × 48. Ten files picked → upload started with nothing else
+  pressed, progress `0 / 10` in the rail. A 6-file batch of oversized files → stage 3 led with
+  „6 souborů se nenahrálo.", the rail pinned at 734–808 px with the tab bar starting at 820 (clears
+  it), primary **Opakovat neúspěšné** 376 × 48, rows open with the reason and per-file retry.
+  Creating „Pouť 2026" inline → listbox gone, `document.activeElement` back to `<body>` (keyboard
+  dismissed), chip visible, sentence updated to „Nahrána 1 fotka, přidána do: Pouť 2026." Tapping the
+  tab bar mid-upload → „Odejít během nahrávání?", page stayed on `/upload`, **Zůstat tady** left the
+  batch running (6/8 → 8/8). At 1440 × 900 the same stages render with the rail as a right-aligned
+  row and the two picker fields side by side.
 
 ### Slideshow (`/slideshow`)
 - Fullscreen player (no navbar/title — intentional). Friendly loading/empty/error gates with an

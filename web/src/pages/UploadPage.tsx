@@ -1,21 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
-import Button from 'react-bootstrap/Button'
-import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
-import { DropZone } from '../components/upload/DropZone'
-import { UploadList } from '../components/upload/UploadList'
-import {
-  organizeSelectionNames,
-  UPLOAD_ALBUMS_FIELD_ID,
-} from '../components/upload/organizeSelection'
-import { UploadOrganize } from '../components/upload/UploadOrganize'
-import { UploadProgressHeader } from '../components/upload/UploadProgressHeader'
-import { UploadStep } from '../components/upload/UploadStep'
+import { ConfirmModal } from '../components/ConfirmModal'
+import { organizeSelectionNames } from '../components/upload/organizeSelection'
+import { type UploadOrganizeProps } from '../components/upload/UploadOrganize'
+import { UploadStageDone } from '../components/upload/UploadStageDone'
+import { UploadStagePick } from '../components/upload/UploadStagePick'
+import { UploadStageUploading } from '../components/upload/UploadStageUploading'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import { useLeaveGuard } from '../hooks/useLeaveGuard'
 import { usePasteFiles } from '../hooks/usePasteFiles'
 import { useUploadOrganize } from '../hooks/useUploadOrganize'
 import { useUploadQueue } from '../hooks/useUploadQueue'
@@ -23,35 +19,38 @@ import { SHARE_PARAM } from '../pwa/shareContract'
 import { collectSharedFiles, type SharedFiles } from '../pwa/shareTarget'
 
 /**
- * Multiupload page, laid out as the three steps it actually is — **pick files →
- * organise the batch → start** — each a numbered {@link UploadStep}, in that
- * order, so the flow is on screen instead of inferred from a wall of controls.
- * Steps 1 and 2 stay rendered from the first visit (an empty step 3 says what
- * will appear there), because a stage that only materialises once you have done
- * the previous one cannot be read as a sequence.
+ * The upload page: **one stage on screen at a time**, and the upload starts by
+ * itself.
  *
- * Step 1: drag, paste or pick many files (gallery/camera on mobile). Step 2: the
- * albums and labels for the **whole batch** — its heading counts the queue
- * ("added to all 57 files"), and the sticky header of step 3 restates the choice
- * with one tap back here, which is what keeps the picker reachable once a long
- * queue has pushed it off screen. Step 3: the queue itself — a prominent sticky
- * overall-progress header and a virtualized per-file list with a local thumbnail
- * per row, retry of failures (whole-batch or per file, and an errors-only filter
- * to find them in a big batch), and a jump to the freshly added photos in the
- * library.
+ * Which stage is showing is not a mode anyone sets — it is read off the queue.
+ * Empty queue → *pick*; files that have not all settled → *uploading*; every file
+ * settled → *done*. So there is nothing to keep in sync and no way to be in the
+ * wrong stage: picking files puts bytes on the wire and moves the page in one
+ * step, adding more mid-flight keeps the page where it is, and **Upload more**
+ * (which only empties the queue) walks it back to the start.
  *
- * Once every file settles, every resolved photo — new *or* duplicate — is added
- * to the chosen albums/labels in one bulk call, with an "assigning…" state and a
- * retryable error if that step alone fails; both are reported inside step 2,
- * beside the picker they belong to, rather than under a hundred queue rows.
- * Picking (or adding) an album or label only after the batch has finished
- * re-runs that assignment with the current selection. Every state and label is
- * translated (cs/en) and the controls are sized for touch.
+ * That is the answer to what the page got wrong on a phone. It used to show
+ * three numbered steps at once — an album picker with no batch, an empty queue
+ * explaining itself, and a start button that a fifty-file queue promptly pushed
+ * below the fold, with the progress in a sticky header somewhere else again. Now
+ * every stage ends in one action bar at the bottom edge, which carries both the
+ * progress and the stage's primary action and never scrolls away, on a phone and
+ * on a desktop alike.
  *
- * `?share=<id>` is how photos arrive from the phone's share sheet: the files are
- * already staged in the browser's cache by then (see `pwa/shareContract.ts`), so
- * the page collects them into the ordinary queue — same limits, same progress,
- * same albums and labels — and says what it took and what it could not.
+ * The album/label choice moved *into* the wait rather than in front of it, which
+ * works without any new backend behaviour: `useUploadOrganize` assigns once the
+ * batch settles and re-arms whenever the selection changes, so a pick made while
+ * the photos upload — or after they have finished — is applied just the same.
+ *
+ * Three ways in, all of them the same queue: the picker (gallery or camera),
+ * pasting anywhere on the page, and `?share=<id>` from the phone's share sheet.
+ * A share is already staged in the browser's cache by then (see
+ * `pwa/shareContract.ts`), so it is collected into the queue and lands directly
+ * in the uploading stage, with a note saying what came through and what did not.
+ *
+ * Because the queue only exists in this tab, leaving mid-upload throws it away —
+ * so {@link useLeaveGuard} holds an in-app link back and asks first, and lets
+ * the browser put its own warning on a tab close.
  */
 export function UploadPage() {
   const { t } = useTranslation()
@@ -63,11 +62,9 @@ export function UploadPage() {
     progress,
     isUploading,
     isComplete,
-    createdUids,
     resolvedUids,
     addFiles,
     removeItem,
-    start,
     retry,
     retryFailed,
     clear,
@@ -138,202 +135,103 @@ export function UploadPage() {
     }
   }, [isComplete, hasSelection, resolvedUids, assign.status, runAssign])
 
-  // A fresh batch (files re-queued, cleared, or a failed upload retried) clears a
-  // prior assignment result so the next completion assigns again.
+  // A fresh batch (files added to a finished one, cleared, or a failed upload
+  // retried) clears a prior assignment result so the next completion assigns
+  // again.
   useEffect(() => {
     if (!isComplete && (assign.status === 'done' || assign.status === 'error')) {
       resetAssign()
     }
   }, [isComplete, assign.status, resetAssign])
 
-  const hasQueued = summary.queued > 0
-  const hasFailed = summary.error > 0
-  const hasItems = items.length > 0
   const assigning = assign.status === 'assigning'
 
-  // Errors-only filter, so a handful of failures in a large batch are easy to
-  // find. It only makes sense while failures exist, so reset it once they are
-  // all retried away (or the queue is cleared).
-  const [showErrorsOnly, setShowErrorsOnly] = useState(false)
-  useEffect(() => {
-    if (!hasFailed) {
-      setShowErrorsOnly(false)
-    }
-  }, [hasFailed])
+  // The queue is browser state: a navigation away ends it mid-flight and the
+  // photos never arrive. That includes the assignment, which is the last thing
+  // to run and the easiest to lose without noticing.
+  const leaving = useLeaveGuard(isUploading || summary.queued > 0 || assigning)
 
-  const visibleItems = useMemo(
-    () => (showErrorsOnly ? items.filter((item) => item.status === 'error') : items),
-    [items, showErrorsOnly],
-  )
-
-  // What the batch is tagged with, for the recap in the sticky header.
+  // What the batch is tagged with, for the outcome sentence.
   const organizeNames = useMemo(
     () => organizeSelectionNames(organizeLoad, albums, labels),
     [organizeLoad, albums, labels],
   )
 
-  // Back to step 2 from anywhere in step 3. Centring the field clears both the
-  // sticky navbar and the queue's own sticky header, and focusing it (without a
-  // second, competing scroll) means a keyboard user lands *in* the picker rather
-  // than merely near it — the field opens its suggestions on focus, so the tap
-  // ends ready to type. The id is the one `MultiSelect` already publishes for its
-  // label, which is why no ref is threaded down for this.
-  const editOrganize = useCallback(() => {
-    const field = document.getElementById(UPLOAD_ALBUMS_FIELD_ID)
-    field?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    field?.focus({ preventScroll: true })
-  }, [])
+  // The picker is the same control in both of the stages that show it, so it is
+  // wired once here and handed over whole.
+  const organize: UploadOrganizeProps = {
+    load: organizeLoad,
+    albums,
+    labels,
+    onAlbums: setAlbums,
+    onLabels: setLabels,
+    disabled: assigning,
+    allowCreate: canWrite,
+  }
 
   return (
     <>
-      <h1 className="kk-page-title mb-1">{t('upload.title')}</h1>
-      <p className="text-secondary">{t('upload.subtitle')}</p>
+      <h1 className="kk-page-title mb-3">{t('upload.title')}</h1>
 
-      <UploadStep
-        index={1}
-        title={t('upload.step.pick.title')}
-        hint={t('upload.step.pick.hint')}
-        status={hasItems ? t('upload.step.pick.picked', { count: items.length }) : undefined}
-      >
-        {shared !== null && (
-          <>
-            {shared.accepted.length > 0 && (
-              <Alert variant="info" aria-live="polite">
-                {t('share.notice.staged', { count: shared.accepted.length })}
-              </Alert>
-            )}
-            {shared.accepted.length === 0 && shared.rejected.length === 0 && (
-              <Alert variant="warning" aria-live="polite">
-                {t('share.notice.empty')}
-              </Alert>
-            )}
-            {shared.rejected.length > 0 && (
-              <Alert variant="warning" aria-live="polite">
-                {t('share.notice.rejected', { names: shared.rejected.join(', ') })}
-              </Alert>
-            )}
-          </>
-        )}
+      {shared !== null && (
+        <>
+          {shared.accepted.length > 0 && (
+            <Alert variant="info" aria-live="polite">
+              {t('share.notice.staged', { count: shared.accepted.length })}
+            </Alert>
+          )}
+          {shared.accepted.length === 0 && shared.rejected.length === 0 && (
+            <Alert variant="warning" aria-live="polite">
+              {t('share.notice.empty')}
+            </Alert>
+          )}
+          {shared.rejected.length > 0 && (
+            <Alert variant="warning" aria-live="polite">
+              {t('share.notice.rejected', { names: shared.rejected.join(', ') })}
+            </Alert>
+          )}
+        </>
+      )}
 
-        <DropZone onFiles={addFiles} />
-      </UploadStep>
+      {items.length === 0 && <UploadStagePick onFiles={addFiles} />}
 
-      <UploadStep
-        index={2}
-        title={t('upload.organize.heading')}
-        hint={
-          hasItems
-            ? t('upload.organize.hintCount', { count: items.length })
-            : t('upload.organize.hint')
-        }
-      >
-        <UploadOrganize
-          load={organizeLoad}
-          albums={albums}
-          labels={labels}
-          onAlbums={setAlbums}
-          onLabels={setLabels}
-          disabled={assigning}
-          allowCreate={canWrite}
+      {items.length > 0 && !isComplete && (
+        <UploadStageUploading
+          summary={summary}
+          progress={progress}
+          items={items}
+          organize={organize}
+          onFiles={addFiles}
+          onRemove={removeItem}
+          onRetry={retry}
         />
+      )}
 
-        {assigning && (
-          <Alert
-            variant="info"
-            className="d-flex align-items-center gap-2 mt-3 mb-0"
-            aria-live="polite"
-          >
-            <Spinner animation="border" role="status" size="sm">
-              <span className="visually-hidden">{t('upload.organize.assigning')}</span>
-            </Spinner>
-            <span>{t('upload.organize.assigning')}</span>
-          </Alert>
-        )}
+      {items.length > 0 && isComplete && (
+        <UploadStageDone
+          summary={summary}
+          items={items}
+          organize={organize}
+          organizeNames={organizeNames}
+          assign={assign}
+          onRetryFailed={retryFailed}
+          onRemove={removeItem}
+          onRetry={retry}
+          onRetryAssign={retryAssign}
+          onUploadMore={clear}
+        />
+      )}
 
-        {assign.status === 'done' && (
-          <Alert variant="success" className="mt-3 mb-0" aria-live="polite">
-            {t('upload.organize.assigned')}
-          </Alert>
-        )}
-
-        {assign.status === 'error' && (
-          <Alert variant="danger" className="mt-3 mb-0" aria-live="polite">
-            <div className="d-flex flex-wrap align-items-center justify-content-between gap-2">
-              <span>
-                {assign.message === ''
-                  ? t('upload.organize.assignErrorGeneric')
-                  : t('upload.organize.assignError', { message: assign.message })}
-              </span>
-              <Button type="button" variant="outline-light" size="sm" onClick={retryAssign}>
-                {t('upload.organize.retry')}
-              </Button>
-            </div>
-          </Alert>
-        )}
-      </UploadStep>
-
-      <UploadStep
-        index={3}
-        title={t('upload.step.upload.title')}
-        hint={t('upload.step.upload.hint')}
+      <ConfirmModal
+        show={leaving.asking}
+        title={t('upload.leave.title')}
+        confirmLabel={t('upload.leave.confirm')}
+        cancelLabel={t('upload.leave.stay')}
+        onConfirm={leaving.confirm}
+        onCancel={leaving.cancel}
       >
-        {!hasItems && <p className="text-secondary mb-0">{t('upload.step.upload.empty')}</p>}
-
-        {hasItems && (
-          <>
-            <UploadProgressHeader
-              summary={summary}
-              progress={progress}
-              isComplete={isComplete}
-              hasCreated={createdUids.length > 0}
-              onRetryFailed={retryFailed}
-              // Only while there is a picker to go back to: with the catalogs
-              // unloaded (or still loading) step 2 shows a spinner or its error,
-              // and a "Change" button pointing at nothing is worse than none.
-              organize={
-                organizeLoad.status === 'ready'
-                  ? { names: organizeNames, onEdit: editOrganize }
-                  : undefined
-              }
-            />
-
-            <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
-              <h3 className="kk-text-eyebrow text-secondary mb-0">{t('upload.queue.heading')}</h3>
-              <div className="d-flex flex-wrap gap-2">
-                {hasQueued && (
-                  <Button type="button" variant="primary" onClick={start}>
-                    {t('upload.actions.start', { count: summary.queued })}
-                  </Button>
-                )}
-                {hasFailed && (
-                  <Button
-                    type="button"
-                    variant={showErrorsOnly ? 'danger' : 'outline-danger'}
-                    aria-pressed={showErrorsOnly}
-                    onClick={() => {
-                      setShowErrorsOnly((value) => !value)
-                    }}
-                  >
-                    {showErrorsOnly
-                      ? t('upload.filter.showAll')
-                      : t('upload.filter.showErrors', { count: summary.error })}
-                  </Button>
-                )}
-                <Button
-                  type="button"
-                  variant="outline-secondary"
-                  onClick={clear}
-                  disabled={isUploading || assigning}
-                >
-                  {t('upload.actions.clear')}
-                </Button>
-              </div>
-            </div>
-
-            <UploadList items={visibleItems} onRemove={removeItem} onRetry={retry} />
-          </>
-        )}
-      </UploadStep>
+        {t('upload.leave.body', { count: summary.queued + summary.uploading })}
+      </ConfirmModal>
     </>
   )
 }

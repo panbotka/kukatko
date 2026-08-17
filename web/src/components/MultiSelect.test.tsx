@@ -216,8 +216,9 @@ describe('MultiSelect', () => {
     const user = userEvent.setup()
     render(
       <>
-        {/* What `/upload` puts on the page the moment a file is queued
-            (`UploadProgressHeader`) — and what used to cover the suggestions. */}
+        {/* A page's own in-page sticky bar — `SelectionBar`, or `/upload`'s
+            action rail under the album picker — which used to cover these
+            suggestions before the menu named a layer of its own. */}
         <div className="kukatko-sticky-toolbar">Uploading…</div>
         <Harness />
       </>,
