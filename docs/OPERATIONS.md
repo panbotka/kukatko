@@ -702,8 +702,11 @@ long-running and belong on the machine where the instance runs — so they remai
   which serves one request at a time**, and before per-type pools existed the single global slot that
   protected it also serialised every thumbnail on the box. They stay at **one slot each even when
   `type_count` does not mention them** (a YAML map *replaces* the default, it does not merge into it),
-  so running several against the box is only ever an explicit entry; values ≤ 0 are ignored and a type
-  with no registered handler gets no pool at all. `serve` logs the resulting layout at startup
+  so running several against the box is only ever an explicit entry. **`mail_send` gets its own one-slot pool
+  for the same reason** — one conversation at a time with a remote mail server, and a message that never waits
+  behind a backlog of thumbnails; values ≤ 0 are ignored and a type
+  with no registered handler gets no pool at all (with `mail.enabled` false there is no `mail_send` handler,
+  and nothing enqueues one either). `serve` logs the resulting layout at startup
   (`worker: pool "shared" draining [...] with N slot(s)`) — that line is how you confirm an override
   took effect. Also `poll_interval` (**default 2s**, the idle delay between empty claims — every pool
   polls, so more pools means proportionally more idle queries), `stale_after` (**default 5m**, the lock
@@ -1061,11 +1064,14 @@ long-running and belong on the machine where the instance runs — so they remai
   `_MAX_LABELS`, `_LABEL_CONCURRENCY`, `_FACE_BUDGET`, `_LABEL_BUDGET`, `_BUILD_TIMEOUT`, `_MAX_PER_ENTITY`,
   `_KIND_SHARES_FACE` (and `_LABEL`/`_PLACE`/`_DUPLICATE`/`_OUTLIER`), `_SKIP_MUTE_THRESHOLD`,
   `_SKIP_MUTE_COOLDOWN`.
-- **Mail keys (`mail.*`, `internal/mailer`):** outgoing transactional mail — the messages sent around
-  accounts (a registration was received, an account was approved, an administrator has somebody to
-  approve, a password reset). `enabled` (bool, **default false**) is the master switch: with mail off the
-  **no-op sender** is wired, every send is accepted and nothing is delivered, which is a working instance
-  rather than a broken one. `host` + `port` (**default 587**, the submission port) name the SMTP server;
+- **Mail keys (`mail.*`, `internal/mailer` + `internal/mailjob`):** outgoing transactional mail — the messages
+  sent around accounts (a registration was received, an account was approved, an administrator has somebody to
+  approve, a password reset). Delivery always goes **through the job queue** (`mail_send`, one worker slot), so
+  a request never waits on the SMTP server and a message enqueued while it is unreachable is delivered once it
+  is back; a permanently rejected recipient is parked in `failed` instead of being retried. `enabled` (bool,
+  **default false**) is the master switch: with mail off no `mail_send` job is enqueued at all and no handler is
+  registered, which is a working instance rather than a broken one (and the **no-op sender** covers any direct
+  `mailer.Sender` caller). `host` + `port` (**default 587**, the submission port) name the SMTP server;
   `username`/`password` are **optional** — an empty username skips the `AUTH` command entirely, which is
   what an unauthenticated relay on localhost wants. `encryption` is `starttls` (**default**, port 587),
   `tls` (implicit TLS, port 465) or `none` (a local relay only: the standard library refuses password

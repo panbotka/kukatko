@@ -717,3 +717,139 @@ func TestCountPending(t *testing.T) {
 		t.Errorf("pending after completing one = %d, want 2", pending)
 	}
 }
+
+// TestFailTerminal_parksTheJobWithoutARetry verifies a permanent failure ends the
+// job then and there: it is stamped 'failed' with its cause, no worker can claim
+// it again however much of its attempt budget is left, and an operator can still
+// requeue it by hand once the cause is fixed.
+func TestFailTerminal_parksTheJobWithoutARetry(t *testing.T) {
+	store, _ := newStore(t)
+	ctx := t.Context()
+
+	enqueued, err := store.Enqueue(ctx, jobs.TypeMailSend,
+		json.RawMessage(`{"template":"account_approved","to":"gone@example.com"}`), jobs.EnqueueOptions{})
+	if err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	claimed, err := store.Claim(ctx, "w1")
+	if err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+
+	failed, err := store.FailTerminal(ctx, claimed.ID, "w1", errors.New("550 no such user"))
+	if err != nil {
+		t.Fatalf("FailTerminal: %v", err)
+	}
+	if failed.State != jobs.StateFailed {
+		t.Errorf("state = %q, want %q", failed.State, jobs.StateFailed)
+	}
+	if failed.Attempts != 1 {
+		t.Errorf("attempts = %d, want 1", failed.Attempts)
+	}
+	if failed.LockedBy != nil || failed.LockedAt != nil {
+		t.Errorf("lock not released: locked_by=%v locked_at=%v", failed.LockedBy, failed.LockedAt)
+	}
+	if failed.LastError != "550 no such user" {
+		t.Errorf("last_error = %q, want the cause", failed.LastError)
+	}
+	if failed.Attempts >= failed.MaxAttempts {
+		t.Fatalf("attempts %d/%d: the test must leave retries unused to prove they are not taken",
+			failed.Attempts, failed.MaxAttempts)
+	}
+
+	if _, err := store.Claim(ctx, "w2"); !errors.Is(err, jobs.ErrNoJobs) {
+		t.Errorf("a terminally failed job was claimable again: %v", err)
+	}
+
+	requeued, err := store.Requeue(ctx, enqueued.ID)
+	if err != nil {
+		t.Fatalf("Requeue: %v", err)
+	}
+	if requeued.State != jobs.StateQueued {
+		t.Errorf("requeued state = %q, want %q", requeued.State, jobs.StateQueued)
+	}
+}
+
+// TestFailTerminal_dropsALateResult verifies the ownership guard: a worker whose
+// job was meanwhile recovered and reclaimed cannot park the new owner's run.
+func TestFailTerminal_dropsALateResult(t *testing.T) {
+	store, _ := newStore(t)
+	ctx := t.Context()
+
+	if _, err := store.Enqueue(ctx, jobs.TypeMailSend,
+		json.RawMessage(`{"template":"account_approved"}`), jobs.EnqueueOptions{}); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	claimed, err := store.Claim(ctx, "w1")
+	if err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	if _, err := store.FailTerminal(ctx, claimed.ID, "somebody-else", errors.New("550")); !errors.Is(err, jobs.ErrLockLost) {
+		t.Fatalf("FailTerminal under a foreign worker id = %v, want ErrLockLost", err)
+	}
+}
+
+// TestEnqueue_joinsTheCallersTransaction verifies the package-level Enqueue takes
+// its executor seriously: a job written on a transaction that rolls back never
+// exists, and one written on a transaction that commits does. It is what lets a
+// mutation schedule its own mail without a mail going out for a change that was
+// undone.
+func TestEnqueue_joinsTheCallersTransaction(t *testing.T) {
+	store, db := newStore(t)
+	ctx := t.Context()
+	payload := json.RawMessage(`{"template":"registration_received","to":"jan@example.com"}`)
+
+	rolledBack, err := db.Pool().Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	if _, err := jobs.Enqueue(ctx, rolledBack, jobs.TypeMailSend, payload, jobs.EnqueueOptions{}); err != nil {
+		t.Fatalf("enqueue in transaction: %v", err)
+	}
+	if err := rolledBack.Rollback(ctx); err != nil {
+		t.Fatalf("rollback: %v", err)
+	}
+	pending, err := store.CountPending(ctx, jobs.TypeMailSend)
+	if err != nil {
+		t.Fatalf("CountPending: %v", err)
+	}
+	if pending != 0 {
+		t.Errorf("pending after rollback = %d, want 0", pending)
+	}
+
+	committed, err := db.Pool().Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	if _, err := jobs.Enqueue(ctx, committed, jobs.TypeMailSend, payload, jobs.EnqueueOptions{}); err != nil {
+		t.Fatalf("enqueue in transaction: %v", err)
+	}
+	if err := committed.Commit(ctx); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+	if pending, err = store.CountPending(ctx, jobs.TypeMailSend); err != nil || pending != 1 {
+		t.Errorf("pending after commit = %d (err %v), want 1", pending, err)
+	}
+}
+
+// TestEnqueue_mailNeverDedupes verifies two mails of the same type coexist in the
+// queue: the dedup index keys on payload->>'photo_uid', which a mail payload does
+// not have, so a second registration is not swallowed as a duplicate of the first.
+func TestEnqueue_mailNeverDedupes(t *testing.T) {
+	store, _ := newStore(t)
+	ctx := t.Context()
+
+	for _, to := range []string{"jan@example.com", "eva@example.com"} {
+		payload := json.RawMessage(`{"template":"registration_received","to":"` + to + `"}`)
+		if _, err := store.Enqueue(ctx, jobs.TypeMailSend, payload, jobs.EnqueueOptions{}); err != nil {
+			t.Fatalf("enqueue for %s: %v", to, err)
+		}
+	}
+	pending, err := store.CountPending(ctx, jobs.TypeMailSend)
+	if err != nil {
+		t.Fatalf("CountPending: %v", err)
+	}
+	if pending != 2 {
+		t.Errorf("pending mail jobs = %d, want 2", pending)
+	}
+}

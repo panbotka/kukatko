@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -168,6 +169,52 @@ func TestWorker_retryThenDeadLetter(t *testing.T) {
 	}
 	if dead.LastError != wantErr.Error() {
 		t.Errorf("last_error = %q, want %q", dead.LastError, wantErr.Error())
+	}
+}
+
+// TestWorker_terminalFailureStopsAtTheFirstAttempt verifies a handler that
+// reports a permanent failure parks its job in 'failed' after a single attempt —
+// it is not retried, however much of its attempt budget is left — and that the
+// job is then requeueable by hand once whatever made it impossible is fixed.
+func TestWorker_terminalFailureStopsAtTheFirstAttempt(t *testing.T) {
+	store, db := newStore(t)
+	reg := worker.NewRegistry()
+	var attempts atomic.Int64
+	wantErr := errors.New("550 no such user")
+	reg.Register(jobType, func(_ context.Context, _ jobs.Job) error {
+		attempts.Add(1)
+		return worker.Terminal(wantErr)
+	})
+
+	job, err := store.Enqueue(t.Context(), jobType, payload(t, "terminal"),
+		jobs.EnqueueOptions{MaxAttempts: 5})
+	if err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+
+	stop := make(chan struct{})
+	go keepRunnable(db, stop)
+	defer close(stop)
+
+	cancel, stopped := runWorker(fastWorker(store, reg))
+	defer func() { cancel(); <-stopped }()
+
+	failed := waitForState(t, store, job.ID, jobs.StateFailed)
+	if failed.Attempts != 1 {
+		t.Errorf("attempts = %d, want 1", failed.Attempts)
+	}
+	if failed.LastError != worker.Terminal(wantErr).Error() {
+		t.Errorf("last_error = %q, want the terminal cause", failed.LastError)
+	}
+	// Give the worker room to claim it again if it wrongly could; nothing may.
+	time.Sleep(50 * time.Millisecond)
+	if got := attempts.Load(); got != 1 {
+		t.Errorf("handler ran %d times, want 1", got)
+	}
+	if requeued, err := store.Requeue(t.Context(), job.ID); err != nil {
+		t.Errorf("Requeue of a terminally failed job: %v", err)
+	} else if requeued.State != jobs.StateQueued {
+		t.Errorf("requeued state = %q, want queued", requeued.State)
 	}
 }
 

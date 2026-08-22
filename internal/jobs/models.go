@@ -91,6 +91,15 @@ const (
 	TypeStoryboard = "storyboard"
 	// TypeBackup runs a backup.
 	TypeBackup = "backup"
+	// TypeMailSend delivers one transactional e-mail — a registration was
+	// received, an account was approved, somebody forgot their password. The
+	// payload names the template and carries its data, so the message is rendered
+	// when it is sent rather than when it is scheduled and a queued mail survives
+	// a restart. It runs locally in the sense that Kukátko owns the process, but
+	// it talks to a remote SMTP server, which is exactly why it is queued: a mail
+	// host that is briefly unreachable delays the message instead of losing it.
+	// See internal/mailjob.
+	TypeMailSend = "mail_send"
 	// TypeNamelessDetach detaches one nameless catch-all subject: the subject row
 	// is deleted and every marker and cached face that pointed at it is left
 	// unassigned. It runs locally, in the queue rather than in the HTTP request,

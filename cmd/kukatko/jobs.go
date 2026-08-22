@@ -13,6 +13,7 @@ import (
 	"github.com/panbotka/kukatko/internal/facejob"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/jobsapi"
+	"github.com/panbotka/kukatko/internal/mailjob"
 	"github.com/panbotka/kukatko/internal/maintenance"
 	"github.com/panbotka/kukatko/internal/maintenanceapi"
 	"github.com/panbotka/kukatko/internal/metajob"
@@ -46,8 +47,10 @@ import (
 // to a YAML file in storage and backs the sidecar backfill), the text-recognition
 // service (nil when OCR is off; it registers the `ocr` job that reads what a
 // photo's signs say and backs the OCR backfill, reusing embedClient because it is
-// the same sidecar on the same box) and the library-maintenance service/API,
-// since all are part of the job subsystem; a build failure for any of them is
+// the same sidecar on the same box), the mail service (nil when mail is off; it
+// registers the `mail_send` job that renders a queued message and hands it to the
+// SMTP server) and the library-maintenance service/API, since all are part of the
+// job subsystem; a build failure for any of them is
 // returned as an error.
 func buildJobs(
 	cfg *config.Config, db *database.DB, store *jobs.Store, authAPI *auth.API, enqueuer *jobs.Enqueuer,
@@ -123,8 +126,8 @@ type jobServiceDeps struct {
 // buildJobServices constructs every handler the worker registry needs, returning
 // them bundled together with the library-maintenance service (which shares the
 // thumbnail service's construction and is not a job handler itself). The
-// config-gated ones — places, sidecar, OCR — come back nil when their feature is
-// switched off; buildRegistry then registers no handler for them, which is what
+// config-gated ones — places, sidecar, OCR, mail — come back nil when their
+// feature is switched off; buildRegistry then registers no handler for them, which is what
 // keeps a job of a type nothing can claim from ever being enqueued.
 func buildJobServices(d jobServiceDeps) (registryServices, *maintenance.Service, error) {
 	thumbSvc, maintenanceSvc, err := buildMaintenanceAndThumb(d.cfg, d.db, d.enqueuer, d.embed, d.face, d.reg)
@@ -147,9 +150,13 @@ func buildJobServices(d jobServiceDeps) (registryServices, *maintenance.Service,
 	if err != nil {
 		return registryServices{}, nil, err
 	}
+	mailSvc, err := buildMailServiceOrNil(d.cfg)
+	if err != nil {
+		return registryServices{}, nil, err
+	}
 	return registryServices{
 		embed: d.embed, face: d.face, thumb: thumbSvc, meta: metaSvc,
-		places: placesSvc, sidecar: sidecarSvc, ocr: ocrSvc,
+		places: placesSvc, sidecar: sidecarSvc, ocr: ocrSvc, mail: mailSvc,
 		nameless: buildNamelessService(d.db, d.store), storyboard: d.storyboard,
 	}, maintenanceSvc, nil
 }
@@ -164,13 +171,14 @@ type registryServices struct {
 	places     *placesjob.Service
 	sidecar    *sidecarjob.Service
 	ocr        *ocrjob.Service
+	mail       *mailjob.Service
 	nameless   *namelessjob.Service
 	storyboard *storyboardjob.Service
 }
 
 // buildRegistry returns the worker registry with every configured handler
 // registered. The always-available handlers register unconditionally; the
-// config-gated ones (places, sidecar, ocr) register only when their service was
+// config-gated ones (places, sidecar, ocr, mail_send) register only when their service was
 // built, because an unregistered type is never claimed — so a job of a type with
 // no handler would sit queued forever.
 func buildRegistry(svc registryServices) *worker.Registry {
@@ -191,6 +199,9 @@ func buildRegistry(svc registryServices) *worker.Registry {
 	}
 	if svc.ocr != nil {
 		registry.Register(jobs.TypeOCR, svc.ocr.Handle)
+	}
+	if svc.mail != nil {
+		registry.Register(jobs.TypeMailSend, svc.mail.Handle)
 	}
 	return registry
 }

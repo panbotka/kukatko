@@ -892,14 +892,22 @@ to `## Package map` in `CLAUDE.md`.
   running job wrote the file before it saw that edit; other types keep queued|running dedup);
   `Store` = `NewStore(pool)` with
   `Enqueue(ctx,type,payload,opts)` (idempotent on the dedup key → `ErrDuplicate`,
-  `EnqueueOptions{Priority,MaxAttempts,RunAfter}`),
+  `EnqueueOptions{Priority,MaxAttempts,RunAfter}`) — a thin wrapper over the **package-level
+  `Enqueue(ctx, exec, type, payload, opts)`, whose `exec` is an `Execer` (`QueryRow`; both `*pgxpool.Pool`
+  and `pgx.Tx` satisfy it), so a job can be scheduled **inside the caller's transaction** exactly the way
+  `audit.Write` records a mutation: a registration that rolls back schedules no mail, one that commits
+  schedules it once. A payload with no `photo_uid` (a mail, a backup) never dedupes, NULLs being distinct
+  in a unique index;
   `Claim(ctx,workerID,types...)` (atomically via `SELECT … FOR UPDATE SKIP LOCKED`,
   `run_after<=now()`, ordered priority DESC/run_after ASC/id ASC, mark running+lock →
   an empty queue `ErrNoJobs`), `Complete(id,workerID)`/`Fail(id,workerID,err)` (increments attempts →
   requeue with exponential backoff via `run_after` base 30 s/cap 1 h, otherwise
   `state=dead`+`last_error`),
   `Defer(id,workerID,delay)` (requeue to `now()+delay` **without** counting an attempt — an offline box waits without
-  burning the retry budget); **every lifecycle write is fenced by `locked_by = workerID`** → a worker whose
+  burning the retry budget), `FailTerminal(id,workerID,err)` (the opposite end: a failure no retry can fix —
+  a mail the server rejected as permanently undeliverable, a payload no version of the handler could read —
+  is parked in `state=failed`+`last_error` **on the first attempt**, whatever budget is left, and stays
+  requeueable by hand once the cause is fixed); **every lifecycle write is fenced by `locked_by = workerID`** → a worker whose
   job was meanwhile reclaimed gets `ErrLockLost` and its late result is dropped instead of clobbering the new
   owner's run; `Heartbeat(id,workerID)` (refreshes `locked_at`; the worker ticks it for as long as a handler
   runs, so a job that legitimately outlives the stale window — a full import pass — is not recovered and run
@@ -915,7 +923,8 @@ to `## Package map` in `CLAUDE.md`.
   hopeless for a dead letter of thousands)/`List`(`ListOptions{State,Limit,Offset}`, ordered
   updated_at DESC, limit cap 500, for the admin listing)/`Get`; sentinels
   `ErrDuplicate`/`ErrNoJobs`/`ErrJobNotFound`/`ErrLockLost`/`ErrNotDead`; **job types** `image_embed`/
-  `face_detect`/`thumbnail`/`places`/`metadata`/`pp_import`/`ps_migrate`/`backup`; `Enqueuer` =
+  `face_detect`/`thumbnail`/`places`/`metadata`/`ocr`/`sidecar`/`storyboard`/`mail_send`/`nameless_detach`/
+  `nameless_restore`/`pp_import`/`ps_migrate`/`backup`; `Enqueuer` =
   `NewEnqueuer(store)`
   implements `ingest.JobEnqueuer` (`EnqueueImageEmbed`/`EnqueueFaceDetect`/`EnqueueThumbnail`/
   `EnqueuePlaces`/`EnqueueMetadata`, `ErrDuplicate`=no-op);
@@ -936,7 +945,9 @@ to `## Package map` in `CLAUDE.md`.
   concurrency limit. `effectiveTypeConcurrency` overlays the config on the built-in caps, and
   **`sidecarBoundTypes` (`image_embed`, `face_detect`) default to one slot each** — the embeddings box
   serves one request at a time, so CPU-bound work must not queue behind it and raising them must be
-  explicit (config maps replace rather than merge, so the cap cannot be lost by omission). A type with no
+  explicit (config maps replace rather than merge, so the cap cannot be lost by omission). **`mail_send`
+  gets the same one-slot treatment** (`defaultMailConcurrency`): one conversation at a time with a remote
+  mail server, and a message that never waits behind a queue of thumbnails. A type with no
   handler gets no pool, and an empty shared pool is not started at all (a type-less `Claim` would mean
   "claim anything"). Worker ids are `<IDPrefix>-<pool>-<i>`, unique across pools. It
   dispatches to the handler by `job.Type`, `Complete`/`Fail` by the result **under the
@@ -945,14 +956,17 @@ to `## Package map` in `CLAUDE.md`.
   stale-lock recovery ticker; while a handler runs, a **heartbeat goroutine** refreshes the lock every
   `StaleAfter/3` (floor 100 ms) so a long job is never recovered underneath itself, and it stops (waited
   for, so it cannot race the outcome write) when the handler returns or the lock is reported lost;
-  the `Queue` interface = a subset of `jobs.Store` (`Claim`/`Complete`/`Fail`/`Defer`/`Heartbeat`/
-  `RecoverStaleLocks`) for testability; **graceful shutdown** = a ctx cancel stops claiming,
+  the `Queue` interface = a subset of `jobs.Store` (`Claim`/`Complete`/`Fail`/`FailTerminal`/`Defer`/
+  `Heartbeat`/`RecoverStaleLocks`) for testability; **graceful shutdown** = a ctx cancel stops claiming,
   a job whose handler errored at shutdown is abandoned (the queue recovers the lock) — but a
   `RetryAfterError` is **still written as a `Defer`**, since a deferral must never burn a retry attempt;
   a handler panic →
   `ErrHandlerPanic` (job fail, not a crash), an unknown type → `ErrNoHandler`; a handler can return
   `RetryAfter(delay,cause)`/`RetryAfterError` → the worker calls `Defer(delay)` instead of `Fail` (a transient
-  error-free failure, no burned attempt — used by `image_embed` when the box is offline); a built-in **noop**
+  error-free failure, no burned attempt — used by `image_embed` when the box is offline), or
+  `Terminal(cause)`/`TerminalError` → `FailTerminal` instead of `Fail` (the job can never succeed, so it is
+  parked in `failed` rather than retried with backoff — used by `mail_send` for a permanently undeliverable
+  address); a built-in **noop**
   handler (`TypeNoop`/`NoopHandler`/`RegisterBuiltins`) only for sanity/tests; `Run` returns nil),
   `internal/wake/`
   (optional **Wake-on-LAN auto-wake** of the box, **default OFF** and fully inert when off: the package
@@ -3402,9 +3416,9 @@ to `## Package map` in `CLAUDE.md`.
   did not arrive, where a 405 would show a bare protocol error).
   Details: [`docs/DEVELOPMENT.md`](DEVELOPMENT.md).
 
-- **Mail (`internal/mailer`):** the one way Kukátko sends an e-mail. Nothing calls it yet — it exists so the
-  account work that follows (registration, approval, password reset) has a single, tested path instead of an
-  SMTP call per handler. Everything goes through the **`Sender`** interface (`Send(ctx, Message) error`), so a
+- **Mail (`internal/mailer`):** the one way Kukátko sends an e-mail. Its only caller is `internal/mailjob`,
+  the `mail_send` worker handler — nothing sends from a request — so the account work that follows
+  (registration, approval, password reset) has a single, tested path instead of an SMTP call per handler. Everything goes through the **`Sender`** interface (`Send(ctx, Message) error`), so a
   caller never depends on SMTP: `SMTPSender` in production, **`Noop`** when `mail.enabled` is false (accepts
   everything, delivers nothing — an instance nobody gave a mail server to still works), and **`Fake`** in
   tests, which records what it was handed (`Sent`/`Last`/`Reset`, `FailWith` to exercise the failure path) and
@@ -3448,6 +3462,37 @@ to `## Package map` in `CLAUDE.md`.
     `Odkaz má omezenou platnost.` instead of printing a zero.
   - Configuration is `mail.*` (`internal/config`, [`OPERATIONS.md`](OPERATIONS.md)); an enabled mailer with no
     `host`, `from_address` or `base_url` fails startup naming every missing key.
+
+- **Queued mail (`internal/mailjob`):** the delivery path — `internal/mailer` renders and speaks SMTP, this
+  package decides **when** a message is scheduled, **whether** it is scheduled at all, and **which** failures
+  are worth another try. Sending from the HTTP handler that caused the mail has two faults: the request waits
+  on a remote host, and a mail server that is briefly away loses the message. Both go away once the persistent
+  queue is the only path.
+  - **The payload is a recipe, not a message:** `{template, to, data}` — the template *name* plus its data
+    struct as JSON, never rendered text and never a live object, so a job means the same thing after a restart
+    or an upgrade. `Handle` decodes it, renders through the generic `renderWith[T]` (which is what keeps a
+    template and its data struct paired **by the compiler**, not by convention) and hands the `mailer.Message`
+    to the `Sender`.
+  - **`Enqueuer`** (`NewEnqueuer(EnqueuerConfig{Enabled,Schedule,Logger})`) is what callers use instead of
+    touching the queue: `Enqueue(ctx, exec, Mail)`, where `exec` is a `jobs.Execer` — pass **the transaction of
+    the mutation that caused the mail** and the message is scheduled if and only if that mutation commits, the
+    way `audit.Write` joins its mutation. Build the `Mail` with `RegistrationReceived`/`AccountApproved`/
+    `NewRegistrationPending`/`PasswordReset`, which pair each template with the data it expects.
+  - **Two silent refusals, both logged, both returning nil** (they must not fail the mutation that asked):
+    `mail.enabled` is false → nothing is enqueued, because an instance nobody gave an SMTP server to must not
+    grow a queue that can only fail (`Enabled()` lets a caller skip minting a reset token for it); and a
+    recipient in the reserved `.invalid` domain → skipped, since those are the placeholder addresses of
+    accounts imported without a real one. **Two refusals with an error**, before any job exists: a recipient
+    that is not an address, and a template this binary cannot render.
+  - **Failure classification is the whole point of the handler.** A transient failure (the host is down, the
+    greeting timed out, a 4yz "try again later") is returned as an ordinary error, so the queue retries with
+    its own backoff — `MaxAttempts` is **10** rather than the queue's 5, which with the 30 s→1 h backoff spans
+    roughly three hours of outage. A permanent one — `ErrInvalidAddress`/`ErrPlaceholderAddress`, or any SMTP
+    **5yz** reply dug out with `errors.As(err, *textproto.Error)` — is a `worker.Terminal` failure: parked in
+    `failed` on the first attempt, never retried, still requeueable by hand.
+  - Wired in `cmd/kukatko` next to the other handlers and **only when `mail.enabled`** (`buildMailServiceOrNil`);
+    with mail off nothing enqueues either, and a job left over from a period when mail was on simply waits in
+    the queue until it is configured again. The worker gives `mail_send` its own single-slot pool.
 
 - **Remote CLI client (`internal/ctl`):** the client half of `kukatko ctl` — the one piece of the tree that
   Kukátko calls **over HTTP as a foreign server**, not through the DB and the disk. It has nothing in common with `internal/config`

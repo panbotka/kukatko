@@ -87,12 +87,29 @@ func payloadOrEmpty(raw json.RawMessage) []byte {
 	return raw
 }
 
+// Execer is the subset of pgx one enqueue statement needs. Both *pgxpool.Pool
+// and pgx.Tx satisfy it, so a job can be scheduled on its own connection or join
+// a caller's transaction — the same convention audit.Write follows.
+type Execer interface {
+	// QueryRow runs sql with args and returns the single row it produced.
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
 // Enqueue inserts a queued job of the given type with the supplied payload and
-// options, returning the created row. It is idempotent with respect to the dedup
-// key: if an active (queued or running) job already exists for the same
-// (type, payload->>'photo_uid') it returns ErrDuplicate without inserting.
-func (s *Store) Enqueue(
-	ctx context.Context, jobType string, payload json.RawMessage, opts EnqueueOptions,
+// options using exec, which may be a pool or an open transaction, and returns the
+// created row.
+//
+// Passing the caller's pgx.Tx makes the job part of that transaction: a mutation
+// that rolls back schedules no work, and one that commits schedules it exactly
+// once. That is what lets a registration enqueue its confirmation mail inside the
+// same transaction that creates the account, the way the audit trail is written.
+//
+// It is idempotent with respect to the dedup key: if an active (queued or
+// running) job already exists for the same (type, payload->>'photo_uid') it
+// returns ErrDuplicate without inserting. A payload without a photo_uid — a mail,
+// a backup — never dedupes, because NULLs are distinct in a unique index.
+func Enqueue(
+	ctx context.Context, exec Execer, jobType string, payload json.RawMessage, opts EnqueueOptions,
 ) (Job, error) {
 	maxAttempts := opts.MaxAttempts
 	if maxAttempts <= 0 {
@@ -105,7 +122,7 @@ func (s *Store) Enqueue(
 	const q = `INSERT INTO jobs (type, state, priority, payload, max_attempts, run_after)
 		VALUES ($1, 'queued', $2, $3, $4, $5)
 		RETURNING ` + jobColumns
-	job, err := scanJob(s.pool.QueryRow(ctx, q,
+	job, err := scanJob(exec.QueryRow(ctx, q,
 		jobType, opts.Priority, payloadOrEmpty(payload), maxAttempts, runAfter))
 	if err != nil {
 		if name, ok := isUniqueViolation(err); ok && name == "idx_jobs_dedup" {
@@ -114,6 +131,16 @@ func (s *Store) Enqueue(
 		return Job{}, err
 	}
 	return job, nil
+}
+
+// Enqueue inserts a queued job of the given type on the store's own pool. It is
+// the package-level Enqueue with the pool as the executor; a caller that wants
+// the job to commit with its mutation calls that one with its transaction
+// instead.
+func (s *Store) Enqueue(
+	ctx context.Context, jobType string, payload json.RawMessage, opts EnqueueOptions,
+) (Job, error) {
+	return Enqueue(ctx, s.pool, jobType, payload, opts)
 }
 
 // claimSQL builds the atomic claim statement. When filterTypes is true the
@@ -219,6 +246,41 @@ func (s *Store) Fail(ctx context.Context, id int64, workerID string, cause error
 		RETURNING ` + jobColumns
 	job, err := scanJob(s.pool.QueryRow(ctx, q,
 		id, msg, float64(backoffCapSeconds), float64(backoffBaseSeconds), workerID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Job{}, s.ownershipMissReason(ctx, id, workerID)
+		}
+		return Job{}, err
+	}
+	return job, nil
+}
+
+// FailTerminal records a permanent failure on the running job identified by id
+// and owned by workerID: it stores cause as last_error, counts the attempt and
+// parks the job in StateFailed, where nothing will claim it again. Unlike Fail it
+// never requeues, whatever the remaining attempt budget — it is for work that
+// cannot succeed on a later try, such as a mail whose recipient the server
+// rejected as permanently undeliverable. The job stays requeueable by hand
+// (Requeue accepts StateFailed), which is how an operator retries one after
+// fixing whatever made it impossible.
+//
+// It returns the refreshed job, ErrLockLost if the job was meanwhile reclaimed by
+// another worker, or ErrJobNotFound if no job has that id.
+func (s *Store) FailTerminal(ctx context.Context, id int64, workerID string, cause error) (Job, error) {
+	msg := "unknown error"
+	if cause != nil {
+		msg = cause.Error()
+	}
+	const q = `UPDATE jobs SET
+			attempts = attempts + 1,
+			last_error = $2,
+			state = 'failed',
+			locked_by = NULL,
+			locked_at = NULL,
+			updated_at = now()
+		WHERE id = $1 AND state = 'running' AND locked_by = $3
+		RETURNING ` + jobColumns
+	job, err := scanJob(s.pool.QueryRow(ctx, q, id, msg, workerID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Job{}, s.ownershipMissReason(ctx, id, workerID)

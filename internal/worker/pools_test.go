@@ -104,9 +104,9 @@ func runUntilDrained(t *testing.T, w *Worker, q *fakeQueue, want int) {
 	}
 }
 
-// TestEffectiveTypeConcurrency verifies the sidecar-bound types are capped at one
-// slot unless the configuration names them, that other types get a pool only when
-// configured, and that non-positive entries are ignored.
+// TestEffectiveTypeConcurrency verifies the sidecar-bound types and mail are
+// capped at one slot unless the configuration names them, that other types get a
+// pool only when configured, and that non-positive entries are ignored.
 func TestEffectiveTypeConcurrency(t *testing.T) {
 	t.Parallel()
 
@@ -118,24 +118,37 @@ func TestEffectiveTypeConcurrency(t *testing.T) {
 		{
 			name:       "no configuration serialises the sidecar-bound types",
 			configured: nil,
-			want:       map[string]int{jobs.TypeImageEmbed: 1, jobs.TypeFaceDetect: 1},
+			want: map[string]int{
+				jobs.TypeImageEmbed: 1, jobs.TypeFaceDetect: 1, jobs.TypeMailSend: 1,
+			},
 		},
 		{
 			name:       "a partial map still leaves the sidecar-bound types capped",
 			configured: map[string]int{jobs.TypeThumbnail: 4},
 			want: map[string]int{
-				jobs.TypeImageEmbed: 1, jobs.TypeFaceDetect: 1, jobs.TypeThumbnail: 4,
+				jobs.TypeImageEmbed: 1, jobs.TypeFaceDetect: 1, jobs.TypeMailSend: 1, jobs.TypeThumbnail: 4,
 			},
 		},
 		{
 			name:       "an explicit override raises a sidecar-bound type",
 			configured: map[string]int{jobs.TypeImageEmbed: 3},
-			want:       map[string]int{jobs.TypeImageEmbed: 3, jobs.TypeFaceDetect: 1},
+			want: map[string]int{
+				jobs.TypeImageEmbed: 3, jobs.TypeFaceDetect: 1, jobs.TypeMailSend: 1,
+			},
+		},
+		{
+			name:       "an explicit override raises the mail pool",
+			configured: map[string]int{jobs.TypeMailSend: 2},
+			want: map[string]int{
+				jobs.TypeImageEmbed: 1, jobs.TypeFaceDetect: 1, jobs.TypeMailSend: 2,
+			},
 		},
 		{
 			name:       "non-positive and empty entries are ignored",
 			configured: map[string]int{jobs.TypeImageEmbed: 0, jobs.TypeThumbnail: -1, "": 5},
-			want:       map[string]int{jobs.TypeImageEmbed: 1, jobs.TypeFaceDetect: 1},
+			want: map[string]int{
+				jobs.TypeImageEmbed: 1, jobs.TypeFaceDetect: 1, jobs.TypeMailSend: 1,
+			},
 		},
 	}
 	for _, tt := range tests {

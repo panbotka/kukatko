@@ -655,14 +655,19 @@ lost on restart).
   stops claiming and leaves abandoned in-flight jobs to the queue for recovery — except a deferral
   (`RetryAfterError`), which is still written so it never burns a retry attempt. The queue state is read via the **admin Jobs API**
   (`internal/jobsapi`: `GET /jobs/stats`, `GET /jobs`, `POST /jobs/{id}/requeue`); the UI polls it.
-- **Job types:** `thumbnail`, `places`, `metadata`, `sidecar`, `storyboard` (run locally on the Pi,
-  immediately), `image_embed`, `face_detect`, `ocr` (require the box), `pp_import`, `ps_migrate`, `backup`.
+- **Job types:** `thumbnail`, `places`, `metadata`, `sidecar`, `storyboard`, `mail_send` (run locally on the
+  Pi, immediately), `image_embed`, `face_detect`, `ocr` (require the box), `pp_import`, `ps_migrate`, `backup`.
   `ocr` reads the text printed in a photo (`POST /ocr/image` over its `fit_1920` preview) into
   `photos.ocr_text`, so a sign in the frame becomes searchable; it runs for **stills only** and records an
   empty reading as a finished one. See `internal/ocrjob`.
   `storyboard` is the odd one out in *when* it is scheduled: it renders a video's scrub-preview sprite
   (one ffmpeg pass over the clip) and is enqueued **lazily, on the first playback of that video** — never
   for the library at large, because most clips are never watched. See `internal/storyboardjob`.
+  `mail_send` is the **only** path by which Kukátko sends an e-mail: the payload names a template and carries
+  its data, so the message is rendered when it is delivered rather than when it is scheduled, and a mail
+  enqueued while the SMTP server is away still arrives once it is back. It is enqueued **inside the
+  transaction of the mutation that caused it** (the way audit rows are written), so a rolled-back registration
+  sends nothing. See `internal/mailjob`.
 - **Box offline:** the embeddings client checks the sidecar's availability before processing (health check).
   When the box is offline, `image_embed`/`face_detect`/`ocr` jobs stay `queued` with `run_after`
   pushed out (backoff), upload and browsing work without restriction. Once the box comes up the queue
@@ -670,7 +675,10 @@ lost on restart).
 - **Idempotency:** dedup on `(type, photo_uid)` in active states; `filterUnprocessedPhotos`
   skips already-done ones.
 - **Retry & dead-letter:** `attempts < max_attempts`, exponential backoff via `run_after`,
-  then `state=dead` + `last_error` (visible in the admin).
+  then `state=dead` + `last_error` (visible in the admin). A handler that recognises a failure **no retry can
+  fix** (a permanently undeliverable address, an unreadable payload) returns `worker.Terminal(cause)` instead:
+  the job is parked in `state=failed` on the first attempt rather than knocking on the same door five times,
+  and an operator can still requeue it once the cause is fixed.
 - **Progress:** the UI gets the state from the DB (polling / SSE only as a thin layer over the DB state).
 - **Box auto-wake (optional, `internal/wake`):** the `wake` package periodically checks the queue
   (every minute, `wakeCheckInterval`) and when configured **on** and the number of pending

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"maps"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -19,6 +20,9 @@ type fakeQueue struct {
 	pending   []jobs.Job
 	completed []int64
 	failed    map[int64]error
+	// terminal records, per job id, the cause of a permanent failure (FailTerminal),
+	// kept apart from failed so a test can tell "retried" from "never again".
+	terminal  map[int64]error
 	deferred  map[int64]time.Duration
 	recovered int
 	// beats counts Heartbeat calls per job id.
@@ -36,6 +40,7 @@ func newFakeQueue(pending ...jobs.Job) *fakeQueue {
 	return &fakeQueue{
 		pending:  pending,
 		failed:   make(map[int64]error),
+		terminal: make(map[int64]error),
 		deferred: make(map[int64]time.Duration),
 		beats:    make(map[int64]int),
 		owner:    make(map[int64]string),
@@ -82,6 +87,22 @@ func (q *fakeQueue) Fail(_ context.Context, id int64, workerID string, cause err
 		return jobs.Job{}, jobs.ErrLockLost
 	}
 	q.failed[id] = cause
+	q.owner[id] = workerID
+	return jobs.Job{ID: id}, nil
+}
+
+// FailTerminal records a permanent failure cause for id under workerID and
+// returns a placeholder job, or reports jobs.ErrLockLost when the job has been
+// marked as reclaimed.
+func (q *fakeQueue) FailTerminal(
+	_ context.Context, id int64, workerID string, cause error,
+) (jobs.Job, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.lockLost[id] {
+		return jobs.Job{}, jobs.ErrLockLost
+	}
+	q.terminal[id] = cause
 	q.owner[id] = workerID
 	return jobs.Job{ID: id}, nil
 }
@@ -152,6 +173,15 @@ func (q *fakeQueue) snapshot() ([]int64, map[int64]error) {
 	failed := make(map[int64]error, len(q.failed))
 	maps.Copy(failed, q.failed)
 	return done, failed
+}
+
+// terminalSnapshot returns a copy of the recorded permanent failures.
+func (q *fakeQueue) terminalSnapshot() map[int64]error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	out := make(map[int64]error, len(q.terminal))
+	maps.Copy(out, q.terminal)
+	return out
 }
 
 // deferredSnapshot returns a copy of the recorded deferrals.
@@ -492,4 +522,68 @@ func waitFor(t *testing.T, cond func() bool) {
 		time.Sleep(time.Millisecond)
 	}
 	t.Fatal("condition not met within 2s")
+}
+
+// TestProcess_terminalFailureIsNotRetried verifies a handler returning a
+// TerminalError parks the job through FailTerminal instead of Fail: a job that
+// can never succeed must not be requeued with backoff, and the cause must stay
+// matchable so the operator sees why.
+func TestProcess_terminalFailureIsNotRetried(t *testing.T) {
+	t.Parallel()
+
+	undeliverable := errors.New("no such mailbox")
+	q := newFakeQueue()
+	reg := NewRegistry()
+	reg.Register("mail", func(context.Context, jobs.Job) error { return Terminal(undeliverable) })
+	w := newTestWorker(q, reg)
+
+	w.process(context.Background(), "test-0", jobs.Job{ID: 21, Type: "mail"})
+
+	done, failed := q.snapshot()
+	if len(done) != 0 || len(failed) != 0 {
+		t.Errorf("terminal failure recorded as done/retried: completed=%v failed=%v", done, failed)
+	}
+	got := q.terminalSnapshot()[21]
+	if !errors.Is(got, undeliverable) {
+		t.Errorf("terminal[21] = %v, want %v", got, undeliverable)
+	}
+}
+
+// TestTerminal_wrapsAndDescribesItsCause verifies the constructor keeps the cause
+// matchable with errors.Is and names it in the message, and that a nil cause
+// still yields a usable description.
+func TestTerminal_wrapsAndDescribesItsCause(t *testing.T) {
+	t.Parallel()
+
+	cause := errors.New("mailbox disabled")
+	err := Terminal(cause)
+	if !errors.Is(err, cause) {
+		t.Errorf("Terminal(%v) does not wrap its cause", cause)
+	}
+	if !isTerminal(err) {
+		t.Error("isTerminal(Terminal(...)) = false, want true")
+	}
+	if !strings.Contains(err.Error(), "mailbox disabled") {
+		t.Errorf("Terminal(...).Error() = %q, want it to name the cause", err.Error())
+	}
+	if got := Terminal(nil).Error(); got != "worker: terminal failure" {
+		t.Errorf("Terminal(nil).Error() = %q", got)
+	}
+}
+
+// TestIsTerminal_rejectsOtherErrors verifies an ordinary error and a deferral are
+// not mistaken for a permanent failure — either mistake would turn a retryable
+// job into a dead one.
+func TestIsTerminal_rejectsOtherErrors(t *testing.T) {
+	t.Parallel()
+
+	if isTerminal(nil) {
+		t.Error("isTerminal(nil) = true, want false")
+	}
+	if isTerminal(errors.New("boom")) {
+		t.Error("isTerminal(plain error) = true, want false")
+	}
+	if isTerminal(RetryAfter(time.Minute, errors.New("box offline"))) {
+		t.Error("isTerminal(RetryAfter) = true, want false")
+	}
 }

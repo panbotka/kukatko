@@ -59,6 +59,38 @@ func (e *RetryAfterError) Unwrap() error {
 	return e.Cause
 }
 
+// TerminalError is the error a handler returns to tell the worker the job can
+// never succeed, however often it is tried: a payload no version of the handler
+// could read, a recipient the mail server rejected as permanently undeliverable.
+// The worker parks such a job in jobs.StateFailed instead of requeuing it with
+// backoff, so an impossible job stops burning attempts (and, for a remote host,
+// stops knocking on its door) the moment it is recognised as impossible. It stays
+// requeueable by hand, which is how an operator retries one after fixing the
+// cause.
+type TerminalError struct {
+	// Cause is the underlying failure; it stays matchable through Unwrap.
+	Cause error
+}
+
+// Terminal wraps cause as a TerminalError, marking the job as one that must not
+// be retried. It is the constructor handlers use to signal a permanent failure.
+func Terminal(cause error) error {
+	return &TerminalError{Cause: cause}
+}
+
+// Error implements error, marking the failure as permanent and naming its cause.
+func (e *TerminalError) Error() string {
+	if e.Cause == nil {
+		return "worker: terminal failure"
+	}
+	return fmt.Sprintf("worker: terminal failure: %v", e.Cause)
+}
+
+// Unwrap exposes the underlying cause so errors.Is/As can match it.
+func (e *TerminalError) Unwrap() error {
+	return e.Cause
+}
+
 const (
 	// defaultConcurrency is the size of the shared pool when Config.Concurrency is
 	// not positive.
@@ -68,6 +100,12 @@ const (
 	// on purpose: the embeddings sidecar on the GPU box serves one request at a
 	// time, and a safe default must not depend on anyone remembering to cap it.
 	defaultSidecarBoundConcurrency = 1
+	// defaultMailConcurrency is how many mail_send jobs run at once when the
+	// configuration does not name the type. It is 1 on purpose: the SMTP server is
+	// a remote host that sees a handful of messages a day, and opening several
+	// connections to it in parallel buys nothing while looking, to a mail
+	// provider, exactly like something worth rate-limiting.
+	defaultMailConcurrency = 1
 	// sharedPoolName labels the pool that drains every job type without a
 	// per-type override; it appears in worker ids and in the startup log.
 	sharedPoolName = "shared"
@@ -146,6 +184,9 @@ type Queue interface {
 	// Fail records a failed attempt on a job owned by workerID, requeuing with
 	// backoff or dead-lettering.
 	Fail(ctx context.Context, id int64, workerID string, cause error) (jobs.Job, error)
+	// FailTerminal records a permanent failure on a job owned by workerID, parking
+	// it in jobs.StateFailed without a retry.
+	FailTerminal(ctx context.Context, id int64, workerID string, cause error) (jobs.Job, error)
 	// Defer requeues a job owned by workerID to run after delay without counting
 	// a failed attempt.
 	Defer(ctx context.Context, id int64, workerID string, delay time.Duration) (jobs.Job, error)
@@ -232,13 +273,17 @@ func New(cfg Config) *Worker {
 // pool. The sidecar-bound types start at defaultSidecarBoundConcurrency, so
 // omitting them from configured — or replacing the map wholesale with a YAML
 // block that only mentions thumbnails — still leaves the GPU box serialised;
-// only naming one of them explicitly can raise it. Entries <= 0 are ignored, so
-// a zero left over from an unset config field never disables a pool.
+// only naming one of them explicitly can raise it. Mail gets its own single-slot
+// pool for the same reason — one conversation at a time with a remote server —
+// and, just as importantly, so a mail never waits behind a queue of thumbnails.
+// Entries <= 0 are ignored, so a zero left over from an unset config field never
+// disables a pool.
 func effectiveTypeConcurrency(configured map[string]int) map[string]int {
-	limits := make(map[string]int, len(sidecarBoundTypes)+len(configured))
+	limits := make(map[string]int, len(sidecarBoundTypes)+len(configured)+1)
 	for _, jobType := range sidecarBoundTypes {
 		limits[jobType] = defaultSidecarBoundConcurrency
 	}
+	limits[jobs.TypeMailSend] = defaultMailConcurrency
 	for jobType, n := range configured {
 		if jobType != "" && n > 0 {
 			limits[jobType] = n
@@ -473,11 +518,12 @@ func runHandler(ctx context.Context, handler HandlerFunc, job jobs.Job) (err err
 }
 
 // record writes a job's outcome to the queue under workerID: Complete when cause
-// is nil, Defer (no attempt burned) when cause is a RetryAfterError, otherwise
-// Fail. The write uses a fresh, shutdown-immune context with a short timeout so a
-// result computed just before shutdown is still persisted. Every write is guarded
-// by the worker id, so if the job was meanwhile reclaimed the result is dropped
-// instead of clobbering the new owner's run.
+// is nil, Defer (no attempt burned) when cause is a RetryAfterError, FailTerminal
+// (no retry at all) when it is a TerminalError, otherwise Fail. The write uses a
+// fresh, shutdown-immune context with a short timeout so a result computed just
+// before shutdown is still persisted. Every write is guarded by the worker id, so
+// if the job was meanwhile reclaimed the result is dropped instead of clobbering
+// the new owner's run.
 func (w *Worker) record(ctx context.Context, workerID string, job jobs.Job, cause error) {
 	bookCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), bookkeepingTimeout)
 	defer cancel()
@@ -486,6 +532,9 @@ func (w *Worker) record(ctx context.Context, workerID string, job jobs.Job, caus
 		w.logOutcomeWrite(job, "completing", w.queue.Complete(bookCtx, job.ID, workerID))
 	case isRetryAfter(cause):
 		w.deferJob(bookCtx, workerID, job, cause)
+	case isTerminal(cause):
+		_, err := w.queue.FailTerminal(bookCtx, job.ID, workerID, cause)
+		w.logOutcomeWrite(job, fmt.Sprintf("permanently failing (cause %v)", cause), err)
 	default:
 		_, err := w.queue.Fail(bookCtx, job.ID, workerID, cause)
 		w.logOutcomeWrite(job, fmt.Sprintf("failing (cause %v)", cause), err)
@@ -520,6 +569,12 @@ func (w *Worker) deferJob(ctx context.Context, workerID string, job jobs.Job, ca
 func isRetryAfter(err error) bool {
 	var ra *RetryAfterError
 	return errors.As(err, &ra)
+}
+
+// isTerminal reports whether err is (or wraps) a TerminalError.
+func isTerminal(err error) bool {
+	var te *TerminalError
+	return errors.As(err, &te)
 }
 
 // recoverLoop periodically requeues jobs whose lock has gone stale (their worker
