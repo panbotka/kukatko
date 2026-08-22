@@ -519,6 +519,42 @@ maps:
   tile_cache_bytes: 67108864 # 64 MiB ≈ a few thousand tiles
   tile_cache_ttl: 24h
 
+# Outgoing transactional mail (internal/mailer): the messages Kukátko sends
+# around accounts — a registration was received, an account was approved, an
+# administrator has somebody to approve, somebody forgot their password. Plain
+# text in UTF-8, nothing else; there is no newsletter and no HTML.
+#
+# Disabled by default: with mail off the no-op sender is wired and nothing is
+# ever delivered, which is a working instance, not a broken one. Turning it ON
+# makes host, from_address and base_url REQUIRED — startup fails naming the
+# missing keys, because a mailer that looks configured and silently drops
+# messages is worse than one that is off. Set username/password via the
+# environment, not this file. Override with KUKATKO_MAIL_HOST etc.
+mail:
+  enabled: false
+  # The SMTP server and its port. 587 is the submission port (starttls), 465 is
+  # implicit TLS, 25 is a local relay.
+  host: ""
+  port: 587
+  # Optional. Empty username = no AUTH at all, which is what an unauthenticated
+  # relay on localhost wants. Set the password via KUKATKO_MAIL_PASSWORD.
+  username: ""
+  password: ""
+  # starttls (default, port 587) | tls (implicit, port 465) | none (a local
+  # relay only — the standard library refuses password auth over an unencrypted
+  # connection to anything but the local host). An unknown value fails startup.
+  encryption: starttls
+  # The visible sender. from_address must be one the server will accept;
+  # from_name is the optional display name in front of it (e.g. "Kukátko").
+  from_address: ""
+  from_name: ""
+  # This instance's public URL — the base of every link inside a mail (the
+  # sign-in page, a password-reset link). No default: only the deployment knows
+  # the address people actually reach it at.
+  base_url: ""
+  # Bounds one delivery attempt: connect, negotiate and send.
+  timeout: 15s
+
 # Backup destination: a SECOND, INDEPENDENT bucket. It shares nothing with
 # storage.r2.* — its own endpoint, region, bucket and credentials — so it can
 # live in another account or with another provider. Do not assume both are R2.

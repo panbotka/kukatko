@@ -198,6 +198,19 @@ func TestLoad_defaults(t *testing.T) {
 		{"ratelimit.comment.burst", cfg.RateLimit.Comment.Burst, 10},
 		{"ratelimit.tiles.rate_per_sec", cfg.RateLimit.Tiles.RatePerSec, 50.0},
 		{"ratelimit.tiles.burst", cfg.RateLimit.Tiles.Burst, 200},
+		// Mail is off out of the box: an instance nobody gave an SMTP server to must
+		// still work, and the three keys an enabled mailer needs have no default at
+		// all — a guessed host or public URL would fail silently.
+		{"mail.enabled", cfg.Mail.Enabled, false},
+		{"mail.host", cfg.Mail.Host, ""},
+		{"mail.port", cfg.Mail.Port, 587},
+		{"mail.username", cfg.Mail.Username, ""},
+		{"mail.password", cfg.Mail.Password, ""},
+		{"mail.encryption", cfg.Mail.Encryption, MailEncryptionSTARTTLS},
+		{"mail.from_address", cfg.Mail.FromAddress, ""},
+		{"mail.from_name", cfg.Mail.FromName, ""},
+		{"mail.base_url", cfg.Mail.BaseURL, ""},
+		{"mail.timeout", cfg.Mail.Timeout, 15 * time.Second},
 		{"metrics.enabled", cfg.Metrics.Enabled, true},
 		// The library gauges aggregate over the largest tables there are and
 		// Prometheus scrapes forever, so a default of "no memoisation" would make
@@ -1237,5 +1250,129 @@ func TestLoad_embeddingThresholdsMatchPackageDefaults(t *testing.T) {
 	if cfg.Duplicate.EmbeddingMaxDist >= cfg.Expand.MaxDistance {
 		t.Errorf("duplicate.embedding_max_dist = %v, want below expand.max_distance (%v)",
 			cfg.Duplicate.EmbeddingMaxDist, cfg.Expand.MaxDistance)
+	}
+}
+
+// TestLoad_mailEnvOverride verifies every mail key is settable from the
+// environment, including the nested ones a deployment keeps out of the file.
+func TestLoad_mailEnvOverride(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("KUKATKO_MAIL_ENABLED", "true")
+	t.Setenv("KUKATKO_MAIL_HOST", "smtp.example.com")
+	t.Setenv("KUKATKO_MAIL_PORT", "465")
+	t.Setenv("KUKATKO_MAIL_USERNAME", "kukatko")
+	t.Setenv("KUKATKO_MAIL_PASSWORD", "s3cret")
+	t.Setenv("KUKATKO_MAIL_ENCRYPTION", "tls")
+	t.Setenv("KUKATKO_MAIL_FROM_ADDRESS", "kukatko@example.com")
+	t.Setenv("KUKATKO_MAIL_FROM_NAME", "Kukátko")
+	t.Setenv("KUKATKO_MAIL_BASE_URL", "https://kukatko.example.com")
+	t.Setenv("KUKATKO_MAIL_TIMEOUT", "30s")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+
+	checks := []struct {
+		name string
+		got  any
+		want any
+	}{
+		{"mail.enabled", cfg.Mail.Enabled, true},
+		{"mail.host", cfg.Mail.Host, "smtp.example.com"},
+		{"mail.port", cfg.Mail.Port, 465},
+		{"mail.username", cfg.Mail.Username, "kukatko"},
+		{"mail.password", cfg.Mail.Password, "s3cret"},
+		{"mail.encryption", cfg.Mail.Encryption, MailEncryptionTLS},
+		{"mail.from_address", cfg.Mail.FromAddress, "kukatko@example.com"},
+		{"mail.from_name", cfg.Mail.FromName, "Kukátko"},
+		{"mail.base_url", cfg.Mail.BaseURL, "https://kukatko.example.com"},
+		{"mail.timeout", cfg.Mail.Timeout, 30 * time.Second},
+	}
+	for _, c := range checks {
+		if c.got != c.want {
+			t.Errorf("%s = %v, want %v", c.name, c.got, c.want)
+		}
+	}
+}
+
+// TestLoad_mailValidation verifies an enabled mailer must name a server, a
+// sender and this instance's public URL, that an unknown encryption mode fails
+// startup, and that a disabled mailer is never checked at all.
+func TestLoad_mailValidation(t *testing.T) {
+	complete := map[string]string{
+		"KUKATKO_MAIL_ENABLED":      "true",
+		"KUKATKO_MAIL_HOST":         "smtp.example.com",
+		"KUKATKO_MAIL_FROM_ADDRESS": "kukatko@example.com",
+		"KUKATKO_MAIL_BASE_URL":     "https://kukatko.example.com",
+	}
+	without := func(key string) map[string]string {
+		env := maps.Clone(complete)
+		env[key] = ""
+		return env
+	}
+	with := func(key, value string) map[string]string {
+		env := maps.Clone(complete)
+		env[key] = value
+		return env
+	}
+
+	tests := []struct {
+		name    string
+		env     map[string]string
+		wantErr error
+	}{
+		{name: "complete config", env: complete},
+		{name: "encryption none accepted", env: with("KUKATKO_MAIL_ENCRYPTION", "none")},
+		{name: "missing host", env: without("KUKATKO_MAIL_HOST"), wantErr: ErrIncompleteMailConfig},
+		{name: "missing from address", env: without("KUKATKO_MAIL_FROM_ADDRESS"), wantErr: ErrIncompleteMailConfig},
+		{name: "missing base url", env: without("KUKATKO_MAIL_BASE_URL"), wantErr: ErrIncompleteMailConfig},
+		{
+			name:    "unknown encryption",
+			env:     with("KUKATKO_MAIL_ENCRYPTION", "ssl"),
+			wantErr: ErrInvalidMailEncryption,
+		},
+		{
+			name:    "disabled tolerates an empty section",
+			env:     map[string]string{"KUKATKO_MAIL_ENABLED": "false"},
+			wantErr: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setMinimalEnv(t)
+			for k, v := range tt.env {
+				t.Setenv(k, v)
+			}
+			_, err := Load("")
+			if tt.wantErr != nil && !errors.Is(err, tt.wantErr) {
+				t.Fatalf("Load error = %v, want %v", err, tt.wantErr)
+			}
+			if tt.wantErr == nil && err != nil {
+				t.Fatalf("Load returned unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+// TestLoad_mailValidation_namesEveryMissingKey verifies a half-configured mailer
+// is reported in one message listing every missing key — and that the password
+// never appears in it.
+func TestLoad_mailValidation_namesEveryMissingKey(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("KUKATKO_MAIL_ENABLED", "true")
+	t.Setenv("KUKATKO_MAIL_PASSWORD", "s3cret")
+
+	_, err := Load("")
+	if !errors.Is(err, ErrIncompleteMailConfig) {
+		t.Fatalf("Load error = %v, want ErrIncompleteMailConfig", err)
+	}
+	for _, key := range []string{"mail.host", "mail.from_address", "mail.base_url"} {
+		if !strings.Contains(err.Error(), key) {
+			t.Errorf("error %q does not name %s", err, key)
+		}
+	}
+	if strings.Contains(err.Error(), "s3cret") {
+		t.Errorf("error %q leaked the password", err)
 	}
 }

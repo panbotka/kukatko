@@ -1061,6 +1061,25 @@ long-running and belong on the machine where the instance runs — so they remai
   `_MAX_LABELS`, `_LABEL_CONCURRENCY`, `_FACE_BUDGET`, `_LABEL_BUDGET`, `_BUILD_TIMEOUT`, `_MAX_PER_ENTITY`,
   `_KIND_SHARES_FACE` (and `_LABEL`/`_PLACE`/`_DUPLICATE`/`_OUTLIER`), `_SKIP_MUTE_THRESHOLD`,
   `_SKIP_MUTE_COOLDOWN`.
+- **Mail keys (`mail.*`, `internal/mailer`):** outgoing transactional mail — the messages sent around
+  accounts (a registration was received, an account was approved, an administrator has somebody to
+  approve, a password reset). `enabled` (bool, **default false**) is the master switch: with mail off the
+  **no-op sender** is wired, every send is accepted and nothing is delivered, which is a working instance
+  rather than a broken one. `host` + `port` (**default 587**, the submission port) name the SMTP server;
+  `username`/`password` are **optional** — an empty username skips the `AUTH` command entirely, which is
+  what an unauthenticated relay on localhost wants. `encryption` is `starttls` (**default**, port 587),
+  `tls` (implicit TLS, port 465) or `none` (a local relay only: the standard library refuses password
+  authentication over an unencrypted connection to anything but the local host); an unknown value →
+  `ErrInvalidMailEncryption` at startup. `from_address` + `from_name` are the visible sender, `base_url`
+  is **this instance's public URL** and the base of every link inside a mail, and `timeout`
+  (**default 15s**) bounds one delivery attempt — connect, negotiate and send. **Validation at startup:**
+  an *enabled* mailer with an empty `mail.host`, `mail.from_address` or `mail.base_url` fails with
+  `ErrIncompleteMailConfig` listing **every** missing key at once (names only — `mail.password` never
+  reaches the error or a log); a *disabled* one is never checked, so an instance that sends no mail need
+  not mention a single key. Messages are `text/plain; charset=utf-8` with RFC 2047 encoded subjects, and a
+  recipient in the reserved `.invalid` domain (the placeholder addresses in the user table) is **refused,
+  never dialled**. Env: `KUKATKO_MAIL_ENABLED`/`_HOST`/`_PORT`/`_USERNAME`/`_PASSWORD`/`_ENCRYPTION`/
+  `_FROM_ADDRESS`/`_FROM_NAME`/`_BASE_URL`/`_TIMEOUT`.
 
 ### `maps.user_agent` — restricting the mapy.com key to a User-Agent
 

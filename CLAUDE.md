@@ -89,6 +89,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/ingest` — upload pipeline: stream, SHA256 dedup, metadata, thumbnails, enqueue jobs
 - `internal/jobs` — persistent job queue in Postgres (retry, dedup, backoff, `Defer`)
 - `internal/jobsapi` — maintainer-only `/jobs` (stats, list, requeue)
+- `internal/mailer` — the only way to send an e-mail: the `Sender` interface + SMTP (stdlib only), a no-op for when mail is off and a socket-free fake for tests; four Czech templates rendered purely; a `.invalid` recipient is refused, never dialled
 - `internal/maintenance` — library integrity check & repair; **never deletes originals**
 - `internal/maintenanceapi` — maintainer-only `/maintenance` (scan, repair)
 - `internal/mapsapi` — tile proxy, geocode (reverse + place search), GeoJSON feed
