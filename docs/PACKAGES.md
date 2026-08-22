@@ -3402,6 +3402,53 @@ to `## Package map` in `CLAUDE.md`.
   did not arrive, where a 405 would show a bare protocol error).
   Details: [`docs/DEVELOPMENT.md`](DEVELOPMENT.md).
 
+- **Mail (`internal/mailer`):** the one way Kukátko sends an e-mail. Nothing calls it yet — it exists so the
+  account work that follows (registration, approval, password reset) has a single, tested path instead of an
+  SMTP call per handler. Everything goes through the **`Sender`** interface (`Send(ctx, Message) error`), so a
+  caller never depends on SMTP: `SMTPSender` in production, **`Noop`** when `mail.enabled` is false (accepts
+  everything, delivers nothing — an instance nobody gave a mail server to still works), and **`Fake`** in
+  tests, which records what it was handed (`Sent`/`Last`/`Reset`, `FailWith` to exercise the failure path) and
+  **never opens a socket**. `Fake` lives in the package, not in a `_test.go` file, because every caller of
+  `Sender` wants it. `Message` is `{To, Subject, Body}` — one recipient, plain text, no HTML alternative, no
+  attachments, no copies.
+  - **The address guard.** The user table holds placeholder addresses in the reserved `.invalid` domain
+    (RFC 6761), and mail to one is **refused before anything is dialled**: `ValidateAddress`/`IsPlaceholder` →
+    `ErrPlaceholderAddress`, an unparseable or empty recipient → `ErrInvalidAddress`, and only a delivery that
+    genuinely failed → **`ErrSendFailed`**. That split is the point of the typed errors: the first two are
+    permanent and the caller should stop, the third is worth retrying. `SMTPSender` and `Fake` both apply the
+    guard; `Noop` does not, because it attempts nothing and an instance with mail off must not fail a
+    registration over an address it was never going to write to.
+  - **`SMTPSender`** — `NewSMTP(SMTPConfig{Host,Port,Username,Password,Encryption,FromAddress,FromName,
+    Timeout})`, **standard library only** (`net/smtp` + `crypto/tls`), so the binary keeps building with
+    `CGO_ENABLED=0`. Three modes: `EncryptionSTARTTLS` (default, port 587), `EncryptionTLS` (implicit, port
+    465) and `EncryptionNone` (a local relay). Authentication is optional — an empty username skips `AUTH`
+    entirely, which is what an unauthenticated relay on localhost needs. `NewSMTP` fills in the missing port
+    (`DefaultPort` 587) and timeout (`DefaultTimeout` 15 s) but refuses a missing host, a missing/unparseable
+    sender address or an unknown encryption mode with `ErrIncompleteConfig`. One delivery is **one
+    connection** (a few messages a day; a pool would only add a way to hold a socket open to a server that has
+    forgotten about it), the context deadline becomes the socket deadline, and TLS is pinned to ≥ 1.2 with the
+    configured host as the server name.
+  - **The wire format** (`renderMessage`, pure): CRLF headers — `From` (display name encoded by `net/mail`),
+    `To`, `Subject` **RFC 2047 Q-encoded**, `Date`, `MIME-Version`, `Content-Type: text/plain; charset=utf-8`,
+    `Content-Transfer-Encoding: quoted-printable` — a blank line, then the quoted-printable body. Quoted-
+    printable rather than raw 8-bit because it needs no `8BITMIME` from the server and it folds the long lines
+    the 998-octet limit would otherwise break; the Q-encoded subject is what makes `Váš účet byl schválen`
+    survive a server that only takes ASCII headers.
+  - **Four Czech templates**, each a **pure function of its own data struct** returning
+    `Rendered{Template,Subject,Body}` (`Rendered.Message(to)` addresses it), unit-tested against the exact
+    expected text: `RenderRegistrationReceived` (`RegistrationReceivedData{DisplayName,Username}` — your
+    account exists and waits for an administrator), `RenderAccountApproved`
+    (`AccountApprovedData{DisplayName,SignInURL}`), `RenderNewRegistrationPending`
+    (`NewRegistrationPendingData{Username,DisplayName,Email}` — the administrator's copy, naming all three),
+    and `RenderPasswordReset` (`PasswordResetData{DisplayName,ResetURL,ValidFor}`). The `Template*` name
+    constants exist so a log or audit line can say which message went out without repeating its subject. Two
+    details the tests pin: an empty display name degrades to the impersonal `Dobrý den,` rather than greeting a
+    blank, and `ValidFor` is rendered with the **Czech plural rule** in the largest unit it divides evenly into
+    (`jednu hodinu`, `2 hodiny`, `7 dnů`), with a non-positive duration falling back to
+    `Odkaz má omezenou platnost.` instead of printing a zero.
+  - Configuration is `mail.*` (`internal/config`, [`OPERATIONS.md`](OPERATIONS.md)); an enabled mailer with no
+    `host`, `from_address` or `base_url` fails startup naming every missing key.
+
 - **Remote CLI client (`internal/ctl`):** the client half of `kukatko ctl` — the one piece of the tree that
   Kukátko calls **over HTTP as a foreign server**, not through the DB and the disk. It has nothing in common with `internal/config`
   (which describes the *server* and knows nothing about a remote endpoint); the only state it owns is the client

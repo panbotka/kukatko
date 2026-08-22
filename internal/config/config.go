@@ -79,6 +79,13 @@ var (
 	// enabled and never produce anything.
 	ErrInvalidLocationEstimate = errors.New(
 		"config: location_estimate.window and location_estimate.radius_meters must be positive")
+	// ErrIncompleteMailConfig indicates mail.enabled is true but a key the mailer
+	// cannot send without is missing. The error names the offending keys and never
+	// their values, so mail.password can never reach a log.
+	ErrIncompleteMailConfig = errors.New("config: mail.enabled is true but its configuration is incomplete")
+	// ErrInvalidMailEncryption indicates mail.encryption is set to an unknown
+	// value (it must be empty, "starttls", "tls" or "none").
+	ErrInvalidMailEncryption = errors.New(`config: mail.encryption must be "starttls", "tls" or "none"`)
 )
 
 // Config is the fully resolved, typed configuration for a kukatko process.
@@ -96,6 +103,7 @@ type Config struct {
 	Review     ReviewConfig     `mapstructure:"review"`
 	Auth       AuthConfig       `mapstructure:"auth"`
 	Maps       MapsConfig       `mapstructure:"maps"`
+	Mail       MailConfig       `mapstructure:"mail"`
 	Backup     BackupConfig     `mapstructure:"backup"`
 	Trash      TrashConfig      `mapstructure:"trash"`
 	Duplicate  DuplicateConfig  `mapstructure:"duplicate"`
@@ -642,6 +650,48 @@ type AuthConfig struct {
 	LoginRateWindow time.Duration `mapstructure:"login_rate_window"`
 }
 
+// Mail encryption modes for mail.encryption.
+const (
+	// MailEncryptionSTARTTLS connects in the clear and upgrades with STARTTLS; it
+	// is the default and what the submission port (587) expects.
+	MailEncryptionSTARTTLS = "starttls"
+	// MailEncryptionTLS wraps the connection in TLS from the first byte (port 465).
+	MailEncryptionTLS = "tls"
+	// MailEncryptionNone sends unencrypted, for a relay on localhost.
+	MailEncryptionNone = "none"
+)
+
+// MailConfig configures outgoing transactional mail (internal/mailer): the
+// registration and password messages Kukátko sends around accounts.
+//
+// Enabled is the master switch and defaults to false, because an instance nobody
+// gave an SMTP server to must still work — with it off the no-op sender is wired
+// and nothing is ever delivered. With it on, Host, FromAddress and BaseURL are
+// required: without the first there is nowhere to send, without the second no
+// server will accept the message, and without the third the links inside the
+// mails would point nowhere.
+type MailConfig struct {
+	Enabled bool   `mapstructure:"enabled"`
+	Host    string `mapstructure:"host"`
+	Port    int    `mapstructure:"port"`
+	// Username and Password are optional: a relay on localhost usually wants no
+	// authentication, and an empty username skips the AUTH command entirely.
+	Username string `mapstructure:"username"`
+	Password string `mapstructure:"password"`
+	// Encryption is "starttls" (default), "tls" or "none".
+	Encryption string `mapstructure:"encryption"`
+	// FromAddress and FromName are the visible sender of every message.
+	FromAddress string `mapstructure:"from_address"`
+	FromName    string `mapstructure:"from_name"`
+	// BaseURL is this instance's public URL, the base of every link inside a mail
+	// (the sign-in page, a password-reset link). It has no default: only the
+	// deployment knows the address people reach it at, and a guessed one would
+	// send somebody to the wrong host.
+	BaseURL string `mapstructure:"base_url"`
+	// Timeout bounds one delivery attempt.
+	Timeout time.Duration `mapstructure:"timeout"`
+}
+
 // MapsConfig holds the server-side mapy.com API key (kept off the client) and
 // the base URL of the mapy.com REST API the tile and reverse-geocode proxies
 // call.
@@ -966,6 +1016,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("auth.login_rate_window", "15m")
 
 	setMapsDefaults(v)
+	setMailDefaults(v)
 
 	v.SetDefault("log.level", "info")
 	v.SetDefault("metrics.enabled", true)
@@ -1060,6 +1111,23 @@ func setReviewDefaults(v *viper.Viper) {
 	v.SetDefault("review.outlier_threshold", 0.5)
 	v.SetDefault("review.skip_mute_threshold", 3)
 	v.SetDefault("review.skip_mute_cooldown", "168h")
+}
+
+// setMailDefaults registers the outgoing-mail defaults. Mail is off by default
+// and the three keys an enabled mailer requires (host, from address, base URL)
+// have no default at all — they are validated instead, because a guessed SMTP
+// host or public URL would fail silently at the worst moment.
+func setMailDefaults(v *viper.Viper) {
+	v.SetDefault("mail.enabled", false)
+	v.SetDefault("mail.host", "")
+	v.SetDefault("mail.port", 587) // the submission port
+	v.SetDefault("mail.username", "")
+	v.SetDefault("mail.password", "")
+	v.SetDefault("mail.encryption", MailEncryptionSTARTTLS)
+	v.SetDefault("mail.from_address", "")
+	v.SetDefault("mail.from_name", "")
+	v.SetDefault("mail.base_url", "")
+	v.SetDefault("mail.timeout", "15s")
 }
 
 func setMapsDefaults(v *viper.Viper) {
@@ -1273,7 +1341,42 @@ func (c *Config) validateSections() error {
 	if err := c.LocationEstimate.validate(); err != nil {
 		return err
 	}
+	if err := c.Mail.validate(); err != nil {
+		return err
+	}
 	return c.Auth.validate()
+}
+
+// validate checks the outgoing-mail settings. A disabled mailer is always valid:
+// it is never consulted, so an instance that sends no mail need not mention a
+// single key. An enabled one must name a server, a sender and this instance's
+// public URL — every missing key is reported at once (names only, never values),
+// so a misconfigured deployment gets one actionable message instead of one key
+// per restart.
+func (m MailConfig) validate() error {
+	if !m.Enabled {
+		return nil
+	}
+	switch m.Encryption {
+	case "", MailEncryptionSTARTTLS, MailEncryptionTLS, MailEncryptionNone:
+	default:
+		return fmt.Errorf("%w: got %q", ErrInvalidMailEncryption, m.Encryption)
+	}
+	required := []struct{ key, value string }{
+		{"mail.host", m.Host},
+		{"mail.from_address", m.FromAddress},
+		{"mail.base_url", m.BaseURL},
+	}
+	missing := make([]string, 0, len(required))
+	for _, field := range required {
+		if strings.TrimSpace(field.value) == "" {
+			missing = append(missing, field.key)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("%w: missing %s", ErrIncompleteMailConfig, strings.Join(missing, ", "))
+	}
+	return nil
 }
 
 // validate checks that an enabled location estimator has a usable window and
