@@ -2251,7 +2251,38 @@ to `## Package map` in `CLAUDE.md`.
   `author_uid` = the actor from the auth context); the body `{message,level}` with `DisallowUnknownFields` + 16 KiB limit,
   `ErrEmptyMessage`/`ErrInvalidLevel` → 400, response `{message, level?, author_uid?, updated_at?}`
   (`updated_at` RFC3339, otherwise omitted); mounted by `server.WithAPI` (`buildAnnouncementAPI` in
-  `cmd/kukatko/announcement.go`)), `internal/whatsnew/`
+  `cmd/kukatko/announcement.go`)), `internal/settings/`
+  (the DB layer for **the instance-wide settings an administrator edits at runtime** — whether self-service
+  registration is open, the shared secret registration asks for, and the Markdown greeting shown on a first
+  sign-in; none of the three is a deployment concern, so they live in the database and change without a
+  redeploy. The single-row `instance_settings` table in migration `0062_instance_settings.sql`:
+  `id BOOLEAN PK DEFAULT true CHECK (id)` (a single-row invariant → a write is an **upsert**),
+  `registration_enabled BOOLEAN NOT NULL DEFAULT false`, `registration_secret TEXT NOT NULL DEFAULT ''`,
+  `welcome_markdown TEXT NOT NULL DEFAULT ''`, `updated_at TIMESTAMPTZ`, `updated_by_uid VARCHAR(32)` FK users
+  `ON DELETE SET NULL` (losing that account must not take the instance's own configuration with it); **the
+  migration seeds the row**, so every read finds one — the anonymous sign-in screen asks whether registration
+  is open before anybody has ever opened the admin area. `Store` = `NewStore(pool)`: `Get(ctx)` (→ the
+  zero-value defaults when the row is missing rather than an error, so a hand-deleted row cannot block the
+  sign-in screen), `Set(ctx,Update{RegistrationEnabled,RegistrationSecret,WelcomeMarkdown},actorUID,entry)`
+  (upsert of **all three at once** — the flag and the secret guard each other, so they are never saved apart;
+  enabling registration with a blank/whitespace-only secret → `ErrSecretRequired` and nothing is written;
+  the secret is stored trimmed, the Markdown verbatim); the update **writes the audit**
+  (`settings.update`) in the **same transaction** as the change (mirrors `internal/announcement`).
+  **The secret is stored readable, not hashed** — an administrator has to read it back to tell people what
+  it is — which is what makes the full record admin-only above. The table is classified **preserved** in
+  `internal/reset/tables.go`: it describes the instance, not the library), `internal/settingsapi/`
+  (the HTTP API over the settings, with **three audiences and three separate wire types** rather than one
+  record filtered per role — a field added to `settings.Settings` then has to be given an audience on purpose
+  instead of leaking into whichever payload happens to embed it. The `Store` interface (a subset of
+  `settings.Store`) → unit-testable with a fake; `NewAPI(Config{Store,RequireAuth,RequireAdmin})`+`RegisterRoutes`
+  mounts `/settings`: `GET /settings/public` **unguarded** → `{registration_enabled}` only (the sign-in screen
+  needs it before anybody is signed in), `GET /settings/welcome` behind `RequireAuth` → `{welcome_markdown}`
+  only, `GET /settings` and `PUT /settings` behind `RequireAdmin` → the full record, secret included;
+  the PUT body `{registration_enabled,registration_secret,welcome_markdown}` with `DisallowUnknownFields`
+  + a 64 KiB limit replaces all three, `ErrSecretRequired` → 400, `updated_at` RFC3339; the audit details
+  carry the flag and *whether* a secret and a greeting are set, **never the secret itself** — the trail is a
+  permanent record that outlives the secret it would copy; mounted by `server.WithAPI` (`buildSettingsAPI` in
+  `cmd/kukatko/settings.go`)), `internal/whatsnew/`
   (**the returning-reader digest** behind the "what's new since your last visit" panel on the library home —
   a shared family library otherwise makes somebody else's evening of uploading invisible to the next person
   who opens the app; **read-only over the catalogue**, its single write is the visit bookkeeping on the

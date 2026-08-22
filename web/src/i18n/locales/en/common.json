@@ -567,6 +567,9 @@
         "bulk": "Bulk photo edit",
         "merge": "Duplicate photos merged"
       },
+      "settings": {
+        "update": "Instance settings changed"
+      },
       "subject": {
         "create": "Person created",
         "delete": "Person deleted",

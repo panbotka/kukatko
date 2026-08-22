@@ -236,6 +236,13 @@ const (
 	// ActionAnnouncementClear records a maintainer clearing the instance-wide
 	// announcement banner, taking it down for all users.
 	ActionAnnouncementClear = "announcement.clear"
+	// ActionSettingsUpdate records an administrator saving the instance-wide
+	// settings (self-service registration, its shared secret, the first-sign-in
+	// welcome text). The registration flag and whether a secret is now set are
+	// recorded in the entry's details; the secret itself never is — the trail is
+	// a permanent record that outlives the secret it would copy, and rotating a
+	// leaked secret should not leave the old one readable in the log.
+	ActionSettingsUpdate = "settings.update"
 	// ActionAuditPurge records a maintainer purging old audit entries by retention
 	// (deleting rows older than a cutoff). The applied cutoff, the retention window
 	// in days and the number of deleted rows are recorded in the entry's details.

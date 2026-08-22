@@ -978,6 +978,25 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   as the change; `author_uid` = the actor from the auth context. The single-row `announcements` table (migration
   `0039_announcement.sql`). Mounted by `server.WithAPI` (`buildAnnouncementAPI` in
   `cmd/kukatko/announcement.go`).
+- **Instance settings API (`/api/v1`, `internal/settingsapi` + `internal/settings`, three audiences):**
+  the three instance-wide values an **administrator** changes at runtime without a redeploy — whether
+  self-service registration is open, the shared secret registration asks for, and the Markdown greeting
+  shown on a first sign-in. The registration secret is stored **readable, not hashed** (an administrator has
+  to read it back to tell people what it is), which is why the responses are three separate payloads rather
+  than one record filtered per role: `GET /settings/public` **unauthenticated** → `{registration_enabled}`
+  and nothing else (the sign-in screen has to know before anybody is signed in); `GET /settings/welcome`
+  behind `RequireAuth` → `{welcome_markdown}` and nothing else; `GET /settings` behind `RequireAdmin` →
+  `{registration_enabled, registration_secret, welcome_markdown, updated_at, updated_by_uid?}` — the only
+  place the secret appears. `PUT /settings` behind `RequireAdmin` **replaces all three values** → 200 with
+  the stored record; a field left out of the body is written as its zero value. **Enabling registration
+  while the secret is blank (or whitespace-only) → 400** (`settings: registration secret must not be empty…`)
+  — an open door with no lock is never what the administrator meant, and the two are saved together so the
+  combination can be refused. The secret is stored trimmed, the welcome Markdown verbatim. Body
+  `DisallowUnknownFields` + a 64 KiB limit, `updated_at` is RFC3339. **The update is audited**
+  (`settings.update`) in the same transaction as the change; the details record the flag and *whether* a
+  secret and a greeting are set — **never the secret itself**. The single-row `instance_settings` table
+  (migration `0062_instance_settings.sql`, seeded so every read finds a row). Mounted by `server.WithAPI`
+  (`buildSettingsAPI` in `cmd/kukatko/settings.go`).
 - **What's New API (`/api/v1`, `internal/whatsnewapi` + `internal/whatsnew`, authenticated via
   `RequireAuth`):** the digest behind the **"what's new since your last visit"** panel on the library home.
   `GET /whats-new` → `200 {has_news, since?, photos, mine_photos, comments, albums:[{uid,title}], album_count,

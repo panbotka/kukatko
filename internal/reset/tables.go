@@ -75,13 +75,18 @@ var catalogueTables = []string{
 // schema_migrations stays, because the schema is not being
 // rebuilt — dropping it would make the next start re-apply every migration.
 // announcements stays, because the banner describes the instance, not the
-// library. And audit_log stays, because the record of the deletion is the only
+// library, and instance_settings stays for the same reason: how this instance
+// receives people — whether registration is open, its shared secret, the welcome
+// text — is not part of the photo library, and a reset that closed registration
+// and threw away the secret would lock out everybody the operator meant to keep.
+// And audit_log stays, because the record of the deletion is the only
 // thing left to read afterwards; the reset writes its own entry into it, in the
 // same transaction as the truncation.
 var preservedTables = []string{
 	"announcements",
 	"api_tokens",
 	"audit_log",
+	"instance_settings",
 	"schema_migrations",
 	"sessions",
 	"users",

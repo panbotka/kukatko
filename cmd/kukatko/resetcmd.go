@@ -57,9 +57,10 @@ way back is re-walking the folders it was imported from. There is no S3 backup
 of this deployment either, so a wipe is final.
 
 It never touches the accounts (users, sessions, API tokens), the announcement,
-the audit trail or the import-run history — a wipe must not lock you out of the
-instance you just wiped, nor erase the record of the wipe or of where the
-library originally came from.
+the instance settings, the audit trail or the import-run history — a wipe must
+not lock you out of the instance you just wiped, nor close self-service
+registration and throw away its shared secret, nor erase the record of the wipe
+or of where the library originally came from.
 
 Guards, all of them on by default:
 

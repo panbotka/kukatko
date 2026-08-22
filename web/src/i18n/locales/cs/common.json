@@ -571,6 +571,9 @@
         "bulk": "Hromadná úprava fotek",
         "merge": "Sloučení duplicitních fotek"
       },
+      "settings": {
+        "update": "Změna nastavení instance"
+      },
       "subject": {
         "create": "Vytvoření osoby",
         "delete": "Smazání osoby",

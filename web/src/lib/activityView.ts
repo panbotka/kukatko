@@ -100,6 +100,7 @@ const ACTION_LABEL_KEYS: Record<string, ParseKeys> = {
   'photo.update': 'activity.actions.photo.update',
   'photos.bulk': 'activity.actions.photos.bulk',
   'photos.merge': 'activity.actions.photos.merge',
+  'settings.update': 'activity.actions.settings.update',
   'subject.create': 'activity.actions.subject.create',
   'subject.delete': 'activity.actions.subject.delete',
   'subject.merge': 'activity.actions.subject.merge',

@@ -47,7 +47,7 @@ configuration key both here **and** into `config.example.yaml`.
   **`maintenance reset`** (the **guarded library wipe** — `internal/reset`; dry run by default, `--execute` +
   a typed database name — and, on a bucket-backed store, a typed bucket name — to delete, `--force` for a
   non-interactive run, `--orphan-sweep` for the leftovers the catalogue never referenced;
-  accounts/announcement/audit trail/migrations are never touched; see below) and
+  accounts/announcement/instance settings/audit trail/migrations are never touched; see below) and
   **`maintenance nameless-subjects`** (reports — and with `--apply --undo-file` detaches — subjects whose name
   identifies nobody, the importer-minted catch-all; dry run by default, reversible via `--undo`; see below) and
   `maintenance repair` with the flags
@@ -325,9 +325,9 @@ not classified makes Postgres refuse the statement instead of silently widening 
 it deletes the `YYYY/MM` originals, the `thumb/` thumbnails and the `sidecars/` metadata, plus the local
 thumbnail cache under `storage.cache_path`.
 
-**What it never touches.** `users`, `sessions`, `api_tokens`, `announcements`, `audit_log` and
-`schema_migrations` — a wipe must not lock you out of the instance you just wiped nor erase the record of the
-wipe.
+**What it never touches.** `users`, `sessions`, `api_tokens`, `announcements`, `instance_settings`,
+`audit_log` and `schema_migrations` — a wipe must not lock you out of the instance you just wiped, nor close
+self-service registration and throw away its shared secret, nor erase the record of the wipe.
 
 **The guards** (all on by default):
 

@@ -130,6 +130,8 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/searchhistory` — each user's recent search queries: upsert-on-record, capped ring of 20, strictly per-user
 - `internal/searchhistoryapi` — `/search-history` (list/record/clear), every operation scoped to the acting user
 - `internal/server` — chi HTTP server, graceful shutdown, `New(addr, WithAPI(...))`
+- `internal/settings` — the instance-wide values an admin edits at runtime (registration open?, its shared secret, the first-sign-in welcome Markdown); one-row table, upsert audited in the mutation's transaction, secret stored readable
+- `internal/settingsapi` — `/settings` with three audiences: anonymous reads only the registration flag, any role reads the welcome text, admin reads/replaces the full record
 - `internal/sidecar` — reads metadata next to the media (Google Takeout `.json`, Apple `.xmp`), pairs it with files and resolves precedence vs. EXIF
 - `internal/sidecarexport` — **writes** the metadata sidecar: the versioned YAML format + its atomic write to storage, so the catalogue survives losing the DB. Not `internal/sidecar` (that reads foreign ones)
 - `internal/sidecarjob` — worker handler `sidecar` + backfill: rewrites a photo's sidecar whenever its metadata/curation changes; idempotent, debounced by the queue's dedup
