@@ -34,7 +34,7 @@ func NewStore(pool *pgxpool.Pool) *Store {
 // model can keep it a plain string.
 const userColumns = `uid, username, display_name, email, password_hash, role,
 	disabled, created_at, updated_at, last_login_at, COALESCE(note, '') AS note,
-	subject_uid`
+	subject_uid, approved_at, welcome_seen_at`
 
 // scanUser reads one user row in userColumns order from a pgx.Row (a single-row
 // QueryRow result or a row during iteration), returning a wrapped error on
@@ -44,6 +44,7 @@ func scanUser(row pgx.Row) (User, error) {
 	if err := row.Scan(
 		&u.UID, &u.Username, &u.DisplayName, &u.Email, &u.PasswordHash, &u.Role,
 		&u.Disabled, &u.CreatedAt, &u.UpdatedAt, &u.LastLoginAt, &u.Note, &u.SubjectUID,
+		&u.ApprovedAt, &u.WelcomeSeenAt,
 	); err != nil {
 		return User{}, fmt.Errorf("auth: scanning user: %w", err)
 	}
@@ -77,17 +78,32 @@ func normalizeSubjectUID(uid *string) *string {
 	return uid
 }
 
+// insertUserQuery inserts one account. approved_at is written from the model
+// rather than defaulted in the schema: a row that says nothing about approval is
+// an account still waiting for one, and that has to stay the answer once
+// self-service registration inserts rows of its own. welcome_seen_at is
+// deliberately absent — a brand new account has never seen the welcome, and the
+// column's NULL says so.
+const insertUserQuery = `INSERT INTO users
+		(uid, username, display_name, email, password_hash, role, disabled, note, subject_uid,
+		 approved_at)
+	VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
+
+// insertUserArgs returns the arguments of insertUserQuery in its parameter
+// order, so the plain and audited insert paths cannot drift apart.
+func insertUserArgs(u User) []any {
+	return []any{
+		u.UID, u.Username, u.DisplayName, u.Email, u.PasswordHash, u.Role, u.Disabled, u.Note,
+		normalizeSubjectUID(u.SubjectUID), u.ApprovedAt,
+	}
+}
+
 // CreateUser inserts u (its CreatedAt/UpdatedAt are assigned by the database
 // defaults and not read back). It returns ErrUsernameTaken if the username
 // already exists, ErrSubjectNotFound if u.SubjectUID names no subject, or a
 // wrapped error otherwise.
 func (s *Store) CreateUser(ctx context.Context, u User) error {
-	const q = `INSERT INTO users
-			(uid, username, display_name, email, password_hash, role, disabled, note, subject_uid)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
-	_, err := s.pool.Exec(ctx, q,
-		u.UID, u.Username, u.DisplayName, u.Email, u.PasswordHash, u.Role, u.Disabled, u.Note,
-		normalizeSubjectUID(u.SubjectUID))
+	_, err := s.pool.Exec(ctx, insertUserQuery, insertUserArgs(u)...)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return ErrUsernameTaken
@@ -211,6 +227,34 @@ func (s *Store) SetUserSubject(ctx context.Context, uid string, subjectUID *stri
 // without a single enabled maintainer (see withMaintainerGuard).
 func (s *Store) SetUserDisabled(ctx context.Context, uid string, disabled bool) (User, error) {
 	return s.updateUserReturningGuarded(ctx, setUserDisabledQuery, uid, disabled)
+}
+
+// markWelcomeSeenQuery records that the account has seen the first-run welcome
+// and returns the refreshed row.
+//
+// COALESCE is what makes it idempotent: the stamp is written only while the
+// column is still NULL, so a second call — a second tab, a retried request, a
+// reload of the page that sends it — leaves the first time in place and can
+// never move it backwards.
+//
+// Like setUserSubjectQuery it leaves updated_at alone. The user-administration
+// screens read that column as "an administrator edited this profile", and
+// somebody closing their own welcome is not that.
+const markWelcomeSeenQuery = `UPDATE users SET welcome_seen_at = COALESCE(welcome_seen_at, $2)
+	WHERE uid = $1 RETURNING ` + userColumns
+
+// MarkWelcomeSeen stamps at into welcome_seen_at for the account identified by
+// uid unless it already holds a time, and returns the refreshed user. It returns
+// ErrUserNotFound when no such account exists.
+func (s *Store) MarkWelcomeSeen(ctx context.Context, uid string, at time.Time) (User, error) {
+	user, err := scanUser(s.pool.QueryRow(ctx, markWelcomeSeenQuery, uid, at))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return User{}, ErrUserNotFound
+		}
+		return User{}, err
+	}
+	return user, nil
 }
 
 // SetPasswordHash replaces the password hash for the user identified by uid and

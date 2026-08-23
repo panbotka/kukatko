@@ -34,6 +34,19 @@ export interface User {
    * has to work without it.
    */
   subject_uid?: string | null
+  /**
+   * When an administrator let this account in, or null while nobody has —
+   * "registered, waiting". It is **not** the inverse of `disabled`: an account
+   * that was never approved and one that was approved and later blocked are
+   * different states, so a reader that shows one must show the other too.
+   */
+  approved_at?: string | null
+  /**
+   * When the account's owner last dismissed or completed the first-run welcome,
+   * or null when they never have. `POST /auth/welcome-seen` stamps it once and
+   * never moves it.
+   */
+  welcome_seen_at?: string | null
 }
 
 /** Successful auth response body (`POST /auth/login`, `GET /auth/me`). */

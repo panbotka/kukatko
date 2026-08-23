@@ -106,6 +106,26 @@ type User struct {
 	// role. It is a subject UID, never anything the subject keeps private: what
 	// may be seen of that person is decided by the people endpoints, not here.
 	SubjectUID *string `json:"subject_uid"`
+	// ApprovedAt is when an administrator let this account in, or nil when
+	// nobody has yet — "registered, waiting". Every account that exists today was
+	// created by an administrator, and creating it *is* the approval, so nil is
+	// currently reserved for the accounts self-service registration will make.
+	//
+	// It is not the inverse of Disabled and must never be read as one. "Never
+	// approved" is an account that has not been let in; "approved and later
+	// blocked" is one that was let in and then shut out again. Both are barred
+	// from signing in and they mean opposite things to the person holding the
+	// account, so every surface that shows one shows the other too.
+	ApprovedAt *time.Time `json:"approved_at"`
+	// WelcomeSeenAt is when the account's owner last dismissed or completed the
+	// first-run welcome (the Markdown an admin writes in internal/settings), or
+	// nil when they never have. It is the caller's own fact about themselves and
+	// is serialised for the same reason SubjectUID is: the client cannot decide
+	// whether to open the welcome without it.
+	//
+	// Only ever moved forward, and only by the account itself — see
+	// Service.MarkWelcomeSeen.
+	WelcomeSeenAt *time.Time `json:"welcome_seen_at"`
 }
 
 // Session is an authenticated session bound to a user. Token is the opaque value

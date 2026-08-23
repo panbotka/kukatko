@@ -16,16 +16,11 @@ import (
 // username, ErrSubjectNotFound when u.SubjectUID names no subject, or a wrapped
 // error otherwise.
 func (s *Store) CreateUserAudited(ctx context.Context, u User, entry audit.Entry) error {
-	const q = `INSERT INTO users
-			(uid, username, display_name, email, password_hash, role, disabled, note, subject_uid)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
 	if entry.TargetUID == "" {
 		entry.TargetUID = u.UID
 	}
 	return s.inAuditedTx(ctx, entry, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, q,
-			u.UID, u.Username, u.DisplayName, u.Email, u.PasswordHash, u.Role, u.Disabled, u.Note,
-			normalizeSubjectUID(u.SubjectUID))
+		_, err := tx.Exec(ctx, insertUserQuery, insertUserArgs(u)...)
 		if err != nil {
 			if isUniqueViolation(err) {
 				return ErrUsernameTaken

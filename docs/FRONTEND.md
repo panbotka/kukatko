@@ -4177,7 +4177,11 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `internal/auth/role.go`; `MIN_PASSWORD_LENGTH`; **`setMySubject(subjectUid|null, signal)`**
   over `PUT /api/v1/auth/subject` → the refreshed `User` (which person of the library the signed-in user is;
   the account written to is always the session's, and `User.subject_uid` is what the "my photos" entry, the
-  `person:me` filter and the comment avatar all read); **and the personal API tokens**
+  `person:me` filter and the comment avatar all read); `User` additionally carries **`approved_at`**
+  (when an administrator let the account in, `null` while nobody has — **not** the inverse of
+  `disabled`, which is an account that *was* let in and then blocked) and **`welcome_seen_at`** (when
+  its owner last dismissed the first-run welcome, `null` when never; `POST /api/v1/auth/welcome-seen`
+  stamps it once and never moves it); **and the personal API tokens**
   (`fetchApiTokens(signal)` / `createApiToken(name,signal)` / `revokeApiToken(id,signal)` over
   `GET`/`POST`/`DELETE /api/v1/auth/tokens[/{id}]`, the types `ApiToken{id,user_uid,name,created_at,
   expires_at?,last_used_at?,revoked_at?}` and `CreatedApiToken{token,secret}` — **`secret` arrives once and

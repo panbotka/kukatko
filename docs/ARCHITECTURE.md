@@ -369,7 +369,10 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
 - **`albums`** + **`album_photos`** — `type IN (album|folder|moment|state|month)`; an album is always
   chronological (migration 0022 removed both the manual `sort_order` and the `order_by` sort choice).
 - **`labels`** + **`photo_labels`** — `source IN (manual|ai|import)`, `uncertainty`.
-- **`users`** — `role IN (viewer|editor|admin|maintainer)`, `password_hash` (bcrypt cost 12), `disabled`.
+- **`users`** — `role IN (viewer|editor|admin|maintainer)`, `password_hash` (bcrypt cost 12), `disabled`,
+  plus the nullable `approved_at` (NULL = registered, waiting for an administrator — distinct from
+  `disabled`, which is an account that *was* let in and then blocked) and `welcome_seen_at`
+  (NULL = the first-run welcome has never been seen), migration `0064_users_approval_welcome.sql`.
 - **`sessions`** — see [§11](#11-auth-a-bezpečnost) (sliding expiry added).
 - **`audit_log`** — durable, written **in the same transaction** as the mutation (migrations
   `0012_audit_log.sql` + `0014_audit_request.sql` add `ip`/`user_agent` and an index

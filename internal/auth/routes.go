@@ -11,6 +11,7 @@ import "github.com/go-chi/chi/v5"
 //	GET    /auth/me               RequireAuth
 //	POST   /auth/password         RequireAuth
 //	PUT    /auth/subject          RequireAuth
+//	POST   /auth/welcome-seen     RequireAuth
 //	POST   /auth/tokens           RequireAuth
 //	GET    /auth/tokens           RequireAuth
 //	DELETE /auth/tokens/{id}      RequireAuth
@@ -29,6 +30,10 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		// so it needs no role beyond being signed in — a viewer is as much a
 		// person in the photographs as a maintainer is.
 		r.With(a.RequireAuth).Put("/subject", a.handleSubject)
+		// Self-service for the same reason, and needs no role for a second one:
+		// the welcome is shown to everybody who signs in, so everybody who signs
+		// in must be able to say they have read it.
+		r.With(a.RequireAuth).Post("/welcome-seen", a.handleWelcomeSeen)
 		r.Route("/tokens", func(r chi.Router) {
 			r.Use(a.RequireAuth)
 			r.Post("/", a.handleCreateAPIToken)

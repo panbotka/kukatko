@@ -6,8 +6,9 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
 <!-- BODY BEGIN -->
 - **Auth API (`/api/v1`):** `POST /auth/login` (set HttpOnly+SameSite=Strict cookie + opaque
   `download_token`), `POST /auth/logout`, `GET /auth/me`, `POST /auth/password` (revokes other
-  sessions), `PUT /auth/subject`. Admin-only: `GET|POST /admin/users`, `PATCH /admin/users/{uid}`,
-  `POST /admin/users/{uid}/disable`, `POST /admin/users/{uid}/password` (reset revokes all of the
+  sessions), `PUT /auth/subject`, `POST /auth/welcome-seen`. Admin-only: `GET|POST /admin/users`,
+  `PATCH /admin/users/{uid}`, `POST /admin/users/{uid}/disable`,
+  `POST /admin/users/{uid}/password` (reset revokes all of the
   user's sessions). Responses of the admin user endpoints carry a free-form **`note`** alongside
   `display_name` (an admin note on why the account exists / who it is). Both fields are optional,
   defaulting to the empty string. A `note` longer than **1000 characters** (runes, not bytes) → 400
@@ -44,6 +45,26 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   Linking an account **publishes that person's cover photo** next to every comment the account has
   written (see the comment thread below); the surfaces that set it say so. A subject's `private` flag
   gates no reading today and is unchanged by this.
+  **Approval and the first-run welcome:** every user payload carries two nullable timestamps.
+  **`approved_at`** is when an administrator let the account in; `null` means *registered, waiting for
+  an administrator*. Every account made through `POST /admin/users` (and the bootstrap maintainer) is
+  approved on creation — an administrator creating an account **is** the approval — so `null` is
+  reserved for the accounts self-service registration will make; accounts predating migration 0064
+  were backfilled as approved with their `created_at`. It is **not** the inverse of `disabled` and no
+  reader may collapse the two: *never approved* and *approved and later blocked* are different states,
+  they mean opposite things to the person holding the account, and the admin listing shows both
+  columns. **`welcome_seen_at`** is when the account's owner last dismissed or completed the first-run
+  welcome (the Markdown an admin writes in `PUT /settings`), or `null` when they never have; it is in
+  the `GET /auth/me` payload for the same reason `subject_uid` is — the client cannot decide whether to
+  open the welcome without it.
+  **`POST /auth/welcome-seen`** (`RequireAuth`, **any role** — the welcome is shown to everybody who
+  signs in) stamps `welcome_seen_at` with the current time and answers **200** with the refreshed user,
+  so the client needs no second trip to `/auth/me`. The account written to is **the session's**; there
+  is no body and nothing to point at somebody else. It is **idempotent**: the stamp is written only
+  while the column is still `null`, so a second call returns the first call's timestamp unchanged and
+  the time can never move backwards. Like `PUT /auth/subject` it writes **no audit entry** (the trail
+  records what was done *to* an account by somebody else) and leaves `updated_at` alone (the admin
+  screens read that as "an administrator edited this profile").
   Roles: a **strict ladder** viewer < editor < admin <
   maintainer (each inherits the rights of the lower ones): viewer read-only, editor adds writing of
   media/metadata, admin governance (user management, audit log, permanent deletion / emptying the

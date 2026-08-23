@@ -237,7 +237,35 @@ func (s *Service) prepareNewUser(in CreateUserInput) (User, error) {
 		PasswordHash: hash,
 		Note:         in.Note,
 		SubjectUID:   in.SubjectUID,
+		ApprovedAt:   s.approvedNow(),
 	}, nil
+}
+
+// approvedNow returns the approval stamp for an account being created here.
+//
+// Every path through prepareNewUser is an administrator making an account — the
+// admin API, and the bootstrap that creates the first maintainer on an empty
+// database — and an administrator creating an account *is* the approval, so
+// there is nothing further to wait for. Self-service registration, when it
+// arrives, is the case that must not come through here: an account nobody has
+// approved yet is stored with a NULL approved_at and only an administrator's
+// later decision fills it.
+func (s *Service) approvedNow() *time.Time {
+	at := s.now()
+	return &at
+}
+
+// MarkWelcomeSeen records that the account identified by uid has seen the
+// first-run welcome, and returns the refreshed user. The stamp is written only
+// once: a repeat call is harmless and leaves the original time in place, so the
+// client may send it as often as it likes.
+//
+// Like SetUserSubject it is self-service and therefore unaudited — the trail
+// records what was done *to* an account by somebody else, and closing one's own
+// welcome is nobody else's action. It returns ErrUserNotFound when the account
+// no longer exists.
+func (s *Service) MarkWelcomeSeen(ctx context.Context, uid string) (User, error) {
+	return s.store.MarkWelcomeSeen(ctx, uid, s.now())
 }
 
 // SetUserSubject records which person of the library the account identified by

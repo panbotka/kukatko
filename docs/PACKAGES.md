@@ -45,6 +45,21 @@ to `## Package map` in `CLAUDE.md`.
   behind `PUT /auth/subject` (outside the maintainer guard: the link carries no permission), while the
   admin create/update paths take it as part of the replaced profile and record it in their audit entries;
   a UID naming no subject surfaces as `ErrSubjectNotFound` (SQLSTATE 23503 → 400).
+  **`users.approved_at` / `users.welcome_seen_at`** (migration `0064_users_approval_welcome.sql`) are two
+  nullable timestamps: when an administrator let the account in (`NULL` = registered, waiting for one)
+  and when its owner last dismissed the first-run welcome (`NULL` = never). Both are timestamps rather
+  than flags because "when" is asked in practice — how long somebody has waited, and whether the welcome
+  text has changed since it was read. Neither column has a database default: an insert silent about
+  approval means *not approved*, which must stay the safe answer once registration writes rows of its
+  own, so `insertUserQuery`/`insertUserArgs` (shared by the plain and audited insert paths) pass the
+  stamp explicitly and `Service.prepareNewUser` fills it from the service clock via `approvedNow` —
+  every path through it is an administrator or the bootstrap, and creating an account is the approval.
+  `approved_at` is **not** the inverse of `disabled` and no read may collapse them; both are carried on
+  `auth.User` (`ApprovedAt`/`WelcomeSeenAt *time.Time`, serialised) and shown by the admin roster.
+  `Store.MarkWelcomeSeen` is the self-service write behind `POST /auth/welcome-seen`: its
+  `COALESCE(welcome_seen_at, $2)` makes it idempotent (the stamp lands only while the column is still
+  NULL, so a repeat call can never move it backwards) and, like `SetUserSubject`, it leaves `updated_at`
+  alone and records no audit entry.
   **Strict role ladder** viewer < editor < admin < maintainer (migration `0036_role_maintainer.sql`
   redefines the CHECK on `users.role` and drops the `ai` role that `0023_role_ai.sql` had added earlier; `ai`
   accounts are promoted to maintainer): every role inherits the rights of the lower ones. `viewer` only reads; `editor` writes media/metadata;

@@ -189,6 +189,33 @@ func (a *API) handleSubject(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleWelcomeSeen records that the caller has seen the first-run welcome. It
+// is self-service and self-scoped: the account written to is the session's, so
+// it needs no role beyond being signed in and there is nothing to point at
+// somebody else.
+//
+// It responds 200 with the refreshed user, so the client can read the stamp back
+// without a second round trip to /auth/me. Sending it twice is harmless — the
+// second call returns the first call's timestamp unchanged — which is what lets
+// a client fire it without tracking whether it already has. It answers 404 if
+// the account has since been deleted, or 500.
+func (a *API) handleWelcomeSeen(w http.ResponseWriter, r *http.Request) {
+	p, ok := principalFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+	user, err := a.svc.MarkWelcomeSeen(r.Context(), p.user.UID)
+	switch {
+	case err == nil:
+		writeJSON(w, http.StatusOK, user)
+	case errors.Is(err, ErrUserNotFound):
+		writeError(w, http.StatusNotFound, "user not found")
+	default:
+		writeError(w, http.StatusInternalServerError, "could not record the welcome")
+	}
+}
+
 // handlePassword changes the authenticated user's password and invalidates their
 // other sessions (the current session is kept). It responds 400 (bad body or
 // weak new password), 401 (wrong current password), 204 (success), or 500.
