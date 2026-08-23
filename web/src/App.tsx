@@ -35,6 +35,7 @@ import { PeoplePage } from './pages/PeoplePage'
 import { PhotoDetailPage } from './pages/PhotoDetailPage'
 import { PlacesPage } from './pages/PlacesPage'
 import { RecognitionPage } from './pages/RecognitionPage'
+import { RegisterPage } from './pages/RegisterPage'
 import { ReviewDecisionsPage } from './pages/ReviewDecisionsPage'
 import { ReviewPage } from './pages/ReviewPage'
 import { SavedSearchesPage } from './pages/SavedSearchesPage'
@@ -49,7 +50,7 @@ import { UploadPage } from './pages/UploadPage'
 import { UsersPage } from './pages/UsersPage'
 
 /**
- * The app's route table. `/login` is public; everything else is gated by
+ * The app's route table. `/login` and `/register` are public; everything else is gated by
  * {@link RequireAuth} and rendered under the shared layout shell. Exported apart
  * from {@link App} so tests can mount it inside a `MemoryRouter` and assert on
  * the wiring itself (which path renders what, and where `/library` forwards to).
@@ -58,6 +59,10 @@ export function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      {/* Self-service registration, public like sign-in: the whole point is that
+          nobody signed in yet. The page itself asks the instance whether
+          registration is open and says so when it is not. */}
+      <Route path="/register" element={<RegisterPage />} />
       <Route element={<RequireAuth />}>
         {/* Fullscreen slideshow lives outside the layout shell (no navbar). */}
         <Route path="/slideshow" element={<SlideshowPage />} />

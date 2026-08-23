@@ -13,6 +13,7 @@ import {
   login,
   logout,
   NetworkError,
+  register,
   revokeApiToken,
   roleAtLeast,
   type Role,
@@ -264,5 +265,64 @@ describe('role helpers', () => {
       expect(isMaintainer(role)).toBe(expected[role])
       expect(canImport(role)).toBe(expected[role])
     }
+  })
+})
+
+describe('register', () => {
+  const ACCOUNT = {
+    username: 'newcomer',
+    display_name: 'New Comer',
+    email: 'newcomer@example.com',
+    pending_approval: true,
+  }
+
+  const INPUT = {
+    username: 'newcomer',
+    display_name: 'New Comer',
+    email: 'newcomer@example.com',
+    password: 'hunter2hunter2',
+    secret: 'veselice',
+  }
+
+  it('posts the registration and returns the pending account on 201', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(ACCOUNT, 201))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(register(INPUT)).resolves.toEqual(ACCOUNT)
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('/api/v1/auth/register')
+    expect(init.method).toBe('POST')
+    expect(init.body).toBe(JSON.stringify(INPUT))
+    // Registration is anonymous: there is no session to send and none to get.
+    expect(init.credentials).toBeUndefined()
+  })
+
+  it('keeps the backend message on a wrong secret, so the form can word it', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(jsonResponse({ error: 'auth: wrong registration secret' }, 403)),
+    )
+
+    await expect(register(INPUT)).rejects.toMatchObject({
+      name: 'ApiError',
+      status: 403,
+      message: 'auth: wrong registration secret',
+    })
+  })
+
+  it('throws ApiError with status 409 for a taken username', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(jsonResponse({ error: 'username already taken' }, 409)),
+    )
+
+    await expect(register(INPUT)).rejects.toMatchObject({ name: 'ApiError', status: 409 })
+  })
+
+  it('throws NetworkError when the request never reached the backend', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')))
+
+    await expect(register(INPUT)).rejects.toBeInstanceOf(NetworkError)
   })
 })

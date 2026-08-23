@@ -7,11 +7,12 @@ import Form from 'react-bootstrap/Form'
 import Row from 'react-bootstrap/Row'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
 import { Icon } from '../components/Icon'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import { useRegistrationOpen } from '../hooks/useRegistrationOpen'
 import { ApiError, NetworkError } from '../services/auth'
 
 /** Shape of the history state set by the route guard on redirect to login. */
@@ -90,11 +91,21 @@ function errorKeyFor(error: unknown): LoginErrorKey {
  * session probe has already found the server unreachable, the form says so up
  * front and keeps its hands off the keyboard: `autoFocus` raising the phone's
  * keyboard for a form that cannot succeed is an invitation to type.
+ *
+ * Under the form sits the way to {@link RegisterPage} — but only on an instance
+ * that reports registration open. A closed one (and one that could not be asked)
+ * shows nothing at all, because a link to a form that refuses every submit costs
+ * the reader the whole form before they learn it.
  */
 export function LoginPage() {
   const { t } = useTranslation()
   useDocumentTitle(t('login.title'))
   const { status: authStatus, login } = useAuth()
+  // Only an instance that says registration is open gets the invitation below.
+  // A closed one — and one that could not be asked at all — shows nothing: a
+  // link to a form that answers every submit with "not open" is worse than no
+  // link, because the reader fills it in before finding out.
+  const registration = useRegistrationOpen()
   const navigate = useNavigate()
   const location = useLocation()
 
@@ -216,6 +227,13 @@ export function LoginPage() {
                 </Button>
               </div>
             </Form>
+
+            {registration === 'open' && (
+              <div className="text-center mt-3" data-testid="login-register-link">
+                <span className="text-secondary me-1">{t('login.registerPrompt')}</span>
+                <Link to="/register">{t('login.registerLink')}</Link>
+              </div>
+            )}
           </Card.Body>
         </Card>
       </Col>

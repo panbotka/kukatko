@@ -205,7 +205,8 @@ were written.
   transaction as the change it records, personal **API tokens**, Prometheus metrics, and
   `kukatko ctl` — a kubectl-style CLI against your own instance.
 - **People can ask for an account themselves.** Switch registration on in the settings, tell the
-  family the shared secret, and anybody who knows it can register — but nobody gets in until an
+  family the shared secret, and anybody who knows it can register — the sign-in screen then offers a
+  registration form (and offers it only while registration is open) — but nobody gets in until an
   administrator approves them. They are e-mailed that they are waiting, every administrator is
   e-mailed that somebody is, and until the approval the sign-in screen says what is being waited for
   instead of blaming the password.

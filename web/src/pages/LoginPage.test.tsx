@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
@@ -9,6 +9,11 @@ import i18n from '../i18n'
 import { ApiError, NetworkError } from '../services/auth'
 
 import { LoginPage } from './LoginPage'
+
+vi.mock('../services/settings', () => ({ fetchPublicSettings: vi.fn() }))
+
+const { fetchPublicSettings } = await import('../services/settings')
+const settingsMock = vi.mocked(fetchPublicSettings)
 
 function authValue(overrides: Partial<AuthContextValue> = {}): AuthContextValue {
   return {
@@ -60,6 +65,9 @@ function renderLogin(
 describe('LoginPage', () => {
   beforeEach(async () => {
     await i18n.changeLanguage('en')
+    // Most of these tests are about signing in, not about who may join: a
+    // closed instance is the quieter default and keeps the card unchanged.
+    settingsMock.mockResolvedValue({ registration_enabled: false })
   })
 
   it('does not call login when fields are empty (client-side validation)', async () => {
@@ -213,5 +221,35 @@ describe('LoginPage', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/could not reach the server/i)
     expect(screen.queryByTestId('login-offline-notice')).not.toBeInTheDocument()
+  })
+
+  it('invites registration only when the instance says it is open', async () => {
+    settingsMock.mockResolvedValue({ registration_enabled: true })
+    renderLogin(authValue())
+
+    const link = await screen.findByRole('link', { name: 'Register' })
+    expect(link).toHaveAttribute('href', '/register')
+  })
+
+  it('says nothing about registration when it is closed', async () => {
+    // A link to a form that answers every submit with "not open" is worse than
+    // no link: the reader fills the whole thing in before finding out.
+    renderLogin(authValue())
+
+    await waitFor(() => {
+      expect(settingsMock).toHaveBeenCalled()
+    })
+    expect(screen.queryByTestId('login-register-link')).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Register' })).not.toBeInTheDocument()
+  })
+
+  it('says nothing about registration when the instance could not be asked', async () => {
+    settingsMock.mockRejectedValue(new NetworkError('Failed to fetch'))
+    renderLogin(authValue())
+
+    await waitFor(() => {
+      expect(settingsMock).toHaveBeenCalled()
+    })
+    expect(screen.queryByTestId('login-register-link')).not.toBeInTheDocument()
   })
 })

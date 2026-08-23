@@ -1124,7 +1124,33 @@ here.
   password they had not forgotten. When `useAuth().status` is already `unreachable` the card shows
   `login.offlineNotice` up front (a `role="status"` warning, `data-testid="login-offline-notice"`,
   yielding to a submit error once there is one) **and drops `autoFocus`** — raising the phone
-  keyboard for a form that cannot succeed is an invitation to type),
+  keyboard for a form that cannot succeed is an invitation to type. **Under the form** sits the way to
+  registration — `login.registerPrompt` + a `Link` to `/register`, `data-testid="login-register-link"` —
+  rendered **only** while `useRegistrationOpen()` says `open`: a closed instance, and one that could not be
+  asked at all, shows nothing there),
+  `RegisterPage` (route `/register`, **public like sign-in** — nobody registering has a session yet — and
+  laid out as the same Superhero card, one column, so the two read as one flow): username, display name,
+  e-mail, password, password again and the **registration word** (the instance's shared registration
+  secret, `register.secretHint` explaining in one line that it is the word somebody who already uses
+  Kukátko told them). All six are required. The two passwords are compared **here**, before anything is
+  sent: the server never sees the second one, so a typo in it is the one rejection this form can word by
+  itself. `useRegistrationOpen()` decides what the card holds at all — a spinner while
+  `GET /settings/public` is being asked, and on a **closed** instance a plain explanation plus the way back
+  to sign-in (`register.closed`, `data-testid="register-closed"`) instead of a form that would refuse every
+  submit after it had been filled in; a probe that **failed** still gets the form, because "we could not
+  ask" is not "the door is shut" and the server words a refusal better than a failed probe could.
+  `rejectionFor` maps a refusal onto **the field that caused it**: 409 → the username is taken, a 403 whose
+  message names the secret → „Tohle není správné registrační slovo" **under the secret field** (never a
+  server error — the word is the one thing the reader can fix), a 403 without it → the instance is closed,
+  400 naming email/password/username → that field, 429 → the per-address budget, `NetworkError` → the
+  connection, anything else generic. A field rejection is rendered under its own input (`isInvalid` +
+  `aria-invalid` + that group's `Form.Control.Feedback`), a refusal about the attempt as a whole in an
+  `Alert` above the form. Success **replaces** the form with the confirmation
+  (`data-testid="register-done"`): the account exists, it is waiting for an administrator, a mail went to
+  the address — and **nobody is signed in**, because there is no session to hand out until somebody
+  approves it, and a sign-in attempt meanwhile is exactly the 403 `LoginPage` words as
+  `login.errorPendingApproval`. Texts in `register.*`; `RegisterPage.test.tsx` covers a successful
+  submission, mismatched passwords, a wrong secret, a taken username and the closed state,
   `AccountPage` = identity/role, **the Jazyk section** (`LanguageSwitcher` +
   a hint, `account.language*`) and changing your own password, **plus the app's technical status**
   (`GET /healthz` badge + version, without the commit hash) in a small muted row at the bottom — status and language
@@ -3365,6 +3391,13 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `AnnouncementBanner`: fetch on mount + refetch after ~60 s, **pauses on a hidden tab** and refreshes immediately
   on return, swallows a failure and returns `null` (the banner hides), on unmount it cancels the timer and the in-flight request (mirrors
   `useJobStats`);
+  `useRegistrationOpen()` = the one-shot probe of `fetchPublicSettings` (`GET /settings/public`) behind both
+  halves of the sign-in flow → `loading|open|closed|unknown`. It **never polls** (an administrator opening
+  or closing registration is rare, and both screens that read it are short-lived) and aborts on unmount —
+  an aborted request leaves the state alone, since the component is gone and `unknown` would be a claim
+  about the instance rather than about the cancellation. That fourth state is the point: `unknown` means
+  the question could not be asked, which `LoginPage` answers by hiding the invitation and `RegisterPage`
+  by showing its form anyway;
   `useWhatsNew()` = a loader of the returning-reader digest over `fetchWhatsNew` (`GET /whats-new`) for
   `WhatsNewPanel`: **fetches exactly once per mount and never polls** — not a performance choice but a
   correctness one, because the request is what stamps the visit server-side and a digest that reloaded
@@ -4158,6 +4191,12 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   → `Capabilities{semantic_search, version?: VersionInfo{version,commit}}` (it sends the session cookie,
   `credentials:'same-origin'`; `version` is optional on the client because it is absent before the first
   answer and after a failed one, not because the endpoint may omit it),
+  `settings.ts` = `fetchPublicSettings(signal)` over `GET /api/v1/settings/public` →
+  `PublicSettings{registration_enabled}` — the **one** fact about the instance an anonymous visitor may
+  learn, which is why the sign-in and registration screens may ask it before anybody has signed in (the
+  full settings record carries the registration secret and stays behind `RequireAdmin`). It sends no
+  credentials and **throws** rather than defaulting: "we could not ask" is not "registration is shut", and
+  the two callers of `useRegistrationOpen()` answer that difference differently,
   `whatsNew.ts` = `fetchWhatsNew(signal)` over `GET /api/v1/whats-new` → `WhatsNew{has_news, since?,
   photos?, comments?, albums?:WhatsNewAlbum[], album_count?, people?:WhatsNewPerson[], person_count?}`
   (`has_news` is the only flag to branch on — false covers both a first-ever visit and an empty one;
@@ -4172,6 +4211,12 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   the difference because "we could not ask" is not "the answer was no": `LoginPage` and `AuthProvider`
   both branch on it, and without it an unreachable backend reached the reader as a rejected password and
   as a signed-out session),
+  **`register(input, signal)`** over `POST /api/v1/auth/register` → `RegisteredAccount{username,
+  display_name, email, pending_approval}` (the self-service way in: it sends the instance's shared
+  registration secret alongside the account, carries **no credentials** — there is no session yet — and
+  returns no session either, because registering deliberately does not sign anybody in. Its rejections are
+  what `RegisterPage` reads: 403 closed/wrong secret told apart by the message, 409 taken, 400 validation,
+  429 the per-address budget),
   `isNotFound(err)` (a 404 = "there is no such thing", which the detail pages tell apart from a failed
   load so a link out of the audit log to something deleted explains itself),
   `roleAtLeast`, `canWrite` (editor+), `isAdmin` (admin+), `isMaintainer` (maintainer) and

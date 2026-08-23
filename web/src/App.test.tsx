@@ -30,6 +30,12 @@ vi.mock('./services/audit', async (importOriginal) => {
   return { ...actual, fetchMyActivity: vi.fn(() => new Promise(() => undefined)) }
 })
 
+// The public registration route asks the instance whether registration is open;
+// stub the call so the route test exercises the wiring, not the network.
+vi.mock('./services/settings', () => ({
+  fetchPublicSettings: vi.fn(() => Promise.resolve({ registration_enabled: true })),
+}))
+
 const { fetchPhotos, fetchTimeline } = await import('./services/photos')
 const fetchPhotosMock = vi.mocked(fetchPhotos)
 const fetchTimelineMock = vi.mocked(fetchTimeline)
@@ -68,6 +74,17 @@ const adminAuth = {
   role: 'admin',
   canWrite: true,
   isAdmin: true,
+  isMaintainer: false,
+} as unknown as AuthContextValue
+
+/** Nobody signed in — what a visitor arriving at a public route looks like. */
+const unauthenticated = {
+  ...viewerAuth,
+  status: 'unauthenticated',
+  user: null,
+  role: null,
+  canWrite: false,
+  isAdmin: false,
   isMaintainer: false,
 } as unknown as AuthContextValue
 
@@ -119,6 +136,17 @@ describe('routing', () => {
 
     expect(await screen.findByRole('heading', { name: 'Library' })).toBeInTheDocument()
     expect(fetchPhotosMock).toHaveBeenCalled()
+  })
+
+  it('renders the registration page at /register without a session', async () => {
+    // Registration is public by definition: nobody has an account yet, so the
+    // route must resolve outside RequireAuth rather than bouncing to /login.
+    renderRoutes(['/register'], 0, unauthenticated)
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Registration' }),
+    ).toBeInTheDocument()
+    expect(screen.getByTestId('pathname')).toHaveTextContent('/register')
   })
 
   it('renders the help page at /help for any authenticated user', async () => {

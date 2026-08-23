@@ -168,6 +168,61 @@ export async function login(
   return (await res.json()) as AuthSession
 }
 
+/**
+ * What a self-service registration sends (`POST /auth/register`), mirroring the
+ * backend `registerRequest`. `secret` is the instance's shared registration
+ * word: it is what separates somebody the community told from a stranger who
+ * found the address, and the backend compares it in constant time.
+ */
+export interface RegisterInput {
+  username: string
+  display_name: string
+  email: string
+  password: string
+  secret: string
+}
+
+/**
+ * The created account as `POST /auth/register` echoes it back: the three values
+ * that were just sent, as they were really stored, plus the statement that
+ * nobody has let this account in yet.
+ *
+ * There is no session and no cookie — registering does **not** sign anybody in,
+ * and signing in now answers "waiting for approval" rather than success.
+ */
+export interface RegisteredAccount {
+  username: string
+  display_name: string
+  email: string
+  pending_approval: boolean
+}
+
+/**
+ * Registers a new account with the instance's shared secret.
+ *
+ * @throws ApiError with `status` 403 (registration closed, or a wrong secret —
+ *   the message tells the two apart), 409 (the username is taken), 400 (a
+ *   malformed address, an over-long username, too short a password), 429 (the
+ *   per-address budget is spent) or 5xx.
+ * @throws NetworkError when the request never reached the backend, which the
+ *   form must say out loud instead of inventing a rejection nobody made.
+ */
+export async function register(
+  input: RegisterInput,
+  signal?: AbortSignal,
+): Promise<RegisteredAccount> {
+  const res = await apiFetch('/auth/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+  return (await res.json()) as RegisteredAccount
+}
+
 /** Ends the current session. Idempotent: the backend always returns 204. */
 export async function logout(signal?: AbortSignal): Promise<void> {
   const res = await apiFetch('/auth/logout', {
