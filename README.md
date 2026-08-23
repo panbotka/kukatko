@@ -204,6 +204,11 @@ were written.
 - Four roles (viewer < editor < admin < maintainer), a durable **audit trail** written in the same
   transaction as the change it records, personal **API tokens**, Prometheus metrics, and
   `kukatko ctl` — a kubectl-style CLI against your own instance.
+- **People can ask for an account themselves.** Switch registration on in the settings, tell the
+  family the shared secret, and anybody who knows it can register — but nobody gets in until an
+  administrator approves them. They are e-mailed that they are waiting, every administrator is
+  e-mailed that somebody is, and until the approval the sign-in screen says what is being waited for
+  instead of blaming the password.
 - **One dashboard that answers "what is in the library and is it healthy?"** — what the catalogue
   holds and what it weighs, what arrived in the last day/week/month/year, the backlogs still to work
   through (faces without a name, photos with no date or place, duplicates), the background queue

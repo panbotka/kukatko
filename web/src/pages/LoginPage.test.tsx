@@ -134,6 +134,23 @@ describe('LoginPage', () => {
     expect(await screen.findByText('home page')).toBeInTheDocument()
   })
 
+  it('says the account is waiting for approval on a 403', async () => {
+    // The password was right — this is somebody who registered and has not been
+    // let in yet. Blaming their credentials would send them off retyping a
+    // password that works.
+    const user = userEvent.setup()
+    const login = vi
+      .fn()
+      .mockRejectedValue(new ApiError(403, 'auth: account is waiting for approval'))
+    renderLogin(authValue({ login }))
+
+    await user.type(screen.getByLabelText('Username'), 'newcomer')
+    await user.type(screen.getByLabelText('Password'), 'secret')
+    await user.click(screen.getByRole('button', { name: 'Sign in' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/waiting for an administrator/i)
+  })
+
   it('renders the rate-limited message on a 429', async () => {
     const user = userEvent.setup()
     const login = vi.fn().mockRejectedValue(new ApiError(429, 'too many'))

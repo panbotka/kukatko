@@ -12,25 +12,36 @@ import (
 // build; every wrong guess differs from it.
 const theRealPassword = "correct horse battery"
 
-// fixtureUser returns an enabled account whose password is theRealPassword.
+// fixtureUser returns an enabled, approved account whose password is
+// theRealPassword — the ordinary account every other case here varies from.
 func fixtureUser(t *testing.T) User {
 	t.Helper()
 	hash, err := HashPassword(theRealPassword)
 	if err != nil {
 		t.Fatalf("HashPassword: %v", err)
 	}
-	return User{Username: "someone", PasswordHash: hash}
+	approved := time.Date(2026, time.August, 1, 12, 0, 0, 0, time.UTC)
+	return User{Username: "someone", PasswordHash: hash, ApprovedAt: &approved}
 }
 
-// TestCheckLoginPassword_outcomes verifies only a known, enabled account with
-// the right password succeeds, and that every other combination is reported as
-// the same indistinguishable ErrInvalidCredentials.
+// TestCheckLoginPassword_outcomes verifies only a known, enabled, approved
+// account with the right password succeeds; that every combination an anonymous
+// caller could probe with is reported as the same indistinguishable
+// ErrInvalidCredentials; and that an account still waiting for an administrator
+// is the one exception — but only once the password was right, so it says
+// nothing to somebody guessing.
 func TestCheckLoginPassword_outcomes(t *testing.T) {
 	t.Parallel()
 
 	user := fixtureUser(t)
 	disabled := user
 	disabled.Disabled = true
+	waiting := user
+	waiting.ApprovedAt = nil
+	// Blocked *and* never approved: the blocking wins, because "this account is
+	// shut out" must stay indistinguishable from a wrong password.
+	waitingDisabled := waiting
+	waitingDisabled.Disabled = true
 
 	tests := []struct {
 		name     string
@@ -48,6 +59,12 @@ func TestCheckLoginPassword_outcomes(t *testing.T) {
 		{name: "disabled user with a wrong password", user: disabled, known: true,
 			password: "not it at all", wantErr: ErrInvalidCredentials},
 		{name: "unknown user", user: User{}, known: false,
+			password: theRealPassword, wantErr: ErrInvalidCredentials},
+		{name: "unapproved user with the right password", user: waiting, known: true,
+			password: theRealPassword, wantErr: ErrNotApproved},
+		{name: "unapproved user with a wrong password", user: waiting, known: true,
+			password: "not it at all", wantErr: ErrInvalidCredentials},
+		{name: "unapproved and disabled user with the right password", user: waitingDisabled, known: true,
 			password: theRealPassword, wantErr: ErrInvalidCredentials},
 	}
 

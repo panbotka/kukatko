@@ -136,11 +136,15 @@ func validateEmail(email string) error {
 }
 
 // Login verifies username/password and, on success, creates and returns a new
-// session together with the authenticated user. Every failure mode (unknown
-// user, wrong password, disabled account) returns ErrInvalidCredentials so the
-// caller cannot distinguish them — neither by the error nor by how long the
-// attempt took, see checkLoginPassword; query and hashing failures are returned
-// wrapped. The caller is responsible for login rate limiting.
+// session together with the authenticated user. Every failure mode an anonymous
+// caller could probe with (unknown user, wrong password, disabled account)
+// returns ErrInvalidCredentials so the caller cannot distinguish them — neither
+// by the error nor by how long the attempt took, see checkLoginPassword; query
+// and hashing failures are returned wrapped. The one exception is an account
+// waiting for an administrator's approval, which returns ErrNotApproved and
+// creates no session: it is only ever reached with the right password, and
+// somebody who has just registered has to be told what they are waiting for. The
+// caller is responsible for login rate limiting.
 func (s *Service) Login(ctx context.Context, username, password string) (Session, User, error) {
 	user, err := s.store.GetUserByUsername(ctx, normalizeUsername(username))
 	if err != nil && !errors.Is(err, ErrUserNotFound) {

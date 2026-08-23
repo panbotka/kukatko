@@ -108,6 +108,7 @@ const ACTION_LABEL_KEYS: Record<string, ParseKeys> = {
   'user.create': 'activity.actions.user.create',
   'user.disable': 'activity.actions.user.disable',
   'user.password': 'activity.actions.user.password',
+  'user.register': 'activity.actions.user.register',
   'user.update': 'activity.actions.user.update',
 }
 

@@ -38,6 +38,14 @@ var dummyPasswordHash = sync.OnceValue(func() string {
 // (SEC-006). Returning early on the first two, as this used to, answered in
 // microseconds and so told an anonymous caller which usernames exist; that
 // oracle is what makes unlimited guessing worth attempting in the first place.
+//
+// An account nobody has approved yet is the one failure that answers with
+// something other than ErrInvalidCredentials: it returns ErrNotApproved, so the
+// sign-in screen can tell somebody who registered that they are waiting rather
+// than that they mistyped. It is decided last, after the password has been
+// verified, so only a caller who already holds the credentials learns it — and
+// after the disabled check, because a blocked account stays indistinguishable
+// from a wrong password however it came to exist.
 func checkLoginPassword(user User, known bool, password string) error {
 	hash := user.PasswordHash
 	if !known {
@@ -46,6 +54,9 @@ func checkLoginPassword(user User, known bool, password string) error {
 	err := CheckPassword(hash, password)
 	if !known || user.Disabled || err != nil {
 		return ErrInvalidCredentials
+	}
+	if user.ApprovedAt == nil {
+		return ErrNotApproved
 	}
 	return nil
 }

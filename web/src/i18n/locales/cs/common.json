@@ -396,6 +396,7 @@
     "usernameRequired": "Zadejte uživatelské jméno.",
     "passwordRequired": "Zadejte heslo.",
     "errorInvalid": "Nesprávné uživatelské jméno nebo heslo.",
+    "errorPendingApproval": "Účet zatím čeká na schválení správcem. Až ho schválí, přijde vám e-mail a budete se moct přihlásit.",
     "errorRateLimited": "Příliš mnoho pokusů o přihlášení. Zkuste to prosím za chvíli.",
     "errorOffline": "Kukátko se nedovolalo serveru, přihlášení tedy nikdo neposoudil. Heslo je nejspíš v pořádku — zkontrolujte připojení a zkuste to znovu.",
     "errorGeneric": "Přihlášení se nezdařilo. Zkuste to prosím znovu.",
@@ -584,6 +585,7 @@
         "create": "Vytvoření uživatele",
         "disable": "Změna přístupu uživatele",
         "password": "Změna hesla uživatele",
+        "register": "Registrace uživatele",
         "update": "Úprava uživatele"
       }
     },

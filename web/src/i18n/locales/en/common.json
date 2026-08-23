@@ -392,6 +392,7 @@
     "usernameRequired": "Please enter your username.",
     "passwordRequired": "Please enter your password.",
     "errorInvalid": "Invalid username or password.",
+    "errorPendingApproval": "This account is still waiting for an administrator to approve it. You will get an e-mail once it is approved and can sign in then.",
     "errorRateLimited": "Too many login attempts. Please try again later.",
     "errorOffline": "Kukátko could not reach the server, so nothing has judged your sign-in. Your password is probably fine — check your connection and try again.",
     "errorGeneric": "Sign in failed. Please try again.",
@@ -580,6 +581,7 @@
         "create": "User created",
         "disable": "User access changed",
         "password": "User password changed",
+        "register": "User registered",
         "update": "User edited"
       }
     },

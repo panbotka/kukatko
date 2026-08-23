@@ -53,13 +53,42 @@ to `## Package map` in `CLAUDE.md`.
   approval means *not approved*, which must stay the safe answer once registration writes rows of its
   own, so `insertUserQuery`/`insertUserArgs` (shared by the plain and audited insert paths) pass the
   stamp explicitly and `Service.prepareNewUser` fills it from the service clock via `approvedNow` —
-  every path through it is an administrator or the bootstrap, and creating an account is the approval.
+  its callers are the admin API and the bootstrap, and creating an account is the approval. The one
+  path that must not keep the stamp is `Service.prepareRegistration`, which wraps `prepareNewUser` and
+  strips it again, so every rule about usernames, addresses and passwords stays in one place.
   `approved_at` is **not** the inverse of `disabled` and no read may collapse them; both are carried on
   `auth.User` (`ApprovedAt`/`WelcomeSeenAt *time.Time`, serialised) and shown by the admin roster.
   `Store.MarkWelcomeSeen` is the self-service write behind `POST /auth/welcome-seen`: its
   `COALESCE(welcome_seen_at, $2)` makes it idempotent (the stamp lands only while the column is still
   NULL, so a repeat call can never move it backwards) and, like `SetUserSubject`, it leaves `updated_at`
   alone and records no audit entry.
+  **Self-service registration** (`register.go`, `handlers_register.go`, `store_register.go`) is the
+  flow behind `POST /auth/register`: somebody who knows the instance's shared secret creates their own
+  account, which exists but cannot be used until an administrator approves it. It is a separate type,
+  `Registration` (built with `NewRegistration`, wired into `APIConfig.Registration`), rather than more
+  methods on `Service`, because it is the only part of `auth` that consults the instance settings and
+  sends mail — both injected as narrow interfaces (`SettingsSource`, satisfied by `*settings.Store`;
+  `MailScheduler`, satisfied by `*mailjob.Enqueuer`) — and because an API built without one simply
+  answers "registration is not open" (`ErrRegistrationClosed`), which is what an instance with
+  registration switched off answers too, so a client never has to tell a missing route from a closed
+  door. `checkSecret` reads `settings.Settings`, refuses outright when registration is disabled **or**
+  the stored secret is blank (an open door with no lock), and otherwise compares with
+  `crypto/subtle.ConstantTimeCompare` on both trimmed values → `ErrRegistrationSecret`. The account is
+  built by `prepareRegistration` (role `viewer`, `ApprovedAt` nil) and written by
+  `Store.CreateUserAuditedWith` — `CreateUserAudited` plus an `alongside` hook that runs on the **same
+  transaction**, which is how the two mails are enqueued: a rolled-back registration schedules
+  nothing. `Store.ListApprovalRecipients` reads the enabled admins and maintainers to notify (no
+  filtering on the address: skipping a `.invalid` placeholder is `internal/mailjob`'s single decision);
+  reading them fails soft, and so does an individual notice that will not schedule — the person's own
+  confirmation is the only mail whose failure fails the registration. The audit entry
+  (`audit.ActionUserRegister`, `user.register`) names the new account as both actor and target and is
+  written in that same transaction. `registerLimiterFor` derives the endpoint's per-address
+  `ratelimit.Limiter` from the login budget when the caller supplies none, and `RegisterRoutes` mounts
+  it as middleware on the route — the one write an anonymous caller may perform.
+  **Waiting for approval is a sign-in outcome:** `checkLoginPassword` returns `ErrNotApproved` (→ 403)
+  for an account with a NULL `approved_at`, *after* the bcrypt comparison and *after* the disabled
+  check, so only a caller who already holds the credentials learns it and a blocked account stays
+  indistinguishable from a wrong password.
   **Strict role ladder** viewer < editor < admin < maintainer (migration `0036_role_maintainer.sql`
   redefines the CHECK on `users.role` and drops the `ai` role that `0023_role_ai.sql` had added earlier; `ai`
   accounts are promoted to maintainer): every role inherits the rights of the lower ones. `viewer` only reads; `editor` writes media/metadata;

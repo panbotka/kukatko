@@ -5,7 +5,8 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
 
 <!-- BODY BEGIN -->
 - **Auth API (`/api/v1`):** `POST /auth/login` (set HttpOnly+SameSite=Strict cookie + opaque
-  `download_token`), `POST /auth/logout`, `GET /auth/me`, `POST /auth/password` (revokes other
+  `download_token`), `POST /auth/register` (anonymous, see below), `POST /auth/logout`,
+  `GET /auth/me`, `POST /auth/password` (revokes other
   sessions), `PUT /auth/subject`, `POST /auth/welcome-seen`. Admin-only: `GET|POST /admin/users`,
   `PATCH /admin/users/{uid}`, `POST /admin/users/{uid}/disable`,
   `POST /admin/users/{uid}/password` (reset revokes all of the
@@ -48,8 +49,8 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   **Approval and the first-run welcome:** every user payload carries two nullable timestamps.
   **`approved_at`** is when an administrator let the account in; `null` means *registered, waiting for
   an administrator*. Every account made through `POST /admin/users` (and the bootstrap maintainer) is
-  approved on creation — an administrator creating an account **is** the approval — so `null` is
-  reserved for the accounts self-service registration will make; accounts predating migration 0064
+  approved on creation — an administrator creating an account **is** the approval — so `null` belongs
+  to the accounts `POST /auth/register` makes; accounts predating migration 0064
   were backfilled as approved with their `created_at`. It is **not** the inverse of `disabled` and no
   reader may collapse the two: *never approved* and *approved and later blocked* are different states,
   they mean opposite things to the person holding the account, and the admin listing shows both
@@ -89,7 +90,41 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   moves between addresses still runs out; the address comes from `internal/clientip`, i.e. the socket
   peer unless `web.trusted_proxies` says the peer is a proxy, never from a header the caller picked).
   A login **fails in the same time** whichever way it fails — unknown user, disabled account and wrong
-  password all run one bcrypt comparison — so response latency does not reveal which usernames exist.
+  password all run one bcrypt comparison — so response latency does not reveal which usernames exist;
+  all three answer **401** with the same body.
+  **Waiting for approval is its own sign-in outcome:** an account whose `approved_at` is `null`, given
+  the *right* password, answers **403** `auth: account is waiting for approval` and **creates no
+  session** — distinct from the 401 of wrong credentials and from a blocked account (which stays a
+  401, blocked *and* unapproved included), so the sign-in screen can say what is being waited for
+  instead of blaming a password that works. It is only ever reached by a caller who already holds the
+  credentials — the check runs after the bcrypt comparison — so it tells a guesser nothing. The
+  client maps it to its own message (`login.errorPendingApproval`).
+  **`POST /auth/register` (no authentication) — self-service registration.** Body:
+  `{username, display_name?, email, password, secret}`; unknown fields → 400. It creates the account
+  as a **viewer**, **not approved**, so it exists and cannot be used until an administrator fills
+  `approved_at`; there is no session and no cookie in the answer. **201** returns
+  `{username, display_name, email, pending_approval: true}` — the stored (normalised) values, and
+  deliberately not the user payload: an anonymous caller learns neither the UID nor the role.
+  Whether it is open at all, and the shared `secret` it demands, come from the instance settings
+  (`PUT /settings`, see the Settings API) and change without a redeploy. Refusals: **403**
+  `auth: registration is not open` when registration is switched off — and equally when it is on with
+  a **blank** stored secret, an open door with no lock; **403** `auth: wrong registration secret` for
+  a secret that does not match (compared in **constant time**, so the answer's latency says nothing
+  about how much of it was right); **409** for a username somebody already holds; **400** for the same
+  input the admin user API refuses (over-long username, missing/malformed address, weak password —
+  identical validation and identical bcrypt hashing, so nothing can be registered that an
+  administrator could not have created). Two accounts may share an e-mail address here too.
+  It is **rate-limited per client address** (`internal/ratelimit` middleware, → **429**) with the
+  login budget (`auth.login_rate_limit`/`auth.login_rate_window`) spent from one bucket per address —
+  at least as strict as signing in, whose budget is also split per username; a registration names no
+  existing account, so the address is all there is to attribute it to.
+  On success **two mails are enqueued on the job queue** (`mail_send`, see `internal/mailjob`), in the
+  **same transaction** as the account and its `user.register` audit entry: the `registration_received`
+  confirmation to the person, and one `new_registration_pending` notice per **enabled admin or
+  maintainer**, naming the username, display name and address. A registration that rolls back
+  therefore sends nothing, and mail switched off (`mail.enabled: false`) or an administrator with a
+  placeholder `.invalid` address costs only the notification — the registration still succeeds. The
+  audit entry names the new account as **both actor and target**: nobody else was involved.
   **Bootstrap admin** from
   `auth.bootstrap_admin_username/password`. In addition, the middleware `RequireAuthOrDownloadToken`
   (session cookie or `?t=download_token` via `Service.AuthenticateDownloadToken` →

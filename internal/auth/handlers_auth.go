@@ -63,8 +63,8 @@ func clientIP(r *http.Request) string {
 // handleLogin authenticates a username/password, enforces login rate limiting
 // both per username+IP and per username alone, and on success sets the session
 // cookie and returns the user plus download token. It responds 400 (bad body or
-// over-long username), 429 (rate limited), 401 (bad credentials), or 500 (server
-// error).
+// over-long username), 429 (rate limited), 401 (bad credentials), 403 (the
+// account is waiting for approval), or 500 (server error).
 //
 // The username length is checked before it is used, so this public endpoint
 // cannot be flooded with oversized usernames to grow the rate limiter's keys.
@@ -89,12 +89,7 @@ func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	sess, user, err := a.svc.Login(r.Context(), req.Username, req.Password)
 	if err != nil {
-		if errors.Is(err, ErrInvalidCredentials) {
-			writeError(w, http.StatusUnauthorized, "invalid username or password")
-			return
-		}
-		log.Printf("auth: login failed unexpectedly: %v", err)
-		writeError(w, http.StatusInternalServerError, "login failed")
+		writeLoginError(w, err)
 		return
 	}
 
@@ -102,6 +97,23 @@ func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 	a.usernameLimiter.Reset(username)
 	a.setSessionCookie(w, sess.Token, sess.ExpiresAt)
 	writeJSON(w, http.StatusOK, loginResponse{User: user, DownloadToken: sess.DownloadToken})
+}
+
+// writeLoginError maps a failed sign-in onto its response. The credentials being
+// wrong is a 401; an account that exists, whose password was right and that
+// nobody has approved yet is a 403 — its own outcome, so the sign-in screen can
+// say "you are waiting for an administrator" instead of blaming the password.
+// Anything else is a server fault and is logged.
+func writeLoginError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, ErrInvalidCredentials):
+		writeError(w, http.StatusUnauthorized, "invalid username or password")
+	case errors.Is(err, ErrNotApproved):
+		writeError(w, http.StatusForbidden, ErrNotApproved.Error())
+	default:
+		log.Printf("auth: login failed unexpectedly: %v", err)
+		writeError(w, http.StatusInternalServerError, "login failed")
+	}
 }
 
 // loginLimitKey is the bucket key of the per-(username, address) login budget.

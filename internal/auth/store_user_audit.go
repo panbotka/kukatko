@@ -16,6 +16,20 @@ import (
 // username, ErrSubjectNotFound when u.SubjectUID names no subject, or a wrapped
 // error otherwise.
 func (s *Store) CreateUserAudited(ctx context.Context, u User, entry audit.Entry) error {
+	return s.CreateUserAuditedWith(ctx, u, entry, nil)
+}
+
+// CreateUserAuditedWith is CreateUserAudited with one more step: alongside runs
+// on the same transaction, after the insert and before the audit entry, so
+// whatever it writes shares the account's fate exactly.
+//
+// It exists for self-service registration, which schedules its two mails through
+// it (see internal/mailjob): a job enqueued on this transaction is scheduled if
+// and only if the account is really created, so a registration that rolls back
+// sends nothing. A nil alongside makes this plain CreateUserAudited.
+func (s *Store) CreateUserAuditedWith(
+	ctx context.Context, u User, entry audit.Entry, alongside func(ctx context.Context, tx pgx.Tx) error,
+) error {
 	if entry.TargetUID == "" {
 		entry.TargetUID = u.UID
 	}
@@ -30,7 +44,10 @@ func (s *Store) CreateUserAudited(ctx context.Context, u User, entry audit.Entry
 			}
 			return fmt.Errorf("auth: inserting user: %w", err)
 		}
-		return nil
+		if alongside == nil {
+			return nil
+		}
+		return alongside(ctx, tx)
 	})
 }
 

@@ -18,14 +18,23 @@ import (
 
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/clientip"
+	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
+	"github.com/panbotka/kukatko/internal/mailjob"
+	"github.com/panbotka/kukatko/internal/settings"
 )
 
 // httpEnv is an httptest server wrapping the auth API plus two probe routes that
-// exercise the RequireWrite and RequireAuth middlewares directly.
+// exercise the RequireWrite and RequireAuth middlewares directly. It keeps the
+// database and the instance-settings store beside them, because self-service
+// registration is decided by settings a test has to write and produces mail jobs
+// a test has to read.
 type httpEnv struct {
-	server *httptest.Server
-	svc    *auth.Service
+	server   *httptest.Server
+	svc      *auth.Service
+	store    *auth.Store
+	db       *database.DB
+	settings *settings.Store
 }
 
 // newHTTPEnv builds the HTTP test environment with a small login rate limit so
@@ -47,7 +56,20 @@ func newHTTPEnvWithProxies(t *testing.T, loginLimit int, trusted []string) *http
 	store := auth.NewStore(db.Pool())
 	svc := auth.NewService(store, auth.SessionPolicy{TTL: time.Hour, MaxLifetime: 3 * time.Hour})
 	limiter := auth.NewLimiter(loginLimit, time.Minute)
-	api := auth.NewAPI(auth.APIConfig{Service: svc, Limiter: limiter})
+	settingsStore := settings.NewStore(db.Pool())
+	// Registration is wired exactly as production wires it, mail included: the
+	// enqueuer is enabled and inserts real `mail_send` jobs through the caller's
+	// transaction, so a test reads what a registration actually scheduled
+	// instead of what a stub was told.
+	api := auth.NewAPI(auth.APIConfig{
+		Service: svc,
+		Limiter: limiter,
+		Registration: auth.NewRegistration(auth.RegistrationConfig{
+			Service:  svc,
+			Settings: settingsStore,
+			Mail:     mailjob.NewEnqueuer(mailjob.EnqueuerConfig{Enabled: true}),
+		}),
+	})
 
 	trustedSet, err := clientip.ParseSet(trusted)
 	if err != nil {
@@ -64,7 +86,7 @@ func newHTTPEnvWithProxies(t *testing.T, loginLimit int, trusted []string) *http
 
 	server := httptest.NewServer(r)
 	t.Cleanup(server.Close)
-	return &httpEnv{server: server, svc: svc}
+	return &httpEnv{server: server, svc: svc, store: store, db: db, settings: settingsStore}
 }
 
 // probeOK is a trivial handler used behind RBAC middleware in tests.

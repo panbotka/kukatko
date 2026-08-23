@@ -241,15 +241,30 @@ func (s *Service) prepareNewUser(in CreateUserInput) (User, error) {
 	}, nil
 }
 
+// prepareRegistration builds the account a self-service registration creates:
+// the same validation, normalization and password hashing as prepareNewUser,
+// minus the approval. The nil ApprovedAt is the whole point — nobody has let this
+// person in yet, and only an administrator's later decision fills it — so it is
+// stripped here rather than never set, which keeps every rule about usernames,
+// addresses and passwords in one place.
+func (s *Service) prepareRegistration(in CreateUserInput) (User, error) {
+	user, err := s.prepareNewUser(in)
+	if err != nil {
+		return User{}, err
+	}
+	user.ApprovedAt = nil
+	return user, nil
+}
+
 // approvedNow returns the approval stamp for an account being created here.
 //
 // Every path through prepareNewUser is an administrator making an account — the
 // admin API, and the bootstrap that creates the first maintainer on an empty
 // database — and an administrator creating an account *is* the approval, so
-// there is nothing further to wait for. Self-service registration, when it
-// arrives, is the case that must not come through here: an account nobody has
-// approved yet is stored with a NULL approved_at and only an administrator's
-// later decision fills it.
+// there is nothing further to wait for. The one caller that must not keep the
+// stamp is self-service registration, which goes through prepareRegistration and
+// strips it again: an account nobody has approved yet is stored with a NULL
+// approved_at.
 func (s *Service) approvedNow() *time.Time {
 	at := s.now()
 	return &at

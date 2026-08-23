@@ -1115,7 +1115,9 @@ here.
   **`BulkEditOutcome{operations,result}`** — what apply actually sent and per-photo results — so
   the page can edit the list in place instead of refetching),
   `pages/` (`LoginPage` (username + password in a Superhero card; `errorKeyFor` maps the failure to
-  a sentence — 401 → `login.errorInvalid`, 429 → `login.errorRateLimited`, **`NetworkError` →
+  a sentence — 401 → `login.errorInvalid`, **403 → `login.errorPendingApproval`** (the account
+  registered and is waiting for an administrator: the password was right, so blaming it would send the
+  reader off retyping one that works), 429 → `login.errorRateLimited`, **`NetworkError` →
   `login.errorOffline`**, anything else → `login.errorGeneric`. The network branch is the one that
   matters: a request that never left the device had nothing judge the credentials, and the generic
   "sign in failed, try again" used to land there, so an offline phone told its owner to retype a
@@ -3932,7 +3934,7 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `ActivityView` type (**only** `offset` — a one-user listing read newest-first has nothing else to choose)
   + `ACTIVITY_DEFAULTS` + `ACTIVITY_PAGE_SIZE` (50, smaller than the admin log's 100: this page is read to find
   one recent action) + `ACTIVITY_LINK_LIMIT` (5) + `viewToParams`; plus the two word-catalogues that turn a raw
-  audit row into a sentence — `activityActionKey(action)` (all 44 `internal/audit` action labels →
+  audit row into a sentence — `activityActionKey(action)` (the `internal/audit` action labels →
   `activity.actions.<domain>.<verb>`) and `activityTargetKey(targetType)` (→ `activity.targets.*`; `markers`
   deliberately maps to the **photo's** label, because that is where its link leads). Both return `undefined` for
   something the catalogue does not know, and the page falls back to the raw label — a missing translation must

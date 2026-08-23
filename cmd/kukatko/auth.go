@@ -10,12 +10,21 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/database"
+	"github.com/panbotka/kukatko/internal/mailjob"
+	"github.com/panbotka/kukatko/internal/settings"
 )
 
 // buildAuth assembles the auth subsystem from configuration and the database:
-// the store, the session service, the login rate limiter, and the HTTP API. The
-// returned API mounts the auth routes; the returned Service is used for
-// bootstrap and the background session-cleanup loop.
+// the store, the session service, the login rate limiter, the self-service
+// registration flow, and the HTTP API. The returned API mounts the auth routes;
+// the returned Service is used for bootstrap and the background session-cleanup
+// loop.
+//
+// Registration is always wired, because whether it is open is a runtime decision
+// an administrator makes in the instance settings, not a deployment one: with it
+// switched off the endpoint refuses every caller, and switching it on needs no
+// restart. Its mails go through the queue like every other message, so an
+// instance with mail disabled registers people and sends nothing.
 func buildAuth(cfg *config.Config, db *database.DB) (*auth.API, *auth.Service) {
 	store := auth.NewStore(db.Pool())
 	svc := auth.NewService(store, auth.SessionPolicy{
@@ -23,9 +32,15 @@ func buildAuth(cfg *config.Config, db *database.DB) (*auth.API, *auth.Service) {
 		MaxLifetime: cfg.Auth.SessionMaxLifetime,
 	})
 	limiter := auth.NewLimiter(cfg.Auth.LoginRateLimit, cfg.Auth.LoginRateWindow)
+	registration := auth.NewRegistration(auth.RegistrationConfig{
+		Service:  svc,
+		Settings: settings.NewStore(db.Pool()),
+		Mail:     mailjob.NewEnqueuer(mailjob.EnqueuerConfig{Enabled: cfg.Mail.Enabled}),
+	})
 	api := auth.NewAPI(auth.APIConfig{
 		Service:       svc,
 		Limiter:       limiter,
+		Registration:  registration,
 		SecureCookies: cfg.Web.SecureCookies,
 	})
 	return api, svc

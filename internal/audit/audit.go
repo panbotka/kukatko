@@ -225,6 +225,12 @@ const (
 	ActionUserDisable = "user.disable"
 	// ActionUserPassword records an admin password reset for a user.
 	ActionUserPassword = "user.password"
+	// ActionUserRegister records somebody creating their own account through
+	// self-service registration. The new account is both the actor and the
+	// target — nobody else was involved — and it is not usable until an
+	// administrator approves it, which is what makes the entry worth keeping
+	// separate from ActionUserCreate.
+	ActionUserRegister = "user.register"
 	// ActionAPITokenCreate records minting a long-lived API token.
 	ActionAPITokenCreate = "api_token.create"
 	// ActionAPITokenRevoke records revoking a long-lived API token.

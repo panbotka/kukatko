@@ -36,6 +36,24 @@ var (
 	ErrLastMaintainer = errors.New("auth: cannot remove the last maintainer")
 	// ErrUserDisabled indicates the account is disabled.
 	ErrUserDisabled = errors.New("auth: user is disabled")
+	// ErrNotApproved indicates the credentials were right but nobody has let
+	// this account in yet (approved_at is NULL). It is deliberately its own
+	// outcome: telling somebody who registered and is waiting that their
+	// password is wrong would send them round in circles, and it is not the same
+	// as ErrUserDisabled either — one account has never been let in, the other
+	// was let in and then shut out. It is only ever returned after the password
+	// has been verified, so it reveals nothing to a caller who does not already
+	// hold the credentials.
+	ErrNotApproved = errors.New("auth: account is waiting for approval")
+	// ErrRegistrationClosed indicates self-service registration is not open on
+	// this instance: an administrator switched it off, or switched it on without
+	// a shared secret, which is the same thing — an open door with no lock is
+	// never what they meant.
+	ErrRegistrationClosed = errors.New("auth: registration is not open")
+	// ErrRegistrationSecret indicates the registration carried the wrong shared
+	// secret. It is separate from ErrRegistrationClosed only for the caller's
+	// message; both are answered with the same status.
+	ErrRegistrationSecret = errors.New("auth: wrong registration secret")
 	// ErrNoteTooLong indicates the user note exceeds MaxNoteLen characters. Its
 	// message names the offending field so it can be surfaced verbatim in a 400.
 	ErrNoteTooLong = errors.New("auth: note must be at most 1000 characters")

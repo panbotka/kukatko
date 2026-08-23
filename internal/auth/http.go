@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/panbotka/kukatko/internal/obs"
+	"github.com/panbotka/kukatko/internal/ratelimit"
 )
 
 // sessionCookieName is the name of the HttpOnly cookie carrying the opaque
@@ -25,11 +26,14 @@ const usernameLimitFactor = 3
 
 // API exposes the auth domain over HTTP: it registers the /auth and admin
 // /users routes and provides the RBAC middleware. It bundles the service, the
-// two login rate limiters, and cookie settings.
+// two login rate limiters, the registration flow with its own per-address
+// limiter, and cookie settings.
 type API struct {
 	svc             *Service
 	limiter         *Limiter
 	usernameLimiter *Limiter
+	registration    *Registration
+	registerLimit   *ratelimit.Limiter
 	secureCookies   bool
 	now             func() time.Time
 }
@@ -45,6 +49,16 @@ type APIConfig struct {
 	// they come from. Optional: when nil, NewAPI derives one from Limiter with a
 	// budget usernameLimitFactor times as large over the same window.
 	UsernameLimiter *Limiter
+	// Registration is the self-service registration flow. Optional: when nil,
+	// POST /auth/register is still mounted but answers "registration is not
+	// open", so an instance that does not wire it behaves exactly like one whose
+	// administrator switched registration off.
+	Registration *Registration
+	// RegisterLimiter throttles registration attempts per client address.
+	// Optional: when nil, NewAPI derives one from Limiter, so registration is
+	// capped as tightly as signing in — with the address as the whole key, since
+	// the username of a registration is by definition new.
+	RegisterLimiter *ratelimit.Limiter
 	// SecureCookies marks the session cookie Secure (HTTPS-only).
 	SecureCookies bool
 }
@@ -55,6 +69,8 @@ func NewAPI(cfg APIConfig) *API {
 		svc:             cfg.Service,
 		limiter:         cfg.Limiter,
 		usernameLimiter: usernameLimiterFor(cfg),
+		registration:    cfg.Registration,
+		registerLimit:   registerLimiterFor(cfg),
 		secureCookies:   cfg.SecureCookies,
 		now:             time.Now,
 	}
@@ -72,9 +88,27 @@ func usernameLimiterFor(cfg APIConfig) *Limiter {
 	return NewLimiter(cfg.Limiter.max*usernameLimitFactor, cfg.Limiter.window)
 }
 
-// RunMaintenance periodically prunes both login rate limiters' stale keys until
-// ctx is canceled. It is meant to run in its own goroutine alongside the
-// service's session cleanup.
+// registerLimiterFor returns the per-address registration limiter cfg asks for,
+// deriving one from the login budget when the caller supplied none: the same
+// number of attempts over the same window, spent from one bucket per client
+// address. That is at least as strict as signing in, whose budget is split per
+// username as well, which is the point — a registration names no existing
+// account, so the address is all there is to attribute it to.
+func registerLimiterFor(cfg APIConfig) *ratelimit.Limiter {
+	limiter := cfg.RegisterLimiter
+	if limiter != nil {
+		return limiter
+	}
+	login := cfg.Limiter
+	if login == nil {
+		login = NewLimiter(usernameLimitFactor, time.Minute)
+	}
+	return ratelimit.New(float64(login.max)/login.window.Seconds(), login.max)
+}
+
+// RunMaintenance periodically prunes the stale keys of the two login rate
+// limiters and of the registration limiter until ctx is canceled. It is meant to
+// run in its own goroutine alongside the service's session cleanup.
 func (a *API) RunMaintenance(ctx context.Context, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -86,6 +120,7 @@ func (a *API) RunMaintenance(ctx context.Context, interval time.Duration) {
 			now := a.now()
 			a.limiter.Cleanup(now)
 			a.usernameLimiter.Cleanup(now)
+			a.registerLimit.Cleanup(now)
 		}
 	}
 }

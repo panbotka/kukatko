@@ -38,6 +38,7 @@ function returnTo(state: LocationState | null): string {
 
 type LoginErrorKey =
   | 'login.errorInvalid'
+  | 'login.errorPendingApproval'
   | 'login.errorRateLimited'
   | 'login.errorOffline'
   | 'login.errorGeneric'
@@ -54,6 +55,10 @@ type SubmitState =
  * the credentials never left the device, so nothing judged them; falling through
  * to the generic "sign in failed, try again" was how an offline phone told its
  * owner to retype a password that was perfectly correct.
+ *
+ * A 403 is the sign-in's own outcome for an account that registered and is
+ * waiting for an administrator: the password was right, so telling them it was
+ * not would send them round in circles retyping it.
  */
 function errorKeyFor(error: unknown): LoginErrorKey {
   if (error instanceof NetworkError) {
@@ -62,6 +67,9 @@ function errorKeyFor(error: unknown): LoginErrorKey {
   if (error instanceof ApiError) {
     if (error.status === 401) {
       return 'login.errorInvalid'
+    }
+    if (error.status === 403) {
+      return 'login.errorPendingApproval'
     }
     if (error.status === 429) {
       return 'login.errorRateLimited'

@@ -7,6 +7,7 @@ import "github.com/go-chi/chi/v5"
 // /api/v1). The layout is:
 //
 //	POST   /auth/login            public
+//	POST   /auth/register         public, rate-limited per address
 //	POST   /auth/logout           public (idempotent)
 //	GET    /auth/me               RequireAuth
 //	POST   /auth/password         RequireAuth
@@ -23,6 +24,12 @@ import "github.com/go-chi/chi/v5"
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.Route("/auth", func(r chi.Router) {
 		r.Post("/login", a.handleLogin)
+		// The only write an anonymous caller may perform, so it carries the
+		// per-address budget as middleware rather than trusting the handler to
+		// remember. It is mounted even when no registration is wired: the
+		// handler then answers "registration is not open", which is the truth,
+		// and a client never has to tell a missing route from a closed door.
+		r.With(a.registerLimit.Middleware).Post("/register", a.handleRegister)
 		r.Post("/logout", a.handleLogout)
 		r.With(a.RequireAuth).Get("/me", a.handleMe)
 		r.With(a.RequireAuth).Post("/password", a.handlePassword)
