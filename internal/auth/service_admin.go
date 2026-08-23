@@ -295,9 +295,10 @@ func (s *Service) SetUserSubject(ctx context.Context, uid string, subjectUID *st
 	return s.store.SetUserSubject(ctx, uid, subjectUID)
 }
 
-// ListUsers returns every user ordered by username.
-func (s *Service) ListUsers(ctx context.Context) ([]User, error) {
-	return s.store.ListUsers(ctx)
+// ListUsers returns the users matching filter, ordered by username. A zero
+// filter is every account.
+func (s *Service) ListUsers(ctx context.Context, filter UserFilter) ([]User, error) {
+	return s.store.ListUsers(ctx, filter)
 }
 
 // GetUser returns the user identified by uid, or ErrUserNotFound.

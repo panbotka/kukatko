@@ -105,6 +105,7 @@ const ACTION_LABEL_KEYS: Record<string, ParseKeys> = {
   'subject.delete': 'activity.actions.subject.delete',
   'subject.merge': 'activity.actions.subject.merge',
   'subject.update': 'activity.actions.subject.update',
+  'user.approve': 'activity.actions.user.approve',
   'user.create': 'activity.actions.user.create',
   'user.disable': 'activity.actions.user.disable',
   'user.password': 'activity.actions.user.password',

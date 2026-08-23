@@ -141,11 +141,27 @@ func (s *Store) getUser(ctx context.Context, col, val string) (User, error) {
 	return user, nil
 }
 
-// ListUsers returns all users ordered by username. The slice is empty (not nil)
-// when there are no users.
-func (s *Store) ListUsers(ctx context.Context) ([]User, error) {
-	q := "SELECT " + userColumns + " FROM users ORDER BY username"
-	rows, err := s.pool.Query(ctx, q)
+// UserFilter narrows a user listing. Its zero value selects every account, which
+// is what the administration page asks for by default.
+type UserFilter struct {
+	// Pending selects by approval state: true lists only the accounts waiting
+	// for an administrator (approved_at IS NULL), false only the ones already
+	// let in, and nil — the usual case — everybody.
+	Pending *bool
+}
+
+// listUsersQuery lists the accounts a UserFilter selects, ordered by username.
+// The approval filter is expressed as a comparison against the parameter rather
+// than as two statements, so a NULL parameter (no filter) selects every row and
+// the listing has exactly one query.
+const listUsersQuery = `SELECT ` + userColumns + ` FROM users
+	WHERE $1::boolean IS NULL OR (approved_at IS NULL) = $1
+	ORDER BY username`
+
+// ListUsers returns the users matching filter, ordered by username. The slice is
+// empty (not nil) when nothing matches.
+func (s *Store) ListUsers(ctx context.Context, filter UserFilter) ([]User, error) {
+	rows, err := s.pool.Query(ctx, listUsersQuery, filter.Pending)
 	if err != nil {
 		return nil, fmt.Errorf("auth: querying users: %w", err)
 	}

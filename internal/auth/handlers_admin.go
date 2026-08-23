@@ -3,6 +3,7 @@ package auth
 import (
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
@@ -80,14 +81,40 @@ type resetPasswordRequest struct {
 	NewPassword string `json:"new_password"`
 }
 
-// handleListUsers returns all users (admin only).
+// handleListUsers returns the users (admin only), optionally narrowed by
+// approval state. `?pending=true` lists only the accounts waiting for an
+// administrator, so a self-service registration can be found without reading
+// every account; `?pending=false` lists only the ones already let in, and an
+// absent parameter everybody. It responds 400 for a `pending` that is not a
+// boolean, rather than silently listing something else than what was asked for.
 func (a *API) handleListUsers(w http.ResponseWriter, r *http.Request) {
-	users, err := a.svc.ListUsers(r.Context())
+	pending, err := pendingParam(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	users, err := a.svc.ListUsers(r.Context(), UserFilter{Pending: pending})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "could not list users")
 		return
 	}
 	writeJSON(w, http.StatusOK, adminUserList(users))
+}
+
+// pendingParam parses the `pending` query parameter of the user listing: nil
+// when it is absent (no filter) and an error when it is present but not a
+// boolean.
+func pendingParam(r *http.Request) (*bool, error) {
+	raw := r.URL.Query().Get("pending")
+	if raw == "" {
+		// An absent optional filter legitimately yields no value and no error.
+		return nil, nil //nolint:nilnil
+	}
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		return nil, errors.New("pending must be true or false")
+	}
+	return &value, nil
 }
 
 // handleCreateUser creates a user (admin only). It responds 201 with the created
@@ -179,6 +206,40 @@ func (a *API) handleDisableUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, adminUser(user))
+}
+
+// handleApproveUser lets a waiting account in (admin only): it stamps the
+// approval time, writes the decision to the audit trail and enqueues the mail
+// telling the person they can sign in — all in one transaction.
+//
+// It responds 200 with the updated account, 403 when the maintainer boundary
+// forbids the actor this account (the same rule as every other user-management
+// action — approval must not become a way around it), 404 if the account does
+// not exist, 409 for a blocked account (unblocking is its own action), or 500.
+// Approving an already approved account is 200 with the account unchanged: an
+// administrator clicking twice must not see a failure.
+func (a *API) handleApproveUser(w http.ResponseWriter, r *http.Request) {
+	uid := chi.URLParam(r, "uid")
+	actor, _ := UserFromContext(r.Context())
+	entry := adminAuditMeta(r).Entry(audit.ActionUserApprove, userTargetType, uid, nil)
+	user, err := a.approval.Approve(r.Context(), uid, actor.Role, entry)
+	if err != nil {
+		writeApproveUserError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, adminUser(user))
+}
+
+// writeApproveUserError maps a failed approval onto its response. A blocked
+// account is a 409 for the same reason ErrLastMaintainer is: the caller is
+// allowed to make the change, it is the account's current state that forbids it,
+// and re-enabling it first makes the identical request succeed.
+func writeApproveUserError(w http.ResponseWriter, err error) {
+	if errors.Is(err, ErrUserDisabled) {
+		writeError(w, http.StatusConflict, ErrUserDisabled.Error())
+		return
+	}
+	writeUserMutationError(w, err, "could not approve user")
 }
 
 // handleResetPassword sets a new password for a user and invalidates all their

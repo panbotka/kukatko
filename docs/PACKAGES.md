@@ -85,6 +85,28 @@ to `## Package map` in `CLAUDE.md`.
   written in that same transaction. `registerLimiterFor` derives the endpoint's per-address
   `ratelimit.Limiter` from the login budget when the caller supplies none, and `RegisterRoutes` mounts
   it as middleware on the route — the one write an anonymous caller may perform.
+  **Approving a waiting account** (`approval.go`, `store_user_approve.go`) is the administrator's half
+  of that flow, behind `POST /admin/users/{uid}/approve`. It is its own type, `Approval` (built with
+  `NewApproval`, wired into `APIConfig.Approval`), for the same reason `Registration` is one — it sends
+  mail and `Service` deliberately knows nothing about mail — and it reuses the same `MailScheduler`
+  interface. Unlike `Registration` it is **not** optional in effect: `approvalFor` derives a mail-less
+  `Approval` from the service when the caller supplies none (`noMail{}` schedules nothing and reports
+  success), so an instance that wires no mail still has the action. `Approve` applies
+  `guardMaintainerBoundary` first — whatever an actor may not otherwise do to an account, approval is
+  not a way around it — then calls `Store.ApproveUserAudited`, which does everything on one
+  transaction: `SELECT … FOR UPDATE` on the row (so two administrators clicking at once queue),
+  `ErrUserDisabled` (→ **409**) for a blocked account, the stamp `approved_at = $2` with `updated_at`
+  bumped, the `alongside` hook that enqueues the `account_approved` mail, and the audit entry
+  (`audit.ActionUserApprove`, `user.approve`). An account that already carries a stamp returns
+  unchanged through `errNoAuditableChange`: no update, no mail, no second entry — approving twice is a
+  repeated click, not a failure. The role is untouched (raising it stays a separate `PATCH`), and the
+  mail's link comes from `ApprovalConfig.SignInURL`, built in `cmd/kukatko` by `signInURL(cfg.Mail.BaseURL)`
+  (`mail.base_url` + `/login`; empty when no public URL is configured — the instances that reach that
+  case send nothing anyway).
+  **The user listing takes an approval filter**: `Store.ListUsers(ctx, UserFilter{Pending *bool})` —
+  `true` only the accounts waiting for an administrator, `false` only the ones let in, `nil` everybody —
+  expressed as `($1::boolean IS NULL OR (approved_at IS NULL) = $1)` so the roster stays one query.
+  `pendingParam` parses `?pending=` off `GET /admin/users` and refuses a non-boolean with 400.
   **Waiting for approval is a sign-in outcome:** `checkLoginPassword` returns `ErrNotApproved` (→ 403)
   for an account with a NULL `approved_at`, *after* the bcrypt comparison and *after* the disabled
   check, so only a caller who already holds the credentials learns it and a blocked account stays

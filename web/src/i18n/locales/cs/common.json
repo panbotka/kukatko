@@ -582,6 +582,7 @@
         "merge": "Sloučení osob"
       },
       "user": {
+        "approve": "Schválení uživatele",
         "create": "Vytvoření uživatele",
         "disable": "Změna přístupu uživatele",
         "password": "Změna hesla uživatele",

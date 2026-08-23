@@ -33,6 +33,7 @@ type API struct {
 	limiter         *Limiter
 	usernameLimiter *Limiter
 	registration    *Registration
+	approval        *Approval
 	registerLimit   *ratelimit.Limiter
 	secureCookies   bool
 	now             func() time.Time
@@ -54,6 +55,10 @@ type APIConfig struct {
 	// open", so an instance that does not wire it behaves exactly like one whose
 	// administrator switched registration off.
 	Registration *Registration
+	// Approval is the administrator's half of that flow: letting a waiting
+	// account in. Optional: when nil, NewAPI derives one that approves accounts
+	// and sends no mail, so an instance that wires no mail still has the action.
+	Approval *Approval
 	// RegisterLimiter throttles registration attempts per client address.
 	// Optional: when nil, NewAPI derives one from Limiter, so registration is
 	// capped as tightly as signing in — with the address as the whole key, since
@@ -70,6 +75,7 @@ func NewAPI(cfg APIConfig) *API {
 		limiter:         cfg.Limiter,
 		usernameLimiter: usernameLimiterFor(cfg),
 		registration:    cfg.Registration,
+		approval:        approvalFor(cfg),
 		registerLimit:   registerLimiterFor(cfg),
 		secureCookies:   cfg.SecureCookies,
 		now:             time.Now,
@@ -86,6 +92,18 @@ func usernameLimiterFor(cfg APIConfig) *Limiter {
 		return NewLimiter(usernameLimitFactor, time.Minute)
 	}
 	return NewLimiter(cfg.Limiter.max*usernameLimitFactor, cfg.Limiter.window)
+}
+
+// approvalFor returns the approval flow cfg asks for, deriving a mail-less one
+// from the service when the caller supplied none. Approval is not optional the
+// way Registration is — an administrator must always be able to let somebody in,
+// including on an instance that sends no mail — so the fallback answers the
+// request rather than refusing it.
+func approvalFor(cfg APIConfig) *Approval {
+	if cfg.Approval != nil {
+		return cfg.Approval
+	}
+	return NewApproval(ApprovalConfig{Service: cfg.Service})
 }
 
 // registerLimiterFor returns the per-address registration limiter cfg asks for,

@@ -61,13 +61,21 @@ func newHTTPEnvWithProxies(t *testing.T, loginLimit int, trusted []string) *http
 	// enqueuer is enabled and inserts real `mail_send` jobs through the caller's
 	// transaction, so a test reads what a registration actually scheduled
 	// instead of what a stub was told.
+	mail := mailjob.NewEnqueuer(mailjob.EnqueuerConfig{Enabled: true})
 	api := auth.NewAPI(auth.APIConfig{
 		Service: svc,
 		Limiter: limiter,
 		Registration: auth.NewRegistration(auth.RegistrationConfig{
 			Service:  svc,
 			Settings: settingsStore,
-			Mail:     mailjob.NewEnqueuer(mailjob.EnqueuerConfig{Enabled: true}),
+			Mail:     mail,
+		}),
+		// The other half of the same flow, wired the same way, so an approval
+		// enqueues a real `mail_send` job a test can read off the queue.
+		Approval: auth.NewApproval(auth.ApprovalConfig{
+			Service:   svc,
+			Mail:      mail,
+			SignInURL: testSignInURL,
 		}),
 	})
 
@@ -88,6 +96,10 @@ func newHTTPEnvWithProxies(t *testing.T, loginLimit int, trusted []string) *http
 	t.Cleanup(server.Close)
 	return &httpEnv{server: server, svc: svc, store: store, db: db, settings: settingsStore}
 }
+
+// testSignInURL is the address the approval mail points at in these tests, the
+// stand-in for mail.base_url + /login.
+const testSignInURL = "https://kukatko.example.test/login"
 
 // probeOK is a trivial handler used behind RBAC middleware in tests.
 func probeOK(w http.ResponseWriter, _ *http.Request) {

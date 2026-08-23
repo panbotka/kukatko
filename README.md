@@ -209,6 +209,11 @@ were written.
   administrator approves them. They are e-mailed that they are waiting, every administrator is
   e-mailed that somebody is, and until the approval the sign-in screen says what is being waited for
   instead of blaming the password.
+- **An administrator lets them in.** Approving a waiting account activates it and e-mails that
+  person the link to sign in. The roster can be narrowed to just the accounts that are waiting, so
+  nobody has to be found by reading the whole list. Approving hands out no rights beyond reading —
+  raising a role stays a separate, deliberate edit — approving twice is harmless, and a blocked
+  account is not approved but unblocked, which is its own action.
 - **One dashboard that answers "what is in the library and is it healthy?"** — what the catalogue
   holds and what it weighs, what arrived in the last day/week/month/year, the backlogs still to work
   through (faces without a name, photos with no date or place, duplicates), the background queue

@@ -8,8 +8,8 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `download_token`), `POST /auth/register` (anonymous, see below), `POST /auth/logout`,
   `GET /auth/me`, `POST /auth/password` (revokes other
   sessions), `PUT /auth/subject`, `POST /auth/welcome-seen`. Admin-only: `GET|POST /admin/users`,
-  `PATCH /admin/users/{uid}`, `POST /admin/users/{uid}/disable`,
-  `POST /admin/users/{uid}/password` (reset revokes all of the
+  `PATCH /admin/users/{uid}`, `POST /admin/users/{uid}/approve`,
+  `POST /admin/users/{uid}/disable`, `POST /admin/users/{uid}/password` (reset revokes all of the
   user's sessions). Responses of the admin user endpoints carry a free-form **`note`** alongside
   `display_name` (an admin note on why the account exists / who it is). Both fields are optional,
   defaulting to the empty string. A `note` longer than **1000 characters** (runes, not bytes) → 400
@@ -50,7 +50,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   **`approved_at`** is when an administrator let the account in; `null` means *registered, waiting for
   an administrator*. Every account made through `POST /admin/users` (and the bootstrap maintainer) is
   approved on creation — an administrator creating an account **is** the approval — so `null` belongs
-  to the accounts `POST /auth/register` makes; accounts predating migration 0064
+  to the accounts `POST /auth/register` makes, until `POST /admin/users/{uid}/approve` (below) fills it; accounts predating migration 0064
   were backfilled as approved with their `created_at`. It is **not** the inverse of `disabled` and no
   reader may collapse the two: *never approved* and *approved and later blocked* are different states,
   they mean opposite things to the person holding the account, and the admin listing shows both
@@ -125,6 +125,25 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   therefore sends nothing, and mail switched off (`mail.enabled: false`) or an administrator with a
   placeholder `.invalid` address costs only the notification — the registration still succeeds. The
   audit entry names the new account as **both actor and target**: nobody else was involved.
+  **`POST /admin/users/{uid}/approve` (admin) — letting a waiting account in.** No body; **200**
+  returns the updated account (the admin view, `note` included) with `approved_at` filled from the
+  server clock. It **does not change the role**: the account was registered on `viewer` and raising it
+  is a separate, deliberate `PATCH /admin/users/{uid}` — "may come in" and "may edit the library" are
+  two decisions. Approving an **already approved** account is **200 with the account unchanged** —
+  no second stamp, no second mail, no second audit entry — because an administrator clicking twice must
+  not see a failure. Approving a **blocked** account is **409** (`auth: user is disabled`): unblocking
+  is the existing action (`PATCH` clearing `disabled`) and conflating the two would hide which one was
+  meant; it is a 409 rather than a 403 for the same reason `ErrLastMaintainer` is — re-enabling the
+  account first makes the identical request succeed. The **maintainer boundary** applies exactly as on
+  the other user-management endpoints: an admin approving a **maintainer** account → **403**
+  (`auth: only a maintainer may manage the maintainer role`); a UID naming nobody → **404**. On a real
+  approval one mail is enqueued on the job queue (`account_approved`, `mail_send`) **in the same
+  transaction** as the stamp and the `user.approve` audit entry, so a rolled-back approval promises
+  nobody anything; its sign-in link is `mail.base_url` + `/login`.
+  **`GET /admin/users?pending=` — finding the accounts that are waiting.** `pending=true` lists only
+  the accounts with `approved_at = null`, `pending=false` only the ones already let in, and an absent
+  parameter everybody (the default). A value that is not a boolean → **400** (`pending must be true or
+  false`) rather than a listing of something else than what was asked for.
   **Bootstrap admin** from
   `auth.bootstrap_admin_username/password`. In addition, the middleware `RequireAuthOrDownloadToken`
   (session cookie or `?t=download_token` via `Service.AuthenticateDownloadToken` →

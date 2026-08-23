@@ -578,6 +578,7 @@
         "merge": "People merged"
       },
       "user": {
+        "approve": "User approved",
         "create": "User created",
         "disable": "User access changed",
         "password": "User password changed",

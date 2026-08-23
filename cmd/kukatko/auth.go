@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -32,18 +33,41 @@ func buildAuth(cfg *config.Config, db *database.DB) (*auth.API, *auth.Service) {
 		MaxLifetime: cfg.Auth.SessionMaxLifetime,
 	})
 	limiter := auth.NewLimiter(cfg.Auth.LoginRateLimit, cfg.Auth.LoginRateWindow)
+	mail := mailjob.NewEnqueuer(mailjob.EnqueuerConfig{Enabled: cfg.Mail.Enabled})
 	registration := auth.NewRegistration(auth.RegistrationConfig{
 		Service:  svc,
 		Settings: settings.NewStore(db.Pool()),
-		Mail:     mailjob.NewEnqueuer(mailjob.EnqueuerConfig{Enabled: cfg.Mail.Enabled}),
+		Mail:     mail,
+	})
+	approval := auth.NewApproval(auth.ApprovalConfig{
+		Service:   svc,
+		Mail:      mail,
+		SignInURL: signInURL(cfg.Mail.BaseURL),
 	})
 	api := auth.NewAPI(auth.APIConfig{
 		Service:       svc,
 		Limiter:       limiter,
 		Registration:  registration,
+		Approval:      approval,
 		SecureCookies: cfg.Web.SecureCookies,
 	})
 	return api, svc
+}
+
+// signInPath is the frontend route of the sign-in screen (see web/src/App.tsx).
+const signInPath = "/login"
+
+// signInURL builds the address the approval mail points at from this instance's
+// public URL, tolerating a trailing slash. An empty base yields an empty URL —
+// mail.base_url is required whenever mail is enabled, so the only instances that
+// reach that case are the ones that send nothing anyway, and inventing a host
+// would send somebody to the wrong one.
+func signInURL(baseURL string) string {
+	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if base == "" {
+		return ""
+	}
+	return base + signInPath
 }
 
 // runBootstrap creates the initial admin account if the users table is empty and

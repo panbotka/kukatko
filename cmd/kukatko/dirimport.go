@@ -339,7 +339,7 @@ func resolveUploader(
 			return user.UID, nil
 		}
 	}
-	users, err := store.ListUsers(ctx)
+	users, err := store.ListUsers(ctx, auth.UserFilter{})
 	if err != nil {
 		return "", fmt.Errorf("listing users: %w", err)
 	}

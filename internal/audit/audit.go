@@ -225,6 +225,13 @@ const (
 	ActionUserDisable = "user.disable"
 	// ActionUserPassword records an admin password reset for a user.
 	ActionUserPassword = "user.password"
+	// ActionUserApprove records an administrator letting a waiting account in:
+	// approved_at goes from NULL to a time and the person is mailed that they can
+	// sign in. It is separate from ActionUserUpdate because it is the decision
+	// that answers a self-service registration — the one moment an account
+	// becomes usable — and it is written only when the stamp really changes, so a
+	// second click on an already approved account leaves no second entry.
+	ActionUserApprove = "user.approve"
 	// ActionUserRegister records somebody creating their own account through
 	// self-service registration. The new account is both the actor and the
 	// target — nobody else was involved — and it is not usable until an
