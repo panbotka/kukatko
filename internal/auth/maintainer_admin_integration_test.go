@@ -47,7 +47,7 @@ func TestMaintainerBoundary_create(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := env.svc.CreateUserAudited(ctx, auth.CreateUserInput{
-				Username: tt.username, Password: testPassword, Role: tt.role,
+				Username: tt.username, Email: tt.username + "@example.test", Password: testPassword, Role: tt.role,
 			}, tt.actor, mgmtEntry(admin.UID, audit.ActionUserCreate))
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("CreateUserAudited(actor=%s, role=%s) err = %v, want %v",
@@ -69,7 +69,8 @@ func TestMaintainerBoundary_modify(t *testing.T) {
 	target := env.createUser(t, "target-maint", auth.RoleMaintainer)
 
 	// An admin may not promote an editor to maintainer.
-	_, err := env.svc.UpdateUserAudited(ctx, editor.UID, auth.UpdateUserInput{Role: auth.RoleMaintainer},
+	_, err := env.svc.UpdateUserAudited(ctx, editor.UID,
+		auth.UpdateUserInput{Email: editor.Email, Role: auth.RoleMaintainer},
 		admin.Role, mgmtEntry(admin.UID, audit.ActionUserUpdate))
 	if !errors.Is(err, auth.ErrMaintainerRequired) {
 		t.Fatalf("admin promote to maintainer err = %v, want ErrMaintainerRequired", err)
@@ -88,7 +89,8 @@ func TestMaintainerBoundary_modify(t *testing.T) {
 	}
 
 	// A maintainer may promote an editor to maintainer.
-	if _, err := env.svc.UpdateUserAudited(ctx, editor.UID, auth.UpdateUserInput{Role: auth.RoleMaintainer},
+	if _, err := env.svc.UpdateUserAudited(ctx, editor.UID,
+		auth.UpdateUserInput{Email: editor.Email, Role: auth.RoleMaintainer},
 		maint.Role, mgmtEntry(maint.UID, audit.ActionUserUpdate)); err != nil {
 		t.Fatalf("maintainer promote to maintainer: %v", err)
 	}
@@ -114,7 +116,8 @@ func TestMigration_aiRowBecomesMaintainer(t *testing.T) {
 	mustExec(t, ctx, tx,
 		`ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('admin','editor','viewer','ai'))`)
 	mustExec(t, ctx, tx,
-		`INSERT INTO users (uid, username, password_hash, role) VALUES ('usr_legacyai','legacy-ai','x','ai')`)
+		`INSERT INTO users (uid, username, email, password_hash, role)
+		 VALUES ('usr_legacyai','legacy-ai','legacy-ai@example.test','x','ai')`)
 
 	// Replay the 0036 body: drop the old constraint (which forbids 'maintainer'),
 	// migrate the data, then add the new constraint.
@@ -136,7 +139,8 @@ func TestMigration_aiRowBecomesMaintainer(t *testing.T) {
 	// savepoint so the surrounding rollback still works cleanly.
 	mustExec(t, ctx, tx, `SAVEPOINT probe_ai`)
 	_, err = tx.Exec(ctx,
-		`INSERT INTO users (uid, username, password_hash, role) VALUES ('usr_newai','new-ai','x','ai')`)
+		`INSERT INTO users (uid, username, email, password_hash, role)
+		 VALUES ('usr_newai','new-ai','new-ai@example.test','x','ai')`)
 	if err == nil {
 		t.Fatal("insert of role 'ai' succeeded; the CHECK constraint no longer forbids it")
 	}

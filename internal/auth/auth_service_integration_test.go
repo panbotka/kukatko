@@ -51,7 +51,7 @@ func newTestEnv(t *testing.T) *testEnv {
 func (e *testEnv) createUser(t *testing.T, username string, role auth.Role) auth.User {
 	t.Helper()
 	user, err := e.svc.CreateUser(t.Context(), auth.CreateUserInput{
-		Username: username,
+		Username: username, Email: username + "@example.test",
 		Password: testPassword,
 		Role:     role,
 	})
@@ -295,14 +295,14 @@ func TestCreateUser_duplicateAndInvalidRole(t *testing.T) {
 	env.createUser(t, "ivan", auth.RoleViewer)
 
 	_, err := env.svc.CreateUser(t.Context(), auth.CreateUserInput{
-		Username: "ivan", Password: testPassword, Role: auth.RoleEditor,
+		Username: "ivan", Email: "ivan@example.test", Password: testPassword, Role: auth.RoleEditor,
 	})
 	if !errors.Is(err, auth.ErrUsernameTaken) {
 		t.Errorf("duplicate username error = %v, want ErrUsernameTaken", err)
 	}
 
 	_, err = env.svc.CreateUser(t.Context(), auth.CreateUserInput{
-		Username: "judy", Password: testPassword, Role: auth.Role("superuser"),
+		Username: "judy", Email: "judy@example.test", Password: testPassword, Role: auth.Role("superuser"),
 	})
 	if !errors.Is(err, auth.ErrInvalidRole) {
 		t.Errorf("invalid role error = %v, want ErrInvalidRole", err)

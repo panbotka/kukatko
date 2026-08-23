@@ -14,6 +14,19 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   with a message naming the field. `PATCH` gives `note` **partial-update** semantics: an omitted key
   leaves the stored note unchanged, `""` clears it. **Only an admin reads `note`** — it is never in the
   `POST /auth/login` or `GET /auth/me` payload.
+  **The e-mail address is required.** Every account receives mail — registration, approval, password
+  reset — so `email` is not optional on either `POST /admin/users` or `PATCH /admin/users/{uid}`: a
+  missing, blank or syntactically invalid address → **400** (`auth: email must be a valid address`).
+  The address is normalised on the way in — surrounding whitespace trimmed, **domain lower-cased**,
+  local part left exactly as typed (RFC 5321 leaves its meaning to the receiving host) — and capped at
+  **254 bytes**. Rejected are a display-name form (`Jan <jan@example.cz>`), an address with inner
+  whitespace, and a dotless domain (`jan@localhost`), none of which an account here could receive mail
+  at. **Two accounts may share an address**: a household mailbox is a real arrangement, so there is no
+  unique constraint. The `PATCH` *replaces* the profile, so an update that omits `email` clears it and
+  is refused like any other blank one — the client echoes the stored address back (or offers it for
+  editing). Accounts that predate this rule were given an undeliverable placeholder in the reserved
+  `.invalid` domain (`<username>-<uid>@kukatko.invalid`, migration 0063), as is the **bootstrap admin**
+  created on an empty database, so a first start still needs no mailbox.
   **Which person the account is:** every user payload — login, `/auth/me` and the admin listings —
   carries **`subject_uid`**, the subject of the library this account belongs to, or `null`. Unlike
   `note` it *is* in the login and `/auth/me` payloads, deliberately: the client cannot render the

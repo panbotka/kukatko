@@ -95,7 +95,7 @@ func newEnvWith(t *testing.T, enabled bool) *env {
 func (e *env) token(t *testing.T, username string, role auth.Role) string {
 	t.Helper()
 	user, err := e.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
-		Username: username, Password: testPassword, Role: role,
+		Username: username, Email: username + "@example.test", Password: testPassword, Role: role,
 	})
 	if err != nil {
 		t.Fatalf("CreateUser(%s): %v", username, err)

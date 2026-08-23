@@ -150,7 +150,7 @@ func loginJSON(username, password string) string {
 func (e *httpEnv) mustCreate(t *testing.T, username string, role auth.Role) auth.User {
 	t.Helper()
 	user, err := e.svc.CreateUser(t.Context(), auth.CreateUserInput{
-		Username: username, Password: testPassword, Role: role,
+		Username: username, Email: username + "@example.test", Password: testPassword, Role: role,
 	})
 	if err != nil {
 		t.Fatalf("CreateUser(%q): %v", username, err)
@@ -259,7 +259,7 @@ func TestHTTP_rbacEnforcement(t *testing.T) {
 		assertStatus(t, env, client, http.MethodGet, "/api/v1/probe/write", "", http.StatusForbidden)
 		assertStatus(t, env, client, http.MethodGet, "/api/v1/admin/users", "", http.StatusForbidden)
 		assertStatus(t, env, client, http.MethodPost, "/api/v1/admin/users",
-			`{"username":"x","password":"password123","role":"viewer"}`, http.StatusForbidden)
+			`{"username":"x","email":"x@example.test","password":"password123","role":"viewer"}`, http.StatusForbidden)
 	})
 
 	t.Run("editor can write but not administer", func(t *testing.T) {
@@ -272,7 +272,7 @@ func TestHTTP_rbacEnforcement(t *testing.T) {
 		client := env.loginClient(t, "admin")
 		assertStatus(t, env, client, http.MethodGet, "/api/v1/admin/users", "", http.StatusOK)
 		assertStatus(t, env, client, http.MethodPost, "/api/v1/admin/users",
-			`{"username":"newbie","password":"password123","role":"editor"}`, http.StatusCreated)
+			`{"username":"newbie","email":"newbie@example.test","password":"password123","role":"editor"}`, http.StatusCreated)
 	})
 }
 
@@ -458,6 +458,7 @@ func TestHTTP_createUserRejectsOverLongUsername(t *testing.T) {
 	body := adminUserBody(t, map[string]any{
 		"username": strings.Repeat("a", auth.MaxUsernameLen+1),
 		"password": testPassword,
+		"email":    "toolong@example.test",
 		"role":     string(auth.RoleViewer),
 	})
 	assertStatus(t, env, client, http.MethodPost, "/api/v1/admin/users", body, http.StatusBadRequest)
@@ -517,7 +518,8 @@ func assertNote(t *testing.T, user map[string]any, want string) {
 func (e *httpEnv) createNotedUser(t *testing.T, admin *http.Client, username, note string) map[string]any {
 	t.Helper()
 	body := adminUserBody(t, map[string]any{
-		"username": username, "password": testPassword, "role": "viewer", "note": note,
+		"username": username, "password": testPassword, "email": username + "@example.test",
+		"role": "viewer", "note": note,
 	})
 	status, data := e.do(t, admin, http.MethodPost, "/api/v1/admin/users", body)
 	if status != http.StatusCreated {
@@ -539,7 +541,7 @@ func TestHTTP_adminUserNoteLifecycle(t *testing.T) {
 
 	// A create that omits display_name and note stays valid and defaults to empty.
 	bare := adminUserBody(t, map[string]any{
-		"username": "bare", "password": testPassword, "role": "viewer",
+		"username": "bare", "password": testPassword, "email": "bare@example.test", "role": "viewer",
 	})
 	status, data := env.do(t, admin, http.MethodPost, "/api/v1/admin/users", bare)
 	if status != http.StatusCreated {
@@ -606,7 +608,8 @@ func TestHTTP_adminUserNoteTooLong(t *testing.T) {
 	tooLong := strings.Repeat("a", auth.MaxNoteLen+1)
 
 	create := adminUserBody(t, map[string]any{
-		"username": "toolong", "password": testPassword, "role": "viewer", "note": tooLong,
+		"username": "toolong", "password": testPassword, "email": "toolong@example.test",
+		"role": "viewer", "note": tooLong,
 	})
 	status, data := env.do(t, admin, http.MethodPost, "/api/v1/admin/users", create)
 	if status != http.StatusBadRequest {
@@ -619,7 +622,9 @@ func TestHTTP_adminUserNoteTooLong(t *testing.T) {
 	// The same limit applies on update.
 	target := env.createNotedUser(t, admin, "lentarget", "short")
 	uid, _ := target["uid"].(string)
-	update := adminUserBody(t, map[string]any{"role": "viewer", "note": tooLong})
+	update := adminUserBody(t, map[string]any{
+		"email": "lentarget@example.test", "role": "viewer", "note": tooLong,
+	})
 	status, data = env.do(t, admin, http.MethodPatch, "/api/v1/admin/users/"+uid, update)
 	if status != http.StatusBadRequest {
 		t.Fatalf("over-length update status = %d, want 400 (body %s)", status, data)
@@ -630,8 +635,8 @@ func TestHTTP_adminUserNoteTooLong(t *testing.T) {
 
 	// A note of exactly MaxNoteLen runes is accepted.
 	atLimit := adminUserBody(t, map[string]any{
-		"username": "atlimit", "password": testPassword, "role": "viewer",
-		"note": strings.Repeat("a", auth.MaxNoteLen),
+		"username": "atlimit", "password": testPassword, "email": "atlimit@example.test",
+		"role": "viewer", "note": strings.Repeat("a", auth.MaxNoteLen),
 	})
 	if status, data := env.do(t, admin, http.MethodPost, "/api/v1/admin/users", atLimit); status != http.StatusCreated {
 		t.Errorf("at-limit create status = %d, want 201 (body %s)", status, data)

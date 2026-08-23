@@ -47,11 +47,23 @@ var (
 	// characters. Its message names the offending field so it can be surfaced
 	// verbatim in a 400.
 	ErrUsernameTooLong = errors.New("auth: username must be at most 64 characters")
+	// ErrInvalidEmail indicates the account was given no e-mail address, or one
+	// that is not a syntactically valid mailbox. Every account receives mail —
+	// registration, approval, password reset — so an address is not optional.
+	// Its message names the offending field so it can be surfaced verbatim in a
+	// 400.
+	ErrInvalidEmail = errors.New("auth: email must be a valid address")
 )
 
 // MaxNoteLen is the maximum length of a user note, measured in runes rather than
 // bytes so that accented text is not penalised against the limit.
 const MaxNoteLen = 1000
+
+// MaxEmailLen is the maximum length of an e-mail address, in bytes. RFC 5321
+// caps a path at 256 octets including the angle brackets, which leaves 254 for
+// the address itself; nothing longer can be delivered, so nothing longer is
+// worth storing.
+const MaxEmailLen = 254
 
 // MaxUsernameLen is the maximum length of a username, measured in runes rather
 // than bytes so that accented text is not penalised against the limit. Login

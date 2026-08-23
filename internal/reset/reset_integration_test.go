@@ -86,7 +86,8 @@ func (e *resetEnv) count(t *testing.T, table string) int64 {
 func (e *resetEnv) seedLibrary(t *testing.T) {
 	t.Helper()
 
-	e.exec(t, `INSERT INTO users (uid, username, password_hash, role) VALUES ($1,$2,$3,$4)`,
+	e.exec(t, `INSERT INTO users (uid, username, email, password_hash, role)
+		VALUES ($1,$2,$2||'@example.test',$3,$4)`,
 		"usr000000001", "operator", "hash", "maintainer")
 	e.exec(t, `INSERT INTO sessions (id, token, download_token, user_uid, role, expires_at)
 		VALUES ($1,$2,$3,$4,$5,$6)`,

@@ -2783,6 +2783,9 @@
       "usernameRequired": "Enter a username.",
       "password": "Password",
       "passwordHint": "At least {{min}} characters.",
+      "email": "E-mail",
+      "emailHint": "Account notices, such as a password reset, are sent here. Required.",
+      "emailRequired": "Enter a valid e-mail address.",
       "role": "Role",
       "displayName": "Real name",
       "note": "Note",
@@ -2814,6 +2817,7 @@
     "errors": {
       "usernameTaken": "That username is already taken.",
       "passwordTooShort": "The password must be at least {{min}} characters.",
+      "invalidEmail": "Enter a valid e-mail address.",
       "invalidRole": "Invalid role.",
       "noteTooLong": "The note may be at most {{max}} characters.",
       "lastMaintainer": "This is the last enabled maintainer. Demoting or disabling it would leave nobody able to grant the role back, and the operations part of the app would become unreachable. Promote somebody else to maintainer first.",

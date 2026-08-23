@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"net/mail"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -53,6 +54,83 @@ func normalizeUsername(username string) string {
 func validateUsername(username string) error {
 	if utf8.RuneCountInString(username) > MaxUsernameLen {
 		return ErrUsernameTooLong
+	}
+	return nil
+}
+
+// placeholderDomain is the domain every generated placeholder address lives in.
+// ".invalid" is reserved by RFC 2606 and guaranteed never to resolve, so a
+// placeholder that slipped into a real send bounces at the resolver rather than
+// arriving in a stranger's mailbox. internal/mailer and internal/mailjob refuse
+// such a recipient outright; migration 0063 uses the same domain for the
+// addresses it backfills.
+const placeholderDomain = "kukatko.invalid"
+
+// placeholderEmail returns the stand-in address for an account that genuinely
+// has none to give — today only the bootstrap maintainer, created on an empty
+// database before anybody could have configured one. The local part is username
+// reduced to [a-z0-9-] and trimmed of separators, so a username of spaces or
+// accents still yields a syntactically valid address; a username that reduces to
+// nothing falls back to "user".
+//
+// It is deliberately not a general answer to a missing address: every other
+// creation path must supply a real one, and validateEmail refuses the empty
+// string.
+func placeholderEmail(username string) string {
+	var local strings.Builder
+	dashed := false
+	for _, r := range strings.ToLower(username) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			local.WriteRune(r)
+			dashed = false
+			continue
+		}
+		if !dashed && local.Len() > 0 {
+			local.WriteByte('-')
+			dashed = true
+		}
+	}
+	name := strings.Trim(local.String(), "-")
+	if name == "" {
+		name = "user"
+	}
+	return name + "@" + placeholderDomain
+}
+
+// normalizeEmail trims surrounding whitespace and lower-cases the domain part,
+// which is case-insensitive by definition. The local part is left exactly as it
+// was typed: RFC 5321 leaves its interpretation to the receiving host, so
+// lower-casing it could address a different mailbox than the one meant.
+func normalizeEmail(email string) string {
+	trimmed := strings.TrimSpace(email)
+	at := strings.LastIndex(trimmed, "@")
+	if at < 0 {
+		return trimmed
+	}
+	return trimmed[:at] + "@" + strings.ToLower(trimmed[at+1:])
+}
+
+// validateEmail returns ErrInvalidEmail unless email is a single, syntactically
+// valid mailbox that mail could actually be delivered to. The caller passes an
+// already normalized address.
+//
+// The grammar comes from net/mail, but parsing alone is too generous for a
+// stored account address: it accepts a display-name form ("Jan <jan@x.cz>") and
+// a quoted local part that may hold spaces, neither of which is what an
+// administrator meant to type into an address field. Requiring the parse to give
+// back the input unchanged rules both out. A dotless domain is refused too —
+// "jan@localhost" parses, but no account on this instance can receive mail there.
+func validateEmail(email string) error {
+	if email == "" || len(email) > MaxEmailLen {
+		return ErrInvalidEmail
+	}
+	parsed, err := mail.ParseAddress(email)
+	if err != nil || parsed.Address != email {
+		return ErrInvalidEmail
+	}
+	domain := email[strings.LastIndex(email, "@")+1:]
+	if !strings.Contains(domain, ".") || strings.HasPrefix(domain, ".") || strings.HasSuffix(domain, ".") {
+		return ErrInvalidEmail
 	}
 	return nil
 }

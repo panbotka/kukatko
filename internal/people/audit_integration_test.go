@@ -38,6 +38,7 @@ func makeUser(t *testing.T, db *database.DB, uid, username string) string {
 	if err := auth.NewStore(db.Pool()).CreateUser(context.Background(), auth.User{
 		UID:          uid,
 		Username:     username,
+		Email:        username + "@example.test",
 		PasswordHash: "x",
 		Role:         auth.RoleViewer,
 	}); err != nil {

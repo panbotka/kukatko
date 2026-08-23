@@ -47,6 +47,7 @@ func makeAdmin(t *testing.T, store *auth.Store, uid, username string) string {
 	if err := store.CreateUser(context.Background(), auth.User{
 		UID:          uid,
 		Username:     username,
+		Email:        username + "@example.test",
 		PasswordHash: "x",
 		Role:         auth.RoleAdmin,
 	}); err != nil {

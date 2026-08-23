@@ -75,7 +75,7 @@ func (e *httpEnv) loginClient(t *testing.T, username string, role auth.Role) *ht
 	t.Helper()
 	const password = "correct horse battery staple"
 	if _, err := e.svc.CreateUser(t.Context(), auth.CreateUserInput{
-		Username: username, Password: password, Role: role,
+		Username: username, Email: username + "@example.test", Password: password, Role: role,
 	}); err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}

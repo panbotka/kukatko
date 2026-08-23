@@ -53,7 +53,7 @@ func uploaderCounts(resp uploadersResp) map[string]int {
 func seedUploader(t *testing.T, e *env, username, displayName string) string {
 	t.Helper()
 	user, err := e.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
-		Username: username, DisplayName: displayName, Password: testPassword, Role: auth.RoleEditor,
+		Username: username, Email: username + "@example.test", DisplayName: displayName, Password: testPassword, Role: auth.RoleEditor,
 	})
 	if err != nil {
 		t.Fatalf("CreateUser(%s): %v", username, err)

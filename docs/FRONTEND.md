@@ -1506,8 +1506,8 @@ here.
   linked to, resolved through **one** `useSubjects` fetch for the whole roster (`linkedPersonLabel` is a plain
   function of that map, not a component with a hook, so thirty rows still cost one request) and an em dash
   when there is no link —, the dialogs **Nový uživatel**
-  (username/password/role/name/**person**/note) and **Upravit** (role/name/**person**/note; username is `readOnly`
-  `plaintext` — the backend cannot change it), **Změnit heslo** for another user (logs them out of all
+  (username/password/**e-mail**/role/name/**person**/note) and **Upravit** (**e-mail**/role/name/**person**/note;
+  username is `readOnly` `plaintext` — the backend cannot change it), **Změnit heslo** for another user (logs them out of all
   devices; the hash is never rendered anywhere) and **Povolit/Zakázat** behind a confirmation dialog
   (`setUserDisabled`). **The two form dialogs are `scrollable fullscreen="sm-down"`** — on a phone the long
   form takes the whole screen and only its body scrolls, so Zrušit/Uložit stay pinned above the on-screen
@@ -1518,6 +1518,12 @@ here.
   off-screen anyway — the utility classes make it a shrinkable flex column (a scroll container's automatic
   minimum size is 0) and hand the cap through. The **Povolit/Zakázat** question follows `ConfirmModal` instead:
   `scrollable`, but a centred card on every screen — it has no inputs, so no keyboard can reach it.
+  **The e-mail field is required in both dialogs** and is the one profile field the edit dialog stopped
+  echoing back: the backend refuses an account without a usable address (`auth.ErrInvalidEmail` → 400,
+  see `docs/API.md`), and since `PATCH` replaces the whole profile, an update that dropped it would be
+  refused too. The dialog therefore prefills the stored address, submits it trimmed, and blocks its own
+  submit while it is blank (`emailMissing`, message `users.form.emailRequired`) rather than letting the
+  request go out to be rejected.
   Both form dialogs carry **`SubjectField`**: the same subject typeahead as the account page (pick-only, no
   `onCreate`) when nothing is linked, the chosen name with a „Zrušit" beside it once something is, and a hint
   saying that the linked person's cover photo then appears next to the account's comments. It is part of the
@@ -1536,7 +1542,7 @@ here.
   on a phone; before, the `title` on a natively disabled Bootstrap button could be read by neither a mouse
   (`pointer-events: none`) nor a keyboard (out of the tab order). API validation errors map to a specific field
   (`fieldErrorFor`: 409 → username *unless* the message names the maintainer, 400 by keyword →
-  password/role/note, otherwise a form-level alert), not to a generic banner. **The last-maintainer
+  password/**email**/role/note, otherwise a form-level alert), not to a generic banner. **The last-maintainer
   refusal** (409 `auth: cannot remove the last maintainer`, see `docs/API.md`) belongs to no input — the
   role `<select>` is only how it was triggered and the disable button has no form at all — so it renders
   as a form-level alert with `users.errors.lastMaintainer`, which says *why* and *what to do* (promote a

@@ -66,7 +66,7 @@ func TestLastMaintainer_soloCannotStepDown(t *testing.T) {
 			name: "audited demote",
 			call: func() error {
 				_, err := env.svc.UpdateUserAudited(t.Context(), solo.UID,
-					auth.UpdateUserInput{Role: auth.RoleAdmin}, solo.Role,
+					auth.UpdateUserInput{Email: solo.Email, Role: auth.RoleAdmin}, solo.Role,
 					mgmtEntry(solo.UID, audit.ActionUserUpdate))
 				return err
 			},
@@ -92,7 +92,7 @@ func TestLastMaintainer_soloCannotStepDown(t *testing.T) {
 			name: "plain update that only disables",
 			call: func() error {
 				_, err := env.svc.UpdateUser(t.Context(), solo.UID, auth.UpdateUserInput{
-					Role: auth.RoleMaintainer, Disabled: true,
+					Email: solo.Email, Role: auth.RoleMaintainer, Disabled: true,
 				})
 				return err
 			},
@@ -131,7 +131,7 @@ func TestLastMaintainer_guardsOnlyTheLastOne(t *testing.T) {
 
 	// Two enabled maintainers: demoting one is a normal, allowed change.
 	demoted, err := env.svc.UpdateUserAudited(t.Context(), first.UID,
-		auth.UpdateUserInput{Role: auth.RoleAdmin}, second.Role,
+		auth.UpdateUserInput{Email: first.Email, Role: auth.RoleAdmin}, second.Role,
 		mgmtEntry(second.UID, audit.ActionUserUpdate))
 	if err != nil {
 		t.Fatalf("demote with a second maintainer present: %v", err)
@@ -148,7 +148,7 @@ func TestLastMaintainer_guardsOnlyTheLastOne(t *testing.T) {
 
 	// The survivor is now the last one, so the very same demote is refused.
 	if _, err := env.svc.UpdateUserAudited(t.Context(), second.UID,
-		auth.UpdateUserInput{Role: auth.RoleAdmin}, second.Role,
+		auth.UpdateUserInput{Email: second.Email, Role: auth.RoleAdmin}, second.Role,
 		mgmtEntry(second.UID, audit.ActionUserUpdate)); !errors.Is(err, auth.ErrLastMaintainer) {
 		t.Fatalf("demote of the survivor err = %v, want ErrLastMaintainer", err)
 	}
@@ -180,7 +180,7 @@ func TestLastMaintainer_disabledMaintainerDoesNotCount(t *testing.T) {
 
 	// Re-enabling the spare raises the count, and the active one may then step down.
 	if _, err := env.svc.UpdateUserAudited(t.Context(), spare.UID, auth.UpdateUserInput{
-		Role: auth.RoleMaintainer, Disabled: false,
+		Email: spare.Email, Role: auth.RoleMaintainer, Disabled: false,
 	}, active.Role, mgmtEntry(active.UID, audit.ActionUserUpdate)); err != nil {
 		t.Fatalf("re-enable the spare maintainer: %v", err)
 	}
@@ -222,7 +222,7 @@ func TestHTTP_lastMaintainerGuard(t *testing.T) {
 		t.Fatalf("login status = %d, want 200 (body %s)", status, body)
 	}
 
-	const demote = `{"display_name":"","email":"","role":"admin","disabled":false}`
+	const demote = `{"display_name":"","email":"solo-maint@example.test","role":"admin","disabled":false}`
 	status, body := env.do(t, client, http.MethodPatch, "/api/v1/admin/users/"+maint.UID, demote)
 	if status != http.StatusConflict {
 		t.Fatalf("PATCH self-demote status = %d, want 409 (body %s)", status, body)
@@ -241,7 +241,7 @@ func TestHTTP_lastMaintainerGuard(t *testing.T) {
 	}
 
 	// Hand the instance over, and the refused request goes through unchanged.
-	const promote = `{"display_name":"","email":"","role":"maintainer","disabled":false}`
+	const promote = `{"display_name":"","email":"successor@example.test","role":"maintainer","disabled":false}`
 	if status, body := env.do(t, client, http.MethodPatch,
 		"/api/v1/admin/users/"+successor.UID, promote); status != http.StatusOK {
 		t.Fatalf("PATCH promote successor status = %d, want 200 (body %s)", status, body)

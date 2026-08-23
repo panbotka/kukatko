@@ -53,7 +53,7 @@ func newEnv(t *testing.T) *testEnv {
 	authSvc := auth.NewService(auth.NewStore(db.Pool()),
 		auth.SessionPolicy{TTL: time.Hour, MaxLifetime: 3 * time.Hour})
 	uploader, err := authSvc.CreateUser(t.Context(), auth.CreateUserInput{
-		Username: "importer", Password: "correct horse battery staple", Role: auth.RoleEditor,
+		Username: "importer", Email: "importer@example.test", Password: "correct horse battery staple", Role: auth.RoleEditor,
 	})
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)

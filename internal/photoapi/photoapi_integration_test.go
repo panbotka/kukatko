@@ -206,7 +206,7 @@ func newEnvWithMedia(t *testing.T, media storage.Storage) *env {
 func (e *env) login(t *testing.T, username string, role auth.Role) (*http.Client, string) {
 	t.Helper()
 	if _, err := e.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
-		Username: username, Password: testPassword, Role: role,
+		Username: username, Email: username + "@example.test", Password: testPassword, Role: role,
 	}); err != nil {
 		t.Fatalf("CreateUser(%s): %v", username, err)
 	}
@@ -623,7 +623,7 @@ func TestDetailUploader(t *testing.T) {
 	base := env.server.URL
 
 	uploader, err := env.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
-		Username: "cameraman", Password: testPassword, DisplayName: "Camera Man", Role: auth.RoleEditor,
+		Username: "cameraman", Email: "cameraman@example.test", Password: testPassword, DisplayName: "Camera Man", Role: auth.RoleEditor,
 	})
 	if err != nil {
 		t.Fatalf("CreateUser(uploader): %v", err)

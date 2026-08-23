@@ -114,3 +114,64 @@ func TestValidateNote(t *testing.T) {
 		})
 	}
 }
+
+// TestValidateUserUpdate verifies the update input is both checked and
+// normalized: a valid update comes back with its address trimmed and its domain
+// lower-cased, while a missing, blank or malformed address, an unknown role and
+// an over-length note are each refused.
+func TestValidateUserUpdate(t *testing.T) {
+	t.Parallel()
+
+	longNote := strings.Repeat("a", MaxNoteLen+1)
+	tests := []struct {
+		name      string
+		in        UpdateUserInput
+		wantEmail string
+		wantErr   error
+	}{
+		{
+			name:      "valid update is normalized",
+			in:        UpdateUserInput{Email: "  Jan@Example.COM ", Role: RoleViewer},
+			wantEmail: "Jan@example.com",
+			wantErr:   nil,
+		},
+		{
+			name:    "missing address is rejected",
+			in:      UpdateUserInput{Role: RoleViewer},
+			wantErr: ErrInvalidEmail,
+		},
+		{
+			name:    "whitespace-only address is rejected",
+			in:      UpdateUserInput{Email: " \t ", Role: RoleViewer},
+			wantErr: ErrInvalidEmail,
+		},
+		{
+			name:    "malformed address is rejected",
+			in:      UpdateUserInput{Email: "jan(at)example.com", Role: RoleViewer},
+			wantErr: ErrInvalidEmail,
+		},
+		{
+			name:    "unknown role is rejected before the address",
+			in:      UpdateUserInput{Email: "jan@example.com", Role: Role("root")},
+			wantErr: ErrInvalidRole,
+		},
+		{
+			name:    "over-length note is rejected",
+			in:      UpdateUserInput{Email: "jan@example.com", Role: RoleViewer, Note: &longNote},
+			wantErr: ErrNoteTooLong,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := validateUserUpdate(tt.in)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("validateUserUpdate(%+v) error = %v, want %v", tt.in, err, tt.wantErr)
+			}
+			if tt.wantErr == nil && got.Email != tt.wantEmail {
+				t.Errorf("normalized email = %q, want %q", got.Email, tt.wantEmail)
+			}
+		})
+	}
+}

@@ -55,7 +55,8 @@ func TestDeletePhoto_cascadesAllDependents(t *testing.T) {
 			t.Fatalf("seed %q: %v", sql, err)
 		}
 	}
-	exec(`INSERT INTO users (uid, username, password_hash, role) VALUES ('u_casc', 'casc', 'x', 'viewer')`)
+	exec(`INSERT INTO users (uid, username, email, password_hash, role)
+		 VALUES ('u_casc', 'casc', 'casc@example.test', 'x', 'viewer')`)
 	exec(`INSERT INTO subjects (uid, slug, name, type, cover_photo_uid) VALUES ('su_casc', 'casc', 'Casc', 'person', $1)`, uid)
 	exec(`INSERT INTO albums (uid, slug, title, cover_photo_uid) VALUES ('al_casc', 'casc', 'Casc', $1)`, uid)
 	exec(`INSERT INTO labels (uid, slug, name) VALUES ('lb_casc', 'casc', 'Casc')`)
@@ -146,7 +147,8 @@ func TestDeleteUser_setsNullAndCascades(t *testing.T) {
 			t.Fatalf("seed %q: %v", sql, err)
 		}
 	}
-	exec(`INSERT INTO users (uid, username, password_hash, role) VALUES ('u_del', 'udel', 'x', 'editor')`)
+	exec(`INSERT INTO users (uid, username, email, password_hash, role)
+		 VALUES ('u_del', 'udel', 'udel@example.test', 'x', 'editor')`)
 	exec(`UPDATE photos SET uploaded_by = 'u_del' WHERE uid = $1`, uid)
 	exec(`INSERT INTO albums (uid, slug, title, created_by) VALUES ('al_del', 'aldel', 'AlDel', 'u_del')`)
 	exec(`INSERT INTO user_favorites (user_uid, photo_uid) VALUES ('u_del', $1)`, uid)

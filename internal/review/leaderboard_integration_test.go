@@ -22,8 +22,8 @@ import (
 func seedUser(t *testing.T, pool *pgxpool.Pool, uid, username, displayName string) {
 	t.Helper()
 	_, err := pool.Exec(context.Background(),
-		`INSERT INTO users (uid, username, display_name, password_hash, role)
-		 VALUES ($1, $2, $3, 'x', 'viewer')`, uid, username, displayName)
+		`INSERT INTO users (uid, username, display_name, email, password_hash, role)
+		 VALUES ($1, $2, $3, $2||'@example.test', 'x', 'viewer')`, uid, username, displayName)
 	if err != nil {
 		t.Fatalf("seedUser(%s): %v", uid, err)
 	}

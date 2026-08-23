@@ -100,7 +100,7 @@ func newNamelessEnv(t *testing.T, wrap func(maintenanceapi.NamelessRepair) maint
 func (e *namelessEnv) loginMaintainer(t *testing.T) *http.Client {
 	t.Helper()
 	if _, err := e.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
-		Username: "boss", Password: testPassword, Role: auth.RoleMaintainer,
+		Username: "boss", Email: "boss@example.test", Password: testPassword, Role: auth.RoleMaintainer,
 	}); err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
@@ -250,7 +250,7 @@ func TestNamelessReportFindsThePlantedSubject(t *testing.T) {
 func TestNamelessReportRequiresMaintainer(t *testing.T) {
 	env := newNamelessEnv(t, nil)
 	if _, err := env.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
-		Username: "editor", Password: testPassword, Role: auth.RoleEditor,
+		Username: "editor", Email: "editor@example.test", Password: testPassword, Role: auth.RoleEditor,
 	}); err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}

@@ -67,7 +67,7 @@ func newTokenEnv(t *testing.T, createLimit int) *tokenEnv {
 func (e *tokenEnv) user(t *testing.T, username string, role auth.Role) auth.User {
 	t.Helper()
 	user, err := e.svc.CreateUser(t.Context(), auth.CreateUserInput{
-		Username: username, Password: testPassword, Role: role,
+		Username: username, Email: username + "@example.test", Password: testPassword, Role: role,
 	})
 	if err != nil {
 		t.Fatalf("CreateUser(%q): %v", username, err)

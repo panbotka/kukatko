@@ -16,6 +16,7 @@ func makeRatingUser(t *testing.T, store *auth.Store, uid string) string {
 	if err := store.CreateUser(t.Context(), auth.User{
 		UID:          uid,
 		Username:     uid,
+		Email:        uid + "@example.test",
 		PasswordHash: "x",
 		Role:         auth.RoleViewer,
 	}); err != nil {

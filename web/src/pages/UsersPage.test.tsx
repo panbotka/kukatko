@@ -57,7 +57,7 @@ function user(overrides: Partial<AdminUser> = {}): AdminUser {
     uid: 'u1',
     username: 'ada',
     display_name: 'Ada Lovelace',
-    email: '',
+    email: 'ada@example.com',
     role: 'viewer',
     disabled: false,
     note: '',
@@ -387,6 +387,7 @@ describe('UsersPage', () => {
 
     await actor.type(within(dialog).getByLabelText('Username'), 'ada')
     await actor.type(within(dialog).getByLabelText('Password'), 'correct-horse')
+    await actor.type(within(dialog).getByLabelText('E-mail'), 'ada@example.com')
     await actor.click(within(dialog).getByRole('button', { name: 'Create' }))
 
     await waitFor(() => {
@@ -482,6 +483,53 @@ describe('UsersPage', () => {
     // belongs to no field, so it must not be mistaken for it.
     expect(within(dialog).getByRole('alert')).toHaveTextContent(LAST_MAINTAINER_TEXT)
     expect(within(dialog).getByLabelText('Username')).not.toHaveClass('is-invalid')
+  })
+
+  it('will not create an account without an e-mail address', async () => {
+    const actor = userEvent.setup()
+    renderPage()
+
+    await actor.click(screen.getByRole('button', { name: 'New user' }))
+    const dialog = await screen.findByRole('dialog')
+
+    await actor.type(within(dialog).getByLabelText('Username'), 'ada')
+    await actor.type(within(dialog).getByLabelText('Password'), 'correct-horse')
+    await actor.click(within(dialog).getByRole('button', { name: 'Create' }))
+
+    // The request is never made: the backend would refuse it anyway, so the
+    // dialog says so where the reader is already looking.
+    expect(createUserMock).not.toHaveBeenCalled()
+    expect(within(dialog).getByLabelText('E-mail')).toHaveClass('is-invalid')
+    expect(within(dialog).getByText('Enter a valid e-mail address.')).toBeInTheDocument()
+  })
+
+  it('edits an account without losing its address, and refuses to clear it', async () => {
+    const ada = user({ uid: 'u1', username: 'ada', email: 'ada@example.com' })
+    fetchUsersMock.mockResolvedValue([ada])
+    updateUserMock.mockResolvedValue({ ...ada, display_name: 'Ada L' })
+    const actor = userEvent.setup()
+    renderPage()
+
+    expect(await screen.findByText('ada')).toBeInTheDocument()
+    await actor.click(screen.getByRole('button', { name: 'Edit' }))
+    const dialog = await screen.findByRole('dialog')
+
+    // The stored address is offered for editing, not silently echoed back.
+    const email = within(dialog).getByLabelText('E-mail')
+    expect(email).toHaveValue('ada@example.com')
+
+    await actor.clear(email)
+    await actor.click(within(dialog).getByRole('button', { name: 'Save' }))
+    expect(updateUserMock).not.toHaveBeenCalled()
+
+    await actor.type(email, 'ada.lovelace@example.com')
+    await actor.click(within(dialog).getByRole('button', { name: 'Save' }))
+    await waitFor(() => {
+      expect(updateUserMock).toHaveBeenCalledWith(
+        'u1',
+        expect.objectContaining({ email: 'ada.lovelace@example.com' }),
+      )
+    })
   })
 
   it('renders the username read-only when editing an existing user', async () => {

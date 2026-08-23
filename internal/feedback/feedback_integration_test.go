@@ -88,7 +88,7 @@ func (f *fixtures) makeLabel(t *testing.T, name string) string {
 func (f *fixtures) makeUser(t *testing.T, uid, username string) string {
 	t.Helper()
 	err := f.users.CreateUser(context.Background(), auth.User{
-		UID: uid, Username: username, PasswordHash: "x", Role: auth.RoleViewer,
+		UID: uid, Username: username, Email: username + "@example.test", PasswordHash: "x", Role: auth.RoleViewer,
 	})
 	if err != nil {
 		t.Fatalf("creating user %s: %v", username, err)

@@ -43,12 +43,13 @@ type Dialog =
   | { kind: 'toggle'; user: AdminUser }
 
 /** The form fields an API validation error can be attributed to. */
-type FormField = 'username' | 'password' | 'role' | 'note'
+type FormField = 'username' | 'password' | 'email' | 'role' | 'note'
 
 /** The i18n keys for the validation messages the backend can produce. */
 type ErrorKey =
   | 'users.errors.usernameTaken'
   | 'users.errors.passwordTooShort'
+  | 'users.errors.invalidEmail'
   | 'users.errors.invalidRole'
   | 'users.errors.noteTooLong'
   | 'users.errors.lastMaintainer'
@@ -69,7 +70,7 @@ interface FormError {
  * The admin user handlers answer with a plain `{"error": "..."}` envelope rather
  * than a per-field structure, so the status plus a keyword from the message is
  * all there is to go on: 409 is either a duplicate username or the
- * last-maintainer guard (told apart by the message), and the three possible 400s
+ * last-maintainer guard (told apart by the message), and the four possible 400s
  * each name their own field (`internal/auth/handlers_admin.go`). Anything
  * unrecognised degrades to a form-level message.
  *
@@ -89,6 +90,9 @@ function fieldErrorFor(error: unknown): FormError {
       const message = error.message.toLowerCase()
       if (message.includes('password')) {
         return { field: 'password', messageKey: 'users.errors.passwordTooShort' }
+      }
+      if (message.includes('email')) {
+        return { field: 'email', messageKey: 'users.errors.invalidEmail' }
       }
       if (message.includes('role')) {
         return { field: 'role', messageKey: 'users.errors.invalidRole' }
@@ -258,7 +262,7 @@ interface UserFormModalProps {
  * than in a banner, so the reader does not have to guess which field to fix.
  *
  * On a phone the dialog is a full-screen sheet and only its body scrolls, so the
- * five fields get the whole small screen and the Save/Cancel pair stays pinned
+ * six fields get the whole small screen and the Save/Cancel pair stays pinned
  * above the on-screen keyboard rather than under it; on a wider screen it is the
  * same centred card as before. Its wrapping form carries {@link MODAL_FORM_CLASS}.
  */
@@ -275,6 +279,7 @@ function UserFormModal({ user, isMaintainer, onHide, onSaved }: UserFormModalPro
   const [username, setUsername] = useState(user?.username ?? '')
   const [password, setPassword] = useState('')
   const [displayName, setDisplayName] = useState(user?.display_name ?? '')
+  const [email, setEmail] = useState(user?.email ?? '')
   const [role, setRole] = useState<Role>(user?.role ?? 'viewer')
   const [note, setNote] = useState(user?.note ?? '')
   const [subjectUid, setSubjectUid] = useState<string | null>(user?.subject_uid ?? null)
@@ -284,10 +289,13 @@ function UserFormModal({ user, isMaintainer, onHide, onSaved }: UserFormModalPro
 
   const usernameMissing = username.trim() === ''
   const passwordTooShort = password.length < MIN_PASSWORD_LENGTH
+  // Every account receives mail — approval, password reset — so the backend
+  // requires an address on create *and* on update; an edit may not clear it.
+  const emailMissing = email.trim() === ''
 
   async function handleSubmit(event: SyntheticEvent) {
     event.preventDefault()
-    if (creating && (usernameMissing || passwordTooShort)) {
+    if (emailMissing || (creating && (usernameMissing || passwordTooShort))) {
       setValidated(true)
       return
     }
@@ -299,16 +307,16 @@ function UserFormModal({ user, isMaintainer, onHide, onSaved }: UserFormModalPro
             username: username.trim(),
             password,
             display_name: displayName,
-            email: '',
+            email: email.trim(),
             role,
             note,
             subject_uid: subjectUid,
           })
         : await updateUser(user.uid, {
             display_name: displayName,
+            email: email.trim(),
             // The update replaces the whole profile, so the fields this dialog
             // does not offer are echoed back unchanged.
-            email: user.email,
             role,
             disabled: user.disabled,
             note,
@@ -400,6 +408,27 @@ function UserFormModal({ user, isMaintainer, onHide, onSaved }: UserFormModalPro
               </Form.Control.Feedback>
             </Form.Group>
           )}
+
+          {/* Required in both modes: the backend refuses an account without a
+              usable address, and an edit that cleared it would be refused too. */}
+          <Form.Group className="mb-3" controlId="user-email">
+            <Form.Label>{t('users.form.email')}</Form.Label>
+            <Form.Control
+              type="email"
+              autoComplete="off"
+              required
+              isInvalid={error?.field === 'email' || (validated && emailMissing)}
+              value={email}
+              onChange={(event) => {
+                setEmail(event.target.value)
+              }}
+              disabled={submitting}
+            />
+            <Form.Text className="text-secondary">{t('users.form.emailHint')}</Form.Text>
+            <Form.Control.Feedback type="invalid">
+              {feedbackFor('email', t('users.form.emailRequired'))}
+            </Form.Control.Feedback>
+          </Form.Group>
 
           <Form.Group className="mb-3" controlId="user-role">
             <Form.Label>{t('users.form.role')}</Form.Label>

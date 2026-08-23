@@ -62,9 +62,11 @@ export interface AdminUser extends User {
 }
 
 /**
- * Body of `POST /admin/users` (`auth.createUserRequest`). `display_name`,
- * `email` and `note` are optional to the backend but always sent, so an omitted
- * field reads as an explicit empty value rather than a silent default.
+ * Body of `POST /admin/users` (`auth.createUserRequest`). `display_name` and
+ * `note` are optional to the backend but always sent, so an omitted field reads
+ * as an explicit empty value rather than a silent default. `email` is not
+ * optional: every account receives mail, so the backend refuses a missing or
+ * malformed address with a 400 (`auth.ErrInvalidEmail`).
  */
 export interface CreateUserBody {
   username: string
@@ -83,8 +85,9 @@ export interface CreateUserBody {
 /**
  * Body of `PATCH /admin/users/{uid}` (`auth.updateUserRequest`). The update
  * *replaces* the mutable profile, so every field must be sent — including the
- * ones the edit dialog does not offer (`email`, `disabled`), echoed back from
- * the row being edited.
+ * ones the edit dialog does not offer (`disabled`), echoed back from the row
+ * being edited. `email` must still be a valid address: an update may not leave
+ * an account without one.
  */
 export interface UpdateUserBody {
   display_name: string
@@ -120,7 +123,8 @@ export async function fetchUsers(signal?: AbortSignal): Promise<AdminUser[]> {
  * Creates a user.
  *
  * @throws ApiError with `status` 409 (username taken) or 400 (weak password,
- *   invalid role, over-length note) so the caller can flag the offending field.
+ *   missing or malformed e-mail address, invalid role, over-length note) so the
+ *   caller can flag the offending field.
  */
 export async function createUser(body: CreateUserBody, signal?: AbortSignal): Promise<AdminUser> {
   const res = await request('POST', '/admin/users', body, signal)
@@ -130,7 +134,8 @@ export async function createUser(body: CreateUserBody, signal?: AbortSignal): Pr
 /**
  * Replaces a user's mutable profile fields.
  *
- * @throws ApiError with `status` 400 (invalid role, over-length note), 404, or
+ * @throws ApiError with `status` 400 (invalid role, missing or malformed e-mail
+ *   address, over-length note), 404, or
  *   409 when the change would demote or disable the instance's last enabled
  *   maintainer — a state with no way back through the API, so the backend
  *   refuses it (`auth.ErrLastMaintainer`).

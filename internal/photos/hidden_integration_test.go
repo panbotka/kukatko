@@ -67,7 +67,8 @@ func newHiddenLibrary(t *testing.T) hiddenLibrary {
 func mustCreateUser(t *testing.T, db *database.DB, uid string) {
 	t.Helper()
 	if _, err := db.Pool().Exec(t.Context(),
-		`INSERT INTO users (uid, username, password_hash, role) VALUES ($1, $2, 'x', 'editor')`,
+		`INSERT INTO users (uid, username, email, password_hash, role)
+		 VALUES ($1, $2, $2||'@example.test', 'x', 'editor')`,
 		uid, uid); err != nil {
 		t.Fatalf("insert user %s: %v", uid, err)
 	}

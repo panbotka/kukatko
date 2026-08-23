@@ -91,8 +91,9 @@ func (a *API) handleListUsers(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleCreateUser creates a user (admin only). It responds 201 with the created
-// user, 400 for a bad body, weak password, invalid role, over-length username or
-// note, 409 for a duplicate username, or 500.
+// user, 400 for a bad body, weak password, invalid role, missing or malformed
+// e-mail address, over-length username or note, 409 for a duplicate username, or
+// 500.
 func (a *API) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	var req createUserRequest
 	if err := decodeJSON(w, r, &req); err != nil {
@@ -124,6 +125,8 @@ func writeCreateUserError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, ErrNoteTooLong.Error())
 	case errors.Is(err, ErrUsernameTooLong):
 		writeError(w, http.StatusBadRequest, ErrUsernameTooLong.Error())
+	case errors.Is(err, ErrInvalidEmail):
+		writeError(w, http.StatusBadRequest, ErrInvalidEmail.Error())
 	case errors.Is(err, ErrSubjectNotFound):
 		writeError(w, http.StatusBadRequest, ErrSubjectNotFound.Error())
 	default:
@@ -132,7 +135,8 @@ func writeCreateUserError(w http.ResponseWriter, err error) {
 }
 
 // handleUpdateUser replaces a user's profile fields (admin only). It responds 200
-// with the updated user, 400 for a bad body, invalid role, or over-length note,
+// with the updated user, 400 for a bad body, invalid role, missing or malformed
+// e-mail address, or over-length note,
 // 404 if the user does not exist, 409 when the change would demote or disable the
 // last enabled maintainer, or 500.
 func (a *API) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
@@ -205,8 +209,8 @@ func (a *API) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 }
 
 // writeUserMutationError maps the common user-mutation errors (invalid role,
-// over-length note, not found, last maintainer) onto HTTP statuses, falling back
-// to fallback as a 500 message.
+// invalid e-mail address, over-length note, not found, last maintainer) onto HTTP
+// statuses, falling back to fallback as a 500 message.
 //
 // ErrLastMaintainer is a 409, not a 403: the caller is allowed to make the
 // change, it is the instance's current state that forbids it, and promoting
@@ -221,6 +225,8 @@ func writeUserMutationError(w http.ResponseWriter, err error, fallback string) {
 		writeError(w, http.StatusBadRequest, "invalid role (want viewer, editor, admin, or maintainer)")
 	case errors.Is(err, ErrNoteTooLong):
 		writeError(w, http.StatusBadRequest, ErrNoteTooLong.Error())
+	case errors.Is(err, ErrInvalidEmail):
+		writeError(w, http.StatusBadRequest, ErrInvalidEmail.Error())
 	case errors.Is(err, ErrSubjectNotFound):
 		writeError(w, http.StatusBadRequest, ErrSubjectNotFound.Error())
 	case errors.Is(err, ErrUserNotFound):

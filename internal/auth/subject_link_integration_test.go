@@ -72,7 +72,7 @@ func (e *linkEnv) deleteSubject(t *testing.T, uid string) {
 func (e *linkEnv) seedUser(t *testing.T, username string, role auth.Role) auth.User {
 	t.Helper()
 	user, err := e.svc.CreateUser(t.Context(), auth.CreateUserInput{
-		Username: username, Password: "correct horse battery", Role: role,
+		Username: username, Email: username + "@example.test", Password: "correct horse battery", Role: role,
 	})
 	if err != nil {
 		t.Fatalf("creating user %s: %v", username, err)
@@ -233,7 +233,7 @@ func TestSubjectLink_adminSetsAndAudits(t *testing.T) {
 
 	status, body := env.do(t, admin, http.MethodPost, "/api/v1/admin/users",
 		`{"username":"novy","password":"correct horse battery","role":"viewer",`+
-			`"display_name":"","email":"","note":"","subject_uid":"sub_a"}`)
+			`"display_name":"","email":"novy@example.test","note":"","subject_uid":"sub_a"}`)
 	if status != http.StatusCreated {
 		t.Fatalf("POST /admin/users = %d, body %s", status, body)
 	}
@@ -249,7 +249,7 @@ func TestSubjectLink_adminSetsAndAudits(t *testing.T) {
 	}
 
 	status, body = env.do(t, admin, http.MethodPatch, "/api/v1/admin/users/"+created.UID,
-		`{"display_name":"","email":"","role":"viewer","disabled":false,"subject_uid":"sub_b"}`)
+		`{"display_name":"","email":"novy@example.test","role":"viewer","disabled":false,"subject_uid":"sub_b"}`)
 	if status != http.StatusOK {
 		t.Fatalf("PATCH /admin/users = %d, body %s", status, body)
 	}
@@ -267,7 +267,7 @@ func TestSubjectLink_adminSetsAndAudits(t *testing.T) {
 
 	// An omitted subject clears the link, because the update replaces the profile.
 	if status, body = env.do(t, admin, http.MethodPatch, "/api/v1/admin/users/"+created.UID,
-		`{"display_name":"","email":"","role":"viewer","disabled":false}`); status != http.StatusOK {
+		`{"display_name":"","email":"novy@example.test","role":"viewer","disabled":false}`); status != http.StatusOK {
 		t.Fatalf("PATCH /admin/users (clear) = %d, body %s", status, body)
 	}
 	if err := json.Unmarshal(body, &updated); err != nil {

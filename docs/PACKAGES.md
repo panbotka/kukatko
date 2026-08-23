@@ -75,6 +75,21 @@ to `## Package map` in `CLAUDE.md`.
   `adminUserResponse` (embedded `User` + `note`). Validation `validateNote` → `ErrNoteTooLong`
   (`MaxNoteLen` = 1000 **runes**) → 400. `UpdateUserInput.Note` is a `*string`: `nil` = leave as is,
   `""` = clear (SQL `note = COALESCE($6::text, note)`).
+  **The e-mail address is mandatory** (migration `0063_users_email_required.sql`): `users.email` keeps
+  its `NOT NULL` but loses the empty-string default and gains `users_email_not_empty`
+  (`CHECK (btrim(email) <> '')`). The migration first fills every blank address with an undeliverable
+  placeholder in the reserved `.invalid` domain — the username reduced to `[a-z0-9-]`, truncated to 31
+  characters and joined to the account's `uid` (`jan-novak-us…@kukatko.invalid`); the uid is what keeps
+  two usernames that reduce to the same local part apart. There is deliberately **no unique index**: a
+  household mailbox two accounts share is a real arrangement. `normalizeEmail`/`validateEmail`
+  (`service.go`, beside `validateUsername`) are the Go half — trim, lower-case the **domain** only, then
+  require a single `net/mail`-parseable address that comes back **unchanged** (so a display-name form or
+  a quoted local part with spaces is out), with a dot in the domain and at most `MaxEmailLen` = 254
+  bytes; otherwise `ErrInvalidEmail` → 400. `prepareNewUser` and `validateUserUpdate` both run it, the
+  latter returning the *normalized* input so what is stored is what was validated. `placeholderEmail`
+  gives the same `.invalid` address to the **bootstrap maintainer**, the one account created before
+  anybody could configure a mailbox; `internal/mailer` and `internal/mailjob` refuse such a recipient
+  rather than dialling it.
   **Username length cap** `validateUsername` → `ErrUsernameTooLong` (`MaxUsernameLen` = 64 **runes**)
   → 400, enforced in `handleLogin` (on the normalized name, *before* it becomes a limiter key) and in
   `prepareNewUser` (so no account is created that could never log in). Together with the `Limiter`'s

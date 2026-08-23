@@ -81,7 +81,7 @@ func (e *env) seed(t *testing.T, entries ...audit.Entry) {
 func (e *env) createUser(t *testing.T, username string, role auth.Role) string {
 	t.Helper()
 	user, err := e.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
-		Username: username, Password: testPassword, Role: role,
+		Username: username, Email: username + "@example.test", Password: testPassword, Role: role,
 	})
 	if err != nil {
 		t.Fatalf("CreateUser(%s): %v", username, err)
@@ -102,7 +102,7 @@ func (e *env) login(t *testing.T, username string, role auth.Role) *http.Client 
 func (e *env) loginUser(t *testing.T, username string, role auth.Role) (*http.Client, string) {
 	t.Helper()
 	user, err := e.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
-		Username: username, Password: testPassword, Role: role,
+		Username: username, Email: username + "@example.test", Password: testPassword, Role: role,
 	})
 	if err != nil {
 		t.Fatalf("CreateUser(%s): %v", username, err)

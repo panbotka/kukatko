@@ -49,6 +49,7 @@ func (f *fixture) makeUser(t *testing.T, uid, username, displayName string) stri
 	if err := f.users.CreateUser(context.Background(), auth.User{
 		UID:          uid,
 		Username:     username,
+		Email:        username + "@example.test",
 		DisplayName:  displayName,
 		PasswordHash: "x",
 		Role:         auth.RoleViewer,

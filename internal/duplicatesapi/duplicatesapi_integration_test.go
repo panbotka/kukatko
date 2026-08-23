@@ -81,7 +81,7 @@ func newEnv(t *testing.T) *env {
 func (e *env) login(t *testing.T, username string, role auth.Role) (*http.Client, string) {
 	t.Helper()
 	user, err := e.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
-		Username: username, Password: testPassword, Role: role,
+		Username: username, Email: username + "@example.test", Password: testPassword, Role: role,
 	})
 	if err != nil {
 		t.Fatalf("CreateUser(%s): %v", username, err)

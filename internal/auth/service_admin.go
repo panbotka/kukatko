@@ -24,7 +24,9 @@ const (
 )
 
 // CreateUserInput holds the fields needed to create a user (admin-only).
-// DisplayName and Note are both optional and default to the empty string.
+// DisplayName and Note are both optional and default to the empty string; Email
+// is not — every account receives mail, so a syntactically valid address is
+// required (see validateEmail).
 //
 // Its field order and types mirror createUserRequest so the HTTP layer can
 // convert between them directly; keep the two in step.
@@ -42,7 +44,9 @@ type CreateUserInput struct {
 
 // UpdateUserInput holds the mutable profile fields for an admin user update.
 // Note is a pointer to distinguish "absent" from "empty": nil leaves the stored
-// note untouched, while a pointer to "" clears it.
+// note untouched, while a pointer to "" clears it. Email has no such escape: the
+// update replaces the whole profile and an account may not end up without an
+// address, so every update carries a valid one.
 //
 // Its field order and types mirror updateUserRequest so the HTTP layer can
 // convert between them directly; keep the two in step.
@@ -72,7 +76,9 @@ func validateNote(note string) error {
 // Bootstrap creates the first account when the users table is empty and a
 // username and password are both provided. The account is created as a
 // maintainer — the top of the role ladder — so the instance always has a root
-// that can grant the maintainer role to others. It returns
+// that can grant the maintainer role to others. It is given a placeholder e-mail
+// address (see placeholderEmail), the one account allowed to start without a
+// real one. It returns
 // BootstrapSkippedHasUsers when users already exist,
 // BootstrapSkippedNoCredentials when credentials are missing, or
 // BootstrapCreated on success; errors are returned wrapped.
@@ -91,7 +97,12 @@ func (s *Service) Bootstrap(ctx context.Context, username, password string) (Boo
 		Username:    username,
 		Password:    password,
 		DisplayName: username,
-		Role:        RoleMaintainer,
+		// Nobody has been able to configure an address yet — the database is
+		// empty and this account is what unlocks the admin area — so the
+		// bootstrap maintainer gets an undeliverable placeholder and changes it
+		// from there. A first start must not need a mailbox.
+		Email: placeholderEmail(normalizeUsername(username)),
+		Role:  RoleMaintainer,
 	}); err != nil {
 		return BootstrapSkippedNoCredentials, err
 	}
@@ -142,8 +153,9 @@ func (s *Service) guardMaintainerBoundary(ctx context.Context, actor Role, uid s
 // test seeding); handlers that must attribute the action to an admin call
 // CreateUserAudited. It returns ErrInvalidRole for an unknown role,
 // ErrPasswordTooShort for a weak password, ErrUsernameTooLong or ErrNoteTooLong
-// for an over-length username or note, ErrUsernameTaken on a duplicate username,
-// and the created user on success.
+// for an over-length username or note, ErrInvalidEmail for a missing or
+// malformed e-mail address, ErrUsernameTaken on a duplicate username, and the
+// created user on success.
 func (s *Service) CreateUser(ctx context.Context, in CreateUserInput) (User, error) {
 	user, err := s.prepareNewUser(in)
 	if err != nil {
@@ -189,8 +201,8 @@ func (s *Service) CreateUserAudited(
 
 // prepareNewUser validates in and builds the User to insert, hashing the password
 // and assigning a fresh UID. It is shared by CreateUser and CreateUserAudited and
-// returns ErrInvalidRole, ErrUsernameTooLong, ErrPasswordTooShort or
-// ErrNoteTooLong on invalid input.
+// returns ErrInvalidRole, ErrUsernameTooLong, ErrPasswordTooShort,
+// ErrNoteTooLong or ErrInvalidEmail on invalid input.
 func (s *Service) prepareNewUser(in CreateUserInput) (User, error) {
 	if !in.Role.Valid() {
 		return User{}, ErrInvalidRole
@@ -202,6 +214,10 @@ func (s *Service) prepareNewUser(in CreateUserInput) (User, error) {
 		return User{}, err
 	}
 	if err := validateNote(in.Note); err != nil {
+		return User{}, err
+	}
+	email := normalizeEmail(in.Email)
+	if err := validateEmail(email); err != nil {
 		return User{}, err
 	}
 	hash, err := HashPassword(in.Password)
@@ -216,7 +232,7 @@ func (s *Service) prepareNewUser(in CreateUserInput) (User, error) {
 		UID:          uid,
 		Username:     username,
 		DisplayName:  in.DisplayName,
-		Email:        in.Email,
+		Email:        email,
 		Role:         in.Role,
 		PasswordHash: hash,
 		Note:         in.Note,
@@ -250,11 +266,13 @@ func (s *Service) GetUser(ctx context.Context, uid string) (User, error) {
 // handlers use UpdateUserAudited. When the update disables the account, all of
 // that user's sessions are invalidated so the change takes effect immediately. A
 // nil in.Note leaves the stored note untouched. It returns ErrInvalidRole for an
-// unknown role, ErrNoteTooLong for an over-length note, ErrUserNotFound if no
-// such user exists, and ErrLastMaintainer when demoting or disabling the account
-// would leave the instance without a single enabled maintainer.
+// unknown role, ErrInvalidEmail for a missing or malformed e-mail address,
+// ErrNoteTooLong for an over-length note, ErrUserNotFound if no such user
+// exists, and ErrLastMaintainer when demoting or disabling the account would
+// leave the instance without a single enabled maintainer.
 func (s *Service) UpdateUser(ctx context.Context, uid string, in UpdateUserInput) (User, error) {
-	if err := validateUserUpdate(in); err != nil {
+	in, err := validateUserUpdate(in)
+	if err != nil {
 		return User{}, err
 	}
 	user, err := s.store.UpdateUserProfile(ctx, uid, in)
@@ -278,7 +296,8 @@ func (s *Service) UpdateUserAudited(
 	if err := s.guardMaintainerBoundary(ctx, actor, uid, in.Role); err != nil {
 		return User{}, err
 	}
-	if err := validateUserUpdate(in); err != nil {
+	in, err := validateUserUpdate(in)
+	if err != nil {
 		return User{}, err
 	}
 	user, err := s.store.UpdateUserProfileAudited(ctx, uid, in, entry)
@@ -288,16 +307,24 @@ func (s *Service) UpdateUserAudited(
 	return s.invalidateIfDisabled(ctx, uid, in.Disabled, user)
 }
 
-// validateUserUpdate validates the role and optional note of an update input,
-// returning ErrInvalidRole or ErrNoteTooLong. A nil note skips the note check.
-func validateUserUpdate(in UpdateUserInput) error {
+// validateUserUpdate validates the role, e-mail address and optional note of an
+// update input and returns the input with the address normalized, so what the
+// caller stores is what was validated. A nil note skips the note check. It
+// returns ErrInvalidRole, ErrInvalidEmail or ErrNoteTooLong.
+func validateUserUpdate(in UpdateUserInput) (UpdateUserInput, error) {
 	if !in.Role.Valid() {
-		return ErrInvalidRole
+		return in, ErrInvalidRole
+	}
+	in.Email = normalizeEmail(in.Email)
+	if err := validateEmail(in.Email); err != nil {
+		return in, err
 	}
 	if in.Note != nil {
-		return validateNote(*in.Note)
+		if err := validateNote(*in.Note); err != nil {
+			return in, err
+		}
 	}
-	return nil
+	return in, nil
 }
 
 // SetUserDisabled enables or disables the user identified by uid without

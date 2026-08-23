@@ -2903,6 +2903,9 @@
       "usernameRequired": "Zadejte uživatelské jméno.",
       "password": "Heslo",
       "passwordHint": "Alespoň {{min}} znaků.",
+      "email": "E-mail",
+      "emailHint": "Na tuto adresu chodí oznámení o účtu, například obnova hesla. Povinné.",
+      "emailRequired": "Zadejte platnou e-mailovou adresu.",
       "role": "Role",
       "displayName": "Jméno",
       "note": "Poznámka",
@@ -2934,6 +2937,7 @@
     "errors": {
       "usernameTaken": "Toto uživatelské jméno je již obsazené.",
       "passwordTooShort": "Heslo musí mít alespoň {{min}} znaků.",
+      "invalidEmail": "Zadejte platnou e-mailovou adresu.",
       "invalidRole": "Neplatná role.",
       "noteTooLong": "Poznámka může mít nejvýše {{max}} znaků.",
       "lastMaintainer": "Toto je poslední aktivní správce systému. Kdyby přišel o roli nebo byl zakázán, nezůstal by nikdo, kdo ji může udělit zpět, a provozní část aplikace by se stala nedostupnou. Nejdřív povyšte na správce systému někoho dalšího.",
