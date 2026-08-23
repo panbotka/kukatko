@@ -582,6 +582,8 @@
         "create": "User created",
         "disable": "User access changed",
         "password": "User password changed",
+        "password_reset": "Password-reset link issued",
+        "password_reset_use": "Password reset through a link",
         "register": "User registered",
         "update": "User edited"
       }

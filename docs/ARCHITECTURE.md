@@ -374,6 +374,11 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
   `disabled`, which is an account that *was* let in and then blocked) and `welcome_seen_at`
   (NULL = the first-run welcome has never been seen), migration `0064_users_approval_welcome.sql`.
 - **`sessions`** — see [§11](#11-auth-a-bezpečnost) (sliding expiry added).
+- **`password_reset_tokens`** — one-time links with which somebody sets their own password
+  (migration `0065_password_reset_tokens.sql`): `token_hash` (hex SHA-256, UNIQUE — **only the hash**
+  is stored, so the table hands nobody a working link), `expires_at` (7 days), nullable `used_at`,
+  `user_uid` CASCADE and `issued_by_uid` SET NULL. Preserved by `kukatko maintenance reset` for the
+  same reason `sessions` is; pruned by the cleanup that removes expired sessions.
 - **`audit_log`** — durable, written **in the same transaction** as the mutation (migrations
   `0012_audit_log.sql` + `0014_audit_request.sql` add `ip`/`user_agent` and an index
   `(target_type, target_uid)`, package `internal/audit`: `Write(ctx, exec, Entry)` over the pool **and**
@@ -783,6 +788,10 @@ is the primary system and imports from nothing but the disk.
   **Improvements over the previous system:**
   - **Sliding expiry** — extension on activity (an active user doesn't get dropped after 30 days).
   - **A password change revokes the user's other sessions.**
+  - **A password reset by link revokes them all** — an administrator issues a one-time link
+    (`password_reset_tokens`, 7 days, only the hash stored, the newest link supersedes the previous),
+    the person behind it chooses their own password, and every session of that account is deleted.
+    Both public halves of it are rate-limited per client address.
   - **Rate-limit on `/auth/login`** (brute-force protection).
   - **Rate-limit on demanding endpoints** (`internal/ratelimit`) — a per-client-IP token-bucket
     (`ratelimit.*` config) on `POST /upload`, `POST /photos/bulk`, `POST /import/*` and

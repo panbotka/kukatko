@@ -2,20 +2,12 @@ package auth
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/panbotka/kukatko/internal/audit"
 )
-
-// lockUserForApprovalQuery reads one account and locks its row for the rest of
-// the transaction, so the decision that follows — is it blocked? has somebody
-// already approved it? — is made on a row nobody else can change underneath it.
-// Two administrators clicking at the same moment therefore queue, and the second
-// one sees the approval the first one wrote instead of stamping a second time.
-const lockUserForApprovalQuery = `SELECT ` + userColumns + ` FROM users WHERE uid = $1 FOR UPDATE`
 
 // approveUserQuery stamps the approval time on one account and returns the
 // refreshed row. updated_at moves with it: an administrator letting somebody in
@@ -50,11 +42,8 @@ func (s *Store) ApproveUserAudited(
 	}
 	var user User
 	err := s.inAuditedTx(ctx, entry, func(tx pgx.Tx) error {
-		current, err := scanUser(tx.QueryRow(ctx, lockUserForApprovalQuery, uid))
+		current, err := lockUser(ctx, tx, uid)
 		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return ErrUserNotFound
-			}
 			return err
 		}
 		if current.Disabled {

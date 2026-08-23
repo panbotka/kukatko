@@ -79,6 +79,11 @@ var catalogueTables = []string{
 // receives people — whether registration is open, its shared secret, the welcome
 // text — is not part of the photo library, and a reset that closed registration
 // and threw away the secret would lock out everybody the operator meant to keep.
+// password_reset_tokens stays for the same reason sessions does: it belongs to
+// the accounts, not to the library. A wipe that quietly voided the link an
+// administrator had just mailed to somebody locked out would be an outage for
+// that person, and the links are short-lived anyway — the periodic cleanup takes
+// them, not the reset.
 // And audit_log stays, because the record of the deletion is the only
 // thing left to read afterwards; the reset writes its own entry into it, in the
 // same transaction as the truncation.
@@ -87,6 +92,7 @@ var preservedTables = []string{
 	"api_tokens",
 	"audit_log",
 	"instance_settings",
+	"password_reset_tokens",
 	"schema_migrations",
 	"sessions",
 	"users",

@@ -312,3 +312,12 @@ func (s *Service) ChangePassword(
 func (s *Service) CleanupExpiredSessions(ctx context.Context) (int64, error) {
 	return s.store.DeleteExpiredSessions(ctx, s.now())
 }
+
+// CleanupFinishedPasswordResets deletes every reset link that can no longer be
+// used as of now — expired, or already consumed — returning the number removed.
+// It rides the same schedule as the expired-session cleanup (see RunCleanup):
+// both are rows whose only remaining purpose was to be refused, and the audit
+// trail keeps the permanent record of what happened to them.
+func (s *Service) CleanupFinishedPasswordResets(ctx context.Context) (int64, error) {
+	return s.store.DeleteFinishedPasswordResets(ctx, s.now())
+}

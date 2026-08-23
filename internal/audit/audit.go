@@ -225,6 +225,21 @@ const (
 	ActionUserDisable = "user.disable"
 	// ActionUserPassword records an admin password reset for a user.
 	ActionUserPassword = "user.password"
+	// ActionUserPasswordReset records an administrator issuing a one-time link
+	// with which somebody sets their own password. It is separate from
+	// ActionUserPassword because nothing has changed yet — a link was handed out —
+	// and because the two halves of the flow are answered by different people:
+	// this entry names the administrator, ActionUserPasswordResetUse names the
+	// account. Both carry the link's id in details.reset_id, which is what ties
+	// them together; the link itself is never recorded, only its hash is stored
+	// at all.
+	ActionUserPasswordReset = "user.password_reset"
+	// ActionUserPasswordResetUse records somebody spending such a link: the
+	// password is set, the link is burnt and every session of that account is
+	// invalidated. The account is both the actor and the target — the person
+	// behind the link proved only that they hold it — exactly as it is for a
+	// self-service registration.
+	ActionUserPasswordResetUse = "user.password_reset_use"
 	// ActionUserApprove records an administrator letting a waiting account in:
 	// approved_at goes from NULL to a time and the person is mailed that they can
 	// sign in. It is separate from ActionUserUpdate because it is the decision

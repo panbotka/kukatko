@@ -203,7 +203,8 @@ func TestRegisterLimiterFor_derivesTheLoginBudget(t *testing.T) {
 	t.Parallel()
 
 	const budget = 4
-	limiter := registerLimiterFor(APIConfig{Limiter: NewLimiter(budget, time.Minute)})
+	cfg := APIConfig{Limiter: NewLimiter(budget, time.Minute)}
+	limiter := perAddressLimiter(cfg.RegisterLimiter, cfg.Limiter)
 	for i := range budget {
 		if !limiter.Allow("198.51.100.7") {
 			t.Fatalf("attempt %d was throttled, want the first %d allowed", i+1, budget)

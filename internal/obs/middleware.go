@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,6 +16,31 @@ import (
 
 // metricsPath is skipped by AccessLog so scrape traffic does not flood the log.
 const metricsPath = "/metrics"
+
+// secretPathSegments are the path fragments after which the next segment is a
+// credential rather than an identifier — today only the one-time password-reset
+// link, whose whole token travels in the URL because that is what a link is.
+// Writing it into the access log would leave a working credential lying in a
+// file that outlives it, which is the same reason the database stores only a
+// hash of it.
+var secretPathSegments = []string{"/auth/password-reset/"}
+
+// redactedSegment stands in for a path segment that was a secret.
+const redactedSegment = "REDACTED"
+
+// logPath returns the request path as it may be written to the log: unchanged,
+// unless it carries a credential (see secretPathSegments), in which case
+// everything from that point on is replaced. The prefix is kept, so a log line
+// still says which endpoint was called and a 429 or a 404 on it is still
+// diagnosable.
+func logPath(path string) string {
+	for _, segment := range secretPathSegments {
+		if i := strings.Index(path, segment); i >= 0 {
+			return path[:i+len(segment)] + redactedSegment
+		}
+	}
+	return path
+}
 
 // fields is the mutable, request-scoped bag the AccessLog middleware installs in
 // the request context. Downstream middleware (notably auth) stamps the
@@ -105,7 +131,7 @@ func logRequest(
 	attrs := []slog.Attr{
 		slog.String("request_id", middleware.GetReqID(ctx)),
 		slog.String("method", r.Method),
-		slog.String("path", r.URL.Path),
+		slog.String("path", logPath(r.URL.Path)),
 		slog.String("route", routePattern(ctx)),
 		slog.Int("status", ww.Status()),
 		slog.Int("bytes", ww.BytesWritten()),

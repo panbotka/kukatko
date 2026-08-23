@@ -26,17 +26,21 @@ const usernameLimitFactor = 3
 
 // API exposes the auth domain over HTTP: it registers the /auth and admin
 // /users routes and provides the RBAC middleware. It bundles the service, the
-// two login rate limiters, the registration flow with its own per-address
-// limiter, and cookie settings.
+// two login rate limiters, the registration and password-reset flows with their
+// own per-address limiters, and cookie settings.
 type API struct {
 	svc             *Service
 	limiter         *Limiter
 	usernameLimiter *Limiter
 	registration    *Registration
 	approval        *Approval
+	passwordReset   *PasswordReset
 	registerLimit   *ratelimit.Limiter
-	secureCookies   bool
-	now             func() time.Time
+	// passwordResetLimit caps the two public halves of a password reset per
+	// client address; they are the only other unauthenticated routes here.
+	passwordResetLimit *ratelimit.Limiter
+	secureCookies      bool
+	now                func() time.Time
 }
 
 // APIConfig configures NewAPI.
@@ -59,6 +63,14 @@ type APIConfig struct {
 	// account in. Optional: when nil, NewAPI derives one that approves accounts
 	// and sends no mail, so an instance that wires no mail still has the action.
 	Approval *Approval
+	// PasswordReset is the "somebody forgot their password" flow. Optional: when
+	// nil, NewAPI derives one that issues links and sends no mail, so an instance
+	// that wires no mail can still hand an administrator a link to pass on.
+	PasswordReset *PasswordReset
+	// PasswordResetLimiter throttles the two public password-reset endpoints per
+	// client address. Optional: when nil, NewAPI derives one exactly as it does
+	// the registration limiter.
+	PasswordResetLimiter *ratelimit.Limiter
 	// RegisterLimiter throttles registration attempts per client address.
 	// Optional: when nil, NewAPI derives one from Limiter, so registration is
 	// capped as tightly as signing in — with the address as the whole key, since
@@ -71,14 +83,16 @@ type APIConfig struct {
 // NewAPI returns an API from cfg, using time.Now as its clock.
 func NewAPI(cfg APIConfig) *API {
 	return &API{
-		svc:             cfg.Service,
-		limiter:         cfg.Limiter,
-		usernameLimiter: usernameLimiterFor(cfg),
-		registration:    cfg.Registration,
-		approval:        approvalFor(cfg),
-		registerLimit:   registerLimiterFor(cfg),
-		secureCookies:   cfg.SecureCookies,
-		now:             time.Now,
+		svc:                cfg.Service,
+		limiter:            cfg.Limiter,
+		usernameLimiter:    usernameLimiterFor(cfg),
+		registration:       cfg.Registration,
+		approval:           approvalFor(cfg),
+		passwordReset:      passwordResetFor(cfg),
+		registerLimit:      perAddressLimiter(cfg.RegisterLimiter, cfg.Limiter),
+		passwordResetLimit: perAddressLimiter(cfg.PasswordResetLimiter, cfg.Limiter),
+		secureCookies:      cfg.SecureCookies,
+		now:                time.Now,
 	}
 }
 
@@ -106,18 +120,29 @@ func approvalFor(cfg APIConfig) *Approval {
 	return NewApproval(ApprovalConfig{Service: cfg.Service})
 }
 
-// registerLimiterFor returns the per-address registration limiter cfg asks for,
-// deriving one from the login budget when the caller supplied none: the same
-// number of attempts over the same window, spent from one bucket per client
-// address. That is at least as strict as signing in, whose budget is split per
-// username as well, which is the point — a registration names no existing
-// account, so the address is all there is to attribute it to.
-func registerLimiterFor(cfg APIConfig) *ratelimit.Limiter {
-	limiter := cfg.RegisterLimiter
-	if limiter != nil {
-		return limiter
+// passwordResetFor returns the password-reset flow cfg asks for, deriving a
+// mail-less one from the service when the caller supplied none. Like Approval it
+// is not optional the way Registration is: an administrator must always be able
+// to start a reset, including on an instance that sends no mail — the link comes
+// back in the response, which is precisely what that case needs.
+func passwordResetFor(cfg APIConfig) *PasswordReset {
+	if cfg.PasswordReset != nil {
+		return cfg.PasswordReset
 	}
-	login := cfg.Limiter
+	return NewPasswordReset(PasswordResetConfig{Service: cfg.Service})
+}
+
+// perAddressLimiter returns custom when the caller supplied one, and otherwise
+// derives a per-client-address limiter from the login budget: the same number of
+// attempts over the same window, spent from one bucket per address. That is at
+// least as strict as signing in, whose budget is split per username as well,
+// which is the point — a registration names no existing account and a reset link
+// names one only in a token nobody may guess, so the address is all there is to
+// attribute either to.
+func perAddressLimiter(custom *ratelimit.Limiter, login *Limiter) *ratelimit.Limiter {
+	if custom != nil {
+		return custom
+	}
 	if login == nil {
 		login = NewLimiter(usernameLimitFactor, time.Minute)
 	}
@@ -125,7 +150,8 @@ func registerLimiterFor(cfg APIConfig) *ratelimit.Limiter {
 }
 
 // RunMaintenance periodically prunes the stale keys of the two login rate
-// limiters and of the registration limiter until ctx is canceled. It is meant to
+// limiters and of the registration and password-reset limiters until ctx is
+// canceled. It is meant to
 // run in its own goroutine alongside the service's session cleanup.
 func (a *API) RunMaintenance(ctx context.Context, interval time.Duration) {
 	ticker := time.NewTicker(interval)
@@ -139,6 +165,7 @@ func (a *API) RunMaintenance(ctx context.Context, interval time.Duration) {
 			a.limiter.Cleanup(now)
 			a.usernameLimiter.Cleanup(now)
 			a.registerLimit.Cleanup(now)
+			a.passwordResetLimit.Cleanup(now)
 		}
 	}
 }

@@ -77,6 +77,14 @@ func newHTTPEnvWithProxies(t *testing.T, loginLimit int, trusted []string) *http
 			Mail:      mail,
 			SignInURL: testSignInURL,
 		}),
+		// Password resets go through the same queue, so a test reads the link
+		// off a real `mail_send` job — and the base is a real absolute URL, so
+		// the link an administrator is handed is the one that was mailed.
+		PasswordReset: auth.NewPasswordReset(auth.PasswordResetConfig{
+			Service:  svc,
+			Mail:     mail,
+			LinkBase: testResetLinkBase,
+		}),
 	})
 
 	trustedSet, err := clientip.ParseSet(trusted)
@@ -100,6 +108,10 @@ func newHTTPEnvWithProxies(t *testing.T, loginLimit int, trusted []string) *http
 // testSignInURL is the address the approval mail points at in these tests, the
 // stand-in for mail.base_url + /login.
 const testSignInURL = "https://kukatko.example.test/login"
+
+// testResetLinkBase is the base of a password-reset link in these tests, the
+// stand-in for mail.base_url + /password-reset.
+const testResetLinkBase = "https://kukatko.example.test/password-reset"
 
 // probeOK is a trivial handler used behind RBAC middleware in tests.
 func probeOK(w http.ResponseWriter, _ *http.Request) {

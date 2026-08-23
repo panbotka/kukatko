@@ -17,7 +17,7 @@ import (
 
 // buildAuth assembles the auth subsystem from configuration and the database:
 // the store, the session service, the login rate limiter, the self-service
-// registration flow, and the HTTP API. The returned API mounts the auth routes;
+// registration flow, the password-reset flow, and the HTTP API. The returned API mounts the auth routes;
 // the returned Service is used for bootstrap and the background session-cleanup
 // loop.
 //
@@ -44,11 +44,17 @@ func buildAuth(cfg *config.Config, db *database.DB) (*auth.API, *auth.Service) {
 		Mail:      mail,
 		SignInURL: signInURL(cfg.Mail.BaseURL),
 	})
+	passwordReset := auth.NewPasswordReset(auth.PasswordResetConfig{
+		Service:  svc,
+		Mail:     mail,
+		LinkBase: passwordResetURL(cfg.Mail.BaseURL),
+	})
 	api := auth.NewAPI(auth.APIConfig{
 		Service:       svc,
 		Limiter:       limiter,
 		Registration:  registration,
 		Approval:      approval,
+		PasswordReset: passwordReset,
 		SecureCookies: cfg.Web.SecureCookies,
 	})
 	return api, svc
@@ -68,6 +74,23 @@ func signInURL(baseURL string) string {
 		return ""
 	}
 	return base + signInPath
+}
+
+// passwordResetPath is the frontend route where somebody follows a reset link
+// and chooses a new password; the token is the last path segment.
+const passwordResetPath = "/password-reset"
+
+// passwordResetURL builds the base of a reset link from this instance's public
+// URL, tolerating a trailing slash. An empty base yields an empty one, which
+// makes the auth package fall back to the site-relative path — the honest answer
+// for an instance nobody told its own address, and still a link an administrator
+// can paste after their host.
+func passwordResetURL(baseURL string) string {
+	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if base == "" {
+		return ""
+	}
+	return base + passwordResetPath
 }
 
 // runBootstrap creates the initial admin account if the users table is empty and

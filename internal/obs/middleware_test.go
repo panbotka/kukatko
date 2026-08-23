@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -87,4 +88,20 @@ func decodeLogLine(t *testing.T, b []byte) map[string]any {
 		t.Fatalf("decoding log line %q: %v", b, err)
 	}
 	return line
+}
+
+// TestLogPath_redactsAResetToken pins that a one-time password-reset link never
+// reaches the access log: the endpoint stays readable, the credential does not.
+func TestLogPath_redactsAResetToken(t *testing.T) {
+	const token = "3PYuXZ0m7Qk1nB2vLd4sTgHjKfWc8RaE"
+	got := logPath("/api/v1/auth/password-reset/" + token)
+	if strings.Contains(got, token) {
+		t.Errorf("logPath kept the token: %q", got)
+	}
+	if want := "/api/v1/auth/password-reset/" + redactedSegment; got != want {
+		t.Errorf("logPath = %q, want %q", got, want)
+	}
+	if plain := "/api/v1/photos/ph123"; logPath(plain) != plain {
+		t.Errorf("logPath rewrote an ordinary path: %q", logPath(plain))
+	}
 }

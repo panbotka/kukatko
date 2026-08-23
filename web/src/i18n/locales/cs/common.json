@@ -586,6 +586,8 @@
         "create": "Vytvoření uživatele",
         "disable": "Změna přístupu uživatele",
         "password": "Změna hesla uživatele",
+        "password_reset": "Vydání odkazu pro obnovení hesla",
+        "password_reset_use": "Obnovení hesla přes odkaz",
         "register": "Registrace uživatele",
         "update": "Úprava uživatele"
       }

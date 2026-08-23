@@ -463,9 +463,10 @@ func (s *Service) invalidateSessions(ctx context.Context, uid string) error {
 	return nil
 }
 
-// RunCleanup periodically deletes expired sessions until ctx is canceled. It is
-// meant to run in its own goroutine; the interval is typically one hour. Cleanup
-// errors are logged and do not stop the loop.
+// RunCleanup periodically deletes expired sessions and the password-reset links
+// that can no longer be used until ctx is canceled. It is meant to run in its own
+// goroutine; the interval is typically one hour. Cleanup errors are logged and do
+// not stop the loop, and neither half stops the other from running.
 func (s *Service) RunCleanup(ctx context.Context, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -474,11 +475,22 @@ func (s *Service) RunCleanup(ctx context.Context, interval time.Duration) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if n, err := s.CleanupExpiredSessions(ctx); err != nil {
-				log.Printf("auth: session cleanup failed: %v", err)
-			} else if n > 0 {
-				log.Printf("auth: cleaned up %d expired session(s)", n)
-			}
+			s.cleanupOnce(ctx)
 		}
+	}
+}
+
+// cleanupOnce runs both prunes of one tick, logging what each removed. It is
+// separate from the loop so a test can exercise it without a ticker.
+func (s *Service) cleanupOnce(ctx context.Context) {
+	if n, err := s.CleanupExpiredSessions(ctx); err != nil {
+		log.Printf("auth: session cleanup failed: %v", err)
+	} else if n > 0 {
+		log.Printf("auth: cleaned up %d expired session(s)", n)
+	}
+	if n, err := s.CleanupFinishedPasswordResets(ctx); err != nil {
+		log.Printf("auth: password-reset cleanup failed: %v", err)
+	} else if n > 0 {
+		log.Printf("auth: cleaned up %d finished password-reset link(s)", n)
 	}
 }

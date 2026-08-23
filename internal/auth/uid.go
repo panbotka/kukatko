@@ -14,6 +14,10 @@ const (
 	// apiTokenIDPrefix marks UIDs that identify api_tokens rows. It also appears
 	// in the plaintext credential, as the lookup key of "kkt_<id>_<secret>".
 	apiTokenIDPrefix = "at"
+	// passwordResetIDPrefix marks UIDs that identify password_reset_tokens rows.
+	// It names the row, never the link: the token itself is random bytes and is
+	// only ever stored as a hash.
+	passwordResetIDPrefix = "pr"
 	// uidSuffixLen is the number of random characters appended after the prefix.
 	// At ~5 bits per character this yields ~120 bits of entropy, and with the
 	// two-character prefixes the total stays at 26 — well within VARCHAR(32).

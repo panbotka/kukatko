@@ -7,10 +7,12 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
 - **Auth API (`/api/v1`):** `POST /auth/login` (set HttpOnly+SameSite=Strict cookie + opaque
   `download_token`), `POST /auth/register` (anonymous, see below), `POST /auth/logout`,
   `GET /auth/me`, `POST /auth/password` (revokes other
-  sessions), `PUT /auth/subject`, `POST /auth/welcome-seen`. Admin-only: `GET|POST /admin/users`,
+  sessions), `GET|POST /auth/password-reset/{token}` (anonymous, see below), `PUT /auth/subject`,
+  `POST /auth/welcome-seen`. Admin-only: `GET|POST /admin/users`,
   `PATCH /admin/users/{uid}`, `POST /admin/users/{uid}/approve`,
   `POST /admin/users/{uid}/disable`, `POST /admin/users/{uid}/password` (reset revokes all of the
-  user's sessions). Responses of the admin user endpoints carry a free-form **`note`** alongside
+  user's sessions), `POST /admin/users/{uid}/password-reset` (see below).
+  Responses of the admin user endpoints carry a free-form **`note`** alongside
   `display_name` (an admin note on why the account exists / who it is). Both fields are optional,
   defaulting to the empty string. A `note` longer than **1000 characters** (runes, not bytes) → 400
   with a message naming the field. `PATCH` gives `note` **partial-update** semantics: an omitted key
@@ -140,6 +142,38 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   approval one mail is enqueued on the job queue (`account_approved`, `mail_send`) **in the same
   transaction** as the stamp and the `user.approve` audit entry, so a rolled-back approval promises
   nobody anything; its sign-in link is `mail.base_url` + `/login`.
+  **Password reset by link — three endpoints.** They exist because `POST /admin/users/{uid}/password`
+  works but means the administrator learns a password its owner may use elsewhere; a link moves the
+  choice back to that owner.
+  **`POST /admin/users/{uid}/password-reset` (admin)** — no body; **200**
+  `{reset_url, expires_at, email}`. It mints a one-time token valid for **7 days**, enqueues the
+  `password_reset` mail carrying the link to the account's address (`mail_send`, in the **same
+  transaction** as the token and its `user.password_reset` audit entry) **and answers the whole link**,
+  so an administrator can also pass it on by hand — which is the only way on an instance with
+  `mail.enabled: false` or an account with a placeholder `.invalid` address. **Issuing invalidates the
+  account's earlier unused link**: only the most recent one works. The **maintainer boundary** applies
+  (an admin resetting a **maintainer** → **403**), a blocked account is **409** (`auth: user is
+  disabled`) — a link that could never be used would only make somebody wait — and an unknown UID is
+  **404**. The link is `mail.base_url` + `/password-reset/<token>`; the database keeps only a SHA-256
+  **hash** of the token, so reading the table hands nobody a working link.
+  **`GET /auth/password-reset/{token}` (no authentication)** — **always 200**: `{"valid": false}` for a
+  link that is unknown, already used, expired or whose account has since been blocked (the four are
+  deliberately indistinguishable), and `{"valid": true, "display_name", "expires_at"}` for a usable
+  one, so the page can say *this link has expired* instead of showing a form that is going to fail. It
+  publishes **nothing else** about the account — a display name to greet the person with is the most a
+  bearer of the token needs.
+  **`POST /auth/password-reset/{token}` (no authentication)** — body `{password}` (unknown fields →
+  400) → **204**. The token is **consumed**, so a second use fails; **all** of that account's sessions
+  are deleted, including any signed in at that moment; the password goes through the same length rule
+  and the same bcrypt hashing as every other password change (**400**, `auth: password must be at
+  least 8 characters`, for a weak one — and a refused password does **not** spend the link). Every
+  unusable link is one unspecific **404** (`auth: the password-reset link is not valid`). The
+  consumption is audited as `user.password_reset_use` with the account as **both actor and target**, in
+  the same transaction; both entries carry the link's id in `details.reset_id`, which is what ties an
+  issued link to its use.
+  Both public endpoints are **rate-limited per client address** (`internal/ratelimit` middleware →
+  **429**) out of the login budget, exactly like `POST /auth/register`. Expired and consumed rows are
+  pruned by the hourly cleanup that already removes expired sessions.
   **`GET /admin/users?pending=` — finding the accounts that are waiting.** `pending=true` lists only
   the accounts with `approved_at = null`, `pending=false` only the ones already let in, and an absent
   parameter everybody (the default). A value that is not a boolean → **400** (`pending must be true or

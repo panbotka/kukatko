@@ -36,6 +36,26 @@ const userColumns = `uid, username, display_name, email, password_hash, role,
 	disabled, created_at, updated_at, last_login_at, COALESCE(note, '') AS note,
 	subject_uid, approved_at, welcome_seen_at`
 
+// lockUserQuery reads one account and locks its row for the rest of the
+// transaction, so the decision that follows — is it blocked? has somebody
+// already approved it? has this link been spent? — is made on a row nobody else
+// can change underneath it. Two administrators clicking at the same moment
+// therefore queue, and the second one sees what the first one wrote.
+const lockUserQuery = `SELECT ` + userColumns + ` FROM users WHERE uid = $1 FOR UPDATE`
+
+// lockUser reads the account identified by uid on tx and locks its row (see
+// lockUserQuery). A missing account is ErrUserNotFound.
+func lockUser(ctx context.Context, tx pgx.Tx, uid string) (User, error) {
+	user, err := scanUser(tx.QueryRow(ctx, lockUserQuery, uid))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return User{}, ErrUserNotFound
+		}
+		return User{}, err
+	}
+	return user, nil
+}
+
 // scanUser reads one user row in userColumns order from a pgx.Row (a single-row
 // QueryRow result or a row during iteration), returning a wrapped error on
 // failure.

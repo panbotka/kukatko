@@ -214,6 +214,11 @@ were written.
   nobody has to be found by reading the whole list. Approving hands out no rights beyond reading —
   raising a role stays a separate, deliberate edit — approving twice is harmless, and a blocked
   account is not approved but unblocked, which is its own action.
+- **Nobody has to be told their own password.** When somebody forgets theirs, an administrator
+  starts a reset instead of inventing a password for them: Kukátko mails that person a one-time link,
+  valid for a week, where they choose their own — and hands the administrator the same link to pass
+  on by hand if the mailbox does not work. Using it signs out every session of that account, the link
+  works exactly once, and issuing a new one kills the old.
 - **One dashboard that answers "what is in the library and is it healthy?"** — what the catalogue
   holds and what it weighs, what arrived in the last day/week/month/year, the backlogs still to work
   through (faces without a name, photos with no date or place, duplicates), the background queue

@@ -82,9 +82,10 @@ to `## Package map` in `CLAUDE.md`.
   reading them fails soft, and so does an individual notice that will not schedule — the person's own
   confirmation is the only mail whose failure fails the registration. The audit entry
   (`audit.ActionUserRegister`, `user.register`) names the new account as both actor and target and is
-  written in that same transaction. `registerLimiterFor` derives the endpoint's per-address
-  `ratelimit.Limiter` from the login budget when the caller supplies none, and `RegisterRoutes` mounts
-  it as middleware on the route — the one write an anonymous caller may perform.
+  written in that same transaction. `perAddressLimiter` derives the endpoint's per-address
+  `ratelimit.Limiter` from the login budget when the caller supplies none (shared with the
+  password-reset endpoints as `perAddressLimiter`), and `RegisterRoutes` mounts it as middleware on the
+  route — one of the two writes an anonymous caller may perform.
   **Approving a waiting account** (`approval.go`, `store_user_approve.go`) is the administrator's half
   of that flow, behind `POST /admin/users/{uid}/approve`. It is its own type, `Approval` (built with
   `NewApproval`, wired into `APIConfig.Approval`), for the same reason `Registration` is one — it sends
@@ -103,6 +104,34 @@ to `## Package map` in `CLAUDE.md`.
   mail's link comes from `ApprovalConfig.SignInURL`, built in `cmd/kukatko` by `signInURL(cfg.Mail.BaseURL)`
   (`mail.base_url` + `/login`; empty when no public URL is configured — the instances that reach that
   case send nothing anyway).
+  **Password reset by link** (`passwordreset.go`, `store_passwordreset.go`, `handlers_passwordreset.go`,
+  migration `0065_password_reset_tokens.sql`) lets an administrator start a reset for somebody without
+  ever learning the password that comes out of it. It is its own type, `PasswordReset` (built with
+  `NewPasswordReset`, wired into `APIConfig.PasswordReset`, derived mail-less by `passwordResetFor`
+  when the caller supplies none — the link comes back in the response, which is exactly what an
+  instance without mail needs), holding the `MailScheduler`, the link base and the TTL.
+  `PasswordResetTTL` is **7 days**: the person is by definition locked out and may read the mail after
+  a weekend away, and the window costs nothing — the token is 256 bits, single-use, and issuing a new
+  link deletes the old.
+  `password_reset_tokens` stores **only a hash** of the token (`hashPasswordResetToken`, hex SHA-256 —
+  not bcrypt, for the reason at `hashAPITokenSecret`: a full-entropy secret has no dictionary to
+  defend against, and the hash is the table's `UNIQUE` lookup key), with `user_uid` **ON DELETE
+  CASCADE** (a token of a deleted account is not a token) and `issued_by_uid` **ON DELETE SET NULL**
+  (removing an administrator must not void links other people hold). The table is **preserved** by
+  `kukatko maintenance reset` for the same reason `sessions` is (see `internal/reset`).
+  `Store.IssuePasswordResetAudited` runs one transaction: `lockUser` (`SELECT … FOR UPDATE`, shared
+  with the approval path) → `ErrUserDisabled` for a blocked account → delete the account's **unused**
+  links (which is the whole of "only the most recent link works") → insert → the `alongside` hook that
+  enqueues the `password_reset` mail → the audit entry (`user.password_reset`, details `reset_id` +
+  `expires_at`). `Store.ConsumePasswordResetAudited` is the mirror: `lockPasswordReset` by hash →
+  `Usable(at)` → `lockUser` → set the hash, stamp `used_at` (conditionally, so a racing second request
+  loses), delete **every** session of the account, audit entry (`user.password_reset_use`, actor =
+  target = the account). Every refusal a public caller can trigger — unknown, spent, expired, blocked —
+  collapses into the single `ErrPasswordResetInvalid`, so the token cannot be probed.
+  `Service.CleanupFinishedPasswordResets` prunes expired and consumed rows on the same hourly tick as
+  the expired sessions (`cleanupOnce`, called by `RunCleanup`). The link base comes from `cmd/kukatko`'s
+  `passwordResetURL(cfg.Mail.BaseURL)` (`mail.base_url` + `/password-reset`); an empty base falls back
+  to the site-relative path.
   **The user listing takes an approval filter**: `Store.ListUsers(ctx, UserFilter{Pending *bool})` —
   `true` only the accounts waiting for an administrator, `false` only the ones let in, `nil` everybody —
   expressed as `($1::boolean IS NULL OR (approved_at IS NULL) = $1)` so the roster stays one query.
