@@ -36,6 +36,13 @@ vi.mock('./services/settings', () => ({
   fetchPublicSettings: vi.fn(() => Promise.resolve({ registration_enabled: true })),
 }))
 
+// The password-reset landing route checks its link on mount; stub the call (never
+// resolving) so the route test exercises the wiring, not the network.
+vi.mock('./services/auth', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./services/auth')>()
+  return { ...actual, fetchPasswordResetStatus: vi.fn(() => new Promise(() => undefined)) }
+})
+
 const { fetchPhotos, fetchTimeline } = await import('./services/photos')
 const fetchPhotosMock = vi.mocked(fetchPhotos)
 const fetchTimelineMock = vi.mocked(fetchTimeline)
@@ -147,6 +154,17 @@ describe('routing', () => {
       await screen.findByRole('heading', { level: 1, name: 'Registration' }),
     ).toBeInTheDocument()
     expect(screen.getByTestId('pathname')).toHaveTextContent('/register')
+  })
+
+  it('renders the password-reset landing page at /password-reset/:token without a session', async () => {
+    // Whoever follows a reset link is locked out of the very account it belongs
+    // to, so the route must resolve outside RequireAuth like registration does.
+    renderRoutes(['/password-reset/tok-123'], 0, unauthenticated)
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'New password' }),
+    ).toBeInTheDocument()
+    expect(screen.getByTestId('pathname')).toHaveTextContent('/password-reset/tok-123')
   })
 
   it('renders the help page at /help for any authenticated user', async () => {

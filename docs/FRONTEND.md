@@ -1151,6 +1151,31 @@ here.
   approves it, and a sign-in attempt meanwhile is exactly the 403 `LoginPage` words as
   `login.errorPendingApproval`. Texts in `register.*`; `RegisterPage.test.tsx` covers a successful
   submission, mismatched passwords, a wrong secret, a taken username and the closed state,
+  `PasswordResetPage` (route **`/password-reset/:token`**, the landing page of the one-time link
+  `POST /admin/users/{uid}/password-reset` mints — **public like sign-in and registration**, because
+  whoever follows it is locked out of the very account it belongs to, and laid out as the same
+  one-column Superhero card): the link is checked **before** there is anything to fill in
+  (`fetchPasswordResetStatus`, a spinner while it is asked, `data-testid="password-reset-checking"`) —
+  an empty form that every submit would refuse is worse than no form. A **usable** link greets the
+  person by the display name the status carries (`passwordReset.greeting`) and asks for the new
+  password twice; the two are compared **here**, before anything is sent, since the server never sees
+  the second one, and the length rule is stated up front in the same words the account screen uses
+  (`passwordReset.passwordHint`, `MIN_PASSWORD_LENGTH`). An **unusable** one — unknown, already used,
+  expired or belonging to a blocked account, which the backend deliberately answers alike — gets one
+  explanation and the way to sign-in (`passwordReset.invalidTitle/invalidBody`,
+  `data-testid="password-reset-invalid"`), and says nothing that would tell a stranger whether the
+  account exists. A **404 at submission time** (the link died between opening the page and sending it)
+  is turned back into exactly that explanation rather than a rejection of what was typed; 400 lands
+  under the password field, 429 and `NetworkError` in an alert above the form. A **failed check** is
+  its own state (`data-testid="password-reset-unreachable"`, a retry button re-asking the endpoint):
+  "we could not ask" is not "the link is dead", and the wrong one of those sends somebody off
+  requesting a replacement they do not need. Success **replaces** the form with the confirmation
+  (`data-testid="password-reset-done"`): the password is changed, **every other session of the account
+  is gone**, and the next step is to sign in — nobody is signed in automatically, because the call that
+  set the password is the same one that ended every session there was. Texts in `passwordReset.*`;
+  `PasswordResetPage.test.tsx` covers the check-before-form state, a usable link, a successful change,
+  mismatched passwords, a dead link on opening, a link that dies between opening and submitting, a
+  server-refused password and an unreachable check,
   `AccountPage` = identity/role, **the Jazyk section** (`LanguageSwitcher` +
   a hint, `account.language*`) and changing your own password, **plus the app's technical status**
   (`GET /healthz` badge + version, without the commit hash) in a small muted row at the bottom — status and language
@@ -4217,6 +4242,15 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   returns no session either, because registering deliberately does not sign anybody in. Its rejections are
   what `RegisterPage` reads: 403 closed/wrong secret told apart by the message, 409 taken, 400 validation,
   429 the per-address budget),
+  **`fetchPasswordResetStatus(token, signal)`** over `GET /api/v1/auth/password-reset/{token}` →
+  `PasswordResetStatus{valid, display_name?, expires_at?}` and **`resetPassword(token, password,
+  signal)`** over `POST` to the same path → 204 (the pair behind `PasswordResetPage`: both are
+  anonymous — the reader is locked out by definition — and send **no credentials**. The status call
+  answers 200 for every link, so a rejection from it means the question could not be asked at all,
+  which is **not** a dead link; `resetPassword` spends the link and ends **every** session of that
+  account, and its 404 — unknown, used, expired or blocked, one unspecific answer for all four — is
+  what the page turns back into the expired-link explanation, while 400 is a password the length rule
+  refused and does not spend the link),
   `isNotFound(err)` (a 404 = "there is no such thing", which the detail pages tell apart from a failed
   load so a link out of the audit log to something deleted explains itself),
   `roleAtLeast`, `canWrite` (editor+), `isAdmin` (admin+), `isMaintainer` (maintainer) and

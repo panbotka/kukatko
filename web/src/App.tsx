@@ -31,6 +31,7 @@ import { MapPage } from './pages/MapPage'
 import { MyActivityPage } from './pages/MyActivityPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { OutliersPage } from './pages/OutliersPage'
+import { PasswordResetPage } from './pages/PasswordResetPage'
 import { PeoplePage } from './pages/PeoplePage'
 import { PhotoDetailPage } from './pages/PhotoDetailPage'
 import { PlacesPage } from './pages/PlacesPage'
@@ -50,10 +51,11 @@ import { UploadPage } from './pages/UploadPage'
 import { UsersPage } from './pages/UsersPage'
 
 /**
- * The app's route table. `/login` and `/register` are public; everything else is gated by
- * {@link RequireAuth} and rendered under the shared layout shell. Exported apart
- * from {@link App} so tests can mount it inside a `MemoryRouter` and assert on
- * the wiring itself (which path renders what, and where `/library` forwards to).
+ * The app's route table. `/login`, `/register` and `/password-reset/:token` are
+ * public; everything else is gated by {@link RequireAuth} and rendered under the
+ * shared layout shell. Exported apart from {@link App} so tests can mount it
+ * inside a `MemoryRouter` and assert on the wiring itself (which path renders
+ * what, and where `/library` forwards to).
  */
 export function AppRoutes() {
   return (
@@ -63,6 +65,11 @@ export function AppRoutes() {
           nobody signed in yet. The page itself asks the instance whether
           registration is open and says so when it is not. */}
       <Route path="/register" element={<RegisterPage />} />
+      {/* The landing page of a password-reset link, public for the same reason:
+          whoever follows it is locked out of the account it belongs to. The page
+          asks the backend whether the link is still usable before it shows a
+          form, and never signs anybody in. */}
+      <Route path="/password-reset/:token" element={<PasswordResetPage />} />
       <Route element={<RequireAuth />}>
         {/* Fullscreen slideshow lives outside the layout shell (no navbar). */}
         <Route path="/slideshow" element={<SlideshowPage />} />

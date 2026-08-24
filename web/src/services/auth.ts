@@ -312,6 +312,77 @@ export async function setMySubject(subjectUid: string | null, signal?: AbortSign
 export const MIN_PASSWORD_LENGTH = 8
 
 /**
+ * What an unauthenticated caller learns about a password-reset link
+ * (`GET /auth/password-reset/{token}`), mirroring backend
+ * `auth.PasswordResetStatus`.
+ *
+ * `valid: false` is the single answer to an unknown, already used, expired or
+ * blocked link — the four are deliberately indistinguishable, so a page reading
+ * this can say *the link no longer works* but never *there is no such account*.
+ * A usable link additionally carries whom to greet and when it stops working;
+ * nothing else about the account is published.
+ */
+export interface PasswordResetStatus {
+  valid: boolean
+  display_name?: string
+  expires_at?: string
+}
+
+/**
+ * Asks whether a password-reset link is still usable. No authentication: the
+ * whole point is that the reader is locked out.
+ *
+ * The endpoint answers 200 for every link, usable or not, so a rejection here
+ * means the question could not be asked at all — which is *not* the same as a
+ * dead link and must not be shown as one.
+ *
+ * @throws ApiError with `status` 429 (the per-address budget is spent) or 5xx.
+ * @throws NetworkError when the request never reached the backend.
+ */
+export async function fetchPasswordResetStatus(
+  token: string,
+  signal?: AbortSignal,
+): Promise<PasswordResetStatus> {
+  const res = await apiFetch(`/auth/password-reset/${encodeURIComponent(token)}`, {
+    method: 'GET',
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+  return (await res.json()) as PasswordResetStatus
+}
+
+/**
+ * Sets the password chosen behind a reset link. The link is spent by this call
+ * and **every** session of that account is ended, including one signed in at
+ * that moment — so the caller must say so rather than quietly signing anybody
+ * in: there is no session here, and none is handed out.
+ *
+ * @throws ApiError with `status` 404 (the link is unknown, already used, expired
+ *   or its account has been blocked — one unspecific answer for all four), 400
+ *   (the password is shorter than {@link MIN_PASSWORD_LENGTH}; a refused
+ *   password does not spend the link), 429 or 5xx.
+ * @throws NetworkError when the request never reached the backend, which the
+ *   form must say out loud instead of claiming the link died.
+ */
+export async function resetPassword(
+  token: string,
+  password: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  const res = await apiFetch(`/auth/password-reset/${encodeURIComponent(token)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password }),
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+}
+
+/**
  * A personal API token, mirroring the backend `auth.APIToken` JSON shape. It is
  * a long-lived bearer credential for non-interactive clients (the `kukatko ctl`
  * CLI, scripts, agents) that inherits its owner's role — there is no second
