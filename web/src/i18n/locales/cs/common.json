@@ -2947,7 +2947,9 @@
     "maintainerManageHint": "Účet správce systému může spravovat jen jiný správce systému.",
     "empty": {
       "title": "Žádní uživatelé",
-      "hint": "Vytvořte první účet tlačítkem „Nový uživatel“."
+      "hint": "Vytvořte první účet tlačítkem „Nový uživatel“.",
+      "noPendingTitle": "Nikdo nečeká",
+      "noPendingHint": "Žádný účet teď nečeká na schválení. Vypněte filtr a uvidíte všechny."
     },
     "columns": {
       "username": "Uživatelské jméno",
@@ -2958,11 +2960,13 @@
       "lastLogin": "Poslední přihlášení",
       "created": "Vytvořen",
       "actions": "Akce",
-      "subject": "Osoba"
+      "subject": "Osoba",
+      "email": "E-mail"
     },
     "state": {
       "enabled": "Aktivní",
-      "disabled": "Zakázaný"
+      "disabled": "Zakázaný",
+      "pending": "Čeká na schválení"
     },
     "form": {
       "createTitle": "Nový uživatel",
@@ -3010,7 +3014,38 @@
       "invalidRole": "Neplatná role.",
       "noteTooLong": "Poznámka může mít nejvýše {{max}} znaků.",
       "lastMaintainer": "Toto je poslední aktivní správce systému. Kdyby přišel o roli nebo byl zakázán, nezůstal by nikdo, kdo ji může udělit zpět, a provozní část aplikace by se stala nedostupnou. Nejdřív povyšte na správce systému někoho dalšího.",
-      "generic": "Akci se nepodařilo dokončit."
+      "generic": "Akci se nepodařilo dokončit.",
+      "accountBlocked": "Účet je zakázaný. Nejdřív ho povolte, pak akci zopakujte.",
+      "notAllowed": "Na tenhle účet nemáte oprávnění. Účet správce systému může spravovat jen jiný správce systému.",
+      "gone": "Účet už neexistuje. Načtěte seznam znovu."
+    },
+    "email": {
+      "none": "Bez adresy",
+      "noneHint": "Zástupná adresa — nic na ni nedojde. Doplňte skutečnou."
+    },
+    "filter": {
+      "pendingOnly": "Jen čekající na schválení",
+      "waiting": "Čeká na schválení: {{pending}}"
+    },
+    "approve": {
+      "action": "Schválit",
+      "title": "Schválit účet?",
+      "body": "Uživatel {{username}} se bude moci přihlásit a přijde mu o tom e-mail. Role se nemění — tu nastavíte zvlášť.",
+      "success": "Účet byl schválen.",
+      "blockedHint": "Zakázaný účet nejde schválit. Nejdřív ho povolte."
+    },
+    "resetLink": {
+      "action": "Odkaz na heslo",
+      "title": "Poslat odkaz na nastavení hesla uživateli {{username}}?",
+      "body": "Uživatel {{username}} dostane e-mailem jednorázový odkaz, kterým si sám nastaví nové heslo. Dosavadní heslo platí dál, dokud si nové nenastaví. Starší nepoužité odkazy tohoto účtu přestanou platit.",
+      "submit": "Vytvořit odkaz",
+      "mailed": "Odkaz jsme poslali na {{email}} a platí {{days}} dní.",
+      "notMailed": "Účet nemá skutečnou e-mailovou adresu, odkaz jsme tedy nikam neposlali — předejte ho osobně. Platí {{days}} dní.",
+      "expires": "Vyprší {{date}}.",
+      "linkLabel": "Odkaz na nastavení hesla",
+      "copy": "Kopírovat",
+      "copied": "Zkopírováno",
+      "close": "Hotovo"
     }
   },
   "audit": {

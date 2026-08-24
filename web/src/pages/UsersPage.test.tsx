@@ -22,6 +22,8 @@ vi.mock('../services/users', async (importOriginal) => {
     updateUser: vi.fn(),
     setUserDisabled: vi.fn(),
     resetUserPassword: vi.fn(),
+    approveUser: vi.fn(),
+    issuePasswordReset: vi.fn(),
   }
 })
 
@@ -30,13 +32,16 @@ vi.mock('../services/people', async (importOriginal) => {
   return { ...actual, fetchSubjects: vi.fn() }
 })
 
-const { fetchUsers, createUser, setUserDisabled, updateUser } = await import('../services/users')
+const { approveUser, createUser, fetchUsers, issuePasswordReset, setUserDisabled, updateUser } =
+  await import('../services/users')
 const { fetchSubjects } = await import('../services/people')
 const fetchSubjectsMock = vi.mocked(fetchSubjects)
 const fetchUsersMock = vi.mocked(fetchUsers)
 const createUserMock = vi.mocked(createUser)
 const setUserDisabledMock = vi.mocked(setUserDisabled)
 const updateUserMock = vi.mocked(updateUser)
+const approveUserMock = vi.mocked(approveUser)
+const issuePasswordResetMock = vi.mocked(issuePasswordReset)
 
 /**
  * What the backend answers when a change would take away the instance's last
@@ -61,6 +66,9 @@ function user(overrides: Partial<AdminUser> = {}): AdminUser {
     role: 'viewer',
     disabled: false,
     note: '',
+    // Let in long ago unless a test says otherwise: an account waiting for an
+    // administrator is the exception, not the default row.
+    approved_at: '2026-01-02T10:05:00Z',
     created_at: '2026-01-02T10:00:00Z',
     updated_at: '2026-01-02T10:00:00Z',
     ...overrides,
@@ -128,6 +136,8 @@ beforeEach(async () => {
   createUserMock.mockReset()
   setUserDisabledMock.mockReset()
   updateUserMock.mockReset()
+  approveUserMock.mockReset()
+  issuePasswordResetMock.mockReset()
 })
 
 afterEach(() => {
@@ -255,13 +265,13 @@ describe('UsersPage', () => {
     }
   })
 
-  it('keeps the full nine-column table on a wide viewport', async () => {
+  it('keeps the full ten-column table on a wide viewport', async () => {
     fetchUsersMock.mockResolvedValue([user()])
     renderPage()
 
     expect(await screen.findByText('ada')).toBeInTheDocument()
     const table = screen.getByRole('table')
-    expect(within(table).getAllByRole('columnheader')).toHaveLength(9)
+    expect(within(table).getAllByRole('columnheader')).toHaveLength(10)
     // No card stack alongside it: only one of the two layouts is ever in the DOM.
     expect(screen.queryByRole('listitem')).toBeNull()
   })
@@ -289,6 +299,7 @@ describe('UsersPage', () => {
     for (const label of [
       'Username',
       'Real name',
+      'E-mail',
       'Role',
       'State',
       'Note',
@@ -622,9 +633,9 @@ describe('UsersPage', () => {
     expect(await screen.findByText('Jarmila')).toBeInTheDocument()
     const rows = screen.getAllByRole('row')
     // Row 0 is the header; the roster is ordered as the backend returned it, and
-    // the person is the fifth column (after username, name, role and state).
-    expect(within(rows[1]).getAllByRole('cell')[4]).toHaveTextContent('Jarmila')
-    expect(within(rows[2]).getAllByRole('cell')[4]).toHaveTextContent('—')
+    // the person is the sixth column (after username, name, e-mail, role and state).
+    expect(within(rows[1]).getAllByRole('cell')[5]).toHaveTextContent('Jarmila')
+    expect(within(rows[2]).getAllByRole('cell')[5]).toHaveTextContent('—')
   })
 
   it('lets an administrator link an account to a person, and says what that does', async () => {
@@ -654,6 +665,200 @@ describe('UsersPage', () => {
         expect.objectContaining({ subject_uid: 'sub1' }),
       )
     })
+  })
+
+  it('shows each account’s address, and a placeholder as no address at all', async () => {
+    fetchUsersMock.mockResolvedValue([
+      user({ uid: 'u1', username: 'ada', email: 'ada@example.com' }),
+      user({ uid: 'u2', username: 'root', email: 'root@kukatko.invalid' }),
+    ])
+    renderPage()
+
+    expect(await screen.findByText('ada@example.com')).toBeInTheDocument()
+    // The account that only has a stand-in address is never shown as reachable:
+    // every mail the app sends goes to this field.
+    expect(screen.queryByText('root@kukatko.invalid')).not.toBeInTheDocument()
+    expect(screen.getByText('No address')).toBeInTheDocument()
+    expect(screen.getByText(/Fill in a real one/)).toBeInTheDocument()
+  })
+
+  it('badges a waiting account apart from a blocked one, and offers Approve only there', async () => {
+    fetchUsersMock.mockResolvedValue([
+      user({ uid: 'u1', username: 'ada', approved_at: null }),
+      user({ uid: 'u2', username: 'bob', disabled: true }),
+    ])
+    renderPage()
+
+    expect(await screen.findByText('ada')).toBeInTheDocument()
+    const waiting = screen.getByText('ada').closest('tr') as HTMLElement
+    const blocked = screen.getByText('bob').closest('tr') as HTMLElement
+
+    // Two states, two badges, two colours — never the same paint.
+    expect(within(waiting).getByText('Waiting for approval')).toHaveClass('bg-warning')
+    expect(within(blocked).getByText('Disabled')).toHaveClass('bg-danger')
+    expect(within(waiting).queryByText('Enabled')).toBeNull()
+
+    // Approve is the answer to a question only the waiting row is asking.
+    expectLive(within(waiting).getByRole('button', { name: 'Approve' }))
+    expect(within(blocked).queryByRole('button', { name: 'Approve' })).toBeNull()
+  })
+
+  it('will not offer to approve a blocked account, and says why', async () => {
+    fetchUsersMock.mockResolvedValue([
+      user({ uid: 'u1', username: 'ada', approved_at: null, disabled: true }),
+    ])
+    renderPage()
+
+    expect(await screen.findByText('ada')).toBeInTheDocument()
+    const row = screen.getByText('ada').closest('tr') as HTMLElement
+    // The backend refuses it (409) and it would be half a decision anyway: the
+    // person still could not sign in. The reason is printed on the row.
+    expectOff(
+      within(row).getByRole('button', { name: 'Approve' }),
+      'A blocked account cannot be approved. Enable it first.',
+    )
+  })
+
+  it('approves a waiting account after confirming, and updates the row in place', async () => {
+    const ada = user({ uid: 'u1', username: 'ada', approved_at: null })
+    fetchUsersMock.mockResolvedValue([ada])
+    approveUserMock.mockResolvedValue({ ...ada, approved_at: '2026-08-24T09:00:00Z' })
+    const actor = userEvent.setup()
+    renderPage()
+
+    expect(await screen.findByText('ada')).toBeInTheDocument()
+    const row = screen.getByText('ada').closest('tr') as HTMLElement
+    await actor.click(within(row).getByRole('button', { name: 'Approve' }))
+
+    // The click alone changes nothing: the dialog asks first.
+    expect(approveUserMock).not.toHaveBeenCalled()
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(/will be able to sign in/)).toBeInTheDocument()
+
+    await actor.click(within(dialog).getByRole('button', { name: 'Approve' }))
+    await waitFor(() => {
+      expect(approveUserMock).toHaveBeenCalledWith('u1')
+    })
+
+    // The row is the approved one — no second fetch of the whole roster.
+    expect(await screen.findByText('Enabled')).toBeInTheDocument()
+    expect(screen.queryByText('Waiting for approval')).toBeNull()
+    expect(screen.getByRole('alert')).toHaveTextContent('The account was approved.')
+    expect(fetchUsersMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves the row waiting when the approval is refused, and explains', async () => {
+    fetchUsersMock.mockResolvedValue([user({ uid: 'u1', username: 'ada', approved_at: null })])
+    approveUserMock.mockRejectedValue(new ApiError(409, 'auth: user is disabled'))
+    const actor = userEvent.setup()
+    renderPage()
+
+    expect(await screen.findByText('ada')).toBeInTheDocument()
+    await actor.click(screen.getByRole('button', { name: 'Approve' }))
+    const dialog = await screen.findByRole('dialog')
+    await actor.click(within(dialog).getByRole('button', { name: 'Approve' }))
+
+    // A 409 on a row action is the blocked account, never a taken username.
+    expect(await screen.findByRole('alert')).toHaveTextContent('The account is blocked.')
+    expect(screen.queryByText('That username is already taken.')).toBeNull()
+    // Nothing moved: the account is still waiting to be let in.
+    expect(screen.getByText('Waiting for approval')).toBeInTheDocument()
+  })
+
+  it('narrows the roster to the accounts waiting for approval', async () => {
+    fetchUsersMock.mockResolvedValue([
+      user({ uid: 'u1', username: 'ada', approved_at: null }),
+      user({ uid: 'u2', username: 'bob' }),
+    ])
+    const actor = userEvent.setup()
+    renderPage()
+
+    expect(await screen.findByText('ada')).toBeInTheDocument()
+    // The count is on the page before anything is filtered, so an administrator
+    // who came for something else still notices the errand.
+    expect(screen.getByText('Waiting for approval: 1')).toBeInTheDocument()
+
+    await actor.click(screen.getByRole('checkbox', { name: 'Only waiting for approval' }))
+
+    expect(screen.getByText('ada')).toBeInTheDocument()
+    expect(screen.queryByText('bob')).toBeNull()
+    // Still the count of the whole roster, and no second request for it.
+    expect(screen.getByText('Waiting for approval: 1')).toBeInTheDocument()
+    expect(fetchUsersMock).toHaveBeenCalledTimes(1)
+
+    await actor.click(screen.getByRole('checkbox', { name: 'Only waiting for approval' }))
+    expect(screen.getByText('bob')).toBeInTheDocument()
+  })
+
+  it('says so when the waiting-only filter leaves nothing', async () => {
+    fetchUsersMock.mockResolvedValue([user({ uid: 'u1', username: 'ada' })])
+    const actor = userEvent.setup()
+    renderPage()
+
+    expect(await screen.findByText('ada')).toBeInTheDocument()
+    await actor.click(screen.getByRole('checkbox', { name: 'Only waiting for approval' }))
+
+    expect(screen.getByText('Nobody is waiting')).toBeInTheDocument()
+    expect(screen.queryByText('ada')).toBeNull()
+  })
+
+  it('issues a reset link from the row and forgets it when the dialog closes', async () => {
+    fetchUsersMock.mockResolvedValue([user({ uid: 'u1', username: 'ada' })])
+    issuePasswordResetMock.mockResolvedValue({
+      reset_url: 'https://kukatko.example/password-reset/tok-123',
+      expires_at: '2026-09-01T10:00:00Z',
+      email: 'ada@example.com',
+    })
+    const actor = userEvent.setup()
+    renderPage()
+
+    expect(await screen.findByText('ada')).toBeInTheDocument()
+    await actor.click(screen.getByRole('button', { name: 'Reset link' }))
+
+    // It asks first: issuing kills the account's earlier unused link.
+    const dialog = await screen.findByRole('dialog')
+    expect(issuePasswordResetMock).not.toHaveBeenCalled()
+    await actor.click(within(dialog).getByRole('button', { name: 'Issue the link' }))
+    await waitFor(() => {
+      expect(issuePasswordResetMock).toHaveBeenCalledWith('u1')
+    })
+
+    const field = await screen.findByLabelText('Password reset link')
+    expect(field).toHaveValue('https://kukatko.example/password-reset/tok-123')
+    await actor.click(screen.getByRole('button', { name: 'Copy' }))
+    await expect(navigator.clipboard.readText()).resolves.toBe(
+      'https://kukatko.example/password-reset/tok-123',
+    )
+
+    // Closing takes the link off the screen for good — it is a bearer
+    // credential for somebody's password, not a row of the roster.
+    await actor.click(screen.getByRole('button', { name: 'Done' }))
+    await waitFor(() => {
+      expect(screen.queryByLabelText('Password reset link')).toBeNull()
+    })
+    // The password of the account was not touched either way.
+    expect(screen.getByText('ada')).toBeInTheDocument()
+  })
+
+  it('shows a rejected address next to the e-mail field, not in a banner', async () => {
+    createUserMock.mockRejectedValue(new ApiError(400, 'auth: invalid email address'))
+    const actor = userEvent.setup()
+    renderPage()
+
+    await actor.click(screen.getByRole('button', { name: 'New user' }))
+    const dialog = await screen.findByRole('dialog')
+
+    await actor.type(within(dialog).getByLabelText('Username'), 'ada')
+    await actor.type(within(dialog).getByLabelText('Password'), 'correct-horse')
+    await actor.type(within(dialog).getByLabelText('E-mail'), 'ada@localhost')
+    await actor.click(within(dialog).getByRole('button', { name: 'Create' }))
+
+    await waitFor(() => {
+      expect(createUserMock).toHaveBeenCalled()
+    })
+    expect(within(dialog).getByLabelText('E-mail')).toHaveClass('is-invalid')
+    expect(within(dialog).getByText('Enter a valid e-mail address.')).toBeInTheDocument()
+    expect(within(dialog).queryByRole('alert')).not.toBeInTheDocument()
   })
 
   it('does not offer deleting a user', async () => {

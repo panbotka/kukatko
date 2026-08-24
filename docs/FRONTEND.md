@@ -1549,20 +1549,44 @@ here.
   where the dashboard belongs — a textarea + a level `<select>` (info/warning) + **Zveřejnit**/**Zrušit oznámení**
   over `setAnnouncement`/`clearAnnouncement`, prefill of the current message via `fetchAnnouncement`, feedback via
   the same dismissible `ActionNotice` `<Alert>` pattern; loading/error/notice states, self-gated on `isMaintainer`,
-  `UsersPage` = `/users` (admin **or** maintainer, `isAdmin`) **account management**: a user table (username, full name, role,
-  status, **person**, note, last login, created) over `GET /admin/users` — rendered through the shared `RecordTable`, so on a
-  phone the nine columns become **one stacked card per account** and the three row actions
+  `UsersPage` = `/users` (admin **or** maintainer, `isAdmin`) **account management**: a user table (username, full name,
+  **e-mail**, role, status, **person**, note, last login, created) over `GET /admin/users` — rendered through the shared
+  `RecordTable`, so on a phone the ten columns become **one stacked card per account** and the row actions
   a full-width button row on the card instead of a sideways scroll away; the note column is `multiline`
   (it is written in a `<textarea>`, so its line breaks survive both layouts); the actions column is
   `cardHidden` and comes back through `cardActions` (`UserActions`, prop `stacked` = the card's grid items
   vs. the table cell's inline cluster); the **person** column prints the name of the subject the account is
   linked to, resolved through **one** `useSubjects` fetch for the whole roster (`linkedPersonLabel` is a plain
   function of that map, not a component with a hook, so thirty rows still cost one request) and an em dash
-  when there is no link —, the dialogs **Nový uživatel**
+  when there is no link. The **e-mail** column goes through **`UserEmail`** (`components/users/`), which prints a real
+  address as it stands but renders a **`.invalid` placeholder as „Bez adresy" + the line asking for a real one**
+  (`isPlaceholderEmail`, the same last-label test the backend refuses to dial on — see `mailer.invalidTLD`): every
+  message the app sends goes to this field, so "there is something in the column" and "this person can be reached"
+  have to look different. The **status** column goes through **`UserStateBadges`** (`components/users/`): blocked
+  (`danger`) and **waiting for approval** (`warning`, `approved_at === null`) are independent states, never one badge —
+  an account can be both, and a waiting one is never painted the reassuring green of an active one, because it cannot
+  sign in at all. Above the list sits **`PendingFilter`** (`components/users/`): a switch narrowing the roster to the
+  waiting accounts plus **the count of them**, so an administrator who came for something else still notices that
+  self-service registration left somebody standing at the door. It filters the **already loaded** list (the backend's
+  `?pending=true` stays unused): the count needs every account anyway, so a second request could only make the two
+  disagree — and the count is always of the whole roster, never of what is on screen. Both predicates live in
+  `components/users/account.ts` (component-free, so the page can count and filter with them and Fast Refresh
+  survives). The dialogs are **Nový uživatel**
   (username/password/**e-mail**/role/name/**person**/note) and **Upravit** (**e-mail**/role/name/**person**/note;
   username is `readOnly` `plaintext` — the backend cannot change it), **Změnit heslo** for another user (logs them out of all
   devices; the hash is never rendered anywhere) and **Povolit/Zakázat** behind a confirmation dialog
-  (`setUserDisabled`). **The two form dialogs are `scrollable fullscreen="sm-down"`** — on a phone the long
+  (`setUserDisabled`). A waiting row additionally offers **Schválit** → a `ConfirmModal` (`variant="primary"`) →
+  `approveUser`, whose answer replaces the row **in place** (`upsert`, no re-fetch) and reports through the page's
+  own success alert; a blocked account's Schválit is off with `users.approve.blockedHint` on its **own** hint line
+  (the backend refuses it with 409, and letting somebody in who still cannot sign in is half a decision).
+  **Změnit heslo gained a sibling, „Odkaz na heslo"** → **`ResetLinkModal`** (`components/users/`): it asks first
+  (issuing kills the account's earlier unused link), then `issuePasswordReset`, then shows the whole link in a
+  **read-only, select-on-focus field with a Kopírovat button** (the same disclosure shape as `ApiTokensCard`'s
+  `CreatedSecret`, so it can be dragged out where the clipboard API is denied), above it the line saying where it
+  was mailed and that it lasts `PASSWORD_RESET_TTL_DAYS` days — or, for a `.invalid` address, that **nothing was
+  sent and the link has to be passed on by hand** (`isPlaceholderEmail` again; promising a mail the backend refuses
+  to send would leave the administrator waiting). The link lives in that component's state only, so closing the
+  dialog takes it off the screen for good. **The two form dialogs are `scrollable fullscreen="sm-down"`** — on a phone the long
   form takes the whole screen and only its body scrolls, so Zrušit/Uložit stay pinned above the on-screen
   keyboard instead of under it; on `sm`+ nothing changes (the same centred 500px card, measured identical).
   Because their `<Form>` wraps header+body+footer, it also carries `MODAL_FORM_CLASS`
@@ -1595,14 +1619,21 @@ here.
   on a phone; before, the `title` on a natively disabled Bootstrap button could be read by neither a mouse
   (`pointer-events: none`) nor a keyboard (out of the tab order). API validation errors map to a specific field
   (`fieldErrorFor`: 409 → username *unless* the message names the maintainer, 400 by keyword →
-  password/**email**/role/note, otherwise a form-level alert), not to a generic banner. **The last-maintainer
+  password/**email**/role/note, otherwise a form-level alert), not to a generic banner. It lives — with the
+  `ErrorKey` union and **`actionErrorFor`** — in `components/users/errors.ts`, shared by the page and by
+  `ResetLinkModal`. **`actionErrorFor` is the mapping for a row action that carries no form** (approve, issue a
+  link), where the statuses mean something else: 409 is never a taken username but always a blocked account
+  (`auth.ErrUserDisabled`), 403 is the maintainer boundary and 404 a roster that has gone stale — each with a
+  message saying what to do next. **The last-maintainer
   refusal** (409 `auth: cannot remove the last maintainer`, see `docs/API.md`) belongs to no input — the
   role `<select>` is only how it was triggered and the disable button has no form at all — so it renders
   as a form-level alert with `users.errors.lastMaintainer`, which says *why* and *what to do* (promote a
   second maintainer first). The row-action alert therefore holds an `ErrorKey`, not a boolean, so a failed
   **Zakázat** shows that explanation instead of the generic “action could not be completed”. States: a **skeleton** (`Placeholder` in the table) while loading,
   an error alert with **Zkusit znovu**, an empty state (`EmptyState`, practically unreachable — the bootstrap
-  admin always exists, but must not crash); self-gated on `isAdmin`,
+  admin always exists, but must not crash) and a second one for a **filter that leaves nothing**
+  („Nikdo nečeká"), which is a normal answer rather than an empty library; self-gated on `isAdmin`.
+  Tests: `UsersPage.test.tsx` plus `components/users/{account,UserEmail,UserStateBadges,PendingFilter,ResetLinkModal}.test.tsx`,
   `AuditPage` = `/audit` (admin **or** maintainer, `isAdmin`) an **audit log**: a read-only table of records from `GET /audit`
   newest first (when/who/action/target/IP) — also through the shared `RecordTable`, so a phone gets **one stacked
   card per entry** —, the `details` JSON via an expandable block (`AuditEntryDetails`, `aria-expanded` +
@@ -4553,12 +4584,18 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   mutable profile → send the fields the dialog doesn't offer as well), `setUserDisabled(user,disabled,signal)`
   (disable → the dedicated `POST /{uid}/disable`, which doesn't need the profile and won't overwrite a concurrent edit;
   enable → a `PATCH` with `disabled:false`, there is no dedicated endpoint) and `resetUserPassword(uid,pwd,signal)`
-  (`POST /{uid}/password`, 204, it logs out all of the target's sessions); the constants `ROLES`
-  (`viewer`/`editor`/`admin`/`maintainer`, ascending along the ladder)/`MAX_NOTE_LENGTH`,
-  the types `AdminUser`/`CreateUserBody`/`UpdateUserBody` — both bodies carry **`subject_uid: string | null`**
-  (which person of the library the account is), and because `PATCH` replaces the profile, `null` **clears**
-  the link rather than leaving it alone, which is why `setUserDisabled`'s re-enabling `PATCH` echoes the
-  row's own link back; the password hash has nowhere to leak — the backend
+  (`POST /{uid}/password`, 204, it logs out all of the target's sessions), **`approveUser(uid,signal)`**
+  (`POST /{uid}/approve` → the row with `approved_at` stamped; 403 = the maintainer boundary, 409 = a blocked
+  account, and approving twice is a 200 with the row unchanged, so a double click cannot fail) and
+  **`issuePasswordReset(uid,signal)`** (`POST /{uid}/password-reset` → `IssuedPasswordReset`
+  = `{reset_url, expires_at, email}`; it sets **no** password — the person chooses their own behind the link —
+  mails the link, kills the account's earlier unused ones, 403/404/409 as above); the constants `ROLES`
+  (`viewer`/`editor`/`admin`/`maintainer`, ascending along the ladder)/`MAX_NOTE_LENGTH`/**`PASSWORD_RESET_TTL_DAYS`**
+  (7, mirroring `auth.PasswordResetTTL` — what the UI *says* has to match what the backend does),
+  the types `AdminUser`/`CreateUserBody`/`UpdateUserBody`/**`IssuedPasswordReset`** — both user bodies carry
+  **`subject_uid: string | null`** (which person of the library the account is), and because `PATCH` replaces
+  the profile, `null` **clears** the link rather than leaving it alone, which is why `setUserDisabled`'s
+  re-enabling `PATCH` echoes the row's own link back; the password hash has nowhere to leak — the backend
   doesn't serialize it and no type has a field for it,
   `audit.ts` = the audit client over `GET /api/v1/audit`: `fetchAuditLog(params,signal)` →
   `AuditListResponse{entries,total,limit,offset,next_offset}`, `buildAuditQuery` serializes the filters

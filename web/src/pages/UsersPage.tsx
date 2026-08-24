@@ -11,16 +11,30 @@ import Table from 'react-bootstrap/Table'
 import { useTranslation } from 'react-i18next'
 
 import { useAuth } from '../auth/AuthContext'
+import { ConfirmModal } from '../components/ConfirmModal'
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
 import { ReasonedButton } from '../components/ReasonedButton'
 import { RecordTable, type RecordColumn } from '../components/RecordTable'
 import { AddAutocomplete } from '../components/photo/AddAutocomplete'
+import { PendingFilter } from '../components/users/PendingFilter'
+import { ResetLinkModal } from '../components/users/ResetLinkModal'
+import { UserEmail } from '../components/users/UserEmail'
+import { UserStateBadges } from '../components/users/UserStateBadges'
+import { isWaitingForApproval } from '../components/users/account'
+import {
+  actionErrorFor,
+  fieldErrorFor,
+  type ErrorKey,
+  type FormError,
+  type FormField,
+} from '../components/users/errors'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useSubjects } from '../hooks/useSubjects'
 import { formatDate, formatDateTime } from '../lib/format'
-import { ApiError, MIN_PASSWORD_LENGTH, type Role } from '../services/auth'
+import { MIN_PASSWORD_LENGTH, type Role } from '../services/auth'
 import {
+  approveUser,
   createUser,
   fetchUsers,
   MAX_NOTE_LENGTH,
@@ -40,70 +54,9 @@ type Dialog =
   | { kind: 'create' }
   | { kind: 'edit'; user: AdminUser }
   | { kind: 'password'; user: AdminUser }
+  | { kind: 'resetLink'; user: AdminUser }
+  | { kind: 'approve'; user: AdminUser }
   | { kind: 'toggle'; user: AdminUser }
-
-/** The form fields an API validation error can be attributed to. */
-type FormField = 'username' | 'password' | 'email' | 'role' | 'note'
-
-/** The i18n keys for the validation messages the backend can produce. */
-type ErrorKey =
-  | 'users.errors.usernameTaken'
-  | 'users.errors.passwordTooShort'
-  | 'users.errors.invalidEmail'
-  | 'users.errors.invalidRole'
-  | 'users.errors.noteTooLong'
-  | 'users.errors.lastMaintainer'
-  | 'users.errors.generic'
-
-/**
- * A failed submission: `field` names the input to flag inline, or is null when
- * the failure belongs to no single field and has to surface as a form-level alert.
- */
-interface FormError {
-  field: FormField | null
-  messageKey: ErrorKey
-}
-
-/**
- * Attributes a failed create/update to the field the backend rejected.
- *
- * The admin user handlers answer with a plain `{"error": "..."}` envelope rather
- * than a per-field structure, so the status plus a keyword from the message is
- * all there is to go on: 409 is either a duplicate username or the
- * last-maintainer guard (told apart by the message), and the four possible 400s
- * each name their own field (`internal/auth/handlers_admin.go`). Anything
- * unrecognised degrades to a form-level message.
- *
- * The last-maintainer refusal belongs to no input — the role select is only the
- * way it was triggered, and the disable button has no form at all — so it
- * surfaces as a form-level alert.
- */
-function fieldErrorFor(error: unknown): FormError {
-  if (error instanceof ApiError) {
-    if (error.status === 409) {
-      if (error.message.toLowerCase().includes('maintainer')) {
-        return { field: null, messageKey: 'users.errors.lastMaintainer' }
-      }
-      return { field: 'username', messageKey: 'users.errors.usernameTaken' }
-    }
-    if (error.status === 400) {
-      const message = error.message.toLowerCase()
-      if (message.includes('password')) {
-        return { field: 'password', messageKey: 'users.errors.passwordTooShort' }
-      }
-      if (message.includes('email')) {
-        return { field: 'email', messageKey: 'users.errors.invalidEmail' }
-      }
-      if (message.includes('role')) {
-        return { field: 'role', messageKey: 'users.errors.invalidRole' }
-      }
-      if (message.includes('note')) {
-        return { field: 'note', messageKey: 'users.errors.noteTooLong' }
-      }
-    }
-  }
-  return { field: null, messageKey: 'users.errors.generic' }
-}
 
 /** The skeleton's three placeholder rows. */
 const SKELETON_ROWS = ['a', 'b', 'c']
@@ -112,6 +65,7 @@ const SKELETON_ROWS = ['a', 'b', 'c']
 const SKELETON_CELLS: { column: string; width: number }[] = [
   { column: 'username', width: 9 },
   { column: 'displayName', width: 7 },
+  { column: 'email', width: 8 },
   { column: 'role', width: 4 },
   { column: 'state', width: 4 },
   { column: 'subject', width: 6 },
@@ -696,38 +650,49 @@ interface UserActionsProps {
   self: boolean
   /**
    * True when the signed-in actor may manage this account. A non-maintainer
-   * cannot touch a maintainer's account (edit, reset password or disable), so its
-   * three actions are disabled — mirroring the backend `guardMaintainerBoundary`.
+   * cannot touch a maintainer's account (edit, reset the password of, approve or
+   * disable), so its actions are disabled — mirroring the backend
+   * `guardMaintainerBoundary`.
    */
   canManage: boolean
   /**
-   * True on a phone card, where the three actions are the whole point of the
+   * True on a phone card, where the actions are the whole point of the
    * reflow: they become one full-width button per line at the finger-friendly
    * height instead of a `size="sm"` cluster the reader would have to scroll to.
    */
   stacked: boolean
+  onApprove: () => void
   onEdit: () => void
   onPassword: () => void
+  onResetLink: () => void
   onToggle: () => void
 }
 
 /**
- * The three things an administrator does to an account, plus the one-line reason
- * when a control is disabled. Shared by both layouts so the table cell and the
- * card's action row can never offer different powers.
+ * The things an administrator does to an account, plus the one-line reason when a
+ * control is disabled. Shared by both layouts so the table cell and the card's
+ * action row can never offer different powers.
+ *
+ * **Approve appears only on a waiting row.** It is not a power an administrator
+ * has over every account but the answer to a question one particular account is
+ * asking, so on an account that was already let in there is nothing to press and
+ * nothing to grey out.
  */
 function UserActions({
   user,
   self,
   canManage,
   stacked,
+  onApprove,
   onEdit,
   onPassword,
+  onResetLink,
   onToggle,
 }: UserActionsProps) {
   const { t } = useTranslation()
   const size = stacked ? undefined : 'sm'
   const hintId = useId()
+  const approveHintId = useId()
   // Not a role gate but a per-row boundary: this administrator may manage users,
   // just not *this* one. That is why the buttons stay on the row instead of
   // vanishing — and why, per the app-wide rule, they have to say why they are
@@ -744,8 +709,26 @@ function UserActions({
     : canManage
       ? null
       : t('users.maintainerManageHint')
+  const waiting = isWaitingForApproval(user)
+  // Approving a blocked account is refused by the backend (409) and would be a
+  // half-measure anyway: the person still could not sign in. The row says so
+  // instead of offering a button that fails — on its own hint line, because it
+  // is a different sentence from the one the rest of the cluster shares.
+  const blocked = user.disabled ? t('users.approve.blockedHint') : undefined
+  const approveOff = outOfReach ?? blocked
   const buttons = (
     <>
+      {waiting && (
+        <ReasonedButton
+          variant="outline-success"
+          size={size}
+          disabledReason={approveOff}
+          reasonId={outOfReach === undefined ? approveHintId : hintId}
+          onClick={onApprove}
+        >
+          {t('users.approve.action')}
+        </ReasonedButton>
+      )}
       <ReasonedButton
         variant="outline-secondary"
         size={size}
@@ -763,6 +746,15 @@ function UserActions({
         onClick={onPassword}
       >
         {t('users.changePassword')}
+      </ReasonedButton>
+      <ReasonedButton
+        variant="outline-secondary"
+        size={size}
+        disabledReason={outOfReach}
+        reasonId={hintId}
+        onClick={onResetLink}
+      >
+        {t('users.resetLink.action')}
       </ReasonedButton>
       <ReasonedButton
         variant={user.disabled ? 'outline-success' : 'outline-danger'}
@@ -786,14 +778,22 @@ function UserActions({
           {hint}
         </div>
       )}
+      {/* Only when Approve is the one control that is off: the shared line above
+          already covers the case where nothing on the row may be pressed. */}
+      {waiting && outOfReach === undefined && blocked !== undefined && (
+        <div id={approveHintId} className="text-secondary small mt-1">
+          {blocked}
+        </div>
+      )}
     </>
   )
 }
 
 /**
- * Admin-only user administration: the roster of local accounts with the four
- * things an administrator does to them — create one, edit its role/name/note,
- * reset its password, and retire it by disabling.
+ * Admin-only user administration: the roster of local accounts and the things an
+ * administrator does to them — create one, edit its role/name/note, let a waiting
+ * one in, set its password or hand out a link so its owner can set their own, and
+ * retire it by disabling.
  *
  * Accounts are never deleted. Photos, albums, ratings and audit entries all
  * point at a user; deleting one would either orphan that history or erase it, so
@@ -815,12 +815,17 @@ export function UsersPage() {
   const [state, setState] = useState<State>({ status: 'loading' })
   const [dialog, setDialog] = useState<Dialog>({ kind: 'none' })
   const [toggling, setToggling] = useState(false)
+  const [approving, setApproving] = useState(false)
+  // Narrows the roster to the accounts waiting to be let in. It is view state of
+  // the already-loaded list, not a query: switching it re-renders and never
+  // re-fetches, so the filter cannot fail and cannot empty the page.
+  const [pendingOnly, setPendingOnly] = useState(false)
   // The enable/disable action has no form to hang a field error on, so it keeps
   // just the message key. It is a real message rather than a boolean because the
   // backend refuses disabling the last maintainer, and "the action could not be
   // completed" would leave the reader with no idea what to do about it.
   const [actionError, setActionError] = useState<ErrorKey | null>(null)
-  const [notice, setNotice] = useState<'passwordChanged' | null>(null)
+  const [notice, setNotice] = useState<'passwordChanged' | 'approved' | null>(null)
 
   const load = useCallback((signal?: AbortSignal) => {
     setState({ status: 'loading' })
@@ -865,6 +870,24 @@ export function UsersPage() {
     })
   }, [])
 
+  /** Lets a waiting account in, replacing its row with the approved one. */
+  async function confirmApprove(user: AdminUser) {
+    setActionError(null)
+    setApproving(true)
+    try {
+      upsert(await approveUser(user.uid))
+      setNotice('approved')
+    } catch (err) {
+      // The roster is untouched: the row still reads "waiting", so the same
+      // button is still there once the reader has dealt with the reason.
+      setActionError(actionErrorFor(err))
+    } finally {
+      setApproving(false)
+      // Either way the dialog closes: a modal backdrop would hide the alert.
+      close()
+    }
+  }
+
   async function confirmToggle(user: AdminUser) {
     setActionError(null)
     setToggling(true)
@@ -889,11 +912,17 @@ export function UsersPage() {
       user,
       self: user.uid === me?.uid,
       canManage: isMaintainer || user.role !== 'maintainer',
+      onApprove: () => {
+        setDialog({ kind: 'approve', user })
+      },
       onEdit: () => {
         setDialog({ kind: 'edit', user })
       },
       onPassword: () => {
         setDialog({ kind: 'password', user })
+      },
+      onResetLink: () => {
+        setDialog({ kind: 'resetLink', user })
       },
       onToggle: () => {
         setDialog({ kind: 'toggle', user })
@@ -901,7 +930,14 @@ export function UsersPage() {
     }
   }
 
-  // One definition drives both layouts: the eight table columns on a tablet or
+  // The whole roster, what the filter leaves of it, and how many accounts are
+  // waiting — the count is of everybody, never of what is on screen, so turning
+  // the filter on cannot make the reminder disappear.
+  const all = state.status === 'ready' ? state.users : []
+  const pendingCount = all.filter(isWaitingForApproval).length
+  const visible = pendingOnly ? all.filter(isWaitingForApproval) : all
+
+  // One definition drives both layouts: the table columns on a tablet or
   // desktop, and the same fields as "label: value" lines on a phone card.
   const columns: RecordColumn<AdminUser>[] = [
     {
@@ -917,6 +953,15 @@ export function UsersPage() {
       cell: (user) => user.display_name || '—',
     },
     {
+      // Every message the app sends goes here, so it belongs on the roster and
+      // not only inside the edit dialog: an account nobody can be reached at is
+      // something the administrator has to be able to *see*.
+      key: 'email',
+      header: t('users.columns.email'),
+      cellClassName: 'text-break',
+      cell: (user) => <UserEmail email={user.email} />,
+    },
+    {
       key: 'role',
       header: t('users.columns.role'),
       cell: (user) => <Badge bg="secondary">{t(`roles.${user.role}`)}</Badge>,
@@ -924,11 +969,7 @@ export function UsersPage() {
     {
       key: 'state',
       header: t('users.columns.state'),
-      cell: (user) => (
-        <Badge bg={user.disabled ? 'danger' : 'success'}>
-          {user.disabled ? t('users.state.disabled') : t('users.state.enabled')}
-        </Badge>
-      ),
+      cell: (user) => <UserStateBadges user={user} />,
     },
     {
       key: 'subject',
@@ -1000,7 +1041,7 @@ export function UsersPage() {
           {t(actionError, { min: MIN_PASSWORD_LENGTH, max: MAX_NOTE_LENGTH })}
         </Alert>
       )}
-      {notice === 'passwordChanged' && (
+      {notice !== null && (
         <Alert
           variant="success"
           role="alert"
@@ -1009,7 +1050,7 @@ export function UsersPage() {
             setNotice(null)
           }}
         >
-          {t('users.password.success')}
+          {notice === 'passwordChanged' ? t('users.password.success') : t('users.approve.success')}
         </Alert>
       )}
 
@@ -1033,13 +1074,27 @@ export function UsersPage() {
           )}
 
           {state.status === 'ready' && state.users.length > 0 && (
-            <RecordTable
-              records={state.users}
-              columns={columns}
-              rowKey={(user) => user.uid}
-              cardActions={(user) => <UserActions {...actionsFor(user)} stacked />}
-              className="mb-0 align-middle"
-            />
+            <>
+              <PendingFilter
+                pendingOnly={pendingOnly}
+                pendingCount={pendingCount}
+                onChange={setPendingOnly}
+              />
+              {visible.length === 0 ? (
+                <EmptyState
+                  title={t('users.empty.noPendingTitle')}
+                  hint={t('users.empty.noPendingHint')}
+                />
+              ) : (
+                <RecordTable
+                  records={visible}
+                  columns={columns}
+                  rowKey={(user) => user.uid}
+                  cardActions={(user) => <UserActions {...actionsFor(user)} stacked />}
+                  className="mb-0 align-middle"
+                />
+              )}
+            </>
           )}
         </Card.Body>
       </Card>
@@ -1065,6 +1120,24 @@ export function UsersPage() {
             close()
           }}
         />
+      )}
+
+      {dialog.kind === 'resetLink' && <ResetLinkModal user={dialog.user} onHide={close} />}
+
+      {dialog.kind === 'approve' && (
+        <ConfirmModal
+          show
+          variant="primary"
+          busy={approving}
+          title={t('users.approve.title')}
+          confirmLabel={t('users.approve.action')}
+          onCancel={close}
+          onConfirm={() => {
+            void confirmApprove(dialog.user)
+          }}
+        >
+          {t('users.approve.body', { username: dialog.user.username })}
+        </ConfirmModal>
       )}
 
       {dialog.kind === 'toggle' && (

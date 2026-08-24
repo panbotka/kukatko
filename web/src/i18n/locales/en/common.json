@@ -2827,7 +2827,9 @@
     "maintainerManageHint": "Only a system maintainer can manage this account.",
     "empty": {
       "title": "No users",
-      "hint": "Create the first account with the “New user” button."
+      "hint": "Create the first account with the “New user” button.",
+      "noPendingTitle": "Nobody is waiting",
+      "noPendingHint": "No account is waiting for approval right now. Turn the filter off to see them all."
     },
     "columns": {
       "username": "Username",
@@ -2838,11 +2840,13 @@
       "lastLogin": "Last login",
       "created": "Created",
       "actions": "Actions",
-      "subject": "Person"
+      "subject": "Person",
+      "email": "E-mail"
     },
     "state": {
       "enabled": "Enabled",
-      "disabled": "Disabled"
+      "disabled": "Disabled",
+      "pending": "Waiting for approval"
     },
     "form": {
       "createTitle": "New user",
@@ -2890,7 +2894,38 @@
       "invalidRole": "Invalid role.",
       "noteTooLong": "The note may be at most {{max}} characters.",
       "lastMaintainer": "This is the last enabled maintainer. Demoting or disabling it would leave nobody able to grant the role back, and the operations part of the app would become unreachable. Promote somebody else to maintainer first.",
-      "generic": "The action could not be completed."
+      "generic": "The action could not be completed.",
+      "accountBlocked": "The account is blocked. Enable it first, then try again.",
+      "notAllowed": "You may not manage this account. Only a system maintainer can manage a maintainer account.",
+      "gone": "The account no longer exists. Reload the list."
+    },
+    "email": {
+      "none": "No address",
+      "noneHint": "A placeholder address — nothing sent to it can arrive. Fill in a real one."
+    },
+    "filter": {
+      "pendingOnly": "Only waiting for approval",
+      "waiting": "Waiting for approval: {{pending}}"
+    },
+    "approve": {
+      "action": "Approve",
+      "title": "Approve the account?",
+      "body": "{{username}} will be able to sign in and will get an e-mail about it. The role does not change — you set that separately.",
+      "success": "The account was approved.",
+      "blockedHint": "A blocked account cannot be approved. Enable it first."
+    },
+    "resetLink": {
+      "action": "Reset link",
+      "title": "Issue a password link for {{username}}?",
+      "body": "{{username}} gets a one-time link by e-mail and chooses a new password themselves. The current password keeps working until they do. Any earlier unused link of this account stops working.",
+      "submit": "Issue the link",
+      "mailed": "The link was e-mailed to {{email}} and is valid for {{days}} days.",
+      "notMailed": "The account has no real e-mail address, so nothing was sent — pass the link on yourself. It is valid for {{days}} days.",
+      "expires": "It expires on {{date}}.",
+      "linkLabel": "Password reset link",
+      "copy": "Copy",
+      "copied": "Copied",
+      "close": "Done"
     }
   },
   "audit": {

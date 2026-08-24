@@ -198,3 +198,61 @@ export async function resetUserPassword(
 ): Promise<void> {
   await request('POST', `/admin/users/${uid}/password`, { new_password: newPassword }, signal)
 }
+
+/**
+ * Lets a waiting account in (`POST /admin/users/{uid}/approve`), returning the
+ * refreshed row with `approved_at` stamped. The backend also mails the person
+ * that they may now sign in — approving is therefore never silent.
+ *
+ * Approving an already approved account is a no-op that still answers 200 with
+ * the unchanged row, so a double click cannot produce a failure.
+ *
+ * @throws ApiError with `status` 403 (the account is a maintainer's and the
+ *   actor is not), 404, or 409 for a blocked account — unblocking is its own
+ *   action, and letting in somebody who still cannot sign in would only make
+ *   them wait.
+ */
+export async function approveUser(uid: string, signal?: AbortSignal): Promise<AdminUser> {
+  const res = await request('POST', `/admin/users/${uid}/approve`, undefined, signal)
+  return (await res.json()) as AdminUser
+}
+
+/**
+ * How long an issued reset link stays usable, in days (`auth.PasswordResetTTL`).
+ * The response carries the exact instant; this is what the UI *says*, and the
+ * two must agree.
+ */
+export const PASSWORD_RESET_TTL_DAYS = 7
+
+/**
+ * What an administrator gets back for a reset they started
+ * (`auth.IssuedPasswordReset`): the whole one-time link, so it can also be
+ * passed on by hand, plus the address it was mailed to and when it dies.
+ */
+export interface IssuedPasswordReset {
+  reset_url: string
+  expires_at: string
+  email: string
+}
+
+/**
+ * Starts a password reset for another user
+ * (`POST /admin/users/{uid}/password-reset`): the backend mints a one-time link
+ * valid for {@link PASSWORD_RESET_TTL_DAYS} days, invalidates the account's
+ * earlier unused ones, mails the new one to the account's address and answers
+ * with it.
+ *
+ * Unlike {@link resetUserPassword} it sets no password: the person chooses their
+ * own behind the link, and the administrator never learns it.
+ *
+ * @throws ApiError with `status` 403 (setting a maintainer's password is
+ *   maintainer-only, and the link ultimately does exactly that), 404, or 409 for
+ *   a blocked account, which could never use the link.
+ */
+export async function issuePasswordReset(
+  uid: string,
+  signal?: AbortSignal,
+): Promise<IssuedPasswordReset> {
+  const res = await request('POST', `/admin/users/${uid}/password-reset`, undefined, signal)
+  return (await res.json()) as IssuedPasswordReset
+}
