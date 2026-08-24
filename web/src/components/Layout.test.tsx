@@ -373,7 +373,7 @@ describe('Layout navbar', () => {
     // One labelled section, in ladder order: operations first, governance after.
     const heading = screen.getByText('Admin')
     expect(heading).toHaveClass('dropdown-header')
-    const links = ['Import', 'Maintenance', 'System', 'Users', 'Audit'].map((name) =>
+    const links = ['Import', 'Maintenance', 'System', 'Users', 'Audit', 'Settings'].map((name) =>
       screen.getByRole('link', { name }),
     )
     expect(links.map((link) => link.getAttribute('href'))).toEqual([
@@ -382,6 +382,7 @@ describe('Layout navbar', () => {
       '/system',
       '/users',
       '/audit',
+      '/settings',
     ])
     expect(links[0]).toHaveAttribute('title', 'Run a photo import')
     expect(links[0].querySelector('i.bi.bi-box-arrow-in-down')).not.toBeNull()
@@ -405,6 +406,7 @@ describe('Layout navbar', () => {
     expect(screen.getByText('Admin')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Users' })).toHaveAttribute('href', '/users')
     expect(screen.getByRole('link', { name: 'Audit' })).toHaveAttribute('href', '/audit')
+    expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/settings')
     for (const name of ['Import', 'Maintenance', 'System']) {
       expect(screen.queryByRole('link', { name })).not.toBeInTheDocument()
     }

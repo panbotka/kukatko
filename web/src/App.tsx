@@ -41,6 +41,7 @@ import { ReviewDecisionsPage } from './pages/ReviewDecisionsPage'
 import { ReviewPage } from './pages/ReviewPage'
 import { SavedSearchesPage } from './pages/SavedSearchesPage'
 import { SearchPage } from './pages/SearchPage'
+import { SettingsPage } from './pages/SettingsPage'
 import { ShareTargetPage } from './pages/ShareTargetPage'
 import { SlideshowPage } from './pages/SlideshowPage'
 import { StatsPage } from './pages/StatsPage'
@@ -149,6 +150,10 @@ export function AppRoutes() {
             {/* One user's review decisions, reached by clicking a player on the
                 leaderboard: inspecting who sorted what is governance, admin only. */}
             <Route path="/audit/reviews" element={<ReviewDecisionsPage />} />
+            {/* The instance's own settings — who may register, with what shared
+                secret, and the greeting a newcomer is met with. Admin only: the
+                record carries that secret in readable form. */}
+            <Route path="/settings" element={<SettingsPage />} />
           </Route>
           <Route path="/account" element={<AccountPage />} />
           {/* One user's own actions, from the audit trail narrowed to them by the

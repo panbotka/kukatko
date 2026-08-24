@@ -215,6 +215,12 @@ were written.
   nobody has to be found by reading the whole list. Approving hands out no rights beyond reading —
   raising a role stays a separate, deliberate edit — approving twice is harmless, and a blocked
   account is not approved but unblocked, which is its own action.
+- **The instance's own settings have a screen.** An administrator opens *Nastavení* and decides
+  there whether self-service registration is open, what the shared secret is — shown as readable
+  text, because the whole job with it is to read it back and tell people what it is — and what
+  greeting a newcomer will be met with on their first sign-in, written in Markdown with a live
+  preview beside it that renders exactly what the welcome will. Registration cannot be opened while the secret is still empty, and nothing is written until
+  it is saved.
 - **Nobody has to be told their own password.** When somebody forgets theirs, an administrator
   starts a reset instead of inventing a password for them: Kukátko mails that person a one-time link,
   valid for a week, where they choose their own — and hands the administrator the same link to pass

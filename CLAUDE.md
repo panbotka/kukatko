@@ -21,6 +21,7 @@ library were removed in August 2026; the only import left is `kukatko import dir
   component (one set, decorative `aria-hidden`). i18n via i18next: **Czech default**, English.
   Virtualize long grids/lists via **`react-virtuoso`**. Map view via
   **`leaflet`** + **`leaflet.markercluster`** (tiles via a backend proxy, the key stays server-side).
+  Markdown **only** via the `Markdown` component (`react-markdown` + **`rehype-sanitize`**, never optional).
 - **Images/videos without CGO:** pure-Go for JPEG/PNG/WebP; **shell-out** to `heif-convert` (HEIC),
   `exiftool`/`dcraw` (RAW preview), `ffmpeg`/`ffprobe` (video poster/metadata/streaming).
 

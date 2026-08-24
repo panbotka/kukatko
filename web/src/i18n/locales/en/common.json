@@ -59,6 +59,7 @@
     "system": "System",
     "users": "Users",
     "audit": "Audit",
+    "settings": "Settings",
     "titles": {
       "library": "Show the photo library",
       "albums": "Show the albums",
@@ -81,6 +82,7 @@
       "system": "Show the system status",
       "users": "Manage user accounts",
       "audit": "View the audit log",
+      "settings": "Set up registration and the welcome",
       "account": "Manage your own account",
       "help": "Show help",
       "logout": "Sign out of Kukátko",
@@ -2808,6 +2810,41 @@
       "duplicatesPending": "Scanning in the background…",
       "duplicatesOff": "Duplicate detection is off.",
       "duplicatesScanned": "Scanned {{age}}"
+    }
+  },
+  "settings": {
+    "title": "Instance settings",
+    "intro": "This is where you decide who may create an account, what word they need for it, and how Kukátko greets a newcomer. Nothing is stored until you save.",
+    "loading": "Loading settings…",
+    "loadFailed": "The settings could not be loaded.",
+    "save": "Save settings",
+    "saved": "The settings were saved.",
+    "saveFailed": "The settings could not be saved.",
+    "discard": "Discard changes",
+    "unsavedHint": "You have unsaved changes.",
+    "lastSaved": "Last saved: {{when}}",
+    "registration": {
+      "title": "Registration",
+      "enabledLabel": "Allow self-service registration",
+      "enabledHelp": "When it is on, the sign-in screen offers creating an account. A new account still waits for an administrator to approve it.",
+      "secretLabel": "Shared registration secret",
+      "secretHelp": "This word is what keeps strangers out — everybody registering has to type it. Everybody in the community is expected to know it, which is why it is readable here: you need to read it back and pass it on.",
+      "secretRequired": "Registration cannot be turned on while the shared secret is empty.",
+      "reveal": "Show",
+      "hide": "Hide"
+    },
+    "welcome": {
+      "title": "Welcome text",
+      "help": "The text everybody sees the first time they sign in. It is written in Markdown; the preview shows exactly what will be rendered.",
+      "editorLabel": "Welcome text (Markdown)",
+      "previewLabel": "Preview",
+      "previewEmpty": "Empty for now — nobody is greeted with anything."
+    },
+    "leave": {
+      "title": "Leave without saving?",
+      "body": "The settings have unsaved changes. Leaving now throws them away.",
+      "confirm": "Leave without saving",
+      "cancel": "Stay here"
     }
   },
   "users": {

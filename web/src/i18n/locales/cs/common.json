@@ -59,6 +59,7 @@
     "system": "Systém",
     "users": "Uživatelé",
     "audit": "Audit",
+    "settings": "Nastavení",
     "titles": {
       "library": "Zobrazit knihovnu fotek",
       "albums": "Zobrazit alba",
@@ -81,6 +82,7 @@
       "system": "Zobrazit stav systému",
       "users": "Spravovat uživatelské účty",
       "audit": "Zobrazit auditní log",
+      "settings": "Nastavit registraci a uvítání",
       "account": "Spravovat vlastní účet",
       "help": "Zobrazit nápovědu",
       "logout": "Odhlásit se z Kukátka",
@@ -2928,6 +2930,41 @@
       "duplicatesPending": "Hledá se na pozadí…",
       "duplicatesOff": "Hledání duplicit je vypnuté.",
       "duplicatesScanned": "Zjištěno {{age}}"
+    }
+  },
+  "settings": {
+    "title": "Nastavení instance",
+    "intro": "Tady se nastavuje, kdo si smí založit účet, jaké slovo k tomu potřebuje a čím Kukátko přivítá nově příchozí. Nic se neukládá, dokud to neuložíš.",
+    "loading": "Načítání nastavení…",
+    "loadFailed": "Nastavení se nepodařilo načíst.",
+    "save": "Uložit nastavení",
+    "saved": "Nastavení bylo uloženo.",
+    "saveFailed": "Nastavení se nepodařilo uložit.",
+    "discard": "Zahodit změny",
+    "unsavedHint": "Máš neuložené změny.",
+    "lastSaved": "Naposledy uloženo: {{when}}",
+    "registration": {
+      "title": "Registrace",
+      "enabledLabel": "Povolit vlastní registraci",
+      "enabledHelp": "Když je zapnutá, přihlašovací obrazovka nabídne založení účtu. Nový účet i tak čeká na schválení správcem.",
+      "secretLabel": "Sdílené heslo pro registraci",
+      "secretHelp": "Tohle slovo drží cizí lidi venku — při registraci ho musí každý napsat. Počítá se s tím, že ho zná celá rodina, proto je tady čitelně: potřebuješ ho přečíst a říct dál.",
+      "secretRequired": "Registraci nelze zapnout, dokud je sdílené heslo prázdné.",
+      "reveal": "Zobrazit",
+      "hide": "Skrýt"
+    },
+    "welcome": {
+      "title": "Uvítání",
+      "help": "Text, který každý uvidí při prvním přihlášení. Píše se v Markdownu; náhled ukazuje přesně to, co se zobrazí.",
+      "editorLabel": "Text uvítání (Markdown)",
+      "previewLabel": "Náhled",
+      "previewEmpty": "Zatím prázdné — nikoho nic neuvítá."
+    },
+    "leave": {
+      "title": "Odejít bez uložení?",
+      "body": "V nastavení máš neuložené změny. Když teď odejdeš, přijdeš o ně.",
+      "confirm": "Odejít bez uložení",
+      "cancel": "Zůstat tady"
     }
   },
   "users": {

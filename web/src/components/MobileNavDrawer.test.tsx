@@ -236,6 +236,7 @@ describe('MobileNavDrawer', () => {
       '/system',
       '/users',
       '/audit',
+      '/settings',
     ])
     // The keyboard-shortcuts overlay and sign-out ride along as rows, so nothing
     // the bar offers is lost on a phone.
@@ -321,6 +322,10 @@ describe('MobileNavDrawer', () => {
     const admin = within(drawer).getByRole('region', { name: 'Admin' })
     expect(within(admin).getByRole('link', { name: 'Users' })).toHaveAttribute('href', '/users')
     expect(within(admin).getByRole('link', { name: 'Audit' })).toHaveAttribute('href', '/audit')
+    expect(within(admin).getByRole('link', { name: 'Settings' })).toHaveAttribute(
+      'href',
+      '/settings',
+    )
     for (const name of ['Import', 'Maintenance', 'System']) {
       expect(within(drawer).queryByRole('link', { name })).not.toBeInTheDocument()
     }

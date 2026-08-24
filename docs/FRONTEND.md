@@ -102,9 +102,9 @@ here.
   `STATS_ITEM`, `HELP_ITEM`, `pathMatches`), so the bar and the phone drawer below read **the same list with the same role
   gates** and cannot drift apart. The administration entries are the one registry that is **not** a
   `NavGroup`: `ADMIN_ITEMS` is a flat list of `AdminEntry` (a `NavEntry` + a `gate` of `'maintainer'` or
-  `'admin'`) in menu order — Import, Údržba, Systém, Uživatelé, Audit — and `adminItems({isAdmin,
+  `'admin'`) in menu order — Import, Údržba, Systém, Uživatelé, Audit, Nastavení — and `adminItems({isAdmin,
   isMaintainer})` returns just the ones a role clears. **The gate is per item, never on the section**: a
-  maintainer gets all five, an admin only Uživatelé + Audit, an editor/viewer an empty list and therefore
+  maintainer gets all six, an admin only Uživatelé + Audit + Nastavení, an editor/viewer an empty list and therefore
   no section at all (no orphan heading, no stray divider). One entry is **built rather than declared**: `myPhotosItem(subjectUid)`
   ("Moje fotky") returns `null` for an account that has not said which person of the library it is, and
   otherwise a `NavEntry` pointing at that person's scoped grid (`/?person=<uid>`). It is offered **only**
@@ -507,6 +507,20 @@ here.
   (keyboard-shrunk) phone viewport; it is deliberately **not** `fullscreen="sm-down"` like the admin form
   dialogs — a confirm has no inputs, so no keyboard ever covers its footer, and a phone-wide sheet for a
   two-line question reads as a page rather than as a question. Tests: `ConfirmModal.test.tsx`),
+  `Markdown` (**the app's one Markdown renderer** — `react-markdown` + `rehype-sanitize`, for wherever
+  prose somebody typed is shown as formatted text. Its first caller is the administrator's live
+  preview of the first-sign-in welcome in `SettingsPage`; when the welcome itself gets a screen it
+  renders through this same component, so the preview is not a lookalike of the real thing but
+  literally the same renderer. **Sanitising is not optional**
+  even though only an administrator can write the text: `rehype-sanitize` runs on the rendered tree
+  with its default (GitHub) schema, so a `javascript:` href, an `onclick`, an `<iframe>` or a `<style>`
+  block cannot survive — a taken-over admin account must not become a way to run script in every other
+  user's browser, and the welcome is shown to everybody once, unprompted. Raw HTML in the source is
+  inert for a second reason too: `rehype-raw` is deliberately **not** installed, so react-markdown
+  never parses HTML at all. A link is rendered through a `components.a` override — `target="_blank"` +
+  `rel="noopener noreferrer"` — rather than by a rehype plugin, so the attributes are added *after*
+  sanitising and cannot be stripped by it. Props: `children` (the source) and `className` (the
+  wrapper). Tests: `Markdown.test.tsx`),
   `ReasonedButton` (**the shared „a button that is off always says why" control.** A greyed-out
   control with no explanation reads as a malfunction, so this drop-in for react-bootstrap's `Button`
   has **no `disabled` prop at all**: the only way to switch it off is `disabledReason` — one finished,
@@ -1634,6 +1648,29 @@ here.
   admin always exists, but must not crash) and a second one for a **filter that leaves nothing**
   („Nikdo nečeká"), which is a normal answer rather than an empty library; self-gated on `isAdmin`.
   Tests: `UsersPage.test.tsx` plus `components/users/{account,UserEmail,UserStateBadges,PendingFilter,ResetLinkModal}.test.tsx`,
+  `SettingsPage` = `/settings` (admin **or** maintainer, `isAdmin`) **the instance's own settings** —
+  the three values behind `GET`/`PUT /settings`: whether self-service registration is open, the shared
+  secret it asks a newcomer for, and the Markdown greeting a person meets on their first sign-in. It is
+  its own route rather than another section of `UsersPage`: that page is about accounts, this one about
+  the instance, and it is long enough already. One `Form` over a local `Draft`, so **nothing is written
+  until „Uložit nastavení"** — `isDirty(draft, saved)` drives both buttons (save + **Zahodit změny**),
+  the „Máš neuložené změny" hint, and `useLeaveGuard(dirty)` + `ConfirmModal`, which holds an in-app
+  link click back (and asks the browser to warn on a tab close) before the draft is lost. The secret is
+  compared **trimmed** against the stored value, because the backend stores it trimmed: typing a
+  trailing space and deleting it again must not leave the page claiming unsaved work forever.
+  **The switch refuses to open registration while the secret is blank**, in the API's own words
+  (`settings.registration.secretRequired` ↔ `settings.ErrSecretRequired`); `handleSubmit` repeats the
+  check, because the field can be emptied after the switch is already on. **The secret is a readable
+  text field** (`type="text"`, an eye button toggles it to `password`), never a write-only password
+  box: reading it back to tell people what it is is the whole reason it is stored unhashed, and the
+  helper line says out loud that this word is what keeps strangers out and that everybody in the
+  community is expected to know it. The welcome text is a monospace `textarea` beside a live preview
+  (`Row` + two `Col md={6}` — stacked, editor first, below `md`) rendered by the shared `Markdown`
+  component — the one the welcome itself will render with — so the two cannot drift apart. A save reports
+  `settings.saved`; a rejection repeats the **server's own message** (`ApiError.message`) rather than a
+  generic apology, because a refusal on grounds this form does not know about is exactly what needs
+  repeating. Loading spinner / `ErrorState` with retry, and a footer line with
+  `formatDateTime(updated_at)`. Tests: `SettingsPage.test.tsx`,
   `AuditPage` = `/audit` (admin **or** maintainer, `isAdmin`) an **audit log**: a read-only table of records from `GET /audit`
   newest first (when/who/action/target/IP) — also through the shared `RecordTable`, so a phone gets **one stacked
   card per entry** —, the `details` JSON via an expandable block (`AuditEntryDetails`, `aria-expanded` +
@@ -4252,7 +4289,14 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   learn, which is why the sign-in and registration screens may ask it before anybody has signed in (the
   full settings record carries the registration secret and stays behind `RequireAdmin`). It sends no
   credentials and **throws** rather than defaulting: "we could not ask" is not "registration is shut", and
-  the two callers of `useRegistrationOpen()` answer that difference differently,
+  the two callers of `useRegistrationOpen()` answer that difference differently. The admin half lives
+  here too: `fetchInstanceSettings(signal)` over `GET /api/v1/settings` → `InstanceSettings`
+  (`registration_enabled`, `registration_secret`, `welcome_markdown`, `updated_at`, `updated_by_uid?`)
+  and `updateInstanceSettings(update, signal)` over `PUT /api/v1/settings` → the persisted record.
+  Both send the session cookie (`credentials: 'same-origin'`) and throw `ApiError` carrying the
+  status **and the backend's own `error` message** — a 400 on enabling registration with a blank secret
+  is meant to be shown verbatim. All three values travel together because the backend writes them
+  together: the flag and the secret guard each other, so a partial update has no meaning,
   `whatsNew.ts` = `fetchWhatsNew(signal)` over `GET /api/v1/whats-new` → `WhatsNew{has_news, since?,
   photos?, comments?, albums?:WhatsNewAlbum[], album_count?, people?:WhatsNewPerson[], person_count?}`
   (`has_news` is the only flag to branch on — false covers both a first-ever visit and an empty one;

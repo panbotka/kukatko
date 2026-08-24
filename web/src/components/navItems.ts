@@ -194,6 +194,13 @@ export const ADMIN_ITEMS: AdminEntry[] = [
     icon: 'clock-history',
     gate: 'admin',
   },
+  {
+    to: '/settings',
+    labelKey: 'nav.settings',
+    titleKey: 'nav.titles.settings',
+    icon: 'sliders',
+    gate: 'admin',
+  },
 ]
 
 /**
