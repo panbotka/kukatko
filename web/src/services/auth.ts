@@ -308,6 +308,32 @@ export async function setMySubject(subjectUid: string | null, signal?: AbortSign
   return (await res.json()) as User
 }
 
+/**
+ * Records that the signed-in account has seen the first-run welcome
+ * (`POST /api/v1/auth/welcome-seen`).
+ *
+ * Self-scoped like {@link setMySubject}: the stamp lands on the session's own
+ * account, never on one named in a body. The backend stamps
+ * `welcome_seen_at` only the first time and returns the stored timestamp
+ * afterwards, so calling this twice is harmless — a caller does not have to
+ * remember whether it already did.
+ *
+ * @returns the refreshed user, carrying the stamp the caller just made.
+ * @throws ApiError when the response status is not 2xx.
+ * @throws NetworkError when the request never reached the backend.
+ */
+export async function markWelcomeSeen(signal?: AbortSignal): Promise<User> {
+  const res = await apiFetch('/auth/welcome-seen', {
+    method: 'POST',
+    credentials: 'same-origin',
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+  return (await res.json()) as User
+}
+
 /** Minimum password length enforced by the backend (`internal/auth`). */
 export const MIN_PASSWORD_LENGTH = 8
 

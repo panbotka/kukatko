@@ -3390,6 +3390,27 @@
     "minePhotos_many": "{{count}} nové fotky, na kterých jsi ty",
     "minePhotos_other": "{{count}} nových fotek, na kterých jsi ty"
   },
+  "welcome": {
+    "title": "Vítej v Kukátku",
+    "close": "Zavřít uvítání",
+    "skip": "Přeskočit",
+    "next": "Pokračovat",
+    "person": {
+      "hint": "Vyber osobu z knihovny, která jsi ty. Appka ti pak umí ukázat fotky, na kterých jsi, a ve vyhledávání funguje person:me. Dokud volbu nepotvrdíš, nic se neuloží.",
+      "publishWarning": "Pozor: až osobu vybereš, bude se u všech tvých komentářů zobrazovat její profilová fotka — uvidí ji každý, kdo si fotku otevře.",
+      "searchLabel": "Najít osobu",
+      "searchPlaceholder": "Zadej jméno",
+      "loading": "Načítám osoby…",
+      "empty": "V knihovně zatím nikdo pojmenovaný není.",
+      "noMatches": "Nikdo takový v knihovně není.",
+      "confirm": "Potvrdit",
+      "done": "Hotovo",
+      "change": "Vybrat jinou osobu",
+      "linkedTo": "Tvůj účet je propojený s osobou {{name}}.",
+      "unknownPerson": "Propojená osoba už v knihovně není.",
+      "error": "Propojení se nepodařilo uložit. Zkus to prosím znovu."
+    }
+  },
   "pwa": {
     "offline": "Jsi offline. Kukátko se otevře, ale fotky a knihovna potřebují připojení.",
     "update": {

@@ -3244,6 +3244,27 @@
     "minePhotos_one": "{{count}} new photo of you",
     "minePhotos_other": "{{count}} new photos of you"
   },
+  "welcome": {
+    "title": "Welcome to Kukátko",
+    "close": "Close the welcome",
+    "skip": "Skip",
+    "next": "Continue",
+    "person": {
+      "hint": "Pick the person in the library that is you. The app can then show you the photos you are on, and person:me starts working in search. Nothing is saved until you confirm.",
+      "publishWarning": "Note: once you pick a person, their profile photo will appear next to every comment you write — everyone who opens the photo will see it.",
+      "searchLabel": "Find a person",
+      "searchPlaceholder": "Type a name",
+      "loading": "Loading people…",
+      "empty": "Nobody in the library has been named yet.",
+      "noMatches": "Nobody in the library matches.",
+      "confirm": "Confirm",
+      "done": "Done",
+      "change": "Pick someone else",
+      "linkedTo": "Your account is linked to {{name}}.",
+      "unknownPerson": "The linked person is no longer in the library.",
+      "error": "Could not save the link. Please try again."
+    }
+  },
   "pwa": {
     "offline": "You are offline. Kukátko opens, but photos and the library need a connection.",
     "update": {

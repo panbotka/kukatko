@@ -30,10 +30,13 @@ vi.mock('./services/audit', async (importOriginal) => {
   return { ...actual, fetchMyActivity: vi.fn(() => new Promise(() => undefined)) }
 })
 
-// The public registration route asks the instance whether registration is open;
-// stub the call so the route test exercises the wiring, not the network.
+// The public registration route asks the instance whether registration is open,
+// and the shell's first-run welcome asks for the administrator's greeting; stub
+// both so the route tests exercise the wiring, not the network. The greeting
+// never resolves, which keeps the welcome closed over every routed page.
 vi.mock('./services/settings', () => ({
   fetchPublicSettings: vi.fn(() => Promise.resolve({ registration_enabled: true })),
+  fetchWelcomeMarkdown: vi.fn(() => new Promise(() => undefined)),
 }))
 
 // The password-reset landing route checks its link on mount; stub the call (never

@@ -228,6 +228,34 @@ here.
   brings it back. Loading / `has_news:false` / already dismissed → renders nothing; **every role sees it**,
   viewers included. Texts `whatsNew.*` (cs/en, with the Czech plural categories `_one/_few/_many/_other`
   so 1 fotka / 2 fotky / 5 fotek all read correctly). Tests: `WhatsNewPanel.test.tsx`),
+  `WelcomeModal` (`components/welcome/`, **the first-run welcome, shown once**: mounted by `Layout` after
+  `MobileTabBar`, so it lies over whatever page the reader landed on and every routed screen inside the shell
+  stays where it is behind it (the immersive routes outside `Layout` never get it). Two steps in one
+  `<Modal show centered scrollable fullscreen="sm-down">` — full-bleed on a phone because the welcome is a page,
+  not an aside — with `aria-labelledby` pointing at its `Modal.Title`. **Step one** (`WelcomeTextStep`) prints
+  the administrator's greeting through the shared `Markdown` component, the very renderer that draws the
+  live preview in `SettingsPage`, so preview and reality cannot drift; the wrapper carries `text-break` so a
+  pasted URL cannot push the dialog sideways. **Step two** (`WelcomePersonStep`) asks who the reader is: a
+  `type="search"` field **at the top of the body** (on a phone the keyboard covers the bottom half, and a search
+  box under it cannot be read while it is typed into) filtering `useSubjects()` through `foldedIncludes`, then up
+  to `MAX_CANDIDATES` = 6 rows, each a `Button` wrapping a `SubjectSummary` — **name *and* face**, because a
+  family archive is full of namesakes and a face settles it faster than a spelling does. Rows are ordered
+  **most-photographed first**, which is what makes an empty query a useful shortlist rather than the alphabet;
+  the marked row carries `aria-pressed`. **Nothing is written until Confirm**, which calls `setMySubject(uid)`
+  then `refresh()` (the menu entry, `person:me` and the comment avatar all read the link off the session).
+  An account that **already names a person** is not asked again: it is told who it is linked to
+  (`welcome.person.linkedTo`, or `unknownPerson` when the link outlived its subject) and offered
+  „Vybrat jinou osobu", which reveals the same picker one click later. **Gating**: a `Phase`
+  (`idle`→`loading`→`open`|`done`) latched in state — `done` is final, so the `refresh()` a successful link
+  triggers cannot reopen it. It renders nothing and **asks the backend nothing** for an account whose
+  `welcome_seen_at` is set (almost every page load); otherwise it fetches `fetchWelcomeMarkdown()` **before** it
+  dares appear, an **empty/whitespace greeting opens straight on step two** (an empty first page only teaches
+  the reader to click through without reading), and a **failed fetch means the welcome quietly does not happen
+  this time** — nothing is recorded, so the next sign-in tries again: the greeting is postponed, not lost.
+  However it ends — confirmed, skipped, or closed with the X — `finish()` closes first and fires
+  `markWelcomeSeen()` **fire-and-forget with the rejection swallowed**: a request the reader cannot see failing
+  is not a reason to keep them in a dialog, and the backend stamp is idempotent. Texts `welcome.*` (cs/en).
+  Tests: `WelcomeModal.test.tsx`),
   `JobStateLegend` (**shared legend of job-queue states**: a compact `dl` with a bold term + a quiet
   one-sentence explanation of each state, so an admin understands without hovering; both the labels and the explanations come from a
   shared i18n block `jobStates.labels.*`/`jobStates.descriptions.*`, so the wording is identical on
@@ -508,10 +536,9 @@ here.
   dialogs — a confirm has no inputs, so no keyboard ever covers its footer, and a phone-wide sheet for a
   two-line question reads as a page rather than as a question. Tests: `ConfirmModal.test.tsx`),
   `Markdown` (**the app's one Markdown renderer** — `react-markdown` + `rehype-sanitize`, for wherever
-  prose somebody typed is shown as formatted text. Its first caller is the administrator's live
-  preview of the first-sign-in welcome in `SettingsPage`; when the welcome itself gets a screen it
-  renders through this same component, so the preview is not a lookalike of the real thing but
-  literally the same renderer. **Sanitising is not optional**
+  prose somebody typed is shown as formatted text. Its two callers are the administrator's live
+  preview of the first-sign-in welcome in `SettingsPage` and the welcome itself (`WelcomeModal`), so
+  the preview is not a lookalike of the real thing but literally the same renderer. **Sanitising is not optional**
   even though only an administrator can write the text: `rehype-sanitize` runs on the rendered tree
   with its default (GitHub) schema, so a `javascript:` href, an `onclick`, an `<iframe>` or a `<style>`
   block cannot survive — a taken-over admin account must not become a way to run script in every other
@@ -4296,7 +4323,13 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   Both send the session cookie (`credentials: 'same-origin'`) and throw `ApiError` carrying the
   status **and the backend's own `error` message** — a 400 on enabling registration with a blank secret
   is meant to be shown verbatim. All three values travel together because the backend writes them
-  together: the flag and the secret guard each other, so a partial update has no meaning,
+  together: the flag and the secret guard each other, so a partial update has no meaning.
+  `fetchWelcomeMarkdown(signal)` over `GET /api/v1/settings/welcome` → the greeting string alone
+  (`WelcomeSettings{welcome_markdown}` unwrapped): the one field of that record any signed-in role may
+  read, a viewer having no business with the registration secret that travels with the admin shape. An
+  instance where nobody wrote a greeting answers **200 with an empty string, not a 404** — "there is no
+  greeting" is an answer — so a rejection here means the question could not be asked, which `WelcomeModal`
+  deliberately does not treat as an empty greeting,
   `whatsNew.ts` = `fetchWhatsNew(signal)` over `GET /api/v1/whats-new` → `WhatsNew{has_news, since?,
   photos?, comments?, albums?:WhatsNewAlbum[], album_count?, people?:WhatsNewPerson[], person_count?}`
   (`has_news` is the only flag to branch on — false covers both a first-ever visit and an empty one;
@@ -4336,8 +4369,10 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `person:me` filter and the comment avatar all read); `User` additionally carries **`approved_at`**
   (when an administrator let the account in, `null` while nobody has — **not** the inverse of
   `disabled`, which is an account that *was* let in and then blocked) and **`welcome_seen_at`** (when
-  its owner last dismissed the first-run welcome, `null` when never; `POST /api/v1/auth/welcome-seen`
-  stamps it once and never moves it); **and the personal API tokens**
+  its owner last dismissed the first-run welcome, `null` when never; **`markWelcomeSeen(signal)`** over
+  `POST /api/v1/auth/welcome-seen` → the refreshed `User` stamps it once and never moves it, so calling it
+  twice is harmless and a caller — `WelcomeModal` fires it and forgets it — need not remember whether it
+  already did); **and the personal API tokens**
   (`fetchApiTokens(signal)` / `createApiToken(name,signal)` / `revokeApiToken(id,signal)` over
   `GET`/`POST`/`DELETE /api/v1/auth/tokens[/{id}]`, the types `ApiToken{id,user_uid,name,created_at,
   expires_at?,last_used_at?,revoked_at?}` and `CreatedApiToken{token,secret}` — **`secret` arrives once and

@@ -38,6 +38,7 @@ import {
   UPLOAD_ITEM,
 } from './navItems'
 import { SearchCommand } from './search/SearchCommand'
+import { WelcomeModal } from './welcome/WelcomeModal'
 
 /**
  * Application shell: a responsive top navbar (navigation and the
@@ -386,6 +387,10 @@ export function Layout() {
           do not cost a hamburger open-then-tap. Renders nothing on `md`+, where
           the top bar above is already the whole navigation. */}
       <MobileTabBar />
+      {/* Shown once, to an account that has never seen it, over whatever it
+          landed on. It renders nothing — and asks the backend nothing — for
+          everybody else, which is almost every page load. */}
+      <WelcomeModal />
     </>
   )
 }

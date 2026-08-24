@@ -29,10 +29,10 @@ function MarkdownLink({ children, ...props }: AnchorHTMLAttributes<HTMLAnchorEle
 
 /**
  * The app's one Markdown renderer, for wherever prose somebody typed is shown as
- * formatted text. Its first caller is the administrator's live preview of the
- * first-sign-in welcome (`SettingsPage`); when the welcome itself gets a screen
- * it renders through this same component, so the preview is not a lookalike of
- * the real thing but literally the same renderer.
+ * formatted text. Its two callers are the administrator's live preview of the
+ * first-sign-in welcome (`SettingsPage`) and the welcome itself
+ * (`WelcomeModal`), so the preview is not a lookalike of the real thing but
+ * literally the same renderer.
  *
  * Sanitising is not optional even though only an administrator can write the
  * text. `rehype-sanitize` runs on the rendered tree with its default (GitHub)

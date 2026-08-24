@@ -221,6 +221,14 @@ were written.
   greeting a newcomer will be met with on their first sign-in, written in Markdown with a live
   preview beside it that renders exactly what the welcome will. Registration cannot be opened while the secret is still empty, and nothing is written until
   it is saved.
+- **The first sign-in is met with a welcome, once.** Whoever signs in for the first time gets the
+  greeting the administrator wrote, and then the one question the app cannot answer on its own:
+  which person of the photographs they are. It is a search over the library's people showing each
+  candidate's face as well as their name, because a family archive is full of namesakes; picking one
+  only marks it, and nothing is linked until it is confirmed. Saying so is what makes *moje fotky*,
+  `person:me` in a search and one's own face beside one's comments start working — and somebody who
+  would rather not is one click from skipping it. An account that already named a person is shown
+  who, not asked again. However it ends, it does not come back.
 - **Nobody has to be told their own password.** When somebody forgets theirs, an administrator
   starts a reset instead of inventing a password for them: Kukátko mails that person a one-time link,
   valid for a week, where they choose their own — and hands the administrator the same link to pass

@@ -127,3 +127,37 @@ export async function updateInstanceSettings(
   }
   return (await res.json()) as InstanceSettings
 }
+
+/**
+ * The first-sign-in greeting as any signed-in user may read it
+ * (`GET /api/v1/settings/welcome`, `settingsapi.welcomeResponse`). One field:
+ * a viewer has no business reading the registration secret that travels with
+ * the administrator's record.
+ */
+export interface WelcomeSettings {
+  welcome_markdown: string
+}
+
+/**
+ * Reads the administrator's first-sign-in welcome text from
+ * `GET /api/v1/settings/welcome`.
+ *
+ * An instance where nobody wrote one answers 200 with an empty string rather
+ * than a 404 — "there is no greeting" is an answer, not a failure — so a caller
+ * that gets a rejection here really could not ask, and must not treat that as
+ * an empty greeting.
+ *
+ * @param signal optional AbortSignal to cancel the request (e.g. on unmount).
+ * @throws ApiError when the response status is not 2xx.
+ */
+export async function fetchWelcomeMarkdown(signal?: AbortSignal): Promise<string> {
+  const res = await fetch(`${API_BASE}/settings/welcome`, {
+    method: 'GET',
+    credentials: 'same-origin',
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+  return ((await res.json()) as WelcomeSettings).welcome_markdown
+}
