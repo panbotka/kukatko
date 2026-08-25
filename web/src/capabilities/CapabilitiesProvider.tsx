@@ -1,8 +1,12 @@
 import { type ReactNode, useEffect, useState } from 'react'
 
-import { type Capabilities, fetchCapabilities } from '../services/capabilities'
+import { fetchCapabilities } from '../services/capabilities'
 
-import { CAPABILITIES_DEFAULT, CapabilitiesContext } from './CapabilitiesContext'
+import {
+  CAPABILITIES_DEFAULT,
+  type CapabilitiesState,
+  CapabilitiesContext,
+} from './CapabilitiesContext'
 
 /**
  * How often the feature flags are refreshed while the tab is visible, so the
@@ -18,10 +22,16 @@ const REFRESH_INTERVAL_MS = 60_000
  * `GET /api/v1/capabilities`, so the UI reflects the embeddings box coming
  * on- or offline without a reload. A failed fetch leaves the last known flags in
  * place; the flags are a hint, never load-bearing, so an offline backend simply
- * keeps the last state (starting from all-off) rather than erroring.
+ * keeps the last state rather than erroring.
+ *
+ * What a failed fetch must NOT do is look like a successful one reporting an
+ * absent feature, so `known` flips to true only on a response that arrived and
+ * stays true afterwards: once the instance has told us what it can do, a later
+ * network blip leaves that answer standing rather than reverting the UI to
+ * "nothing works".
  */
 export function CapabilitiesProvider({ children }: { children: ReactNode }) {
-  const [capabilities, setCapabilities] = useState<Capabilities>(CAPABILITIES_DEFAULT)
+  const [capabilities, setCapabilities] = useState<CapabilitiesState>(CAPABILITIES_DEFAULT)
 
   useEffect(() => {
     let active = true
@@ -40,7 +50,7 @@ export function CapabilitiesProvider({ children }: { children: ReactNode }) {
         .then((next) => {
           // Ignore a resolved response from a superseded/aborted request.
           if (active && controller === current) {
-            setCapabilities(next)
+            setCapabilities({ ...next, known: true })
           }
         })
         .catch(() => {

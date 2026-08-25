@@ -3402,8 +3402,13 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `GET /api/v1/capabilities`; the provider sits inside `AuthProvider`,
   fetches on mount + after 60 s + on `visibilitychange` (the same pattern as `useJobStats`), a failed
   fetch keeps the last state; **unlike `useAuth` the hook doesn't throw** — the context has a safe default
-  `{semantic_search:false}` (**no `version`**), so a component outside the provider merely hides the optional
-  offer — or prints no version — instead of crashing.
+  `{semantic_search:false, known:false}` (**no `version`**), so a component outside the provider merely hides
+  the optional offer — or prints no version — instead of crashing.
+  **`known` separates "the instance said no" from "we never got an answer"**: it flips true on the first
+  reply and stays true, so a later failure keeps the learned flags rather than reverting the UI to
+  "nothing works". Anything that *tells the reader a feature is missing* must key off it — the all-off
+  default used to be indistinguishable from a reported outage, which made a capabilities call answered
+  401 (an expired session) announce that content search was unavailable while it was running fine.
   `FilterBar` reads it for the semantic-search link, `useSearchMode` to decide the mode a search is
   actually sent as, `Layout`/`MobileNavDrawer`/`HelpPage` for the version:
   the shell holds it once, so no menu open ever costs a request and the number cannot disagree with the
@@ -3443,8 +3448,11 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   replays the search in the background after a mutation; the `mode` it sends is the one
   `useSearchMode` resolves, so **no page backed by this hook can block on the sidecar timeout**;
   `useSearchMode(requested)` → `{mode,semanticAvailable,downgraded}` = the one place that decides what a search
-  is really sent as: `effectiveSearchMode` (`lib/searchView`) turns `semantic`/`hybrid` into `fulltext` while
-  `useCapabilities().semantic_search` is false. The box is offline most of the time, and asking anyway only buys
+  is really sent as: `effectiveSearchMode` (`lib/searchView`) turns `semantic`/`hybrid` into `fulltext` **only
+  once the instance has actually reported the sidecar unreachable** (`known && !semantic_search`); while the
+  flags are still unknown the requested mode goes out unchanged, since `downgraded` drives the page's
+  "showing text results instead" notice and inventing one on no evidence is the worse error of the two.
+  The box is offline most of the time, and asking anyway only buys
   the sidecar timeout (30 s of bare spinner, measured on the live instance) before the backend answers with the
   full-text results it had all along. Idempotent and mode-preserving when semantic search is up, so applying it
   along a chain is safe; the capability refreshes in the background, so a box coming back flips the mode and

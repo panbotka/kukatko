@@ -7,10 +7,14 @@ import { type SearchMode } from '../services/photos'
 
 import { useSearchMode } from './useSearchMode'
 
-/** Renders the hook under an instance that does or does not offer semantic search. */
-function render(requested: SearchMode, semanticSearch: boolean) {
+/**
+ * Renders the hook under an instance that does or does not offer semantic search.
+ * The flags are marked known, which is what makes "off" mean the instance said so
+ * rather than that nobody has asked it yet.
+ */
+function render(requested: SearchMode, semanticSearch: boolean, known = true) {
   const wrapper = ({ children }: { children: ReactNode }) => (
-    <CapabilitiesContext.Provider value={{ semantic_search: semanticSearch }}>
+    <CapabilitiesContext.Provider value={{ semantic_search: semanticSearch, known }}>
       {children}
     </CapabilitiesContext.Provider>
   )
@@ -45,10 +49,32 @@ describe('useSearchMode', () => {
     })
   })
 
-  it('reports all-off outside a provider, so a missing one cannot cost a timeout', () => {
-    // CAPABILITIES_DEFAULT is semantic_search: false; the conservative answer is
-    // a search that returns something over one that waits for a box that may not
-    // be there.
-    expect(renderHook(() => useSearchMode('hybrid')).result.current.mode).toBe('fulltext')
+  it('sends the requested mode while the flags are still unknown', () => {
+    // The flags start all-off and only a reply makes them mean anything. Reading
+    // that blank as "the sidecar is down" is what made a capabilities request
+    // answered 401 tell the reader content search was unavailable while it was
+    // running. Unknown must therefore behave as "go ahead and ask".
+    expect(render('hybrid', false, false)).toEqual({
+      mode: 'hybrid',
+      semanticAvailable: true,
+      downgraded: false,
+    })
+  })
+
+  it('claims no downgrade on an unknown instance, so no page invents an outage', () => {
+    // The specific regression: the banner explaining the fallback keys off
+    // `downgraded`, so an instance nobody could ask must not set it.
+    expect(render('semantic', false, false).downgraded).toBe(false)
+  })
+
+  it('reports nothing known outside a provider, and so downgrades nothing', () => {
+    // CAPABILITIES_DEFAULT carries known: false. A missing provider is a test
+    // artefact rather than a real state, and it must not fabricate an outage
+    // either; the backend still reports its own fallback in the reply.
+    expect(renderHook(() => useSearchMode('hybrid')).result.current).toEqual({
+      mode: 'hybrid',
+      semanticAvailable: true,
+      downgraded: false,
+    })
   })
 })

@@ -10,7 +10,12 @@ export interface SearchModeState {
    * sidecar is unreachable.
    */
   mode: SearchMode
-  /** Whether the instance can currently answer embedding-backed searches. */
+  /**
+   * Whether a semantic request is worth sending. False only when the instance
+   * has actually said it cannot answer one — never merely because the flags have
+   * not arrived, which is a different thing and must not be reported as a
+   * missing feature.
+   */
   semanticAvailable: boolean
   /**
    * True when the requested mode was replaced by `fulltext`. Pages use it to say
@@ -30,9 +35,18 @@ export interface SearchModeState {
  *
  * Capabilities refresh in the background, so a box coming back online flips
  * `mode` back to the requested one within about a minute and the search re-runs.
+ *
+ * Until the flags are known the requested mode is sent unchanged. Downgrading on
+ * a guess is the worse error of the two: it costs the reader the search they
+ * asked for and, because the page explains the downgrade, tells them a feature
+ * is unavailable on no evidence — which is exactly what an unauthenticated
+ * capabilities request used to do. The backend degrades and reports it in the
+ * reply if the sidecar really is down, so the truth still reaches the page; the
+ * only cost is one request that may wait for the sidecar timeout.
  */
 export function useSearchMode(requested: SearchMode): SearchModeState {
-  const { semantic_search: semanticAvailable } = useCapabilities()
+  const { semantic_search: semanticSearch, known } = useCapabilities()
+  const semanticAvailable = !known || semanticSearch
   const mode = effectiveSearchMode(requested, semanticAvailable)
   return { mode, semanticAvailable, downgraded: mode !== requested }
 }
