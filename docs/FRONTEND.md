@@ -2985,7 +2985,11 @@ here.
   (`kukatko-search-trigger`, named + shortcut-hinted by `aria-label`/`title`, see the navbar above)
   opens via `react-bootstrap` `Modal` a top-anchored console — a live input (a combobox
   with `aria-activedescendant`), grouped **keyboard-operable** results from `useGlobalSearch`
-  (rows Fotky/Lidé/Alba/Štítky + always a leading action „Hledat vše" → `/search?q=`) and a footer legend
+  (rows **Alba/Štítky/Lidé/Fotky — sbírky první, jednotlivá fotka poslední**; hledající „Veselici" chce
+  skoro vždycky album nebo štítek, ne jednu z dvou set fotek, které to slovo obsahují, a fotka je nejužší
+  možná odpověď, tak se kreslí na konec. Pořadí skupin je zároveň pořadí klávesnice: `buildGroups` je
+  vrací v něm a `flat` je v něm zplošťuje, takže šipka dolů jde přesně po tom, co oko čte. Prázdné
+  skupiny se dál vůbec nekreslí + always a leading action „Hledat vše" → `/search?q=`) and a footer legend
   of keys. Arrows ↑/↓ move (wrapping), Enter opens the active row, Esc closes, a click opens. It opens
   with `/` (suppressed while typing / with a form-modal open via `isTypingElement`+`isFormModalOpen`) or
   Cmd/Ctrl-K (a chord, works while typing too); **the open/closed state and the query live only in the component, not in the URL**,

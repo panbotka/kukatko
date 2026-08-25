@@ -64,7 +64,7 @@ interface SearchItem {
   query?: string
 }
 
-/** A titled block of {@link SearchItem}s (Photos / People / Albums / Labels). */
+/** A titled block of {@link SearchItem}s (Albums / Labels / People / Photos). */
 interface SearchGroup {
   /** Stable key for React and the group's DOM ids. */
   key: string
@@ -182,9 +182,17 @@ function buildHistoryGroup(
  * loading) result. A resolved UID lookup comes first — pasting an id is an exact
  * reference and Enter should open it. Then the "search everything" action, so a
  * user who just types and presses Enter lands on the full search page; the entity
- * groups (photos, people, albums, labels — the groups the global-search endpoint
- * returns) follow when they arrive. An empty query yields no rows; the caller
- * offers the recent searches (or the idle hint) instead.
+ * groups follow when they arrive.
+ *
+ * Those groups go from the most specific answer to the least: albums, labels,
+ * people, photos. Somebody searching for a place name almost always means the
+ * album or the label that collects it, not one of the two hundred photographs
+ * that happen to match — and a single photo, being the narrowest possible answer
+ * to a word, is the one thing worth scrolling for rather than tripping over. The
+ * order is the drawn order and the keyboard order at once: {@link SearchGroup}s
+ * are flattened in this sequence, so arrowing down walks exactly what the eye
+ * reads. An empty query yields no rows; the caller offers the recent searches
+ * (or the idle hint) instead.
  */
 function buildGroups(
   query: string,
@@ -223,38 +231,6 @@ function buildGroups(
     groups.unshift(directGroup)
   }
 
-  if (result.photos.length > 0) {
-    groups.push({
-      key: 'photos',
-      headingKey: 'globalSearch.groups.photos',
-      items: result.photos.map((photo) => ({
-        id: `sc-opt-photo-${photo.uid}`,
-        to: `/photos/${photo.uid}`,
-        primary: firstNonEmpty(
-          localizeCountryNames(photo.title, lang),
-          photo.original_name,
-          photo.file_name,
-        ),
-        secondary: formatPhotoDate(photo.taken_at, lang),
-        thumbSrc: thumbUrl(photo.uid, RESULT_THUMB_SIZE),
-        icon: 'images',
-      })),
-    })
-  }
-  if (result.people.length > 0) {
-    groups.push({
-      key: 'people',
-      headingKey: 'globalSearch.groups.people',
-      items: result.people.map((person) => ({
-        id: `sc-opt-person-${person.uid}`,
-        to: `/people/${person.uid}`,
-        primary: person.name,
-        thumbSrc: person.thumb_url,
-        circle: true,
-        icon: 'person-circle',
-      })),
-    })
-  }
   if (result.albums.length > 0) {
     groups.push({
       key: 'albums',
@@ -280,6 +256,38 @@ function buildGroups(
         count: label.photo_count,
         thumbSrc: label.thumb_url,
         icon: 'tags',
+      })),
+    })
+  }
+  if (result.people.length > 0) {
+    groups.push({
+      key: 'people',
+      headingKey: 'globalSearch.groups.people',
+      items: result.people.map((person) => ({
+        id: `sc-opt-person-${person.uid}`,
+        to: `/people/${person.uid}`,
+        primary: person.name,
+        thumbSrc: person.thumb_url,
+        circle: true,
+        icon: 'person-circle',
+      })),
+    })
+  }
+  if (result.photos.length > 0) {
+    groups.push({
+      key: 'photos',
+      headingKey: 'globalSearch.groups.photos',
+      items: result.photos.map((photo) => ({
+        id: `sc-opt-photo-${photo.uid}`,
+        to: `/photos/${photo.uid}`,
+        primary: firstNonEmpty(
+          localizeCountryNames(photo.title, lang),
+          photo.original_name,
+          photo.file_name,
+        ),
+        secondary: formatPhotoDate(photo.taken_at, lang),
+        thumbSrc: thumbUrl(photo.uid, RESULT_THUMB_SIZE),
+        icon: 'images',
       })),
     })
   }

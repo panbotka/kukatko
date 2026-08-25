@@ -179,6 +179,16 @@ describe('SearchCommand', () => {
     for (const heading of ['Photos', 'People', 'Albums', 'Labels']) {
       expect(screen.getByText(heading)).toBeInTheDocument()
     }
+    // …and the collections come first: the album and the label answer "Veselice"
+    // better than any single photograph that merely matches the word, so a photo
+    // — the narrowest answer there is — is drawn last.
+    expect(screen.getAllByRole('option').map((option) => option.id)).toEqual([
+      'sc-opt-action',
+      'sc-opt-album-al1',
+      'sc-opt-label-lb1',
+      'sc-opt-person-su1',
+      'sc-opt-photo-ph1',
+    ])
     // The X that appears beside a typed query is icon-only, so it says what it
     // does to the mouse as well as to a screen reader.
     expect(screen.getByRole('button', { name: 'Clear search' })).toHaveAttribute(
@@ -196,8 +206,31 @@ describe('SearchCommand', () => {
     await screen.findByRole('option', { name: /Sunset beach/ })
 
     // The cursor starts on the "search everything" row; one step down lands on the
-    // first result (the photo), and Enter opens it.
+    // first result (the album, now that collections lead), and Enter opens it.
     await user.keyboard('{ArrowDown}{Enter}')
+    expect(screen.getByTestId('loc')).toHaveTextContent('/albums/al1')
+  })
+
+  it('arrows through the groups in the order they are drawn, photos last', async () => {
+    const user = userEvent.setup()
+    renderCommand()
+    await user.click(screen.getByRole('button', { name: 'Search' }))
+    const input = await screen.findByRole('combobox')
+    await user.type(input, 'beach')
+    await screen.findByRole('option', { name: /Sunset beach/ })
+
+    // The cursor starts on the first row on screen and every step down is the
+    // next row on screen: no group is reachable in an order other than its own.
+    const walked = [input.getAttribute('aria-activedescendant') ?? '']
+    for (let step = 0; step < 4; step += 1) {
+      await user.keyboard('{ArrowDown}')
+      walked.push(input.getAttribute('aria-activedescendant') ?? '')
+    }
+    expect(walked).toEqual(screen.getAllByRole('option').map((option) => option.id))
+    expect(input).toHaveAttribute('aria-activedescendant', 'sc-opt-photo-ph1')
+
+    // Four steps down from the top is the photo — the last row, not the first.
+    await user.keyboard('{Enter}')
     expect(screen.getByTestId('loc')).toHaveTextContent('/photos/ph1')
   })
 
