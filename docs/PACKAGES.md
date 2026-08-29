@@ -730,10 +730,20 @@ to `## Package map` in `CLAUDE.md`.
   dimensions for 5–8), so the retired importers de-oriented on the way in; without it the pair contradicted
   itself and every consumer rotated a second time. The transform is **its own inverse**.
   `FileOrientation(path) int` (`orientation.go`) reads **only** the orientation tag, pure-Go and with no
-  shell-out, returning 1–8 or 0 when the file says nothing. It answers the one question a caller has about
-  bytes it is about to hand to something that ignores EXIF — does this still need turning? — and it has to be
-  asked of those bytes, not of the catalogue: an `imgconvert` intermediate may already carry the rotation in
-  its pixels, and applying the original's tag on top would turn the picture twice), `internal/phash/`
+  shell-out, returning 1–8 or 0 when the file says nothing. **EXIF first, then XMP** (`xmp.go`): with no EXIF
+  orientation it walks the JPEG segment headers itself (`image/jpeg` throws the APP segments away), takes the
+  APP1 whose payload starts with the Adobe XMP signature and reads `tiff:Orientation` out of it — **both**
+  serialisations, the attribute form (`tiff:Orientation="8"`) and the element form
+  (`<tiff:Orientation>8</tiff:Orientation>`); a truncated segment or a packet that is not XML reads as 0 and
+  never panics. EXIF keeps precedence when both are present. XMP is read at all because a file can carry its
+  orientation nowhere else: the batch that exposed this were JPEGs misnamed `.dng` with **no EXIF block
+  whatsoever** and `tiff:Orientation="8"` in their packet, which made this reader weaker than the `exiftool`
+  one `Extract` uses at ingest — the two disagreed, and `facejob` handed the detector a picture lying on its
+  side. It answers the one question a caller has about bytes it is about to hand to something that ignores
+  EXIF — does this still need turning? — and it has to be asked of those bytes, not of the catalogue: an
+  `imgconvert` intermediate may already carry the rotation in its pixels, and applying the original's tag on
+  top would turn the picture twice (which is why `facejob` consults the catalogue **only** when the bytes are
+  the untouched original)), `internal/phash/`
   (perceptual hashes, **CGO-free**: `Compute(img) Hashes{Phash,Dhash int64}` — **pHash** via
   a 2-D DCT 32×32 → low-freq 8×8 block with a median-without-DC threshold, **dHash** gradient 9×8; `Distance(a,b)`
   = Hamming distance via `bits.OnesCount64`; near-dup = a small distance), `internal/ingest/`
@@ -1444,17 +1454,28 @@ to `## Package map` in `CLAUDE.md`.
   the original (not the thumbnail) so the detector sees every pixel there is.
   **The sidecar does NOT apply EXIF** — measured against the running service: one production iPhone original
   with `orientation=6` returned 2 misshapen boxes as it lay and 6 face-shaped ones pre-rotated, a second
-  returned 0 against 2 — so **this package owns the rotation**: `OpenUpright` reads the orientation tag of
-  **the file it is about to send** (`exif.FileOrientation`, never the catalogue — an `imgconvert` copy may
-  already have the rotation in its pixels), and for a tag > 1 decodes, applies `imgconvert.Orient` and
-  re-encodes a JPEG with no EXIF at all (`NewStorageSource(storage, maxPixels)`, cap = `thumb.max_pixels`
-  via `imgconvert.EnforcePixelBound`, over the cap = a visible job failure, not a sideways send); a file with
-  no tag is streamed byte-for-byte, so the common case pays nothing. It returns `UprightImage{Reader,Width,
-  Height}` whose frame is **measured on those very bytes**, and **bbox conversion**
+  returned 0 against 2 — so **this package owns the rotation**: `OpenUpright` reads the orientation of
+  **the file it is about to send** (`exif.FileOrientation`), and for a tag > 1 decodes, applies
+  `imgconvert.Orient` and re-encodes a JPEG with no EXIF at all (`NewStorageSource(storage, maxPixels)`,
+  cap = `thumb.max_pixels` via `imgconvert.EnforcePixelBound`, over the cap = a visible job failure, not a
+  sideways send); a file with no tag is streamed byte-for-byte, so the common case pays nothing.
+  **Two orientation readers, one hazard:** this one reads the file being sent, ingest's (`exiftool`) read
+  the original and wrote `photos.file_orientation`, and they can disagree — so the catalogue is the
+  fallback **only** when the file says nothing **and** the bytes are the untouched original, which
+  `materializeDecodable` decides by comparing the path `imgconvert.EnsureDecodable` returned with the one
+  it was given (identical = the passthrough path = the original itself; any other path is an intermediate
+  whose pixels may already be turned, and there today's behaviour is kept exactly). Without that fallback a
+  JPEG whose orientation lives only in XMP went to the detector on its side: nine production photos with
+  `file_orientation = 8` detected on a `6048x4032` frame that should have been `4032x6048`, boxes beside
+  faces and two of them with no faces found at all. It returns
+  `UprightImage{Reader,Width,Height,Orientation}` whose frame is **measured on those very bytes** and whose
+  orientation is the one that was applied to them (or that they already embodied), and **bbox conversion**
   `NormalizeBBox(bbox, frameWidth, frameHeight)` divides pixel `[x1,y1,x2,y2]` → normalized `[x,y,w,h]`
   (0..1) by exactly that frame — no orientation enters the conversion, which is what makes the old defect
   (divide by the stored pair swapped, while the pixels were in the raw frame) unrepresentable; the photo's
-  stored pair/orientation are still copied onto the face row as the render hints they always were;
+  stored pair is still copied onto the face row as the render hint it always was, while the row's
+  `orientation` comes from `UprightImage` — the source that turned the pixels has the last word, so a row
+  cannot carry a detection frame and an orientation that describe different pictures;
   **det_score filter**
   (`faces.min_det_score`, default 0.5, `<=0` disables) drops weak detections, reindexes the survivors
   contiguously; **idempotent** (a photo with a `face_detections` row is skipped; zero faces is still

@@ -209,15 +209,19 @@ func (s *Service) Detect(ctx context.Context, photoUID string) error {
 	return nil
 }
 
-// detectionResult is one completed sidecar call: the faces it returned, its model tag
-// and the frame of the image it was given. The frame travels with the faces
-// because every box in them is in it — it is what the boxes are normalized
-// against and what is recorded alongside them, and separating the two is what
-// made the boxes wrong in the first place.
+// detectionResult is one completed sidecar call: the faces it returned, its model
+// tag, and the frame of the image it was given together with the orientation that
+// frame is in. The frame travels with the faces because every box in them is in it
+// — it is what the boxes are normalized against and what is recorded alongside
+// them, and separating the two is what made the boxes wrong in the first place.
+// The orientation travels with it for the same reason one step further out: it is
+// the render hint cached on the face row, and reading it off the catalogue while
+// the frame came from the image source let one row describe two pictures.
 type detectionResult struct {
 	faces                   []embedding.Face
 	model                   string
 	frameWidth, frameHeight int
+	orientation             int
 }
 
 // detectFaces opens the photo's upright original and streams it to the sidecar,
@@ -240,6 +244,7 @@ func (s *Service) detectFaces(ctx context.Context, photo photos.Photo) (detectio
 		model:       model,
 		frameWidth:  upright.Width,
 		frameHeight: upright.Height,
+		orientation: upright.Orientation,
 	}, nil
 }
 
@@ -249,10 +254,14 @@ func (s *Service) detectFaces(ctx context.Context, photo photos.Photo) (detectio
 // indexes so filtered gaps never collide on the UNIQUE (photo_uid, face_index)
 // constraint.
 //
-// The box is divided by the detection's own frame; the photo's stored pair and
-// orientation are only copied onto the row as the render hints they have always
-// been (raw dimensions, raw tag — see vectors.Face). Keeping the two roles apart
-// is what this signature exists for: mixing them is what moved the boxes.
+// The box is divided by the detection's own frame; the photo's stored pair is
+// only copied onto the row as the render hint it has always been (raw dimensions
+// — see vectors.Face). Keeping the two roles apart is what this signature exists
+// for: mixing them is what moved the boxes. The orientation comes from the
+// detection rather than from photo.FileOrientation so it describes the frame the
+// box was measured in; the two are the same value whenever the readers agree, and
+// where they do not it is the image source — the one that actually turned the
+// pixels — that gets the last word.
 func (s *Service) buildFaces(photo photos.Photo, det detectionResult) []vectors.Face {
 	out := make([]vectors.Face, 0, len(det.faces))
 	for _, f := range det.faces {
@@ -268,7 +277,7 @@ func (s *Service) buildFaces(photo photos.Photo, det detectionResult) []vectors.
 			Model:       det.model,
 			PhotoWidth:  photo.FileWidth,
 			PhotoHeight: photo.FileHeight,
-			Orientation: photo.FileOrientation,
+			Orientation: det.orientation,
 		})
 	}
 	return out

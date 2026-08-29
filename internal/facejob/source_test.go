@@ -11,8 +11,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
+	"github.com/panbotka/kukatko/internal/exif"
 	"github.com/panbotka/kukatko/internal/imgconvert"
 	"github.com/panbotka/kukatko/internal/photos"
 )
@@ -408,5 +410,238 @@ func TestOpenUpright_openError(t *testing.T) {
 	}
 	if store.released != 1 {
 		t.Errorf("materialized original released %d times after an open failure, want 1", store.released)
+	}
+}
+
+// xmpAPP1 builds an APP1 segment holding an XMP packet whose only property is
+// tiff:Orientation, in the attribute form the production files used. It is the
+// second place an orientation can live, and for the batch that exposed this defect
+// it was the only one: those files carry no EXIF block at all.
+func xmpAPP1(orientation int) []byte {
+	packet := "http://ns.adobe.com/xap/1.0/\x00" +
+		`<x:xmpmeta xmlns:x="adobe:ns:meta/">` +
+		`<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">` +
+		`<rdf:Description rdf:about="" xmlns:tiff="http://ns.adobe.com/tiff/1.0/" ` +
+		`tiff:Orientation="` + strconv.Itoa(orientation) + `"/>` +
+		`</rdf:RDF></x:xmpmeta>`
+	segment := make([]byte, 4, 4+len(packet))
+	segment[0], segment[1] = 0xFF, 0xE1
+	binary.BigEndian.PutUint16(segment[2:], uint16(len(packet)+2))
+	return append(segment, packet...)
+}
+
+// writeXMPJPEG writes img as a JPEG whose orientation lives ONLY in an XMP packet
+// — no EXIF segment anywhere in the file — and returns its path.
+func writeXMPJPEG(t *testing.T, dir string, img image.Image, orientation int) string {
+	t.Helper()
+	var encoded bytes.Buffer
+	if err := jpeg.Encode(&encoded, img, &jpeg.Options{Quality: 95}); err != nil {
+		t.Fatalf("encode fixture: %v", err)
+	}
+	out := encoded.Bytes()
+	out = append(append(append([]byte{}, out[:2]...), xmpAPP1(orientation)...), out[2:]...)
+	path := filepath.Join(dir, "xmp.jpg")
+	if err := os.WriteFile(path, out, 0o600); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	return path
+}
+
+// TestOpenUpright_xmpOnlyOriginalIsRotated is the regression test for the reported
+// class: a JPEG with no EXIF block whose orientation lives only in XMP. Ingest
+// (exiftool) read it and stored file_orientation = 8; the file-level reader used to
+// answer 0, so the picture went to the detector as it lay — a 6048x4032 frame where
+// the displayed picture is 4032x6048, boxes beside faces and two of nine photos with
+// no faces found at all.
+//
+// The fixture is that file in miniature: landscape pixels, orientation only in the
+// packet, and a catalogue that already knows the answer.
+func TestOpenUpright_xmpOnlyOriginalIsRotated(t *testing.T) {
+	t.Parallel()
+
+	const width, height = 120, 80
+	path := writeXMPJPEG(t, t.TempDir(), quadrantImage(width, height), 8)
+	if got := exif.FileOrientation(path); got != 8 {
+		t.Fatalf("exif.FileOrientation on an XMP-only file = %d, want 8", got)
+	}
+	src := sourceOver(&staticMaterializer{abs: path}, path, nil)
+
+	upright, err := src.OpenUpright(context.Background(),
+		photos.Photo{UID: "ph1", FileWidth: width, FileHeight: height, FileOrientation: 8})
+	if err != nil {
+		t.Fatalf("OpenUpright: %v", err)
+	}
+	defer func() { _ = upright.Reader.Close() }()
+
+	if upright.Width != height || upright.Height != width {
+		t.Errorf("frame = %dx%d, want the portrait %dx%d", upright.Width, upright.Height, height, width)
+	}
+	if upright.Orientation != 8 {
+		t.Errorf("reported orientation = %d, want 8 — the frame and the render hint must agree",
+			upright.Orientation)
+	}
+	img, _, err := image.Decode(upright.Reader)
+	if err != nil {
+		t.Fatalf("decode what was sent: %v", err)
+	}
+	bounds := img.Bounds()
+	if bounds.Dx() != upright.Width || bounds.Dy() != upright.Height {
+		t.Errorf("bytes sent are %dx%d but the frame says %dx%d",
+			bounds.Dx(), bounds.Dy(), upright.Width, upright.Height)
+	}
+	// 270° clockwise: the green top-right quadrant becomes the top-left one.
+	if got := img.At(bounds.Min.X+5, bounds.Min.Y+5); !colourClose(got, color.RGBA{G: 255, A: 255}) {
+		t.Errorf("top-left pixel = %v, want green — the picture was not turned upright", got)
+	}
+}
+
+// TestOpenUpright_ownTagWinsAndIsNotDoubled proves the file's own tag still decides
+// and the catalogue agreeing with it does not turn the picture a second time: the
+// fallback added for XMP-only files must not become "rotate by both".
+func TestOpenUpright_ownTagWinsAndIsNotDoubled(t *testing.T) {
+	t.Parallel()
+
+	const width, height = 120, 80
+	path := writeJPEG(t, t.TempDir(), quadrantImage(width, height), 6)
+	src := sourceOver(&staticMaterializer{abs: path}, path, nil)
+
+	upright, err := src.OpenUpright(context.Background(),
+		photos.Photo{UID: "ph1", FileWidth: width, FileHeight: height, FileOrientation: 6})
+	if err != nil {
+		t.Fatalf("OpenUpright: %v", err)
+	}
+	defer func() { _ = upright.Reader.Close() }()
+
+	if upright.Width != height || upright.Height != width {
+		t.Errorf("frame = %dx%d, want %dx%d — one quarter turn, not two or none",
+			upright.Width, upright.Height, height, width)
+	}
+	if upright.Orientation != 6 {
+		t.Errorf("reported orientation = %d, want 6", upright.Orientation)
+	}
+	img, _, err := image.Decode(upright.Reader)
+	if err != nil {
+		t.Fatalf("decode what was sent: %v", err)
+	}
+	bounds := img.Bounds()
+	// 90° clockwise once: the blue bottom-left quadrant becomes the top-left one.
+	// Turned twice it would be white (180°), and not at all red.
+	if got := img.At(bounds.Min.X+5, bounds.Min.Y+5); !colourClose(got, color.RGBA{B: 255, A: 255}) {
+		t.Errorf("top-left pixel = %v, want blue — the picture was turned the wrong number of times", got)
+	}
+}
+
+// TestOpenUpright_convertedIgnoresCatalogue protects the original design decision:
+// when imgconvert produced an intermediate (the decoder returned a DIFFERENT path)
+// its pixels may already carry the rotation, so a silent intermediate is streamed as
+// it is and the catalogue is never consulted. Applying the original's tag on top
+// would turn the picture twice.
+func TestOpenUpright_convertedIgnoresCatalogue(t *testing.T) {
+	t.Parallel()
+
+	const width, height = 120, 80
+	temp := writeJPEG(t, t.TempDir(), quadrantImage(width, height), 0)
+	before, err := os.ReadFile(temp)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	store := &staticMaterializer{abs: "/originals/photo.heic"}
+	src := &StorageSource{
+		storage: store,
+		decode: func(_ context.Context, _ string) (string, func(), error) {
+			return temp, func() {}, nil
+		},
+	}
+
+	upright, err := src.OpenUpright(context.Background(),
+		photos.Photo{UID: "ph1", FileWidth: height, FileHeight: width, FileOrientation: 8})
+	if err != nil {
+		t.Fatalf("OpenUpright: %v", err)
+	}
+	defer func() { _ = upright.Reader.Close() }()
+
+	if upright.Width != width || upright.Height != height {
+		t.Errorf("frame = %dx%d, want the intermediate's own %dx%d — the catalogue must not rotate it",
+			upright.Width, upright.Height, width, height)
+	}
+	sent, err := io.ReadAll(upright.Reader)
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+	if !bytes.Equal(sent, before) {
+		t.Error("a converted intermediate was re-encoded; it must be streamed unchanged")
+	}
+}
+
+// TestOpenUpright_untaggedOriginalStaysUntouched keeps the common case free: an
+// original that carries no orientation anywhere and whose catalogue row says 0 is
+// streamed byte-for-byte, with the frame measured on those bytes.
+func TestOpenUpright_untaggedOriginalStaysUntouched(t *testing.T) {
+	t.Parallel()
+
+	const width, height = 64, 48
+	path := writeJPEG(t, t.TempDir(), quadrantImage(width, height), 0)
+	want, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	src := sourceOver(&staticMaterializer{abs: path}, path, nil)
+
+	upright, err := src.OpenUpright(context.Background(),
+		photos.Photo{UID: "ph1", FileWidth: width, FileHeight: height, FileOrientation: 0})
+	if err != nil {
+		t.Fatalf("OpenUpright: %v", err)
+	}
+	defer func() { _ = upright.Reader.Close() }()
+
+	if upright.Width != width || upright.Height != height || upright.Orientation != 0 {
+		t.Errorf("frame = %dx%d o%d, want %dx%d o0",
+			upright.Width, upright.Height, upright.Orientation, width, height)
+	}
+	sent, err := io.ReadAll(upright.Reader)
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+	if !bytes.Equal(sent, want) {
+		t.Error("an untagged original was not streamed unchanged")
+	}
+}
+
+// TestOpenUpright_untouchedOriginalFallsBackToCatalogue exercises the other half of
+// the fix: the bytes are the untouched original (the decoder returned the path it
+// was given) and the file itself says nothing this reader understands, so the
+// catalogue — filled by the stronger exiftool reader at ingest — decides. A HEIC or
+// DNG whose orientation the pure-Go readers cannot reach lands here, and without the
+// fallback it would be sent lying on its side.
+func TestOpenUpright_untouchedOriginalFallsBackToCatalogue(t *testing.T) {
+	t.Parallel()
+
+	const width, height = 120, 80
+	path := writeJPEG(t, t.TempDir(), quadrantImage(width, height), 0)
+	if got := exif.FileOrientation(path); got != 0 {
+		t.Fatalf("fixture carries an orientation of its own (%d); the fallback would not be reached", got)
+	}
+	src := sourceOver(&staticMaterializer{abs: path}, path, nil)
+
+	upright, err := src.OpenUpright(context.Background(),
+		photos.Photo{UID: "ph1", FileWidth: width, FileHeight: height, FileOrientation: 8})
+	if err != nil {
+		t.Fatalf("OpenUpright: %v", err)
+	}
+	defer func() { _ = upright.Reader.Close() }()
+
+	if upright.Width != height || upright.Height != width {
+		t.Errorf("frame = %dx%d, want the portrait %dx%d", upright.Width, upright.Height, height, width)
+	}
+	if upright.Orientation != 8 {
+		t.Errorf("reported orientation = %d, want 8", upright.Orientation)
+	}
+	img, _, err := image.Decode(upright.Reader)
+	if err != nil {
+		t.Fatalf("decode what was sent: %v", err)
+	}
+	bounds := img.Bounds()
+	if got := img.At(bounds.Min.X+5, bounds.Min.Y+5); !colourClose(got, color.RGBA{G: 255, A: 255}) {
+		t.Errorf("top-left pixel = %v, want green — the catalogue's orientation was not applied", got)
 	}
 }

@@ -71,11 +71,14 @@ func (f *fakeVectorStore) ListPhotosMissingFaces(_ context.Context, _ int) ([]st
 // fakeSource is an ImageSource serving a fixed payload in a fixed frame. The
 // frame is what a real StorageSource measures on the upright bytes it sends, so a
 // test sets it to the frame it wants the boxes divided by — deliberately unrelated
-// to the photo's stored pair, which must not enter the conversion.
+// to the photo's stored pair, which must not enter the conversion. The orientation
+// is the one the real source reports for that frame, and it is likewise the
+// source's to state, not the catalogue's.
 type fakeSource struct {
 	openErr       error
 	opened        int
 	width, height int
+	orientation   int
 }
 
 // OpenUpright returns a fixed in-memory reader with the configured frame, or openErr.
@@ -85,9 +88,10 @@ func (f *fakeSource) OpenUpright(_ context.Context, _ photos.Photo) (UprightImag
 	}
 	f.opened++
 	return UprightImage{
-		Reader: io.NopCloser(strings.NewReader("jpeg-bytes")),
-		Width:  f.width,
-		Height: f.height,
+		Reader:      io.NopCloser(strings.NewReader("jpeg-bytes")),
+		Width:       f.width,
+		Height:      f.height,
+		Orientation: f.orientation,
 	}, nil
 }
 
@@ -172,7 +176,7 @@ func TestDetect_success(t *testing.T) {
 	client := &fakeClient{model: "buffalo_l", faces: []embedding.Face{
 		detection(0.99, [4]float64{100, 50, 300, 150}),
 	}}
-	src := &fakeSource{width: 1000, height: 500}
+	src := &fakeSource{width: 1000, height: 500, orientation: 1}
 	svc := newService(t, ps, vs, client, src, &fakeEnqueuer{})
 
 	if err := svc.Detect(context.Background(), "ph1"); err != nil {
@@ -424,4 +428,41 @@ func TestNew_panicsWithoutDeps(t *testing.T) {
 		}
 	}()
 	New(Config{Photos: &fakePhotoStore{}})
+}
+
+// TestDetect_orientationDescribesTheFrameSent proves the render hint cached on a
+// face row comes from the image source — the one that turned the pixels — and not
+// from the catalogue read independently of it. When the two disagreed, a row ended
+// up carrying a detection frame and an orientation that describe different
+// pictures, which is precisely what made the boxes of the XMP-only batch
+// unrepairable: the frame said the picture lay on its side, the row claimed the
+// quarter turn had been applied.
+func TestDetect_orientationDescribesTheFrameSent(t *testing.T) {
+	t.Parallel()
+
+	ps := &fakePhotoStore{photos: map[string]photos.Photo{
+		// The catalogue says the original is landscape and still has to be turned.
+		"ph1": {UID: "ph1", FileWidth: 600, FileHeight: 400, FileOrientation: 8},
+	}}
+	vs := &fakeVectorStore{}
+	client := &fakeClient{model: "buffalo_l", faces: []embedding.Face{
+		detection(0.99, [4]float64{0, 0, 200, 200}),
+	}}
+	// The source turned nothing: it sent the intermediate as it lay, in the frame
+	// it measured, and says so.
+	src := &fakeSource{width: 600, height: 400, orientation: 0}
+	svc := newService(t, ps, vs, client, src, &fakeEnqueuer{})
+
+	if err := svc.Detect(context.Background(), "ph1"); err != nil {
+		t.Fatalf("Detect: %v", err)
+	}
+	face := vs.recorded[0].det.Faces[0]
+	if face.Orientation != 0 {
+		t.Errorf("face orientation = %d, want 0 — it must describe the frame that was sent, "+
+			"not the catalogue read behind the source's back", face.Orientation)
+	}
+	if face.PhotoWidth != 600 || face.PhotoHeight != 400 {
+		t.Errorf("cached pair = %dx%d, want the photo's stored 600x400",
+			face.PhotoWidth, face.PhotoHeight)
+	}
 }

@@ -88,25 +88,27 @@ func (c *cleanupReadCloser) Close() error {
 }
 
 // OpenUpright materializes the photo's original, ensures it is decodable
-// (converting non-native formats to a temporary JPEG), applies any EXIF
-// orientation the resulting file still carries and returns the bytes to send
-// together with the frame they measure.
+// (converting non-native formats to a temporary JPEG), applies any orientation
+// the resulting file still carries and returns the bytes to send together with
+// the frame they measure.
 //
 // The rotation is decided from the file being sent, never from the catalogue: an
 // intermediate copy produced by imgconvert may already have the rotation baked
 // into its pixels, and re-applying the original's tag would turn the picture
-// twice. A file with no orientation tag (or an upright one) is streamed
-// untouched — the common case pays nothing — and only a file that really has to
-// turn is decoded, rotated and re-encoded.
+// twice. That reasoning holds only for an intermediate, so when the bytes ARE the
+// untouched original and the original says nothing, the catalogue breaks the tie
+// (see uprightFrom). A file with no orientation at all is streamed untouched —
+// the common case pays nothing — and only a file that really has to turn is
+// decoded, rotated and re-encoded.
 //
 // The returned reader's Close releases the temporary files behind it; every error
 // path here releases them too.
 func (s *StorageSource) OpenUpright(ctx context.Context, photo photos.Photo) (UprightImage, error) {
-	decodable, cleanup, err := s.materializeDecodable(ctx, photo)
+	decodable, untouched, cleanup, err := s.materializeDecodable(ctx, photo)
 	if err != nil {
 		return UprightImage{}, err
 	}
-	upright, err := s.uprightFrom(decodable, photo.UID)
+	upright, err := s.uprightFrom(decodable, photo, untouched)
 	if err != nil {
 		cleanup()
 		return UprightImage{}, err
@@ -126,44 +128,72 @@ func (s *StorageSource) OpenUpright(ctx context.Context, photo photos.Photo) (Up
 }
 
 // materializeDecodable pulls the original out of storage and converts it to
-// something the pure-Go decoders can read, returning the local path and the
-// cleanup that releases both temporary files.
+// something the pure-Go decoders can read, returning the local path, whether that
+// path still holds the untouched original, and the cleanup that releases both
+// temporary files.
+//
+// The untouched flag is decided by comparing the path the decoder returned with
+// the path it was given: imgconvert.EnsureDecodable returns its input unchanged
+// on the passthrough path (JPEG/PNG/WebP/BMP/GIF/TIFF need no conversion), so an
+// identical path means the bytes about to be sent are the original itself, while
+// any other path is an intermediate whose pixels may already carry the rotation.
+// That distinction is what makes the catalogue fallback in uprightFrom safe.
 func (s *StorageSource) materializeDecodable(
 	ctx context.Context, photo photos.Photo,
-) (string, func(), error) {
+) (path string, untouched bool, cleanup func(), err error) {
 	abs, releaseOriginal, err := s.storage.Materialize(ctx, photo.FilePath)
 	if err != nil {
-		return "", nil, fmt.Errorf("facejob: materializing image for %s: %w", photo.UID, err)
+		return "", false, nil, fmt.Errorf("facejob: materializing image for %s: %w", photo.UID, err)
 	}
 	decodable, releaseDecoded, err := s.decode(ctx, abs)
 	if err != nil {
 		releaseOriginal()
-		return "", nil, fmt.Errorf("facejob: ensuring decodable image for %s: %w", photo.UID, err)
+		return "", false, nil, fmt.Errorf("facejob: ensuring decodable image for %s: %w", photo.UID, err)
 	}
 	// The decoded file may be derived from the original, so drop it first.
-	return decodable, func() { releaseDecoded(); releaseOriginal() }, nil
+	return decodable, decodable == abs, func() { releaseDecoded(); releaseOriginal() }, nil
 }
 
 // uprightFrom decides what to send for the decodable file at path: an
 // UprightImage with the rotated bytes in Reader when the file still has to be
 // turned, or one with a nil Reader and only the frame filled in when the file is
-// already upright and can be streamed as it is.
-func (s *StorageSource) uprightFrom(path, photoUID string) (UprightImage, error) {
+// already upright and can be streamed as it is. untouched says the path still
+// holds the original (see materializeDecodable).
+//
+// Kukátko has two orientation readers and they can disagree, which is the hazard
+// this function is built around. The one here (exif.FileOrientation) reads the
+// file it is about to send; ingest's (exiftool, via internal/exif.Extract) read
+// the original and wrote photos.file_orientation. Only the first can be trusted
+// for an imgconvert intermediate — its pixels may already be turned — so the
+// catalogue is consulted ONLY when the bytes are the untouched original and the
+// original itself yields nothing. That is the case that broke: a JPEG carrying
+// its orientation exclusively in XMP read as 0 here, was streamed as it lay, and
+// the detector got a picture on its side. The fallback stays conditional so the
+// converted case keeps behaving exactly as it did.
+func (s *StorageSource) uprightFrom(path string, photo photos.Photo, untouched bool) (UprightImage, error) {
 	orientation := exif.FileOrientation(path)
+	if orientation == 0 && untouched {
+		orientation = photo.FileOrientation
+	}
 	if orientation <= 1 {
 		width, height, err := imageFrame(path)
 		if err != nil {
-			return UprightImage{}, fmt.Errorf("facejob: reading frame of %s: %w", photoUID, err)
+			return UprightImage{}, fmt.Errorf("facejob: reading frame of %s: %w", photo.UID, err)
 		}
-		return UprightImage{Width: width, Height: height}, nil
+		// Nothing was applied here, so the frame is the one the bytes already
+		// embody: the photo's own orientation, whether they are the untouched
+		// original (which then says nothing either) or an intermediate imgconvert
+		// already turned.
+		return UprightImage{Width: width, Height: height, Orientation: photo.FileOrientation}, nil
 	}
-	return s.rotate(path, photoUID, orientation)
+	return s.rotate(path, photo.UID, orientation)
 }
 
-// rotate decodes the file, applies its EXIF orientation and re-encodes it as a
+// rotate decodes the file, applies the given orientation and re-encodes it as a
 // JPEG with no EXIF block at all, so the bytes sent are upright however the
 // receiver treats metadata. The frame reported is measured on the rotated image,
-// not derived from the tag.
+// not derived from the tag, and the orientation reported is the one that was
+// applied — the two describe the same picture by construction.
 func (s *StorageSource) rotate(path, photoUID string, orientation int) (UprightImage, error) {
 	if err := imgconvert.EnforcePixelBound(path, s.maxPixels); err != nil {
 		return UprightImage{}, fmt.Errorf("facejob: rotating image for %s: %w", photoUID, err)
@@ -185,9 +215,10 @@ func (s *StorageSource) rotate(path, photoUID string, orientation int) (UprightI
 	}
 	bounds := oriented.Bounds()
 	return UprightImage{
-		Reader: io.NopCloser(&buf),
-		Width:  bounds.Dx(),
-		Height: bounds.Dy(),
+		Reader:      io.NopCloser(&buf),
+		Width:       bounds.Dx(),
+		Height:      bounds.Dy(),
+		Orientation: orientation,
 	}, nil
 }
 

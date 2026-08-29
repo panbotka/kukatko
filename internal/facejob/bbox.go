@@ -20,6 +20,14 @@ type UprightImage struct {
 	// Width and Height are the pixel dimensions of exactly those bytes.
 	Width  int
 	Height int
+	// Orientation is the orientation the frame above is in: the tag that was
+	// applied to produce these bytes, or the one they already embodied when
+	// nothing had to be applied. It travels with the frame so the render hint
+	// cached on a face row and the frame its box was measured in cannot end up
+	// describing different pictures — the second half of the same defect, since a
+	// row that claims a quarter turn its frame does not have is exactly what makes
+	// a box unrepairable later.
+	Orientation int
 }
 
 // NormalizeBBox converts a face bounding box from sidecar pixel coordinates
