@@ -100,6 +100,19 @@ type LoadState =
 
 /** A no-change / set / clear selector for an editable field. */
 type SetClearMode = '' | 'set' | 'clear'
+
+/**
+ * The capture-date field's third choice: not a finer or coarser date, but the
+ * statement that nobody knows when the photo was taken. It is a mode of the same
+ * control rather than a button of its own, because "unknown" is an answer to the
+ * question the control already asks — and because losing a date deserves the
+ * dialog's confirmation rather than one click in the grid's toolbar.
+ */
+const TAKEN_AT_UNKNOWN = 'unknown'
+
+/** The capture-date field's mode: no change, a grain to state, or "unknown". */
+type TakenAtMode = '' | TakenPrecision | typeof TAKEN_AT_UNKNOWN
+
 /** A no-change / yes / no selector for a boolean field. */
 type BoolMode = '' | 'true' | 'false'
 
@@ -112,11 +125,12 @@ interface FormState {
   descriptionMode: SetClearMode
   description: string
   /**
-   * The grain a new capture date is stated at, `''` for no change. It is the
-   * field's mode *and* the precision sent, because how much of a date you can
-   * state and how much of it may be shown are the same question.
+   * What is to happen to the capture date: `''` for no change, a grain for a
+   * date being stated, or {@link TAKEN_AT_UNKNOWN} for declaring it unknown. A
+   * grain is the field's mode *and* the precision sent, because how much of a
+   * date you can state and how much of it may be shown are the same question.
    */
-  takenAtMode: '' | TakenPrecision
+  takenAtMode: TakenAtMode
   /**
    * The date itself, shaped by {@link FormState.takenAtMode}: `1974-06-14`,
    * `1974-06`, `1974`, or a decade's first year `1970`. Reset whenever the mode
@@ -247,7 +261,9 @@ function buildOperations(
   } else if (form.descriptionMode === 'clear') {
     ops.clear_description = true
   }
-  if (form.takenAtMode !== '') {
+  if (form.takenAtMode === TAKEN_AT_UNKNOWN) {
+    ops.clear_taken_at = true
+  } else if (form.takenAtMode !== '') {
     if (takenAtInstant(form.takenAtMode, form.takenAt) === '') {
       return 'invalid-taken-at'
     }
@@ -448,7 +464,12 @@ export function BulkEditModal({ show, photoUids, onHide, onDone, prefill }: Bulk
     // it overwrites the one fact the whole library is ordered by, on photos whose
     // old date is not shown in this dialog, so "which date, on how many photos"
     // has to be said out loud before it happens rather than discovered afterwards.
-    if (!skipConfirm && (photoUids.length > LARGE_SELECTION || ops.set_taken_at !== undefined)) {
+    if (
+      !skipConfirm &&
+      (photoUids.length > LARGE_SELECTION ||
+        ops.set_taken_at !== undefined ||
+        ops.clear_taken_at === true)
+    ) {
       setError(null)
       setConfirming(true)
       return
@@ -456,8 +477,11 @@ export function BulkEditModal({ show, photoUids, onHide, onDone, prefill }: Bulk
     void send(form)
   }
 
+  const clearingTakenAt = form.takenAtMode === TAKEN_AT_UNKNOWN
   const takenAtText =
-    form.takenAtMode === '' ? '' : takenAtPhrase(form.takenAtMode, form.takenAt, t, i18n.language)
+    form.takenAtMode === '' || form.takenAtMode === TAKEN_AT_UNKNOWN
+      ? ''
+      : takenAtPhrase(form.takenAtMode, form.takenAt, t, i18n.language)
 
   return (
     <Modal show={show} onHide={onHide} centered scrollable fullscreen="sm-down">
@@ -505,12 +529,14 @@ export function BulkEditModal({ show, photoUids, onHide, onDone, prefill }: Bulk
                 {confirming && (
                   <Alert variant="danger" className="mt-3 mb-0">
                     <p className="mb-2">
-                      {takenAtText !== ''
-                        ? t('bulkEdit.confirm.takenAt', {
-                            date: takenAtText,
-                            count: photoUids.length,
-                          })
-                        : t('bulkEdit.confirm.body', { count: photoUids.length })}
+                      {clearingTakenAt
+                        ? t('bulkEdit.confirm.clearTakenAt', { count: photoUids.length })
+                        : takenAtText !== ''
+                          ? t('bulkEdit.confirm.takenAt', {
+                              date: takenAtText,
+                              count: photoUids.length,
+                            })
+                          : t('bulkEdit.confirm.body', { count: photoUids.length })}
                     </p>
                     <div className="d-flex flex-wrap gap-2">
                       <Button
@@ -883,6 +909,11 @@ function BulkEditForm({
  * cannot be typed in by accident: a decade is a list, a year a bounded number, a
  * month and a day their native pickers.
  *
+ * The last choice on the list is no grain at all: the date is unknown. It shows
+ * no value field, because there is nothing to type — the photos simply lose the
+ * date they were filed under, and what they lose is kept beside them so the
+ * photo's detail can offer it back.
+ *
  * Nothing here writes to the files. The originals and their EXIF are untouched;
  * this is the catalogue's own date.
  */
@@ -926,8 +957,16 @@ function TakenAtField({
               {t(`bulkEdit.takenAt.grain.${precision}` as const)}
             </option>
           ))}
+          {/* Last, below the grains: it is the same question answered with "we
+              don't know", and a shelf of scans stamped with the day they were
+              scanned is answered this way by the handful. */}
+          <option value={TAKEN_AT_UNKNOWN}>{t('bulkEdit.takenAt.unknown')}</option>
         </Form.Select>
-        <Form.Text className="kk-text-caption">{t('bulkEdit.takenAt.hint')}</Form.Text>
+        <Form.Text className="kk-text-caption">
+          {form.takenAtMode === TAKEN_AT_UNKNOWN
+            ? t('bulkEdit.takenAt.unknownHint')
+            : t('bulkEdit.takenAt.hint')}
+        </Form.Text>
       </Form.Group>
       {form.takenAtMode === 'day' && (
         <Form.Control
@@ -1072,7 +1111,15 @@ function PendingChanges({
       destructive: true,
     })
   }
-  if (form.takenAtMode !== '') {
+  if (form.takenAtMode === TAKEN_AT_UNKNOWN) {
+    lines.push({
+      id: 'takenAt',
+      text: t('bulkEdit.summary.clearTakenAt'),
+      // Toned like the overwrite below it: the photos lose the date they are
+      // filed under, even though the value itself is only set aside.
+      destructive: true,
+    })
+  } else if (form.takenAtMode !== '') {
     const phrase = takenAtPhrase(form.takenAtMode, form.takenAt, t, i18n.language)
     lines.push({
       id: 'takenAt',

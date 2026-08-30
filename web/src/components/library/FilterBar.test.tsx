@@ -866,6 +866,30 @@ describe('FilterBar advanced controls', () => {
     expect(onChange).toHaveBeenCalledWith({ min_rating: '3' })
   })
 
+  it('pushes the capture-date filter, worded after the date rather than the flag', async () => {
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    renderBar(LIBRARY_DEFAULTS, onChange)
+
+    await openPanel(user)
+    const select = screen.getByLabelText('Date')
+    // "Date: Yes" says nothing; the answers name what they keep.
+    expect(within(select).getByRole('option', { name: 'has a date' })).toBeInTheDocument()
+    expect(within(select).getByRole('option', { name: 'no date' })).toBeInTheDocument()
+
+    await user.selectOptions(select, 'false')
+    expect(onChange).toHaveBeenCalledWith({ dated: 'false' })
+  })
+
+  it('admits when the query has already taken the capture-date filter over', async () => {
+    const user = userEvent.setup()
+    renderBar({ ...LIBRARY_DEFAULTS, q: 'dated:no' }, vi.fn())
+
+    await openPanel(user)
+    expect(screen.getByText('Already set by the query:')).toBeInTheDocument()
+    expect(screen.getByText('dated:no')).toBeInTheDocument()
+  })
+
   it('pushes the flag filter when selected', async () => {
     const onChange = vi.fn()
     const user = userEvent.setup()
@@ -996,6 +1020,11 @@ describe('FilterBar active-filter chips', () => {
     expect(screen.getByText('Flag: Picked')).toBeInTheDocument()
     const toggle = screen.getByRole('button', { name: /Filters/ })
     expect(within(toggle).getByText('2')).toBeInTheDocument()
+  })
+
+  it('names the capture-date filter on its chip, either way round', () => {
+    renderBar({ ...LIBRARY_DEFAULTS, dated: 'false' }, vi.fn())
+    expect(screen.getByText('Date: no date')).toBeInTheDocument()
   })
 
   it('renders the eye value on the flag chip', () => {

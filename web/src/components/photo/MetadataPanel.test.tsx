@@ -117,6 +117,16 @@ function apiResponse(current: PhotoDetail, patch: PhotoMetadataUpdate): PhotoDet
     // A null clears the field; an absent key leaves it as it was.
     taken_at: patch.taken_at === undefined ? current.taken_at : (patch.taken_at ?? undefined),
     taken_at_source: patch.taken_at === undefined ? current.taken_at_source : 'manual',
+    // The set-aside date follows the backend's own three-branch rule
+    // (`photos.TakenAtBeforeUnknownAssignment`, migration 0066): stating a date
+    // discards it, clearing one puts the outgoing date away, and a patch that
+    // says nothing about the date leaves it alone.
+    taken_at_before_unknown:
+      patch.taken_at === undefined
+        ? current.taken_at_before_unknown
+        : patch.taken_at === null
+          ? (current.taken_at ?? current.taken_at_before_unknown)
+          : undefined,
     taken_at_estimated: estimated,
     // The backend keeps the dating note only while the flag is set — clearing the
     // flag drops the note with it, whatever the photo held before.
@@ -1211,5 +1221,70 @@ describe('MetadataPanel multi-line values', () => {
       screen.queryByText('What is happening here, and why it is worth remembering'),
     ).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Edit Description' })).not.toBeInTheDocument()
+  })
+})
+
+describe('a capture date declared unknown', () => {
+  it('shows what the photo used to be dated, at the grain it was stated in', () => {
+    // The date is gone from the catalogue — so the capture-date row itself shows
+    // nothing — but the value it disowned is quoted beneath it.
+    renderPanel({
+      photo: photo({
+        taken_at: undefined,
+        taken_at_source: 'unknown',
+        taken_at_before_unknown: '1974-01-01T00:00:00Z',
+        taken_at_precision: 'year',
+      }),
+    })
+
+    expect(screen.getByText('originally recorded: 1974')).toBeInTheDocument()
+  })
+
+  it('says nothing extra about a photo that never carried a date', () => {
+    renderPanel({ photo: photo({ taken_at: undefined, taken_at_source: '' }) })
+
+    expect(screen.queryByText(/originally recorded/)).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Put it back as the date' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('puts the set-aside date back as an ordinary date edit', async () => {
+    const user = userEvent.setup()
+    const current = photo({
+      taken_at: undefined,
+      taken_at_source: 'unknown',
+      taken_at_before_unknown: '2019-05-03T10:15:00Z',
+      taken_at_precision: 'day',
+    })
+    mockApi(current)
+    renderHarness(current)
+
+    await user.click(screen.getByRole('button', { name: 'Put it back as the date' }))
+
+    // The existing PATCH path, carrying the preserved instant and nothing else.
+    await waitFor(() => {
+      expect(sentPatch()).toEqual({ taken_at: '2019-05-03T10:15:00Z' })
+    })
+    // And with the date back, there is nothing set aside any more.
+    await waitFor(() => {
+      expect(screen.queryByText(/originally recorded/)).not.toBeInTheDocument()
+    })
+  })
+
+  it('offers a viewer the value but not the way back', () => {
+    renderPanel({
+      canWrite: false,
+      photo: photo({
+        taken_at: undefined,
+        taken_at_source: 'unknown',
+        taken_at_before_unknown: '2019-05-03T10:15:00Z',
+      }),
+    })
+
+    expect(screen.getByText(/originally recorded/)).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Put it back as the date' }),
+    ).not.toBeInTheDocument()
   })
 })

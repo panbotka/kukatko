@@ -706,6 +706,7 @@
       "sort": "Řazení",
       "archived": "Archiv",
       "hasGps": "Poloha",
+      "dated": "Datum",
       "camera": "Fotoaparát",
       "cameraPlaceholder": "např. Canon",
       "takenAfter": "Pořízeno od",
@@ -758,6 +759,10 @@
       "any": "Vše",
       "yes": "Ano",
       "no": "Ne"
+    },
+    "dated": {
+      "has": "má datum",
+      "none": "bez data"
     },
     "empty": {
       "title": "Nenalezeny žádné fotky",
@@ -1171,6 +1176,8 @@
         "decade": "Desetiletí"
       },
       "hint": "Jen katalog — původní soubory ani jejich EXIF se nemění.",
+      "unknown": "Datum je neznámé",
+      "unknownHint": "Fotkám se odebere datum. Dosavadní hodnota se uchová a v detailu fotky ji jde vrátit zpět.",
       "pickDecade": "Vyber desetiletí…",
       "invalid": "Vyplň datum pořízení podle zvolené přesnosti.",
       "phrase": {
@@ -1224,6 +1231,7 @@
       "clearDescription": "Vymazat popis",
       "setTakenAt": "Nastavit datum pořízení na {{date}}",
       "setTakenAtPending": "Nastavit datum pořízení — zatím není vybráno",
+      "clearTakenAt": "Prohlásit datum pořízení za neznámé",
       "setLocation": "Nastavit polohu na {{lat}}, {{lng}}",
       "clearLocation": "Vymazat polohu",
       "archive": "Archivovat",
@@ -1242,6 +1250,10 @@
       "takenAt_few": "Nastavit {{date}} pro {{count}} fotky? Jejich dosavadní datum pořízení se přepíše.",
       "takenAt_many": "Nastavit {{date}} pro {{count}} fotky? Jejich dosavadní datum pořízení se přepíše.",
       "takenAt_other": "Nastavit {{date}} pro {{count}} fotek? Jejich dosavadní datum pořízení se přepíše.",
+      "clearTakenAt_one": "Odebrat datum pořízení {{count}} fotce? Dosavadní hodnota se uchová a jde ji vrátit v detailu fotky.",
+      "clearTakenAt_few": "Odebrat datum pořízení {{count}} fotkám? Dosavadní hodnoty se uchovají a jdou vrátit v detailu fotky.",
+      "clearTakenAt_many": "Odebrat datum pořízení {{count}} fotkám? Dosavadní hodnoty se uchovají a jdou vrátit v detailu fotky.",
+      "clearTakenAt_other": "Odebrat datum pořízení {{count}} fotkám? Dosavadní hodnoty se uchovají a jdou vrátit v detailu fotky.",
       "apply_one": "Ano, použít na {{count}} fotku",
       "apply_few": "Ano, použít na {{count}} fotky",
       "apply_many": "Ano, použít na {{count}} fotky",
@@ -1982,6 +1994,9 @@
       "takenAtEstimated": "Datum je odhad",
       "takenAtNote": "Poznámka k datování",
       "takenAtNotePlaceholder": "např. kolem roku 1950, podle babičky před svatbou",
+      "beforeUnknown": "původně zaznamenáno: {{date}}",
+      "restoreBeforeUnknown": "Vrátit jako datum pořízení",
+      "restoreBeforeUnknownFailed": "Datum se nepodařilo vrátit.",
       "takenAtPeriodHint": "Uloženo jako období {{period}}. Zápis přesného data ho nahradí konkrétním dnem.",
       "estimatedMarker": "cca",
       "estimatedTitle": "Odhadované datum, ne přesné",

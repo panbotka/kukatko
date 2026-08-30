@@ -702,6 +702,7 @@
       "sort": "Sort",
       "archived": "Archived",
       "hasGps": "Location",
+      "dated": "Date",
       "camera": "Camera",
       "cameraPlaceholder": "e.g. Canon",
       "takenAfter": "Taken from",
@@ -752,6 +753,10 @@
       "any": "Any",
       "yes": "Yes",
       "no": "No"
+    },
+    "dated": {
+      "has": "has a date",
+      "none": "no date"
     },
     "empty": {
       "title": "No photos found",
@@ -1210,6 +1215,8 @@
         "decade": "Decade"
       },
       "hint": "Catalogue only — the original files and their EXIF are left untouched.",
+      "unknown": "The date is unknown",
+      "unknownHint": "The photos lose their date. The current value is kept and can be put back from the photo's detail.",
       "pickDecade": "Pick a decade…",
       "invalid": "Fill in the capture date for the grain you picked.",
       "phrase": {
@@ -1261,6 +1268,7 @@
       "clearDescription": "Clear the description",
       "setTakenAt": "Set the capture date to {{date}}",
       "setTakenAtPending": "Set the capture date — pick one first",
+      "clearTakenAt": "Declare the capture date unknown",
       "setLocation": "Set the location to {{lat}}, {{lng}}",
       "clearLocation": "Clear the location",
       "archive": "Archive",
@@ -1275,6 +1283,8 @@
       "body_other": "This change affects {{count}} photos at once. Read the summary above, then confirm.",
       "takenAt_one": "Set {{date}} on {{count}} photo? Their current capture dates are overwritten.",
       "takenAt_other": "Set {{date}} on {{count}} photos? Their current capture dates are overwritten.",
+      "clearTakenAt_one": "Take the capture date off {{count}} photo? Its current value is kept and can be put back from the photo's detail.",
+      "clearTakenAt_other": "Take the capture date off {{count}} photos? Their current values are kept and can be put back from each photo's detail.",
       "apply_one": "Yes, apply to {{count}} photo",
       "apply_other": "Yes, apply to {{count}} photos",
       "back": "Go back"
@@ -1902,6 +1912,9 @@
       "takenAtEstimated": "Date is an estimate",
       "takenAtNote": "Dating note",
       "takenAtNotePlaceholder": "e.g. around 1950, before the wedding",
+      "beforeUnknown": "originally recorded: {{date}}",
+      "restoreBeforeUnknown": "Put it back as the date",
+      "restoreBeforeUnknownFailed": "The date could not be put back.",
       "takenAtPeriodHint": "Stored as the period {{period}}. Typing an exact date here replaces it with that one day.",
       "estimatedMarker": "c.",
       "estimatedTitle": "Estimated date, not an exact one",

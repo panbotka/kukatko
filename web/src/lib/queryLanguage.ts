@@ -217,6 +217,10 @@ export const FACET_QUERY_KEYS = {
   // counts — a `before:1950` narrows the grid exactly as a `year:` does.
   period: PERIOD_QUERY_KEYS,
   album: ['album'],
+  // The date filter is itself compiled to one of these tokens, so a query that
+  // already carries one owns the filter outright — see `libraryView`'s
+  // `queryWithDated`, which then appends nothing.
+  dated: ['dated'],
   label: ['label'],
   person: ['person', 'subject'],
   uploader: ['uploader'],

@@ -827,7 +827,12 @@ here.
   case it exists for. Like the primary pickers it admits when `uploader:` in `q` has taken it over,
   **`showFavorite`** enables the **Oblíbené** toggle in the panel (a two-state select „Vše"/„Jen oblíbené"
   → `view.favorite` `''`/`'true'`, the backend scopes only to `true`; the library enables it so you can
-  combine „oblíbené + album + období" in the main grid, the Oblíbené page doesn't — it's already scoped)
+  combine „oblíbené + album + období" in the main grid, the Oblíbené page doesn't — it's already scoped);
+  beside the GPS one sits **Datum** — a second `TriStateSelect` over `view.dated`, the worklist for the
+  photos nobody could date. It is named after the *date*, not after a flag, so its answers read
+  „má datum" / „bez data" rather than Ano/Ne: `TriStateSelect` therefore takes optional `yesLabel`/`noLabel`
+  (default Ano/Ne, which is what „Poloha" wants) and an optional `fromQuery`, since a `dated:` typed into `q`
+  takes the filter over exactly as `album:` takes over its picker
   (chips/panel/clear keep working); ~44 px tap targets via `styles/app.css`
   `.kukatko-filter-*`;
   **the four ways photos are actually searched** (the entity three from the `facets` prop of
@@ -900,7 +905,7 @@ here.
   describe one filter differently, which is why `locale` is passed in; **one chip per selected album,
   label and person** (`clear` removes only its own UID from the list, the last chip clears the facet; an album chip has
   `kind:'album'`, a label `kind:'tag'`, a person `kind:'person'` → `FilterBar` takes the color + icon from it via
-  `ENTITY_STYLE`; **favorites** = a neutral chip with no `kind`); `facets`
+  `ENTITY_STYLE`; **favorites** and **„Datum: bez data"** = neutral chips with no `kind`); `facets`
   name the album/label/person by title instead of UID (missing → raw UID, a chip is never empty),
   `includeQuery` enables a chip for `q`
   — the filter bar disables it (it has its own field), **the empty state enables it** (a reader at zero results must
@@ -1143,11 +1148,20 @@ here.
   (`bulkEdit.takenAt.invalid`) before the batch goes; a grain change clears the value. The summary row is
   toned **destructive** (the old date is overwritten, and on some of the selection it may have been the real
   one) and a `Form.Text` says the originals and their EXIF are untouched.
+  **The last choice of the same select is „Datum je neznámé"** (`TAKEN_AT_UNKNOWN`, sends `clear_taken_at`):
+  it hides every value control — there is nothing to type — and swaps the hint for one saying the current
+  value is set aside and can be put back from the photo's detail. It is deliberately a mode of the date
+  control and **not** a button in `BatchActionBar`: losing a date is destructive enough to belong behind the
+  dialog's confirmation, next to the other date choices. Its summary row is toned destructive too — the
+  photos lose the date they are filed under, even though the value itself only moves to
+  `taken_at_before_unknown`.
   A selection **over `LARGE_SELECTION` (50) photos** requires **explicit confirmation**: the first Apply only
   opens a danger alert („Ano, použít na N fotek" / „Zpět"), and **any form change revokes the
   confirmation**. **A capture date is confirmed at any selection size** and names itself — „Nastavit rok 1974
   pro 36 fotek?" (`bulkEdit.confirm.takenAt`): it overwrites the one fact the whole library is ordered by,
-  on photos whose current dates this dialog does not show. Client-side coordinate validation + "at least one change" stays; after applying,
+  on photos whose current dates this dialog does not show. Declaring it unknown goes through the same step
+  with its own wording (`bulkEdit.confirm.clearTakenAt`), which says how many photos lose their date **and**
+  that the value is kept and can be put back. Client-side coordinate validation + "at least one change" stays; after applying,
   a **per-photo result summary** from the response. A failed request **prints the server's message**
   (`ApiError.message` — a conflicting operation, too large a batch), otherwise a generic `bulkEdit.applyError`;
   the selection stays untouched so apply can be retried. The optional prop **`prefill`**
@@ -2103,7 +2117,17 @@ here.
   the note in italics, the badge carries a `title` with the note (**not** just color/glyph), so an estimate can't be
   mistaken for a certain date even at a glance or in a screen reader; a photo **without** `taken_at` can
   be an estimate too — then the marker with the note stands on its own. `EditableField` therefore takes an optional
-  `display?: ReactNode` (a richer render of the value, plain `value` still decides "filled-ness"). The location picker = **three ways in** in the order a person reaches for them:
+  `display?: ReactNode` (a richer render of the value, plain `value` still decides "filled-ness").
+  **A date declared unknown** (`taken_at` gone, `taken_at_before_unknown` set — see migration 0066) renders
+  where the capture-date row would be, through **`PreservedDate`** (in `MetadataPanel.tsx`): muted secondary
+  text „původně zaznamenáno: …" formatted by `lib/takenDate` `formatTakenLabel` (the set-aside value has a
+  precision like any other date; the estimate flag is deliberately **not** passed on — it describes what the
+  photo claims now, and a „cca" in front of a disowned date would be the app hedging about a value it is only
+  quoting), plus — for an editor — a link putting it back. Restoring is an **ordinary date edit**
+  (`PATCH /photos/{uid}` with `taken_at`, no new endpoint), so the backend drops the preserved value in the
+  same statement and the row disappears with it. A photo that never carried a date shows nothing extra: the
+  guard is 0066's invariant (a photo with a date never has one set aside) made explicit, so the two can never
+  show at once. The location picker = **three ways in** in the order a person reaches for them:
   **`PlaceSearch`** (find a place by name), one tolerant coordinate field parsed by
   `lib/coordinates` (`parseCoordinates`/`formatCoordinates`: decimal degrees `49.1234, 16.5678`,
   DMS `49°7'24.2"N 16°34'12.5"E`, degrees-decimal-minutes, hemispheres, axis reorder, range check)
@@ -3972,7 +3996,8 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   costs the reader their position and nothing else;
   `urlState.ts` = the `useUrlState` hook +
   the pure `readUrlState`/`writeUrlState`: the view state ↔ the URL query via the History API, „Back always
-  works"; `libraryView.ts` = the `LibraryView` type (incl. `min_rating`/`flag`, the `favorite` toggle and the facets
+  works"; `libraryView.ts` = the `LibraryView` type (incl. `min_rating`/`flag`, the `favorite` toggle, the
+  capture-date tri-state **`dated`** and the facets
   `album`/`label`/`person`) + `LIBRARY_DEFAULTS` + **`ALBUM_DEFAULTS`/`ALBUM_SORTS`** (the same view
   resting **oldest-first** for a grid scoped to one album, and the two orders such a grid offers — so
   only a deliberate reversal ends up in the URL, and `backHref` measures an album link against these) +
@@ -3982,7 +4007,13 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   year's period) and `periodPatch(period)` the single writer (it clears `year`, so the two can never both be
   set); `viewToParams` sends it as `taken_after` + `takenBeforeParam(to)`, the **end** of the last day
   (`…T23:59:59.999999Z`) — `taken_at <= taken_before` would otherwise drop everything shot that day after
-  midnight, and a decade would lose its last New Year's Eve +
+  midnight, and a decade would lose its last New Year's Eve.
+  **`dated`** (`''` any / `'true'` has a date / `'false'` none) is the one filter with no list param behind it:
+  the backend spells it as the query language's `dated:yes` / `dated:no`, so **`queryWithDated(view)`**
+  compiles it into `q` and `viewToParams` sends that instead of `view.q`. Appending is safe on the search
+  page too — the backend splits `q` into free text and filters and only the free text is ever embedded —
+  and a `dated:` **already typed into the query wins**, nothing is appended (two contradictory tokens would
+  match nothing, and `FACET_QUERY_KEYS.dated` is what makes the control admit it) +
   `lib/period.ts` (pure, no React: the `Period{from,to}` pair of inclusive UTC calendar days — one
   representation for a decade, a year, „před 1950" and „léto 2019" — plus `periodForYears`/`yearSpanOf`
   (a whole-year span only when both bounds sit on year boundaries, so „léto 2019" is never reported as

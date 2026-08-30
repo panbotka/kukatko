@@ -14,7 +14,7 @@ import {
   splitAiNote,
   splitKeywords,
 } from '../../lib/photoFacts'
-import { formatTakenPeriod } from '../../lib/takenDate'
+import { formatTakenLabel, formatTakenPeriod } from '../../lib/takenDate'
 import { type Place } from '../../services/map'
 import { type PhotoDetail, type PhotoMetadataUpdate, updatePhoto } from '../../services/photos'
 import { Icon } from '../Icon'
@@ -289,6 +289,60 @@ function CaptureDate({ date, note }: CaptureDateProps) {
   )
 }
 
+/** Props for {@link PreservedDate}. */
+interface PreservedDateProps {
+  /** The set-aside date, already formatted at the grain it was stated in. */
+  date: string
+  /** Whether the current user may put it back (editor/admin). */
+  canWrite: boolean
+  /** Whether the restore request is in flight. */
+  busy: boolean
+  /** Whether the last restore failed. */
+  failed: boolean
+  /** Puts the set-aside date back as the photo's capture date. */
+  onRestore: () => void
+}
+
+/**
+ * What a photo whose date was declared unknown used to be dated — the day a
+ * scanner stamped on it, the mtime an import fell back to — as muted secondary
+ * text, with the one action that takes it back.
+ *
+ * A declaration of ignorance is worth nothing if it cannot be revisited: the
+ * owner clears dates by the handful, and one handful in ten is a slip. Showing
+ * the value is also the only way to answer "what did it claim before?" without
+ * digging in the database.
+ *
+ * It is deliberately quiet — no badge, no border. This is not a claim about the
+ * photo (the photo has no date, and that is the honest answer); it is the note
+ * beside the answer saying what was crossed out.
+ */
+function PreservedDate({ date, canWrite, busy, failed, onRestore }: PreservedDateProps) {
+  const { t } = useTranslation()
+  return (
+    <div className="mb-2">
+      <div className="small text-secondary">
+        {t('photo.metadata.beforeUnknown', { date })}
+        {canWrite && (
+          <Button
+            type="button"
+            variant="link"
+            size="sm"
+            className="p-0 ms-2 align-baseline"
+            disabled={busy}
+            onClick={onRestore}
+          >
+            {t('photo.metadata.restoreBeforeUnknown')}
+          </Button>
+        )}
+      </div>
+      {failed && (
+        <div className="text-danger small">{t('photo.metadata.restoreBeforeUnknownFailed')}</div>
+      )}
+    </div>
+  )
+}
+
 /**
  * The caption & place panel: the photo's title, description, AI description,
  * capture notes, capture time and location shown read-only, each an inline edit
@@ -319,6 +373,11 @@ export function MetadataPanel({ photo, canWrite, onUpdated, footer }: MetadataPa
   // asked, not an edit the user came here to make.
   const [locationBusy, setLocationBusy] = useState(false)
   const [locationFailed, setLocationFailed] = useState(false)
+  // Putting a set-aside date back is its own one-click request too, for the same
+  // reason: it answers a question the panel asked, not an edit somebody opened
+  // the form to make.
+  const [dateBusy, setDateBusy] = useState(false)
+  const [dateFailed, setDateFailed] = useState(false)
 
   // The photo's own values, as the form renders them. A field still equal to its
   // pristine value is left out of the PATCH entirely — see buildPatch.
@@ -389,6 +448,25 @@ export function MetadataPanel({ photo, canWrite, onUpdated, footer }: MetadataPa
         .filter((part) => part !== '')
         .join(' ')
     : takenAtText
+
+  // The date the photo carried when somebody declared its date unknown, formatted
+  // at the grain it was stated in — the preserved value has a precision like any
+  // other date, so a year put away must not read back as a New Year's Day.
+  //
+  // The estimate flag is deliberately not passed on: it describes what the photo
+  // claims *now*, and a "cca" in front of a date the owner disowned would be the
+  // app hedging about a value it is only quoting. The guard is the invariant of
+  // migration 0066 — a photo with a date never has one set aside — made explicit,
+  // so nothing can show both at once.
+  const preservedDate = photo.taken_at === undefined ? photo.taken_at_before_unknown : undefined
+  const preservedDateText =
+    preservedDate === undefined
+      ? ''
+      : formatTakenLabel(
+          { taken_at: preservedDate, taken_at_precision: photo.taken_at_precision },
+          t,
+          i18n.language,
+        )
 
   // The automatic description as the reader sees it: without the `AI_MODEL:` line
   // the photo-sorter import appended to some 2500 of them. The model itself is not
@@ -539,6 +617,27 @@ export function MetadataPanel({ photo, canWrite, onUpdated, footer }: MetadataPa
       setLocationFailed(true)
     } finally {
       setLocationBusy(false)
+    }
+  }
+
+  /**
+   * Puts the set-aside date back as the photo's capture date. It is an ordinary
+   * date edit — the same PATCH the form's date field sends — so the backend drops
+   * the preserved value in the same statement, and the note above disappears with
+   * it because there is nothing set aside any more.
+   */
+  async function restorePreservedDate() {
+    if (preservedDate === undefined) {
+      return
+    }
+    setDateBusy(true)
+    setDateFailed(false)
+    try {
+      onUpdated(await updatePhoto(photo.uid, { taken_at: preservedDate }))
+    } catch {
+      setDateFailed(true)
+    } finally {
+      setDateBusy(false)
     }
   }
 
@@ -943,6 +1042,20 @@ export function MetadataPanel({ photo, canWrite, onUpdated, footer }: MetadataPa
         canWrite={canWrite}
         onEdit={startEditing}
       />
+      {/* Where the capture date would be, on a photo that has none: what it used
+          to be dated, and the way back. A photo that never carried a date shows
+          nothing here at all. */}
+      {preservedDateText !== '' && (
+        <PreservedDate
+          date={preservedDateText}
+          canWrite={canWrite}
+          busy={dateBusy}
+          failed={dateFailed}
+          onRestore={() => {
+            void restorePreservedDate()
+          }}
+        />
+      )}
       <EditableField
         label={t('photo.metadata.notes')}
         value={photo.notes}

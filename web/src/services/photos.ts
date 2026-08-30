@@ -44,6 +44,17 @@ export interface Photo {
    * exactly as before.
    */
   taken_at_precision?: string
+  /**
+   * The capture date the photo carried at the moment somebody declared its date
+   * unknown — the day a scanner stamped on it, the file's mtime an import fell
+   * back to. Present only while the photo has no `taken_at`: stating a real date
+   * discards the value that was put away.
+   *
+   * It is provenance, never a second date axis. Nothing sorts, groups or filters
+   * by it (see migration 0066); the detail drawer shows it as what was disowned
+   * and offers to put it back, which is an ordinary date edit.
+   */
+  taken_at_before_unknown?: string
   title: string
   description: string
   lat?: number

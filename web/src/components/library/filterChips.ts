@@ -153,6 +153,15 @@ export function buildChips(
       clear: { has_gps: '' },
     })
   }
+  if (view.dated !== '') {
+    chips.push({
+      key: 'dated',
+      label: `${t('library.filters.dated')}: ${t(
+        view.dated === 'true' ? 'library.dated.has' : 'library.dated.none',
+      )}`,
+      clear: { dated: '' },
+    })
+  }
   if (view.camera !== '') {
     chips.push({
       key: 'camera',

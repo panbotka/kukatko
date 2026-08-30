@@ -581,6 +581,38 @@ describe('BulkEditModal', () => {
     })
   })
 
+  it('declares the date unknown, with nothing to type and the count said out loud', async () => {
+    bulkMock.mockResolvedValue(result({ total: 2, updated: 2 }))
+    const user = userEvent.setup()
+    renderModal(['ph1', 'ph2'])
+
+    await user.selectOptions(await screen.findByLabelText('Capture date'), 'unknown')
+
+    // There is no date to state, so every grain's value control is gone.
+    expect(screen.queryByLabelText('Exact date')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Month and year')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Year only')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Decade')).not.toBeInTheDocument()
+
+    expect(screen.getByText('Declare the capture date unknown')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+    // Losing a date is confirmed at any selection size, and the confirmation
+    // states both the scope and that the value is only set aside.
+    expect(bulkMock).not.toHaveBeenCalled()
+    expect(
+      screen.getByText(
+        "Take the capture date off 2 photos? Their current values are kept and can be put back from each photo's detail.",
+      ),
+    ).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Yes, apply to 2 photos' }))
+    await waitFor(() => {
+      expect(bulkMock).toHaveBeenCalledWith(['ph1', 'ph2'], { clear_taken_at: true })
+    })
+  })
+
   it('refuses a grain with no date rather than sending half an operation', async () => {
     const user = userEvent.setup()
     renderModal()

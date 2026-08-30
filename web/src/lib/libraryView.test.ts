@@ -8,6 +8,7 @@ import {
   parseFilterList,
   periodOf,
   periodPatch,
+  queryWithDated,
   removeFromFilterList,
   UPLOADER_NONE,
   uploaderHref,
@@ -144,5 +145,44 @@ describe('URL round-trip', () => {
     const restored = readUrlState(params, LIBRARY_DEFAULTS)
     expect(parseFilterList(restored.album)).toEqual(['al_1', 'al_2'])
     expect(parseFilterList(restored.label)).toEqual(['lb_1', 'lb_2'])
+  })
+})
+
+describe('the capture-date filter', () => {
+  it('compiles the tri-state into the query language the backend speaks', () => {
+    expect(viewToParams({ ...LIBRARY_DEFAULTS, dated: 'true' }).q).toBe('dated:yes')
+    expect(viewToParams({ ...LIBRARY_DEFAULTS, dated: 'false' }).q).toBe('dated:no')
+    expect(viewToParams(LIBRARY_DEFAULTS).q).toBe('')
+  })
+
+  it('appends the token to the reader’s own query rather than replacing it', () => {
+    expect(viewToParams({ ...LIBRARY_DEFAULTS, q: 'svatba', dated: 'false' }).q).toBe(
+      'svatba dated:no',
+    )
+  })
+
+  it('leaves a dated: typed into the query in charge', () => {
+    // Two contradictory tokens would match no photo at all, and a filter the
+    // reader typed is the one they meant.
+    expect(queryWithDated({ ...LIBRARY_DEFAULTS, q: 'dated:yes', dated: 'false' })).toBe(
+      'dated:yes',
+    )
+  })
+
+  it('round-trips through the URL query params', () => {
+    const params = writeUrlState({ ...LIBRARY_DEFAULTS, dated: 'false' }, LIBRARY_DEFAULTS)
+    expect(params.get('dated')).toBe('false')
+
+    const restored = readUrlState(params, LIBRARY_DEFAULTS)
+    expect(restored.dated).toBe('false')
+    expect(viewToParams(restored).q).toBe('dated:no')
+
+    // At rest it stays out of the URL, like every other default.
+    expect(writeUrlState(LIBRARY_DEFAULTS, LIBRARY_DEFAULTS).has('dated')).toBe(false)
+  })
+
+  it('counts as an active filter, either way round', () => {
+    expect(hasActiveFilters({ ...LIBRARY_DEFAULTS, dated: 'true' })).toBe(true)
+    expect(hasActiveFilters({ ...LIBRARY_DEFAULTS, dated: 'false' })).toBe(true)
   })
 })

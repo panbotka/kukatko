@@ -8,6 +8,7 @@ import {
   takenBeforeParam,
   toDateBound,
 } from './period'
+import { queryFilterTokens } from './queryLanguage'
 
 /**
  * The library's canonical route. The library *is* the homepage — the grid is the
@@ -30,6 +31,16 @@ export type LibraryView = {
   sort: string
   archived: string
   has_gps: string
+  /**
+   * Capture-date filter: `''` (any), `'true'` for photos that carry a date and
+   * `'false'` for the ones that do not — the scans whose date the owner declared
+   * unknown, and everything that never had one.
+   *
+   * Unlike its neighbours this is not a list param of its own: the backend
+   * expresses it as the query language's `dated:yes` / `dated:no`, so
+   * {@link viewToParams} compiles it into `q` (see {@link queryWithDated}).
+   */
+  dated: string
   camera: string
   q: string
   /**
@@ -121,6 +132,7 @@ export const LIBRARY_DEFAULTS: LibraryView = {
   sort: 'newest',
   archived: 'false',
   has_gps: '',
+  dated: '',
   camera: '',
   q: '',
   year: '',
@@ -253,6 +265,41 @@ export function removeFromFilterList(raw: string, uid: string): string {
 }
 
 /**
+ * The query-language token a {@link LibraryView.dated} value compiles to, `''`
+ * for no filter. The view keeps the tri-state control's own `'true'`/`'false'`,
+ * like `has_gps` beside it; the backend spells the same filter `dated:yes` /
+ * `dated:no`.
+ */
+function datedToken(dated: string): string {
+  if (dated === 'true') {
+    return 'dated:yes'
+  }
+  if (dated === 'false') {
+    return 'dated:no'
+  }
+  return ''
+}
+
+/**
+ * The `q` the backend is sent: the reader's own query text plus the token the
+ * date filter compiles to. `dated:` is a key of the query language rather than a
+ * list param, so appending it to `q` is the control's only way in — and it is
+ * safe on the search page too, where the backend splits `q` into free text and
+ * filters and only the free text is ever embedded.
+ *
+ * A `dated:` already typed into the query wins and nothing is appended: two
+ * contradictory tokens would match no photo at all, and the filter bar already
+ * treats a typed filter as the one in force (see `FACET_QUERY_KEYS`).
+ */
+export function queryWithDated(view: LibraryView): string {
+  const token = datedToken(view.dated)
+  if (token === '' || queryFilterTokens(view.q).has('dated')) {
+    return view.q
+  }
+  return view.q === '' ? token : `${view.q} ${token}`
+}
+
+/**
  * Maps the URL view state to API list params, sanitising the enum-like fields so
  * a tampered URL cannot send an out-of-range sort/archived value to the backend.
  * Free-text, tri-state and UID filters pass through verbatim: the album, label
@@ -264,7 +311,9 @@ export function removeFromFilterList(raw: string, uid: string): string {
  * The time axis goes through {@link periodOf}, so the legacy `year` key and the
  * date bounds arrive as one period, with its upper bound stretched to the end of
  * its last day ({@link takenBeforeParam}) — a period is inclusive of the day the
- * reader picked.
+ * reader picked. The one filter that does not pass through verbatim is `dated`,
+ * which has no list param behind it and is compiled into `q` by
+ * {@link queryWithDated}.
  */
 export function viewToParams(view: LibraryView): PhotoListParams {
   const period = periodOf(view)
@@ -273,7 +322,7 @@ export function viewToParams(view: LibraryView): PhotoListParams {
     archived: toArchived(view.archived),
     has_gps: view.has_gps,
     camera: view.camera,
-    q: view.q,
+    q: queryWithDated(view),
     album: view.album,
     label: view.label,
     person: view.person,
@@ -298,6 +347,7 @@ export function hasActiveFilters(
   return (
     view.archived !== LIBRARY_DEFAULTS.archived ||
     view.has_gps !== '' ||
+    view.dated !== '' ||
     view.camera !== '' ||
     (!options.ignoreQuery && view.q !== '') ||
     !isAnyPeriod(periodOf(view)) ||

@@ -60,6 +60,14 @@ export interface BulkOperations {
   clear_description?: boolean
   /** Set the capture date of every photo at a stated grain. */
   set_taken_at?: BulkTakenAt
+  /**
+   * Declare the capture date unknown: the date goes, and the provenance records
+   * that somebody said so rather than that nothing was ever known. The outgoing
+   * date is not lost — the backend puts it away in `taken_at_before_unknown`, so
+   * the photo's detail can show what was disowned and put it back. Supplying it
+   * together with `set_taken_at` is a 400.
+   */
+  clear_taken_at?: boolean
   /** Set the GPS location. */
   set_location?: BulkLocation
   /** Clear the GPS location. */

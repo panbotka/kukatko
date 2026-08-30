@@ -110,7 +110,10 @@ Albums (each covered by a collage of four of its photos, so two albums from the 
 look alike; a new one can be started straight from a selection — "these forty photos are Ostatky 2022" —
 or from a single photo, without leaving for the Albums page) · labels · per-user favourites and ratings ·
 comments · bulk editing, including re-dating
-a whole shelf of scans at the grain you actually know ("1974", "the seventies") · duplicate detection
+a whole shelf of scans at the grain you actually know ("1974", "the seventies") — or declaring by the
+handful that the date is simply unknown, which sets the wrong date aside rather than destroying it: the
+photo's detail still shows what it used to claim and puts it back in one click, and the filter bar's
+"Datum: bez data" gathers everything left undated · duplicate detection
 with a side-by-side compare and a merge that keeps every album, label and person · RAW+JPEG and
 edited-variant stacks (grouped, never merged) · non-destructive crop/brightness/contrast and a rotation
 either way, which the whole library follows — the thumbnails are rebuilt from the turned photo, so the grid

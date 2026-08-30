@@ -955,6 +955,23 @@ function AdvancedFilters({
       </Col>
 
       <Col xs={6} sm={6} lg={3}>
+        {/* Named after the date, not after the flag: the reader is looking for
+            the photos nobody could date, and "Dated: No" is a sentence about the
+            catalogue rather than about them. */}
+        <TriStateSelect
+          id="library-dated"
+          label={t('library.filters.dated')}
+          value={view.dated}
+          yesLabel={t('library.dated.has')}
+          noLabel={t('library.dated.none')}
+          fromQuery={facetQueryTokens(queryFilters, FACET_QUERY_KEYS.dated)}
+          onChange={(value) => {
+            push({ dated: value })
+          }}
+        />
+      </Col>
+
+      <Col xs={6} sm={6} lg={3}>
         <Form.Group controlId="library-min-rating">
           <Form.Label className="small mb-1">{t('library.filters.minRating')}</Form.Label>
           <Form.Select
@@ -1095,32 +1112,50 @@ function uploaderValue(uid: string): string {
   return uid === '' ? UPLOADER_NONE : uid
 }
 
-/** A reusable any/yes/no select for tri-state boolean filters. */
+/**
+ * A reusable any/yes/no select for tri-state boolean filters. The two answers
+ * default to a plain Yes/No, which is what a filter named after the thing it
+ * asks about ("Location") wants; a filter named after the *fact* rather than the
+ * question takes its own wording instead — "Date: has a date / no date" reads,
+ * "Date: Yes" does not.
+ */
 function TriStateSelect({
   id,
   label,
   value,
+  yesLabel,
+  noLabel,
+  fromQuery = '',
   onChange,
 }: {
   id: string
   label: string
   value: string
+  /** Wording of the "true" answer; the plain "Yes" when absent. */
+  yesLabel?: string
+  /** Wording of the "false" answer; the plain "No" when absent. */
+  noLabel?: string
+  /** The query's own tokens for this filter, when it already sets it. */
+  fromQuery?: string
   onChange: (value: string) => void
 }) {
   const { t } = useTranslation()
+  const noteId = `${id}-from-query`
   return (
     <Form.Group controlId={id}>
       <Form.Label className="small mb-1">{label}</Form.Label>
       <Form.Select
         value={value}
+        aria-describedby={fromQuery === '' ? undefined : noteId}
         onChange={(e) => {
           onChange(e.target.value)
         }}
       >
         <option value="">{t('library.triState.any')}</option>
-        <option value="true">{t('library.triState.yes')}</option>
-        <option value="false">{t('library.triState.no')}</option>
+        <option value="true">{yesLabel ?? t('library.triState.yes')}</option>
+        <option value="false">{noLabel ?? t('library.triState.no')}</option>
       </Form.Select>
+      <QueryOverrideNote id={noteId} tokens={fromQuery} />
     </Form.Group>
   )
 }
