@@ -65,7 +65,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/clusterapi` — `/faces/clusters` (list, assign, remove-face)
 - `internal/comments` — per-photo comment threads: plain text, soft delete, audited in the mutation's transaction; every role may write (viewers included), the endpoints live in `internal/photoapi`
 - `internal/config` — typed configuration, Viper, `Load()`
-- `internal/ctl` — **client** of the own API for `kukatko ctl`: contexts (kubectl-style), Bearer token, table/JSON output
+- `internal/ctl` — **client** of the own API for `kukatko ctl`: contexts (kubectl-style), Bearer token, table/JSON/llm output, streamed renditions, the photo-edit body
 - `internal/database` — pgxpool wrapper, embedded migration runner, pgvector types
 - `internal/dirimport` — `kukatko import dir`: walks a directory on disk and uploads its media via `internal/ingest`
 - `internal/duplicates` — near-dup groups (pHash banded-LSH + embedding HNSW, union-find); read-only
@@ -79,7 +79,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/expand` — "expand a collection": photos similar to an album/label (per-photo kNN + voting, exclude members, vote rule, label rejections/negative-exemplar); read-only, **never writes**
 - `internal/expandapi` — `GET /albums/{uid}/similar`, `GET /labels/{uid}/similar` (RequireWrite)
 - `internal/facejob` — worker handler `face_detect` + backfill
-- `internal/facematch` — face↔marker IoU matching, identity suggestions, assignment state machine
+- `internal/facematch` — face↔marker IoU matching, identity suggestions, the compact per-photo roll-call, assignment state machine
 - `internal/feedback` — persisted opinions: "not this person" / "not this label" / "not duplicates", idempotent, audited, never mutates; bulk exclusion lookups
 - `internal/feedbackapi` — `POST`/`DELETE /feedback/{face,label}-rejections` (RequireWrite)
 - `internal/geoestimate` — estimate a missing location from photos taken near it in time; refuses unless the neighbours cluster tightly (a wrong location is worse than none), marks every result `estimate`

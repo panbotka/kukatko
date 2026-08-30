@@ -37,8 +37,11 @@ func impliesCtl(argv0 string) bool {
 type ctlOptions struct {
 	// contextName selects a context by name; empty means the current context.
 	contextName string
-	// output is the -o format, "table" or "json".
+	// output is the -o format: "table", "json" or "llm".
 	output string
+	// fields is the --fields allowlist, a comma-separated list of the JSON keys
+	// the llm format should keep.
+	fields string
 	// configPath overrides the client-side context file, mainly for tests.
 	configPath string
 }
@@ -69,25 +72,25 @@ func (o *ctlOptions) load() (*ctl.Config, string, error) {
 }
 
 // resolve builds the API client for the selected context (with the KUKATKO_SERVER
-// and KUKATKO_TOKEN overrides applied) and parses the requested output format.
-func (o *ctlOptions) resolve() (*ctl.Client, ctl.Format, error) {
-	format, err := ctl.ParseFormat(o.output)
+// and KUKATKO_TOKEN overrides applied) and reads the requested output mode.
+func (o *ctlOptions) resolve() (*ctl.Client, ctl.Output, error) {
+	out, err := ctl.NewOutput(o.output, ctl.ParseFields(o.fields))
 	if err != nil {
-		return nil, "", fmt.Errorf("reading --output: %w", err)
+		return nil, ctl.Output{}, fmt.Errorf("reading --output: %w", err)
 	}
 	cfg, _, err := o.load()
 	if err != nil {
-		return nil, "", err
+		return nil, ctl.Output{}, err
 	}
 	endpoint, err := ctl.Resolve(cfg, o.contextName, ctl.EnvFromOS())
 	if err != nil {
-		return nil, "", fmt.Errorf("selecting the server: %w", err)
+		return nil, ctl.Output{}, fmt.Errorf("selecting the server: %w", err)
 	}
 	client, err := ctl.NewClient(endpoint.Server, endpoint.Token)
 	if err != nil {
-		return nil, "", fmt.Errorf("building the API client: %w", err)
+		return nil, ctl.Output{}, fmt.Errorf("building the API client: %w", err)
 	}
-	return client, format, nil
+	return client, out, nil
 }
 
 // newCtlCmd builds the "ctl" subcommand tree: a remote client that drives a
@@ -110,7 +113,9 @@ func newCtlCmd() *cobra.Command {
 	flags.StringVar(&opts.contextName, "context", "",
 		"name of the context to use (default: the current context)")
 	flags.StringVarP(&opts.output, "output", "o", string(ctl.FormatTable),
-		"output format: table or json")
+		"output format: table, json (the server's own bytes) or llm (compact JSON for an agent)")
+	flags.StringVar(&opts.fields, "fields", "",
+		"comma-separated JSON keys to keep; narrows -o llm to an allowlist")
 	flags.StringVar(&opts.configPath, "ctl-config", "",
 		"path to the client context file (default: ~/.config/kukatko/ctl.yaml)")
 
@@ -282,14 +287,14 @@ func newCtlConfigUseContextCmd(opts *ctlOptions) *cobra.Command {
 
 // renderPhotoPage writes a photo list, a search result, a favorites page or a
 // subject's gallery — all four share the /photos envelope — in the requested
-// format: the API's own JSON bytes, unchanged, or a compact table.
-func renderPhotoPage(w io.Writer, format ctl.Format, raw json.RawMessage) error {
-	return renderRaw(w, format, raw, "photo list", ctl.DecodePhotoPage, ctl.WritePhotoPage)
+// output mode: the API's own JSON bytes unchanged, a slimmed one, or a table.
+func renderPhotoPage(w io.Writer, out ctl.Output, raw json.RawMessage) error {
+	return renderRaw(w, out, raw, "photo list", ctl.DecodePhotoPage, ctl.WritePhotoPage)
 }
 
 // renderPhotoDetail writes a single photo in the requested format.
-func renderPhotoDetail(w io.Writer, format ctl.Format, raw json.RawMessage) error {
-	return renderRaw(w, format, raw, "photo", ctl.DecodePhotoDetail, ctl.WritePhotoDetail)
+func renderPhotoDetail(w io.Writer, out ctl.Output, raw json.RawMessage) error {
+	return renderRaw(w, out, raw, "photo", ctl.DecodePhotoDetail, ctl.WritePhotoDetail)
 }
 
 // writeRawJSON echoes the API's response bytes for -o json.

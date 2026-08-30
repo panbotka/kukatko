@@ -23,14 +23,35 @@ type Ack struct {
 }
 
 // WriteAck renders the confirmation of a 204 No Content mutation: one line of
-// prose as a table, or a small synthesized object as JSON.
-func WriteAck(w io.Writer, format Format, message string) error {
-	if format != FormatJSON {
+// prose as a table, or a small synthesized object for the two machine formats.
+func WriteAck(w io.Writer, out Output, message string) error {
+	if out.Format == FormatTable {
 		return writeLine(w, message)
 	}
 	encoded, err := json.Marshal(Ack{Status: "ok", Message: message})
 	if err != nil {
 		return fmt.Errorf("encoding the confirmation: %w", err)
+	}
+	if out.Format == FormatLLM {
+		return WriteLLM(w, encoded, out.Fields)
+	}
+	return WriteJSON(w, encoded)
+}
+
+// WriteRendition confirms a saved rendition. A table prints the bare path and
+// nothing else — that is what gets pasted into the next command — while the two
+// machine formats get the file's size and type alongside it, which a pipeline
+// would otherwise have to stat for.
+func WriteRendition(w io.Writer, out Output, saved Rendition) error {
+	if out.Format == FormatTable {
+		return writeLine(w, saved.Path)
+	}
+	encoded, err := json.Marshal(saved)
+	if err != nil {
+		return fmt.Errorf("encoding the saved rendition: %w", err)
+	}
+	if out.Format == FormatLLM {
+		return WriteLLM(w, encoded, out.Fields)
 	}
 	return WriteJSON(w, encoded)
 }

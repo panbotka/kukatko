@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -22,6 +23,10 @@ type FaceService interface {
 	// PhotoFaces returns the photo's faces with their marker assignment and ranked
 	// subject suggestions (to name an unnamed face, or to reassign an assigned one).
 	PhotoFaces(ctx context.Context, photoUID string) (facematch.FacesResponse, error)
+	// PhotoPeople returns who is on the photo — the markers naming a subject and
+	// the detections nobody has named yet — without the suggestion search, so a
+	// detail response can carry it.
+	PhotoPeople(ctx context.Context, photoUID string) ([]facematch.PersonOnPhoto, error)
 	// Apply runs one assignment-state transition (create_marker / assign_person /
 	// unassign_person), recording an audit entry stamped with meta in the same
 	// transaction as the change.
@@ -43,6 +48,38 @@ func (a *API) handleFaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// resolvePeople returns who is on the photo for the detail response, or nil to
+// omit the block entirely.
+//
+// Unlike ocr_text it is behind an opt-in `people=true` query parameter, because
+// assembling it costs a face list, a marker list and a subject lookup per named
+// person — work the detail endpoint otherwise never pays, and which the web UI
+// already pays separately in GET /photos/{uid}/faces when the face editor opens.
+// The parameter exists for the caller that wants the whole photo in one request:
+// `kukatko ctl photos get --people`.
+//
+// A malformed value is treated as "not asked" rather than failing the detail, and
+// so is a face backend that is missing or in trouble: nobody loses the photo over
+// the list of who is on it.
+func (a *API) resolvePeople(r *http.Request, uid string) *[]facematch.PersonOnPhoto {
+	if a.faces == nil {
+		return nil
+	}
+	want, err := boolParam(r.URL.Query(), "people")
+	if err != nil || want == nil || !*want {
+		return nil
+	}
+	onPhoto, err := a.faces.PhotoPeople(r.Context(), uid)
+	if err != nil {
+		log.Printf("photoapi: resolving people of %s: %v", uid, err)
+		return nil
+	}
+	if onPhoto == nil {
+		onPhoto = []facematch.PersonOnPhoto{}
+	}
+	return &onPhoto
 }
 
 // handleFaceAssign applies a face-assignment transition (create marker, assign or

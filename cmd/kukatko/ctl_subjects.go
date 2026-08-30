@@ -29,7 +29,7 @@ func newCtlSubjectsListCmd(opts *ctlOptions) *cobra.Command {
 		Short: "List every subject with its face-marker count",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			client, format, err := opts.resolve()
+			client, out, err := opts.resolve()
 			if err != nil {
 				return err
 			}
@@ -37,7 +37,7 @@ func newCtlSubjectsListCmd(opts *ctlOptions) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("listing subjects: %w", err)
 			}
-			return renderSubjects(cmd.OutOrStdout(), format, raw)
+			return renderSubjects(cmd.OutOrStdout(), out, raw)
 		},
 	}
 }
@@ -49,7 +49,7 @@ func newCtlSubjectsGetCmd(opts *ctlOptions) *cobra.Command {
 		Short: "Show one subject's detail",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, format, err := opts.resolve()
+			client, out, err := opts.resolve()
 			if err != nil {
 				return err
 			}
@@ -57,7 +57,7 @@ func newCtlSubjectsGetCmd(opts *ctlOptions) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("fetching subject %s: %w", args[0], err)
 			}
-			return renderSubject(cmd.OutOrStdout(), format, raw)
+			return renderSubject(cmd.OutOrStdout(), out, raw)
 		},
 	}
 }
@@ -72,7 +72,7 @@ func newCtlSubjectsPhotosCmd(opts *ctlOptions) *cobra.Command {
 		Short: "List the photos a subject appears in, newest first",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, format, err := opts.resolve()
+			client, out, err := opts.resolve()
 			if err != nil {
 				return err
 			}
@@ -80,7 +80,7 @@ func newCtlSubjectsPhotosCmd(opts *ctlOptions) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("listing photos of subject %s: %w", args[0], err)
 			}
-			return renderPhotoPage(cmd.OutOrStdout(), format, raw)
+			return renderPhotoPage(cmd.OutOrStdout(), out, raw)
 		},
 	}
 	flags := cmd.Flags()

@@ -13,7 +13,7 @@ func TestWriteAck(t *testing.T) {
 	t.Parallel()
 
 	var table strings.Builder
-	if err := WriteAck(&table, FormatTable, "photo pht01 favorited"); err != nil {
+	if err := WriteAck(&table, Output{Format: FormatTable}, "photo pht01 favorited"); err != nil {
 		t.Fatalf("WriteAck(table) returned %v", err)
 	}
 	if table.String() != "photo pht01 favorited\n" {
@@ -21,7 +21,7 @@ func TestWriteAck(t *testing.T) {
 	}
 
 	var raw strings.Builder
-	if err := WriteAck(&raw, FormatJSON, "photo pht01 favorited"); err != nil {
+	if err := WriteAck(&raw, Output{Format: FormatJSON}, "photo pht01 favorited"); err != nil {
 		t.Fatalf("WriteAck(json) returned %v", err)
 	}
 	var ack Ack

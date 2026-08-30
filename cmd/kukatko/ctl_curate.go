@@ -31,7 +31,7 @@ func newCtlFavoritesListCmd(opts *ctlOptions) *cobra.Command {
 		Short: "List the photos you have favorited",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			client, format, err := opts.resolve()
+			client, out, err := opts.resolve()
 			if err != nil {
 				return err
 			}
@@ -39,7 +39,7 @@ func newCtlFavoritesListCmd(opts *ctlOptions) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("listing favorites: %w", err)
 			}
-			return renderPhotoPage(cmd.OutOrStdout(), format, raw)
+			return renderPhotoPage(cmd.OutOrStdout(), out, raw)
 		},
 	}
 	addPagingFlags(cmd, &list)
@@ -58,14 +58,14 @@ func newCtlFavoritesAddCmd(opts *ctlOptions) *cobra.Command {
 		Short: "Favorite one photo",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, format, err := opts.resolve()
+			client, out, err := opts.resolve()
 			if err != nil {
 				return err
 			}
 			if err := client.AddFavorite(cmd.Context(), args[0]); err != nil {
 				return fmt.Errorf("favoriting photo %s: %w", args[0], err)
 			}
-			return renderAck(cmd.OutOrStdout(), format, "photo "+args[0]+" favorited")
+			return renderAck(cmd.OutOrStdout(), out, "photo "+args[0]+" favorited")
 		},
 	}
 }
@@ -77,14 +77,14 @@ func newCtlFavoritesRemoveCmd(opts *ctlOptions) *cobra.Command {
 		Short: "Unfavorite one photo",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, format, err := opts.resolve()
+			client, out, err := opts.resolve()
 			if err != nil {
 				return err
 			}
 			if err := client.RemoveFavorite(cmd.Context(), args[0]); err != nil {
 				return fmt.Errorf("unfavoriting photo %s: %w", args[0], err)
 			}
-			return renderAck(cmd.OutOrStdout(), format, "photo "+args[0]+" unfavorited")
+			return renderAck(cmd.OutOrStdout(), out, "photo "+args[0]+" unfavorited")
 		},
 	}
 }
@@ -113,7 +113,7 @@ func newCtlRatingSetCmd(opts *ctlOptions) *cobra.Command {
 			"you omit is left as it was.",
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, format, err := opts.resolve()
+			client, out, err := opts.resolve()
 			if err != nil {
 				return err
 			}
@@ -125,7 +125,7 @@ func newCtlRatingSetCmd(opts *ctlOptions) *cobra.Command {
 			if err := client.SetRating(cmd.Context(), args[0], rating, flagPtr); err != nil {
 				return fmt.Errorf("rating photo %s: %w", args[0], err)
 			}
-			return renderAck(cmd.OutOrStdout(), format, "photo "+args[0]+" rated "+ratingSummary(rating, flagPtr))
+			return renderAck(cmd.OutOrStdout(), out, "photo "+args[0]+" rated "+ratingSummary(rating, flagPtr))
 		},
 	}
 	cmd.Flags().StringVar(&flag, "flag", "", "cull flag: none, pick or reject")
@@ -177,14 +177,14 @@ func newCtlRatingClearCmd(opts *ctlOptions) *cobra.Command {
 		Short: "Clear a photo's star rating and cull flag",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, format, err := opts.resolve()
+			client, out, err := opts.resolve()
 			if err != nil {
 				return err
 			}
 			if err := client.ClearRating(cmd.Context(), args[0]); err != nil {
 				return fmt.Errorf("clearing the rating of photo %s: %w", args[0], err)
 			}
-			return renderAck(cmd.OutOrStdout(), format, "photo "+args[0]+" rating cleared")
+			return renderAck(cmd.OutOrStdout(), out, "photo "+args[0]+" rating cleared")
 		},
 	}
 }

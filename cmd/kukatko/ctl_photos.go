@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -15,7 +16,10 @@ func newCtlPhotosCmd(opts *ctlOptions) *cobra.Command {
 		Use:   "photos",
 		Short: "Browse the photo catalogue on a running server",
 	}
-	cmd.AddCommand(newCtlPhotosListCmd(opts), newCtlPhotosGetCmd(opts), newCtlPhotosSearchCmd(opts))
+	cmd.AddCommand(
+		newCtlPhotosListCmd(opts), newCtlPhotosGetCmd(opts), newCtlPhotosSearchCmd(opts),
+		newCtlPhotosImageCmd(opts), newCtlPhotosEditCmd(opts),
+	)
 	return cmd
 }
 
@@ -48,7 +52,7 @@ func newCtlPhotosListCmd(opts *ctlOptions) *cobra.Command {
 		Short: "List photos with the catalogue filters",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			client, format, err := opts.resolve()
+			client, out, err := opts.resolve()
 			if err != nil {
 				return err
 			}
@@ -56,7 +60,7 @@ func newCtlPhotosListCmd(opts *ctlOptions) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("listing photos: %w", err)
 			}
-			return renderPhotoPage(cmd.OutOrStdout(), format, raw)
+			return renderPhotoPage(cmd.OutOrStdout(), out, raw)
 		},
 	}
 	addPagingFlags(cmd, &list)
@@ -69,24 +73,76 @@ func newCtlPhotosListCmd(opts *ctlOptions) *cobra.Command {
 	return cmd
 }
 
-// newCtlPhotosGetCmd builds "ctl photos get <uid>", the full detail of one photo.
+// newCtlPhotosGetCmd builds "ctl photos get <uid>": the whole photo in one
+// request — its metadata with the provenance of the date and the location, its
+// memberships, the text the recogniser read in it, and who is on it.
 func newCtlPhotosGetCmd(opts *ctlOptions) *cobra.Command {
-	return &cobra.Command{
+	detail := ctl.PhotoDetailOptions{People: true}
+	cmd := &cobra.Command{
 		Use:   "get <uid>",
-		Short: "Show one photo's full detail",
-		Args:  cobra.ExactArgs(1),
+		Short: "Show one photo's full detail, including who is on it",
+		Long: "Show one photo's full detail: its metadata with the provenance of the date and\n" +
+			"the location, its albums and labels, the text the recogniser read in it, and who\n" +
+			"is on it — the named subjects plus however many detections nobody has named yet.\n\n" +
+			"Reading the photo whole is the point of this command, so the roll-call is asked\n" +
+			"for by default. The server assembles it only on request (matching the detections\n" +
+			"against the markers is work a plain read should not pay for), so\n" +
+			"--people=false skips it.",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, format, err := opts.resolve()
+			client, out, err := opts.resolve()
 			if err != nil {
 				return err
 			}
-			raw, err := client.GetPhoto(cmd.Context(), args[0])
+			raw, err := client.GetPhoto(cmd.Context(), args[0], detail)
 			if err != nil {
 				return fmt.Errorf("fetching photo %s: %w", args[0], err)
 			}
-			return renderPhotoDetail(cmd.OutOrStdout(), format, raw)
+			return renderPhotoDetail(cmd.OutOrStdout(), out, raw)
 		},
 	}
+	cmd.Flags().BoolVar(&detail.People, "people", true,
+		"report who is on the photo; --people=false skips the face↔marker match")
+	return cmd
+}
+
+// newCtlPhotosImageCmd builds "ctl photos image <uid>", which saves one rendition
+// of a photo to a file so an agent can actually look at it.
+func newCtlPhotosImageCmd(opts *ctlOptions) *cobra.Command {
+	var (
+		size   string
+		output string
+	)
+	cmd := &cobra.Command{
+		Use:   "image <uid>",
+		Short: "Save a rendition of a photo to a file and print its path",
+		Long: "Save one rendition of a photo to a file and print the path.\n\n" +
+			"--size takes one of:\n  " + strings.Join(ctl.RenditionSizes(), ", ") + "\n" +
+			"The last of them is the stored file itself, at full size and in its own format,\n" +
+			"a video included; the rest are cached thumbnails.\n\n" +
+			"The bytes are streamed from the socket to the file and are never held in memory,\n" +
+			"and the file appears at its final name only once the download is complete.\n\n" +
+			"The flag is --output-file, not --output: -o/--output is already the output\n" +
+			"format, and a local flag of that name would shadow it.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, out, err := opts.resolve()
+			if err != nil {
+				return err
+			}
+			saved, err := client.SaveRendition(cmd.Context(), args[0], size, output)
+			if err != nil {
+				return fmt.Errorf("saving photo %s: %w", args[0], err)
+			}
+			return renderRendition(cmd.OutOrStdout(), out, saved)
+		},
+	}
+	flags := cmd.Flags()
+	flags.StringVar(&size, "size", ctl.DefaultRenditionSize,
+		"rendition: a thumbnail size or "+ctl.RenditionOriginal)
+	flags.StringVarP(&output, "output-file", "f", "",
+		"where to write it (default: the working directory, named after the response)")
+	return cmd
 }
 
 // newCtlPhotosSearchCmd builds "ctl photos search <query>", a page of GET /search.
@@ -99,7 +155,7 @@ func newCtlPhotosSearchCmd(opts *ctlOptions) *cobra.Command {
 		Short: "Search photos by text, semantics, or both",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, format, err := opts.resolve()
+			client, out, err := opts.resolve()
 			if err != nil {
 				return err
 			}
@@ -108,7 +164,7 @@ func newCtlPhotosSearchCmd(opts *ctlOptions) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("searching photos: %w", err)
 			}
-			return renderPhotoPage(cmd.OutOrStdout(), format, raw)
+			return renderPhotoPage(cmd.OutOrStdout(), out, raw)
 		},
 	}
 	addPagingFlags(cmd, &search.List)

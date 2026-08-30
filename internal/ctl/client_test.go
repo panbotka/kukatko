@@ -35,6 +35,9 @@ func testClient(t *testing.T, token string, handler http.HandlerFunc) *Client {
 	transport := &http.Transport{}
 	t.Cleanup(transport.CloseIdleConnections)
 	client.httpc = &http.Client{Timeout: defaultTimeout, Transport: transport}
+	// The media client shares the same reasoning and the same pool; it keeps its
+	// production absence of a timeout, since a download is meant to be slow.
+	client.stream = &http.Client{Transport: transport}
 	return client
 }
 

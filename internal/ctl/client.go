@@ -85,6 +85,11 @@ type Client struct {
 	server string
 	token  string
 	httpc  *http.Client
+	// stream is the client for the media routes, which have no timeout: a
+	// hundred-megabyte original is slow on purpose, and only the caller's context
+	// should be able to end its download. It shares nothing with httpc but the
+	// default transport's connection pool.
+	stream *http.Client
 }
 
 // NewClient builds a client for the given server root (scheme and host, with no
@@ -104,6 +109,7 @@ func NewClient(server, token string) (*Client, error) {
 		server: server,
 		token:  token,
 		httpc:  &http.Client{Timeout: defaultTimeout},
+		stream: &http.Client{},
 	}, nil
 }
 

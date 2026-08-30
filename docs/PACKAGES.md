@@ -1436,7 +1436,15 @@ to `## Package map` in `CLAUDE.md`.
   methods in the same transaction as the change — `create_marker`/`assign_person` → `face.assign`,
   `unassign_person` → `face.unassign` (target = marker, details action/photo/subject/face_index);
   `meta` is the actor+request from `photoapi.handleFaceAssign`, empty for the system cluster caller
-  (actor NULL); **`ClearSurplusLinks(ctx,photoUID)`** re-derives one photo's pairing and clears the
+  (actor NULL);
+  **`PhotoPeople(ctx,photoUID)`** (`people.go`, backing the detail response's opt-in `?people=true` block)
+  answers the narrower question "who is on this photo?" → `[]PersonOnPhoto`
+  (`subject_uid`/`subject_name`/`marker_uid`/`bbox`/`det_score`): every detection with the subject its
+  matched marker names, then the face markers no detection claimed (the regions drawn by hand). It shares
+  the exclusive pairing with `PhotoFaces` and does **none** of its expensive or mutating work — no
+  suggestion search (up to two HNSW queries per face) and no rewriting of the cached face↔marker link —
+  which is what makes it cheap enough to answer a detail request with and keeps a plain read a plain read;
+  **`ClearSurplusLinks(ctx,photoUID)`** re-derives one photo's pairing and clears the
   cached `marker_uid`/`subject_uid`/`subject_name` of every face holding a surplus claim (→ how many rows
   were cleared) — the bulk counterpart of what `PhotoFaces` does when a photo is viewed, for the links
   written before matching was exclusive; it is what `maintenance repair --face-markers` drives and it
@@ -3709,7 +3717,14 @@ to `## Package map` in `CLAUDE.md`.
     `insufficient permissions`. It **never** prints the body or the token; another non-2xx → `*StatusError`
     with the server's `{"error":…}` text (otherwise a limited excerpt of the body). The body is read through `io.LimitReader`,
     timeout 30 s.
-  - `photos.go` — `ListPhotos`/`GetPhoto`/`SearchPhotos` + `DecodePhotoPage`/`DecodePhotoDetail`.
+  - `photos.go` — `ListPhotos`/`GetPhoto(uid, PhotoDetailOptions)`/`SearchPhotos` +
+    `DecodePhotoPage`/`DecodePhotoDetail`. `PhotoDetail` carries every field the renderer prints, which since
+    `photos edit` exists means every field that command can write — an agent that edits a photo has to be able
+    to read back what it changed — plus `ocr_text` and `people` (`[]PhotoPerson`, `nil` when the caller did not
+    ask, which is **not** the same as nobody being on the photo). `PhotoDetailOptions{People}` renders the
+    server's opt-in `?people=true` and nothing at all when it is false, so a plain read never makes the server
+    do the match. `ctl photos get` asks for it by default — reading the photo whole is the point of that
+    command — while `photos edit` does not, unless asked.
     **The decoder is per-resource on purpose:** the API has no uniform list envelope (`photos` returns
     `{photos,total,limit,offset,next_offset}`, the other resources a bare list) and we must not unify it —
     it would break the frontend. `ListOptions` (limit/offset/sort/order/year/album/label/favorite/archived)
@@ -3746,17 +3761,52 @@ to `## Package map` in `CLAUDE.md`.
     objects with a `uid`, or a plain whitespace-separated list. `NormalizeUIDs` trims, drops the empty ones
     and **deduplicates** (so that the count in the confirmation prompt matches what is actually sent) →
     `ErrNoPhotoUIDs`. `ConfirmThreshold = 50` is the boundary above which the command asks.
-  - `output.go` — `ParseFormat` (`table`/`json`; **deliberately no `yaml`**), `WriteJSON` (echoing the bytes
+  - `edit.go` — `PhotoEdit`, the body of `PATCH /photos/{uid}`, built one field at a time with
+    `Set`/`SetTime`/`Clear`, plus `EditPhoto(ctx, uid, edit, opts)` and `ParseTakenAt`. It is a **key/value map,
+    not a struct of pointers**, because the API reads *presence*, not nullness: an untouched field must not
+    appear in the request at all (re-sending an unchanged `taken_at` would flip its source from `exif` to
+    `manual`) while a cleared one must appear as an explicit `null`. `Validate()` refuses only an edit that
+    carries nothing — the length caps, the dropping of `taken_at_note` and which `location_source` a client may
+    claim stay on the server, and a second copy here would be one that drifts. `Body()` renders the indented
+    JSON `--dry-run` prints. Errors: `ErrNoEdits`, `ErrConflictingEdits`, `ErrIncompleteLocation`,
+    `ErrInvalidTimestamp`.
+  - `media.go` — `SaveRendition(ctx, uid, size, path)` behind `ctl photos image`: a thumbnail size or
+    `RenditionOriginal`, validated locally against the `thumb` registry (`ValidRendition`, `RenditionSizes`,
+    `DefaultRenditionSize = fit_720`). It is the one call that does **not** go through `Client.do`: the bytes are
+    copied straight from the socket into the file, so a hundred-megabyte original is never held in memory, and
+    it uses `Client.stream` — a second `http.Client` with **no timeout**, because a big download is slow on
+    purpose and only the caller's context should end it. The file lands on a temporary name beside its
+    destination and is renamed into place only when the copy succeeds, so a failed transfer leaves nothing that
+    looks finished. With no destination the name comes from the response (`Content-Disposition` for an
+    original, `<uid>_<size><ext>` otherwise), always reduced to a bare file name so a header cannot steer the
+    write out of the working directory.
+  - `llm.go` — `WriteLLM(w, raw, fields)` and `ParseFields`, the `-o llm` renderer. It slims the server's body
+    generically — the keys in `droppedKeys` (the raw `exif`, the signed media URLs, the file-internal and
+    machine-derived columns, the row bookkeeping) and every empty or zero-valued field — and re-encodes it
+    compactly, keeping numbers as `json.Number` so a coordinate is not rounded through a float. It is a rule
+    about **keys**, not a projection per resource, which is what makes one implementation cover every command
+    (see `renderRaw` in `cmd/kukatko/ctl_render.go`, which handles the format before the per-resource decoder
+    runs) and everything added later. `pickFields` applies the `--fields` allowlist: a named key keeps its whole
+    value, an unnamed one survives only as the road to a named descendant, so the allowlist reaches through a
+    list envelope without naming it; an allowlist nothing matches yields `{}` rather than the whole body.
+  - `output.go` — `ParseFormat` (`table`/`json`/`llm`; **deliberately no `yaml`**), `Output{Format,Fields}` and
+    `NewOutput` (one value rather than two parameters, so a renderer added later cannot quietly drop the
+    allowlist), `WriteJSON` (echoing the bytes
     unchanged), the shared `writeTable`/`writeKeyValues`/`writeLine`, `WritePhotoPage` (a table + one summary
     line: how many out of how many, `offset`, `next offset`, and for a search the effective `mode` and any `degraded`),
-    `WritePhotoDetail`, `WriteContexts` (**the token is never printed**, only `stored`/`not set`).
+    `WritePhotoDetail` (the date and the location beside their provenance, so an inferred value never reads
+    like a measured one; the roll-call as names plus a count of the unassigned detections, and
+    `- (not requested)` when `--people` was not given; the OCR reading folded onto one line and elided),
+    `WriteContexts` (**the token is never printed**, only `stored`/`not set`).
+    `WriteRendition` (`render.go`) confirms a file saved by `photos image`: the bare path as a table, the
+    path with its size and type in `-o json`/`-o llm`.
     An empty result = the single line `no photos found`, no header — so that an agent does not mistake a header
     for a row.
   - `render.go` — `WriteAlbums`/`WriteAlbum`, `WriteLabels`/`WriteLabel`, `WriteSubjects` (both counts,
     `PHOTOS` and `MARKERS`, because they answer different questions)/`WriteSubject`,
     `WriteMembership` (one line: how many photos the album now holds), `WriteBulkResult` (a summary + a table of
     the failed photos **only**) and `WriteAck`. `Ack` is the only payload the CLI **makes up itself**: where
-    the API answers `204` there is nothing to pass through unchanged, so `-o json` gets
+    the API answers `204` there is nothing to pass through unchanged, so `-o json` (and `-o llm`) gets
     `{"status":"ok","message":…}` and the pipeline can tell success from failure.
 
   The command tree, the configuration file and the `kukatkoctl` symlink are described in

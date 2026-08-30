@@ -195,6 +195,67 @@ func TestWritePhotoDetail_sparse(t *testing.T) {
 	}
 }
 
+// TestWritePhotoDetail_provenanceAndPeople verifies the rows an agent reads a
+// photo by: the date and the location beside where they came from, who is on the
+// photo, and the text read in it.
+func TestWritePhotoDetail_provenanceAndPeople(t *testing.T) {
+	t.Parallel()
+
+	lat, lng := 50.08750, 14.42111
+	detail := PhotoDetail{
+		Photo:            Photo{UID: "pht01", TakenAt: takenAt(t)},
+		TakenAtSource:    "manual",
+		TakenAtEstimated: true,
+		TakenAtNote:      "kolem roku 1950",
+		TakenAtPrecision: "year",
+		Lat:              &lat, Lng: &lng,
+		LocationSource: "estimate",
+		Artist:         "Josef Novák",
+		OCRText:        "ZAVŘENO\nOtevíráme v pondělí",
+		People: []PhotoPerson{
+			{SubjectUID: "su1", SubjectName: "Alice"},
+			{DetScore: 0.7},
+		},
+	}
+	var buf bytes.Buffer
+	if err := WritePhotoDetail(&buf, detail); err != nil {
+		t.Fatalf("WritePhotoDetail returned %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		"estimated", "year", "manual", "kolem roku 1950",
+		"50.08750, 14.42111 (estimate)", "Josef Novák",
+		"Alice, 1 unassigned", "ZAVŘENO Otevíráme v pondělí",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("detail output does not contain %q:\n%s", want, out)
+		}
+	}
+}
+
+// TestWritePhotoDetail_peopleNotReported verifies a detail whose response carried
+// no roll-call says so, rather than claiming nobody is on the photo.
+func TestWritePhotoDetail_peopleNotReported(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	if err := WritePhotoDetail(&buf, PhotoDetail{Photo: Photo{UID: "pht01"}}); err != nil {
+		t.Fatalf("WritePhotoDetail returned %v", err)
+	}
+	if !strings.Contains(buf.String(), "not reported") {
+		t.Errorf("output does not distinguish a missing roll-call:\n%s", buf.String())
+	}
+
+	buf.Reset()
+	empty := PhotoDetail{Photo: Photo{UID: "pht01"}, People: []PhotoPerson{}}
+	if err := WritePhotoDetail(&buf, empty); err != nil {
+		t.Fatalf("WritePhotoDetail returned %v", err)
+	}
+	if strings.Contains(buf.String(), "not reported") {
+		t.Errorf("an empty roll-call was reported as missing:\n%s", buf.String())
+	}
+}
+
 // TestWriteContexts verifies the context table marks the current context and
 // never prints a token, only whether one is stored.
 func TestWriteContexts(t *testing.T) {

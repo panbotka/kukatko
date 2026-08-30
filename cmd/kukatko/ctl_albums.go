@@ -33,7 +33,7 @@ func newCtlAlbumsListCmd(opts *ctlOptions) *cobra.Command {
 		Short: "List every album with its photo count",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			client, format, err := opts.resolve()
+			client, out, err := opts.resolve()
 			if err != nil {
 				return err
 			}
@@ -41,7 +41,7 @@ func newCtlAlbumsListCmd(opts *ctlOptions) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("listing albums: %w", err)
 			}
-			return renderAlbums(cmd.OutOrStdout(), format, raw)
+			return renderAlbums(cmd.OutOrStdout(), out, raw)
 		},
 	}
 }
@@ -53,7 +53,7 @@ func newCtlAlbumsGetCmd(opts *ctlOptions) *cobra.Command {
 		Short: "Show one album's detail",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, format, err := opts.resolve()
+			client, out, err := opts.resolve()
 			if err != nil {
 				return err
 			}
@@ -61,7 +61,7 @@ func newCtlAlbumsGetCmd(opts *ctlOptions) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("fetching album %s: %w", args[0], err)
 			}
-			return renderAlbum(cmd.OutOrStdout(), format, raw)
+			return renderAlbum(cmd.OutOrStdout(), out, raw)
 		},
 	}
 }
@@ -78,7 +78,7 @@ func newCtlAlbumsCreateCmd(opts *ctlOptions) *cobra.Command {
 		Short: "Create an album (editor or admin)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, format, err := opts.resolve()
+			client, out, err := opts.resolve()
 			if err != nil {
 				return err
 			}
@@ -90,7 +90,7 @@ func newCtlAlbumsCreateCmd(opts *ctlOptions) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("creating album %q: %w", in.Title, err)
 			}
-			return renderAlbum(cmd.OutOrStdout(), format, raw)
+			return renderAlbum(cmd.OutOrStdout(), out, raw)
 		},
 	}
 	flags := cmd.Flags()
@@ -157,7 +157,7 @@ func newCtlAlbumMembershipCmd(opts *ctlOptions, spec membershipSpec) *cobra.Comm
 			"composes with `kukatkoctl photos list -o json`.",
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, format, err := opts.resolve()
+			client, out, err := opts.resolve()
 			if err != nil {
 				return err
 			}
@@ -174,7 +174,7 @@ func newCtlAlbumMembershipCmd(opts *ctlOptions, spec membershipSpec) *cobra.Comm
 			if err != nil {
 				return fmt.Errorf("updating album %s: %w", albumUID, err)
 			}
-			return renderMembership(cmd.OutOrStdout(), format, raw, albumUID)
+			return renderMembership(cmd.OutOrStdout(), out, raw, albumUID)
 		},
 	}
 	addConfirmFlag(cmd, &assumeYes)

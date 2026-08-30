@@ -53,7 +53,7 @@ func newCtlBulkCmd(opts *ctlOptions) *cobra.Command {
 			"The whole batch is one request: the server applies it in one transaction, so it\n" +
 			"either lands as a unit or not at all.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, format, err := opts.resolve()
+			client, out, err := opts.resolve()
 			if err != nil {
 				return err
 			}
@@ -78,7 +78,7 @@ func newCtlBulkCmd(opts *ctlOptions) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("applying the bulk edit: %w", err)
 			}
-			return renderBulkResult(cmd.OutOrStdout(), format, raw)
+			return renderBulkResult(cmd.OutOrStdout(), out, raw)
 		},
 	}
 	flags.register(cmd)

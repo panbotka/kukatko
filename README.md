@@ -249,6 +249,10 @@ were written.
   searches and organizes the library directly ("find grandma's photos from the sixties and put them
   in an album"). Off by default, authenticated with an ordinary API token, bound by the same RBAC —
   and nothing destructive is exposed.
+- **Or the same job from the terminal.** `kukatko ctl photos` is the loop an agent needs per photo:
+  read it whole (`get` — who is on it, and the text the recogniser read in it), actually look at it
+  (`image`, streamed to a file), and write the evaluation back (`edit`) — with `--dry-run` to show
+  its intent first, and `-o llm` to spend a fraction of the tokens the raw JSON would.
 - **Czech first, English second.** The UI ships bilingual (`cs` default, `en`).
 
 ## What you need

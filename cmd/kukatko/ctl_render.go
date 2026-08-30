@@ -8,8 +8,9 @@ import (
 	"github.com/panbotka/kukatko/internal/ctl"
 )
 
-// renderRaw writes one API response in the requested format: the server's own
-// JSON bytes, unchanged, or a compact table decoded from them.
+// renderRaw writes one API response in the requested output mode: the server's
+// own JSON bytes unchanged, the same bytes slimmed for an agent, or a compact
+// table decoded from them.
 //
 // Every resource passes its own decoder and renderer, because the API has no
 // uniform list envelope — /photos wraps its rows in a paging envelope, /albums,
@@ -17,14 +18,24 @@ import (
 // shapes are what the frontend consumes, so ctl adapts to them rather than the
 // other way round; this generic only removes the plumbing they do share.
 //
+// The llm mode is handled here, before the decoder runs, which is what makes it
+// available to every command rather than to the ones somebody remembered: it is a
+// rule about JSON keys, not about any one resource.
+//
 // what names the resource in an error message ("album list", "subject").
 func renderRaw[T any](
-	w io.Writer, format ctl.Format, raw json.RawMessage, what string,
+	w io.Writer, out ctl.Output, raw json.RawMessage, what string,
 	decode func(json.RawMessage) (T, error),
 	write func(io.Writer, T) error,
 ) error {
-	if format == ctl.FormatJSON {
+	if out.Format == ctl.FormatJSON {
 		return writeRawJSON(w, raw)
+	}
+	if out.Format == ctl.FormatLLM {
+		if err := ctl.WriteLLM(w, raw, out.Fields); err != nil {
+			return fmt.Errorf("rendering the %s: %w", what, err)
+		}
+		return nil
 	}
 	value, err := decode(raw)
 	if err != nil {
@@ -38,51 +49,59 @@ func renderRaw[T any](
 
 // renderAck confirms a mutation whose endpoint answered 204 No Content, so there
 // are no server bytes to pass through. See ctl.WriteAck.
-func renderAck(w io.Writer, format ctl.Format, message string) error {
-	if err := ctl.WriteAck(w, format, message); err != nil {
+func renderAck(w io.Writer, out ctl.Output, message string) error {
+	if err := ctl.WriteAck(w, out, message); err != nil {
 		return fmt.Errorf("writing the confirmation: %w", err)
 	}
 	return nil
 }
 
+// renderRendition confirms a file saved by `photos image`.
+func renderRendition(w io.Writer, out ctl.Output, saved ctl.Rendition) error {
+	if err := ctl.WriteRendition(w, out, saved); err != nil {
+		return fmt.Errorf("writing the saved rendition: %w", err)
+	}
+	return nil
+}
+
 // renderAlbums writes the bare {"albums": […]} list.
-func renderAlbums(w io.Writer, format ctl.Format, raw json.RawMessage) error {
-	return renderRaw(w, format, raw, "album list", ctl.DecodeAlbums, ctl.WriteAlbums)
+func renderAlbums(w io.Writer, out ctl.Output, raw json.RawMessage) error {
+	return renderRaw(w, out, raw, "album list", ctl.DecodeAlbums, ctl.WriteAlbums)
 }
 
 // renderAlbum writes one album, as returned by the detail and create endpoints.
-func renderAlbum(w io.Writer, format ctl.Format, raw json.RawMessage) error {
-	return renderRaw(w, format, raw, "album", ctl.DecodeAlbum, ctl.WriteAlbum)
+func renderAlbum(w io.Writer, out ctl.Output, raw json.RawMessage) error {
+	return renderRaw(w, out, raw, "album", ctl.DecodeAlbum, ctl.WriteAlbum)
 }
 
 // renderMembership writes an album's refreshed photo order after a membership
 // mutation, as one summary line naming the album.
-func renderMembership(w io.Writer, format ctl.Format, raw json.RawMessage, albumUID string) error {
-	return renderRaw(w, format, raw, "album membership", ctl.DecodePhotoUIDs,
+func renderMembership(w io.Writer, out ctl.Output, raw json.RawMessage, albumUID string) error {
+	return renderRaw(w, out, raw, "album membership", ctl.DecodePhotoUIDs,
 		func(w io.Writer, uids []string) error { return ctl.WriteMembership(w, albumUID, uids) })
 }
 
 // renderLabels writes the bare {"labels": […]} list.
-func renderLabels(w io.Writer, format ctl.Format, raw json.RawMessage) error {
-	return renderRaw(w, format, raw, "label list", ctl.DecodeLabels, ctl.WriteLabels)
+func renderLabels(w io.Writer, out ctl.Output, raw json.RawMessage) error {
+	return renderRaw(w, out, raw, "label list", ctl.DecodeLabels, ctl.WriteLabels)
 }
 
 // renderLabel writes one label, as returned by the detail and create endpoints.
-func renderLabel(w io.Writer, format ctl.Format, raw json.RawMessage) error {
-	return renderRaw(w, format, raw, "label", ctl.DecodeLabel, ctl.WriteLabel)
+func renderLabel(w io.Writer, out ctl.Output, raw json.RawMessage) error {
+	return renderRaw(w, out, raw, "label", ctl.DecodeLabel, ctl.WriteLabel)
 }
 
 // renderSubjects writes the bare {"subjects": […]} list.
-func renderSubjects(w io.Writer, format ctl.Format, raw json.RawMessage) error {
-	return renderRaw(w, format, raw, "subject list", ctl.DecodeSubjects, ctl.WriteSubjects)
+func renderSubjects(w io.Writer, out ctl.Output, raw json.RawMessage) error {
+	return renderRaw(w, out, raw, "subject list", ctl.DecodeSubjects, ctl.WriteSubjects)
 }
 
 // renderSubject writes one subject.
-func renderSubject(w io.Writer, format ctl.Format, raw json.RawMessage) error {
-	return renderRaw(w, format, raw, "subject", ctl.DecodeSubject, ctl.WriteSubject)
+func renderSubject(w io.Writer, out ctl.Output, raw json.RawMessage) error {
+	return renderRaw(w, out, raw, "subject", ctl.DecodeSubject, ctl.WriteSubject)
 }
 
 // renderBulkResult writes a bulk edit's per-photo outcome.
-func renderBulkResult(w io.Writer, format ctl.Format, raw json.RawMessage) error {
-	return renderRaw(w, format, raw, "bulk result", ctl.DecodeBulkResult, ctl.WriteBulkResult)
+func renderBulkResult(w io.Writer, out ctl.Output, raw json.RawMessage) error {
+	return renderRaw(w, out, raw, "bulk result", ctl.DecodeBulkResult, ctl.WriteBulkResult)
 }

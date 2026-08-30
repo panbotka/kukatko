@@ -426,6 +426,35 @@ next offset 3`, plus `mode`/`degraded` for a search). An empty result prints a s
 `no photos found` / `no albums found` / … **with no header**. `-o json` prints the **server's JSON
 unchanged** (no re-marshal) for machine processing; `-o yaml` does not exist.
 
+**`-o llm` — the same answer, minus what costs tokens.** A third format, accepted by `ParseFormat` and
+therefore available to **every** `ctl` command, not just `photos get`. It re-encodes the server's body as
+compact JSON with everything a reader learns nothing from removed:
+
+| Dropped | Why |
+| --- | --- |
+| every empty and zero-valued field | a zero rating and an empty note say exactly as much as their absence |
+| `exif` | a raw camera document, hundreds of tags deep, all of it already in named columns |
+| `thumb_url`, `download_url` | long signed URLs that expire — fetch the image with `photos image` |
+| `file_hash`, `file_path`, `file_orientation`, `files` | where the bytes live is the storage layer's business |
+| `software`, `color_profile`, `image_codec`, `camera_serial`, `original_name`, `projection`, `video_codec`, `audio_codec`, `title_edited` | machine-derived provenance the API itself refuses to edit |
+| `processing` | the queue's bookkeeping about the photo, not the photo |
+| `photoprism_uid`, `photoprism_file_hash`, `photosorter_uid` | which library a row came from |
+| `created_at`, `updated_at`, `metadata_extracted_at` | row bookkeeping — the date that means something is `taken_at`, which is kept |
+
+Kept: identity, the texts, the date trio with its precision, the location with its origin, `people`,
+albums, labels, media type and dimensions. It is a rule about **keys**, not a projection per resource,
+which is exactly why one implementation covers every command and everything added later.
+
+**`--fields uid,title`** narrows it further to an allowlist. A named key keeps its whole value; a key that
+was **not** named survives only as the road to one that was, so the allowlist reaches through a list
+envelope without your having to name `photos`. An allowlist nothing matches prints `{}` rather than
+silently falling back to the whole body.
+
+```bash
+kukatkoctl photos get pht01h2j3 -o llm
+kukatkoctl photos list --year 2024 -o llm --fields uid,title,taken_at
+```
+
 **Exception for `204 No Content`.** Where the API returns no body (attach/detach a label, favorite,
 rating), there is nothing to pass through unchanged — `-o table` prints one sentence and `-o json` a single
 payload the CLI produces itself: `{"status":"ok","message":"photo pht01 favorited"}`. A pipeline
@@ -443,8 +472,13 @@ Neither one prints a stack trace, the response body, or the token.
 | Command | Meaning |
 | --- | --- |
 | `ctl photos list` | a page of `GET /photos` |
-| `ctl photos get <uid>` | detail `GET /photos/{uid}` (+ files, albums, labels) |
+| `ctl photos get <uid>` | detail `GET /photos/{uid}` (+ albums, labels, `ocr_text` and, by default, who is on it) |
 | `ctl photos search <query>` | `GET /search?q=…&mode=…` |
+| `ctl photos image <uid>` | saves a rendition to a file and prints the path |
+| `ctl photos edit <uid>` | `PATCH /photos/{uid}` — the whole editable metadata surface (`editor`/`admin`) |
+
+Together those three are the loop an agent needs per photo: **read it whole, look at it, write the
+evaluation back** — one command per step instead of three raw HTTP calls.
 
 `list` and `search` share the filters, except those marked "`list` only" / "`search` only".
 `search` orders by relevance, so it offers no `--sort`/`--order`; it offers no `--favorite` because
@@ -473,6 +507,85 @@ kukatkoctl photos list --album alb1a2b3 --sort title -o json | jq '.photos[].uid
 kukatkoctl photos get pht01h2j3
 kukatkoctl photos search "západ slunce nad jezerem" --mode semantic
 KUKATKO_SERVER=http://localhost:8080 KUKATKO_TOKEN=kkt_… kukatkoctl photos list
+```
+
+#### `ctl photos get` — the whole photo in one request
+
+Beyond the metadata, `get` reports **`ocr_text`** (the text the recogniser read *in* the photo; the table
+folds it onto one line, the full reading is in `-o json`/`-o llm`) and **who is on the photo**: the named
+subjects followed by a count of the detections nobody has assigned yet. Reading the photo whole is the
+point of the command, so the roll-call is asked for **by default**; on the server it stays opt-in
+(`?people=true`) because assembling it costs a face↔marker match a plain read should not pay for, and
+**`--people=false`** skips it. When the response carries no roll-call at all — you turned it off, or the
+instance has no face backend — the row reads `- (not reported)`, which is **not** the same as "nobody is
+on this photo". The date and the location are printed beside their provenance (`estimated, year, manual` /
+`50.08750, 14.42111 (estimate)`) so an inferred value never reads like a measured one.
+
+#### `ctl photos image` — actually look at the photo
+
+```
+ctl photos image <uid> [--size fit_720] [--output-file <path>]
+```
+
+Saves one rendition and prints the path, which is what you feed to the next step (`-o json`/`-o llm` get
+`{"path":…,"bytes":…,"media_type":…}` instead, so a pipeline need not stat the file). `--size` takes a
+thumbnail size (`fit_3840`/`fit_2560`/`fit_1920`/`fit_1280`/`fit_720`/`tile_500`/`tile_224`/`tile_100`)
+or **`original`** — the stored file itself, full size, in its own format, a video included. An unknown size
+is refused locally rather than becoming a puzzling 404.
+
+The bytes are **streamed** from the socket into the file and never held in memory, on a client with **no
+timeout** (a hundred-megabyte original is slow on purpose; only Ctrl-C ends it). The download lands on a
+temporary file beside its destination and is renamed into place only when it is complete, so an interrupted
+transfer never leaves a half-written file that looks like a photo. With no `--output-file` the name comes
+from the response — the `Content-Disposition` of `/download` for an original, `<uid>_<size>.jpg` otherwise —
+always reduced to a bare file name, so a server cannot steer the write out of the working directory.
+
+The flag is `--output-file` (`-f`), not `--output`: `-o`/`--output` is already the global output format, and
+a local flag of the same name would shadow it and break `-o llm` on this one command.
+
+#### `ctl photos edit` — write the evaluation back
+
+```
+ctl photos edit <uid> [fields…] [--people] [--dry-run]
+```
+
+The whole `PATCH /photos/{uid}` surface, one flag per API field, named after the field:
+
+| Flag | Meaning |
+| --- | --- |
+| `--title` / `--description` / `--notes` / `--ai-note` | the free texts |
+| `--subject` / `--keywords` / `--artist` / `--copyright` / `--license` / `--scan` | the IPTC/XMP credits |
+| `--taken-at` / `--clear-taken-at` | the capture time: a date, a date and time, or an RFC 3339 timestamp |
+| `--taken-at-estimated` / `--taken-at-note` | the date is a guess, and what the guess rests on |
+| `--lat` + `--lng` / `--clear-location` | the position; both halves or neither |
+| `--accept-location` | accept an estimated position as your own (`location_source: manual`) |
+
+**Only the flags you actually write are sent.** That is not an optimisation: re-sending the `taken_at`
+that is already on the photo would make the server stamp it `manual`, and the library would permanently
+lose the fact that the date came out of the file — on a photo you only meant to retitle.
+
+**Clearing is therefore its own act, never an accident of omission.** A text column is emptied by passing
+it the empty string (`--title ""`); the three nullable ones get their own flag (`--clear-taken-at`,
+`--clear-location`), which sends an explicit JSON `null`. Nothing else can express the difference, which is
+why the request body is built as a key/value map rather than a struct of pointers.
+
+**The rules stay on the server.** The length caps, the dating note that only lives while the date is
+flagged as an estimate, and which `location_source` a client may claim are all enforced by
+`internal/photoapi`; `ctl` re-implements none of them and reports the `400` it gets back. The fields the API
+serves but refuses to edit (`software`, `color_profile`, `image_codec`, `camera_serial`, `original_name`,
+`projection`) get **no flags at all** — offering one the server would reject is worse than offering none.
+Contradictions that need no round trip (`--taken-at` with `--clear-taken-at`, a lone `--lat`, an unreadable
+date) are caught locally.
+
+**`--dry-run` prints the request body and writes nothing** — not even a context is needed. This runs
+against a live family archive; show your intent before you change it.
+
+```bash
+kukatkoctl photos image pht01h2j3 --size fit_1920 -f /tmp/look.jpg
+kukatkoctl photos edit pht01h2j3 --ai-note "babička na dvoře" --dry-run
+kukatkoctl photos edit pht01h2j3 --taken-at 1978-06-03 --taken-at-estimated \
+  --taken-at-note "podle babičky rok po svatbě" --people -o llm   # --people: read the roll-call back
+kukatkoctl photos edit pht01h2j3 --title ""      # empties it; omitting --title leaves it alone
 ```
 
 #### `ctl albums`

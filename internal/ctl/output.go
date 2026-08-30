@@ -19,20 +19,48 @@ const (
 	FormatTable Format = "table"
 	// FormatJSON echoes the API's response bytes unchanged.
 	FormatJSON Format = "json"
+	// FormatLLM is the API's answer stripped to what an agent can learn from:
+	// compact JSON with the empty fields, the machine-derived columns and the
+	// signed media URLs removed. See WriteLLM.
+	FormatLLM Format = "llm"
 )
 
 // ErrInvalidFormat indicates an unsupported -o value.
-var ErrInvalidFormat = errors.New(`ctl: output format must be "table" or "json"`)
+var ErrInvalidFormat = errors.New(`ctl: output format must be "table", "json" or "llm"`)
 
 // ParseFormat maps the -o flag value onto a Format, returning ErrInvalidFormat
 // for anything else. yaml is deliberately not supported.
 func ParseFormat(raw string) (Format, error) {
 	switch Format(raw) {
-	case FormatTable, FormatJSON:
+	case FormatTable, FormatJSON, FormatLLM:
 		return Format(raw), nil
 	default:
 		return "", fmt.Errorf("%w: %q", ErrInvalidFormat, raw)
 	}
+}
+
+// Output is how one command renders its result: the chosen format plus, for
+// FormatLLM, the field allowlist --fields narrowed it to.
+//
+// It travels as one value rather than two parameters because every renderer
+// needs both and a signature carrying only the format would quietly drop the
+// allowlist on the resources that were added later.
+type Output struct {
+	// Format is the -o value.
+	Format Format
+	// Fields is the --fields allowlist, empty when the caller named none. It is
+	// only consulted by FormatLLM: table output is already narrow, and JSON output
+	// is the server's own bytes, which ctl does not rewrite.
+	Fields []string
+}
+
+// NewOutput parses the -o value and pairs it with the --fields allowlist.
+func NewOutput(raw string, fields []string) (Output, error) {
+	format, err := ParseFormat(raw)
+	if err != nil {
+		return Output{}, err
+	}
+	return Output{Format: format, Fields: fields}, nil
 }
 
 // Column widths that keep a row inside a terminal without wrapping. The point of
@@ -138,13 +166,25 @@ func WritePhotoDetail(w io.Writer, detail PhotoDetail) error {
 	return writeKeyValues(w, detailRows(detail))
 }
 
+// ocrWidth keeps the text read *in* a photo to a couple of terminal lines. The
+// whole reading is in `-o json` and `-o llm`; the table is a glance, and a
+// scanned page of newsprint would otherwise bury every row under it.
+const ocrWidth = 120
+
 // detailRows lists the key/value pairs of a photo detail in display order.
+//
+// The date and location rows carry their provenance beside their value: an
+// estimated date and an estimated location are the two things a reader must not
+// mistake for measured facts (see photos.Photo.TakenAtEstimated / LocationSource).
 func detailRows(detail PhotoDetail) [][2]string {
 	rows := [][2]string{
 		{"UID", detail.UID},
 		{"TITLE", dash(detail.Title)},
 		{"DESCRIPTION", dash(detail.Description)},
-		{"TAKEN", formatTime(detail.TakenAt)},
+		{"NOTES", dash(detail.Notes)},
+		{"AI NOTE", dash(detail.AiNote)},
+		{"TAKEN", formatTakenAt(detail)},
+		{"TAKEN NOTE", dash(detail.TakenAtNote)},
 		{"MEDIA", dash(detail.MediaType)},
 		{"FILE", dash(detail.FileName)},
 		{"SIZE", formatSize(detail.FileSize)},
@@ -152,7 +192,13 @@ func detailRows(detail PhotoDetail) [][2]string {
 		{"DIMENSIONS", formatDimensions(detail.FileWidth, detail.FileHeight)},
 		{"CAMERA", dash(strings.TrimSpace(detail.CameraMake + " " + detail.CameraModel))},
 		{"LENS", dash(detail.LensModel)},
-		{"GPS", formatGPS(detail.Lat, detail.Lng)},
+		{"GPS", formatLocation(detail)},
+		{"SUBJECT", dash(detail.Subject)},
+		{"KEYWORDS", dash(detail.Keywords)},
+		{"ARTIST", dash(detail.Artist)},
+		{"COPYRIGHT", dash(detail.Copyright)},
+		{"LICENSE", dash(detail.License)},
+		{"SCAN", strconv.FormatBool(detail.Scan)},
 		{"FAVORITE", strconv.FormatBool(detail.IsFavorite)},
 		{"RATING", strconv.Itoa(detail.Rating)},
 		{"FLAG", dash(detail.Flag)},
@@ -160,8 +206,81 @@ func detailRows(detail PhotoDetail) [][2]string {
 		{"FILES", strconv.Itoa(len(detail.Files))},
 		{"ALBUMS", dash(joinRefs(detail.Albums))},
 		{"LABELS", dash(joinRefs(detail.Labels))},
+		{"PEOPLE", formatPeople(detail.People)},
+		{"OCR", dash(elide(collapseLines(detail.OCRText), ocrWidth))},
 	}
 	return rows
+}
+
+// formatTakenAt renders the capture time with the three things that qualify it:
+// where the date came from, how coarsely it was stated, and whether it is an
+// estimate rather than a fact.
+func formatTakenAt(detail PhotoDetail) string {
+	value := formatTime(detail.TakenAt)
+	qualifiers := make([]string, 0, 3)
+	if detail.TakenAtEstimated {
+		qualifiers = append(qualifiers, "estimated")
+	}
+	if detail.TakenAtPrecision != "" && detail.TakenAtPrecision != "day" {
+		qualifiers = append(qualifiers, detail.TakenAtPrecision)
+	}
+	if detail.TakenAtSource != "" {
+		qualifiers = append(qualifiers, detail.TakenAtSource)
+	}
+	if len(qualifiers) == 0 {
+		return value
+	}
+	return value + " (" + strings.Join(qualifiers, ", ") + ")"
+}
+
+// formatLocation renders the coordinates with where they came from, so an
+// inferred position never reads like a measured one.
+func formatLocation(detail PhotoDetail) string {
+	value := formatGPS(detail.Lat, detail.Lng)
+	if detail.LocationSource == "" {
+		return value
+	}
+	return value + " (" + detail.LocationSource + ")"
+}
+
+// formatPeople renders who is on the photo: the named subjects first, then how
+// many detections are still waiting for a name.
+//
+// A nil slice is not an empty photo: it means the response carried no roll-call
+// at all — the caller passed --people=false, or the instance has no face backend
+// wired — and saying "nobody" there would be a claim nobody made.
+func formatPeople(onPhoto []PhotoPerson) string {
+	if onPhoto == nil {
+		return "- (not reported)"
+	}
+	names := make([]string, 0, len(onPhoto))
+	unassigned := 0
+	for _, person := range onPhoto {
+		if !person.Named() {
+			unassigned++
+			continue
+		}
+		names = append(names, personLabel(person))
+	}
+	if unassigned > 0 {
+		names = append(names, strconv.Itoa(unassigned)+" unassigned")
+	}
+	return dash(strings.Join(names, ", "))
+}
+
+// personLabel names one person on a photo, falling back to the subject uid when
+// the subject could not be resolved to a name.
+func personLabel(person PhotoPerson) string {
+	if person.SubjectName != "" {
+		return person.SubjectName
+	}
+	return person.SubjectUID
+}
+
+// collapseLines folds a multi-line value onto one row, so a block of recognised
+// text cannot break the table's alignment.
+func collapseLines(value string) string {
+	return strings.Join(strings.Fields(value), " ")
 }
 
 // WriteContexts renders the client-side contexts as a table, marking the current

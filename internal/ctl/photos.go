@@ -108,20 +108,76 @@ func (r NamedRef) Label() string {
 	return r.Name
 }
 
-// PhotoDetail decodes GET /photos/{uid}: a photo view plus its files and its
-// album and label memberships.
+// PhotoPerson is one entry of the detail response's people block: a named
+// subject, or a detection nobody has assigned yet (both name fields empty).
+type PhotoPerson struct {
+	SubjectUID  string  `json:"subject_uid,omitempty"`
+	SubjectName string  `json:"subject_name,omitempty"`
+	MarkerUID   string  `json:"marker_uid,omitempty"`
+	DetScore    float64 `json:"det_score,omitempty"`
+}
+
+// Named reports whether the entry names a person, as opposed to being a
+// detection still waiting for one.
+func (p PhotoPerson) Named() bool {
+	return p.SubjectUID != ""
+}
+
+// PhotoDetail decodes GET /photos/{uid}: a photo view with its editable
+// metadata, the text read in it, who is on it, its files and its album and label
+// memberships.
+//
+// It carries every field the table renderer prints, which since `photos edit`
+// exists means every field that command can write — an agent that edits a photo
+// has to be able to read back what it changed.
 type PhotoDetail struct {
 	Photo
-	Description string      `json:"description"`
-	Notes       string      `json:"notes"`
-	CameraMake  string      `json:"camera_make"`
-	CameraModel string      `json:"camera_model"`
-	LensModel   string      `json:"lens_model"`
-	Lat         *float64    `json:"lat,omitempty"`
-	Lng         *float64    `json:"lng,omitempty"`
-	Files       []PhotoFile `json:"files"`
-	Albums      []NamedRef  `json:"albums"`
-	Labels      []NamedRef  `json:"labels"`
+	Description      string   `json:"description"`
+	Notes            string   `json:"notes"`
+	AiNote           string   `json:"ai_note"`
+	Subject          string   `json:"subject"`
+	Keywords         string   `json:"keywords"`
+	Artist           string   `json:"artist"`
+	Copyright        string   `json:"copyright"`
+	License          string   `json:"license"`
+	Scan             bool     `json:"scan"`
+	TakenAtSource    string   `json:"taken_at_source"`
+	TakenAtEstimated bool     `json:"taken_at_estimated"`
+	TakenAtNote      string   `json:"taken_at_note"`
+	TakenAtPrecision string   `json:"taken_at_precision"`
+	CameraMake       string   `json:"camera_make"`
+	CameraModel      string   `json:"camera_model"`
+	LensModel        string   `json:"lens_model"`
+	Lat              *float64 `json:"lat,omitempty"`
+	Lng              *float64 `json:"lng,omitempty"`
+	LocationSource   string   `json:"location_source"`
+	// OCRText is the text the recogniser read in the photo, empty when it has
+	// never been read or read nothing.
+	OCRText string `json:"ocr_text"`
+	// People is who is on the photo. It is only filled when the request asked for
+	// it (PhotoDetailOptions.People); nil otherwise, which is not the same as a
+	// photo with nobody on it.
+	People []PhotoPerson `json:"people"`
+	Files  []PhotoFile   `json:"files"`
+	Albums []NamedRef    `json:"albums"`
+	Labels []NamedRef    `json:"labels"`
+}
+
+// PhotoDetailOptions selects the optional blocks of GET /photos/{uid}.
+type PhotoDetailOptions struct {
+	// People asks the server to also report who is on the photo — the named
+	// subjects and the detections nobody has assigned yet. It is opt-in because
+	// assembling it costs a face and marker match the detail otherwise never pays.
+	People bool
+}
+
+// query renders the optional blocks as query parameters, returning nil when the
+// caller asked for none so the request URL stays bare.
+func (o PhotoDetailOptions) query() url.Values {
+	if !o.People {
+		return nil
+	}
+	return url.Values{"people": []string{"true"}}
 }
 
 // ListOptions carries the GET /photos filters the CLI exposes. A zero value asks
@@ -251,14 +307,16 @@ func (c *Client) ListPhotos(ctx context.Context, opts ListOptions) (json.RawMess
 	return c.get(ctx, "/photos", q)
 }
 
-// GetPhoto fetches GET /photos/{uid} and returns the raw JSON body. It returns
-// ErrEmptyUID for a blank uid and a *StatusError with status 404 for a photo
-// that does not exist.
-func (c *Client) GetPhoto(ctx context.Context, uid string) (json.RawMessage, error) {
+// GetPhoto fetches GET /photos/{uid} and returns the raw JSON body, asking for
+// the optional blocks opts names. It returns ErrEmptyUID for a blank uid and a
+// *StatusError with status 404 for a photo that does not exist.
+func (c *Client) GetPhoto(
+	ctx context.Context, uid string, opts PhotoDetailOptions,
+) (json.RawMessage, error) {
 	if err := requireUID("photo", uid); err != nil {
 		return nil, err
 	}
-	return c.get(ctx, "/photos/"+url.PathEscape(uid), nil)
+	return c.get(ctx, "/photos/"+url.PathEscape(uid), opts.query())
 }
 
 // SearchPhotos fetches one page of GET /search and returns the raw JSON body.

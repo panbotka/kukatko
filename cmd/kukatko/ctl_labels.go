@@ -31,7 +31,7 @@ func newCtlLabelsListCmd(opts *ctlOptions) *cobra.Command {
 		Short: "List every label with its photo count, highest priority first",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			client, format, err := opts.resolve()
+			client, out, err := opts.resolve()
 			if err != nil {
 				return err
 			}
@@ -39,7 +39,7 @@ func newCtlLabelsListCmd(opts *ctlOptions) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("listing labels: %w", err)
 			}
-			return renderLabels(cmd.OutOrStdout(), format, raw)
+			return renderLabels(cmd.OutOrStdout(), out, raw)
 		},
 	}
 }
@@ -51,7 +51,7 @@ func newCtlLabelsGetCmd(opts *ctlOptions) *cobra.Command {
 		Short: "Show one label's detail",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, format, err := opts.resolve()
+			client, out, err := opts.resolve()
 			if err != nil {
 				return err
 			}
@@ -59,7 +59,7 @@ func newCtlLabelsGetCmd(opts *ctlOptions) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("fetching label %s: %w", args[0], err)
 			}
-			return renderLabel(cmd.OutOrStdout(), format, raw)
+			return renderLabel(cmd.OutOrStdout(), out, raw)
 		},
 	}
 }
@@ -73,7 +73,7 @@ func newCtlLabelsCreateCmd(opts *ctlOptions) *cobra.Command {
 		Short: "Create a label (editor or admin)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, format, err := opts.resolve()
+			client, out, err := opts.resolve()
 			if err != nil {
 				return err
 			}
@@ -82,7 +82,7 @@ func newCtlLabelsCreateCmd(opts *ctlOptions) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("creating label %q: %w", in.Name, err)
 			}
-			return renderLabel(cmd.OutOrStdout(), format, raw)
+			return renderLabel(cmd.OutOrStdout(), out, raw)
 		},
 	}
 	cmd.Flags().IntVar(&in.Priority, "priority", 0, "float the label up the UI's list")
@@ -100,14 +100,14 @@ func newCtlLabelsAttachCmd(opts *ctlOptions) *cobra.Command {
 		Short: "Attach a label to one photo (editor or admin)",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, format, err := opts.resolve()
+			client, out, err := opts.resolve()
 			if err != nil {
 				return err
 			}
 			if err := client.AttachLabel(cmd.Context(), args[0], args[1], source, uncertainty); err != nil {
 				return fmt.Errorf("attaching label %s to photo %s: %w", args[0], args[1], err)
 			}
-			return renderAck(cmd.OutOrStdout(), format,
+			return renderAck(cmd.OutOrStdout(), out,
 				"label "+args[0]+" attached to photo "+args[1])
 		},
 	}
@@ -125,14 +125,14 @@ func newCtlLabelsDetachCmd(opts *ctlOptions) *cobra.Command {
 		Short: "Detach a label from one photo (editor or admin)",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, format, err := opts.resolve()
+			client, out, err := opts.resolve()
 			if err != nil {
 				return err
 			}
 			if err := client.DetachLabel(cmd.Context(), args[0], args[1]); err != nil {
 				return fmt.Errorf("detaching label %s from photo %s: %w", args[0], args[1], err)
 			}
-			return renderAck(cmd.OutOrStdout(), format,
+			return renderAck(cmd.OutOrStdout(), out,
 				"label "+args[0]+" detached from photo "+args[1])
 		},
 	}

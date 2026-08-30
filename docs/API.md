@@ -325,6 +325,27 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   for a photo without GPS, and for a "processed" marker (a row with all levels empty); individual levels
   may be empty when the geocoder knew nothing more precise. Rendered by `TechnicalDetails` (the Location
   group);
+  and **`ocr_text`** — the text the recogniser read **in** the photo (a street sign, a shop front, the
+  headline of a scanned newspaper), stored by the `ocr` job in `photos.ocr_text` and, until now, searchable
+  (`text:`) but served by no endpoint at all. It is **read-only** and **served unconditionally**, but only
+  here: one primary-key lookup (`photos.Store.GetOCR`) on an endpoint that already runs half a dozen
+  queries, and **never on a list or a search page**, where a hundred scanned documents would drown the
+  response. It is `omitempty`, so it is absent both for a photo the recogniser has never seen and for one it
+  looked at and found nothing on — the `processing` block below is what tells those two apart. An opt-in
+  parameter was rejected deliberately: for the vast majority of a family archive the key is simply not
+  there, and a flag would only be one more thing for a caller to forget;
+  and — **behind the opt-in `?people=true`** — **`people`**: who is on the photo, as
+  `[{subject_uid?,subject_name?,marker_uid?,bbox,det_score?}]`, the markers that name a subject followed by
+  the detections nobody has named yet (both name fields empty, `det_score` the detector's confidence). It
+  shares the exclusive IoU pairing of `GET /photos/{uid}/faces` (`facematch.Service.PhotoPeople`) but does
+  **none** of its expensive or mutating work: no suggestion search (up to two HNSW queries per face) and no
+  rewriting of the cached face↔marker link — a read stays a read. That is also why it is opt-in rather than
+  always served: the web UI fetches `/faces` on its own when the face editor opens, and only a caller that
+  wants the whole photo in one request (`kukatko ctl photos get`, which asks by default) should pay for it. The
+  field is a **pointer**, so an empty list ("we looked, nobody is marked") stays distinguishable from an
+  absent one ("you did not ask"); a malformed value or a face backend in trouble is treated as "not asked"
+  rather than failing the detail, and with no face backend wired the block never appears. It rides the
+  `PATCH /photos/{uid}` response too (same `writeDetail`), so one edit can read back what it changed;
   **non-destructive edit** (`internal/photoedit` + `edit.go`/`media_edit.go`):
   `GET /photos/{uid}/edit` (authenticated) → the stored `photos.Edit` (crop/rotation 0-90-180-270/brightness/contrast,
   an unedited photo → a neutral edit) and `PUT /photos/{uid}/edit` (editor/admin) writes the edit into

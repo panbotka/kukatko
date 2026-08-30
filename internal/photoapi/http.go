@@ -19,6 +19,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
+	"github.com/panbotka/kukatko/internal/facematch"
 	"github.com/panbotka/kukatko/internal/mediaurl"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/processing"
@@ -232,7 +233,7 @@ func passthroughMiddleware(next http.Handler) http.Handler {
 //	GET    /photos/timeline           RequireAuth      month date buckets (histogram)
 //	GET    /photos/years              RequireAuth      capture years with counts (facet)
 //	GET    /photos/uploaders          RequireAuth      who uploaded, with counts (facet)
-//	GET    /photos/{uid}              RequireAuth      full detail
+//	GET    /photos/{uid}              RequireAuth      full detail (+ people=true)
 //	GET    /photos/{uid}/similar      RequireAuth      visually similar photos
 //	GET    /photos/{uid}/faces        RequireAuth      faces + assignment + suggestions
 //	POST   /photos/{uid}/faces/assign RequireWrite     create/assign/unassign marker
@@ -581,6 +582,19 @@ type photoDetail struct {
 	// processing service is wired or the report could not be read; the photo is
 	// worth showing either way.
 	Processing []processing.Status `json:"processing,omitempty"`
+	// OCRText is the text the recogniser read *in* the photo — a street sign, a
+	// shop front, the headline of a scanned newspaper. It is served read-only and
+	// only here, never on a list or a search page, where a hundred scanned
+	// documents would drown the response. It is absent for a photo the recogniser
+	// has never seen and for one it looked at and found nothing on; the processing
+	// block above is what tells those two apart.
+	OCRText string `json:"ocr_text,omitempty"`
+	// People is who is on the photo: the markers that name a subject and the
+	// detections nobody has named yet. It is present only when the request asked
+	// for it with people=true (see resolvePeople), and it is a pointer so that an
+	// empty list — "we looked, nobody is marked" — stays distinguishable from an
+	// absent one — "you did not ask".
+	People *[]facematch.PersonOnPhoto `json:"people,omitempty"`
 }
 
 // handleDetail returns a photo's full detail, including its file list and the
@@ -642,7 +656,31 @@ func (a *API) writeDetail(w http.ResponseWriter, r *http.Request, userUID string
 		StackMembers: members,
 		CommentCount: commentCount,
 		Processing:   a.resolveProcessing(r.Context(), photo.UID),
+		OCRText:      a.resolveOCR(r.Context(), photo.UID),
+		People:       a.resolvePeople(r, photo.UID),
 	})
+}
+
+// resolveOCR returns the text the recogniser read in the photo, or "" when it has
+// never been read, read nothing, or could not be looked up.
+//
+// It is served unconditionally rather than behind an opt-in parameter: it is one
+// primary-key lookup on an endpoint that already runs half a dozen queries, it
+// never reaches a list or a search page, and for the overwhelming majority of a
+// family archive the column is empty and the key is simply absent. A flag would
+// only be one more thing for a caller to forget.
+//
+// A lookup failure is swallowed on purpose: the photo is worth showing without
+// the text printed in it, exactly as it is worth showing without its place.
+func (a *API) resolveOCR(ctx context.Context, uid string) string {
+	if a.store == nil {
+		return ""
+	}
+	result, err := a.store.GetOCR(ctx, uid)
+	if err != nil {
+		return ""
+	}
+	return result.Text
 }
 
 // resolveUploader resolves a photo's uploaded_by UID to a compact uploader
