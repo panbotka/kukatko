@@ -852,6 +852,7 @@
         "flag": "Vaše označení: pick (vybrané), reject (zamítnuté) nebo eye (k prohlédnutí později).",
         "date": "Rok, měsíc a den pořízení.",
         "takenAdded": "Datum pořízení / přidání do katalogu: RRRR, RRRR-MM nebo RRRR-MM-DD.",
+        "dated": "Fotky s datem pořízení, nebo bez něj. `dated:no` je seznam všech nedatovaných — i těch, u kterých datum nikdo nikdy neznal.",
         "beforeAfter": "Pořízeno před datem / od data.",
         "place": "Země a město (podle zpětného geokódování).",
         "geo": "Fotky s GPS souřadnicemi, nebo bez nich.",

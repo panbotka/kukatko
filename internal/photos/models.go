@@ -160,6 +160,13 @@ type Photo struct {
 	// zero value read from a pre-0055 row is the empty string; every stored row
 	// carries "day" or better.
 	TakenAtPrecision string `json:"taken_at_precision"`
+	// TakenAtBeforeUnknown is the capture time the photo carried at the moment its
+	// date was declared unknown — the wrong date a scan was stamped with, kept so
+	// the declaration is reversible and so nobody has to re-derive what was
+	// disowned. It is provenance only: nothing sorts, groups or filters by it (see
+	// migration 0066), and a photo with a TakenAt never has one, because stating a
+	// real date discards the value that was put away.
+	TakenAtBeforeUnknown *time.Time `json:"taken_at_before_unknown,omitempty"`
 
 	Title string `json:"title"`
 	// TitleEdited marks the title as owned by the user rather than by the import: it

@@ -27,6 +27,16 @@ func setTakenAtBody(precision, value string, uids ...string) []byte {
 	return body
 }
 
+// clearTakenAtBody builds a bulk request that declares the capture date of the
+// given photos unknown.
+func clearTakenAtBody(uids ...string) []byte {
+	body, _ := json.Marshal(map[string]any{
+		"photo_uids": uids,
+		"operations": map[string]any{"clear_taken_at": true},
+	})
+	return body
+}
+
 // TestBulk_setTakenAtEachPrecision walks the four grains a date can be stated
 // at, asserting for each that the stored anchor is the first instant of the
 // period in UTC, that the precision is recorded beside it, and that only a grain
@@ -351,5 +361,157 @@ func assertListedUIDs(
 		if !seen[uid] {
 			t.Errorf("List is missing %s", uid)
 		}
+	}
+}
+
+// TestBulk_clearTakenAtPreservesTheOutgoingDate drives the bulk half of "the
+// date is unknown": a batch of scans whose date is wrong loses it, keeps it put
+// away so the declaration is reversible, and comes out stamped exactly the way a
+// single-photo PATCH clear would stamp it.
+func TestBulk_clearTakenAtPreservesTheOutgoingDate(t *testing.T) {
+	env := newEnv(t, 1000)
+	editor, actorUID := env.login(t, "editor", auth.RoleEditor)
+	ctx := t.Context()
+
+	scannedIn := time.Date(2011, time.March, 8, 10, 15, 0, 0, time.UTC)
+	uids := []string{env.seedPhoto(t, "wrong1"), env.seedPhoto(t, "wrong2")}
+	for _, uid := range uids {
+		if _, err := env.photos.UpdateMetadata(ctx, uid, photos.MetadataUpdate{
+			TakenAt: &scannedIn, TakenAtSource: "exif",
+			TakenAtPrecision: photos.TakenAtPrecisionYear,
+			TakenAtEstimated: true, TakenAtNote: "podle babičky svatba",
+		}); err != nil {
+			t.Fatalf("seed the wrong date on %s: %v", uid, err)
+		}
+	}
+	// A photo outside the batch proves the operation touches only its targets.
+	control := env.seedPhoto(t, "control")
+	if _, err := env.photos.UpdateMetadata(ctx, control, photos.MetadataUpdate{
+		TakenAt: &scannedIn, TakenAtSource: "exif", TakenAtPrecision: photos.TakenAtPrecisionDay,
+	}); err != nil {
+		t.Fatalf("date the control photo: %v", err)
+	}
+
+	resp := env.mustDo(t, editor, http.MethodPost, "/api/v1/photos/bulk",
+		clearTakenAtBody(uids...))
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("bulk status = %d, want 200", resp.StatusCode)
+	}
+	var result bulk.Result
+	decodeBody(t, resp, &result)
+	if result.Counts.Updated != len(uids) {
+		t.Fatalf("counts = %+v, want updated=%d", result.Counts, len(uids))
+	}
+
+	for _, uid := range uids {
+		photo, err := env.photos.GetByUID(ctx, uid)
+		if err != nil {
+			t.Fatalf("get %s: %v", uid, err)
+		}
+		if photo.TakenAt != nil {
+			t.Errorf("%s TakenAt = %s, want none", uid, photo.TakenAt)
+		}
+		if photo.TakenAtBeforeUnknown == nil || !photo.TakenAtBeforeUnknown.Equal(scannedIn) {
+			t.Errorf("%s TakenAtBeforeUnknown = %v, want %s", uid, photo.TakenAtBeforeUnknown, scannedIn)
+		}
+		if photo.TakenAtSource != photos.TakenAtSourceUnknown {
+			t.Errorf("%s TakenAtSource = %q, want %q", uid, photo.TakenAtSource, photos.TakenAtSourceUnknown)
+		}
+		if photo.TakenAtPrecision != photos.TakenAtPrecisionDay {
+			t.Errorf("%s TakenAtPrecision = %q, want day", uid, photo.TakenAtPrecision)
+		}
+		// Orthogonal to the date and deliberately untouched: "unknown, but grandma
+		// says it was a wedding" is a state worth keeping.
+		if !photo.TakenAtEstimated || photo.TakenAtNote != "podle babičky svatba" {
+			t.Errorf("%s lost the estimate pair: estimated=%v note=%q",
+				uid, photo.TakenAtEstimated, photo.TakenAtNote)
+		}
+	}
+
+	untouched, err := env.photos.GetByUID(ctx, control)
+	if err != nil {
+		t.Fatalf("get %s: %v", control, err)
+	}
+	if untouched.TakenAt == nil || !untouched.TakenAt.Equal(scannedIn) {
+		t.Errorf("control TakenAt = %v, want %s", untouched.TakenAt, scannedIn)
+	}
+
+	// The same audit shape as every other bulk operation, written in the batch's
+	// own transaction.
+	assertAuditWritten(t, ctx, env, actorUID)
+}
+
+// TestBulk_clearTakenAtOnUndatedPhotosPreservesNothing verifies the two
+// no-outgoing-date cases: a photo that never had a date keeps an empty preserved
+// column, and clearing an already-cleared photo does not overwrite what is
+// already put away.
+func TestBulk_clearTakenAtOnUndatedPhotosPreservesNothing(t *testing.T) {
+	env := newEnv(t, 1000)
+	editor, _ := env.login(t, "editor", auth.RoleEditor)
+	ctx := t.Context()
+
+	never := env.seedPhoto(t, "neverdated")
+	cleared := env.seedPhoto(t, "alreadycleared")
+	scannedIn := time.Date(2011, time.March, 8, 10, 15, 0, 0, time.UTC)
+	if _, err := env.photos.UpdateMetadata(ctx, cleared, photos.MetadataUpdate{
+		TakenAt: &scannedIn, TakenAtSource: "exif", TakenAtPrecision: photos.TakenAtPrecisionDay,
+	}); err != nil {
+		t.Fatalf("seed the wrong date: %v", err)
+	}
+
+	for range 2 {
+		resp := env.mustDo(t, editor, http.MethodPost, "/api/v1/photos/bulk",
+			clearTakenAtBody(never, cleared))
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("bulk status = %d, want 200", resp.StatusCode)
+		}
+		_ = resp.Body.Close()
+	}
+
+	neverPhoto, err := env.photos.GetByUID(ctx, never)
+	if err != nil {
+		t.Fatalf("get %s: %v", never, err)
+	}
+	if neverPhoto.TakenAtBeforeUnknown != nil {
+		t.Errorf("a never-dated photo preserved %s, want nothing", neverPhoto.TakenAtBeforeUnknown)
+	}
+
+	clearedPhoto, err := env.photos.GetByUID(ctx, cleared)
+	if err != nil {
+		t.Fatalf("get %s: %v", cleared, err)
+	}
+	if clearedPhoto.TakenAtBeforeUnknown == nil || !clearedPhoto.TakenAtBeforeUnknown.Equal(scannedIn) {
+		t.Errorf("a second clear left %v, want the preserved %s",
+			clearedPhoto.TakenAtBeforeUnknown, scannedIn)
+	}
+}
+
+// TestBulk_clearTakenAtRejectsSetTakenAt verifies the contradiction is refused:
+// one operation states a date and the other states that nobody knows it, so a
+// request carrying both is a 400 and changes nothing.
+func TestBulk_clearTakenAtRejectsSetTakenAt(t *testing.T) {
+	env := newEnv(t, 1000)
+	editor, _ := env.login(t, "editor", auth.RoleEditor)
+
+	uid := env.seedPhoto(t, "contradiction")
+	body, _ := json.Marshal(map[string]any{
+		"photo_uids": []string{uid},
+		"operations": map[string]any{
+			"set_taken_at":   map[string]string{"precision": "year", "value": "1974"},
+			"clear_taken_at": true,
+		},
+	})
+	resp := env.mustDo(t, editor, http.MethodPost, "/api/v1/photos/bulk", body)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("bulk status = %d, want 400", resp.StatusCode)
+	}
+	_ = resp.Body.Close()
+
+	photo, err := env.photos.GetByUID(t.Context(), uid)
+	if err != nil {
+		t.Fatalf("get %s: %v", uid, err)
+	}
+	if photo.TakenAt != nil {
+		t.Errorf("TakenAt = %v, want nil — the request was refused", photo.TakenAt)
 	}
 }

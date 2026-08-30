@@ -55,6 +55,11 @@ const fillMissingSQL = `UPDATE photos SET
 		THEN $2::timestamptz ELSE taken_at END,
 	taken_at_source = CASE WHEN $2::timestamptz IS NOT NULL AND (taken_at IS NULL OR taken_at_source = ANY($3))
 		THEN $4 ELSE taken_at_source END,
+	-- Filling in a date is stating one, so it discards whatever a clear had set
+	-- aside (migration 0066). The guard is the same as the two clauses above:
+	-- a photo this import does not re-date keeps its preserved value.
+	taken_at_before_unknown = CASE WHEN $2::timestamptz IS NOT NULL AND (taken_at IS NULL OR taken_at_source = ANY($3))
+		THEN NULL ELSE taken_at_before_unknown END,
 	lat = CASE WHEN lat IS NULL AND lng IS NULL THEN $5::double precision ELSE lat END,
 	lng = CASE WHEN lat IS NULL AND lng IS NULL THEN $6::double precision ELSE lng END,
 	altitude = COALESCE(altitude, $7::double precision),

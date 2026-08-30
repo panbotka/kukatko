@@ -87,7 +87,14 @@ type Operations struct {
 	// TakenAt sets the capture date of every target photo at a stated grain — the
 	// one repair for a shelf of scans the scanner dated to the day it was switched
 	// on. See TakenAt for why a coarse grain still stores a concrete instant.
-	TakenAt       *TakenAt
+	TakenAt *TakenAt
+	// ClearTakenAt declares the capture date of every target photo unknown: it
+	// wipes taken_at, stamps taken_at_source "unknown" and puts the outgoing date
+	// away in taken_at_before_unknown, so the declaration stays reversible (see
+	// migration 0066). It is the other half of the same repair as TakenAt — a
+	// shelf of scans whose date is wrong and whose real one nobody knows — and the
+	// two contradict each other, so the API layer rejects them together.
+	ClearTakenAt  bool
 	Location      *Location
 	ClearLocation bool
 	Archive       *bool
@@ -166,6 +173,7 @@ func (o Operations) IsEmpty() bool {
 func (o Operations) Summary() map[string]any {
 	summary := o.collectionSummary()
 	o.addScalarSummary(summary)
+	o.addClearSummary(summary)
 	o.addTakenAtSummary(summary)
 	return summary
 }
@@ -202,6 +210,19 @@ func (o Operations) collectionSummary() map[string]any {
 	return summary
 }
 
+// addClearSummary adds the operations that deliberately empty a field. They are
+// their own group because "the user removed this" is a different statement from
+// "the user set this to that", and an audit entry read years later has to keep
+// the two apart.
+func (o Operations) addClearSummary(summary map[string]any) {
+	if o.ClearTakenAt {
+		summary["clear_taken_at"] = true
+	}
+	if o.ClearLocation {
+		summary["clear_location"] = true
+	}
+}
+
 // addScalarSummary adds the scalar (description, location, flags) operations to
 // the given summary map.
 func (o Operations) addScalarSummary(summary map[string]any) {
@@ -213,9 +234,6 @@ func (o Operations) addScalarSummary(summary map[string]any) {
 	}
 	if o.Location != nil {
 		summary["location"] = map[string]float64{"lat": o.Location.Lat, "lng": o.Location.Lng}
-	}
-	if o.ClearLocation {
-		summary["clear_location"] = true
 	}
 	if o.Archive != nil {
 		summary["archive"] = *o.Archive

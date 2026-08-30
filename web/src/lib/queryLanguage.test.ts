@@ -64,6 +64,12 @@ describe('suggestFilterKeys', () => {
     expect(suggestFilterKeys('hid')?.keys).toContain('hidden')
   })
 
+  it('offers dated:, the worklist of photos with no date', () => {
+    // `dated:no` is how the undated pile is found at all; typing "dat" must
+    // reach it rather than only the date-ish keys around it.
+    expect(suggestFilterKeys('dat')?.keys).toContain('dated')
+  })
+
   it('knows every documented key', () => {
     for (const key of FILTER_KEYS) {
       const prefix = key.slice(0, key.length - 1)

@@ -289,6 +289,20 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
     the 1 January it is anchored at — the anchor is a storage decision, and printing it back would invent
     a day nobody claimed. Carried in the metadata sidecar as `temporal.precision` (format version 3).
     No index: it is never a filter or a sort key.
+  - **A date declared unknown** (migration `0066_photos_taken_at_before_unknown.sql`):
+    `taken_at_before_unknown` (`TIMESTAMPTZ`, nullable, no default, no index) — the date the photo carried at
+    the moment somebody said its date is unknown. Saying so is already `taken_at = NULL` +
+    `taken_at_source = 'unknown'`, and the date being disowned is usually a *wrong* one (a scan stamped with
+    the day it was scanned), so destroying it made the statement one-way; this column makes it reversible.
+    The rule is in the photos store, not in a caller — `TakenAtBeforeUnknownAssignment` builds the SET clause
+    every path that writes `taken_at` uses (the single-photo `PATCH`, the bulk `clear_taken_at`, the import
+    gap-filler): stating a date drops the preserved value, clearing one preserves the outgoing value, and a
+    clear after a clear keeps what is already preserved. Hence the invariant it is read under — a photo with
+    a `taken_at` never has one. **Provenance, never a sort or filter anchor**: `taken_at` stays the single
+    date axis, an undated photo already falls to the end of every listing through `NULLS LAST`, and the
+    worklist of the undated is `dated:no`, which filters on `taken_at` itself. Carried in the metadata
+    sidecar as `temporal.taken_at_before_unknown` (format version 4), because after losing the database
+    that file is the only place the disowned date still exists.
   - **Location source** (migration `0033_photos_location_source.sql`): `location_source`
     (`TEXT NOT NULL DEFAULT ''`, the vocabulary mirrors `taken_at_source` — `exif` / `manual` / `estimate` /
     empty), plus a partial index `idx_photos_location_estimate_candidates ON photos(taken_at) WHERE

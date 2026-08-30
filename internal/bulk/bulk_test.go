@@ -22,6 +22,7 @@ func TestOperations_IsEmpty(t *testing.T) {
 		{"empty album slice", Operations{AddAlbums: []string{}}, true},
 		{"set title", Operations{Title: new("")}, false},
 		{"clear location", Operations{ClearLocation: true}, false},
+		{"clear taken at", Operations{ClearTakenAt: true}, false},
 		{"archive", Operations{Archive: new(true)}, false},
 		{"hide", Operations{Hide: new(true)}, false},
 		{"favorite", Operations{Favorite: new(false)}, false},
@@ -53,6 +54,7 @@ func TestOperations_Summary(t *testing.T) {
 		RemoveLabels:  []string{"lb1"},
 		Description:   new("hi"),
 		ClearLocation: true,
+		ClearTakenAt:  true,
 		Hide:          new(true),
 		Rating:        new(5),
 		Flag:          new("reject"),
@@ -60,8 +62,8 @@ func TestOperations_Summary(t *testing.T) {
 	}
 	summary := ops.Summary()
 	for _, key := range []string{
-		"add_albums", "remove_labels", "description", "clear_location", "hide", "rating", "flag",
-		"taken_at",
+		"add_albums", "remove_labels", "description", "clear_location", "clear_taken_at", "hide",
+		"rating", "flag", "taken_at",
 	} {
 		if _, ok := summary[key]; !ok {
 			t.Errorf("Summary() missing key %q in %v", key, summary)
@@ -106,6 +108,30 @@ func TestOperations_photoColumnUpdate(t *testing.T) {
 			wantOK:     true,
 			wantArgs:   1, // uid only; NULL/now()/'manual' are literals
 			wantSubstr: []string{"lat = NULL", "lng = NULL", "location_source = 'manual'", "archived_at = now()"},
+		},
+		{
+			// Declaring the date unknown: every clause is a literal, and the outgoing
+			// date is put away by the rule the photos store owns rather than lost.
+			name:     "clear taken at",
+			ops:      Operations{ClearTakenAt: true},
+			wantOK:   true,
+			wantArgs: 1,
+			wantSubstr: []string{
+				"taken_at = NULL", "taken_at_source = 'unknown'", "taken_at_precision = 'day'",
+				"taken_at_before_unknown = CASE",
+			},
+		},
+		{
+			// Contradictory input the API refuses; the builder must still emit one
+			// valid statement rather than two assignments to the same column.
+			name: "a stated date wins over a clear",
+			ops: Operations{
+				TakenAt:      &TakenAt{At: time.Date(1974, time.January, 1, 0, 0, 0, 0, time.UTC), Precision: "year"},
+				ClearTakenAt: true,
+			},
+			wantOK:     true,
+			wantArgs:   5, // uid + taken_at + source + precision + estimated
+			wantSubstr: []string{"taken_at = $2"},
 		},
 		{
 			name:       "unarchive",

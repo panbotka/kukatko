@@ -344,7 +344,15 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   dropped it, or the photo never had it), the server **clears** `taken_at_note` — a date presented as a
   fact never keeps a stale note hanging (the length is still validated first, so an overly long note is
   reported, not silently discarded). `taken_at` NULL + `taken_at_estimated` `true` is legal
-  (the note carries the meaning) and the flag has no effect on sorting/timeline/filters
+  (the note carries the meaning) and the flag has no effect on sorting/timeline/filters.
+  **Clearing `taken_at` is reversible**: the date the photo carried is moved into the read-only
+  `taken_at_before_unknown` in the same statement, so the wrong date a scan was stamped with — the usual
+  reason for saying "unknown" — is recoverable rather than destroyed. Stating a real date afterwards clears
+  it again (there is nothing set aside any more); clearing an already-cleared date keeps what is preserved
+  instead of overwriting it, and clearing a photo that never had a date preserves nothing. The field is
+  **provenance only**: it is served on every photo (`omitempty`, so absent unless a date was cleared), it is
+  never editable, nothing sorts, groups or filters by it, and it rides in the metadata sidecar
+  (`temporal.taken_at_before_unknown`, format version 4) so the fact survives losing the database
   **+ location origin** `location_source` (`exif`/`manual`/`estimate`/`""`, see `internal/geoestimate`):
   in the payload it is **read-only information**, in PATCH the only allowed value is `"manual"` and only
   on a photo that has a location — this **accepts the estimate** (promotes it to the user's decision)
@@ -1176,7 +1184,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `POST /photos/bulk` `{photo_uids:[…], operations:{…}}` applies a set of operations to many photos
   **in a single transaction** with an audit-log entry. Operations (each optional): `add_to_albums`/
   `remove_from_albums`, `add_labels`/`remove_labels`, `set_caption`/`clear_caption` (→title),
-  `set_description`/`clear_description`, `set_taken_at {precision,value}` (see below),
+  `set_description`/`clear_description`, `set_taken_at {precision,value}`/`clear_taken_at` (see below),
   `set_location {lat,lng}`/`clear_location`,
   `archive`/`unarchive`, `hide`/`unhide` (library visibility, see above),
   `set_favorite` (**per-user**), `set_rating` (0–5) / `set_flag`
@@ -1195,6 +1203,13 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   instead lowers that flag and clears `taken_at_note` with it. A precision outside the four, or a value that
   does not parse at its precision, → **400**. It never touches the original file or its EXIF; the caller's
   sidecar rewrite carries the change to storage.
+  `clear_taken_at` (bool) is the opposite statement — **the date is unknown** — and the bulk twin of a
+  `PATCH` with `taken_at: null`: it wipes `taken_at`, stamps `taken_at_source = unknown`, resets
+  `taken_at_precision` to `day` and **moves the outgoing date into `taken_at_before_unknown`** so the
+  declaration can be undone (see the `PATCH` above and migration `0066`). `taken_at_estimated` and
+  `taken_at_note` are left alone: "the date is unknown, but grandma says it was a wedding" is a state worth
+  keeping. Sending it together with `set_taken_at` → **400**: one states a date, the other states that
+  nobody knows it. The cleared photos are then reachable as `dated:no`.
   Mounted by another `server.WithAPI` (`buildBulkAPI` in `cmd/kukatko/bulk.go`).
 - **Maps API (`/api/v1`, `internal/mapsapi` + `internal/mapy`, authenticated via `RequireAuth`):**
   a backend proxy to mapy.com (**the key never reaches the client** — only the `X-Mapy-Api-Key` header) +
@@ -1629,6 +1644,7 @@ put a photo taken minutes either side of New Year in the same year.
 | `flag:` | `pick\|reject\|eye` | the current user's flag |
 | `year:` `month:` `day:` | number, ranges | year (1000–9999) / month (1–12) / day (1–31) of capture |
 | `taken:` `added:` | `YYYY`, `YYYY-MM`, `YYYY-MM-DD` | date of capture / of adding to the catalog (whole day/month/year) |
+| `dated:` | `yes\|no` | has / has no capture date. `dated:no` is the worklist of everything the timeline cannot place, and it deliberately covers **both** the photos whose date somebody declared unknown and those that never had one — the same job either way. Provenance separates them on the photo (`taken_at_source`, `taken_at_before_unknown`) |
 | `before:` / `after:` | a date as above | captured **before** the start of the date / **from** the start of the date |
 | `country:` `city:` | text | country/city from reverse geocoding (`photo_places`) |
 | `geo:` | `yes\|no` | has / has no GPS coordinates |

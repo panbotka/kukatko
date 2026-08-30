@@ -53,6 +53,27 @@ func TestToOperations(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "clear taken at carries through",
+			in:   operationsInput{ClearTakenAt: true},
+			check: func(t *testing.T, ops bulk.Operations) {
+				if !ops.ClearTakenAt {
+					t.Error("ClearTakenAt = false, want true")
+				}
+				if ops.TakenAt != nil {
+					t.Errorf("TakenAt = %+v, want nil", ops.TakenAt)
+				}
+			},
+		},
+		{
+			// One states a date, the other states that nobody knows it.
+			name: "set and clear taken at conflict",
+			in: operationsInput{
+				SetTakenAt:   &takenAtInput{Precision: "year", Value: "1974"},
+				ClearTakenAt: true,
+			},
+			wantErr: true,
+		},
+		{
 			name:    "archive and unarchive conflict",
 			in:      operationsInput{Archive: true, Unarchive: true},
 			wantErr: true,
@@ -372,7 +393,7 @@ func TestResolveTakenAt(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := resolveTakenAt(tt.in)
+			got, err := operationsInput{SetTakenAt: tt.in}.resolveTakenAt()
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf("resolveTakenAt(%+v) = %+v, want error", tt.in, got)
@@ -400,11 +421,11 @@ func TestResolveTakenAt(t *testing.T) {
 func TestResolveTakenAtAbsent(t *testing.T) {
 	t.Parallel()
 
-	got, err := resolveTakenAt(nil)
+	got, err := operationsInput{}.resolveTakenAt()
 	if err != nil {
-		t.Fatalf("resolveTakenAt(nil): %v", err)
+		t.Fatalf("resolveTakenAt(absent): %v", err)
 	}
 	if got != nil {
-		t.Errorf("resolveTakenAt(nil) = %+v, want nil", got)
+		t.Errorf("resolveTakenAt(absent) = %+v, want nil", got)
 	}
 }

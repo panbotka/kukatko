@@ -196,6 +196,10 @@ func TestParse_table(t *testing.T) {
 		{"after", "after:2024-06-15", "filters=[after=date:2024-06-15..2024-06-16]"},
 		{"added", "added:2025-01", "filters=[added=date:2025-01-01..2025-02-01]"},
 		{"taken negated", "taken:!2024", "filters=[taken=!date:2024-01-01..2025-01-01]"},
+		{"dated yes", "dated:yes", "filters=[dated=bool:true]"},
+		{"dated no", "dated:no", "filters=[dated=bool:false]"},
+		{"dated false", "dated:false", "filters=[dated=bool:false]"},
+		{"dated negated", "dated:!no", "filters=[dated=!bool:false]"},
 
 		// --- Place ---
 		{"country", "country:Czechia", "filters=[country=text:Czechia]"},

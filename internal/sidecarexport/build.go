@@ -136,6 +136,10 @@ func temporalOf(p photos.Photo) Temporal {
 		utc := p.TakenAt.UTC()
 		t.TakenAt = &utc
 	}
+	if p.TakenAtBeforeUnknown != nil {
+		utc := p.TakenAtBeforeUnknown.UTC()
+		t.TakenAtBeforeUnknown = &utc
+	}
 	return t
 }
 

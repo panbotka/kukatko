@@ -79,6 +79,10 @@ const (
 	KeyDay Key = "day"
 	// KeyTaken matches a capture date: YYYY, YYYY-MM or YYYY-MM-DD (date).
 	KeyTaken Key = "taken"
+	// KeyDated keeps photos with (yes) or without (no) a capture date. dated:no
+	// is the worklist of everything the timeline cannot place: both the photos
+	// whose date somebody declared unknown and the ones that never had one.
+	KeyDated Key = "dated"
 	// KeyBefore keeps photos taken strictly before the date (date).
 	KeyBefore Key = "before"
 	// KeyAfter keeps photos taken on or after the date (date).
@@ -189,6 +193,7 @@ var specs = map[Key]spec{
 	KeyMonth:       {kind: KindNumber, lo: 1, hi: 12, integer: true},
 	KeyDay:         {kind: KindNumber, lo: 1, hi: 31, integer: true},
 	KeyTaken:       {kind: KindDate},
+	KeyDated:       {kind: KindBool},
 	KeyBefore:      {kind: KindDate},
 	KeyAfter:       {kind: KindDate},
 	KeyAdded:       {kind: KindDate},

@@ -38,6 +38,7 @@ type operationsInput struct {
 	SetDescription   *string        `json:"set_description"`
 	ClearDescription bool           `json:"clear_description"`
 	SetTakenAt       *takenAtInput  `json:"set_taken_at"`
+	ClearTakenAt     bool           `json:"clear_taken_at"`
 	SetLocation      *locationInput `json:"set_location"`
 	ClearLocation    bool           `json:"clear_location"`
 	Archive          bool           `json:"archive"`
@@ -116,11 +117,12 @@ func (in operationsInput) toOperations() (bulk.Operations, error) {
 	}
 	ops.Description = description
 
-	takenAt, err := resolveTakenAt(in.SetTakenAt)
+	takenAt, err := in.resolveTakenAt()
 	if err != nil {
 		return bulk.Operations{}, err
 	}
 	ops.TakenAt = takenAt
+	ops.ClearTakenAt = in.ClearTakenAt
 
 	location, clearLocation, err := in.resolveLocation()
 	if err != nil {
@@ -166,8 +168,17 @@ func (in operationsInput) toOperations() (bulk.Operations, error) {
 // UTC, so anchoring there is what makes a photo dated "1974" land in the 1974
 // bucket rather than in December 1973 for readers east of Greenwich.
 //
+// It rejects set_taken_at together with clear_taken_at: one states a date and
+// the other states that nobody knows it, so a request carrying both says nothing
+// the server could honour and is answered with a 400 rather than with whichever
+// clause the SQL happened to apply last.
+//
 // A nil pointer means no change.
-func resolveTakenAt(set *takenAtInput) (*bulk.TakenAt, error) {
+func (in operationsInput) resolveTakenAt() (*bulk.TakenAt, error) {
+	if in.SetTakenAt != nil && in.ClearTakenAt {
+		return nil, errors.New("set_taken_at and clear_taken_at are mutually exclusive")
+	}
+	set := in.SetTakenAt
 	if set == nil {
 		// No date change requested: nil pointer, nil error is the "leave unchanged"
 		// signal here.

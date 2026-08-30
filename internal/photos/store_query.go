@@ -198,6 +198,7 @@ var queryCondBuilders = map[query.Key]condBuilder{
 	query.KeyMonth:       numberCond("EXTRACT(MONTH FROM taken_at)"),
 	query.KeyDay:         numberCond("EXTRACT(DAY FROM taken_at)"),
 	query.KeyTaken:       dateCond("taken_at"),
+	query.KeyDated:       datedCond,
 	query.KeyAdded:       dateCond("created_at"),
 	query.KeyBefore:      beforeCond,
 	query.KeyAfter:       afterCond,
@@ -340,6 +341,25 @@ func geoCond(v query.Value, _ condEnv) (string, bool) {
 		return "(lat IS NOT NULL AND lng IS NOT NULL)", true
 	}
 	return "(lat IS NULL OR lng IS NULL)", true
+}
+
+// datedCond keeps photos that carry a capture date (yes) or that carry none
+// (no).
+//
+// dated:no deliberately matches every photo with a NULL taken_at, not only the
+// ones whose date was cleared on purpose: the useful list is "everything the
+// timeline cannot place", and for the person working through it a photo that
+// never had a date and one whose date was disowned are the same job. The
+// provenance that separates them (taken_at_source, taken_at_before_unknown) is
+// on the photo for whoever wants it.
+func datedCond(v query.Value, _ condEnv) (string, bool) {
+	if v.Bool == nil {
+		return "", false
+	}
+	if *v.Bool {
+		return "taken_at IS NOT NULL", true
+	}
+	return "taken_at IS NULL", true
 }
 
 // numberCond builds a numeric range condition over the given SQL expression,

@@ -220,8 +220,16 @@ func (o Operations) photoColumnUpdate(uid string) (string, []any, bool) {
 	if o.Description != nil {
 		appendSet("description", *o.Description)
 	}
-	if o.TakenAt != nil {
+	// Exclusive on purpose. The two contradict each other and the API layer answers
+	// a request carrying both with a 400, so this is unreachable from the wire; the
+	// switch is here because emitting both would put two assignments to taken_at in
+	// one UPDATE, which PostgreSQL rejects — a 500 on a request that already has a
+	// clearer answer. Stating a date wins.
+	switch {
+	case o.TakenAt != nil:
 		o.appendTakenAt(appendSet)
+	case o.ClearTakenAt:
+		o.appendClearTakenAt(&set)
 	}
 	if o.Hide != nil {
 		appendSet("hidden_from_library", *o.Hide)
@@ -262,6 +270,27 @@ func (o Operations) appendTakenAt(appendSet func(column string, value any)) {
 	if !estimated {
 		appendSet("taken_at_note", "")
 	}
+}
+
+// appendClearTakenAt adds the SET clauses that declare the capture date unknown:
+// the date goes, the provenance records that somebody said so rather than that
+// nothing was ever known, and the grain goes back to a plain day so a period set
+// earlier in the bulk editor cannot outlive the date it described.
+//
+// The outgoing date is not lost — photos.TakenAtBeforeUnknownAssignment puts it
+// away — which is the whole point of the operation and is why the clause comes
+// from the photos store rather than being spelled out here: the single-photo
+// PATCH clears a date through the very same rule.
+//
+// taken_at_estimated and taken_at_note are deliberately untouched. "The date is
+// unknown, but grandma says it was a wedding" is a legitimate state, and the note
+// is worth more once the date is gone than it ever was beside it.
+func (o Operations) appendClearTakenAt(set *[]string) {
+	*set = append(*set,
+		photos.TakenAtBeforeUnknownAssignment("NULL"),
+		"taken_at = NULL",
+		"taken_at_source = '"+photos.TakenAtSourceUnknown+"'",
+		"taken_at_precision = '"+photos.TakenAtPrecisionDay+"'")
 }
 
 // appendLocationAndArchive adds the literal (argument-free) SET clauses for

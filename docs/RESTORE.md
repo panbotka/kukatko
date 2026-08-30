@@ -320,7 +320,7 @@ then the YAML document. Comments are ignored by any parser, so the file round-tr
 # ...
 # NOT in this file, deliberately, and please do not "fix" it: the image embedding
 # and the face vectors. ...
-version: 3
+version: 4
 generated_at: 2026-07-17T12:00:00Z
 identity:
     uid: pht000000000001
@@ -394,11 +394,11 @@ Every group and key is omitted when empty, so a photo nobody has touched yields 
 
 | Group | Holds | Notes |
 | --- | --- | --- |
-| `version` | Schema version (currently `3`) | First key, so a reader can dispatch before parsing. A reader that meets a version it does not know should **refuse the file**, not guess. `2` added `curation.hidden_from_library`; a `1` document simply has no hidden photos. `3` added `temporal.precision`; an older document is a library where every date is an ordinary one. |
+| `version` | Schema version (currently `4`) | First key, so a reader can dispatch before parsing. A reader that meets a version it does not know should **refuse the file**, not guess. `2` added `curation.hidden_from_library`; a `1` document simply has no hidden photos. `3` added `temporal.precision`; an older document is a library where every date is an ordinary one. `4` added `temporal.taken_at_before_unknown`; an older document is a library where no cleared date was ever kept. |
 | `generated_at` | When the file was written | Provenance: it tells you how current the file is, the first thing you want to know when rebuilding. |
 | `identity` | `uid`, `sha256`, `file_name`, `file_path`, `original_name`, `media_type`, `uploaded_by`, `external` | `sha256` is the durable link to the original: paths move, content does not. `external` carries `photoprism_uid` / `photoprism_file_hash` (the source system's SHA1, not Kukátko's SHA256) / `photosorter_uid` — the photo's provenance, and what `uid:pt…` search resolves against. |
 | `descriptive` | `title`, `description`, `notes`, `ai_note`, `subject`, `keywords`, `artist`, `copyright`, `license` | `keywords` are the IPTC keywords verbatim, comma-separated. They are **not** labels — labels are Kukátko's own taxonomy and live under `curation`. |
-| `temporal` | `taken_at`, `taken_at_source`, `estimated`, `note`, `precision` | `estimated: true` marks the date as a guess and `note` records what it rests on ("kolem roku 1950"). A photo with no `taken_at` may still be estimated, the note then carrying the whole meaning. `precision` (`month`/`year`/`decade`, absent for an ordinary date) says how much of `taken_at` was actually stated: anything coarser than a day means it is the **first instant of that period in UTC**, so a rebuild that dropped it would turn "somewhere in the seventies" into 1 January 1970. |
+| `temporal` | `taken_at`, `taken_at_source`, `estimated`, `note`, `precision`, `taken_at_before_unknown` | `estimated: true` marks the date as a guess and `note` records what it rests on ("kolem roku 1950"). A photo with no `taken_at` may still be estimated, the note then carrying the whole meaning. `precision` (`month`/`year`/`decade`, absent for an ordinary date) says how much of `taken_at` was actually stated: anything coarser than a day means it is the **first instant of that period in UTC**, so a rebuild that dropped it would turn "somewhere in the seventies" into 1 January 1970. `taken_at_before_unknown` is the date the photo held when somebody declared its date unknown — the day a scanner stamped on a print from the fifties — kept so the declaration stays reversible; a photo that has one has no `taken_at`, and a rebuild must never show or sort by it. |
 | `spatial` | `lat`, `lng`, `altitude`, `source`, `place` | `source` is `exif` / `manual` / `estimate` / empty. **It matters:** an inferred location must never be rebuilt as a measured one. `source: manual` with no coordinates is not a contradiction but a **tombstone** — the user deleted the location on purpose, and a rebuild must not hand it back. `place` is the cached reverse-geocode (geocoding costs credits; recording it means a rebuild does not pay twice). |
 | `technical` | Camera, lens, exposure, dimensions, file, `video` | Mostly recomputable from the original, recorded anyway: it is small, and a sidecar readable on its own is worth more than the saved bytes. `video` is present only for videos and live photos. |
 | `curation` | `albums`, `labels`, `people`, `favorites`, `ratings`, `private`, `hidden_from_library`, `archived_at`, `stack` | **The group that exists nowhere else.** Everything above can in the last resort be re-derived from the original; none of this can. |

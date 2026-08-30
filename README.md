@@ -41,8 +41,9 @@ photo-book tool (deliberately out of scope), or a product with support and a rel
 - **A query language** that mixes free text with `key:value` filters in the same field:
   `dovolená camera:"Canon EOS R6" iso:100-400 faces:2`, `label:cat|dog`, `taken:2024-05`,
   `person:"Anna Nováková" year:1985`, `near:<uid>` for "more like this one". Some 40 keys — people,
-  albums, labels, country/city, `geo`, camera, lens, `iso`, `f`, `mm`, `mp`, media type, codec,
-  orientation, rating, favourite. `person:`, `label:` and `album:` autocomplete the **actual names in
+  albums, labels, country/city, `geo`, `dated` (`dated:no` is the pile of photos with no date at all,
+  whether nobody ever knew it or somebody said so), camera, lens, `iso`, `f`, `mm`, `mp`, media type,
+  codec, orientation, rating, favourite. `person:`, `label:` and `album:` autocomplete the **actual names in
   your library**, diacritics-insensitively and quoted correctly; a `?` cheat sheet is one keypress
   away, and a filter the parser did not understand is pointed out instead of silently ignored.
 - **The text in the picture is searchable too** — a street sign, a shop front, a race number, a

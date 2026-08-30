@@ -255,7 +255,18 @@ to `## Package map` in `CLAUDE.md`.
   Anything coarser than `day` means `TakenAt` is the **first instant of that period in UTC**, so the photo
   sorts and filters into it while presentation shows only what was claimed; the store normalises an empty
   value to `day` on write (`takenAtPrecisionOrDay`) rather than tripping the column's CHECK, so a caller
-  built by hand cannot invent a grain),
+  built by hand cannot invent a grain);
+  **the date put away** `TakenAtBeforeUnknown *time.Time` (JSON/column `taken_at_before_unknown`,
+  migration `0066`, **read-only**, absent from `MetadataUpdate`): the capture time the photo carried at the
+  moment its date was declared unknown, kept so that declaration is reversible — the wrong date a scan was
+  stamped with is the usual reason for saying "unknown", and destroying it made the statement one-way. The
+  rule lives in the store, not in a caller: `TakenAtBeforeUnknownAssignment(takenAtExpr)` (`store_takenat.go`)
+  returns the `taken_at_before_unknown = CASE …` SET clause that **stating a date → drops the preserved
+  value / clearing a date → preserves the outgoing one / a clear after a clear → keeps what is already
+  preserved**, and all three write paths use it (`updateMetadataRow`, `FillMissingMetadata`, and
+  `internal/bulk`'s `clear_taken_at`). Hence the invariant it is read under: a photo with a `TakenAt` never
+  has one. Provenance only — no index, nothing sorts, groups or filters by it (`dated:no` filters on
+  `taken_at` itself); `TakenAtSourceUnknown` is the `taken_at_source` both clear paths stamp),
   `MediaType` image/video/live, `FileRole` original/sidecar/edited, UID generator prefix `ph`,
   `Store` over pgx with
   `Create`/`GetByUID`/`GetByFileHash`/`GetByPhotoprismUID`/`GetByPhotoprismFileHash`
@@ -2574,6 +2585,11 @@ to `## Package map` in `CLAUDE.md`.
   UTC**), `taken_at_source='manual'`, `taken_at_precision` and `taken_at_estimated` = "the grain is coarser
   than a day" — an exact date instead lowers that flag and clears `taken_at_note` with it (0029's invariant:
   a note only lives beside a date presented as a guess); it never touches the original file or its EXIF;
+  `ClearTakenAt` is the opposite statement — **the date is unknown** — and the bulk twin of a `PATCH` with
+  `taken_at: null`: `appendClearTakenAt` wipes `taken_at`, stamps `taken_at_source='unknown'`, resets
+  `taken_at_precision` to `day` and takes the preserve-the-outgoing-date clause from
+  `photos.TakenAtBeforeUnknownAssignment("NULL")` rather than spelling it out, so the two clear paths cannot
+  drift apart; `taken_at_estimated`/`taken_at_note` are deliberately untouched;
   `Summary()` (audit details) + `IsEmpty()`), `internal/bulkapi/`
   (HTTP over `bulk.Service`: the `Service` interface (Apply) — fakeable; `NewAPI(Config{Service,
   RequireWrite})`+`RegisterRoutes` mounts `POST /photos/bulk` behind `RequireWrite`; the body
@@ -2584,6 +2600,8 @@ to `## Package map` in `CLAUDE.md`.
   (`day`/`1974-06-14`, `month`/`1974-06`, `year`/`1974`, `decade`/`1970` — a year mid-decade rounds down),
   parsed in UTC by `resolveTakenAt` to the period's first instant; no time of day (the operation is for
   scans, where the hour is never known); an unknown precision or a value that does not parse at it → 400,
+  **`clear_taken_at`** (bool, mirroring `clear_location`) declares the date unknown, and together with
+  `set_taken_at` → 400 (one states a date, the other states that nobody knows it),
   coordinate validation, `DisallowUnknownFields` (an unknown operation → 400) + 4 MiB limit; errors mapped
   `ErrNoPhotos`/`ErrNoOperations`/`ErrAlbum/LabelNotFound`→400, `ErrBatchTooLarge`→413, otherwise 500;
   per-photo errors return 200 with the detail in the body; mounted by a further `server.WithAPI`
@@ -2967,10 +2985,13 @@ to `## Package map` in `CLAUDE.md`.
   Not to be confused with `internal/sidecar`, which reads *foreign* sidecars (Google Takeout `.json`, Apple `.xmp`) during
   an import — this package only **writes**, and only its own format. `Document` = a versioned, grouped
   schema (`version`/`generated_at`/`identity`/`descriptive`/`temporal`/`spatial`/`technical`/
-  `curation`/`edit`), `Version = 3` (v2 added `curation.hidden_from_library` — additive, but still a bump,
+  `curation`/`edit`), `Version = 4` (v2 added `curation.hidden_from_library` — additive, but still a bump,
   because a reader that ignored the key would un-hide every hidden photo on restore; v3 added
   `temporal.precision`, omitted at the ordinary `day` grain, for the same reason: a reader that ignored it
-  would restore "somewhere in the seventies" as a photo taken on 1 January 1970);
+  would restore "somewhere in the seventies" as a photo taken on 1 January 1970; v4 added
+  `temporal.taken_at_before_unknown`, the date put away when somebody declared a photo's date unknown —
+  a reader that dropped it would turn a reversible declaration into a permanent one, since after losing
+  the database the sidecar is the only place that date still exists);
   `Build(Input) Document` is a **pure function** (no I/O, no
   clock — the caller collects the collaborators), `Marshal`/`Unmarshal` add/ignore the header comment
   that explains **why there are no embeddings in the file** (large, binary, cheap to recompute from
@@ -3392,7 +3413,10 @@ to `## Package map` in `CLAUDE.md`.
   `description:`/`notes:` — OCR output is machine-read and noisy, and someone hunting for the photo of a
   particular shop wants to say so; the bool keys include
   `hidden:` (photos hidden from the library — like `archived:`, using it lifts the store's default scope,
-  so `hidden:yes` is the way back to a hidden photo); the id key **`uid:`** names exactly one photo — by its own
+  so `hidden:yes` is the way back to a hidden photo) and `dated:` (has / has no capture date; `dated:no` is
+  the worklist of everything the timeline cannot place and covers **both** the photos whose date was declared
+  unknown and those that never had one — for the person working through them it is the same job);
+  the id key **`uid:`** names exactly one photo — by its own
   uid **or** by the source uid it was imported under, one key for both because the two shapes cannot collide
   — and lifts the live-only, visible-only **and** stack-primary scopes at once (`uidLookup` in
   `store_list.go`), because naming an id is explicit intent and silence about a photo that exists is the one

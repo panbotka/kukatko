@@ -25,6 +25,7 @@ export const FILTER_KEYS = [
   'city',
   'codec',
   'country',
+  'dated',
   'day',
   'description',
   'dist',
@@ -484,6 +485,7 @@ export type QueryHelpRowId =
   | 'rating'
   | 'flag'
   | 'date'
+  | 'dated'
   | 'takenAdded'
   | 'beforeAfter'
   | 'place'
@@ -527,6 +529,7 @@ export const QUERY_HELP_ROWS: QueryHelpRow[] = [
   { id: 'flag', keys: 'flag:', example: 'flag:pick' },
   { id: 'date', keys: 'year: month: day:', example: 'year:2020-2023' },
   { id: 'takenAdded', keys: 'taken: added:', example: 'taken:2024-05' },
+  { id: 'dated', keys: 'dated:', example: 'dated:no' },
   { id: 'beforeAfter', keys: 'before: after:', example: 'after:2024-05-01' },
   { id: 'place', keys: 'country: city:', example: 'city:Praha' },
   { id: 'geo', keys: 'geo:', example: 'geo:no' },

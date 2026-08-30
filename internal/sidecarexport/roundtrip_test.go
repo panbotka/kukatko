@@ -21,6 +21,7 @@ func fullDocument() Document {
 	archived := time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC)
 	added := time.Date(2024, 6, 1, 8, 0, 0, 0, time.UTC)
 	rated := time.Date(2024, 6, 2, 8, 0, 0, 0, time.UTC)
+	beforeUnknown := time.Date(2011, 3, 8, 10, 15, 0, 0, time.UTC)
 
 	return Document{
 		Version:     Version,
@@ -57,6 +58,10 @@ func fullDocument() Document {
 			Estimated:     true,
 			Note:          "kolem roku 1950",
 			Precision:     "year",
+			// A photo with a real taken_at never carries this in practice (stating a
+			// date discards it); the fixture exists to prove every field survives a
+			// round trip, so it sets both.
+			TakenAtBeforeUnknown: &beforeUnknown,
 		},
 		Spatial: &Spatial{
 			Lat:      new(50.0755),

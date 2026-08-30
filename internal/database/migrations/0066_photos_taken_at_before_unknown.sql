@@ -1,0 +1,50 @@
+-- 0066_photos_taken_at_before_unknown: make "the date is unknown" reversible.
+--
+-- A large part of this library carries a date that is simply wrong: a scan
+-- stamped with the day it went through the scanner, an import that fell back to
+-- the file's mtime. The owner usually cannot supply the real one and wants to
+-- say exactly that — the date is unknown — which the app already writes as
+-- taken_at = NULL plus taken_at_source = 'unknown'. Until now that statement
+-- destroyed the wrong date, so a clear made by mistake, or one the owner later
+-- wanted to look at again ("what did the scanner claim?"), was unrecoverable.
+--
+-- taken_at_before_unknown holds the value taken_at carried at the moment it was
+-- declared unknown:
+--
+--   * NULL         the photo's date was never cleared (or a real date has since
+--                  been stated, which discards the set-aside value).
+--   * a timestamp  the date the photo held when the owner declared it unknown.
+--
+-- The rules, enforced by the photos store on every path that writes taken_at
+-- (internal/photos: the single-photo update, the bulk clear, the import
+-- gap-filler) rather than by any one caller:
+--
+--   * a date going from a value to NULL moves that value in here first;
+--   * stating a real date clears this column in the same statement — once the
+--     owner says when it was, there is nothing set aside any more;
+--   * clearing an already-cleared date keeps what is already preserved instead
+--     of overwriting it with NULL, and clearing a date that was never there
+--     changes nothing.
+--
+-- Together those give the invariant this column is read under: a photo with a
+-- taken_at never has one here. It is deliberately NOT enforced by a CHECK,
+-- because the invariant is a property of the write paths and a constraint would
+-- turn a future importer's oversight into a failed restore rather than a
+-- harmless leftover.
+--
+-- THIS COLUMN IS PROVENANCE, NEVER A SORT OR FILTER ANCHOR. taken_at stays the
+-- single date the timeline, the period filter, the year facets and the query
+-- language read; an undated photo already falls to the end of every listing
+-- through idx_photos_live_taken_at's NULLS LAST, and nothing may quietly sort or
+-- group by the value put away here — that would resurrect exactly the wrong date
+-- the owner disowned. Hence nullable, no default and NO INDEX: no listing
+-- filters on it, it is read one photo at a time and written out to the photo's
+-- metadata sidecar so the fact survives losing the database.
+--
+-- `dated:no` in the query language is the worklist that goes with it: every
+-- photo with no taken_at, including the ones that never had one.
+--
+-- This migration is wrapped in a transaction by the runner.
+
+ALTER TABLE photos
+    ADD COLUMN taken_at_before_unknown TIMESTAMPTZ;

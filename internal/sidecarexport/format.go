@@ -44,7 +44,12 @@ import (
 // a bump for the same reason: a reader that ignored it would restore "somewhere
 // in the seventies" as a photo taken on 1 January 1970, turning a period nobody
 // could pin down into an exact day nobody ever claimed.
-const Version = 3
+// Version 4 adds temporal.taken_at_before_unknown (see
+// Temporal.TakenAtBeforeUnknown). Additive, and a bump for the same reason: a
+// reader that dropped it would turn a reversible "the date is unknown" into a
+// permanent one, because the wrong date the owner disowned is recoverable from
+// nowhere else once the database is gone.
+const Version = 4
 
 // Document is one photo's sidecar: everything a human created or a machine
 // derived that would be expensive or impossible to recompute from the original
@@ -160,6 +165,14 @@ type Temporal struct {
 	// the whole meaning.
 	Estimated bool   `yaml:"estimated,omitempty"`
 	Note      string `yaml:"note,omitempty"`
+	// TakenAtBeforeUnknown is the capture time the photo carried at the moment its
+	// date was declared unknown — the day a scanner stamped on a print from the
+	// fifties, say. It rides in the sidecar so that declaration stays reversible
+	// even after losing the database, which is the one place it could be recovered
+	// from. It is never a date to show or to sort by: a photo that has one has no
+	// TakenAt, and the two must not be confused. Absent for every photo whose date
+	// was never cleared.
+	TakenAtBeforeUnknown *time.Time `yaml:"taken_at_before_unknown,omitempty"`
 	// Precision is the grain TakenAt was stated at — day, month, year or decade.
 	// Anything coarser than a day means TakenAt is the first instant of that period
 	// in UTC, so a reader that dropped this would hand back a made-up day. Omitted

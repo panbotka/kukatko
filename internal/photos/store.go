@@ -33,7 +33,7 @@ var photoInsertColumns = []string{
 	"uid", "file_hash", "file_path", "file_name", "file_size", "file_mime",
 	"file_width", "file_height", "file_orientation", "media_type", "duration_ms",
 	"video_codec", "audio_codec", "has_audio", "fps", "taken_at", "taken_at_source",
-	"taken_at_estimated", "taken_at_note", "taken_at_precision",
+	"taken_at_estimated", "taken_at_note", "taken_at_precision", "taken_at_before_unknown",
 	"title", "description", "notes", "ai_note", "subject", "keywords", "artist",
 	"copyright", "license", "lat", "lng", "altitude", "location_source", "camera_make",
 	"camera_model", "lens_model", "camera_serial", "iso", "aperture", "exposure", "focal_length",
@@ -89,7 +89,7 @@ func scanPhoto(row pgx.Row) (Photo, error) {
 		&p.UID, &p.FileHash, &p.FilePath, &p.FileName, &p.FileSize, &p.FileMime,
 		&p.FileWidth, &p.FileHeight, &p.FileOrientation, &p.MediaType, &p.DurationMs,
 		&p.VideoCodec, &p.AudioCodec, &p.HasAudio, &p.FPS, &p.TakenAt, &p.TakenAtSource,
-		&p.TakenAtEstimated, &p.TakenAtNote, &p.TakenAtPrecision,
+		&p.TakenAtEstimated, &p.TakenAtNote, &p.TakenAtPrecision, &p.TakenAtBeforeUnknown,
 		&p.Title, &p.Description, &p.Notes, &p.AiNote, &p.Subject, &p.Keywords, &p.Artist,
 		&p.Copyright, &p.License, &p.Lat, &p.Lng, &p.Altitude, &p.LocationSource, &p.CameraMake,
 		&p.CameraModel, &p.LensModel, &p.CameraSerial, &p.ISO, &p.Aperture, &p.Exposure, &p.FocalLength,
@@ -137,6 +137,7 @@ func (s *Store) Create(ctx context.Context, p Photo) (Photo, error) {
 		p.FileWidth, p.FileHeight, p.FileOrientation, p.MediaType, p.DurationMs,
 		p.VideoCodec, p.AudioCodec, p.HasAudio, p.FPS, p.TakenAt, p.TakenAtSource,
 		p.TakenAtEstimated, p.TakenAtNote, takenAtPrecisionOrDay(p.TakenAtPrecision),
+		p.TakenAtBeforeUnknown,
 		p.Title, p.Description, p.Notes, p.AiNote, p.Subject, p.Keywords, p.Artist,
 		p.Copyright, p.License, p.Lat, p.Lng, p.Altitude, p.LocationSource, p.CameraMake,
 		p.CameraModel, p.LensModel, p.CameraSerial, p.ISO, p.Aperture, p.Exposure, p.FocalLength,
@@ -313,6 +314,7 @@ func updateMetadataRow(ctx context.Context, q rowQuerier, uid string, m Metadata
 		subject = $12, keywords = $13, artist = $14, copyright = $15, license = $16, scan = $17,
 		taken_at_estimated = $18, taken_at_note = $19, location_source = $20, title_edited = $21,
 		taken_at_precision = $22,
+		` + TakenAtBeforeUnknownAssignment("$6") + `,
 		updated_at = now()
 		WHERE uid = $1 RETURNING ` + photoColumns
 	photo, err := scanPhoto(q.QueryRow(ctx, sql, uid,

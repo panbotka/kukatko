@@ -846,6 +846,7 @@
         "flag": "Your mark: pick (picked), reject (rejected) or eye (to look at later).",
         "date": "Capture year, month and day.",
         "takenAdded": "Capture date / date added to the catalogue: YYYY, YYYY-MM or YYYY-MM-DD.",
+        "dated": "Photos with a capture date, or without one. `dated:no` is the worklist of everything undated — including what never had a date at all.",
         "beforeAfter": "Taken before a date / on or after a date.",
         "place": "Country and city (from reverse geocoding).",
         "geo": "Photos with GPS coordinates, or without them.",
