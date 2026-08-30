@@ -1388,6 +1388,7 @@
       "favorite": "Toggle favorite",
       "faces": "Show / hide faces",
       "info": "Show / hide info",
+      "hide": "Hide the photo from the library / bring it back",
       "back": "Step back: the selection, then the info panel, then out to the list"
     },
     "video": {

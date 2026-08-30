@@ -558,6 +558,94 @@ describe('PhotoDetailPage — immersive viewer', () => {
   })
 
   /**
+   * The `s` key ("skrýt") is the eye button's own act on a keyboard, for walking
+   * a series and dropping the dross without aiming a mouse at the same 1rem
+   * target every time. It runs the very same handler, so these tests pin what is
+   * particular to the key: that it toggles, that it stays on the photo (the
+   * second press is the undo — the toast has no action button), that a viewer
+   * gets nothing, and that it keeps out of the way of typing and of dialogs.
+   */
+  describe('the `s` shortcut — hide and unhide', () => {
+    it('hides the open photo and swaps the control to Show', async () => {
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      fireEvent.keyDown(document, { key: 's' })
+      await waitFor(() => {
+        expect(hidePhotoMock).toHaveBeenCalledWith('b')
+      })
+      expect(await screen.findByRole('button', { name: 'Show in the library' })).toBeInTheDocument()
+    })
+
+    it('stays on the photo and brings it back on a second press', async () => {
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      fireEvent.keyDown(document, { key: 's' })
+      // The badge is the proof the state is legible while you stand on it, so a
+      // stray press is obvious rather than silent.
+      expect(await screen.findByText('Hidden from the library')).toBeInTheDocument()
+      expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/b')
+
+      fireEvent.keyDown(document, { key: 's' })
+      await waitFor(() => {
+        expect(unhidePhotoMock).toHaveBeenCalledWith('b')
+      })
+      expect(
+        await screen.findByRole('button', { name: 'Hide from the library' }),
+      ).toBeInTheDocument()
+      expect(screen.queryByText('Hidden from the library')).toBeNull()
+      expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/b')
+    })
+
+    it('does nothing at all for a viewer', async () => {
+      renderPage(false)
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      fireEvent.keyDown(document, { key: 's' })
+      await act(async () => {
+        await Promise.resolve()
+      })
+      expect(hidePhotoMock).not.toHaveBeenCalled()
+      expect(screen.queryByText('Hidden from the library')).toBeNull()
+    })
+
+    it('is ignored while a text field has the keystroke', async () => {
+      // The hook's own guard, asserted through the page: `s` is a letter, and
+      // "skrýt" must never happen because someone typed a caption.
+      const user = userEvent.setup()
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+      await openInfo(user)
+
+      const field = screen.getAllByRole('textbox')[0]
+      fireEvent.keyDown(field, { key: 's' })
+      await act(async () => {
+        await Promise.resolve()
+      })
+      expect(hidePhotoMock).not.toHaveBeenCalled()
+    })
+
+    it('is ignored while a modal with a form is open', async () => {
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+      const modal = document.createElement('div')
+      modal.className = 'modal show'
+      modal.innerHTML = '<input aria-label="modal-field" />'
+      document.body.append(modal)
+      try {
+        fireEvent.keyDown(document, { key: 's' })
+        await act(async () => {
+          await Promise.resolve()
+        })
+        expect(hidePhotoMock).not.toHaveBeenCalled()
+      } finally {
+        modal.remove()
+      }
+    })
+  })
+
+  /**
    * "Held back from the library" — hidden, or archived into the trash — is a
    * state the viewer has to SHOW, not just announce. The rule these tests pin:
    * the glyph never names the action, the on-state marking (`active` plus the

@@ -80,6 +80,8 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
       { keys: ['f'], descriptionKey: 'shortcuts.detail.favorite' },
       { keys: ['m'], descriptionKey: 'shortcuts.detail.faces' },
       { keys: ['i'], descriptionKey: 'shortcuts.detail.info' },
+      // `s` as in „skrýt"; `h` is taken by the grid's vim-style move-left.
+      { keys: ['s'], descriptionKey: 'shortcuts.detail.hide' },
       { keys: ['Esc'], descriptionKey: 'shortcuts.detail.back' },
     ],
   },

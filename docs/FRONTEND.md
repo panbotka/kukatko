@@ -1792,7 +1792,8 @@ here.
   always work and return **to the exact previous scroll position**: `navigate(-1)` when you arrived here from
   the grid (the browser restores scroll), otherwise (a direct link/refresh — caught by `location.key === 'default'`
   at mount) `backHref(view)` reconstructs the list URL. **Keys:** ←/→ steps through neighbors, `f`
-  favorite, `m` faces, `i` drawer, Esc **a step back** (first the selected face, then the drawer, then
+  favorite, `m` faces, `i` drawer, `s` **skrýt** (hide/unhide, editor+ only — the same handler the eye
+  button calls, see below), Esc **a step back** (first the selected face, then the drawer, then
   out); rating hotkeys `0`–`5`/`p`/`r`/`v` on document (except while typing into an input).
   **prev/next** = `<Link replace>` `‹`/`›` carrying scope+filters from the URL (`detailQuery`) **and `info`**,
   respecting the source listing's order (`usePhotoNeighbors` over `neighborParams`+`mode` — `GET
@@ -1830,7 +1831,17 @@ here.
   the library grid, the timeline, the map, the slideshow and the default search while leaving it in its
   albums, labels and favourites. It is **not** archiving and nothing is deleted;
   the button's `title` and the success toast both name the way back (`hidden:yes` in search) —
-  a flag you cannot list is a flag you cannot undo.
+  a flag you cannot list is a flag you cannot undo. **The `s` key** (`shortcuts.detail.hide` in the
+  `?` help) is the same act without the mouse, for walking a series and dropping the dross: it runs
+  `toggleHidden` itself — one implementation, one optimistic flip, one toast — it is **a toggle and
+  the view stays on the photo**, so the second press is the undo the toast has no button for, and it
+  is bound only when `canWrite` (for a viewer the key is not in the map at all). `hidden`/`toggleHidden`
+  therefore sit **above** the loading/error returns, unlike their archive twins: a `const` declared
+  after an early return would be in its temporal dead zone on every render that returns early, and
+  the key would throw while the photo was still loading. Nothing else moves — `PhotoFlagBadges` below
+  already reads the state in words beside the title, so a stray press is visible where you stand.
+  (`a` is deliberately left unbound: archive is the obvious next claimant. `h` is not free — it is the
+  grid's vim-style move-left.)
   **Both are *flag toggles*, and their glyph shows STATE, never the action** (`flagBtnClass`, a
   comment on the decision at the call site). They used to show the action — a hidden photo got a
   plain `eye` meaning "click to show" — which contradicted the `aria-pressed` beside it and was

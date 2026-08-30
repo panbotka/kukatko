@@ -531,8 +531,57 @@ export function PhotoDetailPage() {
     },
   })
 
-  // Viewer shortcuts: ←/→ page, `f` favorite, `m` faces, `i` info drawer, Escape
-  // steps back out (a selected face, then the drawer, then the viewer itself).
+  // Whether the open photo is currently hidden from the library. Unlike
+  // `archived` this is not a step towards deletion: the photo stays in the
+  // catalogue and in everything it was filed in, it just leaves the firehose.
+  const hidden = state.status === 'ready' && state.photo.hidden_from_library === true
+
+  // Hide the open photo from the library, or bring it back. Like the archive
+  // toggle the page stays put and flips the flag locally (both endpoints answer
+  // with the refreshed photo, but nothing else on the page depends on it). The
+  // success toast names where the photo went and how to find it again — a flag
+  // you cannot list is a flag you cannot undo.
+  //
+  // Unlike its archive twin this one is declared ABOVE the loading/error returns,
+  // because the `s` shortcut just below closes over it: a `const` declared after
+  // an early return stays in its temporal dead zone on every render that returns
+  // early, so the key would throw while the photo was still loading. The eye
+  // button further down calls this very function — one implementation, one
+  // optimistic flip, one toast, whichever way it is reached.
+  const toggleHidden = async (): Promise<void> => {
+    if (state.status !== 'ready' || hidePending) {
+      return
+    }
+    const target = state.photo.uid
+    const wasHidden = hidden
+    setHidePending(true)
+    try {
+      if (wasHidden) {
+        await unhidePhoto(target)
+      } else {
+        await hidePhoto(target)
+      }
+      // Only the photo the mutation was aimed at: paging on while it was in
+      // flight must not stamp the answer onto whatever is on stage now.
+      setState((prev) =>
+        prev.status === 'ready' && prev.photo.uid === target
+          ? { ...prev, photo: { ...prev.photo, hidden_from_library: !wasHidden } }
+          : prev,
+      )
+      toast.show({
+        message: wasHidden ? t('photo.hidden.shown') : t('photo.hidden.hidden'),
+        variant: 'success',
+      })
+    } catch {
+      toast.show({ message: t('photo.hidden.error'), variant: 'danger' })
+    } finally {
+      setHidePending(false)
+    }
+  }
+
+  // Viewer shortcuts: ←/→ page, `f` favorite, `m` faces, `i` info drawer, `s`
+  // hide/unhide, Escape steps back out (a selected face, then the drawer, then
+  // the viewer itself).
   // Rating keys (0–5, p/r) are handled by the separate effect below. The hook
   // suppresses these while typing, which keeps `m`/`i` out of the name field.
   useKeyboardShortcuts({
@@ -553,6 +602,17 @@ export function PhotoDetailPage() {
     i: () => {
       togglePanel()
     },
+    // `s` = skrýt: the eye button's own act, on a key — and its own undo, since
+    // the toast carries no action button and the view stays on the photo. Bound
+    // only for an editor, exactly like the button: for a viewer the key is not
+    // in the map at all, so nothing happens and nothing is swallowed.
+    ...(canWrite
+      ? {
+          s: () => {
+            void toggleHidden()
+          },
+        }
+      : {}),
     Escape: () => {
       if (faces.selected !== null) {
         faces.select(null)
@@ -752,34 +812,9 @@ export function PhotoDetailPage() {
       setArchivePending(false)
     }
   }
-  // Whether the open photo is currently hidden from the library. Unlike
-  // `archived` this is not a step towards deletion: the photo stays in the
-  // catalogue and in everything it was filed in, it just leaves the firehose.
-  const hidden = photo.hidden_from_library === true
-
-  // Hide the open photo from the library, or bring it back. Like the archive
-  // toggle the page stays put and flips the flag locally (both endpoints answer
-  // with the refreshed photo, but nothing else on the page depends on it). The
-  // success toast names where the photo went and how to find it again — a flag
-  // you cannot list is a flag you cannot undo.
-  const toggleHidden = async (): Promise<void> => {
-    setHidePending(true)
-    try {
-      if (hidden) {
-        await unhidePhoto(photo.uid)
-        setPhoto({ ...photo, hidden_from_library: false })
-        toast.show({ message: t('photo.hidden.shown'), variant: 'success' })
-      } else {
-        await hidePhoto(photo.uid)
-        setPhoto({ ...photo, hidden_from_library: true })
-        toast.show({ message: t('photo.hidden.hidden'), variant: 'success' })
-      }
-    } catch {
-      toast.show({ message: t('photo.hidden.error'), variant: 'danger' })
-    } finally {
-      setHidePending(false)
-    }
-  }
+  // `hidden` and `toggleHidden` live above the early returns (see them there):
+  // the `s` shortcut has to close over the toggle, which a declaration down here
+  // could not survive on a render that returns early.
   const handleSetStackPrimary = async (memberUid: string): Promise<void> => {
     await setStackPrimary(memberUid)
     await reloadPhoto()
