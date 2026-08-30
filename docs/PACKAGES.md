@@ -660,8 +660,15 @@ to `## Package map` in `CLAUDE.md`.
   (path, cleanup, err); **pure-Go passthrough** JPEG/PNG/WebP/**BMP/GIF/TIFF** (animated GIF →
   first frame; the decoders are registered by a blank import in `imgconvert`, `ingest` and `thumb`), **HEIC** via `heif-convert`
   to a temp JPEG, **RAW** (cr2/cr3/nef/nrw/arw/srf/dng/raf/orf/rw2/pef/srw/3fr/iiq/x3f/kdc/mrw/mef)
-  pulls the embedded preview via `exiftool -b -PreviewImage` (fallback `-JpgFromRaw`/`-ThumbnailImage`)
-  instead of demosaicing, **video** (`FormatVideo`) delegates to `video.ExtractPoster` (poster frame via
+  pulls **the largest** embedded preview instead of demosaicing: one metadata-only `exiftool -s3 -f -n` call
+  reads the offset+length of `PreviewImage`/`JpgFromRaw`/`ThumbnailImage`, `image/jpeg`'s `DecodeConfig`
+  measures the frame header sitting at each of those offsets (a few kB, never the image data), and only the
+  winner is extracted with `exiftool -b <tag>` — Nikon bodies fill `PreviewImage` with a 640x424 thumbnail
+  while the 6000x4000 image waits in `JpgFromRaw`, so taking the first non-empty tag served 10% of the pixels
+  to thumbnails, embeddings and face detection alike; a candidate whose header won't parse ranks below every
+  measured one (then by byte size), a file that advertises no offsets at all — or a garbled metadata answer —
+  falls back to the old preference order, and a RAW with nothing in any tag still fails with
+  `ErrNoEmbeddedPreview`, **video** (`FormatVideo`) delegates to `video.ExtractPoster` (poster frame via
   `ffmpeg`) — the thumbnailer and pHash process the poster as a photo; `DetectFormat` prefers **magic
   bytes** whenever they recognize a directly decodable format (JPEG/PNG/WebP/BMP/GIF/TIFF/HEIC) — so a JPEG
   renamed to `.dng`/`.tif` is decoded by content, **not** sent down the RAW branch (where it would have no
