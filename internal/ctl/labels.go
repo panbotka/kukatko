@@ -36,13 +36,17 @@ const (
 // populated by GET /labels, which pairs every label with how many photos carry it;
 // GET /labels/{uid} returns a bare label and leaves it zero.
 type Label struct {
-	UID        string    `json:"uid"`
-	Slug       string    `json:"slug"`
-	Name       string    `json:"name"`
-	Priority   int       `json:"priority"`
-	PhotoCount int       `json:"photo_count"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	UID      string `json:"uid"`
+	Slug     string `json:"slug"`
+	Name     string `json:"name"`
+	Priority int    `json:"priority"`
+	// ReviewEnabled reports whether the review game may ask about this label. A
+	// created label always takes part; switching it off is an explicit edit, so
+	// an update has to carry the stored value across (see UpdateLabel).
+	ReviewEnabled bool      `json:"review_enabled"`
+	PhotoCount    int       `json:"photo_count"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 // LabelInput is the body of POST /labels. Priority floats a label up the UI's
@@ -155,4 +159,111 @@ func DecodeLabel(raw json.RawMessage) (Label, error) {
 		return Label{}, fmt.Errorf("decoding the label: %w", err)
 	}
 	return label, nil
+}
+
+// ErrNoLabelEdits indicates a label update that would send an unchanged record:
+// the server would rewrite the row and record an audit entry for a change nobody
+// made.
+var ErrNoLabelEdits = errors.New("ctl: label update needs at least one field")
+
+// LabelPatch is what `ctl labels update` changes. Every field is a pointer
+// because a nil one means "leave this as it is" — a distinction a label update
+// cannot express any other way, since PATCH /labels/{uid} rewrites the whole
+// editable record rather than merging into it (see UpdateLabel).
+type LabelPatch struct {
+	Name     *string
+	Priority *int
+	// Review switches the review game's questions about this label on or off.
+	Review *bool
+}
+
+// isEmpty reports whether the patch would change nothing.
+func (p LabelPatch) isEmpty() bool {
+	return p.Name == nil && p.Priority == nil && p.Review == nil
+}
+
+// labelUpdateBody is the body of PATCH /labels/{uid}: the label's whole editable
+// record. Unlike LabelInput nothing is omitted at its zero value — for this
+// endpoint priority 0 is a value, not an absence — and review_enabled is always
+// sent, because the client has just read the stored one and can state it.
+type labelUpdateBody struct {
+	Name          string `json:"name"`
+	Priority      int    `json:"priority"`
+	ReviewEnabled bool   `json:"review_enabled"`
+}
+
+// apply folds the patch onto the label as it is stored, producing the whole
+// record to send back.
+func (p LabelPatch) apply(label Label) labelUpdateBody {
+	body := labelUpdateBody{
+		Name:          label.Name,
+		Priority:      label.Priority,
+		ReviewEnabled: label.ReviewEnabled,
+	}
+	if p.Name != nil {
+		body.Name = *p.Name
+	}
+	if p.Priority != nil {
+		body.Priority = *p.Priority
+	}
+	if p.Review != nil {
+		body.ReviewEnabled = *p.Review
+	}
+	return body
+}
+
+// UpdateLabel edits one label's name, priority and review-game participation and
+// returns the refreshed label as raw JSON. It needs the editor or admin role.
+//
+// It reads the label first and sends the merged record back, because PATCH
+// /labels/{uid} is a whole-record write: a body carrying only a new name would
+// reset the priority to zero. A missing label yields a *StatusError with status
+// 404.
+func (c *Client) UpdateLabel(ctx context.Context, uid string, patch LabelPatch) (json.RawMessage, error) {
+	if err := requireUID("label", uid); err != nil {
+		return nil, err
+	}
+	if patch.isEmpty() {
+		return nil, ErrNoLabelEdits
+	}
+	label, err := c.FetchLabel(ctx, uid)
+	if err != nil {
+		return nil, err
+	}
+	body := patch.apply(label)
+	if strings.TrimSpace(body.Name) == "" {
+		return nil, ErrEmptyName
+	}
+	return c.send(ctx, http.MethodPatch, "/labels/"+url.PathEscape(uid), body)
+}
+
+// DeleteLabel removes one label. The photos are untouched: the label simply stops
+// being attached to any of them. The endpoint answers 204, so there is nothing to
+// return but an error; a missing label yields a *StatusError with status 404. It
+// needs the editor or admin role.
+func (c *Client) DeleteLabel(ctx context.Context, uid string) error {
+	if err := requireUID("label", uid); err != nil {
+		return err
+	}
+	_, err := c.send(ctx, http.MethodDelete, "/labels/"+url.PathEscape(uid), nil)
+	return err
+}
+
+// FetchLabel reads one label and decodes it, for the commands that need the
+// record itself rather than its raw bytes.
+func (c *Client) FetchLabel(ctx context.Context, uid string) (Label, error) {
+	raw, err := c.GetLabel(ctx, uid)
+	if err != nil {
+		return Label{}, err
+	}
+	return DecodeLabel(raw)
+}
+
+// DescribeLabel names one label for a confirmation line, as `Sunset (lbl1a2b3)`.
+func (c *Client) DescribeLabel(ctx context.Context, uid string) (string, error) {
+	label, err := c.FetchLabel(ctx, uid)
+	if err != nil {
+		return "", err
+	}
+	return NamedUID(label.Name, label.UID), nil
 }

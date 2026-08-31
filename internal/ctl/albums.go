@@ -173,3 +173,134 @@ func DecodePhotoUIDs(raw json.RawMessage) ([]string, error) {
 	}
 	return payload.PhotoUIDs, nil
 }
+
+// ErrNoAlbumEdits indicates an album update that would send an unchanged record:
+// the server would rewrite the row and record an audit entry for a change nobody
+// made.
+var ErrNoAlbumEdits = errors.New("ctl: album update needs at least one field")
+
+// AlbumPatch is what `ctl albums update` changes. Every field is a pointer
+// because a nil one means "leave this as it is" — a distinction an album update
+// cannot express any other way, since PATCH /albums/{uid} rewrites the whole
+// editable record rather than merging into it (see UpdateAlbum).
+type AlbumPatch struct {
+	Title       *string
+	Description *string
+	// Cover names the photo the album is fronted by. A pointer to the empty
+	// string clears the cover, which is the only way to say "no cover at all"
+	// without also saying "leave whatever is there alone".
+	Cover   *string
+	Private *bool
+}
+
+// isEmpty reports whether the patch would change nothing.
+func (p AlbumPatch) isEmpty() bool {
+	return p.Title == nil && p.Description == nil && p.Cover == nil && p.Private == nil
+}
+
+// albumUpdateBody is the body of PATCH /albums/{uid}: the album's whole editable
+// record. Unlike AlbumInput nothing is omitted at its zero value, because for
+// this endpoint an omitted field is not a default — it is an erasure.
+//
+// The structural type is deliberately absent: it is not user-editable and the
+// server carries the album's existing one across.
+type albumUpdateBody struct {
+	Title         string  `json:"title"`
+	Description   string  `json:"description"`
+	CoverPhotoUID *string `json:"cover_photo_uid"`
+	Private       bool    `json:"private"`
+}
+
+// apply folds the patch onto the album as it is stored, producing the whole
+// record to send back.
+func (p AlbumPatch) apply(album Album) albumUpdateBody {
+	body := albumUpdateBody{
+		Title:         album.Title,
+		Description:   album.Description,
+		CoverPhotoUID: album.CoverPhotoUID,
+		Private:       album.Private,
+	}
+	if p.Title != nil {
+		body.Title = *p.Title
+	}
+	if p.Description != nil {
+		body.Description = *p.Description
+	}
+	if p.Cover != nil {
+		body.CoverPhotoUID = coverPointer(*p.Cover)
+	}
+	if p.Private != nil {
+		body.Private = *p.Private
+	}
+	return body
+}
+
+// coverPointer turns a --cover value into the field the API reads: a blank value
+// is an explicit "no cover", which travels as JSON null.
+func coverPointer(cover string) *string {
+	if strings.TrimSpace(cover) == "" {
+		return nil
+	}
+	return &cover
+}
+
+// UpdateAlbum edits one album's title, description, cover photo and privacy and
+// returns the refreshed album as raw JSON. It needs the editor or admin role.
+//
+// It reads the album first and sends the merged record back, because PATCH
+// /albums/{uid} is a whole-record write: a body that omits the description
+// empties it and one that omits the cover clears it. A flag-per-field edit that
+// did not read first would therefore erase everything the caller did not
+// mention — the same reason `ctl subjects rename` reads before it writes.
+//
+// The album's structural type (folder, moment, …) is not editable; the server
+// preserves it. A missing album yields a *StatusError with status 404.
+func (c *Client) UpdateAlbum(ctx context.Context, uid string, patch AlbumPatch) (json.RawMessage, error) {
+	if err := requireUID("album", uid); err != nil {
+		return nil, err
+	}
+	if patch.isEmpty() {
+		return nil, ErrNoAlbumEdits
+	}
+	album, err := c.FetchAlbum(ctx, uid)
+	if err != nil {
+		return nil, err
+	}
+	body := patch.apply(album)
+	if strings.TrimSpace(body.Title) == "" {
+		return nil, ErrEmptyTitle
+	}
+	return c.send(ctx, http.MethodPatch, "/albums/"+url.PathEscape(uid), body)
+}
+
+// DeleteAlbum removes one album. The photos are untouched: an album is a
+// grouping, so deleting it deletes only the grouping. The endpoint answers 204,
+// so there is nothing to return but an error; a missing album yields a
+// *StatusError with status 404. It needs the editor or admin role.
+func (c *Client) DeleteAlbum(ctx context.Context, uid string) error {
+	if err := requireUID("album", uid); err != nil {
+		return err
+	}
+	_, err := c.send(ctx, http.MethodDelete, "/albums/"+url.PathEscape(uid), nil)
+	return err
+}
+
+// FetchAlbum reads one album and decodes it, for the commands that need the
+// record itself rather than its raw bytes.
+func (c *Client) FetchAlbum(ctx context.Context, uid string) (Album, error) {
+	raw, err := c.GetAlbum(ctx, uid)
+	if err != nil {
+		return Album{}, err
+	}
+	return DecodeAlbum(raw)
+}
+
+// DescribeAlbum names one album for a confirmation line, as `Trip (alb1a2b3)`,
+// so a destructive command says what is about to go rather than which uid is.
+func (c *Client) DescribeAlbum(ctx context.Context, uid string) (string, error) {
+	album, err := c.FetchAlbum(ctx, uid)
+	if err != nil {
+		return "", err
+	}
+	return NamedUID(album.Title, album.UID), nil
+}

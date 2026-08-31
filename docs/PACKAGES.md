@@ -3732,15 +3732,27 @@ to `## Package map` in `CLAUDE.md`.
     cost a round trip. **The API does not know `--year`** — it is translated into the inclusive range
     `taken_after`/`taken_before` (`taken_at >= … <= …`), the upper bound being the last instant of 31 December.
     `SearchOptions` adds `q` + `mode` (`fulltext`/`semantic`/`hybrid`).
-  - `albums.go` — `ListAlbums`/`GetAlbum`/`CreateAlbum`/`AddAlbumPhotos`/`RemoveAlbumPhotos`
-    + `DecodeAlbums`/`DecodeAlbum`/`DecodePhotoUIDs`. The envelope is a **bare `{"albums":[…]}` without paging**
+  - `albums.go` — `ListAlbums`/`GetAlbum`/`CreateAlbum`/`UpdateAlbum`/`DeleteAlbum`/`AddAlbumPhotos`/
+    `RemoveAlbumPhotos` + `DecodeAlbums`/`DecodeAlbum`/`DecodePhotoUIDs`/`FetchAlbum`/`DescribeAlbum`.
+    The envelope is a **bare `{"albums":[…]}` without paging**
     — hence its own decoder. `PhotoCount` is filled only by the list; the detail does not send it, so the renderer does not print it.
     `AlbumInput` is validated locally (`ErrEmptyTitle`, `ErrInvalidAlbumType`); membership sends the whole
     list of uids in **one** request and the server returns the refreshed order.
-  - `labels.go` — `ListLabels`/`GetLabel`/`CreateLabel`/`AttachLabel`/`DetachLabel` + `DecodeLabels`/
-    `DecodeLabel`. The envelope is a **bare `{"labels":[…]}`** ordered by priority (a third shape). Attach/detach
+    **`UpdateAlbum` reads before it writes**, for the same reason `RenameSubject` does: `PATCH /albums/{uid}`
+    rewrites the whole editable record, so a body carrying only a new title would empty the description and
+    clear the cover. `AlbumPatch` is all pointers (a `nil` field means "leave it"), `apply` folds it onto the
+    stored album and `albumUpdateBody` states every field including the nulls — `Cover` pointing at `""` is the
+    explicit "no cover". The structural type is deliberately not in the body: it is not user-editable and the
+    server carries the existing one across. `ErrNoAlbumEdits` refuses an update that would change nothing but
+    still cost an audit entry.
+  - `labels.go` — `ListLabels`/`GetLabel`/`CreateLabel`/`UpdateLabel`/`DeleteLabel`/`AttachLabel`/`DetachLabel`
+    + `DecodeLabels`/`DecodeLabel`/`FetchLabel`/`DescribeLabel`. The envelope is a **bare `{"labels":[…]}`**
+    ordered by priority (a third shape). Attach/detach
     answer `204`. An empty `source` is dropped from the body so that the server fills in its own `manual`
-    (`ErrInvalidLabelSource`, `ErrEmptyName`).
+    (`ErrInvalidLabelSource`, `ErrEmptyName`). **`UpdateLabel` reads before it writes** too: `PATCH
+    /labels/{uid}` is a whole-record write, so a body carrying only a new name would reset the priority to
+    zero. `LabelPatch` is all pointers and `labelUpdateBody` sends name, priority and `review_enabled`
+    unconditionally — priority `0` is a value here, not an absence (`ErrNoLabelEdits`).
   - `subjects.go` — the whole subject surface, read and write. Reads: `ListSubjects`/`GetSubject`/
     `SubjectPhotos` + `DecodeSubjects`/`DecodeSubject`/`FetchSubject`. The envelope is a **bare
     `{"subjects":[…]}`**; a subject's gallery, however, **has the `/photos` shape**, so it is read by
@@ -3785,6 +3797,59 @@ to `## Package map` in `CLAUDE.md`.
     exclusive set/clear pairs, the star range, the flag, the coordinates) → `ErrNoOperations`,
     `ErrConflictingOperations`, `ErrInvalidLocation`. `DecodeBulkResult` reads `{results,counts}` (a fourth
     shape). `ParseLocation("lat,lng")`.
+  - `stacks.go` — the manual grouping of the several files one shot was stored as: `StackPhotos`
+    (`POST /photos/stack`), `SetStackPrimary`, `UnstackPhoto`, `UnstackAll` (the three per-photo verbs) +
+    `DecodeStack`/`WriteStack`. All four answer with a **photo detail**, so `Stack` decodes only the part that
+    is the result — the photo, its `stack_uid` and the whole `stack_members` strip — while `-o json` still
+    passes the full response through. A selection is normalised and de-duplicated before it is counted, so a
+    uid given twice is one photo and is refused as `ErrStackTooSmall` rather than becoming a puzzling `400`.
+    An unstacked photo renders as one line, not an empty table: after `ungroup` that *is* the result. Nothing
+    here merges — every member keeps its uid, its file and its metadata.
+  - `imageedit.go` — the **non-destructive image edit** (`GET`/`PUT /photos/{uid}/edit`), which is not
+    `edit.go`: that one writes the photo's metadata, this one how the library renders it. `GetImageEdit`/
+    `FetchImageEdit`, `SetImageEdit`, `ResetImageEdit` + `DecodeImageEdit`/`WriteImageEdit`. **`SetImageEdit`
+    reads before it writes**: `PUT` replaces the whole edit, so a body carrying only a rotation would silently
+    drop an existing crop. `ImageEditPatch` is pointers plus a separate `ClearCrop`, because a `nil` crop
+    already means "do not touch it"; `imageEditBody` always states all seven fields, the crop as four explicit
+    nulls when there is none. `ResetImageEdit` writes the neutral edit **outright and reads nothing first** —
+    a reset is a write, and only a write makes the thumbnail cache re-render. `Crop`/`ParseCrop` read and print
+    `x,y,w,h` as fractions of the image; the rotation allow-list and the `[-1,1]` adjustment range mirror
+    `internal/photoapi` so a typo costs neither a round trip nor an audit entry (`ErrInvalidRotation`,
+    `ErrInvalidAdjustment`, `ErrInvalidCrop`, `ErrNoImageEdits`). `WriteImageEdit` says outright when an edit
+    is neutral, since a table of zeroes cannot otherwise be told from "nobody has edited this".
+  - `savedsearch.go` — the per-user "smart albums": `ListSavedSearches`/`GetSavedSearch`/`CreateSavedSearch`/
+    `UpdateSavedSearch`/`DeleteSavedSearch` + `DecodeSavedSearches`/`DecodeSavedSearch` and
+    `WriteSavedSearches`/`WriteSavedSearch`. A fifth envelope, `{"saved_searches":[…]}`. **This is the one
+    update that needs no read first**: `PATCH /saved-searches/{uid}` genuinely merges, so an omitted field is
+    left alone server-side. The stored `params` is the flat string map the app serialises into its URL, which
+    is why `ParseSearchParams` refuses anything but a JSON object of strings — a number stored here is a saved
+    search the web UI cannot open — and `ParseSearchParam` reads one repeated `key=value` (the value may hold
+    `=`). A search that is missing **or somebody else's** answers `404`, never `403`, so `notYours` rewrites
+    exactly that status into `*NotYoursError`, which names both readings; every other status passes through as
+    the server's own `*StatusError`.
+  - `similar.go` — `ListSimilar` (`GET /photos/{uid}/similar`) + `DecodeSimilar`/`WriteSimilar`. Every row
+    carries its cosine distance, because without it a neighbour list is just a list. A limit the server would
+    silently clamp is refused instead (`ErrInvalidSimilarLimit`), so a caller asking for 500 learns it cannot
+    have them; a limit of `0` sends no parameter at all. An empty answer is not an error and not a claim: a
+    photo the box has not embedded yet, and an instance with no embeddings backend, both answer `200` with an
+    empty list, which the renderer says out loud.
+  - `duplicates.go` — the read-only scan and the two opinions: `ListDuplicates` (`GET /duplicates`, paged) +
+    `DecodeDuplicates`/`WriteDuplicates`, and `ConfirmDuplicate`/`UnconfirmDuplicate`/`DismissDuplicate`/
+    `UndismissDuplicate` over `/feedback/duplicate-{confirmations,dismissals}` (`204`, idempotent, the DELETE
+    half carrying a body). **Merging is not here**: resolving a group into a keeper archives photos and stays
+    with the guarded local commands. The pair is unordered server-side; a pair naming one photo twice is
+    refused locally (`ErrSameDuplicatePhoto`). The table prints **one row per member**, since the member uids
+    are what confirm and dismiss take, and each distance names its detector — a Hamming distance between
+    perceptual hashes and a cosine distance between embeddings are not the same number.
+  - `comments.go` — `ListComments`/`AddComment` + `DecodeComments`/`DecodeComment` and `WriteComments`/
+    `WriteComment`. **The author is always the token's owner** — the API takes it from the authenticated
+    principal and the audit trail records it there too — which is why the MCP server exposes no comment tool
+    at all and why `ctl`'s help says to write only under your own account. Every role may write, viewers
+    included: a comment is participation, not curation. The thread renders as **prose, not a table**: one
+    header line per comment and the body indented whole underneath, because a comment is often the only record
+    of who, where and when, and a column width would cut off the answer somebody came for. `MaxCommentLen`
+    mirrors `comments.MaxBodyLen` rather than importing it, so `ctl` links none of the server's domain
+    packages; the server enforces it either way (`ErrEmptyComment`, `ErrCommentTooLong`).
   - `uids.go` — `ParsePhotoUIDs(r)` reads a set of photos from stdin in **four** shapes: the envelope
     `{"photos":[…]}` (exactly what `ctl photos list -o json` prints), a bare JSON array of uids, a bare array of
     objects with a `uid`, or a plain whitespace-separated list. `NormalizeUIDs` trims, drops the empty ones
@@ -3831,16 +3896,19 @@ to `## Package map` in `CLAUDE.md`.
     path with its size and type in `-o json`/`-o llm`.
     An empty result = the single line `no photos found`, no header — so that an agent does not mistake a header
     for a row.
-  - `render.go` — `WriteAlbums`/`WriteAlbum`, `WriteLabels`/`WriteLabel`, `WriteSubjects` (both counts,
+  - `render.go` — `NamedUID` (**`Name (uid)`** — the way every command that must name a record reports one,
+    because a uid alone is unreadable and a name alone cannot be passed to the next command; `SubjectLabel`
+    is its person-shaped alias), `formatDistance` (three decimals, the precision
+    [`docs/THRESHOLDS.md`](THRESHOLDS.md) states its thresholds to),
+    `WriteAlbums`/`WriteAlbum`, `WriteLabels`/`WriteLabel`, `WriteSubjects` (both counts,
     `PHOTOS` and `MARKERS`, because they answer different questions)/`WriteSubject` (the life years
     among them, dashed when unknown — `subjects create` writes them and has to print back what it stored),
     `WriteMembership` (one line: how many photos the album now holds), `WriteBulkResult` (a summary + a table of
     the failed photos **only**) and `WriteAck`. `Ack` is the payload the CLI **makes up itself**: where
     the API answers `204` there is nothing to pass through unchanged, so `-o json` (and `-o llm`) gets
     `{"status":"ok","message":…}` and the pipeline can tell success from failure.
-  - `recognition.go` — the renderers of the face surface: `SubjectLabel` (**`Name (uid)`** — every recognition
-    command reports a person that way, because a uid alone is unreadable and a name alone cannot be passed to
-    the next command), `WriteFaceList` (a row per detection: who it names, its marker, the detector score, the
+  - `recognition.go` — the renderers of the face surface: `SubjectLabel` (`NamedUID` under a name that says
+    it is a person), `WriteFaceList` (a row per detection: who it names, its marker, the detector score, the
     box, the recommended action and the suggested identities with their distances, closed by a summary saying
     how many faces are still unnamed), `WriteFaceAssign` (a detach says *`names nobody`* outright rather than
     printing an empty name), `WriteClusters`/`WriteClusterAssign`/`WriteClusterRemoval`, and

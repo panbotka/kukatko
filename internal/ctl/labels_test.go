@@ -220,3 +220,125 @@ func TestClient_DetachLabel(t *testing.T) {
 		t.Errorf("body = %v, want just the photo uid", gotBody)
 	}
 }
+
+// TestClient_UpdateLabel verifies the update reads the label first and sends the
+// whole record back, so a rename does not silently reset the priority or switch
+// the review game off.
+func TestClient_UpdateLabel(t *testing.T) {
+	t.Parallel()
+
+	var methods []string
+	var gotBody map[string]any
+	client := testClient(t, "kkt_a_b", func(w http.ResponseWriter, r *http.Request) {
+		methods = append(methods, r.Method)
+		if r.Method == http.MethodGet {
+			w.Write([]byte(`{"uid":"lbl01","name":"Sunset","priority":7,"review_enabled":true}`))
+			return
+		}
+		json.NewDecoder(r.Body).Decode(&gotBody)
+		w.Write([]byte(`{"uid":"lbl01","name":"Dusk","priority":7,"review_enabled":true}`))
+	})
+
+	name := "Dusk"
+	raw, err := client.UpdateLabel(t.Context(), "lbl01", LabelPatch{Name: &name})
+	if err != nil {
+		t.Fatalf("UpdateLabel returned %v", err)
+	}
+	if len(methods) != 2 || methods[0] != http.MethodGet || methods[1] != http.MethodPatch {
+		t.Fatalf("requests = %v, want a GET then a PATCH", methods)
+	}
+	if gotBody["name"] != "Dusk" {
+		t.Errorf("body name = %v, want the new one", gotBody["name"])
+	}
+	if gotBody["priority"] != float64(7) || gotBody["review_enabled"] != true {
+		t.Errorf("body = %v, want the stored priority and review setting carried across", gotBody)
+	}
+	label, err := DecodeLabel(raw)
+	if err != nil || label.Name != "Dusk" || !label.ReviewEnabled {
+		t.Errorf("DecodeLabel = %+v, %v, want the refreshed label", label, err)
+	}
+}
+
+// TestClient_UpdateLabel_priorityZero verifies an explicit priority of 0 is sent
+// as a value, not dropped as an absence.
+func TestClient_UpdateLabel_priorityZero(t *testing.T) {
+	t.Parallel()
+
+	var gotBody map[string]any
+	client := testClient(t, "kkt_a_b", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Write([]byte(`{"uid":"lbl01","name":"Sunset","priority":7,"review_enabled":false}`))
+			return
+		}
+		json.NewDecoder(r.Body).Decode(&gotBody)
+		w.Write([]byte(`{"uid":"lbl01","name":"Sunset"}`))
+	})
+
+	priority := 0
+	if _, err := client.UpdateLabel(t.Context(), "lbl01", LabelPatch{Priority: &priority}); err != nil {
+		t.Fatalf("UpdateLabel returned %v", err)
+	}
+	if value, sent := gotBody["priority"]; !sent || value != float64(0) {
+		t.Errorf("body priority = %v (sent %v), want an explicit zero", value, sent)
+	}
+	if gotBody["review_enabled"] != false {
+		t.Errorf("body = %v, want the stored review setting carried across", gotBody)
+	}
+}
+
+// TestClient_UpdateLabel_invalid verifies an empty patch and a blank name are
+// caught client-side.
+func TestClient_UpdateLabel_invalid(t *testing.T) {
+	t.Parallel()
+
+	client := testClient(t, "kkt_a_b", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("the server was contacted with %s despite invalid input", r.Method)
+			return
+		}
+		w.Write([]byte(`{"uid":"lbl01","name":"Sunset"}`))
+	})
+	if _, err := client.UpdateLabel(t.Context(), "lbl01", LabelPatch{}); !errors.Is(err, ErrNoLabelEdits) {
+		t.Errorf("empty patch error = %v, want ErrNoLabelEdits", err)
+	}
+	blank := " "
+	_, err := client.UpdateLabel(t.Context(), "lbl01", LabelPatch{Name: &blank})
+	if !errors.Is(err, ErrEmptyName) {
+		t.Errorf("blank name error = %v, want ErrEmptyName", err)
+	}
+}
+
+// TestClient_DeleteLabel verifies the verb and the path.
+func TestClient_DeleteLabel(t *testing.T) {
+	t.Parallel()
+
+	var gotMethod, gotPath string
+	client := testClient(t, "kkt_a_b", func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotPath = r.Method, r.URL.Path
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	if err := client.DeleteLabel(t.Context(), "lbl01"); err != nil {
+		t.Fatalf("DeleteLabel returned %v", err)
+	}
+	if gotMethod != http.MethodDelete || gotPath != "/api/v1/labels/lbl01" {
+		t.Errorf("request = %s %s, want DELETE on the label path", gotMethod, gotPath)
+	}
+	if err := client.DeleteLabel(t.Context(), ""); !errors.Is(err, ErrEmptyUID) {
+		t.Errorf("blank uid error = %v, want ErrEmptyUID", err)
+	}
+}
+
+// TestClient_DescribeLabel verifies a destructive command can name what it is
+// about to remove.
+func TestClient_DescribeLabel(t *testing.T) {
+	t.Parallel()
+
+	client := testClient(t, "kkt_a_b", func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte(`{"uid":"lbl01","name":"Sunset"}`))
+	})
+	which, err := client.DescribeLabel(t.Context(), "lbl01")
+	if err != nil || which != "Sunset (lbl01)" {
+		t.Errorf("DescribeLabel = %q, %v, want the named label", which, err)
+	}
+}

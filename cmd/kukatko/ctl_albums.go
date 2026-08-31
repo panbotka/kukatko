@@ -16,10 +16,11 @@ import (
 func newCtlAlbumsCmd(opts *ctlOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "albums",
-		Short: "List, inspect, create albums and edit their membership",
+		Short: "List, inspect, create, edit and delete albums and their membership",
 	}
 	cmd.AddCommand(
 		newCtlAlbumsListCmd(opts), newCtlAlbumsGetCmd(opts), newCtlAlbumsCreateCmd(opts),
+		newCtlAlbumsUpdateCmd(opts), newCtlAlbumsDeleteCmd(opts),
 		newCtlAlbumsAddPhotosCmd(opts), newCtlAlbumsRemovePhotosCmd(opts),
 	)
 	return cmd
@@ -179,4 +180,95 @@ func newCtlAlbumMembershipCmd(opts *ctlOptions, spec membershipSpec) *cobra.Comm
 	}
 	addConfirmFlag(cmd, &assumeYes)
 	return cmd
+}
+
+// newCtlAlbumsUpdateCmd builds "ctl albums update <uid>", the flag-per-field edit
+// of an album's title, description, cover and privacy.
+func newCtlAlbumsUpdateCmd(opts *ctlOptions) *cobra.Command {
+	var (
+		title       string
+		description string
+		cover       string
+		private     bool
+	)
+	cmd := &cobra.Command{
+		Use:   "update <uid>",
+		Short: "Rename an album or change its description, cover or privacy (editor or admin)",
+		Long: "Edit an album's title, description, cover photo or privacy.\n\n" +
+			"Only the flags you actually write are changed: the command reads the album\n" +
+			"first and sends the rest back untouched, because PATCH /albums/{uid} rewrites\n" +
+			"the whole record and a body that omitted the description would empty it.\n\n" +
+			"An album's structural type (folder, moment, …) is not editable — the server\n" +
+			"generates those groupings — so there is no flag for it. `--cover \"\"` removes\n" +
+			"the cover photo. The photos stay where they are either way.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, out, err := opts.resolve()
+			if err != nil {
+				return err
+			}
+			patch := ctl.AlbumPatch{
+				Title:       optionalString(cmd, "title", title),
+				Description: optionalString(cmd, "description", description),
+				Cover:       optionalString(cmd, "cover", cover),
+				Private:     optionalBool(cmd, "private", private),
+			}
+			raw, err := client.UpdateAlbum(cmd.Context(), args[0], patch)
+			if err != nil {
+				return fmt.Errorf("updating album %s: %w", args[0], err)
+			}
+			return renderAlbum(cmd.OutOrStdout(), out, raw)
+		},
+	}
+	flags := cmd.Flags()
+	flags.StringVar(&title, "title", "", "new album title")
+	flags.StringVar(&description, "description", "", "new album description")
+	flags.StringVar(&cover, "cover", "", `uid of the cover photo; "" removes the cover`)
+	flags.BoolVar(&private, "private", false, "hide the album from non-owners (--private=false unhides)")
+	return cmd
+}
+
+// newCtlAlbumsDeleteCmd builds "ctl albums delete <uid>".
+func newCtlAlbumsDeleteCmd(opts *ctlOptions) *cobra.Command {
+	var assumeYes, dryRun bool
+	cmd := &cobra.Command{
+		Use:   "delete <uid>",
+		Short: "Delete an album, leaving its photos alone (editor or admin)",
+		Long: "Delete an album.\n\n" +
+			"The photos survive: an album is a grouping, so deleting it deletes only the\n" +
+			"grouping. What is lost is the curation — which photos somebody chose, and the\n" +
+			"order they chose them in — and that cannot be rebuilt from the library. Pass\n" +
+			"--yes to confirm, or --dry-run to see which album would go.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAlbumDelete(cmd, opts, args[0], assumeYes, dryRun)
+		},
+	}
+	addIrreversibleFlags(cmd, &assumeYes, &dryRun)
+	return cmd
+}
+
+// runAlbumDelete names the album before removing it, so the confirmation says
+// which album went rather than which uid did.
+func runAlbumDelete(cmd *cobra.Command, opts *ctlOptions, uid string, assumeYes, dryRun bool) error {
+	client, out, err := opts.resolve()
+	if err != nil {
+		return err
+	}
+	which, err := client.DescribeAlbum(cmd.Context(), uid)
+	if err != nil {
+		return fmt.Errorf("fetching album %s: %w", uid, err)
+	}
+	action := "delete album " + which
+	if dryRun {
+		return renderAck(cmd.OutOrStdout(), out,
+			"dry run: would "+action+"; its photos would stay in the library, nothing was changed")
+	}
+	if err := confirmIrreversible(assumeYes, action); err != nil {
+		return err
+	}
+	if err := client.DeleteAlbum(cmd.Context(), uid); err != nil {
+		return fmt.Errorf("deleting album %s: %w", uid, err)
+	}
+	return renderAck(cmd.OutOrStdout(), out, "album "+which+" deleted; its photos stayed in the library")
 }

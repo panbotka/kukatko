@@ -147,16 +147,6 @@ func newCtlSubjectsCreateCmd(opts *ctlOptions) *cobra.Command {
 	return cmd
 }
 
-// optionalInt returns a pointer to value only when the named flag was actually
-// given, so an unset year reaches the API as "unknown" rather than as the year 0
-// its validation would refuse.
-func optionalInt(cmd *cobra.Command, name string, value int) *int {
-	if !cmd.Flags().Changed(name) {
-		return nil
-	}
-	return &value
-}
-
 // newCtlSubjectsRenameCmd builds "ctl subjects rename <uid> <name>".
 func newCtlSubjectsRenameCmd(opts *ctlOptions) *cobra.Command {
 	return &cobra.Command{

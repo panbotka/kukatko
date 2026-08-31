@@ -477,6 +477,7 @@ Neither one prints a stack trace, the response body, or the token.
 | `ctl photos image <uid>` | saves a rendition to a file and prints the path |
 | `ctl photos edit <uid>` | `PATCH /photos/{uid}` — the whole editable metadata surface (`editor`/`admin`) |
 | `ctl photos faces <uid>` | `GET /photos/{uid}/faces` — the detections, their markers, and who they might be |
+| `ctl photos similar <uid>` | `GET /photos/{uid}/similar` — the visual neighbours with their cosine distance; `--limit` 1…100 |
 
 Together `get`, `image` and `edit` are the loop an agent needs per photo: **read it whole, look at it,
 write the evaluation back** — one command per step instead of three raw HTTP calls. `faces` opens the
@@ -600,6 +601,8 @@ require `editor`/`admin`**.
 | `ctl albums list` | `GET /albums` — a **bare `{"albums":[…]}`, no pagination**, each album with a photo count |
 | `ctl albums get <uid>` | `GET /albums/{uid}`; the detail **does not send** `photo_count`, so the column is absent |
 | `ctl albums create <title>` | `POST /albums`; `--description`, `--type`, `--order-by`, `--cover`, `--private` |
+| `ctl albums update <uid>` | `PATCH /albums/{uid}`; `--title`, `--description`, `--cover`, `--private` |
+| `ctl albums delete <uid>` | `DELETE /albums/{uid}` — needs `--yes`; the photos stay |
 | `ctl albums add-photos <album-uid> [<photo-uid>…]` | `POST /albums/{uid}/photos` — appends **after** the existing ones |
 | `ctl albums remove-photos <album-uid> [<photo-uid>…]` | `DELETE /albums/{uid}/photos`; a non-member = no-op |
 
@@ -607,6 +610,16 @@ require `editor`/`admin`**.
 manually, the server generates the rest. `add-photos`/`remove-photos` read uids from arguments, or **from
 stdin** when there are none (see *Large batches* below), and send them in **one** request.
 In a table they print one line (`album alb1a2b3 now holds 12 photos`), `-o json` the whole new order.
+
+**`update` reads the album before it writes**, exactly like `ctl subjects rename` and for the same reason:
+`PATCH /albums/{uid}` rewrites the whole record, so a body carrying only a new title would empty the
+description and clear the cover. Only the flags you actually write change; `--cover ""` is how you say "no
+cover", and there is no `--type` because the structural type is not user-editable. An `update` naming no flag
+is refused locally rather than rewriting the row and writing an audit entry for nothing.
+
+**`delete` refuses without `--yes`** and offers `--dry-run`, like the subject commands: the photos survive —
+an album is a grouping — but *which* photos somebody chose cannot be rebuilt from the library. It resolves
+the album first, so the confirmation reads `Trip (alb1a2b3)` rather than a bare uid.
 
 #### `ctl labels`
 
@@ -617,11 +630,19 @@ Labels and attaching them to photos (`internal/organizeapi`). Anyone may list; t
 | `ctl labels list` | `GET /labels` — a **bare `{"labels":[…]}`**, ordered by priority |
 | `ctl labels get <uid>` | `GET /labels/{uid}` |
 | `ctl labels create <name>` | `POST /labels`; `--priority` |
+| `ctl labels update <uid>` | `PATCH /labels/{uid}`; `--name`, `--priority`, `--review[=false]` |
+| `ctl labels delete <uid>` | `DELETE /labels/{uid}` — needs `--yes`; the photos stay |
 | `ctl labels attach <label-uid> <photo-uid>` | `POST /labels/{uid}/photos`; `--source`, `--uncertainty` |
 | `ctl labels detach <label-uid> <photo-uid>` | `DELETE /labels/{uid}/photos`; a non-attached one = no-op |
 
 `--source` is `manual` (default), `ai`, or `import`. If omitted it is **not sent** in the body, so the
 server fills in its own default.
+
+`update` reads the label first for the same reason `albums update` does — a body carrying only a new name
+would reset the priority to zero — and `--review=false` takes the label out of the review game
+([`internal/review`](PACKAGES.md)) without touching anything else. `delete` needs `--yes` and offers
+`--dry-run`; the photos survive and simply stop carrying the label, but which photos somebody decided it
+applied to is gone, and re-creating a label of the same name re-attaches none of them.
 
 #### `ctl subjects`
 
@@ -712,6 +733,141 @@ kukatkoctl clusters assign clu1a2b3 sub1a2b3            # twelve photos named at
 kukatkoctl subjects merge sub9z8y7 sub1a2b3 --dry-run   # the same person recorded twice
 ```
 
+#### `ctl stacks`
+
+Grouping the several files one shot was stored as — a RAW beside its JPEG, an edit beside its original —
+into a single tile (`internal/stacks`). All of it `editor`/`admin`.
+
+**A stack groups, it never merges.** Every member keeps its own uid, its own file and its own metadata; the
+group only decides which of them a listing, a search and the map show. That is why ungrouping loses nothing
+and why none of these commands deletes anything.
+
+| Command | Meaning |
+| --- | --- |
+| `ctl stacks group <photo-uid> <photo-uid> […]` | `POST /photos/stack` — the manual path, for the pairs the rules miss |
+| `ctl stacks set-primary <photo-uid>` | `POST /photos/{uid}/stack/primary` — which variant the stack is shown as |
+| `ctl stacks ungroup <photo-uid>` | `POST /photos/{uid}/unstack` — one member leaves, the rest stay grouped |
+| `ctl stacks ungroup-all <photo-uid>` | `POST /photos/{uid}/unstack-all` — the whole group dissolves |
+
+All four answer with the affected photo's **detail**, so the output is the resulting variants strip: one row
+per member with the primary marked, closed by `stack stk1a2b3 groups 2 photos; each keeps its own file and
+metadata`. After `ungroup` the photo is standalone, and the table would be empty — so it prints
+`photo pht01h2j3 is not stacked` instead, which is the whole result. A group of fewer than two photos is
+refused locally (a uid given twice is one photo, not two), and an instance with stacking switched off answers
+`503`.
+
+#### `ctl edits` — the non-destructive image edit
+
+**Not `ctl photos edit`.** That writes the photo's *metadata* (title, date, place); this writes how the
+library *renders* it — crop, rotation, brightness, contrast (`internal/photoedit`). The original file is
+never rewritten either way. Reading needs any role, writing `editor`/`admin`.
+
+| Command | Meaning |
+| --- | --- |
+| `ctl edits get <uid>` | `GET /photos/{uid}/edit` — the stored edit, or the neutral one |
+| `ctl edits set <uid>` | `PUT /photos/{uid}/edit`; `--crop`, `--clear-crop`, `--rotate`, `--brightness`, `--contrast` |
+| `ctl edits reset <uid>` | `PUT` the neutral edit — a reset, and a real write |
+
+`--crop` takes `x,y,w,h` as fractions of the whole image (`0.1,0.1,0.8,0.8`), so the same rectangle survives
+a thumbnail of any size; `--clear-crop` removes it and leaves the rest alone. `--rotate` is `0`/`90`/`180`/
+`270` clockwise and the two adjustments run `-1`…`1`, neutral at `0` — all three are checked locally, so a
+typo costs neither a round trip nor an audit entry.
+
+**`set` reads the stored edit first** and sends the merged record back, because `PUT` replaces the whole edit
+and a body carrying only a rotation would silently drop an existing crop. An argument-less `set` is refused
+and names `reset`, which is the deliberate way to clear everything.
+
+**A reset is a write, not the absence of one.** The thumbnails the grid, the search results and the map show
+were rendered through the previous edit and are cached against the original's hash, so only saving the
+neutral edit actually puts the photo back the way the file has it. `get` says `NEUTRAL yes` outright, because
+a table of zeroes cannot otherwise be told from "nobody has edited this photo".
+
+#### `ctl saved-searches` — smart albums
+
+Named library views, stored per user (`internal/savedsearchapi`). Alias: `smart-albums`. Any signed-in role
+may keep their own — a saved search curates nobody else's view — so there is no `editor` check.
+
+| Command | Meaning |
+| --- | --- |
+| `ctl saved-searches list` | `GET /saved-searches` — a **bare `{"saved_searches":[…]}`**, newest first |
+| `ctl saved-searches get <uid>` | `GET /saved-searches/{uid}`; the stored view spelled out one key per row |
+| `ctl saved-searches create <name>` | `POST /saved-searches`; `--param k=v` (repeatable) or `--params '<json>'` |
+| `ctl saved-searches update <uid>` | `PATCH /saved-searches/{uid}`; `--name`, `--param`/`--params` |
+| `ctl saved-searches delete <uid>` | `DELETE /saved-searches/{uid}` — no photo is touched, so no confirmation |
+
+The stored view is the flat key/value object the app puts in its URL — the filters, the sort, the query `q`
+and the search `mode` — so a search written here **opens in the web UI exactly as you wrote it**. Every value
+must be a string; `--params '{"year":2024}'` is refused rather than stored as a view the app cannot open.
+`--param` and `--params` are mutually exclusive, and the view is always replaced whole, never merged into.
+
+**This is the one `ctl` update that needs no read first:** `PATCH /saved-searches/{uid}` genuinely merges, so
+an omitted field is left alone server-side.
+
+**They are strictly yours.** A saved search belonging to somebody else answers `404` — never `403`, which
+would confirm it exists — so a bare status cannot tell "gone" from "not yours". `ctl` says both:
+
+```
+Error: fetching saved search sav9z8y7: saved search sav9z8y7 is not yours: it either does not exist or
+belongs to another user, and the server never says which.
+`ctl saved-searches list` shows the ones you own.
+```
+
+#### `ctl duplicates`
+
+The groups of photos the library thinks are the same shot (`internal/duplicates`), and the two opinions a
+human can record about a pair (`internal/feedbackapi`). All of it `editor`/`admin`.
+
+| Command | Meaning |
+| --- | --- |
+| `ctl duplicates list` | `GET /duplicates`; `--limit`/`--offset`, confirmed groups first |
+| `ctl duplicates confirm <a> <b>` | `POST /feedback/duplicate-confirmations` — "yes, the same shot" |
+| `ctl duplicates unconfirm <a> <b>` | `DELETE` the same (undo) |
+| `ctl duplicates dismiss <a> <b>` | `POST /feedback/duplicate-dismissals` — "no, these are different photos" |
+| `ctl duplicates undismiss <a> <b>` | `DELETE` the same (undo) |
+
+**Nothing here merges or archives anything.** Resolving a group by merging the copies into a keeper is
+destructive, and like backups and maintenance it stays off the network — see *What `ctl` deliberately cannot
+do*. Confirming and dismissing are opinions: one ranks a group up the duplicates page, the other stops the
+pair being offered again. **They are opposites**, both idempotent, both undoable, and the pair is unordered.
+
+`list` prints **one row per member**, because the member uids are what `confirm` and `dismiss` take.
+`DISTANCE` names the detector that measured it (`phash 2`, `cos 0.013`): a Hamming distance between
+perceptual hashes and a cosine distance between embeddings are not the same number. An instance with
+detection switched off answers `503`.
+
+#### `ctl comments`
+
+A photo's conversation (`internal/comments`). Every signed-in role may read a thread and write into one — a
+comment is participation, not curation.
+
+| Command | Meaning |
+| --- | --- |
+| `ctl comments list <photo-uid>` | `GET /photos/{uid}/comments` — the whole thread, oldest first |
+| `ctl comments add <photo-uid> <text>` | `POST /photos/{uid}/comments` — plain text, at most 2000 characters |
+
+**Reading matters most.** A thread is often the only record of who is on a photo, where it was taken and
+when — which is exactly what dating an undated photo needs. So it renders as **prose, not a table**: one
+header line per comment (`2024-05-01 10:22  Anna Nováková (usr01)  cmt1a2b3`) and the body indented whole
+below it, nothing elided. A photo with no thread — and a photo that does not exist — both print
+`no comments on this photo`.
+
+**Write only under your own account.** The author is whoever the API token belongs to: the server takes it
+from the authenticated principal and the audit trail records it there too. Commenting through a person's
+token puts words in that person's mouth, in the one place in the library whose whole value is that it says
+who remembered what. That is why the **MCP server exposes no comment tool at all**; `ctl` may have one
+because an agent's account is a distinct one. The route is rate limited per user (`429`).
+
+```bash
+kukatkoctl photos similar pht01h2j3 --limit 10          # what else looks like this?
+kukatkoctl duplicates list -o llm
+kukatkoctl duplicates dismiss pht01h2j3 pht09z8y7       # no, two different photos of the same wall
+kukatkoctl stacks group pht01h2j3 pht09z8y7             # the JPEG and its RAW, one tile
+kukatkoctl edits set pht01h2j3 --rotate 90              # it was scanned sideways
+kukatkoctl edits reset pht01h2j3                        # and back, thumbnails rebuilt
+kukatkoctl comments list pht01h2j3                      # who remembers what about this photo
+kukatkoctl saved-searches create "Nedatované" --param q="taken:unknown" --param sort=oldest
+```
+
 #### `ctl favorites` and `ctl rating`
 
 Favorites and ratings are both **per-user**, not global: the token scopes them, not a parameter. So **even a viewer**
@@ -797,6 +953,10 @@ kukatkoctl photos list --year 2019 -o json | kukatkoctl bulk --archive --yes
 Backups, restore, migrations, maintenance, import, and the job queue are **not offered over the network**. They are destructive or
 long-running and belong on the machine where the instance runs — so they remain only as local subcommands
 (`kukatko backup`, `restore`, `migrate`, `maintenance`, `import`, …).
+
+**Resolving a duplicate group is on that list too.** `POST /duplicates/merge` moves everything the copies
+carried onto a keeper and archives them, which no agent should be able to do down a pipe;
+[`ctl duplicates`](#ctl-duplicates) therefore offers the scan and the two opinions, and nothing that merges.
 
 ## Configuration keys
 

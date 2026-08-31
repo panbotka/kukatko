@@ -253,6 +253,20 @@ were written.
   read it whole (`get` — who is on it, and the text the recogniser read in it), actually look at it
   (`image`, streamed to a file), and write the evaluation back (`edit`) — with `--dry-run` to show
   its intent first, and `-o llm` to spend a fraction of the tokens the raw JSON would.
+- **And the rest of the curation, too.** Albums and labels can be renamed, re-described and removed,
+  not merely created; the several files one shot was stored as can be grouped into one tile and
+  ungrouped again (a stack **groups, it never merges** — every file keeps its own metadata); a
+  photo's crop, rotation, brightness and contrast can be read and rewritten without ever touching
+  the original; smart albums can be saved, edited and deleted; a photo's visual neighbours can be
+  listed with how alike they are, and a pair of them settled as the same shot or as two different
+  ones. Deleting an album or a label refuses without an explicit `--yes` and offers a `--dry-run`
+  first, and merging duplicates — the one thing here that destroys something — is deliberately not
+  offered over the network at all.
+- **The conversation is readable from the terminal.** A photo's comment thread is often the only
+  record of who is on it and when it was taken, so it can be read whole — bodies printed in full,
+  not cut to a column — and written into. An agent writes under **its own account**, because the
+  audit trail records the token's owner as the author and nobody should be able to put words in
+  somebody else's mouth.
 - **Naming people from the terminal too.** The whole recognition surface is there: list a photo's
   faces with the identities the machine suggests, attach one to a person (by name, which creates them
   if need be) or detach it, name a whole cluster of unnamed faces in one command, and record that a

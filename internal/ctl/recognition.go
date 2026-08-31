@@ -17,16 +17,7 @@ const suggestWidth = 34
 // because the name is what the next command cannot be given. An unnamed face is
 // a dash — it is not "a person called nothing".
 func SubjectLabel(name, uid string) string {
-	switch {
-	case name != "" && uid != "":
-		return name + " (" + uid + ")"
-	case name != "":
-		return name
-	case uid != "":
-		return uid
-	default:
-		return "-"
-	}
+	return NamedUID(name, uid)
 }
 
 // formatBBox renders a normalised box as origin and size, at the three decimals a
@@ -80,7 +71,7 @@ func formatSuggestions(suggestions []FaceSuggestion) string {
 	parts := make([]string, 0, len(suggestions))
 	for _, suggestion := range suggestions {
 		parts = append(parts, suggestion.SubjectName+" "+
-			strconv.FormatFloat(suggestion.Distance, 'f', 3, 64))
+			formatDistance(suggestion.Distance))
 	}
 	return strings.Join(parts, ", ")
 }
@@ -150,7 +141,7 @@ func formatClusterSuggestion(suggestion *FaceSuggestion) string {
 		return "-"
 	}
 	return SubjectLabel(suggestion.SubjectName, suggestion.SubjectUID) +
-		" " + strconv.FormatFloat(suggestion.Distance, 'f', 3, 64)
+		" " + formatDistance(suggestion.Distance)
 }
 
 // WriteClusterAssign renders the outcome of naming a whole cluster: who it became

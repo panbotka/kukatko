@@ -261,3 +261,139 @@ func TestDecodeAlbums_invalid(t *testing.T) {
 		t.Error("DecodePhotoUIDs of malformed JSON returned no error")
 	}
 }
+
+// TestClient_UpdateAlbum verifies the update reads the album first and sends the
+// whole record back, so the fields the caller did not name survive an endpoint
+// that rewrites everything it is given.
+func TestClient_UpdateAlbum(t *testing.T) {
+	t.Parallel()
+
+	var methods []string
+	var gotBody map[string]any
+	client := testClient(t, "kkt_a_b", func(w http.ResponseWriter, r *http.Request) {
+		methods = append(methods, r.Method)
+		if r.Method == http.MethodGet {
+			w.Write([]byte(`{"uid":"alb01","title":"Trip","description":"Summer",
+				"type":"moment","private":true,"cover_photo_uid":"pht09"}`))
+			return
+		}
+		json.NewDecoder(r.Body).Decode(&gotBody)
+		w.Write([]byte(`{"uid":"alb01","title":"Journey","description":"Summer"}`))
+	})
+
+	title := "Journey"
+	raw, err := client.UpdateAlbum(t.Context(), "alb01", AlbumPatch{Title: &title})
+	if err != nil {
+		t.Fatalf("UpdateAlbum returned %v", err)
+	}
+	if len(methods) != 2 || methods[0] != http.MethodGet || methods[1] != http.MethodPatch {
+		t.Fatalf("requests = %v, want a GET then a PATCH", methods)
+	}
+	if gotBody["title"] != "Journey" {
+		t.Errorf("body title = %v, want the new one", gotBody["title"])
+	}
+	if gotBody["description"] != "Summer" || gotBody["private"] != true ||
+		gotBody["cover_photo_uid"] != "pht09" {
+		t.Errorf("body = %v, want the untouched fields carried across", gotBody)
+	}
+	if _, sent := gotBody["type"]; sent {
+		t.Errorf("body = %v, want no type: it is not user-editable and the server preserves it", gotBody)
+	}
+	album, err := DecodeAlbum(raw)
+	if err != nil || album.Title != "Journey" {
+		t.Errorf("DecodeAlbum = %+v, %v, want the refreshed album", album, err)
+	}
+}
+
+// TestClient_UpdateAlbum_clearCover verifies a blank --cover travels as an
+// explicit null, which is the only way to say "no cover" to a whole-record write.
+func TestClient_UpdateAlbum_clearCover(t *testing.T) {
+	t.Parallel()
+
+	var gotBody map[string]json.RawMessage
+	client := testClient(t, "kkt_a_b", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Write([]byte(`{"uid":"alb01","title":"Trip","cover_photo_uid":"pht09"}`))
+			return
+		}
+		json.NewDecoder(r.Body).Decode(&gotBody)
+		w.Write([]byte(`{"uid":"alb01","title":"Trip"}`))
+	})
+
+	cover := ""
+	if _, err := client.UpdateAlbum(t.Context(), "alb01", AlbumPatch{Cover: &cover}); err != nil {
+		t.Fatalf("UpdateAlbum returned %v", err)
+	}
+	if string(gotBody["cover_photo_uid"]) != "null" {
+		t.Errorf("cover_photo_uid = %s, want an explicit null", gotBody["cover_photo_uid"])
+	}
+}
+
+// TestClient_UpdateAlbum_invalid verifies an empty patch and a patch that would
+// blank the title are both caught before a request is spent.
+func TestClient_UpdateAlbum_invalid(t *testing.T) {
+	t.Parallel()
+
+	blank := "   "
+	tests := []struct {
+		name  string
+		patch AlbumPatch
+		want  error
+		serve bool
+	}{
+		{name: "nothing to change", patch: AlbumPatch{}, want: ErrNoAlbumEdits},
+		{name: "blank title", patch: AlbumPatch{Title: &blank}, want: ErrEmptyTitle, serve: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			client := testClient(t, "kkt_a_b", func(w http.ResponseWriter, r *http.Request) {
+				if !tt.serve || r.Method != http.MethodGet {
+					t.Errorf("the server was contacted with %s despite invalid input", r.Method)
+					return
+				}
+				w.Write([]byte(`{"uid":"alb01","title":"Trip"}`))
+			})
+			if _, err := client.UpdateAlbum(t.Context(), "alb01", tt.patch); !errors.Is(err, tt.want) {
+				t.Errorf("UpdateAlbum error = %v, want %v", err, tt.want)
+			}
+		})
+	}
+}
+
+// TestClient_DeleteAlbum verifies the verb and the path, and that a blank uid is
+// refused before it reads as a list request.
+func TestClient_DeleteAlbum(t *testing.T) {
+	t.Parallel()
+
+	var gotMethod, gotPath string
+	client := testClient(t, "kkt_a_b", func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotPath = r.Method, r.URL.Path
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	if err := client.DeleteAlbum(t.Context(), "alb01"); err != nil {
+		t.Fatalf("DeleteAlbum returned %v", err)
+	}
+	if gotMethod != http.MethodDelete || gotPath != "/api/v1/albums/alb01" {
+		t.Errorf("request = %s %s, want DELETE on the album path", gotMethod, gotPath)
+	}
+	if err := client.DeleteAlbum(t.Context(), " "); !errors.Is(err, ErrEmptyUID) {
+		t.Errorf("blank uid error = %v, want ErrEmptyUID", err)
+	}
+}
+
+// TestClient_DescribeAlbum verifies a destructive command can name what it is
+// about to remove.
+func TestClient_DescribeAlbum(t *testing.T) {
+	t.Parallel()
+
+	client := testClient(t, "kkt_a_b", func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte(`{"uid":"alb01","title":"Trip"}`))
+	})
+	who, err := client.DescribeAlbum(t.Context(), "alb01")
+	if err != nil || who != "Trip (alb01)" {
+		t.Errorf("DescribeAlbum = %q, %v, want the named album", who, err)
+	}
+}

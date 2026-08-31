@@ -188,3 +188,32 @@ func newCtlRatingClearCmd(opts *ctlOptions) *cobra.Command {
 		},
 	}
 }
+
+// optionalBool returns a pointer to value only when the named flag was actually
+// given, so an unset boolean reaches the API as "leave this alone" rather than as
+// a false that would switch something off nobody asked about.
+func optionalBool(cmd *cobra.Command, name string, value bool) *bool {
+	if !cmd.Flags().Changed(name) {
+		return nil
+	}
+	return &value
+}
+
+// optionalInt returns a pointer to value only when the named flag was actually
+// given, so an unset number is not read as a deliberate zero — a year nobody
+// recorded is not the year 0, and a priority nobody set is not priority 0.
+func optionalInt(cmd *cobra.Command, name string, value int) *int {
+	if !cmd.Flags().Changed(name) {
+		return nil
+	}
+	return &value
+}
+
+// optionalFloat returns a pointer to value only when the named flag was actually
+// given, so an unset adjustment is not read as a deliberate neutral one.
+func optionalFloat(cmd *cobra.Command, name string, value float64) *float64 {
+	if !cmd.Flags().Changed(name) {
+		return nil
+	}
+	return &value
+}

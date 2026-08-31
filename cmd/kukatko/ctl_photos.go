@@ -19,6 +19,7 @@ func newCtlPhotosCmd(opts *ctlOptions) *cobra.Command {
 	cmd.AddCommand(
 		newCtlPhotosListCmd(opts), newCtlPhotosGetCmd(opts), newCtlPhotosSearchCmd(opts),
 		newCtlPhotosImageCmd(opts), newCtlPhotosEditCmd(opts), newCtlPhotosFacesCmd(opts),
+		newCtlPhotosSimilarCmd(opts),
 	)
 	return cmd
 }
@@ -171,5 +172,37 @@ func newCtlPhotosSearchCmd(opts *ctlOptions) *cobra.Command {
 	addFilterFlags(cmd, &search.List)
 	cmd.Flags().StringVar(&search.Mode, "mode", ctl.SearchHybrid,
 		"ranking mode: fulltext, semantic or hybrid")
+	return cmd
+}
+
+// newCtlPhotosSimilarCmd builds "ctl photos similar <uid>", the photo's visual
+// neighbourhood.
+func newCtlPhotosSimilarCmd(opts *ctlOptions) *cobra.Command {
+	var limit int
+	cmd := &cobra.Command{
+		Use:   "similar <uid>",
+		Short: "List the photos that look most like this one, nearest first",
+		Long: "List the photos nearest this one in the embedding space, nearest first, with\n" +
+			"the cosine distance to each — without the distance a neighbour list is just a\n" +
+			"list, and \"how alike\" is the whole question. The photo itself is excluded, and\n" +
+			"so is every non-primary member of a stack.\n\n" +
+			"An empty answer means \"nothing to compare with\" as often as \"nothing alike\":\n" +
+			"a photo the box has not embedded yet, and an instance with no embeddings\n" +
+			"backend at all, both answer with an empty list rather than an error.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, out, err := opts.resolve()
+			if err != nil {
+				return err
+			}
+			raw, err := client.ListSimilar(cmd.Context(), args[0], limit)
+			if err != nil {
+				return fmt.Errorf("finding photos similar to %s: %w", args[0], err)
+			}
+			return renderSimilar(cmd.OutOrStdout(), out, raw)
+		},
+	}
+	cmd.Flags().IntVar(&limit, "limit", 0,
+		"how many neighbours to return, 1…100 (0 = the server's default of 24)")
 	return cmd
 }

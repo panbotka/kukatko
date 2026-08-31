@@ -117,6 +117,7 @@ func WriteLabel(w io.Writer, label Label) error {
 		{"NAME", dash(label.Name)},
 		{"SLUG", dash(label.Slug)},
 		{"PRIORITY", strconv.Itoa(label.Priority)},
+		{"REVIEW", strconv.FormatBool(label.ReviewEnabled)},
 		{"CREATED", formatStamp(label.CreatedAt)},
 		{"UPDATED", formatStamp(label.UpdatedAt)},
 	})
@@ -237,4 +238,28 @@ func dashPtr(value *string) string {
 		return "-"
 	}
 	return dash(*value)
+}
+
+// NamedUID renders a record the way every command that must name one reports it:
+// the human-readable name first, because a uid alone is unreadable, and the uid
+// in brackets, because the name is what the next command cannot be given. A
+// record with neither is a dash — it is not "a thing called nothing".
+func NamedUID(name, uid string) string {
+	switch {
+	case name != "" && uid != "":
+		return name + " (" + uid + ")"
+	case name != "":
+		return name
+	case uid != "":
+		return uid
+	default:
+		return "-"
+	}
+}
+
+// formatDistance renders a cosine distance the way every command that reports one
+// prints it: three decimals, the precision docs/THRESHOLDS.md states its
+// thresholds to.
+func formatDistance(distance float64) string {
+	return strconv.FormatFloat(distance, 'f', 3, 64)
 }

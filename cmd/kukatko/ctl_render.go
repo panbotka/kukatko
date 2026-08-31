@@ -142,3 +142,44 @@ func renderMergeReport(w io.Writer, out ctl.Output, report ctl.MergeReport) erro
 	}
 	return nil
 }
+
+// renderStack writes the stack a stacking command left behind, decoded out of
+// the photo detail the API answers those endpoints with.
+func renderStack(w io.Writer, out ctl.Output, raw json.RawMessage) error {
+	return renderRaw(w, out, raw, "stack", ctl.DecodeStack, ctl.WriteStack)
+}
+
+// renderImageEdit writes one photo's non-destructive edit.
+func renderImageEdit(w io.Writer, out ctl.Output, raw json.RawMessage) error {
+	return renderRaw(w, out, raw, "image edit", ctl.DecodeImageEdit, ctl.WriteImageEdit)
+}
+
+// renderSavedSearches writes the bare {"saved_searches": […]} list.
+func renderSavedSearches(w io.Writer, out ctl.Output, raw json.RawMessage) error {
+	return renderRaw(w, out, raw, "saved search list", ctl.DecodeSavedSearches, ctl.WriteSavedSearches)
+}
+
+// renderSavedSearch writes one saved search.
+func renderSavedSearch(w io.Writer, out ctl.Output, raw json.RawMessage) error {
+	return renderRaw(w, out, raw, "saved search", ctl.DecodeSavedSearch, ctl.WriteSavedSearch)
+}
+
+// renderSimilar writes a photo's visual neighbours with their distances.
+func renderSimilar(w io.Writer, out ctl.Output, raw json.RawMessage) error {
+	return renderRaw(w, out, raw, "similar photos", ctl.DecodeSimilar, ctl.WriteSimilar)
+}
+
+// renderDuplicates writes one page of likely-duplicate groups.
+func renderDuplicates(w io.Writer, out ctl.Output, raw json.RawMessage) error {
+	return renderRaw(w, out, raw, "duplicate groups", ctl.DecodeDuplicates, ctl.WriteDuplicates)
+}
+
+// renderComments writes a photo's whole comment thread.
+func renderComments(w io.Writer, out ctl.Output, raw json.RawMessage) error {
+	return renderRaw(w, out, raw, "comment thread", ctl.DecodeComments, ctl.WriteComments)
+}
+
+// renderComment writes one comment, as the create endpoint echoes it back.
+func renderComment(w io.Writer, out ctl.Output, raw json.RawMessage) error {
+	return renderRaw(w, out, raw, "comment", ctl.DecodeComment, ctl.WriteComment)
+}
