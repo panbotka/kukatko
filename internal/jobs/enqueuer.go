@@ -69,11 +69,40 @@ func (e *Enqueuer) EnqueueThumbnail(ctx context.Context, photoUID string) error 
 // then depends on that job — which is acceptable, since the photo is scheduled for
 // thumbnailing either way and a later edit schedules a fresh forced job.
 func (e *Enqueuer) EnqueueThumbnailRebuild(ctx context.Context, photoUID string) error {
-	payload, err := forcedPhotoPayload(photoUID)
-	if err != nil {
-		return err
-	}
-	return e.enqueuePayload(ctx, TypeThumbnail, photoUID, payload, EnqueueOptions{})
+	return e.enqueueForcedPhotoJob(ctx, TypeThumbnail, photoUID)
+}
+
+// EnqueueImageEmbedRebuild schedules a *forced* re-embedding of the photo
+// identified by photoUID: unlike EnqueueImageEmbed, the handler recomputes the
+// vector instead of skipping a photo that already has one. It is what an operator
+// reaches for when the stored embedding describes the wrong picture — computed
+// from a preview that has since been corrected, or by a model that has since
+// changed — because nothing about the photo says its embedding is stale.
+//
+// The forced flag rides in the payload, so dedup (keyed on type + photo_uid) is
+// unchanged: at most one active image_embed job per photo, exactly as for the
+// plain enqueue. See EnqueueThumbnailRebuild, whose reasoning this shares.
+func (e *Enqueuer) EnqueueImageEmbedRebuild(ctx context.Context, photoUID string) error {
+	return e.enqueueForcedPhotoJob(ctx, TypeImageEmbed, photoUID)
+}
+
+// EnqueueFaceDetectRebuild schedules a *forced* re-detection of the faces on the
+// photo identified by photoUID: unlike EnqueueFaceDetect, the handler runs the
+// detector again instead of skipping a photo whose detection is already recorded,
+// and the faces it finds replace the ones stored before. It is the counterpart of
+// EnqueueImageEmbedRebuild for the second thing the sidecar computes about a
+// photo, and dedupes the same way.
+func (e *Enqueuer) EnqueueFaceDetectRebuild(ctx context.Context, photoUID string) error {
+	return e.enqueueForcedPhotoJob(ctx, TypeFaceDetect, photoUID)
+}
+
+// EnqueuePlacesRebuild schedules a *forced* re-geocode of the photo identified by
+// photoUID: unlike EnqueuePlaces, the handler asks mapy.com again instead of
+// skipping a coordinate it has already resolved. Every geocode costs a credit, so
+// this is deliberately the manual path — the backfill and the upload pipeline
+// keep using the plain, skipping enqueue.
+func (e *Enqueuer) EnqueuePlacesRebuild(ctx context.Context, photoUID string) error {
+	return e.enqueueForcedPhotoJob(ctx, TypePlaces, photoUID)
 }
 
 // EnqueuePlaces schedules reverse geocoding for the photo identified by photoUID.
@@ -151,6 +180,19 @@ func (e *Enqueuer) enqueuePhotoJobOpts(
 		return err
 	}
 	return e.enqueuePayload(ctx, jobType, photoUID, payload, opts)
+}
+
+// enqueueForcedPhotoJob enqueues a job of jobType carrying
+// {"photo_uid": photoUID, "force": true} with the default options, swallowing
+// ErrDuplicate so the call is idempotent per photo. It is the shared body of
+// every rebuild enqueue: they differ only in the job type, since what "force"
+// means is the handler's business.
+func (e *Enqueuer) enqueueForcedPhotoJob(ctx context.Context, jobType, photoUID string) error {
+	payload, err := forcedPhotoPayload(photoUID)
+	if err != nil {
+		return err
+	}
+	return e.enqueuePayload(ctx, jobType, photoUID, payload, EnqueueOptions{})
 }
 
 // enqueuePayload enqueues a job of jobType carrying an already-built payload,

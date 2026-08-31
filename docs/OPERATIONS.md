@@ -481,6 +481,7 @@ Neither one prints a stack trace, the response body, or the token.
 | `ctl photos upload <path>…` | `POST /upload` — streams files in through the ordinary ingest path (`editor`/`admin`) |
 | `ctl photos archive` / `unarchive <uid>` | `POST /photos/{uid}/archive`+`/unarchive` — to the trash and back (reversible) |
 | `ctl photos hide` / `unhide <uid>` | `POST /photos/{uid}/hide`+`/unhide` — out of the library grid, nothing deleted |
+| `ctl photos rebuild <step> <uid>` | recompute one derived thing over the top of what is stored (`maintainer`); see below |
 | `ctl photos purge <uid>` | `POST /photos/{uid}/purge` — **permanent**, `admin`, needs `--yes`; see [the gate](#the-irreversible-commands-and-their-gate) |
 
 Together `get`, `image` and `edit` are the loop an agent needs per photo: **read it whole, look at it,
@@ -514,6 +515,41 @@ kukatkoctl photos list --album alb1a2b3 --sort title -o json | jq '.photos[].uid
 kukatkoctl photos get pht01h2j3
 kukatkoctl photos search "západ slunce nad jezerem" --mode semantic
 KUKATKO_SERVER=http://localhost:8080 KUKATKO_TOKEN=kkt_… kukatkoctl photos list
+```
+
+#### `ctl photos rebuild` — recompute, don't merely re-schedule
+
+**The trap this exists for:** every per-photo job skips work it has already done. Asking the server to run
+a step again — `POST /photos/{uid}/process/{step}`, or the same button in the UI — enqueues the ordinary
+job, which looks at a photo that already has an embedding, a recorded face detection or a geocoded
+coordinate and leaves it alone. The request answers **200** and the step reads `done`, so it looks like it
+worked while nothing happened. That is the right behaviour for a photo the pipeline **missed**, and useless
+for a photo whose stored answer is **wrong** — computed from a source that has since been corrected, or by a
+model that has since changed. (This is how seven Nikon NEFs kept their 640×424 thumbnails after the RAW
+preview fix in `273a724`: `process/thumbnail` skipped every cached size.)
+
+`rebuild` discards the stored answer and computes a new one. It needs the **maintainer** role, never touches
+an original, and is not gated — everything it throws away it can produce again.
+
+| Command | Endpoint | What it redoes |
+| --- | --- | --- |
+| `ctl photos rebuild thumbnail <uid>` | `POST /photos/{uid}/regenerate-thumbnail` | every cached thumbnail size + the perceptual hashes |
+| `ctl photos rebuild embedding <uid>` | `POST /photos/{uid}/reembed` | the CLIP image embedding behind semantic search and similar photos |
+| `ctl photos rebuild faces <uid>` | `POST /photos/{uid}/redetect-faces` | face detection; the stored faces are **replaced**, and it reports how many the photo has afterwards |
+| `ctl photos rebuild place <uid>` | `POST /photos/{uid}/regeocode` | the reverse geocode — **costs a mapy.com credit every time** |
+
+A re-detection replaces rather than appends, and hands each assignment to the face that comes back in the
+same place, so redoing the detection never leaves duplicate faces behind and never un-names anybody. A face
+found somewhere new arrives unassigned.
+
+When the embeddings box (or mapy.com) is offline the work is **queued** instead of failing: a forced job goes
+into the queue and runs when the service is back. The command says so and exits 0 — a sleeping box is not an
+error. Two requests for the same photo collapse into one job (queue dedup is keyed on type + photo uid).
+
+```bash
+kukatkoctl photos rebuild thumbnail pht01h2j3
+kukatkoctl photos rebuild faces pht01h2j3       # → "face_detect: rebuilt, 3 faces on the photo"
+kukatkoctl photos rebuild embedding pht01h2j3   # → "image_embed: … a forced job is queued …" when the box sleeps
 ```
 
 #### `ctl photos get` — the whole photo in one request

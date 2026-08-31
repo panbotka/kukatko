@@ -52,6 +52,10 @@ type API struct {
 	stacker        Stacker
 	sidecar        SidecarEnqueuer
 	thumbnails     ThumbnailEnqueuer
+	reembedder     PhotoReembedder
+	redetector     PhotoRedetector
+	regeocoder     PhotoRegeocoder
+	rebuilds       RebuildEnqueuer
 	comments       CommentStore
 	storyboards    StoryboardService
 	processing     ProcessingService
@@ -131,6 +135,20 @@ type Config struct {
 	// edit, so the library grid shows the photo as the user turned it. When nil the
 	// edit still saves and the cached thumbnails keep the previous rendering.
 	Thumbnails ThumbnailEnqueuer
+	// Reembedder recomputes a photo's image embedding for the reembed rebuild,
+	// replacing the stored one. When nil that endpoint answers 503.
+	Reembedder PhotoReembedder
+	// Redetector re-runs face detection for the redetect-faces rebuild, replacing
+	// the photo's stored faces. When nil that endpoint answers 503.
+	Redetector PhotoRedetector
+	// Regeocoder resolves a photo's coordinates again for the regeocode rebuild,
+	// replacing the cached place. It is nil on an instance with no mapy.com key,
+	// where that endpoint answers 503.
+	Regeocoder PhotoRegeocoder
+	// Rebuilds schedules a forced job when a rebuild's backing service is offline,
+	// so the request queues the work rather than failing. When nil an outage is
+	// reported as 503 instead.
+	Rebuilds RebuildEnqueuer
 	// Comments backs the per-photo comment thread endpoints and the
 	// comment_count on the detail response. When nil those endpoints answer 503
 	// and the detail reports a zero count.
@@ -194,6 +212,10 @@ func NewAPI(cfg Config) *API {
 		stacker:           cfg.Stacker,
 		sidecar:           cfg.Sidecar,
 		thumbnails:        cfg.Thumbnails,
+		reembedder:        cfg.Reembedder,
+		redetector:        cfg.Redetector,
+		regeocoder:        cfg.Regeocoder,
+		rebuilds:          cfg.Rebuilds,
 		comments:          cfg.Comments,
 		storyboards:       cfg.Storyboards,
 		processing:        cfg.Processing,
@@ -250,6 +272,9 @@ func passthroughMiddleware(next http.Handler) http.Handler {
 //	POST   /photos/{uid}/unstack-all  RequireWrite     dissolve the whole stack
 //	POST   /photos/{uid}/regenerate-thumbnail RequireWrite  rebuild thumbnail + pHash
 //	POST   /photos/{uid}/process/{step} RequireMaintainer  schedule one computation
+//	POST   /photos/{uid}/reembed      RequireMaintainer  recompute the embedding
+//	POST   /photos/{uid}/redetect-faces RequireMaintainer  re-detect the faces
+//	POST   /photos/{uid}/regeocode    RequireMaintainer  re-resolve the place
 //	GET    /photos/{uid}/thumb/{size} RequireDownload  cached thumbnail (or 302)
 //	GET    /photos/{uid}/video        RequireDownload  video stream (range/206, or 302)
 //	GET    /photos/{uid}/storyboard   RequireAuth      scrub-preview status (+ lazy enqueue)
@@ -312,6 +337,9 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.With(a.requireWrite).Post("/{uid}/unstack-all", a.handleUnstackAll)
 		r.With(a.requireWrite).Post("/{uid}/regenerate-thumbnail", a.handleRegenerateThumbnail)
 		r.With(a.requireMaintainer).Post("/{uid}/process/{step}", a.handleRunProcessingStep)
+		r.With(a.requireMaintainer).Post("/{uid}/reembed", a.handleReembed)
+		r.With(a.requireMaintainer).Post("/{uid}/redetect-faces", a.handleRedetectFaces)
+		r.With(a.requireMaintainer).Post("/{uid}/regeocode", a.handleRegeocode)
 		r.With(a.requireAdmin).Post("/{uid}/purge", a.handlePurge)
 		r.With(a.requireDownload).Get("/{uid}/thumb/{size}", a.handleThumb)
 		r.With(a.requireDownload).Get("/{uid}/video", a.handleVideo)

@@ -150,6 +150,13 @@ func New(cfg Config) *Service {
 // jobPayload is the JSON shape of a face_detect job's payload.
 type jobPayload struct {
 	PhotoUID string `json:"photo_uid"`
+	// Force asks for the rebuild rather than the repair: the detector runs again
+	// even though a detection is already recorded, and what it finds replaces the
+	// stored faces. The repair path skips such a photo, which is right when the
+	// detection is merely missing and wrong when it was made on the wrong picture —
+	// a RAW preview that has since been corrected, or an image sent sideways. See
+	// jobs.Enqueuer.EnqueueFaceDetectRebuild.
+	Force bool `json:"force"`
 }
 
 // Handle is the worker.HandlerFunc for face_detect jobs: it decodes the photo uid
@@ -164,6 +171,10 @@ func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 	if p.PhotoUID == "" {
 		return ErrMissingPhotoUID
 	}
+	if p.Force {
+		_, err := s.ForceDetect(ctx, p.PhotoUID)
+		return err
+	}
 	return s.Detect(ctx, p.PhotoUID)
 }
 
@@ -175,17 +186,50 @@ func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 // (retryable) error. A missing photo is returned as an error so the job fails and
 // dead-letters rather than looping.
 func (s *Service) Detect(ctx context.Context, photoUID string) error {
-	detected, err := s.vectors.FacesDetected(ctx, photoUID)
-	if err != nil {
-		return fmt.Errorf("facejob: checking face detection for %s: %w", photoUID, err)
-	}
-	if detected {
-		return nil // already processed — idempotent skip
+	_, err := s.detect(ctx, photoUID, false)
+	return err
+}
+
+// ForceDetect runs face detection for photoUID even though a detection is
+// already recorded, replaces the stored faces with what it finds, and returns how
+// many faces the photo has afterwards. It is to Detect what
+// thumbjob.ForceRegenerate is to thumbjob.Regenerate: the repair fills a gap, the
+// rebuild corrects a wrong answer — a detection made on a preview that has since
+// been fixed, or on an image the detector saw sideways.
+//
+// Nothing is appended: the store replaces the photo's faces in one transaction,
+// carrying the marker and subject a re-detected face already had onto the face
+// that takes its place (see vectors.RecordFaceDetection), so naming the people on
+// a photo survives redoing the detection. Everything else is Detect's behaviour —
+// an offline sidecar still yields a worker.RetryAfter, a missing photo is still an
+// error.
+//
+// The returned count is the number of faces stored, which is zero when the photo
+// genuinely holds none: a photo looked at and found empty is a result, not a
+// failure.
+func (s *Service) ForceDetect(ctx context.Context, photoUID string) (int, error) {
+	return s.detect(ctx, photoUID, true)
+}
+
+// detect runs the detection for photoUID and returns how many faces were stored,
+// skipping a photo whose detection is already recorded unless force is set. It is
+// the shared body of Detect and ForceDetect, so the two differ in exactly one
+// thing — whether the existing record is a reason to stop. A skipped photo
+// reports zero faces, which the caller (Detect) discards.
+func (s *Service) detect(ctx context.Context, photoUID string, force bool) (int, error) {
+	if !force {
+		detected, err := s.vectors.FacesDetected(ctx, photoUID)
+		if err != nil {
+			return 0, fmt.Errorf("facejob: checking face detection for %s: %w", photoUID, err)
+		}
+		if detected {
+			return 0, nil // already processed — idempotent skip
+		}
 	}
 
 	photo, err := s.photos.GetByUID(ctx, photoUID)
 	if err != nil {
-		return fmt.Errorf("facejob: loading photo %s: %w", photoUID, err)
+		return 0, fmt.Errorf("facejob: loading photo %s: %w", photoUID, err)
 	}
 
 	detection, err := s.detectFaces(ctx, photo)
@@ -193,20 +237,21 @@ func (s *Service) Detect(ctx context.Context, photoUID string) error {
 		if embedding.IsUnavailable(err) {
 			// RetryAfter is our own worker control-flow signal, not a foreign error
 			// to annotate; wrapping it would obscure the type the worker matches.
-			return worker.RetryAfter(s.retryDelay, err) //nolint:wrapcheck
+			return 0, worker.RetryAfter(s.retryDelay, err) //nolint:wrapcheck
 		}
-		return err
+		return 0, err
 	}
 
+	faces := s.buildFaces(photo, detection)
 	if err := s.vectors.RecordFaceDetection(ctx, photoUID, vectors.Detection{
-		Faces:       s.buildFaces(photo, detection),
+		Faces:       faces,
 		Model:       detection.model,
 		FrameWidth:  detection.frameWidth,
 		FrameHeight: detection.frameHeight,
 	}); err != nil {
-		return fmt.Errorf("facejob: recording faces for %s: %w", photoUID, err)
+		return 0, fmt.Errorf("facejob: recording faces for %s: %w", photoUID, err)
 	}
-	return nil
+	return len(faces), nil
 }
 
 // detectionResult is one completed sidecar call: the faces it returned, its model

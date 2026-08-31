@@ -189,6 +189,14 @@ func (s *Service) BudgetSnapshot() BudgetSnapshot { return s.budget.Snapshot() }
 // jobPayload is the JSON shape of a `places` job's payload.
 type jobPayload struct {
 	PhotoUID string `json:"photo_uid"`
+	// Force asks for the rebuild rather than the repair: mapy.com is asked again
+	// and the answer replaces the cached place, even though the coordinate has
+	// already been resolved. The repair path skips such a photo, which is right
+	// when the place is merely missing and wrong when the cached one is stale — a
+	// geocode taken before the place was renamed, or one recorded from a bad
+	// answer. It costs a credit, so nothing schedules it automatically. See
+	// jobs.Enqueuer.EnqueuePlacesRebuild.
+	Force bool `json:"force"`
 }
 
 // Handle is the worker.HandlerFunc for `places` jobs: it decodes the photo uid
@@ -203,6 +211,9 @@ func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 	if p.PhotoUID == "" {
 		return ErrMissingPhotoUID
 	}
+	if p.Force {
+		return s.ForceGeocode(ctx, p.PhotoUID)
+	}
 	return s.Geocode(ctx, p.PhotoUID)
 }
 
@@ -214,16 +225,43 @@ func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 // retry attempt; any other failure is returned as an ordinary (retryable) error.
 // A missing photo is returned as an error so the job fails and dead-letters.
 func (s *Service) Geocode(ctx context.Context, photoUID string) error {
+	return s.geocode(ctx, photoUID, false)
+}
+
+// ForceGeocode resolves photoUID's coordinates again and replaces the cached
+// place, where Geocode would skip a photo already geocoded for those very
+// coordinates. It is to Geocode what thumbjob.ForceRegenerate is to
+// thumbjob.Regenerate: the repair fills a gap, the rebuild corrects an answer that
+// is wrong rather than absent.
+//
+// It spends a mapy.com credit every time by definition, which is why nothing
+// schedules it automatically — the upload pipeline and the backfill keep the
+// skipping path. Everything else is Geocode's behaviour: there is one place row
+// per photo, so the new answer replaces the old one; an unreachable or
+// rate-limited geocoder, an empty local limiter and an exhausted credit budget all
+// still defer without burning a retry attempt; a photo with no GPS is still
+// recorded as processed rather than asked about.
+func (s *Service) ForceGeocode(ctx context.Context, photoUID string) error {
+	return s.geocode(ctx, photoUID, true)
+}
+
+// geocode resolves the photo's coordinates into the place cache, skipping a photo
+// already geocoded for those coordinates unless force is set. It is the shared
+// body of Geocode and ForceGeocode, so the two differ in exactly one thing —
+// whether the cached answer is a reason to stop.
+func (s *Service) geocode(ctx context.Context, photoUID string, force bool) error {
 	photo, err := s.photos.GetByUID(ctx, photoUID)
 	if err != nil {
 		return fmt.Errorf("placesjob: loading photo %s: %w", photoUID, err)
 	}
-	current, err := s.alreadyCurrent(ctx, photo)
-	if err != nil {
-		return err
-	}
-	if current {
-		return nil // already geocoded for these coordinates — idempotent skip
+	if !force {
+		current, currentErr := s.alreadyCurrent(ctx, photo)
+		if currentErr != nil {
+			return currentErr
+		}
+		if current {
+			return nil // already geocoded for these coordinates — idempotent skip
+		}
 	}
 	if photo.Lat == nil || photo.Lng == nil {
 		// No GPS: record an empty processed marker so the job never retries it.

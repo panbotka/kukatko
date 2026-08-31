@@ -56,11 +56,11 @@ func buildJobs(
 	cfg *config.Config, db *database.DB, store *jobs.Store, authAPI *auth.API, enqueuer *jobs.Enqueuer,
 	embedSvc *embedjob.Service, faceSvc *facejob.Service, clusterSvc *cluster.Service,
 	storyboardSvc *storyboardjob.Service, embedClient embedding.Client, reg *metrics.Registry,
-	geocodeBudget *placesjob.WindowBudget,
+	placesSvc *placesjob.Service,
 ) (*worker.Worker, *jobsapi.API, *processapi.API, *maintenanceapi.API, error) {
 	svcs, maintenanceSvc, err := buildJobServices(jobServiceDeps{
 		cfg: cfg, db: db, store: store, enqueuer: enqueuer, embed: embedSvc, face: faceSvc,
-		storyboard: storyboardSvc, embedClient: embedClient, geocodeBudget: geocodeBudget, reg: reg,
+		storyboard: storyboardSvc, embedClient: embedClient, places: placesSvc, reg: reg,
 	})
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -111,30 +111,30 @@ func buildJobs(
 // jobServiceDeps bundles what buildJobServices needs, so the construction step
 // takes one parameter rather than ten.
 type jobServiceDeps struct {
-	cfg           *config.Config
-	db            *database.DB
-	store         *jobs.Store
-	enqueuer      *jobs.Enqueuer
-	embed         *embedjob.Service
-	face          *facejob.Service
-	storyboard    *storyboardjob.Service
-	embedClient   embedding.Client
-	geocodeBudget *placesjob.WindowBudget
-	reg           *metrics.Registry
+	cfg         *config.Config
+	db          *database.DB
+	store       *jobs.Store
+	enqueuer    *jobs.Enqueuer
+	embed       *embedjob.Service
+	face        *facejob.Service
+	storyboard  *storyboardjob.Service
+	embedClient embedding.Client
+	// places is the reverse-geocode service, already built by the caller because
+	// the regeocode rebuild endpoint shares it (nil when no mapy.com key is set).
+	places *placesjob.Service
+	reg    *metrics.Registry
 }
 
 // buildJobServices constructs every handler the worker registry needs, returning
 // them bundled together with the library-maintenance service (which shares the
 // thumbnail service's construction and is not a job handler itself). The
-// config-gated ones — places, sidecar, OCR, mail — come back nil when their
+// config-gated ones — sidecar, OCR, mail — come back nil when their
 // feature is switched off; buildRegistry then registers no handler for them, which is what
-// keeps a job of a type nothing can claim from ever being enqueued.
+// keeps a job of a type nothing can claim from ever being enqueued. The places
+// service is passed in rather than built here, since the rebuild endpoints share
+// it, and is nil with no mapy.com key by the same rule.
 func buildJobServices(d jobServiceDeps) (registryServices, *maintenance.Service, error) {
 	thumbSvc, maintenanceSvc, err := buildMaintenanceAndThumb(d.cfg, d.db, d.enqueuer, d.embed, d.face, d.reg)
-	if err != nil {
-		return registryServices{}, nil, err
-	}
-	placesSvc, err := buildPlacesServiceOrNil(d.cfg, d.db, d.enqueuer, d.geocodeBudget, d.reg)
 	if err != nil {
 		return registryServices{}, nil, err
 	}
@@ -156,7 +156,7 @@ func buildJobServices(d jobServiceDeps) (registryServices, *maintenance.Service,
 	}
 	return registryServices{
 		embed: d.embed, face: d.face, thumb: thumbSvc, meta: metaSvc,
-		places: placesSvc, sidecar: sidecarSvc, ocr: ocrSvc, mail: mailSvc,
+		places: d.places, sidecar: sidecarSvc, ocr: ocrSvc, mail: mailSvc,
 		nameless: buildNamelessService(d.db, d.store), storyboard: d.storyboard,
 	}, maintenanceSvc, nil
 }

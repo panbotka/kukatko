@@ -14,26 +14,16 @@
 // assignment and suggestion flows against the real stores.
 package facematch
 
+import "github.com/panbotka/kukatko/internal/vectors"
+
 // IoU returns the Intersection-over-Union of two normalised boxes a and b, each in
 // [x, y, w, h] form. The result is 0 when the boxes do not overlap (or either has a
 // non-positive area) and 1 when they coincide exactly. It is the overlap score
 // face↔marker matching thresholds against.
+//
+// The geometry itself lives in internal/vectors, which needs the same measure to
+// hand a re-detected face the assignment its predecessor carried. Two copies of a
+// primitive drift; this one is the name this package matches by.
 func IoU(a, b [4]float64) float64 {
-	ax1, ay1, ax2, ay2 := a[0], a[1], a[0]+a[2], a[1]+a[3]
-	bx1, by1, bx2, by2 := b[0], b[1], b[0]+b[2], b[1]+b[3]
-
-	interX1, interY1 := max(ax1, bx1), max(ay1, by1)
-	interX2, interY2 := min(ax2, bx2), min(ay2, by2)
-	if interX2 <= interX1 || interY2 <= interY1 {
-		return 0 // no overlap
-	}
-	intersection := (interX2 - interX1) * (interY2 - interY1)
-
-	areaA := a[2] * a[3]
-	areaB := b[2] * b[3]
-	union := areaA + areaB - intersection
-	if union <= 0 {
-		return 0
-	}
-	return intersection / union
+	return vectors.IoU(a, b)
 }

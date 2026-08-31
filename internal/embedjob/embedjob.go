@@ -156,6 +156,12 @@ func New(cfg Config) *Service {
 // jobPayload is the JSON shape of an image_embed job's payload.
 type jobPayload struct {
 	PhotoUID string `json:"photo_uid"`
+	// Force asks for the rebuild rather than the repair: the vector is recomputed
+	// and overwritten even though the photo already has one. The repair path skips
+	// such a photo, which is right when the embedding is merely missing and wrong
+	// when the stored one describes the wrong picture — a preview that has since
+	// been corrected. See jobs.Enqueuer.EnqueueImageEmbedRebuild.
+	Force bool `json:"force"`
 }
 
 // Handle is the worker.HandlerFunc for image_embed jobs: it decodes the photo
@@ -170,6 +176,9 @@ func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 	if p.PhotoUID == "" {
 		return ErrMissingPhotoUID
 	}
+	if p.Force {
+		return s.ForceEmbed(ctx, p.PhotoUID)
+	}
 	return s.Embed(ctx, p.PhotoUID)
 }
 
@@ -180,13 +189,39 @@ func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 // storage failure is returned as an ordinary (retryable) error. A missing photo
 // is returned as an error so the job fails and dead-letters rather than looping.
 func (s *Service) Embed(ctx context.Context, photoUID string) error {
-	switch _, err := s.vectors.GetEmbedding(ctx, photoUID); {
-	case err == nil:
-		return nil // already embedded — idempotent skip
-	case errors.Is(err, vectors.ErrEmbeddingNotFound):
-		// fall through and compute it
-	default:
-		return fmt.Errorf("embedjob: checking existing embedding for %s: %w", photoUID, err)
+	return s.embed(ctx, photoUID, false)
+}
+
+// ForceEmbed recomputes the image embedding for photoUID and replaces the stored
+// one, where Embed would skip a photo that already has an embedding. It is the
+// counterpart to Embed in the sense thumbjob.ForceRegenerate is to
+// thumbjob.Regenerate: the repair fills a gap, the rebuild corrects a wrong
+// answer — an embedding computed from a preview that has since been fixed, or by
+// a model that has since changed.
+//
+// Everything else is Embed's behaviour, deliberately: the sidecar being offline
+// still yields a worker.RetryAfter (so a forced job waits for the box rather than
+// dead-lettering, and an on-demand caller can queue it instead of failing), and a
+// missing photo is still an error. There is exactly one embedding row per photo,
+// so the recomputed vector replaces the old one; nothing is appended.
+func (s *Service) ForceEmbed(ctx context.Context, photoUID string) error {
+	return s.embed(ctx, photoUID, true)
+}
+
+// embed computes and stores the photo's embedding, skipping a photo that already
+// has one unless force is set. It is the shared body of Embed and ForceEmbed, so
+// the two differ in exactly one thing — whether the existing evidence is a reason
+// to stop.
+func (s *Service) embed(ctx context.Context, photoUID string, force bool) error {
+	if !force {
+		switch _, err := s.vectors.GetEmbedding(ctx, photoUID); {
+		case err == nil:
+			return nil // already embedded — idempotent skip
+		case errors.Is(err, vectors.ErrEmbeddingNotFound):
+			// fall through and compute it
+		default:
+			return fmt.Errorf("embedjob: checking existing embedding for %s: %w", photoUID, err)
+		}
 	}
 
 	photo, err := s.photos.GetByUID(ctx, photoUID)

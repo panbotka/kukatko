@@ -119,6 +119,22 @@ const (
 	// action). It never touches the original; the regenerated sizes are listed in
 	// the entry's details.
 	ActionPhotoThumbnail = "photo.thumbnail"
+	// ActionPhotoEmbedding records an on-demand rebuild of a photo's image
+	// embedding: the stored vector was discarded and recomputed, or (with the box
+	// offline) a forced job was queued to do it. The entry's details carry which of
+	// the two happened. It is the semantic-search counterpart of
+	// ActionPhotoThumbnail — a rebuild, not the repair POST /process/image_embed
+	// schedules.
+	ActionPhotoEmbedding = "photo.embedding"
+	// ActionPhotoFaces records an on-demand re-detection of the faces on a photo:
+	// the stored detections were replaced by a fresh run. The details carry the
+	// outcome and how many faces the photo has afterwards. Assignments survive the
+	// replacement, so this is not a face.unassign in disguise.
+	ActionPhotoFaces = "photo.faces"
+	// ActionPhotoPlace records an on-demand re-geocode of a photo's coordinates,
+	// replacing the cached place. Unlike the other two rebuilds it costs a mapy.com
+	// credit every time, which is why the trail records who asked for it.
+	ActionPhotoPlace = "photo.place"
 	// ActionPhotoEdit records saving a photo's non-destructive edit (rotation,
 	// brightness, contrast, crop). The original file is never rewritten, so the
 	// entry is the only record that the library's rendering of the photo changed:

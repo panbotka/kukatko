@@ -910,6 +910,17 @@ to `## Package map` in `CLAUDE.md`.
   overwrites the thumbnails + pHash via `ForceRegenerate` and returns `{status,sizes}` (200), 404 missing photo,
   **422** `thumbjob.ErrRegenerateFailed` (the original is missing/undecodable); best-effort audit `photo.thumbnail`
   via `AuditRecorder` (`*audit.Store`, a failure is only logged — the thumbnail is already regenerated);
+  **the other three rebuilds** (`rebuild.go`): `POST /photos/{uid}/reembed`, `/redetect-faces` and `/regeocode`
+  (**maintainer** via `RequireMaintainer` — a rebuild discards stored work, so it is held to the stricter of its
+  two neighbours), over the `PhotoReembedder`/`PhotoRedetector`/`PhotoRegeocoder` interfaces (satisfied by
+  `*embedjob.Service`/`*facejob.Service`/`*placesjob.Service`, each nil-safe → 503). They exist because
+  `process/{step}` cannot do this: it enqueues the *repair*, which skips a photo that already has the data and so
+  answers 200 having changed nothing. Each calls the job service's `Force…` path synchronously and answers
+  `{step,status,faces?}` — `status` `rebuilt`, `faces` the count **after** a re-detection (0 is a result).
+  A backing service that is merely asleep is recognised via `worker.IsDeferral` and the forced job is enqueued
+  through the `RebuildEnqueuer` (`jobs.Enqueuer`) instead → `status:"queued"`, 200; with no enqueuer wired the
+  outage is an honest 503. 404 missing photo, 500 otherwise. Best-effort audit `photo.embedding`/`photo.faces`/
+  `photo.place` carrying the status (and the face count) in details, by the same rule as `photo.thumbnail`;
   `GET /photos/years` (`handleYears`, `years.go`) = a **year-histogram** for the library's year facet
   → `photos.Store.YearBuckets` → `{years:[{year,count}],total}`; takes the same filters as the list
   (incl. per-user `FavoriteOf`/`RatedBy`), but **zeroes out `params.Year` itself** — a facet must not narrow
@@ -1071,7 +1082,14 @@ to `## Package map` in `CLAUDE.md`.
   cache is keyed by the original's hash and would otherwise serve the previous rendering forever. The flag rides in
   the payload so **dedup is unchanged** (`idx_jobs_dedup` keys on type + `photo_uid`): at most one active thumbnail
   job per photo, which does mean a plain job already queued absorbs the forced one — acceptable, since the photo is
-  scheduled for thumbnailing either way and the next edit schedules a fresh forced job),
+  scheduled for thumbnailing either way and the next edit schedules a fresh forced job).
+  `EnqueueImageEmbedRebuild`/`EnqueueFaceDetectRebuild`/`EnqueuePlacesRebuild` are the same pattern for the other
+  three per-photo jobs that own an idempotent skip (`{photo_uid,force:true}` on `image_embed`/`face_detect`/`places`;
+  all four share `enqueueForcedPhotoJob`). They are what the rebuild endpoints queue when the backing service is
+  offline, and what makes a forced job survive a sleeping box instead of failing the request. `metadata`, `ocr`,
+  `sidecar` and `storyboard` have **no** forced counterpart and need none: `ocr` and `sidecar` deliberately re-run
+  every time, `metadata` is a gap-filler that never overwrites a value, and `storyboard` is a content-addressed
+  cache file with nothing persisted behind it),
   `internal/worker/`
   (the in-process background worker runtime, **the main queue execution loop**: `Registry` =
   `NewRegistry()`+`Register(type, HandlerFunc)`+`Handler`/`Types` (panics on an empty type/nil
@@ -1101,7 +1119,10 @@ to `## Package map` in `CLAUDE.md`.
   a handler panic →
   `ErrHandlerPanic` (job fail, not a crash), an unknown type → `ErrNoHandler`; a handler can return
   `RetryAfter(delay,cause)`/`RetryAfterError` → the worker calls `Defer(delay)` instead of `Fail` (a transient
-  error-free failure, no burned attempt — used by `image_embed` when the box is offline), or
+  error-free failure, no burned attempt — used by `image_embed` when the box is offline);
+  `IsDeferral(err)` is the same distinction for callers **outside** the worker — the rebuild endpoints, which
+  run a handler's work synchronously and queue the forced job instead of failing when the answer is "not now";
+  or
   `Terminal(cause)`/`TerminalError` → `FailTerminal` instead of `Fail` (the job can never succeed, so it is
   parked in `failed` rather than retried with backoff — used by `mail_send` for a permanently undeliverable
   address); a built-in **noop**
@@ -1249,7 +1270,19 @@ to `## Package map` in `CLAUDE.md`.
   with no faces from an unprocessed one; `RecordFaceDetection(uid, Detection{Faces,Model,FrameWidth,FrameHeight})`
   (atomically replaces the photo's
   faces **and** upserts the `face_detections` row — even for zero faces; shares the `replaceFaces` tx
-  helper with `SaveFaces`), `FacesDetected(uid)` (does a row exist?), `ListPhotosMissingFaces(limit)`
+  helper with `SaveFaces`).
+  **Replacing is not forgetting** (`carryover.go`): before the delete it reads the photo's rows that carry an
+  assignment (`listAssignedFaces`) and hands each one — `marker_uid`, `subject_uid`, `subject_name` — to the new
+  face that lands on the same place, pairing old and new greedily and **exclusively** by overlap
+  (`IoU`, threshold `CarryAssignmentIoU` = 0.5, deliberately far above the 0.1 `facematch` uses for
+  face↔marker matching: the cost of being wrong here is a photo attributed to the wrong person). A new face
+  the caller already named is skipped — an explicit assignment is never replaced by an inherited one — and a
+  face detected somewhere new arrives unassigned. Without it, a forced re-detection would leave
+  `faces.subject_uid` NULL until somebody next opened the photo (`facematch` re-derives the cache from the
+  markers on read), so the photo would quietly drop out of that person's gallery and out of `person:` search
+  in the meantime. `IoU` lives here rather than in `facematch` because both callers need it and two copies of
+  a geometric primitive drift; `facematch.IoU` is a one-line delegation.
+  `FacesDetected(uid)` (does a row exist?), `ListPhotosMissingFaces(limit)`
   (uids of photos with no `face_detections` row, like `ListPhotosMissingEmbedding`);
   **the detection frame** (`Detection.FrameWidth`/`FrameHeight` → `detect_width`/`detect_height`, a
   non-positive value stored as NULL) is the pixel size of the image the detector actually **saw**, in display
@@ -1466,7 +1499,12 @@ to `## Package map` in `CLAUDE.md`.
   `pretrained`; **idempotent** (a photo with an embedding is skipped without calling the sidecar), **box
   offline** (`embedding.IsUnavailable`) → `worker.RetryAfter(5 min)` (deferral without burning an attempt),
   any other error a normal retry; `BackfillEmbeddings(ctx)` enqueues `image_embed` for every photo without
-  an embedding (dedup no-op), returns the count; `Duplicates(ctx,uid)` embedding-based detection of near
+  an embedding (dedup no-op), returns the count; the payload's **`force` flag** routes to `ForceEmbed(uid)`,
+  which shares `embed(uid,force)` with `Embed` and differs in exactly one thing — the existing embedding is not
+  a reason to stop — so the vector is recomputed and **replaces** the stored one (there is one `embeddings` row
+  per photo). Everything else is `Embed`'s behaviour on purpose: an offline box still defers, a missing photo is
+  still an error. It backs `POST /photos/{uid}/reembed` and `jobs.Enqueuer.EnqueueImageEmbedRebuild`;
+  `Duplicates(ctx,uid)` embedding-based detection of near
   duplicates within `duplicate.embedding_max_dist`, excluding itself (`<=0` disables it)), `internal/facejob/`
   (wiring of face detection into the queue, all behind the interfaces
   `PhotoStore`/`VectorStore`/`ImageSource`/`Enqueuer`+`embedding.Client`: `Service` =
@@ -1507,7 +1545,12 @@ to `## Package map` in `CLAUDE.md`.
   contiguously; **idempotent** (a photo with a `face_detections` row is skipped; zero faces is still
   recorded), **box offline** → `worker.RetryAfter(5 min)`; `BackfillFaces(ctx)` enqueues
   `face_detect` for every unprocessed photo (`ListPhotosMissingFaces`, dedup no-op), returns
-  the count), `internal/processapi/`
+  the count; the payload's **`force` flag** routes to `ForceDetect(uid) (int,error)`, which shares
+  `detect(uid,force)` with `Detect` and differs only in ignoring the recorded detection, then **returns how many
+  faces the photo has afterwards** (0 is a result). The faces it finds replace the stored ones in one
+  transaction, with the assignments carried over (see `internal/vectors`), so a rebuild never leaves duplicate
+  detections behind and never un-names anybody. It backs `POST /photos/{uid}/redetect-faces` and
+  `jobs.Enqueuer.EnqueueFaceDetectRebuild`), `internal/processapi/`
   (a maintainer-only HTTP API for bulk processing: `NewAPI(Config{Backfiller,FaceBackfiller,
   Reclusterer,PlacesBackfiller,ThumbnailBackfiller,MetadataBackfiller,RequireMaintainer})`+`RegisterRoutes`
   mounts `/process`;
@@ -2736,7 +2779,12 @@ to `## Package map` in `CLAUDE.md`.
   Window,ResetsAt}` feeds `GET /system/status` → `geocode` and the `kukatko_geocode_credits_remaining`/
   `_limit` gauges; one instance is built in `runServe` (`newGeocodeBudget`, nil without a mapy key) and
   shared by the job, the status service and the collector; `BackfillPlaces(ctx)` enqueues `places`
-  for every geotagged photo without a place (dedup no-op), returns the count), `internal/importer/`
+  for every geotagged photo without a place (dedup no-op), returns the count; the payload's **`force` flag**
+  routes to `ForceGeocode(uid)`, which shares `geocode(uid,force)` with `Geocode` and differs only in not
+  treating the cached place as a reason to stop, so mapy.com is asked again and the answer **replaces** the row.
+  It costs a credit every time by definition, which is why nothing schedules it automatically — the upload
+  pipeline and the backfill keep the skipping path. It backs `POST /photos/{uid}/regeocode` and
+  `jobs.Enqueuer.EnqueuePlacesRebuild`), `internal/importer/`
   (bookkeeping of import runs, the `import_runs` table in migration `0013_import_runs.sql`:
   `id BIGSERIAL`, `source TEXT` CHECK `photoprism|photosorter` (`0026` adds `folder`, `0041` adds
   `photosorter_feeds`), `started_at`/`finished_at TIMESTAMPTZ`, `status TEXT`
@@ -3864,6 +3912,17 @@ to `## Package map` in `CLAUDE.md`.
     only the change would not say so. `DescribePurgeTarget` is what a purge rehearsal reads out: the size,
     and whether the photo is even archived — a rehearsal that did not say so would let somebody confirm a
     command the server is going to refuse with `409`.
+  - `rebuild.go` — redoing one photo's derived data: `RebuildPhoto(uid, name)` over the four endpoints
+    `RebuildSpecs` lists (`regenerate-thumbnail`, `reembed`, `redetect-faces`, `regeocode`) +
+    `RebuildSpecFor`/`DecodePhotoRebuild`/`WritePhotoRebuild`, with `ErrUnknownRebuild` for a name that is not
+    one of them (refused client-side, before a request is spent). The CLI names are what is being rebuilt
+    (`thumbnail`/`embedding`/`faces`/`place`), not the endpoints' verbs, because the paths predate the idea of
+    a set. `PhotoRebuild` is the **union** of what the four answer — the thumbnail endpoint is the oldest and
+    says `{status,sizes}` while the newer three say `{step,status,faces?}` — and `DecodePhotoRebuild` stamps
+    the requested name onto a response that does not name its own step. The line reports what the
+    recomputation **produced** (the face count, the regenerated sizes) rather than a bare acknowledgement:
+    a rebuild is run because the previous answer was wrong, so the new one is the point. `status:"queued"`
+    is printed as the wait it is, not as a failure — the box being asleep is not the operator's problem.
   - `trash.go` — the trash and the two batch purges: `FetchTrash` (`GET /trash/info` for the retention
     window + paged `GET /photos?archived=only` for the photos), `PurgePhoto`, `EmptyTrash`,
     `PurgeOlderThan(days)` — each carrying the API's own `confirm=true`, which is **not** the CLI's `--yes`

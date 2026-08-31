@@ -169,6 +169,87 @@ func TestEnqueueThumbnail_plainVsRebuild(t *testing.T) {
 	}
 }
 
+// TestEnqueueRebuilds_forcePayloadPerType verifies every rebuild enqueue maps to
+// the job type its repair uses and carries the force flag beside the photo_uid the
+// dedup index keys on. Sharing the type is the design: at most one active job per
+// photo per type survives, so a rebuild request cannot pile a second job onto a
+// photo the queue is already working on.
+func TestEnqueueRebuilds_forcePayloadPerType(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		enqueue  func(*Enqueuer) error
+		wantType string
+	}{
+		{
+			name:     "thumbnail",
+			enqueue:  func(e *Enqueuer) error { return e.EnqueueThumbnailRebuild(context.Background(), "ph1") },
+			wantType: TypeThumbnail,
+		},
+		{
+			name:     "image embed",
+			enqueue:  func(e *Enqueuer) error { return e.EnqueueImageEmbedRebuild(context.Background(), "ph1") },
+			wantType: TypeImageEmbed,
+		},
+		{
+			name:     "face detect",
+			enqueue:  func(e *Enqueuer) error { return e.EnqueueFaceDetectRebuild(context.Background(), "ph1") },
+			wantType: TypeFaceDetect,
+		},
+		{
+			name:     "places",
+			enqueue:  func(e *Enqueuer) error { return e.EnqueuePlacesRebuild(context.Background(), "ph1") },
+			wantType: TypePlaces,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			fake := &fakeEnqueuer{}
+			if err := tt.enqueue(&Enqueuer{store: fake}); err != nil {
+				t.Fatalf("enqueue: %v", err)
+			}
+			if fake.lastType != tt.wantType {
+				t.Errorf("lastType = %q, want %q", fake.lastType, tt.wantType)
+			}
+			var decoded struct {
+				PhotoUID string `json:"photo_uid"`
+				Force    bool   `json:"force"`
+			}
+			if err := json.Unmarshal(fake.lastPayload, &decoded); err != nil {
+				t.Fatalf("unmarshal payload %q: %v", fake.lastPayload, err)
+			}
+			if decoded.PhotoUID != "ph1" || !decoded.Force {
+				t.Errorf("payload = %+v, want photo_uid ph1 with force set", decoded)
+			}
+		})
+	}
+}
+
+// TestEnqueueRebuilds_duplicateIsSuccess confirms two rebuild requests for the
+// same photo collapse into one job: the second enqueue hits the dedup index and
+// is reported as success, exactly as the plain enqueues are, so an operator
+// pressing the button twice schedules the work once.
+func TestEnqueueRebuilds_duplicateIsSuccess(t *testing.T) {
+	t.Parallel()
+
+	enqueues := map[string]func(*Enqueuer) error{
+		"image embed": func(e *Enqueuer) error { return e.EnqueueImageEmbedRebuild(context.Background(), "ph1") },
+		"face detect": func(e *Enqueuer) error { return e.EnqueueFaceDetectRebuild(context.Background(), "ph1") },
+		"places":      func(e *Enqueuer) error { return e.EnqueuePlacesRebuild(context.Background(), "ph1") },
+	}
+	for name, enqueue := range enqueues {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if err := enqueue(&Enqueuer{store: &fakeEnqueuer{err: ErrDuplicate}}); err != nil {
+				t.Errorf("rebuild enqueue on a duplicate = %v, want nil", err)
+			}
+		})
+	}
+}
+
 // TestEnqueueThumbnailRebuild_duplicateIsSuccess confirms the forced enqueue keeps
 // the adapter's idempotency: a photo whose thumbnail job is already active is a
 // no-op rather than an error the edit endpoint would log.

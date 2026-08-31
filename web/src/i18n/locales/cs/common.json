@@ -627,7 +627,10 @@
       "photo": {
         "archive": "Přesun fotky do koše",
         "edit": "Úprava obrazu fotky",
+        "embedding": "Přepočítání otisku fotky",
+        "faces": "Znovurozpoznání obličejů na fotce",
         "hide": "Skrytí fotky z knihovny",
+        "place": "Znovuurčení místa fotky",
         "purge": "Trvalé smazání fotky",
         "thumbnail": "Přegenerování náhledu fotky",
         "unarchive": "Obnovení fotky z koše",

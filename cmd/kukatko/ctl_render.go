@@ -195,6 +195,17 @@ func renderPhotoState(w io.Writer, out ctl.Output, raw json.RawMessage) error {
 	return renderRaw(w, out, raw, "photo state", ctl.DecodePhotoState, ctl.WritePhotoState)
 }
 
+// renderPhotoRebuild writes the result of one forced per-photo recomputation.
+// The step name is passed alongside the bytes because the oldest of the four
+// endpoints — regenerate-thumbnail — does not name what it rebuilt.
+func renderPhotoRebuild(w io.Writer, out ctl.Output, raw json.RawMessage, name string) error {
+	return renderRaw(w, out, raw, "rebuild result",
+		func(bytes json.RawMessage) (ctl.PhotoRebuild, error) {
+			return ctl.DecodePhotoRebuild(bytes, name)
+		},
+		ctl.WritePhotoRebuild)
+}
+
 // renderTrash writes a trash listing — what is in it, or what a purge would
 // destroy. Unlike most renderers this one does not pass the server's bytes
 // through even for -o json: the listing is a value ctl composes out of two

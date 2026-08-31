@@ -67,6 +67,10 @@ type env struct {
 	// storyboards is the real sprite generator behind the storyboard endpoints; a
 	// test plants a sprite in its cache to move a photo from pending to ready.
 	storyboards *storyboard.Generator
+	// rebuilds are the three forced per-photo recomputations behind the rebuild
+	// endpoints, faked so a test can pin what they answer without a sidecar or a
+	// mapy.com key.
+	rebuilds *fakeRebuilders
 }
 
 // fakeEmbedder is a controllable photoapi.TextEmbedder for the search tests: it
@@ -135,6 +139,7 @@ func newEnvWithMedia(t *testing.T, media storage.Storage) *env {
 	placeStore := places.NewStore(db.Pool())
 	commentStore := comments.NewStore(db.Pool())
 	embedder := &fakeEmbedder{byQuery: map[string][]float32{}}
+	rebuilders := &fakeRebuilders{}
 	jobStore := jobs.NewStore(db.Pool())
 	// The storyboard endpoints run against the real generator and the real queue:
 	// the pending/ready transition is a cache fact and the scheduling a queue fact,
@@ -179,6 +184,13 @@ func newEnvWithMedia(t *testing.T, media storage.Storage) *env {
 			Jobs:     jobStore,
 			Enqueuer: jobs.NewEnqueuer(jobStore),
 		}),
+		// The rebuild endpoints, over fake recomputations and the real queue: what
+		// this level is testing is the route, the guard, the audit entry and the
+		// offline fall-back, and running a real sidecar would test the sidecar.
+		Reembedder:        rebuilders,
+		Redetector:        rebuilders,
+		Regeocoder:        rebuilders,
+		Rebuilds:          jobs.NewEnqueuer(jobStore),
 		RequireAuth:       authAPI.RequireAuth,
 		RequireWrite:      authAPI.RequireWrite,
 		RequireAdmin:      authAPI.RequireAdmin,
@@ -197,7 +209,7 @@ func newEnvWithMedia(t *testing.T, media storage.Storage) *env {
 		server: server, authSvc: authSvc, store: store,
 		fs: fs, vectors: vectorStore, embedder: embedder, organize: organizeStore,
 		places: placeStore, comments: commentStore, db: db,
-		jobs: jobStore, storyboards: storyboards,
+		jobs: jobStore, storyboards: storyboards, rebuilds: rebuilders,
 	}
 }
 

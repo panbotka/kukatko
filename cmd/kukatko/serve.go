@@ -335,15 +335,25 @@ func buildServices(
 	// One storyboard service for both readers: the photo API answers "is there a
 	// scrub preview" (and schedules it), the worker renders what it scheduled.
 	storyboardSvc := buildStoryboardService(cfg, db, mediaStore, enqueuer)
+	// The places service is built here rather than with the other job handlers
+	// because it has two readers: the `places` worker handler, and the regeocode
+	// rebuild endpoint that runs its forced path on demand. One service, so a
+	// rebuild spends its mapy.com credit against the same budget and limiter the
+	// queue does.
+	placesSvc, err := buildPlacesServiceOrNil(cfg, db, enqueuer, geocodeBudget, reg)
+	if err != nil {
+		return nil, backgroundServices{}, err
+	}
+	rebuilders := photoRebuilders{embed: embedSvc, face: faceSvc, places: placesSvc}
 	photoAPI := buildPhotoAPI(cfg, db, authAPI, mediaStore, vectorStore, embedClient, matchSvc,
-		trashSvc, sidecarSched, enqueuer, storyboardSvc, jobStore, enqueuer, reg)
+		trashSvc, sidecarSched, enqueuer, storyboardSvc, jobStore, enqueuer, rebuilders, reg)
 	clusterAPI, clusterSvc := buildClusterAPI(cfg, db, authAPI, matchSvc)
 	mapsAPI, err := buildMapsAPI(cfg, db, authAPI, mapsHealth)
 	if err != nil {
 		return nil, backgroundServices{}, err
 	}
 	jobWorker, jobAPI, processAPI, maintenanceAPI, err := buildJobs(cfg, db, jobStore, authAPI, enqueuer,
-		embedSvc, faceSvc, clusterSvc, storyboardSvc, embedClient, reg, geocodeBudget)
+		embedSvc, faceSvc, clusterSvc, storyboardSvc, embedClient, reg, placesSvc)
 	if err != nil {
 		return nil, backgroundServices{}, err
 	}

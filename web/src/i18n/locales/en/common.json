@@ -623,7 +623,10 @@
       "photo": {
         "archive": "Photo moved to the trash",
         "edit": "Photo image adjusted",
+        "embedding": "Photo embedding recomputed",
+        "faces": "Photo faces re-detected",
         "hide": "Photo hidden from the library",
+        "place": "Photo place re-geocoded",
         "purge": "Photo permanently deleted",
         "thumbnail": "Photo thumbnail regenerated",
         "unarchive": "Photo restored from the trash",

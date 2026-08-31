@@ -59,6 +59,21 @@ func (e *RetryAfterError) Unwrap() error {
 	return e.Cause
 }
 
+// IsDeferral reports whether err is (or wraps) a RetryAfterError — the handler's
+// "not now, but nothing is wrong" signal, raised chiefly when the embeddings box
+// or mapy.com is unreachable.
+//
+// The worker itself matches the type with errors.As to read the delay. This
+// predicate is for the callers *outside* the worker that run a job handler's work
+// synchronously — the on-demand rebuild endpoints — and need the same
+// distinction without caring how long the queue would have waited: a deferral
+// means the work can still be done later, so the request queues it instead of
+// failing.
+func IsDeferral(err error) bool {
+	var retry *RetryAfterError
+	return errors.As(err, &retry)
+}
+
 // TerminalError is the error a handler returns to tell the worker the job can
 // never succeed, however often it is tried: a payload no version of the handler
 // could read, a recipient the mail server rejected as permanently undeliverable.

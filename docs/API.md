@@ -542,6 +542,34 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `jobs.Enqueuer`, so the dedup index makes a double click harmless, and answers **200** with the step's new
   state (the same entry shape) — 400 unknown step (including `storyboard`), 404 missing photo, **409** the
   step does not apply to this photo, 503 unwired.
+  **Repair is not rebuild — and this is the trap.** `process/{step}` enqueues the *ordinary* job, and every
+  per-photo job skips work it has already done: a photo that already has an embedding, a recorded face
+  detection or a geocoded coordinate is left exactly as it is. The request still answers **200** with the
+  step reading `done`, so it looks like it worked while nothing happened. That is right for a photo the
+  pipeline **missed** and useless for a photo whose stored answer is **wrong** — computed from a source that
+  has since been corrected (a RAW preview, a sideways image) or by a model that has since changed.
+  **Rebuild endpoints** (`internal/photoapi/rebuild.go`, all **maintainer** via `RequireMaintainer` —
+  matching the stricter of their two neighbours, because a rebuild discards stored work):
+  `POST /photos/{uid}/reembed` (`embedjob.Service.ForceEmbed`),
+  `POST /photos/{uid}/redetect-faces` (`facejob.Service.ForceDetect`) and
+  `POST /photos/{uid}/regeocode` (`placesjob.Service.ForceGeocode`) run the job's own work **now** and over
+  the top of what is stored. They are named and shaped after `regenerate-thumbnail`, which was the first of
+  them; that one keeps its `RequireWrite` guard and its `{status:"regenerated", sizes:[…]}` body.
+  Answer **200** `{step, status, faces?}` where `step` is the processing report's own name
+  (`image_embed`/`face_detect`/`places`), `status` is `"rebuilt"` (the work ran) or `"queued"`, and `faces`
+  is how many faces the photo has **afterwards** (present only for `redetect-faces`; **0 is a result**).
+  Errors: 404 missing photo, 503 the service is not wired (no mapy.com key → no `regeocode`), 500 otherwise.
+  **An offline backing service queues instead of failing:** when the embeddings box is asleep, or mapy.com is
+  unreachable / rate limited / out of credit budget, the handler recognises the job layer's own deferral
+  (`worker.IsDeferral`) and enqueues a **forced** job (`jobs.Enqueuer.Enqueue{ImageEmbed,FaceDetect,Places}Rebuild`)
+  instead, answering `status:"queued"`. The forced flag rides in the job payload, so queue dedup stays keyed
+  on type + `photo_uid`: two rebuild requests for one photo collapse into one job.
+  **A forced re-detection replaces, never appends:** `vectors.RecordFaceDetection` deletes the photo's faces
+  and inserts the new ones in one transaction, first handing each assignment (marker, subject, cached name)
+  to the new face that lands on the same place (IoU ≥ `vectors.CarryAssignmentIoU` = 0.5, exclusive greedy
+  pairing). So naming the people on a photo survives redoing its detection, and a face detected somewhere
+  new arrives unassigned. Audited as `photo.embedding` / `photo.faces` / `photo.place` with the outcome (and
+  the face count) in details.
   Mounted by the third `server.WithAPI` (`buildPhotoAPI` in `cmd/kukatko/photos.go`).
 - **Comments API (`/api/v1`, `internal/photoapi` + `internal/comments`):** per-photo comment threads — the
   family conversation around a picture ("who is the boy on the left?", "this was the summer before the barn

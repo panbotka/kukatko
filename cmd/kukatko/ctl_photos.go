@@ -13,9 +13,10 @@ import (
 // internal/photoapi serves it, plus the upload that fills it.
 //
 // The tree covers a photo's whole life in the order it happens: `upload` brings
-// one in, the read and edit commands work on it, `hide` and `archive` take it
-// out of sight and out of the library, and `purge` ends it. Only that last step
-// is gated — everything before it is undone by the command that reverses it.
+// one in, the read and edit commands work on it, `rebuild` redoes what the
+// library computed about it, `hide` and `archive` take it out of sight and out of
+// the library, and `purge` ends it. Only that last step is gated — everything
+// before it is undone by the command that reverses it.
 func newCtlPhotosCmd(opts *ctlOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "photos",
@@ -24,7 +25,8 @@ func newCtlPhotosCmd(opts *ctlOptions) *cobra.Command {
 	cmd.AddCommand(
 		newCtlPhotosListCmd(opts), newCtlPhotosGetCmd(opts), newCtlPhotosSearchCmd(opts),
 		newCtlPhotosImageCmd(opts), newCtlPhotosEditCmd(opts), newCtlPhotosFacesCmd(opts),
-		newCtlPhotosSimilarCmd(opts), newCtlPhotosUploadCmd(opts), newCtlPhotosPurgeCmd(opts),
+		newCtlPhotosSimilarCmd(opts), newCtlPhotosUploadCmd(opts), newCtlPhotosRebuildCmd(opts),
+		newCtlPhotosPurgeCmd(opts),
 	)
 	cmd.AddCommand(newCtlPhotoStateCmds(opts)...)
 	return cmd

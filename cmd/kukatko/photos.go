@@ -8,6 +8,8 @@ import (
 	"github.com/panbotka/kukatko/internal/comments"
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/database"
+	"github.com/panbotka/kukatko/internal/embedjob"
+	"github.com/panbotka/kukatko/internal/facejob"
 	"github.com/panbotka/kukatko/internal/facematch"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/metrics"
@@ -16,6 +18,7 @@ import (
 	"github.com/panbotka/kukatko/internal/photoapi"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/places"
+	"github.com/panbotka/kukatko/internal/placesjob"
 	"github.com/panbotka/kukatko/internal/processing"
 	"github.com/panbotka/kukatko/internal/ratelimit"
 	"github.com/panbotka/kukatko/internal/storage"
@@ -41,6 +44,30 @@ func buildFaceMatch(cfg *config.Config, db *database.DB) *facematch.Service {
 	})
 }
 
+// photoRebuilders bundles the three services behind the per-photo rebuild
+// endpoints: recomputing an embedding, re-detecting faces, re-geocoding a place.
+// They are the same job services the worker runs, reached through their forced
+// path — a rebuild is the job's own work, done now and over the top of what is
+// stored, so nothing about the pipeline is reimplemented in the HTTP layer.
+//
+// places is nil on an instance with no mapy.com key, where the regeocode endpoint
+// answers 503; the other two are always built.
+type photoRebuilders struct {
+	embed  *embedjob.Service
+	face   *facejob.Service
+	places *placesjob.Service
+}
+
+// regeocoderOrNil returns the places service as a photoapi.PhotoRegeocoder, or a
+// nil interface when none was built, so photoapi's nil check disables the
+// regeocode endpoint instead of calling into a typed nil.
+func (r photoRebuilders) regeocoderOrNil() photoapi.PhotoRegeocoder {
+	if r.places == nil {
+		return nil
+	}
+	return r.places
+}
+
 // buildPhotoAPI assembles the photo browse/curation subsystem: the configured
 // original store and thumbnailer (for media serving), the photo repository, and
 // the HTTP API. Read endpoints reuse the auth subsystem's RequireAuth guard,
@@ -58,13 +85,15 @@ func buildFaceMatch(cfg *config.Config, db *database.DB) *facematch.Service {
 // the grid stops showing the previous rendering. storyboards backs the video
 // scrub-preview routes (status + sprite) and is the same service the worker
 // renders through. enqueuer is the queue adapter the per-photo processing repair
-// schedules a single step through.
+// schedules a single step through, and the fallback an offline rebuild queues its
+// forced job with. rebuilders are the job services the rebuild endpoints redo one
+// photo's computation through.
 func buildPhotoAPI(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, store storage.Storage,
 	similar photoapi.SimilarSearcher, embedder photoapi.TextEmbedder, faceSvc *facematch.Service,
 	purger photoapi.Purger, sidecar sidecarScheduler, thumbnails photoapi.ThumbnailEnqueuer,
 	storyboards *storyboardjob.Service, jobStore *jobs.Store, enqueuer *jobs.Enqueuer,
-	reg *metrics.Registry,
+	rebuilders photoRebuilders, reg *metrics.Registry,
 ) *photoapi.API {
 	thumbnailer := thumb.New(store, cfg.Storage.CachePath, thumbOptions(cfg, reg, db)...)
 	photoStore := photos.NewStore(db.Pool())
@@ -119,7 +148,14 @@ func buildPhotoAPI(
 		Storyboards: storyboards,
 		// What the library has already computed about a photo, and the maintainer's
 		// per-step repair for the one it missed.
-		Processing:        buildProcessingService(cfg, db, jobStore, enqueuer),
+		Processing: buildProcessingService(cfg, db, jobStore, enqueuer),
+		// The rebuild endpoints: the job services' forced path, run on demand. The
+		// queue enqueuer is the fallback for when the box (or mapy.com) is asleep —
+		// the request then schedules a forced job instead of failing.
+		Reembedder:        rebuilders.embed,
+		Redetector:        rebuilders.face,
+		Regeocoder:        rebuilders.regeocoderOrNil(),
+		Rebuilds:          enqueuer,
 		CommentRateLimit:  commentLimit.KeyedMiddleware(commentRateKey),
 		RetentionDays:     cfg.Trash.RetentionDays,
 		VideoTranscode:    cfg.Video.Transcode,

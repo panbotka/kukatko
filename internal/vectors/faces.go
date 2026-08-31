@@ -133,6 +133,12 @@ ON CONFLICT (photo_uid) DO UPDATE SET
 // photo with no faces be told apart from one that was never processed, so the job
 // stays idempotent and the backfill skips it. Vectors are validated against FaceDim
 // (ErrDimMismatch) and a duplicate face_index yields ErrFaceIndexTaken.
+//
+// Replacing is not forgetting: a re-detection first reads the assignments cached
+// on the rows it is about to delete and hands each one to the new face that lands
+// on the same place (see carryAssignments), so redoing the detection on a photo
+// does not un-name the people on it. Whatever the caller already set on a face is
+// left alone — an explicit assignment is never overwritten by an inherited one.
 func (s *Store) RecordFaceDetection(ctx context.Context, photoUID string, det Detection) error {
 	if err := validateFaceDims(det.Faces); err != nil {
 		return err
@@ -142,6 +148,12 @@ func (s *Store) RecordFaceDetection(ctx context.Context, photoUID string, det De
 		return fmt.Errorf("begin transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+
+	assigned, err := listAssignedFaces(ctx, tx, photoUID)
+	if err != nil {
+		return err
+	}
+	carryAssignments(det.Faces, assigned)
 
 	if err := replaceFaces(ctx, tx, photoUID, det.Faces); err != nil {
 		return err
