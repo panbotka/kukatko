@@ -152,6 +152,17 @@ func (c *Client) do(
 	}
 	defer func() { _ = resp.Body.Close() }()
 
+	return c.readBody(resp, path)
+}
+
+// readBody reads one response's body, returning it as raw JSON — or nil when the
+// server answered with no content — and mapping a non-2xx status onto the CLI's
+// typed errors. Closing the body stays with the caller that opened it, which is
+// also where a reader can see that it happens.
+//
+// It is shared by the buffered requests of do and by the streamed upload, which
+// builds its own request but reads the same JSON answer.
+func (c *Client) readBody(resp *http.Response, path string) (json.RawMessage, error) {
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))
 	if err != nil {
 		return nil, fmt.Errorf("reading response from %s: %w", path, err)
@@ -170,25 +181,39 @@ func (c *Client) do(
 func (c *Client) newRequest(
 	ctx context.Context, method, path string, query url.Values, body any,
 ) (*http.Request, error) {
-	endpoint := c.server + apiBasePath + path
-	if len(query) > 0 {
-		endpoint += "?" + query.Encode()
-	}
 	var payload io.Reader
+	contentType := ""
 	if body != nil {
 		encoded, err := json.Marshal(body)
 		if err != nil {
 			return nil, fmt.Errorf("encoding the request body for %s: %w", path, err)
 		}
 		payload = bytes.NewReader(encoded)
+		contentType = "application/json"
+	}
+	return c.newStreamRequest(ctx, method, path, query, contentType, payload)
+}
+
+// newStreamRequest builds one authenticated request whose body is read from
+// payload as it is sent, rather than marshalled into memory first. contentType
+// is set only when there is a body; an empty payload leaves the request bodiless.
+//
+// It exists for the upload, whose body is a multipart stream of whole originals
+// and must never be buffered, and newRequest is the JSON case of it.
+func (c *Client) newStreamRequest(
+	ctx context.Context, method, path string, query url.Values, contentType string, payload io.Reader,
+) (*http.Request, error) {
+	endpoint := c.server + apiBasePath + path
+	if len(query) > 0 {
+		endpoint += "?" + query.Encode()
 	}
 	req, err := http.NewRequestWithContext(ctx, method, endpoint, payload)
 	if err != nil {
 		return nil, fmt.Errorf("building request for %s: %w", path, err)
 	}
 	req.Header.Set("Accept", "application/json")
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+	if payload != nil && contentType != "" {
+		req.Header.Set("Content-Type", contentType)
 	}
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)

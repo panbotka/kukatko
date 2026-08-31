@@ -183,3 +183,43 @@ func renderComments(w io.Writer, out ctl.Output, raw json.RawMessage) error {
 func renderComment(w io.Writer, out ctl.Output, raw json.RawMessage) error {
 	return renderRaw(w, out, raw, "comment", ctl.DecodeComment, ctl.WriteComment)
 }
+
+// renderUploadReport writes the per-file outcome of an upload.
+func renderUploadReport(w io.Writer, out ctl.Output, raw json.RawMessage) error {
+	return renderRaw(w, out, raw, "upload result", ctl.DecodeUploadReport, ctl.WriteUploadReport)
+}
+
+// renderPhotoState writes where a photo now stands after a reversible state
+// change, decoded out of the refreshed photo the endpoints answer with.
+func renderPhotoState(w io.Writer, out ctl.Output, raw json.RawMessage) error {
+	return renderRaw(w, out, raw, "photo state", ctl.DecodePhotoState, ctl.WritePhotoState)
+}
+
+// renderTrash writes a trash listing — what is in it, or what a purge would
+// destroy. Unlike most renderers this one does not pass the server's bytes
+// through even for -o json: the listing is a value ctl composes out of two
+// endpoints, so there are no single response bytes to echo.
+func renderTrash(w io.Writer, out ctl.Output, view ctl.TrashView) error {
+	if err := ctl.WriteTrash(w, out, view); err != nil {
+		return fmt.Errorf("writing the trash listing: %w", err)
+	}
+	return nil
+}
+
+// renderPurgeResult writes what a batch purge destroyed.
+func renderPurgeResult(w io.Writer, out ctl.Output, raw json.RawMessage) error {
+	result, err := ctl.DecodePurgeResult(raw)
+	if err != nil {
+		return fmt.Errorf("writing the purge result: %w", err)
+	}
+	if err := ctl.WritePurgeResult(w, out, result); err != nil {
+		return fmt.Errorf("writing the purge result: %w", err)
+	}
+	return nil
+}
+
+// renderDuplicateMerge writes what resolving a duplicate group moved onto the
+// keeper and how many copies it archived.
+func renderDuplicateMerge(w io.Writer, out ctl.Output, raw json.RawMessage) error {
+	return renderRaw(w, out, raw, "merge result", ctl.DecodeDuplicateMerge, ctl.WriteDuplicateMerge)
+}

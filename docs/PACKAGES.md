@@ -3836,11 +3836,46 @@ to `## Package map` in `CLAUDE.md`.
   - `duplicates.go` — the read-only scan and the two opinions: `ListDuplicates` (`GET /duplicates`, paged) +
     `DecodeDuplicates`/`WriteDuplicates`, and `ConfirmDuplicate`/`UnconfirmDuplicate`/`DismissDuplicate`/
     `UndismissDuplicate` over `/feedback/duplicate-{confirmations,dismissals}` (`204`, idempotent, the DELETE
-    half carrying a body). **Merging is not here**: resolving a group into a keeper archives photos and stays
-    with the guarded local commands. The pair is unordered server-side; a pair naming one photo twice is
+    half carrying a body). **Nothing in this file changes a photo** — merging lives in `dupmerge.go`, behind
+    the gate. The pair is unordered server-side; a pair naming one photo twice is
     refused locally (`ErrSameDuplicatePhoto`). The table prints **one row per member**, since the member uids
     are what confirm and dismiss take, and each distance names its detector — a Hamming distance between
     perceptual hashes and a cosine distance between embeddings are not the same number.
+  - `dupmerge.go` — resolving a group: `MergeGroup(keeperUID, others, dryRun)` (`POST /duplicates/merge`) +
+    `DecodeDuplicateMerge`/`WriteDuplicateMerge`. **The keeper is folded into its own group** by
+    `mergeInput`, so the API's `ErrKeeperNotInGroup` is unreachable from ctl; the set is deduplicated and a
+    group of one is refused locally (`ErrNoMergeMembers`). A dry run is **the server's own `dry_run`
+    preview** — the same computation, writing nothing — rather than a second guess at what a merge would do,
+    which is the whole reason a rehearsal is trustworthy. The renderer says out loud that the archived copies
+    are **in the trash, not deleted**: a merge archives, and only a purge destroys.
+  - `upload.go` — `UploadPhotos(ctx, paths)` (`POST /upload`) + `DecodeUploadReport`/`WriteUploadReport`.
+    The multipart body is written into an `io.Pipe` as the files are read, so **a whole original is never
+    held in memory**, and like `media.go` it uses `Client.stream` (no timeout) and `Client.newStreamRequest`,
+    the streamed half of `newRequest`. Every path is `os.Stat`ed **before the first byte is sent**
+    (`ErrNoUploadFiles`, `ErrNotRegularFile` — a directory is refused, not walked: that is
+    `kukatko import dir`), so a typo costs no half-sent batch. `UploadReport.Counts()` treats an outcome that
+    is neither `created` nor `duplicate` as a failure, so an outcome added server-side later is reported as a
+    problem rather than silently ignored; a **duplicate is not an error**, which is the point of the hashing.
+  - `state.go` — the reversible half of a photo's life: `SetPhotoState(uid, state)` over
+    `/photos/{uid}/{archive,unarchive,hide,unhide}` + `DecodePhotoState`/`WritePhotoState`, and
+    `DescribePurgeTarget`. `PhotoState` decodes only the two lifecycle fields out of the whole refreshed
+    photo the endpoints answer with, because everything else in that body is what the photo already was —
+    and the line prints **both** flags, since archiving a hidden photo leaves it in two states and reporting
+    only the change would not say so. `DescribePurgeTarget` is what a purge rehearsal reads out: the size,
+    and whether the photo is even archived — a rehearsal that did not say so would let somebody confirm a
+    command the server is going to refuse with `409`.
+  - `trash.go` — the trash and the two batch purges: `FetchTrash` (`GET /trash/info` for the retention
+    window + paged `GET /photos?archived=only` for the photos), `PurgePhoto`, `EmptyTrash`,
+    `PurgeOlderThan(days)` — each carrying the API's own `confirm=true`, which is **not** the CLI's `--yes`
+    but what the endpoint demands of any client — plus `PurgeCutoff`, `Trash.ArchivedBefore` and
+    `DecodePurgeResult`/`WritePurgeResult`/`WriteTrash`. The listing is sorted **oldest-archived first**
+    client-side: the API has no `archived_at` sort key, and a "what goes next" answer computed over one
+    arbitrary page would be wrong rather than merely partial; paging stops at `maxTrashItems` and the summary
+    says when it did. `PurgeAt` is left unset when retention is off — then nothing goes away on its own and a
+    countdown would be a promise the instance does not make. `TrashView` pairs the listing with the heading
+    it is printed under and a `DryRun` flag, because the same rows mean something very different under
+    "what is in the trash" and "what this would destroy"; like `MergeReport` it is a value ctl composes out
+    of two endpoints, so the machine formats emit it rather than passing server bytes through.
   - `comments.go` — `ListComments`/`AddComment` + `DecodeComments`/`DecodeComment` and `WriteComments`/
     `WriteComment`. **The author is always the token's owner** — the API takes it from the authenticated
     principal and the audit trail records it there too — which is why the MCP server exposes no comment tool

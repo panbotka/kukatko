@@ -260,8 +260,19 @@ were written.
   the original; smart albums can be saved, edited and deleted; a photo's visual neighbours can be
   listed with how alike they are, and a pair of them settled as the same shot or as two different
   ones. Deleting an album or a label refuses without an explicit `--yes` and offers a `--dry-run`
-  first, and merging duplicates — the one thing here that destroys something — is deliberately not
-  offered over the network at all.
+  first.
+- **A photo's whole life fits in the terminal.** `kukatko ctl photos upload` streams files in
+  through the ordinary ingest path — the same hashing, the same deduplication, the same follow-up
+  work as the web uploader — and reports what was catalogued and what the library already had.
+  `hide`, `archive` and their undos are ordinary commands, because each is undone by the one that
+  reverses it. **What cannot be taken back is gated**: `photos purge`, `trash empty`,
+  `trash purge-older` and the merge of a duplicate group all refuse to run without an explicit
+  `--yes`, and every one of them offers a `--dry-run` that lists exactly which photos would be
+  destroyed — a rehearsal that deliberately needs no confirmation, because seeing what is at stake
+  is how the decision gets made. `ctl trash info` says what is in the trash and when retention will
+  take each photo, so the decision is an informed one rather than a blind one. None of this is
+  exposed to an MCP agent, and that difference is the point: the CLI is the door for a person
+  holding a token, MCP is the door for an agent running unattended.
 - **The conversation is readable from the terminal.** A photo's comment thread is often the only
   record of who is on it and when it was taken, so it can be read whole — bodies printed in full,
   not cut to a column — and written into. An agent writes under **its own account**, because the

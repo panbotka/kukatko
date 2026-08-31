@@ -9,18 +9,24 @@ import (
 	"github.com/panbotka/kukatko/internal/ctl"
 )
 
-// newCtlPhotosCmd builds the "ctl photos" tree: the read side of the photo
-// catalogue, served by internal/photoapi.
+// newCtlPhotosCmd builds the "ctl photos" tree: the photo catalogue as
+// internal/photoapi serves it, plus the upload that fills it.
+//
+// The tree covers a photo's whole life in the order it happens: `upload` brings
+// one in, the read and edit commands work on it, `hide` and `archive` take it
+// out of sight and out of the library, and `purge` ends it. Only that last step
+// is gated — everything before it is undone by the command that reverses it.
 func newCtlPhotosCmd(opts *ctlOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "photos",
-		Short: "Browse the photo catalogue on a running server",
+		Short: "Browse the photo catalogue on a running server, and move photos through their lifecycle",
 	}
 	cmd.AddCommand(
 		newCtlPhotosListCmd(opts), newCtlPhotosGetCmd(opts), newCtlPhotosSearchCmd(opts),
 		newCtlPhotosImageCmd(opts), newCtlPhotosEditCmd(opts), newCtlPhotosFacesCmd(opts),
-		newCtlPhotosSimilarCmd(opts),
+		newCtlPhotosSimilarCmd(opts), newCtlPhotosUploadCmd(opts), newCtlPhotosPurgeCmd(opts),
 	)
+	cmd.AddCommand(newCtlPhotoStateCmds(opts)...)
 	return cmd
 }
 

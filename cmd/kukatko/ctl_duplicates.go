@@ -14,17 +14,18 @@ import (
 // a human can record about a pair (`internal/feedbackapi`). All of it needs the
 // editor or admin role.
 //
-// **Nothing here merges or archives anything.** Resolving a group by merging the
-// copies into a keeper is destructive and stays out of `ctl` on purpose — it
-// lives with the guarded local commands. Confirming and dismissing are opinions:
-// they rank the duplicates page and keep a settled pair from coming back.
+// Confirming and dismissing are opinions: they rank the duplicates page and keep
+// a settled pair from coming back, and neither of them touches a photo. `merge`
+// is the one command here that does — it archives the copies it did not keep —
+// so it is gated like every other irreversible step: --yes to run it, --dry-run
+// to see what it would move first.
 func newCtlDuplicatesCmd(opts *ctlOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "duplicates",
-		Short: "List likely-duplicate groups and settle a pair as the same shot or as different ones",
+		Short: "List likely-duplicate groups, settle a pair, or resolve a group into one keeper",
 	}
 	cmd.AddCommand(
-		newCtlDuplicatesListCmd(opts),
+		newCtlDuplicatesListCmd(opts), newCtlDuplicatesMergeCmd(opts),
 		newCtlDuplicatesPairCmd(opts, duplicatePairSpec{
 			use:   "confirm <photo-uid> <photo-uid>",
 			short: "Record that the two photos really are the same shot",
@@ -128,4 +129,55 @@ func newCtlDuplicatesPairCmd(opts *ctlOptions, spec duplicatePairSpec) *cobra.Co
 				"photos "+args[0]+" and "+args[1]+" "+spec.done)
 		},
 	}
+}
+
+// newCtlDuplicatesMergeCmd builds "ctl duplicates merge <keeper-uid>
+// <other-uid>…", the one command in this tree that changes the library.
+func newCtlDuplicatesMergeCmd(opts *ctlOptions) *cobra.Command {
+	var assumeYes, dryRun bool
+	cmd := &cobra.Command{
+		Use:   "merge <keeper-uid> <other-uid>…",
+		Short: "Resolve a duplicate group into one keeper, archiving the copies (editor or admin)",
+		Long: "Resolve a duplicate group: everything the other members carried — their\n" +
+			"albums, their labels, the people on them — moves onto the keeper, whose empty\n" +
+			"metadata fields are filled from theirs, and **the copies are archived**.\n\n" +
+			"That last part is why this is gated while `confirm` and `dismiss` are not: an\n" +
+			"opinion about a pair can be taken back, an archived photo is on the retention\n" +
+			"clock and will eventually be destroyed. Nothing is deleted here and no original\n" +
+			"is touched — the copies land in the trash, where `ctl trash info` accounts for\n" +
+			"them and only a purge ends them.\n\n" +
+			"The keeper is named first and is added to the group automatically, so it\n" +
+			"cannot be left out of its own merge. Pass --yes to confirm, or --dry-run to\n" +
+			"see what would move — the rehearsal is the server's own preview of this exact\n" +
+			"merge, not a second guess at it, and it needs no --yes.",
+		Args: cobra.MinimumNArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runDuplicateMerge(cmd, opts, args[0], args[1:], assumeYes, dryRun)
+		},
+	}
+	addIrreversibleFlags(cmd, &assumeYes, &dryRun)
+	return cmd
+}
+
+// runDuplicateMerge previews or performs a merge. The dry run goes to the server
+// too: POST /duplicates/merge with dry_run computes the whole result and writes
+// nothing, so what the rehearsal prints is what the merge would do.
+func runDuplicateMerge(
+	cmd *cobra.Command, opts *ctlOptions, keeperUID string, others []string, assumeYes, dryRun bool,
+) error {
+	client, out, err := opts.resolve()
+	if err != nil {
+		return err
+	}
+	if !dryRun {
+		action := fmt.Sprintf("merge %d photos into %s, archiving the copies", len(others), keeperUID)
+		if err := confirmIrreversible(assumeYes, action); err != nil {
+			return err
+		}
+	}
+	raw, err := client.MergeGroup(cmd.Context(), keeperUID, others, dryRun)
+	if err != nil {
+		return fmt.Errorf("merging a duplicate group into %s: %w", keeperUID, err)
+	}
+	return renderDuplicateMerge(cmd.OutOrStdout(), out, raw)
 }

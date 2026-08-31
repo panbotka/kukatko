@@ -478,6 +478,10 @@ Neither one prints a stack trace, the response body, or the token.
 | `ctl photos edit <uid>` | `PATCH /photos/{uid}` — the whole editable metadata surface (`editor`/`admin`) |
 | `ctl photos faces <uid>` | `GET /photos/{uid}/faces` — the detections, their markers, and who they might be |
 | `ctl photos similar <uid>` | `GET /photos/{uid}/similar` — the visual neighbours with their cosine distance; `--limit` 1…100 |
+| `ctl photos upload <path>…` | `POST /upload` — streams files in through the ordinary ingest path (`editor`/`admin`) |
+| `ctl photos archive` / `unarchive <uid>` | `POST /photos/{uid}/archive`+`/unarchive` — to the trash and back (reversible) |
+| `ctl photos hide` / `unhide <uid>` | `POST /photos/{uid}/hide`+`/unhide` — out of the library grid, nothing deleted |
+| `ctl photos purge <uid>` | `POST /photos/{uid}/purge` — **permanent**, `admin`, needs `--yes`; see [the gate](#the-irreversible-commands-and-their-gate) |
 
 Together `get`, `image` and `edit` are the loop an agent needs per photo: **read it whole, look at it,
 write the evaluation back** — one command per step instead of three raw HTTP calls. `faces` opens the
@@ -589,6 +593,121 @@ kukatkoctl photos edit pht01h2j3 --ai-note "babička na dvoře" --dry-run
 kukatkoctl photos edit pht01h2j3 --taken-at 1978-06-03 --taken-at-estimated \
   --taken-at-note "podle babičky rok po svatbě" --people -o llm   # --people: read the roll-call back
 kukatkoctl photos edit pht01h2j3 --title ""      # empties it; omitting --title leaves it alone
+```
+
+#### `ctl photos upload` — the way in
+
+```
+ctl photos upload <path>…
+```
+
+The files go through **the same ingest path as the web uploader** (`POST /upload`,
+`internal/ingest`): the server hashes each one and refuses to store the same bytes twice, reads its
+metadata, renders its thumbnails and queues the follow-up work (embeddings, faces, OCR, the metadata
+sidecar). None of that happens in the CLI — this command only carries the bytes there, so an upload
+from the terminal and one from the browser produce the same photo.
+
+**It streams.** The multipart body is written into the request as the files are read from disk, so a
+hundred-megabyte original never sits in memory, and the transfer has no client timeout (like
+`photos image`, only the context you interrupt it with ends it). Every path is checked to be an
+existing regular file **before** a byte is sent, so a typo fails the command instead of half the batch.
+
+A file whose bytes are already in the library is reported as **`duplicate`, not as an error** — that
+is the deduplication doing its job — and the row carries the uid of the photo that already holds
+them. Only a file that could not be catalogued at all makes the command **exit nonzero**; the report
+is printed either way.
+
+```
+FILE      OUTCOME    UID     NOTE
+a.jpg     created    pht01   near_duplicate
+b.jpg     duplicate  pht02   -
+c.txt     error      -       unsupported media type
+
+3 files · 1 created · 1 already in the library · 1 failed
+```
+
+To ingest a whole directory tree, use **`kukatko import dir`** beside the library instead: this
+command takes files, and a directory is refused rather than walked.
+
+#### The lifecycle: hide, archive, purge
+
+A photo moves through four states, and `ctl` draws a hard line across them:
+
+| Step | Command | Reversible? |
+| --- | --- | --- |
+| out of the library grid | `photos hide` / `photos unhide` | yes, by its undo |
+| into the trash | `photos archive` / `photos unarchive` | yes, by its undo |
+| gone | `photos purge`, `trash empty`, `trash purge-older` | **no** |
+
+**`hide` is not archiving.** Nothing is deleted or scheduled for deletion: the photo leaves the
+library grid and its counts, the timeline, the map, the slideshow, the review game and the default
+search, and stays fully visible in its albums and labels, in favourites and at its own uid. It is
+for the photo worth keeping but not worth meeting again by accident; `q=hidden:yes` lists them.
+
+**`archive` is a soft delete** — nothing about the photo changes, it simply leaves the default
+listings — but it starts a clock: the trash is purged by retention. All four commands answer with
+the refreshed photo and print **both** flags, not only the one they changed, because archiving a
+hidden photo leaves it in two states at once.
+
+`ctl bulk --archive` / `--unarchive` does the same to a whole set in one transaction; these
+per-photo commands exist because hiding has no bulk operation and because a single photo needs no batch.
+
+#### `ctl trash`
+
+The trash, and the two ways to empty it for good.
+
+| Command | Meaning |
+| --- | --- |
+| `ctl trash info` | what is in the trash and when retention takes each photo (read-only, any role) |
+| `ctl trash empty` | `POST /trash/empty` — **permanently deletes every archived photo** (`admin`) |
+| `ctl trash purge-older --days N` | `POST /trash/purge-older` — the same for photos archived longer ago than `N` days (`admin`); `--days 0` is the whole trash |
+
+`info` reads `GET /trash/info` for the retention window and pages `GET /photos?archived=only` for
+the photos themselves, then sorts them **oldest-archived first** — the order retention takes them
+in — and stamps each with the date it will be destroyed on. The sort happens client-side because the
+listing has no `archived_at` sort key, and a "what goes next" answer computed over one arbitrary page
+would be wrong rather than merely partial. With retention off (`trash.retention_days` <= 0) there is
+no date to print and the summary says so: nothing in the trash then goes away on its own.
+
+```
+UID     FILE       TITLE   SIZE     ARCHIVED          PURGE AT
+pht01   old.jpg    Lake    2.0 MiB  2026-01-02 10:00  2026-02-01 10:00
+
+1 of 1 photos · 2.0 MiB · retention 30 days
+```
+
+#### The irreversible commands and their gate
+
+`photos purge`, `trash empty`, `trash purge-older` and `duplicates merge` are the commands that
+cannot be taken back. They all carry the same two flags:
+
+| Flag | Meaning |
+| --- | --- |
+| `--yes` / `-y` | confirm; **without it the command refuses and says so**, having changed nothing |
+| `--dry-run` | list exactly what would be destroyed, change nothing, and **exit 0 without `--yes`** |
+
+The asymmetry is deliberate: a rehearsal is how the decision gets made, so it cannot sit behind the
+same flag as the decision. There is no size threshold and no prompt (unlike
+[large batches](#large-batches-confirmation-above-50-photos)) — there is no number of photos at which
+permanent deletion is harmless, and a piped agent has no terminal to answer a question from.
+
+**Nothing here deletes an original by itself.** Every purge goes through `internal/trash`, the
+catalogue's own path (row, original, thumbnails, storyboard, backup object, in that order, audited);
+the CLI adds no deletion logic and has no way around it. `photos purge` refuses a photo that is not
+archived (`409`), so nothing live is one command away from gone, and it needs the **admin** role,
+not merely write access. `duplicates merge` archives the copies it did not keep — it deletes
+nothing — which is why it is gated here and yet its result says out loud that they are in the trash.
+
+`ctl trash info` exists so the gate is informed rather than blind, and each dry run prints the same
+listing under a heading that says what it is:
+
+```bash
+kukatkoctl trash info                                  # what is in there, and what goes next
+kukatkoctl trash empty --dry-run                       # exactly what would be lost
+kukatkoctl trash empty --yes                           # 2 photos permanently deleted
+kukatkoctl trash purge-older --days 30 --dry-run       # only what is past the window
+kukatkoctl photos purge pht01h2j3 --dry-run            # one photo, named and sized
+kukatkoctl duplicates merge pht01h2j3 pht09z8y7 --dry-run
 ```
 
 #### `ctl albums`
@@ -824,11 +943,20 @@ human can record about a pair (`internal/feedbackapi`). All of it `editor`/`admi
 | `ctl duplicates unconfirm <a> <b>` | `DELETE` the same (undo) |
 | `ctl duplicates dismiss <a> <b>` | `POST /feedback/duplicate-dismissals` — "no, these are different photos" |
 | `ctl duplicates undismiss <a> <b>` | `DELETE` the same (undo) |
+| `ctl duplicates merge <keeper> <other>…` | `POST /duplicates/merge` — resolve the group into the keeper, **archiving the copies**; needs `--yes` |
 
-**Nothing here merges or archives anything.** Resolving a group by merging the copies into a keeper is
-destructive, and like backups and maintenance it stays off the network — see *What `ctl` deliberately cannot
-do*. Confirming and dismissing are opinions: one ranks a group up the duplicates page, the other stops the
-pair being offered again. **They are opposites**, both idempotent, both undoable, and the pair is unordered.
+Confirming and dismissing are **opinions**: one ranks a group up the duplicates page, the other stops
+the pair being offered again. They change no photo, they are opposites, both idempotent, both
+undoable, and the pair is unordered.
+
+**`merge` is the one command here that changes the library.** Everything the other members carried —
+albums, labels, the people on them — moves onto the keeper, its empty metadata fields are filled from
+theirs, and the copies are **archived**. That is why it is gated like a deletion (see
+[the gate](#the-irreversible-commands-and-their-gate)) even though it deletes nothing: an opinion can
+be taken back, an archived photo is on the retention clock. The keeper is named first and is folded
+into its own group, so the API's "the keeper must be in the group" rejection is unreachable; and
+`--dry-run` is **the server's own preview** of that exact merge (`dry_run` in the request body), not a
+second implementation's guess at it.
 
 `list` prints **one row per member**, because the member uids are what `confirm` and `dismiss` take.
 `DISTANCE` names the detector that measured it (`phash 2`, `cos 0.013`): a Hamming distance between
@@ -950,13 +1078,20 @@ kukatkoctl photos list --year 2019 -o json | kukatkoctl bulk --archive --yes
 
 #### What `ctl` deliberately cannot do
 
-Backups, restore, migrations, maintenance, import, and the job queue are **not offered over the network**. They are destructive or
+Backups, restore, migrations, maintenance, the library wipe, and the job queue are **not offered over the network**. They are destructive or
 long-running and belong on the machine where the instance runs — so they remain only as local subcommands
-(`kukatko backup`, `restore`, `migrate`, `maintenance`, `import`, …).
+(`kukatko backup`, `restore`, `migrate`, `maintenance`, …).
 
-**Resolving a duplicate group is on that list too.** `POST /duplicates/merge` moves everything the copies
-carried onto a keeper and archives them, which no agent should be able to do down a pipe;
-[`ctl duplicates`](#ctl-duplicates) therefore offers the scan and the two opinions, and nothing that merges.
+**Permanent deletion is the exception, and it is a deliberate one.** `photos purge`, `trash empty`,
+`trash purge-older` and `duplicates merge` are here, behind
+[the `--yes`/`--dry-run` gate](#the-irreversible-commands-and-their-gate), because the person who has
+to decide whether a photo goes is holding a token and a terminal. **The MCP server exposes none of
+it** and must stay that way — an integration test walks `tools/list` for destructive names and fails
+if one appears. That is the whole distinction: the CLI is the door for a human holding a token, MCP is
+the door for an agent running unattended.
+
+Ingesting a **directory tree** stays local too (`kukatko import dir`): `ctl photos upload` takes
+files, one request, streamed — a walk over a disk the server cannot see is not something an API can do.
 
 ## Configuration keys
 

@@ -126,6 +126,15 @@ The `TestMCPDestructiveToolsAreNotExposed` test guards this **by intent, not by 
 the highest role, walks `tools/list` and fails on any tool whose name contains `delete`, `purge`,
 `trash`, `archive`, `restore`, `backup`, `user` or `empty`.
 
+**`kukatko ctl` does offer several of these, and that is not an inconsistency.** Uploading, hiding,
+archiving, purging, emptying the trash and merging a duplicate group all live in the CLI, the
+irreversible ones behind an explicit `--yes` with a `--dry-run` that lists what would be lost (see
+[`OPERATIONS.md`](OPERATIONS.md) → *The irreversible commands and their gate*). The difference is who
+is on the other end: the CLI is the door for a **person holding a token**, who is asked to confirm and
+can be shown what is at stake first; MCP is the door for an **agent running unattended**, where there
+is nobody to ask. Adding any of it here would erase that distinction, which is the reason both doors
+exist.
+
 ## Enabling it and connecting an agent
 
 See [`docs/OPERATIONS.md`](OPERATIONS.md) → the `mcp.*` keys. In brief:
