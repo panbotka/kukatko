@@ -476,9 +476,11 @@ Neither one prints a stack trace, the response body, or the token.
 | `ctl photos search <query>` | `GET /search?q=…&mode=…` |
 | `ctl photos image <uid>` | saves a rendition to a file and prints the path |
 | `ctl photos edit <uid>` | `PATCH /photos/{uid}` — the whole editable metadata surface (`editor`/`admin`) |
+| `ctl photos faces <uid>` | `GET /photos/{uid}/faces` — the detections, their markers, and who they might be |
 
-Together those three are the loop an agent needs per photo: **read it whole, look at it, write the
-evaluation back** — one command per step instead of three raw HTTP calls.
+Together `get`, `image` and `edit` are the loop an agent needs per photo: **read it whole, look at it,
+write the evaluation back** — one command per step instead of three raw HTTP calls. `faces` opens the
+second loop, over people, which [`ctl faces`](#ctl-faces) continues.
 
 `list` and `search` share the filters, except those marked "`list` only" / "`search` only".
 `search` orders by relevance, so it offers no `--sort`/`--order`; it offers no `--favorite` because
@@ -623,17 +625,92 @@ server fills in its own default.
 
 #### `ctl subjects`
 
-People, animals, and other subjects of the face pipeline (`internal/peopleapi`). **The whole tree is read-only** —
-creating and editing subjects belongs in the UI, where the face gallery is visible and a decision can be verified.
+People, animals, and other subjects of the face pipeline (`internal/peopleapi`). Reading needs any role,
+writing `editor`/`admin`.
 
 | Command | Meaning |
 | --- | --- |
 | `ctl subjects list` | `GET /subjects` — a **bare `{"subjects":[…]}`**; `PHOTOS` = distinct photos, `MARKERS` = faces |
 | `ctl subjects get <uid>` | `GET /subjects/{uid}` |
 | `ctl subjects photos <uid>` | `GET /subjects/{uid}/photos`; `--limit`/`--offset` |
+| `ctl subjects create <name>` | `POST /subjects`; `--type`, `--notes`, `--cover`, `--favorite`, `--private`, `--birth-year`, `--death-year` |
+| `ctl subjects rename <uid> <name>` | `PATCH /subjects/{uid}` with the stored record read back first |
+| `ctl subjects merge <source-uid> <keeper-uid>` | `POST /subjects/{uid}/merge` — **irreversible**, needs `--yes` |
+| `ctl subjects delete <uid>` | `DELETE /subjects/{uid}` — **irreversible**, needs `--yes` |
 
 A subject's gallery is the only paginated subject endpoint and returns the **`/photos` envelope**, so it
 prints as a photo list. It does not read the catalog filters, so `ctl` does not offer them either.
+
+**There is no `ctl subjects edit`.** `PATCH /subjects/{uid}` rewrites the whole editable record rather than
+patching it, so a flag-per-field edit would silently erase everything you did not mention. `rename` is that
+edit done safely: it reads the record, changes the name, and sends the rest back untouched — otherwise
+renaming a pet would reclassify it as a person and drop its notes, cover and life years on the way.
+
+**Merging and deleting cannot be undone**, so both refuse without an explicit `--yes` (there is no size at
+which losing a person's name is harmless, and no threshold to be under) and both offer `--dry-run`, which
+names who would go and writes nothing. Both **resolve the people by name first**: a mistyped uid becomes a
+`404` before anything is destroyed, and the confirmation reads `Anna N. (sub01)` rather than a bare uid.
+`merge` moves everything the source carried onto the keeper — markers, the faces cache, confirmations,
+rejections, dismissals — fills the keeper's *empty* fields from it, and deletes the source in the same
+transaction. Its report is the one result `ctl` **synthesizes** instead of echoing the server (the other is
+the `204` `Ack`): the response carries only uids, and the source's name exists nowhere else once the merge
+has run. `delete` leaves the photos and their markers alone; the markers simply stop naming anybody, and
+re-creating the person will not re-attach a single face — if the two records are the same person, `merge`
+is what you want.
+
+#### `ctl faces`
+
+Naming the people on a photo — the most frequent curation there is (`internal/facematch`,
+`internal/feedbackapi`). All of it `editor`/`admin`; start from `ctl photos faces <uid>`, whose `FACE`
+column is the index every command here takes.
+
+| Command | Meaning |
+| --- | --- |
+| `ctl faces assign <photo-uid> <face> [<subject-uid>]` | attach one detection to a person; `--name` instead of a uid |
+| `ctl faces detach <photo-uid> <face>` | clear whoever that face names; the marker survives, unnamed |
+| `ctl faces reject <photo-uid> <face> <subject-uid>` | `POST /feedback/face-rejections` — "this is NOT them" |
+| `ctl faces unreject …` | `DELETE /feedback/face-rejections` (undo) |
+| `ctl faces confirm <photo-uid> <face> <subject-uid>` | `POST /feedback/face-confirmations` — "this really IS them" |
+| `ctl faces unconfirm …` | `DELETE /feedback/face-confirmations` (undo) |
+
+`assign` **reads the photo's faces first**, because whether the detection already carries a marker is what
+decides the action (`assign_person` on the existing marker, or `create_marker` over the detection's own
+box), and only the server knows. That read is also what lets a face index the photo does not have fail
+against the listing — naming the indexes it *does* have — instead of becoming a puzzling `404`. The
+assignment state machine itself stays on the server, and so does `--name`: an unknown name creates the
+subject there, by slug, which is how an agent names somebody the library has never heard of in one command.
+
+**A rejection and a confirmation are opinions, not edits.** Neither detaches a marker nor draws one. A
+rejection keeps a wrong suggestion from coming back on every sweep; a confirmation keeps a correct
+assignment out of that person's outlier review. **They are opposites** — reaching for one meaning the other
+records the exact opposite of what you decided. All four are idempotent, answer `204`, and are undoable.
+They resolve the subject's name before writing, so the confirmation says *who* you just refused.
+
+#### `ctl clusters`
+
+The groups of unassigned faces the auto-clustering found (`internal/clusterapi`), `editor`/`admin`
+throughout. Naming a whole cluster is the cheapest curation in the library — one command names a person on
+every photo the clustering put in the group — which is exactly why looking first matters.
+
+| Command | Meaning |
+| --- | --- |
+| `ctl clusters list` | `GET /faces/clusters`; `SUGGESTION` = the nearest named subject + its cosine distance |
+| `ctl clusters assign <cluster-uid> [<subject-uid>]` | names **every** face of the group; `--name` instead of a uid |
+| `ctl clusters remove-face <cluster-uid> <photo-uid> <face>` | drops one face that does not belong, before naming |
+
+`REPRESENTATIVE` prints as `<photo-uid> #<face-index>` — the two arguments `ctl photos image` and
+`remove-face` take, so looking at a group and repairing it need no translation step. `assign` **consumes**
+the cluster: its faces become that person's markers and the group is gone. Removing the last face of a
+cluster removes the cluster too, and the confirmation says so rather than reporting a group of zero.
+
+```bash
+kukatkoctl photos faces pht01h2j3                       # who is on it, and who they might be
+kukatkoctl faces assign pht01h2j3 1 --name "Anna Nováková"
+kukatkoctl faces reject pht01h2j3 2 sub1a2b3            # no, that is not her
+kukatkoctl clusters list -o llm
+kukatkoctl clusters assign clu1a2b3 sub1a2b3            # twelve photos named at once
+kukatkoctl subjects merge sub9z8y7 sub1a2b3 --dry-run   # the same person recorded twice
+```
 
 #### `ctl favorites` and `ctl rating`
 
@@ -698,6 +775,10 @@ About to apply this edit to 120 photos, more than the 50-photo threshold. Contin
 `--yes` / `-y` skips the prompt. When the uids came **from stdin**, the prompt cannot be asked — that stream already
 swallowed the list of uids and there is no terminal in the pipeline to answer from. So the command **ends with an error
 that asks for `--yes`**, instead of silently continuing past an unanswerable question.
+
+**The irreversible commands are gated differently.** `ctl subjects merge` and `ctl subjects delete` never ask:
+there is no size at which losing a person's name is harmless, so there is no threshold to be under and no
+question a piped agent would fail to answer. They simply **refuse without `--yes`**, and offer `--dry-run`.
 
 ```bash
 kukatkoctl albums create "Léto 2024" --description "prázdniny"

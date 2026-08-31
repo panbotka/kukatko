@@ -105,3 +105,40 @@ func renderSubject(w io.Writer, out ctl.Output, raw json.RawMessage) error {
 func renderBulkResult(w io.Writer, out ctl.Output, raw json.RawMessage) error {
 	return renderRaw(w, out, raw, "bulk result", ctl.DecodeBulkResult, ctl.WriteBulkResult)
 }
+
+// renderFaceList writes a photo's detections with their markers and suggestions.
+func renderFaceList(w io.Writer, out ctl.Output, raw json.RawMessage) error {
+	return renderRaw(w, out, raw, "face list", ctl.DecodeFaceList, ctl.WriteFaceList)
+}
+
+// renderFaceAssign writes the outcome of one face assignment or detachment.
+func renderFaceAssign(w io.Writer, out ctl.Output, raw json.RawMessage) error {
+	return renderRaw(w, out, raw, "assignment", ctl.DecodeFaceAssign, ctl.WriteFaceAssign)
+}
+
+// renderClusters writes the bare {"clusters": […]} list of unnamed face groups.
+func renderClusters(w io.Writer, out ctl.Output, raw json.RawMessage) error {
+	return renderRaw(w, out, raw, "cluster list", ctl.DecodeClusters, ctl.WriteClusters)
+}
+
+// renderClusterAssign writes the outcome of naming a whole cluster.
+func renderClusterAssign(w io.Writer, out ctl.Output, raw json.RawMessage) error {
+	return renderRaw(w, out, raw, "cluster assignment", ctl.DecodeClusterAssign, ctl.WriteClusterAssign)
+}
+
+// renderClusterRemoval writes what removing a stray face left of a cluster.
+func renderClusterRemoval(w io.Writer, out ctl.Output, raw json.RawMessage, clusterUID string) error {
+	return renderRaw(w, out, raw, "cluster", ctl.DecodeClusterRemoval,
+		func(w io.Writer, cluster *ctl.Cluster) error {
+			return ctl.WriteClusterRemoval(w, clusterUID, cluster)
+		})
+}
+
+// renderMergeReport writes what a merge of two subjects moved onto the keeper,
+// naming both of them.
+func renderMergeReport(w io.Writer, out ctl.Output, report ctl.MergeReport) error {
+	if err := ctl.WriteMergeReport(w, out, report); err != nil {
+		return fmt.Errorf("writing the merge result: %w", err)
+	}
+	return nil
+}

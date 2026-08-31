@@ -3741,10 +3741,39 @@ to `## Package map` in `CLAUDE.md`.
     `DecodeLabel`. The envelope is a **bare `{"labels":[…]}`** ordered by priority (a third shape). Attach/detach
     answer `204`. An empty `source` is dropped from the body so that the server fills in its own `manual`
     (`ErrInvalidLabelSource`, `ErrEmptyName`).
-  - `subjects.go` — `ListSubjects`/`GetSubject`/`SubjectPhotos` + `DecodeSubjects`/`DecodeSubject`.
-    The envelope is a **bare `{"subjects":[…]}`**; a subject's gallery, however, **has the `/photos` shape**, so it is read by
-    `DecodePhotoPage` (the same shape, not a unified one). `PageOptions` offers only limit/offset — the endpoint does not
-    read the catalogue filters, so ctl does not offer them either.
+  - `subjects.go` — the whole subject surface, read and write. Reads: `ListSubjects`/`GetSubject`/
+    `SubjectPhotos` + `DecodeSubjects`/`DecodeSubject`/`FetchSubject`. The envelope is a **bare
+    `{"subjects":[…]}`**; a subject's gallery, however, **has the `/photos` shape**, so it is read by
+    `DecodePhotoPage` (the same shape, not a unified one). `PageOptions` offers only limit/offset — the endpoint
+    does not read the catalogue filters, so ctl does not offer them either.
+    Writes: `CreateSubject`/`UpdateSubject`/`RenameSubject`/`DeleteSubject`/`MergeSubjects` +
+    `DecodeMergeResult`. `SubjectInput` is validated locally (`ErrEmptySubjectName`, `ErrInvalidSubjectType`).
+    **`RenameSubject` reads before it writes** — `PATCH /subjects/{uid}` rewrites the whole editable record, so a
+    body carrying the new name alone would reclassify a pet as a person and erase the notes, the cover and the
+    life years with it; `Subject.input()` is that round trip. `MergeSubjects` posts the keeper to the **source's**
+    path (the subject in the path is the one deleted) and refuses a merge into self locally
+    (`ErrMergeIntoSelf`). `MergeReport` pairs the server's counts with both people's names, because the merge
+    deletes the source and its name then exists nowhere else (see `recognition.go`). `SubjectRef`
+    (+ `SubjectRefFromArgs`, `ErrSubjectRequired`/`ErrSubjectAmbiguous`) is the "by uid **or** by name"
+    reference the face and cluster assignments share — a name is resolved, or created, server-side.
+    `DescribeSubject` renders one as `Name (uid)` for the commands whose endpoint answers `204` and gives
+    nothing back to name.
+  - `faces.go` — the per-photo recognition surface: `ListFaces` (`GET /photos/{uid}/faces`) + `DecodeFaceList`,
+    `AssignFace` (`POST /photos/{uid}/faces/assign`) + `DecodeFaceAssign`, and the four persisted opinions
+    `RejectFace`/`UnrejectFace`/`ConfirmFace`/`UnconfirmFace` (`/feedback/face-{rejections,confirmations}`,
+    `204`, idempotent, **the DELETE half carries a body too**). `FaceList.Find(index)` resolves the per-photo
+    face index the tables print — a missing one reports the indexes the photo *does* have rather than becoming a
+    server error — and `FaceView.AssignTo(SubjectRef)`/`FaceView.Detach()` build the request body. That routing
+    is the whole of what ctl decides: a detection that already carries a marker gets `assign_person`, a bare one
+    `create_marker` with its own box, a named one `unassign_person` — the same rule the web face editor
+    applies. **The assignment state machine, the find-or-create by name and every threshold stay on the
+    server.** Errors: `ErrUnknownFace`, `ErrFaceNotMarked`, `ErrFaceNotNamed`, `ErrNegativeFaceIndex`.
+  - `clusters.go` — the auto-clustered groups of unassigned faces: `ListClusters` + `DecodeClusters`,
+    `AssignCluster(uid, SubjectRef)` + `DecodeClusterAssign` (one action names every face in the group and
+    consumes it), `RemoveClusterFace(cluster, photo, index)` + `DecodeClusterRemoval`, whose `nil` cluster means
+    the removal emptied the group and the server deleted it — which is why the decoder returns a pointer.
+    `Cluster.Suggestion` is a pointer for the same reason: "nobody was close enough" is not a suggestion with a
+    zero distance.
   - `curate.go` — `ListFavorites` (the `/photos` envelope, the `favorite` parameter is dropped: the endpoint scopes
     itself), `AddFavorite`/`RemoveFavorite`, `SetRating`/`ClearRating`. Favorites and ratings are both
     **per-user**, so even a viewer may change them. The stars and the flag are independent indicators — whatever you send as `nil`
@@ -3803,11 +3832,23 @@ to `## Package map` in `CLAUDE.md`.
     An empty result = the single line `no photos found`, no header — so that an agent does not mistake a header
     for a row.
   - `render.go` — `WriteAlbums`/`WriteAlbum`, `WriteLabels`/`WriteLabel`, `WriteSubjects` (both counts,
-    `PHOTOS` and `MARKERS`, because they answer different questions)/`WriteSubject`,
+    `PHOTOS` and `MARKERS`, because they answer different questions)/`WriteSubject` (the life years
+    among them, dashed when unknown — `subjects create` writes them and has to print back what it stored),
     `WriteMembership` (one line: how many photos the album now holds), `WriteBulkResult` (a summary + a table of
-    the failed photos **only**) and `WriteAck`. `Ack` is the only payload the CLI **makes up itself**: where
+    the failed photos **only**) and `WriteAck`. `Ack` is the payload the CLI **makes up itself**: where
     the API answers `204` there is nothing to pass through unchanged, so `-o json` (and `-o llm`) gets
     `{"status":"ok","message":…}` and the pipeline can tell success from failure.
+  - `recognition.go` — the renderers of the face surface: `SubjectLabel` (**`Name (uid)`** — every recognition
+    command reports a person that way, because a uid alone is unreadable and a name alone cannot be passed to
+    the next command), `WriteFaceList` (a row per detection: who it names, its marker, the detector score, the
+    box, the recommended action and the suggested identities with their distances, closed by a summary saying
+    how many faces are still unnamed), `WriteFaceAssign` (a detach says *`names nobody`* outright rather than
+    printing an empty name), `WriteClusters`/`WriteClusterAssign`/`WriteClusterRemoval`, and
+    `WriteMergeReport`. That last one is the **second** result ctl does not pass through unchanged in the
+    machine formats, and for a reason peculiar to the operation: a merge deletes the subject it merged away, so
+    afterwards the source's name exists nowhere — not in the library, not in the response, which carries only
+    uids. Echoing the server's bytes would throw away the only account of who was merged into whom, on the one
+    operation that cannot be undone.
 
   The command tree, the configuration file and the `kukatkoctl` symlink are described in
   [`docs/OPERATIONS.md`](OPERATIONS.md).

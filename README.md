@@ -253,6 +253,12 @@ were written.
   read it whole (`get` — who is on it, and the text the recogniser read in it), actually look at it
   (`image`, streamed to a file), and write the evaluation back (`edit`) — with `--dry-run` to show
   its intent first, and `-o llm` to spend a fraction of the tokens the raw JSON would.
+- **Naming people from the terminal too.** The whole recognition surface is there: list a photo's
+  faces with the identities the machine suggests, attach one to a person (by name, which creates them
+  if need be) or detach it, name a whole cluster of unnamed faces in one command, and record that a
+  suggestion was wrong so it stops coming back. People can be created, renamed, merged and deleted —
+  and because merging or deleting a person cannot be undone, both refuse without an explicit `--yes`,
+  offer a `--dry-run` first, and report **who** they touched rather than a uid nobody can read.
 - **Czech first, English second.** The UI ships bilingual (`cs` default, `en`).
 
 ## What you need

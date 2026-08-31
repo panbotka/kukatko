@@ -19,6 +19,8 @@ var (
 	// errConfirmationUnavailable indicates a large batch whose uid list arrived on
 	// stdin, leaving nothing to read an answer from.
 	errConfirmationUnavailable = errors.New("aborted: the batch needs --yes")
+	// errNotConfirmed indicates an irreversible command run without --yes.
+	errNotConfirmed = errors.New("aborted: this cannot be undone")
 )
 
 // photoUIDsFromArgs resolves the photo-uid set of a batch command from its
@@ -81,4 +83,29 @@ func confirmBatch(cmd *cobra.Command, count int, assumeYes, uidsFromStdin bool, 
 func addConfirmFlag(cmd *cobra.Command, assumeYes *bool) {
 	cmd.Flags().BoolVarP(assumeYes, "yes", "y", false,
 		fmt.Sprintf("do not ask for confirmation above %d photos", ctl.ConfirmThreshold))
+}
+
+// confirmIrreversible gates a command that destroys something the library cannot
+// get back — merging two people into one, deleting a person. Unlike confirmBatch
+// it has no threshold and asks no question: there is no size at which losing a
+// person's name is harmless, and a ctl command is as likely to be run by an agent
+// with no terminal as by a person with one. So the confirmation is the explicit
+// --yes flag, and without it the command refuses, naming --dry-run as the way to
+// see what it would have done.
+//
+// action is the whole phrase that completes "refusing to …".
+func confirmIrreversible(assumeYes bool, action string) error {
+	if assumeYes {
+		return nil
+	}
+	return fmt.Errorf("%w: refusing to %s without --yes; --dry-run shows what it would do",
+		errNotConfirmed, action)
+}
+
+// addIrreversibleFlags registers the two flags every irreversible ctl command
+// carries: the confirmation and the rehearsal.
+func addIrreversibleFlags(cmd *cobra.Command, assumeYes, dryRun *bool) {
+	flags := cmd.Flags()
+	flags.BoolVarP(assumeYes, "yes", "y", false, "confirm this irreversible change")
+	flags.BoolVar(dryRun, "dry-run", false, "print what would happen and exit without writing")
 }

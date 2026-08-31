@@ -65,7 +65,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/clusterapi` — `/faces/clusters` (list, assign, remove-face)
 - `internal/comments` — per-photo comment threads: plain text, soft delete, audited in the mutation's transaction; every role may write (viewers included), the endpoints live in `internal/photoapi`
 - `internal/config` — typed configuration, Viper, `Load()`
-- `internal/ctl` — **client** of the own API for `kukatko ctl`: contexts (kubectl-style), Bearer token, table/JSON/llm output, streamed renditions, the photo-edit body
+- `internal/ctl` — **client** of the own API for `kukatko ctl`: contexts (kubectl-style), Bearer token, table/JSON/llm output, streamed renditions, the photo-edit body, the face/subject/cluster write surface
 - `internal/database` — pgxpool wrapper, embedded migration runner, pgvector types
 - `internal/dirimport` — `kukatko import dir`: walks a directory on disk and uploads its media via `internal/ingest`
 - `internal/duplicates` — near-dup groups (pHash banded-LSH + embedding HNSW, union-find); read-only

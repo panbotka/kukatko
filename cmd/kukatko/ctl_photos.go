@@ -18,7 +18,7 @@ func newCtlPhotosCmd(opts *ctlOptions) *cobra.Command {
 	}
 	cmd.AddCommand(
 		newCtlPhotosListCmd(opts), newCtlPhotosGetCmd(opts), newCtlPhotosSearchCmd(opts),
-		newCtlPhotosImageCmd(opts), newCtlPhotosEditCmd(opts),
+		newCtlPhotosImageCmd(opts), newCtlPhotosEditCmd(opts), newCtlPhotosFacesCmd(opts),
 	)
 	return cmd
 }

@@ -147,7 +147,9 @@ func WriteSubjects(w io.Writer, subjects []Subject) error {
 }
 
 // WriteSubject renders one subject as an aligned key/value table. PHOTOS and
-// MARKERS are absent: the detail endpoint does not count them.
+// MARKERS are absent: the detail endpoint does not count them. The life years are
+// present because `subjects create` can write them and a create must print back
+// what it stored; both dash when nobody recorded them, which is the usual case.
 func WriteSubject(w io.Writer, subject Subject) error {
 	return writeKeyValues(w, [][2]string{
 		{"UID", subject.UID},
@@ -158,9 +160,20 @@ func WriteSubject(w io.Writer, subject Subject) error {
 		{"PRIVATE", strconv.FormatBool(subject.Private)},
 		{"NOTES", dash(subject.Notes)},
 		{"COVER", dashPtr(subject.CoverPhotoUID)},
+		{"BORN", dashInt(subject.BirthYear)},
+		{"DIED", dashInt(subject.DeathYear)},
 		{"CREATED", formatStamp(subject.CreatedAt)},
 		{"UPDATED", formatStamp(subject.UpdatedAt)},
 	})
+}
+
+// dashInt renders a nullable whole number, printing a dash when it is unset — a
+// year nobody recorded is not the year zero.
+func dashInt(value *int) string {
+	if value == nil {
+		return "-"
+	}
+	return strconv.Itoa(*value)
 }
 
 // WriteMembership renders an album's membership after a mutation as one line: the

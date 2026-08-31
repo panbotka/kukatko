@@ -144,3 +144,25 @@ func TestWriteAlbum_nullableFields(t *testing.T) {
 		t.Errorf("album detail drops a set cover:\n%s", out.String())
 	}
 }
+
+// TestWriteSubject_lifeYears verifies a person's life span is printed when it is
+// known and dashed when it is not — a year nobody recorded must not read as the
+// year zero, and `subjects create --birth-year` has to print back what it stored.
+func TestWriteSubject_lifeYears(t *testing.T) {
+	t.Parallel()
+
+	var buf strings.Builder
+	born := 1931
+	if err := WriteSubject(&buf, Subject{UID: "sub01", Name: "Anna", BirthYear: &born}); err != nil {
+		t.Fatalf("WriteSubject returned %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "BORN") || !strings.Contains(out, "1931") {
+		t.Errorf("subject detail does not print the birth year:\n%s", out)
+	}
+	for line := range strings.SplitSeq(out, "\n") {
+		if strings.HasPrefix(line, "DIED") && !strings.HasSuffix(line, "-") {
+			t.Errorf("unknown death year printed as %q, want a dash", line)
+		}
+	}
+}
