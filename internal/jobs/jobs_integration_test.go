@@ -853,3 +853,270 @@ func TestEnqueue_mailNeverDedupes(t *testing.T) {
 		t.Errorf("pending mail jobs = %d, want 2", pending)
 	}
 }
+
+// forcedPayload builds a {"photo_uid": uid, "force": true} payload — what a
+// rebuild enqueue carries, and what a handler branches on to redo work it would
+// otherwise skip.
+func forcedPayload(t *testing.T, uid string) json.RawMessage {
+	t.Helper()
+	raw, err := json.Marshal(map[string]any{"photo_uid": uid, "force": true})
+	if err != nil {
+		t.Fatalf("marshaling forced payload: %v", err)
+	}
+	return raw
+}
+
+// isForced reports whether a job's payload carries the force flag.
+func isForced(t *testing.T, payload json.RawMessage) bool {
+	t.Helper()
+	var decoded struct {
+		Force bool `json:"force"`
+	}
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		t.Fatalf("decoding the job payload %q: %v", payload, err)
+	}
+	return decoded.Force
+}
+
+// countActive returns how many queued or running jobs exist for one type and
+// photo — the invariant the upgrade must not break, since dedup stays keyed on
+// type + photo_uid.
+func countActive(t *testing.T, db *database.DB, jobType, photoUID string) int {
+	t.Helper()
+	var n int
+	err := db.Pool().QueryRow(t.Context(),
+		"SELECT count(*) FROM jobs WHERE type = $1 AND payload ->> 'photo_uid' = $2 "+
+			"AND state IN ('queued', 'running')", jobType, photoUID).Scan(&n)
+	if err != nil {
+		t.Fatalf("counting active jobs: %v", err)
+	}
+	return n
+}
+
+// TestUpgradeToForced_rewritesTheQueuedPlainJob is the bug the upgrade exists to
+// fix: a forced enqueue that collides with a queued *plain* job used to be
+// dropped, leaving the plain job to take its idempotent skip and the operator
+// looking at a success that recomputed nothing. The payload is rewritten instead,
+// so the job that runs is the forced one — and there is still exactly one job.
+func TestUpgradeToForced_rewritesTheQueuedPlainJob(t *testing.T) {
+	store, db := newStore(t)
+	ctx := t.Context()
+
+	if _, err := store.Enqueue(ctx, jobs.TypeImageEmbed, photoPayload(t, "p1"), jobs.EnqueueOptions{}); err != nil {
+		t.Fatalf("plain enqueue: %v", err)
+	}
+
+	outcome, err := store.UpgradeToForced(ctx, jobs.TypeImageEmbed, "p1", forcedPayload(t, "p1"))
+	if err != nil {
+		t.Fatalf("UpgradeToForced: %v", err)
+	}
+	if outcome != jobs.ForceUpgraded {
+		t.Errorf("outcome = %q, want %q", outcome, jobs.ForceUpgraded)
+	}
+	if got := countActive(t, db, jobs.TypeImageEmbed, "p1"); got != 1 {
+		t.Errorf("active image_embed jobs for p1 = %d, want 1 — the upgrade rewrites, it does not insert", got)
+	}
+
+	// The claimed payload is what the handler reads, and a forced one is what makes
+	// it recompute instead of skipping (see embedjob.TestHandle_forcePayloadRebuilds).
+	claimed, err := store.Claim(ctx, "w1", jobs.TypeImageEmbed)
+	if err != nil {
+		t.Fatalf("Claim: %v", err)
+	}
+	if !isForced(t, claimed.Payload) {
+		t.Errorf("the claimed payload is %s, want the forced one — the run would skip the photo", claimed.Payload)
+	}
+}
+
+// TestUpgradeToForced_absorbsAnAlreadyForcedJob keeps the collapse that is
+// correct: two rebuild requests for the same photo are one job, and the second
+// changes nothing.
+func TestUpgradeToForced_absorbsAnAlreadyForcedJob(t *testing.T) {
+	store, db := newStore(t)
+	ctx := t.Context()
+
+	if _, err := store.Enqueue(ctx, jobs.TypeFaceDetect, forcedPayload(t, "p1"), jobs.EnqueueOptions{}); err != nil {
+		t.Fatalf("forced enqueue: %v", err)
+	}
+
+	outcome, err := store.UpgradeToForced(ctx, jobs.TypeFaceDetect, "p1", forcedPayload(t, "p1"))
+	if err != nil {
+		t.Fatalf("UpgradeToForced: %v", err)
+	}
+	if outcome != jobs.ForceAbsorbed {
+		t.Errorf("outcome = %q, want %q", outcome, jobs.ForceAbsorbed)
+	}
+	if got := countActive(t, db, jobs.TypeFaceDetect, "p1"); got != 1 {
+		t.Errorf("active face_detect jobs for p1 = %d, want 1", got)
+	}
+}
+
+// TestUpgradeToForced_refusesARunningJob is the collision the queue cannot
+// resolve: the worker read the payload when it claimed the job, so rewriting it
+// now would either be lost or — worse — read as applying to the run in flight.
+// The statement is conditional on the job still being queued, so it leaves the
+// running job alone and says so.
+func TestUpgradeToForced_refusesARunningJob(t *testing.T) {
+	store, db := newStore(t)
+	ctx := t.Context()
+
+	if _, err := store.Enqueue(ctx, jobs.TypePlaces, photoPayload(t, "p1"), jobs.EnqueueOptions{}); err != nil {
+		t.Fatalf("plain enqueue: %v", err)
+	}
+	claimed, err := store.Claim(ctx, "w1", jobs.TypePlaces)
+	if err != nil {
+		t.Fatalf("Claim: %v", err)
+	}
+
+	outcome, err := store.UpgradeToForced(ctx, jobs.TypePlaces, "p1", forcedPayload(t, "p1"))
+	if err != nil {
+		t.Fatalf("UpgradeToForced: %v", err)
+	}
+	if outcome != jobs.ForceInFlight {
+		t.Errorf("outcome = %q, want %q", outcome, jobs.ForceInFlight)
+	}
+	if got := countActive(t, db, jobs.TypePlaces, "p1"); got != 1 {
+		t.Errorf("active places jobs for p1 = %d, want 1", got)
+	}
+	var payload json.RawMessage
+	if err := db.Pool().QueryRow(ctx, "SELECT payload FROM jobs WHERE id = $1", claimed.ID).Scan(&payload); err != nil {
+		t.Fatalf("re-reading the running job: %v", err)
+	}
+	if isForced(t, payload) {
+		t.Error("the running job's payload was forced; the flag would apply to a run that already read it")
+	}
+}
+
+// TestUpgradeToForced_withoutAnActiveJob reports the window between the two
+// statements of a forced enqueue: the insert lost to the dedup index, but the job
+// it collided with finished before the upgrade looked for it. There is nothing to
+// rewrite, and the caller retries the insert rather than reporting a collision.
+func TestUpgradeToForced_withoutAnActiveJob(t *testing.T) {
+	store, _ := newStore(t)
+	ctx := t.Context()
+
+	tests := []struct {
+		name  string
+		setup func()
+	}{
+		{name: "empty queue", setup: func() {}},
+		{name: "the job has finished", setup: func() {
+			job, err := store.Enqueue(ctx, jobs.TypeOCR, photoPayload(t, "p1"), jobs.EnqueueOptions{})
+			if err != nil {
+				t.Fatalf("plain enqueue: %v", err)
+			}
+			claimed, err := store.Claim(ctx, "w1", jobs.TypeOCR)
+			if err != nil {
+				t.Fatalf("Claim: %v", err)
+			}
+			if err := store.Complete(ctx, claimed.ID, "w1"); err != nil {
+				t.Fatalf("Complete job %d: %v", job.ID, err)
+			}
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.setup()
+			_, err := store.UpgradeToForced(ctx, jobs.TypeOCR, "p1", forcedPayload(t, "p1"))
+			if !errors.Is(err, jobs.ErrNoActiveJob) {
+				t.Errorf("UpgradeToForced = %v, want ErrNoActiveJob", err)
+			}
+		})
+	}
+}
+
+// TestEnqueue_plainNeverDowngradesAForcedJob is the other direction of the same
+// rule: a forced job outranks a plain one both ways round. The ordinary repair
+// enqueue is unchanged — it collides with the forced job and is absorbed — and it
+// must never rewrite the payload back to the plain one, or the rebuild an operator
+// asked for would quietly become a skip again.
+func TestEnqueue_plainNeverDowngradesAForcedJob(t *testing.T) {
+	store, db := newStore(t)
+	ctx := t.Context()
+
+	if _, err := store.Enqueue(ctx, jobs.TypeImageEmbed, forcedPayload(t, "p1"), jobs.EnqueueOptions{}); err != nil {
+		t.Fatalf("forced enqueue: %v", err)
+	}
+	if _, err := store.Enqueue(ctx, jobs.TypeImageEmbed, photoPayload(t, "p1"), jobs.EnqueueOptions{}); !errors.Is(err, jobs.ErrDuplicate) {
+		t.Fatalf("plain enqueue over a forced job = %v, want ErrDuplicate", err)
+	}
+	if got := countActive(t, db, jobs.TypeImageEmbed, "p1"); got != 1 {
+		t.Fatalf("active image_embed jobs for p1 = %d, want 1", got)
+	}
+	claimed, err := store.Claim(ctx, "w1", jobs.TypeImageEmbed)
+	if err != nil {
+		t.Fatalf("Claim: %v", err)
+	}
+	if !isForced(t, claimed.Payload) {
+		t.Errorf("the claimed payload is %s, want the forced one kept", claimed.Payload)
+	}
+}
+
+// TestUpgradeToForced_losesToAConcurrentClaim is why the upgrade is one
+// statement rather than a read followed by a write: a worker can claim the job
+// between the two, and a rewrite that had already decided the job was queued
+// would then stamp the forced flag onto a run that read its payload before the
+// flag existed. The run would ignore it and the flag would be lost with the job.
+//
+// The race is staged deterministically — the claim is held open in an
+// uncommitted transaction, so the upgrade reaches the row while it still reads as
+// queued and blocks on the lock — and the answer must be the in-flight one, with
+// the running job's payload untouched.
+func TestUpgradeToForced_losesToAConcurrentClaim(t *testing.T) {
+	store, db := newStore(t)
+	ctx := t.Context()
+
+	job, err := store.Enqueue(ctx, jobs.TypeImageEmbed, photoPayload(t, "p1"), jobs.EnqueueOptions{})
+	if err != nil {
+		t.Fatalf("plain enqueue: %v", err)
+	}
+	forced := forcedPayload(t, "p1")
+
+	tx, err := db.Pool().Begin(ctx)
+	if err != nil {
+		t.Fatalf("beginning the claim transaction: %v", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx,
+		"UPDATE jobs SET state = 'running', locked_by = 'w1', locked_at = now() WHERE id = $1", job.ID,
+	); err != nil {
+		t.Fatalf("claiming the job: %v", err)
+	}
+
+	type result struct {
+		outcome jobs.ForceOutcome
+		err     error
+	}
+	done := make(chan result, 1)
+	go func() {
+		outcome, upgradeErr := store.UpgradeToForced(ctx, jobs.TypeImageEmbed, "p1", forced)
+		done <- result{outcome: outcome, err: upgradeErr}
+	}()
+
+	select {
+	case res := <-done:
+		t.Fatalf("the upgrade answered %q (%v) while the claim was still open; it never took the row lock",
+			res.outcome, res.err)
+	case <-time.After(500 * time.Millisecond):
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatalf("committing the claim: %v", err)
+	}
+
+	res := <-done
+	if res.err != nil {
+		t.Fatalf("UpgradeToForced: %v", res.err)
+	}
+	if res.outcome != jobs.ForceInFlight {
+		t.Errorf("outcome = %q, want %q — the job was claimed out from under the upgrade",
+			res.outcome, jobs.ForceInFlight)
+	}
+	var payload json.RawMessage
+	if err := db.Pool().QueryRow(ctx, "SELECT payload FROM jobs WHERE id = $1", job.ID).Scan(&payload); err != nil {
+		t.Fatalf("re-reading the claimed job: %v", err)
+	}
+	if isForced(t, payload) {
+		t.Error("the forced flag landed on a job that was already running with the plain payload")
+	}
+}

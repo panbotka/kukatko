@@ -919,7 +919,12 @@ to `## Package map` in `CLAUDE.md`.
   `{step,status,faces?}` — `status` `rebuilt`, `faces` the count **after** a re-detection (0 is a result).
   A backing service that is merely asleep is recognised via `worker.IsDeferral` and the forced job is enqueued
   through the `RebuildEnqueuer` (`jobs.Enqueuer`) instead → `status:"queued"`, 200; with no enqueuer wired the
-  outage is an honest 503. 404 missing photo, 500 otherwise. Best-effort audit `photo.embedding`/`photo.faces`/
+  outage is an honest 503. `queueRebuild` branches on the `jobs.ForceOutcome` the enqueue reports: `ForceInFlight`
+  — a job of that type for this photo is already **running**, so the force could only be dropped and the run will
+  take its idempotent skip — is a **409** telling the caller to retry once it finishes; `ForceScheduled`/
+  `ForceUpgraded`/`ForceAbsorbed` all really do end in a forced job and keep the 200 `queued`. That branch is the
+  whole reason the outcome crosses the package boundary; resolving the collision itself belongs to
+  `internal/jobs`, so all three endpoints inherit it. 404 missing photo, 500 otherwise. Best-effort audit `photo.embedding`/`photo.faces`/
   `photo.place` carrying the status (and the face count) in details, by the same rule as `photo.thumbnail`;
   `GET /photos/years` (`handleYears`, `years.go`) = a **year-histogram** for the library's year facet
   → `photos.Store.YearBuckets` → `{years:[{year,count}],total}`; takes the same filters as the list
@@ -1071,7 +1076,15 @@ to `## Package map` in `CLAUDE.md`.
   how many rows moved — the dashboard used to list the dead jobs and requeue one row per round trip, which is
   hopeless for a dead letter of thousands)/`List`(`ListOptions{State,Limit,Offset}`, ordered
   updated_at DESC, limit cap 500, for the admin listing)/`Get`; sentinels
-  `ErrDuplicate`/`ErrNoJobs`/`ErrJobNotFound`/`ErrLockLost`/`ErrNotDead`; **job types** `image_embed`/
+  `ErrDuplicate`/`ErrNoJobs`/`ErrJobNotFound`/`ErrLockLost`/`ErrNotDead`/`ErrNoActiveJob`/`ErrEnqueueRaced`;
+  `UpgradeToForced(ctx,type,photoUID,payload)` rewrites the payload of the **queued** job covering that photo to
+  the forced one and reports what the collision was — `ForceUpgraded` (a queued plain job was rewritten),
+  `ForceAbsorbed` (it was already forced) or `ForceInFlight` (it is running and beyond reach), `ErrNoActiveJob`
+  when it finished meanwhile. **One statement** on purpose (a CTE that describes the collision, an `UPDATE`
+  repeating `state='queued'` in its own `WHERE`, and a `SELECT` reporting both): a read-then-write could stamp the
+  forced flag onto a run that already read its payload, and PostgreSQL re-checks that `WHERE` against the committed
+  row if a worker claims it concurrently — so the flag is never lost *and* never applied in flight. It inserts
+  nothing: the active-job count for that photo and type is unchanged; **job types** `image_embed`/
   `face_detect`/`thumbnail`/`places`/`metadata`/`ocr`/`sidecar`/`storyboard`/`mail_send`/`nameless_detach`/
   `nameless_restore`/`pp_import`/`ps_migrate`/`backup`; `Enqueuer` =
   `NewEnqueuer(store)`
@@ -1081,12 +1094,21 @@ to `## Package map` in `CLAUDE.md`.
   `thumbjob`): what a changed rendering — a saved or reset non-destructive edit — schedules, since the thumbnail
   cache is keyed by the original's hash and would otherwise serve the previous rendering forever. The flag rides in
   the payload so **dedup is unchanged** (`idx_jobs_dedup` keys on type + `photo_uid`): at most one active thumbnail
-  job per photo, which does mean a plain job already queued absorbs the forced one — acceptable, since the photo is
-  scheduled for thumbnailing either way and the next edit schedules a fresh forced job).
+  job per photo. It discards its outcome — the caller saving an edit has nothing to do with it.
   `EnqueueImageEmbedRebuild`/`EnqueueFaceDetectRebuild`/`EnqueuePlacesRebuild` are the same pattern for the other
   three per-photo jobs that own an idempotent skip (`{photo_uid,force:true}` on `image_embed`/`face_detect`/`places`;
-  all four share `enqueueForcedPhotoJob`). They are what the rebuild endpoints queue when the backing service is
-  offline, and what makes a forced job survive a sleeping box instead of failing the request. `metadata`, `ocr`,
+  all four share `enqueueForcedPhotoJob`), and they **return `(ForceOutcome, error)`**. They are what the rebuild
+  endpoints queue when the backing service is offline, and what makes a forced job survive a sleeping box instead of
+  failing the request.
+  **A collision is resolved, not swallowed** (the change that made the outcome worth returning): `enqueueForcedPhotoJob`
+  inserts, and on `ErrDuplicate` calls `UpgradeToForced` rather than treating the dedup hit as success —
+  because the job it collided with is usually the *plain* one `POST /photos/{uid}/process/{step}` queues, whose
+  handler then takes its idempotent skip, which is the silent no-op the rebuild endpoints exist to kill. So a queued
+  job is upgraded (`ForceUpgraded`), an already-forced one absorbs the request (`ForceAbsorbed`), a fresh insert is
+  `ForceScheduled`, and a running one is `ForceInFlight` — the only outcome that means the force is *not* going to
+  happen. A collision that vanishes between the two statements retries the insert (`forceEnqueueAttempts` = 3, then
+  `ErrEnqueueRaced`). The **plain** enqueuers are untouched: they still swallow `ErrDuplicate` and never rewrite a
+  forced payload back to a plain one — a forced job outranks a plain one in both directions. `metadata`, `ocr`,
   `sidecar` and `storyboard` have **no** forced counterpart and need none: `ocr` and `sidecar` deliberately re-run
   every time, `metadata` is a gap-filler that never overwrites a value, and `storyboard` is a content-addressed
   cache file with nothing persisted behind it),

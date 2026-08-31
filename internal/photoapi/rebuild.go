@@ -11,6 +11,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
+	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/processing"
 	"github.com/panbotka/kukatko/internal/worker"
@@ -64,14 +65,17 @@ type PhotoRegeocoder interface {
 //
 // Each method carries the forced flag in the job payload, so queue dedup stays
 // keyed on type + photo uid: two rebuild requests for the same photo collapse
-// into one job exactly as two plain ones would.
+// into one job exactly as two plain ones would. The jobs.ForceOutcome each of
+// them returns is how that collapse is told apart from the one collision the
+// queue cannot resolve — a job already running with the plain payload, which
+// queueRebuild has to refuse rather than report as queued.
 type RebuildEnqueuer interface {
 	// EnqueueImageEmbedRebuild schedules a forced re-embedding of photoUID.
-	EnqueueImageEmbedRebuild(ctx context.Context, photoUID string) error
+	EnqueueImageEmbedRebuild(ctx context.Context, photoUID string) (jobs.ForceOutcome, error)
 	// EnqueueFaceDetectRebuild schedules a forced re-detection of photoUID's faces.
-	EnqueueFaceDetectRebuild(ctx context.Context, photoUID string) error
+	EnqueueFaceDetectRebuild(ctx context.Context, photoUID string) (jobs.ForceOutcome, error)
 	// EnqueuePlacesRebuild schedules a forced re-geocode of photoUID.
-	EnqueuePlacesRebuild(ctx context.Context, photoUID string) error
+	EnqueuePlacesRebuild(ctx context.Context, photoUID string) (jobs.ForceOutcome, error)
 }
 
 // rebuildResponse is the JSON body of a successful rebuild: which computation was
@@ -99,8 +103,9 @@ type rebuildSpec struct {
 	ready bool
 	// run recomputes the step and returns the face count when the step has one.
 	run func(ctx context.Context, photoUID string) (*int, error)
-	// enqueue schedules the forced job, for when run reports the service is offline.
-	enqueue func(ctx context.Context, photoUID string) error
+	// enqueue schedules the forced job, for when run reports the service is
+	// offline, and reports what the queue did with it.
+	enqueue func(ctx context.Context, photoUID string) (jobs.ForceOutcome, error)
 }
 
 // handleReembed recomputes the photo's image embedding and replaces the stored
@@ -109,8 +114,9 @@ type rebuildSpec struct {
 // discards the stored vector and computes a new one, which is what a photo
 // embedded from a preview that has since been corrected needs.
 //
-// It answers 200 with the step and status, 404 for a missing photo, 503 when no
-// embedding service is wired, and 500 otherwise. When the embeddings box is
+// It answers 200 with the step and status, 404 for a missing photo, 409 when a
+// job for this photo is already running and the force could only be dropped, 503
+// when no embedding service is wired, and 500 otherwise. When the embeddings box is
 // offline it enqueues the forced job instead of failing and answers "queued", so
 // the rebuild survives a sleeping box exactly as the plain path does. Maintainers
 // only (the route is guarded by RequireMaintainer): it throws stored work away.
@@ -122,7 +128,7 @@ func (a *API) handleReembed(w http.ResponseWriter, r *http.Request) {
 		run: func(ctx context.Context, photoUID string) (*int, error) {
 			return nil, a.reembedder.ForceEmbed(ctx, photoUID)
 		},
-		enqueue: func(ctx context.Context, photoUID string) error {
+		enqueue: func(ctx context.Context, photoUID string) (jobs.ForceOutcome, error) {
 			return a.rebuilds.EnqueueImageEmbedRebuild(ctx, photoUID)
 		},
 	})
@@ -147,7 +153,7 @@ func (a *API) handleRedetectFaces(w http.ResponseWriter, r *http.Request) {
 			}
 			return &count, nil
 		},
-		enqueue: func(ctx context.Context, photoUID string) error {
+		enqueue: func(ctx context.Context, photoUID string) (jobs.ForceOutcome, error) {
 			return a.rebuilds.EnqueueFaceDetectRebuild(ctx, photoUID)
 		},
 	})
@@ -169,7 +175,7 @@ func (a *API) handleRegeocode(w http.ResponseWriter, r *http.Request) {
 		run: func(ctx context.Context, photoUID string) (*int, error) {
 			return nil, a.regeocoder.ForceGeocode(ctx, photoUID)
 		},
-		enqueue: func(ctx context.Context, photoUID string) error {
+		enqueue: func(ctx context.Context, photoUID string) (jobs.ForceOutcome, error) {
 			return a.rebuilds.EnqueuePlacesRebuild(ctx, photoUID)
 		},
 	})
@@ -204,15 +210,29 @@ func (a *API) runRebuild(w http.ResponseWriter, r *http.Request, spec rebuildSpe
 // rather than an error. When no enqueuer is wired there is nothing to fall back
 // to and the outage is reported as 503 — the honest answer, since the work is
 // then neither done nor scheduled.
+//
+// A forced job that collides with a run already in flight is the second answer
+// that would otherwise be dishonest: it cannot be scheduled at all — the running
+// job holds the plain payload it was claimed with and will take its idempotent
+// skip — so it is refused with 409 rather than reported as queued. Every other
+// collision does end in a forced job (a queued one is upgraded, an already-forced
+// one absorbs the request), and answers 200.
 func (a *API) queueRebuild(w http.ResponseWriter, r *http.Request, spec rebuildSpec, uid string) {
 	if a.rebuilds == nil {
 		writeError(w, http.StatusServiceUnavailable,
 			"rebuilding "+spec.step+" is unavailable right now and cannot be queued")
 		return
 	}
-	if err := spec.enqueue(r.Context(), uid); err != nil {
+	outcome, err := spec.enqueue(r.Context(), uid)
+	if err != nil {
 		log.Printf("photoapi: queueing %s rebuild for %s: %v", spec.step, uid, err)
 		writeError(w, http.StatusInternalServerError, "queueing the rebuild failed")
+		return
+	}
+	if outcome == jobs.ForceInFlight {
+		writeError(w, http.StatusConflict,
+			"a "+spec.step+" job for this photo is already running and cannot be forced; "+
+				"retry the rebuild once it has finished")
 		return
 	}
 	a.finishRebuild(w, r, spec, uid, rebuildResponse{Step: spec.step, Status: RebuildStatusQueued})

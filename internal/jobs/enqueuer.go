@@ -12,6 +12,7 @@ import (
 // interface so the adapter can be unit-tested with a fake.
 type photoEnqueuer interface {
 	Enqueue(ctx context.Context, jobType string, payload json.RawMessage, opts EnqueueOptions) (Job, error)
+	UpgradeToForced(ctx context.Context, jobType, photoUID string, payload json.RawMessage) (ForceOutcome, error)
 }
 
 // Enqueuer adapts the queue Store to the post-ingest scheduling interface used by
@@ -65,11 +66,14 @@ func (e *Enqueuer) EnqueueThumbnail(ctx context.Context, photoUID string) error 
 //
 // The forced flag rides in the payload, so dedup (keyed on type + photo_uid) is
 // unchanged: at most one active thumbnail job per photo. A plain thumbnail job
-// already queued for the same photo therefore absorbs this one, and the rebuild
-// then depends on that job — which is acceptable, since the photo is scheduled for
-// thumbnailing either way and a later edit schedules a fresh forced job.
+// already queued for the same photo is upgraded to this one rather than
+// absorbing it, so the edit is rendered by the job that was already waiting. A
+// job that is already *running* keeps the collision it always had — its outcome
+// is dropped here rather than reported, because a caller saving an edit has
+// nothing to do with it and the running job re-reads the photo anyway.
 func (e *Enqueuer) EnqueueThumbnailRebuild(ctx context.Context, photoUID string) error {
-	return e.enqueueForcedPhotoJob(ctx, TypeThumbnail, photoUID)
+	_, err := e.enqueueForcedPhotoJob(ctx, TypeThumbnail, photoUID)
+	return err
 }
 
 // EnqueueImageEmbedRebuild schedules a *forced* re-embedding of the photo
@@ -81,8 +85,13 @@ func (e *Enqueuer) EnqueueThumbnailRebuild(ctx context.Context, photoUID string)
 //
 // The forced flag rides in the payload, so dedup (keyed on type + photo_uid) is
 // unchanged: at most one active image_embed job per photo, exactly as for the
-// plain enqueue. See EnqueueThumbnailRebuild, whose reasoning this shares.
-func (e *Enqueuer) EnqueueImageEmbedRebuild(ctx context.Context, photoUID string) error {
+// plain enqueue. The returned ForceOutcome says which of the collisions that
+// leaves happened, so the endpoint behind it can answer "queued" for a force that
+// is really going to run and refuse the one that is not — see
+// enqueueForcedPhotoJob.
+func (e *Enqueuer) EnqueueImageEmbedRebuild(
+	ctx context.Context, photoUID string,
+) (ForceOutcome, error) {
 	return e.enqueueForcedPhotoJob(ctx, TypeImageEmbed, photoUID)
 }
 
@@ -92,7 +101,11 @@ func (e *Enqueuer) EnqueueImageEmbedRebuild(ctx context.Context, photoUID string
 // and the faces it finds replace the ones stored before. It is the counterpart of
 // EnqueueImageEmbedRebuild for the second thing the sidecar computes about a
 // photo, and dedupes the same way.
-func (e *Enqueuer) EnqueueFaceDetectRebuild(ctx context.Context, photoUID string) error {
+//
+// It reports its ForceOutcome for the same reason EnqueueImageEmbedRebuild does.
+func (e *Enqueuer) EnqueueFaceDetectRebuild(
+	ctx context.Context, photoUID string,
+) (ForceOutcome, error) {
 	return e.enqueueForcedPhotoJob(ctx, TypeFaceDetect, photoUID)
 }
 
@@ -101,7 +114,11 @@ func (e *Enqueuer) EnqueueFaceDetectRebuild(ctx context.Context, photoUID string
 // skipping a coordinate it has already resolved. Every geocode costs a credit, so
 // this is deliberately the manual path — the backfill and the upload pipeline
 // keep using the plain, skipping enqueue.
-func (e *Enqueuer) EnqueuePlacesRebuild(ctx context.Context, photoUID string) error {
+//
+// It reports its ForceOutcome for the same reason EnqueueImageEmbedRebuild does.
+func (e *Enqueuer) EnqueuePlacesRebuild(
+	ctx context.Context, photoUID string,
+) (ForceOutcome, error) {
 	return e.enqueueForcedPhotoJob(ctx, TypePlaces, photoUID)
 }
 
@@ -182,17 +199,53 @@ func (e *Enqueuer) enqueuePhotoJobOpts(
 	return e.enqueuePayload(ctx, jobType, photoUID, payload, opts)
 }
 
-// enqueueForcedPhotoJob enqueues a job of jobType carrying
-// {"photo_uid": photoUID, "force": true} with the default options, swallowing
-// ErrDuplicate so the call is idempotent per photo. It is the shared body of
-// every rebuild enqueue: they differ only in the job type, since what "force"
-// means is the handler's business.
-func (e *Enqueuer) enqueueForcedPhotoJob(ctx context.Context, jobType, photoUID string) error {
+// forceEnqueueAttempts bounds the insert/upgrade retry of a forced enqueue. Each
+// round loses the insert to the dedup index and then finds the colliding job
+// already finished; one repeat covers that window comfortably, and a third round
+// only exists so a busy queue is never reported as a failure.
+const forceEnqueueAttempts = 3
+
+// enqueueForcedPhotoJob schedules a job of jobType carrying
+// {"photo_uid": photoUID, "force": true} and reports what became of it. It is the
+// shared body of every rebuild enqueue: they differ only in the job type, since
+// what "force" means is the handler's business.
+//
+// Dedup is keyed on type + photo_uid, so a photo the queue is already working on
+// leaves no room for a second job — and dropping the forced payload there is what
+// used to make a rebuild a silent no-op, because the plain job that survived took
+// its idempotent skip. So a collision is resolved rather than swallowed: a queued
+// job is upgraded to the forced payload (ForceUpgraded), an already-forced one
+// absorbs the request (ForceAbsorbed), and a running one cannot be touched at all
+// (ForceInFlight) — that run is using the payload it was claimed with, so the
+// force has not been scheduled and the caller has to be told.
+//
+// The retry covers the one case where neither the insert nor the upgrade applies:
+// the colliding job finished in between, leaving nothing to upgrade and room to
+// insert after all.
+func (e *Enqueuer) enqueueForcedPhotoJob(
+	ctx context.Context, jobType, photoUID string,
+) (ForceOutcome, error) {
 	payload, err := forcedPhotoPayload(photoUID)
 	if err != nil {
-		return err
+		return "", err
 	}
-	return e.enqueuePayload(ctx, jobType, photoUID, payload, EnqueueOptions{})
+	for range forceEnqueueAttempts {
+		_, enqueueErr := e.store.Enqueue(ctx, jobType, payload, EnqueueOptions{})
+		if enqueueErr == nil {
+			return ForceScheduled, nil
+		}
+		if !errors.Is(enqueueErr, ErrDuplicate) {
+			return "", fmt.Errorf("jobs: enqueuing %s for %s: %w", jobType, photoUID, enqueueErr)
+		}
+		outcome, upgradeErr := e.store.UpgradeToForced(ctx, jobType, photoUID, payload)
+		if upgradeErr == nil {
+			return outcome, nil
+		}
+		if !errors.Is(upgradeErr, ErrNoActiveJob) {
+			return "", fmt.Errorf("jobs: forced enqueue: %w", upgradeErr)
+		}
+	}
+	return "", fmt.Errorf("jobs: forcing %s for %s: %w", jobType, photoUID, ErrEnqueueRaced)
 }
 
 // enqueuePayload enqueues a job of jobType carrying an already-built payload,

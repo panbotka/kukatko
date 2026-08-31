@@ -191,3 +191,103 @@ func hasAuditAction(entries []audit.Record, action, targetUID string) bool {
 	}
 	return false
 }
+
+// postReembed drives the reembed endpoint for one photo and returns the status
+// code and the decoded status word (empty when the body is not a rebuild).
+func postReembed(t *testing.T, client *http.Client, url, photoUID string) (int, string) {
+	t.Helper()
+	resp := mustDo(t, client, http.MethodPost, url+"/api/v1/photos/"+photoUID+"/reembed", nil)
+	defer func() { _ = resp.Body.Close() }()
+	var body struct {
+		Status string `json:"status"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&body)
+	return resp.StatusCode, body.Status
+}
+
+// queuedEmbedPayload returns the payload of the photo's single unfinished
+// image_embed job, failing when there is not exactly one — the dedup invariant
+// the upgrade must not break.
+func queuedEmbedPayload(t *testing.T, store *jobs.Store, photoUID string) json.RawMessage {
+	t.Helper()
+	unfinished, err := store.UnfinishedForPhoto(t.Context(), photoUID)
+	if err != nil {
+		t.Fatalf("UnfinishedForPhoto: %v", err)
+	}
+	var found []json.RawMessage
+	for _, job := range unfinished {
+		if job.Type == jobs.TypeImageEmbed {
+			found = append(found, job.Payload)
+		}
+	}
+	if len(found) != 1 {
+		t.Fatalf("unfinished image_embed jobs = %d, want exactly 1", len(found))
+	}
+	return found[0]
+}
+
+// isForcedPayload reports whether a job payload carries the force flag the
+// handlers branch on.
+func isForcedPayload(t *testing.T, payload json.RawMessage) bool {
+	t.Helper()
+	var decoded struct {
+		Force bool `json:"force"`
+	}
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		t.Fatalf("decoding the job payload %q: %v", payload, err)
+	}
+	return decoded.Force
+}
+
+// TestReembed_upgradesAQueuedPlainJob is the trap this endpoint was built to
+// avoid, closed at its last hole: POST /process/image_embed leaves a plain repair
+// job queued even for a photo that already has an embedding, and with the sidecar
+// asleep the rebuild falls back to the same queue. The forced payload used to be
+// dropped by dedup, leaving that plain job to take its idempotent skip — an
+// operator watching a success that recomputed nothing. It must upgrade the queued
+// job instead, and still leave exactly one.
+func TestReembed_upgradesAQueuedPlainJob(t *testing.T) {
+	env := newEnv(t)
+	env.rebuilds.err = worker.RetryAfter(time.Minute, embedding.ErrUnavailable)
+	client, _ := env.login(t, "rb-upgrade", auth.RoleMaintainer)
+	photo := env.seedPhoto(t, photos.Photo{Title: "upgrade"}, "rebuild-upgrade.jpg", 71, 72, 73)
+
+	if err := jobs.NewEnqueuer(env.jobs).EnqueueImageEmbed(t.Context(), photo.UID); err != nil {
+		t.Fatalf("queueing the plain repair job: %v", err)
+	}
+
+	status, word := postReembed(t, client, env.server.URL, photo.UID)
+	if status != http.StatusOK || word != "queued" {
+		t.Fatalf("status = %d/%q, want 200/queued", status, word)
+	}
+	if payload := queuedEmbedPayload(t, env.jobs, photo.UID); !isForcedPayload(t, payload) {
+		t.Errorf("the queued job's payload is %s, want the forced one — that job would skip the photo", payload)
+	}
+}
+
+// TestReembed_runningJobIsAConflict is the collision the queue cannot resolve: a
+// worker already claimed the photo's image_embed job and is running it with the
+// payload it read then, so the force can be neither inserted nor written onto it.
+// Answering "queued" there would be the very no-op the endpoint exists to kill,
+// so it is a 409 asking for a retry once the run finishes.
+func TestReembed_runningJobIsAConflict(t *testing.T) {
+	env := newEnv(t)
+	env.rebuilds.err = worker.RetryAfter(time.Minute, embedding.ErrUnavailable)
+	client, _ := env.login(t, "rb-inflight", auth.RoleMaintainer)
+	photo := env.seedPhoto(t, photos.Photo{Title: "in flight"}, "rebuild-inflight.jpg", 81, 82, 83)
+
+	if err := jobs.NewEnqueuer(env.jobs).EnqueueImageEmbed(t.Context(), photo.UID); err != nil {
+		t.Fatalf("queueing the plain repair job: %v", err)
+	}
+	if _, err := env.jobs.Claim(t.Context(), "worker-1", jobs.TypeImageEmbed); err != nil {
+		t.Fatalf("claiming the job: %v", err)
+	}
+
+	if status, word := postReembed(t, client, env.server.URL, photo.UID); status != http.StatusConflict {
+		t.Errorf("status = %d/%q, want %d — a force that will not happen is not a success",
+			status, word, http.StatusConflict)
+	}
+	if payload := queuedEmbedPayload(t, env.jobs, photo.UID); isForcedPayload(t, payload) {
+		t.Error("the running job's payload was forced; the flag would apply to a run that already read it")
+	}
+}

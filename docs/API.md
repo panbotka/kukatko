@@ -558,12 +558,23 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   Answer **200** `{step, status, faces?}` where `step` is the processing report's own name
   (`image_embed`/`face_detect`/`places`), `status` is `"rebuilt"` (the work ran) or `"queued"`, and `faces`
   is how many faces the photo has **afterwards** (present only for `redetect-faces`; **0 is a result**).
-  Errors: 404 missing photo, 503 the service is not wired (no mapy.com key → no `regeocode`), 500 otherwise.
+  Errors: 404 missing photo, **409** a job of that type for this photo is already **running** (see below),
+  503 the service is not wired (no mapy.com key → no `regeocode`), 500 otherwise.
   **An offline backing service queues instead of failing:** when the embeddings box is asleep, or mapy.com is
   unreachable / rate limited / out of credit budget, the handler recognises the job layer's own deferral
   (`worker.IsDeferral`) and enqueues a **forced** job (`jobs.Enqueuer.Enqueue{ImageEmbed,FaceDetect,Places}Rebuild`)
   instead, answering `status:"queued"`. The forced flag rides in the job payload, so queue dedup stays keyed
   on type + `photo_uid`: two rebuild requests for one photo collapse into one job.
+  **A queued repair is upgraded, not shadowed.** Dedup leaves room for one active job per photo per type, and
+  the job already there is usually the *plain* one `process/{step}` queues — the trap above. A forced enqueue
+  colliding with it rewrites its payload to the forced one in a single conditional statement
+  (`jobs.Store.UpgradeToForced`), so the job that runs recomputes instead of skipping and there is still
+  exactly one job; the endpoint still answers **200 `queued`**. A collision with a job that is already forced
+  is absorbed the same way (200), and a plain enqueue colliding with a forced job never downgrades it — a
+  forced job outranks a plain one in both directions. The one collision that cannot be resolved is a job
+  already **running**: it read its payload when it was claimed, so the force can be neither inserted nor
+  written onto it, and the endpoint answers **409** ("retry once it has finished") rather than reporting a
+  `queued` that would recompute nothing.
   **A forced re-detection replaces, never appends:** `vectors.RecordFaceDetection` deletes the photo's faces
   and inserts the new ones in one transaction, first handing each assignment (marker, subject, cached name)
   to the new face that lands on the same place (IoU ≥ `vectors.CarryAssignmentIoU` = 0.5, exclusive greedy

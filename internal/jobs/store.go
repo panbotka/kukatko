@@ -143,6 +143,71 @@ func (s *Store) Enqueue(
 	return Enqueue(ctx, s.pool, jobType, payload, opts)
 }
 
+// upgradeToForcedSQL rewrites the payload of the *queued plain* job covering one
+// photo to a forced one, and reports what it found either way. It is one
+// statement on purpose: the upgrade has to be conditional on the job still being
+// queued at the moment it is written, so a worker claiming that job concurrently
+// can neither lose the forced flag nor have it applied to a run already in
+// flight. A read followed by a write could do both.
+//
+// The `active` CTE describes the collision as it stood when the statement began,
+// the `upgraded` CTE rewrites it — repeating `state = 'queued'` in its own WHERE,
+// which is what PostgreSQL re-checks against the row's committed version if a
+// concurrent claim beat it there — and the final SELECT reports both halves. A
+// running job wins the report, because it is the answer that cannot be upgraded.
+const upgradeToForcedSQL = `WITH active AS (
+		SELECT id, state, coalesce((payload ->> 'force')::boolean, false) AS forced
+		FROM jobs
+		WHERE type = $1 AND payload ->> 'photo_uid' = $2 AND state IN ('queued', 'running')
+	), upgraded AS (
+		UPDATE jobs SET payload = $3, updated_at = now()
+		WHERE id IN (SELECT id FROM active WHERE state = 'queued' AND NOT forced)
+		  AND state = 'queued'
+		RETURNING id
+	)
+	SELECT active.state, active.forced, EXISTS (SELECT 1 FROM upgraded)
+	FROM active ORDER BY (active.state = 'running') DESC LIMIT 1`
+
+// UpgradeToForced makes the active job for (jobType, photoUID) carry payload —
+// the forced payload — instead of the plain one it was enqueued with, and returns
+// what the collision turned out to be: ForceUpgraded when a queued plain job was
+// rewritten, ForceAbsorbed when the job was already forced (nothing to do), or
+// ForceInFlight when it is running and therefore beyond reach. It returns
+// ErrNoActiveJob when the job finished in the meantime and there is nothing to
+// upgrade.
+//
+// It is what makes a forced enqueue that hits the dedup index mean something: the
+// queue keeps at most one active job per photo per type, so without the upgrade
+// the forced payload would simply be dropped and the plain job would take its
+// idempotent skip. Nothing is inserted here — the row count for that photo and
+// type is unchanged.
+func (s *Store) UpgradeToForced(
+	ctx context.Context, jobType, photoUID string, payload json.RawMessage,
+) (ForceOutcome, error) {
+	var state State
+	var forced, upgraded bool
+	err := s.pool.QueryRow(ctx, upgradeToForcedSQL, jobType, photoUID, payloadOrEmpty(payload)).
+		Scan(&state, &forced, &upgraded)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrNoActiveJob
+		}
+		return "", fmt.Errorf("jobs: upgrading the queued %s job for %s: %w", jobType, photoUID, err)
+	}
+	switch {
+	case upgraded:
+		return ForceUpgraded, nil
+	case forced && state == StateQueued:
+		return ForceAbsorbed, nil
+	default:
+		// Either the job was already running, or it was queued and plain when the
+		// statement began and a worker claimed it before the UPDATE could take its
+		// lock — in which case that run is using the old payload, which is exactly
+		// what ForceInFlight says.
+		return ForceInFlight, nil
+	}
+}
+
 // claimSQL builds the atomic claim statement. When filterTypes is true the
 // candidate subquery is restricted to the types passed as $2 (a text array).
 func claimSQL(filterTypes bool) string {

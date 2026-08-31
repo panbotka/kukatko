@@ -31,6 +31,18 @@ var (
 	// ErrNotDead indicates a requeue was attempted on a job that is not in the
 	// dead-letter state.
 	ErrNotDead = errors.New("jobs: job is not dead")
+	// ErrNoActiveJob indicates no queued or running job exists for the (type,
+	// photo_uid) an upgrade was asked to rewrite — the colliding job finished
+	// between the enqueue that hit the dedup index and the upgrade that followed
+	// it. The caller retries the insert rather than reporting a collision that is
+	// no longer there.
+	ErrNoActiveJob = errors.New("jobs: no active job for this type and photo")
+	// ErrEnqueueRaced indicates a forced enqueue neither inserted its job nor found
+	// the job it collided with, repeatedly: every insert lost to the dedup index
+	// and every upgrade found the collision already gone. It takes a job finishing
+	// inside that window several times in a row, so it reports a queue thrashing
+	// rather than any state the caller can act on.
+	ErrEnqueueRaced = errors.New("jobs: forced enqueue kept racing an active job")
 	// ErrLockLost indicates the job exists but is not running under the worker id
 	// that tried to finish it — typically because stale-lock recovery requeued it
 	// and another worker owns it now. The late result must be dropped rather than
@@ -112,6 +124,31 @@ const (
 	// it owned are re-assigned to it. It is the undo of TypeNamelessDetach and
 	// runs in the queue for the same reason.
 	TypeNamelessRestore = "nameless_restore"
+)
+
+// ForceOutcome says what a forced enqueue did to the queue. A forced job carries
+// `"force": true` beside the `photo_uid` the dedup index keys on, so it dedupes
+// against the job already covering that photo exactly as a plain one would — and
+// what that collision means depends on the job it collided with.
+type ForceOutcome string
+
+// The outcomes of a forced enqueue.
+const (
+	// ForceScheduled means nothing was covering the photo, so the forced job was
+	// inserted.
+	ForceScheduled ForceOutcome = "scheduled"
+	// ForceUpgraded means a *queued plain* job was covering the photo and its
+	// payload was rewritten to the forced one. The job that was going to take its
+	// idempotent skip now redoes the work, and there is still exactly one job.
+	ForceUpgraded ForceOutcome = "upgraded"
+	// ForceAbsorbed means the job covering the photo is itself forced, so the
+	// request collapsed into it. That is the correct no-op: the work will be redone.
+	ForceAbsorbed ForceOutcome = "absorbed"
+	// ForceInFlight means a job for the same photo and type is already running. It
+	// read its payload when it was claimed, so it cannot be upgraded and the force
+	// has not been scheduled at all — the caller must say so and be retried once
+	// that run finishes.
+	ForceInFlight ForceOutcome = "in_flight"
 )
 
 // Job is one row of the persistent queue. Payload holds the job's opaque

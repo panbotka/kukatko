@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/panbotka/kukatko/internal/embedding"
+	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/worker"
 )
@@ -55,39 +56,49 @@ func (f *fakeRegeocoder) ForceGeocode(_ context.Context, _ string) error {
 	return f.err
 }
 
-// fakeRebuildEnqueuer records the forced jobs a deferred rebuild schedules.
+// fakeRebuildEnqueuer records the forced jobs a deferred rebuild schedules, and
+// answers with the queue outcome the test is about — the empty value standing for
+// the ordinary one, a job of its own.
 type fakeRebuildEnqueuer struct {
-	embeds []string
-	faces  []string
-	places []string
-	err    error
+	embeds  []string
+	faces   []string
+	places  []string
+	err     error
+	outcome jobs.ForceOutcome
 }
 
 // EnqueueImageEmbedRebuild records the uid or fails.
-func (f *fakeRebuildEnqueuer) EnqueueImageEmbedRebuild(_ context.Context, uid string) error {
-	if f.err != nil {
-		return f.err
-	}
-	f.embeds = append(f.embeds, uid)
-	return nil
+func (f *fakeRebuildEnqueuer) EnqueueImageEmbedRebuild(
+	_ context.Context, uid string,
+) (jobs.ForceOutcome, error) {
+	return f.record(&f.embeds, uid)
 }
 
 // EnqueueFaceDetectRebuild records the uid or fails.
-func (f *fakeRebuildEnqueuer) EnqueueFaceDetectRebuild(_ context.Context, uid string) error {
-	if f.err != nil {
-		return f.err
-	}
-	f.faces = append(f.faces, uid)
-	return nil
+func (f *fakeRebuildEnqueuer) EnqueueFaceDetectRebuild(
+	_ context.Context, uid string,
+) (jobs.ForceOutcome, error) {
+	return f.record(&f.faces, uid)
 }
 
 // EnqueuePlacesRebuild records the uid or fails.
-func (f *fakeRebuildEnqueuer) EnqueuePlacesRebuild(_ context.Context, uid string) error {
+func (f *fakeRebuildEnqueuer) EnqueuePlacesRebuild(
+	_ context.Context, uid string,
+) (jobs.ForceOutcome, error) {
+	return f.record(&f.places, uid)
+}
+
+// record appends uid to the queue it belongs to and reports the configured
+// outcome, or fails when the fake was given an error.
+func (f *fakeRebuildEnqueuer) record(queue *[]string, uid string) (jobs.ForceOutcome, error) {
 	if f.err != nil {
-		return f.err
+		return "", f.err
 	}
-	f.places = append(f.places, uid)
-	return nil
+	*queue = append(*queue, uid)
+	if f.outcome == "" {
+		return jobs.ForceScheduled, nil
+	}
+	return f.outcome, nil
 }
 
 // rebuildRouter mounts the three rebuild handlers without any guard, so the
@@ -297,5 +308,80 @@ func TestHandleRebuild_queueFailureIs500(t *testing.T) {
 	}
 	if rec := postRebuild(t, api, "reembed"); rec.Code != http.StatusInternalServerError {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
+	}
+}
+
+// TestHandleRebuild_inFlightIsAConflict is the answer that must not be 200: the
+// forced job collided with a run already in flight, which holds the plain payload
+// it was claimed with and will take its idempotent skip. Nothing was rebuilt and
+// nothing is queued to rebuild it, so the endpoint says so and asks for a retry
+// rather than reporting the same silent no-op it exists to kill.
+func TestHandleRebuild_inFlightIsAConflict(t *testing.T) {
+	t.Parallel()
+
+	offline := worker.RetryAfter(time.Minute, embedding.ErrUnavailable)
+	tests := []struct {
+		name string
+		path string
+		api  func(*fakeRebuildEnqueuer) *API
+	}{
+		{
+			name: "embedding",
+			path: "reembed",
+			api: func(e *fakeRebuildEnqueuer) *API {
+				return &API{reembedder: &fakeReembedder{err: offline}, rebuilds: e}
+			},
+		},
+		{
+			name: "faces",
+			path: "redetect-faces",
+			api: func(e *fakeRebuildEnqueuer) *API {
+				return &API{redetector: &fakeRedetector{err: offline}, rebuilds: e}
+			},
+		},
+		{
+			name: "place",
+			path: "regeocode",
+			api: func(e *fakeRebuildEnqueuer) *API {
+				return &API{regeocoder: &fakeRegeocoder{err: offline}, rebuilds: e}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			rec := postRebuild(t, tt.api(&fakeRebuildEnqueuer{outcome: jobs.ForceInFlight}), tt.path)
+			if rec.Code != http.StatusConflict {
+				t.Errorf("status = %d, want %d — a force that will not happen is not a success",
+					rec.Code, http.StatusConflict)
+			}
+		})
+	}
+}
+
+// TestHandleRebuild_resolvedCollisionsStillQueue keeps the other two collisions
+// on the success side: a queued job upgraded to the forced payload and an
+// already-forced job that absorbed the request both end in a forced job, which is
+// what "queued" promises.
+func TestHandleRebuild_resolvedCollisionsStillQueue(t *testing.T) {
+	t.Parallel()
+
+	offline := worker.RetryAfter(time.Minute, embedding.ErrUnavailable)
+	for _, outcome := range []jobs.ForceOutcome{jobs.ForceScheduled, jobs.ForceUpgraded, jobs.ForceAbsorbed} {
+		t.Run(string(outcome), func(t *testing.T) {
+			t.Parallel()
+			api := &API{
+				reembedder: &fakeReembedder{err: offline},
+				rebuilds:   &fakeRebuildEnqueuer{outcome: outcome},
+			}
+			rec := postRebuild(t, api, "reembed")
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200 for a %s collision", rec.Code, outcome)
+			}
+			if body := decodeRebuild(t, rec); body.Status != RebuildStatusQueued {
+				t.Errorf("status = %q, want %q", body.Status, RebuildStatusQueued)
+			}
+		})
 	}
 }
