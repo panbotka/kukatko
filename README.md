@@ -119,7 +119,11 @@ somebody actually made and leaves the machine-made month folders, moments and pl
 sections, each carrying its count; above them a name search that ignores case and diacritics — `pout`
 finds `Pouť` — and a choice of ordering: newest, by name, by photo count. Empty albums stay out of the
 way until a switch asks for them, and the whole view lives in the URL, so Back works and a link carries
-exactly what you were looking at) · labels · per-user favourites and ratings ·
+exactly what you were looking at) · labels (a wrapping cloud of chips, each carrying one of its own
+photos, its name and its count, opening on the labels the library is actually full of rather than on the
+alphabet; the same folded name search — `dovolena` finds `Dovolená` — and the numbered families a village
+archive grows, `Dum11`, `Dum12`, `Dum20`, …, folded into one chip you can open, so house numbers no longer
+occupy the whole first screen) · per-user favourites and ratings ·
 comments · bulk editing, including re-dating
 a whole shelf of scans at the grain you actually know ("1974", "the seventies") — or declaring by the
 handful that the date is simply unknown, which sets the wrong date aside rather than destroying it: the

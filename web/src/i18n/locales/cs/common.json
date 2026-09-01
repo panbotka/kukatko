@@ -1053,7 +1053,8 @@
     },
     "noMatches": {
       "title": "Žádný štítek neodpovídá",
-      "hint": "Zkus jiné jméno."
+      "hint": "Zkus jiné jméno.",
+      "reset": "Zrušit hledání"
     },
     "group": {
       "name": "{{prefix}}…",

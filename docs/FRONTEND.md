@@ -1401,8 +1401,10 @@ here.
   (`LabelFilterBar` over the pure `lib/labelBrowse`), defaulting to **most photos first** rather than
   to the alphabet. The whole view (`q`/`sort`/`open`) lives in the **URL** (`LABELS_DEFAULTS` are
   omitted from it), so Back steps through it and a link carries the exact one; only the live-typed
-  query replaces its history entry. Searching everything away shows `labels.noMatches`; the loading
-  placeholder is `ChipCloudSkeleton`, not the old row stack. Creating or renaming a label **expands
+  query replaces its history entry. Searching everything away shows `labels.noMatches` with a
+  **`Zrušit hledání` / `Clear search`** button back out of it — it clears the query and nothing else,
+  because the search is the only control that can empty the cloud, and it stays away while there is
+  no query to clear; the loading placeholder is `ChipCloudSkeleton`, not the old row stack. Creating or renaming a label **expands
   the family its name lands in** (`withFamilyOpen`) — a new `Dum99` disappearing behind a folded chip
   the moment it is saved reads as a failed save. The row's three inline controls became a per-chip
   "…" `Dropdown` (**Přejmenovat** · the review-game action · **Smazat** behind a divider), because

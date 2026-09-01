@@ -1098,7 +1098,8 @@
     },
     "noMatches": {
       "title": "No label matches",
-      "hint": "Try another name."
+      "hint": "Try another name.",
+      "reset": "Clear search"
     },
     "group": {
       "name": "{{prefix}}…",

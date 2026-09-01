@@ -269,14 +269,18 @@ implemented**, per the task's conservative-changes rule.
 ## Organize
 
 ### Albums index (`/albums`) & Labels index (`/labels`)
-- **Consistency:** Two sibling "index" pages render differently — Albums as a **card grid**, Labels
+- **Consistency:** Two sibling "index" pages rendered differently — Albums as a **card grid**, Labels
   as a **ListGroup**. Defensible (labels are lightweight) but worth a deliberate decision. 📋 ⚪⚪
-  — **verified still open (2026-08-05)**, and at production scale it stops being cosmetic:
-  Albums shows **438** cards in one flat unsorted grid, Labels shows **113** full-width rows over
-  5 730 px, and neither page has a search box or a sort control. See `UX_RESEARCH.md`
-  **N7** and **N10**.
+  — **verified still open (2026-08-05)**, and at production scale it stopped being cosmetic:
+  Albums showed **438** cards in one flat unsorted grid, Labels **113** full-width rows over
+  5 730 px, and neither page had a search box or a sort control. ✅ **Done:** both indexes now carry
+  a folded name search, an ordering and their whole view in the URL (`UX_RESEARCH.md` **N7** and
+  **N10**). The two shapes stay different, now deliberately: an album is a picture, so it is a
+  virtualized grid of covers; a label is a word and a number, so it is a wrapping cloud of chips.
 - **Primary action:** Create CTA was `size="sm"`. ✅ **Done:** now full size.
-- **Touch:** Label rows pack Rename + Delete `size="sm"` at the right edge (floored on touch ✅).
+- **Touch:** Label rows packed Rename + Delete `size="sm"` at the right edge. ✅ **Done:** a label is
+  a chip and its editor actions live in a per-chip "⋯" menu; the whole pill meets the coarse-pointer
+  floor (`web/src/styles/tapTargets.test.ts`).
 - States/copy: friendly and complete.
 
 ### Album detail (`/albums/:uid`)

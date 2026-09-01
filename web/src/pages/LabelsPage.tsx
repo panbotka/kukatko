@@ -52,7 +52,8 @@ const NO_LABELS: LabelCount[] = []
  * expandable chip each, and the page carries a name search and a choice between
  * most-used-first and alphabetical (see `LabelFilterBar` over the pure
  * `lib/labelBrowse`). All of it lives in the URL, so Back steps through the views
- * and a link carries the exact one.
+ * and a link carries the exact one, and a search that matched nothing carries one
+ * button back out of it instead of leaving the reader to guess what to delete.
  *
  * The review switch lives here and deliberately nowhere else. Inside the game it
  * would be an answer to the wrong question — "not this photo" is already a
@@ -223,7 +224,27 @@ export function LabelsPage() {
           <LabelFilterBar view={view} onChange={setView} />
 
           {entries.length === 0 && (
-            <EmptyState title={t('labels.noMatches.title')} hint={t('labels.noMatches.hint')} />
+            <EmptyState
+              title={t('labels.noMatches.title')}
+              hint={t('labels.noMatches.hint')}
+              // The way back from a search that matched nothing is one button.
+              // It clears the search and nothing else: the search is the only
+              // control that can empty the cloud, so resetting the ordering too
+              // would silently undo a choice that is not the reason the reader
+              // is looking at this screen.
+              action={
+                view.q === '' ? undefined : (
+                  <Button
+                    variant="outline-secondary"
+                    onClick={() => {
+                      setView({ q: '' })
+                    }}
+                  >
+                    {t('labels.noMatches.reset')}
+                  </Button>
+                )
+              }
+            />
           )}
 
           {entries.length > 0 && (

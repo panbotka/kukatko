@@ -143,6 +143,29 @@ describe('LabelsPage', () => {
     expect(screen.queryByRole('list', { name: 'Labels' })).not.toBeInTheDocument()
   })
 
+  it('offers one button out of a search that matched nothing', async () => {
+    fetchMock.mockResolvedValue([label('lb_1', 'Dovolená'), label('lb_2', 'Hory')])
+    const user = userEvent.setup()
+    renderPage(true, '/labels?q=nic&sort=name')
+
+    expect(await screen.findByText('No label matches')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Clear search' }))
+
+    await screen.findByRole('list', { name: 'Labels' })
+    expect(screen.getByLabelText('Search labels')).toHaveValue('')
+    // The ordering the reader picked survives: it is not what emptied the cloud.
+    expect(screen.getByLabelText('Sort')).toHaveValue('name')
+    expect(chipNames()).toEqual(['Dovolená', 'Hory'])
+  })
+
+  it('keeps the way out to itself while the cloud has something in it', async () => {
+    fetchMock.mockResolvedValue([label('lb_1', 'Dovolená')])
+    renderPage()
+
+    await screen.findByRole('list', { name: 'Labels' })
+    expect(screen.queryByRole('button', { name: 'Clear search' })).not.toBeInTheDocument()
+  })
+
   it('restores the view the URL carries', async () => {
     fetchMock.mockResolvedValue([label('lb_1', 'Dovolená'), label('lb_2', 'Hory')])
     renderPage(true, '/labels?q=hory')

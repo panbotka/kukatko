@@ -72,7 +72,7 @@ dopad/pracnost — nahoře je to, co se vyplatí udělat první.
 | [N7](#n7) ✅ | 438 alb v jedné hromadě, i když API už rozlišuje jejich typ | 🔴 | 🟡 | `AlbumsPage` |
 | [N8](#n8) ✅ | `/people`: 105 osob bez hledání, a 125 Mpx stažených na 72 čtverečků | 🔴 | 🟡 | `PeoplePage`, `SubjectTile` |
 | [N9](#n9) | Seznam obličejů nemá náhledy, jmenovky na fotce se překrývají | 🟡 | 🟡 | `FacesPanel`, `FaceOverlay` |
-| [N10](#n10) | `/labels`: 113 štítků jako svislý seznam bez hledání a řazení | 🟡 | ⚪ | `LabelsPage` |
+| [N10](#n10) ✅ | `/labels`: 113 štítků jako svislý seznam bez hledání a řazení | 🟡 | ⚪ | `LabelsPage` |
 | [N11](#n11) ✅ | Příznaky se jmenují podle tvaru ikony: „Oko", „Palec nahoru" | 🟡 | ⚪ | `FlagControl`, `FilterBar` |
 | [N12](#n12) ✅ | Do textu pro uživatele prosakuje `AI_MODEL:`, `Unknown`, anglické názvy | 🟡 | ⚪ | `MetadataPanel`, import |
 | [N13](#n13) ✅ | Stránka, na kterou nemám právo, mlčky přesměruje na knihovnu | 🟡 | ⚪ | routing, `LeaderboardPage` |
@@ -595,6 +595,44 @@ seznam"; při 113 položkách to ale není kosmetika, ale skutečná cena za nal
 štítku.
 
 **Kde to je.** `web/src/pages/LabelsPage.tsx`.
+
+**✅ Vyřešeno (8. 8. 2026, doplněno 2. 9. 2026).** Všechny čtyři body.
+
+*Mrak pilulek.* Stránka už není sloupec plných řádků: štítky jsou chipy
+(`LabelCloud` + `LabelChip`) v obtékajícím layoutu — a je to skutečný `ul`/`li`,
+takže odečítač obrazovky ohlásí, kolik jich je, místo aby předčítal hromadu odkazů.
+Chip nese **jednu z fotek svého štítku** (`cover_uid` v `tile_100`), jméno a počet
+fotek, protože stovka stejných pilulek je stěna textu a „Dovolená 2016" řekne míň
+než obrázek za tím. Tři ovládací prvky, které dřív ležely v řádku, se sbalily do
+nabídky „…" na chipu: zopakované na stovce chipů by zabraly víc šířky než jména —
+tedy přesně to, kvůli čemu mrak vznikl.
+
+*Hledání a řazení.* Nad mrakem je `LabelFilterBar` nad čistým `lib/labelBrowse`:
+hledání podle jména necitlivé na velikost písmen i diakritiku (`dovolena` najde
+`Dovolená`, stejně jako filtr „Štítek" v knihovně) a řazení **Podle počtu fotek**
+(výchozí) / **Podle jména**. Výchozí je počet, ne abeceda — abeceda je totiž právě
+to řazení, které pustí `DumNN` na začátek. Druhým kritériem je vždycky jméno, takže
+se mrak mezi překresleními nepřeskládá, a porovnává se v jazyce čtenáře (číselná
+kolace, takže `Dum4` předchází `Dum11`). Celý pohled (`q`/`sort`/`open`) žije v URL:
+Zpět jím prochází a odkaz nese přesně ten jeden pohled; jen psaní do hledání záznam
+v historii nahrazuje, místo aby přidávalo jeden na každý stisk klávesy.
+
+*Číselné rodiny.* Štítky tvaru „předpona + číslo" se od **čtyř** členů výš skládají
+do jednoho rozbalovacího chipu (`Dum…` a počet štítků, ne fotek — to je otázka, na
+kterou odpovídá). Rodina se řadí podle **součtu** fotek svých členů, takže složení
+nemůže velkou předponu zahrabat dolů, a **hledání rodiny rozpouští**: kdo napíše
+`dum4`, ptá se na `Dum4`, `Dum41` a `Dum47` samotné, ne na chip, který musí znovu
+otevřít. Nově uložený `Dum99` svou rodinu rozbalí sám — štítek, který v tu ránu
+zmizí, vypadá jako neúspěšné uložení.
+
+*Slot ve spodní liště* se vyměnil v rámci [N3](#n3): na telefonu je teď
+**Knihovna · Alba · Hledat · Nahrát** a `Štítky` odešly do zásuvky.
+
+**Doplněno 2. 9. 2026.** Hledání, které nic nenašlo, nabízelo jen radu „Zkus jiné
+jméno" a žádnou cestu ven. Prázdný stav má teď tlačítko **Zrušit hledání** /
+`Clear search`; maže jen dotaz, ne řazení — hledání je jediné ovládání, které mrak
+dokáže vyprázdnit, takže vrátit s ním i řazení by potichu zrušilo volbu, která za
+tím prázdným místem nestojí. Když není co mazat, tlačítko tam není.
 
 ---
 
