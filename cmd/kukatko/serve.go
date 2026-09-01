@@ -336,10 +336,9 @@ func buildServices(
 	// scrub preview" (and schedules it), the worker renders what it scheduled.
 	storyboardSvc := buildStoryboardService(cfg, db, mediaStore, enqueuer)
 	// The places service is built here rather than with the other job handlers
-	// because it has two readers: the `places` worker handler, and the regeocode
-	// rebuild endpoint that runs its forced path on demand. One service, so a
-	// rebuild spends its mapy.com credit against the same budget and limiter the
-	// queue does.
+	// because it has two readers: the `places` worker handler and the regeocode
+	// rebuild endpoint running its forced path on demand. One service, so a rebuild
+	// spends its mapy.com credit against the same budget and limiter the queue does.
 	placesSvc, err := buildPlacesServiceOrNil(cfg, db, enqueuer, geocodeBudget, reg)
 	if err != nil {
 		return nil, backgroundServices{}, err
@@ -388,7 +387,9 @@ func buildServices(
 // config, the pool, the auth guard and the media store together: the editor-only
 // discovery APIs riding the vector indexes (per-subject candidates, the
 // recognition sweep, collection expansion, the review game and repeated-marker
-// review) and the MCP server that lets an AI agent drive the library. The review
+// review), the MCP server that lets an AI agent drive the library, and — the one
+// read here open to everybody — the people index's subject avatars, which are in
+// this group because rendering one needs the config's derived-media cache path. The review
 // game and repeated-marker review additionally reuse the photo API's facematch
 // service so their face writes go through the one assign state machine; the MCP
 // server is off unless mcp.enabled is set.
@@ -406,6 +407,7 @@ func discoveryAPIOptions(
 		server.WithAPI(buildDupMarkersAPI(db, authAPI, matchSvc).RegisterRoutes),
 		// The MCP server mounts nothing unless mcp.enabled is set.
 		server.WithAPI(buildMCPAPI(cfg, db, authAPI, mediaStore).RegisterRoutes),
+		server.WithAPI(buildAvatarAPI(cfg, db, authAPI, mediaStore).RegisterRoutes),
 	}
 }
 

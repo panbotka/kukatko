@@ -98,41 +98,61 @@ describe('SubjectTile', () => {
     expect(screen.getByText('12 fotek')).toBeInTheDocument()
   })
 
+  it('shows a life span beside the count for whoever has one', () => {
+    renderTile({ birth_year: 1923, death_year: 1998 })
+    expect(screen.getByText('3 photos · 1923–1998')).toBeInTheDocument()
+  })
+
+  it('shows a birth year alone when that is all there is', () => {
+    renderTile({ birth_year: 1923 })
+    expect(screen.getByText('3 photos · *1923')).toBeInTheDocument()
+  })
+
+  it('says nothing about years for a subject carrying none', () => {
+    renderTile()
+    expect(screen.getByText('3 photos')).toBeInTheDocument()
+  })
+
   it('links to the subject page', () => {
     renderTile()
     expect(screen.getByRole('link', { name: 'Anna' })).toHaveAttribute('href', '/people/s1')
   })
 })
 
-describe('SubjectTile face crop', () => {
-  it('cuts the crop from a full-frame fit_* size, never a centre-cropped tile', () => {
-    // The bbox is normalised against the whole frame; a `tile_*` is a
-    // centre-cropped square, so the crop would land beside the face.
-    renderTile({ cover_face: coverFace(0.3) })
-    expect(screen.getByRole('img', { name: 'Anna' })).toHaveAttribute(
-      'src',
-      expect.stringContaining('/thumb/fit_'),
-    )
-  })
-
-  it('does not buy the biggest preview for a face that no preview can sharpen', () => {
+describe('SubjectTile picture', () => {
+  it('loads the backend avatar rendition, not a whole-frame preview', () => {
     // The regression this tile is named for: 72 of these squares pulled 125 Mpx
-    // because every small face escalated to the ceiling. A small face and a big
-    // one now cost at most one rung apart.
-    renderTile({ cover_face: coverFace(0.03) })
-    const small = screen.getByRole('img', { name: 'Anna' }).getAttribute('src')
-    expect(small).toContain('/thumb/fit_1280')
+    // because each cropped a face out of a full preview in the browser. The crop
+    // is cut server-side now, so a tile fetches the pixels it paints.
+    renderTile({ cover_face: coverFace(0.3) })
+    const src = screen.getByRole('img', { name: 'Anna' }).getAttribute('src')
+    expect(src).toBe('/api/v1/subjects/s1/avatar')
+    expect(src).not.toContain('/thumb/')
   })
 
-  it('takes the cheapest rung for a face that fills the frame', () => {
-    renderTile({ cover_face: coverFace(0.6) })
+  it('asks for the same avatar for a chosen cover photo', () => {
+    // The rendition follows the subject, not the picture behind it, so the tile
+    // needs no second code path for a hand-picked cover.
+    renderTile({ cover_photo_uid: 'p9' })
     expect(screen.getByRole('img', { name: 'Anna' })).toHaveAttribute(
       'src',
-      expect.stringContaining('/thumb/fit_720'),
+      '/api/v1/subjects/s1/avatar',
     )
   })
 
-  it('shimmers until the crop has decoded, so a filling page is not a broken one', () => {
+  it('asks for nothing for a subject with no picture at all', () => {
+    // A request that can only 404 is worse than the placeholder it would end in.
+    renderTile()
+    expect(screen.queryByRole('img', { name: 'Anna' })).toBeNull()
+    expect(screen.getByText('No cover')).toBeInTheDocument()
+  })
+
+  it('keeps the placeholder for a face on a frame the crop maths cannot use', () => {
+    renderTile({ cover_face: { ...coverFace(0.3), width: 0, height: 0 } })
+    expect(screen.queryByRole('img', { name: 'Anna' })).toBeNull()
+  })
+
+  it('shimmers until the avatar has decoded, so a filling page is not a broken one', () => {
     const { container } = renderTile({ cover_face: coverFace(0.3) })
     expect(container.querySelector('.kk-skeleton')).not.toBeNull()
 
@@ -140,12 +160,14 @@ describe('SubjectTile face crop', () => {
     expect(container.querySelector('.kk-skeleton')).toBeNull()
   })
 
-  it('stops shimmering when the crop will never arrive', () => {
+  it('falls back to the placeholder when the avatar will never arrive', () => {
     // A placeholder that pulses forever says "still loading" about an image that
-    // has already given up.
+    // has already given up, and a broken-image glyph says even less.
     const { container } = renderTile({ cover_face: coverFace(0.3) })
     fireEvent.error(screen.getByRole('img', { name: 'Anna' }))
     expect(container.querySelector('.kk-skeleton')).toBeNull()
+    expect(screen.queryByRole('img', { name: 'Anna' })).toBeNull()
+    expect(screen.getByText('No cover')).toBeInTheDocument()
   })
 
   it('shimmers under a chosen cover photo too', () => {

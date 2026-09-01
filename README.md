@@ -66,6 +66,12 @@ photo-book tool (deliberately out of scope), or a product with support and a rel
 
 ### People
 
+- **The index of people is a picture of your family, not a phone book.** It opens on whoever the
+  archive is fullest of, with a search that ignores case and diacritics (`nemcova` finds `Němcová`),
+  a split between people, animals and everything else, and an ordering by photo count, by name or by
+  who was named most recently — all of it in the URL, so Back works and a link carries the view. Each
+  tile is the person's own face, cut to size by the server, so a hundred people cost about as much to
+  load as a page of the library grid.
 - Faces are detected, clustered, and matched against the people you have named — and **nothing is
   ever assigned automatically**. The machine narrows the list down, a human confirms.
 - Tools for the parts that are actually hard: candidates for one person among the untagged faces,

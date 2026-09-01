@@ -1,12 +1,10 @@
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { subjectTileImage } from '../../lib/subjectTile'
-import { type SubjectCount } from '../../services/people'
-import { GRID_THUMB_SIZE, thumbUrl } from '../../services/photos'
+import { type SubjectCount, subjectAvatarUrl } from '../../services/people'
 import { EmptyState } from '../EmptyState'
 import { FadeInImage } from '../FadeInImage'
-
-import { FaceCrop } from './FaceCrop'
 
 /** How wide the picture is, in CSS pixels: a thumbnail beside a name, not a tile. */
 const PICTURE_PX = 72
@@ -27,12 +25,17 @@ export interface SubjectSummaryProps {
  * decide, since they say which record is the substantial one.
  *
  * The picture follows the same rule as the people grid ({@link subjectTileImage}):
- * a chosen cover wins, a face crop is the fallback, and a person with neither
- * keeps an honest placeholder rather than a borrowed face.
+ * a chosen cover wins, the person's own face is the fallback, and a person with
+ * neither keeps an honest placeholder rather than a borrowed face. It is the
+ * backend's avatar rendition, the same small square the grid draws, so opening
+ * the dialog costs a couple of thumbnails rather than two full previews.
  */
 export function SubjectSummary({ subject, role }: SubjectSummaryProps) {
   const { t } = useTranslation()
   const image = subjectTileImage(subject)
+  // As in the grid: a rendition that will not arrive leaves the placeholder.
+  const [failed, setFailed] = useState(false)
+  const hasPicture = image.kind !== 'none' && !failed
 
   return (
     <div className="d-flex align-items-center gap-3">
@@ -40,26 +43,20 @@ export function SubjectSummary({ subject, role }: SubjectSummaryProps) {
         className="kk-tile__media flex-shrink-0 d-flex align-items-center justify-content-center overflow-hidden"
         style={{ width: `${String(PICTURE_PX)}px`, height: `${String(PICTURE_PX)}px` }}
       >
-        {image.kind === 'cover' && (
+        {hasPicture && (
           <FadeInImage
-            src={thumbUrl(image.photoUid, GRID_THUMB_SIZE)}
+            src={subjectAvatarUrl(subject.uid)}
             alt=""
             aria-hidden
             className="w-100 h-100"
             style={{ objectFit: 'cover' }}
             skeleton
+            onError={() => {
+              setFailed(true)
+            }}
           />
         )}
-        {image.kind === 'face' && (
-          <FaceCrop
-            photoUid={image.photoUid}
-            crop={image.crop}
-            frame={image.frame}
-            label=""
-            className="w-100 h-100"
-          />
-        )}
-        {image.kind === 'none' && (
+        {!hasPicture && (
           <EmptyState size="sm" title={t('people.noCover')} className="kk-tile__placeholder" />
         )}
       </div>

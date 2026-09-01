@@ -64,6 +64,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/avatar"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/storyboard"
 	"github.com/panbotka/kukatko/internal/thumb"
@@ -570,13 +571,14 @@ func (s *Service) sweptKeys(ctx context.Context) ([]string, int, error) {
 }
 
 // clearThumbCache drops the local derived-image cache: the whole thumbnail
-// directory (and the video storyboard sprites beside it) under an orphan sweep,
+// directory (and the video storyboard sprites and subject avatars beside it)
+// under an orphan sweep,
 // otherwise the cached sizes of every catalogued hash. A cache entry addressed by
 // a hash no photo has any more is harmless but occupies disk that the re-import
 // wants back.
 func (s *Service) clearThumbCache(hashes []string, opts Options, result *StorageResult) error {
 	if opts.OrphanSweep && s.cacheDir != "" {
-		for _, subdir := range []string{thumb.CacheSubdir, storyboard.CacheSubdir} {
+		for _, subdir := range []string{thumb.CacheSubdir, storyboard.CacheSubdir, avatar.CacheSubdir} {
 			dir := filepath.Join(s.cacheDir, subdir)
 			if err := os.RemoveAll(dir); err != nil {
 				return fmt.Errorf("reset: removing the derived-media cache %s: %w", dir, err)

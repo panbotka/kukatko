@@ -42,7 +42,11 @@ const fetchMock = vi.mocked(fetchSubjects)
 
 function subject(
   name: string,
-  { type = 'person', photoCount = 1 }: { type?: SubjectType; photoCount?: number } = {},
+  {
+    type = 'person',
+    photoCount = 1,
+    createdAt = '2026-01-01T00:00:00Z',
+  }: { type?: SubjectType; photoCount?: number; createdAt?: string } = {},
 ): SubjectCount {
   return {
     uid: `su_${name.toLowerCase()}`,
@@ -54,7 +58,7 @@ function subject(
     notes: '',
     birth_year: null,
     death_year: null,
-    created_at: '2026-01-01T00:00:00Z',
+    created_at: createdAt,
     updated_at: '2026-01-01T00:00:00Z',
     marker_count: photoCount * 2,
     photo_count: photoCount,
@@ -67,7 +71,9 @@ function library(): SubjectCount[] {
     subject('Anna', { photoCount: 12 }),
     subject('Němcová', { photoCount: 40 }),
     subject('Bedřich', { photoCount: 3 }),
-    subject('Rex', { type: 'pet', photoCount: 7 }),
+    // The most recently named of them, so the "recently added" order is about
+    // when somebody was named rather than about the alphabet.
+    subject('Rex', { type: 'pet', photoCount: 7, createdAt: '2026-08-30T10:00:00Z' }),
     subject('Chalupa', { type: 'other', photoCount: 5 }),
   ]
 }
@@ -122,10 +128,10 @@ beforeEach(async () => {
 })
 
 describe('PeoplePage', () => {
-  it('opens on everybody, alphabetically', async () => {
+  it('opens on everybody, the people with the most photos first', async () => {
     renderPage()
     await screen.findByRole('link', { name: 'Anna' })
-    expect(shownNames()).toEqual(['anna', 'bedřich', 'chalupa', 'němcová', 'rex'])
+    expect(shownNames()).toEqual(['němcová', 'anna', 'rex', 'chalupa', 'bedřich'])
   })
 
   it('narrows the grid by name and remembers the search in the URL', async () => {
@@ -142,17 +148,30 @@ describe('PeoplePage', () => {
     expect(screen.getByTestId('search')).toHaveTextContent('q=nemcova')
   })
 
-  it('sorts by photo count when asked', async () => {
+  it('sorts alphabetically when asked', async () => {
     const user = userEvent.setup()
     renderPage()
     await screen.findByRole('link', { name: 'Anna' })
 
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Sort' }), 'count')
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Sort' }), 'name')
 
     await waitFor(() => {
-      expect(shownNames()).toEqual(['němcová', 'anna', 'rex', 'chalupa', 'bedřich'])
+      expect(shownNames()).toEqual(['anna', 'bedřich', 'chalupa', 'němcová', 'rex'])
     })
-    expect(screen.getByTestId('search')).toHaveTextContent('sort=count')
+    expect(screen.getByTestId('search')).toHaveTextContent('sort=name')
+  })
+
+  it('sorts by when a person was added when asked', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByRole('link', { name: 'Anna' })
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Sort' }), 'recent')
+
+    await waitFor(() => {
+      expect(screen.getByTestId('search')).toHaveTextContent('sort=recent')
+    })
+    expect(shownNames()[0]).toBe('rex')
   })
 
   it('splits the animals out of the people', async () => {

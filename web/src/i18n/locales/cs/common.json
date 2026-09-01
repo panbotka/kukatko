@@ -1490,8 +1490,9 @@
       "other": "Ostatní"
     },
     "sort": {
+      "count": "Podle počtu fotek",
       "name": "Podle jména",
-      "count": "Podle počtu fotek"
+      "recent": "Naposledy přidaní"
     },
     "noMatches": {
       "title": "Nikdo tu neodpovídá",

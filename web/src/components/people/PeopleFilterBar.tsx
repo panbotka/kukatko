@@ -25,8 +25,9 @@ const TAB_LABEL_KEY: Record<PeopleTab, ParseKeys> = {
 
 /** The i18n label key of each ordering. */
 const SORT_LABEL_KEY: Record<PeopleSort, ParseKeys> = {
-  name: 'people.sort.name',
   count: 'people.sort.count',
+  name: 'people.sort.name',
+  recent: 'people.sort.recent',
 }
 
 /** Props for {@link PeopleFilterBar}. */
@@ -42,7 +43,8 @@ export interface PeopleFilterBarProps {
 /**
  * The people index's own filter bar: a search over names, the kind of subject
  * (everyone · people · animals · other, each with its live count) and the
- * ordering — alphabetically, or the people with the most photos first.
+ * ordering — the people with the most photos first (as the page opens),
+ * alphabetically, or the most recently added.
  *
  * The search matches the way the library's "Osoba" facet does: folded, so
  * `nemcova` finds `Němcová`. Unlike the album index this offers the types as a

@@ -907,9 +907,10 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   subject is illustrated in the people grid when it **has no** `cover_photo_uid`; absent when the subject has no
   usable marker. Picked by `listSubjectsSQL` (the largest box, then `score`, then `uid`; only
   `type='face'`, non-invalid, on a visible photo). `width`/`height`/`orientation` are the stored frame of the
-  photo — the client crops the cutout itself from the thumbnail cache (there is no face-thumbnail endpoint) and
-  without the frame would distort it. **An explicit `cover_photo_uid` always wins**, `cover_face` is only a
-  fallback;
+  photo. **An explicit `cover_photo_uid` always wins**, `cover_face` is only a fallback. A client that just
+  wants the picture does **not** crop either of them any more — it asks for `GET /subjects/{uid}/avatar`
+  below; the two fields say whether a subject *has* a picture (so a tile with none fires no request) and are
+  still what a client cropping for itself needs;
   `POST /subjects` (RequireWrite) → 201 creates a subject from `{name,type,favorite,private,notes,
   cover_photo_uid?,birth_year?,death_year?}` (empty name / unknown type → 400; a name that identifies **nobody** — punctuation or
   symbols alone, no letter and no digit — is also 400 `subject name must contain a letter or a digit`: it has
@@ -950,6 +951,19 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `{photos,total,limit,offset,next_offset}` (newest-first, non-archived only, `limit`≤500). Mounted
   by `server.WithAPI` (`buildPeopleAPI` in `cmd/kukatko/people.go`). The subject's photo records
   build on `people.Store.ListPhotoUIDsBySubject` (distinct non-invalid markers → photo uid).
+- **Subject avatar (`/api/v1`, `internal/avatarapi`):** `GET /subjects/{uid}/avatar` (RequireAuth) → the
+  square **`image/jpeg`** that stands for the subject: 320 px, ~15 kB measured against real 24 Mpx
+  originals (a `fit_1280` of one is ~190 kB). It is the people index's picture,
+  cut server-side by `internal/avatar` — a hand-picked `cover_photo_uid` centre-cropped, otherwise the
+  subject's biggest valid face padded 30 % per side and squared. It exists because cropping that face in the
+  browser means fetching a whole-frame preview per tile: measured on the real library, **125 Mpx of image for
+  72 tiles of 152 px**, some 25 MB for a page that paints 1.7 Mpx. The source is picked per face from the
+  `fit_*` ladder (720/1280/1920) and the rendition is cached under the derived-media cache's own `avatar/`
+  prefix, never in the object store. `ETag` + `private, max-age=600, must-revalidate` — deliberately **not**
+  immutable, since the URL names a subject and which picture stands for one changes; `If-None-Match` → 304.
+  A subject that does not exist, has no picture at all, or whose picture names a photo that is gone all
+  answer **404** (the grid draws its placeholder for each). Mounted by `server.WithAPI` (`buildAvatarAPI` in
+  `cmd/kukatko/avatar.go`).
 - **Process API (`/api/v1`, `internal/processapi`, maintainer-only via `RequireMaintainer`):**
   `POST /process/embeddings` → `{enqueued}` (backfill `image_embed` for photos without an embedding),
   `POST /process/faces` → `{enqueued}` (backfill `face_detect` for photos without face detection),

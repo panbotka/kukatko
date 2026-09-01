@@ -13,7 +13,11 @@ import { type SubjectCount, type SubjectType } from '../services/people'
 /** A subject with the two fields the index actually browses by. */
 function subject(
   name: string,
-  { type = 'person', photoCount = 1 }: { type?: SubjectType; photoCount?: number } = {},
+  {
+    type = 'person',
+    photoCount = 1,
+    createdAt = '2026-01-01T00:00:00Z',
+  }: { type?: SubjectType; photoCount?: number; createdAt?: string } = {},
 ): SubjectCount {
   return {
     uid: `su_${name.toLowerCase()}`,
@@ -25,7 +29,7 @@ function subject(
     notes: '',
     birth_year: null,
     death_year: null,
-    created_at: '2026-01-01T00:00:00Z',
+    created_at: createdAt,
     updated_at: '2026-01-01T00:00:00Z',
     marker_count: photoCount * 2,
     photo_count: photoCount,
@@ -49,16 +53,16 @@ function browse(patch: Partial<typeof PEOPLE_DEFAULTS> = {}, language = 'cs') {
 }
 
 describe('browsePeople', () => {
-  it('opens on everybody in alphabetical order', () => {
+  it('opens on everybody, the people with the most photos first', () => {
     const { visible } = browse()
-    expect(visible.map((s) => s.name)).toEqual(['Anna', 'Bedřich', 'Chalupa', 'Němcová', 'Rex'])
+    expect(visible.map((s) => s.name)).toEqual(['Němcová', 'Anna', 'Rex', 'Chalupa', 'Bedřich'])
   })
 
   it('sorts by the reader’s alphabet, not the database’s', () => {
     // Czech collates Ch after H and Ř after R; a byte-order sort would put
     // "Chalupa" between "Bedřich" and "Němcová" in English too, so the test uses
     // a pair the two locales genuinely disagree about.
-    const cs = browse({}, 'cs').visible.map((s) => s.name)
+    const cs = browse({ sort: 'name' }, 'cs').visible.map((s) => s.name)
     expect(cs.indexOf('Chalupa')).toBeGreaterThan(cs.indexOf('Bedřich'))
     expect(cs.indexOf('Němcová')).toBeGreaterThan(cs.indexOf('Chalupa'))
   })
@@ -85,11 +89,36 @@ describe('browsePeople', () => {
   it('narrows to one kind of subject', () => {
     expect(browse({ type: 'pet' }).visible.map((s) => s.name)).toEqual(['Rex'])
     expect(browse({ type: 'other' }).visible.map((s) => s.name)).toEqual(['Chalupa'])
-    expect(browse({ type: 'person' }).visible.map((s) => s.name)).toEqual([
+    expect(browse({ type: 'person', sort: 'name' }).visible.map((s) => s.name)).toEqual([
       'Anna',
       'Bedřich',
       'Němcová',
     ])
+  })
+
+  it('orders by when a person was added, newest first', () => {
+    const added = [
+      subject('Old', { createdAt: '2026-01-01T00:00:00Z' }),
+      subject('Newest', { createdAt: '2026-08-30T10:00:00Z' }),
+      subject('Middle', { createdAt: '2026-05-05T10:00:00Z' }),
+    ]
+    const { visible } = browsePeople(
+      added,
+      peopleBrowseOptions({ ...PEOPLE_DEFAULTS, sort: 'recent' }, 'cs'),
+    )
+    expect(visible.map((s) => s.name)).toEqual(['Newest', 'Middle', 'Old'])
+  })
+
+  it('sorts a subject with an unusable timestamp last rather than at random', () => {
+    const added = [
+      subject('Broken', { createdAt: 'not a date' }),
+      subject('Dated', { createdAt: '2026-05-05T10:00:00Z' }),
+    ]
+    const { visible } = browsePeople(
+      added,
+      peopleBrowseOptions({ ...PEOPLE_DEFAULTS, sort: 'recent' }, 'cs'),
+    )
+    expect(visible.map((s) => s.name)).toEqual(['Dated', 'Broken'])
   })
 
   it('counts what each kind holds under the current search, not the library total', () => {
@@ -121,11 +150,12 @@ describe('toPeopleTab / toPeopleSort', () => {
   it('falls back to the defaults for a value the URL made up', () => {
     expect(toPeopleTab('robot')).toBe('all')
     expect(toPeopleTab('')).toBe('all')
-    expect(toPeopleSort('newest')).toBe('name')
+    expect(toPeopleSort('newest')).toBe('count')
   })
 
   it('passes a known value through', () => {
     expect(toPeopleTab('pet')).toBe('pet')
     expect(toPeopleSort('count')).toBe('count')
+    expect(toPeopleSort('recent')).toBe('recent')
   })
 })

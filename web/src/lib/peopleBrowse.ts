@@ -29,14 +29,23 @@ export type PeopleTab = (typeof PEOPLE_TABS)[number]
  */
 export const PEOPLE_TAB_DEFAULT: PeopleTab = 'all'
 
-/** The orderings the sort selector offers. */
-export const PEOPLE_SORTS = ['name', 'count'] as const
+/** The orderings the sort selector offers, in the order it lists them. */
+export const PEOPLE_SORTS = ['count', 'name', 'recent'] as const
 
 /** One ordering of the people index. */
 export type PeopleSort = (typeof PEOPLE_SORTS)[number]
 
-/** The ordering used when the URL asks for none: alphabetical, as before. */
-export const PEOPLE_SORT_DEFAULT: PeopleSort = 'name'
+/**
+ * The ordering used when the URL asks for none: the people with the most photos
+ * first.
+ *
+ * The API answers alphabetically and the page used to keep that order, which for
+ * a real library opens on a wall of a hundred strangers sorted by first name. The
+ * people somebody actually browses to are the ones the archive is full of, so
+ * they lead; the alphabet is one selection away for whoever came looking for a
+ * particular name — and the search above it is the faster answer to that anyway.
+ */
+export const PEOPLE_SORT_DEFAULT: PeopleSort = 'count'
 
 /** Narrows a raw URL value to a type filter, defaulting when it is not one. */
 export function toPeopleTab(value: string): PeopleTab {
@@ -125,8 +134,10 @@ function compareByName(a: SubjectCount, b: SubjectCount, language: string): numb
  * totals.
  *
  * `count` orders by `photo_count`, the figure the tile's caption shows and the
- * one the subject's gallery honours; ties fall back to the name so the grid never
- * reshuffles itself between renders.
+ * one the subject's gallery honours; `recent` by `created_at`, which is when the
+ * person was added to the library rather than when their photos were taken —
+ * "who did I name last week" is a question about the naming. Both fall back to
+ * the name on a tie, so the grid never reshuffles itself between renders.
  */
 export function browsePeople(
   subjects: SubjectCount[],
@@ -142,13 +153,38 @@ export function browsePeople(
   }
 
   const visible = pool.filter((subject) => tab === 'all' || knownType(subject.type) === tab)
-  if (sort === 'count') {
-    visible.sort((a, b) => b.photo_count - a.photo_count || compareByName(a, b, language))
-  } else {
-    visible.sort((a, b) => compareByName(a, b, language))
-  }
+  visible.sort(comparator(sort, language))
 
   return { visible, counts, filteredOut: subjects.length - pool.length }
+}
+
+/**
+ * The comparison one ordering sorts by, with the name as every tie-break: two
+ * people with the same number of photos (or added in the same second, as a bulk
+ * naming session produces) must not swap places between renders.
+ */
+function comparator(
+  sort: PeopleSort,
+  language: string,
+): (a: SubjectCount, b: SubjectCount) => number {
+  switch (sort) {
+    case 'count':
+      return (a, b) => b.photo_count - a.photo_count || compareByName(a, b, language)
+    case 'recent':
+      return (a, b) => addedAt(b) - addedAt(a) || compareByName(a, b, language)
+    default:
+      return (a, b) => compareByName(a, b, language)
+  }
+}
+
+/**
+ * When a subject was added, as a number to sort by. A missing or unparseable
+ * timestamp sorts oldest rather than throwing the whole list into `NaN`
+ * comparisons, which in JavaScript would leave the order arbitrary.
+ */
+function addedAt(subject: SubjectCount): number {
+  const at = Date.parse(subject.created_at)
+  return Number.isNaN(at) ? 0 : at
 }
 
 /** Maps a subject's type onto a filter option, folding unknown types into `other`. */

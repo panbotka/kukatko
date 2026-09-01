@@ -183,6 +183,20 @@ export async function fetchSubjects(signal?: AbortSignal): Promise<SubjectCount[
   return body.subjects
 }
 
+/**
+ * The address of a subject's avatar: the small square JPEG the backend cuts from
+ * the person's face (or from the cover photo somebody chose for them).
+ *
+ * It is a plain `<img>` source, not a fetch — the session cookie rides along with
+ * the request, and the browser caches the picture. It exists because cropping a
+ * face in the page means downloading a whole-frame preview measured in megapixels
+ * to paint a 150 px square; this URL answers with about 15 kB. A subject with no
+ * picture at all answers 404, so ask `subjectTileImage` before rendering one.
+ */
+export function subjectAvatarUrl(uid: string): string {
+  return `${API_BASE}/subjects/${encodeURIComponent(uid)}/avatar`
+}
+
 /** Fetches one subject by UID; throws ApiError 404 when missing. */
 export async function fetchSubject(uid: string, signal?: AbortSignal): Promise<Subject> {
   return getJSON<Subject>(`/subjects/${encodeURIComponent(uid)}`, signal)

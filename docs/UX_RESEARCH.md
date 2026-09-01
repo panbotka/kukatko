@@ -70,7 +70,7 @@ dopad/pracnost — nahoře je to, co se vyplatí udělat první.
 | [N5](#n5) ✅ | Zpět z fotky ztratí pozici v knihovně | 🔴 | 🟡 | `PhotoGrid`, `usePaginatedPhotos` |
 | [N6](#n6) ✅ | Na telefonu panel obličejů i informací fotku úplně zakryje | 🔴 | 🟡 | `photo/viewer.css` |
 | [N7](#n7) ✅ | 438 alb v jedné hromadě, i když API už rozlišuje jejich typ | 🔴 | 🟡 | `AlbumsPage` |
-| [N8](#n8) | `/people`: 105 osob bez hledání, a 125 Mpx stažených na 72 čtverečků | 🔴 | 🟡 | `PeoplePage`, `SubjectTile` |
+| [N8](#n8) ✅ | `/people`: 105 osob bez hledání, a 125 Mpx stažených na 72 čtverečků | 🔴 | 🟡 | `PeoplePage`, `SubjectTile` |
 | [N9](#n9) | Seznam obličejů nemá náhledy, jmenovky na fotce se překrývají | 🟡 | 🟡 | `FacesPanel`, `FaceOverlay` |
 | [N10](#n10) | `/labels`: 113 štítků jako svislý seznam bez hledání a řazení | 🟡 | ⚪ | `LabelsPage` |
 | [N11](#n11) ✅ | Příznaky se jmenují podle tvaru ikony: „Oko", „Palec nahoru" | 🟡 | ⚪ | `FlagControl`, `FilterBar` |
@@ -475,6 +475,42 @@ o řád.
 `web/src/components/people/SubjectTile.tsx` a `FaceCrop.tsx` (výběr varianty
 náhledu), `web/src/pages/SubjectPage.tsx`. Serverová strana: `internal/thumb`
 (případná nová varianta výřezu).
+
+**✅ Vyřešeno (2. 9. 2026).** Obě půlky.
+
+*Ovládání.* Nad roštem je `PeopleFilterBar` nad čistým `lib/peopleBrowse`:
+hledání podle jména (necitlivé na velikost písmen i diakritiku, `nemcova` najde
+`Němcovou` — stejně jako filtr „Osoba" v knihovně), výběr druhu (Všichni · Lidé ·
+Zvířata · Ostatní, každý se svým živým počtem) a řazení **Podle počtu fotek** /
+**Podle jména** / **Naposledy přidaní**. Výchozí je počet fotek, ne abeceda:
+stránka se tak neotevírá stovkou cizích jmen seřazených podle křestního, ale lidmi,
+kterých je archiv plný — a kdo hledá konkrétní jméno, má nad tím hledání. Celý
+pohled (`q`/`type`/`sort`) žije v URL, takže Zpět funguje a odkaz nese přesně to,
+co je vidět; rošt je virtualizovaný (`TileGrid`) a když nic neodpovídá, je tam
+prázdný stav.
+
+*Pixely.* Návrh měl tři body a udělaly se všechny tři — včetně toho třetího,
+který byl označený jako „ještě lépe". Výřez obličeje se nekrájí v prohlížeči:
+backend má vlastní miniaturu (`internal/avatar`, `GET /subjects/{uid}/avatar`),
+čtverec 320 px za patnáct kilobajtů, který dlaždice prostě natáhne jako obrázek. Zdroj
+výřezu se přitom vybírá podle velikosti rámečku obličeje (žebřík `fit_720` /
+`fit_1280` / strop `fit_1920`, měřeno proti zobrazenému rámu fotky), takže i ta
+jedna serverová dekódovací práce je nejmenší, která stačí — a `tile_*` se na to
+nepoužívá, protože je to čtvercový ořez ze středu, ve kterém by rámeček seděl
+jinde. Rendition se ukládá do odvozené cache (`avatar/<aa>/<bb>/<cc>/…`, nikdy do
+objektového úložiště) a odpovídá s ETagem, takže druhé otevření stránky nestojí
+skoro nic.
+
+Naměřeno na šesti skutečných fotkách 24 Mpx (rámeček obličeje 7 % rámu, stejný
+kodér a kvalita jako v registru miniatur): jedna dlaždice stojí **v průměru
+14,8 kB** místo 188 kB za `fit_1280`, resp. 391 kB za `fit_1920`. Na skladbě,
+kterou nález naměřil (28× `fit_1920`, 21× `fit_1280`, 11× `fit_720` na 72
+dlaždic), to je zhruba **15,5 MB → 1,1 MB, tedy asi 14× méně** — řádový rozdíl,
+a to ještě před tím, než virtualizace většinu dlaždic vůbec nepustí ke slovu.
+Kostra v prázdné dlaždici
+(bod 4) přibyla už dřív, s `FadeInImage skeleton`. Stejnou miniaturu bere i
+`SubjectSummary` ve slučovacím dialogu; `FaceCrop` zůstává tam, kde se výřez
+opravdu krájí u klienta — v recenzních pohledech.
 
 ---
 

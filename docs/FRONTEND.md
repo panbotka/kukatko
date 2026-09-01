@@ -2358,22 +2358,33 @@ here.
   (`TileGrid`, minTile 140 / gap 12 — the skeleton's geometry) with its own **`PeopleFilterBar`** over
   the pure `lib/peopleBrowse`: a name search (folded, so `nemcova` finds `Němcová` — the library's
   „Osoba" facet matches the same way), a **kind** selector (Všichni · Lidé · Zvířata · Ostatní, each
-  with its live count) and an ordering (**Podle jména**, re-collated in the reader's language rather
-  than the database's / **Podle počtu fotek**, ties broken by name so the grid never reshuffles). The
+  with its live count) and an ordering — **Podle počtu fotek** (the default: the API answers
+  alphabetically, which for a real library opens on a wall of a hundred strangers sorted by first name,
+  while the people somebody browses to are the ones the archive is full of) / **Podle jména**,
+  re-collated in the reader's language rather than the database's / **Naposledy přidaní** by
+  `created_at`, i.e. when somebody was *named*, not when their photos were taken — every one of them
+  breaking ties by name so the grid never reshuffles. The
   whole view (`q`/`type`/`sort`) lives in the **URL** (`PEOPLE_DEFAULTS` are omitted from it), so Back
   steps through it and a link carries the exact one; only the live-typed query replaces its history
   entry. Filtering everything away shows `people.noMatches` (the hint blames the search only when the
-  search actually dropped somebody). Virtualizing matters more here than on `/albums`: every tile's
-  face crop is cut from a full-frame preview, so mounting all of them at once is what made the page
-  fetch a hundred megapixels before it drew anything. The tile shows the image/name/photo
+  search actually dropped somebody). Virtualizing still matters more here than on `/albums`, even now
+  that a tile fetches one small avatar: a hundred of them at once is a hundred requests before the page
+  draws anything. The tile shows the image/name/photo
   count — `photo_count`, **not** `marker_count`: the caption says „fotek" and the tile links to the
   subject's gallery, which lists a photo once however many of that person's faces it holds; the face
   tools — `CandidateSearchForm`, `FaceAssignPanel`, `OutlierControls` — keep `marker_count`, and their
-  strings say „obličejů"), for editors a link to cluster review; the tile shows **that person's face** — what exactly
-  is decided by pure `lib/subjectTile.ts` `subjectTileImage` → `{kind:'cover'|'face'|'none'}`:
-  an explicit `cover_photo_uid` always wins (a decision overrides a guess), otherwise `cover_face` from the API
-  (marker selection see `listSubjectsSQL`) `padBbox(0.3)` + `squareCrop` → `FaceCrop`, and without
-  a usable face a placeholder remains (`people.noCover`) — the app doesn't invent a face,
+  strings say „obličejů"), for editors a link to cluster review; the tile shows **that person's face**, and
+  since 09/2026 it simply loads **`GET /subjects/{uid}/avatar`** (`services/people.ts` `subjectAvatarUrl`) —
+  a ~320 px, ~15 kB square the backend cuts (`internal/avatar`), instead of cropping a full-frame preview
+  in CSS. That was the second half of finding N8: 72 tiles pulled **125 Mpx** of image to paint 1.7 Mpx.
+  `lib/subjectTile.ts` `subjectTileImage` → `{kind:'cover'|'face'|'none'}` stays, in the one role only the
+  client can play — deciding whether the subject has a picture **at all**, so a tile with none fires no
+  request that could only 404 and keeps its placeholder (`people.noCover`); the app doesn't invent a face.
+  Its rule is the same one the server applies (an explicit `cover_photo_uid` wins over `cover_face`, marker
+  selection see `listSubjectsSQL`), which is why the two agree on which face a tile shows. An avatar that
+  never arrives falls back to the same placeholder rather than to a broken-image glyph. The caption under
+  the name is the photo count plus, for whoever has one, the **life span** (`formatLifeSpan` → „1923–1998" /
+  „*1923" / „†1998") — on the count's own line, so a grid of people with years and one without still line up,
   `SubjectPage` = `/people/:uid` a person's page: a header (name/**life span**/type + edit via
   `SubjectEditModal` — the page keeps it mounted, so the dialog **re-seeds every field (and clears the
   error) each time it opens**: a cancelled edit is really discarded and a failed save's message doesn't
@@ -3287,7 +3298,8 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `SubjectDecadeNav` (a person's gallery in decades — one tick per decade of the loaded photos, with its
   count, jumping to that section; renders **nothing** below two decades. The library rail's look at the
   grain a life is remembered in — see `SubjectPage` above),
-  `SubjectSummary` (one person, small: the `subjectTileImage` picture, the name and both counts — built for
+  `SubjectSummary` (one person, small: the subject's avatar — the same `GET /subjects/{uid}/avatar` the grid
+  draws, with `subjectTileImage` deciding only whether there is a picture at all — the name and both counts — built for
   the merge confirmation, where the question "are these two the same person, and which record is the
   substantial one" is answered by the pictures and the photo counts, never by two names),
   `MergeSubjectModal` (**two steps on purpose**: a pick — an `AddAutocomplete` over everyone *else*
@@ -3306,7 +3318,9 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   assignment create them and the rest find them by slug; a `ProgressBar` while it runs (undismissable), then
   a report counting **photos** — plus what was skipped (no reassignable face there) and what failed, since a
   run that moved fewer photos than were picked has to say so),
-  `FaceCrop` (**the preferred** face crop: an `<img>` with a `fit_*` source from `lib/faceSource.ts`
+  `FaceCrop` (**the preferred** face crop **where the client still cuts one** — the review views and the
+  per-photo panels; the people index and `SubjectSummary` moved to the server-cut avatar above, which is
+  what an ordinary tile should use. An `<img>` with a `fit_*` source from `lib/faceSource.ts`
   `faceSourceSize` (the whole frame — `tile_*` is a centred square on which the crop would miss the face;
   the size **scales with how small the face is**: a fixed one would give a 13px smudge instead of
   a person for a face over 2 % of the frame. The ladder is 720/1280/1920/2560/3840, but **the ceiling belongs
@@ -4117,11 +4131,14 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   plans the whole `visible` list once in a `useMemo` — a plan recomputed per visible window would deal
   a tile a new cover every time it scrolled back;
   `peopleBrowse.ts` = the same job for the people index: the `PeopleView` type (`q`/`type`/`sort`) +
-  `PEOPLE_DEFAULTS` (everybody, alphabetical) + the `toPeopleTab`/`toPeopleSort` sanitizers +
+  `PEOPLE_DEFAULTS` (everybody, **most photos first**) + the `toPeopleTab`/`toPeopleSort` sanitizers +
   `peopleBrowseOptions(view, language)` + `browsePeople(subjects, options)` → `{visible, counts,
-  filteredOut}`. The search is `foldedIncludes` over the name; `name` sorts by `localeCompare`
-  (numeric, base sensitivity — the API orders in the *database's* collation, this one in the reader's),
-  `count` by `photo_count` (the figure the tile's caption shows) with the name as the tie-break; a
+  filteredOut}`. The search is `foldedIncludes` over the name; `comparator(sort, language)` owns the three
+  orderings: `count` by `photo_count` (the figure the tile's caption shows), `name` by `localeCompare`
+  (numeric, base sensitivity — the API orders in the *database's* collation, this one in the reader's) and
+  `recent` by `Date.parse(created_at)` descending, an unparseable timestamp sorting oldest rather than
+  poisoning the comparison with `NaN`. Every one of them tie-breaks on the name, so two people with the
+  same count (or named in the same second, as a bulk naming session produces) never swap places; a
   subject type this frontend doesn't know yet counts as `other` rather than falling out of every option,
   and the counts are taken **after** the search but **before** the type split,
   `labelBrowse.ts` = the same job for the labels index, plus the **numbered-family folding**: the
@@ -4596,7 +4613,9 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `fetchSubjects`/`fetchSubject`/`createSubject`/`updateSubject`/`deleteSubject`/
   `mergeSubject(sourceUid,keeperUid)` (`POST /subjects/{uid}/merge` — the path subject is the one merged
   away and deleted; irreversible, so the caller confirms first)/
-  `fetchSubjectPhotos`, faces `fetchFaces`/`assignFace`, clusters `fetchClusters`/
+  `fetchSubjectPhotos`, the avatar address `subjectAvatarUrl(uid)` (`GET /subjects/{uid}/avatar` — a plain
+  `<img>` source, not a fetch: the session cookie rides along and the browser caches the picture),
+  faces `fetchFaces`/`assignFace`, clusters `fetchClusters`/
   `assignCluster`/`removeClusterFace`, outliers `fetchOutliers`; the types `Subject`/`SubjectCount`/
   `SubjectInput`/`SubjectType`/`MergeResult`/`Bbox`/`FaceView`/`FacesResponse`/`AssignRequest`/`Suggestion`/
   `ClusterView`/`ExampleFace`/`ClusterAssignRequest`/`RemoveFaceRequest`/`OutlierResult`/

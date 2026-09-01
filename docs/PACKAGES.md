@@ -1437,7 +1437,13 @@ to `## Package map` in `CLAUDE.md`.
   `COALESCE(taken_at, created_at)`, restricted to the photos the subject's gallery shows and overridden by a
   hand-picked `cover_photo_uid`. It is a whole **photo**, not the `SubjectFace` the people index crops — a
   medallion drawn from a face crop of a small tile is mush; a subject on no visible photo is absent from the
-  map); **markers** `CreateMarker`
+  map)/`SubjectAvatar(uid)` (`avatar.go`; → `AvatarSource{PhotoUID,Face *Box}`, what one subject's avatar is
+  cut from, in **one** statement: a hand-picked `cover_photo_uid` (still visible) wins and comes back with no
+  box — shown whole — otherwise the subject's biggest valid face, ordered exactly as `listSubjectsSQL`'s
+  `best_face` is (`w*h DESC, score DESC, uid`) and filtered the same way, because the grid decides whether to
+  ask for an avatar from the *list* payload and the route must then cut the face that payload named.
+  `ErrSubjectNotFound` for a uid naming nothing, **`ErrNoAvatar`** for a subject with neither — an ordinary
+  answer the HTTP layer turns into the placeholder's 404); **markers** `CreateMarker`
   (validation of type/`0..1` bounds, optionally a subject right away → faces cache)/`GetMarkerByUID`/
   `ListMarkersByPhoto`/`AssignSubject`+`UnassignSubject` (in a transaction they update the
   denormalized **faces cache** `marker_uid`/`subject_uid`/`subject_name` via
@@ -2177,7 +2183,40 @@ to `## Package map` in `CLAUDE.md`.
   markers, non-archived, newest-first) → page → `ListByUIDs` → reorder by the uid order); body
   decode `DisallowUnknownFields` + 1 MiB limit + empty name (or empty `keeper_uid`) → 400; sentinels mapped
   `ErrSubjectNotFound`→404/`ErrInvalidType`+`ErrMergeIntoSelf`→400; mounted by the eighth `server.WithAPI`
-  (`buildPeopleAPI` in `cmd/kukatko/people.go`)), `internal/organize/`
+  (`buildPeopleAPI` in `cmd/kukatko/people.go`)),
+  `internal/avatar/`
+  (the **subject avatar**: the small square picture the people index draws, cut server-side. A tile is a
+  ~150 px square but a face box spans a few per cent of its photo, so cropping one in the browser meant
+  fetching a whole-frame preview per tile — measured on the real library, **125 Mpx of image for 72 tiles**.
+  `Renderer` = `New(source,cacheDir)` + `Open(ctx,photo,face) (io.ReadCloser, etag, error)`: a `nil` face is a
+  hand-picked cover, shown whole (`centreSquare`, the same crop a `tile_*` size takes); a face is padded 0.3
+  per side, clamped to the frame, squared on its longer **pixel** edge and slid back inside rather than
+  clipped (`faceSquare`) — the geometry the client's `padBbox`+`squareCrop` used to do, so the pictures did
+  not change when the work moved. Rendered at `Side` = 320 px (a 2× display's worth of a 150 px tile) at
+  quality 85 — measured at ~15 kB a tile against ~190 kB for the `fit_1280` it used to take — and **never upscaled**: a crop with fewer pixels than that is emitted at its own
+  size. The source is never the original — `sourceSize` picks the smallest `fit_*` rung (720/1280/**ceiling
+  1920**) that still puts 320 px across the padded crop, measured against the photo's *display* frame
+  (`displayFrame` swaps the quarter-turn orientations), and a cover takes `thumb.GridSize`; so rendering is a
+  JPEG decode of at most a 1920 px preview, with no HEIC/RAW shell-out. **Storage is cache-only**, in the
+  thumbnail cache's sharded layout under its own prefix — `avatar/<aa>/<bb>/<cc>/<hash>_<variant>_320.jpg`,
+  `CacheSubdir` exported for the wipe (`internal/reset` sweeps it beside `thumb` and `storyboard`) — and
+  deliberately **never uploaded to the object store**. `variantKey` is `cover` or a digest of the box rounded
+  to four decimals, so one photo standing for two people yields two entries and float noise forks neither;
+  the ETag is `hash-variant-side`. Writes are atomic (temp + rename), so a concurrent render costs a
+  duplicated decode and never a torn file. `ErrInvalidHash` (a hash that cannot address the cache),
+  `ErrRenderFailed`),
+  `internal/avatarapi/`
+  (an HTTP API over it: the interfaces `Subjects` (`people.Store.SubjectAvatar`), `Photos`
+  (`photos.Store.GetByUID`) and `Renderer` (`*avatar.Renderer`, nil → 503) → unit-testable with fakes and no
+  disk; `NewAPI(Config{Subjects,Photos,Renderer,RequireAuth})`+`RegisterRoutes` mounts the **flat**
+  `GET /subjects/{uid}/avatar` (RequireAuth — it illustrates the subject list, which any signed-in user
+  reads), coexisting with `peopleapi`'s `/subjects` group and `outlierapi`'s `/subjects/{uid}/outliers`.
+  Answers `image/jpeg` with the renderer's ETag and `private, max-age=600, must-revalidate` — *not* immutable,
+  because the URL names a subject and which picture stands for it changes; `If-None-Match` → 304. Everything
+  that means "no picture" — `ErrSubjectNotFound`, `ErrNoAvatar`, `photos.ErrPhotoNotFound` — is the same 404,
+  since the grid draws its placeholder for all three; a render failure is a logged 500. Mounted in `serve`
+  (`buildAvatarAPI` in `cmd/kukatko/avatar.go`, which builds its own `thumb.Thumbnailer` over the shared
+  cache)), `internal/organize/`
   (the DB layer for **organization** — albums, labels, **per-user favorites** (replacing the global
   the old global `photos.favorite`) and **per-user ratings** (0–5 stars + a personal flag none/pick/reject/eye);
   tables `albums`/`album_photos`/`labels`/`photo_labels`/

@@ -1142,7 +1142,8 @@ files, one request, streamed — a walk over a disk the server cannot see is not
 - **Storage keys (`storage.*`, `internal/storage`):** `backend` (`fs` **default** = local disk /
   `r2` = a private Cloudflare R2 bucket; an unknown value → `ErrInvalidStorageBackend` at startup),
   `originals_path` (the originals root, `fs` only), `cache_path` (derived artifacts — thumbnails,
-  video posters, and the `storyboard/` scrub-preview sprites, which live **only** here and are never
+  video posters, the `storyboard/` scrub-preview sprites and the `avatar/` subject renditions the
+  people index draws, the last two of which live **only** here and are never
   uploaded to the bucket), `temp_path` (default `/var/lib/kukatko/tmp`; `r2` stages uploads through it
   and materializes objects for tools that only accept a file name — the **single largest
   file** must fit there, not the library). `KUKATKO_STORAGE_BACKEND`/`_ORIGINALS_PATH`/`_CACHE_PATH`/

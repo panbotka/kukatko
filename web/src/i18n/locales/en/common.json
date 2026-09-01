@@ -1458,8 +1458,9 @@
       "other": "Other"
     },
     "sort": {
+      "count": "By photo count",
       "name": "By name",
-      "count": "By photo count"
+      "recent": "Recently added"
     },
     "noMatches": {
       "title": "Nobody matches here",
