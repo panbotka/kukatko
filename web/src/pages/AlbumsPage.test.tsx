@@ -368,6 +368,72 @@ describe('AlbumsPage', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
+  it('drops the section strip when the library has only one kind of album', async () => {
+    // Nothing but hand-made albums: three dead buttons reading 0 would be worse
+    // than the flat page this replaced.
+    fetchMock.mockResolvedValue([album('al_1', 'Dovolená 2019'), album('al_2', 'Zebra')])
+    renderPage()
+
+    await screen.findByText('Dovolená 2019')
+    expect(screen.queryByRole('group', { name: 'Album kind' })).not.toBeInTheDocument()
+    // The search and the ordering are worth having either way.
+    expect(screen.getByRole('searchbox', { name: 'Search albums' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Sort' })).toBeInTheDocument()
+  })
+
+  it('offers only the sections the library has albums in', async () => {
+    fetchMock.mockResolvedValue([
+      album('al_1', 'Dovolená 2019'),
+      album('al_4', 'January 2026', { type: 'folder', photoCount: 15 }),
+    ])
+    renderPage()
+
+    await screen.findByText('Dovolená 2019')
+    expect(section('My albums')).toBeInTheDocument()
+    expect(section('By month')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Moments/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Places/ })).not.toBeInTheDocument()
+  })
+
+  it('shows the only section a library of machine-made albums has', async () => {
+    // The default section (`album`) is empty here, so honouring it would greet
+    // the reader with an empty grid over a library that is not empty at all.
+    fetchMock.mockResolvedValue([album('al_4', 'January 2026', { type: 'folder', photoCount: 15 })])
+    renderPage()
+
+    expect(await screen.findByText('January 2026')).toBeInTheDocument()
+  })
+
+  it('clears the filters from the empty state, back to the view the page opens with', async () => {
+    fetchMock.mockResolvedValue(mixedLibrary())
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByText('Dovolená 2019')
+    await user.click(section('By month'))
+    await user.type(screen.getByRole('searchbox', { name: 'Search albums' }), 'nothing')
+    expect(await screen.findByText('Nothing matches here')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Clear filters' }))
+
+    expect(gridTitles()).toEqual(['Dovolená 2019', 'Zebra'])
+    expect(screen.getByRole('searchbox', { name: 'Search albums' })).toHaveValue('')
+    expect(screen.getByTestId('search').textContent).toBe('')
+  })
+
+  it('offers nothing to clear when the default view is the empty one', async () => {
+    // A section that is empty on its own merits: there is no filter to undo, so
+    // the button would promise a fix it cannot deliver.
+    fetchMock.mockResolvedValue([
+      album('al_3', 'Pets', { photoCount: 0 }),
+      album('al_7', 'Czechia', { type: 'state', photoCount: 120 }),
+    ])
+    renderPage()
+
+    expect(await screen.findByText('Nothing matches here')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Clear filters' })).not.toBeInTheDocument()
+  })
+
   it('hides the create control from viewers', async () => {
     fetchMock.mockResolvedValue([album('al_1', 'Holidays')])
     renderPage(false)

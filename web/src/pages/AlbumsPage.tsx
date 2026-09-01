@@ -18,6 +18,7 @@ import {
   ALBUMS_DEFAULTS,
   ALBUMS_SHOW_EMPTY,
   browseAlbums,
+  isDefaultAlbumsView,
 } from '../lib/albumBrowse'
 import { planAlbumCovers } from '../lib/albumCovers'
 import { useUrlState } from '../lib/urlState'
@@ -42,9 +43,10 @@ const NO_ALBUMS: AlbumSummary[] = []
  * into four sections (Moje alba · Podle měsíce · Momenty · Místa), opens on the
  * hand-made ones, hides the albums holding no photos, and offers a name search
  * and an ordering. All of it lives in the URL, so Back steps through the
- * sections and a link carries the exact view. Nothing here is stored: the
- * machine-made English titles are only *rendered* in Czech (see
- * `i18n/albumNames`).
+ * sections and a link carries the exact view. A library holding only one kind
+ * of album gets no section strip — just the search and the ordering. Nothing
+ * here is stored: the machine-made English titles are only *rendered* in Czech
+ * (see `i18n/albumNames`).
  *
  * The covers are planned for the whole section at once (`lib/albumCovers`)
  * rather than tile by tile, because overlapping albums share their newest photo
@@ -83,7 +85,7 @@ export function AlbumsPage() {
 
   const albums = state.status === 'ready' ? state.albums : NO_ALBUMS
   const language = i18n.language
-  const { visible, counts, filteredOut } = useMemo(
+  const { visible, counts, filteredOut, sections, tab } = useMemo(
     () => browseAlbums(albums, albumBrowseOptions(view, language)),
     [albums, view, language],
   )
@@ -122,13 +124,35 @@ export function AlbumsPage() {
 
       {state.status === 'ready' && albums.length > 0 && (
         <>
-          <AlbumFilterBar view={view} onChange={setView} counts={counts} />
+          <AlbumFilterBar
+            view={view}
+            onChange={setView}
+            counts={counts}
+            sections={sections}
+            tab={tab}
+          />
 
           {visible.length === 0 && (
             <EmptyState
               title={t('albums.noMatches.title')}
               hint={
                 filteredOut > 0 ? t('albums.noMatches.hintFiltered') : t('albums.noMatches.hint')
+              }
+              // The way out of a search that matched nothing is one button, not
+              // a hunt for which of the three controls narrowed the view. Absent
+              // when the view is already the default one, where it would undo
+              // nothing.
+              action={
+                isDefaultAlbumsView(view) ? undefined : (
+                  <Button
+                    variant="outline-secondary"
+                    onClick={() => {
+                      setView(ALBUMS_DEFAULTS)
+                    }}
+                  >
+                    {t('albums.noMatches.reset')}
+                  </Button>
+                )
               }
             />
           )}

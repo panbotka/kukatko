@@ -11,10 +11,8 @@ import {
   type AlbumSort,
   type AlbumTab,
   ALBUM_SORTS,
-  ALBUM_TABS,
   ALBUMS_SHOW_EMPTY,
   toAlbumSort,
-  toAlbumTab,
 } from '../../lib/albumBrowse'
 import { type SetUrlState } from '../../lib/urlState'
 import { Icon } from '../Icon'
@@ -42,6 +40,14 @@ export interface AlbumFilterBarProps {
   onChange: SetUrlState<AlbumsView>
   /** How many albums each section holds under the current search and empty filter. */
   counts: Record<AlbumTab, number>
+  /**
+   * The sections this library has albums in, in strip order, and the section
+   * currently shown — both from `browseAlbums`, so the strip cannot offer a
+   * section the grid has nothing for.
+   */
+  sections: AlbumTab[]
+  /** The section the grid is showing. */
+  tab: AlbumTab
 }
 
 /**
@@ -49,14 +55,17 @@ export interface AlbumFilterBarProps {
  * · Momenty · Místa, each with its live count), a search over album names, the
  * ordering selector and the switch that brings empty albums back.
  *
+ * Only the sections the library actually has are offered, and a library with
+ * just one of them gets no strip at all — a lone tab is a label, not a choice,
+ * and the search and the ordering are worth having either way.
+ *
  * It is the smaller sibling of the library's `FilterBar` and follows the same
  * conventions: every control writes straight into the URL, so Back steps through
  * the sections, and only live typing replaces the history entry instead of
  * pushing one per keystroke.
  */
-export function AlbumFilterBar({ view, onChange, counts }: AlbumFilterBarProps) {
+export function AlbumFilterBar({ view, onChange, counts, sections, tab }: AlbumFilterBarProps) {
   const { t } = useTranslation()
-  const tab = toAlbumTab(view.type)
   const sort = toAlbumSort(view.sort)
 
   return (
@@ -70,29 +79,31 @@ export function AlbumFilterBar({ view, onChange, counts }: AlbumFilterBarProps) 
         event.preventDefault()
       }}
     >
-      <ButtonGroup aria-label={t('albums.filters.sections')} className="flex-wrap mb-2">
-        {ALBUM_TABS.map((name) => (
-          <Button
-            key={name}
-            type="button"
-            variant={name === tab ? 'primary' : 'outline-secondary'}
-            aria-pressed={name === tab}
-            className="d-flex align-items-center gap-2"
-            onClick={() => {
-              onChange({ type: name })
-            }}
-          >
-            {t(TAB_LABEL_KEY[name])}
-            <Badge
-              bg={name === tab ? 'light' : 'secondary'}
-              text={name === tab ? 'dark' : undefined}
-              pill
+      {sections.length > 1 && (
+        <ButtonGroup aria-label={t('albums.filters.sections')} className="flex-wrap mb-2">
+          {sections.map((name) => (
+            <Button
+              key={name}
+              type="button"
+              variant={name === tab ? 'primary' : 'outline-secondary'}
+              aria-pressed={name === tab}
+              className="d-flex align-items-center gap-2"
+              onClick={() => {
+                onChange({ type: name })
+              }}
             >
-              {counts[name]}
-            </Badge>
-          </Button>
-        ))}
-      </ButtonGroup>
+              {t(TAB_LABEL_KEY[name])}
+              <Badge
+                bg={name === tab ? 'light' : 'secondary'}
+                text={name === tab ? 'dark' : undefined}
+                pill
+              >
+                {counts[name]}
+              </Badge>
+            </Button>
+          ))}
+        </ButtonGroup>
+      )}
 
       <div className="d-flex flex-wrap align-items-center gap-2">
         <InputGroup className="kukatko-filter-search">

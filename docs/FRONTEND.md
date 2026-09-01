@@ -1016,7 +1016,9 @@ here.
   Momenty · Místa, each with its live count as a `Badge`, `ButtonGroup` + `aria-pressed` like
   `CandidateFilterTabs` — plus a name search, the ordering `Form.Select` and the „I prázdná" switch;
   every control writes straight into the URL via `SetUrlState<AlbumsView>`, **pushing** except the
-  live-typed query, which replaces),
+  live-typed query, which replaces. The strip offers only the sections the library **has albums in**
+  (`sections` from `browseAlbums`) and disappears entirely below two of them — a lone tab is a label,
+  not a choice, so a library of nothing but hand-made albums keeps just the search and the ordering),
   `LabelFilterBar` (the labels index's own filter bar: a name search + the ordering, both writing
   straight into the URL via `SetUrlState<LabelsView>`, **pushing** except the live-typed query. No
   filter beyond the search: a label is a name and a count, and there is nothing else to filter it by),
@@ -1356,7 +1358,10 @@ here.
   (`useReloadKey`) instead of locally appending to the end — where a new album belongs is known only to the
   server — and resets the view **with empty albums shown**, so a fresh (photo-less) album isn't swallowed by
   the default filter. Filtering everything away shows `albums.noMatches` (a hint pointing at the switch when
-  the filters actually dropped something) while the section badges keep saying where the matches are;
+  the filters actually dropped something) while the section badges keep saying where the matches are, plus a
+  **Zrušit filtry** button back to `ALBUMS_DEFAULTS` — one control instead of a hunt for which of the three
+  narrowed the view, and absent when the view already **is** the default one (`isDefaultAlbumsView`), where
+  it would undo nothing;
   the grid is **virtualized** (`TileGrid`, minTile 160 / gap 12 — the skeleton's geometry), so a large
   collection puts only the visible rows plus a buffer into the DOM and starts only their cover loads,
   while the layout stays exactly the one the plain CSS grid drew,
@@ -4084,14 +4089,19 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `albumBrowse.ts` = the album index's view state + the pure browse rules: the `AlbumsView` type
   (`type`/`q`/`sort`/`empty`, string-only for the URL) + `ALBUMS_DEFAULTS` (hand-made albums, the server's
   order, empty ones hidden) + `ALBUMS_SHOW_EMPTY` (`'1'`) + the `toAlbumTab`/`toAlbumSort` sanitizers +
-  `albumBrowseOptions(view, language)` + `browseAlbums(albums, options)` → `{visible, counts, filteredOut}`.
+  `albumBrowseOptions(view, language)` + `browseAlbums(albums, options)` →
+  `{visible, counts, filteredOut, sections, tab}` + `presentSections` + `isDefaultAlbumsView`.
   `tabForType` puts **every** album type into one of the four sections (`album` · `folder` **and `month`** ·
   `moment` · `state`; a type this frontend doesn't know yet lands in the default one, so it can never fall
   out of all of them). The search matches the **stored title and the Czech display name** (`leden` finds
   `January 2026`) via `lib/text` `foldedIncludes`; `name`/`count` sort by the **displayed** name
   (`localeCompare`, numeric, base sensitivity — so `květen` really precedes `leden`) while `date`
   **keeps the order the API returned**; the counts are taken **after** the search + empty filter but
-  **before** the section split, so a badge answers „where are my matches?" rather than restating the totals;
+  **before** the section split, so a badge answers „where are my matches?" rather than restating the totals.
+  `sections` (via `presentSections`) lists the sections the library actually has albums in — read from the
+  **whole** list, not from the current search, so the strip doesn't appear and vanish as the reader types —
+  and the returned `tab` is the requested section only if it exists there, otherwise the first one that
+  does: a library made only of month folders opens on **Podle měsíce** instead of on an empty default;
   `albumCovers.ts` = what each album tile draws, so a grid of cards actually differs card to card: the
   `AlbumCover` union (`none` · `single{photoUid}` · `collage{photoUids}`) + `ALBUM_COLLAGE_TILES` (4) +
   `coverPhotoUids(cover)` + the pure `albumCover(album, taken?)` and `planAlbumCovers(albums)`.

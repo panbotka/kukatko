@@ -108,7 +108,12 @@ library is tidied by more than one person.
 
 Albums (each covered by a collage of four of its photos, so two albums from the same afternoon don't
 look alike; a new one can be started straight from a selection — "these forty photos are Ostatky 2022" —
-or from a single photo, without leaving for the Albums page) · labels · per-user favourites and ratings ·
+or from a single photo, without leaving for the Albums page. The index of them opens on the albums
+somebody actually made and leaves the machine-made month folders, moments and places to their own
+sections, each carrying its count; above them a name search that ignores case and diacritics — `pout`
+finds `Pouť` — and a choice of ordering: newest, by name, by photo count. Empty albums stay out of the
+way until a switch asks for them, and the whole view lives in the URL, so Back works and a link carries
+exactly what you were looking at) · labels · per-user favourites and ratings ·
 comments · bulk editing, including re-dating
 a whole shelf of scans at the grain you actually know ("1974", "the seventies") — or declaring by the
 handful that the date is simply unknown, which sets the wrong date aside rather than destroying it: the

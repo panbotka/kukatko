@@ -7,6 +7,8 @@ import {
   albumBrowseOptions,
   ALBUMS_DEFAULTS,
   browseAlbums,
+  isDefaultAlbumsView,
+  presentSections,
   tabForType,
   toAlbumSort,
   toAlbumTab,
@@ -147,6 +149,29 @@ describe('browseAlbums', () => {
     expect(result.counts).toEqual({ album: 0, folder: 1, moment: 0, state: 0 })
   })
 
+  it('reports the sections the library has albums in, in strip order', () => {
+    expect(browse().sections).toEqual(['album', 'folder', 'moment', 'state'])
+  })
+
+  it('shows the only section a single-type library has, whatever the URL asks for', () => {
+    // A library of nothing but month folders: the URL default (`album`) names a
+    // section that does not exist, and honouring it would show an empty grid.
+    const folders = [album('January 2026', 'folder', 15), album('May 2026', 'month', 3)]
+    const result = browseAlbums(folders, albumBrowseOptions(view(), 'cs'))
+    expect(result.sections).toEqual(['folder'])
+    expect(result.tab).toBe('folder')
+    expect(titles(result)).toEqual(['January 2026', 'May 2026'])
+  })
+
+  it('keeps a requested section that the library does have', () => {
+    expect(browse({ type: 'moment' }).tab).toBe('moment')
+  })
+
+  it('counts sections from the whole library, not from the current search', () => {
+    // The strip must not appear and vanish as the reader types.
+    expect(browse({ q: 'january' }).sections).toEqual(['album', 'folder', 'moment', 'state'])
+  })
+
   it('leaves the input list untouched', () => {
     const before = LIBRARY.map((a) => a.title)
     browse({ sort: 'name', empty: '1' })
@@ -164,5 +189,29 @@ describe('albumBrowseOptions', () => {
   it('treats anything but the show-empty marker as hiding empty albums', () => {
     expect(albumBrowseOptions(view({ empty: '' }), 'cs').showEmpty).toBe(false)
     expect(albumBrowseOptions(view({ empty: '0' }), 'cs').showEmpty).toBe(false)
+  })
+})
+
+describe('presentSections', () => {
+  it('is empty for an empty library', () => {
+    expect(presentSections([])).toEqual([])
+  })
+
+  it('reports each section once, in strip order, ignoring the empty-album filter', () => {
+    // `Pets` holds no photos and is hidden by default, but its section exists.
+    expect(presentSections([album('Czechia', 'state', 1), album('Pets', 'album', 0)])).toEqual([
+      'album',
+      'state',
+    ])
+  })
+})
+
+describe('isDefaultAlbumsView', () => {
+  it('is true only for the view the page opens with', () => {
+    expect(isDefaultAlbumsView(view())).toBe(true)
+    expect(isDefaultAlbumsView(view({ q: 'x' }))).toBe(false)
+    expect(isDefaultAlbumsView(view({ type: 'folder' }))).toBe(false)
+    expect(isDefaultAlbumsView(view({ sort: 'name' }))).toBe(false)
+    expect(isDefaultAlbumsView(view({ empty: '1' }))).toBe(false)
   })
 })

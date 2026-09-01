@@ -117,6 +117,28 @@ export function albumBrowseOptions(view: AlbumsView, language: string): AlbumBro
   }
 }
 
+/** Reports whether the view is the one the page opens with — nothing to reset. */
+export function isDefaultAlbumsView(view: AlbumsView): boolean {
+  return (Object.keys(ALBUMS_DEFAULTS) as (keyof AlbumsView)[]).every(
+    (key) => view[key] === ALBUMS_DEFAULTS[key],
+  )
+}
+
+/**
+ * The sections the library actually has something in, in the order they are
+ * shown. A library of nothing but hand-made albums has one, and the page then
+ * drops the section strip altogether rather than offering three dead buttons.
+ *
+ * Presence is read from the whole list, not from the current search or the
+ * empty-album switch: a strip that appeared and vanished as the reader typed
+ * would move the grid under the pointer, and a section whose only match is
+ * hidden still has to say so through its zero count.
+ */
+export function presentSections(albums: AlbumSummary[]): AlbumTab[] {
+  const present = new Set(albums.map((album) => tabForType(album.type)))
+  return ALBUM_TABS.filter((tab) => present.has(tab))
+}
+
 /** The album index after filtering: what to render, and what each section holds. */
 export interface AlbumBrowseResult {
   /** The albums of the selected section, in the selected order. */
@@ -125,6 +147,10 @@ export interface AlbumBrowseResult {
   counts: Record<AlbumTab, number>
   /** How many albums the search and the empty filter dropped, across all sections. */
   filteredOut: number
+  /** The sections this library has albums in — what the strip may offer. */
+  sections: AlbumTab[]
+  /** The section actually shown, which is the requested one only if it exists here. */
+  tab: AlbumTab
 }
 
 /**
@@ -179,12 +205,18 @@ export function browseAlbums(
     counts[tabForType(album.type)] += 1
   }
 
-  const visible = pool.filter((album) => tabForType(album.type) === tab)
+  // A section the library has nothing in is not offered by the strip, so a URL
+  // asking for it (a stale link, or the default on a library made only of month
+  // folders) would strand the reader on an empty grid with no way back.
+  const sections = presentSections(albums)
+  const shown = sections.includes(tab) ? tab : (sections[0] ?? ALBUM_TAB_DEFAULT)
+
+  const visible = pool.filter((album) => tabForType(album.type) === shown)
   if (sort === 'name') {
     visible.sort((a, b) => compareByName(a, b, language))
   } else if (sort === 'count') {
     visible.sort((a, b) => b.photo_count - a.photo_count || compareByName(a, b, language))
   }
 
-  return { visible, counts, filteredOut: albums.length - pool.length }
+  return { visible, counts, filteredOut: albums.length - pool.length, sections, tab: shown }
 }

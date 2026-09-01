@@ -995,7 +995,8 @@
     "noMatches": {
       "title": "Nic tu neodpovídá",
       "hint": "Zkus jinou sekci nebo jiný název.",
-      "hintFiltered": "Zkus jinou sekci, jiný název, nebo zapni „I prázdná“."
+      "hintFiltered": "Zkus jinou sekci, jiný název, nebo zapni „I prázdná“.",
+      "reset": "Zrušit filtry"
     },
     "edit": {
       "titleNew": "Nové album",

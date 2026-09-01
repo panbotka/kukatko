@@ -69,7 +69,7 @@ dopad/pracnost — nahoře je to, co se vyplatí udělat první.
 | [N4](#n4) | Hustota mřížky je jedna hodnota pro notebook i telefon | 🔴 | ⚪ | `lib/gridDensity.ts` |
 | [N5](#n5) ✅ | Zpět z fotky ztratí pozici v knihovně | 🔴 | 🟡 | `PhotoGrid`, `usePaginatedPhotos` |
 | [N6](#n6) ✅ | Na telefonu panel obličejů i informací fotku úplně zakryje | 🔴 | 🟡 | `photo/viewer.css` |
-| [N7](#n7) | 438 alb v jedné hromadě, i když API už rozlišuje jejich typ | 🔴 | 🟡 | `AlbumsPage` |
+| [N7](#n7) ✅ | 438 alb v jedné hromadě, i když API už rozlišuje jejich typ | 🔴 | 🟡 | `AlbumsPage` |
 | [N8](#n8) | `/people`: 105 osob bez hledání, a 125 Mpx stažených na 72 čtverečků | 🔴 | 🟡 | `PeoplePage`, `SubjectTile` |
 | [N9](#n9) | Seznam obličejů nemá náhledy, jmenovky na fotce se překrývají | 🟡 | 🟡 | `FacesPanel`, `FaceOverlay` |
 | [N10](#n10) | `/labels`: 113 štítků jako svislý seznam bez hledání a řazení | 🟡 | ⚪ | `LabelsPage` |
@@ -403,6 +403,25 @@ hledání, ani řazení, ani stránkování (rošt je virtualizovaný a scrolluj
 **Kde to je.** `web/src/pages/AlbumsPage.tsx` (nepoužívá `type` z odpovědi API);
 pojmenování vzniklo v importerech migrace, které byly 2026-08-06 odstraněny — data
 zůstávají, kód, který je vyrobil, ne.
+
+**✅ Vyřešeno (2. 9. 2026).** Stránka se dělí na sekce podle `type` a otevírá se na
+**Moje alba** — pravidla jsou čisté funkce v `web/src/lib/albumBrowse.ts`, ovládání
+v `AlbumFilterBar`. Nad roštem je hledání v názvech (necitlivé na velikost písmen
+i diakritiku, `pout` najde `Pouť`) a řazení **Od nejnovějších** (pořadí serveru,
+výchozí) / **Podle názvu** / **Podle počtu fotek**. Prázdná alba jsou schovaná, dokud
+si je přepínač „I prázdná" nevyžádá; sekce nese živý počet, takže hledání říká, kde
+zásahy jsou. Když nic neodpovídá, je tam prázdný stav s tlačítkem **Zrušit filtry**.
+Celý pohled (`type`/`q`/`sort`/`empty`) žije v URL, takže Zpět funguje a odkaz nese
+přesně to, co je vidět; rošt zůstává virtualizovaný (`TileGrid`). Nabízejí se jen
+sekce, ve kterých knihovna opravdu něco má — knihovna s jediným druhem alba strip
+nedostane vůbec, takže není na čem tratit oproti dřívějšku.
+
+Bod 3 návrhu (české názvy strojových alb) je vyřešený **jen zobrazením**:
+`i18n/albumNames` vykreslí `January 2026` jako `leden 2026` a hledání matchuje obojí —
+v databázi se nepřejmenovává nic (obsah knihovny se řeší ručně, ne autonomním taskem).
+**Bod 5 zůstává otevřený:** měsíční album se pořád odvozuje od data přidání, ne od
+`taken_at`, takže „January 2026" u prvorepublikového skenu je věcně dál zavádějící.
+Je to práce na straně dat a importu, ne na `AlbumsPage`.
 
 ---
 
