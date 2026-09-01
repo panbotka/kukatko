@@ -3948,7 +3948,7 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   and repaints **all** grids at once, without a context and without a provider (so page tests work
   without a wrapper too). It takes an optional **`GridDensityScope`** (default `LIBRARY_GRID_SCOPE`): the
   key, seed tile and gutter of *one* grid. Every subscriber is woken by every change but each reads its
-  own key, so `/outliers` (`OUTLIER_GRID_SCOPE`) and the library never move each other's number; the scope is
+  own key, so the review tools (`REVIEW_GRID_SCOPE`) and the library never move each other's number; the scope is
   re-`useMemo`d from its fields, not used by identity, so an inline `{…}` at a call site can't thrash the seed;
   `useImageFrame({source,width,height,orientation})` → `{frame,measured,aspectRatio,ratio,imgProps}` =
   **the frame a face box is positioned against, taken from the loaded image**. Wherever a box is drawn over a
@@ -4326,8 +4326,9 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   every viewport (no `auto-fill` fallback, because the user always picks a concrete number); the gap
   between tiles is handled separately by `gap` on the container. Everything above takes an optional
   **`GridDensityScope`** `{storageKey, tileMinPx, gapPx}` (the whole per-grid contract) and defaults to
-  `LIBRARY_GRID_SCOPE` (`kukatko.grid.density`, 140px, 3px). The second scope is `OUTLIER_GRID_SCOPE`
-  (`kukatko.outliers.density`, `OUTLIER_TILE_MIN_PX` 256 = the 16rem card, `OUTLIER_GAP_PX` 16 = `gap-3`):
+  `LIBRARY_GRID_SCOPE` (`kukatko.grid.density`, 140px, 3px). The second scope is `REVIEW_GRID_SCOPE`
+  (`kukatko.review.density`, `REVIEW_TILE_MIN_PX` 256 = the 16rem card, `REVIEW_GAP_PX` 16 = `gap-3`), shared
+  by every review tool (`/faces`, `/recognition`, `/expand`, `/outliers`, `/people/clusters`, duplicates):
   **a shared control, a separate number**, because a density for browsing photographs is not one for judging
   faces — and a review card seeded from the library's 140px would open at twice the density anyone wants;
   `slideshowSettings.ts` = the `SlideshowSettings{effect,intervalMs,repeat,shuffle,showTitle,

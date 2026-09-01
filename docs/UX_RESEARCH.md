@@ -66,7 +66,7 @@ dopad/pracnost — nahoře je to, co se vyplatí udělat první.
 | [N1](#n1) ✅ | Hledání čeká 30 s na AI službu, o které aplikace ví, že je offline | 🔴 | ⚪ | `SearchPage`, `usePhotoSearch` |
 | [N2](#n2) | Knihovna dotazovací jazyk umí, ale tvrdí opak (a mlčí u překlepu) | 🔴 | ⚪ | `FilterBar` |
 | [N3](#n3) ✅ | Na `/search` a `/saved` nevede z menu žádný odkaz, `Žebříček` má top-level slot | 🔴 | ⚪ | `navItems.ts` |
-| [N4](#n4) | Hustota mřížky je jedna hodnota pro notebook i telefon | 🔴 | ⚪ | `lib/gridDensity.ts` |
+| [N4](#n4) ✅ | Hustota mřížky je jedna hodnota pro notebook i telefon | 🔴 | ⚪ | `lib/gridDensity.ts` |
 | [N5](#n5) ✅ | Zpět z fotky ztratí pozici v knihovně | 🔴 | 🟡 | `PhotoGrid`, `usePaginatedPhotos` |
 | [N6](#n6) ✅ | Na telefonu panel obličejů i informací fotku úplně zakryje | 🔴 | 🟡 | `photo/viewer.css` |
 | [N7](#n7) ✅ | 438 alb v jedné hromadě, i když API už rozlišuje jejich typ | 🔴 | 🟡 | `AlbumsPage` |
@@ -255,6 +255,28 @@ na `< 768 px` maximálně 4. Druhá varianta je pár řádků a řeší to celé
 
 **Kde to je.** `web/src/lib/gridDensity.ts` (klíč `kukatko.grid.density`, řádek ~79),
 `web/src/hooks/useGridDensity.ts`, `web/src/components/library/GridDensityControl.tsx`.
+
+**✅ Vyřešeno (7. 8. 2026, ověřeno 2. 9. 2026).** Druhou variantou — tvrdým stropem
+podle šířky výřezu.
+
+`lib/gridDensity.ts` drží `GRID_COLUMN_CAPS` (pod 576 px nejvýš **3** sloupce, pod
+768 px nejvýš **4**) a nad nimi `maxColumnsForWidth` / `clampColumnsToWidth`.
+`useGridDensity` čte strop z živého výřezu druhým `useSyncExternalStore` (`resize`,
+`orientationchange`) a vrací `density = min(storedDensity, maxColumns)`. Osmisloupcová
+hustota napíchnutá na notebooku tedy na telefonu (393 px) vykreslí tři sloupce, ne osm
+— mříž bílých srdcí zmizela.
+
+Ořez je **jen zobrazovací**: do localStorage nesahá, takže na široké obrazovce je
+zpátky uživatelova osmička. Ovladač jde s ním — `+` se vypne na stropu výřezu a
+prostřední chip čte počet **v platnosti**, aby telefon nenabízel krok, který by stejně
+odmítl.
+
+Pokryto testy: `lib/gridDensity.test.ts` (320/393/575 px → 3, 576/700/767 px → 4, od
+768 px → 10, neměřitelná šířka → bez stropu) a `hooks/useGridDensity.test.tsx`
+(„clamps a desktop density down on a phone without touching the stored value",
+„restores the chosen density when the window goes wide again"). Ovladač sám je
+`GridDensityControl` v liště `FilterBar` (na telefonu v zásuvce) a na `SubjectPage`;
+hustotu tak mění všechny mřížky knihovny včetně výsledků hledání.
 
 ---
 
