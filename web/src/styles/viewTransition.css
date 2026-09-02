@@ -1,0 +1,63 @@
+/* Grid ⇄ viewer morph, built on the platform's View Transitions API.
+ *
+ * Opening a photograph reads as the tile growing into the viewer: the browser
+ * captures the marked element before the route change and after it, and
+ * interpolates the one into the other. `components/morph` decides *when* that
+ * runs and *which* element is marked; this file is only the choreography.
+ *
+ * Every rule here is inert in a browser without the API — an unknown pseudo
+ * element is simply dropped — so nothing below can affect the fallback path.
+ */
+
+/* The mark itself. An attribute rather than an inline style, so a test can see
+   which element is taking part (jsdom drops the unknown property outright), and
+   so the name is stated once instead of at every call site. */
+[data-kk-morph] {
+  view-transition-name: kk-morph;
+}
+
+/* The morph's own timing. `--kk-duration-base` is 200 ms and collapses to 1 ms
+   under prefers-reduced-motion — a second belt beside the braces in
+   `components/morph`, which does not start a transition in that case at all. */
+::view-transition-group(kk-morph) {
+  animation-duration: var(--kk-duration-base);
+  animation-timing-function: var(--kk-ease-standard);
+}
+
+/* The two snapshots are different crops of one photograph — a square-cropped
+   tile and the whole fitted image — so they must fill the interpolating box the
+   same way, or the cross-fade would squash one against the other's proportions.
+   `object-fit: cover` on both keeps the photograph's own shape throughout; the
+   group's box is what changes. */
+::view-transition-old(kk-morph),
+::view-transition-new(kk-morph) {
+  height: 100%;
+  object-fit: cover;
+  /* The default `mix-blend-mode: plus-lighter` makes an overlapping pair of
+     photographs wash out to white halfway through; these two overlap by design. */
+  mix-blend-mode: normal;
+  animation-duration: var(--kk-duration-base);
+  animation-timing-function: var(--kk-ease-standard);
+}
+
+/* The rest of the page cross-fades under the morph, briskly: the chrome is not
+   what the eye is following, and a slow fade there would make the whole
+   navigation feel slower than it is. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--kk-duration-fast);
+  animation-timing-function: var(--kk-ease-standard);
+}
+
+/* The preference means "no motion", not "less motion". The runner already
+   refuses to start a transition when it is set, so this only covers a transition
+   started before the preference flipped. */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(kk-morph),
+  ::view-transition-old(kk-morph),
+  ::view-transition-new(kk-morph),
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none;
+  }
+}

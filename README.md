@@ -128,6 +128,10 @@ library is tidied by more than one person.
   enough to look at from the first frame, and the full-size one takes its place in exactly the same
   spot: no grey flash, nothing jumping. A video is left alone; its player fetches the film when you
   ask for it.
+- **The tile grows into the photograph.** Clicking a photo on the wall no longer swaps one page for
+  another: the tile itself expands into the full-screen viewer, and closing eases back out to the
+  wall. It rides the browser's own View Transitions API, so a browser without it navigates exactly
+  as it did before, and asking your system to reduce motion turns the whole thing off.
 - **On a phone the photo takes a pinch.** Pinch to zoom, or double-tap to zoom in on the spot you
   tapped, then drag the photograph around; while it is magnified a sideways drag pans it instead of
   paging away from it, and another double-tap puts it back.

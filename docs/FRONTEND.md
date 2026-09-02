@@ -530,6 +530,42 @@ here.
   neutral surface the caller drew before (the sunken tile well). Render it as the sibling **before**
   the image: both are static, so the image paints over the blur. Used by `FadeInImage` (→ every grid
   tile) and directly by `PhotoDetailPage`'s stage. Tests: `BlurPlaceholder.test.tsx`),
+  `morph/` = **the grid ⇄ viewer morph**, the app's single integration with the View Transitions API
+  (`lib/viewTransition` is its pure half, `styles/viewTransition.css` its choreography). Opening a photo
+  should read as the tile *growing* into the viewer rather than as a page swap, and the platform does that
+  for free once the same element is named on both sides of the DOM change. Three files:
+  `MorphContext.tsx` (`MorphState{enabled,morphId,morph}`, `MorphContext`, `useMorph()` and
+  `useMorphMark(id)` → `{'data-kk-morph': ''}` while `id` is the one being morphed, `{}` otherwise. The mark
+  is an **attribute**, not an inline style: `view-transition-name` is invisible to jsdom, so an attribute is
+  what a test can see, and the name is then stated once in CSS instead of at every call site.
+  `MORPH_DEFAULT` is **inert** — nothing marked, every navigation run plainly — so a component mounted
+  outside the provider, which is every focused unit test, keeps navigating exactly as it always did instead
+  of crashing);
+  `MorphProvider.tsx` (mounted in `App` **inside** `BrowserRouter` and around the whole route table, so a
+  future route opts in with a `useMorphMark` and a `MorphLink` and never a second router integration. It owns
+  the ordering, which is the subtle part. The browser captures the **old** state at the first rendering
+  opportunity *after* `startViewTransition` is called, so the mark is painted with `flushSync` **before** the
+  transition is asked for. The **new** state is captured once the update callback settles — and the textbook
+  `flushSync(() => navigate(…))` *inside* that callback **does not work with this router**: react-router v7's
+  `BrowserRouter` applies its location update inside `React.startTransition`, which `flushSync` cannot force
+  through, so the DOM is still the old page when the new state is captured and the pair morphs the leaving
+  element into itself. Measured in Chromium before the fix: at the transition's `ready`, `location.pathname`
+  was already the photo but the only marked element was still the 120×90 grid tile. So **every** morph is
+  deferred — the callback fires the navigation and then waits for a `useLayoutEffect` on `location.key` to
+  report the new route rendered, or for `MORPH_SETTLE_TIMEOUT_MS` to run out — which covers a history pop for
+  free, that being asynchronous in its own right. A `document` prop lets a test pass a fake starter. **Why not
+  react-router's own `viewTransition` prop:** it lives in `RouterProvider` only, and this app runs
+  `BrowserRouter`);
+  `MorphLink.tsx` (a drop-in `<Link>` that morphs — `morphId` plus the router's props, with `state` narrowed
+  from the router's `any` to `unknown`. It carries the mark itself, so a caller only swaps `Link` for
+  `MorphLink`. It intercepts **only** a plain left click on a same-document link that its own `onClick` did
+  not already cancel: Ctrl/Cmd/middle-click, Shift, Alt, a `target` and `reloadDocument` are all left to the
+  browser, and where `enabled` is false — no API, or reduced motion — it does not intercept at all, so
+  react-router does exactly what it did before). Used by `PhotoTile` (the grid half) and
+  `PhotoDetailPage` (the viewer half + `close()`). Tests: `MorphProvider.test.tsx` covers the wiring and every
+  fallback path (no API, reduced motion, a modified click); jsdom implements none of the API and cannot (there is no compositor to snapshot
+  with), so the animation itself was verified in Chromium — see the evidence note under
+  `styles/viewTransition.css` below,
   `Skeleton` / `TileGridSkeleton` / `ListSkeleton` / `ChipCloudSkeleton` (**shared skeleton placeholders** instead of
   full-page spinners on the main data views: `Skeleton` is a single shimmer block
   (`.kk-skeleton`, warm surface-1 + a sweeping sheen, `aria-hidden`, props size/circle/radius);
@@ -713,7 +749,11 @@ here.
   (`lib/tileRendition`), so a panorama spanning half a desktop does not go soft);
   a justified tile also **hands its address to the viewer** in the link's navigation state
   (`lib/photoHandoff`, `{uid,previewUrl}`) so the detail page can open in an image the browser already holds;
-  a square tile hands over nothing, its crop is not the photograph),
+  a square tile hands over nothing, its crop is not the photograph.
+  The tile root is a **`MorphLink`** (`components/morph`), not a bare `Link`: the media box is the grid half of
+  the grid ⇄ viewer morph, so a click grows the tile into the viewer's figure where the browser can do that
+  and is an ordinary link everywhere else — the element type is unchanged, so the selection-mode reasoning
+  above still holds),
   `PhotoGrid` (the **justified photo wall**: a virtualized **`react-virtuoso` `Virtuoso`** list,
   window-scroll, footer spinner/retry. Photos keep **their own proportions** — the tiles are laid into rows
   that share one height and fill the width edge to edge (`lib/justifiedLayout`), so a panorama is wide, a
@@ -2097,6 +2137,17 @@ here.
   over `--under` z-index 1): both stand-ins are absolutely positioned and would otherwise paint **above** the
   in-flow image they sit under — the image escapes that only while it carries a zoom transform, which it does
   not with the faces or edit view up.
+  **While the photo's own row is still on the wire** the viewer no longer shows a bare spinner when the grid
+  handed an address over: it paints that image as the stage's first frame (a `kk-viewer__figure` with a
+  decorative `<img>` and a visually-hidden `role="status"` carrying `photo.loading`). Those bytes are already
+  decoded, so it costs nothing — and it is what the **grid → viewer morph** lands on: the morph's new state is
+  captured right after the route change, when only the loading branch has rendered, so an empty stage would
+  make the tile grow into a dark box instead of into the photograph. A photo opened from a bare link hands
+  nothing over and still gets the spinner. The figure — the loading one and the ready one alike — carries
+  `useMorphMark(uid)`, which is the viewer half of the morphing pair; `close()` runs the return leg through
+  `useMorph().morph` — one entry point for both ways out, the `navigate(-1)` pop and the pushed list URL of a
+  directly-opened photo alike. See `components/morph` above, including what the return leg does and does not
+  manage to pair with.
   Taking the frame from the image is what makes the viewer immune to the **other** half of that invariant, which
   is on the backend: `file_width`/`file_height` **must be the stored,
   pre-rotation dimensions**, because `displayFrame` is what applies the orientation to them. The source catalogue
@@ -4253,6 +4304,17 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   trusted** — history state outlives the navigation that made it, so Back/Forward and the viewer's own
   `replace` paging can present the previous photo's address, and painting that under the photo on stage would
   be showing the wrong photograph;
+  `viewTransition.ts` = **the one place the app talks to the browser's View Transitions API**, pure and
+  React-free: `MORPH_NAME` (`kk-morph`, the `view-transition-name` the morphing pair shares — one name, not
+  one per photo: only two elements ever carry it and never at the same time, since a route change replaces
+  one with the other), `MORPH_SETTLE_TIMEOUT_MS` (400 — how long a morph holds its transition open waiting for
+  the page it navigated to, so a navigation that never lands cannot read as a frozen page),
+  `ViewTransitionHost{startViewTransition?:unknown}` (structural on purpose: the property is absent from the
+  DOM typings this project builds against, and a test can hand the runner a two-property stand-in rather than
+  forge a document), `viewTransitionStarter(doc)` → the API bound to its document or **`null`** where the
+  browser has none, and `morphStarter(doc,reducedMotion)` → the same, plus **`null` under
+  `prefers-reduced-motion`** (the preference means "no motion", not "less motion", so the morph is turned off
+  rather than shortened). Nothing here polyfills anything: `null` is the whole fallback contract;
   `duplicateCompare.ts` = the **pure logic of pair comparison**: `buildPairQueue(groups)` → `ComparePair[]`
   (a multi-member group **pair by pair against the keeper**, never member-to-member; a group whose keeper is not among
   the members is skipped, not guessed), `pairId(a,b)` (unordered, like the backend), `pairsInGroup`/
@@ -5156,6 +5218,45 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   a stored choice wins, a language change is stored) + `screens.test.tsx` (representative
   screens — the navbar + tiles — render without missing-key warnings in both cs and en via
   `cloneInstance({saveMissing})`, plural rendering 1/3/5, a language switch rewrites the visible text)),
+  `styles/viewTransition.css` (**the grid ⇄ viewer morph's choreography** — imported last in `main.tsx`, and
+  inert in any browser without the API, which simply drops an unknown pseudo element. Its rules:
+  `[data-kk-morph] { view-transition-name: kk-morph }` (the mark `useMorphMark` paints — see
+  `components/morph` above); `::view-transition-group(kk-morph)` timed on `--kk-duration-base` (200 ms, and
+  1 ms under `prefers-reduced-motion`, which is the second belt beside the runner's own refusal to start a
+  transition at all); `::view-transition-old/new(kk-morph)` with `height: 100%` + **`object-fit: cover`** —
+  the two snapshots are different crops of one photograph (a square-cropped tile and the whole fitted image),
+  so without it the cross-fade squashes each into the other's proportions — plus `mix-blend-mode: normal`,
+  because the default `plus-lighter` washes an overlapping pair of photographs out to white halfway through;
+  and a brisk `--kk-duration-fast` on `::view-transition-old/new(root)`, since the chrome is not what the eye
+  is following. Guarded by `styles/viewTransition.test.ts`, which reads the shipped stylesheet — jsdom
+  evaluates none of these pseudo elements.
+  **Browser evidence** (Chromium 145.0.7632.0 on this box, 2026-09-02; the real app driven over a Vite dev
+  server proxying to the deployed API, `document.startViewTransition` wrapped to record what was marked at
+  each phase. That deployment predates `preview_url`, so the list responses were patched in the page to carry
+  one — without it no tile hands an address over and the viewer's loading branch has nothing to draw).
+  Opening a photo: at `before-start` the marked element was the grid tile (`kk-tile__media`,
+  **120×90**) on `/`; at `ready` it was the viewer's figure (`kk-viewer__figure`, **493×493**) on
+  `/photos/…`, and `document.getAnimations()` reported the full pair — `::view-transition-group(kk-morph)`,
+  `::view-transition-old(kk-morph)`, `::view-transition-new(kk-morph)`, all 200 ms and `running` — beside the
+  120 ms root cross-fade. With `prefers-reduced-motion: reduce` forced, the same click navigated and **no
+  view-transition animation existed at any point**. **The return leg is a transition but usually not a
+  paired morph:** closing the viewer captures the figure as `::view-transition-old(kk-morph)`, but the grid
+  it pops back to has not fetched its photos yet, so nothing claims the name on the new side and the
+  photograph fades out over the root cross-fade instead of shrinking into its tile. Measured time from the
+  pop to the marked tile being back in the DOM: **~2.2 s** — far past anything a transition may be held open
+  for, so this is left as the honest degradation rather than paid for with a frozen page. It *does* pair
+  whenever the tile is already on screen when the browser looks. The browser's own Back button is
+  deliberately **not** wrapped at all (it navigates exactly as it did before): a raw `popstate` gives no
+  point at which the old state can be captured before the router has re-rendered, and „back always works"
+  outranks the animation. Note also that a headless screenshot cannot show any of this — the
+  view-transition pseudo tree is a compositor layer and is absent from `Page.captureScreenshot` output,
+  which is why the evidence above is the animation/geometry log rather than a picture.
+  **„Back always works" was A/B-ed in the same session**, since that is the project rule the morph is most
+  able to break: from `/?sort=oldest&density=4`, opening a photo gave `/photos/…?sort=oldest` and closing it
+  restored `/?sort=oldest&density=4` in full; the browser's own Back/Forward stepped between the two
+  correctly afterwards; and scroll restoration landed on exactly the same offset (377px, from 2400px) with
+  the morph on and with it switched off through `prefers-reduced-motion` — so the position the grid comes
+  back to is the app's existing behaviour, untouched),
   `styles/tokens.css` (**the design token layer** — the single source of truth for spacing, radii, elevation,
   motion and the typographic scale; imported **once** in `main.tsx` right after the Bootswatch CSS and **before**
   `app.css`, which consumes the tokens. Bootswatch Superhero remains the base theme — this is a layer

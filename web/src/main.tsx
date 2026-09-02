@@ -10,6 +10,9 @@ import 'bootstrap-icons/font/bootstrap-icons.css'
 // consume, so it must be imported before them.
 import './styles/tokens.css'
 import './styles/app.css'
+// The grid ⇄ viewer morph's choreography. Last, so its view-transition rules sit
+// above the polish layer; it is inert wherever the API is missing.
+import './styles/viewTransition.css'
 
 import './i18n'
 import { App } from './App'

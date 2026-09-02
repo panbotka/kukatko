@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import { CapabilitiesContext } from '../capabilities/CapabilitiesContext'
+import { MorphContext, type MorphState } from '../components/morph/MorphContext'
 import { NARROW_VIEWPORT_QUERY } from '../hooks/useIsNarrowViewport'
 import i18n from '../i18n'
 import { clearBlurPlaceholderCache } from '../lib/blurPlaceholder'
@@ -2666,5 +2667,154 @@ describe('PhotoDetailPage — the blurred stand-in', () => {
     await screen.findByRole('heading', { name: 'Beach' })
 
     expect(document.querySelector('.kk-media-blur')).not.toBeInTheDocument()
+  })
+})
+
+describe('the grid → viewer morph', () => {
+  /**
+   * Mounts the viewer with the view-transition plumbing already saying "this
+   * photo is the one being morphed", which is what the provider does with
+   * `flushSync` before it asks the browser for a transition. jsdom implements
+   * none of the API, so what is asserted here is the wiring — which element
+   * carries the mark, and that both of the close button's ways out are routed
+   * through the morph — and never the animation.
+   *
+   * `from` decides how the viewer was reached: opened from a grid inside the
+   * same history (Back can pop) or straight from a link (it cannot, and the list
+   * URL has to be pushed instead).
+   */
+  function renderMorphing(overrides: Partial<MorphState> = {}, from: 'grid' | 'link' = 'link') {
+    const morph = vi.fn((_id: string, navigate: () => void) => {
+      navigate()
+    })
+    const value: MorphState = { enabled: true, morphId: 'b', morph, ...overrides }
+    const entries = from === 'grid' ? ['/', '/photos/b?sort=oldest'] : ['/photos/b?sort=oldest']
+    render(
+      <I18nextProvider i18n={i18n}>
+        <CapabilitiesContext.Provider
+          value={{ semantic_search: true, known: true, passkeys: false }}
+        >
+          <AuthContext.Provider value={auth(true)}>
+            <MorphContext.Provider value={value}>
+              <MemoryRouter initialEntries={entries}>
+                <Routes>
+                  <Route path="/photos/:uid" element={<PhotoDetailPage />} />
+                  {/* The list the viewer returns to, whichever query it
+                      reconstructs. */}
+                  <Route path="*" element={<div>grid</div>} />
+                </Routes>
+                <LocationProbe />
+              </MemoryRouter>
+            </MorphContext.Provider>
+          </AuthContext.Provider>
+        </CapabilitiesContext.Provider>
+      </I18nextProvider>,
+    )
+    return { morph }
+  }
+
+  it('marks the photograph on stage as the half the tile grows into', async () => {
+    renderMorphing()
+    await screen.findByRole('heading', { name: 'Beach' })
+
+    // The figure, not the stage around it: the tile has to grow into the
+    // photograph, not into the letterbox the photograph sits in.
+    expect(stageFigure()).toHaveAttribute('data-kk-morph')
+  })
+
+  it('marks nothing while another photo is the one being morphed', async () => {
+    renderMorphing({ morphId: 'a' })
+    await screen.findByRole('heading', { name: 'Beach' })
+
+    expect(stageFigure()).not.toHaveAttribute('data-kk-morph')
+  })
+
+  it('closes back into the grid through the morph, popping history', async () => {
+    const user = userEvent.setup()
+    const { morph } = renderMorphing({}, 'grid')
+    await screen.findByRole('heading', { name: 'Beach' })
+
+    await user.click(screen.getByRole('button', { name: 'Back to the list' }))
+
+    expect(morph).toHaveBeenCalledTimes(1)
+    expect(morph.mock.calls[0][0]).toBe('b')
+    // Back still pops — the morph wraps the navigation, it does not replace it.
+    expect(screen.getByTestId('location')).toHaveTextContent('/')
+  })
+
+  it('closes through the morph for a photo opened from a bare link too', async () => {
+    const user = userEvent.setup()
+    const { morph } = renderMorphing()
+    await screen.findByRole('heading', { name: 'Beach' })
+
+    await user.click(screen.getByRole('button', { name: 'Back to the list' }))
+
+    // Nothing to pop back to, so the reconstructed list URL is pushed instead —
+    // still through the same single entry point.
+    expect(morph).toHaveBeenCalledTimes(1)
+    expect(screen.getByTestId('location')).toHaveTextContent('/?sort=oldest')
+  })
+
+  it('navigates exactly as before when the plumbing is the inert default', async () => {
+    const user = userEvent.setup()
+    render(
+      <I18nextProvider i18n={i18n}>
+        <CapabilitiesContext.Provider
+          value={{ semantic_search: true, known: true, passkeys: false }}
+        >
+          <AuthContext.Provider value={auth(true)}>
+            <MemoryRouter initialEntries={['/', '/photos/b?sort=oldest']}>
+              <Routes>
+                <Route path="/" element={<div>grid</div>} />
+                <Route path="/photos/:uid" element={<PhotoDetailPage />} />
+              </Routes>
+              <LocationProbe />
+            </MemoryRouter>
+          </AuthContext.Provider>
+        </CapabilitiesContext.Provider>
+      </I18nextProvider>,
+    )
+    await screen.findByRole('heading', { name: 'Beach' })
+
+    await user.click(screen.getByRole('button', { name: 'Back to the list' }))
+
+    // No provider at all — the fallback every browser without the API takes.
+    // Back still works, which is the hard rule the morph must not touch.
+    await waitFor(() => {
+      expect(screen.getByTestId('location')).toHaveTextContent('/')
+    })
+    expect(stageFigure()).toBeNull()
+  })
+})
+
+describe('the first frame while the photo is still on the wire', () => {
+  it('opens on the very image the grid painted when one was handed over', async () => {
+    // A promise that never settles: the assertion is about what the viewer shows
+    // *before* the photo's row arrives.
+    fetchPhotoMock.mockImplementation(() => new Promise<PhotoDetail>(() => undefined))
+    renderPage(true, {
+      pathname: '/photos/b',
+      search: '?sort=oldest',
+      state: { uid: 'b', previewUrl: 'https://media.example/b-720.jpg?sig=abc' },
+    })
+
+    const first = await waitFor(() => {
+      const img = document.querySelector<HTMLImageElement>('img.kk-viewer__image')
+      expect(img).not.toBeNull()
+      return img
+    })
+    expect(first).toHaveAttribute('src', 'https://media.example/b-720.jpg?sig=abc')
+    // Decorative: the photo's name is not known yet, and the wait is announced
+    // beside it instead.
+    expect(first).toHaveAttribute('alt', '')
+    expect(screen.getByRole('status')).toHaveTextContent('Loading photo…')
+  })
+
+  it('falls back to the spinner for a photo opened from a bare link', async () => {
+    fetchPhotoMock.mockImplementation(() => new Promise<PhotoDetail>(() => undefined))
+    renderPage(true, '/photos/b?sort=oldest')
+
+    expect(await screen.findByRole('status')).toBeInTheDocument()
+    expect(document.querySelector('img.kk-viewer__image')).toBeNull()
   })
 })

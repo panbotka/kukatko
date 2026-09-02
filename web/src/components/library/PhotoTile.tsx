@@ -1,5 +1,4 @@
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { useThumbSrc } from '../../hooks/useThumbSrc'
 import { formatDuration } from '../../lib/format'
@@ -10,6 +9,7 @@ import { tileRenditionName, tileUsesPreviewURL } from '../../lib/tileRendition'
 import { type Photo, thumbUrl } from '../../services/photos'
 import { FadeInImage } from '../FadeInImage'
 import { Icon } from '../Icon'
+import { MorphLink } from '../morph/MorphLink'
 
 import { FavoriteButton } from './FavoriteButton'
 
@@ -244,23 +244,29 @@ export function PhotoTile({
     </>
   )
 
-  // The tile root is ALWAYS a <Link> so its element TYPE never changes when the
-  // grid flips into selection-first mode (selection going empty↔non-empty). Were
-  // the root swapped between <a> and <button>, React would unmount the whole tile
-  // subtree and mount a fresh <img> — re-running the load-in fade on every visible
-  // tile at once (the reported whole-grid flicker). Keeping one element means only
-  // its click behaviour and ARIA role change, and the <img> stays mounted.
+  // The tile root is ALWAYS a link — a `MorphLink`, which renders exactly one — so
+  // its element TYPE never changes when the grid flips into selection-first mode
+  // (selection going empty↔non-empty). Were the root swapped between <a> and
+  // <button>, React would unmount the whole tile subtree and mount a fresh <img>
+  // — re-running the load-in fade on every visible tile at once (the reported
+  // whole-grid flicker). Keeping one element means only its click behaviour and
+  // ARIA role change, and the <img> stays mounted.
   //
   // When selection-first the whole media box toggles this tile's selection: it is
   // exposed as a toggle button (role="button" + aria-pressed) and navigation is
-  // suppressed (preventDefault, which react-router honours — it runs our handler
-  // first and skips its own navigation when the event is defaultPrevented). A
-  // native <a> already activates on Enter (→ a click we intercept), but not on
-  // Space, so Space is handled explicitly to keep it operable as a button. When
-  // not selection-first it is a plain link to the detail page and only the corner
-  // checkmark selects.
+  // suppressed (preventDefault, which both react-router and the morph honour —
+  // each runs our handler first and stands down when the event is
+  // defaultPrevented). A native <a> already activates on Enter (→ a click we
+  // intercept), but not on Space, so Space is handled explicitly to keep it
+  // operable as a button. When not selection-first it is a plain link to the
+  // detail page and only the corner checkmark selects.
   const base = (
-    <Link
+    <MorphLink
+      // The tile is the half of the grid ⇄ viewer morph that the user clicked:
+      // it grows into the viewer's figure for the same photograph. A browser
+      // without the View Transitions API — or a reader who asked for reduced
+      // motion — gets the plain link this degrades to.
+      morphId={photo.uid}
       to={
         detailQuery !== undefined && detailQuery !== ''
           ? `/photos/${photo.uid}?${detailQuery}`
@@ -304,7 +310,7 @@ export function PhotoTile({
       }
     >
       {inner}
-    </Link>
+    </MorphLink>
   )
 
   // The checkmark control and the favorite heart both sit in a relative wrapper

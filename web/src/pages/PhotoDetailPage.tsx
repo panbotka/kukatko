@@ -28,6 +28,7 @@ import './../components/photo/viewer.css'
 import { SharePhotosButton } from '../components/organize/SharePhotosButton'
 import { FaceOverlay } from '../components/people/FaceOverlay'
 import { FacesPanel } from '../components/people/FacesPanel'
+import { useMorph, useMorphMark } from '../components/morph/MorphContext'
 import { useToast } from '../components/toast/ToastContext'
 import { useAutoHideChrome } from '../hooks/useAutoHideChrome'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
@@ -204,6 +205,10 @@ export function PhotoDetailPage() {
   // controls exist exactly ONCE in the DOM: a second, hidden copy would give
   // every star and heart a twin for assistive tech (and for a query) to find.
   const narrow = useIsNarrowViewport()
+  // The grid ⇄ viewer morph: this page is the half the clicked tile grows into,
+  // and `morphMark` is what marks the photograph on stage as that half.
+  const morph = useMorph()
+  const morphMark = useMorphMark(uid)
 
   const view = useMemo(() => readUrlState(searchParams, DETAIL_DEFAULTS), [searchParams])
   const neighborParams = useMemo(() => detailToParams(view), [view])
@@ -327,11 +332,14 @@ export function PhotoDetailPage() {
   // scroll position; only for a directly-opened photo — where there is no grid
   // entry behind us — do we push the reconstructed list URL instead.
   const close = (): void => {
-    if (openedDirectlyRef.current) {
-      void navigate(backHref(view))
-    } else {
-      void navigate(-1)
-    }
+    // Both ways out go through the one morph entry point, which leaves the
+    // navigation itself exactly as it was and only wraps it. It pairs back into
+    // the tile when the grid is already on screen by the time the browser
+    // captures the new state, and otherwise degrades to the photograph fading
+    // out over the page change — see `components/morph`.
+    morph.morph(uid, () => {
+      void (openedDirectlyRef.current ? navigate(backHref(view)) : navigate(-1))
+    })
   }
 
   // The favorite is lifted here so the header heart and the `f` shortcut share one
@@ -757,6 +765,12 @@ export function PhotoDetailPage() {
   useDocumentTitle(state.status === 'ready' ? photoName(state.photo) : null)
 
   if (state.status === 'loading') {
+    // The address the grid tile just painted, when it handed one over: those
+    // bytes are already decoded, so the viewer can open ON the photograph rather
+    // than on a spinner — and it gives the grid → viewer morph a photograph to
+    // land on, which an empty stage would not. A photo opened from a bare link
+    // hands over nothing and still gets the spinner.
+    const handed = handoffPreviewUrl(location.state, uid)
     return (
       <div className="kk-viewer" data-chrome="visible">
         <button
@@ -769,9 +783,21 @@ export function PhotoDetailPage() {
           <Icon name="arrow-left" />
         </button>
         <div className="kk-viewer__stage d-flex justify-content-center align-items-center">
-          <Spinner animation="border" role="status" variant="light">
-            <span className="visually-hidden">{t('photo.loading')}</span>
-          </Spinner>
+          {handed === undefined ? (
+            <Spinner animation="border" role="status" variant="light">
+              <span className="visually-hidden">{t('photo.loading')}</span>
+            </Spinner>
+          ) : (
+            <div className="kk-viewer__figure" {...morphMark}>
+              {/* Decorative: it is the tile's own image, and the photo's name is
+                  not known yet — the row it would come from is still on the wire.
+                  The loading state is announced beside it instead. */}
+              <img className="kk-viewer__image" src={handed} alt="" draggable={false} />
+              <span className="visually-hidden" role="status">
+                {t('photo.loading')}
+              </span>
+            </div>
+          )}
         </div>
       </div>
     )
@@ -1056,6 +1082,10 @@ export function PhotoDetailPage() {
         // fade/scale replays only once the new photo actually swaps in.
         key={photo.uid}
         className="kk-viewer__figure"
+        // The viewer's half of the grid ⇄ viewer morph: the figure is exactly the
+        // rendered photograph, so the tile grows into the photograph rather than
+        // into the stage's letterbox around it.
+        {...morphMark}
         data-framed={framed ? 'true' : undefined}
         style={framed ? { aspectRatio: stage.aspectRatio } : undefined}
         data-swipe-surface=""

@@ -4,6 +4,7 @@ import { AuthProvider } from './auth/AuthProvider'
 import { RequireAuth, RequireImport, RequireRole } from './auth/ProtectedRoute'
 import { CapabilitiesProvider } from './capabilities/CapabilitiesProvider'
 import { Layout } from './components/Layout'
+import { MorphProvider } from './components/morph/MorphProvider'
 import { PwaStatus } from './components/pwa/PwaStatus'
 import { ToastProvider } from './components/toast/ToastProvider'
 import { ACTIVITY_PATH } from './lib/activityView'
@@ -182,7 +183,13 @@ export function App() {
           {/* Capabilities are only meaningful once authenticated (the endpoint is
               behind auth), so the provider sits inside AuthProvider. */}
           <CapabilitiesProvider>
-            <AppRoutes />
+            {/* The grid ⇄ viewer morph. It sits inside the router (it watches the
+                location to know when the navigation it started has landed) and
+                wraps the whole route table, so any route can opt into the
+                transition later without a second integration. */}
+            <MorphProvider>
+              <AppRoutes />
+            </MorphProvider>
           </CapabilitiesProvider>
         </AuthProvider>
         {/* Outside the auth gate and outside the layout shell: the service
