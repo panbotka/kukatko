@@ -15,6 +15,8 @@
 
 import { GRID_PREVIEW_SIZE } from '../services/photos'
 
+import { MAX_RENDITION_DPR, pickRendition, RENDITION_TOLERANCE, renditionDpr } from './rendition'
+
 /**
  * The `fit_*` rungs a wall tile may be drawn from, ascending. They are a subset
  * of the sizes `internal/thumb/sizes.go` registers; the first is the one every
@@ -22,19 +24,11 @@ import { GRID_PREVIEW_SIZE } from '../services/photos'
  */
 export const TILE_RENDITION_SIZES: readonly number[] = [720, 1280, 1920, 2560]
 
-/**
- * The most a rendition may be scaled up before the next rung is worth its bytes.
- * Slightly above 1 because a thumbnail stretched a few per cent is invisible,
- * while stepping a whole rung early doubles what the wall downloads.
- */
-export const TILE_RENDITION_TOLERANCE = 1.15
+/** The wall's scale-up tolerance — the shared {@link RENDITION_TOLERANCE}. */
+export const TILE_RENDITION_TOLERANCE = RENDITION_TOLERANCE
 
-/**
- * The device-pixel ratio to size for, capped: a 3× phone screen showing tiles a
- * third of its width does not need a 2560 px rendition of each of them, and the
- * difference past 2× is not one anybody sees on a photo wall.
- */
-export const TILE_MAX_DPR = 2
+/** The wall's device-pixel-ratio cap — the shared {@link MAX_RENDITION_DPR}. */
+export const TILE_MAX_DPR = MAX_RENDITION_DPR
 
 /**
  * The `fit_*` size a tile laid out `widthPx` CSS pixels wide should be drawn
@@ -47,17 +41,7 @@ export const TILE_MAX_DPR = 2
  * tile whose size is unknown is far likelier to be ordinary than enormous.
  */
 export function tileRenditionSize(widthPx: number, dpr = 1): number {
-  if (!Number.isFinite(widthPx) || widthPx <= 0) {
-    return TILE_RENDITION_SIZES[0] ?? 720
-  }
-  const scale = Number.isFinite(dpr) && dpr > 0 ? Math.min(dpr, TILE_MAX_DPR) : 1
-  const needed = widthPx * scale
-  for (const rung of TILE_RENDITION_SIZES) {
-    if (rung * TILE_RENDITION_TOLERANCE >= needed) {
-      return rung
-    }
-  }
-  return TILE_RENDITION_SIZES.at(-1) ?? 720
+  return pickRendition(TILE_RENDITION_SIZES, widthPx * renditionDpr(dpr))
 }
 
 /** The thumbnail size name (`fit_720`…) for a tile of `widthPx` CSS pixels. */

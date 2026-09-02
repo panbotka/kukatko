@@ -1,5 +1,6 @@
 import { useState } from 'react'
 
+import { MAX_RENDITION_DPR, squareRenditionName } from '../lib/rendition'
 import { thumbUrl } from '../services/photos'
 
 import { InitialAvatar } from './InitialAvatar'
@@ -18,11 +19,20 @@ export interface PersonAvatarProps {
 }
 
 /**
- * The thumbnail size a 2rem avatar is cut from. `tile_224` is the square,
- * centre-cropped size the app's other grid tiles use, so an avatar costs no
- * thumbnail nobody else already asked for.
+ * How wide the circle is drawn, in CSS pixels — `.kk-avatar`'s `2rem` at the
+ * app's 16 px root. It is a constant here rather than a measurement because the
+ * class fixes the size: nothing renders this avatar at any other one, and
+ * measuring would mean fetching a first picture before knowing which to fetch.
  */
-const AVATAR_SIZE = 'tile_224'
+const AVATAR_CSS_PX = 32
+
+/**
+ * The thumbnail size the circle is cut from: the smallest square rung that still
+ * covers 32 CSS pixels on the sharpest screen worth sizing for, which is
+ * `tile_100`. The avatar used to take `tile_224` — five times the pixels it can
+ * draw — and a comment thread pays that for every distinct author in it.
+ */
+const AVATAR_SIZE = squareRenditionName(AVATAR_CSS_PX, MAX_RENDITION_DPR)
 
 /**
  * Somebody as a small round picture: the cover photo of the person their account

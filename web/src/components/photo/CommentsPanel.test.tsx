@@ -111,7 +111,7 @@ describe('CommentsPanel', () => {
 
     const items = await screen.findAllByRole('listitem')
     const face = within(items[0]).getByRole('presentation', { hidden: true })
-    expect(face.getAttribute('src')).toBe('/api/v1/photos/ph_cover/thumb/tile_224')
+    expect(face.getAttribute('src')).toBe('/api/v1/photos/ph_cover/thumb/tile_100')
     expect(within(items[1]).queryByRole('presentation', { hidden: true })).not.toBeInTheDocument()
     expect(within(items[1]).getByText('P')).toBeInTheDocument()
   })

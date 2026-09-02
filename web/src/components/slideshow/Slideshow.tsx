@@ -6,8 +6,10 @@ import { useTranslation } from 'react-i18next'
 
 import { useIdleChrome } from '../../hooks/useIdleChrome'
 import { usePrefersReducedMotion } from '../../hooks/usePrefersReducedMotion'
+import { useViewportBox, type ViewportBox } from '../../hooks/useViewportBox'
 import { formatDuration, slideshowRemainingMs } from '../../lib/duration'
 import { kenBurnsStyle } from '../../lib/kenBurns'
+import { stageRenditionName } from '../../lib/rendition'
 import {
   type SlideshowEffect,
   type SlideshowSettings,
@@ -22,11 +24,22 @@ import { SlideshowSettingsForm } from './SlideshowSettingsForm'
 import './slideshow.css'
 
 /**
- * Preview size for the slideshow stage: a large fit-to-box preview, not a tile.
+ * Where the slideshow stage fetches one slide from: the smallest `fit_*` rung
+ * that covers the photograph as this viewport paints it, full-bleed.
+ *
  * Exported because the page preloads upcoming slides, and a prefetch at any
- * other size would warm the wrong image and leave the stage waiting anyway.
+ * other size would warm the wrong image and leave the stage waiting anyway — so
+ * the two must agree, which they do by both deriving the size from the same
+ * viewport box and the same photograph rather than by sharing a constant.
  */
-export const SLIDESHOW_PREVIEW_SIZE = 'fit_1920'
+export function slideshowSlideSrc(photo: Photo, viewport: ViewportBox): string {
+  const size = stageRenditionName(
+    viewport,
+    { width: photo.file_width, height: photo.file_height },
+    viewport.dpr,
+  )
+  return thumbUrl(photo.uid, size)
+}
 
 /** Minimum horizontal travel (px) for a touch swipe to count as next/prev. */
 const SWIPE_THRESHOLD = 50
@@ -192,6 +205,9 @@ export function Slideshow({
 }: SlideshowProps) {
   const { t } = useTranslation()
   const reducedMotion = usePrefersReducedMotion()
+  // The stage is full-bleed, so the viewport *is* the box the slide is fitted
+  // into — which is what decides how many pixels of it are worth fetching.
+  const viewport = useViewportBox()
   const containerRef = useRef<HTMLDivElement>(null)
   const [showSettings, setShowSettings] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
@@ -413,7 +429,7 @@ export function Slideshow({
         <img
           key={current.uid}
           className={`slideshow__image ${effectClass}`}
-          src={thumbUrl(current.uid, SLIDESHOW_PREVIEW_SIZE)}
+          src={slideshowSlideSrc(current, viewport)}
           alt={current.title || current.file_name}
           data-effect={settings.effect}
           style={kenBurns ? kenBurnsStyle(current.uid, settings.intervalMs) : undefined}

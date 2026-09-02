@@ -17,7 +17,7 @@ describe('PersonAvatar', () => {
     render(<PersonAvatar name="Jarmila" photoUid="ph_1" />)
 
     const img = screen.getByRole('presentation', { hidden: true })
-    expect(img.getAttribute('src')).toBe('/api/v1/photos/ph_1/thumb/tile_224')
+    expect(img.getAttribute('src')).toBe('/api/v1/photos/ph_1/thumb/tile_100')
     expect(img).toHaveAttribute('aria-hidden', 'true')
     expect(img).toHaveAttribute('alt', '')
   })

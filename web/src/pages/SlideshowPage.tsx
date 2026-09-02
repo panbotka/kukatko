@@ -6,7 +6,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
-import { Slideshow, SLIDESHOW_PREVIEW_SIZE } from '../components/slideshow/Slideshow'
+import { Slideshow, slideshowSlideSrc } from '../components/slideshow/Slideshow'
 import { SlideshowNotice } from '../components/slideshow/SlideshowNotice'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useImagePreloader } from '../hooks/useImagePreloader'
@@ -14,17 +14,12 @@ import { usePaginatedPhotos } from '../hooks/usePaginatedPhotos'
 import { useSearchMode } from '../hooks/useSearchMode'
 import { preloadWindow, type SlideReadiness, useSlideshow } from '../hooks/useSlideshow'
 import { useSlideshowSettings } from '../hooks/useSlideshowSettings'
+import { useViewportBox } from '../hooks/useViewportBox'
 import { LIBRARY_DEFAULTS, LIBRARY_PATH, type LibraryView, viewToParams } from '../lib/libraryView'
 import { searchHref, type SearchView, toMode } from '../lib/searchView'
 import { extendSeen, newShuffleSeed, playlistOf } from '../lib/slideshowPlaylist'
 import { readUrlState } from '../lib/urlState'
-import {
-  fetchPhotos,
-  type Photo,
-  type PhotoListParams,
-  searchPhotos,
-  thumbUrl,
-} from '../services/photos'
+import { fetchPhotos, type Photo, type PhotoListParams, searchPhotos } from '../services/photos'
 
 /**
  * The fullscreen slideshow route (`/slideshow`). It reads the source scope
@@ -120,11 +115,16 @@ export function SlideshowPage() {
 
   // The stage's image, at the exact size the stage renders it: a prefetch of
   // any other size would warm a different URL and leave the slide blank anyway.
+  // The stage is full-bleed, so the slide's rendition follows the viewport; the
+  // prefetch must resolve to the very same URL the stage will ask for.
+  const viewport = useViewportBox()
   const { statusOf, prime } = useImagePreloader()
   const slideSrc = useCallback(
-    (i: number): string =>
-      i >= 0 && i < playlist.length ? thumbUrl(playlist[i].uid, SLIDESHOW_PREVIEW_SIZE) : '',
-    [playlist],
+    (i: number): string => {
+      const photo = i >= 0 && i < playlist.length ? playlist[i] : undefined
+      return photo === undefined ? '' : slideshowSlideSrc(photo, viewport)
+    },
+    [playlist, viewport],
   )
   const readiness = useCallback(
     (i: number): SlideReadiness => {

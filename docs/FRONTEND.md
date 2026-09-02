@@ -1937,7 +1937,9 @@ here.
   nowhere. **touch**:
   `usePinchZoom` (pinch/double-tap zoom + pan + swipe on a plain still) or `useSwipeNavigation`
   (swipe when faces/edit are on, where zoom is off so the transform doesn't shift the boxes/preview);
-  neighbor preload (`new Image()` on `fit_1920`). **Paging without a full-page flicker** — only the first
+  neighbor preload (`new Image()` on the rendition the stage itself resolved to — the neighbours' own
+  proportions are not known here, only their UIDs, and warming any other rung would leave the stage waiting).
+  **Paging without a full-page flicker** — only the first
   load shows a big spinner, otherwise the current photo stays mounted (the `<img>`/figure key on the
   **displayed** `photo.uid`, not the route `uid`) and the new one is fetched in the background, then **swapped in
   place** with a fade/scale; a corner spinner glows over the shot (`photo.loadingNext`). While a neighbor is loading
@@ -2159,7 +2161,9 @@ here.
   forwards) as a `<ul>` of `CommentItem`, and the composer. **Empty state invites the first remark**
   („Napiš, co o téhle fotce víš…") rather than reporting an absence. **`PersonAvatar`**
   (`components/`) is what a thread actually draws: the **cover photo of the person the author's account is
-  linked to** (`author_photo_uid` on the comment → `thumbUrl(uid, 'tile_224')`, no download token — the
+  linked to** (`author_photo_uid` on the comment → `thumbUrl(uid, AVATAR_SIZE)`, the smallest square rung that
+  covers the 2 rem circle at `MAX_RENDITION_DPR` — `tile_100`, a fifth of the `tile_224` it used to take; no
+  download token — the
   browser sends the session cookie with a same-origin `<img>`), falling back to `InitialAvatar` when there
   is no link, no cover photo, or the image fails to load. The fallback is the **normal** case, not an error
   path: most accounts name no person and most people have no hand-picked cover, so the letter has to look
@@ -2729,7 +2733,9 @@ here.
   `playlistOf(carried, photos)` with `seen`/`carried` kept per pass (`extendSeen`, reset when
   `useSlideshow`'s `pass` increments) — that is what makes a mid-show toggle reorder only what is still
   to come; **its own frame
-  preloading**: `preloadWindow(index,length)` → URLs at `SLIDESHOW_PREVIEW_SIZE` → `useImagePreloader`
+  preloading**: `preloadWindow(index,length)` → URLs from `slideshowSlideSrc(photo,viewport)` (the stage's own
+  address builder, exported so a prefetch cannot warm a different rendition than the stage will ask for — both
+  derive the size from the same `useViewportBox` and the same photograph, see `lib/rendition`) → `useImagePreloader`
   (`prime` in an effect), whose `statusOf` goes back into `useSlideshow` as `readiness`, so
   auto-advance waits until the next frame is decoded; exit → `navigate(-1)`
   (fallback to the source view — album/label/`searchHref`/library), so Back works,
@@ -3329,9 +3335,11 @@ mounted **outside `Layout`** as well, so it adds its own **safe-area insets**: t
 `.review-game`, `safe-area-inset-top` added to the header's padding and `-bottom` to the actions row
 — and to `review-game__center`, which owns the bottom edge in the loading/error/empty states —
 including inside the `max-height: 500px` block, which re-declares exactly those paddings);
-  `components/slideshow/` = `Slideshow` (a presentation fullscreen stage: the current photo at preview
-  size `SLIDESHOW_PREVIEW_SIZE` (`fit_1920`, **exported** — the page has to preload exactly
-  this URL), previous/play-pause/next/fullscreen/settings/close controls + a header bar carrying
+  `components/slideshow/` = `Slideshow` (a presentation fullscreen stage: the current photo at
+  `slideshowSlideSrc(photo,viewport)` (**exported** — the page has to preload exactly this URL, and both
+  sides derive it from the same `useViewportBox` + photograph rather than a shared constant, so a phone
+  fetches `fit_1280` where a desktop still fetches `fit_1920`; see `lib/rendition`),
+  previous/play-pause/next/fullscreen/settings/close controls + a header bar carrying
   **only the progress** (`slideshow.progress` → „snímek 7 ze 40"; counted against the server's `total`, not against
   the loaded pages — neither the remaining time nor the title lives there any more: the header says
   where you are in the show, the photo says what it is);
@@ -4166,7 +4174,14 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   answers *how much room is there*, this one *how precisely can it be pointed at* — a tablet is wide and
   still touched, a 500 px desktop window is narrow and still has a mouse. Asked by a control whose **hit
   area** has to grow in a way CSS alone cannot deliver: `TimelineScrubber` thins its rail to 44 px targets
-  by it)),
+  by it),
+  `useViewportBox()` → `{width,height,dpr}` = **the box a full-screen stage draws into**, for components
+  that pick an image rendition from it (`lib/rendition`). It follows `resize` + `orientationchange` and caps
+  the ratio at `MAX_RENDITION_DPR`, and is deliberately **monotonic** — the box only ever grows over the
+  hook's life, because a smaller rendition is a *different URL*, so shrinking a window would make the browser
+  fetch the same photograph a second time, smaller, to replace one it already has. Outside a browser (or
+  before jsdom lays anything out) it reports a desktop-sized fallback, i.e. the rendition the stage asked for
+  before it measured anything. Tests `hooks/useViewportBox.test.tsx`),
   `lib/` (`gestures.ts` = **pure, DOM-free decision helpers for touch gestures** shared by
   `useSwipeNavigation`/`usePinchZoom` (and therefore **directly unit-testable** without jsdom touch sequences):
   `swipeAction(dx,dy,{threshold,ratio})` → `'prev'|'next'|null` (left = next, right = prev, a threshold +
@@ -4500,7 +4515,22 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   unmeasured container yields **no rows at all**, which is what a caller rendering nothing until it has
   measured itself wants. `rowOfTile(rows,index)` binary-searches the row holding a photo (a library is tens
   of thousands of photos long, and every scroll-to asks);
-  `tileRendition.ts` = **which thumbnail rendition a wall tile draws** (pure): `tileRenditionSize(widthPx,dpr)`
+  `rendition.ts` = **the one place that answers „which rendition is this box worth?"** (pure, no DOM): the
+  rung sets (`FIT_RENDITION_SIZES` 720…3840, `SQUARE_RENDITION_SIZES` 100/224/500 — exactly the sizes
+  `internal/thumb/sizes.go` registers and never a name it does not), `RENDITION_TOLERANCE` (**1.15**),
+  `MAX_RENDITION_DPR` (**2** — past that nobody sees the difference on a photograph and the bytes land on
+  the connection least able to afford them) and `pickRendition(rungs,neededPx,tolerance?)`, which every
+  caller shares. On top of it: `fitRenditionName`/`squareRenditionName` (a box → `fit_*`/`tile_*`),
+  `paintedLongestSide(box,media)` = how long the photograph's longest side actually *is* once fitted into the
+  box — a 4:3 photograph on a 390×844 phone is painted 390 px across, so sizing for the viewport's 844 would
+  fetch nearly twice the pixels the screen can show — and `stageRenditionName(box,media,dpr)`, what the
+  viewer and slideshow stages draw. That one picks from a narrow `STAGE_RENDITION_SIZES` (**1280/1920**) at
+  `STAGE_RENDITION_TOLERANCE` (**1**, no upscale at all): 1920 on top because it is what both stages fetched
+  unconditionally before they measured anything, so the change can only ever ask for *fewer* bytes — a retina
+  desktop keeps the preview it had — and no tolerance because a stage is where somebody has stopped to
+  **look**. Measured cut on a phone: 629 KB → 314 KB a slide (`docs/PERF.md` §5). Tests `lib/rendition.test.ts`;
+  `tileRendition.ts` = **which thumbnail rendition a wall tile draws** (pure), now a thin wall-specific
+  wrapper over `rendition.ts`: `tileRenditionSize(widthPx,dpr)`
   walks `TILE_RENDITION_SIZES` (720/1280/1920/2560) and returns the first rung that covers the tile within
   `TILE_RENDITION_TOLERANCE` (1.15 — a few per cent of stretch is invisible, a rung early doubles the bytes),
   with the ratio capped at `TILE_MAX_DPR` (2). `tileUsesPreviewURL(widthPx,dpr)` is the question the tile

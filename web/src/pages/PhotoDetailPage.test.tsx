@@ -9,6 +9,7 @@ import { CapabilitiesContext } from '../capabilities/CapabilitiesContext'
 import { NARROW_VIEWPORT_QUERY } from '../hooks/useIsNarrowViewport'
 import i18n from '../i18n'
 import { clearBlurPlaceholderCache } from '../lib/blurPlaceholder'
+import { stageRenditionName } from '../lib/rendition'
 import { type AlbumCount, type LabelCount } from '../services/organize'
 import { type FacesResponse } from '../services/people'
 import { type PhotoDetail, type PhotoEdit, type PhotoListResponse } from '../services/photos'
@@ -115,6 +116,17 @@ const attachLabelMock = vi.mocked(attachLabel)
 const detachLabelMock = vi.mocked(detachLabel)
 
 const NEUTRAL: PhotoEdit = { rotation: 0, brightness: 0, contrast: 0 }
+
+/**
+ * The rendition the viewer stage resolves to for the 4000 × 3000 fixture in
+ * jsdom's 1024 × 768 window at DPR 1. The stage picks its size from the box it
+ * paints into (see `lib/rendition`), so these tests derive it the same way
+ * rather than pinning a literal that a viewport change would silently invalidate.
+ */
+const STAGE_SIZE = stageRenditionName(
+  { width: window.innerWidth, height: window.innerHeight },
+  { width: 4000, height: 3000 },
+)
 
 function photo(overrides: Partial<PhotoDetail> = {}): PhotoDetail {
   return {
@@ -427,7 +439,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
     expect(viewer(container)).toHaveAttribute('data-panel', 'closed')
     expect(container.querySelectorAll('img')).toHaveLength(1)
     expect(within(dialog).getByRole('img', { name: 'Beach' }).getAttribute('src')).toContain(
-      'fit_1920',
+      STAGE_SIZE,
     )
     expect(screen.queryByTestId('face-overlay')).not.toBeInTheDocument()
     // The similar-photos strip lives in the (mounted) drawer, keyed to this photo.
@@ -1516,7 +1528,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
       // the panel rows and the people chips are small `fit_*` cut-outs, so the
       // invariant is counted in full-size previews.
       const previews = [...container.querySelectorAll('img')].filter((img) =>
-        img.getAttribute('src')?.includes('fit_1920'),
+        img.getAttribute('src')?.includes(STAGE_SIZE),
       )
       expect(previews).toHaveLength(1)
     })

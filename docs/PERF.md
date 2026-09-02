@@ -856,3 +856,142 @@ Verified, already optimal — no change required:
   face rather than sharing a constant, and the size is deliberately *not* a
   function of the column count — changing the density restyles the grid without
   re-fetching a single image. See "Which `fit_*` a face crop is worth" above.
+
+---
+
+## 5. Right-sized renditions and media caching
+
+The cheapest byte is the one never sent. Two levers: ask for the *smallest*
+rendition that covers the box a picture is actually drawn in, and let the browser
+keep what it already fetched.
+
+### What a rung costs
+
+Measured against the production library (`kukatko ctl photos image` over the
+24 most recent photos, September 2026 — a mix of iPhone JPEGs and scans):
+
+| Rendition  | Total (24 photos) | Mean per photo |
+| ---------- | ----------------: | -------------: |
+| `tile_100` |          115.5 KB |         4.8 KB |
+| `tile_224` |          383.7 KB |        16.0 KB |
+| `tile_500` |          1.90 MB  |        81.0 KB |
+| `fit_720`  |          2.73 MB  |       116.6 KB |
+| `fit_1280` |          7.36 MB  |       313.9 KB |
+| `fit_1920` |         14.75 MB  |       629.3 KB |
+
+Reproduce:
+
+```sh
+for s in fit_720 fit_1280 fit_1920 tile_100 tile_224 tile_500; do
+  for uid in $(./bin/kukatko ctl photos list --limit 24 -o json |
+                 python3 -c 'import json,sys; print("\n".join(p["uid"] for p in json.load(sys.stdin)["photos"]))'); do
+    ./bin/kukatko ctl photos image "$uid" --size "$s" -f "/tmp/rend/${uid}_${s}.jpg" >/dev/null
+  done
+  du -cb /tmp/rend/*_"$s".jpg | tail -1
+done
+```
+
+The steps are steep — a rung is roughly twice its predecessor — which is why
+picking one rung too high anywhere doubles that surface's bytes.
+
+### Where a rendition is chosen
+
+One module answers the question everywhere: `web/src/lib/rendition.ts`. It holds
+the rung sets (the sizes `internal/thumb/sizes.go` registers, and nothing else),
+the scale-up tolerance, the device-pixel-ratio cap (**2** — past that the
+difference is not one anybody sees on a photograph, while the bytes very much
+are, on exactly the connection least able to afford them), and `pickRendition`,
+which every caller shares. `web/src/lib/tileRendition.ts` is now a thin
+wall-specific wrapper over it.
+
+The audit, surface by surface:
+
+| Surface                          | Rendition                                            | Verdict |
+| -------------------------------- | ---------------------------------------------------- | ------- |
+| Justified wall tile              | `preview_url` (`fit_720`), stepping up by laid-out width | already right-sized (`lib/tileRendition`) |
+| Album cover (single)             | `tile_500` for a 160–300 px tile                     | right-sized at DPR 2; the next rung down would not cover it |
+| Album cover (collage cell)       | `tile_224` for a half-tile cell                      | right-sized |
+| Command palette / label / place rows | `tile_100` / `tile_224`                          | right-sized |
+| Face crops (outliers, review)    | per-face, `lib/faceSource`                            | right-sized (see §2) |
+| **Viewer stage (photo detail)**  | was a fixed `fit_1920`                               | **fixed** — now `stageRenditionName` |
+| **Slideshow stage**              | was a fixed `fit_1920`                               | **fixed** — now `stageRenditionName` |
+| **Comment avatar**               | was `tile_224` for a 2 rem circle                    | **fixed** — now `tile_100` |
+
+### The viewer stage: measure the painted box, not the screen
+
+A stage fits the photograph inside the viewport (`object-fit: contain`), so the
+side that matters is the one it is *painted* at, not the viewport's longest side.
+A 4:3 photograph on a 390 × 844 phone is painted 390 px across — its longest side
+is the phone's **width**. Sizing for 844 fetches nearly twice the pixels the
+screen can show.
+
+`stageRenditionName(box, media, dpr)` does that arithmetic and picks from a
+deliberately narrow rung set, `[1280, 1920]`, with **zero** upscale tolerance:
+
+- `fit_1920` on top because that is what both stages fetched unconditionally
+  before they measured anything — so this can only ever ask for *fewer* bytes
+  than the old behaviour, never more. A retina desktop keeps the preview it had.
+- No tolerance at all (unlike a grid tile's 1.15) because a stage is where
+  somebody has stopped to *look*, filling the screen — the one place a few per
+  cent of upscale would be noticed.
+- `fit_1280` at the floor leaves a phone stage ~3× the pixels it paints, which is
+  the headroom a pinch-zoom spends.
+
+`useViewportBox` (`web/src/hooks/useViewportBox.ts`) supplies the box. It is
+**monotonic**: it only ever grows over its life, because a smaller rendition is a
+different URL — narrowing a window would otherwise make the browser download the
+same photograph a second time, smaller, to replace one it already has.
+
+### Bytes before → after
+
+The library grid page is **unchanged**: it was already right-sized, drawing
+`fit_720` and stepping up only for a tile genuinely wide enough to outrun it. The
+savings land on the surfaces that were fetching a fixed size.
+
+| Surface (phone, 390 × 844, DPR 2)                | Before   | After    | Cut |
+| ------------------------------------------------ | -------: | -------: | --: |
+| Opening one photo (stage + prev/next prefetch)    |  1.84 MB |  0.92 MB | 50 % |
+| A 30-slide slideshow                              | 18.4 MB  |  9.2 MB  | 50 % |
+| A comment thread with 6 distinct authors          |  96.0 KB |  28.8 KB | 70 % |
+| A 60-tile library page                            |  6.83 MB |  6.83 MB |  — |
+
+| Surface (laptop, 1440 × 900, DPR 1)               | Before   | After    | Cut |
+| ------------------------------------------------- | -------: | -------: | --: |
+| Opening one photo (stage + prev/next prefetch)     |  1.84 MB |  0.92 MB | 50 % |
+
+A 1920 × 1080 desktop and any retina laptop stay on `fit_1920` — the calculation
+puts them there, and the rung set cannot take them higher.
+
+### Caching: what the app's own media routes promise
+
+The routes were audited against the rule "content-addressed or version-stamped
+may be `immutable`; anything else gets a safe shorter policy; never on
+authenticated API JSON". They already conform, and this is the record of it:
+
+| Route                                    | `Cache-Control`                              | Why |
+| ---------------------------------------- | -------------------------------------------- | --- |
+| `GET /photos/{uid}/thumb/{size}`         | `private, max-age=31536000, immutable`       | bytes are a pure function of (file hash, size) |
+| `GET /photos/{uid}/download`             | `private, max-age=31536000, immutable`       | the stored original, addressed by content hash |
+| `GET /photos/{uid}/download` (edited)    | `private, max-age=31536000, immutable`       | a pure render of (original, edit), under its own ETag |
+| `GET /photos/{uid}/video`                | `private, max-age=31536000`                  | immutable per content hash |
+| `GET /photos/{uid}/storyboard`           | `private, max-age=31536000, immutable`       | a pure function of the clip's hash |
+| `GET /subjects/{uid}/avatar`             | `private, max-age=600, must-revalidate`      | **not** content-addressed — which face stands for a subject changes; ETag-validated, so a re-pick costs one 304 |
+| `GET /map/tiles/{mapset}/{z}/{x}/{y}`    | `public, max-age=<ttl>, immutable`           | third-party tiles, no user data |
+| SPA hashed assets / `index.html`         | `public, …, immutable` / `no-cache`          | `internal/web/spa.go` |
+| **302 to a signed media URL**            | `private, no-store`                          | see below |
+
+Every media response is `private`, not `public`: it is served only to an
+authenticated caller, and a shared proxy must never hold a copy. That is a
+deliberate departure from the `public` the rule permits — the year-long lifetime
+is the part that matters, and `private` costs nothing in a browser cache.
+
+**The signed-URL path.** On a publishing backend (R2 behind the media Worker)
+the media routes answer `302` to a short-lived signed URL instead of streaming.
+That redirect is `private, no-store`, and must stay that way: the object it
+points at is immutable, but the *signature* that authorizes the fetch expires
+within the hour, so a cached redirect would eventually send the client to a 403.
+The URL contract is untouched by this work — nothing here appends to, rewrites or
+re-orders a signed URL, and the rendition picking only ever changes *which* size
+is asked for, never how its address is built. The bytes the Worker serves are
+cached by the edge under their own headers; a client that outlives the signature
+re-reads a fresh one from the photo payload (`useThumbSrc`).

@@ -40,6 +40,7 @@ import { usePhotoNeighbors } from '../hooks/usePhotoNeighbors'
 import { usePinchZoom } from '../hooks/usePinchZoom'
 import { useRating } from '../hooks/useRating'
 import { useSwipeNavigation } from '../hooks/useSwipeNavigation'
+import { useViewportBox } from '../hooks/useViewportBox'
 import { backHref, DETAIL_DEFAULTS, detailQueryString, detailToParams } from '../lib/detailView'
 import { readFaceOverlay, writeFaceOverlay } from '../lib/faceOverlayPref'
 import { formatDateTimeMinutes } from '../lib/format'
@@ -52,6 +53,7 @@ import {
 } from '../lib/photoEdit'
 import { photoDisplayTitle, photoTitleText, titleSource } from '../lib/photoTitle'
 import { isTypingElement, ratingHotkey } from '../lib/ratingHotkeys'
+import { stageRenditionName } from '../lib/rendition'
 import { toMode } from '../lib/searchView'
 import { isFormModalOpen } from '../lib/shortcuts'
 import { readUrlState } from '../lib/urlState'
@@ -71,9 +73,6 @@ import {
   unstackAll,
   unstackMember,
 } from '../services/photos'
-
-/** Preview size for the viewer stage: a large fit-to-box preview, not a tile. */
-const PREVIEW_SIZE = 'fit_1920'
 
 /**
  * Fetch lifecycle of the photo detail (the photo and its stored edit). `missing`
@@ -209,6 +208,9 @@ export function PhotoDetailPage() {
   // than the plain library list.
   const searchMode = view.mode !== '' ? toMode(view.mode) : undefined
   const neighbors = usePhotoNeighbors(uid, neighborParams, true, searchMode)
+
+  // The box the stage draws into, for picking the preview's rendition below.
+  const viewport = useViewportBox()
 
   // The info drawer's open state lives in a URL param (`info`), so it is
   // deep-linkable and survives Back/refresh. It is deliberately NOT part of the
@@ -686,15 +688,32 @@ export function PhotoDetailPage() {
     }
   }, [uid])
 
-  // Preload the adjacent photos at preview size so stepping feels instant.
+  // The rendition the stage draws: the smallest `fit_*` rung that still covers
+  // the photograph as this viewport actually paints it. A 4:3 photograph on a
+  // phone is painted the phone's width across, not its height, so sizing for the
+  // stage's longest side would fetch nearly twice the pixels the screen can show.
+  // The rung set is capped at what the stage used to fetch unconditionally, so
+  // this only ever asks for fewer bytes — never more (see `lib/rendition`).
+  const previewSize = stageRenditionName(
+    viewport,
+    state.status === 'ready'
+      ? { width: state.photo.file_width, height: state.photo.file_height }
+      : null,
+    viewport.dpr,
+  )
+
+  // Preload the adjacent photos at preview size so stepping feels instant. The
+  // neighbours' own proportions are not known here — only their UIDs are — so
+  // they are warmed at the rung the photo on screen resolved to, which is the
+  // one they will almost always resolve to themselves.
   useEffect(() => {
     for (const neighbor of [neighbors.prev, neighbors.next]) {
       if (neighbor !== null) {
         const img = new Image()
-        img.src = thumbUrl(neighbor, PREVIEW_SIZE, downloadToken ?? undefined)
+        img.src = thumbUrl(neighbor, previewSize, downloadToken ?? undefined)
       }
     }
-  }, [neighbors.prev, neighbors.next, downloadToken])
+  }, [neighbors.prev, neighbors.next, downloadToken, previewSize])
 
   /**
    * What the photo is called, in one string — the same name the chrome's `<h1>`
@@ -932,7 +951,7 @@ export function PhotoDetailPage() {
   // by value, not by identity.
   const sharePhotoUids = [photo.uid]
 
-  const basePoster = thumbUrl(photo.uid, PREVIEW_SIZE, downloadToken)
+  const basePoster = thumbUrl(photo.uid, previewSize, downloadToken)
   // The thumb URL is built from the UID (stable), so a regenerated thumbnail would
   // otherwise be masked by the browser cache. Append a version once the user
   // regenerates it, so the new image actually shows without a hard reload.
