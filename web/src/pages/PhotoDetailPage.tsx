@@ -36,7 +36,8 @@ import { useImageFrame } from '../hooks/useImageFrame'
 import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
 import { useKeyboardInset } from '../hooks/useKeyboardInset'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
-import { usePhotoNeighbors } from '../hooks/usePhotoNeighbors'
+import { useImagePreloader } from '../hooks/useImagePreloader'
+import { type NeighborPhoto, usePhotoNeighbors } from '../hooks/usePhotoNeighbors'
 import { usePinchZoom } from '../hooks/usePinchZoom'
 import { useRating } from '../hooks/useRating'
 import { useSwipeNavigation } from '../hooks/useSwipeNavigation'
@@ -51,18 +52,21 @@ import {
   isIdentityEdit,
   NEUTRAL_EDIT,
 } from '../lib/photoEdit'
+import { handoffPreviewUrl } from '../lib/photoHandoff'
 import { photoDisplayTitle, photoTitleText, titleSource } from '../lib/photoTitle'
 import { isTypingElement, ratingHotkey } from '../lib/ratingHotkeys'
 import { stageRenditionName } from '../lib/rendition'
 import { toMode } from '../lib/searchView'
 import { isFormModalOpen } from '../lib/shortcuts'
 import { readUrlState } from '../lib/urlState'
+import { preloadUids } from '../lib/viewerPreload'
 import { isNotFound } from '../services/auth'
 import {
   archivePhoto,
   downloadUrl,
   fetchEdit,
   fetchPhoto,
+  GRID_PREVIEW_SIZE,
   hidePhoto,
   type PhotoDetail,
   type PhotoEdit,
@@ -212,6 +216,13 @@ export function PhotoDetailPage() {
   // The box the stage draws into, for picking the preview's rendition below.
   const viewport = useViewportBox()
 
+  // The warm-image window around the photo on stage. Its readiness is read back
+  // below to decide whether the stage still needs a smaller image painted under
+  // the full-size one: a photo stepped to from its neighbour is already decoded,
+  // and fetching a second, smaller rendition of it would be bytes spent on a
+  // frame nobody ever sees.
+  const { prime, statusOf } = useImagePreloader()
+
   // The info drawer's open state lives in a URL param (`info`), so it is
   // deep-linkable and survives Back/refresh. It is deliberately NOT part of the
   // DetailView (DETAIL_DEFAULTS), so it never leaks into the neighbour params or
@@ -260,9 +271,9 @@ export function PhotoDetailPage() {
   // URL/state, same stop-at-ends semantics). Replace, so paging never grows the
   // history stack the close button pops.
   const goToNeighbor = useCallback(
-    (neighbor: string | null): void => {
+    (neighbor: NeighborPhoto | null): void => {
       if (neighbor !== null) {
-        void navigate(neighborTo(neighbor), { replace: true })
+        void navigate(neighborTo(neighbor.uid), { replace: true })
       }
     },
     [navigate, neighborTo],
@@ -702,18 +713,22 @@ export function PhotoDetailPage() {
     viewport.dpr,
   )
 
-  // Preload the adjacent photos at preview size so stepping feels instant. The
-  // neighbours' own proportions are not known here — only their UIDs are — so
-  // they are warmed at the rung the photo on screen resolved to, which is the
+  // The images kept warm around the one on stage: this photo and its immediate
+  // neighbours, at preview size, so stepping shows a picture that is already
+  // downloaded AND decoded rather than one that starts loading on the keypress.
+  // The neighbours' own proportions are not known here — only their UIDs are —
+  // so they are warmed at the rung the photo on screen resolved to, which is the
   // one they will almost always resolve to themselves.
+  const preloadWindow = useMemo(
+    () =>
+      preloadUids(uid, neighbors.prev, neighbors.next).map((target) =>
+        thumbUrl(target, previewSize, downloadToken ?? undefined),
+      ),
+    [uid, neighbors.prev, neighbors.next, downloadToken, previewSize],
+  )
   useEffect(() => {
-    for (const neighbor of [neighbors.prev, neighbors.next]) {
-      if (neighbor !== null) {
-        const img = new Image()
-        img.src = thumbUrl(neighbor, previewSize, downloadToken ?? undefined)
-      }
-    }
-  }, [neighbors.prev, neighbors.next, downloadToken, previewSize])
+    prime(preloadWindow)
+  }, [prime, preloadWindow])
 
   /**
    * What the photo is called, in one string — the same name the chrome's `<h1>`
@@ -960,6 +975,29 @@ export function PhotoDetailPage() {
       ? `${basePoster}${basePoster.includes('?') ? '&' : '?'}v=${String(thumbVersion)}`
       : basePoster
 
+  // The smaller image the stage paints UNDER the full-size one while that one is
+  // still on the wire, so a photograph arrives as itself — softly at first, then
+  // sharp — instead of as a grey well or a blur that snaps. In order of
+  // preference: the very address the grid tile just painted (handed over in the
+  // navigation state, so it is already in the browser's cache and costs nothing
+  // at all), then the aspect-preserving rendition this photo's own payload names.
+  // Never the square crop: that is a centre cut of the photograph, and painting
+  // it under the whole one would show the wrong part of it and then jump.
+  const underSrc =
+    handoffPreviewUrl(location.state, photo.uid) ??
+    photo.preview_url ??
+    thumbUrl(photo.uid, GRID_PREVIEW_SIZE, downloadToken)
+  // It is worth painting only while the real image is genuinely still coming:
+  // never once that image has loaded (`measured`), never when the preloader has
+  // already decoded it (stepping to a warmed neighbour — the swap is instant and
+  // a second request would be pure waste), never when it IS the image on stage,
+  // and never on an unframed figure, which shrink-wraps its image and so has no
+  // box to fill. `thumbVersion` deliberately does not defeat this: a regenerated
+  // thumbnail changes the full-size address, and the stale smaller one under it
+  // is a better first frame than nothing.
+  const showUnder =
+    !stage.measured && statusOf(poster) !== 'ready' && underSrc !== poster && underSrc !== ''
+
   // The still image's style composes the saved edit with the live zoom/pan (only
   // when zoom is enabled — a plain still). Rotate first, then scale/translate the
   // rotated image, matching editPreviewStyle's own transform ordering.
@@ -1035,9 +1073,36 @@ export function PhotoDetailPage() {
             move the image off it, and never rendered for an unframed figure,
             which shrink-wraps its image and so has no box to fill yet. */}
         {framed && !stage.measured && <BlurPlaceholder hash={photo.blurhash} />}
+        {/* The progressive middle step: the grid's own smaller rendition, laid
+            over the blur and under the full-size image, filling exactly the same
+            framed box so the sharp one lands on it without moving a pixel. It
+            carries the same edit/zoom transform as the image above it, so a
+            rotated or cropped photograph does not un-rotate for a moment as the
+            two swap. Decorative — the image above it owns the alt text — and a
+            failure is simply nothing (the blur is still underneath). */}
+        {framed && showUnder && (
+          <img
+            aria-hidden="true"
+            className="kk-viewer__image kk-viewer__image--under"
+            src={underSrc}
+            alt=""
+            style={stillStyle}
+            draggable={false}
+          />
+        )}
         <img
           {...stage.imgProps}
           className="kk-viewer__image"
+          // The frame stated as the image's INTRINSIC size, before the image is
+          // there to state it itself. Without it the figure has nothing in flow
+          // to size it while the photograph is on the wire — an `<img>` with a
+          // loading `src` and no dimensions is a box the width of its alt text —
+          // so it collapsed to a thumbnail-sized sliver and the stand-ins that
+          // fill it (the blur, the smaller rendition) collapsed with it, which is
+          // exactly the gap they exist to cover. With it, the loading box and the
+          // loaded box are measurably identical and nothing moves on arrival.
+          width={framed ? stage.frame.width : undefined}
+          height={framed ? stage.frame.height : undefined}
           src={poster}
           alt={title}
           style={stillStyle}
@@ -1194,7 +1259,7 @@ export function PhotoDetailPage() {
           `replace` keeps paging from growing the history the close button pops. */}
       {neighbors.prev !== null && (
         <Link
-          to={neighborTo(neighbors.prev)}
+          to={neighborTo(neighbors.prev.uid)}
           replace
           className="kk-viewer__btn kk-viewer__btn--icon kk-viewer__nav kk-viewer__nav--prev"
           aria-label={t('photo.prev')}
@@ -1205,7 +1270,7 @@ export function PhotoDetailPage() {
       )}
       {neighbors.next !== null && (
         <Link
-          to={neighborTo(neighbors.next)}
+          to={neighborTo(neighbors.next.uid)}
           replace
           className="kk-viewer__btn kk-viewer__btn--icon kk-viewer__nav kk-viewer__nav--next"
           aria-label={t('photo.next')}

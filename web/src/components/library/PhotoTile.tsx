@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 
 import { useThumbSrc } from '../../hooks/useThumbSrc'
 import { formatDuration } from '../../lib/format'
+import { type PhotoHandoff } from '../../lib/photoHandoff'
 import { photoLabel } from '../../lib/photoTitle'
 import { formatTakenLabel } from '../../lib/takenDate'
 import { tileRenditionName, tileUsesPreviewURL } from '../../lib/tileRendition'
@@ -23,6 +24,12 @@ interface TileSource {
   src: string
   /** Reads the same rendition off a freshly fetched payload; see {@link useThumbSrc}. */
   refresh: (photo: Photo) => string
+  /**
+   * Whether {@link TileSource.src} keeps the photograph's own proportions. Only
+   * such an address may be handed to the viewer (see `lib/photoHandoff`): a
+   * square crop painted under a fitted photograph shows the wrong part of it.
+   */
+  aspect: boolean
 }
 
 /**
@@ -35,15 +42,23 @@ interface TileSource {
  */
 function tileSource(photo: Photo, fill: boolean, tileWidth?: number): TileSource {
   if (!fill) {
-    return { src: photo.thumb_url, refresh: (fresh) => fresh.thumb_url }
+    return { src: photo.thumb_url, refresh: (fresh) => fresh.thumb_url, aspect: false }
   }
   const dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio
   if (tileWidth !== undefined && !tileUsesPreviewURL(tileWidth, dpr)) {
-    return { src: thumbUrl(photo.uid, tileRenditionName(tileWidth, dpr)), refresh: () => '' }
+    return {
+      src: thumbUrl(photo.uid, tileRenditionName(tileWidth, dpr)),
+      refresh: () => '',
+      aspect: true,
+    }
   }
   return {
     src: photo.preview_url ?? photo.thumb_url,
     refresh: (fresh) => fresh.preview_url ?? fresh.thumb_url,
+    // A payload from a backend too old to mint `preview_url` leaves the square
+    // crop as the only address there is; the tile draws it (cropped by
+    // `object-fit`) but it is not the photograph's shape and is not handed on.
+    aspect: photo.preview_url !== undefined,
   }
 }
 
@@ -250,6 +265,16 @@ export function PhotoTile({
         detailQuery !== undefined && detailQuery !== ''
           ? `/photos/${photo.uid}?${detailQuery}`
           : `/photos/${photo.uid}`
+      }
+      // A tile drawn at the photograph's own proportions has already downloaded
+      // exactly what the viewer wants for its first frame — hand the address over
+      // rather than let the viewer mint a second, differently-signed one for the
+      // same rendition. A tile showing a square crop hands over nothing: that
+      // crop is not the photograph (see `lib/photoHandoff`).
+      state={
+        source.aspect
+          ? ({ uid: photo.uid, previewUrl: thumb.src } satisfies PhotoHandoff)
+          : undefined
       }
       className="kk-tile__media d-block"
       // A justified tile is sized by its row (which has already applied the

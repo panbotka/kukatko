@@ -122,6 +122,15 @@ library is tidied by more than one person.
   photograph — and the real thumbnail simply fades in over it. The photo's own page does the same
   while the big image loads. Nothing moves as they land: the tiles were laid out before any of it
   arrived. A photo the library has not got round to computing one for keeps the plain dark tile.
+- **Flipping through photos is instant.** Open one and its two neighbours are already being fetched
+  in the background, so ←/→ — or a swipe — puts the next photograph on the screen with nothing to
+  wait for. A photo opened from the wall opens in the very image the tile was already showing, sharp
+  enough to look at from the first frame, and the full-size one takes its place in exactly the same
+  spot: no grey flash, nothing jumping. A video is left alone; its player fetches the film when you
+  ask for it.
+- **On a phone the photo takes a pinch.** Pinch to zoom, or double-tap to zoom in on the spot you
+  tapped, then drag the photograph around; while it is magnified a sideways drag pans it instead of
+  paging away from it, and another double-tap puts it back.
 
 Albums (each covered by a collage of four of its photos, so two albums from the same afternoon don't
 look alike; a new one can be started straight from a selection — "these forty photos are Ostatky 2022" —

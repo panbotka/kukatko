@@ -114,6 +114,33 @@
   will-change: transform;
 }
 
+/* The progressive stand-in: the grid's smaller rendition of the same photograph,
+   stretched across the framed figure — which already carries the photograph's own
+   proportions — so it sits exactly where the full-size image will land. It only
+   ever exists while that image is on the wire.
+
+   The stacking is explicit because it has to be. Both stand-ins (this and the
+   blur) are absolutely positioned, and a positioned element paints ABOVE the
+   in-flow image it is meant to sit under; the image escapes that only while it
+   carries a zoom transform, which it does not when the faces or edit view is up.
+   So the order is stated once, here, rather than left to depend on which view
+   the viewer happens to be in: blur, then this, then the photograph. */
+.kk-viewer__figure > .kk-viewer__image {
+  position: relative;
+  z-index: 2;
+}
+
+.kk-viewer__figure > .kk-viewer__image--under {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  pointer-events: none;
+}
+
 /* The video/live players carry their own chrome; give them room to breathe. */
 .kk-viewer__media {
   display: flex;

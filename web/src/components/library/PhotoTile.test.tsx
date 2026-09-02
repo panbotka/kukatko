@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { I18nextProvider } from 'react-i18next'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../../i18n'
@@ -46,6 +46,26 @@ function photo(overrides: Partial<Photo> = {}): Photo {
 /** Builds the detail payload a refetch answers with, carrying a fresh thumb URL. */
 function detail(overrides: Partial<Photo> = {}): PhotoDetail {
   return { ...photo(overrides), files: [], albums: [], labels: [] }
+}
+
+/** Reports the navigation state the tile's link carries into the viewer. */
+function HandoffProbe() {
+  const location = useLocation()
+  return <span data-testid="handoff">{JSON.stringify(location.state)}</span>
+}
+
+/** Renders a tile as a grid row does, with the route it opens mounted behind it. */
+function renderTileWithRoute(p: Photo, fill: boolean) {
+  return render(
+    <I18nextProvider i18n={i18n}>
+      <MemoryRouter initialEntries={['/library']}>
+        <Routes>
+          <Route path="/library" element={<PhotoTile photo={p} fill={fill} tileWidth={300} />} />
+          <Route path="/photos/:uid" element={<HandoffProbe />} />
+        </Routes>
+      </MemoryRouter>
+    </I18nextProvider>,
+  )
 }
 
 function renderTile(p: Photo, favoritable = false) {
@@ -336,5 +356,43 @@ describe('PhotoTile placeholder', () => {
     // would only make harder to read.
     await screen.findByRole('img', { name: 'Preview unavailable' })
     expect(document.querySelector('.kk-media-blur')).not.toBeInTheDocument()
+  })
+})
+
+describe('PhotoTile — handoff into the viewer', () => {
+  it('hands the viewer the very address a justified tile painted', () => {
+    // The viewer cannot rebuild it — a rendition URL is signed per response — so
+    // carrying it across the route change is what turns the viewer's first paint
+    // into a cache hit instead of a second download.
+    renderTileWithRoute(
+      photo({ media_type: 'image', preview_url: 'https://media.example/ph1-720.jpg?sig=abc' }),
+      true,
+    )
+
+    fireEvent.click(screen.getByRole('img', { name: 'Clip' }))
+
+    expect(screen.getByTestId('handoff')).toHaveTextContent(
+      JSON.stringify({ uid: 'ph1', previewUrl: 'https://media.example/ph1-720.jpg?sig=abc' }),
+    )
+  })
+
+  it('hands a square tile over to nobody — its crop is not the photograph', () => {
+    renderTileWithRoute(photo({ media_type: 'image' }), false)
+
+    fireEvent.click(screen.getByRole('img', { name: 'Clip' }))
+
+    // A link that carried nothing arrives with the router's own empty state.
+    expect(screen.getByTestId('handoff')).toHaveTextContent('null')
+  })
+
+  it('hands nothing over when the payload names no aspect-preserving rendition', () => {
+    // A backend too old to mint `preview_url` leaves the justified tile drawing
+    // the square crop. It is still the wrong shape to paint under a photograph,
+    // whichever tile happens to be showing it.
+    renderTileWithRoute(photo({ media_type: 'image' }), true)
+
+    fireEvent.click(screen.getByRole('img', { name: 'Clip' }))
+
+    expect(screen.getByTestId('handoff')).toHaveTextContent('null')
   })
 })

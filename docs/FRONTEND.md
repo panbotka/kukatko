@@ -705,7 +705,10 @@ here.
   **an address from the payload** via `useThumbSrc` and **never** builds it from the UID: the square crop
   `photo.thumb_url` for a square tile, the aspect-preserving `photo.preview_url` (`fit_720`) for a
   justified one — and for a tile laid out wide enough to outrun that rung, the next `fit_*` up by route
-  (`lib/tileRendition`), so a panorama spanning half a desktop does not go soft),
+  (`lib/tileRendition`), so a panorama spanning half a desktop does not go soft);
+  a justified tile also **hands its address to the viewer** in the link's navigation state
+  (`lib/photoHandoff`, `{uid,previewUrl}`) so the detail page can open in an image the browser already holds;
+  a square tile hands over nothing, its crop is not the photograph),
   `PhotoGrid` (the **justified photo wall**: a virtualized **`react-virtuoso` `Virtuoso`** list,
   window-scroll, footer spinner/retry. Photos keep **their own proportions** — the tiles are laid into rows
   that share one height and fill the width edge to edge (`lib/justifiedLayout`), so a panorama is wide, a
@@ -1937,8 +1940,14 @@ here.
   nowhere. **touch**:
   `usePinchZoom` (pinch/double-tap zoom + pan + swipe on a plain still) or `useSwipeNavigation`
   (swipe when faces/edit are on, where zoom is off so the transform doesn't shift the boxes/preview);
-  neighbor preload (`new Image()` on the rendition the stage itself resolved to — the neighbours' own
-  proportions are not known here, only their UIDs, and warming any other rung would leave the stage waiting).
+  **the warm window** — the photo on stage *and* one neighbour each side are primed through
+  `useImagePreloader` (`preloadUids` in `lib/viewerPreload` picks them, `thumbUrl` at the rendition the stage
+  itself resolved to: the neighbours' own proportions are not known here, only their UIDs, and warming any
+  other rung would leave the stage waiting). One each side is the whole window — nobody presses faster than a
+  decode, and more would be a page of bytes a phone never looks at. **A video neighbour is skipped**: its
+  stage streams the file itself, so nothing warmed here shortens it. The photo on stage is in the window on
+  purpose although it is being fetched anyway — it costs no request, and `statusOf(poster)` is what tells the
+  stage whether the full-size image is *already decoded* (see the progressive stand-in below).
   **Paging without a full-page flicker** — only the first
   load shows a big spinner, otherwise the current photo stays mounted (the `<img>`/figure key on the
   **displayed** `photo.uid`, not the route `uid`) and the new one is fetched in the background, then **swapped in
@@ -2056,7 +2065,21 @@ here.
   where the image will be and nothing moves when it lands. It is rendered **only** for a framed figure
   (an unframed one shrink-wraps its image and has no box to fill yet) and dropped as soon as
   `useImageFrame` reports `measured` — before a zoom or a rotation can move the image off the blur
-  underneath it.
+  underneath it. Between the blur and the photograph sits the **progressive stand-in**: the same
+  photograph at the grid's smaller `fit_720` rung, `aria-hidden` (the image above it owns the alt text) and
+  carrying the same edit/zoom transform, so a rotated or cropped photo does not un-rotate for a moment as the
+  two swap. Its address is, in order: **the very one the grid tile just painted** — handed over in the
+  navigation state (`lib/photoHandoff`, `PhotoTile` attaches it) and therefore already in the browser cache,
+  which is the whole point, because a rendition URL is *signed per response* and the one the viewer would
+  compute for the same rendition is a different string and so a second download — then `photo.preview_url`,
+  then the thumb route. Never the square crop: that is a centre cut of the photograph and would show the
+  wrong part of it, then jump. It is painted only while the real image is genuinely still coming: not once
+  `measured`, not when the preloader reports that image `ready` (stepping to a warmed neighbour swaps
+  instantly, and a second request would buy a frame nobody sees), and not on an unframed figure. The
+  stacking is stated in `viewer.css` rather than inferred (`.kk-viewer__figure > .kk-viewer__image` z-index 2
+  over `--under` z-index 1): both stand-ins are absolutely positioned and would otherwise paint **above** the
+  in-flow image they sit under — the image escapes that only while it carries a zoom transform, which it does
+  not with the faces or edit view up.
   Taking the frame from the image is what makes the viewer immune to the **other** half of that invariant, which
   is on the backend: `file_width`/`file_height` **must be the stored,
   pre-rotation dimensions**, because `displayFrame` is what applies the orientation to them. The source catalogue
@@ -3678,7 +3701,9 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   slideshow scope, so nothing downstream re-asks for the unavailable mode);
   `usePhotoNeighbors(uid,params,enabled?,mode?)` → `{prev,next,pending}` = the prev/next photo of `uid`
   **in the originating list's order**: it pages `GET /photos` (or `GET /search` in the `useSearchMode`-resolved
-  `mode`) from the top, accumulating uids until `uid` and its follower are located, bounded by `MAX_PAGES` (50).
+  `mode`) from the top, accumulating `NeighborPhoto{uid,mediaType}` until `uid` and its follower are located,
+  bounded by `MAX_PAGES` (50). The **media kind rides along** because the viewer warms its neighbours' images
+  ahead of time and a video is not worth warming; everything else about paging only ever reads `.uid`.
   **`pending` is the third answer** — "still walking", as distinct from a `null` that means "there is no such
   neighbour" — because that walk is the whole latency of a **deep-linked** photo (28 requests / ~3.5 s measured on
   the live library) and `PhotoDetailPage` needs the two apart to know whether an arrow key is worth remembering
@@ -4193,6 +4218,15 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `panBy`, `clampView` (the pan stays within `(scale-1)*box/2`, so the image can't be dragged out of the panel),
   `isZoomed`, `viewTransform`; deliberately separate from `gestures.ts` — that one is touch-only and measures against
   the viewport;
+  `viewerPreload.ts` = **which images the viewer keeps warm** around the one on stage, pure and DOM-free:
+  `PreloadCandidate{uid,mediaType?}`, `isPreloadable` (everything but a video — a live photo counts, what it
+  shows at rest is its still) and `preloadUids(current,prev,next)` → the window, current first, deduped and
+  with the ends dropped. The fetching and the bounded release are `useImagePreloader`'s;
+  `photoHandoff.ts` = **what a grid hands the viewer as it opens a photograph**: `PhotoHandoff{uid,previewUrl}`
+  in the link's navigation state, and `handoffPreviewUrl(state,uid)` reading it back. The UID is **checked, not
+  trusted** — history state outlives the navigation that made it, so Back/Forward and the viewer's own
+  `replace` paging can present the previous photo's address, and painting that under the photo on stage would
+  be showing the wrong photograph;
   `duplicateCompare.ts` = the **pure logic of pair comparison**: `buildPairQueue(groups)` → `ComparePair[]`
   (a multi-member group **pair by pair against the keeper**, never member-to-member; a group whose keeper is not among
   the members is skipped, not guessed), `pairId(a,b)` (unordered, like the backend), `pairsInGroup`/

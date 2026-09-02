@@ -1,8 +1,8 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { type Location, MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import { CapabilitiesContext } from '../capabilities/CapabilitiesContext'
@@ -12,7 +12,12 @@ import { clearBlurPlaceholderCache } from '../lib/blurPlaceholder'
 import { stageRenditionName } from '../lib/rendition'
 import { type AlbumCount, type LabelCount } from '../services/organize'
 import { type FacesResponse } from '../services/people'
-import { type PhotoDetail, type PhotoEdit, type PhotoListResponse } from '../services/photos'
+import {
+  GRID_PREVIEW_SIZE,
+  type PhotoDetail,
+  type PhotoEdit,
+  type PhotoListResponse,
+} from '../services/photos'
 import { STUB_CANVAS_DATA_URL, stubBlurCanvas } from '../test/canvas'
 import { declarations, readCss, ruleBody } from '../test/css'
 import { frameRatio, loadImageAs } from '../test/imageFrame'
@@ -252,7 +257,11 @@ function LocationProbe() {
  * decides the mode prev/next pages the originating search with; it defaults to
  * available so a `mode=semantic` URL is followed as written.
  */
-function renderPage(canWrite = true, entry = '/photos/b?sort=oldest', semanticSearch = true) {
+function renderPage(
+  canWrite = true,
+  entry: string | Partial<Location> = '/photos/b?sort=oldest',
+  semanticSearch = true,
+) {
   return render(
     <I18nextProvider i18n={i18n}>
       <CapabilitiesContext.Provider
@@ -348,16 +357,76 @@ function tabbableInDrawer(container: HTMLElement): HTMLElement[] {
  * it. The default is the shape of `photo()`'s own row, i.e. a correct row.
  */
 function loadPreview(width = 4000, height = 3000): void {
-  const img = document.querySelector<HTMLImageElement>('img.kk-viewer__image')
+  // Never the progressive stand-in beneath it: that one is a smaller rendition
+  // of the same photograph, and it is the FULL-size image whose arrival the
+  // viewer measures its frame from.
+  const img = document.querySelector<HTMLImageElement>(
+    'img.kk-viewer__image:not(.kk-viewer__image--under)',
+  )
   if (img === null) {
     throw new Error('stage preview not found')
   }
   loadImageAs(img, width, height)
 }
 
+/**
+ * A stand-in for `HTMLImageElement` recording what the viewer's preloader asks
+ * the browser for. jsdom fetches nothing and implements no `decode()`, so a
+ * warmed image is only ever *requested* here, and a test that wants one to become
+ * ready says so by hand through {@link StubImage.finish}.
+ */
+class StubImage {
+  /** Every address a preloader has started a load for, in order. */
+  static readonly requested: string[] = []
+  private static readonly live = new Map<string, StubImage>()
+
+  decoding = 'auto'
+  onload: (() => void) | null = null
+  onerror: (() => void) | null = null
+
+  private url = ''
+
+  /** Assigning a source is what starts a load, so that is where it is recorded. */
+  get src(): string {
+    return this.url
+  }
+
+  set src(url: string) {
+    this.url = url
+    if (url !== '') {
+      StubImage.requested.push(url)
+      StubImage.live.set(url, this)
+    }
+  }
+
+  removeAttribute(name: string): void {
+    if (name === 'src') {
+      StubImage.live.delete(this.url)
+      this.url = ''
+    }
+  }
+
+  /** Reports the warmed image at `url` as loaded, as the network would. */
+  static finish(url: string): void {
+    StubImage.live.get(url)?.onload?.()
+  }
+
+  static reset(): void {
+    StubImage.requested.length = 0
+    StubImage.live.clear()
+  }
+}
+
+/** Every address the viewer's preloader has asked the browser for. */
+function preloaded(): string[] {
+  return [...StubImage.requested]
+}
+
 beforeEach(async () => {
   await i18n.changeLanguage('en')
   vi.clearAllMocks()
+  StubImage.reset()
+  vi.stubGlobal('Image', StubImage)
   // Every test but the phone ones runs at the desktop breakpoint, where the
   // curation controls ride the top action bar.
   mockViewport(false)
@@ -383,6 +452,11 @@ beforeEach(async () => {
   unarchivePhotoMock.mockResolvedValue(undefined)
   hidePhotoMock.mockResolvedValue(undefined)
   unhidePhotoMock.mockResolvedValue(undefined)
+})
+
+afterEach(() => {
+  // `restoreMocks` puts spies back but leaves stubbed globals in place.
+  vi.unstubAllGlobals()
 })
 
 describe('PhotoDetailPage — immersive viewer', () => {
@@ -437,6 +511,11 @@ describe('PhotoDetailPage — immersive viewer', () => {
     // never a second copy — and the default state is just the photo, no panel.
     const dialog = screen.getByRole('dialog', { name: 'Photo viewer' })
     expect(viewer(container)).toHaveAttribute('data-panel', 'closed')
+    // One full-size preview. The second `<img>` is the progressive stand-in — a
+    // smaller rendition painted underneath while that preview is on the wire —
+    // which goes as soon as the real one lands.
+    expect(container.querySelectorAll('img')).toHaveLength(2)
+    loadPreview()
     expect(container.querySelectorAll('img')).toHaveLength(1)
     expect(within(dialog).getByRole('img', { name: 'Beach' }).getAttribute('src')).toContain(
       STAGE_SIZE,
@@ -1203,6 +1282,61 @@ describe('PhotoDetailPage — immersive viewer', () => {
       const opacity = Number(wash.get('opacity'))
       expect(opacity).toBeGreaterThan(0)
       expect(opacity).toBeLessThan(1)
+    })
+  })
+
+  describe('stage sizing before the image arrives', () => {
+    it('states the frame as the image’s own intrinsic size, so nothing moves on arrival', async () => {
+      // An `<img>` with a loading `src` and no dimensions is a box the width of
+      // its alt text, and the figure has nothing else in flow to size it: without
+      // this the stage collapsed to a sliver while the photograph was on the wire,
+      // taking the blur and the smaller rendition that fill it down with it.
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      const image = screen.getByRole('img', { name: 'Beach' })
+      expect(image).toHaveAttribute('width', '4000')
+      expect(image).toHaveAttribute('height', '3000')
+
+      // Once the image has landed the measurement replaces the row's estimate —
+      // the same proportions, so the box does not move.
+      loadPreview(1920, 1440)
+      expect(image).toHaveAttribute('width', '1920')
+      expect(image).toHaveAttribute('height', '1440')
+    })
+  })
+
+  describe('progressive stand-in stylesheet', () => {
+    const css = readCss('src/components/photo/viewer.css')
+
+    it('stacks the blur, then the smaller rendition, then the photograph', () => {
+      // The order has to be stated rather than inferred: both stand-ins are
+      // absolutely positioned, and a positioned element paints ABOVE the in-flow
+      // image it is meant to sit under — the image escapes that only while it
+      // carries a zoom transform, which it does not with the faces or edit view up.
+      const image = declarations(
+        ruleBody(css, /\.kk-viewer__figure > \.kk-viewer__image\s*(?=\{)/) ?? '',
+      )
+      const under = declarations(
+        ruleBody(css, /\.kk-viewer__figure > \.kk-viewer__image--under\s*(?=\{)/) ?? '',
+      )
+      expect(Number(image.get('z-index'))).toBeGreaterThan(Number(under.get('z-index')))
+      expect(Number(under.get('z-index'))).toBeGreaterThan(0)
+    })
+
+    it('lays the stand-in over exactly the box the photograph will fill', () => {
+      // The framed figure already carries the photograph's proportions, so filling
+      // it edge to edge is what makes the sharp image land without moving a pixel.
+      const under = declarations(
+        ruleBody(css, /\.kk-viewer__figure > \.kk-viewer__image--under\s*(?=\{)/) ?? '',
+      )
+      expect(under.get('position')).toBe('absolute')
+      expect(under.get('inset')).toBe('0')
+      expect(under.get('width')).toBe('100%')
+      expect(under.get('height')).toBe('100%')
+      // It is scenery, never a target: the gesture surface underneath must keep
+      // receiving the touches that pinch and swipe the photograph.
+      expect(under.get('pointer-events')).toBe('none')
     })
   })
 
@@ -2017,6 +2151,25 @@ describe('PhotoDetailPage — immersive viewer', () => {
       expect(screen.queryByRole('heading', { name: 'Cliff' })).not.toBeInTheDocument()
     })
 
+    it('warms the photo on stage and its two neighbours, but never a video', async () => {
+      // Paging is the most repeated gesture in the app, so the neighbours' bytes
+      // are on the machine before the arrow is pressed. A video neighbour is left
+      // alone: its stage streams the file itself, and pulling a clip down for a
+      // photo nobody may step to is the one preload that costs more than it saves.
+      const videos = page(['a', 'b', 'c'])
+      videos.photos[2] = { ...videos.photos[2], media_type: 'video' }
+      fetchPhotosMock.mockResolvedValue(videos)
+
+      renderPage(true, '/photos/b?sort=oldest')
+      await screen.findByRole('heading', { name: 'Beach' })
+      await screen.findByRole('link', { name: 'Next photo' })
+
+      await waitFor(() => {
+        expect(preloaded()).toContain(`/api/v1/photos/a/thumb/${STAGE_SIZE}`)
+      })
+      expect(preloaded()).toContain(`/api/v1/photos/b/thumb/${STAGE_SIZE}`)
+      expect(preloaded().some((url) => url.includes('/photos/c/thumb/'))).toBe(false)
+    })
     it('closes to the source list with Escape', async () => {
       renderPage(true, '/photos/b?sort=oldest')
       await screen.findByRole('heading', { name: 'Beach' })
@@ -2181,6 +2334,9 @@ describe('PhotoDetailPage — immersive viewer', () => {
       const user = userEvent.setup()
       const { container } = renderPage()
       await screen.findByRole('heading', { name: 'Beach' })
+      // The full-size preview has landed, so the progressive stand-in is gone and
+      // the photo is on the stage exactly once.
+      loadPreview()
 
       // The panel is not up until asked for, and the photo has the screen to itself.
       expect(screen.queryByRole('button', { name: 'Rotate right' })).not.toBeInTheDocument()
@@ -2190,7 +2346,8 @@ describe('PhotoDetailPage — immersive viewer', () => {
       const main = screen.getByRole('img', { name: 'Beach' })
       await user.click(screen.getByRole('button', { name: 'Rotate right' }))
       expect(main).toHaveStyle({ transform: 'rotate(90deg)' })
-      // The page still carries exactly one copy of the photo.
+      // The page still carries exactly one copy of the photo (the progressive
+      // stand-in went the moment the preview loaded).
       expect(container.querySelectorAll('img')).toHaveLength(1)
 
       saveEditMock.mockResolvedValue({ ...NEUTRAL, rotation: 90 })
@@ -2332,6 +2489,76 @@ describe('PhotoDetailPage — immersive viewer', () => {
       screen.queryByRole('button', { name: 'Select face #1: No name' }),
     ).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Name this face')).not.toBeInTheDocument()
+  })
+
+  describe('progressive display', () => {
+    /** The smaller rendition painted under the full-size image, if any. */
+    function underImage(): HTMLImageElement | null {
+      return document.querySelector<HTMLImageElement>('img.kk-viewer__image--under')
+    }
+
+    it('paints the grid rendition under the photo and drops it when the real one lands', async () => {
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      // Under the full-size image, filling the same framed box, and decorative:
+      // the image above it owns the alt text.
+      const under = underImage()
+      expect(under).not.toBeNull()
+      expect(under?.getAttribute('src')).toContain(`/thumb/${GRID_PREVIEW_SIZE}`)
+      expect(under).toHaveAttribute('aria-hidden', 'true')
+      expect(under?.parentElement).toBe(stageFigure())
+      expect(under?.compareDocumentPosition(screen.getByRole('img', { name: 'Beach' }))).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      )
+
+      loadPreview()
+      expect(underImage()).toBeNull()
+    })
+
+    it('opens in the very image the grid painted when the grid hands its address over', async () => {
+      // The address is carried across the route change because it cannot be
+      // rebuilt: a rendition URL is signed per response, so the one the viewer
+      // would compute is a different string and therefore a second download.
+      renderPage(true, {
+        pathname: '/photos/b',
+        search: '?sort=oldest',
+        state: { uid: 'b', previewUrl: 'https://media.example/b-720.jpg?sig=abc' },
+      })
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      expect(underImage()).toHaveAttribute('src', 'https://media.example/b-720.jpg?sig=abc')
+    })
+
+    it('ignores a handoff left behind by another photo', async () => {
+      // History state outlives the navigation that made it: Back/Forward, and the
+      // viewer's own `replace` paging, can present the previous photo's address.
+      renderPage(true, {
+        pathname: '/photos/b',
+        search: '?sort=oldest',
+        state: { uid: 'a', previewUrl: 'https://media.example/a-720.jpg' },
+      })
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      expect(underImage()?.getAttribute('src')).toContain(`/photos/b/thumb/${GRID_PREVIEW_SIZE}`)
+    })
+
+    it('spends nothing on a smaller rendition of a photo already warmed', async () => {
+      // Stepping to a preloaded neighbour swaps instantly, so a stand-in would be
+      // bytes spent on a frame nobody ever sees.
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+      await waitFor(() => {
+        expect(preloaded()).toContain(`/api/v1/photos/b/thumb/${STAGE_SIZE}`)
+      })
+
+      act(() => {
+        StubImage.finish(`/api/v1/photos/b/thumb/${STAGE_SIZE}`)
+      })
+      await waitFor(() => {
+        expect(underImage()).toBeNull()
+      })
+    })
   })
 })
 

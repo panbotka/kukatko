@@ -10,12 +10,25 @@ import {
 import { PAGE_SIZE } from './usePaginatedPhotos'
 import { useSearchMode } from './useSearchMode'
 
-/** The previous/next photo UIDs around the current one in the list order. */
+/**
+ * A neighbouring photo, as much of it as paging needs to know: where to go, and
+ * what kind of media waits there. The kind is carried because the viewer warms
+ * the neighbours' images ahead of time and a video is not worth warming (see
+ * `lib/viewerPreload`).
+ */
+export interface NeighborPhoto {
+  /** The photo's UID. */
+  uid: string
+  /** Media kind (`image`, `video`, `live`); absent counts as an image. */
+  mediaType?: string
+}
+
+/** The previous/next photos around the current one in the list order. */
 export interface PhotoNeighbors {
-  /** UID of the photo before the current one, or null at the start. */
-  prev: string | null
-  /** UID of the photo after the current one, or null at the end. */
-  next: string | null
+  /** The photo before the current one, or null at the start. */
+  prev: NeighborPhoto | null
+  /** The photo after the current one, or null at the end. */
+  next: NeighborPhoto | null
   /**
    * True while the answer for the current photo is still being worked out, so a
    * caller can tell "there is no next photo" (a list end — the key is a no-op)
@@ -43,8 +56,8 @@ const PENDING: PhotoNeighbors = { prev: null, next: null, pending: true }
 interface ScannedOrder {
   /** Identity of the list (params + search mode) the order was scanned from. */
   key: string
-  /** UIDs in list order, starting at the list's first page. */
-  uids: string[]
+  /** The photos in list order, starting at the list's first page. */
+  photos: NeighborPhoto[]
   /** Offset the next page starts at, or null once the list was exhausted. */
   nextOffset: number | null
 }
@@ -60,17 +73,17 @@ function neighborsIn(order: ScannedOrder | null, key: string, uid: string): Phot
   if (order?.key !== key) {
     return null
   }
-  const idx = order.uids.indexOf(uid)
+  const idx = order.photos.findIndex((photo) => photo.uid === uid)
   if (idx === -1) {
     return null
   }
-  const last = idx === order.uids.length - 1
+  const last = idx === order.photos.length - 1
   if (last && order.nextOffset !== null) {
     return null
   }
   return {
-    prev: idx > 0 ? order.uids[idx - 1] : null,
-    next: last ? null : order.uids[idx + 1],
+    prev: idx > 0 ? order.photos[idx - 1] : null,
+    next: last ? null : order.photos[idx + 1],
     pending: false,
   }
 }
@@ -143,10 +156,10 @@ export function usePhotoNeighbors(
         previous !== null &&
         previous.key === key &&
         previous.nextOffset !== null &&
-        previous.uids.includes(uid)
-          ? { uids: previous.uids, from: previous.nextOffset }
+        previous.photos.some((photo) => photo.uid === uid)
+          ? { photos: previous.photos, from: previous.nextOffset }
           : null
-      const order: string[] = carry === null ? [] : [...carry.uids]
+      const order: NeighborPhoto[] = carry === null ? [] : [...carry.photos]
       let offset: number | null = carry?.from ?? 0
       for (let page = 0; page < MAX_PAGES; page++) {
         if (offset === null) {
@@ -158,10 +171,10 @@ export function usePhotoNeighbors(
             ? await fetchPhotos(pageParams, controller.signal)
             : await searchPhotos(pageParams, searchMode, controller.signal)
         for (const photo of res.photos) {
-          order.push(photo.uid)
+          order.push({ uid: photo.uid, mediaType: photo.media_type })
         }
         offset = res.next_offset
-        const found = order.indexOf(uid)
+        const found = order.findIndex((photo) => photo.uid === uid)
         // Stop once the current photo is located and its next neighbour is known,
         // or when the list is exhausted.
         if (found !== -1 && found < order.length - 1) {
@@ -171,8 +184,8 @@ export function usePhotoNeighbors(
       if (cancelled) {
         return
       }
-      scanned.current = { key, uids: order, nextOffset: offset }
-      const idx = order.indexOf(uid)
+      scanned.current = { key, photos: order, nextOffset: offset }
+      const idx = order.findIndex((photo) => photo.uid === uid)
       setNeighbors({
         prev: idx > 0 ? order[idx - 1] : null,
         next: idx !== -1 && idx < order.length - 1 ? order[idx + 1] : null,
