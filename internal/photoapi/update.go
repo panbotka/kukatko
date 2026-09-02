@@ -118,6 +118,13 @@ func (a *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.enqueueSidecar(r.Context(), uid)
+	// A moved (or cleared) coordinate makes the cached place a statement about
+	// where the photo used to be, so the geocode is rescheduled. Nothing else in a
+	// metadata edit can change it, and every geocode costs a credit, so this is
+	// deliberately conditional on the coordinate actually having moved.
+	if coordinateMoved(current, updated) {
+		a.enqueueGeocode(r.Context(), uid)
+	}
 	a.writeDetail(w, r, user.UID, updated)
 }
 

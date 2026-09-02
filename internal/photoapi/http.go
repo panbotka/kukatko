@@ -52,6 +52,7 @@ type API struct {
 	stacker        Stacker
 	sidecar        SidecarEnqueuer
 	thumbnails     ThumbnailEnqueuer
+	geocodes       PlacesEnqueuer
 	reembedder     PhotoReembedder
 	redetector     PhotoRedetector
 	regeocoder     PhotoRegeocoder
@@ -135,6 +136,11 @@ type Config struct {
 	// edit, so the library grid shows the photo as the user turned it. When nil the
 	// edit still saves and the cached thumbnails keep the previous rendering.
 	Thumbnails ThumbnailEnqueuer
+	// Geocodes schedules a reverse geocode after an edit moved or cleared a
+	// photo's coordinates, so the cached place — and with it the places hierarchy
+	// — follows the photo. When nil the coordinate still saves and the cached
+	// place waits for the next backfill.
+	Geocodes PlacesEnqueuer
 	// Reembedder recomputes a photo's image embedding for the reembed rebuild,
 	// replacing the stored one. When nil that endpoint answers 503.
 	Reembedder PhotoReembedder
@@ -211,6 +217,7 @@ func NewAPI(cfg Config) *API {
 		purger:            cfg.Purger,
 		stacker:           cfg.Stacker,
 		sidecar:           cfg.Sidecar,
+		geocodes:          cfg.Geocodes,
 		thumbnails:        cfg.Thumbnails,
 		reembedder:        cfg.Reembedder,
 		redetector:        cfg.Redetector,

@@ -182,6 +182,12 @@ that it was imported.
   browsing by place (country → city, with a preview photo on every row), and reverse geocoding. A
   missing location can be estimated from photos taken near it in time — and only when those
   neighbours cluster tightly, always marked as an estimate.
+- **Setting a location by hand**, which is what a box of scans actually needs: name the place, paste
+  the coordinates in whatever notation you have them, or drop a pin on the map and drag it — on a
+  phone the map opens full-screen. A photo with no location of its own starts the map where you put
+  the last pin, so geotagging a whole box is a sitting rather than an expedition. What you pick is
+  yours: it replaces an estimate, is never shown as one, can be removed again, and the place browsing
+  follows it.
 - **Video** with range streaming, poster frames, live photos, and a player with playback speed,
   ±10 s skips, and frame previews under the cursor as you scrub.
 

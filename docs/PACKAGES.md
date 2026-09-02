@@ -1049,7 +1049,15 @@ to `## Package map` in `CLAUDE.md`.
   (satisfied by `places.Store.GetPlace`): `writeDetail` attaches `place{country,region,city,place_name}`
   from the `photo_places` cache — **cache-read only, the detail never geocodes** (mapy.com credits are
   metered; the on-demand lookup stays in `mapsapi`), nil-safe just like the uploader and also omitted for a
-  "processed" marker (a row with all levels empty); `EditService`/`edit.go`+`media_edit.go`
+  "processed" marker (a row with all levels empty); **rescheduling that cache** after a metadata edit
+  through the `PlacesEnqueuer` interface (also `place.go`, satisfied by `jobs.Enqueuer.EnqueuePlaces`,
+  `Config.Geocodes`, nil-safe): `handleUpdate` compares the row before the edit with the row the store
+  stored (`coordinateMoved`) and enqueues the `places` job only when the photo actually moved or lost its
+  location, because a geocode costs a metered credit and a retitle must not spend one — a cleared location
+  is enqueued too, since the job answers it with the empty "processed" marker that takes the photo out of
+  the hierarchy; best-effort and after the commit, exactly like `enqueueSidecar` (the job re-reads the row,
+  so enqueuing earlier would have it compare against the old coordinates and skip);
+  `EditService`/`edit.go`+`media_edit.go`
   (`GET`/`PUT /photos/{uid}/edit`, download honours the edit via `internal/photoedit`; a saved edit also
   **audits** `photo.edit` through the same `AuditRecorder` as the thumbnail action — after the write, because
   `Store.SetEdit` exposes no transaction to join — and **enqueues a forced thumbnail rebuild** through the

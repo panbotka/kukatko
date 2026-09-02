@@ -429,7 +429,16 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   (moving or clearing) writes `location_source: "manual"` on its own; clearing therefore **does not reset**
   the origin to empty the way `taken_at` → `unknown` does — `"manual"` without coordinates is a deliberate
   **tombstone** ("the user decided this photo has no location"), thanks to which backfill never brings back
-  an estimate the user discarded
+  an estimate the user discarded. **A coordinate that actually moved (or was cleared) reschedules the
+  derived work**: the handler enqueues the `places` job (`jobs.Enqueuer.EnqueuePlaces`), so the cached
+  reverse-geocoded place — and with it the country/city browsing, the places hierarchy and the detail page's
+  Location block — follows the photo; for a cleared location the job writes its empty "processed" marker,
+  which is what takes the photo back out of the hierarchy. The condition is the point: every geocode costs a
+  metered mapy.com credit, so an edit that leaves the coordinates where they were (a retitle, a PATCH
+  resending the same numbers) schedules none. Like every metadata edit it also enqueues a `sidecar` rewrite.
+  Both are best-effort and scheduled **after** the commit — a failure is logged, never returned, the
+  coordinate is saved either way, and the metered call itself happens in the worker behind the geocode rate
+  limit and the credit budget
   **+ IPTC/XMP credits** `subject/artist/copyright/license/keywords/scan`: free text,
   whitespace trimmed, length caps (`subject`/`copyright`/`license` 1000, `keywords` 2000,
   `artist` 255 **characters**, not bytes), longer = 400; `scan` is a plain bool. Machine-derived fields

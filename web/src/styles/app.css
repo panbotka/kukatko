@@ -2252,6 +2252,24 @@ body {
   visibility: visible;
 }
 
+/* The location picker's full-screen dialog: the map is the content, so it takes
+   whatever height the dialog has left under its header and footer. The map asks
+   for `height: 100%` inline, which Chromium resolves against the modal body's
+   flex-determined height; making the body a column flex container and the map a
+   growing item says the same thing without depending on that percentage
+   resolving, so the map cannot come out zero pixels tall and invisible. */
+.kukatko-picker-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.kukatko-picker-body .kukatko-map {
+  flex: 1 1 auto;
+  /* Without this a tall map refuses to shrink below its content and pushes the
+     dialog's footer off the screen. */
+  min-height: 0;
+}
+
 /* A draggable marker — the location picker's pin — is the one thing on a
    gesture-handled map that must still answer a ONE-finger drag. The container
    sits at `touch-action: pan-x pan-y` (that is what lets the page scroll), which

@@ -36,7 +36,7 @@ import {
   type LabelCount,
 } from '../../services/organize'
 import { MultiSelect, type MultiSelectOption } from '../MultiSelect'
-import { PlaceSearch } from '../photo/PlaceSearch'
+import { PlaceSearch } from '../map/PlaceSearch'
 
 /**
  * The error text for an album or label the form could not create — a duplicate

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/places"
 )
 
@@ -98,5 +99,99 @@ func assertPlaceRef(t *testing.T, got, want *placeRef) {
 	}
 	if *got != *want {
 		t.Errorf("resolvePlace() = %+v, want %+v", got, want)
+	}
+}
+
+// fakePlacesEnqueuer is a controllable PlacesEnqueuer: it records the photo UIDs
+// it was asked to geocode and can fail, so a test can assert both that the
+// scheduling happens and that a queue failure never escapes.
+type fakePlacesEnqueuer struct {
+	uids []string
+	err  error
+}
+
+// EnqueuePlaces records the request and returns the fake's configured error.
+func (f *fakePlacesEnqueuer) EnqueuePlaces(_ context.Context, photoUID string) error {
+	f.uids = append(f.uids, photoUID)
+	return f.err
+}
+
+// TestCoordinateMoved covers what counts as "the photo is somewhere else now" —
+// the question that decides whether an edit spends a mapy.com credit on a fresh
+// reverse geocode.
+func TestCoordinateMoved(t *testing.T) {
+	t.Parallel()
+
+	brnoLat, brnoLng := 49.19522, 16.60796
+	praLat := 50.08804
+
+	tests := []struct {
+		name          string
+		before, after photos.Photo
+		want          bool
+	}{
+		{
+			name:   "unchanged coordinate",
+			before: photos.Photo{Lat: &brnoLat, Lng: &brnoLng},
+			after:  photos.Photo{Lat: &brnoLat, Lng: &brnoLng},
+			want:   false,
+		},
+		{
+			name:   "no coordinate before or after",
+			before: photos.Photo{},
+			after:  photos.Photo{},
+			want:   false,
+		},
+		{
+			name:   "location picked on the map",
+			before: photos.Photo{},
+			after:  photos.Photo{Lat: &brnoLat, Lng: &brnoLng},
+			want:   true,
+		},
+		{
+			name:   "location removed",
+			before: photos.Photo{Lat: &brnoLat, Lng: &brnoLng},
+			after:  photos.Photo{},
+			want:   true,
+		},
+		{
+			name:   "pin dragged north",
+			before: photos.Photo{Lat: &brnoLat, Lng: &brnoLng},
+			after:  photos.Photo{Lat: &praLat, Lng: &brnoLng},
+			want:   true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := coordinateMoved(tc.before, tc.after); got != tc.want {
+				t.Errorf("coordinateMoved() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestEnqueueGeocode verifies the scheduling helper: it asks the queue once, is
+// a no-op without one, and swallows a queue failure — the coordinate is already
+// saved and a stale cached place is not worth failing the edit over.
+func TestEnqueueGeocode(t *testing.T) {
+	t.Parallel()
+
+	enqueuer := &fakePlacesEnqueuer{}
+	api := &API{geocodes: enqueuer}
+	api.enqueueGeocode(t.Context(), "ph_1")
+	if len(enqueuer.uids) != 1 || enqueuer.uids[0] != "ph_1" {
+		t.Errorf("enqueued %v, want [ph_1]", enqueuer.uids)
+	}
+
+	unwired := &API{}
+	unwired.enqueueGeocode(t.Context(), "ph_1") // must not panic
+
+	failing := &fakePlacesEnqueuer{err: errors.New("queue is down")}
+	api = &API{geocodes: failing}
+	api.enqueueGeocode(t.Context(), "ph_1") // must not panic or propagate
+	if len(failing.uids) != 1 {
+		t.Errorf("enqueued %v, want one attempt", failing.uids)
 	}
 }

@@ -154,15 +154,21 @@ func newEnvWithMedia(t *testing.T, media storage.Storage) *env {
 		// leave the wiring untested.
 		Audit:      audit.NewStore(db.Pool()),
 		Thumbnails: jobs.NewEnqueuer(jobStore),
-		Similar:    vectorStore,
-		Embedder:   embedder,
-		Favorites:  organizeStore,
-		Ratings:    organizeStore,
-		Organizer:  organizeStore,
-		Users:      authStore,
-		Places:     placeStore,
-		Comments:   commentStore,
-		Stacker:    stacks.New(store, stacks.Config{Enabled: true, Rules: stacks.RuleSet{BaseName: true}}),
+		// The two pieces of derived work a metadata edit schedules: the sidecar
+		// rewrite that keeps the on-disk copy of the catalogue current, and — when
+		// the edit moved the photo — the reverse geocode that keeps the cached
+		// place from describing where it used to be.
+		Sidecar:   jobs.NewEnqueuer(jobStore),
+		Geocodes:  jobs.NewEnqueuer(jobStore),
+		Similar:   vectorStore,
+		Embedder:  embedder,
+		Favorites: organizeStore,
+		Ratings:   organizeStore,
+		Organizer: organizeStore,
+		Users:     authStore,
+		Places:    placeStore,
+		Comments:  commentStore,
+		Stacker:   stacks.New(store, stacks.Config{Enabled: true, Rules: stacks.RuleSet{BaseName: true}}),
 		Purger: trash.New(trash.Config{
 			Photos:      store,
 			Storage:     fs,

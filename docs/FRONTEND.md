@@ -431,11 +431,12 @@ here.
   so there is nothing left to choose from the list it was typed into. Without that the list stayed up
   over the keyboard with a blank query and the whole thing read as „nothing happened"; the new chip
   below the field is the confirmation),
-  `photo/PlaceSearch` (**place autocomplete by name** = the third route to a photo's location alongside
-  coordinates and a map click — for a scanned photo you know *Veselí nad Moravou*, not the numbers, and hunting
+  `map/PlaceSearch` (**place autocomplete by name** = the third route to a photo's location alongside
+  coordinates and a map click — it lives with the map stack (`components/map/`) rather than under `photo/`,
+  because the question it answers is where a photo *is*, not what its detail page shows — for a scanned photo you know *Veselí nad Moravou*, not the numbers, and hunting
   that point by panning the map is a nuisance. `{id,onPick,disabled?}`, `onPick(place)` receives a `Place` and
-  the caller decides where to write the coordinates: `MetadataPanel` writes them into its own coordinate
-  field (the marker and the map redraw themselves), `BulkEditModal` into `lat`/`lng` for `set_location`.
+  the caller decides where to write the coordinates: `LocationPicker` writes them into the one coordinate
+  field it owns (the marker and the map redraw themselves), `BulkEditModal` into `lat`/`lng` for `set_location`.
   Each row carries **name + place kind (`label`) + `location`** — the distinction is the whole point (Veselí
   is a town, a château, and a village district; three identical-looking rows would be useless). Typing goes through
   `usePlaceSearch` (debounce + cancelling in-flight); the field holds **two** state values — what is visible
@@ -2364,9 +2365,10 @@ here.
   (`PATCH /photos/{uid}` with `taken_at`, no new endpoint), so the backend drops the preserved value in the
   same statement and the row disappears with it. A photo that never carried a date shows nothing extra: the
   guard is 0066's invariant (a photo with a date never has one set aside) made explicit, so the two can never
-  show at once. The location picker = **three ways in** in the order a person reaches for them:
-  **`PlaceSearch`** (find a place by name), one tolerant coordinate field parsed by
-  `lib/coordinates` (`parseCoordinates`/`formatCoordinates`: decimal degrees `49.1234, 16.5678`,
+  show at once. The location row mounts the shared **`map/LocationPicker`** (`value`/`onChange` over the panel's
+  coordinate text, `idPrefix="photo-location"`, disabled while a save is in flight) — **three ways in** in
+  the order a person reaches for them: `PlaceSearch` (find a place by name), one tolerant coordinate field
+  parsed by `lib/coordinates` (`parseCoordinates`/`formatCoordinates`: decimal degrees `49.1234, 16.5678`,
   DMS `49°7'24.2"N 16°34'12.5"E`, degrees-decimal-minutes, hemispheres, axis reorder, range check)
   and the **`LeafletMap` picker mode** (`picker={position,onPick}`: a draggable marker + click-to-place,
   two-way sync text↔marker, clear location = lat/lng null). All three **write the same single
@@ -3522,6 +3524,24 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   class `kukatko-map--dim-tiles`, whose CSS filter tones the **tile pane** down for the dark page and leaves
   pins, clusters, popups and controls at full colour; a dimming rather than the usual `invert()` trick, which
   turns water orange, and toggled imperatively because Leaflet stamps its own classes onto that element),
+  `LocationPicker` (**the reusable "where was this taken?" control** over that same map stack — one
+  component, not a block of the metadata form, because the bulk editor asks the same question of a
+  selection: `{value,onChange,disabled?,idPrefix?,height?}`, fully **controlled on the coordinate text**
+  (not a parsed pair — the caller decides what unparseable text means for its save, and a half-typed
+  coordinate must never be rewritten under the cursor). It stacks `PlaceSearch`, the tolerant coordinate
+  field (`lib/coordinates`) with its inline "unrecognised" error and a **Vymazat polohu** button, and the
+  `LeafletMap` in picker mode; every way in writes the same text, and a picked point is written canonically
+  through `formatCoordinates`. **Where the map opens** is `startViewport`: the photo's own coordinate
+  (zoom 13) → the **last place picked in this session** (`lib/pickedLocation`, a validated coordinate in
+  `sessionStorage`, zoom 11 — a box of scans is almost always one village, so the previous pin is the best
+  guess for the next; session, not local, because a week-old pin is not where anyone wants to start) →
+  `null`, i.e. `LeafletMap`'s own default view of the Czech lands. Never 0,0 in the Atlantic, which is
+  where a map with no opinion puts you. **Mapa na celou obrazovku** opens the same map in a `fullscreen`
+  `Modal` (`.kukatko-picker-body` makes the map take everything between header and footer) — a 260px inline
+  map is not something you can aim a pin on with a thumb; the inline map is **unmounted while the dialog
+  holds one**, so Leaflet never owns two containers for one pin, and the dialog's footer reads the picked
+  coordinate back plus repeats clear/done, because the field itself is behind it. Tests:
+  `LocationPicker.test.tsx` (a fake `leaflet` module, as in `LeafletMap.test.tsx`)),
   `MapFilterBar` (a basemap toggle
   basic/outdoor/aerial — inactive buttons are `outline-light`, since Superhero's `secondary` navy on this
   page's near-black reads as disabled — + date from/to, archived, the coverage sentence with the

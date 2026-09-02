@@ -127,14 +127,18 @@ func buildPhotoAPI(
 		// Saving an edit changes what the photo renders as; the cache is keyed by the
 		// original's hash and needs telling.
 		Thumbnails: thumbnails,
-		Audit:      audit.NewStore(db.Pool()),
-		Similar:    similar,
-		Embedder:   embedder,
-		Faces:      faceSvc,
-		Favorites:  organizeStore,
-		Ratings:    organizeStore,
-		Organizer:  organizeStore,
-		Users:      userStore,
+		// Setting a photo's location on the map leaves the cached place describing
+		// somewhere else; the `places` job resolves the new coordinate (and clears
+		// the cache when the location was removed).
+		Geocodes:  enqueuer,
+		Audit:     audit.NewStore(db.Pool()),
+		Similar:   similar,
+		Embedder:  embedder,
+		Faces:     faceSvc,
+		Favorites: organizeStore,
+		Ratings:   organizeStore,
+		Organizer: organizeStore,
+		Users:     userStore,
 		// The detail response carries the photo's cached place. This is a read of
 		// the photo_places cache the `places` job fills — the detail endpoint never
 		// geocodes, so opening a photo costs no mapy.com credit.

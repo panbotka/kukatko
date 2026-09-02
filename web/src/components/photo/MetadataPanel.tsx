@@ -5,7 +5,7 @@ import Button from 'react-bootstrap/Button'
 import Form from 'react-bootstrap/Form'
 import { useTranslation } from 'react-i18next'
 
-import { type Coordinates, formatCoordinates, parseCoordinates } from '../../lib/coordinates'
+import { formatCoordinates, parseCoordinates } from '../../lib/coordinates'
 import { formatDateTimeMinutes } from '../../lib/format'
 import {
   joinKeywords,
@@ -15,14 +15,12 @@ import {
   splitKeywords,
 } from '../../lib/photoFacts'
 import { formatTakenLabel, formatTakenPeriod } from '../../lib/takenDate'
-import { type Place } from '../../services/map'
 import { type PhotoDetail, type PhotoMetadataUpdate, updatePhoto } from '../../services/photos'
 import { Icon } from '../Icon'
-import { LeafletMap } from '../map/LeafletMap'
+import { LocationPicker } from '../map/LocationPicker'
 
 import { KeywordsInput } from './KeywordsInput'
 import { PhotoLocation } from './PhotoLocation'
-import { PlaceSearch } from './PlaceSearch'
 
 /**
  * The dating note's length cap, mirroring the backend's (`photoapi`'s
@@ -476,12 +474,11 @@ export function MetadataPanel({ photo, canWrite, onUpdated, footer }: MetadataPa
   // off a photo they only came to retitle.
   const aiNoteText = splitAiNote(photo.ai_note).text
 
+  // The picker owns the map and the field; the panel parses the same text once
+  // more to decide what the PATCH carries and whether the form may close.
   const parsedCoords = useMemo(() => parseCoordinates(coordText), [coordText])
   const hasCoordText = coordText.trim() !== ''
   const coordsInvalid = hasCoordText && !parsedCoords.ok
-  // The controlled marker position: the parsed coordinate, or none while the
-  // text is empty or not yet valid.
-  const markerPosition: Coordinates | null = parsedCoords.ok ? parsedCoords.value : null
 
   function startEditing() {
     setTitle(photo.title)
@@ -501,21 +498,6 @@ export function MetadataPanel({ photo, canWrite, onUpdated, footer }: MetadataPa
     setCreditsOpen(false)
     setError(false)
     setEditing(true)
-  }
-
-  /** Rewrites the coordinate text in canonical decimal degrees after a map move. */
-  function pickLocation(lat: number, lng: number) {
-    setCoordText(formatCoordinates({ lat, lng }))
-  }
-
-  /**
-   * Takes a searched-for place's coordinates. It writes the same field a map
-   * click does, so the map recentres on the point and the save path stays the one
-   * that was already there — a place search is a third way to fill the coordinate
-   * in, not a fourth kind of location.
-   */
-  function pickPlace(place: Place) {
-    pickLocation(place.lat, place.lng)
   }
 
   /**
@@ -912,63 +894,15 @@ export function MetadataPanel({ photo, canWrite, onUpdated, footer }: MetadataPa
             </div>
           )}
         </div>
-        {/* The three ways to set a location, in the order they are reached for:
-            name it, type/paste the numbers, or click the map. */}
-        <PlaceSearch id="photo-place-search" onPick={pickPlace} disabled={saving} />
-        <Form.Group className="mb-2" controlId="photo-coordinates">
-          <Form.Label className="small text-secondary mb-1">
-            {t('photo.metadata.coordinates')}
-          </Form.Label>
-          <div className="d-flex gap-2 align-items-start">
-            <Form.Control
-              value={coordText}
-              onChange={(event) => {
-                setCoordText(event.target.value)
-              }}
-              placeholder={t('photo.metadata.coordinatesPlaceholder')}
-              isInvalid={coordsInvalid}
-              inputMode="text"
-              aria-describedby="photo-coordinates-help"
-            />
-            <Button
-              type="button"
-              variant="outline-secondary"
-              size="sm"
-              className="flex-shrink-0 kukatko-tap-target"
-              disabled={!hasCoordText}
-              onClick={() => {
-                setCoordText('')
-              }}
-            >
-              {t('photo.metadata.clearLocation')}
-            </Button>
-          </div>
-          {coordsInvalid && (
-            <Form.Text className="text-danger d-block">
-              {t('photo.metadata.coordinatesInvalid')}
-            </Form.Text>
-          )}
-          <Form.Text id="photo-coordinates-help" className="text-secondary d-block">
-            {t('photo.metadata.coordinatesHelp')}
-          </Form.Text>
-        </Form.Group>
-        <div className="mb-2 rounded overflow-hidden">
-          <LeafletMap
-            features={[]}
-            mapset="basic"
-            viewport={
-              markerPosition !== null
-                ? { lat: markerPosition.lat, lng: markerPosition.lng, zoom: 13 }
-                : null
-            }
-            onViewportChange={() => undefined}
-            onSelectPhoto={() => undefined}
-            thumbAlt={t('map.thumbAlt')}
-            twoFingerHint={t('map.gesture.twoFingers')}
-            height="260px"
-            picker={{ position: markerPosition, onPick: pickLocation }}
-          />
-        </div>
+        {/* Where the photo was taken: name the place, type the numbers, or drop a
+            pin — one reusable control (see `components/map/LocationPicker`), with
+            a full-screen map for a phone. */}
+        <LocationPicker
+          idPrefix="photo-location"
+          value={coordText}
+          onChange={setCoordText}
+          disabled={saving}
+        />
         {/* Actions pin to the drawer's footer while editing so they never scroll
             out of reach behind the long form and its map. When there is no footer
             to portal into (panel used outside the viewer) they fall back inline. */}

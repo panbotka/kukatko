@@ -1504,6 +1504,12 @@
     "gesture": {
       "twoFingers": "Mapu posunete dvěma prsty"
     },
+    "picker": {
+      "expand": "Mapa na celou obrazovku",
+      "title": "Vybrat místo na mapě",
+      "done": "Hotovo",
+      "noLocation": "Zatím bez polohy"
+    },
     "mapset": {
       "label": "Podkladová mapa",
       "basic": "Základní",

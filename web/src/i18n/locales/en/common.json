@@ -1031,6 +1031,12 @@
     "gesture": {
       "twoFingers": "Use two fingers to move the map"
     },
+    "picker": {
+      "expand": "Full-screen map",
+      "title": "Pick a place on the map",
+      "done": "Done",
+      "noLocation": "No location yet"
+    },
     "mapset": {
       "label": "Base map",
       "basic": "Basic",
