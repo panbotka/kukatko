@@ -724,7 +724,8 @@
       "apply_many": "Zobrazit {{count}} fotky",
       "apply_other": "Zobrazit {{count}} fotek",
       "applyEmpty": "Žádné fotky — zavřít",
-      "applyClose": "Zavřít filtry"
+      "applyClose": "Zavřít filtry",
+      "counting": "Počítám fotky…"
     },
     "density": {
       "label": "Dlaždic na řádek",

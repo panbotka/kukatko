@@ -8,10 +8,12 @@ import Form from 'react-bootstrap/Form'
 import InputGroup from 'react-bootstrap/InputGroup'
 import Offcanvas from 'react-bootstrap/Offcanvas'
 import Row from 'react-bootstrap/Row'
+import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 import { useCapabilities } from '../../capabilities/CapabilitiesContext'
+import { useDebouncedText } from '../../hooks/useDebouncedText'
 import { useIsNarrowViewport } from '../../hooks/useIsNarrowViewport'
 import { type LibraryFacets } from '../../hooks/useLibraryFacets'
 import {
@@ -53,6 +55,14 @@ export interface FilterBarProps<T extends LibraryView> {
    * yields without closing the drawer to find out.
    */
   total?: number
+  /**
+   * Whether `total` is currently being refetched under a filter the reader has
+   * just changed. The count then reads as "counting", in the status line and on
+   * the drawer's primary button alike, instead of stating the number belonging
+   * to the *previous* filters — or, worse, the zero a page hands over while its
+   * first request is in flight. Omit it on a page whose count never lags.
+   */
+  totalPending?: boolean
   /**
    * Whether to show the query field (and, with it, the query-language help
    * beside it). The search page hides both (`false`) because its prominent
@@ -150,6 +160,14 @@ export interface FilterBarProps<T extends LibraryView> {
  * live result count ({@link FilterDrawerFooter}) rather than only on the cross
  * ten fields back up.
  *
+ * That count is honest in both directions. The free-text fields — the quick
+ * filter and the camera — commit on a pause ({@link useDebouncedText}) rather
+ * than on every letter, so a typed word costs one refetch and moves the number
+ * once instead of walking it through an intermediate answer per keystroke. And
+ * while a changed filter is being counted, `totalPending` makes the bar and the
+ * footer say so: the count belonging to the filters the reader has just left is
+ * not an answer to the ones they are looking at.
+ *
  * There is exactly **one** control per thing being filtered. The time axis used
  * to have two — a Year dropdown of single years in the primary row and a
  * "taken after / taken before" pair buried in the panel — which between them
@@ -178,6 +196,7 @@ export function FilterBar<T extends LibraryView>({
   view,
   onChange,
   total,
+  totalPending = false,
   showSearch = true,
   showSort = true,
   sortOptions,
@@ -201,6 +220,15 @@ export function FilterBar<T extends LibraryView>({
   const replace = (patch: Partial<LibraryView>) => {
     onChange(patch as Partial<T>, { replace: true })
   }
+
+  // The quick filter commits on a pause rather than on every letter. Each
+  // committed value refetches the grid and resets the count this bar states, so
+  // typing `svatba` straight into the URL made the reader watch six wrong
+  // numbers on the way to the one they asked for — and, on a phone, six of them
+  // on the drawer's own button.
+  const [queryDraft, setQueryDraft] = useDebouncedText(view.q, (q) => {
+    replace({ q })
+  })
 
   const chips = buildChips(view, t, i18n.language, { facets, uploaders })
   const clearVisible = hasActiveFilters(view, { ignoreQuery: !showSearch })
@@ -286,9 +314,14 @@ export function FilterBar<T extends LibraryView>({
       }`}
     >
       {/* The live region stays mounted while the count is absent, so the number
-          is announced when it arrives instead of a new region appearing. */}
+          is announced when it arrives instead of a new region appearing. While
+          a changed filter is being counted it says so: the number belonging to
+          the filters the reader has just left is not an answer to the ones they
+          are looking at. */}
       <span className="text-secondary small" aria-live="polite">
-        {total !== undefined && t('library.count', { count: total })}
+        {totalPending
+          ? t('library.filters.counting')
+          : total !== undefined && t('library.count', { count: total })}
       </span>
       {clearVisible && (
         <Button
@@ -316,11 +349,11 @@ export function FilterBar<T extends LibraryView>({
               <Form.Control
                 type="search"
                 size="lg"
-                value={view.q}
+                value={queryDraft}
                 aria-label={t('library.filters.search')}
                 placeholder={t('library.filters.searchPlaceholder')}
                 onChange={(e) => {
-                  replace({ q: e.target.value })
+                  setQueryDraft(e.target.value)
                 }}
               />
             </InputGroup>
@@ -444,6 +477,7 @@ export function FilterBar<T extends LibraryView>({
               scrolls above it rather than under it. */}
           <FilterDrawerFooter
             total={total}
+            totalPending={totalPending}
             clearVisible={clearVisible}
             onClear={clearAll}
             onClose={() => {
@@ -611,12 +645,23 @@ function DisplayControls({
 
 /**
  * What the drawer's primary button says. The live result count when there is
- * one; at zero the empty-set wording instead of "Show 0 photos", which reads
- * like a broken promise; and, when the page has no result set to count at all
- * (`total` undefined — the search page before a query is typed), a plain "close"
- * rather than a fabricated number.
+ * one; while the filters the reader has just changed are still being counted,
+ * that fact rather than the previous combination's number; at zero the empty-set
+ * wording instead of "Show 0 photos", which reads like a broken promise; and,
+ * when the page has no result set to count at all (`total` undefined — the
+ * search page before a query is typed), a plain "close" rather than a fabricated
+ * number.
+ *
+ * The pending wording is checked *first* and deliberately: a page whose request
+ * is in flight has no honest number to offer — it is typically still holding the
+ * previous filters' total, or the zero its list hook rests at until the first
+ * response — and stating either as the answer to the filters now on screen is
+ * the one thing this button must never do.
  */
-function applyLabel(t: TFunction, total: number | undefined): string {
+function applyLabel(t: TFunction, total: number | undefined, pending: boolean): string {
+  if (pending) {
+    return t('library.filters.counting')
+  }
   if (total === undefined) {
     return t('library.filters.applyClose')
   }
@@ -641,7 +686,8 @@ function applyLabel(t: TFunction, total: number | undefined): string {
  *
  * It stays usable at zero — an empty result is exactly when the reader most
  * needs a way out — so the button only changes its wording, never its ability to
- * close.
+ * close. That holds while the count is being fetched too: a spinner replaces the
+ * number, not the exit.
  *
  * "Clear filters" repeats the bar's own action (and, like it, appears only when
  * there is something to clear) and deliberately does *not* close: clearing is
@@ -650,11 +696,13 @@ function applyLabel(t: TFunction, total: number | undefined): string {
  */
 function FilterDrawerFooter({
   total,
+  totalPending,
   clearVisible,
   onClear,
   onClose,
 }: {
   total: number | undefined
+  totalPending: boolean
   clearVisible: boolean
   onClear: () => void
   onClose: () => void
@@ -662,8 +710,17 @@ function FilterDrawerFooter({
   const { t } = useTranslation()
   return (
     <div className="offcanvas-footer kukatko-filter-footer">
-      <Button type="button" size="lg" variant="primary" className="w-100" onClick={onClose}>
-        {applyLabel(t, total)}
+      <Button
+        type="button"
+        size="lg"
+        variant="primary"
+        className="w-100 d-inline-flex align-items-center justify-content-center gap-2"
+        onClick={onClose}
+      >
+        {/* Decorative: the button's own text already says it is counting, and a
+            spinner announced beside that would say it twice. */}
+        {totalPending && <Spinner as="span" animation="border" size="sm" aria-hidden="true" />}
+        {applyLabel(t, total, totalPending)}
       </Button>
       {clearVisible && (
         <Button
@@ -1021,19 +1078,45 @@ function AdvancedFilters({
       )}
 
       <Col xs={12} sm={6}>
-        <Form.Group controlId="library-camera">
-          <Form.Label className="small mb-1">{t('library.filters.camera')}</Form.Label>
-          <Form.Control
-            type="text"
-            value={view.camera}
-            placeholder={t('library.filters.cameraPlaceholder')}
-            onChange={(e) => {
-              replace({ camera: e.target.value })
-            }}
-          />
-        </Form.Group>
+        <CameraFilter value={view.camera} replace={replace} />
       </Col>
     </Row>
+  )
+}
+
+/**
+ * The camera filter: the panel's one free-text field, and — on a phone — the one
+ * control in the drawer a reader can type into while watching the footer's
+ * count. Like the quick filter above it, it commits on a pause rather than on
+ * every letter, so `Canon` costs one refetch and moves the count once instead of
+ * walking it through five intermediate answers.
+ *
+ * Its own component because the debounce is a hook, and a hook cannot live
+ * inside the conditional layout of the panel around it.
+ */
+function CameraFilter({
+  value,
+  replace,
+}: {
+  value: string
+  replace: (patch: Partial<LibraryView>) => void
+}) {
+  const { t } = useTranslation()
+  const [draft, setDraft] = useDebouncedText(value, (camera) => {
+    replace({ camera })
+  })
+  return (
+    <Form.Group controlId="library-camera">
+      <Form.Label className="small mb-1">{t('library.filters.camera')}</Form.Label>
+      <Form.Control
+        type="text"
+        value={draft}
+        placeholder={t('library.filters.cameraPlaceholder')}
+        onChange={(e) => {
+          setDraft(e.target.value)
+        }}
+      />
+    </Form.Group>
   )
 }
 

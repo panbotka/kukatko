@@ -718,7 +718,8 @@
       "apply_one": "Show {{count}} photo",
       "apply_other": "Show {{count}} photos",
       "applyEmpty": "No photos — close",
-      "applyClose": "Close filters"
+      "applyClose": "Close filters",
+      "counting": "Counting photos…"
     },
     "density": {
       "label": "Tiles per row",

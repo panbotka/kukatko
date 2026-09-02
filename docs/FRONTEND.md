@@ -804,7 +804,20 @@ here.
   scrolls, so a footer **after** the body is pinned to the bottom edge *and* subtracted from the scroll
   area (the last field scrolls above it, no reserved padding to keep in sync); the footer carries
   `env(safe-area-inset-bottom)` itself, because the drawer covers the `.kk-tabbar` that normally owns that
-  edge. Each active filter = a removable
+  edge.
+  **That count never states a number belonging to filters the reader has already left.** The page hands the
+  bar `total` *and* **`totalPending`** (`LibraryPage`: `total={status === 'ready' ? total : undefined}`,
+  `totalPending={status === 'loading'}`), and while the request is in flight the footer button and the
+  `.kukatko-filter-status` line both read „Počítám fotky…" — the button keeping a `Spinner` beside the
+  wording and its ability to close, because waiting for a number must not cost the way out. Without it the
+  drawer stated a *false zero*: `useWindowedPhotos` resets `total` to 0 the moment the query changes, so
+  every refetch flashed „Žádné fotky — zavřít". Measured on the deployed build at 393 × 852: typing
+  `svatba` walked the count „Počet fotek: 20664" → „0" → „146"; the same typing now goes „436" →
+  „Počítám fotky…" → the answer, with no wrong number in between. And the two free-text fields — the quick
+  filter and **Fotoaparát** — commit through **`useDebouncedText`** (300 ms) rather than on every
+  keystroke, so a typed word is one query instead of one per letter (`Apple` on the deployed build:
+  `q=A`, `q=Ap`, `q=App`, `q=Appl`, `q=Apple`; now a single `camera=Apple`) — which is what lets the
+  number the reader is watching move once. Each active filter = a removable
   **chip** (`buildChips`, a pill with a cross, clears only that filter — the `q` query has no chip,
   it has its own field; the photo count below the chips comes from the `total` prop, which is **optional** —
   omit it and the bar states nothing (the live region stays mounted, so the number is announced when it
@@ -3537,6 +3550,14 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   another one finishing, and adding files to a running batch appends to it rather than restarting it.
   That is what lets `/upload` put the album picker *in* the wait instead of in front of it. Running
   uploads are cancelled on unmount;
+  `useDebouncedText(value, commit, delayMs = TEXT_FILTER_DEBOUNCE_MS)` → `[draft, setDraft]` = a text field
+  that keeps up with the keyboard but writes on a pause. A filter field wired straight to the URL costs a
+  request per keystroke and, with each one, a reset of the count `FilterBar` states; the draft is local, so
+  typing stays instant, and `commit` runs 300 ms after the last change. It remembers the last value passed
+  in either direction, so an outside change (clear-all, a removed chip, Back) replaces the draft while a
+  `commit` the caller ignores leaves the field alone rather than snapping it back mid-word; `commit` is
+  read from a ref, so a caller's inline arrow neither restarts the timer nor fires stale. Used by
+  `FilterBar`'s quick filter and its **Fotoaparát** field. Tests: `useDebouncedText.test.tsx`;
   `useLeaveGuard(active)` = holds a navigation back while a page has unsaved browser-only work, and
   asks the browser to warn on a tab close. Two mechanisms, because the browser owns only one of them:
   a `beforeunload` listener (bare `preventDefault()` — the deprecated `returnValue` adds nothing and the

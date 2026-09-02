@@ -325,7 +325,14 @@ export function LibraryPage() {
       <FilterBar
         view={view}
         onChange={setView}
-        total={total}
+        // Only a finished request has a count. The windowed list resets to zero
+        // the moment the query changes, so passing `total` unconditionally made
+        // the bar — and, on a phone, the drawer's own button — read "no photos"
+        // for the length of every refetch, which is exactly the number the
+        // reader is waiting to find out. Pending says so; an error says nothing
+        // at all, because the page states the failure in full below.
+        total={status === 'ready' ? total : undefined}
+        totalPending={status === 'loading'}
         facets={facets}
         uploaders={uploaders}
         showFavorite

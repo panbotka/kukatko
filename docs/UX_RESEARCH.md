@@ -78,10 +78,10 @@ dopad/pracnost — nahoře je to, co se vyplatí udělat první.
 | [N13](#n13) ✅ | Stránka, na kterou nemám právo, mlčky přesměruje na knihovnu | 🟡 | ⚪ | routing, `LeaderboardPage` |
 | [N14](#n14) ✅ | Zašedlá tlačítka bez vysvětlení, proč nejdou zmáčknout | 🟡 | ⚪ | `ReasonedButton`, `FacesPanel` |
 | [N15](#n15) ✅ | Karta prohlížeče se vždy jmenuje „Kukátko" | 🟡 | ⚪ | `useDocumentTitle`, stránky |
-| [N16](#n16) | Mobilní zásuvka filtrů nemá patičku s počtem výsledků ani „Použít" | 🟡 | ⚪ | `FilterBar` |
+| [N16](#n16) ✅ | Mobilní zásuvka filtrů nemá patičku s počtem výsledků ani „Použít" | 🟡 | ⚪ | `FilterBar` |
 | [N17](#n17) ✅ | Nápověda o dotazovacím jazyce mlčí a slibuje zapamatovanou pozici | 🟡 | ⚪ | `HelpPage` |
 | [N18](#n18) | `Rok` (109 položek) a `Pořízeno od/do` jsou dva soupeřící filtry data | 🟡 | 🟡 | `FilterBar` |
-| [N19](#n19) | Mobil: 350 z 852 px je ovládání, a časová osa je skrytá | 🟡 | 🟡 | `LibraryPage`, `TimelineScrubber` |
+| [N19](#n19) ✅ | Mobil: 350 z 852 px je ovládání, a časová osa je skrytá | 🟡 | 🟡 | `LibraryPage`, `TimelineScrubber` |
 | [N20](#n20) ✅ | Ovládání prohlížeče fotky se schová i s jedinou cestou zpět | 🟡 | ⚪ | `useAutoHideChrome` |
 | [N21](#n21) ✅ | Obálky alb se opakují, alba jdou od sebe rozeznat jen podle názvu | 🟡 | 🟡 | `AlbumsPage`, výběr obálky |
 | [N22](#n22) ✅ | `/stats` mluví o „Embeddingách" a nenabízí žádnou akci | 🟡 | ⚪ | `StatsPage` |
@@ -924,6 +924,33 @@ vedle něj **„Zrušit filtry"**. Počet už stránka zná, jen se v zásuvce n
 
 **Kde to je.** `web/src/components/library/FilterBar.tsx` (varianta pro úzký výřez).
 
+**✅ Vyřešeno (2. 9. 2026).** Zásuvka má patičku (`FilterDrawerFooter`,
+`.offcanvas-footer.kukatko-filter-footer`) a v ní hlavní tlačítko s **živým
+počtem** — „Zobrazit 227 fotek" —, které zásuvku zavře, a vedle něj „Zrušit
+filtry", které ji naopak nechá otevřenou: rušení filtrů je způsob, jak se
+dostat z prázdného výsledku, a počet na tlačítku vedle hned ukáže, že to
+zabralo. Při nule tlačítko neslibuje mřížku, která tam není („Žádné fotky —
+zavřít"), ale **zavírat nepřestane** — východ musí být vždycky. Patička je
+sourozenec těla, ne jeho dítě: `.offcanvas` je flexový sloupec, takže je
+přilepená ke spodní hraně *a* odečtená z rolovací plochy (poslední pole se
+odroluje nad ni, ne pod ni), a sama nese `env(safe-area-inset-bottom)`, protože
+zásuvka překrývá spodní lištu, která tenhle okraj jinak vlastní.
+
+Číslo na tlačítku navíc **nikdy nepatří filtrům, které už čtenář opustil**.
+Stránka posílá vedle `total` i `totalPending` a po dobu dotazu čte tlačítko —
+i řádek s počtem v liště — „Počítám fotky…", se spinnerem a beze ztráty
+schopnosti zavřít. Bez toho hlásila zásuvka *nepravdivou nulu*:
+`useWindowedPhotos` resetuje `total` na 0, jakmile se dotaz změní, takže každé
+přefiltrování problesklo jako „Žádné fotky". Naměřeno na nasazeném sestavení
+(393 × 852): napsat do rychlého filtru „svatba" vede počet přes „Počet fotek:
+20664" → „0" → „146"; totéž psaní jde teď „436" → „Počítám fotky…" → odpověď,
+bez jediného špatného čísla mezi tím. A obě volnotextová pole — rychlý filtr
+a **Fotoaparát** — píší do adresy až po pauze (`useDebouncedText`, 300 ms),
+takže napsané slovo je jeden dotaz místo jednoho na písmeno: na nasazeném
+sestavení `q=A`, `q=Ap`, `q=App`, `q=Appl`, `q=Apple`, teď jediné
+`camera=Apple`. Právě to je důvod, proč se číslo v patičce hne jednou, a ne
+pětkrát cestou k jednomu slovu.
+
 ---
 
 <a id="n17"></a>
@@ -1037,6 +1064,30 @@ nástroj na rychlý pohyb ve dvacetitisícové knihovně.
 **Kde to je.** `web/src/pages/LibraryPage.tsx`,
 `web/src/components/library/FilterBar.tsx`,
 `web/src/components/library/TimelineScrubber.tsx`, `web/src/styles/app.css`.
+
+**✅ Vyřešeno (2. 9. 2026).** Telefon dostal obrazovku zpátky. Nadpis
+„Knihovna" zůstal jen pro odečítač (`visually-hidden` — stránka pořád začíná
+`h1`, jen za něj neplatí řádkem), řazení a hustota se přestěhovaly do zásuvky
+(`DisplayControls` jako její první oddíl — jsou to prvky, které z lišty
+zmizely, takže se musí najít první), poznámka pod hledáním a vlastní akce
+stránky (Promítání, Uložit pohled) skončily na dně zásuvky (`mobileActions`,
+vykreslené jen na úzkém výřezu, takže nikdy nejsou v dokumentu dvakrát) a počet
+fotek se přesunul do hlavičkové řady, kde se zalomí pod tlačítko Filtry. Nad
+fotkami zbylo **jedno pole a jedno tlačítko**. První fotka začíná na **150 px**
+místo 350 (naměřeno 2. 9. 2026 na produkčních datech, 393 × 852): z 852 px
+zbývá na fotky 648 px, tedy **76 % obrazovky** místo 53 %.
+
+Časová osa na mobilu existuje: `.kukatko-timeline` už není `display: none`, ale
+proužek 2,5 rem u pravé hrany, kterému mřížka uhne vlastním pruhem
+(`.kukatko-grid-timeline-lane`), aby ležel vedle dlaždic, a ne na nich — jinak
+by bral ťuknutí mířená na srdíčka v pravém sloupci. V klidu je sotva vidět, při
+rolování nebo pod prstem zesílí, podloží se rozostřenou plochou a ukáže bublinu
+s měsícem. Horní hrana se **měří** (`--kukatko-timeline-top` publikovaná
+`TimelineScrubber`em), ne hádá, takže osa neleží přes tlačítko Filtry ani
+tehdy, když je nad mřížkou digest „Co je nového" nebo hlášení instance. Ťuknutí
+navíc dostala velikost pro prst: ročníkové značky se prořeďují už v rozvržení
+(`timelineRail.buildRail`) a `@media (pointer: coarse)` jim dá 2,75rem čtverec,
+takže z 93 tlačítek ve 40px proužku zbylo 17 terčů 44 × 44 px.
 
 ---
 
@@ -1304,8 +1355,8 @@ Aby byl obrázek úplný — tohle jsem při používání ocenil a nemá smysl 
 
 - **Časová osa vpravo** v knihovně. Segmenty mají pojmenované rozsahy
   („Přejít na čvc 1965 – led 1967"), reagují na filtr, a ve sbírce sahající
-  do roku 1905 je to jediný použitelný způsob pohybu. Škoda, že chybí na
-  mobilu ([N19](#n19)).
+  do roku 1905 je to jediný použitelný způsob pohybu. Na mobilu, kde chyběla
+  úplně, je od vyřešení [N19](#n19) taky — jako proužek u pravé hrany.
 - **Dotazovací jazyk sám o sobě.** Nápověda je přehledná, syntaxe rozumná
   (rozsahy, negace, `|`, uvozovky, hvězdička), diakritika se ignoruje správně.
   Chyba je jen v tom, že se o něm nikdo nedozví ([N2](#n2), [N3](#n3)).

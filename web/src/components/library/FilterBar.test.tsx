@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { type ReactNode } from 'react'
 import { I18nextProvider } from 'react-i18next'
@@ -29,6 +29,8 @@ interface BarProps {
   semanticSearch?: boolean
   /** The count to state; pass `undefined` for "there is nothing to count". */
   total?: number
+  /** Whether that count is still being fetched under a just-changed filter. */
+  totalPending?: boolean
   /** The page's own view actions, which the drawer hosts on a phone. */
   mobileActions?: ReactNode
 }
@@ -243,6 +245,43 @@ describe('FilterBar header', () => {
       'href',
       '/search?q=sunset',
     )
+  })
+
+  it('commits a typed query once the reader pauses, not once per letter', async () => {
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    renderBar(LIBRARY_DEFAULTS, onChange)
+
+    const search = screen.getByLabelText('Filter the library')
+    await user.type(search, 'svatba')
+
+    // The field keeps up with the keyboard...
+    expect(search).toHaveValue('svatba')
+    // ...but the view is written once. Every write refetches the grid and resets
+    // the count the bar states, so six of them walked that number through five
+    // answers nobody asked for.
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalledWith({ q: 'svatba' }, { replace: true })
+    })
+    expect(onChange).toHaveBeenCalledTimes(1)
+  })
+
+  it('follows the query when it is changed from outside the field', async () => {
+    const user = userEvent.setup()
+    const { rerender } = renderBar({ ...LIBRARY_DEFAULTS, q: 'svatba' }, vi.fn())
+
+    const search = screen.getByLabelText('Filter the library')
+    expect(search).toHaveValue('svatba')
+
+    // Clear-all, a removed chip, Back: the view moved without the field being
+    // touched, and a field holding its own draft would keep showing a filter
+    // that is no longer on.
+    rerender(barTree(LIBRARY_DEFAULTS, vi.fn()))
+    expect(screen.getByLabelText('Filter the library')).toHaveValue('')
+
+    // And typing still works afterwards — the draft was replaced, not frozen.
+    await user.type(screen.getByLabelText('Filter the library'), 'x')
+    expect(screen.getByLabelText('Filter the library')).toHaveValue('x')
   })
 
   it('toggles the advanced panel open and closed', async () => {
@@ -835,6 +874,70 @@ describe('FilterBar drawer footer (phone)', () => {
     expect(within(drawer).queryByRole('button', { name: 'Clear filters' })).not.toBeInTheDocument()
   })
 
+  it('says it is counting rather than restating the previous filters number', async () => {
+    mockViewport(true)
+    const user = userEvent.setup()
+    const props = { facets: FACETS, total: 227 }
+    const { rerender } = renderBar(LIBRARY_DEFAULTS, vi.fn(), props)
+
+    const drawer = await openDrawer(user)
+    expect(within(drawer).getByRole('button', { name: 'Show 227 photos' })).toBeInTheDocument()
+
+    // The reader picks a period; the page refetches. 227 belongs to the filters
+    // they have just left, so the button must stop claiming it — and must not
+    // fall back to the zero the list hook rests at while the request is in
+    // flight either, which would read as an empty result that is not one.
+    rerender(
+      barTree({ ...LIBRARY_DEFAULTS, taken_after: '2023-01-01' }, vi.fn(), {
+        ...props,
+        total: undefined,
+        totalPending: true,
+      }),
+    )
+
+    const pending = screen.getByRole('dialog')
+    expect(within(pending).getByRole('button', { name: /Counting photos/ })).toBeInTheDocument()
+    expect(within(pending).queryByRole('button', { name: /Show 227/ })).not.toBeInTheDocument()
+    expect(within(pending).queryByRole('button', { name: /No photos/ })).not.toBeInTheDocument()
+
+    // And the answer replaces it in place, with the drawer still open.
+    rerender(
+      barTree({ ...LIBRARY_DEFAULTS, taken_after: '2023-01-01' }, vi.fn(), {
+        ...props,
+        total: 12,
+      }),
+    )
+    expect(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Show 12 photos' }),
+    ).toBeInTheDocument()
+  })
+
+  it('stays the way out while the count is being fetched', async () => {
+    mockViewport(true)
+    const user = userEvent.setup()
+    renderBar(LIBRARY_DEFAULTS, vi.fn(), { total: undefined, totalPending: true })
+
+    const drawer = await openDrawer(user)
+    const apply = within(drawer).getByRole('button', { name: /Counting photos/ })
+    // A spinner beside the wording, and a button that still closes: waiting for
+    // a number must never cost the reader the exit.
+    expect(apply.querySelector('.spinner-border')).not.toBeNull()
+    expect(apply).toBeEnabled()
+
+    await user.click(apply)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('says it is counting in the bar own status line too', () => {
+    mockViewport(true)
+    renderBar(LIBRARY_DEFAULTS, vi.fn(), { total: undefined, totalPending: true })
+
+    // The same rule as the footer, on the line that rides beside the Filters
+    // button: "Photos: 0" during a refetch is a wrong answer, not a pending one.
+    expect(screen.getByText('Counting photos…')).toBeInTheDocument()
+    expect(screen.queryByText(/^Photos:/)).not.toBeInTheDocument()
+  })
+
   it('keeps the footer outside the scroll area, so it cannot cover the last field', async () => {
     mockViewport(true)
     const user = userEvent.setup()
@@ -1008,7 +1111,30 @@ describe('FilterBar advanced controls', () => {
 
     await openPanel(user)
     await user.type(screen.getByLabelText('Camera'), 'C')
-    expect(onChange).toHaveBeenCalledWith({ camera: 'C' }, { replace: true })
+    // The field commits on a pause, so the write lands after the debounce — but
+    // still as a replacement, because a letter is not a navigation.
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalledWith({ camera: 'C' }, { replace: true })
+    })
+  })
+
+  it('commits a typed camera once, not once per letter', async () => {
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    renderBar(LIBRARY_DEFAULTS, onChange)
+
+    await openPanel(user)
+    await user.type(screen.getByLabelText('Camera'), 'Canon')
+
+    // Every committed value refetches the grid and resets the count the phone
+    // drawer states beside this field. Five of them for one word walked that
+    // number through four answers nobody asked for.
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalledWith({ camera: 'Canon' }, { replace: true })
+    })
+    expect(onChange).toHaveBeenCalledTimes(1)
+    // The field itself keeps up with the keyboard regardless.
+    expect(screen.getByLabelText('Camera')).toHaveValue('Canon')
   })
 })
 
