@@ -529,7 +529,9 @@ here.
   never move the layout — the whole zero-CLS promise is that one rule, and a test asserts the shipped
   declarations. A missing or undecodable hash renders **nothing at all**, which leaves whatever
   neutral surface the caller drew before (the sunken tile well). Render it as the sibling **before**
-  the image: both are static, so the image paints over the blur. Used by `FadeInImage` (→ every grid
+  the image — and since the blur is absolutely positioned, the image must be positioned too
+  (`.kk-media-img { position: relative }`) or it paints *under* the blur regardless of DOM order;
+  `styles/mediaLoadIn.test.ts` pins that pair. Used by `FadeInImage` (→ every grid
   tile) and directly by `PhotoDetailPage`'s stage. Tests: `BlurPlaceholder.test.tsx`),
   `morph/` = **the grid ⇄ viewer morph**, the app's single integration with the View Transitions API
   (`lib/viewTransition` is its pure half, `styles/viewTransition.css` its choreography). Opening a photo

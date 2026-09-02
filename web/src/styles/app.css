@@ -1114,6 +1114,12 @@ body {
  * while the image is arriving.
  */
 .kk-media-img {
+  /* `relative` is load-bearing, not decoration: the `.kk-media-blur` stand-in
+   * behind this image is absolutely positioned, and CSS paints positioned boxes
+   * above static ones regardless of DOM order — a static image would fade in
+   * *under* its own placeholder and the tile would stay a blur forever. Being
+   * positioned too puts the image back on DOM order, which places it on top. */
+  position: relative;
   transition:
     opacity var(--kk-duration-base) var(--kk-ease-standard),
     transform var(--kk-duration-slow) var(--kk-ease-standard);
