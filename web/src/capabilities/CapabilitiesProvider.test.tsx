@@ -43,7 +43,7 @@ async function flush() {
 beforeEach(() => {
   vi.useFakeTimers()
   capsMock.mockReset()
-  capsMock.mockResolvedValue({ semantic_search: true })
+  capsMock.mockResolvedValue({ semantic_search: true, passkeys: false })
   Object.defineProperty(document, 'hidden', { configurable: true, get: () => false })
 })
 
@@ -85,7 +85,7 @@ describe('CapabilitiesProvider', () => {
     expect(screen.getByTestId('semantic')).toHaveTextContent('true')
 
     // The box drops off: the next refresh reports semantic search unavailable.
-    capsMock.mockResolvedValue({ semantic_search: false })
+    capsMock.mockResolvedValue({ semantic_search: false, passkeys: false })
     act(() => {
       vi.advanceTimersByTime(60_000)
     })

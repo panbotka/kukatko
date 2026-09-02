@@ -131,6 +131,7 @@ const editorAuth: AuthContextValue = {
   isMaintainer: false,
   canImport: false,
   login: vi.fn(),
+  loginWithPasskey: vi.fn(),
   logout: vi.fn(),
   refresh: vi.fn(),
 }

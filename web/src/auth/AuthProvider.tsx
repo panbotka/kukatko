@@ -1,6 +1,7 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 
 import * as authService from '../services/auth'
+import { signInWithPasskey } from '../services/passkeys'
 import {
   canImport,
   canWrite,
@@ -78,6 +79,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [applySession],
   )
 
+  /**
+   * The passkey counterpart of {@link login}. It differs only in how the session
+   * is obtained: the ceremony runs in `services/passkeys`, and what comes back is
+   * the same `AuthSession` the password endpoint returns, applied the same way.
+   */
+  const loginWithPasskey = useCallback(async () => {
+    applySession(await signInWithPasskey())
+  }, [applySession])
+
   const logout = useCallback(async () => {
     try {
       await authService.logout()
@@ -100,10 +110,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isMaintainer: user ? isMaintainer(user.role) : false,
       canImport: user ? canImport(user.role) : false,
       login,
+      loginWithPasskey,
       logout,
       refresh,
     }
-  }, [state, login, logout, refresh])
+  }, [state, login, loginWithPasskey, logout, refresh])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

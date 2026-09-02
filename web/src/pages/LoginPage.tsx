@@ -12,8 +12,9 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { Icon } from '../components/Icon'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
-import { useRegistrationOpen } from '../hooks/useRegistrationOpen'
+import { usePublicSettings } from '../hooks/usePublicSettings'
 import { ApiError, NetworkError } from '../services/auth'
+import { isPasskeySupported, PasskeyError, type PasskeyErrorReason } from '../services/passkeys'
 
 /** Shape of the history state set by the route guard on redirect to login. */
 interface LocationState {
@@ -43,11 +44,55 @@ type LoginErrorKey =
   | 'login.errorRateLimited'
   | 'login.errorOffline'
   | 'login.errorGeneric'
+  | 'login.passkeyError.unavailable'
+  | 'login.passkeyError.cancelled'
+  | 'login.passkeyError.refused'
+  | 'login.passkeyError.unsupported'
+  | 'login.passkeyError.generic'
+
+/** Which of the two buttons is waiting, so only that one shows a spinner. */
+type LoginMethod = 'password' | 'passkey'
 
 type SubmitState =
   | { status: 'idle' }
-  | { status: 'submitting' }
+  | { status: 'submitting'; method: LoginMethod }
   | { status: 'error'; messageKey: LoginErrorKey }
+
+/**
+ * The message each way a passkey sign-in can fail. Four of them are the password
+ * form's own sentences, because the outcome is genuinely the same fact about the
+ * account or the connection rather than anything to do with authenticators: an
+ * account waiting for approval, a spent rate-limit budget, an unreachable server.
+ *
+ * `duplicate` cannot arise while signing in (it is the registration ceremony's
+ * "this authenticator already has a key here"), so it maps to the generic
+ * sentence rather than inventing a fifth one that nobody will read.
+ */
+const PASSKEY_ERROR_KEYS = {
+  unsupported: 'login.passkeyError.unsupported',
+  unavailable: 'login.passkeyError.unavailable',
+  cancelled: 'login.passkeyError.cancelled',
+  duplicate: 'login.passkeyError.generic',
+  refused: 'login.passkeyError.refused',
+  pendingApproval: 'login.errorPendingApproval',
+  rateLimited: 'login.errorRateLimited',
+  offline: 'login.errorOffline',
+  generic: 'login.passkeyError.generic',
+} satisfies Record<PasskeyErrorReason, LoginErrorKey>
+
+/**
+ * Maps a failed passkey sign-in to the i18n key of the message to show.
+ *
+ * Anything that is not a {@link PasskeyError} never came from the ceremony at
+ * all, so it gets the generic sentence — the one thing that must not happen here
+ * is a `DOMException` message reaching the reader.
+ */
+function passkeyErrorKeyFor(error: unknown): LoginErrorKey {
+  if (error instanceof PasskeyError) {
+    return PASSKEY_ERROR_KEYS[error.reason]
+  }
+  return 'login.passkeyError.generic'
+}
 
 /**
  * Maps a failed login to the i18n key of the message to show the user.
@@ -100,12 +145,14 @@ function errorKeyFor(error: unknown): LoginErrorKey {
 export function LoginPage() {
   const { t } = useTranslation()
   useDocumentTitle(t('login.title'))
-  const { status: authStatus, login } = useAuth()
+  const { status: authStatus, login, loginWithPasskey } = useAuth()
   // Only an instance that says registration is open gets the invitation below.
   // A closed one — and one that could not be asked at all — shows nothing: a
   // link to a form that answers every submit with "not open" is worse than no
   // link, because the reader fills it in before finding out.
-  const registration = useRegistrationOpen()
+  const publicSettings = usePublicSettings()
+  const registration =
+    publicSettings.status === 'ready' && publicSettings.settings.registration_enabled
   const navigate = useNavigate()
   const location = useLocation()
 
@@ -129,7 +176,7 @@ export function LoginPage() {
       setValidated(true)
       return
     }
-    setSubmit({ status: 'submitting' })
+    setSubmit({ status: 'submitting', method: 'password' })
     try {
       await login(username.trim(), password)
       void navigate(from, { replace: true })
@@ -138,7 +185,30 @@ export function LoginPage() {
     }
   }
 
+  /**
+   * Runs the passkey ceremony and, on success, goes where the password form
+   * would have gone. There is nothing to validate first: a discoverable sign-in
+   * names no account, so the authenticator's own prompt is the whole form.
+   */
+  async function handlePasskey() {
+    setSubmit({ status: 'submitting', method: 'passkey' })
+    try {
+      await loginWithPasskey()
+      void navigate(from, { replace: true })
+    } catch (error: unknown) {
+      setSubmit({ status: 'error', messageKey: passkeyErrorKeyFor(error) })
+    }
+  }
+
   const submitting = submit.status === 'submitting'
+  // The passkey button is offered only where it can actually work: an instance
+  // with a relying party configured, in a browser that has WebAuthn. Everywhere
+  // else there is simply no button — a "sign in with a passkey" that answers
+  // every press with "not available here" is worse than the password form alone.
+  const passkeyOffered =
+    publicSettings.status === 'ready' &&
+    publicSettings.settings.passkeys_enabled &&
+    isPasskeySupported()
   // The session probe already tried and failed to reach the backend, so this
   // form has nothing to talk to — until it does.
   const unreachable = authStatus === 'unreachable'
@@ -214,7 +284,7 @@ export function LoginPage() {
 
               <div className="d-grid">
                 <Button type="submit" variant="primary" disabled={submitting}>
-                  {submitting && (
+                  {submitting && submit.method === 'password' && (
                     <Spinner
                       animation="border"
                       size="sm"
@@ -228,7 +298,39 @@ export function LoginPage() {
               </div>
             </Form>
 
-            {registration === 'open' && (
+            {passkeyOffered && (
+              <>
+                <div className="d-flex align-items-center gap-3 my-3 text-secondary small">
+                  <hr className="flex-grow-1 my-0" />
+                  {t('login.passkeyOr')}
+                  <hr className="flex-grow-1 my-0" />
+                </div>
+                <div className="d-grid">
+                  <Button
+                    type="button"
+                    variant="outline-light"
+                    className="d-inline-flex align-items-center justify-content-center gap-2"
+                    disabled={submitting}
+                    data-testid="login-passkey-button"
+                    onClick={() => {
+                      void handlePasskey()
+                    }}
+                  >
+                    {submitting && submit.method === 'passkey' ? (
+                      <Spinner animation="border" size="sm" role="status" aria-hidden="true" />
+                    ) : (
+                      <Icon name="key" />
+                    )}
+                    {t('login.passkeySubmit')}
+                  </Button>
+                </div>
+                <div className="text-secondary small mt-2 text-center">
+                  {t('login.passkeyHint')}
+                </div>
+              </>
+            )}
+
+            {registration && (
               <div className="text-center mt-3" data-testid="login-register-link">
                 <span className="text-secondary me-1">{t('login.registerPrompt')}</span>
                 <Link to="/register">{t('login.registerLink')}</Link>

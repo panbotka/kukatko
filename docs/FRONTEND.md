@@ -1211,8 +1211,26 @@ here.
   yielding to a submit error once there is one) **and drops `autoFocus`** — raising the phone
   keyboard for a form that cannot succeed is an invitation to type. **Under the form** sits the way to
   registration — `login.registerPrompt` + a `Link` to `/register`, `data-testid="login-register-link"` —
-  rendered **only** while `useRegistrationOpen()` says `open`: a closed instance, and one that could not be
-  asked at all, shows nothing there),
+  rendered **only** while the instance says registration is `open`: a closed instance, and one that could not
+  be asked at all, shows nothing there. **Between the form and that invitation** sits the passkey action:
+  a „nebo" rule and an outline button `login.passkeySubmit`
+  (`data-testid="login-passkey-button"`, a `key` glyph, `login.passkeyHint` under it) that runs the
+  discoverable WebAuthn ceremony through **`useAuth().loginWithPasskey()`** and then goes exactly where the
+  password form goes. It is rendered **only when both halves are true** — `usePublicSettings()` reports
+  `passkeys_enabled` **and** `isPasskeySupported()` — because a button that answers every press with "not
+  available here" is worse than the password form alone; an instance that could not be asked therefore
+  shows none. The page reads `usePublicSettings()` rather than pairing `useRegistrationOpen()` with a
+  sibling hook, so both facts come from **one** request. `passkeyErrorKeyFor` maps a `PasskeyError` onto a
+  sentence, and **four reasons borrow the password form's own**: `pendingApproval` → `login.errorPendingApproval`,
+  `rateLimited` → `login.errorRateLimited`, `offline` → `login.errorOffline` (the same fact about the account or
+  the connection deserves the same words, not an authenticator-flavoured retelling); the rest are
+  `login.passkeyError.{cancelled,refused,unavailable,unsupported,generic}`. **No `DOMException` message ever
+  reaches the reader** — WebAuthn's own "The operation either timed out or was not allowed" is unreadable, and
+  `cancelled` deliberately covers all three things the browser refuses to tell apart (dismissed, timed out,
+  no passkey on this device), so its sentence names the fallback: sign in with the password and add one under
+  My account. `LoginPage.test.tsx` covers the button being hidden by the instance flag and by a browser
+  without WebAuthn, a successful passkey sign-in returning to the requested address, a cancelled prompt, and
+  the borrowed approval sentence),
   `RegisterPage` (route `/register`, **public like sign-in** — nobody registering has a session yet — and
   laid out as the same Superhero card, one column, so the two read as one flow): username, display name,
   e-mail, password, password again and the **registration word** (the instance's shared registration
@@ -1279,7 +1297,27 @@ here.
   (`PUT /auth/subject`) and then `useAuth().refresh()`, because the menu entry and the avatar both read the
   link off the session rather than off this card. A link whose person has since been deleted reads as
   „Propojená osoba už v knihovně není" instead of a blank. Tests: `MySubjectCard.test.tsx`,
-  **plus `ApiTokensCard`** (`components/account/`, below the password — the other credential this one user
+  **plus `PasskeysCard`** (`components/account/`, directly under the password form — it is the same question,
+  how this person gets in, answered better): the account's WebAuthn credentials. It renders **nothing at all**
+  unless `useCapabilities()` reports `known && passkeys` — an instance with no relying party configured gets
+  no card rather than a form that cannot work, and the flags starting all-off means "not yet known" must hide
+  it too. It lists the caller's own keys (the name, or „Passkey bez názvu" for one saved without one, when it
+  was added, and when it was last used — or „Zatím nepoužit"), adds one from a name field
+  (`PASSKEY_NAME_MAX_LENGTH` = 64, the backend's own limit; an **empty name is allowed**, as the backend
+  allows it) and removes one behind a `ConfirmModal` that **names the key** and says the password keeps
+  working. Removal is optimistic — the row goes at once and comes back with an alert if the request fails —
+  and **removing the last key is not refused**, because the password never stopped working and refusing would
+  strand somebody whose only authenticator was lost. The **empty state explains what a passkey is in one
+  sentence** (`account.passkeys.empty.hint`) rather than just saying there are none. A browser **without**
+  WebAuthn keeps the list and loses only the form (`account.passkeys.unsupported`): those keys are still this
+  account's and still worth removing. A listing that comes back `unavailable` (HTTP 501 — the instance stopped
+  offering passkeys under an open page) is one explanatory sentence, not an error; anything else is an
+  `ErrorState` with retry. `addErrorKeyFor` maps each `PasskeyErrorReason` onto `account.passkeys.addError.*`,
+  with `duplicate` — this authenticator already holds a key for the account, which is a fact rather than a
+  failure — worded as such. Texts in `account.passkeys.*`; `PasskeysCard.test.tsx` covers the hidden states,
+  the empty state, listing, adding (named, unnamed, cancelled, duplicate), removing (confirmed, called off,
+  failed) and the browser-without-WebAuthn case,
+  **plus `ApiTokensCard`** (`components/account/`, below the passkeys — the other credential this one user
   owns): the personal `kkt_…` bearer tokens a script, `kukatko ctl` or an agent signs in with, until now
   reachable only by `curl`. It lists the caller's own tokens (name, the public prefix `kkt_<id>_…` so a token
   found in some config can be matched to a row, when it was made, when it was last seen — or „Zatím nepoužit"
@@ -3505,7 +3543,11 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   built **only** of the element's own `border` + `inset` shadows (dark/warning/dark), which the card's
   `overflow: hidden` therefore cannot clip; the strokes are absolute px, so they don't thin out at ten columns);
   `auth/` (`AuthContext`/`useAuth` + `AuthProvider` = boot `GET /auth/me`,
-  exposes `status`/`user`/`role`/`login`/`logout`/`refresh`/`canWrite`/`isAdmin` (admin+)/`isMaintainer`/`canImport`.
+  exposes `status`/`user`/`role`/`login`/**`loginWithPasskey`**/`logout`/`refresh`/`canWrite`/`isAdmin`
+  (admin+)/`isMaintainer`/`canImport`. `loginWithPasskey()` runs the discoverable ceremony in
+  `services/passkeys` and publishes the `AuthSession` it yields — the very same one the password endpoint
+  returns, applied the same way, so nothing downstream can tell the two apart; it rejects with a
+  `PasskeyError`, which `LoginPage` translates.
   **`AuthStatus` has four values, not three**: `loading` | `authenticated` | `unauthenticated` |
   **`unreachable`** — the last meaning the probe never got an answer, so the session is unknown. Only a
   `NetworkError` (a transport failure, see `services/auth.ts`) files as `unreachable`; anything that
@@ -3659,8 +3701,13 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `AnnouncementBanner`: fetch on mount + refetch after ~60 s, **pauses on a hidden tab** and refreshes immediately
   on return, swallows a failure and returns `null` (the banner hides), on unmount it cancels the timer and the in-flight request (mirrors
   `useJobStats`);
-  `useRegistrationOpen()` = the one-shot probe of `fetchPublicSettings` (`GET /settings/public`) behind both
-  halves of the sign-in flow → `loading|open|closed|unknown`. It **never polls** (an administrator opening
+  `usePublicSettings()` = the one-shot probe of `fetchPublicSettings` (`GET /settings/public`) →
+  `{status:'loading'}|{status:'ready',settings}|{status:'unknown'}`, the anonymous view of the instance both
+  halves of the sign-in flow are built on. It **never polls** (neither fact moves often — one is an
+  administrator's rare decision, the other is fixed for the life of the process) and aborts on unmount.
+  `LoginPage` reads it directly because it needs **both** flags and must not ask twice;
+  `useRegistrationOpen()` is a narrowing of it to the one question — `loading|open|closed|unknown`.
+  It **never polls** (an administrator opening
   or closing registration is rare, and both screens that read it are short-lived) and aborts on unmount —
   an aborted request leaves the state alone, since the component is gone and `unknown` would be a claim
   about the instance rather than about the cancellation. That fourth state is the point: `unknown` means
@@ -4472,13 +4519,18 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   language; unparseable input → the original string; used by PhotoTile/DuplicateGroupCard/
   MetadataPanel/Import/System for dates in the cs/en format))),
   `services/` (`health.ts`, `capabilities.ts` = `fetchCapabilities(signal)` over `GET /api/v1/capabilities`
-  → `Capabilities{semantic_search, version?: VersionInfo{version,commit}}` (it sends the session cookie,
+  → `Capabilities{semantic_search, passkeys, version?: VersionInfo{version,commit}}` (`passkeys` says whether
+  this instance has a WebAuthn relying party configured — a **static** fact about the deployment, unlike the
+  probed `semantic_search` — and gates `PasskeysCard`; the sign-in screen reads the same flag off
+  `GET /settings/public`, this endpoint being behind auth. It sends the session cookie,
   `credentials:'same-origin'`; `version` is optional on the client because it is absent before the first
   answer and after a failed one, not because the endpoint may omit it),
   `settings.ts` = `fetchPublicSettings(signal)` over `GET /api/v1/settings/public` →
-  `PublicSettings{registration_enabled}` — the **one** fact about the instance an anonymous visitor may
-  learn, which is why the sign-in and registration screens may ask it before anybody has signed in (the
-  full settings record carries the registration secret and stays behind `RequireAdmin`). It sends no
+  `PublicSettings{registration_enabled, passkeys_enabled}` — the **two** facts about the instance an anonymous
+  visitor may learn, which is why the sign-in and registration screens may ask it before anybody has signed in
+  (the full settings record carries the registration secret and stays behind `RequireAdmin`). `passkeys_enabled`
+  is here **as well as** in `GET /capabilities` for exactly that reason: capabilities are behind `RequireAuth`,
+  and the screen that has to decide whether to offer a passkey is the one nobody has signed in on. It sends no
   credentials and **throws** rather than defaulting: "we could not ask" is not "registration is shut", and
   the two callers of `useRegistrationOpen()` answer that difference differently. The admin half lives
   here too: `fetchInstanceSettings(signal)` over `GET /api/v1/settings` → `InstanceSettings`
@@ -4543,6 +4595,27 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   only once**, the server keeps nothing but its hash — plus `API_TOKEN_NAME_MAX_LENGTH` = 100 mirroring the
   backend's `apiTokenNameMaxLen`; the listing is scoped server-side to the caller and **includes revoked and
   expired tokens**, so hiding the dead ones is the caller's decision);
+  `passkeys.ts` = the whole WebAuthn surface, kept out of `auth.ts` because it is the one client flow that
+  talks to the **platform** as well as to the server: `isPasskeySupported()` (both `window.PublicKeyCredential`
+  **and** `navigator.credentials` — the latter is absent in an insecure context, which is exactly how this app
+  gets opened over a LAN address), `signInWithPasskey(signal)` and `registerPasskey(name,signal)` (each runs
+  **both halves of one ceremony** — begin, `navigator.credentials.get`/`.create`, finish — because the
+  HttpOnly ceremony cookie the begin sets is spent by the finish exactly once, so there is no retrying the
+  second half alone), `fetchPasskeys(signal)` / `deletePasskey(id,signal)` over
+  `GET`/`DELETE /api/v1/auth/passkeys[/{id}]`, the type `Passkey{id,name,transports,created_at,last_used_at?}`
+  and `PASSKEY_NAME_MAX_LENGTH` = 64 mirroring `auth.MaxPasskeyNameLen`. Every request sends
+  `credentials:'same-origin'` — without the ceremony cookie a perfectly good signature is refused. The
+  binary fields are converted **by hand** (base64url in, base64url out; `parseCreationOptionsFromJSON` and
+  `credential.toJSON()` are too new to rely on and absent from jsdom), and the conversion is byte-exact on
+  purpose: the server verifies a signature over `clientDataJSON` and the authenticator data, so re-encoding
+  either turns a good answer into a refused one. **Every** rejection out of this module is a
+  `PasskeyError` carrying a `PasskeyErrorReason`
+  (`unsupported|unavailable|cancelled|duplicate|refused|pendingApproval|rateLimited|offline|generic`), never a
+  `DOMException` and never a backend string: `NotAllowedError`/`AbortError` → `cancelled` (the platform
+  refuses to say whether the prompt was dismissed, timed out or had nothing to offer), `InvalidStateError` and
+  HTTP 409 → `duplicate`, 501 → `unavailable`, 401 → `refused`, 403 → `pendingApproval`, 429 → `rateLimited`,
+  a transport failure → `offline`. `passkeys.test.ts` drives the real code against a fake authenticator and a
+  stubbed `fetch`, asserting the wire encoding as well as the reasons;
   `photos.ts` = `fetchPhotos(params,signal)` over `GET /api/v1/photos`
   (filters/sorting/pagination → `PhotoListResponse{photos,total,limit,offset,next_offset}`),
   `searchPhotos(params,mode?,signal)` over `GET /api/v1/search` (the mode

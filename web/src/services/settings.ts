@@ -4,16 +4,22 @@ import { ApiError } from './auth'
 const API_BASE = '/api/v1'
 
 /**
- * The one fact about this instance an anonymous visitor may learn
- * (`GET /api/v1/settings/public`): whether self-service registration is open.
+ * The two facts about this instance an anonymous visitor may learn
+ * (`GET /api/v1/settings/public`): whether self-service registration is open, and
+ * whether this instance can run a passkey ceremony.
  *
  * It is deliberately not the full settings record — that one carries the shared
  * registration secret and is behind `RequireAdmin`. Nothing else about the
  * instance leaks from this endpoint, which is why the sign-in screen may ask it
  * before anybody has signed in.
+ *
+ * `passkeys_enabled` is here rather than only in `GET /capabilities` for exactly
+ * that reason: capabilities are behind `RequireAuth`, and the screen that has to
+ * decide whether to offer passkey sign-in is the one nobody has signed in on.
  */
 export interface PublicSettings {
   registration_enabled: boolean
+  passkeys_enabled: boolean
 }
 
 /**

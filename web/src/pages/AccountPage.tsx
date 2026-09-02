@@ -13,6 +13,7 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { ApiTokensCard } from '../components/account/ApiTokensCard'
 import { MySubjectCard } from '../components/account/MySubjectCard'
+import { PasskeysCard } from '../components/account/PasskeysCard'
 import { Icon } from '../components/Icon'
 import { LanguageSwitcher } from '../components/LanguageSwitcher'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
@@ -70,6 +71,10 @@ function errorKeyFor(error: unknown): AccountErrorKey {
  * It is also the way to {@link MyActivityPage} — the user's own history of
  * actions. That entry point lives here rather than in the navigation: the bar is
  * crowded already, and "what I did" belongs with the rest of what is mine.
+ *
+ * Under the password form sits {@link PasskeysCard} — the passkeys this account
+ * signs in with instead of typing that password. It appears only on an instance
+ * that has passkeys configured.
  *
  * The last section is {@link ApiTokensCard} — the personal API tokens a script
  * or the CLI authenticates with. It sits beside the password because it is the
@@ -281,6 +286,11 @@ export function AccountPage() {
             </Form>
           </Card.Body>
         </Card>
+
+        {/* The way to stop typing the password above: a key kept in the phone or
+            the laptop. It follows the password form because it is the same
+            question — how this person gets in — answered better. */}
+        <PasskeysCard />
 
         {/* The other credential a user owns, next to the password: the tokens
             that let a script or the CLI act as them. */}

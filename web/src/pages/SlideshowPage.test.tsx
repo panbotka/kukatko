@@ -54,7 +54,9 @@ function page(photos: Photo[], extra: Partial<PhotoListResponse> = {}): PhotoLis
 function renderPage(initialEntry = '/slideshow', semanticSearch = true) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <CapabilitiesContext.Provider value={{ semantic_search: semanticSearch, known: true }}>
+      <CapabilitiesContext.Provider
+        value={{ semantic_search: semanticSearch, known: true, passkeys: false }}
+      >
         <MemoryRouter initialEntries={[initialEntry]}>
           <SlideshowPage />
         </MemoryRouter>

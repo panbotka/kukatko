@@ -23,6 +23,7 @@ function authValue(status: AuthStatus, role: Role | null = null): AuthContextVal
     // Import is an operations capability: maintainer only.
     canImport: isMaintainer,
     login: vi.fn(),
+    loginWithPasskey: vi.fn(),
     logout: vi.fn(),
     refresh: vi.fn(),
   }

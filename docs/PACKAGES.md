@@ -2577,9 +2577,12 @@ to `## Package map` in `CLAUDE.md`.
   (the HTTP API over the settings, with **three audiences and three separate wire types** rather than one
   record filtered per role — a field added to `settings.Settings` then has to be given an audience on purpose
   instead of leaking into whichever payload happens to embed it. The `Store` interface (a subset of
-  `settings.Store`) → unit-testable with a fake; `NewAPI(Config{Store,RequireAuth,RequireAdmin})`+`RegisterRoutes`
-  mounts `/settings`: `GET /settings/public` **unguarded** → `{registration_enabled}` only (the sign-in screen
-  needs it before anybody is signed in), `GET /settings/welcome` behind `RequireAuth` → `{welcome_markdown}`
+  `settings.Store`) → unit-testable with a fake; `NewAPI(Config{Store,Passkeys,RequireAuth,RequireAdmin})`+`RegisterRoutes`
+  mounts `/settings`: `GET /settings/public` **unguarded** → `{registration_enabled,passkeys_enabled}` only —
+  the two facts the sign-in screen needs before anybody is signed in. `passkeys_enabled` is `Config.Passkeys`
+  (`auth.API.PasskeysEnabled()`), not a stored setting: `GET /capabilities` carries the same flag for the rest
+  of the app but is behind `RequireAuth`, so it cannot answer an anonymous sign-in screen.
+  `GET /settings/welcome` behind `RequireAuth` → `{welcome_markdown}`
   only, `GET /settings` and `PUT /settings` behind `RequireAdmin` → the full record, secret included;
   the PUT body `{registration_enabled,registration_secret,welcome_markdown}` with `DisallowUnknownFields`
   + a 64 KiB limit replaces all three, `ErrSecretRequired` → 400, `updated_at` RFC3339; the audit details

@@ -26,7 +26,11 @@ export interface CapabilitiesState extends Capabilities {
  * available. Because the flags are purely presentational (full-text search works
  * regardless), a wrong default only ever hides a hint, never breaks a flow.
  */
-export const CAPABILITIES_DEFAULT: CapabilitiesState = { semantic_search: false, known: false }
+export const CAPABILITIES_DEFAULT: CapabilitiesState = {
+  semantic_search: false,
+  passkeys: false,
+  known: false,
+}
 
 /**
  * Provides the current instance feature flags. Unlike the auth context this one

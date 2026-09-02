@@ -3,15 +3,22 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
 import { ApiError, NetworkError, type AuthSession } from '../services/auth'
+import { PasskeyError } from '../services/passkeys'
 
 import { useAuth } from './AuthContext'
 import { AuthProvider } from './AuthProvider'
 
 const fetchMe = vi.fn<() => Promise<AuthSession | null>>()
+const signIn = vi.fn<() => Promise<AuthSession>>()
 
 vi.mock('../services/auth', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/auth')>()
   return { ...actual, fetchMe: () => fetchMe() }
+})
+
+vi.mock('../services/passkeys', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/passkeys')>()
+  return { ...actual, signInWithPasskey: () => signIn() }
 })
 
 const SESSION: AuthSession = {
@@ -122,5 +129,63 @@ describe('AuthProvider session probe', () => {
     expect(unhandled).not.toHaveBeenCalled()
     expect(screen.getByTestId('status')).toHaveTextContent('unreachable')
     window.removeEventListener('unhandledrejection', unhandled)
+  })
+})
+
+/** Signs in with a passkey and prints who ended up in the context. */
+function PasskeyProbe() {
+  const { status, user, loginWithPasskey } = useAuth()
+  return (
+    <div>
+      <span data-testid="status">{status}</span>
+      <span data-testid="user">{user?.username ?? '-'}</span>
+      <button
+        onClick={() => {
+          // Swallowed here as `LoginPage` swallows it: a refused ceremony is a
+          // message on the form, not an unhandled rejection.
+          void loginWithPasskey().catch(() => undefined)
+        }}
+      >
+        passkey
+      </button>
+    </div>
+  )
+}
+
+describe('AuthProvider passkey sign-in', () => {
+  it('publishes the ceremony session exactly as a password login does', async () => {
+    // Nothing downstream may be able to tell the two ways in apart: the passkey
+    // endpoint returns the same AuthSession, so it is applied the same way.
+    const user = userEvent.setup()
+    fetchMe.mockResolvedValue(null)
+    signIn.mockResolvedValue(SESSION)
+    render(
+      <AuthProvider>
+        <PasskeyProbe />
+      </AuthProvider>,
+    )
+    expect(await screen.findByTestId('status')).toHaveTextContent('unauthenticated')
+
+    await user.click(screen.getByRole('button', { name: 'passkey' }))
+
+    expect(await screen.findByTestId('status')).toHaveTextContent('authenticated')
+    expect(screen.getByTestId('user')).toHaveTextContent('alice')
+  })
+
+  it('leaves the session alone when the ceremony is refused', async () => {
+    const user = userEvent.setup()
+    fetchMe.mockResolvedValue(null)
+    signIn.mockRejectedValue(new PasskeyError('cancelled'))
+    render(
+      <AuthProvider>
+        <PasskeyProbe />
+      </AuthProvider>,
+    )
+    expect(await screen.findByTestId('status')).toHaveTextContent('unauthenticated')
+
+    await user.click(screen.getByRole('button', { name: 'passkey' }))
+
+    expect(screen.getByTestId('status')).toHaveTextContent('unauthenticated')
+    expect(screen.getByTestId('user')).toHaveTextContent('-')
   })
 })

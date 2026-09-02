@@ -1,6 +1,4 @@
-import { useEffect, useState } from 'react'
-
-import { fetchPublicSettings } from '../services/settings'
+import { usePublicSettings } from './usePublicSettings'
 
 /**
  * What this instance says about self-service registration.
@@ -15,37 +13,18 @@ import { fetchPublicSettings } from '../services/settings'
 export type RegistrationState = 'loading' | 'open' | 'closed' | 'unknown'
 
 /**
- * Asks `GET /api/v1/settings/public` once whether registration is open.
+ * Asks `GET /api/v1/settings/public` once whether registration is open, and
+ * narrows the answer to that one question.
  *
- * The endpoint is anonymous, so this works before anybody has signed in. It
- * fetches exactly once per mount and never polls: an administrator opening or
- * closing registration is rare, and both screens that read it are short-lived
- * (a visitor is on them for a minute at most).
- *
- * The request is aborted on unmount, and an aborted request leaves the state
- * alone — the component is gone, and `unknown` would be a claim about the
- * instance rather than about the cancellation.
+ * It is a reading of {@link usePublicSettings}, which fetches the whole public
+ * record. A screen that needs both facts (the sign-in card, which also decides
+ * whether to offer a passkey) reads that hook directly rather than pairing this
+ * one with a sibling, so it asks the server once.
  */
 export function useRegistrationOpen(): RegistrationState {
-  const [state, setState] = useState<RegistrationState>('loading')
-
-  useEffect(() => {
-    const controller = new AbortController()
-    void fetchPublicSettings(controller.signal)
-      .then((settings) => {
-        if (!controller.signal.aborted) {
-          setState(settings.registration_enabled ? 'open' : 'closed')
-        }
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) {
-          setState('unknown')
-        }
-      })
-    return () => {
-      controller.abort()
-    }
-  }, [])
-
-  return state
+  const state = usePublicSettings()
+  if (state.status === 'loading' || state.status === 'unknown') {
+    return state.status
+  }
+  return state.settings.registration_enabled ? 'open' : 'closed'
 }

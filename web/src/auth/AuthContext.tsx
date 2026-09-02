@@ -37,6 +37,15 @@ export interface AuthContextValue {
   /** True when the current user may trigger imports (maintainer only). */
   canImport: boolean
   login: (username: string, password: string) => Promise<void>
+  /**
+   * Signs in with a passkey instead of a password: runs the discoverable WebAuthn
+   * ceremony and, on success, publishes the session it yields — the very same one
+   * a password login produces, so nothing downstream can tell the two apart.
+   *
+   * It rejects with a `PasskeyError` (`internal` reasons like a dismissed prompt
+   * or an account still awaiting approval), which the sign-in screen translates.
+   */
+  loginWithPasskey: () => Promise<void>
   logout: () => Promise<void>
   /**
    * Re-reads the session from the backend — after a role change, or when the

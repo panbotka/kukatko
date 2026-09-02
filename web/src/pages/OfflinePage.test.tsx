@@ -19,6 +19,7 @@ function authValue(overrides: Partial<AuthContextValue> = {}): AuthContextValue 
     isMaintainer: false,
     canImport: false,
     login: vi.fn(),
+    loginWithPasskey: vi.fn(),
     logout: vi.fn(),
     refresh: vi.fn().mockResolvedValue(undefined),
     ...overrides,

@@ -400,7 +400,17 @@
     "errorGeneric": "Sign in failed. Please try again.",
     "offlineNotice": "Kukátko cannot reach the server right now. Signing in will work once you are back online.",
     "registerPrompt": "No account yet?",
-    "registerLink": "Register"
+    "registerLink": "Register",
+    "passkeyOr": "or",
+    "passkeySubmit": "Sign in with a passkey",
+    "passkeyHint": "Your device will ask for your fingerprint, face or PIN. No password is typed anywhere.",
+    "passkeyError": {
+      "unavailable": "This Kukátko instance does not offer passkeys yet. Please sign in with your password.",
+      "cancelled": "The passkey sign-in was not completed — either the prompt was dismissed, or this device holds no passkey for Kukátko. Sign in with your password; you can add a passkey under My account.",
+      "refused": "That passkey could not be verified. Try again, or sign in with your password.",
+      "unsupported": "This browser cannot use passkeys. Please sign in with your password.",
+      "generic": "The passkey sign-in failed. Try again, or sign in with your password."
+    }
   },
   "register": {
     "title": "Registration",
@@ -495,6 +505,42 @@
       "title": "My activity",
       "hint": "A list of what you have done in Kukátko, newest first. Useful when you know you clicked something wrong and need to find it.",
       "link": "Show my activity"
+    },
+    "passkeys": {
+      "title": "Passkeys",
+      "intro": "A passkey signs you in without a password: instead of typing one you confirm with the fingerprint, face or PIN of the device the key is stored on.",
+      "loading": "Loading passkeys…",
+      "loadError": "The passkeys could not be loaded.",
+      "unavailable": "This Kukátko instance does not offer passkeys yet. Signing in with a password still works.",
+      "unsupported": "This browser cannot use passkeys, so no new one can be added here — try your phone or a newer browser.",
+      "empty": {
+        "title": "No passkeys yet",
+        "hint": "A passkey is a key kept on your phone or computer: you sign in with your fingerprint, face or PIN, there is nothing to remember, and it cannot be used on a lookalike site."
+      },
+      "unnamed": "Unnamed passkey",
+      "nameLabel": "Name of the new passkey",
+      "namePlaceholder": "E.g. Tomáš's phone",
+      "nameHint": "The name is only for you — it is how you tell which device this is.",
+      "add": "Add a passkey",
+      "added": "The passkey “{{name}}” has been added.",
+      "addError": {
+        "unsupported": "This browser cannot use passkeys. Try your phone or a newer browser.",
+        "unavailable": "This Kukátko instance does not offer passkeys yet.",
+        "cancelled": "Adding the passkey was not completed — the device prompt closed before it was confirmed.",
+        "duplicate": "This device already holds a passkey for your account. There is no need for a second one.",
+        "refused": "The device's answer could not be verified. Try adding the passkey again.",
+        "offline": "Kukátko could not reach the server, so the passkey was not saved. Check your connection and try again.",
+        "generic": "The passkey could not be added. Please try again."
+      },
+      "createdAt": "Added {{date}}",
+      "lastUsed": "Last used {{date}}",
+      "neverUsed": "Never used",
+      "remove": "Remove",
+      "removeNamed": "Remove the passkey {{name}}",
+      "removeError": "The passkey could not be removed. Please try again.",
+      "confirmTitle": "Remove the passkey?",
+      "confirmBody": "The passkey “{{name}}” will stop working and can no longer sign you in. Your password keeps working. This cannot be undone — you would have to add the passkey again.",
+      "confirmAction": "Remove the passkey"
     },
     "apiTokens": {
       "title": "API tokens",

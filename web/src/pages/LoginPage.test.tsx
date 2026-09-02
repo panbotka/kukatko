@@ -7,13 +7,25 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
 import { ApiError, NetworkError } from '../services/auth'
+import { PasskeyError } from '../services/passkeys'
 
 import { LoginPage } from './LoginPage'
 
 vi.mock('../services/settings', () => ({ fetchPublicSettings: vi.fn() }))
 
+// Only the feature probe is faked: jsdom has no WebAuthn at all, and without a
+// stand-in the passkey button could never render in a test. The ceremony itself
+// runs behind `loginWithPasskey` on the auth context, which every test here
+// controls directly.
+vi.mock('../services/passkeys', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/passkeys')>()
+  return { ...actual, isPasskeySupported: vi.fn() }
+})
+
 const { fetchPublicSettings } = await import('../services/settings')
 const settingsMock = vi.mocked(fetchPublicSettings)
+const { isPasskeySupported } = await import('../services/passkeys')
+const supportedMock = vi.mocked(isPasskeySupported)
 
 function authValue(overrides: Partial<AuthContextValue> = {}): AuthContextValue {
   return {
@@ -26,6 +38,7 @@ function authValue(overrides: Partial<AuthContextValue> = {}): AuthContextValue 
     isMaintainer: false,
     canImport: false,
     login: vi.fn(),
+    loginWithPasskey: vi.fn(),
     logout: vi.fn(),
     refresh: vi.fn(),
     ...overrides,
@@ -67,7 +80,10 @@ describe('LoginPage', () => {
     await i18n.changeLanguage('en')
     // Most of these tests are about signing in, not about who may join: a
     // closed instance is the quieter default and keeps the card unchanged.
-    settingsMock.mockResolvedValue({ registration_enabled: false })
+    settingsMock.mockResolvedValue({ registration_enabled: false, passkeys_enabled: false })
+    // A browser that has WebAuthn is the interesting default; the instance flag
+    // above still keeps the button off unless a test turns it on.
+    supportedMock.mockReturnValue(true)
   })
 
   it('does not call login when fields are empty (client-side validation)', async () => {
@@ -224,7 +240,7 @@ describe('LoginPage', () => {
   })
 
   it('invites registration only when the instance says it is open', async () => {
-    settingsMock.mockResolvedValue({ registration_enabled: true })
+    settingsMock.mockResolvedValue({ registration_enabled: true, passkeys_enabled: false })
     renderLogin(authValue())
 
     const link = await screen.findByRole('link', { name: 'Register' })
@@ -251,5 +267,75 @@ describe('LoginPage', () => {
       expect(settingsMock).toHaveBeenCalled()
     })
     expect(screen.queryByTestId('login-register-link')).not.toBeInTheDocument()
+  })
+  it('offers the passkey button only on an instance that has passkeys', async () => {
+    renderLogin(authValue())
+
+    await waitFor(() => {
+      expect(settingsMock).toHaveBeenCalled()
+    })
+    expect(screen.queryByTestId('login-passkey-button')).not.toBeInTheDocument()
+  })
+
+  it('hides the passkey button in a browser without WebAuthn', async () => {
+    // A button that answers every press with "this browser cannot" is worse than
+    // no button: the password form below it works everywhere.
+    settingsMock.mockResolvedValue({ registration_enabled: false, passkeys_enabled: true })
+    supportedMock.mockReturnValue(false)
+    renderLogin(authValue())
+
+    await waitFor(() => {
+      expect(settingsMock).toHaveBeenCalled()
+    })
+    expect(screen.queryByTestId('login-passkey-button')).not.toBeInTheDocument()
+  })
+
+  it('signs in with a passkey and returns to the requested address', async () => {
+    settingsMock.mockResolvedValue({ registration_enabled: false, passkeys_enabled: true })
+    const user = userEvent.setup()
+    const loginWithPasskey = vi.fn().mockResolvedValue(undefined)
+    renderLogin(authValue({ loginWithPasskey }), {
+      from: { pathname: '/share-target', search: '?share=abc' },
+    })
+
+    await user.click(await screen.findByRole('button', { name: 'Sign in with a passkey' }))
+
+    expect(loginWithPasskey).toHaveBeenCalledTimes(1)
+    expect(await screen.findByText('share page')).toBeInTheDocument()
+    // Nothing was typed: a discoverable sign-in names no account.
+    expect(screen.queryByLabelText('Username')).not.toBeInTheDocument()
+  })
+
+  it('says a cancelled prompt in plain words, never the exception', async () => {
+    settingsMock.mockResolvedValue({ registration_enabled: false, passkeys_enabled: true })
+    const user = userEvent.setup()
+    const loginWithPasskey = vi
+      .fn()
+      .mockRejectedValue(
+        new PasskeyError('cancelled', 'The operation either timed out or was not allowed.'),
+      )
+    renderLogin(authValue({ loginWithPasskey }))
+
+    await user.click(await screen.findByRole('button', { name: 'Sign in with a passkey' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/was not completed/i)
+    expect(alert).toHaveTextContent(/sign in with your password/i)
+    expect(alert).not.toHaveTextContent(/timed out or was not allowed/i)
+    // The password form is still there to fall back on.
+    expect(screen.getByLabelText('Username')).toBeInTheDocument()
+  })
+
+  it("borrows the password form's own sentence for an account awaiting approval", async () => {
+    // The signature was good — this is the same fact about the account, so it is
+    // the same sentence, not an authenticator-flavoured retelling of it.
+    settingsMock.mockResolvedValue({ registration_enabled: false, passkeys_enabled: true })
+    const user = userEvent.setup()
+    const loginWithPasskey = vi.fn().mockRejectedValue(new PasskeyError('pendingApproval'))
+    renderLogin(authValue({ loginWithPasskey }))
+
+    await user.click(await screen.findByRole('button', { name: 'Sign in with a passkey' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/waiting for an administrator/i)
   })
 })

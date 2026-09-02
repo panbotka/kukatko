@@ -8,15 +8,16 @@
 // then has to be given an audience on purpose instead of leaking into whichever
 // payload happens to embed it:
 //
-//	GET /settings/public    anonymous       only whether registration is enabled
+//	GET /settings/public    anonymous       only what the sign-in screen must know
 //	GET /settings/welcome   RequireAuth     only the first-sign-in welcome Markdown
 //	GET /settings           RequireAdmin    the full record, secret included
 //	PUT /settings           RequireAdmin    replaces all three values
 //
 // The public endpoint is deliberately unauthenticated: the sign-in screen has to
-// know whether to offer registration before anybody is signed in. It answers a
-// single boolean and reads one seeded row, so it tells an anonymous caller
-// nothing beyond what the sign-in screen would show them anyway.
+// know whether to offer registration — and whether this instance can run a
+// passkey ceremony — before anybody is signed in. It answers two booleans and
+// reads one seeded row, so it tells an anonymous caller nothing beyond what the
+// sign-in screen would show them anyway.
 //
 // The guards and the store are injected so the package stays decoupled from
 // auth's wiring and the concrete store, and is unit-testable with fakes. An
@@ -61,6 +62,7 @@ type Store interface {
 // behaviour, not its wiring.
 type API struct {
 	store        Store
+	passkeys     bool
 	requireAuth  func(http.Handler) http.Handler
 	requireAdmin func(http.Handler) http.Handler
 }
@@ -69,6 +71,13 @@ type API struct {
 type Config struct {
 	// Store backs the settings read and update operations.
 	Store Store
+	// Passkeys reports whether this instance has a WebAuthn relying party
+	// configured. It is a static fact about the deployment (auth.API.PasskeysEnabled),
+	// not a stored setting, and it travels on the public response because the
+	// sign-in screen has to decide whether to offer passkey sign-in while nobody
+	// is signed in yet — GET /capabilities, which carries the same flag for the
+	// rest of the app, is behind RequireAuth and cannot answer that question.
+	Passkeys bool
 	// RequireAuth guards the welcome-text endpoint for any signed-in user.
 	RequireAuth func(http.Handler) http.Handler
 	// RequireAdmin guards the full record and the update.
@@ -79,6 +88,7 @@ type Config struct {
 func NewAPI(cfg Config) *API {
 	return &API{
 		store:        cfg.Store,
+		passkeys:     cfg.Passkeys,
 		requireAuth:  cfg.RequireAuth,
 		requireAdmin: cfg.RequireAdmin,
 	}
@@ -87,7 +97,7 @@ func NewAPI(cfg Config) *API {
 // RegisterRoutes mounts the settings endpoints onto r, which the caller has
 // scoped under the API base path (for example /api/v1):
 //
-//	GET /settings/public    (no guard)     {"registration_enabled":bool}
+//	GET /settings/public    (no guard)     {"registration_enabled":…,"passkeys_enabled":…}
 //	GET /settings/welcome   RequireAuth    {"welcome_markdown":"…"}
 //	GET /settings           RequireAdmin   the full record, secret included
 //	PUT /settings           RequireAdmin   replaces all three values
@@ -100,15 +110,19 @@ func (a *API) RegisterRoutes(r chi.Router) {
 	})
 }
 
-// handlePublic writes the one fact an anonymous caller is allowed to learn:
-// whether the sign-in screen should offer self-service registration.
+// handlePublic writes the two facts an anonymous caller is allowed to learn:
+// whether the sign-in screen should offer self-service registration, and whether
+// it should offer to sign in with a passkey.
 func (a *API) handlePublic(w http.ResponseWriter, r *http.Request) {
 	current, err := a.store.Get(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "reading settings failed")
 		return
 	}
-	writeJSON(w, http.StatusOK, publicResponse{RegistrationEnabled: current.RegistrationEnabled})
+	writeJSON(w, http.StatusOK, publicResponse{
+		RegistrationEnabled: current.RegistrationEnabled,
+		PasskeysEnabled:     a.passkeys,
+	})
 }
 
 // handleWelcome writes the first-sign-in greeting for any signed-in user. An
@@ -195,11 +209,15 @@ func writeSetError(w http.ResponseWriter, err error) {
 	writeError(w, http.StatusInternalServerError, "saving settings failed")
 }
 
-// publicResponse is the anonymous wire shape. It has exactly one field on
+// publicResponse is the anonymous wire shape. It has exactly two fields on
 // purpose: it is served without authentication, so anything added here is added
-// to the open internet.
+// to the open internet. Both are things the sign-in screen puts on that same
+// open page anyway — an invitation to register, and a "sign in with a passkey"
+// button — and the passkey flag is one an anonymous caller could already read
+// off POST /auth/passkeys/login/begin answering 200 rather than 501.
 type publicResponse struct {
 	RegistrationEnabled bool `json:"registration_enabled"`
+	PasskeysEnabled     bool `json:"passkeys_enabled"`
 }
 
 // welcomeResponse is the authenticated wire shape for the first-sign-in

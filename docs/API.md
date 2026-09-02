@@ -1233,8 +1233,13 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   self-service registration is open, the shared secret registration asks for, and the Markdown greeting
   shown on a first sign-in. The registration secret is stored **readable, not hashed** (an administrator has
   to read it back to tell people what it is), which is why the responses are three separate payloads rather
-  than one record filtered per role: `GET /settings/public` **unauthenticated** → `{registration_enabled}`
-  and nothing else (the sign-in screen has to know before anybody is signed in); `GET /settings/welcome`
+  than one record filtered per role: `GET /settings/public` **unauthenticated** →
+  `{registration_enabled, passkeys_enabled}` and nothing else — the two facts the sign-in screen must know
+  before anybody is signed in. `passkeys_enabled` is **not** a stored setting but this instance's
+  `auth.API.PasskeysEnabled()`, repeated here because `GET /capabilities`, which carries the same flag for
+  the rest of the app, is behind `RequireAuth` and so cannot answer an anonymous sign-in screen; it leaks
+  nothing an anonymous caller could not already read off `POST /auth/passkeys/login/begin` answering 200
+  rather than 501. `GET /settings/welcome`
   behind `RequireAuth` → `{welcome_markdown}` and nothing else; `GET /settings` behind `RequireAdmin` →
   `{registration_enabled, registration_secret, welcome_markdown, updated_at, updated_by_uid?}` — the only
   place the secret appears. `PUT /settings` behind `RequireAdmin` **replaces all three values** → 200 with

@@ -51,8 +51,15 @@ func passThrough(next http.Handler) http.Handler { return next }
 
 // newServer mounts an API backed by store behind pass-through guards.
 func newServer(store settingsapi.Store) http.Handler {
+	return newServerWithPasskeys(store, false)
+}
+
+// newServerWithPasskeys mounts the API with the instance's passkey availability
+// pinned, which only the public response reflects.
+func newServerWithPasskeys(store settingsapi.Store, passkeys bool) http.Handler {
 	api := settingsapi.NewAPI(settingsapi.Config{
 		Store:        store,
+		Passkeys:     passkeys,
 		RequireAuth:  passThrough,
 		RequireAdmin: passThrough,
 	})
@@ -91,20 +98,39 @@ func full() settings.Settings {
 	}
 }
 
-// TestPublicReturnsOnlyTheFlag: the anonymous endpoint answers exactly one
-// field, so neither the secret nor the welcome text can leak from it.
-func TestPublicReturnsOnlyTheFlag(t *testing.T) {
+// TestPublicReturnsOnlyTheTwoFlags: the anonymous endpoint answers exactly the
+// two facts the sign-in screen needs, so neither the secret nor the welcome text
+// can leak from it.
+func TestPublicReturnsOnlyTheTwoFlags(t *testing.T) {
 	t.Parallel()
 	rec := do(t, newServer(&fakeStore{current: full()}), http.MethodGet, "/settings/public", "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
 	body := decode(t, rec)
-	if len(body) != 1 {
-		t.Fatalf("public body = %v, want exactly one field", body)
+	if len(body) != 2 {
+		t.Fatalf("public body = %v, want exactly two fields", body)
 	}
 	if body["registration_enabled"] != true {
 		t.Errorf("registration_enabled = %v, want true", body["registration_enabled"])
+	}
+	if body["passkeys_enabled"] != false {
+		t.Errorf("passkeys_enabled = %v, want false on an instance with none configured", body["passkeys_enabled"])
+	}
+}
+
+// TestPublicReportsConfiguredPasskeys: an instance with a relying party says so
+// anonymously — that is what lets the sign-in screen show the passkey button
+// before anybody is signed in, since GET /capabilities is behind auth.
+func TestPublicReportsConfiguredPasskeys(t *testing.T) {
+	t.Parallel()
+	h := newServerWithPasskeys(&fakeStore{current: full()}, true)
+	rec := do(t, h, http.MethodGet, "/settings/public", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if body := decode(t, rec); body["passkeys_enabled"] != true {
+		t.Errorf("passkeys_enabled = %v, want true", body["passkeys_enabled"])
 	}
 }
 

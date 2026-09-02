@@ -25,6 +25,15 @@ export interface Capabilities {
    */
   semantic_search: boolean
   /**
+   * Whether this instance can run a WebAuthn ceremony at all — that is, whether
+   * an administrator configured a relying party. Unlike `semantic_search` it is a
+   * static fact about the deployment, not a probe: it cannot change while the
+   * server runs. It gates the passkey section of the account page; the sign-in
+   * screen reads the same flag off `GET /settings/public`, because this endpoint
+   * is behind auth and nobody is signed in there yet.
+   */
+  passkeys: boolean
+  /**
    * The build the server runs, so the UI can print it without a second source of
    * truth (a version compiled into this bundle would drift from the binary that
    * embeds it). Optional because it is absent before the first response — and

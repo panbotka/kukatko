@@ -404,7 +404,17 @@
     "errorGeneric": "Přihlášení se nezdařilo. Zkuste to prosím znovu.",
     "offlineNotice": "Kukátko se teď nedovolá serveru. Přihlásit se půjde, až budete zase online.",
     "registerPrompt": "Nemáte ještě účet?",
-    "registerLink": "Zaregistrujte se"
+    "registerLink": "Zaregistrujte se",
+    "passkeyOr": "nebo",
+    "passkeySubmit": "Přihlásit se passkeyem",
+    "passkeyHint": "Zařízení si řekne o otisk prstu, obličej nebo PIN. Žádné heslo se nikam nepíše.",
+    "passkeyError": {
+      "unavailable": "Tato instalace Kukátka passkeye zatím nenabízí. Přihlaste se prosím heslem.",
+      "cancelled": "Přihlášení passkeyem se nedokončilo — buď jste výzvu zavřeli, nebo na tomhle zařízení žádný passkey pro Kukátko není. Přihlaste se heslem a passkey si můžete přidat v Mém účtu.",
+      "refused": "Passkey se nepodařilo ověřit. Zkuste to prosím znovu, nebo se přihlaste heslem.",
+      "unsupported": "Tenhle prohlížeč passkeye neumí. Přihlaste se prosím heslem.",
+      "generic": "Přihlášení passkeyem se nezdařilo. Zkuste to prosím znovu, nebo se přihlaste heslem."
+    }
   },
   "register": {
     "title": "Registrace",
@@ -499,6 +509,42 @@
       "title": "Moje aktivita",
       "hint": "Přehled toho, co jste v Kukátku udělali — od nejnovějšího. Hodí se, když víte, že jste něco odklikli špatně, a potřebujete to najít.",
       "link": "Zobrazit moji aktivitu"
+    },
+    "passkeys": {
+      "title": "Passkeye",
+      "intro": "Passkey je přihlášení bez hesla: místo psaní potvrdíte přihlášení otiskem prstu, obličejem nebo PINem zařízení, ve kterém je uložený.",
+      "loading": "Načítám passkeye…",
+      "loadError": "Passkeye se nepodařilo načíst.",
+      "unavailable": "Tato instalace Kukátka passkeye zatím nenabízí. Přihlašovat se dá heslem.",
+      "unsupported": "Tenhle prohlížeč passkeye neumí. Přidat nový tady nepůjde — zkuste to na telefonu nebo v novějším prohlížeči.",
+      "empty": {
+        "title": "Zatím žádný passkey",
+        "hint": "Passkey je klíč uložený v telefonu nebo počítači: přihlásíte se jím otiskem prstu, obličejem nebo PINem, nemusíte si nic pamatovat a na podvrženém webu ho použít nejde."
+      },
+      "unnamed": "Passkey bez názvu",
+      "nameLabel": "Název nového passkeye",
+      "namePlaceholder": "Např. Tomášův telefon",
+      "nameHint": "Název je jen pro vás — poznáte podle něj, o které zařízení jde.",
+      "add": "Přidat passkey",
+      "added": "Passkey „{{name}}“ je přidaný.",
+      "addError": {
+        "unsupported": "Tenhle prohlížeč passkeye neumí. Zkuste to na telefonu nebo v novějším prohlížeči.",
+        "unavailable": "Tato instalace Kukátka passkeye zatím nenabízí.",
+        "cancelled": "Přidávání passkeye se nedokončilo — výzva zařízení se zavřela dřív, než jste ji potvrdili.",
+        "duplicate": "Tohle zařízení už pro váš účet passkey má. Přidávat druhý není potřeba.",
+        "refused": "Odpověď zařízení se nepodařilo ověřit. Zkuste passkey přidat znovu.",
+        "offline": "Kukátko se nedovolalo serveru, passkey se tedy neuložil. Zkontrolujte připojení a zkuste to znovu.",
+        "generic": "Passkey se nepodařilo přidat. Zkuste to prosím znovu."
+      },
+      "createdAt": "Přidán {{date}}",
+      "lastUsed": "Naposledy použit {{date}}",
+      "neverUsed": "Zatím nepoužit",
+      "remove": "Odebrat",
+      "removeNamed": "Odebrat passkey {{name}}",
+      "removeError": "Passkey se nepodařilo odebrat. Zkuste to prosím znovu.",
+      "confirmTitle": "Odebrat passkey?",
+      "confirmBody": "Passkey „{{name}}“ přestane fungovat a přihlásit se jím už nepůjde. Heslo funguje dál. Vrátit to nejde — museli byste passkey přidat znovu.",
+      "confirmAction": "Odebrat passkey"
     },
     "apiTokens": {
       "title": "API tokeny",

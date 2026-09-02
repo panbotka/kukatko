@@ -73,7 +73,7 @@ function groupOf(label: string): HTMLElement {
 describe('RegisterPage', () => {
   beforeEach(async () => {
     await i18n.changeLanguage('en')
-    settingsMock.mockResolvedValue({ registration_enabled: true })
+    settingsMock.mockResolvedValue({ registration_enabled: true, passkeys_enabled: false })
   })
 
   it('creates the account and confirms it is waiting, without signing anybody in', async () => {
@@ -146,7 +146,7 @@ describe('RegisterPage', () => {
   })
 
   it('shows no form at all when the instance says registration is closed', async () => {
-    settingsMock.mockResolvedValue({ registration_enabled: false })
+    settingsMock.mockResolvedValue({ registration_enabled: false, passkeys_enabled: false })
     renderRegister()
 
     const closed = await screen.findByTestId('register-closed')
