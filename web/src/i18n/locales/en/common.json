@@ -620,6 +620,11 @@
       "marker": {
         "invalidate": "Face box marked invalid"
       },
+      "passkey": {
+        "delete": "Passkey removed",
+        "login": "Signed in with a passkey",
+        "register": "Passkey added"
+      },
       "photo": {
         "archive": "Photo moved to the trash",
         "edit": "Photo image adjusted",
@@ -664,6 +669,7 @@
       "subjects": "Person",
       "users": "User",
       "api_tokens": "API token",
+      "passkey_credentials": "Passkey",
       "announcement": "Announcement",
       "audit_log": "Audit log"
     }

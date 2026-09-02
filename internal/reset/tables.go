@@ -79,6 +79,11 @@ var catalogueTables = []string{
 // receives people — whether registration is open, its shared secret, the welcome
 // text — is not part of the photo library, and a reset that closed registration
 // and threw away the secret would lock out everybody the operator meant to keep.
+// passkey_credentials stays for the same reason api_tokens does, only more so:
+// it holds the *only* copy of the public key a passkey sign-in is checked
+// against, and wiping it would silently turn every registered authenticator into
+// a key that opens nothing — with no way to put it back except registering each
+// one again.
 // password_reset_tokens stays for the same reason sessions does: it belongs to
 // the accounts, not to the library. A wipe that quietly voided the link an
 // administrator had just mailed to somebody locked out would be an outage for
@@ -92,6 +97,7 @@ var preservedTables = []string{
 	"api_tokens",
 	"audit_log",
 	"instance_settings",
+	"passkey_credentials",
 	"password_reset_tokens",
 	"schema_migrations",
 	"sessions",

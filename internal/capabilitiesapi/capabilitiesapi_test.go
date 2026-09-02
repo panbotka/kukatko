@@ -54,7 +54,16 @@ func newRouter(reach Reachability, guard func(http.Handler) http.Handler) chi.Ro
 func newRouterWithBuild(
 	reach Reachability, guard func(http.Handler) http.Handler, build version.Info,
 ) chi.Router {
-	api := NewAPI(Config{Embeddings: reach, Build: build, RequireAuth: guard})
+	return newRouterWithPasskeys(reach, guard, build, false)
+}
+
+// newRouterWithPasskeys is newRouterWithBuild with the passkey flag pinned too,
+// so a test can cover both an instance that has a relying party configured and
+// one that has not.
+func newRouterWithPasskeys(
+	reach Reachability, guard func(http.Handler) http.Handler, build version.Info, passkeys bool,
+) chi.Router {
+	api := NewAPI(Config{Embeddings: reach, Passkeys: passkeys, Build: build, RequireAuth: guard})
 	r := chi.NewRouter()
 	r.Route("/api/v1", api.RegisterRoutes)
 	return r
@@ -98,7 +107,37 @@ func TestHandleGet_ReflectsFlag(t *testing.T) {
 	}
 }
 
-// TestHandleGet_PayloadShape pins the JSON body: the flag and the nested build
+// TestHandleGet_passkeys pins the passkey flag onto the deployment's
+// configuration rather than onto anything that can change while the process
+// runs: it is what decides whether the sign-in screen offers the button at all,
+// and an instance with no relying party must never advertise one.
+func TestHandleGet_passkeys(t *testing.T) {
+	t.Parallel()
+
+	for _, enabled := range []bool{false, true} {
+		t.Run(map[bool]string{false: "not configured", true: "configured"}[enabled], func(t *testing.T) {
+			t.Parallel()
+			r := newRouterWithPasskeys(fakeReachability{}, passThrough, testBuild, enabled)
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequestWithContext(
+				context.Background(), http.MethodGet, "/api/v1/capabilities", nil)
+			r.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200", rec.Code)
+			}
+			var body capabilities
+			if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+				t.Fatalf("decoding body: %v", err)
+			}
+			if body.Passkeys != enabled {
+				t.Errorf("passkeys = %v, want %v", body.Passkeys, enabled)
+			}
+		})
+	}
+}
+
+// TestHandleGet_PayloadShape pins the JSON body: the flags and the nested build
 // object under the exact keys the frontend reads (the user menu prints the
 // version from this response, so a renamed key would silently blank it out).
 func TestHandleGet_PayloadShape(t *testing.T) {
@@ -117,11 +156,14 @@ func TestHandleGet_PayloadShape(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
 		t.Fatalf("decoding body: %v", err)
 	}
-	if len(body) != 2 {
-		t.Errorf("body keys = %v, want exactly semantic_search and version", body)
+	if len(body) != 3 {
+		t.Errorf("body keys = %v, want exactly semantic_search, passkeys and version", body)
 	}
 	if got, ok := body["semantic_search"].(bool); !ok || !got {
 		t.Errorf("semantic_search = %v, want true", body["semantic_search"])
+	}
+	if got, ok := body["passkeys"].(bool); !ok || got {
+		t.Errorf("passkeys = %v, want false", body["passkeys"])
 	}
 	build, ok := body["version"].(map[string]any)
 	if !ok {

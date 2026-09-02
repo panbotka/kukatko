@@ -220,7 +220,10 @@ func registerDBPoolMetrics(reg *metrics.Registry, db *database.DB) {
 // setupAuth builds the auth API, bootstraps the initial admin account, and
 // starts the background session/rate-limiter cleanup goroutines tied to ctx.
 func setupAuth(ctx context.Context, cmd *cobra.Command, cfg *config.Config, db *database.DB) (*auth.API, error) {
-	authAPI, authSvc := buildAuth(cfg, db)
+	authAPI, authSvc, err := buildAuth(cfg, db)
+	if err != nil {
+		return nil, err
+	}
 	if err := runBootstrap(ctx, cmd, authSvc, cfg.Auth); err != nil {
 		return nil, err
 	}

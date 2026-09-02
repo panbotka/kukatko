@@ -269,6 +269,21 @@ const (
 	// administrator approves it, which is what makes the entry worth keeping
 	// separate from ActionUserCreate.
 	ActionUserRegister = "user.register"
+	// ActionPasskeyRegister records somebody adding a passkey to their own
+	// account. The credential's row UID is the target and the name they gave it is
+	// in the details; the public key itself is never in the trail, because the
+	// trail records decisions and the credential store records credentials.
+	ActionPasskeyRegister = "passkey.register"
+	// ActionPasskeyLogin records a successful passkey sign-in. It is the one
+	// sign-in this instance audits, and deliberately so: a password login is
+	// attributable to an account that already existed, while a passkey login is
+	// attributable to one specific physical authenticator — which is exactly the
+	// fact an incident needs, and the only place it is recorded.
+	ActionPasskeyLogin = "passkey.login"
+	// ActionPasskeyDelete records somebody removing a passkey from their own
+	// account. Removing the last one is allowed (the password remains), so this
+	// entry is the only lasting record that an authenticator was retired.
+	ActionPasskeyDelete = "passkey.delete"
 	// ActionAPITokenCreate records minting a long-lived API token.
 	ActionAPITokenCreate = "api_token.create"
 	// ActionAPITokenRevoke records revoking a long-lived API token.

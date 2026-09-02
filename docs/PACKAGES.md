@@ -236,7 +236,49 @@ to `## Package map` in `CLAUDE.md`.
   `Store.CreateAPITokenAudited`/`RevokeAPITokenAudited` write the audit `inAuditedTx` — mutation and audit
   row in one transaction; `errNoAuditableChange` turns a repeated revocation into a no-op with no audit
   record. `bearerToken` parses `Authorization` case-insensitively per RFC 7235; a missing or
-  non-Bearer scheme falls through to the cookie), `internal/photos/`
+  non-Bearer scheme falls through to the cookie.
+  **Passkeys** (`passkey.go`, `passkey_ceremony.go`, `store_passkey.go`, `handlers_passkey.go`,
+  migration `0067_passkey_credentials.sql`, library `github.com/go-webauthn/webauthn`): WebAuthn
+  sign-in beside the password. It lives **in this package rather than a package of its own** on
+  purpose — a passkey login produces exactly the session a password login produces, from the same
+  `Service` under the same policy, and splitting that across a boundary would mean exporting the
+  session machinery to build a second door into the same house. `Passkeys` is therefore a peer of
+  `Registration` and `PasswordReset`: optional (`APIConfig.Passkeys` nil ⇒ every route answers 501),
+  built by `NewPasskeys` from `PasskeysConfig{RPID, RPDisplayName, Origins}`, which **refuses an empty
+  ID or origin list itself** rather than letting the library infer one — the ID is what a credential is
+  permanently bound to, so an inferred one would mint keys that stop working when the inference changes.
+  `passkeyUser` adapts an account to `webauthn.User` with **the account UID as the user handle**
+  (26 printable characters, well inside the protocol's 64-byte limit, and resolvable back to the
+  account — which is what makes the discoverable, usernameless login possible at all).
+  `BeginRegistration`/`FinishRegistration` and `BeginLogin`/`FinishLogin` are the four halves;
+  the login pair uses `BeginDiscoverableLogin`/`ValidatePasskeyLogin`, so the credential decides whose
+  session is created. `checkPasskeyLogin` then applies the *account* rules a verified signature must
+  still not get past — disabled ⇒ `ErrPasskeyRejected` (as unspecific as a bad signature), unapproved
+  ⇒ `ErrNotApproved`, the same distinction `checkLoginPassword` draws.
+  `ceremonyStore` (`passkey_ceremony.go`) holds the in-flight challenges **in memory**, keyed by a
+  25-character random id the client carries in an HttpOnly `kukatko_passkey_ceremony` cookie: a
+  challenge is worthless the moment it is answered or expires, so a table of them would be a table
+  whose every row is garbage within `defaultCeremonyTTL` (5 min). `take` is **one-shot** — the entry
+  goes whether the answer verified or not, which is what makes a captured response unreplayable — and
+  refuses a registration ceremony offered as a login (`userUID` non-empty). The map is capped at
+  `maxCeremonies` = 4096, dropping expired entries before refusing, because the begin half is
+  anonymous; `API.RunMaintenance` prunes it on the same tick as the limiters.
+  The row (`passkey_credentials`, PK prefix `pk`) keeps the credential id (`BYTEA`, UNIQUE — it *is*
+  the lookup key of a discoverable login), the COSE public key, the sign counter (`BIGINT`, because the
+  protocol's counter is an unsigned 32-bit), the transports, the AAGUID and attestation type/format,
+  the owner's name for it, `created_at`/`last_used_at` — and **the four credential flags**, which are
+  not decoration: go-webauthn refuses a login whose backup-eligibility flag disagrees with the one
+  recorded at registration, so a row scanned without them would reject the very authenticator it
+  belongs to (most synced platform passkeys). `CreatePasskeyAudited`/`TouchPasskeyAudited`/
+  `DeletePasskeyAudited` all go through `inAuditedTx`; the touch carries the counter and the latched
+  flags forward in the same transaction that records `passkey.login`. The table is classified
+  **preserved** in `internal/reset` — it holds the only copy of the key a sign-in is checked against.
+  Rate limiting reuses the login `Limiter` on two per-address keys (`passkeyBeginLimitKey`,
+  `passkeyLoginLimitKey`) so ceremony-opening cannot spend the verification budget.
+  The tests drive a **virtual authenticator** (`passkey_virtual_test.go`, integration tag): a real
+  ES256 key producing real attestation objects, assertions and signatures, because every step of a
+  ceremony *is* a signature and a stub that answered "verified" would test the stub),
+  `internal/photos/`
   (the photo-catalog core: typed models `Photo`/`PhotoFile`/`Phash`/`Edit`/`MetadataUpdate`
   (`Photo` also carries per-user annotation fields `Rating int`/`Flag string` — JSON `rating`/`flag`,
   analogous to `is_favorite`; they are not stored in `photos`, HTTP handlers fill them from `organize.Store`;
@@ -3514,11 +3556,14 @@ to `## Package map` in `CLAUDE.md`.
   in `appendOpsAPIs` next to backup/restore)), `internal/capabilitiesapi/`
   (an all-authenticated HTTP API of what the instance is — its feature flags and the build it runs: the
   `Reachability` interface (`Reachable() bool`,
-  satisfied by `*reachability.Checker`, fakeable); `NewAPI(Config{Embeddings,Build,RequireAuth})`+
+  satisfied by `*reachability.Checker`, fakeable); `NewAPI(Config{Embeddings,Passkeys,Build,RequireAuth})`+
   `RegisterRoutes` mounts `GET /capabilities` behind `RequireAuth` → `{semantic_search:bool,
-  version:version.Info}` — the flag read
+  passkeys:bool, version:version.Info}` — `semantic_search` read
   from the cached probe result (never a live probe, so it is cheap and every logged-in user may read it — unlike the
-  maintainer-only `/system/status`), the build injected as a value (`version.Get()` at wiring, so tests pin
+  maintainer-only `/system/status`), `passkeys` a plain `bool` rather than an interface because it is a
+  **static** fact about the deployment (`authAPI.PasskeysEnabled()` — whether a relying party is
+  configured at all) and nothing about it changes while the process runs,
+  the build injected as a value (`version.Get()` at wiring, so tests pin
   it) and reported verbatim, `dev`/`none` placeholders included. The build lives here, not in the frontend
   bundle: the bundle is `//go:embed`-ed into this binary, so a version compiled into it would drift from the
   binary that serves it — read from the server it cannot. The shape is deliberately open for future flags;

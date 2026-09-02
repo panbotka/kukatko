@@ -17,16 +17,17 @@ import (
 
 // buildAuth assembles the auth subsystem from configuration and the database:
 // the store, the session service, the login rate limiter, the self-service
-// registration flow, the password-reset flow, and the HTTP API. The returned API mounts the auth routes;
+// registration flow, the password-reset flow, the passkey flow, and the HTTP
+// API. The returned API mounts the auth routes;
 // the returned Service is used for bootstrap and the background session-cleanup
-// loop.
+// loop. It fails only on a passkey relying party the WebAuthn library refuses.
 //
 // Registration is always wired, because whether it is open is a runtime decision
 // an administrator makes in the instance settings, not a deployment one: with it
 // switched off the endpoint refuses every caller, and switching it on needs no
 // restart. Its mails go through the queue like every other message, so an
 // instance with mail disabled registers people and sends nothing.
-func buildAuth(cfg *config.Config, db *database.DB) (*auth.API, *auth.Service) {
+func buildAuth(cfg *config.Config, db *database.DB) (*auth.API, *auth.Service, error) {
 	store := auth.NewStore(db.Pool())
 	svc := auth.NewService(store, auth.SessionPolicy{
 		TTL:         cfg.Auth.SessionTTL,
@@ -49,15 +50,50 @@ func buildAuth(cfg *config.Config, db *database.DB) (*auth.API, *auth.Service) {
 		Mail:     mail,
 		LinkBase: passwordResetURL(cfg.Mail.BaseURL),
 	})
+	// Passkeys are wired only when this instance is a relying party at all;
+	// otherwise the flow stays nil and the endpoints answer "not available",
+	// which is what "cleanly off" means here.
+	var passkeys *auth.Passkeys
+	if rp := cfg.Passkey(); rp.Enabled {
+		var err error
+		if passkeys, err = buildPasskeys(rp, svc); err != nil {
+			return nil, nil, err
+		}
+	}
 	api := auth.NewAPI(auth.APIConfig{
 		Service:       svc,
 		Limiter:       limiter,
 		Registration:  registration,
 		Approval:      approval,
 		PasswordReset: passwordReset,
+		Passkeys:      passkeys,
 		SecureCookies: cfg.Web.SecureCookies,
 	})
-	return api, svc
+	return api, svc, nil
+}
+
+// buildPasskeys assembles the WebAuthn sign-in flow for the resolved relying
+// party rp, which the caller has already established this instance has (see
+// config.Config.Passkey — an instance with neither auth.passkey.rp_id/origins nor
+// the mail.base_url they fall back to simply does not offer passkeys, and the
+// endpoints say so).
+//
+// A configured relying party the WebAuthn library refuses *is* a failure, and
+// deliberately a startup one: silently degrading to "no passkeys" would leave an
+// operator who configured the feature staring at an interface that never offers
+// it, and — worse, once anybody has registered a key — at authenticators that
+// have quietly stopped working.
+func buildPasskeys(rp config.RelyingParty, svc *auth.Service) (*auth.Passkeys, error) {
+	passkeys, err := auth.NewPasskeys(auth.PasskeysConfig{
+		Service:       svc,
+		RPID:          rp.ID,
+		RPDisplayName: rp.DisplayName,
+		Origins:       rp.Origins,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("building the passkey relying party: %w", err)
+	}
+	return passkeys, nil
 }
 
 // signInPath is the frontend route of the sign-in screen (see web/src/App.tsx).

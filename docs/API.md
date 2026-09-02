@@ -8,7 +8,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `download_token`), `POST /auth/register` (anonymous, see below), `POST /auth/logout`,
   `GET /auth/me`, `POST /auth/password` (revokes other
   sessions), `GET|POST /auth/password-reset/{token}` (anonymous, see below), `PUT /auth/subject`,
-  `POST /auth/welcome-seen`. Admin-only: `GET|POST /admin/users`,
+  `POST /auth/welcome-seen`, the passkey routes under `/auth/passkeys/*` (see below). Admin-only: `GET|POST /admin/users`,
   `PATCH /admin/users/{uid}`, `POST /admin/users/{uid}/approve`,
   `POST /admin/users/{uid}/disable`, `POST /admin/users/{uid}/password` (reset revokes all of the
   user's sessions), `POST /admin/users/{uid}/password-reset` (see below).
@@ -192,6 +192,52 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   also 204 and writes no second audit entry); **someone else's token → 404, not 403** (an admin may
   revoke anyone's). Both create and revoke write an audit entry (`api_token.create`/`api_token.revoke`)
   **in the same transaction** as the mutation.
+- **Passkeys (`/api/v1/auth/passkeys/*`, `internal/auth`):** WebAuthn sign-in beside the password —
+  the private half never leaves the authenticator, nothing reusable is typed, and a credential minted
+  for this origin cannot be replayed against another one. Six routes, all of them mounted on every
+  instance: an instance with no relying party configured (`auth.passkey.*`, defaulting off
+  `mail.base_url` — see `docs/OPERATIONS.md`) answers every one of them **501**
+  `passkeys are not available on this instance`, and `GET /capabilities` reports `passkeys:false`.
+  A client must be able to tell that from a build that has never heard of the word, which is why the
+  routes exist rather than 404.
+  Each ceremony is two requests. The **begin** half returns `{options:{publicKey:{…}}}` — the object
+  `navigator.credentials.create`/`.get` takes, unreshaped — and sets an HttpOnly, SameSite=Strict
+  `kukatko_passkey_ceremony` cookie naming the challenge, which the server holds **in memory** for
+  5 minutes. The **finish** half spends it **exactly once**, whether it verifies or not, and clears
+  the cookie; a replayed response therefore gets 401. Ceremonies do not survive a restart and are
+  capped at 4096 in flight.
+  - `POST /auth/passkeys/register/begin` (`RequireAuth`) → 200 options. The account's existing
+    credentials go out as an exclusion list, so an authenticator that already holds a key for it says
+    so instead of silently minting a second one.
+  - `POST /auth/passkeys/register/finish` (`RequireAuth`, body `{name?, credential}` — `credential`
+    is the raw `PublicKeyCredential` JSON, unmodified, because reshaping it would break the signature)
+    → 201 `{id, name, transports:[…], created_at, last_used_at?}`. 400 for a bad body, an expired or
+    foreign ceremony, an answer that does not verify (a foreign origin lands here), or a `name` over
+    **64 characters** (runes); **409** when this instance already stores the credential — the one
+    failure that is not a mistake, so the interface can say "you already added this one". An empty
+    name is allowed.
+  - `POST /auth/passkeys/login/begin` — **anonymous**, discoverable ("usernameless"): no account is
+    named, which one is being signed into is decided by the credential the authenticator picks.
+  - `POST /auth/passkeys/login/finish` — **anonymous**, body `{credential}` → 200 with the **same**
+    `{user, download_token}` payload and the same sliding session cookie a password login sets.
+    401 (refused: bad signature, unknown credential, no ceremony, **or a disabled account** — the
+    refusal says nothing about which), **403** when the account is still waiting for an
+    administrator's approval (only ever reached by somebody whose authenticator already signed the
+    challenge, exactly as with a password login).
+    Both public halves are **rate-limited per client address on the password login's budget**
+    (`auth.login_rate_limit`), on two separate keys — `passkey-begin:<ip>` and `passkey:<ip>` — so
+    opening ceremonies cannot spend the allowance that guards credential verification; a successful
+    sign-in clears the verification key.
+  - `GET /auth/passkeys` (`RequireAuth`) → `{passkeys:[{id,name,transports,created_at,last_used_at?}]}`
+    — **only the caller's own**, never a public key or a flag. `[]` when there are none.
+  - `DELETE /auth/passkeys/{id}` (`RequireAuth`) → 204. Somebody else's is **404, not 403** (ids
+    cannot be probed), and **not even an admin** may delete another account's — the list is the
+    account's own. **Removing the last one is allowed**: the password never stopped working, and
+    refusing would strand somebody whose only authenticator was lost.
+  Registration, sign-in and deletion each write an audit entry (`passkey.register`/`passkey.login`/
+  `passkey.delete`, target type `passkey_credentials`) **in the same transaction** as the mutation —
+  a sign-in's being the one this instance audits, because it is attributable to one specific physical
+  authenticator, which is the fact an incident needs.
 - **Bearer authentication:** `authenticateRequest` accepts `Authorization: Bearer kkt_<id>_<secret>`
   **alongside** the session cookie (the cookie path is unchanged). A token **inherits its user's role**
   → no second permission system, `RequireAuth`/`RequireWrite`/`RequireAdmin`/`RequireMaintainer` apply
@@ -1627,8 +1673,12 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   empty library). Mounted **always** (`buildSystemAPI`). The frontend renders it on **Statistiky**
   (`/stats`, all roles) below the counts; `SystemStatusPage` does not read it.
 - **Capabilities API (`/api/v1`, `internal/capabilitiesapi`, authenticated via `RequireAuth`):**
-  `GET /capabilities` → `{semantic_search:bool, version:{version,commit}}` — a small object saying what this
+  `GET /capabilities` → `{semantic_search:bool, passkeys:bool, version:{version,commit}}` — a small object
+  saying what this
   instance is, which **every authenticated user** may read (unlike the maintainer-only `/system/status`).
+  `passkeys` says whether a WebAuthn ceremony can be run at all — a **static** fact about the deployment's
+  configuration, unlike the two live-ish values beside it, so nothing about it changes while the process
+  runs; it is what lets the sign-in screen offer the button and the account page offer to add a key.
   `semantic_search` is
   the **cached** reachability state of the embeddings sidecar (not a live probe): filled by the background loop
   `internal/reachability` (a probe every 60 s, `cmd/kukatko/capabilities.go`); when `embedding.url` is not

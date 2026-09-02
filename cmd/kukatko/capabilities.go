@@ -46,12 +46,14 @@ func buildReachabilityChecker(cfg *config.Config) (*reachability.Checker, error)
 }
 
 // buildCapabilitiesAPI mounts GET /capabilities, an all-authenticated view of the
-// instance feature flags (currently semantic search) backed by the cached
-// reachability checker, plus the build metadata of this binary — the one source
+// instance feature flags — semantic search, backed by the cached reachability
+// checker, and whether a passkey ceremony can be run at all — plus the build
+// metadata of this binary, the one source
 // of truth for the version the UI prints, read from the server that runs it.
 func buildCapabilitiesAPI(checker *reachability.Checker, authAPI *auth.API) *capabilitiesapi.API {
 	return capabilitiesapi.NewAPI(capabilitiesapi.Config{
 		Embeddings:  checker,
+		Passkeys:    authAPI.PasskeysEnabled(),
 		Build:       version.Get(),
 		RequireAuth: authAPI.RequireAuth,
 	})

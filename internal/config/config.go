@@ -58,6 +58,12 @@ var (
 	// window is non-positive.
 	ErrInvalidLoginRateLimit = errors.New(
 		"config: auth.login_rate_limit and auth.login_rate_window must be positive")
+	// ErrInvalidPasskeyOrigin indicates an entry of auth.passkey.origins is not an
+	// absolute http(s) URL with a host, so no browser could ever present it as the
+	// origin of a ceremony. The error names the offending value: an origin is a
+	// public address, never a secret.
+	ErrInvalidPasskeyOrigin = errors.New(
+		"config: auth.passkey.origins holds an entry that is not an http(s) origin")
 	// ErrInvalidWake indicates the Wake-on-LAN auto-wake settings are enabled but
 	// inconsistent (missing/invalid MAC, or no destination to send the packet to).
 	ErrInvalidWake = errors.New("config: invalid embedding.wake settings")
@@ -648,6 +654,38 @@ type AuthConfig struct {
 	LoginRateLimit int `mapstructure:"login_rate_limit"`
 	// LoginRateWindow is the trailing window over which LoginRateLimit applies.
 	LoginRateWindow time.Duration `mapstructure:"login_rate_window"`
+	// Passkey configures WebAuthn sign-in. Leaving it empty is a supported
+	// state: the feature is then simply off (see PasskeyConfig).
+	Passkey PasskeyConfig `mapstructure:"passkey"`
+}
+
+// PasskeyConfig configures passkey (WebAuthn) sign-in: which relying party this
+// instance is, and which page origins may run a ceremony for it.
+//
+// Both values are security boundaries rather than cosmetics. RPID scopes a
+// credential to one domain — an authenticator will not hand a key registered for
+// "photos.example.com" to any other site, which is what makes a passkey
+// unphishable — and Origins is checked against the page the browser actually ran
+// the ceremony on. Guessing either would either lock out every authenticator or
+// widen the boundary, so an unconfigured instance keeps passkeys switched off
+// rather than inventing them.
+//
+// The one guess that is not a guess is mail.base_url: it is already this
+// instance's own public address, declared by the operator for the links inside
+// its mail. When it is set and these keys are not, Resolve derives the origin and
+// the relying-party ID from it, which is the right answer for every deployment
+// served from one hostname.
+type PasskeyConfig struct {
+	// RPID is the relying-party ID: the registrable domain a credential is bound
+	// to, without scheme or port (for example "photos.example.com"). Empty
+	// derives it from the host of the first origin.
+	RPID string `mapstructure:"rp_id"`
+	// RPDisplayName is the human-readable name an authenticator shows while it
+	// asks whether to create or use a key.
+	RPDisplayName string `mapstructure:"rp_display_name"`
+	// Origins are the page origins (scheme://host[:port]) a ceremony may come
+	// from. Empty derives a single origin from mail.base_url.
+	Origins []string `mapstructure:"origins"`
 }
 
 // Mail encryption modes for mail.encryption.
@@ -1014,6 +1052,9 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("auth.session_max_lifetime", "720h") // 30-day absolute cap
 	v.SetDefault("auth.login_rate_limit", 10)
 	v.SetDefault("auth.login_rate_window", "15m")
+	v.SetDefault("auth.passkey.rp_id", "")
+	v.SetDefault("auth.passkey.rp_display_name", "Kukátko")
+	v.SetDefault("auth.passkey.origins", []string{})
 
 	setMapsDefaults(v)
 	setMailDefaults(v)
@@ -1504,5 +1545,5 @@ func (a *AuthConfig) validate() error {
 	if a.LoginRateLimit < 1 || a.LoginRateWindow <= 0 {
 		return fmt.Errorf("%w: limit=%d window=%s", ErrInvalidLoginRateLimit, a.LoginRateLimit, a.LoginRateWindow)
 	}
-	return nil
+	return a.Passkey.validate()
 }

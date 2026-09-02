@@ -393,6 +393,14 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
   is stored, so the table hands nobody a working link), `expires_at` (7 days), nullable `used_at`,
   `user_uid` CASCADE and `issued_by_uid` SET NULL. Preserved by `kukatko maintenance reset` for the
   same reason `sessions` is; pruned by the cleanup that removes expired sessions.
+- **`passkey_credentials`** — the public keys a WebAuthn sign-in is verified against (migration
+  `0067_passkey_credentials.sql`, package `internal/auth`): `credential_id` (BYTEA, UNIQUE — it is the
+  lookup key of a discoverable login), `public_key` (COSE), `sign_count`, `transports`, the AAGUID and
+  attestation type/format, the four latched credential flags (the backup-eligibility one is load-bearing:
+  a login whose flag disagrees with the registered value is refused), the owner's `name`, `created_at`
+  and nullable `last_used_at`; `user_uid` CASCADE, several rows per account. There is **no secret in the
+  table** — a public key is public by construction — but it is preserved by `kukatko maintenance reset`
+  all the same, because wiping it would turn every registered authenticator into a key that opens nothing.
 - **`audit_log`** — durable, written **in the same transaction** as the mutation (migrations
   `0012_audit_log.sql` + `0014_audit_request.sql` add `ip`/`user_agent` and an index
   `(target_type, target_uid)`, package `internal/audit`: `Write(ctx, exec, Entry)` over the pool **and**
@@ -807,6 +815,15 @@ is the primary system and imports from nothing but the disk.
     the person behind it chooses their own password, and every session of that account is deleted.
     Both public halves of it are rate-limited per client address.
   - **Rate-limit on `/auth/login`** (brute-force protection).
+- **Passkeys (WebAuthn)** — a second, phishing-resistant way in beside the password
+  (`internal/auth`, `passkey_credentials`, `github.com/go-webauthn/webauthn`). The private half never
+  leaves the authenticator, nothing reusable is typed into a form, and a credential minted for this
+  origin cannot be replayed against another one — which matters here because registration is open
+  behind a shared secret. A successful passkey login creates **exactly** the sliding session a password
+  login creates; the password is never taken away, so it stays the fallback and deleting the last
+  passkey is allowed. Off unless the instance is a relying party (`auth.passkey.*`, defaulting off
+  `mail.base_url`): the endpoints then answer 501 and `GET /capabilities` reports `passkeys:false`.
+  Registration, sign-in and deletion are audited in the mutation's transaction.
   - **Rate-limit on demanding endpoints** (`internal/ratelimit`) — a per-client-IP token-bucket
     (`ratelimit.*` config) on `POST /upload`, `POST /photos/bulk`, `POST /import/*` and
     `GET /map/tiles/...`, so that a single client can't swamp the server; an empty bucket → 429. The limiter runs

@@ -52,7 +52,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/announcementapi` — dual-guard `/announcement` (`GET` RequireAuth, `PUT`/`DELETE` RequireMaintainer)
 - `internal/audit` — durable audit trail; `Write(ctx, exec, Entry)` runs **in the same transaction** as the mutation
 - `internal/auditapi` — read-only listings: admin-only `GET /audit`, own-actions `GET /audit/mine`
-- `internal/auth` — viewer/editor/admin/maintainer roles (strict ladder), bcrypt, sliding sessions, RBAC middleware, API tokens (Bearer)
+- `internal/auth` — viewer/editor/admin/maintainer roles (strict ladder), bcrypt, sliding sessions, RBAC middleware, API tokens (Bearer), passkeys (WebAuthn)
 - `internal/avatar` — the subject's small square picture, cut server-side: the crop geometry, the per-face choice of source thumbnail and the cache-only rendition
 - `internal/avatarapi` — all-authenticated `GET /subjects/{uid}/avatar` (JPEG + ETag; "no picture" of any kind is a 404)
 - `internal/backup` — S3 backup (pg_dump + sync of originals + retention) **and** restore

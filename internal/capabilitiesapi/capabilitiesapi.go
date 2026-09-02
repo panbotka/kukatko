@@ -1,8 +1,9 @@
 // Package capabilitiesapi exposes GET /capabilities, an all-authenticated view of
-// what this instance is: its optional feature flags — currently only whether
-// semantic search is available, which depends on the embeddings sidecar being
-// reachable — and the build the server runs. The frontend polls it to show or
-// hide the semantic-search affordance as the box goes on- or offline, and to
+// what this instance is: its optional feature flags — whether semantic search is
+// available, which depends on the embeddings sidecar being reachable, and whether
+// passkeys are configured — and the build the server runs. The frontend polls it
+// to show or hide the semantic-search affordance as the box goes on- or offline,
+// to decide whether to offer passkey sign-in, and to
 // print the version in the user menu.
 //
 // Unlike the maintainer-only system status (internal/systemapi) it is cheap and
@@ -41,6 +42,7 @@ type Reachability interface {
 // caller's identity, not its wiring.
 type API struct {
 	embeddings  Reachability
+	passkeys    bool
 	build       version.Info
 	requireAuth func(http.Handler) http.Handler
 }
@@ -49,6 +51,11 @@ type API struct {
 type Config struct {
 	// Embeddings reports the cached reachability of the semantic-search backend.
 	Embeddings Reachability
+	// Passkeys reports whether this instance has a WebAuthn relying party
+	// configured, so a sign-in ceremony can be run at all. Unlike Embeddings it is
+	// a static fact about the deployment rather than a probe: nothing about it
+	// changes while the process runs.
+	Passkeys bool
 	// Build is the link-time version metadata of the running binary, injected by
 	// the caller (normally version.Get) so tests can pin it.
 	Build version.Info
@@ -58,7 +65,12 @@ type Config struct {
 
 // NewAPI returns an API from cfg.
 func NewAPI(cfg Config) *API {
-	return &API{embeddings: cfg.Embeddings, build: cfg.Build, requireAuth: cfg.RequireAuth}
+	return &API{
+		embeddings:  cfg.Embeddings,
+		passkeys:    cfg.Passkeys,
+		build:       cfg.Build,
+		requireAuth: cfg.RequireAuth,
+	}
 }
 
 // capabilities is the JSON body of GET /capabilities: what a logged-in client
@@ -69,6 +81,12 @@ type capabilities struct {
 	// SemanticSearch is true when the embeddings sidecar is currently reachable,
 	// so semantic search runs rather than silently degrading to full text.
 	SemanticSearch bool `json:"semantic_search"`
+	// Passkeys is true when this instance can run a WebAuthn ceremony, which is
+	// what lets the sign-in screen offer "sign in with a passkey" and the account
+	// page offer to add one. On an instance with no relying party configured the
+	// endpoints answer "not available", and this flag is how a client knows that
+	// without asking.
+	Passkeys bool `json:"passkeys"`
 	// Version is the build metadata of the running binary, the same value
 	// /healthz reports. A development build carries the "dev"/"none" placeholders.
 	Version version.Info `json:"version"`
@@ -89,6 +107,7 @@ func (a *API) RegisterRoutes(r chi.Router) {
 func (a *API) handleGet(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, capabilities{
 		SemanticSearch: a.embeddings.Reachable(),
+		Passkeys:       a.passkeys,
 		Version:        a.build,
 	})
 }

@@ -1311,6 +1311,33 @@ files, one request, streamed — a walk over a disk the server cannot see is not
   password from one machine hits the per-IP limit first and never meets it, while somebody aiming at
   another person's account to lock them out has to spend three times as much to do it. Both are in-memory
   and per process, so a restart clears them. `KUKATKO_AUTH_LOGIN_RATE_LIMIT`/`_LOGIN_RATE_WINDOW`.
+- **Passkey keys (`auth.passkey.*`, `internal/auth`):** the WebAuthn relying party this instance is.
+  `rp_id` (the registrable domain a credential is bound to, **without scheme or port**),
+  `rp_display_name` (what an authenticator shows while it asks; default `Kukátko`) and `origins` (the
+  page origins a ceremony may run from). Env: `KUKATKO_AUTH_PASSKEY_RP_ID`/`_RP_DISPLAY_NAME`/
+  `_ORIGINS` (comma-separated).
+  **All three have a working default derived from `mail.base_url`**, which the operator has already
+  declared as this instance's public address: with `mail.base_url: https://kukatko.example.cz` and
+  nothing else set, the origin is `https://kukatko.example.cz` and the relying-party ID is
+  `kukatko.example.cz`. Set `origins` only when the same instance is genuinely reached at a second
+  address (a local dev server, `http://localhost:5173`); an entry that is not an absolute http(s) URL
+  with a host fails startup with `ErrInvalidPasskeyOrigin`. An explicit `rp_id` wins over the
+  derivation; an `origins` list without `rp_id` takes the host of its first entry.
+  **With neither the keys nor `mail.base_url` set, passkeys are simply off:** the six
+  `/auth/passkeys/*` endpoints answer `501 passkeys are not available on this instance`, and
+  `GET /capabilities` reports `passkeys: false` so the interface offers nothing. That is deliberate
+  rather than a guessed default — a credential is bound to the relying-party ID **forever**, so an
+  instance that minted keys against a guessed domain would stop recognising every one of them the
+  moment the guess changed. For the same reason, **changing `rp_id` after anybody has registered a
+  key invalidates every registered key**; there is no migration, they have to be added again. The
+  password is never taken away, so nobody is locked out by that — which is also why deleting the
+  last passkey is allowed.
+  A ceremony is a two-request exchange: the begin endpoint mints a challenge, holds it **in memory**
+  for 5 minutes and names it in an HttpOnly `kukatko_passkey_ceremony` cookie, and the finish
+  endpoint spends it exactly once. Ceremonies therefore do not survive a restart (cost: one retry of
+  a sign-in nobody had finished) and are capped at 4096 in flight. The two public halves are
+  rate-limited on the login budget above, on two separate per-address keys, so opening ceremonies
+  cannot spend the allowance that guards credential verification.
 - **Trusted proxies (`web.trusted_proxies`, `internal/clientip`):** which peers may rename the client with a
   forwarding header. Default **`["loopback", "private"]`** = `127.0.0.0/8`, `::1`, `10/8`, `172.16/12`,
   `192.168/16`, `fc00::/7`. Entries are CIDR blocks, single addresses, or those two keywords; an unparseable

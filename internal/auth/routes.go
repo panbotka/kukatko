@@ -15,6 +15,12 @@ import "github.com/go-chi/chi/v5"
 //	POST   /auth/password         RequireAuth
 //	PUT    /auth/subject          RequireAuth
 //	POST   /auth/welcome-seen     RequireAuth
+//	POST   /auth/passkeys/register/begin   RequireAuth
+//	POST   /auth/passkeys/register/finish  RequireAuth
+//	POST   /auth/passkeys/login/begin      public, rate-limited per address
+//	POST   /auth/passkeys/login/finish     public, rate-limited per address
+//	GET    /auth/passkeys         RequireAuth
+//	DELETE /auth/passkeys/{id}    RequireAuth
 //	POST   /auth/tokens           RequireAuth
 //	GET    /auth/tokens           RequireAuth
 //	DELETE /auth/tokens/{id}      RequireAuth
@@ -55,6 +61,21 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		// the welcome is shown to everybody who signs in, so everybody who signs
 		// in must be able to say they have read it.
 		r.With(a.RequireAuth).Post("/welcome-seen", a.handleWelcomeSeen)
+		// The two public halves of a passkey sign-in sit beside the two
+		// authenticated halves of a passkey registration, because they are one
+		// feature and a client discovers them together. Their rate limiting is
+		// inside the handlers rather than middleware here: unlike registration
+		// and password reset, the budget is charged against a key the handler
+		// composes (see passkeyLoginLimitKey) and cleared again on success,
+		// exactly as the password login does it.
+		r.Route("/passkeys", func(r chi.Router) {
+			r.Post("/login/begin", a.handleBeginPasskeyLogin)
+			r.Post("/login/finish", a.handleFinishPasskeyLogin)
+			r.With(a.RequireAuth).Post("/register/begin", a.handleBeginPasskeyRegistration)
+			r.With(a.RequireAuth).Post("/register/finish", a.handleFinishPasskeyRegistration)
+			r.With(a.RequireAuth).Get("/", a.handleListPasskeys)
+			r.With(a.RequireAuth).Delete("/{id}", a.handleDeletePasskey)
+		})
 		r.Route("/tokens", func(r chi.Router) {
 			r.Use(a.RequireAuth)
 			r.Post("/", a.handleCreateAPIToken)

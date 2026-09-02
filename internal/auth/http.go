@@ -39,8 +39,12 @@ type API struct {
 	// passwordResetLimit caps the two public halves of a password reset per
 	// client address; they are the only other unauthenticated routes here.
 	passwordResetLimit *ratelimit.Limiter
-	secureCookies      bool
-	now                func() time.Time
+	// passkeys is the WebAuthn sign-in flow, or nil on an instance that has no
+	// relying party configured — in which case every passkey route answers "not
+	// available" instead of vanishing.
+	passkeys      *Passkeys
+	secureCookies bool
+	now           func() time.Time
 }
 
 // APIConfig configures NewAPI.
@@ -76,6 +80,11 @@ type APIConfig struct {
 	// capped as tightly as signing in — with the address as the whole key, since
 	// the username of a registration is by definition new.
 	RegisterLimiter *ratelimit.Limiter
+	// Passkeys is the WebAuthn sign-in flow. Optional: when nil, the passkey
+	// endpoints are still mounted but answer "passkeys are not available on this
+	// instance", so a client can tell an instance that does not offer them from a
+	// build that does not know them.
+	Passkeys *Passkeys
 	// SecureCookies marks the session cookie Secure (HTTPS-only).
 	SecureCookies bool
 }
@@ -91,6 +100,7 @@ func NewAPI(cfg APIConfig) *API {
 		passwordReset:      passwordResetFor(cfg),
 		registerLimit:      perAddressLimiter(cfg.RegisterLimiter, cfg.Limiter),
 		passwordResetLimit: perAddressLimiter(cfg.PasswordResetLimiter, cfg.Limiter),
+		passkeys:           cfg.Passkeys,
 		secureCookies:      cfg.SecureCookies,
 		now:                time.Now,
 	}
@@ -150,7 +160,8 @@ func perAddressLimiter(custom *ratelimit.Limiter, login *Limiter) *ratelimit.Lim
 }
 
 // RunMaintenance periodically prunes the stale keys of the two login rate
-// limiters and of the registration and password-reset limiters until ctx is
+// limiters and of the registration and password-reset limiters, and the WebAuthn
+// ceremonies that were begun and never answered, until ctx is
 // canceled. It is meant to
 // run in its own goroutine alongside the service's session cleanup.
 func (a *API) RunMaintenance(ctx context.Context, interval time.Duration) {
@@ -166,6 +177,9 @@ func (a *API) RunMaintenance(ctx context.Context, interval time.Duration) {
 			a.usernameLimiter.Cleanup(now)
 			a.registerLimit.Cleanup(now)
 			a.passwordResetLimit.Cleanup(now)
+			if a.passkeys != nil {
+				a.passkeys.Cleanup(now)
+			}
 		}
 	}
 }
@@ -211,6 +225,14 @@ func UserFromContext(ctx context.Context) (User, bool) {
 func SessionFromContext(ctx context.Context) (Session, bool) {
 	p, ok := principalFromContext(ctx)
 	return p.session, ok
+}
+
+// PasskeysEnabled reports whether this instance can run a WebAuthn ceremony at
+// all, which is what GET /capabilities publishes so a client knows whether to
+// offer the affordance. It is a static fact about the deployment's
+// configuration, not a probe.
+func (a *API) PasskeysEnabled() bool {
+	return a.passkeys != nil
 }
 
 // errorResponse is the JSON body returned for error responses.

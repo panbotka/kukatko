@@ -624,6 +624,11 @@
       "marker": {
         "invalidate": "Označení rámečku jako neplatného"
       },
+      "passkey": {
+        "delete": "Odebrání přístupového klíče",
+        "login": "Přihlášení přístupovým klíčem",
+        "register": "Přidání přístupového klíče"
+      },
       "photo": {
         "archive": "Přesun fotky do koše",
         "edit": "Úprava obrazu fotky",
@@ -668,6 +673,7 @@
       "subjects": "Osoba",
       "users": "Uživatel",
       "api_tokens": "API token",
+      "passkey_credentials": "Přístupový klíč",
       "announcement": "Oznámení",
       "audit_log": "Auditní log"
     }

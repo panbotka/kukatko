@@ -223,6 +223,13 @@ were written.
 - Four roles (viewer < editor < admin < maintainer), a durable **audit trail** written in the same
   transaction as the change it records, personal **API tokens**, Prometheus metrics, and
   `kukatko ctl` — a kubectl-style CLI against your own instance.
+- **Sign in with a passkey.** Add the fingerprint reader on your phone or laptop, or a hardware
+  key, and use it instead of typing a password — the secret never leaves the device, so there is
+  nothing to phish and nothing to reuse. A key registered here works only here. Several may be
+  added, each under a name you choose, and any of them may be removed again: the password never
+  stops working, so removing the last one strands nobody. The server keeps only public keys.
+  Needs the instance's own address configured (`auth.passkey.*`, which defaults off the address
+  already set for mail); without it the feature is simply not offered.
 - **People can ask for an account themselves.** Switch registration on in the settings, tell the
   family the shared secret, and anybody who knows it can register — the sign-in screen then offers a
   registration form (and offers it only while registration is open) — but nobody gets in until an
