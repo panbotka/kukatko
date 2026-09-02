@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
+import { BlurPlaceholder } from '../components/BlurPlaceholder'
 import { ErrorState } from '../components/ErrorState'
 import { Icon } from '../components/Icon'
 import { FavoriteToggle } from '../components/library/FavoriteButton'
@@ -1008,6 +1009,13 @@ export function PhotoDetailPage() {
           swipe.onTouchEnd(event)
         }}
       >
+        {/* The photograph's blurred stand-in, filling exactly the framed figure
+            — the same box the image will occupy — so the viewer opens in the
+            photo's own colours instead of empty stage. It is dropped the moment
+            the image has loaded (`measured`), before any zoom or rotation can
+            move the image off it, and never rendered for an unframed figure,
+            which shrink-wraps its image and so has no box to fill yet. */}
+        {framed && !stage.measured && <BlurPlaceholder hash={photo.blurhash} />}
         <img
           {...stage.imgProps}
           className="kk-viewer__image"

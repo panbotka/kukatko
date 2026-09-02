@@ -811,6 +811,28 @@ Verified, already optimal — no change required:
 - **Thumbnail lazy-loading**: `PhotoTile` renders `<img loading="lazy"
   decoding="async">` inside a fixed `aspectRatio: '1 / 1'` box (no layout shift)
   and fades in on load (`web/src/components/library/PhotoTile.tsx`).
+- **BlurHash placeholders**: every tile paints its photo's own blurred stand-in
+  while the thumbnail loads (`web/src/lib/blurPlaceholder.ts`). Three things keep
+  the decode off the scrolling critical path: only **mounted** tiles ask (the wall
+  is virtualized, so that is the visible ones), every answer is **memoised by
+  hash** — a tile scrolled back into view costs nothing, and a hash that cannot be
+  painted is not retried — and the decode is deliberately **20×20**, not the
+  ecosystem's usual 32×32. Decoding is linear in the pixel count; measured on this
+  Pi 5 (Node 22, `blurhash@2.0.5`, 1 000 iterations of one hash each):
+
+  | decode | per hash | ~40-tile screen |
+  |---|---|---|
+  | 16×16 | 0.168 ms | 6.7 ms |
+  | **20×20** | **0.264 ms** | **10.6 ms** |
+  | 24×24 | 0.381 ms | 15.2 ms |
+  | 32×32 | 0.658 ms | 26.3 ms |
+  | 48×48 | 1.505 ms | 60.2 ms |
+
+  A BlurHash carries at most a 9×9 grid of frequencies, so nothing above ~20² is
+  detail the hash actually holds — the difference is invisible once CSS stretches
+  the square across a 300-pixel tile, while 32² would spend more than a frame's
+  budget on the first screen alone. The cache is a FIFO capped at 512 entries
+  (`BLUR_PLACEHOLDER_CACHE_LIMIT`), a few screens' worth.
 - **Request batching / pagination**: `usePaginatedPhotos` fetches 100 photos per
   page, cancels the previous in-flight request via `AbortController`, and ignores
   stale responses via a sequence guard; `loadMore` is a no-op while loading or at

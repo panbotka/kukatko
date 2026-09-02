@@ -1128,6 +1128,32 @@ body {
   opacity: 1;
 }
 
+/* ---- Blurred stand-in --------------------------------------------------
+ *
+ * The photograph's own BlurHash, decoded to a 32-pixel image and stretched over
+ * the box the picture will occupy (see `lib/blurPlaceholder`). It is what the
+ * `.kk-media-img` above fades in over, so a grid opens in the colours of its
+ * photographs instead of a field of grey wells.
+ *
+ * `inset: 0` on an absolutely positioned layer means it takes its size from the
+ * box its parent has ALREADY been given — the square tile, the justified row's
+ * cell, the viewer's aspect-ratio figure — so it can never move the layout, in
+ * either direction, at any point in the load. `background-size: 100% 100%`
+ * (not `cover`) stretches the square decode to whatever shape that box is: a
+ * blur has no detail to crop, and this way its colours stay where the photo's
+ * are. `border-radius: inherit` keeps it inside the tile's rounded corners, and
+ * it is inert to the pointer so the link underneath keeps every click.
+ */
+.kk-media-blur {
+  position: absolute;
+  inset: 0;
+  display: block;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
 /* The page's column: everything in normal flow (the routed content and the
    footer), minus the lane the timeline rail owns along the right edge.
 

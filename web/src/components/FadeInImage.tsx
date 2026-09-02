@@ -1,5 +1,8 @@
 import { type ImgHTMLAttributes, useCallback, useState } from 'react'
 
+import { blurPlaceholderUrl } from '../lib/blurPlaceholder'
+
+import { BlurPlaceholder } from './BlurPlaceholder'
 import { Skeleton } from './Skeleton'
 
 /** Props for {@link FadeInImage}: every native `<img>` attribute bar the load
@@ -15,6 +18,15 @@ export interface FadeInImageProps extends Omit<ImgHTMLAttributes<HTMLImageElemen
    * inherits its corners.
    */
   skeleton?: boolean
+  /**
+   * The photo's BlurHash (`Photo.blurhash`), painted as a blurred stand-in
+   * behind the image until it arrives — so a tile is the colours of its
+   * photograph from the first frame rather than an empty well. Absent (or
+   * undecodable) leaves the caller's neutral surface showing, and takes
+   * precedence over {@link FadeInImageProps.skeleton}: a photo's own blur says
+   * more than a shimmer. Needs a positioned box, exactly as the skeleton does.
+   */
+  blurhash?: string
 }
 
 /**
@@ -24,6 +36,10 @@ export interface FadeInImageProps extends Omit<ImgHTMLAttributes<HTMLImageElemen
  * `prefers-reduced-motion`) and holds no space of its own — callers give it a
  * fixed box with a placeholder surface (the sunken thumbnail well) so the layout
  * never shifts as images stream in.
+ *
+ * Given the photo's `blurhash` it paints that blurred stand-in behind the image
+ * first (see {@link BlurPlaceholder}), so the box is the colours of its
+ * photograph from the first frame and the real image fades in over it.
  *
  * Defaults to `loading="lazy"` and `decoding="async"`, both overridable. Every
  * other attribute — `src`, `alt`, `style`, `onError`, the caller's own
@@ -35,6 +51,7 @@ export function FadeInImage({
   loading = 'lazy',
   decoding = 'async',
   skeleton = false,
+  blurhash,
   onError,
   ...rest
 }: FadeInImageProps) {
@@ -57,9 +74,17 @@ export function FadeInImage({
 
   const classes = ['kk-media-img', loaded ? 'is-loaded' : '', className].filter(Boolean).join(' ')
 
+  // The blur is never removed once painted: the image fades in *over* it and is
+  // opaque, so there is nothing to uncover and nothing to time. Asking the
+  // decoder twice (here and inside the placeholder) is free — it memoises by
+  // hash — and it is what lets a photograph without a usable hash still fall
+  // back to the shimmer.
+  const blurred = blurPlaceholderUrl(blurhash) !== undefined
+
   return (
     <>
-      {skeleton && !loaded && !failed && (
+      <BlurPlaceholder hash={blurhash} />
+      {skeleton && !blurred && !loaded && !failed && (
         <Skeleton
           className="position-absolute top-0 start-0 w-100 h-100"
           style={{ borderRadius: 'inherit' }}

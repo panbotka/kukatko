@@ -117,6 +117,11 @@ library is tidied by more than one person.
   edge. A panorama is wide, a portrait is tall, and nothing is cropped down to a square to fit a
   cell. How many go across is yours to set (the `−`/`+` beside the filters), and the setting is read
   as "about this many landscape photos", so portraits sit fewer to a row and panoramas more.
+- **A grid never opens empty.** Every photo carries a few dozen characters describing its own
+  colours, so the moment a page of photos arrives each tile is already a blurred version of its
+  photograph — and the real thumbnail simply fades in over it. The photo's own page does the same
+  while the big image loads. Nothing moves as they land: the tiles were laid out before any of it
+  arrived. A photo the library has not got round to computing one for keeps the plain dark tile.
 
 Albums (each covered by a collage of four of its photos, so two albums from the same afternoon don't
 look alike; a new one can be started straight from a selection — "these forty photos are Ostatky 2022" —

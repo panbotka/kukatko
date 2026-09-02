@@ -4,7 +4,9 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../../i18n'
+import { clearBlurPlaceholderCache } from '../../lib/blurPlaceholder'
 import type { Photo, PhotoDetail } from '../../services/photos'
+import { STUB_CANVAS_DATA_URL, stubBlurCanvas } from '../../test/canvas'
 
 import { PhotoTile } from './PhotoTile'
 
@@ -59,6 +61,7 @@ function renderTile(p: Photo, favoritable = false) {
 beforeEach(async () => {
   await i18n.changeLanguage('en')
   fetchPhotoMock.mockReset()
+  clearBlurPlaceholderCache()
 })
 
 describe('PhotoTile thumbnail source', () => {
@@ -295,5 +298,43 @@ describe('PhotoTile selection-mode rendering stability', () => {
   it('stays a navigable link to the detail page when not selecting', () => {
     render(tile(false, false))
     expect(screen.getByRole('link', { name: 'Clip' })).toHaveAttribute('href', '/photos/ph1')
+  })
+})
+
+describe('PhotoTile placeholder', () => {
+  /** A real BlurHash of a real photograph (the woltapp reference string). */
+  const hash = 'LEHV6nWB2yk8pyo0adR*.7kCMdnj'
+
+  it("paints the photo's own blur under the thumbnail while it loads", () => {
+    stubBlurCanvas()
+
+    renderTile(photo({ media_type: 'image', blurhash: hash }))
+
+    const blur = document.querySelector('.kk-media-blur')
+    expect(blur).toBeInTheDocument()
+    expect(blur).toHaveStyle({ backgroundImage: `url("${STUB_CANVAS_DATA_URL}")` })
+    // Behind the image, not in front of it: the thumbnail fades in over the blur.
+    expect(blur?.nextElementSibling).toBe(screen.getByRole('img', { name: 'Clip' }))
+  })
+
+  it('keeps the neutral box for a photo whose placeholder was never computed', () => {
+    stubBlurCanvas()
+
+    renderTile(photo({ media_type: 'image' }))
+
+    expect(document.querySelector('.kk-media-blur')).not.toBeInTheDocument()
+  })
+
+  it('drops the blur along with the image once the thumbnail is beyond saving', async () => {
+    stubBlurCanvas()
+    fetchPhotoMock.mockRejectedValue(new Error('gone'))
+
+    renderTile(photo({ media_type: 'image', blurhash: hash }))
+    fireEvent.error(screen.getByRole('img', { name: 'Clip' }))
+
+    // The tile falls back to its "unavailable" label, which a blur behind it
+    // would only make harder to read.
+    await screen.findByRole('img', { name: 'Preview unavailable' })
+    expect(document.querySelector('.kk-media-blur')).not.toBeInTheDocument()
   })
 })

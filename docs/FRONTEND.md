@@ -508,10 +508,23 @@ here.
   well is): for a grid whose sources are measured in megapixels, an empty dark square reads as broken
   rather than as loading. It clears on `onError` as well as on `onLoad` — a placeholder that pulses
   forever says „still loading" about an image that has given up — and the caller's own `onError` still
-  runs (`OutlierCard` steps down the thumbnail ladder from it). `SubjectTile`/`FaceCrop` ask for it. Replaced the manual `loaded` fade in
+  runs (`OutlierCard` steps down the thumbnail ladder from it). `SubjectTile`/`FaceCrop` ask for it.
+  Optional `blurhash` paints the photograph's **own** blurred stand-in behind the image instead
+  (→ `BlurPlaceholder`) and **wins over `skeleton`**: a photo's colours say more than a shimmer.
+  The blur is **never taken away** once painted — the image is opaque and fades in *over* it, so
+  removing it could only flash the empty box through the fade. `PhotoTile` passes `photo.blurhash`. Replaced the manual `loaded` fade in
   `PhotoTile`/`TrashCard` and added the fade to covers/previews:
   `AlbumTile`, `SubjectTile`, `SubjectPhotoTile`, `SimilarPhotos`, `StackStrip`,
   `DuplicateGroupCard`, `GlobalSearchSections`, `SearchCommand`. Tests: `FadeInImage.test.tsx`),
+  `BlurPlaceholder` (**the photograph's blurred stand-in**: one prop, `hash` = the photo's
+  `blurhash`, decoded by `lib/blurPlaceholder` and painted as a `background-image` on a decorative
+  (`aria-hidden`) `.kk-media-blur` layer. Absolutely positioned (`inset: 0`, corners inherited,
+  `pointer-events: none`), so it takes its size from a box the caller has **already** sized and can
+  never move the layout — the whole zero-CLS promise is that one rule, and a test asserts the shipped
+  declarations. A missing or undecodable hash renders **nothing at all**, which leaves whatever
+  neutral surface the caller drew before (the sunken tile well). Render it as the sibling **before**
+  the image: both are static, so the image paints over the blur. Used by `FadeInImage` (→ every grid
+  tile) and directly by `PhotoDetailPage`'s stage. Tests: `BlurPlaceholder.test.tsx`),
   `Skeleton` / `TileGridSkeleton` / `ListSkeleton` / `ChipCloudSkeleton` (**shared skeleton placeholders** instead of
   full-page spinners on the main data views: `Skeleton` is a single shimmer block
   (`.kk-skeleton`, warm surface-1 + a sweeping sheen, `aria-hidden`, props size/circle/radius);
@@ -678,7 +691,10 @@ here.
   (the group's member count at top right — an `images` icon + `stack_count`, `library.tile.stackCount`,
   only when `stack_count > 1`), a **play badge + duration** for a video/live photo (`▶` + `formatDuration`,
   **top right** — the date took the lower reading corner; a stack never meets a video), a placeholder with no
-  layout shift; a **hover date caption** `.kk-tile__caption` (capture date over the bottom scrim
+  layout shift — the photograph's **own** blurred stand-in while the thumbnail is on the way
+  (`photo.blurhash` → `FadeInImage`'s `blurhash` → `BlurPlaceholder`), the neutral well for a photo
+  that carries no hash, and the neutral well again once the thumbnail is beyond saving (the failed
+  tile unmounts the image and the blur with it, so the „unavailable" label stays readable); a **hover date caption** `.kk-tile__caption` (capture date over the bottom scrim
   `--kk-tile-scrim`, only on hover/focus, `aria-hidden` because the same date is already carried by the image alt,
   not shown on touch — without a date it doesn't render); on hover the **image** zooms in discreetly
   (`scale`, inside `overflow:hidden`, no layout shift); an optional **favorite heart** overlay
@@ -2033,6 +2049,12 @@ here.
   sit off its face and then jump. (jsdom doesn't catch the letterbox
   — verify the geometry visually; previously the figure just shrank to the `<img>` and when the stage was narrowed by the panel
   it stretched, so the **frames drifted apart**.)
+  That framed figure is also what the stage's **blurred stand-in** fills: while the preview is on its
+  way the viewer renders `BlurPlaceholder` with `photo.blurhash` inside the figure, so it sits exactly
+  where the image will be and nothing moves when it lands. It is rendered **only** for a framed figure
+  (an unframed one shrink-wraps its image and has no box to fill yet) and dropped as soon as
+  `useImageFrame` reports `measured` — before a zoom or a rotation can move the image off the blur
+  underneath it.
   Taking the frame from the image is what makes the viewer immune to the **other** half of that invariant, which
   is on the backend: `file_width`/`file_height` **must be the stored,
   pre-rotation dimensions**, because `displayFrame` is what applies the orientation to them. The source catalogue
@@ -4485,6 +4507,22 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   actually asks: the common answer is yes, and yes means the **signed** `preview_url` from the payload
   (served at the edge) rather than a route through the application. It exists because a square grid asked one
   question of every tile and a justified one does not — a panorama at density 2 can span most of the window;
+  `blurPlaceholder.ts` = **the BlurHash decoder** behind `BlurPlaceholder`: `blurPlaceholderUrl(hash)`
+  → a PNG `data:` URL to hand to `background-image`, or `undefined` when there is nothing to paint (no
+  hash — the backend has not computed one — or one that does not decode, or an environment with no 2D
+  canvas). Decoding is the woltapp **`blurhash`** package (MIT, the same flavour `internal/blurhash`
+  writes), into a `BLUR_PLACEHOLDER_RESOLUTION` (**20**) square: a BlurHash holds at most a 9×9 grid of
+  frequencies, so a larger decode buys no detail and only spends time — CSS stretches the square to
+  whatever shape the tile turned out to be. **20, not the ecosystem's usual 32**, because decoding is
+  linear in pixels and a first screen of the wall is ~40 tiles: measured on the Pi 5, 0.264 ms per hash
+  at 20² (~10 ms a screen) against 0.658 ms at 32² (~26 ms — more than a frame). See `docs/PERF.md`. Two things keep it off the scrolling critical path: only
+  **mounted** tiles ask (the wall is virtualized, so that is the visible ones), and every answer is
+  **memoised by hash** — including the „cannot be painted" answer, so a broken hash is decoded once
+  rather than on every render — behind a FIFO capped at `BLUR_PLACEHOLDER_CACHE_LIMIT` (**512**), which
+  is a few screens' worth. `clearBlurPlaceholderCache()` exists **for tests only**; nothing in the app
+  invalidates it, since a hash describes a rendering that cannot change without becoming another hash.
+  Tests: `blurPlaceholder.test.ts` (+ `test/canvas.ts`, which lends jsdom the two canvas methods it has
+  none of, leaving the real decode under test);
   `gridDensity.ts` = the `GridDensity` type (**a plain `number`**, the column count) + `GRID_COLUMNS_MIN`
   (**1** = one photo per row) / `GRID_COLUMNS_MAX` (**10**) / `GRID_COLUMN_CHOICES` (1…10) /
   `GRID_TILE_MIN_PX` (140, the target tile width **for the seed only**) / `GRID_GAP_PX` (**3** — a hairline
@@ -4715,9 +4753,10 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   the types `Photo` (incl. `is_favorite` + the per-user `rating`/`flag` + the video fields
   `duration_ms`/`video_codec`/`audio_codec`/`has_audio`/`fps` + **`thumb_url`/`download_url`** +
   **`stack_uid`/`stack_count`** + **`blurhash?`** — a BlurHash of the photo's rendering (`internal/blurhash`),
-  a few dozen characters a decoder turns into the blur a tile can paint while its thumbnail loads; it is
-  **optional on purpose** (absent = the backend has not computed it yet), so anything reading it must cope
-  with the absence rather than assume a value, and no component uses it yet)/`PhotoListParams`
+  a few dozen characters a decoder turns into the blur a tile paints while its thumbnail loads
+  (`lib/blurPlaceholder` → `BlurPlaceholder`); it is **optional on purpose** (absent = the backend has
+  not computed it yet), so anything reading it must cope with the absence rather than assume a
+  value — which is exactly the fallback the tile and the viewer keep)/`PhotoListParams`
   (incl. the `album`/`label` scope + the **`person` scope** (comma-joined subject UIDs → repeated `?person=`, AND)
   + the **`country`/`city` place scope** + the `favorite` filter + the `min_rating`/`flag` filters)/`PhotoSort`
   (incl. `rating`)/`RatingFlag`/`ArchivedFilter`/`SearchMode`, `ApiError`.

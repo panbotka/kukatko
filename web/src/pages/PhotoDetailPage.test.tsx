@@ -8,9 +8,11 @@ import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import { CapabilitiesContext } from '../capabilities/CapabilitiesContext'
 import { NARROW_VIEWPORT_QUERY } from '../hooks/useIsNarrowViewport'
 import i18n from '../i18n'
+import { clearBlurPlaceholderCache } from '../lib/blurPlaceholder'
 import { type AlbumCount, type LabelCount } from '../services/organize'
 import { type FacesResponse } from '../services/people'
 import { type PhotoDetail, type PhotoEdit, type PhotoListResponse } from '../services/photos'
+import { STUB_CANVAS_DATA_URL, stubBlurCanvas } from '../test/canvas'
 import { declarations, readCss, ruleBody } from '../test/css'
 import { frameRatio, loadImageAs } from '../test/imageFrame'
 
@@ -2375,5 +2377,43 @@ describe('PhotoDetailPage comment badge', () => {
     // The count comes from the open thread, not from a second GET of the photo.
     expect(await screen.findByRole('button', { name: 'Info – 2 comments' })).toBeInTheDocument()
     expect(fetchPhotoMock).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('PhotoDetailPage — the blurred stand-in', () => {
+  /** A real BlurHash of a real photograph (the woltapp reference string). */
+  const hash = 'LEHV6nWB2yk8pyo0adR*.7kCMdnj'
+
+  beforeEach(() => {
+    clearBlurPlaceholderCache()
+  })
+
+  it("paints the photo's blur across the stage until the image lands", async () => {
+    stubBlurCanvas()
+    fetchPhotoMock.mockResolvedValue(photo({ blurhash: hash }))
+    renderPage()
+    await screen.findByRole('heading', { name: 'Beach' })
+
+    const blur = document.querySelector('.kk-media-blur')
+    expect(blur).toBeInTheDocument()
+    expect(blur).toHaveStyle({ backgroundImage: `url("${STUB_CANVAS_DATA_URL}")` })
+    // Inside the framed figure — the box already sized to the photo's shape — so
+    // the blur stands exactly where the image will be and nothing moves.
+    expect(blur?.parentElement).toBe(stageFigure())
+
+    // Once the image is there it owns the stage; the blur goes before any zoom or
+    // rotation can move the image off it.
+    loadPreview()
+    await waitFor(() => {
+      expect(document.querySelector('.kk-media-blur')).not.toBeInTheDocument()
+    })
+  })
+
+  it('opens on the neutral stage for a photo whose placeholder was never computed', async () => {
+    stubBlurCanvas()
+    renderPage()
+    await screen.findByRole('heading', { name: 'Beach' })
+
+    expect(document.querySelector('.kk-media-blur')).not.toBeInTheDocument()
   })
 })

@@ -15,6 +15,7 @@
     "typecheck": "tsc -b --noEmit"
   },
   "dependencies": {
+    "blurhash": "^2.0.5",
     "bootstrap": "^5.3.3",
     "bootstrap-icons": "^1.13.1",
     "bootswatch": "^5.3.3",

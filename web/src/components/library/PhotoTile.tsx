@@ -133,8 +133,9 @@ export interface PhotoTileProps {
  * photo's detail route (`/photos/{uid}`); in selection mode it instead toggles
  * its selection so a grid of tiles can be batch-added to an album or given a
  * label. The image is lazy-loaded and sits in a box whose size is known before
- * it arrives, so the grid never shifts as thumbnails stream in; a neutral
- * placeholder is shown until it loads or if it fails.
+ * it arrives, so the grid never shifts as thumbnails stream in; until it loads
+ * the box shows the photograph's own blurred stand-in (its `blurhash`), or the
+ * neutral well when there is none — and the neutral well again if it fails.
  */
 export function PhotoTile({
   photo,
@@ -176,6 +177,10 @@ export function PhotoTile({
           src={thumb.src}
           alt={alt}
           onError={thumb.onError}
+          // The photograph's own blurred stand-in, painted the moment the row
+          // arrives so the tile is never an empty grey well; the thumbnail fades
+          // in over it. A photo without a hash keeps that neutral well.
+          blurhash={photo.blurhash}
           className="w-100 h-100"
           style={{ objectFit: 'cover' }}
         />
