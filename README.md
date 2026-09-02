@@ -15,9 +15,10 @@ every photo grandma is in and it knows her face. It runs on a Raspberry Pi.
 <!--
   SCREENSHOTS ARE MISSING and should be added by a human.
   Two would be enough: the library grid and a photo detail.
-  Do NOT reuse the images in .shots/ — they are frames of the live family
-  library and show identifiable real people. Shoot them against a throwaway
-  instance holding photos that are safe to publish.
+  Never commit anything out of .shots/ — those are working frames of the live
+  family library and show identifiable real people. The directory is gitignored
+  for that reason. Shoot the README images against a throwaway instance holding
+  photos that are safe to publish.
 -->
 
 ## Who it's for

@@ -32,6 +32,11 @@ config.local.*
 /.devdata/
 /kukatko.log
 
+# Screenshots taken while working on the UI. They are frames of whatever
+# library the shot was taken against — usually the live one, with identifiable
+# people in it — so they never belong in a public history.
+/.shots/
+
 # Local Claude Code setup (personal slash commands; they reference private
 # deployment repos, so they stay out of the project history).
 .claude/
