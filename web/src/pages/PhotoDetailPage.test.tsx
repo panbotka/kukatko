@@ -1423,6 +1423,18 @@ describe('PhotoDetailPage — immersive viewer', () => {
       expect(screen.getByTestId('location')).not.toHaveTextContent('info=1')
     })
 
+    it('answers ? with the shortcuts overlay, navbar or no navbar', async () => {
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      // The viewer is rendered outside the Layout, so it carries its own
+      // triggerless copy of the help — the screen with the most keys of all
+      // would otherwise be the one screen that cannot list them.
+      fireEvent.keyDown(document, { key: '?' })
+      expect(await screen.findByText('Previous / next photo')).toBeInTheDocument()
+      expect(screen.getByText('Set the star rating (0 clears it)')).toBeInTheDocument()
+    })
+
     it('toggles with the i key', async () => {
       const { container } = renderPage()
       await screen.findByRole('heading', { name: 'Beach' })

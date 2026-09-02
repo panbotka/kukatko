@@ -1,4 +1,23 @@
-import { type StateSnapshot } from 'react-virtuoso'
+import { type ListRange, type StateSnapshot } from 'react-virtuoso'
+
+/**
+ * How to reveal `row` given the rows currently on screen: `null` when it is
+ * already comfortably visible (do not scroll at all), otherwise the alignment
+ * that brings it in by the shortest move. A row *at* either end of the visible
+ * range counts as needing the scroll: virtuoso reports partially visible rows as
+ * visible, and a half-shown focused tile is not revealed. With nothing reported
+ * yet (the grid has not settled) it is aligned to the top, which is where a
+ * fresh grid starts anyway. Pure, so the decision is testable without layout.
+ */
+export function revealAlign(row: number, visible: ListRange | null): 'start' | 'end' | null {
+  if (visible === null) {
+    return 'start'
+  }
+  if (row > visible.startIndex && row < visible.endIndex) {
+    return null
+  }
+  return row >= visible.endIndex ? 'end' : 'start'
+}
 
 /**
  * sessionStorage key under which every remembered grid position lives. Session

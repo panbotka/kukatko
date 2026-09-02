@@ -20,7 +20,7 @@ export interface UseGridKeyboardNavigationOptions {
   scrollToIndex: (index: number) => void
   /** Opens the focused tile's detail (Enter). */
   onOpen: (index: number) => void
-  /** Toggles selection of the focused tile, entering selection mode (`x`). */
+  /** Toggles selection of the focused tile, entering selection mode (Space/`x`). */
   onToggleSelect: (index: number) => void
   /** Toggles favorite on the focused tile (`f`). */
   onToggleFavorite: (index: number) => void
@@ -41,9 +41,9 @@ export interface GridKeyboardNavigation {
  * highlight and registers the grid shortcuts via {@link useKeyboardShortcuts}.
  * Arrow keys and `j`/`k`/`h`/`l` move the highlight (left/right by one, up/down by
  * a row using the live column count), scrolling the focused tile into view so the
- * highlight follows virtualization. `Enter` opens it, `x` selects it (entering
- * selection mode), `f` favorites it, and `Escape` clears the selection first, then
- * the focus. The first directional key focuses the first tile.
+ * highlight follows virtualization. `Enter` opens it, `Space`/`x` select it
+ * (entering selection mode), `f` favorites it, and `Escape` clears the selection
+ * first, then the focus. The first directional key focuses the first tile.
  */
 export function useGridKeyboardNavigation(
   options: UseGridKeyboardNavigationOptions,
@@ -115,6 +115,14 @@ export function useGridKeyboardNavigation(
       }
     },
     x: () => {
+      if (focusedRef.current >= 0) {
+        onToggleSelect(focusedRef.current)
+      }
+    },
+    // Space is the selection key readers reach for first (it is what a file
+    // manager uses); `x` stays as the vim-flavoured alias. A focused button keeps
+    // Space for itself — see `useKeyboardShortcuts`.
+    ' ': () => {
       if (focusedRef.current >= 0) {
         onToggleSelect(focusedRef.current)
       }

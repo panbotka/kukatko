@@ -873,6 +873,51 @@ describe('LibraryPage', () => {
     expect(screen.getByRole('button', { name: 'a.jpg' })).toHaveAttribute('aria-pressed', 'true')
   })
 
+  it('Space selects the focused tile, just as x does', async () => {
+    fetchMock.mockResolvedValue(page([photo('a', 'a.jpg'), photo('b', 'b.jpg')], 2, null))
+    renderLibraryAs(editorAuth)
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    fireEvent.keyDown(document, { key: 'ArrowRight' }) // focus tile a
+    fireEvent.keyDown(document, { key: ' ' })
+
+    expect(await screen.findByText('1 selected')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'a.jpg' })).toHaveAttribute('aria-pressed', 'true')
+
+    // And Space again lets it go, so one key is the whole toggle.
+    fireEvent.keyDown(document, { key: ' ' })
+    await waitFor(() => {
+      expect(screen.queryByText('1 selected')).not.toBeInTheDocument()
+    })
+  })
+
+  it('leaves Space to a focused button rather than selecting behind it', async () => {
+    fetchMock.mockResolvedValue(page([photo('a', 'a.jpg'), photo('b', 'b.jpg')], 2, null))
+    renderLibraryAs(editorAuth)
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    fireEvent.keyDown(document, { key: 'ArrowRight' }) // focus tile a
+
+    // With any button carrying the keyboard focus, Space is that button's key:
+    // pressing it must not quietly select the highlighted photo as well.
+    const button = screen.getByRole('button', { name: 'Select a.jpg' })
+    button.focus()
+    fireEvent.keyDown(button, { key: ' ' })
+
+    expect(screen.queryByText('1 selected')).not.toBeInTheDocument()
+  })
+
+  it('does not select for a viewer, who may not edit the library', async () => {
+    fetchMock.mockResolvedValue(page([photo('a', 'a.jpg')], 1, null))
+    renderLibrary()
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    fireEvent.keyDown(document, { key: 'ArrowRight' })
+    fireEvent.keyDown(document, { key: ' ' })
+
+    expect(screen.queryByText('1 selected')).not.toBeInTheDocument()
+  })
+
   it('f toggles the focused tile’s favorite', async () => {
     fetchMock.mockResolvedValue(page([photo('a', 'a.jpg')], 1, null))
     renderLibrary()

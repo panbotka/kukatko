@@ -7,6 +7,7 @@ import { type ListRange, type StateSnapshot, Virtuoso, type VirtuosoHandle } fro
 import { useElementWidth } from '../../hooks/useElementWidth'
 import { useGridDensity } from '../../hooks/useGridDensity'
 import { type GridDensityScope, LIBRARY_GRID_SCOPE } from '../../lib/gridDensity'
+import { revealAlign } from '../../lib/gridScroll'
 import {
   DEFAULT_TILE_RATIO,
   type JustifiedRow,
@@ -103,7 +104,12 @@ export type PhotoGridScrollTarget =
 
 /** Imperative handle a page holds on the grid (`PhotoGridProps.gridRef`). */
 export interface PhotoGridHandle {
-  /** Scrolls the photo at this absolute index into view. */
+  /**
+   * Scrolls the photo at this absolute index into view. A bare index *reveals*
+   * it — the wall does not move while it is already on screen — which is what
+   * keyboard focus wants; an explicit `align` positions the row, which is what a
+   * timeline jump wants.
+   */
   scrollToIndex: (target: PhotoGridScrollTarget) => void
 }
 
@@ -265,6 +271,9 @@ export function PhotoGrid({
   rowsRef.current = rows
 
   const virtuosoRef = useRef<VirtuosoHandle>(null)
+  // The rows virtuoso last reported as being on screen, so a reveal-only scroll
+  // can tell "already visible" from "off screen" without measuring anything.
+  const visibleRowsRef = useRef<ListRange | null>(null)
   useImperativeHandle(
     gridRef,
     () => ({
@@ -274,9 +283,18 @@ export function PhotoGrid({
         if (row < 0) {
           return
         }
-        virtuosoRef.current?.scrollToIndex(
-          typeof target === 'number' ? row : { ...target, index: row },
-        )
+        if (typeof target !== 'number') {
+          virtuosoRef.current?.scrollToIndex({ ...target, index: row })
+          return
+        }
+        // A bare index is the keyboard focus asking to be revealed: stepping to
+        // the tile next door must not yank the wall, only a move off screen may
+        // scroll — and then by the shortest hop, top or bottom.
+        const align = revealAlign(row, visibleRowsRef.current)
+        if (align === null) {
+          return
+        }
+        virtuosoRef.current?.scrollToIndex({ index: row, align })
       },
     }),
     [],
@@ -294,6 +312,7 @@ export function PhotoGrid({
 
   const handleRangeChanged = useCallback(
     (range: ListRange) => {
+      visibleRowsRef.current = range
       captureState()
       if (onRangeChanged === undefined) {
         return

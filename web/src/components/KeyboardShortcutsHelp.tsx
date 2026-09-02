@@ -38,12 +38,15 @@ function KeyboardIcon() {
  * form modal is open (see {@link useKeyboardShortcuts}).
  *
  * `variant` only changes what the trigger looks like, never what it does: the
- * default `icon` is the navbar's compact keyboard cap, while `row` renders it as
- * one more full-width tap row for the mobile nav drawer, where an icon-only
- * button would be the odd one out among labelled rows. The modal is a portal, so
- * it stacks above the drawer that opened it and leaves it standing underneath.
+ * default `icon` is the navbar's compact keyboard cap, `row` renders it as one
+ * more full-width tap row for the mobile nav drawer, where an icon-only button
+ * would be the odd one out among labelled rows, and `bare` renders no trigger at
+ * all — the `?` key alone — for the screens that carry no navbar to hang one on
+ * (the photo viewer) and whose chrome is deliberately kept to the photo. The
+ * modal is a portal, so it stacks above the drawer that opened it and leaves it
+ * standing underneath.
  */
-export function KeyboardShortcutsHelp({ variant = 'icon' }: { variant?: 'icon' | 'row' }) {
+export function KeyboardShortcutsHelp({ variant = 'icon' }: { variant?: 'icon' | 'row' | 'bare' }) {
   const { t } = useTranslation()
   const [show, setShow] = useState(false)
 
@@ -59,7 +62,7 @@ export function KeyboardShortcutsHelp({ variant = 'icon' }: { variant?: 'icon' |
 
   return (
     <>
-      {variant === 'row' ? (
+      {variant === 'bare' ? null : variant === 'row' ? (
         <button
           type="button"
           className="kk-navdrawer__link"

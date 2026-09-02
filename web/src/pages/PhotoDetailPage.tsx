@@ -8,6 +8,7 @@ import { useAuth } from '../auth/AuthContext'
 import { BlurPlaceholder } from '../components/BlurPlaceholder'
 import { ErrorState } from '../components/ErrorState'
 import { Icon } from '../components/Icon'
+import { KeyboardShortcutsHelp } from '../components/KeyboardShortcutsHelp'
 import { FavoriteToggle } from '../components/library/FavoriteButton'
 import { FlagControl } from '../components/library/FlagControl'
 import { RatingStars } from '../components/library/RatingStars'
@@ -655,6 +656,11 @@ export function PhotoDetailPage() {
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       if (event.ctrlKey || event.metaKey || event.altKey || isTypingElement(event.target)) {
+        return
+      }
+      // The same "a dialog is up" rule the shared hook applies: a rating must not
+      // be stamped onto the photo behind an open edit/album modal.
+      if (isFormModalOpen()) {
         return
       }
       const action = ratingHotkey(event.key)
@@ -1476,6 +1482,10 @@ export function PhotoDetailPage() {
             at any height. Empty (and zero-height) whenever nothing is editing. */}
         <div className="kk-viewer__panel-foot" ref={setPanelFoot} />
       </aside>
+      {/* The viewer lives outside the Layout, so the navbar's shortcuts help is
+          not on screen here: mount the triggerless variant so `?` still answers
+          on the one screen with the most shortcuts of all. */}
+      <KeyboardShortcutsHelp variant="bare" />
     </div>
   )
 }

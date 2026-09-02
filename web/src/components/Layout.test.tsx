@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
@@ -137,6 +137,21 @@ beforeEach(async () => {
 })
 
 describe('Layout navbar', () => {
+  it('holds every shortcut back while the command palette has the focus', async () => {
+    renderLayout(auth())
+
+    // `/` opens the palette; with its field focused the app's own shortcuts —
+    // `?` for this very help among them — must stay out of the way.
+    fireEvent.keyDown(document, { key: '/' })
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+
+    fireEvent.keyDown(document, { key: '?' })
+    await waitFor(() => {
+      expect(screen.getAllByRole('dialog')).toHaveLength(1)
+    })
+    expect(screen.queryByText('Keyboard shortcuts', { selector: '.modal-title' })).toBeNull()
+  })
+
   it('renders a collapsible mobile menu toggle wired to the nav collapse', () => {
     renderLayout(auth())
     // The hamburger toggle (visible below the `md` breakpoint) controls the

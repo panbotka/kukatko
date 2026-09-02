@@ -1,7 +1,12 @@
 import { useEffect, useRef } from 'react'
 
 import { isTypingElement } from '../lib/ratingHotkeys'
-import { isFormModalOpen, shortcutToken } from '../lib/shortcuts'
+import {
+  ACTIVATION_KEYS,
+  isActivatableElement,
+  isFormModalOpen,
+  shortcutToken,
+} from '../lib/shortcuts'
 
 /** A handler invoked when its shortcut key fires; receives the raw event. */
 export type ShortcutHandler = (event: KeyboardEvent) => void
@@ -25,7 +30,9 @@ export interface UseKeyboardShortcutsOptions {
  *
  * Shortcuts never fire while a modifier (Ctrl/Meta/Alt) is held, while the user
  * is typing in an input/textarea/`contenteditable`, or while a modal containing a
- * form is open — so text entry and dialogs are never hijacked. A matched key has
+ * form is open (the command palette among them) — so text entry and dialogs are
+ * never hijacked. Space and Enter additionally stand aside for a focused
+ * button/link, which owns them. A matched key has
  * its default prevented and the handler run. `handlers`/`enabled` are read through
  * refs so the listener is bound once yet always sees the latest closures.
  */
@@ -52,7 +59,14 @@ export function useKeyboardShortcuts(
       if (isTypingElement(event.target) || isFormModalOpen()) {
         return
       }
-      const handler = handlersRef.current[shortcutToken(event.key)]
+      const token = shortcutToken(event.key)
+      // Space and Enter belong to the control under the keyboard focus: with a
+      // button focused, one press must click it rather than also run a global
+      // shortcut (and `preventDefault` would swallow the click entirely).
+      if (ACTIVATION_KEYS.includes(token) && isActivatableElement(event.target)) {
+        return
+      }
+      const handler = handlersRef.current[token]
       if (handler === undefined) {
         return
       }

@@ -445,10 +445,15 @@ here.
   search (no key, provider down) = **a single line of text**, the rest of the location editor carries
   on. Tests: `PlaceSearch.test.tsx`),
   `KeyboardShortcutsHelp` (in the navbar: a keyboard icon + **shortcuts help modal** — opens with
-  `?` (Shift+/) anywhere or by click, lists all shortcuts grouped by context (Grid / Detail)
-  from `lib/shortcuts.ts` `SHORTCUT_GROUPS`, closes with Escape/the close button. Prop `variant`
+  `?` (Shift+/) anywhere or by click, lists **every** shortcut the app has, grouped by context
+  (Global / Photo grid / Selecting photos / Photo detail / Video / Slideshow / Person search /
+  Possible mistakes / Review preview / Review / Duplicate compare) from `lib/shortcuts.ts`
+  `SHORTCUT_GROUPS`, closes with Escape/the close button. Prop `variant`
   changes only the trigger: `'icon'` (default) is the bar's compact keyboard cap, `'row'` is the
-  full-width `.kk-navdrawer__link` row `MobileNavDrawer` puts in its account section — the modal is a
+  full-width `.kk-navdrawer__link` row `MobileNavDrawer` puts in its account section, and `'bare'`
+  renders **no trigger at all** — the `?` key alone — for the screens outside the Layout that have no
+  navbar to hang one on (`PhotoDetailPage` mounts it that way, so the screen with the most shortcuts
+  is not the one screen that cannot list them). The modal is a
   portal either way, so it stacks above the drawer that opened it),
   `EmptyState` (**shared empty-collection placeholder**: an icon in a round pit, a short title,
   a single-line hint and an optional action button, centered in the space the collection would occupy.
@@ -723,7 +728,11 @@ here.
   a Shift+click range only spans the loaded uids. An index is then
   a photo's **absolute** position, which is what lets the timeline jump anywhere in one scroll; the `favoritable` prop
   leaks the heart onto the tiles (and `onFavoriteChange` its flips back to the page); an optional `gridRef`
-  (`PhotoGridHandle`, an imperative `scrollToIndex` in photo indices, resolved to its row by `rowOfTile`)
+  (`PhotoGridHandle`, an imperative `scrollToIndex` in photo indices, resolved to its row by `rowOfTile`;
+  a **bare index reveals** — the wall stays put while the row is already on screen and otherwise hops the
+  shortest way, top or bottom, per the pure `revealAlign(row, visibleRange)` in `lib/gridScroll` — while an explicit
+  `{index, align}` positions the row, which is what a timeline jump wants: arrowing along a visible row
+  must not yank the wall to the top)
   + `onRangeChanged` (the visible range, translated back from rows) for the timeline; the **density** is read
   through `useGridDensity` and translated into the **target row height** by `rowHeightForColumns` — N columns
   means "about N *landscape* photos across", so portraits sit fewer to a row and panoramas more; the DOM
@@ -1927,7 +1936,10 @@ here.
   at mount) `backHref(view)` reconstructs the list URL. **Keys:** ←/→ steps through neighbors, `f`
   favorite, `m` faces, `i` drawer, `s` **skrýt** (hide/unhide, editor+ only — the same handler the eye
   button calls, see below), Esc **a step back** (first the selected face, then the drawer, then
-  out); rating hotkeys `0`–`5`/`p`/`r`/`v` on document (except while typing into an input).
+  out); rating hotkeys `0`–`5`/`p`/`r`/`v` on document (except while typing into an input or with a
+  form modal up, the same two guards the shared hook applies), and **`?`** for the shortcuts overlay —
+  the viewer is rendered outside the Layout, so it mounts its own triggerless
+  `KeyboardShortcutsHelp variant="bare"`.
   **prev/next** = `<Link replace>` `‹`/`›` carrying scope+filters from the URL (`detailQuery`) **and `info`**,
   respecting the source listing's order (`usePhotoNeighbors` over `neighborParams`+`mode` — `GET
   /photos`, or `GET /search` when the detail came from a search, in the mode `useSearchMode` resolves so a
@@ -2695,7 +2707,7 @@ here.
   errored ones stay; a different bulk operation doesn't change the grid) and the summary counts update; ✗ on a tile
   (only **labels** — albums have no rejection model, so it isn't offered) **permanently rejects** via
   `rejectLabel` (`services/feedback`) optimistically with rollback + an alert on failure; the **keyboard**
-  like the library (`useGridKeyboardNavigation`: arrows/`hjkl`, Enter opens, `x` selects, Esc clears the
+  like the library (`useGridKeyboardNavigation`: arrows/`hjkl`, Enter opens, Space/`x` select, Esc clears the
   selection — suspended while the lightbox is open, which owns the arrows then); config (type/collection/threshold/limit) in the URL (Back/refresh restores the search); states
   idle/loading/error/**no-embeddings** (its own message — embeddings are computed once the box is online;
   distinct from zero-matches)/empty-collection/zero-matches (advises lowering the threshold)/all-handled,
@@ -3956,7 +3968,10 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   document-level `keydown` listener dispatches by the normalized `shortcutToken(event.key)` onto
   `handlers` (via refs, bound once and always seeing the current closures), a matched key `preventDefault`s;
   it **never fires** while Ctrl/Meta/Alt is held, while typing (`isTypingElement`) or with a form modal
-  open (`isFormModalOpen`);
+  open (`isFormModalOpen`) — the command palette being one, since its dialog holds the search field —
+  and `ACTIVATION_KEYS` (Space, Enter) additionally **stand aside for a focused button/link**
+  (`isActivatableElement`), which owns them: without that, one Space would both run the shortcut and
+  have the button's own click swallowed by `preventDefault`;
   `useAutoHideChrome({idleMs?,paused?})` → `{visible,wake}` = the **disappearing chrome** of the immersive
   viewer (`PhotoDetailPage`): the controls start visible, after `idleMs` (default 2600 ms) without
   activity they fade out and return on the next activity. It watches activity **globally** (pointer move/down,
@@ -3971,8 +3986,11 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   scrollToIndex,onOpen,onToggleSelect,onToggleFavorite,hasSelection,onClearSelection})` = grid navigation
   over `useKeyboardShortcuts`: it holds `focusedIndex` (the highlight), the arrows + `j`/`k`/`h`/`l` move
   (left/right by 1, up/down by a row based on the live column count) and scroll the tile into view, `Enter`
-  opens, `x` selects (turning on selection mode), `f` toggles the favorite, `Escape` clears the selection first, then the
-  focus; the focus resets on `resetKey` (a new filter/sort/scope);
+  opens, `Space`/`x` select (turning on selection mode — Space is the key a file manager taught readers to
+  reach for, `x` the vim-flavoured alias), `f` toggles the favorite, `Escape` clears the selection first, then the
+  focus; the focus resets on `resetKey` (a new filter/sort/scope). Selection follows the page's role gate
+  (the library ignores the key for a viewer), favoriting does not — it is a personal act every signed-in
+  account may perform;
   `useSwipeNavigation({onSwipe,enabled?,threshold?})` → `{onTouchStart,onTouchMove,onTouchEnd}` =
   a horizontal **swipe on touch → prev/next** on the detail's image; it reads only the start/end of the touch and
   **never calls `preventDefault`**, so a mostly-vertical drag falls through to the native scroll (`lib/gestures`
@@ -4261,7 +4279,10 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   tomorrow. Reads are validated field by field (storage is shared with other builds, and a half-read
   snapshot handed to virtuoso would restore a nonsense layout), the store is an LRU of
   `GRID_SCROLL_MAX_ENTRIES` (16) views, and every failure — disabled storage, a full quota, foreign JSON —
-  costs the reader their position and nothing else;
+  costs the reader their position and nothing else. It also holds `revealAlign(row, visibleRange)` — the pure
+  rule behind `PhotoGridHandle.scrollToIndex`'s bare-index form: `null` (don't move) while the row sits
+  *inside* the visible range, `'start'`/`'end'` otherwise, with the rows *at* either edge counted as needing
+  the scroll since virtuoso reports a half-shown row as visible;
   `urlState.ts` = the `useUrlState` hook +
   the pure `readUrlState`/`writeUrlState`: the view state ↔ the URL query via the History API, „Back always
   works"; `libraryView.ts` = the `LibraryView` type (incl. `min_rating`/`flag`, the `favorite` toggle, the
@@ -4334,10 +4355,17 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   a rating, `p`/`r`/`v` → a personal flag 👍/👎/👁 (stored pick/reject/eye), otherwise null) + `isTypingElement(target)` (input/textarea/select/
   contenteditable → the hotkey is skipped) — shared by the photo detail and a focused tile;
   `shortcuts.ts` = the keyboard-shortcut registry + pure helpers: `shortcutToken(key)` (normalization of
-  `KeyboardEvent.key` — single-char lower-case, named keys passthrough, `?` stays), `isFormModalOpen`
-  (is a `.modal.show` with a form control open? → suppress the shortcuts behind a dialog), `HELP_SHORTCUT_KEY`
-  (`?`) and `SHORTCUT_GROUPS` (the grouped Grid/Detail source of truth for the help, `titleKey`/`descriptionKey`
-  typed as i18next `ParseKeys`, so a non-existent key is a compile error);
+  `KeyboardEvent.key` — single-char lower-case, named keys passthrough, `?` stays, `Spacebar` → `' '`),
+  `isFormModalOpen`
+  (is a `.modal.show` with a form control open? → suppress the shortcuts behind a dialog),
+  `isActivatableElement` (button/link/`role="button"`/`summary` — the control that answers Space and Enter
+  itself; also what `Slideshow` uses to keep Space off its Next button) + `ACTIVATION_KEYS` (`' '`, `Enter`),
+  `HELP_SHORTCUT_KEY`
+  (`?`) and `SHORTCUT_GROUPS` (the grouped, context-by-context source of truth for the help overlay —
+  global, grid, selection, detail, video, slideshow, face search, outliers, review lightbox, review,
+  compare — `titleKey`/`descriptionKey`
+  typed as i18next `ParseKeys`, so a non-existent key is a compile error; `shortcuts.test.ts` also asserts
+  both locales resolve every key and that no context advertises the same row twice);
   `albumBrowse.ts` = the album index's view state + the pure browse rules: the `AlbumsView` type
   (`type`/`q`/`sort`/`empty`, string-only for the URL) + `ALBUMS_DEFAULTS` (hand-made albums, the server's
   order, empty ones hidden) + `ALBUMS_SHOW_EMPTY` (`'1'`) + the `toAlbumTab`/`toAlbumSort` sanitizers +

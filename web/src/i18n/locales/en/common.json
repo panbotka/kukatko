@@ -1439,21 +1439,28 @@
     "groups": {
       "global": "Global",
       "grid": "Photo grid",
+      "selection": "Selecting photos",
       "detail": "Photo detail",
       "video": "Video player",
+      "slideshow": "Slideshow",
       "faceSearch": "Person search",
       "outliers": "Possible mistakes",
+      "lightbox": "Review preview",
       "review": "Review",
       "compare": "Duplicate compare"
     },
     "global": {
-      "search": "Open global search"
+      "search": "Open global search",
+      "help": "Open this help"
     },
     "grid": {
       "move": "Move focus between photos",
       "open": "Open the focused photo",
-      "select": "Select / deselect the focused photo",
-      "favorite": "Toggle favorite on the focused photo",
+      "favorite": "Toggle favorite on the focused photo"
+    },
+    "selection": {
+      "toggle": "Select / deselect the focused photo",
+      "range": "Shift + click selects a contiguous run of photos",
       "escape": "Clear selection, then focus"
     },
     "detail": {
@@ -1462,6 +1469,8 @@
       "faces": "Show / hide faces",
       "info": "Show / hide info",
       "hide": "Hide the photo from the library / bring it back",
+      "rating": "Set the star rating (0 clears it)",
+      "flag": "Mark thumbs-up / thumbs-down / eye",
       "back": "Step back: the selection, then the info panel, then out to the list"
     },
     "video": {
@@ -1469,6 +1478,13 @@
       "skip": "Skip 10 s back / forward",
       "speed": "Slow down / speed up playback",
       "arrows": "Arrows keep paging between photos, even during playback — seek with the focused timeline instead"
+    },
+    "slideshow": {
+      "step": "Previous / next slide",
+      "playPause": "Play / pause the show",
+      "fullscreen": "Toggle fullscreen",
+      "chrome": "Bring the slideshow controls back",
+      "leave": "Step back: settings, fullscreen, then out"
     },
     "faceSearch": {
       "move": "Move focus between cards",
@@ -1482,6 +1498,11 @@
       "select": "Select / deselect the focused card",
       "selectAll": "Select every face",
       "escape": "Clear selection, then focus"
+    },
+    "lightbox": {
+      "step": "Previous / next photo in the preview",
+      "open": "Open the photo in a new tab",
+      "close": "Close the preview"
     },
     "review": {
       "yes": "Yes — confirm the question",

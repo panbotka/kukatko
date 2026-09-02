@@ -1412,21 +1412,28 @@
     "groups": {
       "global": "Globální",
       "grid": "Mřížka fotek",
+      "selection": "Výběr fotek",
       "detail": "Detail fotky",
       "video": "Přehrávač videa",
+      "slideshow": "Promítání",
       "faceSearch": "Hledání osoby",
       "outliers": "Možné chyby",
+      "lightbox": "Náhled při posuzování",
       "review": "Třídění",
       "compare": "Porovnání duplikátů"
     },
     "global": {
-      "search": "Otevřít globální hledání"
+      "search": "Otevřít globální hledání",
+      "help": "Otevřít tuto nápovědu"
     },
     "grid": {
       "move": "Přesun výběru mezi fotkami",
       "open": "Otevřít vybranou fotku",
-      "select": "Vybrat / zrušit výběr fotky",
-      "favorite": "Přepnout oblíbenou u vybrané fotky",
+      "favorite": "Přepnout oblíbenou u vybrané fotky"
+    },
+    "selection": {
+      "toggle": "Vybrat / zrušit výběr zaměřené fotky",
+      "range": "Shift + klik vybere souvislý úsek fotek",
       "escape": "Zrušit výběr, poté zaměření"
     },
     "detail": {
@@ -1435,6 +1442,8 @@
       "faces": "Zobrazit / skrýt obličeje",
       "info": "Zobrazit / skrýt informace",
       "hide": "Skrýt fotku z knihovny / vrátit ji zpět",
+      "rating": "Nastavit hodnocení hvězdičkami (0 = zrušit)",
+      "flag": "Označit palcem nahoru / palcem dolů / okem",
       "back": "Krok zpět: výběr, poté informační panel, poté ven na seznam"
     },
     "video": {
@@ -1442,6 +1451,13 @@
       "skip": "Skok o 10 s zpět / vpřed",
       "speed": "Zpomalit / zrychlit přehrávání",
       "arrows": "Šipky i při přehrávání listují mezi fotkami — přetoč přehrávač zaměřenou časovou osou"
+    },
+    "slideshow": {
+      "step": "Předchozí / další snímek",
+      "playPause": "Spustit / pozastavit promítání",
+      "fullscreen": "Přepnout celou obrazovku",
+      "chrome": "Zobrazit ovládání promítání",
+      "leave": "Krok zpět: nastavení, celá obrazovka, poté ven"
     },
     "faceSearch": {
       "move": "Přesun zaměření mezi kartami",
@@ -1455,6 +1471,11 @@
       "select": "Vybrat / zrušit výběr zaměřené karty",
       "selectAll": "Vybrat všechny obličeje",
       "escape": "Zrušit výběr, poté zaměření"
+    },
+    "lightbox": {
+      "step": "Předchozí / další fotka v náhledu",
+      "open": "Otevřít fotku v nové záložce",
+      "close": "Zavřít náhled"
     },
     "review": {
       "yes": "Ano — potvrdit otázku",

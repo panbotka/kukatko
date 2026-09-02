@@ -17,8 +17,43 @@ export const HELP_SHORTCUT_KEY = '?'
  * unchanged. A pure function so dispatch is trivially testable.
  */
 export function shortcutToken(key: string): string {
+  // Old engines (and a few remotes) still report the space bar as `Spacebar`;
+  // normalizing it here means a handler only ever has to bind `' '`.
+  if (key === 'Spacebar') {
+    return ' '
+  }
   return key.length === 1 ? key.toLowerCase() : key
 }
+
+/**
+ * Reports whether an event target activates on Space (or Enter) by itself — a
+ * button, a link, an `role="button"` or a `<summary>`. A global Space/Enter
+ * shortcut has to stand aside for those: with the "Select all" button focused,
+ * one press would otherwise both click it and run the shortcut, and the reader
+ * would see two things happen for one key. Text-entry elements are covered by
+ * `isTypingElement` instead.
+ */
+export function isActivatableElement(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false
+  }
+  const tag = target.tagName
+  return (
+    tag === 'BUTTON' ||
+    tag === 'A' ||
+    tag === 'SUMMARY' ||
+    target.getAttribute('role') === 'button' ||
+    target.getAttribute('role') === 'link'
+  )
+}
+
+/**
+ * The keys that a focused control owns before any global shortcut does: Space
+ * (and Enter) press the button/link under the keyboard focus. Dispatch skips
+ * these when {@link isActivatableElement} says so — see
+ * `useKeyboardShortcuts`.
+ */
+export const ACTIVATION_KEYS: readonly string[] = [' ', 'Enter']
 
 /**
  * Reports whether a Bootstrap modal that contains form controls is currently
@@ -61,16 +96,25 @@ export interface ShortcutGroup {
 export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
   {
     titleKey: 'shortcuts.groups.global',
-    entries: [{ keys: ['/', 'Ctrl+K'], descriptionKey: 'shortcuts.global.search' }],
+    entries: [
+      { keys: ['/', 'Ctrl+K'], descriptionKey: 'shortcuts.global.search' },
+      { keys: ['?'], descriptionKey: 'shortcuts.global.help' },
+    ],
   },
   {
     titleKey: 'shortcuts.groups.grid',
     entries: [
       { keys: ['↑', '↓', '←', '→', 'j', 'k', 'h', 'l'], descriptionKey: 'shortcuts.grid.move' },
       { keys: ['Enter'], descriptionKey: 'shortcuts.grid.open' },
-      { keys: ['x'], descriptionKey: 'shortcuts.grid.select' },
       { keys: ['f'], descriptionKey: 'shortcuts.grid.favorite' },
-      { keys: ['Esc'], descriptionKey: 'shortcuts.grid.escape' },
+    ],
+  },
+  {
+    titleKey: 'shortcuts.groups.selection',
+    entries: [
+      { keys: ['Space', 'x'], descriptionKey: 'shortcuts.selection.toggle' },
+      { keys: ['Shift'], descriptionKey: 'shortcuts.selection.range' },
+      { keys: ['Esc'], descriptionKey: 'shortcuts.selection.escape' },
     ],
   },
   {
@@ -82,6 +126,8 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
       { keys: ['i'], descriptionKey: 'shortcuts.detail.info' },
       // `s` as in „skrýt"; `h` is taken by the grid's vim-style move-left.
       { keys: ['s'], descriptionKey: 'shortcuts.detail.hide' },
+      { keys: ['0', '…', '5'], descriptionKey: 'shortcuts.detail.rating' },
+      { keys: ['p', 'r', 'v'], descriptionKey: 'shortcuts.detail.flag' },
       { keys: ['Esc'], descriptionKey: 'shortcuts.detail.back' },
     ],
   },
@@ -92,6 +138,16 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
       { keys: ['j', 'l'], descriptionKey: 'shortcuts.video.skip' },
       { keys: ['<', '>'], descriptionKey: 'shortcuts.video.speed' },
       { keys: ['←', '→'], descriptionKey: 'shortcuts.video.arrows' },
+    ],
+  },
+  {
+    titleKey: 'shortcuts.groups.slideshow',
+    entries: [
+      { keys: ['←', '→', 'PgUp', 'PgDn'], descriptionKey: 'shortcuts.slideshow.step' },
+      { keys: ['Space'], descriptionKey: 'shortcuts.slideshow.playPause' },
+      { keys: ['f'], descriptionKey: 'shortcuts.slideshow.fullscreen' },
+      { keys: ['Tab'], descriptionKey: 'shortcuts.slideshow.chrome' },
+      { keys: ['Esc'], descriptionKey: 'shortcuts.slideshow.leave' },
     ],
   },
   {
@@ -117,6 +173,14 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
       { keys: ['x'], descriptionKey: 'shortcuts.outliers.select' },
       { keys: ['Ctrl+A'], descriptionKey: 'shortcuts.outliers.selectAll' },
       { keys: ['Esc'], descriptionKey: 'shortcuts.outliers.escape' },
+    ],
+  },
+  {
+    titleKey: 'shortcuts.groups.lightbox',
+    entries: [
+      { keys: ['←', '→'], descriptionKey: 'shortcuts.lightbox.step' },
+      { keys: ['o'], descriptionKey: 'shortcuts.lightbox.open' },
+      { keys: ['Esc'], descriptionKey: 'shortcuts.lightbox.close' },
     ],
   },
   {

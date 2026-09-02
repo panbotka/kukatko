@@ -6,7 +6,12 @@ import { type ShortcutMap, useKeyboardShortcuts } from './useKeyboardShortcuts'
 /** A tiny harness that binds the given shortcuts and renders a text input. */
 function Harness({ handlers, enabled }: { handlers: ShortcutMap; enabled?: boolean }) {
   useKeyboardShortcuts(handlers, { enabled })
-  return <input aria-label="field" />
+  return (
+    <>
+      <input aria-label="field" />
+      <button type="button">Select all</button>
+    </>
+  )
 }
 
 afterEach(() => {
@@ -62,6 +67,37 @@ describe('useKeyboardShortcuts', () => {
     // `?` is produced with Shift held; that must still fire.
     fireEvent.keyDown(document, { key: '?', shiftKey: true })
     expect(onQuestion).toHaveBeenCalledTimes(1)
+  })
+
+  it('normalizes the space bar to one token', () => {
+    const onSpace = vi.fn()
+    render(<Harness handlers={{ ' ': onSpace }} />)
+
+    fireEvent.keyDown(document, { key: ' ' })
+    fireEvent.keyDown(document, { key: 'Spacebar' })
+    expect(onSpace).toHaveBeenCalledTimes(2)
+  })
+
+  it('leaves Space and Enter to the focused button, which owns them', () => {
+    const onSpace = vi.fn()
+    const onEnter = vi.fn()
+    const onF = vi.fn()
+    const { getByRole } = render(<Harness handlers={{ ' ': onSpace, Enter: onEnter, f: onF }} />)
+    const button = getByRole('button', { name: 'Select all' })
+    button.focus()
+
+    const space = new KeyboardEvent('keydown', { key: ' ', cancelable: true, bubbles: true })
+    button.dispatchEvent(space)
+    fireEvent.keyDown(button, { key: 'Enter' })
+
+    expect(onSpace).not.toHaveBeenCalled()
+    expect(onEnter).not.toHaveBeenCalled()
+    // The default is left alone too, so the browser still clicks the button.
+    expect(space.defaultPrevented).toBe(false)
+
+    // Only those two keys stand aside; the rest still work from a button.
+    fireEvent.keyDown(button, { key: 'f' })
+    expect(onF).toHaveBeenCalledTimes(1)
   })
 
   it('is inert when disabled', () => {

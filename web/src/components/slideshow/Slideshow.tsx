@@ -10,6 +10,7 @@ import { useViewportBox, type ViewportBox } from '../../hooks/useViewportBox'
 import { formatDuration, slideshowRemainingMs } from '../../lib/duration'
 import { kenBurnsStyle } from '../../lib/kenBurns'
 import { stageRenditionName } from '../../lib/rendition'
+import { isActivatableElement } from '../../lib/shortcuts'
 import {
   type SlideshowEffect,
   type SlideshowSettings,
@@ -106,23 +107,6 @@ function isFormControl(target: EventTarget | null): boolean {
   }
   const tag = target.tagName
   return tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA'
-}
-
-/**
- * True when the event target activates on Space itself — a button, a link. The
- * player's own Space shortcut has to stand aside for those: with the Next button
- * focused, one press would otherwise both click it and toggle playback, and the
- * reader would see the show jump a slide *and* pause.
- */
-function isActivatable(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) {
-    return false
-  }
-  return (
-    target.tagName === 'BUTTON' ||
-    target.tagName === 'A' ||
-    target.getAttribute('role') === 'button'
-  )
 }
 
 /** True when the touch started on the controls rather than on the photograph. */
@@ -305,7 +289,7 @@ export function Slideshow({
           break
         case ' ':
         case 'Spacebar':
-          if (isActivatable(event.target)) {
+          if (isActivatableElement(event.target)) {
             break
           }
           event.preventDefault()
