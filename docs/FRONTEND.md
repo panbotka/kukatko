@@ -671,7 +671,9 @@ here.
   (the album field's id, kept as one literal) + `organizeSelectionNames`
   (selection → human names for the outcome sentence, a `create:` marker reading as the typed name);
   `components/library/` = `PhotoTile`
-  (a square lazy-load tile → `/photos/{uid}` in the **hero-first** style: no border, no shadow, and
+  (a lazy-load tile → `/photos/{uid}` in the **hero-first** style: square by default, or **the shape of its
+  own photograph** when the caller lays the box out for it (`fill` + `tileWidth`, which is what the justified
+  wall does); no border, no shadow, and
   with a minimal radius `--kk-radius-tile`, so the library is a dense wall of images; **stack badge**
   (the group's member count at top right — an `images` icon + `stack_count`, `library.tile.stackCount`,
   only when `stack_count > 1`), a **play badge + duration** for a video/live photo (`▶` + `formatDuration`,
@@ -684,23 +686,38 @@ here.
   detail**, not on the tile); the heart hides in selection mode; the optional
   `onFavoriteChange(uid,favorite)` reports every flip (optimistic **and** rolled back) up to the page,
   so a list that also favorites by another route keeps **one** baseline per photo; `src` takes
-  **`photo.thumb_url` from the payload** via `useThumbSrc` and **never** builds it from the UID),
-  `PhotoGrid` (a virtualized **`react-virtuoso` `VirtuosoGrid`**,
-  window-scroll, footer spinner/retry. It serves **two loading shapes**: a grid that grows by
-  appending pages passes `onEndReached` (→ next page), while a **windowed** grid (the library)
+  **an address from the payload** via `useThumbSrc` and **never** builds it from the UID: the square crop
+  `photo.thumb_url` for a square tile, the aspect-preserving `photo.preview_url` (`fit_720`) for a
+  justified one — and for a tile laid out wide enough to outrun that rung, the next `fit_*` up by route
+  (`lib/tileRendition`), so a panorama spanning half a desktop does not go soft),
+  `PhotoGrid` (the **justified photo wall**: a virtualized **`react-virtuoso` `Virtuoso`** list,
+  window-scroll, footer spinner/retry. Photos keep **their own proportions** — the tiles are laid into rows
+  that share one height and fill the width edge to edge (`lib/justifiedLayout`), so a panorama is wide, a
+  portrait is tall and nothing is cropped into a square on the way in. Virtualization is **by row**, which is
+  what the variable-height list is for; everything a page passes or receives is still in **photo** indices
+  (`onRangeChanged`, `gridRef.scrollToIndex`), because which row a photo landed in is the grid's own
+  business. The layout needs a real width, so the grid measures its own box (`useElementWidth`, a
+  `ResizeObserver`) and re-lays itself out when that moves. It serves **two loading shapes**: a grid that
+  grows by appending pages passes `onEndReached` (→ next page), while a **windowed** grid (the library)
   omits it and instead hands over `photos` as long as the *whole* result with `undefined` where
-  a page is not loaded — a hole renders as a tile-shaped `Skeleton` placeholder, `computeItemKey`
-  falls back to `slot-<index>`, and a Shift+click range only spans the loaded uids. An index is then
+  a page is not loaded — a hole is laid out as a default 3:2 box and rendered as a `Skeleton` placeholder, and
+  a Shift+click range only spans the loaded uids. An index is then
   a photo's **absolute** position, which is what lets the timeline jump anywhere in one scroll; the `favoritable` prop
-  leaks the heart onto the tiles (and `onFavoriteChange` its flips back to the page); an optional `gridRef` (imperative `scrollToIndex`
-  handle) + `onRangeChanged` (the visible range) for the timeline; it takes its column template from
-  `useGridDensity` → `lib/gridDensity` `gridTemplateColumns`, the DOM carries `data-density` for tests.
+  leaks the heart onto the tiles (and `onFavoriteChange` its flips back to the page); an optional `gridRef`
+  (`PhotoGridHandle`, an imperative `scrollToIndex` in photo indices, resolved to its row by `rowOfTile`)
+  + `onRangeChanged` (the visible range, translated back from rows) for the timeline; the **density** is read
+  through `useGridDensity` and translated into the **target row height** by `rowHeightForColumns` — N columns
+  means "about N *landscape* photos across", so portraits sit fewer to a row and panoramas more; the DOM
+  carries `data-density` on the wall and one `.kukatko-photo-row` per row (which is also how row-wise keyboard
+  navigation counts a row, since there is no one column count any more).
   **Which** stored count (and gutter) it follows is the optional `scope` prop — the library's by default,
-  `REVIEW_GRID_SCOPE` on `/expand` — threaded to the inner `List` through virtuoso's `context`.
-  A density change **only restyles** the existing `<div>` — virtuoso re-measures the tiles, scroll and selection
+  `REVIEW_GRID_SCOPE` on `/expand`.
+  A density change **only re-lays out** the existing `<div>` — virtuoso re-measures the rows, scroll and selection
   survive because the grid is neither keyed nor remounted. Where the reader is in it is reported through
-  **`onStateChanged(state)`** and put back through **`restoreStateFrom`** (virtuoso's own `GridStateSnapshot`:
-  the offset plus the measurements that let the grid lay the tiles out at it before anything is on screen);
+  **`onStateChanged(state)`** and put back through **`restoreStateFrom`** (virtuoso's own `StateSnapshot`:
+  the offset plus the measured row sizes that let the list lay itself out at it before anything is on screen;
+  the list has no `stateChanged` prop, so the grid reads the snapshot off the handle's `getState` whenever the
+  visible rows change and once more when the scroll settles);
   the grid remembers nothing itself, the page does — see `useGridScrollMemory`),
   `TimelineScrubber` (**the timeline** — a thin fixed vertical date rail beside the grid: it fetches a monthly
   histogram via `useTimeline(params)` (refetch on filter change) and lays it out through
@@ -4022,15 +4039,18 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   rating (stars) + pick/reject flag over `ratePhoto` (`PUT …/rating` with only the changed field),
   `setRating`/`setFlag` with a per-field rollback on an error, a no-op on an identical value, `pending` via an
   in-flight counter, a resync on a change of `uid`/the server state (mirroring `useFavorite`);
-  `useThumbSrc(uid,thumbUrl)` → `{src,failed,onError}` = **resilience against an expired signed URL**:
+  `useThumbSrc(uid,thumbUrl,pick?)` → `{src,failed,onError}` = **resilience against an expired signed URL**:
   the `thumb_url` in the payload may be a short-lived signed address of the media Worker (default 1 h), so a
   payload held in a virtualized list or carried across a longer idle gives the `<img>` an address
   the Worker rejects. The first `onError` therefore refetches the photo **once** (`fetchPhoto`) and tries it
   with a freshly signed URL; a second failure, a failed refetch, an empty or **unchanged** address (which is what the
   filesystem backend does — its URLs are routes and don't age, so a failure = a genuinely missing preview) → `failed`
   and the caller renders a placeholder. A new `thumbUrl` prop (a new page of results) resets the retry budget.
-  It is solved this way, **not with a long TTL** — a short lifetime is the whole point of signing. Used by
-  `PhotoTile` and `TrashCard`;
+  It is solved this way, **not with a long TTL** — a short lifetime is the whole point of signing. **Which**
+  address a refreshed payload is re-read from is the caller's (`pick`, default `thumb_url`): a photo carries
+  more than one now, and a caller drawing a rendition the payload does not carry at all (a bigger `fit_*`
+  rung fetched by route, which never expires) passes a picker returning `''`, so a failure there is simply a
+  failure. Used by `PhotoTile` and `TrashCard`;
   `useSlideshow({length,hasMore,intervalMs,repeat?,autoPlay?,onLoadMore?,readiness?,maxHoldMs?})` = the control of the
   slideshow: it owns `index`+`playing`+`holding`+`pass`, `next`/`prev`/`play`/`pause`/`toggle`/`goTo`,
   wrap-around, prefetch of `PRELOAD_AHEAD` pages ahead
@@ -4059,6 +4079,13 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `lib/slideshowSettings` (read once on mount, one `update(patch)` writes into localStorage,
   sanitization). The **start dialog does not use it** — it edits a draft and persists on confirmation,
   so dismissing it changes nothing;
+  `useElementWidth(ref)` → the live content width of an element in CSS pixels, over a `ResizeObserver`
+  (with a one-off measurement on mount, so the first paint is already laid out, and a `resize` listener where
+  there is no observer). The justified wall is laid out in JavaScript and needs a real number — not a
+  percentage, and not the viewport, which is wider than the page column the timeline rail takes a lane out
+  of. An **unmeasurable** element (jsdom, which has neither layout nor `ResizeObserver`) reports
+  `FALLBACK_WIDTH_PX` (1024), because a component that renders nothing until measured would otherwise render
+  nothing at all in every test;
   `useGridDensity()` → `{density,setDensity,maxColumns,storedDensity}` = the photo grid's density (**always a
   concrete column count 1…10**, no `'auto'` mode) over `useSyncExternalStore` on top of `lib/gridDensity`. localStorage is
   **the single source of truth** (no in-memory copy): the snapshot is a primitive (a column count, or `null`
@@ -4144,7 +4171,10 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   (`https://github.com/panbotka/kukatko/commit/<sha>`, or `null` unless the commit is 7–40 hex characters,
   which is what keeps a development build's `none` from becoming a dead link);
   `gridScroll.ts` = the **session store of grid positions** behind `useGridScrollMemory`: one
-  `sessionStorage` entry (`kukatko.gridScroll`) holding `{snapshot?,scrollY,count}` per view key, plus
+  `sessionStorage` entry (`kukatko.gridScroll`) holding `{snapshot?,scrollY,count}` per view key — the
+  snapshot being virtuoso's `StateSnapshot` (`{ranges,scrollTop}`, the measured row sizes plus the offset);
+  a snapshot in the older uniform-grid shape (one item size, no ranges) fails validation and is dropped, so
+  the reader lands at the top of that view once instead of somewhere the measurements do not describe — plus
   `gridScrollKey(pathname,search)` — the path and the query that defines the *result set*, sorted for
   stability and with the position-only params (`at`, `info`) dropped, so a timeline jump keys to the same
   view while a changed filter keys to a different one and can never restore an unrelated position. Session
@@ -4430,6 +4460,31 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   in/out × 5 depths) are derived **deterministically** from an FNV-1a hash of the `uid`, so the same album
   looks the same on every replay. Both endpoints keep the offset within the `panLimit` of their scale and both the scale
   and the offset interpolate linearly → **the image never uncovers the edge** of the scene;
+  `justifiedLayout.ts` = **the photo wall's geometry**, pure and unit-tested (no DOM, no React: the grid
+  measures the width, this decides the shape). `tileRatio(width,height,orientation)` is a photo's laid-out
+  aspect ratio — the stored dimensions with the EXIF orientation applied (a quarter turn swaps the sides, and
+  the thumbnail has that rotation baked in), falling back to `DEFAULT_TILE_RATIO` (**3:2**, the commonest
+  frame in a family archive) for anything unusable and clamped into `MIN_TILE_RATIO`…`MAX_TILE_RATIO`
+  (**1/3…3** — a 10:1 panorama would otherwise own a row nothing else reaches; the tile is filled with
+  `object-fit: cover`, so the trade is a slice of an extreme photo for a readable wall).
+  `rowHeightForColumns(width,columns,gap)` translates the density's column count into the target row height
+  through `REFERENCE_TILE_RATIO` (**3:2**), which is what keeps "five across" meaning what it meant.
+  `justifiedRows(ratios,{containerWidth,targetRowHeight,gap})` is the greedy row-filler every justified
+  gallery uses: keep adding photos until scaling the row to the width would push it below the target, then
+  close whichever candidate row (with the last photo or without) lands nearer it. A closed row measures
+  **exactly** `containerWidth`, gutters included, its rounding error absorbed by the last tile. The **last
+  row** is justified only while that does not stretch it past `LAST_ROW_MAX_STRETCH` (**1.4×**) — beyond
+  that (the single leftover portrait) it keeps the target height and ends where its photos end. An
+  unmeasured container yields **no rows at all**, which is what a caller rendering nothing until it has
+  measured itself wants. `rowOfTile(rows,index)` binary-searches the row holding a photo (a library is tens
+  of thousands of photos long, and every scroll-to asks);
+  `tileRendition.ts` = **which thumbnail rendition a wall tile draws** (pure): `tileRenditionSize(widthPx,dpr)`
+  walks `TILE_RENDITION_SIZES` (720/1280/1920/2560) and returns the first rung that covers the tile within
+  `TILE_RENDITION_TOLERANCE` (1.15 — a few per cent of stretch is invisible, a rung early doubles the bytes),
+  with the ratio capped at `TILE_MAX_DPR` (2). `tileUsesPreviewURL(widthPx,dpr)` is the question the tile
+  actually asks: the common answer is yes, and yes means the **signed** `preview_url` from the payload
+  (served at the edge) rather than a route through the application. It exists because a square grid asked one
+  question of every tile and a justified one does not — a panorama at density 2 can span most of the window;
   `gridDensity.ts` = the `GridDensity` type (**a plain `number`**, the column count) + `GRID_COLUMNS_MIN`
   (**1** = one photo per row) / `GRID_COLUMNS_MAX` (**10**) / `GRID_COLUMN_CHOICES` (1…10) /
   `GRID_TILE_MIN_PX` (140, the target tile width **for the seed only**) / `GRID_GAP_PX` (**3** — a hairline

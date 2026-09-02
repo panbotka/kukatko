@@ -309,6 +309,12 @@ type Photo struct {
 	ThumbURL    string `json:"thumb_url,omitempty"`
 	DownloadURL string `json:"download_url,omitempty"`
 
+	// PreviewURL is where a client fetches the aspect-preserving rendition of this
+	// photo (thumb.PreviewSize) — what the justified library grid draws, since a
+	// tile there is the shape of its photograph rather than a square. Filled by
+	// the same builder, under the same rules, as the two above.
+	PreviewURL string `json:"preview_url,omitempty"`
+
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }

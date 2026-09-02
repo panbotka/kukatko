@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react'
-import { type GridStateSnapshot } from 'react-virtuoso'
+import { type StateSnapshot } from 'react-virtuoso'
 
 import { type GridScrollState, readGridScroll, writeGridScroll } from '../lib/gridScroll'
 
@@ -52,11 +52,11 @@ export interface GridScrollMemory {
    * The remembered virtuoso state, for `PhotoGrid`'s `restoreStateFrom`;
    * undefined when this view has no remembered position.
    */
-  restoreFrom: GridStateSnapshot | undefined
+  restoreFrom: StateSnapshot | undefined
   /** The remembered window offset, for a grid that is not virtualized. */
   restoreScrollY: number
   /** Pass to `PhotoGrid`'s `onStateChanged`. */
-  onStateChanged: (snapshot: GridStateSnapshot) => void
+  onStateChanged: (snapshot: StateSnapshot) => void
 }
 
 /**
@@ -86,7 +86,7 @@ export function useGridScrollMemory({
   countRef.current = count
   const restoringRef = useRef(restoring)
   restoringRef.current = restoring
-  const snapshotRef = useRef<GridStateSnapshot | undefined>(undefined)
+  const snapshotRef = useRef<StateSnapshot | undefined>(undefined)
   const scrollYRef = useRef(0)
   // Whether anything worth writing has been observed since this view became
   // current. Without it, a reader who opens a photo without scrolling would have
@@ -136,7 +136,7 @@ export function useGridScrollMemory({
   }, [persist])
 
   const onStateChanged = useCallback(
-    (snapshot: GridStateSnapshot) => {
+    (snapshot: StateSnapshot) => {
       if (snapshot.scrollTop > 0) {
         movedRef.current = true
       } else if (!movedRef.current && restoreTopRef.current > 0) {

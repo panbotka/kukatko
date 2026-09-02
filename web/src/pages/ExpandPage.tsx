@@ -4,13 +4,13 @@ import Button from 'react-bootstrap/Button'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { type VirtuosoGridHandle } from 'react-virtuoso'
 
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
 import { ExpandResults } from '../components/expand/ExpandResults'
 import { ExpandSearchForm } from '../components/expand/ExpandSearchForm'
 import { Icon } from '../components/Icon'
+import { type PhotoGridHandle } from '../components/library/PhotoGrid'
 import { BulkEditControl } from '../components/organize/BulkEditControl'
 import { type BulkEditOutcome, type BulkEditPrefill } from '../components/organize/BulkEditModal'
 import { SelectionBar } from '../components/organize/SelectionBar'
@@ -258,17 +258,20 @@ export function ExpandPage() {
 
   // Keyboard navigation identical to the library grid: arrows/hjkl move the
   // highlight, Enter opens the photo, x selects, Escape clears the selection.
-  const gridRef = useRef<VirtuosoGridHandle>(null)
+  const gridRef = useRef<PhotoGridHandle>(null)
   const gridWrapRef = useRef<HTMLDivElement>(null)
+  // A justified wall has no one column count: "one row down" is how many tiles
+  // the highlighted row holds — see the same read in `LibraryPage`.
   const getColumns = useCallback(() => {
-    const el = gridWrapRef.current?.querySelector<HTMLElement>('.kukatko-photo-grid')
-    if (!el) {
+    const wrap = gridWrapRef.current
+    if (!wrap) {
       return 1
     }
-    const tracks = getComputedStyle(el)
-      .gridTemplateColumns.split(' ')
-      .filter((track) => track.trim() !== '')
-    return tracks.length > 0 ? tracks.length : 1
+    const focused = wrap.querySelector<HTMLElement>('[data-focused="true"]')
+    const row =
+      focused?.closest<HTMLElement>('.kukatko-photo-row') ??
+      wrap.querySelector<HTMLElement>('.kukatko-photo-row')
+    return row !== null && row.childElementCount > 0 ? row.childElementCount : 1
   }, [])
   const scrollFocusIntoView = useCallback((index: number) => {
     gridRef.current?.scrollToIndex(index)

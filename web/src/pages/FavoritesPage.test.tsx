@@ -1,6 +1,5 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { type ReactNode } from 'react'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -13,19 +12,9 @@ import { albumOption, BATCH_ACTIONS } from '../test/batchBar'
 
 import { FavoritesPage } from './FavoritesPage'
 
-interface MockGridProps {
-  data: Photo[]
-  itemContent: (index: number, item: Photo) => ReactNode
-}
-vi.mock('react-virtuoso', () => ({
-  VirtuosoGrid: ({ data, itemContent }: MockGridProps) => (
-    <div data-testid="grid">
-      {data.map((item, index) => (
-        <div key={item.uid}>{itemContent(index, item)}</div>
-      ))}
-    </div>
-  ),
-}))
+// jsdom lays nothing out, so the real virtualizer mounts nothing: render it
+// all instead (see `test/virtuoso`).
+vi.mock('react-virtuoso', async () => (await import('../test/virtuoso')).virtuosoMock())
 
 vi.mock('../services/photos', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/photos')>()

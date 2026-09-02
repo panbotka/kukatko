@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { fetchPhoto } from '../services/photos'
+import { fetchPhoto, type Photo } from '../services/photos'
+
+/** The address a refreshed payload is re-read from by default: the square crop. */
+function defaultPick(photo: Photo): string {
+  return photo.thumb_url
+}
 
 /** State and error handler for an `<img>` whose source may have expired. */
 export interface UseThumbSrcResult {
@@ -29,8 +34,19 @@ export interface UseThumbSrcResult {
  * stale, so a failure there is a genuinely missing thumbnail), the image is
  * reported as failed and the caller renders its placeholder. A fresh `thumbUrl`
  * prop — a new page of results, a refreshed payload — resets the retry budget.
+ *
+ * Which address the refreshed payload is re-read from is the caller's to say
+ * (`pick`), because a photo now carries more than one: the square crop every
+ * medallion draws and the aspect-preserving rendition the justified wall does. A
+ * caller showing a rendition the payload does not carry at all — a bigger rung
+ * fetched by route, which never expires — passes a picker returning the empty
+ * string, and a failure there is simply a failure.
  */
-export function useThumbSrc(uid: string, thumbUrl: string): UseThumbSrcResult {
+export function useThumbSrc(
+  uid: string,
+  thumbUrl: string,
+  pick: (photo: Photo) => string = defaultPick,
+): UseThumbSrcResult {
   const [src, setSrc] = useState(thumbUrl)
   const [failed, setFailed] = useState(false)
   const retriedRef = useRef(false)
@@ -50,6 +66,11 @@ export function useThumbSrc(uid: string, thumbUrl: string): UseThumbSrcResult {
     retriedRef.current = false
   }, [thumbUrl])
 
+  // The picker is read through a ref so a caller may pass an inline arrow
+  // without re-arming the retry on every render.
+  const pickRef = useRef(pick)
+  pickRef.current = pick
+
   const onError = useCallback(() => {
     if (retriedRef.current) {
       setFailed(true)
@@ -61,13 +82,14 @@ export function useThumbSrc(uid: string, thumbUrl: string): UseThumbSrcResult {
         if (!mountedRef.current) {
           return
         }
+        const next = pickRef.current(fresh)
         // An unchanged address would not even re-trigger a load, let alone
         // succeed: the thumbnail is missing, not stale.
-        if (fresh.thumb_url === '' || fresh.thumb_url === src) {
+        if (next === '' || next === src) {
           setFailed(true)
           return
         }
-        setSrc(fresh.thumb_url)
+        setSrc(next)
       })
       .catch(() => {
         if (mountedRef.current) {

@@ -1,4 +1,4 @@
-import { type GridStateSnapshot } from 'react-virtuoso'
+import { type StateSnapshot } from 'react-virtuoso'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import {
@@ -11,12 +11,13 @@ import {
 const STORAGE_KEY = 'kukatko.gridScroll'
 
 /** A plausible virtuoso snapshot at the given offset. */
-function snapshot(scrollTop: number): GridStateSnapshot {
+function snapshot(scrollTop: number): StateSnapshot {
   return {
-    gap: { column: 8, row: 8 },
-    item: { height: 220, width: 220 },
+    ranges: [
+      { startIndex: 0, endIndex: 11, size: 220 },
+      { startIndex: 12, endIndex: 30, size: 180 },
+    ],
     scrollTop,
-    viewport: { height: 900, width: 1400 },
   }
 }
 
@@ -115,6 +116,33 @@ describe('readGridScroll / writeGridScroll', () => {
     window.sessionStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({ '/': { count: 5, scrollY: 300, snapshot: { scrollTop: 300 } } }),
+    )
+    expect(readGridScroll('/')).toEqual({ count: 5, scrollY: 300 })
+
+    // Same for a range that is not a measurement, and for the shape the build
+    // with a uniform square grid used to write.
+    window.sessionStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        '/': { count: 5, scrollY: 300, snapshot: { scrollTop: 300, ranges: [{ size: 220 }] } },
+      }),
+    )
+    expect(readGridScroll('/')).toEqual({ count: 5, scrollY: 300 })
+
+    window.sessionStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        '/': {
+          count: 5,
+          scrollY: 300,
+          snapshot: {
+            gap: { column: 8, row: 8 },
+            item: { height: 220, width: 220 },
+            scrollTop: 300,
+            viewport: { height: 900, width: 1400 },
+          },
+        },
+      }),
     )
     expect(readGridScroll('/')).toEqual({ count: 5, scrollY: 300 })
   })

@@ -1,6 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { type ReactNode } from 'react'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -15,20 +14,9 @@ import { albumOption, BATCH_ACTIONS } from '../test/batchBar'
 import { SearchPage } from './SearchPage'
 
 // Stand-in for react-virtuoso's grid (jsdom has no layout): render every item.
-interface MockGridProps {
-  data: Photo[]
-  itemContent: (index: number, item: Photo) => ReactNode
-  endReached?: () => void
-}
-vi.mock('react-virtuoso', () => ({
-  VirtuosoGrid: ({ data, itemContent }: MockGridProps) => (
-    <div data-testid="grid">
-      {data.map((item, index) => (
-        <div key={item.uid}>{itemContent(index, item)}</div>
-      ))}
-    </div>
-  ),
-}))
+// jsdom lays nothing out, so the real virtualizer mounts nothing: render it
+// all instead (see `test/virtuoso`).
+vi.mock('react-virtuoso', async () => (await import('../test/virtuoso')).virtuosoMock())
 
 // Keep the real helpers; only the network call is faked.
 vi.mock('../services/photos', async (importOriginal) => {

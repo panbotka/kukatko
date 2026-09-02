@@ -612,11 +612,13 @@ to `## Package map` in `CLAUDE.md`.
   `Download(uid,filePath)` (the client address: the signed Worker URL, otherwise a fallback to the own
   route `/api/v1/photos/...`), `Object(relPath)` / `ThumbObject(fileHash,size)` (the **raw** backend
   response — an empty string = "stream it yourself", non-empty = "redirect there"; the media routes use this)
-  and `Decorate(list)` / `DecorateOne(&photo)`, which fill `Photo.ThumbURL`+`Photo.DownloadURL`.
+  and `Decorate(list)` / `DecorateOne(&photo)`, which fill `Photo.ThumbURL`+`Photo.PreviewURL`+`Photo.DownloadURL`.
   `Download` forces `?original=true` on the fallback so both branches mean the same thing (the stored original,
   never the rendering of a non-destructive edit). **A nil `*Builder` is valid** and behaves like a backend that
   publishes nothing → an API built without storage (test) still returns a working payload. `uid`/`size` are
-  percent-encoded into the route. The grid size is `thumb.GridSize` (`tile_500`) — the only one the payload carries.
+  percent-encoded into the route. The payload carries **two** thumbnails, because the client picks between them
+  by shape: `thumb.GridSize` (`tile_500`, the square crop a medallion or a card draws) and `thumb.PreviewSize`
+  (`fit_720`, the aspect-preserving rendition the justified photo wall draws).
   **Authorization guards discovery**: a URL is minted only into a response the caller was already entitled to; the object
   is then guarded by the signature the Worker verifies. The package doc comment says so explicitly, because **an older design
   with a public bucket** made the archive just a presentation filter — that **no longer holds**,
@@ -667,7 +669,11 @@ to `## Package map` in `CLAUDE.md`.
   the one for the other is what dead-lettered **every** `image_embed` job after the move to R2 — the thumbnail
   job published the preview, `Generate` rightly declined to re-encode it, and the handler then failed on the
   cache file that had never existed (spec `task-08a84c07`);
-  `GridSize` (`tile_500`) is the size the grid renders and that `thumb_url` carries in the payload,
+  `GridSize` (`tile_500`) is the square size a card or a medallion renders and that `thumb_url` carries in the
+  payload, `PreviewSize` (`fit_720`) the aspect-preserving one the justified library wall renders, carried as
+  `preview_url` — a wall tile is the shape of its photograph, so a square crop would cut its ends off and go
+  soft spread across it; it is an **existing** rung on purpose (every photo already has that thumbnail, so the
+  wall needed no backfill, and an unknown size would be a signed URL to an object that does not exist),
   `AvatarSize` (`tile_100`) the one a compact row's medallion takes — the command palette's album/label/person
   previews, two dozen of which would otherwise fetch a grid page's worth of bytes;
   decode once per photo, parallel encode of the sizes (errgroup, default `GOMAXPROCS`,

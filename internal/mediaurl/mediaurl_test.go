@@ -183,7 +183,7 @@ func TestDecorate_stampsEveryPhoto(t *testing.T) {
 	builder.Decorate(list)
 
 	for i, photo := range list {
-		if photo.ThumbURL == "" || photo.DownloadURL == "" {
+		if photo.ThumbURL == "" || photo.PreviewURL == "" || photo.DownloadURL == "" {
 			t.Fatalf("photo %d not decorated: %+v", i, photo)
 		}
 	}
@@ -192,5 +192,27 @@ func TestDecorate_stampsEveryPhoto(t *testing.T) {
 	}
 	if !strings.Contains(list[1].DownloadURL, "2024/06/two.jpg") {
 		t.Errorf("photo 1 download URL = %q", list[1].DownloadURL)
+	}
+}
+
+// TestDecorateOne_previewIsTheAspectPreservingRendition proves the payload
+// carries both thumbnail addresses and that they are different renditions: the
+// square crop the medallions use and the fit_* rung the justified wall draws.
+func TestDecorateOne_previewIsTheAspectPreservingRendition(t *testing.T) {
+	t.Parallel()
+
+	var builder *mediaurl.Builder
+
+	photo := photos.Photo{UID: "ph1", FileHash: testHash, FilePath: "2024/05/one.jpg"}
+	builder.DecorateOne(&photo)
+
+	if !strings.HasSuffix(photo.ThumbURL, "/thumb/"+thumb.GridSize) {
+		t.Errorf("ThumbURL = %q, want the grid size", photo.ThumbURL)
+	}
+	if !strings.HasSuffix(photo.PreviewURL, "/thumb/"+thumb.PreviewSize) {
+		t.Errorf("PreviewURL = %q, want the preview size", photo.PreviewURL)
+	}
+	if photo.PreviewURL == photo.ThumbURL {
+		t.Error("PreviewURL must not be the square crop")
 	}
 }

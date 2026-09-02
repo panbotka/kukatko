@@ -112,6 +112,12 @@ library is tidied by more than one person.
 
 ### The everyday library
 
+- **The wall shows photographs, not squares.** The library, an album, a search result — every grid is
+  justified: rows of photos at their own proportions, aligned to a common height and running edge to
+  edge. A panorama is wide, a portrait is tall, and nothing is cropped down to a square to fit a
+  cell. How many go across is yours to set (the `−`/`+` beside the filters), and the setting is read
+  as "about this many landscape photos", so portraits sit fewer to a row and panoramas more.
+
 Albums (each covered by a collage of four of its photos, so two albums from the same afternoon don't
 look alike; a new one can be started straight from a selection — "these forty photos are Ostatky 2022" —
 or from a single photo, without leaving for the Albums page. The index of them opens on the albums

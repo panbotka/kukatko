@@ -5,7 +5,8 @@ import { useThumbSrc } from '../../hooks/useThumbSrc'
 import { formatDuration } from '../../lib/format'
 import { photoLabel } from '../../lib/photoTitle'
 import { formatTakenLabel } from '../../lib/takenDate'
-import { type Photo } from '../../services/photos'
+import { tileRenditionName, tileUsesPreviewURL } from '../../lib/tileRendition'
+import { type Photo, thumbUrl } from '../../services/photos'
 import { FadeInImage } from '../FadeInImage'
 import { Icon } from '../Icon'
 
@@ -14,6 +15,36 @@ import { FavoriteButton } from './FavoriteButton'
 /** Whether the photo is a playable video or a live photo (has a motion clip). */
 function isPlayable(photo: Photo): boolean {
   return photo.media_type === 'video' || photo.media_type === 'live'
+}
+
+/** A tile's image address, and how to re-read it from a refreshed payload. */
+interface TileSource {
+  /** What goes into `<img src>`. */
+  src: string
+  /** Reads the same rendition off a freshly fetched payload; see {@link useThumbSrc}. */
+  refresh: (photo: Photo) => string
+}
+
+/**
+ * Picks the rendition a tile draws. A square tile takes the square crop
+ * (`thumb_url`). A justified one takes the aspect-preserving `preview_url` the
+ * payload carries — unless it was laid out wide enough to outrun that rung, in
+ * which case it asks the thumb route for a bigger one (see `lib/tileRendition`).
+ * A route address never expires, so there is nothing to re-read it from and its
+ * picker gives up instead, which the tile shows as its "unavailable" state.
+ */
+function tileSource(photo: Photo, fill: boolean, tileWidth?: number): TileSource {
+  if (!fill) {
+    return { src: photo.thumb_url, refresh: (fresh) => fresh.thumb_url }
+  }
+  const dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio
+  if (tileWidth !== undefined && !tileUsesPreviewURL(tileWidth, dpr)) {
+    return { src: thumbUrl(photo.uid, tileRenditionName(tileWidth, dpr)), refresh: () => '' }
+  }
+  return {
+    src: photo.preview_url ?? photo.thumb_url,
+    refresh: (fresh) => fresh.preview_url ?? fresh.thumb_url,
+  }
 }
 
 /** Props for {@link PhotoTile}. */
@@ -72,6 +103,20 @@ export interface PhotoTileProps {
    */
   focused?: boolean
   /**
+   * When true the tile fills the box it is placed in instead of squaring itself
+   * — what the justified wall does, where the row has already decided the tile's
+   * width and height from the photo's own proportions. Defaults false, the
+   * square tile every other grid draws.
+   */
+  fill?: boolean
+  /**
+   * The width the tile is laid out at, in CSS pixels, when the caller knows it
+   * (the justified wall does). It only picks the thumbnail rendition — a tile
+   * spanning half a desktop needs more pixels than the one every payload
+   * carries — so leaving it out costs nothing but that choice.
+   */
+  tileWidth?: number
+  /**
    * Page-supplied overlays stamped onto the tile (badges, per-tile actions such
    * as the /expand page's similarity percentage and reject button). Rendered as
    * siblings of the link/button inside the tile's relative wrapper — never
@@ -82,12 +127,14 @@ export interface PhotoTileProps {
 }
 
 /**
- * A single square thumbnail tile in the library grid. By default the tile links
- * to the photo's detail route (`/photos/{uid}`); in selection mode it instead
- * toggles its selection so a grid of tiles can be batch-added to an album or
- * given a label. The image is lazy-loaded and sits in a fixed square box so the
- * grid never shifts as thumbnails stream in; a neutral placeholder is shown until
- * it loads or if it fails.
+ * A single thumbnail tile in the library grid — square by default, or the shape
+ * of its own photograph when the caller has laid the box out for it (`fill`,
+ * which is what the justified wall does). By default the tile links to the
+ * photo's detail route (`/photos/{uid}`); in selection mode it instead toggles
+ * its selection so a grid of tiles can be batch-added to an album or given a
+ * label. The image is lazy-loaded and sits in a box whose size is known before
+ * it arrives, so the grid never shifts as thumbnails stream in; a neutral
+ * placeholder is shown until it loads or if it fails.
  */
 export function PhotoTile({
   photo,
@@ -100,13 +147,16 @@ export function PhotoTile({
   onFavoriteChange,
   detailQuery,
   focused = false,
+  fill = false,
+  tileWidth,
   extras,
 }: PhotoTileProps) {
   const { t, i18n } = useTranslation()
   // The thumbnail address comes from the payload, not from the UID: only the
   // server can sign it. A signed URL expires, so a failed load gets one retry
   // with a freshly fetched one before the tile gives up.
-  const thumb = useThumbSrc(photo.uid, photo.thumb_url)
+  const source = tileSource(photo, fill, tileWidth)
+  const thumb = useThumbSrc(photo.uid, source.src, source.refresh)
 
   const label = photoLabel(photo, i18n.language)
   // The tile shows no date of its own; the only one it carries is in the alt text,
@@ -197,7 +247,9 @@ export function PhotoTile({
           : `/photos/${photo.uid}`
       }
       className="kk-tile__media d-block"
-      style={{ aspectRatio: '1 / 1' }}
+      // A justified tile is sized by its row (which has already applied the
+      // photo's own proportions); every other grid squares it.
+      style={fill ? { height: '100%', width: '100%' } : { aspectRatio: '1 / 1' }}
       aria-label={label}
       title={label}
       role={selectFirst ? 'button' : undefined}
@@ -234,6 +286,7 @@ export function PhotoTile({
   // photo detail page.
   return (
     <div
+      style={fill ? { height: '100%' } : undefined}
       className={`kk-tile position-relative${selected ? ' kk-tile--selected' : ''}${
         anySelected ? ' kk-tile--checks' : ''
       }${focused ? ' kukatko-tile-focused' : ''}`}

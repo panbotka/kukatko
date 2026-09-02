@@ -1,4 +1,4 @@
-import { type GridStateSnapshot } from 'react-virtuoso'
+import { type StateSnapshot } from 'react-virtuoso'
 
 /**
  * sessionStorage key under which every remembered grid position lives. Session
@@ -29,11 +29,11 @@ const TRANSIENT_PARAMS = ['at', 'info']
 export interface GridScrollState {
   /**
    * react-virtuoso's own snapshot — the scroll offset plus the measurements it
-   * needs to lay the grid out at that offset before anything is on screen. Handed
+   * needs to lay the rows out at that offset before anything is on screen. Handed
    * back through `restoreStateFrom` for a pixel-exact restore. Absent for a grid
    * that renders every tile itself (the person gallery), which has no virtuoso.
    */
-  snapshot?: GridStateSnapshot
+  snapshot?: StateSnapshot
   /**
    * Window scroll offset, the restore target for a grid that is not virtualized.
    */
@@ -81,43 +81,38 @@ function num(source: Record<string, unknown>, field: string): number | undefined
 }
 
 /**
- * Validates a parsed virtuoso snapshot. Storage is shared with older (and newer)
- * builds of the app, so a stored shape is untrusted input: anything not matching
- * is dropped rather than handed to virtuoso, which would restore a nonsense
- * layout from it.
+ * Validates a parsed virtuoso snapshot: the scroll offset plus the measured size
+ * of each range of rows, which is what lets the list lay itself out at that
+ * offset before anything has been rendered. Storage is shared with older (and
+ * newer) builds of the app, so a stored shape is untrusted input: anything not
+ * matching is dropped rather than handed to virtuoso, which would restore a
+ * nonsense layout from it. A snapshot written by the build that had a *uniform*
+ * grid here (one item size, no ranges) is one of those shapes, and is dropped on
+ * sight — the reader lands at the top of the view once, instead of somewhere the
+ * measurements do not describe.
  */
-function parseSnapshot(value: unknown): GridStateSnapshot | undefined {
+function parseSnapshot(value: unknown): StateSnapshot | undefined {
   if (!isRecord(value)) {
     return undefined
   }
-  const { gap, item, viewport } = value
-  if (!isRecord(gap) || !isRecord(item) || !isRecord(viewport)) {
-    return undefined
-  }
   const scrollTop = num(value, 'scrollTop')
-  const column = num(gap, 'column')
-  const row = num(gap, 'row')
-  const itemHeight = num(item, 'height')
-  const itemWidth = num(item, 'width')
-  const viewportHeight = num(viewport, 'height')
-  const viewportWidth = num(viewport, 'width')
-  if (
-    scrollTop === undefined ||
-    column === undefined ||
-    row === undefined ||
-    itemHeight === undefined ||
-    itemWidth === undefined ||
-    viewportHeight === undefined ||
-    viewportWidth === undefined
-  ) {
+  if (scrollTop === undefined || !Array.isArray(value.ranges)) {
     return undefined
   }
-  return {
-    gap: { column, row },
-    item: { height: itemHeight, width: itemWidth },
-    scrollTop,
-    viewport: { height: viewportHeight, width: viewportWidth },
+  const ranges: StateSnapshot['ranges'] = []
+  for (const entry of value.ranges as unknown[]) {
+    if (!isRecord(entry)) {
+      return undefined
+    }
+    const startIndex = num(entry, 'startIndex')
+    const endIndex = num(entry, 'endIndex')
+    const size = num(entry, 'size')
+    if (startIndex === undefined || endIndex === undefined || size === undefined) {
+      return undefined
+    }
+    ranges.push({ startIndex, endIndex, size })
   }
+  return { ranges, scrollTop }
 }
 
 /** Validates one parsed entry, returning null for anything unusable. */

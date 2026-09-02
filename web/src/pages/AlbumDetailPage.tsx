@@ -4,7 +4,7 @@ import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { type ListRange, type VirtuosoGridHandle } from 'react-virtuoso'
+import { type ListRange } from 'react-virtuoso'
 
 import { useAuth } from '../auth/AuthContext'
 import { albumDisplayTitle } from '../i18n/albumNames'
@@ -15,7 +15,7 @@ import { ErrorState } from '../components/ErrorState'
 import { HeaderActions } from '../components/HeaderActions'
 import { FilterBar } from '../components/library/FilterBar'
 import { GridSkeleton } from '../components/library/GridSkeleton'
-import { PhotoGrid } from '../components/library/PhotoGrid'
+import { PhotoGrid, type PhotoGridHandle } from '../components/library/PhotoGrid'
 import { type TimelineJump, TimelineScrubber } from '../components/library/TimelineScrubber'
 import { AlbumEditModal } from '../components/organize/AlbumEditModal'
 import { type BatchExtraAction, BatchActionBar } from '../components/organize/BatchActionBar'
@@ -265,7 +265,7 @@ export function AlbumDetailPage() {
   // absolute index. The rail is hidden while a selection is being gathered — it
   // overlays the right edge, where the tiles' own controls are — and it hides
   // itself on an album too short in time to need one.
-  const gridRef = useRef<VirtuosoGridHandle>(null)
+  const gridRef = useRef<PhotoGridHandle>(null)
   // The grid's wrapper, which is where the fixed rail starts on a phone: an album
   // page has a header of its own above the grid, and its height is not a constant
   // the rail may assume (the description wraps, the cover row comes and goes).

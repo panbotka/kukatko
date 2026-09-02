@@ -199,6 +199,14 @@ export interface Photo {
    */
   thumb_url: string
   /**
+   * Where to fetch this photo's aspect-preserving rendition (`fit_720`) — what
+   * the justified photo wall draws, where a tile is the shape of its photograph
+   * rather than a square. Same rules as {@link Photo.thumb_url}: the backend
+   * mints it, it may be a signed URL, and it may go stale. Absent on a payload
+   * from an older backend, in which case the square crop is the fallback.
+   */
+  preview_url?: string
+  /**
    * Where to fetch this photo's untouched original bytes — a signed URL, or the
    * download route with `?original=true`. It never renders a non-destructive
    * edit; for that, link to the plain download route (see {@link downloadUrl}).
@@ -1626,5 +1634,13 @@ export async function fetchPhotoUploaders(
   return (await res.json()) as UploadersResponse
 }
 
-/** Thumbnail size used for library grid tiles — a square crop, high enough DPI. */
+/** Thumbnail size used for square grid tiles (medallions, cards) — a crop. */
 export const GRID_THUMB_SIZE = 'tile_500'
+
+/**
+ * The rendition the justified photo wall draws: aspect-preserving, not a square
+ * crop, and the size the backend stamps into every photo's `preview_url`. A tile
+ * wide enough to outrun it asks for a larger rung by route — see
+ * `lib/tileRendition`.
+ */
+export const GRID_PREVIEW_SIZE = 'fit_720'

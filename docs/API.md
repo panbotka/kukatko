@@ -492,8 +492,13 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   after the image it stands in for. Written by the upload pipeline (from the same decode as the pHash) and by
   the `thumbnail` job (from the `fit_720` preview it just rendered); backfilled by `POST /process/blurhash`;
   **media URLs in the payload** (`internal/mediaurl`): every returned photo carries `thumb_url`
-  (the grid thumbnail `tile_500`) and `download_url` (the original, `?original=true` semantics — never
-  rendering an edit). The values are minted by the storage backend via `Storage.URL`: `FS` returns
+  (the **square** thumbnail `tile_500`, what a medallion or a card draws), `preview_url` (the
+  **aspect-preserving** rendition `thumb.PreviewSize` = `fit_720`, what the justified photo wall draws — a
+  tile there is the shape of its photograph, so a centred square crop would both cut its ends off and, spread
+  across that width, go soft) and `download_url` (the original, `?original=true` semantics — never
+  rendering an edit). The preview is deliberately an **existing** rung: every photo already has that
+  thumbnail, so the wall needed no backfill, and a size the cache had never heard of would be a signed URL to
+  an object that does not exist. The values are minted by the storage backend via `Storage.URL`: `FS` returns
   empty → fallback to the own routes below, `R2` returns a **short-lived signed URL** (default 1 h) on
   the edge Worker's domain, so the application does not transfer a single byte of media. The client takes
   them **as-is** and never assembles them from a UID (it cannot compute the signature). A signed URL

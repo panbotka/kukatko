@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { forwardRef, type ReactNode, useEffect, useImperativeHandle, useRef, useState } from 'react'
-import { type GridStateSnapshot, type ListRange, type VirtuosoGridHandle } from 'react-virtuoso'
+import { type ListRange, type StateSnapshot, type VirtuosoHandle } from 'react-virtuoso'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -18,32 +18,40 @@ import { AlbumDetailPage } from './AlbumDetailPage'
 // Shared spies captured across renders, so a test can assert the timeline
 // scrolled the grid. Hoisted so the (hoisted) vi.mock factory can reference them.
 const grid = vi.hoisted(() => ({
+  /** Every jump the page asked for, in photo indices (see the mock below). */
   scrollToIndex: vi.fn(),
   /** The position the grid was mounted with, if the page restored one. */
-  restoredFrom: null as GridStateSnapshot | null,
+  restoredFrom: null as StateSnapshot | null,
 }))
 
 /**
- * How many items the mock grid keeps "on screen". The album hands the grid an
+ * How many photos the mock list keeps "on screen". The album hands the grid an
  * array as long as the whole album, so a mock rendering all of it would mount
  * every tile of the very albums these tests make big on purpose.
  */
 const MOCK_WINDOW = 100
 
-// Stand-in for react-virtuoso's grid (jsdom lays nothing out, so the real one
-// renders nothing). It renders a window of MOCK_WINDOW items from wherever the
-// last `scrollToIndex` landed — which is what makes it a faithful stand-in for a
-// windowed list — reports that window through `rangeChanged`, and forwards a
-// `scrollToIndex` handle so the timeline can drive it.
-interface MockGridProps {
-  data: readonly (Photo | undefined)[]
-  itemContent: (index: number, item: Photo | undefined) => ReactNode
-  computeItemKey?: (index: number, item: Photo | undefined) => string
+// Stand-in for react-virtuoso's list (jsdom lays nothing out, so the real one
+// renders nothing). The photo wall virtualizes by justified *row*, so this is
+// handed rows: it renders about MOCK_WINDOW photos' worth of them from wherever
+// the last `scrollToIndex` landed — which is what makes it a faithful stand-in
+// for a windowed list — reports that window through `rangeChanged`, and forwards
+// a `scrollToIndex` handle so the timeline can drive it. The handle records the
+// jump in *photo* indices (the row's first and last), because that is the only
+// thing about a row a test has any business knowing.
+interface MockRow {
+  start: number
+  tiles: { index: number }[]
+}
+interface MockListProps {
+  data: readonly MockRow[]
+  itemContent: (index: number, row: MockRow) => ReactNode
+  computeItemKey?: (index: number, row: MockRow) => string
   rangeChanged?: (range: ListRange) => void
-  restoreStateFrom?: GridStateSnapshot
+  restoreStateFrom?: StateSnapshot
 }
 vi.mock('react-virtuoso', () => ({
-  VirtuosoGrid: forwardRef<VirtuosoGridHandle, MockGridProps>(function MockGrid(
+  Virtuoso: forwardRef<VirtuosoHandle, MockListProps>(function MockList(
     { data, itemContent, computeItemKey, rangeChanged, restoreStateFrom },
     ref,
   ) {
@@ -53,29 +61,46 @@ vi.mock('react-virtuoso', () => ({
     grid.restoredFrom = restoreStateFrom ?? null
     const rangeRef = useRef(rangeChanged)
     rangeRef.current = rangeChanged
+    const dataRef = useRef(data)
+    dataRef.current = data
     useImperativeHandle(ref, () => ({
       scrollToIndex: (location: number | { index?: number | 'LAST'; align?: string }) => {
-        grid.scrollToIndex(location)
         const index = typeof location === 'number' ? location : location.index
+        const align = typeof location === 'number' ? undefined : location.align
+        const row = typeof index === 'number' ? dataRef.current[index] : undefined
+        grid.scrollToIndex({
+          align,
+          first: row?.start ?? -1,
+          last: row === undefined ? -1 : row.start + row.tiles.length - 1,
+        })
         if (typeof index === 'number') {
           setStart(index)
         }
       },
       scrollTo: vi.fn(),
       scrollBy: vi.fn(),
+      scrollIntoView: vi.fn(),
+      autoscrollToBottom: vi.fn(),
+      getState: vi.fn(),
     }))
-    const end = Math.min(data.length - 1, start + MOCK_WINDOW - 1)
+    let end = start
+    for (let shown = 0; end < data.length; end++) {
+      const size = data[end]?.tiles.length ?? 1
+      if (shown + size > MOCK_WINDOW && end > start) {
+        break
+      }
+      shown += size
+    }
+    end = Math.max(start, end - 1)
     useEffect(() => {
       if (data.length > 0) {
         rangeRef.current?.({ startIndex: start, endIndex: end })
       }
     }, [start, end, data.length])
     const window = []
-    for (let index = start; index <= end; index++) {
-      const item = data[index]
-      window.push(
-        <div key={computeItemKey?.(index, item) ?? index}>{itemContent(index, item)}</div>,
-      )
+    for (let index = start; index <= end && index < data.length; index++) {
+      const row = data[index]
+      window.push(<div key={computeItemKey?.(index, row) ?? index}>{itemContent(index, row)}</div>)
     }
     return <div data-testid="grid">{window}</div>
   }),
@@ -706,13 +731,8 @@ describe('AlbumDetailPage on a narrow (phone) screen', () => {
 
 describe('AlbumDetailPage scroll position', () => {
   /** A virtuoso state at the given offset, as the grid would report it. */
-  function gridState(scrollTop: number) {
-    return {
-      gap: { column: 8, row: 8 },
-      item: { height: 220, width: 220 },
-      scrollTop,
-      viewport: { height: 900, width: 1400 },
-    }
+  function gridState(scrollTop: number): StateSnapshot {
+    return { ranges: [{ startIndex: 0, endIndex: 20, size: 220 }], scrollTop }
   }
 
   it('restores the position without paging its way back to it', async () => {
@@ -880,7 +900,15 @@ describe('AlbumDetailPage timeline', () => {
     const rail = await screen.findByRole('navigation', { name: 'Timeline' })
     await user.click(within(rail).getByRole('button', { name: 'Jump to Jun 2026' }))
 
-    expect(grid.scrollToIndex).toHaveBeenCalledWith({ index: 200, align: 'start' })
+    // The wall scrolls by justified row, so the jump lands on the row holding
+    // photo 200 — reported here as that row's first and last photo.
+    expect(grid.scrollToIndex).toHaveBeenCalledWith(expect.objectContaining({ align: 'start' }))
+    const jump = grid.scrollToIndex.mock.calls.at(-1)?.[0] as {
+      first: number
+      last: number
+    }
+    expect(jump.first).toBeLessThanOrEqual(200)
+    expect(jump.last).toBeGreaterThanOrEqual(200)
     await waitFor(() => {
       expect(fetchPhotosMock.mock.calls.map((c) => c[0].offset)).toContain(200)
     })

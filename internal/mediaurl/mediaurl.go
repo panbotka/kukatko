@@ -103,7 +103,8 @@ func (b *Builder) Download(uid, filePath string) string {
 	return photosPath + url.PathEscape(uid) + "/download?original=true"
 }
 
-// Decorate fills in ThumbURL and DownloadURL on every photo in list, in place.
+// Decorate fills in the media addresses (see DecorateOne) on every photo in
+// list, in place.
 // Call it on any page of photos on its way into a JSON response: a payload
 // without these is a photo the client cannot render.
 func (b *Builder) Decorate(list []photos.Photo) {
@@ -112,8 +113,13 @@ func (b *Builder) Decorate(list []photos.Photo) {
 	}
 }
 
-// DecorateOne fills in ThumbURL and DownloadURL on a single photo, in place.
+// DecorateOne fills in ThumbURL, PreviewURL and DownloadURL on a single photo,
+// in place. The two thumbnail addresses are both minted because the client picks
+// between them by shape: a square crop for anything drawn in a square box (a
+// medallion, a card), the aspect-preserving rendition for the justified photo
+// wall, whose tiles are as wide as their photographs.
 func (b *Builder) DecorateOne(photo *photos.Photo) {
 	photo.ThumbURL = b.Thumb(photo.UID, photo.FileHash, thumb.GridSize)
+	photo.PreviewURL = b.Thumb(photo.UID, photo.FileHash, thumb.PreviewSize)
 	photo.DownloadURL = b.Download(photo.UID, photo.FilePath)
 }

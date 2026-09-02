@@ -1,14 +1,13 @@
 import { useCallback, useMemo } from 'react'
 import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
-import { type VirtuosoGridHandle } from 'react-virtuoso'
 
 import { similarityPercent } from '../../lib/expandSearch'
 import { REVIEW_GRID_SCOPE } from '../../lib/gridDensity'
 import { type ExpandCandidate, type ExpandResult } from '../../services/expand'
 import { type Photo } from '../../services/photos'
 import { GridDensityControl } from '../library/GridDensityControl'
-import { PhotoGrid, type PhotoGridSelection } from '../library/PhotoGrid'
+import { PhotoGrid, type PhotoGridHandle, type PhotoGridSelection } from '../library/PhotoGrid'
 import { Icon } from '../Icon'
 
 /** Props for {@link ExpandResults}. */
@@ -29,7 +28,7 @@ export interface ExpandResultsProps {
    */
   onReject?: (photoUid: string) => void
   /** Imperative handle to the grid, for keyboard-navigation scrolling. */
-  gridRef?: React.Ref<VirtuosoGridHandle>
+  gridRef?: React.Ref<PhotoGridHandle>
   /** Index of the tile carrying the keyboard focus highlight, or -1. */
   focusedIndex?: number
   /** Opens the candidate at this index of `candidates` in the review lightbox. */

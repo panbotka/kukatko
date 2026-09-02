@@ -9,17 +9,18 @@ import type { Photo } from '../../services/photos'
 
 import { PhotoGrid } from './PhotoGrid'
 
-// Minimal stand-in for react-virtuoso's grid (jsdom has no layout), so the
-// tiles actually mount and their click handlers can be exercised.
-interface MockGridProps {
-  data: Photo[]
-  itemContent: (index: number, item: Photo) => ReactNode
+// Minimal stand-in for react-virtuoso's list (jsdom has no layout), so the rows
+// — and the tiles in them — actually mount and their click handlers can be
+// exercised. The rows themselves are the grid's own justified layout.
+interface MockListProps {
+  data: unknown[]
+  itemContent: (index: number, row: never) => ReactNode
 }
 vi.mock('react-virtuoso', () => ({
-  VirtuosoGrid: ({ data, itemContent }: MockGridProps) => (
+  Virtuoso: ({ data, itemContent }: MockListProps) => (
     <div data-testid="grid">
-      {data.map((item, index) => (
-        <div key={item.uid}>{itemContent(index, item)}</div>
+      {data.map((row, index) => (
+        <div key={index}>{itemContent(index, row as never)}</div>
       ))}
     </div>
   ),

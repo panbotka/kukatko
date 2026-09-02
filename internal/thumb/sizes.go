@@ -25,6 +25,20 @@ type sizeSpec struct {
 // client directly rather than making it follow a redirect per tile.
 const GridSize = "tile_500"
 
+// PreviewSize is the aspect-preserving rendition the justified library grid
+// renders. The wall lays photos out at their natural proportions, so a tile is
+// as wide as its photograph is — a panorama spans a whole row — and a centred
+// square crop (GridSize) would both cut the ends off it and, stretched across
+// that width, go soft. This is the smallest fit_* rung that still covers an
+// ordinary tile on a high-DPI screen; a client rendering an unusually wide tile
+// asks the thumb route for a bigger rung itself.
+//
+// It is deliberately an existing rung rather than a new one: every photo already
+// has this thumbnail generated, so the grid needed no backfill to start using
+// it, and a size the cache had never heard of would be a signed URL to an object
+// that does not exist.
+const PreviewSize = "fit_720"
+
 // AvatarSize is the smallest square tile: what a compact row draws its
 // medallion from, which today is the command palette's album / label / person
 // previews. It is a constant of its own rather than GridSize because those

@@ -1,5 +1,5 @@
 import { act, renderHook } from '@testing-library/react'
-import { type GridStateSnapshot } from 'react-virtuoso'
+import { type StateSnapshot } from 'react-virtuoso'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { readGridScroll, writeGridScroll } from '../lib/gridScroll'
@@ -7,12 +7,10 @@ import { readGridScroll, writeGridScroll } from '../lib/gridScroll'
 import { useGridScrollMemory, type UseGridScrollMemoryOptions } from './useGridScrollMemory'
 
 /** A plausible virtuoso snapshot at the given offset. */
-function snapshot(scrollTop: number): GridStateSnapshot {
+function snapshot(scrollTop: number): StateSnapshot {
   return {
-    gap: { column: 8, row: 8 },
-    item: { height: 220, width: 220 },
+    ranges: [{ startIndex: 0, endIndex: 12, size: 220 }],
     scrollTop,
-    viewport: { height: 900, width: 1400 },
   }
 }
 

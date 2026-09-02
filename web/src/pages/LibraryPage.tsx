@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
-import { type ListRange, type VirtuosoGridHandle } from 'react-virtuoso'
+import { type ListRange } from 'react-virtuoso'
 
 import { useAuth } from '../auth/AuthContext'
 import { EmptyState } from '../components/EmptyState'
@@ -10,7 +10,7 @@ import { ErrorState } from '../components/ErrorState'
 import { FilterBar } from '../components/library/FilterBar'
 import { buildChips } from '../components/library/filterChips'
 import { GridSkeleton } from '../components/library/GridSkeleton'
-import { PhotoGrid } from '../components/library/PhotoGrid'
+import { PhotoGrid, type PhotoGridHandle } from '../components/library/PhotoGrid'
 import { type TimelineJump, TimelineScrubber } from '../components/library/TimelineScrubber'
 import { WhatsNewPanel } from '../components/library/WhatsNewPanel'
 import { BatchActionBar } from '../components/organize/BatchActionBar'
@@ -139,7 +139,7 @@ export function LibraryPage() {
   // 2011" unusable on a 20 000 photo library. The scrubber is only meaningful for
   // the default newest-first date order (the timeline is always date-grouped), so
   // it is hidden for other sorts and in selection mode.
-  const gridRef = useRef<VirtuosoGridHandle>(null)
+  const gridRef = useRef<PhotoGridHandle>(null)
   // Where the grid was left, per view, so stepping into a photo and coming back
   // — Back, or the viewer's own "back to list", which pops the same entry —
   // returns to the tile it was opened from instead of to the top of the library.
@@ -181,19 +181,23 @@ export function LibraryPage() {
   )
 
   // Keyboard navigation over the grid: a visible focus highlight moved by the
-  // arrow keys / hjkl, with Enter/x/f/Escape acting on the focused tile. Row-wise
-  // moves need the live column count, read from the rendered grid's computed
-  // template so it tracks the responsive `auto-fill` layout.
+  // arrow keys / hjkl, with Enter/x/f/Escape acting on the focused tile. A
+  // justified wall has no one column count — each row holds as many photos as
+  // their shapes allowed — so "one row down" is how many tiles the highlighted
+  // row itself holds, read off the rendered row (the first one, before anything
+  // is highlighted). It lands within a tile of the column it started in, which
+  // is what the move means to the reader.
   const gridWrapRef = useRef<HTMLDivElement>(null)
   const getColumns = useCallback(() => {
-    const el = gridWrapRef.current?.querySelector<HTMLElement>('.kukatko-photo-grid')
-    if (!el) {
+    const wrap = gridWrapRef.current
+    if (!wrap) {
       return 1
     }
-    const tracks = getComputedStyle(el)
-      .gridTemplateColumns.split(' ')
-      .filter((track) => track.trim() !== '')
-    return tracks.length > 0 ? tracks.length : 1
+    const focused = wrap.querySelector<HTMLElement>('[data-focused="true"]')
+    const row =
+      focused?.closest<HTMLElement>('.kukatko-photo-row') ??
+      wrap.querySelector<HTMLElement>('.kukatko-photo-row')
+    return row !== null && row.childElementCount > 0 ? row.childElementCount : 1
   }, [])
   const scrollFocusIntoView = useCallback((index: number) => {
     gridRef.current?.scrollToIndex(index)

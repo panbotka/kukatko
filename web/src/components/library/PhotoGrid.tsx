@@ -1,79 +1,31 @@
-import { forwardRef } from 'react'
+import { useCallback, useImperativeHandle, useMemo, useRef } from 'react'
 import Button from 'react-bootstrap/Button'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
-import {
-  type GridComponents,
-  type GridStateSnapshot,
-  type ListRange,
-  VirtuosoGrid,
-  type VirtuosoGridHandle,
-} from 'react-virtuoso'
+import { type ListRange, type StateSnapshot, Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 
+import { useElementWidth } from '../../hooks/useElementWidth'
 import { useGridDensity } from '../../hooks/useGridDensity'
+import { type GridDensityScope, LIBRARY_GRID_SCOPE } from '../../lib/gridDensity'
 import {
-  type GridDensityScope,
-  gridTemplateColumns,
-  LIBRARY_GRID_SCOPE,
-} from '../../lib/gridDensity'
+  DEFAULT_TILE_RATIO,
+  type JustifiedRow,
+  justifiedRows,
+  rowHeightForColumns,
+  rowOfTile,
+  tileRatio,
+} from '../../lib/justifiedLayout'
 import { type Photo } from '../../services/photos'
 import { Skeleton } from '../Skeleton'
 
 import { PhotoTile } from './PhotoTile'
 
-/** State the footer and the grid need, threaded to the virtuoso components via `context`. */
+/** State the footer needs, threaded to the virtuoso components via `context`. */
 interface GridContext {
   loadingMore: boolean
   moreError: boolean
   onRetry: () => void
-  /** Which stored column count this grid follows (see {@link PhotoGridProps.scope}). */
-  scope: GridDensityScope
 }
-
-/**
- * CSS-grid list honouring the user's density preference: it renders exactly the
- * chosen number of columns (`repeat(n, 1fr)`) on every viewport — the user picks
- * a concrete count in 1..GRID_COLUMNS_MAX, so there is no width-driven "auto"
- * fallback to defer to.
- *
- * *Which* count it follows comes from the grid's scope, handed down through
- * virtuoso's `context`: the library's own by default, the review tools' shared
- * one on `/expand`, which is a review workspace rather than a browsing wall.
- *
- * Changing the density only restyles this element — virtuoso re-measures the
- * resized tiles and keeps the scroll position, and the page keeps its selection.
- */
-const List = forwardRef<
-  HTMLDivElement,
-  {
-    style?: React.CSSProperties
-    className?: string
-    children?: React.ReactNode
-    context?: GridContext
-  }
->(function List({ style, className, children, context, ...props }, ref) {
-  const scope = context?.scope ?? LIBRARY_GRID_SCOPE
-  const { density } = useGridDensity(scope)
-  return (
-    <div
-      ref={ref}
-      {...props}
-      // The class lets the page measure the live column count (for row-wise
-      // keyboard navigation) from the rendered grid's computed `grid-template`,
-      // which now always resolves to exactly the chosen number of columns.
-      className={`kukatko-photo-grid${className ? ` ${className}` : ''}`}
-      data-density={String(density)}
-      style={{
-        display: 'grid',
-        gridTemplateColumns: gridTemplateColumns(density),
-        gap: `${String(scope.gapPx)}px`,
-        ...style,
-      }}
-    >
-      {children}
-    </div>
-  )
-})
 
 /** Footer slot: a spinner while a page loads, or a retry control if one failed. */
 function GridFooter({ context }: { context?: GridContext }) {
@@ -103,19 +55,14 @@ function GridFooter({ context }: { context?: GridContext }) {
   return null
 }
 
-const gridComponents: GridComponents<GridContext> = {
-  List,
-  Footer: GridFooter,
-}
-
 /**
  * Stand-in for a photo the grid knows exists but has not loaded yet — a slot the
- * windowed library list leaves empty until the page covering it arrives. It is
- * exactly a tile's shape (a square of the same radius), so the row it sits in has
- * the right height from the outset and nothing shifts when the photo lands.
+ * windowed library list leaves empty until the page covering it arrives. It fills
+ * the box the row laid out for it, so the row it sits in has the right height
+ * from the outset and nothing shifts when the photo lands.
  */
 function TilePlaceholder() {
-  return <Skeleton radius="var(--kk-radius-tile)" style={{ aspectRatio: '1 / 1' }} />
+  return <Skeleton radius="var(--kk-radius-tile)" style={{ width: '100%', height: '100%' }} />
 }
 
 /** Selection wiring for a grid that offers multi-select. */
@@ -145,6 +92,21 @@ export interface PhotoGridSelection {
   onToggleRange?: (uid: string, orderedUids: string[]) => void
 }
 
+/**
+ * Where a caller may ask the grid to scroll — the same shape virtuoso takes,
+ * narrowed to what the pages use, and always in **photo** indices: the grid
+ * itself knows which row a photo ended up in.
+ */
+export type PhotoGridScrollTarget =
+  | number
+  | { index: number; align?: 'start' | 'center' | 'end'; behavior?: 'auto' | 'smooth' }
+
+/** Imperative handle a page holds on the grid (`PhotoGridProps.gridRef`). */
+export interface PhotoGridHandle {
+  /** Scrolls the photo at this absolute index into view. */
+  scrollToIndex: (target: PhotoGridScrollTarget) => void
+}
+
 /** Props for {@link PhotoGrid}. */
 export interface PhotoGridProps {
   /**
@@ -152,7 +114,8 @@ export interface PhotoGridProps {
    * library list sizes this array to the *whole* result and fills only the pages
    * it has loaded, so an index here is a photo's absolute position and a hole is
    * a photo whose page is still on its way. Holes render as
-   * {@link TilePlaceholder}; a plain `Photo[]` (every other grid) has none.
+   * {@link TilePlaceholder} in a default-shaped box; a plain `Photo[]` (every
+   * other grid) has none.
    */
   photos: readonly (Photo | undefined)[]
   loadingMore: boolean
@@ -183,13 +146,15 @@ export interface PhotoGridProps {
    */
   detailQuery?: string
   /**
-   * Imperative handle to the underlying virtuoso grid, exposing `scrollToIndex`
-   * so the timeline scrubber can jump to a photo index.
+   * Imperative handle to the grid, exposing `scrollToIndex` (in photo indices)
+   * so the timeline scrubber and the keyboard navigation can jump to a photo.
    */
-  gridRef?: React.Ref<VirtuosoGridHandle>
+  gridRef?: React.Ref<PhotoGridHandle>
   /**
-   * Called with the visible item range each time it changes, letting the
-   * scrubber highlight the month owning the first visible photo.
+   * Called with the visible **photo** range each time it changes, letting the
+   * scrubber highlight the month owning the first visible photo and the windowed
+   * list fetch what came into view. The grid translates its own row range back
+   * into photo indices, so a caller never sees the layout.
    */
   onRangeChanged?: (range: ListRange) => void
   /**
@@ -205,16 +170,16 @@ export interface PhotoGridProps {
   tileExtras?: (photo: Photo) => React.ReactNode
   /**
    * A position this grid was left at, restored as it mounts: the offset plus the
-   * measurements needed to lay the tiles out at it before anything is on screen,
+   * measurements needed to lay the rows out at it before anything is on screen,
    * so returning from a photo lands on the tile it was opened from instead of at
    * the top. Read once, when the grid mounts — see `useGridScrollMemory`.
    */
-  restoreStateFrom?: GridStateSnapshot
+  restoreStateFrom?: StateSnapshot
   /**
    * Reports the grid's position (and the measurements that give it meaning)
    * whenever it changes, so the page can remember where the reader was.
    */
-  onStateChanged?: (state: GridStateSnapshot) => void
+  onStateChanged?: (state: StateSnapshot) => void
   /**
    * Which stored column count (and gutter) this grid follows. Defaults to the
    * photo library's — pass `REVIEW_GRID_SCOPE` where the grid is a review
@@ -225,9 +190,22 @@ export interface PhotoGridProps {
 }
 
 /**
- * Virtualized grid of photo tiles. Only the visible rows are mounted
+ * Virtualized justified wall of photo tiles.
+ *
+ * Photos keep their own proportions: the tiles are laid into rows that share one
+ * height and fill the width edge to edge (`lib/justifiedLayout`), so a panorama
+ * is wide, a portrait is tall and nothing is cropped to a square on the way in.
+ * The density control still says how many photos go across — it is read as "that
+ * many *landscape* photos", which is what a row of mixed shapes then works out
+ * to. The layout needs a real width, so the grid measures its own box and lays
+ * itself out again whenever that moves.
+ *
+ * Virtualization is by **row**: only the visible rows are mounted
  * (react-virtuoso) and it scrolls with the window, so the page behaves like a
- * normal document. The footer surfaces load-more progress and errors.
+ * normal document. Rows have different heights, which is exactly what the list
+ * virtualizer is for. Everything a page passes and receives is still in *photo*
+ * indices — the range it watches, the index it scrolls to — because which row a
+ * photo landed in is the grid's business and nobody else's.
  *
  * It serves both loading shapes. A grid that grows by appending pages requests
  * the next one via `onEndReached`. A *windowed* grid (the library) instead hands
@@ -259,6 +237,92 @@ export function PhotoGrid({
   onStateChanged,
   scope = LIBRARY_GRID_SCOPE,
 }: PhotoGridProps) {
+  const { density } = useGridDensity(scope)
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const width = useElementWidth(wrapRef)
+  const gap = scope.gapPx
+
+  // The layout, in three steps so each is memoized on what actually moves it:
+  // the photos' shapes (a new page), the target height (density or width) and
+  // the rows themselves.
+  const ratios = useMemo(
+    () =>
+      photos.map((photo) =>
+        photo === undefined
+          ? DEFAULT_TILE_RATIO
+          : tileRatio(photo.file_width, photo.file_height, photo.file_orientation ?? 0),
+      ),
+    [photos],
+  )
+  const targetHeight = rowHeightForColumns(width, density, gap)
+  const rows = useMemo(
+    () => justifiedRows(ratios, { containerWidth: width, targetRowHeight: targetHeight, gap }),
+    [ratios, width, targetHeight, gap],
+  )
+  // The current layout, for the imperative calls (which run outside render) and
+  // for translating virtuoso's row range back into photo indices.
+  const rowsRef = useRef(rows)
+  rowsRef.current = rows
+
+  const virtuosoRef = useRef<VirtuosoHandle>(null)
+  useImperativeHandle(
+    gridRef,
+    () => ({
+      scrollToIndex: (target: PhotoGridScrollTarget) => {
+        const index = typeof target === 'number' ? target : target.index
+        const row = rowOfTile(rowsRef.current, index)
+        if (row < 0) {
+          return
+        }
+        virtuosoRef.current?.scrollToIndex(
+          typeof target === 'number' ? row : { ...target, index: row },
+        )
+      },
+    }),
+    [],
+  )
+
+  // Virtuoso's list has no `stateChanged` prop (only the grid had one), so the
+  // position is read off the handle: whenever the visible rows change and once
+  // more when the scroll settles. The page debounces what it does with it.
+  const captureState = useCallback(() => {
+    if (onStateChanged === undefined) {
+      return
+    }
+    virtuosoRef.current?.getState(onStateChanged)
+  }, [onStateChanged])
+
+  const handleRangeChanged = useCallback(
+    (range: ListRange) => {
+      captureState()
+      if (onRangeChanged === undefined) {
+        return
+      }
+      // `.at` rather than an index: a range virtuoso reported against a layout
+      // that has since been redone can point past the end, and a row that is not
+      // there is a range not worth reporting.
+      const first = rowsRef.current.at(range.startIndex)
+      const last = rowsRef.current.at(range.endIndex)
+      if (first === undefined || last === undefined) {
+        return
+      }
+      onRangeChanged({
+        startIndex: first.start,
+        endIndex: last.start + last.tiles.length - 1,
+      })
+    },
+    [captureState, onRangeChanged],
+  )
+
+  const handleIsScrolling = useCallback(
+    (scrolling: boolean) => {
+      if (!scrolling) {
+        captureState()
+      }
+    },
+    [captureState],
+  )
+
   // Shift+click selects the contiguous range between the anchor and the clicked
   // tile; the grid supplies its own photo order so pages need no extra wiring.
   // Only loaded photos can take part — a range cannot select a tile whose uid
@@ -281,40 +345,73 @@ export function PhotoGrid({
   const selectable = selection !== undefined && (selection.active || selection.hoverSelect === true)
   const selectFirst =
     selection !== undefined && (selection.active || (selection.hoverSelect === true && anySelected))
-  return (
-    <VirtuosoGrid
-      ref={gridRef}
-      useWindowScroll
-      data={photos}
-      context={{ loadingMore, moreError, onRetry, scope }}
-      endReached={onEndReached}
-      rangeChanged={onRangeChanged}
-      restoreStateFrom={restoreStateFrom}
-      stateChanged={onStateChanged}
-      components={gridComponents}
-      itemContent={(index, photo) =>
-        photo === undefined ? (
-          <TilePlaceholder />
-        ) : (
-          <PhotoTile
-            photo={photo}
-            selectable={selectable}
-            selectFirst={selectFirst}
-            selected={selection?.selected.has(photo.uid) ?? false}
-            anySelected={anySelected}
-            onToggleSelect={selection === undefined ? undefined : toggleSelect}
-            favoritable={favoritable}
-            onFavoriteChange={onFavoriteChange}
-            detailQuery={detailQuery}
-            focused={index === focusedIndex}
-            extras={tileExtras?.(photo)}
-          />
+
+  const renderRow = (row: JustifiedRow) => (
+    // The gutter below the row is padding, not a margin: virtuoso sizes an item
+    // from its box, and a margin it cannot see would let the rows overlap.
+    <div
+      className="kukatko-photo-row d-flex"
+      style={{
+        gap: `${String(gap)}px`,
+        height: `${String(row.height + gap)}px`,
+        paddingBottom: `${String(gap)}px`,
+        boxSizing: 'border-box',
+      }}
+    >
+      {row.tiles.map((tile) => {
+        const photo = photos[tile.index]
+        return (
+          <div
+            key={photo?.uid ?? `slot-${String(tile.index)}`}
+            style={{ width: `${String(tile.width)}px`, flex: '0 0 auto' }}
+          >
+            {photo === undefined ? (
+              <TilePlaceholder />
+            ) : (
+              <PhotoTile
+                photo={photo}
+                fill
+                tileWidth={tile.width}
+                selectable={selectable}
+                selectFirst={selectFirst}
+                selected={selection?.selected.has(photo.uid) ?? false}
+                anySelected={anySelected}
+                onToggleSelect={selection === undefined ? undefined : toggleSelect}
+                favoritable={favoritable}
+                onFavoriteChange={onFavoriteChange}
+                detailQuery={detailQuery}
+                focused={tile.index === focusedIndex}
+                extras={tileExtras?.(photo)}
+              />
+            )}
+          </div>
         )
-      }
-      // A not-yet-loaded slot keys on its index, so the placeholder is replaced
-      // (not reordered) the moment its photo arrives.
-      computeItemKey={(index, photo) => photo?.uid ?? `slot-${String(index)}`}
-      style={{ minHeight: '50vh' }}
-    />
+      })}
+    </div>
+  )
+
+  return (
+    // The measured box *and* the class the wall's styling hangs off. It stays
+    // outside virtuoso so it is a plain block element of the page's own width —
+    // measuring virtuoso's own scroller would measure something it is itself
+    // sizing.
+    <div ref={wrapRef} className="kukatko-photo-grid" data-density={String(density)}>
+      <Virtuoso
+        ref={virtuosoRef}
+        useWindowScroll
+        data={rows}
+        context={{ loadingMore, moreError, onRetry }}
+        endReached={onEndReached}
+        rangeChanged={handleRangeChanged}
+        isScrolling={handleIsScrolling}
+        restoreStateFrom={restoreStateFrom}
+        components={{ Footer: GridFooter }}
+        itemContent={(_index, row) => renderRow(row)}
+        // A row keys on the photo that opens it, so re-laying the wall out (a
+        // resize, a density step) reuses the rows whose first photo did not move.
+        computeItemKey={(index, row) => `row-${String(row.start)}-${String(index)}`}
+        style={{ minHeight: '50vh' }}
+      />
+    </div>
   )
 }
