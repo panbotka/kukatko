@@ -3,6 +3,7 @@ module github.com/panbotka/kukatko
 go 1.26
 
 require (
+	github.com/bbrks/go-blurhash v1.2.0
 	github.com/fxamacker/cbor/v2 v2.9.3
 	github.com/go-chi/chi/v5 v5.2.1
 	github.com/go-webauthn/webauthn v0.18.0
@@ -27,7 +28,6 @@ require (
 )
 
 require (
-	github.com/bbrks/go-blurhash v1.2.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
