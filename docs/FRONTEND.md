@@ -1436,18 +1436,20 @@ here.
   returns to the label; + a **Promítání** button + for editors **hover-select** → the shared
   **`BatchActionBar`** (the library's full set of actions, `onSelectAll`; refetch on success),
   `SearchPage` = semantic/hybrid/fulltext search: a prominent debounced (350 ms)
-  search field + a mode toggle (`q`+`mode` in the URL), the same virtualized grid as the
+  search field **spanning the whole width** + the mode switch tucked into `SearchModeControl` below it
+  (`q`+`mode` in the URL), the same virtualized grid as the
   library + the shared `FilterBar` (without query/sort), `degraded` → a non-blocking notice
   (sidecar offline) **beside the mode selector, raised from `useSearchMode().downgraded` before a search
   runs** rather than only from the server's reply: with `semantic_search:false` the request already went out
   as `fulltext`, so there is nothing to wait for and nothing to announce afterwards. The same flag `disabled`s
-  the **Semantic** option (`title` = `search.semanticUnavailable`) — hybrid stays, full-text is a fair half of
-  what it promises — while the URL keeps the picked mode, so it applies again the minute the box is back.
+  the **„Podle obsahu fotky"** option (`title` = `search.semanticUnavailable`) — hybrid stays, full-text is a
+  fair half of what it promises — while the URL keeps the picked mode, so it applies again the minute the box
+  is back.
   The `FilterBar` count is **omitted entirely until a query exists** (`total={hasQuery ? total : undefined}`):
   „Počet fotek: 0“ over „Zadejte hledaný výraz.“ reads as an empty library, not as an unasked question.
-  idle/loading/empty/error states (an empty result **repeats the query** —
-  `search.empty.hintQuery` „Pro «dotaz» jsme nic nenašli…“ — and advises loosening the narrowing; the error is
-  `ErrorState` with Retry); the field speaks **the search language**
+  idle/loading/empty/error states (an empty result is `SearchEmptyState` — it **repeats the query**
+  (`search.empty.hintQuery` „Pro «dotaz» jsme nic nenašli.") and offers the steps that actually fix one; the
+  error is `ErrorState` with Retry); the field speaks **the search language**
   (`q` = free text + `klíč:hodnota` filters, grammar in docs/API.md „Vyhledávací jazyk (q=)“;
   parsed exclusively by the backend): the input is `SearchQueryInput` (`components/search/`) — a combobox
   whose dropdown draws (via the presentational `SearchSuggestions`) **one list mixing up to two kinds of row**:
@@ -1487,8 +1489,12 @@ here.
   as its own `text-nowrap` `<code>` (the cell wraps between keys, never inside one) — whatever still
   doesn't fit scrolls in its own wrapper instead of pushing the dialog past a 320px viewport),
   and `unknown_tokens` from the response (`PhotoListResponse.unknown_tokens` → `usePaginatedPhotos`
-  returns `unknownTokens`) → `UnknownFiltersAlert`, a non-blocking info hint „těmto filtrům nerozumím“ above
-  the grid — the same component, and therefore the same wording, the library raises under its own filter bar;
+  returns `unknownTokens`) → `UnknownFiltersAlert`, a non-blocking info hint „těmto filtrům nerozumím“ —
+  rendered **inside the search form, right under the box** rather than below the filters and the cross-entity
+  sections, because it is feedback on what was just typed, and wired with `query`+`onFix` so accepting the
+  suggested key types the repair back into both the URL and the visible text (leaving them apart would let
+  the typing debounce commit the broken query straight back). The same component, and therefore the same
+  wording, the library raises under its own filter bar;
   beside it **`QueryNoticesAlert`** (`components/search/`) renders the response's `notices` — the reason an
   understood query was answered with **nothing** rather than with everything. The only code today is
   `person_me_unlinked` (`person:me` from an account that has not said which person it is), shown as a
@@ -3046,7 +3052,29 @@ here.
   `UnknownFiltersAlert` (the „těmto filtrům nerozumím (hledám je jako obyčejný text)" info alert listing the
   raw `unknown_tokens` as `<code>`, in input order and repeats included; renders **nothing** for an empty
   list, so a caller needs no condition of its own. Shared by `SearchPage` and `LibraryPage` — a mistyped key
-  is one mistake and gets one explanation, wherever it was typed) +
+  is one mistake and gets one explanation, wherever it was typed. Naming the token is only half an answer,
+  so whenever one of the real keys is close enough (`suggestFilterKey`) the alert adds „Nemysleli jste
+  `person:Jarmila`?" — **one hint per distinct token**, and with the optional `query`+`onFix` props a
+  **button** that rewrites the query in place (`applyFilterKeyFix` re-keys whole tokens only, every
+  occurrence, never text that merely contains one); without them the same sentence is stated as plain text.
+  Nothing here blocks or re-runs a search: the degradation to free text stays, the hint is a suggestion) +
+  `SearchModeControl` (**the „how should I search" switch, kept out of the way**: the three ranking
+  strategies carry plain names — „Chytré (doporučeno) / Podle textu / Podle obsahu fotky", `search.mode.*` —
+  each with one sentence saying what it does (`search.modeHint.*`), and the `Form.Select` itself lives behind
+  an unobtrusive **Rozšířené** link (`aria-expanded`/`aria-controls`). Hybrid stays everyone's default, so
+  nobody is asked to pick a retrieval algorithm before looking for a photograph. The panel **opens by
+  itself** whenever the mode is not the default — a shared `?mode=semantic` link ranks differently from what
+  the same query gives everyone else, and the switch that did it has to be on screen — and folded up on a
+  non-default mode the toggle still says which one is in force (`search.advancedWithMode`). `semanticAvailable`
+  `disabled`s the semantic option with `search.semanticUnavailable` as its `title`. Tests:
+  `SearchModeControl.test.tsx`) +
+  `SearchEmptyState` (**what a search that found nothing says**: `EmptyState` with the query repeated
+  („Pro «svatba» jsme nic nenašli.") and, as its `action`, the concrete next steps — **zrušit filtry**
+  (a `primary` button, not advice: the filters are the commonest reason a good query finds nothing; it drops
+  every filter and keeps the query and the mode), **zkontrolovat překlepy**, and **popsat, co má být na
+  fotce** (an `outline-primary` button switching the search to `mode=semantic`), the last one offered only
+  while the embeddings box is reachable and the search is not already running that way, so the page never
+  proposes a step that would change nothing. Tests: `SearchEmptyState.test.tsx`) +
   `SearchCommand` (**a global command palette** in the navbar: a compact icon trigger
   (`kukatko-search-trigger`, named + shortcut-hinted by `aria-label`/`title`, see the navbar above)
   opens via `react-bootstrap` `Modal` a top-anchored console — a live input (a combobox

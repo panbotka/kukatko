@@ -64,7 +64,7 @@ dopad/pracnost — nahoře je to, co se vyplatí udělat první.
 | # | Nález | Dopad | Pracnost | Kde |
 | --- | --- | :---: | :---: | --- |
 | [N1](#n1) ✅ | Hledání čeká 30 s na AI službu, o které aplikace ví, že je offline | 🔴 | ⚪ | `SearchPage`, `usePhotoSearch` |
-| [N2](#n2) | Knihovna dotazovací jazyk umí, ale tvrdí opak (a mlčí u překlepu) | 🔴 | ⚪ | `FilterBar` |
+| [N2](#n2) ✅ | Knihovna dotazovací jazyk umí, ale tvrdí opak (a mlčí u překlepu) | 🔴 | ⚪ | `FilterBar` |
 | [N3](#n3) ✅ | Na `/search` a `/saved` nevede z menu žádný odkaz, `Žebříček` má top-level slot | 🔴 | ⚪ | `navItems.ts` |
 | [N4](#n4) ✅ | Hustota mřížky je jedna hodnota pro notebook i telefon | 🔴 | ⚪ | `lib/gridDensity.ts` |
 | [N5](#n5) ✅ | Zpět z fotky ztratí pozici v knihovně | 🔴 | 🟡 | `PhotoGrid`, `usePaginatedPhotos` |
@@ -87,7 +87,7 @@ dopad/pracnost — nahoře je to, co se vyplatí udělat první.
 | [N22](#n22) ✅ | `/stats` mluví o „Embeddingách" a nenabízí žádnou akci | 🟡 | ⚪ | `StatsPage` |
 | [N23](#n23) ✅ | Mapa je světlá v tmavé aplikaci a `Místa` jsou jeden řádek | 🟡 | 🟡 | `MapPage`, `PlacesPage` |
 | [N24](#n24) | Detail alba nemá časovou osu ani popis | ⚪ | ⚪ | `AlbumDetailPage` |
-| [N25](#n25) | Prázdné hledání hlásí „Počet fotek: 0" | ⚪ | ⚪ | `SearchPage` |
+| [N25](#n25) ✅ | Prázdné hledání hlásí „Počet fotek: 0" | ⚪ | ⚪ | `SearchPage` |
 | [N26](#n26) | Technické údaje ukazují SHA256, zdrojové UID a souřadnice | ⚪ | ⚪ | `TechnicalDetails` |
 
 ---
@@ -179,6 +179,23 @@ jako *„napsal jsi to špatně"*.
 **Kde to je.** `web/src/components/library/FilterBar.tsx` (placeholder a `hint`),
 `web/src/components/search/SearchQueryHelp.tsx` (existující nápověda k znovupoužití),
 varování o neznámých filtrech vrací `internal/query`.
+
+**✅ Vyřešeno (2. 9. 2026).** Všechny čtyři body. Pole nad knihovnou říká pravdu
+(„Hledat — text, nebo filtr jako `year:1965` či `person:Jarmila`"), vedle něj visí
+**týž `SearchQueryHelp`** `?` jako na `/search`, `UnknownFiltersAlert` se kreslí i
+v knihovně (stejná slova na obou místech) a ovládací prvky přiznávají, co jim dotaz
+přebil (`queryFilterTokens`).
+
+Poslední půlka — mlčení u překlepu — je zavřená teď: neznámý `klíč:hodnota` dostane
+vedle sebe **návrh nejbližšího platného klíče** a tlačítko, které opravu rovnou
+napíše do dotazu (`suggestFilterKey`/`applyFilterKeyFix` v `lib/queryLanguage.ts`).
+Vzdálenost je Damerau–Levenshtein (prohozená písmena = jedna chyba, `yaer:` →
+`year:`) s prahem 1 pro krátké klíče a 2 pro delší; a protože jazyk je anglický,
+zatímco aplikace mluví česky, předchází jí **tabulka českých slov** — `osoba:` →
+`person:`, `rok:` → `year:`, `štítek:` → `label:` —, na které by žádná pravopisná
+vzdálenost nedosáhla. Klíč, který jazyk zná, se nikdy nepřejmenovává: takový token
+spadl mezi neznámé kvůli hodnotě, ne kvůli klíči. Hledání to nikdy neblokuje —
+degradace na volný text zůstává, návrh je nabídka, ne chyba.
 
 ---
 
@@ -1321,6 +1338,16 @@ návštěvě hledání čte část lidí jako „v knihovně nic není".
 **Návrh.** Počet nevykreslovat, dokud dotaz není zadaný.
 
 **Kde to je.** `web/src/pages/SearchPage.tsx`.
+
+**✅ Vyřešeno (2. 9. 2026).** Počet se do `FilterBar` posílá jen s dotazem
+(`total={hasQuery ? total : undefined}`), takže nad „Zadejte hledaný výraz."
+už žádné „Počet fotek: 0" nestojí. A prázdný **výsledek** není holé „Nic nenalezeno":
+`SearchEmptyState` zopakuje dotaz, na kterém hledání selhalo, a nabídne tři kroky,
+každý jen když dává smysl — **zrušit filtry** (tlačítko, ne rada: filtry jsou
+nejčastější důvod, proč dobrý dotaz nic nenajde), **zkontrolovat překlepy** a
+**popsat, co má na fotce být**, což je jediná věc, kterou tahle knihovna umí a
+hledání podle názvu souboru ne. Poslední krok se nabízí, jen když box běží a
+hledání už tak neběží.
 
 ---
 

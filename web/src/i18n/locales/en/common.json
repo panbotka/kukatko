@@ -795,24 +795,39 @@
     "formLabel": "Search photos",
     "queryLabel": "Search term",
     "placeholder": "Search… e.g. beach iso:100-400",
-    "modeLabel": "Mode",
+    "modeLabel": "How to search",
     "mode": {
-      "hybrid": "Hybrid",
-      "fulltext": "Full-text",
-      "semantic": "Semantic"
+      "hybrid": "Smart (recommended)",
+      "fulltext": "By text",
+      "semantic": "By what is in the photo"
     },
+    "modeHint": {
+      "hybrid": "Searches the captions and what can be seen in the photo. Leave this one if in doubt.",
+      "fulltext": "Searches only titles, descriptions and notes — word by word.",
+      "semantic": "Describe what should be in the photo (“a child with a dog in the snow”) and it searches by what can be seen."
+    },
+    "advanced": "Advanced",
+    "advancedWithMode": "Advanced — {{mode}}",
     "degraded": "Search by content is temporarily unavailable right now. Showing text-based results instead.",
     "semanticUnavailable": "Content search is unavailable right now — the service that reads photo content is offline.",
     "prompt": "Enter a search term.",
     "empty": {
       "title": "Nothing found",
       "hint": "Try a different term or adjust the filters.",
-      "hintQuery": "Nothing matches “{{query}}”. Try a broader term or fewer filters."
+      "hintQuery": "Nothing matches “{{query}}”.",
+      "tips": {
+        "filters": "The active filters may be hiding it — try clearing them.",
+        "spelling": "Check the spelling, or try a shorter, more general word.",
+        "describe": "Try describing what should be in the photo — “a child with a dog in the snow”."
+      },
+      "clearFilters": "Clear filters",
+      "describe": "Search by what is in the photo"
     },
     "error": {
       "load": "Search failed."
     },
     "unknownTokens": "I don't understand these filters (searching them as plain text):",
+    "didYouMean": "Did you mean {{suggestion}}?",
     "keySuggestions": "Filter suggestions",
     "valueSuggestions": "Value suggestions",
     "suggestions": "Suggestions",

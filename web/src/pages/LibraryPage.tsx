@@ -342,8 +342,15 @@ export function LibraryPage() {
 
       {/* A mistyped filter key (`osoba:` for `person:`) is not "no such photos":
           it degraded to free text, so say which token fell through instead of
-          letting an empty grid blame the library. */}
-      <UnknownFiltersAlert tokens={unknownTokens} />
+          letting an empty grid blame the library — and, when one of the real
+          keys is close enough, offer it and type the fix back into the box. */}
+      <UnknownFiltersAlert
+        tokens={unknownTokens}
+        query={view.q}
+        onFix={(fixed) => {
+          setView({ q: fixed }, { replace: true })
+        }}
+      />
       {/* And an empty grid that is a decision rather than an absence — `person:me`
           from an account that has not said who it is — says so, with the way to
           fix it. */}

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   applyFilterKey,
+  applyFilterKeyFix,
   applyFilterValue,
   FACET_QUERY_KEYS,
   facetQueryTokens,
@@ -10,8 +11,10 @@ import {
   matchFilterValues,
   queryFilterTokens,
   quoteFilterValue,
+  suggestFilterKey,
   suggestFilterKeys,
   suggestFilterValues,
+  withFilterKey,
 } from './queryLanguage'
 
 describe('suggestFilterKeys', () => {
@@ -353,5 +356,70 @@ describe('matchFilterValues', () => {
     const original = [...values]
     matchFilterValues(values, '')
     expect(values).toEqual(original)
+  })
+})
+
+describe('suggestFilterKey', () => {
+  it('proposes the key a spelling slip was reaching for', () => {
+    expect(suggestFilterKey('persn:Anna')).toBe('person')
+    expect(suggestFilterKey('yaer:1965')).toBe('year')
+    expect(suggestFilterKey('albom:"Léto 2024"')).toBe('album')
+  })
+
+  it('proposes the key a Czech word means, which no spelling distance reaches', () => {
+    expect(suggestFilterKey('osoba:Jarmila')).toBe('person')
+    expect(suggestFilterKey('rok:1965')).toBe('year')
+    // Diacritics are folded, so the word survives being typed properly.
+    expect(suggestFilterKey('štítek:svatba')).toBe('label')
+  })
+
+  it('stays silent when nothing is close, rather than guessing wildly', () => {
+    expect(suggestFilterKey('color:red')).toBeNull()
+    expect(suggestFilterKey('http://example.com')).toBeNull()
+  })
+
+  it('never renames a key the language knows — that token has a bad value, not a bad key', () => {
+    expect(suggestFilterKey('year:tisic')).toBeNull()
+    expect(suggestFilterKey('iso:abc')).toBeNull()
+  })
+
+  it('ignores a token that is not filter-shaped', () => {
+    expect(suggestFilterKey('svatba')).toBeNull()
+    expect(suggestFilterKey(':1965')).toBeNull()
+  })
+})
+
+describe('withFilterKey', () => {
+  it('re-keys the token and keeps its value exactly as typed', () => {
+    expect(withFilterKey('osoba:Jarmila', 'person')).toBe('person:Jarmila')
+    expect(withFilterKey('albom:"Léto 2024"', 'album')).toBe('album:"Léto 2024"')
+  })
+
+  it('leaves a token with no key alone', () => {
+    expect(withFilterKey('svatba', 'person')).toBe('svatba')
+  })
+})
+
+describe('applyFilterKeyFix', () => {
+  it('repairs the token in place, leaving the rest of the query untouched', () => {
+    expect(applyFilterKeyFix('svatba osoba:Jarmila year:1965', 'osoba:Jarmila', 'person')).toBe(
+      'svatba person:Jarmila year:1965',
+    )
+  })
+
+  it('repairs every occurrence, since one mistake typed twice is one mistake', () => {
+    expect(applyFilterKeyFix('osoba:Jarmila osoba:Jarmila', 'osoba:Jarmila', 'person')).toBe(
+      'person:Jarmila person:Jarmila',
+    )
+  })
+
+  it('rewrites whole tokens only, never text that merely contains one', () => {
+    expect(applyFilterKeyFix('"osoba:Jarmila" osoba:Jarmila', 'osoba:Jarmila', 'person')).toBe(
+      '"osoba:Jarmila" person:Jarmila',
+    )
+  })
+
+  it('returns the query unchanged when the token is not in it', () => {
+    expect(applyFilterKeyFix('svatba', 'osoba:Jarmila', 'person')).toBe('svatba')
   })
 })

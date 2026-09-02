@@ -801,24 +801,39 @@
     "formLabel": "Hledat fotky",
     "queryLabel": "Hledaný výraz",
     "placeholder": "Hledat… např. pláž iso:100-400",
-    "modeLabel": "Režim",
+    "modeLabel": "Způsob hledání",
     "mode": {
-      "hybrid": "Hybridní",
-      "fulltext": "Fulltext",
-      "semantic": "Sémantické"
+      "hybrid": "Chytré (doporučeno)",
+      "fulltext": "Podle textu",
+      "semantic": "Podle obsahu fotky"
     },
+    "modeHint": {
+      "hybrid": "Hledá v popiscích i v tom, co je na fotce vidět. Když nevíte, nechte tohle.",
+      "fulltext": "Hledá jen v názvech, popiscích a poznámkách — slovo za slovem.",
+      "semantic": "Popište, co má být na fotce („dítě s pejskem na sněhu“), a hledá se podle toho, co je vidět."
+    },
+    "advanced": "Rozšířené",
+    "advancedWithMode": "Rozšířené — {{mode}}",
     "degraded": "Vyhledávání podle obsahu je teď dočasně nedostupné. Zobrazujeme výsledky podle textu.",
     "semanticUnavailable": "Vyhledávání podle obsahu je teď nedostupné — služba pro rozpoznávání obsahu neběží.",
     "prompt": "Zadejte hledaný výraz.",
     "empty": {
       "title": "Nic nenalezeno",
       "hint": "Zkuste jiný výraz nebo upravte filtry.",
-      "hintQuery": "Pro „{{query}}“ jsme nic nenašli. Zkuste obecnější výraz nebo méně filtrů."
+      "hintQuery": "Pro „{{query}}“ jsme nic nenašli.",
+      "tips": {
+        "filters": "Možná to schovávají zapnuté filtry — zkuste je zrušit.",
+        "spelling": "Zkontrolujte překlepy, nebo zkuste kratší a obecnější slovo.",
+        "describe": "Zkuste popsat, co má být na fotce — třeba „dítě s pejskem na sněhu“."
+      },
+      "clearFilters": "Zrušit filtry",
+      "describe": "Hledat podle obsahu fotky"
     },
     "error": {
       "load": "Vyhledávání se nezdařilo."
     },
     "unknownTokens": "Těmto filtrům nerozumím (hledám je jako obyčejný text):",
+    "didYouMean": "Nemysleli jste {{suggestion}}?",
     "keySuggestions": "Návrhy filtrů",
     "valueSuggestions": "Návrhy hodnot",
     "suggestions": "Návrhy",

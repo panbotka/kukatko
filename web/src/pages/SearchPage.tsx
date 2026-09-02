@@ -1,13 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
-import Col from 'react-bootstrap/Col'
 import Form from 'react-bootstrap/Form'
-import Row from 'react-bootstrap/Row'
 import { useTranslation } from 'react-i18next'
 import { useLocation } from 'react-router-dom'
 
-import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
 import { FilterBar } from '../components/library/FilterBar'
 import { GridSkeleton } from '../components/library/GridSkeleton'
@@ -16,6 +13,8 @@ import { BatchActionBar } from '../components/organize/BatchActionBar'
 import { SaveSearchModal } from '../components/savedsearch/SaveSearchModal'
 import { SavedSearchesDropdown } from '../components/savedsearch/SavedSearchesDropdown'
 import { GlobalSearchSections } from '../components/search/GlobalSearchSections'
+import { SearchEmptyState } from '../components/search/SearchEmptyState'
+import { SearchModeControl } from '../components/search/SearchModeControl'
 import { SearchQueryHelp } from '../components/search/SearchQueryHelp'
 import { SearchQueryInput } from '../components/search/SearchQueryInput'
 import { QueryNoticesAlert } from '../components/search/QueryNoticesAlert'
@@ -30,7 +29,7 @@ import { useRecordSearch } from '../hooks/useSearchHistory'
 import { useSearchMode } from '../hooks/useSearchMode'
 import { detailQueryString } from '../lib/detailView'
 import { gridScrollKey, readGridScroll } from '../lib/gridScroll'
-import { viewToParams } from '../lib/libraryView'
+import { hasActiveFilters, LIBRARY_DEFAULTS, viewToParams } from '../lib/libraryView'
 import { SEARCH_DEFAULTS, type SearchView, toMode } from '../lib/searchView'
 import { useUrlState } from '../lib/urlState'
 
@@ -113,6 +112,13 @@ export function SearchPage() {
   const selecting = selection.count > 0
   const hasQuery = view.q.trim() !== ''
   const hasResults = status === 'ready' && photos.length > 0
+  // The query is this page's own input rather than one of the bar's filters, so
+  // it does not count as narrowing here — and clearing keeps it, exactly as the
+  // filter bar's own "clear" does on this page.
+  const filtered = hasActiveFilters(view, { ignoreQuery: true })
+  const clearFilters = useCallback(() => {
+    setView({ ...LIBRARY_DEFAULTS, sort: view.sort, q: view.q })
+  }, [setView, view.sort, view.q])
   // The tab quotes the query — „svatba" — because a search is only worth finding
   // again by what was asked for; an empty page is just "Hledání". It follows the
   // URL, not the debounced input, so history entries and the tab agree.
@@ -207,56 +213,42 @@ export function SearchPage() {
           recordSearch(text)
         }}
       >
-        <Row className="g-2 align-items-end">
-          <Col xs={12} md={8} lg={9}>
-            <Form.Group controlId="search-query">
-              <div className="d-flex align-items-center gap-2 mb-1">
-                <Form.Label className="small mb-0">{t('search.queryLabel')}</Form.Label>
-                {/* The query language's discoverability: filters + operators. */}
-                <SearchQueryHelp />
-              </div>
-              <SearchQueryInput
-                id="search-query"
-                value={text}
-                autoFocus
-                placeholder={t('search.placeholder')}
-                onChange={setText}
-                onRun={(next) => {
-                  // Picking a recent search runs it at once: it is a whole query,
-                  // so waiting out the typing debounce would only feel slow. It
-                  // is also a submit, so it moves back to the front of the ring.
-                  setView({ q: next }, { replace: true })
-                  recordSearch(next)
-                }}
-              />
-            </Form.Group>
-          </Col>
-          <Col xs={12} md={4} lg={3}>
-            <Form.Group controlId="search-mode">
-              <Form.Label className="small mb-1">{t('search.modeLabel')}</Form.Label>
-              <Form.Select
-                value={view.mode}
-                onChange={(e) => {
-                  setView({ mode: e.target.value })
-                }}
-              >
-                <option value="hybrid">{t('search.mode.hybrid')}</option>
-                <option value="fulltext">{t('search.mode.fulltext')}</option>
-                {/* Semantic search cannot be served at all without the sidecar,
-                    so it is taken off the menu rather than silently answered by
-                    something else; hybrid stays, as full-text is a fair half of
-                    what it promises. */}
-                <option
-                  value="semantic"
-                  disabled={!semanticAvailable}
-                  title={semanticAvailable ? undefined : t('search.semanticUnavailable')}
-                >
-                  {t('search.mode.semantic')}
-                </option>
-              </Form.Select>
-            </Form.Group>
-          </Col>
-        </Row>
+        {/* The box is the page: it now spans the whole width the mode selector
+            used to share, which is what a field holding a whole query wants. */}
+        <Form.Group controlId="search-query">
+          <div className="d-flex align-items-center gap-2 mb-1">
+            <Form.Label className="small mb-0">{t('search.queryLabel')}</Form.Label>
+            {/* The query language's discoverability: filters + operators. */}
+            <SearchQueryHelp />
+          </div>
+          <SearchQueryInput
+            id="search-query"
+            value={text}
+            autoFocus
+            placeholder={t('search.placeholder')}
+            onChange={setText}
+            onRun={(next) => {
+              // Picking a recent search runs it at once: it is a whole query, so
+              // waiting out the typing debounce would only feel slow. It is also
+              // a submit, so it moves back to the front of the ring.
+              setView({ q: next }, { replace: true })
+              recordSearch(next)
+            }}
+          />
+        </Form.Group>
+
+        {/* How the search ranks is a preference, not a question to answer before
+            looking for a photograph: the switch lives behind an "advanced"
+            toggle and everyone else gets the smart mode. */}
+        <div className="mt-2">
+          <SearchModeControl
+            mode={view.mode}
+            semanticAvailable={semanticAvailable}
+            onChange={(next) => {
+              setView({ mode: next })
+            }}
+          />
+        </div>
 
         {/* Beside the controls that caused it, and before any results: the
             fallback is known from the capability flag, not from a reply. */}
@@ -265,6 +257,20 @@ export function SearchPage() {
             {t('search.degraded')}
           </Alert>
         )}
+        {/* A mistyped key belongs beside the box that mistyped it, not below
+            the filters and the cross-entity sections: it is feedback on what was
+            just typed, and accepting the suggestion types the fix back in. */}
+        <UnknownFiltersAlert
+          tokens={unknownTokens}
+          query={view.q}
+          onFix={(fixed) => {
+            // Both halves of the box: the URL is what the search runs on, `text`
+            // is what the reader sees, and leaving the two apart would let the
+            // typing debounce commit the broken query straight back.
+            setText(fixed)
+            setView({ q: fixed }, { replace: true })
+          }}
+        />
       </Form>
 
       {/* No query means no result set, so there is no count to state: showing
@@ -279,7 +285,6 @@ export function SearchPage() {
 
       <GlobalSearchSections query={view.q} />
 
-      <UnknownFiltersAlert tokens={unknownTokens} />
       <QueryNoticesAlert notices={notices} />
 
       {status === 'idle' && (
@@ -293,13 +298,17 @@ export function SearchPage() {
       {status === 'error' && <ErrorState title={t('search.error.load')} onRetry={retry} />}
 
       {status === 'ready' && photos.length === 0 && (
-        <EmptyState
-          title={t('search.empty.title')}
-          hint={
-            view.q.trim() === ''
-              ? t('search.empty.hint')
-              : t('search.empty.hintQuery', { query: view.q.trim() })
-          }
+        <SearchEmptyState
+          query={view.q.trim()}
+          hasFilters={filtered}
+          onClearFilters={clearFilters}
+          // Describing the photo is the one thing this library can do that no
+          // filename search can — but only while the box that reads photographs
+          // is up, and only when it is not already what just found nothing.
+          canDescribe={semanticAvailable && mode !== 'semantic' && hasQuery}
+          onDescribe={() => {
+            setView({ mode: 'semantic' })
+          }}
         />
       )}
 

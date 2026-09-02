@@ -572,3 +572,153 @@ export const QUERY_HELP_OPERATORS: QueryHelpOperator[] = [
   { id: 'quotes', example: 'camera:"Canon EOS R6"' },
   { id: 'wildcard', example: 'filename:IMG_*' },
 ]
+
+/**
+ * The words a reader reaches for instead of a filter key, mapped to the key they
+ * meant. The query language is English while the app is Czech first, so the
+ * commonest "typo" is not a typo at all but the Czech word — `osoba:Jarmila`
+ * for `person:Jarmila` — which no spelling distance will ever bridge. Folded
+ * keys ({@link foldText}), so `štítek:` and `stitek:` both land on `label:`.
+ */
+const KEY_ALIASES: Readonly<Record<string, string | undefined>> = {
+  autor: 'uploader',
+  datum: 'taken',
+  den: 'day',
+  fotoaparat: 'camera',
+  fotka: 'filename',
+  hodnoceni: 'rating',
+  jmeno: 'person',
+  mesic: 'month',
+  mesto: 'city',
+  misto: 'city',
+  nazev: 'title',
+  objektiv: 'lens',
+  oblibene: 'favorite',
+  osoba: 'person',
+  osoby: 'person',
+  popis: 'description',
+  poznamka: 'notes',
+  poznamky: 'notes',
+  rok: 'year',
+  soubor: 'filename',
+  stitek: 'label',
+  stitky: 'label',
+  tvar: 'faces',
+  tvare: 'faces',
+  zeme: 'country',
+}
+
+/**
+ * Edit distance between two short strings, counting a swap of two neighbouring
+ * characters as **one** edit (Damerau's optimal string alignment) rather than
+ * the two substitutions plain Levenshtein charges it: `yaer` for `year` is one
+ * of the commonest ways to mistype a word, and at a key's length two edits is
+ * already most of the word.
+ *
+ * It stops as soon as a whole row exceeds `max` — the callers only care whether
+ * the words are *close*, and a key is at most a dozen characters long.
+ */
+function editDistance(a: string, b: string, max: number): number {
+  if (Math.abs(a.length - b.length) > max) {
+    return max + 1
+  }
+  // The two rows above the one being filled: the previous one for the three
+  // Levenshtein moves, the one before it for a transposition.
+  let older: number[] = []
+  let previous = Array.from({ length: b.length + 1 }, (_, i) => i)
+  for (let i = 1; i <= a.length; i++) {
+    const current = [i]
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1
+      let best = Math.min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + cost)
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        best = Math.min(best, older[j - 2] + 1)
+      }
+      current.push(best)
+    }
+    if (Math.min(...current) > max) {
+      return max + 1
+    }
+    older = previous
+    previous = current
+  }
+  return previous[b.length]
+}
+
+/**
+ * How far a typed key may sit from a real one and still be taken for it: one
+ * edit for a short key (`day`/`dat` must not become `dist`), two for a longer
+ * one, where a doubled or dropped letter is easy and the word is specific enough
+ * that nothing else is near it.
+ */
+function maxKeyDistance(typed: string): number {
+  return typed.length <= 4 ? 1 : 2
+}
+
+/**
+ * The filter key an unrecognised `key:value` token was probably meant to carry,
+ * or null when nothing is close enough to propose.
+ *
+ * `token` is the raw token exactly as the backend reported it in
+ * `unknown_tokens` (`persn:Anna`, `osoba:Jarmila`). A token whose key the
+ * language *does* know is never guessed at — it landed in the unknown list
+ * because its value was malformed, and renaming the key would be a wrong
+ * answer to a right question.
+ */
+export function suggestFilterKey(token: string): string | null {
+  const colon = token.indexOf(':')
+  if (colon <= 0) {
+    return null
+  }
+  const typed = foldText(token.slice(0, colon))
+  if (typed === '' || KNOWN_KEYS.has(typed)) {
+    return null
+  }
+  const alias = KEY_ALIASES[typed]
+  if (alias !== undefined) {
+    return alias
+  }
+  const max = maxKeyDistance(typed)
+  let best: string | null = null
+  let bestDistance = max + 1
+  for (const key of FILTER_KEYS) {
+    const distance = editDistance(typed, key, max)
+    if (distance < bestDistance) {
+      best = key
+      bestDistance = distance
+    }
+  }
+  return best
+}
+
+/** The same token with its key replaced — `persn:Anna` → `person:Anna`. */
+export function withFilterKey(token: string, key: string): string {
+  const colon = token.indexOf(':')
+  return colon <= 0 ? token : key + token.slice(colon)
+}
+
+/**
+ * The query with every occurrence of `token` re-keyed to `key`, so accepting a
+ * "did you mean person:?" hint fixes the query the reader already typed rather
+ * than asking them to type it again.
+ *
+ * Only whole tokens are rewritten ({@link scanTokens}, the same splitting the
+ * backend does), so a word that merely contains the mistyped text — inside a
+ * quoted phrase, say — is left exactly as it was.
+ */
+export function applyFilterKeyFix(input: string, token: string, key: string): string {
+  const replacement = withFilterKey(token, key)
+  if (replacement === token) {
+    return input
+  }
+  let out = ''
+  let cursor = 0
+  for (const scanned of scanTokens(input)) {
+    if (scanned.raw !== token) {
+      continue
+    }
+    out += input.slice(cursor, scanned.start) + replacement
+    cursor = scanned.start + scanned.raw.length
+  }
+  return out + input.slice(cursor)
+}

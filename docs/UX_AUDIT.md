@@ -213,14 +213,17 @@ implemented**, per the task's conservative-changes rule.
 - **Clarity:** Prominent autofocus search field + mode selector; well-designed.
 - **Intimidation:** Previously the **most jargon-heavy copy** — the degraded notice named "the
   inference service is offline" and "semantic/full-text". ✅ **Done:** reworded to plain language.
-  📋 The **mode selector labels** ("Hybrid / Full-text / Semantic") remain technical — rename to
-  plain terms (e.g. "Smart / By text / By meaning") and/or hide the selector behind an "advanced"
-  toggle, defaulting everyone to the smart mode. 🔴🟡 — **verified still open (2026-08-05)**:
-  the selector reads "Hybridní / Fulltext / Sémantické". The bigger problem behind it — with the box
+  The **mode selector labels** ("Hybrid / Full-text / Semantic") were the last technical copy in the
+  app's main flow. ✅ **Done (2026-09-02)**: both halves of the ticket. The modes carry plain names —
+  „Chytré (doporučeno) / Podle textu / Podle obsahu fotky" — each with one sentence saying what it
+  does, and the switch itself moved into `SearchModeControl` behind an unobtrusive **Rozšířené**
+  toggle: everyone gets the smart mode and only a reader who wants to say otherwise ever meets the
+  choice. The panel unfolds by itself for a non-default mode (a shared `?mode=semantic` link), and
+  folded up on one it keeps saying which mode is in force. The bigger problem behind it — with the box
   offline every hybrid query blocked for a **30 s** timeout even though `/capabilities` already
   reported `semantic_search: false` — is ✅ **Done (2026-08-07)**: the query now goes out as
-  full-text straight away, "Sémantické" is `disabled` with an explanation, and the notice appears
-  beside the selector before the search runs. See `UX_RESEARCH.md` **N1**.
+  full-text straight away, "Podle obsahu fotky" is `disabled` with an explanation, and the notice
+  appears beside the selector before the search runs. See `UX_RESEARCH.md` **N1**.
 - **Touch/States:** Field is full-size (good); header Save-view + retry are `size="sm"` (now
   floored on touch ✅).
 
@@ -561,7 +564,7 @@ reached or reproduced with a viewer account, ✅ = done.
 
 | # | Item | Impact | Effort | Checked | Notes |
 |---|------|:---:|:---:|:---:|-------|
-| 1 | Plain-language **search modes** ("Smart / By text / By meaning") + hide selector behind "advanced" | 🔴 | 🟡 | ✔ | Search is a core flow; mode names are the last scary copy there. Fix together with `UX_RESEARCH.md` **N1** (30 s timeout on an offline box) — same component. |
+| 1 | ✅ **Done** — plain-language **search modes** („Chytré / Podle textu / Podle obsahu fotky") behind an „Rozšířené" toggle | 🔴 | 🟡 | ✅ | `SearchModeControl`: hybrid stays the default and the switch is out of the way, each mode explained in one sentence; the panel opens itself for a mode that came from a shared URL. `UX_RESEARCH.md` **N1** (30 s timeout on an offline box) was closed earlier in the same component. |
 | 2 | ✅ **Done** — shared **`ConfirmModal`** replaces all `window.confirm` (Album/Labels/Saved/Import) | 🔴 | 🟡 | ✅ | One dialog modelled on Trash: confirm button carries the action, `danger` by default and not the Enter target, focus/Escape/restore handled, cs+en. |
 | 3 | **Import**: stop rendering `run.last_error` verbatim; friendly "details" disclosure | 🔴 | 🟡 | — | Only raw-error leak in the app. Admin-only, 403 for the audit account. May become moot: removing the dead import is already a queued task. |
 | 4 | **Maintenance/Import/Duplicates/System**: plain-language explainers/tooltips for jargon (embeddings, hashes, orphans, dead jobs, box) | 🔴 | 🟡 | — | Admin pages, but still meant to be usable. The same jargon leaks onto the all-roles `/stats` — see `UX_RESEARCH.md` **N22**. |

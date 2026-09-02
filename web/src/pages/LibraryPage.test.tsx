@@ -901,6 +901,21 @@ describe('LibraryPage unknown filters', () => {
     expect(alert).toHaveTextContent('osoba:Jarmila')
   })
 
+  it('offers the key that was meant and types it into the quick filter', async () => {
+    fetchMock.mockResolvedValue({
+      ...page([], 0, null),
+      unknown_tokens: ['osoba:Jarmila'],
+    })
+    const user = userEvent.setup()
+    renderLibrary('/?q=osoba%3AJarmila')
+
+    await user.click(await screen.findByRole('button', { name: 'Did you mean person:Jarmila?' }))
+
+    expect(screen.getByTestId('search')).toHaveTextContent('q=person%3AJarmila')
+    // The field follows the URL, so the fix is visible where it was typed.
+    expect(screen.getByLabelText('Filter the library')).toHaveValue('person:Jarmila')
+  })
+
   it('stays quiet when every filter parsed', async () => {
     fetchMock.mockResolvedValue(page([photo('a', 'a.jpg')], 1, null))
     renderLibrary('/?q=year%3A1965')

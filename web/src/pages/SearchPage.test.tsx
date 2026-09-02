@@ -153,6 +153,19 @@ function renderSearch(initialEntry = '/search', canWrite = true, semanticSearch 
   )
 }
 
+/**
+ * Reveals the mode switch, which lives behind the "Advanced" toggle for everyone
+ * who has not asked for a mode of their own. A view already running a
+ * non-default mode opens the panel by itself, so the toggle is only clicked when
+ * the select is not on screen yet.
+ */
+async function openAdvanced(user: ReturnType<typeof userEvent.setup>) {
+  if (screen.queryByLabelText('How to search') === null) {
+    await user.click(screen.getByRole('button', { name: /advanced/i }))
+  }
+  return screen.getByLabelText('How to search')
+}
+
 beforeEach(async () => {
   await i18n.changeLanguage('en')
   searchMock.mockReset()
@@ -203,9 +216,10 @@ describe('SearchPage', () => {
 
     await screen.findByRole('link', { name: 'a.jpg' })
 
-    // The input and mode selector reflect the URL.
+    // The input reflects the URL, and a mode nobody would have picked by
+    // accident unfolds its own switch rather than ranking differently in secret.
     expect(screen.getByLabelText('Search term')).toHaveValue('beach')
-    expect(screen.getByLabelText('Mode')).toHaveValue('semantic')
+    expect(screen.getByLabelText('How to search')).toHaveValue('semantic')
 
     // The fetch used the URL query and mode (params, mode, signal).
     const [params, mode] = searchMock.mock.calls[0]
@@ -232,7 +246,7 @@ describe('SearchPage', () => {
     await screen.findByRole('link', { name: 'a.jpg' })
     expect(searchMock.mock.calls[0][1]).toBe('hybrid')
 
-    await user.selectOptions(screen.getByLabelText('Mode'), 'fulltext')
+    await user.selectOptions(await openAdvanced(user), 'fulltext')
 
     await waitFor(() => {
       const calls = searchMock.mock.calls
@@ -299,11 +313,12 @@ describe('SearchPage', () => {
       ).not.toBeInTheDocument()
     })
 
-    it('disables the semantic option and explains why', () => {
+    it('disables the semantic option and explains why', async () => {
+      const user = userEvent.setup()
       renderSearch('/search', true, false)
 
-      const semantic = within(screen.getByLabelText('Mode')).getByRole('option', {
-        name: 'Semantic',
+      const semantic = within(await openAdvanced(user)).getByRole('option', {
+        name: 'By what is in the photo',
       })
       expect(semantic).toBeDisabled()
       expect(semantic).toHaveAttribute('title', expect.stringMatching(/unavailable/i))
@@ -314,7 +329,7 @@ describe('SearchPage', () => {
       renderSearch('/search?q=beach&mode=semantic', true, false)
 
       await screen.findByRole('link', { name: 'a.jpg' })
-      expect(screen.getByLabelText('Mode')).toHaveValue('semantic')
+      expect(screen.getByLabelText('How to search')).toHaveValue('semantic')
       expect(screen.getByTestId('search')).toHaveTextContent('mode=semantic')
     })
   })
@@ -343,6 +358,23 @@ describe('SearchPage', () => {
     expect(screen.getByText('color:red')).toBeInTheDocument()
     // The results still render alongside the hint (the token degraded to text).
     expect(screen.getByRole('link', { name: 'a.jpg' })).toBeInTheDocument()
+  })
+
+  it('repairs a mistyped filter key in the box and re-runs the search with it', async () => {
+    searchMock.mockResolvedValue(page([photo('a', 'a.jpg')], { unknown_tokens: ['osoba:Jarmila'] }))
+    const user = userEvent.setup()
+    renderSearch('/search?q=osoba:Jarmila')
+
+    await user.click(await screen.findByRole('button', { name: 'Did you mean person:Jarmila?' }))
+
+    // Both halves of the box move together: the URL the search runs on, and the
+    // text the reader sees — otherwise the debounce commits the broken query back.
+    expect(screen.getByTestId('search')).toHaveTextContent('q=person%3AJarmila')
+    expect(screen.getByLabelText('Search term')).toHaveValue('person:Jarmila')
+    await waitFor(() => {
+      const calls = searchMock.mock.calls
+      expect(calls[calls.length - 1][0].q).toBe('person:Jarmila')
+    })
   })
 
   it('opens the query-language help listing filters and operators', async () => {
@@ -491,6 +523,44 @@ describe('SearchPage', () => {
     renderSearch('/search?q=nothing')
 
     expect(await screen.findByText('Nothing found')).toBeInTheDocument()
+    // A dead end is never just a statement: the spelling is always worth a look.
+    expect(screen.getByText(/check the spelling/i)).toBeInTheDocument()
+  })
+
+  it('clears the filters from the empty state, keeping the query that was asked', async () => {
+    searchMock.mockResolvedValue(page([]))
+    const user = userEvent.setup()
+    renderSearch('/search?q=nothing&favorite=yes')
+
+    // Scoped to the empty state: the filter bar carries a clear-all of its own,
+    // saying the same thing in the same words, which is the point.
+    const empty = within(await screen.findByTestId('empty-state'))
+    await user.click(empty.getByRole('button', { name: 'Clear filters' }))
+
+    const url = screen.getByTestId('search')
+    expect(url).toHaveTextContent('q=nothing')
+    expect(url).not.toHaveTextContent('favorite=yes')
+  })
+
+  it('offers describing the photo from the empty state and switches the search to it', async () => {
+    searchMock.mockResolvedValue(page([]))
+    const user = userEvent.setup()
+    renderSearch('/search?q=nothing')
+
+    await screen.findByText('Nothing found')
+    await user.click(screen.getByRole('button', { name: 'Search by what is in the photo' }))
+
+    expect(screen.getByTestId('search')).toHaveTextContent('mode=semantic')
+  })
+
+  it('offers no describing step while the box that reads photographs is down', async () => {
+    searchMock.mockResolvedValue(page([]))
+    renderSearch('/search?q=nothing', true, false)
+
+    await screen.findByText('Nothing found')
+    expect(
+      screen.queryByRole('button', { name: 'Search by what is in the photo' }),
+    ).not.toBeInTheDocument()
   })
 
   it('shows an error with a retry that re-runs the search', async () => {
@@ -619,7 +689,7 @@ describe('SearchPage bulk edit', () => {
     await user.click(screen.getByRole('button', { name: 'Select a.jpg' }))
     expect(screen.getByText('1 selected')).toBeInTheDocument()
 
-    await user.selectOptions(screen.getByLabelText('Mode'), 'fulltext')
+    await user.selectOptions(await openAdvanced(user), 'fulltext')
 
     await waitFor(() => {
       expect(screen.queryByText('1 selected')).not.toBeInTheDocument()
