@@ -16,6 +16,7 @@ import {
   type NamelessUndoFile,
 } from '../../services/maintenance'
 import { RecordTable, type RecordColumn } from '../RecordTable'
+import { TechnicalDetail } from '../TechnicalDetail'
 
 /** Lifecycle of the read-only report. */
 type ReportState =
@@ -52,12 +53,20 @@ function NamelessTable({ subjects }: { subjects: NamelessSubject[] }) {
     {
       key: 'uid',
       header: t('maintenance.nameless.columns.subject'),
+      // The row says what this is; the two identifiers that tell one catch-all
+      // from another are behind the disclosure, because that is the only thing
+      // here nobody but a maintainer can read.
       cell: (subject) => (
         <>
-          <span className="font-monospace text-break">{subject.uid}</span>
-          <div className="fw-normal text-secondary small">
-            {t('maintenance.nameless.emptyName', { slug: subject.slug })}
-          </div>
+          <span>{t('maintenance.nameless.emptyName')}</span>
+          <TechnicalDetail id={`nameless-subject-${subject.uid}`}>
+            <dl className="small mb-0">
+              <dt className="fw-normal text-secondary">{t('maintenance.nameless.uidLabel')}</dt>
+              <dd className="font-monospace text-break">{subject.uid}</dd>
+              <dt className="fw-normal text-secondary">{t('maintenance.nameless.slugLabel')}</dt>
+              <dd className="font-monospace text-break mb-0">{subject.slug}</dd>
+            </dl>
+          </TechnicalDetail>
         </>
       ),
     },

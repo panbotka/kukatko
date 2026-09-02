@@ -1,3 +1,4 @@
+import type { ParseKeys, TFunction } from 'i18next'
 import Button from 'react-bootstrap/Button'
 import Card from 'react-bootstrap/Card'
 import Spinner from 'react-bootstrap/Spinner'
@@ -7,6 +8,7 @@ import { useTranslation } from 'react-i18next'
 import { formatCount } from '../../lib/format'
 import type { JobsStatus } from '../../services/system'
 import { JobStateLegend, type JobStateKey } from '../JobStateLegend'
+import { TechnicalDetail } from '../TechnicalDetail'
 
 /**
  * The lifecycle states the breakdown has a column for, in the order work moves
@@ -24,6 +26,32 @@ const EXPLAINED_STATES: readonly JobStateKey[] = [
   'done',
   'pending',
 ]
+
+/**
+ * The job types that have a name in the family's vocabulary. A type missing here
+ * — a new handler shipped before its translation, say — falls back to its own
+ * id, which is wrong-looking rather than blank and says exactly what to add.
+ */
+const TYPE_LABELS: Record<string, ParseKeys | undefined> = {
+  image_embed: 'system.jobs.types.image_embed',
+  face_detect: 'system.jobs.types.face_detect',
+  thumbnail: 'system.jobs.types.thumbnail',
+  places: 'system.jobs.types.places',
+  metadata: 'system.jobs.types.metadata',
+  ocr: 'system.jobs.types.ocr',
+  sidecar: 'system.jobs.types.sidecar',
+  storyboard: 'system.jobs.types.storyboard',
+  backup: 'system.jobs.types.backup',
+  mail_send: 'system.jobs.types.mail_send',
+  nameless_detach: 'system.jobs.types.nameless_detach',
+  nameless_restore: 'system.jobs.types.nameless_restore',
+}
+
+/** The job type's name in the family's vocabulary, or its raw id if it has none. */
+function typeLabel(type: string, t: TFunction): string {
+  const key = TYPE_LABELS[type]
+  return key === undefined ? type : t(key)
+}
 
 /** One row of the breakdown: a job type with its per-state counts and total. */
 interface TypeRow {
@@ -75,6 +103,10 @@ interface JobQueuePanelProps {
 /**
  * The job queue, broken down by type **and** state.
  *
+ * Every row is named in the family's vocabulary — "looking for faces", not
+ * `face_detect` — and the ids those names stand for are listed once, behind the
+ * disclosure under the table, for whoever has to match a row to a log line.
+ *
  * It replaces a row of badges that summed the whole queue per type, which was
  * actively misleading: the queue table keeps finished jobs, so `image_embed:
  * 41 594` against a library of 20 930 photos described a re-embedding that
@@ -119,8 +151,8 @@ export function JobQueuePanel({ jobs, onRequeue, requeuing }: JobQueuePanelProps
                 <tbody>
                   {rows.map((row) => (
                     <tr key={row.type} data-testid={`job-row-${row.type}`}>
-                      <th scope="row" className="fw-normal font-monospace">
-                        {row.type}
+                      <th scope="row" className="fw-normal">
+                        {typeLabel(row.type, t)}
                       </th>
                       {STATE_COLUMNS.map((state) => (
                         <td
@@ -182,6 +214,27 @@ export function JobQueuePanel({ jobs, onRequeue, requeuing }: JobQueuePanelProps
           <div className="mt-3">
             <JobStateLegend states={EXPLAINED_STATES} />
           </div>
+          {/* The rows are named in words, but a maintainer reading a log, a
+              `kukatko ctl` output or the source needs the ids those words stand
+              for. One disclosure for the whole table, rather than a monospace id
+              in every row nobody else can read. */}
+          {rows.length > 0 && (
+            <TechnicalDetail
+              id="system-job-types"
+              label={t('system.jobs.typesTitle')}
+              className="mt-3"
+            >
+              <dl className="small text-secondary mb-0">
+                {rows.map((row) => (
+                  <div key={row.type} className="mb-1">
+                    <dt className="d-inline fw-semibold text-body font-monospace">{row.type}</dt>
+                    {' — '}
+                    <dd className="d-inline mb-0">{typeLabel(row.type, t)}</dd>
+                  </div>
+                ))}
+              </dl>
+            </TechnicalDetail>
+          )}
         </Card.Body>
       </Card>
     </section>

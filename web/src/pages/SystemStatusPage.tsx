@@ -16,6 +16,7 @@ import { ErrorState } from '../components/ErrorState'
 import { JobQueuePanel } from '../components/system/JobQueuePanel'
 import { LibraryOverview } from '../components/system/LibraryOverview'
 import { RemainingWorkPanel } from '../components/system/RemainingWorkPanel'
+import { TechnicalDetail } from '../components/TechnicalDetail'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { formatBytes, formatDateTime } from '../lib/format'
 import { formatRelativeTime } from '../lib/relativeTime'
@@ -57,7 +58,12 @@ function formatTimestamp(value: string, locale: string): string {
   return formatDateTime(value, locale)
 }
 
-/** The build version / commit card. */
+/**
+ * Which version is running. The version number answers "is the deploy the one I
+ * released?"; the commit hash answers "which exact code is that?" — a question
+ * only somebody with the repository open ever asks, so the forty hex characters
+ * sit behind the disclosure instead of under the heading.
+ */
 function VersionCard({ version }: { version: VersionInfo }) {
   const { t } = useTranslation()
   return (
@@ -65,7 +71,10 @@ function VersionCard({ version }: { version: VersionInfo }) {
       <Card.Body>
         <h2 className="kk-section-title mb-2">{t('system.version.title')}</h2>
         <div className="kk-section-title">{version.version}</div>
-        <div className="text-secondary small font-monospace text-break">{version.commit}</div>
+        <TechnicalDetail id="system-version-commit">
+          <div className="text-secondary small">{t('system.version.commit')}</div>
+          <div className="text-secondary small font-monospace text-break">{version.commit}</div>
+        </TechnicalDetail>
       </Card.Body>
     </Card>
   )
@@ -88,7 +97,17 @@ function DatabaseCard({ database }: { database: DatabaseStatus }) {
   )
 }
 
-/** The embeddings-sidecar card, surfacing the offline-but-queued state. */
+/**
+ * Whether the service that reads photos — what is in them, whose faces are on
+ * them — can be reached, and what waits while it cannot.
+ *
+ * It is one machine on the other side of an HTTP call, so it used to be titled
+ * after its payload and its host ("Embeddingy (box)"). Neither word means
+ * anything to whoever runs the family's library; what they need to know is
+ * whether recognition works right now and that nothing is lost while it does
+ * not. The address stays reachable behind the disclosure, because that is the
+ * first thing to check when it says unavailable.
+ */
 function EmbeddingsCard({
   embeddings,
   pending,
@@ -108,7 +127,10 @@ function EmbeddingsCard({
             {t('system.embeddings.offline')}
           </Badge>
         )}
-        <div className="text-secondary small font-monospace text-break mt-2">{embeddings.url}</div>
+        <TechnicalDetail id="system-embeddings-url" className="mt-2">
+          <div className="text-secondary small">{t('system.embeddings.address')}</div>
+          <div className="text-secondary small font-monospace text-break">{embeddings.url}</div>
+        </TechnicalDetail>
         {!embeddings.online && pending > 0 && (
           <Alert variant="warning" className="mt-3 mb-0 small">
             {t('system.embeddings.offlineHint', { n: pending })}
@@ -207,7 +229,12 @@ function MapsCard({ maps, geocode }: { maps: MapsStatus; geocode: GeocodeStatus 
           </Alert>
         )}
         {maps.degraded && maps.detail !== undefined && maps.detail !== '' && (
-          <div className="text-secondary small font-monospace text-break mt-2">{maps.detail}</div>
+          // Whatever mapy.com answered, verbatim: useful when the badge says
+          // something is wrong, unreadable otherwise, so it is one click away.
+          <TechnicalDetail id="system-maps-detail" className="mt-2">
+            <div className="text-secondary small">{t('system.maps.detailTitle')}</div>
+            <div className="text-secondary small font-monospace text-break">{maps.detail}</div>
+          </TechnicalDetail>
         )}
         <GeocodeCredits geocode={geocode} />
       </Card.Body>

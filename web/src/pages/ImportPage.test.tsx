@@ -1,4 +1,5 @@
 import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -143,7 +144,7 @@ describe('ImportPage', () => {
     runsMock.mockResolvedValue(runsResponse([run(2, 'photoprism', 'done')]))
     renderPage()
 
-    await screen.findByText('Run history')
+    await screen.findByText('Imports that have run')
     expect(screen.queryByRole('button', { name: /start/i })).toBeNull()
     expect(screen.queryByText('Completeness check')).toBeNull()
   })
@@ -158,21 +159,29 @@ describe('ImportPage', () => {
     )
     renderPage()
 
-    expect(await screen.findByText('Run history')).toBeInTheDocument()
+    expect(await screen.findByText('Imports that have run')).toBeInTheDocument()
     // Every retired source still has a label — a raw i18n key in the provenance
     // record would be worse than useless.
     expect(screen.getByText('Legacy catalogue')).toBeInTheDocument()
-    expect(screen.getByText('Legacy vector layer')).toBeInTheDocument()
-    expect(screen.getByText('Legacy vector layer (feeds)')).toBeInTheDocument()
-    expect(screen.getByText('connection refused')).toBeInTheDocument()
+    expect(screen.getByText('Previous library — recognised content')).toBeInTheDocument()
+    expect(screen.getByText('Previous library — recognised content (batches)')).toBeInTheDocument()
 
+    // The raw server text is not on the page: the failed run says what happened
+    // in a sentence and keeps the verbatim error behind its disclosure.
+    expect(screen.queryByText('connection refused')).toBeNull()
+    expect(
+      screen.getByText('The import stopped before it finished — something went wrong.'),
+    ).toBeInTheDocument()
     // A wide viewport keeps the familiar six-column table.
     const table = screen.getByRole('table')
+    await userEvent.click(within(table).getByRole('button', { name: 'Technical details' }))
+    expect(within(table).getByText('connection refused')).toBeInTheDocument()
+
     expect(
       within(table)
         .getAllByRole('columnheader')
         .map((th) => th.textContent),
-    ).toEqual(['Source', 'Started', 'Finished', 'Status', 'Counts', 'Last error'])
+    ).toEqual(['Source', 'Started', 'Finished', 'Status', 'Counts', 'What happened'])
     // The header row plus one row per run.
     expect(within(table).getAllByRole('row')).toHaveLength(4)
   })
@@ -187,7 +196,7 @@ describe('ImportPage', () => {
     )
     renderPage()
 
-    expect(await screen.findByText('Run history')).toBeInTheDocument()
+    expect(await screen.findByText('Imports that have run')).toBeInTheDocument()
     // Nothing to drag sideways: the six-column table is gone entirely.
     expect(screen.queryByRole('table')).toBeNull()
 
@@ -195,13 +204,19 @@ describe('ImportPage', () => {
     expect(cards).toHaveLength(2)
     // Every column travels with its label, so a value is still readable alone.
     const first = cards[0]
-    for (const label of ['Source', 'Started', 'Finished', 'Status', 'Counts', 'Last error']) {
+    for (const label of ['Source', 'Started', 'Finished', 'Status', 'Counts', 'What happened']) {
       expect(within(first).getByText(label)).toBeInTheDocument()
     }
     expect(within(first).getByText('Folder on disk')).toBeInTheDocument()
     expect(within(first).getByText('Done')).toBeInTheDocument()
     expect(within(first).getByText('New: 5')).toBeInTheDocument()
-    // The per-run status detail survives the reflow: the failure keeps its error.
+    // The per-run status detail survives the reflow: the failure keeps its
+    // summary, and its verbatim error keeps hiding behind the same disclosure.
+    expect(
+      within(cards[1]).getByText('The import stopped before it finished — something went wrong.'),
+    ).toBeInTheDocument()
+    expect(within(cards[1]).queryByText('connection refused')).toBeNull()
+    await userEvent.click(within(cards[1]).getByRole('button', { name: 'Technical details' }))
     expect(within(cards[1]).getByText('connection refused')).toBeInTheDocument()
     expect(within(cards[1]).getByText('Failed')).toBeInTheDocument()
   })
@@ -224,7 +239,16 @@ describe('ImportPage', () => {
     renderPage()
 
     expect(await screen.findByText('/srv/incoming/beach.jpg')).toBeInTheDocument()
-    expect(screen.getByText('decode failed')).toBeInTheDocument()
+    // The step is named in words and the raw stage id is not in the row…
+    expect(screen.getByText('The photo as a whole')).toBeInTheDocument()
+    expect(screen.queryByText('decode failed')).toBeNull()
+    // …and both the id and what the server said are one click away.
+    const row = screen.getByText('/srv/incoming/beach.jpg').closest('tr')
+    expect(row).not.toBeNull()
+    const failureRow = within(row as HTMLElement)
+    await userEvent.click(failureRow.getByRole('button', { name: 'Technical details' }))
+    expect(failureRow.getByText('photo')).toBeInTheDocument()
+    expect(failureRow.getByText('decode failed')).toBeInTheDocument()
   })
 
   it('denies access to users without import permission', async () => {
@@ -232,7 +256,7 @@ describe('ImportPage', () => {
     expect(
       await screen.findByText('This page is available to system maintainers only.'),
     ).toBeInTheDocument()
-    expect(screen.queryByText('Run history')).not.toBeInTheDocument()
+    expect(screen.queryByText('Imports that have run')).not.toBeInTheDocument()
     expect(runsMock).not.toHaveBeenCalled()
   })
 
@@ -241,7 +265,7 @@ describe('ImportPage', () => {
     expect(
       await screen.findByText('This page is available to system maintainers only.'),
     ).toBeInTheDocument()
-    expect(screen.queryByText('Run history')).not.toBeInTheDocument()
+    expect(screen.queryByText('Imports that have run')).not.toBeInTheDocument()
     expect(runsMock).not.toHaveBeenCalled()
   })
 
@@ -249,7 +273,7 @@ describe('ImportPage', () => {
     runsMock.mockResolvedValue(runsResponse([run(2, 'folder', 'done')]))
     renderPage(auth({ isMaintainer: true }))
 
-    expect(await screen.findByText('Run history')).toBeInTheDocument()
+    expect(await screen.findByText('Imports that have run')).toBeInTheDocument()
     expect(runsMock).toHaveBeenCalled()
   })
 })

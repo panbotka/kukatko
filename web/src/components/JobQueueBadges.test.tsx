@@ -90,8 +90,8 @@ describe('JobQueueBadges', () => {
     statsMock.mockResolvedValue(stats({ queued: 3, running: 1, failed: 2, done: 500 }))
     renderBadges('maintainer')
     // done is deliberately excluded; queued/running/failed each render a badge.
-    expect(await screen.findByText('queued 3')).toBeInTheDocument()
-    expect(screen.getByText('running 1')).toBeInTheDocument()
+    expect(await screen.findByText('waiting 3')).toBeInTheDocument()
+    expect(screen.getByText('in progress 1')).toBeInTheDocument()
     expect(screen.getByText('failed 2')).toBeInTheDocument()
     expect(screen.queryByText(/^done/)).not.toBeInTheDocument()
   })
@@ -116,7 +116,7 @@ describe('JobQueueBadges', () => {
     const link = await screen.findByRole('link')
     expect(link).toHaveAttribute('href', '/system')
     // The badge itself is inside the link — the whole row is one destination.
-    expect(link).toContainElement(screen.getByText('queued 16'))
+    expect(link).toContainElement(screen.getByText('waiting 16'))
   })
 
   it('names the queue, its state and the destination, so the label stands alone', async () => {
@@ -125,7 +125,7 @@ describe('JobQueueBadges', () => {
     // Not just the bare numbers a screen reader would otherwise announce.
     expect(
       await screen.findByRole('link', {
-        name: 'Job queue: queued 16, running 1 — open System status',
+        name: 'Background work: waiting 16, in progress 1 — open System status',
       }),
     ).toBeInTheDocument()
   })
@@ -134,7 +134,7 @@ describe('JobQueueBadges', () => {
     statsMock.mockResolvedValue(stats({}))
     renderBadges('maintainer')
     expect(
-      await screen.findByRole('link', { name: 'Job queue: idle — open System status' }),
+      await screen.findByRole('link', { name: 'Background work: idle — open System status' }),
     ).toBeInTheDocument()
   })
 

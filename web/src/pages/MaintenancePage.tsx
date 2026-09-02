@@ -11,6 +11,7 @@ import { useAuth } from '../auth/AuthContext'
 import { JobStateLegend, type JobStateKey } from '../components/JobStateLegend'
 import { NamelessSubjectsCard } from '../components/maintenance/NamelessSubjectsCard'
 import { RecordTable, type RecordColumn } from '../components/RecordTable'
+import { TechnicalDetail } from '../components/TechnicalDetail'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { ApiError } from '../services/auth'
 import { fetchJobStats, type JobStats } from '../services/import'
@@ -130,14 +131,21 @@ function ScanResult({ report }: { report: ScanReport }) {
     {
       key: 'samples',
       header: t('maintenance.findings.samples'),
-      // On the value, not in `cellClassName`: the card shows the same sample ids
-      // and they need the same monospace + break-anywhere treatment there.
+      // File paths and UIDs are what a maintainer opens a terminal with and what
+      // everybody else reads as noise, so they are one click away rather than
+      // dumped into the row. On the value, not in `cellClassName`: the phone card
+      // renders the same cell and has to hide them just as well.
       cell: (key) => {
         const { samples } = findingOf(report, key)
+        if (samples.length === 0) {
+          return <span className="text-secondary small">—</span>
+        }
         return (
-          <span className="text-secondary small font-monospace text-break">
-            {samples.length > 0 ? samples.join(', ') : '—'}
-          </span>
+          <TechnicalDetail id={`maintenance-samples-${key}`}>
+            <span className="text-secondary small font-monospace text-break">
+              {samples.join(', ')}
+            </span>
+          </TechnicalDetail>
         )
       },
     },
@@ -255,7 +263,12 @@ function RepairForm({ report, selection, onToggle, onRun, state }: RepairFormPro
   )
 }
 
-/** The background job-queue stats summary (repair progress). */
+/**
+ * How the filling-in is progressing, as the queue counts with the shared
+ * {@link JobStateLegend} beneath them. The badge labels come from the same
+ * `jobStates.*` block as the legend, so a badge and its explanation cannot end
+ * up calling the same state two different things.
+ */
 function JobStatsBar({ stats }: { stats: JobStats }) {
   const { t } = useTranslation()
   return (
@@ -265,19 +278,19 @@ function JobStatsBar({ stats }: { stats: JobStats }) {
         <p className="text-secondary small">{t('maintenance.jobs.intro')}</p>
         <div className="d-flex gap-2 flex-wrap mb-3">
           <Badge bg="primary">
-            {t('maintenance.jobs.total')}: {stats.total}
+            {t('jobStates.labels.total')}: {stats.total}
           </Badge>
           <Badge bg="secondary">
-            {t('maintenance.jobs.queued')}: {stats.by_state.queued ?? 0}
+            {t('jobStates.labels.queued')}: {stats.by_state.queued ?? 0}
           </Badge>
           <Badge bg="info">
-            {t('maintenance.jobs.running')}: {stats.by_state.running ?? 0}
+            {t('jobStates.labels.running')}: {stats.by_state.running ?? 0}
           </Badge>
           <Badge bg="warning" text="dark">
-            {t('maintenance.jobs.failed')}: {stats.by_state.failed ?? 0}
+            {t('jobStates.labels.failed')}: {stats.by_state.failed ?? 0}
           </Badge>
           <Badge bg="dark">
-            {t('maintenance.jobs.dead')}: {stats.by_state.dead ?? 0}
+            {t('jobStates.labels.dead')}: {stats.by_state.dead ?? 0}
           </Badge>
         </div>
         <JobStateLegend states={MAINT_JOB_STATES} />

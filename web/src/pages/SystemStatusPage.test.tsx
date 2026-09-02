@@ -222,8 +222,8 @@ describe('SystemStatusPage', () => {
 
     // Each card heading renders.
     expect(await screen.findByText('Database')).toBeInTheDocument()
-    expect(screen.getByText('Embeddings (box)')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Job queue' })).toBeInTheDocument()
+    expect(screen.getByText('Content and face recognition')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Background work' })).toBeInTheDocument()
     expect(screen.getByText('Backup')).toBeInTheDocument()
     expect(screen.getByText('Imports')).toBeInTheDocument()
     // The disk card says whose disk it is: the library's own size lives in the
@@ -231,9 +231,9 @@ describe('SystemStatusPage', () => {
     expect(screen.getByText('Server disk')).toBeInTheDocument()
     expect(screen.getByText(/almost none of them/)).toBeInTheDocument()
 
-    // Section values: reachable DB, offline box, disk size, version.
+    // Section values: reachable DB, unavailable recognition, disk size, version.
     expect(screen.getByText('Reachable')).toBeInTheDocument()
-    expect(screen.getByText('Offline')).toBeInTheDocument()
+    expect(screen.getByText('Unavailable')).toBeInTheDocument()
     expect(screen.getByText('1.0 MB')).toBeInTheDocument()
     expect(screen.getByText('1.2.3')).toBeInTheDocument()
   })
@@ -247,14 +247,16 @@ describe('SystemStatusPage', () => {
     expect(ages).toHaveLength(2)
   })
 
-  it('explains the job-queue states in plain language, including box-pending', async () => {
+  it('explains the queue states in plain language, recognition-service wait included', async () => {
     renderPage()
 
     // The queue is introduced and the tricky states are explained without hover.
-    expect(await screen.findByText(/Background work, by type and state/)).toBeInTheDocument()
-    expect(screen.getByText(/failed even after all attempts were used up/)).toBeInTheDocument()
-    // The extra box-pending state (jobs waiting for the AI box) is explained here.
-    expect(screen.getByText(/waiting in the queue for the box/)).toBeInTheDocument()
+    expect(
+      await screen.findByText(/works through in the background, by kind of work/),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/went wrong even after several attempts/)).toBeInTheDocument()
+    // The extra pending state (work waiting for the recognition service) too.
+    expect(screen.getByText(/waiting for the service to come back/)).toBeInTheDocument()
   })
 
   it('breaks the queue down by type and state instead of one lifetime total', async () => {
@@ -265,9 +267,7 @@ describe('SystemStatusPage', () => {
     expect(screen.getByTestId('job-image_embed-done')).toHaveTextContent('2')
     expect(screen.getByTestId('job-ocr-dead')).toHaveTextContent('2')
     // The lifetime tally is still there, but explicitly labelled as history.
-    expect(
-      screen.getByText(/counts every job on record, finished ones included/),
-    ).toBeInTheDocument()
+    expect(screen.getByText(/counts everything Kukátko has ever worked on/)).toBeInTheDocument()
   })
 
   it('requeues the dead letter of one job type from its row', async () => {
@@ -277,20 +277,20 @@ describe('SystemStatusPage', () => {
 
     // Only the type with a dead letter offers the action.
     const row = await screen.findByTestId('job-row-ocr')
-    await user.click(within(row).getByRole('button', { name: 'Requeue' }))
+    await user.click(within(row).getByRole('button', { name: 'Retry' }))
 
     await waitFor(() => {
       expect(requeueMock).toHaveBeenCalledWith('ocr')
     })
-    expect(await screen.findByText('Requeued 2 jobs.')).toBeInTheDocument()
+    expect(await screen.findByText('2 jobs went back into the queue.')).toBeInTheDocument()
     expect(within(screen.getByTestId('job-row-image_embed')).queryByRole('button')).toBeNull()
   })
 
-  it('shows the offline-box queued embeddings hint', async () => {
+  it('shows the queued-work hint while recognition is unavailable', async () => {
     renderPage()
     expect(
       await screen.findByText(
-        'Box is offline → 5 embedding jobs are queued and will resume once the box is back online.',
+        'The service is unavailable → 5 photos are waiting in the queue. Kukátko catches up as soon as it is back.',
       ),
     ).toBeInTheDocument()
   })
@@ -299,13 +299,13 @@ describe('SystemStatusPage', () => {
     const user = userEvent.setup()
     renderPage()
 
-    const button = await screen.findByRole('button', { name: 'Requeue dead-letter jobs' })
+    const button = await screen.findByRole('button', { name: 'Retry the permanently failed' })
     await user.click(button)
 
     await waitFor(() => {
       expect(requeueMock).toHaveBeenCalledWith(undefined)
     })
-    expect(await screen.findByText('Requeued 2 jobs.')).toBeInTheDocument()
+    expect(await screen.findByText('2 jobs went back into the queue.')).toBeInTheDocument()
   })
 
   it('disables the requeue action when there are no dead-letter jobs', async () => {
@@ -322,7 +322,7 @@ describe('SystemStatusPage', () => {
       }),
     )
     renderPage()
-    const button = await screen.findByRole('button', { name: 'Requeue dead-letter jobs' })
+    const button = await screen.findByRole('button', { name: 'Retry the permanently failed' })
     expect(button).toBeDisabled()
   })
 
@@ -345,7 +345,7 @@ describe('SystemStatusPage', () => {
       'href',
       '/import',
     )
-    expect(screen.getByRole('link', { name: 'Maintenance scan' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Library maintenance' })).toHaveAttribute(
       'href',
       '/maintenance',
     )
@@ -403,7 +403,7 @@ describe('SystemStatusPage', () => {
     expect(screen.getByTestId('tile-without-gps')).toHaveTextContent('8,000')
     expect(screen.getByTestId('tile-without-ocr')).toHaveTextContent('300')
     expect(screen.getByTestId('tile-duplicates')).toHaveTextContent('14')
-    expect(screen.getByRole('link', { name: 'Clusters to name' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Groups of faces to name' })).toHaveAttribute(
       'href',
       '/people/clusters',
     )
@@ -439,9 +439,9 @@ describe('SystemStatusPage', () => {
     expect(await screen.findByTestId('tile-photos')).toHaveTextContent('0')
     expect(screen.getByTestId('catalogue-storage-library')).toHaveTextContent('0 B')
     expect(
-      screen.getByText('The queue is empty — nothing has been enqueued yet.'),
+      screen.getByText('Nothing to do — there is no background work waiting.'),
     ).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Requeue dead-letter jobs' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Retry the permanently failed' })).toBeDisabled()
     // A zeroed backlog is the goal, not a warning: nothing is highlighted.
     expect(screen.getByTestId('tile-faces-unassigned')).not.toHaveClass('text-warning')
   })
@@ -475,14 +475,14 @@ describe('SystemStatusPage', () => {
     renderPage()
 
     expect(await screen.findByText('Key rejected')).toBeInTheDocument()
-    expect(screen.getByText(/rejecting the API key/)).toBeInTheDocument()
+    expect(screen.getByText(/rejecting the access key/)).toBeInTheDocument()
   })
 
   it('reports a healthy map backend without alarming the admin', async () => {
     renderPage()
 
     expect(await screen.findByText('Healthy')).toBeInTheDocument()
-    expect(screen.queryByText(/rejecting the API key/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/rejecting the access key/)).not.toBeInTheDocument()
   })
 
   it('reports maps as not configured when no mapy.com key is set', async () => {

@@ -63,10 +63,14 @@ function renderCard() {
   )
 }
 
-/** Runs the read-only report and waits for its table. */
+/**
+ * Runs the read-only report and waits for its table. The row is identified by
+ * what it says in words — the uid it used to lead with now waits behind the
+ * row's technical-details disclosure.
+ */
 async function check(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: /zkontrolovat/i }))
-  await screen.findByText('sunuikf1e9jdpjog5qgomsvgrb')
+  await screen.findByText('Osoba bez jména')
 }
 
 describe('NamelessSubjectsCard', () => {
@@ -78,8 +82,11 @@ describe('NamelessSubjectsCard', () => {
     expect(screen.getByText(/zatím neproběhla žádná kontrola/i)).toBeInTheDocument()
     await check(user)
 
-    expect(screen.getByText(/prázdné jméno/i)).toBeInTheDocument()
     expect(screen.getByText(/16531 značek a 111155 obličejů/)).toBeInTheDocument()
+    // The uid and the slug are identifiers, so they are one click away.
+    expect(screen.queryByText('sunuikf1e9jdpjog5qgomsvgrb')).toBeNull()
+    await user.click(screen.getByRole('button', { name: /technické podrobnosti/i }))
+    expect(screen.getByText('sunuikf1e9jdpjog5qgomsvgrb')).toBeInTheDocument()
     // Reporting is read-only: nothing may be scheduled by looking.
     expect(detachMock).not.toHaveBeenCalled()
   })
@@ -91,7 +98,7 @@ describe('NamelessSubjectsCard', () => {
 
     await user.click(screen.getByRole('button', { name: /zkontrolovat/i }))
 
-    expect(await screen.findByText(/žádný subjekt bez jména/i)).toBeInTheDocument()
+    expect(await screen.findByText(/žádná osoba bez jména/i)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /odpojit a smazat/i })).not.toBeInTheDocument()
   })
 
@@ -104,7 +111,7 @@ describe('NamelessSubjectsCard', () => {
 
     await user.click(screen.getByRole('button', { name: /odpojit a smazat/i }))
     // The confirmation has to be explicit about both the loss and the undo file.
-    expect(screen.getByText(/tuto akci nelze vrátit/i)).toBeInTheDocument()
+    expect(screen.getByText(/vrátit to jde jedině souborem níže/i)).toBeInTheDocument()
     expect(screen.getByText(/uschovejte ho/i)).toBeInTheDocument()
     expect(detachMock).not.toHaveBeenCalled()
 
@@ -156,7 +163,7 @@ describe('NamelessSubjectsCard', () => {
     await user.click(screen.getByRole('button', { name: /odpojit a smazat/i }))
     await user.click(screen.getByRole('button', { name: /^ano, odpojit$/i }))
 
-    expect(await screen.findByText(/oprava není na tomto serveru dostupná/i)).toBeInTheDocument()
+    expect(await screen.findByText(/tahle oprava na tomhle serveru není/i)).toBeInTheDocument()
   })
 
   it('replays an uploaded undo file', async () => {
@@ -173,7 +180,7 @@ describe('NamelessSubjectsCard', () => {
     await waitFor(() => {
       expect(restoreMock).toHaveBeenCalledWith(file)
     })
-    expect(await screen.findByText(/naplánováno obnovení 1 subjektů/i)).toBeInTheDocument()
+    expect(await screen.findByText(/naplánováno obnovení 1 osob/i)).toBeInTheDocument()
   })
 
   it('rejects a file that is not a usable undo file', async () => {

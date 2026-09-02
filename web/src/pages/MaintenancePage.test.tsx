@@ -158,19 +158,27 @@ describe('MaintenancePage', () => {
     const user = userEvent.setup()
     renderPage()
 
-    await user.click(screen.getByRole('button', { name: 'Run scan' }))
+    await user.click(screen.getByRole('button', { name: 'Run the check' }))
 
-    expect(await screen.findByText('Missing thumbnails')).toBeInTheDocument()
-    // The outstanding count badge and a sample id both render.
+    expect(await screen.findByText('Photos with no thumbnail')).toBeInTheDocument()
+    // The outstanding count badge renders; the raw ids and paths of the samples
+    // do not — they wait behind the row's technical-details disclosure.
     expect(screen.getByText('3')).toBeInTheDocument()
+    expect(screen.queryByText('ph1, ph2')).toBeNull()
+    expect(screen.queryByText('2026/06/x.jpg')).toBeNull()
+    const disclosures = screen.getAllByRole('button', { name: 'Technical details' })
+    expect(disclosures).toHaveLength(2)
+    for (const disclosure of disclosures) {
+      await user.click(disclosure)
+    }
     expect(screen.getByText('ph1, ph2')).toBeInTheDocument()
     expect(screen.getByText('2026/06/x.jpg')).toBeInTheDocument()
     // The totals summary and its drift hint render.
     expect(screen.getByText(/10 photos/)).toBeInTheDocument()
-    expect(screen.getByText(/should roughly match/)).toBeInTheDocument()
+    expect(screen.getByText(/should roughly agree/)).toBeInTheDocument()
     // Each finding carries an inline plain-language explanation of what it means.
-    expect(screen.getByText(/has no generated thumbnail/)).toBeInTheDocument()
-    expect(screen.getByText(/belongs to no catalogue photo/)).toBeInTheDocument()
+    expect(screen.getByText(/no small copy for the grid/)).toBeInTheDocument()
+    expect(screen.getByText(/belongs to no photo in the catalogue/)).toBeInTheDocument()
 
     // A wide viewport keeps the compact table, headerless: its first column names
     // the problem, so there is nothing for a header row to add.
@@ -187,9 +195,9 @@ describe('MaintenancePage', () => {
     const user = userEvent.setup()
     renderPage()
 
-    await user.click(screen.getByRole('button', { name: 'Run scan' }))
+    await user.click(screen.getByRole('button', { name: 'Run the check' }))
 
-    expect(await screen.findByText('Missing thumbnails')).toBeInTheDocument()
+    expect(await screen.findByText('Photos with no thumbnail')).toBeInTheDocument()
     // Nothing to drag sideways: the three-column table is gone entirely.
     expect(screen.queryByRole('table')).toBeNull()
 
@@ -198,14 +206,16 @@ describe('MaintenancePage', () => {
     // The headerless table's columns still carry their labels onto the card —
     // a card has no header row to read the values across from.
     const thumbnails = cards[2]
-    expect(within(thumbnails).getByText('Problem')).toBeInTheDocument()
-    expect(within(thumbnails).getByText('Count')).toBeInTheDocument()
-    expect(within(thumbnails).getByText('Samples')).toBeInTheDocument()
+    expect(within(thumbnails).getByText('What drifted')).toBeInTheDocument()
+    expect(within(thumbnails).getByText('How many')).toBeInTheDocument()
+    expect(within(thumbnails).getByText('Examples')).toBeInTheDocument()
     // Count, samples and the plain-language explanation all survive the reflow.
-    expect(within(thumbnails).getByText('Missing thumbnails')).toBeInTheDocument()
+    expect(within(thumbnails).getByText('Photos with no thumbnail')).toBeInTheDocument()
     expect(within(thumbnails).getByText('3')).toBeInTheDocument()
+    expect(within(thumbnails).queryByText('ph1, ph2')).toBeNull()
+    await user.click(within(thumbnails).getByRole('button', { name: 'Technical details' }))
     expect(within(thumbnails).getByText('ph1, ph2')).toBeInTheDocument()
-    expect(within(thumbnails).getByText(/has no generated thumbnail/)).toBeInTheDocument()
+    expect(within(thumbnails).getByText(/no small copy for the grid/)).toBeInTheDocument()
   })
 
   it('reports a clean library when the scan finds no problems', async () => {
@@ -213,9 +223,11 @@ describe('MaintenancePage', () => {
     const user = userEvent.setup()
     renderPage()
 
-    await user.click(screen.getByRole('button', { name: 'Run scan' }))
+    await user.click(screen.getByRole('button', { name: 'Run the check' }))
 
-    expect(await screen.findByText('The library is consistent.')).toBeInTheDocument()
+    expect(
+      await screen.findByText('The catalogue and the files agree; there is nothing to repair.'),
+    ).toBeInTheDocument()
   })
 
   it('disables the repair button until a repair is selected, then runs it', async () => {
@@ -223,10 +235,10 @@ describe('MaintenancePage', () => {
     const user = userEvent.setup()
     renderPage()
 
-    const runButton = screen.getByRole('button', { name: 'Run repairs' })
+    const runButton = screen.getByRole('button', { name: 'Start filling in' })
     expect(runButton).toBeDisabled()
 
-    await user.click(screen.getByLabelText('Regenerate missing thumbnails'))
+    await user.click(screen.getByLabelText('Generate the missing thumbnails'))
     expect(runButton).toBeEnabled()
 
     await user.click(runButton)
@@ -242,10 +254,12 @@ describe('MaintenancePage', () => {
     const user = userEvent.setup()
     renderPage()
 
-    await user.click(screen.getByLabelText('Backfill missing embeddings'))
-    await user.click(screen.getByRole('button', { name: 'Run repairs' }))
+    await user.click(
+      screen.getByLabelText('Work out what is in the photos that are still missing it'),
+    )
+    await user.click(screen.getByRole('button', { name: 'Start filling in' }))
 
-    expect(await screen.findByText('The repair failed.')).toBeInTheDocument()
+    expect(await screen.findByText('It could not be started.')).toBeInTheDocument()
   })
 
   it('purges the audit log only after a confirmation step and shows the count', async () => {
@@ -317,10 +331,11 @@ describe('MaintenancePage', () => {
     renderPage()
 
     expect(await screen.findByText('Total: 9')).toBeInTheDocument()
-    expect(screen.getByText('Queued: 7')).toBeInTheDocument()
+    expect(screen.getByText('Waiting: 7')).toBeInTheDocument()
     // The queue is introduced and every state is explained in plain language,
-    // including what "Dead" means and that it needs a manual requeue.
-    expect(screen.getByText(/background queue that runs the repairs/)).toBeInTheDocument()
-    expect(screen.getByText(/failed even after all attempts were used up/)).toBeInTheDocument()
+    // including what the permanently-failed count means and that it needs a
+    // manual retry — with no "dead job" anywhere in the copy.
+    expect(screen.getByText(/works through in the background/)).toBeInTheDocument()
+    expect(screen.getByText(/went wrong even after several attempts/)).toBeInTheDocument()
   })
 })

@@ -27,28 +27,36 @@ describe('JobStateLegend', () => {
     renderLegend(['total', 'queued', 'running', 'failed', 'dead', 'pending'])
 
     // Each state term is present as a definition term…
-    for (const label of ['Total', 'Queued', 'Running', 'Failed', 'Dead', 'Waiting on box']) {
+    for (const label of [
+      'Total',
+      'Waiting',
+      'In progress',
+      'Failed',
+      'Permanently failed',
+      'Waiting for the recognition service',
+    ]) {
       expect(screen.getByText(label)).toBeInTheDocument()
     }
-    // …with an explanation of the tricky states an admin needs.
-    expect(screen.getByText(/failed even after all attempts were used up/)).toBeInTheDocument()
-    expect(screen.getByText(/without using up their retry budget/)).toBeInTheDocument()
-    expect(screen.getByText(/waiting in the queue for the box/)).toBeInTheDocument()
+    // …with an explanation of the tricky states an admin needs — and not a word
+    // of the vocabulary they used to be written in ("dead", "the box").
+    expect(screen.getByText(/went wrong even after several attempts/)).toBeInTheDocument()
+    expect(screen.getByText(/waiting costs it no attempts/)).toBeInTheDocument()
+    expect(screen.getByText(/waiting for the service to come back/)).toBeInTheDocument()
   })
 
   it('omits states that were not requested', () => {
     renderLegend(['total', 'queued', 'running', 'failed', 'dead'])
 
-    expect(screen.getByText('Dead')).toBeInTheDocument()
-    // The System-only box-pending state is not shown on the Maintenance page.
-    expect(screen.queryByText('Waiting on box')).not.toBeInTheDocument()
+    expect(screen.getByText('Permanently failed')).toBeInTheDocument()
+    // The System-only recognition-service state is not shown on Maintenance.
+    expect(screen.queryByText('Waiting for the recognition service')).not.toBeInTheDocument()
   })
 
   it('renders the Czech wording when the language is Czech', async () => {
     await i18n.changeLanguage('cs')
     renderLegend(['dead'])
 
-    expect(screen.getByText('Mrtvé')).toBeInTheDocument()
-    expect(screen.getByText(/po vyčerpání všech pokusů/)).toBeInTheDocument()
+    expect(screen.getByText('Trvale se nepovedlo')).toBeInTheDocument()
+    expect(screen.getByText(/ani po několika pokusech/)).toBeInTheDocument()
   })
 })

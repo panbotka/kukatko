@@ -1,3 +1,4 @@
+import type { ParseKeys } from 'i18next'
 import { useCallback, useEffect, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Badge from 'react-bootstrap/Badge'
@@ -9,7 +10,9 @@ import { useTranslation } from 'react-i18next'
 import { useAuth } from '../auth/AuthContext'
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
+import { JobStateLegend, type JobStateKey } from '../components/JobStateLegend'
 import { RecordTable, type RecordColumn } from '../components/RecordTable'
+import { TechnicalDetail } from '../components/TechnicalDetail'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { formatDateTime } from '../lib/format'
 import {
@@ -36,6 +39,27 @@ const STATUS_VARIANT: Record<RunStatus, string> = {
 
 /** How many failure rows to show at once. */
 const FAILURES_LIMIT = 100
+
+/**
+ * The queue states explained under the badges, in display order. The import page
+ * shows no `total` badge (it is not what an import is watched for) and no
+ * `pending` one, so the legend explains exactly the four counts above it.
+ */
+const IMPORT_JOB_STATES: readonly JobStateKey[] = ['queued', 'running', 'failed', 'dead']
+
+/**
+ * The one-line summary of a run that recorded an error, keyed by what the run
+ * ended as: a run that stopped is a different story from one that finished with
+ * a few files it could not read, and both are stories rather than stack traces.
+ */
+function errorSummaryKey(status: RunStatus): ParseKeys {
+  if (status === 'failed') {
+    return 'import.history.errorSummary.failed'
+  }
+  return status === 'partial'
+    ? 'import.history.errorSummary.partial'
+    : 'import.history.errorSummary.generic'
+}
 
 /** Fetch lifecycle of the import page data. */
 type State =
@@ -74,27 +98,34 @@ function CountsBadges({ counts }: { counts: ImportCounts }) {
   )
 }
 
-/** The job-queue stats summary (background processing backlog). */
+/**
+ * What is still being worked out after an import — the queue counts as badges,
+ * with the shared {@link JobStateLegend} spelling out what each of them means.
+ * The badge labels come from the same `jobStates.*` block as the legend, so the
+ * word above a number and the word explaining it can never drift apart.
+ */
 function JobStatsBar({ stats }: { stats: JobStats }) {
   const { t } = useTranslation()
   return (
     <Card className="mb-4">
       <Card.Body>
-        <h2 className="kk-section-title mb-2">{t('import.jobs.title')}</h2>
-        <div className="d-flex gap-2 flex-wrap">
+        <h2 className="kk-section-title mb-1">{t('import.jobs.title')}</h2>
+        <p className="text-secondary small">{t('import.jobs.intro')}</p>
+        <div className="d-flex gap-2 flex-wrap mb-3">
           <Badge bg="secondary">
-            {t('import.jobs.queued')}: {stats.by_state.queued ?? 0}
+            {t('jobStates.labels.queued')}: {stats.by_state.queued ?? 0}
           </Badge>
           <Badge bg="info">
-            {t('import.jobs.running')}: {stats.by_state.running ?? 0}
+            {t('jobStates.labels.running')}: {stats.by_state.running ?? 0}
           </Badge>
           <Badge bg="warning" text="dark">
-            {t('import.jobs.failed')}: {stats.by_state.failed ?? 0}
+            {t('jobStates.labels.failed')}: {stats.by_state.failed ?? 0}
           </Badge>
           <Badge bg="dark">
-            {t('import.jobs.dead')}: {stats.by_state.dead ?? 0}
+            {t('jobStates.labels.dead')}: {stats.by_state.dead ?? 0}
           </Badge>
         </div>
+        <JobStateLegend states={IMPORT_JOB_STATES} />
       </Card.Body>
     </Card>
   )
@@ -139,17 +170,35 @@ function RunHistoryTable({ runs }: { runs: ImportRun[] }) {
       cell: (run) => <CountsBadges counts={run.counts} />,
     },
     {
-      key: 'lastError',
-      header: t('import.history.lastError'),
+      key: 'outcome',
+      header: t('import.history.outcome'),
       // The styling rides on the value, not on `cellClassName`: the card shows the
-      // same error and it has to stay just as red and just as small there.
-      cell: (run) => <span className="text-danger small">{run.last_error || '—'}</span>,
+      // same summary and it has to stay just as red and just as small there.
+      cell: (run) =>
+        run.last_error === '' ? (
+          <span className="text-secondary small">{t('import.history.ok')}</span>
+        ) : (
+          <>
+            <span className="text-danger small">{t(errorSummaryKey(run.status))}</span>
+            <TechnicalDetail id={`import-run-error-${String(run.id)}`}>
+              <div className="small font-monospace text-break text-secondary">{run.last_error}</div>
+            </TechnicalDetail>
+          </>
+        ),
     },
   ]
   return <RecordTable records={runs} columns={columns} rowKey={(run) => String(run.id)} size="sm" />
 }
 
-/** The recorded per-photo/per-file import-failure list (unresolved failures). */
+/**
+ * The recorded per-photo/per-file import failures (the unresolved ones).
+ *
+ * Each row names the step that went wrong in words — "the thumbnail", "looking
+ * for faces" — instead of the `importer.Stage` id, and points at the file it
+ * happened to. What the server actually said is the one thing here a maintainer
+ * cannot do without and nobody else can read, so it lives behind the row's
+ * {@link TechnicalDetail} together with the step id and the source reference.
+ */
 function FailuresPanel({ failures }: { failures: ImportFailure[] }) {
   const { t, i18n } = useTranslation()
   return (
@@ -166,24 +215,39 @@ function FailuresPanel({ failures }: { failures: ImportFailure[] }) {
                 <th>{t('import.failures.colStage')}</th>
                 <th>{t('import.failures.colSource')}</th>
                 <th>{t('import.failures.colRef')}</th>
-                <th>{t('import.failures.colDetail')}</th>
-                <th>{t('import.failures.colError')}</th>
                 <th>{t('import.failures.colWhen')}</th>
+                <th>{t('import.failures.colDetail')}</th>
               </tr>
             </thead>
             <tbody>
               {failures.map((f) => (
                 <tr key={f.id}>
-                  <td>
-                    <Badge bg="secondary">{f.stage}</Badge>
-                  </td>
-                  <td className="small">{f.source}</td>
-                  <td className="text-break">
-                    <code>{f.source_ref || f.photo_uid || '—'}</code>
-                  </td>
-                  <td className="small text-break">{f.detail || '—'}</td>
-                  <td className="small text-danger text-break">{f.error}</td>
+                  <td className="small">{t(`import.failures.stages.${f.stage}`)}</td>
+                  <td className="small">{t(`import.source.${f.source}`)}</td>
+                  <td className="text-break small">{f.source_ref || f.photo_uid || '—'}</td>
                   <td className="small">{formatTimestamp(f.created_at, i18n.language)}</td>
+                  <td>
+                    <TechnicalDetail id={`import-failure-${String(f.id)}`}>
+                      <dl className="small mb-0">
+                        <dt className="fw-normal text-secondary">
+                          {t('import.failures.stageLabel')}
+                        </dt>
+                        <dd className="font-monospace text-break">{f.stage}</dd>
+                        {f.detail !== '' && (
+                          <>
+                            <dt className="fw-normal text-secondary">
+                              {t('import.failures.detailLabel')}
+                            </dt>
+                            <dd className="text-break">{f.detail}</dd>
+                          </>
+                        )}
+                        <dt className="fw-normal text-secondary">
+                          {t('import.failures.errorLabel')}
+                        </dt>
+                        <dd className="font-monospace text-break mb-0">{f.error}</dd>
+                      </dl>
+                    </TechnicalDetail>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -262,6 +326,15 @@ export function ImportPage() {
       <Alert variant="info">
         <p className="mb-0">{t('import.intro')}</p>
       </Alert>
+      {/* The command is the one thing on this page only a maintainer at a shell
+          can use, so it sits behind the same disclosure as every other
+          machine-readable fact rather than in the opening paragraph. It sits
+          *below* the alert, not inside it: a `variant="link"` button on a filled
+          Alert inherits nothing and reads as invisible. */}
+      <TechnicalDetail id="import-cli" className="mb-3">
+        <p className="small mb-1">{t('import.cli')}</p>
+        <code>kukatko import dir</code>
+      </TechnicalDetail>
 
       {state.status === 'loading' && (
         <div className="d-flex justify-content-center py-5">

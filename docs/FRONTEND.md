@@ -262,6 +262,18 @@ here.
   `MaintenancePage` and `SystemStatusPage`; the `states` prop controls order and selection — Maintenance omits
   `pending` and `done`, System adds both (its queue table has a `done` column, because without it a row's
   states would not add up to its lifetime total). Tests: `JobStateLegend.test.tsx`),
+  `TechnicalDetail` (**the one way an admin page shows a machine-readable fact**: a chevron + label
+  `Button` that is itself the summary, `aria-expanded`/`aria-controls` onto a region that is **only
+  mounted while open** — so a collapsed error is not findable by a page search and not read out by a
+  screen reader. Props `id` (the region's DOM id, keyed on the row when it sits in a table), `label?`
+  (default the shared `technicalDetails.label` — „Technické podrobnosti"), `className?`, `children`.
+  It generalises the `DeveloperGroup` idiom of `TechnicalDetails` (photo detail) so that the admin
+  pages can say what happened in one plain sentence and still keep the precise text two seconds away.
+  Callers: `ImportPage` (a failed run's verbatim `last_error`, a failure row's stage id + server
+  message, the `kukatko import dir` command), `MaintenancePage` (a finding's sample paths/UIDs),
+  `NamelessSubjectsCard` (a catch-all's uid + slug), `SystemStatusPage` (the commit hash, the
+  recognition service's URL, mapy.com's raw detail) and `JobQueuePanel` (the raw job-type ids).
+  Tests: `TechnicalDetail.test.tsx`),
   `components/system/` = **the admin dashboard's three sections**, all rendered from the single
   `GET /system/status` snapshot the page already polls (no second fetch, no arithmetic of their own):
   `StatTile`/`StatTileGrid` (**the dashboard's number tile** — a big `kk-display` value over its label, 2 per
@@ -270,7 +282,7 @@ here.
   with nowhere to go stays plain text rather than offering a link that lands somewhere unrelated; a `gap` tile
   is `text-warning` **only while non-zero**, because a cleared backlog is the goal, not a warning),
   `LibraryOverview` (**what is in the library**: ten tiles — fotky, z toho videa, v koši, skryté, soukromé,
-  alba, štítky, osoby, obličeje, embeddingy, the first five linking to `/`, `/?q=type%3Avideo`, `/trash`,
+  alba, štítky, osoby, obličeje, fotek k hledání podle obsahu, the first five linking to `/`, `/?q=type%3Avideo`, `/trash`,
   `/?q=hidden%3Ayes`, `/?q=private%3Ayes` — plus two cards: **Nedávno nahráno** (24 h / 7 / 30 / 365 days,
   counted by when a photo *arrived*, which is why the note says so) and **Velikost podle katalogu**
   (knihovna / koš / odvozená data), the one storage figure that is meaningful when the originals live in an
@@ -285,7 +297,10 @@ here.
   order is stable between two polls; a row with a dead letter carries its **own requeue button**, and the
   whole-dead-letter button sits below with the shared `JobStateLegend`. The lifetime numbers are captioned as
   history — this replaced a badge row where `image_embed: 41 594` against 20 930 photos read as a backlog when
-  it was a one-off re-embedding. An empty queue renders a sentence, not an empty table),
+  it was a one-off re-embedding. An empty queue renders a sentence, not an empty table. **Every row is named
+  in words** — `system.jobs.types.*`, „Hledání obličejů" rather than `face_detect`, falling back to the raw id
+  for a type shipped before its translation — and the ids those names stand for are listed once, under the
+  table, behind a `TechnicalDetail`, for whoever has to match a row to a log line),
   `LibraryStatsCards` (**the shared rendering of the library counts** `GET /system/stats`: six
   `Card`s in a responsive `Row` — photos, vyhledávání podle obsahu, obličeje, lidé a zvířata, značky na
   fotkách, alba a štítky — each with a
@@ -1564,13 +1579,19 @@ here.
   which is what makes a share survive the round trip,
   `ImportPage` = `/import` (maintainer only) the import console, now **read-only**: the background queue
   state (`GET /jobs/stats`), the recorded per-photo/per-file failures (`GET /import/failures`) and a
-  **run history** table (`import_runs`: source/start/end/status/counts/error) — rendered through the
-  shared `RecordTable` (`size="sm"`), so on a phone the six columns become **one stacked card per run**
-  instead of a sideways scroll; the error keeps its `text-danger small` on the *value* (a `cellClassName`
+  **run history** table (`import_runs`: source/start/end/status/counts/**„Co se stalo"**) — rendered through
+  the shared `RecordTable` (`size="sm"`), so on a phone the six columns become **one stacked card per run**
+  instead of a sideways scroll; the summary keeps its `text-danger small` on the *value* (a `cellClassName`
   would be desktop-only) —, with the imported/updated/skipped/**deduplicated**/failed counts per run (the
   `deduplicated` badge appears only when the run has any, since older runs have no such key: it counts
   source photos whose content was already catalogued under another source photo). It polls every 3 s and
-  is self-gated on `canImport` (= maintainer).
+  is self-gated on `canImport` (= maintainer). **No raw error reaches the page.** A run that recorded one
+  reads as a sentence keyed on how it ended (`import.history.errorSummary.failed`/`.partial`/`.generic`)
+  and parks `run.last_error` verbatim in a `TechnicalDetail`; a failure row names its step in words
+  (`import.failures.stages.*`) and hides the `importer.Stage` id, the extra detail and the server's message
+  behind the row's own disclosure. The queue badges read the shared `jobStates.labels.*` and carry the
+  `JobStateLegend`, so „mrtvé úlohy" is now „trvale se nepovedlo" with a sentence saying what to do about it.
+  Even the `kukatko import dir` command sits in a disclosure under the intro rather than in its prose.
   There is **nothing to start from the page**: the only import left is `kukatko import dir`, which reads a
   directory on the server's disk and therefore runs from the CLI, and the one-off import
   closed in August 2026 and was removed together with its start buttons and its completeness-check card.
@@ -1582,20 +1603,25 @@ here.
   konzistentní") — also through the shared `RecordTable` (`size="sm"` + **`hideHeader`**: the first column names
   the problem, so the desktop table stays headerless), so a phone gets **one stacked card per finding**
   (`maintenance.findings.problem`/`.count`/`.samples` are the card's labels — a card has no header row to read
-  the values across from) —, repair checkboxes (thumbnails/embeddings/faces/hashes/import of orphans — annotated
+  the values across from); **a finding's samples are file paths and UIDs, so they live in a `TechnicalDetail`**
+  rather than in the row —, repair checkboxes (thumbnails/embeddings/faces/hashes/import of orphans — annotated
   with the remaining count from the last check) → **Spustit opravy** (`POST /maintenance/repair`) with a result
   summary, plus the background queue state (`GET /jobs/stats` polls every 3 s) as progress; **every finding,
   the summary „drift" row and every queue state carries a quiet plain-language explanation** (without hovering) —
   `maintenance.findings.descriptions.*`, `maintenance.scan.summaryHint`, `maintenance.jobs.intro`
-  and the shared `JobStateLegend` (total/queued/running/failed/**dead**) — so a maintainer knows what a count
-  means and whether action is needed; plus the destructive card **`AuditPurgeCard`** (**Vymazat audit log**)
+  and the shared `JobStateLegend` (celkem/ve frontě/zpracovává se/nepovedlo se/**trvale se nepovedlo**) — so a
+  maintainer knows what a count means and whether action is needed. **Every name on the page is the family's,
+  not the pipeline's**: no „embedding", no „perceptuální hash", no „osiřelý soubor" and no „box" — a finding is
+  „Fotky, které zatím nejdou najít podle obsahu", a repair is „Dohledat obličeje tam, kde se ještě nehledaly",
+  and the sidecar is „rozpoznávací služba"; plus the destructive card **`AuditPurgeCard`** (**Vymazat audit log**)
   with a retention choice (presets 3/6 months, 1/2 years or a custom number of days), a **confirmation step**
   (irreversible deletion) and a result `Alert` with the deleted count (`purgeAuditLog(olderThanDays)` →
   `POST /maintenance/audit/purge`), and the card **`NamelessSubjectsCard`**
   (`components/maintenance/NamelessSubjectsCard.tsx`, **Osoba bez jména**) — the importer-minted catch-all
   subject that sits first in `/people` owning 96 % of the library's faces, whose repair used to be reachable
   only over SSH: **Zkontrolovat** (`fetchNamelessSubjects` → `GET /maintenance/nameless-subjects`, read-only)
-  renders the found subjects through the shared `RecordTable` (uid + „prázdné jméno", markers, faces, created),
+  renders the found subjects through the shared `RecordTable` („Osoba bez jména" with the uid + slug behind a
+  `TechnicalDetail`, markers, faces, created),
   **Odpojit a smazat subjekt** goes through a confirmation that names both the loss and the undo file, and the
   apply (`detachNamelessSubjects` → `POST …/detach`) **saves the undo file to the user's downloads** —
   the response body *is* the file, and the backend schedules the detach only once it has gone out, so a refusal
@@ -1605,9 +1631,9 @@ here.
   point at the queue card below; self-gated on `isMaintainer`,
   `SystemStatusPage` = `/system` (maintainer only) the **admin dashboard**: auto-refresh (polling 5 s)
   `GET /system/status`, read top to bottom in the order the questions are asked — **Knihovna**
-  (`LibraryOverview`), **Zbývá udělat** (`RemainingWorkPanel`), **Fronta úloh** (`JobQueuePanel`) and only
-  then **Zdraví systému**, the card grid (DB, embeddings, backup, imports, **disk serveru**, **maps**,
-  version). Everything comes from that one snapshot: there is no second fetch and no arithmetic in the page,
+  (`LibraryOverview`), **Zbývá udělat** (`RemainingWorkPanel`), **Práce na pozadí** (`JobQueuePanel`) and only
+  then **Zdraví systému**, the card grid (DB, **Rozpoznávání obsahu a obličejů**, backup, imports,
+  **disk serveru**, **maps**, version). Everything comes from that one snapshot: there is no second fetch and no arithmetic in the page,
   so nothing on it can drift from what the backend counted. **Quick actions** — *requeue the dead letter*
   (`requeueDeadLetterJobs(jobType?)` → one `POST /jobs/requeue-dead`, whole or per type from the queue row),
   *run a backup* (`POST /backup`), a link to the maintenance check (`/maintenance`), and the import history
@@ -1616,16 +1642,18 @@ here.
   read for; the **imports card** reports the last `kukatko import dir` run (`imports.folder`), the only import
   that can still happen; the **disk card** is titled *Disk serveru* and says so in a caption, because it used
   to read as the library's size while reporting an almost empty originals directory (prod keeps the originals
-  in R2 — what the library weighs is in the Knihovna section); **box offline** + pending embeddings → a
-  highlighted message „doženou se po návratu"; **the Mapy card** (`MapsCard` over `status.maps`) shows the latest
+  in R2 — what the library weighs is in the Knihovna section); the recognition card is titled after what it
+  buys rather than after its payload and its host („Embeddingy (box)" is gone), reports **Dostupné/Nedostupné**,
+  keeps the sidecar URL in a `TechnicalDetail` and, when it is unavailable with work queued, shows a highlighted
+  „doženou se po návratu"; the commit hash and mapy.com's raw `detail` sit behind the same disclosure; **the Mapy card** (`MapsCard` over `status.maps`) shows the latest
   mapy.com status — `key_rejected` in red + what to do about it (swap the key in the mapy.com console), degradation
   in yellow, without a key „Nenastaveno" — and beneath it the **geocode credit line** (`GeocodeCredits` over
   `status.geocode`, the same metered mapy.com account): `spent / limit` for the current budget window plus when
   it refills, the numbers in yellow and the label switched to „Rozpočet vyčerpán, obnoví se" once nothing is
   left (the queued `places` jobs then wait for that instant instead of failing); it renders nothing when
   `budget_enabled` is false, i.e. no cap is configured; the queue panel carries the shared `JobStateLegend`
-  (queued/running/failed/**dead**/done/**pending** = „Čeká na box") with a plain-language explanation of
-  each state (`jobStates.*` + `system.jobs.intro`); **last on the page** comes the Oznámení card
+  (ve frontě/zpracovává se/nepovedlo se/**trvale se nepovedlo**/hotovo/**čeká na rozpoznávací službu**) with a
+  plain-language explanation of each state (`jobStates.*` + `system.jobs.intro`); **last on the page** comes the Oznámení card
   (`AnnouncementCard`, gated `isMaintainer`) — it used to sit above everything, which put a rare errand
   where the dashboard belongs — a textarea + a level `<select>` (info/warning) + **Zveřejnit**/**Zrušit oznámení**
   over `setAnnouncement`/`clearAnnouncement`, prefill of the current message via `fetchAnnouncement`, feedback via
@@ -3116,7 +3144,10 @@ here.
   `components/trash/` = `TrashCard` (an archived-photo tile: a preview + a countdown to auto-purge via
   `trashCountdown` + restore/delete actions + selection in selection mode);
   `components/duplicates/` = `DuplicateGroupCard` (a group card: members side by side with a preview/
-  dimensions/size/`taken_at`/distances, a radio selection of the keeper (the suggested one by default), a `reason` badge,
+  dimensions/size/`taken_at`/distances — the two distance badges are titled by **what they answer**
+  („jak moc se podobají", smaller = more alike) rather than by what they are computed from, since
+  „vzdálenost perceptuálního hashe / embeddingu" told a lay admin nothing —, a radio selection of the keeper
+  (the suggested one by default), a `reason` badge,
   actions **Ponechat nejlepší a sloučit** (`onResolve` → preview) / **Není duplikát**, a busy state; the member
   row is a `kk-review-grid` columned by the `density` prop the page passes down, and a **click on a tile enlarges
   instead of navigating** — `EnlargeButton` around the thumbnail, `ReviewLightbox` on the group's members at

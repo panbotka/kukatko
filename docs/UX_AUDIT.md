@@ -445,25 +445,37 @@ on unexplained jargon that even a non-developer admin will struggle with.
   model the other pages should follow.
 
 ### Duplicates (`/duplicates`)
-- Best-explained page (full subtitle). **Intimidation:** the group card tooltips expose
-  **"perceptual hash distance" / "embedding distance"** — meaningless to a lay admin. 📋 Reword to
-  "how similar the photos look". 🟡⚪
+- Best-explained page (full subtitle). **Intimidation:** the group card tooltips exposed
+  **"perceptual hash distance" / "embedding distance"** — meaningless to a lay admin. ✅ **Done
+  (2026-09-02):** both badges are titled by what they answer — „Jak moc se tahle fotka na pohled
+  podobá ponechané (menší číslo = podobnější)" and the same for what is *in* the photo. The numbers
+  are unchanged; only the sentence explaining them is.
 
 ### Import (`/import`)
-- **Intimidation (highest raw-error risk):** the run-history table renders **`run.last_error`
-  verbatim** in red — the one place a raw server/stack error reaches the UI, contradicting the
-  sanitize-everything approach everywhere else. 📋 Truncate + wrap in a friendly "Import failed —
-  details" disclosure. 🔴🟡 Jargon: "dead jobs", "embeddings", "the migration",
-  "background processing queue". 📋 Add plain-language explanations / tooltips. 🟡🟡
+- **Intimidation (highest raw-error risk):** the run-history table rendered **`run.last_error`
+  verbatim** in red — the one place a raw server/stack error reached the UI, contradicting the
+  sanitize-everything approach everywhere else. ✅ **Done (2026-09-02):** the column is „Co se stalo"
+  and a run that recorded an error reads as a sentence keyed on how it ended ("Import se nedokončil —
+  Kukátko ho kvůli chybě přerušilo." / "…část souborů se zpracovat nepodařilo."); the verbatim text
+  moved into the shared `TechnicalDetail` disclosure. The per-failure list got the same treatment:
+  the step is named in words and the stage id, the extra detail and the server's message are one
+  click away. Jargon: "dead jobs", "embeddings", "the migration", "background processing queue"
+  ✅ **Done** in the same pass — the queue badges read the shared plain-language `jobStates.*` labels
+  and carry the `JobStateLegend`, and even the `kukatko import dir` command sits in a disclosure
+  rather than in the intro's prose.
 - **Consistency:** first-run confirmation used a native `window.confirm` with un-localized
   OK/Cancel, vs. Trash's styled modal. ✅ **Done:** now the shared `ConfirmModal`; its confirm
   button carries "Spustit import" (non-destructive, so `primary`, not `danger`).
 
 ### Maintenance (`/maintenance`)
 - **Most jargon-dense page:** "embeddings", "perceptual hashes", "orphan files/originals", "face
-  detection", "missing thumbnails", plus scan `samples` that **dump raw file paths / UIDs inline**.
-  📋 Add a plain-language explainer per repair option; collapse raw samples behind a "show details".
-  🔴🟡
+  detection", "missing thumbnails", plus scan `samples` that **dumped raw file paths / UIDs inline**.
+  ✅ **Done (2026-09-02):** every finding and every repair is named for what it means to the library
+  („Fotky, které zatím nejdou najít podle obsahu", „Soubory, o kterých katalog neví", „Dohledat
+  obličeje tam, kde se ještě nehledaly"), the per-finding explanations were rewritten without a word
+  of pipeline vocabulary, the samples moved behind the shared `TechnicalDetail`, and the nameless
+  catch-all card now leads with „Osoba bez jména" and keeps its uid + slug behind the same
+  disclosure.
 - **Touch:** repair `Form.Check` checkboxes are the tightest hit areas; the coarse-pointer rule now
   enlarges `.form-check-input`. ✅ 📋 Also enlarge the clickable label. ⚪⚪
 - **States:** Well covered; a 503 (orphan import not configured) collapses into the generic error
@@ -471,8 +483,12 @@ on unexplained jargon that even a non-developer admin will struggle with.
 
 ### System status (`/system`)
 - Cleanest error hygiene (no raw errors surfaced). **Intimidation:** "dead-letter" → "Requeue dead
-  jobs", "embeddings (box)", "box offline". The offline hint copy is genuinely good. 📋 A short
-  glossary or tooltips for "box" / "dead jobs". 🟡⚪
+  jobs", "embeddings (box)", "box offline". The offline hint copy is genuinely good. ✅ **Done
+  (2026-09-02):** "the box" is „rozpoznávací služba" everywhere (card title „Rozpoznávání obsahu a
+  obličejů", states Dostupné/Nedostupné), "dead" is „trvale se nepovedlo" with the legend saying it
+  needs a manual retry, the queue rows are named in words (`system.jobs.types.*`) with their ids
+  listed once behind a disclosure, and the commit hash, the sidecar URL and mapy.com's raw detail all
+  moved into that same `TechnicalDetail`.
 - **Touch:** many `size="sm"` links-as-buttons (requeue, backup, import/maintenance links) — floored
   on touch ✅.
 
@@ -497,7 +513,8 @@ on unexplained jargon that even a non-developer admin will struggle with.
    📋 Always surface an alert/toast. 🟡⚪ — **not verified in this pass** (write-gated).
 6. **Jargon inventory to keep out of user copy:** "backend/commit", "inference service",
    "semantic/full-text", "clustered", "geotag" (✅ all fixed), plus still-present "perceptual
-   hash / embedding distance", "dead jobs / dead-letter", "orphan files", "box". 📋
+   hash / embedding distance", "dead jobs / dead-letter", "orphan files", "box" — ✅ **all fixed
+  2026-09-02** across Maintenance / Import / Duplicates / System, see the backlog rows 3 and 4. 📋
    — **extended 2026-08-05:** the list also has to cover copy that reaches *every* role —
    "Embeddingy" on `/stats`, `AI_MODEL: gemini-2.5-flash` and `Unknown` on photo detail (✅ both
    fixed 2026-08-08, see **N12**), and
@@ -566,8 +583,8 @@ reached or reproduced with a viewer account, ✅ = done.
 |---|------|:---:|:---:|:---:|-------|
 | 1 | ✅ **Done** — plain-language **search modes** („Chytré / Podle textu / Podle obsahu fotky") behind an „Rozšířené" toggle | 🔴 | 🟡 | ✅ | `SearchModeControl`: hybrid stays the default and the switch is out of the way, each mode explained in one sentence; the panel opens itself for a mode that came from a shared URL. `UX_RESEARCH.md` **N1** (30 s timeout on an offline box) was closed earlier in the same component. |
 | 2 | ✅ **Done** — shared **`ConfirmModal`** replaces all `window.confirm` (Album/Labels/Saved/Import) | 🔴 | 🟡 | ✅ | One dialog modelled on Trash: confirm button carries the action, `danger` by default and not the Enter target, focus/Escape/restore handled, cs+en. |
-| 3 | **Import**: stop rendering `run.last_error` verbatim; friendly "details" disclosure | 🔴 | 🟡 | — | Only raw-error leak in the app. Admin-only, 403 for the audit account. May become moot: removing the dead import is already a queued task. |
-| 4 | **Maintenance/Import/Duplicates/System**: plain-language explainers/tooltips for jargon (embeddings, hashes, orphans, dead jobs, box) | 🔴 | 🟡 | — | Admin pages, but still meant to be usable. The same jargon leaks onto the all-roles `/stats` — see `UX_RESEARCH.md` **N22**. |
+| 3 | ✅ **Done (2026-09-02)** — **Import**: `run.last_error` no longer rendered verbatim; friendly summary + "technical details" disclosure | 🔴 | 🟡 | ✅ | The app's last raw-error leak is closed. The per-failure list took the same shape, so the stage id and the server's message are one click away too. |
+| 4 | ✅ **Done (2026-09-02)** — **Maintenance/Import/Duplicates/System**: plain-language copy for the jargon (embeddings, hashes, orphans, dead jobs, box) | 🔴 | 🟡 | ✅ | Presentation only: no behaviour, API or data changed. One shared `TechnicalDetail` disclosure keeps the identifiers a maintainer needs (sample paths, UIDs, job-type ids, the commit, the sidecar URL) reachable without leading with them. `/stats` had already been cleared by `UX_RESEARCH.md` **N22**. |
 | 5 | Add **retry** to People / Subject / Clusters error states | 🟡 | ⚪ | — | They already have the fetch logic. Error state not forceable read-only. |
 | 6 | Surface **Subject set-cover failure** (currently silent) | 🟡 | ⚪ | — | One alert. Write-gated. |
 | 7 | Standardize **`<Button as={Link}>`** everywhere (kill `className="btn…"` on `Link`) | 🟡 | 🟡 | — | Removes a whole class of inconsistency. Code-level, not observable by using the app. |

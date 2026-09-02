@@ -23,12 +23,12 @@
     "github": "GitHub",
     "githubTitle": "View the project's source code on GitHub",
     "jobs": {
-      "link": "Job queue: {{summary}} — open System status",
+      "link": "Background work: {{summary}} — open System status",
       "idle": "idle",
-      "queued": "queued",
-      "running": "running",
+      "queued": "waiting",
+      "running": "in progress",
       "failed": "failed",
-      "dead": "dead"
+      "dead": "permanently failed"
     }
   },
   "nav": {
@@ -2361,21 +2361,21 @@
   },
   "import": {
     "title": "Import",
-    "intro": "History of import runs and the failures they recorded. Imports are started from the command line only: `kukatko import dir` reads a directory on the server’s disk. The one-off import the library was built from finished in August 2026 and was removed — its runs stay in the history as the record of where the library came from.",
+    "intro": "The imports that have run and the things they could not read. An import is started on the server only; there is nothing to start from a browser. The one-off import the library was built from finished in August 2026 and was removed — its runs stay in the history as the record of where the library came from.",
     "maintainerOnly": "This page is available to system maintainers only.",
     "loading": "Loading imports…",
     "error": "Failed to load import status.",
     "source": {
       "photoprism": "Legacy catalogue",
-      "photosorter": "Legacy vector layer",
+      "photosorter": "Previous library — recognised content",
       "folder": "Folder on disk",
-      "photosorter_feeds": "Legacy vector layer (feeds)"
+      "photosorter_feeds": "Previous library — recognised content (batches)"
     },
     "counts": {
       "imported": "New",
       "updated": "Updated",
       "skipped": "Skipped",
-      "deduplicated": "Deduplicated",
+      "deduplicated": "Duplicates",
       "failed": "Failed"
     },
     "status": {
@@ -2385,33 +2385,52 @@
       "partial": "Partial"
     },
     "jobs": {
-      "title": "Background processing queue",
-      "queued": "Queued",
-      "running": "Running",
-      "failed": "Failed",
-      "dead": "Dead"
+      "title": "Background work",
+      "intro": "What Kukátko still works out after an import — thumbnails, content search, faces."
     },
     "history": {
-      "title": "Run history",
+      "title": "Imports that have run",
       "source": "Source",
       "started": "Started",
       "finished": "Finished",
       "status": "Status",
       "counts": "Counts",
-      "lastError": "Last error",
-      "empty": "No import runs yet."
+      "empty": "No import runs yet.",
+      "outcome": "What happened",
+      "errorSummary": {
+        "failed": "The import stopped before it finished — something went wrong.",
+        "partial": "The import finished, but some files could not be processed.",
+        "generic": "Something went wrong during the import."
+      },
+      "ok": "No trouble"
     },
     "failures": {
-      "title": "Import failures",
-      "intro": "Individual photos and files that failed to import. Re-running the import retries them.",
-      "empty": "No unresolved import failures.",
-      "colStage": "Stage",
-      "colSource": "Source",
-      "colRef": "Reference",
-      "colDetail": "Detail",
-      "colError": "Error",
-      "colWhen": "When"
-    }
+      "title": "What could not be imported",
+      "intro": "The individual photos and files Kukátko could not read. The next import tries them again.",
+      "empty": "Nothing is left unresolved.",
+      "colStage": "What went wrong",
+      "colSource": "From where",
+      "colRef": "File",
+      "colDetail": "Details",
+      "colWhen": "When",
+      "stages": {
+        "photo": "The photo as a whole",
+        "file": "The photo’s file",
+        "marker": "A marker on the photo",
+        "album_member": "Putting it in an album",
+        "label": "A label",
+        "thumbnail": "The thumbnail",
+        "embedding": "Getting it ready for content search",
+        "faces": "Looking for faces",
+        "phash": "The fingerprint used to find duplicates",
+        "edit": "The photo’s edits",
+        "metadata": "The details written inside the file"
+      },
+      "errorLabel": "What the server reported",
+      "stageLabel": "Import step",
+      "detailLabel": "Extra detail"
+    },
+    "cli": "A folder on the server’s disk is read by this command on the server:"
   },
   "trash": {
     "title": "Trash",
@@ -2453,60 +2472,55 @@
   },
   "maintenance": {
     "title": "Library maintenance",
-    "subtitle": "Check integrity between the catalogue and the files on disk, and repair derived data. Originals are never deleted.",
+    "subtitle": "Check that the catalogue and the files on disk still agree, and fill in whatever is missing. Originals are never deleted.",
     "maintainerOnly": "This page is available to system maintainers only.",
     "loading": "Loading…",
     "scan": {
-      "run": "Run scan",
+      "run": "Run the check",
       "running": "Scanning…",
-      "title": "Scan result",
-      "summary": "{{photos}} photos · {{files}} files in DB · {{disk}} originals on disk",
-      "summaryHint": "These numbers should roughly match; a larger gap between the catalogue and disk means something drifted — missing originals (in the catalogue, not on disk) or orphan files (on disk, not in the catalogue), see below.",
-      "clean": "The library is consistent.",
-      "empty": "No scan has run yet. Run an integrity scan.",
+      "title": "What the check found",
+      "summary": "{{photos}} photos · {{files}} files in the catalogue · {{disk}} originals on disk",
+      "summaryHint": "These numbers should roughly agree. A bigger gap between the catalogue and the disk means something drifted apart — either a photo’s original is gone (it is in the catalogue but not on disk), or a file sits on disk that the catalogue knows nothing about. See below.",
+      "clean": "The catalogue and the files agree; there is nothing to repair.",
+      "empty": "No check has run yet. Start one with the button above.",
       "error": "The scan failed."
     },
     "findings": {
-      "missing_originals": "Missing originals",
-      "orphan_files": "Orphan files on disk",
-      "missing_thumbnails": "Missing thumbnails",
-      "missing_embeddings": "Missing embeddings",
-      "missing_faces": "Missing face detections",
-      "missing_phashes": "Missing perceptual hashes",
-      "problem": "Problem",
-      "count": "Count",
-      "samples": "Samples",
+      "missing_originals": "Photos whose original is gone",
+      "orphan_files": "Files the catalogue knows nothing about",
+      "missing_thumbnails": "Photos with no thumbnail",
+      "missing_embeddings": "Photos that cannot be found by content yet",
+      "missing_faces": "Photos where faces have not been looked for yet",
+      "missing_phashes": "Photos with no fingerprint for finding duplicates",
+      "problem": "What drifted",
+      "count": "How many",
+      "samples": "Examples",
       "descriptions": {
-        "missing_originals": "The photo exists in the catalogue but its original file is gone from disk or storage — a real risk of data loss, worth attention.",
-        "orphan_files": "An original file sits in storage but belongs to no catalogue photo (never imported). The “Import orphan originals into the catalogue” repair adds them.",
-        "missing_thumbnails": "The photo has no generated thumbnail; the grid may show it slowly or blank. Fixed by the thumbnails repair.",
-        "missing_embeddings": "The photo has no AI vector, so similarity or content search won't find it. Filled in once the AI box is online.",
-        "missing_faces": "Face detection hasn't run for the photo yet, so it won't appear under people. Filled in once the box is online.",
-        "missing_phashes": "The photo has no perceptual fingerprint, used to find near-duplicates."
+        "missing_originals": "The photo is in the catalogue, but its original file is neither on disk nor in storage. This one is a real risk of loss and deserves attention.",
+        "orphan_files": "The file sits in storage but belongs to no photo in the catalogue — it was never imported. The “Add the files the catalogue is missing” repair takes it in.",
+        "missing_thumbnails": "The photo has no small copy for the grid, so it may load slowly or stay blank. The thumbnail repair fixes it.",
+        "missing_embeddings": "Kukátko has not yet worked out what is in the photo, so searching by content — and finding similar photos — will not turn it up. It is filled in once the recognition service is available.",
+        "missing_faces": "Nobody has looked for faces in this photo yet, so it will not show up under people. It is filled in once the recognition service is available.",
+        "missing_phashes": "The photo has no short fingerprint of how it looks; that is what near-identical copies are found by."
       }
     },
     "repair": {
-      "title": "Repairs",
-      "hint": "Choose what to repair. Repairs don't run instantly — they are enqueued as background jobs. Embeddings and face detection also wait for the AI box to come online.",
-      "thumbnails": "Regenerate missing thumbnails",
-      "embeddings": "Backfill missing embeddings",
-      "faces": "Backfill missing face detections",
-      "phashes": "Recompute missing perceptual hashes",
-      "import_orphans": "Import orphan originals into the catalogue",
-      "run": "Run repairs",
+      "title": "What to fill in",
+      "hint": "Choose what should be filled in. It does not happen at once — it is queued as background work. Content search and faces also wait for the recognition service to become available.",
+      "thumbnails": "Generate the missing thumbnails",
+      "embeddings": "Work out what is in the photos that are still missing it",
+      "faces": "Look for faces where nobody has looked yet",
+      "phashes": "Work out the missing duplicate-finding fingerprints",
+      "import_orphans": "Add the files the catalogue is missing",
+      "run": "Start filling in",
       "running": "Starting…",
-      "none": "Select at least one repair.",
-      "error": "The repair failed.",
-      "result": "Scheduled: thumbnails {{thumbnails}}, hashes {{phashes}}, embeddings {{embeddings}}, faces {{faces}}; orphans imported {{imported}}, skipped {{skipped}}, failed {{failed}}."
+      "none": "Pick at least one.",
+      "error": "It could not be started.",
+      "result": "Scheduled: thumbnails {{thumbnails}}, fingerprints {{phashes}}, photo content {{embeddings}}, faces {{faces}}; of the files outside the catalogue {{imported}} added, {{skipped}} skipped, {{failed}} failed."
     },
     "jobs": {
-      "title": "Background job queue",
-      "intro": "The background queue that runs the repairs and backfills (thumbnails, embeddings, faces…). Dead jobs can be revived on the System status page.",
-      "total": "Total",
-      "queued": "Queued",
-      "running": "Running",
-      "failed": "Failed",
-      "dead": "Dead"
+      "title": "Background work",
+      "intro": "What Kukátko works through in the background — thumbnails, photo content, faces. This is where you see whether the filling-in is moving."
     },
     "auditPurge": {
       "title": "Purge audit log",
@@ -2531,37 +2545,39 @@
       "result": "Deleted {{deleted}} audit entries."
     },
     "nameless": {
-      "title": "The nameless subject (an import catch-all)",
-      "hint": "A subject with no name cannot be created deliberately — an importer minted it as a catch-all and every nameless face after it was assigned to it. It tends to sit first in /people and it is not a real person. The check is read-only; detaching is irreversible, so it always hands you an undo file first.",
+      "title": "The nameless person (an import catch-all)",
+      "hint": "A person with no name cannot be created by hand — an import minted one as a catch-all and every unnamed face after it landed on them. They tend to sit first in the list of people and they are not a real person. The check changes nothing; detaching cannot be undone, so it always hands you a file to undo it with first.",
       "check": "Check",
       "checking": "Checking…",
       "empty": "No check has been run yet.",
-      "clean": "No nameless subject — nothing to repair.",
-      "unavailable": "The repair is not available on this instance.",
+      "clean": "No nameless person — nothing to repair.",
+      "unavailable": "This repair is not available on this server.",
       "reportError": "The check failed.",
-      "summary": "Found {{subjects}} nameless subject(s): {{markers}} markers and {{faces}} faces of the library point at them.",
-      "emptyName": "empty name, slug “{{slug}}”",
+      "summary": "Found {{subjects}} nameless people: {{markers}} markers and {{faces}} faces in the library point at them.",
+      "emptyName": "A person with no name",
       "columns": {
-        "subject": "Subject",
+        "subject": "Person",
         "markers": "Markers",
         "faces": "Faces",
         "created": "Created"
       },
-      "detach": "Detach and delete the subject",
+      "detach": "Detach and delete",
       "detaching": "Detaching…",
-      "confirm": "This permanently deletes these subjects and leaves {{markers}} markers and {{faces}} faces unassigned. Nothing but the file below can undo it.",
+      "confirm": "This permanently deletes these people and leaves {{markers}} markers and {{faces}} faces with no name. Nothing but the file below can undo it.",
       "confirmUndo": "The undo file is saved to your downloads before anything is scheduled. Keep it — it is the only way back. Without it the repair does not run.",
       "confirmRun": "Yes, detach",
       "cancel": "Cancel",
       "detachError": "The detach failed.",
-      "detachResult": "Downloaded {{filename}} — keep it. Detaching {{markers}} markers and {{faces}} faces is running in the background job queue.",
+      "detachResult": "Downloaded {{filename}} — keep it. Detaching {{markers}} markers and {{faces}} faces is running in the background.",
       "restoreTitle": "Undo from a file",
-      "restoreHint": "Upload the file the detach downloaded (or one written by `kukatko maintenance nameless-subjects --undo-file`). The subjects come back under their original uid and their markers and faces are re-assigned.",
+      "restoreHint": "Upload the file the detach downloaded (or the one the same command on the server wrote). The people come back exactly as they were, and their markers and faces return to them.",
       "restoreLabel": "Undo file",
       "restoring": "Uploading…",
       "restoreInvalid": "That is not a usable undo file.",
       "restoreError": "The undo failed.",
-      "restoreResult": "Scheduled the restore of {{queued}} subject(s); it runs in the background job queue."
+      "restoreResult": "The restore of {{queued}} people is scheduled; it runs in the background.",
+      "uidLabel": "Internal identifier",
+      "slugLabel": "Name in the address"
     }
   },
   "duplicates": {
@@ -2594,8 +2610,8 @@
       "cancel": "Cancel"
     },
     "dismiss": "Not a duplicate",
-    "phashDistanceTitle": "Perceptual-hash distance to the kept photo (lower is more similar)",
-    "embeddingDistanceTitle": "Embedding distance to the kept photo (lower is more similar)",
+    "phashDistanceTitle": "How alike this photo and the one being kept look (a smaller number means more alike)",
+    "embeddingDistanceTitle": "How alike what is in this photo and in the one being kept is (a smaller number means more alike)",
     "merged_one": "Merged and archived {{count}} copy.",
     "merged_other": "Merged and archived {{count}} copies.",
     "actionError": "The action failed.",
@@ -2689,31 +2705,32 @@
   "jobStates": {
     "labels": {
       "total": "Total",
-      "queued": "Queued",
-      "running": "Running",
+      "queued": "Waiting",
+      "running": "In progress",
       "failed": "Failed",
-      "dead": "Dead",
-      "pending": "Waiting on box",
+      "dead": "Permanently failed",
+      "pending": "Waiting for the recognition service",
       "done": "Done"
     },
     "descriptions": {
-      "total": "Every job on record, including ones that have already finished.",
-      "queued": "Waiting to be processed — including jobs scheduled for a retry and jobs deferred while the AI box is offline (they wait without using up their retry budget).",
-      "running": "Currently being processed.",
-      "failed": "Permanent, non-retryable failures (usually 0 — ordinary failures retry and then end up as “Dead”).",
-      "dead": "The job failed even after all attempts were used up (default max 5) and was set aside. It will not run again on its own — it must be manually requeued (the “Requeue dead-letter jobs” button on the System status page). A high count usually means a job type keeps failing, or the box was unreachable for a long time.",
-      "pending": "Jobs for the AI box (embeddings and face detection) waiting in the queue for the box to come back online.",
-      "done": "Finished successfully. These rows stay in the queue table, which is why a job type's lifetime total can be far larger than the library it processed."
+      "total": "Everything Kukátko has on record, finished work included.",
+      "queued": "Waiting its turn — including work scheduled for another attempt and work put aside until the recognition service is back (waiting costs it no attempts).",
+      "running": "Being processed right now.",
+      "failed": "Something that makes no sense to retry (usually 0 — ordinary errors are retried and end up under “permanently failed” if they keep going wrong).",
+      "dead": "It went wrong even after several attempts (five by default), so Kukátko set it aside. It will not try again on its own — send it back to the queue with the “Retry the permanently failed” button on the System status page. A high number usually means something keeps going wrong, or that the recognition service was unavailable for a long time.",
+      "pending": "Work for the recognition service (reading what is in a photo and finding faces) that is waiting for the service to come back.",
+      "done": "Finished successfully. It stays on record, which is why one kind of work can total far more than the number of photos it ever touched."
     }
   },
   "system": {
     "title": "System status",
-    "subtitle": "What is in the library, what is still to do, and how the running instance is doing — the queue, backups, imports and the services it depends on.",
+    "subtitle": "What is in the library, what is left to do and how the running Kukátko is doing — background work, backups, imports and the services it depends on.",
     "maintainerOnly": "This page is available to system maintainers only.",
     "loading": "Loading status…",
     "error": "Failed to load the system status.",
     "version": {
-      "title": "Version"
+      "title": "Version",
+      "commit": "Source revision"
     },
     "database": {
       "title": "Database",
@@ -2721,29 +2738,39 @@
       "unreachable": "Unreachable"
     },
     "embeddings": {
-      "title": "Embeddings (box)",
-      "online": "Online",
-      "offline": "Offline",
-      "offlineHint": "Box is offline → {{n}} embedding jobs are queued and will resume once the box is back online."
+      "title": "Content and face recognition",
+      "online": "Available",
+      "offline": "Unavailable",
+      "offlineHint": "The service is unavailable → {{n}} photos are waiting in the queue. Kukátko catches up as soon as it is back.",
+      "address": "Service address"
     },
     "jobs": {
-      "title": "Job queue",
-      "intro": "Background work, by type and state. The queue keeps finished jobs, so only the queued, running and dead columns say anything about a backlog.",
-      "total": "Total",
-      "queued": "Queued",
-      "running": "Running",
-      "failed": "Failed",
-      "dead": "Dead",
-      "pending": "Waiting on box",
-      "requeue": "Requeue dead-letter jobs",
-      "requeued": "Requeued {{n}} jobs.",
-      "requeueError": "Failed to requeue the dead-letter jobs.",
-      "type": "Job type",
-      "lifetime": "Ever run",
-      "lifetimeNote": "“Ever run” counts every job on record, finished ones included — {{total}} in total. It is history, not a backlog.",
-      "requeueColumn": "Requeue",
-      "requeueType": "Requeue",
-      "empty": "The queue is empty — nothing has been enqueued yet."
+      "title": "Background work",
+      "intro": "What Kukátko works through in the background, by kind of work and how it is doing. Finished work stays on record, so only the Waiting, In progress and Permanently failed columns say anything about a backlog.",
+      "requeue": "Retry the permanently failed",
+      "requeued": "{{n}} jobs went back into the queue.",
+      "requeueError": "They could not be sent back into the queue.",
+      "type": "Kind of work",
+      "lifetime": "All time",
+      "lifetimeNote": "“All time” counts everything Kukátko has ever worked on, finished work included — {{total}} altogether. It is history, not a backlog.",
+      "requeueColumn": "Retry",
+      "requeueType": "Retry",
+      "empty": "Nothing to do — there is no background work waiting.",
+      "typesTitle": "What the kinds of work are called inside the system",
+      "types": {
+        "image_embed": "Working out what is in a photo",
+        "face_detect": "Looking for faces",
+        "thumbnail": "Photo thumbnails",
+        "places": "Turning coordinates into a place",
+        "metadata": "Reading the details out of a file",
+        "ocr": "Reading text in a photo",
+        "sidecar": "Writing the details next to the original",
+        "storyboard": "Previews for scrubbing a video",
+        "backup": "Backup",
+        "mail_send": "Sending an e-mail",
+        "nameless_detach": "Detaching the nameless person",
+        "nameless_restore": "Restoring the nameless person"
+      }
     },
     "imports": {
       "title": "Imports",
@@ -2769,14 +2796,14 @@
     "storage": {
       "title": "Server disk",
       "originals": "Originals",
-      "cache": "Cache",
+      "cache": "Thumbnails and derived files",
       "free": "Free space",
       "total": "Total capacity",
       "note": "The server's own disk. When the originals live in an object store this holds almost none of them — what the library weighs is in the Library section above."
     },
     "actions": {
       "title": "Quick actions:",
-      "maintenance": "Maintenance scan"
+      "maintenance": "Library maintenance"
     },
     "maps": {
       "title": "Maps (mapy.com)",
@@ -2787,8 +2814,9 @@
       "unavailable": "Unavailable",
       "error": "Error",
       "unknown": "Not used yet",
-      "keyRejectedHint": "mapy.com is rejecting the API key (expired, revoked or out of credits). The map stays without tiles until the key is replaced in the mapy.com console.",
-      "checkedAt": "Last checked"
+      "keyRejectedHint": "mapy.com is rejecting the access key (expired, revoked or out of credits). The map stays without its background until the key is replaced in the mapy.com console.",
+      "checkedAt": "Last checked",
+      "detailTitle": "What mapy.com reported"
     },
     "geocode": {
       "credits": "Geocoding credits this window",
@@ -2804,9 +2832,9 @@
       "libraryIntro": "What the catalogue holds right now.",
       "libraryStatsLink": "Full statistics",
       "remainingTitle": "Remaining work",
-      "remainingIntro": "Backlogs waiting to be worked through. Zero is the goal; a highlighted number links to the screen where it is dealt with.",
+      "remainingIntro": "What is still waiting to be worked through. Zero is the goal; a highlighted number leads to the screen it is worked through on.",
       "healthTitle": "Health",
-      "healthIntro": "The state of the instance and the services it depends on."
+      "healthIntro": "How Kukátko and the services it depends on are doing."
     },
     "tiles": {
       "photos": "Photos in the library",
@@ -2818,7 +2846,7 @@
       "labels": "Labels",
       "people": "People",
       "faces": "Detected faces",
-      "embeddings": "Embeddings"
+      "embeddings": "Photos searchable by content"
     },
     "uploads": {
       "title": "Uploaded recently",
@@ -2837,11 +2865,11 @@
     },
     "remaining": {
       "facesUnassigned": "Faces without a name",
-      "clusters": "Clusters to name",
+      "clusters": "Groups of faces to name",
       "withoutTakenAt": "Without a date",
       "withoutGps": "Without coordinates",
       "withoutPlace": "Without a place",
-      "withoutOcr": "Without text recognition",
+      "withoutOcr": "Text not read yet",
       "duplicateMarkers": "Duplicate markers",
       "duplicates": "Duplicate groups",
       "duplicatesPending": "Scanning in the background…",
@@ -3309,5 +3337,8 @@
       "action": "Reload",
       "dismiss": "Not now"
     }
+  },
+  "technicalDetails": {
+    "label": "Technical details"
   }
 }

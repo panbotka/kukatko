@@ -23,12 +23,12 @@
     "github": "GitHub",
     "githubTitle": "Zobrazit zdrojový kód projektu na GitHubu",
     "jobs": {
-      "link": "Fronta úloh: {{summary}} — otevřít Stav systému",
+      "link": "Práce na pozadí: {{summary}} — otevřít Stav systému",
       "idle": "nečinné",
       "queued": "ve frontě",
-      "running": "běží",
-      "failed": "selhalo",
-      "dead": "mrtvé"
+      "running": "zpracovává se",
+      "failed": "nepovedlo se",
+      "dead": "trvale se nepovedlo"
     }
   },
   "nav": {
@@ -2455,15 +2455,15 @@
   },
   "import": {
     "title": "Import",
-    "intro": "Historie importních běhů a jejich chyb. Spouští se jen z příkazové řádky: `kukatko import dir` načte složku ze serverového disku. Jednorázový import, kterým knihovna vznikla, skončil v srpnu 2026 a byl odstraněn — jeho běhy zůstávají v historii jako záznam o původu knihovny.",
+    "intro": "Přehled proběhlých importů a toho, co se při nich nepodařilo načíst. Import se spouští jen na serveru, z prohlížeče tu není co spustit. Jednorázový import, kterým knihovna vznikla, skončil v srpnu 2026 a byl odstraněn — jeho běhy zůstávají v historii jako záznam o původu knihovny.",
     "maintainerOnly": "Tato stránka je dostupná pouze správcům systému.",
     "loading": "Načítání importů…",
     "error": "Stav importu se nepodařilo načíst.",
     "source": {
       "photoprism": "Původní katalog",
-      "photosorter": "Původní vektorová vrstva",
+      "photosorter": "Starší knihovna — rozpoznaný obsah",
       "folder": "Složka z disku",
-      "photosorter_feeds": "Původní vektorová vrstva (feedy)"
+      "photosorter_feeds": "Starší knihovna — rozpoznaný obsah (dávky)"
     },
     "counts": {
       "imported": "Nové",
@@ -2479,33 +2479,52 @@
       "partial": "Částečně"
     },
     "jobs": {
-      "title": "Fronta zpracování na pozadí",
-      "queued": "Ve frontě",
-      "running": "Běží",
-      "failed": "Chyby",
-      "dead": "Mrtvé"
+      "title": "Práce na pozadí",
+      "intro": "Co Kukátko po importu ještě dopočítává — náhledy, hledání podle obsahu, obličeje."
     },
     "history": {
-      "title": "Historie běhů",
+      "title": "Proběhlé importy",
       "source": "Zdroj",
       "started": "Začátek",
       "finished": "Konec",
       "status": "Stav",
       "counts": "Počty",
-      "lastError": "Poslední chyba",
-      "empty": "Zatím žádné běhy importu."
+      "empty": "Zatím žádné běhy importu.",
+      "outcome": "Co se stalo",
+      "errorSummary": {
+        "failed": "Import se nedokončil — Kukátko ho kvůli chybě přerušilo.",
+        "partial": "Import doběhl, ale část souborů se zpracovat nepodařilo.",
+        "generic": "Během importu došlo k chybě."
+      },
+      "ok": "Bez chyb"
     },
     "failures": {
-      "title": "Chyby importu",
-      "intro": "Jednotlivé fotky a soubory, které se nepodařilo naimportovat. Spuštění importu znovu je zkusí znovu.",
-      "empty": "Žádné nevyřešené chyby importu.",
-      "colStage": "Krok",
-      "colSource": "Zdroj",
-      "colRef": "Identifikátor",
-      "colDetail": "Detail",
-      "colError": "Chyba",
-      "colWhen": "Kdy"
-    }
+      "title": "Co se naimportovat nepodařilo",
+      "intro": "Jednotlivé fotky a soubory, které Kukátko nedokázalo načíst. Další import je zkusí znovu.",
+      "empty": "Nic nezůstalo nevyřešené.",
+      "colStage": "Co se nepovedlo",
+      "colSource": "Odkud",
+      "colRef": "Soubor",
+      "colDetail": "Podrobnosti",
+      "colWhen": "Kdy",
+      "stages": {
+        "photo": "Fotka jako celek",
+        "file": "Soubor fotky",
+        "marker": "Značka na fotce",
+        "album_member": "Zařazení do alba",
+        "label": "Štítek",
+        "thumbnail": "Náhled",
+        "embedding": "Příprava na hledání podle obsahu",
+        "faces": "Hledání obličejů",
+        "phash": "Otisk pro hledání duplikátů",
+        "edit": "Úpravy fotky",
+        "metadata": "Údaje zapsané v souboru"
+      },
+      "errorLabel": "Hlášení serveru",
+      "stageLabel": "Krok importu",
+      "detailLabel": "Doplněk"
+    },
+    "cli": "Složku ze serverového disku načte tento příkaz na serveru:"
   },
   "trash": {
     "title": "Koš",
@@ -2553,60 +2572,55 @@
   },
   "maintenance": {
     "title": "Údržba knihovny",
-    "subtitle": "Kontrola integrity mezi katalogem a soubory na disku a oprava odvozených dat. Originály se nikdy nemažou.",
+    "subtitle": "Kontrola, jestli si katalog a soubory na disku odpovídají, a doplnění toho, co chybí. Originály se nikdy nemažou.",
     "maintainerOnly": "Tato stránka je dostupná pouze správcům systému.",
     "loading": "Načítání…",
     "scan": {
       "run": "Spustit kontrolu",
       "running": "Probíhá kontrola…",
       "title": "Výsledek kontroly",
-      "summary": "{{photos}} fotek · {{files}} souborů v DB · {{disk}} originálů na disku",
-      "summaryHint": "Čísla by měla zhruba odpovídat; větší rozdíl mezi katalogem a diskem značí nesoulad — chybějící originály (v katalogu, ale ne na disku) nebo osiřelé soubory (na disku, ale ne v katalogu), viz níže.",
-      "clean": "Knihovna je konzistentní.",
-      "empty": "Zatím neproběhla žádná kontrola. Spusťte kontrolu integrity.",
+      "summary": "{{photos}} fotek · {{files}} souborů v katalogu · {{disk}} originálů na disku",
+      "summaryHint": "Čísla by si měla zhruba odpovídat. Větší rozdíl mezi katalogem a diskem znamená, že se něco rozešlo — buď fotce chybí originál (je v katalogu, ale ne na disku), nebo je na disku soubor, o kterém katalog neví. Viz níže.",
+      "clean": "Katalog a soubory si odpovídají, není co opravovat.",
+      "empty": "Zatím neproběhla žádná kontrola. Spusťte ji tlačítkem výše.",
       "error": "Kontrola se nezdařila."
     },
     "findings": {
-      "missing_originals": "Chybějící originály",
-      "orphan_files": "Osiřelé soubory na disku",
-      "missing_thumbnails": "Chybějící náhledy",
-      "missing_embeddings": "Chybějící embeddingy",
-      "missing_faces": "Chybějící detekce obličejů",
-      "missing_phashes": "Chybějící perceptuální hashe",
-      "problem": "Problém",
-      "count": "Počet",
+      "missing_originals": "Fotky, kterým chybí originál",
+      "orphan_files": "Soubory, o kterých katalog neví",
+      "missing_thumbnails": "Fotky bez náhledu",
+      "missing_embeddings": "Fotky, které zatím nejdou najít podle obsahu",
+      "missing_faces": "Fotky, na kterých se ještě nehledaly obličeje",
+      "missing_phashes": "Fotky bez otisku pro hledání duplikátů",
+      "problem": "Co se rozešlo",
+      "count": "Kolik",
       "samples": "Ukázky",
       "descriptions": {
-        "missing_originals": "Fotka je v katalogu, ale její originální soubor na disku či úložišti chybí — hrozí skutečná ztráta dat, stojí za pozornost.",
-        "orphan_files": "Originál leží v úložišti, ale nepatří žádné fotce v katalogu (nikdy nebyl naimportován). Přidá je oprava „Importovat osiřelé originály do katalogu“.",
-        "missing_thumbnails": "Fotka nemá vygenerovaný náhled; v mřížce se může zobrazovat pomalu nebo prázdně. Opraví oprava náhledů.",
-        "missing_embeddings": "Fotka nemá AI vektor, takže ji nenajde vyhledávání podle podobnosti či obsahu. Doplní se, jakmile bude AI box online.",
-        "missing_faces": "Pro fotku ještě neproběhla detekce obličejů, takže se neobjeví u osob. Doplní se, jakmile bude box online.",
-        "missing_phashes": "Fotka nemá perceptuální otisk, který slouží k hledání téměř shodných duplikátů."
+        "missing_originals": "Fotka je v katalogu, ale její původní soubor na disku ani v úložišti není. Tady opravdu hrozí ztráta, stojí za pozornost.",
+        "orphan_files": "Soubor v úložišti leží, ale nepatří k žádné fotce v katalogu — nikdy se nenaimportoval. Přidá ho oprava „Přidat do katalogu soubory, o kterých neví“.",
+        "missing_thumbnails": "Fotka nemá zmenšeninu, kterou se ukazuje v mřížce, takže se může načítat pomalu nebo zůstat prázdná. Spraví to oprava náhledů.",
+        "missing_embeddings": "Kukátko si o té fotce zatím nepřečetlo, co na ní je, takže ji hledání podle obsahu ani hledání podobných nenajde. Doplní se, jakmile bude dostupná rozpoznávací služba.",
+        "missing_faces": "Na fotce se ještě nehledaly obličeje, takže se neobjeví u lidí. Doplní se, jakmile bude dostupná rozpoznávací služba.",
+        "missing_phashes": "Fotka nemá krátký otisk toho, jak vypadá; podle něj se hledají téměř shodné kopie."
       }
     },
     "repair": {
-      "title": "Opravy",
-      "hint": "Vyberte, co opravit. Opravy neproběhnou hned — zařadí se jako úlohy na pozadí do fronty. Embeddingy a detekce obličejů navíc čekají, až bude AI box online.",
-      "thumbnails": "Obnovit chybějící náhledy",
-      "embeddings": "Doplnit chybějící embeddingy",
-      "faces": "Doplnit chybějící detekce obličejů",
-      "phashes": "Přepočítat chybějící perceptuální hashe",
-      "import_orphans": "Importovat osiřelé originály do katalogu",
-      "run": "Spustit opravy",
+      "title": "Co doplnit",
+      "hint": "Vyberte, co se má doplnit. Nestane se to hned — zařadí se to jako práce na pozadí. Hledání podle obsahu a obličejů navíc počká, až bude dostupná rozpoznávací služba.",
+      "thumbnails": "Dogenerovat chybějící náhledy",
+      "embeddings": "Přečíst, co je na fotkách, které to ještě nemají",
+      "faces": "Dohledat obličeje tam, kde se ještě nehledaly",
+      "phashes": "Dopočítat chybějící otisky pro hledání duplikátů",
+      "import_orphans": "Přidat do katalogu soubory, o kterých neví",
+      "run": "Spustit doplnění",
       "running": "Spouštím…",
-      "none": "Vyberte alespoň jednu opravu.",
-      "error": "Oprava se nezdařila.",
-      "result": "Naplánováno: náhledy {{thumbnails}}, hashe {{phashes}}, embeddingy {{embeddings}}, obličeje {{faces}}; osiřelé importováno {{imported}}, přeskočeno {{skipped}}, selhalo {{failed}}."
+      "none": "Vyberte alespoň jednu možnost.",
+      "error": "Nepovedlo se to spustit.",
+      "result": "Naplánováno: náhledy {{thumbnails}}, otisky {{phashes}}, obsah fotek {{embeddings}}, obličeje {{faces}}; ze souborů mimo katalog přidáno {{imported}}, přeskočeno {{skipped}}, nepovedlo se {{failed}}."
     },
     "jobs": {
-      "title": "Fronta úloh na pozadí",
-      "intro": "Fronta na pozadí, která provádí opravy a doplňování dat (náhledy, embeddingy, obličeje…). Mrtvé úlohy lze znovu spustit na stránce Stav systému.",
-      "total": "Celkem",
-      "queued": "Ve frontě",
-      "running": "Běží",
-      "failed": "Selhalo",
-      "dead": "Mrtvé"
+      "title": "Práce na pozadí",
+      "intro": "Co Kukátko zpracovává na pozadí — náhledy, obsah fotek, obličeje. Odsud se pozná, jestli se doplňování hýbe."
     },
     "auditPurge": {
       "title": "Vymazat starý audit log",
@@ -2631,37 +2645,39 @@
       "result": "Smazáno {{deleted}} záznamů auditu."
     },
     "nameless": {
-      "title": "Osoba bez jména (nálezový koš importu)",
-      "hint": "Subjekt bez jména nelze založit ručně — vznikl při importu jako „nálezový koš“, do kterého se pak přiřazovaly všechny nepojmenované obličeje. V /people bývá první a nejde o skutečnou osobu. Kontrola je jen pro čtení; odpojení je nevratné a proto vždy stáhne soubor pro vrácení zpět.",
+      "title": "Osoba bez jména (nálezový koš z importu)",
+      "hint": "Osobu bez jména nejde založit ručně — vznikla při importu jako „nálezový koš“, do kterého pak spadly všechny nepojmenované obličeje. V seznamu lidí bývá první a o skutečnou osobu nejde. Kontrola nic nemění; odpojení vrátit nelze, a proto vždycky nejdřív stáhne soubor, kterým to jde vzít zpět.",
       "check": "Zkontrolovat",
       "checking": "Kontroluji…",
       "empty": "Zatím neproběhla žádná kontrola.",
-      "clean": "Žádný subjekt bez jména — není co opravovat.",
-      "unavailable": "Oprava není na tomto serveru dostupná.",
+      "clean": "Žádná osoba bez jména — není co opravovat.",
+      "unavailable": "Tahle oprava na tomhle serveru není.",
       "reportError": "Kontrola se nezdařila.",
-      "summary": "Nalezeno {{subjects}} subjektů bez jména: {{markers}} značek a {{faces}} obličejů z knihovny na ně ukazuje.",
-      "emptyName": "prázdné jméno, slug „{{slug}}“",
+      "summary": "Nalezeno {{subjects}} osob bez jména: ukazuje na ně {{markers}} značek a {{faces}} obličejů z knihovny.",
+      "emptyName": "Osoba bez jména",
       "columns": {
-        "subject": "Subjekt",
+        "subject": "Osoba",
         "markers": "Značky",
         "faces": "Obličeje",
         "created": "Vytvořeno"
       },
-      "detach": "Odpojit a smazat subjekt",
+      "detach": "Odpojit a smazat",
       "detaching": "Odpojuji…",
-      "confirm": "Trvale smaže tyto subjekty a {{markers}} značek i {{faces}} obličejů zůstane nepřiřazených. Tuto akci nelze vrátit jinak než souborem níže.",
+      "confirm": "Trvale smaže tyhle osoby a {{markers}} značek i {{faces}} obličejů zůstane bez jména. Vrátit to jde jedině souborem níže.",
       "confirmUndo": "Před spuštěním se do vašich stažených souborů uloží soubor pro vrácení zpět. Uschovejte ho — je to jediná cesta zpátky. Bez něj se oprava nespustí.",
       "confirmRun": "Ano, odpojit",
       "cancel": "Zrušit",
       "detachError": "Odpojení se nezdařilo.",
-      "detachResult": "Staženo {{filename}} — uschovejte ho. Odpojení {{markers}} značek a {{faces}} obličejů běží na pozadí ve frontě úloh.",
+      "detachResult": "Staženo {{filename}} — uschovejte ho. Odpojení {{markers}} značek a {{faces}} obličejů běží na pozadí.",
       "restoreTitle": "Vrátit zpět ze souboru",
-      "restoreHint": "Nahrajte soubor stažený při odpojení (nebo zapsaný pomocí `kukatko maintenance nameless-subjects --undo-file`). Subjekty se obnoví pod původním uid a jejich značky i obličeje se znovu přiřadí.",
+      "restoreHint": "Nahrajte soubor, který se stáhl při odpojení (nebo ten, který vypsal stejný příkaz na serveru). Osoby se obnoví přesně takové, jaké byly, a jejich značky i obličeje se jim vrátí.",
       "restoreLabel": "Soubor pro vrácení zpět",
       "restoring": "Nahrávám…",
       "restoreInvalid": "Tohle není použitelný soubor pro vrácení zpět.",
       "restoreError": "Vrácení zpět se nezdařilo.",
-      "restoreResult": "Naplánováno obnovení {{queued}} subjektů; běží na pozadí ve frontě úloh."
+      "restoreResult": "Naplánováno obnovení {{queued}} osob; běží na pozadí.",
+      "uidLabel": "Vnitřní identifikátor",
+      "slugLabel": "Jméno v adrese"
     }
   },
   "duplicates": {
@@ -2706,8 +2722,8 @@
       "cancel": "Zrušit"
     },
     "dismiss": "Není duplikát",
-    "phashDistanceTitle": "Vzdálenost perceptuálního hashe od ponechané fotky (nižší = podobnější)",
-    "embeddingDistanceTitle": "Vzdálenost embeddingu od ponechané fotky (nižší = podobnější)",
+    "phashDistanceTitle": "Jak moc se tahle fotka na pohled podobá ponechané (menší číslo = podobnější)",
+    "embeddingDistanceTitle": "Jak moc se shoduje to, co je na téhle fotce, s ponechanou (menší číslo = podobnější)",
     "merged_one": "Sloučena a archivována {{count}} kopie.",
     "merged_few": "Sloučeny a archivovány {{count}} kopie.",
     "merged_many": "Sloučeno a archivováno {{count}} kopie.",
@@ -2812,30 +2828,31 @@
     "labels": {
       "total": "Celkem",
       "queued": "Ve frontě",
-      "running": "Běží",
-      "failed": "Selhalo",
-      "dead": "Mrtvé",
-      "pending": "Čeká na box",
+      "running": "Zpracovává se",
+      "failed": "Nepovedlo se",
+      "dead": "Trvale se nepovedlo",
+      "pending": "Čeká na rozpoznávací službu",
       "done": "Hotovo"
     },
     "descriptions": {
-      "total": "Počet všech úloh v evidenci, včetně už dokončených.",
-      "queued": "Čekají na zpracování — včetně úloh naplánovaných na další pokus a úloh odložených, dokud je AI box offline (čekají, aniž by spotřebovaly své pokusy).",
-      "running": "Právě se zpracovávají.",
-      "failed": "Trvalé, neopakovatelné chyby (obvykle 0 — běžné chyby se zkoušejí znovu a případně skončí jako „Mrtvé“).",
-      "dead": "Úloha selhala i po vyčerpání všech pokusů (výchozí max 5) a byla odložena mimo frontu. Sama se už nespustí — je nutné ji ručně znovu zařadit (tlačítko „Znovu zařadit mrtvé úlohy“ na stránce Stav systému). Vysoký počet obvykle znamená, že nějaký typ úlohy opakovaně selhává, nebo byl box dlouho nedostupný.",
-      "pending": "Úlohy pro AI box (embeddingy a detekce obličejů), které čekají ve frontě, než se box vrátí online.",
-      "done": "Úspěšně dokončené úlohy. Zůstávají v tabulce fronty, a proto může být celoživotní součet u typu úlohy mnohem vyšší než počet fotek, které zpracoval."
+      "total": "Kolik práce Kukátko dohromady eviduje, včetně té už hotové.",
+      "queued": "Čeká, až na ni dojde řada — včetně práce naplánované na další pokus a práce odložené na dobu, kdy bude rozpoznávací služba zase dostupná (čekáním se pokusy nespotřebovávají).",
+      "running": "Právě se zpracovává.",
+      "failed": "Chyba, kterou nemá smysl opakovat (obvykle 0 — běžné chyby se zkoušejí znovu a případně skončí mezi trvale nepovedenými).",
+      "dead": "Nepovedlo se to ani po několika pokusech (ve výchozím nastavení pěti) a Kukátko to odložilo stranou. Samo se o to už nepokusí — je potřeba to ručně poslat zpátky do fronty tlačítkem „Zkusit znovu trvale nepovedené“ na stránce Stav systému. Vysoké číslo obvykle znamená, že se něco opakovaně nedaří, nebo že byla dlouho nedostupná rozpoznávací služba.",
+      "pending": "Práce pro rozpoznávací službu (hledání obsahu a obličejů), která čeká, až bude služba zase dostupná.",
+      "done": "Úspěšně hotová práce. Zůstává v evidenci, a proto může být celkový součet u jednoho druhu práce mnohem vyšší než počet fotek, kterých se týkal."
     }
   },
   "system": {
     "title": "Stav systému",
-    "subtitle": "Co je v knihovně, co zbývá udělat a jak se daří běžící instanci — fronta úloh, zálohy, importy a služby, na kterých závisí.",
+    "subtitle": "Co je v knihovně, co zbývá udělat a jak se běžícímu Kukátku daří — práce na pozadí, zálohy, importy a služby, na kterých závisí.",
     "maintainerOnly": "Tato stránka je dostupná pouze správcům systému.",
     "loading": "Načítání stavu…",
     "error": "Stav systému se nepodařilo načíst.",
     "version": {
-      "title": "Verze"
+      "title": "Verze",
+      "commit": "Revize zdrojového kódu"
     },
     "database": {
       "title": "Databáze",
@@ -2843,29 +2860,39 @@
       "unreachable": "Nedostupná"
     },
     "embeddings": {
-      "title": "Embeddingy (box)",
-      "online": "Online",
-      "offline": "Offline",
-      "offlineHint": "Box je offline → {{n}} úloh embeddingů čeká ve frontě a dožene se, jakmile bude box online."
+      "title": "Rozpoznávání obsahu a obličejů",
+      "online": "Dostupné",
+      "offline": "Nedostupné",
+      "offlineHint": "Služba je nedostupná → {{n}} fotek čeká ve frontě. Kukátko je dožene, jakmile se služba vrátí.",
+      "address": "Adresa služby"
     },
     "jobs": {
-      "title": "Fronta úloh",
-      "intro": "Práce na pozadí podle typu a stavu. Fronta si nechává i dokončené úlohy, takže o nedodělcích vypovídají jen sloupce ve frontě, běží a mrtvé.",
-      "total": "Celkem",
-      "queued": "Ve frontě",
-      "running": "Běží",
-      "failed": "Selhalo",
-      "dead": "Mrtvé",
-      "pending": "Čeká na box",
-      "requeue": "Znovu zařadit mrtvé úlohy",
-      "requeued": "Znovu zařazeno úloh: {{n}}.",
-      "requeueError": "Mrtvé úlohy se nepodařilo znovu zařadit.",
-      "type": "Typ úlohy",
-      "lifetime": "Celkem kdy",
-      "lifetimeNote": "„Celkem kdy“ počítá všechny evidované úlohy včetně dokončených — dohromady {{total}}. Je to historie, ne nedodělky.",
-      "requeueColumn": "Znovu zařadit",
-      "requeueType": "Znovu zařadit",
-      "empty": "Fronta je prázdná — zatím se nic nezařadilo."
+      "title": "Práce na pozadí",
+      "intro": "Co Kukátko zpracovává na pozadí, podle druhu práce a toho, jak na tom je. Hotovou práci si eviduje dál, takže o nedodělcích vypovídají jen sloupce Ve frontě, Zpracovává se a Trvale se nepovedlo.",
+      "requeue": "Zkusit znovu trvale nepovedené",
+      "requeued": "Zpátky do fronty se vrátilo {{n}} úloh.",
+      "requeueError": "Zpátky do fronty se je vrátit nepodařilo.",
+      "type": "Druh práce",
+      "lifetime": "Za celou dobu",
+      "lifetimeNote": "„Za celou dobu“ počítá všechno, co Kukátko kdy zpracovávalo, včetně hotového — dohromady {{total}}. Je to historie, ne nedodělky.",
+      "requeueColumn": "Zkusit znovu",
+      "requeueType": "Zkusit znovu",
+      "empty": "Není co dělat — na pozadí nic nečeká.",
+      "typesTitle": "Jak se druhy práce jmenují uvnitř systému",
+      "types": {
+        "image_embed": "Přečtení, co je na fotce",
+        "face_detect": "Hledání obličejů",
+        "thumbnail": "Náhledy fotek",
+        "places": "Určení místa ze souřadnic",
+        "metadata": "Načtení údajů ze souboru",
+        "ocr": "Čtení textu na fotce",
+        "sidecar": "Zápis údajů vedle originálu",
+        "storyboard": "Náhledy pro převíjení videa",
+        "backup": "Záloha",
+        "mail_send": "Odeslání e-mailu",
+        "nameless_detach": "Odpojení osoby bez jména",
+        "nameless_restore": "Obnovení osoby bez jména"
+      }
     },
     "imports": {
       "title": "Importy",
@@ -2891,14 +2918,14 @@
     "storage": {
       "title": "Disk serveru",
       "originals": "Originály",
-      "cache": "Cache",
+      "cache": "Náhledy a odvozené soubory",
       "free": "Volné místo",
       "total": "Celková kapacita",
       "note": "Vlastní disk serveru. Když originály leží v objektovém úložišti, není tu skoro nic — kolik váží knihovna, najdeš v sekci Knihovna výše."
     },
     "actions": {
       "title": "Rychlé akce:",
-      "maintenance": "Kontrola údržby"
+      "maintenance": "Údržba knihovny"
     },
     "maps": {
       "title": "Mapy (mapy.com)",
@@ -2909,8 +2936,9 @@
       "unavailable": "Nedostupné",
       "error": "Chyba",
       "unknown": "Zatím nevyužito",
-      "keyRejectedHint": "mapy.com odmítá API klíč (vypršel, byl zrušen, nebo došly kredity). Mapa zůstane bez podkladů, dokud klíč nevyměníš v konzoli mapy.com.",
-      "checkedAt": "Naposledy ověřeno"
+      "keyRejectedHint": "mapy.com odmítá přístupový klíč (vypršel, byl zrušen, nebo došly kredity). Mapa zůstane bez podkladů, dokud klíč nevyměníš v konzoli mapy.com.",
+      "checkedAt": "Naposledy ověřeno",
+      "detailTitle": "Hlášení mapy.com"
     },
     "geocode": {
       "credits": "Kredity geokódování v tomto okně",
@@ -2926,9 +2954,9 @@
       "libraryIntro": "Co katalog právě teď obsahuje.",
       "libraryStatsLink": "Kompletní statistiky",
       "remainingTitle": "Zbývá udělat",
-      "remainingIntro": "Nedodělky čekající na zpracování. Cílem je nula; zvýrazněné číslo vede na obrazovku, kde se to řeší.",
+      "remainingIntro": "Co ještě čeká na zpracování. Cílem je nula; zvýrazněné číslo vede na obrazovku, kde se to řeší.",
       "healthTitle": "Zdraví systému",
-      "healthIntro": "Stav instance a služeb, na kterých závisí."
+      "healthIntro": "Jak se daří Kukátku a službám, na kterých závisí."
     },
     "tiles": {
       "photos": "Fotek v knihovně",
@@ -2940,7 +2968,7 @@
       "labels": "Štítků",
       "people": "Osob",
       "faces": "Nalezených obličejů",
-      "embeddings": "Embeddingů"
+      "embeddings": "Fotek k hledání podle obsahu"
     },
     "uploads": {
       "title": "Nedávno nahráno",
@@ -2959,11 +2987,11 @@
     },
     "remaining": {
       "facesUnassigned": "Obličejů beze jména",
-      "clusters": "Shluků k pojmenování",
+      "clusters": "Skupin obličejů k pojmenování",
       "withoutTakenAt": "Bez data pořízení",
       "withoutGps": "Bez souřadnic",
       "withoutPlace": "Bez místa",
-      "withoutOcr": "Bez rozpoznání textu",
+      "withoutOcr": "Bez přečtení textu",
       "duplicateMarkers": "Duplicitních značek",
       "duplicates": "Skupin duplicit",
       "duplicatesPending": "Hledá se na pozadí…",
@@ -3457,5 +3485,8 @@
       "action": "Načíst znovu",
       "dismiss": "Teď ne"
     }
+  },
+  "technicalDetails": {
+    "label": "Technické podrobnosti"
   }
 }
