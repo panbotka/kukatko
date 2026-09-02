@@ -48,7 +48,13 @@ func newPasskeyEnv(t *testing.T, loginLimit int, enabled bool) *passkeyEnv {
 	db := dbtest.New(t)
 	dbtest.TruncateAll(t, db)
 
-	now := time.Date(2026, 9, 2, 10, 0, 0, 0, time.UTC)
+	// Anchored to the real clock, never to a literal date. The session cookie
+	// carries an absolute Expires computed from *this* clock, while the client's
+	// cookie jar judges that Expires against the wall clock — so a frozen date
+	// stops working the moment real time passes it, and every test here starts
+	// failing with 401 because the jar silently drops the session. Frozen it
+	// stays, so an instant is stable within one test.
+	now := time.Now().UTC()
 	svc := auth.NewService(auth.NewStore(db.Pool()),
 		auth.SessionPolicy{TTL: testTTL, MaxLifetime: testMaxLifetime}).
 		WithClock(func() time.Time { return now })
