@@ -179,6 +179,8 @@ describe('BatchActionBar', () => {
     expect(screen.getByRole('button', { name: 'Favorite' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Archive' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Select all' })).toBeInTheDocument()
+    // One pin for a whole box of scans lives in the same vocabulary as the rest.
+    expect(screen.getByRole('button', { name: 'Set location' })).toBeInTheDocument()
   })
 
   it("joins a page's own actions onto the same bar, honouring their disabled state", async () => {
@@ -553,6 +555,7 @@ describe('BatchActionBar on a narrow (phone) screen', () => {
     expect(screen.getByRole('button', { name: 'More edits' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Download ZIP' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Stack selected' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Set location' })).toBeInTheDocument()
   })
 
   it('still applies a batch action chosen from the overflow menu', async () => {

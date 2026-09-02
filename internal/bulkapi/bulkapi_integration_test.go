@@ -38,6 +38,22 @@ type env struct {
 	photos   *photos.Store
 	organize *organize.Store
 	audit    *audit.Store
+	// places records the reverse geocodes the batch scheduled, standing in for
+	// the job queue the server wires in production.
+	places *recordingPlacesQueue
+}
+
+// recordingPlacesQueue is a bulkapi.PlacesEnqueuer that only remembers what it
+// was asked to schedule, so a test can assert the derived work a location edit
+// owes without running a worker.
+type recordingPlacesQueue struct {
+	uids []string
+}
+
+// EnqueuePlaces records the photo a batch moved on the map.
+func (q *recordingPlacesQueue) EnqueuePlaces(_ context.Context, uid string) error {
+	q.uids = append(q.uids, uid)
+	return nil
 }
 
 // newEnv builds the HTTP test environment over a freshly truncated database with
@@ -51,8 +67,10 @@ func newEnv(t *testing.T, maxBatch int) *env {
 	authSvc := auth.NewService(authStore, auth.SessionPolicy{TTL: time.Hour, MaxLifetime: 3 * time.Hour})
 	authAPI := auth.NewAPI(auth.APIConfig{Service: authSvc, Limiter: auth.NewLimiter(100, time.Minute)})
 
+	places := &recordingPlacesQueue{}
 	api := bulkapi.NewAPI(bulkapi.Config{
 		Service:      bulk.NewService(db.Pool(), maxBatch),
+		Places:       places,
 		RequireWrite: authAPI.RequireWrite,
 	})
 
@@ -69,6 +87,7 @@ func newEnv(t *testing.T, maxBatch int) *env {
 		photos:   photos.NewStore(db.Pool()),
 		organize: organize.NewStore(db.Pool()),
 		audit:    audit.NewStore(db.Pool()),
+		places:   places,
 	}
 }
 

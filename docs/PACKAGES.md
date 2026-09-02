@@ -2783,7 +2783,7 @@ to `## Package map` in `CLAUDE.md`.
   photoUIDs, ops Operations) (Result, error)` — **the whole batch in a single transaction** with an audit
   record; `Operations` = the optional fields `AddAlbums`/`RemoveAlbums`/`AddLabels`/`RemoveLabels`,
   `Title`/`Description *string` (nil=unchanged, ""=clear), **`TakenAt *TakenAt{At,Precision}`**,
-  `Location *Location`+`ClearLocation`,
+  `Location *Location{Lat,Lng,OnlyMissing}`+`ClearLocation`,
   `Archive`/`Hide`/`Favorite *bool` (`Hide` = `photos.hidden_from_library`, the operation the
   hide-from-library feature actually needs — the real use is fifty document scans at once),
   **`Rating *int` (0–5) + `Flag *string` (none/pick/reject/eye)**;
@@ -2806,9 +2806,25 @@ to `## Package map` in `CLAUDE.md`.
   `taken_at_precision` to `day` and takes the preserve-the-outgoing-date clause from
   `photos.TakenAtBeforeUnknownAssignment("NULL")` rather than spelling it out, so the two clear paths cannot
   drift apart; `taken_at_estimated`/`taken_at_note` are deliberately untouched;
-  `Summary()` (audit details) + `IsEmpty()`), `internal/bulkapi/`
-  (HTTP over `bulk.Service`: the `Service` interface (Apply) — fakeable; `NewAPI(Config{Service,
-  RequireWrite})`+`RegisterRoutes` mounts `POST /photos/bulk` behind `RequireWrite`; the body
+  a set-location operation writes `lat`/`lng` + `location_source='manual'` (a picked location is never an
+  estimate) and is narrowed **per photo** by `forPhoto`: with `Location.OnlyMissing` a photo that already
+  has both components keeps them and, if nothing else was asked of it, comes back `skipped` ("location
+  already set") — the batch answer to a box of scans with a few geotagged strays in it. The same per-photo
+  read (`loadCoordinate`, which doubles as the existence check) also decides `Result.LocationChanged`
+  (`json:"-"`): the photos the batch really **moved**, compared against the stored row rather than the
+  request, so a re-sent coordinate schedules no reverse geocode and spends no mapy.com credit;
+  `Summary()` (audit details, recording `only_missing` — the same coordinate with and without it is a
+  different edit) + `IsEmpty()`; `LocationSummary(ctx, photoUIDs) (LocationSummary{Total,WithLocation},
+  error)` is the read-only preview behind the dialog: how many of the selection exist (a repeated uid
+  counts once) and how many already carry a full coordinate, validated against the same batch limits as
+  `Apply`), `internal/bulkapi/`
+  (HTTP over `bulk.Service`: the `Service` interface (Apply + LocationSummary) — fakeable; `NewAPI(Config{Service,
+  Sidecar, Places, RequireWrite, RateLimit})`+`RegisterRoutes` mounts `POST /photos/bulk` and the read-only
+  `POST /photos/bulk/location-summary` (a POST because its argument is the whole selection) behind
+  `RequireWrite`; after a committed batch `enqueueSidecars` schedules one sidecar rewrite per updated photo
+  and `enqueueGeocodes` one `places` job per photo in `LocationChanged` — the same derived work a
+  single-photo location edit owes (`photoapi.PlacesEnqueuer`), both best-effort: a queue failure is logged,
+  never returned, and never breaks the edit it derives from; the body
   `{photo_uids,operations}` via `operationsInput` with **set/clear pairs as separate keys**
   (unambiguous, a `set_*`+`clear_*` / `archive`+`unarchive` conflict → 400), `set_caption`→title,
   **`set_rating` (0–5) / `set_flag` (none/pick/reject/eye)** with validation → 400,
@@ -2818,7 +2834,8 @@ to `## Package map` in `CLAUDE.md`.
   scans, where the hour is never known); an unknown precision or a value that does not parse at it → 400,
   **`clear_taken_at`** (bool, mirroring `clear_location`) declares the date unknown, and together with
   `set_taken_at` → 400 (one states a date, the other states that nobody knows it),
-  coordinate validation, `DisallowUnknownFields` (an unknown operation → 400) + 4 MiB limit; errors mapped
+  **`set_location {lat,lng,only_missing?}`** with coordinate validation (lat −90..90, lng −180..180 → 400)
+  and `only_missing` deciding what happens to the targets that already have a location, `DisallowUnknownFields` (an unknown operation → 400) + 4 MiB limit; errors mapped
   `ErrNoPhotos`/`ErrNoOperations`/`ErrAlbum/LabelNotFound`→400, `ErrBatchTooLarge`→413, otherwise 500;
   per-photo errors return 200 with the detail in the body; mounted by a further `server.WithAPI`
   (`buildBulkAPI` in `cmd/kukatko/bulk.go`)),

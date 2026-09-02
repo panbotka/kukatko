@@ -24,6 +24,13 @@ type bulkRequest struct {
 	Operations operationsInput `json:"operations"`
 }
 
+// locationSummaryRequest is the JSON body of POST /photos/bulk/location-summary:
+// the selection to describe. It is the bulk request without its operations —
+// the question is about the photos as they stand, not about a change.
+type locationSummaryRequest struct {
+	PhotoUIDs []string `json:"photo_uids"`
+}
+
 // operationsInput is the wire form of the operation set. Set/clear pairs are
 // distinct keys (rather than presence/null) so the payload is unambiguous and
 // mutually exclusive pairs can be rejected. "caption" maps to the photo title;
@@ -57,10 +64,16 @@ const (
 	maxRating = 5
 )
 
-// locationInput is the lat/lng pair of a set-location operation.
+// locationInput is the lat/lng pair of a set-location operation, plus what to do
+// about the targets that already have a location. only_missing false (the
+// default) overwrites every photo in the batch; true fills in the ones with no
+// coordinates and leaves the rest untouched, which is how a box of scans with a
+// few geotagged strays among them is placed without discarding the strays'
+// evidence. The photos it leaves alone come back as skipped.
 type locationInput struct {
-	Lat float64 `json:"lat"`
-	Lng float64 `json:"lng"`
+	Lat         float64 `json:"lat"`
+	Lng         float64 `json:"lng"`
+	OnlyMissing bool    `json:"only_missing"`
 }
 
 // takenAtInput is the wire form of a set-taken-date operation. The value's shape
@@ -261,7 +274,11 @@ func (in operationsInput) resolveLocation() (*bulk.Location, bool, error) {
 	if err := validateCoords(in.SetLocation.Lat, in.SetLocation.Lng); err != nil {
 		return nil, false, err
 	}
-	return &bulk.Location{Lat: in.SetLocation.Lat, Lng: in.SetLocation.Lng}, false, nil
+	return &bulk.Location{
+		Lat:         in.SetLocation.Lat,
+		Lng:         in.SetLocation.Lng,
+		OnlyMissing: in.SetLocation.OnlyMissing,
+	}, false, nil
 }
 
 // resolveToggle turns a pair of opposing boolean flags (archive/unarchive,

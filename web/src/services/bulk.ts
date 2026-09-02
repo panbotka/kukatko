@@ -31,10 +31,32 @@ async function readErrorMessage(res: Response): Promise<string> {
   return res.statusText || `request failed: ${res.status}`
 }
 
-/** A coordinate pair for a `set_location` bulk operation. */
+/**
+ * A coordinate pair for a `set_location` bulk operation, plus what to do about
+ * the photos in the batch that already have one.
+ *
+ * `only_missing` is the choice a box of scans forces: most of them were never
+ * near a GPS, a few came off a phone and know exactly where they were. Left out
+ * (or false) the pin replaces every selected photo's location; true fills in the
+ * empty ones and reports the rest as skipped, keeping coordinates that are
+ * better evidence than a pin dropped from memory.
+ */
 export interface BulkLocation {
   lat: number
   lng: number
+  only_missing?: boolean
+}
+
+/**
+ * What `POST /photos/bulk/location-summary` answers about a selection: how many
+ * of its photos exist and how many of those already carry coordinates. It is
+ * what lets the set-location dialog say what an overwrite would cost before
+ * anything is written — a repeated UID counts once and a photo that is gone
+ * counts not at all, so the total is the batch the apply would really see.
+ */
+export interface BulkLocationSummary {
+  total: number
+  with_location: number
 }
 
 /**
@@ -124,6 +146,29 @@ export interface BulkCounts {
 export interface BulkResult {
   results: BulkPhotoResult[]
   counts: BulkCounts
+}
+
+/**
+ * Reads how many of `photoUids` already have a location, via
+ * `POST /photos/bulk/location-summary`. A POST for a read: the argument is the
+ * whole selection, which belongs in a body rather than in a query string.
+ * Throws {@link ApiError} on a rejected or failed request.
+ */
+export async function fetchBulkLocationSummary(
+  photoUids: string[],
+  signal?: AbortSignal,
+): Promise<BulkLocationSummary> {
+  const res = await fetch(`${API_BASE}/photos/bulk/location-summary`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ photo_uids: photoUids }),
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+  return (await res.json()) as BulkLocationSummary
 }
 
 /**

@@ -47,10 +47,22 @@ var (
 	ErrLabelNotFound = errors.New("bulk: label not found")
 )
 
-// Location is a geographic coordinate set by a bulk operation.
+// Location is a geographic coordinate set by a bulk operation, together with
+// what to do about the photos in the batch that already have one.
+//
+// A location is picked once for a whole box of scans, and a box of scans is
+// rarely uniform: some of its photos were geotagged by the camera, most were
+// never anywhere near a GPS. OnlyMissing is that distinction made explicit —
+// false overwrites every target, true fills in the empty ones and leaves the
+// photos that already know where they are alone (they are reported skipped).
+// The choice belongs in the request because only the person looking at the
+// selection knows whether the existing coordinates are better evidence than the
+// pin they just dropped.
 type Location struct {
 	Lat float64 `json:"lat"`
 	Lng float64 `json:"lng"`
+	// OnlyMissing restricts the operation to photos with no coordinates yet.
+	OnlyMissing bool `json:"only_missing"`
 }
 
 // TakenAt is a capture date set by a bulk operation, together with the grain it
@@ -127,6 +139,13 @@ type Counts struct {
 type Result struct {
 	Results []PhotoResult `json:"results"`
 	Counts  Counts        `json:"counts"`
+	// LocationChanged lists the photos this batch actually moved on the map (or
+	// took off it), so the caller can schedule the reverse geocode each of them
+	// now needs. It stays out of the response body: it is not news to the reader —
+	// they asked for the move — and every reverse geocode costs a metered
+	// mapy.com credit, so the list is deliberately the photos whose coordinates
+	// really changed, not every photo the batch touched.
+	LocationChanged []string `json:"-"`
 }
 
 // add appends a per-photo outcome and updates the matching aggregate count.
@@ -233,7 +252,13 @@ func (o Operations) addScalarSummary(summary map[string]any) {
 		summary["description"] = *o.Description
 	}
 	if o.Location != nil {
-		summary["location"] = map[string]float64{"lat": o.Location.Lat, "lng": o.Location.Lng}
+		location := map[string]any{"lat": o.Location.Lat, "lng": o.Location.Lng}
+		if o.Location.OnlyMissing {
+			// Recorded because it changes what the entry means: the same coordinate
+			// with and without it describes two different edits of the same batch.
+			location["only_missing"] = true
+		}
+		summary["location"] = location
 	}
 	if o.Archive != nil {
 		summary["archive"] = *o.Archive

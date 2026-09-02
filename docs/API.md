@@ -1344,7 +1344,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   **in a single transaction** with an audit-log entry. Operations (each optional): `add_to_albums`/
   `remove_from_albums`, `add_labels`/`remove_labels`, `set_caption`/`clear_caption` (→title),
   `set_description`/`clear_description`, `set_taken_at {precision,value}`/`clear_taken_at` (see below),
-  `set_location {lat,lng}`/`clear_location`,
+  `set_location {lat,lng,only_missing?}`/`clear_location` (see below),
   `archive`/`unarchive`, `hide`/`unhide` (library visibility, see above),
   `set_favorite` (**per-user**), `set_rating` (0–5) / `set_flag`
   (none/pick/reject/eye) (**per-user**, invalid value → 400). Response `{results:[{photo_uid,status,
@@ -1362,6 +1362,20 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   instead lowers that flag and clears `taken_at_note` with it. A precision outside the four, or a value that
   does not parse at its precision, → **400**. It never touches the original file or its EXIF; the caller's
   sidecar rewrite carries the change to storage.
+  `set_location` places a whole selection with one coordinate — a box of scans is usually one village —
+  validated to lat −90..90 / lng −180..180 (**400** outside) and stamped `location_source = manual`:
+  a location somebody picked is never an estimate and is out of the estimator's reach.
+  `only_missing` (default `false`) decides what happens to the targets that **already** have coordinates:
+  `false` overwrites them, `true` fills only the empty ones and reports the rest as `skipped`
+  (its own coordinates, provenance and all, left untouched). The audit entry records the flag —
+  the same coordinate with and without it is a different edit. Every photo the batch actually **moved**
+  (or took off the map) is enqueued for the `places` reverse geocode, exactly like a single-photo
+  `PATCH`; a photo re-sent the coordinate it already had is not, because each geocode costs a metered
+  mapy.com credit. The sidecar rewrite follows the usual rule (one job per updated photo).
+  `POST /photos/bulk/location-summary` `{photo_uids:[…]}` → `{total, with_location}` is the read that
+  precedes it: how many of the selection exist (a repeated uid counts once, a missing photo not at all)
+  and how many of those already have a full coordinate, so the dialog can state what an overwrite would
+  replace **before** writing. Read-only, guarded and rate-limited like the apply, same 400/413 rules.
   `clear_taken_at` (bool) is the opposite statement — **the date is unknown** — and the bulk twin of a
   `PATCH` with `taken_at: null`: it wipes `taken_at`, stamps `taken_at_source = unknown`, resets
   `taken_at_precision` to `day` and **moves the outgoing date into `taken_at_before_unknown`** so the

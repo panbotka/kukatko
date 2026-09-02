@@ -364,7 +364,7 @@ func buildServices(
 		server.WithAPI(ingestAPI.RegisterRoutes),
 		server.WithAPI(photoAPI.RegisterRoutes),
 		server.WithAPI(clusterAPI.RegisterRoutes),
-		server.WithAPI(buildBulkAPI(cfg, db, authAPI, sidecarSched).RegisterRoutes),
+		server.WithAPI(buildBulkAPI(cfg, db, authAPI, sidecarSched, enqueuer).RegisterRoutes),
 		server.WithAPI(buildDuplicatesAPI(cfg, db, authAPI, vectorStore).RegisterRoutes),
 		server.WithAPI(mapsAPI.RegisterRoutes),
 		server.WithAPI(jobAPI.RegisterRoutes),

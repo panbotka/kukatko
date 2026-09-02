@@ -26,6 +26,7 @@ import { useToast } from '../toast/ToastContext'
 
 import { BulkEditModal } from './BulkEditModal'
 import { DownloadZipButton } from './DownloadZipButton'
+import { SetLocationControl } from './SetLocationControl'
 import { SharePhotosButton } from './SharePhotosButton'
 import { StackSelectedControl } from './StackSelectedControl'
 
@@ -436,6 +437,10 @@ export function BatchActionBar({ bulk, onSelectAll, extraActions }: BatchActionB
       disabled={busy}
     />
   )
+  // The map picker for a whole selection: one pin for a box of scans from the
+  // same place. It owns its own dialog (and the count of photos that already
+  // have a location), so the bar only places the trigger.
+  const locationControl = <SetLocationControl bulk={bulk} variant="outline-light" />
   const downloadControl = <DownloadZipButton photoUids={bulk.photoUids} variant="outline-light" />
   // Beside the ZIP, and gated the same way (both go through RequireDownload), but
   // only where the browser can actually hand files to a share sheet — on a desktop
@@ -491,6 +496,7 @@ export function BatchActionBar({ bulk, onSelectAll, extraActions }: BatchActionB
                 <div className="d-grid gap-1">
                   {selectAllControl}
                   {favoriteAction}
+                  {locationControl}
                   {archiveAction}
                   {downloadControl}
                   {shareControl}
@@ -507,6 +513,7 @@ export function BatchActionBar({ bulk, onSelectAll, extraActions }: BatchActionB
             {albumAction}
             {labelAction}
             {favoriteAction}
+            {locationControl}
             {archiveAction}
             {downloadControl}
             {shareControl}

@@ -1181,7 +1181,7 @@ here.
   after a failed batch never makes a second album of that name. A failed creation names it in a danger toast
   (`batch.createError` / `batch.createErrorUnknown`), skips the batch and **keeps the photo selection**.
   The **remove** labels field never creates — a label that does not exist cannot be taken off a photo),
-  **Oblíbené**, **Archivovat**, **Stáhnout**
+  **Oblíbené**, **Nastavit polohu** (`SetLocationControl`), **Archivovat**, **Stáhnout**
   (`DownloadZipButton`), **Seskupit** (`StackSelectedControl`) and **Další úpravy** (the whole
   `BulkEditModal`); each metadata action runs **as a single `POST /photos/bulk`** via `bulkUpdatePhotos`,
   success/failure reported by a **toast** (`useToast`): success clears the selection and reloads the grid (`bulk.finish`),
@@ -1234,6 +1234,20 @@ here.
   `selection.stackBusy` (the request is running — something to wait out); calls
   `stackPhotos`, on success clears the selection and reloads the grid; tests
   `StackSelectedControl.test.tsx`),
+  `SetLocationControl` (**Nastavit polohu** on the batch bar: one pin for a whole selection — a box of
+  scans is almost always one village — opening the **same** `map/LocationPicker` the photo detail uses
+  (name the place / type the numbers / click the map), never a second picker. Before anything is written
+  the dialog reads `fetchBulkLocationSummary` and **states how many of the selected photos already have a
+  location**, offering the choice that number makes meaningful: *Přepsat i je* or *Nechat je být a doplnit
+  jen prázdné* (`set_location.only_missing`). The default is to leave them — an existing coordinate is
+  usually evidence (a camera's GPS, an earlier decision) and a pin dropped over sixty photos from memory
+  is not worth destroying it for; the choice is offered too when the count **fails** to load, since an
+  unknown number of overwrites is exactly what not to pick blindly. One `POST /photos/bulk` for the whole
+  batch (one transaction, one audit entry, `location_source = manual` — a picked location is never an
+  estimate, and the backend enqueues the reverse geocode + sidecar rewrite for every photo it moved). The
+  apply is a `ReasonedButton` off until a place is picked (`batch.location.pickFirst`); the success toast
+  says how many were set and how many kept their own. **Editor/admin only** (absent for a viewer), i18n
+  `batch.location.*`, tests `SetLocationControl.test.tsx` + the wiring in `BatchActionBar.test.tsx`),
   `BulkEditModal` (**bulk edit** of the selection via `POST /photos/bulk`, the whole batch
   in a single transaction on the backend; the form is split into **four sections** (`.kk-text-eyebrow`
   headings): **Zařazení** (add/remove albums, add/remove labels — four `MultiSelect`s, so one
@@ -4996,7 +5010,11 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   from the photo `searchPhotos` (fulltext/semantic/hybrid), the basis for `GlobalSearchSections`; `bulk.ts` =
   `bulkUpdatePhotos(uids,ops)` over `POST /photos/bulk` (a bulk edit of the selection), the types
   `BulkOperations` (add/remove an album+label, set/clear the caption+description+location,
-  archive/unarchive, set_favorite per-user)/`BulkLocation`/`BulkResult`; `duplicates.ts` =
+  archive/unarchive, set_favorite per-user)/`BulkLocation` (`{lat,lng,only_missing?}` — `only_missing`
+  fills only the photos with no coordinates and leaves the rest, reported `skipped`)/`BulkResult`, plus
+  `fetchBulkLocationSummary(uids,signal)` over `POST /photos/bulk/location-summary` →
+  `BulkLocationSummary{total,with_location}` (a POST for a read: the argument is the whole selection),
+  which is what lets a set-location dialog say what an overwrite would replace **before** it writes; `duplicates.ts` =
   `fetchDuplicates(params,signal)` over `GET /api/v1/duplicates` (duplicate groups →
   `DuplicatesResponse{groups,total,limit,offset,next_offset}`) + `mergeDuplicates(input,signal)` over
   `POST /api/v1/duplicates/merge` (resolving a group → `MergeResult{albums_added,labels_added,people_added,

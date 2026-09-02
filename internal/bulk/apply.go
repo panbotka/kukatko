@@ -2,6 +2,7 @@ package bulk
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -157,7 +158,7 @@ func applyAll(
 		}
 		seen[uid] = true
 
-		exists, err := photoExists(ctx, tx, uid)
+		current, exists, err := loadCoordinate(ctx, tx, uid)
 		if err != nil {
 			return Result{}, err
 		}
@@ -165,10 +166,20 @@ func applyAll(
 			result.add(uid, StatusError, "photo not found")
 			continue
 		}
-		if err := processPhoto(ctx, tx, uid, actorUID, ops); err != nil {
+		photoOps, moved := ops.forPhoto(current)
+		if photoOps.IsEmpty() {
+			// The only way a non-empty request narrows to nothing: a fill-the-gaps
+			// location on a photo that already has one.
+			result.add(uid, StatusSkipped, "location already set")
+			continue
+		}
+		if err := processPhoto(ctx, tx, uid, actorUID, photoOps); err != nil {
 			return Result{}, err
 		}
 		result.add(uid, StatusUpdated, "")
+		if moved {
+			result.LocationChanged = append(result.LocationChanged, uid)
+		}
 	}
 	result.Counts.Total = len(result.Results)
 	return result, nil
@@ -379,6 +390,70 @@ func applyRating(ctx context.Context, tx pgx.Tx, uid, actorUID string, ops Opera
 	return nil
 }
 
+// coordinate is a photo's stored position as it was before the batch: both
+// components, or nil ones for a photo that has never been placed on the map.
+type coordinate struct {
+	lat *float64
+	lng *float64
+}
+
+// placed reports whether the photo already has a usable location. Half a
+// coordinate is not a location — nothing can be drawn from a latitude alone —
+// so a row with only one component counts as empty and a fill-the-gaps
+// operation is free to complete it.
+func (c coordinate) placed() bool {
+	return c.lat != nil && c.lng != nil
+}
+
+// isAt reports whether the photo already sits exactly on lat/lng, which is what
+// makes a re-sent coordinate free of derived work: no move, no reverse geocode,
+// no metered credit spent restating where the photo has been all along.
+func (c coordinate) isAt(lat, lng float64) bool {
+	return c.placed() && *c.lat == lat && *c.lng == lng
+}
+
+// forPhoto narrows the operation set to what this one photo should receive and
+// reports whether the narrowed set moves it on the map.
+//
+// The narrowing exists for the fill-the-gaps location: a photo that already has
+// coordinates keeps them, so the operation drops out of its update. Everything
+// else in the batch still applies to it — the caller decides what an empty
+// remainder means (see applyAll, which reports such a photo as skipped).
+//
+// The "moved" answer is compared against the row as it stands, not against what
+// the request asked for, exactly as the single-photo PATCH does: re-sending a
+// photo's own coordinate changes nothing and must not schedule a geocode.
+func (o Operations) forPhoto(current coordinate) (Operations, bool) {
+	switch {
+	case o.Location != nil:
+		if o.Location.OnlyMissing && current.placed() {
+			o.Location = nil
+			return o, false
+		}
+		return o, !current.isAt(o.Location.Lat, o.Location.Lng)
+	case o.ClearLocation:
+		return o, current.lat != nil || current.lng != nil
+	default:
+		return o, false
+	}
+}
+
+// loadCoordinate reads a photo's stored coordinate, reporting whether the photo
+// exists at all. It is the batch's existence check as well: one round trip
+// answers both questions, and every target needs both asked.
+func loadCoordinate(ctx context.Context, tx pgx.Tx, uid string) (coordinate, bool, error) {
+	var current coordinate
+	err := tx.QueryRow(ctx, "SELECT lat, lng FROM photos WHERE uid = $1", uid).
+		Scan(&current.lat, &current.lng)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return coordinate{}, false, nil
+	}
+	if err != nil {
+		return coordinate{}, false, fmt.Errorf("bulk: reading photo %s: %w", uid, err)
+	}
+	return current, true, nil
+}
+
 // existsRow runs an EXISTS query bound to a single string argument.
 func existsRow(ctx context.Context, tx pgx.Tx, query, arg string) (bool, error) {
 	var ok bool
@@ -386,11 +461,6 @@ func existsRow(ctx context.Context, tx pgx.Tx, query, arg string) (bool, error) 
 		return false, fmt.Errorf("bulk: existence check: %w", err)
 	}
 	return ok, nil
-}
-
-// photoExists reports whether a photo with the given UID exists.
-func photoExists(ctx context.Context, tx pgx.Tx, uid string) (bool, error) {
-	return existsRow(ctx, tx, "SELECT EXISTS(SELECT 1 FROM photos WHERE uid = $1)", uid)
 }
 
 // writeAudit appends the bulk change to the audit log within the open

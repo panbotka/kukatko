@@ -130,6 +130,20 @@ func TestToOperations(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name:    "out of range longitude",
+			in:      operationsInput{SetLocation: &locationInput{Lat: 50, Lng: -181}},
+			wantErr: true,
+		},
+		{
+			name: "only_missing rides along with the coordinate",
+			in:   operationsInput{SetLocation: &locationInput{Lat: 50, Lng: 14, OnlyMissing: true}},
+			check: func(t *testing.T, ops bulk.Operations) {
+				if ops.Location == nil || !ops.Location.OnlyMissing {
+					t.Errorf("Location = %v, want OnlyMissing true", ops.Location)
+				}
+			},
+		},
+		{
 			name: "valid location",
 			in:   operationsInput{SetLocation: &locationInput{Lat: 50, Lng: 14}},
 			check: func(t *testing.T, ops bulk.Operations) {
@@ -322,6 +336,12 @@ func (stubService) Apply(
 	_ context.Context, _ string, _ []string, _ bulk.Operations,
 ) (bulk.Result, error) {
 	return bulk.Result{}, nil
+}
+
+// LocationSummary returns an empty summary, satisfying the Service interface for
+// tests that never reach it.
+func (stubService) LocationSummary(_ context.Context, _ []string) (bulk.LocationSummary, error) {
+	return bulk.LocationSummary{}, nil
 }
 
 // TestResolveTakenAt verifies that each precision parses its own value shape and
