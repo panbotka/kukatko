@@ -1,5 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
 
+import { rangeBetween } from '../lib/selectionRange'
+
 /** State and actions for a multi-item grid selection. */
 export interface UseSelectionResult {
   /** Whether selection mode is active (tiles show checkboxes instead of links). */
@@ -74,14 +76,13 @@ export function useSelection(): UseSelectionResult {
 
   const toggleRange = useCallback(
     (uid: string, orderedUids: string[]) => {
-      const from = anchor === null ? -1 : orderedUids.indexOf(anchor)
-      const to = orderedUids.indexOf(uid)
-      if (from < 0 || to < 0) {
+      const range = rangeBetween(anchor, uid, orderedUids)
+      if (range === null) {
         toggle(uid)
         return
       }
-      const [start, end] = from <= to ? [from, to] : [to, from]
-      const range = orderedUids.slice(start, end + 1)
+      // The anchor deliberately stays put: a second Shift+click extends the same
+      // range from where the run started instead of hopping to the last tile.
       setSelected((prev) => {
         const next = new Set(prev)
         for (const item of range) {

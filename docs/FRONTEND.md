@@ -1055,7 +1055,12 @@ here.
   **Shift+click selects a contiguous range**: `onToggleSelect` carries
   the `shiftKey` of the click, `PhotoGrid` redirects it with its own photo order to the optional
   `selection.onToggleRange(uid, orderedUids)` (without it a plain toggle remains) — the anchor is held by
-  `useSelection`, so a range works in every grid without page wiring; `PhotoTile` has
+  `useSelection` and the run itself is the pure `lib/selectionRange` `rangeBetween`, so a range works in
+  every grid without page wiring. The order the grid hands over is the **loaded** photos, not the mounted
+  tiles, so a Shift+click spans rows virtuoso unmounted long ago and the count still adds up
+  (`PhotoGridRangeSelection.test.tsx` picks such a run over a deliberately windowed list); a second
+  Shift+click extends from the **same** anchor (only a plain toggle moves it), so ranging inside a picked
+  run never toggles it back off. `PhotoTile` has
   an optional **`extras`** slot (or the `PhotoGrid` prop `tileExtras(photo)`) for page overlays —
   a badge/action as a **sibling** of the link/button in a relative wrapper (an interactive extra doesn't navigate,
   doesn't toggle; a badge with `pe-none` doesn't steal the click) — used by `/expand` for the % similarity and ✗;
@@ -3889,7 +3894,10 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   back; `useSelection` = multi-selection of photos in the grid
   (`active`/`selected`/`count`/`enable`/`disable`/`toggle`/`selectMany` (select-all-in-view)/`clear`);
   the last `toggle` holds the **anchor** and `toggleRange(uid, orderedUids)` (Shift+click) selects a contiguous
-  range between the anchor and `uid` — it only **adds**, without an anchor or with an anchor out of order it degrades to
+  range between the anchor and `uid` — the run comes from the pure `lib/selectionRange`
+  `rangeBetween(anchor, uid, orderedUids)` (`null` = no usable anchor, so every boundary case is unit-tested
+  without React in `lib/selectionRange.test.ts`); it only **adds** and leaves the anchor where it was,
+  without an anchor or with an anchor out of order it degrades to
   `toggle`, `clear`/`disable` drop the anchor;
   `useBulkEdit({onEdited?, hoverSelect?})` = a **reusable bulk edit** of an arbitrary photo list:
   `useSelection` + a role gate (`canBulkEdit` = `canWrite`) + the dialog state
