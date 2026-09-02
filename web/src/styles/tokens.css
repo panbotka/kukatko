@@ -768,6 +768,25 @@
   opacity: 0.82;
 }
 
+/* On a touch screen a press-and-hold on a tile starts a selection and dragging
+   on from it paints across the wall (`hooks/useLongPressSelect`). Two native
+   reflexes fight that gesture, so both come off the wall's tiles: the text
+   selection a long press starts, and iOS's "save image" callout over the
+   photograph. Suppressing the *scroll* is not CSS's to do — the same finger has
+   to stay free to scroll right up until the press engages, so the gesture calls
+   `preventDefault` at that moment instead. Once it has, the wall stops taking
+   touch gestures at all (`data-dragging`), so a second finger cannot start
+   scrolling it out from under the stroke. */
+.kukatko-photo-grid .kk-tile {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.kukatko-photo-grid[data-dragging='true'] {
+  touch-action: none;
+}
+
 /* Touch devices cannot hover, so a hover-revealed checkmark is unreachable there
    — and it is the whole of the multi-select entry point: in the library's
    hover-select grid the corner check is the ONLY way to start a selection, and

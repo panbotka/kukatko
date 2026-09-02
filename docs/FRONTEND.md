@@ -1110,7 +1110,18 @@ here.
   tiles, so a Shift+click spans rows virtuoso unmounted long ago and the count still adds up
   (`PhotoGridRangeSelection.test.tsx` picks such a run over a deliberately windowed list); a second
   Shift+click extends from the **same** anchor (only a plain toggle moves it), so ranging inside a picked
-  run never toggles it back off. `PhotoTile` has
+  run never toggles it back off.
+  **On a touch screen the grid is selected by long press**: press and hold a tile and it is picked (which is what
+  turns the wall selection-first), keep the finger down and drag and every tile crossed joins the batch — the
+  count in the bulk bar climbing as it goes, since each addition is an ordinary selection update. The gesture
+  lives in `hooks/useLongPressSelect` (over the pure `lib/longPressSelect`), the grid hands it
+  `selection.onSelectMany(uids)` (`useBulkEdit` wires it to `useSelection`'s `selectMany`; a caller with no
+  additive handler simply gets no gesture) and `PhotoTile` stamps **`data-photo-uid`** on its box so a finger can
+  be hit-tested onto a photo. `tokens.css` takes the two native reflexes that would fight it off the wall's tiles
+  — the text selection a long press starts and iOS's "save image" callout — and stops the wall taking touch
+  gestures at all while the stroke runs (`.kukatko-photo-grid[data-dragging='true']`), so a second finger cannot
+  scroll it out from under one. An ordinary flick is untouched: nothing is prevented until the press engages.
+  `PhotoTile` has
   an optional **`extras`** slot (or the `PhotoGrid` prop `tileExtras(photo)`) for page overlays —
   a badge/action as a **sibling** of the link/button in a relative wrapper (an interactive extra doesn't navigate,
   doesn't toggle; a badge with `pe-none` doesn't steal the click) — used by `/expand` for the % similarity and ✗;
@@ -4083,6 +4094,27 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   (pinch) and when it **starts on an interactive element** (`button`/`a`/form) without `data-swipe-surface` — so
   a tap on a face box/arrow doesn't page, only the image itself does (its button carries that attribute). The mouse
   on the desktop never comes here, the gesture is purely additive for touch;
+  `useLongPressSelect({target,enabled,onSelect,holdMs?,slop?})` → `{dragging}` = the gesture every phone
+  gallery has taught its readers: **press and hold a tile to start selecting, keep the finger down and drag to
+  add every tile it crosses** (Google-Photos style, deliberately **additive** — dragging back over a tile leaves
+  it picked, undoing one is its own tap, a far more precise instrument than a finger on a wall). It is what
+  makes bulk curation on a phone one stroke instead of a checkbox-by-checkbox errand, and it needs **no "enter
+  selection mode" step**: the photo the press picks is what turns the grid selection-first. Wired with **native**
+  listeners on `target` (a ref to the grid box), not React's `onTouch*` props, because React attaches those
+  **passively** and an engaged drag has to `preventDefault` the scroll. Until it engages nothing is prevented, so
+  an ordinary flick scrolls exactly as before; movement past `slop` **before** the timer fires drops the press for
+  good (that touch is a scroll and stays one). Three things go away while a finger is down on a tile: the
+  platform's long-press menu (`contextmenu` — otherwise "save image" lands on top of the gesture), the scroll
+  during the drag, and the synthetic **`click` the lift would fire** (it would toggle the just-selected tile back
+  off). A drag is followed by **hit-testing** `document.elementFromPoint`, because the touch events of a gesture
+  all keep naming the element it *started* on — what they find there is some descendant of a tile, so `PhotoTile`
+  stamps `data-photo-uid` on its box. Gated on `supportsTouch()` (exported alongside): **`navigator.maxTouchPoints
+  > 0`**, a feature test and never a UA sniff, and deliberately not `'ontouchstart' in window` (a dialect — some
+  engines, jsdom among them, expose the handler with no screen to touch) nor the coarse-pointer query
+  `useCoarsePointer` (a touchscreen laptop has a fine primary pointer and still deserves the gesture). The
+  desktop mouse fires none of these events, so its behaviour is unchanged by construction. The decision itself is
+  the pure `lib/longPressSelect`; tests `hooks/useLongPressSelect.test.tsx` (synthetic touch sequences on fake
+  timers) and `components/library/PhotoGridLongPress.test.tsx` (the wiring, incl. the live count),
   `useSyncZoom({resetKey})` → `{view,zoomed,dragging,handlers,zoomIn,zoomOut,reset}` = **one**
   zoom/pan state for **both** photos in `DupComparePage`: both `<img>`s render the same `ZoomView`, so they
   are synchronous **by construction** — there is nothing to copy between the panels and nowhere to diverge. The wheel
@@ -4323,6 +4355,15 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `swipeAction(dx,dy,{threshold,ratio})` → `'prev'|'next'|null` (left = next, right = prev, a threshold +
   a dominant horizontal component), `touchDistance`/`touchMidpoint`, `pinchScale`/`clampScale`
   (clamped to `[MIN_SCALE=1,MAX_SCALE=4]`, `DOUBLE_TAP_SCALE`), `isDoubleTap(dt,dist)` and `clampPan`;
+  `longPressSelect.ts` = the **long-press-and-drag selection state machine**, pure and DOM-free, so the whole
+  gesture is unit-testable without a single simulated touch: `LongPressState{phase:'idle'|'pending'|'selecting',
+  uid,origin,covered}`, `IDLE_LONG_PRESS`, `LONG_PRESS_MS=450`/`LONG_PRESS_SLOP=12` and
+  `longPressStep(state,event,{slop})` → `{state,added,engaged}` over the four events `press`/`hold`/`move`/`end`.
+  A press goes *pending*; the hold timer **engages** it (selecting the pressed tile — `engaged` marks the one step
+  that does, the moment to buzz and to start swallowing the scroll); every tile the engaged drag then crosses is
+  `added` **once** (`covered` remembers, so wandering back adds nothing twice); a `move` past `slop` while still
+  pending returns to idle — the press is *dropped*, not postponed, and the caller cancels its timer on seeing it.
+  `hooks/useLongPressSelect` is the DOM half; tests `lib/longPressSelect.test.ts`;
   `compareZoom.ts` = the **pure zoom/pan maths** of the synchronous canvas in `DupComparePage` (and therefore
   unit-testable without a DOM): `ZoomView{scale,x,y}`, `IDENTITY_VIEW`, `MIN_SCALE=1`/`MAX_SCALE=8`/
   `ZOOM_STEP`, `zoomAt(view,factor,px,py,box)` (the point under the cursor stays under the cursor), `zoomCentre`,

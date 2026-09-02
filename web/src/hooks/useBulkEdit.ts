@@ -101,6 +101,7 @@ export function useBulkEdit(options: UseBulkEditOptions = {}): UseBulkEditResult
         selected: selection.selected,
         onToggle: selection.toggle,
         onToggleRange: selection.toggleRange,
+        onSelectMany: selection.selectMany,
       }
     }
     return selection.active
@@ -109,6 +110,7 @@ export function useBulkEdit(options: UseBulkEditOptions = {}): UseBulkEditResult
           selected: selection.selected,
           onToggle: selection.toggle,
           onToggleRange: selection.toggleRange,
+          onSelectMany: selection.selectMany,
         }
       : undefined
   }, [
@@ -118,6 +120,7 @@ export function useBulkEdit(options: UseBulkEditOptions = {}): UseBulkEditResult
     selection.selected,
     selection.toggle,
     selection.toggleRange,
+    selection.selectMany,
   ])
 
   return useMemo(

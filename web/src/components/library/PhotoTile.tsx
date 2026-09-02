@@ -327,6 +327,11 @@ export function PhotoTile({
         anySelected ? ' kk-tile--checks' : ''
       }${focused ? ' kukatko-tile-focused' : ''}`}
       data-focused={focused ? 'true' : undefined}
+      // Which photograph this box stands for, in the DOM. The touch long-press
+      // gesture follows a finger by hit-testing the point under it
+      // (`useLongPressSelect`), and what it finds there is some descendant of a
+      // tile — an <img>, a badge — so the tile has to say whose it is.
+      data-photo-uid={photo.uid}
     >
       {base}
       {selectable && (

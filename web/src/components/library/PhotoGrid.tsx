@@ -6,6 +6,7 @@ import { type ListRange, type StateSnapshot, Virtuoso, type VirtuosoHandle } fro
 
 import { useElementWidth } from '../../hooks/useElementWidth'
 import { useGridDensity } from '../../hooks/useGridDensity'
+import { useLongPressSelect } from '../../hooks/useLongPressSelect'
 import { type GridDensityScope, LIBRARY_GRID_SCOPE } from '../../lib/gridDensity'
 import { revealAlign } from '../../lib/gridScroll'
 import {
@@ -91,6 +92,15 @@ export interface PhotoGridSelection {
    * Shift+click behaves as a plain toggle.
    */
   onToggleRange?: (uid: string, orderedUids: string[]) => void
+  /**
+   * Adds several photos to the selection at once, leaving anything already
+   * picked alone. It is what the **touch long-press drag** paints: press and
+   * hold a tile, keep the finger down, and every tile it crosses joins the
+   * selection. Omitting it leaves the grid without that gesture — the checkmark
+   * and the taps still select — so a caller that has no additive selection to
+   * offer simply does not wire it.
+   */
+  onSelectMany?: (uids: string[]) => void
 }
 
 /**
@@ -365,6 +375,24 @@ export function PhotoGrid({
   const selectFirst =
     selection !== undefined && (selection.active || (selection.hoverSelect === true && anySelected))
 
+  // Press and hold a tile on a touch screen, then drag: every tile the finger
+  // crosses joins the selection (the count in the bulk bar climbs as it goes,
+  // since each addition is an ordinary selection update). The gesture is offered
+  // wherever the grid is selectable at all and the caller has an additive
+  // handler to take it; on a mouse it is inert by construction.
+  const selectMany = selection?.onSelectMany
+  const addToSelection = useCallback(
+    (uids: string[]) => {
+      selectMany?.(uids)
+    },
+    [selectMany],
+  )
+  const { dragging } = useLongPressSelect({
+    target: wrapRef,
+    enabled: selectable && selectMany !== undefined,
+    onSelect: addToSelection,
+  })
+
   const renderRow = (row: JustifiedRow) => (
     // The gutter below the row is padding, not a margin: virtuoso sizes an item
     // from its box, and a margin it cannot see would let the rows overlap.
@@ -414,7 +442,16 @@ export function PhotoGrid({
     // outside virtuoso so it is a plain block element of the page's own width —
     // measuring virtuoso's own scroller would measure something it is itself
     // sizing.
-    <div ref={wrapRef} className="kukatko-photo-grid" data-density={String(density)}>
+    <div
+      ref={wrapRef}
+      className="kukatko-photo-grid"
+      data-density={String(density)}
+      // While a long-press drag is painting a selection the wall must not scroll
+      // or start selecting text under the finger. `preventDefault` on the move
+      // already stops the scroll for this gesture; the attribute is what stops
+      // the next one from starting mid-drag (and marks the state for tests).
+      data-dragging={dragging ? 'true' : undefined}
+    >
       <Virtuoso
         ref={virtuosoRef}
         useWindowScroll

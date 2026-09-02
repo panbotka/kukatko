@@ -135,6 +135,10 @@ library is tidied by more than one person.
 - **On a phone the photo takes a pinch.** Pinch to zoom, or double-tap to zoom in on the spot you
   tapped, then drag the photograph around; while it is magnified a sideways drag pans it instead of
   paging away from it, and another double-tap puts it back.
+- **On a phone a batch is one stroke.** Press and hold a photo on the wall and it is picked; keep
+  your finger down and drag, and every photo you pass over joins the selection — the count climbing
+  as you go — ready to be given an album, a label or a date. An ordinary flick still just scrolls:
+  the gesture only takes over once you have held still long enough to mean it.
 
 Albums (each covered by a collage of four of its photos, so two albums from the same afternoon don't
 look alike; a new one can be started straight from a selection — "these forty photos are Ostatky 2022" —
