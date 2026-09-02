@@ -68,6 +68,25 @@ type ThumbnailBackfiller interface {
 	CountBackfillThumbnails(ctx context.Context, all bool) (int, error)
 }
 
+// BlurhashBackfiller enqueues a thumbnail job for every photo that has no
+// blurred placeholder yet — the tiny stand-in a grid paints while the real
+// thumbnail loads. It is satisfied by thumbjob.Service, which computes the
+// placeholder alongside the renditions it is derived from, so the placeholder
+// backfill and the thumbnail backfill schedule the same kind of job and differ
+// only in which photos they pick. When all is true it schedules every
+// non-archived photo instead (a forced full re-run). The jobs run locally, so the
+// backfill works regardless of the embeddings box being offline. A nil
+// BlurhashBackfiller disables the /process/blurhash endpoint (it answers 503).
+type BlurhashBackfiller interface {
+	// BackfillBlurhash enqueues a thumbnail job for every photo missing a
+	// placeholder (or, when all is true, for every non-archived photo) and returns
+	// how many were scheduled.
+	BackfillBlurhash(ctx context.Context, all bool) (int, error)
+	// CountBackfillBlurhash returns how many photos BackfillBlurhash would
+	// schedule for the same value of all, scheduling nothing. It backs ?dry_run.
+	CountBackfillBlurhash(ctx context.Context, all bool) (int, error)
+}
+
 // MetadataBackfiller enqueues a `metadata` job for every photo whose original has
 // never been read out into the IPTC/XMP and file-technical columns. It is satisfied
 // by metajob.Service. When all is true it schedules every non-archived photo
@@ -144,6 +163,7 @@ type API struct {
 	reclusterer       Reclusterer
 	placesBackfiller  PlacesBackfiller
 	thumbBackfiller   ThumbnailBackfiller
+	blurBackfiller    BlurhashBackfiller
 	metaBackfiller    MetadataBackfiller
 	sidecarBackfill   SidecarBackfiller
 	ocrBackfiller     OCRBackfiller
@@ -166,6 +186,8 @@ type Config struct {
 	PlacesBackfiller PlacesBackfiller
 	// ThumbnailBackfiller runs the missing-thumbnail backfill.
 	ThumbnailBackfiller ThumbnailBackfiller
+	// BlurhashBackfiller runs the blurred-placeholder backfill.
+	BlurhashBackfiller BlurhashBackfiller
 	// MetadataBackfiller runs the file-metadata (IPTC/XMP) backfill.
 	MetadataBackfiller MetadataBackfiller
 	// SidecarBackfiller runs the metadata-sidecar export backfill.
@@ -188,6 +210,7 @@ func NewAPI(cfg Config) *API {
 		reclusterer:       cfg.Reclusterer,
 		placesBackfiller:  cfg.PlacesBackfiller,
 		thumbBackfiller:   cfg.ThumbnailBackfiller,
+		blurBackfiller:    cfg.BlurhashBackfiller,
 		metaBackfiller:    cfg.MetadataBackfiller,
 		sidecarBackfill:   cfg.SidecarBackfiller,
 		ocrBackfiller:     cfg.OCRBackfiller,
@@ -206,6 +229,8 @@ func NewAPI(cfg Config) *API {
 //	POST /process/places      RequireMaintainer  backfill missing reverse-geocoded places
 //	POST /process/thumbnails  RequireMaintainer  backfill missing thumbnails (?all=true forces a full
 //	                                             re-run, ?dry_run=true only counts)
+//	POST /process/blurhash    RequireMaintainer  backfill missing blurred placeholders (?all=true forces a full
+//	                                             re-run, ?dry_run=true only counts)
 //	POST /process/metadata    RequireMaintainer  backfill unread file metadata (?all=true forces a full re-read)
 //	POST /process/sidecars    RequireMaintainer  backfill missing metadata sidecars (?all=true forces a full re-run)
 //	POST /process/ocr         RequireMaintainer  backfill un-recognised photo text (?all=true forces a full re-run)
@@ -218,6 +243,7 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.With(a.requireMaintainer).Post("/clusters", a.handleRecluster)
 		r.With(a.requireMaintainer).Post("/places", a.handleBackfillPlaces)
 		r.With(a.requireMaintainer).Post("/thumbnails", a.handleBackfillThumbnails)
+		r.With(a.requireMaintainer).Post("/blurhash", a.handleBackfillBlurhash)
 		r.With(a.requireMaintainer).Post("/metadata", a.handleBackfillMetadata)
 		r.With(a.requireMaintainer).Post("/sidecars", a.handleBackfillSidecars)
 		r.With(a.requireMaintainer).Post("/ocr", a.handleBackfillOCR)
@@ -372,12 +398,13 @@ func (a *API) handleBackfillPlaces(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, backfillResponse{Enqueued: enqueued})
 }
 
-// thumbnailBackfillResponse is the JSON body returned by the thumbnail-backfill
-// endpoint. It carries the candidate count alongside the enqueued one so the size
-// of the run is visible whether or not it was actually started.
-type thumbnailBackfillResponse struct {
-	// Enqueued is the number of thumbnail jobs scheduled by this call — always 0
-	// for a dry run.
+// countedBackfillResponse is the JSON body returned by the backfill endpoints
+// that can also be asked to count — the thumbnail one and the placeholder one. It
+// carries the candidate count alongside the enqueued one so the size of the run
+// is visible whether or not it was actually started.
+type countedBackfillResponse struct {
+	// Enqueued is the number of jobs scheduled by this call — always 0 for a dry
+	// run.
 	Enqueued int `json:"enqueued"`
 	// Pending is how many photos match the backfill's predicate, i.e. how many jobs
 	// a real run would schedule.
@@ -398,22 +425,68 @@ func (a *API) handleBackfillThumbnails(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "thumbnail backfill not available")
 		return
 	}
+	a.serveCountedBackfill(w, r, countedBackfill{
+		count:     a.thumbBackfiller.CountBackfillThumbnails,
+		run:       a.thumbBackfiller.BackfillThumbnails,
+		countFail: "counting thumbnail backfill failed",
+		runFail:   "backfilling thumbnails failed",
+	})
+}
+
+// handleBackfillBlurhash enqueues thumbnail jobs for all photos that have no
+// blurred placeholder and reports how many were scheduled. With ?all=true it
+// schedules every non-archived photo (a forced full re-run, which is how a
+// library picks up a changed placeholder encoding). With ?dry_run=true it
+// schedules nothing and only reports how many photos would be covered — worth
+// asking first, because a library that predates placeholders has none anywhere
+// and the narrow predicate then matches every photo in it. It answers 503 when no
+// placeholder backfiller is wired.
+func (a *API) handleBackfillBlurhash(w http.ResponseWriter, r *http.Request) {
+	if a.blurBackfiller == nil {
+		writeError(w, http.StatusServiceUnavailable, "blurhash backfill not available")
+		return
+	}
+	a.serveCountedBackfill(w, r, countedBackfill{
+		count:     a.blurBackfiller.CountBackfillBlurhash,
+		run:       a.blurBackfiller.BackfillBlurhash,
+		countFail: "counting blurhash backfill failed",
+		runFail:   "backfilling blurhashes failed",
+	})
+}
+
+// countedBackfill is one backfill's pair of operations — count the candidates,
+// schedule them — plus the message each failure reports, so serveCountedBackfill
+// can drive any of them.
+type countedBackfill struct {
+	// count answers how many photos a real run would cover.
+	count func(ctx context.Context, all bool) (int, error)
+	// run schedules the jobs and returns how many it scheduled.
+	run func(ctx context.Context, all bool) (int, error)
+	// countFail and runFail are the 500 messages for each step.
+	countFail string
+	runFail   string
+}
+
+// serveCountedBackfill answers a backfill endpoint that supports ?all and
+// ?dry_run: it always counts the candidates first, so the size of the run is
+// reported whether or not it was started, and only then schedules them.
+func (a *API) serveCountedBackfill(w http.ResponseWriter, r *http.Request, b countedBackfill) {
 	all := queryFlag(r, "all")
-	pending, err := a.thumbBackfiller.CountBackfillThumbnails(r.Context(), all)
+	pending, err := b.count(r.Context(), all)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "counting thumbnail backfill failed")
+		writeError(w, http.StatusInternalServerError, b.countFail)
 		return
 	}
 	if queryFlag(r, "dry_run") {
-		writeJSON(w, http.StatusOK, thumbnailBackfillResponse{Pending: pending, DryRun: true})
+		writeJSON(w, http.StatusOK, countedBackfillResponse{Pending: pending, DryRun: true})
 		return
 	}
-	enqueued, err := a.thumbBackfiller.BackfillThumbnails(r.Context(), all)
+	enqueued, err := b.run(r.Context(), all)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "backfilling thumbnails failed")
+		writeError(w, http.StatusInternalServerError, b.runFail)
 		return
 	}
-	writeJSON(w, http.StatusOK, thumbnailBackfillResponse{Enqueued: enqueued, Pending: pending})
+	writeJSON(w, http.StatusOK, countedBackfillResponse{Enqueued: enqueued, Pending: pending})
 }
 
 // handleBackfillMetadata enqueues `metadata` jobs for all photos whose original

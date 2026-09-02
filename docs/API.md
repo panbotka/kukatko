@@ -481,6 +481,16 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   actor `source=retention`); archiving (reversible soft-delete) stays `RequireWrite` and
   `GET /trash/info` (authenticated) returns `{retention_days}` for the countdown
   to auto-purge; the trash listing runs via the shared `GET /photos?archived=only`;
+  **the blurred placeholder** (`internal/blurhash`, migration `0068_photos_blurhash.sql`): every returned
+  photo — list rows, search results and the detail alike — carries **`blurhash`**, a BlurHash string
+  (woltapp/blurhash: 28 bytes for the 4×3 grid an ordinary photograph gets, 36 for the 4×4 a square one
+  gets) a client decodes into a blurred approximation of the picture and paints while the real thumbnail
+  loads. It is read-only, describes the **rendering** (upright, with any non-destructive edit applied), and
+  is `omitempty`: **absent means "not computed yet"** — a photo catalogued before placeholders existed, or
+  one whose original could not be decoded — so a client asks whether the key is there rather than telling an
+  empty string from a value. It is on the list on purpose: a placeholder that costs a second request arrives
+  after the image it stands in for. Written by the upload pipeline (from the same decode as the pHash) and by
+  the `thumbnail` job (from the `fit_720` preview it just rendered); backfilled by `POST /process/blurhash`;
   **media URLs in the payload** (`internal/mediaurl`): every returned photo carries `thumb_url`
   (the grid thumbnail `tile_500`) and `download_url` (the original, `?original=true` semantics — never
   rendering an edit). The values are minted by the storage backend via `Storage.URL`: `FS` returns
@@ -1026,6 +1036,16 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   (`thumbjob.CountBackfillThumbnails`): a thumbnail job re-reads an original, and "the narrow predicate" is no
   promise of a small run, so the cost is reportable before it is paid. A real run answers `pending` too, so the
   size of what was just started is visible in the response.
+  `POST /process/blurhash` → `{enqueued,pending,dry_run}` (backfill the **blurred placeholder** for photos
+  **without one** via `thumbjob.BackfillBlurhash`). It schedules `thumbnail` jobs, not a job of its own: the
+  `thumbnail` job is what computes a placeholder, from the `fit_720` preview it renders, so the placeholder
+  and the thumbnail backfills differ only in which photos they pick. Optional `?all=true` schedules **every
+  non-archived photo** (a forced full re-run, how a library picks up a changed placeholder encoding);
+  optional **`?dry_run=true`** schedules nothing and answers only `pending`
+  (`thumbjob.CountBackfillBlurhash`) — worth asking first, since a library that predates placeholders has
+  none anywhere and the narrow predicate then matches every photo in it. Idempotent and resumable: the queue
+  dedupes an active job per photo, each photo is written the moment its job completes, and the plain job
+  skips a photo that already has a placeholder.
   `POST /process/metadata` → `{enqueued}` (backfill `metadata` for photos whose **file has never
   been read** into the IPTC/XMP and file-technical columns, via `metajob.BackfillMetadata`; "unread"
   = `photos.metadata_extracted_at IS NULL`, which are rows from the one-off imports

@@ -251,6 +251,18 @@ type Photo struct {
 	// catalogues a photo; the `metadata` job stamps it when it re-reads an original.
 	MetadataExtractedAt *time.Time `json:"metadata_extracted_at,omitempty"`
 
+	// Blurhash is the photo's placeholder: a BlurHash string a client decodes into
+	// a blurred approximation of the picture and paints while the real thumbnail
+	// is still loading. It describes the *rendering* — the same upright, edited
+	// image the thumbnails show — and is derived data like a thumbnail or a pHash,
+	// regenerable from the original at any time.
+	//
+	// The empty string means "not computed yet" (the column is NULL): a photo
+	// catalogued before placeholders existed, or one whose original could not be
+	// decoded. It is omitted from JSON in that case, so a client can simply ask
+	// whether the field is there. See migration 0068 and internal/blurhash.
+	Blurhash string `json:"blurhash,omitempty"`
+
 	Private    bool       `json:"private"`
 	ArchivedAt *time.Time `json:"archived_at,omitempty"`
 	UploadedBy *string    `json:"uploaded_by,omitempty"`

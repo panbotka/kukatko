@@ -4659,7 +4659,10 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   on every request, so a seek always runs against a fresh signature), `GRID_THUMB_SIZE`,
   the types `Photo` (incl. `is_favorite` + the per-user `rating`/`flag` + the video fields
   `duration_ms`/`video_codec`/`audio_codec`/`has_audio`/`fps` + **`thumb_url`/`download_url`** +
-  **`stack_uid`/`stack_count`**)/`PhotoListParams`
+  **`stack_uid`/`stack_count`** + **`blurhash?`** — a BlurHash of the photo's rendering (`internal/blurhash`),
+  a few dozen characters a decoder turns into the blur a tile can paint while its thumbnail loads; it is
+  **optional on purpose** (absent = the backend has not computed it yet), so anything reading it must cope
+  with the absence rather than assume a value, and no component uses it yet)/`PhotoListParams`
   (incl. the `album`/`label` scope + the **`person` scope** (comma-joined subject UIDs → repeated `?person=`, AND)
   + the **`country`/`city` place scope** + the `favorite` filter + the `min_rating`/`flag` filters)/`PhotoSort`
   (incl. `rating`)/`RatingFlag`/`ArchivedFilter`/`SearchMode`, `ApiError`.

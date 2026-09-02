@@ -17,6 +17,14 @@ export interface Photo {
   /** The raw EXIF orientation tag (1–8); 0/absent when the file carried none. */
   file_orientation?: number
   /**
+   * A BlurHash of the photo's rendering — a few dozen characters a decoder turns
+   * into the blurred stand-in a tile can paint while the real thumbnail loads.
+   * Absent means the placeholder has not been computed yet (a photo catalogued
+   * before placeholders existed, or one whose original could not be decoded), so
+   * anything using it must cope with its absence rather than assume a value.
+   */
+  blurhash?: string
+  /**
    * The file name the photo carried before it was ingested. Only interesting when
    * it differs from `file_name`, the name it has in the storage layout.
    */

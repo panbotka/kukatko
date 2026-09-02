@@ -91,7 +91,11 @@ func buildJobs(
 		Reclusterer:         clusterSvc,
 		PlacesBackfiller:    placesBF,
 		ThumbnailBackfiller: svcs.thumb,
-		MetadataBackfiller:  svcs.meta,
+		// The same service: the thumbnail job is what computes a photo's blurred
+		// placeholder, so the two backfills schedule the same job and differ only in
+		// which photos they pick.
+		BlurhashBackfiller: svcs.thumb,
+		MetadataBackfiller: svcs.meta,
 		// A nil interface (not a typed-nil pointer) disables /process/sidecars when
 		// the metadata sidecar export is off.
 		SidecarBackfiller: sidecarBackfillerOrNil(svcs.sidecar),

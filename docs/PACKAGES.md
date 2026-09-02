@@ -298,6 +298,17 @@ to `## Package map` in `CLAUDE.md`.
   sorts and filters into it while presentation shows only what was claimed; the store normalises an empty
   value to `day` on write (`takenAtPrecisionOrDay`) rather than tripping the column's CHECK, so a caller
   built by hand cannot invent a grain);
+  **the blurred placeholder** `Blurhash string` (JSON/column `blurhash`, `omitempty`, migration
+  `0068_photos_blurhash.sql`): a BlurHash of the photo's rendering, derived data like a thumbnail and
+  regenerable at any time. The column is nullable and the NULL is load-bearing — "not computed yet", the
+  predicate the backfill lists — so the model carries the absence as the empty string and `blurhashOrNil`
+  maps it back to NULL on write, which the `photos_blurhash_not_empty` CHECK insists on. `store_blurhash.go`:
+  `SaveBlurhash(uid,hash)` overwrites it (an empty hash clears it back to NULL, `ErrPhotoNotFound` for an
+  unknown uid) and deliberately does **not** bump `updated_at`, for the reason `SaveOCR` does not — a
+  machine-derived value nobody asked for must not reorder every "recently edited" listing the first time a
+  backfill drains; `ListPhotosMissingBlurhash(limit)`/`CountPhotosMissingBlurhash()` are the backfill's
+  predicate (no placeholder, not archived, newest first, served by the partial index
+  `idx_photos_blurhash_pending`), videos included since their thumbnails come from the poster frame);
   **the date put away** `TakenAtBeforeUnknown *time.Time` (JSON/column `taken_at_before_unknown`,
   migration `0066`, **read-only**, absent from `MetadataUpdate`): the capture time the photo carried at the
   moment its date was declared unknown, kept so that declaration is reversible — the wrong date a scan was
@@ -806,7 +817,23 @@ to `## Package map` in `CLAUDE.md`.
   the untouched original)), `internal/phash/`
   (perceptual hashes, **CGO-free**: `Compute(img) Hashes{Phash,Dhash int64}` — **pHash** via
   a 2-D DCT 32×32 → low-freq 8×8 block with a median-without-DC threshold, **dHash** gradient 9×8; `Distance(a,b)`
-  = Hamming distance via `bits.OnesCount64`; near-dup = a small distance), `internal/ingest/`
+  = Hamming distance via `bits.OnesCount64`; near-dup = a small distance), `internal/blurhash/`
+  (the **blurred placeholder**, **CGO-free**: `Encode(img image.Image) (string,error)` → a BlurHash string
+  (woltapp/blurhash) the frontend decodes into the blur a tile paints while the real thumbnail loads.
+  Encoding is `github.com/bbrks/go-blurhash` (MIT, zero-dependency, pure Go); this package owns the three
+  decisions around it. **(1) Scale first**: `downscale` renders the source into an opaque `image.NRGBA`
+  whose longest side is at most `WorkingSide = 64` (`draw.CatmullRom`, never upscaling) — the encoder's cost
+  is proportional to the pixel count and a placeholder computed from 64 px is indistinguishable from one
+  computed from a 24 Mpx original; NRGBA because it is the encoder's fast path. Transparency is composited
+  **over white** (the destination is filled white and drawn `draw.Over`), so a PNG with a cut-out background
+  yields the light placeholder its rendering suggests rather than whatever colour sits under the transparent
+  pixels. **(2) Match the grid to the aspect ratio** (`componentsFor`): 4×3 for a landscape, 3×4 for a
+  portrait, 4×4 within 20 % of square → 28 or 36 bytes, small enough to ride along in every photo of every
+  list payload. **(3) Refuse an empty image** (`ErrEmptyImage` for nil or zero-sized bounds) rather than
+  encode nothing. The image is expected **in display orientation** — the placeholder stands in for the
+  rendition the user sees, so a caller holding an untouched original orients it (`imgconvert.Orient`) first,
+  which is exactly what `internal/ingest` does and what `internal/thumbjob` gets for free by reading a
+  preview. Sub-images (non-origin bounds) encode from their own pixels), `internal/ingest/`
   (the upload/ingest pipeline: `Service` = `New(Config{Storage,Photos,Thumbnailer,Enqueuer,Duplicate,
   MaxFileSize,MaxPixels,TempDir})` (`MaxPixels` = the same decompression-bomb cap as `thumb.max_pixels`,
   applied to the pHash decode via `imgconvert.EnforcePixelBound`; a rejected oversize source becomes a
@@ -829,7 +856,13 @@ to `## Package map` in `CLAUDE.md`.
   the file was read, so the metadata backfill (`internal/metajob`) no longer schedules this photo)
   +primary `photo_files`, pHash/dHash → `photo_phashes`
   (from the poster frame for video), thumbnails (the poster for video), enqueue of jobs (the poster frame takes part in
-  search/people); **per-file** `FileResult{Filename,Status,
+  search/people); `hashPixels` decodes the stored original **once** and derives from it both the pHash/dHash
+  (`storePhash`) and the **blurred placeholder** (`storeBlurhash` → `blurhash.Encode` → `photos.SaveBlurhash`,
+  a `blurhash_failed` warning on failure), because the decode is by far the most expensive part of either and a
+  second one for a value the size of a tweet would be absurd. The placeholder is encoded from the
+  **oriented** image (`imgconvert.Orient`) while the pHash deliberately reads the unoriented one: the
+  placeholder stands in for the rendering, the pHash exists to recognise two copies of one shot however
+  either is turned; **per-file** `FileResult{Filename,Status,
   Outcome (created/duplicate/error),PhotoUID,Error,Warnings}` — never returns an error, everything is in the result;
   **race**: concurrent identical uploads → one photo (storage hard-link + unique `file_hash`), the loser
   a clean duplicate; **near-dup warning** config-gated via `photos.NearestPhash`; `JobEnqueuer` =
@@ -1636,6 +1669,11 @@ to `## Package map` in `CLAUDE.md`.
   answers, so a full-library run is a number read beforehand rather than a surprise; a real run reports both,
   so its size is visible in the response too; `ThumbnailBackfiller` optional — nil → 503; local, works even
   with the box offline; `queryFlag` parses `?all`/`?dry_run`),
+  `POST /process/blurhash` → `{enqueued,pending,dry_run}` runs `thumbjob.BackfillBlurhash(all)` (backfill of
+  the **blurred placeholder** for photos without one; it schedules `thumbnail` jobs, since that is the job
+  which computes a placeholder, so this endpoint and `/process/thumbnails` differ only in the predicate;
+  `?all=true`/`?dry_run=true` behave exactly as there, both handlers going through the shared
+  `serveCountedBackfill`; `BlurhashBackfiller` optional — nil → 503; local, works even with the box offline),
   `POST /process/metadata` → `{enqueued}` runs `metajob.BackfillMetadata(all)` (backfill of `metadata`
   for photos whose file has never been read = `metadata_extracted_at IS NULL`; `?all=true`
   forces a re-read of every non-archived photo; `MetadataBackfiller` optional — nil → 503;
@@ -3119,13 +3157,20 @@ to `## Package map` in `CLAUDE.md`.
   together with the target, the per-table row counts and the object counts. Deliberately **no HTTP surface**,
   for the reason `restore db` has none: it pulls the tables out from under a running server), `internal/thumbjob/`
   (the worker handler of the `thumbnail` job — the **repair path** for maintenance: it regenerates a photo's derived
-  data from the original, the **thumbnails** (`Thumbnailer.GenerateAll`, cached ones skipped) and the **pHash/dHash** (only when
-  they are missing, `phash.Compute` over the decoded original), all behind the interfaces `PhotoStore`/`Thumbnailer`/
+  data from the original, the **thumbnails** (`Thumbnailer.GenerateAll`, cached ones skipped), the **pHash/dHash** (only when
+  they are missing, `phash.Compute` over the decoded original) and the **blurred placeholder**
+  (`ensureBlurhash`, only when missing: `Thumbnailer.OpenOrGenerate` the `PlaceholderSize` = `fit_720`
+  preview → `image.Decode` → `blurhash.Encode` → `PhotoStore.SaveBlurhash`), all behind the interfaces `PhotoStore`/`Thumbnailer`/
   `Decoder` (`StorageDecoder` = `storage.Materialize`+`imgconvert.EnsureDecodable`, fakeable) →
   unit-testable without a disk; `Service` = `New(Config{Photos,Thumbnailer,Decoder,Lister?,Enqueuer?})`
   (panics on a nil mandatory collaborator; `Lister`/`Enqueuer` optional — they turn the backfill on),
   `Handle`=`worker.HandlerFunc` (payload `{photo_uid,force?}`, empty uid → `ErrMissingPhotoUID` dead-letter),
-  `Regenerate(uid)`/`ensurePhash` idempotent; registered in `serve` on `jobs.TypeThumbnail`.
+  `Regenerate(uid)`/`ensurePhash`/`ensureBlurhash` idempotent; registered in `serve` on `jobs.TypeThumbnail`.
+  **The placeholder lives here rather than in a job of its own** because it is derived from the *rendering*,
+  not from the original: it is read back out of the preview this job has just written, so a photo whose
+  rendering changed (a saved crop or rotation, which forces a rebuild) gets a matching placeholder in the
+  same run, with no second job to race against. It is the one derived value the job reads from a rendition
+  instead of from the original, which is also what keeps it cheap on a photo whose thumbnails are all cached.
   The payload's **`force` flag** routes the job to `ForceRegenerate` instead: the repair skips a size already cached,
   which is right when the cache is merely incomplete and wrong when the photo's *rendering* changed, since nothing
   about the cache key records the edit. It is what `jobs.Enqueuer.EnqueueThumbnailRebuild` schedules from `PUT
@@ -3134,7 +3179,9 @@ to `## Package map` in `CLAUDE.md`.
   other, so a rotation changes the grid and deliberately leaves duplicate detection where it was.
   The **force path** `ForceRegenerate(uid) ([]string,error)` is the on-demand counterpart (the basis of the service
   action "regenerate thumbnail" in `photoapi`): it **overwrites** every thumbnail (`Thumbnailer.RegenerateAll`,
-  an atomic overwrite) and **always** recomputes the pHash (`recomputePhash`, shared with `ensurePhash`), returning
+  an atomic overwrite) and **always** recomputes the pHash (`recomputePhash`, shared with `ensurePhash`) and the
+  placeholder (`recomputeBlurhash`, run **after** `RegenerateAll` so it reads the rendering that was just
+  written rather than the one it replaced), returning
   the sorted size names; a missing photo → `photos.ErrPhotoNotFound`, a missing/undecodable
   original is wrapped in `ErrRegenerateFailed` (HTTP 422). The **backfill** `BackfillThumbnails(ctx,all)
   (int,error)` (the basis of `POST /process/thumbnails`): it enqueues a `thumbnail` job for every photo **without a
@@ -3147,7 +3194,14 @@ to `## Package map` in `CLAUDE.md`.
   paid: "the narrow predicate" is no promise of a small number — a library imported before the import scheduled
   thumbnail jobs has no pHash anywhere, so *every* photo in it matches — and a thumbnail job re-reads an original.
   It backs `?dry_run=true`; the count is a snapshot, so a concurrent import may grow it and the queue's dedup may
-  shrink what a later real run schedules),
+  shrink what a later real run schedules.
+  **The placeholder backfill** `BackfillBlurhash(ctx,all) (int,error)` + `CountBackfillBlurhash(ctx,all)`
+  (the basis of `POST /process/blurhash`) is the same machinery over a different predicate: every photo
+  **without a placeholder** (`PhotoLister.ListPhotosMissingBlurhash`/`CountPhotosMissingBlurhash`, served by
+  the partial index `idx_photos_blurhash_pending`), or — when `all` — every non-archived one; it enqueues
+  `thumbnail` jobs through the same `Enqueuer.EnqueueThumbnail`, so the two backfills differ only in which
+  photos they pick and both inherit the queue's per-photo dedup. Videos are **not** excluded: their
+  thumbnails come from the poster frame the pipeline extracts, so a clip has a first frame to blur),
   `internal/sidecarexport/`
   (**the format** of the metadata sidecar + its atomic write into storage — a YAML file per photo next to
   the originals, so the library can be restored **from storage alone**: originals + sidecars, without a database.

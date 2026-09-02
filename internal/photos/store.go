@@ -40,7 +40,7 @@ var photoInsertColumns = []string{
 	"software", "scan", "color_profile", "image_codec", "projection", "original_name",
 	"exif", "private", "archived_at", "uploaded_by", "photoprism_uid",
 	"photoprism_file_hash", "photosorter_uid", "metadata_extracted_at",
-	"stack_uid", "stack_primary", "title_edited", "hidden_from_library",
+	"stack_uid", "stack_primary", "title_edited", "hidden_from_library", "blurhash",
 }
 
 // photoColumns is the canonical, ordered column list for photo reads (the insert
@@ -85,6 +85,9 @@ func isUniqueViolation(err error) (string, bool) {
 func scanPhoto(row pgx.Row) (Photo, error) {
 	var p Photo
 	var exif []byte
+	// blurhash is NULL for a photo whose placeholder has not been computed yet,
+	// which the model carries as the empty string.
+	var blurhash *string
 	if err := row.Scan(
 		&p.UID, &p.FileHash, &p.FilePath, &p.FileName, &p.FileSize, &p.FileMime,
 		&p.FileWidth, &p.FileHeight, &p.FileOrientation, &p.MediaType, &p.DurationMs,
@@ -96,13 +99,28 @@ func scanPhoto(row pgx.Row) (Photo, error) {
 		&p.Software, &p.Scan, &p.ColorProfile, &p.ImageCodec, &p.Projection, &p.OriginalName,
 		&exif, &p.Private, &p.ArchivedAt, &p.UploadedBy, &p.PhotoprismUID,
 		&p.PhotoprismFileHash, &p.PhotosorterUID, &p.MetadataExtractedAt,
-		&p.StackUID, &p.StackPrimary, &p.TitleEdited, &p.HiddenFromLibrary,
+		&p.StackUID, &p.StackPrimary, &p.TitleEdited, &p.HiddenFromLibrary, &blurhash,
 		&p.CreatedAt, &p.UpdatedAt,
 	); err != nil {
 		return Photo{}, fmt.Errorf("photos: scanning photo: %w", err)
 	}
 	p.Exif = exif
+	if blurhash != nil {
+		p.Blurhash = *blurhash
+	}
 	return p, nil
+}
+
+// blurhashOrNil maps a photo's placeholder onto the nullable column: the empty
+// string — "not computed yet", and what a caller that predates placeholders
+// builds — is stored as NULL rather than as an empty string, which is what the
+// photos_blurhash_not_empty CHECK insists on and what the backfill's partial
+// index reads.
+func blurhashOrNil(hash string) *string {
+	if hash == "" {
+		return nil
+	}
+	return &hash
 }
 
 // takenAtPrecisionOrDay normalises a capture-date grain for writing: an empty
@@ -144,7 +162,7 @@ func (s *Store) Create(ctx context.Context, p Photo) (Photo, error) {
 		p.Software, p.Scan, p.ColorProfile, p.ImageCodec, p.Projection, p.OriginalName,
 		nilIfEmptyJSON(p.Exif), p.Private, p.ArchivedAt, p.UploadedBy, p.PhotoprismUID,
 		p.PhotoprismFileHash, p.PhotosorterUID, p.MetadataExtractedAt,
-		p.StackUID, p.StackPrimary, p.TitleEdited, p.HiddenFromLibrary,
+		p.StackUID, p.StackPrimary, p.TitleEdited, p.HiddenFromLibrary, blurhashOrNil(p.Blurhash),
 	}
 	created, err := scanPhoto(s.pool.QueryRow(ctx, insertPhotoSQL, args...))
 	if err != nil {

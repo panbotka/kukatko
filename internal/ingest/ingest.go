@@ -42,6 +42,7 @@ import (
 	_ "golang.org/x/image/tiff"
 	_ "golang.org/x/image/webp"
 
+	"github.com/panbotka/kukatko/internal/blurhash"
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/exif"
 	"github.com/panbotka/kukatko/internal/imgconvert"
@@ -67,6 +68,10 @@ const (
 	// warnPhashFailed marks a photo whose perceptual hashes could not be
 	// computed or stored (it has no near-duplicate protection until reprocessed).
 	warnPhashFailed = "phash_failed"
+	// warnBlurhashFailed marks a photo whose blurred placeholder could not be
+	// computed or stored; the grid simply shows no placeholder for it until the
+	// backfill (POST /process/blurhash) fills it in.
+	warnBlurhashFailed = "blurhash_failed"
 	// warnThumbnailFailed marks a photo whose thumbnails could not be generated;
 	// the cache is regenerable so the original and record are intact.
 	warnThumbnailFailed = "thumbnail_failed"
@@ -384,13 +389,13 @@ func (s *Service) createPrimaryFile(ctx context.Context, photo photos.Photo, sto
 }
 
 // postProcess runs the regenerable side effects for a freshly created photo —
-// perceptual hashing (with near-duplicate detection), thumbnail generation and
-// job enqueue — collecting any non-fatal failures as warnings. None of these
-// undo the create: a photo with a missing thumbnail or unqueued job is a
-// degraded but valid, repairable state.
+// perceptual hashing (with near-duplicate detection), the blurred placeholder,
+// thumbnail generation and job enqueue — collecting any non-fatal failures as
+// warnings. None of these undo the create: a photo with a missing thumbnail or
+// unqueued job is a degraded but valid, repairable state.
 func (s *Service) postProcess(ctx context.Context, photo photos.Photo) []Warning {
 	warnings := slices.Concat(
-		s.computePhash(ctx, photo),
+		s.hashPixels(ctx, photo),
 		s.generateThumbnails(ctx, photo),
 		s.enqueueJobs(ctx, photo),
 	)
@@ -400,16 +405,25 @@ func (s *Service) postProcess(ctx context.Context, photo photos.Photo) []Warning
 	return warnings
 }
 
-// computePhash decodes the stored original, checks it against existing photos
-// for a near-duplicate, and stores its pHash/dHash. A decode or store failure
-// is reported as a warning, not an error.
-func (s *Service) computePhash(ctx context.Context, photo photos.Photo) []Warning {
+// hashPixels decodes the stored original once and derives from it everything the
+// pipeline reads out of the pixels themselves: the perceptual hashes (with
+// near-duplicate detection) and the blurred placeholder. Sharing the decode is
+// the whole reason they live in one step — it is by far the most expensive part,
+// and a second one for a value the size of a tweet would be absurd. A decode or
+// store failure is reported as a warning, not an error.
+func (s *Service) hashPixels(ctx context.Context, photo photos.Photo) []Warning {
 	img, cleanup, err := s.decodeOriginal(ctx, photo)
 	if err != nil {
 		return []Warning{{Code: warnPhashFailed, Message: err.Error()}}
 	}
 	defer cleanup()
 
+	return append(s.storePhash(ctx, photo, img), s.storeBlurhash(ctx, photo, img)...)
+}
+
+// storePhash checks the decoded original against existing photos for a
+// near-duplicate and stores its pHash/dHash.
+func (s *Service) storePhash(ctx context.Context, photo photos.Photo, img image.Image) []Warning {
 	hashes := phash.Compute(img)
 	warnings := s.nearDuplicateWarning(ctx, hashes.Phash)
 	if err := s.photos.SetPhash(ctx, photos.Phash{
@@ -418,6 +432,25 @@ func (s *Service) computePhash(ctx context.Context, photo photos.Photo) []Warnin
 		warnings = append(warnings, Warning{Code: warnPhashFailed, Message: err.Error()})
 	}
 	return warnings
+}
+
+// storeBlurhash encodes the photo's blurred placeholder from the decoded original
+// and stores it.
+//
+// The image is oriented first, while the pHash deliberately reads the unoriented
+// original: the placeholder stands in for the *rendering* — the upright picture
+// the thumbnails show — whereas the pHash exists to recognise two copies of the
+// same shot regardless of how either is turned. Same pixels, two different
+// questions.
+func (s *Service) storeBlurhash(ctx context.Context, photo photos.Photo, img image.Image) []Warning {
+	hash, err := blurhash.Encode(imgconvert.Orient(img, photo.FileOrientation))
+	if err != nil {
+		return []Warning{{Code: warnBlurhashFailed, Message: err.Error()}}
+	}
+	if err := s.photos.SaveBlurhash(ctx, photo.UID, hash); err != nil {
+		return []Warning{{Code: warnBlurhashFailed, Message: err.Error()}}
+	}
+	return nil
 }
 
 // decodeOriginal resolves the photo's stored original to a decodable image,

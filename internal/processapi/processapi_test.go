@@ -493,7 +493,7 @@ func TestBackfillThumbnails_reportsPendingAlongsideEnqueued(t *testing.T) {
 
 	resp := postProcess(t, srv.URL+"/process/thumbnails")
 	defer func() { _ = resp.Body.Close() }()
-	var body thumbnailBackfillResponse
+	var body countedBackfillResponse
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
@@ -517,7 +517,7 @@ func TestBackfillThumbnails_dryRun(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
-	var body thumbnailBackfillResponse
+	var body countedBackfillResponse
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
@@ -542,7 +542,7 @@ func TestBackfillThumbnails_dryRunAll(t *testing.T) {
 
 	resp := postProcess(t, srv.URL+"/process/thumbnails?all=true&dry_run=true")
 	defer func() { _ = resp.Body.Close() }()
-	var body thumbnailBackfillResponse
+	var body countedBackfillResponse
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}

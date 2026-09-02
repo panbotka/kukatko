@@ -250,6 +250,19 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
     `file_name` is the name in the storage layout), `projection` (`equirectangular` for panoramas).
     Populating from EXIF and mapping them at import were separate tasks — existing rows have
     defaults.
+  - **The blurred placeholder** (migration `0068_photos_blurhash.sql`): `blurhash TEXT` — nullable, with a
+    CHECK that forbids the empty string — holds a BlurHash of the photo's rendering (28 bytes for the 4×3
+    grid an ordinary photograph gets, 36 for the 4×4 a square one gets), so a grid can paint a blurred
+    stand-in the moment its rows arrive instead of a page of empty tiles. It sits **on the row** rather than
+    in a side table precisely because it must ride along in every list payload: a placeholder that costs a
+    second request arrives after the image it stands in for. **NULL means "not computed yet"** — a row
+    catalogued before this existed, or one whose original could not be decoded — which is the predicate the
+    backfill lists (partial index `idx_photos_blurhash_pending`) and the reason it is nullable rather than
+    `NOT NULL DEFAULT ''`. It is derived data like a thumbnail: written by the upload pipeline from the same
+    decode as the pHash, refreshed by the `thumbnail` job from the preview it renders (so a saved crop or
+    rotation gets a matching stand-in), backfilled by `POST /process/blurhash`, and never carried in the
+    metadata sidecar — it is regenerable from the original, which is exactly what the sidecar's header
+    comment says about embeddings.
   - **Hidden from the library** (migration `0049_photos_hidden_from_library.sql`):
     `hidden_from_library BOOLEAN NOT NULL DEFAULT false` keeps a photo out of the firehose — the grid
     and its counts, the timeline and year buckets, the map and places, the slideshow, the review game

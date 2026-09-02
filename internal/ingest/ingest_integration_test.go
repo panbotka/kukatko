@@ -176,6 +176,19 @@ func TestIngest_singleCreatesEverything(t *testing.T) {
 		t.Errorf("GetPhash: %v", err)
 	}
 
+	// The blurred placeholder is computed from the same decode as the pHash, so a
+	// fresh upload arrives with one and never waits for the backfill.
+	if photo.Blurhash == "" {
+		t.Error("uploaded photo has no blurhash placeholder")
+	}
+	pending, err := env.store.ListPhotosMissingBlurhash(ctx, 0)
+	if err != nil {
+		t.Fatalf("ListPhotosMissingBlurhash: %v", err)
+	}
+	if len(pending) != 0 {
+		t.Errorf("a freshly uploaded photo is still pending a placeholder: %v", pending)
+	}
+
 	for _, size := range []string{"tile_224", "fit_1280"} {
 		rc, err := env.thumbs.OpenCached(photo.FileHash, size)
 		if err != nil {
@@ -386,4 +399,34 @@ func hasWarning(warnings []ingest.Warning, code string) bool {
 		}
 	}
 	return false
+}
+
+// TestIngest_placeholderDescribesThePhoto verifies the placeholder is derived
+// from the pixels rather than being a constant: two uploads of different
+// pictures must not share a placeholder, or the grid would paint the same blur
+// under every tile.
+func TestIngest_placeholderDescribesThePhoto(t *testing.T) {
+	env := newEnv(t, config.DuplicateConfig{})
+	ctx := t.Context()
+
+	first := env.ingest(ctx, jpegBytes(t, 220, 20, 20, 90), "red.jpg")
+	second := env.ingest(ctx, jpegBytes(t, 20, 20, 220, 90), "blue.jpg")
+	if first.Outcome != ingest.OutcomeCreated || second.Outcome != ingest.OutcomeCreated {
+		t.Fatalf("uploads = %+v, %+v; want both created", first, second)
+	}
+
+	red, err := env.store.GetByUID(ctx, first.PhotoUID)
+	if err != nil {
+		t.Fatalf("GetByUID(red): %v", err)
+	}
+	blue, err := env.store.GetByUID(ctx, second.PhotoUID)
+	if err != nil {
+		t.Fatalf("GetByUID(blue): %v", err)
+	}
+	if red.Blurhash == "" || blue.Blurhash == "" {
+		t.Fatalf("placeholders = %q, %q; want both computed", red.Blurhash, blue.Blurhash)
+	}
+	if red.Blurhash == blue.Blurhash {
+		t.Errorf("a red and a blue photo share the placeholder %q", red.Blurhash)
+	}
 }

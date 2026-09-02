@@ -57,6 +57,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/avatarapi` — all-authenticated `GET /subjects/{uid}/avatar` (JPEG + ETag; "no picture" of any kind is a 404)
 - `internal/backup` — S3 backup (pg_dump + sync of originals + retention) **and** restore
 - `internal/backupapi` — maintainer-only `GET`/`POST /backup`
+- `internal/blurhash` — the blurred placeholder: a photo scaled down and encoded as a BlurHash string, pure Go
 - `internal/bulk` — bulk metadata editing, the whole batch in one transaction
 - `internal/bulkapi` — `POST /photos/bulk`
 - `internal/candidates` — "find a person among untagged photos": per-exemplar kNN over unassigned faces + voting, rejection/negative-exemplar/size filters, action classification; read-only
@@ -148,7 +149,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/system` — aggregation of instance operational state for the admin dashboard
 - `internal/systemapi` — maintainer-only `GET /system/status`
 - `internal/thumb` — thumbnailer (pure-Go default, optional `vips` engine), cache layout
-- `internal/thumbjob` — worker handler `thumbnail` (thumbnail regeneration + pHashes)
+- `internal/thumbjob` — worker handler `thumbnail` (thumbnail regeneration + pHashes + the blur placeholder)
 - `internal/trash` — permanent deletion (purge) of archived photos + scheduled retention
 - `internal/vectors` — embeddings and faces directly in Postgres (`halfvec` + HNSW cosine)
 - `internal/version` — ldflags-injectable `Version`/`Commit`
