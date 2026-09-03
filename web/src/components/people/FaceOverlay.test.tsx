@@ -289,4 +289,17 @@ describe('FaceOverlay', () => {
     expect(screen.getByTestId('face-overlay')).toBeInTheDocument()
     expect(screen.queryAllByRole('button')).toHaveLength(0)
   })
+
+  it('carries the class a host stylesheet stacks it by', () => {
+    // `.kk-face-layer` is the hook `viewer.css` uses to paint the boxes above the
+    // photograph; renaming it here without renaming it there gives back the bug
+    // where the photo covered every box and swallowed its clicks.
+    render(
+      <I18nextProvider i18n={i18n}>
+        <FaceOverlay faces={faces()} selected={null} onSelect={vi.fn()} />
+      </I18nextProvider>,
+    )
+
+    expect(screen.getByTestId('face-overlay')).toHaveClass('kk-face-layer')
+  })
 })

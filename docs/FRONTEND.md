@@ -2164,7 +2164,13 @@ here.
   stacking is stated in `viewer.css` rather than inferred (`.kk-viewer__figure > .kk-viewer__image` z-index 2
   over `--under` z-index 1): both stand-ins are absolutely positioned and would otherwise paint **above** the
   in-flow image they sit under — the image escapes that only while it carries a zoom transform, which it does
-  not with the faces or edit view up.
+  not with the faces or edit view up. The figure **contains** that order (`isolation: isolate`) and the face
+  layer tops it (`.kk-viewer__figure > .kk-face-layer` z-index 3, the class `FaceOverlay` carries): the
+  viewer's own chrome ladder starts at 3 (chrome/nav/dock) and leaves nothing free above the photograph, so
+  numbering the layers inside a contained figure is what keeps the boxes over the photo *and* the chrome over
+  both. Left unstated, the photograph painted over every face box and won their clicks as well — a faces view
+  that drew nothing and answered nothing (0.17.1). Guarded by `styles/viewerStacking.test.ts`, since jsdom
+  computes no paint order.
   **While the photo's own row is still on the wire** the viewer no longer shows a bare spinner when the grid
   handed an address over: it paints that image as the stage's first frame (a `kk-viewer__figure` with a
   decorative `<img>` and a visually-hidden `role="status"` carrying `photo.loading`). Those bytes are already

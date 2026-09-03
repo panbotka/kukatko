@@ -73,6 +73,14 @@
   display: inline-flex;
   max-width: 100%;
   max-height: 100%;
+  /* The figure keeps its layers' stacking to itself. Its children number them
+     among themselves (stand-in, photograph, face boxes) and the numbers must not
+     escape into the viewer, where the chrome ladder starts at 3: without this the
+     photograph's 2 competed directly with the top bar, and the layer drawn over it
+     had no number in that ladder to reach for — there is none free between the
+     photograph and the chrome. Contained, the figure is one box below all chrome
+     and its own layers are ordered freely inside. */
+  isolation: isolate;
   animation: kk-viewer-photo-in var(--kk-duration-base) var(--kk-ease-standard);
 }
 
@@ -128,6 +136,15 @@
 .kk-viewer__figure > .kk-viewer__image {
   position: relative;
   z-index: 2;
+}
+
+/* The face boxes trace what is in the photograph, so they are the one layer that
+   belongs above it — the top of the figure's own order, stated here beside the
+   rest of it rather than left to DOM order. Numbering the photograph and leaving
+   this layer unnumbered puts the photograph over every box and hands it their
+   clicks too: a faces view that draws nothing and answers nothing. */
+.kk-viewer__figure > .kk-face-layer {
+  z-index: 3;
 }
 
 .kk-viewer__figure > .kk-viewer__image--under {

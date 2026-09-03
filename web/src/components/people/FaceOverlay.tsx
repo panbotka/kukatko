@@ -134,7 +134,11 @@ export function FaceOverlay({
       // `!important` would win over it. The layer is rotated only in shape, never
       // by a `rotate()`: the boxes carry the rotation in their coordinates, so
       // their numbers and names stay the right way up.
-      className="position-absolute"
+      // `kk-face-layer` is what a host stylesheet addresses to place the boxes in
+      // its own stacking order — the viewer has to, since its photograph is
+      // numbered (see `viewer.css`). Keep the class even if this layer's own
+      // styling stays inline.
+      className="kk-face-layer position-absolute"
       style={{ ...rotatedFrameStyle(rotation, frameRatio), pointerEvents: 'none' }}
       data-testid="face-overlay"
     >
