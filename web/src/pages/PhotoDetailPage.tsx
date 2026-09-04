@@ -15,6 +15,7 @@ import { RatingStars } from '../components/library/RatingStars'
 import { SimilarPhotos } from '../components/library/SimilarPhotos'
 import { CommentsPanel } from '../components/photo/CommentsPanel'
 import { EditPanel } from '../components/photo/EditPanel'
+import { LibraryActionsMenu } from '../components/photo/LibraryActionsMenu'
 import { LivePhoto } from '../components/photo/LivePhoto'
 import { MetadataPanel } from '../components/photo/MetadataPanel'
 import { OrganizePanel } from '../components/photo/OrganizePanel'
@@ -110,28 +111,6 @@ type SidePanel = 'faces' | 'edit' | null
 type PanelToggle = 'info' | 'faces' | 'edit'
 
 /**
- * The classes of a *flag toggle* — a control over a flag that holds the photo
- * back from the library (hidden from it, or archived into the trash) — for the
- * flag's current value.
- *
- * **The glyph on these two buttons shows STATE, never the action.** That is the
- * decision; please do not flip it back. It used to show the action (a hidden
- * photo got a plain eye meaning "click to show"), which contradicted the
- * `aria-pressed` state right next to it and was unreadable anyway: an eye and a
- * struck-through eye differ by a hairline at 1rem, so the state could only be
- * guessed by someone who already knew the convention. Now everything visual says
- * state — the glyph (a struck eye = hidden; the archive box names the flag
- * itself, as no glyph exists for "not in the trash"), `aria-pressed`, the
- * `active` marking and its `danger` tone — and only the `aria-label`/`title` say
- * what a click will do. The colour is never alone: `active` carries the state
- * for a colour-blind reader and forced colours, and {@link PhotoFlagBadges}
- * repeats it in words beside the title.
- */
-function flagBtnClass(on: boolean): string {
-  return `kk-viewer__btn kk-viewer__btn--icon kk-viewer__btn--flag${on ? ' active' : ''}`
-}
-
-/**
  * The immersive full-bleed photo viewer, and the `/photos/:uid` route itself.
  * Opening a photo drops the whole viewport into a distraction-free viewer: the
  * image is centered and scaled to the largest fit without cropping over a warm
@@ -144,11 +123,27 @@ function flagBtnClass(on: boolean): string {
  * persistent back arrow (Esc / ←) always works and steps back to the originating
  * list at its exact prior scroll position.
  *
+ * **The controls are grouped by what they do, not laid out as one row of equal
+ * glyphs.** Fourteen identical round icons side by side say nothing about which
+ * of them change the library and which only change the view, so they read as a
+ * puzzle rather than a toolbar. There are three kinds and they are kept apart:
+ * the **assessment** of the photograph (the five stars and the three review
+ * marks, one labelled group), the **library operations** (archive and hide —
+ * behind {@link LibraryActionsMenu}, written out as text, because an act that
+ * takes a photograph out of the library must be *read*, not guessed from a
+ * glyph), and the **view toggles** (faces, edits, info). The favorite heart
+ * belongs to none of them: with the info drawer and the ‹/› arrows it is one of
+ * the handful of things done on nearly every photograph, so it stays one click
+ * away, on its own, between the assessment and the library menu.
+ *
  * Where the everyday curation controls sit depends on the reach: with a mouse
- * the top edge costs nothing, so they ride the top action bar; on a phone that
- * corner is the hardest place to hit one-handed on a tall screen, so stars,
- * personal mark, favorite and archive move down into a thumb-reachable dock
- * along the bottom edge and the top bar keeps only the occasional view toggles.
+ * the top edge costs nothing, so the assessment group and the heart ride the top
+ * action bar; on a phone that corner is the hardest place to hit one-handed on a
+ * tall screen, so they move down into a thumb-reachable dock along the bottom
+ * edge, while the top bar keeps the occasional controls — the view toggles and
+ * the library menu. That is the grouping that makes the dock a **single row**:
+ * the two library glyphs left it for the menu, and what remains fits one line of
+ * finger-sized targets even on a 360px screen.
  *
  * All the rich metadata and curation — caption & place (EXIF, date, location with
  * its map), people/faces, albums & labels, technical details, the variants stack,
@@ -193,8 +188,13 @@ export function PhotoDetailPage() {
   // In flight while the archive/restore (trash) mutation runs, so its button is
   // disabled and cannot be double-fired.
   const [archivePending, setArchivePending] = useState(false)
+  // Whether the library-operations overflow menu is open. It is held here, not
+  // inside the menu, because the auto-hiding chrome has to be pinned while it is
+  // up: a menu whose own trigger melts away under the reader's hand cannot be
+  // closed by the control that opened it.
+  const [libraryOpen, setLibraryOpen] = useState(false)
   // In flight while the hide/show (library visibility) mutation runs, so its
-  // button is disabled and cannot be double-fired.
+  // control is disabled and cannot be double-fired.
   const [hidePending, setHidePending] = useState(false)
   const faces = useFaces(uid)
   // How far the on-screen keyboard reaches up the window, so the phone's bottom
@@ -542,7 +542,7 @@ export function PhotoDetailPage() {
   // The chrome (top bar + arrows) melts away after a short idle and returns on any
   // activity — except while the drawer is open, when the actions beside it (and
   // its own toggle) must stay reachable, so it is pinned visible.
-  const chrome = useAutoHideChrome({ paused: panelOpen })
+  const chrome = useAutoHideChrome({ paused: panelOpen || libraryOpen })
 
   // Touch: horizontal swipe pages when zoom is not in play (faces/edit on, where
   // pinch-zoom is disabled so the boxes/preview stay put). A mostly-vertical drag
@@ -926,86 +926,62 @@ export function PhotoDetailPage() {
     setThumbVersion((v) => v + 1)
   }
 
-  // The everyday curation loop: the stars, the personal mark, the favorite heart
-  // and — for an editor — archive/restore. Built ONCE here and mounted in exactly
-  // one of two places, the top action bar or the phone's bottom dock, so the two
-  // layouts cannot drift apart: they are the same element tree driving the same
-  // handlers, not two copies kept in sync by hand. Touch gets the larger glyphs
-  // (the dock's own CSS lifts each button to the 44px finger floor).
-  //
-  // The archive glyph does not move with its state (see the note at the button),
-  // so the sentence that does is composed once and worn twice: as the accessible
-  // name and as the tooltip the mouse gets.
-  const archiveLabel = archived ? t('photo.archive.restore') : t('batch.archive')
-  // The same once-and-twice for the two chrome toggles whose sentence is not a
-  // constant: the faces toggle switches on its own state, the info toggle counts
-  // the conversation behind it.
+  // The two chrome toggles whose sentence is not a constant get it composed once
+  // and worn twice — as the accessible name and as the tooltip the mouse gets:
+  // the faces toggle switches on its own state, the info toggle counts the
+  // conversation behind it.
   const facesToggleLabel = showFaces ? t('faces.hide') : t('faces.toggle')
   const infoToggleLabel =
     commentCount > 0
       ? t('photo.viewer.infoWithComments', { count: commentCount })
       : t('photo.viewer.info')
+  // The everyday curation loop: this reader's opinion of the photograph — the
+  // stars, the three review marks and the favorite heart. Built ONCE here and
+  // mounted in exactly one of two places, the top action bar or the phone's
+  // bottom dock, so the two layouts cannot drift apart: they are the same element
+  // tree driving the same handlers, not two copies kept in sync by hand. Touch
+  // gets the larger glyphs (the dock's own CSS lifts each button to the 44px
+  // finger floor).
+  //
+  // The library operations that used to ride along here — archive and hide — are
+  // not opinions about a photograph but changes to what the library contains, so
+  // they live in `LibraryActionsMenu` under text labels instead. Losing those two
+  // glyphs is also what lets the phone's dock hold a single row.
   const curation = (
     <>
-      <RatingStars
-        rating={rating.rating}
-        onRate={rating.setRating}
-        disabled={rating.pending}
-        size={narrow ? 26 : 22}
-      />
-      {/* The marks travel as one cluster, so where the dock has to wrap it breaks
-          between the stars and them — never leaving the heart stranded alone on a
-          line of its own. */}
-      <span className="kk-viewer__marks">
+      {/* The stars and the marks are one thought — "what is this photograph
+          worth" — so they travel as one named group, and the row's gap tells
+          them apart from the heart beside them. */}
+      <span
+        className="kk-viewer__group kk-viewer__assess"
+        role="group"
+        aria-label={t('photo.viewer.assess')}
+      >
+        <RatingStars
+          className="kk-viewer__stars"
+          rating={rating.rating}
+          onRate={rating.setRating}
+          disabled={rating.pending}
+          size={narrow ? 26 : 22}
+        />
         <FlagControl
           flag={rating.flag}
           onFlag={rating.setFlag}
           disabled={rating.pending}
           size={narrow ? 22 : 18}
         />
-        <FavoriteToggle
-          favorite={favorite.favorite}
-          pending={favorite.pending}
-          onToggle={() => {
-            favorite.toggle()
-          }}
-        />
-        {canWrite && (
-          <button
-            type="button"
-            className={flagBtnClass(archived)}
-            aria-label={archiveLabel}
-            title={archiveLabel}
-            aria-pressed={archived}
-            disabled={archivePending}
-            onClick={() => {
-              void toggleArchive()
-            }}
-          >
-            {/* No glyph exists for "not in the trash", so this one names the flag
-                itself and never moves; the on-state marking says whether it is set. */}
-            <Icon name="archive" />
-          </button>
-        )}
-        {canWrite && (
-          <button
-            type="button"
-            className={flagBtnClass(hidden)}
-            aria-label={hidden ? t('photo.hidden.show') : t('photo.hidden.hide')}
-            // The title spells out what the toggle does and how to get back, so
-            // the one-glyph control is not the only place the rule is written.
-            title={hidden ? t('photo.hidden.showHint') : t('photo.hidden.hideHint')}
-            aria-pressed={hidden}
-            disabled={hidePending}
-            onClick={() => {
-              void toggleHidden()
-            }}
-          >
-            {/* State, not action: a struck-through eye means the photo IS hidden. */}
-            <Icon name={hidden ? 'eye-slash' : 'eye'} />
-          </button>
-        )}
       </span>
+      {/* Favoriting is one of the three things done on nearly every photograph
+          (with the info drawer and the ‹/› arrows), so it is never folded into a
+          menu and never grouped away: one click, always, for every signed-in
+          reader including a viewer. */}
+      <FavoriteToggle
+        favorite={favorite.favorite}
+        pending={favorite.pending}
+        onToggle={() => {
+          favorite.toggle()
+        }}
+      />
     </>
   )
 
@@ -1238,58 +1214,88 @@ export function PhotoDetailPage() {
             )}
           </h1>
           {/* The flags that hold this photo back from the library, in words —
-              the one place the state shows outside the toggle that sets it, and
-              the only one a viewer (who gets no toggles) ever sees. */}
+              the one place the state is readable without opening the library
+              menu, and the only one a viewer (who gets no menu) ever sees. */}
           <PhotoFlagBadges hidden={hidden} archived={archived} />
         </div>
+        {/* Three kinds of control, kept apart rather than lined up as equals:
+            what this reader thinks of the photograph (with the heart beside it),
+            what may be done to the library, and what the screen shows. The gap
+            between the groups is wider than the gap inside one — that spacing IS
+            the grouping, and `role="group"` says the same thing to a reader who
+            never sees it. */}
         <div className="kk-viewer__actions">
           {!narrow && curation}
-          {facesAvailable && (
-            <button
-              type="button"
-              ref={facesToggleRef}
-              className="kk-viewer__btn kk-viewer__btn--icon"
-              aria-pressed={showFaces}
-              aria-label={facesToggleLabel}
-              title={facesToggleLabel}
-              onClick={toggleFaces}
-            >
-              <Icon name="person-bounding-box" />
-            </button>
+          {/* Archive and hide, as words. Editors only: for a viewer there is no
+              menu at all, not an empty one. */}
+          {canWrite && (
+            <LibraryActionsMenu
+              archived={archived}
+              hidden={hidden}
+              archivePending={archivePending}
+              hidePending={hidePending}
+              onToggleArchive={() => {
+                void toggleArchive()
+              }}
+              onToggleHidden={() => {
+                void toggleHidden()
+              }}
+              open={libraryOpen}
+              onOpenChange={setLibraryOpen}
+            />
           )}
-          {canWrite && isStill && (
-            <button
-              type="button"
-              ref={editToggleRef}
-              className="kk-viewer__btn kk-viewer__btn--icon"
-              aria-pressed={showEdit}
-              aria-label={t('photo.edit.title')}
-              title={t('photo.edit.title')}
-              onClick={toggleEdit}
-            >
-              <Icon name="sliders" />
-            </button>
-          )}
-          {/* The info toggle carries the conversation's count. A thread nobody can
-              see from the outside is a thread nobody joins, so the number rides the
-              one control that opens it — and it is in the accessible name too, not
-              only in the little disc, which a screen reader would never read out. */}
-          <button
-            type="button"
-            ref={infoToggleRef}
-            className="kk-viewer__btn kk-viewer__btn--icon kk-viewer__btn--badged"
-            aria-pressed={infoActive}
-            aria-label={infoToggleLabel}
-            title={infoToggleLabel}
-            onClick={togglePanel}
+          <span
+            className="kk-viewer__group kk-viewer__views"
+            role="group"
+            aria-label={t('photo.viewer.views')}
           >
-            <Icon name="info-circle" />
-            {commentCount > 0 && (
-              <span className="kk-viewer__btn-badge" aria-hidden="true">
-                {commentCount > 99 ? '99+' : commentCount}
-              </span>
+            {facesAvailable && (
+              <button
+                type="button"
+                ref={facesToggleRef}
+                className="kk-viewer__btn kk-viewer__btn--icon"
+                aria-pressed={showFaces}
+                aria-label={facesToggleLabel}
+                title={facesToggleLabel}
+                onClick={toggleFaces}
+              >
+                <Icon name="person-bounding-box" />
+              </button>
             )}
-          </button>
+            {canWrite && isStill && (
+              <button
+                type="button"
+                ref={editToggleRef}
+                className="kk-viewer__btn kk-viewer__btn--icon"
+                aria-pressed={showEdit}
+                aria-label={t('photo.edit.title')}
+                title={t('photo.edit.title')}
+                onClick={toggleEdit}
+              >
+                <Icon name="sliders" />
+              </button>
+            )}
+            {/* The info toggle carries the conversation's count. A thread nobody can
+                see from the outside is a thread nobody joins, so the number rides the
+                one control that opens it — and it is in the accessible name too, not
+                only in the little disc, which a screen reader would never read out. */}
+            <button
+              type="button"
+              ref={infoToggleRef}
+              className="kk-viewer__btn kk-viewer__btn--icon kk-viewer__btn--badged"
+              aria-pressed={infoActive}
+              aria-label={infoToggleLabel}
+              title={infoToggleLabel}
+              onClick={togglePanel}
+            >
+              <Icon name="info-circle" />
+              {commentCount > 0 && (
+                <span className="kk-viewer__btn-badge" aria-hidden="true">
+                  {commentCount > 99 ? '99+' : commentCount}
+                </span>
+              )}
+            </button>
+          </span>
         </div>
       </div>
 
@@ -1334,9 +1340,12 @@ export function PhotoDetailPage() {
 
       {/* The phone's curation dock: the everyday actions along the bottom edge,
           where the thumb already rests, instead of the top corner it cannot
-          reach. It fades with the rest of the chrome, so the photo is never
-          permanently boxed in, and stands down while the drawer (which owns the
-          whole screen at this width) is open. */}
+          reach. Since the library operations moved into the top bar's menu it
+          carries only this reader's own opinion — the stars, the marks and the
+          heart — which is what fits it onto ONE row of finger-sized targets. It
+          fades with the rest of the chrome, so the photo is never permanently
+          boxed in, and stands down while the drawer (which owns the whole screen
+          at this width) is open. */}
       {narrow && (
         <div className="kk-viewer__dock" role="group" aria-label={t('photo.viewer.actions')}>
           {curation}

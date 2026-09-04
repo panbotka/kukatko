@@ -1979,7 +1979,11 @@
       "infoWithComments_one": "Info – {{count}} comment",
       "infoWithComments_other": "Info – {{count}} comments",
       "closeInfo": "Close info",
-      "actions": "Photo actions"
+      "actions": "Photo actions",
+      "assess": "Photo assessment",
+      "views": "Photo views",
+      "library": "Library actions",
+      "libraryGroup": "Library"
     },
     "tabs": {
       "info": "Info",

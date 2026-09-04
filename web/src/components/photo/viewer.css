@@ -308,23 +308,39 @@
   font-weight: 600;
 }
 
+/* The bar holds GROUPS, not a row of fourteen equal glyphs: what the reader
+   thinks of the photograph, what may be done to the library, and what the screen
+   shows. The gap between two groups is wider than the gap inside one — that
+   difference is the whole grouping, so the two values must stay apart. */
 .kk-viewer__actions {
   display: flex;
   align-items: center;
-  gap: var(--kk-space-2);
+  gap: var(--kk-space-3);
   flex: 0 0 auto;
   flex-wrap: wrap;
   justify-content: flex-end;
 }
 
-/* The personal mark, the favorite heart and archive form one cluster within the
-   curation loop, spaced like the bar's own items. Grouping them is what makes the
-   phone dock break between the stars and the marks when it has to wrap, instead
-   of stranding whichever control happens to land past the edge. */
-.kk-viewer__marks {
+/* One group of the bar (or of the phone's dock): controls that do the same kind
+   of thing, spaced tighter than the groups are spaced from each other. */
+.kk-viewer__group {
   display: inline-flex;
   align-items: center;
   gap: var(--kk-space-2);
+}
+
+/* A hairline in front of every group but the first. Spacing alone carries the
+   grouping at a glance; this makes it unmissable over a busy photograph, where a
+   12px gap and an 8px gap are not told apart. It rides a pseudo-element inside
+   the group (a flex item of its own), so no separator element has to be rendered
+   conditionally — a group that is not there takes its rule with it, and the
+   viewer's read-only bar cannot end up with a rule leading nowhere. */
+.kk-viewer__actions > * + .kk-viewer__group::before {
+  content: '';
+  align-self: center;
+  width: 1px;
+  height: 1.5rem;
+  background: rgb(255 255 255 / 18%);
 }
 
 /* Round control buttons on the stage (close, prev/next, chrome toggles). Solid
@@ -407,30 +423,6 @@
   border-color: var(--kk-accent);
 }
 
-/* ---- Flag toggles: held back from the library ------------------------ */
-
-/* A *flag* toggle (hidden from the library, archived into the trash) is the one
-   place in the viewer where "on" is not "this view is turned on" but "this photo
-   is held back", so its on-state leaves the azure accent every other toggle uses
-   and takes the theme's `danger` red instead — a variable, never a literal, so
-   the dark theme's own doctoring of `--bs-danger` carries through. The fill is
-   deepened towards black so white glyphs clear AA on it (the accent's on-state
-   does the same); the opaque pill also means the contrast no longer depends on
-   whatever photograph happens to be underneath. Colour is never the only signal:
-   `.active` pairs with the already-present `aria-pressed`, and the badge strip
-   below the title repeats the state in words. */
-.kk-viewer__btn.kk-viewer__btn--flag.active {
-  background: color-mix(in srgb, var(--bs-danger) 85%, #000);
-  border-color: var(--bs-danger);
-  color: #fff;
-}
-
-.kk-viewer__btn.kk-viewer__btn--flag.active:hover {
-  background: var(--bs-danger);
-  border-color: var(--bs-danger);
-  color: #fff;
-}
-
 /* The persistent way OUT: top-left, always reachable (never fades with the
    chrome), so Esc has a visible twin the pointer can always find.
 
@@ -450,6 +442,24 @@
 .kk-viewer__back:hover,
 .kk-viewer__back:focus-visible {
   opacity: 1;
+}
+
+/* ---- Library operations (the overflow menu) --------------------------- */
+
+/* Archive and hide are the only controls in the viewer that change WHAT IS IN
+   the library, and they are the two that a glyph cannot say: no icon exists for
+   "not in the trash", and hidden-versus-shown is an eye against a struck-through
+   eye, a hairline apart at 1rem. So they sit behind this one trigger and are read
+   as sentences instead. The trigger is an ordinary viewer pill; Bootstrap's caret
+   would only add a second glyph to a button that already has one. */
+.kk-viewer__library-toggle.dropdown-toggle::after {
+  display: none;
+}
+
+/* Wide enough to keep "Skrýt z knihovny" and "Vrátit z koše" on one line each —
+   an action that wraps mid-sentence is exactly what this menu exists to avoid. */
+.kk-viewer__library-menu {
+  min-width: 13rem;
 }
 
 /* ---- Prev / next ----------------------------------------------------- */
@@ -480,13 +490,13 @@
 
 /* ---- Curation dock (phone) ------------------------------------------- */
 
-/* On a phone the everyday curation loop — the stars, the personal mark, the
-   favorite heart and archive — moves OFF the top edge, which is the hardest place
-   to reach one-handed on a tall screen, into a strip along the bottom where the
-   thumb already rests. The top bar keeps only the title and the three occasional
-   view toggles (faces / edits / info). PhotoDetailPage mounts this element only
-   below `md` (`useIsNarrowViewport`), so the desktop bar is untouched: with a
-   mouse the top edge costs nothing.
+/* On a phone the everyday curation loop — the stars, the three review marks and
+   the favorite heart — moves OFF the top edge, which is the hardest place to
+   reach one-handed on a tall screen, into a strip along the bottom where the
+   thumb already rests. The top bar keeps the title, the view toggles (faces /
+   edits / info) and the library menu, all of them occasional.
+   PhotoDetailPage mounts this element only below `md` (`useIsNarrowViewport`),
+   so the desktop bar is untouched: with a mouse the top edge costs nothing.
 
    Like the top bar it is chrome, not furniture: it rides the same idle timer and
    fades away with everything else, so the photo owns the screen the moment you
@@ -501,11 +511,14 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  /* Ten finger-sized controls do not fit one 360px row, so the groups wrap onto
-     a second line (stars / marks + heart + archive) instead of overflowing;
-     a wider phone keeps them on one. */
+  /* ONE row. It used to take two, because eleven finger-sized controls do not
+     fit a 360px line — the two library glyphs have since moved into the top
+     bar's menu, and the star scale gives up its width floor below (never its
+     height), which brings what is left inside even the narrowest phone. `wrap`
+     stays as the safety valve for something narrower still (a 320px screen);
+     it is not what the ordinary phone does. */
   flex-wrap: wrap;
-  gap: var(--kk-space-1) var(--kk-space-2);
+  gap: var(--kk-space-1) var(--kk-space-3);
   /* The bar owns the bottom edge, so it carries the home-indicator inset itself
      (real: index.html opts into `viewport-fit=cover`) and the side insets a
      landscape notch adds. */
@@ -543,11 +556,46 @@
 
 /* The stars, the flags and the heart are shared with grid tiles and the desktop
    bar, where a mouse wants them compact — so the dock lifts its own copies (and
-   only them) to the 44px finger floor. They are all `.btn` underneath; the
-   archive control is a viewer pill, which already clears it. */
+   only them) to the 44px finger floor. They are all `.btn` underneath. */
 .kk-viewer__dock .btn {
   min-width: 2.75rem;
   min-height: 2.75rem;
+}
+
+/* The one exception, and the reason the dock is a single row: the star scale
+   keeps the 44px HEIGHT but gives up the 44px width, shrinking towards its
+   glyphs when the line would otherwise break. Nine targets at 44px wide need
+   396px and a phone offers 344; the stars absorb that difference because they
+   are the one control here that is a *scale* — five contiguous targets with no
+   gap between them, where a mis-tap lands on the neighbouring star and the next
+   tap undoes it. The discrete toggles beside them (marks, heart) never shrink:
+   their min-width holds, so the browser has nowhere else to take the space
+   from. */
+.kk-viewer__dock .kk-viewer__group {
+  min-width: 0;
+}
+
+/* The assessment group takes the row's leftover width, and inside it the star
+   scale takes what the marks do not — capped at five full 44px targets, so on a
+   roomy phone the stars ARE the finger floor and the dock simply spans the
+   screen. */
+.kk-viewer__dock .kk-viewer__assess {
+  flex: 1 1 auto;
+}
+
+.kk-viewer__dock .kk-viewer__stars {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 13.75rem;
+}
+
+/* A star never goes below 24px — WCAG 2.2's minimum target — and the dock wraps
+   rather than squeezing past it. Between 24 and 44 it is the one control that
+   yields, because it is the one that is a *scale*: five contiguous targets with
+   no gaps, where a mis-tap lands on a neighbour and the next tap undoes it. */
+.kk-viewer__dock .kk-viewer__stars .btn {
+  flex: 1 1 0;
+  min-width: 1.5rem;
 }
 
 /* ---- Info drawer ----------------------------------------------------- */

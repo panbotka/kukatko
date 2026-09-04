@@ -2067,7 +2067,11 @@
       "infoWithComments_many": "Informace – {{count}} komentáře",
       "infoWithComments_other": "Informace – {{count}} komentářů",
       "closeInfo": "Zavřít informace",
-      "actions": "Akce s fotkou"
+      "actions": "Akce s fotkou",
+      "assess": "Hodnocení fotky",
+      "views": "Zobrazení fotky",
+      "library": "Akce s knihovnou",
+      "libraryGroup": "Knihovna"
     },
     "tabs": {
       "info": "Informace",

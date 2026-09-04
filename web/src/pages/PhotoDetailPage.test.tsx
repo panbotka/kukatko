@@ -288,6 +288,16 @@ async function openInfo(user: ReturnType<typeof userEvent.setup>) {
 }
 
 /**
+ * Opens the library-operations overflow menu (archive / hide). Its items are not
+ * rendered at all while it is shut, which is the point: no glyph, no hidden twin
+ * — the operations are read as text or not offered.
+ */
+async function openLibrary(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: 'Library actions' }))
+  await screen.findByText('Library')
+}
+
+/**
  * Points `window.matchMedia` at a fixed phone/desktop answer for the narrow
  * viewport query alone, so only `useIsNarrowViewport` changes its mind — every
  * other media query (reduced motion, coarse pointer) keeps the shared setup's
@@ -542,83 +552,228 @@ describe('PhotoDetailPage — immersive viewer', () => {
     expect(within(bar).getByRole('button', { name: 'Pick' })).toBeInTheDocument()
     expect(within(bar).getByRole('button', { name: 'Reject' })).toBeInTheDocument()
     expect(within(bar).getByRole('button', { name: 'Add to favorites' })).toBeInTheDocument()
-    expect(within(bar).getByRole('button', { name: 'Archive' })).toBeInTheDocument()
     expect(screen.queryByRole('group', { name: 'Photo actions' })).not.toBeInTheDocument()
   })
 
+  /**
+   * The bar used to be fourteen identical round glyphs in one row, which says
+   * nothing about which of them change the library and which only change the
+   * view. These tests pin the three kinds apart — the assessment of the
+   * photograph, the operations on the library, the toggles of the view — plus the
+   * handful of acts that are never folded into any of them.
+   */
+  describe('the bar is grouped by what its controls do', () => {
+    it('gathers the stars and the review marks into one named assessment group', async () => {
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      const assess = screen.getByRole('group', { name: 'Photo assessment' })
+      expect(within(assess).getByRole('button', { name: 'Rate 1 of 5' })).toBeInTheDocument()
+      expect(within(assess).getByRole('button', { name: 'Rate 5 of 5' })).toBeInTheDocument()
+      expect(within(assess).getByRole('button', { name: 'Look at later' })).toBeInTheDocument()
+      expect(within(assess).getByRole('button', { name: 'Pick' })).toBeInTheDocument()
+      expect(within(assess).getByRole('button', { name: 'Reject' })).toBeInTheDocument()
+      // What the group is NOT: neither the view toggles nor the library
+      // operations belong to an opinion about the photograph.
+      expect(within(assess).queryByRole('button', { name: 'Info' })).not.toBeInTheDocument()
+      expect(
+        within(assess).queryByRole('button', { name: 'Library actions' }),
+      ).not.toBeInTheDocument()
+    })
+
+    it('gathers faces, edits and info into one named group of view toggles', async () => {
+      fetchFacesMock.mockResolvedValue(facesResponse(1))
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      const views = screen.getByRole('group', { name: 'Photo views' })
+      expect(await within(views).findByRole('button', { name: 'Show faces' })).toBeInTheDocument()
+      expect(within(views).getByRole('button', { name: 'Edits' })).toBeInTheDocument()
+      expect(within(views).getByRole('button', { name: 'Info' })).toBeInTheDocument()
+      expect(within(views).queryByRole('button', { name: 'Rate 1 of 5' })).not.toBeInTheDocument()
+    })
+
+    it('keeps favoriting out of every group, one click away', async () => {
+      // Favoriting, opening the info drawer and stepping to the next photograph
+      // are what a reader does on nearly every photo, so none of them is ever
+      // folded into a menu — and the heart belongs to no group: it is not an
+      // assessment of the photograph, it is a shortlist.
+      const user = userEvent.setup()
+      const { container } = renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      const heart = within(actionBar(container)).getByRole('button', { name: 'Add to favorites' })
+      expect(heart.closest('.kk-viewer__group')).toBeNull()
+      expect(screen.getByRole('button', { name: 'Info' })).toBeInTheDocument()
+      expect(await screen.findByRole('link', { name: 'Next photo' })).toBeInTheDocument()
+
+      await user.click(heart)
+      await waitFor(() => {
+        expect(favoritePhotoMock).toHaveBeenCalledWith('b', true)
+      })
+    })
+
+    it('spaces the groups apart more widely than the controls inside one', () => {
+      // jsdom computes no layout, so the grouping's visual half is read off the
+      // stylesheet: if the two gaps were equal there would be no grouping to see,
+      // only a `role` a sighted reader never hears.
+      const css = readCss('src/components/photo/viewer.css')
+      const bar = declarations(ruleBody(css, /\.kk-viewer__actions\s*(?=\{)/, /gap:/) ?? '')
+      const group = declarations(ruleBody(css, /\.kk-viewer__group\s*(?=\{)/) ?? '')
+      expect(bar.get('gap')).toBe('var(--kk-space-3)')
+      expect(group.get('gap')).toBe('var(--kk-space-2)')
+      // And a hairline in front of every group but the first, for the reader who
+      // cannot tell 12px from 8px over a busy photograph.
+      const rule = ruleBody(css, /\.kk-viewer__actions > \* \+ \.kk-viewer__group::before\s*(?=\{)/)
+      expect(declarations(rule ?? '').get('width')).toBe('1px')
+    })
+  })
+
+  /**
+   * Archive and hide are the only two controls that change WHAT IS IN the
+   * library, and they are the two no glyph can say. They live behind one overflow
+   * control and are read as sentences.
+   */
+  describe('library operations behind the overflow menu', () => {
+    it('offers them as words, not as glyphs', async () => {
+      const user = userEvent.setup()
+      const { container } = renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      // Shut, the menu renders nothing at all: no second, hidden copy of the two
+      // controls for a query — or a screen reader — to find.
+      expect(screen.queryByRole('button', { name: 'Archive' })).not.toBeInTheDocument()
+      expect(
+        screen.queryByRole('button', { name: 'Hide from the library' }),
+      ).not.toBeInTheDocument()
+
+      const toggle = within(actionBar(container)).getByRole('button', { name: 'Library actions' })
+      expect(toggle).toHaveAttribute('title', 'Library actions')
+
+      await openLibrary(user)
+      expect(screen.getByRole('button', { name: 'Hide from the library' })).toHaveTextContent(
+        'Hide from the library',
+      )
+      expect(screen.getByRole('button', { name: 'Archive' })).toHaveTextContent('Archive')
+    })
+
+    it('is not offered at all to a viewer', async () => {
+      // An overflow control that opens an empty menu is worse than no control.
+      renderPage(false)
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      expect(screen.queryByRole('button', { name: 'Library actions' })).not.toBeInTheDocument()
+    })
+
+    it('pins the chrome while it is open', async () => {
+      // The trigger is chrome, and chrome fades when the viewer goes idle. A menu
+      // whose own trigger melts away under the reader's hand cannot be closed by
+      // the control that opened it — so the idle timer stands down while it is up.
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+      try {
+        const { container } = renderPage()
+        await screen.findByRole('heading', { name: 'Beach' })
+
+        // The control: shut, the chrome melts away on idle exactly as before.
+        act(() => {
+          vi.advanceTimersByTime(10_000)
+        })
+        expect(viewer(container)).toHaveAttribute('data-chrome', 'hidden')
+
+        await openLibrary(user)
+        act(() => {
+          vi.advanceTimersByTime(10_000)
+        })
+        expect(viewer(container)).toHaveAttribute('data-chrome', 'visible')
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+  })
+
   describe('archive control', () => {
-    it('archives the open photo and swaps the control to Restore', async () => {
+    it('archives the open photo and swaps the item to Restore', async () => {
       const user = userEvent.setup()
       renderPage()
       await screen.findByRole('heading', { name: 'Beach' })
 
-      // An editor sees Archive; clicking it calls the archive service for this
-      // photo and, on success, keeps the user on the page with the control now
-      // offering Restore (the photo is in the trash).
-      // The box glyph does not move with the state, so the tooltip has to — and
-      // it says the same thing as the accessible name, on both sides of the flip.
+      // An editor finds Archive in the library menu; clicking it calls the
+      // archive service for this photo and, on success, keeps the user on the
+      // page with the menu now offering Restore (the photo is in the trash).
+      // The item says the act in words, and the tooltip repeats it.
+      await openLibrary(user)
       expect(screen.getByRole('button', { name: 'Archive' })).toHaveAttribute('title', 'Archive')
 
       await user.click(screen.getByRole('button', { name: 'Archive' }))
       await waitFor(() => {
         expect(archivePhotoMock).toHaveBeenCalledWith('b')
       })
+      await openLibrary(user)
       const restore = await screen.findByRole('button', { name: 'Restore' })
       expect(restore).toHaveAttribute('title', 'Restore')
       expect(screen.queryByRole('button', { name: 'Archive' })).not.toBeInTheDocument()
     })
 
     it('hides the archive control from a viewer', async () => {
-      // Archiving is an editor+ action; a viewer gets the read-only viewer.
+      // Archiving is an editor+ action; a viewer gets the read-only viewer, and
+      // with it no library menu at all.
       renderPage(false)
       await screen.findByRole('heading', { name: 'Beach' })
 
+      expect(screen.queryByRole('button', { name: 'Library actions' })).not.toBeInTheDocument()
       expect(screen.queryByRole('button', { name: 'Archive' })).not.toBeInTheDocument()
       expect(screen.queryByRole('button', { name: 'Restore' })).not.toBeInTheDocument()
     })
 
     it('shows Restore for an already-archived photo and unarchives on click', async () => {
-      // Opened from the Trash page: the photo arrives archived, so the same
-      // control leads with Restore and calls unarchive, swapping back to Archive.
+      // Opened from the Trash page: the photo arrives archived, so the same item
+      // leads with Restore and calls unarchive, swapping back to Archive.
       const user = userEvent.setup()
       fetchPhotoMock.mockResolvedValue(photo({ archived_at: '2026-01-01T00:00:00Z' }))
       renderPage()
       await screen.findByRole('heading', { name: 'Beach' })
 
+      await openLibrary(user)
       expect(screen.queryByRole('button', { name: 'Archive' })).not.toBeInTheDocument()
       await user.click(screen.getByRole('button', { name: 'Restore' }))
       await waitFor(() => {
         expect(unarchivePhotoMock).toHaveBeenCalledWith('b')
       })
+      await openLibrary(user)
       expect(await screen.findByRole('button', { name: 'Archive' })).toBeInTheDocument()
     })
   })
 
   describe('hide-from-library control', () => {
-    it('hides the open photo and swaps the control to Show', async () => {
+    it('hides the open photo and swaps the item to Show', async () => {
       const user = userEvent.setup()
       renderPage()
       await screen.findByRole('heading', { name: 'Beach' })
 
-      // The toggle sits next to archive/favourite, but it is a different act: the
-      // photo is not deleted, so the page stays put and the control simply offers
-      // the way back.
+      // The item sits next to archive, but it is a different act: the photo is
+      // not deleted, so the page stays put and the menu simply offers the way
+      // back.
+      await openLibrary(user)
       await user.click(screen.getByRole('button', { name: 'Hide from the library' }))
       await waitFor(() => {
         expect(hidePhotoMock).toHaveBeenCalledWith('b')
       })
+      await openLibrary(user)
       expect(await screen.findByRole('button', { name: 'Show in the library' })).toBeInTheDocument()
       expect(
         screen.queryByRole('button', { name: 'Hide from the library' }),
       ).not.toBeInTheDocument()
     })
 
-    it('shows the way back in the control title, so the flag can be undone', async () => {
+    it('shows the way back in the item title, so the flag can be undone', async () => {
+      const user = userEvent.setup()
       renderPage()
       await screen.findByRole('heading', { name: 'Beach' })
 
-      // A flag you cannot list is a flag you cannot undo, so the one glyph that
-      // sets it also names the search that finds it again.
+      // A flag you cannot list is a flag you cannot undo, so the item that sets
+      // it also names the search that finds it again.
+      await openLibrary(user)
       expect(screen.getByRole('button', { name: 'Hide from the library' })).toHaveAttribute(
         'title',
         expect.stringContaining('hidden:yes'),
@@ -631,6 +786,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
       renderPage()
       await screen.findByRole('heading', { name: 'Beach' })
 
+      await openLibrary(user)
       expect(
         screen.queryByRole('button', { name: 'Hide from the library' }),
       ).not.toBeInTheDocument()
@@ -638,6 +794,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
       await waitFor(() => {
         expect(unhidePhotoMock).toHaveBeenCalledWith('b')
       })
+      await openLibrary(user)
       expect(
         await screen.findByRole('button', { name: 'Hide from the library' }),
       ).toBeInTheDocument()
@@ -647,6 +804,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
       renderPage(false)
       await screen.findByRole('heading', { name: 'Beach' })
 
+      expect(screen.queryByRole('button', { name: 'Library actions' })).not.toBeInTheDocument()
       expect(
         screen.queryByRole('button', { name: 'Hide from the library' }),
       ).not.toBeInTheDocument()
@@ -663,7 +821,8 @@ describe('PhotoDetailPage — immersive viewer', () => {
    * gets nothing, and that it keeps out of the way of typing and of dialogs.
    */
   describe('the `s` shortcut — hide and unhide', () => {
-    it('hides the open photo and swaps the control to Show', async () => {
+    it('hides the open photo and swaps the menu item to Show', async () => {
+      const user = userEvent.setup()
       renderPage()
       await screen.findByRole('heading', { name: 'Beach' })
 
@@ -671,10 +830,15 @@ describe('PhotoDetailPage — immersive viewer', () => {
       await waitFor(() => {
         expect(hidePhotoMock).toHaveBeenCalledWith('b')
       })
+      // The key and the menu are one state: what the keyboard did shows in the
+      // badge at once, and in the menu's wording the next time it is opened.
+      expect(await screen.findByText('Hidden from the library')).toBeInTheDocument()
+      await openLibrary(user)
       expect(await screen.findByRole('button', { name: 'Show in the library' })).toBeInTheDocument()
     })
 
     it('stays on the photo and brings it back on a second press', async () => {
+      const user = userEvent.setup()
       renderPage()
       await screen.findByRole('heading', { name: 'Beach' })
 
@@ -688,6 +852,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
       await waitFor(() => {
         expect(unhidePhotoMock).toHaveBeenCalledWith('b')
       })
+      await openLibrary(user)
       expect(
         await screen.findByRole('button', { name: 'Hide from the library' }),
       ).toBeInTheDocument()
@@ -744,87 +909,65 @@ describe('PhotoDetailPage — immersive viewer', () => {
 
   /**
    * "Held back from the library" — hidden, or archived into the trash — is a
-   * state the viewer has to SHOW, not just announce. The rule these tests pin:
-   * the glyph never names the action, the on-state marking (`active` plus the
-   * `--flag` danger tone) names the state, and only the label/title name what a
-   * click does. See the comment on the controls in `PhotoDetailPage`.
+   * state the viewer has to SHOW, not just announce. It used to ride two icon
+   * toggles whose glyphs named the state and whose `active` marking tinted it
+   * red; an eye and a struck-through eye read alike at 1rem, and the archive box
+   * names a flag no glyph has. The state is now written twice in words — as the
+   * badge beside the title, which every reader (a viewer included) sees without
+   * opening anything, and as the act the library menu offers, which can only be
+   * "Hide from the library" for a photo that is in it.
    */
   describe('withheld state — hidden from the library, archived', () => {
-    it('marks the hide control as on while the photo is hidden', async () => {
-      // The reported bug: an eye and a struck-through eye read alike at 1rem, so
-      // the state was legible to a screen reader and to nobody else.
+    it('offers the way back for a hidden photo, and names it', async () => {
+      const user = userEvent.setup()
       fetchPhotoMock.mockResolvedValue(photo({ hidden_from_library: true }))
       renderPage()
       await screen.findByRole('heading', { name: 'Beach' })
 
-      expect(screen.getByRole('button', { name: 'Show in the library' })).toHaveClass('active')
+      await openLibrary(user)
+      const on = screen.getByRole('button', { name: 'Show in the library' })
+      expect(on).toHaveAttribute('title', 'Bring the photo back into the library')
+      expect(screen.queryByRole('button', { name: 'Hide from the library' })).toBeNull()
     })
 
-    it('leaves the hide control unmarked while the photo is in the library', async () => {
-      renderPage()
-      await screen.findByRole('heading', { name: 'Beach' })
-
-      expect(screen.getByRole('button', { name: 'Hide from the library' })).not.toHaveClass(
-        'active',
-      )
-    })
-
-    it('takes the marking on when the photo is hidden and off when it comes back', async () => {
+    it('offers the hiding for a photo that is in the library', async () => {
       const user = userEvent.setup()
       renderPage()
       await screen.findByRole('heading', { name: 'Beach' })
 
-      await user.click(screen.getByRole('button', { name: 'Hide from the library' }))
-      expect(await screen.findByRole('button', { name: 'Show in the library' })).toHaveClass(
-        'active',
-      )
-
-      await user.click(screen.getByRole('button', { name: 'Show in the library' }))
-      expect(await screen.findByRole('button', { name: 'Hide from the library' })).not.toHaveClass(
-        'active',
-      )
-    })
-
-    it('keeps the state on aria-pressed and the action in the label and title', async () => {
-      // The visual marking is added to the screen-reader state, never instead of
-      // it — and the wording keeps promising what the click will do.
-      fetchPhotoMock.mockResolvedValue(photo({ hidden_from_library: true }))
-      renderPage()
-      await screen.findByRole('heading', { name: 'Beach' })
-
-      const on = screen.getByRole('button', { name: 'Show in the library' })
-      expect(on).toHaveAttribute('aria-pressed', 'true')
-      expect(on).toHaveAttribute('title', 'Bring the photo back into the library')
-    })
-
-    it('reports the library photo as not pressed, with the hiding wording', async () => {
-      renderPage()
-      await screen.findByRole('heading', { name: 'Beach' })
-
+      await openLibrary(user)
       const off = screen.getByRole('button', { name: 'Hide from the library' })
-      expect(off).toHaveAttribute('aria-pressed', 'false')
       expect(off).toHaveAttribute('title', expect.stringContaining('hidden:yes'))
+      expect(screen.queryByRole('button', { name: 'Show in the library' })).toBeNull()
     })
 
-    it('marks the archive control the same way once the photo is in the trash', async () => {
-      // Two adjacent toggles of the same shape behave the same, or the marking
-      // teaches nothing.
+    it('follows the photo as it is hidden and brought back', async () => {
+      const user = userEvent.setup()
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      await openLibrary(user)
+      await user.click(screen.getByRole('button', { name: 'Hide from the library' }))
+      expect(await screen.findByText('Hidden from the library')).toBeInTheDocument()
+
+      await openLibrary(user)
+      await user.click(screen.getByRole('button', { name: 'Show in the library' }))
+      await waitFor(() => {
+        expect(screen.queryByText('Hidden from the library')).toBeNull()
+      })
+    })
+
+    it('offers Restore once the photo is in the trash', async () => {
+      // Two items of the same kind behave the same way, or the wording teaches
+      // nothing.
+      const user = userEvent.setup()
       fetchPhotoMock.mockResolvedValue(photo({ archived_at: '2026-01-01T00:00:00Z' }))
       renderPage()
       await screen.findByRole('heading', { name: 'Beach' })
 
-      const restore = screen.getByRole('button', { name: 'Restore' })
-      expect(restore).toHaveClass('active')
-      expect(restore).toHaveAttribute('aria-pressed', 'true')
-    })
-
-    it('leaves the archive control unmarked for a photo outside the trash', async () => {
-      renderPage()
-      await screen.findByRole('heading', { name: 'Beach' })
-
-      const archive = screen.getByRole('button', { name: 'Archive' })
-      expect(archive).not.toHaveClass('active')
-      expect(archive).toHaveAttribute('aria-pressed', 'false')
+      await openLibrary(user)
+      expect(screen.getByRole('button', { name: 'Restore' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Archive' })).toBeNull()
     })
 
     it('says "hidden from the library" in words beside the title', async () => {
@@ -872,27 +1015,15 @@ describe('PhotoDetailPage — immersive viewer', () => {
       await screen.findByRole('heading', { name: 'Beach' })
       expect(container.querySelector('.kk-viewer__flags')).toBeNull()
 
+      await openLibrary(user)
       await user.click(screen.getByRole('button', { name: 'Hide from the library' }))
       expect(await screen.findByText('Hidden from the library')).toBeInTheDocument()
 
+      await openLibrary(user)
       await user.click(screen.getByRole('button', { name: 'Show in the library' }))
       await waitFor(() => {
         expect(container.querySelector('.kk-viewer__flags')).toBeNull()
       })
-    })
-
-    /**
-     * jsdom loads no stylesheet, so the tone itself is pinned by reading the one
-     * that ships. The point is that the red comes from the theme's `danger`
-     * token: a literal would drift away from the dark theme's own doctoring.
-     */
-    it('tones the on-state with the danger token rather than a hard-coded red', () => {
-      const css = readCss('src/components/photo/viewer.css')
-      const on = declarations(
-        ruleBody(css, /\.kk-viewer__btn\.kk-viewer__btn--flag\.active\s*(?=\{)/) ?? '',
-      )
-      expect(on.get('background')).toContain('--bs-danger')
-      expect(on.get('border-color')).toContain('--bs-danger')
     })
   })
 
@@ -903,8 +1034,8 @@ describe('PhotoDetailPage — immersive viewer', () => {
 
     it('moves the everyday curation loop out of the top bar into a bottom dock', async () => {
       // The top corner is the hardest place to reach one-handed on a tall phone,
-      // so on a phone the stars, the personal mark, the heart and archive live in
-      // a strip along the bottom edge instead. They are MOVED, not duplicated:
+      // so on a phone the stars, the review marks and the heart live in a strip
+      // along the bottom edge instead. They are MOVED, not duplicated:
       // `getByRole` throws on a second copy, so each of these assertions also
       // pins that the desktop bar did not keep a hidden twin.
       const { container } = renderPage()
@@ -917,7 +1048,9 @@ describe('PhotoDetailPage — immersive viewer', () => {
       expect(within(dock).getByRole('button', { name: 'Pick' })).toBeInTheDocument()
       expect(within(dock).getByRole('button', { name: 'Reject' })).toBeInTheDocument()
       expect(within(dock).getByRole('button', { name: 'Add to favorites' })).toBeInTheDocument()
-      expect(within(dock).getByRole('button', { name: 'Archive' })).toBeInTheDocument()
+      // The very same grouping as the desktop bar's, which is what keeps the two
+      // layouts one design instead of two.
+      expect(within(dock).getByRole('group', { name: 'Photo assessment' })).toBeInTheDocument()
 
       const bar = actionBar(container)
       expect(within(bar).queryByRole('button', { name: 'Rate 1 of 5' })).not.toBeInTheDocument()
@@ -925,7 +1058,26 @@ describe('PhotoDetailPage — immersive viewer', () => {
       expect(
         within(bar).queryByRole('button', { name: 'Add to favorites' }),
       ).not.toBeInTheDocument()
-      expect(within(bar).queryByRole('button', { name: 'Archive' })).not.toBeInTheDocument()
+    })
+
+    it('leaves the library operations in the top bar, as words', async () => {
+      // Archive and hide are occasional, and they are the two that need a
+      // sentence rather than a glyph — so they stay in the bar's overflow menu
+      // rather than taking two of the dock's finger-sized slots. That is what
+      // makes the dock a single row.
+      const user = userEvent.setup()
+      const { container } = renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      const dock = screen.getByRole('group', { name: 'Photo actions' })
+      expect(within(dock).queryByRole('button', { name: 'Library actions' })).toBeNull()
+      expect(
+        within(actionBar(container)).getByRole('button', { name: 'Library actions' }),
+      ).toBeInTheDocument()
+
+      await openLibrary(user)
+      expect(screen.getByRole('button', { name: 'Hide from the library' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Archive' })).toBeInTheDocument()
     })
 
     it('leaves the occasional toggles, the close and the arrows where they were', async () => {
@@ -998,12 +1150,6 @@ describe('PhotoDetailPage — immersive viewer', () => {
       expect(
         await within(dock).findByRole('button', { name: 'Remove from favorites' }),
       ).toBeInTheDocument()
-
-      await user.click(within(dock).getByRole('button', { name: 'Archive' }))
-      await waitFor(() => {
-        expect(archivePhotoMock).toHaveBeenCalledWith('b')
-      })
-      expect(await within(dock).findByRole('button', { name: 'Restore' })).toBeInTheDocument()
     })
 
     it('shares its state with the rating hotkeys and the `f` key', async () => {
@@ -1032,19 +1178,21 @@ describe('PhotoDetailPage — immersive viewer', () => {
       ).toBeInTheDocument()
     })
 
-    it('drops archive from a viewer’s dock but keeps the personal actions', async () => {
-      // Archiving is editor+; rating, marking and favoriting are personal actions
-      // every signed-in user gets — so a viewer's dock is one control shorter, not
-      // absent.
-      renderPage(false)
+    it('gives a viewer the same dock, and no library menu at all', async () => {
+      // Rating, marking and favoriting are personal actions every signed-in user
+      // gets, so a viewer's dock is the whole dock; what a viewer does not get is
+      // the bar's library menu, which would otherwise open on nothing.
+      const { container } = renderPage(false)
       await screen.findByRole('heading', { name: 'Beach' })
 
       const dock = screen.getByRole('group', { name: 'Photo actions' })
       expect(within(dock).getByRole('button', { name: 'Rate 1 of 5' })).toBeInTheDocument()
       expect(within(dock).getByRole('button', { name: 'Look at later' })).toBeInTheDocument()
       expect(within(dock).getByRole('button', { name: 'Add to favorites' })).toBeInTheDocument()
-      expect(within(dock).queryByRole('button', { name: 'Archive' })).not.toBeInTheDocument()
-      expect(within(dock).queryByRole('button', { name: 'Restore' })).not.toBeInTheDocument()
+      expect(
+        within(actionBar(container)).queryByRole('button', { name: 'Library actions' }),
+      ).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Archive' })).not.toBeInTheDocument()
     })
 
     it('does not disturb the info drawer', async () => {
@@ -1094,10 +1242,15 @@ describe('PhotoDetailPage — immersive viewer', () => {
       expect(dock.get('padding')).toContain('env(safe-area-inset-right, 0px)')
     })
 
-    it('wraps rather than overflowing a 360px row', () => {
-      // Ten finger-sized targets do not fit one narrow row; wrapping is what
-      // keeps the last of them on screen instead of past its right edge.
+    it('keeps its groups on one row, and wrapping only as a last resort', () => {
+      // It used to take two rows: eleven finger-sized targets do not fit a 360px
+      // line. The two library glyphs have left for the bar's menu, and the star
+      // scale gives up its width floor (never its height) below — which is what
+      // brings the rest onto one line. `wrap` survives only as the safety valve
+      // for something narrower than any ordinary phone.
       expect(dock.get('flex-wrap')).toBe('wrap')
+      // The groups are told apart by the same wider gap the top bar uses.
+      expect(dock.get('gap')).toBe('var(--kk-space-1) var(--kk-space-3)')
     })
 
     it('fades away with the rest of the chrome', () => {
@@ -1129,6 +1282,34 @@ describe('PhotoDetailPage — immersive viewer', () => {
       const buttons = declarations(ruleBody(css, /\.kk-viewer__dock \.btn\s*(?=\{)/) ?? '')
       expect(buttons.get('min-width')).toBe('2.75rem')
       expect(buttons.get('min-height')).toBe('2.75rem')
+    })
+
+    it('lets the star scale — and only it — give up that width to hold one row', () => {
+      // Nine targets at 44px wide want 396px and a phone offers 344. The stars
+      // absorb the difference because they are the one control here that is a
+      // *scale*: five contiguous targets, where a mis-tap lands on a neighbour
+      // and the next tap undoes it. They stretch back to the full 44px wherever
+      // the row has the room (measured in Chromium: 28px at 360, 35 at 393, 42
+      // at 430) and never go below 24px, WCAG 2.2's minimum target; the discrete
+      // toggles beside them keep both floors, so the browser has nowhere else to
+      // take the space from.
+      const scale = declarations(
+        ruleBody(css, /\.kk-viewer__dock \.kk-viewer__stars\s*(?=\{)/) ?? '',
+      )
+      expect(scale.get('flex')).toBe('1 1 0')
+      expect(scale.get('max-width')).toBe('13.75rem')
+      const stars = declarations(
+        ruleBody(css, /\.kk-viewer__dock \.kk-viewer__stars \.btn\s*(?=\{)/) ?? '',
+      )
+      expect(stars.get('flex')).toBe('1 1 0')
+      expect(stars.get('min-width')).toBe('1.5rem')
+      // Only the width yields: the 44px height floor is the dock's own and is
+      // never overridden here.
+      expect(stars.get('min-height')).toBeUndefined()
+      const group = declarations(
+        ruleBody(css, /\.kk-viewer__dock \.kk-viewer__group\s*(?=\{)/) ?? '',
+      )
+      expect(group.get('min-width')).toBe('0')
     })
   })
 
@@ -1851,6 +2032,32 @@ describe('PhotoDetailPage — immersive viewer', () => {
       expect(video).not.toBeNull()
       expect(video?.getAttribute('src')).toContain('/photos/b/video')
       expect(container.querySelector('img[alt="Clip"]')).toBeNull()
+    })
+
+    it('leaves a video with a view group of one, and the library menu intact', async () => {
+      // Neither the edit panel nor the face boxes apply to a video, so the view
+      // group shrinks to the info toggle alone rather than leaving an empty
+      // group — and the library operations, which apply to any medium, are
+      // unaffected.
+      const user = userEvent.setup()
+      fetchPhotoMock.mockResolvedValue(
+        photo({
+          media_type: 'video',
+          file_name: 'clip.mp4',
+          file_mime: 'video/mp4',
+          title: 'Clip',
+        }),
+      )
+      renderPage()
+      await screen.findByRole('heading', { name: 'Clip' })
+
+      const views = screen.getByRole('group', { name: 'Photo views' })
+      expect(within(views).getByRole('button', { name: 'Info' })).toBeInTheDocument()
+      expect(within(views).queryByRole('button', { name: 'Edits' })).toBeNull()
+      expect(within(views).queryByRole('button', { name: 'Show faces' })).toBeNull()
+
+      await openLibrary(user)
+      expect(screen.getByRole('button', { name: 'Hide from the library' })).toBeInTheDocument()
     })
 
     it('shows a live photo with a hold-to-play motion clip', async () => {
@@ -2838,5 +3045,21 @@ describe('the first frame while the photo is still on the wire', () => {
 
     expect(await screen.findByRole('status')).toBeInTheDocument()
     expect(document.querySelector('img.kk-viewer__image')).toBeNull()
+  })
+
+  it('offers no toolbar at all until the row lands', async () => {
+    // A photo opened straight from a URL has no rating, no flags and no hidden
+    // state to show yet, so the grouped bar is not rendered half-built: the way
+    // back is the only control on screen, and none of the groups — least of all
+    // the library menu, which would act on nothing — is offered early.
+    fetchPhotoMock.mockImplementation(() => new Promise<PhotoDetail>(() => undefined))
+    const { container } = renderPage(true, '/photos/b?sort=oldest')
+
+    expect(await screen.findByRole('status')).toBeInTheDocument()
+    expect(container.querySelector('.kk-viewer__actions')).toBeNull()
+    expect(screen.queryByRole('group', { name: 'Photo assessment' })).toBeNull()
+    expect(screen.queryByRole('group', { name: 'Photo views' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Library actions' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Back to the list' })).toBeInTheDocument()
   })
 })

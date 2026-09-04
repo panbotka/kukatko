@@ -141,6 +141,13 @@ library is tidied by more than one person.
   another: the tile itself expands into the full-screen viewer, and closing eases back out to the
   wall. It rides the browser's own View Transitions API, so a browser without it navigates exactly
   as it did before, and asking your system to reduce motion turns the whole thing off.
+- **The photo's controls are sorted by what they do.** The viewer's bar used to be fourteen equal
+  round icons in a row, with nothing to say which of them changed the library and which only changed
+  the view. They are three groups now: what you think of the photograph (the stars and the three
+  marks), what the screen shows (faces, edits, information), and — behind one `⋯` menu, written out
+  in words rather than left to a glyph — what happens to the library itself (hide it, or send it to
+  the trash). Favouriting, the information panel and stepping to the next photograph stay one click
+  or one tap away, and on a phone the bottom strip is down to a single row.
 - **On a phone the photo takes a pinch.** Pinch to zoom, or double-tap to zoom in on the spot you
   tapped, then drag the photograph around; while it is magnified a sideways drag pans it instead of
   paging away from it, and another double-tap puts it back.

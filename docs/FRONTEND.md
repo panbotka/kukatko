@@ -2124,43 +2124,61 @@ here.
   already reads the state in words beside the title, so a stray press is visible where you stand.
   (`a` is deliberately left unbound: archive is the obvious next claimant. `h` is not free — it is the
   grid's vim-style move-left.)
-  **Both are *flag toggles*, and their glyph shows STATE, never the action** (`flagBtnClass`, a
-  comment on the decision at the call site). They used to show the action — a hidden photo got a
-  plain `eye` meaning "click to show" — which contradicted the `aria-pressed` beside it and was
-  unreadable anyway: an eye and a struck-through eye differ by a hairline at 1rem, so the state was
-  legible to a screen reader and to nobody else (a reported bug). Now the glyph says state
-  (`eye-slash` = hidden, `eye` = in the library; archive keeps the `archive` box in both states —
-  there is no glyph for "not in the trash", and `arrow-counterclockwise` named the action), and
-  so do `aria-pressed`, Bootstrap's `active` marking and its tone; only `aria-label`/`title` say
-  what a click will do. **The on-state is toned `danger`** (`.kk-viewer__btn--flag.active` in
-  `viewer.css`, `color-mix` over `var(--bs-danger)` — the token, never a literal, so the dark
-  theme's own doctoring carries through; deepened towards black so the white glyph clears AA on an
-  opaque pill, whatever photograph is underneath) — the one place in the viewer where "on" means
-  "this photo is held back", not "this view is turned on", which keeps the azure accent. Colour is
-  never alone: `active` carries the state where colour is lost (colour blindness, forced colours),
-  and **`PhotoFlagBadges`** repeats it in words under the title — a `danger` pill per flag
-  (`photo.archive.badge` „V koši", `photo.hidden.badge` „Skrytá z knihovny", `.kk-viewer__flags`),
-  nothing for an ordinary photo. That badge is the only place the state shows for a **viewer**, who
-  gets no toggles at all. Elsewhere — the album and label galleries, which raise the filter and do
-  list hidden photos — nothing marks them yet; that is left for a later task, as marking a tile is a
-  grid concern, not this control's.
-  **Where that loop sits depends on the reach.** With a mouse it rides the top bar; **below `md`
-  (`useIsNarrowViewport`) it moves into a bottom dock** (`.kk-viewer__dock`, `role="group"` /
+  **Both live behind one overflow control, as text** — `LibraryActionsMenu` (`components/photo/`,
+  own test), a `⋯` `Dropdown` in the top bar under the heading „Knihovna" whose items read
+  „Skrýt z knihovny" / „Vrátit do knihovny" and „Archivovat" / „Vrátit z koše". Its **open state is
+  lifted to `PhotoDetailPage`**, which pins the auto-hiding chrome while it is up (`paused:
+  panelOpen || libraryOpen`): a menu whose own trigger melts away under the reader's hand cannot be
+  closed by the control that opened it. Shut, it renders nothing at all — no hidden twin of either
+  operation for a query or a screen reader to find — and for a **viewer** the trigger is not
+  rendered either, since an overflow that opens an empty menu is worse than none.
+  They used to be two icon toggles among twelve others, and no glyph can say
+  either of them: an eye and a struck-through eye differ by a hairline at 1rem
+  (a reported bug — the state was legible to a screen reader and to nobody else), and there is no
+  glyph at all for "not in the trash", so the archive box named the flag rather than the act. **The
+  item's wording carries the state**, because it names the act available *now*: „Skrýt z knihovny"
+  can only be offered to a photo that is in it. **`PhotoFlagBadges`** says the same thing without
+  opening anything — a `danger` pill per flag under the title (`photo.archive.badge` „V koši",
+  `photo.hidden.badge` „Skrytá z knihovny", `.kk-viewer__flags`), nothing for an ordinary photo,
+  and the only place a **viewer** (who gets no menu at all) ever reads it. Elsewhere — the album and
+  label galleries, which raise the filter and do list hidden photos — nothing marks them yet; that
+  is left for a later task, as marking a tile is a grid concern, not this control's.
+  **The bar is GROUPED by what its controls do** — it used to be fourteen equal round glyphs in one
+  row (five stars, three review marks, favourite, archive, hide, faces, edits, info), which says
+  nothing about which of them change the library and which only change the view. There are three
+  kinds and each is a `role="group"` with a name: the **assessment** (`photo.viewer.assess`) =
+  `RatingStars` + `FlagControl`, the **library operations** = `LibraryActionsMenu`, and the **view
+  toggles** (`photo.viewer.views`) = faces / edits / info. The **favourite heart belongs to none of
+  them**: with the info drawer and the ‹/› arrows it is one of the handful of acts performed on
+  nearly every photograph, so it is never folded into a menu and never grouped away. Visually the
+  grouping is the spacing — `.kk-viewer__actions` gaps its children by `--kk-space-3` while
+  `.kk-viewer__group` gaps its own by `--kk-space-2` — plus a hairline before every group but the
+  first (`.kk-viewer__actions > * + .kk-viewer__group::before`, a pseudo-element so a group that is
+  not rendered takes its rule with it: a viewer's bar cannot end up with a rule leading nowhere).
+  **Where the everyday loop sits depends on the reach.** With a mouse it rides the top bar; **below
+  `md` (`useIsNarrowViewport`) it moves into a bottom dock** (`.kk-viewer__dock`, `role="group"` /
   `photo.viewer.actions`) along the edge the thumb already rests on — the top-right corner is the
-  hardest place to hit one-handed on a tall phone, and rating/flagging/favoriting is the everyday
-  loop. The top bar then keeps only the title and the three occasional view toggles (faces / edits /
-  info); the persistent ✕ and the ‹/› arrows are untouched (already reachable). The controls are
-  **one element tree mounted in one of two places**, never two copies — the decision is made in JS,
-  not by a pair of `d-*-none` rules, so nothing renders a hidden twin of every star for assistive
-  tech (or a query) to find, and the two layouts cannot drift apart. The dock **fades with the rest
-  of the chrome** (same idle timer) so the photo is never permanently boxed in, **stands down while
-  the drawer is open** (which owns the whole screen at this width), carries
-  `env(safe-area-inset-bottom)` itself, frosts the photo behind it, and lifts the shared (mouse-sized)
-  stars/flags/heart to the **44px finger floor**. Ten finger-sized targets do not fit a 360px row, so
-  it **wraps** — the flag+heart+archive cluster is grouped (`.kk-viewer__marks`) so the break falls
-  between the stars and the marks rather than stranding a lone control. `PhotoDetailPage.test.tsx`
-  guards both layouts (DOM) plus the dock's placement/fade/floor by reading `viewer.css` (jsdom
-  evaluates no media query and computes no layout).
+  hardest place to hit one-handed on a tall phone, and rating/marking/favoriting is the everyday
+  loop. The top bar then keeps the title and the *occasional* controls: the view toggles and the
+  library menu; the persistent ✕ and the ‹/› arrows are untouched (already reachable). The controls
+  are **one element tree mounted in one of two places**, never two copies — the decision is made in
+  JS, not by a pair of `d-*-none` rules, so nothing renders a hidden twin of every star for
+  assistive tech (or a query) to find, and the two layouts cannot drift apart. The dock **fades with
+  the rest of the chrome** (same idle timer) so the photo is never permanently boxed in, **stands
+  down while the drawer is open** (which owns the whole screen at this width), carries
+  `env(safe-area-inset-bottom)` itself, frosts the photo behind it, and lifts the shared
+  (mouse-sized) marks/heart to the **44px finger floor**. **It is ONE row.** It used to be two —
+  eleven finger-sized targets do not fit a 360px line — and the two library glyphs leaving for the
+  menu is half of what fixed it; the other half is that the **star scale flexes**: the assessment
+  group takes the leftover width and the stars take what the marks do not, capped at five full 44px
+  targets (`flex: 1 1 0`, `max-width: 13.75rem`) and floored at **24px**, WCAG 2.2's minimum. The
+  stars are the one control here that may yield, because they are a *scale*: five contiguous targets
+  with no gaps, where a mis-tap lands on a neighbour and the next tap undoes it. Measured in
+  Chromium: 28px stars at 360, 35 at 393, 42 at 430 — one row throughout; `flex-wrap` survives only
+  as the safety valve for a 320px screen, where the dock does break in two.
+  `PhotoDetailPage.test.tsx` guards both layouts (DOM) plus the dock's placement/fade/floor and the
+  grouping's two gaps by reading `viewer.css` (jsdom evaluates no media query and computes no
+  layout).
   **The viewer carries
   exactly ONE image of the photo** — faces are a **toggleable overlay** over it (`FaceOverlay` over
   `useFaces`), never a second copy of the shot, and even the **Úpravy** panel edits this one shot.
