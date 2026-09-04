@@ -538,6 +538,21 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   **404**, which the player reads as "no preview" and nothing worse. The sprite is **cache-only derived media**
   (never published to the object store), so this route is always where the bytes come from — the client
   builds the address rather than reading it off a payload.
+  **One face as its own rendition** (`internal/photoapi/facecrop.go`, the `FaceCrops` renderer =
+  `avatar.Renderer`, **nil → 503**): `GET /photos/{uid}/face?box=x,y,w,h` (session/`?t=` token, the same guard
+  as every other photo image) **streams a small square JPEG** of the one face the normalised box names —
+  `Cache-Control: private, max-age=31536000, immutable`, the renderer's `ETag`, `304`. The box is four
+  comma-separated numbers in the photo's **display** space (where a marker's box lives), and it may hang over
+  an edge: the renderer slides it back inside rather than clipping. A box that is not four finite numbers, has
+  no positive size, or lies wholly outside the frame → **400**; an unknown photo → **404**. It exists because
+  showing a face used to mean downloading a photograph — the outlier section of one person's page fetched 290
+  `fit_1280` previews (1280×960 each) so the reader could see 290 windows of 96 px; a crop is some 15 kB. The
+  crop is cut by the **same renderer as the subject avatar** (`internal/avatar`): padded 30 %, squared in pixel
+  space, cut from the smallest `fit_*` rung that still puts 320 px across it, and **never upscaled** — a face
+  too small for that arrives at the size the pixels allow rather than blown up. Unlike the avatar, whose URL
+  names a mutable *subject*, this one names a photo and an exact box, so it caches like a thumbnail. It is
+  **cache-only derived media** (never published to the object store), so it always streams: there is nothing to
+  redirect to, and 15 kB through the application beats a megapixel around it.
   **Bulk ZIP download** (`internal/photoapi/zip.go`): `POST /photos/download-zip`
   (session/`?t=` token — **the same authorization as a single download**, whoever may download one may
   download more) **streams a ZIP of originals** straight to the response (`archive/zip`, `Store` method —

@@ -2,7 +2,6 @@ import { useState } from 'react'
 import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
 
-import { type Frame, padBbox, squareCrop } from '../../lib/faceGeometry'
 import { hasEmbedding, isNamed } from '../../lib/faceState'
 import { type FaceView, type SubjectCount, type Suggestion } from '../../services/people'
 import { Icon } from '../Icon'
@@ -21,26 +20,12 @@ export type SubjectChoice = Pick<Suggestion, 'subject_uid' | 'subject_name'>
  */
 const PANEL_FACE_SIZE = 96
 
-/**
- * How much context the panel's crop keeps around the face box — the review
- * card's 30 %. A crop cut tight to the detector's rectangle is a mask, not a
- * person; the padding gives back the hair and the chin that make somebody
- * recognisable.
- */
-const PANEL_FACE_PADDING = 0.3
-
 /** Props for {@link FaceAssignPanel}. */
 export interface FaceAssignPanelProps {
   /** The face being named. */
   face: FaceView
-  /** The photo the face is on — the crop is cut from its thumbnail. */
+  /** The photo the face is on — the crop is cut from it server-side. */
   photoUid: string
-  /**
-   * The photo's display frame (after EXIF orientation), or null while it is still
-   * unknown. Without it the crop is left out rather than guessed: a crop squared
-   * against the wrong frame shows a stretched stranger.
-   */
-  frame: Frame | null
   /** Every subject in the library, for the typeahead. */
   subjects: SubjectCount[]
   /** True while the subject list is still loading (the typeahead waits for it). */
@@ -82,14 +67,13 @@ function confidencePct(confidence: number): string {
  * **The panel leads with an enlarged crop of the face it is naming.** The
  * marker on the photograph is only as big as the face, and on a crowd that is a
  * handful of pixels — the highlight says *which* face, this says *who*. It costs
- * no extra download: it is a region of the same thumbnail the page already has
- * (`FaceCrop`), and it is cut square in pixel space (`squareCrop`) so nobody is
- * shown a stretched version of themselves.
+ * a few kilobytes: the crop is its own small square rendition, cut server-side
+ * (`FaceCrop`) and squared in pixel space, so nobody is shown a stretched version
+ * of themselves and nobody downloads a photograph to see one face.
  */
 export function FaceAssignPanel({
   face,
   photoUid,
-  frame,
   subjects,
   subjectsLoading = false,
   busy,
@@ -125,16 +109,13 @@ export function FaceAssignPanel({
       }}
     >
       <div className="d-flex align-items-start gap-3 mb-2">
-        {frame !== null && (
-          <FaceCrop
-            photoUid={photoUid}
-            crop={squareCrop(padBbox(face.bbox, PANEL_FACE_PADDING), frame)}
-            frame={frame}
-            label={t('faces.panel.crop')}
-            size={PANEL_FACE_SIZE}
-            className="rounded flex-shrink-0"
-          />
-        )}
+        <FaceCrop
+          photoUid={photoUid}
+          bbox={face.bbox}
+          label={t('faces.panel.crop')}
+          size={PANEL_FACE_SIZE}
+          className="rounded flex-shrink-0"
+        />
         <div className="d-flex justify-content-between align-items-start flex-grow-1 kk-min-w-0">
           <strong>
             {assigned

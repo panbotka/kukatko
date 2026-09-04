@@ -986,6 +986,18 @@ to `## Package map` in `CLAUDE.md`.
   (idempotent clear via `ClearRating` → 204); the `RatingStore` interface (satisfied by `organize.Store`,
   `SetRating`/`SetFlag`/`ClearRating`/`RatingsAmong`) is nil-safe (not wired → rating 0 / flag `none`,
   rating endpoints 503);
+  **one face as its own rendition** (`facecrop.go`): `GET /photos/{uid}/face?box=x,y,w,h` (`RequireDownload`,
+  the same guard as a thumbnail, so an `<img>` works from a cookie or a `?t=` token) streams the small square
+  JPEG of that one face through the `FaceCropRenderer` interface (satisfied by `*avatar.Renderer` — the very
+  renderer the subject avatar is cut by, so the padding/squaring/source-rung geometry exists once, nil-safe →
+  503). `parseFaceBox` takes four comma-separated numbers in the photo's **display** space, rejecting anything
+  non-finite, of no size, or lying wholly outside the frame (→ 400) while letting a box that merely *overhangs*
+  an edge through — the renderer slides it back inside rather than clipping, and that is the geometry to keep.
+  404 for an unknown photo, logged 500 for a render failure. `private, max-age=31536000, immutable` + the
+  renderer's ETag: unlike the avatar's, this URL names a photo and an exact box, so what it answers is as fixed
+  as a thumbnail's. It always streams (the rendition is cache-only, never in the object store) and never
+  redirects. It exists because a face shown as a small square used to cost a photograph: the outlier section of
+  one person's page fetched 290 `fit_1280` previews to paint 290 tiles of 96 px;
   **thumbnail regeneration** (`thumbnail.go`): `POST /photos/{uid}/regenerate-thumbnail` (editor/admin via
   `RequireWrite`, the `ThumbnailRegenerator` interface satisfied by `*thumbjob.Service`, nil-safe → 503) synchronously
   overwrites the thumbnails + pHash via `ForceRegenerate` and returns `{status,sizes}` (200), 404 missing photo,
@@ -2310,7 +2322,10 @@ to `## Package map` in `CLAUDE.md`.
   `ErrSubjectNotFound`→404/`ErrInvalidType`+`ErrMergeIntoSelf`→400; mounted by the eighth `server.WithAPI`
   (`buildPeopleAPI` in `cmd/kukatko/people.go`)),
   `internal/avatar/`
-  (the **subject avatar**: the small square picture the people index draws, cut server-side. A tile is a
+  (the **small square picture of a face**, cut server-side: the subject avatar the people index draws
+  (`internal/avatarapi`) and, by the same renderer, any single face a page shows as a square
+  (`GET /photos/{uid}/face`, `internal/photoapi/facecrop.go`) — it takes a photo and a plain box and knows
+  nothing about subjects. A tile is a
   ~150 px square but a face box spans a few per cent of its photo, so cropping one in the browser meant
   fetching a whole-frame preview per tile — measured on the real library, **125 Mpx of image for 72 tiles**.
   `Renderer` = `New(source,cacheDir)` + `Open(ctx,photo,face) (io.ReadCloser, etag, error)`: a `nil` face is a

@@ -16,15 +16,16 @@ import {
 import { EnlargeButton } from '../review/EnlargeButton'
 import { ReviewLightbox } from '../review/ReviewLightbox'
 
-import { FaceThumb } from './FaceThumb'
+import { FaceCrop } from './FaceCrop'
 
 import './clusters.css'
 
 /**
- * The size the overlay shows a clustered face at: `fit_*` (the whole frame),
- * never the square `tile_*` the strip's crops are cut from — a centre-cropped
- * square is precisely what „is this the same person?" cannot be answered from,
- * and the face rectangle is placed in coordinates of the full photo.
+ * The size the overlay shows a clustered face at: `fit_*`, the whole frame. The
+ * strip below it shows each face as its own small square crop, and a square is
+ * precisely what „is this the same person?" cannot be answered from — the
+ * overlay is where the photograph around the face comes back, and the face
+ * rectangle is placed in coordinates of that full frame.
  */
 const CLUSTER_LIGHTBOX_SIZE = 'fit_1280'
 
@@ -88,11 +89,12 @@ export function ClusterCard({ cluster, busy, onAssign, onRemoveFace }: ClusterCa
             }}
             className="d-inline-block w-auto"
           >
-            <FaceThumb
+            <FaceCrop
               photoUid={cluster.representative.photo_uid}
               bbox={cluster.representative.bbox}
               label={t('clusters.representative')}
               size={72}
+              className="rounded"
             />
           </EnlargeButton>
           <Badge bg="secondary">{t('clusters.size', { count: cluster.size })}</Badge>
@@ -108,11 +110,12 @@ export function ClusterCard({ cluster, busy, onAssign, onRemoveFace }: ClusterCa
                 }}
                 className="d-inline-block w-auto"
               >
-                <FaceThumb
+                <FaceCrop
                   photoUid={face.photo_uid}
                   bbox={face.bbox}
                   label={t('clusters.sample')}
                   size={48}
+                  className="rounded"
                 />
               </EnlargeButton>
               {/* Geometry lives in `clusters.css`, not inline: on a coarse pointer the

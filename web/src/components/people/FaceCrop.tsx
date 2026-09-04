@@ -1,18 +1,14 @@
-import { cropImageStyle, type Frame } from '../../lib/faceGeometry'
-import { DEFAULT_TARGET_PX, faceSourceSize } from '../../lib/faceSource'
+import { useState } from 'react'
 
-import { type Bbox } from '../../services/people'
-import { thumbUrl } from '../../services/photos'
+import { type Bbox, faceCropUrl } from '../../services/people'
 import { FadeInImage } from '../FadeInImage'
 
 /** Props for {@link FaceCrop}. */
 export interface FaceCropProps {
   /** The photo the face is on. */
   photoUid: string
-  /** The crop region, normalised against the photo's *display* frame. */
-  crop: Bbox
-  /** The photo's display frame, i.e. after EXIF orientation. */
-  frame: Frame
+  /** The face's normalised `[x, y, w, h]` box, in the photo's display space. */
+  bbox: Bbox
   /**
    * Accessible label — who or what this is a picture of. Pass an empty string
    * where the crop sits beside a name that already says it: a second announcement
@@ -21,9 +17,7 @@ export interface FaceCropProps {
   label: string
   /**
    * Fixed width in CSS pixels. Omit it to let the crop fill its container (pair
-   * with `w-100 h-100`), which is what the responsive people grid does. It also
-   * sets how sharp the crop needs to be: a 24px chip does not need the thumbnail
-   * a 150px tile does.
+   * with `w-100 h-100`), which is what a responsive grid does.
    */
   size?: number
   /** Extra class names for the crop's container. */
@@ -33,45 +27,47 @@ export interface FaceCropProps {
 /**
  * A face cropped out of a photo, filling whatever box its parent gives it.
  *
- * There is no face-thumbnail endpoint, so the crop is done in the browser: the
- * photo's cached full-frame thumbnail is dropped into an `overflow: hidden`
- * container, scaled and offset (in percentages, so it works at any rendered size)
- * until exactly the crop region shows. Nothing is stretched — the container's
- * `aspect-ratio` is set from the crop's true pixel proportions, so a square crop
- * in a square tile is a square, and callers pass a crop that is already square in
- * pixels (see `squareCrop`).
+ * The crop is cut **server-side** and fetched as its own small square rendition
+ * (`faceCropUrl` → `GET /photos/{uid}/face?box=…`), of some 15 kB. It used to be
+ * done in the page: a whole-frame preview was dropped into an `overflow: hidden`
+ * box and scaled until only the face showed, which meant downloading a
+ * photograph to paint a thumbnail. Measured on one person's page, the outlier
+ * section fetched 290 `fit_1280` previews — 1280 × 960 pixels each — so the
+ * reader could see 290 windows of 96 px. Now the browser receives the window.
  *
- * Which thumbnail the crop is cut from is decided per face by `lib/faceSource`,
- * from how big the face is in its frame and what a tile is worth spending — a
- * grid of little squares must not each pull the largest preview there is. Until
- * the source has decoded, the box shows a shimmering placeholder rather than an
- * empty dark well, so a page filling in reads as loading rather than as broken.
+ * The geometry is the renderer's: it pads the box for context, squares it in
+ * pixel space and slides it back inside the frame rather than clipping, so the
+ * component needs neither the padding nor the photo's dimensions and every face
+ * in the app is cropped the same way. That the answer is square is why the box
+ * here is one too.
  *
- * Prefer this over `FaceThumb`, which crops a centre-cropped `tile_*` square as
- * though it were the whole frame and scales its axes independently. This one
- * needs the frame's dimensions to be correct; `FaceThumb` remains for the cluster
- * previews, whose API payload does not carry them.
+ * The image loads lazily ({@link FadeInImage}'s default), which is what lets a
+ * section of hundreds of faces request only the ones the reader has reached. A
+ * rendition that cannot be produced — a photograph with no usable preview, a box
+ * naming nothing — leaves the caller's empty well rather than the browser's
+ * broken-image glyph.
  */
-export function FaceCrop({ photoUid, crop, frame, label, size, className }: FaceCropProps) {
-  const [, , cropW, cropH] = crop
-  // The crop's real proportions: the same normalised width is more pixels on a
-  // wide frame than on a tall one, so the frame decides the box's shape.
-  const ratio = cropH > 0 && frame.height > 0 ? (cropW * frame.width) / (cropH * frame.height) : 1
-  // Doubled for a 2x display: a crop that is exactly its CSS size is soft there.
-  const targetPx = size !== undefined ? size * 2 : DEFAULT_TARGET_PX
+export function FaceCrop({ photoUid, bbox, label, size, className }: FaceCropProps) {
+  const [failed, setFailed] = useState(false)
 
   return (
     <div
       className={`position-relative overflow-hidden${className !== undefined ? ` ${className}` : ''}`}
-      style={{ aspectRatio: `${ratio}`, ...(size !== undefined && { width: `${size}px` }) }}
+      style={{ aspectRatio: '1', ...(size !== undefined && { width: `${size}px` }) }}
     >
-      <FadeInImage
-        src={thumbUrl(photoUid, faceSourceSize(crop, frame, targetPx))}
-        alt={label}
-        aria-hidden={label === '' || undefined}
-        skeleton
-        style={cropImageStyle(crop)}
-      />
+      {!failed && (
+        <FadeInImage
+          src={faceCropUrl(photoUid, bbox)}
+          alt={label}
+          aria-hidden={label === '' || undefined}
+          skeleton
+          className="w-100 h-100"
+          style={{ objectFit: 'cover' }}
+          onError={() => {
+            setFailed(true)
+          }}
+        />
+      )}
     </div>
   )
 }

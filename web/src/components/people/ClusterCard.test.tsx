@@ -116,7 +116,7 @@ describe('ClusterCard', () => {
     // control below the face instead of on top of it.
     const sample = button.parentElement
     expect(sample).toHaveClass('kk-cluster-sample')
-    expect(sample?.querySelector('[role="img"]')).toHaveAttribute('aria-label', 'Sample face')
+    expect(sample?.querySelector('img')).toHaveAttribute('alt', 'Sample face')
   })
 })
 

@@ -7,11 +7,9 @@ import { useTranslation } from 'react-i18next'
 
 import { useSubjects } from '../../hooks/useSubjects'
 import { type UseFacesResult } from '../../hooks/useFaces'
-import { padBbox, squareCrop } from '../../lib/faceGeometry'
 import { type FaceState, faceState, hasEmbedding } from '../../lib/faceState'
 import { approximateAge } from '../../lib/lifeYears'
 import { type FaceView } from '../../services/people'
-import { ENTITY_STYLE } from '../entityStyle'
 import { Icon } from '../Icon'
 import { FaceAssignPanel } from './FaceAssignPanel'
 import { FaceCrop } from './FaceCrop'
@@ -24,16 +22,9 @@ import { FaceCrop } from './FaceCrop'
  */
 const ROW_FACE_SIZE = 44
 
-/**
- * How much context a row's crop keeps around the face box. Between the chip's
- * 15 % and the review card's 30 %: at 44px a little hair and chin is what turns a
- * crop into a person, and the row has the width to spend on it.
- */
-const ROW_FACE_PADDING = 0.25
-
 /** Props for {@link FacesPanel}. */
 export interface FacesPanelProps {
-  /** The photo the faces are on — the row crops are cut from its thumbnail. */
+  /** The photo the faces are on — the row crops are cut from it server-side. */
   photoUid: string
   /** The faces state machine, shared with the overlay drawn on the photo. */
   faces: UseFacesResult
@@ -110,7 +101,6 @@ export function FacesPanel({
   const { subjects, loading: subjectsLoading } = useSubjects()
 
   const selected = faces.selected
-  const frame = faces.frame
   const listRef = useRef<HTMLDivElement>(null)
 
   // Birth year by subject uid, so a row can date the face it shows without a
@@ -136,28 +126,18 @@ export function FacesPanel({
     return approximateAge(takenAt, birthYear)
   }
 
-  /**
-   * The row's leading picture: a crop of the actual face, or the generic person
-   * icon while the frame is unknown (only ever during loading) — the slot is
-   * always filled, so the list does not jump as the frame arrives.
-   */
-  const faceGlyph = (face: FaceView) => {
-    if (frame === null) {
-      return <Icon name={ENTITY_STYLE.person.icon} />
-    }
-    return (
-      <FaceCrop
-        photoUid={photoUid}
-        crop={squareCrop(padBbox(face.bbox, ROW_FACE_PADDING), frame)}
-        frame={frame}
-        // The row's own label already says whose face this is; a second
-        // announcement of the same name is noise.
-        label=""
-        size={ROW_FACE_SIZE}
-        className="rounded-circle flex-shrink-0"
-      />
-    )
-  }
+  /** The row's leading picture: a crop of the face the row is about. */
+  const faceGlyph = (face: FaceView) => (
+    <FaceCrop
+      photoUid={photoUid}
+      bbox={face.bbox}
+      // The row's own label already says whose face this is; a second
+      // announcement of the same name is noise.
+      label=""
+      size={ROW_FACE_SIZE}
+      className="rounded-circle flex-shrink-0"
+    />
+  )
 
   // Tapping a box on the photo selects a face from the other side of the pair,
   // and on a phone this list scrolls (and lives in a drawer below the photo) —
@@ -320,7 +300,6 @@ export function FacesPanel({
                     key={face.face_index}
                     face={face}
                     photoUid={photoUid}
-                    frame={frame}
                     subjects={subjects}
                     subjectsLoading={subjectsLoading}
                     busy={faces.busy}

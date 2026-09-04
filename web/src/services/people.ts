@@ -197,6 +197,38 @@ export function subjectAvatarUrl(uid: string): string {
   return `${API_BASE}/subjects/${encodeURIComponent(uid)}/avatar`
 }
 
+/**
+ * How many decimals of a normalised box travel in a face-crop URL.
+ *
+ * It matches the precision the backend's cache key is a digest of, so two
+ * requests for the same face are one cache entry there and one entry in the
+ * browser's cache — and rounding here rather than letting floating-point noise
+ * through is what keeps the URL stable across renders.
+ */
+const FACE_BOX_PRECISION = 4
+
+/**
+ * The address of one detected face as a small square JPEG, cut server-side from
+ * the given normalised `[x, y, w, h]` box (the photo's *display* space, which is
+ * where every marker box lives).
+ *
+ * It is the per-face twin of {@link subjectAvatarUrl} and shares its renderer, so
+ * the padding, the squaring and the choice of source preview happen once and in
+ * one place. Use it wherever a face is shown as a small square: cropping one in
+ * the page means downloading the entire photograph — measured on a person's
+ * page, 290 `fit_1280` previews to paint 290 tiles of 96 px — where this URL
+ * answers with the crop itself.
+ *
+ * It is a plain `<img>` source, not a fetch: the session cookie rides along, and
+ * the response is cached like any other photo imagery. The box is not validated
+ * here — a degenerate one answers 400, which the caller shows as a missing
+ * picture rather than as an error.
+ */
+export function faceCropUrl(photoUid: string, bbox: Bbox): string {
+  const box = bbox.map((value) => value.toFixed(FACE_BOX_PRECISION)).join(',')
+  return `${API_BASE}/photos/${encodeURIComponent(photoUid)}/face?box=${encodeURIComponent(box)}`
+}
+
 /** Fetches one subject by UID; throws ApiError 404 when missing. */
 export async function fetchSubject(uid: string, signal?: AbortSignal): Promise<Subject> {
   return getJSON<Subject>(`/subjects/${encodeURIComponent(uid)}`, signal)

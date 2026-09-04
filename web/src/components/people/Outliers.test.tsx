@@ -93,6 +93,26 @@ describe('Outliers', () => {
     })
   })
 
+  it('paints each face from its own small rendition, not from the photograph', async () => {
+    // The measured regression: this section drew 96px tiles by fetching one
+    // whole `fit_1280` preview per face and cropping it in CSS — 290 of them on
+    // one person's page.
+    fetchMock.mockResolvedValue(outliers())
+    renderOutliers()
+
+    await screen.findAllByRole('button', { name: 'Not this person' })
+    const sources = screen
+      .getAllByRole('link', { name: 'Open photo' })
+      .map((link) => link.querySelector('img')?.getAttribute('src') ?? '')
+
+    expect(sources).toHaveLength(2)
+    expect(sources[0]).toBe('/api/v1/photos/p1/face?box=0.1000%2C0.1000%2C0.2000%2C0.2000')
+    expect(sources[1]).toBe('/api/v1/photos/p2/face?box=0.3000%2C0.3000%2C0.2000%2C0.2000')
+    for (const src of sources) {
+      expect(src).not.toContain('/thumb/')
+    }
+  })
+
   it('shows the empty state once every face has been reviewed', async () => {
     fetchMock.mockResolvedValue({
       subject_uid: 'su_a',

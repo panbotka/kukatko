@@ -3,11 +3,9 @@ import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 
 import { type UseFacesResult } from '../../hooks/useFaces'
-import { padBbox, squareCrop } from '../../lib/faceGeometry'
 import { isNamed } from '../../lib/faceState'
 import { type FaceView } from '../../services/people'
 import { ENTITY_STYLE } from '../entityStyle'
-import { Icon } from '../Icon'
 import { FaceCrop } from '../people/FaceCrop'
 
 /**
@@ -16,13 +14,6 @@ import { FaceCrop } from '../people/FaceCrop'
  * a picture in its own right.
  */
 const CHIP_FACE_SIZE = 24
-
-/**
- * How much context a chip's crop keeps around the face box. Tighter than the
- * people grid's 30 %: at 24px there is no room to spend on shoulders, and the
- * name is right there beside it doing the naming.
- */
-const CHIP_FACE_PADDING = 0.15
 
 /** Props for {@link PeoplePanel}. */
 export interface PeoplePanelProps {
@@ -57,9 +48,9 @@ export interface PeoplePanelProps {
  *
  * Each chip carries a crop of its own face, so "who is on this photo" is answered
  * by looking rather than by reading — and an unnamed detection stops being an
- * anonymous "Face 2" the reader has to open the panel to identify. The crop is cut
- * from the photo's cached thumbnail in the browser (see {@link FaceCrop}); it is
- * dropped when the frame is unknown, which is only ever while loading.
+ * anonymous "Face 2" the reader has to open the panel to identify. The crop is its
+ * own small rendition, cut server-side (see {@link FaceCrop}), so a row of chips
+ * costs a few kilobytes rather than a copy of the photograph per chip.
  *
  * Chips are numbered by position, matching the numbers on the boxes and in the
  * faces panel: `face_index` is negative for markers with no detected face.
@@ -74,30 +65,19 @@ export function PeoplePanel({
   const { t } = useTranslation()
   const busyLoading = loading || faces.status === 'loading'
   const selected = faces.selected
-  const frame = faces.frame
 
-  /**
-   * The chip's leading glyph: a crop of the actual face where the geometry allows
-   * one, and the generic person icon where it does not — a chip always has
-   * something in that slot, so the row never jumps as the frame arrives.
-   */
-  const faceGlyph = (face: FaceView) => {
-    if (frame === null) {
-      return <Icon name={ENTITY_STYLE.person.icon} />
-    }
-    return (
-      <FaceCrop
-        photoUid={photoUid}
-        crop={squareCrop(padBbox(face.bbox, CHIP_FACE_PADDING), frame)}
-        frame={frame}
-        // The chip's own text names the person; the crop showing the same name
-        // again would only make a screen reader say it twice.
-        label=""
-        size={CHIP_FACE_SIZE}
-        className="rounded-circle flex-shrink-0"
-      />
-    )
-  }
+  /** The chip's leading glyph: a crop of the face the chip is about. */
+  const faceGlyph = (face: FaceView) => (
+    <FaceCrop
+      photoUid={photoUid}
+      bbox={face.bbox}
+      // The chip's own text names the person; the crop showing the same name
+      // again would only make a screen reader say it twice.
+      label=""
+      size={CHIP_FACE_SIZE}
+      className="rounded-circle flex-shrink-0"
+    />
+  )
   // Viewers only care about the people who have a name; an editor also sees the
   // unnamed detections so they can name them.
   const visible = faces.faces

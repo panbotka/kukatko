@@ -72,7 +72,9 @@ photo-book tool (deliberately out of scope), or a product with support and a rel
   a split between people, animals and everything else, and an ordering by photo count, by name or by
   who was named most recently — all of it in the URL, so Back works and a link carries the view. Each
   tile is the person's own face, cut to size by the server, so a hundred people cost about as much to
-  load as a page of the library grid.
+  load as a page of the library grid. Every other place a single face is shown as a small square — a
+  person's suspicious faces, a group of unknown ones, the chips under a photograph — is the same
+  server-cut crop, so a screen full of faces is kilobytes rather than a photograph apiece.
 - Faces are detected, clustered, and matched against the people you have named — and **nothing is
   ever assigned automatically**. The machine narrows the list down, a human confirms.
 - Tools for the parts that are actually hard: candidates for one person among the untagged faces,

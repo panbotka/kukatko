@@ -227,10 +227,10 @@ describe('FacesPanel', () => {
 
     const crops = container.querySelectorAll('img')
     expect(crops).toHaveLength(2)
-    // Cut from a `fit_*` preview of the photo — a `tile_*` is a centre-cropped
-    // square and the bbox would land beside the face (`lib/faceSource`).
+    // Its own server-cut rendition, not a window onto a whole-frame preview:
+    // a row of little faces must not cost a photograph apiece.
     for (const crop of crops) {
-      expect(crop.getAttribute('src')).toMatch(/\/photos\/ph_1\/thumb\/fit_\d+$/)
+      expect(crop.getAttribute('src')).toMatch(/^\/api\/v1\/photos\/ph_1\/face\?box=/)
     }
     // The number survives as the cross-reference to the box on the photo…
     expect(screen.getByRole('button', { name: 'Select face #1: No name' })).toHaveTextContent('1')
@@ -241,35 +241,25 @@ describe('FacesPanel', () => {
   it('shows the selected face enlarged, where the naming happens', () => {
     // The marker on the photograph is only as big as the face, and on a crowd
     // that is a handful of pixels: the highlight says WHICH face, this says WHO.
-    // It costs no extra download — it is a region of a thumbnail the page has.
     const face = faceView({ face_index: 0 })
     renderPanel(facesResult({ faces: [face], selected: face }))
 
     const crop = screen.getByRole('img', { name: 'The face being named' })
-    expect(crop.getAttribute('src')).toMatch(/\/photos\/ph_1\/thumb\/fit_\d+$/)
+    expect(crop.getAttribute('src')).toMatch(/^\/api\/v1\/photos\/ph_1\/face\?box=/)
     // Inside the naming panel, not merely somewhere on the page.
     expect(screen.getByLabelText('Name this face')).toContainElement(crop)
   })
 
-  it('leaves the naming panel cropless while the frame is still unknown', () => {
-    // A crop squared against the wrong frame shows a stretched stranger, which is
-    // worse than no crop at all — the row's number and the highlight still pair.
+  it('shows the crops even before the photo frame is known', () => {
+    // The panel used to hide them: cropping in the page divided by the frame, so
+    // a crop squared against the wrong one showed a stretched stranger. The crop
+    // is cut server-side now, from the frame the server itself reads, so the
+    // rows and the naming panel are never a person icon waiting for dimensions.
     const face = faceView({ face_index: 0 })
-    renderPanel(facesResult({ faces: [face], selected: face, frame: null }))
+    const { container } = renderPanel(facesResult({ faces: [face], selected: face, frame: null }))
 
-    expect(screen.queryByRole('img', { name: 'The face being named' })).not.toBeInTheDocument()
-    expect(screen.getByLabelText('Name this face')).toBeInTheDocument()
-  })
-
-  it('falls back to a person icon while the frame is still unknown', () => {
-    // The crop needs the photo's frame; until it lands the slot is filled anyway,
-    // so the list does not jump when it does.
-    const { container } = renderPanel(
-      facesResult({ faces: [faceView({ face_index: 0 })], frame: null }),
-    )
-
-    expect(container.querySelector('img')).toBeNull()
-    expect(container.querySelector('.bi-person-circle')).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'The face being named' })).toBeInTheDocument()
+    expect(container.querySelector('.bi-person-circle')).toBeNull()
   })
 
   it('reports the hovered row so the box on the photo can highlight', async () => {

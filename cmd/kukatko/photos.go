@@ -5,6 +5,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
+	"github.com/panbotka/kukatko/internal/avatar"
 	"github.com/panbotka/kukatko/internal/comments"
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/database"
@@ -122,6 +123,10 @@ func buildPhotoAPI(
 		Store:       photoStore,
 		Storage:     store,
 		Thumbnailer: thumbnailer,
+		// One face as a small square, cut from the smallest preview that carries
+		// it — the same renderer (and the same cache) the subject avatar uses, so
+		// the cropping geometry exists once. See internal/avatar.
+		FaceCrops:   avatar.New(thumbnailer, cfg.Storage.CachePath),
 		Regenerator: regenerator,
 		Sidecar:     sidecar,
 		// Saving an edit changes what the photo renders as; the cache is keyed by the

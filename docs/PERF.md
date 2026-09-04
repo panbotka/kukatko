@@ -176,8 +176,8 @@ ceilings keep that from turning into a blanket `fit_3840`:
 
 | Caller | Ceiling | Target | Why |
 |---|---|---|---|
-| chips/tiles (`FaceCrop`: people grid, clusters, markers) | `fit_1920` | 300 px | dozens on screen at once; past 1920 the pixels are mostly not in the original either |
-| `/outliers` review card | `fit_3840` | 154 px across the crop (≈ 96 px across the face) | the card *is* the question being asked; a handful on screen, all `loading="lazy"` |
+| chips/tiles (formerly `FaceCrop`: people grid, clusters, markers) | `fit_1920` | 300 px | dozens on screen at once; past 1920 the pixels are mostly not in the original either. **This row is history**: a face shown as a small square is now its own server-cut rendition (`GET /photos/{uid}/face`, §5) and picks no `fit_*` in the browser at all |
+| `/outliers` review card, `ReviewOutlier`, `DuplicateMarkerCrop` | `fit_3840` | 154 px across the crop (≈ 96 px across the face) | the card *is* the question being asked; a handful on screen, all `loading="lazy"`. These stay in the browser: they are large, non-square **context** crops with the marker drawn over them, so the image has to carry the frame the marker is placed against |
 
 96 px is roughly the width a face is *rendered* at in the densest grid the review
 page offers (ten columns of a ~1400 px page ⇒ ~88 px, since the crop is defined
@@ -912,7 +912,8 @@ The audit, surface by surface:
 | Album cover (single)             | `tile_500` for a 160–300 px tile                     | right-sized at DPR 2; the next rung down would not cover it |
 | Album cover (collage cell)       | `tile_224` for a half-tile cell                      | right-sized |
 | Command palette / label / place rows | `tile_100` / `tile_224`                          | right-sized |
-| Face crops (outliers, review)    | per-face, `lib/faceSource`                            | right-sized (see §2) |
+| Face crops (a face as a small square) | its own server-cut rendition, `GET /photos/{uid}/face` | **fixed** — was a CSS window onto a whole frame (see below) |
+| Face context crops (outlier/dup cards) | per-face, `lib/faceSource`                          | right-sized (see §2) — these show the photograph around the face, with the marker drawn on it |
 | **Viewer stage (photo detail)**  | was a fixed `fit_1920`                               | **fixed** — now `stageRenditionName` |
 | **Slideshow stage**              | was a fixed `fit_1920`                               | **fixed** — now `stageRenditionName` |
 | **Comment avatar**               | was `tile_224` for a 2 rem circle                    | **fixed** — now `tile_100` |
@@ -962,6 +963,45 @@ savings land on the surfaces that were fetching a fixed size.
 A 1920 × 1080 desktop and any retina laptop stay on `fit_1920` — the calculation
 puts them there, and the rung set cannot take them higher.
 
+### A face is its own rendition, not a window onto a photograph
+
+The audit row above ("Face crops — per-face, `lib/faceSource` — right-sized") was
+right only about the *rung*. It could not fix the shape of the transaction: a
+crop cut in the browser has to fetch the whole frame first, so a 96 px tile paid
+for a megapixel however carefully the rung was chosen. `GET /photos/{uid}/face?box=`
+(`internal/photoapi/facecrop.go`, cut by `internal/avatar`) sends the crop
+itself, at most 320 px square.
+
+Measured against a 3915 × 5873 (23 Mpx) original, on a throwaway instance —
+the source rung is picked per face, so the cost scales with how small the face is:
+
+| What a 96 px face tile downloads      | Pixels    |     Bytes |
+| ------------------------------------- | --------: | --------: |
+| **Before**, whole frame at `fit_1280` | 1,091,840 | 393,749 B |
+| **Before**, whole frame at `fit_1920` | 2,455,680 | 761,536 B |
+| After — face 40 % of the frame wide   |   102,400 |  28,997 B |
+| After — face 15 % wide                |    94,249 |  18,215 B |
+| After — face 5 % wide (the average)   |    10,404 |   2,315 B |
+| After — face 2 % wide                 |     1,600 |     944 B |
+
+For the average face that is **170× fewer bytes and 105× fewer pixels**, and the
+crop is also *sharper* than the one it replaces: 102 real pixels across a 96 px
+tile, where the `fit_1280` window gave ~68. The outlier section of one person's
+page measured at 290 such tiles — 290 × `fit_1280` ≈ **111 MB** before,
+≈ **0.7 MB** after; the number of requests is unchanged (one per face, all lazy).
+
+The last two rows are the "too small to upscale" edge: the renderer never invents
+pixels, so a face the original barely holds arrives at the size it really is. A
+40 px crop in a 96 px tile is honest and costs 944 B — the old path spent 393 kB
+to blow up the same 40 px.
+
+The route caches like a thumbnail (`private, max-age=31536000, immutable` + the
+renderer's ETag), which the subject avatar deliberately does not: that URL names
+a *subject*, whose picture a curator can re-pick, while this one names a photo
+and an exact box. The rendition is cache-only derived media, so it is always
+streamed — there is nothing in the object store to redirect to, and 15 kB through
+the application beats a megapixel around it.
+
 ### Caching: what the app's own media routes promise
 
 The routes were audited against the rule "content-addressed or version-stamped
@@ -976,6 +1016,7 @@ authenticated API JSON". They already conform, and this is the record of it:
 | `GET /photos/{uid}/video`                | `private, max-age=31536000`                  | immutable per content hash |
 | `GET /photos/{uid}/storyboard`           | `private, max-age=31536000, immutable`       | a pure function of the clip's hash |
 | `GET /subjects/{uid}/avatar`             | `private, max-age=600, must-revalidate`      | **not** content-addressed — which face stands for a subject changes; ETag-validated, so a re-pick costs one 304 |
+| `GET /photos/{uid}/face?box=`            | `private, max-age=31536000, immutable`       | a pure function of (file hash, box, side) — the URL names a photo and a box, not a subject |
 | `GET /map/tiles/{mapset}/{z}/{x}/{y}`    | `public, max-age=<ttl>, immutable`           | third-party tiles, no user data |
 | SPA hashed assets / `index.html`         | `public, …, immutable` / `no-cache`          | `internal/web/spa.go` |
 | **302 to a signed media URL**            | `private, no-store`                          | see below |

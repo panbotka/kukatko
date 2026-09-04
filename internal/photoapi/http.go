@@ -38,6 +38,7 @@ type API struct {
 	// photo payload, and tells the media routes whether to redirect or stream.
 	media          *mediaurl.Builder
 	thumbnailer    *thumb.Thumbnailer
+	faceCrops      FaceCropRenderer
 	regenerator    ThumbnailRegenerator
 	audit          AuditRecorder
 	similar        SimilarSearcher
@@ -85,6 +86,10 @@ type Config struct {
 	Storage storage.Storage
 	// Thumbnailer serves (and generates on miss) cached thumbnails.
 	Thumbnailer *thumb.Thumbnailer
+	// FaceCrops cuts the small square rendition of a single detected face, so a
+	// page showing faces stops downloading whole photographs to crop them in the
+	// browser. When nil that endpoint answers 503.
+	FaceCrops FaceCropRenderer
 	// Regenerator force-rebuilds a photo's thumbnails and perceptual hashes on
 	// demand for the regenerate-thumbnail service action. When nil that endpoint
 	// answers 503.
@@ -204,6 +209,7 @@ func NewAPI(cfg Config) *API {
 		storage:           cfg.Storage,
 		media:             mediaurl.NewBuilder(cfg.Storage),
 		thumbnailer:       cfg.Thumbnailer,
+		faceCrops:         cfg.FaceCrops,
 		regenerator:       cfg.Regenerator,
 		audit:             cfg.Audit,
 		similar:           cfg.Similar,
@@ -283,6 +289,7 @@ func passthroughMiddleware(next http.Handler) http.Handler {
 //	POST   /photos/{uid}/redetect-faces RequireMaintainer  re-detect the faces
 //	POST   /photos/{uid}/regeocode    RequireMaintainer  re-resolve the place
 //	GET    /photos/{uid}/thumb/{size} RequireDownload  cached thumbnail (or 302)
+//	GET    /photos/{uid}/face         RequireDownload  square JPEG crop of one face (?box=)
 //	GET    /photos/{uid}/video        RequireDownload  video stream (range/206, or 302)
 //	GET    /photos/{uid}/storyboard   RequireAuth      scrub-preview status (+ lazy enqueue)
 //	GET    /photos/{uid}/storyboard/sprite RequireDownload  scrub-preview sprite (JPEG)
@@ -349,6 +356,7 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.With(a.requireMaintainer).Post("/{uid}/regeocode", a.handleRegeocode)
 		r.With(a.requireAdmin).Post("/{uid}/purge", a.handlePurge)
 		r.With(a.requireDownload).Get("/{uid}/thumb/{size}", a.handleThumb)
+		r.With(a.requireDownload).Get("/{uid}/face", a.handleFaceCrop)
 		r.With(a.requireDownload).Get("/{uid}/video", a.handleVideo)
 		r.With(a.requireAuth).Get("/{uid}/storyboard", a.handleStoryboard)
 		r.With(a.requireDownload).Get("/{uid}/storyboard/sprite", a.handleStoryboardSprite)

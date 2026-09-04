@@ -23,6 +23,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
+	"github.com/panbotka/kukatko/internal/avatar"
 	"github.com/panbotka/kukatko/internal/comments"
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
@@ -145,10 +146,16 @@ func newEnvWithMedia(t *testing.T, media storage.Storage) *env {
 	// the pending/ready transition is a cache fact and the scheduling a queue fact,
 	// and a fake for either would test the fake.
 	storyboards := storyboard.New(fs, t.TempDir())
+	// One thumbnailer and one cache root for both the media routes and the face
+	// crop: the crop is cut from a thumbnail, so a renderer pointed at a different
+	// cache would test a setup that does not exist.
+	derivedCache := t.TempDir()
+	thumbnailer := thumb.New(fs, derivedCache)
 	api := photoapi.NewAPI(photoapi.Config{
 		Store:       store,
 		Storage:     mediaStore,
-		Thumbnailer: thumb.New(fs, t.TempDir()),
+		Thumbnailer: thumbnailer,
+		FaceCrops:   avatar.New(thumbnailer, derivedCache),
 		// The real trail and the real queue: what a saved edit records and what it
 		// schedules are both facts about those two, and a fake for either would
 		// leave the wiring untested.

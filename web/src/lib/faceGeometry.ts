@@ -349,30 +349,3 @@ export function squareCrop(bbox: Bbox, frame: Frame): Bbox {
   const top = Math.min(Math.max(centerY - side / 2, 0), frame.height - side)
   return [left / frame.width, top / frame.height, side / frame.width, side / frame.height]
 }
-
-/**
- * Builds the CSS for a square thumbnail cropped to a face's bbox, given the URL
- * of the full thumbnail. The background is scaled so the bbox region fills the
- * crop box and positioned so it is centred; a near-square face shows with
- * negligible distortion. Used by the cluster and outlier face previews.
- *
- * Prefer {@link squareCrop} with {@link cropImageStyle} where the frame's
- * dimensions are known: this scales the two axes independently, so a non-square
- * bbox is stretched, and it assumes the thumbnail carries the whole frame — which
- * a `tile_*` size, being a centre-cropped square, does not.
- */
-export function faceCropStyle(url: string, bbox: Bbox): CSSProperties {
-  const [x, y, w, h] = bbox
-  // Guard against a full-width/height bbox (denominator 0): fall back to no
-  // positional offset, which simply centres the (already full) region.
-  const posX = w >= 1 ? 0 : x / (1 - w)
-  const posY = h >= 1 ? 0 : y / (1 - h)
-  const sizeX = w > 0 ? 100 / w : 100
-  const sizeY = h > 0 ? 100 / h : 100
-  return {
-    backgroundImage: `url("${url}")`,
-    backgroundRepeat: 'no-repeat',
-    backgroundSize: `${sizeX}% ${sizeY}%`,
-    backgroundPosition: `${pct(posX)} ${pct(posY)}`,
-  }
-}

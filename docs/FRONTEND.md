@@ -3649,30 +3649,25 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   assignment create them and the rest find them by slug; a `ProgressBar` while it runs (undismissable), then
   a report counting **photos** — plus what was skipped (no reassignable face there) and what failed, since a
   run that moved fewer photos than were picked has to say so),
-  `FaceCrop` (**the preferred** face crop **where the client still cuts one** — the review views and the
-  per-photo panels; the people index and `SubjectSummary` moved to the server-cut avatar above, which is
-  what an ordinary tile should use. An `<img>` with a `fit_*` source from `lib/faceSource.ts`
-  `faceSourceSize` (the whole frame — `tile_*` is a centred square on which the crop would miss the face;
-  the size **scales with how small the face is**: a fixed one would give a 13px smudge instead of
-  a person for a face over 2 % of the frame. The ladder is 720/1280/1920/2560/3840, but **the ceiling belongs
-  to the caller**: a chip stops at `FACE_SOURCE_TILE_MAX` (1920 — a dense grid of chips isn't worth megabytes),
-  a card that exists to be **judged** goes to `FACE_SOURCE_REVIEW_MAX` (3840, `/outliers`). Below the target
-  it never picks a rung above the original's own long side — `fit_*` doesn't upscale, so that would be the same
-  pixels at another URL. Beside the ceiling there is a **download budget** (`FaceSourceLimits.budgetPx`,
-  by default `FACE_SOURCE_TILE_BUDGET_PX` = 1.5 Mpx, measured against the *frame* — what `fit_N` really
-  costs for this photo — so a small original is never punished for a 24 Mpx one; the review views pass
-  `FACE_SOURCE_REVIEW_BUDGET_PX` = ∞). The budget is the answer to the "no rung reaches the target"
-  case: most faces span a few per cent of their frame, so without it every one of them took the ceiling
-  and 72 people tiles of 152 px pulled **125 Mpx**. It admits `fit_1280` and refuses `fit_1920` on the
-  shape most of the catalogue is — ~102 px instead of ~153 px across the tile, both an upscale on a 2×
-  display, at 2.3× the bytes. The real fix is a face crop cut server-side; this is the honest trade
-  until then) in an `overflow:hidden` container,
-  `cropImageStyle` in %, `aspect-ratio` from the crop's real pixel proportions → **nothing is
-  deformed**; `size` = a fixed width in px, otherwise it fills the parent (`w-100 h-100`); `label=""` =
-  decorative, when the name stands beside it. It renders through `FadeInImage skeleton`, so a crop that
-  hasn't decoded shimmers instead of sitting as a dark square. It needs the frame's dimensions),
-  `FaceThumb` (**the legacy** square crop via `faceCropStyle` — it deforms and reads `tile_*`; it stays
-  only for cluster previews, whose payload doesn't carry the frame),
+  `FaceCrop` (**the** way a single face is shown as a small square, everywhere: the outlier strip, the
+  cluster previews, the per-photo people chips, the faces panel's rows and its assign panel. It is an
+  `<img>` on **its own server-cut rendition** — `faceCropUrl(photoUid, bbox)` →
+  `GET /photos/{uid}/face?box=x,y,w,h`, a ~320 px square of some 15 kB — inside a square
+  `overflow:hidden` box, `objectFit: cover`; `size` = a fixed width in px, otherwise it fills the parent
+  (`w-100 h-100`); `label=""` = decorative, when the name stands beside it. The geometry is the server's
+  (padded 30 %, squared in **pixel** space, slid back inside the frame), so the component needs neither the
+  padding nor the photo's dimensions and every face in the app is cropped alike — a chip, a row and a
+  review tile of one face are now one cached rendition rather than three CSS windows onto three previews.
+  It renders through `FadeInImage skeleton`, which also gives it `loading="lazy"`: a section holding
+  hundreds of faces requests only the ones the reader reaches. A rendition that cannot be cut (no usable
+  preview, a box naming nothing) drops the `<img>` on `onError`, leaving the caller's empty well rather
+  than a torn-page glyph.
+  It used to crop in the page — a whole-frame `fit_*` preview positioned with `cropImageStyle` — which is
+  why the outlier section of one person's page fetched **290 `fit_1280` previews, 1280×960 each, to paint
+  290 windows of 96 px**. `lib/faceSource.ts` still picks that source for the views that show a
+  **context crop with the face outlined inside it** (`OutlierCard`, `ReviewOutlier`,
+  `DuplicateMarkerCrop`): those are large, non-square and judged rather than glanced at, and the marker
+  drawn over them has to be placed against the same frame the image carries),
   `PeopleFilterBar` (the people index's own filter bar: a name search + the **kind** selector (with each
   option's live count) + the ordering, all `Form.Select`/`InputGroup` in one row. It offers the kinds as
   a select rather than the tab strip `AlbumFilterBar` uses, because one of them holds nearly everybody
@@ -3762,10 +3757,10 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   workspace; `no_faces`/`no_embeddings`/empty have an explanation; an
   **Otevřít celý nástroj** link to `/faces?subject={uid}`), `Outliers` (a ranking of suspicious faces
   with a one-tap unassign on the person's page + a **Projít všechny** link to `/outliers?subject={uid}`, where
-  the full sweep version lives; each face is a `FaceCrop` — a `fit_*` source picked per face, padded and
-  squared like the people tiles. It used to be a `FaceThumb`, i.e. a centre-cropped `tile_*` treated as
-  the whole frame, so on anything but a square photo the crop landed **beside** the face; and being a CSS
-  background it also loaded for every face at once, however far down the page the section sits),
+  the full sweep version lives; each face is a `FaceCrop`, i.e. its own server-cut square of some 15 kB,
+  loaded lazily. This is the section the face rendition was built for: it draws every one of the person's
+  suspicious faces at 96 px, and it used to paint each of them by fetching the whole photograph —
+  **290 `fit_1280` previews on one measured page**, of which the reader saw 96×96 apiece),
   `OutlierCard`/`OutlierControls`/`OutlierStats` (the building blocks of `/outliers`: a card with a **context
   crop** (30 % around the bbox, `padBbox`+`cropImageStyle`+`faceMarkerStyle`) wrapped in `EnlargeButton`
   (stretched over the frame with `position-absolute`, because the picture inside is absolutely positioned and
@@ -4719,8 +4714,9 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   properties of `.kk-face-marker`: the box's **centre** and its size in % of the crop. The centre-anchored
   twin of `boxWithinCrop` — a marker growing from its top-left corner would slide off the face when it hits
   the CSS minimum; the `max()`/`clamp()` stay in CSS also because jsdom's CSSOM mangles `clamp()` in `left`
-  but passes custom properties through verbatim) + `faceCropStyle` (**legacy**, it scales the axes independently → it deforms, and
-  it reads `tile_*`, which is a centred square, not the whole frame; only for `FaceThumb`);
+  but passes custom properties through verbatim). `faceCropStyle` is **gone**: it scaled the two axes
+  independently (so it deformed) and read `tile_*` as though it were the whole frame, and the one component
+  left using it, `FaceThumb`, was replaced by `FaceCrop` on the server-cut rendition;
   `faceThreshold.ts` = a pure conversion of the person-search threshold between **percent** (the UI) and the **cosine
   distance** (the backend): `percentToDistance` (`1 - p/100`)/`distanceToPercent` (the inverse,
   rounded — also the „match %" on a card)/`clampThresholdPercent` + the range constants (20–80, step 5,
@@ -5180,7 +5176,10 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `mergeSubject(sourceUid,keeperUid)` (`POST /subjects/{uid}/merge` — the path subject is the one merged
   away and deleted; irreversible, so the caller confirms first)/
   `fetchSubjectPhotos`, the avatar address `subjectAvatarUrl(uid)` (`GET /subjects/{uid}/avatar` — a plain
-  `<img>` source, not a fetch: the session cookie rides along and the browser caches the picture),
+  `<img>` source, not a fetch: the session cookie rides along and the browser caches the picture) and its
+  per-face twin `faceCropUrl(photoUid, bbox)` (`GET /photos/{uid}/face?box=x,y,w,h`, what `FaceCrop` paints;
+  the box is written to **four decimals**, the precision the backend keys its cache by, so two renders of one
+  face are one cache entry rather than two),
   faces `fetchFaces`/`assignFace`, clusters `fetchClusters({limit,offset})` (**one page** —
   the response carries `total` ready groups, `pending` ones still being prepared server-side and
   `next_offset`)/
