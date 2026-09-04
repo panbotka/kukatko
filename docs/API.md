@@ -705,8 +705,14 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   builds — and `serve` starts — a **background worker** (`internal/worker`) for the whole life of the
   process (`startWorker`, stopped on shutdown via ctx).
 - **Clusters API (`/api/v1`, `internal/clusterapi`, editor/admin via `RequireWrite`):**
-  `GET /faces/clusters` → `{clusters:[{uid,size,representative,examples,suggestion?}]}` (clusters of
-  unassigned faces from auto-clustering, `suggestion` = the nearest named subject);
+  `GET /faces/clusters?limit&offset` → `{clusters:[{uid,size,representative,examples,suggestion?}],
+  total,pending,limit,offset,next_offset}` (one **page** of the clusters of unassigned faces from
+  auto-clustering, newest first; `suggestion` = the nearest named subject). `limit` defaults to 24 and
+  is capped at 100; a non-integer or negative `limit`/`offset` → 400. Only clusters whose cached
+  summary (`face_clusters.summary`, migration 0069) has been built are listed — `total` counts those,
+  `pending` the ones still being prepared — and a request that finds work pending **schedules the
+  `face_cluster` job** (deduped: at most one pass queued or running), which is what makes opening the
+  page fill it in. The page therefore costs two indexed queries and no vector search;
   `POST /faces/clusters/{id}/assign` `{subject_uid?,subject_name?}` assigns the **whole cluster** to one
   subject (find-or-create by name) → markers for all faces, the cluster is consumed;
   `POST /faces/clusters/{id}/remove-face` `{photo_uid,face_index}` detaches a stray face before
@@ -1037,8 +1043,9 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
 - **Process API (`/api/v1`, `internal/processapi`, maintainer-only via `RequireMaintainer`):**
   `POST /process/embeddings` → `{enqueued}` (backfill `image_embed` for photos without an embedding),
   `POST /process/faces` → `{enqueued}` (backfill `face_detect` for photos without face detection),
-  `POST /process/clusters` → `{created}` (re-clustering of unassigned faces via
-  `cluster.Recluster`), `POST /process/places` → `{enqueued}` (backfill `places` reverse-geocode for
+  `POST /process/clusters` → **202** `{scheduled}` (queues the `face_cluster` pass: regroup the
+  unassigned faces, then prepare the cluster summaries; `scheduled:false` means a pass was already
+  waiting or running — the work is on its way either way), `POST /process/places` → `{enqueued}` (backfill `places` reverse-geocode for
   geotagged photos without a place via `placesjob.BackfillPlaces`; 503 when there is no mapy.com key),
   `POST /process/thumbnails` → `{enqueued,pending,dry_run}` (backfill `thumbnail` for photos **without a
   generated thumbnail** via `thumbjob.BackfillThumbnails`; "missing thumbnail" = a photo without a perceptual

@@ -39,15 +39,15 @@ func (f *fakeFaceBackfiller) BackfillFaces(context.Context) (int, error) {
 
 // fakeReclusterer is a Reclusterer stub returning canned values.
 type fakeReclusterer struct {
-	created int
-	err     error
-	calls   int
+	scheduled bool
+	err       error
+	calls     int
 }
 
-// Recluster records the call and returns the canned result.
-func (f *fakeReclusterer) Recluster(context.Context) (int, error) {
+// ScheduleRecluster records the call and returns the canned result.
+func (f *fakeReclusterer) ScheduleRecluster(context.Context) (bool, error) {
 	f.calls++
-	return f.created, f.err
+	return f.scheduled, f.err
 }
 
 // fakePlacesBackfiller is a PlacesBackfiller stub returning canned values.
@@ -279,31 +279,53 @@ func TestBackfillFaces_error(t *testing.T) {
 	}
 }
 
-// TestRecluster_ok reports the created count on success.
+// TestRecluster_ok schedules the pass and answers 202 rather than running it in
+// the request: on a real library the grouping takes minutes.
 func TestRecluster_ok(t *testing.T) {
 	t.Parallel()
 
-	rc := &fakeReclusterer{created: 3}
+	rc := &fakeReclusterer{scheduled: true}
 	srv := newServerWithRecluster(t, rc)
 
 	resp := postProcess(t, srv.URL+"/process/clusters")
 	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202", resp.StatusCode)
 	}
 	var body reclusterResponse
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if body.Created != 3 {
-		t.Errorf("created = %d, want 3", body.Created)
+	if !body.Scheduled {
+		t.Error("scheduled = false, want true")
 	}
 	if rc.calls != 1 {
 		t.Errorf("reclusterer calls = %d, want 1", rc.calls)
 	}
 }
 
-// TestRecluster_error maps a clustering failure to 500.
+// TestRecluster_alreadyScheduled reports scheduled=false when a pass is already
+// waiting, which is a success: the work asked for is already on its way.
+func TestRecluster_alreadyScheduled(t *testing.T) {
+	t.Parallel()
+
+	srv := newServerWithRecluster(t, &fakeReclusterer{scheduled: false})
+
+	resp := postProcess(t, srv.URL+"/process/clusters")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202", resp.StatusCode)
+	}
+	var body reclusterResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Scheduled {
+		t.Error("scheduled = true, want false")
+	}
+}
+
+// TestRecluster_error maps a scheduling failure to 500.
 func TestRecluster_error(t *testing.T) {
 	t.Parallel()
 

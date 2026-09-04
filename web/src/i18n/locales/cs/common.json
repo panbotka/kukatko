@@ -1724,6 +1724,10 @@
     "loading": "Načítání skupin obličejů…",
     "error": "Skupiny obličejů se nepodařilo načíst.",
     "actionError": "Akce se nezdařila. Zkus to prosím znovu.",
+    "preparing": "Hotových skupin: {{ready}} · na pozadí se jich připravuje ještě {{pending}}",
+    "refresh": "Načíst znovu",
+    "loadMore": "Načíst další",
+    "moreError": "Další skupiny se nepodařilo načíst.",
     "empty": {
       "title": "Žádné skupiny k projití",
       "hint": "Nové skupiny se tu objeví, jakmile aplikace rozpozná obličeje na vašich fotkách."
@@ -2998,7 +3002,8 @@
         "backup": "Záloha",
         "mail_send": "Odeslání e-mailu",
         "nameless_detach": "Odpojení osoby bez jména",
-        "nameless_restore": "Obnovení osoby bez jména"
+        "nameless_restore": "Obnovení osoby bez jména",
+        "face_cluster": "Skupiny obličejů"
       }
     },
     "imports": {

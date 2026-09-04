@@ -16,7 +16,8 @@ const (
 		`"marker_uid":"mrk01","subject_uid":"sub01","subject_name":"Anna","suggestions":[]},` +
 		`{"face_index":1,"bbox":[0.5,0.2,0.2,0.25],"det_score":0.88,"action":"create_marker",` +
 		`"suggestions":[{"subject_uid":"sub02","subject_name":"Bob","distance":0.31,"confidence":0.69}]}]}`
-	ctlClustersBody = `{"clusters":[{"uid":"clu01","size":12,` +
+	ctlClustersBody = `{"total":1,"pending":4,"limit":24,"offset":0,"next_offset":null,` +
+		`"clusters":[{"uid":"clu01","size":12,` +
 		`"representative":{"photo_uid":"pht01","face_index":0,"bbox":[0.1,0.2,0.3,0.4],"det_score":0.9},` +
 		`"examples":[],"suggestion":{"subject_uid":"sub01","subject_name":"Anna","distance":0.28,` +
 		`"confidence":0.72},"created_at":"2026-08-01T10:00:00Z"}]}`
@@ -301,8 +302,9 @@ func TestCtlFacesReject_llm(t *testing.T) {
 	}
 }
 
-// TestCtlClusters_list verifies the cluster listing renders with its suggestion
-// and totals the faces waiting to be named.
+// TestCtlClusters_list verifies the cluster listing renders with its suggestion,
+// totals the faces waiting to be named, and says how many groups the server is
+// still preparing.
 func TestCtlClusters_list(t *testing.T) {
 	var gotPath string
 	configPath := ctlServer(t, func(w http.ResponseWriter, r *http.Request) {
@@ -317,7 +319,10 @@ func TestCtlClusters_list(t *testing.T) {
 	if gotPath != "/api/v1/faces/clusters" {
 		t.Errorf("path = %q, want the clusters endpoint", gotPath)
 	}
-	for _, want := range []string{"UID", "clu01", "Anna (sub01) 0.280", "pht01 #0", "12 unnamed faces"} {
+	for _, want := range []string{
+		"UID", "clu01", "Anna (sub01) 0.280", "pht01 #0", "12 unnamed faces",
+		"4 more groups are still being prepared",
+	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("cluster table does not contain %q:\n%s", want, out)
 		}

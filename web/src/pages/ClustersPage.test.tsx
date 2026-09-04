@@ -1,15 +1,58 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { type ComponentType, type ReactNode } from 'react'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../i18n'
 import { REVIEW_GRID_SCOPE } from '../lib/gridDensity'
-import { type ClusterView } from '../services/people'
+import { type ClusterPage, type ClusterView } from '../services/people'
 import { readCss, ruleBody } from '../test/css'
 
 import { ClustersPage } from './ClustersPage'
+
+/** Context the review grid threads to its List and Footer components. */
+interface GridContext {
+  density: number
+  footer?: ReactNode
+}
+
+/** The props the fake grid reads off `VirtuosoGrid`; the rest is ignored. */
+interface MockGridProps {
+  data: ClusterView[]
+  context: GridContext
+  components: {
+    List: ComponentType<{ context: GridContext; children: ReactNode }>
+    Footer: ComponentType<{ context: GridContext }>
+  }
+  itemContent: (index: number, item: ClusterView) => ReactNode
+  computeItemKey: (index: number, item: ClusterView) => string
+  endReached?: () => void
+}
+
+/**
+ * jsdom lays nothing out, so the real virtualizer measures a viewport of zero
+ * and mounts no cards at all. This stand-in renders them through the component's
+ * own `List` (the element carrying the column template) and exposes
+ * `endReached`, so the scroll-driven paging can be triggered by a test.
+ */
+const virtuoso = vi.hoisted(() => ({ props: null as MockGridProps | null }))
+
+vi.mock('react-virtuoso', () => ({
+  VirtuosoGrid: (props: MockGridProps) => {
+    virtuoso.props = props
+    const { components, context, data, itemContent, computeItemKey } = props
+    return (
+      <components.List context={context}>
+        {data.map((item, index) => (
+          <div key={computeItemKey(index, item)}>{itemContent(index, item)}</div>
+        ))}
+        <components.Footer context={context} />
+      </components.List>
+    )
+  },
+}))
 
 vi.mock('../services/people', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/people')>()
@@ -51,6 +94,30 @@ function clusters(): ClusterView[] {
   ]
 }
 
+/** One more group, for the second page. */
+function thirdCluster(): ClusterView {
+  return {
+    uid: 'fc_3',
+    size: 7,
+    representative: { photo_uid: 'p3', face_index: 0, bbox: [0.2, 0.2, 0.2, 0.2], det_score: 0.7 },
+    examples: [{ photo_uid: 'p3', face_index: 0, bbox: [0.2, 0.2, 0.2, 0.2], det_score: 0.7 }],
+    created_at: '2026-01-02T00:00:00Z',
+  }
+}
+
+/** Wraps views in a listing page, filling in the paging fields. */
+function page(views: ClusterView[], extra: Partial<ClusterPage> = {}): ClusterPage {
+  return {
+    clusters: views,
+    total: views.length,
+    pending: 0,
+    limit: 24,
+    offset: 0,
+    next_offset: null,
+    ...extra,
+  }
+}
+
 function renderPage() {
   return render(
     <I18nextProvider i18n={i18n}>
@@ -67,11 +134,12 @@ beforeEach(async () => {
   fetchMock.mockReset()
   assignMock.mockReset()
   assignMock.mockResolvedValue(undefined)
+  virtuoso.props = null
 })
 
 describe('ClustersPage', () => {
   it('names a cluster by free text, calls the API, and drops it from the list', async () => {
-    fetchMock.mockResolvedValue(clusters())
+    fetchMock.mockResolvedValue(page(clusters()))
     const user = userEvent.setup()
     renderPage()
 
@@ -95,7 +163,7 @@ describe('ClustersPage', () => {
   })
 
   it('accepts the subject suggestion with one tap', async () => {
-    fetchMock.mockResolvedValue(clusters())
+    fetchMock.mockResolvedValue(page(clusters()))
     const user = userEvent.setup()
     renderPage()
 
@@ -106,9 +174,82 @@ describe('ClustersPage', () => {
     })
   })
 
+  it('asks for a bounded first page rather than the whole library', async () => {
+    fetchMock.mockResolvedValue(page(clusters()))
+    renderPage()
+    await screen.findByText('4 faces')
+
+    expect(fetchMock).toHaveBeenCalledWith({ limit: 24, offset: 0 }, expect.anything())
+  })
+
+  it('appends the next page as the reader reaches the end', async () => {
+    fetchMock.mockResolvedValueOnce(page(clusters(), { total: 3, next_offset: 24 }))
+    fetchMock.mockResolvedValueOnce(page([thirdCluster()], { total: 3, offset: 24 }))
+    renderPage()
+    await screen.findByText('4 faces')
+
+    // The scroll-driven append: virtuoso reports the end of the loaded cards.
+    virtuoso.props?.endReached?.()
+
+    expect(await screen.findByText('7 faces')).toBeInTheDocument()
+    expect(fetchMock).toHaveBeenLastCalledWith({ limit: 24, offset: 24 }, undefined)
+    // The groups already loaded stay mounted; the page grew, it did not reload.
+    expect(screen.getByText('4 faces')).toBeInTheDocument()
+  })
+
+  it('keeps the loaded groups and offers a retry when a later page fails', async () => {
+    fetchMock.mockResolvedValueOnce(page(clusters(), { total: 3, next_offset: 24 }))
+    fetchMock.mockRejectedValueOnce(new Error('network'))
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByText('4 faces')
+
+    virtuoso.props?.endReached?.()
+
+    expect(await screen.findByText('Could not load more groups.')).toBeInTheDocument()
+    expect(screen.getByText('4 faces')).toBeInTheDocument()
+
+    fetchMock.mockResolvedValueOnce(page([thirdCluster()], { total: 3, offset: 24 }))
+    await user.click(screen.getByRole('button', { name: 'Load more' }))
+    expect(await screen.findByText('7 faces')).toBeInTheDocument()
+  })
+
+  it('says how many groups are still being prepared instead of spinning', async () => {
+    fetchMock.mockResolvedValue(page(clusters(), { total: 2, pending: 431 }))
+    renderPage()
+
+    expect(
+      await screen.findByText('Ready groups: 2 · still being prepared in the background: 431'),
+    ).toBeInTheDocument()
+    // The prepared groups are shown meanwhile, not withheld.
+    expect(screen.getByText('4 faces')).toBeInTheDocument()
+  })
+
+  it('does not call an unprepared library empty', async () => {
+    fetchMock.mockResolvedValue(page([], { total: 0, pending: 12 }))
+    renderPage()
+
+    expect(
+      await screen.findByText('Ready groups: 0 · still being prepared in the background: 12'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('No face groups to review')).not.toBeInTheDocument()
+  })
+
+  it('reloads from the first page when the reader looks again', async () => {
+    fetchMock.mockResolvedValueOnce(page([], { total: 0, pending: 3 }))
+    fetchMock.mockResolvedValueOnce(page(clusters(), { total: 2, pending: 0 }))
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: 'Look again' }))
+
+    expect(await screen.findByText('4 faces')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Look again' })).not.toBeInTheDocument()
+  })
+
   it('columns the cluster grid from the review density stepper', async () => {
     window.localStorage.setItem(REVIEW_GRID_SCOPE.storageKey, '2')
-    fetchMock.mockResolvedValue(clusters())
+    fetchMock.mockResolvedValue(page(clusters()))
     const user = userEvent.setup()
     renderPage()
     await screen.findByText('4 faces')
@@ -133,7 +274,7 @@ describe('ClustersPage', () => {
     // phone is capped to, the tracks would outgrow the row and scroll the whole
     // page sideways. The guard is the pair: the class on the grid, and the rule
     // that class stands for.
-    fetchMock.mockResolvedValue(clusters())
+    fetchMock.mockResolvedValue(page(clusters()))
     renderPage()
     await screen.findByText('4 faces')
 
@@ -144,8 +285,18 @@ describe('ClustersPage', () => {
   })
 
   it('shows the empty state when no clusters await review', async () => {
-    fetchMock.mockResolvedValue([])
+    fetchMock.mockResolvedValue(page([]))
     renderPage()
     expect(await screen.findByText('No face groups to review')).toBeInTheDocument()
+  })
+
+  it('offers a retry when the first page fails', async () => {
+    fetchMock.mockRejectedValueOnce(new Error('network'))
+    fetchMock.mockResolvedValueOnce(page(clusters()))
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: /Try again/i }))
+    expect(await screen.findByText('4 faces')).toBeInTheDocument()
   })
 })

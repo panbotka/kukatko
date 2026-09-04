@@ -1,15 +1,18 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
+import Button from 'react-bootstrap/Button'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
 import { GridDensityControl } from '../components/library/GridDensityControl'
+import { GridSkeleton } from '../components/library/GridSkeleton'
 import { ClusterCard } from '../components/people/ClusterCard'
+import { ReviewGrid } from '../components/review/ReviewGrid'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useGridDensity } from '../hooks/useGridDensity'
-import { gridTemplateColumns, REVIEW_GRID_SCOPE } from '../lib/gridDensity'
+import { REVIEW_GRID_SCOPE } from '../lib/gridDensity'
 import {
   assignCluster,
   type ClusterAssignRequest,
@@ -21,90 +24,154 @@ import {
 
 import '../components/review/review.css'
 
-/** Fetch lifecycle of the cluster queue. */
-type State =
-  | { status: 'loading' }
-  | { status: 'error' }
-  | { status: 'ready'; clusters: ClusterView[] }
+/**
+ * How many groups one request asks for. A screenful and a bit: enough that the
+ * first page fills the grid, small enough that it arrives at once even on a
+ * library with thousands of groups.
+ */
+const PAGE_SIZE = 24
+
+/** Top-level load status of the cluster queue (the first page's). */
+type Status = 'loading' | 'error' | 'ready'
 
 /**
- * The cluster review queue: unnamed face clusters, each named in one action
+ * The cluster review queue: unnamed face groups, each named in one action
  * (assigning every face to a new or existing subject). It is the primary, fast
- * path for bulk people-tagging. Naming a cluster removes it from the list;
- * detaching a stray face refreshes (or drops) that cluster in place. The whole
+ * path for bulk people-tagging. Naming a group removes it from the list;
+ * detaching a stray face refreshes (or drops) that group in place. The whole
  * flow is editor/admin-only (the route guards it) and updates optimistically.
+ *
+ * The queue arrives in pages and is virtualized: the first groups appear as soon
+ * as the first page lands, more load as the reader scrolls, and only the rows in
+ * view are ever mounted — a library with thousands of groups opens as fast as
+ * one with ten.
+ *
+ * A group is listed only once the server has prepared its cached summary. While
+ * groups are still being prepared the page says so, with the count, rather than
+ * spinning: preparing them is background work that opening the page schedules.
  */
 export function ClustersPage() {
   const { t } = useTranslation()
   useDocumentTitle(t('clusters.title'))
-  const [state, setState] = useState<State>({ status: 'loading' })
+  const [clusters, setClusters] = useState<ClusterView[]>([])
+  const [ready, setReady] = useState(0)
+  const [pending, setPending] = useState(0)
+  const [nextOffset, setNextOffset] = useState<number | null>(null)
+  const [status, setStatus] = useState<Status>('loading')
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [moreError, setMoreError] = useState(false)
   const [busyUid, setBusyUid] = useState<string | null>(null)
   const [actionError, setActionError] = useState(false)
+  // Guards the scroll-driven append: virtuoso can fire `endReached` again while
+  // a page is still in flight, and a second request for the same offset would
+  // append the same groups twice.
+  const loadingRef = useRef(false)
   // The cluster grid is the one the user sizes here: a card is a face plus a
   // name field, and how many of them fit across is the same choice every other
   // review tool offers, on the same stored number.
   const { density } = useGridDensity(REVIEW_GRID_SCOPE)
 
-  const load = useCallback((signal?: AbortSignal) => {
-    setState({ status: 'loading' })
-    fetchClusters(signal)
-      .then((clusters) => {
-        setState({ status: 'ready', clusters })
-      })
-      .catch((err: unknown) => {
-        if (err instanceof DOMException && err.name === 'AbortError') {
-          return
-        }
-        setState({ status: 'error' })
-      })
+  // load fetches the page at the given offset, replacing the list on the first
+  // page and appending afterwards. `status` reflects the initial load only: a
+  // failed append keeps the page `ready` with every group loaded so far and is
+  // reported inline through `moreError` instead, so one bad append never wipes
+  // the queue the reader is halfway through.
+  const load = useCallback(async (offset: number, signal?: AbortSignal) => {
+    loadingRef.current = true
+    try {
+      const page = await fetchClusters({ limit: PAGE_SIZE, offset }, signal)
+      setClusters((prev) => (offset === 0 ? page.clusters : [...prev, ...page.clusters]))
+      setReady(page.total)
+      setPending(page.pending)
+      setNextOffset(page.next_offset)
+      setMoreError(false)
+      setStatus('ready')
+    } catch (err) {
+      if (signal?.aborted === true || (err instanceof DOMException && err.name === 'AbortError')) {
+        return
+      }
+      if (offset > 0) {
+        setMoreError(true)
+        return
+      }
+      setStatus('error')
+    } finally {
+      loadingRef.current = false
+    }
   }, [])
 
   useEffect(() => {
     const controller = new AbortController()
-    load(controller.signal)
+    void load(0, controller.signal)
     return () => {
       controller.abort()
     }
   }, [load])
 
-  const assign = useCallback(async (uid: string, req: ClusterAssignRequest) => {
-    setBusyUid(uid)
-    setActionError(false)
-    try {
-      await assignCluster(uid, req)
-      // The cluster is consumed server-side: drop it from the queue.
-      setState((prev) =>
-        prev.status === 'ready'
-          ? { status: 'ready', clusters: prev.clusters.filter((c) => c.uid !== uid) }
-          : prev,
-      )
-    } catch {
-      setActionError(true)
-    } finally {
-      setBusyUid(null)
+  // reload restarts from the first page: the retry after a failure, and the
+  // "look again" once the background preparation has had a moment.
+  const reload = useCallback(() => {
+    setStatus('loading')
+    setMoreError(false)
+    void load(0)
+  }, [load])
+
+  const loadMore = useCallback(() => {
+    if (nextOffset === null || loadingRef.current) {
+      return
     }
+    setLoadingMore(true)
+    setMoreError(false)
+    void load(nextOffset).finally(() => {
+      setLoadingMore(false)
+    })
+  }, [load, nextOffset])
+
+  // drop removes a group from the queue and from the ready count, so the "still
+  // being prepared" line stays truthful as groups are consumed.
+  const drop = useCallback((uid: string) => {
+    setClusters((prev) => prev.filter((c) => c.uid !== uid))
+    setReady((prev) => Math.max(prev - 1, 0))
   }, [])
 
-  const removeFace = useCallback(async (uid: string, ref: RemoveFaceRequest) => {
-    setBusyUid(uid)
-    setActionError(false)
-    try {
-      const refreshed = await removeClusterFace(uid, ref)
-      setState((prev) => {
-        if (prev.status !== 'ready') {
-          return prev
+  const assign = useCallback(
+    async (uid: string, req: ClusterAssignRequest) => {
+      setBusyUid(uid)
+      setActionError(false)
+      try {
+        await assignCluster(uid, req)
+        // The cluster is consumed server-side: drop it from the queue.
+        drop(uid)
+      } catch {
+        setActionError(true)
+      } finally {
+        setBusyUid(null)
+      }
+    },
+    [drop],
+  )
+
+  const removeFace = useCallback(
+    async (uid: string, ref: RemoveFaceRequest) => {
+      setBusyUid(uid)
+      setActionError(false)
+      try {
+        const refreshed = await removeClusterFace(uid, ref)
+        if (refreshed === null) {
+          drop(uid)
+          return
         }
-        const clusters = refreshed
-          ? prev.clusters.map((c) => (c.uid === uid ? refreshed : c))
-          : prev.clusters.filter((c) => c.uid !== uid)
-        return { status: 'ready', clusters }
-      })
-    } catch {
-      setActionError(true)
-    } finally {
-      setBusyUid(null)
-    }
-  }, [])
+        setClusters((prev) => prev.map((c) => (c.uid === uid ? refreshed : c)))
+      } catch {
+        setActionError(true)
+      } finally {
+        setBusyUid(null)
+      }
+    },
+    [drop],
+  )
+
+  const hasCards = clusters.length > 0
 
   return (
     <>
@@ -120,9 +187,7 @@ export function ClustersPage() {
           <h1 className="kk-page-title mb-1">{t('clusters.title')}</h1>
           <p className="text-secondary">{t('clusters.subtitle')}</p>
         </div>
-        {state.status === 'ready' && state.clusters.length > 0 && (
-          <GridDensityControl scope={REVIEW_GRID_SCOPE} />
-        )}
+        {status === 'ready' && hasCards && <GridDensityControl scope={REVIEW_GRID_SCOPE} />}
       </div>
 
       {actionError && (
@@ -137,44 +202,50 @@ export function ClustersPage() {
         </Alert>
       )}
 
-      {state.status === 'loading' && (
-        <div className="d-flex justify-content-center py-5">
-          <Spinner animation="border" role="status">
-            <span className="visually-hidden">{t('clusters.loading')}</span>
-          </Spinner>
-        </div>
+      {/* The groups the server has not prepared yet, in the reader's own words
+          and with the count — the alternative was a spinner that never ended,
+          because preparing them is background work that takes as long as it
+          takes. */}
+      {status === 'ready' && pending > 0 && (
+        <Alert variant="info" className="d-flex flex-wrap align-items-center gap-2">
+          <span>{t('clusters.preparing', { ready, pending })}</span>
+          <Button variant="outline-light" size="sm" className="ms-auto" onClick={reload}>
+            {t('clusters.refresh')}
+          </Button>
+        </Alert>
       )}
 
-      {state.status === 'error' && (
-        <ErrorState
-          title={t('clusters.error')}
-          onRetry={() => {
-            load()
-          }}
-        />
-      )}
+      {status === 'loading' && <GridSkeleton label={t('clusters.loading')} />}
 
-      {state.status === 'ready' && state.clusters.length === 0 && (
+      {status === 'error' && <ErrorState title={t('clusters.error')} onRetry={reload} />}
+
+      {status === 'ready' && !hasCards && pending === 0 && (
         <EmptyState title={t('clusters.empty.title')} hint={t('clusters.empty.hint')} />
       )}
 
-      {state.status === 'ready' && state.clusters.length > 0 && (
-        <div
-          className="d-grid kk-review-grid"
-          data-density={density}
-          /* The responsive 1/2/3 columns this grid had are gone: the count is the
-             user's, shared with every other review tool. `kk-review-grid` is what
-             keeps that count honest — a card carries a name field and a button,
-             so without it the `1fr` tracks would grow to their content and run
-             off the side of a phone. */
-          style={{
-            gridTemplateColumns: gridTemplateColumns(density),
-            gap: `${String(REVIEW_GRID_SCOPE.gapPx)}px`,
-          }}
-        >
-          {state.clusters.map((cluster) => (
+      {status === 'ready' && hasCards && (
+        <ReviewGrid
+          items={clusters}
+          density={density}
+          itemKey={(cluster) => cluster.uid}
+          onEndReached={loadMore}
+          footer={
+            nextOffset === null ? null : (
+              <div className="text-center mt-3">
+                {loadingMore && <Spinner animation="border" size="sm" />}
+                {moreError && (
+                  <>
+                    <div className="text-danger small mb-2">{t('clusters.moreError')}</div>
+                    <Button variant="outline-secondary" size="sm" onClick={loadMore}>
+                      {t('clusters.loadMore')}
+                    </Button>
+                  </>
+                )}
+              </div>
+            )
+          }
+          renderItem={(cluster) => (
             <ClusterCard
-              key={cluster.uid}
               cluster={cluster}
               busy={busyUid === cluster.uid}
               onAssign={(req) => {
@@ -184,8 +255,8 @@ export function ClustersPage() {
                 void removeFace(cluster.uid, ref)
               }}
             />
-          ))}
-        </div>
+          )}
+        />
       )}
     </>
   )

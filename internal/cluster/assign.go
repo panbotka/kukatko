@@ -112,8 +112,14 @@ func (s *Service) RemoveFace(ctx context.Context, clusterUID string, ref Ref) (V
 	return view, false, err
 }
 
-// refreshView recomputes the cluster's centroid and size from faces, then returns
-// its refreshed listing view.
+// refreshView recomputes the cluster's centroid and size from faces and rebuilds
+// its cached listing summary, then returns the refreshed view.
+//
+// The summary is rebuilt here rather than left to the background pass because
+// the reader is looking at this one card and expects it to redraw at once: the
+// cost is a single cluster's suggestion search, paid by the person who asked for
+// the change. RefreshCluster has already dropped the stale summary, so a failure
+// to store the new one only leaves the cluster pending for the background pass.
 func (s *Service) refreshView(ctx context.Context, clusterUID string, faces []Face) (View, error) {
 	vecs := make([][]float32, len(faces))
 	for i := range faces {
@@ -126,5 +132,10 @@ func (s *Service) refreshView(ctx context.Context, clusterUID string, faces []Fa
 	if err != nil {
 		return View{}, err
 	}
-	return s.clusterView(ctx, refreshed)
+	summary := s.summarize(ctx, refreshed.Centroid, faces)
+	if err := s.store.SaveSummary(ctx, clusterUID, summary); err != nil {
+		return View{}, err
+	}
+	refreshed.Summary = &summary
+	return viewOf(refreshed), nil
 }

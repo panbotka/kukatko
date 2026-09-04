@@ -870,9 +870,15 @@ every photo the clustering put in the group — which is exactly why looking fir
 
 | Command | Meaning |
 | --- | --- |
-| `ctl clusters list` | `GET /faces/clusters`; `SUGGESTION` = the nearest named subject + its cosine distance |
+| `ctl clusters list [--limit N] [--offset N]` | one page of `GET /faces/clusters`; `SUGGESTION` = the nearest named subject + its cosine distance |
 | `ctl clusters assign <cluster-uid> [<subject-uid>]` | names **every** face of the group; `--name` instead of a uid |
 | `ctl clusters remove-face <cluster-uid> <photo-uid> <face>` | drops one face that does not belong, before naming |
+
+The listing is **paged** (24 groups by default, 100 at most) and shows only the groups the server has
+already prepared: a group is listed once its cached summary exists, and the line under the table says how
+many are still being prepared in the background and where the next page starts. Asking for the listing is
+what schedules that preparation (the `face_cluster` job, at most one pass queued at a time), so a library
+whose groups have never been prepared fills in by itself a moment after the first `list`.
 
 `REPRESENTATIVE` prints as `<photo-uid> #<face-index>` — the two arguments `ctl photos image` and
 `remove-face` take, so looking at a group and repairing it need no translation step. `assign` **consumes**

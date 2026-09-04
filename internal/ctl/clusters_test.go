@@ -10,7 +10,7 @@ import (
 
 // clustersBody is a realistic GET /faces/clusters body: one group the server has a
 // guess about and one it has none for, which is why suggestion is a pointer.
-const clustersBody = `{"clusters":[
+const clustersBody = `{"total":2,"pending":7,"limit":2,"offset":0,"next_offset":2,"clusters":[
 	{"uid":"clu01","size":12,
 	 "representative":{"photo_uid":"pht01","face_index":0,"bbox":[0.1,0.2,0.3,0.4],"det_score":0.94},
 	 "examples":[{"photo_uid":"pht02","face_index":1,"bbox":[0.2,0.2,0.2,0.2],"det_score":0.9}],
@@ -26,18 +26,22 @@ const clustersBody = `{"clusters":[
 func TestClient_ListClusters(t *testing.T) {
 	t.Parallel()
 
-	var gotPath, gotMethod string
+	var gotPath, gotMethod, gotQuery string
 	client := testClient(t, "kkt_a_b", func(w http.ResponseWriter, r *http.Request) {
-		gotPath, gotMethod = r.URL.Path, r.Method
+		gotPath, gotMethod, gotQuery = r.URL.Path, r.Method, r.URL.RawQuery
 		w.Write([]byte(clustersBody))
 	})
 
-	raw, err := client.ListClusters(t.Context())
+	raw, err := client.ListClusters(t.Context(), 2, 0)
 	if err != nil {
 		t.Fatalf("ListClusters returned %v", err)
 	}
 	if gotPath != "/api/v1/faces/clusters" || gotMethod != http.MethodGet {
 		t.Errorf("request = %s %s, want GET /api/v1/faces/clusters", gotMethod, gotPath)
+	}
+	// A zero offset is left out; only what was asked for travels.
+	if gotQuery != "limit=2" {
+		t.Errorf("query = %q, want limit=2", gotQuery)
 	}
 	clusters, err := DecodeClusters(raw)
 	if err != nil {
@@ -54,6 +58,34 @@ func TestClient_ListClusters(t *testing.T) {
 	}
 	if clusters[1].Suggestion != nil {
 		t.Errorf("second suggestion = %+v, want nil when nobody was close enough", clusters[1].Suggestion)
+	}
+	// The page also carries what surrounds it: the groups still being prepared
+	// and where the next page starts.
+	page, err := DecodeClusterPage(raw)
+	if err != nil {
+		t.Fatalf("DecodeClusterPage returned %v", err)
+	}
+	if page.Pending != 7 || page.NextOffset == nil || *page.NextOffset != 2 {
+		t.Errorf("page = %+v, want seven pending and the next page at 2", page)
+	}
+}
+
+// TestClient_ListClusters_paging verifies both paging parameters travel when the
+// caller asks for a later page.
+func TestClient_ListClusters_paging(t *testing.T) {
+	t.Parallel()
+
+	var gotQuery string
+	client := testClient(t, "kkt_a_b", func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		w.Write([]byte(clustersBody))
+	})
+
+	if _, err := client.ListClusters(t.Context(), 24, 48); err != nil {
+		t.Fatalf("ListClusters returned %v", err)
+	}
+	if gotQuery != "limit=24&offset=48" {
+		t.Errorf("query = %q, want limit=24&offset=48", gotQuery)
 	}
 }
 

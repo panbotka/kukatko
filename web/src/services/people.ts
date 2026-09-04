@@ -377,9 +377,27 @@ export interface ClusterView {
   created_at: string
 }
 
-/** Response body of `GET /api/v1/faces/clusters`. */
-interface ClustersResponse {
+/**
+ * One page of `GET /api/v1/faces/clusters` (`cluster.Listing`).
+ *
+ * `total` counts the groups that are *ready* — the ones whose cached summary the
+ * server has already built — and `pending` the ones it is still preparing in the
+ * background. A page load that finds groups pending asks the server to prepare
+ * them, so the two numbers together are what the page says instead of spinning.
+ */
+export interface ClusterPage {
   clusters: ClusterView[]
+  total: number
+  pending: number
+  limit: number
+  offset: number
+  next_offset: number | null
+}
+
+/** Query parameters for {@link fetchClusters}. */
+export interface ClusterPageParams {
+  limit?: number
+  offset?: number
 }
 
 /** A cluster-naming request: assign by existing subject UID or by name. */
@@ -399,10 +417,25 @@ interface RemoveFaceResponse {
   cluster: ClusterView | null
 }
 
-/** Lists the unnamed face clusters awaiting review, largest impact first. */
-export async function fetchClusters(signal?: AbortSignal): Promise<ClusterView[]> {
-  const body = await getJSON<ClustersResponse>('/faces/clusters', signal)
-  return body.clusters
+/**
+ * Fetches one page of the unnamed face clusters awaiting review, newest first.
+ * The page is bounded on purpose: a real library holds far more groups than a
+ * reader looks at, and the server prepares them in the background rather than
+ * rebuilding every group's view for every visit.
+ */
+export async function fetchClusters(
+  params: ClusterPageParams = {},
+  signal?: AbortSignal,
+): Promise<ClusterPage> {
+  const query = new URLSearchParams()
+  if (params.limit !== undefined) {
+    query.set('limit', String(params.limit))
+  }
+  if (params.offset !== undefined && params.offset > 0) {
+    query.set('offset', String(params.offset))
+  }
+  const search = query.toString()
+  return getJSON<ClusterPage>(`/faces/clusters${search === '' ? '' : `?${search}`}`, signal)
 }
 
 /**

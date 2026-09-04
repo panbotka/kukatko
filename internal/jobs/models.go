@@ -124,6 +124,17 @@ const (
 	// it owned are re-assigned to it. It is the undo of TypeNamelessDetach and
 	// runs in the queue for the same reason.
 	TypeNamelessRestore = "nameless_restore"
+	// TypeFaceCluster prepares the face-groups page: it groups the currently
+	// unassigned, unclustered faces into clusters when its payload asks for it,
+	// and then builds the cached listing summary (representative, examples,
+	// suggested subject) of the groups that have none. Both halves are minutes of
+	// vector search over a real library — the clustering pass runs an HNSW query
+	// per clusterable face, the summary one per group — which is exactly why
+	// neither belongs in the HTTP request that asks for it. A run that leaves
+	// groups unprepared enqueues its own successor, so the backlog drains in
+	// bounded steps and the page can say how many groups are ready. See
+	// internal/clusterjob.
+	TypeFaceCluster = "face_cluster"
 )
 
 // ForceOutcome says what a forced enqueue did to the queue. A forced job carries

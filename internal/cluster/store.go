@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -97,7 +98,7 @@ func scanFace(rows pgx.Rows) (Face, error) {
 const insertClusterSQL = `
 INSERT INTO face_clusters (uid, centroid, size, model)
 VALUES ($1, $2, $3, $4)
-RETURNING uid, centroid, size, model, created_at, updated_at`
+RETURNING ` + clusterColumns
 
 // CreateCluster inserts a cluster with the given centroid, size and model and
 // returns it refreshed with a generated uid and timestamps.
@@ -124,17 +125,48 @@ func (s *Store) AddFacesToCluster(ctx context.Context, clusterUID string, faceID
 	return nil
 }
 
-// listClustersSQL reads every cluster, newest first then by uid for a stable
-// listing.
-const listClustersSQL = `
-SELECT uid, centroid, size, model, created_at, updated_at
-FROM face_clusters
-ORDER BY created_at DESC, uid`
+// clusterColumns is the canonical column order every cluster-reading query uses,
+// matched by scanCluster.
+const clusterColumns = `uid, centroid, size, model, created_at, updated_at, summary`
 
-// ListClusters returns every cluster, newest first. A store with no clusters
-// yields an empty slice and a nil error.
-func (s *Store) ListClusters(ctx context.Context) ([]Cluster, error) {
-	rows, err := s.pool.Query(ctx, listClustersSQL)
+// listReadyClustersSQL reads one page of the clusters that have a cached listing
+// summary, newest first then by uid for a stable page boundary. It is served by
+// idx_face_clusters_ready, which covers exactly this predicate and order.
+const listReadyClustersSQL = `
+SELECT ` + clusterColumns + `
+FROM face_clusters
+WHERE summary IS NOT NULL
+ORDER BY created_at DESC, uid
+LIMIT $1 OFFSET $2`
+
+// ListReadyClusters returns one page of the clusters whose listing summary has
+// been built, newest first. Clusters still awaiting a summary are deliberately
+// not returned: a group without one cannot be drawn, and the caller reports how
+// many are pending instead. A page past the end yields an empty slice.
+func (s *Store) ListReadyClusters(ctx context.Context, limit, offset int) ([]Cluster, error) {
+	return s.queryClusters(ctx, listReadyClustersSQL, limit, offset)
+}
+
+// listPendingClustersSQL reads the clusters with no cached summary yet, oldest
+// first so the backlog drains in the order it was created. It is served by
+// idx_face_clusters_summary_pending.
+const listPendingClustersSQL = `
+SELECT ` + clusterColumns + `
+FROM face_clusters
+WHERE summary IS NULL
+ORDER BY created_at, uid
+LIMIT $1`
+
+// ListPendingClusters returns up to limit clusters that have no cached listing
+// summary, oldest first. It is the work list of the background summary pass.
+func (s *Store) ListPendingClusters(ctx context.Context, limit int) ([]Cluster, error) {
+	return s.queryClusters(ctx, listPendingClustersSQL, limit)
+}
+
+// queryClusters runs a cluster-selecting query in the canonical column order and
+// scans the rows into Cluster values.
+func (s *Store) queryClusters(ctx context.Context, query string, args ...any) ([]Cluster, error) {
+	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("cluster: listing clusters: %w", err)
 	}
@@ -154,9 +186,45 @@ func (s *Store) ListClusters(ctx context.Context) ([]Cluster, error) {
 	return out, nil
 }
 
+// countClustersSQL counts the clusters that can be listed and the ones still
+// waiting for their summary, in one pass over the table.
+const countClustersSQL = `
+SELECT count(*) FILTER (WHERE summary IS NOT NULL), count(*) FILTER (WHERE summary IS NULL)
+FROM face_clusters`
+
+// CountClusters returns how many clusters have a cached listing summary (ready)
+// and how many are still waiting for one (pending). The two together are every
+// cluster in the library.
+func (s *Store) CountClusters(ctx context.Context) (ready, pending int, err error) {
+	if err := s.pool.QueryRow(ctx, countClustersSQL).Scan(&ready, &pending); err != nil {
+		return 0, 0, fmt.Errorf("cluster: counting clusters: %w", err)
+	}
+	return ready, pending, nil
+}
+
+// SaveSummary stores the cached listing summary of one cluster, stamping when it
+// was built. It returns ErrClusterNotFound when the cluster is gone — which a
+// background pass treats as a skip, not a failure: a cluster named by somebody
+// while its summary was being built is a cluster that no longer needs one.
+func (s *Store) SaveSummary(ctx context.Context, uid string, summary Summary) error {
+	encoded, err := json.Marshal(summary)
+	if err != nil {
+		return fmt.Errorf("cluster: encoding summary of cluster %s: %w", uid, err)
+	}
+	tag, err := s.pool.Exec(ctx,
+		"UPDATE face_clusters SET summary = $2, summary_at = now() WHERE uid = $1", uid, encoded)
+	if err != nil {
+		return fmt.Errorf("cluster: storing the summary of cluster %s: %w", uid, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrClusterNotFound
+	}
+	return nil
+}
+
 // getClusterSQL reads one cluster by uid.
 const getClusterSQL = `
-SELECT uid, centroid, size, model, created_at, updated_at
+SELECT ` + clusterColumns + `
 FROM face_clusters
 WHERE uid = $1`
 
@@ -169,16 +237,25 @@ func (s *Store) GetCluster(ctx context.Context, uid string) (Cluster, error) {
 	return c, err
 }
 
-// scanCluster reads one cluster row, decoding the halfvec centroid into []float32.
+// scanCluster reads one cluster row, decoding the halfvec centroid into
+// []float32 and the cached summary JSON (absent for a cluster that has none).
 func scanCluster(row pgx.Row) (Cluster, error) {
 	var (
-		c  Cluster
-		hv pgvector.HalfVector
+		c       Cluster
+		hv      pgvector.HalfVector
+		summary []byte
 	)
-	if err := row.Scan(&c.UID, &hv, &c.Size, &c.Model, &c.CreatedAt, &c.UpdatedAt); err != nil {
+	if err := row.Scan(&c.UID, &hv, &c.Size, &c.Model, &c.CreatedAt, &c.UpdatedAt, &summary); err != nil {
 		return Cluster{}, fmt.Errorf("cluster: scanning cluster: %w", err)
 	}
 	c.Centroid = vectors.FromHalfVec(hv)
+	if len(summary) > 0 {
+		var decoded Summary
+		if err := json.Unmarshal(summary, &decoded); err != nil {
+			return Cluster{}, fmt.Errorf("cluster: decoding the summary of cluster %s: %w", c.UID, err)
+		}
+		c.Summary = &decoded
+	}
 	return c, nil
 }
 
@@ -210,12 +287,16 @@ func (s *Store) RemoveFaceFromCluster(ctx context.Context, clusterUID string, re
 	return tag.RowsAffected() > 0, nil
 }
 
-// RefreshCluster rewrites a cluster's centroid and size (and bumps updated_at),
-// used after a face is removed so the cached centroid stays in step with the
-// remaining members. It returns ErrClusterNotFound when no such cluster exists.
+// RefreshCluster rewrites a cluster's centroid and size and drops its cached
+// listing summary (bumping updated_at), used after a face is removed so neither
+// the centroid nor the summary outlives the membership it was computed from. The
+// caller writes the recomputed summary back with SaveSummary; until it does, the
+// cluster is pending and the background pass would rebuild it anyway. It returns
+// ErrClusterNotFound when no such cluster exists.
 func (s *Store) RefreshCluster(ctx context.Context, uid string, centroid []float32, size int) error {
 	tag, err := s.pool.Exec(ctx,
-		"UPDATE face_clusters SET centroid = $2, size = $3, updated_at = now() WHERE uid = $1",
+		"UPDATE face_clusters SET centroid = $2, size = $3, summary = NULL, summary_at = NULL,"+
+			" updated_at = now() WHERE uid = $1",
 		uid, vectors.ToHalfVec(centroid), size)
 	if err != nil {
 		return fmt.Errorf("cluster: refreshing cluster %s: %w", uid, err)

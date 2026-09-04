@@ -591,6 +591,13 @@ here.
   scrolls in. The class is `.kk-tile-grid`, a **selector hook only**: unlike `.kukatko-photo-grid`,
   which strips the card chrome off what it holds, the tiles keep their `.kk-tile` look. Used by
   `AlbumsPage` and `PeoplePage`. Tests: `TileGrid.test.tsx`),
+  `review/ReviewGrid` (**the virtualized review-card grid** — `TileGrid`'s treatment for the review
+  queues, whose geometry is not `auto-fill` but the column count the reader pinned: its list element
+  carries `kk-review-grid`, `data-density` and `gridTemplateColumns(density)` with the
+  `REVIEW_GRID_SCOPE` gap, so virtualizing a queue moves no card. Beyond `TileGrid` it takes an
+  `onEndReached` (the scroll-driven "load the next page") and a `footer` node rendered below the last
+  card through virtuoso's `Footer` component — that is where a queue puts its "loading more" spinner
+  and the retry for a failed append. Used by `ClustersPage`. Tests: `ReviewGrid.test.tsx`),
   `ConfirmModal` (**the single shared confirmation dialog** — replaced the native `window.confirm`
   in four places: `AlbumDetailPage` (deleting an album), `LabelsPage` (deleting a label),
   `SavedSearchesPage` (deleting a saved search).
@@ -2696,7 +2703,15 @@ here.
   `ClusterCard` (a representative + samples + removal of a strayed face + one-shot naming
   of the whole cluster) in the **review tools' density grid** — `useGridDensity(REVIEW_GRID_SCOPE)` +
   `GridDensityControl` beside the title, `gridTemplateColumns(density)` in place of the responsive
-  1/2/3 `Row`/`Col` it had, which survives only as the width the count is *seeded* from; the grid also
+  1/2/3 `Row`/`Col` it had, which survives only as the width the count is *seeded* from.
+  The queue is **paged and virtualized** (`ReviewGrid`, see below): `fetchClusters({limit,offset})`
+  loads `PAGE_SIZE` 24 groups at a time, the grid's `onEndReached` appends the next page as the reader
+  scrolls (guarded by a `loadingRef` against virtuoso firing twice for one offset), and a failed
+  *append* keeps every group already loaded and offers a retry line instead of wiping the queue —
+  only a failed **first** page becomes the `ErrorState`. The server lists only the groups whose
+  summary it has prepared, so the page shows `clusters.preparing` ("2 groups ready, another 431 still
+  being prepared…") with a **Look again** button whenever `pending > 0`, and — the point of the
+  count — a library with nothing prepared yet is *not* called empty. The grid also
   carries **`kk-review-grid`** (`components/review/review.css` → `min-width: 0` on its children),
   without which a card's name field and button would set the `1fr` tracks' automatic minimum and
   push the grid off the side of a phone at the three columns a narrow viewport is capped to —
@@ -5117,10 +5132,12 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   away and deleted; irreversible, so the caller confirms first)/
   `fetchSubjectPhotos`, the avatar address `subjectAvatarUrl(uid)` (`GET /subjects/{uid}/avatar` — a plain
   `<img>` source, not a fetch: the session cookie rides along and the browser caches the picture),
-  faces `fetchFaces`/`assignFace`, clusters `fetchClusters`/
+  faces `fetchFaces`/`assignFace`, clusters `fetchClusters({limit,offset})` (**one page** —
+  the response carries `total` ready groups, `pending` ones still being prepared server-side and
+  `next_offset`)/
   `assignCluster`/`removeClusterFace`, outliers `fetchOutliers`; the types `Subject`/`SubjectCount`/
   `SubjectInput`/`SubjectType`/`MergeResult`/`Bbox`/`FaceView`/`FacesResponse`/`AssignRequest`/`Suggestion`/
-  `ClusterView`/`ExampleFace`/`ClusterAssignRequest`/`RemoveFaceRequest`/`OutlierResult`/
+  `ClusterView`/`ClusterPage`/`ClusterPageParams`/`ExampleFace`/`ClusterAssignRequest`/`RemoveFaceRequest`/`OutlierResult`/
   `OutlierFace`; it shares `ApiError`+`buildPhotoQuery` from `auth.ts`/`photos.ts`);
   `faces.ts` = the client of the „find a person among untagged photos" search:
   `searchCandidates(subjectUid,{threshold,limit},signal)` over `POST /subjects/{uid}/candidates`; the types

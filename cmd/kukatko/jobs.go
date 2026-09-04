@@ -5,7 +5,7 @@ import (
 	"log"
 
 	"github.com/panbotka/kukatko/internal/auth"
-	"github.com/panbotka/kukatko/internal/cluster"
+	"github.com/panbotka/kukatko/internal/clusterjob"
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/embedding"
@@ -54,13 +54,14 @@ import (
 // returned as an error.
 func buildJobs(
 	cfg *config.Config, db *database.DB, store *jobs.Store, authAPI *auth.API, enqueuer *jobs.Enqueuer,
-	embedSvc *embedjob.Service, faceSvc *facejob.Service, clusterSvc *cluster.Service,
+	embedSvc *embedjob.Service, faceSvc *facejob.Service, clusterSvc *clusterjob.Service,
 	storyboardSvc *storyboardjob.Service, embedClient embedding.Client, reg *metrics.Registry,
 	placesSvc *placesjob.Service,
 ) (*worker.Worker, *jobsapi.API, *processapi.API, *maintenanceapi.API, error) {
 	svcs, maintenanceSvc, err := buildJobServices(jobServiceDeps{
 		cfg: cfg, db: db, store: store, enqueuer: enqueuer, embed: embedSvc, face: faceSvc,
 		storyboard: storyboardSvc, embedClient: embedClient, places: placesSvc, reg: reg,
+		cluster: clusterSvc,
 	})
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -126,7 +127,10 @@ type jobServiceDeps struct {
 	// places is the reverse-geocode service, already built by the caller because
 	// the regeocode rebuild endpoint shares it (nil when no mapy.com key is set).
 	places *placesjob.Service
-	reg    *metrics.Registry
+	// cluster is the face-grouping job service, already built by the caller because
+	// the clusters API shares it (it schedules the preparation the listing needs).
+	cluster *clusterjob.Service
+	reg     *metrics.Registry
 }
 
 // buildJobServices constructs every handler the worker registry needs, returning
@@ -162,6 +166,7 @@ func buildJobServices(d jobServiceDeps) (registryServices, *maintenance.Service,
 		embed: d.embed, face: d.face, thumb: thumbSvc, meta: metaSvc,
 		places: d.places, sidecar: sidecarSvc, ocr: ocrSvc, mail: mailSvc,
 		nameless: buildNamelessService(d.db, d.store), storyboard: d.storyboard,
+		cluster: d.cluster,
 	}, maintenanceSvc, nil
 }
 
@@ -178,6 +183,7 @@ type registryServices struct {
 	mail       *mailjob.Service
 	nameless   *namelessjob.Service
 	storyboard *storyboardjob.Service
+	cluster    *clusterjob.Service
 }
 
 // buildRegistry returns the worker registry with every configured handler
@@ -195,6 +201,7 @@ func buildRegistry(svc registryServices) *worker.Registry {
 	registry.Register(jobs.TypeNamelessDetach, svc.nameless.HandleDetach)
 	registry.Register(jobs.TypeNamelessRestore, svc.nameless.HandleRestore)
 	registry.Register(jobs.TypeStoryboard, svc.storyboard.Handle)
+	registry.Register(jobs.TypeFaceCluster, svc.cluster.Handle)
 	if svc.places != nil {
 		registry.Register(jobs.TypePlaces, svc.places.Handle)
 	}

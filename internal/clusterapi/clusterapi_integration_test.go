@@ -17,8 +17,10 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/cluster"
 	"github.com/panbotka/kukatko/internal/clusterapi"
+	"github.com/panbotka/kukatko/internal/clusterjob"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/facematch"
+	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/vectors"
@@ -38,6 +40,7 @@ type env struct {
 	authSvc *auth.Service
 	photos  *photos.Store
 	vectors *vectors.Store
+	jobs    *jobs.Store
 	svc     *cluster.Service
 }
 
@@ -57,7 +60,12 @@ func newEnv(t *testing.T) *env {
 	matchSvc := facematch.New(facematch.Config{Photos: photoStore, Faces: vectorStore, People: peopleStore})
 	svc := cluster.New(cluster.Config{Store: cluster.NewStore(db.Pool()), Faces: vectorStore, Assigner: matchSvc})
 
-	api := clusterapi.NewAPI(clusterapi.Config{Service: svc, RequireWrite: authAPI.RequireWrite})
+	jobStore := jobs.NewStore(db.Pool())
+	api := clusterapi.NewAPI(clusterapi.Config{
+		Service:      svc,
+		Preparer:     clusterjob.New(svc, jobStore, 0, nil),
+		RequireWrite: authAPI.RequireWrite,
+	})
 	r := chi.NewRouter()
 	r.Route("/api/v1", func(r chi.Router) {
 		authAPI.RegisterRoutes(r)
@@ -65,7 +73,10 @@ func newEnv(t *testing.T) *env {
 	})
 	server := httptest.NewServer(r)
 	t.Cleanup(server.Close)
-	return &env{server: server, authSvc: authSvc, photos: photoStore, vectors: vectorStore, svc: svc}
+	return &env{
+		server: server, authSvc: authSvc, photos: photoStore, vectors: vectorStore,
+		jobs: jobStore, svc: svc,
+	}
 }
 
 // login creates a user with the given role and returns a cookie-bearing client.
@@ -129,19 +140,30 @@ func (e *env) seedFace(t *testing.T, hash string) {
 	}
 }
 
-// firstClusterUID seeds a cluster and returns its uid after a recluster pass.
+// firstClusterUID seeds a cluster and returns its uid after a recluster pass and
+// the background preparation the listing depends on.
 func (e *env) firstClusterUID(t *testing.T) string {
+	t.Helper()
+	e.seedCluster(t)
+	if _, err := e.svc.BuildSummaries(t.Context(), 0); err != nil {
+		t.Fatalf("BuildSummaries: %v", err)
+	}
+	listing, err := e.svc.ListPage(t.Context(), cluster.PageRequest{})
+	if err != nil || len(listing.Clusters) != 1 {
+		t.Fatalf("ListPage = %+v, %v; want 1 cluster", listing, err)
+	}
+	return listing.Clusters[0].UID
+}
+
+// seedCluster seeds two faces of one person and groups them, leaving the cluster
+// unprepared (no cached summary yet).
+func (e *env) seedCluster(t *testing.T) {
 	t.Helper()
 	e.seedFace(t, "f1")
 	e.seedFace(t, "f2")
 	if _, err := e.svc.Recluster(t.Context()); err != nil {
 		t.Fatalf("Recluster: %v", err)
 	}
-	views, err := e.svc.ListClusters(t.Context())
-	if err != nil || len(views) != 1 {
-		t.Fatalf("ListClusters = %v, %v; want 1 cluster", views, err)
-	}
-	return views[0].UID
 }
 
 // TestListClusters_EditorSeesClusters verifies an editor can list clusters.
@@ -201,9 +223,9 @@ func TestAssignCluster_Endpoint(t *testing.T) {
 		t.Fatalf("result = %+v, want subject Carol with 2 markers", result)
 	}
 
-	views, err := env.svc.ListClusters(t.Context())
-	if err != nil || len(views) != 0 {
-		t.Fatalf("clusters after assign = %v, %v; want none", views, err)
+	listing, err := env.svc.ListPage(t.Context(), cluster.PageRequest{})
+	if err != nil || listing.Total != 0 || listing.Pending != 0 {
+		t.Fatalf("clusters after assign = %+v, %v; want none", listing, err)
 	}
 }
 
@@ -230,9 +252,15 @@ func TestRemoveFace_Endpoint(t *testing.T) {
 	if _, err := env.svc.Recluster(t.Context()); err != nil {
 		t.Fatalf("Recluster: %v", err)
 	}
-	views, _ := env.svc.ListClusters(t.Context())
-	uid := views[0].UID
-	strayPhoto := views[0].Representative.PhotoUID
+	if _, err := env.svc.BuildSummaries(t.Context(), 0); err != nil {
+		t.Fatalf("BuildSummaries: %v", err)
+	}
+	listing, err := env.svc.ListPage(t.Context(), cluster.PageRequest{})
+	if err != nil || len(listing.Clusters) != 1 {
+		t.Fatalf("ListPage = %+v, %v; want 1 cluster", listing, err)
+	}
+	uid := listing.Clusters[0].UID
+	strayPhoto := listing.Clusters[0].Representative.PhotoUID
 	client := env.login(t, "editor", auth.RoleEditor)
 
 	body, _ := json.Marshal(map[string]any{"photo_uid": strayPhoto, "face_index": 0})
@@ -250,5 +278,60 @@ func TestRemoveFace_Endpoint(t *testing.T) {
 	}
 	if out.Cluster == nil || out.Cluster.Size != 2 {
 		t.Fatalf("cluster after remove = %+v, want size 2", out.Cluster)
+	}
+}
+
+// TestListClusters_SchedulesPreparation verifies that opening the page on a
+// library whose groups have not been prepared answers at once — with the pending
+// count instead of an unbounded wait — and queues exactly one preparation pass,
+// however many times it is opened.
+func TestListClusters_SchedulesPreparation(t *testing.T) {
+	env := newEnv(t)
+	env.seedCluster(t)
+	client := env.login(t, "editor", auth.RoleEditor)
+
+	for range 3 {
+		resp := mustDo(t, client, http.MethodGet, env.server.URL+"/api/v1/faces/clusters", nil)
+		var out cluster.Listing
+		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET clusters status = %d, want 200", resp.StatusCode)
+		}
+		if len(out.Clusters) != 0 || out.Pending != 1 {
+			t.Fatalf("listing = %+v, want nothing ready and one pending", out)
+		}
+	}
+
+	pending, err := env.jobs.CountPending(t.Context(), jobs.TypeFaceCluster)
+	if err != nil {
+		t.Fatalf("CountPending: %v", err)
+	}
+	if pending != 1 {
+		t.Fatalf("queued %d preparation passes, want exactly 1", pending)
+	}
+}
+
+// TestListClusters_Pages verifies the endpoint serves bounded pages: the reader
+// asks for two groups and is told where the third one starts.
+func TestListClusters_Pages(t *testing.T) {
+	env := newEnv(t)
+	env.firstClusterUID(t)
+	client := env.login(t, "editor", auth.RoleEditor)
+
+	resp := mustDo(t, client, http.MethodGet,
+		env.server.URL+"/api/v1/faces/clusters?limit=1&offset=0", nil)
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET clusters status = %d, want 200", resp.StatusCode)
+	}
+	var out cluster.Listing
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if out.Limit != 1 || out.Total != 1 || out.NextOffset != nil {
+		t.Fatalf("listing = %+v, want a page of one with no further page", out)
 	}
 }

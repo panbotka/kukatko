@@ -23,30 +23,38 @@ func newCtlClustersCmd(opts *ctlOptions) *cobra.Command {
 	return cmd
 }
 
-// newCtlClustersListCmd builds "ctl clusters list", the bare {"clusters": […]}
-// listing. It is not paginated.
+// newCtlClustersListCmd builds "ctl clusters list", one page of the cluster
+// listing. It is paginated: the server serves a bounded page and says where the
+// next one starts, because a real library holds far more groups than anybody
+// reads in one sitting.
 func newCtlClustersListCmd(opts *ctlOptions) *cobra.Command {
-	return &cobra.Command{
+	var limit, offset int
+	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List every cluster of unnamed faces with its suggested identity",
-		Long: "List every cluster of unnamed faces.\n\n" +
+		Short: "List a page of the clusters of unnamed faces with their suggested identity",
+		Long: "List the clusters of unnamed faces, a page at a time.\n\n" +
 			"SUGGESTION is the nearest already-named subject with the cosine distance that\n" +
 			"ranked it — a guess, never an assignment. REPRESENTATIVE is one face of the\n" +
 			"group as `<photo-uid> #<face-index>`, which is what `ctl photos image` and\n" +
-			"`ctl clusters remove-face` take.",
+			"`ctl clusters remove-face` take.\n\n" +
+			"Only groups the server has already prepared are listed; the rest are counted\n" +
+			"below the table and prepared in the background, which this command asks for.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			client, out, err := opts.resolve()
 			if err != nil {
 				return err
 			}
-			raw, err := client.ListClusters(cmd.Context())
+			raw, err := client.ListClusters(cmd.Context(), limit, offset)
 			if err != nil {
 				return fmt.Errorf("listing face clusters: %w", err)
 			}
 			return renderClusters(cmd.OutOrStdout(), out, raw)
 		},
 	}
+	cmd.Flags().IntVar(&limit, "limit", 0, "how many groups to list (server default when unset)")
+	cmd.Flags().IntVar(&offset, "offset", 0, "where to start, as the previous page reported it")
+	return cmd
 }
 
 // newCtlClustersAssignCmd builds "ctl clusters assign <cluster-uid> [<subject-uid>]",

@@ -118,7 +118,7 @@ func renderFaceAssign(w io.Writer, out ctl.Output, raw json.RawMessage) error {
 
 // renderClusters writes the bare {"clusters": […]} list of unnamed face groups.
 func renderClusters(w io.Writer, out ctl.Output, raw json.RawMessage) error {
-	return renderRaw(w, out, raw, "cluster list", ctl.DecodeClusters, ctl.WriteClusters)
+	return renderRaw(w, out, raw, "cluster list", ctl.DecodeClusterPage, ctl.WriteClusterPage)
 }
 
 // renderClusterAssign writes the outcome of naming a whole cluster.

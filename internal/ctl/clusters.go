@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 )
 
@@ -52,11 +53,37 @@ type ClusterAssignResult struct {
 	Markers    []Marker `json:"markers"`
 }
 
-// ListClusters fetches GET /faces/clusters and returns the raw JSON body: every
-// cluster of unassigned faces with its suggestion. It needs the editor or admin
-// role. Decode it with DecodeClusters.
-func (c *Client) ListClusters(ctx context.Context) (json.RawMessage, error) {
-	return c.get(ctx, "/faces/clusters", nil)
+// ClusterPage is one page of the cluster listing plus what surrounds it: how
+// many clusters are ready to be shown, how many are still being prepared in the
+// background, and where the next page starts (nil at the end).
+type ClusterPage struct {
+	Clusters   []Cluster `json:"clusters"`
+	Total      int       `json:"total"`
+	Pending    int       `json:"pending"`
+	Limit      int       `json:"limit"`
+	Offset     int       `json:"offset"`
+	NextOffset *int      `json:"next_offset"`
+}
+
+// ListClusters fetches one page of GET /faces/clusters and returns the raw JSON
+// body: the clusters of unassigned faces that are ready, each with its
+// suggestion, plus the paging fields. A non-positive limit or offset is left out
+// and the server's default page is served. It needs the editor or admin role.
+// Decode it with DecodeClusters (the groups) or DecodeClusterPage (the whole
+// page).
+//
+// Only clusters whose cached summary has been built are listed; the rest are
+// reported as `pending` and prepared by the `face_cluster` job, which the
+// request schedules.
+func (c *Client) ListClusters(ctx context.Context, limit, offset int) (json.RawMessage, error) {
+	query := url.Values{}
+	if limit > 0 {
+		query.Set("limit", strconv.Itoa(limit))
+	}
+	if offset > 0 {
+		query.Set("offset", strconv.Itoa(offset))
+	}
+	return c.get(ctx, "/faces/clusters", query)
 }
 
 // AssignCluster names every face of one cluster at once via POST
@@ -89,15 +116,23 @@ func (c *Client) RemoveClusterFace(
 	return c.send(ctx, http.MethodPost, "/faces/clusters/"+url.PathEscape(clusterUID)+"/remove-face", body)
 }
 
-// DecodeClusters decodes the bare {"clusters": […]} envelope of GET /faces/clusters.
+// DecodeClusters decodes the clusters out of one page of GET /faces/clusters.
 func DecodeClusters(raw json.RawMessage) ([]Cluster, error) {
-	var payload struct {
-		Clusters []Cluster `json:"clusters"`
+	page, err := DecodeClusterPage(raw)
+	if err != nil {
+		return nil, err
 	}
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		return nil, fmt.Errorf("decoding the cluster list: %w", err)
+	return page.Clusters, nil
+}
+
+// DecodeClusterPage decodes one whole page of GET /faces/clusters — the clusters
+// together with the totals and the next offset.
+func DecodeClusterPage(raw json.RawMessage) (ClusterPage, error) {
+	var page ClusterPage
+	if err := json.Unmarshal(raw, &page); err != nil {
+		return ClusterPage{}, fmt.Errorf("decoding the cluster list: %w", err)
 	}
-	return payload.Clusters, nil
+	return page, nil
 }
 
 // DecodeClusterAssign decodes the result of naming a whole cluster.

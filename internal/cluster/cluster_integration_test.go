@@ -5,6 +5,8 @@ package cluster_test
 import (
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/panbotka/kukatko/internal/cluster"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/facematch"
@@ -20,6 +22,7 @@ import (
 
 // env bundles the stores and the cluster service over the integration database.
 type env struct {
+	pool    *pgxpool.Pool
 	photos  *photos.Store
 	vectors *vectors.Store
 	people  *people.Store
@@ -44,7 +47,9 @@ func newEnv(t *testing.T) *env {
 		Faces:    vectorStore,
 		Assigner: matchSvc,
 	})
-	return &env{photos: photoStore, vectors: vectorStore, people: peopleStore, svc: svc}
+	return &env{
+		pool: db.Pool(), photos: photoStore, vectors: vectorStore, people: peopleStore, svc: svc,
+	}
 }
 
 // makePhoto inserts a photo with stored dimensions and returns its uid.
@@ -85,14 +90,34 @@ func (e *env) seedFace(t *testing.T, hash string, index int, subjectUID, subject
 	return uid
 }
 
-// listClusters returns the current clusters, failing the test on error.
+// listClusters prepares whatever the background pass would prepare and returns
+// the resulting first page of clusters, failing the test on error. Preparation
+// is part of the helper because a cluster is only listed once its cached summary
+// exists — which is what took the vector search off the request path.
 func (e *env) listClusters(t *testing.T) []cluster.View {
 	t.Helper()
-	views, err := e.svc.ListClusters(t.Context())
+	e.prepare(t)
+	return e.page(t, cluster.PageRequest{Limit: cluster.MaxPageSize}).Clusters
+}
+
+// prepare runs one background summary pass, failing the test on error.
+func (e *env) prepare(t *testing.T) cluster.SummaryRun {
+	t.Helper()
+	run, err := e.svc.BuildSummaries(t.Context(), 0)
 	if err != nil {
-		t.Fatalf("ListClusters: %v", err)
+		t.Fatalf("BuildSummaries: %v", err)
 	}
-	return views
+	return run
+}
+
+// page reads one listing page, failing the test on error.
+func (e *env) page(t *testing.T, req cluster.PageRequest) cluster.Listing {
+	t.Helper()
+	listing, err := e.svc.ListPage(t.Context(), req)
+	if err != nil {
+		t.Fatalf("ListPage: %v", err)
+	}
+	return listing
 }
 
 // TestRecluster_GroupsSimilarSeparatesDissimilar verifies that faces with similar
@@ -224,10 +249,7 @@ func TestRecluster_Incremental_OnlyTouchesUnassigned(t *testing.T) {
 	}
 
 	// Cluster B is unchanged (already clustered, not re-touched).
-	stillB, err := env.svc.ListClusters(ctx)
-	if err != nil {
-		t.Fatalf("ListClusters: %v", err)
-	}
+	stillB := env.listClusters(t)
 	if !containsCluster(stillB, clusterB.UID, 2) {
 		t.Fatalf("cluster B %s (size 2) missing after re-cluster: %+v", clusterB.UID, stillB)
 	}
@@ -346,4 +368,146 @@ func (e *env) photoUID(t *testing.T, hash string) string {
 		t.Fatalf("GetByFileHash %s: %v", hash, err)
 	}
 	return photo.UID
+}
+
+// TestListPage_ListsOnlyPreparedClusters verifies the listing serves what the
+// background pass has prepared and reports the rest as pending, rather than
+// building every cluster's view inside the request.
+func TestListPage_ListsOnlyPreparedClusters(t *testing.T) {
+	env := newEnv(t)
+	ctx := t.Context()
+
+	for _, h := range []string{"a1", "a2"} {
+		env.seedFace(t, h, 0, "", "")
+	}
+	for _, h := range []string{"b1", "b2"} {
+		env.seedFace(t, h, 5, "", "")
+	}
+	if _, err := env.svc.Recluster(ctx); err != nil {
+		t.Fatalf("Recluster: %v", err)
+	}
+
+	// Freshly grouped clusters carry no summary: nothing is listed, and the reader
+	// is told how many groups are being prepared.
+	before := env.page(t, cluster.PageRequest{})
+	if len(before.Clusters) != 0 || before.Total != 0 || before.Pending != 2 {
+		t.Fatalf("listing before preparation = %+v, want nothing ready and two pending", before)
+	}
+
+	run := env.prepare(t)
+	if run.Built != 2 || run.Remaining != 0 {
+		t.Fatalf("summary run = %+v, want two built and nothing left", run)
+	}
+
+	after := env.page(t, cluster.PageRequest{})
+	if len(after.Clusters) != 2 || after.Total != 2 || after.Pending != 0 {
+		t.Fatalf("listing after preparation = %+v, want two ready and none pending", after)
+	}
+	for _, view := range after.Clusters {
+		if view.Representative.PhotoUID == "" || len(view.Examples) == 0 {
+			t.Fatalf("view %+v has no representative or examples", view)
+		}
+	}
+}
+
+// TestListPage_Pages walks the listing in bounded pages, which is what keeps the
+// page from holding a whole library's worth of groups.
+func TestListPage_Pages(t *testing.T) {
+	env := newEnv(t)
+	ctx := t.Context()
+
+	// Three clusters of two faces each, on three separate identity axes.
+	for i, axis := range []int{0, 5, 9} {
+		for _, suffix := range []string{"x", "y"} {
+			env.seedFace(t, string(rune('p'+i))+suffix, axis, "", "")
+		}
+	}
+	if _, err := env.svc.Recluster(ctx); err != nil {
+		t.Fatalf("Recluster: %v", err)
+	}
+	env.prepare(t)
+
+	first := env.page(t, cluster.PageRequest{Limit: 2})
+	if len(first.Clusters) != 2 || first.Total != 3 {
+		t.Fatalf("first page = %+v, want two of three", first)
+	}
+	if first.NextOffset == nil || *first.NextOffset != 2 {
+		t.Fatalf("next offset = %v, want 2", first.NextOffset)
+	}
+
+	second := env.page(t, cluster.PageRequest{Limit: 2, Offset: *first.NextOffset})
+	if len(second.Clusters) != 1 || second.NextOffset != nil {
+		t.Fatalf("second page = %+v, want the last cluster and no further page", second)
+	}
+	// The two pages together are the whole listing, with nothing repeated.
+	seen := map[string]bool{}
+	for _, view := range append(first.Clusters, second.Clusters...) {
+		if seen[view.UID] {
+			t.Fatalf("cluster %s appears on both pages", view.UID)
+		}
+		seen[view.UID] = true
+	}
+}
+
+// TestBuildSummaries_DropsEmptyClusters verifies the preparation pass clears out
+// a group whose faces are all gone instead of listing an empty card.
+func TestBuildSummaries_DropsEmptyClusters(t *testing.T) {
+	env := newEnv(t)
+	ctx := t.Context()
+
+	first := env.seedFace(t, "e1", 0, "", "")
+	second := env.seedFace(t, "e2", 0, "", "")
+	if _, err := env.svc.Recluster(ctx); err != nil {
+		t.Fatalf("Recluster: %v", err)
+	}
+	listing := env.page(t, cluster.PageRequest{})
+	if listing.Pending != 1 {
+		t.Fatalf("pending = %d, want the one fresh cluster", listing.Pending)
+	}
+
+	// Detach both faces through the store, which is what a cluster losing its
+	// members to somebody else's curation amounts to. RemoveFace would delete the
+	// emptied cluster itself, so this is how the pass's own cleanup is reached.
+	store := cluster.NewStore(env.pool)
+	clusterUID := env.onlyClusterUID(t)
+	for _, uid := range []string{first, second} {
+		removed, err := store.RemoveFaceFromCluster(ctx, clusterUID, cluster.Ref{PhotoUID: uid})
+		if err != nil {
+			t.Fatalf("RemoveFaceFromCluster %s: %v", uid, err)
+		}
+		if !removed {
+			t.Fatalf("face of %s was not a member of cluster %s", uid, clusterUID)
+		}
+	}
+
+	run := env.prepare(t)
+	if run.Dropped != 1 || run.Built != 0 {
+		t.Fatalf("summary run = %+v, want the empty cluster dropped", run)
+	}
+	if after := env.page(t, cluster.PageRequest{}); after.Total != 0 || after.Pending != 0 {
+		t.Fatalf("listing = %+v, want no clusters at all", after)
+	}
+}
+
+// onlyClusterUID returns the uid of the single cluster in the library, prepared
+// or not, failing the test when there is not exactly one.
+func (e *env) onlyClusterUID(t *testing.T) string {
+	t.Helper()
+	var uid string
+	rows, err := e.pool.Query(t.Context(), "SELECT uid FROM face_clusters")
+	if err != nil {
+		t.Fatalf("listing cluster uids: %v", err)
+	}
+	defer rows.Close()
+	found := 0
+	for rows.Next() {
+		if err := rows.Scan(&uid); err != nil {
+			t.Fatalf("scanning a cluster uid: %v", err)
+		}
+		found++
+	}
+	if found != 1 {
+		t.Fatalf("found %d clusters, want exactly one", found)
+	}
+	return uid
 }

@@ -698,7 +698,8 @@ lost on restart).
   stops claiming and leaves abandoned in-flight jobs to the queue for recovery — except a deferral
   (`RetryAfterError`), which is still written so it never burns a retry attempt. The queue state is read via the **admin Jobs API**
   (`internal/jobsapi`: `GET /jobs/stats`, `GET /jobs`, `POST /jobs/{id}/requeue`); the UI polls it.
-- **Job types:** `thumbnail`, `places`, `metadata`, `sidecar`, `storyboard`, `mail_send` (run locally on the
+- **Job types:** `thumbnail`, `places`, `metadata`, `sidecar`, `storyboard`, `mail_send`, `face_cluster`
+  (run locally on the
   Pi, immediately), `image_embed`, `face_detect`, `ocr` (require the box), `pp_import`, `ps_migrate`, `backup`.
   `ocr` reads the text printed in a photo (`POST /ocr/image` over its `fit_1920` preview) into
   `photos.ocr_text`, so a sign in the frame becomes searchable; it runs for **stills only** and records an
@@ -706,6 +707,12 @@ lost on restart).
   `storyboard` is the odd one out in *when* it is scheduled: it renders a video's scrub-preview sprite
   (one ffmpeg pass over the clip) and is enqueued **lazily, on the first playback of that video** — never
   for the library at large, because most clips are never watched. See `internal/storyboardjob`.
+  `face_cluster` is what prepares the face-groups page: it groups the currently unassigned faces (when the
+  maintainer trigger asked for it) and then builds each group's cached listing summary — the representative,
+  the examples and the suggested subject. Both halves are one HNSW query per face or per group, minutes of
+  work on a real library, which is why neither runs inside an HTTP request: the page reads the prepared
+  summaries and reports how many groups are still being prepared. A run that leaves work over enqueues its
+  own successor, so the backlog drains in bounded steps. See `internal/clusterjob`.
   `mail_send` is the **only** path by which Kukátko sends an e-mail: the payload names a template and carries
   its data, so the message is rendered when it is delivered rather than when it is scheduled, and a mail
   enqueued while the SMTP server is away still arrives once it is back. It is enqueued **inside the

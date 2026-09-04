@@ -33,13 +33,17 @@ type FaceBackfiller interface {
 	BackfillFaces(ctx context.Context) (int, error)
 }
 
-// Reclusterer groups the currently unassigned, unclustered faces into clusters.
-// It is satisfied by cluster.Service. A nil Reclusterer disables the
-// /process/clusters endpoint (it answers 503).
+// Reclusterer schedules the pass that groups the currently unassigned,
+// unclustered faces into clusters. It is satisfied by clusterjob.Service. A nil
+// Reclusterer disables the /process/clusters endpoint (it answers 503).
+//
+// It schedules rather than runs: the pass is one HNSW query per clusterable face
+// plus one per resulting group, minutes of work on a real library, so it belongs
+// in the queue and not in the request that asks for it.
 type Reclusterer interface {
-	// Recluster groups clusterable faces into clusters and returns how many
-	// clusters were created.
-	Recluster(ctx context.Context) (int, error)
+	// ScheduleRecluster queues the clustering pass and reports whether a job was
+	// queued (false when one is already waiting or running).
+	ScheduleRecluster(ctx context.Context) (bool, error)
 }
 
 // PlacesBackfiller enqueues a `places` job for every geotagged photo missing
@@ -225,7 +229,7 @@ func NewAPI(cfg Config) *API {
 //
 //	POST /process/embeddings  RequireMaintainer  backfill missing image embeddings
 //	POST /process/faces       RequireMaintainer  backfill missing face detections
-//	POST /process/clusters    RequireMaintainer  rebuild face clusters from unassigned faces
+//	POST /process/clusters    RequireMaintainer  schedule the face-clustering pass (202, runs in the queue)
 //	POST /process/places      RequireMaintainer  backfill missing reverse-geocoded places
 //	POST /process/thumbnails  RequireMaintainer  backfill missing thumbnails (?all=true forces a full
 //	                                             re-run, ?dry_run=true only counts)
@@ -260,8 +264,10 @@ type backfillResponse struct {
 
 // reclusterResponse is the JSON body returned by the clustering endpoint.
 type reclusterResponse struct {
-	// Created is the number of clusters formed by this call.
-	Created int `json:"created"`
+	// Scheduled says whether this call queued a clustering pass. False means one
+	// was already waiting or running, so the work this call asked for is already
+	// on its way — not that nothing will happen.
+	Scheduled bool `json:"scheduled"`
 }
 
 // stacksResponse is the JSON body returned by the stack-detection endpoint.
@@ -344,20 +350,23 @@ func (a *API) handleEstimateLocations(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, locationsResponse{Estimated: estimated})
 }
 
-// handleRecluster groups the currently unassigned, unclustered faces into
-// clusters and reports how many clusters were created. It answers 503 when no
-// clustering backend is wired.
+// handleRecluster schedules the pass that groups the currently unassigned,
+// unclustered faces into clusters and prepares the summaries the face-groups
+// page is listed from, answering 202 with whether a job was queued. The work
+// itself happens in the background: on a real library it is minutes of vector
+// search, which no HTTP request should sit on. It answers 503 when no clustering
+// backend is wired.
 func (a *API) handleRecluster(w http.ResponseWriter, r *http.Request) {
 	if a.reclusterer == nil {
 		writeError(w, http.StatusServiceUnavailable, "face clustering not available")
 		return
 	}
-	created, err := a.reclusterer.Recluster(r.Context())
+	scheduled, err := a.reclusterer.ScheduleRecluster(r.Context())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "reclustering faces failed")
+		writeError(w, http.StatusInternalServerError, "scheduling the clustering pass failed")
 		return
 	}
-	writeJSON(w, http.StatusOK, reclusterResponse{Created: created})
+	writeJSON(w, http.StatusAccepted, reclusterResponse{Scheduled: scheduled})
 }
 
 // handleBackfillEmbeddings enqueues image_embed jobs for all photos missing an

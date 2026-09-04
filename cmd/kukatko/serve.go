@@ -349,7 +349,7 @@ func buildServices(
 	rebuilders := photoRebuilders{embed: embedSvc, face: faceSvc, places: placesSvc}
 	photoAPI := buildPhotoAPI(cfg, db, authAPI, mediaStore, vectorStore, embedClient, matchSvc,
 		trashSvc, sidecarSched, enqueuer, storyboardSvc, jobStore, enqueuer, rebuilders, reg)
-	clusterAPI, clusterSvc := buildClusterAPI(cfg, db, authAPI, matchSvc)
+	clusterAPI, clusterSvc := buildClusterAPI(cfg, db, jobStore, authAPI, matchSvc)
 	mapsAPI, err := buildMapsAPI(cfg, db, authAPI, mapsHealth)
 	if err != nil {
 		return nil, backgroundServices{}, err

@@ -134,6 +134,27 @@ func WriteClusters(w io.Writer, clusters []Cluster) error {
 		strconv.Itoa(faces)+" unnamed "+plural(faces, "face", "faces"))
 }
 
+// WriteClusterPage writes one page of the cluster listing: the table of groups,
+// then what surrounds the page — how many groups the server is still preparing
+// in the background, and the offset that asks for the next page. Both lines are
+// omitted when there is nothing to say.
+func WriteClusterPage(w io.Writer, page ClusterPage) error {
+	if err := WriteClusters(w, page.Clusters); err != nil {
+		return err
+	}
+	if page.Pending > 0 {
+		if err := writeLine(w, strconv.Itoa(page.Pending)+" more "+
+			plural(page.Pending, "group is", "groups are")+
+			" still being prepared in the background; ask again in a moment"); err != nil {
+			return err
+		}
+	}
+	if page.NextOffset != nil {
+		return writeLine(w, "next page: --offset "+strconv.Itoa(*page.NextOffset))
+	}
+	return nil
+}
+
 // formatClusterSuggestion renders the nearest named subject to a cluster with the
 // cosine distance behind the guess, or a dash when nobody was close enough.
 func formatClusterSuggestion(suggestion *FaceSuggestion) string {

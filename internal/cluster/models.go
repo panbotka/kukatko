@@ -67,7 +67,8 @@ type Ref struct {
 }
 
 // Cluster is one face_clusters row: a group of same-person faces plus the cached
-// centroid used for suggestions and representative selection.
+// centroid used for suggestions and representative selection, and the cached
+// listing summary the page is served from.
 type Cluster struct {
 	UID       string    `json:"uid"`
 	Centroid  []float32 `json:"-"`
@@ -75,6 +76,21 @@ type Cluster struct {
 	Model     string    `json:"model"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+	// Summary is the cached listing view of the cluster, or nil when it has not
+	// been prepared yet (a fresh cluster, or one whose membership changed). A
+	// cluster with no summary is not listed; the `face_cluster` job builds it.
+	Summary *Summary `json:"-"`
+}
+
+// Summary is what the listing needs about one cluster and what building it
+// costs: a face-listing query for the representative and the examples, plus one
+// HNSW vector search for the suggestion. It is computed as background work and
+// stored on the cluster row (face_clusters.summary) so a page load reads it
+// rather than recomputing it for every viewer.
+type Summary struct {
+	Representative ExampleFace   `json:"representative"`
+	Examples       []ExampleFace `json:"examples"`
+	Suggestion     *Suggestion   `json:"suggestion,omitempty"`
 }
 
 // Suggestion is one likely identity for a cluster: the nearest already-named
@@ -107,6 +123,41 @@ type View struct {
 	Examples       []ExampleFace `json:"examples"`
 	Suggestion     *Suggestion   `json:"suggestion,omitempty"`
 	CreatedAt      time.Time     `json:"created_at"`
+}
+
+// PageRequest is one page of the cluster listing: how many clusters to return
+// and where to start. The zero value asks for the first page of DefaultPageSize
+// clusters; the service clamps both fields.
+type PageRequest struct {
+	Limit  int
+	Offset int
+}
+
+// Listing is one page of the cluster listing plus what the reader needs to know
+// about the rest: how many clusters are ready (Total, what the page is drawn
+// from), how many are still being prepared in the background (Pending), and
+// where the next page starts (NextOffset, nil at the end).
+//
+// Pending is the honest answer to "why are there fewer groups than faces": the
+// clusters exist, their summaries do not yet. The page says so in words instead
+// of spinning.
+type Listing struct {
+	Clusters   []View `json:"clusters"`
+	Total      int    `json:"total"`
+	Pending    int    `json:"pending"`
+	Limit      int    `json:"limit"`
+	Offset     int    `json:"offset"`
+	NextOffset *int   `json:"next_offset"`
+}
+
+// SummaryRun is the outcome of one background summary-building pass: how many
+// cluster summaries were built, how many empty clusters were dropped on the way,
+// and how many clusters still have no summary once the pass ran out of its
+// budget (Remaining > 0 means another pass is due).
+type SummaryRun struct {
+	Built     int
+	Dropped   int
+	Remaining int
 }
 
 // AssignRequest names a cluster and the subject every face in it should be

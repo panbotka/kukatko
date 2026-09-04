@@ -1175,7 +1175,7 @@ to `## Package map` in `CLAUDE.md`.
   row if a worker claims it concurrently — so the flag is never lost *and* never applied in flight. It inserts
   nothing: the active-job count for that photo and type is unchanged; **job types** `image_embed`/
   `face_detect`/`thumbnail`/`places`/`metadata`/`ocr`/`sidecar`/`storyboard`/`mail_send`/`nameless_detach`/
-  `nameless_restore`/`pp_import`/`ps_migrate`/`backup`; `Enqueuer` =
+  `nameless_restore`/`face_cluster`/`pp_import`/`ps_migrate`/`backup`; `Enqueuer` =
   `NewEnqueuer(store)`
   implements `ingest.JobEnqueuer` (`EnqueueImageEmbed`/`EnqueueFaceDetect`/`EnqueueThumbnail`/
   `EnqueuePlaces`/`EnqueueMetadata`, `ErrDuplicate`=no-op);
@@ -1673,8 +1673,10 @@ to `## Package map` in `CLAUDE.md`.
   mounts `/process`;
   `POST /process/embeddings` →
   `{enqueued}` runs `embedjob.BackfillEmbeddings`, `POST /process/faces` → `{enqueued}` runs
-  `facejob.BackfillFaces`, `POST /process/clusters` → `{created}` runs `cluster.Recluster`
-  (re-clustering of unassigned faces; `Reclusterer` optional — nil → 503),
+  `facejob.BackfillFaces`, `POST /process/clusters` → **202** `{scheduled}` runs
+  `clusterjob.ScheduleRecluster` (it **queues** the `face_cluster` pass — regroup the unassigned faces,
+  then prepare the cluster summaries — rather than running minutes of vector search inside the
+  request; `scheduled:false` = a pass was already waiting or running; `Reclusterer` optional — nil → 503),
   `POST /process/places` → `{enqueued}` runs `placesjob.BackfillPlaces` (backfill of reverse-geocode for
   geotagged photos; `PlacesBackfiller` optional — nil → 503, i.e. without a mapy.com key),
   `POST /process/thumbnails` → `{enqueued,pending,dry_run}` runs `thumbjob.BackfillThumbnails(all)` (backfill of
@@ -1732,26 +1734,55 @@ to `## Package map` in `CLAUDE.md`.
   for picking the representative (`nearestToCentroid`) and the subject suggestion; **`Recluster(ctx)`** clusters
   only faces **without a subject AND without a cluster** (`subject_uid IS NULL AND cluster_uid IS NULL`) →
   incremental and re-runnable, never touches assigned or clustered ones, deterministic;
-  **`ListClusters(ctx)`** (backing `GET /faces/clusters`) → per cluster the size, a representative
-  face, examples (`maxExamples` 4) and **a suggestion of an existing subject** (`bestSubjectSuggestion`
-  aggregates `FindSimilarFaceCandidates` over the centroid by subject, `confidence = 1 − distance`,
-  null when no named neighbour < `suggestionMaxDistance`); **`AssignCluster(ctx,req)`**
+  **`ListPage(ctx,PageRequest{Limit,Offset})`** (backing `GET /faces/clusters`) → `Listing`
+  `{clusters,total,pending,limit,offset,next_offset}`: one page of the clusters **whose cached
+  summary exists**, newest first, built from `face_clusters.summary` (`DefaultPageSize` 24,
+  `MaxPageSize` 100, `clamp`/`nextOffset`/`viewOf` pure) — two indexed queries, **no per-cluster
+  query and no vector search**, which is what makes the page open on a 20k-photo library where the
+  old per-request assembly (a face listing **plus an HNSW search per cluster**) never finished;
+  **`BuildSummaries(ctx,limit)`** → `SummaryRun{Built,Dropped,Remaining}` prepares up to `limit`
+  (`DefaultSummaryBatch` 200) of the clusters that have none — the representative, the examples
+  (`maxExamples` 4) and **the suggestion of an existing subject** (`bestSubjectSuggestion` aggregates
+  `FindSimilarFaceCandidates` over the centroid by subject, `confidence = 1 − distance`, null when no
+  named neighbour < `suggestionMaxDistance`) — stored as JSON on the cluster row (migration
+  `0069_face_clusters_summary.sql`: `summary jsonb` NULL = "not prepared yet", `summary_at`, the
+  partial indexes `idx_face_clusters_ready`/`idx_face_clusters_summary_pending`); it is called from
+  the `face_cluster` job (`internal/clusterjob`), never from a request, drops a cluster whose faces
+  are all gone and skips one that vanished mid-pass; **`AssignCluster(ctx,req)`**
   (backing `POST /faces/clusters/{id}/assign`) assigns **all** faces of the cluster to one subject
   (by `subject_uid`, otherwise find-or-create by `subject_name`) via the **shared facematch state
   machine** (`create_marker`, the subject is resolved once and pinned for the rest), then deletes the consumed
   cluster (the FK releases `cluster_uid`); **`RemoveFace(ctx,clusterUID,ref)`** (backing
   `POST /faces/clusters/{id}/remove-face`) detaches a stray face **before** naming, recomputes the
-  centroid/size (`RefreshCluster`), deletes an orphaned cluster; `Store` over the shared pgx pool
-  (`ListUnclusteredFaces`/`ListClusterFaces`/`CreateCluster`/`AddFacesToCluster`/`ListClusters`/
+  centroid/size (`RefreshCluster`, which also drops the stale summary) **and rebuilds that one
+  cluster's summary inline** — the reader is looking at that card and one suggestion search is theirs
+  to pay — deletes an orphaned cluster; `Store` over the shared pgx pool
+  (`ListUnclusteredFaces`/`ListClusterFaces`/`CreateCluster`/`AddFacesToCluster`/`ListReadyClusters`/
+  `ListPendingClusters`/`CountClusters`/`SaveSummary`/
   `GetCluster`/`DeleteCluster`/`RemoveFaceFromCluster`/`RefreshCluster`); sentinels
   `ErrClusterNotFound`/`ErrEmptyCluster`/`ErrMissingSubject`/`ErrFaceNotInCluster`; tunables in
   `cluster.*` config), `internal/clusterapi/`
-  (an editor/admin HTTP API over the clustering: the `Service` interface (satisfied by `cluster.Service`),
-  `NewAPI(Config{Service,RequireWrite})`+`RegisterRoutes` mounts `/faces/clusters`:
-  `GET /faces/clusters` (list of clusters + suggestions), `POST /faces/clusters/{id}/assign` (assigns the whole
-  cluster), `POST /faces/clusters/{id}/remove-face` (detaches a face); 503 when the backend is not wired,
-  400/404/409 per the sentinels; mounted in `serve` (`buildClusterAPI` in `cmd/kukatko/clusters.go`,
-  which shares the `facematch.Service` from `buildFaceMatch`)), `internal/outliers/`
+  (an editor/admin HTTP API over the clustering: the `Service` interface (satisfied by `cluster.Service`)
+  and the optional `Preparer` (satisfied by `clusterjob.Service`),
+  `NewAPI(Config{Service,Preparer,RequireWrite})`+`RegisterRoutes` mounts `/faces/clusters`:
+  `GET /faces/clusters?limit&offset` (one **page** of prepared clusters + suggestions + the `pending`
+  count; a bad `limit`/`offset` → 400; with clusters pending it calls `Preparer.EnsureSummaries`, and a
+  scheduling failure is logged, never fatal to the read), `POST /faces/clusters/{id}/assign` (assigns
+  the whole cluster), `POST /faces/clusters/{id}/remove-face` (detaches a face); 503 when the backend
+  is not wired, 400/404/409 per the sentinels; mounted in `serve` (`buildClusterAPI` in
+  `cmd/kukatko/clusters.go`, which shares the `facematch.Service` from `buildFaceMatch` and the job
+  store, and hands the same `clusterjob.Service` on to `buildJobs`)), `internal/clusterjob/`
+  (the face-grouping work as background work: the `face_cluster` job handler and the two schedulers.
+  `New(Clusterer,Queue,batch,logger)` over the interfaces `Clusterer` (`Recluster`/`BuildSummaries`,
+  satisfied by `cluster.Service`) and `Queue` (`Enqueue`/`CountPending`, satisfied by `jobs.Store`);
+  **`ScheduleRecluster(ctx)`** queues `{"recluster":true}` (the maintainer trigger) and
+  **`EnsureSummaries(ctx)`** queues `{}` (the listing's preparation-only pass, which regroups
+  nothing — browsing must never change who a face belongs to). Both are **deduped by an explicit
+  `CountPending` check**, because the queue's dedup index keys on `payload->>'photo_uid'` and these
+  payloads carry none: at most one pass is queued or running, so repeated page loads collapse into
+  one. **`Handle(ctx,job)`** regroups when asked, then prepares one batch of summaries and, when
+  `Remaining > 0`, **enqueues its own successor** — so a backlog drains in bounded steps and the page
+  can honestly report how many groups are ready), `internal/outliers/`
   (per-person outlier detection of faces: reveals probably **misassigned faces**
   by ordering them by distance from the centroid of the person's embeddings, carried over unchanged; all behind the interfaces
   `FaceStore` (a subset of `vectors.Store`) and `PeopleStore` (a subset of `people.Store`) →

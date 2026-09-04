@@ -66,8 +66,9 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/candidatesapi` — `POST /subjects/{uid}/candidates` (RequireWrite)
 - `internal/capabilitiesapi` — all-authenticated `GET /capabilities` (instance feature flags, e.g. `semantic_search`)
 - `internal/clientip` — who a request came from: a forwarding header is believed only from a configured trusted proxy, otherwise the socket peer wins; one address for the limiters, the audit trail and the access log
-- `internal/cluster` — auto-clustering of unassigned faces (union-find over HNSW neighbors)
-- `internal/clusterapi` — `/faces/clusters` (list, assign, remove-face)
+- `internal/cluster` — auto-clustering of unassigned faces (union-find over HNSW neighbors); the listing is a page of cached per-cluster summaries, built in the background
+- `internal/clusterapi` — `/faces/clusters` (paged list, assign, remove-face)
+- `internal/clusterjob` — the `face_cluster` job: reclustering and the preparation of the cluster summaries, off the request path
 - `internal/comments` — per-photo comment threads: plain text, soft delete, audited in the mutation's transaction; every role may write (viewers included), the endpoints live in `internal/photoapi`
 - `internal/config` — typed configuration, Viper, `Load()`
 - `internal/ctl` — **client** of the own API for `kukatko ctl`: contexts (kubectl-style), Bearer token, table/JSON/llm output, streamed renditions and uploads, the photo-edit body, the whole curation write surface (faces/subjects/clusters, albums, labels, stacks, image edits, saved searches, duplicates, comments), the photo lifecycle, and the irreversible commands behind their `--yes`/`--dry-run` gate (purge, trash, duplicate merge)

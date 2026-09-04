@@ -1670,6 +1670,10 @@
     "loading": "Loading face groups…",
     "error": "Could not load face groups.",
     "actionError": "The action failed. Please try again.",
+    "preparing": "Ready groups: {{ready}} · still being prepared in the background: {{pending}}",
+    "refresh": "Look again",
+    "loadMore": "Load more",
+    "moreError": "Could not load more groups.",
     "empty": {
       "title": "No face groups to review",
       "hint": "New groups appear here once the app recognizes faces in your photos."
@@ -2868,7 +2872,8 @@
         "backup": "Backup",
         "mail_send": "Sending an e-mail",
         "nameless_detach": "Detaching the nameless person",
-        "nameless_restore": "Restoring the nameless person"
+        "nameless_restore": "Restoring the nameless person",
+        "face_cluster": "Grouping faces"
       }
     },
     "imports": {

@@ -23,6 +23,22 @@ const (
 	DefaultSuggestionMaxDistance = 0.5
 )
 
+// Page and batch sizes. The listing is paginated because a real library holds
+// hundreds of clusters and the reader looks at a screenful at a time; the
+// summary pass is batched because it is a vector search per cluster and a job
+// that bounds its own work leaves visible progress behind.
+const (
+	// DefaultPageSize is how many clusters one listing page carries when the
+	// caller does not say.
+	DefaultPageSize = 24
+	// MaxPageSize caps a listing page, so no request can ask for the whole library
+	// back in one response.
+	MaxPageSize = 100
+	// DefaultSummaryBatch is how many cluster summaries one background pass builds
+	// before it hands the rest to its successor.
+	DefaultSummaryBatch = 200
+)
+
 const (
 	// neighborSearchLimit caps how many nearest faces the HNSW search returns per
 	// clusterable face when building the similarity graph.
