@@ -1965,15 +1965,18 @@
     "viewerNote": "Obličeje si můžete prohlédnout, ale na jejich pojmenování potřebujete roli editora — požádejte o ni správce."
   },
   "outliers": {
-    "title": "Možné chyby",
-    "subtitle": "Obličeje nejméně podobné této osobě — pravděpodobně přiřazené omylem.",
-    "loading": "Načítání…",
-    "error": "Podezřelé obličeje se nepodařilo načíst.",
-    "empty": "Žádné přiřazené obličeje k projití.",
+    "title": "Je to pořád tato osoba?",
+    "subtitle": "Nejdřív obličeje nejméně podobné této osobě. Dokud neodpovíš, nic se nemění.",
+    "error": "Obličeje ke kontrole se nepodařilo načíst.",
     "notMeaningful": "Příliš málo obličejů pro spolehlivé seřazení.",
     "unassignError": "Obličej se nepodařilo odebrat. Zkus to prosím znovu.",
+    "restoreError": "Obličej se nepodařilo vrátit zpět. Zkus to prosím znovu.",
     "openPhoto": "Otevřít fotku",
     "unassign": "Není to tato osoba",
+    "removed": "Odebráno",
+    "undo": "Vrátit zpět",
+    "distanceTitle": "Odlišnost od této osoby: {{percent}} %",
+    "showMore": "Ukázat další ({{remaining}})",
     "reviewAll": "Projít všechny"
   },
   "outliersPage": {

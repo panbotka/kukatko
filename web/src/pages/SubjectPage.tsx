@@ -434,13 +434,10 @@ export function SubjectPage() {
         </section>
       )}
 
-      {canWrite && (
-        <section className="mt-4">
-          <h2 className="kk-section-title">{t('outliers.title')}</h2>
-          <p className="text-secondary small">{t('outliers.subtitle')}</p>
-          <Outliers subjectUid={subject.uid} />
-        </section>
-      )}
+      {/* The section brings its own heading and frame, and draws neither when it
+          has nothing to ask about — most people have no suspicious face at all,
+          and a titled empty box is worse than no box. */}
+      {canWrite && <Outliers subjectUid={subject.uid} />}
 
       {bulk.canBulkEdit && selecting && (
         <>

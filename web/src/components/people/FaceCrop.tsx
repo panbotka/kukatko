@@ -22,6 +22,14 @@ export interface FaceCropProps {
   size?: number
   /** Extra class names for the crop's container. */
   className?: string
+  /**
+   * Called once when the rendition cannot be produced and the crop has given up
+   * — there is no picture of this face and there never will be one this render.
+   * Callers that *ask about* a face (the outlier section) use it to take the
+   * face out of the list rather than offer a grey square as a question; callers
+   * that merely show one can leave it out and keep the empty well.
+   */
+  onUnavailable?: () => void
 }
 
 /**
@@ -45,9 +53,10 @@ export interface FaceCropProps {
  * section of hundreds of faces request only the ones the reader has reached. A
  * rendition that cannot be produced — a photograph with no usable preview, a box
  * naming nothing — leaves the caller's empty well rather than the browser's
- * broken-image glyph.
+ * broken-image glyph, and says so through `onUnavailable` for the callers whose
+ * tile has no meaning without the picture.
  */
-export function FaceCrop({ photoUid, bbox, label, size, className }: FaceCropProps) {
+export function FaceCrop({ photoUid, bbox, label, size, className, onUnavailable }: FaceCropProps) {
   const [failed, setFailed] = useState(false)
 
   return (
@@ -65,6 +74,7 @@ export function FaceCrop({ photoUid, bbox, label, size, className }: FaceCropPro
           style={{ objectFit: 'cover' }}
           onError={() => {
             setFailed(true)
+            onUnavailable?.()
           }}
         />
       )}

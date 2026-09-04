@@ -1887,15 +1887,18 @@
     "viewerNote": "You can look through the faces, but naming them needs the editor role — ask an administrator for it."
   },
   "outliers": {
-    "title": "Possible mistakes",
-    "subtitle": "Faces least like this person — likely assigned by mistake.",
-    "loading": "Loading…",
-    "error": "Could not load suspected faces.",
-    "empty": "No assigned faces to review.",
+    "title": "Is this still the same person?",
+    "subtitle": "The faces least like this person come first. Nothing changes until you answer.",
+    "error": "Could not load the faces to check.",
     "notMeaningful": "Too few faces to rank reliably.",
     "unassignError": "Could not remove the face. Please try again.",
+    "restoreError": "Could not put the face back. Please try again.",
     "openPhoto": "Open photo",
     "unassign": "Not this person",
+    "removed": "Removed",
+    "undo": "Undo",
+    "distanceTitle": "Difference from this person: {{percent}} %",
+    "showMore": "Show more ({{remaining}})",
     "reviewAll": "Review all"
   },
   "outliersPage": {

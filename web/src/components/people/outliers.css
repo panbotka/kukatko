@@ -50,3 +50,29 @@
   /* Decoration over the photo: it must not eat the card's clicks. */
   pointer-events: none;
 }
+
+/*
+ * The answer under a face in the person-page outlier section ("Není to tato
+ * osoba" / "Vrátit zpět"). The section asks a question, so its control has to
+ * read as an answer, not as an alarm: eight filled danger buttons in a row were
+ * the reason the panel looked like an error state. It is therefore a link-shaped
+ * button in the muted body colour, turning danger only under the pointer — the
+ * consequence is announced where the hand already is, without the whole section
+ * shouting it. Bootstrap's own button variables carry it, so nothing here has to
+ * fight `.btn` for specificity.
+ */
+.kk-outlier-answer.btn {
+  --bs-btn-color: var(--bs-secondary-color);
+  --bs-btn-hover-color: var(--bs-danger);
+  --bs-btn-active-color: var(--bs-danger);
+  --bs-btn-disabled-color: var(--bs-secondary-color);
+
+  padding: 0;
+  line-height: 1.2;
+  text-decoration: none;
+}
+
+.kk-outlier-answer.btn:hover,
+.kk-outlier-answer.btn:focus-visible {
+  text-decoration: underline;
+}

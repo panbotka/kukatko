@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { type Bbox } from '../../services/people'
 
@@ -38,6 +38,15 @@ describe('FaceCrop', () => {
     const { container } = render(<FaceCrop photoUid="p1" bbox={BBOX} label="Anna" />)
     fireEvent.error(screen.getByRole('img', { name: 'Anna' }))
     expect(container.querySelector('img')).toBeNull()
+  })
+
+  it('tells a caller that asks about the face that there is no picture of it', () => {
+    // The outlier section takes the face out of its questions on this signal: a
+    // grey square is not something a reader can answer "is this still them?" to.
+    const onUnavailable = vi.fn()
+    render(<FaceCrop photoUid="p1" bbox={BBOX} label="Anna" onUnavailable={onUnavailable} />)
+    fireEvent.error(screen.getByRole('img', { name: 'Anna' }))
+    expect(onUnavailable).toHaveBeenCalledTimes(1)
   })
 
   it('keeps a square box, because the rendition it shows is square', () => {
