@@ -318,8 +318,15 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   title>description>notes>file_name); **semantic** = `q` → SigLIP 2 embedding via sidecar →
   cosine HNSW over `embeddings`, ranked by similarity; **hybrid** = a fusion of both via
   **Reciprocal Rank Fusion (k=60)**, deduplicated. All modes honour the other list filters + pagination,
-  the response is a list + `mode` + `degraded`; `q` is required (empty → 400); **box offline** →
-  `semantic`/`hybrid` gracefully fall back to fulltext with `degraded: true`;
+  the response is a list + `mode` + `ranked_total` + `degraded`; `q` is required (empty → 400); **box
+  offline** → `semantic`/`hybrid` gracefully fall back to fulltext with `degraded: true`;
+  **`total` means one of two things and `ranked_total: bool` says which**: `fulltext`, a filter-only
+  query and a degraded fallback run a real SQL `COUNT`, so their `total` is the exact number of
+  matching photos and the flag is omitted; `semantic` and `hybrid` rank a **bounded candidate pool**
+  (500 nearest neighbours; 200 from each ranking fed into the fusion) and report the size of the ranked
+  set built from it, which stops growing at the pool however many photos match — so `total` there is
+  the count of **best matches returned**, flagged `ranked_total: true` so a client never presents it as
+  a library total;
   **`q` speaks the search language** (see [Search language](#search-language-q) below): free
   text + `key:value` filters in one string — filters narrow the result in all modes, the free-text
   ranking is left untouched. A query **made only of filters** (no free text) runs the plain-list

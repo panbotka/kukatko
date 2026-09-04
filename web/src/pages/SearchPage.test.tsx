@@ -264,6 +264,27 @@ describe('SearchPage', () => {
     expect(screen.getByTestId('search')).toHaveTextContent('q=cat')
   })
 
+  it('names a ranked result set as the best matches rather than as a photo total', async () => {
+    // A hybrid search fuses two bounded pools, so its "total" saturates and is
+    // no count of what matches; the page must not word it like the library's own.
+    searchMock.mockResolvedValue(
+      page([photo('a', 'a.jpg')], { total: 200, mode: 'hybrid', ranked_total: true }),
+    )
+    renderSearch('/search?q=beach')
+
+    expect(await screen.findByText('Best matches: 200')).toBeInTheDocument()
+    expect(screen.queryByText(/^Photos:/)).not.toBeInTheDocument()
+  })
+
+  it('states a real count plainly, as the library does', async () => {
+    // Full-text runs a genuine SQL count, so its number is a true total.
+    searchMock.mockResolvedValue(page([photo('a', 'a.jpg')], { total: 42, mode: 'fulltext' }))
+    renderSearch('/search?q=beach&mode=fulltext')
+
+    expect(await screen.findByText('Photos: 42')).toBeInTheDocument()
+    expect(screen.queryByText(/Best matches/)).not.toBeInTheDocument()
+  })
+
   it('shows a non-blocking notice when search degrades to full-text', async () => {
     searchMock.mockResolvedValue(page([photo('a', 'a.jpg')], { mode: 'fulltext', degraded: true }))
     renderSearch('/search?q=beach&mode=semantic')

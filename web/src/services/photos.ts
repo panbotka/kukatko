@@ -236,6 +236,16 @@ export interface PhotoListResponse {
   /** Effective search mode, only present on `GET /search` responses. */
   mode?: EffectiveSearchMode
   /**
+   * True when `total` is the size of the ranked set a semantic or hybrid search
+   * built out of its bounded candidate pool — the best matches it returned —
+   * rather than an exact count of every matching photo. Such a total stops
+   * growing once the pool is full, so it must never be presented as a library
+   * total. Absent (treated as false) whenever the backend ran a real COUNT:
+   * full-text, a filter-only query, a plain list, and a ranked search degraded
+   * to full-text.
+   */
+  ranked_total?: boolean
+  /**
    * True when a semantic or hybrid search fell back to full-text because the
    * embeddings sidecar was unavailable, so the UI can tell the user semantic
    * ranking was skipped. Absent (treated as false) on list responses.

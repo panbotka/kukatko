@@ -29,6 +29,8 @@ interface BarProps {
   semanticSearch?: boolean
   /** The count to state; pass `undefined` for "there is nothing to count". */
   total?: number
+  /** Whether that count is the best matches of a ranked search, not a total. */
+  totalRanked?: boolean
   /** Whether that count is still being fetched under a just-changed filter. */
   totalPending?: boolean
   /** The page's own view actions, which the bar seats once per viewport. */
@@ -162,6 +164,28 @@ describe('FilterBar header', () => {
     expect(screen.getByText('Photos: 3')).toBeInTheDocument()
   })
 
+  it('names a ranked count as the best matches, not as a photo total', () => {
+    // The semantic/hybrid pool saturates: "Photos: 200" would claim the library
+    // holds exactly two hundred photographs of the thing searched for.
+    renderBar(LIBRARY_DEFAULTS, vi.fn(), { total: 200, totalRanked: true })
+    expect(screen.getByText('Best matches: 200')).toBeInTheDocument()
+    expect(screen.queryByText(/^Photos:/)).not.toBeInTheDocument()
+  })
+
+  it('keeps the ranked wording free of any claim about a cap', () => {
+    // Nine results never reached the pool, so the wording must read as true of
+    // them as it does of a saturated one.
+    renderBar(LIBRARY_DEFAULTS, vi.fn(), { total: 9, totalRanked: true })
+    expect(screen.getByText('Best matches: 9')).toBeInTheDocument()
+  })
+
+  it('states a ranked zero plainly and leaves the empty state to speak', () => {
+    // An empty ranking is the one ranked count that *is* exact: nothing matched.
+    renderBar(LIBRARY_DEFAULTS, vi.fn(), { total: 0, totalRanked: true })
+    expect(screen.getByText('Photos: 0')).toBeInTheDocument()
+    expect(screen.queryByText(/Best matches/)).not.toBeInTheDocument()
+  })
+
   it('states nothing when there is no result set to count', () => {
     // The search page before a query is typed: "Photos: 0" would read as an
     // empty library rather than as "nothing searched for yet".
@@ -210,7 +234,7 @@ describe('FilterBar header', () => {
     // The quick filter says what it does — text *or* a filter; the link says
     // where ranked full-text and semantic search live.
     expect(
-      screen.getByPlaceholderText('Search — text, or a filter like year:1965 or person:Jarmila'),
+      screen.getByPlaceholderText('Filter — text, or a filter like year:1965 or person:Jarmila'),
     ).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Full-text & semantic search/ })).toHaveAttribute(
       'href',

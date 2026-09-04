@@ -56,6 +56,16 @@ export interface FilterBarProps<T extends LibraryView> {
    */
   total?: number
   /**
+   * Whether `total` counts the best matches a ranked search returned rather than
+   * everything that matches. The semantic and hybrid modes rank a bounded pool of
+   * candidates and report the size of the ranked set they built, which stops
+   * growing once the pool is full — so stating it as a total would claim the
+   * library holds exactly that many photographs of the thing searched for. The
+   * status line then names it for what it is instead. Omit it (default false) on
+   * every page whose count is a real count.
+   */
+  totalRanked?: boolean
+  /**
    * Whether `total` is currently being refetched under a filter the reader has
    * just changed. The count then reads as "counting", in the status line and on
    * the drawer's primary button alike, instead of stating the number belonging
@@ -213,6 +223,7 @@ export function FilterBar<T extends LibraryView>({
   view,
   onChange,
   total,
+  totalRanked = false,
   totalPending = false,
   showSearch = true,
   showSort = true,
@@ -336,11 +347,10 @@ export function FilterBar<T extends LibraryView>({
           is announced when it arrives instead of a new region appearing. While
           a changed filter is being counted it says so: the number belonging to
           the filters the reader has just left is not an answer to the ones they
-          are looking at. */}
+          are looking at. What the number *is* is stated here in words rather
+          than left to a tooltip, which a phone cannot reach ({@link countLabel}). */}
       <span className="text-secondary small" aria-live="polite">
-        {totalPending
-          ? t('library.filters.counting')
-          : total !== undefined && t('library.count', { count: total })}
+        {countLabel(t, total, totalPending, totalRanked)}
       </span>
       <div className="d-flex align-items-center gap-2">
         {clearVisible && (
@@ -656,6 +666,43 @@ function DisplayControls({
       )}
     </Row>
   )
+}
+
+/**
+ * What the status line beside the grid says about the size of the result set.
+ *
+ * A page with no result set to count at all (`total` undefined — the search page
+ * before a query is typed) says nothing rather than claiming an empty library,
+ * and a count still being fetched says so instead of stating the previous
+ * filters' number.
+ *
+ * `ranked` is the honest half. A semantic or hybrid search does not count what
+ * matches: it ranks a bounded pool of candidates and hands back the ranked set
+ * it built, a number that stops growing once the pool is full. Reporting it as
+ * "Photos: 200" claims the library holds exactly two hundred photographs of the
+ * thing searched for, which is false and makes the library look smaller than it
+ * is — so such a number is named as the best matches the search returned. The
+ * wording states no cap, because a ranked search that found nine results reached
+ * none: it is true whether the pool saturated or not. Zero is the one ranked
+ * count that *is* exact — an empty ranking means nothing matched at all — so it
+ * falls back to the plain wording and leaves the empty state to explain itself.
+ */
+function countLabel(
+  t: TFunction,
+  total: number | undefined,
+  pending: boolean,
+  ranked: boolean,
+): string {
+  if (pending) {
+    return t('library.filters.counting')
+  }
+  if (total === undefined) {
+    return ''
+  }
+  if (ranked && total > 0) {
+    return t('library.countRanked', { count: total })
+  }
+  return t('library.count', { count: total })
 }
 
 /**

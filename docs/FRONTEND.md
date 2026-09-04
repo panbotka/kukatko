@@ -975,6 +975,13 @@ here.
   it has its own field; the photo count below the chips comes from the `total` prop, which is **optional** —
   omit it and the bar states nothing (the live region stays mounted, so the number is announced when it
   arrives), which is how `SearchPage` avoids claiming zero photos before a query is even typed;
+  **`totalRanked` decides what that number may be called** (`countLabel`): a ranked search does not count
+  what matches, it ranks a bounded pool and hands back the ranked set it built, so with the flag set the
+  line reads **„Nejlepší shody: N"** (`library.countRanked`) instead of „Počet fotek: N" — wording that
+  claims **no cap**, because a ranked search that returned nine results reached none, and the distinction
+  is therefore carried by visible words rather than by a tooltip a phone cannot reach. A ranked **zero**
+  falls back to the plain wording: an empty ranking is the one ranked count that is exact, and the empty
+  state below it already speaks for itself;
   **album and label chips carry the entity color** — `.kk-entity-album`
   vs. `.kk-entity-tag` + a guide icon from `ENTITY_STYLE`, so an album and a label are distinct at a glance
   (see *entity colors* in `tokens.css`); the other filters stay a neutral `text-bg-primary`)
@@ -1035,7 +1042,9 @@ here.
   The inline search field (`q`) is **not** merely a substring narrowing: it runs the **whole `klíč:hodnota`
   search language**, exactly as `/search` does — `year:1960-1969` narrows the library grid to the sixties here
   too — with the residual free text matching title/description/notes as a substring. The placeholder and the
-  hint therefore name both halves („Hledat — text, nebo filtr jako `year:1965` či `person:Jarmila`"), and
+  hint therefore name both halves („Filtrovat — text, nebo filtr jako `year:1965` či `person:Jarmila`" —
+  it opens on the same verb as the field's own label „Filtrovat v knihovně", so the two never disagree about
+  what the box does; „Hledat" is what the *navigation* and `/search` say), and
   beside the field sits **the very same `SearchQueryHelp` `?`** the search page opens — one language, one
   explanation, never a second copy to drift (`showSearch={false}` hides field and `?` together, so `/search`
   doesn't end up with two triggers). What `/search` adds on top is **ranking**, which is what
@@ -1676,6 +1685,12 @@ here.
   is back.
   The `FilterBar` count is **omitted entirely until a query exists** (`total={hasQuery ? total : undefined}`):
   „Počet fotek: 0“ over „Zadejte hledaný výraz.“ reads as an empty library, not as an unasked question.
+  And when there is one, **`totalRanked={totalRanked}`** (the response's `ranked_total`, carried by
+  `usePaginatedPhotos`) says whether it may be called a total at all: `hybrid` fuses two 200-deep pools and
+  `semantic` ranks 500 neighbours, so their number saturates there and „Počet fotek: 200" would claim the
+  library holds exactly two hundred photographs of the thing searched for — the line says
+  **„Nejlepší shody: 200"** instead, while `fulltext` and a filter-only query (both a real SQL count, as is
+  a degraded fallback) keep stating the total plainly.
   idle/loading/empty/error states (an empty result is `SearchEmptyState` — it **repeats the query**
   (`search.empty.hintQuery` „Pro «dotaz» jsme nic nenašli.") and offers the steps that actually fix one; the
   error is `ErrorState` with Retry); the field speaks **the search language**
@@ -3934,7 +3949,9 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `usePaginatedPhotos` = a shared
   paginated infinite-scroll loader over an arbitrary `PageFetcher`: it accumulates pages,
   `loadMore`/`retry`, reset+refetch **with a skeleton** when the query/`key`/`enabled` changes, cancels
-  in-flight requests and ignores stale responses, and also exposes `mode`/`degraded`; `enabled:false`
+  in-flight requests and ignores stale responses, and also exposes `mode`/`degraded`/**`totalRanked`**
+  (the search response's `ranked_total` — `total` is the size of a ranked pool of best matches, not a count
+  of what matches, so a caller must not word it as a total; false on every plain list); `enabled:false`
   → an `idle` state without a request. **`reloadKey` (separate from `key`) is a _background_ refetch of all pages
   loaded so far with the query unchanged: the current photos stay pinned, `status` stays
   `ready` (no skeleton, no reloading of previews), so a bulk edit (favorite/archive)

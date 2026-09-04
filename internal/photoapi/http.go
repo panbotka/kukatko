@@ -376,6 +376,14 @@ type listResponse struct {
 	// Mode is the effective search mode (fulltext/semantic/hybrid). It is only
 	// set by the search endpoint and omitted from a plain list response.
 	Mode string `json:"mode,omitempty"`
+	// RankedTotal is true when Total is the size of the ranked set a semantic or
+	// hybrid search built out of its bounded candidate pool — the best matches it
+	// returned — rather than an exact count of every photo the query matches. Such
+	// a total stops growing once the pool is full, so the UI must not present it
+	// as a library total; the modes that run a real COUNT (full-text, a pure
+	// filter query, and a ranked search degraded to full-text) leave it false.
+	// Omitted when false.
+	RankedTotal bool `json:"ranked_total,omitempty"`
 	// Degraded is true when a semantic or hybrid search fell back to full-text
 	// because the embeddings sidecar was unavailable, so the UI can tell the user
 	// that semantic ranking was skipped. Omitted when false.
@@ -475,7 +483,9 @@ func pageResponse(params photos.ListParams, list []photoView, total int) listRes
 // When the sidecar is unavailable, semantic and hybrid fall back to full-text
 // and the response sets `degraded: true`. The response otherwise mirrors the
 // list endpoint (photos, total, limit, offset, next_offset) plus the effective
-// `mode` and the `unknown_tokens` the query language did not understand.
+// `mode`, the `unknown_tokens` the query language did not understand, and
+// `ranked_total: true` whenever `total` is the size of a bounded ranked pool
+// rather than an exact count.
 func (a *API) handleSearch(w http.ResponseWriter, r *http.Request) {
 	params, unknown, err := parseListParams(r.URL.Query())
 	if err != nil {
@@ -525,8 +535,8 @@ func (a *API) handleSearch(w http.ResponseWriter, r *http.Request) {
 }
 
 // writeRankedSearch runs the ranked search in the given mode and writes the
-// annotated page, stamping the effective mode, the degraded flag and the query
-// hints onto the response.
+// annotated page, stamping the effective mode, the ranked-total and degraded
+// flags and the query hints onto the response.
 func (a *API) writeRankedSearch(
 	w http.ResponseWriter, r *http.Request, userUID string,
 	mode searchMode, plain string, params photos.ListParams, hints pageHints,
@@ -543,6 +553,7 @@ func (a *API) writeRankedSearch(
 	}
 	resp := pageResponse(params, views, result.total)
 	resp.Mode = string(mode)
+	resp.RankedTotal = result.ranked
 	resp.Degraded = result.degraded
 	hints.stamp(&resp)
 	writeJSON(w, http.StatusOK, resp)

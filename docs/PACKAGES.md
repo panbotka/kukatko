@@ -1038,8 +1038,16 @@ to `## Package map` in `CLAUDE.md`.
   filters the candidates through `store.FilterUIDs` → orders by distance; **hybrid** merges both
   rankings with **Reciprocal Rank Fusion** (`fuseRRF`, constant `rrfK=60`), dedups, orders by
   the fusion score. All modes honour List filters + pagination (`sort`/`order` ignored),
-  the response = the list shape + `mode` (effective) + `degraded`; **box offline** (`Embedder` nil or
-  `embedding.IsUnavailable`) → `semantic`/`hybrid` fall back to fulltext with `degraded: true`;
+  the response = the list shape + `mode` (effective) + `ranked_total` + `degraded`; **box offline**
+  (`Embedder` nil or `embedding.IsUnavailable`) → `semantic`/`hybrid` fall back to fulltext with
+  `degraded: true`;
+  **`total` is two different numbers and the response says which** (`searchResult.ranked` →
+  `ranked_total`): fulltext, a filter-only query and a degraded fallback run a real `store.Count`, so
+  their total is exact and the flag stays false; the ranked modes report the **size of the ranked set
+  they built out of a bounded candidate pool** (`semanticCandidatePool`=500 nearest neighbours,
+  `fusionPool`=200 from each ranking before `fuseRRF`), which saturates there however many photos
+  actually match — so it is the number of best matches returned, and the flag makes the client word it
+  as such instead of as a library total;
   the `TextEmbedder` interface (fakeable, satisfied by `embedding.Client`); `PATCH` is
   partial via raw-key presence (an omitted field unchanged, `null` clears a nullable one, coordinate
   validation); media `thumb/{size}`+`download` **stream** via `io.Copy` with `streamMedia`

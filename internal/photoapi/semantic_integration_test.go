@@ -3,6 +3,7 @@
 package photoapi_test
 
 import (
+	"net/url"
 	"testing"
 	"time"
 
@@ -165,9 +166,49 @@ func TestSearch_degradedFallback(t *testing.T) {
 		if got.Mode != mode {
 			t.Fatalf("%s degraded response mode = %q, want %q", mode, got.Mode, mode)
 		}
+		if got.RankedTotal {
+			t.Fatalf("%s fallback: ranked_total = true, want false (the fallback counts for real)", mode)
+		}
 		if got.Total != 1 || len(got.Photos) != 1 || got.Photos[0].UID != match.UID {
 			t.Fatalf("%s fallback = %v, want full-text [%s]", mode, uids(got.Photos), match.UID)
 		}
+	}
+}
+
+// TestSearch_rankedTotalMarksPooledCounts verifies the response says whether its
+// total is an exact count or the size of a bounded ranked pool: the two ranked
+// modes set ranked_total, while full-text and a filter-only query — both of
+// which run a real SQL COUNT — leave it unset.
+func TestSearch_rankedTotalMarksPooledCounts(t *testing.T) {
+	env := newEnv(t)
+	client, _ := env.login(t, "ranked-total", auth.RoleViewer)
+	base := env.server.URL
+
+	p := env.seedPhoto(t, photos.Photo{Title: "castle tower"}, "castle.jpg", 13, 0, 0)
+	env.embedder.byQuery["castle"] = imageVecAt(map[int]float32{0: 1})
+	saveVec(t, env, p.UID, imageVecAt(map[int]float32{0: 1}))
+
+	cases := []struct {
+		name  string
+		query string
+		mode  string
+		want  bool
+	}{
+		{name: "semantic", query: "q=castle&mode=semantic", mode: "semantic", want: true},
+		{name: "hybrid", query: "q=castle&mode=hybrid", mode: "hybrid", want: true},
+		{name: "fulltext", query: "q=castle&mode=fulltext", mode: "fulltext", want: false},
+		{name: "filter only", query: "q=" + url.QueryEscape("iso:100-400"), mode: "filter", want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := getSearch(t, client, base, tc.query)
+			if got.Mode != tc.mode {
+				t.Fatalf("%s: mode = %q, want %q", tc.query, got.Mode, tc.mode)
+			}
+			if got.RankedTotal != tc.want {
+				t.Fatalf("%s: ranked_total = %v, want %v", tc.query, got.RankedTotal, tc.want)
+			}
+		})
 	}
 }
 

@@ -723,13 +723,14 @@
   "library": {
     "title": "Library",
     "count": "Photos: {{count}}",
+    "countRanked": "Best matches: {{count}}",
     "loading": "Loading photos…",
     "loadingMore": "Loading more photos…",
     "selectAll": "Select all",
     "filters": {
       "barLabel": "Photo filters",
       "search": "Filter the library",
-      "searchPlaceholder": "Search — text, or a filter like year:1965 or person:Jarmila",
+      "searchPlaceholder": "Filter — text, or a filter like year:1965 or person:Jarmila",
       "searchHint": "Searches title, description and notes, and understands filters like year:1965, album:\"Summer 2024\" or person:Jarmila.",
       "fullSearchLink": "Full-text & semantic search →",
       "setByQuery": "Already set by the query:",

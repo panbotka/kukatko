@@ -519,7 +519,9 @@ is stored in a `halfvec` column with an HNSW cosine index. When you search, your
 by the same model (`POST /embed/text`) and the query becomes "give me the nearest vectors" — plain
 SQL. That is why "sunset over water" finds the photo nobody ever titled, and why **similar photos**
 is the same query with a photo's own vector as the needle. The default hybrid mode runs full-text
-alongside it and merges, so exact words still win when you use them.
+alongside it and merges, so exact words still win when you use them. A ranked search draws a bounded
+pool of candidates rather than counting the whole library, so the results line says **"Nejlepší
+shody: N"** there and keeps "Počet fotek: N" for the modes whose number really is a total.
 
 **Faces** are a second, unrelated model. `POST /embed/face` returns one 512-dimensional vector per
 detected face plus its bounding box, and those vectors go into their own indexed column. Recognition

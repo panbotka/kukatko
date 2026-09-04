@@ -79,6 +79,14 @@ export interface UsePaginatedPhotosResult {
   photos: Photo[]
   /** Total number of photos matching the current query. */
   total: number
+  /**
+   * True when `total` is not a count of everything that matches but the size of
+   * the ranked set a semantic/hybrid search returned out of its bounded
+   * candidate pool. Such a number saturates at the pool size, so a caller must
+   * word it as "the best matches", never as a total. False on every list and on
+   * the search modes that run a real count.
+   */
+  totalRanked: boolean
   /** Status of the first-page load (drives the page-level loading/error UI). */
   status: ListStatus
   /** True while a subsequent page is being appended. */
@@ -116,6 +124,7 @@ export interface UsePaginatedPhotosResult {
 interface Data {
   photos: Photo[]
   total: number
+  totalRanked: boolean
   nextOffset: number | null
   loading: boolean
   /** Whether the in-flight / most recent request is the first page. */
@@ -143,6 +152,7 @@ interface Data {
 const INITIAL: Data = {
   photos: [],
   total: 0,
+  totalRanked: false,
   nextOffset: 0,
   loading: true,
   initial: true,
@@ -243,6 +253,7 @@ export function usePaginatedPhotos(
         setData((prev) => ({
           photos: [...prev.photos, ...res.photos],
           total: res.total,
+          totalRanked: res.ranked_total ?? false,
           nextOffset: res.next_offset,
           loading: false,
           initial: false,
@@ -344,6 +355,7 @@ export function usePaginatedPhotos(
       setData(() => ({
         photos,
         total: res.total,
+        totalRanked: res.ranked_total ?? false,
         nextOffset: res.next_offset,
         loading: false,
         initial: loaded <= 1,
@@ -421,6 +433,7 @@ export function usePaginatedPhotos(
   return {
     photos: data.photos,
     total: data.total,
+    totalRanked: data.totalRanked,
     status,
     loadingMore: data.loading && !data.initial,
     moreError: data.error && !data.initial,

@@ -359,6 +359,7 @@ type listResp struct {
 	Offset        int            `json:"offset"`
 	NextOffset    *int           `json:"next_offset"`
 	Mode          string         `json:"mode"`
+	RankedTotal   bool           `json:"ranked_total"`
 	Degraded      bool           `json:"degraded"`
 	UnknownTokens []string       `json:"unknown_tokens"`
 	Notices       []string       `json:"notices"`

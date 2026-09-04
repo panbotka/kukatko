@@ -94,6 +94,7 @@ export function SearchPage() {
   const {
     photos,
     total,
+    totalRanked,
     status,
     degraded,
     unknownTokens,
@@ -274,11 +275,15 @@ export function SearchPage() {
       </Form>
 
       {/* No query means no result set, so there is no count to state: showing
-          "0 photos" above the "type something" prompt reads as an empty library. */}
+          "0 photos" above the "type something" prompt reads as an empty library.
+          When there is one, `totalRanked` says whether it may be called a total
+          at all: the ranked modes report the size of a bounded pool of best
+          matches, not a count of everything that matches. */}
       <FilterBar
         view={view}
         onChange={setView}
         total={hasQuery ? total : undefined}
+        totalRanked={totalRanked}
         showSearch={false}
         showSort={false}
       />

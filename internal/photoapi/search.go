@@ -63,9 +63,18 @@ const (
 // set is not returned; instead photos already holds the requested page, total
 // the size of the whole result set (for pagination), and degraded whether the
 // search fell back to full-text because the sidecar was unavailable.
+//
+// ranked says what total actually counts. The ranked modes draw a bounded
+// candidate pool (semanticCandidatePool, fusionPool) and report the size of the
+// ranked set they built out of it, which stops growing once the pool is full —
+// so it is the number of best matches returned, not a count of everything that
+// matches. The modes that run a real SQL COUNT leave it false and total is the
+// exact total. The distinction reaches the client so it can say which one it is
+// showing rather than presenting a saturated pool as a library total.
 type searchResult struct {
 	photos   []photos.Photo
 	total    int
+	ranked   bool
 	degraded bool
 }
 
@@ -129,7 +138,7 @@ func (a *API) semanticSearch(ctx context.Context, query string, params photos.Li
 		return searchResult{}, err
 	}
 	page := paginateUIDs(shuffled(ranked, params), params.Offset, effectiveLimit(params))
-	return searchResult{photos: resolvePhotos(page, byUID), total: len(ranked)}, nil
+	return searchResult{photos: resolvePhotos(page, byUID), total: len(ranked), ranked: true}, nil
 }
 
 // hybridSearch fuses the full-text and semantic rankings with Reciprocal Rank
@@ -156,7 +165,7 @@ func (a *API) hybridSearch(ctx context.Context, query string, params photos.List
 
 	fused, byUID := fuse(ftList, semUIDs, semByUID)
 	page := paginateUIDs(shuffled(fused, params), params.Offset, effectiveLimit(params))
-	return searchResult{photos: resolvePhotos(page, byUID), total: len(fused)}, nil
+	return searchResult{photos: resolvePhotos(page, byUID), total: len(fused), ranked: true}, nil
 }
 
 // degradedFulltext runs a full-text search and marks the result degraded, used
