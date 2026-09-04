@@ -1694,6 +1694,47 @@ body {
   font-size: 0.6rem;
 }
 
+/*
+ * The row those chips sit in. With every filter now behind the Filters button,
+ * this row is the only thing on the page that says what the grid is narrowed
+ * by — so it wraps rather than truncating: nothing that is *set* may be
+ * invisible, which is the whole condition on having moved the pickers away.
+ *
+ * It must equally not grow back into the tall block the picker row was, so it
+ * is bounded at three chip rows (2.25 rem each plus the flex gaps) and scrolls
+ * past that, the way `.kk-decade-nav` bounds its own unbounded strip. The bound
+ * is set where a real filter combination does not reach it: fourteen filters at
+ * once — three albums, two labels, two people, a period, favourites, GPS, date,
+ * camera, rating and a flag — measured 124 px at 1280 px, which is exactly the
+ * three rows. Only past *that* is anything scrolled to rather than seen, and a
+ * reader who set fifteen filters is not the reader this page is laid out for.
+ *
+ * Desktop only. On a phone the chips are a few lines under a one-row header and
+ * were never the problem this bound exists for; clamping them there would hide
+ * a filter on the viewport with the least room to find it again.
+ */
+@media (min-width: 768px) {
+  .kukatko-filter-chips {
+    max-height: calc(3 * 2.25rem + 2 * var(--kk-space-2));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+  }
+}
+
+/*
+ * The "what's new since your last visit" digest, condensed to one line. It is
+ * about the library rather than about the current view, so it is the first
+ * thing on the page — which is exactly why it may not cost more than a line:
+ * everything it pushes down is photographs. Bootstrap's alert padding is a
+ * whole rem top and bottom, so the variable is re-pointed rather than a `py-2`
+ * utility bolted on, because the dismiss `X` positions itself off the very same
+ * variable and would otherwise sit off-centre in the shortened box.
+ */
+.kk-whats-new {
+  --bs-alert-padding-y: var(--kk-space-2);
+}
+
 /* ---- Label cloud -------------------------------------------------------- */
 
 /*

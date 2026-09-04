@@ -89,6 +89,40 @@ describe('WhatsNewPanel', () => {
     expect(screen.queryByRole('link', { name: '2 new comments' })).not.toBeInTheDocument()
   })
 
+  it('condenses the visit to one line, with the detail one click away', async () => {
+    // The digest sits above everything on the library page, so its height comes
+    // straight out of the photographs. At rest it states the counts and nothing
+    // else; the names, the links and the exact moment of the last visit are a
+    // click below.
+    fetchMock.mockResolvedValue({ ...FULL_DIGEST, mine_photos: 3 })
+    renderPanel('sub123')
+
+    expect(
+      await screen.findByText(
+        /5 new photos · 3 new photos of you · 1 new album · 1 newly named person · 2 new comments/,
+      ),
+    ).toBeInTheDocument()
+
+    const toggle = screen.getByRole('button', { name: 'Details' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    const detail = document.getElementById(toggle.getAttribute('aria-controls') ?? '')
+    expect(detail).not.toBeNull()
+    // jsdom loads no Bootstrap, so the shut region is still in the document; what
+    // the test can hold is that it is shut and that the toggle says so.
+    expect(detail).not.toHaveClass('show')
+    expect(detail).toContainElement(screen.getByRole('link', { name: 'Summer 2026' }))
+    expect(detail).toContainElement(screen.getByText(/Since your last visit/))
+
+    await userEvent.setup().click(toggle)
+    await waitFor(() => {
+      expect(detail).toHaveClass('show')
+    })
+    expect(screen.getByRole('button', { name: 'Hide details' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    )
+  })
+
   it('renders nothing when the visit produced no news', async () => {
     fetchMock.mockResolvedValue({ has_news: false })
     renderPanel()

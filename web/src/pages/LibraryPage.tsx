@@ -22,7 +22,6 @@ import { useBulkEdit } from '../hooks/useBulkEdit'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useGridKeyboardNavigation } from '../hooks/useGridKeyboardNavigation'
 import { useGridScrollMemory } from '../hooks/useGridScrollMemory'
-import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
 import { useLibraryFacets } from '../hooks/useLibraryFacets'
 import { useReloadKey } from '../hooks/useReloadKey'
 import { useUploaders } from '../hooks/useUploaders'
@@ -69,19 +68,24 @@ const ANCHOR_PARAM = 'at'
  * add-to-album, add/remove-label, favorite, archive, download and the full editor
  * via the bulk API. Escape clears the selection and hides the bar.
  *
- * On a phone the page spends no line on a heading row. "Knihovna" over the photo
- * wall told the reader what the bottom tab bar already highlights, and the two
- * view actions beside it (Slideshow, Save view) are occasional — together they
- * cost a fifth of the first screen. The heading stays for assistive technology
- * (`visually-hidden`, so the page still opens with an `h1`) and the actions move
- * into the filters drawer, which {@link FilterBar} hosts for exactly this
- * reason.
+ * **The page spends no line on a heading row, on any viewport.** "Knihovna"
+ * over the photo wall told the reader what the navigation already highlights,
+ * and the two view actions beside it (Slideshow, Save view) are occasional —
+ * together they were a fifth of a phone's first screen and the top of a
+ * desktop's. The heading stays for assistive technology (`visually-hidden`, so
+ * the page still opens with an `h1`) and the actions go to {@link FilterBar} as
+ * `viewActions`, which seats them in a line that exists anyway: beside the
+ * result count on desktop, in the filters drawer on a phone. That, with the
+ * digest condensed to one line and the filter pickers moved behind the Filters
+ * button, is what puts the first row of photographs on the first screen at
+ * 1280 x 800: measured against the deployed build over the same 20 664-photo
+ * catalogue, 325 px -> 205 px with the digest dismissed, 261 px with it showing,
+ * against the ~490 px the page used to open at.
  */
 export function LibraryPage() {
   const { t, i18n } = useTranslation()
   useDocumentTitle(t('library.title'))
   const { canWrite } = useAuth()
-  const narrow = useIsNarrowViewport()
   const navigate = useNavigate()
   const [view, setView] = useUrlState<LibraryView>(LIBRARY_DEFAULTS)
   const [savingView, setSavingView] = useState(false)
@@ -280,8 +284,10 @@ export function LibraryPage() {
     setView({ ...LIBRARY_DEFAULTS, sort: view.sort })
   }
 
-  // The page's own view actions. Rendered in exactly one place — the heading row
-  // on desktop, the filters drawer on a phone — so neither button is ever in the
+  // The page's own view actions. The page no longer has a heading row to put
+  // them in on any viewport, so it hands them to the filter bar, which renders
+  // them in exactly one place per viewport (beside the result count on desktop,
+  // in the filters drawer on a phone) — so neither button is ever in the
   // document twice.
   const viewActions = (
     <>
@@ -307,17 +313,12 @@ export function LibraryPage() {
 
   return (
     <>
-      {narrow ? (
-        // The tab bar already says which destination this is; the heading only
-        // has to survive for a screen reader, which reads it without it taking
-        // a row from the photographs.
-        <h1 className="visually-hidden">{t('library.title')}</h1>
-      ) : (
-        <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-          <h1 className="kk-page-title mb-0">{t('library.title')}</h1>
-          <div className="d-flex gap-1 flex-wrap">{viewActions}</div>
-        </div>
-      )}
+      {/* The navigation already says which destination this is — the bottom tab
+          bar on a phone, the navbar's active item on desktop — so a headline
+          repeating it buys nothing and costs the top of the first screen, which
+          on the app's front door is photographs. The heading survives for a
+          screen reader, which reads it without it taking a row. */}
+      <h1 className="visually-hidden">{t('library.title')}</h1>
 
       {/* What happened while the reader was away. It sits above the filters
           because it is about the library as a whole, not about the current
@@ -341,7 +342,7 @@ export function LibraryPage() {
         uploaders={uploaders}
         showFavorite
         searchHref={searchHref(view)}
-        mobileActions={narrow ? viewActions : undefined}
+        viewActions={viewActions}
       />
 
       {/* A mistyped filter key (`osoba:` for `person:`) is not "no such photos":

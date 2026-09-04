@@ -3419,7 +3419,13 @@
     "more_one": "and {{count}} more",
     "more_other": "and {{count}} more",
     "minePhotos_one": "{{count}} new photo of you",
-    "minePhotos_other": "{{count}} new photos of you"
+    "minePhotos_other": "{{count}} new photos of you",
+    "albumsCount_one": "{{count}} new album",
+    "albumsCount_other": "{{count}} new albums",
+    "peopleCount_one": "{{count}} newly named person",
+    "peopleCount_other": "{{count}} newly named people",
+    "expand": "Details",
+    "collapse": "Hide details"
   },
   "welcome": {
     "title": "Welcome to Kukátko",

@@ -1090,6 +1090,41 @@ describe('LibraryPage scroll position', () => {
 })
 
 /**
+ * The library is the app's front door, and it used to open onto its own
+ * settings: at 1280 px the first row of photographs began ~490 px down, below a
+ * heading repeating the navigation, a four-line digest, the search row and a row
+ * of four pickers. Three of those four went; this is what is left of them.
+ */
+describe('LibraryPage opens onto photographs', () => {
+  it('spends no row on a heading, keeping it only for a screen reader', async () => {
+    servePagesOf(3)
+
+    renderLibrary()
+    await screen.findByRole('link', { name: 'p0.jpg' })
+
+    const heading = screen.getByRole('heading', { level: 1, name: 'Library' })
+    expect(heading).toHaveClass('visually-hidden')
+  })
+
+  it('moves the view actions into the bar status line rather than dropping them', async () => {
+    servePagesOf(3)
+
+    renderLibrary()
+    await screen.findByRole('link', { name: 'p0.jpg' })
+
+    // Nothing is lost with the heading row — the actions simply moved to the one
+    // line the bar already spends on the result count, and exist exactly once.
+    for (const action of [
+      screen.getByRole('button', { name: 'Save view' }),
+      screen.getByRole('link', { name: 'Slideshow' }),
+    ]) {
+      expect(action.closest('.kukatko-filter-status')).not.toBeNull()
+    }
+    expect(screen.getAllByRole('button', { name: 'Save view' })).toHaveLength(1)
+  })
+})
+
+/**
  * What a phone gets instead of the page's heading row. "Knihovna" over the photo
  * wall repeated what the bottom tab bar already highlights, and the two view
  * actions beside it are occasional — together they were a fifth of a 852px

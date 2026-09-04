@@ -211,8 +211,20 @@ here.
   library grid, rendered by `LibraryPage` **before `FilterBar`** because it is about the library as a whole,
   not about the current view. A shared family library otherwise makes somebody else's evening of uploading
   invisible to the next person who opens the app; this is the one place that says so, and it is deliberately
-  four lines rather than a second timeline competing with the real one. Via `useWhatsNew` + a dismissible
-  `<Alert variant="info">` with a `clock-history` `Icon`, a `whatsNew.since` sub-line through
+  a summary rather than a second timeline competing with the real one. Via `useWhatsNew` + a dismissible
+  `<Alert variant="dark">` with a `clock-history` `Icon`.
+  **At rest it is one line** (since 2026-09-05): the title plus the non-zero counts joined by ` · `
+  (`whatsNew.photos`, `minePhotos`, `albumsCount`, `peopleCount`, `comments`), `text-truncate` rather than
+  wrapping — it sits above everything on the library page, so any height it takes it takes from the
+  photographs, and a digest that grows a second row is back to being a block of the first screen.
+  `.kk-whats-new` re-points `--bs-alert-padding-y` to 0.5 rem (rather than a `py-2` utility, because the
+  dismiss `X` positions itself off that same variable and would otherwise sit off-centre), so one line of
+  text costs one line of the page. A `whatsNew.expand`/`whatsNew.collapse` toggle
+  (`aria-expanded` + `aria-controls` over a `<Collapse>`; inside a filled alert it inherits the alert's own
+  colour and underlines rather than using `variant="link"`, which is illegible there — and below `sm` the
+  word gives way to its chevron alone, which on a 390 px screen was a third of the line the summary has to
+  fit into, the accessible name riding on `aria-label` either way) opens **the detail** —
+  the digest exactly as it read before: a `whatsNew.since` sub-line through
   `formatDateTimeMinutes`, then one `<li>` per non-zero group: **`whatsNew.photos` links to `/?sort=added`**
   (recently added, not the capture-time timeline — a scan of 1962 negatives is *new* but not *recent*),
   a **„N nových fotek, na kterých jsi ty"** line follows it when `mine_photos > 0` *and* the reader's
@@ -889,18 +901,33 @@ here.
   (**a redesign for a calm default state + progressive disclosure**: on desktop the header holds a prominent
   search field (the visual anchor, the largest element), sort (incl. **by rating**),
   `GridDensityControl` and a
-  **Filtry** button with a badge of the active-filter count; advanced filters (location, private,
-  camera, archive, **min. rating ≥1…≥5**, **picked/rejected flag**) live in a collapsible
+  **Filtry** button with a badge of the active-filter count; **every filter** — the primary four
+  (Období/Album/Štítek/Osoba) as well as the advanced ones (location, private, camera, archive,
+  **min. rating ≥1…≥5**, **picked/rejected flag**) — lives in a collapsible
   panel — inline `Collapse` on desktop, `Offcanvas` on mobile per `matchMedia` (the shared hook `useIsNarrowViewport`,
   defensive against jsdom, where `matchMedia` returns `undefined`).
+  **Since 2026-09-05 the primary four are behind that button on desktop too** — they used to hold an
+  always-visible row under the header, deliberately, because they are the ways photos are actually found.
+  Measured on the live instance at 1280 px that row was the last of ~490 px of chrome (heading, digest,
+  search row, pickers) above the first photograph: the app's front door opened onto its own settings.
+  A/B over the same 20 664-photo catalogue at 1280 × 800 (deployed 0.17.2 vs. this tree through the
+  prod-proxy probe, digest dismissed on both): the first row of photographs moved from **325 px to 205 px**;
+  with the digest showing it is **261 px**, against ~490 px before.
+  A picker is a surface for *changing* the view, which a reader does occasionally; photographs are what
+  everybody came for, every visit. **The compactness is not bought with an invisible filter**: whatever is
+  *set* stays on the page as a removable chip whether the panel is open or shut — a view opened straight
+  from a shared URL included — so only *adding* a filter costs the extra click. The chip row is capped
+  at two rows and scrolls past that (`.kukatko-filter-chips`), so several filters at once cannot rebuild
+  the tall block that was just removed.
   **On a phone the header is the search field and the Filtry button, and nothing else.** That desktop
   header alone stacked into three rows there, and with the page heading, the search note and the count line
   above it the first photo started at 371 px of an 852 px screen (measured on production at 393 × 852);
   now it starts at **150 px**. What moved: sort and density into the drawer (`DisplayControls`, its first
   section — they are what was *taken away* from the bar, so they must be the first thing found), the search
   note to the drawer's foot (`SearchNote`, defined once and placed in exactly one of the two), the page's own
-  view actions to the drawer's very bottom (**`mobileActions`**, a `ReactNode` the page hands over — rendered
-  only when narrow, so the buttons are never in the document twice), and the **result count into the header
+  view actions to the drawer's very bottom (**`viewActions`**, a `ReactNode` the page hands over — seated
+  in exactly one place per viewport, the drawer's foot on a phone and the `.kukatko-filter-status` line on
+  desktop, so the buttons are never in the document twice), and the **result count into the header
   row itself**, wrapping onto a full-width line under the Filtry button (`.kukatko-filter-status`
   + `flex-row-reverse`, with a 2.75 rem right pad so it clears the timeline rail's lane). `.kukatko-filter-search`
   drops to an 8 rem flex-basis below `md` (an 18 rem basis is wider than the screen, which wrapped the button
@@ -965,11 +992,10 @@ here.
   (chips/panel/clear keep working); ~44 px tap targets via `styles/app.css`
   `.kukatko-filter-*`;
   **the four ways photos are actually searched** (the entity three from the `facets` prop of
-  `useLibraryFacets`, the period always): on
-  **desktop** its own always-visible row of four below the header, on **phone** (per
-  `useIsNarrowViewport`) it **folds into the same filter `Offcanvas`** as the advanced filters —
-  otherwise four columns stacked below one another would push the photos below the first screen; the active filter
-  still stays visible as a **chip**, so the filtered set is no mystery even with the drawer closed:
+  `useLibraryFacets`, the period always) — `PrimaryFilterRow`, the **first section of the panel on both
+  viewports** (`Collapse` on desktop, `Offcanvas` on phone per `useIsNarrowViewport`), above the advanced
+  filters and, on a phone, below `DisplayControls`; the active filter
+  still stays visible as a **chip**, so the filtered set is no mystery even with the panel closed:
   **Období** = `PeriodFilter` (below; rendered even without `facets` — an album- or place-scoped grid can be
   narrowed in time too, it just gets no decade list),
   **Album**, **Štítek** and **Osoba** = `SearchableSelect` (all collections grow without limit;
@@ -1522,13 +1548,18 @@ here.
   being personal like the favourite heart, and since 2026-08-08 carrying the same `savedSearches.saveViewTitle`
   one-liner the search header gives it, so it cannot be mistaken for one of the editor controls it stands next
   to (see `UX_RESEARCH.md` **N14**).
-  **On a phone the page spends no row on a heading.** „Knihovna" over the photo wall repeated what the
-  bottom tab bar already highlights, and the two view actions beside it (Promítání, Uložit pohled) are
-  occasional; together they were a fifth of the first screen. Below `md` (`useIsNarrowViewport`) the
-  heading renders `visually-hidden` — the page still opens with an `h1` for a screen reader — and the two
-  actions are handed to `FilterBar` as **`mobileActions`**, which hosts them at the foot of the filters
-  drawer. Both are built once into a `viewActions` fragment and rendered in exactly one of the two places,
-  so neither button can end up in the document twice,
+  **The page spends no row on a heading, on any viewport** (phone since 2026-08-14, desktop since
+  2026-09-05). „Knihovna" over the photo wall repeated what the navigation already highlights — the bottom
+  tab bar on a phone, the navbar's active item on desktop — and the two view actions beside it (Promítání,
+  Uložit pohled) are occasional; together they were a fifth of a phone's first screen and the top of a
+  desktop's. The heading always renders `visually-hidden` — the page still opens with an `h1` for a screen
+  reader — and the two actions are handed to `FilterBar` as **`viewActions`**, which seats them in a line
+  that exists anyway: beside the result count (`.kukatko-filter-status`) on desktop, at the foot of the
+  filters drawer on a phone. Built once into one fragment and rendered in exactly one of the two places,
+  so neither button can end up in the document twice. That, with the digest condensed to one line
+  (`WhatsNewPanel`) and the filter pickers moved behind the Filtry button, is what puts the first row of
+  photographs on the first screen at 1280 × 800 (**261 px**, or 205 px with the digest dismissed) instead
+  of ~490 px down the page; the phone is unchanged apart from the digest (**206 px** at 390 × 844),
   `SavedSearchesPage` = `/saved` (any logged-in user, reached from the „Procházet" nav group as well as
   from the dropdown on `/search`) „Moje uložená hledání": a list of the current
   user's saved views, each link opens the exactly restored view (`savedSearchHref`), plus

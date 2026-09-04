@@ -31,8 +31,8 @@ interface BarProps {
   total?: number
   /** Whether that count is still being fetched under a just-changed filter. */
   totalPending?: boolean
-  /** The page's own view actions, which the drawer hosts on a phone. */
-  mobileActions?: ReactNode
+  /** The page's own view actions, which the bar seats once per viewport. */
+  viewActions?: ReactNode
 }
 
 /**
@@ -725,7 +725,7 @@ describe('FilterBar narrow viewport (phone)', () => {
     mockViewport(true)
     const user = userEvent.setup()
     renderBar(LIBRARY_DEFAULTS, vi.fn(), {
-      mobileActions: <button type="button">Save view</button>,
+      viewActions: <button type="button">Save view</button>,
     })
 
     // A phone has no heading row for them to sit in, so until the drawer is
@@ -734,19 +734,106 @@ describe('FilterBar narrow viewport (phone)', () => {
     const drawer = await openFilterDrawer(user)
     expect(within(drawer).getByRole('button', { name: 'Save view' })).toBeInTheDocument()
   })
+})
 
-  it('ignores the page view actions on a desktop, where the page keeps them itself', async () => {
-    mockViewport(false)
+/**
+ * The desktop resting state. The Period / Album / Label / Person row used to be
+ * permanent here on the argument that the ways *in* deserve a permanent place;
+ * measured on the live instance it was the last of ~490 px of chrome above the
+ * first photograph, so it moved behind the same Filters button the advanced
+ * filters already used. These tests hold the trade to its terms: setting a
+ * filter may cost the extra click, seeing one may not.
+ *
+ * jsdom loads no Bootstrap, so a shut `.collapse` is still in the document and
+ * absence cannot be asserted. What can be — and is what actually matters — is
+ * *where* a control lives: inside the region the toggle controls, with the
+ * toggle shut.
+ */
+describe('FilterBar on desktop', () => {
+  /** The collapsible panel the Filters toggle controls. */
+  function filterPanel(): HTMLElement {
+    const toggle = screen.getByRole('button', { name: /Filters/ })
+    const id = toggle.getAttribute('aria-controls') ?? ''
+    const panel = document.getElementById(id)
+    if (panel === null) {
+      throw new Error(`no element with id ${id}`)
+    }
+    return panel
+  }
+
+  it('seats every filter behind the toggle instead of in a permanent picker row', () => {
+    renderBar(LIBRARY_DEFAULTS, vi.fn(), { facets: FACETS, showFavorite: true })
+
+    expect(screen.getByRole('button', { name: /Filters/ })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
+    const panel = filterPanel()
+    expect(panel).not.toHaveClass('show')
+    // The four that used to stand between the search box and the photographs…
+    expect(panel).toContainElement(screen.getByRole('button', { name: /^Period:/ }))
+    expect(panel).toContainElement(screen.getByLabelText('Album'))
+    expect(panel).toContainElement(screen.getByLabelText('Label'))
+    expect(panel).toContainElement(screen.getByLabelText('Person'))
+    // …beside the ones that always lived there, so there is one filter surface.
+    expect(panel).toContainElement(screen.getByLabelText('Camera'))
+  })
+
+  it('keeps the display controls in the header, since neither of them filters', () => {
+    renderBar(LIBRARY_DEFAULTS, vi.fn(), { facets: FACETS })
+
+    const panel = filterPanel()
+    expect(panel).not.toContainElement(screen.getByLabelText('Sort'))
+    expect(panel).not.toContainElement(screen.getByLabelText('Tiles per row'))
+  })
+
+  it('opens the pickers on the one click the toggle costs', async () => {
     const user = userEvent.setup()
-    renderBar(LIBRARY_DEFAULTS, vi.fn(), {
-      mobileActions: <button type="button">Save view</button>,
+    renderBar(LIBRARY_DEFAULTS, vi.fn(), { facets: FACETS })
+
+    await openPanel(user)
+    expect(screen.getByRole('button', { name: /Filters/ })).toHaveAttribute('aria-expanded', 'true')
+    expect(filterPanel()).toHaveClass('show')
+  })
+
+  it('shows a filter opened straight from a URL as a chip, with the panel still shut', async () => {
+    // The reader followed a shared link; nothing was clicked, so nothing may be
+    // hidden behind a collapsed control either.
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    renderBar({ ...LIBRARY_DEFAULTS, album: 'al_1', min_rating: '4' }, onChange, {
+      facets: FACETS,
     })
 
-    await user.click(screen.getByRole('button', { name: /Filters/ }))
-    // The desktop panel is the same `panel` element as the drawer's body; were
-    // the actions unconditional, opening it would put a second copy of the
-    // page's own buttons on the page.
-    expect(screen.queryByRole('button', { name: 'Save view' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Filters/ })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
+    const chip = screen.getByText('Album: Holidays')
+    expect(filterPanel()).not.toContainElement(chip)
+    expect(screen.getByText('Rating: ≥ 4')).toBeInTheDocument()
+
+    // And one click on the chip's own X drops it — the extra click the panel
+    // costs is for *setting* a filter, never for undoing one.
+    await user.click(screen.getByRole('button', { name: 'Remove filter: Album: Holidays' }))
+    expect(onChange).toHaveBeenCalledWith({ album: '' })
+  })
+
+  it('seats the page view actions beside the result count, and only there', async () => {
+    const user = userEvent.setup()
+    renderBar(LIBRARY_DEFAULTS, vi.fn(), {
+      total: 20637,
+      viewActions: <button type="button">Save view</button>,
+    })
+
+    // The page has no heading row any more, so the bar's own status line hosts
+    // them — visible without opening anything…
+    const action = screen.getByRole('button', { name: 'Save view' })
+    expect(action.closest('.kukatko-filter-status')).not.toBeNull()
+    // …and not a second time inside the panel, whose body is shared with the
+    // phone drawer that hosts them there.
+    await openPanel(user)
+    expect(screen.getAllByRole('button', { name: 'Save view' })).toHaveLength(1)
   })
 })
 

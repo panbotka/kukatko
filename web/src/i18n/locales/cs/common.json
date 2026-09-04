@@ -3577,7 +3577,17 @@
     "minePhotos_one": "{{count}} nová fotka, na které jsi ty",
     "minePhotos_few": "{{count}} nové fotky, na kterých jsi ty",
     "minePhotos_many": "{{count}} nové fotky, na kterých jsi ty",
-    "minePhotos_other": "{{count}} nových fotek, na kterých jsi ty"
+    "minePhotos_other": "{{count}} nových fotek, na kterých jsi ty",
+    "albumsCount_one": "{{count}} nové album",
+    "albumsCount_few": "{{count}} nová alba",
+    "albumsCount_many": "{{count}} nového alba",
+    "albumsCount_other": "{{count}} nových alb",
+    "peopleCount_one": "{{count}} nově pojmenovaný člověk",
+    "peopleCount_few": "{{count}} nově pojmenovaní lidé",
+    "peopleCount_many": "{{count}} nově pojmenovaného člověka",
+    "peopleCount_other": "{{count}} nově pojmenovaných lidí",
+    "expand": "Podrobnosti",
+    "collapse": "Skrýt podrobnosti"
   },
   "welcome": {
     "title": "Vítej v Kukátku",

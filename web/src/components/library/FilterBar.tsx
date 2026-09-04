@@ -90,7 +90,7 @@ export interface FilterBarProps<T extends LibraryView> {
   /**
    * The Album / Label / Person facet option lists plus the years the library
    * holds. Omit on pages whose grid is already scoped to one album, label or
-   * place: the three entity pickers are then dropped from the primary row (the
+   * place: the three entity pickers are then dropped from the filter panel (the
    * period control stays — every grid can be narrowed in time), and the period
    * control offers its exact dates without the decade list it has no counts for.
    * Album titles, label names and subject names also let the chips name a filter
@@ -119,13 +119,13 @@ export interface FilterBarProps<T extends LibraryView> {
    */
   searchHref?: string
   /**
-   * Page-level view actions (Slideshow, Save view) to host at the foot of the
-   * filters drawer, rendered **only on a narrow viewport**. A phone has no room
-   * for a page-heading row above the photos, so the page hands its actions here
-   * instead of spending a line of the first screen on them; on desktop the page
-   * keeps them in its own header and passes nothing.
+   * Page-level view actions (Slideshow, Save view). No viewport spends a
+   * page-heading row on them any more, so the bar hosts them in the one line
+   * that already exists on each: beside the result count on desktop, at the
+   * foot of the filters drawer on a phone. Rendered in exactly one of the two
+   * places, so a page can never have the same button in the document twice.
    */
-  mobileActions?: ReactNode
+  viewActions?: ReactNode
 }
 
 /**
@@ -134,31 +134,47 @@ export interface FilterBarProps<T extends LibraryView> {
  * field (the visual anchor, matching title and description as you type), the
  * sort selector, the grid-density picker (how many photos sit side by side — a
  * per-device display preference, not part of the view), and a "Filters" toggle
- * badged with the count of active filters. The primary filter row — Period,
- * Album, Label, Person, the ways photos are actually found — sits below it in
- * its own always-visible four-across row (the three entity pickers only when the
- * page supplies `facets`). The remaining filters (camera, archived, favorites,
- * location, min rating, flag, uploader) live in a collapsible panel, so the
- * resting state stays uncluttered — the favorites toggle only when the page opts
+ * badged with the count of active filters.
+ *
+ * **Every filter lives behind that toggle — on desktop too.** Period, Album,
+ * Label and Person, the ways photos are actually found, used to hold an
+ * always-visible four-across row under the header, on the argument that the
+ * ways *in* deserve a permanent place. That row was the last of the ~490 px of
+ * chrome (heading, digest, search row, pickers) measured at 1280 px between the
+ * top of the library and its first photograph: the app's front door opened onto
+ * its own settings. A picker is a surface for *changing* the view, which a
+ * reader does occasionally; photographs are what they came for, every visit. So
+ * the primary pickers moved into the panel beside the rest (camera, archived,
+ * favorites, location, min rating, flag, uploader), which is now one filter
+ * surface with one way in on every viewport — the three entity pickers only
+ * when the page supplies `facets`, the favorites toggle only when the page opts
  * in via `showFavorite`, the uploader only when the page supplies `uploaders`.
+ *
+ * The compactness is not bought with a filter the reader cannot see. Every
+ * filter that is *set* stays on the page as a removable chip whether the panel
+ * is open or shut, including one arrived at from a shared URL — so only *adding*
+ * a filter costs the extra click, and a narrowed grid never has a cause hidden
+ * behind a collapsed control. On desktop the chip row is bounded at three rows
+ * (`.kukatko-filter-chips`) so that several filters at once cannot rebuild the
+ * block that was just removed — a bound fourteen simultaneous filters still fit
+ * inside, so it is a guard rather than something a reader meets.
  *
  * **On a phone the header is the search field and the Filters button, and
  * nothing else.** Photos are browsed mostly on phones, which is where the app
  * has the least room: the desktop header alone stacked into three rows there,
  * and with the page heading, the search note and the count line above it the
  * first photo started past 350 px of a 852 px screen. So everything the header
- * carries besides the search — the sort order, the grid density, the primary
- * pickers, the note explaining the query language, and the page's own view
- * actions (`mobileActions`) — folds into the offcanvas drawer, which has room to
- * spare, and the result count rides in the header row itself, beside the
- * Filters button that opens them ({@link FilterDrawerFooter} states it again on
- * the way out). What is left above the photos is one field and one button.
+ * carries besides the search — the sort order, the grid density, the note
+ * explaining the query language, and the page's own view actions
+ * (`viewActions`) — folds into the offcanvas drawer, which has room to spare,
+ * and the result count rides in the header row itself, beside the Filters
+ * button that opens them ({@link FilterDrawerFooter} states it again on the way
+ * out). What is left above the photos is one field and one button.
  *
- * Every active filter — the primary row included — is echoed as a removable chip
- * plus a single clear-all action, so a filtered set is never a mystery even
- * while the drawer is shut. The drawer closes on a sticky footer carrying the
- * live result count ({@link FilterDrawerFooter}) rather than only on the cross
- * ten fields back up.
+ * The chips are joined by a single clear-all action, so a filtered set is never
+ * a mystery nor a chore to undo. The drawer closes on a sticky footer carrying
+ * the live result count ({@link FilterDrawerFooter}) rather than only on the
+ * cross ten fields back up.
  *
  * That count is honest in both directions. The free-text fields — the quick
  * filter and the camera — commit on a pause ({@link useDebouncedText}) rather
@@ -169,10 +185,10 @@ export interface FilterBarProps<T extends LibraryView> {
  * not an answer to the ones they are looking at.
  *
  * There is exactly **one** control per thing being filtered. The time axis used
- * to have two — a Year dropdown of single years in the primary row and a
+ * to have two — a Year dropdown of single years in the primary picker row and a
  * "taken after / taken before" pair buried in the panel — which between them
  * could neither express a decade nor agree with each other;
- * {@link PeriodFilter} is both of them, in the primary row, over one pair of URL
+ * {@link PeriodFilter} is both of them, in the filter panel, over one pair of URL
  * keys.
  *
  * The quick filter speaks the whole `key:value` query language, exactly as
@@ -180,7 +196,8 @@ export interface FilterBarProps<T extends LibraryView> {
  * with the residual free text matching title, description and notes as a
  * substring. So it carries the same {@link SearchQueryHelp} `?` the search page
  * uses rather than a second, drifting explanation of the language, and the
- * facet pickers below flag the facets the query has already taken over. What
+ * facet pickers in the panel flag the facets the query has already taken over.
+ * What
  * `/search` adds is *ranking* — full-text relevance and semantic similarity —
  * which is what `searchHref` links to when the embeddings box is reachable.
  *
@@ -205,7 +222,7 @@ export function FilterBar<T extends LibraryView>({
   uploaders,
   showFavorite = false,
   searchHref,
-  mobileActions,
+  viewActions,
 }: FilterBarProps<T>) {
   const { t, i18n } = useTranslation()
   const [open, setOpen] = useState(false)
@@ -232,7 +249,7 @@ export function FilterBar<T extends LibraryView>({
 
   const chips = buildChips(view, t, i18n.language, { facets, uploaders })
   const clearVisible = hasActiveFilters(view, { ignoreQuery: !showSearch })
-  // Which filters the query itself already sets. The pickers below would
+  // Which filters the query itself already sets. The pickers in the panel would
   // otherwise keep reading "any period" while `year:1960-1969` in the box has
   // filtered the grid down to the sixties.
   const queryFilters = useMemo(() => queryFilterTokens(view.q), [view.q])
@@ -250,12 +267,13 @@ export function FilterBar<T extends LibraryView>({
       <SearchNote href={searchHref} semanticSearch={semanticSearch} />
     ) : null
 
-  // Everything the phone header cannot afford folds in here, in the order a
-  // reader looks for it: the two display controls the header used to carry
-  // (sort, density), then the primary pickers, then the advanced filters, then
-  // the reference material (what the search box understands) and the page's own
-  // view actions. On desktop the display controls and the primary row keep their
-  // always-visible places above and this panel holds only the advanced filters.
+  // One filter surface for both viewports, in the order a reader looks for it:
+  // on a phone first the two display controls the header cannot afford (sort,
+  // density), then — everywhere — the primary pickers, then the advanced
+  // filters, and on a phone the reference material (what the search box
+  // understands) and the page's own view actions. On desktop the display
+  // controls keep their always-visible place in the header row above; nothing
+  // that *filters* does.
   const panel = (
     <>
       {narrow && (showSort || showDensity) && (
@@ -270,12 +288,8 @@ export function FilterBar<T extends LibraryView>({
           <hr className="my-3" />
         </>
       )}
-      {narrow && (
-        <>
-          <PrimaryFilterRow view={view} facets={facets} push={push} queryFilters={queryFilters} />
-          <hr className="my-3" />
-        </>
-      )}
+      <PrimaryFilterRow view={view} facets={facets} push={push} queryFilters={queryFilters} />
+      <hr className="my-3" />
       <AdvancedFilters
         view={view}
         push={push}
@@ -290,23 +304,28 @@ export function FilterBar<T extends LibraryView>({
           {searchNote}
         </>
       )}
-      {narrow && mobileActions !== undefined && (
+      {narrow && viewActions !== undefined && (
         <>
           <hr className="my-3" />
           {/* `d-grid` stretches whatever the page handed over into full-width
               rows, so a page never has to know how its buttons are laid out
               here. */}
-          <div className="d-grid gap-2">{mobileActions}</div>
+          <div className="d-grid gap-2">{viewActions}</div>
         </>
       )}
     </>
   )
 
-  // The result count and the clear-all action. On desktop they are a row of
-  // their own under the bar. On a phone the row rides *inside* the header's flex
-  // row as a full-width wrapped line, so the count lands directly beneath the
-  // Filters button (`flex-row-reverse` keeps it on that side) instead of costing
-  // a line of its own between the search field and the photos.
+  // The result count, the clear-all action and — on desktop — the page's own
+  // view actions. On desktop they are a row of their own under the bar, and it
+  // is the row that replaced the page-heading row the library used to carry:
+  // one short line stating what is on screen and offering what to do with it,
+  // rather than a title repeating the navigation plus a line of buttons. On a
+  // phone the row rides *inside* the header's flex row as a full-width wrapped
+  // line, so the count lands directly beneath the Filters button
+  // (`flex-row-reverse` keeps it on that side) instead of costing a line of its
+  // own between the search field and the photos; there the view actions are in
+  // the drawer instead (see `panel`), because this line has no room for them.
   const status = (
     <div
       className={`kukatko-filter-status d-flex align-items-center justify-content-between gap-2 ${
@@ -323,17 +342,20 @@ export function FilterBar<T extends LibraryView>({
           ? t('library.filters.counting')
           : total !== undefined && t('library.count', { count: total })}
       </span>
-      {clearVisible && (
-        <Button
-          type="button"
-          size="sm"
-          variant="link"
-          className="text-decoration-none px-0"
-          onClick={clearAll}
-        >
-          {t('library.filters.clear')}
-        </Button>
-      )}
+      <div className="d-flex align-items-center gap-2">
+        {clearVisible && (
+          <Button
+            type="button"
+            size="sm"
+            variant="link"
+            className="text-decoration-none px-0"
+            onClick={clearAll}
+          >
+            {t('library.filters.clear')}
+          </Button>
+        )}
+        {!narrow && viewActions}
+      </div>
     </div>
   )
 
@@ -416,15 +438,8 @@ export function FilterBar<T extends LibraryView>({
           the field carry the same message at no cost in height. */}
       {!narrow && searchNote}
 
-      {/* Desktop keeps the primary pickers in a persistent row; on a phone they
-          move into the filters drawer (see `panel` above) so the photos start
-          near the top of the screen instead of below four stacked selects. */}
-      {!narrow && (
-        <PrimaryFilterRow view={view} facets={facets} push={push} queryFilters={queryFilters} />
-      )}
-
       {chips.length > 0 && (
-        <div className="d-flex flex-wrap align-items-center gap-2 mt-2">
+        <div className="kukatko-filter-chips d-flex flex-wrap align-items-center gap-2 mt-2">
           {chips.map((chip) => {
             // Album and tag chips carry a distinct hue + leading icon from the
             // shared entity convention; every other filter keeps the neutral
