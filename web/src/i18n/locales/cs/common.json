@@ -2281,6 +2281,12 @@
       "noPeople": "Na této fotce nejsou žádní lidé.",
       "editPerson": "Upravit: {{name}}",
       "namePerson": "Pojmenovat neznámý obličej {{index}}",
+      "faceNumber": "#{{index}}",
+      "morePeople_one": "Zobrazit ještě {{count}} obličej",
+      "morePeople_few": "Zobrazit ještě {{count}} obličeje",
+      "morePeople_many": "Zobrazit ještě {{count}} obličeje",
+      "morePeople_other": "Zobrazit ještě {{count}} obličejů",
+      "foldPeople": "Zobrazit méně obličejů",
       "error": "Změnu se nepodařilo uložit."
     },
     "location": {

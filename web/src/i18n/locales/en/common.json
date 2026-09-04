@@ -2191,6 +2191,10 @@
       "noPeople": "No people in this photo.",
       "editPerson": "Edit {{name}}",
       "namePerson": "Name unnamed face {{index}}",
+      "faceNumber": "#{{index}}",
+      "morePeople_one": "Show {{count}} more face",
+      "morePeople_other": "Show {{count}} more faces",
+      "foldPeople": "Show fewer faces",
       "error": "Could not save the change."
     },
     "location": {

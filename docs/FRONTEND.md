@@ -2278,7 +2278,20 @@ here.
   `useFaces` that drives the overlay — answers "who is in the photo" even with faces off; **it assigns nothing
   itself**: an editor's click on a chip calls `onEditFace` → the page turns on faces and selects that
   face in `FacesPanel`, so assignment lives in exactly one place. A viewer sees named
-  people read-only; named = a rose chip, an unnamed detection = a neutral chip); albums/labels/people have
+  people read-only; named = a rose chip, an unnamed detection = a neutral chip. **A crowd is folded
+  away**: past **six** unnamed faces (`UNNAMED_CHIP_LIMIT`) the rest sit behind one control that counts
+  them („Zobrazit ještě 12 obličejů", `photo.organize.morePeople`) and unfolds them **in place**; named
+  people are never folded — they are the answer to „who is in this photo". A concert photograph in the
+  library detects eighteen faces, and listed in full they pushed everything below People off the panel:
+  measured in a 380px drawer, the sections under it (comments, technical details, similar photos) started
+  **752px** down and now start **274px** down. Two things pay for that. The chip's crop is **40px**
+  (`CHIP_FACE_SIZE`, was 24 — a coloured dot beside the text, not a face you can recognise), and an
+  unnamed chip is captioned with **its number alone** («#12», `photo.organize.faceNumber`) instead of
+  the full „Nepojmenovaný obličej 12", which made every anonymous chip 204px wide and therefore one per
+  row — six rows of text saying nothing. The sentence stays as the button's `aria-label`, where a screen
+  reader still reads it. The unfold is `useState` holding **which photo uid** is unfolded, so walking to
+  the next photo folds it back up with no effect to run; nothing about it is stored, here or on the
+  server); albums/labels/people have
   a distinct color via `ENTITY_STYLE` (`components/entityStyle`), and an album/label chip is the shared
   `EntityChip` (the pill itself is the link, so the whole chip is one 44px target on a phone — the editor's
   remove X only trims it). Adding runs through

@@ -1,4 +1,6 @@
+import { useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
+import Button from 'react-bootstrap/Button'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 
@@ -9,11 +11,24 @@ import { ENTITY_STYLE } from '../entityStyle'
 import { FaceCrop } from '../people/FaceCrop'
 
 /**
- * The edge length of a chip's face crop, in CSS pixels. It is sized to the chip's
- * text rather than to a portrait: the crop is an identity cue beside the name, not
- * a picture in its own right.
+ * The edge length of a chip's face crop, in CSS pixels. Big enough to recognise a
+ * face by: the crop is how the reader answers "who is this", and at the 24 px it
+ * used to be it read as a coloured dot beside the text rather than as a person.
+ * It also makes the chip itself a comfortable touch target on a phone.
  */
-const CHIP_FACE_SIZE = 24
+const CHIP_FACE_SIZE = 40
+
+/**
+ * How many unnamed faces the panel shows before it folds the rest away.
+ *
+ * A photograph of an audience detects a crowd — eighteen faces on one concert
+ * shot in the library — and each one is a chip nobody will ever name. Listed in
+ * full they push the comments, the technical details and everything below them
+ * off the panel, so the tail is collapsed behind one control. Named people are
+ * never affected: they are the answer to "who is in this photo" and there are
+ * never unmanageably many of them.
+ */
+const UNNAMED_CHIP_LIMIT = 6
 
 /** Props for {@link PeoplePanel}. */
 export interface PeoplePanelProps {
@@ -54,6 +69,12 @@ export interface PeoplePanelProps {
  *
  * Chips are numbered by position, matching the numbers on the boxes and in the
  * faces panel: `face_index` is negative for markers with no detected face.
+ *
+ * A crowd is folded away rather than listed: past {@link UNNAMED_CHIP_LIMIT}
+ * unnamed faces the rest sit behind one control that says how many there are and
+ * unfolds them in place. Named people are always listed. Nothing is stored — the
+ * fold is state of this render of this photograph, and moving to the next photo
+ * folds it back up.
  */
 export function PeoplePanel({
   photoUid,
@@ -63,6 +84,11 @@ export function PeoplePanel({
   onEditFace,
 }: PeoplePanelProps) {
   const { t } = useTranslation()
+  // The unfold belongs to the photograph it was asked for, not to the panel: the
+  // panel stays mounted while the reader walks the library, so remembering *which*
+  // photo is unfolded is what folds the next one back up, with no effect to run.
+  const [unfoldedFor, setUnfoldedFor] = useState<string | null>(null)
+  const unfolded = unfoldedFor === photoUid
   const busyLoading = loading || faces.status === 'loading'
   const selected = faces.selected
 
@@ -84,6 +110,20 @@ export function PeoplePanel({
     .map((face, position) => ({ face, number: position + 1 }))
     .filter(({ face }) => canWrite || isNamed(face))
 
+  // Keep every named person and the first few unnamed detections, in the order
+  // the faces come in — a name that sits behind the crowd keeps its place rather
+  // than being sorted to the front.
+  const unnamedTotal = visible.filter(({ face }) => !isNamed(face)).length
+  const unnamedLimit = unfolded ? unnamedTotal : UNNAMED_CHIP_LIMIT
+  let unnamedShown = 0
+  const shown = visible.filter(({ face }) => {
+    if (isNamed(face)) return true
+    if (unnamedShown >= unnamedLimit) return false
+    unnamedShown += 1
+    return true
+  })
+  const hidden = unnamedTotal - unnamedShown
+
   return (
     <div>
       <div className="small text-secondary mb-1">{t('photo.organize.people')}</div>
@@ -100,13 +140,26 @@ export function PeoplePanel({
         </Spinner>
       ) : (
         <div className="d-flex flex-wrap gap-2 mb-2">
-          {visible.length === 0 && (
+          {shown.length === 0 && (
             <span className="text-secondary small">{t('photo.organize.noPeople')}</span>
           )}
-          {visible.map(({ face, number }) => {
+          {shown.map(({ face, number }) => {
             const named = isNamed(face)
-            const text = named ? (face.subject_name ?? '') : t('faces.unnamed', { index: number })
-            const chipClass = `badge rounded-pill d-inline-flex align-items-center gap-1 ${
+            // A named chip says the name; an unnamed one says only its number —
+            // the picture is what identifies it, and the number is the tie to the
+            // box on the photo and to the row in the faces panel. Spelling
+            // "Nepojmenovaný obličej 12" out made every anonymous chip 204 px
+            // wide, one per row on the drawer: six of them were six rows of text
+            // saying nothing. The full sentence stays as the chip's label, where
+            // a screen reader still reads it.
+            const text = named
+              ? (face.subject_name ?? '')
+              : t('photo.organize.faceNumber', {
+                  index: number,
+                })
+            // `ps-1` pulls the pill in around the crop, which is now a portrait
+            // rather than a dot and needs no padding of its own on that side.
+            const chipClass = `badge rounded-pill d-inline-flex align-items-center gap-2 ps-1 pe-3 ${
               named ? ENTITY_STYLE.person.className : 'text-bg-secondary'
             }`
             if (!canWrite) {
@@ -137,6 +190,23 @@ export function PeoplePanel({
               </button>
             )
           })}
+          {unnamedTotal > UNNAMED_CHIP_LIMIT && (
+            /* The control stands where the folded chips would be, so unfolding
+               reads as the list growing rather than as a new panel opening. */
+            <Button
+              variant="outline-secondary"
+              size="sm"
+              className="rounded-pill"
+              aria-expanded={unfolded}
+              onClick={() => {
+                setUnfoldedFor(unfolded ? null : photoUid)
+              }}
+            >
+              {unfolded
+                ? t('photo.organize.foldPeople')
+                : t('photo.organize.morePeople', { count: hidden })}
+            </Button>
+          )}
         </div>
       )}
     </div>

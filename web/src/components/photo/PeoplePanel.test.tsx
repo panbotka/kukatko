@@ -38,18 +38,27 @@ function facesResult(overrides: Partial<UseFacesResult> = {}): UseFacesResult {
 
 const onEditFace = vi.fn()
 
-function renderPanel(faces: UseFacesResult, canWrite = true, loading = false) {
-  return render(
+function panel(faces: UseFacesResult, canWrite = true, loading = false, photoUid = 'photo1') {
+  return (
     <I18nextProvider i18n={i18n}>
       <PeoplePanel
-        photoUid="photo1"
+        photoUid={photoUid}
         faces={faces}
         canWrite={canWrite}
         loading={loading}
         onEditFace={onEditFace}
       />
-    </I18nextProvider>,
+    </I18nextProvider>
   )
+}
+
+function renderPanel(faces: UseFacesResult, canWrite = true, loading = false) {
+  return render(panel(faces, canWrite, loading))
+}
+
+/** `count` unnamed detections, numbered from 1 as the panel numbers them. */
+function crowd(count: number): FaceView[] {
+  return Array.from({ length: count }, (_v, index) => faceView({ face_index: index }))
 }
 
 beforeEach(async () => {
@@ -112,5 +121,91 @@ describe('PeoplePanel', () => {
     renderPanel(facesResult({ faces: [faceView()] }), true, true)
     expect(screen.getByRole('status')).toBeInTheDocument()
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('lists every unnamed face while there are few of them, with no control', () => {
+    renderPanel(facesResult({ faces: crowd(6) }))
+
+    expect(screen.getByRole('button', { name: 'Name unnamed face 6' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /more faces/ })).not.toBeInTheDocument()
+  })
+
+  it('folds a crowd of unnamed faces away behind a control that counts them', () => {
+    renderPanel(facesResult({ faces: crowd(18) }))
+
+    expect(screen.getByRole('button', { name: 'Name unnamed face 6' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Name unnamed face 7' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Show 12 more faces' })).toBeInTheDocument()
+  })
+
+  it('unfolds the rest in place, and folds them back', async () => {
+    const user = userEvent.setup()
+    renderPanel(facesResult({ faces: crowd(18) }))
+
+    await user.click(screen.getByRole('button', { name: 'Show 12 more faces' }))
+    expect(screen.getByRole('button', { name: 'Name unnamed face 18' })).toBeInTheDocument()
+
+    const fold = screen.getByRole('button', { name: 'Show fewer faces' })
+    expect(fold).toHaveAttribute('aria-expanded', 'true')
+    await user.click(fold)
+    expect(screen.queryByRole('button', { name: 'Name unnamed face 18' })).not.toBeInTheDocument()
+  })
+
+  it('always shows a named person, however deep in the crowd they stand', () => {
+    const faces = crowd(18)
+    faces[16] = faceView({ face_index: 16, subject_name: 'Alice', marker_uid: 'mk_1' })
+
+    renderPanel(facesResult({ faces }))
+
+    // The crowd is folded, yet Alice — the answer to "who is in this photo" — is not.
+    expect(screen.getByRole('button', { name: 'Edit Alice' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Show 11 more faces' })).toBeInTheDocument()
+  })
+
+  it('takes the next face out of the fold when one of the shown ones is named', () => {
+    const faces = crowd(18)
+    const { rerender } = render(panel(facesResult({ faces })))
+    expect(screen.getByRole('button', { name: 'Show 12 more faces' })).toBeInTheDocument()
+
+    // Naming face 3 in the faces panel comes back as a patched list: it stays on
+    // screen as a person, and the seventh detection moves up into its place.
+    const named = [...faces]
+    named[2] = faceView({ face_index: 2, subject_name: 'Alice', marker_uid: 'mk_1' })
+    rerender(panel(facesResult({ faces: named })))
+
+    expect(screen.getByRole('button', { name: 'Edit Alice' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Name unnamed face 7' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Show 11 more faces' })).toBeInTheDocument()
+  })
+
+  it('offers no control when every face already has a name', () => {
+    renderPanel(
+      facesResult({
+        faces: Array.from({ length: 9 }, (_v, index) =>
+          faceView({
+            face_index: index,
+            subject_name: `Person ${index}`,
+            marker_uid: `mk_${index}`,
+          }),
+        ),
+      }),
+    )
+
+    expect(screen.getByRole('button', { name: 'Edit Person 8' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /more faces/ })).not.toBeInTheDocument()
+  })
+
+  it('folds the crowd back up on the next photo', async () => {
+    const user = userEvent.setup()
+    const faces = facesResult({ faces: crowd(18) })
+    const { rerender } = render(panel(faces))
+
+    await user.click(screen.getByRole('button', { name: 'Show 12 more faces' }))
+    expect(screen.getByRole('button', { name: 'Name unnamed face 18' })).toBeInTheDocument()
+
+    // The panel is not remounted between neighbours; the next photo starts folded.
+    rerender(panel(faces, true, false, 'photo2'))
+    expect(screen.queryByRole('button', { name: 'Name unnamed face 18' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Show 12 more faces' })).toBeInTheDocument()
   })
 })
