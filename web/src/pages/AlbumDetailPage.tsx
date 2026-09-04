@@ -449,8 +449,7 @@ export function AlbumDetailPage() {
               detailQuery={detailQuery}
               gridRef={gridRef}
               onRangeChanged={onRangeChanged}
-              restoreStateFrom={gridScroll.restoreFrom}
-              onStateChanged={gridScroll.onStateChanged}
+              scroll={gridScroll}
             />
           </div>
           {showScrubber && (

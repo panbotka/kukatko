@@ -54,9 +54,21 @@ export interface GridScrollState {
    */
   snapshot?: StateSnapshot
   /**
-   * Window scroll offset, the restore target for a grid that is not virtualized.
+   * The window's own scroll offset. Every grid here scrolls the document — the
+   * virtualized wall included, since it runs virtuoso with `useWindowScroll` — so
+   * this is the position in the terms the browser itself uses: the restore target
+   * for a grid that has no virtuoso to ask, and the fallback for one whose
+   * snapshot cannot be used.
    */
   scrollY: number
+  /**
+   * The photograph the reader last had open from this view, if any. Paging
+   * through the viewer with the arrows moves it on, so coming back lands on the
+   * photograph they were looking at rather than the one they first clicked. The
+   * grid only *reveals* it — a photo already on screen does not move the wall,
+   * and one no longer in the list is simply not there.
+   */
+  uid?: string
   /**
    * How many photos the list had loaded. A list that grows by appending pages
    * comes back holding only its first page — far too short a document to scroll
@@ -109,6 +121,14 @@ function num(source: Record<string, unknown>, field: string): number | undefined
  * grid here (one item size, no ranges) is one of those shapes, and is dropped on
  * sight — the reader lands at the top of the view once, instead of somewhere the
  * measurements do not describe.
+ *
+ * The last range of a real snapshot is **open-ended**: virtuoso closes its size
+ * tree with `endIndex: Infinity`, meaning "every row from here on measures the
+ * same", and `JSON.stringify` has no way to write that other than `null`. So a
+ * null end is not a broken entry, it is the only end a stored snapshot ever has —
+ * it reads back as the infinity it was written from. Reading it as unusable
+ * instead threw away *every* snapshot the grids wrote, which is what left the
+ * reader at the top of the library on the way back from a photograph.
  */
 function parseSnapshot(value: unknown): StateSnapshot | undefined {
   if (!isRecord(value)) {
@@ -124,7 +144,7 @@ function parseSnapshot(value: unknown): StateSnapshot | undefined {
       return undefined
     }
     const startIndex = num(entry, 'startIndex')
-    const endIndex = num(entry, 'endIndex')
+    const endIndex = entry.endIndex === null ? Number.POSITIVE_INFINITY : num(entry, 'endIndex')
     const size = num(entry, 'size')
     if (startIndex === undefined || endIndex === undefined || size === undefined) {
       return undefined
@@ -142,10 +162,16 @@ function parseState(value: unknown): GridScrollState | null {
   const scrollY = num(value, 'scrollY') ?? 0
   const count = num(value, 'count') ?? 0
   const snapshot = parseSnapshot(value.snapshot)
+  const uid = typeof value.uid === 'string' && value.uid !== '' ? value.uid : undefined
   if (scrollY < 0 || count < 0) {
     return null
   }
-  return { count, scrollY, ...(snapshot === undefined ? {} : { snapshot }) }
+  return {
+    count,
+    scrollY,
+    ...(snapshot === undefined ? {} : { snapshot }),
+    ...(uid === undefined ? {} : { uid }),
+  }
 }
 
 /**
@@ -211,4 +237,38 @@ export function writeGridScroll(key: string, state: GridScrollState): void {
     // Best-effort: a full or disabled storage costs the reader their position,
     // nothing more.
   }
+}
+
+/**
+ * Records which photograph the reader is looking at, against the view they
+ * opened it from — the one thing about a grid's position that only the *viewer*
+ * knows. Paging with the arrows replaces the history entry rather than adding
+ * one, so without this the way back would always land on the photograph that was
+ * first clicked, however far the reader has paged since.
+ *
+ * It updates an existing entry and nothing else: a view with no remembered
+ * position has no position for a photograph to sit in, and inventing an offset of
+ * zero for it would send the reader to the top of a list they had scrolled.
+ */
+export function rememberGridPhoto(key: string, uid: string): void {
+  const state = readGridScroll(key)
+  if (state === null || uid === '' || state.uid === uid) {
+    return
+  }
+  writeGridScroll(key, { ...state, uid })
+}
+
+/**
+ * Forgets the photograph recorded against a view, keeping its position. The
+ * hand-off from the viewer to the grid is one-shot: the grid reveals the
+ * photograph as it lands, and a later visit — a reload, or the reader coming
+ * back again having scrolled on since — must not be pulled to it a second time.
+ */
+export function forgetGridPhoto(key: string): void {
+  const state = readGridScroll(key)
+  if (state?.uid === undefined) {
+    return
+  }
+  const { uid: _forgotten, ...kept } = state
+  writeGridScroll(key, kept)
 }

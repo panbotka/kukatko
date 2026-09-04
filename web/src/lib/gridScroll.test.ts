@@ -147,6 +147,24 @@ describe('readGridScroll / writeGridScroll', () => {
     expect(readGridScroll('/')).toEqual({ count: 5, scrollY: 300 })
   })
 
+  // The measured shape of a real virtuoso snapshot: react-virtuoso closes the
+  // size tree with an open-ended range, whose `endIndex` is `Infinity` — which
+  // `JSON.stringify` writes as `null`. Rejecting that dropped *every* snapshot a
+  // window-scrolled grid ever wrote, which is what left the reader at the top of
+  // the library on the way back from a photograph.
+  it('round-trips the open-ended range a virtuoso snapshot ends with', () => {
+    const open: StateSnapshot = {
+      ranges: [
+        { startIndex: 0, endIndex: 4, size: 105 },
+        { startIndex: 5, endIndex: Number.POSITIVE_INFINITY, size: 106 },
+      ],
+      scrollTop: 3872,
+    }
+    writeGridScroll('/', { count: 0, scrollY: 4000, snapshot: open })
+
+    expect(readGridScroll('/')).toEqual({ count: 0, scrollY: 4000, snapshot: open })
+  })
+
   it('drops an entry with a nonsensical offset', () => {
     window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ '/': { count: 1, scrollY: -5 } }))
     expect(readGridScroll('/')).toBeNull()

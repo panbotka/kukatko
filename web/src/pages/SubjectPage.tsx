@@ -133,7 +133,6 @@ export function SubjectPage() {
   useGridScrollMemory({
     key: scrollKey,
     count: photos.length,
-    track: 'window',
     restoring: restorePending,
   })
 

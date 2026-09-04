@@ -103,7 +103,6 @@ describe('useGridScrollMemory', () => {
         initialProps: {
           key: '/people/su_1',
           count: 100,
-          track: 'window' as const,
           restoring: true,
         },
       },
@@ -115,7 +114,7 @@ describe('useGridScrollMemory', () => {
     })
     expect(readGridScroll('/people/su_1')?.scrollY).toBe(2400)
 
-    rerender({ key: '/people/su_1', count: 300, track: 'window', restoring: false })
+    rerender({ key: '/people/su_1', count: 300, restoring: false })
     act(() => {
       scrollWindowTo(2400)
     })
@@ -125,9 +124,7 @@ describe('useGridScrollMemory', () => {
   })
 
   it('records the window offset for a grid that reports no state of its own', () => {
-    const { unmount } = renderHook(() =>
-      useGridScrollMemory({ key: '/people/su_1', count: 250, track: 'window' }),
-    )
+    const { unmount } = renderHook(() => useGridScrollMemory({ key: '/people/su_1', count: 250 }))
 
     act(() => {
       scrollWindowTo(1800)
@@ -137,17 +134,46 @@ describe('useGridScrollMemory', () => {
     expect(readGridScroll('/people/su_1')).toEqual({ count: 250, scrollY: 1800 })
   })
 
-  it('leaves the window alone when tracking a virtualized grid', () => {
-    const { unmount } = renderHook(() => useGridScrollMemory({ key: '/', count: 0 }))
+  it('records the window offset for a virtualized grid too', () => {
+    const { result, unmount } = renderHook(() => useGridScrollMemory({ key: '/', count: 0 }))
 
-    // A virtualized grid reports its own offset; the window's is meaningless
-    // here, so a scroll must not on its own count as a position worth keeping.
+    // The virtualized wall runs virtuoso with `useWindowScroll`, so the window's
+    // offset is its offset — there is no per-page option deciding otherwise, and
+    // the snapshot beside it describes the same position.
     act(() => {
       scrollWindowTo(1800)
+      result.current.onStateChanged(snapshot(1800))
     })
     unmount()
 
-    expect(readGridScroll('/')).toBeNull()
+    expect(readGridScroll('/')).toEqual({ count: 0, scrollY: 1800, snapshot: snapshot(1800) })
+  })
+
+  it('ignores the window sitting at the top on its way to a deeper position', () => {
+    writeGridScroll('/', { count: 0, scrollY: 3800, snapshot: snapshot(3800) })
+
+    const { unmount } = renderHook(() => useGridScrollMemory({ key: '/', count: 0 }))
+    // The document is still filling and pinned to its top. Recording that would
+    // throw away the very position being restored — and the snapshot with it.
+    act(() => {
+      scrollWindowTo(0)
+    })
+    unmount()
+
+    expect(readGridScroll('/')).toEqual({ count: 0, scrollY: 3800, snapshot: snapshot(3800) })
+  })
+
+  it('hands the photograph the viewer recorded to the grid, once', () => {
+    writeGridScroll('/', { count: 0, scrollY: 3800, snapshot: snapshot(3800), uid: 'ph_9' })
+
+    const first = renderHook(() => useGridScrollMemory({ key: '/' }))
+    expect(first.result.current.restoreUid).toBe('ph_9')
+    first.unmount()
+
+    // A reload, or coming back again having scrolled on since, must not be pulled
+    // to the same photograph a second time.
+    const second = renderHook(() => useGridScrollMemory({ key: '/' }))
+    expect(second.result.current.restoreUid).toBeUndefined()
   })
 
   it('does not carry one view position over to another', () => {

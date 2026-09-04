@@ -10,6 +10,7 @@ import { MorphContext, type MorphState } from '../components/morph/MorphContext'
 import { NARROW_VIEWPORT_QUERY } from '../hooks/useIsNarrowViewport'
 import i18n from '../i18n'
 import { clearBlurPlaceholderCache } from '../lib/blurPlaceholder'
+import { readGridScroll, writeGridScroll } from '../lib/gridScroll'
 import { stageRenditionName } from '../lib/rendition'
 import { type AlbumCount, type LabelCount } from '../services/organize'
 import { type FacesResponse } from '../services/people'
@@ -1980,6 +1981,27 @@ describe('PhotoDetailPage — immersive viewer', () => {
       fireEvent.keyDown(document, { key: 'ArrowRight' })
       await waitFor(() => {
         expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/c')
+      })
+    })
+
+    it('tells the list which photograph the reader paged to', async () => {
+      window.sessionStorage.clear()
+      // The library was left scrolled, so there is a position for a photograph to
+      // sit in; paging replaces the history entry, so only this keeps the way back
+      // pointed at what is actually on stage.
+      writeGridScroll('/?sort=oldest', { count: 0, scrollY: 4000 })
+
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+      await waitFor(() => {
+        expect(readGridScroll('/?sort=oldest')?.uid).toBe('b')
+      })
+      await screen.findByRole('link', { name: 'Next photo' })
+
+      fireEvent.keyDown(document, { key: 'ArrowRight' })
+
+      await waitFor(() => {
+        expect(readGridScroll('/?sort=oldest')?.uid).toBe('c')
       })
     })
 

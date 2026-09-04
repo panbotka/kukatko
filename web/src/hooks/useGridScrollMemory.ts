@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { type StateSnapshot } from 'react-virtuoso'
 
-import { type GridScrollState, readGridScroll, writeGridScroll } from '../lib/gridScroll'
+import {
+  forgetGridPhoto,
+  type GridScrollState,
+  readGridScroll,
+  writeGridScroll,
+} from '../lib/gridScroll'
 
 /**
  * How long the memory waits after the last position change before writing it.
@@ -31,13 +36,6 @@ export interface UseGridScrollMemoryOptions {
    */
   count?: number
   /**
-   * Where the position comes from. `virtuoso` (the default) records the
-   * snapshots a {@link import('../components/library/PhotoGrid').PhotoGrid}
-   * reports; `window` records the window's own scroll offset, for a grid that
-   * renders every tile itself and so has no virtuoso to ask.
-   */
-  track?: 'virtuoso' | 'window'
-  /**
    * While true nothing is written. A caller driving the view back to its
    * remembered position sets this until it gets there, so the offsets on the way
    * — a half-loaded document pinned to its top — cannot overwrite the very
@@ -46,17 +44,42 @@ export interface UseGridScrollMemoryOptions {
   restoring?: boolean
 }
 
-/** What {@link useGridScrollMemory} hands back to the page. */
+/**
+ * What {@link useGridScrollMemory} hands back — everything a
+ * {@link import('../components/library/PhotoGrid').PhotoGrid} needs to put the
+ * reader back where they were, in one value. It is handed over whole
+ * (`<PhotoGrid scroll={…} />`) rather than unpacked into a prop each, because
+ * half a memory is worse than none: a grid restored without reporting overwrites
+ * nothing, a grid reporting without restoring lands at the top every time, and
+ * neither mistake shows up in a test that exercises the hook by itself.
+ */
 export interface GridScrollMemory {
   /**
-   * The remembered virtuoso state, for `PhotoGrid`'s `restoreStateFrom`;
-   * undefined when this view has no remembered position.
+   * The remembered virtuoso state — the offset plus the row measurements that
+   * give it meaning; undefined when this view has no remembered position.
    */
   restoreFrom: StateSnapshot | undefined
-  /** The remembered window offset, for a grid that is not virtualized. */
+  /**
+   * The remembered window offset: the restore target for a grid with no virtuoso
+   * to ask, and the fallback for one whose snapshot could not be read back.
+   */
   restoreScrollY: number
-  /** Pass to `PhotoGrid`'s `onStateChanged`. */
+  /**
+   * The photograph the reader last had open from this view, to be revealed once
+   * the grid has landed; undefined when they opened none.
+   */
+  restoreUid: string | undefined
+  /** Reports the grid's position, whenever it changes. */
   onStateChanged: (snapshot: StateSnapshot) => void
+}
+
+/**
+ * How far down this view is being restored to, whichever of the two positions it
+ * kept says so. Zero — nothing remembered — means a reported top is simply the
+ * top, with no restore for it to be mistaken for.
+ */
+function restoreTop(remembered: GridScrollState | null): number {
+  return Math.max(remembered?.scrollY ?? 0, remembered?.snapshot?.scrollTop ?? 0)
 }
 
 /**
@@ -74,7 +97,6 @@ export interface GridScrollMemory {
 export function useGridScrollMemory({
   key,
   count = 0,
-  track = 'virtuoso',
   restoring = false,
 }: UseGridScrollMemoryOptions): GridScrollMemory {
   const remembered = useMemo(() => readGridScroll(key), [key])
@@ -96,7 +118,7 @@ export function useGridScrollMemory({
   // away from its top since. Until it has, a reported offset of zero is the grid
   // *before* its restore landed — not the reader scrolling back to the top — and
   // recording it would throw away the position on the way to it.
-  const restoreTopRef = useRef(remembered?.snapshot?.scrollTop ?? 0)
+  const restoreTopRef = useRef(restoreTop(remembered))
   const movedRef = useRef(false)
   // The loaded length as of the last recorded position. Only the flush that
   // happens *because* the view changed needs it: by then this render already
@@ -135,19 +157,28 @@ export function useGridScrollMemory({
     }, WRITE_DELAY_MS)
   }, [persist])
 
+  // Whether an offset just reported is a position worth keeping. The grid is
+  // reported at the top twice for different reasons — before its restore has
+  // landed, and after the reader has scrolled back up themselves — and only the
+  // second is a position. Until the view has been seen away from the top, a zero
+  // belongs to the restore on its way there.
+  const worthKeeping = useCallback((offset: number) => {
+    if (offset > 0) {
+      movedRef.current = true
+      return true
+    }
+    return movedRef.current || restoreTopRef.current === 0
+  }, [])
+
   const onStateChanged = useCallback(
     (snapshot: StateSnapshot) => {
-      if (snapshot.scrollTop > 0) {
-        movedRef.current = true
-      } else if (!movedRef.current && restoreTopRef.current > 0) {
-        // The grid is still at the top of a view that is being restored deeper
-        // down: this is the state on the way there, not a position to keep.
+      if (!worthKeeping(snapshot.scrollTop)) {
         return
       }
       snapshotRef.current = snapshot
       schedule()
     },
-    [schedule],
+    [schedule, worthKeeping],
   )
 
   // A new view starts with a memory of its own: write out whatever the previous
@@ -157,20 +188,26 @@ export function useGridScrollMemory({
       persist(pendingCountRef.current)
     }
     keyRef.current = key
-    restoreTopRef.current = remembered?.snapshot?.scrollTop ?? 0
+    // The photograph the viewer left against this view is consumed here: the grid
+    // gets it once, through `restoreUid`, and the store keeps only the position.
+    forgetGridPhoto(key)
+    restoreTopRef.current = restoreTop(remembered)
     snapshotRef.current = undefined
     scrollYRef.current = 0
     movedRef.current = false
     dirtyRef.current = false
   }, [key, remembered, persist])
 
-  // A grid that renders its own tiles reports nothing, so the window's offset is
-  // the only position there is to record.
+  // Every grid here scrolls the document — the virtualized wall runs virtuoso
+  // with `useWindowScroll`, the person gallery renders its own tiles — so the
+  // window's offset is always *a* truthful position, and always worth recording.
+  // It used to be an option, which six of the seven pages did not pass, and their
+  // memory kept nothing the browser would recognise.
   useEffect(() => {
-    if (track !== 'window') {
-      return
-    }
     const onScroll = () => {
+      if (!worthKeeping(window.scrollY)) {
+        return
+      }
       scrollYRef.current = window.scrollY
       schedule()
     }
@@ -178,7 +215,7 @@ export function useGridScrollMemory({
     return () => {
       window.removeEventListener('scroll', onScroll)
     }
-  }, [track, schedule])
+  }, [schedule, worthKeeping])
 
   // Leaving for a photo unmounts the page, so the last position has to be
   // written out there and then; `pagehide` covers the reload/close that never
@@ -197,6 +234,7 @@ export function useGridScrollMemory({
   return {
     restoreFrom: remembered?.snapshot,
     restoreScrollY: remembered?.scrollY ?? 0,
+    restoreUid: remembered?.uid,
     onStateChanged,
   }
 }

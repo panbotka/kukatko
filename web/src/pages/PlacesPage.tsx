@@ -282,8 +282,7 @@ export function PlacesPage() {
                   onEndReached={loadMore}
                   onRetry={retry}
                   selection={bulk.gridSelection}
-                  restoreStateFrom={gridScroll.restoreFrom}
-                  onStateChanged={gridScroll.onStateChanged}
+                  scroll={gridScroll}
                 />
               )}
             </>

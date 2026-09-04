@@ -423,8 +423,7 @@ export function LibraryPage() {
               gridRef={gridRef}
               onRangeChanged={onRangeChanged}
               focusedIndex={focusedIndex}
-              restoreStateFrom={gridScroll.restoreFrom}
-              onStateChanged={gridScroll.onStateChanged}
+              scroll={gridScroll}
             />
           </div>
           {showScrubber && (

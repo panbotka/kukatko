@@ -1,11 +1,12 @@
-import { useCallback, useImperativeHandle, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useImperativeHandle, useMemo, useRef } from 'react'
 import Button from 'react-bootstrap/Button'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
-import { type ListRange, type StateSnapshot, Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
+import { type ListRange, Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 
 import { useElementWidth } from '../../hooks/useElementWidth'
 import { useGridDensity } from '../../hooks/useGridDensity'
+import { type GridScrollMemory } from '../../hooks/useGridScrollMemory'
 import { useLongPressSelect } from '../../hooks/useLongPressSelect'
 import { type GridDensityScope, LIBRARY_GRID_SCOPE } from '../../lib/gridDensity'
 import { revealAlign } from '../../lib/gridScroll'
@@ -185,17 +186,15 @@ export interface PhotoGridProps {
    */
   tileExtras?: (photo: Photo) => React.ReactNode
   /**
-   * A position this grid was left at, restored as it mounts: the offset plus the
-   * measurements needed to lay the rows out at it before anything is on screen,
-   * so returning from a photo lands on the tile it was opened from instead of at
-   * the top. Read once, when the grid mounts — see `useGridScrollMemory`.
+   * Where this grid was left, whole — what `useGridScrollMemory` hands back. The
+   * grid restores itself from it as it mounts (the offset plus the measurements
+   * needed to lay the rows out at it before anything is on screen), reveals the
+   * photograph the reader last had open from this view, and reports every
+   * position back so the page can remember it. One prop rather than three,
+   * because a caller that wires only some of them has a memory that silently
+   * keeps nothing. Omit it where a grid has no position worth remembering.
    */
-  restoreStateFrom?: StateSnapshot
-  /**
-   * Reports the grid's position (and the measurements that give it meaning)
-   * whenever it changes, so the page can remember where the reader was.
-   */
-  onStateChanged?: (state: StateSnapshot) => void
+  scroll?: GridScrollMemory
   /**
    * Which stored column count (and gutter) this grid follows. Defaults to the
    * photo library's — pass `REVIEW_GRID_SCOPE` where the grid is a review
@@ -231,9 +230,9 @@ export interface PhotoGridProps {
  * instead of paging its way there.
  *
  * Where the reader is in it is not the grid's business to remember, but it is the
- * grid's to report and to restore: `onStateChanged` hands the page a position to
- * keep and `restoreStateFrom` puts the grid back at one, which is what makes Back
- * out of a photo land on the tile it was opened from.
+ * grid's to report and to restore: one `scroll` memory hands it a position to
+ * keep reporting into and the position (plus the photograph) to come back to,
+ * which is what makes Back out of a photo land on the tile it was opened from.
  */
 export function PhotoGrid({
   photos,
@@ -249,8 +248,7 @@ export function PhotoGrid({
   onRangeChanged,
   focusedIndex = -1,
   tileExtras,
-  restoreStateFrom,
-  onStateChanged,
+  scroll,
   scope = LIBRARY_GRID_SCOPE,
 }: PhotoGridProps) {
   const { density } = useGridDensity(scope)
@@ -313,6 +311,7 @@ export function PhotoGrid({
   // Virtuoso's list has no `stateChanged` prop (only the grid had one), so the
   // position is read off the handle: whenever the visible rows change and once
   // more when the scroll settles. The page debounces what it does with it.
+  const onStateChanged = scroll?.onStateChanged
   const captureState = useCallback(() => {
     if (onStateChanged === undefined) {
       return
@@ -320,10 +319,77 @@ export function PhotoGrid({
     virtuosoRef.current?.getState(onStateChanged)
   }, [onStateChanged])
 
+  // What the restore still owes the reader, read once as the grid mounts (the
+  // moment virtuoso reads its own snapshot): the window offset to fall back to
+  // where that snapshot could not be used at all, and the photograph they last
+  // had open from this view, to be revealed once the wall has landed. Both are
+  // paid at most once.
+  const owedRef = useRef({
+    scrollY: scroll?.restoreFrom === undefined ? (scroll?.restoreScrollY ?? 0) : 0,
+    expect: scroll?.restoreScrollY ?? 0,
+    uid: scroll?.restoreUid,
+  })
+  // The current photos, for the reveal: it runs outside render, and the tile it
+  // is looking for may only arrive with a later page.
+  const photosRef = useRef(photos)
+  photosRef.current = photos
+
+  // Settle the restore against the rows that just came on screen. The offset goes
+  // first — a fallback restore has not moved yet — and the photograph after it,
+  // once it is loaded: `revealAlign` leaves the wall alone when it is already
+  // visible, which is the ordinary case of stepping into a photo and back out.
+  const land = useCallback((range: ListRange) => {
+    const owed = owedRef.current
+    if (owed.scrollY > 0) {
+      owedRef.current = { ...owed, scrollY: 0 }
+      window.scrollTo(0, owed.scrollY)
+      return
+    }
+    if (owed.uid === undefined) {
+      return
+    }
+    if (owed.expect > 0 && window.scrollY === 0) {
+      // The first range a restored grid reports is the layout it had *before* the
+      // restore landed. Aligning the photograph against that would position it
+      // off an offset nobody is at, and undo the restore on the way.
+      return
+    }
+    const index = photosRef.current.findIndex((photo) => photo?.uid === owed.uid)
+    if (index < 0) {
+      // Not loaded yet — a windowed list fetches around the position it restored
+      // to — so keep the debt and try again with the next range.
+      return
+    }
+    owedRef.current = { ...owed, uid: undefined }
+    const row = rowOfTile(rowsRef.current, index)
+    const align = row < 0 ? null : revealAlign(row, range)
+    if (align !== null) {
+      virtuosoRef.current?.scrollToIndex({ index: row, align })
+    }
+  }, [])
+
+  // The moment the reader touches the wall themselves it is theirs: a photograph
+  // whose page lands a minute later must not yank them away from where they are.
+  useEffect(() => {
+    const giveUp = () => {
+      owedRef.current = { scrollY: 0, expect: 0, uid: undefined }
+    }
+    const events = ['wheel', 'touchstart', 'keydown', 'pointerdown'] as const
+    for (const event of events) {
+      window.addEventListener(event, giveUp, { passive: true })
+    }
+    return () => {
+      for (const event of events) {
+        window.removeEventListener(event, giveUp)
+      }
+    }
+  }, [])
+
   const handleRangeChanged = useCallback(
     (range: ListRange) => {
       visibleRowsRef.current = range
       captureState()
+      land(range)
       if (onRangeChanged === undefined) {
         return
       }
@@ -340,7 +406,7 @@ export function PhotoGrid({
         endIndex: last.start + last.tiles.length - 1,
       })
     },
-    [captureState, onRangeChanged],
+    [captureState, land, onRangeChanged],
   )
 
   const handleIsScrolling = useCallback(
@@ -460,7 +526,7 @@ export function PhotoGrid({
         endReached={onEndReached}
         rangeChanged={handleRangeChanged}
         isScrolling={handleIsScrolling}
-        restoreStateFrom={restoreStateFrom}
+        restoreStateFrom={scroll?.restoreFrom}
         components={{ Footer: GridFooter }}
         itemContent={(_index, row) => renderRow(row)}
         // A row keys on the photo that opens it, so re-laying the wall out (a

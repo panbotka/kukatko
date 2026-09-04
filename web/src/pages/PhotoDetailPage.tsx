@@ -47,6 +47,7 @@ import { useViewportBox } from '../hooks/useViewportBox'
 import { backHref, DETAIL_DEFAULTS, detailQueryString, detailToParams } from '../lib/detailView'
 import { readFaceOverlay, writeFaceOverlay } from '../lib/faceOverlayPref'
 import { formatDateTimeMinutes } from '../lib/format'
+import { gridScrollKey, rememberGridPhoto } from '../lib/gridScroll'
 import {
   editPreviewStyle,
   editTransform,
@@ -255,6 +256,21 @@ export function PhotoDetailPage() {
   // photo was loaded directly (a deep link, a refresh, a shared URL), in which case
   // there is no grid entry to pop and Back must reconstruct the list URL instead.
   const openedDirectlyRef = useRef(location.key === 'default')
+
+  // Tell the list this photo came from which photograph is on stage. Paging with
+  // the arrows *replaces* the history entry rather than adding one, so without
+  // this the way back would always land on the photograph first clicked, however
+  // far the reader has paged since. The list is named the way its own grid
+  // remembers itself — the very URL the Back link reconstructs — and the grid only
+  // ever *reveals* what it is told, so naming a list nobody scrolled costs
+  // nothing.
+  const listScrollKey = useMemo(() => {
+    const back = new URL(backHref(view), window.location.origin)
+    return gridScrollKey(back.pathname, back.search)
+  }, [view])
+  useEffect(() => {
+    rememberGridPhoto(listScrollKey, uid)
+  }, [listScrollKey, uid])
 
   // The neighbour's detail URL, carrying the originating order/scope so prev/next
   // keeps paging the same list, plus the drawer's open state so it stays open (or

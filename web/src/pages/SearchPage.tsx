@@ -324,8 +324,7 @@ export function SearchPage() {
             onRetry={retry}
             selection={bulk.gridSelection}
             detailQuery={detailQuery}
-            restoreStateFrom={gridScroll.restoreFrom}
-            onStateChanged={gridScroll.onStateChanged}
+            scroll={gridScroll}
           />
         </div>
       )}

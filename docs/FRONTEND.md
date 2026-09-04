@@ -792,11 +792,17 @@ here.
   `REVIEW_GRID_SCOPE` on `/expand`.
   A density change **only re-lays out** the existing `<div>` — virtuoso re-measures the rows, scroll and selection
   survive because the grid is neither keyed nor remounted. Where the reader is in it is reported through
-  **`onStateChanged(state)`** and put back through **`restoreStateFrom`** (virtuoso's own `StateSnapshot`:
-  the offset plus the measured row sizes that let the list lay itself out at it before anything is on screen;
-  the list has no `stateChanged` prop, so the grid reads the snapshot off the handle's `getState` whenever the
-  visible rows change and once more when the scroll settles);
-  the grid remembers nothing itself, the page does — see `useGridScrollMemory`),
+  the single **`scroll`** prop — the whole `GridScrollMemory` a page gets from `useGridScrollMemory`, handed
+  over in one piece because a caller that wires only half of it has a memory that silently keeps nothing.
+  From it the grid restores itself (virtuoso's own `StateSnapshot`: the offset plus the measured row sizes
+  that let the list lay itself out at it before anything is on screen; the list has no `stateChanged` prop,
+  so the grid reads the snapshot off the handle's `getState` whenever the visible rows change and once more
+  when the scroll settles), falls back to `restoreScrollY` where that snapshot could not be read at all, and
+  **reveals `restoreUid`** — the photograph the reader last had open from this view — once the restore has
+  landed (the first range a restored grid reports is its *pre-restore* layout, so the reveal waits for the
+  window to have moved; `revealAlign` then leaves the wall alone when the tile is already on screen, and the
+  whole debt is dropped the moment the reader scrolls, keys or taps for themselves).
+  The grid remembers nothing itself, the page does — see `useGridScrollMemory`),
   `TimelineScrubber` (**the timeline** — a thin fixed vertical date rail beside the grid: it fetches a monthly
   histogram via `useTimeline(params)` (refetch on filter change) and lays it out through
   `components/library/timelineRail`. **Every month bucket owns an equal slice of the rail**
@@ -2008,7 +2014,10 @@ here.
   photo. Arrow = leave the photo, cross = close what is over it. It and **Esc**
   always work and return **to the exact previous scroll position**: `navigate(-1)` when you arrived here from
   the grid (the browser restores scroll), otherwise (a direct link/refresh — caught by `location.key === 'default'`
-  at mount) `backHref(view)` reconstructs the list URL. **Keys:** ←/→ steps through neighbors, `f`
+  at mount) `backHref(view)` reconstructs the list URL. That same reconstructed URL names the list in the
+  terms its grid remembers itself under, and the viewer stamps the photograph on stage into that entry
+  (`rememberGridPhoto`) on every step: paging *replaces* the history entry, so without it the way back would
+  land on the photograph first clicked rather than the one being looked at. **Keys:** ←/→ steps through neighbors, `f`
   favorite, `m` faces, `i` drawer, `s` **skrýt** (hide/unhide, editor+ only — the same handler the eye
   button calls, see below), Esc **a step back** (first the selected face, then the drawer, then
   out); rating hotkeys `0`–`5`/`p`/`r`/`v` on document (except while typing into an input or with a
@@ -3997,23 +4006,27 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   where a page is not loaded; `ensureRange(start,end)` (called from `onRangeChanged`) loads the pages
   covering the visible range plus `WINDOW_PREFETCH_PAGES` either side, **aborts** the requests a jump has
   travelled past, and evicts down to `WINDOW_MAX_PAGES` so memory stays bounded however far the reader goes.
-  `useGridScrollMemory({key,count?,track?,restoring?})` = **where the reader was in a photo grid**, remembered
+  `useGridScrollMemory({key,count?,restoring?})` = **where the reader was in a photo grid**, remembered
   per view for the browser session over `lib/gridScroll`. Browsing is a constant grid → photo → grid, and
   every step used to land back at the top (measured on the live instance: Back from `scrollY=4000` gave 195),
-  which put the older end of a 20 000 photo library out of reach. It returns `restoreFrom` (the snapshot for
-  `PhotoGrid`'s `restoreStateFrom`) and `restoreScrollY` (for a grid that renders its own tiles), and takes
-  `onStateChanged` back from the grid. `track:'window'` records `window.scrollY` off a passive scroll listener
-  instead (the person gallery), and `restoring:true` suppresses every write while the caller is still driving
+  which put the older end of a 20 000 photo library out of reach. It returns one `GridScrollMemory` —
+  `restoreFrom` (the virtuoso snapshot), `restoreScrollY` (the window offset), `restoreUid` (the photograph
+  the viewer last showed from this view) and `onStateChanged` — which `PhotoGrid` takes whole as its `scroll`
+  prop; a grid with no virtuoso (the person gallery) reads the offset and restores it itself. **Every** grid
+  here scrolls the document (the wall runs virtuoso with `useWindowScroll`), so `window.scrollY` is always
+  recorded off a passive scroll listener: it used to be an opt-in `track:'window'` that six of the seven
+  pages did not pass. `restoring:true` suppresses every write while the caller is still driving
   the view to its position — the offsets on the way there must not overwrite the one being restored; the
-  virtuoso path needs no flag, it simply ignores a reported offset of zero until the grid has been seen away
-  from its top. Nothing here re-renders the caller (refs + a 200 ms debounced write, flushed on unmount and on
+  virtuoso path needs no flag either: a reported offset of zero is ignored — whichever source it came from —
+  until the grid has been seen away from its top. Nothing here re-renders the caller (refs + a 200 ms debounced write, flushed on unmount and on
   `pagehide`, so leaving for a photo always records the position), and an untouched view is never written, so
   opening a photo without scrolling keeps what the last visit left. The restore length (`count`) is read back
   by the page itself (`readGridScroll(key)?.count`) because it feeds the list hook *above* this one.
   Both ways back are the same history pop — the browser's Back button and the viewer's „Zpět na seznam"
   (`PhotoDetailPage` closes with `navigate(-1)`) — so both restore. Wired into `LibraryPage` (windowed, so
   `count` stays 0: the grid is as tall as the whole result from its first response), `AlbumDetailPage`,
-  `LabelDetailPage`, `SubjectPage` (`track:'window'`), `FavoritesPage`, `SearchPage` and `PlacesPage`.
+  `LabelDetailPage`, `SubjectPage` (no `PhotoGrid`: it restores the window offset itself once the gallery is
+  as long as it was), `FavoritesPage`, `SearchPage` and `PlacesPage`.
   A failed page is retried on the next range change up to `WINDOW_MAX_ATTEMPTS`, then surfaces as `moreError`
   (footer retry); a `reloadKey` bump refetches exactly the loaded pages in the background. It also passes the
   response's `unknown_tokens` through as `unknownTokens` (every page of one query carries the same verdict on
@@ -4428,10 +4441,19 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   (`https://github.com/panbotka/kukatko/commit/<sha>`, or `null` unless the commit is 7–40 hex characters,
   which is what keeps a development build's `none` from becoming a dead link);
   `gridScroll.ts` = the **session store of grid positions** behind `useGridScrollMemory`: one
-  `sessionStorage` entry (`kukatko.gridScroll`) holding `{snapshot?,scrollY,count}` per view key — the
-  snapshot being virtuoso's `StateSnapshot` (`{ranges,scrollTop}`, the measured row sizes plus the offset);
-  a snapshot in the older uniform-grid shape (one item size, no ranges) fails validation and is dropped, so
-  the reader lands at the top of that view once instead of somewhere the measurements do not describe — plus
+  `sessionStorage` entry (`kukatko.gridScroll`) holding `{snapshot?,scrollY,count,uid?}` per view key — the
+  snapshot being virtuoso's `StateSnapshot` (`{ranges,scrollTop}`, the measured row sizes plus the offset),
+  whose **last range is open-ended**: virtuoso closes its size tree with `endIndex: Infinity`, which `JSON`
+  can only write as `null`, so a null end is the only end a *stored* snapshot ever has and reads back as the
+  infinity it came from. Reading it as unusable instead threw away every snapshot the virtualized grids
+  wrote, which is what left the reader at the top of the library on the way back from a photograph.
+  A snapshot in the older uniform-grid shape (one item size, no ranges) does fail validation and is dropped,
+  so the reader lands at the top of that view once instead of somewhere the measurements do not describe.
+  `uid` is the photograph the viewer recorded against the list it was opened from
+  (`rememberGridPhoto(key,uid)` — it updates an existing entry and never invents one), consumed on the grid's
+  next mount (`forgetGridPhoto`) so a reload is not pulled to it a second time; paging with the arrows
+  *replaces* the history entry, so without it the way back would always land on the photograph first clicked.
+  Plus
   `gridScrollKey(pathname,search)` — the path and the query that defines the *result set*, sorted for
   stability and with the position-only params (`at`, `info`) dropped, so a timeline jump keys to the same
   view while a changed filter keys to a different one and can never restore an unrelated position. Session

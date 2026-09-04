@@ -100,8 +100,7 @@ export function FavoritesPage() {
             selection={bulk.gridSelection}
             favoritable
             detailQuery={detailQuery}
-            restoreStateFrom={gridScroll.restoreFrom}
-            onStateChanged={gridScroll.onStateChanged}
+            scroll={gridScroll}
           />
         </div>
       )}
