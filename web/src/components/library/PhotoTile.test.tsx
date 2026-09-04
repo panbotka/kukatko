@@ -319,6 +319,17 @@ describe('PhotoTile selection-mode rendering stability', () => {
     render(tile(false, false))
     expect(screen.getByRole('link', { name: 'Clip' })).toHaveAttribute('href', '/photos/ph1')
   })
+
+  it('marks a selection target so touch can show the checkmark it hides at rest', () => {
+    // On a touch screen the wall carries no checkmark until the grid is actually
+    // selecting (`styles/tokens.css`); this class is what says that it is.
+    const { rerender } = render(tile(false, false))
+    const root = document.querySelector('.kk-tile')
+    expect(root).not.toHaveClass('kk-tile--selecting')
+
+    rerender(tile(true, false))
+    expect(root).toHaveClass('kk-tile--selecting')
+  })
 })
 
 describe('PhotoTile placeholder', () => {

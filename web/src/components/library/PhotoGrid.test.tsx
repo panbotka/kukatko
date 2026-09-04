@@ -70,6 +70,7 @@ function renderGrid(
   withControl = false,
   scope?: GridDensityScope,
   photos: readonly (Photo | undefined)[] = PHOTOS,
+  extra: Partial<React.ComponentProps<typeof PhotoGrid>> = {},
 ) {
   return render(
     <I18nextProvider i18n={i18n}>
@@ -82,10 +83,16 @@ function renderGrid(
           onEndReached={vi.fn()}
           onRetry={vi.fn()}
           scope={scope}
+          {...extra}
         />
       </MemoryRouter>
     </I18nextProvider>,
   )
+}
+
+/** Pins the jsdom viewport width, which is what the column ceiling reads. */
+function setViewportWidth(px: number): void {
+  Object.defineProperty(window, 'innerWidth', { value: px, writable: true, configurable: true })
 }
 
 /** The wall's own element, the one carrying the density and the styling. */
@@ -243,5 +250,114 @@ describe('PhotoGrid', () => {
     })
     expect(window.localStorage.getItem(REVIEW_GRID_SCOPE.storageKey)).toBe('4')
     expect(window.localStorage.getItem(STORAGE_KEY)).toBe('2')
+  })
+})
+
+/**
+ * The wall is justified, so the density is only a *target row height*: a row of
+ * portraits at a phone's target holds twice the pinned count, which is how a
+ * viewport whose density was already clamped to three still rendered six tiles
+ * across. The ceiling therefore has to reach the row itself.
+ */
+describe('PhotoGrid narrow-viewport column cap', () => {
+  const REAL_WIDTH = window.innerWidth
+
+  /** Twelve squares — the shape that packs most greedily into a wide row. */
+  const SQUARES = Array.from({ length: 12 }, (_, i) => photo(`s${String(i)}`, 1000, 1000))
+
+  afterEach(() => {
+    setViewportWidth(REAL_WIDTH)
+  })
+
+  /** The tile count of every laid-out row, in order. */
+  function rowSizes(): number[] {
+    return rows().map((row) => row.children.length)
+  }
+
+  it('never lays more than a phone can carry into one row', () => {
+    setViewportWidth(393)
+    window.localStorage.setItem(STORAGE_KEY, '8')
+    renderGrid(false, undefined, SQUARES)
+
+    // The density is clamped to three and the rows obey the same three.
+    expect(gridElement()).toHaveAttribute('data-density', '3')
+    for (const size of rowSizes()) {
+      expect(size).toBeLessThanOrEqual(3)
+    }
+  })
+
+  it('caps a small tablet one step higher', () => {
+    setViewportWidth(700)
+    window.localStorage.setItem(STORAGE_KEY, '8')
+    renderGrid(false, undefined, SQUARES)
+
+    expect(Math.max(...rowSizes())).toBe(4)
+  })
+
+  it('leaves a desktop row alone', () => {
+    // The same photos and the same stored density: no ceiling, so the greedy
+    // rule alone decides and packs far more than the cap would have allowed.
+    setViewportWidth(1440)
+    window.localStorage.setItem(STORAGE_KEY, '8')
+    renderGrid(false, undefined, SQUARES)
+
+    expect(Math.max(...rowSizes())).toBeGreaterThan(4)
+  })
+
+  it('keeps the reader’s stored density untouched by the cap', () => {
+    setViewportWidth(393)
+    window.localStorage.setItem(STORAGE_KEY, '8')
+    renderGrid(false, undefined, SQUARES)
+
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('8')
+  })
+})
+
+/**
+ * A finger cannot hover, so every control drawn on a tile is drawn there for
+ * good. The heart comes off the wall on touch — it is a permanent overlay over a
+ * phone-sized thumbnail and favoriting is a tap away on the photo itself.
+ */
+describe('PhotoGrid tile overlays on touch', () => {
+  const realMatchMedia = window.matchMedia
+
+  /** Points `window.matchMedia` at a device whose primary pointer is a finger. */
+  function setCoarsePointer(coarse: boolean): void {
+    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+      matches: coarse && query.includes('pointer: coarse'),
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }))
+  }
+
+  afterEach(() => {
+    // Reassigning `window.matchMedia` outlives mock restoration.
+    window.matchMedia = realMatchMedia
+  })
+
+  it('draws the favourite heart on every tile with a mouse', async () => {
+    setCoarsePointer(false)
+    renderGrid(false, undefined, PHOTOS, { favoritable: true })
+
+    await waitFor(() => {
+      expect(screen.getAllByRole('button', { name: 'Add to favorites' })).toHaveLength(
+        PHOTOS.length,
+      )
+    })
+  })
+
+  it('takes the favourite heart off the tile on a touch screen', async () => {
+    setCoarsePointer(true)
+    renderGrid(false, undefined, PHOTOS, { favoritable: true })
+
+    await waitFor(() => {
+      expect(rows().length).toBeGreaterThan(0)
+    })
+    expect(screen.queryByRole('button', { name: 'Add to favorites' })).not.toBeInTheDocument()
   })
 })

@@ -7,6 +7,7 @@ import {
   initialColumns,
   LIBRARY_GRID_SCOPE,
   maxColumnsForViewport,
+  maxTilesPerRowForViewport,
   readStoredDensity,
   sanitizeDensity,
   writeDensity,
@@ -52,6 +53,11 @@ function serverMaxColumns(): number {
   return GRID_COLUMNS_MAX
 }
 
+/** The row cap to assume with no viewport to measure (SSR): none at all. */
+function serverMaxTilesPerRow(): undefined {
+  return undefined
+}
+
 /**
  * Pins a grid to a column count, persists it under the scope's key and re-renders
  * every grid. The scope defaults to the photo library, the grid that had this
@@ -88,6 +94,15 @@ export interface UseGridDensityResult {
    * window widens again.
    */
   storedDensity: GridDensity
+  /**
+   * The most photographs one row of a **justified** wall may hold on this
+   * viewport, or `undefined` where it imposes no ceiling at all. A fixed-column
+   * grid needs none — {@link density} is already the whole answer for it — but a
+   * justified one reads the density as a target height, and a row of portraits
+   * at a phone's target height holds twice the pinned count. See
+   * `lib/gridDensity.maxTilesPerRowForWidth`.
+   */
+  maxTilesPerRow: number | undefined
 }
 
 /**
@@ -106,7 +121,10 @@ export interface UseGridDensityResult {
  * at most 3 below 576 px, 4 below 768 px), because one stored number is shared
  * by the laptop that set it and the phone that has to live with it. The clamp is
  * display-only: `density` is what the grid renders, `storedDensity` what the
- * user chose, and widening the window brings the latter straight back.
+ * user chose, and widening the window brings the latter straight back. A
+ * justified wall gets that ceiling a second time as `maxTilesPerRow`, because
+ * there the density is only a target row height and a narrow row would otherwise
+ * sail past the count the screen can carry.
  *
  * Scopes do not share a number: the photo library (the default) and the
  * `/outliers` review grid each keep their own, because a comfortable density for
@@ -139,6 +157,15 @@ export function useGridDensity(scope: GridDensityScope = LIBRARY_GRID_SCOPE): Us
     maxColumnsForViewport,
     serverMaxColumns,
   )
+  // The same ceiling for the justified wall, where "columns" is a target row
+  // height rather than a track count: read separately (both snapshots are
+  // primitives, so neither can loop) so a caller is never left to work the row
+  // cap out of a column count itself.
+  const maxTilesPerRow = useSyncExternalStore(
+    subscribeViewport,
+    maxTilesPerRowForViewport,
+    serverMaxTilesPerRow,
+  )
 
   // First use on this device: no numeric preference yet (empty storage or a
   // legacy `'auto'`). Seed it once from the current viewport width — auto's only
@@ -161,5 +188,5 @@ export function useGridDensity(scope: GridDensityScope = LIBRARY_GRID_SCOPE): Us
   // shows it and there is no flash to a placeholder default.
   const storedDensity = stored ?? initialColumns(resolved)
   const density = Math.min(storedDensity, maxColumns)
-  return { density, setDensity, maxColumns, storedDensity }
+  return { density, setDensity, maxColumns, storedDensity, maxTilesPerRow }
 }

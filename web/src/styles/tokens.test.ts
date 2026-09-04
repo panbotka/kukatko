@@ -66,6 +66,32 @@ describe('tile selection checkmark on touch', () => {
     expect(shown.get('opacity')).toBe('1')
   })
 
+  it('leaves the photo wall bare at rest, where a long press is the entry point', () => {
+    // Every other grid keeps the pinned control (it has no gesture of its own);
+    // the wall would otherwise carry a disc over every photograph for good.
+    const wall = declarations(
+      ruleBody(touch ?? '', /\.kukatko-photo-grid \.kk-tile__check\s*(?=\{)/) ?? '',
+    )
+    expect(wall.get('opacity')).toBe('0')
+  })
+
+  it('brings the wall’s checkmark back the moment the grid is selecting', () => {
+    // The rule has to come after the one that hides it — same specificity — and
+    // cover all three ways a tile is part of a live selection.
+    const hidden = (touch ?? '').indexOf('.kukatko-photo-grid .kk-tile__check {')
+    const shown = (touch ?? '').indexOf('.kukatko-photo-grid .kk-tile--selecting')
+    expect(hidden).toBeGreaterThan(-1)
+    expect(shown).toBeGreaterThan(hidden)
+
+    const selecting = declarations(
+      ruleBody(touch ?? '', /\.kukatko-photo-grid \.kk-tile--selecting[^{]*/) ?? '',
+    )
+    expect(selecting.get('opacity')).toBe('1')
+    for (const state of ['.kk-tile--checks .kk-tile__check', '.kk-tile__check--on']) {
+      expect(touch).toContain(`.kukatko-photo-grid ${state}`)
+    }
+  })
+
   it('grows the hit area to the 44px touch-target floor', () => {
     const hit = declarations(ruleBody(touch ?? '', /\.kk-tile__check::before\s*/) ?? '')
     expect(hit.get('content')).toBe("''")

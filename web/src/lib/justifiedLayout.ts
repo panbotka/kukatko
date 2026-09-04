@@ -82,6 +82,19 @@ export interface JustifiedLayoutOptions {
   targetRowHeight: number
   /** The gutter between tiles (and between rows), in CSS pixels. */
   gap: number
+  /**
+   * The most tiles one row may hold, whatever the target height would allow.
+   * Omitted (or unusable: non-finite, below one) means no ceiling — the greedy
+   * rule alone decides, which is what every viewport wide enough to carry the
+   * density ladder gets.
+   *
+   * It exists for the narrow viewport, where the target height is a poor proxy
+   * for "how many photographs across": a row of portraits at a phone's target
+   * height holds twice the pinned count, at a tile width where the controls
+   * drawn on a tile are bigger than the photograph under it. See
+   * `lib/gridDensity.maxTilesPerRowForWidth`.
+   */
+  maxTilesPerRow?: number
 }
 
 /**
@@ -142,6 +155,11 @@ export function rowHeightForColumns(containerWidth: number, columns: number, gap
  * `containerWidth` wide, gutters included, with the rounding error absorbed by
  * its last tile so no row is a pixel short of the edge.
  *
+ * A row cap ({@link JustifiedLayoutOptions.maxTilesPerRow}) cuts across that
+ * rule: a row that has reached the cap is closed at whatever height its own
+ * photographs give it — taller than the target, which is exactly the point on a
+ * phone — rather than being allowed to grow past the cap.
+ *
  * The final row is the exception: it is justified only while that does not
  * stretch it past {@link LAST_ROW_MAX_STRETCH}× the target. Beyond that — the
  * single leftover portrait — it keeps the target height and ends where its
@@ -154,10 +172,14 @@ export function rowHeightForColumns(containerWidth: number, columns: number, gap
  */
 export function justifiedRows(
   ratios: readonly number[],
-  { containerWidth, targetRowHeight, gap }: JustifiedLayoutOptions,
+  { containerWidth, targetRowHeight, gap, maxTilesPerRow }: JustifiedLayoutOptions,
 ): JustifiedRow[] {
   const gutter = Number.isFinite(gap) && gap > 0 ? gap : 0
   const target = Number.isFinite(targetRowHeight) && targetRowHeight > 0 ? targetRowHeight : 0
+  const cap =
+    maxTilesPerRow !== undefined && Number.isFinite(maxTilesPerRow) && maxTilesPerRow >= 1
+      ? Math.floor(maxTilesPerRow)
+      : Number.POSITIVE_INFINITY
   if (!Number.isFinite(containerWidth) || containerWidth <= 0 || target <= 0) {
     return []
   }
@@ -179,7 +201,11 @@ export function justifiedRows(
     current.push(i)
     sum += ratio
     const height = rowHeight(containerWidth, gutter, current.length, sum)
-    if (height > target) {
+    // A row still short of the target keeps filling — unless it has reached the
+    // cap, which closes it however tall it still is. Everything below is then
+    // the ordinary close: a full row too is offered the choice of leaving its
+    // last photo to the next one, where that lands nearer the target.
+    if (height > target && current.length < cap) {
       continue
     }
     // Adding this photo took the row past full. Closing it *before* the photo

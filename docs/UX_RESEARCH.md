@@ -295,6 +295,24 @@ Pokryto testy: `lib/gridDensity.test.ts` (320/393/575 px → 3, 576/700/767 px �
 `GridDensityControl` v liště `FilterBar` (na telefonu v zásuvce) a na `SubjectPage`;
 hustotu tak mění všechny mřížky knihovny včetně výsledků hledání.
 
+**Doplněno 5. 9. 2026 — strop musel podruhé, až na řádek.** Od 2. 9. 2026 je zeď
+zarovnaná (`lib/justifiedLayout`, [N19](#n19) a spol.) a hustota je na ní **jen cílová
+výška řádku**, čtená jako „N *na šířku* fotek vedle sebe". Strop nad hustotou tím
+přestal na zeď dosahovat: telefon se stopnutou trojkou vykresloval **šest** dlaždic
+na řádek, protože řádek portrétů se do cílové výšky vejde dvakrát. Naměřeno 5. 9. 2026
+na produkci (390 px, uložená hustota 8): 6 dlaždic po ~53 px, přes ně srdíčko
+oblíbených s dotykovým terčem 44 × 44 px. `justifiedRows` teď dostává tvrdý
+`maxTilesPerRow` (`gridDensity.maxTilesPerRowForWidth`, stejné hranice 576/768 px, nad
+nimi **bez stropu** — desktopový řádek portrétů jich smí mít dvanáct) a řádek se uzavře,
+i když je na cílovou výšku pořád vysoký. Po opravě: 3 dlaždice na řádek, 80–182 px
+široké; na 1440 px vychází rozvržení **beze změny** (12 na řádek, stejné šířky).
+
+Zároveň spadly trvalé překryvy z dotykové dlaždice: srdíčko se na hrubém ukazateli
+(`useCoarsePointer`) na zeď vůbec nekreslí — oblíbení zůstává na detailu fotky — a
+zaškrtávací kolečko je na zdi v klidu skryté, protože vstupem do výběru je tam
+podržení prstu a tažení (`useLongPressSelect`). Objeví se, jakmile mřížka opravdu
+vybírá; vybraná dlaždice si drží prstenec i ztlumení.
+
 ---
 
 <a id="n5"></a>

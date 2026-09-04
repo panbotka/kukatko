@@ -4,6 +4,7 @@ import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 import { type ListRange, Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 
+import { useCoarsePointer } from '../../hooks/useCoarsePointer'
 import { useElementWidth } from '../../hooks/useElementWidth'
 import { useGridDensity } from '../../hooks/useGridDensity'
 import { type GridScrollMemory } from '../../hooks/useGridScrollMemory'
@@ -148,7 +149,10 @@ export interface PhotoGridProps {
   selection?: PhotoGridSelection
   /**
    * When true each tile shows a favorite heart overlay (a personal toggle). The
-   * heart is suppressed while a tile is a selection target. Defaults false.
+   * heart is suppressed while a tile is a selection target, and on a **touch**
+   * device altogether: a finger cannot hover, so the heart would sit over every
+   * thumbnail permanently — at a phone's tile size, over a good part of the
+   * photograph. Favoriting is a tap away on the photo itself. Defaults false.
    */
   favoritable?: boolean
   /**
@@ -251,10 +255,14 @@ export function PhotoGrid({
   scroll,
   scope = LIBRARY_GRID_SCOPE,
 }: PhotoGridProps) {
-  const { density } = useGridDensity(scope)
+  const { density, maxTilesPerRow } = useGridDensity(scope)
   const wrapRef = useRef<HTMLDivElement>(null)
   const width = useElementWidth(wrapRef)
   const gap = scope.gapPx
+  // A finger cannot hover, so a control drawn on a tile is drawn there for good:
+  // the heart is taken off the wall entirely on touch (favoriting stays on the
+  // photo itself) rather than left sitting over a phone-sized thumbnail.
+  const coarse = useCoarsePointer()
 
   // The layout, in three steps so each is memoized on what actually moves it:
   // the photos' shapes (a new page), the target height (density or width) and
@@ -270,8 +278,18 @@ export function PhotoGrid({
   )
   const targetHeight = rowHeightForColumns(width, density, gap)
   const rows = useMemo(
-    () => justifiedRows(ratios, { containerWidth: width, targetRowHeight: targetHeight, gap }),
-    [ratios, width, targetHeight, gap],
+    () =>
+      justifiedRows(ratios, {
+        containerWidth: width,
+        targetRowHeight: targetHeight,
+        gap,
+        // The narrow viewport's own ceiling, applied where the row is actually
+        // closed: the target height alone lets a row of portraits hold twice the
+        // count the screen can carry, which is how a phone ended up with
+        // six 53 px tiles under controls bigger than the photographs.
+        maxTilesPerRow,
+      }),
+    [ratios, width, targetHeight, gap, maxTilesPerRow],
   )
   // The current layout, for the imperative calls (which run outside render) and
   // for translating virtuoso's row range back into photo indices.
@@ -490,7 +508,7 @@ export function PhotoGrid({
                 selected={selection?.selected.has(photo.uid) ?? false}
                 anySelected={anySelected}
                 onToggleSelect={selection === undefined ? undefined : toggleSelect}
-                favoritable={favoritable}
+                favoritable={favoritable && !coarse}
                 onFavoriteChange={onFavoriteChange}
                 detailQuery={detailQuery}
                 focused={tile.index === focusedIndex}

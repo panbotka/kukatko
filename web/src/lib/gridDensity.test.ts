@@ -13,6 +13,8 @@ import {
   LIBRARY_GRID_SCOPE,
   maxColumnsForViewport,
   maxColumnsForWidth,
+  maxTilesPerRowForViewport,
+  maxTilesPerRowForWidth,
   REVIEW_GRID_SCOPE,
   readStoredDensity,
   sanitizeDensity,
@@ -238,6 +240,38 @@ describe('maxColumnsForWidth', () => {
       expect(cap.maxColumns).toBeGreaterThanOrEqual(GRID_COLUMNS_MIN)
       expect(cap.maxColumns).toBeLessThanOrEqual(GRID_COLUMNS_MAX)
     }
+  })
+})
+
+describe('maxTilesPerRowForWidth', () => {
+  it('caps a justified row exactly where the column ceiling caps the density', () => {
+    expect(maxTilesPerRowForWidth(320)).toBe(3)
+    expect(maxTilesPerRowForWidth(393)).toBe(3)
+    expect(maxTilesPerRowForWidth(575)).toBe(3)
+    expect(maxTilesPerRowForWidth(576)).toBe(4)
+    expect(maxTilesPerRowForWidth(767)).toBe(4)
+  })
+
+  it('imposes no ceiling from the tablet breakpoint up', () => {
+    // Ten is the most a reader may *pin*, not a ceiling on a row: a desktop row
+    // of portraits legitimately holds more than that and must keep doing so.
+    expect(maxTilesPerRowForWidth(768)).toBeUndefined()
+    expect(maxTilesPerRowForWidth(1440)).toBeUndefined()
+  })
+
+  it('imposes no ceiling on a width it cannot use', () => {
+    expect(maxTilesPerRowForWidth(0)).toBeUndefined()
+    expect(maxTilesPerRowForWidth(-100)).toBeUndefined()
+    expect(maxTilesPerRowForWidth(Number.NaN)).toBeUndefined()
+  })
+
+  it('reads the current viewport width via maxTilesPerRowForViewport', () => {
+    setViewportWidth(393)
+    expect(maxTilesPerRowForViewport()).toBe(3)
+    setViewportWidth(700)
+    expect(maxTilesPerRowForViewport()).toBe(4)
+    setViewportWidth(1440)
+    expect(maxTilesPerRowForViewport()).toBeUndefined()
   })
 })
 

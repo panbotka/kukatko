@@ -74,7 +74,9 @@ export interface PhotoTileProps {
   selectable?: boolean
   /**
    * When true the whole tile is a selection target — clicking anywhere on it
-   * toggles selection instead of navigating. The grid sets this once a selection
+   * toggles selection instead of navigating. It also marks the tile
+   * `kk-tile--selecting`, which is what shows the corner checkmark on a touch
+   * screen (where the wall is otherwise left bare, see `styles/tokens.css`). The grid sets this once a selection
    * exists (or in an explicit selection mode) so a run of tiles can be picked
    * quickly, mirroring modern photo apps. When false the tile still navigates and
    * only the corner checkmark toggles.
@@ -325,7 +327,7 @@ export function PhotoTile({
       style={fill ? { height: '100%' } : undefined}
       className={`kk-tile position-relative${selected ? ' kk-tile--selected' : ''}${
         anySelected ? ' kk-tile--checks' : ''
-      }${focused ? ' kukatko-tile-focused' : ''}`}
+      }${selectFirst ? ' kk-tile--selecting' : ''}${focused ? ' kukatko-tile-focused' : ''}`}
       data-focused={focused ? 'true' : undefined}
       // Which photograph this box stands for, in the DOM. The touch long-press
       // gesture follows a finger by hit-testing the point under it

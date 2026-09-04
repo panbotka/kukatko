@@ -193,6 +193,21 @@ describe('useGridDensity', () => {
     expect(window.localStorage.getItem(STORAGE_KEY)).toBe('8')
   })
 
+  it('hands a justified wall the same ceiling as a row cap', () => {
+    setViewportWidth(393)
+    window.localStorage.setItem(STORAGE_KEY, '8')
+    const { result } = renderHook(() => useGridDensity())
+
+    expect(result.current.maxTilesPerRow).toBe(3)
+
+    // A tablet gets the looser cap, and a desktop none at all: there the density
+    // is a target height a row of portraits may legitimately overshoot.
+    resizeTo(700)
+    expect(result.current.maxTilesPerRow).toBe(4)
+    resizeTo(1440)
+    expect(result.current.maxTilesPerRow).toBeUndefined()
+  })
+
   it('leaves a density the viewport can carry alone', () => {
     setViewportWidth(393)
     window.localStorage.setItem(STORAGE_KEY, '2')

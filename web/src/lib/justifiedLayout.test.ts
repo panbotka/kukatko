@@ -152,6 +152,60 @@ describe('justifiedRows', () => {
     }
   })
 
+  it('never puts more photos in a row than the cap allows', () => {
+    // A phone's row of portraits: at the target height alone it holds six 53px
+    // tiles, which is the defect the cap exists for.
+    const narrow = { containerWidth: 335, targetRowHeight: 73, gap: 3 }
+    const portraits = Array.from({ length: 24 }, () => 0.75)
+    expect(Math.max(...justifiedRows(portraits, narrow).map((r) => r.tiles.length))).toBe(6)
+
+    const capped = justifiedRows(portraits, { ...narrow, maxTilesPerRow: 3 })
+    expect(capped.length).toBeGreaterThan(1)
+    for (const row of capped) {
+      expect(row.tiles.length).toBeLessThanOrEqual(3)
+    }
+    // Fewer photos in the row means each of them is bigger, which is the point.
+    expect(capped[0].height).toBeGreaterThan(73)
+    expect(capped[0].tiles[0].width).toBeGreaterThan(100)
+  })
+
+  it('still fills a capped row edge to edge, in order', () => {
+    const narrow = { containerWidth: 335, targetRowHeight: 73, gap: 3, maxTilesPerRow: 3 }
+    const rows = justifiedRows(
+      Array.from({ length: 13 }, (_, i) => [0.75, 1.5, 1.0][i % 3] ?? 1),
+      narrow,
+    )
+    expect(rows.flatMap((row) => row.tiles.map((t) => t.index))).toEqual(
+      Array.from({ length: 13 }, (_, i) => i),
+    )
+    for (const row of rows.slice(0, -1)) {
+      expect(
+        rowWidth(
+          row.tiles.map((t) => t.width),
+          narrow.gap,
+        ),
+      ).toBe(narrow.containerWidth)
+    }
+  })
+
+  it('leaves a row the greedy rule would close early alone', () => {
+    // Two panoramas already overshoot the target at this width, so the cap of
+    // three never comes into it: the row closes exactly where it did before.
+    const narrow = { containerWidth: 335, targetRowHeight: 73, gap: 3 }
+    const panoramas = Array.from({ length: 9 }, () => 3)
+    expect(justifiedRows(panoramas, { ...narrow, maxTilesPerRow: 3 })).toEqual(
+      justifiedRows(panoramas, narrow),
+    )
+  })
+
+  it('imposes no ceiling without a usable cap', () => {
+    const ratios = Array.from({ length: 40 }, (_, i) => [1.5, 0.75, 1.0, 2.0][i % 4] ?? 1.5)
+    const plain = justifiedRows(ratios, options)
+    for (const cap of [undefined, Number.NaN, 0, -3]) {
+      expect(justifiedRows(ratios, { ...options, maxTilesPerRow: cap })).toEqual(plain)
+    }
+  })
+
   it('returns nothing for an unmeasured container', () => {
     expect(justifiedRows([1.5, 1.5], { ...options, containerWidth: 0 })).toEqual([])
     expect(justifiedRows([1.5, 1.5], { ...options, targetRowHeight: 0 })).toEqual([])

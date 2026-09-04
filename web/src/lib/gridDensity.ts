@@ -196,6 +196,34 @@ export function maxColumnsForViewport(): number {
 }
 
 /**
+ * The most photographs one row of the **justified** wall may hold on a viewport
+ * of `width` pixels, or `undefined` where the viewport imposes no ceiling at all.
+ *
+ * The density is only a *target row height* on that wall (see
+ * `lib/justifiedLayout.rowHeightForColumns`), read as "this many landscape photos
+ * across" — so a row of portraits or of small crops happily holds twice the
+ * pinned count, and the ceiling {@link maxColumnsForWidth} puts on the density
+ * never reaches the row. On a phone that is the defect all over again: six
+ * portraits across 390 px are 53 px wide, which is a thumbnail smaller than the
+ * controls drawn on it. A row cap is therefore a second, harder limit, applied
+ * where the row is closed.
+ *
+ * A width that carries the whole ladder gets `undefined` rather than
+ * {@link GRID_COLUMNS_MAX}: ten is the most a reader may *pin*, not a ceiling on
+ * a justified row, and a desktop row of portraits that legitimately holds twelve
+ * must keep holding twelve.
+ */
+export function maxTilesPerRowForWidth(width: number): number | undefined {
+  const ceiling = maxColumnsForWidth(width)
+  return ceiling < GRID_COLUMNS_MAX ? ceiling : undefined
+}
+
+/** The row cap of the current viewport, unmeasurable width → no cap. */
+export function maxTilesPerRowForViewport(): number | undefined {
+  return maxTilesPerRowForWidth(viewportWidth())
+}
+
+/**
  * Narrows a raw value to a usable column count. A finite number is rounded and
  * clamped into 1..{@link GRID_COLUMNS_MAX}; anything else — a legacy `'auto'`
  * string, `null`, `NaN`, a tampered object — is coerced to a concrete count

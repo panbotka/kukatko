@@ -789,7 +789,9 @@ here.
   a page is not loaded — a hole is laid out as a default 3:2 box and rendered as a `Skeleton` placeholder, and
   a Shift+click range only spans the loaded uids. An index is then
   a photo's **absolute** position, which is what lets the timeline jump anywhere in one scroll; the `favoritable` prop
-  leaks the heart onto the tiles (and `onFavoriteChange` its flips back to the page); an optional `gridRef`
+  leaks the heart onto the tiles (and `onFavoriteChange` its flips back to the page) — **except on a coarse
+  pointer** (`useCoarsePointer`), where a finger cannot hover and the heart would therefore sit over every
+  thumbnail for good; favoriting is then a tap away on the photo itself; an optional `gridRef`
   (`PhotoGridHandle`, an imperative `scrollToIndex` in photo indices, resolved to its row by `rowOfTile`;
   a **bare index reveals** — the wall stays put while the row is already on screen and otherwise hops the
   shortest way, top or bottom, per the pure `revealAlign(row, visibleRange)` in `lib/gridScroll` — while an explicit
@@ -800,6 +802,14 @@ here.
   means "about N *landscape* photos across", so portraits sit fewer to a row and panoramas more; the DOM
   carries `data-density` on the wall and one `.kukatko-photo-row` per row (which is also how row-wise keyboard
   navigation counts a row, since there is no one column count any more).
+  Because that is only a *target height*, the narrow-viewport ceiling has to reach the **row** as well:
+  `useGridDensity` also hands over **`maxTilesPerRow`** (`lib/gridDensity` `maxTilesPerRowForWidth`: 3 below
+  576px, 4 below 768px, `undefined` from there up) and the grid passes it into `justifiedRows`, which closes a
+  full row however tall it still is. Without it a phone whose density was *already* clamped to three still
+  rendered six 53px portraits across, under controls bigger than the photographs — the density cap alone
+  stopped meaning anything to the wall the moment the wall became justified. Above 768px there is deliberately
+  **no** cap: ten is the most a reader may *pin*, not a ceiling on a row, and a desktop row of portraits
+  legitimately holds a dozen.
   **Which** stored count (and gutter) it follows is the optional `scope` prop — the library's by default,
   `REVIEW_GRID_SCOPE` on `/expand`.
   A density change **only re-lays out** the existing `<div>` — virtuoso re-measures the rows, scroll and selection
@@ -1124,14 +1134,18 @@ here.
   `anySelected`/`onToggleSelect`, or `selection`): each tile carries a **round check
   circle** in the corner (`.kk-tile__check`, a sibling of the link/button like the heart — a click **selects without
   opening the photo**), which appears on hover and **stays visible once something is selected**
-  (`kk-tile--checks`). On a **coarse pointer / touch screen** there is no hover to reveal it, and the check
-  is the *only* entry point into multi-select (the library has no "Vybrat" button, and in explicit mode
-  nothing else marks the grid as a selection surface), so `@media (hover: none), (pointer: coarse)` in
-  `tokens.css` **pins it visible at rest** and grows its tap target to the app's **2.75rem (44px)** floor via an
-  invisible `::before` — expanded down/right so it stops at the tile's own edge and can't swallow a tap
-  meant for the neighbouring tile. This is safe by construction: the control is **mounted only while the tile
-  is `selectable`**, so a viewer's grid has nothing to reveal. Guarded by `src/styles/tokens.test.ts`
-  (jsdom evaluates no media queries, so the rule is asserted against the stylesheet source).
+  (`kk-tile--checks`). On a **coarse pointer / touch screen** there is no hover to reveal it, so
+  `@media (hover: none), (pointer: coarse)` in `tokens.css` **pins it visible at rest** and grows its tap
+  target to the app's **2.75rem (44px)** floor via an invisible `::before` — expanded down/right so it stops at
+  the tile's own edge and can't swallow a tap meant for the neighbouring tile. This is safe by construction:
+  the control is **mounted only while the tile is `selectable`**, so a viewer's grid has nothing to reveal.
+  The **justified photo wall is the exception**: there the touch entry point is the long press below, so a disc
+  on every tile buys nothing and costs a permanent overlay over every photograph. Inside
+  `.kukatko-photo-grid` the check stays hidden until the grid is actually selecting — a tile that is a
+  selection target (**`kk-tile--selecting`**, which `PhotoTile` stamps from `selectFirst`), a grid holding a
+  selection (`kk-tile--checks`) or a tile already picked (`kk-tile__check--on`). Guarded by
+  `src/styles/tokens.test.ts` (jsdom evaluates no media queries, so the rule is asserted against the
+  stylesheet source).
   A selected tile gets an **accent ring** (`kk-tile--selected` → inset
   `::after` from `--kk-accent`) and a **dimmed image**, so the selection is unmissable on the dense wall.
   Selection mode is either **explicit** (`selection.active` — tiles are selection targets from the start,
@@ -4407,7 +4421,7 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   of. An **unmeasurable** element (jsdom, which has neither layout nor `ResizeObserver`) reports
   `FALLBACK_WIDTH_PX` (1024), because a component that renders nothing until measured would otherwise render
   nothing at all in every test;
-  `useGridDensity()` → `{density,setDensity,maxColumns,storedDensity}` = the photo grid's density (**always a
+  `useGridDensity()` → `{density,setDensity,maxColumns,storedDensity,maxTilesPerRow}` = the photo grid's density (**always a
   concrete column count 1…10**, no `'auto'` mode) over `useSyncExternalStore` on top of `lib/gridDensity`. localStorage is
   **the single source of truth** (no in-memory copy): the snapshot is a primitive (a column count, or `null`
   = nothing usable stored), so React's `Object.is` comparison never loops. **On first
@@ -4418,7 +4432,10 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `maxColumnsForViewport()` — the ceiling, not the width, so dragging a window edge only re-renders where the
   grid changes shape) gives `maxColumns`, and `density = min(storedDensity, maxColumns)`. So a phone renders
   at most 3 columns and a small tablet 4 **whatever is stored**, while `storedDensity` (and localStorage) keep
-  the user's own number for the wide window it was chosen on. `subscribe` also listens to the `storage`
+  the user's own number for the wide window it was chosen on. A third subscription (same events) reports
+  **`maxTilesPerRow`** = the same ceiling as a hard limit on one row of a *justified* wall, or `undefined`
+  where the viewport imposes none; a fixed-column grid needs none, but on the wall the density is only a
+  target row height that a row of portraits sails straight past (see `PhotoGrid`). `subscribe` also listens to the `storage`
   event → all tabs on the device hold the same column count; `setGridDensity` sanitizes, writes
   and repaints **all** grids at once, without a context and without a provider (so page tests work
   without a wrapper too). It takes an optional **`GridDensityScope`** (default `LIBRARY_GRID_SCOPE`): the
@@ -4853,10 +4870,13 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `object-fit: cover`, so the trade is a slice of an extreme photo for a readable wall).
   `rowHeightForColumns(width,columns,gap)` translates the density's column count into the target row height
   through `REFERENCE_TILE_RATIO` (**3:2**), which is what keeps "five across" meaning what it meant.
-  `justifiedRows(ratios,{containerWidth,targetRowHeight,gap})` is the greedy row-filler every justified
-  gallery uses: keep adding photos until scaling the row to the width would push it below the target, then
-  close whichever candidate row (with the last photo or without) lands nearer it. A closed row measures
-  **exactly** `containerWidth`, gutters included, its rounding error absorbed by the last tile. The **last
+  `justifiedRows(ratios,{containerWidth,targetRowHeight,gap,maxTilesPerRow?})` is the greedy row-filler every
+  justified gallery uses: keep adding photos until scaling the row to the width would push it below the
+  target, then close whichever candidate row (with the last photo or without) lands nearer it. A closed row
+  measures **exactly** `containerWidth`, gutters included, its rounding error absorbed by the last tile.
+  **`maxTilesPerRow`** (omitted / unusable = no ceiling) is the narrow viewport's hard limit on top of that
+  rule: a full row closes however tall it still is, which is what stops a phone laying six 53px portraits
+  across at a target height meant for three landscapes (`lib/gridDensity.maxTilesPerRowForWidth`). The **last
   row** is justified only while that does not stretch it past `LAST_ROW_MAX_STRETCH` (**1.4×**) — beyond
   that (the single leftover portrait) it keeps the target height and ends where its photos end. An
   unmeasured container yields **no rows at all**, which is what a caller rendering nothing until it has
@@ -4914,7 +4934,10 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   + `GRID_COLUMN_CAPS` (`{belowWidthPx,maxColumns}[]` = **at most 3 columns below 576px, 4 below 768px** —
   Bootstrap `sm`/`md`) + `maxColumnsForWidth(width)` / `maxColumnsForViewport()` (that ceiling for a width /
   for the live viewport; an unmeasurable width → **no ceiling**, the user's own choice is the better guess)
-  + `clampColumnsToWidth(density,width)` (the sanitized preference lowered to the ceiling). The clamp is
+  + `clampColumnsToWidth(density,width)` (the sanitized preference lowered to the ceiling)
+  + `maxTilesPerRowForWidth(width)` / `maxTilesPerRowForViewport()` (the same ceiling read as **the most
+  photographs one justified row may hold**, or `undefined` from 768px up — ten is the most a reader may *pin*,
+  not a ceiling on a row, and a desktop row of portraits legitimately holds more). The clamp is
   **display-only** — the stored number is never rewritten, so a wide window restores the chosen density
   verbatim. It exists because *one* number is shared by the laptop that pinned it and the phone that has to
   live with it: eight columns across a 393px screen leaves tiles under 50px, i.e. a mesh of favourite hearts
