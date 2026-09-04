@@ -598,6 +598,61 @@
   min-width: 1.5rem;
 }
 
+/* ---- The one-time "tap to bring the chrome back" hint ---------------- */
+
+/* A photograph with no controls looks broken. With a mouse it never is — the
+   smallest move brings the chrome back — but a touch device has no such gesture,
+   so the first time the chrome fades there (once per device, see
+   `useViewerChrome`) this pill says how to get it back, and then goes.
+
+   It sits where the dock will reappear, just above the bottom edge: the sentence
+   and the thing it promises occupy the same place. `pointer-events: none` is
+   load-bearing — the hint asks for a tap on the photograph, so it must never be
+   the thing that swallows it. Above the dock's layer for the moment their fades
+   cross; the drawer (z 4) pins the chrome visible, so the two never coincide. */
+.kk-viewer__hint {
+  position: absolute;
+  bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));
+  left: 50%;
+  z-index: 4;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--kk-space-2);
+  max-width: min(22rem, calc(100% - 2rem));
+  margin: 0;
+  padding: var(--kk-space-2) var(--kk-space-3);
+  border-radius: var(--kk-radius-pill);
+  background: rgb(0 0 0 / 72%);
+  color: #fff;
+  font-size: 0.875rem;
+  line-height: 1.3;
+  text-align: center;
+  text-wrap: balance;
+  pointer-events: none;
+  /* It arrives rather than snapping in — on the duration tokens, so reduced
+     motion gets it instantly. */
+  animation: kk-viewer-hint-in var(--kk-duration-base) var(--kk-ease-standard);
+}
+
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .kk-viewer__hint {
+    backdrop-filter: blur(var(--kk-header-blur));
+    -webkit-backdrop-filter: blur(var(--kk-header-blur));
+  }
+}
+
+@keyframes kk-viewer-hint-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 0.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
 /* ---- Info drawer ----------------------------------------------------- */
 
 /* One panel, two shapes. Here it is the desktop side drawer, sliding in from the

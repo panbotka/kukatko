@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 /** Idle time before the chrome fades, in milliseconds. */
-const DEFAULT_IDLE_MS = 2600
+export const DEFAULT_IDLE_MS = 2600
 
 /** Options for {@link useAutoHideChrome}. */
 export interface UseAutoHideChromeOptions {

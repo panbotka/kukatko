@@ -44,6 +44,7 @@ export type IconName =
   | 'geo-alt'
   | 'github'
   | 'grid-3x3-gap-fill'
+  | 'hand-index'
   | 'hand-thumbs-down'
   | 'hand-thumbs-down-fill'
   | 'hand-thumbs-up'

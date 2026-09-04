@@ -346,6 +346,38 @@ implemented**, per the task's conservative-changes rule.
   × 44 pill whose link stretches the full 44 px beside the remove X — and the link answering
   `elementFromPoint` across the pill (46/50 sampled points, the misses being the rounded corners).
   The same page with `pointer: fine` still draws the 20.9 px pill: the desktop chip, unchanged. 🔴 ⚪
+- **Discoverability (2026-09-05), touch only:** the viewer's chrome fades after 2.6 s of no input, leaving
+  a photograph, a dimmed title and one back arrow. A real tap brings it all back — but nothing said so, and
+  a phone offers no pointer move to stumble on the answer with, so a first-time reader could only read the
+  screen as broken. ✅ **Done (2026-09-05):** on a coarse pointer, and **once per device**, the chrome is
+  held up 4 s longer the first time and the moment it does fade a pill says `Klepnutím na fotku vrátíte
+  ovládání` (4 s, or until the chrome is back). `useViewerChrome` + `lib/viewerChromeHint`
+  (`kukatko.viewer.chromeHintSeen`); the auto-hide itself is unchanged, and with a mouse nothing is shown
+  and nothing is written. The pill is `pointer-events: none` — it must never swallow the very tap it asks
+  for — and `aria-hidden`, because the chrome only fades (opacity + `pointer-events`) and stays in the
+  accessibility tree, so a screen-reader user never lost the controls in the first place. 🔴 ⚪
+- **Bottom dock vs. the phone's own browser bar (2026-09-05) — checked, unchanged.** A user reported the
+  viewer's controls as "somehow fallen at the bottom". Measured in Chromium over a harness carrying the real
+  `tokens.css` + `app.css` + `viewer.css` at **390 × 844**, **360 × 640**, **844 × 390** and **640 × 360**:
+  the dock ends exactly at `innerHeight` (`bottom: 0` on a `position: fixed; inset: 0` viewer) with an 8 px
+  padding under its buttons; every one of its nine targets is **44 px tall** and answers `elementFromPoint`
+  at its centre in all four geometries, and the element at the very bottom row of pixels **is** the dock.
+  In every one of them `window.innerHeight − visualViewport.height − visualViewport.offsetTop = 0` and
+  `100dvh = innerHeight`: **no emulated phone here produces a visible viewport shorter than the layout
+  viewport**, which is the only way a bottom browser bar could cover a `position: fixed` element. The
+  existing handling is the standard one and already complete — `viewport-fit=cover` in `index.html` plus
+  `env(safe-area-inset-bottom)` in the dock's own padding — and the app already *measures* a layout ⇄ visual
+  mismatch where one really occurs (`useKeyboardInset`, wired to the bottom sheet for the on-screen
+  keyboard; its 80 px floor deliberately reads a collapsing toolbar as noise). The viewer also never
+  scrolls (`touch-action: none` on a fixed root), so the transient bar-overlap that affects scrolling pages
+  cannot arise inside it. **No change made**: speculative bottom padding would push the controls up on
+  every phone to solve a problem none of the measurements can reproduce. The report stays unconfirmed —
+  reopen it with a screenshot from the real phone and browser, plus `innerHeight` vs
+  `visualViewport.height` read on that device. ⚪ ⚪
+- **Sheet open (2026-09-05), measured:** with `data-panel="open"` at 390 × 844 the bottom sheet spans
+  456 → 844 (exactly `46dvh`, flush with the bottom edge, **gap under it 0 px**), the stage ends where the
+  sheet begins, and the dock stands down to `opacity: 0` / `pointer-events: none` — so nothing is left
+  behind it and nothing under it intercepts a tap. ✅ nothing to fix.
 
 ### Upload (`/upload`)
 - **Rebuilt as one stage at a time (2026-08-17).** The three-numbered-steps page read fine on a

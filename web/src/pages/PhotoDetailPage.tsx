@@ -31,7 +31,7 @@ import { FaceOverlay } from '../components/people/FaceOverlay'
 import { FacesPanel } from '../components/people/FacesPanel'
 import { useMorph, useMorphMark } from '../components/morph/MorphContext'
 import { useToast } from '../components/toast/ToastContext'
-import { useAutoHideChrome } from '../hooks/useAutoHideChrome'
+import { useCoarsePointer } from '../hooks/useCoarsePointer'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useFaces } from '../hooks/useFaces'
 import { useFavorite } from '../hooks/useFavorite'
@@ -45,6 +45,7 @@ import { usePinchZoom } from '../hooks/usePinchZoom'
 import { useRating } from '../hooks/useRating'
 import { useSwipeNavigation } from '../hooks/useSwipeNavigation'
 import { useViewportBox } from '../hooks/useViewportBox'
+import { useViewerChrome } from '../hooks/useViewerChrome'
 import { backHref, DETAIL_DEFAULTS, detailQueryString, detailToParams } from '../lib/detailView'
 import { readFaceOverlay, writeFaceOverlay } from '../lib/faceOverlayPref'
 import { formatDateTimeMinutes } from '../lib/format'
@@ -206,6 +207,10 @@ export function PhotoDetailPage() {
   // controls exist exactly ONCE in the DOM: a second, hidden copy would give
   // every star and heart a twin for assistive tech (and for a query) to find.
   const narrow = useIsNarrowViewport()
+  // Whether the screen is *touched* rather than pointed at — a different question
+  // from how wide it is, and the one that decides whether the vanishing chrome
+  // needs explaining: with a mouse the smallest move brings it back.
+  const touch = useCoarsePointer()
   // The grid ⇄ viewer morph: this page is the half the clicked tile grows into,
   // and `morphMark` is what marks the photograph on stage as that half.
   const morph = useMorph()
@@ -539,10 +544,12 @@ export function PhotoDetailPage() {
     )
   }, [facesAvailable, sidePanel, panelOpen, setSearchParams])
 
-  // The chrome (top bar + arrows) melts away after a short idle and returns on any
-  // activity — except while the drawer is open, when the actions beside it (and
-  // its own toggle) must stay reachable, so it is pinned visible.
-  const chrome = useAutoHideChrome({ paused: panelOpen || libraryOpen })
+  // The chrome (top bar + arrows + the phone's dock) melts away after a short idle
+  // and returns on any activity — except while the drawer is open, when the actions
+  // beside it (and its own toggle) must stay reachable, so it is pinned visible.
+  // On a touch device, once per device, it also stays up longer the very first time
+  // and then explains itself: see `useViewerChrome`.
+  const chrome = useViewerChrome({ paused: panelOpen || libraryOpen, touch })
 
   // Touch: horizontal swipe pages when zoom is not in play (faces/edit on, where
   // pinch-zoom is disabled so the boxes/preview stay put). A mostly-vertical drag
@@ -1350,6 +1357,22 @@ export function PhotoDetailPage() {
         <div className="kk-viewer__dock" role="group" aria-label={t('photo.viewer.actions')}>
           {curation}
         </div>
+      )}
+
+      {/* The one-time hint. A viewer whose controls have just vanished looks
+          broken to someone who does not know that a tap brings them back — so the
+          first time the chrome fades on a touch device, and only that once, it
+          says so, then goes. It never intercepts the very tap it is asking for.
+
+          `aria-hidden`: the chrome only fades (opacity + pointer-events), it is
+          never removed from the accessibility tree, so a screen-reader user still
+          reaches every control and this sentence would describe a problem they do
+          not have. */}
+      {chrome.hintVisible && (
+        <p className="kk-viewer__hint" aria-hidden="true">
+          <Icon name="hand-index" />
+          {t('photo.viewer.tapHint')}
+        </p>
       )}
 
       {/* The metadata drawer: everything the photo carries, on demand. At ≥ md it

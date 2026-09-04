@@ -8,6 +8,9 @@ import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import { CapabilitiesContext } from '../capabilities/CapabilitiesContext'
 import { MorphContext, type MorphState } from '../components/morph/MorphContext'
 import { NARROW_VIEWPORT_QUERY } from '../hooks/useIsNarrowViewport'
+import { DEFAULT_IDLE_MS } from '../hooks/useAutoHideChrome'
+import { FIRST_RUN_HOLD_MS } from '../hooks/useViewerChrome'
+import { COARSE_POINTER_QUERY } from '../lib/mapGestures'
 import i18n from '../i18n'
 import { clearBlurPlaceholderCache } from '../lib/blurPlaceholder'
 import { readGridScroll, writeGridScroll } from '../lib/gridScroll'
@@ -3061,5 +3064,125 @@ describe('the first frame while the photo is still on the wire', () => {
     expect(screen.queryByRole('group', { name: 'Photo views' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Library actions' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Back to the list' })).toBeInTheDocument()
+  })
+})
+
+/**
+ * The one-time hint. A viewer whose controls have just faded looks broken to
+ * someone who has never been told that a tap brings them back — and a phone
+ * offers no pointer move to stumble on the answer with. These pin the two halves
+ * of the answer: the chrome is held up longer the first time, and when it does go
+ * it says how to get it back — once per device, never on the fiftieth photo.
+ */
+describe('the first-run chrome hint on a phone', () => {
+  const HINT = 'Tap the photo to bring the controls back'
+
+  /** A finger-pointed phone: both the narrow width and the coarse pointer. */
+  function mockPhone(): void {
+    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+      matches: query === NARROW_VIEWPORT_QUERY || query === COARSE_POINTER_QUERY,
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }))
+  }
+
+  /** Runs the clock to the first fade: the first-run hold, then the idle. */
+  function fadeChrome(): void {
+    act(() => {
+      vi.advanceTimersByTime(FIRST_RUN_HOLD_MS)
+    })
+    act(() => {
+      vi.advanceTimersByTime(DEFAULT_IDLE_MS)
+    })
+  }
+
+  beforeEach(() => {
+    window.localStorage.removeItem('kukatko.viewer.chromeHintSeen')
+    // `shouldAdvanceTime` keeps the page's own async work (fetches, findBy*)
+    // running while the idle timers are driven by hand.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    mockPhone()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    window.localStorage.removeItem('kukatko.viewer.chromeHintSeen')
+  })
+
+  it('holds the chrome up past the ordinary idle, then explains its going', async () => {
+    const { container } = renderPage()
+    await screen.findByRole('heading', { name: 'Beach' })
+
+    // The moment the bar would normally have gone: still there, and silent —
+    // there is nothing to explain while the controls are on screen.
+    act(() => {
+      vi.advanceTimersByTime(DEFAULT_IDLE_MS)
+    })
+    expect(viewer(container)).toHaveAttribute('data-chrome', 'visible')
+    expect(screen.queryByText(HINT)).toBeNull()
+
+    fadeChrome()
+    expect(viewer(container)).toHaveAttribute('data-chrome', 'hidden')
+    expect(screen.getByText(HINT)).toBeInTheDocument()
+  })
+
+  it('never says it twice on the same device', async () => {
+    const first = renderPage()
+    await screen.findByRole('heading', { name: 'Beach' })
+    fadeChrome()
+    expect(screen.getByText(HINT)).toBeInTheDocument()
+    first.unmount()
+
+    const { container } = renderPage()
+    await screen.findByRole('heading', { name: 'Beach' })
+    // No hold either: the second photo fades on the ordinary idle.
+    act(() => {
+      vi.advanceTimersByTime(DEFAULT_IDLE_MS)
+    })
+    expect(viewer(container)).toHaveAttribute('data-chrome', 'hidden')
+    expect(screen.queryByText(HINT)).toBeNull()
+  })
+
+  it('says nothing at all where there is a mouse', async () => {
+    mockViewport(false)
+    const { container } = renderPage()
+    await screen.findByRole('heading', { name: 'Beach' })
+
+    act(() => {
+      vi.advanceTimersByTime(DEFAULT_IDLE_MS)
+    })
+    expect(viewer(container)).toHaveAttribute('data-chrome', 'hidden')
+    expect(screen.queryByText(HINT)).toBeNull()
+  })
+})
+
+/**
+ * jsdom computes no layout, so where the hint lands — clear of the bottom edge
+ * and of the home indicator, and above all not in the way of the very tap it is
+ * asking for — is pinned by reading the stylesheet.
+ */
+describe('the chrome hint stylesheet', () => {
+  const css = readCss('src/components/photo/viewer.css')
+  const hint = declarations(ruleBody(css, /\.kk-viewer__hint\s*(?=\{)/) ?? '')
+
+  it('never swallows the tap it asks for', () => {
+    expect(hint.get('pointer-events')).toBe('none')
+  })
+
+  it('sits above the bottom edge, clear of the home indicator', () => {
+    expect(hint.get('position')).toBe('absolute')
+    const bottom = hint.get('bottom') ?? ''
+    // Well up from the edge — where the dock will reappear — and carrying the
+    // inset itself, exactly as the dock does (`viewport-fit=cover` is real).
+    expect(bottom).toMatch(/^calc\(/)
+    expect(bottom).toContain('env(safe-area-inset-bottom, 0px)')
+    // Above the dock's layer for the moment their fades cross, below the
+    // persistent back control (5).
+    expect(Number(hint.get('z-index'))).toBeGreaterThan(3)
   })
 })

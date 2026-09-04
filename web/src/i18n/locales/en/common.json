@@ -1980,6 +1980,7 @@
       "infoWithComments_other": "Info – {{count}} comments",
       "closeInfo": "Close info",
       "actions": "Photo actions",
+      "tapHint": "Tap the photo to bring the controls back",
       "assess": "Photo assessment",
       "views": "Photo views",
       "library": "Library actions",

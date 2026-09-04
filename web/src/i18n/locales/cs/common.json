@@ -2068,6 +2068,7 @@
       "infoWithComments_other": "Informace – {{count}} komentářů",
       "closeInfo": "Zavřít informace",
       "actions": "Akce s fotkou",
+      "tapHint": "Klepnutím na fotku vrátíte ovládání",
       "assess": "Hodnocení fotky",
       "views": "Zobrazení fotky",
       "library": "Akce s knihovnou",
