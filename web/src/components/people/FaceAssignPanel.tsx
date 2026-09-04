@@ -2,18 +2,45 @@ import { useState } from 'react'
 import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
 
+import { type Frame, padBbox, squareCrop } from '../../lib/faceGeometry'
 import { hasEmbedding, isNamed } from '../../lib/faceState'
 import { type FaceView, type SubjectCount, type Suggestion } from '../../services/people'
 import { Icon } from '../Icon'
 import { AddAutocomplete } from '../photo/AddAutocomplete'
+import { FaceCrop } from './FaceCrop'
 
 /** The identity an assignment names a face with. */
 export type SubjectChoice = Pick<Suggestion, 'subject_uid' | 'subject_name'>
+
+/**
+ * The edge length of the panel's face crop, in CSS pixels. Deliberately far
+ * larger than the 44px thumbnail on the row above it: that one is a
+ * cross-reference ("this row, that box"), this one is the evidence — on a group
+ * photograph the marker itself can be a dozen pixels across, and nobody should be
+ * asked to put a name to a face they cannot see.
+ */
+const PANEL_FACE_SIZE = 96
+
+/**
+ * How much context the panel's crop keeps around the face box — the review
+ * card's 30 %. A crop cut tight to the detector's rectangle is a mask, not a
+ * person; the padding gives back the hair and the chin that make somebody
+ * recognisable.
+ */
+const PANEL_FACE_PADDING = 0.3
 
 /** Props for {@link FaceAssignPanel}. */
 export interface FaceAssignPanelProps {
   /** The face being named. */
   face: FaceView
+  /** The photo the face is on — the crop is cut from its thumbnail. */
+  photoUid: string
+  /**
+   * The photo's display frame (after EXIF orientation), or null while it is still
+   * unknown. Without it the crop is left out rather than guessed: a crop squared
+   * against the wrong frame shows a stretched stranger.
+   */
+  frame: Frame | null
   /** Every subject in the library, for the typeahead. */
   subjects: SubjectCount[]
   /** True while the subject list is still loading (the typeahead waits for it). */
@@ -51,9 +78,18 @@ function confidencePct(confidence: number): string {
  * A face with no embedding says so: it is the honest explanation of an empty
  * suggestion list (there is nothing to rank neighbours against), and it tells the
  * reader that this panel, by hand, is the *only* way that face will ever be named.
+ *
+ * **The panel leads with an enlarged crop of the face it is naming.** The
+ * marker on the photograph is only as big as the face, and on a crowd that is a
+ * handful of pixels — the highlight says *which* face, this says *who*. It costs
+ * no extra download: it is a region of the same thumbnail the page already has
+ * (`FaceCrop`), and it is cut square in pixel space (`squareCrop`) so nobody is
+ * shown a stretched version of themselves.
  */
 export function FaceAssignPanel({
   face,
+  photoUid,
+  frame,
   subjects,
   subjectsLoading = false,
   busy,
@@ -88,21 +124,33 @@ export function FaceAssignPanel({
         }
       }}
     >
-      <div className="d-flex justify-content-between align-items-start mb-2">
-        <strong>
-          {assigned
-            ? t('faces.panel.assignedTo', { name: face.subject_name })
-            : t('faces.panel.title')}
-        </strong>
-        <Button
-          variant="outline-secondary"
-          size="sm"
-          onClick={onClose}
-          aria-label={t('faces.panel.close')}
-          title={t('faces.panel.close')}
-        >
-          ✕
-        </Button>
+      <div className="d-flex align-items-start gap-3 mb-2">
+        {frame !== null && (
+          <FaceCrop
+            photoUid={photoUid}
+            crop={squareCrop(padBbox(face.bbox, PANEL_FACE_PADDING), frame)}
+            frame={frame}
+            label={t('faces.panel.crop')}
+            size={PANEL_FACE_SIZE}
+            className="rounded flex-shrink-0"
+          />
+        )}
+        <div className="d-flex justify-content-between align-items-start flex-grow-1 kk-min-w-0">
+          <strong>
+            {assigned
+              ? t('faces.panel.assignedTo', { name: face.subject_name })
+              : t('faces.panel.title')}
+          </strong>
+          <Button
+            variant="outline-secondary"
+            size="sm"
+            onClick={onClose}
+            aria-label={t('faces.panel.close')}
+            title={t('faces.panel.close')}
+          >
+            ✕
+          </Button>
+        </div>
       </div>
 
       {assigned && (

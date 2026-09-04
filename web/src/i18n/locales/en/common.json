@@ -1869,7 +1869,8 @@
       "assign": "Assign",
       "reassign": "Reassign",
       "cancelReassign": "Cancel reassign",
-      "closePanel": "Close the faces panel"
+      "closePanel": "Close the faces panel",
+      "crop": "The face being named"
     },
     "count": "Faces: {{count}}",
     "row": {

@@ -1,0 +1,117 @@
+/*
+ * The face markers drawn over the photograph on the photo detail
+ * (`FaceOverlay`). Everything here exists in CSS rather than inline for the same
+ * reason the outlier card's `.kk-face-marker` does: the two promises the markers
+ * have to keep — "never too small to see" and "the selected one is unmistakable"
+ * — are `max()`/`clamp()` arithmetic against the *rendered* photograph, whose
+ * pixel size no component knows (the viewer fits it to whatever room is left).
+ * JS supplies only the geometry, as the `--kk-face-*` custom properties
+ * `lib/faceGeometry` `faceMarkerStyle` emits.
+ */
+
+.kk-face-layer {
+  /* The smallest a marker is ever drawn, and the floor the dimming veil's hole
+     uses too, so the two always agree. Inherited by both from the layer, which
+     is also where a phone raises it below.
+
+     Why a floor at all: a marker is exactly as big as the face it traces, and on
+     a group photograph that is nothing. Measured on a concert photo with 18
+     detections, the smallest marker rendered about 8 x 9 CSS pixels — a mark
+     nobody can tie to "Unnamed face 12" in the panel beside it. */
+  --kk-face-min: 32px;
+}
+
+/* On a coarse pointer the drawn marker grows to the touch floor, so what the
+   reader sees is what they can hit: the invisible 44px hit box in `app.css` is
+   already there, and a visible mark smaller than its own target reads as a
+   missed tap when the tap in fact landed. */
+@media (pointer: coarse) {
+  .kk-face-layer {
+    --kk-face-min: 44px;
+  }
+}
+
+.kk-face-box {
+  /* Anchored on the face's centre and pulled back by half its own size, so
+     hitting the floor grows the marker *around* the face instead of dragging it
+     off. The clamp keeps that grown box inside the photograph, which is what
+     stops a marker on a face at the very edge of the frame from being drawn
+     half outside it. */
+  left: clamp(
+    calc(var(--kk-face-min) / 2),
+    var(--kk-face-x, 50%),
+    calc(100% - var(--kk-face-min) / 2)
+  );
+  top: clamp(
+    calc(var(--kk-face-min) / 2),
+    var(--kk-face-y, 50%),
+    calc(100% - var(--kk-face-min) / 2)
+  );
+  width: max(var(--kk-face-w, 100%), var(--kk-face-min));
+  height: max(var(--kk-face-h, 100%), var(--kk-face-min));
+  transform: translate(-50%, -50%);
+  border-radius: 0.125rem;
+  /* Only the paint moves — never the geometry, which would slide the outline off
+     its face. Built on the duration token, so `prefers-reduced-motion` collapses
+     it to an instant change (see `tokens.css`). */
+  transition:
+    border-color var(--kk-duration-base) var(--kk-ease-standard),
+    box-shadow var(--kk-duration-base) var(--kk-ease-standard);
+}
+
+/*
+ * The dimming veil: everything except the selected face goes quiet, which is how
+ * the review game makes one face unmistakable on a crowded photograph
+ * (`review/review.css` `.review-photo__box`). Same trick, same numbers — a huge
+ * translucent spread clipped by a container — but here the container is the veil
+ * itself rather than a borrowed one, so the layer above it keeps the overflow it
+ * needs for a quarter-turned photograph and for the labels that reach outside
+ * their boxes.
+ *
+ * `pointer-events: none` is what keeps it decoration: hit testing skips it
+ * entirely, so the markers underneath still take their clicks.
+ */
+.kk-face-dim {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+  animation: kk-face-dim-in var(--kk-duration-base) var(--kk-ease-standard);
+}
+
+@keyframes kk-face-dim-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+/* The hole in the veil, on the selected face and sized by the same floor as the
+   marker that traces it — the two are drawn from one geometry, so the lit patch
+   is never smaller than the outline sitting in it. The two shadows are
+   `review.css`'s own, down to the alphas: a photograph with a single large face
+   gets the same gentle treatment there and it has never read as heavy-handed. */
+.kk-face-dim__hole {
+  position: absolute;
+  left: clamp(
+    calc(var(--kk-face-min) / 2),
+    var(--kk-face-x, 50%),
+    calc(100% - var(--kk-face-min) / 2)
+  );
+  top: clamp(
+    calc(var(--kk-face-min) / 2),
+    var(--kk-face-y, 50%),
+    calc(100% - var(--kk-face-min) / 2)
+  );
+  width: max(var(--kk-face-w, 100%), var(--kk-face-min));
+  height: max(var(--kk-face-h, 100%), var(--kk-face-min));
+  transform: translate(-50%, -50%);
+  border-radius: 0.125rem;
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 55%),
+    0 0 0 9999px rgb(0 0 0 / 35%);
+}

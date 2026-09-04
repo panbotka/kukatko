@@ -1947,7 +1947,8 @@
       "assign": "Přiřadit",
       "reassign": "Přeřadit",
       "cancelReassign": "Zrušit přeřazení",
-      "closePanel": "Zavřít panel obličejů"
+      "closePanel": "Zavřít panel obličejů",
+      "crop": "Pojmenovávaný obličej"
     },
     "count": "Obličejů: {{count}}",
     "row": {

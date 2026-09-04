@@ -319,6 +319,8 @@ export function FacesPanel({
                     // the typed name, so no state leaks from the previous face.
                     key={face.face_index}
                     face={face}
+                    photoUid={photoUid}
+                    frame={frame}
                     subjects={subjects}
                     subjectsLoading={subjectsLoading}
                     busy={faces.busy}

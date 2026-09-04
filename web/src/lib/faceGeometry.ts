@@ -214,10 +214,13 @@ function markerPct(v: number): string {
   return `${Math.round(clampUnit(v) * 1e6) / 1e4}%`
 }
 
+/** The whole frame, i.e. the crop that crops nothing. */
+const FULL_FRAME: Bbox = [0, 0, 1, 1]
+
 /**
  * Describes the face rectangle inside a context crop as the four `--kk-face-*`
- * custom properties the `.kk-face-marker` rule consumes: the box's **centre** and
- * its size, both as percentages of the crop.
+ * custom properties the `.kk-face-marker` and `.kk-face-box` rules consume: the
+ * box's **centre** and its size, both as percentages of the crop.
  *
  * It is the centre-anchored twin of {@link boxWithinCrop}, and the reason is the
  * minimum apparent size the stylesheet enforces. A marker that grows from its
@@ -227,10 +230,14 @@ function markerPct(v: number): string {
  * makes the rule survive a jsdom test — its CSSOM mangles `clamp()` in `left`,
  * but passes custom properties through verbatim.
  *
+ * The crop defaults to the whole frame, which is the case of the markers drawn
+ * straight onto the photograph (`FaceOverlay`): there the bbox's own percentages
+ * already are percentages of the layer.
+ *
  * A degenerate (zero-area) crop yields a centred, full-size marker rather than
  * NaNs.
  */
-export function faceMarkerStyle(bbox: Bbox, crop: Bbox): FaceMarkerStyle {
+export function faceMarkerStyle(bbox: Bbox, crop: Bbox = FULL_FRAME): FaceMarkerStyle {
   const [x, y, w, h] = bbox
   const [cx, cy, cw, ch] = crop
   if (cw <= 0 || ch <= 0) {

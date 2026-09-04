@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   displayFrame,
+  faceMarkerStyle,
   padBbox,
   readingOrder,
   rotateBbox,
@@ -285,5 +286,42 @@ describe('rotatedFrameStyle', () => {
     expect(rotatedFrameStyle(90, undefined)).toEqual(filled)
     expect(rotatedFrameStyle(90, 0)).toEqual(filled)
     expect(rotatedFrameStyle(90, Number.NaN)).toEqual(filled)
+  })
+})
+
+describe('faceMarkerStyle', () => {
+  it('describes the face by its centre and its size within the crop', () => {
+    // The centre is what lets the stylesheet enforce a minimum apparent size:
+    // a box grown from its top-left corner slides off the face, one grown from
+    // its centre grows around it.
+    expect(faceMarkerStyle([0.2, 0.2, 0.4, 0.4], [0.1, 0.1, 0.8, 0.8])).toEqual({
+      '--kk-face-x': '37.5%',
+      '--kk-face-y': '37.5%',
+      '--kk-face-w': '50%',
+      '--kk-face-h': '50%',
+    })
+  })
+
+  it('takes the whole frame as the crop by default', () => {
+    // Which is the case of the markers drawn straight onto the photograph
+    // (`FaceOverlay`): the bbox's percentages already are the layer's.
+    expect(faceMarkerStyle([0.1, 0.2, 0.3, 0.4])).toEqual({
+      '--kk-face-x': '25%',
+      '--kk-face-y': '40%',
+      '--kk-face-w': '30%',
+      '--kk-face-h': '40%',
+    })
+    expect(faceMarkerStyle([0.1, 0.2, 0.3, 0.4])).toEqual(
+      faceMarkerStyle([0.1, 0.2, 0.3, 0.4], [0, 0, 1, 1]),
+    )
+  })
+
+  it('centres a full-size marker on a degenerate crop rather than emitting NaNs', () => {
+    expect(faceMarkerStyle([0.1, 0.2, 0.3, 0.4], [0, 0, 0, 0])).toEqual({
+      '--kk-face-x': '50%',
+      '--kk-face-y': '50%',
+      '--kk-face-w': '100%',
+      '--kk-face-h': '100%',
+    })
   })
 })

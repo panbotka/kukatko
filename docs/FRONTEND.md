@@ -2216,12 +2216,16 @@ here.
   The boxes are colored by state (`lib/faceState`) — **two colors: green = named, yellow = not named**, deliberately
   no third one (see the `faceState.ts` note below); the selected one is primary + a ring, and every box carries a
   **number `#N`** — in **reading order**, see `useFaces` below. **A name is drawn only on the ACTIVE box**
-  (hovered, focused or selected; `zIndex: 1` lifts it over the neighbours it reaches across). Drawing every name at
+  (hovered, focused or selected; the z-ladder lifts it over the neighbours it reaches across, and over the veil that
+  dims the rest of the photograph while a face is selected). Drawing every name at
   once is what the overlay used to do, and with two people side by side one label lay across another and across a
   third box — on a fifteen-person group photo an unreadable pile, and `faces:3 face:new` alone returns 2 937 photos.
   The other names are one hover away in the panel, whose rows carry the crops.
   Hovering a box highlights the row in the panel and vice versa (`hovered`/`onHover`
-  held by the page). A click on a box or on a panel row = the same selection (and opens the drawer).
+  held by the page) — **from focus as well as hover on both sides**, so the keyboard and a finger pair too, and the
+  pointed-at box takes a **white halo** (`0 0 0 2px rgba(255,255,255,0.7)`) rather than only a pixel of extra border:
+  at the minimum marker size that difference is not findable among eighteen of them. The selected box keeps its
+  primary tint. A click on a box or on a panel row = the same selection (and opens the drawer).
   **On touch** the pair still works: a box is only as big as the face, so on `pointer: coarse` `.kk-face-box`
   grows an **invisible 44px hit box** around it (an `::after` in `app.css`, `min-*: 100%` so a face already
   bigger keeps its own target and the **drawn outline never changes**; `pointer-events` is inherited, so a
@@ -3675,7 +3679,7 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   and three buttons reading zero are a strip that only takes space; every control writes straight into
   the URL via `SetUrlState<PeopleView>`, **pushing** except the live-typed query, which replaces),
   `FaceOverlay`+`FacesPanel`+`FaceAssignPanel` (`FaceOverlay` = a **purely presentational** transparent layer
-  of clickable boxes from the normalized bbox via `faceBoxStyle`, **no image or fetch of its own** —
+  of clickable boxes from the normalized bbox via `faceMarkerStyle`, **no image or fetch of its own** —
   it mounts as the last child of the `position-relative` wrapper tight around the `<img>`. Its `measured` prop
   (default `true`) says whether that wrapper is the **measured** image (`useImageFrame`) or still an estimate;
   while it is `false` the layer renders **empty**, because percentages are only as good as the box they are
@@ -3687,8 +3691,27 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `pointer-events:none`, otherwise they would steal the click and break the swipe). A box carries `.kk-face-box` = an invisible
   44px hitbox on `pointer: coarse` (see app.css below), so even a small face can be hit on a phone, and it reports
   the pairing with the panel from **focus** too, not only from hover (a finger doesn't hover, but a tap focuses the box).
-  **The name tag is drawn only on the active box** (hovered/focused/selected — all three arrive as `hovered`) and that box
-  gets `zIndex: 1`; see the viewer section above for why every name at once was unreadable. The data +
+  **A box is never drawn smaller than a floor the reader can see.** Traced exactly it is only as big as its face, and
+  on a group photograph that is nothing — measured on a concert photo with 18 detections the smallest one rendered
+  about **8 × 9 CSS px**, a mark nobody can tie to the row asking them to name „Nepojmenovaný obličej 12". So the
+  geometry is emitted as the same `--kk-face-*` custom properties the outlier card uses (`faceMarkerStyle`, whose
+  `crop` argument now defaults to the whole frame) and `components/people/faceOverlay.css` does the `max()`/`clamp()`
+  against the rendered photograph, whose px size no component knows: `--kk-face-min: 32px` on `.kk-face-layer`
+  (raised to **44px on `pointer: coarse`**, so what the reader sees is what they can hit), centre-anchored via
+  `translate(-50%,-50%)` so hitting the floor grows the box **around** its face, and clamped so a face at the very
+  edge of the frame is not drawn half outside it.
+  **The selected face is lit and the rest of the photograph dimmed** — the review game's own treatment, reused rather
+  than reinvented (`.kk-face-dim`/`.kk-face-dim__hole` = the `0 0 0 9999px` spread of `review.css`'s
+  `.review-photo__box`, on a hole placed by the same `faceMarkerStyle` geometry as the marker sitting in it). It is
+  its **own** clipping container (`overflow: hidden`) rather than a borrowed one, so the layer above keeps the
+  overflow that a quarter-turned photo and the outside-the-box labels need; it is `pointer-events: none` (hit testing
+  skips it, the markers under it still take their clicks) and `aria-hidden`; and the z-ladder inside the layer is
+  *quiet markers (auto) → veil (1) → hovered (2) → selected (3)*, so the unselected boxes stay visible but stop
+  competing. It fades in on `--kk-duration-base`, i.e. instantly under `prefers-reduced-motion`.
+  **The name tag is drawn only on the active box** (hovered/focused/selected — all three arrive as `hovered`);
+  see the viewer section above for why every name at once was unreadable. The **number badge** hangs above its box
+  except within 6 % of the top edge, where it is drawn inside it instead — outside the frame the container's
+  overflow eats it. The data +
   the naming state machine
   are held by the `useFaces` hook. **`FacesPanel`** = the panel in the viewer's drawer, the single place where assignment happens:
   a row per face = **the number badge** (the same mark as on the box, the cross-reference to the photo) + **a round 44px
@@ -3720,7 +3743,11 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   phone the drawer is a short bottom sheet that scrolls itself and has to be able to *lift* the cap — an inline
   style would outrank the media query that does it. Under the selected row
   `FaceAssignPanel` expands
-  (`key={face_index}` → the state resets when the selection changes). **`FaceAssignPanel`** = the top-3 suggestions
+  (`key={face_index}` → the state resets when the selection changes). **`FaceAssignPanel`** = **a 96px `FaceCrop` of the face being
+  named** (`padBbox(0.3)`+`squareCrop`, alt `faces.panel.crop`; left out entirely while `faces.frame` is null, since a
+  crop squared against the wrong frame shows a stretched stranger) beside the title and the close button — the
+  highlight on the photograph says *which* face, this says *who*, and it costs no extra download, being a region of a
+  thumbnail the page already holds — then the top-3 suggestions
   (`{name} · {confidence}%`, one-tap) + a typeahead over `useSubjects` (`AddAutocomplete` with `autoFocus`
   and `hint` = the person's photo count); a face with no embedding leads with a muted note saying so, which is also
   the honest explanation of its empty suggestion list; for an assigned face **Přeřadit** (suggestions, which the backend supplies

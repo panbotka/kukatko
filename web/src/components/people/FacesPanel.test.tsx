@@ -238,6 +238,29 @@ describe('FacesPanel', () => {
     expect(screen.queryByText(/Face #/)).not.toBeInTheDocument()
   })
 
+  it('shows the selected face enlarged, where the naming happens', () => {
+    // The marker on the photograph is only as big as the face, and on a crowd
+    // that is a handful of pixels: the highlight says WHICH face, this says WHO.
+    // It costs no extra download — it is a region of a thumbnail the page has.
+    const face = faceView({ face_index: 0 })
+    renderPanel(facesResult({ faces: [face], selected: face }))
+
+    const crop = screen.getByRole('img', { name: 'The face being named' })
+    expect(crop.getAttribute('src')).toMatch(/\/photos\/ph_1\/thumb\/fit_\d+$/)
+    // Inside the naming panel, not merely somewhere on the page.
+    expect(screen.getByLabelText('Name this face')).toContainElement(crop)
+  })
+
+  it('leaves the naming panel cropless while the frame is still unknown', () => {
+    // A crop squared against the wrong frame shows a stretched stranger, which is
+    // worse than no crop at all — the row's number and the highlight still pair.
+    const face = faceView({ face_index: 0 })
+    renderPanel(facesResult({ faces: [face], selected: face, frame: null }))
+
+    expect(screen.queryByRole('img', { name: 'The face being named' })).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Name this face')).toBeInTheDocument()
+  })
+
   it('falls back to a person icon while the frame is still unknown', () => {
     // The crop needs the photo's frame; until it lands the slot is filled anyway,
     // so the list does not jump when it does.
