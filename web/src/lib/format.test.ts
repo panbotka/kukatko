@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   formatByteCount,
   formatBytes,
+  formatCaptureParts,
   formatCaptureRange,
   formatCount,
   formatDate,
@@ -145,6 +146,62 @@ describe('formatDateTimeMinutes', () => {
   it('returns the original string for an unparseable value', () => {
     expect(formatDateTimeMinutes('not-a-date', 'cs')).toBe('not-a-date')
     expect(formatDateTimeMinutes('', 'en')).toBe('')
+  })
+})
+
+describe('formatCaptureParts', () => {
+  const iso = '2026-03-09T14:05:40Z'
+
+  it('joins back into exactly the label it was cut from', () => {
+    // The whole point of the split: a caller that shows only `date` must be
+    // shortening the very string the rest of the app renders, not a lookalike.
+    for (const locale of ['cs', 'en', 'en-US', 'en-GB', 'de']) {
+      const parts = formatCaptureParts(iso, locale)
+      expect(parts.date + parts.separator + parts.time).toBe(formatDateTimeMinutes(iso, locale))
+    }
+  })
+
+  it('keeps the year on the date side, whichever end the locale puts it', () => {
+    // Czech ends the date with the year ("9. 3. 2026"), US English ends it with
+    // the year too but leads with the month — either way it must survive the cut,
+    // because dropping the time is what a narrow header does INSTEAD of losing it.
+    expect(formatCaptureParts(iso, 'cs').date).toContain('2026')
+    expect(formatCaptureParts(iso, 'en-US').date).toContain('2026')
+  })
+
+  it('leaves no clock on the date side and no calendar on the time side', () => {
+    const minute = String(new Date(iso).getMinutes()).padStart(2, '0')
+    for (const locale of ['cs', 'en-US']) {
+      const parts = formatCaptureParts(iso, locale)
+      expect(parts.date).not.toMatch(/\d{1,2}:\d\d/)
+      expect(parts.time).toContain(`:${minute}`)
+      expect(parts.time).not.toContain('2026')
+    }
+  })
+
+  it('carries the AM/PM with the time it qualifies', () => {
+    // "5:17" without its "PM" would be worse than no time at all, so the day
+    // period belongs to the part that is dropped as a whole.
+    const parts = formatCaptureParts(iso, 'en-US')
+    expect(parts.time).toMatch(/[AP]M/)
+    expect(parts.date).not.toMatch(/[AP]M/)
+  })
+
+  it('gives the separator to the time, so the date never keeps a dangling space', () => {
+    for (const locale of ['cs', 'en-US']) {
+      const { date, separator } = formatCaptureParts(iso, locale)
+      expect(separator.trim()).not.toBe(' ')
+      expect(date).toBe(date.trimEnd())
+    }
+  })
+
+  it('returns the original string as the date for an unparseable value', () => {
+    expect(formatCaptureParts('not-a-date', 'cs')).toEqual({
+      date: 'not-a-date',
+      separator: '',
+      time: '',
+    })
+    expect(formatCaptureParts('', 'en')).toEqual({ date: '', separator: '', time: '' })
   })
 })
 

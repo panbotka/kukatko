@@ -48,7 +48,7 @@ import { useViewportBox } from '../hooks/useViewportBox'
 import { useViewerChrome } from '../hooks/useViewerChrome'
 import { backHref, DETAIL_DEFAULTS, detailQueryString, detailToParams } from '../lib/detailView'
 import { readFaceOverlay, writeFaceOverlay } from '../lib/faceOverlayPref'
-import { formatDateTimeMinutes } from '../lib/format'
+import { formatCaptureParts, formatDateTimeMinutes } from '../lib/format'
 import { gridScrollKey, rememberGridPhoto } from '../lib/gridScroll'
 import {
   editPreviewStyle,
@@ -852,6 +852,12 @@ export function PhotoDetailPage() {
   const captureDate =
     photo.taken_at !== undefined ? formatDateTimeMinutes(photo.taken_at, i18n.language) : ''
   const displayTitle = photoDisplayTitle(titleSource(photo, i18n.language), captureDate)
+  // The very same label, cut at the seam between the day and the clock. The
+  // heading renders the two as separate elements so a phone-width bar can drop the
+  // time and keep the date: the year sits at the END of the line in both locales,
+  // so an ellipsis is guaranteed to eat the most useful part of it first.
+  const capture =
+    photo.taken_at !== undefined ? formatCaptureParts(photo.taken_at, i18n.language) : null
   // The one-string form, for alt text, the players' titles and the browser tab.
   const title = photoName(photo)
 
@@ -1208,7 +1214,17 @@ export function PhotoDetailPage() {
           <h1 className="kk-viewer__title">
             {displayTitle.kind === 'facts' ? (
               <>
-                {displayTitle.date !== '' && <span>{displayTitle.date}</span>}
+                {displayTitle.date !== '' && capture !== null && (
+                  <span className="kk-viewer__title-date">
+                    {capture.date}
+                    {capture.time !== '' && (
+                      <span className="kk-viewer__title-time">
+                        {capture.separator}
+                        {capture.time}
+                      </span>
+                    )}
+                  </span>
+                )}
                 {displayTitle.place !== '' && (
                   <span className="kk-viewer__title-muted">
                     {displayTitle.date !== '' && <span aria-hidden="true"> · </span>}
@@ -1217,7 +1233,9 @@ export function PhotoDetailPage() {
                 )}
               </>
             ) : (
-              title
+              /* Wrapped rather than bare: the heading lays its parts out as flex
+                 items, and an anonymous one cannot carry the ellipsis. */
+              <span className="kk-viewer__title-text">{title}</span>
             )}
           </h1>
           {/* The flags that hold this photo back from the library, in words —

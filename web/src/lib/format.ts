@@ -107,6 +107,44 @@ export function formatDateTime(value: string | number | Date, locale: string): s
 }
 
 /**
+ * The one shape every "when was this taken" label is built from: a numeric date
+ * plus the clock to the minute. Held in one place so {@link formatDateTimeMinutes}
+ * and {@link formatCaptureParts} can never drift apart — the parts must join back
+ * into exactly the string, or a caller that shortens the label would be shortening
+ * a different one.
+ */
+const CAPTURE_FORMAT: Intl.DateTimeFormatOptions = {
+  year: 'numeric',
+  month: 'numeric',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+}
+
+/**
+ * The narrow no-break space (U+202F) CLDR writes in front of an English AM/PM.
+ * V8 replaces it with a plain space in `format` — and so in every other label the
+ * app renders — but hands it through untouched in `formatToParts`, which would
+ * leave {@link formatCaptureParts} joining back into a lookalike of
+ * {@link formatDateTimeMinutes} rather than into the string itself.
+ */
+const NARROW_NO_BREAK_SPACE = /\u202f/g
+
+/**
+ * The `formatToParts` part types that belong to the clock rather than to the
+ * calendar day. `dayPeriod` (AM/PM) and `timeZoneName` are on this side too: they
+ * qualify the time, and an English label reading "5:17" without its "PM" would be
+ * worse than no time at all.
+ */
+const TIME_PARTS = new Set<Intl.DateTimeFormatPartTypes>([
+  'hour',
+  'minute',
+  'second',
+  'dayPeriod',
+  'timeZoneName',
+])
+
+/**
  * Formats a timestamp as a locale-aware date and time to the minute, dropping the
  * seconds `toLocaleString` includes by default: "10. 7. 2026 23:03" rather than
  * "10. 7. 2026 23:03:40". Nobody reading when a photo was taken needs the second
@@ -121,13 +159,60 @@ export function formatDateTimeMinutes(value: string | number | Date, locale: str
   if (date === null) {
     return typeof value === 'string' ? value : ''
   }
-  return date.toLocaleString(locale, {
-    year: 'numeric',
-    month: 'numeric',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  })
+  return new Intl.DateTimeFormat(locale, CAPTURE_FORMAT).format(date)
+}
+
+/** {@link formatDateTimeMinutes}, cut at the seam between the day and the clock. */
+export interface CaptureParts {
+  /**
+   * The calendar day, e.g. "7. 9. 2019" or "9/7/2019". The part a reader needs —
+   * losing the year off the end of it is the failure this split exists to prevent.
+   */
+  date: string
+  /** Whatever the locale writes between the two, e.g. `" "` or `", "`. */
+  separator: string
+  /** The clock to the minute, e.g. "17:17" or "5:17 PM"; empty when the locale writes none. */
+  time: string
+}
+
+/**
+ * Splits {@link formatDateTimeMinutes} into the calendar day and the clock, so a
+ * caller with too little room can drop the time and keep the date rather than let
+ * the whole label truncate — which, since the year sits at the end in both of the
+ * app's locales, is exactly what an ellipsis eats first.
+ *
+ * The seam is found through `formatToParts` rather than by splitting on a space:
+ * the order and the separator are the locale's business ("7. 9. 2019 17:17" but
+ * "9/7/2019, 5:17 PM"), and only the formatter knows which run of characters is
+ * the clock. `date + separator + time` is always exactly what
+ * {@link formatDateTimeMinutes} returns for the same input.
+ *
+ * Invalid inputs render as the original string (or empty for non-strings) in
+ * `date`, with no time — like the rest of this module.
+ */
+export function formatCaptureParts(value: string | number | Date, locale: string): CaptureParts {
+  const date = toDate(value)
+  if (date === null) {
+    return { date: typeof value === 'string' ? value : '', separator: '', time: '' }
+  }
+  const parts = new Intl.DateTimeFormat(locale, CAPTURE_FORMAT).formatToParts(date)
+  const join = (from: number, to: number): string =>
+    parts
+      .slice(from, to)
+      .map((part) => part.value)
+      .join('')
+      .replace(NARROW_NO_BREAK_SPACE, ' ')
+  const clock = parts.findIndex((part) => TIME_PARTS.has(part.type))
+  // No clock, or a locale that opens with it: there is no seam to cut, so the
+  // whole label stays on the side that is never dropped.
+  if (clock <= 0) {
+    return { date: join(0, parts.length), separator: '', time: '' }
+  }
+  // The literal in front of the clock is the separator, and it goes with the time:
+  // hiding "17:17" must take its leading space with it, or the date keeps a
+  // trailing one.
+  const seam = parts[clock - 1].type === 'literal' ? clock - 1 : clock
+  return { date: join(0, seam), separator: join(seam, clock), time: join(clock, parts.length) }
 }
 
 /**

@@ -2075,6 +2075,26 @@ here.
   time, and when it does fade a pill above the dock says so (`.kk-viewer__hint` — `pointer-events: none`,
   so it never swallows the tap it asks for; `aria-hidden`, because the chrome only fades and stays in the
   accessibility tree). Strictly once per device — see `useViewerChrome` in the hooks catalogue.
+  **The header title keeps the year on a phone** (2026-09-05): the heading is the photo's primary
+  label — for an untitled photo the capture date — and at 393 px it read `7. 9. 201…`, truncating away
+  the one part of it a reader can't reconstruct, because the year sits at the end of the date in both
+  locales. The row is not overspending: the heading takes everything the fixed-size cluster leaves
+  (`flex: 1 1 auto` + `min-width: 0`), which for an **editor** at that width is a 96 px content box —
+  the rest is the back button's 3 rem clearance, the gap and four 44 px controls, none of which may
+  shrink. So three things give instead. The title is laid out as **parts** rather than one run of text
+  (`.kk-viewer__title` is a flex line; `.kk-viewer__title-date` is `flex: 0 0 auto` and never gives
+  way, `.kk-viewer__title-muted` — the place — and `.kk-viewer__title-text` — a real title — are what
+  yield and ellipsise). At phone width the line steps down to `1.05rem`, which is what turns a 109.5 px
+  Czech date into a 91.9 px one. And the heading is a **query container**
+  (`container-name: kk-viewer-heading`) rather than the bar reading a media query, because the room
+  left depends on the reader: the same 393 px gives an editor 96 px and a viewer 161 px. Under 13 rem
+  the clock goes (`.kk-viewer__title-time`, a span of its own inside the date — see
+  `formatCaptureParts` in `lib/format`) and the day stays; under 9 rem a place next to a date goes too,
+  since what survives of it there is a four-pixel stub of the separator. A place with **no** date is
+  never dropped (the sibling combinator guards it) — it is all such a photo has to be called. Desktop
+  is untouched: at the 768 px breakpoint the heading still measures ~260 px, well clear of both cuts.
+  Guarded by `styles/viewerTitle.test.ts` (the declarations, since jsdom evaluates no container query)
+  and `PhotoDetailPage.test.tsx` (the shape: the time is separable and what remains still says 2026).
   **The persistent way out** is `.kk-viewer__back` (a circle at top left, `photo.back`, **never fades**
   with the chrome) — **a back arrow, not a ✕** (N6/N20): the drawer carries its own ✕ and on a phone
   the two sat side by side as identical round crosses, so a tap meant for the panel closed the whole
@@ -2723,7 +2743,14 @@ here.
   one below it dropped — a village is often its own named place — and the **region left out**: an address
   is not a caption), `lib/format`
   `formatBytes(bytes, locale?)` (locale = decimal comma) and `formatByteCount` (the exact byte count
-  for the tooltip); `lib/photoEdit` = pure helpers
+  for the tooltip), `formatDateTimeMinutes` (a capture label to the minute) and `formatCaptureParts`
+  = the same label **cut at the seam** between the calendar day and the clock, `{ date, separator,
+  time }`, found through `Intl.formatToParts` because the order and the punctuation are the locale's
+  business (`7. 9. 2019 17:17` but `9/7/2019, 5:17 PM`) and the day period belongs to the clock. The
+  three join back into exactly what `formatDateTimeMinutes` returns — V8's narrow no-break space
+  before an English AM/PM normalised away, since `format` drops it and `formatToParts` does not — so a
+  caller that shows only `date` is shortening the app's own label rather than formatting a second one;
+  the viewer's header is that caller (above); `lib/photoEdit` = pure helpers
   edit→CSS (`editPreviewStyle`/`editFilter`/`editTransform`/`cropClipPath`/`isIdentityEdit`/
   `hasCrop`/`NEUTRAL_EDIT`) and the quarter-turn arithmetic `rotateBy(rotation,quarters)` with its two
   named directions `rotateLeft`/`rotateRight` — it normalises into the 0/90/180/270 the API accepts, which is

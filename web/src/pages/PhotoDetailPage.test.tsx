@@ -2487,6 +2487,81 @@ describe('PhotoDetailPage — immersive viewer', () => {
 
       expect(await screen.findByRole('heading', { name: 'Untitled' })).toBeInTheDocument()
     })
+
+    /**
+     * On a phone the bar's fixed-size controls leave the heading about 96 px, and
+     * the label used to truncate as one run of text — losing the year, which is
+     * the end of the date in both locales, and with it the only part a reader
+     * cannot reconstruct. The bar now sheds the CLOCK instead, which it can only
+     * do if the clock is an element of its own inside the date.
+     *
+     * jsdom evaluates no container query, so what is asserted here is the shape
+     * that makes the shortening possible: with the time element taken out, what
+     * remains still reads as a whole date, year included.
+     */
+    it('keeps the year when the header sheds the time on a narrow bar', async () => {
+      fetchPhotoMock.mockResolvedValue(
+        photo({ title: '', file_name: 'IMG_1234.jpg', taken_at: '2026-01-02T10:00:00Z' }),
+      )
+      renderPage()
+
+      const heading = await screen.findByRole('heading', { level: 1 })
+      const date = heading.querySelector('.kk-viewer__title-date')
+      if (date === null) {
+        throw new Error('the heading renders no capture date')
+      }
+      const time = date.querySelector('.kk-viewer__title-time')
+      if (time === null) {
+        throw new Error('the capture date renders no separable time')
+      }
+
+      // It really is a shortening of the app's own label, not a second formatting
+      // of the same instant.
+      const full = date.textContent
+      expect(full).toBe(
+        new Date('2026-01-02T10:00:00Z').toLocaleString('en', {
+          year: 'numeric',
+          month: 'numeric',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+        }),
+      )
+
+      // What the phone is left with once the clock is dropped.
+      const shortened = full.replace(time.textContent, '')
+      expect(shortened).toContain('2026')
+      expect(shortened).toBe(
+        new Date('2026-01-02T10:00:00Z').toLocaleDateString('en', {
+          year: 'numeric',
+          month: 'numeric',
+          day: 'numeric',
+        }),
+      )
+      expect(shortened).not.toMatch(/\d{1,2}:\d\d/)
+    })
+
+    it('lets the place give way rather than the date it follows', async () => {
+      // The two are separate elements for one reason: only the place may be
+      // ellipsised. If they ever fold back into one run of text, the year goes
+      // first again.
+      fetchPhotoMock.mockResolvedValue(
+        photo({
+          title: '',
+          file_name: 'IMG_1234.jpg',
+          taken_at: '2026-01-02T10:00:00Z',
+          place: { country: 'Czechia', region: 'South Moravia', city: 'Brno', place_name: '' },
+        }),
+      )
+      renderPage()
+
+      const heading = await screen.findByRole('heading', { level: 1 })
+      const date = heading.querySelector('.kk-viewer__title-date')
+      const place = heading.querySelector('.kk-viewer__title-muted')
+      expect(date?.textContent).toContain('2026')
+      expect(date?.textContent).not.toContain('Brno')
+      expect(place?.textContent).toContain('Brno')
+    })
   })
 
   describe('curation & metadata', () => {
