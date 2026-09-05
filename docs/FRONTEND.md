@@ -5600,6 +5600,26 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   correctly afterwards; and scroll restoration landed on exactly the same offset (377px, from 2400px) with
   the morph on and with it switched off through `prefers-reduced-motion` — so the position the grid comes
   back to is the app's existing behaviour, untouched),
+  `styles/fonts.css` (**the typeface, served from the binary** — six `@font-face` rules: Lato 300/400/700,
+  each in the `latin` and `latin-ext` subset, pointing at `woff2` files from the `@fontsource/lato`
+  package that Vite hashes into `internal/web/static/dist/assets` and `//go:embed` puts inside the
+  binary. It replaces the `fonts.googleapis.com` `@import` that opens Bootswatch's compiled theme (the
+  `css2?family=Lato:wght@300;400;700&display=swap` one) and that `build/localFonts.ts` now strips: for
+  a self-hosted family archive, sending every viewer's IP address and referrer to Google on every page
+  load is the wrong trade, and an instance on a LAN or behind a firewall lost its typeface altogether.
+  **The three weights are the ones Bootswatch asked for**, so the rendering is unchanged to the pixel —
+  the 500/600 the polish layer uses were never downloaded either and keep resolving against the weights
+  that exist (500 → 400, 600 → 700), italics stay synthesised. **`latin-ext` is not optional**: ě/š/č/ř/ž/ů
+  live there and the interface is Czech by default, so shipping only `latin` would drop every accented
+  letter back to the fallback face mid-word; the `unicode-range` pairs are Google's own, so a page with
+  no accented text still fetches only the ~23 kB `latin` file. `font-display: swap` matches the removed
+  import's `&display=swap`, and the fallback stack stays Bootswatch's own `--bs-font-sans-serif`
+  (`Lato, -apple-system, BlinkMacSystemFont, "Segoe UI", …`) so a font file that fails to load degrades
+  to the platform UI sans, never to a serif. Only `woff2` is referenced — the `woff` twins would double
+  the bytes in the binary for a browser that cannot run this app anyway. Verified on the built bundle:
+  no asset under `internal/web/static/dist` mentions `fonts.googleapis`/`fonts.gstatic`, and a page load
+  of the built SPA reports `performance.getEntriesByType('resource')` with **zero** cross-origin entries
+  while `document.fonts` holds `Lato 400`/`Lato 700` in both subsets as `loaded` from `/assets/…`),
   `styles/tokens.css` (**the design token layer** — the single source of truth for spacing, radii, elevation,
   motion and the typographic scale; imported **once** in `main.tsx` right after the Bootswatch CSS and **before**
   `app.css`, which consumes the tokens. Bootswatch Superhero remains the base theme — this is a layer
@@ -5893,6 +5913,22 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   goreleaser before-hook — leaves the checkout clean from one place. `build/gitkeep.test.ts` runs a
   real `vite build` over a scratch project (hence `// @vitest-environment node`: esbuild refuses to
   run under jsdom) and asserts the stale output is gone while the placeholder is back.
+
+  **`build/localFonts.ts` (`localFontsPlugin`, `enforce: 'pre'`, dev *and* build).** Bootswatch's
+  compiled theme opens with an `@import` of an absolute `fonts.googleapis.com` URL, and an absolute
+  `@import` is the one thing a CSS bundler cannot inline — Vite hoists it to the top of the built
+  stylesheet, so the self-contained binary called Google on every page load. The plugin's `transform`
+  removes that statement from any stylesheet before Vite's own CSS pipeline sees it (narrowly: only
+  imports pointing at `fonts.googleapis.com`/`fonts.gstatic.com`, so a genuine remote stylesheet import
+  is never silently dropped; the regex back-references the opening quote as the closing delimiter,
+  because the URL's own `family=Lato:wght@300;400;700` carries semicolons and stopping at the first one
+  cuts the statement in half). `generateBundle` with **`order: 'post'`** then re-checks the *finished*
+  assets and fails the build if any still names a font host — the spec's "check the built CSS, not just
+  the source" turned into a permanent gate, so a Bootswatch upgrade or a new dependency cannot quietly
+  re-introduce the request. `styles/fonts.css` supplies the typeface in its place. `build/localFonts.test.ts`
+  (again `// @vitest-environment node`) unit-tests the strip on both CSS spellings and on the imports it
+  must *not* touch, and runs two real `vite build`s: one proving the themed output comes out clean, one
+  with the strip disabled proving the guard actually sees the hoisted import rather than passing vacuously.
 
   **Installable PWA (`web/build/`, `src/pwa/`, `components/pwa/`).** The app installs to a phone
   home screen and opens standalone. Four pieces:

@@ -2,6 +2,10 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 
 import 'bootswatch/dist/superhero/bootstrap.min.css'
+// The theme's typeface, from files embedded in the binary. Bootswatch fetched
+// Lato from Google; `build/localFonts.ts` strips that remote `@import` and this
+// stylesheet declares the same weights locally, so a page load stays offline.
+import './styles/fonts.css'
 // The app's single icon set. `Icon` renders its glyphs as `bi bi-<name>` classes,
 // so the font must be loaded globally rather than per component.
 import 'bootstrap-icons/font/bootstrap-icons.css'

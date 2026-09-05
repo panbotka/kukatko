@@ -1,0 +1,104 @@
+/*
+ * The app's typeface, served from the binary.
+ *
+ * Bootswatch Superhero sets `--bs-font-sans-serif: Lato, -apple-system, …` and
+ * pulled the actual font files from Google with an `@import` at the top of its
+ * compiled stylesheet. For a self-hosted family archive that is the wrong
+ * trade: it sent every viewer's IP address and referrer to a third party on
+ * every page load, and an instance on a LAN or behind a firewall lost its
+ * typeface altogether. `build/localFonts.ts` strips that `@import` out of the
+ * theme at build time and this file replaces it — the same family, the same
+ * three weights, from files Vite hashes into `internal/web/static/dist/assets`
+ * and `//go:embed` puts inside the binary.
+ *
+ * Which weights: Bootswatch requested exactly 300, 400 and 700, so those three
+ * reproduce today's rendering to the pixel. The 500 and 600 the polish layer
+ * asks for were never downloaded either — CSS font matching resolves them
+ * against the weights that exist (500 → 400, 600 → 700), as it did before.
+ * Italics are synthesised, again as before.
+ *
+ * Which subsets: latin *and* latin-ext. The interface is Czech by default, and
+ * ě/š/č/ř/ž/ů all live in latin-ext; shipping only latin would drop every
+ * accented Czech letter back to the fallback face mid-word. The `unicode-range`
+ * pairs are Google's own, so a page with no accented text still fetches only
+ * the ~23 kB latin file.
+ *
+ * `font-display: swap` matches the `&display=swap` the removed import carried:
+ * text paints immediately in the fallback stack and re-renders in Lato. The
+ * fallback stack itself stays Bootswatch's (`--bs-font-sans-serif`), so a font
+ * file that fails to load degrades to the platform's UI sans, never to a serif.
+ *
+ * The files come from the `@fontsource/lato` package (Lato is SIL OFL 1.1);
+ * only `woff2` is referenced — every browser that runs this React 19 app
+ * supports it, and the `woff` twins would double the bytes in the binary for
+ * nobody.
+ */
+
+@font-face {
+  font-family: 'Lato';
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  src: url('@fontsource/lato/files/lato-latin-300-normal.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Lato';
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  src: url('@fontsource/lato/files/lato-latin-ext-300-normal.woff2') format('woff2');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'Lato';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('@fontsource/lato/files/lato-latin-400-normal.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Lato';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('@fontsource/lato/files/lato-latin-ext-400-normal.woff2') format('woff2');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'Lato';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('@fontsource/lato/files/lato-latin-700-normal.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Lato';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('@fontsource/lato/files/lato-latin-ext-700-normal.woff2') format('woff2');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}

@@ -21,6 +21,8 @@ library were removed in August 2026; the only import left is `kukatko import dir
   component (one set, decorative `aria-hidden`). i18n via i18next: **Czech default**, English.
   Virtualize long grids/lists via **`react-virtuoso`**. Map view via
   **`leaflet`** + **`leaflet.markercluster`** (tiles via a backend proxy, the key stays server-side).
+  **Webfonts ship inside the binary** (`@fontsource/lato` → `styles/fonts.css`); no built asset may
+  reference a font CDN — `build/localFonts.ts` strips Bootswatch's `@import` and fails the build otherwise.
   Markdown **only** via the `Markdown` component (`react-markdown` + **`rehype-sanitize`**, never optional).
   Blurred image placeholders decode via **`blurhash`** (woltapp, the flavour `internal/blurhash` writes),
   **only** through the `BlurPlaceholder` component.

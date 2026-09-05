@@ -257,6 +257,9 @@ were written.
 
 - **One executable.** A single static Go binary (`CGO_ENABLED=0`) with the whole React frontend
   embedded in it. No app server, no separate frontend deployment, no Node.js at runtime.
+- **A page load talks to nobody but your server.** The typeface ships inside the binary as well, so
+  no viewer's IP address reaches a font CDN and an instance on a LAN or behind a firewall looks the
+  same as one with an internet connection. The build fails if any asset re-introduces such a call.
 - **Postgres is the only datastore — vectors included.** Image embeddings and face embeddings
   live in `pgvector` columns (`halfvec` + HNSW cosine), so a similarity search is an ordinary SQL
   query. There is no second database to run, back up, or keep in sync.
