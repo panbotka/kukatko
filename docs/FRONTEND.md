@@ -175,7 +175,8 @@ here.
   `github` icon (`aria-hidden`); texts `footer.*` (cs/en). It renders in normal flow — on a
   short page it simply follows the content, overlapping and floating nothing. Inside is a space-between
   flex row: operator + GitHub on the left, `children` fills the right side (today the admin job-queue
-  badge); `.kukatko-footer` shares safe-area padding with `.kukatko-main` — which carries
+  badge); `.kukatko-footer` shares its horizontal padding — the container gutter plus the safe-area
+  inset — with `.kukatko-main`, which also carries
   `pt-3 pt-md-4 pb-4`, one step less top padding on a phone, where that gap comes straight out of the
   first screen. Both live inside one **`.kukatko-page`** column (everything `Layout` renders in normal
   flow; the navbar and the tab bar stay outside it), which is what the timeline rail's lane is cut from —
@@ -5659,8 +5660,18 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `styles/app.css` (**a global responsive polish layer** imported in `main.tsx` right after
   `tokens.css` — only cross-cutting mobile/touch things that Bootstrap utilities can't do: **safe-area
   insets** via `env(safe-area-inset-*)` (they work thanks to `viewport-fit=cover` in `index.html`) on the
-  navbar (`.kukatko-navbar`) and the main container (`.kukatko-main`); a guard against horizontal
-  scrolling/overscroll bounce (`body overflow-x:hidden`, `html overscroll-behavior-y:none`); the shared
+  navbar (`.kukatko-navbar`) and the page shell (`.kukatko-main` + `.kukatko-footer`) — on the shell the
+  inset is **added** to the container's own padding (`calc(var(--bs-gutter-x) * 0.5 + env(...))`), never a
+  replacement for it: a `.container`'s horizontal padding is what absorbs the negative margin every `.row`
+  inside it opens with, and a bare `env()` (0 where there is no notch) zeroed it, so every row hung half a
+  gutter past the container — invisible on a desktop, where the bleed lands in the spare margin, but eight
+  routes measuring 9–66px wider than a 393px phone, with the content flush against both screen edges.
+  **`.table-responsive` is `position: relative`** for a related reason: `overflow: auto` clips only
+  descendants whose containing block is the scroller itself, so the job queue's `visually-hidden` column
+  label (Bootstrap positions it `absolute`) resolved against the `.card` outside it, kept its place beside
+  the scrolled-away last column and gave `/system` a 485px scroll width inside a 393px phone — a 1px
+  invisible box. Both are guarded by `styles/pageGutter.test.ts`; a guard against horizontal
+  scrolling/overscroll bounce (`body overflow-x:clip`, `html overscroll-behavior-y:none`); the shared
   **sticky-toolbar offset** `.kukatko-sticky-toolbar` (`top: navbar height + safe-area-inset-top`,
   a z-index below the navbar — in-page sticky bars like `SelectionBar` settle under the navbar, not beneath it);
   the **minimum tap target** `.kukatko-tap-target` (2.75rem/44px) for icon-only controls like
@@ -5808,6 +5819,9 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   stylesheet), `styles/safeArea.test.ts`, which computes the padding of the
   fullscreen overlays (`review.css`, `compare.css`) against the iPhone's insets and asserts that the
   control rows clear both the notch and the home bar — and that without the insets the spacing stays exactly as before —
+  `styles/pageGutter.test.ts`, which reads the shipped Bootstrap alongside `app.css` and checks the page
+  shell's padding against the bleed it has to absorb (the `.row` margin, and the widest `g-*`/`gx-*` gutter
+  the markup actually spends) rather than against a transcribed number,
   and `components/people/ClusterCard.test.tsx`, which guards both pointer variants of
   `clusters.css` the same way, plus the naming row's flex shorthands — the field's basis is what
   keeps it from collapsing beside its button, and no layout runs in jsdom to catch it).

@@ -406,10 +406,20 @@ body {
   }
 }
 
+/* The page shell — the routed content and the footer below it — is a Bootstrap
+   `.container`, and the notch handling here has to *add* to its padding rather
+   than take it over. Its horizontal padding is load-bearing: every `.row` inside
+   opens with a negative margin of half a gutter, and this padding is what absorbs
+   it. Declaring a bare `env()` (0 without insets) zeroed it, so every row hung
+   half a gutter past the container on both sides — invisible on a desktop, where
+   the container is narrower than the viewport and the bleed lands in the spare
+   margin, but a page that scrolls sideways on a phone, where the container *is*
+   the viewport. `var(--bs-gutter-x)` is the same variable the rows spend, so the
+   two stay in step (guarded by `pageGutter.test.ts`). */
 .kukatko-main,
 .kukatko-footer {
-  padding-left: env(safe-area-inset-left, 0px);
-  padding-right: env(safe-area-inset-right, 0px);
+  padding-left: calc(var(--bs-gutter-x) * 0.5 + env(safe-area-inset-left, 0px));
+  padding-right: calc(var(--bs-gutter-x) * 0.5 + env(safe-area-inset-right, 0px));
 }
 
 /* Navbar hierarchy. The bar is not a flat row of equals: the everyday actions
@@ -2546,6 +2556,25 @@ body {
     width: 4.5rem;
     height: 4.5rem;
   }
+}
+
+/* --------------------------------------------------------------------------
+   Wide tables that scroll inside themselves
+   -------------------------------------------------------------------------- */
+
+/* A table too wide for the screen scrolls inside `.table-responsive`, and the
+   page around it must not move — but `overflow: auto` only clips descendants
+   whose containing block is the scroller itself. Bootstrap's `.visually-hidden`
+   is `position: absolute`, so the screen-reader label on the job queue's action
+   column resolved its position against the `.card` *outside* the scroller, kept
+   its place beside the scrolled-away last column, and handed the whole page a
+   scroll width of 485px inside a 393px phone — a one-pixel, invisible box that
+   nonetheless made `/system` measure as a sideways-scrolling page. Making the
+   scroller a containing block keeps every absolutely positioned descendant
+   inside it. Nothing in these tables wants to escape: the row actions are plain
+   buttons, and the phone reflows the wide ones into cards (`RecordTable`). */
+.table-responsive {
+  position: relative;
 }
 
 /* --------------------------------------------------------------------------
