@@ -7,10 +7,9 @@ import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 
 import { useAuth } from '../../auth/AuthContext'
-import { useSubjects } from '../../hooks/useSubjects'
 import { foldedIncludes } from '../../lib/text'
 import { markWelcomeSeen, setMySubject } from '../../services/auth'
-import { type SubjectCount } from '../../services/people'
+import { fetchSubjects, type SubjectCount } from '../../services/people'
 import { fetchWelcomeMarkdown } from '../../services/settings'
 import { Icon } from '../Icon'
 import { Markdown } from '../Markdown'
@@ -38,10 +37,14 @@ type Phase = 'idle' | 'loading' | 'open' | 'done'
 interface WelcomeTextStepProps {
   /** The administrator's greeting, already known to be non-empty. */
   markdown: string
-  /** Moves on to the question about who the reader is. */
-  onNext: () => void
+  /**
+   * Moves on to the question about who the reader is, or `null` when the library
+   * has named nobody to ask about — then the greeting is the whole welcome and
+   * the step ends it rather than promising a second page.
+   */
+  onNext: (() => void) | null
   /** Ends the welcome without asking anything else. */
-  onSkip: () => void
+  onFinish: () => void
 }
 
 /**
@@ -52,7 +55,7 @@ interface WelcomeTextStepProps {
  * with are produced by literally the same component — sanitised, with links
  * opening in a new tab under `noopener noreferrer`.
  */
-function WelcomeTextStep({ markdown, onNext, onSkip }: WelcomeTextStepProps) {
+function WelcomeTextStep({ markdown, onNext, onFinish }: WelcomeTextStepProps) {
   const { t } = useTranslation()
 
   return (
@@ -61,12 +64,20 @@ function WelcomeTextStep({ markdown, onNext, onSkip }: WelcomeTextStepProps) {
         <Markdown className="text-break">{markdown}</Markdown>
       </Modal.Body>
       <Modal.Footer>
-        <Button variant="link" onClick={onSkip}>
-          {t('welcome.skip')}
-        </Button>
-        <Button variant="primary" onClick={onNext}>
-          {t('welcome.next')}
-        </Button>
+        {onNext === null ? (
+          <Button variant="primary" onClick={onFinish}>
+            {t('welcome.done')}
+          </Button>
+        ) : (
+          <>
+            <Button variant="link" onClick={onFinish}>
+              {t('welcome.skip')}
+            </Button>
+            <Button variant="primary" onClick={onNext}>
+              {t('welcome.next')}
+            </Button>
+          </>
+        )}
       </Modal.Footer>
     </>
   )
@@ -74,6 +85,12 @@ function WelcomeTextStep({ markdown, onNext, onSkip }: WelcomeTextStepProps) {
 
 /** Props for {@link WelcomePersonStep}. */
 interface WelcomePersonStepProps {
+  /**
+   * The library's named people, fetched by the welcome before it opened. Passed
+   * in rather than fetched here because the same list decides whether this step
+   * happens at all: an empty one means the step is never rendered.
+   */
+  subjects: SubjectCount[]
   /** The person this account already says it is, or null when nobody has said. */
   linkedUid: string | null
   /** Ends the welcome — after a successful link, or because it was skipped. */
@@ -93,10 +110,9 @@ interface WelcomePersonStepProps {
  * is told who it is linked to and offered to change it, which is the same
  * control one step later.
  */
-function WelcomePersonStep({ linkedUid, onFinish }: WelcomePersonStepProps) {
+function WelcomePersonStep({ subjects, linkedUid, onFinish }: WelcomePersonStepProps) {
   const { t } = useTranslation()
   const { refresh } = useAuth()
-  const { subjects, loading } = useSubjects()
   const [query, setQuery] = useState('')
   const [chosen, setChosen] = useState<SubjectCount | null>(null)
   const [busy, setBusy] = useState(false)
@@ -159,9 +175,7 @@ function WelcomePersonStep({ linkedUid, onFinish }: WelcomePersonStepProps) {
             {/* A link can outlive its person (deleted from the library): it still
                 has a UID and no name, and saying so beats printing a blank. */}
             {linked === undefined ? (
-              <span className="text-secondary">
-                {loading ? t('welcome.person.loading') : t('welcome.person.unknownPerson')}
-              </span>
+              <span className="text-secondary">{t('welcome.person.unknownPerson')}</span>
             ) : (
               <span className="fw-semibold">
                 {t('welcome.person.linkedTo', { name: linked.name })}
@@ -194,15 +208,8 @@ function WelcomePersonStep({ linkedUid, onFinish }: WelcomePersonStepProps) {
                 }}
               />
             </Form.Group>
-            {loading && (
-              <p className="text-secondary" role="status">
-                {t('welcome.person.loading')}
-              </p>
-            )}
-            {!loading && candidates.length === 0 && (
-              <p className="text-secondary">
-                {subjects.length === 0 ? t('welcome.person.empty') : t('welcome.person.noMatches')}
-              </p>
+            {candidates.length === 0 && (
+              <p className="text-secondary">{t('welcome.person.noMatches')}</p>
             )}
             <div className="d-flex flex-column gap-2">
               {candidates.map((candidate) => (
@@ -278,6 +285,15 @@ function WelcomePersonStep({ linkedUid, onFinish }: WelcomePersonStepProps) {
  * greeting opens straight on the question; an account that already answered it
  * is shown its answer instead of being asked again.
  *
+ * The question is only asked where it has an answer. A library in which nobody
+ * is named yet — a fresh instance, or one whose faces are all still unassigned —
+ * gets the greeting and nothing else, because a picker over an empty set is a
+ * dead end for the very first administrator to sign in. Whoever is skipped that
+ * way still links their account whenever they like, in the account screen
+ * (`MySubjectCard`). The list is read every time the welcome is about to open,
+ * never remembered, so the instance that names its first person asks the next
+ * newcomer properly.
+ *
  * However it ends — confirmed, skipped, or closed with the X — the visit is
  * recorded and it does not come back. Recording it is deliberately
  * fire-and-forget: the modal closes first and a failed stamp is swallowed, so a
@@ -297,6 +313,7 @@ export function WelcomeModal() {
   const { user } = useAuth()
   const [phase, setPhase] = useState<Phase>('idle')
   const [markdown, setMarkdown] = useState('')
+  const [subjects, setSubjects] = useState<SubjectCount[]>([])
   const [step, setStep] = useState<Step>('text')
 
   // Decide once, off the session: an account carrying a `welcome_seen_at` stamp
@@ -314,9 +331,29 @@ export function WelcomeModal() {
       return
     }
     const controller = new AbortController()
-    fetchWelcomeMarkdown(controller.signal)
-      .then((text) => {
+    // A subject listing that fails is read as "nobody is named". The picker is
+    // the part of the welcome that may be dropped, and dropping it costs the
+    // reader nothing they cannot do later in the account screen — whereas an
+    // empty one is precisely the dead end being avoided here.
+    const people = fetchSubjects(controller.signal).catch((error: unknown) => {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        throw error
+      }
+      return [] as SubjectCount[]
+    })
+    Promise.all([fetchWelcomeMarkdown(controller.signal), people])
+      .then(([text, list]) => {
+        // Nothing written and nobody to ask about: a dialog whose only working
+        // control is its close button. It does not open, and — since the reader
+        // was shown nothing — the visit is not recorded either, so the greeting
+        // an administrator writes tomorrow, or the first person somebody names,
+        // still reaches them.
+        if (text.trim() === '' && list.length === 0) {
+          setPhase('done')
+          return
+        }
         setMarkdown(text)
+        setSubjects(list)
         // An instance whose administrator wrote nothing has no step one to show;
         // an empty first page would only teach the reader that the dialog is
         // worth clicking through without reading.
@@ -368,13 +405,21 @@ export function WelcomeModal() {
       {step === 'text' ? (
         <WelcomeTextStep
           markdown={markdown}
-          onNext={() => {
-            setStep('person')
-          }}
-          onSkip={finish}
+          onNext={
+            subjects.length === 0
+              ? null
+              : () => {
+                  setStep('person')
+                }
+          }
+          onFinish={finish}
         />
       ) : (
-        <WelcomePersonStep linkedUid={user?.subject_uid ?? null} onFinish={finish} />
+        <WelcomePersonStep
+          subjects={subjects}
+          linkedUid={user?.subject_uid ?? null}
+          onFinish={finish}
+        />
       )}
     </Modal>
   )

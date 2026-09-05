@@ -39,6 +39,14 @@ vi.mock('./services/settings', () => ({
   fetchWelcomeMarkdown: vi.fn(() => new Promise(() => undefined)),
 }))
 
+// Before the shell's welcome decides whether to ask who the reader is, it asks
+// the library who is named; answer "nobody", which is also what every routed page
+// under test wants from the subject list.
+vi.mock('./services/people', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./services/people')>()
+  return { ...actual, fetchSubjects: vi.fn(() => Promise.resolve([])) }
+})
+
 // The password-reset landing route checks its link on mount; stub the call (never
 // resolving) so the route test exercises the wiring, not the network.
 vi.mock('./services/auth', async (importOriginal) => {

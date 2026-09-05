@@ -250,8 +250,9 @@ here.
   live preview in `SettingsPage`, so preview and reality cannot drift; the wrapper carries `text-break` so a
   pasted URL cannot push the dialog sideways. **Step two** (`WelcomePersonStep`) asks who the reader is: a
   `type="search"` field **at the top of the body** (on a phone the keyboard covers the bottom half, and a search
-  box under it cannot be read while it is typed into) filtering `useSubjects()` through `foldedIncludes`, then up
-  to `MAX_CANDIDATES` = 6 rows, each a `Button` wrapping a `SubjectSummary` — **name *and* face**, because a
+  box under it cannot be read while it is typed into) filtering **the people the modal fetched before it opened**
+  (a `subjects` prop, not an own `useSubjects()` — the same list decides whether this step happens at all)
+  through `foldedIncludes`, then up to `MAX_CANDIDATES` = 6 rows, each a `Button` wrapping a `SubjectSummary` — **name *and* face**, because a
   family archive is full of namesakes and a face settles it faster than a spelling does. Rows are ordered
   **most-photographed first**, which is what makes an empty query a useful shortlist rather than the alphabet;
   the marked row carries `aria-pressed`. **Nothing is written until Confirm**, which calls `setMySubject(uid)`
@@ -261,10 +262,17 @@ here.
   „Vybrat jinou osobu", which reveals the same picker one click later. **Gating**: a `Phase`
   (`idle`→`loading`→`open`|`done`) latched in state — `done` is final, so the `refresh()` a successful link
   triggers cannot reopen it. It renders nothing and **asks the backend nothing** for an account whose
-  `welcome_seen_at` is set (almost every page load); otherwise it fetches `fetchWelcomeMarkdown()` **before** it
-  dares appear, an **empty/whitespace greeting opens straight on step two** (an empty first page only teaches
-  the reader to click through without reading), and a **failed fetch means the welcome quietly does not happen
-  this time** — nothing is recorded, so the next sign-in tries again: the greeting is postponed, not lost.
+  `welcome_seen_at` is set (almost every page load); otherwise it fetches `fetchWelcomeMarkdown()` **and**
+  `fetchSubjects()` together **before** it dares appear. An **empty/whitespace greeting opens straight on step
+  two** (an empty first page only teaches the reader to click through without reading), and a **library in which
+  nobody is named drops step two** — step one then closes on a single primary „Hotovo" (`welcome.done`) instead
+  of Skip/Continue, because a picker over an empty set is the dead end the very first administrator would meet;
+  whoever is skipped that way still links their account any time in `MySubjectCard`. The list is read **every
+  time the welcome is about to open**, never remembered, so the instance that names its first person asks the
+  next newcomer properly; a **failed subject listing counts as "nobody named"** (the droppable half of the
+  welcome). **Neither a greeting nor a named person → the dialog does not open** and records nothing, so a
+  greeting written tomorrow still reaches the reader. A **failed greeting fetch means the welcome quietly does
+  not happen this time** — nothing is recorded, so the next sign-in tries again: it is postponed, not lost.
   However it ends — confirmed, skipped, or closed with the X — `finish()` closes first and fires
   `markWelcomeSeen()` **fire-and-forget with the rejection swallowed**: a request the reader cannot see failing
   is not a reason to keep them in a dialog, and the backend stamp is idempotent. Texts `welcome.*` (cs/en).

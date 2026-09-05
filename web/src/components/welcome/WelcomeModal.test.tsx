@@ -84,14 +84,14 @@ function renderWelcome(user: User, refresh = vi.fn().mockResolvedValue(undefined
     refresh,
   } as unknown as AuthContextValue
 
-  render(
+  const { unmount } = render(
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={auth}>
         <WelcomeModal />
       </AuthContext.Provider>
     </I18nextProvider>,
   )
-  return { refresh }
+  return { refresh, unmount }
 }
 
 /** The open welcome. It is a portal, so every assertion is scoped inside it. */
@@ -137,6 +137,66 @@ describe('WelcomeModal', () => {
     const modal = await dialog()
     expect(modal.getByRole('searchbox', { name: 'Find a person' })).toBeInTheDocument()
     expect(modal.queryByRole('button', { name: 'Continue' })).not.toBeInTheDocument()
+  })
+
+  it('drops the person picker when the library has named nobody yet', async () => {
+    const user = userEvent.setup()
+    subjectsMock.mockResolvedValue([])
+    renderWelcome(account())
+
+    // The administrator's greeting is still the point of the dialog…
+    const modal = await dialog()
+    expect(modal.getByRole('heading', { name: 'Hello' })).toBeInTheDocument()
+    expect(modal.getByText('Welcome to the family archive.')).toBeInTheDocument()
+    // …but there is nobody to be asked about, so there is no second step.
+    expect(modal.queryByRole('button', { name: 'Continue' })).not.toBeInTheDocument()
+    expect(modal.queryByRole('searchbox')).not.toBeInTheDocument()
+
+    await user.click(modal.getByRole('button', { name: 'Done' }))
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+    expect(seenMock).toHaveBeenCalled()
+    expect(linkMock).not.toHaveBeenCalled()
+  })
+
+  it('asks who the reader is as soon as one person in the library is named', async () => {
+    const user = userEvent.setup()
+    subjectsMock.mockResolvedValue([counted('su_a', 'Anna Nováková', 42)])
+    renderWelcome(account())
+
+    const modal = await dialog()
+    await user.click(modal.getByRole('button', { name: 'Continue' }))
+
+    expect(await modal.findByRole('searchbox', { name: 'Find a person' })).toBeInTheDocument()
+    expect(await modal.findByRole('button', { name: /Anna Nováková/ })).toBeInTheDocument()
+  })
+
+  it('does not open on a library with neither a greeting nor a named person', async () => {
+    welcomeMock.mockResolvedValue('   \n  ')
+    subjectsMock.mockResolvedValue([])
+    renderWelcome(account())
+
+    await waitFor(() => {
+      expect(subjectsMock).toHaveBeenCalled()
+    })
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    // Nothing was shown, so nothing is recorded: the next visit asks again.
+    expect(seenMock).not.toHaveBeenCalled()
+  })
+
+  it('reads the people afresh each time, never off an earlier visit', async () => {
+    subjectsMock.mockResolvedValue([])
+    const { unmount } = renderWelcome(account())
+    const first = await dialog()
+    expect(first.queryByRole('button', { name: 'Continue' })).not.toBeInTheDocument()
+    unmount()
+
+    // The instance has since named somebody; the next newcomer is asked.
+    subjectsMock.mockResolvedValue([counted('su_a', 'Anna Nováková', 42)])
+    renderWelcome(account())
+    const second = await dialog()
+    expect(second.getByRole('button', { name: 'Continue' })).toBeInTheDocument()
   })
 
   it('does not open at all when the greeting cannot be fetched, and records nothing', async () => {
