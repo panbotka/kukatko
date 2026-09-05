@@ -194,6 +194,20 @@ describe('Layout navbar', () => {
     expect(page?.querySelector('.kukatko-navbar')).toBeNull()
   })
 
+  it('holds the navbar and the page in one shell column', () => {
+    // The shell is what lets a short page still fill the window: it is a flex
+    // column at least as tall as the viewport, and the footer inside it takes the
+    // slack (`.kukatko-shell` in `app.css`, guarded by `shellFooter.test.ts`).
+    // That only works while the bar contributes its *rendered* height to the same
+    // column — measuring it from the `--kukatko-navbar-height` estimate instead
+    // overshot the viewport and gave every short page a 1px scrollbar.
+    const { container } = renderLayout(auth())
+    const shell = container.querySelector('.kukatko-shell')
+    expect(shell).not.toBeNull()
+    expect(shell?.querySelector('.kukatko-navbar')).not.toBeNull()
+    expect(shell?.querySelector('.kukatko-page > footer.kukatko-footer')).not.toBeNull()
+  })
+
   it('carries no logo and no wordmark, on either viewport', () => {
     // Width is the bar's scarce resource: the brand is gone entirely, mark and
     // wordmark alike, rather than being juggled by display utilities.

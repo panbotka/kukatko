@@ -240,7 +240,12 @@ export function Layout() {
   }
 
   return (
-    <>
+    // One flex column for the whole shell, so the footer can be held at the
+    // bottom of a page that does not fill the window: the navbar contributes its
+    // real height here rather than an estimate, and `.kukatko-page` takes what is
+    // left (see `.kukatko-shell` in `app.css`). The fixed chrome below — the
+    // drawer, the tab bar, the modal — is out of flow and unaffected.
+    <div className="kukatko-shell">
       <Navbar
         expand="md"
         variant="dark"
@@ -391,6 +396,6 @@ export function Layout() {
           landed on. It renders nothing — and asks the backend nothing — for
           everybody else, which is almost every page load. */}
       <WelcomeModal />
-    </>
+    </div>
   )
 }

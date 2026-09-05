@@ -406,6 +406,43 @@ body {
   }
 }
 
+/* The shell holds the bottom of the window on a page that does not fill it.
+   Without a minimum height the footer simply followed the content, so every
+   empty state — `/people`, `/albums`, `/labels`, `/saved`, exactly what a new
+   instance shows most of — left it floating mid-screen (measured on `/people` in
+   a 1440x900 window: the footer ended at 451px, with 449px of nothing under it).
+
+   One flex column spanning the navbar and the page below it, at least as tall as
+   the viewport minus whatever already owns the bottom edge — the mobile tab bar
+   where there is one, the home-indicator inset where there is not
+   (`--kk-bottom-edge`, the same value `body` reserves as scroll clearance). The
+   page grows into the slack (`flex: 1 0 auto`) and the footer takes the rest of
+   it (`margin-top: auto`), which puts the footer on the bottom edge exactly.
+
+   The navbar being *inside* the column is the point: it contributes its rendered
+   height instead of the `--kukatko-navbar-height` estimate, which is sized to the
+   taller coarse-pointer case and would overshoot the viewport by the difference —
+   a 1px scrollbar on every short page, measured. Nothing is pinned: on a page
+   taller than the viewport the minimum is already met, so the footer stays at the
+   end of the content and scrolls away with it. `100dvh`, not `100vh`, so a
+   phone's collapsing URL bar is not counted twice. Guarded by
+   `shellFooter.test.ts`. */
+.kukatko-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100dvh - var(--kk-bottom-edge));
+}
+
+.kukatko-page {
+  display: flex;
+  flex-direction: column;
+  flex: 1 0 auto;
+}
+
+.kukatko-footer {
+  margin-top: auto;
+}
+
 /* The page shell — the routed content and the footer below it — is a Bootstrap
    `.container`, and the notch handling here has to *add* to its padding rather
    than take it over. Its horizontal padding is load-bearing: every `.row` inside

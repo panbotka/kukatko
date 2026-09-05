@@ -174,14 +174,24 @@ here.
   `Footer` (**global footer** below `<main>` on every page in `Layout` — the fullscreen
   `/slideshow` and the immersive `/photos/:uid` run outside the shell, so they don't have it: „Provozuje SDH Veselice“ + a link to the source code
   <https://github.com/panbotka/kukatko> in a new tab with `rel="noopener noreferrer"` and a decorative
-  `github` icon (`aria-hidden`); texts `footer.*` (cs/en). It renders in normal flow — on a
-  short page it simply follows the content, overlapping and floating nothing. Inside is a space-between
+  `github` icon (`aria-hidden`); texts `footer.*` (cs/en). It renders in normal flow, and still ends at the
+  bottom of the window on a page too short to fill it: `Layout` wraps everything it renders in a
+  **`.kukatko-shell`** flex column at least `100dvh - --kk-bottom-edge` tall, `.kukatko-page` inside it grows
+  into the slack (`flex: 1 0 auto`) and the footer takes what is left with `margin-top: auto` — so an empty
+  state sits on the bottom edge, just above the phone tab bar that `--kk-bottom-edge` keeps clear, instead of
+  leaving half a window blank below it (measured on `/people` at 1440x900: the footer used to end at 451px).
+  The navbar is *inside* that column on purpose: it contributes its rendered height rather than the
+  `--kukatko-navbar-height` estimate, which is sized to the taller coarse-pointer bar and overshot the
+  viewport by the difference — a 1px scrollbar on every short page. A page taller than the window is
+  untouched: the minimum is already met, so the footer stays at the end of the content and scrolls away with
+  it, never pinned over it (guarded by `styles/shellFooter.test.ts`). Inside is a space-between
   flex row: operator + GitHub on the left, `children` fills the right side (today the admin job-queue
   badge); `.kukatko-footer` shares its horizontal padding — the container gutter plus the safe-area
   inset — with `.kukatko-main`, which also carries
   `pt-3 pt-md-4 pb-4`, one step less top padding on a phone, where that gap comes straight out of the
   first screen. Both live inside one **`.kukatko-page`** column (everything `Layout` renders in normal
-  flow; the navbar and the tab bar stay outside it), which is what the timeline rail's lane is cut from —
+  flow; the navbar stays outside it — one level up, in the shell around it — and the tab bar is fixed over
+  the whole thing), which is what the timeline rail's lane is cut from —
   see `TimelineScrubber` below),
   `JobQueueBadges` (right side of the footer: a compact badge with the job-queue state **for maintainers only**
   — the `/jobs` endpoint is a maintainer-only operational capability; via `useAuth().isMaintainer` +
