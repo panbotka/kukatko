@@ -351,7 +351,7 @@ export function Layout() {
               button sits best under the thumb on the trailing edge. It is
               `display: none` on `md`+, so the desktop bar is unmoved by where it
               stands in the DOM. */}
-          <Navbar.Toggle aria-controls={MOBILE_MENU_ID} />
+          <Navbar.Toggle aria-controls={MOBILE_MENU_ID} label={t('nav.openMenu')} />
         </Container>
       </Navbar>
       {/* Phone only: the hamburger opens a real drawer of labelled sections

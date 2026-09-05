@@ -1,11 +1,11 @@
 import { useState } from 'react'
 import Button from 'react-bootstrap/Button'
-import Modal from 'react-bootstrap/Modal'
 import Table from 'react-bootstrap/Table'
 import { useTranslation } from 'react-i18next'
 
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { HELP_SHORTCUT_KEY, SHORTCUT_GROUPS } from '../lib/shortcuts'
+import Modal from './Modal'
 
 /** A keyboard-cap glyph for the trigger button. */
 function KeyboardIcon() {

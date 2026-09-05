@@ -1,6 +1,5 @@
 import { type SyntheticEvent, useEffect, useState } from 'react'
 import Form from 'react-bootstrap/Form'
-import Modal from 'react-bootstrap/Modal'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -9,6 +8,7 @@ import {
   type SavedSearchParams,
   updateSavedSearch,
 } from '../../services/savedSearches'
+import Modal from '../Modal'
 import { ReasonedButton } from '../ReasonedButton'
 
 /** Props for {@link SaveSearchModal}. */

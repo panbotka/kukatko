@@ -1,10 +1,10 @@
 import { type SyntheticEvent, useEffect, useState } from 'react'
 import Button from 'react-bootstrap/Button'
 import Form from 'react-bootstrap/Form'
-import Modal from 'react-bootstrap/Modal'
 import { useTranslation } from 'react-i18next'
 
 import { type Album, type AlbumInput, createAlbum, updateAlbum } from '../../services/organize'
+import Modal from '../Modal'
 
 /** Props for {@link AlbumEditModal}. */
 export interface AlbumEditModalProps {

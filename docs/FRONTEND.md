@@ -69,7 +69,9 @@ here.
   is the bar's first item **Knihovna** `/` (labelled, `end`-matched, `title` „Zobrazit knihovnu fotek"),
   below `md` it is the leading tab of `MobileTabBar`, permanently under the thumb — one tap either way,
   exactly as the mark was. The **hamburger closes the phone row** `[search] [hamburger]` instead of opening
-  it (last in the DOM); it is `display: none` on `md`+, so the desktop bar is unmoved by that.
+  it (last in the DOM); it is `display: none` on `md`+, so the desktop bar is unmoved by that. It names
+  itself from the catalogue — `label={t('nav.openMenu')}` („Otevřít nabídku") — rather than leaving
+  react-bootstrap's English `Toggle navigation` default on the one control a phone reader needs most.
   **The bar leads with global search** `SearchCommand` (`components/search/`) — since the same change a
   **compact icon button** (a 2.25rem magnifier, 2.75rem on `pointer: coarse`, guarded by
   `styles/tapTargets.test.ts`), not the old 16rem field-shaped pill: the control never takes a keystroke, it
@@ -619,6 +621,14 @@ here.
   `onEndReached` (the scroll-driven "load the next page") and a `footer` node rendered below the last
   card through virtuoso's `Footer` component — that is where a queue puts its "loading more" spinner
   and the retry for a failed append. Used by `ClustersPage`. Tests: `ReviewGrid.test.tsx`),
+  `Modal` (**the app's dialog** — react-bootstrap's `Modal` re-exported with exactly one thing changed:
+  the header's ✕ takes its accessible name from the catalogue (`dialog.close`) instead of the library's
+  English `Close` default, which a Czech screen reader would otherwise read out on every dialog in the
+  app. A dialog wanting a more specific name still passes `closeLabel` itself (`SearchQueryHelp`,
+  `KeyboardShortcutsHelp`, `SlideshowStart`, `WelcomeModal` do). `Modal.Title`, `Modal.Body` and
+  `Modal.Footer` are the library's own components and the rendered markup is unchanged. Every dialog
+  imports this instead of `react-bootstrap/Modal`, and ESLint's `no-restricted-imports` enforces it, so
+  a dialog written next cannot silently opt back out of the translation. Tests: `Modal.test.tsx`),
   `ConfirmModal` (**the single shared confirmation dialog** — replaced the native `window.confirm`
   in four places: `AlbumDetailPage` (deleting an album), `LabelsPage` (deleting a label),
   `SavedSearchesPage` (deleting a saved search).
@@ -5909,7 +5919,8 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `vite.config.ts` (the build → `../internal/web/static/dist`, vitest jsdom, **`restoreMocks: true`** =
   the single place mocks are restored, the dev proxy
   `/healthz`+`/api` → `:8080`), `eslint.config.js` (strict typed, plus a test-file-only
-  `no-restricted-syntax` that bans `vi.restoreAllMocks()`), `.prettierrc.json`,
+  `no-restricted-syntax` that bans `vi.restoreAllMocks()` and a `no-restricted-imports` that sends
+  every dialog to the app's own `components/Modal` instead of `react-bootstrap/Modal`), `.prettierrc.json`,
   `tsconfig*.json`.
 
   **`build/gitkeep.ts` (`gitkeepPlugin`, `apply: 'build'`).** `emptyOutDir: true` wipes

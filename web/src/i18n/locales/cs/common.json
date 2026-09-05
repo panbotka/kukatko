@@ -12,6 +12,9 @@
   "confirmModal": {
     "cancel": "Zrušit"
   },
+  "dialog": {
+    "close": "Zavřít"
+  },
   "headerActions": {
     "overflow": "Další akce"
   },
@@ -99,6 +102,7 @@
     "leaderboard": "Žebříček",
     "tabBar": "Hlavní navigace",
     "menu": "Nabídka",
+    "openMenu": "Otevřít nabídku",
     "closeMenu": "Zavřít nabídku",
     "sections": {
       "main": "Hlavní",
@@ -770,6 +774,7 @@
       "minRating": "Hodnocení",
       "flag": "Označení",
       "toggle": "Filtry",
+      "close": "Zavřít filtry",
       "removeFilter": "Odebrat filtr: {{name}}",
       "clear": "Zrušit filtry",
       "apply_one": "Zobrazit {{count}} fotku",
@@ -1548,6 +1553,7 @@
     "filters": {
       "toggle": "Filtry",
       "label": "Filtry mapy",
+      "close": "Zavřít filtry mapy",
       "takenAfter": "Pořízeno od",
       "takenBefore": "Pořízeno do",
       "archived": "Archiv",

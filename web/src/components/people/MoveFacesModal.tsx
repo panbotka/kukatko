@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
-import Modal from 'react-bootstrap/Modal'
 import ProgressBar from 'react-bootstrap/ProgressBar'
 import { useTranslation } from 'react-i18next'
 
@@ -13,6 +12,7 @@ import {
   moveRequests,
 } from '../../lib/moveFaces'
 import { assignFace, fetchFaces } from '../../services/people'
+import Modal from '../Modal'
 import { AddAutocomplete } from '../photo/AddAutocomplete'
 
 /** Props for {@link MoveFacesModal}. */

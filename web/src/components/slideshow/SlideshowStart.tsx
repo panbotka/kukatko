@@ -1,6 +1,5 @@
 import { useCallback, useState } from 'react'
 import Button from 'react-bootstrap/Button'
-import Modal from 'react-bootstrap/Modal'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate } from 'react-router-dom'
 
@@ -14,6 +13,7 @@ import {
 } from '../../lib/slideshowSettings'
 import { slideshowHref, type SlideshowScope } from '../../lib/slideshowView'
 
+import Modal from '../Modal'
 import { SlideshowSettingsForm } from './SlideshowSettingsForm'
 
 /** Props for {@link SlideshowStart}. */

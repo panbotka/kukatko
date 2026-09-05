@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import Button from 'react-bootstrap/Button'
 import Form from 'react-bootstrap/Form'
-import Modal from 'react-bootstrap/Modal'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 
@@ -14,6 +13,7 @@ import {
   fetchBulkLocationSummary,
 } from '../../services/bulk'
 import { Icon } from '../Icon'
+import Modal from '../Modal'
 import { LocationPicker } from '../map/LocationPicker'
 import { ReasonedButton } from '../ReasonedButton'
 import { useToast } from '../toast/ToastContext'

@@ -12,6 +12,9 @@
   "confirmModal": {
     "cancel": "Cancel"
   },
+  "dialog": {
+    "close": "Close"
+  },
   "headerActions": {
     "overflow": "More actions"
   },
@@ -99,6 +102,7 @@
     "leaderboard": "Leaderboard",
     "tabBar": "Primary navigation",
     "menu": "Menu",
+    "openMenu": "Open the menu",
     "closeMenu": "Close the menu",
     "sections": {
       "main": "Main",
@@ -766,6 +770,7 @@
       "minRating": "Rating",
       "flag": "Flag",
       "toggle": "Filters",
+      "close": "Close the filters",
       "removeFilter": "Remove filter: {{name}}",
       "clear": "Clear filters",
       "apply_one": "Show {{count}} photo",
@@ -1047,6 +1052,7 @@
     "filters": {
       "toggle": "Filters",
       "label": "Map filters",
+      "close": "Close the map filters",
       "takenAfter": "Taken from",
       "takenBefore": "Taken until",
       "archived": "Archived",

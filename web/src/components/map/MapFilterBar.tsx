@@ -175,7 +175,7 @@ export function MapFilterBar({
           placement="end"
           aria-label={t('map.filters.label')}
         >
-          <Offcanvas.Header closeButton>
+          <Offcanvas.Header closeButton closeLabel={t('map.filters.close')}>
             <Offcanvas.Title>{t('map.filters.label')}</Offcanvas.Title>
           </Offcanvas.Header>
           <Offcanvas.Body id={PANEL_ID}>

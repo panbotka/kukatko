@@ -1,7 +1,8 @@
 import { type ReactNode, useRef } from 'react'
 import Button from 'react-bootstrap/Button'
-import Modal from 'react-bootstrap/Modal'
 import { useTranslation } from 'react-i18next'
+
+import Modal from './Modal'
 
 /** Props for {@link ConfirmModal}. */
 export interface ConfirmModalProps {

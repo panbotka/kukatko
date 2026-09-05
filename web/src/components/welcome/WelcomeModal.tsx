@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
 import Form from 'react-bootstrap/Form'
-import Modal from 'react-bootstrap/Modal'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 
@@ -13,6 +12,7 @@ import { fetchSubjects, type SubjectCount } from '../../services/people'
 import { fetchWelcomeMarkdown } from '../../services/settings'
 import { Icon } from '../Icon'
 import { Markdown } from '../Markdown'
+import Modal from '../Modal'
 import { SubjectSummary } from '../people/SubjectSummary'
 
 /**

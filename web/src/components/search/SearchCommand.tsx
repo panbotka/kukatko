@@ -1,6 +1,5 @@
 import type { ParseKeys, TFunction } from 'i18next'
 import { type ReactNode, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
-import Modal from 'react-bootstrap/Modal'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 
@@ -24,6 +23,7 @@ import {
 } from '../../services/search'
 import { FadeInImage } from '../FadeInImage'
 import { Icon, type IconName } from '../Icon'
+import Modal from '../Modal'
 
 /** Thumbnail size for the small entity avatars in the palette rows. */
 const RESULT_THUMB_SIZE = 'tile_100'

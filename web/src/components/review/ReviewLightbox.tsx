@@ -1,11 +1,11 @@
 import { type ReactNode } from 'react'
 import Button from 'react-bootstrap/Button'
-import Modal from 'react-bootstrap/Modal'
 import { useTranslation } from 'react-i18next'
 
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts'
 import { Icon } from '../Icon'
 
+import Modal from '../Modal'
 import { ReviewStage, type ReviewStageProps } from './ReviewStage'
 
 /** Props for {@link ReviewLightbox}. */

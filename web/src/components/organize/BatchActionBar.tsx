@@ -2,7 +2,6 @@ import type { TFunction } from 'i18next'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Button from 'react-bootstrap/Button'
 import Dropdown from 'react-bootstrap/Dropdown'
-import Modal from 'react-bootstrap/Modal'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 
@@ -21,6 +20,7 @@ import {
   type LabelCount,
 } from '../../services/organize'
 import { Icon, type IconName } from '../Icon'
+import Modal from '../Modal'
 import { MultiSelect, type MultiSelectOption } from '../MultiSelect'
 import { useToast } from '../toast/ToastContext'
 

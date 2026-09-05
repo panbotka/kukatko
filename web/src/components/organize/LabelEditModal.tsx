@@ -1,10 +1,10 @@
 import { type SyntheticEvent, useEffect, useState } from 'react'
 import Button from 'react-bootstrap/Button'
 import Form from 'react-bootstrap/Form'
-import Modal from 'react-bootstrap/Modal'
 import { useTranslation } from 'react-i18next'
 
 import { createLabel, type Label, type LabelInput, updateLabel } from '../../services/organize'
+import Modal from '../Modal'
 
 /** Props for {@link LabelEditModal}. */
 export interface LabelEditModalProps {

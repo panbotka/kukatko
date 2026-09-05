@@ -492,7 +492,7 @@ export function FilterBar<T extends LibraryView>({
           placement="end"
           aria-label={t('library.filters.toggle')}
         >
-          <Offcanvas.Header closeButton>
+          <Offcanvas.Header closeButton closeLabel={t('library.filters.close')}>
             <Offcanvas.Title>{t('library.filters.toggle')}</Offcanvas.Title>
           </Offcanvas.Header>
           <Offcanvas.Body id={PANEL_ID}>{panel}</Offcanvas.Body>

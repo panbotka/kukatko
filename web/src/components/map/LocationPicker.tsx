@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react'
 import Button from 'react-bootstrap/Button'
 import Form from 'react-bootstrap/Form'
-import Modal from 'react-bootstrap/Modal'
 import { useTranslation } from 'react-i18next'
 
 import { type Coordinates, formatCoordinates, parseCoordinates } from '../../lib/coordinates'
@@ -10,6 +9,7 @@ import { type MapViewport } from '../../lib/mapView'
 import { type Place } from '../../services/map'
 import { Icon } from '../Icon'
 
+import Modal from '../Modal'
 import { LeafletMap } from './LeafletMap'
 import { PlaceSearch } from './PlaceSearch'
 

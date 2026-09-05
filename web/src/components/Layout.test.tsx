@@ -126,7 +126,7 @@ function precedes(first: Element, second: Element): boolean {
  * collapse transition (which does not run under jsdom).
  */
 function menuIsCollapsed(): boolean {
-  return screen.getByRole('button', { name: /toggle navigation/i }).classList.contains('collapsed')
+  return screen.getByRole('button', { name: /open the menu/i }).classList.contains('collapsed')
 }
 
 beforeEach(async () => {
@@ -156,8 +156,22 @@ describe('Layout navbar', () => {
     renderLayout(auth())
     // The hamburger toggle (visible below the `md` breakpoint) controls the
     // collapsible nav region, so touch users can open the menu.
-    const toggle = screen.getByRole('button', { name: /toggle navigation/i })
+    const toggle = screen.getByRole('button', { name: /open the menu/i })
     expect(toggle).toHaveAttribute('aria-controls', 'main-navbar')
+  })
+
+  it('names the mobile menu toggle from the catalogue, in both languages', async () => {
+    // react-bootstrap names this button `Toggle navigation` unless told
+    // otherwise, and a Czech screen-reader user would hear that English on every
+    // page — for the one control they most need named correctly.
+    const { unmount } = renderLayout(auth())
+    expect(screen.getByRole('button', { name: 'Open the menu' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /toggle navigation/i })).toBeNull()
+    unmount()
+
+    await i18n.changeLanguage('cs')
+    renderLayout(auth())
+    expect(screen.getByRole('button', { name: 'Otevřít nabídku' })).toBeInTheDocument()
   })
 
   it('applies safe-area padding class to the navbar', () => {
@@ -227,7 +241,7 @@ describe('Layout navbar', () => {
     // `[search] [hamburger]` — search first (the hamburger belongs on the
     // trailing edge), and outside the collapse so it never folds away.
     const search = screen.getByRole('button', { name: 'Search' })
-    const toggle = screen.getByRole('button', { name: /toggle navigation/i })
+    const toggle = screen.getByRole('button', { name: /open the menu/i })
     expect(precedes(search, toggle)).toBe(true)
     expect(search.closest('.navbar.kukatko-navbar')).not.toBeNull()
 
@@ -574,7 +588,7 @@ describe('Layout navbar', () => {
 
     // The menu starts collapsed; opening the hamburger expands it.
     expect(menuIsCollapsed()).toBe(true)
-    await user.click(screen.getByRole('button', { name: /toggle navigation/i }))
+    await user.click(screen.getByRole('button', { name: /open the menu/i }))
     expect(menuIsCollapsed()).toBe(false)
 
     // Tapping a destination navigates and must dismiss the menu, rather than
@@ -591,7 +605,7 @@ describe('Layout navbar', () => {
     renderLayoutWithRoutes(auth())
 
     // Open the mobile menu, then the Browse group inside it.
-    await user.click(screen.getByRole('button', { name: /toggle navigation/i }))
+    await user.click(screen.getByRole('button', { name: /open the menu/i }))
     expect(menuIsCollapsed()).toBe(false)
     await user.click(screen.getByRole('button', { name: 'Browse' }))
 

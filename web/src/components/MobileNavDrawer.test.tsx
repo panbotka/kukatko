@@ -96,7 +96,7 @@ const withVersion = {
 
 /** Opens the hamburger and returns the drawer dialog. */
 async function openDrawer(user: ReturnType<typeof userEvent.setup>): Promise<HTMLElement> {
-  await user.click(screen.getByRole('button', { name: /toggle navigation/i }))
+  await user.click(screen.getByRole('button', { name: /open the menu/i }))
   return screen.findByRole('dialog', { name: 'Menu' })
 }
 
@@ -405,7 +405,7 @@ describe('MobileNavDrawer on desktop', () => {
     const user = userEvent.setup()
     const { container } = renderShell(auth({ isMaintainer: true }))
 
-    await user.click(screen.getByRole('button', { name: /toggle navigation/i }))
+    await user.click(screen.getByRole('button', { name: /open the menu/i }))
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(container.querySelector('.kk-navdrawer')).toBeNull()

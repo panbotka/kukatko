@@ -38,7 +38,30 @@ export default tseslint.config(
         'error',
         { allowNumber: true, allowBoolean: true },
       ],
+      // Every dialog must name its close button in the interface language, and
+      // react-bootstrap's own default for it is the English literal `Close`.
+      // src/components/Modal.tsx re-exports the modal with that name taken from
+      // the catalogue, so importing the library's directly would silently opt a
+      // new dialog back out of the translation.
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'react-bootstrap/Modal',
+              message:
+                "Import the app's Modal (src/components/Modal.tsx) instead: it translates the close button's accessible name.",
+            },
+          ],
+        },
+      ],
     },
+  },
+  {
+    // The one file allowed to reach for react-bootstrap's modal: it is what
+    // re-exports it with a translated close button.
+    files: ['src/components/Modal.tsx'],
+    rules: { 'no-restricted-imports': 'off' },
   },
   {
     // The service worker template is plain JavaScript on purpose: it is not

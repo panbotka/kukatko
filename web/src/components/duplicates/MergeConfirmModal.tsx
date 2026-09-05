@@ -1,10 +1,10 @@
 import type { TFunction } from 'i18next'
 import Button from 'react-bootstrap/Button'
-import Modal from 'react-bootstrap/Modal'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 
 import { type MergeResult } from '../../services/duplicates'
+import Modal from '../Modal'
 
 interface MergeConfirmModalProps {
   /** The dry-run preview to confirm, or null to keep the modal closed. */

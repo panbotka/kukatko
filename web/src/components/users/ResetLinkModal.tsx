@@ -3,7 +3,6 @@ import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
 import Form from 'react-bootstrap/Form'
 import InputGroup from 'react-bootstrap/InputGroup'
-import Modal from 'react-bootstrap/Modal'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 
@@ -16,6 +15,7 @@ import {
 } from '../../services/users'
 import { Icon } from '../Icon'
 
+import Modal from '../Modal'
 import { isPlaceholderEmail } from './account'
 import { actionErrorFor, type ErrorKey } from './errors'
 
