@@ -2833,9 +2833,19 @@ here.
   without which a card's name field and button would set the `1fr` tracks' automatic minimum and
   push the grid off the side of a phone at the three columns a narrow viewport is capped to —
   the other half of that is inside the card, which now survives **any** track width: the
-  representative row and the naming row wrap, the name field is `flex-basis: 0` (its own
-  `width: 100%` would otherwise push the submit onto its own line at every width) and the submit
-  is `text-break`, so its longest word cannot set a floor under the card either;
+  representative row and the naming row wrap, and the **naming row is sized by
+  `components/people/clusters.css`** (`.kk-cluster-name`/`__input`/`__submit`), not inline. The
+  field takes the free space (`flex: 1 1 15rem`, `min-width: 0`), the submit takes none
+  (`flex: 0 1 auto`) and is `text-break`, so its longest word cannot set a floor under the card
+  either. The basis is the fix for a field that used to collapse: a wrapping flex line is broken
+  on its items' *hypothetical* sizes, so at the `flex-basis: 0` this row shipped with, the two
+  always shared the row and the field absorbed all of the shrinkage — 41 px beside a 171 px
+  button at the page's own default five columns. A basis the placeholder fits in (202 px in Lato
+  1rem, plus the control's 26 px of padding and borders) breaks the button onto its own line
+  instead, and the field takes the whole card: 215 px at five columns, and never wider than the
+  card at the tenth density or a phone's three, where it shrinks to the track rather than out of
+  it. Pinned by `ClusterCard.test.tsx` (the classes on the rendered row, and the declarations
+  read out of the stylesheet);
   the title row is `flex-md-nowrap`, because a flex line is laid out from each item's *max-content*
   width and the subtitle's is a whole sentence — with wrapping left on the stepper always dropped
   to a second line and `justify-content-between` never applied; optimistic removal after naming;
@@ -5799,7 +5809,8 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   fullscreen overlays (`review.css`, `compare.css`) against the iPhone's insets and asserts that the
   control rows clear both the notch and the home bar — and that without the insets the spacing stays exactly as before —
   and `components/people/ClusterCard.test.tsx`, which guards both pointer variants of
-  `clusters.css` the same way).
+  `clusters.css` the same way, plus the naming row's flex shorthands — the field's basis is what
+  keeps it from collapsing beside its button, and no layout runs in jsdom to catch it).
   Routing in `App.tsx`: the route table lives in the exported `AppRoutes` (so that a test can mount it
   into a `MemoryRouter` and verify the wiring itself — `App.test.tsx`), `App` merely wraps it in
   `BrowserRouter`+`AuthProvider`+`CapabilitiesProvider` (the capabilities provider sits inside the auth provider,

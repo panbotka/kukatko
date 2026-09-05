@@ -161,15 +161,13 @@ export function ClusterCard({ cluster, busy, onAssign, onRemoveFace }: ClusterCa
           <Form.Label htmlFor={`cluster-name-${cluster.uid}`} className="small text-secondary mb-1">
             {t('clusters.nameLabel')}
           </Form.Label>
-          <div className="d-flex flex-wrap gap-2">
+          {/* Geometry lives in `clusters.css`: how wide this field has to be is a
+              fact about the placeholder's own rendering, and the row it decides —
+              field beside button, or button wrapped under a field that owns the
+              whole card — cannot be written as one set of inline sizes. */}
+          <div className="kk-cluster-name">
             <Form.Control
-              // `flex-basis: 0`, not the control's own `width: 100%`: a wrapping
-              // row is laid out from each item's hypothetical size, so a
-              // full-width input would push the submit onto its own line at every
-              // width. At zero basis the two share the row and only a track too
-              // narrow for the button's own word wraps them apart.
-              className="flex-grow-1"
-              style={{ flexBasis: 0, minWidth: 0 }}
+              className="kk-cluster-name__input"
               id={`cluster-name-${cluster.uid}`}
               type="text"
               value={name}
@@ -187,7 +185,7 @@ export function ClusterCard({ cluster, busy, onAssign, onRemoveFace }: ClusterCa
             <Button
               type="submit"
               variant="primary"
-              className="text-break"
+              className="kk-cluster-name__submit text-break"
               disabled={busy || name.trim() === ''}
             >
               {t('clusters.name')}

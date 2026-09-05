@@ -57,3 +57,46 @@
     font-size: var(--kk-font-size-body);
   }
 }
+
+/*
+ * The naming row: the field a group is named in, and its submit.
+ *
+ * The field is what the row is for, so it — never the button — takes the free
+ * space. Both live on one wrapping line, and a flex line is broken on its items'
+ * *hypothetical* sizes, so the field's basis is what decides whether the two
+ * still share the row. At the `flex-basis: 0` this row shipped with they always
+ * did: the button kept its 171 px and the field absorbed all of the shrinkage,
+ * down to 41 px at the page's default five columns — narrower than a single
+ * word of what it was asking for.
+ */
+.kk-cluster-name {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--kk-space-2);
+}
+
+.kk-cluster-name__input {
+  /*
+   * A basis the placeholder actually fits in: „Nové nebo existující jméno…"
+   * measures 202 px in the app's own face, and the control's padding and borders
+   * add 26 px, so 15rem is that plus a little slack for the name being typed. A
+   * card too narrow to hold it beside the button now breaks the button onto its
+   * own line instead, and the field takes the whole card.
+   */
+  flex: 1 1 15rem;
+  /*
+   * Below that basis the card itself is the limit — the tenth density and the
+   * three columns a phone is capped to are both narrower than any field worth
+   * asking for. There the field is alone on its line and shrinks to the card
+   * rather than out of it.
+   */
+  min-width: 0;
+}
+
+.kk-cluster-name__submit {
+  /* It takes the width of its label and no free space, and gives way — by
+     shrinking, by breaking its own word (`text-break`), and finally by wrapping
+     under the field. */
+  flex: 0 1 auto;
+  min-width: 0;
+}

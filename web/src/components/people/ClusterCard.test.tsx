@@ -14,6 +14,13 @@ import { ClusterCard } from './ClusterCard'
 const TOUCH_TARGET_PX = 44
 const REM_PX = 16
 
+/**
+ * The narrowest the name field may ask to be: the Czech placeholder „Nové nebo
+ * existující jméno…" measures 202 px in the app's own face (Lato 1rem, measured in
+ * Chromium), and the control's padding and borders add 26 px on top of it.
+ */
+const NAME_FIELD_MIN_PX = 228
+
 /** A one-sample cluster — enough to exercise the remove control. */
 function cluster(): ClusterView {
   return {
@@ -103,6 +110,23 @@ describe('ClusterCard', () => {
     ).toBeNull()
   })
 
+  it('leaves the name field sized by the stylesheet, on a row that may wrap', () => {
+    // The inline `flex-basis: 0` this field used to carry is the whole defect, and
+    // the width it needs is a fact about the placeholder's own rendering — so the
+    // geometry lives in `clusters.css`, where the guard below can read it.
+    renderCard()
+
+    const input = screen.getByLabelText('Name this group')
+    expect(input).toHaveClass('kk-cluster-name__input')
+    expect(input.style.flexBasis).toBe('')
+    expect(input.style.minWidth).toBe('')
+    // Field and submit are siblings on the one row the stylesheet lays out.
+    const submit = screen.getByRole('button', { name: 'Name group' })
+    expect(submit).toHaveClass('kk-cluster-name__submit')
+    expect(input.parentElement).toHaveClass('kk-cluster-name')
+    expect(submit.parentElement).toBe(input.parentElement)
+  })
+
   it('leaves the remove control sized by the stylesheet, next to its sample', () => {
     // The inline `width: 18px; height: 18px` this button used to carry was exactly
     // what the touch floor could not undo (it caps height, nothing caps width), so
@@ -168,5 +192,69 @@ describe('cluster sample remove control', () => {
     const sample = rule(coarse, /\.kk-cluster-sample\s*(?=\{)/)
     expect(sample.get('display')).toBe('flex')
     expect(sample.get('flex-direction')).toBe('column')
+  })
+})
+
+/**
+ * The naming row is a wrapping flex line, and a flex line is broken on its items'
+ * *hypothetical* sizes — so the field's basis, not its `min-width`, is what decides
+ * whether the fixed-width button still fits beside it. With the `flex-basis: 0` the
+ * row shipped with, the two always shared the row and the field absorbed every pixel
+ * the button did not need: 41 px at the page's default five columns, too narrow to
+ * read the placeholder or the name being typed. jsdom lays nothing out, so the guard
+ * is on the declarations that decide the break.
+ */
+describe('cluster naming row', () => {
+  const css = readCss('src/components/people/clusters.css')
+
+  /** The declarations of a rule, or a loud failure when the class was renamed. */
+  function rule(prelude: RegExp): Map<string, string> {
+    const body = ruleBody(css, prelude)
+    if (body === undefined) {
+      throw new Error(`rule not found: ${prelude.source}`)
+    }
+    return declarations(body)
+  }
+
+  const row = rule(/\.kk-cluster-name\s*(?=\{)/)
+  const input = rule(/\.kk-cluster-name__input\s*(?=\{)/)
+  const submit = rule(/\.kk-cluster-name__submit\s*(?=\{)/)
+
+  /** `flex: <grow> <shrink> <basis>` split into its three parts. */
+  function flex(declared: string | undefined): [number, number, string] {
+    const parts = (declared ?? '').split(/\s+/)
+    if (parts.length !== 3) {
+      throw new Error(`expected a three-part flex shorthand, got: ${String(declared)}`)
+    }
+    return [Number(parts[0]), Number(parts[1]), parts[2]]
+  }
+
+  it('gives the name field a basis wide enough for its own placeholder', () => {
+    const [grow, , basis] = flex(input.get('flex'))
+    // The field, not the button, takes the free space...
+    expect(grow).toBeGreaterThan(0)
+    // ...and it asks for at least the room the placeholder needs, so a card that
+    // cannot spare it breaks the button onto the next line instead of squeezing
+    // the field. A `0`/`auto` basis is exactly the defect.
+    expect(lengthPx(basis)).toBeGreaterThanOrEqual(NAME_FIELD_MIN_PX)
+  })
+
+  it('lets the field shrink to the card rather than out of it', () => {
+    // The tenth density and a phone's three columns are both narrower than any
+    // basis worth asking for: there the field is alone on its line and must take
+    // the card's width, not overflow it.
+    const [, shrink] = flex(input.get('flex'))
+    expect(shrink).toBeGreaterThan(0)
+    expect(input.get('min-width')).toBe('0')
+  })
+
+  it('wraps the row and lets the button give way, never the field', () => {
+    expect(row.get('display')).toBe('flex')
+    expect(row.get('flex-wrap')).toBe('wrap')
+    const [grow, shrink] = flex(submit.get('flex'))
+    // The button neither claims free space nor refuses to shrink.
+    expect(grow).toBe(0)
+    expect(shrink).toBeGreaterThan(0)
+    expect(submit.get('min-width')).toBe('0')
   })
 })
