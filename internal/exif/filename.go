@@ -20,6 +20,26 @@ var filenameDatePatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?P<y>\d{4})[-_.]?(?P<mo>\d{2})[-_.]?(?P<d>\d{2})`),
 }
 
+// minFilenameYear is the earliest year a date read from a file name may claim:
+// 1826, the year of the oldest surviving photograph. A run of digits reaching
+// further back is an identifier that merely looks like a date.
+const minFilenameYear = 1826
+
+// filenameYearLookahead is how far past the current year a date read from a file
+// name may reach. One year forgives a camera whose clock is set wrong; it does
+// not forgive an asset id.
+const filenameYearLookahead = 1
+
+// plausibleFilenameYear reports whether year could be the year a photograph was
+// taken: no earlier than the birth of photography and no later than a year from
+// now. It guards only the file-name heuristic — a date the camera itself wrote
+// is an assertion and is kept however odd it looks, while a file-name match is a
+// guess, and the long digit runs Facebook and WhatsApp name their downloads with
+// (90090310_638783213372240_… reads as 9009-03-10) are exactly the guess to drop.
+func plausibleFilenameYear(year int) bool {
+	return year >= minFilenameYear && year <= time.Now().UTC().Year()+filenameYearLookahead
+}
+
 // FilenameTakenAt recovers a capture time from name's base name using the same
 // camera/screenshot naming conventions Extract uses, returning the parsed UTC
 // time and true on success. It lets non-image pipelines (notably video ingest,
@@ -34,8 +54,9 @@ func FilenameTakenAt(name string) (*time.Time, bool) {
 
 // parseFilenameDate attempts to recover a capture time from path's base name,
 // trying each known naming convention in turn. It returns the parsed time in
-// UTC and true on success, or the zero time and false when no pattern matches or
-// the matched components do not form a valid calendar date.
+// UTC and true on success, or the zero time and false when no pattern matches,
+// the matched components do not form a valid calendar date, or the year they
+// form is not plausible for a photograph.
 func parseFilenameDate(path string) (time.Time, bool) {
 	name := filepath.Base(path)
 	for _, re := range filenameDatePatterns {
@@ -53,12 +74,16 @@ func parseFilenameDate(path string) (time.Time, bool) {
 // timeFromGroups builds a UTC time from a regexp match's named capture groups,
 // defaulting hour/minute/second to zero when the pattern did not capture them.
 // It returns false when the captured numbers do not round-trip to the same
-// calendar date (e.g. month 13 or day 32), rejecting false positives.
+// calendar date (e.g. month 13 or day 32) or when the year is not plausible for
+// a photograph, rejecting false positives.
 func timeFromGroups(re *regexp.Regexp, match []string) (time.Time, bool) {
 	g := namedGroups(re, match)
 	year, month, day := g["y"], g["mo"], g["d"]
 	hour, minute, second := g["h"], g["mi"], g["s"]
 	if year == 0 || month == 0 || day == 0 {
+		return time.Time{}, false
+	}
+	if !plausibleFilenameYear(year) {
 		return time.Time{}, false
 	}
 	when := time.Date(year, time.Month(month), day, hour, minute, second, 0, time.UTC)

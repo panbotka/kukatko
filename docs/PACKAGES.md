@@ -773,7 +773,12 @@ to `## Package map` in `CLAUDE.md`.
   it with both the same. A caller holding the bytes under a generated name (`ingest` stages every upload
   as `os.CreateTemp` → `kukatko-ingest-<digits>`) **must** pass the real name: eight digits that happen
   to read as `YYYYMMDD` parse as a date, which invented capture times in the year 2879 for roughly one
-  upload in thirty. An empty `name` disables the fallback (used by `video.probeWithExiftool`, whose
+  upload in thirty. **The file-name date must also land on a plausible year** — no earlier than
+  1826 (the oldest surviving photograph) and no later than a year from now, which forgives a
+  camera whose clock is set wrong but drops the long digit runs Facebook and WhatsApp name their
+  downloads with (`90090310_638783213372240_…` reads as 9009-03-10); a rejected year is simply
+  no date, i.e. `unknown`, and the bound is the guess's alone — an EXIF date is kept however odd.
+  An empty `name` disables the fallback (used by `video.probeWithExiftool`, whose
   caller applies its own with the upload's name); a file without EXIF (PNG) = zero values, **not an error**;
   **IPTC/XMP + file-technical fields** (`iptc.go`, mapped onto the same-named `photos` columns):
   `Subject` ← `Subject`(scalar)/`Headline`/`XPSubject`/`ObjectName`, `Keywords` ←
