@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import { GRID_GAP_PX } from '../lib/gridDensity'
 import { declarations, readCss, ruleBody } from '../test/css'
 
 /**
@@ -315,5 +316,110 @@ describe('map sizing fallback', () => {
     const css = readCss('src/styles/app.css')
     const pin = declarations(ruleBody(css, /\.kukatko-map \.leaflet-marker-draggable/) ?? '')
     expect(pin.get('touch-action')).toBe('none')
+  })
+})
+
+/**
+ * The library tile's selection checkbox is the one control that shares its space
+ * with what it sits on: the tile opens the photograph, the small disc in its
+ * corner selects it. That is why it grew its target with a pseudo-element rather
+ * than with a bigger box — and it is why the target was wrong. Swept with
+ * `elementFromPoint` on a phone viewport with touch emulation held open, the four
+ * insets that read as 0.25rem + 1.65rem + 0.85rem = 44px gave a **41 x 41** region
+ * whose centre sat 4px below and right of the disc: an absolutely positioned
+ * `::before` is laid out against the *padding* box, while those insets were arrived
+ * at against the border box, so the disc's 2px border came off the top and the left
+ * of what they grew. A sized, translated box cannot drift that way — the padding box
+ * and the border box share a centre — so what is pinned below is the shape of the
+ * fix, not the arithmetic that failed.
+ */
+describe('the tile selection checkbox on a coarse pointer', () => {
+  const css = readCss('src/styles/tokens.css')
+  // Both conditions in one prelude: `hover: none` is a touch screen, `pointer:
+  // coarse` also catches a hybrid device driven by a finger.
+  const touch =
+    ruleBody(
+      css,
+      /@media(?=[^{]*\(hover:\s*none\))(?=[^{]*\(pointer:\s*coarse\))[^{]*/,
+      /\.kk-tile__check/,
+    ) ?? ''
+  const disc = declarations(ruleBody(css, /\.kk-tile__check\s*(?=\{)/) ?? '')
+  const hit = declarations(ruleBody(touch, /\.kk-tile__check::before\s*(?=\{)/) ?? '')
+
+  /** Resolves a `var(--kk-*)` reference back to its `:root` declaration. */
+  function tokenPx(value: string | undefined): number {
+    const token = /^var\((--[\w-]+)\)$/.exec(value ?? '')
+    if (token === null) {
+      return lengthPx(value)
+    }
+    const root = ruleBody(css, /:root\s*(?=\{)/, new RegExp(`${token[1]}\\s*:`))
+    return lengthPx(declarations(root ?? '').get(token[1]))
+  }
+
+  it('gives the disc a 44px hit area', () => {
+    expect(hit.get('content')).toBe("''")
+    expect(hit.get('position')).toBe('absolute')
+    expect(lengthPx(hit.get('width'))).toBeGreaterThanOrEqual(TOUCH_FLOOR_PX)
+    expect(lengthPx(hit.get('height'))).toBeGreaterThanOrEqual(TOUCH_FLOOR_PX)
+  })
+
+  it('centres it on the visible control', () => {
+    expect(hit.get('top')).toBe('50%')
+    expect(hit.get('left')).toBe('50%')
+    expect(hit.get('transform')).toBe('translate(-50%, -50%)')
+    // The inset form is the one that drifted: `right`/`bottom` would be measured
+    // from the padding box again and the border would eat the difference.
+    for (const inset of ['right', 'bottom']) {
+      expect(hit.has(inset)).toBe(false)
+    }
+  })
+
+  it('grows the target and not the artwork', () => {
+    // The wall is dense and the disc deliberately quiet, so the coarse block may
+    // reveal it but never resize it…
+    const shown = declarations(ruleBody(touch, /\.kk-tile__check\s*(?=\{)/) ?? '')
+    for (const grown of ['width', 'height', 'font-size', 'padding']) {
+      expect(shown.has(grown)).toBe(false)
+    }
+    // …and the box that carries the target paints nothing at all.
+    for (const painted of ['background', 'background-color', 'border', 'outline', 'box-shadow']) {
+      expect(hit.has(painted)).toBe(false)
+    }
+  })
+
+  it('reaches no further than a hair past the tile it belongs to', () => {
+    // Centred on a disc that sits closer to the tile's corner than half the
+    // difference in size, the target has to overhang that corner. Most of the
+    // overhang is the wall's own gutter; the couple of pixels beyond it are at a
+    // tile boundary, where a finger is ambiguous anyway.
+    const overhang =
+      (lengthPx(hit.get('width')) - lengthPx(disc.get('width'))) / 2 - tokenPx(disc.get('left'))
+    expect(overhang).toBeGreaterThan(0)
+    expect(overhang - GRID_GAP_PX).toBeLessThanOrEqual(2)
+  })
+
+  it('is no target at all while the wall keeps it hidden', () => {
+    // The photo wall shows no check until the grid is actually selecting, and an
+    // invisible one that still hit-tests would take the top-start corner of every
+    // photograph — a ninth of a phone tile, on the tap that has to open it.
+    const bare = declarations(
+      ruleBody(touch, /\.kukatko-photo-grid \.kk-tile__check\s*(?=\{)/) ?? '',
+    )
+    expect(bare.get('opacity')).toBe('0')
+    expect(bare.get('pointer-events')).toBe('none')
+
+    const selecting = declarations(
+      ruleBody(touch, /\.kukatko-photo-grid \.kk-tile--selecting[^{]*/) ?? '',
+    )
+    expect(selecting.get('opacity')).toBe('1')
+    expect(selecting.get('pointer-events')).toBe('auto')
+  })
+
+  it('leaves the fine pointer exactly as it was', () => {
+    // Every rule above is inside the coarse block: with a mouse the target is the
+    // drawn disc, revealed on hover, as it has always been.
+    expect(css.match(/\.kk-tile__check::before/g)).toHaveLength(1)
+    expect(touch).toContain('.kk-tile__check::before')
+    expect(disc.has('pointer-events')).toBe(false)
   })
 })

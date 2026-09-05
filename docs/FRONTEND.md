@@ -1174,16 +1174,25 @@ here.
   opening the photo**), which appears on hover and **stays visible once something is selected**
   (`kk-tile--checks`). On a **coarse pointer / touch screen** there is no hover to reveal it, so
   `@media (hover: none), (pointer: coarse)` in `tokens.css` **pins it visible at rest** and grows its tap
-  target to the app's **2.75rem (44px)** floor via an invisible `::before` — expanded down/right so it stops at
-  the tile's own edge and can't swallow a tap meant for the neighbouring tile. This is safe by construction:
+  target to the app's **2.75rem (44px)** floor via an invisible `::before` — a box of exactly that size
+  **centred** on the disc (`top`/`left: 50%` + `translate(-50%, -50%)`), not the four insets it used to carry:
+  an absolutely positioned pseudo-element is laid out against the *padding* box, while those offsets were
+  arrived at against the border box, so the disc's 2px border came off the top and the left of the box they
+  grew — a 40px target (**41 × 41** as `elementFromPoint` sweeps it) sitting 4px below and right of the control. Centred, the
+  box overhangs the tile's corner by ~4.8px — 3px of that the wall's own hairline gutter (`GRID_GAP_PX`), the
+  rest a hair over the very edge of the tile above/left, which is the deliberate trade for a target that is
+  both on the floor and on the control. This is safe by construction:
   the control is **mounted only while the tile is `selectable`**, so a viewer's grid has nothing to reveal.
   The **justified photo wall is the exception**: there the touch entry point is the long press below, so a disc
   on every tile buys nothing and costs a permanent overlay over every photograph. Inside
   `.kukatko-photo-grid` the check stays hidden until the grid is actually selecting — a tile that is a
   selection target (**`kk-tile--selecting`**, which `PhotoTile` stamps from `selectFirst`), a grid holding a
-  selection (`kk-tile--checks`) or a tile already picked (`kk-tile__check--on`). Guarded by
-  `src/styles/tokens.test.ts` (jsdom evaluates no media queries, so the rule is asserted against the
-  stylesheet source).
+  selection (`kk-tile--checks`) or a tile already picked (`kk-tile__check--on`). While it is hidden there it is
+  also **`pointer-events: none`** — invisible is not absent, and left hit-testable the disc took every tap in
+  the top-start corner of a photograph, the tap that has to open it; the three selecting states restore
+  `pointer-events: auto` alongside the opacity. Guarded by `src/styles/tokens.test.ts` (what is visible when)
+  and `src/styles/tapTargets.test.ts` (the 44px box, its centring and its pointer-events) — jsdom evaluates no
+  media queries, so both read the stylesheet source.
   A selected tile gets an **accent ring** (`kk-tile--selected` → inset
   `::after` from `--kk-accent`) and a **dimmed image**, so the selection is unmissable on the dense wall.
   Selection mode is either **explicit** (`selection.active` — tiles are selection targets from the start,

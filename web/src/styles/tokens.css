@@ -794,9 +794,24 @@
    `PhotoTile` mounts the control only while the tile is `selectable`, so a
    viewer's grid has no control to reveal. The disc keeps its quiet 1.65rem; an
    invisible `::before` grows the tap target to the app's 2.75rem (44px) touch
-   floor instead. It expands only as far as the tile edge above/left (exactly the
-   `--kk-space-1` inset) and takes the rest down/right, so it never reaches across
-   the grid gutter and steals a tap from the neighbouring tile.
+   floor instead, as a box of that exact size centred on the disc.
+
+   Centred, and sized rather than inset, because an inset `::before` is laid out
+   against its element's *padding* box: the four offsets that read as 0.25rem +
+   1.65rem + 0.85rem = 2.75rem were arrived at against the border box, so the
+   disc's 2px border came off the top and the left of what they grew — a 40px
+   target (it sweeps as 41 x 41), sitting 4px down and right of the control it
+   belongs to. A `width`/`height` pair plus `translate(-50%, -50%)` cannot drift
+   like that: the padding box and the border box share a centre, so the target is
+   44px wherever the border goes.
+
+   It reaches 8.8px past the 1.65rem disc on every side, which is 4.8px past the
+   tile's own corner — 3px of the wall's hairline gutter (`lib/gridDensity`'s
+   `GRID_GAP_PX`) and a last ~1.8px over the very edge of the tile above/left.
+   That is the deliberate trade: the alternative to a hair of overlap at a tile
+   boundary — where a finger is ambiguous anyway — is either a target under the
+   floor or moving the visible disc inward, out of line with the tile's other
+   corner controls.
 
    The justified photo wall is the exception: there the touch entry point is the
    press-and-hold-and-drag gesture (`hooks/useLongPressSelect`), so a check on
@@ -813,22 +828,29 @@
 
   .kukatko-photo-grid .kk-tile__check {
     opacity: 0;
+    /* Invisible is not absent: left hit-testable, the bare wall's hidden disc
+       takes every tap in the top-start corner of a photograph — a tap that has
+       to open the photo — and a 44px target would take a ninth of a phone tile
+       that way. It becomes a target again exactly when it becomes visible. */
+    pointer-events: none;
   }
 
   .kukatko-photo-grid .kk-tile--selecting .kk-tile__check,
   .kukatko-photo-grid .kk-tile--checks .kk-tile__check,
   .kukatko-photo-grid .kk-tile__check--on {
     opacity: 1;
+    pointer-events: auto;
   }
 
   .kk-tile__check::before {
     content: '';
     position: absolute;
-    /* 0.25rem + 1.65rem + 0.85rem = 2.75rem in each axis. */
-    top: calc(-1 * var(--kk-space-1));
-    left: calc(-1 * var(--kk-space-1));
-    right: -0.85rem;
-    bottom: -0.85rem;
+    /* 2.75rem (44px) square, centred on the disc — see the note above. */
+    top: 50%;
+    left: 50%;
+    width: 2.75rem;
+    height: 2.75rem;
+    transform: translate(-50%, -50%);
   }
 }
 
