@@ -85,3 +85,28 @@ func (s *Service) persistCluster(ctx context.Context, faces []Face, component []
 	}
 	return nil
 }
+
+// GroupingState reports what the library's face groups look like to the
+// scheduler: how many are listable, how many still need their cached summary,
+// and — for a library that has never been grouped — whether enough unassigned
+// faces are waiting for a pass to produce anything.
+//
+// It is a read: it groups nothing and assigns nobody. The clusterable-face count
+// stops at the minimum group size, so the question costs the same on a library
+// with two unassigned faces and on one with two hundred thousand.
+func (s *Service) GroupingState(ctx context.Context) (GroupingState, error) {
+	ready, unprepared, err := s.store.CountClusters(ctx)
+	if err != nil {
+		return GroupingState{}, err
+	}
+	state := GroupingState{Ready: ready, Unprepared: unprepared}
+	if ready+unprepared > 0 {
+		return state, nil
+	}
+	clusterable, err := s.store.CountClusterableFaces(ctx, s.minSize)
+	if err != nil {
+		return GroupingState{}, err
+	}
+	state.Groupable = clusterable >= s.minSize
+	return state, nil
+}

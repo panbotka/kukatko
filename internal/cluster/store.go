@@ -42,6 +42,30 @@ func (s *Store) ListUnclusteredFaces(ctx context.Context) ([]Face, error) {
 	return s.queryFaces(ctx, listUnclusteredFacesSQL)
 }
 
+// countClusterableFacesSQL counts the faces eligible for clustering, stopping at
+// the caller's cap. The question it answers is "are there at least N", and a
+// library with a hundred thousand unassigned faces must not pay for counting
+// every one of them to answer it.
+const countClusterableFacesSQL = `
+SELECT count(*) FROM (
+	SELECT 1 FROM faces WHERE subject_uid IS NULL AND cluster_uid IS NULL LIMIT $1
+) AS clusterable`
+
+// CountClusterableFaces returns how many faces are eligible for clustering —
+// unassigned and not yet in a cluster — counting at most limit of them, so the
+// answer costs the same on an empty library and on a huge one. A non-positive
+// limit counts nothing.
+func (s *Store) CountClusterableFaces(ctx context.Context, limit int) (int, error) {
+	if limit <= 0 {
+		return 0, nil
+	}
+	var count int
+	if err := s.pool.QueryRow(ctx, countClusterableFacesSQL, limit).Scan(&count); err != nil {
+		return 0, fmt.Errorf("cluster: counting clusterable faces: %w", err)
+	}
+	return count, nil
+}
+
 // listClusterFacesSQL selects every face belonging to one cluster, ordered by id.
 const listClusterFacesSQL = `
 SELECT id, photo_uid, face_index, embedding, bbox, det_score, model

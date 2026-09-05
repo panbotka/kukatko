@@ -49,6 +49,13 @@ type Status = 'loading' | 'error' | 'ready'
  * A group is listed only once the server has prepared its cached summary. While
  * groups are still being prepared the page says so, with the count, rather than
  * spinning: preparing them is background work that opening the page schedules.
+ *
+ * Opening the page is also what starts the grouping itself on a library that has
+ * never been grouped — nothing else in the app does — so an empty page here is
+ * not necessarily an empty library. When the server says a pass is queued or
+ * running the page says "we are working it out" instead of the empty state,
+ * because the reader would otherwise be looking at a screen that is about to
+ * fill itself in and has no way to know it.
  */
 export function ClustersPage() {
   const { t } = useTranslation()
@@ -56,6 +63,9 @@ export function ClustersPage() {
   const [clusters, setClusters] = useState<ClusterView[]>([])
   const [ready, setReady] = useState(0)
   const [pending, setPending] = useState(0)
+  // Whether the server has a grouping pass queued or running. It is what tells
+  // an empty page apart from a page whose groups have not been worked out yet.
+  const [grouping, setGrouping] = useState(false)
   const [nextOffset, setNextOffset] = useState<number | null>(null)
   const [status, setStatus] = useState<Status>('loading')
   const [loadingMore, setLoadingMore] = useState(false)
@@ -83,6 +93,7 @@ export function ClustersPage() {
       setClusters((prev) => (offset === 0 ? page.clusters : [...prev, ...page.clusters]))
       setReady(page.total)
       setPending(page.pending)
+      setGrouping(page.grouping)
       setNextOffset(page.next_offset)
       setMoreError(false)
       setStatus('ready')
@@ -219,7 +230,24 @@ export function ClustersPage() {
 
       {status === 'error' && <ErrorState title={t('clusters.error')} onRetry={reload} />}
 
-      {status === 'ready' && !hasCards && pending === 0 && (
+      {/* Two different silences. A pass under way means the groups are being
+          worked out right now and the page will fill itself in; nothing under
+          way means there is genuinely nothing to name, and promising work that
+          will never happen is the thing this state used to get wrong. */}
+      {status === 'ready' && !hasCards && pending === 0 && grouping && (
+        <EmptyState
+          title={t('clusters.grouping.title')}
+          hint={t('clusters.grouping.hint')}
+          icon={<Spinner animation="border" size="sm" />}
+          action={
+            <Button variant="outline-secondary" size="sm" onClick={reload}>
+              {t('clusters.refresh')}
+            </Button>
+          }
+        />
+      )}
+
+      {status === 'ready' && !hasCards && pending === 0 && !grouping && (
         <EmptyState title={t('clusters.empty.title')} hint={t('clusters.empty.hint')} />
       )}
 

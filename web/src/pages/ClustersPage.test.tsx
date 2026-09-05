@@ -111,6 +111,7 @@ function page(views: ClusterView[], extra: Partial<ClusterPage> = {}): ClusterPa
     clusters: views,
     total: views.length,
     pending: 0,
+    grouping: false,
     limit: 24,
     offset: 0,
     next_offset: null,
@@ -288,6 +289,30 @@ describe('ClustersPage', () => {
     fetchMock.mockResolvedValue(page([]))
     renderPage()
     expect(await screen.findByText('No face groups to review')).toBeInTheDocument()
+    expect(screen.queryByText('Looking for face groups…')).not.toBeInTheDocument()
+  })
+
+  it('says the groups are being worked out while a pass is running', async () => {
+    // A library whose faces have never been grouped: nothing to list yet and
+    // nothing pending either, but a pass is under way — the one case the bare
+    // empty state used to describe as "there is nothing here".
+    fetchMock.mockResolvedValue(page([], { grouping: true }))
+    renderPage()
+
+    expect(await screen.findByText('Looking for face groups…')).toBeInTheDocument()
+    expect(screen.queryByText('No face groups to review')).not.toBeInTheDocument()
+  })
+
+  it('looks again from the grouping state once the pass has had a moment', async () => {
+    fetchMock.mockResolvedValueOnce(page([], { grouping: true }))
+    fetchMock.mockResolvedValueOnce(page(clusters(), { total: 2 }))
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: 'Look again' }))
+
+    expect(await screen.findByText('4 faces')).toBeInTheDocument()
+    expect(screen.queryByText('Looking for face groups…')).not.toBeInTheDocument()
   })
 
   it('offers a retry when the first page fails', async () => {

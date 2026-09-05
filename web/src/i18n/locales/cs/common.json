@@ -1731,7 +1731,11 @@
     "moreError": "Další skupiny se nepodařilo načíst.",
     "empty": {
       "title": "Žádné skupiny k projití",
-      "hint": "Nové skupiny se tu objeví, jakmile aplikace rozpozná obličeje na vašich fotkách."
+      "hint": "Není tu žádný nepojmenovaný obličej, který by šlo seskupit — buď je všechno pojmenované, nebo aplikace zatím nenašla dost obličejů stejného člověka."
+    },
+    "grouping": {
+      "title": "Hledáme skupiny obličejů…",
+      "hint": "Na pozadí právě porovnáváme nepojmenované obličeje. Chvíli to trvá — za moment to zkus načíst znovu."
     },
     "representative": "Reprezentativní obličej",
     "sample": "Ukázkový obličej",

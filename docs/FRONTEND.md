@@ -2822,7 +2822,13 @@ here.
   only a failed **first** page becomes the `ErrorState`. The server lists only the groups whose
   summary it has prepared, so the page shows `clusters.preparing` ("2 groups ready, another 431 still
   being prepared…") with a **Look again** button whenever `pending > 0`, and — the point of the
-  count — a library with nothing prepared yet is *not* called empty. The grid also
+  count — a library with nothing prepared yet is *not* called empty. The same is true one step
+  earlier: opening the page is what schedules the **grouping itself** on a library that has never
+  been grouped, and while that pass is queued or running the response says `grouping: true`, which
+  the page shows as the `clusters.grouping` state (a spinner, "Looking for face groups…" and the same
+  **Look again**) in place of the empty state. The empty state proper (`clusters.empty`) is now only
+  the honest one — no unnamed faces left to group and no pass under way — instead of the old promise
+  that groups would appear "once the app recognizes faces", which nothing kept. The grid also
   carries **`kk-review-grid`** (`components/review/review.css` → `min-width: 0` on its children),
   without which a card's name field and button would set the `1fr` tracks' automatic minimum and
   push the grid off the side of a phone at the three columns a narrow viewport is capped to —
@@ -5328,8 +5334,8 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   the box is written to **four decimals**, the precision the backend keys its cache by, so two renders of one
   face are one cache entry rather than two),
   faces `fetchFaces`/`assignFace`, clusters `fetchClusters({limit,offset})` (**one page** —
-  the response carries `total` ready groups, `pending` ones still being prepared server-side and
-  `next_offset`)/
+  the response carries `total` ready groups, `pending` ones still being prepared server-side,
+  `grouping` (a grouping/preparation pass is queued or running) and `next_offset`)/
   `assignCluster`/`removeClusterFace`, outliers `fetchOutliers`; the types `Subject`/`SubjectCount`/
   `SubjectInput`/`SubjectType`/`MergeResult`/`Bbox`/`FaceView`/`FacesResponse`/`AssignRequest`/`Suggestion`/
   `ClusterView`/`ClusterPage`/`ClusterPageParams`/`ExampleFace`/`ClusterAssignRequest`/`RemoveFaceRequest`/`OutlierResult`/

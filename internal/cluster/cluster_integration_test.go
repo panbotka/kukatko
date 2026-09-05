@@ -511,3 +511,48 @@ func (e *env) onlyClusterUID(t *testing.T) string {
 	}
 	return uid
 }
+
+// TestGroupingState_ReadsTheLibrary verifies the state the grouping scheduler
+// reads: an empty library asks for nothing, a library holding unassigned faces
+// and no groups asks to be grouped, one lone face is not enough to ask, and a
+// library that already has groups never asks to be regrouped — however many
+// unassigned faces are left over, which after any pass there always are.
+func TestGroupingState_ReadsTheLibrary(t *testing.T) {
+	env := newEnv(t)
+	ctx := t.Context()
+
+	state, err := env.svc.GroupingState(ctx)
+	if err != nil {
+		t.Fatalf("GroupingState on an empty library: %v", err)
+	}
+	if state.Groupable || state.Ready != 0 || state.Unprepared != 0 {
+		t.Fatalf("empty library state = %+v, want nothing to do", state)
+	}
+
+	env.seedFace(t, "g1", 0, "", "")
+	if state, err = env.svc.GroupingState(ctx); err != nil {
+		t.Fatalf("GroupingState with one face: %v", err)
+	}
+	if state.Groupable {
+		t.Errorf("state = %+v, want one face to be too few to group", state)
+	}
+
+	env.seedFace(t, "g2", 0, "", "")
+	if state, err = env.svc.GroupingState(ctx); err != nil {
+		t.Fatalf("GroupingState with two faces: %v", err)
+	}
+	if !state.Groupable {
+		t.Errorf("state = %+v, want two unassigned faces and no groups to be groupable", state)
+	}
+
+	if _, err = env.svc.Recluster(ctx); err != nil {
+		t.Fatalf("Recluster: %v", err)
+	}
+	env.seedFace(t, "g3", 9, "", "")
+	if state, err = env.svc.GroupingState(ctx); err != nil {
+		t.Fatalf("GroupingState after grouping: %v", err)
+	}
+	if state.Groupable || state.Unprepared != 1 {
+		t.Errorf("state = %+v, want one unprepared group and no regrouping", state)
+	}
+}

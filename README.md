@@ -530,9 +530,11 @@ is then arithmetic on distances, and Kukátko deliberately stops short of acting
 - an unnamed face's nearest neighbours among **named** faces become *suggestions*, never assignments;
 - faces nobody has named are grouped into **clusters** by union-find over their nearest neighbours,
   so you can name twenty photos of the same stranger in one go. Both the grouping and each group's
-  preview are prepared in the background, and the page reads what is ready: it opens in a moment on a
-  library of any size, loads more groups as you scroll, and tells you in plain words how many groups
-  are still being prepared instead of spinning at you;
+  preview are prepared in the background, and opening the face-groups page is what starts whichever
+  of the two the library is missing — no administrator's command required. The page reads what is
+  ready: it opens in a moment on a library of any size, loads more groups as you scroll, and tells
+  you in plain words that the groups are still being worked out instead of spinning at you (or,
+  worse, calling itself empty);
 - a named person's faces have a centroid, and the ones sitting far from it are surfaced as
   **outliers** — that is how a misfiled face gets found;
 - "not this person" is remembered as a **rejection**, so a wrong guess stays refused instead of

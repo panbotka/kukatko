@@ -410,17 +410,22 @@ export interface ClusterView {
 }
 
 /**
- * One page of `GET /api/v1/faces/clusters` (`cluster.Listing`).
+ * One page of `GET /api/v1/faces/clusters` (`cluster.Listing` plus `grouping`).
  *
  * `total` counts the groups that are *ready* — the ones whose cached summary the
  * server has already built — and `pending` the ones it is still preparing in the
- * background. A page load that finds groups pending asks the server to prepare
- * them, so the two numbers together are what the page says instead of spinning.
+ * background. A page load asks the server for whichever pass the library is
+ * missing (grouping the unassigned faces of a library that has none, preparing
+ * the summaries of the groups that have none), and `grouping` says whether one
+ * is queued or running. The three together are what the page says instead of
+ * spinning — and, on a library that has never been grouped, instead of claiming
+ * there is nothing to see.
  */
 export interface ClusterPage {
   clusters: ClusterView[]
   total: number
   pending: number
+  grouping: boolean
   limit: number
   offset: number
   next_offset: number | null

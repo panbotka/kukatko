@@ -15,6 +15,13 @@
 // in visible steps, and the page can honestly say how many groups are ready
 // while the rest are being prepared. Nothing here assigns a face to anybody —
 // browsing and preparing are read-only in effect.
+//
+// The grouping itself has to start somewhere, and nothing else in the app ever
+// starts it: face detection fills the faces table and stops. EnsureGrouping is
+// that start. It reads the library's own state — faces but no groups, or groups
+// with no summaries — and queues the one pass that state is missing, at most one
+// at a time, so a library nobody has grouped by hand still ends up with groups
+// while a fully grouped one queues nothing.
 package clusterjob
 
 import (
@@ -36,6 +43,10 @@ type Clusterer interface {
 	// BuildSummaries prepares the cached listing summary of up to limit clusters
 	// that have none, reporting what it did and how many still wait.
 	BuildSummaries(ctx context.Context, limit int) (cluster.SummaryRun, error)
+	// GroupingState reports what the library's groups look like: how many are
+	// listable, how many await a summary, and whether a library with no groups
+	// holds enough unassigned faces to make one.
+	GroupingState(ctx context.Context) (cluster.GroupingState, error)
 }
 
 // Queue is the slice of the job store this package needs: appending a job and
@@ -88,15 +99,62 @@ func (s *Service) ScheduleRecluster(ctx context.Context) (bool, error) {
 	return s.schedule(ctx, payload{Recluster: true})
 }
 
-// EnsureSummaries queues a preparation pass for the groups whose summary has not
-// been built yet, unless one is already waiting or running. It reports whether a
-// job was queued.
+// EnsureGrouping queues the grouping work the library is missing, if any, and
+// reports whether a pass is queued or running once it has looked — which is what
+// the face-groups page says out loud instead of showing a bare empty state.
 //
-// The face-groups page calls it when its listing says groups are pending, so
-// opening the page is what starts (and only ever starts) the work that fills it
-// in. It regroups nothing: browsing must never change who a face belongs to.
-func (s *Service) EnsureSummaries(ctx context.Context) (bool, error) {
-	return s.schedule(ctx, payload{})
+// Two things can be missing, and the library's own state says which:
+//
+//   - It has faces and no groups at all. Nothing else in the app ever starts the
+//     grouping pass — face detection fills the faces table and stops there — so
+//     without this a library that nobody grouped by hand stays empty for ever.
+//     The pass groups only unassigned, unclustered faces: an already-named face
+//     is never regrouped or reassigned by somebody merely opening the page.
+//   - It has groups whose cached listing summary has not been built yet. That
+//     pass regroups nothing at all; it only prepares what the listing draws.
+//
+// A library that is fully grouped and fully prepared queues nothing, and neither
+// does one with no faces: an empty library must stay calmly empty rather than
+// promise work that will never happen. At most one pass is in flight, so
+// reloading the page collapses into the pass already queued instead of stacking
+// up a queue of identical ones.
+func (s *Service) EnsureGrouping(ctx context.Context) (bool, error) {
+	pending, err := s.queue.CountPending(ctx, jobs.TypeFaceCluster)
+	if err != nil {
+		return false, fmt.Errorf("clusterjob: checking for a pending pass: %w", err)
+	}
+	if pending > 0 {
+		return true, nil
+	}
+	state, err := s.clusters.GroupingState(ctx)
+	if err != nil {
+		return false, fmt.Errorf("clusterjob: reading the library's grouping state: %w", err)
+	}
+	due, ok := duePass(state)
+	if !ok {
+		return false, nil
+	}
+	if err := s.enqueue(ctx, due); err != nil {
+		return false, err
+	}
+	s.log.InfoContext(ctx, "face grouping pass queued",
+		slog.Bool("recluster", due.Recluster), slog.Int("groups_ready", state.Ready),
+		slog.Int("groups_unprepared", state.Unprepared))
+	return true, nil
+}
+
+// duePass returns the pass state is asking for, and whether one is due at all.
+// Grouping comes first: a library with faces and no groups needs the groups
+// before their summaries can mean anything.
+func duePass(state cluster.GroupingState) (payload, bool) {
+	switch {
+	case state.Groupable:
+		return payload{Recluster: true}, true
+	case state.Unprepared > 0:
+		return payload{}, true
+	default:
+		return payload{}, false
+	}
 }
 
 // schedule appends a face_cluster job carrying p unless one is already pending.

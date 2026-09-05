@@ -45,16 +45,17 @@ func (f *fakeService) RemoveFace(context.Context, string, cluster.Ref) (cluster.
 }
 
 // fakePreparer is a Preparer stub counting how often the listing asked for the
-// background preparation pass.
+// background grouping pass, and reporting the canned answer it gives back.
 type fakePreparer struct {
-	calls int
-	err   error
+	calls    int
+	grouping bool
+	err      error
 }
 
-// EnsureSummaries counts the call and returns the canned outcome.
-func (f *fakePreparer) EnsureSummaries(context.Context) (bool, error) {
+// EnsureGrouping counts the call and returns the canned outcome.
+func (f *fakePreparer) EnsureGrouping(context.Context) (bool, error) {
 	f.calls++
-	return true, f.err
+	return f.grouping, f.err
 }
 
 // passthrough is a no-op middleware standing in for the write guard.
@@ -158,38 +159,77 @@ func TestHandleList_badPaging(t *testing.T) {
 	}
 }
 
-// TestHandleList_schedulesPreparation asks for the background pass exactly when
-// the listing reports clusters that are not prepared yet.
-func TestHandleList_schedulesPreparation(t *testing.T) {
+// TestHandleList_schedulesGrouping asks the scheduler on every listing — a
+// library with no groups at all is exactly the one whose listing reports nothing
+// pending, so the request itself, not the counts in its answer, is what decides
+// to ask — and passes its verdict on to the reader as `grouping`.
+func TestHandleList_schedulesGrouping(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		pending int
-		want    int
+		name     string
+		listing  cluster.Listing
+		grouping bool
 	}{
-		{name: "groups still being prepared", pending: 7, want: 1},
-		{name: "everything prepared", pending: 0, want: 0},
+		{name: "an empty page whose groups are being worked out", grouping: true},
+		{name: "an empty page with nothing to do", grouping: false},
+		{
+			name:     "groups still being prepared",
+			listing:  cluster.Listing{Pending: 7},
+			grouping: true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			prep := &fakePreparer{}
-			srv := newServerWith(t, &fakeService{listing: cluster.Listing{Pending: tt.pending}}, prep)
+			prep := &fakePreparer{grouping: tt.grouping}
+			srv := newServerWith(t, &fakeService{listing: tt.listing}, prep)
 			resp := do(t, http.MethodGet, srv.URL+"/api/v1/faces/clusters", "")
 			defer func() { _ = resp.Body.Close() }()
-			if prep.calls != tt.want {
-				t.Errorf("preparation scheduled %d times, want %d", prep.calls, tt.want)
+			if prep.calls != 1 {
+				t.Errorf("grouping scheduled %d times, want 1", prep.calls)
+			}
+			var out struct {
+				Grouping bool `json:"grouping"`
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			if out.Grouping != tt.grouping {
+				t.Errorf("grouping = %t, want %t", out.Grouping, tt.grouping)
 			}
 		})
 	}
 }
 
-// TestHandleList_preparationFailureStillAnswers keeps serving the prepared
+// TestHandleList_noPreparerStillAnswers serves the listing with no scheduler
+// wired at all, reporting no pass rather than promising work nobody will do.
+func TestHandleList_noPreparerStillAnswers(t *testing.T) {
+	t.Parallel()
+
+	srv := newServer(t, &fakeService{listing: cluster.Listing{Pending: 2}})
+	resp := do(t, http.MethodGet, srv.URL+"/api/v1/faces/clusters", "")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var out struct {
+		Grouping bool `json:"grouping"`
+		Pending  int  `json:"pending"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if out.Grouping || out.Pending != 2 {
+		t.Errorf("listing = %+v, want two pending groups and no pass", out)
+	}
+}
+
+// TestHandleList_schedulingFailureStillAnswers keeps serving the prepared
 // groups when the pass could not be scheduled: a queue hiccup must not turn a
 // readable page into an error.
-func TestHandleList_preparationFailureStillAnswers(t *testing.T) {
+func TestHandleList_schedulingFailureStillAnswers(t *testing.T) {
 	t.Parallel()
 	prep := &fakePreparer{err: errScheduling}
 	srv := newServerWith(t, &fakeService{listing: cluster.Listing{

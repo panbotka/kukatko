@@ -150,6 +150,26 @@ type Listing struct {
 	NextOffset *int   `json:"next_offset"`
 }
 
+// GroupingState is what the library looks like to whoever decides whether a
+// grouping pass is due: how many groups can already be listed, how many exist
+// but have no cached summary yet, and — only when there are no groups at all —
+// whether there are enough unassigned faces left to form one.
+//
+// Groupable is deliberately answered only for a library with no groups. Once a
+// library has been grouped there are always leftover unassigned faces (every
+// component smaller than the minimum size stays unclustered), so treating their
+// mere existence as "grouping is due" would schedule a pass that creates nothing,
+// for ever.
+type GroupingState struct {
+	// Ready is how many groups have a cached listing summary.
+	Ready int
+	// Unprepared is how many groups exist but are still waiting for one.
+	Unprepared int
+	// Groupable reports that the library has never been grouped and holds enough
+	// clusterable faces for a group to come out of a pass.
+	Groupable bool
+}
+
 // SummaryRun is the outcome of one background summary-building pass: how many
 // cluster summaries were built, how many empty clusters were dropped on the way,
 // and how many clusters still have no summary once the pass ran out of its

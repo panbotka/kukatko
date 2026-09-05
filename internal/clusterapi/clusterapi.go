@@ -41,14 +41,16 @@ type Service interface {
 	RemoveFace(ctx context.Context, clusterUID string, ref cluster.Ref) (cluster.View, bool, error)
 }
 
-// Preparer schedules the background pass that builds the cached summary each
-// cluster is listed from. It is satisfied by clusterjob.Service and is optional:
-// with none wired the listing still serves whatever is prepared, it just never
-// asks for more.
+// Preparer schedules the background pass the library's groups are missing: the
+// grouping of unassigned faces on a library that has none, or the cached
+// summaries each group is listed from. It is satisfied by clusterjob.Service and
+// is optional: with none wired the listing still serves whatever is prepared, it
+// just never asks for more.
 type Preparer interface {
-	// EnsureSummaries queues a preparation pass unless one is already waiting or
-	// running, reporting whether it queued one. It never regroups faces.
-	EnsureSummaries(ctx context.Context) (bool, error)
+	// EnsureGrouping queues the pass the library is missing, unless one is already
+	// waiting or running, and reports whether a pass is in flight afterwards. It
+	// groups only unassigned faces and reassigns nobody.
+	EnsureGrouping(ctx context.Context) (bool, error)
 }
 
 // API exposes the clustering endpoints over HTTP. The write guard is supplied by
@@ -91,15 +93,27 @@ func (a *API) RegisterRoutes(r chi.Router) {
 	})
 }
 
+// listResponse is the listing page plus whether a grouping pass is queued or
+// running. The flag is what lets an empty page say "the groups are being worked
+// out" instead of "there are none", which on a library that had never been
+// grouped was the one thing the page could not tell its reader.
+type listResponse struct {
+	cluster.Listing
+	Grouping bool `json:"grouping"`
+}
+
 // handleList returns one page of the clusters of unassigned faces, each with its
 // representative, examples and suggested subject, plus how many clusters are
-// ready in total and how many are still being prepared in the background.
+// ready in total, how many are still being prepared in the background, and
+// whether a pass is running.
 //
 // The page is served entirely from the cached summaries, so it costs two indexed
-// queries and no vector search. When the listing reports clusters still waiting
-// for a summary it schedules the preparation pass — opening the page is what
-// starts the work that fills it in — but a failure to schedule is not a failure
-// to answer: the reader gets the groups that are ready either way.
+// queries and no vector search. Opening it is also what starts the background
+// work that fills it in: the scheduler groups the unassigned faces of a library
+// that has no groups, and prepares the summaries of the groups that have none.
+// It never regroups a named face — browsing changes who a face belongs to
+// nowhere in this API — and a failure to schedule is not a failure to answer:
+// the reader gets the groups that are ready either way.
 //
 // It answers 400 for a malformed limit/offset and 503 when no cluster backend is
 // wired.
@@ -118,12 +132,23 @@ func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "listing clusters failed")
 		return
 	}
-	if listing.Pending > 0 && a.preparer != nil {
-		if _, err := a.preparer.EnsureSummaries(r.Context()); err != nil {
-			log.Printf("clusterapi: scheduling the cluster preparation pass: %v", err)
-		}
+	writeJSON(w, http.StatusOK, listResponse{Listing: listing, Grouping: a.ensureGrouping(r)})
+}
+
+// ensureGrouping asks the scheduler for the pass the library is missing and
+// reports whether one is queued or running. With no preparer wired, or when the
+// scheduler fails, it reports no pass: the listing is still served, it just
+// cannot promise work it did not manage to queue.
+func (a *API) ensureGrouping(r *http.Request) bool {
+	if a.preparer == nil {
+		return false
 	}
-	writeJSON(w, http.StatusOK, listing)
+	grouping, err := a.preparer.EnsureGrouping(r.Context())
+	if err != nil {
+		log.Printf("clusterapi: scheduling the face-grouping pass: %v", err)
+		return false
+	}
+	return grouping
 }
 
 // pageRequest reads the limit and offset query parameters. Both are optional; a

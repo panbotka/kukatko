@@ -728,13 +728,18 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   process (`startWorker`, stopped on shutdown via ctx).
 - **Clusters API (`/api/v1`, `internal/clusterapi`, editor/admin via `RequireWrite`):**
   `GET /faces/clusters?limit&offset` → `{clusters:[{uid,size,representative,examples,suggestion?}],
-  total,pending,limit,offset,next_offset}` (one **page** of the clusters of unassigned faces from
-  auto-clustering, newest first; `suggestion` = the nearest named subject). `limit` defaults to 24 and
-  is capped at 100; a non-integer or negative `limit`/`offset` → 400. Only clusters whose cached
+  total,pending,grouping,limit,offset,next_offset}` (one **page** of the clusters of unassigned faces
+  from auto-clustering, newest first; `suggestion` = the nearest named subject). `limit` defaults to 24
+  and is capped at 100; a non-integer or negative `limit`/`offset` → 400. Only clusters whose cached
   summary (`face_clusters.summary`, migration 0069) has been built are listed — `total` counts those,
-  `pending` the ones still being prepared — and a request that finds work pending **schedules the
-  `face_cluster` job** (deduped: at most one pass queued or running), which is what makes opening the
-  page fill it in. The page therefore costs two indexed queries and no vector search;
+  `pending` the ones still being prepared. Every request **schedules the `face_cluster` pass the
+  library is missing** (`clusterjob.EnsureGrouping`, deduped: at most one pass queued or running):
+  grouping the unassigned faces of a library that has **no** clusters — nothing else ever starts that,
+  so this is what makes the feature reachable for an editor instead of only for a maintainer calling
+  `POST /process/clusters` — or preparing the summaries of the clusters that have none. It never
+  regroups or reassigns a named face, an empty or already-grouped library schedules nothing, and
+  `grouping` reports whether a pass is queued or running, so an empty page can say so. The page itself
+  costs two indexed queries and no vector search;
   `POST /faces/clusters/{id}/assign` `{subject_uid?,subject_name?}` assigns the **whole cluster** to one
   subject (find-or-create by name) → markers for all faces, the cluster is consumed;
   `POST /faces/clusters/{id}/remove-face` `{photo_uid,face_index}` detaches a stray face before

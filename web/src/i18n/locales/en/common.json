@@ -1677,7 +1677,11 @@
     "moreError": "Could not load more groups.",
     "empty": {
       "title": "No face groups to review",
-      "hint": "New groups appear here once the app recognizes faces in your photos."
+      "hint": "There are no unnamed faces left to group — everything is named, or the app has not found enough faces of the same person yet."
+    },
+    "grouping": {
+      "title": "Looking for face groups…",
+      "hint": "Unnamed faces are being compared in the background. It takes a moment — look again shortly."
     },
     "representative": "Representative face",
     "sample": "Sample face",

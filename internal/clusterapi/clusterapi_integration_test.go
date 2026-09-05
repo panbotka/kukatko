@@ -335,3 +335,108 @@ func TestListClusters_Pages(t *testing.T) {
 		t.Fatalf("listing = %+v, want a page of one with no further page", out)
 	}
 }
+
+// listGroups reads one listing page over HTTP, returning the decoded body.
+func (e *env) listGroups(t *testing.T, client *http.Client) struct {
+	Clusters []cluster.View `json:"clusters"`
+	Pending  int            `json:"pending"`
+	Grouping bool           `json:"grouping"`
+} {
+	t.Helper()
+	var out struct {
+		Clusters []cluster.View `json:"clusters"`
+		Pending  int            `json:"pending"`
+		Grouping bool           `json:"grouping"`
+	}
+	resp := mustDo(t, client, http.MethodGet, e.server.URL+"/api/v1/faces/clusters", nil)
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET clusters status = %d, want 200", resp.StatusCode)
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	return out
+}
+
+// pendingPasses returns how many face_cluster jobs are queued or running.
+func (e *env) pendingPasses(t *testing.T) int {
+	t.Helper()
+	pending, err := e.jobs.CountPending(t.Context(), jobs.TypeFaceCluster)
+	if err != nil {
+		t.Fatalf("CountPending: %v", err)
+	}
+	return pending
+}
+
+// TestListClusters_SchedulesGrouping verifies the bug this endpoint used to
+// have: a library with unassigned faces and no groups at all was never grouped,
+// because nothing but the maintainer-only trigger ever started a pass. Opening
+// the page as a plain editor must now queue exactly one grouping pass, however
+// many times it is opened, and say that it is grouping.
+func TestListClusters_SchedulesGrouping(t *testing.T) {
+	env := newEnv(t)
+	env.seedFace(t, "u1")
+	env.seedFace(t, "u2")
+	client := env.login(t, "editor", auth.RoleEditor)
+
+	for range 3 {
+		out := env.listGroups(t, client)
+		if len(out.Clusters) != 0 || out.Pending != 0 {
+			t.Fatalf("listing = %+v, want nothing to show yet", out)
+		}
+		if !out.Grouping {
+			t.Fatal("listing does not say a grouping pass is under way")
+		}
+	}
+	if pending := env.pendingPasses(t); pending != 1 {
+		t.Fatalf("queued %d grouping passes, want exactly 1", pending)
+	}
+
+	// The queued pass is the real one: running it groups the faces and leaves the
+	// page with a group to show.
+	job, err := env.jobs.Claim(t.Context(), "test", jobs.TypeFaceCluster)
+	if err != nil {
+		t.Fatalf("Claim: %v", err)
+	}
+	if err := clusterjob.New(env.svc, env.jobs, 0, nil).Handle(t.Context(), job); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	if out := env.listGroups(t, client); len(out.Clusters) != 1 {
+		t.Fatalf("listing after the pass = %+v, want the one group it made", out)
+	}
+}
+
+// TestListClusters_NoFacesSchedulesNothing verifies a library with no faces at
+// all stays calm: nothing is queued and the page is told no pass is running, so
+// it can show a plain empty state rather than a permanent "working…".
+func TestListClusters_NoFacesSchedulesNothing(t *testing.T) {
+	env := newEnv(t)
+	client := env.login(t, "editor", auth.RoleEditor)
+
+	if out := env.listGroups(t, client); out.Grouping || len(out.Clusters) != 0 {
+		t.Fatalf("listing = %+v, want an empty page and no pass", out)
+	}
+	if pending := env.pendingPasses(t); pending != 0 {
+		t.Fatalf("queued %d passes on a library with no faces, want none", pending)
+	}
+}
+
+// TestListClusters_GroupedLibrarySchedulesNothing verifies a library that has
+// already been grouped and prepared queues nothing more — not even with
+// unassigned faces left over, which every pass leaves behind (a face whose
+// component is smaller than the minimum group size stays unclustered).
+func TestListClusters_GroupedLibrarySchedulesNothing(t *testing.T) {
+	env := newEnv(t)
+	env.firstClusterUID(t)
+	env.seedFace(t, "leftover")
+	client := env.login(t, "editor", auth.RoleEditor)
+
+	out := env.listGroups(t, client)
+	if len(out.Clusters) != 1 || out.Grouping {
+		t.Fatalf("listing = %+v, want the one prepared group and no pass", out)
+	}
+	if pending := env.pendingPasses(t); pending != 0 {
+		t.Fatalf("queued %d passes on an already grouped library, want none", pending)
+	}
+}

@@ -1776,8 +1776,15 @@ to `## Package map` in `CLAUDE.md`.
   `POST /faces/clusters/{id}/remove-face`) detaches a stray face **before** naming, recomputes the
   centroid/size (`RefreshCluster`, which also drops the stale summary) **and rebuilds that one
   cluster's summary inline** — the reader is looking at that card and one suggestion search is theirs
-  to pay — deletes an orphaned cluster; `Store` over the shared pgx pool
-  (`ListUnclusteredFaces`/`ListClusterFaces`/`CreateCluster`/`AddFacesToCluster`/`ListReadyClusters`/
+  to pay — deletes an orphaned cluster; **`GroupingState(ctx)`** → `GroupingState{Ready,Unprepared,
+  Groupable}` is the read the scheduler decides from: the two cluster counts plus — **only for a
+  library with no clusters at all** — whether at least `minSize` clusterable faces are waiting
+  (`CountClusterableFaces(ctx,limit)` counts through a `LIMIT`, so the question costs the same on an
+  empty library and on one with 200k faces). `Groupable` is deliberately not answered once clusters
+  exist: every pass leaves the components below `minSize` unclustered, so "there are unassigned
+  faces" would otherwise mean "regroup for ever"; `Store` over the shared pgx pool
+  (`ListUnclusteredFaces`/`ListClusterFaces`/`CountClusterableFaces`/`CreateCluster`/
+  `AddFacesToCluster`/`ListReadyClusters`/
   `ListPendingClusters`/`CountClusters`/`SaveSummary`/
   `GetCluster`/`DeleteCluster`/`RemoveFaceFromCluster`/`RefreshCluster`); sentinels
   `ErrClusterNotFound`/`ErrEmptyCluster`/`ErrMissingSubject`/`ErrFaceNotInCluster`; tunables in
@@ -1786,21 +1793,29 @@ to `## Package map` in `CLAUDE.md`.
   and the optional `Preparer` (satisfied by `clusterjob.Service`),
   `NewAPI(Config{Service,Preparer,RequireWrite})`+`RegisterRoutes` mounts `/faces/clusters`:
   `GET /faces/clusters?limit&offset` (one **page** of prepared clusters + suggestions + the `pending`
-  count; a bad `limit`/`offset` → 400; with clusters pending it calls `Preparer.EnsureSummaries`, and a
-  scheduling failure is logged, never fatal to the read), `POST /faces/clusters/{id}/assign` (assigns
+  count + **`grouping`**; a bad `limit`/`offset` → 400; **every** listing calls
+  `Preparer.EnsureGrouping` — the library that needs a pass most is exactly the one whose listing
+  reports nothing at all — and `grouping` passes its verdict on, so an empty page can say "the groups
+  are being worked out" instead of "there are none"; a scheduling failure is logged and answers
+  `grouping:false`, never fatal to the read), `POST /faces/clusters/{id}/assign` (assigns
   the whole cluster), `POST /faces/clusters/{id}/remove-face` (detaches a face); 503 when the backend
   is not wired, 400/404/409 per the sentinels; mounted in `serve` (`buildClusterAPI` in
   `cmd/kukatko/clusters.go`, which shares the `facematch.Service` from `buildFaceMatch` and the job
   store, and hands the same `clusterjob.Service` on to `buildJobs`)), `internal/clusterjob/`
   (the face-grouping work as background work: the `face_cluster` job handler and the two schedulers.
-  `New(Clusterer,Queue,batch,logger)` over the interfaces `Clusterer` (`Recluster`/`BuildSummaries`,
-  satisfied by `cluster.Service`) and `Queue` (`Enqueue`/`CountPending`, satisfied by `jobs.Store`);
+  `New(Clusterer,Queue,batch,logger)` over the interfaces `Clusterer` (`Recluster`/`BuildSummaries`/
+  `GroupingState`, satisfied by `cluster.Service`) and `Queue` (`Enqueue`/`CountPending`, satisfied
+  by `jobs.Store`);
   **`ScheduleRecluster(ctx)`** queues `{"recluster":true}` (the maintainer trigger) and
-  **`EnsureSummaries(ctx)`** queues `{}` (the listing's preparation-only pass, which regroups
-  nothing — browsing must never change who a face belongs to). Both are **deduped by an explicit
-  `CountPending` check**, because the queue's dedup index keys on `payload->>'photo_uid'` and these
-  payloads carry none: at most one pass is queued or running, so repeated page loads collapse into
-  one. **`Handle(ctx,job)`** regroups when asked, then prepares one batch of summaries and, when
+  **`EnsureGrouping(ctx)`** queues the pass the library's own state asks for, reporting whether one
+  is queued or running afterwards: `{"recluster":true}` when `GroupingState.Groupable` (faces and no
+  groups — **nothing else in the app ever starts the grouping**, face detection fills `faces` and
+  stops, so before this a library nobody grouped by hand stayed empty for ever), `{}` when groups are
+  waiting for their summary (regroups nothing — browsing must never change who a face belongs to),
+  and **nothing** for a library that is empty or already grouped and prepared. Both are **deduped by
+  an explicit `CountPending` check**, because the queue's dedup index keys on `payload->>'photo_uid'`
+  and these payloads carry none: at most one pass is queued or running, so repeated page loads
+  collapse into one. **`Handle(ctx,job)`** regroups when asked, then prepares one batch of summaries and, when
   `Remaining > 0`, **enqueues its own successor** — so a backlog drains in bounded steps and the page
   can honestly report how many groups are ready), `internal/outliers/`
   (per-person outlier detection of faces: reveals probably **misassigned faces**

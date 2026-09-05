@@ -13,6 +13,9 @@ import (
 // errQueue stands in for a queue that refused the job.
 var errQueue = errors.New("queue unavailable")
 
+// errState stands in for a library whose grouping state could not be read.
+var errState = errors.New("state unavailable")
+
 // fakeClusterer records what the handler asked of the cluster service and
 // returns canned outcomes.
 type fakeClusterer struct {
@@ -24,6 +27,16 @@ type fakeClusterer struct {
 	runs          []cluster.SummaryRun
 	summaryErr    error
 	summaryCursor int
+
+	state      cluster.GroupingState
+	stateErr   error
+	stateCalls int
+}
+
+// GroupingState records the call and returns the canned state.
+func (f *fakeClusterer) GroupingState(context.Context) (cluster.GroupingState, error) {
+	f.stateCalls++
+	return f.state, f.stateErr
 }
 
 // Recluster records the call and returns the canned count.
@@ -120,31 +133,118 @@ func TestScheduleRecluster_collapsesIntoAPendingPass(t *testing.T) {
 	}
 }
 
-// TestEnsureSummaries_neverRegroups queues a preparation pass that leaves the
-// grouping alone: browsing must never change who a face belongs to.
-func TestEnsureSummaries_neverRegroups(t *testing.T) {
+// TestEnsureGrouping_decides queues the one pass the library's state asks for:
+// the grouping itself when there are faces and no groups (nothing else in the
+// app ever starts it), the summaries when groups are waiting to be listed, and
+// nothing at all for a library that is either empty or already done.
+func TestEnsureGrouping_decides(t *testing.T) {
 	t.Parallel()
 
-	queue := &fakeQueue{}
-	svc := New(&fakeClusterer{}, queue, 0, nil)
-
-	if _, err := svc.EnsureSummaries(t.Context()); err != nil {
-		t.Fatalf("EnsureSummaries: %v", err)
+	tests := []struct {
+		name          string
+		state         cluster.GroupingState
+		wantGrouping  bool
+		wantPasses    int
+		wantRecluster bool
+	}{
+		{
+			name:          "faces but no groups are grouped",
+			state:         cluster.GroupingState{Groupable: true},
+			wantGrouping:  true,
+			wantPasses:    1,
+			wantRecluster: true,
+		},
+		{
+			name:         "unprepared groups are prepared, never regrouped",
+			state:        cluster.GroupingState{Ready: 2, Unprepared: 5},
+			wantGrouping: true,
+			wantPasses:   1,
+		},
+		{
+			name:  "a library with no faces stays calm",
+			state: cluster.GroupingState{},
+		},
+		{
+			name:  "a grouped and prepared library queues nothing",
+			state: cluster.GroupingState{Ready: 3},
+		},
 	}
-	if len(queue.enqueued) != 1 || decode(t, queue.enqueued[0]).Recluster {
-		t.Errorf("enqueued = %s, want one preparation-only pass", queue.enqueued)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			queue := &fakeQueue{}
+			svc := New(&fakeClusterer{state: tt.state}, queue, 0, nil)
+
+			grouping, err := svc.EnsureGrouping(t.Context())
+			if err != nil {
+				t.Fatalf("EnsureGrouping: %v", err)
+			}
+			if grouping != tt.wantGrouping {
+				t.Errorf("grouping = %t, want %t", grouping, tt.wantGrouping)
+			}
+			if len(queue.enqueued) != tt.wantPasses {
+				t.Fatalf("enqueued = %s, want %d pass(es)", queue.enqueued, tt.wantPasses)
+			}
+			if tt.wantPasses > 0 && decode(t, queue.enqueued[0]).Recluster != tt.wantRecluster {
+				t.Errorf("enqueued = %s, want recluster = %t", queue.enqueued, tt.wantRecluster)
+			}
+		})
 	}
 }
 
-// TestEnsureSummaries_queueFailure reports a queue that refused the job instead
-// of pretending it was scheduled.
-func TestEnsureSummaries_queueFailure(t *testing.T) {
+// TestEnsureGrouping_collapsesIntoAPendingPass queues nothing while a pass is
+// already waiting or running — a reader reloading the page must not stack up a
+// queue of identical passes — and still reports that grouping is under way.
+func TestEnsureGrouping_collapsesIntoAPendingPass(t *testing.T) {
+	t.Parallel()
+
+	clusters := &fakeClusterer{state: cluster.GroupingState{Groupable: true}}
+	queue := &fakeQueue{pending: 1}
+	svc := New(clusters, queue, 0, nil)
+
+	grouping, err := svc.EnsureGrouping(t.Context())
+	if err != nil {
+		t.Fatalf("EnsureGrouping: %v", err)
+	}
+	if !grouping {
+		t.Error("grouping = false, want true: a pass is already running")
+	}
+	if len(queue.enqueued) != 0 {
+		t.Errorf("enqueued = %s, want nothing", queue.enqueued)
+	}
+	if clusters.stateCalls != 0 {
+		t.Errorf("state reads = %d, want none: the pending pass settles it", clusters.stateCalls)
+	}
+}
+
+// TestEnsureGrouping_queueFailure reports a queue that refused the job instead
+// of pretending a pass was scheduled.
+func TestEnsureGrouping_queueFailure(t *testing.T) {
 	t.Parallel()
 
 	svc := New(&fakeClusterer{}, &fakeQueue{err: errQueue}, 0, nil)
 
-	if _, err := svc.EnsureSummaries(t.Context()); !errors.Is(err, errQueue) {
+	if _, err := svc.EnsureGrouping(t.Context()); !errors.Is(err, errQueue) {
 		t.Errorf("error = %v, want the queue's", err)
+	}
+}
+
+// TestEnsureGrouping_stateFailure reports a library whose state could not be
+// read rather than guessing at a pass.
+func TestEnsureGrouping_stateFailure(t *testing.T) {
+	t.Parallel()
+
+	queue := &fakeQueue{}
+	svc := New(&fakeClusterer{stateErr: errState}, queue, 0, nil)
+
+	grouping, err := svc.EnsureGrouping(t.Context())
+	if !errors.Is(err, errState) {
+		t.Errorf("error = %v, want the clusterer's", err)
+	}
+	if grouping || len(queue.enqueued) != 0 {
+		t.Errorf("grouping = %t / enqueued = %s, want false / nothing", grouping, queue.enqueued)
 	}
 }
 
