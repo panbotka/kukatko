@@ -48,9 +48,10 @@ interface DrawerSection {
 }
 
 /**
- * The phone menu, as a real drawer.
+ * The collapsed menu — a phone's, and from now on a portrait tablet's — as a real
+ * drawer.
  *
- * Below the navbar's `md` breakpoint the bar's dropdowns cannot open as popovers
+ * Below the navbar's `lg` breakpoint the bar's dropdowns cannot open as popovers
  * (react-bootstrap disables Popper inside a `Navbar`), so the collapsed burger
  * used to expand every group *inline* — one long nested stack of links with no
  * grouping, no headings and cramped rows. This renders the same menu as an

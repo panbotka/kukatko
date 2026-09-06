@@ -64,12 +64,14 @@ here.
   labels), the compact search below plus the dropped brand cut the overflow past the viewport edge by
   **264px at every desktop width**: an **editor** bar stops scrolling horizontally from ~1160px instead of
   ~1420px, a **maintainer** one from ~1290px instead of ~1890px (at 1200px: editor +135px → fits,
-  maintainer +352px → +88px; at 1400px: +14px / +231px → both fit). Below `md` nothing overflowed before or
-  after, since the collapse is not rendered there. **The way home does not depend on a logo:** on `md`+ it
+  maintainer +352px → +88px; at 1400px: +14px / +231px → both fit). Below the navbar's expand breakpoint
+  nothing overflowed before or after, since the collapse is not rendered there — a band that grew on
+  2026-09-06, when the breakpoint moved from `md` to `lg` (see the `Layout` entry below).
+  **The way home does not depend on a logo:** on `lg`+ it
   is the bar's first item **Knihovna** `/` (labelled, `end`-matched, `title` „Zobrazit knihovnu fotek"),
-  below `md` it is the leading tab of `MobileTabBar`, permanently under the thumb — one tap either way,
-  exactly as the mark was. The **hamburger closes the phone row** `[search] [hamburger]` instead of opening
-  it (last in the DOM); it is `display: none` on `md`+, so the desktop bar is unmoved by that. It names
+  below `lg` it is the leading tab of `MobileTabBar`, permanently under the thumb — one tap either way,
+  exactly as the mark was. The **hamburger closes the collapsed row** `[search] [hamburger]` instead of
+  opening it (last in the DOM); it is `display: none` on `lg`+, so the desktop bar is unmoved by that. It names
   itself from the catalogue — `label={t('nav.openMenu')}` („Otevřít nabídku") — rather than leaving
   react-bootstrap's English `Toggle navigation` default on the one control a phone reader needs most.
   **The bar leads with global search** `SearchCommand` (`components/search/`) — since the same change a
@@ -117,12 +119,27 @@ here.
   **every navigation**, so tapping any item — top-level link, group-dropdown item, or user-menu item —
   auto-closes the burger instead of leaving it open over the page. Logout closes it explicitly (a handler,
   not a route change). This replaces react-bootstrap `collapseOnSelect`, which never fired for the bar's
-  bare `NavLink`s and raw `Dropdown.Item`s; on `md`+ the collapse is always shown, so the state is inert there.
-  Below `md` the `Navbar.Collapse` is **not rendered at all** — `useIsNarrowViewport` swaps it for the
+  bare `NavLink`s and raw `Dropdown.Item`s; on `lg`+ the collapse is always shown, so the state is inert there.
+  Below `lg` the `Navbar.Collapse` is **not rendered at all** — `useIsNavDrawerViewport` swaps it for the
   `MobileNavDrawer`, so a phone never carries two copies of the nav links (and a resize past the breakpoint
-  resets `expanded`, or the desktop bar would come back with an invisible open menu behind it),
+  resets `expanded`, or the desktop bar would come back with an invisible open menu behind it).
+  **The `Navbar`'s `expand` is `lg`, not `md`** (changed 2026-09-06): a portrait tablet (768–991px) was given
+  the inline bar and could not hold it — measured at 834px, the row ended at 1043px, i.e. the shortcuts button
+  and the whole user menu (account settings and sign-out with them) hung 209px outside the viewport and the
+  page grew a horizontal scrollbar. Scrapping the row down to fit would have bought one release: the widest
+  role's set of items is a moving target and the user menu wears the account's display name, so the band would
+  return with the next addition. The drawer does not care how many items there are, and on a touch screen it
+  is the better navigation anyway — the tablet gets the same pair as a phone, drawer + `MobileTabBar`.
+  From `lg` the bar comes back into a 960px container, where a maintainer's row measures ~958px with a short
+  username and ~1006px with a real name, so the stylesheet spends that one band (`992–1199px`) **without the
+  bar's decorative glyphs**: `@media (min-width: 992px) and (max-width: 1199.98px)` hides
+  `.kukatko-navbar .nav-link > .bi`, which buys ~170px and costs nothing (every icon there is `aria-hidden`
+  beside a label that names the destination). At `xl` the container is 1140px and the icons come back.
+  Guarded by `styles/navbarBand.test.ts` (the band opens exactly where `NAV_DRAWER_QUERY` closes) and by the
+  „tablet band" cases in `components/Layout.test.tsx`,
   `MobileNavDrawer` (**the phone menu, as a real drawer** — `components/MobileNavDrawer.tsx`, rendered by
-  `Layout` only below the navbar's `md` breakpoint and opened by the hamburger, whose `aria-controls` points at
+  `Layout` only below the navbar's `lg` breakpoint — a phone's menu, and a portrait tablet's — and opened by
+  the hamburger, whose `aria-controls` points at
   the shared `MOBILE_MENU_ID` = `main-navbar` that the desktop collapse also uses. It replaces the old inline
   collapse: react-bootstrap disables Popper inside a `Navbar`, so every group dropdown used to expand *into*
   the bar — one long nested stack with no grouping, no headings and no room to aim a thumb. It is a
@@ -149,9 +166,9 @@ here.
   always left to dismiss by), `env(safe-area-inset-{top,right,bottom})` padding on the panel (the left edge
   faces the middle of the screen, so it is deliberately not inset), a hairline + heading between sections, and
   `overscroll-behavior: contain` on the scrolling body),
-  `MobileTabBar` (**the phone-only bottom tab bar**, rendered by `Layout` after the `Footer`: on a phone the
-  whole primary nav is folded into the burger, so every everyday destination costs an open-then-tap — this
-  pins them to the bottom edge where the thumb already is. Four tabs at most (`TABS`), the everyday loop only:
+  `MobileTabBar` (**the bottom tab bar below `lg`**, rendered by `Layout` after the `Footer`: wherever the
+  whole primary nav is folded into the burger — a phone, and since 2026-09-06 a portrait tablet too — every
+  everyday destination costs an open-then-tap, and this pins them to the bottom edge where the thumb already is. Four tabs at most (`TABS`), the everyday loop only:
   **Knihovna** `/` (`end`-matched, otherwise the root's prefix match lights it up everywhere), **Alba** `/albums`,
   **Hledat** `/search` (`nav.searchShort` — the imperative, like the „Nahrát" beside it, where the bar and the
   drawer use the page's own noun „Hledání"; it took the slot **Štítky** `/labels` used to hold, which keeps its
@@ -161,8 +178,8 @@ here.
   being short enough to hit blind. Each tab is a `NavLink` with a decorative `Icon` above a short label plus the
   same `nav.titles.*` action tooltip as the navbar, an `active` accent-tinted pill matching the top bar's
   „you are here", and a 2.75rem (44px) touch target; the landmark is labelled `nav.tabBar` (cs/en).
-  **Shown only below the navbar's `md` expand breakpoint**, and the decision is made in JS
-  (`useIsNarrowViewport`) — it renders `null` on `md`+ rather than hiding via `d-md-none`, so the desktop DOM
+  **Shown only below the navbar's `lg` expand breakpoint**, and the decision is made in JS
+  (`useIsNavDrawerViewport`) — it renders `null` on `lg`+ rather than hiding via `d-lg-none`, so the desktop DOM
   carries no duplicate set of nav links (the class stays only as a guard for the frame between a resize and
   the re-render). It publishes its live rendered height (safe-area padding included) into `--kk-tabbar-height`
   on the document root via a `ResizeObserver`, mirroring `BatchActionBar`'s `--kk-batch-bar-height`; that one
@@ -702,7 +719,7 @@ here.
   may not collapse into one on the card) and `cardHidden?`. On `md`+ it renders the familiar
   `<Table striped hover responsive>`; below it each record becomes one `Card` in a `<ul>`, every column
   a „label: value" line of a `dl.row` (`col-5`/`col-7`). The breakpoint is decided **in JS**
-  (`useIsNarrowViewport`), like `MobileTabBar` — never `d-md-none` — so only one of the two layouts is
+  (`useIsNarrowViewport`), like `MobileTabBar` decides its own — never a `d-*-none` class — so only one of the two layouts is
   ever in the DOM and assistive tech (or a test) never sees every record twice. Props `records`,
   `columns`, `rowKey`, `cardActions?` (the card's **full-width** action row, `.kk-record-card__actions`;
   its buttons clear the 44px finger floor **unconditionally**, not only on `pointer: coarse` — a narrow
@@ -4765,10 +4782,19 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   square-tile croppers keep taking `displayFrame` from the row (see the viewer's invariant above). Tests
   `hooks/useImageFrame.test.tsx` + `test/imageFrame.ts` (`loadImageAs`/`frameRatio` — jsdom fetches nothing, so
   a test about a box has to report the load itself);
-  `useIsNarrowViewport()` = a shared hook over `matchMedia` (`(max-width: 767.98px)`, Bootstrap `md`;
+  `useIsNarrowViewport()` = a shared hook over `matchMedia` (`NARROW_VIEWPORT_QUERY` = `(max-width: 767.98px)`,
+  Bootstrap `md`;
   it removes `change`, a missing/broken `matchMedia` → „wide"; the single source of truth for the filter
   offcanvas, the default grid density, the collapse of `BatchActionBar` and `HeaderActions` into the „…" overflow menu on a phone, and the move
   of the viewer's curatorial loop from the top bar to the bottom dock within thumb's reach);
+  `useIsNavDrawerViewport()` = the same mechanism one Bootstrap step wider (`NAV_DRAWER_QUERY` =
+  `(max-width: 991.98px)`, `lg`), **asked only by the navigation**: `Layout` (drawer vs. inline bar) and
+  `MobileTabBar`. The two are separate on purpose — the shell's row is sized by the length of its items, not
+  by the page under it, and a maintainer's ten labelled items need ~960px while the `.container` between `md`
+  and `lg` offers 696px, so between 768px and 991px the bar ran off the screen (the user menu, sign-out
+  included, ended outside the viewport and the page scrolled sideways). Widening the *page's* breakpoint
+  instead would have turned a tablet's photo grid into a phone's. Tests
+  `hooks/useIsNarrowViewport.test.tsx`;
   `useIdleChrome({delayMs,held})` → `{visible,wake,toggle}` = **when a player's controls are on screen**:
   visible on mount, hidden after `CHROME_IDLE_MS` (3 s) of nothing, back on `wake()` (a mouse move, any key) and
   toggled by `toggle()` (a tap — a finger has no „movement" to report, so the tap *is* the request). `held`

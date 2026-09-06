@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
@@ -104,6 +104,32 @@ function renderLayoutWithRoutes(value: AuthContextValue) {
 function mockViewport(narrow: boolean): void {
   window.matchMedia = vi.fn().mockImplementation((query: string) => ({
     matches: narrow,
+    media: query,
+    onchange: null,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  }))
+}
+
+/**
+ * Points `window.matchMedia` at a viewport of the given width, answering each
+ * `(max-width: …)` / `(min-width: …)` query on its own instead of giving every
+ * query the same yes/no. The shell asks two of them — the phone breakpoint and
+ * the navigation's own, one step wider (see `NAV_DRAWER_QUERY`) — so a tablet is
+ * only expressible as a width: narrow enough to fold the bar away, too wide to be
+ * a phone.
+ */
+function mockViewportWidth(width: number): void {
+  const matches = (query: string): boolean => {
+    const min = /min-width:\s*([\d.]+)px/.exec(query)
+    const max = /max-width:\s*([\d.]+)px/.exec(query)
+    return (min === null || width >= Number(min[1])) && (max === null || width <= Number(max[1]))
+  }
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches: matches(query),
     media: query,
     onchange: null,
     addEventListener: vi.fn(),
@@ -636,5 +662,83 @@ describe('Layout navbar', () => {
     renderLayout(auth())
     // Every page under the layout shell gets the operator/source-code footer.
     expect(screen.getByRole('contentinfo')).toHaveTextContent('Operated by SDH Veselice')
+  })
+})
+
+/**
+ * The tablet band. A portrait tablet (768–991px) used to be given the inline bar
+ * and could not hold it: the `.container` is 696px wide there while a
+ * maintainer's row of items needs some 960px, so the trailing end — the
+ * shortcuts button and the whole user menu, sign-out and account settings
+ * included — hung outside the viewport and the page scrolled sideways (measured
+ * at 834px: the bar ended at 1043px, 209px past the edge).
+ *
+ * The fix is the breakpoint, not a diet: the navigation folds into the drawer up
+ * to `lg` now, so the band has no inline bar to overflow. These guards state
+ * that as a property of the whole band — every width in it, for the widest role
+ * — plus the two edges, since a breakpoint is only ever wrong at its edges.
+ */
+describe('Layout navbar in the tablet band', () => {
+  const TABLET_WIDTHS = [768, 834, 900, 991]
+
+  it.each(TABLET_WIDTHS)('folds the bar into the drawer at %ipx', (width) => {
+    mockViewportWidth(width)
+    const { container } = renderLayout(auth({ isMaintainer: true }))
+
+    // No inline nav at all: the collapse is not rendered, so nothing in the bar
+    // can run past the viewport, and the row is `[search] [hamburger]`.
+    expect(container.querySelector('.navbar-collapse')).toBeNull()
+    expect(container.querySelector('#user-menu')).toBeNull()
+    expect(screen.getByRole('button', { name: /open the menu/i })).toBeInTheDocument()
+  })
+
+  it.each(TABLET_WIDTHS)('keeps the account reachable at %ipx', async (width) => {
+    const user = userEvent.setup()
+    mockViewportWidth(width)
+    renderLayout(auth({ isMaintainer: true }))
+
+    // What the band actually cost the user: the account menu. It is the drawer's
+    // now — account, settings and sign-out included — one tap from the bar.
+    await user.click(screen.getByRole('button', { name: /open the menu/i }))
+    const drawer = await screen.findByRole('dialog')
+    expect(within(drawer).getByRole('link', { name: 'My account' })).toBeInTheDocument()
+    expect(within(drawer).getByRole('button', { name: 'Sign out' })).toBeInTheDocument()
+  })
+
+  it.each(TABLET_WIDTHS)('keeps the everyday loop under the thumb at %ipx', (width) => {
+    mockViewportWidth(width)
+    const { container } = renderLayout(auth({ isMaintainer: true }), '/albums')
+
+    // The drawer is not the only navigation the band gets: the bottom tab bar
+    // follows the same breakpoint, so the library stays one tap away rather than
+    // costing an open-then-tap.
+    const bar = container.querySelector('.kk-tabbar')
+    expect(bar).not.toBeNull()
+    expect(bar).toHaveClass('d-lg-none')
+    expect(within(bar as HTMLElement).getByRole('link', { name: 'Library' })).toHaveAttribute(
+      'href',
+      '/',
+    )
+  })
+
+  it('brings the inline bar back at 992px, user menu inside the bar', () => {
+    mockViewportWidth(992)
+    const { container } = renderLayout(auth({ isMaintainer: true }))
+
+    // The first width the container can hold the row at — labels and all (the
+    // stylesheet drops the decorative glyphs up to `xl`, guarded in
+    // `styles/navbarBand.test.ts`).
+    expect(container.querySelector('.navbar-collapse')).not.toBeNull()
+    expect(container.querySelector('#user-menu')).not.toBeNull()
+    expect(container.querySelector('.kk-tabbar')).toBeNull()
+    expect(screen.getByRole('link', { name: 'Library' }).closest('.navbar-collapse')).not.toBeNull()
+  })
+
+  it('still folds away on a phone, which is inside the same band', () => {
+    mockViewportWidth(390)
+    const { container } = renderLayout(auth({ isMaintainer: true }))
+
+    expect(container.querySelector('.navbar-collapse')).toBeNull()
+    expect(container.querySelector('.kk-tabbar')).not.toBeNull()
   })
 })

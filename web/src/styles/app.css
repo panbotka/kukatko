@@ -498,26 +498,34 @@ body {
 }
 
 /* The rule dividing the everyday cluster from the quieter tools/admin one: a
-   vertical hairline while the bar is a horizontal row (>= md), a horizontal one
-   once it collapses into the stacked hamburger menu (< md). `align-self: stretch`
-   lets one element serve both axes; only the main-axis size flips per breakpoint. */
+   vertical hairline in the horizontal bar. It needs no breakpoint of its own —
+   the divider is rendered inside the inline collapse, which the shell mounts only
+   from `lg` up; below that the same grouping is the drawer's labelled sections. */
 .kukatko-nav-divider {
   align-self: stretch;
+  width: 1px;
+  margin-block: var(--kk-space-2);
+  margin-inline: var(--kk-space-1);
   background-color: var(--bs-border-color, rgb(255 255 255 / 15%));
 }
 
-@media (min-width: 768px) {
-  .kukatko-nav-divider {
-    width: 1px;
-    margin-block: var(--kk-space-2);
-    margin-inline: var(--kk-space-1);
-  }
-}
-
-@media (max-width: 767.98px) {
-  .kukatko-nav-divider {
-    height: 1px;
-    margin-block: var(--kk-space-2);
+/* ---- The tight desktop band (`lg`, 992-1199px) --------------------------
+ *
+ * The inline bar comes back at `lg`, where a `.container` is 960px wide, and a
+ * maintainer's row of ten labelled items measures ~958px before the user menu
+ * has spelled out anything longer than "admin" — i.e. it fits only by accident,
+ * and a real display name pushes the menu off the edge again (measured on the
+ * staging box: 1006px for "Tomáš Kozák").
+ *
+ * So this one band drops the *glyphs*, not the words. Every icon in the bar is
+ * decorative (`aria-hidden`, the label beside it names the destination), which
+ * makes it the only thing here that can go without costing a user anything: the
+ * row falls to ~766px and keeps ~170px of slack for the account's name. From
+ * `xl` the container is 1140px and the icons come back. Guarded by
+ * `navbarBand.test.ts`. */
+@media (min-width: 992px) and (max-width: 1199.98px) {
+  .kukatko-navbar .nav-link > .bi {
+    display: none;
   }
 }
 
@@ -715,10 +723,11 @@ body {
 
 /* ---- Mobile bottom tab bar ---------------------------------------------
  *
- * The phone-only strip of primary destinations (`MobileTabBar`), pinned to the
- * bottom edge where a thumb already is. It is mounted only below the navbar's
- * `md` expand breakpoint, so these rules need no media query of their own — the
- * `.d-md-none` on the element is only the guard for the frame between a resize
+ * The strip of primary destinations (`MobileTabBar`), pinned to the bottom edge
+ * where a thumb already is — a phone's whole navigation together with the
+ * drawer, and a portrait tablet's too. It is mounted only below the navbar's
+ * `lg` expand breakpoint, so these rules need no media query of their own — the
+ * `.d-lg-none` on the element is only the guard for the frame between a resize
  * and React's re-render.
  *
  * The bar owns the bottom edge: it carries the home-indicator inset itself
@@ -820,8 +829,8 @@ body {
 }
 
 /*
- * The phone navigation drawer (`MobileNavDrawer`), the hamburger's panel below
- * the navbar's `md` breakpoint. It replaces the old inline collapse, where every
+ * The navigation drawer (`MobileNavDrawer`), the hamburger's panel below the
+ * navbar's `lg` breakpoint — a phone's menu, and a portrait tablet's. It replaces the old inline collapse, where every
  * group dropdown expanded into the bar itself: react-bootstrap disables Popper
  * inside a `Navbar`, so the menu was one long nested stack with no grouping and
  * no room to aim a thumb.
@@ -1945,9 +1954,9 @@ body {
  * screen. It keeps the sunken well and the hairline so it still reads as a
  * control among the quiet nav links rather than as one more glyph.
  *
- * `margin-inline-start: auto` is the phone rule: with the brand gone the top row
- * is `[search] [hamburger]`, and the pair belongs together at the thumb end
- * instead of one control at each edge with a hole between them. From `md` the
+ * `margin-inline-start: auto` is the collapsed rule: with the brand gone the top
+ * row is `[search] [hamburger]`, and the pair belongs together at the thumb end
+ * instead of one control at each edge with a hole between them. From `lg` the
  * margin flips (below) and it leads the bar again, ahead of the nav.
  */
 .kukatko-search-trigger {
@@ -1981,9 +1990,11 @@ body {
   outline-offset: var(--kk-focus-ring-offset);
 }
 
-/* From the navbar's own breakpoint the bar unfolds and the trigger leads it, so
-   it stops hugging the trailing edge and just keeps a gap to the first nav item. */
-@media (min-width: 768px) {
+/* From the navbar's own breakpoint (`lg`, see `Layout`) the bar unfolds and the
+   trigger leads it, so it stops hugging the trailing edge and just keeps a gap to
+   the first nav item. Below it the row is `[search] [hamburger]` and the pair
+   belongs together at the thumb end. */
+@media (min-width: 992px) {
   .kukatko-search-trigger {
     margin-inline-start: 0;
     margin-inline-end: var(--kk-space-3);

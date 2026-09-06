@@ -11,7 +11,7 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-do
 
 import { useAuth } from '../auth/AuthContext'
 import { useCapabilities } from '../capabilities/CapabilitiesContext'
-import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
+import { useIsNavDrawerViewport } from '../hooks/useIsNarrowViewport'
 import { LIBRARY_PATH } from '../lib/libraryView'
 import { formatVersion } from '../lib/version'
 
@@ -68,9 +68,9 @@ import { WelcomeModal } from './welcome/WelcomeModal'
  * items already ran past the container well into desktop widths, and the „Kukátko"
  * wordmark was only kept alive by four stacked display utilities because it fit
  * nowhere. Dropping the brand buys back the whole leading block. The way home
- * survives it on every viewport and does not depend on a logo: on `md`+ the first
+ * survives it on every viewport and does not depend on a logo: on `lg`+ the first
  * item of the bar is **Knihovna**, the library at the site root, labelled and
- * `end`-matched; below `md` the same destination is the leading tab of the
+ * `end`-matched; below `lg` the same destination is the leading tab of the
  * {@link MobileTabBar}, permanently under the thumb. Both are one tap, exactly as
  * the mark was.
  *
@@ -93,27 +93,39 @@ import { WelcomeModal } from './welcome/WelcomeModal'
  * `navItems.ts`, so the phone menu below cannot drift from the bar's set or its
  * role gating.
  *
- * Below the `md` breakpoint the shell swaps that inline bar for two thumb-level
+ * Below the `lg` breakpoint the shell swaps that inline bar for two thumb-level
  * navigations. The {@link MobileTabBar} pins the everyday destinations to the
  * bottom edge so a phone user reaches them without opening the hamburger first,
  * and the hamburger opens the {@link MobileNavDrawer} — a proper Offcanvas panel
  * of labelled sections — instead of expanding every dropdown inline into one
- * cramped nested list. Both are decided in JS ({@link useIsNarrowViewport}), and
- * the drawer replaces the `Navbar.Collapse` rather than joining it, so neither
- * breakpoint ever carries two copies of the same links.
+ * cramped nested list. Both are decided in JS
+ * ({@link useIsNavDrawerViewport}), and the drawer replaces the
+ * `Navbar.Collapse` rather than joining it, so neither breakpoint ever carries
+ * two copies of the same links.
+ *
+ * **That boundary is `lg`, not the app's phone breakpoint.** A tablet held
+ * upright (768–991px) was given the inline bar and could not hold it: the
+ * `.container` is 696px wide there while a maintainer's row of items needs some
+ * 960px, so the trailing end — the shortcuts button and the whole user menu,
+ * sign-out and account settings included — hung outside the viewport and the
+ * page grew a horizontal scrollbar (measured: at 834px the bar ended at 1043px).
+ * Scrapping the row down to fit would have bought one release: the widest role's
+ * bar is a moving target and the user menu wears the account's display name, so
+ * the band would return with the next item. The drawer does not care how many
+ * items there are, and on a touch screen it is the better navigation anyway.
  */
 export function Layout() {
   const { t } = useTranslation()
   const { user, canWrite, isAdmin, isMaintainer, logout } = useAuth()
   const navigate = useNavigate()
   const { pathname } = useLocation()
-  const narrow = useIsNarrowViewport()
+  const drawerNav = useIsNavDrawerViewport()
   // The build the server runs, printed at the foot of the user menu. It rides
   // along on the capabilities the shell already holds, so opening the menu costs
   // no request; `null` (nothing loaded yet, or the call failed) shows nothing.
   const version = formatVersion(useCapabilities().version)
   // The mobile navbar is controlled so it can be closed programmatically. Below
-  // the `md` breakpoint the nav folds into a hamburger; react-bootstrap's
+  // the `lg` breakpoint the nav folds into a hamburger; react-bootstrap's
   // `collapseOnSelect` only collapses on a fired select event, which this bar's
   // mix of bare `NavLink`s and raw `Dropdown` items does not reliably emit — so
   // the menu stayed open over the page it had just navigated to.
@@ -129,7 +141,7 @@ export function Layout() {
 
   // Close the collapsed menu on every navigation, whatever control was tapped
   // (top-level link, group dropdown item, or user menu item all change the
-  // path). On `md`+ the collapse is always shown, so this is a no-op there.
+  // path). On `lg`+ the collapse is always shown, so this is a no-op there.
   useEffect(() => {
     setExpanded(false)
   }, [pathname])
@@ -138,10 +150,10 @@ export function Layout() {
   // the drawer for the inline bar; leaving the state open would then mean the
   // desktop bar came back with an invisible menu still "expanded" behind it.
   useEffect(() => {
-    if (!narrow) {
+    if (!drawerNav) {
       setExpanded(false)
     }
-  }, [narrow])
+  }, [drawerNav])
 
   function closeMenu() {
     setExpanded(false)
@@ -247,7 +259,7 @@ export function Layout() {
     // drawer, the tab bar, the modal — is out of flow and unaffected.
     <div className="kukatko-shell">
       <Navbar
-        expand="md"
+        expand="lg"
         variant="dark"
         sticky="top"
         expanded={expanded}
@@ -263,10 +275,10 @@ export function Layout() {
               a bare icon button: it opens a dialog, so it does not need the width
               of something you can type into. */}
           <SearchCommand />
-          {/* The inline bar is the `md`+ navigation only: on a phone the same
+          {/* The inline bar is the `lg`+ navigation only: below that the same
               items are the drawer's, so rendering both would duplicate every
               link in the DOM. */}
-          {!narrow && (
+          {!drawerNav && (
             <Navbar.Collapse id={MOBILE_MENU_ID}>
               <Nav className="me-auto">
                 {/* The everyday loop, loudest first. Library (the homepage), Albums,
@@ -294,7 +306,7 @@ export function Layout() {
                 <KeyboardShortcutsHelp />
               </Nav>
               {user && (
-                <Nav className="ms-md-3">
+                <Nav className="ms-3">
                   <NavDropdown
                     align="end"
                     title={user.display_name || user.username}
@@ -354,14 +366,14 @@ export function Layout() {
           )}
           {/* The hamburger closes the phone row (`[search] [hamburger]`): a menu
               button sits best under the thumb on the trailing edge. It is
-              `display: none` on `md`+, so the desktop bar is unmoved by where it
+              `display: none` on `lg`+, so the desktop bar is unmoved by where it
               stands in the DOM. */}
           <Navbar.Toggle aria-controls={MOBILE_MENU_ID} label={t('nav.openMenu')} />
         </Container>
       </Navbar>
       {/* Phone only: the hamburger opens a real drawer of labelled sections
           rather than expanding the whole nav inline into the bar. */}
-      {narrow && (
+      {drawerNav && (
         <MobileNavDrawer
           show={expanded}
           onHide={closeMenu}
@@ -389,7 +401,7 @@ export function Layout() {
         </Footer>
       </div>
       {/* Phone only: the everyday destinations as a fixed bottom strip, so they
-          do not cost a hamburger open-then-tap. Renders nothing on `md`+, where
+          do not cost a hamburger open-then-tap. Renders nothing on `lg`+, where
           the top bar above is already the whole navigation. */}
       <MobileTabBar />
       {/* Shown once, to an account that has never seen it, over whatever it

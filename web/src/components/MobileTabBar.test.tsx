@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
+import { NAV_DRAWER_QUERY } from '../hooks/useIsNarrowViewport'
 import i18n from '../i18n'
 import { declarations, readCss, ruleBody, zIndexOf } from '../test/css'
 
@@ -200,6 +201,26 @@ describe('MobileTabBar on desktop', () => {
     expect(container.querySelector('.kk-tabbar')).toBeNull()
     // …and therefore exactly one "Albums" link in the DOM, not two.
     expect(screen.getAllByRole('link', { name: 'Albums' })).toHaveLength(1)
+  })
+})
+
+/**
+ * Which viewports get the bar at all. It follows the navbar's expand breakpoint
+ * rather than the app's phone one: from `lg` down the navigation is folded into
+ * the hamburger (a portrait tablet included, where the inline bar used to run off
+ * the screen), and wherever that is true the everyday destinations owe the reader
+ * a thumb-level strip.
+ */
+describe('MobileTabBar breakpoint', () => {
+  it('asks the navigation breakpoint, not the page one', () => {
+    mockViewport(true)
+    const { container } = renderBar()
+
+    // The JS decision and its CSS twin have to name the same width, or a resize
+    // shows the bar on a desktop for a frame (or hides it on a tablet).
+    expect(window.matchMedia).toHaveBeenCalledWith(NAV_DRAWER_QUERY)
+    expect(NAV_DRAWER_QUERY).toContain('991.98px')
+    expect(container.querySelector('.kk-tabbar')).toHaveClass('d-lg-none')
   })
 })
 

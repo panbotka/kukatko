@@ -85,8 +85,18 @@ implemented**, per the task's conservative-changes rule.
   "Home"/"Domů" entry in the bar itself.~~ — **no longer applies:** the bar now carries a
   labelled **Knihovna** entry pointing at `/`, which *is* the home destination since the
   library became the landing page. Nothing further to do.
+- **Responsiveness:** ~~⚠️ **Found (2026-09-06, release walkthrough of 0.18.0):** between 768px and
+  991px — a tablet held upright, a half-screen laptop window — the bar was inline but did not fit.
+  For a maintainer at 834px the row ended at 1043px: the shortcuts button and the whole user menu
+  (account settings, sign-out) lay off-screen and the page scrolled sideways. The same band had been
+  narrowed once before, in August 2026, without being closed.~~ — **fixed (2026-09-06):** the navbar
+  expands at `lg`, so the whole band gets the hamburger drawer and the bottom tab bar, exactly as a
+  phone does; and the tight `lg` band above it (992–1199px) spends its width on the labels by dropping
+  the decorative glyphs. Measured after: 768 / 834 / 900 / 991 / 992 / 1024 / 1199 / 1200 / 1440px all
+  fit with no horizontal scrollbar. ✅
 - **Readability / States / Intimidation:** Every entry pairs a bootstrap-icons glyph with an
-  action-describing `title`, so daily users recognise entries by shape.
+  action-describing `title`, so daily users recognise entries by shape (from `xl`; the tight `lg` band
+  keeps the labels and drops the glyphs).
   ~~⚠️ **Correction (2026-08-05):** this section used to claim that searching and saved searches
   "are reached from `/search`". They are not reachable at all from the bar — `/search` itself
   has no nav entry in any role, only the unlabelled magnifier icon, and `/saved` sits one level

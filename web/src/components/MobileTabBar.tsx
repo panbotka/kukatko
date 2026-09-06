@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { NavLink } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
-import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
+import { useIsNavDrawerViewport } from '../hooks/useIsNarrowViewport'
 import { LIBRARY_PATH } from '../lib/libraryView'
 
 import { Icon, type IconName } from './Icon'
@@ -52,17 +52,19 @@ const TABS: readonly TabEntry[] = [
 ]
 
 /**
- * The mobile bottom tab bar: a fixed strip of the primary destinations, shown
- * **only below the navbar's `md` expand breakpoint**. On a phone the whole
- * primary navigation is otherwise folded into the hamburger, so reaching the
- * library or the albums costs an open-then-tap every single time; the bar puts
- * the everyday loop — searching among it now — one thumb-reach away, while the
- * top bar keeps the command palette's shortcut.
+ * The bottom tab bar: a fixed strip of the primary destinations, shown **only
+ * below the navbar's `lg` expand breakpoint** — a phone, and a tablet held
+ * upright, which the bar now covers too because the navigation folds into the
+ * hamburger there as well (see `Layout`). Wherever the whole primary navigation
+ * is otherwise behind the hamburger, reaching the library or the albums costs an
+ * open-then-tap every single time; the bar puts the everyday loop — searching
+ * among it now — one thumb-reach away, while the top bar keeps the command
+ * palette's shortcut.
  *
- * On `md`+ it renders nothing at all — the decision is made in JS via
- * {@link useIsNarrowViewport} rather than by a `d-md-none` display rule, so the
- * desktop DOM has no duplicate set of navigation links for assistive tech (or a
- * test) to trip over. The class is kept as a second guard for the instant
+ * On `lg`+ it renders nothing at all — the decision is made in JS via
+ * {@link useIsNavDrawerViewport} rather than by a `d-lg-none` display rule, so
+ * the desktop DOM has no duplicate set of navigation links for assistive tech (or
+ * a test) to trip over. The class is kept as a second guard for the instant
  * between a resize and React's re-render.
  *
  * The bar publishes its own rendered height into `--kk-tabbar-height` on the
@@ -76,7 +78,7 @@ const TABS: readonly TabEntry[] = [
 export function MobileTabBar() {
   const { t } = useTranslation()
   const { canWrite } = useAuth()
-  const narrow = useIsNarrowViewport()
+  const drawerNav = useIsNavDrawerViewport()
   const barRef = useRef<HTMLElement>(null)
 
   // Publish the live height (safe-area padding included) so the rest of the shell
@@ -105,16 +107,16 @@ export function MobileTabBar() {
       observer?.disconnect()
       root.style.removeProperty('--kk-tabbar-height')
     }
-  }, [narrow])
+  }, [drawerNav])
 
-  if (!narrow) {
+  if (!drawerNav) {
     return null
   }
 
   const tabs = TABS.filter((tab) => tab.writeOnly !== true || canWrite)
 
   return (
-    <nav ref={barRef} className="kk-tabbar d-md-none" aria-label={t('nav.tabBar')}>
+    <nav ref={barRef} className="kk-tabbar d-lg-none" aria-label={t('nav.tabBar')}>
       {tabs.map((tab) => (
         <NavLink
           key={tab.to}
