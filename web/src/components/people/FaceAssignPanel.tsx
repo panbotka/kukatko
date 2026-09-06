@@ -2,6 +2,7 @@ import { useState } from 'react'
 import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
 
+import { rankSuggestions } from '../../lib/faceSuggestion'
 import { hasEmbedding, isNamed } from '../../lib/faceState'
 import { type FaceView, type SubjectCount, type Suggestion } from '../../services/people'
 import { Icon } from '../Icon'
@@ -60,6 +61,13 @@ function confidencePct(confidence: number): string {
  * Reassignment is a mode rather than the default view, so a correct name is never
  * one stray click from being replaced.
  *
+ * Only suggestions strong enough to be a recommendation get a button. The backend
+ * widens its search past its own cutoff so an unnamed face always has candidates,
+ * and a 10 % one sitting in the row as a one-click chip is a wrong click waiting
+ * to happen on a crowd; the panel offers what clears
+ * {@link import('../../lib/faceSuggestion').SUGGESTION_DISPLAY_FLOOR} and shows the
+ * best of the rest as muted, unclickable text that says outright it is uncertain.
+ *
  * A face with no embedding says so: it is the honest explanation of an empty
  * suggestion list (there is nothing to rank neighbours against), and it tells the
  * reader that this panel, by hand, is the *only* way that face will ever be named.
@@ -87,7 +95,7 @@ export function FaceAssignPanel({
 
   const assigned = isNamed(face)
   const naming = !assigned || reassigning
-  const suggestions = face.suggestions.slice(0, MAX_SUGGESTIONS)
+  const { offered, uncertain } = rankSuggestions(face.suggestions, MAX_SUGGESTIONS)
   const embedded = hasEmbedding(face)
 
   return (
@@ -161,11 +169,11 @@ export function FaceAssignPanel({
 
       {naming && (
         <>
-          {suggestions.length > 0 && (
+          {offered.length > 0 && (
             <div className="mb-2">
               <p className="small text-secondary mb-1">{t('faces.panel.suggestions')}</p>
               <div className="d-flex flex-wrap gap-2">
-                {suggestions.map((suggestion) => (
+                {offered.map((suggestion) => (
                   <Button
                     key={suggestion.subject_uid}
                     variant="outline-primary"
@@ -180,6 +188,22 @@ export function FaceAssignPanel({
                 ))}
               </div>
             </div>
+          )}
+
+          {uncertain !== null && (
+            /* Deliberately text and not a button: the nearest neighbour of a face
+               nobody matched is worth knowing about — it is often the right hint
+               for the typeahead below — but one tap away from being applied it is
+               just a trap. */
+            <p className="small text-secondary d-flex gap-2 mb-2">
+              <Icon name="question-circle" className="mt-1" />
+              <span>
+                {t('faces.panel.uncertainSuggestion', {
+                  name: uncertain.subject_name,
+                  confidence: confidencePct(uncertain.confidence),
+                })}
+              </span>
+            </p>
           )}
 
           <AddAutocomplete

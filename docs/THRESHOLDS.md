@@ -14,7 +14,9 @@ prevent.
 Faces are a separate space (InsightFace/ArcFace, 512-dim) and were untouched by the SigLIP 2
 migration; the face thresholds — `faces.suggestion_max_distance`, `cluster.threshold`,
 `cluster.suggestion_max_distance`, `candidates.max_distance`, `review.outlier_threshold`, the
-sweep's default confidence — are **not** on this path and are not covered here.
+sweep's default confidence — are **not** on this path and their derivation is not covered here.
+One number on the face side is written down anyway, because it is derived *from* one of them
+rather than measured: [the face-suggestion display floor](#the-face-suggestion-display-floor).
 
 ## The inventory
 
@@ -205,6 +207,53 @@ from this document's mapping — `sure_min` 0.80 → **0.86** (distance 0.20 →
 `band_max` 0.75 → **0.83** (0.25 → 0.171, measured) and `band_min` 0.45 → **0.62**
 (0.55 → ≈0.38, extrapolated at the flat 0.69 ratio since 0.55 is past the measured window).
 Until then the review game's label questions are looser than they read.
+
+## The face-suggestion display floor
+
+`SUGGESTION_DISPLAY_FLOOR = 0.5` in `web/src/lib/faceSuggestion.ts` — a **confidence**, i.e. cosine
+distance 0.5 in the ArcFace space. It decides which identity suggestions the viewer's face-naming
+popover (`FaceAssignPanel`) offers as one-click chips.
+
+It is not a measurement. It is the complement of `faces.suggestion_max_distance`
+(`facematch.DefaultSuggestionMaxDistance` = 0.5), and it exists because the backend deliberately
+serves suggestions from *past* that cutoff:
+
+- `facematch.suggestForFace` runs its primary search at `faces.suggestion_max_distance`.
+- For an **unnamed** face it then calls `fillSuggestions`, which repeats the search with **no
+  distance cutoff at all** to fill the remaining slots, "so a face always gets some candidates when
+  any named neighbour exists".
+
+That second pass is the right behaviour for the data — a face in a library where nobody similar is
+named still deserves a starting point, and the nearest neighbour is often the right name to *type*.
+It is the wrong behaviour for a button. On the box staging instance an unnamed face was offered
+"Testovací osoba 4 · 10 %" (distance 0.9 — approximately "the closest face in a library containing
+nobody like this one") sitting in the same row, in the same style, as a genuine match. On a
+photograph of a crowd, somebody skimming will click it, and a wrong name is more expensive to find
+and undo than a missing one.
+
+So the floor restores the backend's own cutoff at the point where a suggestion becomes a
+*recommendation*:
+
+- **confidence ≥ 0.5** — what the primary pass returns, i.e. a candidate the backend itself counts
+  as a match → offered as a chip, unchanged.
+- **below it** — only ever produced by the widening → the strongest one is shown once as muted,
+  **unclickable** text ("Nejistý návrh: {name} · {confidence}"). The information survives; the
+  invitation does not.
+
+Two consequences worth knowing:
+
+- **Nothing changed on the backend.** The ranking, the widening and every other consumer of
+  `Suggestion` (the review game, the recognition sweep, `ctl`) see exactly what they saw before.
+  This is a rendering rule in one component.
+- **The floor does not read the config key.** An instance that *tightens*
+  `faces.suggestion_max_distance` below 0.5 is unaffected (its primary pass returns only stronger
+  candidates, all above the floor); one that *loosens* it past 0.5 would see the weakest of its
+  primary suggestions demoted to the uncertain line. If that key is ever moved from its default,
+  move this constant with it.
+
+Cluster suggestions need no equivalent: `cluster.suggestion_max_distance` (also 0.5) has **no**
+widening fallback — `internal/cluster/clusters.go` searches once, at the cutoff — so the percentage
+`ClusterCard` prints is already floored where it is computed.
 
 ## Redoing this after the next model change
 

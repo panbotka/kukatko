@@ -33,6 +33,12 @@ export interface SearchableSelectProps {
   describedBy?: string
   /** Called with the chosen option's value, or `''` when the filter is cleared. */
   onChange: (value: string) => void
+  /**
+   * Disables the field, for a caller whose options are still loading. The current
+   * choice stays legible — a disabled input still shows its text — so a control
+   * restored from a URL does not go blank while the list arrives.
+   */
+  disabled?: boolean
 }
 
 /** Cap on rendered suggestions so a catalog with thousands of labels stays responsive. */
@@ -60,6 +66,7 @@ export function SearchableSelect({
   anyLabel,
   describedBy,
   onChange,
+  disabled = false,
 }: SearchableSelectProps) {
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
@@ -159,6 +166,7 @@ export function SearchableSelect({
         aria-describedby={describedBy}
         aria-autocomplete="list"
         autoComplete="off"
+        disabled={disabled}
         onFocus={() => {
           setOpen(true)
         }}

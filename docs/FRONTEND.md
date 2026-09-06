@@ -1104,7 +1104,9 @@ here.
   `foldedIncludes` (`namesti` finds `Náměstí`, same as the backend `immutable_unaccent`);
   the leading row „libovolné" clears the facet, keyboard Up/Down/Enter/Esc, combobox/listbox ARIA,
   a `MAX_SUGGESTIONS` (50) cap on rendered suggestions; it never creates items —
-  mirrors `AddAutocomplete`), `filterChips.ts` (pure `buildChips(view, t, locale, {facets?, includeQuery?})`
+  mirrors `AddAutocomplete`; `disabled` for a caller whose options are still loading — the input keeps
+  showing the choice while the list arrives, which is what a control restored from a URL needs),
+  `filterChips.ts` (pure `buildChips(view, t, locale, {facets?, includeQuery?})`
   → `FilterChip{key,label,clear,kind?}` for each active filter; **one chip for the whole time axis**
   („Období: 1960–1969"), worded by the same `formatPeriod` the control uses — a chip and its control must not
   describe one filter differently, which is why `locale` is passed in; **one chip per selected album,
@@ -3002,9 +3004,15 @@ here.
   overlay's footer repeats the sample's ✕ so a stray face can be detached from the picture that
   revealed it, and carries none for the representative, which the card does not offer either,
   `FacesPage` = `/faces` (editor/admin, a link in „Nástrojích") „najdi osobu mezi neotagovanými
-  fotkami": the config panel `CandidateSearchForm` (person selection via `AddAutocomplete` with the photo count
-  in `hint`, a threshold in **percent** 20–80 % with bookends „Více výsledků"↔„Lepší shody", limit, a
-  Hledat button — the search is **explicit**, not live-on-drag), calls `searchCandidates()` (percent→
+  fotkami": the config panel `CandidateSearchForm` (person selection via `SearchableSelect` with the
+  **marker** count beside each name — the search matches face against face — a threshold in **percent**
+  20–80 % with bookends „Více výsledků"↔„Lepší shody", limit, a
+  Hledat button — the search is **explicit**, not live-on-drag; the picker **shows** its person rather
+  than only collecting one: the page's state lives in the URL, so a reload or Back has to put the name
+  back into the control and not merely into the results — a `subject` uid the loaded subject list does not
+  carry is resolved through `useSubjectName`, and until it is named the field shows its placeholder,
+  never a raw uid; clearing it (the „vyber osobu" row) hands the page a `null`, which takes `subject`
+  off the URL and the results off the screen), calls `searchCandidates()` (percent→
   distance conversion via `percentToDistance` from `lib/faceThreshold`), `CandidateStats` shows the source photos/
   faces, matches found, done, and the **computed `min_match_count`** with an explanation; `CandidateFilterTabs`
   (Vše/Nové/Přiřadit/Hotovo with counts, also scopes „Potvrdit vše"), `CandidateLegend` + `CandidateCard`
@@ -4000,8 +4008,13 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   crop squared against the wrong frame shows a stretched stranger) beside the title and the close button — the
   highlight on the photograph says *which* face, this says *who*, and it costs no extra download, being a region of a
   thumbnail the page already holds — then the top-3 suggestions
-  (`{name} · {confidence}%`, one-tap) + a typeahead over `useSubjects` (`AddAutocomplete` with `autoFocus`
-  and `hint` = the person's photo count); a face with no embedding leads with a muted note saying so, which is also
+  (`{name} · {confidence}%`, one-tap) **that clear the display floor** of `lib/faceSuggestion`
+  (`rankSuggestions`): the backend widens its own search past `faces.suggestion_max_distance` so an unnamed
+  face always has candidates, and a 10 % one offered as a button is a wrong click waiting to happen on a
+  crowd; when nothing clears the floor the strongest is stated once as muted, **unclickable** text
+  („Nejistý návrh: {name} · {confidence}") — the hint survives, the recommendation does not
+  (see `docs/THRESHOLDS.md`) — + a typeahead over `useSubjects` (`AddAutocomplete` with `autoFocus`
+  and `hint` = the person's marker count); a face with no embedding leads with a muted note saying so, which is also
   the honest explanation of its empty suggestion list; for an assigned face **Přeřadit** (suggestions, which the backend supplies
   for assigned faces too — the face's own person is excluded from them) and **Odebrat**; Esc leaves the reassignment first,
   then the selection), `ClusterCard`, `Candidates` (the per-subject version of `/faces` embedded in the person's page:
@@ -4502,6 +4515,11 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   when the reader is still on the same photo;
   `useSubjects()` = a lazy list of all subjects for the typeahead (it mounts only with `FacesPanel`,
   so merely viewing a photo never pays for it; an error = an empty list, the field then only creates new ones);
+  `useSubjectName(uid, subjects, subjectsLoading)` = the name behind a uid a **URL** supplied rather than a
+  click (`/faces?subject=…`): the already-loaded list answers it for free, and only once that list has
+  arrived without it does the hook ask the subjects API for that one person; the answer is kept keyed by uid
+  so a stale response never labels the person picked since, and a failure resolves to `null` — the caller
+  shows its placeholder instead of a uid;
   `useCandidateReview(subjectUid,candidates)` = the state machine of the `/faces` review grid: it seeds the
   working list from a fresh search and applies ✓/✗ **optimistically** (the grid doesn't reload);
   `confirm` flips the card to `done` and calls `assignFace` (an error → `error` for a retry, it doesn't touch
@@ -5021,7 +5039,12 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `faceThreshold.ts` = a pure conversion of the person-search threshold between **percent** (the UI) and the **cosine
   distance** (the backend): `percentToDistance` (`1 - p/100`)/`distanceToPercent` (the inverse,
   rounded — also the „match %" on a card)/`clampThresholdPercent` + the range constants (20–80, step 5,
-  default 50); `candidateReview.ts` = the pure model of the `/faces` review grid: `ReviewItem`/`CandidateStatus`
+  default 50); `faceSuggestion.ts` = the **display floor** on identity suggestions:
+  `SUGGESTION_DISPLAY_FLOOR` (0.5 confidence = the complement of `faces.suggestion_max_distance`) and the pure
+  `rankSuggestions(suggestions, max)` → `{offered, uncertain}`, where `uncertain` is the strongest candidate
+  **only when none cleared the floor** (picked by comparison, not by taking the first, so a caller that
+  reorders cannot mislabel it). It is a display decision, not a new cosine threshold — the derivation is in
+  `docs/THRESHOLDS.md`; `candidateReview.ts` = the pure model of the `/faces` review grid: `ReviewItem`/`CandidateStatus`
   (`pending`/`done`/`error`), the buckets `new`/`assign`/`done` (`bucketOf`, a shared color code via
   `BUCKET_VARIANT`), `FilterTab`/`FILTER_TABS`/`matchesTab`/`tabCounts`, `isActionable`,
   `buildAssignRequest` (mirrors `useFaces`: an existing `marker_uid` → `assign_person`, otherwise

@@ -1841,10 +1841,6 @@
     "form": {
       "subjectHeading": "Osoba",
       "subjectLabel": "Vyber osobu k hledání",
-      "subjectHint_one": "{{count}} obličej",
-      "subjectHint_few": "{{count}} obličeje",
-      "subjectHint_many": "{{count}} obličeje",
-      "subjectHint_other": "{{count}} obličejů",
       "subjectNone": "Vyber osobu, kterou chceš hledat.",
       "subjectSelected": "Hledá se: {{name}}",
       "thresholdLabel": "Práh shody",
@@ -1953,6 +1949,7 @@
       "close": "Zavřít",
       "unassign": "Odebrat osobu",
       "suggestions": "Návrhy",
+      "uncertainSuggestion": "Nejistý návrh: {{name}} · {{confidence}}",
       "nameLabel": "Jméno",
       "namePlaceholder": "Nové nebo existující jméno…",
       "assign": "Přiřadit",

@@ -1,11 +1,12 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { I18nextProvider } from 'react-i18next'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../i18n'
 import { REVIEW_GRID_SCOPE } from '../lib/gridDensity'
 import { type Candidate, type CandidateResult } from '../services/faces'
+import { type SubjectCount } from '../services/people'
 import { type Photo } from '../services/photos'
 import { frameRatio, loadImageAs } from '../test/imageFrame'
 
@@ -15,16 +16,22 @@ vi.mock('../services/faces', () => ({ searchCandidates: vi.fn() }))
 vi.mock('../services/feedback', () => ({ rejectFace: vi.fn(), unrejectFace: vi.fn() }))
 vi.mock('../services/people', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/people')>()
-  return { ...actual, fetchSubjects: vi.fn(), assignFace: vi.fn() }
+  return { ...actual, fetchSubjects: vi.fn(), fetchSubject: vi.fn(), assignFace: vi.fn() }
 })
 
 const { searchCandidates } = await import('../services/faces')
 const { rejectFace } = await import('../services/feedback')
-const { fetchSubjects, assignFace } = await import('../services/people')
+const { fetchSubjects, fetchSubject, assignFace } = await import('../services/people')
 const searchMock = vi.mocked(searchCandidates)
 const rejectMock = vi.mocked(rejectFace)
 const subjectsMock = vi.mocked(fetchSubjects)
+const subjectMock = vi.mocked(fetchSubject)
 const assignMock = vi.mocked(assignFace)
+
+/** makeSubject builds a listed subject with the fields the picker reads. */
+function makeSubject(uid: string, name: string): SubjectCount {
+  return { uid, name, marker_count: 4, photo_count: 3 } as unknown as SubjectCount
+}
 
 /** makePhoto builds a photo with the fields the candidate card reads. */
 function makePhoto(uid: string): Photo {
@@ -84,14 +91,26 @@ function makeResult(
   }
 }
 
+/** Renders the current query string, so a test can assert on the page's URL. */
+function LocationProbe() {
+  const location = useLocation()
+  return <span data-testid="location-search">{location.search}</span>
+}
+
 function renderPage(entry = '/faces') {
   return render(
     <I18nextProvider i18n={i18n}>
       <MemoryRouter initialEntries={[entry]}>
         <FacesPage />
+        <LocationProbe />
       </MemoryRouter>
     </I18nextProvider>,
   )
+}
+
+/** The person picker at the top of the page. */
+function picker(): HTMLInputElement {
+  return screen.getByRole('combobox', { name: 'Person' })
 }
 
 /** The results grid — the element carrying the pinned column count. */
@@ -109,6 +128,7 @@ beforeEach(async () => {
   searchMock.mockReset()
   rejectMock.mockReset().mockResolvedValue(undefined)
   subjectsMock.mockReset().mockResolvedValue([])
+  subjectMock.mockReset().mockRejectedValue(new Error('not stubbed'))
   assignMock.mockReset().mockResolvedValue(undefined)
 })
 
@@ -407,5 +427,77 @@ describe('FacesPage results', () => {
     })
     const card = screen.getByTestId('candidate-card')
     expect(within(card).getByText('Assign person')).toBeInTheDocument()
+  })
+})
+
+describe('FacesPage person picker', () => {
+  it('shows the person named by the URL, not just its results', async () => {
+    subjectsMock.mockResolvedValue([makeSubject('su_1', 'Alice'), makeSubject('su_2', 'Bob')])
+    searchMock.mockResolvedValue(makeResult([]))
+    renderPage('/faces?subject=su_1')
+
+    await waitFor(() => {
+      expect(picker()).toHaveValue('Alice')
+    })
+    expect(screen.getByText('Searching for: Alice')).toBeInTheDocument()
+  })
+
+  it('resolves a person the subject list does not carry through the subjects API', async () => {
+    subjectsMock.mockResolvedValue([makeSubject('su_2', 'Bob')])
+    subjectMock.mockResolvedValue(makeSubject('su_1', 'Alice'))
+    searchMock.mockResolvedValue(makeResult([]))
+    renderPage('/faces?subject=su_1')
+
+    await waitFor(() => {
+      expect(picker()).toHaveValue('Alice')
+    })
+    expect(subjectMock).toHaveBeenCalledWith('su_1', expect.anything())
+  })
+
+  it('shows the placeholder rather than a raw uid when the person cannot be named', async () => {
+    subjectsMock.mockResolvedValue([])
+    subjectMock.mockRejectedValue(new Error('gone'))
+    searchMock.mockResolvedValue(makeResult([]))
+    renderPage('/faces?subject=su_gone')
+
+    await waitFor(() => {
+      expect(subjectMock).toHaveBeenCalled()
+    })
+    expect(picker()).toHaveValue('')
+    expect(picker()).toHaveAttribute('placeholder', 'Pick a person to search for')
+  })
+
+  it('keeps the picked person in the control after the search has run', async () => {
+    subjectsMock.mockResolvedValue([makeSubject('su_1', 'Alice')])
+    searchMock.mockResolvedValue(makeResult([makeCandidate('p1', 'create_marker')]))
+    renderPage('/faces')
+
+    await waitFor(() => {
+      expect(picker()).toBeEnabled()
+    })
+    fireEvent.focus(picker())
+    fireEvent.click(await screen.findByRole('option', { name: /Alice/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }))
+
+    expect(await screen.findByTestId('candidate-card')).toBeInTheDocument()
+    expect(picker()).toHaveValue('Alice')
+    expect(screen.getByTestId('location-search')).toHaveTextContent('subject=su_1')
+  })
+
+  it('clearing the picker drops the subject from the URL and the results with it', async () => {
+    subjectsMock.mockResolvedValue([makeSubject('su_1', 'Alice')])
+    searchMock.mockResolvedValue(makeResult([makeCandidate('p1', 'create_marker')]))
+    renderPage('/faces?subject=su_1')
+    expect(await screen.findByTestId('candidate-card')).toBeInTheDocument()
+
+    fireEvent.focus(picker())
+    fireEvent.click(screen.getByRole('option', { name: 'Pick a person to search for' }))
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('candidate-card')).toBeNull()
+    })
+    expect(picker()).toHaveValue('')
+    expect(screen.getByTestId('location-search')).not.toHaveTextContent('subject=')
+    expect(screen.getByText('Pick a person and search')).toBeInTheDocument()
   })
 })

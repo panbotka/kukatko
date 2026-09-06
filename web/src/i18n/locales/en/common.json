@@ -1773,8 +1773,6 @@
     "form": {
       "subjectHeading": "Person",
       "subjectLabel": "Pick a person to search for",
-      "subjectHint_one": "{{count}} face",
-      "subjectHint_other": "{{count}} faces",
       "subjectNone": "Pick the person you want to find.",
       "subjectSelected": "Searching for: {{name}}",
       "thresholdLabel": "Match threshold",
@@ -1875,6 +1873,7 @@
       "close": "Close",
       "unassign": "Remove person",
       "suggestions": "Suggestions",
+      "uncertainSuggestion": "Uncertain match: {{name}} · {{confidence}}",
       "nameLabel": "Name",
       "namePlaceholder": "New or existing name…",
       "assign": "Assign",

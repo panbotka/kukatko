@@ -17,6 +17,7 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useGridDensity } from '../hooks/useGridDensity'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { useLightbox } from '../hooks/useLightbox'
+import { useSubjectName } from '../hooks/useSubjectName'
 import { useSubjects } from '../hooks/useSubjects'
 import {
   candidateKey,
@@ -85,6 +86,10 @@ export function FacesPage() {
     return FILTER_TABS.includes(tab as FilterTab) ? (tab as FilterTab) : 'all'
   })
 
+  // The picker is driven by the URL, so it has to be able to name a person the
+  // subject list has not delivered — a reload arrives with the uid alone.
+  const subjectName = useSubjectName(subjectUid, subjects, subjectsLoading)
+
   const [state, setState] = useState<SearchState>({ status: 'idle' })
   const abortRef = useRef<AbortController | null>(null)
   const [focusedKey, setFocusedKey] = useState<string | null>(null)
@@ -130,6 +135,30 @@ export function FacesPage() {
       runSearch(uid, thresholdPercent, limit)
     }
   }, [searchParams, thresholdPercent, limit, runSearch])
+
+  const selectSubject = useCallback(
+    (uid: string | null) => {
+      setSubjectUid(uid)
+      if (uid !== null) {
+        return
+      }
+      // Clearing the picker clears the search it stands for: the URL is the truth
+      // this page reads on reload, and leaving `subject` in it (with the results
+      // still on screen) would restore a search nobody has asked for any more.
+      abortRef.current?.abort()
+      setState({ status: 'idle' })
+      setFocusedKey(null)
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev)
+          next.delete('subject')
+          return next
+        },
+        { replace: true },
+      )
+    },
+    [setSearchParams],
+  )
 
   const handleSearch = useCallback(() => {
     if (subjectUid === null || subjectUid === '') {
@@ -294,10 +323,11 @@ export function FacesPage() {
         subjects={subjects}
         subjectsLoading={subjectsLoading}
         subjectUid={subjectUid}
+        subjectName={subjectName}
         thresholdPercent={thresholdPercent}
         limit={limit}
         loading={state.status === 'loading'}
-        onSubjectChange={setSubjectUid}
+        onSubjectChange={selectSubject}
         onThresholdChange={setThresholdPercent}
         onLimitChange={setLimit}
         onSearch={handleSearch}
