@@ -332,6 +332,12 @@ const (
 	// candidate — across every window the rebuild rotated through, so it is not
 	// merely "this tier is exhausted here".
 	ReasonNoCandidates = "no_candidates"
+	// ReasonSourceOff means the game was restricted to a kind the instance has
+	// switched off in review.kind_shares. Such a kind is never scanned, so its
+	// library-wide total stays zero however full the library is — and reading
+	// that zero as "there are no labels" used to send an operator to a labels
+	// page with nothing on it to fix.
+	ReasonSourceOff = "source_off"
 )
 
 // Question is one yes/no/skip decision served to the player.
@@ -483,7 +489,7 @@ type QueueResult struct {
 	// queue's length — not recomputed per answer).
 	Remaining int `json:"remaining"`
 	// Reason explains an empty queue: ReasonNoSources, ReasonNoPeople,
-	// ReasonNoLabels or ReasonNoCandidates.
+	// ReasonNoLabels, ReasonSourceOff or ReasonNoCandidates.
 	Reason string `json:"reason,omitempty"`
 }
 

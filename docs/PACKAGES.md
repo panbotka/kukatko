@@ -2043,7 +2043,9 @@ to `## Package map` in `CLAUDE.md`.
   kind (`review.kind_shares.*`, **default `face: 1` and nothing else**), normalised over the enabled ones;
   `newKindShares` drops non-positive entries and falls back to faces when everything is off. It decides three
   things: a kind at zero is **never scanned** (`collect`/`collectChecks` skip it, so its total stays 0 and
-  `reasonFor` cannot name it), the round mixer prefers whichever kind its running share is furthest behind on
+  `reasonFor` cannot name it — a game restricted to a switched-off kind reports `"source_off"` instead, since
+  a total nothing counted is no evidence about the library), the round mixer prefers whichever kind its
+  running share is furthest behind on
   (`wanted`, the same positional rule `blend` uses for the tiers), and `presentIn` narrows the shares to the
   kinds a pool actually holds so a share reserved for a kind with no material does not pace the ones that have
   some. What a share deliberately does **not** do is shrink a collector's target: every enabled kind still
@@ -2217,7 +2219,11 @@ to `## Package map` in `CLAUDE.md`.
   (`soleKindReason`: a faces-only game says `"no_people"`, not "no people and no labels"); an empty **chosen**
   source → `"no_people"`/`"no_labels"` (`reasonFor`; only for a
   restricted source, because the unscanned side's total is 0 by construction, and never after a
-  degraded rebuild), neither tier producing anything → `"no_candidates"` (all non-error).
+  degraded rebuild); a restricted source whose kind the shares switched off → `"source_off"`, because that
+  kind is skipped in `collect` and its zero total would otherwise be read as an empty library — the box
+  staging instance, ten populated review-enabled labels under the default `face: 1`, is exactly the case that
+  used to answer `"no_labels"` and send the operator to a labels page with nothing wrong on it; neither tier
+  producing anything → `"no_candidates"` (all non-error).
   **Infinite means degrading, not stopping.** Running out of one tier fills from the other (both scans see the
   same material, so this is automatic), and a round that came back empty **rotates to the next window and tries
   again** — `collectRotating`, up to `maxRebuildRounds` (3) **inside the one `BuildTimeout`**, stopping early

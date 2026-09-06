@@ -29,9 +29,11 @@ import { isTypingElement } from '../lib/ratingHotkeys'
 import { cardPhoto, type ReviewCard } from '../lib/reviewRounds'
 import { thumbUrl } from '../services/photos'
 import {
+  REASON_NO_CANDIDATES,
   REASON_NO_LABELS,
   REASON_NO_PEOPLE,
   REASON_NO_SOURCES,
+  REASON_SOURCE_OFF,
   REVIEW_SOURCES,
   type ReviewQuestion,
   type ReviewSource,
@@ -136,11 +138,60 @@ function SourceToggle({
 }
 
 /**
+ * The two ways out of a game restricted to one kind: the page where that kind
+ * is curated, and the other kind's questions. Every scoped empty state offers
+ * exactly these, whatever put the player there, so only the wording above them
+ * changes with the reason.
+ */
+function ScopedEmpty({
+  kind,
+  testId,
+  title,
+  hint,
+  onSelect,
+}: {
+  kind: 'people' | 'labels'
+  testId: string
+  title: string
+  hint: string
+  onSelect: (next: ReviewSource) => void
+}) {
+  const { t } = useTranslation()
+  const people = kind === 'people'
+  return (
+    <div className="review-game__center" data-testid={testId}>
+      <EmptyState
+        title={title}
+        hint={hint}
+        action={
+          <div className="d-flex gap-2 justify-content-center flex-wrap">
+            <Link to={people ? '/people' : '/labels'} className="btn btn-sm btn-outline-light">
+              {t(people ? 'review.empty.people' : 'review.empty.labels')}
+            </Link>
+            <Button
+              variant="outline-light"
+              size="sm"
+              onClick={() => {
+                onSelect(people ? 'labels' : 'people')
+              }}
+            >
+              {t(people ? 'review.empty.askLabels' : 'review.empty.askPeople')}
+            </Button>
+          </div>
+        }
+      />
+    </div>
+  )
+}
+
+/**
  * The nothing-to-ask bodies, told apart by the reason the backend gave. They
  * differ because the way out differs: an empty library needs people or labels
- * created, an empty *chosen* source needs the toggle moved, and an exhausted
- * band needs only patience. A single "no results" would send the player hunting
- * a bug that is not there.
+ * created, a chosen source with nothing to build from needs the toggle moved,
+ * a kind the instance switched off needs a config edit, and an exhausted band
+ * needs only patience. A single "no results" would send the player hunting a
+ * bug that is not there — and so does a wrong one, which is why the band case
+ * says the band is empty instead of borrowing "there are no labels yet".
  */
 function EmptyQueue({
   reason,
@@ -177,52 +228,53 @@ function EmptyQueue({
   if (reason === REASON_NO_PEOPLE || reason === REASON_NO_LABELS) {
     const noPeople = reason === REASON_NO_PEOPLE
     return (
-      <div className="review-game__center" data-testid="review-empty-source">
-        <EmptyState
-          title={t(noPeople ? 'review.empty.noPeopleTitle' : 'review.empty.noLabelsTitle')}
-          hint={t(noPeople ? 'review.empty.noPeopleHint' : 'review.empty.noLabelsHint')}
-          action={
-            <div className="d-flex gap-2 justify-content-center flex-wrap">
-              <Link to={noPeople ? '/people' : '/labels'} className="btn btn-sm btn-outline-light">
-                {t(noPeople ? 'review.empty.people' : 'review.empty.labels')}
-              </Link>
-              <Button
-                variant="outline-light"
-                size="sm"
-                onClick={() => {
-                  onSelect(noPeople ? 'labels' : 'people')
-                }}
-              >
-                {t(noPeople ? 'review.empty.askLabels' : 'review.empty.askPeople')}
-              </Button>
-            </div>
-          }
-        />
-      </div>
+      <ScopedEmpty
+        kind={noPeople ? 'people' : 'labels'}
+        testId="review-empty-source"
+        title={t(noPeople ? 'review.empty.noPeopleTitle' : 'review.empty.noLabelsTitle')}
+        hint={t(noPeople ? 'review.empty.noPeopleHint' : 'review.empty.noLabelsHint')}
+        onSelect={onSelect}
+      />
+    )
+  }
+  // The remaining two reasons do not name a kind — they are about whichever one
+  // the player restricted the game to, so the toggle is what tells them apart.
+  const scoped = source === 'both' ? null : source
+  if (scoped && reason === REASON_SOURCE_OFF) {
+    const people = scoped === 'people'
+    return (
+      <ScopedEmpty
+        kind={scoped}
+        testId="review-empty-source"
+        title={t(
+          people ? 'review.empty.sourceOffPeopleTitle' : 'review.empty.sourceOffLabelsTitle',
+        )}
+        hint={t(people ? 'review.empty.sourceOffPeopleHint' : 'review.empty.sourceOffLabelsHint')}
+        onSelect={onSelect}
+      />
+    )
+  }
+  if (scoped && reason === REASON_NO_CANDIDATES) {
+    const people = scoped === 'people'
+    return (
+      <ScopedEmpty
+        kind={scoped}
+        testId="review-empty-queue"
+        title={t(people ? 'review.empty.queuePeopleTitle' : 'review.empty.queueLabelsTitle')}
+        hint={t(people ? 'review.empty.queuePeopleHint' : 'review.empty.queueLabelsHint')}
+        onSelect={onSelect}
+      />
     )
   }
   return (
     <div className="review-game__center" data-testid="review-empty-queue">
       <EmptyState
         title={t('review.empty.queueTitle')}
-        hint={source === 'both' ? t('review.empty.queueHint') : t('review.empty.queueHintScoped')}
+        hint={t('review.empty.queueHint')}
         action={
-          <div className="d-flex gap-2 justify-content-center flex-wrap">
-            {source !== 'both' && (
-              <Button
-                variant="outline-light"
-                size="sm"
-                onClick={() => {
-                  onSelect('both')
-                }}
-              >
-                {t('review.empty.askBoth')}
-              </Button>
-            )}
-            <Button variant="outline-light" size="sm" onClick={onRetry}>
-              {t('review.empty.checkAgain')}
-            </Button>
-          </div>
+          <Button variant="outline-light" size="sm" onClick={onRetry}>
+            {t('review.empty.checkAgain')}
+          </Button>
         }
       />
     </div>

@@ -99,17 +99,29 @@ func (s Source) wantsChecks() bool {
 // its total stays zero and it can never be the source an empty queue points at.
 // That is the honest reading of "there is nothing left": a game configured down
 // to faces which has run out of faces says so, rather than naming a kind it
-// would not have asked about anyway.
+// would not have asked about anyway — and a game restricted to that switched-off
+// kind says *that*, because an unscanned total is no evidence about the library
+// at all.
 func reasonFor(src Source, shares kindShares, mat material) string {
 	if mat.degraded {
 		return ReasonNoCandidates
 	}
 	switch src.orBoth() {
 	case SourcePeople:
+		// The counts below are only evidence if the scan that produces them ran:
+		// a switched-off kind is skipped in collect, so its zero says nothing
+		// about the library. (Such a rebuild scans nothing and therefore cannot
+		// degrade, which is why the order against the check above never matters.)
+		if !shares.enabled(KindFace) {
+			return ReasonSourceOff
+		}
 		if mat.subjectsTotal == 0 {
 			return ReasonNoPeople
 		}
 	case SourceLabels:
+		if !shares.enabled(KindLabel) {
+			return ReasonSourceOff
+		}
 		// A library whose every label has been switched off on the labels page
 		// reads as "no labels" here, and that is the honest message: the game has
 		// nothing to ask about, and the fix is the toggle, not more photos.

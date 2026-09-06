@@ -161,6 +161,13 @@ export const REASON_NO_LABELS = 'no_labels'
 export const REASON_NO_CANDIDATES = 'no_candidates'
 
 /**
+ * The game is restricted to a kind this instance switched off in
+ * `review.kind_shares`, so it is never scanned and never asked about — however
+ * many people or labels the library holds.
+ */
+export const REASON_SOURCE_OFF = 'source_off'
+
+/**
  * The round a batch of questions forms (`review.RoundInfo`). One request is one
  * round — `questions` *is* the round — so there are no boundary markers inside
  * it; this says which round it is and what it is made of.

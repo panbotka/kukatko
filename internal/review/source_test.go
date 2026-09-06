@@ -150,6 +150,38 @@ func TestQueue_emptyChosenSourceSaysWhich(t *testing.T) {
 			},
 			want: ReasonNoLabels,
 		},
+		"labels are switched off in the kind shares": {
+			source: SourceLabels,
+			setup: func(f *fixture) {
+				// The default configuration: the game asks about faces and nothing
+				// else. The labels are fine — enabled, populated, in band — they are
+				// simply never scanned, and "no labels" would send the operator to a
+				// labels page with nothing to fix on it.
+				f.shares = map[Kind]float64{KindFace: 1}
+				f.organize.labels = []organize.LabelCount{labelCount("lab1", 3)}
+				f.expander.results["lab1"] = labelResult("lab1", 0.5)
+			},
+			want: ReasonSourceOff,
+		},
+		"people are switched off in the kind shares": {
+			source: SourcePeople,
+			setup: func(f *fixture) {
+				f.shares = map[Kind]float64{KindLabel: 1}
+				f.sweeper.people = []*sweep.Person{scannedPerson("subj1", 0.4)}
+			},
+			want: ReasonSourceOff,
+		},
+		"labels exist but neither tier has anything": {
+			source: SourceLabels,
+			setup: func(f *fixture) {
+				f.organize.labels = []organize.LabelCount{labelCount("lab1", 3)}
+				// Similarity 0.30: below the band, so the guess is noise rather than a
+				// fair question. The label itself is enabled and populated, which is
+				// what tells this apart from ReasonNoLabels.
+				f.expander.results["lab1"] = labelResult("lab1", 0.30)
+			},
+			want: ReasonNoCandidates,
+		},
 		"people exist but neither tier has anything": {
 			source: SourcePeople,
 			setup: func(f *fixture) {

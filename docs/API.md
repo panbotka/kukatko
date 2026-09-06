@@ -948,9 +948,14 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   recompute the expensive vector searches, but a **changed source always rebuilds** (a warm cache serving the
   previous selection would look exactly like a broken toggle); skips/answers are session-wide, so they hold
   across a switch. `remaining`/`answered` are cheap session counters.
-  An empty library (no named people or labels) → a **non-error** empty queue with `reason:
-  "no_people_no_labels"`; the chosen source itself is empty → `reason:"no_people"` / `"no_labels"` (only for a
-  restricted source; the untouched source is never counted); sources exist, but the band is empty →
+  The `reason` on an empty queue is one of five, and they say different things on purpose — a wrong one sends
+  the operator to a page with nothing on it to fix. An empty library (no named people or labels) → a
+  **non-error** empty queue with `reason:"no_people_no_labels"`; the chosen source has nothing to build
+  questions from — nobody named, or no label that both has photos and is still `review_enabled` →
+  `reason:"no_people"` / `"no_labels"` (only for a restricted source; the untouched source is never counted);
+  the chosen source is a kind this instance **switched off** in `review.kind_shares`, so it is never scanned
+  however full the library is → `reason:"source_off"`; the source is fine but **nothing sits in the band right
+  now** (or the rebuild was cut short — a timed-out scan may not claim the library is empty) →
   `reason:"no_candidates"`.
   `POST /review/answer` with `{question_id,answer:"yes"|"no"|"skip"}` → `{result,answered,remaining,
   reveal?{subject_uid,name,photo_count,oldest_year?,newest_year?}}`

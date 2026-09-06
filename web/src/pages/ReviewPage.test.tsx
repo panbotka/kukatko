@@ -16,6 +16,7 @@ import {
   REASON_NO_LABELS,
   REASON_NO_PEOPLE,
   REASON_NO_SOURCES,
+  REASON_SOURCE_OFF,
   type ReviewBreather,
   type ReviewQuestion,
   type ReviewQueue,
@@ -616,19 +617,40 @@ describe('ReviewPage', () => {
     })
   })
 
-  it('offers both sources when the chosen one has run dry', async () => {
+  it('blames the empty band, not the labels, when the chosen source has run dry', async () => {
     const user = userEvent.setup()
     queueMock.mockResolvedValue(
       makeQueue([], { source: 'labels', remaining: 0, reason: REASON_NO_CANDIDATES }),
     )
     renderPage('/review?source=labels')
 
+    // The labels are fine — they simply have nothing in the uncertainty band —
+    // so the state must not repeat the "no labels yet" advice.
     const empty = await screen.findByTestId('review-empty-queue')
-    expect(empty).toHaveTextContent('Nothing left to sort in the chosen source.')
+    expect(empty).toHaveTextContent('Nothing to review about labels')
+    expect(empty).toHaveTextContent('No photo sits in the uncertainty band right now.')
+    expect(empty).not.toHaveTextContent('No labels yet')
 
-    await user.click(screen.getByRole('button', { name: 'Ask about both' }))
+    await user.click(screen.getByRole('button', { name: 'Ask about people' }))
     await waitFor(() => {
-      expect(screen.getByTestId('source-probe')).toHaveTextContent('both')
+      expect(screen.getByTestId('source-probe')).toHaveTextContent('people')
+    })
+  })
+
+  it('says a kind is switched off rather than pretending it is empty', async () => {
+    const user = userEvent.setup()
+    queueMock.mockResolvedValue(
+      makeQueue([], { source: 'labels', remaining: 0, reason: REASON_SOURCE_OFF }),
+    )
+    renderPage('/review?source=labels')
+
+    const empty = await screen.findByTestId('review-empty-source')
+    expect(empty).toHaveTextContent('Label questions are switched off')
+    expect(empty).toHaveTextContent('review.kind_shares')
+
+    await user.click(screen.getByRole('button', { name: 'Ask about people' }))
+    await waitFor(() => {
+      expect(screen.getByTestId('source-probe')).toHaveTextContent('people')
     })
   })
 
@@ -636,10 +658,11 @@ describe('ReviewPage', () => {
     queueMock.mockResolvedValue(makeQueue([], { remaining: 0, reason: REASON_NO_CANDIDATES }))
     renderPage()
 
-    // Nothing to switch to, so no scoped hint and no switch button either.
+    // Nothing to switch to, so no scoped wording and no switch button either.
     const empty = await screen.findByTestId('review-empty-queue')
     expect(empty).toHaveTextContent('No questions right now.')
-    expect(screen.queryByRole('button', { name: 'Ask about both' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Ask about people' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Ask about labels' })).toBeNull()
   })
 
   it('shows the labels-are-empty state with a way to the other source', async () => {

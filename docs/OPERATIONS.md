@@ -1529,7 +1529,9 @@ files, one request, streamed — a walk over a disk the server cannot see is not
   `0.95 / 0.05` say the same thing, and every kind is defaulted so setting one share alone means
   what it looks like. A kind at zero is switched off *entirely*: it is never scanned, so it costs a
   rebuild nothing, and it is not a source the empty-queue reason can name — a game configured down
-  to faces that has run out of faces says `no_people`, not `no_people_no_labels`. The default
+  to faces that has run out of faces says `no_people`, not `no_people_no_labels`, and a player who
+  switches the toggle to a kind at zero is told it is **switched off** (`source_off`) rather than
+  that the library has none of it. The default
   leaves the queue to faces because that is what the game is for; restoring the mix it started as
   is `face: 0.95, label: 0.05`, and the `place` / `duplicate` kinds still need their own
   subsystem switched on as well (`location_estimate.enabled`, `duplicate.enabled`). A set where

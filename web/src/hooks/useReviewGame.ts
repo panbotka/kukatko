@@ -185,7 +185,10 @@ export interface ReviewGame {
   loadError: boolean
   /** True when the server has nothing new to ask. */
   exhausted: boolean
-  /** Why the queue is empty: `no_people_no_labels` / `no_people` / `no_labels` / `no_candidates`. */
+  /**
+   * Why the queue is empty: `no_people_no_labels` / `no_people` / `no_labels` /
+   * `source_off` / `no_candidates`.
+   */
   reason: string | undefined
   /** Answers whose requests failed, awaiting retry or dismissal. */
   failed: readonly FailedAnswer[]

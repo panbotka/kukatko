@@ -3392,8 +3392,13 @@ here.
   decision it claims to be). States (all through `EmptyQueue`): an **empty library** (`no_people_no_labels` → „nejdřív pojmenuj
   lidi / založ štítky" with links to `/people` and `/labels`) is **distinct from an empty chosen source**
   (`no_people`/`no_labels` → „hra se ptá jen na lidi/štítky, ale…" + a link to `/people`/`/labels` **and** a
-  button that moves the toggle to the other one) and from an **empty queue** (`no_candidates` → „vše
-  posouzeno" + Zkusit znovu; with a restricted source the hint says so and offers **Ptát se na oboje**),
+  button that moves the toggle to the other one), from a **kind the instance switched off** (`source_off` →
+  „otázky na štítky jsou vypnuté", naming `review.kind_shares`, with the same two buttons) and from an
+  **empty queue** (`no_candidates` → „vše posouzeno" + Zkusit znovu; with a **restricted** source it names
+  the kind instead — „pro štítky teď není co posuzovat — žádná fotka nesedí do pásma nejistoty" with the
+  same two buttons, because blaming the labels for an empty band sent operators hunting a bug that was not
+  there). The three scoped states share `ScopedEmpty`: whatever put the player there, the ways out are the
+  kind's own page and the other kind's questions.
   plus loading the first batch and **offline/error** with retry; tests `ReviewPage.test.tsx` (a padded
   bbox, the name/label in the question, →/←/spacebar send the right verdict and advance, **no fetch
   between cards within a batch**, undo via the right inverse endpoint, a failed answer doesn't lose
