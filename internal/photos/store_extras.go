@@ -76,11 +76,18 @@ func (s *Store) ListFiles(ctx context.Context, photoUID string) ([]PhotoFile, er
 }
 
 // SetPhash upserts the perceptual hashes for p.PhotoUID, replacing any existing
-// row. It returns a wrapped error on failure.
+// row and stamping created_at with the time of THIS write. The stamp is the
+// row's whole meaning to the processing report: the thumbnail job writes the
+// hashes right after the renditions, so "when were the thumbnails last built"
+// is this timestamp — and a forced rebuild after a saved edit has to move it,
+// or a client waiting for the rebuilt rendition could never tell it has landed
+// (the thumbnail route's ETag is keyed on the original's hash and cannot). It
+// returns a wrapped error on failure.
 func (s *Store) SetPhash(ctx context.Context, p Phash) error {
 	const q = `INSERT INTO photo_phashes (photo_uid, phash, dhash)
 		VALUES ($1, $2, $3)
-		ON CONFLICT (photo_uid) DO UPDATE SET phash = EXCLUDED.phash, dhash = EXCLUDED.dhash`
+		ON CONFLICT (photo_uid) DO UPDATE SET
+			phash = EXCLUDED.phash, dhash = EXCLUDED.dhash, created_at = now()`
 	if _, err := s.pool.Exec(ctx, q, p.PhotoUID, p.Phash, p.Dhash); err != nil {
 		return fmt.Errorf("photos: upserting phash: %w", err)
 	}

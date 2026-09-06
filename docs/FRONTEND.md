@@ -2168,7 +2168,9 @@ here.
   **the warm window** — the photo on stage *and* one neighbour each side are primed through
   `useImagePreloader` (`preloadUids` in `lib/viewerPreload` picks them, `thumbUrl` at the rendition the stage
   itself resolved to: the neighbours' own proportions are not known here, only their UIDs, and warming any
-  other rung would leave the stage waiting). One each side is the whole window — nobody presses faster than a
+  other rung would leave the stage waiting; every address carries the photo's session rendition version via
+  `versionedUrl`, and a rebuilt rendition on its way in after a save rides the same window — `incoming`, see the
+  edit-preview contract). One each side is the whole window — nobody presses faster than a
   decode, and more would be a page of bytes a phone never looks at. **A video neighbour is skipped**: its
   stage streams the file itself, so nothing warmed here shortens it. The photo on stage is in the window on
   purpose although it is being fetched anyway — it costs no request, and `statusOf(poster)` is what tells the
@@ -2278,13 +2280,14 @@ here.
   „Informace" (`.kk-viewer__panel-head`) glows **only in the info view**. The same `sidePanel` drives the boxes and the faces
   panel, so they can't diverge. **A crop — and only a crop — stands the whole faces UI down**
   (`!hasCrop(previewEdit)` in `facesAvailable`): it leaves a frame the boxes were never measured against, so every
-  frame would miss its face; the UI comes back the moment the crop is off again. A **rotation no longer costs the
-  reader their frames**: `FaceOverlay` takes the preview's `rotation` (and the measured frame's `ratio`) and maps
-  every bbox through it — `rotateBbox` turns the coordinates, `rotatedFrameStyle` gives the layer the box the turned
-  photo actually paints (for a quarter turn the wrapper's height by its width, centred, since the wrapper keeps the
-  *unrotated* aspect ratio). Only the coordinates turn, never the layer via a `rotate()`, so a box's number and name
-  stay upright — verified pixel-exact for all four rotations against the real figure geometry. Brightness and
-  contrast move no pixels and never mattered.
+  frame would miss its face; the UI comes back the moment the crop is off again — and a crop still **baked into the
+  rendition on stage** (`renditionEdit`, see the edit-preview contract under `EditPanel`) stands it down the same
+  way. A **rotation no longer costs the reader their frames**: `FaceOverlay` takes the preview's `rotation` — the
+  whole turn from the upright original the detector saw — and maps every bbox through it (`rotateBbox`); the layer
+  simply **fills the figure**, because the figure already IS the turned photo's box (the renditions carry the saved
+  rotation, and a draft quarter-turn gives the figure the turned box, `data-turned`). Only the coordinates turn,
+  never the layer via a `rotate()`, so a box's number and name stay upright. Brightness and contrast move no pixels
+  and never mattered.
   **Known limit of that trade:** the boxes drawn *over the photo* follow a rotation, but everything that **crops a
   square tile** out of a `fit_*` thumbnail by bbox (`FacesPanel`'s rows, `Clusters`, `Outliers`,
   `DuplicateMarkerCrop`, `Review`) does not — since a saved edit is now baked into the thumbnails, those crops land
@@ -2676,9 +2679,12 @@ here.
   (`components/photo/`) inside the expanded expander calls `regenerateThumbnail(uid)` (POST
   `/photos/{uid}/regenerate-thumbnail`), shows **pending** (spinner + `disabled`), then success
   or an error (422 = „originál chybí nebo ho nelze dekódovat", otherwise a generic message); on success
-  it calls `onThumbnailRegenerated`, which in `PhotoDetailPage` **bumps `thumbVersion`** and appends
-  `?v=` to `poster` (the thumb URL is built from the UID, thus stable → a cache-bust forces loading the new
-  thumbnail without a hard reload). A viewer doesn't see the button.
+  it calls `onThumbnailRegenerated`, which in `PhotoDetailPage` **bumps the photo's rendition version**
+  (`bumpRenditionVersion` in `lib/renditionRebuild`, a per-photo counter kept outside React for the whole session)
+  and so appends `?v=` to `poster` (`versionedUrl`; the thumb URL is built from the UID and served immutable for a
+  year, so only a changed address makes the browser fetch the new thumbnail — and a photo reopened later asks for
+  the same versioned address rather than the cached stale one). The regenerated rendition carries the saved edit,
+  so the page also resets `rendition` to it (see the edit-preview contract). A viewer doesn't see the button.
   **Zpracování** (`ProcessingPanel`, `components/photo/`) is a **visible block of the drawer**, not a row
   inside the collapsed Technické údaje: „proč se tahle fotka nenajde ve vyhledávání?" deserves an answer
   without an extra click. `PhotoDetailPage` renders it as its own `kk-viewer__section` (eyebrow
@@ -2719,10 +2725,38 @@ here.
   controls changed in one React batch read the same not-yet-rerendered `edit` prop, so
   composing the next value in the panel = **silently discarding that first change** (the page applies the updater via
   `applyEdit`, the first change builds on `state.edit` because the draft isn't there yet) — and **the preview is that
-  ONE original photo up top**
-  (`editPreviewStyle(previewEdit)`, `previewEdit = editDraft ?? state.edit`) — so it stays visible the whole
-  time and changes live under your hands. Closing or jumping to a neighbor (the `uid` effect) discards the draft
-  (the photo returns to the saved state), a successful save swaps it for `state.edit` without a flicker.
+  ONE original photo up top** (`previewEdit = editDraft ?? state.edit`) — so it stays visible the whole time and
+  changes live under your hands. **The edit-preview contract — saved → rendition, draft → CSS delta:** the
+  renditions the stage draws already carry the saved edit (`internal/thumb` `WithEdits` renders it in and a save
+  forces a rebuild), so the page must never style the saved edit onto them — that is exactly how a saved 90° came to
+  be turned twice (portrait rendition + `rotate(90deg)` = a photo on its side on every fresh open, staging
+  2026-09-06). The page keeps `rendition` = the edit **baked into the rendition on stage** (set from the fetched edit
+  on load, keyed by photo) and styles only `editDelta(renditionEdit, previewEdit)` (`lib/photoEdit`): the rotation
+  difference, the ratio of the brightness/contrast multipliers, the draft crop expressed inside the rendered one.
+  A saved edit alone is therefore **no transform at all**; a draft on top of it is only what it adds. A
+  **quarter-turn delta** gives the figure the turned box — `data-turned='true'`, the inline `aspect-ratio`
+  transposed and `--kk-turn-ratio` for `viewer.css`, which fits that box to the stage in container units
+  (`.kk-viewer__stage` is a `container-type: size`) and lays the image out transposed inside it, so the preview
+  never overflows the viewport on any screen (the old unturned fit cut 108px off top and bottom on a 900px
+  screen; guarded by `styles/viewerTurnedFit.test.ts`). The figure's *estimate* (`useImageFrame`, before the
+  rendition has stated its size) is the row's frame with the rendition's edit applied (`editedFrame`), so a photo
+  saved sideways opens in a portrait box; the frame source is versioned, so a swapped-in rendition is measured
+  afresh. **After a save** the rendition on stage still carries the previous edit, so the stage keeps showing the
+  difference (the old rendition, correctly turned and fitted — a correct picture, never a stale sideways one) and
+  `useThumbnailRebuild` (`hooks/`) polls `GET /photos/{uid}` (immediately, then `REBUILD_POLL_DELAYS_MS` in
+  `lib/renditionRebuild`, ~90 s before giving up; a failed poll just waits for the next) until
+  `thumbnailRebuiltSince` says the `thumbnail` step's `at` reached the saved edit's `updated_at` (both server
+  stamps; `done` alone means nothing — the step reads done from the first build on, and the stamp is what the
+  rebuild moves). Then the rebuilt rendition is warmed under the next version through the preloader's window
+  (`incoming`), and only once it has **decoded** is the version bumped and `rendition` set to the saved edit in the
+  same render — no frame of new bytes under the old transform, no empty stage; a rendition that never loads is
+  given up on (the delta stays). Off stage (the reader paged on) the version is bumped at once, so the next open
+  fetches the rebuilt bytes. A save without `updated_at` (an older server) starts no watch: the delta simply
+  stays. Known limits: a rebuild still in flight when the photo is opened *fresh* cannot be told apart from a
+  finished one (the rendition is assumed to carry the stored edit — the old rendering, not a double-turned one,
+  until a reload), and a second save while the previous rebuild is *running* can be answered by that run's stamp.
+  Closing or jumping to a neighbor (the `uid` effect) discards the draft (the photo returns to the saved state), a
+  successful save swaps it for `state.edit` without a flicker.
   Opening Úpravy also **removes the faces** (one lead slot) and the face selection, but
   **doesn't overwrite the saved overlay choice** — the hiding is a consequence of opening Úpravy, not a decision about
   faces, so it survives to the next photo. A viewer sees everything read-only
@@ -2789,9 +2823,19 @@ here.
   caller that shows only `date` is shortening the app's own label rather than formatting a second one;
   the viewer's header is that caller (above); `lib/photoEdit` = pure helpers
   edit→CSS (`editPreviewStyle`/`editFilter`/`editTransform`/`cropClipPath`/`isIdentityEdit`/
-  `hasCrop`/`NEUTRAL_EDIT`) and the quarter-turn arithmetic `rotateBy(rotation,quarters)` with its two
+  `hasCrop`/`NEUTRAL_EDIT`), **`editDelta(rendered, shown)`** — what CSS must still apply to a rendition that
+  already carries `rendered` so it shows `shown`, the only edit `editPreviewStyle` may ever be handed (see the
+  viewer's edit-preview contract), `editedFrame(frame, edit)` (the shape a rendition has with the edit baked in:
+  cropped, then transposed for a quarter turn), `normalizeRotation`/`isQuarterTurn`, and the quarter-turn
+  arithmetic `rotateBy(rotation,quarters)` with its two
   named directions `rotateLeft`/`rotateRight` — it normalises into the 0/90/180/270 the API accepts, which is
-  what a counter-clockwise turn needs (a plain `%` would yield `-90` and the save would be rejected),
+  what a counter-clockwise turn needs (a plain `%` would yield `-90` and the save would be rejected);
+  `lib/renditionRebuild` = `thumbnailRebuiltSince(photo, since)`, `versionedUrl(url, version)`, the poll schedule
+  `REBUILD_POLL_DELAYS_MS` and the session-wide per-photo **rendition version store** (`renditionVersion`/
+  `bumpRenditionVersion`, the immutable `renditionVersions` snapshot + `subscribeRenditionVersions` for
+  `useSyncExternalStore`, `resetRenditionVersions` for tests); `hooks/useThumbnailRebuild(watch)` = the poll that
+  answers a `RebuildWatch{uid,since}` with the detail that first reported the rebuild (the result carries the watch
+  it answers, so a superseded save is never acted on),
   `PeoplePage` = `/people` a people index: a responsive, **virtualized** `SubjectTile` grid
   (`TileGrid`, minTile 140 / gap 12 — the skeleton's geometry) with its own **`PeopleFilterBar`** over
   the pure `lib/peopleBrowse`: a name search (folded, so `nemcova` finds `Němcová` — the library's

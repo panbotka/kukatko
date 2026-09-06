@@ -143,7 +143,10 @@ type Evidence struct {
 	MetadataAt *time.Time
 	// ThumbnailAt is the photo_phashes row's created_at: the thumbnail job
 	// computes the perceptual hashes alongside the thumbnails, so that row is the
-	// durable record that it ran (a thumbnail itself is only a cache file).
+	// durable record that it ran (a thumbnail itself is only a cache file). The
+	// stamp is refreshed by every write (photos.SetPhash), so it says when the
+	// thumbnails were LAST built — which is what lets the viewer wait for the
+	// rebuild a saved edit enqueues and only then refetch the rendition.
 	ThumbnailAt *time.Time
 	// EmbeddingAt is the embeddings row's created_at.
 	EmbeddingAt *time.Time

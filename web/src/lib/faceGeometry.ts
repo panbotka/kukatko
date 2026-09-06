@@ -43,8 +43,9 @@ export function faceBoxStyle(bbox: Bbox): Pick<CSSProperties, 'left' | 'top' | '
  * it, so a photo the user turned in the editor needs its boxes turned the same
  * way or every rectangle lands on the wrong part of the picture. A quarter turn
  * also swaps the frame's proportions, hence the swap of `w` and `h`: the returned
- * box is normalised against the ROTATED frame (see {@link rotatedFrameStyle},
- * which gives that frame its box on screen).
+ * box is normalised against the ROTATED frame — which is the frame the viewer's
+ * figure has, since the renditions carry the saved rotation and the figure takes
+ * the shape of what it displays.
  *
  * Anything other than 90/180/270 (0 included, and any value the backend would
  * have rejected) returns the bbox unchanged, so a caller may pass a rotation
@@ -63,38 +64,6 @@ export function rotateBbox(bbox: Bbox, rotation: number): Bbox {
       return [y, 1 - x - w, h, w]
     default:
       return bbox
-  }
-}
-
-/**
- * Positions and sizes the layer that a rotated photo's boxes are drawn in, given
- * the wrapper it sits in and the wrapper's `width / height` ratio.
- *
- * The wrapper is the *unrotated* photo's box (the viewer gives the figure the
- * photo's own aspect ratio), and CSS rotates the image about its centre — so a
- * quarter turn paints the photo in a box of the wrapper's height by the wrapper's
- * width, centred on the same point. Percentages of the wrapper cannot describe
- * that box without knowing its proportions, which is why the ratio is a
- * parameter: at ratio `a`, the rotated box is `100 / a` percent wide and `100 * a`
- * percent tall, pulled back onto the centre by a translate.
- *
- * A half turn keeps the frame's shape, so it — like no rotation at all — simply
- * fills the wrapper. An unusable (non-positive or non-finite) ratio also falls
- * back to filling it: a full-size layer puts the boxes slightly wrong, where
- * `NaN` percentages would drop them off the page entirely.
- */
-export function rotatedFrameStyle(rotation: number, ratio: number | undefined): CSSProperties {
-  const angle = ((rotation % 360) + 360) % 360
-  const turned = angle === 90 || angle === 270
-  if (!turned || ratio === undefined || !Number.isFinite(ratio) || ratio <= 0) {
-    return { left: 0, top: 0, width: '100%', height: '100%' }
-  }
-  return {
-    left: '50%',
-    top: '50%',
-    width: `${100 / ratio}%`,
-    height: `${100 * ratio}%`,
-    transform: 'translate(-50%, -50%)',
   }
 }
 

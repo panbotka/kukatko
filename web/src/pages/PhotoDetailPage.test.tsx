@@ -15,6 +15,7 @@ import i18n from '../i18n'
 import { clearBlurPlaceholderCache } from '../lib/blurPlaceholder'
 import { readGridScroll, writeGridScroll } from '../lib/gridScroll'
 import { stageRenditionName } from '../lib/rendition'
+import { resetRenditionVersions } from '../lib/renditionRebuild'
 import { type AlbumCount, type LabelCount } from '../services/organize'
 import { type FacesResponse } from '../services/people'
 import {
@@ -442,6 +443,9 @@ beforeEach(async () => {
   vi.clearAllMocks()
   StubImage.reset()
   vi.stubGlobal('Image', StubImage)
+  // The rendition versions live outside React on purpose (they follow a photo
+  // across the viewer's lifetimes); a bump must not follow into the next test.
+  resetRenditionVersions()
   // Every test but the phone ones runs at the desktop breakpoint, where the
   // curation controls ride the top action bar.
   mockViewport(false)
@@ -2764,6 +2768,163 @@ describe('PhotoDetailPage — immersive viewer', () => {
       expect(await screen.findByRole('button', { name: 'Show faces' })).toBeInTheDocument()
       fireEvent.keyDown(document, { key: 'm' })
       expect(await screen.findByTestId('face-overlay')).toBeInTheDocument()
+    })
+
+    /**
+     * The renditions carry the saved edit — the thumbnailer renders it in — so
+     * the viewer may style only the DIFFERENCE between what the rendition on
+     * stage carries and what it should show. Found on staging: a saved 90° was
+     * baked into a portrait rendition AND turned once more by CSS, and every
+     * fresh open showed the photo lying on its side.
+     */
+    describe('saved edit vs draft — the rendition already carries the saved edit', () => {
+      const SAVED_AT = '2026-09-06T10:00:00Z'
+
+      /** The stage's thumbnail step reporting a build at `at`. */
+      function builtAt(at: string): PhotoDetail {
+        return photo({ processing: [{ step: 'thumbnail', state: 'done', at }] })
+      }
+
+      it('draws a saved rotation with no transform at all — the rendition is already turned', async () => {
+        fetchEditMock.mockResolvedValue({ ...NEUTRAL, rotation: 90, updated_at: SAVED_AT })
+        renderPage()
+        await screen.findByRole('heading', { name: 'Beach' })
+
+        const main = screen.getByRole('img', { name: 'Beach' })
+        // A plain still always wears the zoom's identity transform; what must
+        // not be there is a rotation.
+        expect(main.style.transform).not.toContain('rotate')
+        expect(main.style.filter).toBe('')
+        expect(stageFigure()).not.toHaveAttribute('data-turned')
+        // And the figure expects the turned rendition from the start: the row is
+        // 4000 × 3000, the rendition of a quarter-turned edit is 3000 × 4000.
+        expect(frameRatio(stageFigure())).toBeCloseTo(3000 / 4000)
+        // The rendition states its own (portrait) size and nothing changes shape.
+        loadPreview(1440, 1920)
+        expect(frameRatio(stageFigure())).toBeCloseTo(3000 / 4000)
+        expect(main.style.transform).not.toContain('rotate')
+      })
+
+      it('previews only what the draft adds on top of the saved edit', async () => {
+        const user = userEvent.setup()
+        fetchEditMock.mockResolvedValue({
+          ...NEUTRAL,
+          rotation: 90,
+          brightness: 0.5,
+          updated_at: SAVED_AT,
+        })
+        renderPage()
+        await screen.findByRole('heading', { name: 'Beach' })
+        loadPreview(1440, 1920)
+        await user.click(screen.getByRole('button', { name: 'Edits' }))
+
+        const main = screen.getByRole('img', { name: 'Beach' })
+        // Nothing unsaved yet: the panel shows the saved values, the stage adds nothing.
+        expect(main.style.transform).toBe('')
+        expect(main.style.filter).toBe('')
+
+        // One more quarter turn: the rendition is at 90°, the draft at 180°, so
+        // the stage turns it by the 90° in between — and takes the turned box
+        // (the portrait rendition's height by its width) so it fits the stage.
+        await user.click(screen.getByRole('button', { name: 'Rotate right' }))
+        expect(main).toHaveStyle({ transform: 'rotate(90deg)' })
+        expect(stageFigure()).toHaveAttribute('data-turned', 'true')
+        expect(frameRatio(stageFigure())).toBeCloseTo(1920 / 1440)
+        expect(stageFigure()?.style.getPropertyValue('--kk-turn-ratio')).toBe(String(1920 / 1440))
+
+        // A half turn from the rendition keeps its shape: no turned box.
+        await user.click(screen.getByRole('button', { name: 'Rotate right' }))
+        expect(main).toHaveStyle({ transform: 'rotate(180deg)' })
+        expect(stageFigure()).not.toHaveAttribute('data-turned')
+        expect(frameRatio(stageFigure())).toBeCloseTo(1440 / 1920)
+
+        // Brightness is a multiplier on both sides: brightness(1.5) is in the
+        // rendition, so showing 2.0 is a further ×(2 / 1.5).
+        fireEvent.change(screen.getByLabelText('Brightness'), { target: { value: '1' } })
+        expect(main.style.filter).toMatch(/^brightness\(1\.33333\d*\)$/)
+      })
+
+      it('swaps in the rebuilt rendition after a save and drops the stand-in transform', async () => {
+        const user = userEvent.setup()
+        renderPage()
+        await screen.findByRole('heading', { name: 'Beach' })
+        loadPreview()
+        await user.click(screen.getByRole('button', { name: 'Edits' }))
+        await user.click(screen.getByRole('button', { name: 'Rotate right' }))
+
+        const main = screen.getByRole('img', { name: 'Beach' })
+        const plain = `/api/v1/photos/b/thumb/${STAGE_SIZE}`
+        const rebuilt = `${plain}?v=1`
+        expect(main).toHaveAttribute('src', plain)
+
+        // The save answers with its server stamp; the worker has rebuilt the
+        // thumbnails by the time the stage asks (the first poll is immediate).
+        saveEditMock.mockResolvedValue({ ...NEUTRAL, rotation: 90, updated_at: SAVED_AT })
+        fetchPhotoMock.mockResolvedValue(builtAt('2026-09-06T10:00:04Z'))
+        await user.click(screen.getByRole('button', { name: 'Save edits' }))
+        await waitFor(() => {
+          expect(preloaded()).toContain(rebuilt)
+        })
+        // Until the rebuilt rendition has decoded, the stage keeps the old
+        // rendition turned by the difference — a correct picture, and no
+        // frame of the new bytes under the old transform.
+        expect(main).toHaveAttribute('src', plain)
+        expect(main).toHaveStyle({ transform: 'rotate(90deg)' })
+
+        act(() => {
+          StubImage.finish(rebuilt)
+        })
+        await waitFor(() => {
+          expect(screen.getByRole('img', { name: 'Beach' })).toHaveAttribute('src', rebuilt)
+        })
+        // Rebuilt rendition on stage: it carries the rotation, so CSS adds none.
+        expect(screen.getByRole('img', { name: 'Beach' }).style.transform).not.toContain('rotate')
+        expect(stageFigure()).not.toHaveAttribute('data-turned')
+      })
+
+      it('keeps the difference on stage while the rebuild is still queued', async () => {
+        const user = userEvent.setup()
+        renderPage()
+        await screen.findByRole('heading', { name: 'Beach' })
+        loadPreview()
+        await user.click(screen.getByRole('button', { name: 'Edits' }))
+        await user.click(screen.getByRole('button', { name: 'Rotate right' }))
+
+        // The report still shows the build from before the save: the old
+        // rendition is what the server would hand back, so nothing is refetched.
+        saveEditMock.mockResolvedValue({ ...NEUTRAL, rotation: 90, updated_at: SAVED_AT })
+        fetchPhotoMock.mockResolvedValue(builtAt('2026-09-06T09:00:00Z'))
+        await user.click(screen.getByRole('button', { name: 'Save edits' }))
+        await waitFor(() => {
+          expect(fetchPhotoMock.mock.calls.length).toBeGreaterThan(1)
+        })
+
+        const main = screen.getByRole('img', { name: 'Beach' })
+        expect(main).toHaveAttribute('src', `/api/v1/photos/b/thumb/${STAGE_SIZE}`)
+        expect(main).toHaveStyle({ transform: 'rotate(90deg)' })
+        expect(stageFigure()).toHaveAttribute('data-turned', 'true')
+        expect(preloaded().some((url) => url.includes('v=1'))).toBe(false)
+      })
+
+      it('lands the face boxes on a saved-rotated rendition without a turned layer', async () => {
+        fetchFacesMock.mockResolvedValue(facesResponse(1))
+        fetchEditMock.mockResolvedValue({ ...NEUTRAL, rotation: 90, updated_at: SAVED_AT })
+        renderPage()
+        await screen.findByRole('heading', { name: 'Beach' })
+        loadPreview(1440, 1920)
+        fireEvent.keyDown(document, { key: 'm' })
+
+        // The figure IS the turned rendition, so the layer fills it and the box
+        // coordinates carry the turn: [0.1, 0.2, 0.3, 0.4] → [0.4, 0.1, 0.4, 0.3],
+        // centred on (0.6, 0.25).
+        const layer = await screen.findByTestId('face-overlay')
+        expect(layer).toHaveStyle({ width: '100%', height: '100%' })
+        const box = screen.getByRole('button', { name: 'Unnamed face 1' })
+        expect(box.style.getPropertyValue('--kk-face-x')).toBe('60%')
+        expect(box.style.getPropertyValue('--kk-face-y')).toBe('25%')
+        expect(box.style.getPropertyValue('--kk-face-w')).toBe('40%')
+        expect(box.style.getPropertyValue('--kk-face-h')).toBe('30%')
+      })
     })
 
     it('stands the faces down for a crop, and brings them back when it is off', async () => {

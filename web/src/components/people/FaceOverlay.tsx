@@ -1,7 +1,7 @@
 import { type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { faceMarkerStyle, rotateBbox, rotatedFrameStyle } from '../../lib/faceGeometry'
+import { faceMarkerStyle, rotateBbox } from '../../lib/faceGeometry'
 import { type FaceState, faceState } from '../../lib/faceState'
 import { type FaceView } from '../../services/people'
 
@@ -33,20 +33,15 @@ export interface FaceOverlayProps {
    */
   readOnly?: boolean
   /**
-   * The rotation the photo under the boxes is being shown at, in clockwise
-   * degrees (0/90/180/270) — the saved or in-progress edit's rotation. The boxes
-   * are mapped through it, so they follow the photo instead of staying with the
-   * pixels the detector saw. Defaults to 0 (upright).
+   * How far the photo under the boxes is turned from the upright original the
+   * detector saw, in clockwise degrees (0/90/180/270) — the whole rotation on
+   * screen, whether the rendition carries it (a saved edit) or a transform adds
+   * the rest (a draft). The boxes are mapped through it, so they follow the
+   * photo instead of staying with the pixels the detector saw. The wrapper is
+   * expected to be the turned photo's own box already (the viewer's figure takes
+   * the shape of whatever it displays). Defaults to 0 (upright).
    */
   rotation?: number
-  /**
-   * The wrapper's `width / height`, needed only for a quarter turn: it is what
-   * says how big the turned photo's box is in percentages of the wrapper it
-   * overflows. Pass the measured frame's ratio (`useImageFrame`); omitting it on a
-   * quarter turn leaves the layer filling the wrapper, which places the boxes
-   * loosely rather than not at all.
-   */
-  frameRatio?: number
   /**
    * Whether the wrapper the boxes are positioned against is the **measured**
    * frame of the loaded image (`useImageFrame`) rather than a provisional
@@ -153,9 +148,9 @@ function halo(isSelected: boolean, isHovered: boolean): string | undefined {
  *
  * **A rotated photo keeps its boxes.** Detection ran on the upright original, so
  * a photo turned in the editor has every bbox mapped through that rotation
- * (`rotateBbox`) and the layer itself given the turned photo's box
- * (`rotatedFrameStyle`) — the rectangles land on the faces, and because only the
- * coordinates turn, each box's number and name stay upright and readable. A crop
+ * (`rotateBbox`) into the turned frame the wrapper already has — the rectangles
+ * land on the faces, and because only the coordinates turn, each box's number
+ * and name stay upright and readable. A crop
  * is the one adjustment the boxes cannot follow (the frame it leaves is not the
  * frame they were measured against), and the viewer keeps the face UI off then.
  *
@@ -173,7 +168,6 @@ export function FaceOverlay({
   readOnly = false,
   measured = true,
   rotation = 0,
-  frameRatio,
 }: FaceOverlayProps) {
   const { t } = useTranslation()
   const drawn = measured ? faces : []
@@ -183,17 +177,17 @@ export function FaceOverlay({
 
   return (
     <div
-      // The layer IS the rendered photo's box, which for a quarter turn is not the
-      // wrapper's box — hence inline geometry rather than `w-100 h-100`, whose
-      // `!important` would win over it. The layer is rotated only in shape, never
-      // by a `rotate()`: the boxes carry the rotation in their coordinates, so
-      // their numbers and names stay the right way up.
+      // The layer IS the rendered photo's box, i.e. the wrapper: the wrapper takes
+      // the shape of the photo as displayed, turned or not, so filling it is
+      // exact. The layer is never given a `rotate()` itself — the boxes carry the
+      // rotation in their coordinates, so their numbers and names stay the right
+      // way up.
       // `kk-face-layer` is what a host stylesheet addresses to place the boxes in
       // its own stacking order — the viewer has to, since its photograph is
       // numbered (see `viewer.css`). Keep the class even if this layer's own
       // styling stays inline.
       className="kk-face-layer position-absolute"
-      style={{ ...rotatedFrameStyle(rotation, frameRatio), pointerEvents: 'none' }}
+      style={{ left: 0, top: 0, width: '100%', height: '100%', pointerEvents: 'none' }}
       data-testid="face-overlay"
     >
       {litFace !== undefined && (

@@ -6,7 +6,6 @@ import {
   padBbox,
   readingOrder,
   rotateBbox,
-  rotatedFrameStyle,
   squareCrop,
 } from './faceGeometry'
 
@@ -255,37 +254,6 @@ describe('rotateBbox', () => {
     // The backend's allow-list means this cannot be stored; a box drawn wrong
     // would be worse than one drawn upright.
     expect(rotateBbox(box, 45)).toEqual(box)
-  })
-})
-
-describe('rotatedFrameStyle', () => {
-  it('fills the wrapper when the photo is upright or half-turned', () => {
-    const filled = { left: 0, top: 0, width: '100%', height: '100%' }
-    expect(rotatedFrameStyle(0, 2)).toEqual(filled)
-    expect(rotatedFrameStyle(180, 2)).toEqual(filled)
-  })
-
-  it('takes the turned photo’s box for a quarter turn, centred on the wrapper', () => {
-    // A wrapper twice as wide as it is tall paints its quarter-turned photo half as
-    // wide and twice as tall, about the same centre.
-    for (const rotation of [90, 270]) {
-      expect(rotatedFrameStyle(rotation, 2)).toEqual({
-        left: '50%',
-        top: '50%',
-        width: '50%',
-        height: '200%',
-        transform: 'translate(-50%, -50%)',
-      })
-    }
-  })
-
-  it('falls back to filling the wrapper when the ratio is unusable', () => {
-    const filled = { left: 0, top: 0, width: '100%', height: '100%' }
-    // NaN percentages would drop every box off the page; a slightly wrong box is
-    // the lesser failure.
-    expect(rotatedFrameStyle(90, undefined)).toEqual(filled)
-    expect(rotatedFrameStyle(90, 0)).toEqual(filled)
-    expect(rotatedFrameStyle(90, Number.NaN)).toEqual(filled)
   })
 })
 

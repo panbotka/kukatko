@@ -409,7 +409,10 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   rendering and the library grid shows the photo the way its owner turned it. Saving the **neutral** edit
   is not a special case: it audits and rebuilds too, which is what makes a reset restore the original
   rendering everywhere rather than only in the viewer. Both are best-effort — a failure is logged, never
-  returned, the edit is stored either way;
+  returned, the edit is stored either way. The response is the stored edit **with its `updated_at`**, and a
+  client that wants the rebuilt renditions waits until `GET /photos/{uid}` `processing` reports the
+  `thumbnail` step at or after that stamp (the viewer does; its renditions must never be styled with the
+  saved edit again, see `docs/FRONTEND.md`);
   `PATCH /photos/{uid}` (editor/admin) partial edit of
   metadata — `title/description/notes/ai_note/taken_at/lat/lng` (null clears a nullable, coordinate
   validation) **+ approximate date** `taken_at_estimated` (bool — the date is an estimate, not a fact) and
@@ -620,7 +623,10 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `metadata`, `thumbnail`, `image_embed`, `face_detect`, `ocr`, `places`, `sidecar`
   (`storyboard` is deliberately absent: it is rendered lazily on first playback and leaves no persisted
   evidence). Each entry is `{step, state, at?, error?, face_count?, text_found?}`. The state is decided by
-  **persisted evidence first** (`photos.metadata_extracted_at`, a `photo_phashes` row, an `embeddings` row,
+  **persisted evidence first** (`photos.metadata_extracted_at`, a `photo_phashes` row — whose `created_at`
+  is restamped by every thumbnail (re)build, so the `thumbnail` step's `at` is when the renditions were
+  **last** built and a client can wait for a saved edit's rebuild by comparing it with the edit's
+  `updated_at` —, an `embeddings` row,
   a `face_detections` row, `photos.ocr_at`, a `photo_places` row **with coordinates**,
   `photos.sidecar_written_at`) → `done` with `at`; then by the **queue** (`jobs` for this `photo_uid` and
   type) → `running`/`queued`/`failed`, where `failed` covers a dead job **and** one whose last attempt

@@ -264,13 +264,7 @@ describe('FaceOverlay', () => {
     // [1 - y - h, x, h, w] — here [0.1, 0.2, 0.3, 0.4] → [0.4, 0.1, 0.4, 0.3].
     render(
       <I18nextProvider i18n={i18n}>
-        <FaceOverlay
-          faces={faces()}
-          selected={null}
-          onSelect={vi.fn()}
-          rotation={90}
-          frameRatio={2}
-        />
+        <FaceOverlay faces={faces()} selected={null} onSelect={vi.fn()} rotation={90} />
       </I18nextProvider>,
     )
 
@@ -280,14 +274,14 @@ describe('FaceOverlay', () => {
       w: '40%',
       h: '30%',
     })
-    // The layer takes the turned photo's own box — the wrapper's height by its
-    // width, centred — since that is what the rotated image paints over.
+    // The layer fills the wrapper: the wrapper already IS the turned photo's box
+    // (the renditions carry the saved rotation, and the viewer's figure takes
+    // the shape of what it displays), so there is no other box to find.
     expect(screen.getByTestId('face-overlay')).toHaveStyle({
-      left: '50%',
-      top: '50%',
-      width: '50%',
-      height: '200%',
-      transform: 'translate(-50%, -50%)',
+      left: '0px',
+      top: '0px',
+      width: '100%',
+      height: '100%',
     })
   })
 
@@ -296,13 +290,7 @@ describe('FaceOverlay', () => {
     // coordinates, so a 180° photo does not hand the reader upside-down text.
     render(
       <I18nextProvider i18n={i18n}>
-        <FaceOverlay
-          faces={faces()}
-          selected={1}
-          onSelect={vi.fn()}
-          rotation={180}
-          frameRatio={2}
-        />
+        <FaceOverlay faces={faces()} selected={1} onSelect={vi.fn()} rotation={180} />
       </I18nextProvider>,
     )
 

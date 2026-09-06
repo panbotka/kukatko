@@ -492,7 +492,9 @@ to `## Package map` in `CLAUDE.md`.
   credits on a photo no map shows) — `ListLocatedNeighbours` deliberately does **not**, since a hidden
   photo's GPS tag is still a real measurement. Duplicate detection, maintenance, the backfills, backup
   and import verify are all untouched: they are about data integrity, not browsing.
-  `SetPhash`/`GetPhash`, `SetEdit`/`GetEdit`; dedup on SHA256 `file_hash` + external IDs
+  `SetPhash`/`GetPhash` (the upsert **restamps `created_at`** on every write: the stamp is when the thumbnails
+  were last built, which is what the processing report's `thumbnail.at` — and through it the viewer's rebuild
+  watch — reads), `SetEdit`/`GetEdit`; dedup on SHA256 `file_hash` + external IDs
   `photoprism_uid`/`photoprism_file_hash`(SHA1)/`photosorter_uid`; tables in migration
   `0003_photos.sql`: `photos`, `photo_files` (one primary/photo), `photo_phashes`,
   `photo_edits` (all-or-nothing crop, rotation 0/90/180/270); video columns in migration
@@ -690,7 +692,10 @@ to `## Package map` in `CLAUDE.md`.
   since caching the unedited rendering under the edited key is a wrong thumbnail nothing would ever notice. And
   because the key does not depend on the edit, **a changed edit must force a rebuild** — that is what the `thumbnail`
   job's `force` flag and `photoapi`'s enqueue on `PUT …/edit` are for; the pHash deliberately stays the original's
-  (see `internal/thumbjob`);
+  (see `internal/thumbjob`). **The client must not re-apply the saved edit**: a rendition already IS the saved
+  edit, so the viewer styles only the difference between what its rendition carries and what it should show
+  (`web/src/lib/photoEdit` `editDelta`, the edit-preview contract in `docs/FRONTEND.md`) — a saved 90° styled
+  onto a rendition turned 90° was a photo lying on its side;
   **decompression-bomb guard**: `WithMaxPixels(px)` (config `thumb.max_pixels`, default 200 MP) makes
   `decodeAndOrient` call `imgconvert.EnforcePixelBound` before the full decode, so a source whose
   `width×height` exceeds the cap fails with `imgconvert.ErrImageTooLarge` instead of allocating a
@@ -1727,7 +1732,9 @@ to `## Package map` in `CLAUDE.md`.
   persisted evidence, so it has no honest state to report and nothing a button could usefully schedule ahead
   of a viewer pressing play. `Store` = `NewStore(pool)`: `Evidence(photoUID)` reads the whole evidence in
   **one** query — `photos.media_type`/`lat`/`lng`/`metadata_extracted_at`/`ocr_at`/`ocr_text`/
-  `sidecar_written_at` plus four LEFT JOINs on the PK-keyed side tables `photo_phashes`, `embeddings`,
+  `sidecar_written_at` plus four LEFT JOINs on the PK-keyed side tables `photo_phashes` (its `created_at` is the
+  thumbnail step's `at`; `photos.SetPhash` restamps it on every write, so it moves when a saved edit's forced
+  rebuild lands — the viewer's only way to know the rebuilt renditions exist), `embeddings`,
   `face_detections` (also the `face_count`) and `photo_places`; the place column is **conditional**
   (`lat IS NOT NULL AND lng IS NOT NULL`) because `photo_places` also holds the coordinate-less marker the
   geocoder writes for a photo with no GPS, and that records that there was nothing to do rather than a place.

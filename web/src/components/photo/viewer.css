@@ -54,6 +54,10 @@
   align-items: center;
   justify-content: center;
   padding: 3.5rem 0.5rem;
+  /* The stage is the query container the turned preview (below) measures itself
+     against in `cqw`/`cqh`. Size containment is free here: the stage is sized by
+     its insets, never by what it holds. */
+  container-type: size;
   /* Whenever the drawer opens the stage yields the space it takes, so the photo
      re-centres in what is left rather than hiding behind it — to the right on a
      wide screen, downwards on a phone, where the drawer is a bottom sheet. */
@@ -97,6 +101,32 @@
   margin: auto;
   min-width: 0;
   min-height: 0;
+}
+
+/* A draft rotation by a quarter turn — the ONE case where CSS turns the picture,
+   since a saved rotation is already baked into the rendition — needs the figure
+   to be the TURNED picture's box: the rendition's height by its width, fitted to
+   the stage by "contain", or the turned image overflows the viewport (measured:
+   a 900px-tall stage with the head and feet cut off). JSX stamps the turned
+   aspect ratio inline plus `--kk-turn-ratio` (turned width / turned height,
+   i.e. the rendition's height / width), and the two rules below do the fit
+   against the stage in container units: the figure is as wide as the stage
+   allows, or as wide as the stage's height allows at that ratio, whichever is
+   smaller; the image inside is laid out at the UNturned size (its width is the
+   figure's height and vice versa), centred, and the rotate() in its transform
+   turns it onto the figure exactly. */
+.kk-viewer__figure[data-turned='true'] {
+  width: min(100cqw, calc(100cqh * var(--kk-turn-ratio)));
+}
+
+.kk-viewer__figure[data-turned='true'] > .kk-viewer__image {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: min(calc(100cqw / var(--kk-turn-ratio)), 100cqh);
+  height: min(100cqw, calc(100cqh * var(--kk-turn-ratio)));
+  max-width: none;
+  max-height: none;
 }
 
 @keyframes kk-viewer-photo-in {

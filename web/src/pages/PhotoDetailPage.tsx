@@ -1,4 +1,12 @@
-import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  type CSSProperties,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react'
 import Button from 'react-bootstrap/Button'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
@@ -44,23 +52,35 @@ import { type NeighborPhoto, usePhotoNeighbors } from '../hooks/usePhotoNeighbor
 import { usePinchZoom } from '../hooks/usePinchZoom'
 import { useRating } from '../hooks/useRating'
 import { useSwipeNavigation } from '../hooks/useSwipeNavigation'
+import { type RebuildWatch, useThumbnailRebuild } from '../hooks/useThumbnailRebuild'
 import { useViewportBox } from '../hooks/useViewportBox'
 import { useViewerChrome } from '../hooks/useViewerChrome'
 import { backHref, DETAIL_DEFAULTS, detailQueryString, detailToParams } from '../lib/detailView'
+import { displayFrame } from '../lib/faceGeometry'
 import { readFaceOverlay, writeFaceOverlay } from '../lib/faceOverlayPref'
 import { formatCaptureParts, formatDateTimeMinutes } from '../lib/format'
 import { gridScrollKey, rememberGridPhoto } from '../lib/gridScroll'
 import {
+  editDelta,
+  editedFrame,
   editPreviewStyle,
   editTransform,
   hasCrop,
   isIdentityEdit,
+  isQuarterTurn,
   NEUTRAL_EDIT,
 } from '../lib/photoEdit'
 import { handoffPreviewUrl } from '../lib/photoHandoff'
 import { photoDisplayTitle, photoTitleText, titleSource } from '../lib/photoTitle'
 import { isTypingElement, ratingHotkey } from '../lib/ratingHotkeys'
 import { stageRenditionName } from '../lib/rendition'
+import {
+  bumpRenditionVersion,
+  renditionVersion,
+  renditionVersions,
+  subscribeRenditionVersions,
+  versionedUrl,
+} from '../lib/renditionRebuild'
 import { toMode } from '../lib/searchView'
 import { isFormModalOpen } from '../lib/shortcuts'
 import { readUrlState } from '../lib/urlState'
@@ -94,6 +114,12 @@ type State =
   | { status: 'error' }
   | { status: 'missing' }
   | { status: 'ready'; photo: PhotoDetail; edit: PhotoEdit }
+
+/**
+ * The figure's inline style: its aspect ratio, plus — for a quarter-turn draft
+ * — the custom property `viewer.css` fits the turned box with.
+ */
+type TurnedFigureStyle = CSSProperties & { '--kk-turn-ratio'?: string }
 
 /**
  * The special slot at the top of the info drawer, or null for none. Faces and
@@ -167,9 +193,27 @@ export function PhotoDetailPage() {
   const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const [state, setState] = useState<State>({ status: 'loading' })
-  // Bumped after a thumbnail is regenerated: the derived image changed under a
-  // stable URL, so appending this counter forces the browser to refetch it.
-  const [thumbVersion, setThumbVersion] = useState(0)
+  // The rendition version of every photo this session has seen rebuilt (a
+  // regenerated thumbnail, a saved edit's rebuild). The derived image changes
+  // under a stable, immutable-cached URL, so the version is appended to make the
+  // browser refetch it — and it lives outside the page so a photo reopened later
+  // still asks for the rebuilt bytes rather than the cached stale ones.
+  const versions = useSyncExternalStore(subscribeRenditionVersions, renditionVersions)
+  // The edit BAKED INTO the rendition on stage, keyed by photo so a neighbour's
+  // never explains this one's. The thumbnailer renders the saved edit into every
+  // rendition, so what the server has already drawn must not be drawn again by
+  // CSS: the stage styles only the difference between this and what it should
+  // show (`editDelta`). It lags the saved edit from a save until the rebuild the
+  // save enqueued has landed and been swapped in.
+  const [rendition, setRendition] = useState<{ uid: string; edit: PhotoEdit } | null>(null)
+  // The rebuild the last save is waiting for, and the rebuilt rendition being
+  // warmed before it replaces the one on stage (so the swap never paints a frame
+  // of the new bytes under the old delta, nor an empty stage).
+  const [rebuildWatch, setRebuildWatch] = useState<RebuildWatch | null>(null)
+  const [incoming, setIncoming] = useState<{ uid: string; url: string; edit: PhotoEdit } | null>(
+    null,
+  )
+  const rebuilt = useThumbnailRebuild(rebuildWatch)
   // Which special slot — if any — leads the info drawer. Seeded from the stored
   // face-overlay choice, which is read once from localStorage and written back on
   // every faces toggle, so it carries across photos and reloads. Faces are off by
@@ -375,19 +419,40 @@ export function PhotoDetailPage() {
   // booleans the render does. `state` is read without destructuring so it stays
   // legal up here.
   const ready = state.status === 'ready' ? state.photo : null
+  const savedEdit = state.status === 'ready' ? state.edit : NEUTRAL_EDIT
+  // The edit the rendition on stage carries — the saved edit, except in the
+  // window after a save when the previous rendition is still up.
+  const renditionEdit =
+    rendition !== null && ready !== null && rendition.uid === ready.uid ? rendition.edit : savedEdit
   // The stage's frame: the shape of the ONE preview on screen, measured from the
   // image itself once it has loaded (the catalogue row is only the estimate that
   // holds the layout still until then). It sizes the figure the face boxes are
-  // positioned against, so it has to be the rendered image and nothing else.
+  // positioned against, so it has to be the rendered image and nothing else. The
+  // estimate is the row's frame with the rendition's own edit applied — a photo
+  // saved sideways opens in a portrait box, not a landscape one that snaps —
+  // and the source is versioned, so a rebuilt rendition is measured afresh.
+  const renditionSource =
+    ready === null ? '' : `${ready.uid}#${String(renditionVersion(ready.uid, versions))}`
+  const estimate = editedFrame(
+    displayFrame(ready?.file_width ?? 0, ready?.file_height ?? 0, ready?.file_orientation ?? 0),
+    renditionEdit,
+  )
   const stage = useImageFrame({
-    source: ready?.uid ?? '',
-    width: ready?.file_width ?? 0,
-    height: ready?.file_height ?? 0,
-    orientation: ready?.file_orientation ?? 0,
+    source: renditionSource,
+    width: estimate.width,
+    height: estimate.height,
+    orientation: 0,
   })
   // What the one photo previews: the adjustments in progress while the edit panel
   // is open, otherwise the stored edit.
-  const previewEdit = editDraft ?? (state.status === 'ready' ? state.edit : NEUTRAL_EDIT)
+  const previewEdit = editDraft ?? savedEdit
+  // What CSS has to add to the rendition to show it: nothing for a saved edit
+  // (the rendition IS the saved edit), the draft's difference while editing, and
+  // the just-saved difference until the rebuilt rendition arrives.
+  const previewDelta = editDelta(renditionEdit, previewEdit)
+  // A quarter-turn delta swaps the picture's sides, so the figure has to take the
+  // turned box (`data-turned`) or the turned image overflows the stage.
+  const turned = isQuarterTurn(previewDelta.rotation)
   // The overlay is only ever drawn over a still image: a video player's chrome is
   // not a photo, and faces are never detected on clips anyway.
   const isStill = ready !== null && ready.media_type !== 'video' && ready.media_type !== 'live'
@@ -396,10 +461,16 @@ export function PhotoDetailPage() {
   const loadingNext = ready !== null && ready.uid !== uid
   // A CROP rules the whole face UI out: it leaves a frame the boxes were never
   // measured against, so every rectangle would be off its face — rather than draw
-  // them wrong, the faces stand down. A rotation does not: FaceOverlay maps its
-  // boxes through it and follows the turned photo. Brightness and contrast move no
-  // pixels at all.
-  const facesAvailable = isStill && !loadingNext && faces.faces.length > 0 && !hasCrop(previewEdit)
+  // them wrong, the faces stand down. That goes for a crop still baked into the
+  // rendition on stage as much as for the one being shown. A rotation does not:
+  // FaceOverlay maps its boxes through it and follows the turned photo.
+  // Brightness and contrast move no pixels at all.
+  const facesAvailable =
+    isStill &&
+    !loadingNext &&
+    faces.faces.length > 0 &&
+    !hasCrop(previewEdit) &&
+    !hasCrop(renditionEdit)
   const showFaces = facesAvailable && sidePanel === 'faces'
   // Edits are for stills only — the backend never re-renders a video edit, and the
   // player carries no preview surface to apply them to.
@@ -724,6 +795,10 @@ export function PhotoDetailPage() {
     Promise.all([fetchPhoto(uid, controller.signal), fetchEdit(uid, controller.signal)])
       .then(([photo, edit]) => {
         setState({ status: 'ready', photo, edit })
+        // The renditions are assumed to carry the stored edit: the rebuild a
+        // save enqueues is normally long done by the next open, and a rebuild
+        // still in flight has left nothing to tell the two apart by.
+        setRendition({ uid, edit })
       })
       .catch((err: unknown) => {
         if (err instanceof DOMException && err.name === 'AbortError') {
@@ -756,16 +831,63 @@ export function PhotoDetailPage() {
   // The neighbours' own proportions are not known here — only their UIDs are —
   // so they are warmed at the rung the photo on screen resolved to, which is the
   // one they will almost always resolve to themselves.
-  const preloadWindow = useMemo(
-    () =>
-      preloadUids(uid, neighbors.prev, neighbors.next).map((target) =>
+  // A rebuilt rendition on its way in (`incoming`) rides the same window, so it
+  // is downloaded and decoded before it replaces the one on stage. Every address
+  // carries the rendition version this session knows for its photo, so a
+  // neighbour rebuilt earlier is warmed as its rebuilt self.
+  const incomingUrl = incoming?.url
+  const preloadWindow = useMemo(() => {
+    const urls = preloadUids(uid, neighbors.prev, neighbors.next).map((target) =>
+      versionedUrl(
         thumbUrl(target, previewSize, downloadToken ?? undefined),
+        renditionVersion(target, versions),
       ),
-    [uid, neighbors.prev, neighbors.next, downloadToken, previewSize],
-  )
+    )
+    return incomingUrl === undefined ? urls : [...urls, incomingUrl]
+  }, [uid, neighbors.prev, neighbors.next, downloadToken, previewSize, incomingUrl, versions])
   useEffect(() => {
     prime(preloadWindow)
   }, [prime, preloadWindow])
+
+  // The rebuild a save waited for has landed: ask for the rebuilt rendition
+  // under a fresh version and warm it. Off stage (the reader paged on) there is
+  // nothing to swap, so the version is bumped right away and the next open of
+  // that photo fetches the rebuilt bytes.
+  useEffect(() => {
+    if (rebuilt?.watch !== rebuildWatch) {
+      return
+    }
+    setRebuildWatch(null)
+    const target = rebuilt.watch.uid
+    if (ready?.uid !== target) {
+      bumpRenditionVersion(target)
+      return
+    }
+    setIncoming({
+      uid: target,
+      url: versionedUrl(
+        thumbUrl(target, previewSize, downloadToken ?? undefined),
+        renditionVersion(target, versions) + 1,
+      ),
+      edit: savedEdit,
+    })
+  }, [rebuilt, rebuildWatch, ready, previewSize, downloadToken, savedEdit, versions])
+
+  // The rebuilt rendition is decoded: swap it in and, in the same render, retire
+  // the delta that stood in for it — the rendition now carries the saved edit.
+  // A rendition that will never load is simply given up on; the delta preview
+  // stays, which is a correct picture, just not a refreshed one.
+  const incomingStatus = incoming === null ? 'pending' : statusOf(incoming.url)
+  useEffect(() => {
+    if (incoming === null || incomingStatus === 'pending') {
+      return
+    }
+    if (incomingStatus === 'ready') {
+      bumpRenditionVersion(incoming.uid)
+      setRendition({ uid: incoming.uid, edit: incoming.edit })
+    }
+    setIncoming(null)
+  }, [incoming, incomingStatus])
 
   /**
    * What the photo is called, in one string — the same name the chrome's `<h1>`
@@ -924,10 +1046,17 @@ export function PhotoDetailPage() {
     await reloadPhoto()
   }
   // A saved edit becomes the stored one and clears the draft, so the photo keeps
-  // previewing the very same adjustments — now from `state` rather than in flight.
+  // previewing the very same adjustments — now as the difference between the
+  // rendition still on stage (which carries the previous edit) and the saved
+  // one, until the rebuild the save enqueued lands and the rebuilt rendition is
+  // swapped in. The save's own server stamp is what the watch compares against.
   const onEditSaved = (saved: PhotoEdit): void => {
     setState({ status: 'ready', photo, edit: saved })
     setEditDraft(null)
+    setIncoming(null)
+    if (saved.updated_at !== undefined) {
+      setRebuildWatch({ uid: photo.uid, since: saved.updated_at })
+    }
   }
   // The panel reports an updater, not a finished edit, so adjustments made in the
   // same React batch compose instead of overwriting each other. The first one has
@@ -935,8 +1064,11 @@ export function PhotoDetailPage() {
   const applyEdit = (update: (prev: PhotoEdit) => PhotoEdit): void => {
     setEditDraft((prev) => update(prev ?? edit))
   }
+  // A thumbnail regenerated on demand is rebuilt from the saved edit before the
+  // request answers, so the fresh rendition carries exactly `edit`.
   const onThumbnailRegenerated = (): void => {
-    setThumbVersion((v) => v + 1)
+    bumpRenditionVersion(photo.uid)
+    setRendition({ uid: photo.uid, edit })
   }
 
   // The two chrome toggles whose sentence is not a constant get it composed once
@@ -1003,14 +1135,14 @@ export function PhotoDetailPage() {
   // by value, not by identity.
   const sharePhotoUids = [photo.uid]
 
-  const basePoster = thumbUrl(photo.uid, previewSize, downloadToken)
-  // The thumb URL is built from the UID (stable), so a regenerated thumbnail would
-  // otherwise be masked by the browser cache. Append a version once the user
-  // regenerates it, so the new image actually shows without a hard reload.
-  const poster =
-    thumbVersion > 0
-      ? `${basePoster}${basePoster.includes('?') ? '&' : '?'}v=${String(thumbVersion)}`
-      : basePoster
+  // The thumb URL is built from the UID (stable), so a regenerated or rebuilt
+  // thumbnail would otherwise be masked by the browser cache. The rendition
+  // version is appended once one has happened, so the new image actually shows
+  // without a hard reload.
+  const poster = versionedUrl(
+    thumbUrl(photo.uid, previewSize, downloadToken),
+    renditionVersion(photo.uid, versions),
+  )
 
   // The smaller image the stage paints UNDER the full-size one while that one is
   // still on the wire, so a photograph arrives as itself — softly at first, then
@@ -1029,18 +1161,20 @@ export function PhotoDetailPage() {
   // already decoded it (stepping to a warmed neighbour — the swap is instant and
   // a second request would be pure waste), never when it IS the image on stage,
   // and never on an unframed figure, which shrink-wraps its image and so has no
-  // box to fill. `thumbVersion` deliberately does not defeat this: a regenerated
-  // thumbnail changes the full-size address, and the stale smaller one under it
-  // is a better first frame than nothing.
+  // box to fill. A rendition version deliberately does not defeat this: a
+  // regenerated thumbnail changes the full-size address, and the stale smaller
+  // one under it is a better first frame than nothing.
   const showUnder =
     !stage.measured && statusOf(poster) !== 'ready' && underSrc !== poster && underSrc !== ''
 
-  // The still image's style composes the saved edit with the live zoom/pan (only
-  // when zoom is enabled — a plain still). Rotate first, then scale/translate the
-  // rotated image, matching editPreviewStyle's own transform ordering.
-  const stillStyle: CSSProperties = { ...editPreviewStyle(previewEdit) }
+  // The still image's style composes the edit DELTA with the live zoom/pan (only
+  // when zoom is enabled — a plain still). Never the saved edit itself: the
+  // rendition already carries it, and a saved 90° turned once more by CSS is a
+  // photo lying on its side. Rotate first, then scale/translate the rotated
+  // image, matching editPreviewStyle's own transform ordering.
+  const stillStyle: CSSProperties = { ...editPreviewStyle(previewDelta) }
   if (isStill && !showFaces && !showEdit) {
-    const rotation = editTransform(previewEdit)
+    const rotation = editTransform(previewDelta)
     stillStyle.transform = `translate(${String(zoom.translateX)}px, ${String(zoom.translateY)}px) scale(${String(zoom.scale)})${rotation === 'none' ? '' : ` ${rotation}`}`
     stillStyle.transition = zoom.gesturing
       ? 'none'
@@ -1080,6 +1214,18 @@ export function PhotoDetailPage() {
     // figure and throws every box off its face. Absent dimensions fall back to the
     // bare shrink-wrap (no `data-framed`), which a frameless photo never needs.
     const framed = stage.aspectRatio !== undefined
+    // A quarter-turn delta: the figure becomes the turned picture's box — the
+    // rendition's height by its width — and hands `viewer.css` the turned ratio
+    // to fit that box to the stage and lay the image out transposed inside it.
+    const turnRatio = turned && stage.ratio !== undefined ? 1 / stage.ratio : undefined
+    const figureStyle: TurnedFigureStyle | undefined = !framed
+      ? undefined
+      : turnRatio === undefined
+        ? { aspectRatio: stage.aspectRatio }
+        : {
+            aspectRatio: `${String(stage.frame.height)} / ${String(stage.frame.width)}`,
+            '--kk-turn-ratio': String(turnRatio),
+          }
     return (
       <div
         // Keyed on the DISPLAYED photo (not the route uid): while a neighbour
@@ -1092,7 +1238,8 @@ export function PhotoDetailPage() {
         // into the stage's letterbox around it.
         {...morphMark}
         data-framed={framed ? 'true' : undefined}
-        style={framed ? { aspectRatio: stage.aspectRatio } : undefined}
+        data-turned={turnRatio !== undefined ? 'true' : undefined}
+        style={figureStyle}
         data-swipe-surface=""
         onTouchStart={(event) => {
           zoom.handlers.onTouchStart(event)
@@ -1156,11 +1303,11 @@ export function PhotoDetailPage() {
             // estimate a box can sit off its face and then jump when the real
             // frame lands. The layer itself stays, so the faces view is up.
             measured={stage.measured}
-            // The boxes follow the preview: the image carries the same rotation as
-            // a CSS transform, and the ratio is what lets a quarter-turned layer
-            // find the box the turned photo actually occupies.
+            // The boxes follow the photo as shown: the whole rotation from the
+            // upright original the detector saw, whether the rendition carries it
+            // or a delta transform adds the rest. The figure IS the shown photo's
+            // box either way, so the layer simply fills it.
             rotation={previewEdit.rotation}
-            frameRatio={stage.ratio}
             selected={faces.selected?.face_index ?? null}
             hovered={hoveredFace}
             onSelect={(faceIndex) => {

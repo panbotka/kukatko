@@ -425,7 +425,14 @@ func TestPhashAndEditRoundTrip(t *testing.T) {
 	if err := store.SetPhash(ctx, photos.Phash{PhotoUID: photo.UID, Phash: 111, Dhash: 222}); err != nil {
 		t.Fatalf("SetPhash: %v", err)
 	}
-	// Upsert replaces the row.
+	first, err := store.GetPhash(ctx, photo.UID)
+	if err != nil {
+		t.Fatalf("GetPhash first: %v", err)
+	}
+	// Upsert replaces the row — and restamps it: the stamp is when the
+	// thumbnails were last built, and a rebuild that left it standing would be
+	// invisible to the viewer waiting for it. Each SetPhash runs in its own
+	// transaction, so now() differs between the two writes.
 	if err := store.SetPhash(ctx, photos.Phash{PhotoUID: photo.UID, Phash: 333, Dhash: 444}); err != nil {
 		t.Fatalf("SetPhash update: %v", err)
 	}
@@ -435,6 +442,10 @@ func TestPhashAndEditRoundTrip(t *testing.T) {
 	}
 	if gotPhash.Phash != 333 || gotPhash.Dhash != 444 {
 		t.Errorf("GetPhash = %+v, want phash 333 dhash 444", gotPhash)
+	}
+	if !gotPhash.CreatedAt.After(first.CreatedAt) {
+		t.Errorf("GetPhash CreatedAt = %v after rewrite, want later than the first write %v",
+			gotPhash.CreatedAt, first.CreatedAt)
 	}
 
 	// Crop coordinates use values exactly representable as float32 (REAL) so
