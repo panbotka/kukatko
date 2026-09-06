@@ -100,6 +100,16 @@ type Report struct {
 	// coordinate fix. A photo whose detection is recorded against the display frame
 	// never appears here, so the count goes to zero and stays there.
 	SidewaysFaceDetections Finding `json:"sideways_face_detections"`
+	// ImpossibleDates are photos whose recorded capture date is a year no
+	// photograph can have been taken in — before 1826 or further ahead than next
+	// year. They come from the file-name date fallback believing a long digit run
+	// that is really an asset id (90090310_638783213372240_… reads as 9009-03-10);
+	// the fallback is guarded now, but rows dated before that guard existed keep
+	// their date, and one of them sorts ahead of the whole library and stretches
+	// the year axis to meet it. Listing them is the dry run of
+	// `maintenance repair --impossible-dates`, which withdraws the date rather than
+	// inventing a replacement.
+	ImpossibleDates Finding `json:"impossible_dates"`
 }
 
 // findings returns every Finding in the report, so an aggregate over all of them
@@ -110,6 +120,7 @@ func (r Report) findings() []Finding {
 		r.MissingOriginals, r.OrphanFiles, r.MissingThumbnails, r.MissingEmbeddings,
 		r.MissingFaces, r.MissingPhashes, r.MissingPlaces, r.TransposedDimensions,
 		r.TransposedFaceBoxes, r.DuplicateFaceMarkers, r.SidewaysFaceDetections,
+		r.ImpossibleDates,
 	}
 }
 

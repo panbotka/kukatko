@@ -94,6 +94,7 @@ const ACTION_LABEL_KEYS: Record<string, ParseKeys> = {
   'passkey.login': 'activity.actions.passkey.login',
   'passkey.register': 'activity.actions.passkey.register',
   'photo.archive': 'activity.actions.photo.archive',
+  'photo.date_clear': 'activity.actions.photo.date_clear',
   'photo.edit': 'activity.actions.photo.edit',
   'photo.embedding': 'activity.actions.photo.embedding',
   'photo.faces': 'activity.actions.photo.faces',

@@ -6,6 +6,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/maintenance"
 	"github.com/panbotka/kukatko/internal/places"
@@ -58,7 +59,7 @@ func TestScanAndRepair_places(t *testing.T) {
 		t.Errorf("MissingPlaces.Samples = %v, want [%s]", report.MissingPlaces.Samples, pending.UID)
 	}
 
-	res, err := h.svc.Repair(ctx, maintenance.RepairOptions{Places: true})
+	res, err := h.svc.Repair(ctx, maintenance.RepairOptions{Places: true}, audit.Meta{})
 	if err != nil {
 		t.Fatalf("Repair: %v", err)
 	}
@@ -76,7 +77,7 @@ func TestScanAndRepair_places(t *testing.T) {
 
 	// Re-running is a no-op rather than a second job: the enqueuer dedupes per
 	// photo, so the option is safe to press twice.
-	if _, err := h.svc.Repair(ctx, maintenance.RepairOptions{Places: true}); err != nil {
+	if _, err := h.svc.Repair(ctx, maintenance.RepairOptions{Places: true}, audit.Meta{}); err != nil {
 		t.Fatalf("second Repair: %v", err)
 	}
 	if got := h.placesJobs(t, pending.UID); got != 1 {

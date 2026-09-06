@@ -173,7 +173,23 @@ func buildMaintenanceService(
 		FaceCache: buildFaceMatch(cfg, db),
 		Importer:  orphanImporter{storage: store, ingest: ingestSvc},
 		Places:    maintenancePlaceBackfillerOrNil(placesSvc),
+		Sidecar:   maintenanceSidecarOrNil(cfg, enqueuer),
 	}), nil
+}
+
+// maintenanceSidecarOrNil returns the sidecar scheduler the repairs follow a
+// catalogue write with, or nil when the sidecar export is off on this instance.
+//
+// It is the same switch every mutating API goes through (sidecarSchedulerFor), in
+// its maintenance shape: with the export off no `sidecar` handler is registered,
+// so an enqueued job would sit in the queue for ever. Returning nil rather than
+// the no-op scheduler keeps that visible in the Config as "this instance has no
+// sidecars", the way a nil Places says it has no mapy.com key.
+func maintenanceSidecarOrNil(cfg *config.Config, enqueuer *jobs.Enqueuer) maintenance.SidecarScheduler {
+	if !cfg.Sidecar.Enabled {
+		return nil
+	}
+	return enqueuer
 }
 
 // buildMaintenanceAndThumb assembles the thumbnail job service and the

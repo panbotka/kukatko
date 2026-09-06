@@ -177,7 +177,11 @@ comments · bulk editing, including re-dating
 a whole shelf of scans at the grain you actually know ("1974", "the seventies") — or declaring by the
 handful that the date is simply unknown, which sets the wrong date aside rather than destroying it: the
 photo's detail still shows what it used to claim and puts it back in one click, and the filter bar's
-"Datum: bez data" gathers everything left undated · placing a whole selection on the map at once, with
+"Datum: bez data" gathers everything left undated. The maintenance page can do the same for the dates
+nobody typed: it finds the photos dated to a year no photograph can have been taken in — a Facebook
+download whose asset id was read as a date lands in the year 9009, sorts ahead of the whole library and
+stretches the year axis to meet it — and clears those dates on request, one by one into the same
+undated pile, never inventing a replacement · placing a whole selection on the map at once, with
 the same picker one photo gets — a box of scans is almost always one village — after being told how many
 of the chosen photos already know where they were, and asked whether to overwrite them or leave them be
 and fill only the empty ones · duplicate detection

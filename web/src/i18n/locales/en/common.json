@@ -689,7 +689,8 @@
         "thumbnail": "Photo thumbnail regenerated",
         "unarchive": "Photo restored from the trash",
         "unhide": "Photo returned to the library",
-        "update": "Photo edited"
+        "update": "Photo edited",
+        "date_clear": "Impossible capture date cleared"
       },
       "photos": {
         "bulk": "Bulk photo edit",
@@ -2636,6 +2637,7 @@
       "missing_faces": "Photos where faces have not been looked for yet",
       "missing_phashes": "Photos with no fingerprint for finding duplicates",
       "missing_places": "Photos with coordinates but no place",
+      "impossible_dates": "Photos with an impossible capture date",
       "problem": "What drifted",
       "count": "How many",
       "samples": "Examples",
@@ -2646,23 +2648,25 @@
         "missing_embeddings": "Kukátko has not yet worked out what is in the photo, so searching by content — and finding similar photos — will not turn it up. It is filled in once the recognition service is available.",
         "missing_faces": "Nobody has looked for faces in this photo yet, so it will not show up under people. It is filled in once the recognition service is available.",
         "missing_phashes": "The photo has no short fingerprint of how it looks; that is what near-identical copies are found by.",
-        "missing_places": "The photo knows where it was taken but has no place name yet, so it is missing from the places overview. It is filled in in the background; turning coordinates into a name costs credits, so it runs in batches and the rest waits."
+        "missing_places": "The photo knows where it was taken but has no place name yet, so it is missing from the places overview. It is filled in in the background; turning coordinates into a name costs credits, so it runs in batches and the rest waits.",
+        "impossible_dates": "The photo claims a year no photograph can have been taken in — before 1826, or further ahead than next year. It comes from reading a date out of a Facebook or WhatsApp download name, where the long number is only an identifier. Such a photo sorts ahead of the whole library and stretches the year axis. The “Clear impossible capture dates” repair withdraws the date — the photo then has none and you find it with dated:no."
       }
     },
     "repair": {
-      "title": "What to fill in",
-      "hint": "Choose what should be filled in. It does not happen at once — it is queued as background work. Content search and faces also wait for the recognition service to become available.",
+      "title": "What to repair",
+      "hint": "Choose what should be repaired. Most options fill something in, and none of it happens at once — it is queued as background work. Content search and faces also wait for the recognition service to become available. Clearing impossible capture dates is the one that removes something: the date is withdrawn, never replaced.",
       "thumbnails": "Generate the missing thumbnails",
       "embeddings": "Work out what is in the photos that are still missing it",
       "faces": "Look for faces where nobody has looked yet",
       "phashes": "Work out the missing duplicate-finding fingerprints",
       "places": "Work out the place for photos that have coordinates",
       "import_orphans": "Add the files the catalogue is missing",
-      "run": "Start filling in",
+      "run": "Start the repair",
       "running": "Starting…",
       "none": "Pick at least one.",
       "error": "It could not be started.",
-      "result": "Scheduled: thumbnails {{thumbnails}}, fingerprints {{phashes}}, photo content {{embeddings}}, faces {{faces}}, places {{places}}; of the files outside the catalogue {{imported}} added, {{skipped}} skipped, {{failed}} failed."
+      "result": "Scheduled: thumbnails {{thumbnails}}, fingerprints {{phashes}}, photo content {{embeddings}}, faces {{faces}}, places {{places}}; of the files outside the catalogue {{imported}} added, {{skipped}} skipped, {{failed}} failed; {{datesCleared}} impossible capture dates cleared.",
+      "impossible_dates": "Clear impossible capture dates"
     },
     "jobs": {
       "title": "Background work",

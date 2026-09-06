@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/panbotka/kukatko/internal/audit"
 )
 
 // sidewaysScenario builds a service whose catalogue reports three quarter-turned
@@ -55,7 +57,7 @@ func TestRepairSidewaysFacesIsOptIn(t *testing.T) {
 	t.Parallel()
 	svc, vec, enq := sidewaysScenario()
 
-	res, err := svc.Repair(context.Background(), RepairOptions{Thumbnails: true})
+	res, err := svc.Repair(context.Background(), RepairOptions{Thumbnails: true}, audit.Meta{})
 	if err != nil {
 		t.Fatalf("Repair: %v", err)
 	}
@@ -74,7 +76,7 @@ func TestRepairSidewaysFacesClearsAndEnqueues(t *testing.T) {
 	t.Parallel()
 	svc, vec, enq := sidewaysScenario()
 
-	res, err := svc.Repair(context.Background(), RepairOptions{SidewaysFaces: true})
+	res, err := svc.Repair(context.Background(), RepairOptions{SidewaysFaces: true}, audit.Meta{})
 	if err != nil {
 		t.Fatalf("Repair: %v", err)
 	}
@@ -109,7 +111,7 @@ func TestRepairSidewaysFacesLeavesOtherRepairsAlone(t *testing.T) {
 		FaceCache: &fakeFaceCache{},
 	})
 
-	if _, err := svc.Repair(context.Background(), RepairOptions{SidewaysFaces: true}); err != nil {
+	if _, err := svc.Repair(context.Background(), RepairOptions{SidewaysFaces: true}, audit.Meta{}); err != nil {
 		t.Fatalf("Repair: %v", err)
 	}
 	if faces.called {

@@ -1542,19 +1542,20 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   the library's integrity check & repairs. `GET /maintenance/scan` → `Report` (counts + samples:
   `missing_originals`/`orphan_files`/`missing_thumbnails`/`missing_embeddings`/`missing_faces`/
   `missing_phashes`/`missing_places`/`transposed_dimensions`/`transposed_face_boxes`/
-  `duplicate_face_markers`/`sideways_face_detections` + the totals
+  `duplicate_face_markers`/`sideways_face_detections`/`impossible_dates` + the totals
   `photos`/`files_in_db`/`store`). **`store`** is the inventory of whichever store the instance keeps its
   originals in — `{kind,originals,error?}`, `kind` being `disk` (the local originals root) or `object` (the
   bucket) — so an `r2` instance reports what the bucket holds instead of the empty local root. `error` is set
   when the listing failed; `originals` is then 0 and means "unknown", not "empty", and the UI shows the reason
   instead of a clean verdict.
   `POST /maintenance/repair`
-  `{thumbnails,embeddings,faces,phashes,import_orphans,places,dimensions,face_markers,sideways_faces}`
+  `{thumbnails,embeddings,faces,phashes,import_orphans,places,dimensions,face_markers,sideways_faces,`
+  `impossible_dates}`
   (each opt-in)
   → `RepairResult`
   with scheduling counts (`*_enqueued` + `orphans_imported/skipped/failed` +
   `dimensions_fixed`/`face_boxes_fixed`/`face_boxes_skipped`/`face_links_cleared`/
-  `sideways_faces_enqueued`);
+  `sideways_faces_enqueued`/`impossible_dates_cleared`);
   `DisallowUnknownFields`, an empty selection →
   400, an orphan import without an importer → 503 (`ErrOrphanImportUnavailable`), a place backfill with no
   mapy.com key → 503 (`ErrPlaceBackfillUnavailable`). The repairs are idempotent and
@@ -1593,7 +1594,20 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   dry run; the repair clears each photo's detection record and enqueues `face_detect`
   (`sideways_faces_enqueued`), so the fixed job re-detects it on an upright image once the sidecar's box is
   awake. The face rows are kept until that detection replaces them, nothing is deleted, and a photo re-detected
-  upright leaves the finding for good. `POST /maintenance/audit/purge` `{older_than_days}` (a positive integer of days,
+  upright leaves the finding for good. `impossible_dates` is the fourth direct-write repair and the only one
+  that **removes** a value: `impossible_dates` (sampled by photo uid) counts the photos dated to a year no
+  photograph can have been taken in — the range `internal/exif` accepts, 1826 to next year, asked for through
+  `exif.CaptureYearBounds()` so the guard on the way in and this finding cannot disagree. Such a row comes from
+  the file-name date fallback believing an asset id (`90090310_638783213372240_…` reads as 9009-03-10), and one
+  of them sorts ahead of the whole library and stretches the year axis to meet it. The repair **withdraws** the
+  date (`impossible_dates_cleared`) rather than guessing a replacement: `taken_at` goes to NULL,
+  `taken_at_source` to `unknown`, so the photo becomes one without a date and is found as `dated:no`. Nothing is
+  lost — the discarded date is put away in `taken_at_before_unknown` (the same rule the single-photo PATCH and
+  the bulk clear use), the original file is never touched, and each cleared date is one `photo.date_clear`
+  **audit entry written in the clear's own transaction**, carrying the acting maintainer, the discarded date,
+  its provenance and the file name. Every write is guarded on the finding's own predicate, so a photo re-dated
+  by hand in between is skipped and a re-run is a no-op; a cleared photo also gets a `sidecar` job (when the
+  sidecar export is on), so the metadata on disk drops the date too and a restore cannot hand it back. `POST /maintenance/audit/purge` `{older_than_days}` (a positive integer of days,
   1..36500) deletes audit entries older than `now − older_than_days` (`audit.Store.PurgeOlderThan`,
   a single `DELETE` via `idx_audit_log_created_at`) → `{deleted,older_than_days,cutoff}`;
   a missing/non-positive/excessive window or an unknown field → 400, an unwired audit store → 503. The

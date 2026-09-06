@@ -26,6 +26,8 @@ import (
 	"os"
 	"sort"
 
+	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/exif"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
@@ -56,6 +58,15 @@ type PhotoCatalog interface {
 	// RepairDimensions writes a mismatch's raw dimensions onto its photo, reporting
 	// whether the row changed.
 	RepairDimensions(ctx context.Context, m photos.DimensionMismatch) (bool, error)
+	// ListImpossibleTakenAt returns the photos dated outside the inclusive year
+	// range [minYear, maxYear].
+	ListImpossibleTakenAt(ctx context.Context, minYear, maxYear int) ([]photos.ImpossibleDate, error)
+	// ClearImpossibleTakenAtAudited declares a photo's capture date unknown when it
+	// is still outside [minYear, maxYear], writing entry in the same transaction and
+	// reporting whether the row changed.
+	ClearImpossibleTakenAtAudited(
+		ctx context.Context, uid string, minYear, maxYear int, entry audit.Entry,
+	) (bool, error)
 }
 
 // VectorCatalog is the subset of the embeddings/faces store the scan and the
@@ -121,6 +132,21 @@ type Enqueuer interface {
 	EnqueueFaceDetect(ctx context.Context, photoUID string) error
 }
 
+// SidecarScheduler schedules a rewrite of a photo's metadata sidecar after the
+// repairs have changed its catalogue metadata. It is the shape every mutating API
+// takes, satisfied by *jobs.Enqueuer.
+//
+// A nil scheduler means the sidecar export is off on this instance, in which case
+// no `sidecar` handler is registered and an enqueued job would sit in the queue
+// for ever — so the repairs simply do not schedule one. Nothing else changes:
+// clearing an impossible date is the repair, the sidecar rewrite only carries it
+// out to storage.
+type SidecarScheduler interface {
+	// EnqueueSidecar schedules a rewrite of photoUID's metadata sidecar, treating a
+	// pre-existing queued job as a no-op.
+	EnqueueSidecar(ctx context.Context, photoUID string) error
+}
+
 // EmbedBackfiller enqueues image_embed jobs for photos missing an embedding. It
 // is satisfied by *embedjob.Service.
 type EmbedBackfiller interface {
@@ -167,9 +193,9 @@ type OrphanImporter interface {
 }
 
 // Config bundles the collaborators and tunables of a Service. Every interface is
-// required except OrphanImporter (nil disables orphan import) and Places (nil
-// disables the reverse-geocode backfill). A non-positive SampleLimit uses
-// defaultSampleLimit.
+// required except OrphanImporter (nil disables orphan import), Places (nil
+// disables the reverse-geocode backfill) and Sidecar (nil means the sidecar
+// export is off). A non-positive SampleLimit uses defaultSampleLimit.
 type Config struct {
 	Photos      PhotoCatalog
 	Vectors     VectorCatalog
@@ -182,6 +208,7 @@ type Config struct {
 	FaceCache   FaceCache
 	Importer    OrphanImporter
 	Places      PlaceBackfiller
+	Sidecar     SidecarScheduler
 	SampleLimit int
 }
 
@@ -199,6 +226,7 @@ type Service struct {
 	faceCache   FaceCache
 	importer    OrphanImporter
 	places      PlaceBackfiller
+	sidecar     SidecarScheduler
 	sampleLimit int
 }
 
@@ -225,14 +253,15 @@ func New(cfg Config) *Service {
 		faceCache:   cfg.FaceCache,
 		importer:    cfg.Importer,
 		places:      cfg.Places,
+		sidecar:     cfg.Sidecar,
 		sampleLimit: limit,
 	}
 }
 
 // missingCollaborator reports whether any collaborator a scan needs is left nil in
-// cfg. OrphanImporter and PlaceBackfiller are deliberately absent: they are the
-// optional dependencies (nil disables the orphan-import and reverse-geocode
-// repairs respectively).
+// cfg. OrphanImporter, PlaceBackfiller and SidecarScheduler are deliberately
+// absent: they are the optional dependencies (nil disables the orphan-import and
+// reverse-geocode repairs, and the sidecar rewrite that follows a repair).
 func missingCollaborator(cfg Config) bool {
 	required := []any{
 		cfg.Photos, cfg.Vectors, cfg.Originals, cfg.Store, cfg.Thumbs,
@@ -250,6 +279,20 @@ func missingCollaborator(cfg Config) bool {
 // derived data, returning a Report of every problem class with counts and bounded
 // samples. It is read-only and safe to run at any time.
 func (s *Service) Scan(ctx context.Context) (Report, error) {
+	report, err := s.scanTotals(ctx)
+	if err != nil {
+		return Report{}, err
+	}
+	if err := s.scanFindings(ctx, &report); err != nil {
+		return Report{}, err
+	}
+	return report, nil
+}
+
+// scanTotals produces the half of the report that comes from reconciling the
+// catalogue against the store: the counts, the store inventory, and the findings
+// derived from walking every photo's files or every missing piece of derived data.
+func (s *Service) scanTotals(ctx context.Context) (Report, error) {
 	photoCount, err := s.photos.CountPhotos(ctx)
 	if err != nil {
 		return Report{}, fmt.Errorf("maintenance: counting photos: %w", err)
@@ -266,42 +309,64 @@ func (s *Service) Scan(ctx context.Context) (Report, error) {
 	if err != nil {
 		return Report{}, err
 	}
-	dimensions, err := s.scanDimensions(ctx)
-	if err != nil {
-		return Report{}, err
-	}
-	faceBoxes, err := s.scanFaceBoxes(ctx)
-	if err != nil {
-		return Report{}, err
-	}
-	duplicateMarkers, err := s.scanFaceMarkers(ctx)
-	if err != nil {
-		return Report{}, err
-	}
-	sideways, err := s.scanSidewaysDetections(ctx)
-	if err != nil {
-		return Report{}, err
-	}
-	missingPlaces, err := s.scanMissingPlaces(ctx)
-	if err != nil {
-		return Report{}, err
-	}
 	return Report{
-		Photos:                 photoCount,
-		FilesInDB:              filesInDB,
-		Store:                  inventory,
-		MissingOriginals:       missingOriginals,
-		OrphanFiles:            findingFrom(orphans, s.sampleLimit),
-		MissingThumbnails:      missingThumbs,
-		MissingEmbeddings:      derived.embeddings,
-		MissingFaces:           derived.faces,
-		MissingPhashes:         derived.phashes,
-		MissingPlaces:          missingPlaces,
-		TransposedDimensions:   dimensions,
-		TransposedFaceBoxes:    faceBoxes,
-		DuplicateFaceMarkers:   duplicateMarkers,
-		SidewaysFaceDetections: sideways,
+		Photos:            photoCount,
+		FilesInDB:         filesInDB,
+		Store:             inventory,
+		MissingOriginals:  missingOriginals,
+		OrphanFiles:       findingFrom(orphans, s.sampleLimit),
+		MissingThumbnails: missingThumbs,
+		MissingEmbeddings: derived.embeddings,
+		MissingFaces:      derived.faces,
+		MissingPhashes:    derived.phashes,
 	}, nil
+}
+
+// scanFindings runs the per-class scans that each answer with one Finding and
+// writes each answer into its field of report. They are a list rather than a
+// chain so a new problem class is one entry, and each sub-scan already wraps its
+// own error with what it was looking for.
+func (s *Service) scanFindings(ctx context.Context, report *Report) error {
+	steps := []struct {
+		run  func(context.Context) (Finding, error)
+		into *Finding
+	}{
+		{s.scanMissingPlaces, &report.MissingPlaces},
+		{s.scanDimensions, &report.TransposedDimensions},
+		{s.scanFaceBoxes, &report.TransposedFaceBoxes},
+		{s.scanFaceMarkers, &report.DuplicateFaceMarkers},
+		{s.scanSidewaysDetections, &report.SidewaysFaceDetections},
+		{s.scanImpossibleDates, &report.ImpossibleDates},
+	}
+	for _, step := range steps {
+		finding, err := step.run(ctx)
+		if err != nil {
+			return err
+		}
+		*step.into = finding
+	}
+	return nil
+}
+
+// scanImpossibleDates turns the photos dated outside the years a photograph can
+// have been taken in into a Finding sampled by photo uid. It is the dry run of
+// `maintenance repair --impossible-dates`: every uid it counts is one whose date
+// that repair withdraws.
+//
+// The bounds come from internal/exif, the same rule that stops a file-name guess
+// from dating a new upload to the year 9009, so the guard on the way in and the
+// finding for what is already in cannot disagree.
+func (s *Service) scanImpossibleDates(ctx context.Context) (Finding, error) {
+	minYear, maxYear := exif.CaptureYearBounds()
+	dated, err := s.photos.ListImpossibleTakenAt(ctx, minYear, maxYear)
+	if err != nil {
+		return Finding{}, fmt.Errorf("maintenance: listing impossible capture dates: %w", err)
+	}
+	uids := make([]string, len(dated))
+	for i, d := range dated {
+		uids[i] = d.UID
+	}
+	return findingFrom(uids, s.sampleLimit), nil
 }
 
 // scanMissingPlaces turns the live, geotagged photos with no cached place into a

@@ -8,6 +8,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
@@ -27,6 +28,14 @@ type fakePhotos struct {
 	mismatches []photos.DimensionMismatch
 	repaired   []photos.DimensionMismatch
 	repairNoop bool
+	// impossible are the impossibly dated photos the scan reports and the
+	// impossible-date repair clears; cleared records the uids actually withdrawn
+	// and clearNoop makes every clear report "row unchanged", the state a photo
+	// re-dated between the scan and the repair leaves behind.
+	impossible   []photos.ImpossibleDate
+	cleared      []string
+	clearEntries []audit.Entry
+	clearNoop    bool
 }
 
 func (f *fakePhotos) CountPhotos(context.Context) (int, error) { return f.count, nil }
@@ -45,6 +54,21 @@ func (f *fakePhotos) RepairDimensions(_ context.Context, m photos.DimensionMisma
 		return false, nil
 	}
 	f.repaired = append(f.repaired, m)
+	return true, nil
+}
+
+func (f *fakePhotos) ListImpossibleTakenAt(_ context.Context, _, _ int) ([]photos.ImpossibleDate, error) {
+	return f.impossible, nil
+}
+
+func (f *fakePhotos) ClearImpossibleTakenAtAudited(
+	_ context.Context, uid string, _, _ int, entry audit.Entry,
+) (bool, error) {
+	if f.clearNoop {
+		return false, nil
+	}
+	f.cleared = append(f.cleared, uid)
+	f.clearEntries = append(f.clearEntries, entry)
 	return true, nil
 }
 
@@ -158,6 +182,7 @@ func (f fakeThumbs) HasThumbnail(hash string) (bool, error) { return f.have[hash
 type fakeEnqueuer struct {
 	thumbnail  []string
 	faceDetect []string
+	sidecar    []string
 }
 
 func (f *fakeEnqueuer) EnqueueThumbnail(_ context.Context, uid string) error {
@@ -167,6 +192,11 @@ func (f *fakeEnqueuer) EnqueueThumbnail(_ context.Context, uid string) error {
 
 func (f *fakeEnqueuer) EnqueueFaceDetect(_ context.Context, uid string) error {
 	f.faceDetect = append(f.faceDetect, uid)
+	return nil
+}
+
+func (f *fakeEnqueuer) EnqueueSidecar(_ context.Context, uid string) error {
+	f.sidecar = append(f.sidecar, uid)
 	return nil
 }
 
@@ -298,7 +328,7 @@ func TestRepairThumbnailsOnlyMissing(t *testing.T) {
 	t.Parallel()
 	svc, enq, _, _, _ := scenario()
 
-	res, err := svc.Repair(context.Background(), RepairOptions{Thumbnails: true})
+	res, err := svc.Repair(context.Background(), RepairOptions{Thumbnails: true}, audit.Meta{})
 	if err != nil {
 		t.Fatalf("Repair: %v", err)
 	}
@@ -316,7 +346,7 @@ func TestRepairPhashesEnqueuesMissing(t *testing.T) {
 	t.Parallel()
 	svc, enq, _, _, _ := scenario()
 
-	res, err := svc.Repair(context.Background(), RepairOptions{Phashes: true})
+	res, err := svc.Repair(context.Background(), RepairOptions{Phashes: true}, audit.Meta{})
 	if err != nil {
 		t.Fatalf("Repair: %v", err)
 	}
@@ -331,7 +361,7 @@ func TestRepairBackfills(t *testing.T) {
 	t.Parallel()
 	svc, _, emb, faces, _ := scenario()
 
-	res, err := svc.Repair(context.Background(), RepairOptions{Embeddings: true, Faces: true})
+	res, err := svc.Repair(context.Background(), RepairOptions{Embeddings: true, Faces: true}, audit.Meta{})
 	if err != nil {
 		t.Fatalf("Repair: %v", err)
 	}
@@ -349,7 +379,7 @@ func TestRepairImportsOrphans(t *testing.T) {
 	t.Parallel()
 	svc, _, _, _, imp := scenario()
 
-	res, err := svc.Repair(context.Background(), RepairOptions{ImportOrphans: true})
+	res, err := svc.Repair(context.Background(), RepairOptions{ImportOrphans: true}, audit.Meta{})
 	if err != nil {
 		t.Fatalf("Repair: %v", err)
 	}
@@ -381,7 +411,7 @@ func TestRepairImportOrphanTally(t *testing.T) {
 		FaceCache: &fakeFaceCache{},
 		Importer:  imp,
 	})
-	res, err := svc.Repair(context.Background(), RepairOptions{ImportOrphans: true})
+	res, err := svc.Repair(context.Background(), RepairOptions{ImportOrphans: true}, audit.Meta{})
 	if err != nil {
 		t.Fatalf("Repair: %v", err)
 	}
@@ -406,7 +436,7 @@ func TestRepairOrphanImportUnavailable(t *testing.T) {
 		FaceCache: &fakeFaceCache{},
 		// Importer omitted.
 	})
-	if _, err := svc.Repair(context.Background(), RepairOptions{ImportOrphans: true}); !errors.Is(err, ErrOrphanImportUnavailable) {
+	if _, err := svc.Repair(context.Background(), RepairOptions{ImportOrphans: true}, audit.Meta{}); !errors.Is(err, ErrOrphanImportUnavailable) {
 		t.Errorf("Repair error = %v, want ErrOrphanImportUnavailable", err)
 	}
 }
@@ -434,7 +464,7 @@ func TestRepairFaceMarkersVisitsEachPhotoOnce(t *testing.T) {
 		FaceCache: cache,
 	})
 
-	res, err := svc.Repair(context.Background(), RepairOptions{FaceMarkers: true})
+	res, err := svc.Repair(context.Background(), RepairOptions{FaceMarkers: true}, audit.Meta{})
 	if err != nil {
 		t.Fatalf("Repair(face markers): %v", err)
 	}
@@ -452,7 +482,7 @@ func TestRepairFaceMarkersNotSelected(t *testing.T) {
 	t.Parallel()
 	svc, _, _, _, _ := scenario()
 
-	if _, err := svc.Repair(context.Background(), RepairOptions{Thumbnails: true}); err != nil {
+	if _, err := svc.Repair(context.Background(), RepairOptions{Thumbnails: true}, audit.Meta{}); err != nil {
 		t.Fatalf("Repair(thumbnails): %v", err)
 	}
 	// The fixture reports a duplicated marker; nothing may have been cleared.

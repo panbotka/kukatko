@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/embedding"
 	"github.com/panbotka/kukatko/internal/embedjob"
@@ -77,6 +79,7 @@ func (stubGeocoder) ReverseGeocode(context.Context, float64, float64) (*mapy.Geo
 // is held as the interface, not as *storage.FS, so the same harness runs over the
 // object-store backend (bucket_integration_test.go).
 type harness struct {
+	db       *database.DB
 	svc      *maintenance.Service
 	photos   *photos.Store
 	vectors  *vectors.Store
@@ -149,13 +152,14 @@ func newHarnessOver(t *testing.T, store storage.Storage, kind maintenance.StoreK
 		FaceCache: facematch.New(facematch.Config{
 			Photos: photoStore, Faces: vectorStore, People: peopleStore,
 		}),
-		Places: placesSvc,
+		Places:  placesSvc,
+		Sidecar: enqueuer,
 	})
 	tj := thumbjob.New(thumbjob.Config{
 		Photos: photoStore, Thumbnailer: thumbnailer, Decoder: thumbjob.NewStorageDecoder(store),
 	})
 	return &harness{
-		svc: svc, photos: photoStore, vectors: vectorStore, people: peopleStore,
+		db: db, svc: svc, photos: photoStore, vectors: vectorStore, people: peopleStore,
 		storage: store, thumbs: thumbnailer, jobs: jobStore, thumbjob: tj,
 		places: placeStore,
 	}
@@ -320,7 +324,7 @@ func TestRepairThumbnailsRegenerates(t *testing.T) {
 	}
 	noThumb := h.storeRealPhoto(t, "nothumb", 0x22)
 
-	res, err := h.svc.Repair(ctx, maintenance.RepairOptions{Thumbnails: true})
+	res, err := h.svc.Repair(ctx, maintenance.RepairOptions{Thumbnails: true}, audit.Meta{})
 	if err != nil {
 		t.Fatalf("Repair(thumbnails): %v", err)
 	}
@@ -355,7 +359,7 @@ func TestRepairEmbeddingsEnqueuesOnlyMissingAndIdempotent(t *testing.T) {
 	h.seedEmbedding(t, withEmb.UID)
 	h.storeRealPhoto(t, "noemb", 0x44)
 
-	res, err := h.svc.Repair(ctx, maintenance.RepairOptions{Embeddings: true})
+	res, err := h.svc.Repair(ctx, maintenance.RepairOptions{Embeddings: true}, audit.Meta{})
 	if err != nil {
 		t.Fatalf("Repair(embeddings): %v", err)
 	}
@@ -366,7 +370,7 @@ func TestRepairEmbeddingsEnqueuesOnlyMissingAndIdempotent(t *testing.T) {
 		t.Fatalf("image_embed jobs = %d, want 1", got)
 	}
 	// Idempotent re-run: still reports 1 attempt but dedupes to no new job.
-	if _, err := h.svc.Repair(ctx, maintenance.RepairOptions{Embeddings: true}); err != nil {
+	if _, err := h.svc.Repair(ctx, maintenance.RepairOptions{Embeddings: true}, audit.Meta{}); err != nil {
 		t.Fatalf("Repair(embeddings) re-run: %v", err)
 	}
 	if got := h.countJobs(t, jobs.TypeImageEmbed); got != 1 {

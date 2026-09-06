@@ -5,6 +5,8 @@ import (
 	"errors"
 	"slices"
 	"testing"
+
+	"github.com/panbotka/kukatko/internal/audit"
 )
 
 // fakePlaceBackfiller reports a fixed reverse-geocode backlog and records that
@@ -105,7 +107,7 @@ func TestRepair_places(t *testing.T) {
 	t.Run("selected schedules the backlog", func(t *testing.T) {
 		t.Parallel()
 		places := &fakePlaceBackfiller{missing: []string{"p1", "p2"}}
-		res, err := placesScenario(places).Repair(context.Background(), RepairOptions{Places: true})
+		res, err := placesScenario(places).Repair(context.Background(), RepairOptions{Places: true}, audit.Meta{})
 		if err != nil {
 			t.Fatalf("Repair: %v", err)
 		}
@@ -120,7 +122,7 @@ func TestRepair_places(t *testing.T) {
 	t.Run("unselected runs nothing", func(t *testing.T) {
 		t.Parallel()
 		places := &fakePlaceBackfiller{missing: []string{"p1", "p2"}}
-		res, err := placesScenario(places).Repair(context.Background(), RepairOptions{Thumbnails: true})
+		res, err := placesScenario(places).Repair(context.Background(), RepairOptions{Thumbnails: true}, audit.Meta{})
 		if err != nil {
 			t.Fatalf("Repair: %v", err)
 		}
@@ -134,7 +136,7 @@ func TestRepair_places(t *testing.T) {
 
 	t.Run("unconfigured refuses", func(t *testing.T) {
 		t.Parallel()
-		_, err := placesScenario(nil).Repair(context.Background(), RepairOptions{Places: true})
+		_, err := placesScenario(nil).Repair(context.Background(), RepairOptions{Places: true}, audit.Meta{})
 		if !errors.Is(err, ErrPlaceBackfillUnavailable) {
 			t.Fatalf("Repair error = %v, want ErrPlaceBackfillUnavailable", err)
 		}

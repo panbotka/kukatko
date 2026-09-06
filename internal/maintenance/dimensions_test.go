@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
@@ -107,7 +108,7 @@ func TestRepairDimensionsIsOptIn(t *testing.T) {
 	t.Parallel()
 	svc, ph, vec := dimensionScenario()
 
-	res, err := svc.Repair(context.Background(), RepairOptions{Thumbnails: true})
+	res, err := svc.Repair(context.Background(), RepairOptions{Thumbnails: true}, audit.Meta{})
 	if err != nil {
 		t.Fatalf("Repair: %v", err)
 	}
@@ -126,7 +127,7 @@ func TestRepairDimensionsFixesPhotosAndFaces(t *testing.T) {
 	t.Parallel()
 	svc, ph, vec := dimensionScenario()
 
-	res, err := svc.Repair(context.Background(), RepairOptions{Dimensions: true})
+	res, err := svc.Repair(context.Background(), RepairOptions{Dimensions: true}, audit.Meta{})
 	if err != nil {
 		t.Fatalf("Repair: %v", err)
 	}
@@ -157,7 +158,7 @@ func TestRepairFaceBoxesRunsWithoutAPhotoToFix(t *testing.T) {
 	svc, ph, vec := dimensionScenario()
 	ph.mismatches = nil
 
-	res, err := svc.Repair(context.Background(), RepairOptions{Dimensions: true})
+	res, err := svc.Repair(context.Background(), RepairOptions{Dimensions: true}, audit.Meta{})
 	if err != nil {
 		t.Fatalf("Repair: %v", err)
 	}

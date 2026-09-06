@@ -5,7 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"time"
 
+	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/exif"
+	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
@@ -49,13 +53,18 @@ type RepairOptions struct {
 	// a sideways image: their detection record is cleared and a face_detect job
 	// enqueued, so the fixed job runs on an upright image.
 	SidewaysFaces bool `json:"sideways_faces"`
+	// ImpossibleDates withdraws the capture date of every photo dated to a year no
+	// photograph can have been taken in. The date is cleared, never replaced: the
+	// photo becomes one without a date (findable as `dated:no`), because a made-up
+	// date would be a second wrong answer on top of the first.
+	ImpossibleDates bool `json:"impossible_dates"`
 }
 
 // Any reports whether at least one repair is selected.
 func (o RepairOptions) Any() bool {
 	return o.Thumbnails || o.Embeddings || o.Faces || o.Phashes ||
 		o.ImportOrphans || o.Dimensions || o.FaceMarkers || o.SidewaysFaces ||
-		o.Places
+		o.Places || o.ImpossibleDates
 }
 
 // RepairResult reports what each selected repair scheduled or did. Enqueue counts
@@ -98,6 +107,10 @@ type RepairResult struct {
 	// detection was cleared and re-detection scheduled. The jobs wait in the queue
 	// while the sidecar's box sleeps, so this counts photos scheduled, not re-detected.
 	SidewaysFacesEnqueued int `json:"sideways_faces_enqueued"`
+	// ImpossibleDatesCleared is the number of photos whose impossible capture date
+	// was withdrawn. Each one is now a photo without a date, reachable as
+	// `dated:no`, and each cleared date is one audit entry.
+	ImpossibleDatesCleared int `json:"impossible_dates_cleared"`
 }
 
 // Repair runs the selected repairs and returns what each scheduled or did. It is
@@ -105,36 +118,96 @@ type RepairResult struct {
 // import dedupes on content hash. Repairs run in a fixed order; the first
 // infrastructure error aborts and is returned, while per-orphan failures are
 // tallied without aborting.
-func (s *Service) Repair(ctx context.Context, opts RepairOptions) (RepairResult, error) {
+//
+// meta is the provenance stamped onto the audit entries the catalogue-writing
+// repairs record — who asked, from where. A zero Meta is the CLI: no user acted,
+// so the entry records a system action.
+func (s *Service) Repair(ctx context.Context, opts RepairOptions, meta audit.Meta) (RepairResult, error) {
 	var res RepairResult
-	if err := s.repairThumbnails(ctx, opts, &res); err != nil {
-		return res, err
+	steps := []func(context.Context, RepairOptions, *RepairResult) error{
+		s.repairThumbnails,
+		s.repairPhashes,
+		s.repairEmbeddings,
+		s.repairFaces,
+		s.repairPlaces,
+		s.repairOrphans,
+		s.repairDimensions,
+		s.repairFaceMarkers,
+		s.repairSidewaysFaces,
+		func(ctx context.Context, opts RepairOptions, res *RepairResult) error {
+			return s.repairImpossibleDates(ctx, opts, meta, res)
+		},
 	}
-	if err := s.repairPhashes(ctx, opts, &res); err != nil {
-		return res, err
-	}
-	if err := s.repairEmbeddings(ctx, opts, &res); err != nil {
-		return res, err
-	}
-	if err := s.repairFaces(ctx, opts, &res); err != nil {
-		return res, err
-	}
-	if err := s.repairPlaces(ctx, opts, &res); err != nil {
-		return res, err
-	}
-	if err := s.repairOrphans(ctx, opts, &res); err != nil {
-		return res, err
-	}
-	if err := s.repairDimensions(ctx, opts, &res); err != nil {
-		return res, err
-	}
-	if err := s.repairFaceMarkers(ctx, opts, &res); err != nil {
-		return res, err
-	}
-	if err := s.repairSidewaysFaces(ctx, opts, &res); err != nil {
-		return res, err
+	for _, step := range steps {
+		if err := step(ctx, opts, &res); err != nil {
+			return res, err
+		}
 	}
 	return res, nil
+}
+
+// repairImpossibleDates withdraws the capture date of every photo the scan
+// reports as impossibly dated, when that repair is selected.
+//
+// It clears rather than corrects, and that is the whole design: a year of 9009
+// says the date is a misread asset id, and nothing in the row hints at what the
+// real date was. A photo with no date is honest and findable (`dated:no`); a
+// photo re-dated by a guess is the same defect with better manners. Nothing is
+// lost either — the withdrawn date is put away in taken_at_before_unknown, the
+// audit entry records it, and the original file is never touched.
+//
+// Each clear is guarded on the finding's own predicate, so a photo re-dated by
+// hand in the meantime is skipped and a second run is a no-op. The sidecar is
+// rewritten afterwards so the metadata on disk drops the date too — otherwise a
+// restore from the sidecars would hand the impossible date straight back — unless
+// the export is off, in which case there is no sidecar to rewrite.
+func (s *Service) repairImpossibleDates(
+	ctx context.Context, opts RepairOptions, meta audit.Meta, res *RepairResult,
+) error {
+	if !opts.ImpossibleDates {
+		return nil
+	}
+	minYear, maxYear := exif.CaptureYearBounds()
+	dated, err := s.photos.ListImpossibleTakenAt(ctx, minYear, maxYear)
+	if err != nil {
+		return fmt.Errorf("maintenance: listing impossible capture dates: %w", err)
+	}
+	for _, d := range dated {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return fmt.Errorf("maintenance: impossible-date repair interrupted: %w", ctxErr)
+		}
+		cleared, clearErr := s.photos.ClearImpossibleTakenAtAudited(
+			ctx, d.UID, minYear, maxYear, impossibleDateEntry(meta, d, minYear, maxYear))
+		if clearErr != nil {
+			return fmt.Errorf("maintenance: clearing impossible date of %s: %w", d.UID, clearErr)
+		}
+		if !cleared {
+			continue
+		}
+		res.ImpossibleDatesCleared++
+		if s.sidecar == nil {
+			continue
+		}
+		if err := s.sidecar.EnqueueSidecar(ctx, d.UID); err != nil {
+			return fmt.Errorf("maintenance: enqueuing sidecar rewrite for %s: %w", d.UID, err)
+		}
+	}
+	return nil
+}
+
+// impossibleDateEntry builds the audit entry for one withdrawn date: what the
+// date was, where it claimed to come from, the file name that most likely
+// produced it and the bounds it fell outside, stamped with the acting
+// maintainer's provenance.
+func impossibleDateEntry(meta audit.Meta, d photos.ImpossibleDate, minYear, maxYear int) audit.Entry {
+	return meta.Entry(audit.ActionPhotoDateClear, "photos", d.UID, map[string]any{
+		"taken_at":        d.TakenAt.UTC().Format(time.RFC3339),
+		"taken_at_source": d.TakenAtSource,
+		"file_name":       d.FileName,
+		"min_year":        minYear,
+		"max_year":        maxYear,
+		"reason":          "impossible capture year",
+	})
 }
 
 // repairSidewaysFaces re-detects the quarter-turned photos whose face detection ran

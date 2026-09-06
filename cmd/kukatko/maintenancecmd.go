@@ -5,6 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/jobs"
@@ -80,6 +81,10 @@ func newMaintenanceRepairCmd() *cobra.Command {
 		"re-detect quarter-turned photos whose face detection ran on a sideways image "+
 			"(clears the detection record and enqueues face_detect); "+
 			"'maintenance scan' is its dry run")
+	cmd.Flags().Bool("impossible-dates", false,
+		"withdraw the capture date of photos dated to a year no photograph can have "+
+			"been taken in; the date is cleared, never replaced, and the photos become "+
+			"findable as dated:no; 'maintenance scan' is its dry run")
 	return cmd
 }
 
@@ -194,6 +199,12 @@ func printScanReport(cmd *cobra.Command, report maintenance.Report) {
 	if len(report.SidewaysFaceDetections.Samples) > 0 {
 		cmd.Printf("    e.g. %v\n", report.SidewaysFaceDetections.Samples)
 	}
+	// The dry run of `repair --impossible-dates`: photos dated to a year no
+	// photograph can have been taken in. The sample is what the repair would clear.
+	cmd.Printf("  impossible dates:   %d\n", report.ImpossibleDates.Count)
+	if len(report.ImpossibleDates.Samples) > 0 {
+		cmd.Printf("    e.g. %v\n", report.ImpossibleDates.Samples)
+	}
 	// Likewise the dry run of `repair --face-markers`, sampled by marker uid.
 	cmd.Printf("  dup face markers:   %d\n", report.DuplicateFaceMarkers.Count)
 	if len(report.DuplicateFaceMarkers.Samples) > 0 {
@@ -213,7 +224,8 @@ func runMaintenanceRepair(cmd *cobra.Command) error {
 	}
 	if !opts.Any() {
 		cmd.Println("no repair selected; pass --thumbnails, --embeddings, --faces, --phashes, " +
-			"--import-orphans, --places, --dimensions, --face-markers or --sideways-faces")
+			"--import-orphans, --places, --dimensions, --face-markers, --sideways-faces " +
+			"or --impossible-dates")
 		return nil
 	}
 	svc, cleanup, err := openMaintenanceService(cmd)
@@ -222,7 +234,9 @@ func runMaintenanceRepair(cmd *cobra.Command) error {
 	}
 	defer cleanup()
 
-	result, err := svc.Repair(cmd.Context(), opts)
+	// A CLI run has no acting user: the audit entries the repairs write record a
+	// system action, which is exactly what a cron or an SSH session is.
+	result, err := svc.Repair(cmd.Context(), opts, audit.Meta{})
 	if err != nil {
 		return fmt.Errorf("running repairs: %w", err)
 	}
@@ -236,6 +250,8 @@ func runMaintenanceRepair(cmd *cobra.Command) error {
 	cmd.Printf("surplus face links cleared=%d\n", result.FaceLinksCleared)
 	cmd.Printf("sideways faces re-detected=%d (queued; they run once the sidecar's box is awake)\n",
 		result.SidewaysFacesEnqueued)
+	cmd.Printf("impossible dates cleared=%d (those photos now have no date; find them with dated:no)\n",
+		result.ImpossibleDatesCleared)
 	return nil
 }
 
@@ -244,15 +260,16 @@ func repairOptionsFromFlags(cmd *cobra.Command) (maintenance.RepairOptions, erro
 	flags := cmd.Flags()
 	var opts maintenance.RepairOptions
 	for name, target := range map[string]*bool{
-		"thumbnails":     &opts.Thumbnails,
-		"embeddings":     &opts.Embeddings,
-		"faces":          &opts.Faces,
-		"phashes":        &opts.Phashes,
-		"import-orphans": &opts.ImportOrphans,
-		"places":         &opts.Places,
-		"dimensions":     &opts.Dimensions,
-		"face-markers":   &opts.FaceMarkers,
-		"sideways-faces": &opts.SidewaysFaces,
+		"thumbnails":       &opts.Thumbnails,
+		"embeddings":       &opts.Embeddings,
+		"faces":            &opts.Faces,
+		"phashes":          &opts.Phashes,
+		"import-orphans":   &opts.ImportOrphans,
+		"places":           &opts.Places,
+		"dimensions":       &opts.Dimensions,
+		"face-markers":     &opts.FaceMarkers,
+		"sideways-faces":   &opts.SidewaysFaces,
+		"impossible-dates": &opts.ImpossibleDates,
 	} {
 		val, err := flags.GetBool(name)
 		if err != nil {

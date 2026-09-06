@@ -13,7 +13,7 @@ import (
 func TestParseFilenameDate_patterns(t *testing.T) {
 	t.Parallel()
 
-	nextYear := time.Now().UTC().Year() + filenameYearLookahead
+	nextYear := time.Now().UTC().Year() + CaptureYearLookahead
 
 	tests := []struct {
 		name string
@@ -75,13 +75,13 @@ func TestParseFilenameDate_patterns(t *testing.T) {
 		},
 		{
 			name: "year before photography rejected",
-			path: fmt.Sprintf("IMG_%d0115_143052.jpg", minFilenameYear-1),
+			path: fmt.Sprintf("IMG_%d0115_143052.jpg", MinCaptureYear-1),
 			ok:   false,
 		},
 		{
 			name: "first year of photography accepted",
-			path: fmt.Sprintf("IMG_%d0115_143052.jpg", minFilenameYear),
-			want: time.Date(minFilenameYear, 1, 15, 14, 30, 52, 0, time.UTC),
+			path: fmt.Sprintf("IMG_%d0115_143052.jpg", MinCaptureYear),
+			want: time.Date(MinCaptureYear, 1, 15, 14, 30, 52, 0, time.UTC),
 			ok:   true,
 		},
 		{
@@ -126,35 +126,5 @@ func TestFilenameTakenAt(t *testing.T) {
 	}
 	if got, ok := FilenameTakenAt("clip.mp4"); ok || got != nil {
 		t.Errorf("FilenameTakenAt(no date) = %v, %v; want nil, false", got, ok)
-	}
-}
-
-// TestPlausibleFilenameYear covers the bounds of the year a file name may claim:
-// the birth of photography below, one year ahead of now above.
-func TestPlausibleFilenameYear(t *testing.T) {
-	t.Parallel()
-
-	thisYear := time.Now().UTC().Year()
-
-	tests := []struct {
-		name string
-		year int
-		want bool
-	}{
-		{name: "before photography", year: minFilenameYear - 1, want: false},
-		{name: "first year of photography", year: minFilenameYear, want: true},
-		{name: "this year", year: thisYear, want: true},
-		{name: "next year", year: thisYear + filenameYearLookahead, want: true},
-		{name: "two years ahead", year: thisYear + filenameYearLookahead + 1, want: false},
-		{name: "facebook asset id", year: 9009, want: false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			if got := plausibleFilenameYear(tt.year); got != tt.want {
-				t.Errorf("plausibleFilenameYear(%d) = %v, want %v", tt.year, got, tt.want)
-			}
-		})
 	}
 }

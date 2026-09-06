@@ -693,7 +693,8 @@
         "thumbnail": "Přegenerování náhledu fotky",
         "unarchive": "Obnovení fotky z koše",
         "unhide": "Vrácení fotky do knihovny",
-        "update": "Úprava fotky"
+        "update": "Úprava fotky",
+        "date_clear": "Zrušení nemožného data pořízení"
       },
       "photos": {
         "bulk": "Hromadná úprava fotek",
@@ -2744,6 +2745,7 @@
       "missing_faces": "Fotky, na kterých se ještě nehledaly obličeje",
       "missing_phashes": "Fotky bez otisku pro hledání duplikátů",
       "missing_places": "Fotky se souřadnicemi, ale bez místa",
+      "impossible_dates": "Fotky s nemožným datem pořízení",
       "problem": "Co se rozešlo",
       "count": "Kolik",
       "samples": "Ukázky",
@@ -2754,23 +2756,25 @@
         "missing_embeddings": "Kukátko si o té fotce zatím nepřečetlo, co na ní je, takže ji hledání podle obsahu ani hledání podobných nenajde. Doplní se, jakmile bude dostupná rozpoznávací služba.",
         "missing_faces": "Na fotce se ještě nehledaly obličeje, takže se neobjeví u lidí. Doplní se, jakmile bude dostupná rozpoznávací služba.",
         "missing_phashes": "Fotka nemá krátký otisk toho, jak vypadá; podle něj se hledají téměř shodné kopie.",
-        "missing_places": "Fotka ví, kde byla vyfocená, ale ještě nemá jméno místa, takže se neobjeví v přehledu míst. Doplní se na pozadí; převod souřadnic na jméno se platí, takže se dělá po dávkách a zbytek počká."
+        "missing_places": "Fotka ví, kde byla vyfocená, ale ještě nemá jméno místa, takže se neobjeví v přehledu míst. Doplní se na pozadí; převod souřadnic na jméno se platí, takže se dělá po dávkách a zbytek počká.",
+        "impossible_dates": "Fotka tvrdí, že vznikla v roce, kdy fotografie být nemohla — před rokem 1826 nebo dál než napřesrok. Vzniklo to tak, že se datum četlo z názvu souboru staženého z Facebooku nebo WhatsAppu, kde dlouhé číslo je jen identifikátor. Taková fotka se řadí před celou knihovnu a natahuje osu roků. Oprava „Zrušit nemožná data pořízení“ datum zruší — fotka pak žádné nemá a najdete ji dotazem dated:no."
       }
     },
     "repair": {
-      "title": "Co doplnit",
-      "hint": "Vyberte, co se má doplnit. Nestane se to hned — zařadí se to jako práce na pozadí. Hledání podle obsahu a obličejů navíc počká, až bude dostupná rozpoznávací služba.",
+      "title": "Co opravit",
+      "hint": "Vyberte, co se má opravit. Většina možností něco doplňuje a nestane se to hned — zařadí se to jako práce na pozadí. Hledání podle obsahu a obličejů navíc počká, až bude dostupná rozpoznávací služba. Zrušení nemožných dat pořízení je jediná možnost, která něco odebírá: datum se zruší, ničím se nenahrazuje.",
       "thumbnails": "Dogenerovat chybějící náhledy",
       "embeddings": "Přečíst, co je na fotkách, které to ještě nemají",
       "faces": "Dohledat obličeje tam, kde se ještě nehledaly",
       "phashes": "Dopočítat chybějící otisky pro hledání duplikátů",
       "places": "Určit místo u fotek se souřadnicemi",
       "import_orphans": "Přidat do katalogu soubory, o kterých neví",
-      "run": "Spustit doplnění",
+      "run": "Spustit opravu",
       "running": "Spouštím…",
       "none": "Vyberte alespoň jednu možnost.",
       "error": "Nepovedlo se to spustit.",
-      "result": "Naplánováno: náhledy {{thumbnails}}, otisky {{phashes}}, obsah fotek {{embeddings}}, obličeje {{faces}}, místa {{places}}; ze souborů mimo katalog přidáno {{imported}}, přeskočeno {{skipped}}, nepovedlo se {{failed}}."
+      "result": "Naplánováno: náhledy {{thumbnails}}, otisky {{phashes}}, obsah fotek {{embeddings}}, obličeje {{faces}}, místa {{places}}; ze souborů mimo katalog přidáno {{imported}}, přeskočeno {{skipped}}, nepovedlo se {{failed}}; zrušeno nemožných dat pořízení {{datesCleared}}.",
+      "impossible_dates": "Zrušit nemožná data pořízení"
     },
     "jobs": {
       "title": "Práce na pozadí",

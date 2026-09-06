@@ -6,6 +6,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/maintenance"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
@@ -99,7 +100,7 @@ func TestScanAndRepairFaceMarkers(t *testing.T) {
 	}
 	assertFinding(t, "duplicate face markers", report.DuplicateFaceMarkers, 1, marker.UID)
 
-	res, err := h.svc.Repair(ctx, maintenance.RepairOptions{FaceMarkers: true})
+	res, err := h.svc.Repair(ctx, maintenance.RepairOptions{FaceMarkers: true}, audit.Meta{})
 	if err != nil {
 		t.Fatalf("Repair(face markers): %v", err)
 	}
@@ -138,7 +139,7 @@ func TestScanAndRepairFaceMarkers(t *testing.T) {
 	if report.DuplicateFaceMarkers.Count != 0 {
 		t.Errorf("duplicate face markers after repair = %d, want 0", report.DuplicateFaceMarkers.Count)
 	}
-	res, err = h.svc.Repair(ctx, maintenance.RepairOptions{FaceMarkers: true})
+	res, err = h.svc.Repair(ctx, maintenance.RepairOptions{FaceMarkers: true}, audit.Meta{})
 	if err != nil {
 		t.Fatalf("Repair(face markers) re-run: %v", err)
 	}
@@ -192,7 +193,7 @@ func TestRepairFaceMarkersLeavesSingleLinks(t *testing.T) {
 		t.Fatalf("duplicate face markers = %d, want 0 (each marker has one face)",
 			report.DuplicateFaceMarkers.Count)
 	}
-	if _, err := h.svc.Repair(ctx, maintenance.RepairOptions{FaceMarkers: true}); err != nil {
+	if _, err := h.svc.Repair(ctx, maintenance.RepairOptions{FaceMarkers: true}, audit.Meta{}); err != nil {
 		t.Fatalf("Repair(face markers): %v", err)
 	}
 	links := h.markerLinks(t, photo.UID)

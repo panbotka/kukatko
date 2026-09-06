@@ -1928,10 +1928,15 @@ here.
   the problem, so the desktop table stays headerless), so a phone gets **one stacked card per finding**
   (`maintenance.findings.problem`/`.count`/`.samples` are the card's labels — a card has no header row to read
   the values across from); **a finding's samples are file paths and UIDs, so they live in a `TechnicalDetail`**
-  rather than in the row —, repair checkboxes (thumbnails/embeddings/faces/hashes/**places**/import of orphans —
-  annotated with the remaining count from the last check; „Určit místo u fotek se souřadnicemi (N)" is where
-  the **Bez místa** tile on Stav systému leads, and N is the same number) → **Spustit opravy** (`POST /maintenance/repair`) with a result
-  summary, plus the background queue state (`GET /jobs/stats` polls every 3 s) as progress; **every finding,
+  rather than in the row —, repair checkboxes (thumbnails/embeddings/faces/hashes/**places**/import of orphans/
+  **nemožná data pořízení** — annotated with the remaining count from the last check; „Určit místo u fotek se
+  souřadnicemi (N)" is where the **Bez místa** tile on Stav systému leads, and N is the same number) →
+  **Spustit opravu** (`POST /maintenance/repair`) with a result
+  summary. „Zrušit nemožná data pořízení (N)" is the odd one out and therefore listed last: every other option
+  fills something in, that one **takes a value away** — the capture date of a photo dated to a year no
+  photograph can have been taken in (a Facebook download whose asset id read as 9009-03-10) is withdrawn, never
+  replaced, so the photo ends up without a date and is found with `dated:no`. That is why the card is „Co
+  opravit" rather than „Co doplnit" and its hint says which option removes rather than fills; plus the background queue state (`GET /jobs/stats` polls every 3 s) as progress; **every finding,
   the summary „drift" row and every queue state carries a quiet plain-language explanation** (without hovering) —
   `maintenance.findings.descriptions.*`, `maintenance.scan.summaryHint.*`, `maintenance.jobs.intro`
   and the shared `JobStateLegend` (celkem/ve frontě/zpracovává se/nepovedlo se/**trvale se nepovedlo**) — so a

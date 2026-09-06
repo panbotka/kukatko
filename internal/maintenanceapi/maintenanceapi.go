@@ -39,8 +39,11 @@ const maxAuditRetentionDays = 36500
 type Service interface {
 	// Scan reconciles the catalogue against disk and derived data.
 	Scan(ctx context.Context) (maintenance.Report, error)
-	// Repair runs the selected repairs.
-	Repair(ctx context.Context, opts maintenance.RepairOptions) (maintenance.RepairResult, error)
+	// Repair runs the selected repairs, stamping meta onto the audit entries the
+	// catalogue-writing ones record.
+	Repair(
+		ctx context.Context, opts maintenance.RepairOptions, meta audit.Meta,
+	) (maintenance.RepairResult, error)
 }
 
 // AuditPurger deletes old audit entries by retention and records standalone audit
@@ -121,6 +124,8 @@ func (a *API) handleScan(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleRepair decodes the requested repairs and runs them, returning the result.
+// The acting maintainer's provenance travels with the request, so a repair that
+// writes the catalogue (withdrawing an impossible capture date) audits who asked.
 // It answers 503 when maintenance is not configured or a selected repair needs a
 // feature this instance does not have (orphan import, place geocoding), 400 for a
 // malformed body or when no repair is selected, and 500 when a repair fails.
@@ -134,7 +139,8 @@ func (a *API) handleRepair(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	result, err := a.service.Repair(r.Context(), opts)
+	user, _ := auth.UserFromContext(r.Context())
+	result, err := a.service.Repair(r.Context(), opts, audit.FromRequest(r, user.UID))
 	if err != nil {
 		writeRepairError(w, err)
 		return

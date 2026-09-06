@@ -55,7 +55,7 @@ configuration key both here **and** into `config.example.yaml`.
   identifies nobody, the importer-minted catch-all; dry run by default, reversible via `--undo`; see below) and
   `maintenance repair` with the flags
   `--thumbnails`/`--embeddings`/`--faces`/`--phashes`/`--import-orphans`/`--places`/`--dimensions`/
-  `--face-markers`/`--sideways-faces`
+  `--face-markers`/`--sideways-faces`/`--impossible-dates`
   (each opt-in; thumbnails/phashes enqueue `thumbnail` jobs drained by a running server's worker,
   embeddings/faces backfill, orphan import synchronously via the upload pipeline; `--dimensions` writes the
   catalogue directly — it rewrites the pixel dimensions of quarter-turned photos whose columns hold the
@@ -96,7 +96,24 @@ configuration key both here **and** into `config.example.yaml`.
   windows instead of overrunning the quota. On an instance with **no `maps.mapy_api_key` the flag refuses**
   (and the scan reports no backlog), because no `places` handler is registered there and the jobs would wait
   for ever. Since photos now earn a `places` job **at upload** (`internal/ingest`), this is a catch-up for the
-  library that predates that, not routine work;
+  library that predates that, not routine work.
+  `--impossible-dates` is the fourth flag that writes the catalogue directly, and the only one that **removes**
+  something: it withdraws the capture date of every photo dated to a year no photograph can have been taken in
+  — before 1826 or further ahead than next year, the same range `internal/exif` enforces on an incoming
+  file-name guess (`internal/exif/captureyear.go`, asked for through `exif.CaptureYearBounds()` so the two
+  cannot drift apart). Those rows are what a Facebook or WhatsApp download leaves behind
+  (`90090310_638783213372240_…` reads as 9009-03-10) and no other backfill touches them: `internal/metajob` is
+  a gap-filler that holds the capture time outside its reach. The date is **cleared, never replaced** — the
+  photo ends up with no date at all and is found with `dated:no` — because a guessed substitute would be a
+  second wrong answer on top of the first. Nothing is lost: the discarded date is preserved in
+  `taken_at_before_unknown` (still shown on the photo page and written to the sidecar), the original file is
+  never touched, and each cleared date is one `photo.date_clear` **audit entry written in the same transaction**
+  as the clear, carrying the discarded date, its provenance and the file name; a CLI run has no acting user, so
+  it is recorded as a system action. Its **dry run is `maintenance scan`** (the `impossible dates` line and
+  samples), each write is guarded on that same predicate — a photo re-dated by hand in between is skipped —
+  and each cleared photo gets a `sidecar` job — when `sidecar.enabled` — so the metadata on disk drops the
+  date too. It prints
+  `impossible dates cleared=N`, and a re-run is a no-op;
   a no-op without any flag;
   the **retention purge of old audit logs** is separate, only via HTTP/UI, not the CLI — the maintainer calls
   `POST /api/v1/maintenance/audit/purge` `{older_than_days}` (`internal/maintenanceapi`), which deletes audit

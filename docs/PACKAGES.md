@@ -462,7 +462,17 @@ to `## Package map` in `CLAUDE.md`.
   is the evidence** — a photo whose document says nothing, whose columns already agree, or whose frame is square
   is never reported and no provenance is guessed. It is read-only, hence the **dry run** of
   `RepairDimensions(m)` → `bool` (writes the file's own pair, guarded on the transposed one it replaces, so a
-  repeat is a no-op and can never swap a corrected row back), **stack methods** (`store_stacks.go`, see `docs/ARCHITECTURE.md` §5.1):
+  repeat is a no-op and can never swap a corrected row back), the **impossible-capture-date repair**
+  (`store_impossibledate.go`): `ListImpossibleTakenAt(minYear,maxYear)` →
+  `[]ImpossibleDate{UID,FileName,TakenAt,TakenAtSource}` = every photo (archived ones included) dated outside
+  the inclusive year range, compared as instants (`captureYearWindow` turns the years into the half-open UTC
+  interval, so the predicate does not depend on the session time zone) — read-only, hence the **dry run** of
+  `ClearImpossibleTakenAtAudited(uid,minYear,maxYear,entry)` → `bool`, which declares the date unknown
+  (`taken_at` NULL, `taken_at_source` `unknown`, `taken_at_precision` `day`, the outgoing value preserved by
+  `TakenAtBeforeUnknownAssignment` exactly as the single-photo PATCH and the bulk clear do) and writes `entry`
+  **in the same transaction**; it is guarded on the same predicate, so a row re-dated in between changes nothing
+  and no audit entry is written for it. The range itself is not this package's business — `internal/maintenance`
+  takes it from `exif.CaptureYearBounds()`, **stack methods** (`store_stacks.go`, see `docs/ARCHITECTURE.md` §5.1):
   `ListStackCandidates` (not-yet-stacked non-archived photos for detection)/`StackInfoByUIDs`/
   `ListStackMembers` (stack members, **primary first** — the strip of variants)/`StackCounts` (member count
   per `stack_uid` — the tile badge)/`CreateStack`/`SetStackPrimary`/`UnstackMember`/`UnstackAll`
@@ -783,6 +793,11 @@ to `## Package map` in `CLAUDE.md`.
   camera whose clock is set wrong but drops the long digit runs Facebook and WhatsApp name their
   downloads with (`90090310_638783213372240_…` reads as 9009-03-10); a rejected year is simply
   no date, i.e. `unknown`, and the bound is the guess's alone — an EXIF date is kept however odd.
+  That bound lives in `captureyear.go` (`MinCaptureYear`, `CaptureYearLookahead`,
+  `PlausibleCaptureYear(year)` and `CaptureYearBounds() (min,max)`) because it has a **second**
+  caller: `internal/maintenance` finds the rows that were dated before this guard existed and offers to
+  withdraw their date. `CaptureYearBounds` is how a caller that must express the same rule as a **query**
+  asks for it, so the two can never drift apart;
   An empty `name` disables the fallback (used by `video.probeWithExiftool`, whose
   caller applies its own with the upload's name); a file without EXIF (PNG) = zero values, **not an error**;
   **IPTC/XMP + file-technical fields** (`iptc.go`, mapped onto the same-named `photos` columns):
@@ -3204,13 +3219,16 @@ to `## Package map` in `CLAUDE.md`.
   the previous system's `cache build-thumbs`, but is broader and safer (**it never deletes originals** — that is the
   job of the trash/purge), idempotent, with repairs going through the persistent job queue; all behind the interfaces
   `PhotoCatalog` (`CountPhotos`/`ListPrimaryFiles`/`ListFilePaths`/`ListPhotosMissingPhash`/
-  `ListDimensionMismatches`/`RepairDimensions`,
+  `ListDimensionMismatches`/`RepairDimensions`/`ListImpossibleTakenAt`/`ClearImpossibleTakenAtAudited`,
   satisfied by `photos.Store`)/`VectorCatalog` (`ListPhotosMissingEmbedding`/`ListPhotosMissingFaces`/
   `PlanFaceBoxRepair`/`ApplyFaceBoxRepair`/`ListDuplicateFaceMarkers`/`ListSidewaysDetections`/
   `ClearFaceDetection`, `vectors.Store`)/`OriginalStore` (`Stat`, `storage.Storage`)/`StoreScanner`
   (`Kind`+`ListOriginals`, satisfied by `NewStoreOriginals(kind, storage.KeyLister)`)/
   `ThumbChecker` (`HasThumbnail`, `NewThumbCache` over `thumb.Thumbnailer`)/
-  `Enqueuer` (`EnqueueThumbnail`+`EnqueueFaceDetect`, `jobs.Enqueuer`)/`EmbedBackfiller` (`embedjob.Service`)/
+  `Enqueuer` (`EnqueueThumbnail`+`EnqueueFaceDetect`, `jobs.Enqueuer`)/`SidecarScheduler`
+  (`EnqueueSidecar`, `jobs.Enqueuer`; optional, **nil = the sidecar export is off**, so no job is scheduled
+  that no handler could drain — `maintenanceSidecarOrNil` in `cmd/kukatko/maintenance.go` is the same switch
+  every mutating API goes through)/`EmbedBackfiller` (`embedjob.Service`)/
   `FaceBackfiller` (`facejob.Service`)/`FaceCache` (`ClearSurplusLinks`, `facematch.Service` — which owns
   the face↔marker pairing rules the cache has to agree with)/`OrphanImporter` (optional, nil turns the
   orphan import off)/`PlaceBackfiller` (`MissingPlaces`+`BackfillPlaces`, `placesjob.Service`; optional,
@@ -3219,7 +3237,7 @@ to `## Package map` in `CLAUDE.md`.
   (panics on a nil mandatory collaborator; default `SampleLimit` 20); **`Scan(ctx)`** (read-only) returns
   `Report{Photos,FilesInDB,Store,MissingOriginals,OrphanFiles,MissingThumbnails,
   MissingEmbeddings,MissingFaces,MissingPhashes,MissingPlaces,TransposedDimensions,TransposedFaceBoxes,
-  DuplicateFaceMarkers,SidewaysFaceDetections}` — each class is a
+  DuplicateFaceMarkers,SidewaysFaceDetections,ImpossibleDates}` — each class is a
   `Finding{Count,Samples}`
   (a count + a limited sample of identifiers); `representativeThumbSize`=`tile_224` is the proxy for the presence of
   thumbnails, an orphan = an original **in the store** with no `photo_files.file_path`, `Report.Clean()`;
@@ -3236,7 +3254,7 @@ to `## Package map` in `CLAUDE.md`.
   the UI shows the failure instead of a green verdict — a store nobody could read must not pass for an empty one.
   The orphan *import* does abort on that failure, since importing nothing is not success;
   **`Repair(ctx,RepairOptions{Thumbnails,Embeddings,Faces,Phashes,ImportOrphans,Places,Dimensions,FaceMarkers,
-  SidewaysFaces})`** (each opt-in,
+  SidewaysFaces,ImpossibleDates},meta audit.Meta)`** (each opt-in,
   idempotent, in a fixed order) → `RepairResult` with the scheduling counts: thumbnails/phashes enqueue
   `thumbnail` jobs (`EnqueueThumbnail`), embeddings/faces call the backfill, the orphan import goes through the
   upload pipeline (a per-orphan failure is counted without aborting); `ErrOrphanImportUnavailable` when the
@@ -3275,7 +3293,25 @@ to `## Package map` in `CLAUDE.md`.
   the way `Dimensions` is: a detector looking at a sideways picture also **missed** faces on it, and no arithmetic
   recovers a face that was never found. The existing face rows stay until the new detection replaces them
   wholesale (the sidecar's box is usually asleep, and boxes in the wrong frame still beat none while the queue
-  waits), and a photo re-detected upright drops out of the scan, so a re-run is a no-op), `internal/reset/`
+  waits), and a photo re-detected upright drops out of the scan, so a re-run is a no-op.
+  **`ImpossibleDates`** is the fourth direct-write repair and the only one that **removes** a value.
+  `photos.ListImpossibleTakenAt(minYear,maxYear)` is its dry run (`ImpossibleDates`, sampled by photo uid): the
+  photos dated to a year no photograph can have been taken in, the bounds asked of `exif.CaptureYearBounds()` so
+  the guard that stops a **new** file-name guess and the finding for the rows dated **before** that guard existed
+  cannot disagree (`90090310_638783213372240_…` reads as 9009-03-10, and one such row sorts ahead of the whole
+  library and stretches the year axis to meet it — `internal/metajob` cannot fix it, being a gap-filler that
+  holds the capture time outside its reach). The repair **withdraws** the date rather than guessing a
+  replacement (`photos.ClearImpossibleTakenAtAudited` → `ImpossibleDatesCleared`): `taken_at` → NULL,
+  `taken_at_source` → `unknown`, so the photo becomes one **without** a date, findable as `dated:no`. Nothing is
+  lost — the outgoing value goes into `taken_at_before_unknown` through the shared
+  `photos.TakenAtBeforeUnknownAssignment` rule, so the clear is reversible and still readable, and originals are
+  never touched. Each clear writes a **`photo.date_clear` audit entry in the clear's own transaction** (the
+  durable-audit convention), carrying the acting maintainer from the `audit.Meta` `Repair` is given — a zero
+  `Meta` is the CLI, i.e. a system action — plus the discarded date, its provenance and the file name. The
+  `UPDATE` is guarded on the finding's own predicate, so a photo re-dated by hand between the scan and the
+  repair is skipped (no row changed → no audit entry, not counted) and a re-run is a no-op; every cleared photo
+  also gets an `EnqueueSidecar` (when the export is on), so the metadata on disk drops the date too and a
+  restore cannot hand the year 9009 back), `internal/reset/`
   (**the guarded library wipe** — what `kukatko maintenance reset` runs and what phase 1 of
   [`docs/MIGRATION_PLAN.md`](MIGRATION_PLAN.md) had nothing to run before: it empties every catalogue table and
   every object the store owns so the library can be re-imported from scratch. The deployment has **no S3 backup**

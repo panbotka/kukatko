@@ -41,6 +41,7 @@ const FINDING_KEYS = [
   'missing_faces',
   'missing_phashes',
   'missing_places',
+  'impossible_dates',
 ] as const
 
 /** A finding key, narrowing {@link ScanReport} access to the Finding fields only. */
@@ -49,7 +50,8 @@ type FindingKey = (typeof FINDING_KEYS)[number]
 /**
  * The opt-in repairs rendered as checkboxes, in display order. Each name is both
  * the i18n suffix (`maintenance.repair.<key>`) and a boolean field of
- * {@link RepairOptions}.
+ * {@link RepairOptions}. `impossible_dates` comes last because it is the odd one
+ * out: every other repair fills something in, that one withdraws a capture date.
  */
 const REPAIR_KEYS = [
   'thumbnails',
@@ -58,6 +60,7 @@ const REPAIR_KEYS = [
   'phashes',
   'places',
   'import_orphans',
+  'impossible_dates',
 ] as const
 
 /** A repair key, used to index {@link RepairOptions} and toggle its selection. */
@@ -84,6 +87,7 @@ const REPAIR_FOR_FINDING: Record<FindingKey, RepairKey | null> = {
   missing_faces: 'faces',
   missing_phashes: 'phashes',
   missing_places: 'places',
+  impossible_dates: 'impossible_dates',
 }
 
 /** Lifecycle of the integrity-scan request. */
@@ -207,14 +211,7 @@ function ScanResult({ report }: { report: ScanReport }) {
   return (
     <>
       <ScanSummary report={report} />
-      {storeListed(report) &&
-      report.missing_originals.count === 0 &&
-      report.orphan_files.count === 0 &&
-      report.missing_thumbnails.count === 0 &&
-      report.missing_embeddings.count === 0 &&
-      report.missing_faces.count === 0 &&
-      report.missing_phashes.count === 0 &&
-      report.missing_places.count === 0 ? (
+      {storeListed(report) && FINDING_KEYS.every((key) => findingOf(report, key).count === 0) ? (
         <Alert variant="success">{t('maintenance.scan.clean')}</Alert>
       ) : (
         <RecordTable
@@ -305,6 +302,7 @@ function RepairForm({ report, selection, onToggle, onRun, state }: RepairFormPro
               imported: state.result.orphans_imported,
               skipped: state.result.orphans_skipped,
               failed: state.result.orphans_failed,
+              datesCleared: state.result.impossible_dates_cleared,
             })}
           </Alert>
         )}
@@ -358,6 +356,7 @@ function emptySelection(): Record<RepairKey, boolean> {
     phashes: false,
     places: false,
     import_orphans: false,
+    impossible_dates: false,
   }
 }
 
@@ -519,10 +518,13 @@ function AuditPurgeCard() {
 /**
  * Admin-only library-maintenance console: runs an integrity scan that reports
  * catalogue/store drift (missing originals, orphan files, missing thumbnails,
- * embeddings, faces and pHashes) with counts and samples, and triggers the opt-in
- * repairs. Repairs run in the background through the job queue, so the page polls
- * the queue stats to show progress. Maintenance is an operations capability, so
- * every action is maintainer-only, safe and idempotent; originals are never deleted.
+ * embeddings, faces, pHashes and places, plus the photos dated to a year no
+ * photograph can have been taken in) with counts and samples, and triggers the
+ * opt-in repairs. Most repairs run in the background through the job queue, so the
+ * page polls the queue stats to show progress. Maintenance is an operations
+ * capability, so every action is maintainer-only, safe and idempotent; originals
+ * are never deleted, and the one repair that removes anything only withdraws an
+ * impossible capture date — it never invents a replacement.
  */
 export function MaintenancePage() {
   const { t } = useTranslation()

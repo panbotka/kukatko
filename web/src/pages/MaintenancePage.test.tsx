@@ -48,6 +48,7 @@ function report(overrides: Partial<ScanReport> = {}): ScanReport {
     missing_faces: empty,
     missing_phashes: empty,
     missing_places: empty,
+    impossible_dates: empty,
     ...overrides,
   }
 }
@@ -63,6 +64,7 @@ function repairResult(overrides: Partial<RepairResult> = {}): RepairResult {
     orphans_imported: 0,
     orphans_skipped: 0,
     orphans_failed: 0,
+    impossible_dates_cleared: 0,
     ...overrides,
   }
 }
@@ -186,7 +188,7 @@ describe('MaintenancePage', () => {
     // the problem, so there is nothing for a header row to add.
     const table = screen.getByRole('table')
     expect(within(table).queryAllByRole('columnheader')).toHaveLength(0)
-    expect(within(table).getAllByRole('row')).toHaveLength(7)
+    expect(within(table).getAllByRole('row')).toHaveLength(8)
   })
 
   it('reflows each finding into a stacked card on a phone', async () => {
@@ -204,7 +206,7 @@ describe('MaintenancePage', () => {
     expect(screen.queryByRole('table')).toBeNull()
 
     const cards = screen.getAllByRole('listitem')
-    expect(cards).toHaveLength(7)
+    expect(cards).toHaveLength(8)
     // The headerless table's columns still carry their labels onto the card —
     // a card has no header row to read the values across from.
     const thumbnails = cards[2]
@@ -272,7 +274,7 @@ describe('MaintenancePage', () => {
     const user = userEvent.setup()
     renderPage()
 
-    const runButton = screen.getByRole('button', { name: 'Start filling in' })
+    const runButton = screen.getByRole('button', { name: 'Start the repair' })
     expect(runButton).toBeDisabled()
 
     await user.click(screen.getByLabelText('Generate the missing thumbnails'))
@@ -300,7 +302,7 @@ describe('MaintenancePage', () => {
     )
 
     await user.click(checkbox)
-    await user.click(screen.getByRole('button', { name: 'Start filling in' }))
+    await user.click(screen.getByRole('button', { name: 'Start the repair' }))
 
     await waitFor(() => {
       expect(repairMock).toHaveBeenCalledWith({ places: true })
@@ -311,6 +313,30 @@ describe('MaintenancePage', () => {
     expect(screen.getByText(/has no place name yet/)).toBeInTheDocument()
   })
 
+  it('offers clearing the impossible capture dates, and says what it removed', async () => {
+    // The one repair that takes something away rather than filling it in: the
+    // checkbox carries the outstanding count, and the result says how many dates
+    // were withdrawn, so the maintainer can go look for them under dated:no.
+    scanMock.mockResolvedValue(report({ impossible_dates: { count: 1, samples: ['ph9009'] } }))
+    repairMock.mockResolvedValue(repairResult({ impossible_dates_cleared: 1 }))
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(screen.getByRole('button', { name: 'Run the check' }))
+    const checkbox = await screen.findByLabelText('Clear impossible capture dates (1)')
+
+    await user.click(checkbox)
+    await user.click(screen.getByRole('button', { name: 'Start the repair' }))
+
+    await waitFor(() => {
+      expect(repairMock).toHaveBeenCalledWith({ impossible_dates: true })
+    })
+    expect(await screen.findByText(/1 impossible capture dates cleared/)).toBeInTheDocument()
+    // It is a scan finding in its own right, with its explanation.
+    expect(screen.getByText('Photos with an impossible capture date')).toBeInTheDocument()
+    expect(screen.getByText(/no photograph can have been taken in/)).toBeInTheDocument()
+  })
+
   it('shows an error when the repair fails', async () => {
     repairMock.mockRejectedValue(new Error('boom'))
     const user = userEvent.setup()
@@ -319,7 +345,7 @@ describe('MaintenancePage', () => {
     await user.click(
       screen.getByLabelText('Work out what is in the photos that are still missing it'),
     )
-    await user.click(screen.getByRole('button', { name: 'Start filling in' }))
+    await user.click(screen.getByRole('button', { name: 'Start the repair' }))
 
     expect(await screen.findByText('It could not be started.')).toBeInTheDocument()
   })

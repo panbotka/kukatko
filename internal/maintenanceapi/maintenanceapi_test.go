@@ -22,6 +22,7 @@ type fakeService struct {
 	result     maintenance.RepairResult
 	repairErr  error
 	lastOpts   maintenance.RepairOptions
+	lastMeta   audit.Meta
 	scanCalled bool
 }
 
@@ -30,8 +31,11 @@ func (f *fakeService) Scan(context.Context) (maintenance.Report, error) {
 	return f.report, f.scanErr
 }
 
-func (f *fakeService) Repair(_ context.Context, opts maintenance.RepairOptions) (maintenance.RepairResult, error) {
+func (f *fakeService) Repair(
+	_ context.Context, opts maintenance.RepairOptions, meta audit.Meta,
+) (maintenance.RepairResult, error) {
 	f.lastOpts = opts
+	f.lastMeta = meta
 	return f.result, f.repairErr
 }
 

@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/panbotka/kukatko/internal/audit"
 )
 
 // fakeLister is a KeyLister over a fixed key list, or one that fails the way an
@@ -256,7 +258,7 @@ func TestRepairOrphans_storeListingFails(t *testing.T) {
 
 	boom := errors.New("connection refused")
 	svc := storeScenario(nil, fakeStore{kind: StoreObject, err: boom})
-	if _, err := svc.Repair(context.Background(), RepairOptions{ImportOrphans: true}); !errors.Is(err, boom) {
+	if _, err := svc.Repair(context.Background(), RepairOptions{ImportOrphans: true}, audit.Meta{}); !errors.Is(err, boom) {
 		t.Errorf("Repair error = %v, want it to wrap %v", err, boom)
 	}
 }
