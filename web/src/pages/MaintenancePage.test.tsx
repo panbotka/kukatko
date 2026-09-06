@@ -47,6 +47,7 @@ function report(overrides: Partial<ScanReport> = {}): ScanReport {
     missing_embeddings: empty,
     missing_faces: empty,
     missing_phashes: empty,
+    missing_places: empty,
     ...overrides,
   }
 }
@@ -58,6 +59,7 @@ function repairResult(overrides: Partial<RepairResult> = {}): RepairResult {
     embeddings_enqueued: 0,
     faces_enqueued: 0,
     phashes_enqueued: 0,
+    places_enqueued: 0,
     orphans_imported: 0,
     orphans_skipped: 0,
     orphans_failed: 0,
@@ -184,7 +186,7 @@ describe('MaintenancePage', () => {
     // the problem, so there is nothing for a header row to add.
     const table = screen.getByRole('table')
     expect(within(table).queryAllByRole('columnheader')).toHaveLength(0)
-    expect(within(table).getAllByRole('row')).toHaveLength(6)
+    expect(within(table).getAllByRole('row')).toHaveLength(7)
   })
 
   it('reflows each finding into a stacked card on a phone', async () => {
@@ -202,7 +204,7 @@ describe('MaintenancePage', () => {
     expect(screen.queryByRole('table')).toBeNull()
 
     const cards = screen.getAllByRole('listitem')
-    expect(cards).toHaveLength(6)
+    expect(cards).toHaveLength(7)
     // The headerless table's columns still carry their labels onto the card —
     // a card has no header row to read the values across from.
     const thumbnails = cards[2]
@@ -247,6 +249,31 @@ describe('MaintenancePage', () => {
     })
     // The result summary reflects the enqueued thumbnail count.
     expect(await screen.findByText(/thumbnails 4/)).toBeInTheDocument()
+  })
+
+  it('offers the reverse geocode as a repair, labelled with the outstanding count', async () => {
+    // The scan's count rides in the checkbox label, so the maintainer sees how
+    // much metered geocoding the option would schedule before pressing it.
+    scanMock.mockResolvedValue(report({ missing_places: { count: 72, samples: ['ph1'] } }))
+    repairMock.mockResolvedValue(repairResult({ places_enqueued: 72 }))
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(screen.getByRole('button', { name: 'Run the check' }))
+    const checkbox = await screen.findByLabelText(
+      'Work out the place for photos that have coordinates (72)',
+    )
+
+    await user.click(checkbox)
+    await user.click(screen.getByRole('button', { name: 'Start filling in' }))
+
+    await waitFor(() => {
+      expect(repairMock).toHaveBeenCalledWith({ places: true })
+    })
+    expect(await screen.findByText(/places 72/)).toBeInTheDocument()
+    // It is also a scan finding in its own right, with its explanation.
+    expect(screen.getByText('Photos with coordinates but no place')).toBeInTheDocument()
+    expect(screen.getByText(/has no place name yet/)).toBeInTheDocument()
   })
 
   it('shows an error when the repair fails', async () => {

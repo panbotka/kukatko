@@ -23,6 +23,7 @@ import (
 	"github.com/panbotka/kukatko/internal/namelessjob"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/placesjob"
 	"github.com/panbotka/kukatko/internal/sidecarexport"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
@@ -155,10 +156,14 @@ func buildMetaService(
 // its on-disk walk, the thumbnail cache check, the queue adapter (thumbnail/pHash
 // repairs), the embedding and face backfills, the face-matching service (which
 // owns the face↔marker pairing the cache repair re-derives), and the orphan
-// importer (the upload pipeline). It returns a service ready to scan and repair.
+// importer (the upload pipeline). placesSvc backs the reverse-geocode backfill and
+// the scan's count of it; it is nil when no mapy.com key is configured, which
+// leaves that finding empty and makes `repair --places` refuse. It returns a
+// service ready to scan and repair.
 func buildMaintenanceService(
 	cfg *config.Config, db *database.DB, enqueuer *jobs.Enqueuer,
-	embedSvc *embedjob.Service, faceSvc *facejob.Service, reg *metrics.Registry,
+	embedSvc *embedjob.Service, faceSvc *facejob.Service, placesSvc *placesjob.Service,
+	reg *metrics.Registry,
 ) (*maintenance.Service, error) {
 	store, err := newStorage(cfg)
 	if err != nil {
@@ -172,6 +177,7 @@ func buildMaintenanceService(
 		Thumbnailer: thumbnailer,
 		Enqueuer:    enqueuer,
 		OCR:         ocrEnqueuerOrNil(cfg, enqueuer),
+		Places:      placesEnqueuerOrNil(cfg, enqueuer),
 		Duplicate:   cfg.Duplicate,
 		MaxFileSize: cfg.Upload.MaxFileSizeBytes(),
 		MaxPixels:   cfg.Thumb.MaxPixels,
@@ -187,6 +193,7 @@ func buildMaintenanceService(
 		Faces:     faceSvc,
 		FaceCache: buildFaceMatch(cfg, db),
 		Importer:  orphanImporter{storage: store, ingest: ingestSvc},
+		Places:    maintenancePlaceBackfillerOrNil(placesSvc),
 	}), nil
 }
 
@@ -197,13 +204,14 @@ func buildMaintenanceService(
 // repairs.
 func buildMaintenanceAndThumb(
 	cfg *config.Config, db *database.DB, enqueuer *jobs.Enqueuer,
-	embedSvc *embedjob.Service, faceSvc *facejob.Service, reg *metrics.Registry,
+	embedSvc *embedjob.Service, faceSvc *facejob.Service, placesSvc *placesjob.Service,
+	reg *metrics.Registry,
 ) (*thumbjob.Service, *maintenance.Service, error) {
 	thumbSvc, err := buildThumbService(cfg, db, enqueuer, reg)
 	if err != nil {
 		return nil, nil, err
 	}
-	maintenanceSvc, err := buildMaintenanceService(cfg, db, enqueuer, embedSvc, faceSvc, reg)
+	maintenanceSvc, err := buildMaintenanceService(cfg, db, enqueuer, embedSvc, faceSvc, placesSvc, reg)
 	if err != nil {
 		return nil, nil, err
 	}

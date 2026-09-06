@@ -369,10 +369,17 @@ func (s *Service) savePlace(ctx context.Context, p places.Place) error {
 // are already geocoded are never touched, and a photo whose job is already queued
 // is a harmless no-op (the enqueuer dedupes), so the backfill is safe to run
 // repeatedly.
+//
+// Scheduling is not spending: queue depth and credit spend are separate bounds.
+// A run over a whole library may queue thousands of jobs, and the credit budget
+// (see reserveCredit) still lets only WindowBudget.Limit of them reach mapy.com
+// per window — the rest are *deferred* until the window refills, not failed, so
+// they burn no retry attempt and no credit and simply drain over the following
+// windows.
 func (s *Service) BackfillPlaces(ctx context.Context) (int, error) {
-	uids, err := s.places.ListPhotosMissingPlaces(ctx, 0)
+	uids, err := s.MissingPlaces(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("placesjob: listing photos missing places: %w", err)
+		return 0, err
 	}
 	enqueued := 0
 	for _, uid := range uids {
@@ -382,6 +389,19 @@ func (s *Service) BackfillPlaces(ctx context.Context) (int, error) {
 		enqueued++
 	}
 	return enqueued, nil
+}
+
+// MissingPlaces returns the uids of the live, geotagged photos that have no
+// cached place yet — exactly the set BackfillPlaces would schedule, listed rather
+// than enqueued. It is the dry run of the backfill: the library-maintenance scan
+// counts it so the "fill in the places" option can say how much work it is before
+// anybody starts it. It is read-only and spends no mapy.com credit.
+func (s *Service) MissingPlaces(ctx context.Context) ([]string, error) {
+	uids, err := s.places.ListPhotosMissingPlaces(ctx, 0)
+	if err != nil {
+		return nil, fmt.Errorf("placesjob: listing photos missing places: %w", err)
+	}
+	return uids, nil
 }
 
 // parsePlace extracts the country / region / city / place-name hierarchy from a

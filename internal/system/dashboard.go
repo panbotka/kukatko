@@ -106,9 +106,13 @@ type RemainingWork struct {
 	// PhotosWithoutGPS is how many browsable photos carry no coordinates, so they
 	// are missing from the map.
 	PhotosWithoutGPS int `json:"photos_without_gps"`
-	// PhotosWithoutPlace is how many browsable photos have no cached place name.
-	// It is the wider set: a photo with no coordinates can never get one, so this
-	// is always at least PhotosWithoutGPS.
+	// PhotosWithoutPlace is the reverse-geocode backlog: how many browsable photos
+	// carry coordinates but have no cached place name yet. A photo with no
+	// coordinates is deliberately not counted — no geocode could ever give it a
+	// place, so it belongs to PhotosWithoutGPS and not here. That makes this a
+	// backlog that actually reaches zero, and one the maintenance page's "fill in
+	// the places" option works down; it is the same number as
+	// LibrarySummary.PhotosPendingGeocode.
 	PhotosWithoutPlace int `json:"photos_without_place"`
 	// PhotosWithoutOCR is how many browsable stills have never been through text
 	// recognition. Videos are excluded because OCR never runs on them.

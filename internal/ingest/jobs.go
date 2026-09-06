@@ -45,6 +45,20 @@ type SidecarEnqueuer interface {
 	EnqueueSidecar(ctx context.Context, photoUID string) error
 }
 
+// PlacesEnqueuer schedules the reverse geocode of a freshly catalogued photo —
+// the `places` job that turns its coordinates into a country/city/place name. It
+// is separate from JobEnqueuer for the same reason OCREnqueuer and
+// SidecarEnqueuer are: geocoding has its own switch (a configured
+// `maps.mapy_api_key`), and without one no `places` handler is registered, so a
+// job enqueued anyway would sit in the queue forever. A nil PlacesEnqueuer is how
+// that off state reaches the pipeline.
+//
+// It is satisfied by jobs.Enqueuer.
+type PlacesEnqueuer interface {
+	// EnqueuePlaces schedules reverse geocoding for photoUID.
+	EnqueuePlaces(ctx context.Context, photoUID string) error
+}
+
 // NopEnqueuer is the no-op JobEnqueuer used until the persistent job queue
 // exists. Both methods succeed without doing anything, so the pipeline runs
 // end to end (stream, dedup, store, catalogue, thumbnails) with the embedding

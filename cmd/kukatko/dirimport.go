@@ -370,6 +370,7 @@ func buildDirImportService(cfg *config.Config, db *database.DB, concurrency int)
 		Thumbnailer: thumb.New(store, cfg.Storage.CachePath, thumbOptions(cfg, nil, db)...),
 		Enqueuer:    enqueuer,
 		OCR:         ocrEnqueuerOrNil(cfg, enqueuer),
+		Places:      placesEnqueuerOrNil(cfg, enqueuer),
 		Duplicate:   cfg.Duplicate,
 		MaxFileSize: cfg.Upload.MaxFileSizeBytes(),
 		MaxPixels:   cfg.Thumb.MaxPixels,

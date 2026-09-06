@@ -162,9 +162,13 @@ func TestCountDashboard_CountsFixture(t *testing.T) {
 		Clusters:             2,
 		PhotosWithoutTakenAt: 12,
 		PhotosWithoutGPS:     11,
-		PhotosWithoutPlace:   11,
-		PhotosWithoutOCR:     11,
-		DuplicateMarkers:     1,
+		// The reverse-geocode backlog, not "everything without a place": of the two
+		// live photos that carry coordinates (p8, p9) only p8 is geocoded, so p9 is
+		// the one job the maintenance option would schedule. The eleven photos with
+		// no coordinates are PhotosWithoutGPS and cannot ever be geocoded.
+		PhotosWithoutPlace: 1,
+		PhotosWithoutOCR:   11,
+		DuplicateMarkers:   1,
 	}
 	if got.Remaining != wantRemaining {
 		t.Errorf("remaining = %+v, want %+v", got.Remaining, wantRemaining)
@@ -203,6 +207,13 @@ func TestCountDashboard_AgreesWithLibraryStats(t *testing.T) {
 	if dash.Remaining.FacesUnassigned != stats.FacesUnassigned {
 		t.Errorf("dashboard nameless faces = %d, want %d",
 			dash.Remaining.FacesUnassigned, stats.FacesUnassigned)
+	}
+	// The dashboard tile and the statistics page must not disagree about how much
+	// geocoding is outstanding: both are the same predicate, and the tile links to
+	// the maintenance option that schedules exactly that set.
+	if dash.Remaining.PhotosWithoutPlace != stats.PhotosPendingGeocode {
+		t.Errorf("dashboard photos without a place = %d, want the pending-geocode count %d",
+			dash.Remaining.PhotosWithoutPlace, stats.PhotosPendingGeocode)
 	}
 }
 

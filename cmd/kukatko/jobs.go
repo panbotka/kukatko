@@ -142,7 +142,8 @@ type jobServiceDeps struct {
 // service is passed in rather than built here, since the rebuild endpoints share
 // it, and is nil with no mapy.com key by the same rule.
 func buildJobServices(d jobServiceDeps) (registryServices, *maintenance.Service, error) {
-	thumbSvc, maintenanceSvc, err := buildMaintenanceAndThumb(d.cfg, d.db, d.enqueuer, d.embed, d.face, d.reg)
+	thumbSvc, maintenanceSvc, err := buildMaintenanceAndThumb(
+		d.cfg, d.db, d.enqueuer, d.embed, d.face, d.places, d.reg)
 	if err != nil {
 		return registryServices{}, nil, err
 	}

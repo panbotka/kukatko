@@ -204,7 +204,10 @@ that it was imported.
 - A **map** with clustering that says out loud how much of the library carries a location at all,
   browsing by place (country → city, with a preview photo on every row), and reverse geocoding. A
   missing location can be estimated from photos taken near it in time — and only when those
-  neighbours cluster tightly, always marked as an estimate.
+  neighbours cluster tightly, always marked as an estimate. **A photo uploaded with coordinates gets
+  its place name on its own**: the reverse geocode is queued at upload and drains within the metered
+  daily budget, and the maintenance page has a "fill in the places" option for everything that
+  arrived before that.
 - **Setting a location by hand**, which is what a box of scans actually needs: name the place, paste
   the coordinates in whatever notation you have them, or drop a pin on the map and drag it — on a
   phone the map opens full-screen. A photo with no location of its own starts the map where you put

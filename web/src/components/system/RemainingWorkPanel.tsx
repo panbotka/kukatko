@@ -11,6 +11,12 @@ import { StatTileGrid, type StatTileSpec } from './StatTile'
 const NO_GPS_HREF = `${LIBRARY_PATH}?q=${encodeURIComponent('geo:no')}`
 
 /**
+ * The maintenance page, where the "fill in the places" option reverse-geocodes
+ * exactly the photos the "without a place" tile counts.
+ */
+const MAINTENANCE_PATH = '/maintenance'
+
+/**
  * The duplicates tile. It is the one number on the page that is not counted while
  * the request is served: the near-duplicate scan is far too expensive for a polled
  * endpoint, so the backend runs it in the background and reports when it last
@@ -52,9 +58,11 @@ function duplicatesTile(scan: DuplicateScan, locale: string): StatTileSpec {
  * faces is the point of the app), then the metadata gaps, then the two kinds of
  * duplicate.
  *
- * Every tile that has a screen to work it through on links there; the three
- * metadata gaps with no matching filter (no capture time, no place, no OCR) stay
- * static rather than pretending to lead somewhere.
+ * Every tile that has a screen to work it through on links there; the two
+ * metadata gaps with no matching filter (no capture time, no OCR) stay static
+ * rather than pretending to lead somewhere. The place gap does have one — the
+ * maintenance page's "fill in the places" option schedules exactly the photos it
+ * counts.
  */
 function tilesFor(remaining: RemainingWork, locale: string): StatTileSpec[] {
   const count = (value: number) => formatCount(value, locale)
@@ -90,6 +98,7 @@ function tilesFor(remaining: RemainingWork, locale: string): StatTileSpec[] {
       key: 'without-place',
       labelKey: 'system.remaining.withoutPlace',
       value: count(remaining.photos_without_place),
+      to: MAINTENANCE_PATH,
       gap: true,
     },
     {

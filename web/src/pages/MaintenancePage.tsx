@@ -40,6 +40,7 @@ const FINDING_KEYS = [
   'missing_embeddings',
   'missing_faces',
   'missing_phashes',
+  'missing_places',
 ] as const
 
 /** A finding key, narrowing {@link ScanReport} access to the Finding fields only. */
@@ -50,7 +51,14 @@ type FindingKey = (typeof FINDING_KEYS)[number]
  * the i18n suffix (`maintenance.repair.<key>`) and a boolean field of
  * {@link RepairOptions}.
  */
-const REPAIR_KEYS = ['thumbnails', 'embeddings', 'faces', 'phashes', 'import_orphans'] as const
+const REPAIR_KEYS = [
+  'thumbnails',
+  'embeddings',
+  'faces',
+  'phashes',
+  'places',
+  'import_orphans',
+] as const
 
 /** A repair key, used to index {@link RepairOptions} and toggle its selection. */
 type RepairKey = (typeof REPAIR_KEYS)[number]
@@ -75,6 +83,7 @@ const REPAIR_FOR_FINDING: Record<FindingKey, RepairKey | null> = {
   missing_embeddings: 'embeddings',
   missing_faces: 'faces',
   missing_phashes: 'phashes',
+  missing_places: 'places',
 }
 
 /** Lifecycle of the integrity-scan request. */
@@ -165,7 +174,8 @@ function ScanResult({ report }: { report: ScanReport }) {
       report.missing_thumbnails.count === 0 &&
       report.missing_embeddings.count === 0 &&
       report.missing_faces.count === 0 &&
-      report.missing_phashes.count === 0 ? (
+      report.missing_phashes.count === 0 &&
+      report.missing_places.count === 0 ? (
         <Alert variant="success">{t('maintenance.scan.clean')}</Alert>
       ) : (
         <RecordTable
@@ -252,6 +262,7 @@ function RepairForm({ report, selection, onToggle, onRun, state }: RepairFormPro
               phashes: state.result.phashes_enqueued,
               embeddings: state.result.embeddings_enqueued,
               faces: state.result.faces_enqueued,
+              places: state.result.places_enqueued,
               imported: state.result.orphans_imported,
               skipped: state.result.orphans_skipped,
               failed: state.result.orphans_failed,
@@ -306,6 +317,7 @@ function emptySelection(): Record<RepairKey, boolean> {
     embeddings: false,
     faces: false,
     phashes: false,
+    places: false,
     import_orphans: false,
   }
 }

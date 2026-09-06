@@ -37,6 +37,7 @@ type testEnv struct {
 	store    *photos.Store
 	thumbs   *thumb.Thumbnailer
 	enq      *recordingEnqueuer
+	places   *recordingPlaces
 	db       *database.DB
 	uploader string
 }
@@ -73,11 +74,49 @@ func (r *recordingEnqueuer) enqueuedEmbed(uid string) bool {
 	return slices.Contains(r.embeds, uid)
 }
 
+// recordingPlaces is a PlacesEnqueuer that records the photo UIDs a reverse
+// geocode was scheduled for, so a test can assert an upload with coordinates
+// earns one and an upload without them does not.
+type recordingPlaces struct {
+	mu   sync.Mutex
+	uids []string
+}
+
+// EnqueuePlaces records uid and reports success.
+func (r *recordingPlaces) EnqueuePlaces(_ context.Context, uid string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.uids = append(r.uids, uid)
+	return nil
+}
+
+// enqueued reports whether a `places` job was enqueued for uid.
+func (r *recordingPlaces) enqueued(uid string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Contains(r.uids, uid)
+}
+
+// count reports how many `places` jobs were enqueued in total.
+func (r *recordingPlaces) count() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.uids)
+}
+
 // newEnv builds an ingest service wired to real storage, thumbnailer and photo
 // repository over the integration database, plus an editor user whose UID is
 // used as the uploader (the photos.uploaded_by foreign key requires a real
 // user).
 func newEnv(t *testing.T, dup config.DuplicateConfig) *testEnv {
+	t.Helper()
+	return newEnvWithPlaces(t, dup, &recordingPlaces{})
+}
+
+// newEnvWithPlaces is newEnv with the reverse-geocode enqueuer chosen by the
+// caller: a recorder for the geocoding-configured case, or nil for an instance
+// with no mapy.com key, where the pipeline must schedule no `places` job at all.
+func newEnvWithPlaces(t *testing.T, dup config.DuplicateConfig, places *recordingPlaces) *testEnv {
 	t.Helper()
 	db := dbtest.New(t)
 	dbtest.TruncateAll(t, db)
@@ -98,15 +137,24 @@ func newEnv(t *testing.T, dup config.DuplicateConfig) *testEnv {
 	thumbs := thumb.New(fs, t.TempDir())
 	store := photos.NewStore(db.Pool())
 	enq := &recordingEnqueuer{}
-	svc := ingest.New(ingest.Config{
+	cfg := ingest.Config{
 		Storage:     fs,
 		Photos:      store,
 		Thumbnailer: thumbs,
 		Enqueuer:    enq,
 		Duplicate:   dup,
 		TempDir:     t.TempDir(),
-	})
-	return &testEnv{svc: svc, store: store, thumbs: thumbs, enq: enq, db: db, uploader: uploader.UID}
+	}
+	// A typed nil would satisfy the interface and defeat the "geocoding off"
+	// case, so the enqueuer is only assigned when there actually is one.
+	if places != nil {
+		cfg.Places = places
+	}
+	svc := ingest.New(cfg)
+	return &testEnv{
+		svc: svc, store: store, thumbs: thumbs, enq: enq, places: places,
+		db: db, uploader: uploader.UID,
+	}
 }
 
 // jpegBytes encodes a small solid-colour JPEG at the given quality. Different

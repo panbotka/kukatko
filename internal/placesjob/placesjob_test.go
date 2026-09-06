@@ -635,6 +635,33 @@ func TestBackfillPlaces(t *testing.T) {
 	}
 }
 
+// TestMissingPlaces verifies the backfill's dry run lists exactly the uids
+// BackfillPlaces would schedule and enqueues nothing — it is what the maintenance
+// scan counts, and counting must not cost a job or a credit.
+func TestMissingPlaces(t *testing.T) {
+	t.Parallel()
+
+	pl := newFakePlaces()
+	pl.missing = []string{"ph1", "ph2"}
+	enq := &fakeEnqueuer{}
+	geo := &fakeGeocoder{}
+	svc := newService(&fakePhotos{}, pl, geo, enq, nil)
+
+	uids, err := svc.MissingPlaces(context.Background())
+	if err != nil {
+		t.Fatalf("MissingPlaces: %v", err)
+	}
+	if len(uids) != 2 || uids[0] != "ph1" || uids[1] != "ph2" {
+		t.Errorf("MissingPlaces = %v, want [ph1 ph2]", uids)
+	}
+	if len(enq.uids) != 0 {
+		t.Errorf("the dry run enqueued %v, want nothing", enq.uids)
+	}
+	if geo.calls != 0 {
+		t.Errorf("the dry run geocoded %d times, want 0", geo.calls)
+	}
+}
+
 // TestNew_panicsOnMissingCollaborator verifies New rejects an incomplete wiring.
 func TestNew_panicsOnMissingCollaborator(t *testing.T) {
 	t.Parallel()

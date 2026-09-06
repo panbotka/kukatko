@@ -121,8 +121,9 @@ func (a *API) handleScan(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleRepair decodes the requested repairs and runs them, returning the result.
-// It answers 503 when maintenance is not configured, 400 for a malformed body or
-// when no repair is selected, and 500 when a repair fails.
+// It answers 503 when maintenance is not configured or a selected repair needs a
+// feature this instance does not have (orphan import, place geocoding), 400 for a
+// malformed body or when no repair is selected, and 500 when a repair fails.
 func (a *API) handleRepair(w http.ResponseWriter, r *http.Request) {
 	if a.service == nil {
 		writeError(w, http.StatusServiceUnavailable, "maintenance not available")
@@ -135,14 +136,24 @@ func (a *API) handleRepair(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := a.service.Repair(r.Context(), opts)
 	if err != nil {
-		if errors.Is(err, maintenance.ErrOrphanImportUnavailable) {
-			writeError(w, http.StatusServiceUnavailable, "orphan import not configured")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, "repair failed")
+		writeRepairError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+// writeRepairError maps a repair failure onto its response: the two
+// "this instance has no such feature" sentinels answer 503 with what is missing,
+// anything else is an opaque 500.
+func writeRepairError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, maintenance.ErrOrphanImportUnavailable):
+		writeError(w, http.StatusServiceUnavailable, "orphan import not configured")
+	case errors.Is(err, maintenance.ErrPlaceBackfillUnavailable):
+		writeError(w, http.StatusServiceUnavailable, "place geocoding not configured")
+	default:
+		writeError(w, http.StatusInternalServerError, "repair failed")
+	}
 }
 
 // decodeRepairOptions reads and validates the repair request body, rejecting

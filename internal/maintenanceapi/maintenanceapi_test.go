@@ -160,6 +160,19 @@ func TestRepairOrphanUnavailable(t *testing.T) {
 	}
 }
 
+// TestRepairPlacesUnavailable verifies ErrPlaceBackfillUnavailable maps to 503:
+// asking an instance with no mapy.com key to fill in places is a "this instance
+// cannot do that", not a server fault, and queuing the jobs anyway would leave
+// them waiting for a handler that is never registered.
+func TestRepairPlacesUnavailable(t *testing.T) {
+	t.Parallel()
+	svc := &fakeService{repairErr: maintenance.ErrPlaceBackfillUnavailable}
+	rec := do(newRouter(svc), http.MethodPost, "/maintenance/repair", `{"places":true}`)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503", rec.Code)
+	}
+}
+
 // TestRepairUnavailable verifies a nil service answers 503.
 func TestRepairUnavailable(t *testing.T) {
 	t.Parallel()

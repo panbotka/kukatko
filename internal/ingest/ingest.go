@@ -128,6 +128,10 @@ type Config struct {
 	// OCR schedules text recognition for a freshly catalogued still. A nil OCR —
 	// the feature switched off — schedules none, and the upload still succeeds.
 	OCR OCREnqueuer
+	// Places schedules the reverse geocode of a freshly catalogued photo that
+	// carries coordinates. A nil Places — no mapy.com key configured — schedules
+	// none, and the upload still succeeds.
+	Places PlacesEnqueuer
 	// Duplicate gates and tunes near-duplicate warnings.
 	Duplicate config.DuplicateConfig
 	// MaxFileSize caps a single uploaded file in bytes; 0 means unlimited.
@@ -152,6 +156,7 @@ type Service struct {
 	enqueuer    JobEnqueuer
 	sidecar     SidecarEnqueuer
 	ocr         OCREnqueuer
+	places      PlacesEnqueuer
 	dup         config.DuplicateConfig
 	maxFileSize int64
 	maxPixels   int64
@@ -171,6 +176,7 @@ func New(cfg Config) *Service {
 		enqueuer:    enq,
 		sidecar:     cfg.Sidecar,
 		ocr:         cfg.OCR,
+		places:      cfg.Places,
 		dup:         cfg.Duplicate,
 		maxFileSize: cfg.MaxFileSize,
 		maxPixels:   cfg.MaxPixels,
@@ -517,12 +523,36 @@ func (s *Service) generateThumbnails(ctx context.Context, photo photos.Photo) []
 	return nil
 }
 
-// enqueueJobs schedules the image-embedding, face-detection, text-recognition and
-// metadata-sidecar jobs, reporting a warning per failed enqueue. With the default
-// NopEnqueuer the first two always succeed; a nil OCR or Sidecar skips its own.
+// enqueueJobs schedules the post-ingest work that applies to photo — see
+// scheduledJobs for which that is — reporting a warning per failed enqueue rather
+// than failing the upload: every one of these jobs is regenerable work that a
+// backfill can schedule again, and none of it is worth losing a catalogued photo
+// over.
+func (s *Service) enqueueJobs(ctx context.Context, photo photos.Photo) []Warning {
+	var warnings []Warning
+	for _, enqueue := range s.scheduledJobs(photo) {
+		if err := enqueue(ctx, photo.UID); err != nil {
+			warnings = append(warnings, Warning{Code: warnEnqueueFailed, Message: err.Error()})
+		}
+	}
+	return warnings
+}
+
+// scheduledJobs returns the enqueue call of every background job a freshly
+// catalogued photo earns, in the order they are scheduled. Image embedding and
+// face detection always apply; the rest are conditional, and a job whose feature
+// is switched off is left out rather than queued, because with no handler
+// registered it would wait in the queue forever.
 //
 // OCR is scheduled for stills only — a video's poster frame is deliberately not
 // read — so a clip leaves the queue exactly as it found it.
+//
+// The reverse geocode is scheduled only for a photo that actually carries
+// coordinates: the job has nothing to look up without them, and every lookup
+// costs a metered mapy.com credit. Enqueuing it here is what makes a place appear
+// on its own after an upload; the credit budget in internal/placesjob still bounds
+// the spend, deferring a job rather than failing it when the window is exhausted,
+// so a bulk import queues its geocodes and drains them across windows.
 //
 // The sidecar is scheduled for a photo that has no curation yet on purpose: it
 // gives the photo a file from the moment it is catalogued, so a library that is
@@ -530,25 +560,21 @@ func (s *Service) generateThumbnails(ctx context.Context, photo photos.Photo) []
 // a database. The alternative — wait for the first edit — leaves exactly the
 // never-edited photos, the ones nobody would notice were undescribed, with
 // nothing.
-func (s *Service) enqueueJobs(ctx context.Context, photo photos.Photo) []Warning {
-	var warnings []Warning
-	if err := s.enqueuer.EnqueueImageEmbed(ctx, photo.UID); err != nil {
-		warnings = append(warnings, Warning{Code: warnEnqueueFailed, Message: err.Error()})
-	}
-	if err := s.enqueuer.EnqueueFaceDetect(ctx, photo.UID); err != nil {
-		warnings = append(warnings, Warning{Code: warnEnqueueFailed, Message: err.Error()})
+func (s *Service) scheduledJobs(photo photos.Photo) []func(context.Context, string) error {
+	scheduled := []func(context.Context, string) error{
+		s.enqueuer.EnqueueImageEmbed,
+		s.enqueuer.EnqueueFaceDetect,
 	}
 	if s.ocr != nil && photo.MediaType != photos.MediaVideo {
-		if err := s.ocr.EnqueueOCR(ctx, photo.UID); err != nil {
-			warnings = append(warnings, Warning{Code: warnEnqueueFailed, Message: err.Error()})
-		}
+		scheduled = append(scheduled, s.ocr.EnqueueOCR)
+	}
+	if s.places != nil && photo.Lat != nil && photo.Lng != nil {
+		scheduled = append(scheduled, s.places.EnqueuePlaces)
 	}
 	if s.sidecar != nil {
-		if err := s.sidecar.EnqueueSidecar(ctx, photo.UID); err != nil {
-			warnings = append(warnings, Warning{Code: warnEnqueueFailed, Message: err.Error()})
-		}
+		scheduled = append(scheduled, s.sidecar.EnqueueSidecar)
 	}
-	return warnings
+	return scheduled
 }
 
 // mediaMeta is the unified metadata an uploaded file contributes to its

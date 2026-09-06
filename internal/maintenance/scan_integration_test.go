@@ -22,8 +22,11 @@ import (
 	"github.com/panbotka/kukatko/internal/facematch"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/maintenance"
+	"github.com/panbotka/kukatko/internal/mapy"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/places"
+	"github.com/panbotka/kukatko/internal/placesjob"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/thumbjob"
@@ -62,6 +65,15 @@ func (stubClient) ImageOCR(context.Context, io.Reader, float64) (embedding.OCRRe
 
 func (stubClient) Healthy(context.Context) bool { return true }
 
+// stubGeocoder is a stand-in mapy.com client. The place paths under test only
+// list and enqueue — they never geocode — so it is never called; it exists
+// because placesjob.New requires a geocoder.
+type stubGeocoder struct{}
+
+func (stubGeocoder) ReverseGeocode(context.Context, float64, float64) (*mapy.GeocodeResult, error) {
+	return nil, mapy.ErrNotFound
+}
+
 // diskScanner adapts backup.DiskOriginals to maintenance.DiskScanner.
 type diskScanner struct{ disk *backup.DiskOriginals }
 
@@ -87,6 +99,7 @@ type harness struct {
 	thumbs   *thumb.Thumbnailer
 	jobs     *jobs.Store
 	thumbjob *thumbjob.Service
+	places   *places.Store
 	root     string
 }
 
@@ -118,6 +131,11 @@ func newHarness(t *testing.T) *harness {
 		Source: facejob.NewStorageSource(store, 0), Enqueuer: enqueuer,
 	})
 
+	placeStore := places.NewStore(db.Pool())
+	placesSvc := placesjob.New(placesjob.Config{
+		Photos: photoStore, Places: placeStore, Geocoder: stubGeocoder{}, Enqueuer: enqueuer,
+	})
+
 	svc := maintenance.New(maintenance.Config{
 		Photos:    photoStore,
 		Vectors:   vectorStore,
@@ -130,13 +148,15 @@ func newHarness(t *testing.T) *harness {
 		FaceCache: facematch.New(facematch.Config{
 			Photos: photoStore, Faces: vectorStore, People: peopleStore,
 		}),
+		Places: placesSvc,
 	})
 	tj := thumbjob.New(thumbjob.Config{
 		Photos: photoStore, Thumbnailer: thumbnailer, Decoder: thumbjob.NewStorageDecoder(store),
 	})
 	return &harness{
 		svc: svc, photos: photoStore, vectors: vectorStore, people: peopleStore,
-		storage: store, thumbs: thumbnailer, jobs: jobStore, thumbjob: tj, root: root,
+		storage: store, thumbs: thumbnailer, jobs: jobStore, thumbjob: tj,
+		places: placeStore, root: root,
 	}
 }
 
@@ -158,8 +178,16 @@ func tinyJPEG(t *testing.T, seed uint8) []byte {
 }
 
 // storeRealPhoto stores a real JPEG original and catalogues it with its primary
-// file, returning the created photo.
+// file, returning the created photo. The photo carries no coordinates; see
+// storeRealPhotoAt for one that does.
 func (h *harness) storeRealPhoto(t *testing.T, name string, seed uint8) photos.Photo {
+	t.Helper()
+	return h.storeRealPhotoAt(t, name, seed, nil, nil)
+}
+
+// storeRealPhotoAt is storeRealPhoto with a GPS fix, the state an upload that
+// carried one leaves behind. Nil coordinates mean the photo has none.
+func (h *harness) storeRealPhotoAt(t *testing.T, name string, seed uint8, lat, lng *float64) photos.Photo {
 	t.Helper()
 	ctx := context.Background()
 	stored, err := h.storage.Store(ctx, bytes.NewReader(tinyJPEG(t, seed)),
@@ -170,7 +198,7 @@ func (h *harness) storeRealPhoto(t *testing.T, name string, seed uint8) photos.P
 	created, err := h.photos.Create(ctx, photos.Photo{
 		FileHash: stored.Hash, FilePath: stored.RelPath, FileName: name + ".jpg",
 		FileSize: stored.Size, FileMime: "image/jpeg", FileWidth: 32, FileHeight: 32,
-		FileOrientation: 1, TakenAtSource: "unknown",
+		FileOrientation: 1, TakenAtSource: "unknown", Lat: lat, Lng: lng,
 	})
 	if err != nil {
 		t.Fatalf("photos.Create(%s): %v", name, err)

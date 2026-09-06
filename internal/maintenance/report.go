@@ -36,6 +36,14 @@ type Report struct {
 	MissingFaces Finding `json:"missing_faces"`
 	// MissingPhashes are photos with no perceptual hashes yet.
 	MissingPhashes Finding `json:"missing_phashes"`
+	// MissingPlaces are live photos that carry coordinates but have no cached
+	// place yet — the reverse-geocode backlog, and the dry run of
+	// `maintenance repair --places`. A photo with no coordinates never appears
+	// here (there is nothing to look up), and neither does anything at all when
+	// no mapy.com key is configured: with geocoding off the backlog is not a gap
+	// that can be filled, so reporting it would only make the scan permanently
+	// dirty.
+	MissingPlaces Finding `json:"missing_places"`
 	// TransposedDimensions are quarter-turned photos whose file_width/file_height
 	// hold the displayed frame instead of the stored one, so every consumer that
 	// applies the orientation to them rotates a second time. Listing them is the
@@ -68,19 +76,26 @@ type Report struct {
 	SidewaysFaceDetections Finding `json:"sideways_face_detections"`
 }
 
+// findings returns every Finding in the report, so an aggregate over all of them
+// is written once rather than restated as a chain that grows with each new
+// problem class.
+func (r Report) findings() []Finding {
+	return []Finding{
+		r.MissingOriginals, r.OrphanFiles, r.MissingThumbnails, r.MissingEmbeddings,
+		r.MissingFaces, r.MissingPhashes, r.MissingPlaces, r.TransposedDimensions,
+		r.TransposedFaceBoxes, r.DuplicateFaceMarkers, r.SidewaysFaceDetections,
+	}
+}
+
 // Clean reports whether the scan found no problems at all, i.e. every Finding has
 // a zero Count.
 func (r Report) Clean() bool {
-	return r.MissingOriginals.Count == 0 &&
-		r.OrphanFiles.Count == 0 &&
-		r.MissingThumbnails.Count == 0 &&
-		r.MissingEmbeddings.Count == 0 &&
-		r.MissingFaces.Count == 0 &&
-		r.MissingPhashes.Count == 0 &&
-		r.TransposedDimensions.Count == 0 &&
-		r.TransposedFaceBoxes.Count == 0 &&
-		r.DuplicateFaceMarkers.Count == 0 &&
-		r.SidewaysFaceDetections.Count == 0
+	for _, finding := range r.findings() {
+		if finding.Count > 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // findingCollector accumulates affected identifiers while iterating, counting

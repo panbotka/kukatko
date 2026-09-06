@@ -2619,6 +2619,7 @@
       "missing_embeddings": "Photos that cannot be found by content yet",
       "missing_faces": "Photos where faces have not been looked for yet",
       "missing_phashes": "Photos with no fingerprint for finding duplicates",
+      "missing_places": "Photos with coordinates but no place",
       "problem": "What drifted",
       "count": "How many",
       "samples": "Examples",
@@ -2628,7 +2629,8 @@
         "missing_thumbnails": "The photo has no small copy for the grid, so it may load slowly or stay blank. The thumbnail repair fixes it.",
         "missing_embeddings": "Kukátko has not yet worked out what is in the photo, so searching by content — and finding similar photos — will not turn it up. It is filled in once the recognition service is available.",
         "missing_faces": "Nobody has looked for faces in this photo yet, so it will not show up under people. It is filled in once the recognition service is available.",
-        "missing_phashes": "The photo has no short fingerprint of how it looks; that is what near-identical copies are found by."
+        "missing_phashes": "The photo has no short fingerprint of how it looks; that is what near-identical copies are found by.",
+        "missing_places": "The photo knows where it was taken but has no place name yet, so it is missing from the places overview. It is filled in in the background; turning coordinates into a name costs credits, so it runs in batches and the rest waits."
       }
     },
     "repair": {
@@ -2638,12 +2640,13 @@
       "embeddings": "Work out what is in the photos that are still missing it",
       "faces": "Look for faces where nobody has looked yet",
       "phashes": "Work out the missing duplicate-finding fingerprints",
+      "places": "Work out the place for photos that have coordinates",
       "import_orphans": "Add the files the catalogue is missing",
       "run": "Start filling in",
       "running": "Starting…",
       "none": "Pick at least one.",
       "error": "It could not be started.",
-      "result": "Scheduled: thumbnails {{thumbnails}}, fingerprints {{phashes}}, photo content {{embeddings}}, faces {{faces}}; of the files outside the catalogue {{imported}} added, {{skipped}} skipped, {{failed}} failed."
+      "result": "Scheduled: thumbnails {{thumbnails}}, fingerprints {{phashes}}, photo content {{embeddings}}, faces {{faces}}, places {{places}}; of the files outside the catalogue {{imported}} added, {{skipped}} skipped, {{failed}} failed."
     },
     "jobs": {
       "title": "Background work",

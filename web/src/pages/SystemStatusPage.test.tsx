@@ -401,6 +401,7 @@ describe('SystemStatusPage', () => {
     expect(screen.getByTestId('tile-faces-unassigned')).toHaveTextContent('900')
     expect(screen.getByTestId('tile-clusters')).toHaveTextContent('7')
     expect(screen.getByTestId('tile-without-gps')).toHaveTextContent('8,000')
+    expect(screen.getByTestId('tile-without-place')).toHaveTextContent('8,100')
     expect(screen.getByTestId('tile-without-ocr')).toHaveTextContent('300')
     expect(screen.getByTestId('tile-duplicates')).toHaveTextContent('14')
     expect(screen.getByRole('link', { name: 'Groups of faces to name' })).toHaveAttribute(
@@ -414,6 +415,12 @@ describe('SystemStatusPage', () => {
     expect(screen.getByRole('link', { name: 'Without coordinates' })).toHaveAttribute(
       'href',
       '/?q=geo%3Ano',
+    )
+    // The reverse-geocode backlog is worked down by the maintenance page's
+    // "fill in the places" option, so the tile leads there rather than nowhere.
+    expect(screen.getByRole('link', { name: 'Without a place' })).toHaveAttribute(
+      'href',
+      '/maintenance',
     )
   })
 

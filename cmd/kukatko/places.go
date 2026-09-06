@@ -6,7 +6,9 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/database"
+	"github.com/panbotka/kukatko/internal/ingest"
 	"github.com/panbotka/kukatko/internal/jobs"
+	"github.com/panbotka/kukatko/internal/maintenance"
 	"github.com/panbotka/kukatko/internal/mapy"
 	"github.com/panbotka/kukatko/internal/metrics"
 	"github.com/panbotka/kukatko/internal/photos"
@@ -92,6 +94,34 @@ func buildPlacesServiceOrNil(
 		Budget:   geocodeBudgetOrNil(budget),
 		Meter:    creditMeter(reg),
 	}), nil
+}
+
+// placesEnqueuerOrNil returns the queue adapter the upload pipeline schedules
+// `places` jobs through, or a nil interface when no mapy.com key is configured —
+// the pipeline then enqueues none, which matters because with geocoding off no
+// `places` handler is registered and the job would wait in the queue forever.
+//
+// It is what makes a place appear on its own after an upload: a photo that
+// arrives with coordinates is queued for a geocode right there, instead of
+// waiting for someone to run a backfill. The spend stays bounded — the job still
+// reserves a credit from the shared window budget and is deferred, not failed,
+// when the window is empty.
+func placesEnqueuerOrNil(cfg *config.Config, enqueuer *jobs.Enqueuer) ingest.PlacesEnqueuer {
+	if cfg.Maps.MapyAPIKey == "" {
+		return nil
+	}
+	return enqueuer
+}
+
+// maintenancePlaceBackfillerOrNil returns svc as a maintenance.PlaceBackfiller,
+// or a nil interface when no places service was built, so the maintenance scan
+// reports no reverse-geocode backlog and `repair --places` refuses instead of
+// holding a typed nil.
+func maintenancePlaceBackfillerOrNil(svc *placesjob.Service) maintenance.PlaceBackfiller {
+	if svc == nil {
+		return nil
+	}
+	return svc
 }
 
 // geocodeBudgetOrNil returns budget as a placesjob.CreditBudget, or a nil

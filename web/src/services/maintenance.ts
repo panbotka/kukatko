@@ -45,6 +45,7 @@ export interface ScanReport {
   missing_embeddings: Finding
   missing_faces: Finding
   missing_phashes: Finding
+  missing_places: Finding
 }
 
 /** The opt-in repairs (`maintenance.RepairOptions`). */
@@ -54,6 +55,7 @@ export interface RepairOptions {
   faces?: boolean
   phashes?: boolean
   import_orphans?: boolean
+  places?: boolean
 }
 
 /** What each selected repair scheduled or did (`maintenance.RepairResult`). */
@@ -62,6 +64,7 @@ export interface RepairResult {
   embeddings_enqueued: number
   faces_enqueued: number
   phashes_enqueued: number
+  places_enqueued: number
   orphans_imported: number
   orphans_skipped: number
   orphans_failed: number

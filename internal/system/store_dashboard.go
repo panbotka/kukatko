@@ -23,6 +23,12 @@ import (
 //   - The two byte sums are the catalogue's own arithmetic over file_size, which
 //     is what makes them meaningful on an instance whose originals live in an
 //     object store and whose local disk therefore holds nothing to measure.
+//   - The place backlog is the same predicate as LibrarySummary.PhotosPendingGeocode
+//     and as internal/places.ListPhotosMissingPlaces: a live photo that carries
+//     coordinates and has no photo_places row. Photos with no coordinates are
+//     deliberately out — no geocode can ever give them a place, so counting them
+//     would make the tile a backlog nothing can work down. They are the tile above
+//     it, PhotosWithoutGPS.
 //   - The OCR backlog matches idx_photos_ocr_pending exactly (never OCR'd, not
 //     archived, not a video), so scheduling and reporting can never disagree
 //     about what is left.
@@ -54,7 +60,7 @@ SELECT
     (SELECT count(*) FROM photos WHERE archived_at IS NULL AND taken_at IS NULL),
     (SELECT count(*) FROM photos WHERE archived_at IS NULL AND (lat IS NULL OR lng IS NULL)),
     (SELECT count(*) FROM photos p
-        WHERE p.archived_at IS NULL
+        WHERE p.archived_at IS NULL AND p.lat IS NOT NULL AND p.lng IS NOT NULL
           AND NOT EXISTS (SELECT 1 FROM photo_places pp WHERE pp.photo_uid = p.uid)),
     (SELECT count(*) FROM photos
         WHERE ocr_at IS NULL AND archived_at IS NULL AND media_type <> 'video'),

@@ -321,7 +321,9 @@ here.
   (knihovna / koš / odvozená data), the one storage figure that is meaningful when the originals live in an
   object store; the header links on to `/stats` for the processing statistics),
   `RemainingWorkPanel` (**what is still to do**: obličeje beze jména → `/review`, shluky → `/people/clusters`,
-  bez data, bez souřadnic → `/?q=geo%3Ano`, bez místa, bez rozpoznání textu, duplicitní značky →
+  bez data, bez souřadnic → `/?q=geo%3Ano`, bez místa → `/maintenance` (the tile counts the photos that
+  *have* coordinates and no place yet, which is exactly what the maintenance page's „Určit místo u fotek se
+  souřadnicemi" option schedules), bez rozpoznání textu, duplicitní značky →
   `/duplicate-markers`, skupiny duplicit → `/duplicates`; the duplicates tile is the only one that renders
   **`—` plus "hledá se na pozadí…"** until the backend's background scan has an answer, and "zjištěno <age>"
   once it has — an unavailable scan must not read as "no duplicates"),
@@ -1871,8 +1873,9 @@ here.
   the problem, so the desktop table stays headerless), so a phone gets **one stacked card per finding**
   (`maintenance.findings.problem`/`.count`/`.samples` are the card's labels — a card has no header row to read
   the values across from); **a finding's samples are file paths and UIDs, so they live in a `TechnicalDetail`**
-  rather than in the row —, repair checkboxes (thumbnails/embeddings/faces/hashes/import of orphans — annotated
-  with the remaining count from the last check) → **Spustit opravy** (`POST /maintenance/repair`) with a result
+  rather than in the row —, repair checkboxes (thumbnails/embeddings/faces/hashes/**places**/import of orphans —
+  annotated with the remaining count from the last check; „Určit místo u fotek se souřadnicemi (N)" is where
+  the **Bez místa** tile on Stav systému leads, and N is the same number) → **Spustit opravy** (`POST /maintenance/repair`) with a result
   summary, plus the background queue state (`GET /jobs/stats` polls every 3 s) as progress; **every finding,
   the summary „drift" row and every queue state carries a quiet plain-language explanation** (without hovering) —
   `maintenance.findings.descriptions.*`, `maintenance.scan.summaryHint`, `maintenance.jobs.intro`

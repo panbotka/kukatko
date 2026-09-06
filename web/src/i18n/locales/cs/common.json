@@ -2729,6 +2729,7 @@
       "missing_embeddings": "Fotky, které zatím nejdou najít podle obsahu",
       "missing_faces": "Fotky, na kterých se ještě nehledaly obličeje",
       "missing_phashes": "Fotky bez otisku pro hledání duplikátů",
+      "missing_places": "Fotky se souřadnicemi, ale bez místa",
       "problem": "Co se rozešlo",
       "count": "Kolik",
       "samples": "Ukázky",
@@ -2738,7 +2739,8 @@
         "missing_thumbnails": "Fotka nemá zmenšeninu, kterou se ukazuje v mřížce, takže se může načítat pomalu nebo zůstat prázdná. Spraví to oprava náhledů.",
         "missing_embeddings": "Kukátko si o té fotce zatím nepřečetlo, co na ní je, takže ji hledání podle obsahu ani hledání podobných nenajde. Doplní se, jakmile bude dostupná rozpoznávací služba.",
         "missing_faces": "Na fotce se ještě nehledaly obličeje, takže se neobjeví u lidí. Doplní se, jakmile bude dostupná rozpoznávací služba.",
-        "missing_phashes": "Fotka nemá krátký otisk toho, jak vypadá; podle něj se hledají téměř shodné kopie."
+        "missing_phashes": "Fotka nemá krátký otisk toho, jak vypadá; podle něj se hledají téměř shodné kopie.",
+        "missing_places": "Fotka ví, kde byla vyfocená, ale ještě nemá jméno místa, takže se neobjeví v přehledu míst. Doplní se na pozadí; převod souřadnic na jméno se platí, takže se dělá po dávkách a zbytek počká."
       }
     },
     "repair": {
@@ -2748,12 +2750,13 @@
       "embeddings": "Přečíst, co je na fotkách, které to ještě nemají",
       "faces": "Dohledat obličeje tam, kde se ještě nehledaly",
       "phashes": "Dopočítat chybějící otisky pro hledání duplikátů",
+      "places": "Určit místo u fotek se souřadnicemi",
       "import_orphans": "Přidat do katalogu soubory, o kterých neví",
       "run": "Spustit doplnění",
       "running": "Spouštím…",
       "none": "Vyberte alespoň jednu možnost.",
       "error": "Nepovedlo se to spustit.",
-      "result": "Naplánováno: náhledy {{thumbnails}}, otisky {{phashes}}, obsah fotek {{embeddings}}, obličeje {{faces}}; ze souborů mimo katalog přidáno {{imported}}, přeskočeno {{skipped}}, nepovedlo se {{failed}}."
+      "result": "Naplánováno: náhledy {{thumbnails}}, otisky {{phashes}}, obsah fotek {{embeddings}}, obličeje {{faces}}, místa {{places}}; ze souborů mimo katalog přidáno {{imported}}, přeskočeno {{skipped}}, nepovedlo se {{failed}}."
     },
     "jobs": {
       "title": "Práce na pozadí",

@@ -51,8 +51,8 @@ configuration key both here **and** into `config.example.yaml`.
   **`maintenance nameless-subjects`** (reports — and with `--apply --undo-file` detaches — subjects whose name
   identifies nobody, the importer-minted catch-all; dry run by default, reversible via `--undo`; see below) and
   `maintenance repair` with the flags
-  `--thumbnails`/`--embeddings`/`--faces`/`--phashes`/`--import-orphans`/`--dimensions`/`--face-markers`/
-  `--sideways-faces`
+  `--thumbnails`/`--embeddings`/`--faces`/`--phashes`/`--import-orphans`/`--places`/`--dimensions`/
+  `--face-markers`/`--sideways-faces`
   (each opt-in; thumbnails/phashes enqueue `thumbnail` jobs drained by a running server's worker,
   embeddings/faces backfill, orphan import synchronously via the upload pipeline; `--dimensions` writes the
   catalogue directly — it rewrites the pixel dimensions of quarter-turned photos whose columns hold the
@@ -83,7 +83,17 @@ configuration key both here **and** into `config.example.yaml`.
   for it, printing `sideways faces re-detected=N`; the jobs **wait in the queue while the sidecar's box sleeps**,
   so N is photos scheduled, not photos re-detected. Its **dry run is `maintenance scan`** (the `sideways faces`
   line and samples), the photos' existing face rows are kept until the new detection replaces them wholesale,
-  and a photo re-detected upright drops out of the finding for good, so a re-run is a no-op;
+  and a photo re-detected upright drops out of the finding for good, so a re-run is a no-op.
+  `--places` is the reverse-geocode backfill: it enqueues a `places` job for every **live photo that carries
+  coordinates and has no cached place**, printing `places=N` in the scheduled line. Its **dry run is
+  `maintenance scan`** (the `missing places` line). It only fills the queue — every job still reserves a
+  credit from the mapy.com window budget (`maps.geocode_budget`/`maps.geocode_budget_window`) before it
+  reaches the geocoder, and a job that finds the window empty is **deferred until it refills, not failed**:
+  it burns neither a retry attempt nor a credit, so scheduling a whole library spreads the spend over
+  windows instead of overrunning the quota. On an instance with **no `maps.mapy_api_key` the flag refuses**
+  (and the scan reports no backlog), because no `places` handler is registered there and the jobs would wait
+  for ever. Since photos now earn a `places` job **at upload** (`internal/ingest`), this is a catch-up for the
+  library that predates that, not routine work;
   a no-op without any flag;
   the **retention purge of old audit logs** is separate, only via HTTP/UI, not the CLI — the maintainer calls
   `POST /api/v1/maintenance/audit/purge` `{older_than_days}` (`internal/maintenanceapi`), which deletes audit

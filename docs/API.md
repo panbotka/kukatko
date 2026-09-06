@@ -1530,17 +1530,19 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
 - **Maintenance API (`/api/v1`, `internal/maintenanceapi`, maintainer-only via `RequireMaintainer`):**
   the library's integrity check & repairs. `GET /maintenance/scan` → `Report` (counts + samples:
   `missing_originals`/`orphan_files`/`missing_thumbnails`/`missing_embeddings`/`missing_faces`/
-  `missing_phashes`/`transposed_dimensions`/`transposed_face_boxes`/`duplicate_face_markers`/
-  `sideways_face_detections` + the totals
+  `missing_phashes`/`missing_places`/`transposed_dimensions`/`transposed_face_boxes`/
+  `duplicate_face_markers`/`sideways_face_detections` + the totals
   `photos`/`files_in_db`/`originals_on_disk`);
   `POST /maintenance/repair`
-  `{thumbnails,embeddings,faces,phashes,import_orphans,dimensions,face_markers,sideways_faces}` (each opt-in)
+  `{thumbnails,embeddings,faces,phashes,import_orphans,places,dimensions,face_markers,sideways_faces}`
+  (each opt-in)
   → `RepairResult`
   with scheduling counts (`*_enqueued` + `orphans_imported/skipped/failed` +
   `dimensions_fixed`/`face_boxes_fixed`/`face_boxes_skipped`/`face_links_cleared`/
   `sideways_faces_enqueued`);
   `DisallowUnknownFields`, an empty selection →
-  400, an orphan import without an importer → 503 (`ErrOrphanImportUnavailable`). The repairs are idempotent and
+  400, an orphan import without an importer → 503 (`ErrOrphanImportUnavailable`), a place backfill with no
+  mapy.com key → 503 (`ErrPlaceBackfillUnavailable`). The repairs are idempotent and
   run through the job queue (thumbnail/pHash via the `thumbnail` job, embeddings/faces backfill), and **never
   delete originals**. `dimensions` is the exception that writes the catalogue directly, in two halves. It
   rewrites the pixel dimensions of quarter-turned photos whose columns hold the **displayed** frame instead of
@@ -1553,7 +1555,15 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   a row whose space the markers cannot establish is left **completely untouched** (`face_boxes_skipped`) so a
   later run can pick it up once the photo carries a marker to reconcile it against. `transposed_face_boxes`
   counts what would be written (per face row, sampled by photo uid), so it is the dry run of that half; every
-  write is guarded on the exact state it replaces, so a re-run is a no-op and no box is ever moved twice. `face_markers` is the other
+  write is guarded on the exact state it replaces, so a re-run is a no-op and no box is ever moved twice. `places` is the reverse-geocode
+  backfill and the counterpart of the enqueue the upload pipeline now does by itself: `missing_places` counts
+  the **live photos that carry coordinates and have no cached place** (the same predicate as
+  `LibrarySummary.photos_pending_geocode` and the dashboard's `photos_without_place`), and the repair enqueues
+  one `places` job per such photo (`places_enqueued`). It only fills the queue — each job still reserves a
+  mapy.com credit from the window budget and is **deferred until the window refills, not failed**, when the
+  budget is spent, so scheduling a whole library spreads the spend rather than overrunning the quota. With no
+  `maps.mapy_api_key` the finding is empty and the repair refuses (503), because no `places` handler is
+  registered there. `face_markers` is the other
   direct-write repair: a marker describes one region, so at most one detected face may claim it, and
   `duplicate_face_markers` (sampled by **marker uid**) counts the markers more than one face row still caches —
   the surplus links non-exclusive matching wrote, which render one person twice and mislead everything reading
@@ -1665,6 +1675,11 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `library_bytes`/`trash_bytes` are the **catalogue's** `sum(file_size)` — the number that is meaningful when
   the originals live in an object store and the server's disk (`storage`, clearly labelled as the server disk
   in the UI) holds none of them. `derived_bytes` is the one measured value, `storage.cache_bytes`.
+  `photos_without_place` is the **reverse-geocode backlog** — live photos that carry coordinates and have no
+  cached place, the same predicate as `photos_pending_geocode` and as the maintenance `missing_places`
+  finding. Photos with no coordinates are deliberately out of it (they are `photos_without_gps` and can
+  never be geocoded), which is what makes it a backlog that reaches zero and lets its tile link to the
+  maintenance page's place option.
   `remaining` is the backlogs, all cheap SQL except `duplicates`: the near-duplicate scan is far too
   expensive for a polled endpoint, so it is refreshed **in the background** (15 min TTL, 2 min timeout,
   `duplicates.Service.CountGroups`) and reported with `available` + `computed_at`; `available:false` means

@@ -143,6 +143,19 @@ type FaceBackfiller interface {
 	BackfillFaces(ctx context.Context) (int, error)
 }
 
+// PlaceBackfiller lists and schedules the reverse geocodes the library still
+// owes: the live photos that carry coordinates but have no cached place. It is
+// satisfied by *placesjob.Service. A nil backfiller is how "no mapy.com key is
+// configured" reaches the scan and the repair — the scan then reports no backlog
+// and the repair refuses with ErrPlaceBackfillUnavailable, because with no
+// `places` handler registered a queued job would wait forever.
+type PlaceBackfiller interface {
+	// MissingPlaces returns the uids of the photos the backfill would schedule.
+	MissingPlaces(ctx context.Context) ([]string, error)
+	// BackfillPlaces enqueues a `places` job per photo missing a place.
+	BackfillPlaces(ctx context.Context) (int, error)
+}
+
 // ImportOutcome classifies what happened when an orphan original was imported.
 type ImportOutcome int
 
@@ -162,8 +175,9 @@ type OrphanImporter interface {
 }
 
 // Config bundles the collaborators and tunables of a Service. Every interface is
-// required except OrphanImporter (nil disables orphan import). A non-positive
-// SampleLimit uses defaultSampleLimit.
+// required except OrphanImporter (nil disables orphan import) and Places (nil
+// disables the reverse-geocode backfill). A non-positive SampleLimit uses
+// defaultSampleLimit.
 type Config struct {
 	Photos      PhotoCatalog
 	Vectors     VectorCatalog
@@ -175,6 +189,7 @@ type Config struct {
 	Faces       FaceBackfiller
 	FaceCache   FaceCache
 	Importer    OrphanImporter
+	Places      PlaceBackfiller
 	SampleLimit int
 }
 
@@ -191,6 +206,7 @@ type Service struct {
 	faces       FaceBackfiller
 	faceCache   FaceCache
 	importer    OrphanImporter
+	places      PlaceBackfiller
 	sampleLimit int
 }
 
@@ -216,13 +232,15 @@ func New(cfg Config) *Service {
 		faces:       cfg.Faces,
 		faceCache:   cfg.FaceCache,
 		importer:    cfg.Importer,
+		places:      cfg.Places,
 		sampleLimit: limit,
 	}
 }
 
 // missingCollaborator reports whether any collaborator a scan needs is left nil in
-// cfg. OrphanImporter is deliberately absent: it is the one optional dependency
-// (nil disables the orphan-import repair).
+// cfg. OrphanImporter and PlaceBackfiller are deliberately absent: they are the
+// optional dependencies (nil disables the orphan-import and reverse-geocode
+// repairs respectively).
 func missingCollaborator(cfg Config) bool {
 	required := []any{
 		cfg.Photos, cfg.Vectors, cfg.Originals, cfg.Disk, cfg.Thumbs,
@@ -272,6 +290,10 @@ func (s *Service) Scan(ctx context.Context) (Report, error) {
 	if err != nil {
 		return Report{}, err
 	}
+	missingPlaces, err := s.scanMissingPlaces(ctx)
+	if err != nil {
+		return Report{}, err
+	}
 	return Report{
 		Photos:                 photoCount,
 		FilesInDB:              filesInDB,
@@ -282,11 +304,31 @@ func (s *Service) Scan(ctx context.Context) (Report, error) {
 		MissingEmbeddings:      derived.embeddings,
 		MissingFaces:           derived.faces,
 		MissingPhashes:         derived.phashes,
+		MissingPlaces:          missingPlaces,
 		TransposedDimensions:   dimensions,
 		TransposedFaceBoxes:    faceBoxes,
 		DuplicateFaceMarkers:   duplicateMarkers,
 		SidewaysFaceDetections: sideways,
 	}, nil
+}
+
+// scanMissingPlaces turns the live, geotagged photos with no cached place into a
+// Finding sampled by photo uid. It is the dry run of `maintenance repair
+// --places`: every uid it counts is one that repair enqueues a `places` job for.
+//
+// With no backfiller wired — no mapy.com key — it reports an empty finding rather
+// than the real backlog: nothing can geocode those photos on this instance, so
+// counting them would leave the scan permanently dirty over work no repair could
+// do.
+func (s *Service) scanMissingPlaces(ctx context.Context) (Finding, error) {
+	if s.places == nil {
+		return Finding{Samples: []string{}}, nil
+	}
+	uids, err := s.places.MissingPlaces(ctx)
+	if err != nil {
+		return Finding{}, fmt.Errorf("maintenance: listing photos missing places: %w", err)
+	}
+	return findingFrom(uids, s.sampleLimit), nil
 }
 
 // scanSidewaysDetections turns the quarter-turned photos whose face detection ran

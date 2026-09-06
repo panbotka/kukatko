@@ -850,8 +850,8 @@ to `## Package map` in `CLAUDE.md`.
   rendition the user sees, so a caller holding an untouched original orients it (`imgconvert.Orient`) first,
   which is exactly what `internal/ingest` does and what `internal/thumbjob` gets for free by reading a
   preview. Sub-images (non-origin bounds) encode from their own pixels), `internal/ingest/`
-  (the upload/ingest pipeline: `Service` = `New(Config{Storage,Photos,Thumbnailer,Enqueuer,Duplicate,
-  MaxFileSize,MaxPixels,TempDir})` (`MaxPixels` = the same decompression-bomb cap as `thumb.max_pixels`,
+  (the upload/ingest pipeline: `Service` = `New(Config{Storage,Photos,Thumbnailer,Enqueuer,Sidecar,OCR,
+  Places,Duplicate,MaxFileSize,MaxPixels,TempDir})` (`MaxPixels` = the same decompression-bomb cap as `thumb.max_pixels`,
   applied to the pHash decode via `imgconvert.EnforcePixelBound`; a rejected oversize source becomes a
   `phash_failed` warning, the photo is still catalogued) with **`IngestFile(ctx,src,Request{Filename,UploadedBy,Sidecar})`** (the full form;
   `Ingest(ctx,src,filename,uploadedBy)` = a thin wrapper for an upload without a sidecar) `→ FileResult`
@@ -883,6 +883,16 @@ to `## Package map` in `CLAUDE.md`.
   **race**: concurrent identical uploads → one photo (storage hard-link + unique `file_hash`), the loser
   a clean duplicate; **near-dup warning** config-gated via `photos.NearestPhash`; `JobEnqueuer` =
   a TODO hook `EnqueueImageEmbed`/`EnqueueFaceDetect`, default `NopEnqueuer` until the queue exists;
+  the three **switchable** enqueuers are separate one-method interfaces (`OCREnqueuer`, `PlacesEnqueuer`,
+  `SidecarEnqueuer`), all satisfied by `jobs.Enqueuer`, and **a nil one is how "the feature is off" reaches
+  the pipeline** — with no handler registered for that type an enqueued job would wait in the queue for ever.
+  `scheduledJobs(photo)` decides which apply: embedding and faces always, `ocr` for stills only (a video's
+  poster frame is deliberately not read), **`places` only for a photo that arrived with coordinates** (nothing
+  to look up otherwise, and every lookup costs a metered mapy.com credit), `sidecar` always when the export is
+  on. The `places` enqueue is what makes an uploaded photo's place fill in **on its own** instead of waiting
+  for the maintenance backfill; the credit budget in `internal/placesjob` still bounds the spend, deferring a
+  job rather than failing it when the window is empty. A failed enqueue is a `enqueue_failed` **warning**, not
+  a failed upload — every one of these jobs is re-schedulable by a backfill;
   `API` = `NewAPI(svc, requireWrite)` + `RegisterRoutes` mounts `POST /upload` behind `RequireWrite`;
   multipart is streamed part-by-part, never the whole file in RAM),
   `internal/sidecar/`
@@ -3035,7 +3045,12 @@ to `## Package map` in `CLAUDE.md`.
   Window,ResetsAt}` feeds `GET /system/status` → `geocode` and the `kukatko_geocode_credits_remaining`/
   `_limit` gauges; one instance is built in `runServe` (`newGeocodeBudget`, nil without a mapy key) and
   shared by the job, the status service and the collector; `BackfillPlaces(ctx)` enqueues `places`
-  for every geotagged photo without a place (dedup no-op), returns the count; the payload's **`force` flag**
+  for every geotagged photo without a place (dedup no-op), returns the count, and `MissingPlaces(ctx)` is its
+  **dry run** — the same uids listed rather than enqueued, which is what the maintenance scan's
+  `missing_places` finding counts and what labels the "fill in the places" option with how much work it is.
+  Scheduling is not spending: a run over a whole library may queue thousands of jobs and the window budget
+  still lets only `Limit` of them reach mapy.com per window, **deferring** the rest (no attempt burned, no
+  credit spent) until it refills, so they drain across windows instead of overrunning the quota; the payload's **`force` flag**
   routes to `ForceGeocode(uid)`, which shares `geocode(uid,force)` with `Geocode` and differs only in not
   treating the cached place as a reason to stop, so mapy.com is asked again and the answer **replaces** the row.
   It costs a credit every time by definition, which is why nothing schedules it automatically — the upload
@@ -3175,21 +3190,31 @@ to `## Package map` in `CLAUDE.md`.
   `Enqueuer` (`EnqueueThumbnail`+`EnqueueFaceDetect`, `jobs.Enqueuer`)/`EmbedBackfiller` (`embedjob.Service`)/
   `FaceBackfiller` (`facejob.Service`)/`FaceCache` (`ClearSurplusLinks`, `facematch.Service` — which owns
   the face↔marker pairing rules the cache has to agree with)/`OrphanImporter` (optional, nil turns the
-  orphan import off) →
+  orphan import off)/`PlaceBackfiller` (`MissingPlaces`+`BackfillPlaces`, `placesjob.Service`; optional,
+  **nil = no mapy.com key**, which empties the finding and makes the repair refuse) →
   unit-testable with fakes without DB/disk/queue; `Service` = `New(Config{...,SampleLimit})`
   (panics on a nil mandatory collaborator; default `SampleLimit` 20); **`Scan(ctx)`** (read-only) returns
   `Report{Photos,FilesInDB,OriginalsOnDisk,MissingOriginals,OrphanFiles,MissingThumbnails,
-  MissingEmbeddings,MissingFaces,MissingPhashes,TransposedDimensions,TransposedFaceBoxes,
+  MissingEmbeddings,MissingFaces,MissingPhashes,MissingPlaces,TransposedDimensions,TransposedFaceBoxes,
   DuplicateFaceMarkers,SidewaysFaceDetections}` — each class is a
   `Finding{Count,Samples}`
   (a count + a limited sample of identifiers); `representativeThumbSize`=`tile_224` is the proxy for the presence of
   thumbnails, an orphan = a file on disk with no `photo_files.file_path` (the `orphanKeys` set-diff), `Report.Clean()`;
-  **`Repair(ctx,RepairOptions{Thumbnails,Embeddings,Faces,Phashes,ImportOrphans,Dimensions,FaceMarkers,
+  **`Repair(ctx,RepairOptions{Thumbnails,Embeddings,Faces,Phashes,ImportOrphans,Places,Dimensions,FaceMarkers,
   SidewaysFaces})`** (each opt-in,
   idempotent, in a fixed order) → `RepairResult` with the scheduling counts: thumbnails/phashes enqueue
   `thumbnail` jobs (`EnqueueThumbnail`), embeddings/faces call the backfill, the orphan import goes through the
   upload pipeline (a per-orphan failure is counted without aborting); `ErrOrphanImportUnavailable` when the
   import is selected without an importer.
+  **`Places`** is the reverse-geocode backfill: `MissingPlaces` is its dry run (`MissingPlaces` finding —
+  live photos carrying coordinates with no `photo_places` row, the same predicate as
+  `system.LibrarySummary.PhotosPendingGeocode` and the dashboard's `PhotosWithoutPlace`) and the repair calls
+  `BackfillPlaces` → `PlacesEnqueued`. It is a **catch-up**, not routine work: `internal/ingest` now enqueues
+  `places` at upload, so this exists for the library that predates that and for photos whose coordinates were
+  added later. It only fills the queue — the window budget still bounds what reaches mapy.com and defers the
+  rest — and with no key wired the finding is empty and the repair returns
+  `ErrPlaceBackfillUnavailable` (503 over HTTP), because no `places` handler is registered then and the jobs
+  would wait for ever.
   **`Dimensions`** is the one repair that writes the catalogue instead of enqueuing regenerable work, and it has
   two halves. For every photo `TransposedDimensions` reports it writes the file's own pair
   (`photos.RepairDimensions`, `DimensionsFixed`); then it runs the faces half over the **whole** catalogue

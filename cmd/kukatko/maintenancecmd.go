@@ -54,7 +54,7 @@ func newMaintenanceScanCmd() *cobra.Command {
 func newMaintenanceRepairCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "repair",
-		Short: "Run the selected repairs (thumbnails, embeddings, faces, phashes, orphans)",
+		Short: "Run the selected repairs (thumbnails, embeddings, faces, phashes, places, orphans)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runMaintenanceRepair(cmd)
@@ -65,6 +65,9 @@ func newMaintenanceRepairCmd() *cobra.Command {
 	cmd.Flags().Bool("faces", false, "backfill missing face detections")
 	cmd.Flags().Bool("phashes", false, "recompute missing perceptual hashes")
 	cmd.Flags().Bool("import-orphans", false, "import orphan originals on disk into the catalogue")
+	cmd.Flags().Bool("places", false,
+		"reverse-geocode the photos that carry coordinates but have no place yet; "+
+			"'maintenance scan' is its dry run")
 	// No backticks in the usage string: Cobra reads the first backquoted word as
 	// the flag's value placeholder, which would print this bool as if it took one.
 	cmd.Flags().Bool("dimensions", false,
@@ -81,8 +84,10 @@ func newMaintenanceRepairCmd() *cobra.Command {
 }
 
 // buildMaintenanceForCLI assembles a maintenance service for the CLI, wiring the
-// shared queue store, the embedding and face backfills, and the originals/disk
-// collaborators. Metrics are disabled (nil registry) for one-off CLI runs.
+// shared queue store, the embedding, face and reverse-geocode backfills, and the
+// originals/disk collaborators. Metrics are disabled (nil registry) for one-off
+// CLI runs, and so is the credit budget: the CLI only *schedules* geocodes, and
+// the worker that performs them enforces the shared budget of the running server.
 func buildMaintenanceForCLI(cfg *config.Config, db *database.DB) (*maintenance.Service, error) {
 	enqueuer := jobs.NewEnqueuer(jobs.NewStore(db.Pool()))
 	embedSvc, vectorStore, embedClient, err := buildEmbedService(cfg, db, enqueuer, nil)
@@ -93,7 +98,11 @@ func buildMaintenanceForCLI(cfg *config.Config, db *database.DB) (*maintenance.S
 	if err != nil {
 		return nil, err
 	}
-	return buildMaintenanceService(cfg, db, enqueuer, embedSvc, faceSvc, nil)
+	placesSvc, err := buildPlacesServiceOrNil(cfg, db, enqueuer, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return buildMaintenanceService(cfg, db, enqueuer, embedSvc, faceSvc, placesSvc, nil)
 }
 
 // openMaintenanceService loads the config, opens the database (applying
@@ -146,6 +155,9 @@ func printScanReport(cmd *cobra.Command, report maintenance.Report) {
 	cmd.Printf("  missing embeddings: %d\n", report.MissingEmbeddings.Count)
 	cmd.Printf("  missing faces:      %d\n", report.MissingFaces.Count)
 	cmd.Printf("  missing phashes:    %d\n", report.MissingPhashes.Count)
+	// The dry run of `repair --places`: the geotagged photos still owed a geocode.
+	// Always 0 with no mapy.com key — nothing on this instance could fill them in.
+	cmd.Printf("  missing places:     %d\n", report.MissingPlaces.Count)
 	// The dry run of `repair --dimensions`: the sample makes the affected photos
 	// inspectable before anything is rewritten.
 	cmd.Printf("  transposed dims:    %d\n", report.TransposedDimensions.Count)
@@ -185,7 +197,7 @@ func runMaintenanceRepair(cmd *cobra.Command) error {
 	}
 	if !opts.Any() {
 		cmd.Println("no repair selected; pass --thumbnails, --embeddings, --faces, --phashes, " +
-			"--import-orphans, --dimensions, --face-markers or --sideways-faces")
+			"--import-orphans, --places, --dimensions, --face-markers or --sideways-faces")
 		return nil
 	}
 	svc, cleanup, err := openMaintenanceService(cmd)
@@ -198,8 +210,9 @@ func runMaintenanceRepair(cmd *cobra.Command) error {
 	if err != nil {
 		return fmt.Errorf("running repairs: %w", err)
 	}
-	cmd.Printf("repairs scheduled: thumbnails=%d phashes=%d embeddings=%d faces=%d\n",
-		result.ThumbnailsEnqueued, result.PhashesEnqueued, result.EmbeddingsEnqueued, result.FacesEnqueued)
+	cmd.Printf("repairs scheduled: thumbnails=%d phashes=%d embeddings=%d faces=%d places=%d\n",
+		result.ThumbnailsEnqueued, result.PhashesEnqueued, result.EmbeddingsEnqueued,
+		result.FacesEnqueued, result.PlacesEnqueued)
 	cmd.Printf("orphans imported=%d skipped=%d failed=%d\n",
 		result.OrphansImported, result.OrphansSkipped, result.OrphansFailed)
 	cmd.Printf("dimensions fixed=%d face boxes fixed=%d left alone=%d\n",
@@ -220,6 +233,7 @@ func repairOptionsFromFlags(cmd *cobra.Command) (maintenance.RepairOptions, erro
 		"faces":          &opts.Faces,
 		"phashes":        &opts.Phashes,
 		"import-orphans": &opts.ImportOrphans,
+		"places":         &opts.Places,
 		"dimensions":     &opts.Dimensions,
 		"face-markers":   &opts.FaceMarkers,
 		"sideways-faces": &opts.SidewaysFaces,

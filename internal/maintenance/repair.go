@@ -13,6 +13,11 @@ import (
 // no importer is configured.
 var ErrOrphanImportUnavailable = errors.New("maintenance: orphan import not configured")
 
+// ErrPlaceBackfillUnavailable indicates a reverse-geocode repair was requested on
+// an instance with no mapy.com key: nothing would ever run the queued jobs, so
+// the repair refuses rather than filling the queue with work no handler claims.
+var ErrPlaceBackfillUnavailable = errors.New("maintenance: place geocoding not configured")
+
 // RepairOptions selects which repairs to run. Every repair is opt-in; the zero
 // value runs nothing. Thumbnail and pHash repairs enqueue jobs (processed by the
 // background worker with bounded concurrency); embedding and face repairs enqueue
@@ -29,6 +34,9 @@ type RepairOptions struct {
 	Phashes bool `json:"phashes"`
 	// ImportOrphans catalogues originals on disk that have no catalogue row.
 	ImportOrphans bool `json:"import_orphans"`
+	// Places reverse-geocodes the live photos that carry coordinates but have no
+	// cached place yet.
+	Places bool `json:"places"`
 	// Dimensions rewrites the pixel dimensions of quarter-turned photos whose
 	// columns hold the displayed frame instead of the stored one, and the faces
 	// normalised against it.
@@ -46,7 +54,8 @@ type RepairOptions struct {
 // Any reports whether at least one repair is selected.
 func (o RepairOptions) Any() bool {
 	return o.Thumbnails || o.Embeddings || o.Faces || o.Phashes ||
-		o.ImportOrphans || o.Dimensions || o.FaceMarkers || o.SidewaysFaces
+		o.ImportOrphans || o.Dimensions || o.FaceMarkers || o.SidewaysFaces ||
+		o.Places
 }
 
 // RepairResult reports what each selected repair scheduled or did. Enqueue counts
@@ -61,6 +70,11 @@ type RepairResult struct {
 	FacesEnqueued int `json:"faces_enqueued"`
 	// PhashesEnqueued is the number of pHash-recompute (thumbnail) jobs scheduled.
 	PhashesEnqueued int `json:"phashes_enqueued"`
+	// PlacesEnqueued is the number of `places` jobs scheduled. It counts photos
+	// queued for a geocode, not places resolved: the metered credit budget lets
+	// only a window's worth of them reach mapy.com at a time and defers the rest,
+	// so a large run drains over several windows.
+	PlacesEnqueued int `json:"places_enqueued"`
 	// OrphansImported is the number of orphan originals catalogued as new photos.
 	OrphansImported int `json:"orphans_imported"`
 	// OrphansSkipped is the number of orphans whose content was already catalogued.
@@ -103,6 +117,9 @@ func (s *Service) Repair(ctx context.Context, opts RepairOptions) (RepairResult,
 		return res, err
 	}
 	if err := s.repairFaces(ctx, opts, &res); err != nil {
+		return res, err
+	}
+	if err := s.repairPlaces(ctx, opts, &res); err != nil {
 		return res, err
 	}
 	if err := s.repairOrphans(ctx, opts, &res); err != nil {
@@ -349,6 +366,30 @@ func (s *Service) repairFaces(ctx context.Context, opts RepairOptions, res *Repa
 		return fmt.Errorf("maintenance: backfilling faces: %w", err)
 	}
 	res.FacesEnqueued = n
+	return nil
+}
+
+// repairPlaces enqueues a `places` job for every live, geotagged photo with no
+// cached place when selected, returning ErrPlaceBackfillUnavailable when no
+// mapy.com key is configured.
+//
+// Only the queue grows here. Each job still has to reserve a credit from the
+// window budget before it reaches mapy.com, and a job that finds the window empty
+// is deferred until it refills rather than failed — it burns neither an attempt
+// nor a credit — so scheduling the whole library cannot overspend the quota, it
+// only spreads the work across windows.
+func (s *Service) repairPlaces(ctx context.Context, opts RepairOptions, res *RepairResult) error {
+	if !opts.Places {
+		return nil
+	}
+	if s.places == nil {
+		return ErrPlaceBackfillUnavailable
+	}
+	n, err := s.places.BackfillPlaces(ctx)
+	if err != nil {
+		return fmt.Errorf("maintenance: backfilling places: %w", err)
+	}
+	res.PlacesEnqueued = n
 	return nil
 }
 
