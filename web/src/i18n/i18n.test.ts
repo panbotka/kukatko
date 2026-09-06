@@ -1,6 +1,6 @@
 import { createInstance } from 'i18next'
 import LanguageDetector from 'i18next-browser-languagedetector'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import csCommon from './locales/cs/common.json'
 import enCommon from './locales/en/common.json'
@@ -183,5 +183,30 @@ describe('default language', () => {
     await instance.changeLanguage('en')
 
     expect(window.localStorage.getItem(STORAGE_KEY)).toBe('en')
+  })
+})
+
+/**
+ * i18next advertises Locize with a `console.info` on the first init of the
+ * page unless the options say otherwise. The app's console is otherwise silent
+ * and we want to keep it that way, so the notice must never be printed.
+ */
+describe('console noise', () => {
+  beforeEach(() => {
+    // The notice is once-per-page, flagged on the global; clear it so this boot
+    // counts as the first one and would actually print without the option.
+    delete (globalThis as Record<string, unknown>).__i18next_supportNoticeShown
+  })
+
+  it('prints no support notice on init', async () => {
+    // Precondition: i18next also stays quiet under a production/opt-out env, so
+    // pin those down or this test would pass with the option gone.
+    expect(process.env.NODE_ENV).not.toBe('production')
+    expect(process.env.I18NEXT_NO_SUPPORT_NOTICE).toBeUndefined()
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+
+    await bootFreshInstance()
+
+    expect(info).not.toHaveBeenCalled()
   })
 })

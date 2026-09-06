@@ -26,6 +26,10 @@ export const resources = {
  */
 export const initOptions: InitOptions = {
   resources,
+  // i18next prints a console.info ad for Locize on every init unless told not
+  // to. Silenced in every build, dev included: a console with nothing in it is
+  // one where a real warning is visible at a glance.
+  showSupportNotice: false,
   fallbackLng: 'cs',
   supportedLngs: [...supportedLngs],
   defaultNS,

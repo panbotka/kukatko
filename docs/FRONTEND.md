@@ -5802,7 +5802,10 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   **Czech is the default**, no hard-coded UI texts — everything through `t()`. The only detector is
   `localStorage` (which `LanguageSwitcher` from `AccountPage` writes to); `navigator`/`htmlTag` are **deliberately
   not** in `detection.order`, otherwise a browser set to English would get an English UI on the first visit —
-  without a stored choice it is `fallbackLng: 'cs'` that decides. **Pluralization** via
+  without a stored choice it is `fallbackLng: 'cs'` that decides. **`showSupportNotice: false`** keeps
+  i18next's `console.info` ad for Locize out of the console — in every build, dev included, because a
+  console with nothing in it is one where a real warning is visible at a glance (guarded by the
+  `console noise` case in `i18n.test.ts`, which clears the once-per-page global flag first). **Pluralization** via
   i18next CLDR plural suffixes: count-bound strings where the noun agrees with the number have
   the forms `key_one/_few/_many/_other` (Czech) and `key_one/_other` (English) — the caller only passes
   `{ count }` (e.g. `albums.photoCount`, `clusters.size`, `bulkEdit.title`, `duplicates.memberCount`/
