@@ -3310,6 +3310,13 @@
     "confidence": "Confidence {{percent}} %",
     "photoAlt": "Photo under review",
     "faceHint": "The face under review is highlighted with a frame.",
+    "facePair": {
+      "face": "This face",
+      "zoom": "Enlarge the face under review",
+      "zoomTitle": "The face up close",
+      "zoomAlt": "The face under review, enlarged",
+      "zoomClose": "Close the enlarged face"
+    },
     "openPhoto": "Open the photo in a new tab",
     "lightbox": {
       "title": "Enlarged photo",

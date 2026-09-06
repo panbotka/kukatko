@@ -11,6 +11,7 @@ import { Icon, type IconName } from '../components/Icon'
 import { KeyboardShortcutsHelp } from '../components/KeyboardShortcutsHelp'
 import { BreatherCard, RevealCard } from '../components/review/ReviewBreather'
 import { ReviewDuplicate } from '../components/review/ReviewDuplicate'
+import { ReviewFacePair, ReviewFaceZoom } from '../components/review/ReviewFacePair'
 import { ReviewOutlier } from '../components/review/ReviewOutlier'
 import { REVIEW_PREVIEW_SIZE, ReviewPhoto } from '../components/review/ReviewPhoto'
 import {
@@ -27,7 +28,8 @@ import { useReviewSwipe } from '../hooks/useReviewSwipe'
 import { type SwipeVerdict } from '../lib/gestures'
 import { isTypingElement } from '../lib/ratingHotkeys'
 import { cardPhoto, type ReviewCard } from '../lib/reviewRounds'
-import { thumbUrl } from '../services/photos'
+import { type Bbox, type Subject } from '../services/people'
+import { type Photo, thumbUrl } from '../services/photos'
 import {
   REASON_NO_CANDIDATES,
   REASON_NO_LABELS,
@@ -391,6 +393,31 @@ function QuestionStage({ question, alt }: { question: ReviewQuestion; alt: strin
   )
 }
 
+/** What {@link ReviewFacePair} and {@link ReviewFaceZoom} are drawn from. */
+interface FacePair {
+  photo: Photo
+  bbox: Bbox
+  subject: Subject
+}
+
+/**
+ * The two pictures a face question is compared through, or `null` for every
+ * other kind. Only a `face` question gets them: a label question has no face at
+ * all, and the outlier check already shows the face large as its own stage —
+ * a second copy of it above the question would be noise.
+ *
+ * A question missing either half is treated as no pair rather than half a one.
+ * The backend always sends both for a face question (`personQuestions` fills
+ * `Subject` and `BBox` together), so this is a type-level guard, not a case the
+ * player is expected to meet.
+ */
+function facePairOf(question: ReviewQuestion | undefined): FacePair | null {
+  if (question?.kind !== 'face' || question.bbox === undefined || question.subject === undefined) {
+    return null
+  }
+  return { photo: question.photo, bbox: question.bbox.relative, subject: question.subject }
+}
+
 /**
  * What the screen is showing. The game is no longer "a question or an excuse":
  * a round ends in a card of its own, a session ends in another, and the odd card
@@ -427,7 +454,12 @@ const CONFIRM_KEYS = new Set(['Enter', ' ', 'ArrowRight'])
  * its own the moment it was given.
  *
  * A question is one plain-language sentence, the photo under it as large as the
- * room left over allows, and Ano / Ne / Nevím. The question and the buttons
+ * room left over allows, and Ano / Ne / Nevím. A question about a face carries
+ * one thing more — {@link ReviewFacePair}, the judged face cut out beside the
+ * person's own picture, because a face twenty pixels across in a group
+ * photograph is a question nobody can answer from the frame alone; tapping it
+ * opens {@link ReviewFaceZoom}, which silences the keyboard while it is up.
+ * The question and the buttons
  * always fit; the photo is what shrinks. The keyboard is the primary interface
  * (← no, → yes, Space/↓ skip, y/n, z undo, o open the photo in a new tab, Esc
  * leave) and on touch the same three answers are a swipe — right yes, left no,
@@ -511,6 +543,20 @@ export function ReviewPage() {
 
   const card: ReviewCard | undefined = game.current
   const question = card?.type === 'question' ? card.question : undefined
+  const facePair = facePairOf(question)
+
+  /**
+   * Whether the enlarged face crop is up. It lives here rather than inside the
+   * pair because the whole page has to know: while the player is examining a
+   * face, `←`/`→` must not answer the question behind the overlay.
+   */
+  const [zoomedFace, setZoomedFace] = useState(false)
+  const questionId = question?.id
+  // A new question closes the overlay — it was opened about the previous face,
+  // and an overlay left standing would keep the keyboard silenced.
+  useEffect(() => {
+    setZoomedFace(false)
+  }, [questionId])
 
   let stage: Stage
   if (leaving) {
@@ -567,38 +613,44 @@ export function ReviewPage() {
     window.open(photoDetailPath(photo.uid), '_blank', 'noopener,noreferrer')
   }, [card])
 
-  useKeyboardShortcuts({
-    ArrowLeft: () => {
-      answer('no')
+  useKeyboardShortcuts(
+    {
+      ArrowLeft: () => {
+        answer('no')
+      },
+      n: () => {
+        answer('no')
+      },
+      ArrowRight: () => {
+        answer('yes')
+      },
+      y: () => {
+        answer('yes')
+      },
+      ' ': () => {
+        answer('skip')
+      },
+      ArrowDown: () => {
+        answer('skip')
+      },
+      z: game.undo,
+      // `o` for open. It is deliberately not one of the answer keys' neighbours,
+      // and it is an addition, not a replacement — the game runs on touch too,
+      // where the corner anchor is the only way there.
+      o: openPhoto,
+      Escape: () => {
+        // Leave Escape to a react-bootstrap modal (the shortcuts help) when one
+        // is open — it closes itself.
+        if (document.querySelector('.modal.show') === null) {
+          exit()
+        }
+      },
     },
-    n: () => {
-      answer('no')
-    },
-    ArrowRight: () => {
-      answer('yes')
-    },
-    y: () => {
-      answer('yes')
-    },
-    ' ': () => {
-      answer('skip')
-    },
-    ArrowDown: () => {
-      answer('skip')
-    },
-    z: game.undo,
-    // `o` for open. It is deliberately not one of the answer keys' neighbours,
-    // and it is an addition, not a replacement — the game runs on touch too,
-    // where the corner anchor is the only way there.
-    o: openPhoto,
-    Escape: () => {
-      // Leave Escape to a react-bootstrap modal (the shortcuts help) when one
-      // is open — it closes itself.
-      if (document.querySelector('.modal.show') === null) {
-        exit()
-      }
-    },
-  })
+    // The enlarged face crop silences every one of them: the player asked to
+    // *look*, and an arrow key pressed while looking must not answer the
+    // question behind the overlay. Escape included — the dialog closes itself.
+    { enabled: !zoomedFace },
+  )
 
   // Ctrl/Cmd+Z as the familiar undo chord. The shared shortcut hook ignores
   // modifier chords by design, so this one is bound separately.
@@ -688,13 +740,31 @@ export function ReviewPage() {
   if (stage === 'question' && question !== undefined) {
     body = (
       <>
-        <section className="review-game__prompt">
-          <QuestionText question={question} />
-          <QuestionHint question={question} />
-          {/* The place check has no confidence to report: the estimator either
-              found neighbours that cluster tightly enough or refused, so there is
-              no percentage behind the guess and inventing one would be a lie. */}
-          {question.kind !== 'place' && <ConfidenceHint confidence={question.confidence} />}
+        <section
+          className={`review-game__prompt${facePair !== null ? ' review-game__prompt--pair' : ''}`}
+        >
+          <div className="review-game__prompt-text">
+            <QuestionText question={question} />
+            <QuestionHint question={question} />
+            {/* The place check has no confidence to report: the estimator either
+                found neighbours that cluster tightly enough or refused, so there is
+                no percentage behind the guess and inventing one would be a lie. */}
+            {question.kind !== 'place' && <ConfidenceHint confidence={question.confidence} />}
+          </div>
+          {/* The two pictures the question actually compares. In the prompt, not
+              on the stage: the stage is the swipe's, and the photo below still
+              carries the highlighted box for the context that settles the hard
+              cases. */}
+          {facePair !== null && (
+            <ReviewFacePair
+              photo={facePair.photo}
+              bbox={facePair.bbox}
+              subject={facePair.subject}
+              onZoom={() => {
+                setZoomedFace(true)
+              }}
+            />
+          )}
         </section>
         <main className="review-game__stage" data-testid="review-stage" {...swipe.handlers}>
           <div
@@ -903,6 +973,16 @@ export function ReviewPage() {
       )}
       {game.milestone !== null && <MilestoneBurst count={game.milestone} />}
       {body}
+      {zoomedFace && facePair !== null && (
+        <ReviewFaceZoom
+          photo={facePair.photo}
+          bbox={facePair.bbox}
+          subject={facePair.subject}
+          onClose={() => {
+            setZoomedFace(false)
+          }}
+        />
+      )}
     </div>
   )
 }

@@ -314,6 +314,79 @@ describe('ReviewPage', () => {
     expect(screen.queryByTestId('review-bbox')).toBeNull()
   })
 
+  it('shows the judged face and the person beside a face question, as their own crops', async () => {
+    queueMock.mockResolvedValue(makeQueue([faceQuestion('q1')]))
+    const { container } = renderPage()
+    await screen.findByTestId('review-question')
+
+    // Both squares are server-cut renditions of about 15 kB — a face crop of the
+    // highlighted box and the person's avatar — not crops of the whole-frame
+    // preview the stage below already pays for.
+    const pair = screen.getByTestId('review-face-pair')
+    // The face is the one inside the enlarge button; the avatar carries its own
+    // test id. Both are decorative (`alt=""`) — the caption and the question say
+    // what they are, so a screen reader is not made to repeat itself.
+    const crop = within(screen.getByTestId('review-enlarge')).getByAltText('')
+    expect(crop).toHaveAttribute(
+      'src',
+      '/api/v1/photos/p-q1/face?box=0.4000%2C0.3000%2C0.2000%2C0.2000',
+    )
+    expect(screen.getByTestId('review-face-pair-avatar')).toHaveAttribute(
+      'src',
+      '/api/v1/subjects/s-q1/avatar',
+    )
+    // The person is named under their picture, and the photograph with the
+    // highlighted box is still the stage below.
+    expect(pair).toHaveTextContent('Tomáš Kozák')
+    expect(container.querySelector('.review-photo')).toBeInTheDocument()
+
+    // The pair lives in the prompt, outside the stage: the stage carries the
+    // swipe, and a row of pictures inside it would eat the horizontal drag that
+    // answers on a phone.
+    expect(within(screen.getByTestId('review-stage')).queryByTestId('review-face-pair')).toBeNull()
+  })
+
+  it('shows no face pair on a label question — there is no face to compare', async () => {
+    queueMock.mockResolvedValue(makeQueue([labelQuestion('q1')]))
+    renderPage()
+
+    await screen.findByTestId('review-question')
+    expect(screen.queryByTestId('review-face-pair')).toBeNull()
+    expect(screen.queryByTestId('review-face-pair-avatar')).toBeNull()
+  })
+
+  it('enlarges the judged face on demand and answers nothing while it is up', async () => {
+    const user = userEvent.setup()
+    queueMock.mockResolvedValue(makeQueue([faceQuestion('q1', 'Alice'), faceQuestion('q2', 'Bob')]))
+    renderPage()
+    await screen.findByTestId('review-question')
+
+    // The crop is a real button, so the enlargement is reachable by keyboard as
+    // well as by a tap.
+    await user.click(screen.getByRole('button', { name: 'Enlarge the face under review' }))
+    const zoom = await screen.findByTestId('review-face-zoom')
+    // Cut from a full-frame `fit_*` preview, never a centre-cropped `tile_*`:
+    // the bbox is normalised against the whole frame.
+    expect(within(zoom).getByRole('img')).toHaveAttribute(
+      'src',
+      expect.stringContaining('/thumb/fit_'),
+    )
+
+    // The player asked to look, not to answer: an arrow key must not decide the
+    // question behind the overlay.
+    await user.keyboard('{ArrowRight}')
+    expect(answerMock).not.toHaveBeenCalled()
+    expect(screen.getByTestId('review-question')).toHaveTextContent('Alice')
+
+    await user.click(screen.getByRole('button', { name: 'Close' }))
+    await waitFor(() => {
+      expect(screen.queryByTestId('review-face-zoom')).toBeNull()
+    })
+    // ...and the keyboard is the player's again once it is closed.
+    await user.keyboard('{ArrowRight}')
+    expect(answerMock).toHaveBeenLastCalledWith('q1', 'yes')
+  })
+
   it('sends yes / no / skip for → ← space and advances each time', async () => {
     const user = userEvent.setup()
     queueMock.mockResolvedValue(

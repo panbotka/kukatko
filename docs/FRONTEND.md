@@ -3350,7 +3350,21 @@ here.
   concatenation; the duplicate question interpolates nothing, the two photos *are* the question)
   and the confidence `ConfidenceHint` (a muted % + a bar: context, not the answer) — **except on a place
   question**, which shows none: the estimator either found neighbours that cluster tightly or refused, so there
-  is no score behind the guess and printing one would be a lie. The two new stages:
+  is no score behind the guess and printing one would be a lie. **A face question carries two more pictures**: `ReviewFacePair` — the judged face cut out
+  (`FaceCrop`, i.e. the server's own `GET /photos/{uid}/face?box=…` rendition) beside the person's avatar
+  (`GET /subjects/{uid}/avatar`), captioned „Tahle tvář" and the person's name, so the screen reads as the
+  question itself. It exists because the photograph alone often cannot be answered: a group of thirty people is
+  393 px wide on a phone, which leaves the highlighted face about twenty of them — the rectangle says *which*
+  face and nothing about *whose*. It lives in the **prompt**, never in `.review-game__stage`: the stage carries
+  the swipe, and a row of pictures inside it would eat the horizontal drag that answers on touch. Under `md` it
+  sits between the question and the photo, from `md` up beside the question (`.review-game__prompt--pair`, the
+  text in `.review-game__prompt-text`); a landscape phone shrinks the squares with the rest of the chrome.
+  Tapping the crop (an `EnlargeButton`, so it is reachable by keyboard too) opens **`ReviewFaceZoom`**, the face
+  filling a dialog with the same rectangle drawn inside it — and while it is up the page passes
+  `enabled: false` to its own `useKeyboardShortcuts`, because a player who asked to *look* must not answer with
+  an arrow key by accident (Esc closes the dialog, which is react-bootstrap's own handling). The label, place
+  and duplicate kinds show no pair — there is no face to compare — and neither does the outlier check, whose
+  stage is already the face large. The two new stages:
   **`ReviewDuplicate`** (`components/review/ReviewDuplicate.tsx`) = the pair **side by side** with each copy's
   file name and pixel size under it — side by side because the whole question is a comparison and a pair the
   eye has to scroll between cannot be compared, and the numbers because two exports of one shot often differ in
@@ -3765,6 +3779,14 @@ so Zpět and the Ponechat levou/obě/pravou buttons never hide under a notch or 
   down the ladder on a 404. **`fit_*` only**: the bbox is normalised against the full frame, so cropping a
   centre-cropped `tile_*` lands beside the face. The context photo is not decoration — a face out of its scene
   is how a curator mistakes one wedding for another)
+  + `ReviewFacePair` + `ReviewFaceZoom` (`ReviewFacePair.tsx`, **face questions only**: the two squares the
+  question actually compares — the judged face and the person's own picture — and the overlay a tap on the face
+  opens. Both squares are **server-cut renditions**, `FaceCrop`'s `GET /photos/{uid}/face?box=…` and
+  `subjectAvatarUrl`'s `GET /subjects/{uid}/avatar`, ~15 kB each: at 96–128 px, cropping one in the page would
+  mean fetching megapixels to paint it. A subject with no picture keeps a quiet icon, never a broken image.
+  The zoom is a **crop of a `fit_*` preview** (`padBbox` 40 % → `cropImageStyle`, the box drawn with the stage's
+  own `review-photo__box` via `boxWithinCrop`, the rung from `lib/faceSource` at the review limits, degrading on
+  a 404) rather than the 320 px chip blown up, and it is what `review.facePair.*` names)
   + `ReviewBreather` (`BreatherCard`/`RevealCard` — the two cards a round carries that **ask nothing**: a photo
   „jen pro radost" with its title and year and the reason it was picked, and the payoff of a face just confirmed
   with a link into that person's gallery. Both render the game's own three-part body, so a pause is still a full

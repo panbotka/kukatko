@@ -3446,6 +3446,13 @@
     "confidence": "Jistota {{percent}} %",
     "photoAlt": "Posuzovaná fotka",
     "faceHint": "Posuzovaná tvář je zvýrazněná rámečkem.",
+    "facePair": {
+      "face": "Tahle tvář",
+      "zoom": "Zvětšit posuzovanou tvář",
+      "zoomTitle": "Tvář zblízka",
+      "zoomAlt": "Zvětšená posuzovaná tvář",
+      "zoomClose": "Zavřít zvětšenou tvář"
+    },
     "openPhoto": "Otevřít fotku v nové záložce",
     "lightbox": {
       "title": "Zvětšená fotka",

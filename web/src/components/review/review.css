@@ -544,6 +544,185 @@
 }
 
 /* ---------------------------------------------------------------------------
+   The face question's pair: the judged face and the person it asks about.
+
+   It sits in the prompt, not in the stage: the stage carries the swipe, and a
+   row of pictures inside it would eat the horizontal drag that answers on a
+   phone. Above the photo on a phone, beside the question on a wide screen —
+   which is the same rule the whole screen follows, the text first and the photo
+   taking what is left.
+   --------------------------------------------------------------------------- */
+
+.review-face-pair {
+  /* 96–128 px: the size at which a face stops being a smudge, capped so the pair
+     never crowds out the photograph on a small phone. */
+  --kk-review-face-size: clamp(6rem, 22vw, 8rem);
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: 0.35rem;
+}
+
+.review-face-pair__item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+  max-width: calc(var(--kk-review-face-size) + 1.5rem);
+  margin: 0;
+}
+
+/* The button around the crop is stripped to nothing (`.review-enlarge`), so the
+   square keeps exactly the size its own rule gives it rather than stretching to
+   the column. */
+.review-face-pair__enlarge {
+  width: auto;
+}
+
+.review-face-pair__square {
+  width: var(--kk-review-face-size);
+  height: var(--kk-review-face-size);
+  border-radius: 0.5rem;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.review-face-pair__caption {
+  max-width: 100%;
+  font-size: 0.8rem;
+  line-height: 1.2;
+  color: var(--bs-secondary-color);
+}
+
+.review-face-pair__vs {
+  font-size: 1.25rem;
+  color: var(--bs-secondary-color);
+}
+
+/* A person the library has no picture of: a quiet stand-in, never a broken
+   image and never an invented face. */
+.review-face-pair__missing {
+  font-size: 2rem;
+  color: var(--bs-secondary-color);
+  opacity: 0.7;
+}
+
+/* On a wide screen the pair sits beside the question instead of under it: there
+   is width to spare there, and every row it does not add is a row the photo
+   keeps. */
+@media (min-width: 768px) {
+  .review-game__prompt--pair {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1.5rem;
+  }
+
+  .review-game__prompt--pair .review-game__prompt-text {
+    min-width: 0;
+  }
+
+  .review-face-pair {
+    margin-top: 0;
+  }
+}
+
+/* A landscape phone has no vertical room to spare: the pair shrinks with the
+   rest of the chrome rather than taking it from the photograph. */
+@media (max-height: 500px) {
+  .review-face-pair {
+    --kk-review-face-size: clamp(3.5rem, 14vh, 5rem);
+
+    margin-top: 0.15rem;
+  }
+}
+
+/* The enlarged crop behind the face chip.
+
+   A layer of the game's own rather than a Bootstrap dialog: `.review-game` is a
+   fixed sheet at `z-index: 1080` and the dialog band tops out at 1055, so a
+   modal opened from here would render *under* the photograph. Drawn inside the
+   game it also puts the veil above the answer buttons, so a tap meant to dismiss
+   the look cannot answer the question underneath it. */
+.review-face-zoom {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(1rem + env(safe-area-inset-top, 0px)) 1rem
+    calc(1rem + env(safe-area-inset-bottom, 0px));
+  /* The frame inside caps itself against `100cqh`, exactly as the game's stage
+     lets `ReviewStage` do — so the enlarged face fits the room that is actually
+     there rather than an estimate of it. */
+  container-type: size;
+}
+
+/* The dimmed surround, and the way out for a tap anywhere off the face. A real
+   button (stripped of every button style), so it is reachable and announced. */
+.review-face-zoom__veil {
+  position: absolute;
+  inset: 0;
+  padding: 0;
+  border: 0;
+  background: rgba(0, 0, 0, 0.85);
+  cursor: zoom-out;
+}
+
+.review-face-zoom__panel {
+  position: relative;
+  width: 100%;
+  max-width: 46rem;
+  margin: 0;
+  text-align: center;
+}
+
+/* The frame's proportions come from the crop itself (inline, from the
+   component); the image is positioned inside it by `cropImageStyle` and the
+   detector's box drawn with the stage's own rectangle, so the two readings of
+   „this face" cannot look different. The height cap is what keeps a portrait
+   crop inside a landscape phone. */
+.review-face-zoom__frame {
+  position: relative;
+  width: 100%;
+  margin-inline: auto;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.review-face-zoom__caption {
+  color: var(--bs-body-color);
+  font-size: 1rem;
+  margin: 0.5rem 0 0;
+}
+
+.review-face-zoom__close {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.4rem 0.6rem;
+  border: 0;
+  border-radius: 0.375rem;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  line-height: 1;
+}
+
+.review-face-zoom__close:hover,
+.review-face-zoom__close:focus-visible {
+  background: rgba(0, 0, 0, 0.8);
+  color: #fff;
+}
+
+/* ---------------------------------------------------------------------------
    The cards that ask nothing: the breather, the reveal, and the two summaries.
 
    They share the game's three-part body (prompt / stage / actions) or its
