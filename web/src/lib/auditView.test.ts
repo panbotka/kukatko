@@ -98,7 +98,7 @@ describe('auditTargetHref', () => {
       }),
     )
 
-    expect(href).toBe('/photos/ph8qpckcoo1vnesecdaqs3f5pv?person=suht2a&info=1')
+    expect(href).toBe('/photos/ph8qpckcoo1vnesecdaqs3f5pv?person=suht2a&panel=faces')
   })
 
   it('has nowhere to send a marker whose details name no photo', () => {
@@ -172,7 +172,7 @@ describe('auditDetailLinks', () => {
     expect(groups).toEqual([
       { key: 'photo_uid', links: [{ uid: 'ph1', href: '/photos/ph1' }] },
       { key: 'subject_uid', links: [{ uid: 'su3', href: '/people/su3' }] },
-      { key: 'marker_uid', links: [{ uid: 'mk1', href: '/photos/ph1?person=su3&info=1' }] },
+      { key: 'marker_uid', links: [{ uid: 'mk1', href: '/photos/ph1?person=su3&panel=faces' }] },
     ])
   })
 

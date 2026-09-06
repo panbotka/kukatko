@@ -1603,14 +1603,14 @@ describe('PhotoDetailPage — immersive viewer', () => {
 
       await openInfo(user)
       expect(viewer(container)).toHaveAttribute('data-panel', 'open')
-      // Deep-linkable: the open state lives in a URL param so refresh/Back behave.
-      expect(screen.getByTestId('location')).toHaveTextContent('info=1')
+      // Deep-linkable: the open panel is NAMED in a URL param so refresh/Back behave.
+      expect(screen.getByTestId('location')).toHaveTextContent('panel=info')
       expect(screen.getByRole('button', { name: 'Technical details' })).toBeInTheDocument()
 
       // Toggling again shuts it and drops the param.
       await openInfo(user)
       expect(viewer(container)).toHaveAttribute('data-panel', 'closed')
-      expect(screen.getByTestId('location')).not.toHaveTextContent('info=1')
+      expect(screen.getByTestId('location')).not.toHaveTextContent('panel=')
     })
 
     it('answers ? with the shortcuts overlay, navbar or no navbar', async () => {
@@ -1640,7 +1640,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
     })
 
     it('opens already showing when the URL asks for it (deep link / refresh)', async () => {
-      const { container } = renderPage(true, '/photos/b?sort=oldest&info=1')
+      const { container } = renderPage(true, '/photos/b?sort=oldest&panel=info')
       await screen.findByRole('heading', { name: 'Beach' })
 
       expect(viewer(container)).toHaveAttribute('data-panel', 'open')
@@ -1680,6 +1680,97 @@ describe('PhotoDetailPage — immersive viewer', () => {
       ).toBeTruthy()
       // The location map is embedded in the caption & place block.
       expect(screen.getByTestId('map')).toBeInTheDocument()
+    })
+  })
+
+  /**
+   * The drawer has three views and the URL names WHICH one is open, not merely
+   * that something is. Opening the edits or the faces and then reloading (or
+   * sharing the link, or stepping Back into it) used to come back on the
+   * metadata, because `info=1` was all the address ever said.
+   */
+  describe('which panel is open lives in the URL', () => {
+    it('names each of the three views in turn, and drops the param when shut', async () => {
+      const user = userEvent.setup()
+      const { container } = renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+      const location = screen.getByTestId('location')
+
+      await user.click(screen.getByRole('button', { name: 'Edits' }))
+      expect(location).toHaveTextContent('panel=edits')
+
+      // Switching views rewrites the one param — never leaves two of them behind.
+      await user.click(screen.getByRole('button', { name: 'Info' }))
+      expect(location).toHaveTextContent('panel=info')
+      expect(location).not.toHaveTextContent('panel=edits')
+
+      await user.click(screen.getByRole('button', { name: 'Info' }))
+      expect(viewer(container)).toHaveAttribute('data-panel', 'closed')
+      expect(location).not.toHaveTextContent('panel=')
+      // The originating list order is untouched by any of it.
+      expect(location).toHaveTextContent('sort=oldest')
+    })
+
+    it('names the faces view too, the one no address could hold before', async () => {
+      const user = userEvent.setup()
+      fetchFacesMock.mockResolvedValue(facesResponse(2))
+      renderPage()
+
+      await user.click(await screen.findByRole('button', { name: 'Show faces' }))
+      expect(screen.getByTestId('location')).toHaveTextContent('panel=faces')
+    })
+
+    it('opens the view the URL names — a reload comes back where it was', async () => {
+      // What a refresh, a shared link and Back/Forward all come down to: the
+      // address alone decides which view is up.
+      fetchFacesMock.mockResolvedValue(facesResponse(2))
+      const { container, unmount } = renderPage(true, '/photos/b?sort=oldest&panel=faces')
+      expect(await screen.findByText('Faces: 2')).toBeInTheDocument()
+      expect(viewer(container)).toHaveAttribute('data-panel', 'open')
+      // The faces view is its own view: no metadata dragged in with it.
+      expect(screen.queryByRole('button', { name: 'Technical details' })).not.toBeInTheDocument()
+      unmount()
+
+      renderPage(true, '/photos/b?sort=oldest&panel=edits')
+      expect(await screen.findByRole('button', { name: 'Rotate right' })).toBeInTheDocument()
+    })
+
+    it('opens the named view on the phone’s bottom sheet as well', async () => {
+      // The sheet is the same one drawer in a different place, so it reads the
+      // same param — a link opened on a phone lands on the same view.
+      mockViewport(true)
+      fetchFacesMock.mockResolvedValue(facesResponse(2))
+      const { container } = renderPage(true, '/photos/b?sort=oldest&panel=faces')
+
+      expect(await screen.findByText('Faces: 2')).toBeInTheDocument()
+      expect(viewer(container)).toHaveAttribute('data-panel', 'open')
+    })
+
+    it('still honours a legacy info=1 link, and rewrites it on the first change', async () => {
+      // Links live on — in mails, in the audit log, in someone's bookmarks — so
+      // the old flag keeps opening the info view; the first navigation moves it
+      // over to the new form rather than carrying both forever.
+      const user = userEvent.setup()
+      const { container } = renderPage(true, '/photos/b?sort=oldest&info=1')
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      expect(viewer(container)).toHaveAttribute('data-panel', 'open')
+      expect(screen.getByRole('button', { name: 'Technical details' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Info' })).toHaveAttribute('aria-pressed', 'true')
+
+      await user.click(screen.getByRole('button', { name: 'Edits' }))
+      const location = screen.getByTestId('location')
+      expect(location).toHaveTextContent('panel=edits')
+      expect(location).not.toHaveTextContent('info=1')
+    })
+
+    it('carries the panel, not just "open", to the neighbour', async () => {
+      fetchFacesMock.mockResolvedValue(facesResponse(2))
+      renderPage(true, '/photos/b?sort=oldest&panel=faces')
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      const next = await screen.findByRole('link', { name: 'Next photo' })
+      expect(next.getAttribute('href')).toContain('panel=faces')
     })
   })
 
@@ -1883,8 +1974,9 @@ describe('PhotoDetailPage — immersive viewer', () => {
       })
       expect(screen.getByTestId('face-overlay')).toBeInTheDocument()
       expect(screen.getByText('Faces: 2')).toBeInTheDocument()
-      // Opening it pins the drawer state into the URL, so Back/refresh behave.
-      expect(screen.getByTestId('location')).toHaveTextContent('info=1')
+      // Opening it pins the open panel into the URL — by name, so a reload comes
+      // back to the faces and not to the metadata.
+      expect(screen.getByTestId('location')).toHaveTextContent('panel=faces')
     })
 
     it('leaves the drawer shut when faces are preferred but the photo has none', async () => {
@@ -1898,7 +1990,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
       // Give the faces fetch time to resolve before asserting the drawer is shut.
       await screen.findByRole('button', { name: 'Info' })
       expect(viewer(container)).toHaveAttribute('data-panel', 'closed')
-      expect(screen.getByTestId('location')).not.toHaveTextContent('info=1')
+      expect(screen.getByTestId('location')).not.toHaveTextContent('panel=')
     })
 
     it('shows the faces on their own — activating them does not drag in the info panel', async () => {
@@ -2178,13 +2270,13 @@ describe('PhotoDetailPage — immersive viewer', () => {
       expect(searchPhotosMock.mock.calls[0][1]).toBe('fulltext')
     })
 
-    it('carries the open drawer through prev/next so it stays open while paging', async () => {
-      renderPage(true, '/photos/b?sort=oldest&info=1')
+    it('carries the open panel through prev/next so it stays open while paging', async () => {
+      renderPage(true, '/photos/b?sort=oldest&panel=info')
       await screen.findByRole('heading', { name: 'Beach' })
 
       const next = await screen.findByRole('link', { name: 'Next photo' })
       expect(next.getAttribute('href')).toContain('/photos/c')
-      expect(next.getAttribute('href')).toContain('info=1')
+      expect(next.getAttribute('href')).toContain('panel=info')
     })
 
     it('pages to the next photo with the right arrow key', async () => {
@@ -2431,7 +2523,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
     })
 
     it('steps back out of the drawer before closing the viewer with Escape', async () => {
-      renderPage(true, '/photos/b?sort=oldest&info=1')
+      renderPage(true, '/photos/b?sort=oldest&panel=info')
       await screen.findByRole('heading', { name: 'Beach' })
 
       // First Escape shuts the drawer, staying on the photo.
@@ -2439,7 +2531,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
       await waitFor(() => {
         expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/b')
       })
-      expect(screen.getByTestId('location')).not.toHaveTextContent('info=1')
+      expect(screen.getByTestId('location')).not.toHaveTextContent('panel=')
 
       // A second Escape leaves the viewer for the list.
       fireEvent.keyDown(document, { key: 'Escape' })
@@ -2565,6 +2657,98 @@ describe('PhotoDetailPage — immersive viewer', () => {
       expect(date?.textContent).toContain('2026')
       expect(date?.textContent).not.toContain('Brno')
       expect(place?.textContent).toContain('Brno')
+    })
+  })
+
+  /**
+   * The marking keys are the marking buttons: `p` / `r` / `v` press thumbs-up /
+   * thumbs-down / eye, and pressing the mark that is already set clears it. They
+   * used to only ever SET, which left the keyboard with no way to take a mark
+   * back — one hand-out (`useRating.toggleFlag`) now serves both.
+   */
+  describe('the p / r / v marking keys', () => {
+    it('sets a mark, switches to another, and clears the one already set', async () => {
+      const { container } = renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+      const bar = actionBar(container)
+
+      fireEvent.keyDown(document, { key: 'p' })
+      await waitFor(() => {
+        expect(ratePhotoMock).toHaveBeenLastCalledWith('b', { flag: 'pick' })
+      })
+      expect(within(bar).getByRole('button', { name: 'Pick' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      )
+
+      // Another key switches the mark rather than adding a second one.
+      fireEvent.keyDown(document, { key: 'r' })
+      await waitFor(() => {
+        expect(ratePhotoMock).toHaveBeenLastCalledWith('b', { flag: 'reject' })
+      })
+      expect(within(bar).getByRole('button', { name: 'Pick' })).toHaveAttribute(
+        'aria-pressed',
+        'false',
+      )
+
+      // The key of the mark that is set clears it — the button's own act.
+      fireEvent.keyDown(document, { key: 'r' })
+      await waitFor(() => {
+        expect(ratePhotoMock).toHaveBeenLastCalledWith('b', { flag: 'none' })
+      })
+      expect(within(bar).getByRole('button', { name: 'Reject' })).toHaveAttribute(
+        'aria-pressed',
+        'false',
+      )
+    })
+
+    it('clears the eye mark a photo arrived with, straight from the keyboard', async () => {
+      // The stored flag, not one this session set: `v` on an already-watched
+      // photo has to be able to take the mark off again.
+      fetchPhotoMock.mockResolvedValue(photo({ flag: 'eye' }))
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+      expect(screen.getByRole('button', { name: 'Look at later' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      )
+
+      fireEvent.keyDown(document, { key: 'v' })
+      await waitFor(() => {
+        expect(ratePhotoMock).toHaveBeenCalledWith('b', { flag: 'none' })
+      })
+      expect(screen.getByRole('button', { name: 'Look at later' })).toHaveAttribute(
+        'aria-pressed',
+        'false',
+      )
+    })
+
+    it('means exactly what the button means — key and click agree', async () => {
+      // The point of the shared handler: the same photo, the same mark, the same
+      // request, whichever way it was asked for.
+      const user = userEvent.setup()
+      const { container } = renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+      const bar = actionBar(container)
+
+      await user.click(within(bar).getByRole('button', { name: 'Pick' }))
+      await waitFor(() => {
+        expect(ratePhotoMock).toHaveBeenLastCalledWith('b', { flag: 'pick' })
+      })
+      // Clicking the active button clears it; so does its key, from the same state.
+      await user.click(within(bar).getByRole('button', { name: 'Pick' }))
+      await waitFor(() => {
+        expect(ratePhotoMock).toHaveBeenLastCalledWith('b', { flag: 'none' })
+      })
+
+      fireEvent.keyDown(document, { key: 'p' })
+      await waitFor(() => {
+        expect(ratePhotoMock).toHaveBeenLastCalledWith('b', { flag: 'pick' })
+      })
+      fireEvent.keyDown(document, { key: 'p' })
+      await waitFor(() => {
+        expect(ratePhotoMock).toHaveBeenLastCalledWith('b', { flag: 'none' })
+      })
     })
   })
 

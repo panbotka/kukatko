@@ -85,6 +85,12 @@ import {
 import { toMode } from '../lib/searchView'
 import { isFormModalOpen } from '../lib/shortcuts'
 import { readUrlState } from '../lib/urlState'
+import {
+  LEGACY_INFO_PARAM,
+  readViewerPanel,
+  type ViewerPanel,
+  writeViewerPanel,
+} from '../lib/viewerPanel'
 import { preloadUids } from '../lib/viewerPreload'
 import { isNotFound } from '../services/auth'
 import {
@@ -121,22 +127,6 @@ type State =
  * — the custom property `viewer.css` fits the turned box with.
  */
 type TurnedFigureStyle = CSSProperties & { '--kk-turn-ratio'?: string }
-
-/**
- * The special slot at the top of the info drawer, or null for none. Faces and
- * edits both want that slot (and both alter what may be drawn over the photo), so
- * this single choice — rather than a boolean each — makes them fighting over it
- * unrepresentable: at most one is active, never both.
- */
-type SidePanel = 'faces' | 'edit' | null
-
-/**
- * Which of the top bar's three view toggles owns what the drawer currently shows.
- * Shutting the drawer takes the keyboard out of it (it goes `inert`), so whatever
- * focus it held has to land somewhere — and the control that reopens the very view
- * just closed is the one place that is never a surprise.
- */
-type PanelToggle = 'info' | 'faces' | 'edit'
 
 /**
  * The immersive full-bleed photo viewer, and the `/photos/:uid` route itself.
@@ -215,11 +205,12 @@ export function PhotoDetailPage() {
     null,
   )
   const rebuilt = useThumbnailRebuild(rebuildWatch)
-  // Which special slot — if any — leads the info drawer. Seeded from the stored
-  // face-overlay choice, which is read once from localStorage and written back on
-  // every faces toggle, so it carries across photos and reloads. Faces are off by
-  // default: the photo is the content, the boxes and their panel are opt-in.
-  const [sidePanel, setSidePanel] = useState<SidePanel>(() => (readFaceOverlay() ? 'faces' : null))
+  // The stored "show the faces" choice, read once from localStorage: with no panel
+  // named in the URL it is what opens the faces view (see the auto-open effect
+  // below), and it is written back on every faces toggle, so the choice carries
+  // across photos and reloads. Faces are off by default — the photo is the
+  // content, the boxes and their panel are opt-in.
+  const facesPreferredRef = useRef(readFaceOverlay())
   // The adjustments the edit panel is working on, or null for "nothing unsaved".
   // The viewer owns them because the preview surface is the ONE photo on stage:
   // the panel reports every slider move up here, and the photo re-renders with it.
@@ -280,24 +271,25 @@ export function PhotoDetailPage() {
   // frame nobody ever sees.
   const { prime, statusOf } = useImagePreloader()
 
-  // The info drawer's open state lives in a URL param (`info`), so it is
-  // deep-linkable and survives Back/refresh. It is deliberately NOT part of the
-  // DetailView (DETAIL_DEFAULTS), so it never leaks into the neighbour params or
-  // the Back link — it is a view of THIS photo, not a filter of the list.
-  const panelOpen = searchParams.get('info') === '1'
-  const setPanelOpen = (open: boolean): void => {
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev)
-        if (open) {
-          next.set('info', '1')
-        } else {
-          next.delete('info')
-        }
-        return next
-      },
-      { replace: true },
-    )
+  // WHICH of the drawer's three views is open lives in one URL param
+  // (`panel=info|faces|edits`), so all three are deep-linkable and survive
+  // Back/refresh — a link shared while the faces were up opens the faces, not the
+  // metadata. It is deliberately NOT part of the DetailView (DETAIL_DEFAULTS), so
+  // it never leaks into the neighbour params or the Back link — it is a view of
+  // THIS photo, not a filter of the list. `null` = the drawer is shut.
+  const panel = readViewerPanel(searchParams)
+  const panelOpen = panel !== null
+
+  // Open, switch or shut the drawer. `replace`, as the open state always was:
+  // Back steps out of the viewer, it does not walk back through every panel
+  // opened along the way. A no-op is skipped so nothing rewrites the URL for
+  // nothing — except while a legacy `info=1` is still in it, which is exactly the
+  // navigation that rewrites it to the new form.
+  const setPanel = (next: ViewerPanel | null): void => {
+    if (next === panel && !searchParams.has(LEGACY_INFO_PARAM)) {
+      return
+    }
+    setSearchParams((prev) => writeViewerPanel(prev, next), { replace: true })
   }
 
   // Whether we can step back through history to restore the grid's exact scroll
@@ -323,18 +315,14 @@ export function PhotoDetailPage() {
   }, [listScrollKey, uid])
 
   // The neighbour's detail URL, carrying the originating order/scope so prev/next
-  // keeps paging the same list, plus the drawer's open state so it stays open (or
-  // shut) as you step through photos.
+  // keeps paging the same list, plus the open panel so the very view being read
+  // stays up (or the drawer stays shut) as you step through photos.
   const neighborTo = useCallback(
     (neighbor: string): string => {
-      const params = new URLSearchParams(detailQuery)
-      if (panelOpen) {
-        params.set('info', '1')
-      }
-      const query = params.toString()
+      const query = writeViewerPanel(new URLSearchParams(detailQuery), panel).toString()
       return query === '' ? `/photos/${neighbor}` : `/photos/${neighbor}?${query}`
     },
-    [detailQuery, panelOpen],
+    [detailQuery, panel],
   )
 
   // Page to a neighbour (prev/next) preserving the originating list order. Shared
@@ -472,16 +460,16 @@ export function PhotoDetailPage() {
     faces.faces.length > 0 &&
     !hasCrop(previewEdit) &&
     !hasCrop(renditionEdit)
-  const showFaces = facesAvailable && sidePanel === 'faces'
+  const showFaces = facesAvailable && panel === 'faces'
   // Edits are for stills only — the backend never re-renders a video edit, and the
   // player carries no preview surface to apply them to.
-  const showEdit = canWrite && isStill && sidePanel === 'edit'
+  const showEdit = canWrite && isStill && panel === 'edits'
   // The drawer is ONE panel showing ONE of three mutually-exclusive views: faces,
   // edits, or the metadata ("Informace"). Faces and edits are their own focused
   // views — the metadata belongs to the info view alone, so activating faces or
   // edits must NOT drag the whole info panel in with them. Info is simply "neither
-  // lead is active"; a `sidePanel` stuck on faces with no faces available (e.g.
-  // after paging to a photo with none) falls through to info rather than an empty
+  // lead is active"; a URL naming the faces on a photo with none (e.g. after
+  // paging to one, or a shared link) falls through to info rather than an empty
   // drawer.
   const showInfo = !showFaces && !showEdit
   // The info view is actually on screen only when the drawer is open on it — used
@@ -501,15 +489,15 @@ export function PhotoDetailPage() {
   const editToggleRef = useRef<HTMLButtonElement | null>(null)
   // Set by `closePanel` when the close came from inside the drawer; read and
   // cleared by the effect below, once the drawer has actually shut.
-  const returnFocusRef = useRef<PanelToggle | null>(null)
-  const shownToggle: PanelToggle = showFaces ? 'faces' : showEdit ? 'edit' : 'info'
+  const returnFocusRef = useRef<ViewerPanel | null>(null)
+  const shownToggle: ViewerPanel = showFaces ? 'faces' : showEdit ? 'edits' : 'info'
 
   // The ONE way to shut the drawer — its own ✕, the view toggles, Escape all go
   // through here — so the focus hand-off can never be forgotten by one of them.
   const closePanel = (): void => {
     const inside = panelRef.current?.contains(document.activeElement) ?? false
     returnFocusRef.current = inside ? shownToggle : null
-    setPanelOpen(false)
+    setPanel(null)
   }
 
   useEffect(() => {
@@ -518,10 +506,10 @@ export function PhotoDetailPage() {
       return
     }
     returnFocusRef.current = null
-    const toggles: Record<PanelToggle, HTMLButtonElement | null> = {
+    const toggles: Record<ViewerPanel, HTMLButtonElement | null> = {
       info: infoToggleRef.current,
       faces: facesToggleRef.current,
-      edit: editToggleRef.current,
+      edits: editToggleRef.current,
     }
     // The faces/edit toggle can be gone by the time we get here (a photo with no
     // faces, a viewer's read-only bar); the info toggle is always in the bar, so it
@@ -534,10 +522,10 @@ export function PhotoDetailPage() {
   // Faces and edits share the drawer's lead slot, so showing either one closes the
   // other; opening either opens the drawer (their panels live inside it).
   const openFaces = (): void => {
-    setSidePanel('faces')
     writeFaceOverlay(true)
+    facesPreferredRef.current = true
     setEditDraft(null)
-    setPanelOpen(true)
+    setPanel('faces')
   }
 
   // Hiding the faces closes their view: it drops the selection, the overlay and the
@@ -545,9 +533,9 @@ export function PhotoDetailPage() {
   // section of the info panel, so turning them off reveals the photo — not the
   // metadata (the info button is how you reach that).
   const toggleFaces = (): void => {
-    if (sidePanel === 'faces') {
-      setSidePanel(null)
+    if (panel === 'faces') {
       writeFaceOverlay(false)
+      facesPreferredRef.current = false
       faces.select(null)
       closePanel()
       return
@@ -568,53 +556,44 @@ export function PhotoDetailPage() {
   // info panel — discarding whatever is unsaved so the photo shows exactly what is
   // stored.
   const toggleEdit = (): void => {
-    if (sidePanel === 'edit') {
-      setSidePanel(null)
+    if (panel === 'edits') {
       setEditDraft(null)
       closePanel()
       return
     }
-    setSidePanel('edit')
     setEditDraft(null)
     faces.select(null)
-    setPanelOpen(true)
+    setPanel('edits')
   }
 
   // The info button opens the metadata view. From faces or edits it SWITCHES to the
   // info view (drops the lead, and with it the overlay/selection that only made
   // sense there); from the info view already showing, it toggles the drawer shut.
   const togglePanel = (): void => {
-    if (panelOpen && sidePanel === null) {
+    if (panel === 'info') {
       closePanel()
       return
     }
-    setSidePanel(null)
     setEditDraft(null)
     faces.select(null)
-    setPanelOpen(true)
+    setPanel('info')
   }
 
   // Honour the remembered "show faces" preference on load: once this photo's faces
-  // are known to be available, bring their panel up (the overlay and its naming
+  // are known to be available, bring their view up (the overlay and its naming
   // panel are a pair), so the stored choice opens the panel too — not just the
   // boxes over a shut drawer. It fires once, on the availability edge; the user
-  // closing the drawer afterwards is respected (`sidePanel` clears), and paging
-  // carries the drawer's open state onward in the URL.
+  // closing the drawer afterwards is respected (the preference is written back),
+  // and paging carries the open panel onward in the URL. A URL that NAMES a panel
+  // wins over the preference — a link shared on the metadata opens the metadata.
   const facesAutoOpenedRef = useRef(false)
   useEffect(() => {
-    if (facesAutoOpenedRef.current || !facesAvailable || sidePanel !== 'faces' || panelOpen) {
+    if (facesAutoOpenedRef.current || !facesAvailable || !facesPreferredRef.current || panelOpen) {
       return
     }
     facesAutoOpenedRef.current = true
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev)
-        next.set('info', '1')
-        return next
-      },
-      { replace: true },
-    )
-  }, [facesAvailable, sidePanel, panelOpen, setSearchParams])
+    setSearchParams((prev) => writeViewerPanel(prev, 'faces'), { replace: true })
+  }, [facesAvailable, panelOpen, setSearchParams])
 
   // The chrome (top bar + arrows + the phone's dock) melts away after a short idle
   // and returns on any activity — except while the drawer is open, when the actions
@@ -736,9 +715,8 @@ export function PhotoDetailPage() {
         faces.select(null)
         return
       }
-      if (panelOpen || sidePanel !== null) {
+      if (panelOpen) {
         closePanel()
-        setSidePanel(null)
         setEditDraft(null)
         return
       }
@@ -752,10 +730,12 @@ export function PhotoDetailPage() {
   const initialRating = state.status === 'ready' ? (state.photo.rating ?? 0) : 0
   const initialFlag = state.status === 'ready' ? (state.photo.flag ?? 'none') : 'none'
   const rating = useRating(uid, initialRating, initialFlag)
-  const { setRating, setFlag } = rating
+  const { setRating, toggleFlag } = rating
 
-  // Number keys 0–5 set the rating, p = pick, r = reject — but never while the
-  // user is typing in an input/textarea/contenteditable.
+  // Number keys 0–5 set the rating; p / r / v press the thumbs-up / thumbs-down /
+  // eye mark — the very act their buttons perform, so the key of the mark already
+  // set clears it. Never while the user is typing in an
+  // input/textarea/contenteditable.
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       if (event.ctrlKey || event.metaKey || event.altKey || isTypingElement(event.target)) {
@@ -774,14 +754,14 @@ export function PhotoDetailPage() {
       if (action.kind === 'rating') {
         setRating(action.value)
       } else {
-        setFlag(action.value)
+        toggleFlag(action.value)
       }
     }
     document.addEventListener('keydown', handler)
     return () => {
       document.removeEventListener('keydown', handler)
     }
-  }, [setRating, setFlag])
+  }, [setRating, toggleFlag])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -1122,7 +1102,7 @@ export function PhotoDetailPage() {
         />
         <FlagControl
           flag={rating.flag}
-          onFlag={rating.setFlag}
+          onToggle={rating.toggleFlag}
           disabled={rating.pending}
           size={narrow ? 22 : 18}
         />
@@ -1323,7 +1303,10 @@ export function PhotoDetailPage() {
             hovered={hoveredFace}
             onSelect={(faceIndex) => {
               faces.select(faceIndex)
-              setPanelOpen(true)
+              // The boxes are only ever drawn while their own view is up, so this
+              // asks for the view that is already open — and stays right for a
+              // caller that ever draws them without it.
+              setPanel('faces')
             }}
             onHover={setHoveredFace}
             readOnly={!canWrite}

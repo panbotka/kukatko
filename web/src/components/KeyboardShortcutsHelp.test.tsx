@@ -67,7 +67,9 @@ describe('KeyboardShortcutsHelp', () => {
     // The rating hotkeys, the slideshow and the review lightbox all exist in the
     // app; an overlay that omitted them would be a lie by silence.
     expect(screen.getByText('Set the star rating (0 clears it)')).toBeInTheDocument()
-    expect(screen.getByText('Mark thumbs-up / thumbs-down / eye')).toBeInTheDocument()
+    // The marks are toggles — the key of the mark already set clears it — and the
+    // sheet says so, because a key that only ever sets is a key with no undo.
+    expect(screen.getByText('Toggle thumbs-up / thumbs-down / eye')).toBeInTheDocument()
     expect(screen.getByText('Slideshow')).toBeInTheDocument()
     expect(screen.getByText('Play / pause the show')).toBeInTheDocument()
     expect(screen.getByText('Review preview')).toBeInTheDocument()

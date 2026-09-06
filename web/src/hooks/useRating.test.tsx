@@ -63,6 +63,42 @@ describe('useRating', () => {
     })
   })
 
+  it('sets a pressed mark, and switches from one mark to another', async () => {
+    rateMock.mockResolvedValue(undefined)
+    const { result } = renderHook(() => useRating('ph1', 0, 'none'))
+
+    act(() => {
+      result.current.toggleFlag('pick')
+    })
+    expect(result.current.flag).toBe('pick')
+    expect(rateMock).toHaveBeenLastCalledWith('ph1', { flag: 'pick' })
+
+    act(() => {
+      result.current.toggleFlag('reject')
+    })
+    expect(result.current.flag).toBe('reject')
+    expect(rateMock).toHaveBeenLastCalledWith('ph1', { flag: 'reject' })
+
+    await waitFor(() => {
+      expect(result.current.pending).toBe(false)
+    })
+  })
+
+  it('clears the mark that is already set — a mark is a toggle, not a radio', async () => {
+    rateMock.mockResolvedValue(undefined)
+    const { result } = renderHook(() => useRating('ph1', 0, 'pick'))
+
+    act(() => {
+      result.current.toggleFlag('pick')
+    })
+    expect(result.current.flag).toBe('none')
+    expect(rateMock).toHaveBeenCalledWith('ph1', { flag: 'none' })
+
+    await waitFor(() => {
+      expect(result.current.pending).toBe(false)
+    })
+  })
+
   it('ignores a no-op set to the current value', () => {
     rateMock.mockResolvedValue(undefined)
     const { result } = renderHook(() => useRating('ph1', 3, 'pick'))

@@ -9,10 +9,13 @@ export interface FlagControlProps {
   /** The current personal-marking flag. */
   flag: RatingFlag
   /**
-   * Called with the new flag when a button is clicked. Clicking the active flag
-   * again clears it back to `'none'`. Omit for a read-only display.
+   * Called with the mark whose button was pressed — NOT with the resulting flag.
+   * Whether that sets the mark or clears it back to `'none'` is the caller's one
+   * rule ({@link import('../../hooks/useRating').useRating}'s `toggleFlag`), so
+   * the buttons and the `p`/`r`/`v` keys can never drift apart. Omit for a
+   * read-only display.
    */
-  onFlag?: (value: RatingFlag) => void
+  onToggle?: (value: RatingFlag) => void
   /** Disables the buttons while a request is in flight. */
   disabled?: boolean
   /** Glyph size in pixels. Defaults to 16. */
@@ -75,25 +78,27 @@ const FLAG_SPECS: readonly FlagSpec[] = [
  * Three toggle buttons for the per-user personal marking — 👁 look at later,
  * 👍 pick, 👎 reject. Each button is named after the act, not the glyph, and
  * its tooltip explains the mark in one sentence. The active mark is highlighted
- * with its filled glyph and a distinct colour; clicking it again clears the
- * mark to `'none'` (the "clear" affordance). When `onFlag` is omitted the
- * control renders read-only. Purely controlled — optimistic state lives in
+ * with its filled glyph and a distinct colour; pressing it again clears the
+ * mark to `'none'` (the "clear" affordance) — this control only reports WHICH
+ * mark was pressed, and the caller's `toggleFlag` decides, which is what the
+ * `p`/`r`/`v` keys drive too. When `onToggle` is omitted the control renders
+ * read-only. Purely controlled — optimistic state lives in
  * {@link import('../../hooks/useRating').useRating}.
  */
 export function FlagControl({
   flag,
-  onFlag,
+  onToggle,
   disabled = false,
   size = 16,
   className,
 }: FlagControlProps) {
   const { t } = useTranslation()
 
-  const toggle = (value: FlagValue) => (event: MouseEvent<HTMLButtonElement>) => {
+  const press = (value: FlagValue) => (event: MouseEvent<HTMLButtonElement>) => {
     // Sibling of a tile link/button: never navigate or toggle selection.
     event.preventDefault()
     event.stopPropagation()
-    onFlag?.(flag === value ? 'none' : value)
+    onToggle?.(value)
   }
 
   return (
@@ -114,8 +119,8 @@ export function FlagControl({
             aria-pressed={active}
             aria-label={label}
             title={t(spec.hintKey)}
-            disabled={disabled || onFlag === undefined}
-            onClick={toggle(spec.value)}
+            disabled={disabled || onToggle === undefined}
+            onClick={press(spec.value)}
             style={{ fontSize: size }}
             className={`btn btn-sm p-1 lh-1 border-0 bg-transparent d-inline-flex ${
               active ? spec.activeClass : 'text-secondary'

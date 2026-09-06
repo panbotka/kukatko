@@ -178,7 +178,7 @@ describe('AuditPage', () => {
     // through the photo the details name.
     expect(await screen.findByRole('link', { name: 'mk3' })).toHaveAttribute(
       'href',
-      '/photos/ph8?person=su4&info=1',
+      '/photos/ph8?person=su4&panel=faces',
     )
   })
 

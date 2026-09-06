@@ -14,6 +14,12 @@ export interface UseRatingResult {
   setRating: (value: number) => void
   /** Sets the pick/reject flag optimistically, rolling back on failure. */
   setFlag: (value: RatingFlag) => void
+  /**
+   * Applies a *pressed* mark: it is set, or — when it is already the current one
+   * — cleared back to `'none'`. This is the rule the marking buttons and the
+   * `p`/`r`/`v` keys both go through, so the two can never mean different things.
+   */
+  toggleFlag: (value: RatingFlag) => void
 }
 
 /**
@@ -103,5 +109,15 @@ export function useRating(
     [uid, run],
   )
 
-  return { rating, flag, pending, setRating, setFlag }
+  // A mark is a toggle, not a radio: pressing the one that is already set clears
+  // it. Reading the current flag from the ref (not the render's closure) keeps a
+  // key pressed twice in the same frame honest.
+  const toggleFlag = useCallback(
+    (value: RatingFlag) => {
+      setFlag(value === flagRef.current ? 'none' : value)
+    },
+    [setFlag],
+  )
+
+  return { rating, flag, pending, setRating, setFlag, toggleFlag }
 }

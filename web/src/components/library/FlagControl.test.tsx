@@ -10,11 +10,11 @@ import { FlagControl } from './FlagControl'
 
 function renderControl(
   flag: RatingFlag,
-  onFlag: ((value: RatingFlag) => void) | undefined = vi.fn(),
+  onToggle: ((value: RatingFlag) => void) | undefined = vi.fn(),
 ) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <FlagControl flag={flag} onFlag={onFlag} />
+      <FlagControl flag={flag} onToggle={onToggle} />
     </I18nextProvider>,
   )
 }
@@ -76,31 +76,34 @@ describe('FlagControl', () => {
     )
   })
 
-  it('sets the eye flag when eye is clicked', async () => {
-    const onFlag = vi.fn()
+  it('reports the eye mark when eye is pressed', async () => {
+    const onToggle = vi.fn()
     const user = userEvent.setup()
-    renderControl('none', onFlag)
+    renderControl('none', onToggle)
 
     await user.click(screen.getByRole('button', { name: 'Look at later' }))
-    expect(onFlag).toHaveBeenCalledWith('eye')
+    expect(onToggle).toHaveBeenCalledWith('eye')
   })
 
-  it('sets the reject flag when the reject button is clicked', async () => {
-    const onFlag = vi.fn()
+  it('reports the reject mark when the reject button is pressed', async () => {
+    const onToggle = vi.fn()
     const user = userEvent.setup()
-    renderControl('none', onFlag)
+    renderControl('none', onToggle)
 
     await user.click(screen.getByRole('button', { name: 'Reject' }))
-    expect(onFlag).toHaveBeenCalledWith('reject')
+    expect(onToggle).toHaveBeenCalledWith('reject')
   })
 
-  it('clears the flag when the active flag is clicked again', async () => {
-    const onFlag = vi.fn()
+  it('reports the active mark again rather than deciding the clear itself', async () => {
+    // Pressing the mark that is already set means "clear it" — but the rule lives
+    // in `useRating.toggleFlag`, which the p/r/v keys go through too, so this
+    // control reports the press and nothing more.
+    const onToggle = vi.fn()
     const user = userEvent.setup()
-    renderControl('pick', onFlag)
+    renderControl('pick', onToggle)
 
     await user.click(screen.getByRole('button', { name: 'Pick' }))
-    expect(onFlag).toHaveBeenCalledWith('none')
+    expect(onToggle).toHaveBeenCalledWith('pick')
   })
 
   it('disables its buttons when read-only', () => {

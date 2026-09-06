@@ -1147,7 +1147,10 @@ here.
   one-sentence explanation (`rating.eyeHint`/`pickHint`/`rejectHint`), which is also what the
   library's **Označení** filter calls its values (`library.flag.eyes` = „K prohlédnutí později"),
   so the filter and the viewer agree; the stored values and the `flag:` query key are untouched.
-  A click on the active state clears it to `none`; without `onFlag` read-only; a sibling of the link → a click doesn't navigate),
+  It reports **which mark was pressed** (`onToggle`), never the resulting flag: pressing the active state
+  clears it to `none`, but that rule lives in `useRating`'s `toggleFlag`, which the `p`/`r`/`v` keys go
+  through as well, so a key and its button cannot mean different things. Without `onToggle` read-only; a
+  sibling of the link → a click doesn't navigate),
   `GridSkeleton` (a placeholder photo grid on the first load; it also mirrors the chosen density, so after
   the photos load the layout doesn't jump. The tiles are `Skeleton` blocks (the shared `.kk-skeleton` shimmer, not
   Bootstrap `.placeholder`); the `label?` prop localizes the `role="status"` message (a person's gallery says
@@ -2051,7 +2054,7 @@ here.
   **The Target column links to the thing that was edited** (`AuditTarget` + `auditTargetHref`): the UID under the
   type is a `<Link>` to `/photos|/albums|/labels/{uid}`, or `/people/{uid}` for a `subjects` target; a `markers`
   entry — a marker UID addresses no page of its own — is routed through its own `details.photo_uid` and lands on
-  `/photos/{uid}?person={subject_uid}&info=1` when the payload names a subject. A target with no detail page
+  `/photos/{uid}?person={subject_uid}&panel=faces` when the payload names a subject. A target with no detail page
   (`users`, `api_tokens`, `announcement`) keeps the plain muted UID, so the row stays scannable either way. The
   expanded block opens with the same links for the UIDs the payload itself names (`auditDetailLinks`,
   `data-testid="audit-links"`, grouped by the `<entity>_uid`/`_uids` key, cut off at `AUDIT_DETAIL_LINK_LIMIT`
@@ -2148,10 +2151,15 @@ here.
   favorite, `m` faces, `i` drawer, `s` **skrýt** (hide/unhide, editor+ only — the same handler the eye
   button calls, see below), Esc **a step back** (first the selected face, then the drawer, then
   out); rating hotkeys `0`–`5`/`p`/`r`/`v` on document (except while typing into an input or with a
-  form modal up, the same two guards the shared hook applies), and **`?`** for the shortcuts overlay —
+  form modal up, the same two guards the shared hook applies). **The three marking keys are toggles, exactly
+  like their buttons**: `p`/`r`/`v` go through `useRating`'s `toggleFlag`, so the key of the mark already set
+  clears it to `none` and another key switches — one hand-out serves the buttons and the keys, so they cannot
+  drift again (before 2026-09-06 the keys only ever SET a mark and the keyboard had no way to take one back;
+  the `?` sheet says „Přepnout palec nahoru / palec dolů / oko" accordingly), and **`?`** for the shortcuts overlay —
   the viewer is rendered outside the Layout, so it mounts its own triggerless
   `KeyboardShortcutsHelp variant="bare"`.
-  **prev/next** = `<Link replace>` `‹`/`›` carrying scope+filters from the URL (`detailQuery`) **and `info`**,
+  **prev/next** = `<Link replace>` `‹`/`›` carrying scope+filters from the URL (`detailQuery`) **and the open
+  `panel`**,
   respecting the source listing's order (`usePhotoNeighbors` over `neighborParams`+`mode` — `GET
   /photos`, or `GET /search` when the detail came from a search, in the mode `useSearchMode` resolves so a
   bookmarked `mode=hybrid` link doesn't spend the sidecar timeout on neighbours; stop at the ends).
@@ -2184,9 +2192,16 @@ here.
   place** with a fade/scale; a corner spinner glows over the shot (`photo.loadingNext`). While a neighbor is loading
   (`loadingNext = photo.uid !== uid`), faces are suppressed (photo B's boxes aren't drawn over
   A); an abort on a `uid` change cancels the leapfrogged request (the last target wins).
-  **Deep-linkable:** the open photo is in the route, **the drawer state in the `info` query param** (outside
-  `DetailView`/`DETAIL_DEFAULTS`, so it doesn't leak into the neighbors or into `backHref`), scope in the query — so Back and
-  refresh line up. The **curation loop** is `RatingStars`+`FlagControl` (per-user stars 0–5 + a personal flag
+  **Deep-linkable:** the open photo is in the route, **WHICH of the drawer's three views is open in the one
+  `panel` query param** (`panel=info|faces|edits`, absent = shut; `lib/viewerPanel` =
+  `readViewerPanel`/`writeViewerPanel`, outside `DetailView`/`DETAIL_DEFAULTS`, so it doesn't leak into the
+  neighbors or into `backHref`), scope in the query — so Back and refresh line up. It used to say only
+  *that* the drawer was open (`info=1`), so opening Úpravy or Obličeje left the address on „Informace" and a
+  reload or a shared link came back on the metadata instead of the view being read (fixed 2026-09-06). The
+  **legacy `info=1` still opens the info view** — it lives in mails, bookmarks and old audit rows — and the
+  first write of the panel state rewrites the URL to the new form (`writeViewerPanel` always drops `info`).
+  Every write is a **`replace`**, as the open state always was: Back steps out of the viewer, it does not
+  walk back through every panel opened along the way. The **curation loop** is `RatingStars`+`FlagControl` (per-user stars 0–5 + a personal flag
   Prohlédnout později/Vybrat/Zamítnout over `useRating`) and `FavoriteToggle` (shares the optimistic toggle with `f`), followed by
   **Archivovat/Vrátit z koše** (editor+ only per `canWrite`, as with bulk archiving): `archivePhoto`
   sends the open photo to the trash, `unarchivePhoto` restores it (a photo opened from `/trash` arrives already
@@ -2272,16 +2287,18 @@ here.
   registry, so the `?` help shows it too). When localStorage remembers **faces on**, the drawer
   **opens by itself on the faces panel** on load (an effect on the edge of `facesAvailable`, once), so
   the saved choice shows the panel too, not just boxes over a closed drawer; a later manual close is respected
-  and the open state continues to travel in the `info` param. The drawer is **one panel with three mutually exclusive
-  views** — faces, edits, or metadata („Informace") — driven by `sidePanel: 'faces' | 'edit' |
-  null` (`showInfo = !showFaces && !showEdit`): **faces and edits are separate views, metadata
+  and the open panel continues to travel in the `panel` param — a URL that **names** a panel wins over the
+  remembered preference, so a link shared on the metadata opens the metadata. The drawer is **one panel with
+  three mutually exclusive views** — faces, edits, or metadata („Informace") — driven by the URL's
+  `ViewerPanel: 'info' | 'faces' | 'edits' | null` (`showInfo = !showFaces && !showEdit`, so a URL naming the
+  faces on a photo that has none falls through to the metadata rather than an empty drawer): **faces and edits are separate views, metadata
   belongs only to the info view**, so turning on faces/edits **doesn't drag the whole info panel along** (previously
   the metadata was drawn beneath them — a reported bug). The **Informace** button from faces/edits **switches** to
   metadata (discards the lead and the overlay/selection), from already-shown metadata it **closes** the drawer. **Turning off**
   faces/edits **closes** the drawer (it is not "show metadata"). In the faces/edits view the header is carried by
   its own panel (`FacesPanel`/`EditPanel` have a title + close), so the generic header
-  „Informace" (`.kk-viewer__panel-head`) glows **only in the info view**. The same `sidePanel` drives the boxes and the faces
-  panel, so they can't diverge. **A crop — and only a crop — stands the whole faces UI down**
+  „Informace" (`.kk-viewer__panel-head`) glows **only in the info view**. The same `panel` value drives the
+  boxes and the faces panel, so they can't diverge. **A crop — and only a crop — stands the whole faces UI down**
   (`!hasCrop(previewEdit)` in `facesAvailable`): it leaves a frame the boxes were never measured against, so every
   frame would miss its face; the UI comes back the moment the crop is off again — and a crop still **baked into the
   rendition on stage** (`renditionEdit`, see the edit-preview contract under `EditPanel`) stands it down the same
@@ -4565,7 +4582,9 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   photo by another route as well (the `f` key in the library) holds **one** initial state, not two that have diverged;
   a resync isn't reported, that one comes from the owner; `useRating(uid,initialRating,initialFlag)` = an **optimistic** per-user
   rating (stars) + pick/reject flag over `ratePhoto` (`PUT …/rating` with only the changed field),
-  `setRating`/`setFlag` with a per-field rollback on an error, a no-op on an identical value, `pending` via an
+  `setRating`/`setFlag` with a per-field rollback on an error, a no-op on an identical value, plus
+  `toggleFlag(pressed)` = **the marking rule** (the mark already set is cleared to `none`, another one
+  switches) that `FlagControl` and the `p`/`r`/`v` keys both go through, `pending` via an
   in-flight counter, a resync on a change of `uid`/the server state (mirroring `useFavorite`);
   `useThumbSrc(uid,thumbUrl,pick?)` → `{src,failed,onError}` = **resilience against an expired signed URL**:
   the `thumb_url` in the payload may be a short-lived signed address of the media Worker (default 1 h), so a
@@ -4703,6 +4722,12 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `panBy`, `clampView` (the pan stays within `(scale-1)*box/2`, so the image can't be dragged out of the panel),
   `isZoomed`, `viewTransform`; deliberately separate from `gestures.ts` — that one is touch-only and measures against
   the viewport;
+  `viewerPanel.ts` = **which of the photo viewer's three drawer views is open, as it lives in the URL**, pure:
+  `ViewerPanel = 'info' | 'faces' | 'edits'`, `PANEL_PARAM` (`panel`), `LEGACY_INFO_PARAM` (`info`),
+  `readViewerPanel(params)` (an unknown value opens the plain photo rather than throwing, then the legacy
+  `info=1` is consulted) and `writeViewerPanel(params,panel)` (a new `URLSearchParams`, the legacy flag
+  always dropped, so the two can never disagree). One param, not a flag per view: the drawer shows exactly
+  one view, and two booleans could express a state it cannot render;
   `viewerPreload.ts` = **which images the viewer keeps warm** around the one on stage, pure and DOM-free:
   `PreloadCandidate{uid,mediaType?}`, `isPreloadable` (everything but a video — a live photo counts, what it
   shows at rest is its still) and `preloadUids(current,prev,next)` → the window, current first, deduped and

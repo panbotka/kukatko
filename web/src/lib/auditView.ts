@@ -132,9 +132,9 @@ function photoHref(photoUid: string, subjectUid: string | null): string {
   if (subjectUid === null) {
     return path
   }
-  // `person` scopes the viewer to that person and `info=1` opens the panel where
-  // the faces are named, so a face entry lands on the marker it is about.
-  return `${path}?person=${encodeURIComponent(subjectUid)}&info=1`
+  // `person` scopes the viewer to that person and `panel=faces` opens the view
+  // where the faces are named, so a face entry lands on the marker it is about.
+  return `${path}?person=${encodeURIComponent(subjectUid)}&panel=faces`
 }
 
 /** Reads a non-empty string field out of a details payload, or null. */

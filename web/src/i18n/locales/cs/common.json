@@ -1477,7 +1477,7 @@
       "info": "Zobrazit / skrýt informace",
       "hide": "Skrýt fotku z knihovny / vrátit ji zpět",
       "rating": "Nastavit hodnocení hvězdičkami (0 = zrušit)",
-      "flag": "Označit palcem nahoru / palcem dolů / okem",
+      "flag": "Přepnout palec nahoru / palec dolů / oko",
       "back": "Krok zpět: výběr, poté informační panel, poté ven na seznam"
     },
     "video": {

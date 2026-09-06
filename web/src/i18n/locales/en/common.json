@@ -1503,7 +1503,7 @@
       "info": "Show / hide info",
       "hide": "Hide the photo from the library / bring it back",
       "rating": "Set the star rating (0 clears it)",
-      "flag": "Mark thumbs-up / thumbs-down / eye",
+      "flag": "Toggle thumbs-up / thumbs-down / eye",
       "back": "Step back: the selection, then the info panel, then out to the list"
     },
     "video": {
