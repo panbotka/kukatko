@@ -245,6 +245,33 @@ describe('PhotoTile curation controls', () => {
     renderTile(photo({ media_type: 'image' }), true)
     expect(screen.getByRole('button', { name: 'Add to favorites' })).toBeInTheDocument()
   })
+
+  // On a hover-capable, fine-pointer screen the heart of a non-favourite tile is
+  // drawn only while the tile is hovered or focused, so a dense wall shows
+  // photographs instead of a disc over every one of them; a favourite keeps its
+  // filled heart. That reveal is a stylesheet rule (`styles/tokens.css`, pinned
+  // in `styles/tokens.test.ts`) which jsdom evaluates no media query for — what
+  // is checked here is the two things the rule selects on, which only the
+  // component can provide.
+  it('gives the heart the class the hover reveal selects on', () => {
+    renderTile(photo({ media_type: 'image' }), true)
+    expect(screen.getByRole('button', { name: 'Add to favorites' })).toHaveClass('kk-tile__fav')
+  })
+
+  it('states a non-favourite in aria-pressed, which is what the hiding rule matches', () => {
+    renderTile(photo({ media_type: 'image' }), true)
+    expect(screen.getByRole('button', { name: 'Add to favorites' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
+  })
+
+  it('states a favourite in aria-pressed, so its heart stays shown across the grid', () => {
+    renderTile(photo({ media_type: 'image', is_favorite: true }), true)
+    const heart = screen.getByRole('button', { name: 'Remove from favorites' })
+    expect(heart).toHaveClass('kk-tile__fav')
+    expect(heart).toHaveAttribute('aria-pressed', 'true')
+  })
 })
 
 describe('PhotoTile selection-mode rendering stability', () => {

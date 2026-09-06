@@ -355,7 +355,13 @@ export function PhotoTile({
         <FavoriteButton
           uid={photo.uid}
           favorite={photo.is_favorite ?? false}
-          className="position-absolute bottom-0 end-0 m-1"
+          // `kk-tile__fav` is the hook the stylesheet reveals on hover: on a
+          // hover-capable, fine-pointer screen a non-favourite heart is drawn
+          // only while its tile is hovered or holds focus, so a dense wall shows
+          // photographs rather than a disc over every one of them. A favourite
+          // tile keeps its filled heart (matched on `aria-pressed`, which the
+          // optimistic toggle keeps current), and touch screens are untouched.
+          className="kk-tile__fav position-absolute bottom-0 end-0 m-1"
           onChange={
             onFavoriteChange === undefined
               ? undefined

@@ -664,3 +664,77 @@ describe('TimelineScrubber wakefulness', () => {
     expect(rail).toHaveClass('is-active')
   })
 })
+
+/**
+ * A rail is a way *across* a list, so a grid that shows everything it has needs
+ * none. The regression: a nine-photo private album fits in a single row, yet the
+ * full-height scale — 2013 · 2015 · 2022 · 2024 · 2026 and a month bubble — stood
+ * at the right edge promising content to scroll to that does not exist, and on a
+ * phone it takes a lane out of the grid to do it.
+ *
+ * The wall scrolls the window (`PhotoGrid` runs Virtuoso with `useWindowScroll`),
+ * so the question is whether the document is taller than the viewport. jsdom lays
+ * nothing out and reports zero for every box, which the component reads as "not
+ * measured" rather than "nothing to scroll" — that is what keeps the rest of this
+ * file rendering a rail at all — so these cases state the geometry themselves.
+ */
+describe('TimelineScrubber on a grid that does not scroll', () => {
+  const VIEWPORT_PX = 800
+  let content = 0
+
+  /** Makes the document report `contentPx` of content in a `viewportPx` window. */
+  function stubPageGeometry(contentPx: number, viewportPx = VIEWPORT_PX): void {
+    content = contentPx
+    Object.defineProperty(document.documentElement, 'scrollHeight', {
+      configurable: true,
+      get: () => content,
+    })
+    Object.defineProperty(document.documentElement, 'clientHeight', {
+      configurable: true,
+      get: () => viewportPx,
+    })
+  }
+
+  /** Republishes the page height and tells the app the viewport changed. */
+  function resizeTo(contentPx: number): void {
+    content = contentPx
+    fireEvent(window, new Event('resize'))
+  }
+
+  afterEach(() => {
+    Reflect.deleteProperty(document.documentElement, 'scrollHeight')
+    Reflect.deleteProperty(document.documentElement, 'clientHeight')
+  })
+
+  it('renders no rail while the content fits, and brings it in when it stops fitting', async () => {
+    fetchMock.mockResolvedValue(TIMELINE)
+    // One row of photographs in an 800 px window: nothing to scroll.
+    stubPageGeometry(VIEWPORT_PX - 100)
+    renderScrubber({})
+
+    // The timeline itself loads — this is not a rail waiting on its data.
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled()
+    })
+    expect(screen.queryByRole('navigation')).toBeNull()
+
+    // Filters cleared, or another page streamed in: now the wall scrolls.
+    resizeTo(VIEWPORT_PX * 5)
+    expect(await screen.findByRole('navigation')).toBeInTheDocument()
+  })
+
+  it('drops the rail again once a resize leaves nothing to scroll', async () => {
+    fetchMock.mockResolvedValue(TIMELINE)
+    stubPageGeometry(VIEWPORT_PX * 5)
+    renderScrubber({})
+
+    await screen.findByRole('navigation')
+
+    // A window grown taller than its own content — the same state a filter that
+    // narrows the result down to one row leaves behind.
+    resizeTo(VIEWPORT_PX)
+    await waitFor(() => {
+      expect(screen.queryByRole('navigation')).toBeNull()
+    })
+  })
+})

@@ -64,3 +64,70 @@ describe('tile selection checkmark on touch', () => {
   // this control's finger target live with the app's other tap targets, in
   // `styles/tapTargets.test.ts`.
 })
+
+/**
+ * The tile's favourite heart. At the denser grid settings the library paints a
+ * plated disc over a hundred-odd thumbnails at once, each covering a good part of
+ * a ~100 px picture, so on a screen that can hover the heart follows the
+ * checkmark above: hidden at rest, revealed with its tile. What must NOT change
+ * is the touch branch — without hover, a hidden control is an unreachable one —
+ * and the state of a tile that *is* a favourite, which stays readable across the
+ * whole grid.
+ *
+ * jsdom evaluates no media queries and loads no stylesheet, so none of this is
+ * observable from a rendered tile; what a component test can pin is that the
+ * heart carries the class and the `aria-pressed` state these rules select on, and
+ * `components/library/PhotoTile.test.tsx` does exactly that.
+ */
+describe('tile favourite heart on a pointer screen', () => {
+  const css = readCss('src/styles/tokens.css')
+  const fine = ruleBody(
+    css,
+    /@media(?=[^{]*\(hover:\s*hover\))(?=[^{]*\(pointer:\s*fine\))[^{]*/,
+    /\.kk-tile__fav/,
+  )
+
+  it('hides a non-favourite heart at rest, on hover-capable fine pointers only', () => {
+    expect(fine).toBeDefined()
+    const rest = declarations(
+      ruleBody(fine ?? '', /\.kk-tile__fav\[aria-pressed='false'\]\s*/) ?? '',
+    )
+    expect(rest.get('opacity')).toBe('0')
+  })
+
+  it('reveals the heart with its tile, and keeps it in a selecting grid', () => {
+    // Every reveal below has the hiding rule's specificity or more, so the rule
+    // has to come after it to win.
+    const hidden = (fine ?? '').indexOf(".kk-tile__fav[aria-pressed='false']")
+    const shown = (fine ?? '').indexOf('.kk-tile:hover .kk-tile__fav')
+    expect(hidden).toBeGreaterThan(-1)
+    expect(shown).toBeGreaterThan(hidden)
+
+    const reveal = declarations(ruleBody(fine ?? '', /\.kk-tile:hover \.kk-tile__fav[^{]*/) ?? '')
+    expect(reveal.get('opacity')).toBe('1')
+    for (const selector of [
+      '.kk-tile:focus-within .kk-tile__fav',
+      '.kk-tile--checks .kk-tile__fav',
+    ]) {
+      expect(fine).toContain(selector)
+    }
+  })
+
+  it('never hides a favourite tile’s heart', () => {
+    // The only rule that hides one selects `aria-pressed='false'`, so a
+    // favourite — `aria-pressed='true'`, kept current by the optimistic toggle —
+    // is not matched by it at all.
+    expect(css).not.toMatch(/\.kk-tile__fav\s*\{[^}]*opacity:\s*0/)
+    expect(css).not.toContain(".kk-tile__fav[aria-pressed='true']")
+  })
+
+  it('leaves the touch branch exactly as it was', () => {
+    const touch = ruleBody(
+      css,
+      /@media(?=[^{]*\(hover:\s*none\))(?=[^{]*\(pointer:\s*coarse\))[^{]*/,
+      /\.kk-tile__check/,
+    )
+    expect(touch).toBeDefined()
+    expect(touch).not.toContain('kk-tile__fav')
+  })
+})

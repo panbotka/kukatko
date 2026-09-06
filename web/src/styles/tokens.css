@@ -865,6 +865,54 @@
   }
 }
 
+/* ---- Favourite heart on a tile ----------------------------------------
+ * The per-tile favourite toggle (`components/library/FavoriteButton`, placed by
+ * `PhotoTile`). It used to be painted on every tile at rest, which at the denser
+ * grid settings is a plated disc over a good part of each ~100 px thumbnail —
+ * a hundred hearts competing with the hundred photographs they sit on.
+ *
+ * So on a screen that can hover and is driven by a fine pointer the heart
+ * follows the selection checkmark above: hidden at rest, revealed while the tile
+ * is hovered or holds keyboard focus. A tile that IS a favourite keeps its
+ * filled heart shown at all times — that is state to read, not an action to
+ * find, and a grid whose favourites only appear under the pointer states
+ * nothing. The state is matched on `aria-pressed`, which the button already
+ * carries and the optimistic toggle keeps current, so an unfavourited tile fades
+ * its heart back out the moment the flip lands.
+ *
+ * Deliberately NOT touched:
+ *   - touch and coarse-pointer screens (no `hover`/`fine` match here at all):
+ *     without hover a hidden heart is an unreachable heart, and the phone grid
+ *     was sized for permanently visible ones (commit 190dfd8);
+ *   - a grid holding a selection (`kk-tile--checks`), where every tile's
+ *     controls are pinned so the reader can see and undo the picks.
+ *
+ * Keyboard users lose nothing: the button keeps its place in the tab order while
+ * transparent, and focusing it puts `:focus-within` on the tile, which reveals
+ * it before it is ever activated.
+ */
+@media (hover: hover) and (pointer: fine) {
+  .kk-tile__fav[aria-pressed='false'] {
+    opacity: 0;
+    transition: opacity var(--kk-duration-fast) var(--kk-ease-standard);
+  }
+
+  /* The reveals. Same specificity as the rule above for all but the first, so
+     they have to come after it. */
+  .kk-tile:hover .kk-tile__fav,
+  .kk-tile:focus-within .kk-tile__fav,
+  .kk-tile--checks .kk-tile__fav,
+  .kk-tile__fav:focus-visible {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kk-tile__fav {
+    transition: none;
+  }
+}
+
 /* ---- Subject cover affordance -----------------------------------------
  * The people/subject gallery's "set as cover" action, quietened from a loud
  * labelled button on every tile to a small icon-only disc in the tile's

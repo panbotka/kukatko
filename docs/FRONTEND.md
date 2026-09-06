@@ -793,7 +793,13 @@ here.
   not shown on touch — without a date it doesn't render); on hover the **image** zooms in discreetly
   (`scale`, inside `overflow:hidden`, no layout shift); an optional **favorite heart** overlay
   `favoritable` → `FavoriteButton` (star ratings and the pick/reject flag live **only in the photo
-  detail**, not on the tile); the heart hides in selection mode; the optional
+  detail**, not on the tile); the heart hides in selection mode; on a **hover-capable, fine-pointer**
+  screen a *non-favourite* heart is drawn only while its tile is hovered or holds focus
+  (`.kk-tile__fav` + `.kk-tile:hover`/`:focus-within` in `tokens.css`, matched on `aria-pressed` so the
+  optimistic flip keeps it current) — at density 10 the library painted a plated disc over all 108 visible
+  ~100 px thumbnails at once; a tile that **is** a favourite keeps its filled heart shown, and touch/coarse
+  pointers and a grid holding a selection (`kk-tile--checks`) are untouched, where a hidden control would be
+  an unreachable one (see `styles/tokens.test.ts`); the optional
   `onFavoriteChange(uid,favorite)` reports every flip (optimistic **and** rolled back) up to the page,
   so a list that also favorites by another route keeps **one** baseline per photo; `src` takes
   **an address from the payload** via `useThumbSrc` and **never** builds it from the UID: the square crop
@@ -883,7 +889,15 @@ here.
   year labels **never overlap** even at a year boundary (where they fall onto one line); the overlay is
   `position: fixed`, so a loading/empty timeline renders nothing and
   doesn't shift the layout; on the library only for
-  the default newest sort.
+  the default newest sort. **A grid that has nothing to scroll gets no rail either** (`usePageScrollable`
+  in `TimelineScrubber`): the wall scrolls the window (`PhotoGrid` runs Virtuoso with `useWindowScroll`), so
+  the rail is drawn only while `document.documentElement.scrollHeight` clears the viewport by more than
+  `SCROLLABLE_SLACK_PX` (2 px of rounding). A nine-photo album fits in one row, and a full-height scale of
+  years standing beside it promised a list that is not there — and on a phone took a lane out of the grid to
+  do it. Measured in a **layout** effect, so a rail with nothing to scrub is never painted, and re-measured
+  on `resize`, on a `ResizeObserver` over `document.body` (which is how a density change, a filter and
+  infinite scroll all show up) and whenever the timeline's `total` changes. A zero `scrollHeight` reads as
+  *not measured*, not as *nothing to scroll* — that is jsdom, which lays nothing out.
   **The page holds a lane open for it** (`.kukatko-page:has(.kukatko-timeline)` in `app.css`, `sm` and up).
   The rail is fixed at the viewport's right edge while the content is a Bootstrap container whose
   `max-width` steps at each breakpoint, so just above every step the container's right edge walked *under*
@@ -1140,7 +1154,8 @@ here.
   with rollback; no role gate, allowed to any logged-in user; as a tile overlay it is a sibling
   of the link, so a click doesn't navigate; an optional `onChange(favorite)` reports the flip and the
   rollback to the owning list, which is how the library's `f` shares this button's state instead of
-  keeping a second one), `RatingStars` (pure controlled 0–5 stars; a click on the current
+  keeping a second one; on a grid tile `PhotoTile` gives it `.kk-tile__fav`, the hook the hover reveal
+  above selects on), `RatingStars` (pure controlled 0–5 stars; a click on the current
   rating clears it to 0; without `onRate` a read-only display) + `FlagControl` (a pure controlled per-user
   **personal flag** — three neutral states via `Icon` bootstrap-icons: 👁 **Prohlédnout později**
   (stored `eye`, `text-info`), 👍 **Vybrat** (stored `pick`, `text-success`), 👎 **Zamítnout**

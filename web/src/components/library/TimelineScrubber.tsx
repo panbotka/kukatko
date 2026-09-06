@@ -115,6 +115,74 @@ function useGridTop(gridWrapRef: RefObject<HTMLElement | null>): number | null {
   return top
 }
 
+/**
+ * How much taller than the viewport the page has to be before it counts as
+ * scrollable. A page can end up a fraction of a pixel over its viewport from
+ * rounding alone (a fractional row height, a hairline gutter), and a rail that
+ * scrubs a single screenful is the very thing this hides.
+ */
+const SCROLLABLE_SLACK_PX = 2
+
+/**
+ * Whether the grid's scroll container actually has anything to scroll. The photo
+ * wall scrolls the window (`PhotoGrid` runs Virtuoso with `useWindowScroll`), so
+ * the container is the document: the page scrolls exactly when its content is
+ * taller than the viewport.
+ *
+ * A rail is a way *across* a list. On a nine-photo album that fits in one row
+ * there is no list to cross, yet the full-height scale of years used to stand at
+ * the right edge announcing content that is not there — and on a phone it takes
+ * a lane out of the grid to do it. So the rail is only drawn where scrolling is a
+ * thing that happens.
+ *
+ * Re-measured on everything that can change the answer: the viewport resizing,
+ * the page growing or shrinking (a density change re-lays the wall, filters and
+ * infinite scroll change how many photos it holds — both show up as the body's
+ * height, which is what the observer watches) and the timeline's own total
+ * changing, which is a fresh result arriving.
+ *
+ * The measurement runs in a layout effect, before the browser paints, so a rail
+ * that turns out to have nothing to scrub is never seen.
+ */
+function usePageScrollable(revision: number): boolean {
+  const [scrollable, setScrollable] = useState(true)
+  useLayoutEffect(() => {
+    let frame = 0
+    const measure = (): void => {
+      frame = 0
+      const doc = document.documentElement
+      const content = doc.scrollHeight
+      if (content === 0) {
+        // An environment that lays nothing out (jsdom) reports zero for every
+        // box. That is "not measured", not "nothing to scroll" — a rendered
+        // document always has some height — so leave the rail alone.
+        setScrollable(true)
+        return
+      }
+      const viewport = doc.clientHeight > 0 ? doc.clientHeight : window.innerHeight
+      setScrollable(content - viewport > SCROLLABLE_SLACK_PX)
+    }
+    const schedule = (): void => {
+      if (frame === 0) {
+        frame = window.requestAnimationFrame(measure)
+      }
+    }
+    measure()
+    window.addEventListener('resize', schedule)
+    // (ResizeObserver is absent in jsdom; the one-off measure above still runs.)
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(schedule) : null
+    observer?.observe(document.body)
+    return () => {
+      if (frame !== 0) {
+        window.cancelAnimationFrame(frame)
+      }
+      window.removeEventListener('resize', schedule)
+      observer?.disconnect()
+    }
+  }, [revision])
+  return scrollable
+}
+
 /** A month the rail asks the grid to jump to. */
 export interface TimelineJump {
   /**
@@ -189,7 +257,9 @@ export interface TimelineScrubberProps {
  * As the grid scrolls, the tick owning the visible range start is highlighted
  * and a floating bubble names its month. The rail overlays the viewport
  * (`position: fixed`), so a loading or empty timeline simply renders nothing and
- * never shifts the grid layout.
+ * never shifts the grid layout. So does a grid that has nothing to scroll: a
+ * scale of years standing beside a single row of photographs promises a list
+ * that is not there (see {@link usePageScrollable}).
  *
  * It runs whichever way its grid does. The backend returns the histogram in the
  * grid's own order, so an album read oldest-first (its resting state) gets a rail
@@ -233,6 +303,9 @@ export function TimelineScrubber({
   const { t, i18n } = useTranslation()
   const { buckets, total, status } = useTimeline(params)
   const gridTop = useGridTop(gridWrapRef)
+  // Re-measured whenever the result's size changes, on top of the resize and
+  // body-growth signals the hook watches for itself.
+  const scrollable = usePageScrollable(total)
   const coarse = useCoarsePointer()
   // The rail element is state, not a ref: its height decides how much of the
   // timeline can be drawn, so mounting it has to trigger a measuring render.
@@ -435,6 +508,11 @@ export function TimelineScrubber({
     return null
   }
   if (spanMonths(buckets) < minSpanMonths) {
+    return null
+  }
+  // Nor is there anything to scrub on a grid that already shows everything it
+  // has — see {@link usePageScrollable}.
+  if (!scrollable) {
     return null
   }
 
