@@ -32,9 +32,15 @@ vi.mock('../services/people', async (importOriginal) => {
   return { ...actual, fetchSubjects: vi.fn() }
 })
 
+// The roster asks the instance whether an approval is followed by an e-mail at
+// all, so the dialogs can say what actually happens.
+vi.mock('../services/settings', () => ({ fetchPublicSettings: vi.fn() }))
+
 const { approveUser, createUser, fetchUsers, issuePasswordReset, setUserDisabled, updateUser } =
   await import('../services/users')
 const { fetchSubjects } = await import('../services/people')
+const { fetchPublicSettings } = await import('../services/settings')
+const fetchPublicSettingsMock = vi.mocked(fetchPublicSettings)
 const fetchSubjectsMock = vi.mocked(fetchSubjects)
 const fetchUsersMock = vi.mocked(fetchUsers)
 const createUserMock = vi.mocked(createUser)
@@ -138,6 +144,12 @@ beforeEach(async () => {
   updateUserMock.mockReset()
   approveUserMock.mockReset()
   issuePasswordResetMock.mockReset()
+  fetchPublicSettingsMock.mockReset()
+  fetchPublicSettingsMock.mockResolvedValue({
+    registration_enabled: false,
+    passkeys_enabled: false,
+    mail_enabled: true,
+  })
 })
 
 afterEach(() => {
@@ -733,7 +745,7 @@ describe('UsersPage', () => {
     // The click alone changes nothing: the dialog asks first.
     expect(approveUserMock).not.toHaveBeenCalled()
     const dialog = await screen.findByRole('dialog')
-    expect(within(dialog).getByText(/will be able to sign in/)).toBeInTheDocument()
+    expect(within(dialog).getByText(/will get an e-mail about it/)).toBeInTheDocument()
 
     await actor.click(within(dialog).getByRole('button', { name: 'Approve' }))
     await waitFor(() => {
@@ -745,6 +757,26 @@ describe('UsersPage', () => {
     expect(screen.queryByText('Waiting for approval')).toBeNull()
     expect(screen.getByRole('alert')).toHaveTextContent('The account was approved.')
     expect(fetchUsersMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not promise an approval e-mail on an instance that sends none', async () => {
+    // Mail off means the no-op sender: the account hears nothing, so the dialog
+    // tells the administrator to say it themselves.
+    fetchPublicSettingsMock.mockResolvedValue({
+      registration_enabled: false,
+      passkeys_enabled: false,
+      mail_enabled: false,
+    })
+    fetchUsersMock.mockResolvedValue([user({ uid: 'u1', username: 'ada', approved_at: null })])
+    const actor = userEvent.setup()
+    renderPage()
+
+    expect(await screen.findByText('ada')).toBeInTheDocument()
+    await actor.click(screen.getByRole('button', { name: 'Approve' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(await within(dialog).findByText(/mail is switched off/i)).toBeInTheDocument()
+    expect(within(dialog).queryByText(/will get an e-mail about it/)).toBeNull()
   })
 
   it('leaves the row waiting when the approval is refused, and explains', async () => {

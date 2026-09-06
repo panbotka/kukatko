@@ -1,4 +1,4 @@
-import { usePublicSettings } from './usePublicSettings'
+import { usePublicSettings, type PublicSettingsState } from './usePublicSettings'
 
 /**
  * What this instance says about self-service registration.
@@ -13,6 +13,23 @@ import { usePublicSettings } from './usePublicSettings'
 export type RegistrationState = 'loading' | 'open' | 'closed' | 'unknown'
 
 /**
+ * Narrows an already-fetched public settings state to the registration question.
+ *
+ * A screen that needs a second public fact as well — the registration form,
+ * which also decides whether it may promise an e-mail — reads
+ * {@link usePublicSettings} once and calls this, rather than mounting two hooks
+ * that would each fetch.
+ *
+ * @param state the public settings as {@link usePublicSettings} reports them.
+ */
+export function registrationOpenFrom(state: PublicSettingsState): RegistrationState {
+  if (state.status === 'loading' || state.status === 'unknown') {
+    return state.status
+  }
+  return state.settings.registration_enabled ? 'open' : 'closed'
+}
+
+/**
  * Asks `GET /api/v1/settings/public` once whether registration is open, and
  * narrows the answer to that one question.
  *
@@ -22,9 +39,5 @@ export type RegistrationState = 'loading' | 'open' | 'closed' | 'unknown'
  * one with a sibling, so it asks the server once.
  */
 export function useRegistrationOpen(): RegistrationState {
-  const state = usePublicSettings()
-  if (state.status === 'loading' || state.status === 'unknown') {
-    return state.status
-  }
-  return state.settings.registration_enabled ? 'open' : 'closed'
+  return registrationOpenFrom(usePublicSettings())
 }

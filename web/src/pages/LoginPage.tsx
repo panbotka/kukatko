@@ -12,6 +12,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { Icon } from '../components/Icon'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import { mailEnabledFrom } from '../hooks/useMailEnabled'
 import { usePublicSettings } from '../hooks/usePublicSettings'
 import { ApiError, NetworkError } from '../services/auth'
 import { isPasskeySupported, PasskeyError, type PasskeyErrorReason } from '../services/passkeys'
@@ -41,6 +42,7 @@ function returnTo(state: LocationState | null): string {
 type LoginErrorKey =
   | 'login.errorInvalid'
   | 'login.errorPendingApproval'
+  | 'login.errorPendingApprovalNoMail'
   | 'login.errorRateLimited'
   | 'login.errorOffline'
   | 'login.errorGeneric'
@@ -79,6 +81,26 @@ const PASSKEY_ERROR_KEYS = {
   offline: 'login.errorOffline',
   generic: 'login.passkeyError.generic',
 } satisfies Record<PasskeyErrorReason, LoginErrorKey>
+
+/**
+ * Swaps the pending-approval sentence for its mail-free wording on an instance
+ * that sends no mail.
+ *
+ * The sentence is the same fact worded two ways: the account is waiting for an
+ * administrator. Only one of them ends with "and then you will get an e-mail",
+ * and an instance with `mail.enabled` off never sends one — so promising it
+ * leaves the reader waiting for a message that is not coming. Everything else
+ * passes through untouched.
+ *
+ * @param key the message key the failure mapped to.
+ * @param mailEnabled whether this instance really sends mail.
+ */
+function withoutMailPromise(key: LoginErrorKey, mailEnabled: boolean): LoginErrorKey {
+  if (key === 'login.errorPendingApproval' && !mailEnabled) {
+    return 'login.errorPendingApprovalNoMail'
+  }
+  return key
+}
 
 /**
  * Maps a failed passkey sign-in to the i18n key of the message to show.
@@ -153,6 +175,8 @@ export function LoginPage() {
   const publicSettings = usePublicSettings()
   const registration =
     publicSettings.status === 'ready' && publicSettings.settings.registration_enabled
+  // The same response says whether an approval is followed by an e-mail at all.
+  const mailEnabled = mailEnabledFrom(publicSettings)
   const navigate = useNavigate()
   const location = useLocation()
 
@@ -234,7 +258,7 @@ export function LoginPage() {
 
             {submit.status === 'error' && (
               <Alert variant="danger" role="alert">
-                {t(submit.messageKey)}
+                {t(withoutMailPromise(submit.messageKey, mailEnabled))}
               </Alert>
             )}
 

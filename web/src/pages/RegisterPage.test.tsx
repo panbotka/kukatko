@@ -73,7 +73,11 @@ function groupOf(label: string): HTMLElement {
 describe('RegisterPage', () => {
   beforeEach(async () => {
     await i18n.changeLanguage('en')
-    settingsMock.mockResolvedValue({ registration_enabled: true, passkeys_enabled: false })
+    settingsMock.mockResolvedValue({
+      registration_enabled: true,
+      passkeys_enabled: false,
+      mail_enabled: true,
+    })
   })
 
   it('creates the account and confirms it is waiting, without signing anybody in', async () => {
@@ -145,8 +149,36 @@ describe('RegisterPage', () => {
     expect(screen.getByLabelText('Username')).toBeInvalid()
   })
 
+  it('promises no e-mail on an instance that sends none', async () => {
+    // With mail.enabled off the mailer is the no-op sender: the confirmation the
+    // page used to promise would never arrive, and the hint under the address
+    // said the same thing a second time.
+    settingsMock.mockResolvedValue({
+      registration_enabled: true,
+      passkeys_enabled: false,
+      mail_enabled: false,
+    })
+    const user = userEvent.setup()
+    registerMock.mockResolvedValue(created())
+    renderRegister()
+
+    expect(await screen.findByText(/sends no e-mail, so nothing will arrive/i)).toBeVisible()
+
+    await fillForm(user)
+    await user.click(screen.getByRole('button', { name: 'Register' }))
+
+    const done = await screen.findByTestId('register-done')
+    expect(done).toHaveTextContent(/waiting for an administrator/i)
+    expect(done).toHaveTextContent(/No confirmation is coming/i)
+    expect(done).not.toHaveTextContent(/sent a confirmation/i)
+  })
+
   it('shows no form at all when the instance says registration is closed', async () => {
-    settingsMock.mockResolvedValue({ registration_enabled: false, passkeys_enabled: false })
+    settingsMock.mockResolvedValue({
+      registration_enabled: false,
+      passkeys_enabled: false,
+      mail_enabled: true,
+    })
     renderRegister()
 
     const closed = await screen.findByTestId('register-closed')

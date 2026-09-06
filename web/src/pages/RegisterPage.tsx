@@ -11,7 +11,9 @@ import { Link } from 'react-router-dom'
 
 import { Icon } from '../components/Icon'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
-import { useRegistrationOpen } from '../hooks/useRegistrationOpen'
+import { mailEnabledFrom } from '../hooks/useMailEnabled'
+import { usePublicSettings } from '../hooks/usePublicSettings'
+import { registrationOpenFrom } from '../hooks/useRegistrationOpen'
 import { ApiError, MIN_PASSWORD_LENGTH, NetworkError, register } from '../services/auth'
 
 /** The inputs of the form, so a rejection can name the one that caused it. */
@@ -184,13 +186,22 @@ function RegisterField({
  *
  * A successful registration replaces the form with the confirmation, and
  * deliberately does **not** sign anybody in: the account exists but is waiting
- * for an administrator, so there is no session to hand out and the next step is
- * to read the e-mail, not to browse.
+ * for an administrator, so there is no session to hand out and there is nothing
+ * to browse yet.
+ *
+ * The same public response says whether this instance sends mail, and both the
+ * e-mail field's hint and the confirmation say only what will actually happen:
+ * an instance with `mail.enabled` off wires the no-op sender, so a promised
+ * confirmation would never arrive.
  */
 export function RegisterPage() {
   const { t } = useTranslation()
   useDocumentTitle(t('register.title'))
-  const registration = useRegistrationOpen()
+  // One fetch answers both questions this screen asks of the instance: whether
+  // there is any point showing the form, and whether it may promise an e-mail.
+  const publicSettings = usePublicSettings()
+  const registration = registrationOpenFrom(publicSettings)
+  const mailEnabled = mailEnabledFrom(publicSettings)
 
   const [username, setUsername] = useState('')
   const [displayName, setDisplayName] = useState('')
@@ -297,7 +308,9 @@ export function RegisterPage() {
                         {t('register.doneTitle', { username: submit.username })}
                       </Alert.Heading>
                       <p className="mb-0">{t('register.donePending')}</p>
-                      <p className="mb-0">{t('register.doneMail')}</p>
+                      <p className="mb-0">
+                        {mailEnabled ? t('register.doneMail') : t('register.doneNoMail')}
+                      </p>
                     </Alert>
                     <div className="text-center">
                       <Link to="/login">{t('register.backToLogin')}</Link>
@@ -366,7 +379,7 @@ export function RegisterPage() {
                             ? rejectionMessage
                             : t('register.emailRequired')
                         }
-                        hint={t('register.emailHint')}
+                        hint={t(mailEnabled ? 'register.emailHint' : 'register.emailHintNoMail')}
                       />
                       <RegisterField
                         id="register-password"

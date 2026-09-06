@@ -14,10 +14,10 @@
 //	PUT /settings           RequireAdmin    replaces all three values
 //
 // The public endpoint is deliberately unauthenticated: the sign-in screen has to
-// know whether to offer registration — and whether this instance can run a
-// passkey ceremony — before anybody is signed in. It answers two booleans and
-// reads one seeded row, so it tells an anonymous caller nothing beyond what the
-// sign-in screen would show them anyway.
+// know whether to offer registration — whether this instance can run a passkey
+// ceremony, and whether it sends any mail at all — before anybody is signed in.
+// It answers three booleans and reads one seeded row, so it tells an anonymous
+// caller nothing beyond what the sign-in screen would show them anyway.
 //
 // The guards and the store are injected so the package stays decoupled from
 // auth's wiring and the concrete store, and is unit-testable with fakes. An
@@ -63,6 +63,7 @@ type Store interface {
 type API struct {
 	store        Store
 	passkeys     bool
+	mail         bool
 	requireAuth  func(http.Handler) http.Handler
 	requireAdmin func(http.Handler) http.Handler
 }
@@ -78,6 +79,13 @@ type Config struct {
 	// is signed in yet — GET /capabilities, which carries the same flag for the
 	// rest of the app, is behind RequireAuth and cannot answer that question.
 	Passkeys bool
+	// Mail reports whether this instance really sends transactional mail — that
+	// is, whether config's mail.enabled put an SMTP sender behind mailer.Sender
+	// rather than the no-op one. It travels on the public response because the
+	// screens that promise an e-mail (a registration was received, an account is
+	// waiting for approval) are the screens nobody is signed in on, and a promise
+	// an instance with mail off can never keep is worse than no promise at all.
+	Mail bool
 	// RequireAuth guards the welcome-text endpoint for any signed-in user.
 	RequireAuth func(http.Handler) http.Handler
 	// RequireAdmin guards the full record and the update.
@@ -89,6 +97,7 @@ func NewAPI(cfg Config) *API {
 	return &API{
 		store:        cfg.Store,
 		passkeys:     cfg.Passkeys,
+		mail:         cfg.Mail,
 		requireAuth:  cfg.RequireAuth,
 		requireAdmin: cfg.RequireAdmin,
 	}
@@ -97,7 +106,7 @@ func NewAPI(cfg Config) *API {
 // RegisterRoutes mounts the settings endpoints onto r, which the caller has
 // scoped under the API base path (for example /api/v1):
 //
-//	GET /settings/public    (no guard)     {"registration_enabled":…,"passkeys_enabled":…}
+//	GET /settings/public    (no guard)     {"registration_enabled":…,"passkeys_enabled":…,"mail_enabled":…}
 //	GET /settings/welcome   RequireAuth    {"welcome_markdown":"…"}
 //	GET /settings           RequireAdmin   the full record, secret included
 //	PUT /settings           RequireAdmin   replaces all three values
@@ -110,9 +119,11 @@ func (a *API) RegisterRoutes(r chi.Router) {
 	})
 }
 
-// handlePublic writes the two facts an anonymous caller is allowed to learn:
-// whether the sign-in screen should offer self-service registration, and whether
-// it should offer to sign in with a passkey.
+// handlePublic writes the three facts an anonymous caller is allowed to learn:
+// whether the sign-in screen should offer self-service registration, whether it
+// should offer to sign in with a passkey, and whether this instance sends mail
+// at all — the last one decides whether the registration and pending-approval
+// screens may promise an e-mail.
 func (a *API) handlePublic(w http.ResponseWriter, r *http.Request) {
 	current, err := a.store.Get(r.Context())
 	if err != nil {
@@ -122,6 +133,7 @@ func (a *API) handlePublic(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, publicResponse{
 		RegistrationEnabled: current.RegistrationEnabled,
 		PasskeysEnabled:     a.passkeys,
+		MailEnabled:         a.mail,
 	})
 }
 
@@ -209,15 +221,19 @@ func writeSetError(w http.ResponseWriter, err error) {
 	writeError(w, http.StatusInternalServerError, "saving settings failed")
 }
 
-// publicResponse is the anonymous wire shape. It has exactly two fields on
+// publicResponse is the anonymous wire shape. It has exactly three fields on
 // purpose: it is served without authentication, so anything added here is added
-// to the open internet. Both are things the sign-in screen puts on that same
-// open page anyway — an invitation to register, and a "sign in with a passkey"
-// button — and the passkey flag is one an anonymous caller could already read
-// off POST /auth/passkeys/login/begin answering 200 rather than 501.
+// to the open internet. All three are things the sign-in screen puts on that same
+// open page anyway — an invitation to register, a "sign in with a passkey"
+// button, and the sentence telling a new account how it will hear back — and the
+// passkey flag is one an anonymous caller could already read off
+// POST /auth/passkeys/login/begin answering 200 rather than 501. The mail flag
+// says only whether this instance sends transactional mail at all; it names no
+// server, no account and no address.
 type publicResponse struct {
 	RegistrationEnabled bool `json:"registration_enabled"`
 	PasskeysEnabled     bool `json:"passkeys_enabled"`
+	MailEnabled         bool `json:"mail_enabled"`
 }
 
 // welcomeResponse is the authenticated wire shape for the first-sign-in

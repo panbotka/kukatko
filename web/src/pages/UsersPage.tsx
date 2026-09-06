@@ -30,6 +30,7 @@ import {
   type FormField,
 } from '../components/users/errors'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import { useMailEnabled } from '../hooks/useMailEnabled'
 import { useSubjects } from '../hooks/useSubjects'
 import { formatDate, formatDateTime } from '../lib/format'
 import { MIN_PASSWORD_LENGTH, type Role } from '../services/auth'
@@ -805,6 +806,10 @@ export function UsersPage() {
   const { t, i18n } = useTranslation()
   useDocumentTitle(t('users.title'))
   const { isAdmin, isMaintainer, user: me } = useAuth()
+  // Whether an approval is followed by an e-mail at all. On an instance with
+  // mail off nothing is sent, and the confirm dialog says so rather than telling
+  // an administrator the account will hear from Kukátko by itself.
+  const mailEnabled = useMailEnabled()
   // The people, once for the whole roster, so the "linked person" column can
   // print a name instead of a UID without costing a request per row.
   const { subjects } = useSubjects()
@@ -1122,7 +1127,9 @@ export function UsersPage() {
         />
       )}
 
-      {dialog.kind === 'resetLink' && <ResetLinkModal user={dialog.user} onHide={close} />}
+      {dialog.kind === 'resetLink' && (
+        <ResetLinkModal user={dialog.user} mailEnabled={mailEnabled} onHide={close} />
+      )}
 
       {dialog.kind === 'approve' && (
         <ConfirmModal
@@ -1136,7 +1143,9 @@ export function UsersPage() {
             void confirmApprove(dialog.user)
           }}
         >
-          {t('users.approve.body', { username: dialog.user.username })}
+          {t(mailEnabled ? 'users.approve.body' : 'users.approve.bodyNoMail', {
+            username: dialog.user.username,
+          })}
         </ConfirmModal>
       )}
 

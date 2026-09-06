@@ -49,17 +49,20 @@ func (f *fakeStore) Set(
 // passThrough is a no-op guard so handler behaviour is tested without auth.
 func passThrough(next http.Handler) http.Handler { return next }
 
-// newServer mounts an API backed by store behind pass-through guards.
+// newServer mounts an API backed by store behind pass-through guards, on an
+// instance with neither passkeys nor mail configured.
 func newServer(store settingsapi.Store) http.Handler {
-	return newServerWithPasskeys(store, false)
+	return newServerWithFlags(store, false, false)
 }
 
-// newServerWithPasskeys mounts the API with the instance's passkey availability
-// pinned, which only the public response reflects.
-func newServerWithPasskeys(store settingsapi.Store, passkeys bool) http.Handler {
+// newServerWithFlags mounts the API with the two process-level facts pinned —
+// whether a WebAuthn relying party is configured and whether this instance
+// really sends mail — which only the public response reflects.
+func newServerWithFlags(store settingsapi.Store, passkeys, mail bool) http.Handler {
 	api := settingsapi.NewAPI(settingsapi.Config{
 		Store:        store,
 		Passkeys:     passkeys,
+		Mail:         mail,
 		RequireAuth:  passThrough,
 		RequireAdmin: passThrough,
 	})
@@ -98,24 +101,27 @@ func full() settings.Settings {
 	}
 }
 
-// TestPublicReturnsOnlyTheTwoFlags: the anonymous endpoint answers exactly the
-// two facts the sign-in screen needs, so neither the secret nor the welcome text
-// can leak from it.
-func TestPublicReturnsOnlyTheTwoFlags(t *testing.T) {
+// TestPublicReturnsOnlyTheThreeFlags: the anonymous endpoint answers exactly the
+// three facts the sign-in screen needs, so neither the secret nor the welcome
+// text can leak from it.
+func TestPublicReturnsOnlyTheThreeFlags(t *testing.T) {
 	t.Parallel()
 	rec := do(t, newServer(&fakeStore{current: full()}), http.MethodGet, "/settings/public", "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
 	body := decode(t, rec)
-	if len(body) != 2 {
-		t.Fatalf("public body = %v, want exactly two fields", body)
+	if len(body) != 3 {
+		t.Fatalf("public body = %v, want exactly three fields", body)
 	}
 	if body["registration_enabled"] != true {
 		t.Errorf("registration_enabled = %v, want true", body["registration_enabled"])
 	}
 	if body["passkeys_enabled"] != false {
 		t.Errorf("passkeys_enabled = %v, want false on an instance with none configured", body["passkeys_enabled"])
+	}
+	if body["mail_enabled"] != false {
+		t.Errorf("mail_enabled = %v, want false on an instance with mail off", body["mail_enabled"])
 	}
 }
 
@@ -124,13 +130,40 @@ func TestPublicReturnsOnlyTheTwoFlags(t *testing.T) {
 // before anybody is signed in, since GET /capabilities is behind auth.
 func TestPublicReportsConfiguredPasskeys(t *testing.T) {
 	t.Parallel()
-	h := newServerWithPasskeys(&fakeStore{current: full()}, true)
+	h := newServerWithFlags(&fakeStore{current: full()}, true, false)
 	rec := do(t, h, http.MethodGet, "/settings/public", "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
 	if body := decode(t, rec); body["passkeys_enabled"] != true {
 		t.Errorf("passkeys_enabled = %v, want true", body["passkeys_enabled"])
+	}
+}
+
+// TestPublicReportsMail: mail_enabled follows the configured sender in both
+// configurations. It is the flag the registration and pending-approval screens
+// read before promising an e-mail, and on an instance with mail off (the no-op
+// sender) that promise would never be kept.
+func TestPublicReportsMail(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name string
+		mail bool
+	}{
+		{name: "mail on", mail: true},
+		{name: "mail off", mail: false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			h := newServerWithFlags(&fakeStore{current: full()}, false, tt.mail)
+			rec := do(t, h, http.MethodGet, "/settings/public", "")
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200", rec.Code)
+			}
+			if body := decode(t, rec); body["mail_enabled"] != tt.mail {
+				t.Errorf("mail_enabled = %v, want %v", body["mail_enabled"], tt.mail)
+			}
+		})
 	}
 }
 

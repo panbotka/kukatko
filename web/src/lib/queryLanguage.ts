@@ -503,6 +503,30 @@ export type QueryHelpRowId =
   | 'orientation'
   | 'faces'
 
+/**
+ * The ids of the code-led sentences a help row can carry, again a literal union
+ * so `search.help.note.<id>` stays a valid typed-i18n key.
+ */
+export type QueryHelpNoteId = 'personMe' | 'uploaderMe' | 'uploaderNone' | 'datedNo'
+
+/**
+ * One code-led sentence appended to a row's description: a literal query
+ * fragment and the prose explaining it.
+ *
+ * It exists so a description can point at a query fragment without the
+ * translated sentence having to contain it. A translation that spelled the
+ * fragment inline could only mark it up with backticks — which a plain-text
+ * table cell prints as characters — and that is exactly the bug this shape
+ * removes: the fragment is data, rendered as a real `<code>`, and the prose
+ * around it stays translatable.
+ */
+export interface QueryHelpNote {
+  /** i18n suffix under `search.help.note.` explaining the fragment. */
+  id: QueryHelpNoteId
+  /** The literal fragment the sentence is about (not translated). */
+  example: string
+}
+
 /** One row of the query-language help: related keys, a worked example. */
 export interface QueryHelpRow {
   /** i18n suffix under `search.help.desc.` describing the row. */
@@ -511,6 +535,12 @@ export interface QueryHelpRow {
   keys: string
   /** A worked example query fragment (not translated). */
   example: string
+  /**
+   * Code-led sentences that follow the description, for a row whose meaning
+   * hangs on particular values (`person:me`, `uploader:none`). A note that
+   * repeats {@link example} replaces it rather than printing it twice.
+   */
+  notes?: QueryHelpNote[]
 }
 
 /**
@@ -525,15 +555,33 @@ export const QUERY_HELP_ROWS: QueryHelpRow[] = [
   { id: 'photoText', keys: 'text:', example: 'text:veselice' },
   { id: 'album', keys: 'album:', example: 'album:"Léto 2024"' },
   { id: 'label', keys: 'label:', example: 'label:cat|dog' },
-  { id: 'person', keys: 'person: subject:', example: 'person:me' },
-  { id: 'uploader', keys: 'uploader:', example: 'uploader:me' },
+  {
+    id: 'person',
+    keys: 'person: subject:',
+    example: 'person:me',
+    notes: [{ id: 'personMe', example: 'person:me' }],
+  },
+  {
+    id: 'uploader',
+    keys: 'uploader:',
+    example: 'uploader:me',
+    notes: [
+      { id: 'uploaderMe', example: 'uploader:me' },
+      { id: 'uploaderNone', example: 'uploader:none' },
+    ],
+  },
   { id: 'state', keys: 'favorite: private: archived:', example: 'favorite:yes' },
   { id: 'hidden', keys: 'hidden:', example: 'hidden:yes' },
   { id: 'rating', keys: 'rating:', example: 'rating:4-5' },
   { id: 'flag', keys: 'flag:', example: 'flag:pick' },
   { id: 'date', keys: 'year: month: day:', example: 'year:2020-2023' },
   { id: 'takenAdded', keys: 'taken: added:', example: 'taken:2024-05' },
-  { id: 'dated', keys: 'dated:', example: 'dated:no' },
+  {
+    id: 'dated',
+    keys: 'dated:',
+    example: 'dated:no',
+    notes: [{ id: 'datedNo', example: 'dated:no' }],
+  },
   { id: 'beforeAfter', keys: 'before: after:', example: 'after:2024-05-01' },
   { id: 'place', keys: 'country: city:', example: 'city:Praha' },
   { id: 'geo', keys: 'geo:', example: 'geo:no' },

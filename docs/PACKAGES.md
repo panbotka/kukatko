@@ -2726,11 +2726,15 @@ to `## Package map` in `CLAUDE.md`.
   (the HTTP API over the settings, with **three audiences and three separate wire types** rather than one
   record filtered per role — a field added to `settings.Settings` then has to be given an audience on purpose
   instead of leaking into whichever payload happens to embed it. The `Store` interface (a subset of
-  `settings.Store`) → unit-testable with a fake; `NewAPI(Config{Store,Passkeys,RequireAuth,RequireAdmin})`+`RegisterRoutes`
-  mounts `/settings`: `GET /settings/public` **unguarded** → `{registration_enabled,passkeys_enabled}` only —
-  the two facts the sign-in screen needs before anybody is signed in. `passkeys_enabled` is `Config.Passkeys`
-  (`auth.API.PasskeysEnabled()`), not a stored setting: `GET /capabilities` carries the same flag for the rest
-  of the app but is behind `RequireAuth`, so it cannot answer an anonymous sign-in screen.
+  `settings.Store`) → unit-testable with a fake;
+  `NewAPI(Config{Store,Passkeys,Mail,RequireAuth,RequireAdmin})`+`RegisterRoutes`
+  mounts `/settings`: `GET /settings/public` **unguarded** →
+  `{registration_enabled,passkeys_enabled,mail_enabled}` only — the three facts the sign-in screen needs
+  before anybody is signed in. Neither flag is a stored setting: `passkeys_enabled` is `Config.Passkeys`
+  (`auth.API.PasskeysEnabled()`) because `GET /capabilities` carries the same flag for the rest of the app
+  but is behind `RequireAuth`, so it cannot answer an anonymous sign-in screen; `mail_enabled` is
+  `Config.Mail` (`cfg.Mail.Enabled`, the switch that decides whether `buildMailServiceOrNil` wires a real
+  SMTP sender), so the screens around registration promise an e-mail only where one is actually coming.
   `GET /settings/welcome` behind `RequireAuth` → `{welcome_markdown}`
   only, `GET /settings` and `PUT /settings` behind `RequireAdmin` → the full record, secret included;
   the PUT body `{registration_enabled,registration_secret,welcome_markdown}` with `DisallowUnknownFields`

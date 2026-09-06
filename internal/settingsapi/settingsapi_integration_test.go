@@ -158,7 +158,7 @@ func TestAdminRoundTripAndAudit(t *testing.T) {
 }
 
 // TestPublicIsAnonymousAndLeaksNothing: the sign-in screen's endpoint answers
-// without a session and carries only the two flags that screen needs.
+// without a session and carries only the three flags that screen needs.
 func TestPublicIsAnonymousAndLeaksNothing(t *testing.T) {
 	env := newEnv(t)
 	admin := env.login(t, "admin", auth.RoleAdmin)
@@ -174,11 +174,13 @@ func TestPublicIsAnonymousAndLeaksNothing(t *testing.T) {
 		t.Fatalf("anonymous GET /settings/public status = %d, want 200", resp.StatusCode)
 	}
 	body := decodeBody(t, resp)
-	if len(body) != 2 || body["registration_enabled"] != true {
-		t.Fatalf("public body = %v, want only registration_enabled=true and passkeys_enabled", body)
+	if len(body) != 3 || body["registration_enabled"] != true {
+		t.Fatalf("public body = %v, want registration_enabled=true plus the two process flags", body)
 	}
-	if _, ok := body["passkeys_enabled"]; !ok {
-		t.Fatalf("public body = %v, want a passkeys_enabled flag", body)
+	for _, flag := range []string{"passkeys_enabled", "mail_enabled"} {
+		if _, ok := body[flag]; !ok {
+			t.Fatalf("public body = %v, want a %s flag", body, flag)
+		}
 	}
 }
 

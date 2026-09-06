@@ -23,10 +23,10 @@ const RESET_URL = 'https://kukatko.example/password-reset/tok-123'
 /** An account row; only the uid and the username reach this dialog. */
 const ADA = { uid: 'u1', username: 'ada' } as AdminUser
 
-function renderModal(onHide = vi.fn()) {
+function renderModal(onHide = vi.fn(), mailEnabled = true) {
   render(
     <I18nextProvider i18n={i18n}>
-      <ResetLinkModal user={ADA} onHide={onHide} />
+      <ResetLinkModal user={ADA} mailEnabled={mailEnabled} onHide={onHide} />
     </I18nextProvider>,
   )
   return onHide
@@ -91,6 +91,20 @@ describe('ResetLinkModal', () => {
     // administrator waiting instead of passing the link on.
     expect(await screen.findByText(/pass the link on yourself/)).toBeInTheDocument()
     expect(screen.queryByText(/kukatko.invalid/)).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Password reset link')).toHaveValue(RESET_URL)
+  })
+
+  it('promises no mail on an instance that sends none', async () => {
+    // The address is perfectly real here; it is the instance that sends nothing,
+    // so the administrator's own copy of the link is the only one there is.
+    const actor = userEvent.setup()
+    renderModal(vi.fn(), false)
+
+    expect(screen.getByText(/the link goes nowhere/)).toBeInTheDocument()
+    await actor.click(screen.getByRole('button', { name: 'Issue the link' }))
+
+    expect(await screen.findByText(/Mail is switched off, so nothing was sent/)).toBeInTheDocument()
+    expect(screen.queryByText(/e-mailed to ada@example.com/)).not.toBeInTheDocument()
     expect(screen.getByLabelText('Password reset link')).toHaveValue(RESET_URL)
   })
 

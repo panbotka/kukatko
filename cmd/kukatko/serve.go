@@ -313,8 +313,8 @@ func buildServices(
 	registerJobQueueMetrics(reg, jobStore)
 	// The sidecar scheduler every mutating API enqueues through: the real queue
 	// enqueuer, or a no-op when the metadata sidecar export is switched off.
-	sidecarSched := sidecarSchedulerFor(cfg, enqueuer)
-	ingestAPI, err := buildIngest(cfg, db, authAPI, enqueuer, sidecarSched, reg)
+	sidecar := sidecarSchedulerFor(cfg, enqueuer)
+	ingestAPI, err := buildIngest(cfg, db, authAPI, enqueuer, sidecar, reg)
 	if err != nil {
 		return nil, backgroundServices{}, err
 	}
@@ -348,7 +348,7 @@ func buildServices(
 	}
 	rebuilders := photoRebuilders{embed: embedSvc, face: faceSvc, places: placesSvc}
 	photoAPI := buildPhotoAPI(cfg, db, authAPI, mediaStore, vectorStore, embedClient, matchSvc,
-		trashSvc, sidecarSched, enqueuer, storyboardSvc, jobStore, enqueuer, rebuilders, reg)
+		trashSvc, sidecar, enqueuer, storyboardSvc, jobStore, enqueuer, rebuilders, reg)
 	clusterAPI, clusterSvc := buildClusterAPI(cfg, db, jobStore, authAPI, matchSvc)
 	mapsAPI, err := buildMapsAPI(cfg, db, authAPI, mapsHealth)
 	if err != nil {
@@ -364,28 +364,30 @@ func buildServices(
 		server.WithAPI(ingestAPI.RegisterRoutes),
 		server.WithAPI(photoAPI.RegisterRoutes),
 		server.WithAPI(clusterAPI.RegisterRoutes),
-		server.WithAPI(buildBulkAPI(cfg, db, authAPI, sidecarSched, enqueuer).RegisterRoutes),
+		server.WithAPI(buildBulkAPI(cfg, db, authAPI, sidecar, enqueuer).RegisterRoutes),
 		server.WithAPI(buildDuplicatesAPI(cfg, db, authAPI, vectorStore).RegisterRoutes),
 		server.WithAPI(mapsAPI.RegisterRoutes),
 		server.WithAPI(jobAPI.RegisterRoutes),
 		server.WithAPI(processAPI.RegisterRoutes),
 		server.WithAPI(maintenanceAPI.RegisterRoutes),
 		server.WithAPI(buildImportAPI(db, authAPI).RegisterRoutes),
-	}, discoveryAPIOptions(cfg, db, authAPI, mediaStore, matchSvc), readAPIOptions(db, authAPI, mediaStore, sidecarSched))
+	}, discoveryAPIOptions(cfg, db, authAPI, mediaStore, matchSvc), readAPIOptions(cfg, db, authAPI, mediaStore, sidecar))
 	return opts, backgroundServices{worker: jobWorker, trash: trashSvc}, nil
 }
 
 // readAPIOptions builds the server options for the read/curation API groups that
-// depend only on the shared pool and the auth guard: per-subject face outliers,
-// the people (subject) catalogue, albums and labels, the places browse hierarchy,
-// per-user saved searches and search history, the announcement banner, the
-// instance settings, the returning-reader digest, the grouped global search and
-// the audit log. Route
+// need little more than the shared pool and the auth guard: per-subject face
+// outliers, the people (subject) catalogue, albums and labels, the places browse
+// hierarchy, per-user saved searches and search history, the announcement banner,
+// the instance settings, the returning-reader digest, the grouped global search
+// and the audit log. Route
 // groups mount on distinct paths, so their relative order does not matter.
 // Splitting them out keeps buildServices within the function-length limit.
 //
 // The groups that return photo records take mediaStore, which decides where their
-// clients fetch each photo's thumbnail and original.
+// clients fetch each photo's thumbnail and original. The instance settings take
+// cfg for one boolean: whether mail is enabled, which its public response reports
+// so the screens around registration promise an e-mail only where one is sent.
 // discoveryAPIOptions builds the server options for the API groups that need the
 // config, the pool, the auth guard and the media store together: the editor-only
 // discovery APIs riding the vector indexes (per-subject candidates, the
@@ -415,7 +417,7 @@ func discoveryAPIOptions(
 }
 
 func readAPIOptions(
-	db *database.DB, authAPI *auth.API, mediaStore storage.Storage, sidecar sidecarScheduler,
+	cfg *config.Config, db *database.DB, authAPI *auth.API, mediaStore storage.Storage, sidecar sidecarScheduler,
 ) []server.Option {
 	return []server.Option{
 		server.WithAPI(buildOutlierAPI(db, authAPI).RegisterRoutes),
@@ -426,7 +428,7 @@ func readAPIOptions(
 		server.WithAPI(buildSavedSearchAPI(db, authAPI).RegisterRoutes),
 		server.WithAPI(buildSearchHistoryAPI(db, authAPI).RegisterRoutes),
 		server.WithAPI(buildAnnouncementAPI(db, authAPI).RegisterRoutes),
-		server.WithAPI(buildSettingsAPI(db, authAPI).RegisterRoutes),
+		server.WithAPI(buildSettingsAPI(cfg, db, authAPI).RegisterRoutes),
 		server.WithAPI(buildWhatsNewAPI(db, authAPI).RegisterRoutes),
 		server.WithAPI(buildGlobalSearchAPI(db, authAPI, mediaStore).RegisterRoutes),
 		server.WithAPI(buildAuditAPI(db, authAPI).RegisterRoutes),

@@ -25,10 +25,39 @@ type Stage =
   | { kind: 'issuing' }
   | { kind: 'issued'; reset: IssuedPasswordReset }
 
+/**
+ * Names the sentence that says what became of the issued link: it was mailed, it
+ * could not be because the account has a placeholder address, or it could not be
+ * because this instance sends no mail at all.
+ *
+ * The two "not mailed" cases are told apart on purpose — the administrator's
+ * next move is the same (hand the link over in person) but the reason is not,
+ * and "this account has no real address" would be a lie on an instance where no
+ * address would have been written to anyway.
+ *
+ * @param mailEnabled whether this instance really sends mail.
+ * @param email the address the backend reported for the account.
+ */
+function deliveryKey(
+  mailEnabled: boolean,
+  email: string,
+): 'users.resetLink.mailed' | 'users.resetLink.notMailed' | 'users.resetLink.mailOff' {
+  if (!mailEnabled) {
+    return 'users.resetLink.mailOff'
+  }
+  return isPlaceholderEmail(email) ? 'users.resetLink.notMailed' : 'users.resetLink.mailed'
+}
+
 /** Props for {@link ResetLinkModal}. */
 export interface ResetLinkModalProps {
   /** The account the link is for. */
   user: AdminUser
+  /**
+   * Whether this instance really sends mail. It arrives as a prop rather than
+   * from a hook of its own: the roster has already asked, and a dialog that
+   * fetched the same fact again on every open would ask once per press.
+   */
+  mailEnabled: boolean
   /** Closes the dialog — which is also what discards the link. */
   onHide: () => void
 }
@@ -53,7 +82,7 @@ export interface ResetLinkModalProps {
  * off the screen for good; it is a bearer credential for one account's password
  * and has no business staying on a roster somebody may walk away from.
  */
-export function ResetLinkModal({ user, onHide }: ResetLinkModalProps) {
+export function ResetLinkModal({ user, mailEnabled, onHide }: ResetLinkModalProps) {
   const { t, i18n } = useTranslation()
   const [stage, setStage] = useState<Stage>({ kind: 'confirm' })
   const [error, setError] = useState<ErrorKey | null>(null)
@@ -102,12 +131,10 @@ export function ResetLinkModal({ user, onHide }: ResetLinkModalProps) {
         {stage.kind === 'issued' ? (
           <>
             <p>
-              {isPlaceholderEmail(stage.reset.email)
-                ? t('users.resetLink.notMailed', { days: PASSWORD_RESET_TTL_DAYS })
-                : t('users.resetLink.mailed', {
-                    email: stage.reset.email,
-                    days: PASSWORD_RESET_TTL_DAYS,
-                  })}{' '}
+              {t(deliveryKey(mailEnabled, stage.reset.email), {
+                email: stage.reset.email,
+                days: PASSWORD_RESET_TTL_DAYS,
+              })}{' '}
               {t('users.resetLink.expires', {
                 date: formatDateTimeMinutes(stage.reset.expires_at, i18n.language),
               })}
@@ -134,7 +161,11 @@ export function ResetLinkModal({ user, onHide }: ResetLinkModalProps) {
             </InputGroup>
           </>
         ) : (
-          <p className="mb-0">{t('users.resetLink.body', { username: user.username })}</p>
+          <p className="mb-0">
+            {t(mailEnabled ? 'users.resetLink.body' : 'users.resetLink.bodyNoMail', {
+              username: user.username,
+            })}
+          </p>
         )}
       </Modal.Body>
       <Modal.Footer>

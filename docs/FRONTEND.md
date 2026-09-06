@@ -1427,7 +1427,9 @@ here.
   `pages/` (`LoginPage` (username + password in a Superhero card; `errorKeyFor` maps the failure to
   a sentence — 401 → `login.errorInvalid`, **403 → `login.errorPendingApproval`** (the account
   registered and is waiting for an administrator: the password was right, so blaming it would send the
-  reader off retyping one that works), 429 → `login.errorRateLimited`, **`NetworkError` →
+  reader off retyping one that works; `withoutMailPromise` swaps in
+  `login.errorPendingApprovalNoMail` when `mail_enabled` is false, since the e-mail that sentence
+  promises is never sent on an instance with mail off), 429 → `login.errorRateLimited`, **`NetworkError` →
   `login.errorOffline`**, anything else → `login.errorGeneric`. The network branch is the one that
   matters: a request that never left the device had nothing judge the credentials, and the generic
   "sign in failed, try again" used to land there, so an offline phone told its owner to retype a
@@ -1460,13 +1462,17 @@ here.
   laid out as the same Superhero card, one column, so the two read as one flow): username, display name,
   e-mail, password, password again and the **registration word** (the instance's shared registration
   secret, `register.secretHint` explaining in one line that it is the word somebody who already uses
-  Kukátko told them). All six are required. The two passwords are compared **here**, before anything is
+  Kukátko told them). All six are required. The e-mail field's hint has **two wordings**: with
+  `mail_enabled` it says the confirmation and the approval message go there, without it that the address
+  only identifies the account (`register.emailHint`/`emailHintNoMail`). The two passwords are compared **here**, before anything is
   sent: the server never sees the second one, so a typo in it is the one rejection this form can word by
   itself. `useRegistrationOpen()` decides what the card holds at all — a spinner while
   `GET /settings/public` is being asked, and on a **closed** instance a plain explanation plus the way back
   to sign-in (`register.closed`, `data-testid="register-closed"`) instead of a form that would refuse every
   submit after it had been filled in; a probe that **failed** still gets the form, because "we could not
-  ask" is not "the door is shut" and the server words a refusal better than a failed probe could.
+  ask" is not "the door is shut" and the server words a refusal better than a failed probe could. It reads
+  `usePublicSettings()` directly and narrows with `registrationOpenFrom`/`mailEnabledFrom`, so one request
+  answers both of the page's questions.
   `rejectionFor` maps a refusal onto **the field that caused it**: 409 → the username is taken, a 403 whose
   message names the secret → „Tohle není správné registrační slovo" **under the secret field** (never a
   server error — the word is the one thing the reader can fix), a 403 without it → the instance is closed,
@@ -1474,11 +1480,14 @@ here.
   connection, anything else generic. A field rejection is rendered under its own input (`isInvalid` +
   `aria-invalid` + that group's `Form.Control.Feedback`), a refusal about the attempt as a whole in an
   `Alert` above the form. Success **replaces** the form with the confirmation
-  (`data-testid="register-done"`): the account exists, it is waiting for an administrator, a mail went to
-  the address — and **nobody is signed in**, because there is no session to hand out until somebody
-  approves it, and a sign-in attempt meanwhile is exactly the 403 `LoginPage` words as
-  `login.errorPendingApproval`. Texts in `register.*`; `RegisterPage.test.tsx` covers a successful
-  submission, mismatched passwords, a wrong secret, a taken username and the closed state,
+  (`data-testid="register-done"`): the account exists, it is waiting for an administrator, and **nobody is
+  signed in**, because there is no session to hand out until somebody approves it, and a sign-in attempt
+  meanwhile is exactly the 403 `LoginPage` words as `login.errorPendingApproval`. Whether that confirmation
+  says a mail went out (`register.doneMail`) or that none is coming and the administrator will say so
+  themselves (`register.doneNoMail`) is `mail_enabled`: on an instance with mail off the promised message
+  would never arrive. Texts in `register.*`; `RegisterPage.test.tsx` covers a successful
+  submission, mismatched passwords, a wrong secret, a taken username, the closed state and both mail
+  wordings,
   `PasswordResetPage` (route **`/password-reset/:token`**, the landing page of the one-time link
   `POST /admin/users/{uid}/password-reset` mints — **public like sign-in and registration**, because
   whoever follows it is locked out of the very account it belongs to, and laid out as the same
@@ -1772,7 +1781,12 @@ here.
   (a `?` button → a modal holding
   **`SearchQueryReference`** — the reference lives in its own component because `/help`'s Search chapter
   renders the same tables inline, so the syntax has one source of truth; operators and filters
-  with examples, rows from `QUERY_HELP_ROWS`/`QUERY_HELP_OPERATORS`, texts `search.help.*` cs+en; the
+  with examples, rows from `QUERY_HELP_ROWS`/`QUERY_HELP_OPERATORS`, texts `search.help.*` cs+en.
+  **Every query fragment is data, never prose**: a row whose meaning hangs on a particular value carries
+  `notes:[{id,example}]` (`QueryHelpNote`), rendered as a real `<code>` followed by `search.help.note.<id>`,
+  and a note that repeats the row's own `example` replaces it instead of printing it twice. The
+  descriptions used to spell `` `person:me` `` inline, and a plain-text table cell printed the backticks as
+  characters; the
   `?` keeps its small glyph but gets a 44px square on touch via `kukatko-tap-target-touch`; the
   modal is `fullscreen="sm-down"` with both tables `responsive`, and a multi-key row renders every key
   as its own `text-nowrap` `<code>` (the cell wraps between keys, never inside one) — whatever still
@@ -1966,14 +1980,20 @@ here.
   (`setUserDisabled`). A waiting row additionally offers **Schválit** → a `ConfirmModal` (`variant="primary"`) →
   `approveUser`, whose answer replaces the row **in place** (`upsert`, no re-fetch) and reports through the page's
   own success alert; a blocked account's Schválit is off with `users.approve.blockedHint` on its **own** hint line
-  (the backend refuses it with 409, and letting somebody in who still cannot sign in is half a decision).
+  (the backend refuses it with 409, and letting somebody in who still cannot sign in is half a decision). The
+  confirm question says the account will get an e-mail about it only where one is sent: `UsersPage` reads
+  `useMailEnabled()` and picks `users.approve.body`/`bodyNoMail`, the latter telling the administrator to say
+  so themselves.
   **Změnit heslo gained a sibling, „Odkaz na heslo"** → **`ResetLinkModal`** (`components/users/`): it asks first
   (issuing kills the account's earlier unused link), then `issuePasswordReset`, then shows the whole link in a
   **read-only, select-on-focus field with a Kopírovat button** (the same disclosure shape as `ApiTokensCard`'s
   `CreatedSecret`, so it can be dragged out where the clipboard API is denied), above it the line saying where it
-  was mailed and that it lasts `PASSWORD_RESET_TTL_DAYS` days — or, for a `.invalid` address, that **nothing was
-  sent and the link has to be passed on by hand** (`isPlaceholderEmail` again; promising a mail the backend refuses
-  to send would leave the administrator waiting). The link lives in that component's state only, so closing the
+  was mailed and that it lasts `PASSWORD_RESET_TTL_DAYS` days — or that **nothing was
+  sent and the link has to be passed on by hand**, for either of the two reasons `deliveryKey` tells apart: a
+  `.invalid` address (`isPlaceholderEmail`) → `users.resetLink.notMailed`, or an instance with mail off
+  (the `mailEnabled` prop) → `users.resetLink.mailOff`, which also rewords the question itself
+  (`users.resetLink.bodyNoMail`). Promising a mail nobody sends would leave the administrator waiting
+  instead of passing the link on. The link lives in that component's state only, so closing the
   dialog takes it off the screen for good. **The two form dialogs are `scrollable fullscreen="sm-down"`** — on a phone the long
   form takes the whole screen and only its body scrolls, so Zrušit/Uložit stay pinned above the on-screen
   keyboard instead of under it; on `sm`+ nothing changes (the same centred 500px card, measured identical).
@@ -4245,7 +4265,14 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   halves of the sign-in flow are built on. It **never polls** (neither fact moves often — one is an
   administrator's rare decision, the other is fixed for the life of the process) and aborts on unmount.
   `LoginPage` reads it directly because it needs **both** flags and must not ask twice;
-  `useRegistrationOpen()` is a narrowing of it to the one question — `loading|open|closed|unknown`.
+  `useRegistrationOpen()` is a narrowing of it to the one question — `loading|open|closed|unknown` —
+  and `registrationOpenFrom(state)` is that narrowing as a **pure** function, so a screen needing a second
+  public fact (`RegisterPage`) reads `usePublicSettings()` once instead of mounting two fetching hooks;
+  `useMailEnabled()`/`mailEnabledFrom(state)` (`hooks/useMailEnabled.ts`) is the same pair for
+  `mail_enabled` → a plain boolean, **false when the instance could not be asked**: the flag only ever
+  decides whether a sentence may promise an e-mail, and a promise made on a guess is what it exists to
+  prevent. `UsersPage` mounts the hook and passes the boolean down to `ResetLinkModal` as a prop rather
+  than letting the dialog fetch the same fact on every open.
   It **never polls** (an administrator opening
   or closing registration is rare, and both screens that read it are short-lived) and aborts on unmount —
   an aborted request leaves the state alone, since the component is gone and `unknown` would be a claim
@@ -5270,11 +5297,15 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `credentials:'same-origin'`; `version` is optional on the client because it is absent before the first
   answer and after a failed one, not because the endpoint may omit it),
   `settings.ts` = `fetchPublicSettings(signal)` over `GET /api/v1/settings/public` →
-  `PublicSettings{registration_enabled, passkeys_enabled}` — the **two** facts about the instance an anonymous
-  visitor may learn, which is why the sign-in and registration screens may ask it before anybody has signed in
-  (the full settings record carries the registration secret and stays behind `RequireAdmin`). `passkeys_enabled`
+  `PublicSettings{registration_enabled, passkeys_enabled, mail_enabled}` — the **three** facts about the
+  instance an anonymous visitor may learn, which is why the sign-in and registration screens may ask it before
+  anybody has signed in (the full settings record carries the registration secret and stays behind
+  `RequireAdmin`). `passkeys_enabled`
   is here **as well as** in `GET /capabilities` for exactly that reason: capabilities are behind `RequireAuth`,
-  and the screen that has to decide whether to offer a passkey is the one nobody has signed in on. It sends no
+  and the screen that has to decide whether to offer a passkey is the one nobody has signed in on.
+  `mail_enabled` (the server's `mail.enabled`; with it off the mailer is the no-op sender and **nothing** is
+  ever sent) is here for the same reason — the screens that would promise an e-mail are screens nobody has
+  signed in on. It sends no
   credentials and **throws** rather than defaulting: "we could not ask" is not "registration is shut", and
   the two callers of `useRegistrationOpen()` answer that difference differently. The admin half lives
   here too: `fetchInstanceSettings(signal)` over `GET /api/v1/settings` → `InstanceSettings`

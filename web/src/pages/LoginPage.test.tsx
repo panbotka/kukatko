@@ -80,7 +80,11 @@ describe('LoginPage', () => {
     await i18n.changeLanguage('en')
     // Most of these tests are about signing in, not about who may join: a
     // closed instance is the quieter default and keeps the card unchanged.
-    settingsMock.mockResolvedValue({ registration_enabled: false, passkeys_enabled: false })
+    settingsMock.mockResolvedValue({
+      registration_enabled: false,
+      passkeys_enabled: false,
+      mail_enabled: true,
+    })
     // A browser that has WebAuthn is the interesting default; the instance flag
     // above still keeps the button off unless a test turns it on.
     supportedMock.mockReturnValue(true)
@@ -172,7 +176,32 @@ describe('LoginPage', () => {
     await user.type(screen.getByLabelText('Password'), 'secret')
     await user.click(screen.getByRole('button', { name: 'Sign in' }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/waiting for an administrator/i)
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/waiting for an administrator/i)
+    expect(alert).toHaveTextContent(/will get an e-mail once it is approved/i)
+  })
+
+  it('promises no approval e-mail on an instance that sends none', async () => {
+    // Same 403, same fact — but with mail.enabled off nobody is ever written to,
+    // so the sentence says the account will simply be let in.
+    settingsMock.mockResolvedValue({
+      registration_enabled: false,
+      passkeys_enabled: false,
+      mail_enabled: false,
+    })
+    const user = userEvent.setup()
+    const login = vi
+      .fn()
+      .mockRejectedValue(new ApiError(403, 'auth: account is waiting for approval'))
+    renderLogin(authValue({ login }))
+
+    await user.type(screen.getByLabelText('Username'), 'newcomer')
+    await user.type(screen.getByLabelText('Password'), 'secret')
+    await user.click(screen.getByRole('button', { name: 'Sign in' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/waiting for an administrator/i)
+    expect(alert).toHaveTextContent(/no e-mail is coming/i)
   })
 
   it('renders the rate-limited message on a 429', async () => {
@@ -240,7 +269,11 @@ describe('LoginPage', () => {
   })
 
   it('invites registration only when the instance says it is open', async () => {
-    settingsMock.mockResolvedValue({ registration_enabled: true, passkeys_enabled: false })
+    settingsMock.mockResolvedValue({
+      registration_enabled: true,
+      passkeys_enabled: false,
+      mail_enabled: true,
+    })
     renderLogin(authValue())
 
     const link = await screen.findByRole('link', { name: 'Register' })
@@ -280,7 +313,11 @@ describe('LoginPage', () => {
   it('hides the passkey button in a browser without WebAuthn', async () => {
     // A button that answers every press with "this browser cannot" is worse than
     // no button: the password form below it works everywhere.
-    settingsMock.mockResolvedValue({ registration_enabled: false, passkeys_enabled: true })
+    settingsMock.mockResolvedValue({
+      registration_enabled: false,
+      passkeys_enabled: true,
+      mail_enabled: true,
+    })
     supportedMock.mockReturnValue(false)
     renderLogin(authValue())
 
@@ -291,7 +328,11 @@ describe('LoginPage', () => {
   })
 
   it('signs in with a passkey and returns to the requested address', async () => {
-    settingsMock.mockResolvedValue({ registration_enabled: false, passkeys_enabled: true })
+    settingsMock.mockResolvedValue({
+      registration_enabled: false,
+      passkeys_enabled: true,
+      mail_enabled: true,
+    })
     const user = userEvent.setup()
     const loginWithPasskey = vi.fn().mockResolvedValue(undefined)
     renderLogin(authValue({ loginWithPasskey }), {
@@ -307,7 +348,11 @@ describe('LoginPage', () => {
   })
 
   it('says a cancelled prompt in plain words, never the exception', async () => {
-    settingsMock.mockResolvedValue({ registration_enabled: false, passkeys_enabled: true })
+    settingsMock.mockResolvedValue({
+      registration_enabled: false,
+      passkeys_enabled: true,
+      mail_enabled: true,
+    })
     const user = userEvent.setup()
     const loginWithPasskey = vi
       .fn()
@@ -329,7 +374,11 @@ describe('LoginPage', () => {
   it("borrows the password form's own sentence for an account awaiting approval", async () => {
     // The signature was good — this is the same fact about the account, so it is
     // the same sentence, not an authenticator-flavoured retelling of it.
-    settingsMock.mockResolvedValue({ registration_enabled: false, passkeys_enabled: true })
+    settingsMock.mockResolvedValue({
+      registration_enabled: false,
+      passkeys_enabled: true,
+      mail_enabled: true,
+    })
     const user = userEvent.setup()
     const loginWithPasskey = vi.fn().mockRejectedValue(new PasskeyError('pendingApproval'))
     renderLogin(authValue({ loginWithPasskey }))

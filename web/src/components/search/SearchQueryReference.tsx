@@ -59,9 +59,21 @@ export function SearchQueryReference() {
                     </Fragment>
                   ))}
                 </td>
+                {/* Description, then any sentence that hangs on a particular
+                    value, then the worked example — unless a sentence already
+                    showed it, in which case printing it again would only repeat
+                    the same fragment twice in one cell. */}
                 <td className="text-secondary small">
                   {t(`search.help.desc.${row.id}`)}{' '}
-                  <code className="text-nowrap">{row.example}</code>
+                  {row.notes?.map((note) => (
+                    <Fragment key={note.id}>
+                      <code className="text-nowrap">{note.example}</code>{' '}
+                      {t(`search.help.note.${note.id}`)}{' '}
+                    </Fragment>
+                  ))}
+                  {!(row.notes ?? []).some((note) => note.example === row.example) && (
+                    <code className="text-nowrap">{row.example}</code>
+                  )}
                 </td>
               </tr>
             ))}
