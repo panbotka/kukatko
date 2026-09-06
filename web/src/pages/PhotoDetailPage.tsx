@@ -79,6 +79,7 @@ import {
   renditionVersion,
   renditionVersions,
   subscribeRenditionVersions,
+  thumbnailRebuildPending,
   versionedUrl,
 } from '../lib/renditionRebuild'
 import { toMode } from '../lib/searchView'
@@ -796,9 +797,19 @@ export function PhotoDetailPage() {
       .then(([photo, edit]) => {
         setState({ status: 'ready', photo, edit })
         // The renditions are assumed to carry the stored edit: the rebuild a
-        // save enqueues is normally long done by the next open, and a rebuild
-        // still in flight has left nothing to tell the two apart by.
+        // save enqueues is normally long done by the next open.
         setRendition({ uid, edit })
+        // Opening *into* that rebuild is the exception, and the detail just
+        // answered it — the processing report's thumbnail stamp against the
+        // edit's own. The stage still shows the rendition as it is (the edit it
+        // carries is the previous one, which nothing here knows, so there is no
+        // honest delta to draw); what the watch buys is that the window ENDS.
+        // Without it a reload landing mid-rebuild leaves the pre-edit picture up
+        // for as long as the browser keeps it — the renditions are served
+        // immutable for a year, and only a version bump asks again.
+        if (edit.updated_at !== undefined && thumbnailRebuildPending(photo, edit.updated_at)) {
+          setRebuildWatch({ uid, since: edit.updated_at })
+        }
       })
       .catch((err: unknown) => {
         if (err instanceof DOMException && err.name === 'AbortError') {

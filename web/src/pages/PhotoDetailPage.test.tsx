@@ -2906,6 +2906,54 @@ describe('PhotoDetailPage — immersive viewer', () => {
         expect(preloaded().some((url) => url.includes('v=1'))).toBe(false)
       })
 
+      it('ends the window when the photo is opened mid-rebuild, not only after a save', async () => {
+        // A reload landing inside the rebuild a save enqueued: the report's build
+        // predates the save, so the rendition on stage is the pre-edit one and
+        // the edit it carries is not knowable here — there is no honest delta to
+        // draw. Without a watch that picture would stay up for as long as the
+        // browser keeps it, the renditions being served immutable for a year.
+        fetchEditMock.mockResolvedValue({ ...NEUTRAL, rotation: 90, updated_at: SAVED_AT })
+        fetchPhotoMock.mockResolvedValue(builtAt('2026-09-06T09:00:00Z'))
+        renderPage()
+        await screen.findByRole('heading', { name: 'Beach' })
+        loadPreview()
+
+        const plain = `/api/v1/photos/b/thumb/${STAGE_SIZE}`
+        const rebuilt = `${plain}?v=1`
+        expect(screen.getByRole('img', { name: 'Beach' })).toHaveAttribute('src', plain)
+
+        // The rebuild lands, and a poll sees it. The first poll went out with the
+        // page, so the answer comes on the next one — a real timer, hence the
+        // room given here.
+        fetchPhotoMock.mockResolvedValue(builtAt('2026-09-06T10:00:04Z'))
+        await waitFor(
+          () => {
+            expect(preloaded()).toContain(rebuilt)
+          },
+          { timeout: 5000 },
+        )
+        act(() => {
+          StubImage.finish(rebuilt)
+        })
+        await waitFor(() => {
+          expect(screen.getByRole('img', { name: 'Beach' })).toHaveAttribute('src', rebuilt)
+        })
+        expect(screen.getByRole('img', { name: 'Beach' }).style.transform).not.toContain('rotate')
+      })
+
+      it('starts no watch when the report cannot say a rebuild is owed', async () => {
+        // An instance wiring no processing service answers every poll the same
+        // way, so a watch could only run its dozen attempts and give up. The
+        // photo detail is fetched once, for the page itself.
+        fetchEditMock.mockResolvedValue({ ...NEUTRAL, rotation: 90, updated_at: SAVED_AT })
+        fetchPhotoMock.mockResolvedValue(photo({ processing: undefined }))
+        renderPage()
+        await screen.findByRole('heading', { name: 'Beach' })
+        loadPreview()
+
+        expect(fetchPhotoMock).toHaveBeenCalledTimes(1)
+      })
+
       it('lands the face boxes on a saved-rotated rendition without a turned layer', async () => {
         fetchFacesMock.mockResolvedValue(facesResponse(1))
         fetchEditMock.mockResolvedValue({ ...NEUTRAL, rotation: 90, updated_at: SAVED_AT })

@@ -2752,9 +2752,16 @@ here.
   same render — no frame of new bytes under the old transform, no empty stage; a rendition that never loads is
   given up on (the delta stays). Off stage (the reader paged on) the version is bumped at once, so the next open
   fetches the rebuilt bytes. A save without `updated_at` (an older server) starts no watch: the delta simply
-  stays. Known limits: a rebuild still in flight when the photo is opened *fresh* cannot be told apart from a
-  finished one (the rendition is assumed to carry the stored edit — the old rendering, not a double-turned one,
-  until a reload), and a second save while the previous rebuild is *running* can be answered by that run's stamp.
+  stays. **Opening the photo into that same window** — a reload while the rebuild is still owed — is watched the
+  same way: the `uid` effect already holds both answers it needs (the detail's report and the edit's `updated_at`),
+  and `thumbnailRebuildPending` says whether a rebuild is genuinely outstanding. It is deliberately the stricter
+  question of the two: only a build recorded *before* the save, or a `thumbnail` step `queued`/`running`, counts,
+  so an instance wiring no processing report never starts a watch it could only lose. The stage keeps the
+  rendition as it is meanwhile — the edit it carries is the *previous* one, which nothing on this path knows, so
+  there is no honest delta to draw — but the window now **ends**: without the watch that pre-edit picture would
+  stand for as long as the browser kept it, the renditions being served immutable for a year and only a version
+  bump asking again. Known limit: a second save while the previous rebuild is *running* can be answered by that
+  run's stamp.
   Closing or jumping to a neighbor (the `uid` effect) discards the draft (the photo returns to the saved state), a
   successful save swaps it for `state.edit` without a flicker.
   Opening Úpravy also **removes the faces** (one lead slot) and the face selection, but
@@ -2830,7 +2837,10 @@ here.
   arithmetic `rotateBy(rotation,quarters)` with its two
   named directions `rotateLeft`/`rotateRight` — it normalises into the 0/90/180/270 the API accepts, which is
   what a counter-clockwise turn needs (a plain `%` would yield `-90` and the save would be rejected);
-  `lib/renditionRebuild` = `thumbnailRebuiltSince(photo, since)`, `versionedUrl(url, version)`, the poll schedule
+  `lib/renditionRebuild` = `thumbnailRebuiltSince(photo, since)` (has the rebuild landed?) and its stricter
+  counterpart `thumbnailRebuildPending(photo, since)` (does the report *positively* still owe one? — a build
+  stamped before the save, or a `queued`/`running` step; no report and the states no rebuild comes out of read as
+  not pending, which is what keeps a fresh open from watching in vain), `versionedUrl(url, version)`, the poll schedule
   `REBUILD_POLL_DELAYS_MS` and the session-wide per-photo **rendition version store** (`renditionVersion`/
   `bumpRenditionVersion`, the immutable `renditionVersions` snapshot + `subscribeRenditionVersions` for
   `useSyncExternalStore`, `resetRenditionVersions` for tests); `hooks/useThumbnailRebuild(watch)` = the poll that
@@ -3902,10 +3912,13 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   it mounts as the last child of the `position-relative` wrapper tight around the `<img>`. Its `measured` prop
   (default `true`) says whether that wrapper is the **measured** image (`useImageFrame`) or still an estimate;
   while it is `false` the layer renders **empty**, because percentages are only as good as the box they are
-  percentages of. Its `rotation`/`frameRatio` props (default upright) follow a **rotated** preview: every bbox goes
-  through `rotateBbox` and the layer's own geometry through `rotatedFrameStyle`, which is why the layer carries
-  **inline** `left/top/width/height` instead of `w-100 h-100` — the sizing utilities are `!important` and would win
-  over it. The layer is
+  percentages of. Its `rotation` prop (default upright) is the **whole** turn from the upright original the
+  detector saw, and every bbox goes through `rotateBbox`; the layer itself simply **fills** the wrapper, because
+  the wrapper already is the shape of the photo as displayed — turned or not (the renditions carry the saved
+  rotation, and a draft quarter-turn hands the figure the turned box). It fills it with **inline**
+  `left/top/width/height` rather than `w-100 h-100` because the sizing utilities are `!important` and would win
+  over anything a host wanted to say. The layer is never given a `rotate()` of its own, so a box's number and
+  name stay upright. The layer is
   click-through, pointer events are caught only by the boxes (and with `readOnly` not even by those; the box's number and name tag have
   `pointer-events:none`, otherwise they would steal the click and break the swipe). A box carries `.kk-face-box` = an invisible
   44px hitbox on `pointer: coarse` (see app.css below), so even a small face can be hit on a phone, and it reports
@@ -4952,10 +4965,11 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `faceGeometry.ts` = the pure `faceBoxStyle` (a normalized bbox → absolute `left/top/width/height`
   in %, for the overlay) + the rotation pair `rotateBbox(bbox, rotation)` (a bbox measured on the upright photo →
   the same box in the frame of that photo turned N degrees **clockwise**; a quarter turn swaps `w`/`h`, anything but
-  90/180/270 passes through unchanged) and `rotatedFrameStyle(rotation, ratio)` (the layer that box is a percentage
-  **of**: the wrapper itself for 0°/180°, and for a quarter turn `100/ratio` × `100*ratio` percent centred by a
-  translate — the box the rotated image paints over a wrapper that keeps the unrotated aspect ratio; an unusable
-  ratio falls back to filling the wrapper, since `NaN` percentages would drop every box off the page)
+  90/180/270 passes through unchanged). There is no second helper for the layer that box is a percentage **of**:
+  the wrapper already IS the shown photo's box for every rotation — the renditions carry the saved turn and a
+  draft quarter-turn gives the figure the turned box — so the overlay just fills it (the older
+  `rotatedFrameStyle(rotation, ratio)`, which sized the layer against a wrapper that kept the *unrotated* ratio,
+  went away with the double-applied rotation it existed for)
   + `readingOrder` (a list of anything carrying a `bbox` → the order the eye crosses the
   photo: the top row left to right, then the row below. One greedy pass down the photo assigns faces to **row bands** —
   a face joins the open band when its vertical centre is within **half the taller box** of the band's **topmost**

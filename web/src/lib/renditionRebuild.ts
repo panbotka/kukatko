@@ -34,6 +34,34 @@ export function thumbnailRebuiltSince(photo: PhotoDetail, since: string): boolea
 }
 
 /**
+ * Whether the processing report positively says a thumbnail rebuild for the edit
+ * saved at `since` is still owed — the question `thumbnailRebuiltSince` cannot
+ * answer, because "not built yet" and "cannot tell" are the same `false` there.
+ *
+ * Only a report that actually knows counts: a build recorded *before* the save,
+ * or a thumbnail step a worker is holding (`running`) or the queue is (`queued`).
+ * A detail carrying no report at all, and the states no rebuild will ever come
+ * out of (`failed`, `skipped`, never run), all read as **not** pending, so an
+ * instance that wires no processing service never starts a watch it could only
+ * lose. Both stamps are the server's own clock.
+ */
+export function thumbnailRebuildPending(photo: PhotoDetail, since: string): boolean {
+  const step = photo.processing?.find((row) => row.step === 'thumbnail')
+  if (step === undefined) {
+    return false
+  }
+  if (step.state === 'running' || step.state === 'queued') {
+    return true
+  }
+  if (step.state !== 'done' || step.at === undefined) {
+    return false
+  }
+  const at = Date.parse(step.at)
+  const from = Date.parse(since)
+  return Number.isFinite(at) && Number.isFinite(from) && at < from
+}
+
+/**
  * The rendition address with a cache-busting version appended, or the address
  * itself for version 0. A thumbnail URL is built from the photo's UID and served
  * as immutable for a year, so a rebuilt rendition under the same address would

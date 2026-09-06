@@ -8,6 +8,7 @@ import {
   renditionVersions,
   resetRenditionVersions,
   subscribeRenditionVersions,
+  thumbnailRebuildPending,
   thumbnailRebuiltSince,
   versionedUrl,
 } from './renditionRebuild'
@@ -51,6 +52,62 @@ describe('thumbnailRebuiltSince', () => {
     expect(thumbnailRebuiltSince(detail([]), SAVED_AT)).toBe(false)
     expect(
       thumbnailRebuiltSince(
+        detail([{ step: 'thumbnail', state: 'done', at: 'not a date' }]),
+        SAVED_AT,
+      ),
+    ).toBe(false)
+  })
+})
+
+describe('thumbnailRebuildPending', () => {
+  it('is true while the report positively owes a rebuild', () => {
+    // A build recorded before the save, or a step the queue/a worker holds.
+    expect(
+      thumbnailRebuildPending(
+        detail([{ step: 'thumbnail', state: 'done', at: '2026-09-06T09:59:59Z' }]),
+        SAVED_AT,
+      ),
+    ).toBe(true)
+    expect(
+      thumbnailRebuildPending(detail([{ step: 'thumbnail', state: 'queued' }]), SAVED_AT),
+    ).toBe(true)
+    expect(
+      thumbnailRebuildPending(detail([{ step: 'thumbnail', state: 'running' }]), SAVED_AT),
+    ).toBe(true)
+  })
+
+  it('is false once the rebuild has landed', () => {
+    expect(
+      thumbnailRebuildPending(
+        detail([{ step: 'thumbnail', state: 'done', at: '2026-09-06T10:00:04Z' }]),
+        SAVED_AT,
+      ),
+    ).toBe(false)
+    expect(
+      thumbnailRebuildPending(
+        detail([{ step: 'thumbnail', state: 'done', at: SAVED_AT }]),
+        SAVED_AT,
+      ),
+    ).toBe(false)
+  })
+
+  it('is false whenever the report cannot tell, so no watch is started in vain', () => {
+    // An instance that wires no processing service, and the states no rebuild
+    // ever comes out of. This is the half `thumbnailRebuiltSince` cannot express:
+    // there, all of these are `false` too, but meaning "not built", not "unknown".
+    expect(thumbnailRebuildPending(detail(undefined), SAVED_AT)).toBe(false)
+    expect(thumbnailRebuildPending(detail([]), SAVED_AT)).toBe(false)
+    expect(
+      thumbnailRebuildPending(detail([{ step: 'thumbnail', state: 'failed' }]), SAVED_AT),
+    ).toBe(false)
+    expect(
+      thumbnailRebuildPending(detail([{ step: 'thumbnail', state: 'skipped' }]), SAVED_AT),
+    ).toBe(false)
+    expect(
+      thumbnailRebuildPending(detail([{ step: 'thumbnail', state: 'pending' }]), SAVED_AT),
+    ).toBe(false)
+    expect(
+      thumbnailRebuildPending(
         detail([{ step: 'thumbnail', state: 'done', at: 'not a date' }]),
         SAVED_AT,
       ),
