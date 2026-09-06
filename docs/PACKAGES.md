@@ -2752,7 +2752,16 @@ to `## Package map` in `CLAUDE.md`.
   library grid's own base filter (`archived_at IS NULL AND (stack_uid IS NULL OR stack_primary) AND NOT
   hidden_from_library` — so the number printed equals the number of tiles the link opens), live comments
   (`deleted_at IS NULL`), **hand-curated** albums only (`type = 'album'`; an import mints folder/moment/month
-  groupings by the hundred) and **named** subjects only (`name <> ''`). **`MinePhotos`** is the one line
+  groupings by the hundred) and **named** subjects only (`name <> ''`). **Whose news:** every count — and the
+  album list with it — subtracts the **reader's own** work (`photos.uploaded_by`, `photo_comments.author_uid`,
+  `albums.created_by`, all `IS DISTINCT FROM $2`): the digest reports what *others* did while the reader was
+  away, and "1 new comment" for the comment they just wrote is an echo, not news. `IS DISTINCT FROM` rather
+  than `<>` because all three columns are `ON DELETE SET NULL` — work whose actor has since been deleted
+  belongs to nobody and stays news to everybody. **Subjects are the deliberate exception:** the schema records
+  no creator for a name put on a face and deliberately gets none, so a newly named person is counted for
+  everyone, whoever named them included. `listAlbums` repeats the exclusion verbatim, so the "Podrobnosti"
+  list can never name an album the count left out; when the exclusion empties every count the digest is the
+  zero-value `Summary` and **no panel appears at all**. **`MinePhotos`** is the one line
   about the reader rather than about the library: the same photo predicate narrowed by a non-invalid marker
   naming the account's linked person, read out of the very `UPDATE … RETURNING` that stamps the visit (the
   row is already being written, so the link costs no second round trip) and skipped entirely for an
@@ -2761,7 +2770,10 @@ to `## Package map` in `CLAUDE.md`.
   `MaxItems` (**6**) links while the counts report the true totals. A `HasNews false` (zero-value) `Summary`
   covers both "first visit" and "nothing happened" so the client branches on one flag. Every count is an
   indexed range over a creation timestamp (`idx_albums_created_at`, `idx_subjects_created_at`,
-  `idx_photo_comments_created_at` from 0053; `idx_photos_live_created_at` from 0015)), `internal/whatsnewapi/`
+  `idx_photo_comments_created_at` from 0053; `idx_photos_live_created_at` from 0015), with the actor exclusion
+  a plan `Filter` on top of that `Index Cond` rather than a new access path — pinned by
+  `TestCountsStayIndexBacked`, which seeds 4 000 old rows per table and reads the plan back)),
+  `internal/whatsnewapi/`
   (a one-route HTTP API over it: the `Summarizer` interface (a subset of `whatsnew.Store`) → unit-testable
   with a fake; `NewAPI(Config{Store,RequireAuth,Now})` (`Now` defaults to `time.Now`, injectable so tests move
   a visit forward without waiting) + `RegisterRoutes` mounts `GET /whats-new` behind **`RequireAuth`** —

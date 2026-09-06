@@ -8,6 +8,17 @@
 // created, which people were named, how many comments were written. Anything
 // bigger would be a second timeline competing with the real one.
 //
+// # Whose news
+//
+// The digest is about what other people did. Every count and every list
+// subtracts the reader's own work — the comments they wrote, the albums they
+// created, the photographs they uploaded — because being greeted with "1 new
+// comment" for the comment you just posted is not news, it is an echo. Work
+// whose actor was deleted since (the actor columns are ON DELETE SET NULL)
+// belongs to nobody and therefore stays news to everybody. Newly named people
+// are the one exception: the schema records no creator for a subject, so they
+// are counted for everyone, the person who named them included.
+//
 // # What a visit is
 //
 // The digest needs a reference point ("since when?"), and the hard part is that

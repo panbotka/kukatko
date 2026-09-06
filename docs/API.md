@@ -1340,8 +1340,10 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `internal/whatsnew` in `docs/PACKAGES.md` for the two-timestamp mechanism and the **6 h** inactivity
   threshold). It must therefore be issued **once per library-home load and never polled**. Counts mirror the
   library grid (live, non-hidden, stack-primary photos; live comments; hand-curated albums; named subjects
-  only) and `albums`/`people` are capped at 6 links while `album_count`/`person_count` report the true
-  totals. **`mine_photos`** counts how many of those new photos the reader themselves is on, via the
+  only) **minus the caller's own work** — photos they uploaded, comments they wrote, albums they created are
+  never reported back to them, while work whose actor was deleted stays news to everybody and newly named
+  subjects are news to everybody because the schema records no creator for them. `albums`/`people` are capped
+  at 6 links while `album_count`/`person_count` report the true totals. **`mine_photos`** counts how many of those new photos the reader themselves is on, via the
   subject their account is linked to (`users.subject_uid`, read in the same statement that stamps the
   visit) and a non-invalid marker. It is **0** both for an unlinked account and for a visit where none
   of the new photographs was of them, and the client shows no line for it either way; being a subset of

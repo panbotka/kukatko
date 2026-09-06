@@ -53,9 +53,14 @@ SET last_seen_at = $2,
 WHERE uid = $1
 RETURNING visit_reference_at, subject_uid`
 
-// visit is what one summary read learns about the account it belongs to: the
-// reference point of this visit, and the person the account says it is.
+// visit is one summary read seen from the account it belongs to: who is
+// reading, the reference point of this visit, and the person the account says it
+// is.
 type visit struct {
+	// viewer is the account the digest is for. It is not only the row that gets
+	// stamped: it is also what every count subtracts, because a reader's own
+	// comment, album or upload is not news to them.
+	viewer string
 	// since is the digest's "since", zero when the account has no reference point.
 	since time.Time
 	// subjectUID is the account's linked person, nil when it has named none.
@@ -81,7 +86,7 @@ func (s *Store) rotateVisit(ctx context.Context, userUID string, now time.Time) 
 	if err != nil {
 		return visit{}, fmt.Errorf("whatsnew: stamping visit: %w", err)
 	}
-	v := visit{subjectUID: subject}
+	v := visit{viewer: userUID, subjectUID: subject}
 	if reference != nil {
 		v.since = *reference
 	}
@@ -90,31 +95,46 @@ func (s *Store) rotateVisit(ctx context.Context, userUID string, now time.Time) 
 
 // countsSQL counts everything the digest reports, in one round trip. Each
 // subquery is a range over a creation timestamp served by its own index
-// (0053_user_visits, and idx_photos_live_created_at from 0015).
+// (0053_user_visits, and idx_photos_live_created_at from 0015); the actor
+// condition is a filter applied to that range, never the access path.
 //
 // The photo predicate is the library grid's own base filter — live, not hidden,
 // and only the primary of a stack — so the number the panel prints is the number
 // of tiles the "new photos" link actually opens. Counting raw rows here would
 // promise photos that the destination then silently drops.
+//
+// $2 is the reader. Their own upload, comment and album are subtracted: the
+// digest reports what *others* did while they were away, and being told about
+// the comment you just wrote is a bug, not news. IS DISTINCT FROM rather than
+// <> because the actor columns are ON DELETE SET NULL — work whose author has
+// since been deleted belongs to nobody and stays news to everybody.
+//
+// Subjects carry no creator column and deliberately get none (a name is put on a
+// face by whoever happens to be looking, and the schema does not record it), so a
+// newly named person is counted for everyone, the person who named them included.
 const countsSQL = `
 SELECT
     (SELECT count(*) FROM photos
         WHERE created_at > $1
           AND archived_at IS NULL
           AND (stack_uid IS NULL OR stack_primary)
-          AND NOT hidden_from_library),
+          AND NOT hidden_from_library
+          AND uploaded_by IS DISTINCT FROM $2),
     (SELECT count(*) FROM photo_comments
-        WHERE created_at > $1 AND deleted_at IS NULL),
+        WHERE created_at > $1 AND deleted_at IS NULL
+          AND author_uid IS DISTINCT FROM $2),
     (SELECT count(*) FROM albums
-        WHERE created_at > $1 AND type = 'album'),
+        WHERE created_at > $1 AND type = 'album'
+          AND created_by IS DISTINCT FROM $2),
     (SELECT count(*) FROM subjects
         WHERE created_at > $1 AND name <> '')`
 
 // minePhotosSQL counts the new photographs the reader themselves is on. It is
-// the photo predicate of countsSQL — the library grid's own base filter, so the
-// number matches the tiles the line opens — narrowed by a marker naming the
-// reader's linked person. Rejected markers (invalid) do not count, exactly as
-// they do not in the person: filter or on the person's own gallery.
+// the photo predicate of countsSQL — the library grid's own base filter and the
+// same exclusion of the reader's own uploads, so the line can never outgrow the
+// total it is a part of — narrowed by a marker naming the reader's linked
+// person. Rejected markers (invalid) do not count, exactly as they do not in the
+// person: filter or on the person's own gallery.
 //
 // It is a second statement rather than a fifth subquery because it runs only for
 // a linked account, which most are not.
@@ -124,23 +144,24 @@ WHERE p.created_at > $1
   AND p.archived_at IS NULL
   AND (p.stack_uid IS NULL OR p.stack_primary)
   AND NOT p.hidden_from_library
+  AND p.uploaded_by IS DISTINCT FROM $2
   AND EXISTS (SELECT 1 FROM markers m
-      WHERE m.photo_uid = p.uid AND m.subject_uid = $2 AND m.invalid = FALSE)`
+      WHERE m.photo_uid = p.uid AND m.subject_uid = $3 AND m.invalid = FALSE)`
 
 // countSince returns how many photos, comments, hand-curated albums and named
-// people were created after since, and — for an account linked to a person — how
-// many of those photos that person is on. An unlinked account skips the second
-// query entirely and reports zero.
-func (s *Store) countSince(ctx context.Context, since time.Time, subjectUID *string) (counts, error) {
+// people somebody other than the reader created after v.since, and — for an
+// account linked to a person — how many of those photos that person is on. An
+// unlinked account skips the second query entirely and reports zero.
+func (s *Store) countSince(ctx context.Context, v visit) (counts, error) {
 	var c counts
-	if err := s.pool.QueryRow(ctx, countsSQL, since).
+	if err := s.pool.QueryRow(ctx, countsSQL, v.since, v.viewer).
 		Scan(&c.photos, &c.comments, &c.albums, &c.people); err != nil {
 		return counts{}, fmt.Errorf("whatsnew: counting changes: %w", err)
 	}
-	if subjectUID == nil || c.photos == 0 {
+	if v.subjectUID == nil || c.photos == 0 {
 		return c, nil
 	}
-	if err := s.pool.QueryRow(ctx, minePhotosSQL, since, *subjectUID).Scan(&c.mine); err != nil {
+	if err := s.pool.QueryRow(ctx, minePhotosSQL, v.since, v.viewer, *v.subjectUID).Scan(&c.mine); err != nil {
 		return counts{}, fmt.Errorf("whatsnew: counting new photos of the reader: %w", err)
 	}
 	return c, nil
@@ -148,17 +169,20 @@ func (s *Store) countSince(ctx context.Context, since time.Time, subjectUID *str
 
 // listAlbumsSQL names the newest hand-curated albums created since the reference
 // point. Auto-generated groupings (folder, moment, month, state) are excluded:
-// an import mints them by the hundred and none of them is somebody's news.
+// an import mints them by the hundred and none of them is somebody's news. The
+// $2 exclusion of the reader's own albums is the one in countsSQL, repeated
+// verbatim so that the panel's list and its count can never disagree.
 const listAlbumsSQL = `
 SELECT uid, title
 FROM albums
-WHERE created_at > $1 AND type = 'album'
+WHERE created_at > $1 AND type = 'album' AND created_by IS DISTINCT FROM $2
 ORDER BY created_at DESC
-LIMIT $2`
+LIMIT $3`
 
-// listAlbums returns up to [MaxItems] albums created after since, newest first.
-func (s *Store) listAlbums(ctx context.Context, since time.Time) ([]Album, error) {
-	rows, err := s.pool.Query(ctx, listAlbumsSQL, since, MaxItems)
+// listAlbums returns up to [MaxItems] albums somebody other than the reader
+// created after v.since, newest first.
+func (s *Store) listAlbums(ctx context.Context, v visit) ([]Album, error) {
+	rows, err := s.pool.Query(ctx, listAlbumsSQL, v.since, v.viewer, MaxItems)
 	if err != nil {
 		return nil, fmt.Errorf("whatsnew: listing new albums: %w", err)
 	}
@@ -207,7 +231,9 @@ func (s *Store) listPeople(ctx context.Context, since time.Time) ([]Person, erro
 }
 
 // Summary stamps userUID's visit at now and returns the digest of everything
-// that happened since the reference point of that visit.
+// somebody else did since the reference point of that visit: the reader's own
+// comments, albums and uploads are excluded, because a digest is what you missed
+// while you were away and you did not miss your own work.
 //
 // The returned Summary has HasNews false — and nothing else set — in the two
 // cases where the panel must not appear: the account's first-ever read, which
@@ -224,14 +250,14 @@ func (s *Store) Summary(ctx context.Context, userUID string, now time.Time) (Sum
 	if v.since.IsZero() {
 		return Summary{}, nil
 	}
-	c, err := s.countSince(ctx, v.since, v.subjectUID)
+	c, err := s.countSince(ctx, v)
 	if err != nil {
 		return Summary{}, err
 	}
 	if c.empty() {
 		return Summary{}, nil
 	}
-	albums, people, err := s.lists(ctx, v.since, c)
+	albums, people, err := s.lists(ctx, v, c)
 	if err != nil {
 		return Summary{}, err
 	}
@@ -240,19 +266,19 @@ func (s *Store) Summary(ctx context.Context, userUID string, now time.Time) (Sum
 
 // lists fetches the album and people links the digest names, skipping either
 // query when its count already said there is nothing to name.
-func (s *Store) lists(ctx context.Context, since time.Time, c counts) ([]Album, []Person, error) {
+func (s *Store) lists(ctx context.Context, v visit, c counts) ([]Album, []Person, error) {
 	var (
 		albums []Album
 		people []Person
 		err    error
 	)
 	if c.albums > 0 {
-		if albums, err = s.listAlbums(ctx, since); err != nil {
+		if albums, err = s.listAlbums(ctx, v); err != nil {
 			return nil, nil, err
 		}
 	}
 	if c.people > 0 {
-		if people, err = s.listPeople(ctx, since); err != nil {
+		if people, err = s.listPeople(ctx, v.since); err != nil {
 			return nil, nil, err
 		}
 	}

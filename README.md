@@ -121,6 +121,8 @@ library is tidied by more than one person.
   button. At 1280 × 800 the first row of photographs is on the screen without scrolling; it used to
   start some 490 px down. Nothing is hidden by that: each filter you have set stays on the page as a
   chip that names it and clears in one click, whether you set it here or arrived from a shared link.
+  The digest itself is about the others: what *you* uploaded, curated or wrote is never announced back
+  to you, so a library where only you have been busy greets you with nothing at all.
 - **The wall shows photographs, not squares.** The library, an album, a search result — every grid is
   justified: rows of photos at their own proportions, aligned to a common height and running edge to
   edge. A panorama is wide, a portrait is tall, and nothing is cropped down to a square to fit a
