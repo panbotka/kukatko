@@ -1,8 +1,8 @@
 // Package maintenance keeps a large, long-lived photo library consistent. It
-// scans for drift between the database catalogue and the files on disk — photos
-// whose original is missing, originals on disk with no catalogue row (orphans),
-// photos missing thumbnails, and photos missing embeddings, faces or perceptual
-// hashes — and repairs what it can: regenerating thumbnails and pHashes through
+// scans for drift between the database catalogue and the store the originals
+// live in — photos whose original is missing, originals in the store with no
+// catalogue row (orphans), photos missing thumbnails, and photos missing
+// embeddings, faces or perceptual hashes — and repairs what it can: regenerating thumbnails and pHashes through
 // the job queue, backfilling embeddings and faces, and optionally importing
 // orphan originals into the catalogue.
 //
@@ -12,6 +12,11 @@
 // disk space is the trash/purge subsystem's job. Everything external sits behind
 // an interface so the orchestration is unit-testable with fakes and no live
 // database, filesystem or queue.
+//
+// The store is whichever backend the instance is configured with: the local
+// originals root on a filesystem instance, the bucket on an object-store one. The
+// scan reads it through StoreScanner and says in its report which one it read, so
+// an object-store library is never reconciled against an empty local directory.
 package maintenance
 
 import (
@@ -19,6 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/vectors"
@@ -86,28 +92,14 @@ type FaceCache interface {
 	ClearSurplusLinks(ctx context.Context, photoUID string) (int, error)
 }
 
-// OriginalStore reports whether a stored original is present on disk. It is the
-// presence-check subset of storage.Storage (Stat).
+// OriginalStore reports whether a stored original is present in the store. It is
+// the presence-check subset of storage.Storage (Stat), and it reaches whichever
+// backend is configured, so the missing-originals half of the scan is correct on
+// an object-store instance too.
 type OriginalStore interface {
 	// Stat returns file information for the original at relPath, or an error
 	// wrapping os.ErrNotExist when it is absent.
 	Stat(ctx context.Context, relPath string) (os.FileInfo, error)
-}
-
-// DiskFile is one regular file found under the originals root, keyed by its
-// slash-separated path relative to the root.
-type DiskFile struct {
-	// Key is the storage key (slash path relative to the originals root).
-	Key string
-	// Size is the file's byte length.
-	Size int64
-}
-
-// DiskScanner walks the originals root and lists the files actually on disk,
-// backing the orphan-detection half of the scan and the orphan-import repair.
-type DiskScanner interface {
-	// List returns every original currently on disk.
-	List(ctx context.Context) ([]DiskFile, error)
 }
 
 // ThumbChecker reports whether a photo's representative thumbnail is cached.
@@ -182,7 +174,7 @@ type Config struct {
 	Photos      PhotoCatalog
 	Vectors     VectorCatalog
 	Originals   OriginalStore
-	Disk        DiskScanner
+	Store       StoreScanner
 	Thumbs      ThumbChecker
 	Enqueuer    Enqueuer
 	Embed       EmbedBackfiller
@@ -199,7 +191,7 @@ type Service struct {
 	photos      PhotoCatalog
 	vectors     VectorCatalog
 	originals   OriginalStore
-	disk        DiskScanner
+	store       StoreScanner
 	thumbs      ThumbChecker
 	enqueuer    Enqueuer
 	embed       EmbedBackfiller
@@ -214,7 +206,7 @@ type Service struct {
 // since a scan needs all of them; the optional OrphanImporter may be nil.
 func New(cfg Config) *Service {
 	if missingCollaborator(cfg) {
-		panic("maintenance: Photos, Vectors, Originals, Disk, Thumbs, Enqueuer, " +
+		panic("maintenance: Photos, Vectors, Originals, Store, Thumbs, Enqueuer, " +
 			"Embed, Faces and FaceCache are required")
 	}
 	limit := cfg.SampleLimit
@@ -225,7 +217,7 @@ func New(cfg Config) *Service {
 		photos:      cfg.Photos,
 		vectors:     cfg.Vectors,
 		originals:   cfg.Originals,
-		disk:        cfg.Disk,
+		store:       cfg.Store,
 		thumbs:      cfg.Thumbs,
 		enqueuer:    cfg.Enqueuer,
 		embed:       cfg.Embed,
@@ -243,7 +235,7 @@ func New(cfg Config) *Service {
 // repairs respectively).
 func missingCollaborator(cfg Config) bool {
 	required := []any{
-		cfg.Photos, cfg.Vectors, cfg.Originals, cfg.Disk, cfg.Thumbs,
+		cfg.Photos, cfg.Vectors, cfg.Originals, cfg.Store, cfg.Thumbs,
 		cfg.Enqueuer, cfg.Embed, cfg.Faces, cfg.FaceCache,
 	}
 	for _, dep := range required {
@@ -254,9 +246,9 @@ func missingCollaborator(cfg Config) bool {
 	return false
 }
 
-// Scan reconciles the catalogue against the files on disk and the derived data,
-// returning a Report of every problem class with counts and bounded samples. It
-// is read-only and safe to run at any time.
+// Scan reconciles the catalogue against the originals the store holds and the
+// derived data, returning a Report of every problem class with counts and bounded
+// samples. It is read-only and safe to run at any time.
 func (s *Service) Scan(ctx context.Context) (Report, error) {
 	photoCount, err := s.photos.CountPhotos(ctx)
 	if err != nil {
@@ -266,7 +258,7 @@ func (s *Service) Scan(ctx context.Context) (Report, error) {
 	if err != nil {
 		return Report{}, err
 	}
-	orphans, filesInDB, originalsOnDisk, err := s.scanOrphans(ctx)
+	orphans, filesInDB, inventory, err := s.scanStore(ctx)
 	if err != nil {
 		return Report{}, err
 	}
@@ -297,7 +289,7 @@ func (s *Service) Scan(ctx context.Context) (Report, error) {
 	return Report{
 		Photos:                 photoCount,
 		FilesInDB:              filesInDB,
-		OriginalsOnDisk:        originalsOnDisk,
+		Store:                  inventory,
 		MissingOriginals:       missingOriginals,
 		OrphanFiles:            findingFrom(orphans, s.sampleLimit),
 		MissingThumbnails:      missingThumbs,
@@ -405,8 +397,8 @@ func (s *Service) scanDimensions(ctx context.Context) (Finding, error) {
 }
 
 // scanFiles iterates every photo's primary original, checking the original's
-// presence on disk and its representative thumbnail in the cache, returning the
-// missing-original and missing-thumbnail findings.
+// presence in the store and its representative thumbnail in the cache, returning
+// the missing-original and missing-thumbnail findings.
 func (s *Service) scanFiles(ctx context.Context) (missingOriginals, missingThumbs Finding, err error) {
 	primary, err := s.photos.ListPrimaryFiles(ctx)
 	if err != nil {
@@ -436,7 +428,7 @@ func (s *Service) scanFiles(ctx context.Context) (missingOriginals, missingThumb
 	return origs.finding(), thumbs.finding(), nil
 }
 
-// originalPresent reports whether the original at relPath exists on disk,
+// originalPresent reports whether the original at relPath exists in the store,
 // treating an os.ErrNotExist Stat as absent rather than an error.
 func (s *Service) originalPresent(ctx context.Context, relPath string) (bool, error) {
 	if _, err := s.originals.Stat(ctx, relPath); err != nil {
@@ -448,22 +440,63 @@ func (s *Service) originalPresent(ctx context.Context, relPath string) (bool, er
 	return true, nil
 }
 
-// scanOrphans lists the catalogued file keys and the files on disk and returns
-// the orphan keys (on disk, not catalogued) plus the two totals.
-func (s *Service) scanOrphans(ctx context.Context) (orphans []string, filesInDB, originalsOnDisk int, err error) {
+// scanStore reconciles the catalogued file keys against the originals the store
+// holds, returning the orphan keys (in the store, not catalogued), the number of
+// catalogued files and the store inventory.
+//
+// A failed store listing is reported, not returned: it lands in the inventory as
+// an error, which keeps the rest of the scan (and its findings) while stopping
+// the report from calling itself clean. Only a failure to read the catalogue —
+// without which there is nothing to reconcile against — aborts the scan.
+func (s *Service) scanStore(ctx context.Context) (orphans []string, filesInDB int, inv StoreInventory, err error) {
 	dbPaths, err := s.photos.ListFilePaths(ctx)
 	if err != nil {
-		return nil, 0, 0, fmt.Errorf("maintenance: listing catalogued files: %w", err)
+		return nil, 0, StoreInventory{}, fmt.Errorf("maintenance: listing catalogued files: %w", err)
 	}
-	diskFiles, err := s.disk.List(ctx)
+	found, originals, listErr := s.storeOrphans(ctx, keySet(dbPaths))
+	inv = storeInventory(s.store.Kind(), originals, listErr)
+	if !inv.Listed() {
+		// Nothing was reconciled, so there are no orphans to report either — only
+		// the reason nobody could tell.
+		return nil, len(dbPaths), inv, nil
+	}
+	return found, len(dbPaths), inv, nil
+}
+
+// storeInventory turns the outcome of a store listing into the inventory the
+// report carries: a count when it ran, the reason when it did not.
+func storeInventory(kind StoreKind, originals int, err error) StoreInventory {
 	if err != nil {
-		return nil, 0, 0, fmt.Errorf("maintenance: listing originals on disk: %w", err)
+		return StoreInventory{Kind: kind, Error: err.Error()}
 	}
-	diskKeys := make([]string, len(diskFiles))
-	for i, f := range diskFiles {
-		diskKeys[i] = f.Key
+	return StoreInventory{Kind: kind, Originals: originals}
+}
+
+// storeOrphans streams the originals the store holds, returning the keys no
+// catalogue row claims (sorted, for a deterministic result) and how many
+// originals were seen.
+//
+// Only the orphans are retained, so a bucket of twenty thousand objects costs the
+// catalogue's key set plus however few keys are actually orphaned, whatever the
+// store's size.
+func (s *Service) storeOrphans(ctx context.Context, catalogued map[string]struct{}) ([]string, int, error) {
+	orphans := make([]string, 0)
+	originals := 0
+	err := s.store.ListOriginals(ctx, func(key string) error {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return fmt.Errorf("maintenance: store listing interrupted: %w", ctxErr)
+		}
+		originals++
+		if _, ok := catalogued[key]; !ok {
+			orphans = append(orphans, key)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("maintenance: listing originals in the store: %w", err)
 	}
-	return orphanKeys(dbPaths, diskKeys), len(dbPaths), len(diskKeys), nil
+	sort.Strings(orphans)
+	return orphans, originals, nil
 }
 
 // derivedFindings groups the three derived-data findings produced from list

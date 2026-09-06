@@ -3196,15 +3196,16 @@ to `## Package map` in `CLAUDE.md`.
   a running server — it belongs in the CLI with the server stopped); always mounted in `serve`
   (`buildRestoreAPI` in `cmd/kukatko/restore.go`)), `internal/maintenance/`
   (**library integrity check & repair** — it keeps a large, long-lived library consistent:
-  it reveals drift between the catalogue and the files on disk and fills in/regenerates derived data; it mirrors
+  it reveals drift between the catalogue and the originals the store holds and fills in/regenerates derived data; it mirrors
   the previous system's `cache build-thumbs`, but is broader and safer (**it never deletes originals** — that is the
   job of the trash/purge), idempotent, with repairs going through the persistent job queue; all behind the interfaces
   `PhotoCatalog` (`CountPhotos`/`ListPrimaryFiles`/`ListFilePaths`/`ListPhotosMissingPhash`/
   `ListDimensionMismatches`/`RepairDimensions`,
   satisfied by `photos.Store`)/`VectorCatalog` (`ListPhotosMissingEmbedding`/`ListPhotosMissingFaces`/
   `PlanFaceBoxRepair`/`ApplyFaceBoxRepair`/`ListDuplicateFaceMarkers`/`ListSidewaysDetections`/
-  `ClearFaceDetection`, `vectors.Store`)/`OriginalStore` (`Stat`, `storage.Storage`)/`DiskScanner` (`List`, an adapter over
-  `backup.DiskOriginals`)/`ThumbChecker` (`HasThumbnail`, `NewThumbCache` over `thumb.Thumbnailer`)/
+  `ClearFaceDetection`, `vectors.Store`)/`OriginalStore` (`Stat`, `storage.Storage`)/`StoreScanner`
+  (`Kind`+`ListOriginals`, satisfied by `NewStoreOriginals(kind, storage.KeyLister)`)/
+  `ThumbChecker` (`HasThumbnail`, `NewThumbCache` over `thumb.Thumbnailer`)/
   `Enqueuer` (`EnqueueThumbnail`+`EnqueueFaceDetect`, `jobs.Enqueuer`)/`EmbedBackfiller` (`embedjob.Service`)/
   `FaceBackfiller` (`facejob.Service`)/`FaceCache` (`ClearSurplusLinks`, `facematch.Service` — which owns
   the face↔marker pairing rules the cache has to agree with)/`OrphanImporter` (optional, nil turns the
@@ -3212,12 +3213,24 @@ to `## Package map` in `CLAUDE.md`.
   **nil = no mapy.com key**, which empties the finding and makes the repair refuse) →
   unit-testable with fakes without DB/disk/queue; `Service` = `New(Config{...,SampleLimit})`
   (panics on a nil mandatory collaborator; default `SampleLimit` 20); **`Scan(ctx)`** (read-only) returns
-  `Report{Photos,FilesInDB,OriginalsOnDisk,MissingOriginals,OrphanFiles,MissingThumbnails,
+  `Report{Photos,FilesInDB,Store,MissingOriginals,OrphanFiles,MissingThumbnails,
   MissingEmbeddings,MissingFaces,MissingPhashes,MissingPlaces,TransposedDimensions,TransposedFaceBoxes,
   DuplicateFaceMarkers,SidewaysFaceDetections}` — each class is a
   `Finding{Count,Samples}`
   (a count + a limited sample of identifiers); `representativeThumbSize`=`tile_224` is the proxy for the presence of
-  thumbnails, an orphan = a file on disk with no `photo_files.file_path` (the `orphanKeys` set-diff), `Report.Clean()`;
+  thumbnails, an orphan = an original **in the store** with no `photo_files.file_path`, `Report.Clean()`;
+  **`Store`** is the inventory of whichever store the instance runs on (`StoreInventory{Kind,Originals,Error}`,
+  `Kind` ∈ `disk`/`object`, `Listed()`): `StoreOriginals` streams `storage.KeyLister.Keys` — `*storage.FS` walks
+  the originals root, `*storage.R2` lists the bucket — and keeps only the keys matching the `YYYY/MM/<name>`
+  layout, so thumbnails, metadata sidecars and anything else sharing a bucket are never counted and never offered
+  to the orphan import (the same positive classification `internal/reset` uses, and the reason the wiring in
+  `cmd/kukatko/maintenance.go` passes the backend itself rather than a walk of `storage.originals_path` — on an
+  `r2` instance that root is empty, which used to report a full library as **0 originals on disk** and then call
+  it consistent). The scan holds only the catalogue's key set and the orphans, never the store's keys, so a
+  bucket of twenty thousand objects costs no more memory than a small one. A **failed listing is carried, not
+  returned** (`Error`, `Originals` stays 0): the rest of the scan is still reported, but `Clean()` is false and
+  the UI shows the failure instead of a green verdict — a store nobody could read must not pass for an empty one.
+  The orphan *import* does abort on that failure, since importing nothing is not success;
   **`Repair(ctx,RepairOptions{Thumbnails,Embeddings,Faces,Phashes,ImportOrphans,Places,Dimensions,FaceMarkers,
   SidewaysFaces})`** (each opt-in,
   idempotent, in a fixed order) → `RepairResult` with the scheduling counts: thumbnails/phashes enqueue

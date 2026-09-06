@@ -34,11 +34,26 @@ export interface Finding {
   samples: string[]
 }
 
+/** Which store an instance keeps its originals in (`maintenance.StoreKind`). */
+export type StoreKind = 'disk' | 'object'
+
+/**
+ * What the scan saw in the store holding the originals (`maintenance.StoreInventory`):
+ * which store it is and how many originals it holds — or, when `error` is set, why
+ * nobody could tell. A failed listing is not a count of zero, which is why the two
+ * are carried apart.
+ */
+export interface StoreInventory {
+  kind: StoreKind
+  originals: number
+  error?: string
+}
+
 /** Result of an integrity scan (`maintenance.Report`). */
 export interface ScanReport {
   photos: number
   files_in_db: number
-  originals_on_disk: number
+  store: StoreInventory
   missing_originals: Finding
   orphan_files: Finding
   missing_thumbnails: Finding

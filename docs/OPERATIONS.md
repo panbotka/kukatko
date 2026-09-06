@@ -43,7 +43,10 @@ configuration key both here **and** into `config.example.yaml`.
   [`docs/RESTORE.md`](RESTORE.md),
   **`kukatko maintenance`** (library integrity check & repair — `internal/maintenance`; for
   ops/cron without a running server, applies migrations and builds a service shared with the admin API):
-  `maintenance scan` (read-only integrity report — disk↔DB drift + missing derived data),
+  `maintenance scan` (read-only integrity report — store↔DB drift + missing derived data; the store it
+  inventories is the configured backend, the originals root under `fs` and the bucket under `r2`, and the
+  summary line names the one it read; a listing it could not run prints `originals …: unknown (reason)`
+  instead of a zero, because an unreadable store must not pass for an empty one),
   **`maintenance reset`** (the **guarded library wipe** — `internal/reset`; dry run by default, `--execute` +
   a typed database name — and, on a bucket-backed store, a typed bucket name — to delete, `--force` for a
   non-interactive run, `--orphan-sweep` for the leftovers the catalogue never referenced;

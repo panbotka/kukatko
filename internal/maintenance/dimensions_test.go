@@ -46,7 +46,7 @@ func dimensionScenario() (*Service, *fakePhotos, *fakeVectors) {
 		Photos:    ph,
 		Vectors:   vec,
 		Originals: fakeOriginals{present: map[string]bool{}},
-		Disk:      fakeDisk{},
+		Store:     fakeStore{},
 		Thumbs:    fakeThumbs{have: map[string]bool{}},
 		Enqueuer:  &fakeEnqueuer{},
 		Embed:     &fakeBackfiller{},

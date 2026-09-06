@@ -2713,8 +2713,16 @@
       "run": "Spustit kontrolu",
       "running": "Probíhá kontrola…",
       "title": "Výsledek kontroly",
-      "summary": "{{photos}} fotek · {{files}} souborů v katalogu · {{disk}} originálů na disku",
-      "summaryHint": "Čísla by si měla zhruba odpovídat. Větší rozdíl mezi katalogem a diskem znamená, že se něco rozešlo — buď fotce chybí originál (je v katalogu, ale ne na disku), nebo je na disku soubor, o kterém katalog neví. Viz níže.",
+      "summary": {
+        "disk": "{{photos}} fotek · {{files}} souborů v katalogu · {{originals}} originálů na disku",
+        "object": "{{photos}} fotek · {{files}} souborů v katalogu · {{originals}} originálů v úložišti"
+      },
+      "summaryUnknown": "{{photos}} fotek · {{files}} souborů v katalogu · obsah úložiště se nepodařilo přečíst",
+      "summaryHint": {
+        "disk": "Čísla by si měla zhruba odpovídat. Větší rozdíl mezi katalogem a diskem znamená, že se něco rozešlo — buď fotce chybí originál (je v katalogu, ale ne na disku), nebo je na disku soubor, o kterém katalog neví. Viz níže.",
+        "object": "Čísla by si měla zhruba odpovídat. Větší rozdíl mezi katalogem a úložištěm znamená, že se něco rozešlo — buď fotce chybí originál (je v katalogu, ale ne v úložišti), nebo v úložišti leží soubor, o kterém katalog neví. Viz níže."
+      },
+      "storeError": "Nepodařilo se vypsat, co v úložišti leží, takže kontrola neví, jestli si katalog a soubory odpovídají. Zbytek výsledků platí. Důvod: {{error}}",
       "clean": "Katalog a soubory si odpovídají, není co opravovat.",
       "empty": "Zatím neproběhla žádná kontrola. Spusťte ji tlačítkem výše.",
       "error": "Kontrola se nezdařila."

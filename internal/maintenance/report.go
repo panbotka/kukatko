@@ -1,7 +1,5 @@
 package maintenance
 
-import "sort"
-
 // Finding summarises one class of integrity problem: how many items are affected
 // and a bounded sample of their identifiers (photo uids for catalogue-side
 // findings, storage keys for orphan files) for display without dumping the whole
@@ -14,7 +12,33 @@ type Finding struct {
 	Samples []string `json:"samples"`
 }
 
-// Report is the result of an integrity scan: the catalogue/disk totals plus one
+// StoreInventory is what the scan saw in the store that holds the originals:
+// which store that is, how many originals it holds, and — when the listing failed
+// — why the count is missing.
+//
+// The failure is carried rather than returned because the rest of the scan is
+// still worth reporting: the missing-original half asks the store per photo and
+// answers honestly even when the listing does not. What must not happen is the
+// two being told apart nowhere, i.e. "the store holds nothing" and "nobody could
+// ask the store" printing the same zero.
+type StoreInventory struct {
+	// Kind names the store the inventory came from: the local originals root or
+	// the object store.
+	Kind StoreKind `json:"kind"`
+	// Originals is the number of originals the store holds. It is zero when the
+	// listing failed, which is what Error is for.
+	Originals int `json:"originals"`
+	// Error is the store listing's failure message, empty when the listing ran.
+	Error string `json:"error,omitempty"`
+}
+
+// Listed reports whether the inventory actually ran, i.e. whether Originals is a
+// count rather than an unknown.
+func (i StoreInventory) Listed() bool {
+	return i.Error == ""
+}
+
+// Report is the result of an integrity scan: the catalogue/store totals plus one
 // Finding per problem class. A library with no problems has a zero Count in every
 // Finding.
 type Report struct {
@@ -22,8 +46,10 @@ type Report struct {
 	Photos int `json:"photos"`
 	// FilesInDB is the number of catalogued files (originals plus sidecars).
 	FilesInDB int `json:"files_in_db"`
-	// OriginalsOnDisk is the number of files found under the originals root.
-	OriginalsOnDisk int `json:"originals_on_disk"`
+	// Store is the inventory of the store the originals live in — the local root
+	// on a filesystem instance, the bucket on an object-store one — together with
+	// the reason it could not be read, if it could not.
+	Store StoreInventory `json:"store"`
 	// MissingOriginals are photos whose primary original is absent on disk.
 	MissingOriginals Finding `json:"missing_originals"`
 	// OrphanFiles are originals on disk with no catalogue row.
@@ -89,7 +115,15 @@ func (r Report) findings() []Finding {
 
 // Clean reports whether the scan found no problems at all, i.e. every Finding has
 // a zero Count.
+//
+// A scan whose store listing failed is never clean: it did not look at half of
+// what it reconciles, and "the catalogue and the files agree" is a claim nobody
+// checked. Reporting it as clean is how a store nobody could read passes for an
+// empty one.
 func (r Report) Clean() bool {
+	if !r.Store.Listed() {
+		return false
+	}
 	for _, finding := range r.findings() {
 		if finding.Count > 0 {
 			return false
@@ -138,20 +172,13 @@ func findingFrom(ids []string, limit int) Finding {
 	return Finding{Count: len(ids), Samples: samples}
 }
 
-// orphanKeys returns the storage keys present on disk but absent from the
-// catalogue, sorted for a deterministic result. It is a pure function so the
-// set-difference is exercised without any I/O.
-func orphanKeys(dbPaths, diskKeys []string) []string {
-	dbSet := make(map[string]struct{}, len(dbPaths))
-	for _, p := range dbPaths {
-		dbSet[p] = struct{}{}
+// keySet turns the catalogued file paths into a lookup set, so the store listing
+// can be streamed against it one key at a time instead of being collected first.
+// It is a pure function, so the set-difference is exercised without any I/O.
+func keySet(paths []string) map[string]struct{} {
+	set := make(map[string]struct{}, len(paths))
+	for _, p := range paths {
+		set[p] = struct{}{}
 	}
-	orphans := make([]string, 0)
-	for _, key := range diskKeys {
-		if _, ok := dbSet[key]; !ok {
-			orphans = append(orphans, key)
-		}
-	}
-	sort.Strings(orphans)
-	return orphans
+	return set
 }

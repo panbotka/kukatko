@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/panbotka/kukatko/internal/backup"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/embedding"
 	"github.com/panbotka/kukatko/internal/embedjob"
@@ -74,28 +73,15 @@ func (stubGeocoder) ReverseGeocode(context.Context, float64, float64) (*mapy.Geo
 	return nil, mapy.ErrNotFound
 }
 
-// diskScanner adapts backup.DiskOriginals to maintenance.DiskScanner.
-type diskScanner struct{ disk *backup.DiskOriginals }
-
-func (d diskScanner) List(ctx context.Context) ([]maintenance.DiskFile, error) {
-	originals, err := d.disk.List(ctx)
-	if err != nil {
-		return nil, err
-	}
-	files := make([]maintenance.DiskFile, len(originals))
-	for i, o := range originals {
-		files[i] = maintenance.DiskFile{Key: o.Key, Size: o.Size}
-	}
-	return files, nil
-}
-
-// harness bundles the wired collaborators an integration test drives.
+// harness bundles the wired collaborators an integration test drives. The store
+// is held as the interface, not as *storage.FS, so the same harness runs over the
+// object-store backend (bucket_integration_test.go).
 type harness struct {
 	svc      *maintenance.Service
 	photos   *photos.Store
 	vectors  *vectors.Store
 	people   *people.Store
-	storage  *storage.FS
+	storage  storage.Storage
 	thumbs   *thumb.Thumbnailer
 	jobs     *jobs.Store
 	thumbjob *thumbjob.Service
@@ -107,13 +93,28 @@ type harness struct {
 // root and a temp thumbnail cache.
 func newHarness(t *testing.T) *harness {
 	t.Helper()
-	db := dbtest.New(t)
-	dbtest.TruncateAll(t, db)
-
 	root := t.TempDir()
 	store, err := storage.NewFS(root)
 	if err != nil {
 		t.Fatalf("storage.NewFS: %v", err)
+	}
+	h := newHarnessOver(t, store, maintenance.StoreDisk)
+	h.root = root
+	return h
+}
+
+// newHarnessOver wires the harness over an already-built storage backend,
+// reporting it to the scan as the given store kind. The filesystem and the object
+// store differ only here, which is the point: every other collaborator, and the
+// service itself, is the one production runs.
+func newHarnessOver(t *testing.T, store storage.Storage, kind maintenance.StoreKind) *harness {
+	t.Helper()
+	db := dbtest.New(t)
+	dbtest.TruncateAll(t, db)
+
+	lister, ok := store.(storage.KeyLister)
+	if !ok {
+		t.Fatalf("storage backend %T cannot list its keys", store)
 	}
 	thumbnailer := thumb.New(store, t.TempDir())
 	photoStore := photos.NewStore(db.Pool())
@@ -140,7 +141,7 @@ func newHarness(t *testing.T) *harness {
 		Photos:    photoStore,
 		Vectors:   vectorStore,
 		Originals: store,
-		Disk:      diskScanner{disk: backup.NewDiskOriginals(root)},
+		Store:     maintenance.NewStoreOriginals(kind, lister),
 		Thumbs:    maintenance.NewThumbCache(thumbnailer),
 		Enqueuer:  enqueuer,
 		Embed:     embedSvc,
@@ -156,7 +157,7 @@ func newHarness(t *testing.T) *harness {
 	return &harness{
 		svc: svc, photos: photoStore, vectors: vectorStore, people: peopleStore,
 		storage: store, thumbs: thumbnailer, jobs: jobStore, thumbjob: tj,
-		places: placeStore, root: root,
+		places: placeStore,
 	}
 }
 
@@ -277,8 +278,11 @@ func TestScanDetectsDrift(t *testing.T) {
 	assertFinding(t, "orphan files", report.OrphanFiles, 1, "2099/01/orphan.jpg")
 	assertFinding(t, "missing thumbnails", report.MissingThumbnails, 1, noThumb.UID)
 	assertFinding(t, "missing embeddings", report.MissingEmbeddings, 1, noOrig.UID)
-	if report.Photos != 3 || report.OriginalsOnDisk != 3 {
-		t.Errorf("totals photos=%d disk=%d, want 3/3", report.Photos, report.OriginalsOnDisk)
+	if report.Photos != 3 || report.Store.Originals != 3 {
+		t.Errorf("totals photos=%d store=%d, want 3/3", report.Photos, report.Store.Originals)
+	}
+	if report.Store.Kind != maintenance.StoreDisk || !report.Store.Listed() {
+		t.Errorf("store inventory = %+v, want a listed disk inventory", report.Store)
 	}
 }
 

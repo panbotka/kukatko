@@ -145,10 +145,26 @@ func runMaintenanceScan(cmd *cobra.Command) error {
 	return nil
 }
 
+// storeSummary describes the store half of a scan in one clause: how many
+// originals the store holds and which store that was, or — when the listing
+// failed — that the number is unknown and why. A failure must not print as a
+// zero: "the store holds nothing" and "nobody could read the store" are opposite
+// conclusions.
+func storeSummary(inv maintenance.StoreInventory) string {
+	where := "on disk"
+	if inv.Kind == maintenance.StoreObject {
+		where = "in the object store"
+	}
+	if !inv.Listed() {
+		return fmt.Sprintf("originals %s: unknown (%s)", where, inv.Error)
+	}
+	return fmt.Sprintf("%d originals %s", inv.Originals, where)
+}
+
 // printScanReport prints a scan report as a readable summary.
 func printScanReport(cmd *cobra.Command, report maintenance.Report) {
-	cmd.Printf("integrity scan: %d photos, %d files in DB, %d originals on disk\n",
-		report.Photos, report.FilesInDB, report.OriginalsOnDisk)
+	cmd.Printf("integrity scan: %d photos, %d files in DB, %s\n",
+		report.Photos, report.FilesInDB, storeSummary(report.Store))
 	cmd.Printf("  missing originals:  %d\n", report.MissingOriginals.Count)
 	cmd.Printf("  orphan files:       %d\n", report.OrphanFiles.Count)
 	cmd.Printf("  missing thumbnails: %d\n", report.MissingThumbnails.Count)

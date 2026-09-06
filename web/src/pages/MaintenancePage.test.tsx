@@ -40,7 +40,7 @@ function report(overrides: Partial<ScanReport> = {}): ScanReport {
   return {
     photos: 10,
     files_in_db: 11,
-    originals_on_disk: 12,
+    store: { kind: 'disk', originals: 12 },
     missing_originals: empty,
     orphan_files: empty,
     missing_thumbnails: empty,
@@ -230,6 +230,41 @@ describe('MaintenancePage', () => {
     expect(
       await screen.findByText('The catalogue and the files agree; there is nothing to repair.'),
     ).toBeInTheDocument()
+  })
+
+  it('names the object store rather than the disk when that is what was scanned', async () => {
+    scanMock.mockResolvedValue(report({ store: { kind: 'object', originals: 398 } }))
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(screen.getByRole('button', { name: 'Run the check' }))
+
+    // The count is the bucket's, and both the summary and its hint say storage —
+    // an object-store instance has no originals on disk to talk about.
+    expect(await screen.findByText(/398 originals in storage/)).toBeInTheDocument()
+    expect(screen.getByText(/between the catalogue and storage/)).toBeInTheDocument()
+    expect(screen.queryByText(/originals on disk/)).toBeNull()
+  })
+
+  it('shows the failure instead of a zero and a green verdict when the store cannot be listed', async () => {
+    scanMock.mockResolvedValue(
+      report({ store: { kind: 'object', originals: 0, error: 'connection refused' } }),
+    )
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(screen.getByRole('button', { name: 'Run the check' }))
+
+    expect(await screen.findByText(/storage could not be read/)).toBeInTheDocument()
+    expect(screen.getByText(/Reason: connection refused/)).toBeInTheDocument()
+    // No count is claimed, and the library is not declared consistent: half of
+    // what the check reconciles was never read.
+    expect(screen.queryByText(/0 originals/)).toBeNull()
+    expect(
+      screen.queryByText('The catalogue and the files agree; there is nothing to repair.'),
+    ).toBeNull()
+    // The findings the scan could compute are still listed.
+    expect(screen.getByRole('table')).toBeInTheDocument()
   })
 
   it('disables the repair button until a repair is selected, then runs it', async () => {

@@ -2605,8 +2605,16 @@
       "run": "Run the check",
       "running": "Scanning…",
       "title": "What the check found",
-      "summary": "{{photos}} photos · {{files}} files in the catalogue · {{disk}} originals on disk",
-      "summaryHint": "These numbers should roughly agree. A bigger gap between the catalogue and the disk means something drifted apart — either a photo’s original is gone (it is in the catalogue but not on disk), or a file sits on disk that the catalogue knows nothing about. See below.",
+      "summary": {
+        "disk": "{{photos}} photos · {{files}} files in the catalogue · {{originals}} originals on disk",
+        "object": "{{photos}} photos · {{files}} files in the catalogue · {{originals}} originals in storage"
+      },
+      "summaryUnknown": "{{photos}} photos · {{files}} files in the catalogue · storage could not be read",
+      "summaryHint": {
+        "disk": "These numbers should roughly agree. A bigger gap between the catalogue and the disk means something drifted apart — either a photo’s original is gone (it is in the catalogue but not on disk), or a file sits on disk that the catalogue knows nothing about. See below.",
+        "object": "These numbers should roughly agree. A bigger gap between the catalogue and storage means something drifted apart — either a photo’s original is gone (it is in the catalogue but not in storage), or a file sits in storage that the catalogue knows nothing about. See below."
+      },
+      "storeError": "Listing what storage holds failed, so the check cannot tell whether the catalogue and the files agree. The rest of the results still stand. Reason: {{error}}",
       "clean": "The catalogue and the files agree; there is nothing to repair.",
       "empty": "No check has run yet. Start one with the button above.",
       "error": "The scan failed."

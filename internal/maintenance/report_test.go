@@ -5,50 +5,18 @@ import (
 	"testing"
 )
 
-// TestOrphanKeys verifies the set difference returns disk keys absent from the
-// catalogue, sorted, and ignores catalogued keys not on disk.
-func TestOrphanKeys(t *testing.T) {
+// TestKeySet verifies the catalogued paths become a lookup set the store listing
+// can be streamed against, including for an empty catalogue.
+func TestKeySet(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name    string
-		dbPaths []string
-		disk    []string
-		want    []string
-	}{
-		{
-			name:    "no orphans",
-			dbPaths: []string{"a", "b"},
-			disk:    []string{"a", "b"},
-			want:    []string{},
-		},
-		{
-			name:    "some orphans sorted",
-			dbPaths: []string{"a"},
-			disk:    []string{"c", "a", "b"},
-			want:    []string{"b", "c"},
-		},
-		{
-			name:    "catalogued-but-missing-on-disk is not an orphan",
-			dbPaths: []string{"a", "missing"},
-			disk:    []string{"a"},
-			want:    []string{},
-		},
-		{
-			name:    "empty disk",
-			dbPaths: []string{"a"},
-			disk:    nil,
-			want:    []string{},
-		},
+	got := keySet([]string{"a", "b", "a"})
+	want := map[string]struct{}{"a": {}, "b": {}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("keySet = %v, want %v", got, want)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			got := orphanKeys(tt.dbPaths, tt.disk)
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("orphanKeys(%v, %v) = %v, want %v", tt.dbPaths, tt.disk, got, tt.want)
-			}
-		})
+	if len(keySet(nil)) != 0 {
+		t.Errorf("keySet(nil) = %v, want an empty set", keySet(nil))
 	}
 }
 
@@ -99,6 +67,15 @@ func TestReportClean(t *testing.T) {
 	dirty := Report{MissingThumbnails: Finding{Count: 1}}
 	if dirty.Clean() {
 		t.Error("Report with a finding should not be clean")
+	}
+	// A store nobody could list has findings nobody could compute, so the verdict
+	// must not be "everything agrees".
+	unread := Report{Store: StoreInventory{Kind: StoreObject, Error: "listing bucket: timeout"}}
+	if unread.Clean() {
+		t.Error("Report whose store listing failed should not be clean")
+	}
+	if unread.Store.Listed() {
+		t.Error("StoreInventory carrying an error should not report itself listed")
 	}
 }
 

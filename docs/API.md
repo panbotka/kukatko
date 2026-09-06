@@ -1539,7 +1539,11 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `missing_originals`/`orphan_files`/`missing_thumbnails`/`missing_embeddings`/`missing_faces`/
   `missing_phashes`/`missing_places`/`transposed_dimensions`/`transposed_face_boxes`/
   `duplicate_face_markers`/`sideways_face_detections` + the totals
-  `photos`/`files_in_db`/`originals_on_disk`);
+  `photos`/`files_in_db`/`store`). **`store`** is the inventory of whichever store the instance keeps its
+  originals in — `{kind,originals,error?}`, `kind` being `disk` (the local originals root) or `object` (the
+  bucket) — so an `r2` instance reports what the bucket holds instead of the empty local root. `error` is set
+  when the listing failed; `originals` is then 0 and means "unknown", not "empty", and the UI shows the reason
+  instead of a clean verdict.
   `POST /maintenance/repair`
   `{thumbnails,embeddings,faces,phashes,import_orphans,places,dimensions,face_markers,sideways_faces}`
   (each opt-in)

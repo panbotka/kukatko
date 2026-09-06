@@ -121,10 +121,32 @@ func (f fakeOriginals) Stat(_ context.Context, relPath string) (os.FileInfo, err
 	return nil, os.ErrNotExist
 }
 
-// fakeDisk lists a fixed set of on-disk files.
-type fakeDisk struct{ files []DiskFile }
+// fakeStore lists a fixed set of originals as the configured store kind, or
+// fails the listing when err is set.
+type fakeStore struct {
+	kind StoreKind
+	keys []string
+	err  error
+}
 
-func (f fakeDisk) List(context.Context) ([]DiskFile, error) { return f.files, nil }
+func (f fakeStore) Kind() StoreKind {
+	if f.kind == "" {
+		return StoreDisk
+	}
+	return f.kind
+}
+
+func (f fakeStore) ListOriginals(_ context.Context, yield func(key string) error) error {
+	if f.err != nil {
+		return f.err
+	}
+	for _, key := range f.keys {
+		if err := yield(key); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 // fakeThumbs reports thumbnail presence from a hash set.
 type fakeThumbs struct{ have map[string]bool }
@@ -213,7 +235,7 @@ func scenario() (*Service, *fakeEnqueuer, *fakeBackfiller, *fakeFaceBackfiller, 
 			duplicateMarkers: []vectors.DuplicateFaceMarker{{MarkerUID: "mk1", PhotoUID: "p1", Faces: 2}},
 		},
 		Originals: fakeOriginals{present: map[string]bool{"a": true, "c": true}},
-		Disk:      fakeDisk{files: []DiskFile{{Key: "a"}, {Key: "c"}, {Key: "orphan1"}}},
+		Store:     fakeStore{keys: []string{"a", "c", "orphan1"}},
 		Thumbs:    fakeThumbs{have: map[string]bool{"h1": true, "h2": true}},
 		Enqueuer:  enq,
 		Embed:     emb,
@@ -258,9 +280,12 @@ func TestScan(t *testing.T) {
 			t.Errorf("%s samples = %v, want [%s]", c.name, c.got.Samples, c.sample)
 		}
 	}
-	if report.Photos != 3 || report.FilesInDB != 3 || report.OriginalsOnDisk != 3 {
-		t.Errorf("totals = photos:%d files:%d disk:%d, want 3/3/3",
-			report.Photos, report.FilesInDB, report.OriginalsOnDisk)
+	if report.Photos != 3 || report.FilesInDB != 3 || report.Store.Originals != 3 {
+		t.Errorf("totals = photos:%d files:%d store:%d, want 3/3/3",
+			report.Photos, report.FilesInDB, report.Store.Originals)
+	}
+	if report.Store.Kind != StoreDisk || !report.Store.Listed() {
+		t.Errorf("store inventory = %+v, want a listed disk inventory", report.Store)
 	}
 	if report.Clean() {
 		t.Error("report with findings should not be Clean")
@@ -348,7 +373,7 @@ func TestRepairImportOrphanTally(t *testing.T) {
 		Photos:    &fakePhotos{filePaths: nil},
 		Vectors:   &fakeVectors{},
 		Originals: fakeOriginals{present: map[string]bool{}},
-		Disk:      fakeDisk{files: []DiskFile{{Key: "a"}, {Key: "b"}, {Key: "c"}}},
+		Store:     fakeStore{keys: []string{"a", "b", "c"}},
 		Thumbs:    fakeThumbs{have: map[string]bool{}},
 		Enqueuer:  &fakeEnqueuer{},
 		Embed:     &fakeBackfiller{},
@@ -373,7 +398,7 @@ func TestRepairOrphanImportUnavailable(t *testing.T) {
 		Photos:    &fakePhotos{},
 		Vectors:   &fakeVectors{},
 		Originals: fakeOriginals{present: map[string]bool{}},
-		Disk:      fakeDisk{},
+		Store:     fakeStore{},
 		Thumbs:    fakeThumbs{have: map[string]bool{}},
 		Enqueuer:  &fakeEnqueuer{},
 		Embed:     &fakeBackfiller{},
@@ -401,7 +426,7 @@ func TestRepairFaceMarkersVisitsEachPhotoOnce(t *testing.T) {
 			{MarkerUID: "mkC", PhotoUID: "p1", Faces: 2},
 		}},
 		Originals: fakeOriginals{present: map[string]bool{}},
-		Disk:      fakeDisk{},
+		Store:     fakeStore{},
 		Thumbs:    fakeThumbs{have: map[string]bool{}},
 		Enqueuer:  &fakeEnqueuer{},
 		Embed:     &fakeBackfiller{},

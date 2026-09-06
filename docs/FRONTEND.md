@@ -1874,7 +1874,11 @@ here.
   `import.source.*` — a raw i18n key in that table would be worse than useless,
   `MaintenancePage` = `/maintenance` (maintainer only) the library maintenance console: a **Spustit kontrolu** button
   (`GET /maintenance/scan`) → a summary of totals + a findings table (count + samples per class, or „knihovna
-  konzistentní") — also through the shared `RecordTable` (`size="sm"` + **`hideHeader`**: the first column names
+  konzistentní"); the summary (`ScanSummary`) names the store the check actually read — „originálů na disku"
+  on an `fs` instance, „originálů v úložišti" on an `r2` one (`report.store.kind`), and its hint follows —
+  while a store that could not be listed (`report.store.error`) prints no count at all but a warning `Alert`
+  with the reason, and **suppresses the green „není co opravovat" verdict**: half of what the check reconciles
+  was never looked at, so it must not read as a clean library — also through the shared `RecordTable` (`size="sm"` + **`hideHeader`**: the first column names
   the problem, so the desktop table stays headerless), so a phone gets **one stacked card per finding**
   (`maintenance.findings.problem`/`.count`/`.samples` are the card's labels — a card has no header row to read
   the values across from); **a finding's samples are file paths and UIDs, so they live in a `TechnicalDetail`**
@@ -1883,7 +1887,7 @@ here.
   the **Bez místa** tile on Stav systému leads, and N is the same number) → **Spustit opravy** (`POST /maintenance/repair`) with a result
   summary, plus the background queue state (`GET /jobs/stats` polls every 3 s) as progress; **every finding,
   the summary „drift" row and every queue state carries a quiet plain-language explanation** (without hovering) —
-  `maintenance.findings.descriptions.*`, `maintenance.scan.summaryHint`, `maintenance.jobs.intro`
+  `maintenance.findings.descriptions.*`, `maintenance.scan.summaryHint.*`, `maintenance.jobs.intro`
   and the shared `JobStateLegend` (celkem/ve frontě/zpracovává se/nepovedlo se/**trvale se nepovedlo**) — so a
   maintainer knows what a count means and whether action is needed. **Every name on the page is the family's,
   not the pipeline's**: no „embedding", no „perceptuální hash", no „osiřelý soubor" and no „box" — a finding is

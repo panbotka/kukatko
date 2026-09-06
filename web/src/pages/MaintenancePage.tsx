@@ -101,7 +101,52 @@ type RepairState =
   | { status: 'done'; result: RepairResult }
 
 /**
- * The scan-result table: catalogue/disk totals and one row per problem class.
+ * The one-line totals of a scan: photos, catalogued files and the originals the
+ * store holds — named after the store that was actually read, "on disk" for a
+ * local library and "in storage" for one that lives in an object store.
+ *
+ * A store the scan could not list is not zero originals: it says so instead, and
+ * the reason comes with it. The green "nothing to repair" verdict is withheld in
+ * that case (see {@link ScanResult}) — half of what the check reconciles was
+ * never looked at.
+ */
+function ScanSummary({ report }: { report: ScanReport }) {
+  const { t } = useTranslation()
+  const { store } = report
+  if (store.error !== undefined && store.error !== '') {
+    return (
+      <>
+        <p className="text-secondary mb-1">
+          {t('maintenance.scan.summaryUnknown', {
+            photos: report.photos,
+            files: report.files_in_db,
+          })}
+        </p>
+        <Alert variant="warning">{t('maintenance.scan.storeError', { error: store.error })}</Alert>
+      </>
+    )
+  }
+  return (
+    <>
+      <p className="text-secondary mb-1">
+        {t(`maintenance.scan.summary.${store.kind}`, {
+          photos: report.photos,
+          files: report.files_in_db,
+          originals: store.originals,
+        })}
+      </p>
+      <p className="text-secondary small">{t(`maintenance.scan.summaryHint.${store.kind}`)}</p>
+    </>
+  )
+}
+
+/** Reports whether the scan actually read the store holding the originals. */
+function storeListed(report: ScanReport): boolean {
+  return report.store.error === undefined || report.store.error === ''
+}
+
+/**
+ * The scan-result table: catalogue/store totals and one row per problem class.
  *
  * The listing is headerless on a desktop — the first column names the problem —
  * but a card has no header row to read across from, so every column still carries
@@ -161,15 +206,9 @@ function ScanResult({ report }: { report: ScanReport }) {
   ]
   return (
     <>
-      <p className="text-secondary mb-1">
-        {t('maintenance.scan.summary', {
-          photos: report.photos,
-          files: report.files_in_db,
-          disk: report.originals_on_disk,
-        })}
-      </p>
-      <p className="text-secondary small">{t('maintenance.scan.summaryHint')}</p>
-      {report.missing_originals.count === 0 &&
+      <ScanSummary report={report} />
+      {storeListed(report) &&
+      report.missing_originals.count === 0 &&
       report.orphan_files.count === 0 &&
       report.missing_thumbnails.count === 0 &&
       report.missing_embeddings.count === 0 &&
@@ -479,7 +518,7 @@ function AuditPurgeCard() {
 
 /**
  * Admin-only library-maintenance console: runs an integrity scan that reports
- * catalogue/disk drift (missing originals, orphan files, missing thumbnails,
+ * catalogue/store drift (missing originals, orphan files, missing thumbnails,
  * embeddings, faces and pHashes) with counts and samples, and triggers the opt-in
  * repairs. Repairs run in the background through the job queue, so the page polls
  * the queue stats to show progress. Maintenance is an operations capability, so

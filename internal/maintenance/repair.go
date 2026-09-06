@@ -32,7 +32,7 @@ type RepairOptions struct {
 	Faces bool `json:"faces"`
 	// Phashes recomputes missing perceptual hashes.
 	Phashes bool `json:"phashes"`
-	// ImportOrphans catalogues originals on disk that have no catalogue row.
+	// ImportOrphans catalogues originals in the store that have no catalogue row.
 	ImportOrphans bool `json:"import_orphans"`
 	// Places reverse-geocodes the live photos that carry coordinates but have no
 	// cached place yet.
@@ -393,10 +393,13 @@ func (s *Service) repairPlaces(ctx context.Context, opts RepairOptions, res *Rep
 	return nil
 }
 
-// repairOrphans catalogues every orphan original on disk through the upload
+// repairOrphans catalogues every orphan original in the store through the upload
 // pipeline when selected, tallying created/duplicate/failed without aborting on a
 // single file's failure. It returns ErrOrphanImportUnavailable when no importer
 // is configured.
+//
+// Unlike the scan, a failed store listing aborts here: a repair that imported
+// nothing because it could not see the store must not report success.
 func (s *Service) repairOrphans(ctx context.Context, opts RepairOptions, res *RepairResult) error {
 	if !opts.ImportOrphans {
 		return nil
@@ -404,7 +407,11 @@ func (s *Service) repairOrphans(ctx context.Context, opts RepairOptions, res *Re
 	if s.importer == nil {
 		return ErrOrphanImportUnavailable
 	}
-	orphans, _, _, err := s.scanOrphans(ctx)
+	dbPaths, err := s.photos.ListFilePaths(ctx)
+	if err != nil {
+		return fmt.Errorf("maintenance: listing catalogued files: %w", err)
+	}
+	orphans, _, err := s.storeOrphans(ctx, keySet(dbPaths))
 	if err != nil {
 		return err
 	}
