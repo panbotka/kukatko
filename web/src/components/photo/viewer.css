@@ -144,6 +144,20 @@
   display: block;
   max-width: 100%;
   max-height: 100%;
+  /* The image carries `width`/`height` ATTRIBUTES (JSX states the frame so the
+     box does not collapse while the photograph is on the wire), and an attribute
+     is a presentational hint — a real used height of, say, 960px. Only
+     `max-height: 100%` above cut it back down to the figure, and that percentage
+     resolves against the figure's height, which comes from `aspect-ratio` alone.
+     WebKit calls such a height indefinite and drops the percentage: measured in
+     WebKit on a 402x713 phone viewport, the figure was a correct 386x290 while
+     the image inside it stayed 386x960, and `object-fit: contain` centred the
+     photograph in that 960px box — painting it 335px BELOW its own figure, at the
+     bottom edge of the screen with the face boxes left behind at the top. Blink
+     resolves the same percentage and never showed it. `height: auto` overrides
+     the attribute hint, so the image scales by its ratio from the width and lands
+     on the figure in both engines, with or without a max-height to lean on. */
+  height: auto;
   object-fit: contain;
   user-select: none;
   -webkit-user-drag: none;

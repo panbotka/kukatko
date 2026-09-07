@@ -2389,6 +2389,15 @@ here.
   sit off its face and then jump. (jsdom doesn't catch the letterbox
   — verify the geometry visually; previously the figure just shrank to the `<img>` and when the stage was narrowed by the panel
   it stretched, so the **frames drifted apart**.)
+  **The image must never take its height from its `height` attribute.** JSX states the frame as `width`/`height`
+  attributes so the box does not collapse while the file is on the wire, and an attribute is a *presentational hint* —
+  a used height in pixels. `.kk-viewer__image` therefore declares **`height: auto`** (`viewer.css`, guarded by
+  `styles/viewerImageFit.test.ts`); leaning on `max-height: 100%` alone is not enough, because that percentage resolves
+  against the figure's height, which comes from `aspect-ratio` and nothing else. **WebKit calls such a height indefinite
+  and drops the percentage** — measured on a 402×713 phone viewport: figure a correct 386×290, image 386×**960**, and
+  `object-fit: contain` centring the photograph in that 960px box painted it **335px below its own figure**, at the
+  bottom edge of the screen, with every face box left behind on the figure. Blink resolves the same percentage and
+  showed nothing, so **Chromium alone cannot clear this class of bug** — the engines disagree here.
   That framed figure is also what the stage's **blurred stand-in** fills: while the preview is on its
   way the viewer renders `BlurPlaceholder` with `photo.blurhash` inside the figure, so it sits exactly
   where the image will be and nothing moves when it lands. It is rendered **only** for a framed figure
