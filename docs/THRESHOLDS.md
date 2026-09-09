@@ -214,6 +214,10 @@ Until then the review game's label questions are looser than they read.
 distance 0.5 in the ArcFace space. It decides which identity suggestions the viewer's face-naming
 popover (`FaceAssignPanel`) offers as one-click chips.
 
+The faces panel's **Potvrdit vše** reuses this same floor and adds no threshold of its own: it
+confirms exactly the suggestions the panel already offers as one-click chips, so moving the floor
+moves the bulk action with it (`bulkConfirmations`, in the same file).
+
 It is not a measurement. It is the complement of `faces.suggestion_max_distance`
 (`facematch.DefaultSuggestionMaxDistance` = 0.5), and it exists because the backend deliberately
 serves suggestions from *past* that cutoff:

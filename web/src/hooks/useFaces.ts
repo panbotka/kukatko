@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { displayFrame, type Frame, readingOrder } from '../lib/faceGeometry'
 import { isNamed } from '../lib/faceState'
+import { type FaceConfirmation } from '../lib/faceSuggestion'
 import {
   type AssignRequest,
   assignFace,
@@ -13,6 +14,18 @@ import {
 
 /** Fetch lifecycle of the faces detected on one photo. */
 type State = { status: 'loading' } | { status: 'error' } | { status: 'ready'; data: FacesResponse }
+
+/**
+ * Live progress of a running "confirm all" over the faces panel's suggestions,
+ * read by the button that started it. `failed` survives the run: it is how the
+ * panel reports afterwards that some faces stayed unnamed.
+ */
+export interface FacesConfirmAllState {
+  running: boolean
+  current: number
+  total: number
+  failed: number
+}
 
 /** What {@link useFaces} exposes: the detections plus the naming actions. */
 export interface UseFacesResult {
@@ -50,6 +63,24 @@ export interface UseFacesResult {
   assignName: (face: FaceView, name: string) => void
   /** Clears a face's current assignment. */
   unassign: (face: FaceView) => void
+  /**
+   * Names every face of a prepared batch, one request at a time, through the same
+   * path a single confirmation takes. The batch is the caller's (see
+   * `lib/faceSuggestion.bulkConfirmations`) — this hook only walks it.
+   */
+  confirmAll: (targets: FaceConfirmation[]) => void
+  /** Stops a running batch before its next face; what is confirmed stays confirmed. */
+  cancelConfirmAll: () => void
+  /** Progress of the running batch, and the failure tally of the last one. */
+  confirmAllState: FacesConfirmAllState
+}
+
+/** A batch that has not been started, or has been forgotten. */
+const IDLE_CONFIRM_ALL: FacesConfirmAllState = {
+  running: false,
+  current: 0,
+  total: 0,
+  failed: 0,
 }
 
 /**
@@ -119,6 +150,13 @@ export function useFaces(photoUid: string): UseFacesResult {
   const [selected, setSelected] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState(false)
+  const [confirmAllState, setConfirmAllState] = useState<FacesConfirmAllState>(IDLE_CONFIRM_ALL)
+
+  // A batch runs outside React state so the loop can read its own liveness
+  // between two awaits: `cancelBatch` is the stop button, `batchRunning` keeps a
+  // second click from starting a parallel run over the same faces.
+  const cancelBatch = useRef(false)
+  const batchRunning = useRef(false)
 
   // The photo this render is showing, and a monotonic id of the newest request.
   // Together they decide whether a response is still wanted: the uid rejects work
@@ -163,6 +201,11 @@ export function useFaces(photoUid: string): UseFacesResult {
     // with a clean action state rather than inheriting its spinner or its error.
     setBusy(false)
     setActionError(false)
+    // A batch belongs to the photo it was started on; the new one neither
+    // continues it nor inherits its failure tally.
+    cancelBatch.current = true
+    batchRunning.current = false
+    setConfirmAllState(IDLE_CONFIRM_ALL)
     // Only the initial load picks a face. The refetch that reconciles a mutation
     // must not, or naming the last face would drag the selection back to the top.
     reload(controller.signal, true).catch((err: unknown) => {
@@ -245,6 +288,66 @@ export function useFaces(photoUid: string): UseFacesResult {
     [runAssign],
   )
 
+  const confirmAll = useCallback(
+    (targets: FaceConfirmation[]) => {
+      if (batchRunning.current || targets.length === 0) {
+        return
+      }
+      // The list as it stands before the batch, so the face selected at the end
+      // is computed the way a single confirmation computes it: from what was
+      // still unnamed when the click happened.
+      const before = facesRef.current
+      batchRunning.current = true
+      cancelBatch.current = false
+      setBusy(true)
+      setActionError(false)
+      setConfirmAllState({ running: true, current: 0, total: targets.length, failed: 0 })
+      void (async () => {
+        const confirmed = new Set<number>()
+        let done = 0
+        let failed = 0
+        for (const target of targets) {
+          if (cancelBatch.current || currentUidRef.current !== photoUid) {
+            break
+          }
+          done += 1
+          applyOptimistic(target.face.face_index, target.subject.subject_name)
+          try {
+            await assignFace(
+              photoUid,
+              buildAssign(target.face, { subject_uid: target.subject.subject_uid }),
+            )
+            confirmed.add(target.face.face_index)
+          } catch {
+            // The run goes on: one face the server refused is not a reason to
+            // abandon the rest, and it simply stays unnamed for a second look.
+            failed += 1
+          }
+          setConfirmAllState((state) => ({ ...state, current: done, failed }))
+        }
+        batchRunning.current = false
+        if (currentUidRef.current !== photoUid) {
+          return
+        }
+        // One reconcile at the end rather than one per face: it replaces every
+        // optimistic name with what the server stored, so the faces that failed
+        // come back unnamed by themselves.
+        await reload().catch(() => undefined)
+        setSelected(
+          before.find((face) => !isNamed(face) && !confirmed.has(face.face_index))?.face_index ??
+            null,
+        )
+        setBusy(false)
+        setConfirmAllState((state) => ({ ...state, running: false }))
+      })()
+    },
+    [applyOptimistic, photoUid, reload],
+  )
+
+  const cancelConfirmAll = useCallback(() => {
+    cancelBatch.current = true
+  }, [])
+
   const unassign = useCallback(
     (face: FaceView) => {
       if (face.marker_uid === undefined || face.marker_uid === '') {
@@ -276,5 +379,8 @@ export function useFaces(photoUid: string): UseFacesResult {
     acceptSuggestion,
     assignName,
     unassign,
+    confirmAll,
+    cancelConfirmAll,
+    confirmAllState,
   }
 }

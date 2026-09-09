@@ -77,6 +77,10 @@ photo-book tool (deliberately out of scope), or a product with support and a rel
   server-cut crop, so a screen full of faces is kilobytes rather than a photograph apiece.
 - Faces are detected, clustered, and matched against the people you have named — and **nothing is
   ever assigned automatically**. The machine narrows the list down, a human confirms.
+- **Naming a group photograph is one click, not twelve.** When several faces on one photo already
+  carry a confident suggestion, the faces panel offers to confirm all of them at once. It names
+  exactly what it was already offering face by face, never the same person twice on one photograph,
+  and it can be stopped halfway — what it could not save it says so, and leaves unnamed.
 - Tools for the parts that are actually hard: candidates for one person among the untagged faces,
   auto-clusters of unknown faces, outliers inside a person's collection (the face that probably isn't
   them), and a recognition sweep across the whole library.

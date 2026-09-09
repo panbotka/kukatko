@@ -4095,7 +4095,22 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   control: where the missing buttons would leave the reader puzzled, the panel says once what they would have
   said one by one. Not an `Alert` — nothing is wrong — and not shown to an editor or on an empty list);
   the selected row **scrolls itself into view**
-  (`block: 'nearest'`), so that a tap on a box in the photo doesn't mark a row off-screen. Its list carries the
+  (`block: 'nearest'`), so that a tap on a box in the photo doesn't mark a row off-screen.
+  **Above the rows sits one bulk control** — **Potvrdit vše (N)** — for the photograph where several faces each
+  already carry a confident suggestion and naming them one row at a time is the same click repeated. What it
+  names is `lib/faceSuggestion`'s `bulkConfirmations`: an unnamed face **with an embedding** whose strongest
+  suggestion clears the **same display floor** the row's own suggestion buttons use — deliberately no second,
+  stricter threshold, so it follows the floor if that ever moves (`docs/THRESHOLDS.md`) — and **one person only
+  once per photograph**: when two faces top-suggest the same subject only the surer one is confirmed and the
+  other is left for a human, because the same person on two markers of one photo is exactly what
+  `internal/dupmarkers` exists to clean up. It is shown only to `canWrite` and only from **two** faces up (with
+  one, the row's own button is the shorter path), and it is a **single** button that becomes its own stop
+  control while the run goes (`aria-busy`, **Potvrzuji 1 / 4 — zastavit**) — so a keyboard that started the
+  batch still has focus on something, and the control does not move out from under a finger when the count
+  drops mid-run. The run is `useFaces.confirmAll`: a sequential client-side loop over the existing single-face
+  assign endpoint, **no bulk API**. What it could not name is reported afterwards as a warning `Alert`
+  (`faces.confirmAll.failed`) rather than an error — those faces are simply still unnamed, and the rows below
+  are where they get fixed; there is no undo, the per-face reassign/unassign is the correction path. Its list carries the
   **class** `.kk-viewer__panel-scroll` (shared with `EditPanel`) rather than an inline `maxHeight`, because on a
   phone the drawer is a short bottom sheet that scrolls itself and has to be able to *lift* the cap — an inline
   style would outrank the media query that does it. Under the selected row
@@ -4617,7 +4632,18 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   photo B's faces and the next assignment would send a `marker_uid` from A against B (404). For the same reason
   `busy`/`actionError` are zeroed at the start of every photo and an error/completion of a mutation is written through only
   when the reader is still on the same photo;
-  `useSubjects()` = a lazy list of all subjects for the typeahead (it mounts only with `FacesPanel`,
+  `confirmAll(targets)`/`cancelConfirmAll`/`confirmAllState` (same hook) = the batch the faces panel starts:
+a sequential walk of a **prepared** list — which faces belong in it is `lib/faceSuggestion.bulkConfirmations`'
+decision, not the hook's — each of them going through the very same `assignFace` call a single confirmation
+makes. It patches every name optimistically, holds `busy` for the whole run (so the per-row controls cannot
+race it), reports `{running, current, total, failed}` live, and can be stopped **between** two faces
+(`cancelBatch`; what is already confirmed stays confirmed). A failure does not end the run — it is counted and
+the face comes back unnamed from the **one** reconciling refetch at the end of the batch (one per face would
+repaint the list under the reader a dozen times). It finishes by selecting the next face left to name, computed
+from the list as it stood **before** the batch minus what was actually confirmed, so a face the server refused
+is precisely what the cursor lands on. `failed` outlives the run, being what the panel's tally reads; a second
+start while one runs is ignored (`batchRunning`), and moving to another photo cancels the batch and forgets it;
+`useSubjects()` = a lazy list of all subjects for the typeahead (it mounts only with `FacesPanel`,
   so merely viewing a photo never pays for it; an error = an empty list, the field then only creates new ones);
   `useSubjectName(uid, subjects, subjectsLoading)` = the name behind a uid a **URL** supplied rather than a
   click (`/faces?subject=…`): the already-loaded list answers it for free, and only once that list has

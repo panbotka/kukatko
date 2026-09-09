@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next'
 import { useSubjects } from '../../hooks/useSubjects'
 import { type UseFacesResult } from '../../hooks/useFaces'
 import { type FaceState, faceState, hasEmbedding } from '../../lib/faceState'
+import { bulkConfirmations } from '../../lib/faceSuggestion'
 import { approximateAge } from '../../lib/lifeYears'
 import { type FaceView } from '../../services/people'
 import { Icon } from '../Icon'
@@ -82,6 +83,13 @@ const STATE_CHIP: Record<FaceState, string> = {
  * Pointing at a row lights its box on the photo (`onHover`), and the pairing is
  * reported from **focus** as well, so tabbing through the rows walks the boxes too.
  *
+ * On a group photo where several faces already carry a confident suggestion,
+ * naming them one row at a time is the same click repeated; a single **confirm
+ * all** above the list does the lot. It offers exactly what the rows offer — the
+ * suggestions {@link bulkConfirmations} finds in the panel's own display tier —
+ * and it appears only from two faces up, because with one the row's own button is
+ * already the shorter path.
+ *
  * A viewer may not name anybody, so their rows are plain rows rather than dead
  * buttons — the app-wide rule (see `ReasonedButton`) is that a role never leaves
  * a greyed-out control behind. They still light their box on hover, because
@@ -102,6 +110,17 @@ export function FacesPanel({
 
   const selected = faces.selected
   const listRef = useRef<HTMLDivElement>(null)
+
+  // What one click would name. Recomputed whenever the faces change, so the count
+  // on the button falls as the rows are confirmed — by the batch or by hand.
+  const batch = useMemo(() => bulkConfirmations(faces.faces), [faces.faces])
+  const { running, current, total, failed } = faces.confirmAllState
+  // Two is the floor: with a single actionable face the row's own suggestion
+  // button is one click as well, and a second control beside it only asks the
+  // reader which of the two identical buttons to press. While a run is going the
+  // control stays put whatever the count does — it is now the stop button, and
+  // pulling it out from under a finger mid-run would be worse than a stale label.
+  const showBatch = canWrite && (running || batch.length >= 2)
 
   // Birth year by subject uid, so a row can date the face it shows without a
   // lookup per render. The subject list is already loaded here for the assign
@@ -189,6 +208,37 @@ export function FacesPanel({
             starts, and it is not an `Alert`: nothing is wrong. */}
         {!canWrite && faces.faces.length > 0 && (
           <p className="text-secondary small mb-2">{t('faces.viewerNote')}</p>
+        )}
+
+        {showBatch && (
+          <div className="mb-2 d-grid">
+            {/* One button, not two: it turns into its own stop control, so a
+                keyboard that started the run still has focus on something. */}
+            <Button
+              variant={running ? 'outline-secondary' : 'success'}
+              size="sm"
+              aria-busy={running}
+              onClick={() => {
+                if (running) {
+                  faces.cancelConfirmAll()
+                } else {
+                  faces.confirmAll(batch)
+                }
+              }}
+            >
+              <Icon name={running ? 'x-lg' : 'check-lg'} className="me-1" />
+              {running
+                ? t('faces.confirmAll.progress', { current, total })
+                : t('faces.confirmAll.idle', { n: batch.length })}
+            </Button>
+          </div>
+        )}
+        {/* The tally of a finished run. Not an error: the faces that failed are
+            simply still unnamed, and the rows below are where they get fixed. */}
+        {!running && failed > 0 && (
+          <Alert variant="warning" className="py-2 small">
+            {t('faces.confirmAll.failed', { count: failed })}
+          </Alert>
         )}
 
         <div className="list-group list-group-flush" ref={listRef}>

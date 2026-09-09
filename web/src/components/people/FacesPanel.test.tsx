@@ -40,6 +40,9 @@ function facesResult(overrides: Partial<UseFacesResult> = {}): UseFacesResult {
     acceptSuggestion: vi.fn(),
     assignName: vi.fn(),
     unassign: vi.fn(),
+    confirmAll: vi.fn(),
+    cancelConfirmAll: vi.fn(),
+    confirmAllState: { running: false, current: 0, total: 0, failed: 0 },
     ...overrides,
   }
 }
@@ -536,5 +539,157 @@ describe('FacesPanel', () => {
       expect(fetchSubjectsMock).toHaveBeenCalledTimes(2)
     })
     expect(screen.queryByText(/yrs?$/)).not.toBeInTheDocument()
+  })
+})
+
+/** A ranked suggestion, at a confidence the panel offers as a one-tap button. */
+function suggestion(name: string, confidence: number): people.Suggestion {
+  return { subject_uid: `su_${name}`, subject_name: name, distance: 1 - confidence, confidence }
+}
+
+/**
+ * The one control that names more than one face at a time. What belongs in the
+ * batch is `lib/faceSuggestion.bulkConfirmations`' decision (tested there); what
+ * this panel owns is when the button appears at all, what it says, and that a
+ * running batch can be stopped.
+ */
+describe('FacesPanel confirm all', () => {
+  /** Two unnamed faces, each with a confident suggestion of its own. */
+  function twoSuggested() {
+    return [
+      faceView({ face_index: 0, suggestions: [suggestion('Alice', 0.9)] }),
+      faceView({ face_index: 1, suggestions: [suggestion('Bob', 0.8)] }),
+    ]
+  }
+
+  it('offers to confirm every suggested face at once, counting them', () => {
+    renderPanel(
+      facesResult({
+        faces: [
+          ...twoSuggested(),
+          // Neither of these belongs in the batch, and neither is counted.
+          faceView({ face_index: 2, suggestions: [suggestion('Cyril', 0.3)] }),
+          faceView({ face_index: 3, marker_uid: 'mk_3', subject_name: 'Zoe' }),
+        ],
+      }),
+    )
+
+    expect(screen.getByRole('button', { name: /Confirm all \(2\)/ })).toBeInTheDocument()
+  })
+
+  it('stays away when a single row button would do the same job', () => {
+    renderPanel(facesResult({ faces: [twoSuggested()[0]] }))
+    expect(screen.queryByRole('button', { name: /Confirm all/ })).not.toBeInTheDocument()
+  })
+
+  it('stays away when nothing is suggested at all', () => {
+    renderPanel(facesResult({ faces: [faceView({ face_index: 0 }), faceView({ face_index: 1 })] }))
+    expect(screen.queryByRole('button', { name: /Confirm all/ })).not.toBeInTheDocument()
+  })
+
+  it('is not offered to a viewer, who may not name anybody', () => {
+    renderPanel(facesResult({ faces: twoSuggested() }), false)
+    expect(screen.queryByRole('button', { name: /Confirm all/ })).not.toBeInTheDocument()
+  })
+
+  it('hands the hook exactly the faces it offered, and nothing else', async () => {
+    const user = userEvent.setup()
+    const confirmAll = vi.fn<UseFacesResult['confirmAll']>()
+    renderPanel(
+      facesResult({
+        faces: [
+          ...twoSuggested(),
+          faceView({ face_index: 2, suggestions: [suggestion('Cyril', 0.3)] }),
+        ],
+        confirmAll,
+      }),
+    )
+
+    await user.click(screen.getByRole('button', { name: /Confirm all/ }))
+
+    expect(confirmAll).toHaveBeenCalledTimes(1)
+    expect(
+      confirmAll.mock.calls[0][0].map((item) => [item.face.face_index, item.subject.subject_name]),
+    ).toEqual([
+      [0, 'Alice'],
+      [1, 'Bob'],
+    ])
+  })
+
+  it('never offers to name one person twice on one photo', async () => {
+    const user = userEvent.setup()
+    const confirmAll = vi.fn<UseFacesResult['confirmAll']>()
+    renderPanel(
+      facesResult({
+        faces: [
+          faceView({ face_index: 0, suggestions: [suggestion('Alice', 0.7)] }),
+          faceView({ face_index: 1, suggestions: [suggestion('Alice', 0.95)] }),
+          faceView({ face_index: 2, suggestions: [suggestion('Bob', 0.8)] }),
+        ],
+        confirmAll,
+      }),
+    )
+
+    // Two faces suggest Alice: only the surer one is confirmed, so the photo does
+    // not end up with two markers for her. The other stays for a human.
+    expect(screen.getByRole('button', { name: /Confirm all \(2\)/ })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Confirm all/ }))
+    expect(confirmAll.mock.calls[0][0].map((item) => item.face.face_index)).toEqual([1, 2])
+  })
+
+  it('turns into its own stop button while the batch runs', async () => {
+    const user = userEvent.setup()
+    const cancelConfirmAll = vi.fn()
+    renderPanel(
+      facesResult({
+        faces: twoSuggested(),
+        cancelConfirmAll,
+        confirmAllState: { running: true, current: 1, total: 2, failed: 0 },
+      }),
+    )
+
+    const stop = screen.getByRole('button', { name: /Confirming 1 \/ 2/ })
+    expect(stop).toHaveAttribute('aria-busy', 'true')
+    await user.click(stop)
+    expect(cancelConfirmAll).toHaveBeenCalledTimes(1)
+    // The control does not vanish when the count would drop below two mid-run.
+    expect(screen.queryByRole('button', { name: /Confirm all/ })).not.toBeInTheDocument()
+  })
+
+  it('keeps the running control up even once nothing is left to confirm', () => {
+    renderPanel(
+      facesResult({
+        faces: [faceView({ face_index: 0, marker_uid: 'mk_1', subject_name: 'Alice' })],
+        confirmAllState: { running: true, current: 2, total: 2, failed: 0 },
+      }),
+    )
+
+    expect(screen.getByRole('button', { name: /Confirming 2 \/ 2/ })).toBeInTheDocument()
+  })
+
+  it('says afterwards how many faces the batch could not name', () => {
+    renderPanel(
+      facesResult({
+        faces: twoSuggested(),
+        confirmAllState: { running: false, current: 2, total: 2, failed: 1 },
+      }),
+    )
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      '1 face could not be confirmed — it stays unnamed.',
+    )
+    // And the rows are still there to fix by hand.
+    expect(screen.getByRole('button', { name: /Confirm all \(2\)/ })).toBeInTheDocument()
+  })
+
+  it('says nothing about failures while the batch is still running', () => {
+    renderPanel(
+      facesResult({
+        faces: twoSuggested(),
+        confirmAllState: { running: true, current: 1, total: 2, failed: 1 },
+      }),
+    )
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 })

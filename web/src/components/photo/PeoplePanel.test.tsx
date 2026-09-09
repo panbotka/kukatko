@@ -32,6 +32,9 @@ function facesResult(overrides: Partial<UseFacesResult> = {}): UseFacesResult {
     acceptSuggestion: vi.fn(),
     assignName: vi.fn(),
     unassign: vi.fn(),
+    confirmAll: vi.fn(),
+    cancelConfirmAll: vi.fn(),
+    confirmAllState: { running: false, current: 0, total: 0, failed: 0 },
     ...overrides,
   }
 }

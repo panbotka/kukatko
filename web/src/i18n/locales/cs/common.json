@@ -1953,6 +1953,14 @@
     "hide": "Skrýt obličeje",
     "unnamed": "Nepojmenovaný obličej {{index}}",
     "assignError": "Přiřazení se nepodařilo uložit. Zkus to prosím znovu.",
+    "confirmAll": {
+      "idle": "Potvrdit vše ({{n}})",
+      "progress": "Potvrzuji {{current}} / {{total}} — zastavit",
+      "failed_one": "{{count}} obličej se nepodařilo potvrdit — zůstal bez jména.",
+      "failed_few": "{{count}} obličeje se nepodařilo potvrdit — zůstaly bez jména.",
+      "failed_many": "{{count}} obličeje se nepodařilo potvrdit — zůstaly bez jména.",
+      "failed_other": "{{count}} obličejů se nepodařilo potvrdit — zůstaly bez jména."
+    },
     "panel": {
       "title": "Pojmenuj tento obličej",
       "assignedTo": "Přiřazeno k {{name}}",

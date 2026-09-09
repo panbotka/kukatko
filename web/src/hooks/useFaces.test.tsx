@@ -399,3 +399,214 @@ describe('useFaces', () => {
     })
   })
 })
+
+/** Alice and Bob, as the two suggestions a batch would confirm. */
+const alice = { subject_uid: 'su_a', subject_name: 'Alice', distance: 0.1, confidence: 0.9 }
+const bob = { subject_uid: 'su_b', subject_name: 'Bob', distance: 0.2, confidence: 0.8 }
+
+/**
+ * A photo with three unnamed faces on one row: two carrying a confident
+ * suggestion, and a third with none — the face a batch must leave alone.
+ */
+function batchResponse(): FacesResponse {
+  const base = facesResponse().faces[0]
+  return {
+    photo_uid: 'ph1',
+    width: 1000,
+    height: 800,
+    orientation: 1,
+    faces: [
+      { ...base, face_index: 0, bbox: [0.1, 0.1, 0.1, 0.1], suggestions: [alice] },
+      { ...base, face_index: 1, bbox: [0.4, 0.1, 0.1, 0.1], suggestions: [bob] },
+      { ...base, face_index: 2, bbox: [0.7, 0.1, 0.1, 0.1], suggestions: [] },
+    ],
+  }
+}
+
+/**
+ * The batch state machine of {@link useFaces}: the sequential walk the faces panel
+ * starts when a photo has several faces the panel already offers a one-tap
+ * suggestion for. The hook only walks the list it is handed — which faces belong
+ * in it is `lib/faceSuggestion.bulkConfirmations`' decision, tested there.
+ */
+describe('useFaces confirm all', () => {
+  /** The two suggested faces of {@link batchResponse}, as a prepared batch. */
+  function targets(faces: FacesResponse['faces']) {
+    return [
+      { face: faces[0], subject: alice },
+      { face: faces[1], subject: bob },
+    ]
+  }
+
+  it('is idle until something starts it', async () => {
+    const { result } = await renderReady(batchResponse())
+
+    expect(result.current.confirmAllState).toEqual({
+      running: false,
+      current: 0,
+      total: 0,
+      failed: 0,
+    })
+  })
+
+  it('names every face of the batch through the single-face endpoint', async () => {
+    const { result } = await renderReady(batchResponse())
+
+    act(() => {
+      result.current.confirmAll(targets(result.current.faces))
+    })
+    await waitFor(() => {
+      expect(result.current.confirmAllState.running).toBe(false)
+    })
+
+    expect(assignMock).toHaveBeenNthCalledWith(1, 'ph1', {
+      action: 'create_marker',
+      bbox: [0.1, 0.1, 0.1, 0.1],
+      face_index: 0,
+      subject_uid: 'su_a',
+    })
+    expect(assignMock).toHaveBeenNthCalledWith(2, 'ph1', {
+      action: 'create_marker',
+      bbox: [0.4, 0.1, 0.1, 0.1],
+      face_index: 1,
+      subject_uid: 'su_b',
+    })
+    // The third face carried no suggestion and was never in the batch.
+    expect(assignMock).toHaveBeenCalledTimes(2)
+    expect(result.current.confirmAllState).toEqual({
+      running: false,
+      current: 2,
+      total: 2,
+      failed: 0,
+    })
+    // One reconcile for the whole run, not one per face.
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(result.current.busy).toBe(false)
+  })
+
+  it('reports progress while it runs and holds the panel busy', async () => {
+    const { result } = await renderReady(batchResponse())
+    let settleFirst: () => void = () => undefined
+    assignMock.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          settleFirst = resolve
+        }),
+    )
+
+    act(() => {
+      result.current.confirmAll(targets(result.current.faces))
+    })
+
+    expect(result.current.confirmAllState).toEqual({
+      running: true,
+      current: 0,
+      total: 2,
+      failed: 0,
+    })
+    expect(result.current.busy).toBe(true)
+    // The face being confirmed already wears its name, as a single confirmation
+    // makes it wear it.
+    expect(result.current.faces[0].subject_name).toBe('Alice')
+    // A second start while one is running is ignored rather than run in parallel.
+    act(() => {
+      result.current.confirmAll(targets(result.current.faces))
+    })
+
+    settleFirst()
+    await waitFor(() => {
+      expect(result.current.confirmAllState.running).toBe(false)
+    })
+    expect(assignMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('stops before the next face when cancelled, keeping what it confirmed', async () => {
+    const { result } = await renderReady(batchResponse())
+    let settleFirst: () => void = () => undefined
+    assignMock.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          settleFirst = resolve
+        }),
+    )
+
+    act(() => {
+      result.current.confirmAll(targets(result.current.faces))
+    })
+    act(() => {
+      result.current.cancelConfirmAll()
+    })
+    settleFirst()
+
+    await waitFor(() => {
+      expect(result.current.confirmAllState.running).toBe(false)
+    })
+    // The face in flight was finished; the one after it was never asked for.
+    expect(assignMock).toHaveBeenCalledTimes(1)
+    expect(result.current.confirmAllState).toEqual({
+      running: false,
+      current: 1,
+      total: 2,
+      failed: 0,
+    })
+  })
+
+  it('carries on past a failure and reports the tally afterwards', async () => {
+    const { result } = await renderReady(batchResponse())
+    assignMock.mockRejectedValueOnce(new Error('nope'))
+
+    act(() => {
+      result.current.confirmAll(targets(result.current.faces))
+    })
+    await waitFor(() => {
+      expect(result.current.confirmAllState.running).toBe(false)
+    })
+
+    // The second face was still confirmed, and the tally outlives the run.
+    expect(assignMock).toHaveBeenCalledTimes(2)
+    expect(result.current.confirmAllState.failed).toBe(1)
+    // The failure is the batch's own report, not the single-assignment banner.
+    expect(result.current.actionError).toBe(false)
+  })
+
+  it('advances the selection to the next face left to name', async () => {
+    const { result } = await renderReady(batchResponse())
+    expect(result.current.selected?.face_index).toBe(0)
+
+    act(() => {
+      result.current.confirmAll(targets(result.current.faces))
+    })
+    await waitFor(() => {
+      expect(result.current.confirmAllState.running).toBe(false)
+    })
+
+    // Faces 0 and 1 were just named; face 2 is what is left to do by hand.
+    expect(result.current.selected?.face_index).toBe(2)
+  })
+
+  it('leaves the selection on a face the batch failed to name', async () => {
+    const { result } = await renderReady(batchResponse())
+    assignMock.mockRejectedValueOnce(new Error('nope'))
+
+    act(() => {
+      result.current.confirmAll(targets(result.current.faces))
+    })
+    await waitFor(() => {
+      expect(result.current.confirmAllState.running).toBe(false)
+    })
+
+    // Face 0 stayed unnamed, so it is the first thing still asking for attention.
+    expect(result.current.selected?.face_index).toBe(0)
+  })
+
+  it('does nothing at all with an empty batch', async () => {
+    const { result } = await renderReady(batchResponse())
+
+    act(() => {
+      result.current.confirmAll([])
+    })
+
+    expect(assignMock).not.toHaveBeenCalled()
+    expect(result.current.confirmAllState.running).toBe(false)
+  })
+})

@@ -1877,6 +1877,12 @@
     "hide": "Hide faces",
     "unnamed": "Unnamed face {{index}}",
     "assignError": "Could not save the assignment. Please try again.",
+    "confirmAll": {
+      "idle": "Confirm all ({{n}})",
+      "progress": "Confirming {{current}} / {{total}} — stop",
+      "failed_one": "{{count}} face could not be confirmed — it stays unnamed.",
+      "failed_other": "{{count}} faces could not be confirmed — they stay unnamed."
+    },
     "panel": {
       "title": "Name this face",
       "assignedTo": "Assigned to {{name}}",
