@@ -193,6 +193,16 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
     ],
   },
   {
+    titleKey: 'shortcuts.groups.albumFaces',
+    entries: [
+      { keys: ['1', '…', '9'], descriptionKey: 'shortcuts.albumFaces.confirmNth' },
+      { keys: ['a'], descriptionKey: 'shortcuts.albumFaces.confirmAll' },
+      { keys: ['→', 'Space'], descriptionKey: 'shortcuts.albumFaces.next' },
+      { keys: ['←'], descriptionKey: 'shortcuts.albumFaces.back' },
+      { keys: ['Esc'], descriptionKey: 'shortcuts.albumFaces.leave' },
+    ],
+  },
+  {
     titleKey: 'shortcuts.groups.review',
     entries: [
       { keys: ['→', 'y'], descriptionKey: 'shortcuts.review.yes' },

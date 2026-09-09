@@ -7,7 +7,8 @@
     "page": "{{title}} · Kukátko",
     "album": "Album {{name}}",
     "label": "Štítek {{name}}",
-    "search": "Hledání „{{query}}“"
+    "search": "Hledání „{{query}}“",
+    "albumFaces": "Obličeje v albu"
   },
   "confirmModal": {
     "cancel": "Zrušit"
@@ -1109,6 +1110,31 @@
     "empty": {
       "title": "Toto album nemá žádné fotky",
       "hint": "Přidej fotky z knihovny tak, že je vybereš a zvolíš toto album."
+    },
+    "faces": "Obličeje ({{n}})"
+  },
+  "albumFaces": {
+    "title": "Obličeje v albu",
+    "progress": "Fotka {{current}}/{{total}}",
+    "loading": "Načítání fotek k pojmenování…",
+    "saving": "Ukládám přiřazení…",
+    "error": "Frontu fotek se nepodařilo načíst.",
+    "close": "Zavřít",
+    "photoAlt": "Fotka s obličeji k pojmenování",
+    "noSuggestion": "Bez návrhu — pojmenuj na detailu fotky",
+    "confirmRow": "Potvrdit {{name}}",
+    "dismissRow": "Přeskočit obličej {{number}}",
+    "confirmAll": "Potvrdit vše ({{n}})",
+    "previous": "Zpět",
+    "skip": "Přeskočit",
+    "failed_one": "{{count}} obličej se nepodařilo potvrdit — zůstal bez jména.",
+    "failed_few": "{{count}} obličeje se nepodařilo potvrdit — zůstaly bez jména.",
+    "failed_many": "{{count}} obličeje se nepodařilo potvrdit — zůstaly bez jména.",
+    "failed_other": "{{count}} obličejů se nepodařilo potvrdit — zůstaly bez jména.",
+    "done": {
+      "title": "Hotovo, tohle album je projité.",
+      "hint": "Obličeje, ke kterým nikdo nenavrhl jméno, zůstaly na detailu fotek.",
+      "back": "Zpět do alba"
     }
   },
   "labels": {
@@ -1464,7 +1490,8 @@
       "outliers": "Možné chyby",
       "lightbox": "Náhled při posuzování",
       "review": "Třídění",
-      "compare": "Porovnání duplikátů"
+      "compare": "Porovnání duplikátů",
+      "albumFaces": "Obličeje v albu"
     },
     "global": {
       "search": "Otevřít globální hledání",
@@ -1535,6 +1562,13 @@
       "keepRight": "Ponechat pravou fotku (levá se archivuje)",
       "keepBoth": "Nechat obě — nejsou to duplikáty",
       "leave": "Zpět na seznam duplikátů"
+    },
+    "albumFaces": {
+      "confirmNth": "Potvrdit obličej s tímhle číslem",
+      "confirmAll": "Potvrdit všechny návrhy na fotce",
+      "next": "Další fotka",
+      "back": "Předchozí fotka",
+      "leave": "Zavřít a vrátit se do alba"
     }
   },
   "map": {

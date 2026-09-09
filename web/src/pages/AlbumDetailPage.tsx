@@ -3,7 +3,7 @@ import Alert from 'react-bootstrap/Alert'
 import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
-import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { type ListRange } from 'react-virtuoso'
 
 import { useAuth } from '../auth/AuthContext'
@@ -13,6 +13,7 @@ import { ConfirmModal } from '../components/ConfirmModal'
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
 import { HeaderActions } from '../components/HeaderActions'
+import { Icon } from '../components/Icon'
 import { FilterBar } from '../components/library/FilterBar'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid, type PhotoGridHandle } from '../components/library/PhotoGrid'
@@ -21,6 +22,7 @@ import { AlbumEditModal } from '../components/organize/AlbumEditModal'
 import { type BatchExtraAction, BatchActionBar } from '../components/organize/BatchActionBar'
 import { DownloadZipButton } from '../components/organize/DownloadZipButton'
 import { SlideshowStart } from '../components/slideshow/SlideshowStart'
+import { useAlbumFaceCount } from '../hooks/useAlbumFaces'
 import { useBulkEdit } from '../hooks/useBulkEdit'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useGridScrollMemory } from '../hooks/useGridScrollMemory'
@@ -149,6 +151,10 @@ export function AlbumDetailPage() {
   // Who contributed to *this album*: after an event several people upload into
   // the same one, and this is what narrows the grid to one person's share.
   const uploaders = useUploaders(params)
+  // How much face-tagging the album still owes. It is the badge on the button
+  // into the tagging run and the reason the button is there at all: an album
+  // where everybody is named offers nothing to do, so it offers no button.
+  const unnamedFaces = useAlbumFaceCount(uid)
 
   // Hover-select: a writer's tiles carry the corner checkmark from the outset,
   // so the toolbar below keys off what is picked rather than an explicit mode.
@@ -356,6 +362,19 @@ export function AlbumDetailPage() {
               ),
             ]}
             secondary={[
+              canWrite && unnamedFaces !== null && unnamedFaces > 0 && (
+                /* An anchor styled as a button, not a Button with an onClick:
+                   the run has an address of its own, so it must be openable in a
+                   new tab and copyable like every other link in the app. */
+                <Link
+                  key="faces"
+                  to={`/albums/${encodeURIComponent(uid)}/faces`}
+                  className="btn btn-outline-secondary btn-sm"
+                >
+                  <Icon name="person-bounding-box" className="me-1" />
+                  {t('albumDetail.faces', { n: unnamedFaces })}
+                </Link>
+              ),
               total > 0 && (
                 <DownloadZipButton
                   key="download"

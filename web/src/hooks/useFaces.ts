@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { buildAssign } from '../lib/faceAssign'
 import { displayFrame, type Frame, readingOrder } from '../lib/faceGeometry'
 import { isNamed } from '../lib/faceState'
 import { type FaceConfirmation } from '../lib/faceSuggestion'
@@ -81,25 +82,6 @@ const IDLE_CONFIRM_ALL: FacesConfirmAllState = {
   current: 0,
   total: 0,
   failed: 0,
-}
-
-/**
- * Builds the assignment request for naming `face` with the given identity (by
- * subject UID or free-text name). A face matched to an existing marker is
- * assigned in place; one with no marker creates a new marker from its bbox.
- *
- * That fork is the backend's own (`internal/facematch`) and stays here; the UI
- * shows neither of its two branches, because naming either face is the same one
- * click (see `lib/faceState`).
- */
-function buildAssign(
-  face: FaceView,
-  who: Pick<AssignRequest, 'subject_uid' | 'subject_name'>,
-): AssignRequest {
-  if (face.marker_uid !== undefined && face.marker_uid !== '') {
-    return { action: 'assign_person', marker_uid: face.marker_uid, ...who }
-  }
-  return { action: 'create_marker', bbox: face.bbox, face_index: face.face_index, ...who }
 }
 
 /**

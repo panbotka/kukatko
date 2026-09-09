@@ -1,0 +1,100 @@
+/* The album face-tagging run. The page owns the whole viewport like the review
+   game does, and for the same reason: the answer controls must always be on
+   screen, so the layout is a fixed flex column and nothing but the row list is
+   allowed to scroll. The stage between the header and the rows is a size
+   container, which is what lets the photo cap itself against the height actually
+   left over rather than against a guess. */
+
+.kk-album-faces {
+  position: fixed;
+  inset: 0;
+  z-index: 1080;
+  display: flex;
+  flex-direction: column;
+  background: var(--bs-body-bg);
+  overflow: hidden;
+  /* Mounted outside the layout shell, so no ancestor keeps it out of the notch.
+     Taken once here for every row inside. */
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+.kk-album-faces__bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: calc(0.5rem + env(safe-area-inset-top, 0px)) 1rem 0.5rem;
+  border-bottom: 1px solid var(--bs-border-color);
+}
+
+.kk-album-faces__stage {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem 1rem;
+  overflow: hidden;
+  container-type: size;
+}
+
+/* The photo the boxes are positioned against: the frame IS the coordinate
+   system, so it must sit exactly on the rendered pixels. Width-driven with an
+   aspect ratio, capped against the stage's real height in container units. */
+.kk-album-faces__photo {
+  position: relative;
+  margin-inline: auto;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.kk-album-faces__img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+/* The questions. Capped at a third of the screen and scrolling by itself, so a
+   photo of a dozen people never pushes the photo off the top. */
+.kk-album-faces__rows {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 40vh;
+  overflow-y: auto;
+  /* A hair of room under the last row, so its border never sits flush against
+     the footer's and read as one thick line. */
+  padding: 0 1rem 0.25rem;
+}
+
+.kk-album-faces__row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.kk-album-faces__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem calc(0.5rem + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--bs-border-color);
+}
+
+.kk-album-faces__kbd {
+  opacity: 0.6;
+  font-size: 0.7em;
+  margin-left: 0.4rem;
+}
+
+/* On a touch screen the buttons carry the whole interaction, and the keyboard
+   hints are addressed to nobody. */
+@media (hover: none) {
+  .kk-album-faces__kbd {
+    display: none;
+  }
+}

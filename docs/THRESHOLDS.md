@@ -25,6 +25,7 @@ rather than measured: [the face-suggestion display floor](#the-face-suggestion-d
 | `duplicate.embedding_max_dist` | `internal/config` (`setDefaults`), `config.example.yaml`; consumed by `internal/duplicates` and `internal/embedjob` | 0.05 | **0.028** | equal-pair-count match, [below](#duplicate-detection-005--0028) |
 | `expand.max_distance` | `internal/config`, `config.example.yaml`, fallback `expand.DefaultMaxDistance` | 0.30 | **0.20** | equal-neighbour-density match, [below](#collection-expansion-030--020) |
 | expand slider bounds + default | `web/src/lib/expandSearch.ts` | 20–80 %, default 70 % | **65–90 %, default 80 %** | the default mirrors `expand.max_distance`; the bounds are read off the library's own pair distribution |
+| `SUGGESTION_DISPLAY_FLOOR` | `web/src/lib/faceSuggestion.ts` | — | **0.4 confidence** (was 0.5) | face space, precision/coverage measured on production, [below](#lowering-the-floor-to-04) |
 | `review.band_min` / `band_max` / `sure_min` | `internal/config`, `internal/review` | 0.45 / 0.75 / 0.80 confidence (= distance 0.55 / 0.25 / 0.20) | unchanged | **shared with the face space** — measured but deliberately not moved, [below](#the-shared-review-bands) |
 
 Semantic and hybrid search carry no distance constant: `photoapi` runs the vector search with
@@ -210,17 +211,22 @@ Until then the review game's label questions are looser than they read.
 
 ## The face-suggestion display floor
 
-`SUGGESTION_DISPLAY_FLOOR = 0.5` in `web/src/lib/faceSuggestion.ts` — a **confidence**, i.e. cosine
-distance 0.5 in the ArcFace space. It decides which identity suggestions the viewer's face-naming
-popover (`FaceAssignPanel`) offers as one-click chips.
+`SUGGESTION_DISPLAY_FLOOR = 0.4` in `web/src/lib/faceSuggestion.ts` — a **confidence**, i.e. cosine
+distance 0.6 in the ArcFace space. It decides which identity suggestions a face-naming surface
+offers as one-click chips: the photo detail's popover (`FaceAssignPanel`), its **Potvrdit vše**
+(`bulkConfirmations`) and every row of the album face-tagging run (`AlbumFacesPage`). All three read
+the same constant through `topSuggestion` and add no threshold of their own, so moving the floor
+moves the lot.
 
-The faces panel's **Potvrdit vše** reuses this same floor and adds no threshold of its own: it
-confirms exactly the suggestions the panel already offers as one-click chips, so moving the floor
-moves the bulk action with it (`bulkConfirmations`, in the same file).
+**It was 0.5 until 2026-09-09**, and that value was not a measurement: it was the complement of
+`faces.suggestion_max_distance` (`facematch.DefaultSuggestionMaxDistance` = 0.5), i.e. exactly where
+the backend's primary suggestion search stops. That is where it belonged while the only consumer was
+a popover on a photo somebody had already chosen to open. It is one band too high for a screen whose
+whole purpose is to hand a name to every face of a freshly uploaded album — see
+[the move to 0.4](#lowering-the-floor-to-04) below.
 
-It is not a measurement. It is the complement of `faces.suggestion_max_distance`
-(`facematch.DefaultSuggestionMaxDistance` = 0.5), and it exists because the backend deliberately
-serves suggestions from *past* that cutoff:
+The reason a floor exists at all is that the backend deliberately serves suggestions from *past*
+its own cutoff:
 
 - `facematch.suggestForFace` runs its primary search at `faces.suggestion_max_distance`.
 - For an **unnamed** face it then calls `fillSuggestions`, which repeats the search with **no
@@ -238,22 +244,68 @@ and undo than a missing one.
 So the floor restores the backend's own cutoff at the point where a suggestion becomes a
 *recommendation*:
 
-- **confidence ≥ 0.5** — what the primary pass returns, i.e. a candidate the backend itself counts
-  as a match → offered as a chip, unchanged.
-- **below it** — only ever produced by the widening → the strongest one is shown once as muted,
-  **unclickable** text ("Nejistý návrh: {name} · {confidence}"). The information survives; the
-  invitation does not.
+- **confidence ≥ 0.4** — everything the primary pass returns (which by construction lands at 0.5 or
+  above: it averages distances all ≤ 0.5), plus the first band of the widened tail → offered as a
+  chip.
+- **below it** — the strongest one is shown once as muted, **unclickable** text ("Nejistý návrh:
+  {name} · {confidence}"). The information survives; the invitation does not.
 
 Two consequences worth knowing:
 
 - **Nothing changed on the backend.** The ranking, the widening and every other consumer of
   `Suggestion` (the review game, the recognition sweep, `ctl`) see exactly what they saw before.
   This is a rendering rule in one component.
-- **The floor does not read the config key.** An instance that *tightens*
-  `faces.suggestion_max_distance` below 0.5 is unaffected (its primary pass returns only stronger
-  candidates, all above the floor); one that *loosens* it past 0.5 would see the weakest of its
-  primary suggestions demoted to the uncertain line. If that key is ever moved from its default,
-  move this constant with it.
+- **The floor does not read the config key.** It now sits *below* the backend's cutoff, so every
+  primary suggestion clears it whatever `faces.suggestion_max_distance` is tightened to. An instance
+  that *loosened* that key past 0.6 would see the weakest of its primary suggestions demoted to the
+  uncertain line; if the key is ever moved that far, move this constant with it.
+
+### Lowering the floor to 0.4
+
+Measured on production, 2026-09-09, against the ArcFace face vectors in `faces`
+(`SET hnsw.ef_search = 200`, replicating `facematch.suggestForFace` in SQL: the 200 nearest faces on
+other photos with a normalised width ≥ `faces.min_face_size` (0.02), grouped per subject by **mean**
+distance, primary pass cut at 0.5, widened pass uncut, strongest subject wins).
+
+**Precision** — 2500 randomly sampled faces a human has *already named*, with that name as the
+ground truth. Every one of them is pretended to be unnamed and asked what the pipeline would offer:
+
+| top suggestion | faces | right person | precision |
+| --- | ---: | ---: | ---: |
+| confidence ≥ 0.50 (offered before) | 2338 | 2299 | **98.3 %** |
+| confidence 0.40–0.50 (**newly offered**) | 21 | 18 | **85.7 %** |
+| confidence 0.30–0.40 (still muted) | 91 | 79 | 86.8 % |
+| confidence < 0.30 (still muted) | 33 | 18 | 54.5 % |
+| no candidate at all | 17 | — | — |
+
+**Coverage** — 1500 randomly sampled faces that are *actually* unnamed, i.e. the population the
+tagging run walks:
+
+| top suggestion | faces | share |
+| --- | ---: | ---: |
+| confidence ≥ 0.50 | 93 | 6.2 % |
+| confidence 0.40–0.50 (**newly offered**) | 21 | **+1.4 pp** |
+| confidence 0.30–0.40 | 165 | 11.0 % |
+| confidence < 0.30 | 596 | 39.7 % |
+| no candidate at all | 625 | 41.7 % |
+
+So the change costs about 12 points of precision on the band it admits and buys roughly a fifth more
+one-tap faces (6.2 % → 7.6 % of unnamed faces). An earlier run of the same query at pgvector's
+default `ef_search` put the band at 88.1 % over 42 faces and the coverage gain at +3.3 pp — the two
+agree that this band is in the high eighties and that the gain is real but modest.
+
+**Why the line stops at 0.4 and not 0.3**, even though 0.30–0.40 measures no worse:
+
+- The sample is *named* faces, so every question in it has a right answer in the library. Real
+  unnamed faces include strangers, for whom the top suggestion is wrong by construction — a bias
+  that inflates every tier and inflates the weak ones most. The measured 86.8 % at 0.30–0.40 is a
+  ceiling, not an estimate.
+- That band is eight times as large on real unnamed faces (11.0 % vs 1.4 %), so admitting it would
+  put a great deal of unverifiable mass in front of a button whose whole design assumes the answer
+  is usually yes.
+- 0.4 is also where the review game's own uncertainty band nearly starts (`review.band_min` = 0.45),
+  and this floor sits one notch below it on purpose: the tagging run's dismiss writes nothing, so a
+  wrong offer here costs one keystroke rather than a stored rejection.
 
 Cluster suggestions need no equivalent: `cluster.suggestion_max_distance` (also 0.5) has **no**
 widening fallback — `internal/cluster/clusters.go` searches once, at the cutoff — so the percentage

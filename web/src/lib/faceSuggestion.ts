@@ -9,11 +9,12 @@
  * offering it as a button beside a genuine one invites a wrong click on a photo
  * of a crowd.
  *
- * So the display floor here is not a new threshold: it restores the backend's own
- * cutoff at the point where a suggestion becomes a *recommendation*. Anything the
- * primary pass would have returned is offered; anything only the widening produced
- * is shown once, muted and labelled uncertain, so the information survives without
- * looking like advice. See `docs/THRESHOLDS.md`.
+ * So the display floor here is a line drawn across that widened tail: strong
+ * enough that a suggestion is worth a button, low enough that the faces of people
+ * the library already knows are not withheld. Everything under it is shown once,
+ * muted and labelled uncertain, so the information survives without looking like
+ * advice. Where the line sits, and what was measured to put it there, is in
+ * `docs/THRESHOLDS.md`.
  */
 
 import { type FaceView, type Suggestion } from '../services/people'
@@ -22,12 +23,15 @@ import { hasEmbedding, isNamed } from './faceState'
 /**
  * The confidence a suggestion must reach to be offered as a clickable chip.
  *
- * It is the complement of `faces.suggestion_max_distance` (0.5, see
- * `facematch.DefaultSuggestionMaxDistance`): confidence is `1 - distance`, so a
- * confidence of 0.5 is exactly the distance the backend's primary suggestion
- * search stops at.
+ * It sat at 0.5 — the complement of `faces.suggestion_max_distance`
+ * (`facematch.DefaultSuggestionMaxDistance`), i.e. exactly where the backend's
+ * primary suggestion search stops — and is now **0.4**, one band into the widened
+ * tail. Measured against the names a human already gave, a top suggestion in the
+ * 0.40–0.50 band is the right person 88 % of the time, and admitting it grows the
+ * share of unnamed faces carrying a one-tap button by about half. See
+ * `docs/THRESHOLDS.md` for the measurement and for why the line stops here.
  */
-export const SUGGESTION_DISPLAY_FLOOR = 0.5
+export const SUGGESTION_DISPLAY_FLOOR = 0.4
 
 /** What a face panel should render for one face's ranked suggestions. */
 export interface RankedSuggestions {
@@ -68,6 +72,35 @@ export function rankSuggestions(suggestions: Suggestion[], max: number): RankedS
   return { offered: [], uncertain }
 }
 
+/**
+ * topSuggestion returns the identity a one-tap confirmation would give `face`, or
+ * null when the face may not be confirmed at all.
+ *
+ * A face qualifies only when it is still unnamed, has an embedding (a marker with
+ * no face row behind it never carries a suggestion anyway, see
+ * {@link hasEmbedding}) and its strongest suggestion clears the display floor —
+ * the tier {@link rankSuggestions} already offers as a button. The strongest one
+ * is picked by comparison rather than by taking the first element, so a caller
+ * that reorders cannot confirm the wrong person.
+ *
+ * It is the single answer to "what does this face's confirm button do", shared by
+ * the photo detail's bulk action ({@link bulkConfirmations}) and by the album
+ * face-tagging run, which shows the same identity as one row's offer.
+ */
+export function topSuggestion(face: FaceView): Suggestion | null {
+  if (isNamed(face) || !hasEmbedding(face)) {
+    return null
+  }
+  // The whole offered tier, then its maximum by comparison — the backend sorts
+  // by descending confidence, but nothing here depends on it having done so.
+  const { offered } = rankSuggestions(face.suggestions, face.suggestions.length)
+  return offered.reduce<Suggestion | null>(
+    (best, suggestion) =>
+      best === null || suggestion.confidence > best.confidence ? suggestion : best,
+    null,
+  )
+}
+
 /** One unnamed face and the identity a bulk confirmation would give it. */
 export interface FaceConfirmation {
   /** The face to be named. */
@@ -80,13 +113,10 @@ export interface FaceConfirmation {
  * bulkConfirmations picks the faces a single "confirm all" may name, and the
  * identity each of them would get.
  *
- * A face qualifies only when it is still unnamed, has an embedding (a marker with
- * no face row behind it never carries a suggestion anyway, see
- * {@link hasEmbedding}) and its strongest suggestion clears the panel's own
- * display floor — the tier {@link rankSuggestions} already offers as a one-tap
- * button. There is deliberately no second, stricter threshold: the bulk action
- * confirms exactly what the panel offers one by one, and follows the floor if it
- * ever moves (see `docs/THRESHOLDS.md`).
+ * A face qualifies exactly when {@link topSuggestion} names somebody for it.
+ * There is deliberately no second, stricter threshold: the bulk action confirms
+ * exactly what the panel offers one by one, and follows the floor if it ever
+ * moves (see `docs/THRESHOLDS.md`).
  *
  * **One person is named once per photo.** When two qualifying faces top-suggest
  * the same subject, only the more confident one is confirmed; the other is left
@@ -104,17 +134,7 @@ export function bulkConfirmations(faces: FaceView[]): FaceConfirmation[] {
   // person loses rather than adding a duplicate marker.
   const bySubject = new Map<string, FaceConfirmation>()
   for (const face of faces) {
-    if (isNamed(face) || !hasEmbedding(face)) {
-      continue
-    }
-    // The whole offered tier, then its maximum by comparison — the backend sorts
-    // by descending confidence, but nothing here depends on it having done so.
-    const { offered } = rankSuggestions(face.suggestions, face.suggestions.length)
-    const top = offered.reduce<Suggestion | null>(
-      (best, suggestion) =>
-        best === null || suggestion.confidence > best.confidence ? suggestion : best,
-      null,
-    )
+    const top = topSuggestion(face)
     if (top === null) {
       continue
     }

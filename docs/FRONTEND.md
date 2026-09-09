@@ -1709,10 +1709,17 @@ here.
   measure, `white-space: pre-line`, so the line breaks the writer typed survive), which was stored,
   editable and shown to nobody until now;
   the header row is a **`HeaderActions`** group: **Promítání** stays inline at every width, while
-  **Stáhnout ZIP**, **Upravit** and — behind its own divider, in danger styling — **Smazat** fold into
+  **Obličeje (N)**, **Stáhnout ZIP**, **Upravit** and — behind its own divider, in danger styling —
+  **Smazat** fold into
   the „…" overflow menu on a phone, so the header keeps to one row instead of wrapping into two or
   three; on desktop the actions stay inline exactly as before, and either way the RBAC gate is the
-  same `canWrite` on the same buttons;
+  same `canWrite` on the same buttons.
+  **Obličeje (N)** is the way into the album face-tagging run (`AlbumFacesPage`, below): an `<a>`
+  styled as a button (`btn btn-outline-secondary btn-sm`) to `/albums/:uid/faces` — an anchor, not
+  an `onClick`, because the run has an address and must be openable in a new tab. `N` is
+  `useAlbumFaceCount(uid)`, i.e. the `total` of `GET /photos?album=…&q=face:new&limit=1`, and the
+  button is **absent** when that count is 0, still unknown or the request failed, and for a viewer —
+  an album where everybody is named offers nothing to do;
   an album is **always chronological** — the backend pins the sort *key* to capture time — so the only
   choice is the direction: `FilterBar sortOptions={ALBUM_SORTS}` offers **Nejstarší** / **Nejnovější**
   and nothing else, the view rests on `ALBUM_DEFAULTS` (oldest first, so only the reversal shows in the
@@ -1729,6 +1736,32 @@ here.
   UIDs of photos that vanished from the grid stay in it, and reload the grid via `reloadKey`); the tiles carry the
   album scope in the detail link (`detailQuery` with `album=uid`) → Esc/Back/prev-next from a photo returns to the album;
   the album's own header controls **stay visible** during a selection (the bar floats over the bottom edge),
+  `AlbumFacesPage` = `/albums/:uid/faces`, the **album face-tagging run**: after an event a whole
+  album is uploaded at once and every face on it has to be named, and the photo detail is the wrong
+  shape for that — it is where *one* photo is worked on in depth, and reaching it eighty times costs
+  eighty round trips through a grid. The run walks the album photo by photo and offers the most
+  likely person for each face, so the normal rhythm is yes, yes, yes.
+  It is **full screen outside `Layout`** (like `/review` and the viewer — `.kk-album-faces` is
+  `position: fixed; inset: 0` at z-index 1080, a flex column where nothing scrolls but the row list)
+  and behind `RequireRole role="editor"`, with an explicit **Zavřít** back to the album. The header
+  says **Fotka 12/86**, the stage draws the photo with `FaceOverlay`'s numbered boxes over a frame
+  measured by `useImageFrame` (never the catalogue row's estimate — see the note on transposed
+  dimensions), and below it comes one row per unnamed face: the number drawn on its box, a
+  `FaceCrop` of it, the top suggested person with its percentage, a **confirm** and a **dismiss**.
+  Hovering a
+  row lights its box and vice versa, exactly as in `FacesPanel`. **Confirm** and **dismiss** are not
+  opposites: confirm writes through the same `POST /photos/{uid}/faces/assign` every other naming
+  surface uses, while dismiss writes **nothing at all** — it drops the row for this run and the face
+  is offered again next time. That is deliberately unlike the review game, where „no" is a stored
+  rejection: there the reader answers a question about a face, here they move past one.
+  **Potvrdit vše (N)** confirms every offer on the photo through `bulkConfirmations`, so its
+  one-person-once rule applies here too — two faces top-suggesting the same subject confirm only the
+  stronger one. A face with **no** offered suggestion is listed (with „Bez návrhu") but carries no
+  controls; it stays for the photo detail, where a name can be typed. The keyboard does the lot:
+  **1–9** confirm the row carrying that number, **a** confirms all, **→**/**Space** move on,
+  **←** goes back, **Esc** closes. Its styles are `components/people/albumFaces.css`, imported by
+  the page itself;
+
   `LabelsPage` = `/labels` **a wrapping cloud of label chips** with counts + `Nový štítek`
   (editor/admin). It used to be a column of full-width rows: a label is one word and a number, so a
   real library's 113 of them ran a 5 730 px document with no controls at all, in which the alphabet
@@ -4124,8 +4157,20 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   (`rankSuggestions`): the backend widens its own search past `faces.suggestion_max_distance` so an unnamed
   face always has candidates, and a 10 % one offered as a button is a wrong click waiting to happen on a
   crowd; when nothing clears the floor the strongest is stated once as muted, **unclickable** text
-  („Nejistý návrh: {name} · {confidence}") — the hint survives, the recommendation does not
-  (see `docs/THRESHOLDS.md`) — + a typeahead over `useSubjects` (`AddAutocomplete` with `autoFocus`
+  („Nejistý návrh: {name} · {confidence}") — the hint survives, the recommendation does not.
+  The floor is **0.4 confidence** since 2026-09-09 (it was 0.5, the backend's own cutoff): the band
+  0.40–0.50 names the right person 86 % of the time on the library's already-named faces, and
+  admitting it is what makes the album face-tagging run offer a button on about a fifth more faces —
+  the measurement, and why the line stops there, is in `docs/THRESHOLDS.md`. Which identity a single
+  confirm button applies is `topSuggestion(face)` in the same module — unnamed, has an embedding,
+  strongest **offered** candidate by comparison — and it is the one answer `FaceAssignPanel`,
+  `bulkConfirmations` and `AlbumFacesPage` all read, so no surface can offer a name another would
+  refuse. Building the request that applies it is `lib/faceAssign`'s `buildAssign(face, who)`:
+  `assign_person` on an existing `marker_uid`, `create_marker` from the bbox otherwise — the
+  backend's own fork (`internal/facematch`), which the UI never shows because naming either face is
+  the same one click. It lives in `lib/` rather than inside `useFaces` because two naming surfaces
+  send it, and a second, subtly different builder is exactly how one of them would start creating
+  markers the other assigns — + a typeahead over `useSubjects` (`AddAutocomplete` with `autoFocus`
   and `hint` = the person's marker count); a face with no embedding leads with a muted note saying so, which is also
   the honest explanation of its empty suggestion list; for an assigned face **Přeřadit** (suggestions, which the backend supplies
   for assigned faces too — the face's own person is excluded from them) and **Odebrat**; Esc leaves the reassignment first,
@@ -4643,6 +4688,29 @@ repaint the list under the reader a dozen times). It finishes by selecting the n
 from the list as it stood **before** the batch minus what was actually confirmed, so a face the server refused
 is precisely what the cursor lands on. `failed` outlives the run, being what the panel's tally reads; a second
 start while one runs is ignored (`batchRunning`), and moving to another photo cancels the batch and forgets it;
+`useAlbumFaces(albumUid)` = the state machine behind `AlbumFacesPage`, and **no new endpoint**:
+  the queue is `GET /photos` scoped to the album with `q=face:new`, paged 200 at a time and in the
+  album's own resting order (`viewToParams(ALBUM_DEFAULTS)`, so the run and the grid it was started
+  from cannot disagree). **The queue is fixed when the page opens** — confirming faces takes photos
+  out of that search, and re-running it mid-session would renumber the progress counter under the
+  reader. Faces arrive **just in time** (`fetchFaces` for the photo being walked to, plus the next 2
+  prefetched) and every response is cached for the whole run, which is what lets going back show a
+  photo as it was left. **A photo nobody can answer for is skipped without ever being shown**: the
+  walk loads faces forward until it finds one where at least one unnamed, not-yet-dismissed face has
+  an offered suggestion (`topSuggestion`), stepping silently over the rest — including a photo whose
+  faces cannot even be fetched. Going *back* is exempt (`cursor.forced`) — the reader asked for that
+  photo by name, and bouncing off it would make the control useless. `next()` pushes the current
+  index onto a trail and `back()` pops it, so „previous" means the previous photo actually
+  **shown**, not the previous index. Auto-advance is a reaction to an action, never to a render:
+  after every confirmation or dismissal the hook asks whether the photo still has an answerable
+  row, and moves on when it does not. A confirmed name is written into the cached faces **only once
+  the server has taken it**, so a refused request leaves the row exactly where it was and merely
+  bumps `failed` — the run goes on. Dismissals live in a `Set` keyed `photoUid#faceIndex` for the
+  length of the run, read through a ref so that dismissing never re-triggers the walk;
+  `useAlbumFaceCount(albumUid)` (same file) = the number on the album header's **Obličeje** button:
+  the same search asked for its `total` alone (`limit=1`), so the badge and the queue can never
+  disagree about what is left to do. A failure resolves to `null` and the button simply isn't
+  rendered — an error banner about a badge would be noise on a page that loaded perfectly well;
 `useSubjects()` = a lazy list of all subjects for the typeahead (it mounts only with `FacesPanel`,
   so merely viewing a photo never pays for it; an error = an empty list, the field then only creates new ones);
   `useSubjectName(uid, subjects, subjectsLoading)` = the name behind a uid a **URL** supplied rather than a

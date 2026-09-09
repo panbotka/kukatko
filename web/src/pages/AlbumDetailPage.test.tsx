@@ -729,10 +729,68 @@ describe('AlbumDetailPage on a narrow (phone) screen', () => {
   })
 })
 
+describe('AlbumDetailPage face tagging', () => {
+  /**
+   * Answers the grid normally and the header's badge (`q=face:new`, `limit=1`)
+   * with the given count — the number of photos of this album that still carry
+   * somebody unnamed.
+   */
+  function withUnnamedFaces(count: number): void {
+    fetchPhotosMock.mockImplementation((params) =>
+      Promise.resolve(
+        params.q === 'face:new'
+          ? { photos: [], total: count, limit: 1, offset: 0, next_offset: null }
+          : page([photo('a', 'a.jpg')]),
+      ),
+    )
+  }
+
+  it('offers the tagging run with the count of photos still owing a name', async () => {
+    fetchAlbumMock.mockResolvedValue(album())
+    withUnnamedFaces(12)
+
+    renderPage()
+
+    const link = await screen.findByRole('link', { name: 'Faces (12)' })
+    expect(link).toHaveAttribute('href', '/albums/al_1/faces')
+  })
+
+  it('offers nothing when everybody in the album is already named', async () => {
+    fetchAlbumMock.mockResolvedValue(album())
+    withUnnamedFaces(0)
+
+    renderPage()
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    expect(screen.queryByRole('link', { name: /^Faces/ })).not.toBeInTheDocument()
+  })
+
+  it('keeps the run away from a viewer, who may not name anybody', async () => {
+    fetchAlbumMock.mockResolvedValue(album())
+    withUnnamedFaces(12)
+
+    renderPage(false)
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    expect(screen.queryByRole('link', { name: /^Faces/ })).not.toBeInTheDocument()
+  })
+})
+
 describe('AlbumDetailPage scroll position', () => {
   /** A virtuoso state at the given offset, as the grid would report it. */
   function gridState(scrollTop: number): StateSnapshot {
     return { ranges: [{ startIndex: 0, endIndex: 20, size: 220 }], scrollTop }
+  }
+
+  /**
+   * The offsets the *grid* asked for. The header's face-tagging badge asks the
+   * same endpoint for a count (`q=face:new`, `limit=1`), and that probe is not a
+   * page of the album — counting it here would make the windowing look broken.
+   */
+  function gridOffsets(): (number | undefined)[] {
+    return fetchPhotosMock.mock.calls
+      .filter((call) => call[0].q !== 'face:new')
+      .map((call) => call[0].offset)
   }
 
   it('restores the position without paging its way back to it', async () => {
@@ -755,7 +813,7 @@ describe('AlbumDetailPage scroll position', () => {
     expect(grid.restoredFrom).toEqual(gridState(6000))
     // Only the page under the reported range (plus its prefetch neighbour) is
     // fetched — never the whole album.
-    expect(fetchPhotosMock.mock.calls.map((c) => c[0].offset)).toEqual([0, 100])
+    expect(gridOffsets()).toEqual([0, 100])
   })
 
   it('opens at the top of an album it has not shown before', async () => {
@@ -765,7 +823,7 @@ describe('AlbumDetailPage scroll position', () => {
     renderPage()
 
     await screen.findByRole('link', { name: 'a.jpg' })
-    expect(fetchPhotosMock).toHaveBeenCalledTimes(1)
+    expect(gridOffsets()).toEqual([0])
     expect(grid.restoredFrom).toBeNull()
   })
 })

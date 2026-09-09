@@ -81,6 +81,15 @@ photo-book tool (deliberately out of scope), or a product with support and a rel
   carry a confident suggestion, the faces panel offers to confirm all of them at once. It names
   exactly what it was already offering face by face, never the same person twice on one photograph,
   and it can be stopped halfway — what it could not save it says so, and leaves unnamed.
+- **A whole album gets named in one sitting.** After an event the album is uploaded at once and
+  every face on it wants a name, which is the one job the photo detail is the wrong shape for. An
+  album whose photos still carry somebody unnamed grows an **Obličeje** button, and behind it the
+  album is walked photo by photo, full screen: the picture with numbered boxes, one row per unnamed
+  face with the person the recogniser thinks it is, and a confirm, a dismiss and a "confirm
+  everything" that never names the same person twice on one photograph. Dismissing writes nothing at
+  all — the face is simply passed over and offered again next time. Photos nothing can be suggested
+  for are skipped without being shown, and the whole run works from the keyboard: a digit names the
+  face carrying that number, `a` names the lot, `→` moves on, `←` goes back, Esc closes.
 - Tools for the parts that are actually hard: candidates for one person among the untagged faces,
   auto-clusters of unknown faces, outliers inside a person's collection (the face that probably isn't
   them), and a recognition sweep across the whole library.

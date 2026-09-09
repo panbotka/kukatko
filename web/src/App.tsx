@@ -10,6 +10,7 @@ import { ToastProvider } from './components/toast/ToastProvider'
 import { ACTIVITY_PATH } from './lib/activityView'
 import { AccountPage } from './pages/AccountPage'
 import { AlbumDetailPage } from './pages/AlbumDetailPage'
+import { AlbumFacesPage } from './pages/AlbumFacesPage'
 import { AlbumsPage } from './pages/AlbumsPage'
 import { AuditPage } from './pages/AuditPage'
 import { ClustersPage } from './pages/ClustersPage'
@@ -82,6 +83,9 @@ export function AppRoutes() {
             screen — and it writes, so it is editors and admins only. */}
         <Route element={<RequireRole role="editor" />}>
           <Route path="/review" element={<ReviewPage />} />
+          {/* Naming an album's faces one photo at a time is the same shape: one
+              question owns the screen, and it writes. */}
+          <Route path="/albums/:uid/faces" element={<AlbumFacesPage />} />
           {/* Comparing two duplicates needs the whole viewport — the decision is
               made by looking at the pixels — and it merges/archives, so it is
               editors and admins only, like the list it is reached from. */}

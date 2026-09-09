@@ -7,7 +7,8 @@
     "page": "{{title}} · Kukátko",
     "album": "Album {{name}}",
     "label": "Label {{name}}",
-    "search": "Search “{{query}}”"
+    "search": "Search “{{query}}”",
+    "albumFaces": "Faces in the album"
   },
   "confirmModal": {
     "cancel": "Cancel"
@@ -1163,6 +1164,29 @@
     "empty": {
       "title": "This album has no photos",
       "hint": "Add photos from the library by selecting them and choosing this album."
+    },
+    "faces": "Faces ({{n}})"
+  },
+  "albumFaces": {
+    "title": "Faces in the album",
+    "progress": "Photo {{current}}/{{total}}",
+    "loading": "Loading the photos to name…",
+    "saving": "Saving the assignment…",
+    "error": "The queue of photos could not be loaded.",
+    "close": "Close",
+    "photoAlt": "Photo with faces to name",
+    "noSuggestion": "No suggestion — name it on the photo detail",
+    "confirmRow": "Confirm {{name}}",
+    "dismissRow": "Dismiss face {{number}}",
+    "confirmAll": "Confirm all ({{n}})",
+    "previous": "Back",
+    "skip": "Skip",
+    "failed_one": "{{count}} face could not be confirmed — it stayed unnamed.",
+    "failed_other": "{{count}} faces could not be confirmed — they stayed unnamed.",
+    "done": {
+      "title": "Done — this album has been walked through.",
+      "hint": "Faces nobody suggested a name for are left on the photo detail.",
+      "back": "Back to the album"
     }
   },
   "labels": {
@@ -1490,7 +1514,8 @@
       "outliers": "Possible mistakes",
       "lightbox": "Review preview",
       "review": "Review",
-      "compare": "Duplicate compare"
+      "compare": "Duplicate compare",
+      "albumFaces": "Faces in the album"
     },
     "global": {
       "search": "Open global search",
@@ -1561,6 +1586,13 @@
       "keepRight": "Keep the right photo (the left one is archived)",
       "keepBoth": "Keep both — they are not duplicates",
       "leave": "Back to the duplicates list"
+    },
+    "albumFaces": {
+      "confirmNth": "Confirm the face carrying that number",
+      "confirmAll": "Confirm every suggestion on the photo",
+      "next": "Next photo",
+      "back": "Previous photo",
+      "leave": "Close and go back to the album"
     }
   },
   "people": {
