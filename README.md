@@ -237,7 +237,12 @@ that it was imported.
   yours: it replaces an estimate, is never shown as one, can be removed again, and the place browsing
   follows it.
 - **Video** with range streaming, poster frames, live photos, and a player with playback speed,
-  ±10 s skips, and frame previews under the cursor as you scrub.
+  ±10 s skips, and frame previews under the cursor as you scrub. With `video.hls.enabled` a video is
+  also encoded once, in the background, into **adaptive streaming renditions** served over HLS, so a
+  phone on a slow connection starts playing at once instead of waiting for a large original. Each
+  segment is authorised and signed as the player asks for it, so nothing that grants access to your
+  library is ever written into a file the player keeps; videos already in the library are caught up
+  with the maintainer backfill.
 
 ### On a phone
 

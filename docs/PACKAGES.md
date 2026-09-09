@@ -1036,6 +1036,22 @@ to `## Package map` in `CLAUDE.md`.
   as a thumbnail's. It always streams (the rendition is cache-only, never in the object store) and never
   redirects. It exists because a face shown as a small square used to cost a photograph: the outlier section of
   one person's page fetched 290 `fit_1280` previews to paint 290 tiles of 96 px;
+  **HLS streaming** (`hls.go`, the `HLSRenditions` interface satisfied by `*hlsjob.Store`, nil-safe → all
+  three routes 404 and the payload flag false): `GET /photos/{uid}/hls/master.m3u8`,
+  `/hls/{rendition}/index.m3u8` and `/hls/{rendition}/{segment}`, all `RequireDownload` like `/video`. The
+  playlists are `application/vnd.apple.mpegurl` and are rendered by `internal/hls`'s pure functions
+  (`BuildMaster` over the rendition rows, `RewriteMedia` over the text ffmpeg wrote) — **no playlist text is
+  assembled here**. The segment route validates the name with `hls.ValidateName` before `hls.Key` builds a
+  key from it (the guard between a request path and the store), checks `Has` (an `EXISTS`, so a fragment
+  request never drags a playlist column along) and answers **302** to `mediaurl.Builder.Object`'s freshly
+  signed URL via the shared `redirectToMedia` (`private, no-store` — a cached redirect would outlive its
+  signature and 403 mid-clip), or streams the object with its own MIME (`video/mp4` / `video/iso.segment`)
+  when the backend publishes no URLs. **The URIs point at the application, not the CDN** — that is what lets
+  each segment be authorised and signed as it is asked for — and are relative, so they resolve under any API
+  base path; they repeat the `?t=` download token when the request carried one, because a player fetches each
+  URI as a bare GET and a cookie-less `<video>` would otherwise 401 on its first segment. Every absence is a
+  404: no rendition, an unknown or malformed rendition name, a segment name the layout cannot hold. The
+  detail response carries `hls` (bool, from `HasAny`) so the player never probes;
   **thumbnail regeneration** (`thumbnail.go`): `POST /photos/{uid}/regenerate-thumbnail` (editor/admin via
   `RequireWrite`, the `ThumbnailRegenerator` interface satisfied by `*thumbjob.Service`, nil-safe → 503) synchronously
   overwrites the thumbnails + pHash via `ForceRegenerate` and returns `{status,sizes}` (200), 404 missing photo,
@@ -1755,11 +1771,17 @@ to `## Package map` in `CLAUDE.md`.
   `POST /process/metadata` → `{enqueued}` runs `metajob.BackfillMetadata(all)` (backfill of `metadata`
   for photos whose file has never been read = `metadata_extracted_at IS NULL`; `?all=true`
   forces a re-read of every non-archived photo; `MetadataBackfiller` optional — nil → 503;
-  local, works even with the box offline)), `internal/processing/`
+  local, works even with the box offline),
+  `POST /process/hls` → `{enqueued}` runs `hlsjob.BackfillHLS(all)` (backfill of `hls_transcode` for
+  non-archived videos with **no `photo_hls_renditions` row**; `?all=true` schedules every non-archived video,
+  a forced full re-encode — how a newly enabled quality level or a changed `segment_seconds` reaches the
+  library, since the job replaces a rendition rather than adding to it; `HLSBackfiller` optional — nil → 503,
+  i.e. with `video.hls.enabled: false`; local ffmpeg, works even with the box offline, but the one-slot pool
+  makes a library-wide run hours of background work)), `internal/processing/`
   (the same question as `processapi` asked about **one photo**: what has the library already computed about
   it, and schedule the one step it missed. `Step` values **are** the `internal/jobs` type constants (no
-  parallel vocabulary), `Steps` fixes the report order `metadata`, `thumbnail`, `image_embed`, `face_detect`,
-  `ocr`, `places`, `sidecar`, and `ParseStep` is the untrusted-input boundary; `storyboard` is deliberately
+  parallel vocabulary), `Steps` fixes the report order `metadata`, `thumbnail`, `hls_transcode`, `image_embed`,
+  `face_detect`, `ocr`, `places`, `sidecar`, and `ParseStep` is the untrusted-input boundary; `storyboard` is deliberately
   **not** a step — it is rendered lazily on first playback into the local derived-media cache and leaves no
   persisted evidence, so it has no honest state to report and nothing a button could usefully schedule ahead
   of a viewer pressing play. `Store` = `NewStore(pool)`: `Evidence(photoUID)` reads the whole evidence in
@@ -1767,9 +1789,15 @@ to `## Package map` in `CLAUDE.md`.
   `sidecar_written_at` plus four LEFT JOINs on the PK-keyed side tables `photo_phashes` (its `created_at` is the
   thumbnail step's `at`; `photos.SetPhash` restamps it on every write, so it moves when a saved edit's forced
   rebuild lands — the viewer's only way to know the rebuilt renditions exist), `embeddings`,
-  `face_detections` (also the `face_count`) and `photo_places`; the place column is **conditional**
+  `face_detections` (also the `face_count`) and `photo_places`, plus a lateral
+  `max(photo_hls_renditions.encoded_at)` for the streaming step — an aggregate rather than a fifth join,
+  because that table holds one row per rendition and a plain join would multiply the whole report by however
+  many qualities the video was encoded into; the place column is **conditional**
   (`lat IS NOT NULL AND lng IS NOT NULL`) because `photo_places` also holds the coordinate-less marker the
   geocoder writes for a photo with no GPS, and that records that there was nothing to do rather than a place.
+  A step **applies** to a photo or it does not: `places` needs a coordinate, `face_detect`/`ocr` read a still
+  (never a video's poster frame), and `hls_transcode` is the mirror image — only a standalone video has
+  anything to encode, a live photo's motion clip being a hover preview nobody streams.
   `Service` = `New(Config{Evidence,Jobs,Enqueuer,Disabled})` (panics on a nil collaborator):
   `Report(photoUID)` = evidence + `jobs.Store.UnfinishedForPhoto` (**two** round trips, never an N+1) →
   `[]Status{Step,State,At?,Error?,FaceCount?,TextFound?}`; the precedence is landed evidence → the queue →
@@ -1777,7 +1805,8 @@ to `## Package map` in `CLAUDE.md`.
   not run", and only an absence with nothing behind it is `pending`. `jobState` maps a queue row: running
   wins over its own previous error, a dead job **and** a queued one carrying a `last_error` (a retry pending
   after a failure) are both `failed` with that text. `Disabled` carries the steps whose feature is off
-  instance-wide (`ocr`, `sidecar`, `places` — exactly the config-gated handlers of `buildRegistry`); with no
+  instance-wide (`ocr`, `sidecar`, `places`, `hls_transcode` — exactly the config-gated handlers of
+  `buildRegistry`); with no
   handler registered a job of that type would sit queued forever, so those read as `skipped` and `Run`
   refuses them. `Run(photoUID,step)` validates, refuses an inapplicable step (`ErrStepNotApplicable`) and an
   unknown one (`ErrUnknownStep`), then dispatches to the step's own `jobs.Enqueuer` method (keeping the
@@ -3619,8 +3648,8 @@ to `## Package map` in `CLAUDE.md`.
   `internal/hlsjob/`
   (**the `hls_transcode` job** — the acting half of streaming to `internal/hls`'s pure one: it runs ffmpeg over
   an uploaded video, publishes the segments and records what the player's playlists must advertise. `Service` =
-  `New(Config{Photos,Objects,Renditions,Plan,SegmentSeconds,TempDir,FFmpegAvailable})` (panics on a nil
-  Photos/Objects/Renditions; the `Plan` is resolved from `video.hls.renditions` by
+  `New(Config{Photos,Objects,Renditions,Lister,Enqueuer,Plan,SegmentSeconds,TempDir,FFmpegAvailable})`
+  (panics on a nil Photos/Objects/Renditions; the `Plan` is resolved from `video.hls.renditions` by
   `cmd/kukatko/hls.go:hlsPlan`, an unknown name failing **startup** rather than silently producing a library
   with a missing quality level). `Handle` = `worker.HandlerFunc` (payload `{photo_uid}`, empty →
   `ErrMissingPhotoUID` dead-letter); `Transcode(ctx,uid)` encodes one photo into every rendition of the plan.
@@ -3652,8 +3681,19 @@ to `## Package map` in `CLAUDE.md`.
   videos serialises instead of taking the machine.
   `Store` (`NewStore(pool)`) is the `photo_hls_renditions` access layer: `Save` (upsert on
   `(photo_uid,rendition)` — what makes a re-encode replace rather than duplicate — returning the row with its
-  `encoded_at`), `Get` (→ `ErrRenditionNotFound`) and `ListForPhoto` (**widest picture first**, the order a
-  master playlist wants, empty slice for a video not encoded yet). The integration tests synthesize a clip with
+  `encoded_at`), `Get` (→ `ErrRenditionNotFound`), `ListForPhoto` (**widest picture first**, the order a
+  master playlist wants, empty slice for a video not encoded yet) and the two existence checks the serving
+  routes run on the request path, `Has(uid,rendition)` and `HasAny(uid)` — `EXISTS` queries that read no
+  column, because the playlist of a two-hour video is tens of kilobytes and fetching it once per fragment
+  would be the most expensive part of streaming the clip.
+  `BackfillHLS(ctx, all)` (optional `Lister` = `*photos.Store` + `Enqueuer` = `*jobs.Enqueuer`, either
+  missing → `ErrBackfillUnavailable`) is the `POST /process/hls` half: it enqueues an `hls_transcode` job per
+  video with **no rendition row at all** (`photos.ListVideosMissingHLS`) or, with `all`, per non-archived
+  video (`photos.ListActiveVideoUIDs`). The predicate is "no row", not "fewer rows than the plan": a
+  rendition list is an instance's configuration, not a property of the catalogue, so counting against it
+  would re-schedule the library whenever a quality level is added — which is what `all` is for. It stops at
+  the first enqueue failure reporting how many had landed, since those jobs are already in the queue. The
+  integration tests synthesize a clip with
   ffmpeg at test time, encode it end to end and assert both halves — the objects in the store *and* the row —
   plus that a re-run leaves one row, moved forward in time, the same object set, and sweeps a segment planted
   as an earlier encode's leftover),

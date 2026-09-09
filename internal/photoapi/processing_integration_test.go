@@ -136,6 +136,12 @@ func TestDetailProcessing_evidenceReadsDone(t *testing.T) {
 
 	report := detailProcessing(t, client, env.server.URL, photo.UID)
 	for _, step := range processing.Steps {
+		// The streaming encode is the one step a still can never reach: there is no
+		// evidence to plant for it, and it reads as skipped by design.
+		if step == processing.StepHLS {
+			wantState(t, report, step, processing.StateSkipped)
+			continue
+		}
 		wantState(t, report, step, processing.StateDone)
 		if report[string(step)].At == nil {
 			t.Errorf("step %q is done but carries no timestamp", step)

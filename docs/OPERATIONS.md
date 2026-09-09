@@ -1261,7 +1261,16 @@ files, one request, streamed — a walk over a disk the server cannot see is not
   `enabled` (bool, **default false**) is the master switch: an encode is the most expensive thing Kukátko
   does, so an instance that does not stream its videos should not spend the CPU. With it **on**, every
   subsequently uploaded video enqueues its encode (the enqueue lives in the upload pipeline next to
-  `image_embed`/`face_detect`); videos already in the library are **not** encoded retroactively. With it
+  `image_embed`/`face_detect`); videos already in the library are **not** encoded retroactively — the
+  maintainer-only **`POST /api/v1/process/hls`** is what catches them up, enqueueing an `hls_transcode` job
+  for every non-archived video with no `photo_hls_renditions` row (and, with **`?all=true`**, for every
+  non-archived video, which is how a newly enabled quality level or a changed `segment_seconds` reaches the
+  library — the job replaces a rendition rather than adding to it). It only enqueues: with the one-slot pool
+  below, a library of videos is hours of background work. The same encode is also a per-photo processing step
+  (`hls_transcode` in the photo detail's `processing` block), so its state is visible next to the thumbnails
+  and the embedding, and a maintainer can re-run it for one video with
+  `POST /api/v1/photos/{uid}/process/hls_transcode`. With the switch off both refuse — `/process/hls` with
+  **503**, the per-photo step with **409** — rather than queueing work no handler would claim. With it
   **off** no handler is registered and nothing is enqueued — a job of a type nothing can claim would wait in
   the queue forever — and the renditions already in the store are left exactly as they are.
   `segment_seconds` (**default 6**) is the length a media segment is cut to *and* the interval keyframes are

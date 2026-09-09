@@ -666,6 +666,13 @@ export interface PhotoDetail extends Photo {
    * fetching the thread; optional here only so older fixtures stay valid.
    */
   comment_count?: number
+  /**
+   * Whether this photo can be streamed: it has at least one encoded HLS
+   * rendition, so `GET /photos/{uid}/hls/master.m3u8` answers. The player reads
+   * it instead of probing — a 404 on every still in the library is noise nobody
+   * needs. Optional here only so older fixtures stay valid.
+   */
+  hls?: boolean
 }
 
 /**

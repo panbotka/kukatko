@@ -43,6 +43,12 @@ import (
 // never succeed.
 var ErrMissingPhotoUID = errors.New("hlsjob: job payload missing photo_uid")
 
+// ErrBackfillUnavailable indicates BackfillHLS was called on a Service built
+// without the backfill collaborators (a Lister and an Enqueuer). A Service that
+// only runs the worker handler omits them; the one behind POST /process/hls is
+// wired with both.
+var ErrBackfillUnavailable = errors.New("hlsjob: HLS backfill not configured")
+
 // ErrNoRenditions indicates a Service was configured with an empty encoding
 // plan. Nothing would be produced, so it is a wiring mistake rather than a
 // switched-off feature — which is expressed by registering no handler at all.
@@ -75,6 +81,26 @@ type ObjectStore interface {
 	Delete(ctx context.Context, relPath string) error
 }
 
+// PhotoLister enumerates the videos an HLS backfill should schedule. It is
+// satisfied by *photos.Store and is optional: only the Service behind
+// POST /process/hls needs it.
+type PhotoLister interface {
+	// ListVideosMissingHLS returns the uids of non-archived videos with no
+	// recorded rendition (limit <= 0 returns all).
+	ListVideosMissingHLS(ctx context.Context, limit int) ([]string, error)
+	// ListActiveVideoUIDs returns the uids of every non-archived video, for a
+	// forced full re-encode.
+	ListActiveVideoUIDs(ctx context.Context) ([]string, error)
+}
+
+// Enqueuer schedules `hls_transcode` jobs for the backfill. It is satisfied by
+// *jobs.Enqueuer and is optional, like PhotoLister.
+type Enqueuer interface {
+	// EnqueueHLSTranscode schedules the streaming encode of photoUID, treating an
+	// existing active job as a no-op so repeated backfills do not pile up.
+	EnqueueHLSTranscode(ctx context.Context, photoUID string) error
+}
+
 // RenditionStore records what an encode produced. It is satisfied by *Store.
 type RenditionStore interface {
 	// Save upserts one rendition on (photo_uid, rendition) and returns the stored
@@ -83,7 +109,8 @@ type RenditionStore interface {
 }
 
 // Config bundles the collaborators and tunables a Service needs. Photos, Objects
-// and Renditions are required, and so is a non-empty Plan.
+// and Renditions are required, and so is a non-empty Plan. Lister and Enqueuer
+// are optional and enable the backfill (BackfillHLS) when both are supplied.
 type Config struct {
 	// Photos is the catalogue repository.
 	Photos PhotoStore
@@ -91,6 +118,10 @@ type Config struct {
 	Objects ObjectStore
 	// Renditions records what was published.
 	Renditions RenditionStore
+	// Lister enumerates the videos the backfill schedules (optional).
+	Lister PhotoLister
+	// Enqueuer schedules the backfill's jobs (optional).
+	Enqueuer Enqueuer
 	// Plan is the ordered list of renditions every video is encoded into. It is
 	// resolved from configuration by the caller, so an instance can produce fewer
 	// qualities than the encoder knows about without this package reading config.
@@ -114,6 +145,8 @@ type Service struct {
 	photos     PhotoStore
 	objects    ObjectStore
 	renditions RenditionStore
+	lister     PhotoLister
+	enqueuer   Enqueuer
 	plan       []hls.Rendition
 	segment    int
 	tempDir    string
@@ -136,6 +169,8 @@ func New(cfg Config) *Service {
 		photos:     cfg.Photos,
 		objects:    cfg.Objects,
 		renditions: cfg.Renditions,
+		lister:     cfg.Lister,
+		enqueuer:   cfg.Enqueuer,
 		plan:       cfg.Plan,
 		segment:    hls.SegmentLength(cfg.SegmentSeconds),
 		tempDir:    cfg.TempDir,

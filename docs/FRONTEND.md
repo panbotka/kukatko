@@ -5603,6 +5603,9 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   `buildPhotoQuery`, `thumbUrl(uid,size,token?)`, `videoUrl(uid,token?)` (a range stream for
   `<video>`; with the R2 backend the route **302** redirects to the Worker, `<video>` follows the redirect
   on every request, so a seek always runs against a fresh signature), `GRID_THUMB_SIZE`,
+  and on `PhotoDetail` the **`hls?`** flag — whether the photo has an encoded streaming rendition, so a
+  player can point at `/photos/{uid}/hls/master.m3u8` instead of probing it; it is optional on purpose
+  (absent = an older payload, or an instance with streaming off), which reads as "no";
   the types `Photo` (incl. `is_favorite` + the per-user `rating`/`flag` + the video fields
   `duration_ms`/`video_codec`/`audio_codec`/`has_audio`/`fps` + **`thumb_url`/`download_url`** +
   **`stack_uid`/`stack_count`** + **`blurhash?`** — a BlurHash of the photo's rendering (`internal/blurhash`),

@@ -55,6 +55,9 @@ func (f *fakeEnqueuer) EnqueueMetadata(_ context.Context, _ string) error {
 func (f *fakeEnqueuer) EnqueueThumbnail(_ context.Context, _ string) error {
 	return f.record(jobs.TypeThumbnail)
 }
+func (f *fakeEnqueuer) EnqueueHLSTranscode(_ context.Context, _ string) error {
+	return f.record(jobs.TypeHLSTranscode)
+}
 func (f *fakeEnqueuer) EnqueueImageEmbed(_ context.Context, _ string) error {
 	return f.record(jobs.TypeImageEmbed)
 }
@@ -148,6 +151,9 @@ func TestService_Report_disabledStepIsSkipped(t *testing.T) {
 		if entry.Step == StepPlaces {
 			want = StateSkipped // no coordinate on this photo either
 		}
+		if entry.Step == StepHLS {
+			want = StateSkipped // a still is never encoded for streaming
+		}
 		if entry.State != want {
 			t.Errorf("%q = %q, want %q", entry.Step, entry.State, want)
 		}
@@ -206,10 +212,15 @@ func TestService_Run_everyStepReachesItsEnqueuer(t *testing.T) {
 		t.Run(string(step), func(t *testing.T) {
 			t.Parallel()
 			enq := &fakeEnqueuer{}
-			// GPS and a still, so no step is inapplicable; a landed metadata read
+			// GPS and, for every step but the streaming encode, a still — so no step
+			// is inapplicable to the photo it is asked for. A landed metadata read
 			// proves an already-done step can still be re-run on demand.
+			media := photos.MediaImage
+			if step == StepHLS {
+				media = photos.MediaVideo
+			}
 			ev := &fakeEvidence{evidence: Evidence{
-				MediaType: photos.MediaImage, HasGPS: true, MetadataAt: &at,
+				MediaType: media, HasGPS: true, MetadataAt: &at,
 			}}
 			if _, err := newTestService(t, ev, &fakeJobs{}, enq).Run(t.Context(), "p1", step); err != nil {
 				t.Fatalf("Run(%q): %v", step, err)

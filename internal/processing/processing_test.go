@@ -50,20 +50,22 @@ func TestSteps_coverEveryStepConstant(t *testing.T) {
 		seen[step] = true
 	}
 	for _, step := range []Step{
-		StepMetadata, StepThumbnail, StepImageEmbed, StepFaceDetect, StepOCR, StepPlaces, StepSidecar,
+		StepMetadata, StepThumbnail, StepHLS, StepImageEmbed, StepFaceDetect, StepOCR, StepPlaces,
+		StepSidecar,
 	} {
 		if !seen[step] {
 			t.Errorf("step %q is missing from Steps", step)
 		}
 	}
-	if len(Steps) != 7 {
-		t.Errorf("len(Steps) = %d, want 7 (storyboard is deliberately not reported)", len(Steps))
+	if len(Steps) != 8 {
+		t.Errorf("len(Steps) = %d, want 8 (storyboard is deliberately not reported)", len(Steps))
 	}
 }
 
-// TestEvidence_applies covers the two inapplicability rules: no coordinate means
-// no place, and a video is outside face detection and text recognition — while a
-// live photo, being a still that carries a clip, is not.
+// TestEvidence_applies covers the three inapplicability rules: no coordinate
+// means no place, a video is outside face detection and text recognition — while
+// a live photo, being a still that carries a clip, is not — and the streaming
+// encode is the mirror image, applying to standalone videos only.
 func TestEvidence_applies(t *testing.T) {
 	t.Parallel()
 
@@ -92,6 +94,15 @@ func TestEvidence_applies(t *testing.T) {
 			evidence: Evidence{MediaType: photos.MediaVideo},
 			step:     StepThumbnail, want: true,
 		},
+		{
+			name:     "hls on a video",
+			evidence: Evidence{MediaType: photos.MediaVideo},
+			step:     StepHLS, want: true,
+		},
+		{name: "hls on an image", evidence: Evidence{MediaType: photos.MediaImage}, step: StepHLS},
+		// A live photo's motion clip is a hover preview, not something anybody
+		// streams, so it is outside the encode exactly like a still is.
+		{name: "hls on a live photo", evidence: Evidence{MediaType: photos.MediaLive}, step: StepHLS},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -257,6 +268,7 @@ func TestEvidence_report(t *testing.T) {
 	want := []State{
 		StateDone,    // metadata
 		StateDone,    // thumbnail
+		StatePending, // hls_transcode
 		StateRunning, // image_embed
 		StateFailed,  // face_detect
 		StatePending, // ocr
@@ -271,7 +283,7 @@ func TestEvidence_report(t *testing.T) {
 			t.Errorf("report[%d] (%q).State = %q, want %q", i, entry.Step, entry.State, want[i])
 		}
 	}
-	if report[3].Error != "boom" {
-		t.Errorf("face_detect error = %q, want %q", report[3].Error, "boom")
+	if report[4].Error != "boom" {
+		t.Errorf("face_detect error = %q, want %q", report[4].Error, "boom")
 	}
 }

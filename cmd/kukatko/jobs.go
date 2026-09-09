@@ -103,6 +103,8 @@ func buildJobs(
 		SidecarBackfiller: sidecarBackfillerOrNil(svcs.sidecar),
 		// Likewise a nil interface disables /process/ocr when text recognition is off.
 		OCRBackfiller: ocrBackfillerOrNil(svcs.ocr),
+		// And the same for /process/hls when streaming is off.
+		HLSBackfiller: hlsBackfillerOrNil(svcs.hls),
 		// A nil interface (not a typed-nil pointer) disables /process/stacks when
 		// the stacking feature is off.
 		StacksDetector: stacksDetectorOrNil(cfg, db),
@@ -164,7 +166,7 @@ func buildJobServices(d jobServiceDeps) (registryServices, *maintenance.Service,
 	if err != nil {
 		return registryServices{}, nil, err
 	}
-	hlsSvc, err := buildHLSServiceOrNil(d.cfg, d.db)
+	hlsSvc, err := buildHLSServiceOrNil(d.cfg, d.db, d.enqueuer)
 	if err != nil {
 		return registryServices{}, nil, err
 	}

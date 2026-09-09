@@ -42,6 +42,11 @@ const (
 	StepMetadata Step = jobs.TypeMetadata
 	// StepThumbnail generates the cached thumbnails and the perceptual hashes.
 	StepThumbnail Step = jobs.TypeThumbnail
+	// StepHLS encodes a video into the HTTP Live Streaming renditions a browser
+	// plays: the segments in the object store and the row describing them. It is
+	// the other derived media a file itself produces, alongside the thumbnails,
+	// and it applies to standalone videos only.
+	StepHLS Step = jobs.TypeHLSTranscode
 	// StepImageEmbed computes the CLIP image embedding that backs semantic search
 	// and "similar photos".
 	StepImageEmbed Step = jobs.TypeImageEmbed
@@ -64,6 +69,7 @@ const (
 var Steps = []Step{
 	StepMetadata,
 	StepThumbnail,
+	StepHLS,
 	StepImageEmbed,
 	StepFaceDetect,
 	StepOCR,
@@ -164,18 +170,27 @@ type Evidence struct {
 	PlaceAt *time.Time
 	// SidecarAt is photos.sidecar_written_at.
 	SidecarAt *time.Time
+	// HLSAt is the newest encoded_at among the video's photo_hls_renditions rows:
+	// when it was last encoded into a streaming rendition. One rendition is
+	// enough to make the step done — the master playlist a player fetches
+	// advertises what was produced, and a library that adds a quality level
+	// re-runs the encode through the forced backfill, not through this report.
+	HLSAt *time.Time
 }
 
 // applies reports whether step can ever produce a result for this photo. A
 // photo with no coordinate has nothing to reverse-geocode, and a video is
 // deliberately outside face detection and text recognition — those read a still,
-// and a video's poster frame is not one.
+// and a video's poster frame is not one. The streaming encode is the mirror
+// image: only a video has anything to encode.
 func (e Evidence) applies(step Step) bool {
 	switch step {
 	case StepPlaces:
 		return e.HasGPS
 	case StepFaceDetect, StepOCR:
 		return e.MediaType != photos.MediaVideo
+	case StepHLS:
+		return e.MediaType == photos.MediaVideo
 	default:
 		return true
 	}
@@ -188,6 +203,8 @@ func (e Evidence) doneAt(step Step) *time.Time {
 		return e.MetadataAt
 	case StepThumbnail:
 		return e.ThumbnailAt
+	case StepHLS:
+		return e.HLSAt
 	case StepImageEmbed:
 		return e.EmbeddingAt
 	case StepFaceDetect:
@@ -240,7 +257,7 @@ func (e Evidence) describeResult(st *Status) {
 	case StepOCR:
 		found := e.OCRTextFound
 		st.TextFound = &found
-	case StepMetadata, StepThumbnail, StepImageEmbed, StepPlaces, StepSidecar:
+	case StepMetadata, StepThumbnail, StepHLS, StepImageEmbed, StepPlaces, StepSidecar:
 	}
 }
 

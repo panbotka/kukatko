@@ -60,6 +60,7 @@ type API struct {
 	rebuilds       RebuildEnqueuer
 	comments       CommentStore
 	storyboards    StoryboardService
+	hls            HLSRenditions
 	processing     ProcessingService
 	retentionDays  int
 	videoTranscode bool
@@ -168,6 +169,10 @@ type Config struct {
 	// nil the status endpoint reports "unavailable" and the sprite route answers
 	// 404, so the player simply shows no preview — never an error.
 	Storyboards StoryboardService
+	// HLS backs the three streaming endpoints and the hls flag on the detail
+	// response. When nil those routes answer 404 and the flag is false, which is
+	// what an instance with streaming switched off looks like to a player.
+	HLS HLSRenditions
 	// Processing backs the detail response's account of what has been computed
 	// about the photo and the maintainer's per-step "run now". When nil the detail
 	// omits the block and that endpoint answers 503.
@@ -231,6 +236,7 @@ func NewAPI(cfg Config) *API {
 		rebuilds:          cfg.Rebuilds,
 		comments:          cfg.Comments,
 		storyboards:       cfg.Storyboards,
+		hls:               cfg.HLS,
 		processing:        cfg.Processing,
 		retentionDays:     cfg.RetentionDays,
 		videoTranscode:    cfg.VideoTranscode,
@@ -291,6 +297,9 @@ func passthroughMiddleware(next http.Handler) http.Handler {
 //	GET    /photos/{uid}/thumb/{size} RequireDownload  cached thumbnail (or 302)
 //	GET    /photos/{uid}/face         RequireDownload  square JPEG crop of one face (?box=)
 //	GET    /photos/{uid}/video        RequireDownload  video stream (range/206, or 302)
+//	GET    /photos/{uid}/hls/master.m3u8    RequireDownload  master playlist (variants)
+//	GET    /photos/{uid}/hls/{rendition}/index.m3u8  RequireDownload  media playlist (segments)
+//	GET    /photos/{uid}/hls/{rendition}/{segment}   RequireDownload  one segment (302, or streamed)
 //	GET    /photos/{uid}/storyboard   RequireAuth      scrub-preview status (+ lazy enqueue)
 //	GET    /photos/{uid}/storyboard/sprite RequireDownload  scrub-preview sprite (JPEG)
 //	GET    /photos/{uid}/download     RequireDownload  original file (or 302)
@@ -358,6 +367,12 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.With(a.requireDownload).Get("/{uid}/thumb/{size}", a.handleThumb)
 		r.With(a.requireDownload).Get("/{uid}/face", a.handleFaceCrop)
 		r.With(a.requireDownload).Get("/{uid}/video", a.handleVideo)
+		// The static `master.m3u8` and `index.m3u8` segments win over the {segment}
+		// parameter in chi's router, so a playlist is never mistaken for an object
+		// name — which hls.ValidateName would refuse anyway.
+		r.With(a.requireDownload).Get("/{uid}/hls/master.m3u8", a.handleHLSMaster)
+		r.With(a.requireDownload).Get("/{uid}/hls/{rendition}/index.m3u8", a.handleHLSMedia)
+		r.With(a.requireDownload).Get("/{uid}/hls/{rendition}/{segment}", a.handleHLSSegment)
 		r.With(a.requireAuth).Get("/{uid}/storyboard", a.handleStoryboard)
 		r.With(a.requireDownload).Get("/{uid}/storyboard/sprite", a.handleStoryboardSprite)
 		r.With(a.requireDownload).Get("/{uid}/download", a.handleDownload)
@@ -636,6 +651,11 @@ type photoDetail struct {
 	// processing service is wired or the report could not be read; the photo is
 	// worth showing either way.
 	Processing []processing.Status `json:"processing,omitempty"`
+	// HLS reports whether this photo can be streamed: it has at least one encoded
+	// rendition, so the master playlist below /hls/ answers. The player reads it
+	// instead of probing — a request for a playlist that does not exist is a 404,
+	// and a 404 on every still in the library is noise nobody needs.
+	HLS bool `json:"hls"`
 	// OCRText is the text the recogniser read *in* the photo — a street sign, a
 	// shop front, the headline of a scanned newspaper. It is served read-only and
 	// only here, never on a list or a search page, where a hundred scanned
@@ -709,6 +729,7 @@ func (a *API) writeDetail(w http.ResponseWriter, r *http.Request, userUID string
 		Place:        a.resolvePlace(r.Context(), photo.UID),
 		StackMembers: members,
 		CommentCount: commentCount,
+		HLS:          a.resolveHLS(r.Context(), photo.UID),
 		Processing:   a.resolveProcessing(r.Context(), photo.UID),
 		OCRText:      a.resolveOCR(r.Context(), photo.UID),
 		People:       a.resolvePeople(r, photo.UID),

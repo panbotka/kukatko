@@ -28,6 +28,7 @@ import (
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/embedding"
+	"github.com/panbotka/kukatko/internal/hlsjob"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/photoapi"
@@ -181,6 +182,10 @@ func newEnvWithMedia(t *testing.T, media storage.Storage) *env {
 			Storage:     fs,
 			Thumbnailer: thumb.New(fs, t.TempDir()),
 		}),
+		// The real rendition store behind the three streaming routes: what a player
+		// is served is a fact about those rows and the objects they promise, and a
+		// fake for the store would test the fake.
+		HLS: hlsjob.NewStore(db.Pool()),
 		Storyboards: storyboardjob.New(storyboardjob.Config{
 			Photos:    store,
 			Generator: storyboards,

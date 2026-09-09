@@ -41,6 +41,8 @@ type StepEnqueuer interface {
 	EnqueueMetadata(ctx context.Context, photoUID string) error
 	// EnqueueThumbnail schedules thumbnail and perceptual-hash generation.
 	EnqueueThumbnail(ctx context.Context, photoUID string) error
+	// EnqueueHLSTranscode schedules the video's streaming encode.
+	EnqueueHLSTranscode(ctx context.Context, photoUID string) error
 	// EnqueueImageEmbed schedules the image embedding.
 	EnqueueImageEmbed(ctx context.Context, photoUID string) error
 	// EnqueueFaceDetect schedules face detection.
@@ -63,7 +65,7 @@ type Config struct {
 	Enqueuer StepEnqueuer
 	// Disabled lists the steps whose feature is switched off on this instance
 	// (`ocr` without OCR enabled, `sidecar` without the export, `places` without a
-	// mapy.com key). No worker handler is registered for those, so a job of that
+	// mapy.com key, `hls_transcode` without streaming). No worker handler is registered for those, so a job of that
 	// type would sit in the queue forever — they are therefore reported as skipped
 	// and refused by Run rather than quietly enqueued.
 	Disabled []Step
@@ -166,30 +168,32 @@ func (s *Service) unfinishedByType(ctx context.Context, photoUID string) (map[st
 	return byType, nil
 }
 
-// enqueue dispatches step to the enqueuer method that owns it, so each step
+// stepEnqueuers maps each step to the enqueuer method that owns it, so each step
 // keeps its own scheduling semantics (the sidecar's debounce, for one) rather
-// than being re-implemented here.
+// than being re-implemented here. It is a table of method expressions rather
+// than a switch because a switch grows one branch per step and there are now
+// enough of them that it was the most complex function in the package;
+// TestService_Run_everyStepReachesItsEnqueuer is what keeps a new step from
+// silently falling out of it.
+var stepEnqueuers = map[Step]func(StepEnqueuer, context.Context, string) error{
+	StepMetadata:   StepEnqueuer.EnqueueMetadata,
+	StepThumbnail:  StepEnqueuer.EnqueueThumbnail,
+	StepHLS:        StepEnqueuer.EnqueueHLSTranscode,
+	StepImageEmbed: StepEnqueuer.EnqueueImageEmbed,
+	StepFaceDetect: StepEnqueuer.EnqueueFaceDetect,
+	StepOCR:        StepEnqueuer.EnqueueOCR,
+	StepPlaces:     StepEnqueuer.EnqueuePlaces,
+	StepSidecar:    StepEnqueuer.EnqueueSidecar,
+}
+
+// enqueue schedules step for photoUID through the method stepEnqueuers names for
+// it, returning ErrUnknownStep for a step no method owns.
 func (s *Service) enqueue(ctx context.Context, photoUID string, step Step) error {
-	var err error
-	switch step {
-	case StepMetadata:
-		err = s.enqueuer.EnqueueMetadata(ctx, photoUID)
-	case StepThumbnail:
-		err = s.enqueuer.EnqueueThumbnail(ctx, photoUID)
-	case StepImageEmbed:
-		err = s.enqueuer.EnqueueImageEmbed(ctx, photoUID)
-	case StepFaceDetect:
-		err = s.enqueuer.EnqueueFaceDetect(ctx, photoUID)
-	case StepOCR:
-		err = s.enqueuer.EnqueueOCR(ctx, photoUID)
-	case StepPlaces:
-		err = s.enqueuer.EnqueuePlaces(ctx, photoUID)
-	case StepSidecar:
-		err = s.enqueuer.EnqueueSidecar(ctx, photoUID)
-	default:
+	schedule, ok := stepEnqueuers[step]
+	if !ok {
 		return fmt.Errorf("%w: %s", ErrUnknownStep, step)
 	}
-	if err != nil {
+	if err := schedule(s.enqueuer, ctx, photoUID); err != nil {
 		return fmt.Errorf("processing: scheduling %s for %s: %w", step, photoUID, err)
 	}
 	return nil

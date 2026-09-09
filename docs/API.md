@@ -548,6 +548,32 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   **404**, which the player reads as "no preview" and nothing worse. The sprite is **cache-only derived media**
   (never published to the object store), so this route is always where the bytes come from — the client
   builds the address rather than reading it off a payload.
+  **HLS streaming** (`internal/photoapi/hls.go`, the `HLS` reader = `hlsjob.Store`, **nil → all three routes
+  404 and the payload flag is false**): three routes, all behind the **same guard as `/video`**
+  (session/`?t=` token). `GET /photos/{uid}/hls/master.m3u8` answers the **master playlist** —
+  `Content-Type: application/vnd.apple.mpegurl` — one `EXT-X-STREAM-INF` per recorded rendition, widest
+  picture first, carrying its real `RESOLUTION`, peak `BANDWIDTH` and RFC 6381 `CODECS` (built by
+  `hls.BuildMaster` from the `photo_hls_renditions` rows; no playlist text is assembled in the API).
+  `GET /photos/{uid}/hls/{rendition}/index.m3u8` answers that rendition's **media playlist**: the text
+  `ffmpeg` wrote, byte for byte, with **only its URIs rewritten** (`hls.RewriteMedia`) — the measured
+  `EXTINF` durations are never synthesised, because a playlist that disagreed with the bytes a player
+  receives is worse than none. `GET /photos/{uid}/hls/{rendition}/{segment}` answers **`302`** to a
+  **freshly signed** object URL (`Cache-Control: private, no-store`, exactly as `/download` and `/video`
+  do — a cached redirect would outlive its signature and send the player to a 403 mid-clip), or **streams**
+  the object (`video/mp4` for `init.mp4`, `video/iso.segment` for a fragment,
+  `Cache-Control: private, max-age=31536000, immutable`, `ETag`, `304`) on a backend that publishes no URLs.
+  **The URIs in both playlists point at this application, not at the CDN, and that is the whole design**:
+  the backend authorises and signs each segment as it is asked for, so no signature can expire mid-playback
+  and no long-lived token is ever written into a file a player keeps. They are **relative** (`1080p/index.m3u8`,
+  `00007.m4s`), so they resolve against the playlist's own address whatever base path the API is mounted
+  under, and they **repeat the `?t=` download token** when the request carried one — a player fetches each URI
+  as a plain GET with nothing else attached, so a cookie-less `<video>` tag would otherwise walk into a 401 on
+  its first segment. Every "there is nothing here" is a **404**: a photo with no rendition (a still, a video
+  the encode has not reached, an unknown uid), a rendition name the layout could never hold or one this video
+  was not encoded into, and a segment name `hls.ValidateName` refuses (wrong padding, a stray extension, a
+  traversal) — which is the guard between a request path and an object key, so such a name never reaches the
+  store. The detail response carries **`hls`** (bool): whether the photo has at least one recorded rendition,
+  so the player reads it instead of probing and a library of stills does not answer 404 on every tile.
   **One face as its own rendition** (`internal/photoapi/facecrop.go`, the `FaceCrops` renderer =
   `avatar.Renderer`, **nil → 503**): `GET /photos/{uid}/face?box=x,y,w,h` (session/`?t=` token, the same guard
   as every other photo image) **streams a small square JPEG** of the one face the normalised box names —
@@ -620,7 +646,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   **Processing** (`internal/photoapi/processing.go`, the `ProcessingService` interface =
   `processing.Service`, **nil → the detail omits the block and the endpoint answers 503**):
   `GET /photos/{uid}` carries **`processing`** — one entry per per-photo computation, in the fixed order
-  `metadata`, `thumbnail`, `image_embed`, `face_detect`, `ocr`, `places`, `sidecar`
+  `metadata`, `thumbnail`, `hls_transcode`, `image_embed`, `face_detect`, `ocr`, `places`, `sidecar`
   (`storyboard` is deliberately absent: it is rendered lazily on first playback and leaves no persisted
   evidence). Each entry is `{step, state, at?, error?, face_count?, text_found?}`. The state is decided by
   **persisted evidence first** (`photos.metadata_extracted_at`, a `photo_phashes` row — whose `created_at`
@@ -628,10 +654,12 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   **last** built and a client can wait for a saved edit's rebuild by comparing it with the edit's
   `updated_at` —, an `embeddings` row,
   a `face_detections` row, `photos.ocr_at`, a `photo_places` row **with coordinates**,
-  `photos.sidecar_written_at`) → `done` with `at`; then by the **queue** (`jobs` for this `photo_uid` and
+  `photos.sidecar_written_at`, the newest `photo_hls_renditions.encoded_at` — one rendition is enough, since
+  the master playlist advertises whatever was produced) → `done` with `at`; then by the **queue** (`jobs` for this `photo_uid` and
   type) → `running`/`queued`/`failed`, where `failed` covers a dead job **and** one whose last attempt
   errored, carrying its `last_error` as `error`; then `skipped` for a step that cannot apply (`places`
-  without GPS, `face_detect`/`ocr` on a video, or a feature switched off instance-wide — no worker handler
+  without GPS, `face_detect`/`ocr` on a video, `hls_transcode` on anything that is **not** a standalone video, or a
+  feature switched off instance-wide — no worker handler
   is registered for it); otherwise `pending`. `face_detect` adds `face_count` and `ocr` adds `text_found`
   on a done step, so a result that legitimately found nothing does not read as a gap. The whole array costs
   **two round trips** (one for the evidence, one for `jobs.Store.UnfinishedForPhoto`), never an N+1.
@@ -1133,6 +1161,18 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   idempotent (the queue dedupes per photo) and resumable. It needs the embeddings box, which is usually
   offline: the jobs then wait in the queue — enqueueing never blocks on it. **503** when
   `embedding.ocr.enabled: false`.
+  `POST /process/hls` → `{enqueued}` (backfill `hls_transcode` for videos that have **never been encoded into a
+  streaming rendition**, via `hlsjob.BackfillHLS`; "never" = no `photo_hls_renditions` row at all, restricted to
+  non-archived photos whose `media_type` is exactly `video` — a live photo's motion clip is a hover preview,
+  not something anybody streams). Optional `?all=true` schedules **every non-archived video** (a forced full
+  re-encode — how a library picks up a newly enabled quality level or a changed segment length, since the job
+  replaces a rendition rather than adding to it). The endpoint only **enqueues**; the worker runs `ffmpeg`, and
+  the encode is the most expensive job in the queue with a **one-slot pool** of its own, so a backfill over a
+  library of videos is hours of background work. The predicate is "no rendition row", not "fewer rows than the
+  configured plan": the rendition list is an instance's configuration, not a property of the catalogue, so
+  counting against it would re-schedule the whole library whenever a quality level is added — which is what
+  `?all=true` is for. Idempotent (the queue dedupes an active job per photo) and resumable. **503** when
+  `video.hls.enabled: false`.
   `POST /process/stacks` → `{created}` (detection and grouping of photos into stacks over the whole library via
   `stacks.Service.DetectStacks`; **synchronous**, the candidates are **only the not-yet-stacked non-archived**
   photos, so a re-run is idempotent and does not break a manual or an existing stack; **503** when

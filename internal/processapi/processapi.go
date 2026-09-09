@@ -134,6 +134,22 @@ type SidecarBackfiller interface {
 	BackfillSidecars(ctx context.Context, all bool) (int, error)
 }
 
+// HLSBackfiller enqueues an `hls_transcode` job for every video that has never
+// been encoded into a streaming rendition. It is satisfied by hlsjob.Service.
+// When all is true it schedules every non-archived video instead (a forced full
+// re-encode, which is how a library picks up a newly enabled quality level or a
+// changed segment length — the job replaces a rendition rather than adding to
+// it). The encode runs locally on ffmpeg, one clip at a time, so a backfill over
+// a library of videos is hours of background work; the enqueue itself is
+// immediate. A nil HLSBackfiller disables the /process/hls endpoint (it answers
+// 503), which is what the video.hls.enabled switch turns off.
+type HLSBackfiller interface {
+	// BackfillHLS enqueues an `hls_transcode` job for every video with no
+	// rendition (or, when all is true, for every non-archived video) and returns
+	// how many were scheduled.
+	BackfillHLS(ctx context.Context, all bool) (int, error)
+}
+
 // StacksDetector groups the several files of one shot (RAW+JPEG, exported edits,
 // …) into stacks by the enabled detection rules. It is satisfied by
 // stacks.Service and runs synchronously like the reclusterer (the grouping is a
@@ -171,6 +187,7 @@ type API struct {
 	metaBackfiller    MetadataBackfiller
 	sidecarBackfill   SidecarBackfiller
 	ocrBackfiller     OCRBackfiller
+	hlsBackfiller     HLSBackfiller
 	stacksDetector    StacksDetector
 	locationEstim     LocationEstimator
 	requireMaintainer func(http.Handler) http.Handler
@@ -198,6 +215,8 @@ type Config struct {
 	SidecarBackfiller SidecarBackfiller
 	// OCRBackfiller runs the text-recognition backfill.
 	OCRBackfiller OCRBackfiller
+	// HLSBackfiller runs the streaming-encode backfill.
+	HLSBackfiller HLSBackfiller
 	// StacksDetector runs the automatic stack-detection pass.
 	StacksDetector StacksDetector
 	// LocationEstimator runs the missing-location estimation pass.
@@ -218,6 +237,7 @@ func NewAPI(cfg Config) *API {
 		metaBackfiller:    cfg.MetadataBackfiller,
 		sidecarBackfill:   cfg.SidecarBackfiller,
 		ocrBackfiller:     cfg.OCRBackfiller,
+		hlsBackfiller:     cfg.HLSBackfiller,
 		stacksDetector:    cfg.StacksDetector,
 		locationEstim:     cfg.LocationEstimator,
 		requireMaintainer: cfg.RequireMaintainer,
@@ -238,6 +258,8 @@ func NewAPI(cfg Config) *API {
 //	POST /process/metadata    RequireMaintainer  backfill unread file metadata (?all=true forces a full re-read)
 //	POST /process/sidecars    RequireMaintainer  backfill missing metadata sidecars (?all=true forces a full re-run)
 //	POST /process/ocr         RequireMaintainer  backfill un-recognised photo text (?all=true forces a full re-run)
+//	POST /process/hls         RequireMaintainer  backfill missing streaming renditions (?all=true
+//	                                             forces a full re-encode)
 //	POST /process/stacks      RequireMaintainer  detect and form stacks over the library
 //	POST /process/locations   RequireMaintainer  estimate missing locations from same-day photos
 func (a *API) RegisterRoutes(r chi.Router) {
@@ -251,6 +273,7 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.With(a.requireMaintainer).Post("/metadata", a.handleBackfillMetadata)
 		r.With(a.requireMaintainer).Post("/sidecars", a.handleBackfillSidecars)
 		r.With(a.requireMaintainer).Post("/ocr", a.handleBackfillOCR)
+		r.With(a.requireMaintainer).Post("/hls", a.handleBackfillHLS)
 		r.With(a.requireMaintainer).Post("/stacks", a.handleDetectStacks)
 		r.With(a.requireMaintainer).Post("/locations", a.handleEstimateLocations)
 	})
@@ -305,6 +328,23 @@ func (a *API) handleBackfillOCR(w http.ResponseWriter, r *http.Request) {
 	enqueued, err := a.ocrBackfiller.BackfillOCR(r.Context(), queryFlag(r, "all"))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "backfilling OCR failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, backfillResponse{Enqueued: enqueued})
+}
+
+// handleBackfillHLS enqueues `hls_transcode` jobs for every video that has never
+// been encoded into a streaming rendition and reports how many were scheduled.
+// With ?all=true it schedules every non-archived video (a forced full re-encode).
+// It answers 503 when streaming is switched off.
+func (a *API) handleBackfillHLS(w http.ResponseWriter, r *http.Request) {
+	if a.hlsBackfiller == nil {
+		writeError(w, http.StatusServiceUnavailable, "HLS not available")
+		return
+	}
+	enqueued, err := a.hlsBackfiller.BackfillHLS(r.Context(), queryFlag(r, "all"))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "backfilling HLS failed")
 		return
 	}
 	writeJSON(w, http.StatusOK, backfillResponse{Enqueued: enqueued})

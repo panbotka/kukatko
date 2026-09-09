@@ -12,6 +12,7 @@ import (
 	"github.com/panbotka/kukatko/internal/embedjob"
 	"github.com/panbotka/kukatko/internal/facejob"
 	"github.com/panbotka/kukatko/internal/facematch"
+	"github.com/panbotka/kukatko/internal/hlsjob"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/metrics"
 	"github.com/panbotka/kukatko/internal/organize"
@@ -155,6 +156,11 @@ func buildPhotoAPI(
 		// the client IP — see photoapi.handleCreateComment.
 		Comments:    comments.NewStore(db.Pool()),
 		Storyboards: storyboards,
+		// The rendition rows behind the three streaming endpoints. They are wired
+		// whatever video.hls.enabled says: the switch decides whether new videos are
+		// encoded, and renditions produced before it was turned off are still there
+		// and still playable.
+		HLS: hlsjob.NewStore(db.Pool()),
 		// What the library has already computed about a photo, and the maintainer's
 		// per-step repair for the one it missed.
 		Processing: buildProcessingService(cfg, db, jobStore, enqueuer),
@@ -196,6 +202,9 @@ func buildProcessingService(
 	}
 	if cfg.Maps.MapyAPIKey == "" {
 		disabled = append(disabled, processing.StepPlaces)
+	}
+	if !cfg.Video.HLS.Enabled {
+		disabled = append(disabled, processing.StepHLS)
 	}
 	return processing.New(processing.Config{
 		Evidence: processing.NewStore(db.Pool()),

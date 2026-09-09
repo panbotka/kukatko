@@ -163,3 +163,39 @@ func scanEncoded(row scanner) (Encoded, error) {
 	}
 	return enc, nil
 }
+
+// hasSQL asks whether one photo has a row for one rendition, reading no column
+// of it. It is the check the segment route runs on every request a player makes,
+// which is why it deliberately does not go through Get: the playlist column of a
+// two-hour video is tens of kilobytes, and fetching it a thousand times to
+// answer "does this rendition exist" would be the most expensive part of
+// streaming the clip.
+const hasSQL = `SELECT EXISTS (
+	SELECT 1 FROM photo_hls_renditions WHERE photo_uid = $1 AND rendition = $2)`
+
+// Has reports whether photoUID has been encoded into the named rendition. It is
+// the existence half of Get, for the callers that only need to know whether the
+// objects behind a key may be served.
+func (s *Store) Has(ctx context.Context, photoUID, rendition string) (bool, error) {
+	var exists bool
+	if err := s.pool.QueryRow(ctx, hasSQL, photoUID, rendition).Scan(&exists); err != nil {
+		return false, fmt.Errorf("hlsjob: checking rendition %s of %s: %w", rendition, photoUID, err)
+	}
+	return exists, nil
+}
+
+// hasAnySQL asks whether one photo has any rendition at all.
+const hasAnySQL = `SELECT EXISTS (SELECT 1 FROM photo_hls_renditions WHERE photo_uid = $1)`
+
+// HasAny reports whether photoUID has been encoded into at least one rendition —
+// which is what "this video can be streamed" means, since the master playlist
+// advertises whatever was produced. It backs the flag on the photo payload, so
+// it reads no row: a payload does not need the playlists, and a still image must
+// not pay for them.
+func (s *Store) HasAny(ctx context.Context, photoUID string) (bool, error) {
+	var exists bool
+	if err := s.pool.QueryRow(ctx, hasAnySQL, photoUID).Scan(&exists); err != nil {
+		return false, fmt.Errorf("hlsjob: checking renditions of %s: %w", photoUID, err)
+	}
+	return exists, nil
+}

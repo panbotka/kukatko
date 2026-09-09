@@ -170,3 +170,52 @@ func TestStore_cascadesWithThePhoto(t *testing.T) {
 		t.Errorf("photo deletion left %d renditions behind", len(rows))
 	}
 }
+
+// TestStore_hasAndHasAny verifies the two existence checks the serving routes
+// run on the request path: whether one rendition exists (the segment route, on
+// every fragment a player fetches) and whether any does at all (the flag on the
+// photo payload).
+func TestStore_hasAndHasAny(t *testing.T) {
+	store, photo := storeHarness(t)
+	ctx := t.Context()
+
+	any, err := store.HasAny(ctx, photo.UID)
+	if err != nil {
+		t.Fatalf("HasAny before the encode: %v", err)
+	}
+	if any {
+		t.Error("HasAny = true before anything was encoded")
+	}
+	if _, err := store.Save(ctx, row(photo.UID, "1080p", 1920, 1080)); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	tests := []struct {
+		rendition string
+		want      bool
+	}{
+		{rendition: "1080p", want: true},
+		{rendition: "720p", want: false},
+	}
+	for _, tt := range tests {
+		got, hasErr := store.Has(ctx, photo.UID, tt.rendition)
+		if hasErr != nil {
+			t.Fatalf("Has(%q): %v", tt.rendition, hasErr)
+		}
+		if got != tt.want {
+			t.Errorf("Has(%q) = %v, want %v", tt.rendition, got, tt.want)
+		}
+	}
+
+	any, err = store.HasAny(ctx, photo.UID)
+	if err != nil {
+		t.Fatalf("HasAny after the encode: %v", err)
+	}
+	if !any {
+		t.Error("HasAny = false for a video with a recorded rendition")
+	}
+	if unknown, unknownErr := store.HasAny(ctx, "ptnosuchphoto0000000000000000000"); unknownErr != nil ||
+		unknown {
+		t.Errorf("HasAny(unknown photo) = %v, %v, want false, nil", unknown, unknownErr)
+	}
+}

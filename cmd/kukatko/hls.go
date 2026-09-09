@@ -10,6 +10,7 @@ import (
 	"github.com/panbotka/kukatko/internal/ingest"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/processapi"
 )
 
 // buildHLSServiceOrNil assembles the streaming-encode service — the
@@ -20,8 +21,12 @@ import (
 // The configured rendition names are resolved into the encoder's plan here, so an
 // unknown name fails startup with a message naming it rather than producing a
 // library of videos that are quietly missing a quality level.
+//
+// The same Service is both the worker handler and the backfill behind
+// POST /process/hls, so it is wired with the catalogue lister and the queue
+// enqueuer that backfill needs.
 func buildHLSServiceOrNil(
-	cfg *config.Config, db *database.DB,
+	cfg *config.Config, db *database.DB, enqueuer *jobs.Enqueuer,
 ) (*hlsjob.Service, error) {
 	if !cfg.Video.HLS.Enabled {
 		return nil, nil //nolint:nilnil // a disabled feature has no service, and that is not an error
@@ -35,9 +40,14 @@ func buildHLSServiceOrNil(
 		return nil, err
 	}
 	return hlsjob.New(hlsjob.Config{
-		Photos:         photos.NewStore(db.Pool()),
-		Objects:        store,
-		Renditions:     hlsjob.NewStore(db.Pool()),
+		Photos:     photos.NewStore(db.Pool()),
+		Objects:    store,
+		Renditions: hlsjob.NewStore(db.Pool()),
+		// The same store and the same queue as the handler: POST /process/hls
+		// schedules exactly the job the upload pipeline schedules, over the videos
+		// the catalogue says have never been encoded.
+		Lister:         photos.NewStore(db.Pool()),
+		Enqueuer:       enqueuer,
 		Plan:           plan,
 		SegmentSeconds: cfg.Video.HLS.SegmentSeconds,
 		TempDir:        cfg.Storage.TempPath,
@@ -60,6 +70,16 @@ func hlsPlan(names []string) ([]hls.Rendition, error) {
 		plan = append(plan, rendition)
 	}
 	return plan, nil
+}
+
+// hlsBackfillerOrNil returns svc as a processapi.HLSBackfiller, or a nil
+// interface (not a typed-nil pointer, so processapi's == nil check fires and
+// disables /process/hls) when streaming is off.
+func hlsBackfillerOrNil(svc *hlsjob.Service) processapi.HLSBackfiller {
+	if svc == nil {
+		return nil
+	}
+	return svc
 }
 
 // hlsEnqueuerOrNil returns the queue adapter the upload pipeline schedules
