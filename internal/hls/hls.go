@@ -17,10 +17,18 @@
 // rendition is added, removed or re-encoded, and it would have to be rewritten
 // whenever the URLs it points at change.
 //
-// This package is pure layout. It builds keys and validates names; it neither
-// encodes video nor talks to the store, which is what lets every layer that
-// touches HLS — the encoder, the purge, the library wipe and the HTTP endpoints —
-// agree on the same strings without depending on each other.
+// The package also holds the two pure halves of streaming that surround those
+// keys: the encoding plan — the renditions a video is encoded into and the ffmpeg
+// argument list for one of them (EncodeArgs) — and the rendering of the playlists
+// a player is served (RewriteMedia, BuildMaster). Both are ordinary functions over
+// their arguments.
+//
+// What the package never does is act. It builds keys, validates names, describes
+// an encode and renders text; it does not run ffmpeg, talk to the store or touch
+// the database. That is what lets every layer that touches HLS — the encoder, the
+// purge, the library wipe and the HTTP endpoints — agree on the same strings
+// without depending on each other, and it is why the whole plan can be tested on a
+// machine with no ffmpeg installed.
 package hls
 
 import (

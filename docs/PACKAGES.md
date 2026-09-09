@@ -3577,7 +3577,41 @@ to `## Package map` in `CLAUDE.md`.
   `ValidateName` accepts **only** `init.mp4` or `^[0-9]{5}\.m4s$`, which is what stands between a
   client-supplied path segment and an object key — traversal, an empty name, wrong padding, a stray second
   extension, an uppercase variant and a playlist name are all refused, and the fixed padding is also what
-  makes the keys sort in playback order),
+  makes the keys sort in playback order.
+  It also holds the **encoding plan** and the **playlist rendering** — pure functions, no ffmpeg ever
+  executed, so all of it is testable on a host without ffmpeg. A `Rendition` is a name + the **square** box
+  its picture is fitted into (`MaxDimension`) + the video bitrate ceiling + its RFC 6381 `Codecs`;
+  `All()` (a copy) and `ByName` read the list, today `{1080p, 1920, 6 Mbit/s, avc1.640028,mp4a.40.2}` —
+  a list because adding 720p must be an entry plus data, never a rewrite. The box is square, not 1920x1080,
+  so a portrait clip is capped on its long edge like a landscape one instead of at a quarter of the pixels.
+  `Bandwidth()` = ceiling + `AudioBitrate` (128 kbit/s), the *peak* a master playlist's BANDWIDTH means.
+  `ScaleFilter()` = `scale=w=min(1920\,iw):h=min(1920\,ih):force_original_aspect_ratio=decrease:force_divisible_by=2`
+  — the `min` with `iw`/`ih` is what stops a small source being blown up to fill the box, the commas are
+  escaped because the string is a filtergraph, and it is left an **expression** rather than concrete numbers
+  because ffmpeg applies a source's rotation before the filter runs. `Fit(w,h)` performs the same arithmetic
+  in Go (nearest even inside the fit, then floored to even) for the plan to be reasoned about and tested;
+  measured against ffmpeg 6.1.1: 3840x2160 → 1920x1080, 2160x3840 → 1080x1920, 640x480 unchanged,
+  1279x721 → 1278x720, 1921x1000 → 1920x1000. `EncodeArgs(src,outDir,rendition)` is the ffmpeg argument list —
+  **the quality decision**: H.264 `high` in `yuv420p` (what every browser and iOS device decodes), preset
+  `medium` (worth it for output encoded once and served many times, unlike `internal/video`'s throwaway
+  `veryfast` transcode), CRF 21 with `-maxrate` at the ceiling and `-bufsize` twice it, AAC-LC stereo at
+  128 kbit/s, `-force_key_frames expr:gte(t,n_forced*6)` so segments are cut where they were planned,
+  `-f hls -hls_time 6 -hls_playlist_type vod -hls_segment_type fmp4 -hls_list_size 0 -hls_flags
+  independent_segments`, `init.mp4` + `%05d.m4s` + the scratch playlist `EncodePlaylistName` = `index.m3u8`
+  in `outDir` (scratch: read, rewritten, thrown away — `ValidateName` refuses it). Audio is mapped `0:a?`
+  so a silent clip still encodes; the builder creates no directory, probes nothing and reads no clock.
+  `RewriteMedia(playlist, SegmentURL)` returns what ffmpeg wrote with **only** the segment URIs and the
+  `EXT-X-MAP` URI replaced by the caller's URLs — every other byte, line endings included, passes through
+  untouched, because ffmpeg has already measured the `EXTINF`s and a synthesised duration would drift from
+  the segments a player receives. The resolver is handed the URI's **base name**, validated by `ValidateName`
+  first (how ffmpeg spells the path in front of it depends on flags no URL builder should know about);
+  errors: `ErrNoSegmentURL`, `ErrMalformedPlaylist` (an `EXT-X-MAP` with no quoted URI), `ErrInvalidName`,
+  or the resolver's own, wrapped — never a playlist with a hole in it. `BuildMaster([]Variant)` renders the
+  master (`#EXT-X-VERSION:7`, `EXT-X-INDEPENDENT-SEGMENTS`, one `EXT-X-STREAM-INF` with
+  `BANDWIDTH`/`RESOLUTION`/`CODECS` + the caller's URL per variant, in the given order = preference order),
+  refusing an empty list (`ErrNoVariants`) or a variant missing URL/bandwidth/resolution/codecs
+  (`ErrInvalidVariant`). Both playlist functions are held to golden files in `testdata/`, the media one's
+  input being a playlist real ffmpeg wrote),
   `internal/maintenanceapi/`
   (a maintainer-only HTTP API over maintenance: the interfaces `Service` (Scan+Repair, satisfied by `*maintenance.Service`,
   nil → 503) and `AuditPurger` (`PurgeOlderThan`+`Record`, satisfied by `*audit.Store`, nil → 503);

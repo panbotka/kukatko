@@ -92,7 +92,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/feedbackapi` — `POST`/`DELETE /feedback/{face,label}-rejections` (RequireWrite)
 - `internal/geoestimate` — estimate a missing location from photos taken near it in time; refuses unless the neighbours cluster tightly (a wrong location is worse than none), marks every result `estimate`
 - `internal/globalsearchapi` — `GET /search/global` (grouped cross-entity)
-- `internal/hls` — where a video's streaming segments live in the object store (`hls/<file_hash>/<rendition>/`) and what may be named there; pure layout, no ffmpeg
+- `internal/hls` — the pure half of streaming: where a video's segments live (`hls/<file_hash>/<rendition>/`), what may be named there, the rendition list + ffmpeg argument plan, and the playlists a player is served; never runs ffmpeg
 - `internal/imgconvert` — HEIC/RAW/video → decodable JPEG (shell-out)
 - `internal/importapi` — maintainer-only, read-only import bookkeeping: run history + failures listing
 - `internal/importer` — bookkeeping of import runs + persisted per-photo/per-file failures (`partial` status); keeps the finished migration's runs as provenance
