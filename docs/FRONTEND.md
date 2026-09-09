@@ -2900,13 +2900,27 @@ here.
   (`stack.setPrimary` → `setStackPrimary`) / **Vyjmout ze skupiny** (`stack.unstack` → `unstackMember`)
   and **Zrušit skupinu** (`stack.unstackAll` → `unstackAll`). It is rendered by `PhotoDetailPage` **in the drawer**,
   only when `stack_members` has **≥ 2** items; its actions reload the displayed photo;
-  `VideoPlayer` (`components/photo/`) = **the video stage of the detail page**: a plain `<video>` streamed from the
-  range-capable `/photos/{uid}/video` (so the browser seeks) with **Kukátko's own control bar** under it —
+  `VideoPlayer` (`components/photo/`) = **the video stage of the detail page**: a plain `<video>` with
+  **Kukátko's own control bar** under it —
   play/pause, **±10 s skips**, the scrubbable `VideoScrubber` timeline, a **speed menu** (0.5/1/1.25/1.5/2×),
   mute and fullscreen. The native `controls` are deliberately **gone**, for exactly one reason: a native timeline
   exposes no hover position, so the scrub preview — the point of the feature — would have nowhere to hang.
   The chosen speed is remembered **for the session** (`sessionStorage`, `lib/videoPlayback`) and re-applied to
-  every clip, since `playbackRate` resets with each new element. **Keyboard:** `K` play/pause, `J`/`L` ∓10 s,
+  every clip, since `playbackRate` resets with each new element. **Where the bytes come from is
+  `hooks/useHlsPlayback`'s business, not the component's** (prop `streaming` = `PhotoDetail.hls`): a clip
+  with an encoded rendition is
+  **streamed** — on a browser that plays HLS itself (`lib/hlsPlayback.nativeHlsSupported`, a detached probe
+  element asked `canPlayType('application/vnd.apple.mpegurl')`, because the answer has to be known while the
+  *first* render picks the `src`) the master playlist simply goes into `src` and **no library is loaded at
+  all**; otherwise **hls.js's light build** is `import()`ed lazily — its own ~370 kB chunk, so a library of
+  stills never downloads a demuxer — and **attached to that very element** (which then carries no `src`, MSE
+  feeds it). Everything else — the control bar, the scrubber, the shortcuts, fullscreen, the remembered rate,
+  Picture-in-Picture — keeps talking to one plain `<video>` and knows nothing about the delivery. Anything that
+  goes wrong **before** playback (no rendition, the chunk fails to load, no MSE) falls back to the progressive
+  `/video` endpoint, i.e. exactly what the player did before streaming existed; a **fatal** hls.js error
+  **during** playback goes to the same "cannot play, download instead" state as an undecodable codec, and a
+  non-fatal one is left to the library to recover from. The download link is always `photo.download_url`, the
+  **original file** — a rendition is for watching, the file is what you keep. **Keyboard:** `K` play/pause, `J`/`L` ∓10 s,
   `<`/`>` step the speed — via `useKeyboardShortcuts` with `enabled` = "the player contains the focused element,
   **or** the clip is playing", so those keys stay free for the rest of the page. **The arrow keys are left alone
   on purpose**: on this page they page between photos, and a video that hijacked them would break browsing to
@@ -2928,7 +2942,11 @@ here.
   `[0, duration]`, only below zero while the duration is unknown), `formatPlaybackTime` (`m:ss`, `h:mm:ss` past
   an hour, never `NaN`), `playbackFraction`, `storyboardTileIndex`/`storyboardTileStyle` (mirroring
   `storyboard.Spec.TileIndex` on the server), `previewOffset` (keeps the bubble inside the track) and
-  `positionFromPointer`;
+  `positionFromPointer`. `lib/hlsPlayback` is the delivery half:
+  `HLS_MIME_TYPE`, `nativeHlsSupported()` (the probe above) and the pure
+  `videoDelivery(streaming, native)` → `native` | `library` | `progressive`, which is the whole policy in one
+  function — no rendition means progressive whatever the browser can do, and a browser that streams HLS itself
+  is never handed a library to duplicate it;
   `components/photo/` also carries `MetaField` (one read-only labelled `<dt>`/`<dd>` row inside
   a `<dl className="row">` group, an empty value = nothing; an optional `title` = a tooltip over the shortened
   value and `children` = a rich value (chips/badge/copy button), a row with `children` renders
@@ -5602,7 +5620,10 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   `fetchTrashInfo()` (`GET /trash/info` → `TrashInfo{retention_days}`),
   `buildPhotoQuery`, `thumbUrl(uid,size,token?)`, `videoUrl(uid,token?)` (a range stream for
   `<video>`; with the R2 backend the route **302** redirects to the Worker, `<video>` follows the redirect
-  on every request, so a seek always runs against a fresh signature), `GRID_THUMB_SIZE`,
+  on every request, so a seek always runs against a fresh signature),
+  `hlsMasterUrl(uid,token?)` (`/photos/{uid}/hls/master.m3u8` — the streaming entry point; the playlist's
+  own URIs are relative and repeat the `?t=` token this URL carries, so signing the master is enough for
+  every media playlist and segment under it), `GRID_THUMB_SIZE`,
   and on `PhotoDetail` the **`hls?`** flag — whether the photo has an encoded streaming rendition, so a
   player can point at `/photos/{uid}/hls/master.m3u8` instead of probing it; it is optional on purpose
   (absent = an older payload, or an instance with streaming off), which reads as "no";

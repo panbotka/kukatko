@@ -1057,6 +1057,25 @@ export function videoUrl(uid: string, downloadToken?: string | null): string {
 }
 
 /**
+ * Builds the URL of a video's HLS master playlist
+ * (`GET /api/v1/photos/{uid}/hls/master.m3u8`) — the entry point a streaming
+ * player loads, listing one variant per encoded rendition.
+ *
+ * Only a photo whose detail payload reports `hls` has one; every other photo
+ * answers 404 here, which is why the player reads the flag instead of probing.
+ * The playlist's own URIs are relative and repeat the token this URL carries, so
+ * appending it here is enough to authorise the media playlists and every segment
+ * behind them in a cookie-less context.
+ */
+export function hlsMasterUrl(uid: string, downloadToken?: string | null): string {
+  const url = `${API_BASE}/photos/${encodeURIComponent(uid)}/hls/master.m3u8`
+  if (downloadToken !== undefined && downloadToken !== null && downloadToken !== '') {
+    return `${url}?t=${encodeURIComponent(downloadToken)}`
+  }
+  return url
+}
+
+/**
  * A video's scrub-preview storyboard as `GET /api/v1/photos/{uid}/storyboard`
  * reports it. Mirrors the backend `storyboardResponse`.
  *

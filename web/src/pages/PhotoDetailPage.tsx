@@ -1186,6 +1186,7 @@ export function PhotoDetailPage() {
             poster={poster}
             downloadHref={photo.download_url}
             token={downloadToken}
+            streaming={photo.hls === true}
           />
         </div>
       )

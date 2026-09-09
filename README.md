@@ -239,10 +239,12 @@ that it was imported.
 - **Video** with range streaming, poster frames, live photos, and a player with playback speed,
   ±10 s skips, and frame previews under the cursor as you scrub. With `video.hls.enabled` a video is
   also encoded once, in the background, into **adaptive streaming renditions** served over HLS, so a
-  phone on a slow connection starts playing at once instead of waiting for a large original. Each
-  segment is authorised and signed as the player asks for it, so nothing that grants access to your
-  library is ever written into a file the player keeps; videos already in the library are caught up
-  with the maintainer backfill.
+  phone on a slow connection starts playing at once instead of waiting for a large original — the
+  player picks that up on its own, letting the browser stream the playlist where it can and loading a
+  demuxer only where it cannot. Each segment is authorised and signed as the player asks for it, so
+  nothing that grants access to your library is ever written into a file the player keeps; videos
+  already in the library are caught up with the maintainer backfill. Downloading still gives you the
+  original file — the renditions exist to be watched, not to replace what you keep.
 
 ### On a phone
 

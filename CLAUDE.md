@@ -25,7 +25,9 @@ library were removed in August 2026; the only import left is `kukatko import dir
   reference a font CDN — `build/localFonts.ts` strips Bootswatch's `@import` and fails the build otherwise.
   Markdown **only** via the `Markdown` component (`react-markdown` + **`rehype-sanitize`**, never optional).
   Blurred image placeholders decode via **`blurhash`** (woltapp, the flavour `internal/blurhash` writes),
-  **only** through the `BlurPlaceholder` component.
+  **only** through the `BlurPlaceholder` component. Streaming playback **only** via **`hls.js`'s light
+  build**, bundled (never a CDN) and **lazily imported** by `hooks/useHlsPlayback`; a browser that plays
+  HLS itself loads no library at all, and a clip without a rendition keeps the progressive endpoint.
 - **Images/videos without CGO:** pure-Go for JPEG/PNG/WebP; **shell-out** to `heif-convert` (HEIC),
   `exiftool`/`dcraw` (RAW preview), `ffmpeg`/`ffprobe` (video poster/metadata/streaming).
 

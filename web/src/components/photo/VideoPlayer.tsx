@@ -3,6 +3,7 @@ import Button from 'react-bootstrap/Button'
 import Dropdown from 'react-bootstrap/Dropdown'
 import { useTranslation } from 'react-i18next'
 
+import { useHlsPlayback } from '../../hooks/useHlsPlayback'
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts'
 import { useStoryboard } from '../../hooks/useStoryboard'
 import {
@@ -16,7 +17,6 @@ import {
   writePlaybackRate,
   type PlaybackRate,
 } from '../../lib/videoPlayback'
-import { videoUrl } from '../../services/photos'
 import { Icon } from '../Icon'
 
 import { VideoScrubber } from './VideoScrubber'
@@ -33,13 +33,27 @@ export interface VideoPlayerProps {
   downloadHref: string
   /** Download token appended to the stream and sprite URLs for cookie-less contexts. */
   token?: string | null
+  /**
+   * Whether the photo has an encoded HLS rendition (`photo.hls`). When it has,
+   * the clip is streamed — natively or through hls.js; when it has not, the
+   * original file is played from the range endpoint as it always was.
+   */
+  streaming?: boolean
 }
 
 /**
- * The video player on the photo detail page: an HTML5 `<video>` streamed from
- * the range-capable backend endpoint (so the browser can seek), with Kukátko's
+ * The video player on the photo detail page: an HTML5 `<video>` with Kukátko's
  * own control bar over it — play/pause, ±10 s skips, a scrubbable timeline with
  * frame previews, a playback-speed menu, mute and fullscreen.
+ *
+ * **Where the bytes come from** is `useHlsPlayback`'s business, not this
+ * component's. A clip with an encoded rendition is streamed — the browser demuxes
+ * the playlist itself where it can, otherwise hls.js is lazily loaded and attached
+ * to this very element — and everything else is played from the range-capable
+ * `/video` endpoint, exactly as before. The element stays a plain `<video>` either
+ * way, so the controls, the scrub preview, the shortcuts and Picture-in-Picture
+ * neither know nor care. The download link always points at the original file: the
+ * renditions exist to be played, not to be kept.
  *
  * The controls are ours rather than the browser's for one reason: the scrub
  * preview. A native timeline exposes no hover position, so the storyboard
@@ -63,7 +77,14 @@ export interface VideoPlayerProps {
  * When the browser cannot decode the codec — and on-the-fly transcoding is off —
  * the player surfaces a download fallback so the user can still retrieve the file.
  */
-export function VideoPlayer({ uid, title, poster, downloadHref, token }: VideoPlayerProps) {
+export function VideoPlayer({
+  uid,
+  title,
+  poster,
+  downloadHref,
+  token,
+  streaming = false,
+}: VideoPlayerProps) {
   const { t } = useTranslation()
   const videoRef = useRef<HTMLVideoElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -78,6 +99,16 @@ export function VideoPlayer({ uid, title, poster, downloadHref, token }: VideoPl
   // what schedules the render, so a video nobody watches never costs a decode.
   const [started, setStarted] = useState(false)
   const storyboard = useStoryboard(uid, started)
+
+  // A fatal streaming error is the same dead end as an undecodable codec: the
+  // element will not play this clip, so the player says so and offers the file.
+  const failPlayback = useCallback((): void => {
+    setFailed(true)
+  }, [])
+  // Where the bytes come from — a playlist the browser demuxes itself, hls.js
+  // attached to this very element, or the original file. Everything below this
+  // line is written as if there were only ever one plain `<video>`.
+  const { src } = useHlsPlayback({ videoRef, uid, streaming, token, onFatalError: failPlayback })
 
   // Restore the rate remembered for this session, and re-apply it whenever the
   // element is replaced (a new clip): `playbackRate` is element state, not React
@@ -213,7 +244,7 @@ export function VideoPlayer({ uid, title, poster, downloadHref, token }: VideoPl
         playsInline
         preload="metadata"
         poster={poster}
-        src={videoUrl(uid, token)}
+        src={src}
         aria-label={`${t('photo.video.label')}: ${title}`}
         className="kk-video__media"
         onClick={togglePlay}

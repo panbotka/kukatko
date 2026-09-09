@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { I18nextProvider } from 'react-i18next'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -13,6 +13,85 @@ vi.mock('../../services/photos', async () => {
 })
 
 const fetchStoryboard = vi.mocked(photosService.fetchStoryboard)
+
+/**
+ * A stand-in for hls.js. Real playback needs Media Source Extensions and a real
+ * decoder — neither of which jsdom has, and neither of which this component owns:
+ * what it must get right is *whether* the library is reached for, what it is
+ * pointed at, that it is attached to the player's own element, and what happens
+ * when it gives up. The fake records exactly that and lets a test raise an error
+ * the way the library would.
+ */
+const hlsjs = vi.hoisted(() => {
+  interface FakeInstance {
+    source: string | null
+    media: HTMLMediaElement | null
+    destroyed: boolean
+    raise: (fatal: boolean) => void
+  }
+  const state = { supported: true, throwOnCreate: false, instances: [] as FakeInstance[] }
+
+  class FakeHls implements FakeInstance {
+    static readonly Events = { ERROR: 'hlsError' }
+
+    source: string | null = null
+    media: HTMLMediaElement | null = null
+    destroyed = false
+    private listeners: ((event: string, data: { fatal: boolean }) => void)[] = []
+
+    constructor() {
+      if (state.throwOnCreate) {
+        throw new Error('hls.js failed to initialise')
+      }
+      state.instances.push(this)
+    }
+
+    static isSupported(): boolean {
+      return state.supported
+    }
+
+    on(event: string, handler: (event: string, data: { fatal: boolean }) => void): void {
+      if (event === FakeHls.Events.ERROR) {
+        this.listeners.push(handler)
+      }
+    }
+
+    loadSource(source: string): void {
+      this.source = source
+    }
+
+    attachMedia(media: HTMLMediaElement): void {
+      this.media = media
+    }
+
+    destroy(): void {
+      this.destroyed = true
+    }
+
+    raise(fatal: boolean): void {
+      for (const handler of this.listeners) {
+        handler(FakeHls.Events.ERROR, { fatal })
+      }
+    }
+  }
+
+  return { state, FakeHls }
+})
+
+vi.mock('hls.js/light', () => ({ default: hlsjs.FakeHls }))
+
+/** Makes the browser claim (or deny) that it plays HLS playlists itself. */
+function stubNativeHls(supported: boolean): void {
+  vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue(supported ? 'maybe' : '')
+}
+
+/** Waits for the lazily imported library to have been attached, and returns it. */
+async function attachedHls() {
+  await waitFor(() => {
+    expect(hlsjs.state.instances).toHaveLength(1)
+  })
+  return hlsjs.state.instances[0]
+}
 
 /**
  * Gives the rendered `<video>` a playable surface: jsdom implements neither
@@ -44,7 +123,7 @@ function stubMedia(video: HTMLVideoElement, duration = 60): HTMLVideoElement {
   return video
 }
 
-function renderPlayer(uid = 'ph1') {
+function renderPlayer(uid = 'ph1', streaming = false) {
   const utils = render(
     <I18nextProvider i18n={i18n}>
       <VideoPlayer
@@ -52,6 +131,7 @@ function renderPlayer(uid = 'ph1') {
         title="Clip"
         poster="/poster.jpg"
         downloadHref="/api/v1/photos/ph1/download?original=true"
+        streaming={streaming}
       />
     </I18nextProvider>,
   )
@@ -66,6 +146,9 @@ beforeEach(async () => {
   await i18n.changeLanguage('en')
   window.sessionStorage.clear()
   fetchStoryboard.mockResolvedValue({ status: 'unavailable' })
+  hlsjs.state.supported = true
+  hlsjs.state.throwOnCreate = false
+  hlsjs.state.instances = []
 })
 
 describe('VideoPlayer', () => {
@@ -231,6 +314,115 @@ describe('VideoPlayer', () => {
 
       expect(video.currentTime).toBe(30)
       expect(right.defaultPrevented).toBe(false)
+    })
+  })
+
+  describe('HLS', () => {
+    it('never loads the library for a photo with no rendition', async () => {
+      const { video } = renderPlayer('ph1', false)
+
+      expect(video.getAttribute('src')).toContain('/photos/ph1/video')
+      // Give the lazy import a turn: nothing may have asked for it.
+      await Promise.resolve()
+      expect(hlsjs.state.instances).toHaveLength(0)
+    })
+
+    it('attaches the library to the player element and points it at the master playlist', async () => {
+      stubNativeHls(false)
+      const { video } = renderPlayer('ph1', true)
+
+      const hls = await attachedHls()
+      expect(hls.source).toContain('/photos/ph1/hls/master.m3u8')
+      expect(hls.media).toBe(video)
+      // hls.js feeds the element through MSE, so the element carries no src of
+      // its own — one that pointed at the original would download it twice.
+      expect(video.hasAttribute('src')).toBe(false)
+    })
+
+    it('lets a browser with native support play the playlist, without the library', async () => {
+      stubNativeHls(true)
+      const { video } = renderPlayer('ph1', true)
+
+      expect(video.getAttribute('src')).toContain('/photos/ph1/hls/master.m3u8')
+      await Promise.resolve()
+      expect(hlsjs.state.instances).toHaveLength(0)
+    })
+
+    it('keeps the controls, the storyboard and the download link while streaming', async () => {
+      stubNativeHls(false)
+      const { video } = renderPlayer('ph1', true)
+      await attachedHls()
+
+      stubMedia(video)
+      fireEvent.click(screen.getByRole('button', { name: 'Play' }))
+      expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument()
+      expect(screen.getByRole('slider', { name: 'Video timeline' })).toBeInTheDocument()
+      await waitFor(() => {
+        expect(fetchStoryboard).toHaveBeenCalledWith('ph1', expect.anything())
+      })
+    })
+
+    it('falls back to the original file when the library cannot run here', async () => {
+      stubNativeHls(false)
+      hlsjs.state.supported = false
+      const { video } = renderPlayer('ph1', true)
+
+      await waitFor(() => {
+        expect(video.getAttribute('src')).toContain('/photos/ph1/video')
+      })
+    })
+
+    it('falls back to the original file when the library fails to initialise', async () => {
+      stubNativeHls(false)
+      hlsjs.state.throwOnCreate = true
+      const { video } = renderPlayer('ph1', true)
+
+      await waitFor(() => {
+        expect(video.getAttribute('src')).toContain('/photos/ph1/video')
+      })
+    })
+
+    it('offers the download after a fatal streaming error', async () => {
+      stubNativeHls(false)
+      renderPlayer('ph1', true)
+      const hls = await attachedHls()
+
+      act(() => {
+        hls.raise(true)
+      })
+
+      expect(screen.getByText('This video cannot be played in your browser.')).toBeInTheDocument()
+      // The original, never a rendition: streaming is for watching, the file is
+      // what you keep.
+      expect(screen.getByRole('button', { name: 'Download the video' })).toHaveAttribute(
+        'href',
+        '/api/v1/photos/ph1/download?original=true',
+      )
+    })
+
+    it('plays on through a recoverable error', async () => {
+      stubNativeHls(false)
+      renderPlayer('ph1', true)
+      const hls = await attachedHls()
+
+      act(() => {
+        hls.raise(false)
+      })
+
+      // Still the player, not the dead end: the timeline is there and no
+      // download link has replaced it. (The unsupported sentence is not a
+      // witness here — it is also the `<video>` element's own fallback child.)
+      expect(screen.getByRole('slider', { name: 'Video timeline' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Download the video' })).not.toBeInTheDocument()
+    })
+
+    it('destroys the instance when the player goes away', async () => {
+      stubNativeHls(false)
+      const { unmount } = renderPlayer('ph1', true)
+      const hls = await attachedHls()
+
+      unmount()
+      expect(hls.destroyed).toBe(true)
     })
   })
 
