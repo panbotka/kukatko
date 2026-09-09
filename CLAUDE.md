@@ -93,6 +93,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/geoestimate` — estimate a missing location from photos taken near it in time; refuses unless the neighbours cluster tightly (a wrong location is worse than none), marks every result `estimate`
 - `internal/globalsearchapi` — `GET /search/global` (grouped cross-entity)
 - `internal/hls` — the pure half of streaming: where a video's segments live (`hls/<file_hash>/<rendition>/`), what may be named there, the rendition list + ffmpeg argument plan, and the playlists a player is served; never runs ffmpeg
+- `internal/hlsjob` — the acting half: the `hls_transcode` job (ffmpeg into a temp dir, segments published under the layout, the row in `photo_hls_renditions`) and that table's store; publishes before it records, undoes its own partial run, one slot in the worker
 - `internal/imgconvert` — HEIC/RAW/video → decodable JPEG (shell-out)
 - `internal/importapi` — maintainer-only, read-only import bookkeeping: run history + failures listing
 - `internal/importer` — bookkeeping of import runs + persisted per-photo/per-file failures (`partial` status); keeps the finished migration's runs as provenance

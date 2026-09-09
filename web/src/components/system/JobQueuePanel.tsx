@@ -41,6 +41,7 @@ const TYPE_LABELS: Record<string, ParseKeys | undefined> = {
   ocr: 'system.jobs.types.ocr',
   sidecar: 'system.jobs.types.sidecar',
   storyboard: 'system.jobs.types.storyboard',
+  hls_transcode: 'system.jobs.types.hls_transcode',
   backup: 'system.jobs.types.backup',
   mail_send: 'system.jobs.types.mail_send',
   nameless_detach: 'system.jobs.types.nameless_detach',

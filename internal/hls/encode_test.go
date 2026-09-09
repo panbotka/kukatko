@@ -81,12 +81,12 @@ func TestRenditionBandwidth(t *testing.T) {
 }
 
 // TestEncodeArgs verifies the whole encoding contract: the quality parameters,
-// the fMP4/CMAF segmenting at SegmentSeconds, the keyframes forced onto those
+// the fMP4/CMAF segmenting at the requested length, the keyframes forced onto those
 // boundaries, and the output names the object layout expects.
 func TestEncodeArgs(t *testing.T) {
 	t.Parallel()
 
-	args := EncodeArgs("/tmp/src.mov", "/tmp/out", rendition1080p(t))
+	args := EncodeArgs("/tmp/src.mov", "/tmp/out", rendition1080p(t), DefaultSegmentSeconds)
 
 	wantValues := map[string]string{
 		"-i":                      "/tmp/src.mov",
@@ -137,8 +137,8 @@ func TestEncodeArgs_isPure(t *testing.T) {
 	t.Parallel()
 
 	r := rendition1080p(t)
-	first := EncodeArgs("src.mp4", "out", r)
-	second := EncodeArgs("src.mp4", "out", r)
+	first := EncodeArgs("src.mp4", "out", r, DefaultSegmentSeconds)
+	second := EncodeArgs("src.mp4", "out", r, DefaultSegmentSeconds)
 	if !slices.Equal(first, second) {
 		t.Errorf("EncodeArgs is not deterministic:\n%v\n%v", first, second)
 	}
@@ -183,7 +183,7 @@ func TestEncodeArgs_scaling(t *testing.T) {
 			if tt.srcWidth > 0 && (gotW > tt.srcWidth || gotH > tt.srcHeight) {
 				t.Errorf("Fit(%d, %d) = %dx%d, want no upscaling", tt.srcWidth, tt.srcHeight, gotW, gotH)
 			}
-			if args := EncodeArgs("src.mp4", "out", r); !slices.Contains(args, wantScaleFilter) {
+			if args := EncodeArgs("src.mp4", "out", r, DefaultSegmentSeconds); !slices.Contains(args, wantScaleFilter) {
 				t.Errorf("EncodeArgs: scale filter = %v, want %q", args, wantScaleFilter)
 			}
 		})
@@ -201,5 +201,62 @@ func TestScaleFilter_escapesCommas(t *testing.T) {
 	}
 	if got != wantScaleFilter {
 		t.Errorf("ScaleFilter() = %q, want %q", got, wantScaleFilter)
+	}
+}
+
+// TestEncodeArgs_segmentLength verifies the configured segment length reaches
+// both places it must — the segmenter and the forced keyframes, which have to
+// agree or a segment does not start on a keyframe — and that a non-positive
+// value falls back to the default rather than asking for zero-length segments.
+func TestEncodeArgs_segmentLength(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		configured int
+		want       string
+	}{
+		{name: "configured length is used", configured: 4, want: "4"},
+		{name: "zero falls back to the default", configured: 0, want: "6"},
+		{name: "negative falls back to the default", configured: -3, want: "6"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			args := EncodeArgs("src.mp4", "out", rendition1080p(t), tt.configured)
+			if got, _ := argValue(args, "-hls_time"); got != tt.want {
+				t.Errorf("EncodeArgs(%d): -hls_time = %q, want %q", tt.configured, got, tt.want)
+			}
+			wantExpr := "expr:gte(t,n_forced*" + tt.want + ")"
+			if got, _ := argValue(args, "-force_key_frames"); got != wantExpr {
+				t.Errorf("EncodeArgs(%d): -force_key_frames = %q, want %q", tt.configured, got, wantExpr)
+			}
+		})
+	}
+}
+
+// TestSegmentLength verifies the "unset means the default" rule the encoder and
+// every config reader share.
+func TestSegmentLength(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		configured int
+		want       int
+	}{
+		{name: "positive is kept", configured: 10, want: 10},
+		{name: "zero is the default", configured: 0, want: DefaultSegmentSeconds},
+		{name: "negative is the default", configured: -1, want: DefaultSegmentSeconds},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := SegmentLength(tt.configured); got != tt.want {
+				t.Errorf("SegmentLength(%d) = %d, want %d", tt.configured, got, tt.want)
+			}
+		})
 	}
 }

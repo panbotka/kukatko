@@ -5,12 +5,13 @@ import (
 	"strconv"
 )
 
-// SegmentSeconds is the length one media segment is cut to. Six seconds is the
-// usual VOD compromise: short enough that a player starts playing quickly and can
-// switch rendition without a long commitment, long enough that a two-hour video
-// does not turn into thousands of objects in the store. It is also the interval
-// keyframes are forced onto, so a segment always starts with one.
-const SegmentSeconds = 6
+// DefaultSegmentSeconds is the length one media segment is cut to unless the
+// instance configures another. Six seconds is the usual VOD compromise: short
+// enough that a player starts playing quickly and can switch rendition without a
+// long commitment, long enough that a two-hour video does not turn into thousands
+// of objects in the store. It is also the interval keyframes are forced onto, so
+// a segment always starts with one.
+const DefaultSegmentSeconds = 6
 
 // EncodePlaylistName is the media playlist ffmpeg writes next to the segments it
 // produces. It is a scratch file: the encoder reads it, rewrites its URIs and
@@ -143,16 +144,21 @@ func (r Rendition) ScaleFilter() string {
 // 00000.m4s, 00001.m4s, … src is either a local path or a URL — ffmpeg opens
 // both — and outDir must exist.
 //
-//	args := hls.EncodeArgs(src, dir, rendition)
+//	args := hls.EncodeArgs(src, dir, rendition, hls.DefaultSegmentSeconds)
 //	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
+//
+// segmentSeconds is the length segments are cut to; a non-positive value means
+// DefaultSegmentSeconds, so a caller reading it out of an unset configuration
+// still asks for a playable encode rather than for segments of length zero.
 //
 // The function is pure: it creates no directory, probes nothing, reads no clock
 // and never runs ffmpeg, so the whole plan is testable on a machine that has no
 // ffmpeg installed. Audio is mapped optionally (0:a?) so a silent clip still
-// encodes, and keyframes are forced onto multiples of SegmentSeconds so the
+// encodes, and keyframes are forced onto multiples of the segment length so the
 // segmenter can cut where it planned to instead of waiting for the next keyframe
 // the encoder happened to emit.
-func EncodeArgs(src, outDir string, r Rendition) []string {
+func EncodeArgs(src, outDir string, r Rendition, segmentSeconds int) []string {
+	segmentSeconds = SegmentLength(segmentSeconds)
 	return []string{
 		"-nostdin",
 		"-y",
@@ -167,12 +173,12 @@ func EncodeArgs(src, outDir string, r Rendition) []string {
 		"-maxrate", kbits(r.VideoBitrate),
 		"-bufsize", kbits(r.VideoBitrate * bufsizeFactor),
 		"-pix_fmt", pixelFormat,
-		"-force_key_frames", keyframeExpr(),
+		"-force_key_frames", keyframeExpr(segmentSeconds),
 		"-c:a", audioCodec,
 		"-ac", audioChannels,
 		"-b:a", kbits(AudioBitrate),
 		"-f", "hls",
-		"-hls_time", strconv.Itoa(SegmentSeconds),
+		"-hls_time", strconv.Itoa(segmentSeconds),
 		"-hls_playlist_type", "vod",
 		"-hls_segment_type", "fmp4",
 		"-hls_list_size", "0",
@@ -184,9 +190,20 @@ func EncodeArgs(src, outDir string, r Rendition) []string {
 }
 
 // keyframeExpr returns ffmpeg's -force_key_frames expression placing a keyframe
-// at every whole multiple of SegmentSeconds.
-func keyframeExpr() string {
-	return "expr:gte(t,n_forced*" + strconv.Itoa(SegmentSeconds) + ")"
+// at every whole multiple of segmentSeconds.
+func keyframeExpr(segmentSeconds int) string {
+	return "expr:gte(t,n_forced*" + strconv.Itoa(segmentSeconds) + ")"
+}
+
+// SegmentLength returns the segment length an encode should use given what the
+// configuration asked for: the value itself when it is positive, and
+// DefaultSegmentSeconds otherwise. It exists so "unset means the default" is
+// decided once, here, rather than at every call site that reads a config field.
+func SegmentLength(configured int) int {
+	if configured <= 0 {
+		return DefaultSegmentSeconds
+	}
+	return configured
 }
 
 // kbits renders a bitrate in bits per second the way ffmpeg's rate options are

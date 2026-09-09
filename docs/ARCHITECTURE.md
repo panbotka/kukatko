@@ -380,6 +380,10 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
 - **`photoprism_aliases`** — `photoprism_uid PK` → `photo_uid` (many-to-one, `ON DELETE CASCADE`),
   `photoprism_file_hash`: the source photos that collapsed onto a row already holding their exact
   content (see §5.3). Provenance like the columns above, and equally live.
+- **`photo_hls_renditions`** — `(photo_uid, rendition) PK`, the media playlist ffmpeg wrote plus what the
+  master playlist advertises (`width`/`height`/`bandwidth`/`codecs`/`segment_count`/`duration_ms`),
+  `encoded_at`. The segments themselves live in the object store; the playlist a player fetches is rendered
+  per request from this row (see `internal/hls`, `internal/hlsjob`). `ON DELETE CASCADE`.
 - **`photo_phashes`** — `phash/dhash BIGINT` (near-duplicate detection).
 - **`photo_edits`** — non-destructive edits (crop/rotation/brightness/contrast), 0..1 coordinates.
   The original file is never rewritten: the edit is rendered at run time — into the download
@@ -698,7 +702,8 @@ lost on restart).
   stops claiming and leaves abandoned in-flight jobs to the queue for recovery — except a deferral
   (`RetryAfterError`), which is still written so it never burns a retry attempt. The queue state is read via the **admin Jobs API**
   (`internal/jobsapi`: `GET /jobs/stats`, `GET /jobs`, `POST /jobs/{id}/requeue`); the UI polls it.
-- **Job types:** `thumbnail`, `places`, `metadata`, `sidecar`, `storyboard`, `mail_send`, `face_cluster`
+- **Job types:** `thumbnail`, `places`, `metadata`, `sidecar`, `storyboard`, `hls_transcode`, `mail_send`,
+  `face_cluster`
   (run locally on the
   Pi, immediately), `image_embed`, `face_detect`, `ocr` (require the box), `pp_import`, `ps_migrate`, `backup`.
   `ocr` reads the text printed in a photo (`POST /ocr/image` over its `fit_1920` preview) into
@@ -713,6 +718,14 @@ lost on restart).
   work on a real library, which is why neither runs inside an HTTP request: the page reads the prepared
   summaries and reports how many groups are still being prepared. A run that leaves work over enqueues its
   own successor, so the backlog drains in bounded steps. See `internal/clusterjob`.
+  `hls_transcode` encodes an uploaded video into its streaming renditions: ffmpeg into a temp directory, the
+  fragmented-MP4 segments published under `hls/<file_hash>/<rendition>/`, and what the player's playlists must
+  advertise recorded in `photo_hls_renditions`. It is enqueued for **standalone videos only**, in the upload
+  pipeline beside `image_embed`/`face_detect`, and is off unless `video.hls.enabled` is set. It publishes
+  before it records the row (a row promises its objects can be fetched) and undoes its own partial upload on
+  failure, so a retry starts from the state it would have found had the run never happened. It is the most
+  expensive job there is, hence a **one-slot pool** and a timeout that scales with the clip.
+  See `internal/hlsjob`.
   `mail_send` is the **only** path by which Kukátko sends an e-mail: the payload names a template and carries
   its data, so the message is rendered when it is delivered rather than when it is scheduled, and a mail
   enqueued while the SMTP server is away still arrives once it is back. It is enqueued **inside the

@@ -3591,15 +3591,19 @@ to `## Package map` in `CLAUDE.md`.
   because ffmpeg applies a source's rotation before the filter runs. `Fit(w,h)` performs the same arithmetic
   in Go (nearest even inside the fit, then floored to even) for the plan to be reasoned about and tested;
   measured against ffmpeg 6.1.1: 3840x2160 → 1920x1080, 2160x3840 → 1080x1920, 640x480 unchanged,
-  1279x721 → 1278x720, 1921x1000 → 1920x1000. `EncodeArgs(src,outDir,rendition)` is the ffmpeg argument list —
+  1279x721 → 1278x720, 1921x1000 → 1920x1000. `EncodeArgs(src,outDir,rendition,segmentSeconds)` is the ffmpeg argument list —
   **the quality decision**: H.264 `high` in `yuv420p` (what every browser and iOS device decodes), preset
   `medium` (worth it for output encoded once and served many times, unlike `internal/video`'s throwaway
   `veryfast` transcode), CRF 21 with `-maxrate` at the ceiling and `-bufsize` twice it, AAC-LC stereo at
-  128 kbit/s, `-force_key_frames expr:gte(t,n_forced*6)` so segments are cut where they were planned,
-  `-f hls -hls_time 6 -hls_playlist_type vod -hls_segment_type fmp4 -hls_list_size 0 -hls_flags
+  128 kbit/s, `-force_key_frames expr:gte(t,n_forced*<segment>)` so segments are cut where they were planned,
+  `-f hls -hls_time <segment> -hls_playlist_type vod -hls_segment_type fmp4 -hls_list_size 0 -hls_flags
   independent_segments`, `init.mp4` + `%05d.m4s` + the scratch playlist `EncodePlaylistName` = `index.m3u8`
   in `outDir` (scratch: read, rewritten, thrown away — `ValidateName` refuses it). Audio is mapped `0:a?`
   so a silent clip still encodes; the builder creates no directory, probes nothing and reads no clock.
+  The segment length is a **parameter**, not a constant: `SegmentLength(configured)` resolves ≤ 0 to
+  `DefaultSegmentSeconds` = 6 in one place, so `video.hls.segment_seconds` left unset still asks for a
+  playable encode, and the value reaches both `-hls_time` and the forced keyframes — they have to agree or a
+  segment does not start on a keyframe.
   `RewriteMedia(playlist, SegmentURL)` returns what ffmpeg wrote with **only** the segment URIs and the
   `EXT-X-MAP` URI replaced by the caller's URLs — every other byte, line endings included, passes through
   untouched, because ffmpeg has already measured the `EXTINF`s and a synthesised duration would drift from
@@ -3612,6 +3616,47 @@ to `## Package map` in `CLAUDE.md`.
   refusing an empty list (`ErrNoVariants`) or a variant missing URL/bandwidth/resolution/codecs
   (`ErrInvalidVariant`). Both playlist functions are held to golden files in `testdata/`, the media one's
   input being a playlist real ffmpeg wrote),
+  `internal/hlsjob/`
+  (**the `hls_transcode` job** — the acting half of streaming to `internal/hls`'s pure one: it runs ffmpeg over
+  an uploaded video, publishes the segments and records what the player's playlists must advertise. `Service` =
+  `New(Config{Photos,Objects,Renditions,Plan,SegmentSeconds,TempDir,FFmpegAvailable})` (panics on a nil
+  Photos/Objects/Renditions; the `Plan` is resolved from `video.hls.renditions` by
+  `cmd/kukatko/hls.go:hlsPlan`, an unknown name failing **startup** rather than silently producing a library
+  with a missing quality level). `Handle` = `worker.HandlerFunc` (payload `{photo_uid}`, empty →
+  `ErrMissingPhotoUID` dead-letter); `Transcode(ctx,uid)` encodes one photo into every rendition of the plan.
+  **A photo that is not a standalone video is a quiet no-op**, live photos included — their motion clip is a
+  hover preview nobody streams — because the job was scheduled from a state that may have changed; an empty
+  plan is `ErrNoRenditions` and a host with no ffmpeg a wrapped `video.ErrFFmpegMissing`.
+  One rendition: `os.MkdirTemp(TempDir)` → ffmpeg (`hls.EncodeArgs`) → read the scratch `index.m3u8` →
+  `parsePlaylist` → probe → publish → `Store.Save`. **`parsePlaylist` is what the run believes**, not a
+  directory listing: ffmpeg's own statement of what it produced and in which order, so a stray file cannot
+  become a segment and the tail of an interrupted run is not published as part of the rendition. It takes the
+  `EXT-X-MAP` URI, the segment URIs (each reduced to its base name and put through `hls.ValidateName`) and the
+  total duration **summed from the `EXTINF`s** — every deviation is `ErrUnusablePlaylist`: no init segment, no
+  segments, a segment with no or an unreadable duration, a name the layout cannot hold. The picture's real
+  dimensions are read off `init.mp4` with `video.Probe` (its sample description answers without a media segment
+  being read) rather than predicted with `hls.Fit`, because ffmpeg applies a container's rotation **before** the
+  scale filter and a portrait clip stored as a rotated landscape one would be described as a picture nobody
+  encoded. Each object is digested and sized first and then streamed (`storage.Storage.Put` verifies against the
+  declared identity), and stamped by name — `video/mp4` for the init segment, `video/iso.segment` for a media
+  one — because sniffing does not recognise an fMP4 box as video at all.
+  **Ordering and cleanup are the contract:** publish first, write the row last (a row is a promise the objects
+  can be fetched); on any failure the keys **this run created** are deleted again, on success the ones a
+  previous encode left that this one did not produce are swept. Both diffs come from one `KeysWithPrefix`
+  listing taken before the upload (`existingKeys`, a `storage.PrefixLister` type assertion — a store without it
+  degrades, never fails), which is what keeps a failed re-encode from deleting the objects the previous,
+  still-valid row points at. The **timeout scales with the clip** (`encodeTimeout`: 5 min + 10× its length,
+  4 h when the length is unknown) — a constant generous enough for a two-hour video is no protection for a
+  ten-second one, and a tight one kills every long video at the same point, which looks exactly like a clip
+  that "cannot be transcoded". The job has a **one-slot pool** (`internal/worker`), so a batch of uploaded
+  videos serialises instead of taking the machine.
+  `Store` (`NewStore(pool)`) is the `photo_hls_renditions` access layer: `Save` (upsert on
+  `(photo_uid,rendition)` — what makes a re-encode replace rather than duplicate — returning the row with its
+  `encoded_at`), `Get` (→ `ErrRenditionNotFound`) and `ListForPhoto` (**widest picture first**, the order a
+  master playlist wants, empty slice for a video not encoded yet). The integration tests synthesize a clip with
+  ffmpeg at test time, encode it end to end and assert both halves — the objects in the store *and* the row —
+  plus that a re-run leaves one row, moved forward in time, the same object set, and sweeps a segment planted
+  as an earlier encode's leftover),
   `internal/maintenanceapi/`
   (a maintainer-only HTTP API over maintenance: the interfaces `Service` (Scan+Repair, satisfied by `*maintenance.Service`,
   nil → 503) and `AuditPurger` (`PurgeOlderThan`+`Record`, satisfied by `*audit.Store`, nil → 503);

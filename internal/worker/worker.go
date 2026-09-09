@@ -121,6 +121,12 @@ const (
 	// connections to it in parallel buys nothing while looking, to a mail
 	// provider, exactly like something worth rate-limiting.
 	defaultMailConcurrency = 1
+	// defaultHLSConcurrency is how many hls_transcode jobs run at once when the
+	// configuration does not name the type. It is 1 on purpose: an HLS encode is a
+	// full re-encode of a clip and will use every core it is given, so two of them
+	// do not finish sooner — they only make sure that nothing else in the queue
+	// runs while a batch of uploaded videos is being transcoded.
+	defaultHLSConcurrency = 1
 	// sharedPoolName labels the pool that drains every job type without a
 	// per-type override; it appears in worker ids and in the startup log.
 	sharedPoolName = "shared"
@@ -291,14 +297,18 @@ func New(cfg Config) *Worker {
 // only naming one of them explicitly can raise it. Mail gets its own single-slot
 // pool for the same reason — one conversation at a time with a remote server —
 // and, just as importantly, so a mail never waits behind a queue of thumbnails.
+// The HLS transcode gets one for the opposite reason — it is the job that would
+// otherwise take the whole machine — so a batch of uploaded videos serialises
+// instead of starving every other job type.
 // Entries <= 0 are ignored, so a zero left over from an unset config field never
 // disables a pool.
 func effectiveTypeConcurrency(configured map[string]int) map[string]int {
-	limits := make(map[string]int, len(sidecarBoundTypes)+len(configured)+1)
+	limits := make(map[string]int, len(sidecarBoundTypes)+len(configured)+2)
 	for _, jobType := range sidecarBoundTypes {
 		limits[jobType] = defaultSidecarBoundConcurrency
 	}
 	limits[jobs.TypeMailSend] = defaultMailConcurrency
+	limits[jobs.TypeHLSTranscode] = defaultHLSConcurrency
 	for jobType, n := range configured {
 		if jobType != "" && n > 0 {
 			limits[jobType] = n

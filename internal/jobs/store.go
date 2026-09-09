@@ -583,7 +583,7 @@ func (s *Store) UnfinishedForPhoto(ctx context.Context, photoUID string) ([]Job,
 // job types, so the usual result fits without a reallocation.
 var photoStepTypes = []string{
 	TypeMetadata, TypeThumbnail, TypeImageEmbed, TypeFaceDetect,
-	TypeOCR, TypePlaces, TypeSidecar, TypeStoryboard,
+	TypeOCR, TypePlaces, TypeSidecar, TypeStoryboard, TypeHLSTranscode,
 }
 
 // ListDead returns dead-lettered jobs, most recently updated first, for the admin

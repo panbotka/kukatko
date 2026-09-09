@@ -132,6 +132,9 @@ type Config struct {
 	// carries coordinates. A nil Places — no mapy.com key configured — schedules
 	// none, and the upload still succeeds.
 	Places PlacesEnqueuer
+	// HLS schedules the streaming encode of a freshly catalogued video. A nil HLS —
+	// the feature switched off — schedules none, and the upload still succeeds.
+	HLS HLSEnqueuer
 	// Duplicate gates and tunes near-duplicate warnings.
 	Duplicate config.DuplicateConfig
 	// MaxFileSize caps a single uploaded file in bytes; 0 means unlimited.
@@ -157,6 +160,7 @@ type Service struct {
 	sidecar     SidecarEnqueuer
 	ocr         OCREnqueuer
 	places      PlacesEnqueuer
+	hls         HLSEnqueuer
 	dup         config.DuplicateConfig
 	maxFileSize int64
 	maxPixels   int64
@@ -177,6 +181,7 @@ func New(cfg Config) *Service {
 		sidecar:     cfg.Sidecar,
 		ocr:         cfg.OCR,
 		places:      cfg.Places,
+		hls:         cfg.HLS,
 		dup:         cfg.Duplicate,
 		maxFileSize: cfg.MaxFileSize,
 		maxPixels:   cfg.MaxPixels,
@@ -547,6 +552,11 @@ func (s *Service) enqueueJobs(ctx context.Context, photo photos.Photo) []Warning
 // OCR is scheduled for stills only — a video's poster frame is deliberately not
 // read — so a clip leaves the queue exactly as it found it.
 //
+// The streaming encode is the mirror image: it is scheduled for standalone
+// videos only. A still has nothing to segment, and a live photo's motion clip is
+// a one-to-three second hover preview nobody streams, so both leave the queue as
+// they found it.
+//
 // The reverse geocode is scheduled only for a photo that actually carries
 // coordinates: the job has nothing to look up without them, and every lookup
 // costs a metered mapy.com credit. Enqueuing it here is what makes a place appear
@@ -570,6 +580,9 @@ func (s *Service) scheduledJobs(photo photos.Photo) []func(context.Context, stri
 	}
 	if s.places != nil && photo.Lat != nil && photo.Lng != nil {
 		scheduled = append(scheduled, s.places.EnqueuePlaces)
+	}
+	if s.hls != nil && photo.MediaType == photos.MediaVideo {
+		scheduled = append(scheduled, s.hls.EnqueueHLSTranscode)
 	}
 	if s.sidecar != nil {
 		scheduled = append(scheduled, s.sidecar.EnqueueSidecar)

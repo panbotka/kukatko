@@ -59,6 +59,20 @@ type PlacesEnqueuer interface {
 	EnqueuePlaces(ctx context.Context, photoUID string) error
 }
 
+// HLSEnqueuer schedules the HTTP Live Streaming encode of a freshly catalogued
+// video — the `hls_transcode` job that cuts the clip into the segments a browser
+// streams. It is separate from JobEnqueuer for the same reason OCREnqueuer and
+// PlacesEnqueuer are: HLS has its own config switch, and when it is off no
+// `hls_transcode` handler is registered, so a job enqueued anyway would sit in
+// the queue forever. A nil HLSEnqueuer is how that off state reaches the
+// pipeline.
+//
+// It is satisfied by jobs.Enqueuer.
+type HLSEnqueuer interface {
+	// EnqueueHLSTranscode schedules the HLS encode of photoUID.
+	EnqueueHLSTranscode(ctx context.Context, photoUID string) error
+}
+
 // NopEnqueuer is the no-op JobEnqueuer used until the persistent job queue
 // exists. Both methods succeed without doing anything, so the pipeline runs
 // end to end (stream, dedup, store, catalogue, thumbnails) with the embedding

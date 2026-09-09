@@ -50,6 +50,7 @@ var catalogueTables = []string{
 	"photo_comments",
 	"photo_edits",
 	"photo_files",
+	"photo_hls_renditions",
 	"photo_labels",
 	"photo_phashes",
 	"photo_places",

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/panbotka/kukatko/internal/expand"
+	"github.com/panbotka/kukatko/internal/hls"
 )
 
 // setMinimalEnv clears every variable Load reads and then sets just the required
@@ -169,6 +170,10 @@ func TestLoad_defaults(t *testing.T) {
 		{"location_estimate.radius_meters", cfg.LocationEstimate.RadiusMeters, 5000.0},
 		{"upload.max_file_size_mb", cfg.Upload.MaxFileSizeMB, 0},
 		{"video.transcode", cfg.Video.Transcode, false},
+		// An HLS encode is the most expensive thing this application does, so the
+		// default is the off switch — this pins that, not merely the key's existence.
+		{"video.hls.enabled", cfg.Video.HLS.Enabled, false},
+		{"video.hls.segment_seconds", cfg.Video.HLS.SegmentSeconds, hls.DefaultSegmentSeconds},
 		{"worker.count", cfg.Worker.Count, 2},
 		{"worker.poll_interval", cfg.Worker.PollInterval, 2 * time.Second},
 		{"worker.stale_after", cfg.Worker.StaleAfter, 5 * time.Minute},
@@ -228,6 +233,41 @@ func TestLoad_defaults(t *testing.T) {
 	wantTypes := map[string]int{"image_embed": 1, "face_detect": 1, "ocr": 1}
 	if !maps.Equal(cfg.Worker.TypeCount, wantTypes) {
 		t.Errorf("worker.type_count = %v, want %v", cfg.Worker.TypeCount, wantTypes)
+	}
+	// A slice does not belong in the comparable table either. The default plan is
+	// the one rendition the encoder knows, so an instance that switches HLS on gets
+	// a working encode without naming anything.
+	if want := []string{hls.Rendition1080p}; !slices.Equal(cfg.Video.HLS.Renditions, want) {
+		t.Errorf("video.hls.renditions = %v, want %v", cfg.Video.HLS.Renditions, want)
+	}
+}
+
+// TestLoad_videoHLSFromYAML verifies the streaming-encode keys are read from the
+// config file: the switch, the segment length and the rendition list, which is a
+// list rather than a scalar and therefore has its own decoding path.
+func TestLoad_videoHLSFromYAML(t *testing.T) {
+	clearConfigEnv(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	yaml := "database:\n  url: postgres://localhost/db\n" +
+		"video:\n  hls:\n    enabled: true\n    segment_seconds: 4\n" +
+		"    renditions:\n      - 1080p\n      - 720p\n"
+	if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
+		t.Fatalf("writing config: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if !cfg.Video.HLS.Enabled {
+		t.Error("video.hls.enabled = false, want true")
+	}
+	if cfg.Video.HLS.SegmentSeconds != 4 {
+		t.Errorf("video.hls.segment_seconds = %d, want 4", cfg.Video.HLS.SegmentSeconds)
+	}
+	if want := []string{"1080p", "720p"}; !slices.Equal(cfg.Video.HLS.Renditions, want) {
+		t.Errorf("video.hls.renditions = %v, want %v", cfg.Video.HLS.Renditions, want)
 	}
 }
 

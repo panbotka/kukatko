@@ -20,6 +20,7 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/panbotka/kukatko/internal/clientip"
+	"github.com/panbotka/kukatko/internal/hls"
 )
 
 const (
@@ -901,6 +902,30 @@ type VideoConfig struct {
 	// precisely. When off, a non-web-friendly video is streamed as-is and the
 	// client falls back to a download link when the browser cannot decode it.
 	Transcode bool `mapstructure:"transcode"`
+	// HLS configures the pre-generated HTTP Live Streaming renditions: the
+	// segmented copies of a video that let a browser start playing immediately and
+	// seek without downloading the original. Unlike Transcode this is produced
+	// once, in the background, and served from the object store.
+	HLS HLSConfig `mapstructure:"hls"`
+}
+
+// HLSConfig tunes the background transcode of uploaded videos into HTTP Live
+// Streaming renditions (the `hls_transcode` job, internal/hlsjob).
+type HLSConfig struct {
+	// Enabled is the master switch. When false no video is transcoded, no
+	// hls_transcode job is enqueued and no handler is registered for the type.
+	// Renditions already in the object store stay exactly as they are — switching
+	// the feature off is not a request to destroy hours of encoding.
+	Enabled bool `mapstructure:"enabled"`
+	// SegmentSeconds is the length one media segment is cut to, and the interval
+	// keyframes are forced onto. <= 0 means hls.DefaultSegmentSeconds. Shorter
+	// segments start playback sooner at the cost of more objects in the store.
+	SegmentSeconds int `mapstructure:"segment_seconds"`
+	// Renditions names the quality levels every video is encoded into, best first.
+	// Each name must be one the encoder knows (hls.ByName); an unknown one fails
+	// startup rather than being silently skipped, because a missing rendition is
+	// invisible until somebody tries to play the video.
+	Renditions []string `mapstructure:"renditions"`
 }
 
 // UploadConfig holds limits for the upload/ingest endpoint.
@@ -1324,6 +1349,15 @@ func setOpsDefaults(v *viper.Viper) {
 	v.SetDefault("upload.max_file_size_mb", 0) // 0 = unlimited
 
 	v.SetDefault("video.transcode", false) // on-the-fly HEVC→H.264 transcode is opt-in
+
+	// Pre-generated HLS renditions of uploaded videos. Off by default: an encode is
+	// the most expensive thing this application does, and an instance that does not
+	// stream its videos should not spend hours of CPU producing segments nobody
+	// fetches. Turning it on is what makes every subsequently uploaded video
+	// streamable.
+	v.SetDefault("video.hls.enabled", false)
+	v.SetDefault("video.hls.segment_seconds", hls.DefaultSegmentSeconds)
+	v.SetDefault("video.hls.renditions", []string{hls.Rendition1080p})
 
 	setWorkerDefaults(v)
 

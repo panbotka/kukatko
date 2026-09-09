@@ -1255,6 +1255,26 @@ files, one request, streamed — a walk over a disk the server cannot see is not
   in the browser. Off = video is streamed as-is (with HTTP Range) and the client offers a download when the
   browser cannot decode it. Transcode is CPU-heavy, runs on every playback (not cached), and a
   transcoded stream cannot be seeked precisely — hence opt-in. `KUKATKO_VIDEO_TRANSCODE`.
+- **HLS keys (`video.hls.*`, `internal/config` + `internal/hlsjob`):** the **pre-generated** streaming
+  renditions, produced once in the background by the `hls_transcode` job and served from the object store —
+  the opposite trade-off to `video.transcode` above, which re-encodes on every playback and caches nothing.
+  `enabled` (bool, **default false**) is the master switch: an encode is the most expensive thing Kukátko
+  does, so an instance that does not stream its videos should not spend the CPU. With it **on**, every
+  subsequently uploaded video enqueues its encode (the enqueue lives in the upload pipeline next to
+  `image_embed`/`face_detect`); videos already in the library are **not** encoded retroactively. With it
+  **off** no handler is registered and nothing is enqueued — a job of a type nothing can claim would wait in
+  the queue forever — and the renditions already in the store are left exactly as they are.
+  `segment_seconds` (**default 6**) is the length a media segment is cut to *and* the interval keyframes are
+  forced onto (they must agree, or a segment does not start on a keyframe); shorter starts playback sooner and
+  costs more objects, `≤ 0` means 6. `renditions` (**default `[1080p]`**) names the quality levels, best
+  first; each must be one the encoder knows (`internal/hls`) — an **unknown name fails startup** rather than
+  quietly producing a library with a missing quality level. The job gets its **own one-slot worker pool**
+  (`internal/worker`, like `mail_send`) so a batch of uploaded videos serialises instead of taking the whole
+  machine, and its ffmpeg deadline **scales with the clip** (5 min + 10× its length; 4 h when the length is
+  unknown) rather than being a flat constant. The temp directory it encodes into is `storage.temp_path`, which
+  must have room for a whole rendition. Objects land under `hls/<file_hash>/<rendition>/` and the row goes to
+  `photo_hls_renditions`; both are removed with the photo (purge cascades the row, the trash sweep the prefix).
+  `KUKATKO_VIDEO_HLS_ENABLED`/`_SEGMENT_SECONDS`.
 - **Worker keys (`worker.*`, `internal/config` + `internal/worker`):** the in-process background
   worker that drains the job queue inside `kukatko serve`. `count` (**default 2**) sizes the **shared
   pool** — the goroutines that drain every job type *without* a `type_count` entry (`thumbnail`,
@@ -1267,7 +1287,9 @@ files, one request, streamed — a walk over a disk the server cannot see is not
   `type_count` does not mention them** (a YAML map *replaces* the default, it does not merge into it),
   so running several against the box is only ever an explicit entry. **`mail_send` gets its own one-slot pool
   for the same reason** — one conversation at a time with a remote mail server, and a message that never waits
-  behind a backlog of thumbnails; values ≤ 0 are ignored and a type
+  behind a backlog of thumbnails; **`hls_transcode` gets one for the opposite reason** — it is the job that
+would otherwise take the whole machine, so a batch of uploaded videos serialises instead of starving every
+other type; values ≤ 0 are ignored and a type
   with no registered handler gets no pool at all (with `mail.enabled` false there is no `mail_send` handler,
   and nothing enqueues one either). `serve` logs the resulting layout at startup
   (`worker: pool "shared" draining [...] with N slot(s)`) — that line is how you confirm an override

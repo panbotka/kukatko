@@ -104,9 +104,10 @@ func runUntilDrained(t *testing.T, w *Worker, q *fakeQueue, want int) {
 	}
 }
 
-// TestEffectiveTypeConcurrency verifies the sidecar-bound types and mail are
-// capped at one slot unless the configuration names them, that other types get a
-// pool only when configured, and that non-positive entries are ignored.
+// TestEffectiveTypeConcurrency verifies the sidecar-bound types, mail and the
+// HLS transcode are capped at one slot unless the configuration names them, that
+// other types get a pool only when configured, and that non-positive entries are
+// ignored.
 func TestEffectiveTypeConcurrency(t *testing.T) {
 	t.Parallel()
 
@@ -120,13 +121,15 @@ func TestEffectiveTypeConcurrency(t *testing.T) {
 			configured: nil,
 			want: map[string]int{
 				jobs.TypeImageEmbed: 1, jobs.TypeFaceDetect: 1, jobs.TypeMailSend: 1,
+				jobs.TypeHLSTranscode: 1,
 			},
 		},
 		{
 			name:       "a partial map still leaves the sidecar-bound types capped",
 			configured: map[string]int{jobs.TypeThumbnail: 4},
 			want: map[string]int{
-				jobs.TypeImageEmbed: 1, jobs.TypeFaceDetect: 1, jobs.TypeMailSend: 1, jobs.TypeThumbnail: 4,
+				jobs.TypeImageEmbed: 1, jobs.TypeFaceDetect: 1, jobs.TypeMailSend: 1,
+				jobs.TypeHLSTranscode: 1, jobs.TypeThumbnail: 4,
 			},
 		},
 		{
@@ -134,6 +137,15 @@ func TestEffectiveTypeConcurrency(t *testing.T) {
 			configured: map[string]int{jobs.TypeImageEmbed: 3},
 			want: map[string]int{
 				jobs.TypeImageEmbed: 3, jobs.TypeFaceDetect: 1, jobs.TypeMailSend: 1,
+				jobs.TypeHLSTranscode: 1,
+			},
+		},
+		{
+			name:       "an explicit override raises the HLS pool",
+			configured: map[string]int{jobs.TypeHLSTranscode: 2},
+			want: map[string]int{
+				jobs.TypeImageEmbed: 1, jobs.TypeFaceDetect: 1, jobs.TypeMailSend: 1,
+				jobs.TypeHLSTranscode: 2,
 			},
 		},
 		{
@@ -141,6 +153,7 @@ func TestEffectiveTypeConcurrency(t *testing.T) {
 			configured: map[string]int{jobs.TypeMailSend: 2},
 			want: map[string]int{
 				jobs.TypeImageEmbed: 1, jobs.TypeFaceDetect: 1, jobs.TypeMailSend: 2,
+				jobs.TypeHLSTranscode: 1,
 			},
 		},
 		{
@@ -148,6 +161,7 @@ func TestEffectiveTypeConcurrency(t *testing.T) {
 			configured: map[string]int{jobs.TypeImageEmbed: 0, jobs.TypeThumbnail: -1, "": 5},
 			want: map[string]int{
 				jobs.TypeImageEmbed: 1, jobs.TypeFaceDetect: 1, jobs.TypeMailSend: 1,
+				jobs.TypeHLSTranscode: 1,
 			},
 		},
 	}

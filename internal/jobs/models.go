@@ -135,6 +135,15 @@ const (
 	// bounded steps and the page can say how many groups are ready. See
 	// internal/clusterjob.
 	TypeFaceCluster = "face_cluster"
+	// TypeHLSTranscode encodes one video into its HTTP Live Streaming renditions:
+	// ffmpeg cuts the clip into fragmented-MP4 segments, they are uploaded to the
+	// object store under hls/<file_hash>/<rendition>/, and what the player's
+	// playlists must advertise is recorded in photo_hls_renditions. It runs locally
+	// and it is by far the most expensive job in the queue — a full re-encode of the
+	// clip — which is why it has a one-slot pool of its own: a batch of uploaded
+	// videos serialises instead of saturating the machine and starving everything
+	// else. See internal/hlsjob.
+	TypeHLSTranscode = "hls_transcode"
 )
 
 // ForceOutcome says what a forced enqueue did to the queue. A forced job carries

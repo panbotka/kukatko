@@ -3088,6 +3088,7 @@
         "ocr": "Čtení textu na fotce",
         "sidecar": "Zápis údajů vedle originálu",
         "storyboard": "Náhledy pro převíjení videa",
+        "hls_transcode": "Příprava videa pro přehrávání",
         "backup": "Záloha",
         "mail_send": "Odeslání e-mailu",
         "nameless_detach": "Odpojení osoby bez jména",

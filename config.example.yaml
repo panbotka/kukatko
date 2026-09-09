@@ -763,6 +763,28 @@ video:
   # client offers a download link when the browser cannot decode it.
   transcode: false
 
+  # Pre-generated HTTP Live Streaming renditions: a video is cut once, in the
+  # background (the `hls_transcode` job), into fragmented-MP4 segments that a
+  # browser can start playing immediately and seek in. Unlike `transcode` above
+  # this is produced once and served from the object store, not re-encoded on
+  # every playback.
+  hls:
+    # OFF by default. An encode is the most expensive thing Kukátko does — a full
+    # re-encode of every uploaded video, hours of CPU on a long one — so an
+    # instance that does not stream its videos should not pay for it. Switching it
+    # on makes every subsequently uploaded video streamable; videos already in the
+    # library are not encoded retroactively. Switching it off again leaves the
+    # renditions already produced exactly as they are.
+    enabled: false
+    # The length one media segment is cut to, in seconds, and the interval
+    # keyframes are forced onto. Shorter starts playback sooner and costs more
+    # objects in the store; 6 is the usual VOD compromise. <= 0 means 6.
+    segment_seconds: 6
+    # The quality levels every video is encoded into, best first. Each name must
+    # be one the encoder knows (today only 1080p); an unknown name fails startup.
+    renditions:
+      - 1080p
+
 # Background worker that drains the persistent job queue inside `kukatko serve`.
 worker:
   # Number of jobs processed in parallel by the shared pool, which drains every

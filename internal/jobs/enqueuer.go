@@ -145,6 +145,14 @@ func (e *Enqueuer) EnqueueStoryboard(ctx context.Context, photoUID string) error
 	return e.enqueuePhotoJob(ctx, TypeStoryboard, photoUID)
 }
 
+// EnqueueHLSTranscode schedules the HLS encode of the video identified by
+// photoUID. A pre-existing active job for the same photo is a no-op (nil error),
+// so re-uploading the same clip — or any other path that schedules it twice —
+// never queues the same multi-minute encode twice.
+func (e *Enqueuer) EnqueueHLSTranscode(ctx context.Context, photoUID string) error {
+	return e.enqueuePhotoJob(ctx, TypeHLSTranscode, photoUID)
+}
+
 // SidecarDebounce is how long a sidecar job waits before it may run. It is the
 // coalescing window: the dedup index keeps at most one queued sidecar job per
 // photo, so every edit landing within this window of the first one is absorbed by

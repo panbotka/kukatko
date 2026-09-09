@@ -2954,6 +2954,7 @@
         "ocr": "Reading text in a photo",
         "sidecar": "Writing the details next to the original",
         "storyboard": "Previews for scrubbing a video",
+        "hls_transcode": "Preparing a video for playback",
         "backup": "Backup",
         "mail_send": "Sending an e-mail",
         "nameless_detach": "Detaching the nameless person",

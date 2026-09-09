@@ -21,10 +21,11 @@ import (
 // from the moment it is catalogued rather than only once someone edits it; it is
 // nil when the sidecar export is switched off.
 //
-// The two remaining switchable jobs are resolved from cfg here rather than passed
-// in, because nothing else needs them: the text recognition of a freshly uploaded
-// still (never a video), and the reverse geocode of a photo that arrives with
-// coordinates — which is what makes its place fill in on its own. Each is a nil
+// The three remaining switchable jobs are resolved from cfg here rather than
+// passed in, because nothing else needs them: the text recognition of a freshly
+// uploaded still (never a video), the reverse geocode of a photo that arrives
+// with coordinates — which is what makes its place fill in on its own — and the
+// streaming encode of a freshly uploaded video (never a still). Each is a nil
 // interface when its feature is off, so nothing is queued for a handler that is
 // not registered.
 func buildIngest(
@@ -46,6 +47,7 @@ func buildIngest(
 		Sidecar:     sidecar,
 		OCR:         ocrEnqueuerOrNil(cfg, enqueuer),
 		Places:      placesEnqueuerOrNil(cfg, enqueuer),
+		HLS:         hlsEnqueuerOrNil(cfg, enqueuer),
 		Duplicate:   cfg.Duplicate,
 		MaxFileSize: cfg.Upload.MaxFileSizeBytes(),
 		MaxPixels:   cfg.Thumb.MaxPixels,
