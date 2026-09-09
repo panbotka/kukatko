@@ -379,12 +379,16 @@ func printResetStoragePlan(cmd *cobra.Command, target reset.Target, plan reset.S
 	cmd.Printf("store (catalogue-referenced keys): %d original(s), %d thumbnail(s), %d sidecar(s)\n",
 		plan.Referenced.Originals, plan.Referenced.Thumbnails, plan.Referenced.Sidecars)
 	if !plan.Sweep {
+		// The HLS segments are deliberately not named here: their keys are not
+		// derivable from the catalogue, so without a sweep they are not among the
+		// keys above and saying otherwise would promise a deletion that will not
+		// happen.
 		cmd.Println("  orphan sweep off: only the keys above would be deleted")
 		return
 	}
-	cmd.Printf("  orphan sweep on: the store holds %d original(s), %d thumbnail(s), %d sidecar(s)"+
-		" under Kukátko's prefixes — all of them would be deleted\n",
-		plan.Stored.Originals, plan.Stored.Thumbnails, plan.Stored.Sidecars)
+	cmd.Printf("  orphan sweep on: the store holds %d original(s), %d thumbnail(s), %d sidecar(s),"+
+		" %d HLS segment(s) under Kukátko's prefixes — all of them would be deleted\n",
+		plan.Stored.Originals, plan.Stored.Thumbnails, plan.Stored.Sidecars, plan.Stored.HLS)
 	cmd.Printf("  %d key(s) outside those prefixes would be left untouched\n", plan.Foreign)
 }
 

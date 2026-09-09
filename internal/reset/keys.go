@@ -11,13 +11,14 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/panbotka/kukatko/internal/hls"
 	"github.com/panbotka/kukatko/internal/sidecarexport"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
 )
 
 // keyKind classifies a key in the store by the prefix that owns it. Only the
-// three owned kinds are ever deleted; kindForeign is what keeps a wipe inside its
+// owned kinds are ever deleted; kindForeign is what keeps a wipe inside its
 // own namespace.
 type keyKind int
 
@@ -31,6 +32,9 @@ const (
 	kindThumbnail
 	// kindSidecar is a metadata sidecar under the sidecars/ prefix.
 	kindSidecar
+	// kindHLS is a video's HLS initialisation or media segment under the hls/
+	// prefix.
+	kindHLS
 )
 
 // originalKeyPattern matches the layout internal/storage gives every original:
@@ -45,8 +49,8 @@ var originalKeyPattern = regexp.MustCompile(`^[0-9]{4}/[0-9]{2}/[^/]+$`)
 //
 // The bucket root is the namespace — there is no per-application prefix in front
 // of YYYY/MM — so "what may this command delete" cannot be answered by a single
-// prefix test. It is answered here, by the three layouts this application
-// actually writes, and everything else is somebody else's object.
+// prefix test. It is answered here, by the layouts this application actually
+// writes, and everything else is somebody else's object.
 func classifyKey(key string) keyKind {
 	clean := strings.TrimPrefix(strings.TrimSpace(key), "/")
 	switch {
@@ -56,6 +60,8 @@ func classifyKey(key string) keyKind {
 		return kindThumbnail
 	case strings.HasPrefix(clean, sidecarexport.Prefix+"/"):
 		return kindSidecar
+	case strings.HasPrefix(clean, hls.Prefix+"/"):
+		return kindHLS
 	case originalKeyPattern.MatchString(clean):
 		return kindOriginal
 	default:
@@ -72,11 +78,17 @@ type PrefixCounts struct {
 	Thumbnails int `json:"thumbnails"`
 	// Sidecars counts keys under the sidecars/ prefix.
 	Sidecars int `json:"sidecars"`
+	// HLS counts keys under the hls/ prefix: the streaming segments of the
+	// library's videos. Unlike the other three it is only ever non-zero on a
+	// sweep, because a segment's key is not derivable from the catalogue — how
+	// many segments a video was cut into, and in which renditions, is known only
+	// to the store that holds them.
+	HLS int `json:"hls"`
 }
 
-// Total returns the sum of the three prefixes.
+// Total returns the sum of every owned prefix.
 func (p PrefixCounts) Total() int {
-	return p.Originals + p.Thumbnails + p.Sidecars
+	return p.Originals + p.Thumbnails + p.Sidecars + p.HLS
 }
 
 // with returns the counts with the counter of kind's prefix incremented. A
@@ -90,6 +102,8 @@ func (p PrefixCounts) with(kind keyKind) PrefixCounts {
 		p.Thumbnails++
 	case kindSidecar:
 		p.Sidecars++
+	case kindHLS:
+		p.HLS++
 	case kindForeign:
 	}
 	return p

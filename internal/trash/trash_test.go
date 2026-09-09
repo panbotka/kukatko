@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/storage"
 )
 
 // fakePhotoStore is an in-memory PhotoStore for the purge tests. It tracks which
@@ -163,7 +165,7 @@ func (f *fakeRemote) Remove(_ context.Context, key string) error {
 
 // newService wires a Service over the supplied fakes with a 1-day retention and
 // a small batch so the batching loop is exercised.
-func newService(t *testing.T, store *fakePhotoStore, fs *fakeStorage, th *fakeThumb, remote RemoteRemover) *Service {
+func newService(t *testing.T, store *fakePhotoStore, fs FileStorage, th *fakeThumb, remote RemoteRemover) *Service {
 	t.Helper()
 	return New(Config{
 		Photos:        store,
@@ -426,4 +428,152 @@ func TestNew_panicsOnMissingCollaborators(t *testing.T) {
 		}
 	}()
 	New(Config{})
+}
+
+// fakeListingStorage is a fakeStorage that can also list its keys by prefix,
+// which is the shape of a real backend and the only shape from which the purge
+// can find a video's HLS segments.
+type fakeListingStorage struct {
+	*fakeStorage
+	// keys is everything the store holds, in the order a listing yields it.
+	keys []string
+	// listErr, when non-nil, is what every listing fails with.
+	listErr error
+}
+
+// newFakeListingStorage returns a store holding keys.
+func newFakeListingStorage(keys ...string) *fakeListingStorage {
+	return &fakeListingStorage{fakeStorage: newFakeStorage(), keys: keys}
+}
+
+// KeysWithPrefix yields every held key starting with prefix, matched literally
+// exactly as the real backends match it.
+func (f *fakeListingStorage) KeysWithPrefix(_ context.Context, prefix string, yield func(key string) error) error {
+	if f.listErr != nil {
+		return f.listErr
+	}
+	for _, key := range f.keys {
+		if !strings.HasPrefix(key, prefix) {
+			continue
+		}
+		if err := yield(key); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// compile-time assertion that the fake is the interface the purge asserts for.
+var _ storage.PrefixLister = (*fakeListingStorage)(nil)
+
+// seedHashed adds an archived photo whose file hash is a real hex digest, which
+// is what the HLS layout requires to address a video's segments.
+func (f *fakePhotoStore) seedHashed(uid, hash string, archivedAt *time.Time) {
+	f.photos[uid] = photos.Photo{UID: uid, FileHash: hash, FilePath: uid + ".mp4", ArchivedAt: archivedAt}
+	f.files[uid] = []photos.PhotoFile{{PhotoUID: uid, FilePath: uid + ".mp4", FileHash: hash}}
+}
+
+// TestPurgePhoto_removesHLSObjects verifies a purged video's streaming segments
+// go with it — every rendition, init segment and media segment — while another
+// video's segments and everything outside the prefix are left alone.
+func TestPurgePhoto_removesHLSObjects(t *testing.T) {
+	t.Parallel()
+	old := time.Now().Add(-48 * time.Hour)
+	const (
+		purged = "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899"
+		kept   = "ffeeddccbbaa00112233445566778899aabbccddeeff00112233445566778899"
+	)
+	store := newFakePhotoStore()
+	store.seedHashed("ph_video", purged, &old)
+	fs := newFakeListingStorage(
+		"hls/"+purged+"/1080p/init.mp4",
+		"hls/"+purged+"/1080p/00000.m4s",
+		"hls/"+purged+"/1080p/00001.m4s",
+		"hls/"+purged+"/720p/init.mp4",
+		"hls/"+kept+"/1080p/init.mp4",
+		"thumb/aa/bb/cc/"+purged+"_tile_500.jpg",
+	)
+	// The purge asserts its storage for the listing interface, so the fake it is
+	// wired with is the listing one.
+	svc := newService(t, store, fs, newFakeThumb(), nil)
+
+	if err := svc.PurgePhoto(context.Background(), "ph_video", audit.Meta{}); err != nil {
+		t.Fatalf("PurgePhoto: %v", err)
+	}
+	for _, key := range []string{
+		"hls/" + purged + "/1080p/init.mp4",
+		"hls/" + purged + "/1080p/00000.m4s",
+		"hls/" + purged + "/1080p/00001.m4s",
+		"hls/" + purged + "/720p/init.mp4",
+	} {
+		if !fs.deleted[key] {
+			t.Errorf("HLS object %s was not deleted", key)
+		}
+	}
+	if fs.deleted["hls/"+kept+"/1080p/init.mp4"] {
+		t.Error("another video's HLS objects were deleted")
+	}
+	if fs.deleted["thumb/aa/bb/cc/"+purged+"_tile_500.jpg"] {
+		t.Error("the prefix listing reached outside the hls/ prefix")
+	}
+}
+
+// TestPurgePhoto_hlsListingFailureIsReported verifies a store that refuses to
+// list fails the purge rather than deleting the row while its segments remain:
+// a failed listing is the store refusing work it can do, unlike a backend that
+// cannot list at all.
+func TestPurgePhoto_hlsListingFailureIsReported(t *testing.T) {
+	t.Parallel()
+	old := time.Now().Add(-48 * time.Hour)
+	const hash = "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899"
+	store := newFakePhotoStore()
+	store.seedHashed("ph_video", hash, &old)
+	fs := newFakeListingStorage("hls/" + hash + "/1080p/init.mp4")
+	fs.listErr = errors.New("bucket unreachable")
+	svc := newService(t, store, fs, newFakeThumb(), nil)
+
+	if err := svc.PurgePhoto(context.Background(), "ph_video", audit.Meta{}); err == nil {
+		t.Fatal("PurgePhoto succeeded, want the listing failure reported")
+	}
+	if store.deleted["ph_video"] {
+		t.Error("the row was deleted although its HLS objects could not be found")
+	}
+}
+
+// TestPurgePhoto_hlsSkippedWhenUnaddressable verifies the two ways a purge has no
+// segments to look for — a backend that cannot list by prefix, and a file hash
+// the HLS layout cannot address — leave the purge itself intact.
+func TestPurgePhoto_hlsSkippedWhenUnaddressable(t *testing.T) {
+	t.Parallel()
+	old := time.Now().Add(-48 * time.Hour)
+
+	t.Run("backend cannot list by prefix", func(t *testing.T) {
+		t.Parallel()
+		store := newFakePhotoStore()
+		store.seedHashed("ph_video", "aabbccddeeff", &old)
+		svc := newService(t, store, newFakeStorage(), newFakeThumb(), nil)
+		if err := svc.PurgePhoto(context.Background(), "ph_video", audit.Meta{}); err != nil {
+			t.Fatalf("PurgePhoto: %v", err)
+		}
+		if !store.deleted["ph_video"] {
+			t.Error("the row was not purged")
+		}
+	})
+
+	t.Run("hash the layout cannot address", func(t *testing.T) {
+		t.Parallel()
+		store := newFakePhotoStore()
+		store.seed("ph_odd", &old) // seed gives a non-hex "ph_odd-hash"
+		fs := newFakeListingStorage("hls/aabbccddeeff/1080p/init.mp4")
+		svc := newService(t, store, fs, newFakeThumb(), nil)
+		if err := svc.PurgePhoto(context.Background(), "ph_odd", audit.Meta{}); err != nil {
+			t.Fatalf("PurgePhoto: %v", err)
+		}
+		if !store.deleted["ph_odd"] {
+			t.Error("the row was not purged")
+		}
+		if fs.deleted["hls/aabbccddeeff/1080p/init.mp4"] {
+			t.Error("an unrelated video's HLS objects were deleted")
+		}
+	})
 }

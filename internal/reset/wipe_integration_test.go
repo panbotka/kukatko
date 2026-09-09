@@ -226,6 +226,10 @@ func TestExecute_orphanSweepIsConfinedToOwnedPrefixes(t *testing.T) {
 		"2019/01/leftover.jpg",
 		"thumb/ff/ee/dd/ffeedd_tile_500.jpg",
 		"sidecars/2019/01/leftover.jpg.yml",
+		// A video's HLS segments are only ever reachable this way: their keys are
+		// not derivable from the catalogue, so the sweep is what wipes them.
+		"hls/ffeeddccbbaa/1080p/init.mp4",
+		"hls/ffeeddccbbaa/1080p/00000.m4s",
 	}
 	foreign := []string{"backups/db/2026-07-31.dump", "README.md", "other-app/state.bin"}
 	for _, key := range append(slices.Clone(orphans), foreign...) {

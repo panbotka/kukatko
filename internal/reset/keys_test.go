@@ -64,7 +64,7 @@ func (f fakeLister) Keys(_ context.Context, yield func(key string) error) error 
 // compile-time assertion that the fake satisfies the interface it stands in for.
 var _ storage.KeyLister = fakeLister{}
 
-// TestClassifyKey verifies each of Kukátko's three prefixes is recognised and
+// TestClassifyKey verifies each of Kukátko's own prefixes is recognised and
 // everything else is classified as foreign — the predicate the whole
 // "never delete outside our namespace" guarantee rests on.
 func TestClassifyKey(t *testing.T) {
@@ -79,6 +79,9 @@ func TestClassifyKey(t *testing.T) {
 		{name: "original with leading slash", key: "/1999/12/scan.png", want: kindOriginal},
 		{name: "thumbnail", key: "thumb/aa/bb/cc/aabbcc_tile_500.jpg", want: kindThumbnail},
 		{name: "sidecar", key: "sidecars/2024/05/IMG_1234.jpg.yml", want: kindSidecar},
+		{name: "hls init segment", key: "hls/aabbccddeeff/1080p/init.mp4", want: kindHLS},
+		{name: "hls media segment", key: "hls/aabbccddeeff/1080p/00042.m4s", want: kindHLS},
+		{name: "hls with leading slash", key: "/hls/aabbccddeeff/1080p/00000.m4s", want: kindHLS},
 		{name: "empty", key: "", want: kindForeign},
 		{name: "bucket root file", key: "README.md", want: kindForeign},
 		{name: "another app's backup", key: "backups/db/2026-07-31.dump", want: kindForeign},
@@ -89,6 +92,7 @@ func TestClassifyKey(t *testing.T) {
 		{name: "not a year", key: "20xx/05/IMG_1234.jpg", want: kindForeign},
 		{name: "prefix lookalike", key: "thumbnails/aa.jpg", want: kindForeign},
 		{name: "sidecar prefix lookalike", key: "sidecars.old/x.yml", want: kindForeign},
+		{name: "hls prefix lookalike", key: "hls-old/aabbcc/1080p/00000.m4s", want: kindForeign},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -111,6 +115,8 @@ func TestSweepKeys_confinedToOwnedPrefixes(t *testing.T) {
 		"2024/06/IMG_2.jpg",
 		"thumb/aa/bb/cc/aabbcc_tile_500.jpg",
 		"sidecars/2024/05/IMG_1.jpg.yml",
+		"hls/aabbccddeeff/1080p/init.mp4",
+		"hls/aabbccddeeff/1080p/00000.m4s",
 		"backups/db/2026-07-31.dump",
 		"some-other-app/data.bin",
 		"README.md",
@@ -123,6 +129,8 @@ func TestSweepKeys_confinedToOwnedPrefixes(t *testing.T) {
 	want := []string{
 		"2024/05/IMG_1.jpg",
 		"2024/06/IMG_2.jpg",
+		"hls/aabbccddeeff/1080p/00000.m4s",
+		"hls/aabbccddeeff/1080p/init.mp4",
 		"sidecars/2024/05/IMG_1.jpg.yml",
 		"thumb/aa/bb/cc/aabbcc_tile_500.jpg",
 	}
@@ -130,15 +138,15 @@ func TestSweepKeys_confinedToOwnedPrefixes(t *testing.T) {
 	if !slices.Equal(keys, want) {
 		t.Errorf("swept keys = %v, want %v", keys, want)
 	}
-	wantCounts := PrefixCounts{Originals: 2, Thumbnails: 1, Sidecars: 1}
+	wantCounts := PrefixCounts{Originals: 2, Thumbnails: 1, Sidecars: 1, HLS: 2}
 	if counts != wantCounts {
 		t.Errorf("counts = %+v, want %+v", counts, wantCounts)
 	}
 	if foreign != 3 {
 		t.Errorf("foreign = %d, want 3", foreign)
 	}
-	if counts.Total() != 4 {
-		t.Errorf("Total() = %d, want 4", counts.Total())
+	if counts.Total() != 6 {
+		t.Errorf("Total() = %d, want 6", counts.Total())
 	}
 }
 
@@ -281,14 +289,15 @@ func TestPrefixCounts_with(t *testing.T) {
 	t.Parallel()
 
 	var counts PrefixCounts
-	for _, kind := range []keyKind{kindOriginal, kindOriginal, kindThumbnail, kindSidecar, kindForeign} {
+	kinds := []keyKind{kindOriginal, kindOriginal, kindThumbnail, kindSidecar, kindHLS, kindForeign}
+	for _, kind := range kinds {
 		counts = counts.with(kind)
 	}
-	want := PrefixCounts{Originals: 2, Thumbnails: 1, Sidecars: 1}
+	want := PrefixCounts{Originals: 2, Thumbnails: 1, Sidecars: 1, HLS: 1}
 	if counts != want {
 		t.Errorf("counts = %+v, want %+v", counts, want)
 	}
-	if counts.Total() != 4 {
-		t.Errorf("Total() = %d, want 4", counts.Total())
+	if counts.Total() != 5 {
+		t.Errorf("Total() = %d, want 5", counts.Total())
 	}
 }

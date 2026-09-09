@@ -527,7 +527,10 @@ to `## Package map` in `CLAUDE.md`.
   content → `ErrAlreadyExists` (a dedup signal), different content → a numeric suffix `name_1.ext` **without
   overwriting**; `Open`/`Stat`/`Delete`/`Materialize` with paths confined to the root
   (`ErrInvalidPath`), a missing file/object wraps `os.ErrNotExist`; MIME from content (sniff
-  512 B) + the extension as a hint (`mediaTypeByExt` for HEIC/RAW/video); sentinels
+  512 B) + the extension as a hint (`mediaTypeByExt` for HEIC/RAW/video), with `mediaTypeByExtFirst`
+  (`.m3u8` → `application/vnd.apple.mpegurl`, `.m4s` → `video/iso.segment`) decided by extension **before**
+  anything is sniffed — a playlist is UTF-8 text that sniffing confidently calls `text/plain`, which no player
+  will load a playlist from, and a fragment's `styp` box it does not recognise at all; sentinels
   `ErrAlreadyExists`/`ErrInvalidPath`/`ErrTooManyCollisions`; never holds the whole file in RAM
   (shared `streamToTemp` in `temp.go`).
   The trio for **bulk moves** (`put.go`): `Put(ctx,src,StoredFile)` writes a stream to a key
@@ -1162,7 +1165,11 @@ to `## Package map` in `CLAUDE.md`.
   `ThumbStore`/`RemoteRemover` (unit-testable with fakes): `Service` = `New(Config{Photos,Storage,
   Thumbnailer,Remote?,RetentionDays,BatchSize,Logger})` (panics on nil Photos/Storage/Thumbnailer);
   **purgeOne** deletes a photo's artifacts (the original via `Storage.Delete`, the cached thumbnails via
-  `Thumbnailer.Remove`, optionally the S3 object via `RemoteRemover`) **and then** the DB row via
+  `Thumbnailer.Remove`, the scrub-preview sprite via `StoryboardStore.Remove`, the **HLS segments** —
+  everything the store holds under `hls.PrefixFor(file_hash)`, found by listing that prefix when the backend
+  is a `storage.PrefixLister`, because their keys are not derivable from the catalogue; a backend that cannot
+  list and a hash the layout cannot address leave them behind rather than failing the purge, while a failed
+  listing or deletion is reported — optionally the S3 object via `RemoteRemover`) **and then** the DB row via
   `photos.DeleteAudited(uid,entry)` — deletes the row (cascading embeddings/faces/markers/album_photos/
   photo_labels/phashes/edits/favorites via `ON DELETE CASCADE`) **and writes a `photo.purge` audit row
   in the same transaction** (durable-audit; rollback ⇒ no audit row); artifacts first, so an
@@ -3329,7 +3336,7 @@ to `## Package map` in `CLAUDE.md`.
   `TargetFromConfig(config.database.url, <the configured bucket>)` → `ErrTargetMismatch`; a DSN naming no
   database is refused too), the schema check, `Counts{Catalogue,Preserved}`
   of `[]TableCount` (`Rows()`, `NonEmpty()`) and a `StoragePlan{Referenced,Stored,Foreign,Sweep}` of
-  `PrefixCounts{Originals,Thumbnails,Sidecars}`; **`Execute(ctx,Options,before)`** deletes, in this order —
+  `PrefixCounts{Originals,Thumbnails,Sidecars,HLS}`; **`Execute(ctx,Options,before)`** deletes, in this order —
   `ErrNotExecuting` without `Options.Execute`, target re-verified, `checkConfirmation` (`Options.Confirm` must
   equal the target database name → `ErrConfirmationMismatch`, **and** `Options.ConfirmBucket` must equal
   `Target.Bucket` → `ErrBucketConfirmationMismatch` — the two come from independent config keys and can name
@@ -3349,8 +3356,12 @@ to `## Package map` in `CLAUDE.md`.
   Any object that fails to delete skips the truncation and returns `ErrStorageIncomplete` — the catalogue is
   the only remaining record of what those objects are, and the whole run is idempotent, so the answer is to fix
   the store and repeat. `keys.go` owns the scope: `classifyKey` recognises exactly `YYYY/MM/<name>` (an anchored
-  regexp — the bucket root *is* the namespace, there is no Kukátko prefix), `thumb/` and `sidecars/`, and calls
-  everything else `kindForeign`, which is counted and **never** deleted; `catalogueFiles.objectKeys` expands each
+  regexp — the bucket root *is* the namespace, there is no Kukátko prefix), `thumb/`, `sidecars/` and
+  `hls.Prefix` (`hls/`), and calls
+  everything else `kindForeign`, which is counted and **never** deleted; the HLS segments are the one owned
+  prefix `PrefixCounts` can only ever count on a **sweep** — how many segments a video was cut into, and in
+  which renditions, is known to the store and not to the catalogue, so `Referenced.HLS` is always 0 and only
+  `Options.OrphanSweep` reaches them; `catalogueFiles.objectKeys` expands each
   catalogued path into its original + `sidecarexport.KeyFor` sidecar and each hash into `thumb.RelPath` × every
   registered size (blind on purpose: probing first would cost a request per candidate); `deleteKeys` runs the
   deletions through an `errgroup` bounded by `Options.Concurrency` (default 8), folding each outcome into
@@ -3552,6 +3563,21 @@ to `## Package map` in `CLAUDE.md`.
   registered in `serve` on `jobs.TypeStoryboard`; `Generate(uid)` renders one, and a photo that **cannot** have a
   storyboard is a quiet no-op rather than a dead-letter — the job was scheduled from a state that no longer holds.
   All behind `PhotoStore`/`Generator`/`Enqueuer` → unit-testable with no ffmpeg and no disk),
+  `internal/hls/`
+  (the **object layout of a video's HLS renditions**, and nothing else — no ffmpeg, no store, no database, so
+  every layer that touches streaming (the encoder, the purge, the library wipe, the HTTP endpoints) agrees on
+  the same strings without depending on each other. Segments live under `hls/<file_hash>/<rendition>/`
+  (`Prefix` = `hls`, `PrefixFor(fileHash)` = `hls/<hash>/` **with** the trailing slash, so a prefix listing
+  cannot spill into a hash that merely starts the same), holding the fMP4 init segment `InitName` =
+  `init.mp4` and zero-padded five-digit media segments `00000.m4s`, `00001.m4s`, …; rendition names are
+  lowercase alphanumeric, `Rendition1080p` = `1080p` being the first. **Playlists are never stored** — the
+  `.m3u8` is generated per request, a stored one being a second source of truth that goes stale the moment a
+  rendition changes. `Key(fileHash,rendition,name)` builds the key and validates all three parts →
+  `ErrInvalidHash` (lowercase hex, 6..64), `ErrInvalidRendition` (`^[a-z0-9]+$`, ≤ 16) or `ErrInvalidName`;
+  `ValidateName` accepts **only** `init.mp4` or `^[0-9]{5}\.m4s$`, which is what stands between a
+  client-supplied path segment and an object key — traversal, an empty name, wrong padding, a stray second
+  extension, an uppercase variant and a playlist name are all refused, and the fixed padding is also what
+  makes the keys sort in playback order),
   `internal/maintenanceapi/`
   (a maintainer-only HTTP API over maintenance: the interfaces `Service` (Scan+Repair, satisfied by `*maintenance.Service`,
   nil → 503) and `AuditPurger` (`PurgeOlderThan`+`Record`, satisfied by `*audit.Store`, nil → 503);

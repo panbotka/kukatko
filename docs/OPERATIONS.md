@@ -368,7 +368,7 @@ self-service registration and throw away its shared secret, nor erase the record
 | Typed bucket confirmation | On a bucket-backed store you must type the configured bucket's name too; a mismatch → `ErrBucketConfirmationMismatch`. `--confirm-bucket <name>` supplies it without a prompt. The database and the bucket come from independent config keys and can name independent deployments (a dev database pointed at the production bucket is exactly the accident this refuses), so confirming one says nothing about the other. A name typed against a store that has **no** bucket — the `fs` backend — is refused for the same reason: the operator was aiming at something this run cannot reach. |
 | Target check | `current_database()` is read **from the server** and compared with the database in the loaded config; a mismatch → `ErrTargetMismatch`. Host + database are printed before you are asked. |
 | Non-interactive refusal | Stdin that is not a terminal (a script, cron, an agent — `/dev/null` included, which is why the check is a terminal ioctl and not "is a character device") is refused unless `--force` is passed too. Checked **before** the config is loaded, so a stray invocation opens nothing. |
-| Storage scope | Only the three prefixes the store owns are ever deleted; anything else in the bucket is counted as `foreign` and left alone. A key the catalogue does not reference is deleted only with `--orphan-sweep`. There is no delete-everything path. |
+| Storage scope | Only the prefixes the store owns — the `YYYY/MM` originals, `thumb/`, `sidecars/` and `hls/` — are ever deleted; anything else in the bucket is counted as `foreign` and left alone. A key the catalogue does not reference is deleted only with `--orphan-sweep`, and the HLS segments are always in that group: their keys are known to the store, not to the catalogue. There is no delete-everything path. |
 | Audit | One `library.reset` entry (`internal/audit`), written **in the same transaction as the truncation**, recording the operator (`$USER@$HOSTNAME`), the target database and bucket, the per-table row counts removed and the object counts. |
 | Before/after summary | Both snapshots are printed, and a catalogue table that somehow survived is flagged with `WARNING`. |
 | Schema drift | A table in `public` that the command classifies as neither wiped nor preserved (or a classified table that is missing) aborts the run with `ErrSchemaDrift`, naming it. Adding a table to a migration therefore cannot silently leave part of the library behind — the fix is one line in `internal/reset/tables.go`. |
@@ -387,7 +387,8 @@ kukatko maintenance reset --execute --force \
 worker mid-job would keep writing rows into a library that no longer exists.
 
 **Use `--orphan-sweep` for the cutover wipe.** Without it the catalogue is the list of what may be deleted,
-which leaves behind whatever an earlier interrupted import put in the bucket. On an object store the sweep is
+which leaves behind whatever an earlier interrupted import put in the bucket — and every video's HLS segments,
+whose keys the catalogue does not hold. On an object store the sweep is
 also the *faster* path: it deletes the objects that are actually there (one `LIST` + one `DELETE` each) instead
 of probing for the eight thumbnail keys every photo might have.
 

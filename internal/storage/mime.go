@@ -36,12 +36,32 @@ var mediaTypeByExt = map[string]string{
 	".3gp":  "video/3gpp",
 }
 
+// mediaTypeByExtFirst maps lowercase file extensions whose media type must be
+// decided by the extension alone, before any content is looked at. It holds the
+// streaming formats, where sniffing is not merely inconclusive but actively
+// wrong: an HLS playlist is a UTF-8 text file, which http.DetectContentType
+// happily and confidently calls text/plain — a type no player will load a
+// playlist from — and a fragmented-MP4 segment begins with a styp/moof box that
+// sniffing does not recognise as video at all.
+//
+// Nothing else belongs here. An extension that is only unknown to sniffing goes
+// in mediaTypeByExt, which stays the fallback, so a mislabelled file's real
+// content still wins wherever its content can be recognised.
+var mediaTypeByExtFirst = map[string]string{
+	".m3u8": "application/vnd.apple.mpegurl",
+	".m4s":  "video/iso.segment",
+}
+
 // detectMIME determines the media type of a file from its leading bytes, using
-// the filename only as a hint. Content sniffing wins whenever it is conclusive;
-// when http.DetectContentType falls back to the generic octet-stream type, the
-// extension is consulted (first the curated media table, then the system mime
-// database) before the generic type is returned.
+// the filename only as a hint. The extensions in mediaTypeByExtFirst are decided
+// by name before anything is sniffed; otherwise content sniffing wins whenever it
+// is conclusive, and when http.DetectContentType falls back to the generic
+// octet-stream type, the extension is consulted (first the curated media table,
+// then the system mime database) before the generic type is returned.
 func detectMIME(header []byte, name string) string {
+	if mediaType, ok := mediaTypeByExtFirst[strings.ToLower(path.Ext(name))]; ok {
+		return mediaType
+	}
 	contentType := http.DetectContentType(header)
 	if contentType != octetStream {
 		return contentType

@@ -5,10 +5,10 @@
 //
 // A purge removes the database row — cascading its embeddings, faces, markers,
 // album/label memberships, phashes, edits and favorites via ON DELETE CASCADE —
-// then deletes the originals and cached thumbnails from disk and, when a remote
-// object store is configured, the corresponding backup objects. Artifacts are
-// always deleted before the row so an interrupted purge leaves a re-purgeable
-// orphan row rather than dangling files. Every operation is idempotent and safe
+// then deletes the originals, cached thumbnails and derived streaming segments
+// and, when a remote object store is configured, the corresponding backup
+// objects. Artifacts are always deleted before the row so an interrupted purge
+// leaves a re-purgeable orphan row rather than dangling files. Every operation is idempotent and safe
 // to re-run.
 package trash
 
@@ -21,8 +21,10 @@ import (
 	"time"
 
 	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/hls"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/sidecarexport"
+	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/storyboard"
 	"github.com/panbotka/kukatko/internal/thumb"
 )
@@ -305,9 +307,9 @@ func (s *Service) purgeOne(ctx context.Context, uid string, meta audit.Meta, sou
 }
 
 // deleteArtifacts removes the on-disk original, its metadata sidecar, the cached
-// thumbnails and (when configured) the remote backup object for a single stored
-// file. A missing original is ignored; a malformed sidecar hash skips thumbnail
-// removal rather than failing the purge.
+// thumbnails, the storyboard sprite, the HLS segments and (when configured) the
+// remote backup object for a single stored file. A missing original is ignored;
+// a malformed sidecar hash skips thumbnail removal rather than failing the purge.
 func (s *Service) deleteArtifacts(ctx context.Context, file photos.PhotoFile) error {
 	if err := s.storage.Delete(ctx, file.FilePath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("deleting original %s: %w", file.FilePath, err)
@@ -319,6 +321,9 @@ func (s *Service) deleteArtifacts(ctx context.Context, file photos.PhotoFile) er
 		return fmt.Errorf("removing thumbnails for %s: %w", file.FileHash, err)
 	}
 	if err := s.deleteStoryboard(file.FileHash); err != nil {
+		return err
+	}
+	if err := s.deleteHLS(ctx, file.FileHash); err != nil {
 		return err
 	}
 	if s.remote != nil {
@@ -340,6 +345,49 @@ func (s *Service) deleteStoryboard(fileHash string) error {
 	}
 	if err := s.storyboards.Remove(fileHash); err != nil && !errors.Is(err, storyboard.ErrInvalidHash) {
 		return fmt.Errorf("removing storyboard for %s: %w", fileHash, err)
+	}
+	return nil
+}
+
+// deleteHLS removes every HLS object of the purged file: the initialisation and
+// media segments of each rendition, all of them under the hls/<file_hash>/ prefix
+// (see internal/hls). They are derived media like the thumbnails, but they live
+// in the object store rather than a local cache, and unlike a thumbnail their
+// keys cannot be enumerated from the catalogue — how many segments a video was
+// cut into, and in which renditions, is known only to the store. So they are
+// found by listing the prefix that holds them.
+//
+// A backend that cannot list by prefix, and a malformed hash (the same condition
+// that skips thumbnail removal), leave the segments behind rather than failing
+// the purge: they are regenerable derived media, and an unrelated storage
+// limitation must not strand a row the user asked to delete permanently. A
+// listing or a deletion that does fail is reported, because that is the store
+// refusing work it can do.
+//
+// The keys are collected before anything is deleted rather than deleted inside
+// the listing callback: the filesystem backend lists by walking the directory
+// tree it would be deleting from underneath itself.
+func (s *Service) deleteHLS(ctx context.Context, fileHash string) error {
+	lister, ok := s.storage.(storage.PrefixLister)
+	if !ok {
+		return nil
+	}
+	prefix, err := hls.PrefixFor(fileHash)
+	if err != nil {
+		// A malformed hash addresses no segments; there is nothing to clean up.
+		return nil //nolint:nilerr // an unusable hash is not a purge failure
+	}
+	var keys []string
+	if listErr := lister.KeysWithPrefix(ctx, prefix, func(key string) error {
+		keys = append(keys, key)
+		return nil
+	}); listErr != nil {
+		return fmt.Errorf("listing HLS objects under %s: %w", prefix, listErr)
+	}
+	for _, key := range keys {
+		if delErr := s.storage.Delete(ctx, key); delErr != nil && !errors.Is(delErr, os.ErrNotExist) {
+			return fmt.Errorf("deleting HLS object %s: %w", key, delErr)
+		}
 	}
 	return nil
 }

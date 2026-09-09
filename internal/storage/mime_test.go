@@ -14,6 +14,14 @@ var pngHeader = []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x0
 // jpegHeader is the JPEG SOI + JFIF marker prefix, recognised as image/jpeg.
 var jpegHeader = []byte{0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 'J', 'F', 'I', 'F'}
 
+// stypHeader is the segment-type box a fragmented-MP4 media segment starts with;
+// content sniffing does not recognise it.
+var stypHeader = []byte{0, 0, 0, 0x18, 's', 't', 'y', 'p', 'm', 's', 'd', 'h'}
+
+// ftypHeader is the file-type box an MP4 initialisation segment starts with,
+// which content sniffing does recognise as video/mp4.
+var ftypHeader = []byte{0, 0, 0, 0x18, 'f', 't', 'y', 'p', 'i', 's', 'o', 'm'}
+
 func TestDetectMIME(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -29,6 +37,12 @@ func TestDetectMIME(t *testing.T) {
 		{"raw dng by extension", []byte{0x01, 0x02, 0x03, 0x04}, "shot.dng", "image/x-adobe-dng"},
 		{"mov by extension", []byte{0, 0, 0, 0, 'm', 'o', 'o', 'v'}, "clip.mov", "video/quicktime"},
 		{"unknown stays octet-stream", []byte{0x00, 0x01, 0x02, 0x03}, "mystery.xyz", octetStream},
+		// The two streaming extensions must beat content sniffing, which would call
+		// a playlist text/plain and a fragment octet-stream.
+		{"hls playlist by extension", []byte("#EXTM3U\n#EXT-X-VERSION:7\n"), "index.m3u8", "application/vnd.apple.mpegurl"},
+		{"hls playlist uppercase extension", []byte("#EXTM3U\n"), "INDEX.M3U8", "application/vnd.apple.mpegurl"},
+		{"hls segment by extension", stypHeader, "00000.m4s", "video/iso.segment"},
+		{"hls init segment stays mp4", ftypHeader, "init.mp4", "video/mp4"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

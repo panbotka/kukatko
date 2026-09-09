@@ -9,12 +9,14 @@ import (
 	"image/color"
 	"image/jpeg"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
+	"github.com/panbotka/kukatko/internal/hls"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
@@ -32,9 +34,12 @@ type purgeEnv struct {
 	store   *photos.Store
 	vectors *vectors.Store
 	fs      *storage.FS
-	thumb   *thumb.Thumbnailer
-	svc     *trash.Service
-	db      *database.DB
+	// root is the filesystem store's root, so a test can place an object the
+	// application itself does not write yet.
+	root  string
+	thumb *thumb.Thumbnailer
+	svc   *trash.Service
+	db    *database.DB
 }
 
 // newPurgeEnv wires the purge service over real storage, a real thumbnailer and
@@ -44,7 +49,8 @@ func newPurgeEnv(t *testing.T) *purgeEnv {
 	db := dbtest.New(t)
 	dbtest.TruncateAll(t, db)
 
-	fs, err := storage.NewFS(t.TempDir())
+	root := t.TempDir()
+	fs, err := storage.NewFS(root)
 	if err != nil {
 		t.Fatalf("storage.NewFS: %v", err)
 	}
@@ -54,7 +60,7 @@ func newPurgeEnv(t *testing.T) *purgeEnv {
 	svc := trash.New(trash.Config{
 		Photos: store, Storage: fs, Thumbnailer: thumbnailer, RetentionDays: 1, BatchSize: 2,
 	})
-	return &purgeEnv{store: store, vectors: vec, fs: fs, thumb: thumbnailer, svc: svc, db: db}
+	return &purgeEnv{store: store, vectors: vec, fs: fs, root: root, thumb: thumbnailer, svc: svc, db: db}
 }
 
 // seedPhoto stores a real JPEG, creates the photo plus a primary file, a phash, a
@@ -291,5 +297,60 @@ func TestPurgePhoto_singleArchived(t *testing.T) {
 
 	if err := env.svc.PurgePhoto(t.Context(), "ph_missing", audit.Meta{}); !errors.Is(err, photos.ErrPhotoNotFound) {
 		t.Errorf("PurgePhoto(missing) error = %v, want ErrPhotoNotFound", err)
+	}
+}
+
+// writeHLSObjects writes a placeholder object for each of names under the given
+// file hash's rendition prefix, and returns the keys it wrote. The keys come from
+// internal/hls, so the test addresses the objects exactly as the encoder will.
+func (e *purgeEnv) writeHLSObjects(t *testing.T, fileHash, rendition string, names ...string) []string {
+	t.Helper()
+	keys := make([]string, 0, len(names))
+	for _, name := range names {
+		key, err := hls.Key(fileHash, rendition, name)
+		if err != nil {
+			t.Fatalf("hls.Key(%q, %q, %q): %v", fileHash, rendition, name, err)
+		}
+		abs := filepath.Join(e.root, filepath.FromSlash(key))
+		if err := os.MkdirAll(filepath.Dir(abs), 0o750); err != nil {
+			t.Fatalf("creating %s: %v", filepath.Dir(abs), err)
+		}
+		if err := os.WriteFile(abs, []byte("segment"), 0o600); err != nil {
+			t.Fatalf("writing %s: %v", abs, err)
+		}
+		keys = append(keys, key)
+	}
+	return keys
+}
+
+// TestPurgePhoto_removesHLSObjectsFromTheStore confirms a purged video's
+// streaming segments leave the object store with it — every rendition, found by listing the prefix
+// rather than by asking the catalogue, which does not know them — while another
+// video's segments stay exactly where they are.
+func TestPurgePhoto_removesHLSObjectsFromTheStore(t *testing.T) {
+	env := newPurgeEnv(t)
+	archived := time.Now().Add(-time.Hour)
+
+	photo, originalAbs, thumbAbs := env.seedPhoto(t, "video", &archived)
+	other, _, _ := env.seedPhoto(t, "other", nil)
+
+	purged := env.writeHLSObjects(t, photo.FileHash, hls.Rendition1080p, hls.InitName, "00000.m4s", "00001.m4s")
+	purged = append(purged, env.writeHLSObjects(t, photo.FileHash, "720p", hls.InitName, "00000.m4s")...)
+	kept := env.writeHLSObjects(t, other.FileHash, hls.Rendition1080p, hls.InitName, "00000.m4s")
+
+	if err := env.svc.PurgePhoto(t.Context(), photo.UID, audit.Meta{}); err != nil {
+		t.Fatalf("PurgePhoto: %v", err)
+	}
+	env.assertGone(t, photo, originalAbs, thumbAbs)
+
+	for _, key := range purged {
+		if _, err := env.fs.Stat(t.Context(), key); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("HLS object %s survives the purge: err = %v", key, err)
+		}
+	}
+	for _, key := range kept {
+		if _, err := env.fs.Stat(t.Context(), key); err != nil {
+			t.Errorf("another video's HLS object %s was removed: %v", key, err)
+		}
 	}
 }
