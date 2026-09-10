@@ -3338,7 +3338,9 @@ here.
   address builder, exported so a prefetch cannot warm a different rendition than the stage will ask for — both
   derive the size from the same `useViewportBox` and the same photograph, see `lib/rendition`) → `useImagePreloader`
   (`prime` in an effect), whose `statusOf` goes back into `useSlideshow` as `readiness`, so
-  auto-advance waits until the next frame is decoded; exit → `navigate(-1)`
+  auto-advance waits until the next frame is decoded; **a clip times its own slide**: `selfTimed(i)` =
+  `isVideo(playlist[i])` disarms the interval for a video, and `Slideshow`'s `onSlideEnd` = `autoAdvance`
+  moves the show on when the clip ends (or `SlideshowVideo` bounds it); exit → `navigate(-1)`
   (fallback to the source view — album/label/`searchHref`/library), so Back works,
   `TrashPage` = `/trash` (editor+ sees the page) the trash: archived photos (a `useScopedPhotos`-style listing via
   `usePaginatedPhotos` scoped `archived=only`) in a `TrashCard` grid with `FilterBar`, **restore**
@@ -3998,8 +4000,8 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   index and the photo on screen are kept;
   the **`kenburns`** effect additionally writes inline
   `--kb-*` custom properties from `lib/kenBurns` onto the `<img>` (transform endpoints + `--kb-duration` = the interval) —
-  it activates **only for images**, a video frame and a user with `prefers-reduced-motion`
-  (`usePrefersReducedMotion`) get a static frame without animation);
+  it activates **only for images** — a clip does its own moving (`lib/mediaKind` `isVideo`), and a user with
+  `prefers-reduced-motion` (`usePrefersReducedMotion`) gets a static frame without animation);
   the entrance animations run for `transitionDurationMs(effect,intervalMs)`, published as
   `--slideshow-transition` on the root, so the 1 s speed is not mostly fade) + `slideshow.css` (keyframes
   `slideshow-fade`/`slideshow-slide`/`slideshow-kenburns` (`object-fit: cover`, `var()` is substituted
@@ -4012,6 +4014,22 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   22 × 44 px target, measured on a real coarse pointer) and `.slideshow__play`, which re-colours the play/pause
   button because the theme's `.btn-light` renders it white on pale grey — 2.06 : 1, the least legible control
   in the player; near-black on near-white is 16.18 : 1)
+  + `SlideshowVideo` (**one video slide, playing** — where the slide is a clip (`lib/mediaKind` `isVideo`) the
+  stage mounts this instead of the `<img>`, keyed by uid like it, so every slide gets its own element and the
+  previous clip is released. Muted, `playsInline`, `preload="auto"`, played from the beginning, with the very
+  rendition the stage would have painted as its `poster`; the bytes come from the shared `useHlsPlayback`, so a
+  payload reporting `hls` streams here exactly as in the viewer — a *listing* does not report it, so in practice a
+  slide plays the original progressively. Deliberately **not** `VideoPlayer`: a slide has no control bar, no
+  scrubber, no speed menu and no sound — a slideshow that suddenly makes noise is worse than a silent one, and a
+  browser refuses to autoplay an unmuted clip anyway. The show advances when the **clip** ends, not when the photo
+  interval does (`onEnded` → the page's `autoAdvance`), and three bounded clocks — each of them stopped while the
+  show is paused, so a paused slide does not quietly run out — guarantee it always does: playback must start within
+  `PLAYBACK_GRACE_MS` (5 s), no clip holds the slide longer than `MAX_VIDEO_SLIDE_MS` (30 s — long enough that
+  the ordinary family video plays whole, short enough that a school-play recording is a pause in the show rather
+  than the end of it), and a clip that cannot be played at all (a codec, a refused `play()`, a fatal streaming
+  error) becomes its poster for **one ordinary photo interval**. A clip that finishes while the show is paused
+  asks again on resume, so pausing into a finished clip cannot strand the show. The slide carries the tile's own
+  ▶ + duration badge (`.slideshow__badge`, outside the chrome so it does not fade) until playback starts)
   + `SlideshowCaption` (what the photo **is**, laid over the picture: title, capture date
   (`lib/takenDate` `formatTakenLabel`, so a coarse date reads „1974" and an estimate is marked) and
   description, each shown only when its toggle is on **and** the photo carries the value — an empty
@@ -4897,8 +4915,8 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   more than one now, and a caller drawing a rendition the payload does not carry at all (a bigger `fit_*`
   rung fetched by route, which never expires) passes a picker returning `''`, so a failure there is simply a
   failure. Used by `PhotoTile` and `TrashCard`;
-  `useSlideshow({length,hasMore,intervalMs,repeat?,autoPlay?,onLoadMore?,readiness?,maxHoldMs?})` = the control of the
-  slideshow: it owns `index`+`playing`+`holding`+`pass`, `next`/`prev`/`play`/`pause`/`toggle`/`goTo`,
+  `useSlideshow({length,hasMore,intervalMs,repeat?,autoPlay?,onLoadMore?,readiness?,maxHoldMs?,selfTimed?})` = the control of the
+  slideshow: it owns `index`+`playing`+`holding`+`pass`, `next`/`prev`/`play`/`pause`/`toggle`/`goTo`/`autoAdvance`,
   wrap-around, prefetch of `PRELOAD_AHEAD` pages ahead
   via `onLoadMore` (at the end with another page it waits instead of looping), an empty set = a no-op, a clamp of the
   index when the set shrinks. **`repeat`** (default `false`) decides the end: with it the show wraps to
@@ -4910,7 +4928,11 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   (a broken frame doesn't block the show). Manual navigation and a pause cancel the hold (manual never waits, a resume
   starts a fresh interval), the interval can be changed **during a hold** without restarting/duplicating the timer
   (the timer isn't armed during a hold, the hold's deadline doesn't depend on `intervalMs` or on `readiness`).
-  A set of < 2 frames neither holds nor switches. `preloadWindow(index,length)` = the indices to preload
+  A set of < 2 frames neither holds nor switches. **`selfTimed(index)`** marks a slide that runs on **its own**
+  clock — a video, which ends when the clip does: no interval is armed for it, and the slide reports its end by
+  calling **`autoAdvance()`**, which is the very advance the interval would have made (the readiness gate, the
+  stop on the last slide of a non-repeating show, the page-in at the loaded end) rather than a manual `next`.
+  `preloadWindow(index,length)` = the indices to preload
   (`PRELOAD_AHEAD` ahead, `PRELOAD_BEHIND` behind, the current one first, the offsets **wrap** →
   at the end of the show the first frames are ready for the wrap-around, with a small set it dedupes);
   `useImagePreloader()` → `{statusOf(url),prime(urls)}` = preloads a window of images and reports
@@ -5392,6 +5414,11 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   RAW/HEIC usually as nothing at all). Deliberately generous: the backend has the last word and
   drag-and-drop bypasses the list entirely, so a missing entry can only hide a file the user meant to add.
   Shared by `DropZone` (the picker) and `pwa/shareTarget` (the triage of a share);
+  `mediaKind.ts` = what a **catalogue row** is, asked of `media_type` alone (never of `file_mime` — a live
+  photo's file is an `image/heic` still that nevertheless carries a clip, and a row with no `media_type` at
+  all predates it and is an image): `isVideo(photo)` = a film, the thing a player plays from beginning to
+  end (the slideshow's video slide, Ken Burns standing down), `isPlayableClip(photo)` = a video **or** a live
+  photo, i.e. „there is something here to play" — which is exactly what the grid tile's ▶ badge means;
   `kenBurns.ts` = the pure `kenBurnsMotion(uid,intervalMs)` → the endpoints of a slow zoom+pan across the whole
   frame (`durationMs` = the interval, so the animation lasts exactly one slide) + `kenBurnsStyle(…)` →
   the `--kb-*` custom properties for `slideshow.css` + `panLimit(scale)`. The parameters (8 directions × zoom

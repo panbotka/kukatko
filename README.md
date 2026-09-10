@@ -217,7 +217,10 @@ server deals, so it covers the library and not just the first page), and whether
 title, its date and its description over the picture, all of it changeable mid-show without losing
 your place — and once it is running the controls get out of the way: they fade a few seconds after
 the last mouse move, key or tap, taking the cursor with them, and come back the moment you ask
-(a tap on the picture is how you ask on a phone) · and a statistics page that answers what the library really
+(a tap on the picture is how you ask on a phone); a video in the show **plays** rather than sitting there
+as a frozen frame — muted, from the beginning, and the show moves on when the clip ends instead of when
+the photo interval does, with a clip that runs long (or that this browser cannot play at all) handed back
+to the show within seconds rather than stopping it · and a statistics page that answers what the library really
 looks like — photos per year across its whole span, arrivals per month, which cameras took most of
 it, what it costs in bytes, and how far along the processing is.
 

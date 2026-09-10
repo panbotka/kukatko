@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next'
 
 import { useThumbSrc } from '../../hooks/useThumbSrc'
 import { formatDuration } from '../../lib/format'
+import { isPlayableClip } from '../../lib/mediaKind'
 import { type PhotoHandoff } from '../../lib/photoHandoff'
 import { photoLabel } from '../../lib/photoTitle'
 import { formatTakenLabel } from '../../lib/takenDate'
@@ -12,11 +13,6 @@ import { Icon } from '../Icon'
 import { MorphLink } from '../morph/MorphLink'
 
 import { FavoriteButton } from './FavoriteButton'
-
-/** Whether the photo is a playable video or a live photo (has a motion clip). */
-function isPlayable(photo: Photo): boolean {
-  return photo.media_type === 'video' || photo.media_type === 'live'
-}
 
 /** A tile's image address, and how to re-read it from a refreshed payload. */
 interface TileSource {
@@ -216,7 +212,7 @@ export function PhotoTile({
           {t('library.tile.unavailable')}
         </span>
       )}
-      {isPlayable(photo) && (
+      {isPlayableClip(photo) && (
         <span
           // Top-end, not bottom-start: the hover date owns the bottom reading
           // corner now, and a video is never part of a RAW+JPEG stack, so this

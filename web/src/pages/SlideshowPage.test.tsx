@@ -1,10 +1,11 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { CapabilitiesContext } from '../capabilities/CapabilitiesContext'
+import { MAX_HOLD_MS } from '../hooks/useSlideshow'
 import i18n from '../i18n'
 import { SLIDESHOW_DEFAULTS, writeSettings } from '../lib/slideshowSettings'
 import { type Photo, type PhotoListResponse } from '../services/photos'
@@ -41,6 +42,11 @@ function photo(uid: string, name: string): Photo {
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
   }
+}
+
+/** The same row as {@link photo}, but a clip: `media_type` is what says so. */
+function clip(uid: string, name: string): Photo {
+  return { ...photo(uid, name), file_mime: 'video/mp4', media_type: 'video', duration_ms: 8000 }
 }
 
 function page(photos: Photo[], extra: Partial<PhotoListResponse> = {}): PhotoListResponse {
@@ -250,5 +256,43 @@ describe('SlideshowPage', () => {
     // never a and b again before it.
     await user.click(screen.getByRole('button', { name: 'Next' }))
     expect(screen.getByRole('img')).toHaveAttribute('src', expect.stringContaining('/photos/c/'))
+  })
+
+  it('lets a clip time its own slide, and moves on when it ends', async () => {
+    fetchMock.mockResolvedValue(page([clip('v', 'clip.mp4'), photo('b', 'b.jpg')]))
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
+    vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined)
+    vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => undefined)
+    // Real time still has to pass, or the awaited queries below never settle.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      renderPage('/slideshow')
+      await screen.findByText('slide 1 of 2')
+      const video = document.querySelector('video')
+      if (video === null) {
+        throw new Error('the stage rendered no video')
+      }
+
+      // Several photo intervals go by and the clip keeps the stage: a video is
+      // not timed by the reader's chosen speed.
+      act(() => {
+        vi.advanceTimersByTime(SLIDESHOW_DEFAULTS.intervalMs * 3)
+      })
+      expect(screen.getByText('slide 1 of 2')).toBeInTheDocument()
+
+      act(() => {
+        fireEvent.playing(video)
+        fireEvent.ended(video)
+      })
+      // The end of the clip is an auto-advance, so it waits for the next image
+      // the way the interval would — and jsdom decodes nothing, so what releases
+      // it here is the bounded wait rather than a decoded slide.
+      act(() => {
+        vi.advanceTimersByTime(MAX_HOLD_MS)
+      })
+      expect(screen.getByText('slide 2 of 2')).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

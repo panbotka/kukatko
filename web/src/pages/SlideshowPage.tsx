@@ -16,6 +16,7 @@ import { preloadWindow, type SlideReadiness, useSlideshow } from '../hooks/useSl
 import { useSlideshowSettings } from '../hooks/useSlideshowSettings'
 import { useViewportBox } from '../hooks/useViewportBox'
 import { LIBRARY_DEFAULTS, LIBRARY_PATH, type LibraryView, viewToParams } from '../lib/libraryView'
+import { isVideo } from '../lib/mediaKind'
 import { searchHref, type SearchView, toMode } from '../lib/searchView'
 import { extendSeen, newShuffleSeed, playlistOf } from '../lib/slideshowPlaylist'
 import { readUrlState } from '../lib/urlState'
@@ -134,13 +135,27 @@ export function SlideshowPage() {
     [slideSrc, statusOf],
   )
 
-  const { index, playing, pass, next, prev, toggle } = useSlideshow({
+  // A clip times its own slide: it plays, and the stage reports the end of it
+  // through `autoAdvance` instead of the interval expiring. Everything that can
+  // go wrong with playing it — a codec this browser refuses, a clip long enough
+  // to swallow the show — is bounded by the stage, which then ends the slide the
+  // same way; see `SlideshowVideo`.
+  const selfTimed = useCallback(
+    (i: number): boolean => {
+      const photo = i >= 0 && i < playlist.length ? playlist[i] : undefined
+      return photo !== undefined && isVideo(photo)
+    },
+    [playlist],
+  )
+
+  const { index, playing, pass, next, prev, toggle, autoAdvance } = useSlideshow({
     length: playlist.length,
     hasMore,
     intervalMs: settings.intervalMs,
     repeat: settings.repeat,
     onLoadMore: loadMore,
     readiness,
+    selfTimed,
   })
 
   // Record what the show has played, so a change of order knows what not to
@@ -276,6 +291,7 @@ export function SlideshowPage() {
       onNext={next}
       onPrev={prev}
       onToggle={toggle}
+      onSlideEnd={autoAdvance}
       onExit={exit}
       onSettingsChange={update}
       loadingMore={loadingMore}

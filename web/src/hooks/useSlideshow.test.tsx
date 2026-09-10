@@ -49,6 +49,72 @@ describe('useSlideshow', () => {
     expect(result.current.index).toBe(2)
   })
 
+  it('leaves a self-timed slide to its own clock', () => {
+    const { result } = renderHook(() =>
+      useSlideshow({ length: 3, intervalMs: 1000, selfTimed: (i) => i === 0 }),
+    )
+
+    // The first slide is a clip: the interval must not take it off the screen.
+    act(() => {
+      vi.advanceTimersByTime(10_000)
+    })
+    expect(result.current.index).toBe(0)
+
+    // It reports the end of the clip, and the show moves — onto a slide the
+    // interval times as usual.
+    act(() => {
+      result.current.autoAdvance()
+    })
+    expect(result.current.index).toBe(1)
+
+    act(() => {
+      vi.advanceTimersByTime(1000)
+    })
+    expect(result.current.index).toBe(2)
+  })
+
+  it('makes a self-timed slide wait for the next image, as the interval would', () => {
+    const readiness = pendingAt(1)
+    const { result, rerender } = renderHook(
+      (props: { readiness: (i: number) => SlideReadiness }) =>
+        useSlideshow({
+          length: 3,
+          intervalMs: 1000,
+          selfTimed: (i) => i === 0,
+          readiness: props.readiness,
+        }),
+      { initialProps: { readiness } },
+    )
+
+    act(() => {
+      result.current.autoAdvance()
+    })
+    expect(result.current.index).toBe(0)
+    expect(result.current.holding).toBe(true)
+
+    rerender({ readiness: allReady })
+    expect(result.current.index).toBe(1)
+    expect(result.current.holding).toBe(false)
+  })
+
+  it('stops on the last slide when a clip ends a show that does not repeat', () => {
+    const { result } = renderHook(() =>
+      useSlideshow({ length: 2, intervalMs: 1000, selfTimed: () => true }),
+    )
+
+    act(() => {
+      result.current.autoAdvance()
+    })
+    expect(result.current.index).toBe(1)
+
+    // The last slide is a clip too: its end is the end of the show, not a wrap.
+    act(() => {
+      result.current.autoAdvance()
+    })
+    expect(result.current.index).toBe(1)
+    expect(result.current.playing).toBe(false)
+  })
+
   it('wraps to the first photo at the end when repeating', () => {
     const { result } = renderHook(() =>
       useSlideshow({ length: 2, intervalMs: 1000, hasMore: false, repeat: true }),

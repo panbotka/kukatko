@@ -75,6 +75,9 @@ function chromeVisible(): boolean {
 function photo(uid: string, name: string, title = '', mime = 'image/jpeg'): Photo {
   return {
     uid,
+    // The stage asks `media_type` whether a slide is a clip, so a video fixture
+    // has to carry it: the MIME type alone is what a live photo lies about.
+    media_type: mime.startsWith('video/') ? 'video' : 'image',
     file_hash: uid,
     file_name: name,
     file_size: 1,
@@ -132,9 +135,30 @@ async function openSettings(user: ReturnType<typeof userEvent.setup>): Promise<v
   await user.click(screen.getByRole('button', { name: 'Settings' }))
 }
 
+/**
+ * Gives every `<video>` the playback jsdom does not implement, so a video slide
+ * can be mounted at all. The stage's own clip behaviour is covered in
+ * `SlideshowVideo.test.tsx`; here it only has to exist.
+ */
+function stubPlayback(): void {
+  vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
+  vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined)
+  vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => undefined)
+}
+
+/** The rendered video slide, which no ARIA role of its own would find. */
+function videoSlide(): HTMLVideoElement {
+  const element = document.querySelector('video')
+  if (element === null) {
+    throw new Error('the stage rendered no video')
+  }
+  return element
+}
+
 beforeEach(async () => {
   await i18n.changeLanguage('en')
   stubFullscreenApi()
+  stubPlayback()
 })
 
 afterEach(() => {
@@ -395,16 +419,45 @@ describe('Slideshow', () => {
     expect(img.getAttribute('style')).toBeNull()
   })
 
-  it('leaves videos motionless: Ken Burns applies to images only', () => {
+  it('leaves videos to their own motion: Ken Burns applies to images only', () => {
     setup({
       photos: [photo('v', 'clip.mp4', 'Clip', 'video/mp4')],
       index: 0,
       settings: settings({ effect: 'kenburns', intervalMs: 5000 }),
     })
-    const img = screen.getByRole('img')
 
-    expect(img).not.toHaveClass('slideshow__image--kenburns')
-    expect(img.getAttribute('style')).toBeNull()
+    expect(videoSlide()).not.toHaveClass('slideshow__image--kenburns')
+    expect(videoSlide().getAttribute('style')).toBeNull()
+  })
+
+  it('plays a video slide instead of painting its poster frame', () => {
+    setup({ photos: [photo('v', 'clip.mp4', 'Clip', 'video/mp4')], index: 0 })
+
+    // No <img> at all: the clip itself is the slide, with the very rendition the
+    // stage would have painted as its poster.
+    expect(screen.queryByRole('img', { name: 'Clip' })).toBeNull()
+    const video = videoSlide()
+    expect(video).toHaveClass('slideshow__image')
+    expect(video.muted).toBe(true)
+    expect(video.getAttribute('poster')).toContain('/photos/v/thumb/')
+    expect(video.getAttribute('src')).toContain('/photos/v/video')
+  })
+
+  it('advances the show when the clip ends, through the auto-advance', () => {
+    const props = setup({
+      photos: [photo('v', 'clip.mp4', 'Clip', 'video/mp4'), photo('b', 'b.jpg')],
+      index: 0,
+      onSlideEnd: vi.fn(),
+    })
+
+    fireEvent.playing(videoSlide())
+    fireEvent.ended(videoSlide())
+
+    // The end of a clip is the interval elapsing, not the reader pressing next:
+    // it must go through the show's own advance, which knows about the end of a
+    // show that does not repeat.
+    expect(props.onSlideEnd).toHaveBeenCalledTimes(1)
+    expect(props.onNext).not.toHaveBeenCalled()
   })
 
   it('triggers a swipe to the next photo on a left drag', () => {

@@ -137,6 +137,15 @@ export interface Photo {
   /** Average frame rate of the video; absent for images. */
   fps?: number
   /**
+   * Whether this photo can be streamed: it has at least one encoded HLS
+   * rendition, so `GET /photos/{uid}/hls/master.m3u8` answers. A player reads it
+   * instead of probing — a 404 on every still in the library is noise nobody
+   * needs. Only the detail response carries it (computing it for a whole page
+   * would be a query per row), so a photo taken from a listing simply does not
+   * say, and whatever plays it plays the original progressively.
+   */
+  hls?: boolean
+  /**
    * The source the photo was imported from, when it was: its UID in PhotoPrism or
    * in photo-sorter. Provenance only — the detail card shows it so it is obvious
    * where an imported photo came from.
@@ -678,13 +687,6 @@ export interface PhotoDetail extends Photo {
    * fetching the thread; optional here only so older fixtures stay valid.
    */
   comment_count?: number
-  /**
-   * Whether this photo can be streamed: it has at least one encoded HLS
-   * rendition, so `GET /photos/{uid}/hls/master.m3u8` answers. The player reads
-   * it instead of probing — a 404 on every still in the library is noise nobody
-   * needs. Optional here only so older fixtures stay valid.
-   */
-  hls?: boolean
 }
 
 /**

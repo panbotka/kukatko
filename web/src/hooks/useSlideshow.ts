@@ -30,6 +30,9 @@ export type SlideReadiness = 'pending' | 'ready' | 'error'
 /** The readiness of a slideshow that does not track its images: play at will. */
 const ALWAYS_READY = (): SlideReadiness => 'ready'
 
+/** The default for {@link UseSlideshowOptions.selfTimed}: the interval times every slide. */
+const NEVER_SELF_TIMED = (): boolean => false
+
 /** Options for {@link useSlideshow}. */
 export interface UseSlideshowOptions {
   /**
@@ -65,6 +68,19 @@ export interface UseSlideshowOptions {
   readiness?: (index: number) => SlideReadiness
   /** The bounded wait for an undecoded slide. Defaults to {@link MAX_HOLD_MS}. */
   maxHoldMs?: number
+  /**
+   * Whether the slide at an index runs on its own clock rather than on the
+   * auto-advance interval — a video, which ends when the clip does. The hook
+   * then arms no timer for it and waits to be told, through
+   * {@link UseSlideshowResult.autoAdvance}, that the slide is over. Defaults to
+   * treating every slide as timed by the interval.
+   *
+   * Everything else about such a slide is unchanged: the advance it asks for is
+   * the same one the interval would have made, so it still waits for the next
+   * image to decode, still stops on the last slide of a show that does not
+   * repeat, and still pages in what is missing at the loaded end.
+   */
+  selfTimed?: (index: number) => boolean
 }
 
 /** Result of {@link useSlideshow}: the cursor, playback state and controls. */
@@ -94,6 +110,14 @@ export interface UseSlideshowResult {
   toggle: () => void
   /** Jumps to a specific index (clamped to the loaded set). */
   goTo: (index: number) => void
+  /**
+   * Ends the current slide the way its elapsed interval would have — for a
+   * self-timed slide, whose clock the caller owns (see
+   * {@link UseSlideshowOptions.selfTimed}). This is auto-advance, not a manual
+   * next: it honours the end of a non-repeating show, pages in what is still
+   * missing, and waits for the next image to be paintable.
+   */
+  autoAdvance: () => void
 }
 
 /**
@@ -173,6 +197,7 @@ export function useSlideshow(options: UseSlideshowOptions): UseSlideshowResult {
     onLoadMore,
     readiness = ALWAYS_READY,
     maxHoldMs = MAX_HOLD_MS,
+    selfTimed = NEVER_SELF_TIMED,
   } = options
 
   const [index, setIndex] = useState(0)
@@ -272,38 +297,45 @@ export function useSlideshow(options: UseSlideshowOptions): UseSlideshowResult {
     }
   }, [playing, endHold])
 
+  // The end of a slide, however it was reached: the interval below elapsing, or
+  // a self-timed slide reporting that it is over. It does not move the cursor —
+  // it opens the readiness gate, which is what actually advances once the next
+  // image can be painted.
+  const autoAdvance = useCallback(() => {
+    const i = indexRef.current
+    if (i + 1 >= lengthRef.current) {
+      // At the loaded end with more pages coming, ask for them and stay put; the
+      // interval effect re-arms once `length` grows.
+      if (hasMoreRef.current) {
+        onLoadMoreRef.current?.()
+        return
+      }
+      // The last photo of a show that does not repeat: stop here, leaving it on
+      // screen. Pausing rather than freezing means the play button restarts it.
+      if (!repeatRef.current) {
+        setPlaying(false)
+        return
+      }
+    }
+    setHolding(true)
+  }, [])
+
   // The interval elapsing does not advance — it starts the readiness gate below.
   // Depending on `index` re-arms the timer after every advance, so a manual
   // next/prev also resets the countdown; depending on `length` picks up freshly
   // loaded pages when playback was waiting at the end. It stays disarmed while
   // holding, so changing the interval mid-hold neither restarts the bounded wait
-  // nor leaves a second timer behind.
+  // nor leaves a second timer behind — and while a self-timed slide is on screen,
+  // whose length is the clip's rather than the reader's chosen speed.
   useEffect(() => {
-    if (!playing || holding || length <= 1) {
+    if (!playing || holding || length <= 1 || selfTimed(index)) {
       return
     }
-    const id = window.setTimeout(() => {
-      const i = indexRef.current
-      if (i + 1 >= lengthRef.current) {
-        // At the loaded end with more pages coming, ask for them and stay put;
-        // this effect re-arms once `length` grows.
-        if (hasMoreRef.current) {
-          onLoadMoreRef.current?.()
-          return
-        }
-        // The last photo of a show that does not repeat: stop here, leaving it on
-        // screen. Pausing rather than freezing means the play button restarts it.
-        if (!repeatRef.current) {
-          setPlaying(false)
-          return
-        }
-      }
-      setHolding(true)
-    }, intervalMs)
+    const id = window.setTimeout(autoAdvance, intervalMs)
     return () => {
       window.clearTimeout(id)
     }
-  }, [playing, holding, intervalMs, length, index])
+  }, [playing, holding, intervalMs, length, index, selfTimed, autoAdvance])
 
   // The bounded wait. Its deps deliberately exclude `readiness` and `intervalMs`
   // so neither an image settling nor a speed change can push the deadline out.
@@ -355,5 +387,17 @@ export function useSlideshow(options: UseSlideshowOptions): UseSlideshowResult {
     }
   }, [index, length])
 
-  return { index, playing, holding, pass, next, prev, play, pause, toggle, goTo }
+  return {
+    index,
+    playing,
+    holding,
+    pass,
+    next,
+    prev,
+    play,
+    pause,
+    toggle,
+    goTo,
+    autoAdvance,
+  }
 }

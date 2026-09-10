@@ -2477,6 +2477,7 @@
     "progress": "slide {{current}} of {{total}}",
     "remaining": "{{remaining}} left",
     "loading": "Loading photos…",
+    "video": "Video",
     "empty": {
       "title": "No photos to play",
       "hint": "Adjust or clear the filters, or add some photos."

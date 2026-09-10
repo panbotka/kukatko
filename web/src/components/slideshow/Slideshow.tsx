@@ -9,6 +9,7 @@ import { usePrefersReducedMotion } from '../../hooks/usePrefersReducedMotion'
 import { useViewportBox, type ViewportBox } from '../../hooks/useViewportBox'
 import { formatDuration, slideshowRemainingMs } from '../../lib/duration'
 import { kenBurnsStyle } from '../../lib/kenBurns'
+import { isVideo } from '../../lib/mediaKind'
 import { stageRenditionName } from '../../lib/rendition'
 import { isActivatableElement } from '../../lib/shortcuts'
 import {
@@ -21,6 +22,7 @@ import { Icon } from '../Icon'
 
 import { SlideshowCaption } from './SlideshowCaption'
 import { SlideshowSettingsForm } from './SlideshowSettingsForm'
+import { SlideshowVideo } from './SlideshowVideo'
 
 import './slideshow.css'
 
@@ -77,6 +79,13 @@ export interface SlideshowProps {
   onPrev: () => void
   /** Toggle play / pause. */
   onToggle: () => void
+  /**
+   * The slide ended on its own clock — a clip that played out. It is the show's
+   * *auto*-advance, not a manual next: it stops at the end of a show that does
+   * not repeat and waits for the next image to be paintable. Defaults to
+   * {@link SlideshowProps.onNext} for a caller that times every slide itself.
+   */
+  onSlideEnd?: () => void
   /** Leave the slideshow (returns to the prior view). */
   onExit: () => void
   /**
@@ -161,6 +170,14 @@ function tryFullscreen(request: Promise<void> | undefined): void {
  * including the preloading of upcoming slides, which the page drives so it can
  * hold the advance until the next image has decoded.
  *
+ * **A video slide plays.** Where the slide is a clip the stage mounts
+ * {@link SlideshowVideo} instead of an `<img>`: it plays muted from the
+ * beginning and ends the slide itself, so the show follows the clip rather than
+ * the photo interval — and a clip that cannot be played, or one long enough to
+ * hold the show hostage, still gives the slide back within a bounded time. The
+ * caller is told through `onSlideEnd`, which is the show's auto-advance rather
+ * than a manual next.
+ *
  * Its settings panel is the same {@link SlideshowSettingsForm} the start dialog
  * shows, so everything the reader could choose before the show they can change
  * during it, and the two cannot drift apart. Changing anything resumes rather
@@ -183,6 +200,7 @@ export function Slideshow({
   onNext,
   onPrev,
   onToggle,
+  onSlideEnd,
   onExit,
   onSettingsChange,
   loadingMore = false,
@@ -378,10 +396,10 @@ export function Slideshow({
   }, [])
 
   // Ken Burns pans across the photo itself, so it only makes sense for stills:
-  // a video slide keeps its previous, motionless framing. A reduced-motion user
-  // gets the same static slide rather than a shortened pan.
-  const isVideo = current.file_mime.startsWith('video/')
-  const kenBurns = settings.effect === 'kenburns' && !reducedMotion && !isVideo
+  // a clip does its own moving. A reduced-motion user gets the same static slide
+  // rather than a shortened pan.
+  const video = isVideo(current)
+  const kenBurns = settings.effect === 'kenburns' && !reducedMotion && !video
   const appliedEffect: SlideshowEffect =
     settings.effect === 'kenburns' && !kenBurns ? 'none' : settings.effect
   const effectClass = EFFECT_CLASS[appliedEffect]
@@ -410,15 +428,31 @@ export function Slideshow({
       onTouchCancel={onTouchCancel}
     >
       <div className="slideshow__stage">
-        <img
-          key={current.uid}
-          className={`slideshow__image ${effectClass}`}
-          src={slideshowSlideSrc(current, viewport)}
-          alt={current.title || current.file_name}
-          data-effect={settings.effect}
-          style={kenBurns ? kenBurnsStyle(current.uid, settings.intervalMs) : undefined}
-          draggable={false}
-        />
+        {video ? (
+          // A clip is played, not painted: it runs the slide, and when it ends
+          // (or has run long enough) it is what advances the show. Keyed like the
+          // image below, so every slide gets an element of its own — which is
+          // also what releases the previous clip.
+          <SlideshowVideo
+            key={current.uid}
+            photo={current}
+            poster={slideshowSlideSrc(current, viewport)}
+            playing={playing}
+            intervalMs={settings.intervalMs}
+            onEnded={onSlideEnd ?? onNext}
+            className={`slideshow__image ${effectClass}`}
+          />
+        ) : (
+          <img
+            key={current.uid}
+            className={`slideshow__image ${effectClass}`}
+            src={slideshowSlideSrc(current, viewport)}
+            alt={current.title || current.file_name}
+            data-effect={settings.effect}
+            style={kenBurns ? kenBurnsStyle(current.uid, settings.intervalMs) : undefined}
+            draggable={false}
+          />
+        )}
         {loadingMore && (
           <Spinner
             animation="border"

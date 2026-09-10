@@ -323,3 +323,16 @@
   color: #fff;
   text-align: center;
 }
+
+/* The play mark and length of a video slide, in the stage's top-end corner —
+   the same badge the library tile carries, so a clip is recognisable as one
+   before it starts. It belongs to the picture rather than to the chrome, so it
+   does not fade with the controls; the slide takes it down the moment playback
+   starts, because a picture that is visibly moving does not need telling. */
+.slideshow__badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  margin: var(--kk-space-3, 0.75rem);
+  pointer-events: none;
+}
