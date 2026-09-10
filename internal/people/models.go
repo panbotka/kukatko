@@ -23,6 +23,9 @@ var (
 	ErrSubjectNotFound = errors.New("people: subject not found")
 	// ErrMarkerNotFound indicates no marker matched the given key.
 	ErrMarkerNotFound = errors.New("people: marker not found")
+	// ErrPhotoNotFound indicates the media item a person was to be attached to
+	// does not exist.
+	ErrPhotoNotFound = errors.New("people: photo not found")
 	// ErrSlugExhausted indicates a unique slug could not be generated for a name
 	// after exhausting the numeric-suffix attempts (effectively never in practice).
 	ErrSlugExhausted = errors.New("people: could not generate a unique slug")
@@ -113,12 +116,22 @@ const (
 	MarkerFace MarkerType = "face"
 	// MarkerLabel is a manually drawn label region.
 	MarkerLabel MarkerType = "label"
+	// MarkerPerson is a person attached to the media item by hand: no bounding
+	// box, no detected face, no embedding — only the claim that this subject is
+	// in this picture. It exists for what face detection cannot see: anybody
+	// appearing after a video's poster frame, and the profiles, backs of heads
+	// and crowd faces a detector misses on a still.
+	//
+	// It carries no geometry (migration 0071 enforces that in SQL), so it must
+	// never reach anything that cuts a crop or searches for a neighbour: every
+	// such query filters on type = 'face'.
+	MarkerPerson MarkerType = "person"
 )
 
 // valid reports whether t is one of the recognised marker types.
 func (t MarkerType) valid() bool {
 	switch t {
-	case MarkerFace, MarkerLabel:
+	case MarkerFace, MarkerLabel, MarkerPerson:
 		return true
 	default:
 		return false
@@ -181,8 +194,10 @@ type SubjectFace struct {
 // work marker by marker, the people index shows photos.
 type SubjectCount struct {
 	Subject
-	// MarkerCount is the number of non-invalid markers assigned to the subject
-	// that fall on a visible photo.
+	// MarkerCount is the number of non-invalid *regions* — face and label markers
+	// — assigned to the subject that fall on a visible photo. A person attached to
+	// a photo by hand carries no region and is not counted here; PhotoCount is
+	// where such a photo shows up.
 	MarkerCount int `json:"marker_count"`
 	// PhotoCount is how many visible photos the subject appears on. It is at most
 	// MarkerCount and lower whenever one photo carries several of the subject's
@@ -229,9 +244,15 @@ type Marker struct {
 	UpdatedAt  time.Time  `json:"updated_at"`
 }
 
-// validBounds reports whether the marker's normalised box lies within 0..1 on
-// every coordinate, the invariant enforced before a marker is written.
+// validBounds reports whether the marker's box is one the store may write: a
+// hand-attached person carries no geometry at all, and every other kind lies
+// within 0..1 on every coordinate. It mirrors the SQL CHECK constraints of
+// migrations 0008 and 0071, so a caller gets ErrInvalidBounds rather than a
+// constraint violation from the database.
 func (m Marker) validBounds() bool {
+	if m.Type == MarkerPerson {
+		return m.X == 0 && m.Y == 0 && m.W == 0 && m.H == 0
+	}
 	return inUnit(m.X) && inUnit(m.Y) && inUnit(m.W) && inUnit(m.H)
 }
 

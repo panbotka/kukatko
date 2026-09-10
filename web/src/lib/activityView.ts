@@ -93,6 +93,8 @@ const ACTION_LABEL_KEYS: Record<string, ParseKeys> = {
   'passkey.delete': 'activity.actions.passkey.delete',
   'passkey.login': 'activity.actions.passkey.login',
   'passkey.register': 'activity.actions.passkey.register',
+  'person.attach': 'activity.actions.person.attach',
+  'person.detach': 'activity.actions.person.detach',
   'photo.archive': 'activity.actions.photo.archive',
   'photo.date_clear': 'activity.actions.photo.date_clear',
   'photo.edit': 'activity.actions.photo.edit',

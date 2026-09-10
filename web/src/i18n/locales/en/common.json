@@ -679,6 +679,10 @@
         "login": "Signed in with a passkey",
         "register": "Passkey added"
       },
+      "person": {
+        "attach": "Person attached to a photo by hand",
+        "detach": "Hand-attached person removed"
+      },
       "photo": {
         "archive": "Photo moved to the trash",
         "edit": "Photo image adjusted",

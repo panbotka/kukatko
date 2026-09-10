@@ -215,14 +215,20 @@ func (s *Service) fillSuggestions(
 	return append(have, extra...)
 }
 
-// assignedSubjectNames resolves the name of every subject assigned to a marker on
-// the photo, returning a subjectUID→name map (best-effort: a subject that cannot be
-// loaded maps to an empty name, still excluding it from suggestions).
+// assignedSubjectNames resolves the name of every subject assigned to a *region*
+// on the photo, returning a subjectUID→name map (best-effort: a subject that
+// cannot be loaded maps to an empty name, still excluding it from suggestions).
+//
+// A hand-attached person (people.MarkerPerson) is deliberately skipped. Such a
+// link exists precisely because the detector never found that person's face, so
+// letting it into the exclusion set would suppress the one suggestion the user
+// wants: when detection later does produce a face, the person already attached
+// by hand is the likeliest answer for it, not the one candidate to hide.
 func (s *Service) assignedSubjectNames(ctx context.Context, markers []people.Marker) map[string]string {
 	names := make(map[string]string)
 	for i := range markers {
 		uid := derefSubject(markers[i].SubjectUID)
-		if uid == "" {
+		if uid == "" || markers[i].Type == people.MarkerPerson {
 			continue
 		}
 		if _, seen := names[uid]; seen {

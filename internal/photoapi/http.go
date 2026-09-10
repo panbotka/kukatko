@@ -21,6 +21,7 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/facematch"
 	"github.com/panbotka/kukatko/internal/mediaurl"
+	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/processing"
 	"github.com/panbotka/kukatko/internal/query"
@@ -44,6 +45,7 @@ type API struct {
 	similar        SimilarSearcher
 	embedder       TextEmbedder
 	faces          FaceService
+	attacher       PeopleAttacher
 	favorites      FavoriteStore
 	ratings        RatingStore
 	organizer      PhotoOrganizer
@@ -109,6 +111,11 @@ type Config struct {
 	// (face↔marker matching, suggestions and the assignment state machine). When
 	// nil those endpoints answer 503.
 	Faces FaceService
+	// Attacher backs attaching a person to a media item by hand — the link that
+	// records who is in a picture when the detector saw no face — and the detail
+	// response's people block. When nil those endpoints answer 503 and the detail
+	// reports an empty list.
+	Attacher PeopleAttacher
 	// Favorites backs the per-user favorite endpoints, the is_favorite annotation
 	// on list/detail responses and the favorite=true filter. When nil those
 	// endpoints answer 503 and photos report is_favorite false.
@@ -220,6 +227,7 @@ func NewAPI(cfg Config) *API {
 		similar:           cfg.Similar,
 		embedder:          cfg.Embedder,
 		faces:             cfg.Faces,
+		attacher:          cfg.Attacher,
 		favorites:         cfg.Favorites,
 		ratings:           cfg.Ratings,
 		organizer:         cfg.Organizer,
@@ -278,6 +286,8 @@ func passthroughMiddleware(next http.Handler) http.Handler {
 //	GET    /photos/{uid}/similar      RequireAuth      visually similar photos
 //	GET    /photos/{uid}/faces        RequireAuth      faces + assignment + suggestions
 //	POST   /photos/{uid}/faces/assign RequireWrite     create/assign/unassign marker
+//	POST   /photos/{uid}/people       RequireWrite     attach a person by hand
+//	DELETE /photos/{uid}/people/{subjectUID}  RequireWrite  detach one again
 //	PATCH  /photos/{uid}              RequireWrite     update metadata
 //	GET    /photos/{uid}/edit         RequireAuth      stored non-destructive edit
 //	PUT    /photos/{uid}/edit         RequireWrite     save non-destructive edit
@@ -347,6 +357,8 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.With(a.requireAuth).Patch("/{uid}/comments/{commentUID}", a.handleUpdateComment)
 		r.With(a.requireAuth).Delete("/{uid}/comments/{commentUID}", a.handleDeleteComment)
 		r.With(a.requireWrite).Post("/{uid}/faces/assign", a.handleFaceAssign)
+		r.With(a.requireWrite).Post("/{uid}/people", a.handleAttachPerson)
+		r.With(a.requireWrite).Delete("/{uid}/people/{subjectUID}", a.handleDetachPerson)
 		r.With(a.requireWrite).Patch("/{uid}", a.handleUpdate)
 		r.With(a.requireAuth).Get("/{uid}/edit", a.handleGetEdit)
 		r.With(a.requireWrite).Put("/{uid}/edit", a.handlePutEdit)
@@ -663,12 +675,21 @@ type photoDetail struct {
 	// has never seen and for one it looked at and found nothing on; the processing
 	// block above is what tells those two apart.
 	OCRText string `json:"ocr_text,omitempty"`
-	// People is who is on the photo: the markers that name a subject and the
-	// detections nobody has named yet. It is present only when the request asked
-	// for it with people=true (see resolvePeople), and it is a pointer so that an
-	// empty list — "we looked, nobody is marked" — stays distinguishable from an
-	// absent one — "you did not ask".
-	People *[]facematch.PersonOnPhoto `json:"people,omitempty"`
+	// Faces is the photo's face roll-call: every detected face with the subject
+	// its marker names (empty when nobody has named it), plus the face regions
+	// drawn by hand. It is present only when the request asked for it with
+	// people=true (see resolveFaces), and it is a pointer so that an empty list —
+	// "we looked, nobody is marked" — stays distinguishable from an absent one —
+	// "you did not ask".
+	//
+	// It was called `people` until hand-attached people took that name: the two
+	// answer different questions, and only this one is about boxes.
+	Faces *[]facematch.PersonOnPhoto `json:"faces,omitempty"`
+	// People is who was attached to the media item by hand — no bounding box, no
+	// detected face. It is always present (an empty array for a photo nobody was
+	// attached to) because it is the only place those links surface: they have no
+	// box, so no face endpoint will ever mention them.
+	People []people.PhotoSubject `json:"people"`
 }
 
 // handleDetail returns a photo's full detail, including its file list and the
@@ -732,7 +753,8 @@ func (a *API) writeDetail(w http.ResponseWriter, r *http.Request, userUID string
 		HLS:          a.resolveHLS(r.Context(), photo.UID),
 		Processing:   a.resolveProcessing(r.Context(), photo.UID),
 		OCRText:      a.resolveOCR(r.Context(), photo.UID),
-		People:       a.resolvePeople(r, photo.UID),
+		Faces:        a.resolveFaces(r, photo.UID),
+		People:       a.resolveAttachedPeople(r.Context(), photo.UID),
 	})
 }
 

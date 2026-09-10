@@ -325,9 +325,10 @@ func (a *API) describePhoto(ctx context.Context, c caller, photo photos.Photo) (
 	return detail, nil
 }
 
-// subjectsForPhoto resolves the photo's accepted face markers into the people
-// they name. Rejected markers and unnamed faces are not people the photo shows,
-// so they are left out.
+// subjectsForPhoto resolves the photo's accepted markers into the people they
+// name. Rejected markers and unnamed faces are not people the photo shows, so
+// they are left out; a person attached by hand is one, box or no box, and is
+// included exactly like a named face.
 func (a *API) subjectsForPhoto(ctx context.Context, photoUID string) ([]ref, error) {
 	markers, err := a.people.ListMarkersByPhoto(ctx, photoUID)
 	if err != nil {

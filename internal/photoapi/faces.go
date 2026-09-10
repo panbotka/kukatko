@@ -50,8 +50,11 @@ func (a *API) handleFaces(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// resolvePeople returns who is on the photo for the detail response, or nil to
-// omit the block entirely.
+// resolveFaces returns the photo's face roll-call for the detail response, or nil
+// to omit the block entirely.
+//
+// The block is named `faces` in the response — `people` belongs to the people
+// attached by hand, which is a different question with a different shape.
 //
 // Unlike ocr_text it is behind an opt-in `people=true` query parameter, because
 // assembling it costs a face list, a marker list and a subject lookup per named
@@ -63,7 +66,7 @@ func (a *API) handleFaces(w http.ResponseWriter, r *http.Request) {
 // A malformed value is treated as "not asked" rather than failing the detail, and
 // so is a face backend that is missing or in trouble: nobody loses the photo over
 // the list of who is on it.
-func (a *API) resolvePeople(r *http.Request, uid string) *[]facematch.PersonOnPhoto {
+func (a *API) resolveFaces(r *http.Request, uid string) *[]facematch.PersonOnPhoto {
 	if a.faces == nil {
 		return nil
 	}

@@ -210,6 +210,15 @@ const (
 	// on invalid = FALSE. The affected marker is the target; the photo and the
 	// subject it was assigned to are in the details.
 	ActionMarkerInvalidate = "marker.invalidate"
+	// ActionPersonAttach records attaching a person to a media item by hand — no
+	// bounding box, no detected face — which is the only way to record somebody a
+	// detector cannot see: a face after a video's poster frame, a profile, a back
+	// of a head. The marker recording the link is the target; the photo and the
+	// subject are in the details.
+	ActionPersonAttach = "person.attach"
+	// ActionPersonDetach records removing a hand-attached person from a media
+	// item. The subject is the target; the photo is in the details.
+	ActionPersonDetach = "person.detach"
 	// ActionFaceReject records a user rejecting a face↔subject guess ("this face is
 	// NOT this person"). It records an opinion — the face is not unassigned or
 	// deleted — so a later search can exclude it. The face (photo UID + face index)

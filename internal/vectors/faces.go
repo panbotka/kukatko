@@ -267,18 +267,22 @@ func (s *Store) ListFacesBySubject(ctx context.Context, subjectUID string) ([]Fa
 	return s.queryFaces(ctx, listFacesBySubjectSQL, subjectUID)
 }
 
-// countMarkersWithoutFaceSQL counts a subject's valid markers that no embedded
-// face row points back at — the assignments that exist as markers but have no
-// embedding to score. The anti-join is on marker_uid: a face matched to the
-// marker carries its uid, so a marker with no such face was never covered by
+// countMarkersWithoutFaceSQL counts a subject's valid face markers that no
+// embedded face row points back at — the assignments that exist as markers but
+// have no embedding to score. The anti-join is on marker_uid: a face matched to
+// the marker carries its uid, so a marker with no such face was never covered by
 // face detection (for example while the embedding sidecar was offline).
+//
+// type = 'face' is load-bearing. A hand-attached person (type = 'person') has no
+// region and no face by definition, so counting it here would report a growing
+// number of "faces we could not score" for work that was never a face at all.
 const countMarkersWithoutFaceSQL = `
 SELECT COUNT(*)
 FROM markers m
-WHERE m.subject_uid = $1 AND m.invalid = FALSE
+WHERE m.subject_uid = $1 AND m.invalid = FALSE AND m.type = 'face'
   AND NOT EXISTS (SELECT 1 FROM faces f WHERE f.marker_uid = m.uid)`
 
-// CountMarkersWithoutFace returns how many of subjectUID's valid markers have no
+// CountMarkersWithoutFace returns how many of subjectUID's valid face markers have no
 // embedded face row, i.e. how many of the subject's assigned faces cannot be
 // scored against the centroid because no embedding exists for them. Outlier
 // review reports the number so unscorable faces are named rather than silently

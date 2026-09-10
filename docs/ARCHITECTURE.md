@@ -395,8 +395,11 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
   `bbox float8[4]` (normalized [x,y,w,h] 0..1), `det_score`, cache `marker_uid/subject_uid/
   subject_name/photo_width/height/orientation`; HNSW `halfvec_cosine_ops`.
 - **`subjects`** — people/animals (`type IN (person|pet|other)`), `name`, `slug`, `cover_photo_uid`.
-- **`markers`** — `type IN (face|label)`, normalized bbox (x,y,w,h 0..1), `subject_uid`,
-  `score`, `invalid`, `reviewed`.
+- **`markers`** — `type IN (face|label|person)`, normalized bbox (x,y,w,h 0..1), `subject_uid`,
+  `score`, `invalid`, `reviewed`. `person` is a **hand-attached** person — somebody a user says is in the
+  picture when no face was detected (a video's later frames, a profile, a back of a head). It carries no
+  geometry at all (CHECK, migration 0071) and is unique per `(photo_uid, subject_uid)` (partial index), so
+  attaching twice is idempotent. Everything that needs a crop or an embedding filters on `type = 'face'`.
 - **`albums`** + **`album_photos`** — `type IN (album|folder|moment|state|month)`; an album is always
   chronological (migration 0022 removed both the manual `sort_order` and the `order_by` sort choice).
 - **`labels`** + **`photo_labels`** — `source IN (manual|ai|import)`, `uncertainty`.

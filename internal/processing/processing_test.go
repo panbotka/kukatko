@@ -82,7 +82,18 @@ func TestEvidence_applies(t *testing.T) {
 			evidence: Evidence{MediaType: photos.MediaImage},
 			step:     StepFaceDetect, want: true,
 		},
-		{name: "faces on a video", evidence: Evidence{MediaType: photos.MediaVideo}, step: StepFaceDetect},
+		// Face detection DOES apply to a video: the upload pipeline enqueues it for
+		// every media type and the detector runs on the poster frame.
+		{
+			name:     "faces on a video",
+			evidence: Evidence{MediaType: photos.MediaVideo},
+			step:     StepFaceDetect, want: true,
+		},
+		{
+			name:     "faces on a live photo",
+			evidence: Evidence{MediaType: photos.MediaLive},
+			step:     StepFaceDetect, want: true,
+		},
 		{name: "ocr on a video", evidence: Evidence{MediaType: photos.MediaVideo}, step: StepOCR},
 		{
 			name:     "ocr on a live photo",

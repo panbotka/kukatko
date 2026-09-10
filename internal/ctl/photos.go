@@ -108,7 +108,7 @@ func (r NamedRef) Label() string {
 	return r.Name
 }
 
-// PhotoPerson is one entry of the detail response's people block: a named
+// PhotoPerson is one entry of the detail response's faces block: a named
 // subject, or a detection nobody has assigned yet (both name fields empty).
 type PhotoPerson struct {
 	SubjectUID  string  `json:"subject_uid,omitempty"`
@@ -121,6 +121,18 @@ type PhotoPerson struct {
 // detection still waiting for one.
 func (p PhotoPerson) Named() bool {
 	return p.SubjectUID != ""
+}
+
+// AttachedPerson is one entry of the detail response's people block: somebody
+// attached to the media item by hand, with no bounding box and no detected face.
+// It is how a person appears who the detector never saw — anybody after a video's
+// poster frame, a profile, a back of a head.
+type AttachedPerson struct {
+	SubjectUID string `json:"subject_uid"`
+	Slug       string `json:"slug"`
+	Name       string `json:"name"`
+	Type       string `json:"type"`
+	MarkerUID  string `json:"marker_uid"`
 }
 
 // PhotoDetail decodes GET /photos/{uid}: a photo view with its editable
@@ -154,13 +166,17 @@ type PhotoDetail struct {
 	// OCRText is the text the recogniser read in the photo, empty when it has
 	// never been read or read nothing.
 	OCRText string `json:"ocr_text"`
-	// People is who is on the photo. It is only filled when the request asked for
-	// it (PhotoDetailOptions.People); nil otherwise, which is not the same as a
-	// photo with nobody on it.
-	People []PhotoPerson `json:"people"`
-	Files  []PhotoFile   `json:"files"`
-	Albums []NamedRef    `json:"albums"`
-	Labels []NamedRef    `json:"labels"`
+	// Faces is the photo's face roll-call. It is only filled when the request
+	// asked for it (PhotoDetailOptions.People); nil otherwise, which is not the
+	// same as a photo with nobody on it.
+	Faces []PhotoPerson `json:"faces"`
+	// People is who was attached to the media item by hand. Unlike Faces it is
+	// always reported, because there is no other endpoint that would mention
+	// those links: they have no box.
+	People []AttachedPerson `json:"people"`
+	Files  []PhotoFile      `json:"files"`
+	Albums []NamedRef       `json:"albums"`
+	Labels []NamedRef       `json:"labels"`
 }
 
 // PhotoDetailOptions selects the optional blocks of GET /photos/{uid}.

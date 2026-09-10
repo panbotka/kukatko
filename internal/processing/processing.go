@@ -107,8 +107,8 @@ const (
 	// wrong.
 	StateFailed State = "failed"
 	// StateSkipped means the step cannot apply to this photo at all — a place for
-	// a photo with no coordinate, face detection or text recognition for a video —
-	// so its absence is not a gap.
+	// a photo with no coordinate, text recognition for a video, a streaming
+	// encode for a still — so its absence is not a gap.
 	StateSkipped State = "skipped"
 	// StatePending means none of the above: the step has never run and nothing is
 	// scheduled.
@@ -178,16 +178,24 @@ type Evidence struct {
 	HLSAt *time.Time
 }
 
-// applies reports whether step can ever produce a result for this photo. A
-// photo with no coordinate has nothing to reverse-geocode, and a video is
-// deliberately outside face detection and text recognition — those read a still,
-// and a video's poster frame is not one. The streaming encode is the mirror
-// image: only a video has anything to encode.
+// applies reports whether step can ever produce a result for this photo.
+//
+// A photo with no coordinate has nothing to reverse-geocode. Text recognition
+// skips a video, in the job and in the backfill query alike. The streaming
+// encode is the mirror image: only a video has anything to encode.
+//
+// Face detection applies to a video, which is not obvious and was reported the
+// other way round until it was measured: the upload pipeline enqueues
+// `face_detect` for every media type and the detector runs on the video's poster
+// frame, faces and all. The report only ever looked truthful because it resolves
+// persisted evidence before this rule — so a video whose faces were already
+// detected read as done, while a freshly uploaded one claimed the step did not
+// apply with its detection job sitting in the queue.
 func (e Evidence) applies(step Step) bool {
 	switch step {
 	case StepPlaces:
 		return e.HasGPS
-	case StepFaceDetect, StepOCR:
+	case StepOCR:
 		return e.MediaType != photos.MediaVideo
 	case StepHLS:
 		return e.MediaType == photos.MediaVideo

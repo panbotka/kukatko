@@ -136,11 +136,15 @@ func buildPhotoAPI(
 		// Setting a photo's location on the map leaves the cached place describing
 		// somewhere else; the `places` job resolves the new coordinate (and clears
 		// the cache when the location was removed).
-		Geocodes:  enqueuer,
-		Audit:     audit.NewStore(db.Pool()),
-		Similar:   similar,
-		Embedder:  embedder,
-		Faces:     faceSvc,
+		Geocodes: enqueuer,
+		Audit:    audit.NewStore(db.Pool()),
+		Similar:  similar,
+		Embedder: embedder,
+		Faces:    faceSvc,
+		// Attaching a person by hand — no box, no detected face — is the only way
+		// to record somebody the detector cannot see: anybody after a video's
+		// poster frame, a profile, a back of a head.
+		Attacher:  people.NewStore(db.Pool()),
 		Favorites: organizeStore,
 		Ratings:   organizeStore,
 		Organizer: organizeStore,

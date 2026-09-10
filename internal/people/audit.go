@@ -178,8 +178,9 @@ func (s *Store) UpdateSubjectAudited(
 
 // DeleteSubjectAudited removes the subject identified by uid and writes entry in
 // the same transaction. entry's TargetUID defaults to uid. It behaves like
-// DeleteSubject otherwise (detaching markers, clearing the faces cache). A missing
-// subject returns ErrSubjectNotFound and writes no audit row.
+// DeleteSubject otherwise (detaching markers, dropping the hand-attached links,
+// clearing the faces cache). A missing subject returns ErrSubjectNotFound and
+// writes no audit row.
 func (s *Store) DeleteSubjectAudited(ctx context.Context, uid string, entry audit.Entry) error {
 	if entry.TargetUID == "" {
 		entry.TargetUID = uid
@@ -189,6 +190,9 @@ func (s *Store) DeleteSubjectAudited(ctx context.Context, uid string, entry audi
 			"UPDATE faces SET subject_uid = NULL, subject_name = '' WHERE subject_uid = $1", uid,
 		); err != nil {
 			return fmt.Errorf("people: clearing faces cache for subject %s: %w", uid, err)
+		}
+		if err := deletePersonMarkersTx(ctx, tx, uid); err != nil {
+			return err
 		}
 		tag, err := tx.Exec(ctx, "DELETE FROM subjects WHERE uid = $1", uid)
 		if err != nil {

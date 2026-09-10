@@ -52,13 +52,19 @@ type MergeResult struct {
 const lockMergePairSQL = "SELECT " + subjectColumns +
 	" FROM subjects WHERE uid = $1 OR uid = $2 ORDER BY uid FOR UPDATE"
 
-// sharedPhotoUIDsSQL lists the photos that carry a marker of both subjects. It
+// sharedPhotoUIDsSQL lists the photos that carry a region of both subjects. It
 // must run before the markers move, while the two subjects are still distinct.
+//
+// Hand-attached links are excluded on both sides because they never become a
+// repeated-marker group: a photo carrying a link to each subject ends up with one
+// link (dedupePersonMarkersSQL drops the source's), and there is nothing for a
+// curator to review. Counting such a photo as shared would promise a finding
+// `GET /duplicate-markers` never reports.
 const sharedPhotoUIDsSQL = `
 SELECT DISTINCT s.photo_uid
 FROM markers s
-JOIN markers k ON k.photo_uid = s.photo_uid AND k.subject_uid = $2
-WHERE s.subject_uid = $1`
+JOIN markers k ON k.photo_uid = s.photo_uid AND k.subject_uid = $2 AND k.type <> 'person'
+WHERE s.subject_uid = $1 AND s.type <> 'person'`
 
 // dropContradictedRejectionsSQL removes the keeper's "this face is not them"
 // rejections for the faces the source is assigned to or has confirmed — the
@@ -76,6 +82,20 @@ WHERE r.subject_uid = $2
 // moveMarkersSQL repoints every marker of the source at the keeper. Nothing is
 // deduplicated: a photo that carried a marker of each subject keeps both.
 const moveMarkersSQL = "UPDATE markers SET subject_uid = $2, updated_at = now() WHERE subject_uid = $1"
+
+// dedupePersonMarkersSQL drops the source's hand-attached links on the photos the
+// keeper is already attached to, and must run before moveMarkersSQL.
+//
+// It is the one exception to "markers are never deduplicated", and it is not a
+// judgement call: a hand-attached link carries no region, so two of them on one
+// photo say the identical thing twice, and migration 0071's partial unique index
+// refuses the second anyway — without this the move would fail outright. Every
+// face and label marker still moves untouched.
+const dedupePersonMarkersSQL = `
+DELETE FROM markers src
+WHERE src.subject_uid = $1 AND src.type = 'person'
+  AND EXISTS (SELECT 1 FROM markers k
+              WHERE k.photo_uid = src.photo_uid AND k.subject_uid = $2 AND k.type = 'person')`
 
 // moveFacesCacheSQL repoints the denormalised faces cache at the keeper. The
 // faces table has no foreign key to subjects (faces are re-created on every
@@ -178,6 +198,12 @@ WHERE uid = $1`
 // (internal/dupmarkers) surfaces for review, which is exactly the tool for
 // deciding whether two boxes on one photo are one mistake or two correct faces.
 // The count of those photos is reported as SharedPhotos.
+//
+// The single exception is a hand-attached link (MarkerPerson), which carries no
+// region: two of them on one photo would be the same sentence written twice, and
+// there is no box for a curator to judge. The source's is dropped and the
+// keeper's kept, so the photo stays attached exactly once and is not counted as
+// a shared photo.
 //
 // Feedback conflicts are resolved in favour of the positive record: an
 // assignment or a confirmation beats a rejection, whichever side each came from.
@@ -302,6 +328,9 @@ func sharedPhotoUIDs(ctx context.Context, tx pgx.Tx, sourceUID, keeperUID string
 // moveAssignments repoints the source's markers and its rows of the faces cache
 // at the keeper, recording both counts on res.
 func moveAssignments(ctx context.Context, tx pgx.Tx, source, keeper Subject, res *MergeResult) error {
+	if _, err := tx.Exec(ctx, dedupePersonMarkersSQL, source.UID, keeper.UID); err != nil {
+		return fmt.Errorf("people: deduplicating hand-attached links of %s: %w", source.UID, err)
+	}
 	tag, err := tx.Exec(ctx, moveMarkersSQL, source.UID, keeper.UID)
 	if err != nil {
 		return fmt.Errorf("people: moving markers of %s to %s: %w", source.UID, keeper.UID, err)

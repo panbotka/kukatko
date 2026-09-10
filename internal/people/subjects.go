@@ -209,13 +209,17 @@ func updateSubjectTx(ctx context.Context, tx pgx.Tx, uid string, upd SubjectUpda
 //
 // The two counts answer different questions and the caller picks the one it means:
 //
-//   - marker_count — how many faces of this subject exist. The figure the face
-//     tools want, since they work one marker at a time.
+//   - marker_count — how many regions of this subject exist. The figure the face
+//     tools want, since they work one marker at a time. The FILTER keeps the
+//     hand-attached links (type = 'person') out of it: they carry no box, so
+//     there is nothing for a face tool to work on, and counting them would
+//     promise faces that do not exist.
 //   - photo_count — on how many photos the subject appears, which is
 //     COUNT(DISTINCT p.uid) because one photo can carry several markers of the
-//     same subject. This is what the people index shows, because clicking a tile
-//     opens listSubjectPhotoUIDsSQL, which is distinct by photo too — a badge is a
-//     promise about the next page.
+//     same subject. Every kind of marker counts here, hand-attached links
+//     included. This is what the people index shows, because clicking a tile
+//     opens listSubjectPhotoUIDsSQL, which counts them too and is distinct by
+//     photo as well — a badge is a promise about the next page.
 //
 // The best_face CTE picks the one face per subject the tile is cropped to. The
 // ordering is the whole rule, so it is worth saying why each term is there:
@@ -254,7 +258,7 @@ WITH best_face AS (
 )
 SELECT s.uid, s.slug, s.name, s.type, s.favorite, s.private, s.notes,
        s.cover_photo_uid, s.birth_year, s.death_year, s.created_at, s.updated_at,
-       COUNT(p.uid) AS marker_count,
+       COUNT(p.uid) FILTER (WHERE m.type <> 'person') AS marker_count,
        COUNT(DISTINCT p.uid) AS photo_count,
        bf.photo_uid, bf.x, bf.y, bf.w, bf.h,
        bf.file_width, bf.file_height, bf.file_orientation
@@ -395,6 +399,9 @@ func (s *Store) DeleteSubject(ctx context.Context, uid string) error {
 		"UPDATE faces SET subject_uid = NULL, subject_name = '' WHERE subject_uid = $1", uid,
 	); err != nil {
 		return fmt.Errorf("people: clearing faces cache for subject %s: %w", uid, err)
+	}
+	if err := deletePersonMarkersTx(ctx, tx, uid); err != nil {
+		return err
 	}
 	tag, err := tx.Exec(ctx, "DELETE FROM subjects WHERE uid = $1", uid)
 	if err != nil {

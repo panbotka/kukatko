@@ -134,7 +134,7 @@ func TestDetail_omitsPeopleWithoutAFaceBackend(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatalf("decode detail: %v", err)
 	}
-	if _, ok := body["people"]; ok {
-		t.Error("people is present with no face backend wired")
+	if _, ok := body["faces"]; ok {
+		t.Error("faces is present with no face backend wired")
 	}
 }

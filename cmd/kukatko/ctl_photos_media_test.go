@@ -58,15 +58,17 @@ func TestCtlPhotosImage_original(t *testing.T) {
 }
 
 // TestCtlPhotosGet_people verifies "read the photo whole" means what it says: the
-// roll-call is asked for by default and the table names who is on the photo,
-// alongside the text the recogniser read in it.
+// roll-call is asked for by default and the table names who is on the photo —
+// the faces and the people attached by hand alike — alongside the text the
+// recogniser read in it.
 func TestCtlPhotosGet_people(t *testing.T) {
 	var gotQuery string
 	configPath := ctlServer(t, func(w http.ResponseWriter, r *http.Request) {
 		gotQuery = r.URL.RawQuery
-		w.Write([]byte(`{"uid":"pht01","title":"Lake","ocr_text":"ZAVŘENO","people":[
+		w.Write([]byte(`{"uid":"pht01","title":"Lake","ocr_text":"ZAVŘENO","faces":[
 			{"subject_uid":"su1","subject_name":"Alice","marker_uid":"mk1","det_score":0.9},
-			{"det_score":0.7}]}`))
+			{"det_score":0.7}],
+			"people":[{"subject_uid":"su2","name":"Bohumil","type":"person","marker_uid":"mk9"}]}`))
 	})
 
 	out, err := runCtl(t, "", "ctl", "--ctl-config", configPath, "photos", "get", "pht01")
@@ -76,7 +78,7 @@ func TestCtlPhotosGet_people(t *testing.T) {
 	if gotQuery != "people=true" {
 		t.Errorf("query = %q, want people=true by default", gotQuery)
 	}
-	for _, want := range []string{"Alice", "1 unassigned", "ZAVŘENO"} {
+	for _, want := range []string{"Alice", "1 unassigned", "Bohumil", "ZAVŘENO"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output does not contain %q:\n%s", want, out)
 		}

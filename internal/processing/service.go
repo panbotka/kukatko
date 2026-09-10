@@ -14,8 +14,8 @@ var (
 	// ErrUnknownStep indicates the requested step is not one of Steps.
 	ErrUnknownStep = errors.New("processing: unknown step")
 	// ErrStepNotApplicable indicates the step cannot apply to this photo at all —
-	// a place for a photo with no coordinate, faces or text for a video — so there
-	// is nothing to schedule.
+	// a place for a photo with no coordinate, text recognition for a video, a
+	// streaming encode for a still — so there is nothing to schedule.
 	ErrStepNotApplicable = errors.New("processing: step does not apply to this photo")
 )
 

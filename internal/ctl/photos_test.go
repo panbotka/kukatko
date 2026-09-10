@@ -370,9 +370,10 @@ func TestClient_GetPhoto_people(t *testing.T) {
 	var gotQuery string
 	client := testClient(t, "kkt_a_b", func(w http.ResponseWriter, r *http.Request) {
 		gotQuery = r.URL.RawQuery
-		w.Write([]byte(`{"uid":"pht01","ocr_text":"ZAVŘENO","people":[
+		w.Write([]byte(`{"uid":"pht01","ocr_text":"ZAVŘENO","faces":[
 			{"subject_uid":"su1","subject_name":"Alice","marker_uid":"mk1","det_score":0.94},
-			{"det_score":0.71}]}`))
+			{"det_score":0.71}],
+			"people":[{"subject_uid":"su2","slug":"bohumil","name":"Bohumil","type":"person","marker_uid":"mk9"}]}`))
 	})
 
 	raw, err := client.GetPhoto(t.Context(), "pht01", PhotoDetailOptions{People: true})
@@ -389,14 +390,17 @@ func TestClient_GetPhoto_people(t *testing.T) {
 	if detail.OCRText != "ZAVŘENO" {
 		t.Errorf("ocr_text = %q, want the recognised text", detail.OCRText)
 	}
-	if len(detail.People) != 2 {
-		t.Fatalf("people = %+v, want two entries", detail.People)
+	if len(detail.Faces) != 2 {
+		t.Fatalf("faces = %+v, want two entries", detail.Faces)
 	}
-	if !detail.People[0].Named() || detail.People[0].SubjectName != "Alice" {
-		t.Errorf("first person = %+v, want Alice named", detail.People[0])
+	if !detail.Faces[0].Named() || detail.Faces[0].SubjectName != "Alice" {
+		t.Errorf("first face = %+v, want Alice named", detail.Faces[0])
 	}
-	if detail.People[1].Named() || detail.People[1].DetScore != 0.71 {
-		t.Errorf("second person = %+v, want an unassigned detection", detail.People[1])
+	if detail.Faces[1].Named() || detail.Faces[1].DetScore != 0.71 {
+		t.Errorf("second face = %+v, want an unassigned detection", detail.Faces[1])
+	}
+	if len(detail.People) != 1 || detail.People[0].Name != "Bohumil" {
+		t.Errorf("people = %+v, want the hand-attached Bohumil", detail.People)
 	}
 }
 

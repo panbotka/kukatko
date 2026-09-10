@@ -363,6 +363,33 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   action `{action, face_index?, marker_uid?, subject_uid?, subject_name?, bbox?}`
   (`create_marker`/`assign_person`/`unassign_person`), auto-creates a subject by name, keeps the `faces`
   cache + `marker.reviewed` consistent (400 validation, 404 missing photo/marker/subject);
+  **attaching a person by hand** (`internal/photoapi/people.go`, the `PeopleAttacher` interface =
+  `people.Store`, **nil → both endpoints answer 503 and the detail reports an empty list**): a person is
+  otherwise linked to a media item only through a marker cut from a **detected** face, which covers less
+  than it looks — face detection on a video only ever sees the **poster frame**, so anybody appearing later
+  in the clip is invisible to it, and on a still the detector misses profiles, backs of heads and faces in a
+  crowd. These two endpoints record who is there anyway, with **no bounding box, no detected face, no
+  embedding**: `POST /photos/{uid}/people` `{subject_uid}` (editor/admin) attaches and
+  `DELETE /photos/{uid}/people/{subject_uid}` (editor/admin) detaches. Both answer **200** with the photo's
+  resulting `{people:[{subject_uid,slug,name,type,marker_uid,attached_at}]}`, ordered by name — the same
+  array `GET /photos/{uid}` carries — so a client renders the new state straight from the reply. **Both are
+  idempotent**: attaching somebody already attached leaves exactly one link and answers the same body as the
+  first attach (not a 409), and detaching somebody who is not attached is a success, because in each case
+  the requested state already holds. 400 for a body naming no subject, **404** for a photo or a subject that
+  does not exist, 403 without write access. Each mutation writes its audit entry (`person.attach` /
+  `person.detach`) **in the same transaction** as the change and schedules the metadata sidecar rewrite
+  afterwards, so the link survives losing the database. Under the hood it is a third kind of `markers` row
+  (`type = 'person'`, migration 0071), which is what makes it behave like any other media of that person for
+  free: the subject's gallery, the `person:` filter and the `person=` scope, the subject's **photo** count,
+  subject merge and the sidecar export all read that table already. A partial unique index on
+  `(photo_uid, subject_uid) WHERE type = 'person'` is what makes attaching idempotent, and a CHECK forbids
+  the row carrying any geometry. It is deliberately **invisible** to everything that needs a face:
+  `GET /photos/{uid}/faces` and the detail's `faces` roll-call, the `faces:` count filter, clustering, the
+  candidate search, the recognition sweep, the review game, outlier detection, repeated-marker detection,
+  the subject **avatar** and the people-index tile (there is no crop to cut), and the subject's
+  `marker_count`. It is never reported as an unassigned face and never enters a nearest-neighbour search.
+  Deleting the subject deletes its links rather than orphaning them: a region survives losing its name as an
+  unassigned box, a bare "this person is here" has nothing left to be;
   `GET /photos/{uid}` full detail additionally carries **membership** `albums`/`labels` (inline detail
   chips, via the `PhotoOrganizer` interface / `organize.Store.AlbumsForPhoto`+`LabelsForPhoto`; a nil
   organizer → empty arrays) and **`uploader`** `{uid,name}` — who uploaded the photo, the name resolved
@@ -387,7 +414,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   looked at and found nothing on — the `processing` block below is what tells those two apart. An opt-in
   parameter was rejected deliberately: for the vast majority of a family archive the key is simply not
   there, and a flag would only be one more thing for a caller to forget;
-  and — **behind the opt-in `?people=true`** — **`people`**: who is on the photo, as
+  and — **behind the opt-in `?people=true`** — **`faces`**: the photo's face roll-call, as
   `[{subject_uid?,subject_name?,marker_uid?,bbox,det_score?}]`, the markers that name a subject followed by
   the detections nobody has named yet (both name fields empty, `det_score` the detector's confidence). It
   shares the exclusive IoU pairing of `GET /photos/{uid}/faces` (`facematch.Service.PhotoPeople`) but does
@@ -398,7 +425,15 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   field is a **pointer**, so an empty list ("we looked, nobody is marked") stays distinguishable from an
   absent one ("you did not ask"); a malformed value or a face backend in trouble is treated as "not asked"
   rather than failing the detail, and with no face backend wired the block never appears. It rides the
-  `PATCH /photos/{uid}` response too (same `writeDetail`), so one edit can read back what it changed;
+  `PATCH /photos/{uid}` response too (same `writeDetail`), so one edit can read back what it changed.
+  ⚠️ The block was called **`people`** until hand-attached people took that name (below); the query
+  parameter is still `people=true`, only the response key changed;
+  and — **always, no opt-in** — **`people`**: who was attached to the media item **by hand**, as
+  `[{subject_uid,slug,name,type,marker_uid,attached_at}]`, ordered by name. See *Attaching a person by
+  hand* below. It is unconditional because it is one indexed read joined to `subjects` — no face list, no
+  IoU pairing, no vector search — and because it is the only place those links surface at all: they have no
+  box, so no face endpoint will ever mention them. It is a plain array, never `null`, and a read failure
+  degrades to an empty one: nobody loses the photo over the list of who is on it;
   **non-destructive edit** (`internal/photoedit` + `edit.go`/`media_edit.go`):
   `GET /photos/{uid}/edit` (authenticated) → the stored `photos.Edit` (crop/rotation 0-90-180-270/brightness/contrast,
   an unedited photo → a neutral edit) and `PUT /photos/{uid}/edit` (editor/admin) writes the edit into
@@ -658,10 +693,16 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   the master playlist advertises whatever was produced) → `done` with `at`; then by the **queue** (`jobs` for this `photo_uid` and
   type) → `running`/`queued`/`failed`, where `failed` covers a dead job **and** one whose last attempt
   errored, carrying its `last_error` as `error`; then `skipped` for a step that cannot apply (`places`
-  without GPS, `face_detect`/`ocr` on a video, `hls_transcode` on anything that is **not** a standalone video, or a
+  without GPS, `ocr` on a video, `hls_transcode` on anything that is **not** a standalone video, or a
   feature switched off instance-wide — no worker handler
   is registered for it); otherwise `pending`. `face_detect` adds `face_count` and `ocr` adds `text_found`
-  on a done step, so a result that legitimately found nothing does not read as a gap. The whole array costs
+  on a done step, so a result that legitimately found nothing does not read as a gap.
+  **`face_detect` applies to a video**, which is easy to get backwards: the upload pipeline enqueues it for
+  every media type and the detector runs on the video's **poster frame**. The report claimed otherwise until
+  it was measured, and the lie was invisible once detection had run (evidence is resolved before the
+  applies-rule) — only a freshly uploaded video showed it, reporting `skipped` with its `face_detect` job
+  sitting in the queue. Text recognition really is skipped for a video, in the job and in the backfill query
+  alike. The whole array costs
   **two round trips** (one for the evidence, one for `jobs.Store.UnfinishedForPhoto`), never an N+1.
   `POST /photos/{uid}/process/{step}` (**maintainer** via `RequireMaintainer` — scheduling background work
   is operations, not curation) enqueues that one step for that one photo through the shared
@@ -1686,7 +1727,8 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `POST /duplicates/merge` (`internal/dupmerge`, `RequireWrite`) `{keeper_uid,member_uids[],dry_run?}` →
   `{keeper_uid,albums_added,labels_added,people_added,metadata_filled[],archived,dry_run}`: in **one
   transaction** it merges the remaining copies into the chosen keeper — a union of albums, labels and people
-  (a subject↔keeper marker without a box, type `label`), fills the missing scalar fields (title/description +
+  (a subject↔keeper marker without a box, type `person` — a face marker's box is pixel-specific to the copy
+  it came from and cannot be transferred), fills the missing scalar fields (title/description +
   per-user rating/favorite/flag; never overwrites an existing value), archives the copies (`archived_at`, originals
   to purge) and writes `photos.merge` to the audit. Idempotent (re-running on a resolved group = a no-op);
   `dry_run:true` only computes a preview without changes. An invalid group → 400, a non-existent keeper → 404,

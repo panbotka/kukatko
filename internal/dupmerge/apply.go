@@ -21,10 +21,16 @@ const (
 		`VALUES ($1, $2, 'manual', 0) ON CONFLICT (photo_uid, label_uid) DO NOTHING`
 	// addMarkerSQL records "this person is present" on the keeper. A face marker's
 	// box is pixel-specific to the copy it came from and cannot be transferred, so
-	// the marker is a box-less ('label' type, zero box via column defaults) tag
-	// whose only job is to associate the subject with the keeper. No faces row
-	// references the new marker, so the denormalised faces cache needs no update.
-	addMarkerSQL   = `INSERT INTO markers (uid, photo_uid, subject_uid, type) VALUES ($1, $2, $3, 'label')`
+	// the marker is a hand-attached link ('person' type, zero box via column
+	// defaults) whose only job is to associate the subject with the keeper — the
+	// same row shape POST /photos/{uid}/people writes. No faces row references the
+	// new marker, so the denormalised faces cache needs no update.
+	//
+	// The ON CONFLICT names migration 0071's partial unique index. The plan never
+	// offers a subject the keeper already carries, so it should never fire; it is
+	// there so a concurrent attach cannot turn a merge into a constraint error.
+	addMarkerSQL = `INSERT INTO markers (uid, photo_uid, subject_uid, type) VALUES ($1, $2, $3, 'person') ` +
+		`ON CONFLICT (photo_uid, subject_uid) WHERE type = 'person' DO NOTHING`
 	addFavoriteSQL = `INSERT INTO user_favorites (user_uid, photo_uid) ` +
 		`VALUES ($1, $2) ON CONFLICT (user_uid, photo_uid) DO NOTHING`
 	setRatingSQL = `INSERT INTO user_ratings (user_uid, photo_uid, rating) VALUES ($1, $2, $3) ` +

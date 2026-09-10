@@ -1007,7 +1007,7 @@ to `## Package map` in `CLAUDE.md`.
   as `failed` (no forever-"running" row); `--dry-run` only **hashes files and looks them up in the catalog**
   (new/duplicate) and **writes nothing at all** — not even `import_runs`), `internal/photoapi/`
   (a read/curation HTTP API over the catalog: `NewAPI(Config{Store,Storage,Thumbnailer,Similar,
-  Embedder,Faces,Favorites,Ratings,RequireAuth,RequireWrite,RequireAdmin,RequireDownload})`
+  Embedder,Faces,Attacher,Favorites,Ratings,RequireAuth,RequireWrite,RequireAdmin,RequireDownload})`
   — **`RequireAdmin` guards only the irreversible trash operations** (`POST /trash/empty`, per-photo
   `POST /photos/{uid}/purge` delete originals, hence tightened from write to admin); archiving
   (reversible soft-delete) stays `RequireWrite`, `GET /trash/info` `RequireAuth` — `RegisterRoutes` mounts `/photos`
@@ -1543,9 +1543,13 @@ to `## Package map` in `CLAUDE.md`.
   `private`, `notes`, `cover_photo_uid` (FK photos `ON DELETE SET NULL`),
   `birth_year`/`death_year` (nullable INTEGER, migration `0051`), timestamps; `markers` =
   `uid PK` (prefix `mk`), `photo_uid` (FK photos `ON DELETE CASCADE`), `subject_uid` (FK
-  subjects `ON DELETE SET NULL`), `type IN (face|label)`, a normalized bbox `x,y,w,h`
+  subjects `ON DELETE SET NULL`), `type IN (face|label|person)`, a normalized bbox `x,y,w,h`
   DOUBLE PRECISION (0..1 display space, like `faces.bbox`), `score`, `invalid`, `reviewed`,
-  timestamps + indexes on `photo_uid`/`subject_uid`; `Store` = `NewStore(pool)` over the shared pgx
+  timestamps + indexes on `photo_uid`/`subject_uid`; `person` (migration `0071`) is a **hand-attached**
+  person — the claim "this subject is in this picture" with **no box, no detected face, no embedding**,
+  for what detection cannot see: anybody after a video's poster frame, a profile, a back of a head. A
+  CHECK forbids it any geometry and a partial UNIQUE on `(photo_uid, subject_uid) WHERE type = 'person'`
+  makes attaching idempotent; `Store` = `NewStore(pool)` over the shared pgx
   pool: **subjects** `CreateSubject`(generates a uid + a **unique slug from name** — `Slugify`
   without diacritics/ASCII, a collision → a numeric suffix `name-2`)/`GetSubjectByUID`/`GetSubjectBySlug`/
   — **two slug functions, and mixing them up is a data bug**: `Slugify` is **total** (a name it cannot
@@ -1601,7 +1605,11 @@ to `## Package map` in `CLAUDE.md`.
   and writes the `subject.merge` audit entry on the same tx. **Three rules decide the disagreements.**
   (1) **Markers are never deduplicated**: a photo that carried a marker of each keeps both, so no region
   and no assignment is thrown away — it simply becomes a repeated-marker group for `internal/dupmarkers`
-  to settle, and their number is reported as `SharedPhotos`. (2) **A positive record beats a rejection**,
+  to settle, and their number is reported as `SharedPhotos`. The single exception is a **hand-attached**
+  link (`type = 'person'`), which carries no region: two of them on one photo would be the same sentence
+  written twice, there is no box for a curator to judge, and migration 0071's partial unique index refuses
+  the second anyway — so `dedupePersonMarkersSQL` drops the source's before the move, and such a photo is
+  not counted as shared. (2) **A positive record beats a rejection**,
   whichever side it came from: the keeper's "not them" for a face the source is assigned to or has
   confirmed is deleted (this runs **before** the assignments move — naming the source is what identifies
   those rows), and a rejection of the source's is not carried onto a face the keeper is assigned to or
@@ -1618,7 +1626,9 @@ to `## Package map` in `CLAUDE.md`.
   repair needs *before* it schedules anything, since over HTTP the browser's download is the undo file and it
   has to be in hand first; a plain, not read-only, tx because the read takes `FOR UPDATE`)/
   `DetachSubject(uid,entry)` (one tx: snapshot the subject + its marker uids +
-  its `(photo_uid,face_index)` face refs, clear the faces cache, delete the subject, audit — returns the
+  its `(photo_uid,face_index)` face refs, clear the faces cache, **delete its hand-attached links** (the
+  undo cannot bring those back — a subject that identifies nobody is not one anybody attaches by hand),
+  delete the subject, audit — returns the
   `SubjectSnapshot` that **is** the undo, since nothing else records the removed links)/
   `RestoreSubject(snap,entry)` (re-inserts the row under its original uid/name/timestamps — only the slug
   may be disambiguated — and re-points its markers and faces; each slug attempt runs in its own audited
@@ -1642,8 +1652,21 @@ to `## Package map` in `CLAUDE.md`.
   `ListMarkersByPhoto`/`AssignSubject`+`UnassignSubject` (in a transaction they update the
   denormalized **faces cache** `marker_uid`/`subject_uid`/`subject_name` via
   `WHERE marker_uid = $1`)/`SetMarkerInvalid`/`SetMarkerReviewed`/`DeleteMarker` (clears the
-  faces cache); sentinels `ErrSubjectNotFound`/`ErrMarkerNotFound`/`ErrSlugExhausted`/
-  `ErrInvalidType`/`ErrInvalidBounds`; **the faces cache is kept consistent** on every change of a
+  faces cache); **hand-attached people** (`attach.go`) `ListPhotoSubjects(photoUID)` → `[]PhotoSubject`
+  (`{SubjectUID,Slug,Name,Type,MarkerUID,AttachedAt}`, ordered by name — the `type = 'person'` markers
+  resolved to their subjects, the array `GET /photos/{uid}` carries) and the two audited mutations
+  `AttachSubjectToPhoto`/`DetachSubjectFromPhoto(photoUID,subjectUID,entry)`, each answering the photo's
+  resulting list. Both run in **one** transaction (`auditedAttachTx`, which stamps the audit target only
+  after the write, because an idempotent re-attach keeps the *existing* marker and that is what the trail
+  must point at), check both ends first (`requireLinkable` → `ErrPhotoNotFound`/`ErrSubjectNotFound`, so a
+  missing end is a 404 rather than a foreign-key violation or a silent no-op) and are idempotent — the
+  attach's `ON CONFLICT` names migration 0071's partial unique index. `deletePersonMarkersTx` runs in all
+  three subject-delete paths (`DeleteSubject`, `DeleteSubjectAudited`, `DetachSubject`): the FK's
+  `ON DELETE SET NULL` is right for a region, which survives losing its name as an unassigned box, and
+  wrong for a bare "this person is here", which would become a row counted forever as a nameless marker
+  nobody can ever name; sentinels `ErrSubjectNotFound`/`ErrMarkerNotFound`/`ErrPhotoNotFound`/
+  `ErrSlugExhausted`/`ErrInvalidType`/`ErrInvalidBounds` (the last also guards a `person` marker's box:
+  `validBounds` mirrors the SQL CHECK, so a caller gets a sentinel instead of a constraint violation); **the faces cache is kept consistent** on every change of a
   marker/subject (delete, rename, assign/unassign); **audited variants**
   `CreateSubjectAudited`/`UpdateSubjectAudited`/`DeleteSubjectAudited` and
   `CreateMarkerAudited`/`AssignSubjectAudited`/`UnassignSubjectAudited`/`SetMarkerInvalidAudited`
@@ -1692,13 +1715,19 @@ to `## Package map` in `CLAUDE.md`.
   `unassign_person` → `face.unassign` (target = marker, details action/photo/subject/face_index);
   `meta` is the actor+request from `photoapi.handleFaceAssign`, empty for the system cluster caller
   (actor NULL);
-  **`PhotoPeople(ctx,photoUID)`** (`people.go`, backing the detail response's opt-in `?people=true` block)
+  **`PhotoPeople(ctx,photoUID)`** (`people.go`, backing the detail response's opt-in `?people=true` block,
+  served under the key **`faces`** since hand-attached people took the name `people`)
   answers the narrower question "who is on this photo?" → `[]PersonOnPhoto`
   (`subject_uid`/`subject_name`/`marker_uid`/`bbox`/`det_score`): every detection with the subject its
   matched marker names, then the face markers no detection claimed (the regions drawn by hand). It shares
   the exclusive pairing with `PhotoFaces` and does **none** of its expensive or mutating work — no
   suggestion search (up to two HNSW queries per face) and no rewriting of the cached face↔marker link —
-  which is what makes it cheap enough to answer a detail request with and keeps a plain read a plain read;
+  which is what makes it cheap enough to answer a detail request with and keeps a plain read a plain read.
+  A **hand-attached** person (`people.MarkerPerson`) appears in neither this nor `PhotoFaces`: every entry
+  they carry is rendered as a rectangle, and such a link has none — it would paint a box at `(0,0,0,0)`.
+  `assignedSubjectNames` skips them too, so they stay *suggestable*: the link exists precisely because the
+  detector never found that person's face, so once detection does produce one they are the likeliest answer
+  for it, not the one candidate to hide;
   **`ClearSurplusLinks(ctx,photoUID)`** re-derives one photo's pairing and clears the
   cached `marker_uid`/`subject_uid`/`subject_name` of every face holding a surplus claim (→ how many rows
   were cleared) — the bulk counterpart of what `PhotoFaces` does when a photo is viewed, for the links
@@ -1707,7 +1736,13 @@ to `## Package map` in `CLAUDE.md`.
   sentinels `ErrInvalidAction`/`ErrMissingBBox`/
   `ErrMissingMarker`/`ErrMissingSubject`, a missing photo/marker/subject → 404 in the HTTP layer
   (`photoapi.FaceService` interface + handlers in `internal/photoapi/faces.go`); tunables in
-  `faces.*` config), `internal/embedjob/`
+  `faces.*` config; **attaching a person by hand** is the deliberate opposite and lives elsewhere —
+  `internal/photoapi/people.go` over the `PeopleAttacher` interface (= `people.Store`), because it needs no
+  face, no box and no vector search: `POST /photos/{uid}/people` and
+  `DELETE /photos/{uid}/people/{subject_uid}` (both `RequireWrite`, both idempotent, both answering the
+  photo's resulting `{people:[…]}`) plus `resolveAttachedPeople`, the unconditional detail block — one
+  indexed read joined to `subjects`, degrading to an empty array when the backend is missing or fails,
+  because nobody should lose the photo over the list of who is on it), `internal/embedjob/`
   (wiring of the image embedding into the queue + embedding queries, all behind the interfaces
   `PhotoStore`/`VectorStore`/`Previewer`/`Enqueuer`+`embedding.Client`: `Service` =
   `New(Config{Photos,Vectors,Client,Previewer,Enqueuer,PreviewSize,OfflineRetryDelay,
@@ -1822,9 +1857,13 @@ to `## Package map` in `CLAUDE.md`.
   many qualities the video was encoded into; the place column is **conditional**
   (`lat IS NOT NULL AND lng IS NOT NULL`) because `photo_places` also holds the coordinate-less marker the
   geocoder writes for a photo with no GPS, and that records that there was nothing to do rather than a place.
-  A step **applies** to a photo or it does not: `places` needs a coordinate, `face_detect`/`ocr` read a still
-  (never a video's poster frame), and `hls_transcode` is the mirror image — only a standalone video has
-  anything to encode, a live photo's motion clip being a hover preview nobody streams.
+  A step **applies** to a photo or it does not: `places` needs a coordinate, `ocr` reads a still (never a
+  video), and `hls_transcode` is the mirror image — only a standalone video has anything to encode, a live
+  photo's motion clip being a hover preview nobody streams. **`face_detect` applies to a video**: the upload
+  pipeline enqueues it for every media type and the detector runs on the video's **poster frame**. The rule
+  said otherwise until it was measured (staging held six faces across two videos), and the lie was invisible
+  once detection had run, because evidence is resolved before the applies-rule — only a freshly uploaded
+  video showed it, reporting `skipped` with its `face_detect` job sitting in the queue.
   `Service` = `New(Config{Evidence,Jobs,Enqueuer,Disabled})` (panics on a nil collaborator):
   `Report(photoUID)` = evidence + `jobs.Store.UnfinishedForPhoto` (**two** round trips, never an N+1) →
   `[]Status{Step,State,At?,Error?,FaceCount?,TextFound?}`; the precedence is landed evidence → the queue →
@@ -3824,7 +3863,9 @@ to `## Package map` in `CLAUDE.md`.
   it computes a `plan`: the union of the copies' albums/labels/people minus what the keeper already has, `pickFill` of the missing scalars
   (title/description from the photo + the actor's per-user favorite/rating/flag, **never overwriting** an existing
   value), and the active copies to archive; it applies raw SQL (`INSERT … ON CONFLICT DO NOTHING`, a person =
-  a box-less `label` marker with a generated `mk…` uid — a new marker has no `faces` row, no cache needed),
+  a box-less `person` marker with a generated `mk…` uid — the same row a hand attach writes, since a face
+  marker's box is pixel-specific to the copy it came from; a new marker has no `faces` row, no cache needed,
+  and the `ON CONFLICT` on migration 0071's partial unique index makes a concurrent attach harmless),
   archives (with an `archived_at IS NULL` guard) and writes `audit.ActionPhotosMerge`. A copy this call actually
   archived also leaves its stack via `photos.LeaveStackTx` in the same tx (skipped for an already-archived
   copy, which left its stack back then), so archiving a copy that happened to be a stack's primary does not

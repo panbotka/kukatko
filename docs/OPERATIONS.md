@@ -505,7 +505,7 @@ Neither one prints a stack trace, the response body, or the token.
 | Command | Meaning |
 | --- | --- |
 | `ctl photos list` | a page of `GET /photos` |
-| `ctl photos get <uid>` | detail `GET /photos/{uid}` (+ albums, labels, `ocr_text` and, by default, who is on it) |
+| `ctl photos get <uid>` | detail `GET /photos/{uid}` (+ albums, labels, `ocr_text`, the hand-attached people and, by default, the face roll-call) |
 | `ctl photos search <query>` | `GET /search?q=…&mode=…` |
 | `ctl photos image <uid>` | saves a rendition to a file and prints the path |
 | `ctl photos edit <uid>` | `PATCH /photos/{uid}` — the whole editable metadata surface (`editor`/`admin`) |
@@ -588,13 +588,15 @@ kukatkoctl photos rebuild embedding pht01h2j3   # → "image_embed: … a forced
 #### `ctl photos get` — the whole photo in one request
 
 Beyond the metadata, `get` reports **`ocr_text`** (the text the recogniser read *in* the photo; the table
-folds it onto one line, the full reading is in `-o json`/`-o llm`) and **who is on the photo**: the named
-subjects followed by a count of the detections nobody has assigned yet. Reading the photo whole is the
-point of the command, so the roll-call is asked for **by default**; on the server it stays opt-in
-(`?people=true`) because assembling it costs a face↔marker match a plain read should not pay for, and
-**`--people=false`** skips it. When the response carries no roll-call at all — you turned it off, or the
-instance has no face backend — the row reads `- (not reported)`, which is **not** the same as "nobody is
-on this photo". The date and the location are printed beside their provenance (`estimated, year, manual` /
+folds it onto one line, the full reading is in `-o json`/`-o llm`) and **who is on the photo**, in two
+rows. **`FACES`** is the face roll-call: the named subjects followed by a count of the detections nobody
+has assigned yet. Reading the photo whole is the point of the command, so it is asked for **by default**;
+on the server it stays opt-in (`?people=true`) because assembling it costs a face↔marker match a plain
+read should not pay for, and **`--people=false`** skips it. When the response carries no roll-call at all
+— you turned it off, or the instance has no face backend — the row reads `- (not reported)`, which is
+**not** the same as "nobody is on this photo". **`PEOPLE`** is the people somebody attached **by hand** —
+no box, no detected face, for what detection cannot see (anybody after a video's poster frame, a profile,
+a back of a head). That one is always reported, so an empty row really does mean nobody was attached. The date and the location are printed beside their provenance (`estimated, year, manual` /
 `50.08750, 14.42111 (estimate)`) so an inferred value never reads like a measured one.
 
 #### `ctl photos image` — actually look at the photo

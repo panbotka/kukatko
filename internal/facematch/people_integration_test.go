@@ -12,7 +12,7 @@ import (
 )
 
 // getDetail fetches a photo's detail with the given query string and returns the
-// raw keys, so a test can tell an absent people block from an empty one.
+// raw keys, so a test can tell an absent faces block from an empty one.
 func (e *env) getDetail(t *testing.T, client *http.Client, photoUID, query string) map[string]json.RawMessage {
 	t.Helper()
 	url := e.server.URL + "/api/v1/photos/" + photoUID + query
@@ -28,20 +28,24 @@ func (e *env) getDetail(t *testing.T, client *http.Client, photoUID, query strin
 	return body
 }
 
-// decodePeople decodes the detail response's people block.
-func decodePeople(t *testing.T, raw json.RawMessage) []facematch.PersonOnPhoto {
+// decodeRollCall decodes the detail response's faces block.
+//
+// The block is keyed `faces`, not `people`: `people` belongs to the subjects
+// somebody attached to the media item by hand, which is a different question
+// (who is here?) with a different shape (no box) and no opt-in.
+func decodeRollCall(t *testing.T, raw json.RawMessage) []facematch.PersonOnPhoto {
 	t.Helper()
 	var onPhoto []facematch.PersonOnPhoto
 	if err := json.Unmarshal(raw, &onPhoto); err != nil {
-		t.Fatalf("decode people %s: %v", raw, err)
+		t.Fatalf("decode faces %s: %v", raw, err)
 	}
 	return onPhoto
 }
 
-// TestDetail_peopleOptIn checks the widened detail payload: with people=true it
-// reports the named subjects and the still-unassigned detections with their
-// detection score, so an agent reads the whole photo in one request instead of
-// having to know that /faces exists.
+// TestDetail_peopleOptIn checks the widened detail payload: with people=true the
+// `faces` block reports the named subjects and the still-unassigned detections
+// with their detection score, so an agent reads the whole photo in one request
+// instead of having to know that /faces exists.
 func TestDetail_peopleOptIn(t *testing.T) {
 	env := newEnv(t)
 	client := env.login(t, "alice-admin", auth.RoleAdmin)
@@ -54,13 +58,13 @@ func TestDetail_peopleOptIn(t *testing.T) {
 	env.saveFace(t, uid, 1, faceVec(1), [4]float64{0.6, 0.6, 0.2, 0.2}, "", "")
 
 	body := env.getDetail(t, client, uid, "?people=true")
-	raw, ok := body["people"]
+	raw, ok := body["faces"]
 	if !ok {
-		t.Fatal("people is absent although the request asked for it")
+		t.Fatal("faces is absent although the request asked for it")
 	}
-	onPhoto := decodePeople(t, raw)
+	onPhoto := decodeRollCall(t, raw)
 	if len(onPhoto) != 2 {
-		t.Fatalf("people = %+v, want the named face and the unassigned one", onPhoto)
+		t.Fatalf("faces = %+v, want the named face and the unassigned one", onPhoto)
 	}
 	named := onPhoto[0]
 	if named.SubjectUID != alice.UID || named.SubjectName != "Alice" || named.MarkerUID != marker.UID {
@@ -72,7 +76,7 @@ func TestDetail_peopleOptIn(t *testing.T) {
 }
 
 // TestDetail_peopleAbsentWithoutTheParameter checks a plain detail read is
-// unchanged: the block does not appear, so the server never pays for the
+// unchanged: the `faces` block does not appear, so the server never pays for the
 // face↔marker match nobody asked for.
 func TestDetail_peopleAbsentWithoutTheParameter(t *testing.T) {
 	env := newEnv(t)
@@ -84,35 +88,35 @@ func TestDetail_peopleAbsentWithoutTheParameter(t *testing.T) {
 	env.createMarker(t, uid, alice.UID, box)
 	env.saveFace(t, uid, 0, faceVec(0), box, "", "")
 
-	if _, ok := env.getDetail(t, client, uid, "")["people"]; ok {
-		t.Error("people is present although nobody asked for it")
+	if _, ok := env.getDetail(t, client, uid, "")["faces"]; ok {
+		t.Error("faces is present although nobody asked for it")
 	}
 	// A malformed value is treated as "not asked" rather than failing the detail:
 	// losing the photo over the list of who is on it would be a bad trade.
-	if _, ok := env.getDetail(t, client, uid, "?people=maybe")["people"]; ok {
-		t.Error("people is present for an unparseable parameter")
+	if _, ok := env.getDetail(t, client, uid, "?people=maybe")["faces"]; ok {
+		t.Error("faces is present for an unparseable parameter")
 	}
 }
 
 // TestDetail_peopleEmptyIsNotAbsent checks a photo with nobody on it answers with
-// an empty list rather than no key at all, so "we looked, nobody is marked" stays
-// distinguishable from "you did not ask".
+// an empty `faces` list rather than no key at all, so "we looked, nobody is
+// marked" stays distinguishable from "you did not ask".
 func TestDetail_peopleEmptyIsNotAbsent(t *testing.T) {
 	env := newEnv(t)
 	client := env.login(t, "alice-admin", auth.RoleAdmin)
 
 	uid := env.makePhoto(t, "nobody")
 	body := env.getDetail(t, client, uid, "?people=true")
-	raw, ok := body["people"]
+	raw, ok := body["faces"]
 	if !ok {
-		t.Fatal("people is absent although the request asked for it")
+		t.Fatal("faces is absent although the request asked for it")
 	}
-	if len(decodePeople(t, raw)) != 0 {
-		t.Errorf("people = %s, want an empty list", raw)
+	if len(decodeRollCall(t, raw)) != 0 {
+		t.Errorf("faces = %s, want an empty list", raw)
 	}
 }
 
-// TestUpdate_returnsPeopleWhenAsked checks the same block rides the PATCH
+// TestUpdate_returnsPeopleWhenAsked checks the same `faces` block rides the PATCH
 // response, so an agent that writes an evaluation can read back the whole photo —
 // who is on it included — without a second request.
 func TestUpdate_returnsPeopleWhenAsked(t *testing.T) {
@@ -133,8 +137,8 @@ func TestUpdate_returnsPeopleWhenAsked(t *testing.T) {
 		t.Fatalf("patch status = %d, want 200", resp.StatusCode)
 	}
 	var body struct {
-		Title  string                    `json:"title"`
-		People []facematch.PersonOnPhoto `json:"people"`
+		Title string                    `json:"title"`
+		Faces []facematch.PersonOnPhoto `json:"faces"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatalf("decode patch response: %v", err)
@@ -142,7 +146,7 @@ func TestUpdate_returnsPeopleWhenAsked(t *testing.T) {
 	if body.Title != "Alice by the lake" {
 		t.Errorf("title = %q, want the edited title", body.Title)
 	}
-	if len(body.People) != 1 || body.People[0].SubjectName != "Alice" {
-		t.Errorf("people = %+v, want Alice", body.People)
+	if len(body.Faces) != 1 || body.Faces[0].SubjectName != "Alice" {
+		t.Errorf("faces = %+v, want Alice", body.Faces)
 	}
 }

@@ -206,7 +206,8 @@ func detailRows(detail PhotoDetail) [][2]string {
 		{"FILES", strconv.Itoa(len(detail.Files))},
 		{"ALBUMS", dash(joinRefs(detail.Albums))},
 		{"LABELS", dash(joinRefs(detail.Labels))},
-		{"PEOPLE", formatPeople(detail.People)},
+		{"FACES", formatFaces(detail.Faces)},
+		{"PEOPLE", formatAttached(detail.People)},
 		{"OCR", dash(elide(collapseLines(detail.OCRText), ocrWidth))},
 	}
 	return rows
@@ -243,13 +244,13 @@ func formatLocation(detail PhotoDetail) string {
 	return value + " (" + detail.LocationSource + ")"
 }
 
-// formatPeople renders who is on the photo: the named subjects first, then how
-// many detections are still waiting for a name.
+// formatFaces renders the photo's face roll-call: the named subjects first, then
+// how many detections are still waiting for a name.
 //
 // A nil slice is not an empty photo: it means the response carried no roll-call
 // at all — the caller passed --people=false, or the instance has no face backend
 // wired — and saying "nobody" there would be a claim nobody made.
-func formatPeople(onPhoto []PhotoPerson) string {
+func formatFaces(onPhoto []PhotoPerson) string {
 	if onPhoto == nil {
 		return "- (not reported)"
 	}
@@ -376,4 +377,15 @@ func elide(value string, width int) string {
 		return value
 	}
 	return string(runes[:width-1]) + "…"
+}
+
+// formatAttached renders the people somebody attached to the media item by hand,
+// by name. It needs no "not reported" case: the block is always present, so an
+// empty list really does mean nobody was attached.
+func formatAttached(attached []AttachedPerson) string {
+	names := make([]string, 0, len(attached))
+	for _, person := range attached {
+		names = append(names, person.Name)
+	}
+	return dash(strings.Join(names, ", "))
 }

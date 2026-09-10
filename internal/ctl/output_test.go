@@ -212,10 +212,11 @@ func TestWritePhotoDetail_provenanceAndPeople(t *testing.T) {
 		LocationSource: "estimate",
 		Artist:         "Josef Novák",
 		OCRText:        "ZAVŘENO\nOtevíráme v pondělí",
-		People: []PhotoPerson{
+		Faces: []PhotoPerson{
 			{SubjectUID: "su1", SubjectName: "Alice"},
 			{DetScore: 0.7},
 		},
+		People: []AttachedPerson{{SubjectUID: "su2", Name: "Bohumil", Type: "person"}},
 	}
 	var buf bytes.Buffer
 	if err := WritePhotoDetail(&buf, detail); err != nil {
@@ -225,7 +226,7 @@ func TestWritePhotoDetail_provenanceAndPeople(t *testing.T) {
 	for _, want := range []string{
 		"estimated", "year", "manual", "kolem roku 1950",
 		"50.08750, 14.42111 (estimate)", "Josef Novák",
-		"Alice, 1 unassigned", "ZAVŘENO Otevíráme v pondělí",
+		"Alice, 1 unassigned", "Bohumil", "ZAVŘENO Otevíráme v pondělí",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("detail output does not contain %q:\n%s", want, out)
@@ -247,7 +248,7 @@ func TestWritePhotoDetail_peopleNotReported(t *testing.T) {
 	}
 
 	buf.Reset()
-	empty := PhotoDetail{Photo: Photo{UID: "pht01"}, People: []PhotoPerson{}}
+	empty := PhotoDetail{Photo: Photo{UID: "pht01"}, Faces: []PhotoPerson{}}
 	if err := WritePhotoDetail(&buf, empty); err != nil {
 		t.Fatalf("WritePhotoDetail returned %v", err)
 	}

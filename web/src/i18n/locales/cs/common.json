@@ -683,6 +683,10 @@
         "login": "Přihlášení přístupovým klíčem",
         "register": "Přidání přístupového klíče"
       },
+      "person": {
+        "attach": "Ruční přiřazení osoby k fotce",
+        "detach": "Odebrání ručně přiřazené osoby"
+      },
       "photo": {
         "archive": "Přesun fotky do koše",
         "edit": "Úprava obrazu fotky",

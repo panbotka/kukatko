@@ -129,6 +129,13 @@ func (s *Store) SnapshotSubject(ctx context.Context, uid string) (SubjectSnapsho
 // are cleared, all in the same transaction as entry's audit row. It returns
 // ErrSubjectNotFound — writing nothing — if no such subject exists.
 //
+// Its hand-attached links (type = 'person') are deleted rather than detached: a
+// region survives losing its name, a bare claim "this person is here" does not.
+// The undo therefore cannot bring them back — the snapshot lists their marker
+// uids but the rows are gone, and RestoreSubject restores only what still
+// exists. A subject that identifies nobody is not one anybody attaches by hand,
+// so in practice there is nothing to lose.
+//
 // This is deliberately not restricted to nameless subjects: the caller decides
 // what to detach (the CLI offers only the nameless ones), and keeping the
 // mechanism general keeps it honest about what it does. Persist the returned
@@ -147,6 +154,9 @@ func (s *Store) DetachSubject(ctx context.Context, uid string, entry audit.Entry
 			"UPDATE faces SET subject_uid = NULL, subject_name = '' WHERE subject_uid = $1", uid,
 		); err != nil {
 			return SubjectSnapshot{}, fmt.Errorf("people: clearing faces cache for subject %s: %w", uid, err)
+		}
+		if err := deletePersonMarkersTx(ctx, tx, uid); err != nil {
+			return SubjectSnapshot{}, err
 		}
 		tag, err := tx.Exec(ctx, "DELETE FROM subjects WHERE uid = $1", uid)
 		if err != nil {

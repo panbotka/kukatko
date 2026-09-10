@@ -31,6 +31,13 @@ type Cover struct {
 // A cover chosen by hand wins over the derived one, and is honoured whatever
 // state its photo is in: it is the user's own explicit answer to what the
 // subject looks like.
+//
+// Every kind of marker is eligible here, hand-attached links included, and that
+// is deliberate: this query elects a *photo*, which the caller draws whole and
+// centre-cropped — unlike the avatar and the people-index tile, which cut the
+// marker's box and therefore accept face markers only. A person known solely
+// from photos somebody attached by hand would otherwise be the one person in the
+// library with no picture at all.
 const subjectCoversSQL = `
 WITH derived AS (
     SELECT DISTINCT ON (m.subject_uid) m.subject_uid, p.uid AS photo_uid, p.file_hash

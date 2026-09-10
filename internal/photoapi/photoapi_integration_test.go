@@ -31,6 +31,7 @@ import (
 	"github.com/panbotka/kukatko/internal/hlsjob"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/organize"
+	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photoapi"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/places"
@@ -166,10 +167,13 @@ func newEnvWithMedia(t *testing.T, media storage.Storage) *env {
 		// rewrite that keeps the on-disk copy of the catalogue current, and — when
 		// the edit moved the photo — the reverse geocode that keeps the cached
 		// place from describing where it used to be.
-		Sidecar:   jobs.NewEnqueuer(jobStore),
-		Geocodes:  jobs.NewEnqueuer(jobStore),
-		Similar:   vectorStore,
-		Embedder:  embedder,
+		Sidecar:  jobs.NewEnqueuer(jobStore),
+		Geocodes: jobs.NewEnqueuer(jobStore),
+		Similar:  vectorStore,
+		Embedder: embedder,
+		// The real people store: attaching somebody by hand is a marker-table fact
+		// (and its audit row), and a fake for it would test the fake.
+		Attacher:  people.NewStore(db.Pool()),
 		Favorites: organizeStore,
 		Ratings:   organizeStore,
 		Organizer: organizeStore,
