@@ -104,6 +104,18 @@ func TestHLS_backfillCandidates(t *testing.T) {
 			videoCount, len(all))
 	}
 
+	// CountVideos answers the other question — "can this library stream anything
+	// at all?" — and counts the archived video too, because archiving hides a
+	// video without removing its renditions or its segments. It is the guard the
+	// integrity check's streaming half asks before it touches the store.
+	total, err := store.CountVideos(ctx)
+	if err != nil {
+		t.Fatalf("CountVideos: %v", err)
+	}
+	if total != 3 {
+		t.Errorf("CountVideos = %d, want 3 (the two live videos and the archived one)", total)
+	}
+
 	// A positive limit caps the page, so a caller can schedule in batches.
 	capped, err := store.ListVideosMissingHLS(ctx, 1)
 	if err != nil {

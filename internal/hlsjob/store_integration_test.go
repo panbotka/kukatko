@@ -6,6 +6,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/hlsjob"
 	"github.com/panbotka/kukatko/internal/photos"
@@ -15,6 +16,15 @@ import (
 // rendition store over it. Unlike the encode tests it needs no ffmpeg: nothing
 // here is encoded, only recorded.
 func storeHarness(t *testing.T) (*hlsjob.Store, photos.Photo) {
+	t.Helper()
+	_, store, photo := storeHarnessDB(t)
+	return store, photo
+}
+
+// storeHarnessDB is storeHarness with the database handle kept, for the tests
+// that also have to reach a table the rendition store does not own — the job
+// queue, whose unfinished rows decide which objects are being written right now.
+func storeHarnessDB(t *testing.T) (*database.DB, *hlsjob.Store, photos.Photo) {
 	t.Helper()
 	db := dbtest.New(t)
 	dbtest.TruncateAll(t, db)
@@ -31,7 +41,7 @@ func storeHarness(t *testing.T) (*hlsjob.Store, photos.Photo) {
 	if err != nil {
 		t.Fatalf("creating the catalogued video: %v", err)
 	}
-	return hlsjob.NewStore(db.Pool()), photo
+	return db, hlsjob.NewStore(db.Pool()), photo
 }
 
 // row returns a valid rendition row for the given photo and rendition name.

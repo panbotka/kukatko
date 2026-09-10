@@ -454,7 +454,10 @@ to `## Package map` in `CLAUDE.md`.
   (uids of all non-archived photos — the basis of the forced full thumbnail/metadata backfill
   `?all=true`) and, next to the HLS listers (`store_hls.go`), `CountActiveVideos()` (a `count(*)` over
   `media_type = 'video' AND archived_at IS NULL`, i.e. what `ListActiveVideoUIDs()` returns — the dry run of
-  the video-scoped poster rebuild `/process/thumbnails?videos=true`), the **orientation-geometry repair** (`store_geometry.go`):
+  the video-scoped poster rebuild `/process/thumbnails?videos=true`) and `CountVideos()` (the same count
+  **without** the archived filter — "can this library stream anything at all?", the guard the integrity check's
+  streaming half asks before it touches the store, archived videos included because archiving removes neither a
+  rendition row nor a segment, only a purge does), the **orientation-geometry repair** (`store_geometry.go`):
   `ListDimensionMismatches()` → `[]DimensionMismatch{UID,StoredWidth,StoredHeight,Orientation,RawWidth,RawHeight}`
   = quarter-turned photos (`file_orientation` 5–8) whose columns hold their own file's dimensions **transposed**,
   i.e. the displayed frame instead of the stored one — the import defect that letterboxed the
@@ -3367,13 +3370,16 @@ to `## Package map` in `CLAUDE.md`.
   `FaceBackfiller` (`facejob.Service`)/`FaceCache` (`ClearSurplusLinks`, `facematch.Service` — which owns
   the face↔marker pairing rules the cache has to agree with)/`OrphanImporter` (optional, nil turns the
   orphan import off)/`PlaceBackfiller` (`MissingPlaces`+`BackfillPlaces`, `placesjob.Service`; optional,
-  **nil = no mapy.com key**, which empties the finding and makes the repair refuse) →
+  **nil = no mapy.com key**, which empties the finding and makes the repair refuse)/
+  `Streaming{Renditions StreamingCatalog, Segments SegmentStore}` (`ListRecorded`+`EncodingHashes`+`Delete`,
+  `hlsjob.Store`; `KeysWithPrefix`+`Stat`+`Delete`, the storage backend — both optional, **a zero `Streaming`
+  = `video.hls.enabled: false`**, which reports nothing and asks the store nothing) →
   unit-testable with fakes without DB/disk/queue; `Service` = `New(Config{...,SampleLimit})`
   (panics on a nil mandatory collaborator; default `SampleLimit` 20); **`Scan(ctx)`** (read-only) returns
   `Report{Photos,FilesInDB,Store,MissingOriginals,OrphanFiles,MissingThumbnails,
   MissingEmbeddings,MissingFaces,MissingPhashes,MissingPlaces,TransposedDimensions,TransposedFaceBoxes,
-  DuplicateFaceMarkers,SidewaysFaceDetections,ImpossibleDates}` — each class is a
-  `Finding{Count,Samples}`
+  DuplicateFaceMarkers,SidewaysFaceDetections,ImpossibleDates,MissingRenditions,OrphanSegments}` — each class is a
+  `Finding{Count,Samples}` (`OrphanSegments` is a `SegmentOrphans`, a `Finding` plus `Bytes`)
   (a count + a limited sample of identifiers); `representativeThumbSize`=`tile_224` is the proxy for the presence of
   thumbnails, an orphan = an original **in the store** with no `photo_files.file_path`, `Report.Clean()`;
   **`Store`** is the inventory of whichever store the instance runs on (`StoreInventory{Kind,Originals,Error}`,
@@ -3389,7 +3395,7 @@ to `## Package map` in `CLAUDE.md`.
   the UI shows the failure instead of a green verdict — a store nobody could read must not pass for an empty one.
   The orphan *import* does abort on that failure, since importing nothing is not success;
   **`Repair(ctx,RepairOptions{Thumbnails,Embeddings,Faces,Phashes,ImportOrphans,Places,Dimensions,FaceMarkers,
-  SidewaysFaces,ImpossibleDates},meta audit.Meta)`** (each opt-in,
+  SidewaysFaces,ImpossibleDates,MissingRenditions,DeleteOrphanSegments},meta audit.Meta)`** (each opt-in,
   idempotent, in a fixed order) → `RepairResult` with the scheduling counts: thumbnails/phashes enqueue
   `thumbnail` jobs (`EnqueueThumbnail`), embeddings/faces call the backfill, the orphan import goes through the
   upload pipeline (a per-orphan failure is counted without aborting); `ErrOrphanImportUnavailable` when the
@@ -3446,7 +3452,36 @@ to `## Package map` in `CLAUDE.md`.
   `UPDATE` is guarded on the finding's own predicate, so a photo re-dated by hand between the scan and the
   repair is skipped (no row changed → no audit entry, not counted) and a re-run is a no-op; every cleared photo
   also gets an `EnqueueSidecar` (when the export is on), so the metadata on disk drops the date too and a
-  restore cannot hand the year 9009 back), `internal/reset/`
+  restore cannot hand the year 9009 back).
+  **Streaming** (`streaming.go`) is the half that knows a video's segments live in the store and its promise of
+  them lives in the catalogue, so the two can rot apart in both directions. `MissingRenditions` is a row of
+  `photo_hls_renditions` whose objects are gone — the state a storage migration that moved the originals but not
+  the segments leaves behind, in which the photo still advertises itself as streamable and every segment request
+  answers 404 — sampled as `<photo_uid>/<rendition>`. Presence is judged by the rendition's **initialisation
+  segment alone** (`hls.InitName`): a player fetches it before any media segment, so a rendition without it
+  cannot be played whatever else survives, and asking about every segment of every clip would be tens of
+  thousands of round trips per scan. The stored playlist is no help — it is never written to the store, it is a
+  column. `OrphanSegments` is the other direction: objects under `hls/` (`hls.Prefix`) that no recorded rendition
+  claims, what a failed or re-run encode leaves, counted per object with their total `Bytes` and **sampled by the
+  `hls/<file_hash>/<rendition>/` prefix** they sit under, because one abandoned encode is thousands of segments
+  under a single prefix and the prefix is what names the video and the quality. Objects belonging to a video with
+  an **unfinished `hls_transcode` job** (`hlsjob.EncodingHashes`: `queued`/`running`/`failed`) are excluded from
+  both the finding and the sweep — `encodeOne` publishes a rendition's objects *before* it writes the row, so for
+  the length of a transcode a healthy job's uploads are indistinguishable from abandoned ones.
+  **Cost**: nothing at all with streaming off or with no video in the catalogue (`photos.CountVideos`, archived
+  included — archiving removes neither rows nor segments, only a purge does), otherwise **one `Stat` per recorded
+  rendition** (one per video under the default single-quality plan), **one prefix listing of `hls/`** for the
+  whole library, and one further `Stat` per orphan object found — so a healthy library pays only the listing.
+  The repairs are asymmetric on purpose. `MissingRenditions` drops the row (`hlsjob.Store.Delete` →
+  `RenditionsDropped`): the clip stops claiming it streams and lands in exactly the state the ordinary encode
+  backfill (`POST /process/hls`) looks for, so recovery is one background job; the original is never touched and
+  stray segments of a partly-surviving rendition are left where they are, becoming orphans the scan reports.
+  `DeleteOrphanSegments` is the **only** part of the integrity check that removes anything from the store, which
+  is why the scan never sweeps on its own and the flag has to be asked for by name; it re-reads the queue rather
+  than trusting the scan (so an encode that started in between is still safe → `OrphanSegmentsKept`), collects
+  every key **before** deleting any (removing entries from under a filesystem walk silently skips half of them)
+  and reports `OrphanSegmentsDeleted`. Both refuse with `ErrStreamingUnavailable` (503 over HTTP) on an instance
+  that does not stream: nothing encodes there, so a dropped row would never be produced again), `internal/reset/`
   (**the guarded library wipe** — what `kukatko maintenance reset` runs and what phase 1 of
   [`docs/MIGRATION_PLAN.md`](MIGRATION_PLAN.md) had nothing to run before: it empties every catalogue table and
   every object the store owns so the library can be re-imported from scratch. The deployment has **no S3 backup**
@@ -3798,6 +3833,15 @@ to `## Package map` in `CLAUDE.md`.
   routes run on the request path, `Has(uid,rendition)` and `HasAny(uid)` — `EXISTS` queries that read no
   column, because the playlist of a two-hour video is tens of kilobytes and fetching it once per fragment
   would be the most expensive part of streaming the clip.
+  `inventory.go` adds what a whole-library reconciliation needs (`internal/maintenance`'s streaming check):
+  `ListRecorded` → `[]Recorded{PhotoUID,Rendition,FileHash}`, every row joined with the hash naming its prefix
+  in the store and **without the playlist column**, since none of it is needed to ask whether the objects are
+  still there; `Delete(uid,rendition)` withdraws one row, reporting whether there was one (a second call is a
+  no-op, so a repair converges); and `EncodingHashes` → the file hashes of the videos with an unfinished
+  `hls_transcode` job (`queued`/`running`/`failed` — `done` is finished and `dead` will never run again).
+  That last one exists because `encodeOne` publishes before it records: between those two moments a healthy
+  job's uploads look exactly like abandoned objects, so anything reasoning about "objects no rendition claims"
+  has to subtract these hashes or it will offer to delete what a job is still writing.
   `BackfillHLS(ctx, all)` (optional `Lister` = `*photos.Store` + `Enqueuer` = `*jobs.Enqueuer`, either
   missing → `ErrBackfillUnavailable`) is the `POST /process/hls` half: it enqueues an `hls_transcode` job per
   video with **no rendition row at all** (`photos.ListVideosMissingHLS`) or, with `all`, per non-archived

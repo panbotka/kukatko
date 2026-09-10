@@ -53,6 +53,17 @@ type RepairOptions struct {
 	// a sideways image: their detection record is cleared and a face_detect job
 	// enqueued, so the fixed job runs on an upright image.
 	SidewaysFaces bool `json:"sideways_faces"`
+	// MissingRenditions drops the streaming rendition rows whose objects are gone,
+	// so a clip stops claiming it streams and the ordinary encode backfill picks it
+	// up again. It removes no media: only the catalogue's false promise.
+	MissingRenditions bool `json:"missing_renditions"`
+	// DeleteOrphanSegments deletes the objects under the streaming prefix that no
+	// recorded rendition claims. It is the one part of the integrity check that
+	// removes anything from the store, which is why the scan only ever reports
+	// those objects and this flag has to be asked for by name. Objects belonging to
+	// a video with an unfinished encode are excluded: that job is still writing
+	// them.
+	DeleteOrphanSegments bool `json:"delete_orphan_segments"`
 	// ImpossibleDates withdraws the capture date of every photo dated to a year no
 	// photograph can have been taken in. The date is cleared, never replaced: the
 	// photo becomes one without a date (findable as `dated:no`), because a made-up
@@ -62,9 +73,23 @@ type RepairOptions struct {
 
 // Any reports whether at least one repair is selected.
 func (o RepairOptions) Any() bool {
-	return o.Thumbnails || o.Embeddings || o.Faces || o.Phashes ||
-		o.ImportOrphans || o.Dimensions || o.FaceMarkers || o.SidewaysFaces ||
-		o.Places || o.ImpossibleDates
+	for _, selected := range o.flags() {
+		if selected {
+			return true
+		}
+	}
+	return false
+}
+
+// flags lists every repair's selection, so "is anything selected?" is one loop a
+// new repair extends by one entry — rather than a boolean chain that grows past
+// the complexity budget every few repairs and has to be rewritten anyway.
+func (o RepairOptions) flags() []bool {
+	return []bool{
+		o.Thumbnails, o.Embeddings, o.Faces, o.Phashes, o.ImportOrphans,
+		o.Places, o.Dimensions, o.FaceMarkers, o.SidewaysFaces,
+		o.ImpossibleDates, o.MissingRenditions, o.DeleteOrphanSegments,
+	}
 }
 
 // RepairResult reports what each selected repair scheduled or did. Enqueue counts
@@ -107,6 +132,18 @@ type RepairResult struct {
 	// detection was cleared and re-detection scheduled. The jobs wait in the queue
 	// while the sidecar's box sleeps, so this counts photos scheduled, not re-detected.
 	SidewaysFacesEnqueued int `json:"sideways_faces_enqueued"`
+	// RenditionsDropped is the number of rendition rows removed because the objects
+	// they promised were not in the store. Each one is a video that has stopped
+	// claiming it streams and is waiting for the encode backfill to produce it
+	// again.
+	RenditionsDropped int `json:"renditions_dropped"`
+	// OrphanSegmentsDeleted is the number of orphan streaming objects removed from
+	// the store by the explicitly requested sweep.
+	OrphanSegmentsDeleted int `json:"orphan_segments_deleted"`
+	// OrphanSegmentsKept is the number of unclaimed objects the sweep deliberately
+	// left alone because a video with an unfinished encode owns their prefix. They
+	// are not orphans, they are a job in flight — deleting them would break it.
+	OrphanSegmentsKept int `json:"orphan_segments_kept"`
 	// ImpossibleDatesCleared is the number of photos whose impossible capture date
 	// was withdrawn. Each one is now a photo without a date, reachable as
 	// `dated:no`, and each cleared date is one audit entry.
@@ -134,6 +171,8 @@ func (s *Service) Repair(ctx context.Context, opts RepairOptions, meta audit.Met
 		s.repairDimensions,
 		s.repairFaceMarkers,
 		s.repairSidewaysFaces,
+		s.repairMissingRenditions,
+		s.repairOrphanSegments,
 		func(ctx context.Context, opts RepairOptions, res *RepairResult) error {
 			return s.repairImpossibleDates(ctx, opts, meta, res)
 		},

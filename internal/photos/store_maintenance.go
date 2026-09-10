@@ -148,10 +148,12 @@ func (s *Store) CountActivePhotos(ctx context.Context) (int, error) {
 }
 
 // queryCount runs a single-value count query, wrapping any failure with the given
-// action for context.
-func (s *Store) queryCount(ctx context.Context, action, query string, args ...any) (int, error) {
+// action for context. It takes no arguments on purpose: every count in this store
+// is over the whole catalogue or a fixed predicate, and a parameterised one would
+// belong with the query that needs it rather than in a shared helper.
+func (s *Store) queryCount(ctx context.Context, action, query string) (int, error) {
 	var count int
-	if err := s.pool.QueryRow(ctx, query, args...).Scan(&count); err != nil {
+	if err := s.pool.QueryRow(ctx, query).Scan(&count); err != nil {
 		return 0, fmt.Errorf("photos: %s: %w", action, err)
 	}
 	return count, nil

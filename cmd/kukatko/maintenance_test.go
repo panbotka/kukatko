@@ -82,6 +82,27 @@ func TestMaintenanceSidecarOrNil(t *testing.T) {
 	}
 }
 
+// TestMaintenanceStreamingOrZero verifies the streaming collaborators are wired
+// only where they mean something: nothing at all with streaming off, and an error
+// rather than a silent downgrade when the backend cannot list a prefix.
+func TestMaintenanceStreamingOrZero(t *testing.T) {
+	t.Parallel()
+
+	off, err := maintenanceStreamingOrZero(&config.Config{}, nil, nil)
+	if err != nil {
+		t.Fatalf("with streaming off: %v", err)
+	}
+	if off.Renditions != nil || off.Segments != nil {
+		t.Errorf("with streaming off the collaborators are %+v, want none", off)
+	}
+
+	cfg := &config.Config{}
+	cfg.Video.HLS.Enabled = true
+	if _, err := maintenanceStreamingOrZero(cfg, nil, nil); err == nil {
+		t.Error("a backend that cannot list a prefix must be an error, not a silent downgrade")
+	}
+}
+
 // TestRepairOptionsFromFlags verifies every repair flag reaches its RepairOptions
 // field, and that no flag means no repair — the CLI's "nothing was asked for".
 func TestRepairOptionsFromFlags(t *testing.T) {
@@ -98,6 +119,12 @@ func TestRepairOptionsFromFlags(t *testing.T) {
 		"face-markers":     func(o maintenance.RepairOptions) bool { return o.FaceMarkers },
 		"sideways-faces":   func(o maintenance.RepairOptions) bool { return o.SidewaysFaces },
 		"impossible-dates": func(o maintenance.RepairOptions) bool { return o.ImpossibleDates },
+		"missing-renditions": func(o maintenance.RepairOptions) bool {
+			return o.MissingRenditions
+		},
+		"delete-orphan-segments": func(o maintenance.RepairOptions) bool {
+			return o.DeleteOrphanSegments
+		},
 	}
 	for flag, selected := range tests {
 		t.Run(flag, func(t *testing.T) {

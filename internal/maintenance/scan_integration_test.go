@@ -21,6 +21,7 @@ import (
 	"github.com/panbotka/kukatko/internal/embedjob"
 	"github.com/panbotka/kukatko/internal/facejob"
 	"github.com/panbotka/kukatko/internal/facematch"
+	"github.com/panbotka/kukatko/internal/hlsjob"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/maintenance"
 	"github.com/panbotka/kukatko/internal/mapy"
@@ -79,17 +80,21 @@ func (stubGeocoder) ReverseGeocode(context.Context, float64, float64) (*mapy.Geo
 // is held as the interface, not as *storage.FS, so the same harness runs over the
 // object-store backend (bucket_integration_test.go).
 type harness struct {
-	db       *database.DB
-	svc      *maintenance.Service
-	photos   *photos.Store
-	vectors  *vectors.Store
-	people   *people.Store
-	storage  storage.Storage
-	thumbs   *thumb.Thumbnailer
-	jobs     *jobs.Store
-	thumbjob *thumbjob.Service
-	places   *places.Store
-	root     string
+	db  *database.DB
+	svc *maintenance.Service
+	// cfg is the configuration svc was built from, so a test can rebuild the
+	// service with one collaborator removed.
+	cfg        maintenance.Config
+	renditions *hlsjob.Store
+	photos     *photos.Store
+	vectors    *vectors.Store
+	people     *people.Store
+	storage    storage.Storage
+	thumbs     *thumb.Thumbnailer
+	jobs       *jobs.Store
+	thumbjob   *thumbjob.Service
+	places     *places.Store
+	root       string
 }
 
 // newHarness wires a maintenance service over a real database, a temp originals
@@ -140,7 +145,12 @@ func newHarnessOver(t *testing.T, store storage.Storage, kind maintenance.StoreK
 		Photos: photoStore, Places: placeStore, Geocoder: stubGeocoder{}, Enqueuer: enqueuer,
 	})
 
-	svc := maintenance.New(maintenance.Config{
+	segments, ok := store.(maintenance.SegmentStore)
+	if !ok {
+		t.Fatalf("storage backend %T cannot list a key prefix", store)
+	}
+	renditions := hlsjob.NewStore(db.Pool())
+	cfg := maintenance.Config{
 		Photos:    photoStore,
 		Vectors:   vectorStore,
 		Originals: store,
@@ -152,17 +162,28 @@ func newHarnessOver(t *testing.T, store storage.Storage, kind maintenance.StoreK
 		FaceCache: facematch.New(facematch.Config{
 			Photos: photoStore, Faces: vectorStore, People: peopleStore,
 		}),
-		Places:  placesSvc,
-		Sidecar: enqueuer,
-	})
+		Places:    placesSvc,
+		Sidecar:   enqueuer,
+		Streaming: maintenance.Streaming{Renditions: renditions, Segments: segments},
+	}
+	svc := maintenance.New(cfg)
 	tj := thumbjob.New(thumbjob.Config{
 		Photos: photoStore, Thumbnailer: thumbnailer, Decoder: thumbjob.NewStorageDecoder(store),
 	})
 	return &harness{
-		db: db, svc: svc, photos: photoStore, vectors: vectorStore, people: peopleStore,
+		db: db, svc: svc, cfg: cfg, photos: photoStore, vectors: vectorStore, people: peopleStore,
 		storage: store, thumbs: thumbnailer, jobs: jobStore, thumbjob: tj,
-		places: placeStore,
+		places: placeStore, renditions: renditions,
 	}
+}
+
+// serviceWithoutStreaming returns a second service over the same collaborators
+// with the streaming ones removed — the shape an instance running
+// `video.hls.enabled: false` is wired with.
+func (h *harness) serviceWithoutStreaming() *maintenance.Service {
+	cfg := h.cfg
+	cfg.Streaming = maintenance.Streaming{}
+	return maintenance.New(cfg)
 }
 
 // tinyJPEG encodes a 32×32 solid-colour JPEG; distinct seeds yield distinct bytes

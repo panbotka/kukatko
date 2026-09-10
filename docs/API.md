@@ -1628,7 +1628,8 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   the library's integrity check & repairs. `GET /maintenance/scan` → `Report` (counts + samples:
   `missing_originals`/`orphan_files`/`missing_thumbnails`/`missing_embeddings`/`missing_faces`/
   `missing_phashes`/`missing_places`/`transposed_dimensions`/`transposed_face_boxes`/
-  `duplicate_face_markers`/`sideways_face_detections`/`impossible_dates` + the totals
+  `duplicate_face_markers`/`sideways_face_detections`/`impossible_dates`/`missing_renditions`/
+  `orphan_segments` + the totals
   `photos`/`files_in_db`/`store`). **`store`** is the inventory of whichever store the instance keeps its
   originals in — `{kind,originals,error?}`, `kind` being `disk` (the local originals root) or `object` (the
   bucket) — so an `r2` instance reports what the bucket holds instead of the empty local root. `error` is set
@@ -1636,15 +1637,17 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   instead of a clean verdict.
   `POST /maintenance/repair`
   `{thumbnails,embeddings,faces,phashes,import_orphans,places,dimensions,face_markers,sideways_faces,`
-  `impossible_dates}`
+  `impossible_dates,missing_renditions,delete_orphan_segments}`
   (each opt-in)
   → `RepairResult`
   with scheduling counts (`*_enqueued` + `orphans_imported/skipped/failed` +
   `dimensions_fixed`/`face_boxes_fixed`/`face_boxes_skipped`/`face_links_cleared`/
-  `sideways_faces_enqueued`/`impossible_dates_cleared`);
+  `sideways_faces_enqueued`/`impossible_dates_cleared`/`renditions_dropped`/
+  `orphan_segments_deleted`/`orphan_segments_kept`);
   `DisallowUnknownFields`, an empty selection →
   400, an orphan import without an importer → 503 (`ErrOrphanImportUnavailable`), a place backfill with no
-  mapy.com key → 503 (`ErrPlaceBackfillUnavailable`). The repairs are idempotent and
+  mapy.com key → 503 (`ErrPlaceBackfillUnavailable`), a streaming repair on an instance with
+  `video.hls.enabled: false` → 503 (`ErrStreamingUnavailable`). The repairs are idempotent and
   run through the job queue (thumbnail/pHash via the `thumbnail` job, embeddings/faces backfill), and **never
   delete originals**. `dimensions` is the exception that writes the catalogue directly, in two halves. It
   rewrites the pixel dimensions of quarter-turned photos whose columns hold the **displayed** frame instead of
@@ -1693,7 +1696,27 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   **audit entry written in the clear's own transaction**, carrying the acting maintainer, the discarded date,
   its provenance and the file name. Every write is guarded on the finding's own predicate, so a photo re-dated
   by hand in between is skipped and a re-run is a no-op; a cleared photo also gets a `sidecar` job (when the
-  sidecar export is on), so the metadata on disk drops the date too and a restore cannot hand it back. `POST /maintenance/audit/purge` `{older_than_days}` (a positive integer of days,
+  sidecar export is on), so the metadata on disk drops the date too and a restore cannot hand it back.
+  `missing_renditions` and `orphan_segments` are the streaming half, the two ways a video's segments and the
+  catalogue's promise of them rot apart. `missing_renditions` (sampled as `<photo_uid>/<rendition>`) counts the
+  `photo_hls_renditions` rows whose objects are not in the store — what a storage migration that moved the
+  originals but not the segments leaves behind, in which the photo still reports itself as streamable and every
+  segment request answers 404. Presence is judged by the rendition's **initialisation segment alone**: a player
+  fetches it before any media segment, so a rendition without it cannot be played whatever else survives, and
+  asking about every segment of every clip would be tens of thousands of store calls per scan. The repair
+  (`missing_renditions`) **drops the row** (`renditions_dropped`), which is the safe half: the clip stops
+  claiming it streams and lands in exactly the state `POST /process/hls` looks for, no media is deleted, and
+  stray segments of a partly-surviving rendition simply become orphans the next scan reports. `orphan_segments`
+  is the other direction — objects under `hls/` that no recorded rendition claims, what a failed or re-run
+  encode leaves — reported as `{count,samples,bytes}`, sampled by the `hls/<file_hash>/<rendition>/` prefix
+  they sit under rather than by file name, since one abandoned encode is thousands of segments under a single
+  prefix. They are **reported, never swept**, unless `delete_orphan_segments` asks by name: it is the only
+  repair that removes anything from the store. Objects belonging to a video with an unfinished `hls_transcode`
+  job are excluded from both the finding and the sweep (`orphan_segments_kept`) — the encode publishes a
+  rendition's objects **before** it writes the row describing them, so during a transcode a healthy job's
+  uploads are indistinguishable from abandoned ones. The whole check costs nothing on an instance that does not
+  stream or holds no video; otherwise one `Stat` per recorded rendition plus one prefix listing of `hls/` for
+  the library, and one further `Stat` per orphan found. `POST /maintenance/audit/purge` `{older_than_days}` (a positive integer of days,
   1..36500) deletes audit entries older than `now − older_than_days` (`audit.Store.PurgeOlderThan`,
   a single `DELETE` via `idx_audit_log_created_at`) → `{deleted,older_than_days,cutoff}`;
   a missing/non-positive/excessive window or an unknown field → 400, an unwired audit store → 503. The

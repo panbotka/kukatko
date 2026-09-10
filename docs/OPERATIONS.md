@@ -57,7 +57,7 @@ configuration key both here **and** into `config.example.yaml`.
   identifies nobody, the importer-minted catch-all; dry run by default, reversible via `--undo`; see below) and
   `maintenance repair` with the flags
   `--thumbnails`/`--embeddings`/`--faces`/`--phashes`/`--import-orphans`/`--places`/`--dimensions`/
-  `--face-markers`/`--sideways-faces`/`--impossible-dates`
+  `--face-markers`/`--sideways-faces`/`--impossible-dates`/`--missing-renditions`/`--delete-orphan-segments`
   (each opt-in; thumbnails/phashes enqueue `thumbnail` jobs drained by a running server's worker,
   embeddings/faces backfill, orphan import synchronously via the upload pipeline; `--dimensions` writes the
   catalogue directly — it rewrites the pixel dimensions of quarter-turned photos whose columns hold the
@@ -115,7 +115,34 @@ configuration key both here **and** into `config.example.yaml`.
   samples), each write is guarded on that same predicate — a photo re-dated by hand in between is skipped —
   and each cleared photo gets a `sidecar` job — when `sidecar.enabled` — so the metadata on disk drops the
   date too. It prints
-  `impossible dates cleared=N`, and a re-run is a no-op;
+  `impossible dates cleared=N`, and a re-run is a no-op.
+  `--missing-renditions` and `--delete-orphan-segments` are the two **streaming** repairs, and the scan grew the
+  two lines that are their dry run: `missing renditions` (rows of `photo_hls_renditions` whose objects are not in
+  the store, sampled as `<photo_uid>/<rendition>`) and `orphan segments` (objects under `hls/` that no recorded
+  rendition claims, counted with the storage they occupy and sampled by the `hls/<file_hash>/<rendition>/` prefix
+  they sit under — one abandoned encode is thousands of segments under a single prefix). A missing rendition is
+  what a storage migration that moved the originals but not the segments leaves behind: the photo still
+  advertises itself as streamable and every segment request answers 404. Presence is judged by the rendition's
+  **initialisation segment alone** — a player fetches it before any media segment, so a rendition without it
+  cannot be played whatever else survives — and the playlist is no evidence at all, being a database column
+  rather than an object. `--missing-renditions` **drops the row** (`renditions dropped=N`): the clip stops
+  claiming it streams and lands in exactly the state `POST /api/v1/process/hls` looks for, so recovery is one
+  background job. It removes no media — not the original, and not the stray segments of a partly-surviving
+  rendition, which simply become orphans the next scan reports.
+  `--delete-orphan-segments` is the **only repair that deletes anything from the store**, which is why the scan
+  never sweeps on its own and the flag has to be asked for by name. It skips every object belonging to a video
+  with an unfinished `hls_transcode` job (`orphan segments deleted=N kept=M`): the encode publishes a rendition's
+  objects **before** it writes the row describing them, so during a transcode a healthy job's uploads are
+  indistinguishable from abandoned ones and deleting them would break the job. The queue is re-read at repair
+  time, not taken from the scan, so an encode that started in between is still safe. Both refuse on an instance
+  with `video.hls.enabled: false` (503 over HTTP): nothing encodes there, so a dropped row would never be
+  produced again.
+  **Cost of the streaming check:** with streaming off, or with no video in the catalogue (archived ones counted —
+  archiving removes neither rows nor segments), it makes **no query and no store call at all**. Otherwise it adds
+  **one `Stat` per recorded rendition** — one per video with the default single-quality plan — plus **one prefix
+  listing of `hls/`** for the whole library, and one further `Stat` per orphan object found. A healthy library
+  therefore pays one listing and one object check per video, and only a library with rot pays in proportion to
+  how much of it there is;
   a no-op without any flag;
   the **retention purge of old audit logs** is separate, only via HTTP/UI, not the CLI — the maintainer calls
   `POST /api/v1/maintenance/audit/purge` `{older_than_days}` (`internal/maintenanceapi`), which deletes audit

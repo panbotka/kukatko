@@ -127,7 +127,8 @@ func (a *API) handleScan(w http.ResponseWriter, r *http.Request) {
 // The acting maintainer's provenance travels with the request, so a repair that
 // writes the catalogue (withdrawing an impossible capture date) audits who asked.
 // It answers 503 when maintenance is not configured or a selected repair needs a
-// feature this instance does not have (orphan import, place geocoding), 400 for a
+// feature this instance does not have (orphan import, place geocoding, video
+// streaming), 400 for a
 // malformed body or when no repair is selected, and 500 when a repair fails.
 func (a *API) handleRepair(w http.ResponseWriter, r *http.Request) {
 	if a.service == nil {
@@ -148,7 +149,7 @@ func (a *API) handleRepair(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
-// writeRepairError maps a repair failure onto its response: the two
+// writeRepairError maps a repair failure onto its response: the three
 // "this instance has no such feature" sentinels answer 503 with what is missing,
 // anything else is an opaque 500.
 func writeRepairError(w http.ResponseWriter, err error) {
@@ -157,6 +158,8 @@ func writeRepairError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusServiceUnavailable, "orphan import not configured")
 	case errors.Is(err, maintenance.ErrPlaceBackfillUnavailable):
 		writeError(w, http.StatusServiceUnavailable, "place geocoding not configured")
+	case errors.Is(err, maintenance.ErrStreamingUnavailable):
+		writeError(w, http.StatusServiceUnavailable, "video streaming not configured")
 	default:
 		writeError(w, http.StatusInternalServerError, "repair failed")
 	}

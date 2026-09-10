@@ -100,6 +100,24 @@ type Report struct {
 	// coordinate fix. A photo whose detection is recorded against the display frame
 	// never appears here, so the count goes to zero and stays there.
 	SidewaysFaceDetections Finding `json:"sideways_face_detections"`
+	// MissingRenditions are streaming renditions the catalogue records whose
+	// objects are not in the store, sampled as <photo_uid>/<rendition>. The row is
+	// a promise that a player can fetch the segments it describes, so while it
+	// stands the clip advertises itself as streamable and every segment request
+	// answers 404 — which is exactly the state a storage migration that moved the
+	// originals but not the segments leaves behind. Presence is judged by the
+	// rendition's initialisation segment, the one object a player fetches before
+	// any other. Listing them is the dry run of
+	// `maintenance repair --missing-renditions`.
+	MissingRenditions Finding `json:"missing_renditions"`
+	// OrphanSegments are objects under the streaming prefix that belong to no
+	// recorded rendition: what a failed or re-run encode left behind, which nothing
+	// will ever serve and nothing else will ever clean up. Objects belonging to a
+	// video the queue is encoding right now are excluded — during a transcode they
+	// are indistinguishable from abandoned ones — so a scan taken mid-encode does
+	// not report the encode. They are reported, never swept, unless
+	// `maintenance repair --delete-orphan-segments` explicitly asks.
+	OrphanSegments SegmentOrphans `json:"orphan_segments"`
 	// ImpossibleDates are photos whose recorded capture date is a year no
 	// photograph can have been taken in — before 1826 or further ahead than next
 	// year. They come from the file-name date fallback believing a long digit run
@@ -120,7 +138,7 @@ func (r Report) findings() []Finding {
 		r.MissingOriginals, r.OrphanFiles, r.MissingThumbnails, r.MissingEmbeddings,
 		r.MissingFaces, r.MissingPhashes, r.MissingPlaces, r.TransposedDimensions,
 		r.TransposedFaceBoxes, r.DuplicateFaceMarkers, r.SidewaysFaceDetections,
-		r.ImpossibleDates,
+		r.ImpossibleDates, r.MissingRenditions, r.OrphanSegments.Finding,
 	}
 }
 

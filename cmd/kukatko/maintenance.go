@@ -12,6 +12,7 @@ import (
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/embedjob"
 	"github.com/panbotka/kukatko/internal/facejob"
+	"github.com/panbotka/kukatko/internal/hlsjob"
 	"github.com/panbotka/kukatko/internal/ingest"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/maintenance"
@@ -161,6 +162,10 @@ func buildMaintenanceService(
 	if err != nil {
 		return nil, err
 	}
+	streaming, err := maintenanceStreamingOrZero(cfg, db, store)
+	if err != nil {
+		return nil, err
+	}
 	return maintenance.New(maintenance.Config{
 		Photos:    photoStore,
 		Vectors:   vectors.NewStore(db.Pool()),
@@ -174,7 +179,37 @@ func buildMaintenanceService(
 		Importer:  orphanImporter{storage: store, ingest: ingestSvc},
 		Places:    maintenancePlaceBackfillerOrNil(placesSvc),
 		Sidecar:   maintenanceSidecarOrNil(cfg, enqueuer),
+		Streaming: streaming,
 	}), nil
+}
+
+// maintenanceStreamingOrZero returns the collaborators the integrity check's
+// streaming half needs — the rendition catalogue and the store its segments live
+// in — or a zero Streaming when `video.hls.enabled` is off.
+//
+// The zero value is not a degraded mode but the correct one: with streaming off
+// nothing encodes, so a rendition row dropped as broken would never be produced
+// again and an object swept as orphaned would never be rewritten. The scan then
+// reports nothing and, just as importantly, asks the store nothing.
+//
+// A backend that cannot list one prefix is an error rather than a silent
+// downgrade, for the same reason the originals scan insists on a key listing: a
+// check that quietly reconciles against nothing reports a clean library.
+func maintenanceStreamingOrZero(
+	cfg *config.Config, db *database.DB, store storage.Storage,
+) (maintenance.Streaming, error) {
+	if !cfg.Video.HLS.Enabled {
+		return maintenance.Streaming{}, nil
+	}
+	segments, ok := store.(maintenance.SegmentStore)
+	if !ok {
+		return maintenance.Streaming{}, fmt.Errorf(
+			"storage backend %q cannot list a key prefix", cfg.Storage.Backend)
+	}
+	return maintenance.Streaming{
+		Renditions: hlsjob.NewStore(db.Pool()),
+		Segments:   segments,
+	}, nil
 }
 
 // maintenanceSidecarOrNil returns the sidecar scheduler the repairs follow a

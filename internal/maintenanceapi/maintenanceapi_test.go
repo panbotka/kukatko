@@ -177,6 +177,19 @@ func TestRepairPlacesUnavailable(t *testing.T) {
 	}
 }
 
+// TestRepairStreamingUnavailable verifies ErrStreamingUnavailable maps to 503:
+// asking an instance with `video.hls.enabled: false` to reconcile its streaming
+// state is a "this instance cannot do that" — nothing there encodes, so a
+// dropped row would never be produced again.
+func TestRepairStreamingUnavailable(t *testing.T) {
+	t.Parallel()
+	svc := &fakeService{repairErr: maintenance.ErrStreamingUnavailable}
+	rec := do(newRouter(svc), http.MethodPost, "/maintenance/repair", `{"missing_renditions":true}`)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503", rec.Code)
+	}
+}
+
 // TestRepairUnavailable verifies a nil service answers 503.
 func TestRepairUnavailable(t *testing.T) {
 	t.Parallel()

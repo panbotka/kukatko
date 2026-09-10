@@ -36,9 +36,13 @@ type fakePhotos struct {
 	cleared      []string
 	clearEntries []audit.Entry
 	clearNoop    bool
+	// videos is how many videos the catalogue holds, the guard the streaming half
+	// of the scan asks before it touches the store at all.
+	videos int
 }
 
 func (f *fakePhotos) CountPhotos(context.Context) (int, error) { return f.count, nil }
+func (f *fakePhotos) CountVideos(context.Context) (int, error) { return f.videos, nil }
 func (f *fakePhotos) ListPrimaryFiles(context.Context) ([]photos.PrimaryFile, error) {
 	return f.primary, nil
 }

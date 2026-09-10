@@ -66,3 +66,20 @@ const countActiveVideosSQL = `SELECT count(*) FROM photos WHERE media_type = 'vi
 func (s *Store) CountActiveVideos(ctx context.Context) (int, error) {
 	return s.queryCount(ctx, "counting active videos", countActiveVideosSQL)
 }
+
+// countVideosSQL counts every video the catalogue holds, archived ones included.
+const countVideosSQL = `SELECT count(*) FROM photos WHERE media_type = 'video'`
+
+// CountVideos returns how many videos the catalogue holds in any state, archived
+// included. It is the question "can this library stream anything at all?", asked
+// before the integrity scan pays for its streaming checks: an instance with no
+// videos has no renditions to verify and no segments to reconcile, so it must not
+// be charged a store listing to be told so.
+//
+// Archived videos are counted deliberately, unlike CountActiveVideos: archiving
+// hides a video, it does not remove its rendition rows or its segments — only a
+// purge does that — so a library whose videos are all archived still has a
+// streaming state worth checking.
+func (s *Store) CountVideos(ctx context.Context) (int, error) {
+	return s.queryCount(ctx, "counting videos", countVideosSQL)
+}

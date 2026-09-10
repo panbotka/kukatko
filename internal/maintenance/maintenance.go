@@ -17,6 +17,12 @@
 // originals root on a filesystem instance, the bucket on an object-store one. The
 // scan reads it through StoreScanner and says in its report which one it read, so
 // an object-store library is never reconciled against an empty local directory.
+//
+// A video's streaming segments are reconciled the same way and in both directions
+// (streaming.go): a rendition the catalogue promises whose objects are gone, and
+// objects under the streaming prefix no rendition claims. That half costs nothing
+// on an instance that does not stream or holds no video, and it deletes objects
+// only when a repair asks for the sweep by name.
 package maintenance
 
 import (
@@ -46,6 +52,9 @@ const representativeThumbSize = "tile_224"
 type PhotoCatalog interface {
 	// CountPhotos returns the total number of catalogued photos.
 	CountPhotos(ctx context.Context) (int, error)
+	// CountVideos returns how many videos the catalogue holds in any state,
+	// archived included — whether this library can stream anything at all.
+	CountVideos(ctx context.Context) (int, error)
 	// ListPrimaryFiles returns every photo's primary original file reference.
 	ListPrimaryFiles(ctx context.Context) ([]photos.PrimaryFile, error)
 	// ListFilePaths returns the storage key of every catalogued file.
@@ -194,8 +203,9 @@ type OrphanImporter interface {
 
 // Config bundles the collaborators and tunables of a Service. Every interface is
 // required except OrphanImporter (nil disables orphan import), Places (nil
-// disables the reverse-geocode backfill) and Sidecar (nil means the sidecar
-// export is off). A non-positive SampleLimit uses defaultSampleLimit.
+// disables the reverse-geocode backfill), Sidecar (nil means the sidecar export
+// is off) and Streaming (a zero value means this instance does not stream). A
+// non-positive SampleLimit uses defaultSampleLimit.
 type Config struct {
 	Photos      PhotoCatalog
 	Vectors     VectorCatalog
@@ -209,6 +219,7 @@ type Config struct {
 	Importer    OrphanImporter
 	Places      PlaceBackfiller
 	Sidecar     SidecarScheduler
+	Streaming   Streaming
 	SampleLimit int
 }
 
@@ -227,6 +238,7 @@ type Service struct {
 	importer    OrphanImporter
 	places      PlaceBackfiller
 	sidecar     SidecarScheduler
+	streaming   Streaming
 	sampleLimit int
 }
 
@@ -254,14 +266,16 @@ func New(cfg Config) *Service {
 		importer:    cfg.Importer,
 		places:      cfg.Places,
 		sidecar:     cfg.Sidecar,
+		streaming:   cfg.Streaming,
 		sampleLimit: limit,
 	}
 }
 
 // missingCollaborator reports whether any collaborator a scan needs is left nil in
-// cfg. OrphanImporter, PlaceBackfiller and SidecarScheduler are deliberately
-// absent: they are the optional dependencies (nil disables the orphan-import and
-// reverse-geocode repairs, and the sidecar rewrite that follows a repair).
+// cfg. OrphanImporter, PlaceBackfiller, SidecarScheduler and Streaming are
+// deliberately absent: they are the optional dependencies (nil disables the
+// orphan-import and reverse-geocode repairs, the sidecar rewrite that follows a
+// repair, and the streaming check on an instance that does not stream).
 func missingCollaborator(cfg Config) bool {
 	required := []any{
 		cfg.Photos, cfg.Vectors, cfg.Originals, cfg.Store, cfg.Thumbs,
@@ -284,6 +298,9 @@ func (s *Service) Scan(ctx context.Context) (Report, error) {
 		return Report{}, err
 	}
 	if err := s.scanFindings(ctx, &report); err != nil {
+		return Report{}, err
+	}
+	if err := s.scanStreaming(ctx, &report); err != nil {
 		return Report{}, err
 	}
 	return report, nil

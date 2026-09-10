@@ -81,6 +81,14 @@ func newMaintenanceRepairCmd() *cobra.Command {
 		"re-detect quarter-turned photos whose face detection ran on a sideways image "+
 			"(clears the detection record and enqueues face_detect); "+
 			"'maintenance scan' is its dry run")
+	cmd.Flags().Bool("missing-renditions", false,
+		"drop the streaming rendition rows whose segments are gone, so those clips stop "+
+			"claiming they stream and the encode backfill produces them again; "+
+			"'maintenance scan' is its dry run")
+	cmd.Flags().Bool("delete-orphan-segments", false,
+		"DELETE the streaming objects no recorded rendition claims; the only repair that "+
+			"removes anything from the store, and it skips every video with an unfinished "+
+			"encode job because that job is still writing them")
 	cmd.Flags().Bool("impossible-dates", false,
 		"withdraw the capture date of photos dated to a year no photograph can have "+
 			"been taken in; the date is cleared, never replaced, and the photos become "+
@@ -210,6 +218,20 @@ func printScanReport(cmd *cobra.Command, report maintenance.Report) {
 	if len(report.DuplicateFaceMarkers.Samples) > 0 {
 		cmd.Printf("    e.g. %v\n", report.DuplicateFaceMarkers.Samples)
 	}
+	// The dry run of `repair --missing-renditions`: rendition rows the store cannot
+	// back, sampled as <photo_uid>/<rendition>. Always 0 with streaming off.
+	cmd.Printf("  missing renditions: %d\n", report.MissingRenditions.Count)
+	if len(report.MissingRenditions.Samples) > 0 {
+		cmd.Printf("    e.g. %v\n", report.MissingRenditions.Samples)
+	}
+	// Reported, never swept on its own: `repair --delete-orphan-segments` has to
+	// ask. Sampled by the rendition prefix the objects sit under, since one
+	// abandoned encode is thousands of segments under a single prefix.
+	cmd.Printf("  orphan segments:    %d (%s)\n",
+		report.OrphanSegments.Count, humanBytes(report.OrphanSegments.Bytes))
+	if len(report.OrphanSegments.Samples) > 0 {
+		cmd.Printf("    e.g. %v\n", report.OrphanSegments.Samples)
+	}
 	if report.Clean() {
 		cmd.Println("library is consistent")
 	}
@@ -224,8 +246,8 @@ func runMaintenanceRepair(cmd *cobra.Command) error {
 	}
 	if !opts.Any() {
 		cmd.Println("no repair selected; pass --thumbnails, --embeddings, --faces, --phashes, " +
-			"--import-orphans, --places, --dimensions, --face-markers, --sideways-faces " +
-			"or --impossible-dates")
+			"--import-orphans, --places, --dimensions, --face-markers, --sideways-faces, " +
+			"--impossible-dates, --missing-renditions or --delete-orphan-segments")
 		return nil
 	}
 	svc, cleanup, err := openMaintenanceService(cmd)
@@ -252,6 +274,10 @@ func runMaintenanceRepair(cmd *cobra.Command) error {
 		result.SidewaysFacesEnqueued)
 	cmd.Printf("impossible dates cleared=%d (those photos now have no date; find them with dated:no)\n",
 		result.ImpossibleDatesCleared)
+	cmd.Printf("renditions dropped=%d (those clips no longer claim to stream; POST /process/hls re-encodes them)\n",
+		result.RenditionsDropped)
+	cmd.Printf("orphan segments deleted=%d kept=%d (kept = an unfinished encode is still writing them)\n",
+		result.OrphanSegmentsDeleted, result.OrphanSegmentsKept)
 	return nil
 }
 
@@ -260,16 +286,18 @@ func repairOptionsFromFlags(cmd *cobra.Command) (maintenance.RepairOptions, erro
 	flags := cmd.Flags()
 	var opts maintenance.RepairOptions
 	for name, target := range map[string]*bool{
-		"thumbnails":       &opts.Thumbnails,
-		"embeddings":       &opts.Embeddings,
-		"faces":            &opts.Faces,
-		"phashes":          &opts.Phashes,
-		"import-orphans":   &opts.ImportOrphans,
-		"places":           &opts.Places,
-		"dimensions":       &opts.Dimensions,
-		"face-markers":     &opts.FaceMarkers,
-		"sideways-faces":   &opts.SidewaysFaces,
-		"impossible-dates": &opts.ImpossibleDates,
+		"thumbnails":             &opts.Thumbnails,
+		"embeddings":             &opts.Embeddings,
+		"faces":                  &opts.Faces,
+		"phashes":                &opts.Phashes,
+		"import-orphans":         &opts.ImportOrphans,
+		"places":                 &opts.Places,
+		"dimensions":             &opts.Dimensions,
+		"face-markers":           &opts.FaceMarkers,
+		"sideways-faces":         &opts.SidewaysFaces,
+		"impossible-dates":       &opts.ImpossibleDates,
+		"missing-renditions":     &opts.MissingRenditions,
+		"delete-orphan-segments": &opts.DeleteOrphanSegments,
 	} {
 		val, err := flags.GetBool(name)
 		if err != nil {
