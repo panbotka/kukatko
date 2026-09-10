@@ -1,21 +1,34 @@
-import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
+import {
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import Button from 'react-bootstrap/Button'
 import Dropdown from 'react-bootstrap/Dropdown'
 import { useTranslation } from 'react-i18next'
 
 import { useHlsPlayback } from '../../hooks/useHlsPlayback'
-import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts'
+import { useKeyboardShortcuts, type ShortcutMap } from '../../hooks/useKeyboardShortcuts'
 import { useStoryboard } from '../../hooks/useStoryboard'
 import { containedRect, type PaintedRect } from '../../lib/faceGeometry'
+import { isTypingElement } from '../../lib/ratingHotkeys'
+import { shortcutToken } from '../../lib/shortcuts'
 import { encodeInProgress, videoFallback } from '../../lib/videoEncode'
 import {
+  ARROW_SECONDS,
   DEFAULT_PLAYBACK_RATE,
+  FRAME_SECONDS,
   PLAYBACK_RATES,
   SKIP_SECONDS,
   formatPlaybackTime,
   readPlaybackRate,
   seekTarget,
   stepPlaybackRate,
+  tenthPosition,
   writePlaybackRate,
   type PlaybackRate,
 } from '../../lib/videoPlayback'
@@ -23,6 +36,26 @@ import { type PhotoProcessing } from '../../services/photos'
 import { Icon } from '../Icon'
 
 import { VideoScrubber } from './VideoScrubber'
+
+/**
+ * What the player currently claims of the keyboard, reported to the page around
+ * it so the two never act on one press. The page owns the same letters, arrows
+ * and digits for browsing, favouriting and rating; the player owns them only
+ * while it is the thing the reader is using.
+ */
+export interface VideoKeyboardScope {
+  /**
+   * The player owns the video keys right now: it holds the focus, the clip is
+   * playing, or it is filling the screen. The page must stand aside for the keys
+   * they share (the arrows, `f`, `m`, the digits) while this is true.
+   */
+  readonly active: boolean
+  /**
+   * The player is what fullscreen is showing, so Escape belongs to leaving it —
+   * and the viewer around it must not read the same press as "close the photo".
+   */
+  readonly fullscreen: boolean
+}
 
 /** Props for {@link VideoPlayer}. */
 export interface VideoPlayerProps {
@@ -59,6 +92,12 @@ export interface VideoPlayerProps {
    */
   overlay?: ReactNode
   /**
+   * Called whenever what the player claims of the keyboard changes, and once
+   * with everything cleared when it unmounts. The page uses it to hand over the
+   * keys the two share; see {@link VideoKeyboardScope}.
+   */
+  onKeyboardScope?: (scope: VideoKeyboardScope) => void
+  /**
    * The picture's aspect ratio (width ÷ height) to place {@link overlay} against
    * until the element reports its own — the catalogue row's dimensions, which
    * hold the layer still for the moment before the metadata arrives. Ignored
@@ -88,12 +127,23 @@ export interface VideoPlayerProps {
  * stays a plain element so the browser's own decoding, buffering and Picture-in-
  * Picture keep working.
  *
- * **Keyboard.** `K` toggles playback, `J`/`L` skip ±10 s and `<`/`>` step the
- * speed — but only while the player is *active*: it contains the focused element,
- * or the clip is playing. The arrow keys are deliberately left alone; on this
- * page they page between photos, and a video that hijacked them would break
- * browsing to satisfy a control that has its own buttons. Click the player (or
- * tab into it) and the video keys are yours.
+ * **Keyboard.** The set everyone already knows from the big players: Space and
+ * `K` play/pause, the arrows seek ±5 s and `J`/`L` ±10 s, `0`–`9` open the clip
+ * at that tenth of it, `M` mutes, `F` fills the screen, `<`/`>` step the speed
+ * and `,`/`.` nudge a paused clip by about a frame. Every one of them is scoped
+ * rather than claimed: they answer only while the player is *active* — it
+ * contains the focused element, the clip is playing, or it is fullscreen — and
+ * at every other moment they keep the meaning the page gives them (the arrows
+ * page between photos, `f` favourites, `m` shows the faces, the digits award
+ * stars). The page is told which of the two states it is in through
+ * `onKeyboardScope`; without that the two would both act on one press.
+ *
+ * Two keys need more than a map entry. **Space** is handled on the container
+ * because the shared hook hands it to a focused button, and after a click on
+ * Play that button holds the focus — one press has to be one toggle, not a
+ * second activation and not a scroll. **Escape** is bound only while fullscreen,
+ * where it means "leave fullscreen"; outside it the key stays the viewer's way
+ * back out.
  *
  * **Touch.** Every control is a real button with the app's finger-sized tap
  * target, and the timeline is draggable. The hover preview is desktop-only: it
@@ -127,6 +177,7 @@ export function VideoPlayer({
   streaming = false,
   encode = null,
   overlay,
+  onKeyboardScope,
   posterRatio,
 }: VideoPlayerProps) {
   const { t } = useTranslation()
@@ -139,6 +190,10 @@ export function VideoPlayer({
   const [duration, setDuration] = useState(0)
   const [rate, setRate] = useState<PlaybackRate>(DEFAULT_PLAYBACK_RATE)
   const [focused, setFocused] = useState(false)
+  // Whether this player is what the screen is filled with. It is read from the
+  // document rather than from our own request, because fullscreen can be left in
+  // ways this component never hears about — the browser's own Escape among them.
+  const [fullscreen, setFullscreen] = useState(false)
   // The storyboard is asked for only once playback has started: the request is
   // what schedules the render, so a video nobody watches never costs a decode.
   const [started, setStarted] = useState(false)
@@ -237,6 +292,41 @@ export function VideoPlayer({
     setFrameRatio(null)
   }, [uid])
 
+  // Follow fullscreen rather than assume it: the browser's own Escape, the F11
+  // key and another element going fullscreen all change this without asking.
+  useEffect(() => {
+    const sync = (): void => {
+      setFullscreen(containerRef.current?.contains(document.fullscreenElement) === true)
+    }
+    sync()
+    document.addEventListener('fullscreenchange', sync)
+    return () => {
+      document.removeEventListener('fullscreenchange', sync)
+    }
+  }, [])
+
+  // The player owns the shared keys while the reader is using it: it holds the
+  // focus, the clip is running, or it is filling the screen. Everywhere else
+  // those keys mean what they have always meant on the page around it.
+  const active = focused || playing || fullscreen
+
+  // Report the scope up so the page can stand aside for exactly these keys. Held
+  // in a ref so a caller that re-creates the callback every render does not turn
+  // this into a render loop — and so the unmount below can still reach it.
+  const scopeRef = useRef(onKeyboardScope)
+  scopeRef.current = onKeyboardScope
+  useEffect(() => {
+    scopeRef.current?.({ active, fullscreen })
+  }, [active, fullscreen])
+  useEffect(
+    () => () => {
+      // A player that is gone claims nothing: paging to a still photo must give
+      // the arrows and the digits straight back to the page.
+      scopeRef.current?.({ active: false, fullscreen: false })
+    },
+    [],
+  )
+
   const applyRate = (next: PlaybackRate): void => {
     setRate(next)
     writePlaybackRate(next)
@@ -276,6 +366,17 @@ export function VideoPlayer({
     setPosition(video.currentTime)
   }, [])
 
+  // A frame step is a paused-only act: nudging a running clip by 1/25 s is
+  // invisible, and the reader who reached for `,` wanted to look at one picture.
+  const stepFrame = useCallback((direction: 1 | -1): void => {
+    const video = videoRef.current
+    if (video?.paused !== true) {
+      return
+    }
+    video.currentTime = seekTarget(video.currentTime, direction * FRAME_SECONDS, video.duration)
+    setPosition(video.currentTime)
+  }, [])
+
   const toggleMute = (): void => {
     const video = videoRef.current
     if (video === null) {
@@ -290,33 +391,109 @@ export function VideoPlayer({
     if (container === null) {
       return
     }
-    if (document.fullscreenElement !== null) {
+    // The tracked state, not a fresh read of the document: it is the same fact,
+    // and it is the one the Escape binding and the reported scope agree with.
+    if (fullscreen) {
       void document.exitFullscreen().catch(() => undefined)
       return
     }
     void container.requestFullscreen().catch(() => undefined)
   }
 
-  // Video shortcuts are scoped: they only fire while the player holds focus or
-  // the clip is running, so `j`/`k`/`l` stay free for the rest of the page.
+  // `0`–`9` open the clip at that tenth of its length. Built once per seek
+  // closure rather than spelled out ten times, and kept out of the map literal
+  // below so the transport keys stay readable.
+  const tenthShortcuts = useMemo<ShortcutMap>(
+    () =>
+      Object.fromEntries(
+        Array.from({ length: 10 }, (_unused, digit) => [
+          String(digit),
+          () => {
+            const video = videoRef.current
+            if (video !== null) {
+              seekTo(tenthPosition(digit, video.duration))
+            }
+          },
+        ]),
+      ),
+    [seekTo],
+  )
+
+  // The player's keys, and only while it is the thing being used: focused,
+  // playing, or filling the screen. Outside that scope every one of them is the
+  // page's — the arrows page between photos, `f` favourites, `m` shows the faces
+  // and the digits award stars — and the page is what stands aside, not us.
   useKeyboardShortcuts(
     {
+      ...tenthShortcuts,
+      ' ': (event) => {
+        // A press with the focus inside the player was already dealt with on the
+        // container (see `onKeyDown` there); this is the one arriving from the
+        // page while the clip simply plays.
+        if (event.target instanceof Node && containerRef.current?.contains(event.target) === true) {
+          return
+        }
+        togglePlay()
+      },
       k: togglePlay,
+      ArrowLeft: () => {
+        seekBy(-ARROW_SECONDS)
+      },
+      ArrowRight: () => {
+        seekBy(ARROW_SECONDS)
+      },
       j: () => {
         seekBy(-SKIP_SECONDS)
       },
       l: () => {
         seekBy(SKIP_SECONDS)
       },
+      m: toggleMute,
+      f: toggleFullscreen,
       '<': () => {
         applyRate(stepPlaybackRate(rate, -1))
       },
       '>': () => {
         applyRate(stepPlaybackRate(rate, 1))
       },
+      ',': () => {
+        stepFrame(-1)
+      },
+      '.': () => {
+        stepFrame(1)
+      },
+      // Escape is bound only while fullscreen, because outside it the key is the
+      // viewer's way back out and a player that swallowed it would trap the
+      // reader on a photo.
+      ...(fullscreen
+        ? {
+            Escape: () => {
+              void document.exitFullscreen().catch(() => undefined)
+            },
+          }
+        : {}),
     },
-    { enabled: focused || playing },
+    { enabled: active },
   )
+
+  /**
+   * The space bar, for every press whose focus is inside the player. It cannot
+   * be left to the shared hook: that hook deliberately hands Space to a focused
+   * button, and after a click on Play the Play button *is* the focused button —
+   * so the press would re-activate it rather than reach a shortcut. Handling it
+   * here, with the default prevented, turns one press into exactly one toggle,
+   * never two and never a scroll of the page behind the viewer.
+   */
+  const onContainerKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
+    if (shortcutToken(event.key) !== ' ') {
+      return
+    }
+    if (event.ctrlKey || event.metaKey || event.altKey || isTypingElement(event.target)) {
+      return
+    }
+    event.preventDefault()
+    togglePlay()
+  }
 
   // The clip has no rendition yet and one is on its way. Progressive playback
   // carries on — the note is a note, never a gate — but it explains why seeking
@@ -361,6 +538,7 @@ export function VideoPlayer({
           setFocused(false)
         }
       }}
+      onKeyDown={onContainerKeyDown}
     >
       <video
         ref={videoRef}

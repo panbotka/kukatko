@@ -33,15 +33,30 @@ describe('KeyboardShortcutsHelp', () => {
     expect(screen.getByText('Open the focused photo')).toBeInTheDocument()
   })
 
-  it('documents the video-player keys and that the arrows still page photos', async () => {
+  it('documents the video-player keys and the scope that decides who owns them', async () => {
     renderHelp()
     fireEvent.keyDown(document, { key: '?' })
     await screen.findByRole('dialog')
 
     expect(screen.getByText('Video player')).toBeInTheDocument()
-    expect(screen.getByText('Skip 10 s back / forward')).toBeInTheDocument()
     expect(screen.getByText('Play / pause the video')).toBeInTheDocument()
-    expect(screen.getByText(/Arrows keep paging between photos/)).toBeInTheDocument()
+    expect(screen.getByText('Seek 5 s back / forward')).toBeInTheDocument()
+    expect(screen.getByText('Skip 10 s back / forward')).toBeInTheDocument()
+    expect(screen.getByText('Jump to that tenth of the clip (0 restarts it)')).toBeInTheDocument()
+    expect(screen.getByText('Mute / unmute')).toBeInTheDocument()
+    expect(screen.getByText('Step a paused clip one frame back / forward')).toBeInTheDocument()
+
+    // The listing would read as a contradiction without it: these are the same
+    // keys the detail group claims, so the group says when each set applies.
+    expect(
+      screen.getByText(/These apply while the video is playing or the player is focused/),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/the arrows page between photos/)).toBeInTheDocument()
+
+    // The space bar is advertised beside `k`, not left to be discovered.
+    const row = screen.getByText('Play / pause the video').closest('tr')
+    expect(row?.textContent).toContain('Space')
+    expect(row?.textContent).toContain('k')
   })
 
   it('lists the selection context, keys and all', async () => {

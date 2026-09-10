@@ -518,7 +518,11 @@ here.
   `?` (Shift+/) anywhere or by click, lists **every** shortcut the app has, grouped by context
   (Global / Photo grid / Selecting photos / Photo detail / Video / Slideshow / Person search /
   Possible mistakes / Review preview / Review / Duplicate compare) from `lib/shortcuts.ts`
-  `SHORTCUT_GROUPS`, closes with Escape/the close button. Prop `variant`
+  `SHORTCUT_GROUPS`, closes with Escape/the close button. A group may carry an optional **`noteKey`**,
+  rendered as one small line under its heading: it is for the group whose keys are **shared with another
+  context**, and so far only the video player has one (`shortcuts.video.scope` — "while the clip is playing or
+  the player is focused; otherwise the arrows page, `f` favourites, `m` shows the faces, the digits rate"),
+  because without it that listing reads as a straight contradiction of the Photo-detail one. Prop `variant`
   changes only the trigger: `'icon'` (default) is the bar's compact keyboard cap, `'row'` is the
   full-width `.kk-navdrawer__link` row `MobileNavDrawer` puts in its account section, and `'bare'`
   renders **no trigger at all** — the `?` key alone — for the screens outside the Layout that have no
@@ -2296,7 +2300,18 @@ here.
   favorite, `m` faces, `i` drawer, `s` **skrýt** (hide/unhide, editor+ only — the same handler the eye
   button calls, see below), Esc **a step back** (first the selected face, then the drawer, then
   out); rating hotkeys `0`–`5`/`p`/`r`/`v` on document (except while typing into an input or with a
-  form modal up, the same two guards the shared hook applies). **The three marking keys are toggles, exactly
+  form modal up, the same two guards the shared hook applies).
+  **A video takes some of them back (09/2026).** The player owns ←/→, `f`, `m` and the digits while it is the
+  thing being used, and reports that through `onKeyboardScope` into `videoScope` (`VideoKeyboardScope`) here.
+  While `videoScope.active` those four are simply **not in the shortcut map** — the press reaches the player and
+  nothing else — and `i`/`s`, which the player never wants, stay bound throughout. `Escape` returns early while
+  `videoScope.fullscreen`, so the press that leaves fullscreen does not also drop the reader onto the grid.
+  The digits are the trap: they live on a **second, separate document listener** (the rating one, which knows
+  nothing of the shared map), so that listener is taught the same scope by hand — and only for
+  `kind === 'rating'`, since `p`/`r`/`v` are nobody else's and keep working over a running clip. A still
+  photograph reports nothing at all, so none of this changes anything outside a video. Tests:
+  `PhotoDetailPage.test.tsx` „a video and the page share the keyboard", which asserts **both directions** for
+  every shared key. **The three marking keys are toggles, exactly
   like their buttons**: `p`/`r`/`v` go through `useRating`'s `toggleFlag`, so the key of the mark already set
   clears it to `none` and another key switches — one hand-out serves the buttons and the keys, so they cannot
   drift again (before 2026-09-06 the keys only ever SET a mark and the keyboard had no way to take one back;
@@ -3020,13 +3035,28 @@ here.
   another item, and while the tab is hidden (`visibilitychange`, resuming with an immediate poll). Tests:
   `lib/videoEncode.test.ts`, `hooks/useVideoEncodeWatch.test.tsx` (fake timers **with `shouldAdvanceTime`**,
   or the async queries hang) and `VideoPlayer.test.tsx` „a streaming encode still owed".
-  **Keyboard:** `K` play/pause, `J`/`L` ∓10 s,
-  `<`/`>` step the speed — via `useKeyboardShortcuts` with `enabled` = "the player contains the focused element,
-  **or** the clip is playing", so those keys stay free for the rest of the page. **The arrow keys are left alone
-  on purpose**: on this page they page between photos, and a video that hijacked them would break browsing to
-  serve a control that has its own buttons — the focused timeline is where arrows seek. All the buttons carry
+  **Keyboard (rewritten 09/2026):** the set everyone already knows from the big players — **Space**/`K`
+  play/pause, **←/→** seek ∓5 s (`ARROW_SECONDS`), `J`/`L` ∓10 s (`SKIP_SECONDS`), **`0`–`9`** open the clip at
+  that tenth of it (`tenthPosition`, `0` restarts), `M` mute, `F` fullscreen, `<`/`>` the speed, and **`,`/`.`**
+  nudging a **paused** clip by about a frame (`FRAME_SECONDS`, a nominal 25 fps — a `<video>` exposes no frame
+  rate at all). Every one of them is **scoped, not claimed**: `useKeyboardShortcuts` runs with `enabled` =
+  `focused || playing || fullscreen`, and at every other moment the identical keys keep the page's meaning
+  (←/→ page between photographs, `f` favourites, `m` shows the faces, the digits award stars). The page is
+  told which of the two states it is in through **`onKeyboardScope`** (`VideoKeyboardScope` = `{ active,
+  fullscreen }`, reported on every change and cleared on unmount, held in a ref so an unmemoized callback
+  cannot loop) — without that hand-off both sides would act on one press. **Two keys need more than a map
+  entry.** The **space bar** is handled on the container's own `onKeyDown` (and skipped by the map entry when
+  the target is inside the player), because the shared hook deliberately yields Space to a focused button and
+  after a click on Play that button *is* the focused one: the press would re-activate it instead of reaching a
+  shortcut. The container takes it, `preventDefault`s, and one press is one toggle — never two, never a scroll.
+  **Escape** is bound **only while fullscreen**, where it means "leave fullscreen"; outside it the key stays
+  the viewer's way back out, and the viewer in turn stands aside while `scope.fullscreen` (see
+  `PhotoDetailPage`). Fullscreen itself is **followed, not assumed** — a `fullscreenchange` listener syncs the
+  state, since the browser's own Escape and F11 change it without asking. All the buttons carry
   `kukatko-tap-target`, so speed and skips are finger-sized on touch. A decode failure still falls back to the
-  download link. **The poster carries the faces** (props `overlay` + `posterRatio`, both new 09/2026): face
+  download link. Tests: `VideoPlayer.test.tsx` „keyboard shortcuts" (both directions for every shared key, the
+  single-toggle space with the play button focused, and the reported scope), with jsdom's missing
+  playback/fullscreen APIs stubbed from **`src/test/media.ts`** (`stubPlayableMedia`, `stubFullscreen`). **The poster carries the faces** (props `overlay` + `posterRatio`, both new 09/2026): face
   detection runs on a clip as well and looks at exactly **one** frame — the poster — so that frame is where its
   boxes belong. The player hands `overlay` a layer (`.kk-video__overlay`) placed and sized **in JS**, because
   only the running player knows where its poster paints: the element is sized by the stage and the picture is
@@ -3051,9 +3081,13 @@ here.
   playback starts, because the request is what schedules the render server-side and a grid of videos asking on
   mount would enqueue a full decode each; a `pending` answer is re-polled 4× at 5 s and then given up on (the
   sprite arrives on the next playback), and **every failure is swallowed** so a missing preview is never an error
-  on screen. `lib/videoPlayback` holds the pure half — `PLAYBACK_RATES`/`SKIP_SECONDS`, the session-storage
+  on screen. `lib/videoPlayback` holds the pure half — `PLAYBACK_RATES`/`SKIP_SECONDS`/`ARROW_SECONDS`/`FRAME_SECONDS`
+  (the three seek distances stay strictly ordered: a frame < an arrow < a skip, asserted, or a key would have
+  nothing of its own to say), the session-storage
   read/write and `stepPlaybackRate` (clamped, an unknown current rate treated as 1×), `seekTarget` (clamped into
-  `[0, duration]`, only below zero while the duration is unknown), `formatPlaybackTime` (`m:ss`, `h:mm:ss` past
+  `[0, duration]`, only below zero while the duration is unknown), `tenthPosition(digit, duration)` (that tenth
+  of the clip; an unknown duration reads as the start, a digit outside `0`–`9` clamps rather than running off
+  the timeline), `formatPlaybackTime` (`m:ss`, `h:mm:ss` past
   an hour, never `NaN`), `playbackFraction`, `storyboardTileIndex`/`storyboardTileStyle` (mirroring
   `storyboard.Spec.TileIndex` on the server), `previewOffset` (keeps the bubble inside the track) and
   `positionFromPointer`. `lib/hlsPlayback` is the delivery half:
@@ -6409,6 +6443,11 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   buckets over 1905–2026, ~10 500 photos, a couple a year before 1950 and thousands a year after 2010 —
   the timeline rail only ever broke on a distribution like this, a development-sized library makes any
   layout look fine, so every test that has to prove the rail stays legible starts from this one),
+  `test/media.ts` (the two APIs jsdom has none of, for anything that drives the video player:
+  `stubPlayableMedia(video, duration)` turns `play`/`pause` into spies that flip `paused` and fire the matching
+  event and makes `duration`/`currentTime` settable, and `stubFullscreen()` lends the document a
+  `fullscreenElement` plus request/exit that flip it and fire `fullscreenchange` — it returns the undo, which
+  the caller must run, because these are properties on shared prototypes and not mocks the runner restores),
   `test/css.ts` (reading and mini-parsing stylesheets from tests: `readCss` / `ruleBody` / `declarations`
   / `zIndexOf` / `installRule` — jsdom evaluates neither `env()` nor media queries, so CSS-only rules are
   guarded by reading the file; `zIndexOf(css, prelude)` answers what layer a rule really claims, resolving

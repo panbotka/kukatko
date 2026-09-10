@@ -28,6 +28,7 @@ import {
 import { STUB_CANVAS_DATA_URL, stubBlurCanvas } from '../test/canvas'
 import { declarations, readCss, ruleBody } from '../test/css'
 import { frameRatio, loadImageAs } from '../test/imageFrame'
+import { stubFullscreen, stubPlayableMedia } from '../test/media'
 
 import { PhotoDetailPage } from './PhotoDetailPage'
 
@@ -2213,6 +2214,175 @@ describe('PhotoDetailPage — immersive viewer', () => {
       await screen.findByRole('heading', { name: 'Live' })
       expect(screen.getByRole('button', { name: /Live/ })).toBeInTheDocument()
       expect(container.querySelector('video')?.getAttribute('src')).toContain('/photos/b/video')
+    })
+  })
+
+  /**
+   * The player and the page own the same keys — the arrows, `f`, `m`, the digits
+   * — and which of the two acts is decided by scope alone: while the clip is
+   * playing, the player is focused or it fills the screen, the keys are the
+   * player's; at every other moment they are the page's, exactly as they always
+   * were. Both directions are asserted for every shared key, because a
+   * precedence rule that is only ever tested one way round is a rule that has
+   * quietly become "the player always wins".
+   */
+  describe('a video and the page share the keyboard', () => {
+    /**
+     * Opens the detail page on a clip and hands back its `<video>`, made
+     * drivable (jsdom plays nothing by itself). `faces` is how many the detector
+     * found on the poster — only `m`'s page-side meaning, show the faces, needs
+     * one, and a clip that has one arrives with it selected, which would give
+     * Escape something to step back out of before the viewer.
+     */
+    async function clipPage(faces = 0): Promise<HTMLVideoElement> {
+      fetchPhotoMock.mockResolvedValue(
+        photo({
+          media_type: 'video',
+          file_name: 'clip.mp4',
+          file_mime: 'video/mp4',
+          title: 'Clip',
+        }),
+      )
+      fetchFacesMock.mockResolvedValue(facesResponse(faces))
+      const { container } = renderPage()
+      await screen.findByRole('heading', { name: 'Clip' })
+      const video = container.querySelector('video')
+      if (video === null) {
+        throw new Error('expected a video element')
+      }
+      return stubPlayableMedia(video, 60).video
+    }
+
+    /** Starts the clip, which is one of the two ways the player takes the keys. */
+    function play(): void {
+      fireEvent.click(screen.getByRole('button', { name: 'Play' }))
+    }
+
+    it('reads a digit as a seek while the clip plays, and as a rating while it does not', async () => {
+      const video = await clipPage()
+
+      // Not playing: the digit is the page's, exactly as on a still photograph.
+      fireEvent.keyDown(document, { key: '4' })
+      await waitFor(() => {
+        expect(ratePhotoMock).toHaveBeenLastCalledWith('b', { rating: 4 })
+      })
+      expect(video.currentTime).toBe(0)
+
+      // Playing: the same digit opens the clip four tenths in, and awards
+      // nothing — the trap this pair of assertions exists for is one press
+      // doing both, because the rating lives on a listener of its own.
+      ratePhotoMock.mockClear()
+      play()
+      fireEvent.keyDown(document, { key: '4' })
+      expect(video.currentTime).toBe(24)
+      expect(ratePhotoMock).not.toHaveBeenCalled()
+
+      // The marking keys are nobody else's, so they keep working over a
+      // running clip: only the digits change hands.
+      fireEvent.keyDown(document, { key: 'v' })
+      await waitFor(() => {
+        expect(ratePhotoMock).toHaveBeenLastCalledWith('b', { flag: 'eye' })
+      })
+    })
+
+    it('reads the arrows as a seek while the clip plays, and as paging while it does not', async () => {
+      const video = await clipPage()
+      play()
+
+      fireEvent.keyDown(document, { key: 'ArrowRight' })
+      expect(video.currentTime).toBe(5)
+      expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/b')
+
+      // Paused and unfocused, the arrow is the page's again and steps on.
+      fireEvent.click(screen.getByRole('button', { name: 'Pause' }))
+      fireEvent.blur(screen.getByRole('button', { name: 'Play' }), { relatedTarget: null })
+      fireEvent.keyDown(document, { key: 'ArrowRight' })
+      await waitFor(() => {
+        expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/c')
+      })
+    })
+
+    it('reads f as fullscreen while the clip plays, and as the favourite while it does not', async () => {
+      const undo = stubFullscreen()
+      try {
+        await clipPage()
+
+        fireEvent.keyDown(document, { key: 'f' })
+        await waitFor(() => {
+          expect(favoritePhotoMock).toHaveBeenCalledWith('b', true)
+        })
+        expect(document.fullscreenElement).toBeNull()
+
+        favoritePhotoMock.mockClear()
+        play()
+        fireEvent.keyDown(document, { key: 'f' })
+        expect(document.fullscreenElement).not.toBeNull()
+        expect(favoritePhotoMock).not.toHaveBeenCalled()
+      } finally {
+        undo()
+      }
+    })
+
+    it('reads m as mute while the clip plays, and as the faces while it does not', async () => {
+      const video = await clipPage(1)
+      await screen.findByRole('button', { name: 'Show faces' })
+
+      fireEvent.keyDown(document, { key: 'm' })
+      expect(await screen.findByTestId('face-overlay')).toBeInTheDocument()
+      expect(video.muted).toBe(false)
+
+      // Playing, the same key is the player's mute — and the faces stay as they
+      // were rather than being toggled behind the clip.
+      fireEvent.keyDown(document, { key: 'm' })
+      play()
+      fireEvent.keyDown(document, { key: 'm' })
+      expect(video.muted).toBe(true)
+      expect(window.localStorage.getItem('kukatko.faces.overlay')).toBe('false')
+    })
+
+    it('gives Escape to leaving fullscreen, and keeps closing the viewer everywhere else', async () => {
+      const undo = stubFullscreen()
+      try {
+        await clipPage()
+        play()
+
+        // Playing but not fullscreen: Escape is still the way out of the photo.
+        fireEvent.keyDown(document, { key: 'f' })
+        expect(document.fullscreenElement).not.toBeNull()
+
+        // Fullscreen: the press leaves fullscreen and the viewer stays put — a
+        // reader who pressed Escape to get the screen back has not asked to be
+        // dropped onto the grid.
+        fireEvent.keyDown(document, { key: 'Escape' })
+        expect(document.fullscreenElement).toBeNull()
+        expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/b')
+
+        // Out of fullscreen it means what it always meant.
+        fireEvent.keyDown(document, { key: 'Escape' })
+        await waitFor(() => {
+          expect(screen.getByTestId('pathname')).toHaveTextContent(/^\/$/)
+        })
+      } finally {
+        undo()
+      }
+    })
+
+    it('changes nothing at all for a still photograph', async () => {
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      fireEvent.keyDown(document, { key: '4' })
+      await waitFor(() => {
+        expect(ratePhotoMock).toHaveBeenLastCalledWith('b', { rating: 4 })
+      })
+      fireEvent.keyDown(document, { key: 'f' })
+      await waitFor(() => {
+        expect(favoritePhotoMock).toHaveBeenCalledWith('b', true)
+      })
+      fireEvent.keyDown(document, { key: 'ArrowRight' })
+      await waitFor(() => {
+        expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/c')
+      })
     })
   })
 

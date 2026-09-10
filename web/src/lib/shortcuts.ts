@@ -84,6 +84,13 @@ export interface ShortcutEntry {
 export interface ShortcutGroup {
   /** i18n key for the group heading (checked against the locale files). */
   readonly titleKey: ParseKeys
+  /**
+   * Optional i18n key for one line under the group saying *when* its shortcuts
+   * apply. Only a group whose keys are shared with another context needs it —
+   * the video player's are the page's own letters, arrows and digits, and a
+   * reader who is not told the scope reads the list as a contradiction.
+   */
+  readonly noteKey?: ParseKeys
   /** The shortcuts in this context. */
   readonly entries: readonly ShortcutEntry[]
 }
@@ -133,11 +140,19 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
   },
   {
     titleKey: 'shortcuts.groups.video',
+    // These are the detail page's own keys. Which of the two acts is decided by
+    // scope, and the note is where that rule is written down for the reader.
+    noteKey: 'shortcuts.video.scope',
     entries: [
-      { keys: ['k'], descriptionKey: 'shortcuts.video.playPause' },
+      { keys: ['Space', 'k'], descriptionKey: 'shortcuts.video.playPause' },
+      { keys: ['←', '→'], descriptionKey: 'shortcuts.video.seek' },
       { keys: ['j', 'l'], descriptionKey: 'shortcuts.video.skip' },
+      { keys: ['0', '…', '9'], descriptionKey: 'shortcuts.video.jump' },
+      { keys: ['m'], descriptionKey: 'shortcuts.video.mute' },
+      { keys: ['f'], descriptionKey: 'shortcuts.video.fullscreen' },
       { keys: ['<', '>'], descriptionKey: 'shortcuts.video.speed' },
-      { keys: ['←', '→'], descriptionKey: 'shortcuts.video.arrows' },
+      { keys: [',', '.'], descriptionKey: 'shortcuts.video.frame' },
+      { keys: ['Esc'], descriptionKey: 'shortcuts.video.escape' },
     ],
   },
   {

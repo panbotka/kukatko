@@ -1553,10 +1553,16 @@
       "back": "Step back: the selection, then the info panel, then out to the list"
     },
     "video": {
+      "scope": "These apply while the video is playing or the player is focused. At every other moment the same keys mean what they always do — the arrows page between photos, f toggles the favourite, m the faces, and the digits set the star rating.",
       "playPause": "Play / pause the video",
+      "seek": "Seek 5 s back / forward",
       "skip": "Skip 10 s back / forward",
+      "jump": "Jump to that tenth of the clip (0 restarts it)",
+      "mute": "Mute / unmute",
+      "fullscreen": "Toggle fullscreen",
       "speed": "Slow down / speed up playback",
-      "arrows": "Arrows keep paging between photos, even during playback — seek with the focused timeline instead"
+      "frame": "Step a paused clip one frame back / forward",
+      "escape": "Leave fullscreen (otherwise it closes the photo viewer)"
     },
     "slideshow": {
       "step": "Previous / next slide",

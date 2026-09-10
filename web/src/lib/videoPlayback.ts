@@ -23,6 +23,23 @@ export const DEFAULT_PLAYBACK_RATE: PlaybackRate = 1
 export const SKIP_SECONDS = 10
 
 /**
+ * How far the arrow keys nudge the position, in seconds. Deliberately smaller
+ * than {@link SKIP_SECONDS}: the two live side by side exactly as they do in the
+ * players everyone already knows, a coarse jump on J/L and a fine one on the
+ * arrows.
+ */
+export const ARROW_SECONDS = 5
+
+/**
+ * Roughly one frame, in seconds. A `<video>` exposes no frame rate at all — only
+ * a duration and a position — so "one frame" can only ever be a nominal 25 fps
+ * here. It is what the `,`/`.` step is measured in: close enough that a paused
+ * clip visibly advances by a single picture, and never so large that stepping
+ * reads as a skip.
+ */
+export const FRAME_SECONDS = 1 / 25
+
+/**
  * sessionStorage key holding the chosen playback rate. Session, not local: the
  * spec is "remembered for the session" — watching a batch of clips at 1.5× is a
  * mood, not a setting, and it should not silently follow the user into next
@@ -96,6 +113,22 @@ export function seekTarget(from: number, delta: number, duration: number): numbe
     return target
   }
   return Math.min(target, duration)
+}
+
+/**
+ * Where digit `0`–`9` lands: that tenth of the clip, so `2` opens it a fifth of
+ * the way in and `0` restarts it. A duration that is not a finite positive
+ * number — a clip whose metadata has not loaded — has no tenths to divide, so
+ * every digit reads as the start. Digits outside `0`–`9` are clamped rather than
+ * refused: the caller binds exactly ten keys, and a tenth past the end is a
+ * position past the end.
+ */
+export function tenthPosition(digit: number, duration: number): number {
+  if (!Number.isFinite(duration) || duration <= 0 || !Number.isFinite(digit)) {
+    return 0
+  }
+  const tenth = Math.min(Math.max(Math.trunc(digit), 0), 9)
+  return (duration * tenth) / 10
 }
 
 /**

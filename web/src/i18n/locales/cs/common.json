@@ -1533,10 +1533,16 @@
       "back": "Krok zpět: výběr, poté informační panel, poté ven na seznam"
     },
     "video": {
+      "scope": "Platí, jen když video hraje nebo je přehrávač zaměřený. Jinak mají tyhle klávesy svůj obvyklý význam — šipky listují mezi fotkami, f přepíná oblíbenou, m obličeje a číslice nastavují hvězdičky.",
       "playPause": "Přehrát / pozastavit video",
+      "seek": "Přetočit o 5 s zpět / vpřed",
       "skip": "Skok o 10 s zpět / vpřed",
+      "jump": "Skočit na tuhle desetinu videa (0 = na začátek)",
+      "mute": "Ztlumit / zase zapnout zvuk",
+      "fullscreen": "Přepnout celou obrazovku",
       "speed": "Zpomalit / zrychlit přehrávání",
-      "arrows": "Šipky i při přehrávání listují mezi fotkami — přetoč přehrávač zaměřenou časovou osou"
+      "frame": "U pozastaveného videa posun o snímek zpět / vpřed",
+      "escape": "Ukončit celou obrazovku (jinak zavírá prohlížeč fotky)"
     },
     "slideshow": {
       "step": "Předchozí / další snímek",

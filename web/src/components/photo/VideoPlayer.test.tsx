@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../../i18n'
 import * as photosService from '../../services/photos'
+import { stubFullscreen, stubPlayableMedia } from '../../test/media'
 
 import { VideoPlayer, type VideoPlayerProps } from './VideoPlayer'
 
@@ -94,36 +95,6 @@ async function attachedHls() {
 }
 
 /**
- * Gives the rendered `<video>` a playable surface: jsdom implements neither
- * playback nor a media clock, so `play`/`pause` are stubbed and `duration` /
- * `currentTime` are turned into ordinary settable properties. Returns the
- * element so a test can drive it the way the browser would.
- */
-function stubMedia(video: HTMLVideoElement, duration = 60): HTMLVideoElement {
-  let paused = true
-  let currentTime = 0
-  Object.defineProperty(video, 'paused', { configurable: true, get: () => paused })
-  Object.defineProperty(video, 'duration', { configurable: true, get: () => duration })
-  Object.defineProperty(video, 'currentTime', {
-    configurable: true,
-    get: () => currentTime,
-    set: (value: number) => {
-      currentTime = value
-    },
-  })
-  vi.spyOn(video, 'play').mockImplementation(() => {
-    paused = false
-    fireEvent.play(video)
-    return Promise.resolve()
-  })
-  vi.spyOn(video, 'pause').mockImplementation(() => {
-    paused = true
-    fireEvent.pause(video)
-  })
-  return video
-}
-
-/**
  * Gives every element a laid-out box, which jsdom otherwise reports as zero. The
  * poster overlay is placed from the element's own box, so without this there is
  * no rectangle to place it on. Returns the undo.
@@ -143,6 +114,14 @@ function stubLayout(width: number, height: number): () => void {
       Reflect.deleteProperty(HTMLElement.prototype, name)
     }
   }
+}
+
+/** Puts the keyboard focus inside the player, which is one of the two ways it
+ * comes to own the video keys (the other is the clip simply playing). */
+function focusPlayer(): void {
+  const play = screen.getByRole('button', { name: 'Play' })
+  play.focus()
+  fireEvent.focus(play)
 }
 
 function renderPlayer(uid = 'ph1', streaming = false, extra: Partial<VideoPlayerProps> = {}) {
@@ -183,7 +162,7 @@ describe('VideoPlayer', () => {
     // scrub preview has somewhere to hang.
     expect(video.hasAttribute('controls')).toBe(false)
 
-    stubMedia(video)
+    stubPlayableMedia(video)
     fireEvent.click(screen.getByRole('button', { name: 'Play' }))
     expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Pause' }))
@@ -203,7 +182,7 @@ describe('VideoPlayer', () => {
   describe('skip controls', () => {
     it('jumps ten seconds back and forward, clamped to the clip', () => {
       const { video } = renderPlayer()
-      stubMedia(video, 60)
+      stubPlayableMedia(video, 60)
       video.currentTime = 30
 
       fireEvent.click(screen.getByRole('button', { name: 'Forward 10 s' }))
@@ -226,7 +205,7 @@ describe('VideoPlayer', () => {
   describe('playback speed', () => {
     it('applies a chosen rate to the element and shows it on the control', async () => {
       const { video } = renderPlayer()
-      stubMedia(video)
+      stubPlayableMedia(video)
 
       fireEvent.click(screen.getByRole('button', { name: 'Playback speed' }))
       fireEvent.click(await screen.findByRole('button', { name: '1.5×' }))
@@ -253,7 +232,7 @@ describe('VideoPlayer', () => {
 
     it('remembers the rate for the session and re-applies it to the next clip', async () => {
       const first = renderPlayer()
-      stubMedia(first.video)
+      stubPlayableMedia(first.video)
       fireEvent.click(screen.getByRole('button', { name: 'Playback speed' }))
       fireEvent.click(await screen.findByRole('button', { name: '2×' }))
       first.unmount()
@@ -269,7 +248,7 @@ describe('VideoPlayer', () => {
   describe('keyboard shortcuts', () => {
     it('ignores J/K/L until the player is focused or playing', () => {
       const { video } = renderPlayer()
-      stubMedia(video, 60)
+      stubPlayableMedia(video, 60)
       video.currentTime = 30
 
       // Nothing focused, nothing playing: the keys belong to the page, which uses
@@ -282,7 +261,7 @@ describe('VideoPlayer', () => {
 
     it('seeks and toggles playback once the player holds focus', () => {
       const { video } = renderPlayer()
-      stubMedia(video, 60)
+      stubPlayableMedia(video, 60)
       video.currentTime = 30
 
       screen.getByRole('button', { name: 'Play' }).focus()
@@ -298,7 +277,7 @@ describe('VideoPlayer', () => {
 
     it('keeps answering while the clip plays, even without focus', () => {
       const { video } = renderPlayer()
-      stubMedia(video, 60)
+      stubPlayableMedia(video, 60)
       video.currentTime = 10
       fireEvent.click(screen.getByRole('button', { name: 'Play' }))
 
@@ -308,7 +287,7 @@ describe('VideoPlayer', () => {
 
     it('steps the speed with < and > and stops at the ends', () => {
       const { video } = renderPlayer()
-      stubMedia(video)
+      stubPlayableMedia(video)
       fireEvent.click(screen.getByRole('button', { name: 'Play' }))
 
       fireEvent.keyDown(document, { key: '>' })
@@ -322,21 +301,186 @@ describe('VideoPlayer', () => {
       expect(video.playbackRate).toBe(0.5)
     })
 
-    it('never claims the arrow keys, so the page keeps paging between photos', () => {
+    it('seeks five seconds with the arrows while it owns the keyboard', () => {
       const { video } = renderPlayer()
-      stubMedia(video, 60)
+      stubPlayableMedia(video, 60)
       video.currentTime = 30
       fireEvent.click(screen.getByRole('button', { name: 'Play' }))
 
-      const right = new KeyboardEvent('keydown', {
-        key: 'ArrowRight',
-        bubbles: true,
-        cancelable: true,
-      })
-      document.dispatchEvent(right)
-
+      // Prevented, because the press was ours: while the clip runs the arrows
+      // are a fine seek, not a step to the next photograph.
+      expect(fireEvent.keyDown(document, { key: 'ArrowRight' })).toBe(false)
+      expect(video.currentTime).toBe(35)
+      fireEvent.keyDown(document, { key: 'ArrowLeft' })
       expect(video.currentTime).toBe(30)
-      expect(right.defaultPrevented).toBe(false)
+    })
+
+    it('leaves the arrows to the page while it owns nothing', () => {
+      const { video } = renderPlayer()
+      stubPlayableMedia(video, 60)
+      video.currentTime = 30
+
+      // Not focused, not playing: the press passes straight through to the page,
+      // which uses it to step between photographs.
+      expect(fireEvent.keyDown(document, { key: 'ArrowRight' })).toBe(true)
+      expect(video.currentTime).toBe(30)
+    })
+
+    it('toggles playback once — never twice — for a space with the play button focused', () => {
+      const { video } = renderPlayer()
+      const media = stubPlayableMedia(video, 60)
+      const play = screen.getByRole('button', { name: 'Play' })
+      focusPlayer()
+
+      // The trap: the button under the focus would activate on the same press,
+      // so the player takes the key itself and suppresses the default. One
+      // press, one toggle — and no scroll of the page behind the viewer.
+      expect(fireEvent.keyDown(play, { key: ' ' })).toBe(false)
+      expect(media.play).toHaveBeenCalledTimes(1)
+      expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument()
+
+      const pause = screen.getByRole('button', { name: 'Pause' })
+      pause.focus()
+      fireEvent.keyDown(pause, { key: ' ' })
+      expect(media.pause).toHaveBeenCalledTimes(1)
+      expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument()
+    })
+
+    it('answers the space bar from the page while the clip is playing', () => {
+      const { video } = renderPlayer()
+      const media = stubPlayableMedia(video, 60)
+      fireEvent.click(screen.getByRole('button', { name: 'Play' }))
+
+      fireEvent.keyDown(document, { key: ' ' })
+      expect(media.pause).toHaveBeenCalledTimes(1)
+      expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument()
+    })
+
+    it('toggles playback with k as well as with the space bar', () => {
+      const { video } = renderPlayer()
+      const media = stubPlayableMedia(video, 60)
+      focusPlayer()
+
+      fireEvent.keyDown(document, { key: 'k' })
+      expect(media.play).toHaveBeenCalledTimes(1)
+    })
+
+    it('opens the clip at that tenth of it for every digit', () => {
+      const { video } = renderPlayer()
+      stubPlayableMedia(video, 60)
+      focusPlayer()
+
+      fireEvent.keyDown(document, { key: '3' })
+      expect(video.currentTime).toBe(18)
+      fireEvent.keyDown(document, { key: '9' })
+      expect(video.currentTime).toBe(54)
+      // `0` is the way back to the start, not a tenth like the others.
+      fireEvent.keyDown(document, { key: '0' })
+      expect(video.currentTime).toBe(0)
+    })
+
+    it('mutes and unmutes with m', () => {
+      const { video } = renderPlayer()
+      stubPlayableMedia(video, 60)
+      focusPlayer()
+
+      fireEvent.keyDown(document, { key: 'm' })
+      expect(video.muted).toBe(true)
+      expect(screen.getByRole('button', { name: 'Unmute' })).toBeInTheDocument()
+      fireEvent.keyDown(document, { key: 'm' })
+      expect(video.muted).toBe(false)
+      expect(screen.getByRole('button', { name: 'Mute' })).toBeInTheDocument()
+    })
+
+    it('fills the screen with f and leaves it again with Escape', () => {
+      const undo = stubFullscreen()
+      try {
+        const scope = vi.fn()
+        const { video, container } = renderPlayer('ph1', false, { onKeyboardScope: scope })
+        stubPlayableMedia(video, 60)
+        focusPlayer()
+
+        fireEvent.keyDown(document, { key: 'f' })
+        expect(document.fullscreenElement).toBe(container.querySelector('.kk-video'))
+        expect(scope).toHaveBeenLastCalledWith({ active: true, fullscreen: true })
+
+        // Escape belongs to leaving fullscreen here, and the viewer around the
+        // player is told so — it must not read the same press as "close".
+        expect(fireEvent.keyDown(document, { key: 'Escape' })).toBe(false)
+        expect(document.fullscreenElement).toBeNull()
+        expect(scope).toHaveBeenLastCalledWith({ active: true, fullscreen: false })
+
+        // A second f puts it back: the key is a toggle, not a one-way door.
+        fireEvent.keyDown(document, { key: 'f' })
+        expect(document.fullscreenElement).not.toBeNull()
+        fireEvent.keyDown(document, { key: 'f' })
+        expect(document.fullscreenElement).toBeNull()
+      } finally {
+        undo()
+      }
+    })
+
+    it('never takes Escape outside fullscreen, so the viewer keeps its way out', () => {
+      const { video } = renderPlayer()
+      stubPlayableMedia(video, 60)
+      fireEvent.click(screen.getByRole('button', { name: 'Play' }))
+
+      // Playing, so the player owns the video keys — but not this one.
+      expect(fireEvent.keyDown(document, { key: 'Escape' })).toBe(true)
+    })
+
+    it('steps a paused clip by about a frame with , and ., and refuses while it runs', () => {
+      const { video } = renderPlayer()
+      stubPlayableMedia(video, 60)
+      video.currentTime = 10
+      focusPlayer()
+
+      fireEvent.keyDown(document, { key: ',' })
+      expect(video.currentTime).toBeCloseTo(9.96, 5)
+      fireEvent.keyDown(document, { key: '.' })
+      expect(video.currentTime).toBeCloseTo(10, 5)
+
+      // Running, the step is a no-op: a 1/25 s nudge of a moving picture is
+      // nothing anybody can see, and the reader asked to look at one frame.
+      fireEvent.click(screen.getByRole('button', { name: 'Play' }))
+      const running = video.currentTime
+      fireEvent.keyDown(document, { key: '.' })
+      expect(video.currentTime).toBe(running)
+    })
+
+    it('claims nothing at all while it is neither focused nor playing', () => {
+      const { video } = renderPlayer()
+      const media = stubPlayableMedia(video, 60)
+      video.currentTime = 30
+
+      for (const key of [' ', 'm', 'f', '4', ',', '.']) {
+        expect(fireEvent.keyDown(document, { key })).toBe(true)
+      }
+      expect(video.currentTime).toBe(30)
+      expect(video.muted).toBe(false)
+      expect(media.play).not.toHaveBeenCalled()
+      expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument()
+    })
+
+    it('reports what it claims of the keyboard, and hands it all back when it goes', () => {
+      const scope = vi.fn()
+      const { video, unmount } = renderPlayer('ph1', false, { onKeyboardScope: scope })
+      stubPlayableMedia(video, 60)
+
+      expect(scope).toHaveBeenLastCalledWith({ active: false, fullscreen: false })
+
+      focusPlayer()
+      expect(scope).toHaveBeenLastCalledWith({ active: true, fullscreen: false })
+
+      // Focus leaves, but the clip is running — still the player's keyboard.
+      fireEvent.click(screen.getByRole('button', { name: 'Play' }))
+      fireEvent.blur(screen.getByRole('button', { name: 'Pause' }), { relatedTarget: null })
+      expect(scope).toHaveBeenLastCalledWith({ active: true, fullscreen: false })
+
+      // Paging to a still photograph unmounts the player: the arrows and the
+      // digits go straight back to the page.
+      unmount()
+      expect(scope).toHaveBeenLastCalledWith({ active: false, fullscreen: false })
     })
   })
 
@@ -376,7 +520,7 @@ describe('VideoPlayer', () => {
       const { video } = renderPlayer('ph1', true)
       await attachedHls()
 
-      stubMedia(video)
+      stubPlayableMedia(video)
       fireEvent.click(screen.getByRole('button', { name: 'Play' }))
       expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument()
       expect(screen.getByRole('slider', { name: 'Video timeline' })).toBeInTheDocument()
@@ -457,7 +601,7 @@ describe('VideoPlayer', () => {
 
     it('asks once playback starts', async () => {
       const { video } = renderPlayer()
-      stubMedia(video)
+      stubPlayableMedia(video)
       fireEvent.click(screen.getByRole('button', { name: 'Play' }))
 
       await waitFor(() => {
@@ -468,7 +612,7 @@ describe('VideoPlayer', () => {
     it('plays normally when the storyboard request fails', async () => {
       fetchStoryboard.mockRejectedValue(new Error('boom'))
       const { video } = renderPlayer()
-      stubMedia(video)
+      stubPlayableMedia(video)
       fireEvent.click(screen.getByRole('button', { name: 'Play' }))
 
       await waitFor(() => {
@@ -525,7 +669,7 @@ describe('VideoPlayer', () => {
         })
         expect(screen.getByTestId('boxes')).toBeInTheDocument()
 
-        stubMedia(video)
+        stubPlayableMedia(video)
         fireEvent.click(screen.getByRole('button', { name: 'Play' }))
         // The element now paints the video, not the poster — boxes measured on
         // the poster would be boxes on the wrong picture. Pausing does not bring
@@ -635,7 +779,7 @@ describe('VideoPlayer', () => {
 
       // The encode gates nothing: the original file is played exactly as before.
       expect(video.getAttribute('src')).toContain('/photos/ph1/video')
-      stubMedia(video)
+      stubPlayableMedia(video)
       fireEvent.click(screen.getByRole('button', { name: 'Play' }))
       expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument()
 

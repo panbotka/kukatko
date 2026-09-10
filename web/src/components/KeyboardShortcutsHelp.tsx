@@ -101,6 +101,11 @@ export function KeyboardShortcutsHelp({ variant = 'icon' }: { variant?: 'icon' |
           {SHORTCUT_GROUPS.map((group) => (
             <section key={group.titleKey} className="mb-3">
               <h3 className="kk-section-title text-secondary">{t(group.titleKey)}</h3>
+              {group.noteKey !== undefined && (
+                /* When a group's keys are shared with another context, this is
+                   where the rule that decides between them is stated. */
+                <p className="text-secondary small mb-2">{t(group.noteKey)}</p>
+              )}
               <Table size="sm" borderless className="mb-0 align-middle">
                 <tbody>
                   {group.entries.map((entry) => (

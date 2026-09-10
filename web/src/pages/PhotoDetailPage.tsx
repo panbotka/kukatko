@@ -32,7 +32,7 @@ import { PeoplePanel } from '../components/photo/PeoplePanel'
 import { ProcessingPanel } from '../components/photo/ProcessingPanel'
 import { StackStrip } from '../components/photo/StackStrip'
 import { TechnicalDetails } from '../components/photo/TechnicalDetails'
-import { VideoPlayer } from '../components/photo/VideoPlayer'
+import { VideoPlayer, type VideoKeyboardScope } from '../components/photo/VideoPlayer'
 import './../components/photo/viewer.css'
 import { SharePhotosButton } from '../components/organize/SharePhotosButton'
 import { FaceOverlay } from '../components/people/FaceOverlay'
@@ -257,6 +257,16 @@ export function PhotoDetailPage() {
   // In flight while the hide/show (library visibility) mutation runs, so its
   // control is disabled and cannot be double-fired.
   const [hidePending, setHidePending] = useState(false)
+  // What the video player currently claims of the keyboard. The player and this
+  // page own the same keys — the arrows, `f`, `m`, the digits — and this is what
+  // decides which of the two a press belongs to: while the clip is playing, the
+  // player is focused or it fills the screen, the page stands aside for exactly
+  // those. A still photo (or no photo at all) leaves it cleared, so nothing here
+  // changes for anything but a video. See `VideoKeyboardScope`.
+  const [videoScope, setVideoScope] = useState<VideoKeyboardScope>({
+    active: false,
+    fullscreen: false,
+  })
   const faces = useFaces(uid)
   // How far the on-screen keyboard reaches up the window, so the phone's bottom
   // sheet can lift clear of it — otherwise tapping into the comment composer puts
@@ -710,21 +720,30 @@ export function PhotoDetailPage() {
   // the viewer itself).
   // Rating keys (0–5, p/r) are handled by the separate effect below. The hook
   // suppresses these while typing, which keeps `m`/`i` out of the name field.
+  //
+  // ←/→, `f` and `m` are also the video player's — seek, fullscreen and mute —
+  // and while it owns the keyboard (`videoScope.active`) they are simply not in
+  // this map, so a press reaches the player and nothing else. `i` and `s` are
+  // this page's alone and stay bound throughout.
   useKeyboardShortcuts({
-    ArrowLeft: () => {
-      step('prev')
-    },
-    ArrowRight: () => {
-      step('next')
-    },
-    f: () => {
-      favorite.toggle()
-    },
-    m: () => {
-      if (facesAvailable) {
-        toggleFaces()
-      }
-    },
+    ...(videoScope.active
+      ? {}
+      : {
+          ArrowLeft: () => {
+            step('prev')
+          },
+          ArrowRight: () => {
+            step('next')
+          },
+          f: () => {
+            favorite.toggle()
+          },
+          m: () => {
+            if (facesAvailable) {
+              toggleFaces()
+            }
+          },
+        }),
     i: () => {
       togglePanel()
     },
@@ -740,6 +759,12 @@ export function PhotoDetailPage() {
         }
       : {}),
     Escape: () => {
+      // A fullscreen video answers Escape itself, by leaving fullscreen. Reading
+      // the same press as "close the photo" would drop the reader back onto the
+      // grid for a key they pressed to get out of fullscreen.
+      if (videoScope.fullscreen) {
+        return
+      }
       if (faces.selected !== null) {
         faces.select(null)
         return
@@ -765,6 +790,14 @@ export function PhotoDetailPage() {
   // eye mark — the very act their buttons perform, so the key of the mark already
   // set clears it. Never while the user is typing in an
   // input/textarea/contenteditable.
+  //
+  // This is a listener of its own rather than an entry in the shared map, so it
+  // has to be taught the video player's scope by hand: while the player owns the
+  // keyboard the digits are its jump-to-a-tenth keys, and a `4` that both sought
+  // to 40 % and awarded four stars would be one press doing two things. Only the
+  // digits are handed over — p/r/v are nobody else's and keep working over a
+  // playing clip.
+  const videoOwnsDigits = videoScope.active
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       if (event.ctrlKey || event.metaKey || event.altKey || isTypingElement(event.target)) {
@@ -776,7 +809,7 @@ export function PhotoDetailPage() {
         return
       }
       const action = ratingHotkey(event.key)
-      if (action === null) {
+      if (action === null || (videoOwnsDigits && action.kind === 'rating')) {
         return
       }
       event.preventDefault()
@@ -790,7 +823,7 @@ export function PhotoDetailPage() {
     return () => {
       document.removeEventListener('keydown', handler)
     }
-  }, [setRating, toggleFlag])
+  }, [setRating, toggleFlag, videoOwnsDigits])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -1218,6 +1251,9 @@ export function PhotoDetailPage() {
             streaming={photo.hls === true}
             encode={videoEncode(photo)}
             posterRatio={stage.ratio}
+            // Which of the two owns a shared key. `setVideoScope` is a state
+            // setter, so it is stable and the player reports into it directly.
+            onKeyboardScope={setVideoScope}
             // The boxes belong to the poster frame — the one frame detection
             // looked at — so the player owns where they go and takes them down
             // once the clip is playing. Nothing is passed for `measured` (it

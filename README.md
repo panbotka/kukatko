@@ -252,7 +252,12 @@ that it was imported.
   yours: it replaces an estimate, is never shown as one, can be removed again, and the place browsing
   follows it.
 - **Video** with range streaming, poster frames, live photos, and a player with playback speed,
-  ±10 s skips, and frame previews under the cursor as you scrub. The poster is **picked**, not taken
+  ±10 s skips, and frame previews under the cursor as you scrub. **The keyboard works the way you
+  already expect it to**: space or `k` plays and pauses, the arrows seek ±5 s and `j`/`l` ±10 s, a
+  digit jumps to that tenth of the clip, `m` mutes, `f` fills the screen, `<` and `>` change the
+  speed and `,`/`.` step a paused clip a frame at a time. They only apply while the clip is playing
+  or the player is where you are working — the moment it is not, the same keys page between
+  photographs, favourite, show the faces and set the star rating, exactly as they always have. The poster is **picked**, not taken
   at a fixed second: a few frames spread across the clip are compared and the one that actually shows
   something wins, so a night scene or a slow fade-in no longer sits in the grid as a black rectangle. With `video.hls.enabled` a video is
   also encoded once, in the background, into **adaptive streaming renditions** served over HLS, so a

@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  ARROW_SECONDS,
   DEFAULT_PLAYBACK_RATE,
+  FRAME_SECONDS,
   PLAYBACK_RATES,
+  SKIP_SECONDS,
   formatPlaybackTime,
   isPlaybackRate,
   playbackFraction,
@@ -13,6 +16,7 @@ import {
   stepPlaybackRate,
   storyboardTileIndex,
   storyboardTileStyle,
+  tenthPosition,
   writePlaybackRate,
   type StoryboardSpec,
 } from './videoPlayback'
@@ -108,6 +112,37 @@ describe('seekTarget', () => {
 
   it('treats a non-finite position as the start', () => {
     expect(seekTarget(Number.NaN, 10, 60)).toBe(10)
+  })
+})
+
+describe('the seek distances', () => {
+  it('keeps the arrows finer than the skip keys, and a frame finer than both', () => {
+    // The order is the whole point: ←/→ nudge, J/L jump, and `,`/`.` move by one
+    // picture. Two of them equal would leave a key with nothing to say.
+    expect(ARROW_SECONDS).toBeLessThan(SKIP_SECONDS)
+    expect(FRAME_SECONDS).toBeLessThan(ARROW_SECONDS)
+    expect(FRAME_SECONDS).toBeGreaterThan(0)
+  })
+})
+
+describe('tenthPosition', () => {
+  it('opens the clip at that tenth of it', () => {
+    expect(tenthPosition(0, 60)).toBe(0)
+    expect(tenthPosition(1, 60)).toBe(6)
+    expect(tenthPosition(5, 60)).toBe(30)
+    expect(tenthPosition(9, 60)).toBe(54)
+  })
+
+  it('reads every digit as the start while the duration is unknown', () => {
+    expect(tenthPosition(7, 0)).toBe(0)
+    expect(tenthPosition(7, Number.NaN)).toBe(0)
+    expect(tenthPosition(7, Number.POSITIVE_INFINITY)).toBe(0)
+  })
+
+  it('clamps a digit outside 0–9 instead of reading off the timeline', () => {
+    expect(tenthPosition(-3, 60)).toBe(0)
+    expect(tenthPosition(42, 60)).toBe(54)
+    expect(tenthPosition(Number.NaN, 60)).toBe(0)
   })
 })
 
