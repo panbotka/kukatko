@@ -137,6 +137,9 @@ type Config struct {
 	// internal/video, which is what production wants; tests pin it so a decision
 	// under test does not depend on the machine running it.
 	FFmpegAvailable func() bool
+	// Metrics receives what each rendition cost. Nil records nothing, which is
+	// exactly how an instance with metrics switched off runs.
+	Metrics Observer
 }
 
 // Service runs the hls_transcode job. It is safe for concurrent use, though the
@@ -151,6 +154,10 @@ type Service struct {
 	segment    int
 	tempDir    string
 	ffmpeg     func() bool
+	// observer receives what each rendition cost; never nil after New.
+	observer Observer
+	// now is the clock the encode is timed against, time.Now in production.
+	now func() time.Time
 }
 
 // New returns a Service from cfg. It panics when Photos, Objects or Renditions is
@@ -165,6 +172,10 @@ func New(cfg Config) *Service {
 	if ffmpeg == nil {
 		ffmpeg = video.FFmpegAvailable
 	}
+	var observer Observer = nopObserver{}
+	if cfg.Metrics != nil {
+		observer = cfg.Metrics
+	}
 	return &Service{
 		photos:     cfg.Photos,
 		objects:    cfg.Objects,
@@ -175,6 +186,8 @@ func New(cfg Config) *Service {
 		segment:    hls.SegmentLength(cfg.SegmentSeconds),
 		tempDir:    cfg.TempDir,
 		ffmpeg:     ffmpeg,
+		observer:   observer,
+		now:        time.Now,
 	}
 }
 
@@ -235,6 +248,14 @@ func (s *Service) Transcode(ctx context.Context, photoUID string) error {
 		if err := s.encodeOne(ctx, photo, srcPath, rendition); err != nil {
 			return err
 		}
+	}
+	// The footage is counted once the whole plan is through the encoder, not once
+	// per rendition: it is the denominator of "what does a minute of video cost to
+	// encode?", and that minute is put through the pipeline once however many
+	// qualities come out of it. A run that failed part-way counts nothing, since
+	// the retry will put the same footage through again.
+	if length := clipLength(photo.DurationMs); length > 0 {
+		s.observer.ObserveEncodedSource(length)
 	}
 	return nil
 }

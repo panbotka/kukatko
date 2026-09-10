@@ -166,7 +166,7 @@ func buildJobServices(d jobServiceDeps) (registryServices, *maintenance.Service,
 	if err != nil {
 		return registryServices{}, nil, err
 	}
-	hlsSvc, err := buildHLSServiceOrNil(d.cfg, d.db, d.enqueuer)
+	hlsSvc, err := buildHLSServiceOrNil(d.cfg, d.db, d.enqueuer, d.reg)
 	if err != nil {
 		return registryServices{}, nil, err
 	}

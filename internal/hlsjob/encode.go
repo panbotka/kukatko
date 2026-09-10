@@ -26,8 +26,22 @@ const (
 	tempDirPattern = "kukatko-hls-*"
 )
 
-// encodeOne encodes photo into one rendition and records it, leaving the store
-// holding exactly the objects the new rendition consists of.
+// encodeOne encodes photo into one rendition, records it, and reports to the
+// Observer what that cost: which rendition, how it ended, how long it took and
+// how many bytes it published. The timing spans the whole of encodeRendition —
+// the ffmpeg run, the uploads and the row — because that is what a rendition
+// takes to become playable, and a failed run is timed and labelled too, so the
+// hours a repeatedly failing encode burns are visible rather than missing.
+func (s *Service) encodeOne(ctx context.Context, photo photos.Photo, srcPath string, r hls.Rendition) error {
+	start := s.now()
+	written, err := s.encodeRendition(ctx, photo, srcPath, r)
+	s.observer.ObserveRenditionEncode(r.Name, outcomeFor(err), s.now().Sub(start), written)
+	return err
+}
+
+// encodeRendition does the encode of one rendition, returning how many bytes of
+// segments it published — everything the run uploaded, which for a failure is
+// the part it had uploaded before it broke and then removed again.
 //
 // The order is deliberate: publish first, write the row last. A row is a promise
 // that the objects it describes can be fetched, so it may only be made once they
@@ -36,23 +50,25 @@ const (
 // the ones this run created are deleted again — objects a previous encode of the
 // same rendition had already published are left alone, because they are what its
 // still-valid row points at.
-func (s *Service) encodeOne(ctx context.Context, photo photos.Photo, srcPath string, r hls.Rendition) error {
+func (s *Service) encodeRendition(
+	ctx context.Context, photo photos.Photo, srcPath string, r hls.Rendition,
+) (int64, error) {
 	dir, err := os.MkdirTemp(s.tempDir, tempDirPattern)
 	if err != nil {
-		return fmt.Errorf("hlsjob: creating encode directory: %w", err)
+		return 0, fmt.Errorf("hlsjob: creating encode directory: %w", err)
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
 
 	produced, row, err := s.prepare(ctx, photo, srcPath, dir, r)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	prefix, err := renditionPrefix(photo.FileHash, r.Name)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	before := s.existingKeys(ctx, prefix)
-	published, err := s.publish(ctx, dir, prefix, produced)
+	published, written, err := s.publish(ctx, dir, prefix, produced)
 	if err == nil {
 		if _, saveErr := s.renditions.Save(ctx, row); saveErr != nil {
 			err = fmt.Errorf("hlsjob: recording rendition %s of %s: %w", r.Name, photo.UID, saveErr)
@@ -60,10 +76,10 @@ func (s *Service) encodeOne(ctx context.Context, photo photos.Photo, srcPath str
 	}
 	if err != nil {
 		s.remove(ctx, without(published, before))
-		return err
+		return written, err
 	}
 	s.remove(ctx, without(before, published))
-	return nil
+	return written, nil
 }
 
 // prepare runs ffmpeg into dir and reads back what it produced: the objects to
@@ -144,42 +160,46 @@ func probeDimensions(ctx context.Context, initPath string) (width, height int, e
 }
 
 // publish uploads the initialisation segment and every media segment from dir
-// into the rendition's prefix, returning the keys it wrote — including on
-// failure, so the caller can undo exactly what this run created.
-func (s *Service) publish(ctx context.Context, dir, prefix string, produced encoded) ([]string, error) {
+// into the rendition's prefix, returning the keys it wrote and their total size —
+// including on failure, so the caller can undo exactly what this run created and
+// still report what it had cost by then.
+func (s *Service) publish(ctx context.Context, dir, prefix string, produced encoded) ([]string, int64, error) {
 	names := append([]string{produced.initName}, produced.segments...)
 	written := make([]string, 0, len(names))
+	var total int64
 	for _, name := range names {
 		key := prefix + name
-		if err := s.putObject(ctx, filepath.Join(dir, name), key, hls.MIMEFor(name)); err != nil {
-			return written, err
+		n, err := s.putObject(ctx, filepath.Join(dir, name), key, hls.MIMEFor(name))
+		if err != nil {
+			return written, total, err
 		}
 		written = append(written, key)
+		total += n
 	}
-	return written, nil
+	return written, total, nil
 }
 
-// putObject uploads one local file to key. The file is digested first and then
-// streamed, because the store verifies an upload against the identity it is
-// given up front — which is what makes a nil error mean the promised bytes are
-// durably in place rather than merely sent.
-func (s *Service) putObject(ctx context.Context, path, key, mime string) error {
+// putObject uploads one local file to key and returns its size. The file is
+// digested first and then streamed, because the store verifies an upload against
+// the identity it is given up front — which is what makes a nil error mean the
+// promised bytes are durably in place rather than merely sent.
+func (s *Service) putObject(ctx context.Context, path, key, mime string) (int64, error) {
 	sum, size, err := digest(path)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	file, err := os.Open(path) // #nosec G304 -- path is a file ffmpeg wrote into our own temp directory.
 	if err != nil {
-		return fmt.Errorf("hlsjob: opening %s: %w", filepath.Base(path), err)
+		return 0, fmt.Errorf("hlsjob: opening %s: %w", filepath.Base(path), err)
 	}
 	defer func() { _ = file.Close() }()
 
 	if err := s.objects.Put(ctx, file, storage.StoredFile{
 		Hash: sum, RelPath: key, Size: size, MIME: mime,
 	}); err != nil {
-		return fmt.Errorf("hlsjob: publishing %s: %w", key, err)
+		return 0, fmt.Errorf("hlsjob: publishing %s: %w", key, err)
 	}
-	return nil
+	return size, nil
 }
 
 // digest returns the SHA256 digest and byte count of the file at path, streaming

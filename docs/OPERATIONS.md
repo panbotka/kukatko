@@ -1802,7 +1802,7 @@ algorithm cannot be changed in just one of them.
 
 ## Prometheus metrics
 
-`GET /metrics` (namespace `kukatko`, mounted outside `/api/v1` when `metrics.enabled`) exposes four
+`GET /metrics` (namespace `kukatko`, mounted outside `/api/v1` when `metrics.enabled`) exposes five
 groups. It is **unauthenticated** — restrict it at the network layer — so it deliberately carries only
 instance-wide aggregates: nothing per-user, and no name of a photo, album, label or person ever
 becomes a label value.
@@ -1815,18 +1815,49 @@ becomes a label value.
   `kukatko_thumbnail_generation_duration_seconds` and `kukatko_geocode_credits_spent_total`.
   `kukatko_import_run_photos{source,outcome}` — the tally of a run in progress — was removed with the
   migration importers that checkpointed it; the last-run gauges below are unaffected.
+- **The streaming encode** (event-driven, recorded where ffmpeg runs):
+  `kukatko_video_encode_duration_seconds{rendition,outcome}` (a histogram whose buckets start at 5 s and
+  triple to just over three hours, because an encode is nothing like an HTTP request),
+  `kukatko_video_encode_output_bytes_total{rendition,outcome}` — how many bytes of segments the encoder
+  published; a failed encode's were removed again, which is what the outcome label is for — and
+  `kukatko_video_encode_source_seconds_total`, the seconds of source footage that have been through the
+  encoder, counted **once per video** and not once per rendition. The observation is per **rendition** on
+  purpose: `hls_transcode` already appears in the generic job series above (started, finished, duration,
+  queue depth) and **needs no duplicates of them**, but there a job is one row whether it chewed through a
+  six-second clip or a forty-minute one, and the qualities it produces cost wildly different amounts. The
+  footage is a counter rather than a ready-made ratio, because a ratio can be neither aggregated across
+  instances nor rated over a window. Three queries answer what this exists for:
+
+  ```promql
+  # How many encodes are running right now (the job has a one-slot pool, so this is 0 or 1)?
+  kukatko_jobs_queue_depth_by_type_state{type="hls_transcode",state="running"}
+
+  # How long does encoding one rendition take (median and p95 over the last 6 h)?
+  histogram_quantile(0.5,  sum by (le, rendition) (rate(kukatko_video_encode_duration_seconds_bucket[6h])))
+  histogram_quantile(0.95, sum by (le, rendition) (rate(kukatko_video_encode_duration_seconds_bucket[6h])))
+
+  # What does a minute of video cost to encode, across every rendition of the plan (seconds of
+  # processing per minute of footage)?
+  60 * sum(rate(kukatko_video_encode_duration_seconds_sum{outcome="success"}[6h]))
+     / rate(kukatko_video_encode_source_seconds_total[6h])
+  ```
 - **Infrastructure, sampled at scrape time:** `kukatko_db_pool_*` (live pgx pool stats),
   `kukatko_jobs_queue_depth{state}` / `_by_type{type}` / `_by_type_state{type,state}` (all three folded
   from **one** `GROUP BY type, state` — the two one-dimensional families are sums over the third, so
   they can never disagree) and `kukatko_geocode_credits_remaining` / `_limit`.
-- **Library content**, memoised for `metrics.library_ttl` (default 1 m) over the same aggregation the
-  admin dashboard reads (`internal/system`, one SQL statement), so the gauges and `GET /system/stats`
-  cannot disagree and a scrape does not re-count the catalogue:
+- **Library content**, memoised for `metrics.library_ttl` (default 1 m) over the same aggregations the
+  admin dashboard reads (`internal/system`: one SQL statement for the counts, the dashboard's own round
+  trip for the streaming backlog), so the gauges, `GET /system/stats` and `GET /system/status` cannot
+  disagree and a scrape does not re-count the catalogue:
   `kukatko_library_photos{media_type="image|video|live"}` (the total is `sum()` over the label),
   `_photos_archived` (the trash), `_photos_processed{stage="embedding|faces|places"}` and
   `_photos_pending{stage=…}` (the processing coverage and its gap — note the `faces` gap also counts
   photos that genuinely contain no face, which the counts cannot tell apart), `_embeddings`, `_faces`,
-  `_markers{state="assigned|unassigned"}`, `_subjects{type}`, `_albums{type}`, `_labels`, plus
+  `_markers{state="assigned|unassigned"}`, `_subjects{type}`, `_albums{type}`, `_labels`,
+  `_videos_without_streaming` (the encoding backlog — browsable videos with no rendition at all, the same
+  number the System page's video card shows, out of the same memoised aggregation; with `video.hls.enabled`
+  off it is every video and is the instance working as configured, so alert on it only where streaming is
+  on), plus
   `kukatko_library_collect_errors_total` (a failed aggregation exports **no** library gauges for that
   scrape — a gap, not a stale number — and bumps this counter, so alert on it).
   RAW originals are deliberately **not** a media type here: RAW-ness is a per-file property judged by

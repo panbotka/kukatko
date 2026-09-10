@@ -28,7 +28,7 @@ func TestLibrarySnapshot_MapsEveryCount(t *testing.T) {
 		Labels: 11,
 	}
 
-	got := librarySnapshot(counts)
+	got := librarySnapshot(counts, system.Video{Videos: 4, Streamable: 1, Missing: 3})
 	checks := []struct {
 		name string
 		got  int
@@ -55,6 +55,7 @@ func TestLibrarySnapshot_MapsEveryCount(t *testing.T) {
 		{"albums state", got.AlbumsByType["state"], 4},
 		{"albums month", got.AlbumsByType["month"], 5},
 		{"labels", got.Labels, 11},
+		{"videos without streaming", got.VideosWithoutStreaming, 3},
 	}
 	for _, check := range checks {
 		if check.got != check.want {

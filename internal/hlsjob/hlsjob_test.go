@@ -307,7 +307,7 @@ func TestPublish(t *testing.T) {
 	svc := newService(t, &fakePhotos{}, objects, &fakeRenditions{})
 	prefix := "hls/" + testHash + "/1080p/"
 
-	written, err := svc.publish(t.Context(), dir, prefix,
+	written, size, err := svc.publish(t.Context(), dir, prefix,
 		encoded{initName: "init.mp4", segments: []string{"00000.m4s", "00001.m4s"}})
 	if err != nil {
 		t.Fatalf("publish: %v", err)
@@ -315,6 +315,15 @@ func TestPublish(t *testing.T) {
 	want := []string{prefix + "init.mp4", prefix + "00000.m4s", prefix + "00001.m4s"}
 	if !slices.Equal(written, want) {
 		t.Fatalf("publish wrote %v, want %v", written, want)
+	}
+	// The reported size is what the rendition weighs — every object it consists
+	// of, not just its segments — since that is what the encode produced.
+	var wantSize int64
+	for _, body := range bodies {
+		wantSize += int64(len(body))
+	}
+	if size != wantSize {
+		t.Errorf("publish reported %d bytes, want %d", size, wantSize)
 	}
 	for name, body := range bodies {
 		key := prefix + name
@@ -348,13 +357,16 @@ func TestPublish_reportsWhatItWrote(t *testing.T) {
 	svc := newService(t, &fakePhotos{}, objects, &fakeRenditions{})
 	prefix := "hls/" + testHash + "/1080p/"
 
-	written, err := svc.publish(t.Context(), dir, prefix,
+	written, size, err := svc.publish(t.Context(), dir, prefix,
 		encoded{initName: "init.mp4", segments: []string{"00000.m4s", "00001.m4s"}})
 	if err == nil {
 		t.Fatal("publish succeeded with a failing store")
 	}
 	if want := []string{prefix + "init.mp4"}; !slices.Equal(written, want) {
 		t.Errorf("publish reported %v as written, want %v", written, want)
+	}
+	if size != 1 {
+		t.Errorf("publish reported %d bytes, want the 1 byte that did land", size)
 	}
 }
 

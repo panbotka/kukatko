@@ -9,6 +9,7 @@ import (
 	"github.com/panbotka/kukatko/internal/hlsjob"
 	"github.com/panbotka/kukatko/internal/ingest"
 	"github.com/panbotka/kukatko/internal/jobs"
+	"github.com/panbotka/kukatko/internal/metrics"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/processapi"
 )
@@ -26,7 +27,7 @@ import (
 // POST /process/hls, so it is wired with the catalogue lister and the queue
 // enqueuer that backfill needs.
 func buildHLSServiceOrNil(
-	cfg *config.Config, db *database.DB, enqueuer *jobs.Enqueuer,
+	cfg *config.Config, db *database.DB, enqueuer *jobs.Enqueuer, reg *metrics.Registry,
 ) (*hlsjob.Service, error) {
 	if !cfg.Video.HLS.Enabled {
 		return nil, nil //nolint:nilnil // a disabled feature has no service, and that is not an error
@@ -51,6 +52,9 @@ func buildHLSServiceOrNil(
 		Plan:           plan,
 		SegmentSeconds: cfg.Video.HLS.SegmentSeconds,
 		TempDir:        cfg.Storage.TempPath,
+		// The encode is the most expensive thing this application does, so it
+		// reports what each rendition cost; with no registry it records nothing.
+		Metrics: encodeObserver(reg),
 	}), nil
 }
 

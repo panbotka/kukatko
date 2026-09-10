@@ -81,6 +81,11 @@ type LibrarySnapshot struct {
 	AlbumsByType map[string]int
 	// Labels is the total number of labels.
 	Labels int
+	// VideosWithoutStreaming is how many browsable videos have no encoded
+	// streaming rendition at all — the encoding backlog. It is the same number
+	// the admin dashboard shows, taken from the same aggregation, so the two
+	// cannot disagree.
+	VideosWithoutStreaming int
 	// Imports is the last recorded run of each import source; sources that have
 	// never run are simply absent.
 	Imports []ImportRun
@@ -121,6 +126,7 @@ type libraryDescs struct {
 	subjects        *prometheus.Desc
 	albums          *prometheus.Desc
 	labels          *prometheus.Desc
+	videosNoStream  *prometheus.Desc
 	collectErrors   *prometheus.Desc
 	importStatus    *prometheus.Desc
 	importStarted   *prometheus.Desc
@@ -144,12 +150,15 @@ func newLibraryDescs() libraryDescs {
 			"Photos still waiting for an asynchronous enrichment stage. For the faces stage this "+
 				"also counts photos that genuinely contain no face, which the counts cannot tell apart.",
 			"stage"),
-		embeddings:    desc("embeddings", "Image-embedding rows stored in the database."),
-		faces:         desc("faces", "Detected-face rows stored in the database."),
-		markers:       desc("markers", "Markers, partitioned by whether they name a subject.", "state"),
-		subjects:      desc("subjects", "Named subjects, partitioned by type.", "type"),
-		albums:        desc("albums", "Albums, partitioned by type.", "type"),
-		labels:        desc("labels", "Labels defined in the catalogue."),
+		embeddings: desc("embeddings", "Image-embedding rows stored in the database."),
+		faces:      desc("faces", "Detected-face rows stored in the database."),
+		markers:    desc("markers", "Markers, partitioned by whether they name a subject.", "state"),
+		subjects:   desc("subjects", "Named subjects, partitioned by type.", "type"),
+		albums:     desc("albums", "Albums, partitioned by type.", "type"),
+		labels:     desc("labels", "Labels defined in the catalogue."),
+		videosNoStream: desc("videos_without_streaming",
+			"Browsable videos with no encoded streaming rendition, i.e. the streaming-encode "+
+				"backlog. With video.hls.enabled off this is every video and is not work outstanding."),
 		collectErrors: desc("collect_errors_total", "Scrapes whose library aggregation failed."),
 		importStatus: prometheus.NewDesc(prometheus.BuildFQName(namespace, "import", "last_run_status"),
 			"Status of the most recent import run per source (1 for the status it is in, 0 for the rest).",
@@ -199,7 +208,7 @@ func (c *libraryCollector) Describe(ch chan<- *prometheus.Desc) {
 	d := c.descs
 	for _, desc := range []*prometheus.Desc{
 		d.photos, d.photosArchived, d.photosProcessed, d.photosPending, d.embeddings, d.faces,
-		d.markers, d.subjects, d.albums, d.labels, d.collectErrors,
+		d.markers, d.subjects, d.albums, d.labels, d.videosNoStream, d.collectErrors,
 		d.importStatus, d.importStarted, d.importFinished,
 	} {
 		ch <- desc
@@ -261,6 +270,7 @@ func (c *libraryCollector) emitLibrary(ch chan<- prometheus.Metric, s LibrarySna
 	emitScalar(ch, d.embeddings, s.Embeddings)
 	emitScalar(ch, d.faces, s.Faces)
 	emitScalar(ch, d.labels, s.Labels)
+	emitScalar(ch, d.videosNoStream, s.VideosWithoutStreaming)
 }
 
 // emitImports writes the per-source import-run gauges. The status is published as

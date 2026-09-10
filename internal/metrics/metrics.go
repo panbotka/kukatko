@@ -58,6 +58,11 @@ type Registry struct {
 
 	// Reverse-geocode credits spent at mapy.com by the places job.
 	geocodeCredits prometheus.Counter
+
+	// Streaming encode (the `hls_transcode` job), per rendition.
+	encodeDuration     *prometheus.HistogramVec
+	encodeOutputBytes  *prometheus.CounterVec
+	encodeSourceSecond prometheus.Counter
 }
 
 // New constructs a Registry with every series registered, including the
@@ -68,6 +73,7 @@ func New() *Registry {
 	r.registerHTTP()
 	r.registerJobs()
 	r.registerExternal()
+	r.registerVideoEncode()
 	r.reg.MustRegister(
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
@@ -155,6 +161,48 @@ func (r *Registry) registerExternal() {
 		Help:      "Total mapy.com reverse-geocode credits spent by the places job since start.",
 	})
 	r.reg.MustRegister(r.embeddingDuration, r.embeddingUp, r.thumbnailDuration, r.geocodeCredits)
+}
+
+// encodeDurationBuckets are the boundaries of the streaming-encode histogram, in
+// seconds: 5 s, then tripling to just over three hours. The default buckets top
+// out at ten seconds, which is shorter than every encode this instrumentation
+// exists to measure — a phone clip's smallest rendition already takes longer
+// than that, and a long family video takes hours — so they would put every
+// observation into +Inf and answer nothing.
+var encodeDurationBuckets = prometheus.ExponentialBuckets(5, 3, 8)
+
+// registerVideoEncode creates and registers the per-rendition streaming-encode
+// series and the counter of source footage that has been through the encoder.
+//
+// The generic job series already count `hls_transcode` jobs; these describe the
+// shape of the work inside one, which a per-job number averages away — a job is
+// one row whether it chewed through a six-second clip or a forty-minute one.
+func (r *Registry) registerVideoEncode() {
+	const subsystem = "video_encode"
+	r.encodeDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: namespace,
+		Subsystem: subsystem,
+		Name:      "duration_seconds",
+		Help: "Wall-clock time to encode one streaming rendition of one video, " +
+			"partitioned by rendition and outcome.",
+		Buckets: encodeDurationBuckets,
+	}, []string{"rendition", "outcome"})
+	r.encodeOutputBytes = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: namespace,
+		Subsystem: subsystem,
+		Name:      "output_bytes_total",
+		Help: "Total bytes of streaming segments published by the encoder, partitioned by " +
+			"rendition and outcome; a failed encode's bytes were removed again.",
+	}, []string{"rendition", "outcome"})
+	r.encodeSourceSecond = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: namespace,
+		Subsystem: subsystem,
+		Name:      "source_seconds_total",
+		Help: "Total seconds of source video that have been through the encoder, counted once " +
+			"per video rather than once per rendition. Divide the summed encode duration by it " +
+			"to get what a second of footage costs to encode.",
+	})
+	r.reg.MustRegister(r.encodeDuration, r.encodeOutputBytes, r.encodeSourceSecond)
 }
 
 // Handler returns an http.Handler that serves the registered metrics in the

@@ -23,12 +23,13 @@ func sampleSnapshot() LibrarySnapshot {
 		PhotosPending: map[string]int{
 			StageEmbedding: 242, StageFaces: 11_089, StagePlaces: 130,
 		},
-		Embeddings:     20_647,
-		Faces:          115_457,
-		MarkersByState: map[string]int{MarkerAssigned: 18_003, MarkerUnassigned: 3_164},
-		SubjectsByType: map[string]int{"person": 100, "pet": 4, "other": 1},
-		AlbumsByType:   map[string]int{"album": 400, "folder": 30, "month": 7},
-		Labels:         113,
+		Embeddings:             20_647,
+		Faces:                  115_457,
+		MarkersByState:         map[string]int{MarkerAssigned: 18_003, MarkerUnassigned: 3_164},
+		SubjectsByType:         map[string]int{"person": 100, "pet": 4, "other": 1},
+		AlbumsByType:           map[string]int{"album": 400, "folder": 30, "month": 7},
+		Labels:                 113,
+		VideosWithoutStreaming: 57,
 		Imports: []ImportRun{
 			{
 				Source: "photoprism", Status: "done",
@@ -69,6 +70,7 @@ func TestRegisterLibrary_exportsCounts(t *testing.T) {
 		`kukatko_library_subjects{type="person"} 100`,
 		`kukatko_library_albums{type="folder"} 30`,
 		`kukatko_library_labels 113`,
+		`kukatko_library_videos_without_streaming 57`,
 		`kukatko_library_collect_errors_total 0`,
 	}
 	for _, series := range want {

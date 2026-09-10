@@ -437,6 +437,55 @@ func TestCollect_DashboardMemoised(t *testing.T) {
 	}
 }
 
+// TestVideoBacklog_sharesTheDashboardAggregation verifies the streaming-encode
+// backlog a scrape reads is the dashboard's own memoised one, stamped with the
+// configured streaming flag: it must never re-count, and it must never be able
+// to disagree with the number the admin page shows.
+func TestVideoBacklog_sharesTheDashboardAggregation(t *testing.T) {
+	t.Parallel()
+
+	counter := &fakeDashboard{dashboard: Dashboard{
+		Video: Video{Videos: 12, Streamable: 5, Missing: 7, NotScheduled: 7},
+	}}
+	cfg := healthyConfig(t.TempDir())
+	cfg.Dashboard = counter
+	cfg.StreamingEnabled = true
+	cfg.Clock = func() time.Time { return time.Unix(0, 0) }
+
+	svc := New(cfg)
+	video, err := svc.VideoBacklog(t.Context())
+	if err != nil {
+		t.Fatalf("VideoBacklog: %v", err)
+	}
+	if video.Missing != 7 || video.Videos != 12 || !video.StreamingEnabled {
+		t.Errorf("video = %+v, want 7 of 12 missing with streaming enabled", video)
+	}
+	status, err := svc.Collect(t.Context())
+	if err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if status.Video != video {
+		t.Errorf("the dashboard reports %+v while the backlog reports %+v", status.Video, video)
+	}
+	if counter.calls != 1 {
+		t.Errorf("the aggregation ran %d times for two readers, want 1", counter.calls)
+	}
+}
+
+// TestVideoBacklog_error verifies a failing aggregation is reported as an error
+// rather than as an empty backlog, so a scrape drops the gauge instead of
+// exporting a zero that reads as "everything is encoded".
+func TestVideoBacklog_error(t *testing.T) {
+	t.Parallel()
+
+	cfg := healthyConfig(t.TempDir())
+	cfg.Dashboard = &fakeDashboard{err: errors.New("db down")}
+
+	if _, err := New(cfg).VideoBacklog(t.Context()); err == nil {
+		t.Error("VideoBacklog with a failing counter = nil error, want error")
+	}
+}
+
 // TestCollect_DashboardError verifies a failing dashboard aggregation fails the
 // whole collection: a section of zeroes would read as an empty library rather
 // than as an unavailable count.

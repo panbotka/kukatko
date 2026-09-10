@@ -3804,7 +3804,7 @@ to `## Package map` in `CLAUDE.md`.
   `internal/hlsjob/`
   (**the `hls_transcode` job** — the acting half of streaming to `internal/hls`'s pure one: it runs ffmpeg over
   an uploaded video, publishes the segments and records what the player's playlists must advertise. `Service` =
-  `New(Config{Photos,Objects,Renditions,Lister,Enqueuer,Plan,SegmentSeconds,TempDir,FFmpegAvailable})`
+  `New(Config{Photos,Objects,Renditions,Lister,Enqueuer,Plan,SegmentSeconds,TempDir,FFmpegAvailable,Metrics})`
   (panics on a nil Photos/Objects/Renditions; the `Plan` is resolved from `video.hls.renditions` by
   `cmd/kukatko/hls.go:hlsPlan`, an unknown name failing **startup** rather than silently producing a library
   with a missing quality level). `Handle` = `worker.HandlerFunc` (payload `{photo_uid}`, empty →
@@ -3835,6 +3835,17 @@ to `## Package map` in `CLAUDE.md`.
   ten-second one, and a tight one kills every long video at the same point, which looks exactly like a clip
   that "cannot be transcoded". The job has a **one-slot pool** (`internal/worker`), so a batch of uploaded
   videos serialises instead of taking the machine.
+  **What an encode cost is reported through `Observer`** (`observe.go`: `ObserveRenditionEncode(rendition,
+  outcome,d,written)` + `ObserveEncodedSource(d)`, satisfied by `*metrics.Registry`, wired as `Config.Metrics`
+  by `cmd/kukatko/hls.go`; nil = `nopObserver`, so the encode behaves identically with metrics off and this
+  package never imports `internal/metrics`). The grain is the **rendition**, because a job encodes one video
+  into every quality and those cost wildly different amounts — `encodeOne` times the whole of
+  `encodeRendition` (ffmpeg + uploads + the row), labels it `success`/`error` so the hours a repeatedly failing
+  encode burns are visible, and reports the bytes `publish` uploaded (for a failure, the part that landed
+  before it broke and was removed again). The **footage** is counted once per video, after the whole plan is
+  through, so `duration_sum / source_seconds_total` is the pipeline's cost per second of video rather than one
+  quality's; a run that failed part-way counts none, since the retry will put the same minutes through again,
+  and a clip whose length the catalogue never recorded counts none either (`clipLength`).
   `Store` (`NewStore(pool)`) is the `photo_hls_renditions` access layer: `Save` (upsert on
   `(photo_uid,rendition)` — what makes a re-encode replace rather than duplicate — returning the row with its
   `encoded_at`), `Get` (→ `ErrRenditionNotFound`), `ListForPhoto` (**widest picture first**, the order a
@@ -3861,7 +3872,8 @@ to `## Package map` in `CLAUDE.md`.
   integration tests synthesize a clip with
   ffmpeg at test time, encode it end to end and assert both halves — the objects in the store *and* the row —
   plus that a re-run leaves one row, moved forward in time, the same object set, and sweeps a segment planted
-  as an earlier encode's leftover),
+  as an earlier encode's leftover, and that the instrumentation reports every rendition of the plan once, as a
+  success, with the bytes its prefix really holds and the clip's length counted once),
   `internal/maintenanceapi/`
   (a maintainer-only HTTP API over maintenance: the interfaces `Service` (Scan+Repair, satisfied by `*maintenance.Service`,
   nil → 503) and `AuditPurger` (`PurgeOlderThan`+`Record`, satisfied by `*audit.Store`, nil → 503);
@@ -4079,7 +4091,12 @@ to `## Package map` in `CLAUDE.md`.
   listing of the whole `hls/` prefix. `StreamingEnabled` is `video.hls.enabled` stamped by `Collect` (like
   `DerivedBytes`, it is not a count): with it false nothing is ever enqueued, so `Missing` is every video and
   is not a backlog. `RemainingWork.VideosWithoutStreaming` is the same number as `Video.Missing`, filled by
-  the store from the same relation so the backlog list and the card cannot disagree. The three video
+  the store from the same relation so the backlog list and the card cannot disagree.
+  **`VideoBacklog(ctx) (Video,error)`** hands that section out on its own, straight off the memoised dashboard
+  cache and with `StreamingEnabled` stamped exactly as `Collect` stamps it, so the Prometheus collector
+  (`kukatko_library_videos_without_streaming`) reads the dashboard's own number instead of counting again — a
+  failure is an error, never an empty backlog, so a scrape drops the gauge rather than exporting a zero that
+  reads as "everything is encoded". The three video
   aggregates are folded into `countDashboardSQL` as CTEs (`hls_encoded` = renditions reduced to one row per
   video, `hls_encodes` = the `hls_transcode` queue grouped by the photo uid in its payload, `video_streaming`
   = both left-joined onto the browsable videos), each scanned once — **no per-video query**, which is what
@@ -4321,7 +4338,13 @@ to `## Package map` in `CLAUDE.md`.
   (started/finished counter + a duration histogram by type/outcome), embeddings (a duration histogram +
   an up gauge), import progress (a gauge per source/outcome), thumbnail duration and the geocode credit
   counter (`kukatko_geocode_credits_spent_total` — metered mapy.com money, so the spend of a running import
-  is watchable, not inferred from the bill) + the standard
+  is watchable, not inferred from the bill), the **streaming encode** (`registerVideoEncode`:
+  `kukatko_video_encode_duration_seconds{rendition,outcome}` + `_output_bytes_total{rendition,outcome}`, one
+  observation per **rendition** rather than per job — a job is one row in the generic series whether it chewed
+  through a six-second clip or a forty-minute one — plus `_source_seconds_total`, the footage counted once per
+  **video**, so the summed duration divided by it is what a minute of video costs to encode; the histogram uses
+  `ExponentialBuckets(5,3,8)` — 5 s tripling to just over three hours — because the default buckets top out at
+  ten seconds, shorter than every encode this exists to measure) + the standard
   `go_`/`process_` collectors; the **pull-at-scrape collectors** `RegisterDBPool` (live pgx pool stats),
   `RegisterJobQueue` (`QueueDepthFunc` → `map[QueueCell]int` keyed by (type,state); the collector folds that
   one breakdown into `kukatko_jobs_queue_depth{state}`/`_by_type{type}`/`_by_type_state{type,state}`, so the
@@ -4331,7 +4354,9 @@ to `## Package map` in `CLAUDE.md`.
   window rolling over even while no job runs; a nil func = no budget wired) read their data at scrape time
   without extra goroutines; `RegisterLibrary(LibraryStatsFunc, ttl)` (`library.go`) adds the **library-content**
   gauges — `kukatko_library_photos{media_type}`/`_photos_archived`/`_photos_processed{stage}`/
-  `_photos_pending{stage}`/`_embeddings`/`_faces`/`_markers{state}`/`_subjects{type}`/`_albums{type}`/`_labels`
+  `_photos_pending{stage}`/`_embeddings`/`_faces`/`_markers{state}`/`_subjects{type}`/`_albums{type}`/`_labels`/
+  `_videos_without_streaming` (the streaming-encode backlog, exported whatever `video.hls.enabled` says — with
+  streaming off it is every video, and saying so is the alert's job, not the gauge's)
   and `kukatko_import_last_run_status{source,status}` (1 for the status the run is in, **0** for every other
   known one, so a transition is visible instead of a series vanishing) + `_start`/`_finish_timestamp_seconds{source}`
   (Unix seconds; the age is `time() - gauge`, not a pre-computed one) — over a `LibrarySnapshot` whose every
@@ -4341,13 +4366,15 @@ to `## Package map` in `CLAUDE.md`.
   value is **never** served past the TTL: a failure exports no library gauges (a gap, not a number the library
   no longer has) and bumps `kukatko_library_collect_errors_total`; the gauges carry no `_total` suffix on
   purpose, that is reserved for counters. The func is wired in `cmd/kukatko/obs.go`
-  (`registerLibraryMetrics`/`librarySnapshot`/`importRuns`) onto `system.Service.LibraryStats`+`LatestRuns` —
-  the **same** aggregation the admin dashboard reads, so `/metrics` and `GET /system/stats` cannot disagree;
+  (`registerLibraryMetrics`/`librarySnapshot`/`importRuns`) onto `system.Service.LibraryStats`+`LatestRuns`+
+  `VideoBacklog` — the **same** memoised aggregations the admin dashboard reads, so `/metrics`,
+  `GET /system/stats` and `GET /system/status` cannot disagree and a scrape re-counts nothing;
   `/metrics` is unauthenticated, so only instance-wide aggregates go in it, never a per-user number or a
   photo/album/label/person name as a label value; `Handler()`
   is mounted by `serve` on `/metrics` (the middleware skips that path, a scrape does not instrument itself),
   the observation methods `JobStarted`/`JobFinished`/`ObserveEmbeddingCall`/`SetEmbeddingUp`/
-  `SetImportProgress`/`ObserveThumbnail`/`GeocodeCreditSpent` and `Middleware(routeOf)` are handed to the subsystems that
+  `SetImportProgress`/`ObserveThumbnail`/`GeocodeCreditSpent`/`ObserveRenditionEncode`/`ObserveEncodedSource`
+  and `Middleware(routeOf)` are handed to the subsystems that
   emit the events; it keeps the lightweight approach — one namespace, limited label sets;
   tunables in the `metrics.*` config), `internal/web/`
   (the SPA fallback handler `web.Handler()`/`SPAHandler` + the `internal/web/static` embed

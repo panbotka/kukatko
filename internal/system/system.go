@@ -335,6 +335,24 @@ func (s *Service) LibraryStats(ctx context.Context) (Library, error) {
 	return s.library.get(ctx)
 }
 
+// VideoBacklog returns the streaming-encode backlog — how many videos the
+// library holds, how many can be streamed, and the disjoint states of the rest —
+// out of the same memoised dashboard aggregation Collect reads, with the
+// configured streaming flag stamped on as Collect stamps it.
+//
+// It exists so a reader that wants only this section (the Prometheus collector)
+// does not gather the whole status snapshot, and cannot reach a second count of
+// its own that could disagree with the dashboard's. Like LibraryStats it reports
+// a failure as an error rather than as an empty backlog.
+func (s *Service) VideoBacklog(ctx context.Context) (Video, error) {
+	dashboard, err := s.dashboard.get(ctx)
+	if err != nil {
+		return Video{}, err
+	}
+	dashboard.Video.StreamingEnabled = s.streaming
+	return dashboard.Video, nil
+}
+
 // LibraryCharts returns the chart aggregates behind the statistics page —
 // photos per year, arrivals per month, the top cameras and the storage
 // breakdowns — gap-filled and memoised for a longer TTL than the counts, because

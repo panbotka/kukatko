@@ -8,6 +8,7 @@ import (
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/embedding"
+	"github.com/panbotka/kukatko/internal/hlsjob"
 	"github.com/panbotka/kukatko/internal/importer"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/metrics"
@@ -69,6 +70,16 @@ func workerObserver(reg *metrics.Registry) worker.Observer {
 	return reg
 }
 
+// encodeObserver returns reg as an hlsjob.Observer, or a nil interface when reg
+// is nil so the streaming encode uses its no-op observer and runs exactly as it
+// does with metrics switched off.
+func encodeObserver(reg *metrics.Registry) hlsjob.Observer {
+	if reg == nil {
+		return nil
+	}
+	return reg
+}
+
 // creditMeter returns reg as a placesjob.CreditMeter, or a nil interface when
 // reg is nil so the places job uses its no-op meter.
 func creditMeter(reg *metrics.Registry) placesjob.CreditMeter {
@@ -102,7 +113,9 @@ func registerJobQueueMetrics(reg *metrics.Registry, store *jobs.Store) {
 // internal/system's aggregation — the very one the admin dashboard reads — into
 // the label maps the metric families need. Sharing that source is deliberate:
 // the counts have one SQL statement behind them, so /metrics and the dashboard
-// can never disagree. It is a no-op when reg is nil.
+// can never disagree. The streaming backlog comes from the same place for the
+// same reason, out of the memoised dashboard aggregation rather than a count of
+// the collector's own. It is a no-op when reg is nil.
 func registerLibraryMetrics(reg *metrics.Registry, svc *system.Service, ttl time.Duration) {
 	if reg == nil {
 		return
@@ -116,15 +129,19 @@ func registerLibraryMetrics(reg *metrics.Registry, svc *system.Service, ttl time
 		if err != nil {
 			return metrics.LibrarySnapshot{}, fmt.Errorf("collecting import runs: %w", err)
 		}
-		snapshot := librarySnapshot(counts)
+		video, err := svc.VideoBacklog(ctx)
+		if err != nil {
+			return metrics.LibrarySnapshot{}, fmt.Errorf("collecting the streaming backlog: %w", err)
+		}
+		snapshot := librarySnapshot(counts, video)
 		snapshot.Imports = importRuns(runs)
 		return snapshot, nil
 	}, ttl)
 }
 
-// librarySnapshot maps the system package's library counts onto the metric
-// shape, one map entry per label value.
-func librarySnapshot(counts system.Library) metrics.LibrarySnapshot {
+// librarySnapshot maps the system package's library counts and streaming-encode
+// backlog onto the metric shape, one map entry per label value.
+func librarySnapshot(counts system.Library, video system.Video) metrics.LibrarySnapshot {
 	return metrics.LibrarySnapshot{
 		PhotosByMediaType: map[string]int{
 			"image": counts.Images, "video": counts.Videos, "live": counts.LivePhotos,
@@ -157,6 +174,10 @@ func librarySnapshot(counts system.Library) metrics.LibrarySnapshot {
 			string(organize.AlbumMonth):  counts.AlbumsMonth,
 		},
 		Labels: counts.Labels,
+		// The backlog is exported whatever video.hls.enabled says: with streaming
+		// off it is every video, which is the instance working as configured and
+		// not work outstanding — a distinction the alert, not the gauge, makes.
+		VideosWithoutStreaming: video.Missing,
 	}
 }
 

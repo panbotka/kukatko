@@ -86,3 +86,26 @@ func (r *Registry) GeocodeCreditSpent() {
 func (r *Registry) ObserveThumbnail(d time.Duration) {
 	r.thumbnailDuration.Observe(d.Seconds())
 }
+
+// ObserveRenditionEncode records that one streaming rendition of one video
+// finished: how long it took, how many bytes of segments it published, which
+// rendition it was and whether it succeeded. It satisfies hlsjob.Observer.
+//
+// The rendition name and the outcome are the only labels: /metrics is
+// unauthenticated, so nothing naming the video may become a label value, and
+// both label sets are small and fixed by the encoder's plan.
+func (r *Registry) ObserveRenditionEncode(rendition, outcome string, d time.Duration, written int64) {
+	r.encodeDuration.WithLabelValues(rendition, outcome).Observe(d.Seconds())
+	r.encodeOutputBytes.WithLabelValues(rendition, outcome).Add(float64(written))
+}
+
+// ObserveEncodedSource records that a clip of length d has been through the
+// encoder. It satisfies hlsjob.Observer.
+//
+// It is a counter of footage rather than a ready-made ratio on purpose: a ratio
+// can be neither aggregated across instances nor rated over a window, whereas
+// this divided into the encode-duration sum answers "what does a minute of video
+// cost to encode?" for whatever window the query asks about.
+func (r *Registry) ObserveEncodedSource(d time.Duration) {
+	r.encodeSourceSecond.Add(d.Seconds())
+}

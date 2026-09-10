@@ -39,10 +39,50 @@ const clipSeconds = 2
 // count and the summed duration worth asserting.
 const segmentSeconds = 1
 
+// recordingObserver is an hlsjob.Observer that keeps what a real encode
+// reported, so the instrumentation can be asserted against numbers ffmpeg
+// actually produced rather than against a fake's. The encode is sequential
+// within one job, so it needs no locking.
+type recordingObserver struct {
+	// renditions maps a rendition name to the bytes reported for it.
+	renditions map[string]int64
+	// outcomes maps a rendition name to the outcome it was reported under.
+	outcomes map[string]string
+	// durations maps a rendition name to how long it was reported to take.
+	durations map[string]time.Duration
+	// footage lists the clip lengths reported, one per encoded video.
+	footage []time.Duration
+}
+
+// newRecordingObserver returns an observer that has seen nothing.
+func newRecordingObserver() *recordingObserver {
+	return &recordingObserver{
+		renditions: map[string]int64{},
+		outcomes:   map[string]string{},
+		durations:  map[string]time.Duration{},
+	}
+}
+
+// ObserveRenditionEncode records one rendition's report.
+func (o *recordingObserver) ObserveRenditionEncode(
+	rendition, outcome string, d time.Duration, written int64,
+) {
+	o.renditions[rendition] = written
+	o.outcomes[rendition] = outcome
+	o.durations[rendition] = d
+}
+
+// ObserveEncodedSource records one video's length.
+func (o *recordingObserver) ObserveEncodedSource(d time.Duration) {
+	o.footage = append(o.footage, d)
+}
+
 // harness bundles everything one end-to-end encode needs.
 type harness struct {
 	// service is the handler under test.
 	service *hlsjob.Service
+	// metrics is what the service reported while encoding.
+	metrics *recordingObserver
 	// renditions reads back the rows the service wrote.
 	renditions *hlsjob.Store
 	// objects is the store the segments are published to.
@@ -85,6 +125,7 @@ func newHarness(t *testing.T) harness {
 		t.Fatalf("creating the catalogued video: %v", err)
 	}
 	renditions := hlsjob.NewStore(db.Pool())
+	observer := newRecordingObserver()
 	return harness{
 		service: hlsjob.New(hlsjob.Config{
 			Photos:         photoStore,
@@ -92,7 +133,9 @@ func newHarness(t *testing.T) harness {
 			Renditions:     renditions,
 			Plan:           hls.All(),
 			SegmentSeconds: segmentSeconds,
+			Metrics:        observer,
 		}),
+		metrics:    observer,
 		renditions: renditions,
 		objects:    objects,
 		photo:      photo,
@@ -241,6 +284,56 @@ func TestTranscode_rerunReplaces(t *testing.T) {
 	}
 	if got := h.keysUnderPrefix(t); !slices.Equal(got, keys) {
 		t.Errorf("objects after the re-run = %v, want the same set as before: %v", got, keys)
+	}
+}
+
+// TestTranscode_reportsWhatEachRenditionCost verifies the instrumentation over a
+// real encode: every rendition of the plan is reported once, as a success, with
+// a duration and with the bytes it published — the same bytes the store now
+// holds — and the clip's length is counted once for the whole job rather than
+// once per rendition, which is what makes the encode's cost per minute of
+// footage a division rather than a guess at how many qualities were produced.
+func TestTranscode_reportsWhatEachRenditionCost(t *testing.T) {
+	h := newHarness(t)
+	ctx := t.Context()
+
+	if err := h.service.Transcode(ctx, h.photo.UID); err != nil {
+		t.Fatalf("Transcode: %v", err)
+	}
+
+	if len(h.metrics.renditions) != len(hls.All()) {
+		t.Fatalf("reported %d renditions, want the plan's %d: %v",
+			len(h.metrics.renditions), len(hls.All()), h.metrics.renditions)
+	}
+	for _, rendition := range hls.All() {
+		if got := h.metrics.outcomes[rendition.Name]; got != hlsjob.OutcomeSuccess {
+			t.Errorf("%s reported outcome %q, want %q", rendition.Name, got, hlsjob.OutcomeSuccess)
+		}
+		if h.metrics.renditions[rendition.Name] <= 0 {
+			t.Errorf("%s reported %d bytes, want the segments it published",
+				rendition.Name, h.metrics.renditions[rendition.Name])
+		}
+		if h.metrics.durations[rendition.Name] <= 0 {
+			t.Errorf("%s reported a duration of %v, want the time it took",
+				rendition.Name, h.metrics.durations[rendition.Name])
+		}
+	}
+	// The bytes reported for 1080p are exactly what its prefix now holds: the
+	// counter must describe the objects a player will fetch, not an estimate.
+	var stored int64
+	for _, key := range h.keysUnderPrefix(t) {
+		info, err := h.objects.Stat(ctx, key)
+		if err != nil {
+			t.Fatalf("stat %s: %v", key, err)
+		}
+		stored += info.Size()
+	}
+	if got := h.metrics.renditions[hls.Rendition1080p]; got != stored {
+		t.Errorf("1080p reported %d bytes, want the %d its prefix holds", got, stored)
+	}
+	if want := []time.Duration{clipSeconds * time.Second}; !slices.Equal(h.metrics.footage, want) {
+		t.Errorf("footage reported = %v, want %v — once per video, not per rendition",
+			h.metrics.footage, want)
 	}
 }
 

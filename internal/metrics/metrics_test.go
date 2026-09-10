@@ -53,12 +53,16 @@ func TestRegistry_exposesExpectedMetricNames(t *testing.T) {
 		"kukatko_library_subjects",
 		"kukatko_library_albums",
 		"kukatko_library_labels",
+		"kukatko_library_videos_without_streaming",
 		"kukatko_library_collect_errors_total",
 		"kukatko_import_last_run_status",
 		"kukatko_import_last_run_start_timestamp_seconds",
 		"kukatko_embedding_request_duration_seconds",
 		"kukatko_embedding_service_up",
 		"kukatko_thumbnail_generation_duration_seconds",
+		"kukatko_video_encode_duration_seconds",
+		"kukatko_video_encode_output_bytes_total",
+		"kukatko_video_encode_source_seconds_total",
 		"kukatko_geocode_credits_spent_total",
 		"kukatko_geocode_credits_remaining",
 		"kukatko_geocode_credits_limit",
@@ -79,6 +83,8 @@ func exerciseAll(r *Registry) {
 	r.ObserveEmbeddingCall("image", 10*time.Millisecond, nil)
 	r.SetEmbeddingUp(true)
 	r.ObserveThumbnail(5 * time.Millisecond)
+	r.ObserveRenditionEncode("1080p", OutcomeSuccess, 90*time.Second, 12_582_912)
+	r.ObserveEncodedSource(45 * time.Second)
 	r.GeocodeCreditSpent()
 	r.RegisterJobQueue(func(context.Context) (map[QueueCell]int, error) {
 		return map[QueueCell]int{{Type: "image_embed", State: "queued"}: 2}, nil
