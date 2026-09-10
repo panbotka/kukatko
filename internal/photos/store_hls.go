@@ -50,7 +50,19 @@ ORDER BY created_at DESC, uid DESC`
 // ListActiveVideoUIDs returns the uids of every non-archived video, newest
 // first. It backs the forced full HLS backfill (`?all=true`), which re-encodes
 // videos that already have renditions — how a library picks up a newly enabled
-// quality level or a changed segment length.
+// quality level or a changed segment length — and the video-scoped thumbnail
+// backfill (`/process/thumbnails?videos=true`), which re-picks poster frames.
 func (s *Store) ListActiveVideoUIDs(ctx context.Context) ([]string, error) {
 	return s.queryUIDs(ctx, "listing active videos", listActiveVideoUIDsSQL)
+}
+
+// countActiveVideosSQL counts the videos ListActiveVideoUIDs would return.
+const countActiveVideosSQL = `SELECT count(*) FROM photos WHERE media_type = 'video' AND archived_at IS NULL`
+
+// CountActiveVideos returns how many non-archived videos the catalogue holds,
+// which is how many jobs a video-scoped backfill would schedule. It exists so
+// that cost can be reported before it is paid: every such job re-decodes a video
+// original, which is the most expensive thing a thumbnail job can do.
+func (s *Store) CountActiveVideos(ctx context.Context) (int, error) {
+	return s.queryCount(ctx, "counting active videos", countActiveVideosSQL)
 }

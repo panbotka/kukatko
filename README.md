@@ -246,7 +246,9 @@ that it was imported.
   yours: it replaces an estimate, is never shown as one, can be removed again, and the place browsing
   follows it.
 - **Video** with range streaming, poster frames, live photos, and a player with playback speed,
-  ±10 s skips, and frame previews under the cursor as you scrub. With `video.hls.enabled` a video is
+  ±10 s skips, and frame previews under the cursor as you scrub. The poster is **picked**, not taken
+  at a fixed second: a few frames spread across the clip are compared and the one that actually shows
+  something wins, so a night scene or a slow fade-in no longer sits in the grid as a black rectangle. With `video.hls.enabled` a video is
   also encoded once, in the background, into **adaptive streaming renditions** served over HLS, so a
   phone on a slow connection starts playing at once instead of waiting for a large original — the
   player picks that up on its own, letting the browser stream the playlist where it can and loading a

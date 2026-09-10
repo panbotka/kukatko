@@ -9,6 +9,8 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -22,6 +24,7 @@ import (
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/thumbjob"
+	"github.com/panbotka/kukatko/internal/video"
 )
 
 // These tests run only under `make test-integration` against the database named
@@ -303,5 +306,153 @@ func TestForceRegenerate_replacesTheStoredPlaceholder(t *testing.T) {
 	}
 	if got.Blurhash == "" {
 		t.Error("the force path cleared the placeholder instead of replacing it")
+	}
+}
+
+// storeVideo renders a clip with ffmpeg from a lavfi filter description, stores
+// it through the originals store and inserts a video row referencing it. It
+// skips the test when ffmpeg is not installed, since there is no other way to
+// make a video original.
+func (h *harness) storeVideo(t *testing.T, name, filter string, width, height int) photos.Photo {
+	t.Helper()
+	if !video.FFmpegAvailable() {
+		t.Skip("ffmpeg not installed; skipping video poster test")
+	}
+	path := filepath.Join(t.TempDir(), name+".mp4")
+	// #nosec G204 -- filter and path are constant test inputs.
+	cmd := exec.CommandContext(t.Context(), "ffmpeg",
+		"-nostdin", "-y", "-f", "lavfi", "-i", filter,
+		"-c:v", "libx264", "-pix_fmt", "yuv420p", path,
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("rendering %s: %v (%s)", name, err, out)
+	}
+	file, err := os.Open(path) //nolint:gosec // G304: our own temp file.
+	if err != nil {
+		t.Fatalf("open rendered clip: %v", err)
+	}
+	defer func() { _ = file.Close() }()
+
+	sf, err := h.storage.Store(context.Background(), file, time.Time{}, name+".mp4")
+	if err != nil {
+		t.Fatalf("store original: %v", err)
+	}
+	created, err := h.photos.Create(context.Background(), photos.Photo{
+		FileHash:        sf.Hash,
+		FilePath:        sf.RelPath,
+		FileName:        name + ".mp4",
+		FileSize:        sf.Size,
+		FileMime:        "video/mp4",
+		FileWidth:       width,
+		FileHeight:      height,
+		MediaType:       photos.MediaVideo,
+		FileOrientation: 1,
+	})
+	if err != nil {
+		t.Fatalf("create video: %v", err)
+	}
+	return created
+}
+
+// meanLuminance returns the average Rec. 601 luma of a rendition, 0 (black) to 1
+// (white) — the cheap stand-in for looking at a thumbnail and calling it black.
+func (h *harness) meanLuminance(t *testing.T, photo photos.Photo, size string) float64 {
+	t.Helper()
+	reader, err := h.thumbnailer.OpenCached(photo.FileHash, size)
+	if err != nil {
+		t.Fatalf("opening the %s rendition: %v", size, err)
+	}
+	defer func() { _ = reader.Close() }()
+
+	img, err := jpeg.Decode(reader)
+	if err != nil {
+		t.Fatalf("decoding the %s rendition: %v", size, err)
+	}
+	bounds := img.Bounds()
+	sum, n := 0.0, 0
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			r, g, b, _ := img.At(x, y).RGBA()
+			sum += (0.299*float64(r) + 0.587*float64(g) + 0.114*float64(b)) / 65535
+			n++
+		}
+	}
+	if n == 0 {
+		t.Fatal("the rendition has no pixels")
+	}
+	return sum / float64(n)
+}
+
+// plantBlackRendition writes a solid black JPEG at the cache path the given
+// rendition lives at, standing in for the tile the old fixed-one-second rule left
+// behind for a clip that opens on darkness.
+func (h *harness) plantBlackRendition(t *testing.T, photo photos.Photo, size string) {
+	t.Helper()
+	abs, err := h.thumbnailer.Path(photo.FileHash, size)
+	if err != nil {
+		t.Fatalf("thumbnail path: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(abs), 0o750); err != nil {
+		t.Fatalf("creating the cache dir: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, image.NewGray(image.Rect(0, 0, 64, 48)), nil); err != nil {
+		t.Fatalf("encoding the black tile: %v", err)
+	}
+	if err := os.WriteFile(abs, buf.Bytes(), 0o600); err != nil {
+		t.Fatalf("planting the black tile: %v", err)
+	}
+}
+
+// TestRegenerate_videoPosterSkipsTheBlackOpening is the claim the poster rule
+// exists for, end to end through the real thumbnailer: a clip whose first two
+// seconds are black gets a thumbnail that shows something, not a black tile.
+func TestRegenerate_videoPosterSkipsTheBlackOpening(t *testing.T) {
+	h := newHarness(t)
+	clip := h.storeVideo(t, "dark-opening",
+		"color=c=black:s=320x240:r=15:d=2[a];testsrc=s=320x240:r=15:d=4[b];[a][b]concat=n=2:v=1",
+		320, 240)
+
+	if err := h.newService().Regenerate(t.Context(), clip.UID); err != nil {
+		t.Fatalf("Regenerate: %v", err)
+	}
+	if mean := h.meanLuminance(t, clip, thumbjob.PlaceholderSize); mean < 0.10 {
+		t.Errorf("the video's poster has mean luminance %.3f — that is a black tile", mean)
+	}
+}
+
+// TestForceRegenerate_repicksTheVideoPoster is the repair path for the videos
+// already in the library: a rebuild re-derives the poster from the original with
+// the current rule, so a black tile becomes a picture without a re-upload. It
+// starts from a thumbnail deliberately rendered from the clip's black opening.
+func TestForceRegenerate_repicksTheVideoPoster(t *testing.T) {
+	h := newHarness(t)
+	ctx := t.Context()
+	clip := h.storeVideo(t, "night",
+		"color=c=black:s=320x240:r=15:d=2[a];testsrc=s=320x240:r=15:d=4[b];[a][b]concat=n=2:v=1",
+		320, 240)
+
+	// Plant the tile the old fixed-one-second rule produced: a solid black
+	// rendition at the very cache path the thumbnailer would skip as "already
+	// generated".
+	h.plantBlackRendition(t, clip, thumbjob.PlaceholderSize)
+	if mean := h.meanLuminance(t, clip, thumbjob.PlaceholderSize); mean > 0.01 {
+		t.Fatalf("the planted rendition is not black (mean %.3f)", mean)
+	}
+
+	// The repair path skips it — which is why the backfill forces the rebuild.
+	if err := h.newService().Regenerate(ctx, clip.UID); err != nil {
+		t.Fatalf("Regenerate: %v", err)
+	}
+	if mean := h.meanLuminance(t, clip, thumbjob.PlaceholderSize); mean > 0.01 {
+		t.Errorf("the plain job rewrote a cached size (mean %.3f); it should skip it", mean)
+	}
+
+	// The rebuild does not.
+	if _, err := h.newService().ForceRegenerate(ctx, clip.UID); err != nil {
+		t.Fatalf("ForceRegenerate: %v", err)
+	}
+	if mean := h.meanLuminance(t, clip, thumbjob.PlaceholderSize); mean < 0.10 {
+		t.Errorf("after the rebuild the poster is still black (mean %.3f)", mean)
 	}
 }

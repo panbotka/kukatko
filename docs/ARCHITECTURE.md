@@ -373,7 +373,9 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
     partial index for "videos only"), `duration_ms`, `video_codec`, `audio_codec`, `has_audio`,
     `fps`. Populated for videos via `internal/video.Probe` (ffprobe → exiftool fallback);
     the poster frame (`internal/video.ExtractPoster`, ffmpeg) feeds the thumbnailer/pHash and the embed/face
-    jobs. A live photo = still as the primary image + a motion clip as another `photo_files` row.
+    jobs — it is **chosen**, not taken at a fixed offset: a handful of candidates spread across the clip are
+    decoded small and the least flat one wins, so a clip that opens on darkness is not a black tile
+    (the rule and its cost: `docs/PERF.md` §2). A live photo = still as the primary image + a motion clip as another `photo_files` row.
   - a generated `fts tsvector` column (GIN index) — see [§6.2](#62-hledani).
   - `favorite` is **moved** into a per-user table (see below).
 - **`photo_files`** — originals + derivatives, `role IN (original|sidecar|edited)`, `is_primary`.

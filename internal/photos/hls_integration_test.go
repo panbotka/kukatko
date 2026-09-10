@@ -93,6 +93,17 @@ func TestHLS_backfillCandidates(t *testing.T) {
 		t.Fatalf("ListActiveVideoUIDs = %v, want the two live videos", all)
 	}
 
+	// The count must answer for exactly that listing — it is what sizes the
+	// video-scoped thumbnail backfill before it re-decodes every video original.
+	videoCount, err := store.CountActiveVideos(ctx)
+	if err != nil {
+		t.Fatalf("CountActiveVideos: %v", err)
+	}
+	if videoCount != len(all) {
+		t.Errorf("CountActiveVideos = %d, want %d (what ListActiveVideoUIDs returns)",
+			videoCount, len(all))
+	}
+
 	// A positive limit caps the page, so a caller can schedule in batches.
 	capped, err := store.ListVideosMissingHLS(ctx, 1)
 	if err != nil {

@@ -1163,7 +1163,12 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   nothing and answers only `pending`, the number of photos the same call would cover
   (`thumbjob.CountBackfillThumbnails`): a thumbnail job re-reads an original, and "the narrow predicate" is no
   promise of a small run, so the cost is reportable before it is paid. A real run answers `pending` too, so the
-  size of what was just started is visible in the response.
+  size of what was just started is visible in the response. Optional **`?videos=true`** points the same
+  endpoint at **every non-archived video** instead (`thumbjob.BackfillVideoPosters`, counted by
+  `CountBackfillVideoPosters`) and **forces** the rebuild: it is how a library re-picks its video **poster
+  frames** after the choosing rule changed (see `docs/PERF.md` §2), and a plain `?all=true` run would not,
+  because these videos already have every thumbnail size cached and the ordinary job skips a cached size.
+  It combines with `?dry_run=true` and ignores `?all` (the scope is already every video).
   `POST /process/blurhash` → `{enqueued,pending,dry_run}` (backfill the **blurred placeholder** for photos
   **without one** via `thumbjob.BackfillBlurhash`). It schedules `thumbnail` jobs, not a job of its own: the
   `thumbnail` job is what computes a placeholder, from the `fit_720` preview it renders, so the placeholder

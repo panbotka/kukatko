@@ -72,12 +72,17 @@ func (f *fakePlacesBackfiller) BackfillPlaces(context.Context) (int, error) {
 type fakeThumbnailBackfiller struct {
 	missing []string
 	active  []string
-	pending map[string]bool
-	created int
-	calls   int
-	counts  int
-	lastAll bool
-	err     error
+	// videos is the video-scoped candidate set, and videoRuns/videoCounts record
+	// that the endpoint reached the video pair rather than the general one.
+	videos      []string
+	videoRuns   int
+	videoCounts int
+	pending     map[string]bool
+	created     int
+	calls       int
+	counts      int
+	lastAll     bool
+	err         error
 }
 
 // newFakeThumbnailBackfiller returns a fake seeded with the missing and active
@@ -119,6 +124,32 @@ func (f *fakeThumbnailBackfiller) CountBackfillThumbnails(_ context.Context, all
 		return len(f.active), nil
 	}
 	return len(f.missing), nil
+}
+
+// BackfillVideoPosters schedules the video candidate set, deduping like the
+// general backfill does.
+func (f *fakeThumbnailBackfiller) BackfillVideoPosters(context.Context) (int, error) {
+	f.videoRuns++
+	if f.err != nil {
+		return 0, f.err
+	}
+	for _, uid := range f.videos {
+		if !f.pending[uid] {
+			f.pending[uid] = true
+			f.created++
+		}
+	}
+	return len(f.videos), nil
+}
+
+// CountBackfillVideoPosters reports how many videos the same call would cover,
+// scheduling nothing.
+func (f *fakeThumbnailBackfiller) CountBackfillVideoPosters(context.Context) (int, error) {
+	f.videoCounts++
+	if f.err != nil {
+		return 0, f.err
+	}
+	return len(f.videos), nil
 }
 
 // passthrough is a no-op middleware standing in for the admin guard.
@@ -598,6 +629,59 @@ func TestBackfillThumbnails_all(t *testing.T) {
 	}
 	if !tb.lastAll {
 		t.Error("?all=true should pass all=true to the backfiller")
+	}
+}
+
+// TestBackfillThumbnails_videos verifies ?videos=true routes to the video-scoped
+// pair — every video, forced — instead of the general predicate.
+func TestBackfillThumbnails_videos(t *testing.T) {
+	t.Parallel()
+
+	tb := newFakeThumbnailBackfiller([]string{"p1"}, []string{"p1", "p2", "p3"})
+	tb.videos = []string{"v1", "v2"}
+	srv := newServerWithThumbnails(t, tb, passthrough)
+
+	resp := postProcess(t, srv.URL+"/process/thumbnails?videos=true")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var body countedBackfillResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Enqueued != 2 || body.Pending != 2 {
+		t.Errorf("body = %+v, want enqueued 2, pending 2", body)
+	}
+	if tb.videoRuns != 1 || tb.videoCounts != 1 {
+		t.Errorf("video runs/counts = %d/%d, want 1/1", tb.videoRuns, tb.videoCounts)
+	}
+	if tb.calls != 0 || tb.counts != 0 {
+		t.Errorf("the general backfill ran %d time(s) and counted %d, want none",
+			tb.calls, tb.counts)
+	}
+}
+
+// TestBackfillThumbnails_videosDryRun verifies the video scope can be sized
+// before it is started, since every one of its jobs re-decodes a video original.
+func TestBackfillThumbnails_videosDryRun(t *testing.T) {
+	t.Parallel()
+
+	tb := newFakeThumbnailBackfiller([]string{"p1"}, []string{"p1", "p2"})
+	tb.videos = []string{"v1", "v2", "v3"}
+	srv := newServerWithThumbnails(t, tb, passthrough)
+
+	resp := postProcess(t, srv.URL+"/process/thumbnails?videos=true&dry_run=true")
+	defer func() { _ = resp.Body.Close() }()
+	var body countedBackfillResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Pending != 3 || body.Enqueued != 0 || !body.DryRun {
+		t.Errorf("body = %+v, want pending 3, enqueued 0, dry_run true", body)
+	}
+	if tb.videoRuns != 0 {
+		t.Errorf("a dry run scheduled %d video backfill call(s), want none", tb.videoRuns)
 	}
 }
 

@@ -58,10 +58,11 @@ type PlacesBackfiller interface {
 
 // ThumbnailBackfiller enqueues a thumbnail job for every photo missing a
 // generated thumbnail. It is satisfied by thumbjob.Service. When all is true it
-// schedules every non-archived photo instead (a forced full re-run). Thumbnail
-// jobs run locally, so the backfill works regardless of the embeddings box being
-// offline. A nil ThumbnailBackfiller disables the /process/thumbnails endpoint
-// (it answers 503).
+// schedules every non-archived photo instead (a forced full re-run), and the
+// video-scoped pair rebuilds every video's poster frame. Thumbnail jobs run
+// locally, so the backfill works regardless of the embeddings box being offline.
+// A nil ThumbnailBackfiller disables the /process/thumbnails endpoint (it
+// answers 503).
 type ThumbnailBackfiller interface {
 	// BackfillThumbnails enqueues a thumbnail job for every photo missing a
 	// thumbnail (or, when all is true, for every non-archived photo) and returns
@@ -70,6 +71,12 @@ type ThumbnailBackfiller interface {
 	// CountBackfillThumbnails returns how many photos BackfillThumbnails would
 	// schedule for the same value of all, scheduling nothing. It backs ?dry_run.
 	CountBackfillThumbnails(ctx context.Context, all bool) (int, error)
+	// BackfillVideoPosters enqueues a forced thumbnail rebuild for every
+	// non-archived video and returns how many were scheduled. It backs ?videos.
+	BackfillVideoPosters(ctx context.Context) (int, error)
+	// CountBackfillVideoPosters returns how many videos BackfillVideoPosters would
+	// schedule, scheduling nothing. It backs ?videos together with ?dry_run.
+	CountBackfillVideoPosters(ctx context.Context) (int, error)
 }
 
 // BlurhashBackfiller enqueues a thumbnail job for every photo that has no
@@ -252,7 +259,8 @@ func NewAPI(cfg Config) *API {
 //	POST /process/clusters    RequireMaintainer  schedule the face-clustering pass (202, runs in the queue)
 //	POST /process/places      RequireMaintainer  backfill missing reverse-geocoded places
 //	POST /process/thumbnails  RequireMaintainer  backfill missing thumbnails (?all=true forces a full
-//	                                             re-run, ?dry_run=true only counts)
+//	                                             re-run, ?videos=true re-picks every video's poster frame,
+//	                                             ?dry_run=true only counts)
 //	POST /process/blurhash    RequireMaintainer  backfill missing blurred placeholders (?all=true forces a full
 //	                                             re-run, ?dry_run=true only counts)
 //	POST /process/metadata    RequireMaintainer  backfill unread file metadata (?all=true forces a full re-read)
@@ -464,22 +472,41 @@ type countedBackfillResponse struct {
 
 // handleBackfillThumbnails enqueues thumbnail jobs for all photos missing a
 // generated thumbnail and reports how many were scheduled. With ?all=true it
-// schedules every non-archived photo (a forced full re-run). With ?dry_run=true it
-// schedules nothing and only reports how many photos would be covered, so the cost
-// of a run can be seen before it is started — a thumbnail job re-reads an original,
-// and on a library that has never been hashed the narrow predicate matches every
-// photo in it. It answers 503 when no thumbnail backfiller is wired.
+// schedules every non-archived photo (a forced full re-run). With ?videos=true it
+// instead covers every non-archived video and forces the rebuild, which is how a
+// library re-picks its video poster frames after the choosing rule changed — a
+// plain re-run would skip them, since their thumbnails are already cached. With
+// ?dry_run=true it schedules nothing and only reports how many photos would be
+// covered, so the cost of a run can be seen before it is started — a thumbnail job
+// re-reads an original, and on a library that has never been hashed the narrow
+// predicate matches every photo in it. It answers 503 when no thumbnail
+// backfiller is wired.
 func (a *API) handleBackfillThumbnails(w http.ResponseWriter, r *http.Request) {
 	if a.thumbBackfiller == nil {
 		writeError(w, http.StatusServiceUnavailable, "thumbnail backfill not available")
 		return
 	}
-	a.serveCountedBackfill(w, r, countedBackfill{
+	backfill := countedBackfill{
 		count:     a.thumbBackfiller.CountBackfillThumbnails,
 		run:       a.thumbBackfiller.BackfillThumbnails,
 		countFail: "counting thumbnail backfill failed",
 		runFail:   "backfilling thumbnails failed",
-	})
+	}
+	if queryFlag(r, "videos") {
+		// The video scope has no "all" of its own — it is already every video — so
+		// the ?all flag the shared driver passes is dropped here.
+		backfill.count = ignoreAll(a.thumbBackfiller.CountBackfillVideoPosters)
+		backfill.run = ignoreAll(a.thumbBackfiller.BackfillVideoPosters)
+		backfill.countFail = "counting video poster backfill failed"
+		backfill.runFail = "backfilling video posters failed"
+	}
+	a.serveCountedBackfill(w, r, backfill)
+}
+
+// ignoreAll adapts a backfill operation that takes no scope flag to the signature
+// serveCountedBackfill drives, discarding the ?all flag.
+func ignoreAll(op func(ctx context.Context) (int, error)) func(ctx context.Context, all bool) (int, error) {
+	return func(ctx context.Context, _ bool) (int, error) { return op(ctx) }
 }
 
 // handleBackfillBlurhash enqueues thumbnail jobs for all photos that have no

@@ -193,6 +193,105 @@ URL and a second cache entry), and the card **degrades** down the ladder on
 generating, so a size missing from the bucket 404s, and one failed request lands
 on the `fit_720` that has always been there rather than a broken image.
 
+### The video poster frame is chosen, not taken at a fixed second
+
+A video's thumbnail is one frame of it, fed back through the ordinary image
+pipeline. That frame used to be whatever sat at a hardcoded **one second** in,
+with the very first frame as a fallback — which is a black rectangle for every
+clip that opens on darkness: a night scene, a fade-in, a lens cap, a camera still
+finding focus. On the staging instance a night-time firework fountain rendered as
+a solid black tile in the grid while its own scrub-preview sprite showed the
+fountain clearly from about 5 % in.
+
+`internal/video/posterframe.go` replaces the fixed seek with a small,
+deterministic rule:
+
+1. **Candidates.** The clip's duration (one `ffprobe`, the same call `Probe`
+   makes) is cut at `{5, 15, 30, 50, 70} %` — spread across the clip but leaning
+   towards its first half, since a poster should say what the clip is about and
+   the opening usually does, while skipping the very first moments where fades and
+   autofocus live. Offsets are rounded to milliseconds, de-duplicated and kept
+   50 ms clear of the end, so a **two-second clip** yields five distinct usable
+   offsets and a clip shorter than one frame collapses to a single one. With no
+   `ffprobe` *and* no `exiftool` the duration is unknown and fixed offsets
+   (`0, 1, 3, 7 s`) are used instead; the ones past the end simply yield no frame.
+2. **Score.** Each candidate is decoded to a **160 px-wide JPEG** and reduced to a
+   64-bucket luminance histogram: `dominant` (share of pixels in the most
+   populated bucket), `spread` (Shannon entropy over the buckets, normalised to
+   0…1) and `mean`. A frame with `dominant ≥ 0.90` is **near-uniform** — almost
+   all one colour, black and white alike — and is rejected. Everything else ranks
+   by `spread × exposure`, where `exposure` falls linearly to 0 as the mean
+   luminance approaches pure black or pure white, which is what separates "dark
+   but legible" from "the lens cap is on".
+3. **Choice.** The best non-uniform candidate wins; ties keep clip order. If
+   **every** candidate is uniform the best of those wins anyway — the rule is "the
+   best of the candidates", never "no thumbnail" and never an error that fails an
+   upload. The winning offset is then re-extracted at full resolution and the
+   normal poster quality.
+4. **Early exit.** Sampling stops at the first candidate that is plainly a picture
+   (`spread × exposure ≥ 0.30`). An ordinary clip therefore pays for exactly one
+   candidate, and only the clips that open on darkness pay for more.
+
+The rule is pure and deterministic, which matters beyond testability: several
+paths re-derive a video's poster independently (ingest's thumbnails, a thumbnail
+rebuild, face detection, the embedding job), and they must all land on the same
+frame or a video's faces would sit on a picture nobody else sees.
+
+#### What it costs
+
+Measured on the Pi with a synthetic 1920×1080 / 30 s H.264 clip (`-preset veryfast`,
+so keyframes ~8 s apart):
+
+| Clip | Subprocesses | Wall clock |
+|---|---|---|
+| old rule (one full frame at 1 s) | 1 × `ffmpeg` | **~0.4 s** |
+| ordinary clip, first candidate is a picture | 1 × `ffprobe` + 1 sample + 1 full frame | **~1.0 s** |
+| ten seconds of black, then picture | 1 × `ffprobe` + 3 samples + 1 full frame | **~3.8 s** |
+| black from beginning to end (worst case) | 1 × `ffprobe` + 5 samples + 1 full frame | **~4.2 s** |
+
+The added cost is essentially **one extra decode** in the common case: a candidate is
+encoded at 160 px, but it is the *decode* that dominates, and scaling saves nothing
+there. Real clips from the staging library, best of three, old rule against new:
+
+| Clip | Old | New |
+|---|---|---|
+| 3840×2160, 20.7 s, opens on a picture (1 sample) | 4.14 s | **2.98 s** |
+| 1080×1920, 2.5 s phone clip (1 sample) | 0.22 s | **0.60 s** |
+| 3840×2160, 53.4 s night drone, black opening (5 samples) | 1.57 s | **5.84 s** |
+
+The first row is not a typo: the old rule's fixed `-ss 1` and the frame the new rule
+picks sit at different distances from their keyframes, and on a 4K clip that swamps
+the extra sample. Ordinary clips land within a second or so of where they were;
+a clip that is dark throughout pays a few seconds — once per *decode of the
+original*, which is once per thumbnail generation, once per face detection and once
+per embedding, not once per thumbnail size. Against the ~4 s the eight thumbnail
+sizes of a photo cost above that is small, and the early exit keeps a bulk import
+from paying the worst case on every clip.
+
+#### Repairing the black tiles already in the library
+
+The poster is chosen while the original is decoded, so **regenerating a video's
+thumbnails re-picks it** — no re-upload, nothing to migrate. Per photo that is
+`POST /photos/{uid}/regenerate-thumbnail` (`kukatko ctl photos rebuild thumbnail
+<uid>`), which force-rebuilds every size over the cached ones. Library-wide it is
+`POST /process/thumbnails?videos=true`, which enqueues a **forced** rebuild for
+every non-archived video; `&dry_run=true` counts them first. The force matters:
+these videos already have a full set of thumbnails, and the ordinary backfill
+skips a size that is already on disk, so a plain `?all=true` run would leave every
+black tile exactly where it is.
+
+Measured on the staging library, mean luminance (`YAVG`, 0…255) of the poster the
+two rules produce for the same original:
+
+| Clip | Old poster | New poster |
+|---|---|---|
+| `Video dron.mp4` — 53 s night drone, opens on black | **0.0** (a solid black tile) | **14.5** (the lit crowd from 8 s in) |
+| `20241227_175126…mov` — 2.5 s phone clip | 114.3 | 120.7 |
+| `20250630_182221…mov` — 20 s daylight clip | 192.6 | 190.1 |
+
+Only the clip that was broken changed materially; the two that were already fine
+stayed where they were, which is the point — the rule takes the earliest frame that
+is plainly a picture, and on a normal clip that is still the opening.
 ---
 
 ## 3. Queries / pagination

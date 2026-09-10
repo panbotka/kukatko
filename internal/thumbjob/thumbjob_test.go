@@ -9,6 +9,7 @@ import (
 	"image/color"
 	"image/jpeg"
 	"io"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -383,6 +384,10 @@ type fakeLister struct {
 	// differ in.
 	missingBlurhash    []string
 	missingBlurhashErr error
+	// videos is the video-scoped backfill's own predicate: every non-archived
+	// video, whatever its thumbnails already look like.
+	videos    []string
+	videosErr error
 }
 
 func (f *fakeLister) ListPhotosMissingPhash(_ context.Context, _ int) ([]string, error) {
@@ -409,6 +414,14 @@ func (f *fakeLister) CountPhotosMissingBlurhash(context.Context) (int, error) {
 	return len(f.missingBlurhash), f.missingBlurhashErr
 }
 
+func (f *fakeLister) ListActiveVideoUIDs(context.Context) ([]string, error) {
+	return f.videos, f.videosErr
+}
+
+func (f *fakeLister) CountActiveVideos(context.Context) (int, error) {
+	return len(f.videos), f.videosErr
+}
+
 // fakeEnqueuer models the queue's per-photo dedup: it records a job only the
 // first time a uid is scheduled, mirroring jobs.Enqueuer (which swallows a
 // duplicate and returns nil). It counts total calls and genuinely created jobs so
@@ -419,6 +432,9 @@ type fakeEnqueuer struct {
 	created int
 	calls   int
 	err     error
+	// forced records the uids scheduled as a *rebuild* rather than as a plain
+	// thumbnail job, which is what the video-poster backfill must use.
+	forced []string
 }
 
 func newFakeEnqueuer() *fakeEnqueuer { return &fakeEnqueuer{pending: map[string]bool{}} }
@@ -432,6 +448,16 @@ func (f *fakeEnqueuer) EnqueueThumbnail(_ context.Context, photoUID string) erro
 		f.pending[photoUID] = true
 		f.created++
 	}
+	return nil
+}
+
+// EnqueueThumbnailRebuild records a forced rebuild, sharing the plain enqueue's
+// dedup so a repeated backfill behaves the same way.
+func (f *fakeEnqueuer) EnqueueThumbnailRebuild(ctx context.Context, photoUID string) error {
+	if err := f.EnqueueThumbnail(ctx, photoUID); err != nil {
+		return err
+	}
+	f.forced = append(f.forced, photoUID)
 	return nil
 }
 
@@ -522,6 +548,65 @@ func TestBackfillThumbnails_enqueueError(t *testing.T) {
 	svc := newBackfillService(&fakeLister{missing: []string{"a"}}, &fakeEnqueuer{err: errors.New("queue full")})
 	if _, err := svc.BackfillThumbnails(context.Background(), false); err == nil {
 		t.Error("BackfillThumbnails should propagate an enqueue error")
+	}
+}
+
+// TestBackfillVideoPosters verifies the video-scoped backfill covers every video
+// — not the missing-thumbnail predicate — and schedules a *forced* rebuild for
+// each, since a plain job would skip the thumbnails these videos already have and
+// the whole point is to re-pick their poster frames.
+func TestBackfillVideoPosters(t *testing.T) {
+	t.Parallel()
+	enq := newFakeEnqueuer()
+	lister := &fakeLister{
+		missing: []string{"a"},
+		active:  []string{"a", "b", "c", "v1", "v2"},
+		videos:  []string{"v1", "v2"},
+	}
+	svc := newBackfillService(lister, enq)
+
+	n, err := svc.BackfillVideoPosters(context.Background())
+	if err != nil {
+		t.Fatalf("BackfillVideoPosters: %v", err)
+	}
+	if n != 2 {
+		t.Errorf("enqueued = %d, want 2 (the video listing)", n)
+	}
+	if !reflect.DeepEqual(enq.forced, []string{"v1", "v2"}) {
+		t.Errorf("forced rebuilds = %v, want [v1 v2]", enq.forced)
+	}
+}
+
+// TestCountBackfillVideoPosters verifies the dry run answers the same number the
+// real run would schedule, without scheduling anything.
+func TestCountBackfillVideoPosters(t *testing.T) {
+	t.Parallel()
+	enq := newFakeEnqueuer()
+	svc := newBackfillService(&fakeLister{videos: []string{"v1", "v2", "v3"}}, enq)
+
+	count, err := svc.CountBackfillVideoPosters(context.Background())
+	if err != nil {
+		t.Fatalf("CountBackfillVideoPosters: %v", err)
+	}
+	if count != 3 {
+		t.Errorf("count = %d, want 3", count)
+	}
+	if enq.calls != 0 {
+		t.Errorf("the dry run scheduled %d jobs, want none", enq.calls)
+	}
+}
+
+// TestBackfillVideoPosters_unavailable verifies the video scope reports
+// ErrBackfillUnavailable on a Service without the backfill collaborators, exactly
+// as the other backfills do.
+func TestBackfillVideoPosters_unavailable(t *testing.T) {
+	t.Parallel()
+	svc := newService(&fakePhotos{}, &fakeThumbs{}, &fakeDecoder{})
+	if _, err := svc.BackfillVideoPosters(context.Background()); !errors.Is(err, ErrBackfillUnavailable) {
+		t.Errorf("BackfillVideoPosters err = %v, want ErrBackfillUnavailable", err)
+	}
+	if _, err := svc.CountBackfillVideoPosters(context.Background()); !errors.Is(err, ErrBackfillUnavailable) {
+		t.Errorf("CountBackfillVideoPosters err = %v, want ErrBackfillUnavailable", err)
 	}
 }
 

@@ -452,7 +452,9 @@ to `## Package map` in `CLAUDE.md`.
   without IPTC tags; it is covered by the partial index `idx_photos_metadata_pending` from migration
   `0028_photos_metadata_extracted.sql`, which is empty once the backfill is exhausted) and `ListActiveUIDs()`
   (uids of all non-archived photos — the basis of the forced full thumbnail/metadata backfill
-  `?all=true`), the **orientation-geometry repair** (`store_geometry.go`):
+  `?all=true`) and, next to the HLS listers (`store_hls.go`), `CountActiveVideos()` (a `count(*)` over
+  `media_type = 'video' AND archived_at IS NULL`, i.e. what `ListActiveVideoUIDs()` returns — the dry run of
+  the video-scoped poster rebuild `/process/thumbnails?videos=true`), the **orientation-geometry repair** (`store_geometry.go`):
   `ListDimensionMismatches()` → `[]DimensionMismatch{UID,StoredWidth,StoredHeight,Orientation,RawWidth,RawHeight}`
   = quarter-turned photos (`file_orientation` 5–8) whose columns hold their own file's dimensions **transposed**,
   i.e. the displayed frame instead of the stored one — the import defect that letterboxed the
@@ -797,7 +799,19 @@ to `## Package map` in `CLAUDE.md`.
   `ffprobe -print_format json -show_format -show_streams` → `DurationMs`/`VideoCodec`/`AudioCodec`/
   `HasAudio`/`FPS` (rational parsing)/dimensions/`TakenAt` (creation_time)/GPS (ISO 6709), **fallback
   to `exiftool`** via `internal/exif` when `ffprobe` is missing; `ExtractPoster(ctx,path)` →
-  a representative frame via `ffmpeg` (~1 s, fallback the first frame) to a temp JPEG + once-cleanup;
+  a representative frame via `ffmpeg` to a temp JPEG + once-cleanup — the frame is **chosen**, not taken at a
+  fixed offset (`posterframe.go`): the duration is probed, cut at `{5,15,30,50,70}%` (fixed
+  `0,1,3,7 s` when no prober is installed, clamped 50 ms clear of the end and de-duplicated, so a 2 s clip
+  still yields five usable offsets and a single-frame clip one), each candidate decoded to a 160 px JPEG and
+  scored from a 64-bucket luminance histogram (`scoreFrame` → `dominant`/`spread`/`mean`; `uniform()` =
+  `dominant ≥ 0.90`, `value()` = normalised entropy × an exposure factor falling to 0 at pure black/white);
+  `pickFrame`/`betterFrame` prefer any non-uniform candidate over a uniform one and the highest `value` among
+  equals, so a black intro loses to a later frame — and when **every** candidate is uniform the best of those
+  still wins (never "no thumbnail", never an error that fails an upload). Sampling **stops early** at the first
+  candidate with `value ≥ 0.30`, so an ordinary clip costs one sample; the winner is then re-extracted at full
+  size, and offset 0 is always the last fallback. Pure and deterministic on purpose — ingest, a thumbnail
+  rebuild, `face_detect` and `image_embed` each re-derive the poster independently and must land on the same
+  frame. Cost and the measurements behind the thresholds: `docs/PERF.md` §2;
   `IsVideoPath`/`IsVideoExt`/`FFmpegAvailable`/`FFprobeAvailable`; **on-the-fly transcode for
   playback** (`transcode.go`): `IsWebFriendlyCodec(codec)` (h264/avc/vp8/vp9/av1/theora play
   natively in the browser, empty=unknown=no), `TranscodeArgs(src)` (ffmpeg → a **fragmented**
@@ -1823,8 +1837,12 @@ to `## Package map` in `CLAUDE.md`.
   `thumbnail` for photos without a thumbnail = without a pHash; `?all=true` schedules every non-archived photo;
   `?dry_run=true` schedules **nothing** and only reports `pending` — the count `thumbjob.CountBackfillThumbnails`
   answers, so a full-library run is a number read beforehand rather than a surprise; a real run reports both,
-  so its size is visible in the response too; `ThumbnailBackfiller` optional — nil → 503; local, works even
-  with the box offline; `queryFlag` parses `?all`/`?dry_run`),
+  so its size is visible in the response too; **`?videos=true`** switches the same endpoint to
+  `thumbjob.BackfillVideoPosters`/`CountBackfillVideoPosters` (every non-archived video, **forced**) — how the
+  library re-picks its video poster frames, which `?all=true` could not do because those thumbnails are already
+  cached; the `ignoreAll` adapter drops the scope flag the shared driver passes, since the video scope is
+  already every video; `ThumbnailBackfiller` optional — nil → 503; local, works even
+  with the box offline; `queryFlag` parses `?all`/`?videos`/`?dry_run`),
   `POST /process/blurhash` → `{enqueued,pending,dry_run}` runs `thumbjob.BackfillBlurhash(all)` (backfill of
   the **blurred placeholder** for photos without one; it schedules `thumbnail` jobs, since that is the job
   which computes a placeholder, so this endpoint and `/process/thumbnails` differ only in the predicate;
@@ -3526,6 +3544,13 @@ to `## Package map` in `CLAUDE.md`.
   thumbnail jobs has no pHash anywhere, so *every* photo in it matches — and a thumbnail job re-reads an original.
   It backs `?dry_run=true`; the count is a snapshot, so a concurrent import may grow it and the queue's dedup may
   shrink what a later real run schedules.
+  **The video-poster backfill** `BackfillVideoPosters(ctx) (int,error)` + `CountBackfillVideoPosters(ctx)`
+  (the basis of `POST /process/thumbnails?videos=true`) covers every non-archived video
+  (`PhotoLister.ListActiveVideoUIDs`/`CountActiveVideos`) and enqueues a **forced** rebuild
+  (`Enqueuer.EnqueueThumbnailRebuild`, `enqueueAllRebuilds`) rather than a plain job: a video's poster frame is
+  chosen while its original is decoded, so rebuilding its thumbnails re-picks it — but only a *forced* job
+  re-encodes a size that is already cached, and every one of these videos has a full set. It is how black video
+  tiles are repaired without re-uploading anything; `ErrBackfillUnavailable` without a `Lister`/`Enqueuer`.
   **The placeholder backfill** `BackfillBlurhash(ctx,all) (int,error)` + `CountBackfillBlurhash(ctx,all)`
   (the basis of `POST /process/blurhash`) is the same machinery over a different predicate: every photo
   **without a placeholder** (`PhotoLister.ListPhotosMissingBlurhash`/`CountPhotosMissingBlurhash`, served by

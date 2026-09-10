@@ -117,6 +117,12 @@ type PhotoLister interface {
 	// CountActivePhotos returns how many photos ListActiveUIDs would return,
 	// without materialising them.
 	CountActivePhotos(ctx context.Context) (int, error)
+	// ListActiveVideoUIDs returns the uids of every non-archived video, for the
+	// video-scoped rebuild that re-picks poster frames.
+	ListActiveVideoUIDs(ctx context.Context) ([]string, error)
+	// CountActiveVideos returns how many videos ListActiveVideoUIDs would return,
+	// without materialising them.
+	CountActiveVideos(ctx context.Context) (int, error)
 	// ListPhotosMissingBlurhash returns the uids of non-archived photos with no
 	// blurred placeholder yet (limit <= 0 returns all).
 	ListPhotosMissingBlurhash(ctx context.Context, limit int) ([]string, error)
@@ -132,6 +138,11 @@ type Enqueuer interface {
 	// EnqueueThumbnail schedules thumbnail regeneration for photoUID, treating an
 	// existing active job as a no-op so repeated backfills do not pile up.
 	EnqueueThumbnail(ctx context.Context, photoUID string) error
+	// EnqueueThumbnailRebuild schedules a *forced* thumbnail rebuild for photoUID:
+	// every size is re-encoded over the one already cached. It is what a backfill
+	// whose point is a changed rendering — the video poster rule — must schedule,
+	// since a plain thumbnail job skips a size that is already on disk.
+	EnqueueThumbnailRebuild(ctx context.Context, photoUID string) error
 }
 
 // Config bundles the collaborators a Service needs. Photos, Thumbnailer and
@@ -340,6 +351,49 @@ func (s *Service) backfillCandidates(ctx context.Context, all bool) ([]string, e
 	return uids, nil
 }
 
+// BackfillVideoPosters enqueues a *forced* thumbnail rebuild for every
+// non-archived video, returning how many uids it scheduled. It is how a library
+// re-picks its video poster frames without re-uploading anything: the poster is
+// chosen while the original is decoded (internal/video.ExtractPoster), so
+// rebuilding a video's thumbnails runs the current rule over the current clip and
+// replaces a black tile with a frame that shows something.
+//
+// The rebuild is forced on purpose. The ordinary thumbnail job skips a size that
+// is already cached, which is right when the cache is merely incomplete and wrong
+// here: every one of these videos already has a full set of thumbnails, and it is
+// exactly those that must be re-encoded. The forced flag rides in the payload, so
+// the queue's per-photo dedup is unchanged and a repeated run costs nothing.
+//
+// It returns ErrBackfillUnavailable when the Service was built without the Lister
+// and Enqueuer collaborators. Ask CountBackfillVideoPosters first: this run
+// re-decodes every video in the library, which is the most expensive of the
+// thumbnail backfills per photo.
+func (s *Service) BackfillVideoPosters(ctx context.Context) (int, error) {
+	if s.lister == nil || s.enqueuer == nil {
+		return 0, ErrBackfillUnavailable
+	}
+	uids, err := s.lister.ListActiveVideoUIDs(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("thumbjob: listing active videos: %w", err)
+	}
+	return s.enqueueAllRebuilds(ctx, uids)
+}
+
+// CountBackfillVideoPosters returns how many videos BackfillVideoPosters would
+// schedule, without scheduling anything — the dry run for a backfill whose every
+// job re-reads a video original. It returns ErrBackfillUnavailable when the
+// Service was built without the Lister.
+func (s *Service) CountBackfillVideoPosters(ctx context.Context) (int, error) {
+	if s.lister == nil {
+		return 0, ErrBackfillUnavailable
+	}
+	count, err := s.lister.CountActiveVideos(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("thumbjob: counting active videos: %w", err)
+	}
+	return count, nil
+}
+
 // sortedSizeNames returns the keys of a size→path map in sorted order, so a
 // regenerated-sizes result is deterministic regardless of map iteration order.
 func sortedSizeNames(sizes map[string]string) []string {
@@ -516,6 +570,19 @@ func (s *Service) blurhashCandidates(ctx context.Context, all bool) ([]string, e
 		return nil, fmt.Errorf("thumbjob: listing photos missing blurhash: %w", err)
 	}
 	return uids, nil
+}
+
+// enqueueAllRebuilds schedules a forced thumbnail rebuild per uid, with the same
+// stop-at-first-failure contract as enqueueAll.
+func (s *Service) enqueueAllRebuilds(ctx context.Context, uids []string) (int, error) {
+	enqueued := 0
+	for _, uid := range uids {
+		if err := s.enqueuer.EnqueueThumbnailRebuild(ctx, uid); err != nil {
+			return enqueued, fmt.Errorf("thumbjob: enqueuing thumbnail rebuild for %s: %w", uid, err)
+		}
+		enqueued++
+	}
+	return enqueued, nil
 }
 
 // enqueueAll schedules a thumbnail job per uid and returns how many it scheduled,
