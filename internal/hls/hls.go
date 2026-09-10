@@ -47,6 +47,20 @@ const Prefix = "hls"
 // with. A player fetches it once per rendition, before any media segment.
 const InitName = "init.mp4"
 
+// Media types of the two kinds of object this layout holds. They are decided by
+// name rather than sniffed, because a fragmented-MP4 segment's leading box is
+// not something content sniffing recognises as video at all — and they live here
+// because everything that moves these objects (the encoder that writes them, the
+// storage migration that re-publishes them elsewhere) has to serve them as the
+// same type.
+const (
+	// InitMIME is the media type of the fragmented-MP4 initialisation segment.
+	InitMIME = "video/mp4"
+	// SegmentMIME is the media type of a CMAF media segment, as HLS players and
+	// storage.detectMIME both expect it.
+	SegmentMIME = "video/iso.segment"
+)
+
 // Rendition1080p is the first (and, for now, only) rendition name. It is part of
 // the layout contract rather than an encoder detail: the name appears verbatim in
 // object keys, so it is fixed here where the keys are built.
@@ -150,6 +164,17 @@ func ValidateRendition(rendition string) error {
 		return fmt.Errorf("%w: %q", ErrInvalidRendition, rendition)
 	}
 	return nil
+}
+
+// MIMEFor returns the media type an object of this layout is stored and served
+// with, decided by its file name: InitMIME for the initialisation segment,
+// SegmentMIME for everything else. The name is expected to have passed
+// ValidateName, so "everything else" is a media segment.
+func MIMEFor(name string) string {
+	if name == InitName {
+		return InitMIME
+	}
+	return SegmentMIME
 }
 
 // validateHash reports whether fileHash is a lowercase hex string of a plausible

@@ -326,7 +326,7 @@ func TestPublish(t *testing.T) {
 		if meta.Hash != hex.EncodeToString(sum[:]) || meta.Size != int64(len(body)) {
 			t.Errorf("%s declared %s/%d bytes, want %x/%d", key, meta.Hash, meta.Size, sum, len(body))
 		}
-		if want := mimeFor(name); meta.MIME != want {
+		if want := hls.MIMEFor(name); meta.MIME != want {
 			t.Errorf("%s MIME = %q, want %q", key, meta.MIME, want)
 		}
 	}
@@ -355,20 +355,6 @@ func TestPublish_reportsWhatItWrote(t *testing.T) {
 	}
 	if want := []string{prefix + "init.mp4"}; !slices.Equal(written, want) {
 		t.Errorf("publish reported %v as written, want %v", written, want)
-	}
-}
-
-// TestMimeFor verifies the two media types an HLS object is stored with. They
-// are decided by name because a fragmented-MP4 segment's leading box is not
-// something content sniffing recognises as video.
-func TestMimeFor(t *testing.T) {
-	t.Parallel()
-
-	if got := mimeFor(hls.InitName); got != initMIME {
-		t.Errorf("mimeFor(init) = %q, want %q", got, initMIME)
-	}
-	if got := mimeFor("00007.m4s"); got != segmentMIME {
-		t.Errorf("mimeFor(segment) = %q, want %q", got, segmentMIME)
 	}
 }
 

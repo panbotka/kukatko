@@ -17,6 +17,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/panbotka/kukatko/internal/hls"
 	"github.com/panbotka/kukatko/internal/sidecarexport"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/storagemigrate"
@@ -139,6 +140,29 @@ func (d sidecarRejectingDestination) Head(ctx context.Context, relPath string) (
 
 func (d sidecarRejectingDestination) Put(ctx context.Context, src io.Reader, file storage.StoredFile) error {
 	if strings.HasPrefix(file.RelPath, sidecarexport.Prefix+"/") {
+		return fmt.Errorf("%w: %s", storage.ErrHashMismatch, file.RelPath)
+	}
+	return d.inner.Put(ctx, src, file)
+}
+
+// segmentRejectingDestination writes everything except a streaming segment,
+// which it refuses with a non-systemic error. It exists to prove the same rule
+// the sidecar one proves, for the objects that were added to the store four
+// commits before this package heard about them.
+type segmentRejectingDestination struct {
+	inner storagemigrate.Destination
+}
+
+func (d segmentRejectingDestination) Check(ctx context.Context) error {
+	return d.inner.Check(ctx)
+}
+
+func (d segmentRejectingDestination) Head(ctx context.Context, relPath string) (storage.StoredFile, error) {
+	return d.inner.Head(ctx, relPath)
+}
+
+func (d segmentRejectingDestination) Put(ctx context.Context, src io.Reader, file storage.StoredFile) error {
+	if strings.HasPrefix(file.RelPath, hls.Prefix+"/") {
 		return fmt.Errorf("%w: %s", storage.ErrHashMismatch, file.RelPath)
 	}
 	return d.inner.Put(ctx, src, file)
@@ -843,5 +867,160 @@ func TestThumbnailKeysAreTheCachePathsVerbatim(t *testing.T) {
 	// wrote it anywhere else, every tile in the library would 404 after cutover.
 	if !slices.Contains(objectKeys(t, fixture.destRoot), want) {
 		t.Errorf("the thumbnail did not land at %s", path.Clean(want))
+	}
+}
+
+// writeSegments writes an initialisation segment and n media segments for the
+// video with fileHash under root, at the keys internal/hls fixes, and returns
+// those keys.
+func writeSegments(t *testing.T, root, fileHash string, n int) []string {
+	t.Helper()
+	prefix, err := hls.PrefixFor(fileHash)
+	if err != nil {
+		t.Fatalf("hls.PrefixFor(%s): %v", fileHash, err)
+	}
+	prefix += hls.Rendition1080p + "/"
+	keys := make([]string, 0, 1+n)
+	keys = append(keys, prefix+hls.InitName)
+	writeFile(t, filepath.Join(root, filepath.FromSlash(keys[0])), []byte("init of "+fileHash))
+	for i := range n {
+		key := fmt.Sprintf("%s%05d.m4s", prefix, i)
+		writeFile(t, filepath.Join(root, filepath.FromSlash(key)), fmt.Appendf(nil, "segment %d of %s", i, fileHash))
+		keys = append(keys, key)
+	}
+	return keys
+}
+
+// TestRun_movesStreamingSegments is the regression test for a library whose
+// videos all broke: the migration used to plan only originals, sidecars and
+// thumbnails, so a video's segments stayed on the emptied disk while its
+// rendition rows went on promising a player it could stream them.
+func TestRun_movesStreamingSegments(t *testing.T) {
+	t.Parallel()
+	fixture := newFixture(t, 1)
+	item := fixture.catalogue.items[0]
+	segments := writeSegments(t, fixture.sourceRoot, item.FileHash, 2)
+
+	result, err := run(t, fixture.config())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result.Failed != 0 {
+		t.Fatalf("Run failed %d photo(s): %v", result.Failed, result.Failures)
+	}
+	// The original, its thumbnail, and the three streaming objects.
+	if result.Objects != 5 {
+		t.Errorf("uploaded %d objects, want 5 (original + thumbnail + 3 segments)", result.Objects)
+	}
+	keys := objectKeys(t, fixture.destRoot)
+	for _, key := range segments {
+		if !slices.Contains(keys, key) {
+			t.Errorf("segment %s did not land in the destination; got %v", key, keys)
+		}
+		got, readErr := os.ReadFile(filepath.Join(fixture.destRoot, filepath.FromSlash(key)))
+		if readErr != nil {
+			t.Fatalf("reading %s from the destination: %v", key, readErr)
+		}
+		want, readErr := os.ReadFile(filepath.Join(fixture.sourceRoot, filepath.FromSlash(key)))
+		if readErr != nil {
+			t.Fatalf("reading %s from the source: %v", key, readErr)
+		}
+		if !slices.Equal(got, want) {
+			t.Errorf("segment %s landed as %q, want %q", key, got, want)
+		}
+	}
+	// Without --delete-local the segments stay on disk too.
+	for _, key := range segments {
+		if !exists(t, filepath.Join(fixture.sourceRoot, filepath.FromSlash(key))) {
+			t.Errorf("segment %s was removed without --delete-local", key)
+		}
+	}
+}
+
+// TestRun_deleteLocalRemovesStreamingSegments proves the segments count as part
+// of the disk the migration empties — like the original and the sidecar beside
+// them, and unlike the thumbnail cache, which lives on another path entirely.
+func TestRun_deleteLocalRemovesStreamingSegments(t *testing.T) {
+	t.Parallel()
+	fixture := newFixture(t, 1)
+	item := fixture.catalogue.items[0]
+	segments := writeSegments(t, fixture.sourceRoot, item.FileHash, 1)
+	cfg := fixture.config()
+	cfg.DeleteLocal = true
+
+	result, err := run(t, cfg)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result.Failed != 0 {
+		t.Fatalf("Run failed %d photo(s): %v", result.Failed, result.Failures)
+	}
+	if result.Deleted != 1 {
+		t.Errorf("Deleted = %d, want 1: the tally counts originals, not every removed file", result.Deleted)
+	}
+	for _, key := range segments {
+		if exists(t, filepath.Join(fixture.sourceRoot, filepath.FromSlash(key))) {
+			t.Errorf("segment %s survived --delete-local, leaving the disk it should have emptied", key)
+		}
+		if !exists(t, filepath.Join(fixture.destRoot, filepath.FromSlash(key))) {
+			t.Errorf("segment %s is not in the destination after --delete-local removed it locally", key)
+		}
+	}
+	if !exists(t, thumbPath(t, fixture.cacheDir, item.FileHash)) {
+		t.Error("the cached thumbnail was removed; the thumbnail cache is not the disk being emptied")
+	}
+}
+
+// TestRun_segmentsAreNotDeletedUntilTheyAreDurable proves the ordering holds for
+// the segments as it does for the original: a destination that refuses one of
+// them leaves every local file of that photo alone, so no rendition row is ever
+// left pointing at bytes that exist nowhere.
+func TestRun_segmentsAreNotDeletedUntilTheyAreDurable(t *testing.T) {
+	t.Parallel()
+	fixture := newFixture(t, 1)
+	item := fixture.catalogue.items[0]
+	segments := writeSegments(t, fixture.sourceRoot, item.FileHash, 1)
+	cfg := fixture.config()
+	cfg.DeleteLocal = true
+	cfg.Destination = segmentRejectingDestination{inner: fixture.destination}
+
+	result, err := run(t, cfg)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result.Failed != 1 {
+		t.Fatalf("Failed = %d, want 1: a refused segment must fail its photo", result.Failed)
+	}
+	if fixture.catalogue.isMigrated(item.UID) {
+		t.Error("the row was committed although a segment never made it")
+	}
+	for _, key := range append(segments, item.FilePath) {
+		if !exists(t, filepath.Join(fixture.sourceRoot, filepath.FromSlash(key))) {
+			t.Errorf("%s was deleted locally although the photo failed", key)
+		}
+	}
+}
+
+// TestRun_dryRunMeasuresStreamingSegments proves the estimate an operator plans
+// a move by counts the segments, which on a library of videos are the bulk of
+// the objects.
+func TestRun_dryRunMeasuresStreamingSegments(t *testing.T) {
+	t.Parallel()
+	fixture := newFixture(t, 1)
+	item := fixture.catalogue.items[0]
+	segments := writeSegments(t, fixture.sourceRoot, item.FileHash, 3)
+	cfg := fixture.config()
+	cfg.DryRun = true
+
+	result, err := run(t, cfg)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if want := int64(2 + len(segments)); result.Objects != want {
+		t.Errorf("dry run measured %d objects, want %d (original + thumbnail + %d streaming objects)",
+			result.Objects, want, len(segments))
+	}
+	if keys := objectKeys(t, fixture.destRoot); len(keys) != 0 {
+		t.Errorf("a dry run wrote %v to the destination", keys)
 	}
 }

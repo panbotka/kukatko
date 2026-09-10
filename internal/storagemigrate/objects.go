@@ -8,10 +8,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 
+	"github.com/panbotka/kukatko/internal/hls"
 	"github.com/panbotka/kukatko/internal/sidecarexport"
 	"github.com/panbotka/kukatko/internal/storage"
+	"github.com/panbotka/kukatko/internal/storekeys"
 	"github.com/panbotka/kukatko/internal/thumb"
 )
 
@@ -23,8 +26,12 @@ const thumbMIME = "image/jpeg"
 // identity the destination must hold once they arrive.
 type object struct {
 	// relPath is the object key. Source and destination share one layout, so it
-	// is the photos.file_path or the thumbnail cache path verbatim.
+	// is the photos.file_path, the thumbnail cache path or the streaming segment
+	// key verbatim.
 	relPath string
+	// kind is which of the store's layouts owns it, which is what decides whether
+	// the local copy may be removed once the object is durable elsewhere.
+	kind storekeys.Kind
 	// size is how many bytes it holds.
 	size int64
 	// mime is the media type the destination serves it as.
@@ -44,35 +51,109 @@ func (o object) stored(digest string) storage.StoredFile {
 	return storage.StoredFile{Hash: digest, RelPath: o.relPath, Size: o.size, MIME: o.mime}
 }
 
-// plan lists what one photo contributes to the object store: its original, its
-// metadata sidecar when one exists on the local disk, plus every thumbnail size
-// that currently sits in the local cache. Sizes that were never generated are
-// not generated here — the cache is regenerable from the original, and a
-// migration is the wrong place to spend an afternoon of CPU on it. The sidecar,
-// by contrast, is not regenerable and must travel with the original (see
-// planSidecar).
+// plan lists everything one photo contributes to the object store, asking the
+// question once per kind of object the store can hold rather than once per kind
+// its author remembered. That is why it walks storekeys.Kinds() instead of
+// calling the planners in a row: a new prefix in the store is a new kind, and
+// planFor then fails to compile until this package says what happens to it.
+//
+// What comes back is the original, the metadata sidecar when one exists on the
+// local disk, every thumbnail size that currently sits in the local cache, and
+// every streaming segment the store already holds for the photo's video. Nothing
+// missing is generated here — a migration is the wrong place to spend an
+// afternoon of CPU on regenerable artifacts — but everything present travels, so
+// no catalogue row is left pointing at bytes that stayed behind.
 func (m *Migrator) plan(ctx context.Context, item Item) ([]object, error) {
-	sizes := thumb.SizeNames()
-	objects := make([]object, 0, 2+len(sizes))
-	objects = append(objects, object{
+	var objects []object
+	for _, kind := range storekeys.Kinds() {
+		planned, err := m.planKind(ctx, kind, item)
+		if err != nil {
+			return nil, err
+		}
+		objects = append(objects, planned...)
+	}
+	return objects, nil
+}
+
+// planKind returns the objects of one kind that item contributes.
+//
+// The switch has no default clause on purpose: a new kind of object in the store
+// must be planned — or explicitly declined — here before this package compiles
+// cleanly again. The kinds that belong to nobody's photo are declined by name: a
+// database dump and a half-written upload are not library content, and a foreign
+// object belongs to whoever put it there.
+func (m *Migrator) planKind(ctx context.Context, kind storekeys.Kind, item Item) ([]object, error) {
+	switch kind {
+	case storekeys.KindOriginal:
+		return []object{m.planOriginal(item)}, nil
+	case storekeys.KindSidecar:
+		return m.planSidecar(ctx, item)
+	case storekeys.KindThumbnail:
+		return m.planThumbs(item.FileHash, thumb.SizeNames())
+	case storekeys.KindHLS:
+		return m.planHLS(ctx, item)
+	case storekeys.KindDump, storekeys.KindPartial, storekeys.KindForeign:
+		return nil, nil
+	}
+	return nil, nil // unreachable: every kind is decided above.
+}
+
+// planOriginal returns the one object every photo has: the media file itself,
+// whose size and digest the catalogue already knows, so planning it costs no
+// disk access at all.
+func (m *Migrator) planOriginal(item Item) object {
+	return object{
 		relPath: item.FilePath,
+		kind:    storekeys.KindOriginal,
 		size:    item.FileSize,
 		mime:    mimeOr(item.FileMIME),
 		digest:  func(context.Context) (string, error) { return item.FileHash, nil },
 		open: func(ctx context.Context) (io.ReadCloser, error) {
 			return m.cfg.Source.Open(ctx, item.FilePath)
 		},
+	}
+}
+
+// planHLS lists the streaming segments the source already holds for the photo's
+// video: the initialisation segment and the media segments of every rendition,
+// under hls/<file_hash>/.
+//
+// They are moved rather than left behind because the catalogue's rendition rows
+// are not touched by a migration. A row is a promise that a player can fetch
+// what it describes, so segments that stayed on the emptied disk would turn
+// every video in the library into a playlist of 404s — the library looking
+// perfectly healthy the whole time. Re-encoding them instead would be hours of
+// ffmpeg for bytes that already exist.
+//
+// A photo that is not a video, or a video that was never encoded, has no such
+// keys and contributes nothing; the listing is asked for unconditionally because
+// it is one cheap prefix lookup and the catalogue row does not reliably say
+// which photos have been encoded.
+func (m *Migrator) planHLS(ctx context.Context, item Item) ([]object, error) {
+	prefix, err := hls.PrefixFor(item.FileHash)
+	if err != nil {
+		return nil, fmt.Errorf("storagemigrate: streaming prefix for %s: %w", item.UID, err)
+	}
+	var planned []object
+	err = m.cfg.Source.KeysWithPrefix(ctx, prefix, func(key string) error {
+		info, statErr := m.cfg.Source.Stat(ctx, key)
+		if statErr != nil {
+			return fmt.Errorf("storagemigrate: stat segment %s: %w", key, statErr)
+		}
+		planned = append(planned, object{
+			relPath: key,
+			kind:    storekeys.KindHLS,
+			size:    info.Size(),
+			mime:    hls.MIMEFor(path.Base(key)),
+			digest:  func(ctx context.Context) (string, error) { return hashSource(ctx, m.cfg.Source, key) },
+			open:    func(ctx context.Context) (io.ReadCloser, error) { return m.cfg.Source.Open(ctx, key) },
+		})
+		return nil
 	})
-	sidecar, err := m.planSidecar(ctx, item)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("storagemigrate: listing segments of %s: %w", item.UID, err)
 	}
-	objects = append(objects, sidecar...)
-	thumbs, err := m.planThumbs(item.FileHash, sizes)
-	if err != nil {
-		return nil, err
-	}
-	return append(objects, thumbs...), nil
+	return planned, nil
 }
 
 // planSidecar returns the one object for the photo's metadata sidecar, or an
@@ -100,6 +181,7 @@ func (m *Migrator) planSidecar(ctx context.Context, item Item) ([]object, error)
 	}
 	return []object{{
 		relPath: key,
+		kind:    storekeys.KindSidecar,
 		size:    info.Size(),
 		mime:    sidecarexport.MIME,
 		digest:  func(ctx context.Context) (string, error) { return hashSource(ctx, m.cfg.Source, key) },
@@ -127,6 +209,7 @@ func (m *Migrator) planThumbs(fileHash string, sizes []string) ([]object, error)
 		}
 		planned = append(planned, object{
 			relPath: relPath,
+			kind:    storekeys.KindThumbnail,
 			size:    info.Size(),
 			mime:    thumbMIME,
 			digest:  func(context.Context) (string, error) { return hashFile(absPath) },

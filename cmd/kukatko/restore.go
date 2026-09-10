@@ -10,6 +10,7 @@ import (
 	"github.com/panbotka/kukatko/internal/backup"
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/database"
+	"github.com/panbotka/kukatko/internal/hlsjob"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/restoreapi"
 )
@@ -222,10 +223,9 @@ func runRestoreDB(cmd *cobra.Command) error {
 	}
 	cmd.Printf("database restored from %s\n", restored)
 
-	if err := reapplyMigrations(cmd, cfg); err != nil {
+	if err := repairRestoredDatabase(cmd, cfg); err != nil {
 		return err
 	}
-	cmd.Println("migrations re-applied (idempotent)")
 
 	verify, err := cmd.Flags().GetBool("verify")
 	if err != nil {
@@ -238,10 +238,18 @@ func runRestoreDB(cmd *cobra.Command) error {
 	return nil
 }
 
-// reapplyMigrations opens the database and applies any pending migrations after a
-// restore. The restored dump already contains the schema, so this is normally a
-// no-op, but it guarantees the schema matches this binary's expectations.
-func reapplyMigrations(cmd *cobra.Command, cfg *config.Config) error {
+// repairRestoredDatabase brings a freshly restored database up to date and back
+// into a truthful state: it re-applies the migrations (idempotent, and the way a
+// dump older than the current schema is caught up), then clears the streaming
+// renditions.
+//
+// Clearing them is not housekeeping, it is the other half of what the backup
+// deliberately omits. A video's HLS segments are reproducible from the original,
+// so they are not carried into the bucket; the dump, however, carries every
+// rendition row, and each row promises a player that segments it can fetch
+// exist. After a restore they do not. Dropping the rows says so, and leaves
+// every video in the state the ordinary encode backfill looks for.
+func repairRestoredDatabase(cmd *cobra.Command, cfg *config.Config) error {
 	db, err := database.New(cmd.Context(), cfg.Database)
 	if err != nil {
 		return fmt.Errorf("connecting to database: %w", err)
@@ -249,6 +257,16 @@ func reapplyMigrations(cmd *cobra.Command, cfg *config.Config) error {
 	defer db.Close()
 	if _, err := db.Migrate(cmd.Context()); err != nil {
 		return fmt.Errorf("applying migrations: %w", err)
+	}
+	cmd.Println("migrations re-applied (idempotent)")
+
+	cleared, err := hlsjob.NewStore(db.Pool()).ClearAll(cmd.Context())
+	if err != nil {
+		return fmt.Errorf("clearing streaming renditions: %w", err)
+	}
+	if cleared > 0 {
+		cmd.Printf("%d streaming rendition(s) cleared: the segments are not in the backup, "+
+			"re-encode them with `POST /api/v1/process/hls`\n", cleared)
 	}
 	return nil
 }

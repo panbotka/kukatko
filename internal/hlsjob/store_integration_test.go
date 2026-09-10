@@ -219,3 +219,40 @@ func TestStore_hasAndHasAny(t *testing.T) {
 		t.Errorf("HasAny(unknown photo) = %v, %v, want false, nil", unknown, unknownErr)
 	}
 }
+
+// TestStore_clearAll verifies the restore's repair: every rendition row goes, so
+// no clip claims to stream segments the backup never carried, and the count
+// reported is what was removed. On an already-empty catalogue it is a no-op.
+func TestStore_clearAll(t *testing.T) {
+	store, photo := storeHarness(t)
+	ctx := t.Context()
+
+	for _, name := range []string{"1080p", "720p"} {
+		if _, err := store.Save(ctx, row(photo.UID, name, 1920, 1080)); err != nil {
+			t.Fatalf("Save(%s): %v", name, err)
+		}
+	}
+
+	cleared, err := store.ClearAll(ctx)
+	if err != nil {
+		t.Fatalf("ClearAll: %v", err)
+	}
+	if cleared != 2 {
+		t.Errorf("ClearAll removed %d rows, want 2", cleared)
+	}
+	has, err := store.HasAny(ctx, photo.UID)
+	if err != nil {
+		t.Fatalf("HasAny: %v", err)
+	}
+	if has {
+		t.Error("the video still claims a rendition after ClearAll")
+	}
+
+	again, err := store.ClearAll(ctx)
+	if err != nil {
+		t.Fatalf("second ClearAll: %v", err)
+	}
+	if again != 0 {
+		t.Errorf("second ClearAll removed %d rows, want 0", again)
+	}
+}

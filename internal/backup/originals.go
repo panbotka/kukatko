@@ -19,7 +19,9 @@ const tmpDirName = ".tmp"
 // DiskOriginals is an OriginalSource backed by the on-disk originals root. It
 // walks the directory tree, exposing each regular file by its slash-separated
 // path relative to the root — the same key layout the bucket uses — and skips
-// the temporary upload directory.
+// whatever that key says does not belong in a backup: the in-progress uploads,
+// and the derived prefixes that share the root with the originals (a video's
+// streaming segments live there too).
 type DiskOriginals struct {
 	root string
 }
@@ -33,10 +35,11 @@ func NewDiskOriginals(root string) *DiskOriginals {
 	return &DiskOriginals{root: root}
 }
 
-// List walks the originals root and returns every regular file as a
-// LocalOriginal keyed by its slash-separated path relative to the root. The
-// temporary upload directory is skipped. A missing root yields an empty list
-// rather than an error, so a fresh install with no originals backs up cleanly.
+// List walks the originals root and returns every regular file whose key says it
+// belongs in a backup as a LocalOriginal, keyed by its slash-separated path
+// relative to the root. The derived and temporary prefixes are skipped whole,
+// without descending into them. A missing root yields an empty list rather than
+// an error, so a fresh install with no originals backs up cleanly.
 func (d *DiskOriginals) List(ctx context.Context) ([]LocalOriginal, error) {
 	var originals []LocalOriginal
 	walkErr := filepath.WalkDir(d.root, func(absPath string, entry fs.DirEntry, err error) error {
@@ -57,28 +60,29 @@ func (d *DiskOriginals) List(ctx context.Context) ([]LocalOriginal, error) {
 	return originals, nil
 }
 
-// visit handles one entry of the originals walk: it skips the temporary upload
-// directory wholesale, ignores non-regular files, and appends a LocalOriginal
-// for each regular file keyed by its slash-separated relative path.
+// visit handles one entry of the originals walk: it turns away at the root of a
+// directory holding nothing a backup wants, ignores non-regular files, and
+// appends a LocalOriginal for each regular file whose key belongs in a backup.
 func (d *DiskOriginals) visit(absPath string, entry fs.DirEntry, originals *[]LocalOriginal) error {
+	rel, err := filepath.Rel(d.root, absPath)
+	if err != nil {
+		return fmt.Errorf("relativising %s: %w", absPath, err)
+	}
+	key := filepath.ToSlash(rel)
 	if entry.IsDir() {
-		if entry.Name() == tmpDirName {
+		if key != "." && skippedDir(key) {
 			return filepath.SkipDir
 		}
 		return nil
 	}
-	if !entry.Type().IsRegular() {
+	if !entry.Type().IsRegular() || !backedUpKey(key) {
 		return nil
 	}
 	info, err := entry.Info()
 	if err != nil {
 		return fmt.Errorf("statting %s: %w", absPath, err)
 	}
-	rel, err := filepath.Rel(d.root, absPath)
-	if err != nil {
-		return fmt.Errorf("relativising %s: %w", absPath, err)
-	}
-	*originals = append(*originals, LocalOriginal{Key: filepath.ToSlash(rel), Size: info.Size()})
+	*originals = append(*originals, LocalOriginal{Key: key, Size: info.Size()})
 	return nil
 }
 

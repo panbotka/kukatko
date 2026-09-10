@@ -5,15 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"regexp"
-	"strings"
 	"sync"
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/panbotka/kukatko/internal/hls"
 	"github.com/panbotka/kukatko/internal/sidecarexport"
 	"github.com/panbotka/kukatko/internal/storage"
+	"github.com/panbotka/kukatko/internal/storekeys"
 	"github.com/panbotka/kukatko/internal/thumb"
 )
 
@@ -37,36 +35,35 @@ const (
 	kindHLS
 )
 
-// originalKeyPattern matches the layout internal/storage gives every original:
-// the YYYY/MM directory derived from the capture time, then a filename. It is
-// anchored at the start and requires a name after the month, so neither a bare
-// directory marker nor a deeper foreign tree that merely begins with digits is
-// mistaken for an original.
-var originalKeyPattern = regexp.MustCompile(`^[0-9]{4}/[0-9]{2}/[^/]+$`)
-
 // classifyKey reports which of Kukátko's prefixes owns key, or kindForeign when
 // none does.
 //
 // The bucket root is the namespace — there is no per-application prefix in front
 // of YYYY/MM — so "what may this command delete" cannot be answered by a single
-// prefix test. It is answered here, by the layouts this application actually
-// writes, and everything else is somebody else's object.
+// prefix test. It is answered by internal/storekeys, which is where the store's
+// layouts are classified for every operation that reasons about the whole store;
+// this function only translates that verdict into what a wipe does about it.
+//
+// The switch has no default clause on purpose: a new kind of object in the store
+// must decide here whether the wipe owns it, rather than silently becoming
+// foreign and surviving a reset.
 func classifyKey(key string) keyKind {
-	clean := strings.TrimPrefix(strings.TrimSpace(key), "/")
-	switch {
-	case clean == "":
-		return kindForeign
-	case strings.HasPrefix(clean, thumb.CacheSubdir+"/"):
-		return kindThumbnail
-	case strings.HasPrefix(clean, sidecarexport.Prefix+"/"):
-		return kindSidecar
-	case strings.HasPrefix(clean, hls.Prefix+"/"):
-		return kindHLS
-	case originalKeyPattern.MatchString(clean):
+	switch storekeys.Classify(key) {
+	case storekeys.KindOriginal:
 		return kindOriginal
-	default:
+	case storekeys.KindThumbnail:
+		return kindThumbnail
+	case storekeys.KindSidecar:
+		return kindSidecar
+	case storekeys.KindHLS:
+		return kindHLS
+	// A dump and a half-written upload are not the library's content: the reset
+	// counts them as foreign and leaves them where they are, exactly as it did
+	// before these two had names.
+	case storekeys.KindDump, storekeys.KindPartial, storekeys.KindForeign:
 		return kindForeign
 	}
+	return kindForeign // unreachable: every kind is decided above.
 }
 
 // PrefixCounts is a per-prefix object count: the shape of the store as this

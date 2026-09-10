@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 )
 
 // Sentinel errors for the bucket-backed originals source. They exist so a
@@ -56,10 +55,12 @@ func NewBucketOriginals(source ObjectStore, bucket string) (*BucketOriginals, er
 // Bucket returns the name of the primary bucket the originals are read from.
 func (b *BucketOriginals) Bucket() string { return b.bucket }
 
-// List enumerates every original in the primary bucket. Database dumps and
-// in-progress uploads are skipped, so pointing the backup at the primary bucket
-// by mistake cannot turn dumps into "originals"; everything else in the bucket
-// is an original, since derived artefacts are cached elsewhere.
+// List enumerates every original in the primary bucket. What an object is, is
+// decided by its key: originals and metadata sidecars are listed, while the
+// derived prefixes — the thumbnail cache and a video's streaming segments — are
+// not, being reproducible from an original by an ordinary background job.
+// Database dumps and in-progress uploads are skipped too, so pointing the backup
+// at the primary bucket by mistake cannot turn dumps into "originals".
 func (b *BucketOriginals) List(ctx context.Context) ([]LocalOriginal, error) {
 	objects, err := b.source.List(ctx, "")
 	if err != nil {
@@ -67,7 +68,7 @@ func (b *BucketOriginals) List(ctx context.Context) ([]LocalOriginal, error) {
 	}
 	originals := make([]LocalOriginal, 0, len(objects))
 	for _, obj := range objects {
-		if skipKey(obj.Key) {
+		if !backedUpKey(obj.Key) {
 			continue
 		}
 		originals = append(originals, LocalOriginal{Key: obj.Key, Size: obj.Size})
@@ -82,11 +83,4 @@ func (b *BucketOriginals) CopyTo(ctx context.Context, dst ObjectStore, original 
 		return fmt.Errorf("backup: copying %s from %s: %w", original.Key, b.bucket, err)
 	}
 	return nil
-}
-
-// skipKey reports whether an object key in the primary bucket is not an original:
-// a database dump under the dump prefix, or a partial upload under the temporary
-// prefix.
-func skipKey(key string) bool {
-	return strings.HasPrefix(key, dumpPrefix) || strings.HasPrefix(key, tmpDirName+"/")
 }

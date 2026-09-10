@@ -2,7 +2,8 @@ package maintenance
 
 import (
 	"context"
-	"regexp"
+
+	"github.com/panbotka/kukatko/internal/storekeys"
 )
 
 // StoreKind names the kind of store an instance keeps its originals in, so a
@@ -48,13 +49,6 @@ type KeyLister interface {
 	Keys(ctx context.Context, yield func(key string) error) error
 }
 
-// originalKeyPattern matches the layout internal/storage gives every original:
-// the YYYY/MM directory derived from the capture time, then a filename. It is
-// anchored at both ends and requires a name after the month, so neither a bare
-// directory marker nor a deeper foreign tree that merely begins with digits is
-// mistaken for an original.
-var originalKeyPattern = regexp.MustCompile(`^[0-9]{4}/[0-9]{2}/[^/]+$`)
-
 // isOriginalKey reports whether key names an original media file rather than one
 // of the other things the store holds.
 //
@@ -63,13 +57,17 @@ var originalKeyPattern = regexp.MustCompile(`^[0-9]{4}/[0-9]{2}/[^/]+$`)
 // that way: the bucket root is the namespace, so thumb/ and sidecars/ are not the
 // only things that can sit beside the originals. An object some other tool put in
 // a shared bucket must not be counted as an orphan, because an orphan is a file
-// the repair offers to ingest into the library.
+// the repair offers to ingest into the library. The classification itself is
+// internal/storekeys', shared with the backup, the storage migration and the
+// wipe, so a prefix added to the store is not something this scan can be left
+// behind on.
 //
 // Excluding the sidecars matters on both backends: a sidecar describes a photo,
 // it is not one, and no catalogue row will ever point at it. Counting them would
 // report one orphan per photo forever and never let the report be clean again.
+// The same now goes for a video's streaming segments.
 func isOriginalKey(key string) bool {
-	return originalKeyPattern.MatchString(key)
+	return storekeys.Classify(key) == storekeys.KindOriginal
 }
 
 // StoreOriginals is the StoreScanner over a storage backend: it streams every key

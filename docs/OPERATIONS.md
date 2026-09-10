@@ -37,7 +37,9 @@ configuration key both here **and** into `config.example.yaml`.
   **`kukatko restore`** (the restore/disaster-recovery tree — `internal/backup`; shares `backup.s3.*`,
   otherwise `errRestoreNotConfigured`; for ops/cron without a running server): `restore list` (dumps in
   the bucket), `restore db [--dump KEY] [--yes] [--verify]` (**destructive** DB restore via
-  `pg_restore` streamed from S3 + idempotent re-migration; without `--yes` → `errRestoreNotConfirmed`),
+  `pg_restore` streamed from S3 + idempotent re-migration + **clearing the streaming renditions**, whose
+  segments the backup never carried, so the ordinary `POST /process/hls` backfill re-encodes them;
+  without `--yes` → `errRestoreNotConfirmed`),
   `restore originals` (downloads missing originals, skips by key+size, resumable),
   `restore verify` (integrity report of photos in the DB vs originals on disk); runbook
   [`docs/RESTORE.md`](RESTORE.md),
@@ -1234,6 +1236,13 @@ files, one request, streamed — a walk over a disk the server cannot see is not
   primary bucket → `errBackupSameBucket` (both in the wiring, `cmd/kukatko/backup.go`). A missing
   `storage.r2.bucket` is caught already by `config.Load` (`ErrIncompleteR2Config`) at startup; the sentinels
   `backup.ErrNoSourceStore`/`ErrNoSourceBucket` therefore only guard against a wiring bug inside the package.
+  **What is copied is decided by the key, in one place** (`internal/storekeys`): originals and metadata
+  sidecars travel; the derived prefixes `thumb/` (the thumbnail cache) and `hls/` (a video's streaming
+  segments) are **deliberately omitted**, being reproducible from an original by an ordinary background
+  job and therefore not worth paying for twice — on the staging instance the segments alone were 470 MB
+  against 1.9 GB of video originals, and they grow with every encode. A foreign object under none of
+  Kukátko's prefixes **is** backed up: its value is not this code's to judge. What that costs on a
+  restore is one backfill (`POST /process/hls`) — see [`RESTORE.md`](RESTORE.md#what-the-backup-does-not-contain).
   Object versioning **does not exist**, the second bucket is the only protection — see [`RESTORE.md`](RESTORE.md).
 - **Thumbnail keys (`thumb.*`, `internal/config`):** `engine` (`go` **default** / `vips`;
   an unknown value → `ErrInvalidThumbEngine` at startup) — `vips` switches JPEG/PNG/WebP thumbnails to a

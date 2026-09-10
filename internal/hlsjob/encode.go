@@ -24,11 +24,6 @@ const (
 	ffmpegBinary = "ffmpeg"
 	// tempDirPattern names the throwaway directory one rendition is encoded into.
 	tempDirPattern = "kukatko-hls-*"
-	// initMIME is the media type of the fragmented-MP4 initialisation segment.
-	initMIME = "video/mp4"
-	// segmentMIME is the media type of a CMAF media segment, as HLS players and
-	// storage.detectMIME both expect it.
-	segmentMIME = "video/iso.segment"
 )
 
 // encodeOne encodes photo into one rendition and records it, leaving the store
@@ -156,7 +151,7 @@ func (s *Service) publish(ctx context.Context, dir, prefix string, produced enco
 	written := make([]string, 0, len(names))
 	for _, name := range names {
 		key := prefix + name
-		if err := s.putObject(ctx, filepath.Join(dir, name), key, mimeFor(name)); err != nil {
+		if err := s.putObject(ctx, filepath.Join(dir, name), key, hls.MIMEFor(name)); err != nil {
 			return written, err
 		}
 		written = append(written, key)
@@ -203,16 +198,6 @@ func digest(path string) (string, int64, error) {
 		return "", 0, fmt.Errorf("hlsjob: digesting %s: %w", filepath.Base(path), err)
 	}
 	return hex.EncodeToString(sum.Sum(nil)), size, nil
-}
-
-// mimeFor returns the media type an HLS object is stored and served with. It is
-// decided by name rather than sniffed, because a fragmented-MP4 segment's
-// leading box is not something content sniffing recognises as video at all.
-func mimeFor(name string) string {
-	if name == hls.InitName {
-		return initMIME
-	}
-	return segmentMIME
 }
 
 // renditionPrefix returns the key prefix holding one rendition's objects,

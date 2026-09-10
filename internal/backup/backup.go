@@ -34,12 +34,16 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/panbotka/kukatko/internal/storekeys"
 )
 
 const (
 	// dumpPrefix is the bucket key prefix under which database dumps are stored.
-	// Pruning is scoped to this prefix so it can never affect originals.
-	dumpPrefix = "db/"
+	// Pruning is scoped to this prefix so it can never affect originals. It is
+	// storekeys' constant because the same prefix is what classifies a dump when
+	// the whole bucket is listed.
+	dumpPrefix = storekeys.DumpPrefix
 	// dumpBaseName is the leading component of a dump object's name.
 	dumpBaseName = "kukatko"
 	// dumpTimeLayout formats a dump timestamp so object names sort

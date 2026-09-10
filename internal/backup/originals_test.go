@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -43,6 +44,36 @@ func TestDiskOriginals_List(t *testing.T) {
 	}
 	if originals[1].Key != "2026/02/b.png" || originals[1].Size != 2 {
 		t.Errorf("originals[1] = %+v, want 2026/02/b.png size 2", originals[1])
+	}
+}
+
+// TestDiskOriginals_List_skipsDerived proves the walk of the originals root
+// leaves behind everything an ordinary background job can rebuild — the
+// streaming segments of a video above all, which live under the same root as the
+// originals and used to be copied into the backup as if each segment were one.
+func TestDiskOriginals_List_skipsDerived(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeFile(t, root, "2026/01/clip.mp4", "video bytes")
+	writeFile(t, root, "sidecars/2026/01/clip.mp4.yaml", "uid: abc")
+	writeFile(t, root, "hls/abcdef0123456789/1080p/init.mp4", "init")
+	writeFile(t, root, "hls/abcdef0123456789/1080p/00000.m4s", "segment zero")
+	writeFile(t, root, "hls/abcdef0123456789/1080p/00001.m4s", "segment one")
+	writeFile(t, root, "thumb/ab/cd/ef/abcdef_tile_500.jpg", "tile")
+	writeFile(t, root, "db/kukatko-20260101T000000Z.dump", "dump")
+
+	originals, err := NewDiskOriginals(root).List(context.Background())
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	sort.Slice(originals, func(i, j int) bool { return originals[i].Key < originals[j].Key })
+	keys := make([]string, 0, len(originals))
+	for _, original := range originals {
+		keys = append(keys, original.Key)
+	}
+	want := []string{"2026/01/clip.mp4", "sidecars/2026/01/clip.mp4.yaml"}
+	if !reflect.DeepEqual(keys, want) {
+		t.Errorf("List() = %v, want %v", keys, want)
 	}
 }
 

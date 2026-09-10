@@ -199,3 +199,29 @@ func (s *Store) HasAny(ctx context.Context, photoUID string) (bool, error) {
 	}
 	return exists, nil
 }
+
+// clearAllSQL removes every rendition row in the catalogue.
+const clearAllSQL = `DELETE FROM photo_hls_renditions`
+
+// ClearAll deletes every rendition row and returns how many it removed.
+//
+// It exists for one situation, and it is deliberately not reachable from the
+// HTTP API: a restore from backup. The backup carries no streaming segments —
+// they are reproducible from the original, so they are not worth their weight in
+// the bucket — while the database dump carries every rendition row, and a row is
+// a promise that a player can fetch the segments it describes. Left alone after
+// a restore, that promise is false for the whole library: the photo detail keeps
+// reporting each clip as streamable and every segment answers 404.
+//
+// Clearing the rows makes the catalogue tell the truth again — no clip claims to
+// stream — and puts every video back into exactly the state the ordinary encode
+// backfill looks for, so re-encoding the library is one background job rather
+// than a special repair. Restoring an older backup that does hold segments loses
+// nothing but the ffmpeg time to produce them again.
+func (s *Store) ClearAll(ctx context.Context) (int64, error) {
+	tag, err := s.pool.Exec(ctx, clearAllSQL)
+	if err != nil {
+		return 0, fmt.Errorf("hlsjob: clearing renditions: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}

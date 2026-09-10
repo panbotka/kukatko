@@ -233,6 +233,35 @@ func TestRestoreService_RestoreOriginals_skipExisting(t *testing.T) {
 	}
 }
 
+// TestRestoreService_RestoreOriginals_toleratesOlderBackups covers restoring a
+// backup taken before the derived prefixes were classified: it holds a video's
+// streaming segments and a thumbnail as if they were originals. Those objects
+// are extra, not corrupt, and the restore must not treat them as an error — a
+// backup is restored on the worst day of an instance's life, and a stricter rule
+// here would refuse to bring the library back over regenerable junk.
+func TestRestoreService_RestoreOriginals_toleratesOlderBackups(t *testing.T) {
+	t.Parallel()
+	store := newFakeStore(map[string][]byte{
+		"2026/01/clip.mp4":                     []byte("video"),
+		"hls/abcdef0123456789/1080p/init.mp4":  []byte("init"),
+		"hls/abcdef0123456789/1080p/00000.m4s": []byte("segment"),
+		"thumb/ab/cd/ef/abcdef_tile_500.jpg":   []byte("tile"),
+	})
+	dest := newFakeLocalOriginals(nil)
+	svc := NewRestoreService(RestoreConfig{Objects: store, Originals: dest})
+
+	res, err := svc.RestoreOriginals(context.Background())
+	if err != nil {
+		t.Fatalf("RestoreOriginals() error = %v, want a tolerated restore", err)
+	}
+	if res.Downloaded != 4 {
+		t.Errorf("downloaded=%d, want 4: every object in the backup comes back", res.Downloaded)
+	}
+	if string(dest.files["2026/01/clip.mp4"]) != "video" {
+		t.Errorf("clip.mp4 = %q, want the original restored", dest.files["2026/01/clip.mp4"])
+	}
+}
+
 func TestRestoreService_Verify(t *testing.T) {
 	t.Parallel()
 	catalog := &fakePhotoCatalog{

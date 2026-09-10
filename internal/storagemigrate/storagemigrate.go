@@ -1,12 +1,13 @@
-// Package storagemigrate moves a library's originals and their cached
-// thumbnails off the local disk and into the object store, one photo at a time,
-// safely enough that the process may be killed at any instant and simply started
-// again.
+// Package storagemigrate moves a library's originals and every derived artifact
+// that belongs to them off the local disk and into the object store, one photo
+// at a time, safely enough that the process may be killed at any instant and
+// simply started again.
 //
 // # The safety rule
 //
 // Every step of a photo happens in one order and no other: upload each of its
-// objects — the original, its metadata sidecar, its cached thumbnails — read
+// objects — the original, its metadata sidecar, its cached thumbnails, the
+// streaming segments of its video — read
 // each back and check it holds the size and the SHA256 the catalogue promised,
 // commit the row, and only then — and only when asked to — remove the local
 // original and its sidecar. Nothing about a failure is silent and nothing about
@@ -46,8 +47,8 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/panbotka/kukatko/internal/sidecarexport"
 	"github.com/panbotka/kukatko/internal/storage"
+	"github.com/panbotka/kukatko/internal/storekeys"
 )
 
 // Defaults for the knobs a caller may leave unset. Concurrency is deliberately
@@ -98,6 +99,14 @@ type Source interface {
 	// has a sidecar at all — and the sidecar's size for the dry-run estimate — is
 	// answered from here, cheaply enough to ask for every photo.
 	Stat(ctx context.Context, relPath string) (os.FileInfo, error)
+	// KeysWithPrefix enumerates the keys under prefix. It is how the objects whose
+	// names the catalogue does not know are found: how many segments a video was
+	// cut into, and in which renditions, is known only to the store holding them.
+	// It is part of this interface rather than an optional capability the migrator
+	// type-asserts for, because a source that could not answer would silently
+	// strand every one of those objects — which is the bug this requirement exists
+	// to prevent.
+	KeysWithPrefix(ctx context.Context, prefix string, yield func(key string) error) error
 	// Delete removes the file at relPath.
 	Delete(ctx context.Context, relPath string) error
 }
@@ -126,7 +135,7 @@ var (
 type Snapshot struct {
 	// Photos is how many photos are done: every object verified, row committed.
 	Photos int64
-	// Objects is how many objects were uploaded, originals and thumbnails alike.
+	// Objects is how many objects were uploaded, of every kind alike.
 	Objects int64
 	// Bytes is how many bytes those uploads transferred.
 	Bytes int64
@@ -205,11 +214,12 @@ type Config struct {
 	BatchSize int
 	// DryRun measures what would move and changes nothing, anywhere.
 	DryRun bool
-	// DeleteLocal removes each local original — and its metadata sidecar — once
-	// every object of the photo is verified in the destination and its row is
-	// committed. Both sit under the originals root this migration exists to empty.
-	// Cached thumbnails are never removed: they are regenerable from the original,
-	// and the cache they sit in is not the disk this migration empties.
+	// DeleteLocal removes each local original — and its metadata sidecar, and its
+	// video's streaming segments — once every object of the photo is verified in
+	// the destination and its row is committed. All three sit under the originals
+	// root this migration exists to empty. Cached thumbnails are never removed:
+	// they are regenerable from the original, and the cache they sit in is not the
+	// disk this migration empties.
 	DeleteLocal bool
 	// ReportEvery throttles the Report callback. Non-positive reports every photo.
 	ReportEvery time.Duration
@@ -355,9 +365,10 @@ func (m *Migrator) handle(ctx context.Context, item Item) error {
 }
 
 // migrateOne performs the whole ordered ritual for one photo: transfer every
-// object — the original, its sidecar, its cached thumbnails — commit the row,
-// then — last, and only if asked — remove the local original and its sidecar. A
-// dry run stops after measuring.
+// object — the original, its sidecar, its cached thumbnails, its streaming
+// segments — commit the row, then — last, and only if asked — remove the local
+// copies of the ones that lived under the originals root. A dry run stops after
+// measuring.
 func (m *Migrator) migrateOne(ctx context.Context, item Item) error {
 	objects, err := m.plan(ctx, item)
 	if err != nil {
@@ -376,7 +387,7 @@ func (m *Migrator) migrateOne(ctx context.Context, item Item) error {
 		return err //nolint:wrapcheck // as in Run: the Catalogue implementation names its own failure.
 	}
 	if m.cfg.DeleteLocal {
-		return m.deleteLocal(ctx, item)
+		return m.deleteLocal(ctx, objects)
 	}
 	return nil
 }
@@ -465,49 +476,51 @@ func (m *Migrator) verify(ctx context.Context, want storage.StoredFile) error {
 	return nil
 }
 
-// deleteLocal removes the photo's local original and then its local sidecar. It
-// is reached only after every object of that photo — the original, its sidecar,
-// any cached thumbnails — verified in the destination and the row was committed,
-// so both the original and the sidecar are provably somewhere else first. The
-// sidecar goes too because it sits under the very originals root this migration
-// exists to empty; the cached thumbnails do not, being regenerable and living in
-// a separate cache, so they are left alone. A file already gone is not an error.
-func (m *Migrator) deleteLocal(ctx context.Context, item Item) error {
-	if err := m.deleteLocalOriginal(ctx, item); err != nil {
-		return err
-	}
-	return m.deleteLocalSidecar(ctx, item)
-}
-
-// deleteLocalOriginal removes the photo's local original, tallying it as deleted.
-// An original already gone is not an error.
-func (m *Migrator) deleteLocalOriginal(ctx context.Context, item Item) error {
-	if err := m.cfg.Source.Delete(ctx, item.FilePath); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
+// deleteLocal removes the local copies of the objects that were just verified in
+// the destination — and only those, by their planned keys, never by a fresh
+// listing: an object written after the plan was made was never verified
+// anywhere, and deleting it would be the one thing this package must never do.
+//
+// It is reached only after every object of the photo verified and the row was
+// committed, so each file it removes is provably somewhere else first. Which
+// kinds go is decided by livesLocally: the original, its sidecar and the video's
+// streaming segments all sit under the originals root this migration exists to
+// empty, while the cached thumbnails live in a separate cache that is not this
+// disk. A file already gone is not an error.
+func (m *Migrator) deleteLocal(ctx context.Context, objects []object) error {
+	for _, obj := range objects {
+		if !livesLocally(obj.kind) {
+			continue
 		}
-		return fmt.Errorf("storagemigrate: removing local original %s: %w", item.FilePath, err)
+		if err := m.cfg.Source.Delete(ctx, obj.relPath); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return fmt.Errorf("storagemigrate: removing local %s %s: %w", obj.kind, obj.relPath, err)
+		}
+		if obj.kind == storekeys.KindOriginal {
+			m.record(func(t *Snapshot) { t.Deleted++ })
+		}
 	}
-	m.record(func(t *Snapshot) { t.Deleted++ })
 	return nil
 }
 
-// deleteLocalSidecar removes the photo's local sidecar, which by now is durable
-// in the destination. It is not counted in the Deleted tally — that is a count
-// of originals — and a photo with no sidecar, or one already removed, is not an
-// error.
-func (m *Migrator) deleteLocalSidecar(ctx context.Context, item Item) error {
-	key, err := sidecarexport.KeyFor(item.FilePath)
-	if err != nil {
-		return fmt.Errorf("storagemigrate: sidecar key for %s: %w", item.FilePath, err)
+// livesLocally reports whether an object of kind sits under the originals root
+// the migration empties, and may therefore be removed once it is durable in the
+// destination. Only the Deleted tally distinguishes among them: it counts
+// originals, which is what an operator watching the disk drain is counting.
+//
+// The switch has no default clause on purpose, for the same reason planKind's
+// has not: a new kind of object in the store must say here whether emptying the
+// disk means emptying it too.
+func livesLocally(kind storekeys.Kind) bool {
+	switch kind {
+	case storekeys.KindOriginal, storekeys.KindSidecar, storekeys.KindHLS:
+		return true
+	case storekeys.KindThumbnail, storekeys.KindDump, storekeys.KindPartial, storekeys.KindForeign:
+		return false
 	}
-	if err := m.cfg.Source.Delete(ctx, key); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		return fmt.Errorf("storagemigrate: removing local sidecar %s: %w", key, err)
-	}
-	return nil
+	return false // unreachable: every kind is decided above.
 }
 
 // measure tallies what a photo's objects would cost, for a dry run.

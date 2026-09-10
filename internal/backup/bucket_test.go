@@ -53,6 +53,37 @@ func TestNewBucketOriginals_validation(t *testing.T) {
 	}
 }
 
+// TestBucketOriginals_List_skipsDerived proves the bucket lister leaves the
+// derived prefixes out of the backup. A video's streaming segments are the
+// reason: they are reproducible from the original by the encode job, they
+// outweigh a small library's photographs, and every re-encode would add more.
+// The catalogued original and its sidecar are what a restore needs.
+func TestBucketOriginals_List_skipsDerived(t *testing.T) {
+	t.Parallel()
+	_, _, originals := newBucketPair(t, map[string][]byte{
+		"2026/01/clip.mp4":                     []byte("video"),
+		"sidecars/2026/01/clip.mp4.yaml":       []byte("uid: abc"),
+		"hls/abcdef0123456789/1080p/init.mp4":  []byte("init"),
+		"hls/abcdef0123456789/1080p/00000.m4s": []byte("segment zero"),
+		"hls/abcdef0123456789/1080p/00001.m4s": []byte("segment one"),
+		"thumb/ab/cd/ef/abcdef_tile_500.jpg":   []byte("tile"),
+		"somebody-elses-tool/state.json":       []byte("keep me"),
+	})
+
+	got, err := originals.List(t.Context())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	want := []LocalOriginal{
+		{Key: "2026/01/clip.mp4", Size: 5},
+		{Key: "sidecars/2026/01/clip.mp4.yaml", Size: 8},
+		{Key: "somebody-elses-tool/state.json", Size: 7},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("List() = %v, want %v", got, want)
+	}
+}
+
 func TestBucketOriginals_List_skipsDumpsAndPartialUploads(t *testing.T) {
 	t.Parallel()
 	_, _, originals := newBucketPair(t, map[string][]byte{
@@ -161,30 +192,6 @@ func TestService_SyncOriginals_copiesBucketToBucketAdditively(t *testing.T) {
 	}
 	if _, ok := backupStore.objects["2026/01/a.jpg"]; !ok {
 		t.Error("original deleted from the primary was also removed from the backup bucket")
-	}
-}
-
-func TestSkipKey(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		key  string
-		want bool
-	}{
-		{key: "2026/01/a.jpg", want: false},
-		{key: "db/kukatko-20260101T000000Z.dump", want: true},
-		{key: ".tmp/upload-123", want: true},
-		{key: "dbx/not-a-dump.jpg", want: false},
-		{key: ".tmpfile.jpg", want: false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.key, func(t *testing.T) {
-			t.Parallel()
-			if got := skipKey(tt.key); got != tt.want {
-				t.Errorf("skipKey(%q) = %v, want %v", tt.key, got, tt.want)
-			}
-		})
 	}
 }
 

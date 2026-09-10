@@ -223,3 +223,24 @@ func TestValidateRendition(t *testing.T) {
 		})
 	}
 }
+
+// TestMIMEFor verifies the two media types an HLS object is stored with. They
+// are decided by name because a fragmented-MP4 segment's leading box is not
+// something content sniffing recognises as video.
+func TestMIMEFor(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		want string
+	}{
+		{InitName, InitMIME},
+		{"00000.m4s", SegmentMIME},
+		{"00007.m4s", SegmentMIME},
+	}
+	for _, tt := range tests {
+		if got := MIMEFor(tt.name); got != tt.want {
+			t.Errorf("MIMEFor(%q) = %q, want %q", tt.name, got, tt.want)
+		}
+	}
+}

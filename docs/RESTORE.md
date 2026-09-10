@@ -116,7 +116,19 @@ kukatko restore db --dump db/kukatko-20260628T020000Z.dump --yes
 What happens: the dump is streamed straight from S3 into `pg_restore`
 (`--clean --if-exists --single-transaction --no-owner --no-privileges`), so the restore runs in a
 single transaction and rolls back cleanly if interrupted. Migrations are then re-applied
-(idempotent — normally a no-op, but it guarantees the schema matches the binary).
+(idempotent — normally a no-op, but it guarantees the schema matches the binary), and finally the
+**streaming renditions are cleared**:
+
+```text
+# 214 streaming rendition(s) cleared: the segments are not in the backup, re-encode them with `POST /api/v1/process/hls`
+```
+
+That is deliberate, and it is the other half of what the backup omits (see
+[What the backup does not contain](#what-the-backup-does-not-contain)). The dump carries every row
+of `photo_hls_renditions`, and each row is a promise to a player that the HLS segments it describes
+can be fetched; after a restore they cannot, because the segments were never in the bucket. Dropping
+the rows makes the catalogue tell the truth — no clip claims to stream — and puts every video into
+exactly the state the ordinary encode backfill looks for. Re-encode them in step 7.
 
 > The connection password is passed to `pg_restore` via `PGPASSWORD`, never on the command line.
 
@@ -136,6 +148,24 @@ This downloads every original in the bucket that is not already on disk at the s
 writing each atomically (temp file under `.tmp/` then rename). **It is resumable**: if it is
 interrupted (network drop, Ctrl-C), just run it again — completed files are skipped and only the
 remainder is fetched. Database dumps under `db/` are never downloaded as originals.
+
+A backup taken before the derived prefixes were classified also holds thumbnails and HLS segments.
+They come back with everything else and are harmless — the restore tolerates extra objects rather
+than refusing to run over regenerable junk — and no later backup run copies them up again.
+
+### What the backup does not contain
+
+The backup carries the originals and the metadata sidecars, and nothing else from the store. Two
+prefixes are deliberately omitted, because both are reproducible from an original by an ordinary
+background job and neither is worth its weight in a second bucket:
+
+| Prefix | What it is | How it comes back |
+| --- | --- | --- |
+| `thumb/` | the thumbnail cache | regenerated lazily on first access |
+| `hls/` | a video's streaming segments | re-encoded by the backfill, step 7 |
+
+On the staging instance the segments alone were 470 MB against 1.9 GB of video originals, and they
+grow with every encode. What this costs on the worst day is ffmpeg time, not a photograph.
 
 ### 6. Verify integrity (`storage.backend: fs`)
 
@@ -168,6 +198,21 @@ sudo systemctl start kukatko        # deb install
 Thumbnails and other derived cache are **regenerated lazily** on first access, so the cache
 directory does not need to be restored. Embeddings and detected faces are part of the database dump
 and are restored with it.
+
+**Streaming renditions are the one thing you have to ask for.** They are not in the backup and their
+rows were cleared in step 4, so every video plays through the progressive endpoint (correct, just
+heavier) until it is encoded again. Schedule the ordinary backfill once the service is up — it
+enqueues one `hls_transcode` job per video that has no rendition, and the worker drains them one
+clip at a time over the following hours:
+
+```bash
+curl -X POST -H "Authorization: Bearer $KUKATKO_TOKEN" \
+  https://<host>/api/v1/process/hls
+# {"enqueued":214}
+```
+
+Nothing waits on it: browsing, search and playback all work while the queue drains. Watch it on the
+admin dashboard, or with `GET /api/v1/jobs/stats`.
 
 ## Restoring the originals into a fresh bucket
 

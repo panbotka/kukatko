@@ -601,13 +601,22 @@ to `## Package map` in `CLAUDE.md`.
   `New(Config)` → `Migrator`, `Run(ctx)` → `Result`. Config takes the narrow interfaces `Catalogue`
   /`Source`/`Destination` (not `storage.Storage`), so the whole pipeline can be tested with `FS`
   instead of a bucket; `Store` over a pgx pool is the production `Catalogue`. **Binding order per photo:**
-  upload all objects (the original, its metadata sidecar if one exists on disk — `sidecarexport.KeyFor`
-  keys it — and the thumbnails already in cache; it generates no new ones) → `Head` reads them back and
-  verifies size and SHA256 → `MarkMigrated` commits the row → only then the optional `Delete` of the
-  local original **and its sidecar**. The sidecar is the non-regenerable disaster-recovery artifact, so
+  upload all objects → `Head` reads them back and
+  verifies size and SHA256 → `MarkMigrated` commits the row → only then the optional `Delete` of the local
+  copies. **What "all objects" means is asked once per kind of object the store can hold**, not once per kind
+  the author remembered: `plan` walks `storekeys.Kinds()` and `planKind` is a default-less switch over them
+  (`internal/storekeys`, `exhaustive` linter), so a new prefix in the store cannot be silently stranded —
+  which is exactly what happened to the streaming segments. Today that is the original, its metadata sidecar
+  if one exists on disk (`sidecarexport.KeyFor` keys it), the thumbnails already in cache (it generates no new
+  ones), and **every HLS segment the source holds under `hls/<file_hash>/`** (`planHLS`, found by
+  `Source.KeysWithPrefix` — how many segments a video was cut into is known only to the store, and the
+  catalogue's rendition rows are not touched by a migration, so segments left behind would turn every video
+  into a playlist of 404s). The sidecar is the non-regenerable disaster-recovery artifact, so
   it is carried into the store with the original and the original is never deleted until the sidecar is
-  durable there; both live under the originals root the move empties, while thumbnails (regenerable,
-  in a separate cache) stay. There is no path where the bytes live only where nobody has vouched for
+  durable there. `deleteLocal` removes only the **planned, verified** keys (never a fresh listing: an object
+  written after the plan was verified nowhere) and only of the kinds `livesLocally` claims — original,
+  sidecar and segments, all under the originals root the move empties — while thumbnails (regenerable,
+  in a separate cache) stay; `Deleted` counts originals. There is no path where the bytes live only where nobody has vouched for
   them. **The cursor** is `photos.storage_migrated_at` (migration `0019`), i.e.
   the `internal/importer` high-watermark **per row** — a scalar watermark would lie, because with
   `Concurrency > 1` photo N+1 commonly finishes before N; it pages by a `uid` cursor, so
@@ -621,6 +630,24 @@ to `## Package map` in `CLAUDE.md`.
   `KUKATKO_TEST_DATABASE_URL`) kills the run mid-photo, resumes it, and asserts that every object
   landed **exactly once** and that nobody deleted the original of a photo whose verification failed;
   a second case asserts each photo's sidecar lands in the bucket and its local copy is reclaimed),
+  `internal/storekeys/`
+  (**the one place that says what lives in the object store and which layout owns it.** The store has no
+  per-application prefix — an original sits at `YYYY/MM/<name>` in the bucket root and the derived artefacts
+  sit beside it — so "what is this object?" cannot be answered by a single prefix test, and before this
+  package each whole-store operation carried its own list of prefixes to remember. `Kind` = `KindOriginal`
+  /`KindSidecar`/`KindThumbnail`/`KindHLS`/`KindDump`/`KindPartial`/`KindForeign` (+`String()`),
+  `Classify(key)` (prefix tests against `thumb.CacheSubdir`, `sidecarexport.Prefix`, `hls.Prefix`,
+  `DumpPrefix`=`db/`, `PartialPrefix`=`.tmp/` and the anchored `YYYY/MM/<name>` pattern; a leading slash and
+  surrounding whitespace are tolerated, everything else is foreign) and `Kinds()` (every kind, a fresh copy,
+  so an operation can be tested against the whole enum rather than the prefixes its author thought of).
+  It holds no layout of its own — those stay in `thumb`/`sidecarexport`/`hls`/`storage` — only the mapping.
+  **Why it exists:** the streaming segments were added to the store and two whole-store operations (the backup
+  and the storage migration) went on not knowing about them for four commits. Consumers — `internal/backup`
+  (`backedUp`), `internal/storagemigrate` (`planKind`/`livesLocally`), `internal/reset` (`classifyKey`) and
+  `internal/maintenance` (`isOriginalKey`) — switch over or match on `Kind`, the first three **without a
+  default clause**, so a new member fails the `exhaustive` linter in each of
+  them until that operation says what it does about the new prefix; per-kind tests in each package back this
+  up with a length check against `Kinds()`),
   `internal/mediaurl/`
   (mints client media addresses and stamps them onto photo payloads; the only decision is made by the storage
   backend via `URL`. `NewBuilder(store)` → `Builder` with `Thumb(uid,fileHash,size)` /
@@ -3208,12 +3235,21 @@ to `## Package map` in `CLAUDE.md`.
   `ErrPgDumpMissing`;
   **the source of the originals** = `OriginalSource` (`List` + `CopyTo(ctx,dst,original)`; `CopyTo` chooses for itself
   how it transfers the bytes) and it is picked by `storage.backend` in `cmd/kukatko/backup.go` (`buildBackupOriginals`):
-  **`DiskOriginals`** (`NewDiskOriginals(root)`, backend `fs`) = a walk of the storage (skipping `.tmp`,
-  confining keys against traversal), `CopyTo` streams the file up via `Put` — **it also serves the restore**
-  through `Stat(key)` (exists + size, for skip-existing) and `Write(key,r)` (an atomic write into
-  `.tmp` + rename → resumable);
+  **what counts as an original is decided in one place** (`classify.go` over `internal/storekeys`):
+  `backedUp(kind)` is a **default-less switch over every kind of object the store can hold**, so a new prefix
+  cannot be added to the store without this package deciding about it (`TestBackedUp_decidesEveryKind` +
+  the `exhaustive` linter). Originals and metadata sidecars travel; `thumb/` and **`hls/`** do not — both are
+  reproducible from an original by an ordinary background job (the streaming segments used to be copied
+  as if each segment were an original: 470 MB of regenerable data against 1.9 GB of video originals on
+  staging, growing with every encode); `db/` and `.tmp/` are not library content; a **foreign** object *is*
+  backed up, since its value is not this package's to judge. `skippedDir` lets the disk walk turn away at
+  the root of a derived prefix instead of statting everything inside it;
+  **`DiskOriginals`** (`NewDiskOriginals(root)`, backend `fs`) = a walk of the storage (skipping the derived and
+  temporary prefixes whole, confining keys against traversal), `CopyTo` streams the file up via `Put` —
+  **it also serves the restore** through `Stat(key)` (exists + size, for skip-existing) and `Write(key,r)`
+  (an atomic write into `.tmp` + rename → resumable);
   **`BucketOriginals`** (`bucket.go`, `NewBucketOriginals(source,bucket)`, backend `r2`) = `List`
-  lists the primary bucket (skipping the `db/` and `.tmp/` prefixes — neither a dump nor an unfinished upload is an original),
+  lists the primary bucket and keeps only what `backedUpKey` says belongs in a backup,
   `CopyTo` delegates to `dst.CopyFrom` → a **bucket→bucket server-side copy**, so the library is never
   dragged onto the VPS just to be uploaded back from there; the sentinels `ErrNoSourceStore`/`ErrNoSourceBucket`
   (an unconfigured primary **must not** look like an empty library) and `errBackupSameBucket` in the
@@ -3230,14 +3266,20 @@ to `## Package map` in `CLAUDE.md`.
   dump from S3 straight into `Restorer`; `ErrDumpNotFound` on an unknown key — **destructive**) /
   **`RestoreOriginals`** (downloads from the bucket only the missing originals — skip by key+size via
   `LocalOriginals.Stat`, the dumps under `db/` are skipped, an atomic `Write` → resumable, honours ctx cancel,
-  `RestoreOriginalsResult{Downloaded,Skipped}`) / **`Verify`** (the integrity report `VerifyReport`
+  `RestoreOriginalsResult{Downloaded,Skipped}`; **extra objects are tolerated, never fatal** — a backup taken
+  before the derived prefixes were classified holds thumbnails and HLS segments, and a restore runs on the
+  worst day of an instance's life, so they simply come back and are ignored by `Verify`) / **`Verify`** (the integrity report `VerifyReport`
   {PhotosInDB,FilesInDB,OriginalsOnDisk,MissingOnDisk,ExtraOnDisk,Consistent} via the pure `reconcile`
   set-diff of `photo_files.file_path` vs the disk); **`pgRestorer`** (`NewPgRestorer(dsn)`) = a shell-out to
   `pg_restore --format=custom --clean --if-exists --no-owner --no-privileges --single-transaction
   --dbname=<db>`, reading the archive **from stdin** (never whole in RAM), with the **DSN parsed into PG\* env**
   (`PGHOST`/`PGPORT`/`PGUSER`/**`PGPASSWORD`**/`PGDATABASE` via `pgx.ParseConfig`) → the password is **never
   in argv**; `PgRestoreAvailable`, the sentinels `ErrPgRestoreMissing`/`ErrInvalidDSN`; no secret leaks
-  anywhere), `internal/backupapi/`
+  anywhere. **What a restore leaves behind is the streaming renditions**: the backup carries no segments, while
+  the dump carries every `photo_hls_renditions` row, and a row promises a player it can fetch them — so
+  `kukatko restore db` clears the table after re-applying the migrations (`repairRestoredDatabase` →
+  `hlsjob.Store.ClearAll`) and prints what to run, leaving every video in exactly the state the ordinary
+  `POST /process/hls` backfill looks for; runbook [`docs/RESTORE.md`](RESTORE.md)), `internal/backupapi/`
   (a maintainer-only HTTP API over the backup: the `Service` interface (Status+Trigger, satisfied by `*backup.Service`,
   fakeable, **nil = not configured**); `NewAPI(Config{Service,RequireMaintainer})`+`RegisterRoutes`
   mounts `GET /backup` (the state + the last run, a nil service → `configured:false`) and `POST /backup`
@@ -3384,10 +3426,12 @@ to `## Package map` in `CLAUDE.md`.
   credentials, role, note and history — the link is the only thing a preserved account loses.
   Any object that fails to delete skips the truncation and returns `ErrStorageIncomplete` — the catalogue is
   the only remaining record of what those objects are, and the whole run is idempotent, so the answer is to fix
-  the store and repeat. `keys.go` owns the scope: `classifyKey` recognises exactly `YYYY/MM/<name>` (an anchored
-  regexp — the bucket root *is* the namespace, there is no Kukátko prefix), `thumb/`, `sidecars/` and
-  `hls.Prefix` (`hls/`), and calls
-  everything else `kindForeign`, which is counted and **never** deleted; the HLS segments are the one owned
+  the store and repeat. `keys.go` owns the scope: `classifyKey` translates `storekeys.Classify`
+  (the shared classification of the store's layouts — `YYYY/MM/<name>` by an anchored regexp, since the bucket
+  root *is* the namespace and there is no Kukátko prefix, plus `thumb/`, `sidecars/` and `hls/`) into what a
+  wipe owns, and calls everything else — a dump, a half-written upload, anything foreign — `kindForeign`,
+  which is counted and **never** deleted; the switch has no default clause, so a new prefix in the store must
+  decide here too rather than silently surviving a reset; the HLS segments are the one owned
   prefix `PrefixCounts` can only ever count on a **sweep** — how many segments a video was cut into, and in
   which renditions, is known to the store and not to the catalogue, so `Referenced.HLS` is always 0 and only
   `Options.OrphanSweep` reaches them; `catalogueFiles.objectKeys` expands each
@@ -3606,7 +3650,11 @@ to `## Package map` in `CLAUDE.md`.
   `ValidateName` accepts **only** `init.mp4` or `^[0-9]{5}\.m4s$`, which is what stands between a
   client-supplied path segment and an object key — traversal, an empty name, wrong padding, a stray second
   extension, an uppercase variant and a playlist name are all refused, and the fixed padding is also what
-  makes the keys sort in playback order.
+  makes the keys sort in playback order. `MIMEFor(name)` gives an object its media type by name —
+  `InitMIME` = `video/mp4`, `SegmentMIME` = `video/iso.segment` — decided rather than sniffed (a fMP4
+  segment's leading box is not something content sniffing recognises as video at all), and it lives here
+  because everything that moves these objects (the encoder writing them, the storage migration
+  re-publishing them elsewhere) must serve them as the same type.
   It also holds the **encoding plan** and the **playlist rendering** — pure functions, no ffmpeg ever
   executed, so all of it is testable on a host without ffmpeg. A `Rendition` is a name + the **square** box
   its picture is fitted into (`MaxDimension`) + the video bitrate ceiling + its RFC 6381 `Codecs`;
