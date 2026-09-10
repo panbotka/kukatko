@@ -63,10 +63,55 @@ func newRouterWithBuild(
 func newRouterWithPasskeys(
 	reach Reachability, guard func(http.Handler) http.Handler, build version.Info, passkeys bool,
 ) chi.Router {
-	api := NewAPI(Config{Embeddings: reach, Passkeys: passkeys, Build: build, RequireAuth: guard})
+	return newRouterFor(Config{Embeddings: reach, Passkeys: passkeys, Build: build, RequireAuth: guard})
+}
+
+// newRouterFor mounts the capabilities API from a fully-stated Config, for the
+// tests that pin a flag the shorthand helpers above do not carry.
+func newRouterFor(cfg Config) chi.Router {
 	r := chi.NewRouter()
-	r.Route("/api/v1", api.RegisterRoutes)
+	r.Route("/api/v1", NewAPI(cfg).RegisterRoutes)
 	return r
+}
+
+// getCapabilities runs GET /api/v1/capabilities against r and returns the
+// decoded body, failing the test on a non-200 or an undecodable response.
+func getCapabilities(t *testing.T, r chi.Router) capabilities {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(
+		context.Background(), http.MethodGet, "/api/v1/capabilities", nil)
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var body capabilities
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decoding body: %v", err)
+	}
+	return body
+}
+
+// TestHandleGet_videoStreaming pins the streaming flag onto the instance's
+// configuration. It is what tells a client whether "the streaming version is
+// still being prepared" is a passing state or a permanent lie: with the encode
+// switched off no video will ever gain a rendition, so nothing may be marked as
+// pending.
+func TestHandleGet_videoStreaming(t *testing.T) {
+	t.Parallel()
+
+	for _, enabled := range []bool{false, true} {
+		t.Run(map[bool]string{false: "off", true: "on"}[enabled], func(t *testing.T) {
+			t.Parallel()
+			body := getCapabilities(t, newRouterFor(Config{
+				Embeddings: fakeReachability{}, Build: testBuild,
+				VideoStreaming: enabled, RequireAuth: passThrough,
+			}))
+			if body.VideoStreaming != enabled {
+				t.Errorf("video_streaming = %v, want %v", body.VideoStreaming, enabled)
+			}
+		})
+	}
 }
 
 // TestHandleGet_ReflectsFlag verifies semantic_search mirrors the cached
@@ -156,14 +201,18 @@ func TestHandleGet_PayloadShape(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
 		t.Fatalf("decoding body: %v", err)
 	}
-	if len(body) != 3 {
-		t.Errorf("body keys = %v, want exactly semantic_search, passkeys and version", body)
+	if len(body) != 4 {
+		t.Errorf(
+			"body keys = %v, want exactly semantic_search, passkeys, video_streaming and version", body)
 	}
 	if got, ok := body["semantic_search"].(bool); !ok || !got {
 		t.Errorf("semantic_search = %v, want true", body["semantic_search"])
 	}
 	if got, ok := body["passkeys"].(bool); !ok || got {
 		t.Errorf("passkeys = %v, want false", body["passkeys"])
+	}
+	if got, ok := body["video_streaming"].(bool); !ok || got {
+		t.Errorf("video_streaming = %v, want false", body["video_streaming"])
 	}
 	build, ok := body["version"].(map[string]any)
 	if !ok {

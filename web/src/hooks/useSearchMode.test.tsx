@@ -15,7 +15,7 @@ import { useSearchMode } from './useSearchMode'
 function render(requested: SearchMode, semanticSearch: boolean, known = true) {
   const wrapper = ({ children }: { children: ReactNode }) => (
     <CapabilitiesContext.Provider
-      value={{ semantic_search: semanticSearch, passkeys: false, known }}
+      value={{ semantic_search: semanticSearch, passkeys: false, video_streaming: false, known }}
     >
       {children}
     </CapabilitiesContext.Provider>

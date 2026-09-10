@@ -864,6 +864,7 @@
     "tile": {
       "unavailable": "Náhled není dostupný",
       "video": "Video",
+      "videoPreparing": "Video – streamovaná verze se teprve připravuje",
       "live": "Živá fotka",
       "stackCount": "Ve skupině: {{count}}"
     },

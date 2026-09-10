@@ -263,7 +263,10 @@ that it was imported.
   already in the library are caught up with the maintainer backfill. A clip whose encode is still in
   the queue says so — "the video is still being prepared, come back in a moment" instead of a
   dead-end "cannot be played", a quiet line under a clip that does play, and the player picks the
-  smooth version up on its own the moment it lands. Downloading still gives you the
+  smooth version up on its own the moment it lands. **The grid says it too**: a video still waiting
+  for its smooth version carries a small hourglass beside the play mark on its tile, so you know
+  before you click. It never blocks anything — the clip usually plays already, straight from the
+  original — and on an instance that does not encode videos at all no tile is marked. Downloading still gives you the
   original file — the renditions exist to be watched, not to replace what you keep.
 
 ### On a phone

@@ -83,12 +83,37 @@ func isUniqueViolation(err error) (string, bool) {
 // single-row QueryRow result or a row during iteration), returning a wrapped
 // error on failure.
 func scanPhoto(row pgx.Row) (Photo, error) {
+	return scanPhotoRow(row)
+}
+
+// scanListPhoto reads one row in photoListColumns order: a photo's own columns
+// followed by the listing's computed streaming flag, which lands in Photo.HLS
+// (NULL for anything that is not a standalone video, so the field stays absent
+// from the response for a still).
+func scanListPhoto(row pgx.Row) (Photo, error) {
+	var streaming *bool
+	photo, err := scanPhotoRow(row, &streaming)
+	if err != nil {
+		return Photo{}, err
+	}
+	photo.HLS = streaming
+	return photo, nil
+}
+
+// scanPhotoRow reads one photo row in photoColumns order, scanning any extra
+// destinations after the photo's own columns. It is the single place the column
+// order is written out, so a read that appends a computed column cannot drift
+// from the one that does not.
+func scanPhotoRow(row pgx.Row, extra ...any) (Photo, error) {
 	var p Photo
 	var exif []byte
 	// blurhash is NULL for a photo whose placeholder has not been computed yet,
 	// which the model carries as the empty string.
 	var blurhash *string
-	if err := row.Scan(
+	// Capacity: the photo's own columns (the insert columns plus the two
+	// database-managed timestamps, exactly what photoColumns lists) and whatever
+	// the caller's query appended after them.
+	dest := append(make([]any, 0, len(photoInsertColumns)+2+len(extra)),
 		&p.UID, &p.FileHash, &p.FilePath, &p.FileName, &p.FileSize, &p.FileMime,
 		&p.FileWidth, &p.FileHeight, &p.FileOrientation, &p.MediaType, &p.DurationMs,
 		&p.VideoCodec, &p.AudioCodec, &p.HasAudio, &p.FPS, &p.TakenAt, &p.TakenAtSource,
@@ -101,7 +126,8 @@ func scanPhoto(row pgx.Row) (Photo, error) {
 		&p.PhotoprismFileHash, &p.PhotosorterUID, &p.MetadataExtractedAt,
 		&p.StackUID, &p.StackPrimary, &p.TitleEdited, &p.HiddenFromLibrary, &blurhash,
 		&p.CreatedAt, &p.UpdatedAt,
-	); err != nil {
+	)
+	if err := row.Scan(append(dest, extra...)...); err != nil {
 		return Photo{}, fmt.Errorf("photos: scanning photo: %w", err)
 	}
 	p.Exif = exif

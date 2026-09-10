@@ -63,6 +63,7 @@ function renderCard(capabilities: Partial<CapabilitiesState> = {}) {
   const value: CapabilitiesState = {
     semantic_search: false,
     passkeys: true,
+    video_streaming: false,
     known: true,
     ...capabilities,
   }

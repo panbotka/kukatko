@@ -293,10 +293,19 @@ func tokenQuery(r *http.Request) string {
 // recorded rendition — for the flag on the detail payload, so a player knows
 // before it asks. A lookup failure reads as "no streaming": the photo is worth
 // showing either way, and the player still has the plain video endpoint.
-func (a *API) resolveHLS(ctx context.Context, photoUID string) bool {
-	if a.hls == nil {
-		return false
+//
+// It answers nil for anything that is not a standalone video, which is what
+// keeps the flag out of a still's payload: the question does not apply there,
+// and a listing (which computes the same flag in its own query) leaves it out
+// for the same reason. See photos.Photo.HLS — one field, one meaning, whichever
+// endpoint filled it.
+func (a *API) resolveHLS(ctx context.Context, photo photos.Photo) *bool {
+	if photo.MediaType != photos.MediaVideo {
+		return nil
 	}
-	has, err := a.hls.HasAny(ctx, photoUID)
-	return err == nil && has
+	if a.hls == nil {
+		return new(false)
+	}
+	has, err := a.hls.HasAny(ctx, photo.UID)
+	return new(err == nil && has)
 }

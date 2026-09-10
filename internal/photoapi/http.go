@@ -674,11 +674,6 @@ type photoDetail struct {
 	// processing service is wired or the report could not be read; the photo is
 	// worth showing either way.
 	Processing []processing.Status `json:"processing,omitempty"`
-	// HLS reports whether this photo can be streamed: it has at least one encoded
-	// rendition, so the master playlist below /hls/ answers. The player reads it
-	// instead of probing — a request for a playlist that does not exist is a 404,
-	// and a 404 on every still in the library is noise nobody needs.
-	HLS bool `json:"hls"`
 	// OCRText is the text the recogniser read *in* the photo — a street sign, a
 	// shop front, the headline of a scanned newspaper. It is served read-only and
 	// only here, never on a list or a search page, where a hundred scanned
@@ -735,6 +730,11 @@ func (a *API) writeDetail(w http.ResponseWriter, r *http.Request, userUID string
 		writeError(w, http.StatusInternalServerError, "fetching photo files failed")
 		return
 	}
+	// The streaming flag is the one field a single-photo read cannot bring with
+	// it: the listing queries compute it, GetByUID does not. Stamp it before the
+	// annotation so the detail payload carries the same `hls` field, with the
+	// same meaning, that a grid row does.
+	photo.HLS = a.resolveHLS(r.Context(), photo)
 	views, err := a.annotate(r.Context(), userUID, []photos.Photo{photo})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "annotating photo failed")
@@ -761,7 +761,6 @@ func (a *API) writeDetail(w http.ResponseWriter, r *http.Request, userUID string
 		Place:        a.resolvePlace(r.Context(), photo.UID),
 		StackMembers: members,
 		CommentCount: commentCount,
-		HLS:          a.resolveHLS(r.Context(), photo.UID),
 		Processing:   a.resolveProcessing(r.Context(), photo.UID),
 		OCRText:      a.resolveOCR(r.Context(), photo.UID),
 		Faces:        a.resolveFaces(r, photo.UID),

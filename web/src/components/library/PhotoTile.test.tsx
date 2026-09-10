@@ -3,6 +3,7 @@ import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { CapabilitiesContext } from '../../capabilities/CapabilitiesContext'
 import i18n from '../../i18n'
 import { clearBlurPlaceholderCache } from '../../lib/blurPlaceholder'
 import type { Photo, PhotoDetail } from '../../services/photos'
@@ -74,6 +75,29 @@ function renderTile(p: Photo, favoritable = false) {
       <MemoryRouter>
         <PhotoTile photo={p} favoritable={favoritable} />
       </MemoryRouter>
+    </I18nextProvider>,
+  )
+}
+
+/**
+ * Renders a tile on an instance whose video-streaming flag is pinned, which is
+ * what decides whether a clip may be marked as still being prepared.
+ */
+function renderTileWithStreaming(p: Photo, streaming: boolean) {
+  return render(
+    <I18nextProvider i18n={i18n}>
+      <CapabilitiesContext.Provider
+        value={{
+          semantic_search: false,
+          passkeys: false,
+          video_streaming: streaming,
+          known: true,
+        }}
+      >
+        <MemoryRouter>
+          <PhotoTile photo={p} />
+        </MemoryRouter>
+      </CapabilitiesContext.Provider>
     </I18nextProvider>,
   )
 }
@@ -164,6 +188,54 @@ describe('PhotoTile video badge', () => {
     renderTile(photo({ media_type: 'image', file_name: 'still.jpg' }))
     expect(screen.queryByRole('img', { name: 'Video' })).not.toBeInTheDocument()
     expect(screen.queryByRole('img', { name: 'Live' })).not.toBeInTheDocument()
+  })
+})
+
+describe('PhotoTile streaming-pending mark', () => {
+  const pendingName = 'Video – the streaming version is still being prepared'
+
+  it('marks a video with no rendition while streaming is on', () => {
+    renderTileWithStreaming(photo({ media_type: 'video', duration_ms: 154000, hls: false }), true)
+
+    const badge = screen.getByRole('img', { name: pendingName })
+    // The play affordance and the duration stay: the clip very likely plays
+    // already, straight from the original, so this is information, not a block.
+    expect(badge).toHaveTextContent('▶')
+    expect(badge).toHaveTextContent('2:34')
+    expect(badge.querySelector('.bi-hourglass-split')).not.toBeNull()
+  })
+
+  it('leaves a video that already has a rendition exactly as it was', () => {
+    renderTileWithStreaming(photo({ media_type: 'video', duration_ms: 154000, hls: true }), true)
+
+    const badge = screen.getByRole('img', { name: 'Video' })
+    expect(badge).toHaveTextContent('2:34')
+    expect(badge.querySelector('.bi-hourglass-split')).toBeNull()
+    expect(screen.queryByRole('img', { name: pendingName })).not.toBeInTheDocument()
+  })
+
+  it('marks nothing on a still, which never streams', () => {
+    renderTileWithStreaming(photo({ media_type: 'image', file_name: 'still.jpg' }), true)
+
+    expect(screen.queryByRole('img', { name: pendingName })).not.toBeInTheDocument()
+    expect(document.querySelector('.bi-hourglass-split')).toBeNull()
+  })
+
+  it('marks nothing when the instance does not stream videos at all', () => {
+    renderTileWithStreaming(photo({ media_type: 'video', duration_ms: 154000, hls: false }), false)
+
+    const badge = screen.getByRole('img', { name: 'Video' })
+    expect(badge).toHaveTextContent('2:34')
+    expect(badge.querySelector('.bi-hourglass-split')).toBeNull()
+  })
+
+  it('marks nothing when the payload does not say whether the clip streams', () => {
+    // An older backend, or any listing that predates the flag: silence is not
+    // "pending", it is "nobody asked".
+    renderTileWithStreaming(photo({ media_type: 'video', duration_ms: 154000 }), true)
+
+    expect(screen.getByRole('img', { name: 'Video' })).toBeInTheDocument()
+    expect(document.querySelector('.bi-hourglass-split')).toBeNull()
   })
 })
 

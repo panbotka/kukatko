@@ -1102,7 +1102,10 @@ to `## Package map` in `CLAUDE.md`.
   base path; they repeat the `?t=` download token when the request carried one, because a player fetches each
   URI as a bare GET and a cookie-less `<video>` would otherwise 401 on its first segment. Every absence is a
   404: no rendition, an unknown or malformed rendition name, a segment name the layout cannot hold. The
-  detail response carries `hls` (bool, from `HasAny`) so the player never probes;
+  detail response carries `hls` (bool, from `HasAny`) so the player never probes — and so does every
+  list/search row, which `internal/photos` computes inside the listing query itself (`photoListColumns`)
+  rather than asking per tile; the key is absent for anything that is not a standalone video, and `false`
+  is what a grid tile draws its "still being prepared" mark from;
   **thumbnail regeneration** (`thumbnail.go`): `POST /photos/{uid}/regenerate-thumbnail` (editor/admin via
   `RequireWrite`, the `ThumbnailRegenerator` interface satisfied by `*thumbjob.Service`, nil-safe → 503) synchronously
   overwrites the thumbnails + pHash via `ForceRegenerate` and returns `{status,sizes}` (200), 404 missing photo,
@@ -4200,13 +4203,17 @@ to `## Package map` in `CLAUDE.md`.
   in `appendOpsAPIs` next to backup/restore)), `internal/capabilitiesapi/`
   (an all-authenticated HTTP API of what the instance is — its feature flags and the build it runs: the
   `Reachability` interface (`Reachable() bool`,
-  satisfied by `*reachability.Checker`, fakeable); `NewAPI(Config{Embeddings,Passkeys,Build,RequireAuth})`+
+  satisfied by `*reachability.Checker`, fakeable);
+  `NewAPI(Config{Embeddings,Passkeys,VideoStreaming,Build,RequireAuth})`+
   `RegisterRoutes` mounts `GET /capabilities` behind `RequireAuth` → `{semantic_search:bool,
-  passkeys:bool, version:version.Info}` — `semantic_search` read
+  passkeys:bool, video_streaming:bool, version:version.Info}` — `semantic_search` read
   from the cached probe result (never a live probe, so it is cheap and every logged-in user may read it — unlike the
   maintainer-only `/system/status`), `passkeys` a plain `bool` rather than an interface because it is a
   **static** fact about the deployment (`authAPI.PasskeysEnabled()` — whether a relying party is
-  configured at all) and nothing about it changes while the process runs,
+  configured at all) and nothing about it changes while the process runs, `video_streaming` static in exactly
+  the same way (`cfg.Video.HLS.Enabled` — whether uploaded videos are encoded into HLS renditions at all),
+  which is what lets a grid tile mark a clip whose rendition has not been produced yet without lying on an
+  instance that will never produce one,
   the build injected as a value (`version.Get()` at wiring, so tests pin
   it) and reported verbatim, `dev`/`none` placeholders included. The build lives here, not in the frontend
   bundle: the bundle is `//go:embed`-ed into this binary, so a version compiled into it would drift from the

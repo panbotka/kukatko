@@ -101,8 +101,9 @@ function useBudgetedTimeout(active: boolean, budgetMs: number, onExpire: () => v
  * back watching, and the slideshow's own controls are the ones on screen. What is
  * shared is the part that matters — {@link useHlsPlayback}, so a clip with an
  * encoded rendition streams here exactly as it does in the viewer, and everything
- * else plays progressively. (A listing does not report `hls`, so in practice a
- * slide plays progressively today and streams the moment a payload says it can.)
+ * else plays progressively. (A listing row now reports `hls` too — the flag is
+ * computed inside the listing query — so a slide of an encoded clip streams here
+ * without the show ever fetching a detail payload.)
  *
  * **Muted, always.** A slideshow that suddenly makes noise is worse than a silent
  * one, and a browser would refuse to autoplay it anyway. There is no sound

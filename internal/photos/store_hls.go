@@ -5,6 +5,29 @@ import (
 	"fmt"
 )
 
+// hlsAvailableExpr is the streaming flag the listing queries carry alongside a
+// photo's own columns: for a standalone video, whether the catalogue records at
+// least one encoded HLS rendition for it; NULL for everything else, which is
+// what keeps the field out of a still's payload.
+//
+// It is a correlated EXISTS rather than a join so that a photo with several
+// renditions still yields one row, and so that the planner may stop at the first
+// match. The subquery reads only photo_hls_renditions' primary key
+// (photo_uid, rendition), so each probe is an index-only lookup; the CASE means
+// a library of stills never pays for one at all. Folding it in here is the whole
+// point — the alternative, asking per tile, is a query per row on every page.
+//
+// The photos columns are qualified because the listing queries select from an
+// unaliased `photos`, and the subquery's own table must not shadow them.
+const hlsAvailableExpr = `CASE WHEN photos.media_type = 'video' THEN EXISTS (` +
+	`SELECT 1 FROM photo_hls_renditions h WHERE h.photo_uid = photos.uid) END`
+
+// photoListColumns is photoColumns plus the computed streaming flag, matched by
+// scanListPhoto. Every read that answers a listing or a search page selects it;
+// the single-photo reads keep photoColumns, since the detail endpoint resolves
+// streaming for itself.
+var photoListColumns = photoColumns + ", " + hlsAvailableExpr + " AS hls_available"
+
 // listVideosMissingHLSSQL selects the uids of non-archived videos that have not
 // been encoded into a single streaming rendition, newest first. The trailing %s
 // receives an optional LIMIT clause.

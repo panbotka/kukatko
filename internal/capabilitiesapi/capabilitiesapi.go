@@ -1,7 +1,8 @@
 // Package capabilitiesapi exposes GET /capabilities, an all-authenticated view of
 // what this instance is: its optional feature flags — whether semantic search is
-// available, which depends on the embeddings sidecar being reachable, and whether
-// passkeys are configured — and the build the server runs. The frontend polls it
+// available, which depends on the embeddings sidecar being reachable, whether
+// passkeys are configured, and whether uploaded videos are encoded for streaming
+// — and the build the server runs. The frontend polls it
 // to show or hide the semantic-search affordance as the box goes on- or offline,
 // to decide whether to offer passkey sign-in, and to
 // print the version in the user menu.
@@ -41,10 +42,11 @@ type Reachability interface {
 // the caller (the auth subsystem) so this package depends on auth for the
 // caller's identity, not its wiring.
 type API struct {
-	embeddings  Reachability
-	passkeys    bool
-	build       version.Info
-	requireAuth func(http.Handler) http.Handler
+	embeddings     Reachability
+	passkeys       bool
+	videoStreaming bool
+	build          version.Info
+	requireAuth    func(http.Handler) http.Handler
 }
 
 // Config bundles the dependencies of NewAPI. Every field is required.
@@ -56,6 +58,10 @@ type Config struct {
 	// a static fact about the deployment rather than a probe: nothing about it
 	// changes while the process runs.
 	Passkeys bool
+	// VideoStreaming reports whether this instance encodes uploaded videos into
+	// streaming renditions (config key video.hls.enabled). Like Passkeys it is a
+	// static fact about the deployment rather than a probe.
+	VideoStreaming bool
 	// Build is the link-time version metadata of the running binary, injected by
 	// the caller (normally version.Get) so tests can pin it.
 	Build version.Info
@@ -66,10 +72,11 @@ type Config struct {
 // NewAPI returns an API from cfg.
 func NewAPI(cfg Config) *API {
 	return &API{
-		embeddings:  cfg.Embeddings,
-		passkeys:    cfg.Passkeys,
-		build:       cfg.Build,
-		requireAuth: cfg.RequireAuth,
+		embeddings:     cfg.Embeddings,
+		passkeys:       cfg.Passkeys,
+		videoStreaming: cfg.VideoStreaming,
+		build:          cfg.Build,
+		requireAuth:    cfg.RequireAuth,
 	}
 }
 
@@ -87,6 +94,12 @@ type capabilities struct {
 	// endpoints answer "not available", and this flag is how a client knows that
 	// without asking.
 	Passkeys bool `json:"passkeys"`
+	// VideoStreaming is true when this instance encodes uploaded videos into HLS
+	// renditions (video.hls.enabled). It is what lets a client say that a clip's
+	// streaming version is still being prepared: with streaming off no video will
+	// ever have a rendition, so "not encoded yet" would be a permanent lie rather
+	// than a passing state. Like Passkeys it cannot change while the process runs.
+	VideoStreaming bool `json:"video_streaming"`
 	// Version is the build metadata of the running binary, the same value
 	// /healthz reports. A development build carries the "dev"/"none" placeholders.
 	Version version.Info `json:"version"`
@@ -108,6 +121,7 @@ func (a *API) handleGet(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, capabilities{
 		SemanticSearch: a.embeddings.Reachable(),
 		Passkeys:       a.passkeys,
+		VideoStreaming: a.videoStreaming,
 		Version:        a.build,
 	})
 }

@@ -50,6 +50,7 @@ export type IconName =
   | 'hand-thumbs-up'
   | 'hand-thumbs-up-fill'
   | 'heart'
+  | 'hourglass-split'
   | 'image'
   | 'image-fill'
   | 'images'

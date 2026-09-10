@@ -1321,6 +1321,11 @@ files, one request, streamed — a walk over a disk the server cannot see is not
   unknown) rather than being a flat constant. The temp directory it encodes into is `storage.temp_path`, which
   must have room for a whole rendition. Objects land under `hls/<file_hash>/<rendition>/` and the row goes to
   `photo_hls_renditions`; both are removed with the photo (purge cascades the row, the trash sweep the prefix).
+  `enabled` is also reported to every signed-in client as **`video_streaming`** on `GET /api/v1/capabilities`,
+  alongside `semantic_search` and `passkeys` — a static deployment fact, read once by the frontend's
+  `CapabilitiesProvider`. It is what lets a grid tile mark a clip whose rendition has not been produced yet
+  (the listing's `hls:false`) without lying on an instance that will never produce one: with the switch off,
+  no video ever gains a rendition, so nothing is marked.
   `KUKATKO_VIDEO_HLS_ENABLED`/`_SEGMENT_SECONDS`.
 - **Worker keys (`worker.*`, `internal/config` + `internal/worker`):** the in-process background
   worker that drains the job queue inside `kukatko serve`. `count` (**default 2**) sizes the **shared

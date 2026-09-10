@@ -217,7 +217,9 @@ type ListParams struct {
 }
 
 // List returns photos matching params, ordered and paginated as requested. The
-// slice is empty (not nil) when nothing matches.
+// slice is empty (not nil) when nothing matches. Each standalone video carries
+// its streaming flag (Photo.HLS), computed in this same query rather than asked
+// per row; see photoListColumns.
 func (s *Store) List(ctx context.Context, params ListParams) ([]Photo, error) {
 	query, args := buildListQuery(params)
 	rows, err := s.pool.Query(ctx, query, args...)
@@ -228,7 +230,7 @@ func (s *Store) List(ctx context.Context, params ListParams) ([]Photo, error) {
 
 	photos := make([]Photo, 0)
 	for rows.Next() {
-		photo, scanErr := scanPhoto(rows)
+		photo, scanErr := scanListPhoto(rows)
 		if scanErr != nil {
 			return nil, scanErr
 		}
@@ -247,7 +249,8 @@ func (s *Store) List(ctx context.Context, params ListParams) ([]Photo, error) {
 // a search can be scoped exactly like a browse. params.FullText must be
 // non-empty; an empty query yields ErrEmptySearch rather than every photo. Pair
 // it with Count (which shares the filters) for the total. The slice is empty
-// (not nil) when nothing matches.
+// (not nil) when nothing matches. Like List, each standalone video carries its
+// streaming flag (Photo.HLS) from the same query.
 func (s *Store) Search(ctx context.Context, params ListParams) ([]Photo, error) {
 	if params.FullText == "" {
 		return nil, ErrEmptySearch
@@ -261,7 +264,7 @@ func (s *Store) Search(ctx context.Context, params ListParams) ([]Photo, error) 
 
 	photos := make([]Photo, 0)
 	for rows.Next() {
-		photo, scanErr := scanPhoto(rows)
+		photo, scanErr := scanListPhoto(rows)
 		if scanErr != nil {
 			return nil, scanErr
 		}
@@ -292,7 +295,7 @@ func (s *Store) FilterUIDs(ctx context.Context, uids []string, params ListParams
 	where, args := buildWhere(params)
 	args = append(args, uids)
 	where = append(where, "uid = ANY($"+strconv.Itoa(len(args))+")")
-	query := "SELECT " + photoColumns + " FROM photos WHERE " + strings.Join(where, " AND ")
+	query := "SELECT " + photoListColumns + " FROM photos WHERE " + strings.Join(where, " AND ")
 
 	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
@@ -302,7 +305,7 @@ func (s *Store) FilterUIDs(ctx context.Context, uids []string, params ListParams
 
 	out := make([]Photo, 0, len(uids))
 	for rows.Next() {
-		photo, scanErr := scanPhoto(rows)
+		photo, scanErr := scanListPhoto(rows)
 		if scanErr != nil {
 			return nil, scanErr
 		}
@@ -685,7 +688,7 @@ func buildListQuery(params ListParams) (string, []any) {
 		return "$" + strconv.Itoa(len(args))
 	}
 
-	query := "SELECT " + photoColumns + " FROM photos"
+	query := "SELECT " + photoListColumns + " FROM photos"
 	if len(where) > 0 {
 		query += " WHERE " + strings.Join(where, " AND ")
 	}
@@ -748,7 +751,7 @@ func buildSearchQuery(params ListParams) (string, []any) {
 		args = append(args, value)
 		return "$" + strconv.Itoa(len(args))
 	}
-	query := "SELECT " + photoColumns + " FROM photos WHERE " + strings.Join(where, " AND ")
+	query := "SELECT " + photoListColumns + " FROM photos WHERE " + strings.Join(where, " AND ")
 
 	if params.Sort == SortByRandom {
 		query += " ORDER BY " + orderClause(params, bind)

@@ -167,6 +167,20 @@ type Photo struct {
 	HasAudio bool `json:"has_audio"`
 	// FPS is a video's average frame rate, nil for images.
 	FPS *float64 `json:"fps,omitempty"`
+	// HLS reports whether this clip can be streamed: the catalogue records at
+	// least one encoded HLS rendition for it, so the master playlist below /hls/
+	// answers. It is nil — and absent from JSON — for everything that is not a
+	// standalone video, because the question does not apply to a still: a live
+	// photo's two seconds of motion are never encoded, and asking a hundred
+	// scanned documents whether they stream would be a hundred lies.
+	//
+	// Like Rating, Flag and the media URLs it is not a column. The listing
+	// queries compute it alongside the photo's own columns (see
+	// photoListColumns), which is the whole point: a grid tile can say a clip is
+	// still being prepared without the page paying a query per row. A photo read
+	// through any other path — GetByUID, an INSERT … RETURNING — carries nil, and
+	// the detail endpoint fills it from its own lookup.
+	HLS *bool `json:"hls,omitempty"`
 
 	TakenAt       *time.Time `json:"taken_at,omitempty"`
 	TakenAtSource string     `json:"taken_at_source"`

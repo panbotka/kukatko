@@ -615,8 +615,15 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   the encode has not reached, an unknown uid), a rendition name the layout could never hold or one this video
   was not encoded into, and a segment name `hls.ValidateName` refuses (wrong padding, a stray extension, a
   traversal) — which is the guard between a request path and an object key, so such a name never reaches the
-  store. The detail response carries **`hls`** (bool): whether the photo has at least one recorded rendition,
-  so the player reads it instead of probing and a library of stills does not answer 404 on every tile.
+  store. Both the detail response **and every list/search row** carry **`hls`** (bool): whether the clip has
+  at least one recorded rendition, so the player reads it instead of probing and a library of stills does not
+  answer 404 on every tile. The key is **absent** for anything that is not a standalone video (a live photo
+  included) — the question does not apply to a still — and `false` means "not encoded yet", which is what a
+  grid tile draws its "still being prepared" mark from. A listing computes it **inside its own query** (a
+  correlated `EXISTS` over `photo_hls_renditions`, `photos.photoListColumns`), never per row; the detail
+  endpoint fills the same field from its own `HasAny` lookup, and with **no HLS reader wired** a video reads
+  `false` rather than losing the field. Pair it with `video_streaming` from `GET /capabilities`: with the
+  encode switched off, `false` is permanent and means nothing.
   **One face as its own rendition** (`internal/photoapi/facecrop.go`, the `FaceCrops` renderer =
   `avatar.Renderer`, **nil → 503**): `GET /photos/{uid}/face?box=x,y,w,h` (session/`?t=` token, the same guard
   as every other photo image) **streams a small square JPEG** of the one face the normalised box names —
@@ -1957,12 +1964,17 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   empty library). Mounted **always** (`buildSystemAPI`). The frontend renders it on **Statistiky**
   (`/stats`, all roles) below the counts; `SystemStatusPage` does not read it.
 - **Capabilities API (`/api/v1`, `internal/capabilitiesapi`, authenticated via `RequireAuth`):**
-  `GET /capabilities` → `{semantic_search:bool, passkeys:bool, version:{version,commit}}` — a small object
+  `GET /capabilities` → `{semantic_search:bool, passkeys:bool, video_streaming:bool,
+  version:{version,commit}}` — a small object
   saying what this
   instance is, which **every authenticated user** may read (unlike the maintainer-only `/system/status`).
   `passkeys` says whether a WebAuthn ceremony can be run at all — a **static** fact about the deployment's
   configuration, unlike the two live-ish values beside it, so nothing about it changes while the process
   runs; it is what lets the sign-in screen offer the button and the account page offer to add a key.
+  `video_streaming` is the same shape of fact: `video.hls.enabled`, whether uploaded videos are encoded
+  into HLS renditions at all. It is what makes the listing's `hls:false` readable — with the encode
+  switched off **no** clip will ever gain a rendition, so a grid tile marks nothing as "still being
+  prepared" rather than marking every video forever.
   `semantic_search` is
   the **cached** reachability state of the embeddings sidecar (not a live probe): filled by the background loop
   `internal/reachability` (a probe every 60 s, `cmd/kukatko/capabilities.go`); when `embedding.url` is not

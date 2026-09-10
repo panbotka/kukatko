@@ -137,12 +137,18 @@ export interface Photo {
   /** Average frame rate of the video; absent for images. */
   fps?: number
   /**
-   * Whether this photo can be streamed: it has at least one encoded HLS
+   * Whether this clip can be streamed: it has at least one encoded HLS
    * rendition, so `GET /photos/{uid}/hls/master.m3u8` answers. A player reads it
    * instead of probing — a 404 on every still in the library is noise nobody
-   * needs. Only the detail response carries it (computing it for a whole page
-   * would be a query per row), so a photo taken from a listing simply does not
-   * say, and whatever plays it plays the original progressively.
+   * needs.
+   *
+   * Only a standalone video ever carries it; for a still (a live photo
+   * included) the key is simply absent, because the question does not apply.
+   * Both the detail payload and every list/search row say it — the listing
+   * computes it inside its own query, so a page of tiles pays no query per row —
+   * which is what lets a tile mark a clip whose streaming version is still being
+   * prepared. `false` means "not encoded yet", and the clip still plays
+   * progressively from the original.
    */
   hls?: boolean
   /**

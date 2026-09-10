@@ -673,6 +673,19 @@
   opacity: 1;
 }
 
+/*
+ * "The streaming version is still being prepared", said inside the clip badge as
+ * one small hourglass beside the play mark. Deliberately quiet: it inherits the
+ * badge's own foreground rather than taking a warning colour, and it is set a
+ * shade smaller and dimmer than the duration next to it — the clip is very
+ * likely playable already (progressively, from the original), so this is
+ * information, never an error and never a block.
+ */
+.kk-tile__pending {
+  font-size: 0.85em;
+  opacity: 0.75;
+}
+
 @media (prefers-reduced-motion: reduce) {
   /* The zoom is decorative; the scrim + date reveal alone still signal hover. */
   .kukatko-photo-grid .kk-tile:hover .kk-tile__media img,

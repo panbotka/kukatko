@@ -34,6 +34,14 @@ export interface Capabilities {
    */
   passkeys: boolean
   /**
+   * Whether this instance encodes uploaded videos into streaming renditions
+   * (`video.hls.enabled`). Like `passkeys` it is a static fact about the
+   * deployment, not a probe. It is what makes "the streaming version is still
+   * being prepared" sayable at all: with the encode switched off no clip will
+   * ever gain a rendition, so a tile must mark nothing as pending.
+   */
+  video_streaming: boolean
+  /**
    * The build the server runs, so the UI can print it without a second source of
    * truth (a version compiled into this bundle would drift from the binary that
    * embeds it). Optional because it is absent before the first response — and

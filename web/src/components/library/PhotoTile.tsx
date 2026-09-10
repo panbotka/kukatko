@@ -1,8 +1,10 @@
+import { type TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 
+import { useCapabilities } from '../../capabilities/CapabilitiesContext'
 import { useThumbSrc } from '../../hooks/useThumbSrc'
 import { formatDuration } from '../../lib/format'
-import { isPlayableClip } from '../../lib/mediaKind'
+import { isPlayableClip, isVideo } from '../../lib/mediaKind'
 import { type PhotoHandoff } from '../../lib/photoHandoff'
 import { photoLabel } from '../../lib/photoTitle'
 import { formatTakenLabel } from '../../lib/takenDate'
@@ -140,6 +142,19 @@ export interface PhotoTileProps {
 }
 
 /**
+ * The accessible name of a tile's clip badge: what kind of clip it is, and — for
+ * a video whose streaming version has not been encoded yet — that it is still
+ * being prepared. It is one string rather than a labelled child because the
+ * badge is exposed as a single image, whose descendants a screen reader ignores.
+ */
+function clipBadgeLabel(photo: Photo, streamPending: boolean, t: TFunction): string {
+  if (photo.media_type === 'live') {
+    return t('library.tile.live')
+  }
+  return streamPending ? t('library.tile.videoPreparing') : t('library.tile.video')
+}
+
+/**
  * A single thumbnail tile in the library grid — square by default, or the shape
  * of its own photograph when the caller has laid the box out for it (`fill`,
  * which is what the justified wall does). By default the tile links to the
@@ -166,6 +181,14 @@ export function PhotoTile({
   extras,
 }: PhotoTileProps) {
   const { t, i18n } = useTranslation()
+  const { video_streaming: videoStreaming } = useCapabilities()
+  // A clip whose streaming version has not been produced yet. `hls` is only ever
+  // `false` when the server actually looked and found no rendition — an absent
+  // one (an older payload, a still) says nothing and marks nothing — and the
+  // instance flag is what keeps this honest: with the encode switched off no clip
+  // will ever gain a rendition, so "still being prepared" would be a permanent
+  // lie rather than a passing state.
+  const streamPending = videoStreaming && isVideo(photo) && photo.hls === false
   // The thumbnail address comes from the payload, not from the UID: only the
   // server can sign it. A signed URL expires, so a failed load gets one retry
   // with a freshly fetched one before the tile gives up.
@@ -219,13 +242,22 @@ export function PhotoTile({
           // never collides with the stack badge sharing the corner.
           className="position-absolute top-0 end-0 m-1 badge text-bg-dark opacity-75 d-inline-flex align-items-center gap-1"
           role="img"
-          aria-label={
-            photo.media_type === 'live' ? t('library.tile.live') : t('library.tile.video')
-          }
+          // The badge is one image to a reader, so its own label is the only
+          // accessible name anything inside it can have — an hourglass nested in
+          // a role="img" would be announced by nobody. The pending state is
+          // therefore said here, in words, rather than left to the glyph.
+          aria-label={clipBadgeLabel(photo, streamPending, t)}
         >
           <span aria-hidden="true">▶</span>
           {photo.duration_ms !== undefined && photo.duration_ms > 0 && (
             <span>{formatDuration(photo.duration_ms)}</span>
+          )}
+          {streamPending && (
+            // Quiet on purpose: one small glyph beside the play mark, in the
+            // badge's own muted foreground rather than a warning colour and
+            // never a second badge. The play affordance is untouched — the clip
+            // very likely plays already, straight from the original.
+            <Icon name="hourglass-split" className="kk-tile__pending" />
           )}
         </span>
       )}

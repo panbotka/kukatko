@@ -393,6 +393,46 @@ pagination O(page) instead of O(offset), but it is a response-shape/contract
 change and is intentionally **out of scope** for this behaviour-preserving pass;
 it is noted here as the next step if deep-scroll latency ever becomes an issue.
 
+### The streaming flag on a listing row (`hls`)
+
+A grid tile marks a video whose HLS rendition has not been produced yet, which
+means every listing row has to say whether the clip has one. The obvious
+implementation — ask per tile — is a query per row on every page, so the flag is
+folded into the listing query instead, as a correlated `EXISTS` guarded by the
+media type (`photos.hlsAvailableExpr`, used by `List`, `Search` and
+`FilterUIDs`):
+
+```sql
+CASE WHEN photos.media_type = 'video' THEN EXISTS (
+  SELECT 1 FROM photo_hls_renditions h WHERE h.photo_uid = photos.uid) END
+```
+
+**Measured** (2026-09-10, `kukatko_test` on this Pi, inside a rolled-back
+transaction: 30 000 photos of which 1 500 videos, 750 of them encoded, both
+tables `ANALYZE`d; the default library page — live, unhidden, stack primaries,
+`ORDER BY taken_at DESC NULLS LAST, uid DESC LIMIT 100`; `EXPLAIN (ANALYZE,
+BUFFERS, COSTS OFF)`):
+
+| | plan | execution |
+| --- | --- | --- |
+| without the flag | `Limit → Index Scan using idx_photos_live_taken_at` | 0.242 ms |
+| with the flag | the **same** `Limit → Index Scan`, plus `SubPlan 2` | 0.491 ms |
+
+The outer plan is unchanged — the same index walk on
+`idx_photos_live_taken_at`, the same filter, no added sort and no join — which is
+the thing that mattered: a plain library page must not degrade. The subplan is
+**hashed**: PostgreSQL builds it once (`actual rows=751 loops=1`, 22 shared
+buffers) and probes it per row rather than re-running it, so the cost is one pass
+over `photo_hls_renditions` per page, not per tile. Buffer counts on the index
+scan itself moved around between runs (167–280) purely from hint bits on the
+freshly inserted rows, so nothing is claimed from them.
+
+The rendition table is small by construction — one row per (video, quality
+level), i.e. bounded by the number of clips, not by the library — so the hashed
+build stays cheap as the library grows. A still never pays even that: the `CASE`
+short-circuits before the subplan is consulted, which is also why the field is
+absent (SQL `NULL`) rather than `false` for stills.
+
 ### The random order (`?sort=random`, the slideshow's shuffle)
 
 `ORDER BY md5(uid || $seed)` is deliberately **not** index-backed: the value is

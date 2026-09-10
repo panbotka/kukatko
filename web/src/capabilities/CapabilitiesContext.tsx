@@ -29,6 +29,7 @@ export interface CapabilitiesState extends Capabilities {
 export const CAPABILITIES_DEFAULT: CapabilitiesState = {
   semantic_search: false,
   passkeys: false,
+  video_streaming: false,
   known: false,
 }
 

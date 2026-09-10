@@ -267,7 +267,7 @@ func appendOpsAPIs(
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	apis = append(apis, server.WithAPI(buildCapabilitiesAPI(reachChecker, authAPI).RegisterRoutes))
+	apis = append(apis, server.WithAPI(buildCapabilitiesAPI(cfg, reachChecker, authAPI).RegisterRoutes))
 	return apis, backupSvc, reachChecker, nil
 }
 

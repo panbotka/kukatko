@@ -314,7 +314,12 @@ function renderPage(
   return render(
     <I18nextProvider i18n={i18n}>
       <CapabilitiesContext.Provider
-        value={{ semantic_search: semanticSearch, known: true, passkeys: false }}
+        value={{
+          semantic_search: semanticSearch,
+          known: true,
+          passkeys: false,
+          video_streaming: false,
+        }}
       >
         <AuthContext.Provider value={auth(canWrite)}>
           <MemoryRouter initialEntries={[entry]}>
@@ -3546,7 +3551,7 @@ describe('the grid → viewer morph', () => {
     render(
       <I18nextProvider i18n={i18n}>
         <CapabilitiesContext.Provider
-          value={{ semantic_search: true, known: true, passkeys: false }}
+          value={{ semantic_search: true, known: true, passkeys: false, video_streaming: false }}
         >
           <AuthContext.Provider value={auth(true)}>
             <MorphContext.Provider value={value}>
@@ -3614,7 +3619,7 @@ describe('the grid → viewer morph', () => {
     render(
       <I18nextProvider i18n={i18n}>
         <CapabilitiesContext.Provider
-          value={{ semantic_search: true, known: true, passkeys: false }}
+          value={{ semantic_search: true, known: true, passkeys: false, video_streaming: false }}
         >
           <AuthContext.Provider value={auth(true)}>
             <MemoryRouter initialEntries={['/', '/photos/b?sort=oldest']}>
@@ -3894,7 +3899,7 @@ describe('PhotoDetailPage — the library operations on a clip', () => {
       <ToastProvider>
         <I18nextProvider i18n={i18n}>
           <CapabilitiesContext.Provider
-            value={{ semantic_search: true, known: true, passkeys: false }}
+            value={{ semantic_search: true, known: true, passkeys: false, video_streaming: false }}
           >
             <AuthContext.Provider value={auth(true)}>
               <MemoryRouter initialEntries={['/photos/b']}>

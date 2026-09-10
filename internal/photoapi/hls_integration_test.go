@@ -358,3 +358,50 @@ func readBody(t *testing.T, resp *http.Response) string {
 	}
 	return string(body)
 }
+
+// TestPhotoList_reportsStreamingAvailability covers the same flag on a page of
+// tiles: the listing must say, per video, whether an encoded rendition exists —
+// which is how a grid marks a clip whose streaming version is still being
+// prepared — and must leave the field off a still entirely.
+func TestPhotoList_reportsStreamingAvailability(t *testing.T) {
+	env := newEnv(t)
+	client, _ := env.login(t, "viewer", auth.RoleViewer)
+	encoded := seedRendition(t, env, nil, env.seedVideo(t, "encoded.mp4", []byte("encoded-bytes")))
+	pending := env.seedVideo(t, "pending.mp4", []byte("pending-bytes"))
+	still := env.seedPhoto(t, photos.Photo{Title: "still", TakenAtSource: "unknown"}, "still.jpg", 1, 2, 3)
+
+	resp := mustDo(t, client, http.MethodGet, env.server.URL+"/api/v1/photos", nil)
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var body struct {
+		Photos []struct {
+			UID string `json:"uid"`
+			HLS *bool  `json:"hls"`
+		} `json:"photos"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decoding listing: %v", err)
+	}
+
+	want := map[string]*bool{encoded.UID: new(true), pending.UID: new(false), still.UID: nil}
+	if len(body.Photos) != len(want) {
+		t.Fatalf("listing returned %d photos, want %d", len(body.Photos), len(want))
+	}
+	for _, row := range body.Photos {
+		expected, ok := want[row.UID]
+		if !ok {
+			t.Errorf("listing returned an unexpected photo %s", row.UID)
+			continue
+		}
+		switch {
+		case expected == nil && row.HLS != nil:
+			t.Errorf("%s carries hls = %v, want the key absent", row.UID, *row.HLS)
+		case expected != nil && row.HLS == nil:
+			t.Errorf("%s carries no hls key, want %v", row.UID, *expected)
+		case expected != nil && *row.HLS != *expected:
+			t.Errorf("%s hls = %v, want %v", row.UID, *row.HLS, *expected)
+		}
+	}
+}

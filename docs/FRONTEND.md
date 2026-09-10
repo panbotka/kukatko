@@ -818,7 +818,16 @@ here.
   with a minimal radius `--kk-radius-tile`, so the library is a dense wall of images; **stack badge**
   (the group's member count at top right — an `images` icon + `stack_count`, `library.tile.stackCount`,
   only when `stack_count > 1`), a **play badge + duration** for a video/live photo (`▶` + `formatDuration`,
-  **top right** — the date took the lower reading corner; a stack never meets a video), a placeholder with no
+  **top right** — the date took the lower reading corner; a stack never meets a video)
+  which for a clip **whose streaming version is not ready yet** also carries a small `hourglass-split`
+  beside the play mark (`.kk-tile__pending` in `tokens.css`: a shade smaller, 75 % opaque, the badge's own
+  foreground — never a warning colour, and never a second badge). It is shown only when the row says
+  `hls === false` **and** the instance says `video_streaming` (`useCapabilities`): an absent `hls` is "nobody
+  asked", and with the encode switched off no clip would ever lose the mark. The play affordance is
+  untouched — the clip very likely plays already, progressively from the original, so this is information,
+  not a block. The badge is one `role="img"`, so the pending state is said **in its `aria-label`**
+  (`library.tile.videoPreparing`) rather than left to a glyph a reader would ignore; a still, a live photo
+  and a clip that already streams read exactly as before. A placeholder with no
   layout shift — the photograph's **own** blurred stand-in while the thumbnail is on the way
   (`photo.blurhash` → `FadeInImage`'s `blurhash` → `BlurPlaceholder`), the neutral well for a photo
   that carries no hash, and the neutral well again once the thumbnail is beyond saving (the failed
@@ -5630,9 +5639,12 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   language; unparseable input → the original string; used by PhotoTile/DuplicateGroupCard/
   MetadataPanel/Import/System for dates in the cs/en format))),
   `services/` (`health.ts`, `capabilities.ts` = `fetchCapabilities(signal)` over `GET /api/v1/capabilities`
-  → `Capabilities{semantic_search, passkeys, version?: VersionInfo{version,commit}}` (`passkeys` says whether
+  → `Capabilities{semantic_search, passkeys, video_streaming, version?: VersionInfo{version,commit}}`
+  (`passkeys` says whether
   this instance has a WebAuthn relying party configured — a **static** fact about the deployment, unlike the
-  probed `semantic_search` — and gates `PasskeysCard`; the sign-in screen reads the same flag off
+  probed `semantic_search` — and gates `PasskeysCard`; `video_streaming` is static in the same way
+  (`video.hls.enabled`) and is what lets `PhotoTile` mark a clip whose streaming version is not encoded yet;
+  the sign-in screen reads the same flag off
   `GET /settings/public`, this endpoint being behind auth. It sends the session cookie,
   `credentials:'same-origin'`; `version` is optional on the client because it is absent before the first
   answer and after a failed one, not because the endpoint may omit it),

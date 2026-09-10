@@ -52,7 +52,12 @@ function barTree(view: LibraryView, onChange: SetUrlState<LibraryView>, props: B
   return (
     <I18nextProvider i18n={i18n}>
       <CapabilitiesContext.Provider
-        value={{ semantic_search: semanticSearch, known: true, passkeys: false }}
+        value={{
+          semantic_search: semanticSearch,
+          known: true,
+          passkeys: false,
+          video_streaming: false,
+        }}
       >
         <MemoryRouter>
           <FilterBar view={view} onChange={onChange} total={total} {...barProps} />

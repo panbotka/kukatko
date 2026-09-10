@@ -854,6 +854,7 @@
     "tile": {
       "unavailable": "Preview unavailable",
       "video": "Video",
+      "videoPreparing": "Video – the streaming version is still being prepared",
       "live": "Live",
       "stackCount": "{{count}} in stack"
     },
