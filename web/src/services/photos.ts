@@ -256,6 +256,14 @@ export interface PhotoListResponse {
    */
   ranked_total?: boolean
   /**
+   * How many of `total` are standalone video clips, so a count line can name
+   * what it is counting instead of calling seven clips seven photographs. A live
+   * photo counts with the stills, because it is a photograph. Absent means zero
+   * — a stills-only result, and the honest reading for any response that does
+   * not say.
+   */
+  video_total?: number
+  /**
    * True when a semantic or hybrid search fell back to full-text because the
    * embeddings sidecar was unavailable, so the UI can tell the user semantic
    * ranking was skipped. Absent (treated as false) on list responses.

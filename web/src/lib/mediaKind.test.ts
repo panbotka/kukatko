@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { type Photo } from '../services/photos'
 
-import { isPlayableClip, isVideo } from './mediaKind'
+import { isPlayableClip, isVideo, mediaCountKind } from './mediaKind'
 
 /** A catalogue row of the given media type; nothing else here is read. */
 function photo(mediaType?: string): Photo {
@@ -44,5 +44,22 @@ describe('mediaKind', () => {
   it('reads a row with no media type as a plain image', () => {
     expect(isVideo(photo())).toBe(false)
     expect(isPlayableClip(photo())).toBe(false)
+  })
+})
+
+describe('mediaCountKind', () => {
+  it('leaves a stills-only count reading exactly as it always has', () => {
+    expect(mediaCountKind(7, 0)).toBe('photos')
+    expect(mediaCountKind(0, 0)).toBe('photos')
+  })
+
+  it('calls a set of nothing but clips videos', () => {
+    expect(mediaCountKind(7, 7)).toBe('videos')
+    expect(mediaCountKind(1, 1)).toBe('videos')
+  })
+
+  it('names both when the set holds both', () => {
+    expect(mediaCountKind(7, 1)).toBe('mixed')
+    expect(mediaCountKind(7, 6)).toBe('mixed')
   })
 })

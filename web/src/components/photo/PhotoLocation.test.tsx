@@ -166,7 +166,7 @@ describe('PhotoLocation', () => {
     expect(screen.queryByRole('button', { name: 'Clear location' })).not.toBeInTheDocument()
 
     renderLocation({ photo: photo({ lat: undefined, lng: undefined }) })
-    expect(screen.getByText('This photo has no stored location.')).toBeInTheDocument()
+    expect(screen.getByText('No location stored.')).toBeInTheDocument()
   })
 
   it('keeps the lookup live for a viewer — it is a read, not a write', () => {

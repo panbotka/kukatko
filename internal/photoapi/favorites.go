@@ -218,7 +218,7 @@ func (a *API) writeFavoritePage(
 		writeError(w, http.StatusInternalServerError, "listing photos failed")
 		return
 	}
-	total, err := a.store.Count(r.Context(), params)
+	counts, err := a.store.CountMedia(r.Context(), params)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "counting photos failed")
 		return
@@ -228,7 +228,7 @@ func (a *API) writeFavoritePage(
 		writeError(w, http.StatusInternalServerError, "annotating photos failed")
 		return
 	}
-	resp := pageResponse(params, views, total)
+	resp := pageResponse(params, views, counts)
 	hints.stamp(&resp)
 	writeJSON(w, http.StatusOK, resp)
 }

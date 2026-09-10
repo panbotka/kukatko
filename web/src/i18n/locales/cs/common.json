@@ -740,6 +740,8 @@
   "library": {
     "title": "Knihovna",
     "count": "Počet fotek: {{count}}",
+    "countVideos": "Počet videí: {{count}}",
+    "countMixed": "Počet fotek a videí: {{count}}",
     "countRanked": "Nejlepší shody: {{count}}",
     "loading": "Načítání fotek…",
     "loadingMore": "Načítání dalších fotek…",
@@ -790,6 +792,14 @@
       "apply_few": "Zobrazit {{count}} fotky",
       "apply_many": "Zobrazit {{count}} fotky",
       "apply_other": "Zobrazit {{count}} fotek",
+      "applyVideos_one": "Zobrazit {{count}} video",
+      "applyVideos_few": "Zobrazit {{count}} videa",
+      "applyVideos_many": "Zobrazit {{count}} videa",
+      "applyVideos_other": "Zobrazit {{count}} videí",
+      "applyMixed_one": "Zobrazit {{count}} položku",
+      "applyMixed_few": "Zobrazit {{count}} položky",
+      "applyMixed_many": "Zobrazit {{count}} položky",
+      "applyMixed_other": "Zobrazit {{count}} položek",
       "applyEmpty": "Žádné fotky — zavřít",
       "applyClose": "Zavřít filtry",
       "counting": "Počítám fotky…"
@@ -1249,11 +1259,11 @@
     "rate": "Ohodnotit {{n}} z 5",
     "flag": "Osobní označení",
     "pick": "Vybrat",
-    "pickHint": "Vybrat fotku k dalšímu zpracování — do alba, k úpravám nebo do tisku.",
+    "pickHint": "Vybrat k dalšímu zpracování — do alba, k úpravám nebo do tisku.",
     "reject": "Zamítnout",
-    "rejectHint": "Zamítnout fotku jako nepovedenou, ať se dá později hromadně vyřadit.",
+    "rejectHint": "Zamítnout jako nepovedené, ať se to dá později hromadně vyřadit.",
     "eye": "Prohlédnout později",
-    "eyeHint": "Odložit fotku na později, až bude čas si ji pořádně prohlédnout."
+    "eyeHint": "Odložit na později, až bude čas si to pořádně prohlédnout."
   },
   "bulkEdit": {
     "title_one": "Upravit {{count}} fotku",
@@ -2113,14 +2123,14 @@
     }
   },
   "photo": {
-    "loading": "Načítání fotky…",
-    "loadingNext": "Načítání fotky…",
-    "error": "Tuto fotku se nepodařilo načíst.",
-    "missing": "Tato fotka už neexistuje.",
-    "missingHint": "Nejspíš byla trvale smazána z koše. Auditní log na smazané věci odkazuje dál — je to záznam o té změně.",
+    "loading": "Načítání…",
+    "loadingNext": "Načítání…",
+    "error": "Tohle se nepodařilo načíst.",
+    "missing": "Tohle už neexistuje.",
+    "missingHint": "Nejspíš to bylo trvale smazáno z koše. Auditní log na smazané věci odkazuje dál — je to záznam o té změně.",
     "back": "Zpět na seznam",
-    "prev": "Předchozí fotka",
-    "next": "Další fotka",
+    "prev": "Předchozí",
+    "next": "Další",
     "download": "Stáhnout originál",
     "downloadEdited": "Stáhnout upravenou",
     "viewer": {
@@ -2131,10 +2141,10 @@
       "infoWithComments_many": "Informace – {{count}} komentáře",
       "infoWithComments_other": "Informace – {{count}} komentářů",
       "closeInfo": "Zavřít informace",
-      "actions": "Akce s fotkou",
-      "tapHint": "Klepnutím na fotku vrátíte ovládání",
-      "assess": "Hodnocení fotky",
-      "views": "Zobrazení fotky",
+      "actions": "Akce",
+      "tapHint": "Klepnutím vrátíte ovládání",
+      "assess": "Hodnocení",
+      "views": "Zobrazení",
       "library": "Akce s knihovnou",
       "libraryGroup": "Knihovna"
     },
@@ -2155,7 +2165,7 @@
       "count_other": "{{count}} komentářů",
       "loading": "Načítání komentářů…",
       "loadFailed": "Komentáře se nepodařilo načíst.",
-      "empty": "Napiš, co o téhle fotce víš…",
+      "empty": "Napiš, co o tomhle víš…",
       "placeholder": "Napiš komentář…",
       "inputLabel": "Nový komentář",
       "submit": "Odeslat komentář",
@@ -2166,7 +2176,7 @@
       "cancel": "Zrušit",
       "delete": "Smazat",
       "deleteTitle": "Smazat komentář?",
-      "deleteBody": "Komentář z fotky zmizí a vrátit to nejde.",
+      "deleteBody": "Komentář zmizí a vrátit to nejde.",
       "edited": "upraveno",
       "unknownAuthor": "Smazaný uživatel",
       "throttled": "Moment — komentáře jdou moc rychle po sobě. Zkus to za chvilku.",
@@ -2197,7 +2207,7 @@
       "seek": "Časová osa videa"
     },
     "metadata": {
-      "formLabel": "Úprava metadat fotky",
+      "formLabel": "Úprava metadat",
       "title": "Název",
       "description": "Popis",
       "notes": "Poznámky",
@@ -2216,7 +2226,7 @@
       "credits": "Autorství a klíčová slova",
       "subject": "Předmět",
       "artist": "Umělec",
-      "artistPlaceholder": "Kdo fotku pořídil",
+      "artistPlaceholder": "Kdo to pořídil",
       "copyright": "Autorská práva",
       "license": "Licence",
       "keywords": "Klíčová slova",
@@ -2257,12 +2267,12 @@
       "acceptLocation": "Potvrdit odhad",
       "acceptLocationHelp": "Označí polohu za tvoje rozhodnutí, přestane se zobrazovat jako odhad.",
       "discardLocation": "Zahodit odhad",
-      "discardLocationHelp": "Fotka zůstane bez polohy a odhad se už znovu nedoplní.",
+      "discardLocationHelp": "Zůstane bez polohy a odhad se už znovu nedoplní.",
       "locationActionFailed": "Polohu se nepodařilo uložit. Zkus to prosím znovu.",
       "titlePrompt": "Třeba „Vánoce u babičky“",
-      "descriptionPrompt": "Co se na fotce děje a proč stojí za zapamatování",
-      "notesPrompt": "Cokoli, co si k fotce chcete poznamenat",
-      "aiNotePrompt": "Popis, který k fotce sám doplnil počítač",
+      "descriptionPrompt": "Co se tu děje a proč to stojí za zapamatování",
+      "notesPrompt": "Cokoli, co si k tomu chcete poznamenat",
+      "aiNotePrompt": "Popis, který sem sám doplnil počítač",
       "takenAtPrompt": "Třeba 24. 12. 1998 — i odhad je lepší než nic"
     },
     "technical": {
@@ -2367,7 +2377,7 @@
       "error": "Změnu se nepodařilo uložit."
     },
     "location": {
-      "none": "Tato fotka nemá uloženou polohu.",
+      "none": "Poloha není uložená.",
       "lookup": "Zjistit místo",
       "lookupError": "Místo se nepodařilo zjistit.",
       "clear": "Vymazat polohu",
@@ -2395,18 +2405,18 @@
     "archive": {
       "restore": "Vrátit z koše",
       "badge": "V koši",
-      "archived": "Fotka přesunuta do koše",
-      "restored": "Fotka vrácena z koše",
+      "archived": "Přesunuto do koše",
+      "restored": "Vráceno z koše",
       "error": "Akci se nepodařilo provést."
     },
     "hidden": {
       "hide": "Skrýt z knihovny",
       "show": "Vrátit do knihovny",
-      "badge": "Skrytá z knihovny",
-      "hideHint": "Skrýt z knihovny — fotka zůstane v albech, štítcích i mezi oblíbenými. Zpátky ji najdeš hledáním hidden:yes.",
-      "showHint": "Vrátit fotku zpátky do knihovny",
-      "hidden": "Fotka skryta z knihovny. Najdeš ji hledáním hidden:yes.",
-      "shown": "Fotka je zase v knihovně",
+      "badge": "Skryto z knihovny",
+      "hideHint": "Skrýt z knihovny — zůstane v albech, štítcích i mezi oblíbenými. Zpátky to najdeš hledáním hidden:yes.",
+      "showHint": "Vrátit zpátky do knihovny",
+      "hidden": "Skryto z knihovny. Zpátky to najdeš hledáním hidden:yes.",
+      "shown": "Je zase v knihovně",
       "error": "Akci se nepodařilo provést."
     },
     "untitled": "Bez názvu",
@@ -2438,7 +2448,7 @@
       "textNone": "žádný text",
       "runNow": "Spustit",
       "runError": "Krok se nepodařilo naplánovat.",
-      "runNotApplicable": "Tenhle krok se pro tuhle fotku neprovádí."
+      "runNotApplicable": "Tenhle krok se tady neprovádí."
     }
   },
   "upload": {

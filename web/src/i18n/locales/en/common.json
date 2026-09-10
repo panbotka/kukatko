@@ -736,6 +736,8 @@
   "library": {
     "title": "Library",
     "count": "Photos: {{count}}",
+    "countVideos": "Videos: {{count}}",
+    "countMixed": "Photos and videos: {{count}}",
     "countRanked": "Best matches: {{count}}",
     "loading": "Loading photos…",
     "loadingMore": "Loading more photos…",
@@ -784,6 +786,10 @@
       "clear": "Clear filters",
       "apply_one": "Show {{count}} photo",
       "apply_other": "Show {{count}} photos",
+      "applyVideos_one": "Show {{count}} video",
+      "applyVideos_other": "Show {{count}} videos",
+      "applyMixed_one": "Show {{count}} item",
+      "applyMixed_other": "Show {{count}} items",
       "applyEmpty": "No photos — close",
       "applyClose": "Close filters",
       "counting": "Counting photos…"
@@ -1295,11 +1301,11 @@
     "rate": "Rate {{n}} of 5",
     "flag": "Personal mark",
     "pick": "Pick",
-    "pickHint": "Pick this photo for further work — an album, edits or print.",
+    "pickHint": "Pick this for further work — an album, edits or print.",
     "reject": "Reject",
-    "rejectHint": "Reject this photo as a dud, so you can weed it out in bulk later.",
+    "rejectHint": "Reject this as a dud, so you can weed it out in bulk later.",
     "eye": "Look at later",
-    "eyeHint": "Set this photo aside to look at properly when you have time."
+    "eyeHint": "Set this aside to look at properly when you have time."
   },
   "bulkEdit": {
     "title_one": "Edit {{count}} photo",
@@ -2025,14 +2031,14 @@
     }
   },
   "photo": {
-    "loading": "Loading photo…",
-    "loadingNext": "Loading photo…",
-    "error": "Could not load this photo.",
-    "missing": "This photo no longer exists.",
+    "loading": "Loading…",
+    "loadingNext": "Loading…",
+    "error": "This could not be loaded.",
+    "missing": "This no longer exists.",
     "missingHint": "It was most likely purged from the trash. The audit log keeps linking to deleted things — it is the record of that change.",
     "back": "Back to the list",
-    "prev": "Previous photo",
-    "next": "Next photo",
+    "prev": "Previous",
+    "next": "Next",
     "download": "Download original",
     "downloadEdited": "Download edited",
     "viewer": {
@@ -2041,10 +2047,10 @@
       "infoWithComments_one": "Info – {{count}} comment",
       "infoWithComments_other": "Info – {{count}} comments",
       "closeInfo": "Close info",
-      "actions": "Photo actions",
-      "tapHint": "Tap the photo to bring the controls back",
-      "assess": "Photo assessment",
-      "views": "Photo views",
+      "actions": "Actions",
+      "tapHint": "Tap to bring the controls back",
+      "assess": "Assessment",
+      "views": "Views",
       "library": "Library actions",
       "libraryGroup": "Library"
     },
@@ -2063,7 +2069,7 @@
       "count_other": "{{count}} comments",
       "loading": "Loading comments…",
       "loadFailed": "The comments could not be loaded.",
-      "empty": "Say what you know about this photo…",
+      "empty": "Say what you know about this one…",
       "placeholder": "Write a comment…",
       "inputLabel": "New comment",
       "submit": "Post comment",
@@ -2074,7 +2080,7 @@
       "cancel": "Cancel",
       "delete": "Delete",
       "deleteTitle": "Delete this comment?",
-      "deleteBody": "The comment disappears from the photo, and that cannot be undone.",
+      "deleteBody": "The comment disappears, and that cannot be undone.",
       "edited": "edited",
       "unknownAuthor": "Deleted user",
       "throttled": "Steady on — comments are coming too fast. Try again in a moment.",
@@ -2105,7 +2111,7 @@
       "seek": "Video timeline"
     },
     "metadata": {
-      "formLabel": "Edit photo metadata",
+      "formLabel": "Edit metadata",
       "title": "Title",
       "description": "Description",
       "notes": "Notes",
@@ -2124,7 +2130,7 @@
       "credits": "Credit and keywords",
       "subject": "Subject",
       "artist": "Artist",
-      "artistPlaceholder": "Who took the photo",
+      "artistPlaceholder": "Who took it",
       "copyright": "Copyright",
       "license": "Licence",
       "keywords": "Keywords",
@@ -2165,12 +2171,12 @@
       "acceptLocation": "Accept estimate",
       "acceptLocationHelp": "Marks the location your own decision; it stops being shown as an estimate.",
       "discardLocation": "Discard estimate",
-      "discardLocationHelp": "The photo stays without a location and the estimate is never added back.",
+      "discardLocationHelp": "It stays without a location and the estimate is never added back.",
       "locationActionFailed": "The location could not be saved. Please try again.",
       "titlePrompt": "For example “Christmas at Grandma's”",
       "descriptionPrompt": "What is happening here, and why it is worth remembering",
-      "notesPrompt": "Anything you want to jot down about this photo",
-      "aiNotePrompt": "A description the computer added to the photo by itself",
+      "notesPrompt": "Anything you want to jot down about it",
+      "aiNotePrompt": "A description the computer added by itself",
       "takenAtPrompt": "For example 24 December 1998 — even a guess beats nothing"
     },
     "technical": {
@@ -2273,7 +2279,7 @@
       "error": "Could not save the change."
     },
     "location": {
-      "none": "This photo has no stored location.",
+      "none": "No location stored.",
       "lookup": "Look up place",
       "lookupError": "Could not look up the place.",
       "clear": "Clear location",
@@ -2301,18 +2307,18 @@
     "archive": {
       "restore": "Restore",
       "badge": "In the trash",
-      "archived": "Photo moved to trash",
-      "restored": "Photo restored from trash",
+      "archived": "Moved to trash",
+      "restored": "Restored from trash",
       "error": "The action failed."
     },
     "hidden": {
       "hide": "Hide from the library",
       "show": "Show in the library",
       "badge": "Hidden from the library",
-      "hideHint": "Hide from the library — the photo stays in its albums, labels and favourites. Find it again by searching hidden:yes.",
-      "showHint": "Bring the photo back into the library",
-      "hidden": "Photo hidden from the library. Find it by searching hidden:yes.",
-      "shown": "Photo is back in the library",
+      "hideHint": "Hide from the library — it stays in its albums, labels and favourites. Find it again by searching hidden:yes.",
+      "showHint": "Bring it back into the library",
+      "hidden": "Hidden from the library. Find it again by searching hidden:yes.",
+      "shown": "Back in the library",
       "error": "The action could not be completed."
     },
     "untitled": "Untitled",
@@ -2342,7 +2348,7 @@
       "textNone": "no text",
       "runNow": "Run now",
       "runError": "Could not schedule the step.",
-      "runNotApplicable": "This step does not apply to this photo."
+      "runNotApplicable": "This step does not apply here."
     }
   },
   "upload": {

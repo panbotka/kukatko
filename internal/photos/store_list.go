@@ -325,6 +325,37 @@ func (s *Store) Count(ctx context.Context, params ListParams) (int, error) {
 	return total, nil
 }
 
+// MediaCounts breaks a result set down by the kind of media it holds: how many
+// rows match in total, and how many of those are standalone video clips.
+//
+// A live photo counts with the stills, deliberately: it *is* a photograph, one
+// that happens to carry two seconds of motion beside it, and calling a library
+// of them "videos" would be a fresh lie in place of the one this split exists to
+// remove. Only MediaVideo — a file that is nothing but moving pictures — counts
+// as a video here.
+type MediaCounts struct {
+	// Total is every row matching the filters, the number Count would return.
+	Total int
+	// Videos is how many of Total are MediaVideo rows. Zero for a stills-only
+	// result, equal to Total for a video-only one, and anything between for a
+	// mixed one — which is exactly the three cases a caller wording a count needs
+	// to tell apart.
+	Videos int
+}
+
+// CountMedia returns the number of photos matching params' filters together with
+// how many of them are videos, ignoring limit, offset and ordering. It is Count
+// plus one filtered aggregate over the same scan, so a listing can say what its
+// total is actually made of without paying for a second pass over the table.
+func (s *Store) CountMedia(ctx context.Context, params ListParams) (MediaCounts, error) {
+	query, args := buildMediaCountQuery(params)
+	var counts MediaCounts
+	if err := s.pool.QueryRow(ctx, query, args...).Scan(&counts.Total, &counts.Videos); err != nil {
+		return MediaCounts{}, fmt.Errorf("photos: counting photos by media type: %w", err)
+	}
+	return counts, nil
+}
+
 // buildWhere assembles the parameterised WHERE filters shared by List and
 // Count. It returns the filter clauses (to be joined with AND) and the bound
 // argument values in matching positional order, starting at $1. The bind closure
@@ -677,6 +708,22 @@ func buildListQuery(params ListParams) (string, []any) {
 func buildCountQuery(params ListParams) (string, []any) {
 	where, args := buildWhere(params)
 	query := "SELECT count(*) FROM photos"
+	if len(where) > 0 {
+		query += " WHERE " + strings.Join(where, " AND ")
+	}
+	return query, args
+}
+
+// buildMediaCountQuery assembles the parameterised two-aggregate SELECT for
+// CountMedia: the same WHERE filters as buildCountQuery, plus a FILTER clause
+// that counts the video rows among them. The media type is bound like every
+// other value rather than interpolated, so the query text never depends on a
+// Go constant's contents.
+func buildMediaCountQuery(params ListParams) (string, []any) {
+	where, args := buildWhere(params)
+	args = append(args, string(MediaVideo))
+	videos := "count(*) FILTER (WHERE media_type = $" + strconv.Itoa(len(args)) + ")"
+	query := "SELECT count(*), " + videos + " FROM photos"
 	if len(where) > 0 {
 		query += " WHERE " + strings.Join(where, " AND ")
 	}

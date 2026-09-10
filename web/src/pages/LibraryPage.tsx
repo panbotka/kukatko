@@ -101,8 +101,17 @@ export function LibraryPage() {
   // The grid is a *window* over the result, not a growing prefix of it: `photos`
   // is as long as the whole library with holes where pages are not loaded, so any
   // position is reachable in one scroll plus one fetch.
-  const { photos, total, status, moreError, unknownTokens, notices, ensureRange, retry } =
-    useWindowedPhotos(params, { reloadKey })
+  const {
+    photos,
+    total,
+    totalVideos,
+    status,
+    moreError,
+    unknownTokens,
+    notices,
+    ensureRange,
+    retry,
+  } = useWindowedPhotos(params, { reloadKey })
   const facets = useLibraryFacets(params)
   // Who contributed to what is on screen — the option list behind the uploader
   // filter, counted under the rest of the view like every other facet.
@@ -337,6 +346,8 @@ export function LibraryPage() {
         // reader is waiting to find out. Pending says so; an error says nothing
         // at all, because the page states the failure in full below.
         total={status === 'ready' ? total : undefined}
+        // What that count may be called: a shelf of clips is not seven photos.
+        totalVideos={totalVideos}
         totalPending={status === 'loading'}
         facets={facets}
         uploaders={uploaders}

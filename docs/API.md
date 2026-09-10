@@ -253,6 +253,13 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   in `serve` (`buildIngest` in `cmd/kukatko/ingest.go`). Limit `upload.max_file_size_mb` (0 = no limit).
 - **Photos API (`/api/v1`, `internal/photoapi`):** `GET /photos` (authenticated) — list with filters/
   sorting/pagination (query params, invalid → 400) → `{photos,total,limit,offset,next_offset}`;
+  **`video_total`** rides beside `total` on every page response (list and search alike): how many of
+  `total` are standalone video clips, so the client can word its count line for what the set holds
+  instead of calling seven clips seven photographs. A **live photo counts with the stills** — it is a
+  photograph that carries motion. Omitted when zero, which is exactly the stills-only case. The list,
+  filter-only and full-text paths get it from `photos.Store.CountMedia` (one extra filtered aggregate
+  over the same scan as `Count`, not a second query); the ranked modes count it in Go over the ranked
+  set they already hold;
   the `?album={uid}`/`?label={uid}` filter scopes the listing to an album's/label's photos (a shared
   endpoint for both the album and the label gallery, honouring all other filters/sorting/pagination —
   see Albums & Labels API);
@@ -326,7 +333,8 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   (500 nearest neighbours; 200 from each ranking fed into the fusion) and report the size of the ranked
   set built from it, which stops growing at the pool however many photos match — so `total` there is
   the count of **best matches returned**, flagged `ranked_total: true` so a client never presents it as
-  a library total;
+  a library total; `video_total` follows whichever `total` it is — the clips among the matching photos,
+  or the clips among the best matches — so the wording of a count never outruns what was counted;
   **`q` speaks the search language** (see [Search language](#search-language-q) below): free
   text + `key:value` filters in one string — filters narrow the result in all modes, the free-text
   ranking is left untouched. A query **made only of filters** (no free text) runs the plain-list

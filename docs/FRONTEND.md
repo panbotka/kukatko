@@ -1061,6 +1061,15 @@ here.
   is therefore carried by visible words rather than by a tooltip a phone cannot reach. A ranked **zero**
   falls back to the plain wording: an empty ranking is the one ranked count that is exact, and the empty
   state below it already speaks for itself;
+  **`totalVideos` decides which noun that number gets** (`lib/mediaKind.mediaCountKind`, fed by the
+  response's `video_total` through `useWindowedPhotos`/`usePaginatedPhotos`): no clips → the line reads
+  exactly as it always has („Počet fotek: 7"), nothing but clips → **„Počet videí: 7"** (`library.countVideos`),
+  and both → **„Počet fotek a videí: 12"** (`library.countMixed`). Announcing seven films as seven
+  photographs was simply false; a library with no video in it is untouched by the distinction. The
+  drawer's primary button carries the same judgement (`applyLabel`): „Zobrazit 7 videí"
+  (`library.filters.applyVideos`) and, for a mixed set — which is at least one of each, so no noun agrees
+  with it — the neutral „Zobrazit 12 položek" (`library.filters.applyMixed`). A **live photo counts with
+  the stills**: it is a photograph that happens to carry motion;
   **album and label chips carry the entity color** — `.kk-entity-album`
   vs. `.kk-entity-tag` + a guide icon from `ENTITY_STYLE`, so an album and a label are distinct at a glance
   (see *entity colors* in `tokens.css`); the other filters stay a neutral `text-bg-primary`)
@@ -1826,7 +1835,9 @@ here.
   `semantic` ranks 500 neighbours, so their number saturates there and „Počet fotek: 200" would claim the
   library holds exactly two hundred photographs of the thing searched for — the line says
   **„Nejlepší shody: 200"** instead, while `fulltext` and a filter-only query (both a real SQL count, as is
-  a degraded fallback) keep stating the total plainly.
+  a degraded fallback) keep stating the total plainly. **`totalVideos={totalVideos}`** rides beside it
+  (the response's `video_total`) so a video-only search reads „Počet videí: 7" rather than „Počet fotek: 7";
+  the ranked wording names no medium at all, so it is unaffected.
   idle/loading/empty/error states (an empty result is `SearchEmptyState` — it **repeats the query**
   (`search.empty.hintQuery` „Pro «dotaz» jsme nic nenašli.") and offers the steps that actually fix one; the
   error is `ErrorState` with Retry); the field speaks **the search language**
@@ -2213,6 +2224,17 @@ here.
   `components/photo/viewer.css`, the `--kk-viewer-*` tokens (backdrop, chrome/dock scrim, z-index) in
   `tokens.css`. **It replaced the old click-opens-lightbox** — `Lightbox` and `lightbox.css` were removed
   and absorbed here.
+  **The viewer's copy names no medium** (2026-09-10): it was written when the library held only stills and
+  said so everywhere — a clip's location block read „Tato fotka nemá uloženou polohu", its People block
+  „Na této fotce nejsou žádní lidé", its comment box invited „Napiš, co o téhle fotce víš…", each of those
+  on a video. The fix is **media-neutral wording rather than a sentence per medium** (one honest word beats
+  two grammatical variants of the same sentence): „Poloha není uložená.", „Zatím tu není nikdo.", „Napiš,
+  co o tomhle víš…", the toolbar groups plain **Akce / Hodnocení / Zobrazení**, the arrows plain
+  **Předchozí / Další**, the toasts „Přesunuto do koše" / „Skryto z knihovny". Nothing branches on
+  `media_type`, so a photograph and a clip read identically — a fork would be the regression, and
+  `PhotoDetailPage.test.tsx` asserts the same sentences for both in both locales. What is *not* renamed:
+  „Prohlížeč fotek", „Podobné fotky", the library's own counts — the library **is** a photo library, and
+  the point was never to purge the word.
   **Disappearing chrome:** the top action bar's **toggles** (plus the curatorial loop on a mouse),
   the **‹/› arrows** and the phone's **bottom curation dock**
   after a short idle **dim away** and return on mouse move / tap / key
@@ -5437,6 +5459,10 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   all predates it and is an image): `isVideo(photo)` = a film, the thing a player plays from beginning to
   end (the slideshow's video slide, Ken Burns standing down), `isPlayableClip(photo)` = a video **or** a live
   photo, i.e. „there is something here to play" — which is exactly what the grid tile's ▶ badge means;
+  `mediaCountKind(total,videos)` = which noun a **count** may honestly use — `'photos'` with no clips in it,
+  `'videos'` when it is nothing but clips, `'mixed'` otherwise — the one judgement behind the library and
+  search count lines (`FilterBar`'s `countLabel`/`applyLabel`). A live photo counts with the stills there:
+  calling a shelf of photographs „videa" would swap one wrong word for another;
   `kenBurns.ts` = the pure `kenBurnsMotion(uid,intervalMs)` → the endpoints of a slow zoom+pan across the whole
   frame (`durationMs` = the interval, so the animation lasts exactly one slide) + `kenBurnsStyle(…)` →
   the `--kb-*` custom properties for `slideshow.css` + `panLimit(scale)`. The parameters (8 directions × zoom

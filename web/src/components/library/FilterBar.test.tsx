@@ -31,6 +31,8 @@ interface BarProps {
   total?: number
   /** Whether that count is the best matches of a ranked search, not a total. */
   totalRanked?: boolean
+  /** How many of that count are video clips; 0 (the default) is stills only. */
+  totalVideos?: number
   /** Whether that count is still being fetched under a just-changed filter. */
   totalPending?: boolean
   /** The page's own view actions, which the bar seats once per viewport. */
@@ -184,6 +186,67 @@ describe('FilterBar header', () => {
     renderBar(LIBRARY_DEFAULTS, vi.fn(), { total: 0, totalRanked: true })
     expect(screen.getByText('Photos: 0')).toBeInTheDocument()
     expect(screen.queryByText(/Best matches/)).not.toBeInTheDocument()
+  })
+
+  /**
+   * The library is a photo library and its count says so — right up until the
+   * seven things being counted are seven films. These are the three readings the
+   * count line owes: a stills-only result exactly as it has always read, a
+   * clips-only one called what it is, and a mixed one naming both rather than
+   * picking a side. Czech is the default locale and where the judgement lies, so
+   * every case is read in Czech as well as in English. The locale is set before
+   * the render, not switched under one: `changeLanguage` does not re-render a
+   * tree that is already on screen.
+   */
+  describe('naming what the count counts', () => {
+    afterEach(async () => {
+      await i18n.changeLanguage('en')
+    })
+
+    /** Renders the bar with `props` after switching the UI to `lng`. */
+    async function barIn(lng: string, props: BarProps) {
+      await i18n.changeLanguage(lng)
+      renderBar(LIBRARY_DEFAULTS, vi.fn(), props)
+    }
+
+    it.each([
+      ['en', 'Photos: 7'],
+      ['cs', 'Počet fotek: 7'],
+    ])('leaves a stills-only count reading as it always has (%s)', async (lng, sentence) => {
+      await barIn(lng, { total: 7, totalVideos: 0 })
+      expect(screen.getByText(sentence)).toBeInTheDocument()
+    })
+
+    it.each([
+      ['en', 'Videos: 7', 'Photos: 7'],
+      ['cs', 'Počet videí: 7', 'Počet fotek: 7'],
+    ])(
+      'calls a result set of nothing but clips videos (%s)',
+      async (lng, sentence, wrongSentence) => {
+        // The confirmed bug: a video-only search read "Počet fotek: 7".
+        await barIn(lng, { total: 7, totalVideos: 7 })
+        expect(screen.getByText(sentence)).toBeInTheDocument()
+        expect(screen.queryByText(wrongSentence)).not.toBeInTheDocument()
+      },
+    )
+
+    it.each([
+      ['en', 'Photos and videos: 12'],
+      ['cs', 'Počet fotek a videí: 12'],
+    ])('names both when the result set holds both (%s)', async (lng, sentence) => {
+      await barIn(lng, { total: 12, totalVideos: 5 })
+      expect(screen.getByText(sentence)).toBeInTheDocument()
+    })
+
+    it.each([
+      ['en', 'Best matches: 200'],
+      ['cs', 'Nejlepší shody: 200'],
+    ])('keeps naming no medium at all in a ranked search (%s)', async (lng, sentence) => {
+      // The ranked wording is about the ranking, not the medium, so a clip in
+      // the result changes nothing about it.
+      await barIn(lng, { total: 200, totalVideos: 200, totalRanked: true })
+      expect(screen.getByText(sentence)).toBeInTheDocument()
+    })
   })
 
   it('states nothing when there is no result set to count', () => {
@@ -885,6 +948,52 @@ describe('FilterBar drawer footer (phone)', () => {
     await user.click(screen.getByRole('button', { name: /Filters/ }))
     return screen.findByRole('dialog')
   }
+
+  /**
+   * The button carries the same number the bar states, so it owes the same
+   * honesty: a drawer over a shelf of clips must not promise photos. A mixed set
+   * is at least one of each, and no noun agrees with that — so it counts items
+   * rather than lending the majority's word to all of them.
+   */
+  describe.each([
+    ['en', 'Show 7 videos', 'Show 12 items'],
+    ['cs', 'Zobrazit 7 videí', 'Zobrazit 12 položek'],
+  ])('naming what the button shows (%s)', (lng, clips, mixed) => {
+    beforeEach(async () => {
+      await i18n.changeLanguage(lng)
+      mockViewport(true)
+    })
+    afterEach(async () => {
+      await i18n.changeLanguage('en')
+    })
+
+    /**
+     * Opens the drawer by the one stem both locales' toggle labels share —
+     * "Filters" and "Filtry". Nothing else here is a button that matches:
+     * "Clear filters" appears only once a filter is set, and these views have
+     * none.
+     */
+    async function open(user: ReturnType<typeof userEvent.setup>) {
+      await user.click(screen.getByRole('button', { name: /^Filt/i }))
+      return screen.findByRole('dialog')
+    }
+
+    it('names a clips-only result videos', async () => {
+      const user = userEvent.setup()
+      renderBar(LIBRARY_DEFAULTS, vi.fn(), { total: 7, totalVideos: 7 })
+
+      const drawer = await open(user)
+      expect(within(drawer).getByRole('button', { name: clips })).toBeInTheDocument()
+    })
+
+    it('counts a mixed result neutrally', async () => {
+      const user = userEvent.setup()
+      renderBar(LIBRARY_DEFAULTS, vi.fn(), { total: 12, totalVideos: 5 })
+
+      const drawer = await open(user)
+      expect(within(drawer).getByRole('button', { name: mixed })).toBeInTheDocument()
+    })
+  })
 
   it('carries the live result count on the button that closes the drawer', async () => {
     mockViewport(true)

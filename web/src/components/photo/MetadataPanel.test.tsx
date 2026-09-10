@@ -479,7 +479,7 @@ describe('MetadataPanel per-field editing', () => {
     expect(entry).toHaveAttribute('title', 'Edit information')
 
     await user.click(entry)
-    expect(screen.getByRole('form', { name: 'Edit photo metadata' })).toBeInTheDocument()
+    expect(screen.getByRole('form', { name: 'Edit metadata' })).toBeInTheDocument()
     expect(screen.getByLabelText('Title')).toHaveValue('')
   })
 
@@ -497,8 +497,8 @@ describe('MetadataPanel per-field editing', () => {
     const prompts = [
       "For example “Christmas at Grandma's”",
       'What is happening here, and why it is worth remembering',
-      'A description the computer added to the photo by itself',
-      'Anything you want to jot down about this photo',
+      'A description the computer added by itself',
+      'Anything you want to jot down about it',
       'For example 24 December 1998 — even a guess beats nothing',
     ]
     for (const prompt of prompts) {

@@ -403,6 +403,12 @@ type listResponse struct {
 	// Mode is the effective search mode (fulltext/semantic/hybrid). It is only
 	// set by the search endpoint and omitted from a plain list response.
 	Mode string `json:"mode,omitempty"`
+	// VideoTotal is how many of Total are standalone video clips, so the client
+	// can name the count for what it holds — seven videos are not seven photos —
+	// instead of calling every result set a pile of photographs. A live photo
+	// counts with the stills, since it is one. Omitted when zero, which is both
+	// the stills-only case and the honest default for a client that ignores it.
+	VideoTotal int `json:"video_total,omitempty"`
 	// RankedTotal is true when Total is the size of the ranked set a semantic or
 	// hybrid search built out of its bounded candidate pool — the best matches it
 	// returned — rather than an exact count of every photo the query matches. Such
@@ -446,8 +452,9 @@ func (h pageHints) stamp(resp *listResponse) {
 }
 
 // handleList parses the query filters, returns the matching page of photos (each
-// annotated with the current user's is_favorite flag) plus the total count and the
-// next-page offset for infinite scroll. The favorite=true filter scopes the list to
+// annotated with the current user's is_favorite flag) plus the total count, how
+// many of that total are videos, and the next-page offset for infinite scroll.
+// The favorite=true filter scopes the list to
 // the caller's own favorites, and `person:me` in q scopes it to the person the
 // caller's account says it is. Invalid filter, sort or pagination values are
 // answered with 400.
@@ -476,20 +483,23 @@ func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 
 // pageResponse builds the paginated listResponse for a page of photo views,
 // computing the effective limit and the next-page offset (nil on the last page)
-// used by an infinite-scroll client. The search endpoint reuses it and then sets
-// the Mode and Degraded fields, which a plain list leaves empty.
-func pageResponse(params photos.ListParams, list []photoView, total int) listResponse {
+// used by an infinite-scroll client. counts carries the result set's size and
+// how much of it is video, so the client can word its count line for what the
+// set actually holds. The search endpoint reuses it and then sets the Mode and
+// Degraded fields, which a plain list leaves empty.
+func pageResponse(params photos.ListParams, list []photoView, counts photos.MediaCounts) listResponse {
 	limit := params.Limit
 	if limit <= 0 {
 		limit = defaultPageLimit
 	}
 	resp := listResponse{
-		Photos: list,
-		Total:  total,
-		Limit:  limit,
-		Offset: params.Offset,
+		Photos:     list,
+		Total:      counts.Total,
+		VideoTotal: counts.Videos,
+		Limit:      limit,
+		Offset:     params.Offset,
 	}
-	if next := params.Offset + len(list); next < total && len(list) > 0 {
+	if next := params.Offset + len(list); next < counts.Total && len(list) > 0 {
 		resp.NextOffset = &next
 	}
 	return resp
@@ -512,7 +522,8 @@ func pageResponse(params photos.ListParams, list []photoView, total int) listRes
 // list endpoint (photos, total, limit, offset, next_offset) plus the effective
 // `mode`, the `unknown_tokens` the query language did not understand, and
 // `ranked_total: true` whenever `total` is the size of a bounded ranked pool
-// rather than an exact count.
+// rather than an exact count. `video_total` says how many of `total` are video
+// clips, in every mode.
 func (a *API) handleSearch(w http.ResponseWriter, r *http.Request) {
 	params, unknown, err := parseListParams(r.URL.Query())
 	if err != nil {
@@ -578,7 +589,7 @@ func (a *API) writeRankedSearch(
 		writeError(w, http.StatusInternalServerError, "annotating photos failed")
 		return
 	}
-	resp := pageResponse(params, views, result.total)
+	resp := pageResponse(params, views, photos.MediaCounts{Total: result.total, Videos: result.videos})
 	resp.Mode = string(mode)
 	resp.RankedTotal = result.ranked
 	resp.Degraded = result.degraded
@@ -598,7 +609,7 @@ func (a *API) writeFilterPage(
 		writeError(w, http.StatusInternalServerError, "listing photos failed")
 		return
 	}
-	total, err := a.store.Count(r.Context(), params)
+	counts, err := a.store.CountMedia(r.Context(), params)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "counting photos failed")
 		return
@@ -608,7 +619,7 @@ func (a *API) writeFilterPage(
 		writeError(w, http.StatusInternalServerError, "annotating photos failed")
 		return
 	}
-	resp := pageResponse(params, views, total)
+	resp := pageResponse(params, views, counts)
 	resp.Mode = string(modeFilter)
 	hints.stamp(&resp)
 	writeJSON(w, http.StatusOK, resp)

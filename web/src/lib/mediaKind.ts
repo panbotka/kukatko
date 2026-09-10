@@ -25,3 +25,27 @@ export function isVideo(photo: Photo): boolean {
 export function isPlayableClip(photo: Photo): boolean {
   return isVideo(photo) || photo.media_type === 'live'
 }
+
+/**
+ * Which noun a count of catalogue items may honestly use: the stills-only
+ * `photos`, the clips-only `videos`, or `mixed` for a set holding both.
+ *
+ * The library is a photo library and its counts say so, which is right until the
+ * seven things being counted are seven films. This is the whole judgement behind
+ * that: a set with no clips in it reads exactly as it always has, a set that is
+ * nothing but clips is called what it is, and a set holding both names both
+ * rather than picking the majority and hoping.
+ *
+ * `videos` counts standalone clips only. A live photo counts with the stills —
+ * it is a photograph that carries two seconds of motion, and calling a shelf of
+ * them "videos" would swap one wrong word for another.
+ */
+export function mediaCountKind(total: number, videos: number): 'photos' | 'videos' | 'mixed' {
+  if (videos <= 0) {
+    return 'photos'
+  }
+  if (videos >= total) {
+    return 'videos'
+  }
+  return 'mixed'
+}

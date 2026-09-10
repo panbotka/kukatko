@@ -403,7 +403,11 @@ to `## Package map` in `CLAUDE.md`.
   the pseudo-random order the slideshow's shuffle plays — a function of the photo and `ListParams.Seed`
   alone, so one seed is one permutation on every page and paging through a shuffled show neither
   repeats a photo nor drops one; the direction does not apply), pagination limit/offset; `Count` shares
-  the `buildWhere` filters for `total`)/`Search` (Czech-aware fulltext over the generated `fts
+  the `buildWhere` filters for `total`)/`CountMedia` (the same filters, answering `MediaCounts{Total,
+  Videos}` from one scan: `count(*)` plus a `FILTER (WHERE media_type = $n)` aggregate, the media type
+  bound like every other value. `Videos` counts **standalone clips only** — a live photo counts with the
+  stills, because it is a photograph that happens to carry motion. It is what lets a listing say
+  "Videos: 7" instead of "Photos: 7" over a shelf of clips; `Total` is always identical to `Count`'s)/`Search` (Czech-aware fulltext over the generated `fts
   tsvector` column: `ListParams.FullText` via `websearch_to_tsquery('simple',
   immutable_unaccent(q))`, ordered by `ts_rank` (title>description>notes>file_name),
   diacritics-insensitive, honours all List filters + pagination; an empty query →
@@ -1146,6 +1150,11 @@ to `## Package map` in `CLAUDE.md`.
   `fusionPool`=200 from each ranking before `fuseRRF`), which saturates there however many photos
   actually match — so it is the number of best matches returned, and the flag makes the client word it
   as such instead of as a library total;
+  **`video_total` rides with whichever total it is** (`searchResult.videos` → `video_total`): the
+  counted paths take it from `store.CountMedia` (one extra aggregate over the same scan), the ranked
+  ones from `countVideos` over the ranked uids they already hold in memory, so the breakdown never
+  costs a second query. It is what lets the client word a count for what it counts — a page of clips is
+  not a page of photographs — with a live photo counted among the stills;
   the `TextEmbedder` interface (fakeable, satisfied by `embedding.Client`); `PATCH` is
   partial via raw-key presence (an omitted field unchanged, `null` clears a nullable one, coordinate
   validation); media `thumb/{size}`+`download` **stream** via `io.Copy` with `streamMedia`

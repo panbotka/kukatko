@@ -72,8 +72,12 @@ const (
 // exact total. The distinction reaches the client so it can say which one it is
 // showing rather than presenting a saturated pool as a library total.
 type searchResult struct {
-	photos   []photos.Photo
-	total    int
+	photos []photos.Photo
+	total  int
+	// videos is how many of total are standalone video clips. It travels with
+	// total because the client words its count line from the two together: a
+	// result set that is all clips must not be announced as photographs.
+	videos   int
 	ranked   bool
 	degraded bool
 }
@@ -117,11 +121,11 @@ func (a *API) fulltextSearch(ctx context.Context, params photos.ListParams) (sea
 	if err != nil {
 		return searchResult{}, fmt.Errorf("photoapi: full-text search: %w", err)
 	}
-	total, err := a.store.Count(ctx, params)
+	counts, err := a.store.CountMedia(ctx, params)
 	if err != nil {
 		return searchResult{}, fmt.Errorf("photoapi: counting search results: %w", err)
 	}
-	return searchResult{photos: list, total: total}, nil
+	return searchResult{photos: list, total: counts.Total, videos: counts.Videos}, nil
 }
 
 // semanticSearch embeds the query and ranks photos by vector similarity, honour-
@@ -138,7 +142,12 @@ func (a *API) semanticSearch(ctx context.Context, query string, params photos.Li
 		return searchResult{}, err
 	}
 	page := paginateUIDs(shuffled(ranked, params), params.Offset, effectiveLimit(params))
-	return searchResult{photos: resolvePhotos(page, byUID), total: len(ranked), ranked: true}, nil
+	return searchResult{
+		photos: resolvePhotos(page, byUID),
+		total:  len(ranked),
+		videos: countVideos(ranked, byUID),
+		ranked: true,
+	}, nil
 }
 
 // hybridSearch fuses the full-text and semantic rankings with Reciprocal Rank
@@ -165,7 +174,28 @@ func (a *API) hybridSearch(ctx context.Context, query string, params photos.List
 
 	fused, byUID := fuse(ftList, semUIDs, semByUID)
 	page := paginateUIDs(shuffled(fused, params), params.Offset, effectiveLimit(params))
-	return searchResult{photos: resolvePhotos(page, byUID), total: len(fused), ranked: true}, nil
+	return searchResult{
+		photos: resolvePhotos(page, byUID),
+		total:  len(fused),
+		videos: countVideos(fused, byUID),
+		ranked: true,
+	}, nil
+}
+
+// countVideos reports how many of the ranked uids resolve to a standalone video
+// clip. A ranked search already holds every photo of its result set in memory
+// (that is what makes its total a length rather than a COUNT), so the breakdown
+// costs a walk over the slice instead of a second trip to the database. A uid
+// with no entry in byUID cannot happen — both ranked paths build the map from
+// the same rows — and is counted as a still rather than guessed at.
+func countVideos(uids []string, byUID map[string]photos.Photo) int {
+	videos := 0
+	for _, uid := range uids {
+		if byUID[uid].MediaType == photos.MediaVideo {
+			videos++
+		}
+	}
+	return videos
 }
 
 // degradedFulltext runs a full-text search and marks the result degraded, used

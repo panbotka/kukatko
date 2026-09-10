@@ -95,6 +95,7 @@ export function SearchPage() {
     photos,
     total,
     totalRanked,
+    totalVideos,
     status,
     degraded,
     unknownTokens,
@@ -278,12 +279,14 @@ export function SearchPage() {
           "0 photos" above the "type something" prompt reads as an empty library.
           When there is one, `totalRanked` says whether it may be called a total
           at all: the ranked modes report the size of a bounded pool of best
-          matches, not a count of everything that matches. */}
+          matches, not a count of everything that matches. `totalVideos` decides
+          which noun it gets — a video-only search is not seven photographs. */}
       <FilterBar
         view={view}
         onChange={setView}
         total={hasQuery ? total : undefined}
         totalRanked={totalRanked}
+        totalVideos={totalVideos}
         showSearch={false}
         showSort={false}
       />

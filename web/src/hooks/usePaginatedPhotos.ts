@@ -87,6 +87,13 @@ export interface UsePaginatedPhotosResult {
    * the search modes that run a real count.
    */
   totalRanked: boolean
+  /**
+   * How many of `total` are standalone video clips. Zero on a stills-only
+   * result, equal to `total` on a video-only one — the two numbers together are
+   * what lets a count line say what it counts instead of calling every result a
+   * photograph. A live photo counts with the stills, because it is one.
+   */
+  totalVideos: number
   /** Status of the first-page load (drives the page-level loading/error UI). */
   status: ListStatus
   /** True while a subsequent page is being appended. */
@@ -125,6 +132,7 @@ interface Data {
   photos: Photo[]
   total: number
   totalRanked: boolean
+  totalVideos: number
   nextOffset: number | null
   loading: boolean
   /** Whether the in-flight / most recent request is the first page. */
@@ -153,6 +161,7 @@ const INITIAL: Data = {
   photos: [],
   total: 0,
   totalRanked: false,
+  totalVideos: 0,
   nextOffset: 0,
   loading: true,
   initial: true,
@@ -254,6 +263,7 @@ export function usePaginatedPhotos(
           photos: [...prev.photos, ...res.photos],
           total: res.total,
           totalRanked: res.ranked_total ?? false,
+          totalVideos: res.video_total ?? 0,
           nextOffset: res.next_offset,
           loading: false,
           initial: false,
@@ -356,6 +366,7 @@ export function usePaginatedPhotos(
         photos,
         total: res.total,
         totalRanked: res.ranked_total ?? false,
+        totalVideos: res.video_total ?? 0,
         nextOffset: res.next_offset,
         loading: false,
         initial: loaded <= 1,
@@ -434,6 +445,7 @@ export function usePaginatedPhotos(
     photos: data.photos,
     total: data.total,
     totalRanked: data.totalRanked,
+    totalVideos: data.totalVideos,
     status,
     loadingMore: data.loading && !data.initial,
     moreError: data.error && !data.initial,

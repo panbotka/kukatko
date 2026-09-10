@@ -367,6 +367,7 @@ type listResp struct {
 	Limit         int            `json:"limit"`
 	Offset        int            `json:"offset"`
 	NextOffset    *int           `json:"next_offset"`
+	VideoTotal    int            `json:"video_total"`
 	Mode          string         `json:"mode"`
 	RankedTotal   bool           `json:"ranked_total"`
 	Degraded      bool           `json:"degraded"`

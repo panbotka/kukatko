@@ -126,7 +126,7 @@ describe('CommentsPanel', () => {
   it('invites the first comment when the thread is empty', async () => {
     renderPanel()
 
-    expect(await screen.findByText('Say what you know about this photo…')).toBeInTheDocument()
+    expect(await screen.findByText('Say what you know about this one…')).toBeInTheDocument()
     expect(screen.queryByRole('list')).not.toBeInTheDocument()
     // No count in the heading when there is nothing to count.
     expect(screen.getByText('Comments')).toBeInTheDocument()
@@ -138,7 +138,7 @@ describe('CommentsPanel', () => {
       comment({ uid: 'cm_new', body: 'Summer of 1968.', created_at: new Date().toISOString() }),
     )
     renderPanel()
-    await screen.findByText('Say what you know about this photo…')
+    await screen.findByText('Say what you know about this one…')
 
     await user.type(screen.getByLabelText('New comment'), 'Summer of 1968.')
     await user.click(screen.getByRole('button', { name: 'Post comment' }))
@@ -155,7 +155,7 @@ describe('CommentsPanel', () => {
     const user = userEvent.setup()
     createCommentMock.mockResolvedValue(comment({ uid: 'cm_new', body: 'one\ntwo' }))
     renderPanel()
-    await screen.findByText('Say what you know about this photo…')
+    await screen.findByText('Say what you know about this one…')
 
     const input = screen.getByLabelText('New comment')
     await user.click(input)
@@ -174,7 +174,7 @@ describe('CommentsPanel', () => {
     createCommentMock.mockResolvedValue(comment({ uid: 'cm_new', body: 'I remember this day.' }))
     // A viewer: signed in, may not curate anything, still part of the conversation.
     renderPanel({ currentUserUid: 'usr_viewer', canModerate: false })
-    await screen.findByText('Say what you know about this photo…')
+    await screen.findByText('Say what you know about this one…')
 
     const input = screen.getByLabelText('New comment')
     expect(input).toBeEnabled()
@@ -295,7 +295,7 @@ describe('CommentsPanel', () => {
     const user = userEvent.setup()
     createCommentMock.mockRejectedValue(new ApiError(429, 'too many'))
     renderPanel()
-    await screen.findByText('Say what you know about this photo…')
+    await screen.findByText('Say what you know about this one…')
 
     await user.type(screen.getByLabelText('New comment'), 'Again!')
     await user.click(screen.getByRole('button', { name: 'Post comment' }))
@@ -326,6 +326,6 @@ describe('CommentsPanel', () => {
     await i18n.changeLanguage('cs')
     renderPanel()
 
-    expect(await screen.findByText('Napiš, co o téhle fotce víš…')).toBeInTheDocument()
+    expect(await screen.findByText('Napiš, co o tomhle víš…')).toBeInTheDocument()
   })
 })

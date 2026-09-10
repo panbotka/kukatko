@@ -39,6 +39,13 @@ export interface UseWindowedPhotosResult {
   photos: readonly (Photo | undefined)[]
   /** Total number of photos matching the current query. */
   total: number
+  /**
+   * How many of `total` are standalone video clips. Zero on a stills-only
+   * library, equal to `total` on a video-only view — the two numbers together
+   * are what lets the count line say what it counts instead of calling every
+   * result a photograph. A live photo counts with the stills, because it is one.
+   */
+  totalVideos: number
   /** Status of the first load (drives the page-level loading/error UI). */
   status: ListStatus
   /** True when a page fetch failed after the first one succeeded. */
@@ -81,6 +88,7 @@ export interface UseWindowedPhotosOptions {
 /** Internal state; every field is replaced as a whole on each update. */
 interface WindowState {
   total: number
+  totalVideos: number
   pages: ReadonlyMap<number, Photo[]>
   status: ListStatus
   moreError: boolean
@@ -90,6 +98,7 @@ interface WindowState {
 
 const INITIAL: WindowState = {
   total: 0,
+  totalVideos: 0,
   pages: new Map<number, Photo[]>(),
   status: 'loading',
   moreError: false,
@@ -204,6 +213,7 @@ export function useWindowedPhotos(
           pages.set(page, res.photos)
           return {
             total: res.total,
+            totalVideos: res.video_total ?? 0,
             pages: evict(pages, rangeRef.current.first, rangeRef.current.last),
             status: 'ready',
             moreError: exhausted(attemptsRef.current),
@@ -340,6 +350,7 @@ export function useWindowedPhotos(
   return {
     photos,
     total: state.total,
+    totalVideos: state.totalVideos,
     status: state.status,
     moreError: state.moreError,
     unknownTokens: state.unknownTokens,

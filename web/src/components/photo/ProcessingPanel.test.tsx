@@ -144,9 +144,7 @@ describe('ProcessingPanel', () => {
 
     await user.click(within(row('Text in the photo')).getByRole('button', { name: /run now/i }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'This step does not apply to this photo.',
-    )
+    expect(await screen.findByRole('alert')).toHaveTextContent('This step does not apply here.')
   })
 
   it('reports a failed request', async () => {

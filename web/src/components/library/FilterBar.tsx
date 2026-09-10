@@ -26,6 +26,7 @@ import {
   periodPatch,
   UPLOADER_NONE,
 } from '../../lib/libraryView'
+import { mediaCountKind } from '../../lib/mediaKind'
 import { periodFromQuery } from '../../lib/period'
 import { FACET_QUERY_KEYS, facetQueryTokens, queryFilterTokens } from '../../lib/queryLanguage'
 import { type SetUrlState } from '../../lib/urlState'
@@ -65,6 +66,13 @@ export interface FilterBarProps<T extends LibraryView> {
    * every page whose count is a real count.
    */
   totalRanked?: boolean
+  /**
+   * How many of `total` are standalone video clips, which decides what the count
+   * calls the things it counts: photos, videos, or both. A page that does not
+   * know (or a library with no clips in it) omits it and reads exactly as it
+   * always has. A live photo is not a clip here — it is a photograph.
+   */
+  totalVideos?: number
   /**
    * Whether `total` is currently being refetched under a filter the reader has
    * just changed. The count then reads as "counting", in the status line and on
@@ -224,6 +232,7 @@ export function FilterBar<T extends LibraryView>({
   onChange,
   total,
   totalRanked = false,
+  totalVideos = 0,
   totalPending = false,
   showSearch = true,
   showSort = true,
@@ -350,7 +359,7 @@ export function FilterBar<T extends LibraryView>({
           are looking at. What the number *is* is stated here in words rather
           than left to a tooltip, which a phone cannot reach ({@link countLabel}). */}
       <span className="text-secondary small" aria-live="polite">
-        {countLabel(t, total, totalPending, totalRanked)}
+        {countLabel(t, total, totalPending, totalRanked, totalVideos)}
       </span>
       <div className="d-flex align-items-center gap-2">
         {clearVisible && (
@@ -502,6 +511,7 @@ export function FilterBar<T extends LibraryView>({
               scrolls above it rather than under it. */}
           <FilterDrawerFooter
             total={total}
+            totalVideos={totalVideos}
             totalPending={totalPending}
             clearVisible={clearVisible}
             onClear={clearAll}
@@ -686,12 +696,21 @@ function DisplayControls({
  * none: it is true whether the pool saturated or not. Zero is the one ranked
  * count that *is* exact — an empty ranking means nothing matched at all — so it
  * falls back to the plain wording and leaves the empty state to explain itself.
+ * The ranked wording names no medium at all ("the best matches"), so `videos`
+ * never reaches it.
+ *
+ * `videos` is the other honest half. Announcing seven clips as "Photos: 7" is
+ * simply false, so a result set that holds any names what it holds — all videos,
+ * or photos and videos both. A set with no clips in it is worded exactly as it
+ * has always been: this distinction exists for the libraries that have videos in
+ * them, not to reword the ones that do not.
  */
 function countLabel(
   t: TFunction,
   total: number | undefined,
   pending: boolean,
   ranked: boolean,
+  videos: number,
 ): string {
   if (pending) {
     return t('library.filters.counting')
@@ -702,7 +721,14 @@ function countLabel(
   if (ranked && total > 0) {
     return t('library.countRanked', { count: total })
   }
-  return t('library.count', { count: total })
+  switch (mediaCountKind(total, videos)) {
+    case 'videos':
+      return t('library.countVideos', { count: total })
+    case 'mixed':
+      return t('library.countMixed', { count: total })
+    default:
+      return t('library.count', { count: total })
+  }
 }
 
 /**
@@ -720,7 +746,12 @@ function countLabel(
  * response — and stating either as the answer to the filters now on screen is
  * the one thing this button must never do.
  */
-function applyLabel(t: TFunction, total: number | undefined, pending: boolean): string {
+function applyLabel(
+  t: TFunction,
+  total: number | undefined,
+  pending: boolean,
+  videos: number,
+): string {
   if (pending) {
     return t('library.filters.counting')
   }
@@ -730,7 +761,16 @@ function applyLabel(t: TFunction, total: number | undefined, pending: boolean): 
   if (total === 0) {
     return t('library.filters.applyEmpty')
   }
-  return t('library.filters.apply', { count: total })
+  switch (mediaCountKind(total, videos)) {
+    case 'videos':
+      return t('library.filters.applyVideos', { count: total })
+    case 'mixed':
+      // A mixed set is at least one of each, so no wording that agrees with a
+      // single noun can be right; the neutral one is, and it counts correctly.
+      return t('library.filters.applyMixed', { count: total })
+    default:
+      return t('library.filters.apply', { count: total })
+  }
 }
 
 /**
@@ -758,12 +798,14 @@ function applyLabel(t: TFunction, total: number | undefined, pending: boolean): 
  */
 function FilterDrawerFooter({
   total,
+  totalVideos,
   totalPending,
   clearVisible,
   onClear,
   onClose,
 }: {
   total: number | undefined
+  totalVideos: number
   totalPending: boolean
   clearVisible: boolean
   onClear: () => void
@@ -782,7 +824,7 @@ function FilterDrawerFooter({
         {/* Decorative: the button's own text already says it is counting, and a
             spinner announced beside that would say it twice. */}
         {totalPending && <Spinner as="span" animation="border" size="sm" aria-hidden="true" />}
-        {applyLabel(t, total, totalPending)}
+        {applyLabel(t, total, totalPending, totalVideos)}
       </Button>
       {clearVisible && (
         <Button
