@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import i18n from '../../i18n'
 import * as photosService from '../../services/photos'
 
-import { VideoPlayer } from './VideoPlayer'
+import { VideoPlayer, type VideoPlayerProps } from './VideoPlayer'
 
 vi.mock('../../services/photos', async () => {
   const actual = await vi.importActual<typeof photosService>('../../services/photos')
@@ -123,7 +123,29 @@ function stubMedia(video: HTMLVideoElement, duration = 60): HTMLVideoElement {
   return video
 }
 
-function renderPlayer(uid = 'ph1', streaming = false) {
+/**
+ * Gives every element a laid-out box, which jsdom otherwise reports as zero. The
+ * poster overlay is placed from the element's own box, so without this there is
+ * no rectangle to place it on. Returns the undo.
+ */
+function stubLayout(width: number, height: number): () => void {
+  const boxes: Record<string, number> = {
+    offsetWidth: width,
+    offsetHeight: height,
+    offsetLeft: 0,
+    offsetTop: 0,
+  }
+  for (const [name, value] of Object.entries(boxes)) {
+    Object.defineProperty(HTMLElement.prototype, name, { configurable: true, get: () => value })
+  }
+  return () => {
+    for (const name of Object.keys(boxes)) {
+      Reflect.deleteProperty(HTMLElement.prototype, name)
+    }
+  }
+}
+
+function renderPlayer(uid = 'ph1', streaming = false, extra: Partial<VideoPlayerProps> = {}) {
   const utils = render(
     <I18nextProvider i18n={i18n}>
       <VideoPlayer
@@ -132,6 +154,7 @@ function renderPlayer(uid = 'ph1', streaming = false) {
         poster="/poster.jpg"
         downloadHref="/api/v1/photos/ph1/download?original=true"
         streaming={streaming}
+        {...extra}
       />
     </I18nextProvider>,
   )
@@ -453,6 +476,76 @@ describe('VideoPlayer', () => {
       })
       expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument()
       expect(screen.getByRole('slider', { name: 'Video timeline' })).toBeInTheDocument()
+    })
+  })
+
+  describe('the poster overlay', () => {
+    it('sits on the painted poster, bars excluded', () => {
+      // A 4:3 poster in a 1000 x 600 player paints 800 x 600 in the middle: a
+      // layer covering the element would put every face box 100px off.
+      const undo = stubLayout(1000, 600)
+      try {
+        renderPlayer('ph1', false, {
+          posterRatio: 4 / 3,
+          overlay: <div data-testid="boxes" />,
+        })
+
+        const layer = screen.getByTestId('boxes').parentElement
+        expect(layer).toHaveStyle({ left: '100px', top: '0px', width: '800px', height: '600px' })
+      } finally {
+        undo()
+      }
+    })
+
+    it('prefers the shape the element reports over the estimate it was given', () => {
+      const undo = stubLayout(1000, 600)
+      try {
+        const { video } = renderPlayer('ph1', false, {
+          posterRatio: 4 / 3,
+          overlay: <div data-testid="boxes" />,
+        })
+        Object.defineProperty(video, 'videoWidth', { configurable: true, get: () => 1000 })
+        Object.defineProperty(video, 'videoHeight', { configurable: true, get: () => 1000 })
+        fireEvent.loadedMetadata(video)
+
+        // A square clip in the same box paints 600 x 600, centred.
+        const layer = screen.getByTestId('boxes').parentElement
+        expect(layer).toHaveStyle({ left: '200px', width: '600px', height: '600px' })
+      } finally {
+        undo()
+      }
+    })
+
+    it('takes the boxes down once the clip has been played', () => {
+      const undo = stubLayout(1000, 600)
+      try {
+        const { video } = renderPlayer('ph1', false, {
+          posterRatio: 4 / 3,
+          overlay: <div data-testid="boxes" />,
+        })
+        expect(screen.getByTestId('boxes')).toBeInTheDocument()
+
+        stubMedia(video)
+        fireEvent.click(screen.getByRole('button', { name: 'Play' }))
+        // The element now paints the video, not the poster — boxes measured on
+        // the poster would be boxes on the wrong picture. Pausing does not bring
+        // the poster back, so neither do they come back.
+        expect(screen.queryByTestId('boxes')).not.toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: 'Pause' }))
+        expect(screen.queryByTestId('boxes')).not.toBeInTheDocument()
+      } finally {
+        undo()
+      }
+    })
+
+    it('draws nothing at all without an overlay to draw', () => {
+      const undo = stubLayout(1000, 600)
+      try {
+        const { container } = renderPlayer()
+        expect(container.querySelector('.kk-video__overlay')).toBeNull()
+      } finally {
+        undo()
+      }
     })
   })
 })

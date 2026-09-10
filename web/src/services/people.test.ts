@@ -1,6 +1,14 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
-import { type Bbox, faceCropUrl, subjectAvatarUrl } from './people'
+import { ApiError } from './auth'
+import {
+  attachPerson,
+  type Bbox,
+  detachPerson,
+  faceCropUrl,
+  type PhotoSubject,
+  subjectAvatarUrl,
+} from './people'
 
 /** Reads the `box` parameter back out of a face-crop URL. */
 function boxOf(url: string): string {
@@ -37,5 +45,67 @@ describe('faceCropUrl', () => {
 describe('subjectAvatarUrl', () => {
   it('addresses the subject avatar route', () => {
     expect(subjectAvatarUrl('su_1')).toBe('/api/v1/subjects/su_1/avatar')
+  })
+})
+
+/** One JSON reply, the way the backend sends it. */
+function jsonResponse(body: unknown, status: number): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  })
+}
+
+const ALICE: PhotoSubject = {
+  subject_uid: 'su_a',
+  slug: 'alice',
+  name: 'Alice',
+  type: 'person',
+  marker_uid: 'mk_1',
+  attached_at: '2026-02-03T10:00:00Z',
+}
+
+describe('attachPerson', () => {
+  it('posts the subject and answers the resulting list', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ people: [ALICE] }, 200))
+    vi.stubGlobal('fetch', fetchMock)
+
+    // The whole list comes back, so nothing has to re-read the photo.
+    await expect(attachPerson('ph_1', 'su_a')).resolves.toEqual([ALICE])
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('/api/v1/photos/ph_1/people')
+    expect(init.method).toBe('POST')
+    expect(init.body).toBe(JSON.stringify({ subject_uid: 'su_a' }))
+  })
+
+  it('reports a refusal from the backend', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(jsonResponse({ error: 'no such subject' }, 404)),
+    )
+    await expect(attachPerson('ph_1', 'nope')).rejects.toBeInstanceOf(ApiError)
+  })
+})
+
+describe('detachPerson', () => {
+  it('addresses the link by both uids and answers what is left', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ people: [] }, 200))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(detachPerson('ph_1', 'su_a')).resolves.toEqual([])
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('/api/v1/photos/ph_1/people/su_a')
+    expect(init.method).toBe('DELETE')
+  })
+
+  it('escapes uids that would otherwise change the path', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ people: [] }, 200))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await detachPerson('a/b', 'c?d')
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/v1/photos/a%2Fb/people/c%3Fd')
   })
 })

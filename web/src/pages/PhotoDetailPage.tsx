@@ -442,9 +442,14 @@ export function PhotoDetailPage() {
   // A quarter-turn delta swaps the picture's sides, so the figure has to take the
   // turned box (`data-turned`) or the turned image overflows the stage.
   const turned = isQuarterTurn(previewDelta.rotation)
-  // The overlay is only ever drawn over a still image: a video player's chrome is
-  // not a photo, and faces are never detected on clips anyway.
+  // Zoom, the edit preview and the on-image overlay are for a still image: a live
+  // photo's motion preview and a video player's chrome are not a photograph.
   const isStill = ready !== null && ready.media_type !== 'video' && ready.media_type !== 'live'
+  // A video, though, has faces of its own. Detection runs on every medium and for
+  // a clip it looks at ONE frame — the poster — which is exactly the picture the
+  // player shows before it is played, so the boxes have a surface to land on and
+  // the panel beside them is the same panel a photograph gets.
+  const isVideo = ready !== null && ready.media_type === 'video'
   // While a neighbour loads the faces are keyed on the target photo, so they must
   // not be drawn over the still-displayed previous one.
   const loadingNext = ready !== null && ready.uid !== uid
@@ -455,7 +460,7 @@ export function PhotoDetailPage() {
   // FaceOverlay maps its boxes through it and follows the turned photo.
   // Brightness and contrast move no pixels at all.
   const facesAvailable =
-    isStill &&
+    (isStill || isVideo) &&
     !loadingNext &&
     faces.faces.length > 0 &&
     !hasCrop(previewEdit) &&
@@ -1187,6 +1192,27 @@ export function PhotoDetailPage() {
             downloadHref={photo.download_url}
             token={downloadToken}
             streaming={photo.hls === true}
+            posterRatio={stage.ratio}
+            // The boxes belong to the poster frame — the one frame detection
+            // looked at — so the player owns where they go and takes them down
+            // once the clip is playing. Nothing is passed for `measured` (it
+            // defaults true): the player mounts this layer only once it has the
+            // poster's own rectangle, so there is no estimate to wait out.
+            overlay={
+              showFaces ? (
+                <FaceOverlay
+                  faces={faces.faces}
+                  selected={faces.selected?.face_index ?? null}
+                  hovered={hoveredFace}
+                  onSelect={(faceIndex) => {
+                    faces.select(faceIndex)
+                    setPanel('faces')
+                  }}
+                  onHover={setHoveredFace}
+                  readOnly={!canWrite}
+                />
+              ) : undefined
+            }
           />
         </div>
       )
@@ -1622,9 +1648,17 @@ export function PhotoDetailPage() {
                 <PeoplePanel
                   photoUid={photo.uid}
                   faces={faces}
+                  people={photo.people ?? []}
                   canWrite={canWrite}
+                  // A chip leads to the faces panel only where that panel can
+                  // open at all; on a photo whose boxes stand down (a saved crop)
+                  // it would silently fall back to the metadata.
+                  canOpenFaces={facesAvailable}
                   loading={loadingNext}
                   onEditFace={editFace}
+                  onPeopleChanged={(people) => {
+                    setPhoto({ ...photo, people })
+                  }}
                 />
               </section>
 

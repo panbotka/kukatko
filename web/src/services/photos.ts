@@ -1,4 +1,5 @@
 import { ApiError } from './auth'
+import type { PhotoSubject } from './people'
 
 /**
  * A photo in the catalogue, mirroring the backend `photos.Photo` JSON shape
@@ -646,6 +647,16 @@ export interface PhotoDetail extends Photo {
   files: PhotoFile[]
   albums: PhotoAlbumRef[]
   labels: PhotoLabelRef[]
+  /**
+   * Who was attached to the media item **by hand** — the people the face
+   * detector could not reach (anybody after a video's poster frame, a profile or
+   * a back of a head on a still), ordered by name. Served unconditionally, so
+   * this is a plain list and never `null`; optional here only so older fixtures
+   * stay valid, and absent from a response the backend answered with no people
+   * store wired. It is deliberately separate from the detected faces
+   * (`GET /photos/{uid}/faces`): an attached person has no box and no crop.
+   */
+  people?: PhotoSubject[]
   uploader?: PhotoUploaderRef
   place?: PhotoPlace
   /**

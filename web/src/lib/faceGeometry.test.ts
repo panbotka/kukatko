@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  containedRect,
   displayFrame,
   faceMarkerStyle,
   padBbox,
@@ -290,6 +291,60 @@ describe('faceMarkerStyle', () => {
       '--kk-face-y': '50%',
       '--kk-face-w': '100%',
       '--kk-face-h': '100%',
+    })
+  })
+})
+
+describe('containedRect', () => {
+  it('leaves bars left and right when the box is wider than the picture', () => {
+    // A 4:3 poster in a 1000 x 600 player: 800 x 600 of picture, 100px of black
+    // on each side — and a face box over the element would be 100px off.
+    expect(containedRect({ width: 1000, height: 600 }, 4 / 3)).toEqual({
+      left: 100,
+      top: 0,
+      width: 800,
+      height: 600,
+    })
+  })
+
+  it('leaves bars above and below when the box is taller than the picture', () => {
+    expect(containedRect({ width: 800, height: 800 }, 4 / 3)).toEqual({
+      left: 0,
+      top: 100,
+      width: 800,
+      height: 600,
+    })
+  })
+
+  it('fills the box exactly when the two ratios agree', () => {
+    expect(containedRect({ width: 800, height: 600 }, 4 / 3)).toEqual({
+      left: 0,
+      top: 0,
+      width: 800,
+      height: 600,
+    })
+  })
+
+  it('gives back the box for a ratio or a box it cannot use', () => {
+    // A player that has not been laid out yet, or whose picture has not reported
+    // its shape: covering the element is harmless, arithmetic on zero is not.
+    expect(containedRect({ width: 1000, height: 600 }, 0)).toEqual({
+      left: 0,
+      top: 0,
+      width: 1000,
+      height: 600,
+    })
+    expect(containedRect({ width: 0, height: 0 }, 4 / 3)).toEqual({
+      left: 0,
+      top: 0,
+      width: 0,
+      height: 0,
+    })
+    expect(containedRect({ width: 1000, height: 600 }, Number.NaN)).toEqual({
+      left: 0,
+      top: 0,
+      width: 1000,
+      height: 600,
     })
   })
 })

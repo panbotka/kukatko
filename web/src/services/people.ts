@@ -387,6 +387,80 @@ export async function assignFace(
   )
 }
 
+/**
+ * Somebody recorded as being in a photo **by hand** (`people.PhotoSubject`), with
+ * no bounding box, no detected face and no embedding.
+ *
+ * It is the answer to the half of "who is in this picture" the detector cannot
+ * reach: face detection on a video only ever looks at the poster frame, so
+ * anybody who appears later in the clip is invisible to it, and on a still it
+ * misses profiles, backs of heads and faces in a crowd. `marker_uid` is the row
+ * that records the link — the same `markers` table a face marker lives in, which
+ * is why an attached person shows up in the subject's gallery and under
+ * `person:` like any other.
+ */
+export interface PhotoSubject {
+  subject_uid: string
+  slug: string
+  name: string
+  type: SubjectType
+  marker_uid: string
+  attached_at: string
+}
+
+/** Response body of both hand-attach mutations, and the detail's `people` block. */
+interface PhotoPeopleResponse {
+  people: PhotoSubject[]
+}
+
+/**
+ * Records that a subject is in a photo or video via
+ * `POST /photos/{uid}/people`, and returns the resulting hand-attached people —
+ * the whole list, so the caller renders the new state from the reply instead of
+ * re-reading the photo. Editor/admin only.
+ *
+ * Attaching somebody who is already attached is a success answering the same
+ * body, not a conflict: the requested state already holds.
+ *
+ * @throws ApiError with `status` 400 (no subject named), 403 (viewer), 404 (no
+ *   such photo or subject) or 503 (the instance wires no people backend).
+ */
+export async function attachPerson(
+  photoUid: string,
+  subjectUid: string,
+  signal?: AbortSignal,
+): Promise<PhotoSubject[]> {
+  const body = await sendJSON<PhotoPeopleResponse>(
+    'POST',
+    `/photos/${encodeURIComponent(photoUid)}/people`,
+    { subject_uid: subjectUid },
+    signal,
+  )
+  return body.people
+}
+
+/**
+ * Removes a hand-attached person from a photo via
+ * `DELETE /photos/{uid}/people/{subject_uid}` and returns the remaining ones.
+ * Editor/admin only, and idempotent for the same reason {@link attachPerson} is.
+ *
+ * A face marker is untouched by this: only the bare "this person is here" link
+ * is removed, and a detected face is unnamed in the faces panel instead.
+ */
+export async function detachPerson(
+  photoUid: string,
+  subjectUid: string,
+  signal?: AbortSignal,
+): Promise<PhotoSubject[]> {
+  const body = await sendJSON<PhotoPeopleResponse>(
+    'DELETE',
+    `/photos/${encodeURIComponent(photoUid)}/people/${encodeURIComponent(subjectUid)}`,
+    undefined,
+    signal,
+  )
+  return body.people
+}
+
 /** A representative or sample face within a cluster (`cluster.ExampleFace`). */
 export interface ExampleFace {
   photo_uid: string

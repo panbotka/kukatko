@@ -2394,7 +2394,13 @@ here.
   faces/edits **closes** the drawer (it is not "show metadata"). In the faces/edits view the header is carried by
   its own panel (`FacesPanel`/`EditPanel` have a title + close), so the generic header
   „Informace" (`.kk-viewer__panel-head`) glows **only in the info view**. The same `panel` value drives the
-  boxes and the faces panel, so they can't diverge. **A crop — and only a crop — stands the whole faces UI down**
+  boxes and the faces panel, so they can't diverge. **A video has the faces UI too** (`facesAvailable` is
+  `(isStill || isVideo)` since 09/2026): detection runs on every medium and for a clip it looks at one frame —
+  the poster — which is exactly the picture the player shows before it is played, so the boxes have a surface and
+  the panel beside them is the same `FacesPanel` a photograph gets. The overlay then lives **inside the player**
+  (`VideoPlayer`'s `overlay` prop, which owns its geometry and takes it down once the clip is playing) rather than
+  over `.kk-viewer__figure`, which a video has none of. A **live photo** is still left out: its motion preview is
+  not a photograph either. **A crop — and only a crop — stands the whole faces UI down**
   (`!hasCrop(previewEdit)` in `facesAvailable`): it leaves a frame the boxes were never measured against, so every
   frame would miss its face; the UI comes back the moment the crop is off again — and a crop still **baked into the
   rendition on stage** (`renditionEdit`, see the edit-preview contract under `EditPanel`) stands it down the same
@@ -2561,7 +2567,27 @@ here.
   row — six rows of text saying nothing. The sentence stays as the button's `aria-label`, where a screen
   reader still reads it. The unfold is `useState` holding **which photo uid** is unfolded, so walking to
   the next photo folds it back up with no effect to run; nothing about it is stored, here or on the
-  server); albums/labels/people have
+  server. **A chip offers the click only where the faces panel can actually open** — prop `canOpenFaces`,
+  which the page feeds `facesAvailable`: on a photo whose boxes stand down (a saved crop leaves a frame they
+  were never measured against) the chips render as plain pills, because a chip that silently falls back to the
+  metadata view is worse than one that does not offer the click.
+  **The block's second half is who was attached BY HAND** (prop `people` = `PhotoDetail.people`, prop
+  `onPeopleChanged` handing the mutation's reply back to the page): face detection on a video only ever sees
+  the poster frame and on a still it misses profiles, backs of heads and crowd faces, so a name can be recorded
+  with no box at all. Such a person has **no crop to show**, so the chip is the shared `EntityChip`
+  (`kind="person"` → the `person-circle` glyph, linking to `/people/{uid}`) with the editor's remove X —
+  glyph versus portrait is exactly what tells the two kinds of chip apart at a glance. Adding is a
+  **`person-plus` toggle button, offered on every medium and whatever the detector found** (`photo.organize.addPerson`,
+  „Přidat, kdo tu je" — the wording avoids „fotka" and „člověk" alike, since the same block answers for a video
+  and a subject can be the dog): pressing it reveals `AttachPersonField`. Both mutations (`attachPerson` /
+  `detachPerson`) redraw the list **from the response**, and a failure surfaces as the same
+  „Změnu se nepodařilo uložit." alert `OrganizePanel` uses, leaving the list untouched. A **viewer** sees
+  every chip and neither control. `AttachPersonField` (`components/photo/`, **NEW**) is a component of its own
+  for one reason: it is what mounts `useSubjects`, and the subject list must not be fetched by every photo the
+  reader opens — the panel mounts it only once somebody has asked to add. It is the **same picker the face
+  naming flow uses** (`AddAutocomplete` over every subject, the photo count in the hint), with the already
+  attached held out of the options and named as `existingNames`; a name nothing carries offers to create, which
+  does `createSubject` (plain defaults, type `person`) + `attachPerson` in one action); albums/labels/people have
   a distinct color via `ENTITY_STYLE` (`components/entityStyle`), and an album/label chip is the shared
   `EntityChip` (the pill itself is the link, so the whole chip is one 44px target on a phone — the editor's
   remove X only trims it). Adding runs through
@@ -2926,7 +2952,21 @@ here.
   on purpose**: on this page they page between photos, and a video that hijacked them would break browsing to
   serve a control that has its own buttons — the focused timeline is where arrows seek. All the buttons carry
   `kukatko-tap-target`, so speed and skips are finger-sized on touch. A decode failure still falls back to the
-  download link. `VideoScrubber` (`components/photo/`) = the timeline: a click/drag-to-seek rail exposed as
+  download link. **The poster carries the faces** (props `overlay` + `posterRatio`, both new 09/2026): face
+  detection runs on a clip as well and looks at exactly **one** frame — the poster — so that frame is where its
+  boxes belong. The player hands `overlay` a layer (`.kk-video__overlay`) placed and sized **in JS**, because
+  only the running player knows where its poster paints: the element is sized by the stage and the picture is
+  fitted into it (`object-fit: contain`), so a layer covering the element would put every box off its face by the
+  width of one letterbox bar. `lib/faceGeometry` `containedRect(frame, ratio)` does the arithmetic, a
+  `ResizeObserver` on the `<video>` keeps it current (window `resize` where there is none), and the ratio is the
+  element's own (`videoWidth/videoHeight` on `loadedmetadata`) with the caller's `posterRatio` — the catalogue
+  row's shape — standing in until then. **The layer stands down the moment the clip is first played** (the
+  existing `started` flag, not `playing`): from then on the element paints a frame of the video, and boxes
+  measured on the poster would sit on the wrong picture; pausing does not bring the poster back, so neither do
+  they come back, and stepping to another clip mounts a fresh element with its own poster. Tests:
+  `VideoPlayer.test.tsx` „the poster overlay", which stubs `offsetWidth`/`offsetHeight` on `HTMLElement.prototype`
+  — jsdom lays nothing out, so without that there is no rectangle to place anything on.
+  `VideoScrubber` (`components/photo/`) = the timeline: a click/drag-to-seek rail exposed as
   `role="slider"` (so ←/→ seek ±5 s and PageUp/Down ±60 s once it has focus, without the player claiming those
   keys globally), plus the **hover preview** — a frame from the clip's storyboard sprite, drawn by offsetting one
   JPEG as a CSS background (`storyboardTileStyle`), so following the cursor costs **no request at all**. The
@@ -5258,7 +5298,12 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   properties of `.kk-face-marker`: the box's **centre** and its size in % of the crop. The centre-anchored
   twin of `boxWithinCrop` — a marker growing from its top-left corner would slide off the face when it hits
   the CSS minimum; the `max()`/`clamp()` stay in CSS also because jsdom's CSSOM mangles `clamp()` in `left`
-  but passes custom properties through verbatim). `faceCropStyle` is **gone**: it scaled the two axes
+  but passes custom properties through verbatim)
+  + `containedRect(frame, ratio)` (a box in CSS pixels + a picture's aspect ratio → the rectangle an
+  `object-fit: contain` picture actually paints in, centred, letterbox bands excluded. What the face boxes over a
+  **video's poster** are placed on: a `<video>` is sized by its container, not by its picture, so percentages *of
+  the element* land every box a bar's width off its face. A degenerate box or ratio gives the box back, since
+  covering the element is harmless and dividing by zero is not). `faceCropStyle` is **gone**: it scaled the two axes
   independently (so it deformed) and read `tile_*` as though it were the whole frame, and the one component
   left using it, `FaceThumb`, was replaced by `FaceCrop` on the server-cut rendition;
   `faceThreshold.ts` = a pure conversion of the person-search threshold between **percent** (the UI) and the **cosine
@@ -5716,7 +5761,10 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   `UploadOutcome`; `onload` is entirely inside `try`/`catch` and a 2xx body without a non-empty `results` array
   is rejected with an `ApiError` — an exception must not escape the XHR callback, the promise would never resolve and the
   upload would hang forever (holding a slot in the concurrency limit); `photos.ts` additionally has `fetchPhoto(uid)` (the detail `GET /photos/{uid}` →
-  `PhotoDetail` = `Photo`+`files`+`albums`+`labels` inline chips `+ uploader?` `{uid,name}`),
+  `PhotoDetail` = `Photo`+`files`+`albums`+`labels` inline chips `+ uploader?` `{uid,name}`
+  `+ people?: PhotoSubject[]` — who was attached **by hand**, served unconditionally and never `null`; the type
+  is `people.ts`'s own and imported `import type`, so the two service modules referring to each other costs
+  nothing at run time),
   `updatePhoto(uid,patch)`
   (`PATCH …` a partial metadata edit → `PhotoMetadataUpdate`, null clears a nullable field),
   `fetchEdit(uid)`/`saveEdit(uid,edit)` (`GET`/`PUT …/edit` a non-destructive edit → `PhotoEdit`
@@ -5752,11 +5800,18 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   per-face twin `faceCropUrl(photoUid, bbox)` (`GET /photos/{uid}/face?box=x,y,w,h`, what `FaceCrop` paints;
   the box is written to **four decimals**, the precision the backend keys its cache by, so two renders of one
   face are one cache entry rather than two),
-  faces `fetchFaces`/`assignFace`, clusters `fetchClusters({limit,offset})` (**one page** —
+  faces `fetchFaces`/`assignFace`,
+  **hand-attached people** `attachPerson(photoUid,subjectUid)` (`POST /photos/{uid}/people` `{subject_uid}`)
+  and `detachPerson(photoUid,subjectUid)` (`DELETE /photos/{uid}/people/{subject_uid}`) — the way to say who is
+  in a picture the detector cannot see (anybody after a video's poster frame, a profile or a back of a head on a
+  still). Both are **idempotent**, both answer the photo's **whole** resulting `people` array
+  (`PhotoSubject{subject_uid,slug,name,type,marker_uid,attached_at}`, ordered by name), so a caller renders the
+  new state from the reply instead of re-reading the photo, and a failure leaves the list exactly as it was;
+  clusters `fetchClusters({limit,offset})` (**one page** —
   the response carries `total` ready groups, `pending` ones still being prepared server-side,
   `grouping` (a grouping/preparation pass is queued or running) and `next_offset`)/
   `assignCluster`/`removeClusterFace`, outliers `fetchOutliers`; the types `Subject`/`SubjectCount`/
-  `SubjectInput`/`SubjectType`/`MergeResult`/`Bbox`/`FaceView`/`FacesResponse`/`AssignRequest`/`Suggestion`/
+  `SubjectInput`/`SubjectType`/`PhotoSubject`/`MergeResult`/`Bbox`/`FaceView`/`FacesResponse`/`AssignRequest`/`Suggestion`/
   `ClusterView`/`ClusterPage`/`ClusterPageParams`/`ExampleFace`/`ClusterAssignRequest`/`RemoveFaceRequest`/`OutlierResult`/
   `OutlierFace`; it shares `ApiError`+`buildPhotoQuery` from `auth.ts`/`photos.ts`);
   `faces.ts` = the client of the „find a person among untagged photos" search:

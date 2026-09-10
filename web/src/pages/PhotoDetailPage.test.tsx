@@ -17,7 +17,7 @@ import { readGridScroll, writeGridScroll } from '../lib/gridScroll'
 import { stageRenditionName } from '../lib/rendition'
 import { resetRenditionVersions } from '../lib/renditionRebuild'
 import { type AlbumCount, type LabelCount } from '../services/organize'
-import { type FacesResponse } from '../services/people'
+import { type FacesResponse, type PhotoSubject, type SubjectCount } from '../services/people'
 import {
   GRID_PREVIEW_SIZE,
   type PhotoDetail,
@@ -76,7 +76,14 @@ vi.mock('../services/organize', async (importOriginal) => {
 
 vi.mock('../services/people', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/people')>()
-  return { ...actual, fetchFaces: vi.fn(), assignFace: vi.fn() }
+  return {
+    ...actual,
+    fetchFaces: vi.fn(),
+    assignFace: vi.fn(),
+    fetchSubjects: vi.fn(),
+    attachPerson: vi.fn(),
+    detachPerson: vi.fn(),
+  }
 })
 
 vi.mock('../services/comments', async (importOriginal) => {
@@ -100,9 +107,13 @@ const {
 } = await import('../services/photos')
 const { fetchAlbums, fetchLabels, addAlbumPhotos, removeAlbumPhotos, attachLabel, detachLabel } =
   await import('../services/organize')
-const { fetchFaces, assignFace } = await import('../services/people')
+const { fetchFaces, assignFace, fetchSubjects, attachPerson, detachPerson } =
+  await import('../services/people')
 const fetchFacesMock = vi.mocked(fetchFaces)
 const assignFaceMock = vi.mocked(assignFace)
+const fetchSubjectsMock = vi.mocked(fetchSubjects)
+const attachPersonMock = vi.mocked(attachPerson)
+const detachPersonMock = vi.mocked(detachPerson)
 const { fetchComments, createComment } = await import('../services/comments')
 const fetchCommentsMock = vi.mocked(fetchComments)
 const createCommentMock = vi.mocked(createComment)
@@ -193,6 +204,37 @@ function facesResponse(count: number): FacesResponse {
       action: 'create_marker' as const,
       suggestions: [{ subject_uid: 'su_a', subject_name: 'Alice', distance: 0.1, confidence: 0.9 }],
     })),
+  }
+}
+
+/** A subject the people picker may offer. */
+function subjectCount(uid: string, name: string): SubjectCount {
+  return {
+    uid,
+    slug: name.toLowerCase(),
+    name,
+    type: 'person',
+    favorite: false,
+    private: false,
+    notes: '',
+    birth_year: null,
+    death_year: null,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+    marker_count: 1,
+    photo_count: 1,
+  }
+}
+
+/** Somebody recorded as being on the media item by hand — no face, no box. */
+function attachedPerson(uid: string, name: string): PhotoSubject {
+  return {
+    subject_uid: uid,
+    slug: name.toLowerCase(),
+    name,
+    type: 'person',
+    marker_uid: `mk_${uid}`,
+    attached_at: '2026-02-03T10:00:00Z',
   }
 }
 
@@ -453,6 +495,9 @@ beforeEach(async () => {
   // shipped default (overlay off — the photo is the content).
   window.localStorage.removeItem('kukatko.faces.overlay')
   fetchFacesMock.mockResolvedValue(facesResponse(0))
+  fetchSubjectsMock.mockResolvedValue([subjectCount('su_a', 'Alice')])
+  attachPersonMock.mockResolvedValue([attachedPerson('su_a', 'Alice')])
+  detachPersonMock.mockResolvedValue([])
   assignFaceMock.mockResolvedValue(undefined)
   fetchCommentsMock.mockResolvedValue([])
   fetchPhotoMock.mockResolvedValue(photo())
@@ -2133,11 +2178,11 @@ describe('PhotoDetailPage — immersive viewer', () => {
       expect(container.querySelector('img[alt="Clip"]')).toBeNull()
     })
 
-    it('leaves a video with a view group of one, and the library menu intact', async () => {
-      // Neither the edit panel nor the face boxes apply to a video, so the view
-      // group shrinks to the info toggle alone rather than leaving an empty
-      // group — and the library operations, which apply to any medium, are
-      // unaffected.
+    it('leaves a video the detector found nobody on a view group of one', async () => {
+      // The edit panel never applies to a video, and with no detected face there
+      // is nothing to draw either, so the view group shrinks to the info toggle
+      // alone rather than leaving an empty group — and the library operations,
+      // which apply to any medium, are unaffected.
       const user = userEvent.setup()
       fetchPhotoMock.mockResolvedValue(
         photo({
@@ -2168,6 +2213,122 @@ describe('PhotoDetailPage — immersive viewer', () => {
       await screen.findByRole('heading', { name: 'Live' })
       expect(screen.getByRole('button', { name: /Live/ })).toBeInTheDocument()
       expect(container.querySelector('video')?.getAttribute('src')).toContain('/photos/b/video')
+    })
+  })
+
+  /**
+   * Face detection runs on a video too — on ONE frame, the poster — so the clip
+   * has faces that can be named, and anybody who only appears later in it (or
+   * whom the detector missed on a still) is attached by hand instead.
+   */
+  describe('who is in this video', () => {
+    /** A clip, with the detector having found `faces` faces on its poster. */
+    function clip(faces = 1) {
+      fetchPhotoMock.mockResolvedValue(
+        photo({
+          media_type: 'video',
+          file_name: 'clip.mp4',
+          file_mime: 'video/mp4',
+          title: 'Clip',
+        }),
+      )
+      fetchFacesMock.mockResolvedValue(facesResponse(faces))
+    }
+
+    it('opens the faces panel on a video and names a face there', async () => {
+      const user = userEvent.setup()
+      clip(1)
+      renderPage()
+      await screen.findByRole('heading', { name: 'Clip' })
+
+      await user.click(await screen.findByRole('button', { name: 'Show faces' }))
+      // The same panel a photograph gets, with the boxes over the poster frame —
+      // the one frame the detector actually looked at.
+      expect(await screen.findByText('Faces: 1')).toBeInTheDocument()
+      expect(screen.getByTestId('face-overlay')).toBeInTheDocument()
+
+      await user.type(screen.getByLabelText('Name'), 'Alice')
+      await user.click(await screen.findByRole('option', { name: /Alice/ }))
+      await waitFor(() => {
+        expect(assignFaceMock).toHaveBeenCalled()
+      })
+    })
+
+    it('reaches that panel from a numbered chip instead of falling back to the info view', async () => {
+      const user = userEvent.setup()
+      clip(1)
+      renderPage()
+      await screen.findByRole('heading', { name: 'Clip' })
+      await openInfo(user)
+
+      await user.click(await screen.findByRole('button', { name: 'Name unnamed face 1' }))
+      expect(screen.getByLabelText('Name this face')).toBeInTheDocument()
+      expect(screen.getByTestId('face-overlay')).toBeInTheDocument()
+    })
+
+    it('offers the add-a-person control on a clip, on a bare photo and on one full of faces', async () => {
+      const user = userEvent.setup()
+      clip(0)
+      const { unmount } = renderPage()
+      await screen.findByRole('heading', { name: 'Clip' })
+      await openInfo(user)
+      expect(await screen.findByRole('button', { name: 'Add who is here' })).toBeInTheDocument()
+      unmount()
+
+      // A photograph the detector found nobody on: the only way to say who is there.
+      fetchPhotoMock.mockResolvedValue(photo())
+      fetchFacesMock.mockResolvedValue(facesResponse(0))
+      const bare = renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+      await openInfo(user)
+      expect(await screen.findByRole('button', { name: 'Add who is here' })).toBeInTheDocument()
+      bare.unmount()
+
+      // And on one it did: somebody in the background is never detected either.
+      fetchFacesMock.mockResolvedValue(facesResponse(2))
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+      await openInfo(user)
+      expect(await screen.findByRole('button', { name: 'Add who is here' })).toBeInTheDocument()
+    })
+
+    it('attaches somebody by hand and shows them as a chip of their own', async () => {
+      const user = userEvent.setup()
+      clip(0)
+      renderPage()
+      await screen.findByRole('heading', { name: 'Clip' })
+      await openInfo(user)
+
+      await user.click(await screen.findByRole('button', { name: 'Add who is here' }))
+      await user.type(await screen.findByLabelText('Who is here?'), 'Ali')
+      await user.click(await screen.findByRole('option', { name: /Alice/ }))
+
+      await waitFor(() => {
+        expect(attachPersonMock).toHaveBeenCalledWith('b', 'su_a')
+      })
+      // Rendered from the reply, with a remove control and no crop to show.
+      const chip = await screen.findByRole('link', { name: 'Alice' })
+      expect(chip).toHaveAttribute('href', '/people/su_a')
+      expect(screen.getByRole('button', { name: 'Remove Alice' })).toBeInTheDocument()
+    })
+
+    it('shows a viewer the attached people and neither control', async () => {
+      const user = userEvent.setup()
+      fetchPhotoMock.mockResolvedValue(
+        photo({
+          media_type: 'video',
+          file_name: 'clip.mp4',
+          title: 'Clip',
+          people: [attachedPerson('su_a', 'Alice')],
+        }),
+      )
+      renderPage(false)
+      await screen.findByRole('heading', { name: 'Clip' })
+      await openInfo(user)
+
+      expect(await screen.findByRole('link', { name: 'Alice' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Remove Alice' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Add who is here' })).not.toBeInTheDocument()
     })
   })
 

@@ -77,6 +77,15 @@ photo-book tool (deliberately out of scope), or a product with support and a rel
   server-cut crop, so a screen full of faces is kilobytes rather than a photograph apiece.
 - Faces are detected, clustered, and matched against the people you have named — and **nothing is
   ever assigned automatically**. The machine narrows the list down, a human confirms.
+- **A video has people on it too.** Face detection runs on a clip as well, on the one frame it can
+  see — the poster — so those faces are named in the same panel a photograph's are, with the boxes
+  drawn over the poster and standing aside the moment you press play.
+- **And whoever the detector never saw is written down by hand.** Somebody who only walks into the
+  clip in its second minute, a face turned away, a back of a head, a child at the edge of a crowd:
+  add them to the picture by name and they become a chip like any other — no box, no crop, the
+  generic person glyph — and from then on the picture is in their gallery, comes up under
+  `person:`, and rides along into the metadata sidecar. Remove them again with one click. It is
+  offered on every photo and every video, not only on the ones the detector came back empty from.
 - **Naming a group photograph is one click, not twelve.** When several faces on one photo already
   carry a confident suggestion, the faces panel offers to confirm all of them at once. It names
   exactly what it was already offering face by face, never the same person twice on one photograph,

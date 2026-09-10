@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import Button from 'react-bootstrap/Button'
 import Dropdown from 'react-bootstrap/Dropdown'
 import { useTranslation } from 'react-i18next'
@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { useHlsPlayback } from '../../hooks/useHlsPlayback'
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts'
 import { useStoryboard } from '../../hooks/useStoryboard'
+import { containedRect, type PaintedRect } from '../../lib/faceGeometry'
 import {
   DEFAULT_PLAYBACK_RATE,
   PLAYBACK_RATES,
@@ -39,6 +40,20 @@ export interface VideoPlayerProps {
    * original file is played from the range endpoint as it always was.
    */
   streaming?: boolean
+  /**
+   * Drawn over the **poster frame**, in a layer that is exactly the rectangle the
+   * poster paints in — the face boxes of the clip, whose detection ran on that
+   * one frame. It is mounted only while the poster is what is on screen, i.e.
+   * until the clip is first played; see {@link VideoPlayer} for why.
+   */
+  overlay?: ReactNode
+  /**
+   * The picture's aspect ratio (width ÷ height) to place {@link overlay} against
+   * until the element reports its own — the catalogue row's dimensions, which
+   * hold the layer still for the moment before the metadata arrives. Ignored
+   * once the element knows better.
+   */
+  posterRatio?: number
 }
 
 /**
@@ -74,6 +89,15 @@ export interface VideoPlayerProps {
  * is driven by mouse pointer events, because a finger on the timeline covers the
  * very frame the preview would show.
  *
+ * **The poster carries the faces.** Face detection on a clip only ever looks at
+ * the poster frame, so that one frame is where its boxes belong — and the player
+ * hands an `overlay` a layer that is exactly the rectangle the poster paints in,
+ * bars excluded. The layer stands down the moment the clip is first played: from
+ * then on the element shows the video, not the poster, and boxes measured on the
+ * poster would sit on the wrong picture. It never comes back for that clip;
+ * turning the faces view off and on again is not what the reader wants mid-clip,
+ * and stepping to another video mounts a fresh element with its own poster.
+ *
  * When the browser cannot decode the codec — and on-the-fly transcoding is off —
  * the player surfaces a download fallback so the user can still retrieve the file.
  */
@@ -84,6 +108,8 @@ export function VideoPlayer({
   downloadHref,
   token,
   streaming = false,
+  overlay,
+  posterRatio,
 }: VideoPlayerProps) {
   const { t } = useTranslation()
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -99,6 +125,67 @@ export function VideoPlayer({
   // what schedules the render, so a video nobody watches never costs a decode.
   const [started, setStarted] = useState(false)
   const storyboard = useStoryboard(uid, started)
+  // The picture's own aspect ratio, as the element reports it once it has read
+  // the clip's metadata. It is the *video's*, which is the poster's too — the
+  // poster is a frame of that clip — and it beats the caller's estimate, which
+  // comes from a catalogue row that can be wrong. Until then the estimate stands.
+  const [frameRatio, setFrameRatio] = useState<number | null>(null)
+  // Where the poster actually paints inside the element, relative to the player
+  // — the box the overlay sits on. Null while there is nothing to draw.
+  const [posterRect, setPosterRect] = useState<PaintedRect | null>(null)
+  // The overlay belongs to the poster, so it stands down the moment the clip has
+  // been played: from then on the element paints a frame of the video, and boxes
+  // measured on the poster would be boxes on the wrong picture.
+  const showOverlay = overlay !== undefined && !started
+
+  // Measure the painted poster. The element is sized by the stage, the poster is
+  // fitted into it (`object-fit: contain`), and the leftover is black bars — so a
+  // layer that simply covered the element would put every box off its face by the
+  // width of one bar.
+  useEffect(() => {
+    const video = videoRef.current
+    if (!showOverlay || video === null) {
+      setPosterRect(null)
+      return
+    }
+    const measure = (): void => {
+      const painted = containedRect(
+        { width: video.offsetWidth, height: video.offsetHeight },
+        frameRatio ?? posterRatio ?? 0,
+      )
+      // Relative to `.kk-video`, which is the element's offset parent and the
+      // layer's own containing block.
+      const next: PaintedRect = {
+        left: video.offsetLeft + painted.left,
+        top: video.offsetTop + painted.top,
+        width: painted.width,
+        height: painted.height,
+      }
+      setPosterRect((current) =>
+        current !== null &&
+        current.left === next.left &&
+        current.top === next.top &&
+        current.width === next.width &&
+        current.height === next.height
+          ? current
+          : next,
+      )
+    }
+    measure()
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null
+    observer?.observe(video)
+    // Without a ResizeObserver the window's own resize is the only signal there
+    // is — better than a layer frozen at mount.
+    if (observer === null) {
+      window.addEventListener('resize', measure)
+    }
+    return () => {
+      observer?.disconnect()
+      if (observer === null) {
+        window.removeEventListener('resize', measure)
+      }
+    }
+  }, [showOverlay, frameRatio, posterRatio, uid])
 
   // A fatal streaming error is the same dead end as an undecodable codec: the
   // element will not play this clip, so the player says so and offers the file.
@@ -129,6 +216,7 @@ export function VideoPlayer({
     setPosition(0)
     setDuration(0)
     setFailed(false)
+    setFrameRatio(null)
   }, [uid])
 
   const applyRate = (next: PlaybackRate): void => {
@@ -258,6 +346,10 @@ export function VideoPlayer({
         onTimeUpdate={(event) => {
           setPosition(event.currentTarget.currentTime)
         }}
+        onLoadedMetadata={(event) => {
+          const { videoWidth, videoHeight } = event.currentTarget
+          setFrameRatio(videoWidth > 0 && videoHeight > 0 ? videoWidth / videoHeight : null)
+        }}
         onDurationChange={(event) => {
           setDuration(
             Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0,
@@ -272,6 +364,22 @@ export function VideoPlayer({
       >
         {t('photo.video.unsupported')}
       </video>
+
+      {showOverlay && posterRect !== null && (
+        /* Exactly the painted poster, so a layer positioning its children in
+           percentages of it lands them on the picture rather than on the bars. */
+        <div
+          className="kk-video__overlay"
+          style={{
+            left: `${String(posterRect.left)}px`,
+            top: `${String(posterRect.top)}px`,
+            width: `${String(posterRect.width)}px`,
+            height: `${String(posterRect.height)}px`,
+          }}
+        >
+          {overlay}
+        </div>
+      )}
 
       <div className="kk-video__controls">
         <VideoScrubber

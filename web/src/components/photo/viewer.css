@@ -1110,6 +1110,15 @@
   background: #000;
 }
 
+/* The face boxes over a video's poster frame. Placed and sized in JS (see
+   `VideoPlayer`), because only the running player knows where its poster paints:
+   the element is sized by the stage and the picture is fitted into it, so the
+   layer has to sit on the fitted rectangle rather than on the element. It paints
+   over the picture and under the control bar, which follows it in the DOM. */
+.kk-video__overlay {
+  position: absolute;
+}
+
 /* Fullscreen puts the container itself in the top layer, so the picture has to
    grow into it and the bar has to stay on top of the picture rather than under
    a 70vh cap that no longer means anything. */
