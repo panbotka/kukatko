@@ -207,7 +207,10 @@ undated pile, never inventing a replacement · placing a whole selection on the 
 the same picker one photo gets — a box of scans is almost always one village — after being told how many
 of the chosen photos already know where they were, and asked whether to overwrite them or leave them be
 and fill only the empty ones · duplicate detection
-with a side-by-side compare and a merge that keeps every album, label and person · RAW+JPEG and
+with a side-by-side compare and a merge that keeps every album, label and person — never across the
+line between a photograph and a film, because a clip is compared by one frame of it and no frame is
+evidence that the two minutes behind it are a duplicate of anything; a video candidate says so, with
+its length, before you are asked which one to keep · RAW+JPEG and
 edited-variant stacks (grouped, never merged) · non-destructive crop/brightness/contrast and a rotation
 either way, which the whole library follows — the thumbnails are rebuilt from the turned photo, so the grid
 shows it the way you turned it, and the face frames turn with it ·

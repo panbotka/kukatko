@@ -2818,6 +2818,8 @@
       "cancel": "Cancel"
     },
     "dismiss": "Not a duplicate",
+    "video": "Video",
+    "videoTitle": "This candidate is a video clip. Only one frame of it is shown here; archiving it archives all of it.",
     "phashDistanceTitle": "How alike this photo and the one being kept look (a smaller number means more alike)",
     "embeddingDistanceTitle": "How alike what is in this photo and in the one being kept is (a smaller number means more alike)",
     "merged_one": "Merged and archived {{count}} copy.",

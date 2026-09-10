@@ -1754,12 +1754,16 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   groups of likely duplicates from pHash Hamming distance (`duplicate.phash_max_diff`,
   banded-LSH) **and/or** embedding cosine distance (`duplicate.embedding_max_dist`, HNSW), merged by
   union-find into connected components (no O(n²) scan). Each group carries members (thumbnail/dimensions/
-  size/`taken_at`/distances) + `reason` (phash/embedding/both) + `confirmed` (a human has answered "yes, the
-  same shot" about one of its pairs, via the review game or `POST /feedback/duplicate-confirmations`) + a
-  suggested `keeper_uid`
+  size/`taken_at`/`media_type`/`duration_ms`/distances) + `reason` (phash/embedding/both) + `confirmed` (a human
+  has answered "yes, the same shot" about one of its pairs, via the review game or
+  `POST /feedback/duplicate-confirmations`) + a suggested `keeper_uid`
   (highest resolution → largest → oldest → uid); ordered **confirmed-first**, then largest, then newest keeper,
   then id — confirmation outranks size because it is the only key here that is not a guess. `limit`≤100, invalid →
   400, scan fails → 500. The listing **only reads**; when `duplicate.enabled=false` the `GET` route answers 503.
+  **A group never mixes stills and videos** — a clip is hashed and embedded from one poster frame, so it can
+  match a photograph exactly while being something else entirely; two videos may still pair. `media_type` +
+  `duration_ms` are on every member so a client can say what a candidate is before asking to archive it
+  (`internal/duplicates`, §Videos in its package doc).
   `POST /duplicates/merge` (`internal/dupmerge`, `RequireWrite`) `{keeper_uid,member_uids[],dry_run?}` →
   `{keeper_uid,albums_added,labels_added,people_added,metadata_filled[],archived,dry_run}`: in **one
   transaction** it merges the remaining copies into the chosen keeper — a union of albums, labels and people
@@ -1768,7 +1772,9 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   per-user rating/favorite/flag; never overwrites an existing value), archives the copies (`archived_at`, originals
   to purge) and writes `photos.merge` to the audit. Idempotent (re-running on a resolved group = a no-op);
   `dry_run:true` only computes a preview without changes. An invalid group → 400, a non-existent keeper → 404,
-  `merge=nil` → 503. The `merge` route runs even with detection off. Mounted always by `buildDuplicatesAPI` (`cmd/kukatko/duplicates.go`).
+  `merge=nil` → 503. A group that would **archive across the still/video boundary** → 400 with the reason in the
+  body (`dupmerge.ErrCrossKindGroup`), from `Preview` as well as `Merge`: detection never offers such a group, so
+  this is a guard against a request from anywhere else, and it fails the whole merge rather than skipping the copy. The `merge` route runs even with detection off. Mounted always by `buildDuplicatesAPI` (`cmd/kukatko/duplicates.go`).
 - **Repeated-marker API (`/api/v1`, `internal/dupmarkersapi` + `internal/dupmarkers`):** the other kind of
   duplicate — not two photos, but **one person marked more than once on one photo**. On a group shot the
   matcher puts the same name on two or three neighbouring boxes, so the people beside her lose their tag and

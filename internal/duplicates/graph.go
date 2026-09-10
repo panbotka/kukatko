@@ -21,6 +21,7 @@ type graph struct {
 	embedDist    map[[2]int]float64 // node pair -> embedding cosine distance
 	dismissed    map[[2]int]bool    // node pairs the user settled as "not duplicates"
 	confirmed    map[[2]int]bool    // node pairs the user settled as "the same shot"
+	kinds        []photos.MediaKind // node index -> still/video, the boundary no edge may cross
 }
 
 // newGraph returns an empty graph ready to accept hashes and pairs.
@@ -36,14 +37,16 @@ func newGraph() *graph {
 	}
 }
 
-// nodeFor returns the node index for uid, allocating a new node the first time a
-// uid is seen.
-func (g *graph) nodeFor(uid string) int {
+// nodeFor returns the node index for uid with the given media kind, allocating a
+// new node the first time a uid is seen. A repeated uid keeps the kind it was
+// first registered with.
+func (g *graph) nodeFor(uid string, kind photos.MediaKind) int {
 	if i, ok := g.index[uid]; ok {
 		return i
 	}
 	i := len(g.nodes)
 	g.nodes = append(g.nodes, uid)
+	g.kinds = append(g.kinds, kind)
 	g.index[uid] = i
 	return i
 }
@@ -53,7 +56,7 @@ func (g *graph) nodeFor(uid string) int {
 // the node set is established (embedding pairs only link existing nodes).
 func (g *graph) addPhashes(hashes []photos.Phash) {
 	for _, h := range hashes {
-		idx := g.nodeFor(h.PhotoUID)
+		idx := g.nodeFor(h.PhotoUID, h.MediaType.Kind())
 		// The pHash is stored signed; reinterpret its bit pattern as uint64 for
 		// Hamming comparison (no numeric meaning is attached to the value).
 		ph := uint64(h.Phash) //nolint:gosec // intentional signed->unsigned bit reinterpretation
@@ -100,11 +103,25 @@ func (g *graph) addConfirmations(pairs []feedback.DuplicateConfirmationKey) {
 	}
 }
 
+// linkable reports whether an edge may be drawn between two known nodes: the user
+// has not dismissed the pair, and the two are the same kind of media.
+//
+// The kind check is the video rule. A video is represented here by a perceptual
+// hash and an embedding of one poster frame grabbed a second in, so a clip whose
+// opening frame matches a photograph is indistinguishable from a genuine
+// duplicate — and resolving that group would archive the footage in favour of the
+// still. Neither signal can tell the two apart, so the pair is never offered: a
+// video and a still are not duplicates of each other whatever their frames look
+// like. Two videos still link (see the package doc for what that is worth).
+func (g *graph) linkable(a, b int) bool {
+	return !g.dismissed[orderedPair(a, b)] && g.kinds[a] == g.kinds[b]
+}
+
 // addEmbedPairs links each near-duplicate embedding pair whose both endpoints are
-// known nodes (i.e. non-archived, hashed photos) and which the user has not
-// dismissed. It records the edge for the union, the per-pair distance (keeping the
-// smallest seen), and that both endpoints were embedding-matched. Pairs touching an
-// unknown uid are ignored.
+// known nodes (i.e. non-archived, hashed photos) and which linkable allows. It
+// records the edge for the union, the per-pair distance (keeping the smallest
+// seen), and that both endpoints were embedding-matched. Pairs touching an unknown
+// uid are ignored.
 func (g *graph) addEmbedPairs(pairs []vectors.DuplicatePair) {
 	if g.uf == nil {
 		g.uf = newUnionFind(len(g.nodes))
@@ -112,7 +129,7 @@ func (g *graph) addEmbedPairs(pairs []vectors.DuplicatePair) {
 	for _, p := range pairs {
 		ia, okA := g.index[p.A]
 		ib, okB := g.index[p.B]
-		if !okA || !okB || ia == ib || g.dismissed[orderedPair(ia, ib)] {
+		if !okA || !okB || ia == ib || !g.linkable(ia, ib) {
 			continue
 		}
 		g.uf.union(ia, ib)
@@ -126,12 +143,12 @@ func (g *graph) addEmbedPairs(pairs []vectors.DuplicatePair) {
 }
 
 // runPhash performs the banded pHash union over all registered entries, skipping
-// the dismissed pairs and recording which nodes gained a pHash edge.
+// the pairs linkable refuses and recording which nodes gained a pHash edge.
 func (g *graph) runPhash(maxDiff int) {
 	if g.uf == nil {
 		g.uf = newUnionFind(len(g.nodes))
 	}
-	g.phashMatched = phashUnion(g.entries, maxDiff, g.uf, g.dismissed)
+	g.phashMatched = phashUnion(g.entries, maxDiff, g.uf, g.linkable)
 }
 
 // components groups node indices by their union-find root, returning only the
@@ -271,11 +288,12 @@ func toMember(p photos.Photo, phash uint64) Member {
 		Title:     p.Title,
 		FileName:  p.FileName,
 		FileWidth: p.FileWidth, FileHeight: p.FileHeight,
-		FileSize:  p.FileSize,
-		MediaType: string(p.MediaType),
-		TakenAt:   p.TakenAt,
-		sortTime:  sortTime,
-		phash:     phash,
+		FileSize:   p.FileSize,
+		MediaType:  string(p.MediaType),
+		DurationMs: p.DurationMs,
+		TakenAt:    p.TakenAt,
+		sortTime:   sortTime,
+		phash:      phash,
 	}
 }
 

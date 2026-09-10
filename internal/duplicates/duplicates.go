@@ -20,6 +20,30 @@
 // links, is still shown and is still mergeable — the confirmation only marks its
 // group (Group.Confirmed) and sorts it first, where merging is a decision already
 // made rather than one still to be judged.
+//
+// # Videos
+//
+// A group never mixes stills and videos, and the rule is enforced as an edge
+// filter (graph.linkable), not as a filter over finished groups: the union-find
+// has no "remove edge", so a cross-kind link would drag both photos into one
+// component that could not afterwards be taken apart honestly.
+//
+// The reason is what a video contributes here, which is one frame. Everything
+// this package compares — the perceptual hash, the embedding — is computed for a
+// clip from its poster frame, grabbed a second in. That frame is a photograph as
+// far as either signal is concerned, so a clip that opens on the same room as a
+// photograph taken moments earlier is, to the detector, that photograph. Offering
+// the pair would put the user in front of two pictures and ask which to archive
+// without telling them one of them is two minutes of footage.
+//
+// Two videos are still compared with each other, and that is the conservative
+// choice rather than a confident one: one frame each is weak evidence, and two
+// clips that share a dark intro, a slate or an afternoon can pair on nothing more
+// than that. Fixing it properly means comparing several frames per clip, or the
+// audio, which is a different and heavier piece of work; until it exists, a video
+// pair is a suggestion to look at, the compare screen says what the candidates
+// are, and internal/dupmerge refuses to archive a clip in favour of a still
+// should such a pair ever reach it from elsewhere.
 package duplicates
 
 import (
@@ -136,7 +160,10 @@ const (
 )
 
 // Member is one photo within a duplicate group, carrying the fields needed to
-// compare it against the others and decide which to keep.
+// compare it against the others and decide which to keep. MediaType and
+// DurationMs are part of that: a group holds one kind of media, but the user is
+// being asked to archive something, and "this one is a two-minute clip" has to be
+// on screen before they answer.
 type Member struct {
 	UID               string     `json:"uid"`
 	Title             string     `json:"title"`
@@ -145,6 +172,7 @@ type Member struct {
 	FileHeight        int        `json:"file_height"`
 	FileSize          int64      `json:"file_size"`
 	MediaType         string     `json:"media_type"`
+	DurationMs        *int       `json:"duration_ms,omitempty"`
 	TakenAt           *time.Time `json:"taken_at,omitempty"`
 	IsKeeper          bool       `json:"is_keeper"`
 	PhashDistance     *int       `json:"phash_distance,omitempty"`

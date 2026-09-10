@@ -1,6 +1,10 @@
 package dupmerge
 
-import "sort"
+import (
+	"sort"
+
+	"github.com/panbotka/kukatko/internal/photos"
+)
 
 // plan is the resolved set of changes a merge will apply to the keeper: the
 // album/label/subject associations it lacks that a copy carries, the scalar
@@ -86,7 +90,15 @@ type photoRow struct {
 	uid         string
 	title       string
 	description string
+	mediaType   string
 	archived    bool
+}
+
+// kind reduces the row's media type to the still/video boundary a merge may not
+// cross. It goes through photos.MediaType so the guard here and the edge filter
+// in internal/duplicates share one definition of what a video is.
+func (r photoRow) kind() photos.MediaKind {
+	return photos.MediaType(r.mediaType).Kind()
 }
 
 // subtract returns the sorted, de-duplicated elements of have that are not in

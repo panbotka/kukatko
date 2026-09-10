@@ -374,6 +374,8 @@ export function DupComparePage() {
                   alt: sides.data.left.photo.file_name,
                   caption: t('duplicates.compare.left'),
                   isKeeper: pair.leftUid === pair.group.keeper_uid,
+                  mediaType: sides.data.left.photo.media_type,
+                  durationMs: sides.data.left.photo.duration_ms,
                 }}
                 right={{
                   uid: pair.rightUid,
@@ -381,6 +383,8 @@ export function DupComparePage() {
                   alt: sides.data.right.photo.file_name,
                   caption: t('duplicates.compare.right'),
                   isKeeper: pair.rightUid === pair.group.keeper_uid,
+                  mediaType: sides.data.right.photo.media_type,
+                  durationMs: sides.data.right.photo.duration_ms,
                 }}
               />
             )}

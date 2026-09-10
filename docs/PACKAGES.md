@@ -320,7 +320,10 @@ to `## Package map` in `CLAUDE.md`.
   `internal/bulk`'s `clear_taken_at`). Hence the invariant it is read under: a photo with a `TakenAt` never
   has one. Provenance only — no index, nothing sorts, groups or filters by it (`dated:no` filters on
   `taken_at` itself); `TakenAtSourceUnknown` is the `taken_at_source` both clear paths stamp),
-  `MediaType` image/video/live, `FileRole` original/sidecar/edited, UID generator prefix `ph`,
+  `MediaType` image/video/live (`MediaType.Kind()` reduces it to the `MediaKind` still/video boundary
+  — **a live photo counts as a still**, its hashes and embeddings come from the still and it carries no footage
+  of its own; the one definition `internal/duplicates` and `internal/dupmerge` both read),
+  `FileRole` original/sidecar/edited, UID generator prefix `ph`,
   `Store` over pgx with
   `Create`/`GetByUID`/`GetByFileHash`/`GetByPhotoprismUID`/`GetByPhotoprismFileHash`
   (the identity of a single SOURCE FILE, not of a source photo: a source photo made of several
@@ -3931,10 +3934,30 @@ to `## Package map` in `CLAUDE.md`.
   on its remaining edges** — "A is not B" is not a claim about C. A pair with a uid the scan does not know (an archived
   /purged photo) is ignored; a pair is scanned over **node indexes**, whereas `seen` in `unionBucket` is over the
   **positions of entries** — those are different key spaces, which is why a dismissal is looked up via `entries[i].idx`;
+  **A group never mixes stills and videos.** `ListActivePhashes` carries each hash's `media_type`, `addPhashes`
+  records `MediaType.Kind()` per node, and `graph.linkable(a,b)` — "not dismissed **and** the same kind" — is
+  what both linking steps ask before drawing an edge (`phashUnion`/`unionBucket` take it as a predicate rather
+  than a set, because "not the same kind of media" is a property of the pair and materialising it would mean
+  listing every cross-kind pair in the catalogue). **Why an edge filter and not a filter over finished groups:**
+  the union-find has no "remove edge", so a cross-kind link would drag the clip and the photographs into one
+  component that cannot afterwards be taken apart honestly — the test
+  `TestFindGroups_videoDoesNotJoinAStillGroup` pins that. **What a video contributes** is one frame: its pHash
+  *and* its embedding are computed from the poster frame grabbed a second in (`internal/thumbjob`,
+  `internal/embedjob`), so to both signals a clip opening on the room a photograph was taken in *is* that
+  photograph — and resolving the group would archive two minutes of footage in favour of one frame of it.
+  **What it does not contribute** is any evidence that it is a video, which is why the boundary is drawn rather
+  than a threshold tightened. **Two videos still pair**, and that is the conservative option rather than a
+  confident one: one frame each is weak evidence, and two clips sharing a dark intro, a slate or an afternoon
+  can pair on nothing more. Judging clips properly means several frames per clip or the audio — a heavier
+  comparison, deliberately not invented here; until it exists a video pair is a suggestion to look at, the
+  compare screen says what the candidates are, and `dupmerge` guards the archive. A live photo is a still
+  (`photos.MediaKind`), and an empty `media_type` — a row from before the column was read — reads as a still,
+  so nothing that used to group stops grouping;
   **`FindGroups(ctx,limit,offset)`** (backing `GET /duplicates`) → `Result{Groups,Total,Limit,Offset,
   NextOffset}`; each `Group{ID (the smallest uid),Reason (phash/embedding/both),KeeperUID,Confirmed,Members}`,
-  a `Member` carries dimensions/size/`taken_at`/media_type + `is_keeper` + `phash_distance`/
-  `embedding_distance` to the keeper; the **proposed keeper** = the highest resolution → the largest file →
+  a `Member` carries dimensions/size/`taken_at`/`media_type`/`duration_ms` (the clip length, videos only —
+  the compare screen and the listing say what a candidate is *before* the keep-or-archive answer) + `is_keeper`
+  + `phash_distance`/`embedding_distance` to the keeper; the **proposed keeper** = the highest resolution → the largest file →
   the oldest → the smallest uid (`selectKeeperIndex`); **`Confirmed`** is set by `graph.addConfirmations` when any
   pair inside the component carries a `feedback` confirmation ("yes, the same shot", written by the review game's
   duplicate check) — unlike a dismissal it suppresses no edge and removes nothing, one confirmed pair marks the
@@ -3956,17 +3979,25 @@ to `## Package map` in `CLAUDE.md`.
   a box-less `person` marker with a generated `mk…` uid — the same row a hand attach writes, since a face
   marker's box is pixel-specific to the copy it came from; a new marker has no `faces` row, no cache needed,
   and the `ON CONFLICT` on migration 0071's partial unique index makes a concurrent attach harmless),
-  archives (with an `archived_at IS NULL` guard) and writes `audit.ActionPhotosMerge`. A copy this call actually
+  archives (with an `archived_at IS NULL` guard) and writes `audit.ActionPhotosMerge`.
+  **`checkSameKind` refuses to archive across the still/video boundary** (`ErrCrossKindGroup`, → 400): `loadPhotos`
+  reads `media_type`, and a copy the plan would archive whose `photoRow.kind()` differs from the keeper's fails the
+  whole merge before anything is written. It is a **guard, not a convention** — detection no longer offers such a
+  group, but the endpoint takes its membership from the caller, so a hand-written request or a stale client can
+  still ask for one, and quietly archiving a clip in favour of a still is the one outcome that loses data here.
+  Only the copies **actually being archived** are checked: an already-archived copy is not being acted on, and
+  erring over one would break the idempotent re-run of a resolved group. A copy this call actually
   archived also leaves its stack via `photos.LeaveStackTx` in the same tx (skipped for an already-archived
   copy, which left its stack back then), so archiving a copy that happened to be a stack's primary does not
   hide that stack's still-live members. **An empty plan = a no-op**
   (it writes nothing → an idempotent re-run on a resolved group); validation `ErrNoKeeper`/`ErrTooFewMembers`/
-  `ErrKeeperNotInGroup`/`ErrKeeperNotFound`), `internal/duplicatesapi/`
+  `ErrKeeperNotInGroup`/`ErrKeeperNotFound`/`ErrCrossKindGroup`), `internal/duplicatesapi/`
   (an editor/admin HTTP API over duplicate detection and resolution: the interfaces `Service` (`FindGroups`, satisfied by
   `*duplicates.Service`, **nil → 503**) and `MergeService` (`Merge`/`Preview`, satisfied by `*dupmerge.Service`,
   **nil → 503**); `NewAPI(Config{Service,Merge,RequireWrite})`+`RegisterRoutes` mounts `GET /duplicates`
   and `POST /duplicates/merge` behind `RequireWrite` (listing: `limit`≤100/`offset`, invalid → 400, a failed scan
-  → 500; merge: a bad group → 400, a non-existent keeper → 404, the actor from `auth.UserFromContext`);
+  → 500; merge: a bad group → 400 — including one mixing a video with a still (`ErrCrossKindGroup`), whose
+  reason is passed through to the body — a non-existent keeper → 404, the actor from `auth.UserFromContext`);
   mounted in `serve` (`buildDuplicatesAPI` in `cmd/kukatko/duplicates.go`, `Merge` always, `Service` nil when
   `duplicate.enabled=false`)),
   `internal/dupmarkers/`

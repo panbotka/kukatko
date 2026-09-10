@@ -57,6 +57,32 @@ const (
 	MediaLive MediaType = "live"
 )
 
+// MediaKind is the coarse "is this footage?" classification: the boundary a
+// comparison of two catalogue rows must not cross. It exists because a video is
+// represented to every image-shaped pipeline by a single poster frame, so a clip
+// and a still can look identical to a perceptual hash or an embedding while being
+// entirely different things — see internal/duplicates.
+type MediaKind string
+
+// The recognised media kinds.
+const (
+	// MediaKindStill is a photograph: a single frame and nothing else.
+	MediaKindStill MediaKind = "still"
+	// MediaKindVideo is a clip: footage of which any single frame is a sample.
+	MediaKindVideo MediaKind = "video"
+)
+
+// Kind reduces a media type to the still/video boundary. A live photo counts as
+// a still: it is a photograph that happens to carry two seconds of motion beside
+// it, its hashes and embeddings come from the still, and archiving one in favour
+// of another photograph loses no footage anybody shot on purpose.
+func (m MediaType) Kind() MediaKind {
+	if m == MediaVideo {
+		return MediaKindVideo
+	}
+	return MediaKindStill
+}
+
 // FileRole enumerates the kind of file a photo_files row represents.
 type FileRole string
 
@@ -336,9 +362,15 @@ type PhotoFile struct {
 // Phash holds the perceptual hashes used for near-duplicate detection. Both
 // hashes are stored as signed 64-bit integers.
 type Phash struct {
-	PhotoUID  string    `json:"photo_uid"`
-	Phash     int64     `json:"phash"`
-	Dhash     int64     `json:"dhash"`
+	PhotoUID string `json:"photo_uid"`
+	Phash    int64  `json:"phash"`
+	Dhash    int64  `json:"dhash"`
+	// MediaType is the owning photo's media type, carried alongside the hashes
+	// because the hash alone cannot say what it hashed: a video's is taken from
+	// one poster frame, and detection must not link that frame to a photograph
+	// (internal/duplicates). Rows written before the column was read carry the
+	// empty string, which MediaType.Kind reads as a still.
+	MediaType MediaType `json:"media_type"`
 	CreatedAt time.Time `json:"created_at"`
 }
 

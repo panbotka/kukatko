@@ -228,6 +228,22 @@ func TestHandleMerge_keeperNotFound(t *testing.T) {
 	}
 }
 
+// TestHandleMerge_crossKindGroup maps a group mixing a video with a still to
+// 400, with the reason in the body: the request is refused, not attempted and
+// failed, so the client can say why rather than showing "the action failed".
+func TestHandleMerge_crossKindGroup(t *testing.T) {
+	t.Parallel()
+	merge := &fakeMerge{err: dupmerge.ErrCrossKindGroup}
+	rec := doMerge(t, mountMerge(merge),
+		`{"keeper_uid":"ph_still","member_uids":["ph_still","ph_clip"]}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "not duplicates of each other") {
+		t.Errorf("body = %q, want the cross-kind reason", rec.Body.String())
+	}
+}
+
 // TestHandleMerge_serviceError maps an unexpected failure to 500.
 func TestHandleMerge_serviceError(t *testing.T) {
 	t.Parallel()

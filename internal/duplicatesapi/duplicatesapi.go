@@ -113,8 +113,9 @@ type mergeRequest struct {
 
 // handleMerge resolves a duplicate group by merging its redundant copies into the
 // chosen keeper (or previews that when dry_run is set). It answers 503 when
-// merging is not configured, 400 for a malformed request or an invalid group, 404
-// when the keeper does not exist, and 500 when the merge fails.
+// merging is not configured, 400 for a malformed request or an invalid group
+// (including one that would archive a video in favour of a still), 404 when the
+// keeper does not exist, and 500 when the merge fails.
 func (a *API) handleMerge(w http.ResponseWriter, r *http.Request) {
 	if a.merge == nil {
 		writeError(w, http.StatusServiceUnavailable, "duplicate resolution not available")
@@ -147,7 +148,8 @@ func mergeStatus(err error) (int, string) {
 	switch {
 	case errors.Is(err, dupmerge.ErrNoKeeper),
 		errors.Is(err, dupmerge.ErrTooFewMembers),
-		errors.Is(err, dupmerge.ErrKeeperNotInGroup):
+		errors.Is(err, dupmerge.ErrKeeperNotInGroup),
+		errors.Is(err, dupmerge.ErrCrossKindGroup):
 		return http.StatusBadRequest, err.Error()
 	case errors.Is(err, dupmerge.ErrKeeperNotFound):
 		return http.StatusNotFound, err.Error()

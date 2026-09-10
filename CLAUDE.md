@@ -78,11 +78,11 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/ctl` — **client** of the own API for `kukatko ctl`: contexts (kubectl-style), Bearer token, table/JSON/llm output, streamed renditions and uploads, the photo-edit body, the whole curation write surface (faces/subjects/clusters, albums, labels, stacks, image edits, saved searches, duplicates, comments), the photo lifecycle, and the irreversible commands behind their `--yes`/`--dry-run` gate (purge, trash, duplicate merge)
 - `internal/database` — pgxpool wrapper, embedded migration runner, pgvector types
 - `internal/dirimport` — `kukatko import dir`: walks a directory on disk and uploads its media via `internal/ingest`
-- `internal/duplicates` — near-dup groups (pHash banded-LSH + embedding HNSW, union-find); read-only
+- `internal/duplicates` — near-dup groups (pHash banded-LSH + embedding HNSW, union-find); read-only, and never across the still/video boundary (a clip is judged by one poster frame)
 - `internal/duplicatesapi` — `GET /duplicates`, `POST /duplicates/merge`
 - `internal/dupmarkers` — finds one person marked more than once on the same photo (repeated valid face markers, named subjects only); read-only, grouping is a pure function
 - `internal/dupmarkersapi` — `GET /duplicate-markers` + the two repairs (`keep`, `invalid`), both delegating to existing write paths
-- `internal/dupmerge` — transactional resolve of a dup group: union albums/labels/people onto the keeper, fill gaps, archive copies
+- `internal/dupmerge` — transactional resolve of a dup group: union albums/labels/people onto the keeper, fill gaps, archive copies; refuses to archive across the still/video boundary
 - `internal/embedding` — HTTP client of the inference sidecar on the box; offline-aware typed errors
 - `internal/embedjob` — worker handler `image_embed` + backfill
 - `internal/exif` — EXIF/GPS extraction (exiftool, pure-Go fallback)

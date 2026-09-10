@@ -136,10 +136,12 @@ func (s *Store) NearestPhash(ctx context.Context, phash int64) (uid string, dist
 // of a stack are excluded so they are never grouped as duplicates — this is how
 // same-stack pairs (a RAW and its JPEG are a textbook near-duplicate) are kept out
 // of the duplicates page: a non-primary member never becomes a node, so it can
-// pair with nothing. The result is ordered by photo_uid for deterministic
-// grouping and is empty (not nil) when no visible photo has a hash.
+// pair with nothing. Each row carries its photo's media type, which is what keeps
+// a video's poster-frame hash from being linked to a photograph. The result is
+// ordered by photo_uid for deterministic grouping and is empty (not nil) when no
+// visible photo has a hash.
 func (s *Store) ListActivePhashes(ctx context.Context) ([]Phash, error) {
-	const q = `SELECT ph.photo_uid, ph.phash, ph.dhash, ph.created_at
+	const q = `SELECT ph.photo_uid, ph.phash, ph.dhash, p.media_type, ph.created_at
 		FROM photo_phashes ph
 		JOIN photos p ON p.uid = ph.photo_uid
 		WHERE p.archived_at IS NULL AND (p.stack_uid IS NULL OR p.stack_primary)
@@ -153,7 +155,7 @@ func (s *Store) ListActivePhashes(ctx context.Context) ([]Phash, error) {
 	hashes := make([]Phash, 0)
 	for rows.Next() {
 		var p Phash
-		if err := rows.Scan(&p.PhotoUID, &p.Phash, &p.Dhash, &p.CreatedAt); err != nil {
+		if err := rows.Scan(&p.PhotoUID, &p.Phash, &p.Dhash, &p.MediaType, &p.CreatedAt); err != nil {
 			return nil, fmt.Errorf("photos: scanning active phash: %w", err)
 		}
 		hashes = append(hashes, p)

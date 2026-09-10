@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 import { useLightbox } from '../../hooks/useLightbox'
-import { formatBytes, formatDate } from '../../lib/format'
+import { formatBytes, formatDate, formatDuration } from '../../lib/format'
 import { pairId } from '../../lib/duplicateCompare'
 import { gridTemplateColumns, REVIEW_GRID_SCOPE } from '../../lib/gridDensity'
 import { photoLabel } from '../../lib/photoTitle'
@@ -17,6 +17,8 @@ import { FadeInImage } from '../FadeInImage'
 import { Icon } from '../Icon'
 import { EnlargeButton } from '../review/EnlargeButton'
 import { ReviewLightbox } from '../review/ReviewLightbox'
+
+import { MediaKindMark } from './MediaKindMark'
 
 import '../review/review.css'
 
@@ -180,7 +182,7 @@ export function DuplicateGroupCard({
             href: `/photos/${enlarged.uid}`,
             alt: photoLabel(enlarged, i18n.language),
           }}
-          title={`${photoLabel(enlarged, i18n.language)} · ${enlarged.file_width}×${enlarged.file_height} · ${formatBytes(enlarged.file_size)}`}
+          title={memberSummary(enlarged, i18n.language)}
           onClose={lightbox.close}
           onPrev={lightbox.prev}
           onNext={lightbox.next}
@@ -201,6 +203,23 @@ export function DuplicateGroupCard({
       )}
     </Card>
   )
+}
+
+/**
+ * The one-line summary the enlarged view heads a member with. A clip says so and
+ * says how long it is: the overlay offers "keep this one", so it is a place a
+ * decision is taken and the same fact has to be legible there.
+ */
+function memberSummary(member: DuplicateMember, language: string): string {
+  const parts = [
+    photoLabel(member, language),
+    `${String(member.file_width)}×${String(member.file_height)}`,
+    formatBytes(member.file_size),
+  ]
+  if (member.media_type === 'video' && member.duration_ms !== undefined && member.duration_ms > 0) {
+    parts.push(formatDuration(member.duration_ms))
+  }
+  return parts.join(' · ')
 }
 
 interface DuplicateMemberTileProps {
@@ -236,6 +255,14 @@ function DuplicateMemberTile({
           style={{ aspectRatio: '1 / 1', objectFit: 'cover' }}
         />
       </EnlargeButton>
+      {/* A clip and a photograph look the same in a 224px square, and the radio
+          below asks which of them to archive. The mark is what makes the answer
+          an informed one. */}
+      <MediaKindMark
+        mediaType={member.media_type}
+        durationMs={member.duration_ms}
+        className="mb-1"
+      />
       <div className="small text-truncate" title={label}>
         {label}
       </div>

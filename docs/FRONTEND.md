@@ -3893,7 +3893,10 @@ here.
   („jak moc se podobají", smaller = more alike) rather than by what they are computed from, since
   „vzdálenost perceptuálního hashe / embeddingu" told a lay admin nothing —, a radio selection of the keeper
   (the suggested one by default), a `reason` badge,
-  actions **Ponechat nejlepší a sloučit** (`onResolve` → preview) / **Není duplikát**, a busy state; the member
+  actions **Ponechat nejlepší a sloučit** (`onResolve` → preview) / **Není duplikát**, a busy state; a member that
+  is a clip carries a `MediaKindMark` under its thumbnail and its length in the enlarged view's title
+  (`memberSummary`), because the radio beside it asks which candidate to archive and archiving a clip archives
+  every frame of it, not the one on screen; the member
   row is a `kk-review-grid` columned by the `density` prop the page passes down, and a **click on a tile enlarges
   instead of navigating** — `EnlargeButton` around the thumbnail, `ReviewLightbox` on the group's members at
   `fit_1280` (never the tile's centre-cropped `tile_224`, which hides the very edges two versions differ at),
@@ -3903,7 +3906,14 @@ here.
   an optional `note` below it — `DupComparePage` uses it to say that the copy is archived and not deleted, Potvrdit/Zrušit,
   a busy spinner) + `CompareStage` (two photos side by side, below `md` stacked; both render **the same**
   `SyncZoom.view`, so the zoom is synchronous by construction; the cursor `zoom-in`/`grab`/`grabbing` says
-  what the gesture will do; the viewport clips, `object-fit: contain` never crops) + `DiffTable` (a diff
+  what the gesture will do; the viewport clips, `object-fit: contain` never crops; each `ComparePane` also takes
+  `mediaType`/`durationMs`, drawn in the `figcaption` as a `MediaKindMark`) +
+  `MediaKindMark` (**„tenhle kandidát je video, a takhle dlouhé"** — a `text-bg-warning` badge with `play-fill`
+  and `formatDuration`; a still renders **nothing**, since „video" is the exception worth marking and badging
+  every photograph as a photograph would bury it. It exists because everything the duplicates screens draw is a
+  picture: a clip is one poster frame in the same square tile as a photograph, and the decision being asked for
+  archives all the frames that are not on screen. `media_type`/`duration_ms` come from the listing payload on
+  the cards and from `fetchPhoto` on the compare stage) + `DiffTable` (a diff
   table: a row that differs is marked with a **border + bold + `visually-hidden` „liší se"** —
   never just color; `onlyDifferences` hides the matching ones, an empty value is „—", all matching → a message
   instead of the table) + `compare.css` (a fullscreen `kk-compare` flex column, `height: 100dvh`;

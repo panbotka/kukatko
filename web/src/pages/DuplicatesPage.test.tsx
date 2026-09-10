@@ -49,6 +49,27 @@ function member(uid: string, w: number, h: number, isKeeper: boolean) {
   }
 }
 
+/** A clip member: what the backend sends for a video, duration and all. */
+function videoMember(uid: string, durationMs: number, isKeeper: boolean) {
+  return {
+    ...member(uid, 1920, 1080, isKeeper),
+    file_name: `${uid}.mp4`,
+    media_type: 'video',
+    duration_ms: durationMs,
+  }
+}
+
+/** A group of two clips — the only shape in which a video reaches this page. */
+function videoGroup(id: string, keeper: string, other: string): DuplicateGroup {
+  return {
+    id,
+    reason: 'phash',
+    keeper_uid: keeper,
+    confirmed: false,
+    members: [videoMember(keeper, 154_000, true), videoMember(other, 30_000, false)],
+  }
+}
+
 // page wraps groups in a listing response; nextOffset drives the Load more control.
 function page(groups: DuplicateGroup[], nextOffset: number | null = null): DuplicatesResponse {
   return { groups, total: groups.length, limit: 20, offset: 0, next_offset: nextOffset }
@@ -85,6 +106,28 @@ beforeEach(async () => {
 })
 
 describe('DuplicatesPage', () => {
+  it('marks a video candidate as a video, with its duration', async () => {
+    // A clip and a photograph are the same square tile here, and the radio below
+    // each asks which to archive. Archiving a clip archives all of it, so what it
+    // is has to be readable before the answer is given.
+    fetchMock.mockResolvedValue(page([videoGroup('g1', 'ph_clip1', 'ph_clip2')]))
+    renderPage()
+
+    const marks = await screen.findAllByTestId('media-video')
+    expect(marks).toHaveLength(2)
+    expect(marks[0]).toHaveTextContent('Video')
+    expect(marks[0]).toHaveTextContent('2:34')
+    expect(marks[1]).toHaveTextContent('0:30')
+  })
+
+  it('marks nothing on a group of stills', async () => {
+    fetchMock.mockResolvedValue(page([group('g1', 'ph_keep', 'ph_dup')]))
+    renderPage()
+
+    await screen.findByText('ph_keep.jpg')
+    expect(screen.queryByTestId('media-video')).not.toBeInTheDocument()
+  })
+
   it('renders the duplicate groups returned by the API', async () => {
     fetchMock.mockResolvedValue(page([group('g1', 'ph_keep', 'ph_dup')]))
     renderPage()

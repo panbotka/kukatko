@@ -156,6 +156,33 @@ func TestPhashUnion_disabled(t *testing.T) {
 	}
 }
 
+// TestPhashUnion_linkableSuppressesPair checks the predicate is consulted per
+// candidate pair and in the node-index key space: nodes 0 and 1 have identical
+// hashes but the predicate refuses them, which is how a video's poster frame is
+// kept from linking to a photograph.
+func TestPhashUnion_linkableSuppressesPair(t *testing.T) {
+	t.Parallel()
+	entries := []phashEntry{
+		{idx: 10, phash: 0},
+		{idx: 11, phash: 0},
+		{idx: 12, phash: 0},
+	}
+	uf := newUnionFind(13)
+	matched := phashUnion(entries, 8, uf, func(a, b int) bool {
+		return a != 10 && b != 10
+	})
+
+	if uf.find(10) == uf.find(11) {
+		t.Errorf("a refused pair was unioned anyway")
+	}
+	if uf.find(11) != uf.find(12) {
+		t.Errorf("an allowed pair was not unioned")
+	}
+	if matched[10] {
+		t.Errorf("a refused node was marked pHash-matched")
+	}
+}
+
 // TestOrderedPair checks the order-independent key.
 func TestOrderedPair(t *testing.T) {
 	t.Parallel()

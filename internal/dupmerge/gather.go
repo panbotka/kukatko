@@ -16,7 +16,7 @@ const (
 	labelSourceSQL   = `SELECT DISTINCT label_uid FROM photo_labels WHERE photo_uid = ANY($1)`
 	subjectSourceSQL = `SELECT DISTINCT subject_uid FROM markers ` +
 		`WHERE photo_uid = ANY($1) AND subject_uid IS NOT NULL AND invalid = FALSE`
-	loadPhotosSQL = `SELECT uid, title, description, archived_at IS NOT NULL ` +
+	loadPhotosSQL = `SELECT uid, title, description, media_type, archived_at IS NOT NULL ` +
 		`FROM photos WHERE uid = ANY($1)`
 )
 
@@ -24,7 +24,8 @@ const (
 // its copies through q and computes the changes the merge will make: the
 // associations the copies carry that the keeper lacks, the scalar gaps a copy can
 // fill, and the still-active copies to archive. It returns ErrKeeperNotFound when
-// the keeper photo does not exist.
+// the keeper photo does not exist and ErrCrossKindGroup when a copy it would
+// archive is not the same kind of media as the keeper.
 func buildPlan(ctx context.Context, q querier, in Input) (plan, error) {
 	photos, err := loadPhotos(ctx, q, in.MemberUIDs)
 	if err != nil {
@@ -35,6 +36,10 @@ func buildPlan(ctx context.Context, q querier, in Input) (plan, error) {
 		return plan{}, ErrKeeperNotFound
 	}
 	copies := copyUIDs(in.MemberUIDs, in.KeeperUID, photos)
+	archive := activeCopies(copies, photos)
+	if err := checkSameKind(keeper, archive, photos); err != nil {
+		return plan{}, err
+	}
 
 	albums, err := diffAssoc(ctx, q, albumSourceSQL, in.KeeperUID, copies)
 	if err != nil {
@@ -57,8 +62,21 @@ func buildPlan(ctx context.Context, q querier, in Input) (plan, error) {
 		labelsToAdd:   labels,
 		subjectsToAdd: subjects,
 		fill:          fill,
-		archiveUIDs:   activeCopies(copies, photos),
+		archiveUIDs:   archive,
 	}, nil
+}
+
+// checkSameKind refuses a merge that would archive a copy of a different media
+// kind than the keeper, returning ErrCrossKindGroup. Only the copies actually
+// being archived are checked: an already-archived copy is not being acted on, and
+// erring over one would break the idempotent re-run of a resolved group.
+func checkSameKind(keeper photoRow, archive []string, photos map[string]photoRow) error {
+	for _, uid := range archive {
+		if photos[uid].kind() != keeper.kind() {
+			return fmt.Errorf("%w: %s and %s", ErrCrossKindGroup, keeper.uid, uid)
+		}
+	}
+	return nil
 }
 
 // loadPhotos reads the scalar fields of every member that exists, keyed by UID.
@@ -73,7 +91,7 @@ func loadPhotos(ctx context.Context, q querier, uids []string) (map[string]photo
 	out := make(map[string]photoRow, len(uids))
 	for rows.Next() {
 		var r photoRow
-		if err := rows.Scan(&r.uid, &r.title, &r.description, &r.archived); err != nil {
+		if err := rows.Scan(&r.uid, &r.title, &r.description, &r.mediaType, &r.archived); err != nil {
 			return nil, fmt.Errorf("dupmerge: scanning photo row: %w", err)
 		}
 		out[r.uid] = r

@@ -156,6 +156,39 @@ beforeEach(async () => {
   dismissMock.mockResolvedValue(undefined)
 })
 
+describe('what the candidates are', () => {
+  it('marks each video pane as a video, with its duration', async () => {
+    // Detection only ever pairs a clip with another clip, but the stage paints one
+    // frame of each either way — and the buttons under it archive the whole clip.
+    fetchMock.mockResolvedValue(page([group('g1', 'ph_keep', 'ph_dup')]))
+    photoMock.mockImplementation((uid) =>
+      Promise.resolve(
+        detail(uid, {
+          media_type: 'video',
+          duration_ms: uid === 'ph_keep' ? 154_000 : 30_000,
+        }),
+      ),
+    )
+    renderPage()
+    await waitForPair()
+
+    // In DOM order: the left pane's caption, then the right pane's.
+    const marks = screen.getAllByTestId('media-video')
+    expect(marks).toHaveLength(2)
+    expect(marks[0]).toHaveTextContent('Video')
+    expect(marks[0]).toHaveTextContent('2:34')
+    expect(marks[1]).toHaveTextContent('0:30')
+  })
+
+  it('marks nothing when both candidates are stills', async () => {
+    fetchMock.mockResolvedValue(page([group('g1', 'ph_keep', 'ph_dup')]))
+    renderPage()
+    await waitForPair()
+
+    expect(screen.queryByTestId('media-video')).not.toBeInTheDocument()
+  })
+})
+
 describe('the difference table', () => {
   it('marks exactly the differing rows and leaves the identical ones unmarked', async () => {
     fetchMock.mockResolvedValue(page([group('g1', 'ph_keep', 'ph_dup')]))

@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next'
 import { type SyncZoom } from '../../hooks/useSyncZoom'
 import { viewTransform } from '../../lib/compareZoom'
 
+import { MediaKindMark } from './MediaKindMark'
+
 import './compare.css'
 
 /** One side of the stage. */
@@ -16,6 +18,10 @@ export interface ComparePane {
   caption: string
   /** Whether this side is the keeper the detector suggested. */
   isKeeper: boolean
+  /** The candidate's media type (`image`, `video`, `live`), when loaded. */
+  mediaType?: string
+  /** Clip length in milliseconds, for a video candidate. */
+  durationMs?: number
 }
 
 /** Props for {@link CompareStage}. */
@@ -27,7 +33,8 @@ export interface CompareStageProps {
 }
 
 /**
- * The two photos side by side, as large as the viewport allows, sharing one zoom.
+ * The two candidates side by side, as large as the viewport allows, sharing one
+ * zoom.
  *
  * Both panes render `zoom.view`, so a wheel/drag on either moves both — the point
  * being that a JPEG re-encode only reveals itself against its original at the same
@@ -65,6 +72,10 @@ function ComparePaneView({ pane, zoom }: { pane: ComparePane; zoom: SyncZoom }) 
         {pane.isKeeper && (
           <span className="badge bg-info text-dark ms-2">{t('duplicates.compare.suggested')}</span>
         )}
+        {/* The stage paints one frame either way. If that frame is a video's
+            poster, the buttons below archive the whole clip — so the caption says
+            what this side is before the question is answered. */}
+        <MediaKindMark mediaType={pane.mediaType} durationMs={pane.durationMs} className="ms-2" />
       </figcaption>
       <div
         className="kk-compare-pane__viewport"

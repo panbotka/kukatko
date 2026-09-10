@@ -43,6 +43,14 @@ var (
 	ErrKeeperNotInGroup = errors.New("dupmerge: keeper is not a member of the group")
 	// ErrKeeperNotFound indicates the keeper photo does not exist.
 	ErrKeeperNotFound = errors.New("dupmerge: keeper photo not found")
+	// ErrCrossKindGroup indicates the group mixes a video with a still. Detection
+	// never offers such a group (internal/duplicates refuses the edge), so this is
+	// a guard against a request that arrived from somewhere else — a hand-written
+	// API call, a stale client, a future caller. It fails the whole merge rather
+	// than skipping the offending copy: a clip archived in favour of a photograph
+	// of the same scene loses everything but one frame of it, and no part of a
+	// request that asks for that should be honoured quietly.
+	ErrCrossKindGroup = errors.New("dupmerge: a video and a still are not duplicates of each other")
 )
 
 // Input identifies a duplicate group to resolve and which member to keep.
@@ -89,6 +97,7 @@ func NewService(pool *pgxpool.Pool) *Service {
 // (nothing to add and nothing to archive, e.g. an already-resolved group) is a
 // no-op that writes nothing. It returns a validation error (ErrNoKeeper,
 // ErrTooFewMembers, ErrKeeperNotInGroup) or ErrKeeperNotFound before any change,
+// ErrCrossKindGroup when the group would archive across the video/still boundary,
 // and a wrapped database error on failure.
 func (s *Service) Merge(ctx context.Context, in Input) (Result, error) {
 	if err := validate(in); err != nil {

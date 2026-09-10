@@ -14,6 +14,8 @@ export interface DuplicateMember {
   file_height: number
   file_size: number
   media_type: string
+  /** Clip length in milliseconds; present on videos only. */
+  duration_ms?: number
   taken_at?: string
   is_keeper: boolean
   /** pHash Hamming distance to the suggested keeper (absent on the keeper). */

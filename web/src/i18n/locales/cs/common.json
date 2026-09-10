@@ -2946,6 +2946,8 @@
       "cancel": "Zrušit"
     },
     "dismiss": "Není duplikát",
+    "video": "Video",
+    "videoTitle": "Tenhle kandidát je video. Vidíte z něj jediné políčko; archivací zmizí celý záznam.",
     "phashDistanceTitle": "Jak moc se tahle fotka na pohled podobá ponechané (menší číslo = podobnější)",
     "embeddingDistanceTitle": "Jak moc se shoduje to, co je na téhle fotce, s ponechanou (menší číslo = podobnější)",
     "merged_one": "Sloučena a archivována {{count}} kopie.",
