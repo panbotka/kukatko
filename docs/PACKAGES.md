@@ -4291,6 +4291,11 @@ to `## Package map` in `CLAUDE.md`.
   so `hidden:yes` is the way back to a hidden photo) and `dated:` (has / has no capture date; `dated:no` is
   the worklist of everything the timeline cannot place and covers **both** the photos whose date was declared
   unknown and those that never had one — for the person working through them it is the same job);
+  the **video** keys are `duration:` (a length, not raw milliseconds: each bound is a number with an
+  optional `s`/`min`/`h` suffix — bare is seconds — and is as precise as it is written, so `duration:10s` is
+  every clip of ten-point-something seconds and `duration:1m-` is "longer than a minute"; the parser resolves
+  the units into the millisecond bounds the column stores), `sound:` (an audio track), `fps:` (frame rate)
+  and `streaming:` (already encoded for playback, or still waiting);
   the id key **`uid:`** names exactly one photo — by its own
   uid **or** by the source uid it was imported under, one key for both because the two shapes cannot collide
   — and lifts the live-only, visible-only **and** stack-primary scopes at once (`uidLookup` in
@@ -4305,6 +4310,10 @@ to `## Package map` in `CLAUDE.md`.
   `HasFilter(key)`. The AST is compiled into SQL by `internal/photos/store_query.go` (`queryClauses` — a map of
   builders per key, everything through bind parameters; per-user filters scoped to `RatedBy`, `near:`
   a spherical distance with the radius `dist:` default 5 km, `faces:` counts non-invalid face markers,
+  the four video filters each narrowed by `queryCondGuards` to the rows their question means something for —
+  the guard sits **outside** the negation, so `sound:no` and `duration:!10s` stay within the clips instead of
+  answering for every still — and `fps:`'s bounds widened by half a percent so `fps:30` finds the 29.97 an
+  NTSC file records,
   every **decimal** bound (both an exact one and the ends of a range) allowed ±0.005 because of float4, integer bounds
   stay exact; `likePattern` makes a wildcard only out of an unescaped `*` and escapes `%`/`_`, just like
   the substring filters `Search`/`?camera=`/`?lens=` in `store_list.go`). The package also owns the **uid

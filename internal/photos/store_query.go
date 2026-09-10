@@ -72,9 +72,10 @@ func queryHasFilter(filters []query.Filter, key query.Key) bool {
 
 // queryFilterClause compiles one filter into a single WHERE clause: its
 // OR-alternatives each become a condition (negated alternatives are wrapped
-// NULL-safely) and are joined with OR. ok is false when the filter yields no
-// condition — dist: (a near: parameter, not a filter) and the per-user filters
-// without a caller.
+// NULL-safely) and are joined with OR, the whole thing narrowed to the rows the
+// filter can speak about at all (queryCondGuards). ok is false when the filter
+// yields no condition — dist: (a near: parameter, not a filter) and the
+// per-user filters without a caller.
 func queryFilterClause(f query.Filter, env condEnv) (string, bool) {
 	build, known := queryCondBuilders[f.Key]
 	if !known {
@@ -94,7 +95,37 @@ func queryFilterClause(f query.Filter, env condEnv) (string, bool) {
 	if len(conds) == 0 {
 		return "", false
 	}
-	return "(" + strings.Join(conds, " OR ") + ")", true
+	clause := "(" + strings.Join(conds, " OR ") + ")"
+	if guard, guarded := queryCondGuards[f.Key]; guarded {
+		clause = "(" + guard + " AND " + clause + ")"
+	}
+	return clause, true
+}
+
+// queryCondGuards restricts a filter to the rows its question means something
+// for. Only the video filters need one: a still has no length, no sound track
+// and no streaming rendition, and answering for it — as a zero, or as "not a
+// match" — would put scanned photographs in the result of `duration:-10s` and,
+// worse, in `streaming:no`, the worklist of clips still waiting to be encoded.
+//
+// The guard sits *outside* the negation on purpose, which is why it lives here
+// rather than inside each builder: `sound:!yes` and `sound:no` both have to stay
+// within the clips, and a guard folded into the condition would be flipped along
+// with it by negateCond and hand back the whole library of stills.
+//
+// duration: and fps: guard on the column being present rather than on the media
+// type: those two columns are exactly the record of "this was measured", so a
+// clip whose probe failed is silent about its length instead of claiming zero.
+// sound: and streaming: cannot do that — has_audio is NOT NULL and defaults to
+// false, and a rendition's absence is not a NULL either — so they name the media
+// type instead, and they name 'video' alone: a live photo's has_audio was never
+// probed (only a standalone clip's is) and its two seconds of motion are never
+// encoded, so it belongs in neither direction of either answer.
+var queryCondGuards = map[query.Key]string{
+	query.KeyDuration:  "duration_ms IS NOT NULL",
+	query.KeyFPS:       "fps IS NOT NULL",
+	query.KeySound:     "media_type = 'video'",
+	query.KeyStreaming: "media_type = 'video'",
 }
 
 // negateCond wraps a condition so its negation also matches rows where the
@@ -203,6 +234,10 @@ var queryCondBuilders = map[query.Key]condBuilder{
 	query.KeyBefore:      beforeCond,
 	query.KeyAfter:       afterCond,
 	query.KeyType:        typeCond,
+	query.KeyDuration:    durationCond,
+	query.KeySound:       soundCond,
+	query.KeyFPS:         fpsCond,
+	query.KeyStreaming:   streamingCond,
 	query.KeyPortrait:    orientationCond(effHeightExpr + " > " + effWidthExpr),
 	query.KeyLandscape:   orientationCond(effWidthExpr + " > " + effHeightExpr),
 	query.KeySquare:      orientationCond(effWidthExpr + " = " + effHeightExpr),
@@ -458,6 +493,84 @@ func afterCond(v query.Value, env condEnv) (string, bool) {
 // typeCond matches the media type (image, video, live).
 func typeCond(v query.Value, env condEnv) (string, bool) {
 	return "media_type = " + env.bind(v.Text), true
+}
+
+// durationCond compiles a clip-length range over duration_ms. The parser has
+// already done the unit arithmetic and hands over whole milliseconds — the
+// column's own unit — so the bounds are bound as integers, the way yearCond
+// binds a year, rather than through boundsCond's float slackening: there is
+// nothing to round here, and the interval's precision was decided when the
+// value was parsed.
+func durationCond(v query.Value, env condEnv) (string, bool) {
+	var conds []string
+	if v.Min != nil {
+		conds = append(conds, "duration_ms >= "+env.bind(int64(*v.Min)))
+	}
+	if v.Max != nil {
+		conds = append(conds, "duration_ms <= "+env.bind(int64(*v.Max)))
+	}
+	if len(conds) == 0 {
+		return "", false
+	}
+	return "(" + strings.Join(conds, " AND ") + ")", true
+}
+
+// soundCond keeps the clips that carry an audio track (yes) or the silent ones
+// (no). The guard on the filter (queryCondGuards) is what keeps a still — whose
+// has_audio is a default, not a measurement — out of both answers.
+func soundCond(v query.Value, _ condEnv) (string, bool) {
+	if v.Bool == nil {
+		return "", false
+	}
+	if *v.Bool {
+		return "has_audio", true
+	}
+	return "NOT has_audio", true
+}
+
+// fpsSlack widens a frame-rate bound by half a percent so the NTSC rates answer
+// to the whole numbers people type: 29.97, 59.94 and 23.976 are each exactly
+// 1000/1001 (about 0.1 %) below 30, 60 and 24, and a reader asking for `fps:30`
+// means the clips a camera labels 30p. Half a percent covers that tenth of a
+// percent with room to spare while staying far from the neighbouring rate — 25
+// is four percent from 24 — so no bound ever reaches a frame rate somebody did
+// not ask for.
+const fpsSlack = 0.005
+
+// fpsCond compiles a frame-rate range over the fps column, each bound widened
+// by fpsSlack: the lower bound down, the upper bound up.
+func fpsCond(v query.Value, env condEnv) (string, bool) {
+	return boundsCond("fps", scaleBounds(v, fpsSlack), env)
+}
+
+// scaleBounds returns the value with its numeric bounds widened by the given
+// fraction of themselves — the lower one down, the upper one up. A nil bound
+// stays open, and a zero bound stays zero (there is nothing below it).
+func scaleBounds(v query.Value, fraction float64) query.Value {
+	if v.Min != nil {
+		lo := *v.Min * (1 - fraction)
+		v.Min = &lo
+	}
+	if v.Max != nil {
+		hi := *v.Max * (1 + fraction)
+		v.Max = &hi
+	}
+	return v
+}
+
+// streamingCond keeps the videos already encoded for smooth playback (yes) or
+// the ones still waiting for it (no) — the same "is there a rendition at all"
+// question the listing's hls flag answers, and the worklist behind the tile that
+// says a clip is not ready yet.
+func streamingCond(v query.Value, _ condEnv) (string, bool) {
+	if v.Bool == nil {
+		return "", false
+	}
+	cond := "EXISTS (SELECT 1 FROM photo_hls_renditions h WHERE h.photo_uid = photos.uid)"
+	if !*v.Bool {
+		cond = negateCond(cond)
+	}
+	return cond, true
 }
 
 // orientationCond builds a yes/no condition over an aspect comparison of the

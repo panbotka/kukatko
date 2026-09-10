@@ -35,6 +35,10 @@ const queryLanguageHelp = `Free words match the title, description, notes and fi
 	`year:, month:, day:, taken:, before:, after: (dates as YYYY, YYYY-MM or YYYY-MM-DD; year: and the ` +
 	`other numbers take ranges like year:1960-1969), country:, city:, geo:yes|no, near:<photo-uid>, ` +
 	`dist:<km>, camera:, lens:, iso:, f:, mm:, mp:, type:image|video|live, faces:yes|no or a count, ` +
+	`duration: (a clip's length: 10s, 1m-2m, 30s-, units s/min/h and a bare number is seconds), ` +
+	`sound:yes|no (an audio track), fps: (frame rate, ranges too), streaming:yes|no (already encoded ` +
+	`for smooth playback; streaming:no are the clips still waiting) — these four answer for videos ` +
+	`only, never for a still, ` +
 	`face:new, favorite:yes|no, rating:0-5, flag:pick|reject|eye, archived:yes|no, private:yes|no, ` +
 	`portrait:, landscape:, square:, panorama:, filename:, keywords:, uploader: (by username, ` +
 	`display name or uid; uploader:none are the imported photos, which nobody uploaded), ` +

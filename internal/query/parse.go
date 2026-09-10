@@ -229,6 +229,8 @@ func parseKindValue(sp spec, chars []tchar) (Value, bool) {
 		return parseDateValue(charsText(chars))
 	case KindCount:
 		return parseCountValue(sp, chars)
+	case KindDuration:
+		return parseDurationValue(sp, chars)
 	default:
 		return Value{}, false
 	}
@@ -315,6 +317,133 @@ func parseCountValue(sp spec, chars []tchar) (Value, bool) {
 		v.Max = nil
 	}
 	return v, true
+}
+
+// maxDurationMs caps a duration bound at twenty-four hours, expressed in the
+// milliseconds the catalogue stores. It is far past any clip a family archive
+// holds, and it keeps a mistyped value ("duration:99999999") out of the
+// compiled query rather than turning it into a range nothing can match.
+const maxDurationMs = 24 * 60 * 60 * 1000
+
+// durationUnits maps the suffixes a person actually types onto the length of
+// the unit in milliseconds. A bare number is seconds — the unit somebody
+// reaching for "a ten second clip" means without saying so — and milliseconds
+// are deliberately absent: they are the storage unit, not a unit anyone types.
+//
+// The unit is also the *precision* of the bound it ends (see
+// parseDurationBound), which is why the map's value carries double duty.
+var durationUnits = map[string]float64{
+	"":     1000,
+	"s":    1000,
+	"sec":  1000,
+	"secs": 1000,
+	"m":    60 * 1000,
+	"min":  60 * 1000,
+	"mins": 60 * 1000,
+	"h":    60 * 60 * 1000,
+	"hr":   60 * 60 * 1000,
+	"hrs":  60 * 60 * 1000,
+}
+
+// parseDurationValue parses a clip length — a single value ("10s") or a range
+// with optionally open ends ("1m-2m", "30-", "-90") — into inclusive
+// millisecond bounds.
+//
+// A bound is as precise as it is written, and the two ends of the interval take
+// opposite ends of that precision: the lower bound starts its last written
+// place, the upper bound runs to the last millisecond of it. So `duration:10s`
+// is every clip of ten-point-something seconds, `duration:1.5s` narrows that to
+// a tenth, and `duration:1m-2m` runs from one minute to just under three. That
+// is the shape `year:2020-2023` already has (it ends with the last day of
+// 2023), and it is what makes a single value useful at all: a clip is never
+// exactly ten thousand milliseconds long, so an exact match would answer "about
+// ten seconds" with nothing.
+func parseDurationValue(sp spec, chars []tchar) (Value, bool) {
+	lo, hi, _, ok := splitRange(chars)
+	if !ok || (lo == "" && hi == "") {
+		return Value{}, false
+	}
+	from, ok := parseDurationBound(sp, lo)
+	if !ok {
+		return Value{}, false
+	}
+	until, ok := parseDurationBound(sp, hi)
+	if !ok {
+		return Value{}, false
+	}
+	if from.ms != nil && until.ms != nil && *from.ms > *until.ms {
+		// A reversed range is normalised before the precision is applied, so
+		// "2m-1m" is the same interval as "1m-2m" rather than an empty one.
+		from, until = until, from
+	}
+	v := Value{Min: from.ms}
+	if until.ms != nil {
+		last := *until.ms + until.precision - 1
+		v.Max = &last
+	}
+	return v, true
+}
+
+// durationBound is one side of a parsed duration range: the value in
+// milliseconds — nil for an open end — and the millisecond span of the last
+// place it was written to, which is how far the interval's upper end runs.
+type durationBound struct {
+	ms        *float64
+	precision float64
+}
+
+// parseDurationBound parses one side of a duration range into milliseconds
+// together with the precision it was written to. An empty side is a
+// legitimately open bound: it returns a nil value at millisecond precision, so
+// nothing widens it. ok is false when the number or the unit does not parse, or
+// the result falls outside the spec's bounds.
+func parseDurationBound(sp spec, raw string) (durationBound, bool) {
+	if raw == "" {
+		return durationBound{precision: 1}, true
+	}
+	digits, unit, ok := splitDurationUnit(raw)
+	if !ok {
+		return durationBound{}, false
+	}
+	n, err := strconv.ParseFloat(digits, 64)
+	if err != nil || math.IsNaN(n) || math.IsInf(n, 0) {
+		return durationBound{}, false
+	}
+	ms := math.Trunc(n * unit)
+	if ms < sp.lo || ms > sp.hi {
+		return durationBound{}, false
+	}
+	return durationBound{ms: &ms, precision: boundPrecision(digits, unit)}, true
+}
+
+// boundPrecision returns the millisecond span of the last place a bound was
+// written to: the whole unit for a plain "2m", a tenth of it for "1.5m", never
+// less than the one millisecond the catalogue can tell apart. It is what keeps
+// a decimal from being widened by a whole unit — somebody who typed the tenth
+// meant the tenth.
+func boundPrecision(digits string, unit float64) float64 {
+	span := unit
+	if point := strings.IndexByte(digits, '.'); point >= 0 {
+		span = unit / math.Pow(10, float64(len(digits)-point-1))
+	}
+	if span < 1 {
+		return 1
+	}
+	return math.Trunc(span)
+}
+
+// splitDurationUnit splits a duration bound into its number and the length in
+// milliseconds of the trailing unit suffix, which is matched
+// case-insensitively against durationUnits. A bound with no suffix is seconds.
+// ok is false for a suffix the language does not know ("10x"), which degrades
+// the whole token to free text like any other malformed value.
+func splitDurationUnit(raw string) (string, float64, bool) {
+	end := len(raw)
+	for end > 0 && isKeyRune(rune(raw[end-1])) {
+		end--
+	}
+	unit, ok := durationUnits[strings.ToLower(raw[end:])]
+	return raw[:end], unit, ok
 }
 
 // splitRange splits a numeric value on its unescaped range dash. Without a

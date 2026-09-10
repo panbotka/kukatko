@@ -2085,12 +2085,21 @@ put a photo taken minutes either side of New Year in the same year.
 | `iso:` `f:` `mm:` `mp:` | number, ranges | ISO / aperture / focal length / megapixels (`width×height/10⁶`) |
 | `type:` | `image\|video\|live` | the media type |
 | `codec:` | text | the image **or** video codec (`hevc`, `jpeg`, …) |
+| `duration:` | a length, ranges | how long a clip runs. Each bound is a number with an optional unit — `s`/`sec`, `m`/`min`, `h`/`hr`; a **bare number is seconds**, milliseconds are not a unit anybody types. A bound is as precise as it is written and the interval runs to the end of its last place, so `duration:10s` is every clip of ten-point-something seconds, `duration:1.5s` narrows that to a tenth and `duration:1m-2m` runs from one minute to just under three (the shape `year:2020-2023` already has). `duration:1m-` is "longer than a minute". A **still is never in the answer** — it has no length — and neither is a clip whose container could not be probed (`duration_ms IS NULL`) |
+| `sound:` | `yes\|no` | whether the clip carries an audio track (`photos.has_audio`). Only a **standalone video** answers: a still has no sound track and a live photo's has never been probed, so neither is in either direction of the answer |
+| `fps:` | number, ranges | a clip's frame rate. Every bound is widened by **0.5 %**, so the whole number a camera prints on its dial finds the NTSC rate the file records — `fps:30` matches 29.97, `fps:60` matches 59.94 — while staying far from the neighbouring rate. `fps:120-` is the high-frame-rate footage, `fps:-30` the ordinary. A still, and a video with no probed frame rate, are never in the answer |
+| `streaming:` | `yes\|no` | whether the video has been encoded for smooth playback: the catalogue records at least one HLS rendition for it (`photo_hls_renditions`), the same fact the listing's `hls` flag reports. `streaming:no` is the worklist of clips **still waiting** to be prepared. Only standalone videos answer — a live photo's motion clip is never encoded, and a still has nothing to encode |
 | `portrait:` `landscape:` `square:` `panorama:` | `yes\|no` | orientation by effective dimensions (EXIF orientation 5–8 swaps the sides); panorama = ratio ≥ 1.9 |
 | `faces:` | `yes\|no`, number, range | the count of non-invalid face **markers**; a bare number = a **minimum** (`faces:3` ≥ 3), a range bounds both sides |
 | `face:new` | enum | the photo has a detected, still **unassigned** face (`faces.subject_uid IS NULL`) |
 
 Booleans accept `yes/no`, `true/false` and `1/0`. Per-user filters (`favorite:`, `rating:`, `flag:`)
 are always scoped to the caller (`RatedBy`); without an authenticated user they are inert.
+The four **video** filters (`duration:`, `sound:`, `fps:`, `streaming:`) are each narrowed to the rows
+their question means something for (`queryCondGuards` in `store_query.go`), and that guard sits **outside**
+the negation: `sound:no`, `sound:!yes` and `duration:!10s` all stay within the clips instead of answering
+for every still in the library. The orientation filters read the stored dimensions, which for a video are
+recorded without rotation handling — a separate question, and none of the four depends on it.
 Structured query params (`?album=`, `?label=`, `?year=`, …) **keep working unchanged** —
 the language is purely additive and saved searches stay compatible.
 

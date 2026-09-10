@@ -272,3 +272,121 @@ func TestUploaderCond(t *testing.T) {
 		})
 	}
 }
+
+// TestVideoFilterClauses covers what the four video filters compile to: the
+// clip-length bounds in the milliseconds the column stores, the frame rate
+// widened enough for the NTSC rates, and the two yes/no filters — each of them
+// wrapped in the guard that keeps a still out of the answer in both directions.
+func TestVideoFilterClauses(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		input string
+		want  []string
+	}{
+		{
+			name:  "duration binds whole milliseconds",
+			input: "duration:10s",
+			want:  []string{"(duration_ms IS NOT NULL AND ((duration_ms >= $1 AND duration_ms <= $2)))"},
+		},
+		{
+			name:  "an open duration range binds one bound",
+			input: "duration:1m-",
+			want:  []string{"(duration_ms >= $1)"},
+		},
+		{
+			name:  "a negated duration keeps the guard outside the negation",
+			input: "duration:!10s",
+			want:  []string{"(duration_ms IS NOT NULL AND (NOT COALESCE("},
+		},
+		{
+			name:  "sound reads the audio flag",
+			input: "sound:yes",
+			want:  []string{"(media_type = 'video' AND (has_audio))"},
+		},
+		{
+			name:  "silent clips are clips, not stills",
+			input: "sound:no",
+			want:  []string{"(media_type = 'video' AND (NOT has_audio))"},
+		},
+		{
+			name:  "fps compiles a range over the fps column",
+			input: "fps:100-240",
+			want:  []string{"(fps IS NOT NULL AND ((fps >= $1 AND fps <= $2)))"},
+		},
+		{
+			name:  "streaming asks for a recorded rendition",
+			input: "streaming:yes",
+			want: []string{"(media_type = 'video' AND (EXISTS (SELECT 1 FROM photo_hls_renditions h " +
+				"WHERE h.photo_uid = photos.uid)))"},
+		},
+		{
+			name:  "the waiting worklist negates the same probe",
+			input: "streaming:no",
+			want:  []string{"(media_type = 'video' AND (NOT COALESCE((EXISTS (SELECT 1 FROM photo_hls_renditions"},
+		},
+		{
+			name:  "the video filters combine into one query",
+			input: "duration:1m- sound:no streaming:no",
+			want:  []string{"duration_ms IS NOT NULL", "has_audio", "photo_hls_renditions"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			sql, _ := buildCountQuery(ListParams{QueryFilters: query.Parse(tt.input).Filters})
+			for _, want := range tt.want {
+				if !strings.Contains(sql, want) {
+					t.Errorf("query missing %q:\n%s", want, sql)
+				}
+			}
+		})
+	}
+}
+
+// TestDurationCond_bindsIntegers pins the millisecond bounds duration: binds:
+// whole integers, the type of the duration_ms column, so the parsed units have
+// been resolved before the query is built and no float ever reaches an INTEGER
+// comparison.
+func TestDurationCond_bindsIntegers(t *testing.T) {
+	t.Parallel()
+
+	_, args := buildCountQuery(ListParams{QueryFilters: query.Parse("duration:1m-2m").Filters})
+	want := []int64{60_000, 179_999}
+	got := make([]int64, 0, len(args))
+	for _, a := range args {
+		if n, ok := a.(int64); ok {
+			got = append(got, n)
+		}
+	}
+	if len(got) != len(want) {
+		t.Fatalf("integer bounds = %v, want %v", got, want)
+	}
+	for i, w := range want {
+		if got[i] != w {
+			t.Errorf("bound %d = %d, want %d", i, got[i], w)
+		}
+	}
+}
+
+// TestFPSCond_ntscSlack verifies the frame-rate bounds are widened by fpsSlack:
+// a reader who types the whole number a camera prints on its dial (30p) has to
+// find the 29.97 the file actually records, and the widening must stay far from
+// the neighbouring rate.
+func TestFPSCond_ntscSlack(t *testing.T) {
+	t.Parallel()
+
+	_, args := buildCountQuery(ListParams{QueryFilters: query.Parse("fps:30").Filters})
+	bounds := floatArgs(args)
+	if len(bounds) != 2 {
+		t.Fatalf("fps bounds = %v, want two", bounds)
+	}
+	if bounds[0] > 29.97 {
+		t.Errorf("lower fps bound = %v, must reach 29.97", bounds[0])
+	}
+	if bounds[0] < 29.5 || bounds[1] > 30.5 {
+		t.Errorf("fps bounds %v reach beyond the neighbouring frame rates", bounds)
+	}
+}

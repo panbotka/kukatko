@@ -117,6 +117,16 @@ const (
 	KeyType Key = "type"
 	// KeyCodec matches the image or video codec (text).
 	KeyCodec Key = "codec"
+	// KeyDuration matches how long a clip runs, as a single value or a range,
+	// in the units a person types (duration).
+	KeyDuration Key = "duration"
+	// KeySound keeps the clips that carry an audio track (yes/no).
+	KeySound Key = "sound"
+	// KeyFPS matches a clip's frame rate, with ranges (number).
+	KeyFPS Key = "fps"
+	// KeyStreaming keeps the videos already encoded for smooth playback (yes),
+	// or the ones still waiting for it (no).
+	KeyStreaming Key = "streaming"
 	// KeyPortrait keeps photos taller than wide (yes/no).
 	KeyPortrait Key = "portrait"
 	// KeyLandscape keeps photos wider than tall (yes/no).
@@ -157,6 +167,10 @@ const (
 	KindID
 	// KindCount accepts yes/no or a number/range; a bare number is a minimum.
 	KindCount
+	// KindDuration accepts a length of time — a single value or a range, each
+	// bound a number with an optional unit suffix (s, min, h; bare is seconds).
+	// Its bounds are milliseconds, the unit the catalogue stores.
+	KindDuration
 )
 
 // spec describes how one filter key's value is parsed and validated: its value
@@ -211,6 +225,10 @@ var specs = map[Key]spec{
 	KeyMegapixels:  {kind: KindNumber, lo: 0, hi: 10000},
 	KeyType:        {kind: KindEnum, enum: []string{"image", "video", "live"}},
 	KeyCodec:       {kind: KindText},
+	KeyDuration:    {kind: KindDuration, lo: 0, hi: maxDurationMs},
+	KeySound:       {kind: KindBool},
+	KeyFPS:         {kind: KindNumber, lo: 0, hi: 10000},
+	KeyStreaming:   {kind: KindBool},
 	KeyPortrait:    {kind: KindBool},
 	KeyLandscape:   {kind: KindBool},
 	KeySquare:      {kind: KindBool},

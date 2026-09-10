@@ -225,14 +225,16 @@ describe('SearchQueryInput — history while typing', () => {
 
     await user.type(screen.getByRole('combobox'), 's')
 
-    // `s` alone used to offer two English filter keys and nothing else; the two
+    // `s` alone used to offer the English filter keys and nothing else; the two
     // remembered queries come first, and only then the completions. `snih`
     // matches `sníh`, as everywhere else in the box.
     const options = await screen.findAllByRole('option')
     expect(options.map((option) => option.textContent)).toEqual([
       'svatba',
       'sníh',
+      'sound:',
       'square:',
+      'streaming:',
       'subject:',
     ])
     // Mixed rows say so, rather than claiming to be one kind or the other.

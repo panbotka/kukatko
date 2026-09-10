@@ -29,12 +29,14 @@ export const FILTER_KEYS = [
   'day',
   'description',
   'dist',
+  'duration',
   'f',
   'face',
   'faces',
   'favorite',
   'filename',
   'flag',
+  'fps',
   'geo',
   'hidden',
   'iso',
@@ -52,7 +54,9 @@ export const FILTER_KEYS = [
   'portrait',
   'private',
   'rating',
+  'sound',
   'square',
+  'streaming',
   'subject',
   'taken',
   'text',
@@ -500,6 +504,10 @@ export type QueryHelpRowId =
   | 'optics'
   | 'type'
   | 'codec'
+  | 'duration'
+  | 'sound'
+  | 'fps'
+  | 'streaming'
   | 'orientation'
   | 'faces'
 
@@ -591,6 +599,10 @@ export const QUERY_HELP_ROWS: QueryHelpRow[] = [
   { id: 'optics', keys: 'iso: f: mm: mp:', example: 'iso:100-400 f:2.8-4' },
   { id: 'type', keys: 'type:', example: 'type:video' },
   { id: 'codec', keys: 'codec:', example: 'codec:hevc' },
+  { id: 'duration', keys: 'duration:', example: 'duration:1m-' },
+  { id: 'sound', keys: 'sound:', example: 'sound:no' },
+  { id: 'fps', keys: 'fps:', example: 'fps:120-' },
+  { id: 'streaming', keys: 'streaming:', example: 'streaming:no' },
   {
     id: 'orientation',
     keys: 'portrait: landscape: square: panorama:',
@@ -631,6 +643,7 @@ export const QUERY_HELP_OPERATORS: QueryHelpOperator[] = [
 const KEY_ALIASES: Readonly<Record<string, string | undefined>> = {
   autor: 'uploader',
   datum: 'taken',
+  delka: 'duration',
   den: 'day',
   fotoaparat: 'camera',
   fotka: 'filename',
@@ -654,6 +667,7 @@ const KEY_ALIASES: Readonly<Record<string, string | undefined>> = {
   tvar: 'faces',
   tvare: 'faces',
   zeme: 'country',
+  zvuk: 'sound',
 }
 
 /**

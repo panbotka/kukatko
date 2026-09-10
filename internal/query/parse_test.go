@@ -2,6 +2,7 @@ package query
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -74,16 +75,22 @@ func fmtValue(v Value) string {
 	case v.Min != nil || v.Max != nil:
 		b.WriteString("num:")
 		if v.Min != nil {
-			fmt.Fprintf(&b, "%g", *v.Min)
+			b.WriteString(fmtNumber(*v.Min))
 		}
 		b.WriteString("..")
 		if v.Max != nil {
-			fmt.Fprintf(&b, "%g", *v.Max)
+			b.WriteString(fmtNumber(*v.Max))
 		}
 	default:
 		b.WriteString("text:" + v.Text)
 	}
 	return b.String()
+}
+
+// fmtNumber renders a numeric bound in full decimal notation, so a duration in
+// milliseconds reads as 3600000 rather than %g's 3.6e+06.
+func fmtNumber(n float64) string {
+	return strconv.FormatFloat(n, 'f', -1, 64)
 }
 
 // TestParse_table is the exhaustive grammar table: every filter, every
@@ -233,6 +240,45 @@ func TestParse_table(t *testing.T) {
 		{"landscape no", "landscape:no", "filters=[landscape=bool:false]"},
 		{"square numeric bool", "square:1", "filters=[square=bool:true]"},
 		{"panorama", "panorama:true", "filters=[panorama=bool:true]"},
+
+		// --- Video: duration, sound, frame rate, streaming ---
+		// A bound is precise to the unit it is written in, so a single value is
+		// the whole unit it names and a range runs to the end of its upper one.
+		{"duration bare number is seconds", "duration:10", "filters=[duration=num:10000..10999]"},
+		{"duration seconds", "duration:10s", "filters=[duration=num:10000..10999]"},
+		{"duration minutes", "duration:2m", "filters=[duration=num:120000..179999]"},
+		{"duration long unit", "duration:2min", "filters=[duration=num:120000..179999]"},
+		{"duration hours", "duration:1h", "filters=[duration=num:3600000..7199999]"},
+		{"duration unit case-insensitive", "duration:10S", "filters=[duration=num:10000..10999]"},
+		{"duration range", "duration:1m-2m", "filters=[duration=num:60000..179999]"},
+		{"duration range mixed units", "duration:30s-2m", "filters=[duration=num:30000..179999]"},
+		{"duration reversed range normalises", "duration:2m-1m", "filters=[duration=num:60000..179999]"},
+		{"duration open upper bound", "duration:1m-", "filters=[duration=num:60000..]"},
+		{"duration open lower bound", "duration:-30s", "filters=[duration=num:..30999]"},
+		{"duration fractional narrows to the tenth", "duration:1.5s", "filters=[duration=num:1500..1599]"},
+		{"duration fractional minutes", "duration:1.5m", "filters=[duration=num:90000..95999]"},
+		{"duration negated", "duration:!10s", "filters=[duration=!num:10000..10999]"},
+		{"duration alternatives", "duration:10s|2m",
+			"filters=[duration=num:10000..10999|num:120000..179999]"},
+		{"duration unknown unit degrades", "duration:10x", "terms=[t(duration:10x)] unknown=[duration:10x]"},
+		{"duration milliseconds are not a unit", "duration:500ms",
+			"terms=[t(duration:500ms)] unknown=[duration:500ms]"},
+		{"duration unit without a number degrades", "duration:m", "terms=[t(duration:m)] unknown=[duration:m]"},
+		{"duration words degrade", "duration:long", "terms=[t(duration:long)] unknown=[duration:long]"},
+		{"duration above the cap degrades", "duration:25h", "terms=[t(duration:25h)] unknown=[duration:25h]"},
+		{"duration not-a-number degrades", "duration:nan", "terms=[t(duration:nan)] unknown=[duration:nan]"},
+		{"duration dash only degrades", "duration:-", "terms=[t(duration:-)] unknown=[duration:-]"},
+		{"sound yes", "sound:yes", "filters=[sound=bool:true]"},
+		{"sound no", "sound:no", "filters=[sound=bool:false]"},
+		{"sound rubbish degrades", "sound:loud", "terms=[t(sound:loud)] unknown=[sound:loud]"},
+		{"fps value", "fps:30", "filters=[fps=num:30..30]"},
+		{"fps fractional", "fps:29.97", "filters=[fps=num:29.97..29.97]"},
+		{"fps range", "fps:100-240", "filters=[fps=num:100..240]"},
+		{"fps open range", "fps:120-", "filters=[fps=num:120..]"},
+		{"fps rubbish degrades", "fps:fast", "terms=[t(fps:fast)] unknown=[fps:fast]"},
+		{"streaming yes", "streaming:yes", "filters=[streaming=bool:true]"},
+		{"streaming no", "streaming:no", "filters=[streaming=bool:false]"},
+		{"streaming rubbish degrades", "streaming:soon", "terms=[t(streaming:soon)] unknown=[streaming:soon]"},
 
 		// --- Faces ---
 		{"faces yes", "faces:yes", "filters=[faces=bool:true]"},

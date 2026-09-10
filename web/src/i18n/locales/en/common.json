@@ -960,6 +960,10 @@
         "optics": "ISO, aperture, focal length in mm and megapixels.",
         "type": "Media type: image, video or live.",
         "codec": "Image or video codec.",
+        "duration": "A clip's length — units s, min, h (a bare number is seconds). A single value covers the whole unit: duration:10s is a clip of about ten seconds.",
+        "sound": "Clips with an audio track, or without one (yes/no). It never answers for a still — a still has none.",
+        "fps": "A clip's frame rate; fps:30 finds 29.97 (NTSC) too.",
+        "streaming": "Videos already encoded for smooth playback (yes), or the ones still waiting for it (no).",
         "orientation": "Portrait, landscape, square, panorama (yes/no).",
         "faces": "Face count (faces:3 = at least three); face:new = a face nobody named yet.",
         "uid": "One photo by its own ID (or by the source ID it was imported under). It finds it even when archived or hidden."

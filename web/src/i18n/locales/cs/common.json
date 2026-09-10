@@ -970,6 +970,10 @@
         "optics": "ISO, clona, ohnisko v mm a megapixely.",
         "type": "Typ média: image, video nebo live.",
         "codec": "Kodek obrázku či videa.",
+        "duration": "Délka klipu — jednotky s, min, h (bez jednotky sekundy). Jedna hodnota pokrývá celou jednotku: duration:10s je klip kolem deseti sekund.",
+        "sound": "Klipy se zvukovou stopou, nebo bez ní (yes/no). Fotek se neptá — ty žádnou nemají.",
+        "fps": "Snímková frekvence videa; fps:30 najde i 29,97 (NTSC).",
+        "streaming": "Videa připravená k plynulému přehrávání (yes), nebo ta, která na přípravu ještě čekají (no).",
         "orientation": "Na výšku, na šířku, čtverec, panorama (yes/no).",
         "faces": "Počet tváří (faces:3 = aspoň tři); face:new = zatím nepřiřazená tvář.",
         "uid": "Jedna fotka podle svého ID (nebo podle ID z původního katalogu). Najde ji i archivovanou nebo skrytou."

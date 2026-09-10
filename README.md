@@ -44,7 +44,9 @@ photo-book tool (deliberately out of scope), or a product with support and a rel
   `person:"Anna Nováková" year:1985`, `near:<uid>` for "more like this one". Some 40 keys — people,
   albums, labels, country/city, `geo`, `dated` (`dated:no` is the pile of photos with no date at all,
   whether nobody ever knew it or somebody said so), camera, lens, `iso`, `f`, `mm`, `mp`, media type,
-  codec, orientation, rating, favourite. `person:`, `label:` and `album:` autocomplete the **actual names in
+  codec, orientation, rating, favourite — and, for videos, `duration:1m-` in the units you would say
+  it in, `sound:no`, `fps:120-` and `streaming:no`, the clips still waiting to be prepared for
+  playback. `person:`, `label:` and `album:` autocomplete the **actual names in
   your library**, diacritics-insensitively and quoted correctly; a `?` cheat sheet is one keypress
   away, and a filter the parser did not understand is pointed out instead of silently ignored.
 - **The text in the picture is searchable too** — a street sign, a shop front, a race number, a
