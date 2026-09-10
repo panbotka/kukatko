@@ -2379,7 +2379,8 @@
     },
     "running": {
       "title": "Uploading…",
-      "lead": "Keep this page open. While you wait, choose where these photos belong."
+      "lead": "Keep this page open. While you wait, choose where these photos belong.",
+      "leadWithVideo": "Keep this page open. While you wait, choose where these belong."
     },
     "queue": {
       "heading": "Files in this batch ({{total}})"
@@ -2414,8 +2415,18 @@
     "done": {
       "uploaded_one": "{{count}} photo uploaded.",
       "uploaded_other": "{{count}} photos uploaded.",
+      "uploadedVideos_one": "{{count}} video uploaded.",
+      "uploadedVideos_other": "{{count}} videos uploaded.",
+      "uploadedMixed": "{{photos}} and {{videos}} uploaded.",
       "uploadedTo_one": "{{count}} photo uploaded, added to {{names}}.",
       "uploadedTo_other": "{{count}} photos uploaded, added to {{names}}.",
+      "uploadedToVideos_one": "{{count}} video uploaded, added to {{names}}.",
+      "uploadedToVideos_other": "{{count}} videos uploaded, added to {{names}}.",
+      "uploadedToMixed": "{{photos}} and {{videos}} uploaded, added to {{names}}.",
+      "photosPart_one": "{{count}} photo",
+      "photosPart_other": "{{count}} photos",
+      "videosPart_one": "{{count}} video",
+      "videosPart_other": "{{count}} videos",
       "allDuplicates_one": "{{count}} file was already in your library.",
       "allDuplicates_other": "All {{count}} files were already in your library.",
       "duplicates_one": "{{count}} file was already in your library.",
@@ -2424,12 +2435,14 @@
       "failed_other": "{{count}} files did not upload.",
       "failedHint": "Everything else is in your library. Retry the ones that failed.",
       "noAlbum": "These photos are not in any album or label yet. Choose one and we will add them.",
+      "noAlbumWithVideo": "These files are not in any album or label yet. Choose one and we will add them.",
       "viewLibrary": "Show them in the library",
       "uploadMore": "Upload more"
     },
     "organize": {
       "heading": "Albums and labels",
       "hint": "What you choose here is added to every photo in this batch.",
+      "hintWithVideo": "What you choose here is added to everything in this batch.",
       "albums": "Albums",
       "labels": "Labels",
       "albumsPlaceholder": "Filter or create an album…",

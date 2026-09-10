@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
 import Spinner from 'react-bootstrap/Spinner'
@@ -5,12 +6,22 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 import { type OrganizeAssignState } from '../../hooks/useUploadOrganize'
-import { type UploadQueueItem, type UploadSummary } from '../../hooks/useUploadQueue'
+import {
+  type QueueItemStatus,
+  type UploadQueueItem,
+  type UploadSummary,
+} from '../../hooks/useUploadQueue'
 import { LIBRARY_PATH } from '../../lib/libraryView'
 
+import { batchMedia } from './batchMedia'
 import { UploadActionBar } from './UploadActionBar'
 import { UploadOrganize, type UploadOrganizeProps } from './UploadOrganize'
 import { UploadQueuePanel } from './UploadQueuePanel'
+
+/** The picked files behind every item of the batch in one of the given states. */
+function filesIn(items: UploadQueueItem[], statuses: readonly QueueItemStatus[]): File[] {
+  return items.filter((item) => statuses.includes(item.status)).map((item) => item.file)
+}
 
 /** Props for {@link UploadStageDone}. */
 export interface UploadStageDoneProps {
@@ -46,6 +57,15 @@ export interface UploadStageDoneProps {
  * primary action becomes retrying them, because a count of successes is not what
  * the reader needs at that moment.
  *
+ * The sentence says what actually went up: stills and clips are counted apart
+ * ("3 photos and 1 video uploaded"), because congratulating someone on a photo
+ * they never sent is simply false. The split is the client's own — `batchMedia`
+ * over the picked files, the same classification the queue's play glyph uses —
+ * so nothing is asked of the per-file result, which carries no media type. A
+ * batch with no clips in it is worded exactly as it always has been. The
+ * duplicate and failed counts stay counts of *files*: a duplicate clip and a
+ * duplicate photo are the same event and neither is claimed as uploaded.
+ *
  * The picker stays on the page. Finishing with no album chosen is the case worth
  * catching — those photos are otherwise quietly untagged — so the stage says so
  * and offers the field right there; `useUploadOrganize` re-arms on a change, so
@@ -77,6 +97,44 @@ export function UploadStageDone({
   const landed = summary.created + summary.duplicate
   const assigned = assign.status === 'done' && organizeNames.length > 0
 
+  // What the batch may be called. The *uploaded* files decide the counted
+  // sentence; everything that landed — a duplicate included, since it is filed
+  // along with the rest — decides the copy around the album picker.
+  const uploaded = useMemo(() => batchMedia(filesIn(items, ['created'])), [items])
+  const filed = useMemo(() => batchMedia(filesIn(items, ['created', 'duplicate'])), [items])
+
+  /** The two halves of a mixed batch, each already in its own plural form. */
+  function mixedParts(): { photos: string; videos: string } {
+    return {
+      photos: t('upload.done.photosPart', { count: uploaded.photos }),
+      videos: t('upload.done.videosPart', { count: uploaded.videos }),
+    }
+  }
+
+  /** The uploaded count, named after what was in fact uploaded. */
+  function uploadedSentence(): string {
+    switch (uploaded.kind) {
+      case 'videos':
+        return t('upload.done.uploadedVideos', { count: uploaded.videos })
+      case 'mixed':
+        return t('upload.done.uploadedMixed', mixedParts())
+      default:
+        return t('upload.done.uploaded', { count: summary.created })
+    }
+  }
+
+  /** The same, with the albums and labels the batch has just been filed into. */
+  function uploadedToSentence(names: string): string {
+    switch (uploaded.kind) {
+      case 'videos':
+        return t('upload.done.uploadedToVideos', { count: uploaded.videos, names })
+      case 'mixed':
+        return t('upload.done.uploadedToMixed', { ...mixedParts(), names })
+      default:
+        return t('upload.done.uploadedTo', { count: summary.created, names })
+    }
+  }
+
   /** The one-sentence outcome, in the order the reader needs it. */
   function outcome(): string {
     if (failed) {
@@ -86,12 +144,9 @@ export function UploadStageDone({
       return t('upload.done.allDuplicates', { count: summary.duplicate })
     }
     if (assigned) {
-      return t('upload.done.uploadedTo', {
-        count: summary.created,
-        names: organizeNames.join(', '),
-      })
+      return uploadedToSentence(organizeNames.join(', '))
     }
-    return t('upload.done.uploaded', { count: summary.created })
+    return uploadedSentence()
   }
 
   const libraryLink = (
@@ -151,8 +206,16 @@ export function UploadStageDone({
       {landed > 0 && (
         <div>
           <h3 className="kk-text-eyebrow text-secondary mb-1">{t('upload.organize.heading')}</h3>
+          {/* Both lines are about what landed, so a batch holding a clip takes
+              the wording that covers both rather than one about photographs. */}
           <p className="kk-text-caption text-secondary mb-2">
-            {organizeNames.length === 0 ? t('upload.done.noAlbum') : t('upload.organize.hint')}
+            {organizeNames.length === 0
+              ? t(filed.kind === 'photos' ? 'upload.done.noAlbum' : 'upload.done.noAlbumWithVideo')
+              : t(
+                  filed.kind === 'photos'
+                    ? 'upload.organize.hint'
+                    : 'upload.organize.hintWithVideo',
+                )}
           </p>
           <UploadOrganize {...organize} />
         </div>

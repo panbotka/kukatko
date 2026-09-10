@@ -1,7 +1,9 @@
+import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { type UploadQueueItem, type UploadSummary } from '../../hooks/useUploadQueue'
 
+import { batchMedia } from './batchMedia'
 import { PickFilesButton } from './PickFilesButton'
 import { UploadActionBar } from './UploadActionBar'
 import { UploadOrganize, type UploadOrganizeProps } from './UploadOrganize'
@@ -43,6 +45,10 @@ export interface UploadStageUploadingProps {
  *
  * Adding files here appends to the running batch: the queue drains whatever it
  * holds, so nothing in flight is restarted or dropped.
+ *
+ * Both framing lines follow what is in the queue: a batch holding a clip is not
+ * asked where its *photos* belong (`batchMedia` over the picked files, the
+ * client's own classification), while a batch of stills reads exactly as before.
  */
 export function UploadStageUploading({
   summary,
@@ -57,6 +63,9 @@ export function UploadStageUploading({
 
   const done = summary.created + summary.duplicate + summary.error
   const remaining = summary.queued + summary.uploading
+  // Nothing has settled yet, so the whole queue is what the copy is about.
+  const media = useMemo(() => batchMedia(items.map((item) => item.file)), [items])
+  const stills = media.kind === 'photos'
 
   return (
     <section className="kk-upload-stage" aria-labelledby="upload-stage-title">
@@ -64,12 +73,16 @@ export function UploadStageUploading({
         <h2 id="upload-stage-title" className="kk-section-title mb-1">
           {t('upload.running.title')}
         </h2>
-        <p className="text-secondary mb-0">{t('upload.running.lead')}</p>
+        <p className="text-secondary mb-0">
+          {t(stills ? 'upload.running.lead' : 'upload.running.leadWithVideo')}
+        </p>
       </div>
 
       <div>
         <h3 className="kk-text-eyebrow text-secondary mb-1">{t('upload.organize.heading')}</h3>
-        <p className="kk-text-caption text-secondary mb-2">{t('upload.organize.hint')}</p>
+        <p className="kk-text-caption text-secondary mb-2">
+          {t(stills ? 'upload.organize.hint' : 'upload.organize.hintWithVideo')}
+        </p>
         <UploadOrganize {...organize} />
       </div>
 

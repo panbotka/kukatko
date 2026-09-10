@@ -2479,7 +2479,8 @@
     },
     "running": {
       "title": "Nahrávám…",
-      "lead": "Nechte stránku otevřenou. Než to doběhne, vyberte, kam fotky patří."
+      "lead": "Nechte stránku otevřenou. Než to doběhne, vyberte, kam fotky patří.",
+      "leadWithVideo": "Nechte stránku otevřenou. Než to doběhne, vyberte, kam to všechno patří."
     },
     "queue": {
       "heading": "Soubory v této dávce ({{total}})"
@@ -2517,9 +2518,23 @@
       "uploaded_one": "Nahrána {{count}} fotka.",
       "uploaded_few": "Nahrány {{count}} fotky.",
       "uploaded_other": "Nahráno {{count}} fotek.",
+      "uploadedVideos_one": "Nahráno {{count}} video.",
+      "uploadedVideos_few": "Nahrána {{count}} videa.",
+      "uploadedVideos_other": "Nahráno {{count}} videí.",
+      "uploadedMixed": "Nahráli jsme {{photos}} a {{videos}}.",
       "uploadedTo_one": "Nahrána {{count}} fotka, přidána do: {{names}}.",
       "uploadedTo_few": "Nahrány {{count}} fotky, přidány do: {{names}}.",
       "uploadedTo_other": "Nahráno {{count}} fotek, přidáno do: {{names}}.",
+      "uploadedToVideos_one": "Nahráno {{count}} video, přidáno do: {{names}}.",
+      "uploadedToVideos_few": "Nahrána {{count}} videa, přidána do: {{names}}.",
+      "uploadedToVideos_other": "Nahráno {{count}} videí, přidáno do: {{names}}.",
+      "uploadedToMixed": "Nahráli jsme {{photos}} a {{videos}} a přidali je do: {{names}}.",
+      "photosPart_one": "{{count}} fotku",
+      "photosPart_few": "{{count}} fotky",
+      "photosPart_other": "{{count}} fotek",
+      "videosPart_one": "{{count}} video",
+      "videosPart_few": "{{count}} videa",
+      "videosPart_other": "{{count}} videí",
       "allDuplicates_one": "{{count}} soubor už v knihovně byl.",
       "allDuplicates_few": "Všechny {{count}} soubory už v knihovně byly.",
       "allDuplicates_other": "Všech {{count}} souborů už v knihovně bylo.",
@@ -2531,12 +2546,14 @@
       "failed_other": "{{count}} souborů se nenahrálo.",
       "failedHint": "Všechno ostatní je v knihovně. Neúspěšné zkuste znovu.",
       "noAlbum": "Tyhle fotky zatím nejsou v žádném albu ani pod štítkem. Vyberte je a přidáme je tam.",
+      "noAlbumWithVideo": "Tyhle soubory zatím nejsou v žádném albu ani pod štítkem. Vyberte je a přidáme je tam.",
       "viewLibrary": "Zobrazit je v knihovně",
       "uploadMore": "Nahrát další"
     },
     "organize": {
       "heading": "Alba a štítky",
       "hint": "Co tu vyberete, přidáme ke každé fotce v této dávce.",
+      "hintWithVideo": "Co tu vyberete, přidáme ke všemu v této dávce.",
       "albums": "Alba",
       "labels": "Štítky",
       "albumsPlaceholder": "Filtrovat nebo vytvořit album…",

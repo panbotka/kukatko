@@ -74,6 +74,10 @@ function file(name: string): File {
   return new File(['data'], name, { type: 'image/jpeg' })
 }
 
+function video(name: string): File {
+  return new File(['data'], name, { type: 'video/mp4' })
+}
+
 function created(uid: string): UploadFileResult {
   return { filename: 'x', status: 201, outcome: 'created', photo_uid: uid }
 }
@@ -265,6 +269,29 @@ describe('UploadPage — stage 2, uploading', () => {
     await openQueue(user)
     expect(screen.getByText('a.jpg')).toBeInTheDocument()
     expect(screen.getByText('b.jpg')).toBeInTheDocument()
+  })
+
+  it('stops asking a batch with a clip in it where its photos belong', async () => {
+    uploadMock.mockReturnValue(new Promise<UploadFileResult>(() => undefined))
+    const user = userEvent.setup()
+    renderPage()
+
+    await pickFiles(user, [file('a.jpg')])
+    expect(
+      screen.getByText('Keep this page open. While you wait, choose where these photos belong.'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('What you choose here is added to every photo in this batch.'),
+    ).toBeInTheDocument()
+
+    // A clip joins the batch: neither line may keep promising photographs.
+    await pickFiles(user, [video('b.mp4')])
+    expect(
+      screen.getByText('Keep this page open. While you wait, choose where these belong.'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('What you choose here is added to everything in this batch.'),
+    ).toBeInTheDocument()
   })
 
   it('appends files added mid-flight to the running batch', async () => {

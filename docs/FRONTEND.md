@@ -814,7 +814,13 @@ here.
   **only** width-dependent thing in the flow — side by side from `md`, stacked below it),
   and beside it the component-free `organizeSelection.ts` = `UPLOAD_ALBUMS_FIELD_ID`
   (the album field's id, kept as one literal) + `organizeSelectionNames`
-  (selection → human names for the outcome sentence, a `create:` marker reading as the typed name);
+  (selection → human names for the outcome sentence, a `create:` marker reading as the typed name),
+  and `batchMedia.ts` = `batchMedia(files)` → `{photos, videos, kind}`, **what the batch is made of**,
+  decided on the client alone: `lib/mediaFiles` `previewKind` per picked `File` (only `video` is a clip —
+  HEIC/TIFF/RAW are stills a browser merely cannot paint) and `lib/mediaKind` `mediaCountKind` for the
+  `'photos' | 'videos' | 'mixed'` judgement, the same one the library's count line uses. It is what lets
+  ② and ③ say what was actually uploaded without the per-file result carrying a media type (it does not).
+  Tests: `batchMedia.test.ts`;
   `components/library/` = `PhotoTile`
   (a lazy-load tile → `/photos/{uid}` in the **hero-first** style: square by default, or **the shape of its
   own photograph** when the caller lays the box out for it (`fill` + `tileWidth`, which is what the justified
@@ -1947,6 +1953,14 @@ here.
   per-file list back (that is where the reason, the per-file retry and the errors-only filter are). A batch
   that landed in no album says so and offers the picker rather than leaving the photos untagged; with
   *nothing* landed there is no picker and no „everything else is in your library" — neither would be true.
+  **The whole flow counts stills and clips apart** (`batchMedia` over the picked files — no backend help, the
+  per-file result carries no media type): the closing sentence names both by count („Nahráli jsme 3 fotky a
+  1 video.“, with `photosPart`/`videosPart` carrying the Czech plurals into the joined sentence), a clips-only
+  batch is „Nahráno 1 video.“, and a batch with no clips in it is worded exactly as it always has been. The
+  same for the album variant of the sentence, and the framing lines in ② and ③ (`running.lead`,
+  `organize.hint`, `done.noAlbum`) take a `…WithVideo` wording — one that covers both — as soon as anything
+  that landed is a clip. The duplicate and failed counters stay counts of **files**: a duplicate clip and a
+  duplicate photo are the same event.
   **Nahrát další keeps the chosen albums and labels**: the next batch is almost always more of the same event.
   This works with no new backend behaviour because `useUploadOrganize` assigns when the batch **settles**
   and re-arms on every change: all recognized photos (new **and** duplicate `resolvedUids`) go in one
