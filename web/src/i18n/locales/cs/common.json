@@ -3110,6 +3110,27 @@
         "face_cluster": "Skupiny obličejů"
       }
     },
+    "video": {
+      "title": "Video ke streamování",
+      "intro": "Kolik videí už má připravenou plynulou verzi pro přehrávání a co brzdí zbytek. Na rozdíl od fronty úloh se tu počítají videa, ne úlohy.",
+      "videos": "Videí v knihovně",
+      "streamable": "Připraveno ke streamování",
+      "missing": "Bez plynulé verze",
+      "encodeRunning": "z toho se právě převádí",
+      "encodeQueued": "z toho čeká ve frontě",
+      "encodeFailed": "z toho selhalo nebo se vzdalo",
+      "notScheduled": "z toho nikdo nenaplánoval",
+      "renditions": "Připravených kvalit celkem",
+      "renditionsNote": "Jedno video může mít víc kvalit. Kolik místa zabírají, tu nenajdete — velikost jednotlivých kousků se nikde neeviduje a spočítat ji by znamenalo projít celé úložiště.",
+      "oldestWait": "Nejdéle čekající převod čeká {{age}}.",
+      "empty": "V knihovně zatím není žádné video.",
+      "disabledBadge": "Vypnuto",
+      "disabledEmpty": "Příprava videí pro plynulé přehrávání je vypnutá a v knihovně zatím žádné video není.",
+      "disabled_one": "Příprava videí pro plynulé přehrávání je vypnutá, takže se nic nepřevádí. To jedno video v knihovně se přehrává jako celý původní soubor — není to nedodělek.",
+      "disabled_few": "Příprava videí pro plynulé přehrávání je vypnutá, takže se nic nepřevádí. Všechna {{count}} videa v knihovně se přehrávají jako celý původní soubor — není to nedodělek.",
+      "disabled_many": "Příprava videí pro plynulé přehrávání je vypnutá, takže se nic nepřevádí. Všech {{count}} videí v knihovně se přehrává jako celý původní soubor — není to nedodělek.",
+      "disabled_other": "Příprava videí pro plynulé přehrávání je vypnutá, takže se nic nepřevádí. Všech {{count}} videí v knihovně se přehrává jako celý původní soubor — není to nedodělek."
+    },
     "imports": {
       "title": "Importy",
       "never": "zatím neproběhl",
@@ -3208,6 +3229,7 @@
       "withoutGps": "Bez souřadnic",
       "withoutPlace": "Bez místa",
       "withoutOcr": "Bez přečtení textu",
+      "videosWithoutStreaming": "Videí bez plynulé verze",
       "duplicateMarkers": "Duplicitních značek",
       "duplicates": "Skupin duplicit",
       "duplicatesPending": "Hledá se na pozadí…",

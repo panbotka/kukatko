@@ -16,6 +16,7 @@ import { ErrorState } from '../components/ErrorState'
 import { JobQueuePanel } from '../components/system/JobQueuePanel'
 import { LibraryOverview } from '../components/system/LibraryOverview'
 import { RemainingWorkPanel } from '../components/system/RemainingWorkPanel'
+import { VideoEncodingPanel } from '../components/system/VideoEncodingPanel'
 import { TechnicalDetail } from '../components/TechnicalDetail'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { formatBytes, formatDateTime } from '../lib/format'
@@ -557,11 +558,15 @@ function AnnouncementCard() {
  *     through on.
  *  3. **Job queue** — the background work broken down by type *and* state, with
  *     a per-type dead-letter requeue.
- *  4. **Health** — the operational cards: database and embeddings-sidecar
+ *  4. **Video** — how far the streaming encode has got, counted over videos
+ *     rather than over jobs, because the queue's row above counts jobs ever run
+ *     and cannot say how much of the library still plays as the whole original
+ *     file.
+ *  5. **Health** — the operational cards: database and embeddings-sidecar
  *     reachability, the backup and last import with their ages, the map provider
  *     (a rejected mapy.com key shows up here rather than only as a grey map), the
  *     geocode credit budget, the server's disk and the build version.
- *  5. The announcement compose box, last: publishing a banner is a rare errand,
+ *  6. The announcement compose box, last: publishing a banner is a rare errand,
  *     not what the page is opened for, and it used to sit above everything.
  *
  * Every number comes from the single `GET /system/status` snapshot — the page
@@ -681,7 +686,7 @@ export function SystemStatusPage() {
       {state.status === 'ready' && (
         <>
           <LibraryOverview library={state.data.library} />
-          <RemainingWorkPanel remaining={state.data.remaining} />
+          <RemainingWorkPanel remaining={state.data.remaining} video={state.data.video} />
           <JobQueuePanel
             jobs={state.data.jobs}
             onRequeue={(jobType) => {
@@ -689,6 +694,7 @@ export function SystemStatusPage() {
             }}
             requeuing={requeuing}
           />
+          <VideoEncodingPanel video={state.data.video} />
           <h2 className="kk-section-title mb-1">{t('system.dashboard.healthTitle')}</h2>
           <p className="text-secondary small">{t('system.dashboard.healthIntro')}</p>
           <Row className="g-3" xs={1} md={2} lg={3}>

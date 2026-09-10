@@ -2976,6 +2976,25 @@
         "face_cluster": "Grouping faces"
       }
     },
+    "video": {
+      "title": "Video streaming",
+      "intro": "How many videos already have a smooth streaming version and what the rest are waiting for. Unlike the job queue, this counts videos, not jobs.",
+      "videos": "Videos in the library",
+      "streamable": "Ready to stream",
+      "missing": "Without a streaming version",
+      "encodeRunning": "of those being encoded now",
+      "encodeQueued": "of those waiting in the queue",
+      "encodeFailed": "of those failed or given up on",
+      "notScheduled": "of those never scheduled",
+      "renditions": "Encoded qualities in total",
+      "renditionsNote": "One video may have several qualities. How much space they take is not shown: the size of the individual pieces is recorded nowhere, and working it out would mean listing the whole storage.",
+      "oldestWait": "The longest-waiting encode has been waiting {{age}}.",
+      "empty": "There is no video in the library yet.",
+      "disabled_one": "Preparing videos for smooth playback is switched off, so nothing is being encoded. The one video in the library plays as the whole original file — nothing is missing.",
+      "disabled_other": "Preparing videos for smooth playback is switched off, so nothing is being encoded. All {{count}} videos in the library play as the whole original file — nothing is missing.",
+      "disabledBadge": "Switched off",
+      "disabledEmpty": "Preparing videos for smooth playback is switched off, and there is no video in the library anyway."
+    },
     "imports": {
       "title": "Imports",
       "never": "never run",
@@ -3074,6 +3093,7 @@
       "withoutGps": "Without coordinates",
       "withoutPlace": "Without a place",
       "withoutOcr": "Text not read yet",
+      "videosWithoutStreaming": "Videos without a streaming version",
       "duplicateMarkers": "Duplicate markers",
       "duplicates": "Duplicate groups",
       "duplicatesPending": "Scanning in the background…",

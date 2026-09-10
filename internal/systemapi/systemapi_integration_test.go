@@ -232,6 +232,71 @@ func TestSystemStatus_LibrarySection(t *testing.T) {
 	}
 }
 
+// TestSystemStatus_VideoSection verifies the streaming-encode section travels in
+// the same snapshot and over the wire under the field names the frontend reads.
+// The harness leaves streaming switched off, which is exactly the case the
+// section exists to describe honestly: the clip really has no streaming version,
+// and that is the instance working as configured rather than a backlog.
+func TestSystemStatus_VideoSection(t *testing.T) {
+	env := newEnv(t)
+	maint := env.login(t, "maint", auth.RoleMaintainer)
+
+	seedStatusVideo(t, env.db, "clip1")
+
+	resp := do(t, maint, http.MethodGet, env.baseURL+"/api/v1/system/status", nil)
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	// Decoded loosely on purpose: this asserts the JSON the frontend actually
+	// parses, not the Go struct both sides of the test would share.
+	var body map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decoding body: %v", err)
+	}
+	video, ok := body["video"].(map[string]any)
+	if !ok {
+		t.Fatalf("payload has no video section: %v", body["video"])
+	}
+	want := map[string]float64{
+		"videos": 1, "streamable": 0, "missing": 1,
+		"encode_queued": 0, "encode_running": 0, "encode_failed": 0,
+		"not_scheduled": 1, "renditions": 0,
+	}
+	for key, value := range want {
+		if got, isNumber := video[key].(float64); !isNumber || got != value {
+			t.Errorf("video.%s = %v, want %v", key, video[key], value)
+		}
+	}
+	if enabled, _ := video["streaming_enabled"].(bool); enabled {
+		t.Error("video.streaming_enabled = true, want false in a harness with no encoding")
+	}
+	// Nothing is queued, so no wait is reported at all.
+	if _, present := video["oldest_queued_at"]; present {
+		t.Errorf("video.oldest_queued_at = %v, want the field omitted", video["oldest_queued_at"])
+	}
+	remaining, ok := body["remaining"].(map[string]any)
+	if !ok {
+		t.Fatalf("payload has no remaining section: %v", body["remaining"])
+	}
+	if got, _ := remaining["videos_without_streaming"].(float64); got != 1 {
+		t.Errorf("remaining.videos_without_streaming = %v, want 1", remaining["videos_without_streaming"])
+	}
+}
+
+// seedStatusVideo inserts one browsable video with no streaming rendition.
+func seedStatusVideo(t *testing.T, db *database.DB, uid string) {
+	t.Helper()
+	const stmt = `
+INSERT INTO photos (uid, file_hash, file_path, file_name, media_type)
+VALUES ($1, $2, $3, $4, 'video')`
+	_, err := db.Pool().Exec(t.Context(), stmt,
+		uid, "hash-"+uid, "2026/08/"+uid+".mp4", uid+".mp4")
+	if err != nil {
+		t.Fatalf("seed video %s: %v", uid, err)
+	}
+}
+
 // seedStatusPhoto inserts one photo of the given size, archived or not.
 func seedStatusPhoto(t *testing.T, db *database.DB, uid string, size int64, archived bool) {
 	t.Helper()

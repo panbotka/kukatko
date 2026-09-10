@@ -169,6 +169,10 @@ func TestCountDashboard_CountsFixture(t *testing.T) {
 		PhotosWithoutPlace: 1,
 		PhotosWithoutOCR:   11,
 		DuplicateMarkers:   1,
+		// The fixture's one live video (p3) has never been encoded; the archived
+		// one (p6) is in the trash and is no backlog. The whole video section is
+		// asserted in TestCountDashboard_VideoEncoding.
+		VideosWithoutStreaming: 1,
 	}
 	if got.Remaining != wantRemaining {
 		t.Errorf("remaining = %+v, want %+v", got.Remaining, wantRemaining)

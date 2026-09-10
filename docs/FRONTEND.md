@@ -324,7 +324,7 @@ here.
   `NamelessSubjectsCard` (a catch-all's uid + slug), `SystemStatusPage` (the commit hash, the
   recognition service's URL, mapy.com's raw detail) and `JobQueuePanel` (the raw job-type ids).
   Tests: `TechnicalDetail.test.tsx`),
-  `components/system/` = **the admin dashboard's three sections**, all rendered from the single
+  `components/system/` = **the admin dashboard's four sections**, all rendered from the single
   `GET /system/status` snapshot the page already polls (no second fetch, no arithmetic of their own):
   `StatTile`/`StatTileGrid` (**the dashboard's number tile** — a big `kk-display` value over its label, 2 per
   row on a phone up to 5 on a wide screen; a tile that has a view behind it makes the **whole card** the click
@@ -340,7 +340,11 @@ here.
   `RemainingWorkPanel` (**what is still to do**: obličeje beze jména → `/review`, shluky → `/people/clusters`,
   bez data, bez souřadnic → `/?q=geo%3Ano`, bez místa → `/maintenance` (the tile counts the photos that
   *have* coordinates and no place yet, which is exactly what the maintenance page's „Určit místo u fotek se
-  souřadnicemi" option schedules), bez rozpoznání textu, duplicitní značky →
+  souřadnicemi" option schedules), bez rozpoznání textu, videí bez plynulé verze → `/?q=type%3Avideo` (the
+  query language has no token for "no streaming version", so the tile leads to the set that contains them
+  rather than nowhere; the tile is **left out entirely** when `video.streaming_enabled` is false, where every
+  video lacking one is the instance working as configured and not a backlog anybody could shrink),
+  duplicitní značky →
   `/duplicate-markers`, skupiny duplicit → `/duplicates`; the duplicates tile is the only one that renders
   **`—` plus "hledá se na pozadí…"** until the backend's background scan has an answer, and "zjištěno <age>"
   once it has — an unavailable scan must not read as "no duplicates"),
@@ -353,6 +357,19 @@ here.
   in words** — `system.jobs.types.*`, „Hledání obličejů" rather than `face_detect`, falling back to the raw id
   for a type shipped before its translation — and the ids those names stand for are listed once, under the
   table, behind a `TechnicalDetail`, for whoever has to match a row to a log line),
+  `VideoEncodingPanel` (**how far the video streaming encode has got**, from `status.video`: a `Card` with the
+  same small `Table` idiom as the queue above it, counting **videos** — videí v knihovně, připraveno ke
+  streamování, bez plynulé verze, and indented under that last one the four disjoint states that sum back up
+  to it (právě se převádí / čeká ve frontě / selhalo nebo se vzdalo / nikdo nenaplánoval), then připravených
+  kvalit celkem. The two backlog rows (bez plynulé verze, nikdo nenaplánoval) go `text-warning` only while
+  non-zero, exactly like a `StatTile` gap. Below the table: how long the oldest queued encode has waited
+  (`formatRelativeTime`, the exact stamp in the `title`) — a queue that has stopped moving looks like a busy
+  one if only the depth is shown — and a caption saying why no byte size is given (segment sizes are recorded
+  nowhere). It exists because the queue's `hls_transcode` row counts *jobs* and keeps the finished ones, so it
+  can never answer "how much of the library still plays as the whole original file". With
+  `streaming_enabled` false the whole table is replaced by a „Vypnuto" badge and one sentence — the numbers
+  would read as a backlog for an instance that is simply not encoding — and an empty library says so instead
+  of rendering a table of zeroes. Tests: `VideoEncodingPanel.test.tsx`),
   `LibraryStatsCards` (**the shared rendering of the library counts** `GET /system/stats`: six
   `Card`s in a responsive `Row` — photos, vyhledávání podle obsahu, obličeje, lidé a zvířata, značky na
   fotkách, alba a štítky — each with a
@@ -1994,7 +2011,8 @@ here.
   point at the queue card below; self-gated on `isMaintainer`,
   `SystemStatusPage` = `/system` (maintainer only) the **admin dashboard**: auto-refresh (polling 5 s)
   `GET /system/status`, read top to bottom in the order the questions are asked — **Knihovna**
-  (`LibraryOverview`), **Zbývá udělat** (`RemainingWorkPanel`), **Práce na pozadí** (`JobQueuePanel`) and only
+  (`LibraryOverview`), **Zbývá udělat** (`RemainingWorkPanel`), **Práce na pozadí** (`JobQueuePanel`),
+  **Video ke streamování** (`VideoEncodingPanel`) and only
   then **Zdraví systému**, the card grid (DB, **Rozpoznávání obsahu a obličejů**, backup, imports,
   **disk serveru**, **maps**, version). Everything comes from that one snapshot: there is no second fetch and no arithmetic in the page,
   so nothing on it can drift from what the backend counted. **Quick actions** — *requeue the dead letter*

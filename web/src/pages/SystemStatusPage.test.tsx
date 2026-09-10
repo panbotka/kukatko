@@ -88,12 +88,25 @@ function status(overrides: Partial<SystemStatus> = {}): SystemStatus {
       photos_without_place: 8100,
       photos_without_ocr: 300,
       duplicate_markers: 2,
+      videos_without_streaming: 40,
       duplicates: {
         configured: true,
         available: true,
         groups: 14,
         computed_at: '2026-06-01T09:55:00Z',
       },
+    },
+    video: {
+      streaming_enabled: true,
+      videos: 145,
+      streamable: 105,
+      missing: 40,
+      encode_queued: 12,
+      encode_running: 1,
+      encode_failed: 3,
+      not_scheduled: 24,
+      renditions: 130,
+      oldest_queued_at: '2026-06-01T06:00:00Z',
     },
     geocode: {
       configured: true,
@@ -147,7 +160,19 @@ function emptyStatus(): SystemStatus {
       photos_without_place: 0,
       photos_without_ocr: 0,
       duplicate_markers: 0,
+      videos_without_streaming: 0,
       duplicates: { configured: false, available: false, groups: 0 },
+    },
+    video: {
+      streaming_enabled: true,
+      videos: 0,
+      streamable: 0,
+      missing: 0,
+      encode_queued: 0,
+      encode_running: 0,
+      encode_failed: 0,
+      not_scheduled: 0,
+      renditions: 0,
     },
   })
 }
@@ -403,6 +428,7 @@ describe('SystemStatusPage', () => {
     expect(screen.getByTestId('tile-without-gps')).toHaveTextContent('8,000')
     expect(screen.getByTestId('tile-without-place')).toHaveTextContent('8,100')
     expect(screen.getByTestId('tile-without-ocr')).toHaveTextContent('300')
+    expect(screen.getByTestId('tile-videos-without-streaming')).toHaveTextContent('40')
     expect(screen.getByTestId('tile-duplicates')).toHaveTextContent('14')
     expect(screen.getByRole('link', { name: 'Groups of faces to name' })).toHaveAttribute(
       'href',
@@ -422,6 +448,31 @@ describe('SystemStatusPage', () => {
       'href',
       '/maintenance',
     )
+    // The query language has no token for "no streaming version", so the tile
+    // leads to the videos rather than to a filter that does not exist.
+    expect(
+      screen.getByRole('link', { name: 'Videos without a streaming version' }),
+    ).toHaveAttribute('href', '/?q=type%3Avideo')
+  })
+
+  it('reports the streaming encode over videos, not over jobs', async () => {
+    renderPage()
+
+    expect(await screen.findByRole('heading', { name: 'Video streaming' })).toBeInTheDocument()
+    expect(screen.getByTestId('video-missing')).toHaveTextContent('40')
+    expect(screen.getByTestId('video-not-scheduled')).toHaveTextContent('24')
+    // The queue's own row is about jobs ever run and says something else entirely.
+    expect(screen.getByTestId('job-image_embed-queued')).toHaveTextContent('4')
+  })
+
+  it('drops the streaming backlog entirely when streaming is switched off', async () => {
+    fetchMock.mockResolvedValue(status({ video: { ...status().video, streaming_enabled: false } }))
+    renderPage()
+
+    expect(await screen.findByTestId('video-disabled')).toBeInTheDocument()
+    // Nothing encodes, so "40 videos have no streaming version" is not work to do
+    // and the backlog tile is gone rather than sitting there at 40 forever.
+    expect(screen.queryByTestId('tile-videos-without-streaming')).not.toBeInTheDocument()
   })
 
   it('says the duplicate scan has no answer yet instead of showing a zero', async () => {

@@ -121,28 +121,92 @@ type RemainingWork struct {
 	// face marker — the same person tagged twice on one photo — with the pairs a
 	// curator has already settled left out.
 	DuplicateMarkers int `json:"duplicate_markers"`
+	// VideosWithoutStreaming is how many browsable videos have no encoded
+	// streaming rendition, i.e. how many still play as the whole original file.
+	// It is the same number as Video.Missing, repeated here so the encoding
+	// backlog sits with the other backlogs instead of only in its own card; a
+	// caller must not show it while streaming is switched off, where "no video is
+	// encoded" is the correct state and not work to do.
+	VideosWithoutStreaming int `json:"videos_without_streaming"`
 	// Duplicates is the near-duplicate photo scan's last answer. Unlike every
 	// other number here it is not a SQL count (see DuplicateScan).
 	Duplicates DuplicateScan `json:"duplicates"`
 }
 
+// Video answers "how is the streaming encode going?" — the question the job
+// queue's `hls_transcode` row cannot answer. That row counts *jobs*, and the
+// queue keeps finished ones, so its totals are a lifetime tally; these numbers
+// count *videos*, as the library holds them right now.
+//
+// The four states of a video that cannot be streamed are disjoint and add up to
+// Missing, in the order an encode moves through them: EncodeRunning (one is
+// being encoded now), EncodeQueued (one is waiting), EncodeFailed (one broke and
+// is retrying or was given up on) and NotScheduled — nothing is scheduled and
+// nothing failed. The last one is why this section exists: it is the state that
+// stalls silently, because no queue row anywhere says that a video was never
+// offered for encoding at all.
+type Video struct {
+	// StreamingEnabled is true when this instance encodes streaming renditions at
+	// all (video.hls.enabled). With it false no `hls_transcode` job is ever
+	// enqueued, so Missing is simply every video and is not a backlog — a reader
+	// must say so rather than show the number as work outstanding. It is stamped
+	// by the service from configuration, not counted, so a Video read straight
+	// from the store always has it false.
+	StreamingEnabled bool `json:"streaming_enabled"`
+	// Videos is how many browsable videos the library holds (the trash excluded),
+	// i.e. Streamable + Missing.
+	Videos int `json:"videos"`
+	// Streamable is how many of them have at least one encoded rendition, which is
+	// what makes a clip playable as a stream.
+	Streamable int `json:"streamable"`
+	// Missing is how many have none.
+	Missing int `json:"missing"`
+	// EncodeQueued is how many of Missing have an encode waiting in the queue.
+	EncodeQueued int `json:"encode_queued"`
+	// EncodeRunning is how many are being encoded right now.
+	EncodeRunning int `json:"encode_running"`
+	// EncodeFailed is how many have a failed or dead-lettered encode, i.e. one
+	// that broke rather than one that is waiting.
+	EncodeFailed int `json:"encode_failed"`
+	// NotScheduled is how many have no encode outstanding at all — never enqueued,
+	// or enqueued and finished without producing a rendition. Nothing will happen
+	// to these until a backfill schedules them.
+	NotScheduled int `json:"not_scheduled"`
+	// Renditions is how many encoded renditions exist across the whole catalogue
+	// (a video may have several qualities). What they weigh is deliberately not
+	// reported: the segments are objects in the store with no recorded size, so
+	// the only honest answer would be a listing of the whole prefix — far too
+	// expensive for a polled dashboard.
+	Renditions int `json:"renditions"`
+	// OldestQueuedAt is when the longest-waiting queued encode was enqueued, so a
+	// queue that has stopped moving is visible as an age rather than as a number
+	// that merely fails to fall. Nil when nothing is queued.
+	OldestQueuedAt *time.Time `json:"oldest_queued_at,omitempty"`
+}
+
 // Dashboard is everything one CountDashboard round trip answers: the library
-// summary and the SQL-countable half of the remaining work. The duplicate scan
-// is filled in separately, by the service, because it is not a count.
+// summary, the SQL-countable half of the remaining work and the video-encoding
+// backlog. The duplicate scan is filled in separately, by the service, because
+// it is not a count.
 type Dashboard struct {
 	// Library is the "what is in the library?" half.
 	Library LibrarySummary `json:"library"`
 	// Remaining is the "what is still to do?" half, minus the duplicate scan.
 	Remaining RemainingWork `json:"remaining"`
+	// Video is the streaming-encode backlog. Its StreamingEnabled flag is
+	// configuration rather than a count, so the store leaves it false and the
+	// service stamps it.
+	Video Video `json:"video"`
 }
 
 // DashboardCounter reads the dashboard aggregates from the catalogue. It is
 // satisfied by *Store; an interface so the aggregation is unit-testable with a
 // fake and so the HTTP layer never talks to the database directly.
 type DashboardCounter interface {
-	// CountDashboard returns the library summary and the remaining-work counts in
-	// one round trip. DerivedBytes is left zero — it is a filesystem measurement,
-	// not a count — and so is the duplicate scan.
+	// CountDashboard returns the library summary, the remaining-work counts and
+	// the video-encoding backlog in one round trip. DerivedBytes is left zero — it
+	// is a filesystem measurement, not a count — and so are the duplicate scan and
+	// Video.StreamingEnabled, which is configuration.
 	CountDashboard(ctx context.Context) (Dashboard, error)
 }
 

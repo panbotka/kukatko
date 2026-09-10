@@ -4016,10 +4016,10 @@ to `## Package map` in `CLAUDE.md`.
   (`placesjob.WindowBudget.Snapshot`, **nil = no mapy.com key**)/`DashboardCounter` (`Store.CountDashboard`)/
   `DuplicateCounter` (`duplicates.Service.CountGroups`, **nil = detection off**) → unit-testable with fakes
   without a DB; `Service` = `New(Config{DB,Embeddings,EmbeddingURL,Jobs,Backup,Maps,Geocode,Imports,Library,Charts,
-  Dashboard,Duplicates,OriginalsPath,CachePath,StorageTTL,LibraryTTL,ChartsTTL,DashboardTTL,DuplicateTTL,
-  DuplicateTimeout,Clock})`; **`Collect(ctx) (Status,error)`** gathers
+  Dashboard,Duplicates,StreamingEnabled,OriginalsPath,CachePath,StorageTTL,LibraryTTL,ChartsTTL,
+  DashboardTTL,DuplicateTTL,DuplicateTimeout,Clock})`; **`Collect(ctx) (Status,error)`** gathers
   `Status{Version,Database,
-  Embeddings,Jobs,Backup,Imports,Storage,Maps,Geocode,Library,Remaining}`: embeddings online/offline, the queue
+  Embeddings,Jobs,Backup,Imports,Storage,Maps,Geocode,Library,Remaining,Video}`: embeddings online/offline, the queue
   (**one** `CountsByTypeState` scan folded into `ByTypeState` + the `ByState`/`ByType`/`Total` sums over it, so the
   three views cannot disagree; `ByType`/`Total` are **lifetime** tallies because the queue keeps finished jobs —
   the UI labels them "ever run" — while `dead_letter` and `pending_embeddings` = queued+running
@@ -4048,7 +4048,7 @@ to `## Package map` in `CLAUDE.md`.
   object store and the disk walk therefore measures nothing; `DerivedBytes` is filled from
   `StorageUsage.CacheBytes` because derived media is never in the catalogue — and
   `RemainingWork{FacesUnassigned,Clusters,PhotosWithoutTakenAt,PhotosWithoutGPS,PhotosWithoutPlace,
-  PhotosWithoutOCR,DuplicateMarkers,Duplicates}`, cheap SQL throughout (the OCR predicate matches
+  PhotosWithoutOCR,DuplicateMarkers,VideosWithoutStreaming,Duplicates}`, cheap SQL throughout (the OCR predicate matches
   `idx_photos_ocr_pending` exactly; `DuplicateMarkers` mirrors `dupmarkers.GroupMarkers` — valid face markers of a
   named subject on a live photo, grouped by (photo,subject), minus the dismissed pairs) **except**
   `Duplicates`: `DuplicateScan{Configured,Available,Groups,ComputedAt}` comes from `asyncCache[int]`
@@ -4057,6 +4057,25 @@ to `## Package map` in `CLAUDE.md`.
   `defaultDuplicateTimeout` 2 min, a failure keeping the last good value and backing off a whole TTL), because the
   near-duplicate scan is the one aggregation here that walks the HNSW index; `Available:false` means "no answer
   yet", not zero groups, and a failed scan never fails the snapshot;
+  the same round trip also answers **how the streaming encode is going**, counted over *videos* rather than
+  over jobs (the queue's `hls_transcode` row is a lifetime tally of jobs and cannot say how much of the
+  library still plays as the whole original file):
+  `Video{StreamingEnabled,Videos,Streamable,Missing,EncodeQueued,EncodeRunning,EncodeFailed,NotScheduled,
+  Renditions,OldestQueuedAt}` — `Streamable` = has a `photo_hls_renditions` row, and the four states of the
+  rest are **disjoint and sum to `Missing`**, a video being classified by the furthest its jobs got (running
+  > queued > failed/dead > finished) so an old `done` row cannot hide the encode running now;
+  `NotScheduled` (nothing queued, nothing failed) is the state that stalls silently and the reason the
+  section exists, `OldestQueuedAt` says whether the queue is moving at all, and `Renditions` deliberately
+  comes **without a byte size** — segment sizes are recorded nowhere, so the only honest answer would be a
+  listing of the whole `hls/` prefix. `StreamingEnabled` is `video.hls.enabled` stamped by `Collect` (like
+  `DerivedBytes`, it is not a count): with it false nothing is ever enqueued, so `Missing` is every video and
+  is not a backlog. `RemainingWork.VideosWithoutStreaming` is the same number as `Video.Missing`, filled by
+  the store from the same relation so the backlog list and the card cannot disagree. The three video
+  aggregates are folded into `countDashboardSQL` as CTEs (`hls_encoded` = renditions reduced to one row per
+  video, `hls_encodes` = the `hls_transcode` queue grouped by the photo uid in its payload, `video_streaming`
+  = both left-joined onto the browsable videos), each scanned once — **no per-video query**, which is what
+  keeps the dashboard the single memoized round trip a polled page can afford
+  (`TestCountDashboard_OneRoundTripPerVideoCount` counts the queries a traced pool actually issues);
   alongside the operational snapshot it also aggregates the **library statistics** for every logged-in user:
   `LibraryCounter` (`CountLibrary`, satisfied by its own `Store` = `NewStore(pool)` — a single query of scalar
   subselects `countLibrarySQL`, **not** a `maintenance scan` over the tree; partial indexes for archived/video/live,

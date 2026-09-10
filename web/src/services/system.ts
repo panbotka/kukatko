@@ -9,8 +9,9 @@ import type { ImportRun } from './import'
  * one aggregated snapshot of embeddings reachability, job-queue depth, the
  * backup subsystem, the last import per source, storage usage, database
  * reachability, the map provider's health (a rejected mapy.com key shows up
- * here, not only as a grey map) and the reverse-geocode credit budget, plus
- * the quick actions (trigger a backup, requeue the dead-letter jobs).
+ * here, not only as a grey map), the reverse-geocode credit budget and how far
+ * the video streaming encode has got, plus the quick actions (trigger a backup,
+ * requeue the dead-letter jobs).
  * The session cookie is sent automatically
  * (same-origin); every call throws {@link ApiError} on a non-OK response so
  * callers can branch on `status`.
@@ -227,6 +228,35 @@ export interface DuplicateScan {
 }
 
 /**
+ * The streaming-encode section (`system.Video`). It counts **videos**, not jobs:
+ * the queue's `hls_transcode` row is a lifetime tally of jobs ever run, which
+ * cannot say how much of the library still plays as the whole original file.
+ *
+ * The four states of a video with no rendition are disjoint and add up to
+ * `missing`. `not_scheduled` is the one to watch — nothing is queued, nothing
+ * failed, so nothing will ever happen to those clips until a backfill schedules
+ * them.
+ *
+ * With `streaming_enabled` false this instance encodes nothing at all, so
+ * `missing` is simply every video and must be presented as the configured state
+ * rather than as a backlog.
+ */
+export interface VideoStatus {
+  streaming_enabled: boolean
+  videos: number
+  streamable: number
+  missing: number
+  encode_queued: number
+  encode_running: number
+  encode_failed: number
+  not_scheduled: number
+  /** Encoded renditions across the catalogue; a video may have several qualities. */
+  renditions: number
+  /** When the longest-waiting queued encode was enqueued; absent when none is. */
+  oldest_queued_at?: string
+}
+
+/**
  * The dashboard's remaining-work section (`system.RemainingWork`): the backlogs
  * of human and machine work. Every number is one where zero is the good value.
  */
@@ -238,6 +268,12 @@ export interface RemainingWork {
   photos_without_place: number
   photos_without_ocr: number
   duplicate_markers: number
+  /**
+   * How many browsable videos have no streaming version — the same number as
+   * {@link VideoStatus.missing}. It is not a backlog while streaming is switched
+   * off, so a reader must hide it in that case.
+   */
+  videos_without_streaming: number
   duplicates: DuplicateScan
 }
 
@@ -254,6 +290,7 @@ export interface SystemStatus {
   geocode: GeocodeStatus
   library: LibrarySummary
   remaining: RemainingWork
+  video: VideoStatus
 }
 
 /**

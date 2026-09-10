@@ -64,20 +64,24 @@ func buildSystemAPI(
 	pool := db.Pool()
 	libraryStore := system.NewStore(pool)
 	svc := system.New(system.Config{
-		DB:            db,
-		Embeddings:    client,
-		EmbeddingURL:  cfg.Embedding.URL,
-		Jobs:          jobs.NewStore(pool),
-		Backup:        backupReporter,
-		Maps:          mapsReporter,
-		Geocode:       geocodeReporter,
-		Imports:       importer.NewStore(pool),
-		Library:       libraryStore,
-		Charts:        libraryStore,
-		Dashboard:     libraryStore,
-		Duplicates:    buildSystemDuplicatesOrNil(cfg, db),
-		OriginalsPath: cfg.Storage.OriginalsPath,
-		CachePath:     cfg.Storage.CachePath,
+		DB:           db,
+		Embeddings:   client,
+		EmbeddingURL: cfg.Embedding.URL,
+		Jobs:         jobs.NewStore(pool),
+		Backup:       backupReporter,
+		Maps:         mapsReporter,
+		Geocode:      geocodeReporter,
+		Imports:      importer.NewStore(pool),
+		Library:      libraryStore,
+		Charts:       libraryStore,
+		Dashboard:    libraryStore,
+		Duplicates:   buildSystemDuplicatesOrNil(cfg, db),
+		// The same switch the worker reads: with streaming off nothing is ever
+		// enqueued, so the dashboard must report "no video is encoded" as the
+		// configured state rather than as a backlog.
+		StreamingEnabled: cfg.Video.HLS.Enabled,
+		OriginalsPath:    cfg.Storage.OriginalsPath,
+		CachePath:        cfg.Storage.CachePath,
 	})
 	api := systemapi.NewAPI(systemapi.Config{
 		Service:           svc,

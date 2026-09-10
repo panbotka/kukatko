@@ -13,8 +13,10 @@
 // page with — what is in the library (LibrarySummary: the browsable catalogue,
 // the trash, what arrived recently, what it all weighs by the catalogue's own
 // arithmetic) and what is still to do (RemainingWork: nameless faces, clusters
-// waiting for a name, the metadata and OCR gaps, the duplicates). Both come from
-// one CountDashboard round trip, except the near-duplicate scan, which is far
+// waiting for a name, the metadata and OCR gaps, the duplicates, the videos with
+// no streaming version) — plus how the streaming encode itself is going (Video:
+// how many clips are encoded, what the rest are waiting for and how long the
+// oldest has waited). All of it comes from one CountDashboard round trip, except the near-duplicate scan, which is far
 // too expensive for a polled endpoint and is therefore refreshed in the
 // background and reported with the time it was taken (see DuplicateScan).
 //
@@ -216,6 +218,7 @@ type Status struct {
 	Geocode    Geocode        `json:"geocode"`
 	Library    LibrarySummary `json:"library"`
 	Remaining  RemainingWork  `json:"remaining"`
+	Video      Video          `json:"video"`
 }
 
 // Config bundles the dependencies of New. Backup may be nil (no destination
@@ -254,6 +257,11 @@ type Config struct {
 	// reported as not configured. It is scanned in the background, never on the
 	// request path (see DuplicateScan).
 	Duplicates DuplicateCounter
+	// StreamingEnabled says whether this instance encodes streaming renditions of
+	// its videos (video.hls.enabled). It is configuration, not a count, and it is
+	// what turns the video section's "no rendition" numbers from a backlog into
+	// the expected state.
+	StreamingEnabled bool
 	// OriginalsPath is the on-disk root of the stored originals.
 	OriginalsPath string
 	// CachePath is the on-disk root of the derived cache (thumbnails).
@@ -285,6 +293,7 @@ type Service struct {
 	db           DBPinger
 	embeddings   EmbeddingHealth
 	embeddingURL string
+	streaming    bool
 	jobs         JobCounter
 	backup       BackupReporter
 	maps         MapsReporter
@@ -303,6 +312,7 @@ func New(cfg Config) *Service {
 		db:           cfg.DB,
 		embeddings:   cfg.Embeddings,
 		embeddingURL: cfg.EmbeddingURL,
+		streaming:    cfg.StreamingEnabled,
 		jobs:         cfg.Jobs,
 		backup:       cfg.Backup,
 		maps:         cfg.Maps,
@@ -361,6 +371,10 @@ func (s *Service) Collect(ctx context.Context) (Status, error) {
 	// filesystem measurement, the duplicate groups a background scan.
 	dashboard.Library.DerivedBytes = storageUsage.CacheBytes
 	dashboard.Remaining.Duplicates = s.collectDuplicates()
+	// Whether videos are encoded at all is configuration, not something the
+	// catalogue can be asked; without it "no video has a streaming version" reads
+	// as a backlog when it is the instance working as configured.
+	dashboard.Video.StreamingEnabled = s.streaming
 	return Status{
 		Version:    version.Get(),
 		Database:   s.collectDatabase(ctx),
@@ -373,6 +387,7 @@ func (s *Service) Collect(ctx context.Context) (Status, error) {
 		Geocode:    s.collectGeocode(),
 		Library:    dashboard.Library,
 		Remaining:  dashboard.Remaining,
+		Video:      dashboard.Video,
 	}, nil
 }
 

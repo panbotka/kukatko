@@ -3,12 +3,19 @@ import { useTranslation } from 'react-i18next'
 import { formatCount } from '../../lib/format'
 import { LIBRARY_PATH } from '../../lib/libraryView'
 import { formatRelativeTime } from '../../lib/relativeTime'
-import type { DuplicateScan, RemainingWork } from '../../services/system'
+import type { DuplicateScan, RemainingWork, VideoStatus } from '../../services/system'
 
 import { StatTileGrid, type StatTileSpec } from './StatTile'
 
 /** The library narrowed to the photos carrying no coordinates. */
 const NO_GPS_HREF = `${LIBRARY_PATH}?q=${encodeURIComponent('geo:no')}`
+
+/**
+ * The library narrowed to the videos. The backlog is narrower than that — the
+ * videos with no streaming version — but the query language has no token for it,
+ * so the tile leads to the set that contains them rather than nowhere.
+ */
+const VIDEOS_HREF = `${LIBRARY_PATH}?q=${encodeURIComponent('type:video')}`
 
 /**
  * The maintenance page, where the "fill in the places" option reverse-geocodes
@@ -55,8 +62,8 @@ function duplicatesTile(scan: DuplicateScan, locale: string): StatTileSpec {
 
 /**
  * The backlogs, in the order they are worked through: the people first (naming
- * faces is the point of the app), then the metadata gaps, then the two kinds of
- * duplicate.
+ * faces is the point of the app), then the metadata gaps, then the videos with no
+ * streaming version, then the two kinds of duplicate.
  *
  * Every tile that has a screen to work it through on links there; the two
  * metadata gaps with no matching filter (no capture time, no OCR) stay static
@@ -64,7 +71,7 @@ function duplicatesTile(scan: DuplicateScan, locale: string): StatTileSpec {
  * maintenance page's "fill in the places" option schedules exactly the photos it
  * counts.
  */
-function tilesFor(remaining: RemainingWork, locale: string): StatTileSpec[] {
+function tilesFor(remaining: RemainingWork, video: VideoStatus, locale: string): StatTileSpec[] {
   const count = (value: number) => formatCount(value, locale)
   return [
     {
@@ -107,6 +114,21 @@ function tilesFor(remaining: RemainingWork, locale: string): StatTileSpec[] {
       value: count(remaining.photos_without_ocr),
       gap: true,
     },
+    // With streaming switched off no video is ever encoded, so "none of them has
+    // a streaming version" is the instance working as configured and not work
+    // anybody can do: the tile is left out entirely rather than shown as a
+    // backlog nothing would ever shrink. The video section says why.
+    ...(video.streaming_enabled
+      ? [
+          {
+            key: 'videos-without-streaming',
+            labelKey: 'system.remaining.videosWithoutStreaming',
+            value: count(remaining.videos_without_streaming),
+            to: VIDEOS_HREF,
+            gap: true,
+          } satisfies StatTileSpec,
+        ]
+      : []),
     {
       key: 'duplicate-markers',
       labelKey: 'system.remaining.duplicateMarkers',
@@ -123,7 +145,13 @@ function tilesFor(remaining: RemainingWork, locale: string): StatTileSpec[] {
  * backlog, so zero is the good value and a non-zero one is highlighted: this is
  * the section an operator opens the page to shrink.
  */
-export function RemainingWorkPanel({ remaining }: { remaining: RemainingWork }) {
+export function RemainingWorkPanel({
+  remaining,
+  video,
+}: {
+  remaining: RemainingWork
+  video: VideoStatus
+}) {
   const { t, i18n } = useTranslation()
   return (
     <section className="mb-4" aria-labelledby="system-remaining-title">
@@ -131,7 +159,7 @@ export function RemainingWorkPanel({ remaining }: { remaining: RemainingWork }) 
         {t('system.dashboard.remainingTitle')}
       </h2>
       <p className="text-secondary small">{t('system.dashboard.remainingIntro')}</p>
-      <StatTileGrid tiles={tilesFor(remaining, i18n.language)} />
+      <StatTileGrid tiles={tilesFor(remaining, video, i18n.language)} />
     </section>
   )
 }

@@ -1804,7 +1804,10 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   library{photos,videos,trashed,hidden,private,uploads{day,week,month,year},albums,labels,people,faces,
   embeddings,library_bytes,trash_bytes,derived_bytes},
   remaining{faces_unassigned,clusters,photos_without_taken_at,photos_without_gps,photos_without_place,
-  photos_without_ocr,duplicate_markers,duplicates{configured,available,groups,computed_at?}}}`.
+  photos_without_ocr,duplicate_markers,videos_without_streaming,
+  duplicates{configured,available,groups,computed_at?}},
+  video{streaming_enabled,videos,streamable,missing,encode_queued,encode_running,encode_failed,
+  not_scheduled,renditions,oldest_queued_at?}}`.
   `jobs.by_type_state` (type → state → count) is what the dashboard renders; `by_type`/`total` are
   **lifetime** tallies, because the queue table keeps finished jobs — `image_embed: 41 594` against 20 930
   photos described a one-off re-embedding, not a backlog, which is why the UI labels them "ever run". All
@@ -1824,7 +1827,27 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `duplicates.Service.CountGroups`) and reported with `available` + `computed_at`; `available:false` means
   "no answer yet" and `groups` is then not a count of zero. `configured:false` = duplicate detection is off
   (`duplicate.enabled`), the same switch that makes `GET /duplicates` answer 503.
-  `library` + the SQL half of `remaining` are one query (`system.Store.CountDashboard`) memoized for 30 s.
+  `video` is the **streaming-encode backlog, counted over videos rather than over jobs**: the queue's
+  `hls_transcode` row above counts jobs and the queue keeps finished ones, so it can say how many encodes
+  ever ran but never how much of the library still plays as the whole original file. `streamable` = has at
+  least one row in `photo_hls_renditions`; the four states of the rest are **disjoint and sum to
+  `missing`** — `encode_running`, `encode_queued`, `encode_failed` (failed **or** dead-lettered) and
+  `not_scheduled`, which is the reason the section exists: nothing is queued and nothing failed, so those
+  clips sit there until a backfill (`POST /process/hls`) schedules them, and no queue row anywhere says
+  so. A video's state is the furthest its jobs have got (running > queued > broken > finished), so a
+  years-old `done` row cannot hide the encode running now. `oldest_queued_at` is when the longest-waiting
+  queued encode was enqueued — a queue that has stopped moving looks exactly like a busy one if only the
+  depth is shown. `renditions` counts the encoded qualities across the catalogue (a video may have several);
+  **what they weigh is deliberately not reported** — segment sizes are recorded nowhere, so the only honest
+  answer would be a listing of the whole `hls/` prefix, far too expensive for a polled endpoint.
+  `streaming_enabled` is `video.hls.enabled` stamped by the service, not a count: with it `false` nothing is
+  ever enqueued, so `missing` is simply every video and is **not** a backlog — the UI says so and hides the
+  matching `remaining.videos_without_streaming` tile entirely. That field is the same number as
+  `video.missing`, repeated in the backlog list so the operator sees it without scrolling to the card.
+  `library` + the SQL half of `remaining` + `video` are one query (`system.Store.CountDashboard`) memoized
+  for 30 s; the video counts are folded into that statement as three CTEs (renditions by photo, the
+  `hls_transcode` queue by photo, both joined onto the browsable videos), so the section costs **no
+  per-video query** however many clips the library holds.
   `maps` = the last observed mapy.com state
   from the proxy (`mapy.Health`, no probe of its own): `state` ∈ `unknown|ok|key_rejected|rate_limited|
   unavailable|error`, `degraded=true` for all except `ok`/`unknown` — **a rejected key (403) is

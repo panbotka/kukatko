@@ -370,8 +370,10 @@ were written.
 - **One dashboard that answers "what is in the library and is it healthy?"** — what the catalogue
   holds and what it weighs, what arrived in the last day/week/month/year, the backlogs still to work
   through (faces without a name, photos with no date or place, duplicates), the background queue
-  broken down by job type and state with a per-type retry, and the health of everything it depends
-  on: the database, the AI box, the last backup and import, the map provider's credits.
+  broken down by job type and state with a per-type retry, how far the video streaming encode has
+  got (how many clips still play as the whole original file, what each of them is waiting for, and
+  how long the oldest wait has lasted), and the health of everything it depends on: the database,
+  the AI box, the last backup and import, the map provider's credits.
 - **A library an AI agent can use:** Kukátko can expose itself as an **MCP server**, so an agent
   searches and organizes the library directly ("find grandma's photos from the sixties and put them
   in an album"). Off by default, authenticated with an ordinary API token, bound by the same RBAC —
