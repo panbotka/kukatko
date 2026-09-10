@@ -1147,6 +1147,16 @@
   flex-wrap: wrap;
 }
 
+/* "A better version of this clip is being prepared." One line under the bar,
+   deliberately quiet: the clip is playing, and nothing here is actionable. */
+.kk-video__notice {
+  padding: var(--kk-space-1) var(--kk-space-2);
+  font-size: var(--kk-font-size-caption);
+  color: rgb(255 255 255 / 75%);
+  background: rgb(0 0 0 / 40%);
+  text-align: center;
+}
+
 .kk-video__button {
   display: inline-flex;
   align-items: center;

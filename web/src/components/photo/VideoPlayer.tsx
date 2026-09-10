@@ -7,6 +7,7 @@ import { useHlsPlayback } from '../../hooks/useHlsPlayback'
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts'
 import { useStoryboard } from '../../hooks/useStoryboard'
 import { containedRect, type PaintedRect } from '../../lib/faceGeometry'
+import { encodeInProgress, videoFallback } from '../../lib/videoEncode'
 import {
   DEFAULT_PLAYBACK_RATE,
   PLAYBACK_RATES,
@@ -18,6 +19,7 @@ import {
   writePlaybackRate,
   type PlaybackRate,
 } from '../../lib/videoPlayback'
+import { type PhotoProcessing } from '../../services/photos'
 import { Icon } from '../Icon'
 
 import { VideoScrubber } from './VideoScrubber'
@@ -40,6 +42,15 @@ export interface VideoPlayerProps {
    * original file is played from the range endpoint as it always was.
    */
   streaming?: boolean
+  /**
+   * Where the clip's streaming encode stands — the `hls_transcode` row of the
+   * photo's processing report, or `null`/absent when the detail carries no
+   * report at all. It never gates playback; it is what turns the dead end the
+   * player used to show into "this is still being prepared, come back in a
+   * moment", and what puts a quiet note under a clip playing progressively
+   * while a better version is on its way.
+   */
+  encode?: PhotoProcessing | null
   /**
    * Drawn over the **poster frame**, in a layer that is exactly the rectangle the
    * poster paints in — the face boxes of the clip, whose detection ran on that
@@ -98,8 +109,14 @@ export interface VideoPlayerProps {
  * turning the faces view off and on again is not what the reader wants mid-clip,
  * and stepping to another video mounts a fresh element with its own poster.
  *
- * When the browser cannot decode the codec — and on-the-fly transcoding is off —
- * the player surfaces a download fallback so the user can still retrieve the file.
+ * **When the browser cannot decode the codec** the player says what that means
+ * *for this clip*, which the streaming encode's state decides: an encode still
+ * queued or running makes it a wait ("being prepared for playback, come back in
+ * a moment"), a failed one names the error and points at the Processing panel,
+ * and only a clip nothing more will happen to keeps the old "cannot be played,
+ * download it instead". The download link is offered in every one of those. The
+ * same fact, while the clip *does* play progressively, is a single quiet line
+ * under the control bar — a better version is coming, nothing to do about it.
  */
 export function VideoPlayer({
   uid,
@@ -108,6 +125,7 @@ export function VideoPlayer({
   downloadHref,
   token,
   streaming = false,
+  encode = null,
   overlay,
   posterRatio,
 }: VideoPlayerProps) {
@@ -300,10 +318,27 @@ export function VideoPlayer({
     { enabled: focused || playing },
   )
 
+  // The clip has no rendition yet and one is on its way. Progressive playback
+  // carries on — the note is a note, never a gate — but it explains why seeking
+  // is coarse and says a smoother version is coming.
+  const preparing = !streaming && encodeInProgress(encode)
+
   if (failed) {
+    // The browser will not play this clip. Whether that is a dead end or a wait
+    // is the encode's business, not the element's: a rendition still owed means
+    // this very clip becomes playable on its own in a few minutes.
+    const fallback = videoFallback(encode)
     return (
       <div className="d-flex flex-column align-items-center justify-content-center text-light p-4 gap-2">
-        <p className="mb-0 text-center">{t('photo.video.unsupported')}</p>
+        <p className="mb-0 text-center">{t(`photo.video.${fallback}`)}</p>
+        {fallback === 'preparationFailed' && (
+          <>
+            {encode?.error !== undefined && encode.error !== '' && (
+              <p className="small text-center text-break mb-0">{encode.error}</p>
+            )}
+            <p className="small text-center mb-0">{t('photo.video.preparationFailedHint')}</p>
+          </>
+        )}
         <Button as="a" href={downloadHref} variant="light" size="sm" download>
           {t('photo.video.downloadInstead')}
         </Button>
@@ -471,6 +506,15 @@ export function VideoPlayer({
           </button>
         </div>
       </div>
+
+      {preparing && (
+        /* One quiet line under the bar, never a dialog: the clip is playing, and
+           this only says why it plays the way it does. */
+        <p className="kk-video__notice mb-0" role="status">
+          <Icon name="clock-history" className="me-1" aria-hidden="true" />
+          {t('photo.video.preparingHint')}
+        </p>
+      )}
     </div>
   )
 }

@@ -548,4 +548,113 @@ describe('VideoPlayer', () => {
       }
     })
   })
+
+  describe('a streaming encode still owed', () => {
+    /** The player after the browser has refused to decode the clip. */
+    function refused(encode: VideoPlayerProps['encode']) {
+      const { video } = renderPlayer('ph1', false, { encode })
+      fireEvent.error(video)
+    }
+
+    it('says the clip is being prepared rather than that it cannot be played', () => {
+      refused({ step: 'hls_transcode', state: 'queued' })
+
+      expect(
+        screen.getByText(/still being prepared for playback\. Please come back/i),
+      ).toBeInTheDocument()
+      expect(
+        screen.queryByText('This video cannot be played in your browser.'),
+      ).not.toBeInTheDocument()
+      // The file itself is still there to be taken away in the meantime.
+      expect(screen.getByRole('button', { name: 'Download the video' })).toHaveAttribute(
+        'href',
+        '/api/v1/photos/ph1/download?original=true',
+      )
+    })
+
+    it('reads a step that never ran as the same wait', () => {
+      refused({ step: 'hls_transcode', state: 'pending' })
+
+      expect(screen.getByText(/still being prepared for playback/i)).toBeInTheDocument()
+    })
+
+    it('words a running encode as happening right now', () => {
+      refused({ step: 'hls_transcode', state: 'running' })
+
+      expect(screen.getByText(/being prepared for playback right now/i)).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Download the video' })).toBeInTheDocument()
+    })
+
+    it('surfaces a failed preparation and points at the Processing panel', () => {
+      refused({ step: 'hls_transcode', state: 'failed', error: 'ffmpeg exited with 1' })
+
+      expect(
+        screen.getByText('Preparing this video for playback did not finish.'),
+      ).toBeInTheDocument()
+      expect(screen.getByText('ffmpeg exited with 1')).toBeInTheDocument()
+      expect(screen.getByText(/Processing section/i)).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Download the video' })).toBeInTheDocument()
+    })
+
+    it('keeps the plain download message where nothing more will happen', () => {
+      // Streaming switched off for the whole instance, and a clip that WAS
+      // encoded and still cannot be decoded: both are dead ends, as before.
+      for (const state of ['skipped', 'done'] as const) {
+        const { unmount } = render(
+          <I18nextProvider i18n={i18n}>
+            <VideoPlayer
+              uid="ph1"
+              title="Clip"
+              poster="/poster.jpg"
+              downloadHref="/api/v1/photos/ph1/download?original=true"
+              encode={{ step: 'hls_transcode', state }}
+            />
+          </I18nextProvider>,
+        )
+        const video = document.querySelector('video')
+        if (video === null) {
+          throw new Error('expected a video element')
+        }
+        fireEvent.error(video)
+        expect(screen.getByText('This video cannot be played in your browser.')).toBeInTheDocument()
+        expect(screen.queryByText(/being prepared/i)).not.toBeInTheDocument()
+        unmount()
+      }
+    })
+
+    it('keeps the plain download message when the report says nothing', () => {
+      refused(null)
+
+      expect(screen.getByText('This video cannot be played in your browser.')).toBeInTheDocument()
+    })
+
+    it('still plays a decodable clip while its encode waits, with a quiet note', () => {
+      const { video } = renderPlayer('ph1', false, {
+        encode: { step: 'hls_transcode', state: 'queued' },
+      })
+
+      // The encode gates nothing: the original file is played exactly as before.
+      expect(video.getAttribute('src')).toContain('/photos/ph1/video')
+      stubMedia(video)
+      fireEvent.click(screen.getByRole('button', { name: 'Play' }))
+      expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument()
+
+      // …and the note is a note: one line under the bar, no dialog, controls intact.
+      expect(
+        screen.getByText('A smoother version for playing and seeking is being prepared.'),
+      ).toBeInTheDocument()
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+
+    it('says nothing under a clip that has its rendition, or whose encode is over', () => {
+      const streamed = renderPlayer('ph1', true, {
+        encode: { step: 'hls_transcode', state: 'running' },
+      })
+      expect(screen.queryByText(/smoother version/i)).not.toBeInTheDocument()
+      streamed.unmount()
+
+      renderPlayer('ph1', false, { encode: { step: 'hls_transcode', state: 'skipped' } })
+      expect(screen.queryByText(/smoother version/i)).not.toBeInTheDocument()
+    })
+  })
 })

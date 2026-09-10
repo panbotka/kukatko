@@ -252,7 +252,10 @@ that it was imported.
   player picks that up on its own, letting the browser stream the playlist where it can and loading a
   demuxer only where it cannot. Each segment is authorised and signed as the player asks for it, so
   nothing that grants access to your library is ever written into a file the player keeps; videos
-  already in the library are caught up with the maintainer backfill. Downloading still gives you the
+  already in the library are caught up with the maintainer backfill. A clip whose encode is still in
+  the queue says so — "the video is still being prepared, come back in a moment" instead of a
+  dead-end "cannot be played", a quiet line under a clip that does play, and the player picks the
+  smooth version up on its own the moment it lands. Downloading still gives you the
   original file — the renditions exist to be watched, not to replace what you keep.
 
 ### On a phone

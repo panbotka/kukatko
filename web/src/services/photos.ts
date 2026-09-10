@@ -612,6 +612,7 @@ export interface StackMember {
 export type ProcessingStep =
   | 'metadata'
   | 'thumbnail'
+  | 'hls_transcode'
   | 'image_embed'
   | 'face_detect'
   | 'ocr'

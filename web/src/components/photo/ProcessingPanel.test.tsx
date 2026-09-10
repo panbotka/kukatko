@@ -22,6 +22,7 @@ function report(overrides: Partial<Record<PhotoProcessing['step'], PhotoProcessi
   const base: PhotoProcessing[] = [
     { step: 'metadata', state: 'done', at: '2026-08-17T10:00:00Z' },
     { step: 'thumbnail', state: 'done', at: '2026-08-17T10:01:00Z' },
+    { step: 'hls_transcode', state: 'skipped' },
     { step: 'image_embed', state: 'queued' },
     { step: 'face_detect', state: 'failed', error: 'the box refused the image' },
     { step: 'ocr', state: 'pending' },
@@ -67,6 +68,18 @@ describe('ProcessingPanel', () => {
     expect(within(row('Text in the photo')).getByText('Not run yet')).toBeInTheDocument()
     expect(within(row('Place lookup')).getByText('Not applicable')).toBeInTheDocument()
     expect(within(row('Metadata sidecar')).getByText('Running')).toBeInTheDocument()
+  })
+
+  it('names the streaming step rather than printing its key', () => {
+    // The row used to read the raw `photo.processing.steps.hls_transcode` on
+    // every photo in the library: the backend added the step, the frontend's
+    // labels did not follow.
+    renderPanel(report({ hls_transcode: { step: 'hls_transcode', state: 'queued' } }))
+
+    expect(screen.queryByText(/photo\.processing\.steps/)).not.toBeInTheDocument()
+    expect(
+      within(row('Preparing the video for smooth playback')).getByText('Waiting in the queue'),
+    ).toBeInTheDocument()
   })
 
   it('shows why a failed step failed', () => {

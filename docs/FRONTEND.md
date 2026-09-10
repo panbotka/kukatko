@@ -2840,19 +2840,21 @@ here.
   inside the collapsed Technické údaje: „proč se tahle fotka nenajde ve vyhledávání?" deserves an answer
   without an extra click. `PhotoDetailPage` renders it as its own `kk-viewer__section` (eyebrow
   `photo.sections.processing`) right above Technické údaje, only when the detail carries `photo.processing`.
-  One row per step (`photo.processing.steps.*`, the backend's fixed order): a state glyph + the step's name
-  + a muted line saying where it stands. **`done` reads calmly** — a green `check-lg` and the moment it ran
-  (`formatDateTimeMinutes`), because a library where everything has been computed should not look like a
-  wall of ticks demanding attention; `queued` (`clock-history`, info), `running` (`arrow-clockwise`,
-  primary), `failed` (`exclamation-triangle`, danger, with the job's `error` text under the row), `pending`
-  (`dash-lg`) and `skipped` (`slash-circle`) are each visually distinct. A step that ran and **found
-  nothing** says so as a result, never as a gap: `face_count` („0 obličejů") and `text_found`
-  („žádný text"). **A maintainer** (`isMaintainer`, not `canWrite` — scheduling background work is
-  operations) additionally gets a **Spustit** button on every step that is neither `done` nor `skipped`; it
-  calls `runProcessingStep(uid, step)` (POST `/photos/{uid}/process/{step}`) and **replaces that one row**
-  with the state the response returns, so nothing is re-fetched. A 409 says the step does not apply to this
-  photo, anything else a generic message, both in a `role="alert"` line under the list. Nobody but a
-  maintainer sees the buttons. **Edits are the drawer's lead slot** — they belong
+  One row per step (`photo.processing.steps.*`, the backend's fixed order — including `hls_transcode`,
+  „Příprava videa k plynulému přehrávání", added to the frontend's step union 09/2026: the label had been
+  missing since the backend started reporting the step, so **every** photo rendered the raw key): a state
+  glyph + the step's name + a muted line saying where it stands. **`done` reads calmly** — a green
+  `check-lg` and the moment it ran (`formatDateTimeMinutes`), because a library where everything has been
+  computed should not look like a wall of ticks demanding attention; `queued` (`clock-history`, info),
+  `running` (`arrow-clockwise`, primary), `failed` (`exclamation-triangle`, danger, with the job's `error`
+  text under the row), `pending` (`dash-lg`) and `skipped` (`slash-circle`) are each visually distinct. A
+  step that ran and **found nothing** says so as a result, never as a gap: `face_count` („0 obličejů") and
+  `text_found` („žádný text"). **A maintainer** (`isMaintainer`, not `canWrite` — scheduling background
+  work is operations) additionally gets a **Spustit** button on every step that is neither `done` nor
+  `skipped`; it calls `runProcessingStep(uid, step)` (POST `/photos/{uid}/process/{step}`) and **replaces
+  that one row** with the state the response returns, so nothing is re-fetched. A 409 says the step does not
+  apply to this photo, anything else a generic message, both in a `role="alert"` line under the list.
+  Nobody but a maintainer sees the buttons. **Edits are the drawer's lead slot** — they belong
   to the photo they edit, so `EditPanel` (editor/admin, still only) is opened by the **Úpravy** button
   (`aria-pressed`) in the action bar; turning it on **opens the drawer** and mounts the panel at its head (the same
   one `sidePanel` as faces, see above), the header carries a title + a closing **`x-lg`**
@@ -2946,7 +2948,30 @@ here.
   `/video` endpoint, i.e. exactly what the player did before streaming existed; a **fatal** hls.js error
   **during** playback goes to the same "cannot play, download instead" state as an undecodable codec, and a
   non-fatal one is left to the library to recover from. The download link is always `photo.download_url`, the
-  **original file** — a rendition is for watching, the file is what you keep. **Keyboard:** `K` play/pause, `J`/`L` ∓10 s,
+  **original file** — a rendition is for watching, the file is what you keep.
+  **A clip whose streaming encode has not run yet says so** (prop `encode` = the `hls_transcode` row of
+  `PhotoDetail.processing`, `lib/videoEncode.videoEncode(photo)`, 09/2026): the encode **never gates
+  playback** — a browser-decodable original keeps playing progressively while it waits — but it decides what
+  the player puts in place of itself once the element *has* refused the media. `videoFallback(encode)` is
+  that decision in one pure function: `queued`/`pending` → `photo.video.preparing` („ještě se připravuje,
+  zkuste to za pár minut"), `running` → `photo.video.preparingNow`, `failed` →
+  `photo.video.preparationFailed` plus the job's own `error` and a pointer at the Zpracování panel (where a
+  maintainer already has **Spustit** for the step), and `done`/`skipped`/**no report at all** → the unchanged
+  `photo.video.unsupported` — an instance with streaming off, or a clip that was encoded and still cannot be
+  decoded, are the dead ends they always were. The download link is offered in every one of them. While the
+  clip *does* play and its encode is `queued`/`running` (`encodeInProgress`), the player adds **one quiet
+  line under the control bar** instead (`.kk-video__notice`, `photo.video.preparingHint`) — never a modal —
+  so the coarse seeking of a progressive file has an explanation and the reader knows a better version is
+  coming. **The wait ends by itself:** `hooks/useVideoEncodeWatch(uid | null)` re-fetches `GET /photos/{uid}`
+  every `ENCODE_POLL_INTERVAL_MS` (15 s) and reports the detail that first shows the encode settled;
+  `PhotoDetailPage` replaces the photo it holds with it, so the player swaps to the streaming source with no
+  reload and no button. What is watched is `shouldWatchEncode(photo)` — a video, without a rendition, whose
+  encode is `queued`/`running` — so a still photo, an already encoded clip and an instance with streaming
+  switched off generate **no request at all**; the watch also stops on any terminal state, on paging to
+  another item, and while the tab is hidden (`visibilitychange`, resuming with an immediate poll). Tests:
+  `lib/videoEncode.test.ts`, `hooks/useVideoEncodeWatch.test.tsx` (fake timers **with `shouldAdvanceTime`**,
+  or the async queries hang) and `VideoPlayer.test.tsx` „a streaming encode still owed".
+  **Keyboard:** `K` play/pause, `J`/`L` ∓10 s,
   `<`/`>` step the speed — via `useKeyboardShortcuts` with `enabled` = "the player contains the focused element,
   **or** the clip is playing", so those keys stay free for the rest of the page. **The arrow keys are left alone
   on purpose**: on this page they page between photos, and a video that hijacked them would break browsing to

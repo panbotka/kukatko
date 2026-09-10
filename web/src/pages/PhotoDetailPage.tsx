@@ -53,6 +53,7 @@ import { usePinchZoom } from '../hooks/usePinchZoom'
 import { useRating } from '../hooks/useRating'
 import { useSwipeNavigation } from '../hooks/useSwipeNavigation'
 import { type RebuildWatch, useThumbnailRebuild } from '../hooks/useThumbnailRebuild'
+import { useVideoEncodeWatch } from '../hooks/useVideoEncodeWatch'
 import { useViewportBox } from '../hooks/useViewportBox'
 import { useViewerChrome } from '../hooks/useViewerChrome'
 import { backHref, DETAIL_DEFAULTS, detailQueryString, detailToParams } from '../lib/detailView'
@@ -91,6 +92,7 @@ import {
   type ViewerPanel,
   writeViewerPanel,
 } from '../lib/viewerPanel'
+import { shouldWatchEncode, videoEncode } from '../lib/videoEncode'
 import { preloadUids } from '../lib/viewerPreload'
 import { isNotFound } from '../services/auth'
 import {
@@ -205,6 +207,28 @@ export function PhotoDetailPage() {
     null,
   )
   const rebuilt = useThumbnailRebuild(rebuildWatch)
+  // A clip whose streaming rendition is still being encoded is re-checked while
+  // the viewer stays open on it, so the player swaps the original file for the
+  // streaming source the moment the encode lands — no reload, no button. What
+  // keeps this to exactly the case it is for is `shouldWatchEncode`: a still
+  // photo, an already encoded clip and an instance with streaming switched off
+  // all watch nothing and cost no request at all.
+  const encodeWatch =
+    state.status === 'ready' && shouldWatchEncode(state.photo) ? state.photo.uid : null
+  const encoded = useVideoEncodeWatch(encodeWatch)
+  useEffect(() => {
+    if (encoded === null) {
+      return
+    }
+    // The watch answers with the server's own detail, so the photo is replaced
+    // wholesale rather than patched — and only while it is still the one on
+    // screen, which a watch superseded by paging on cannot be.
+    setState((prev) =>
+      prev.status === 'ready' && prev.photo.uid === encoded.uid
+        ? { ...prev, photo: encoded }
+        : prev,
+    )
+  }, [encoded])
   // The stored "show the faces" choice, read once from localStorage: with no panel
   // named in the URL it is what opens the faces view (see the auto-open effect
   // below), and it is written back on every faces toggle, so the choice carries
@@ -1192,6 +1216,7 @@ export function PhotoDetailPage() {
             downloadHref={photo.download_url}
             token={downloadToken}
             streaming={photo.hls === true}
+            encode={videoEncode(photo)}
             posterRatio={stage.ratio}
             // The boxes belong to the poster frame — the one frame detection
             // looked at — so the player owns where they go and takes them down
