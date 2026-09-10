@@ -27,6 +27,8 @@ type fakeStoryboards struct {
 	hashErr    error
 	statusUID  string
 	openCalls  int
+	regenErr   error
+	regenUIDs  []string
 }
 
 // Status records the uid and returns the configured answer.
@@ -47,6 +49,16 @@ func (f *fakeStoryboards) Open(context.Context, string) (io.ReadCloser, storyboa
 // FileHash returns the configured ETag source.
 func (f *fakeStoryboards) FileHash(context.Context, string) (string, error) {
 	return f.hash, f.hashErr
+}
+
+// Regenerate records the uid it was asked to re-render or reports the configured
+// refusal.
+func (f *fakeStoryboards) Regenerate(_ context.Context, uid string) error {
+	if f.regenErr != nil {
+		return f.regenErr
+	}
+	f.regenUIDs = append(f.regenUIDs, uid)
+	return nil
 }
 
 // storyboardRouter mounts only the two storyboard handlers (no auth middleware)

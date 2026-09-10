@@ -68,10 +68,37 @@ but an agent's rating should be traceable like every other change it makes.
 `photos.Photo` has ~60 fields, including the **raw `exif` JSONB blob**. A search that returns 50 such
 objects is unusable. Hence:
 
-- Lists return `photoSummary`: `uid`, `title`, `taken_at`, `media_type`, `thumb_url`. Nothing more.
+- Lists return `photoSummary`: `uid`, `title`, `taken_at`, `media_type`, `duration_ms` (videos only),
+  `thumb_url`. Nothing more.
 - The detail (`get_photo`) returns a curated selection of columns — **never the `exif` blob, from any tool**.
 - Everything paginates: `total`, `offset` and **`remaining`** (how many are still left).
 - Page sizes are held by `mcp.page_size` / `mcp.max_page_size`.
+
+### Video
+
+A clip is not a photograph with a duration, and the payloads say so. The **summary** carries `duration_ms`,
+which is the one video fact worth a list row: an agent asked "how long are these clips" would otherwise have
+to call `get_photo` once per result, which is the exact shape this package exists to avoid. The **detail**
+adds four more columns and one derived field:
+
+| Field | Meaning |
+| --- | --- |
+| `fps` | the clip's average frame rate |
+| `video_codec` / `audio_codec` | the container's primary streams (`h264`, `aac`) |
+| `has_audio` | whether the clip carries sound |
+| `encode_state` | where the streaming encode stands: `done`, `queued`, `running`, `failed`, `pending`, `skipped` |
+
+`has_audio` is a **tri-state**: present and `false` on a video that was asked and has no audio stream,
+**absent** on a still, where "does it have sound" is not a question with a false answer. The same rule puts
+every video field off a still's payload entirely, rather than sending zeroes an agent could report as facts.
+
+`encode_state` is the `hls_transcode` step of the per-photo processing report, and it is what answers **"which
+videos still need preparing"** — a clip with no encode cannot be played in a browser at all. `pending` means
+nothing has ever been scheduled for it, `skipped` means it never will be here (not a standalone video, or
+streaming switched off instance-wide), and `failed` means the last attempt errored. It is read **only for a
+standalone video**: the report costs two queries, and for anything else the answer would be `skipped` repeated
+on every still in the library. A report that cannot be read costs the field, never the record — `get_photo`
+still answers with the photo.
 
 ## Tools
 
@@ -80,7 +107,7 @@ objects is unusable. Hence:
 | Tool | What it does |
 | --- | --- |
 | `search_photos` | The main entry point. Free text + the **search language** (`person:babicka year:1960-1969 -album:dovolena`), plus exact scoping via `album_uid` / `label_uid` / `person_uid`, `sort`, `order`, `limit`, `offset`. Returns a compact page + `total` + `remaining`. `uid:` names one photo by its own id or the source id it was imported under, and reaches it even when archived, hidden or a stack variant. |
-| `get_photo` | A single photo in detail: texts, date, location, exposure, the caller's favorite/rating + **the albums, labels and people** it carries. |
+| `get_photo` | A single photo in detail: texts, date, location, exposure, the caller's favorite/rating + **the albums, labels and people** it carries. For a video also its frame rate, codecs, whether it has sound, and the state of its streaming encode. |
 | `find_similar_photos` | Visually similar photos (kNN over embeddings), with the distance. If embeddings are missing it says so. |
 | `list_albums`, `list_labels`, `list_subjects` | Catalogs with counts, optionally filtered by `name`. Used to turn **a name a human said into the `uid`** the other tools want. A subject carries both `face_count` (recognised faces) and `photo_count` (photos the person appears on) — one photo can hold several of their faces, so they are not the same number. |
 | `get_album`, `get_label`, `get_subject` | A single record by `uid` **or `slug`**. |
@@ -114,6 +141,15 @@ later — it is a decision about what an autonomous agent may do to someone else
 - **No restore and no backup.**
 - **No user or token management.**
 - **No admin surface** — jobs, maintenance, process backfills, import.
+- **No starting an encode.** The detail *reports* `encode_state`, so an agent can answer "which videos still
+  need preparing" and hand that list to a human — but there is no tool that schedules `hls_transcode`, for one
+  clip or for the library. `POST /process/hls` is a process backfill, and those are withheld by the line
+  above; the fact that reporting the state makes the gap visible is not an argument for closing it. A
+  streaming encode is the most expensive job this application runs and drains the worker one clip at a time,
+  so an agent that could start one over a library could occupy the instance for a day with a single tool call
+  nobody watched. The person holding a token can: `kukatkoctl process hls`
+  ([`OPERATIONS.md`](OPERATIONS.md) → *`ctl process`*), which is the same distinction the whole section rests
+  on. The same goes for the scrub preview: `ctl photos rebuild storyboard` exists, no tool does.
 - **No setting the location.** A coordinate an agent made up is, once written, indistinguishable from
   a measured one; for estimating a location the library has its own, honestly-labeled path (`internal/geoestimate`).
   That is why `bulk_edit_photos` leaves out `Location` / `ClearLocation` too.
@@ -191,4 +227,8 @@ the search language works · a write token creates an album and attaches a label
 row** · a partial edit does not null out the other fields · bulk is atomic · the tool descriptions are written.
 
 Unit tests (`mcpapi_test.go`, run in `make check` without a DB) hold the pure helpers, the RBAC check and that
-`exif` does not leak into any payload.
+`exif` does not leak into any payload. `shape_test.go` pins the payload shapes against the three rows they
+have to tell apart — a still, a video with sound and a video without — including that every video-only key is
+**absent** from a still rather than present and empty, that a silent clip states its silence instead of
+leaving it to be inferred from a missing audio codec, and that `encode_state` is never asked about anything
+but a standalone video.

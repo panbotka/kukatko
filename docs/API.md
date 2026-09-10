@@ -624,6 +624,35 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   endpoint fills the same field from its own `HasAny` lookup, and with **no HLS reader wired** a video reads
   `false` rather than losing the field. Pair it with `video_streaming` from `GET /capabilities`: with the
   encode switched off, `false` is permanent and means nothing.
+  **The rendition inventory** (`internal/photoapi/renditions.go`): `GET /photos/{uid}/renditions`
+  (**RequireAuth** — a read that says no more than the master playlist the caller may already play) answers
+  `{renditions:[{rendition,width,height,bandwidth,codecs,segment_count,duration_ms,encoded_at}]}`, widest
+  picture first, straight from `photo_hls_renditions`. It exists because nothing else answers **when** a
+  quality was encoded: the master playlist names the qualities, `hls` is one boolean for the whole clip, and
+  the processing report knows only that *some* rendition exists — so "is what is stored still current?", after
+  a changed rendition plan or a restore that cleared the segments, had to be answered from the database. The
+  **playlist text is deliberately left out**: it is by far the largest column of the row (thousands of segment
+  durations for a long clip) and is already served, rewritten, by the media-playlist route. The photo is looked
+  up first, so an unknown uid is a **404** rather than an empty inventory that would read as "not encoded"; a
+  still, a video the encode has not reached and an instance with no HLS reader all answer an empty **list**,
+  never a null. `duration_ms` here is the rendition's own measurement, not the catalogue's, so a clip whose
+  container lied about its length can be told apart from one that did not.
+  **The scrub preview's rebuild** (`internal/photoapi/renditions.go`, over `StoryboardService.Regenerate`,
+  **nil → 503**): `POST /photos/{uid}/regenerate-storyboard` (**maintainer** via `RequireMaintainer` — it
+  discards stored work and schedules a full decode of the clip) throws the cached sprite away and enqueues a
+  fresh `storyboard` job, in that order. It is the sprite's only way back: the lazy `GET /storyboard` schedules
+  nothing for a clip that already has one, and the renderer behind it skips a sprite that exists, so a preview
+  cut before the clip's duration was corrected — or from an original that has since been replaced — stays
+  wrong for ever. Answers **200** `{step:"storyboard", state:"queued"}` — the processing report's vocabulary
+  rather than the rebuild endpoints' `status`, because the sprite is scheduled here and not rendered, and
+  `queued` rather than `storyboardjob`'s own `pending` because in *that* vocabulary `pending` means the
+  opposite, that nothing was scheduled at all — **409**
+  for a photo that can never have a preview (a still, a live photo, a clip of unknown length), **503** when
+  nothing on the instance could render one (no queue, no ffmpeg) and the stale sprite is therefore **kept**,
+  404 missing photo. Best-effort audit `photo.storyboard`, like the other rebuilds. Note the asymmetry with the
+  streaming encode: **that one needs no rebuild endpoint**, because `POST /photos/{uid}/process/hls_transcode`
+  already is one — the `hls_transcode` handler re-encodes wholesale rather than skipping a clip it has already
+  done, which is exactly the trap `process/{step}` is otherwise the wrong tool for.
   **One face as its own rendition** (`internal/photoapi/facecrop.go`, the `FaceCrops` renderer =
   `avatar.Renderer`, **nil → 503**): `GET /photos/{uid}/face?box=x,y,w,h` (session/`?t=` token, the same guard
   as every other photo image) **streams a small square JPEG** of the one face the normalised box names —

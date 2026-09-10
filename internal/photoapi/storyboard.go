@@ -31,6 +31,11 @@ type StoryboardService interface {
 	Open(ctx context.Context, photoUID string) (io.ReadCloser, storyboard.Spec, error)
 	// FileHash returns the content hash the sprite is keyed by, for the ETag.
 	FileHash(ctx context.Context, photoUID string) (string, error)
+	// Regenerate discards the cached sprite and schedules a fresh render. It
+	// returns storyboardjob.ErrNotAVideo or storyboard.ErrNoDuration for a photo
+	// that can never have one, and storyboardjob.ErrCannotRender when nothing on
+	// this instance could produce it.
+	Regenerate(ctx context.Context, photoUID string) error
 }
 
 // storyboardResponse is the JSON body of the storyboard status endpoint. Only a

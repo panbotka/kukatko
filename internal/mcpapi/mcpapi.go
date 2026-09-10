@@ -39,6 +39,7 @@ import (
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/processing"
 	"github.com/panbotka/kukatko/internal/vectors"
 	"github.com/panbotka/kukatko/internal/version"
 )
@@ -87,6 +88,19 @@ type SimilarSearcher interface {
 	FindSimilar(ctx context.Context, vec []float32, limit int, maxDistance float64) ([]vectors.Match, error)
 }
 
+// EncodeReporter answers where each per-photo computation of one photo stands.
+// Only the streaming encode is read from it — an agent asked "which videos still
+// need preparing" cannot answer from a duration alone — and it is an interface so
+// this package depends on the behaviour rather than on the processing package's
+// wiring; *processing.Service satisfies it. A nil EncodeReporter leaves the field
+// off the detail, which is the honest answer on an instance that does not report
+// processing state.
+type EncodeReporter interface {
+	// Report returns the state of every step for the photo, or
+	// photos.ErrPhotoNotFound.
+	Report(ctx context.Context, photoUID string) ([]processing.Status, error)
+}
+
 // API exposes the MCP server over HTTP. The auth guard is injected so this
 // package depends on auth's behaviour, not its wiring.
 type API struct {
@@ -99,6 +113,7 @@ type API struct {
 	people      *people.Store
 	bulk        *bulk.Service
 	similar     SimilarSearcher
+	processing  EncodeReporter
 	media       *mediaurl.Builder
 	pageSize    int
 	maxPageSize int
@@ -121,6 +136,10 @@ type Config struct {
 	Bulk *bulk.Service
 	// Similar backs find_similar_photos. Nil disables that one tool.
 	Similar SimilarSearcher
+	// Processing reports a video's streaming-encode state on the photo detail. Nil
+	// leaves that one field off; nothing here can schedule an encode, which is the
+	// admin surface this server deliberately does not expose (see docs/MCP.md).
+	Processing EncodeReporter
 	// Media stamps thumbnail URLs onto returned photos. Nil falls back to this
 	// application's own media routes.
 	Media *mediaurl.Builder
@@ -143,6 +162,7 @@ func NewAPI(cfg Config) *API {
 		people:      cfg.People,
 		bulk:        cfg.Bulk,
 		similar:     cfg.Similar,
+		processing:  cfg.Processing,
 		media:       cfg.Media,
 		pageSize:    positiveOr(cfg.PageSize, defaultPageSize),
 		maxPageSize: positiveOr(cfg.MaxPageSize, defaultMaxPageSize),

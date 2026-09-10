@@ -206,6 +206,34 @@ func renderPhotoRebuild(w io.Writer, out ctl.Output, raw json.RawMessage, name s
 		ctl.WritePhotoRebuild)
 }
 
+// renderPhotoStep writes where one scheduled per-photo computation now stands.
+// The step name is passed alongside the bytes for the endpoint that does not name
+// it — the forced storyboard rebuild, whose step is not one of the processing
+// report's own.
+func renderPhotoStep(w io.Writer, out ctl.Output, raw json.RawMessage, name string) error {
+	return renderRaw(w, out, raw, "step result",
+		func(bytes json.RawMessage) (ctl.PhotoStep, error) {
+			return ctl.DecodePhotoStep(bytes, name)
+		},
+		ctl.WritePhotoStep)
+}
+
+// renderVideoRenditions writes a video's encoded streaming qualities.
+func renderVideoRenditions(w io.Writer, out ctl.Output, raw json.RawMessage) error {
+	return renderRaw(w, out, raw, "rendition list",
+		ctl.DecodeVideoRenditions, ctl.WriteVideoRenditions)
+}
+
+// renderBackfill writes how much work a library-wide backfill put in the queue.
+// what names one scheduled item ("video"), so the line reads as the thing rather
+// than as a job type.
+func renderBackfill(w io.Writer, out ctl.Output, raw json.RawMessage, what string) error {
+	return renderRaw(w, out, raw, "backfill result", ctl.DecodeBackfill,
+		func(w io.Writer, backfill ctl.Backfill) error {
+			return ctl.WriteBackfill(w, what, backfill)
+		})
+}
+
 // renderTrash writes a trash listing — what is in it, or what a purge would
 // destroy. Unlike most renderers this one does not pass the server's bytes
 // through even for -o json: the listing is a value ctl composes out of two

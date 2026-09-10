@@ -39,6 +39,13 @@ var ErrMissingPhotoUID = errors.New("storyboardjob: job payload missing photo_ui
 // retry.
 var ErrNotAVideo = errors.New("storyboardjob: photo has no scrubbable video")
 
+// ErrCannotRender indicates this instance has no way to produce a sprite at all —
+// no queue to schedule the render on, or no ffmpeg to run it. It is what makes a
+// forced regeneration refuse instead of throwing the cached sprite away and
+// leaving the clip with no preview at all, which is strictly worse than the stale
+// one it started with.
+var ErrCannotRender = errors.New("storyboardjob: nothing here can render a sprite")
+
 // PhotoStore is the subset of the photo catalogue this package needs: loading one
 // photo. It is satisfied by *photos.Store.
 type PhotoStore interface {
@@ -56,6 +63,9 @@ type Generator interface {
 	// Generate renders the sprite for the video stored at srcRelPath, keyed by
 	// hash and laid out by spec. It is a no-op when the sprite already exists.
 	Generate(ctx context.Context, hash, srcRelPath string, spec storyboard.Spec) error
+	// Remove deletes the cached sprite for the file hash. It is idempotent: a hash
+	// that never had one is not an error.
+	Remove(hash string) error
 }
 
 // Enqueuer schedules storyboard jobs. It is satisfied by *jobs.Enqueuer.
@@ -237,6 +247,41 @@ func (s *Service) Generate(ctx context.Context, photoUID string) error {
 	}
 	if err := s.generator.Generate(ctx, photo.FileHash, photo.FilePath, spec); err != nil {
 		return fmt.Errorf("storyboardjob: generating storyboard for %s: %w", photoUID, err)
+	}
+	return nil
+}
+
+// Regenerate throws the photo's cached sprite away and schedules a fresh render,
+// which is the one thing Generate deliberately cannot do: the renderer is a no-op
+// over a sprite that already exists, so re-running the ordinary job over a clip
+// whose preview is wrong changes nothing at all. That is the state a video whose
+// poster geometry, duration or original was corrected after the sprite was cut
+// ends up in.
+//
+// The order is deliberate — drop first, then enqueue — because the queue dedups
+// per photo: a job scheduled before the removal could claim the work while the old
+// sprite is still there and take its idempotent skip.
+//
+// It returns ErrNotAVideo (or a wrapped storyboard.ErrNoDuration) for a photo that
+// can never have a preview, ErrCannotRender on an instance that could not produce
+// one, and photos.ErrPhotoNotFound for an unknown photo. It renders nothing
+// itself: the sprite costs a full decode of its clip and belongs in the queue.
+func (s *Service) Regenerate(ctx context.Context, photoUID string) error {
+	photo, err := s.photos.GetByUID(ctx, photoUID)
+	if err != nil {
+		return fmt.Errorf("storyboardjob: loading photo %s: %w", photoUID, err)
+	}
+	if _, err := planFor(photo); err != nil {
+		return err
+	}
+	if s.enqueuer == nil || !s.ffmpeg() {
+		return ErrCannotRender
+	}
+	if err := s.generator.Remove(photo.FileHash); err != nil {
+		return fmt.Errorf("storyboardjob: discarding the sprite of %s: %w", photoUID, err)
+	}
+	if err := s.enqueuer.EnqueueStoryboard(ctx, photoUID); err != nil {
+		return fmt.Errorf("storyboardjob: scheduling storyboard for %s: %w", photoUID, err)
 	}
 	return nil
 }

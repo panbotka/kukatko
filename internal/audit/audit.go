@@ -143,6 +143,12 @@ const (
 	// replacing the cached place. Unlike the other two rebuilds it costs a mapy.com
 	// credit every time, which is why the trail records who asked for it.
 	ActionPhotoPlace = "photo.place"
+	// ActionPhotoStoryboard records an on-demand rebuild of a video's scrub-preview
+	// sprite: the cached one was thrown away and a fresh render queued. Like the
+	// rebuilds above it is recorded because stored work was discarded — the sprite
+	// is gone the moment the request is accepted, whether or not the render that
+	// replaces it ever runs.
+	ActionPhotoStoryboard = "photo.storyboard"
 	// ActionPhotoEdit records saving a photo's non-destructive edit (rotation,
 	// brightness, contrast, crop). The original file is never rewritten, so the
 	// entry is the only record that the library's rendering of the photo changed:

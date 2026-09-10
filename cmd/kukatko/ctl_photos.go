@@ -26,7 +26,7 @@ func newCtlPhotosCmd(opts *ctlOptions) *cobra.Command {
 		newCtlPhotosListCmd(opts), newCtlPhotosGetCmd(opts), newCtlPhotosSearchCmd(opts),
 		newCtlPhotosImageCmd(opts), newCtlPhotosEditCmd(opts), newCtlPhotosFacesCmd(opts),
 		newCtlPhotosSimilarCmd(opts), newCtlPhotosUploadCmd(opts), newCtlPhotosRebuildCmd(opts),
-		newCtlPhotosPurgeCmd(opts),
+		newCtlPhotosRenditionsCmd(opts), newCtlPhotosPurgeCmd(opts),
 	)
 	cmd.AddCommand(newCtlPhotoStateCmds(opts)...)
 	return cmd

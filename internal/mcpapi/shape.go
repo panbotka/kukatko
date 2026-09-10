@@ -27,6 +27,11 @@ type photoSummary struct {
 	TakenAt string `json:"taken_at,omitempty"`
 	// MediaType is "image", "video" or "live".
 	MediaType string `json:"media_type,omitempty"`
+	// DurationMs is a clip's length in milliseconds, absent for a still. It is the
+	// one video fact worth a place in the summary: an agent asked about a library's
+	// videos otherwise has to call get_photo once per row to learn how long any of
+	// them is, which is the exact shape this package exists to avoid.
+	DurationMs *int `json:"duration_ms,omitempty"`
 	// ThumbURL fetches the grid thumbnail.
 	ThumbURL string `json:"thumb_url,omitempty"`
 }
@@ -84,6 +89,25 @@ type photoDetail struct {
 	Height    int    `json:"height,omitempty"`
 	// DurationMs is a video's length in milliseconds, absent for images.
 	DurationMs *int `json:"duration_ms,omitempty"`
+	// FPS is a video's average frame rate, absent for images.
+	FPS *float64 `json:"fps,omitempty"`
+	// VideoCodec and AudioCodec name the container's primary streams ("h264",
+	// "aac"). An absent audio codec is a video with no audio stream at all, which
+	// HasAudio states outright rather than leaving to be inferred.
+	VideoCodec string `json:"video_codec,omitempty"`
+	AudioCodec string `json:"audio_codec,omitempty"`
+	// HasAudio reports whether a clip carries sound. It is a pointer because false
+	// and absent are different answers: a silent video was asked and has none, a
+	// still was never asked. Absent for anything that is not a video.
+	HasAudio *bool `json:"has_audio,omitempty"`
+	// EncodeState is where the streaming encode of this clip stands — "done",
+	// "queued", "running", "failed", "pending" (never scheduled) or "skipped" (it
+	// will never run here, because the photo is not a standalone video or streaming
+	// is switched off). It is the answer to "which videos still need preparing",
+	// which no other field gives: a clip with no encode cannot be played in the
+	// browser at all. Absent for a still, and on an instance that does not report
+	// processing state.
+	EncodeState string `json:"encode_state,omitempty"`
 
 	Lat *float64 `json:"lat,omitempty"`
 	Lng *float64 `json:"lng,omitempty"`
@@ -187,11 +211,12 @@ func (a *API) summarize(list []photos.Photo) []photoSummary {
 	out := make([]photoSummary, 0, len(list))
 	for i := range list {
 		out = append(out, photoSummary{
-			UID:       list[i].UID,
-			Title:     list[i].Title,
-			TakenAt:   formatTime(list[i].TakenAt),
-			MediaType: string(list[i].MediaType),
-			ThumbURL:  list[i].ThumbURL,
+			UID:        list[i].UID,
+			Title:      list[i].Title,
+			TakenAt:    formatTime(list[i].TakenAt),
+			MediaType:  string(list[i].MediaType),
+			DurationMs: list[i].DurationMs,
+			ThumbURL:   list[i].ThumbURL,
 		})
 	}
 	return out

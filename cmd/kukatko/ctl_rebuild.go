@@ -41,6 +41,11 @@ func newCtlPhotosRebuildCmd(opts *ctlOptions) *cobra.Command {
 	for _, spec := range ctl.RebuildSpecs {
 		cmd.AddCommand(newCtlPhotosRebuildStepCmd(opts, spec))
 	}
+	// The two video rebuilds. They belong here — they redo derived data over the
+	// top of what is stored, exactly like the four above — but they are queued
+	// rather than run, because a streaming encode and a storyboard sprite are each
+	// a full pass over the clip and neither belongs in a request.
+	cmd.AddCommand(newCtlPhotosRebuildVideoCmd(opts), newCtlPhotosRebuildStoryboardCmd(opts))
 	return cmd
 }
 

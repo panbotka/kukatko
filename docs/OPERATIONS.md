@@ -541,6 +541,7 @@ Neither one prints a stack trace, the response body, or the token.
 | `ctl photos upload <path>…` | `POST /upload` — streams files in through the ordinary ingest path (`editor`/`admin`) |
 | `ctl photos archive` / `unarchive <uid>` | `POST /photos/{uid}/archive`+`/unarchive` — to the trash and back (reversible) |
 | `ctl photos hide` / `unhide <uid>` | `POST /photos/{uid}/hide`+`/unhide` — out of the library grid, nothing deleted |
+| `ctl photos renditions <uid>` | `GET /photos/{uid}/renditions` — a video's encoded streaming qualities, with the encode stamp of each; see below |
 | `ctl photos rebuild <step> <uid>` | recompute one derived thing over the top of what is stored (`maintainer`); see below |
 | `ctl photos purge <uid>` | `POST /photos/{uid}/purge` — **permanent**, `admin`, needs `--yes`; see [the gate](#the-irreversible-commands-and-their-gate) |
 
@@ -597,6 +598,8 @@ an original, and is not gated — everything it throws away it can produce again
 | `ctl photos rebuild embedding <uid>` | `POST /photos/{uid}/reembed` | the CLIP image embedding behind semantic search and similar photos |
 | `ctl photos rebuild faces <uid>` | `POST /photos/{uid}/redetect-faces` | face detection; the stored faces are **replaced**, and it reports how many the photo has afterwards |
 | `ctl photos rebuild place <uid>` | `POST /photos/{uid}/regeocode` | the reverse geocode — **costs a mapy.com credit every time** |
+| `ctl photos rebuild video <uid>` | `POST /photos/{uid}/process/hls_transcode` | the streaming encode — every configured quality, **replacing** what was recorded |
+| `ctl photos rebuild storyboard <uid>` | `POST /photos/{uid}/regenerate-storyboard` | the scrub-preview sprite; the cached one is **deleted** first |
 
 A re-detection replaces rather than appends, and hands each assignment to the face that comes back in the
 same place, so redoing the detection never leaves duplicate faces behind and never un-names anybody. A face
@@ -606,11 +609,94 @@ When the embeddings box (or mapy.com) is offline the work is **queued** instead 
 into the queue and runs when the service is back. The command says so and exits 0 — a sleeping box is not an
 error. Two requests for the same photo collapse into one job (queue dedup is keyed on type + photo uid).
 
+**The two video rebuilds are always queued**, and that is the only way they differ from the four above. A
+streaming encode and a storyboard sprite are each a full pass over the clip — minutes of ffmpeg for a long
+video, and the encode is the most expensive job this application runs — so neither happens inside the
+request. They therefore answer with a **step and its state** rather than with a result:
+
+```
+hls_transcode: queued; the worker runs it in the background
+hls_transcode: the recorded result is the previous run (2026-09-01 08:30); the one you asked for is queued behind it
+hls_transcode: skipped; this step does not apply to this photo, or is switched off here
+```
+
+The middle line is the one worth reading twice. The processing report resolves **persisted evidence before
+the queue**, so a clip that is already encoded answers `done` with the *old* stamp — the encode this command
+just scheduled has not happened yet. It really is queued; the line says so rather than printing a state word
+an operator would read as "nothing happened".
+
+`rebuild video` needs no endpoint of its own because `process/hls_transcode` is already the exception to the
+trap at the top of this section: that handler re-encodes wholesale instead of skipping a clip it has already
+done, so scheduling the step **is** the rebuild. `rebuild storyboard` is the opposite case and needs its own
+endpoint precisely because of the trap — the sprite renderer skips one that already exists, so the cached
+sprite is deleted first and only then is the render queued. A clip that can never have a preview (a still, a
+live photo, a video of unknown length) is **refused** rather than queued, and on an instance that could not
+render a replacement at all the stale sprite is kept rather than thrown away.
+
 ```bash
 kukatkoctl photos rebuild thumbnail pht01h2j3
 kukatkoctl photos rebuild faces pht01h2j3       # → "face_detect: rebuilt, 3 faces on the photo"
 kukatkoctl photos rebuild embedding pht01h2j3   # → "image_embed: … a forced job is queued …" when the box sleeps
+kukatkoctl photos rebuild video pht01h2j3       # → "hls_transcode: queued; the worker runs it in the background"
+kukatkoctl photos rebuild storyboard pht01h2j3  # → "storyboard: queued; the worker runs it …"
 ```
+
+#### `ctl photos renditions` — what the encode actually produced
+
+```
+ctl photos renditions <uid>
+```
+
+The one command that reads `photo_hls_renditions`. `photos get` says only whether a clip streams at all, the
+master playlist names the qualities but not when they were made, and the processing report knows only that
+*some* rendition exists — so "is what is stored still current?" (after a changed rendition plan, a re-encode,
+a restore that cleared the segments) had no answer short of the database.
+
+```
+RENDITION  PICTURE    BITRATE      CODECS                 SEGMENTS  LENGTH  ENCODED
+1080p      1920×1080  5.1 Mbit/s   avc1.640028,mp4a.40.2  7         2:05    2026-08-09 10:11
+
+1 rendition (1080p) · oldest encoded 2026-08-09 10:11
+```
+
+The footer names the **oldest** encode, which is the one that decides whether the clip needs redoing. The
+media playlist is deliberately not reported: it is the largest column of the row and is already served,
+rewritten, at `/photos/{uid}/hls/{rendition}/index.m3u8`. `duration_ms` in `-o json` is the rendition's own
+measurement rather than the catalogue's, so a container that lied about its length is visible here. Any
+authenticated role may read it — it says no more than the playlist they may already play. A still, a video
+the encoder has not reached and an instance with streaming switched off all print *"no streaming renditions:
+this photo has never been encoded"* and exit 0; an unknown uid is a 404.
+
+#### `ctl process` — the library-wide backfills
+
+```
+ctl process hls [--all] [--yes]
+```
+
+The streaming encode over the whole library. By default it schedules only the videos with **no rendition at
+all** — what a restore leaves behind (the backup carries the database and the originals, never the segments,
+see [`docs/RESTORE.md`](RESTORE.md)) and what an import onto an instance whose box was asleep leaves behind.
+`--all` schedules every live video instead: a full re-encode, which is how a newly configured quality level
+reaches the videos that predate it, since the job replaces a rendition rather than adding to it.
+
+`--all` needs **`--yes`**. It destroys nothing — every rendition it replaces can be produced again — so it is
+not one of [the irreversible commands](#the-irreversible-commands-and-their-gate); the gate is there because
+a mistyped flag would occupy the only worker slot that encodes for a day.
+
+Either way this only fills the queue. The worker encodes one clip at a time, so the number reported is **jobs
+scheduled, not videos finished**; watch them land with `ctl photos renditions <uid>` or the admin dashboard.
+It needs the **maintainer** role.
+
+```bash
+kukatkoctl process hls                    # → "12 videos were scheduled; the worker drains them …"
+kukatkoctl process hls                    # → "nothing to do: no video is waiting for this work"
+kukatkoctl process hls --all --yes        # the whole library, hours of background work
+```
+
+Only the encode is here. Every other `/process/*` backfill already has a local counterpart on the machine
+that runs the instance — `kukatko maintenance repair --embeddings --faces --places --thumbnails …`,
+`kukatko sidecar backfill` — and that is where an operator reaches for them. The encode had neither a flag
+nor a subcommand: it was reachable only with curl, which is the whole reason this command exists.
 
 #### `ctl photos get` — the whole photo in one request
 
@@ -1184,7 +1270,9 @@ kukatkoctl photos list --year 2019 -o json | kukatkoctl bulk --archive --yes
 
 Backups, restore, migrations, maintenance, the library wipe, and the job queue are **not offered over the network**. They are destructive or
 long-running and belong on the machine where the instance runs — so they remain only as local subcommands
-(`kukatko backup`, `restore`, `migrate`, `maintenance`, …).
+(`kukatko backup`, `restore`, `migrate`, `maintenance`, …). [`ctl process hls`](#ctl-process--the-library-wide-backfills)
+is not a hole in that rule: it schedules queue work rather than doing it, exactly as the admin UI's own
+button does, and it is here because it is the one backfill with no local counterpart at all.
 
 **Permanent deletion is the exception, and it is a deliberate one.** `photos purge`, `trash empty`,
 `trash purge-older` and `duplicates merge` are here, behind

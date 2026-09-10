@@ -1155,6 +1155,26 @@ to `## Package map` in `CLAUDE.md`.
   whole reason the outcome crosses the package boundary; resolving the collision itself belongs to
   `internal/jobs`, so all three endpoints inherit it. 404 missing photo, 500 otherwise. Best-effort audit `photo.embedding`/`photo.faces`/
   `photo.place` carrying the status (and the face count) in details, by the same rule as `photo.thumbnail`;
+  **the two video rebuilds and the rendition inventory** (`renditions.go`):
+  `POST /photos/{uid}/regenerate-storyboard` (**maintainer**, over `StoryboardService.Regenerate`, nil-safe → 503)
+  discards a clip's cached scrub-preview sprite and queues a fresh render — the sprite's *only* way back, since
+  the lazy `GET /storyboard` schedules nothing for a clip that already has one and the renderer skips it anyway.
+  It answers `{step:"storyboard",state:"queued"}` — the processing report's vocabulary, deliberately, because
+  the work is scheduled and not run, and `queued` rather than `storyboardjob.StatePending` because there
+  `pending` means the opposite, that nothing was scheduled — 409 for a photo that can never have a preview (`ErrNotAVideo`,
+  `storyboard.ErrNoDuration`), 503 for `storyboardjob.ErrCannotRender`, 404 missing photo; best-effort audit
+  `photo.storyboard`, by the same rule as the other rebuilds. `storyboard` is **not** one of
+  `processing.Steps` and the step-repair endpoint still refuses it: it leaves no persisted evidence, so the
+  report has nothing to say about it. The **encode** rebuild needs no endpoint of its own —
+  `POST /photos/{uid}/process/hls_transcode` already is one, since that handler re-encodes wholesale rather
+  than skipping a clip it has already done. `GET /photos/{uid}/renditions` (**RequireAuth** — a read that says
+  no more than the master playlist the caller may already play) answers `{renditions:[…]}` from
+  `HLSRenditions.ListForPhoto`, widest first, each row `{rendition,width,height,bandwidth,codecs,segment_count,
+  duration_ms,encoded_at}` — **the playlist text left behind**, being the largest column of the row and already
+  served, rewritten, by the media-playlist route. The photo is looked up first, so an unknown uid is a 404 and
+  never an empty inventory reading as "not encoded"; a still, an unencoded clip and an instance with no HLS
+  reader all answer an empty **list**, never a null. Nothing else exposes when a rendition was made, which is
+  what "is what is stored still current?" needs after a changed rendition plan or a restore;
   `GET /photos/years` (`handleYears`, `years.go`) = a **year-histogram** for the library's year facet
   → `photos.Store.YearBuckets` → `{years:[{year,count}],total}`; takes the same filters as the list
   (incl. per-user `FavoriteOf`/`RatedBy`), but **zeroes out `params.Year` itself** — a facet must not narrow
@@ -2170,7 +2190,7 @@ to `## Package map` in `CLAUDE.md`.
   `cmd/kukatko/expand.go`, takes `mediaStore` for URL stamping)),
   `internal/mcpapi/`
   (**MCP server** — a library exposed to an AI agent over the Model Context Protocol at `POST /api/v1/mcp`;
-  `NewAPI(Config{Enabled,Photos,Organize,People,Bulk,Similar,Media,RequireAuth,PageSize,MaxPageSize})`
+  `NewAPI(Config{Enabled,Photos,Organize,People,Bulk,Similar,Processing,Media,RequireAuth,PageSize,MaxPageSize})`
   + `RegisterRoutes`. **`Enabled:false` → `RegisterRoutes` registers nothing and the servers aren't even built**
   (the route doesn't exist, rather than returning a 403 — a 403 would reveal that the endpoint is there; in the full binary the
   path then falls into the SPA catch-all and returns `index.html`, in tests 404, because their router has no
@@ -2197,10 +2217,19 @@ to `## Package map` in `CLAUDE.md`.
   naive "set title" would null out the description, date and location; pointer fields = omit vs. clear),
   `set_photo_rating` (goes through `internal/bulk`, because that **writes the audit row in the transaction itself** —
   the rating store has no audited variant) and `bulk_edit_photos`. `shape.go` is an **allow-list**, not a copy:
-  `photoSummary` = `{uid,title,taken_at,media_type,thumb_url}`, `photoDetail` curated columns,
+  `photoSummary` = `{uid,title,taken_at,media_type,duration_ms?,thumb_url}`, `photoDetail` curated columns,
   **the `exif` blob nowhere**; `page()` reports `total`/`offset`/`remaining` (clamped to 0). **Nothing destructive**
   — no purge/trash/**archiving**/restore/backup/users; `bulkEditIn` therefore omits `Archive`
-  (archive → trash → retention purge = deletion in installments) and `Location`. The `jsonschema` tags carry the descriptions
+  (archive → trash → retention purge = deletion in installments) and `Location`.
+  **The video fields are reads, and only reads.** A summary carries `duration_ms` so a listing of clips is
+  useful without a `get_photo` per row; the detail adds `fps`, `video_codec`, `audio_codec`, `has_audio` (a
+  **pointer**: a silent video states its silence, a still is never asked) and `encode_state` — the
+  `hls_transcode` step of the processing report, which is what answers "which videos still need preparing".
+  `encodeState` asks the optional `EncodeReporter` (satisfied by `*processing.Service`) **only for a
+  standalone video**: the report costs two queries and for anything else the answer would be `skipped`
+  repeated on every still in the library. A read that fails costs the field, never the record. No tool
+  schedules an encode — `POST /process/hls` is the admin surface this server deliberately withholds, and the
+  reporter is wired read-only. The `jsonschema` tags carry the descriptions
   of the tool arguments → `//nolint:lll` (the tag is one unbreakable token and is the agent's real interface).
   Unit tests without a DB (helpers, RBAC, `exif` doesn't leak, disabled route) + integration tests over the **real
   MCP transport**, real auth and real `kkt_` tokens; mounted in `serve`
@@ -3804,6 +3833,12 @@ to `## Package map` in `CLAUDE.md`.
   source. `Handle` = `worker.HandlerFunc` (payload `{photo_uid}`, empty → `ErrMissingPhotoUID` dead-letter),
   registered in `serve` on `jobs.TypeStoryboard`; `Generate(uid)` renders one, and a photo that **cannot** have a
   storyboard is a quiet no-op rather than a dead-letter — the job was scheduled from a state that no longer holds.
+  `Regenerate(uid)` is the **forced** rebuild behind `POST /photos/{uid}/regenerate-storyboard`: it removes the
+  cached sprite and *then* enqueues, in that order, because the queue dedups per photo and a job scheduled first
+  could claim the work while the stale sprite is still there and take `Generate`'s idempotent skip. It refuses
+  rather than deletes when nothing here could render a replacement (`ErrCannotRender`, no enqueuer or no ffmpeg):
+  a clip with a stale preview is strictly better off than one with none. `ErrNotAVideo` / a wrapped
+  `storyboard.ErrNoDuration` for a photo that can never have one, `photos.ErrPhotoNotFound` for an unknown uid.
   All behind `PhotoStore`/`Generator`/`Enqueuer` → unit-testable with no ffmpeg and no disk),
   `internal/hls/`
   (the **object layout of a video's HLS renditions**, and nothing else — no ffmpeg, no store, no database, so
@@ -4754,6 +4789,27 @@ to `## Package map` in `CLAUDE.md`.
     recomputation **produced** (the face count, the regenerated sizes) rather than a bare acknowledgement:
     a rebuild is run because the previous answer was wrong, so the new one is the point. `status:"queued"`
     is printed as the wait it is, not as a failure — the box being asleep is not the operator's problem.
+  - `video.go` — the video surface: `PrepareVideo(uid)` (`POST /photos/{uid}/process/hls_transcode`),
+    `RebuildStoryboard(uid)` (`POST /photos/{uid}/regenerate-storyboard`), `VideoRenditions(uid)`
+    (`GET /photos/{uid}/renditions`) and `BackfillHLS(all)` (`POST /process/hls`), with
+    `DecodePhotoStep`/`WritePhotoStep`, `DecodeVideoRenditions`/`WriteVideoRenditions` and
+    `DecodeBackfill`/`WriteBackfill`. The two per-photo calls are rebuilds and are named as such
+    (`RebuildVideo` = `video`, `RebuildStoryboard` = `storyboard`) but they are **not** in `RebuildSpecs`,
+    because neither is run in the request: an encode and a sprite are each a full pass over the clip, so both
+    are queued and both answer with a step and its state rather than with a result. That is why the reply
+    shape here is `PhotoStep` — the processing report's own `{step,state,at?,error?}` — and not
+    `PhotoRebuild`: `queued` and `running` are honest answers. `done` is the one that has to be spelled out
+    rather than printed: the report resolves persisted evidence **before** the queue, so an already-encoded
+    clip answers `done` with the *old* stamp while the encode this call just scheduled sits behind it, and
+    the state word alone would read as "nothing happened". `WritePhotoStep` prints what happens next rather than the
+    state word alone, so `skipped` reads as "this will never run here" instead of as a silent success.
+    `VideoRendition` is the row of `photo_hls_renditions` **without** its playlist text, which is by far the
+    largest column and is already served, rewritten, by the media-playlist route; the table renders the
+    bitrate in Mbit/s and the length as `m:ss`, and its footer names the **oldest** encode, which is what
+    answers "is what is stored still current?". An unencoded clip prints a sentence, not a headed empty
+    table — never having been encoded is a normal state of a video. `BackfillHLS(all=true)` is the full
+    re-encode of the library and is gated by the CLI's `--yes`: nothing is destroyed, so it is not one of the
+    irreversible commands, but a mistyped flag would occupy the worker for a day.
   - `trash.go` — the trash and the two batch purges: `FetchTrash` (`GET /trash/info` for the retention
     window + paged `GET /photos?archived=only` for the photos), `PurgePhoto`, `EmptyTrash`,
     `PurgeOlderThan(days)` — each carrying the API's own `confirm=true`, which is **not** the CLI's `--yes`

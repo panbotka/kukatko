@@ -40,6 +40,8 @@ type fakeGenerator struct {
 	ready     bool
 	existsErr error
 	genErr    error
+	removeErr error
+	removed   []string
 	calls     []generateCall
 }
 
@@ -74,6 +76,16 @@ func (f *fakeGenerator) Generate(_ context.Context, hash, src string, spec story
 		return f.genErr
 	}
 	f.ready = true
+	return nil
+}
+
+// Remove records the discarded hash and drops the pretend cache entry.
+func (f *fakeGenerator) Remove(hash string) error {
+	if f.removeErr != nil {
+		return f.removeErr
+	}
+	f.removed = append(f.removed, hash)
+	f.ready = false
 	return nil
 }
 
@@ -444,4 +456,70 @@ func TestNew_requiresCollaborators(t *testing.T) {
 		}
 	}()
 	_ = New(Config{Generator: &fakeGenerator{}})
+}
+
+// TestRegenerate_dropsTheSpriteAndSchedules verifies a forced regeneration does
+// the one thing the ordinary job cannot: it discards the cached sprite before
+// scheduling, so the render that follows actually runs instead of taking
+// Generate's idempotent skip.
+func TestRegenerate_dropsTheSpriteAndSchedules(t *testing.T) {
+	t.Parallel()
+
+	gen := &fakeGenerator{ready: true}
+	enq := &fakeEnqueuer{}
+	svc := newService(&fakePhotos{rows: map[string]photos.Photo{
+		"pht1": videoPhoto("pht1", 20000),
+	}}, gen, enq)
+
+	if err := svc.Regenerate(context.Background(), "pht1"); err != nil {
+		t.Fatalf("Regenerate: %v", err)
+	}
+	if len(gen.removed) != 1 || gen.removed[0] != testHash {
+		t.Errorf("removed = %v, want one removal of %q", gen.removed, testHash)
+	}
+	if len(enq.uids) != 1 || enq.uids[0] != "pht1" {
+		t.Errorf("scheduled = %v, want [pht1]", enq.uids)
+	}
+	if len(gen.calls) != 0 {
+		t.Errorf("Regenerate rendered %d sprites itself, want 0", len(gen.calls))
+	}
+}
+
+// TestRegenerate_refusals verifies the three answers that are not a scheduled
+// render: a photo that can never have a preview, an unknown photo, and an
+// instance with nothing to render on — which must keep the stale sprite rather
+// than delete it and leave the clip with none.
+func TestRegenerate_refusals(t *testing.T) {
+	t.Parallel()
+
+	rows := map[string]photos.Photo{
+		"vid": videoPhoto("vid", 20000),
+		"img": {UID: "img", FileHash: testHash, MediaType: photos.MediaImage},
+	}
+
+	tests := []struct {
+		name    string
+		uid     string
+		enq     Enqueuer
+		wantErr error
+	}{
+		{name: "a still has no scrubbable clip", uid: "img", enq: &fakeEnqueuer{}, wantErr: ErrNotAVideo},
+		{name: "unknown photo", uid: "nope", enq: &fakeEnqueuer{}, wantErr: photos.ErrPhotoNotFound},
+		{name: "nothing can render here", uid: "vid", enq: nil, wantErr: ErrCannotRender},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			gen := &fakeGenerator{ready: true}
+			svc := newService(&fakePhotos{rows: rows}, gen, tt.enq)
+			err := svc.Regenerate(context.Background(), tt.uid)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("Regenerate = %v, want %v", err, tt.wantErr)
+			}
+			if len(gen.removed) != 0 {
+				t.Errorf("a refused regeneration removed %v, want nothing", gen.removed)
+			}
+		})
+	}
 }

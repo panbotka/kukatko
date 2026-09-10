@@ -13,6 +13,7 @@ import (
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/personme"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/processing"
 	"github.com/panbotka/kukatko/internal/query"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
@@ -320,6 +321,7 @@ func (a *API) describePhoto(ctx context.Context, c caller, photo photos.Photo) (
 	a.media.DecorateOne(&photo)
 
 	detail := toPhotoDetail(photo)
+	detail.EncodeState = a.encodeState(ctx, photo)
 	detail.Favorite = favorite
 	detail.Rating = rating.Rating
 	detail.Flag = rating.Flag
@@ -327,6 +329,41 @@ func (a *API) describePhoto(ctx context.Context, c caller, photo photos.Photo) (
 	detail.Labels = labelRefs(labels)
 	detail.People = subjects
 	return detail, nil
+}
+
+// encodeState reports where the streaming encode of this clip stands, or the
+// empty string when the question does not apply or cannot be answered here.
+//
+// It is asked only of a standalone video, for two reasons: the processing report
+// costs two queries, and for everything else the answer would be the constant
+// "skipped" repeated on every still in the library — which is noise in a payload
+// whose whole design is to leave noise out. A failure to read it is swallowed:
+// the detail is a read of the photo, and losing the whole record because the queue
+// could not be consulted would be the worse answer.
+func (a *API) encodeState(ctx context.Context, photo photos.Photo) string {
+	if a.processing == nil || photo.MediaType != photos.MediaVideo {
+		return ""
+	}
+	report, err := a.processing.Report(ctx, photo.UID)
+	if err != nil {
+		return ""
+	}
+	for _, status := range report {
+		if status.Step == processing.StepHLS {
+			return string(status.State)
+		}
+	}
+	return ""
+}
+
+// soundOf reports whether a clip carries an audio stream, and nil for anything
+// that is not a video — where "does it have sound" is not a question with a false
+// answer, it is not a question at all.
+func soundOf(p photos.Photo) *bool {
+	if p.MediaType != photos.MediaVideo {
+		return nil
+	}
+	return &p.HasAudio
 }
 
 // subjectsForPhoto resolves the photo's accepted markers into the people they
@@ -531,6 +568,10 @@ func toPhotoDetail(p photos.Photo) photoDetail {
 		Width:            p.FileWidth,
 		Height:           p.FileHeight,
 		DurationMs:       p.DurationMs,
+		FPS:              p.FPS,
+		VideoCodec:       p.VideoCodec,
+		AudioCodec:       p.AudioCodec,
+		HasAudio:         soundOf(p),
 		Lat:              p.Lat,
 		Lng:              p.Lng,
 		LocationSource:   p.LocationSource,

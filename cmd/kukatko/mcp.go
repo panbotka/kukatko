@@ -5,6 +5,7 @@ import (
 	"github.com/panbotka/kukatko/internal/bulk"
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/database"
+	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/mcpapi"
 	"github.com/panbotka/kukatko/internal/mediaurl"
 	"github.com/panbotka/kukatko/internal/organize"
@@ -26,6 +27,11 @@ import (
 func buildMCPAPI(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, mediaStore storage.Storage,
 ) *mcpapi.API {
+	// The processing report, read-only: it is what tells an agent whether a video
+	// has been encoded for playback yet. Its own enqueuer is wired because the
+	// service requires one, and is never reached from here — nothing this server
+	// exposes schedules a step.
+	jobStore := jobs.NewStore(db.Pool())
 	return mcpapi.NewAPI(mcpapi.Config{
 		Enabled:     cfg.MCP.Enabled,
 		Photos:      photos.NewStore(db.Pool()),
@@ -33,6 +39,7 @@ func buildMCPAPI(
 		People:      people.NewStore(db.Pool()),
 		Bulk:        bulk.NewService(db.Pool(), cfg.Bulk.MaxBatchSize),
 		Similar:     vectors.NewStore(db.Pool()),
+		Processing:  buildProcessingService(cfg, db, jobStore, jobs.NewEnqueuer(jobStore)),
 		Media:       mediaurl.NewBuilder(mediaStore),
 		RequireAuth: authAPI.RequireAuth,
 		PageSize:    cfg.MCP.PageSize,

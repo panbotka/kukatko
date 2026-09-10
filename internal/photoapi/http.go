@@ -304,12 +304,14 @@ func passthroughMiddleware(next http.Handler) http.Handler {
 //	POST   /photos/{uid}/reembed      RequireMaintainer  recompute the embedding
 //	POST   /photos/{uid}/redetect-faces RequireMaintainer  re-detect the faces
 //	POST   /photos/{uid}/regeocode    RequireMaintainer  re-resolve the place
+//	POST   /photos/{uid}/regenerate-storyboard RequireMaintainer  discard the scrub preview and re-render it
 //	GET    /photos/{uid}/thumb/{size} RequireDownload  cached thumbnail (or 302)
 //	GET    /photos/{uid}/face         RequireDownload  square JPEG crop of one face (?box=)
 //	GET    /photos/{uid}/video        RequireDownload  video stream (range/206, or 302)
 //	GET    /photos/{uid}/hls/master.m3u8    RequireDownload  master playlist (variants)
 //	GET    /photos/{uid}/hls/{rendition}/index.m3u8  RequireDownload  media playlist (segments)
 //	GET    /photos/{uid}/hls/{rendition}/{segment}   RequireDownload  one segment (302, or streamed)
+//	GET    /photos/{uid}/renditions   RequireAuth      the video's encoded streaming qualities
 //	GET    /photos/{uid}/storyboard   RequireAuth      scrub-preview status (+ lazy enqueue)
 //	GET    /photos/{uid}/storyboard/sprite RequireDownload  scrub-preview sprite (JPEG)
 //	GET    /photos/{uid}/download     RequireDownload  original file (or 302)
@@ -375,6 +377,7 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.With(a.requireMaintainer).Post("/{uid}/reembed", a.handleReembed)
 		r.With(a.requireMaintainer).Post("/{uid}/redetect-faces", a.handleRedetectFaces)
 		r.With(a.requireMaintainer).Post("/{uid}/regeocode", a.handleRegeocode)
+		r.With(a.requireMaintainer).Post("/{uid}/regenerate-storyboard", a.handleRegenerateStoryboard)
 		r.With(a.requireAdmin).Post("/{uid}/purge", a.handlePurge)
 		r.With(a.requireDownload).Get("/{uid}/thumb/{size}", a.handleThumb)
 		r.With(a.requireDownload).Get("/{uid}/face", a.handleFaceCrop)
@@ -385,6 +388,7 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.With(a.requireDownload).Get("/{uid}/hls/master.m3u8", a.handleHLSMaster)
 		r.With(a.requireDownload).Get("/{uid}/hls/{rendition}/index.m3u8", a.handleHLSMedia)
 		r.With(a.requireDownload).Get("/{uid}/hls/{rendition}/{segment}", a.handleHLSSegment)
+		r.With(a.requireAuth).Get("/{uid}/renditions", a.handleRenditions)
 		r.With(a.requireAuth).Get("/{uid}/storyboard", a.handleStoryboard)
 		r.With(a.requireDownload).Get("/{uid}/storyboard/sprite", a.handleStoryboardSprite)
 		r.With(a.requireDownload).Get("/{uid}/download", a.handleDownload)

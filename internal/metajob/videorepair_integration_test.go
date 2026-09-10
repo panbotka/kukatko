@@ -319,6 +319,9 @@ func (fakeSprites) Open(string) (io.ReadCloser, error) { return nil, storyboard.
 // Generate does nothing; these tests never render a sprite.
 func (fakeSprites) Generate(context.Context, string, string, storyboard.Spec) error { return nil }
 
+// Remove does nothing; there is never a cached sprite to discard here.
+func (fakeSprites) Remove(string) error { return nil }
+
 // spriteEnqueuer records the photos whose sprite generation was scheduled.
 type spriteEnqueuer struct{ uids []string }
 
