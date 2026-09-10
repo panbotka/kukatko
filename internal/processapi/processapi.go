@@ -10,6 +10,7 @@ package processapi
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -109,6 +110,10 @@ type MetadataBackfiller interface {
 	// has never been read (or, when all is true, for every non-archived photo) and
 	// returns how many were scheduled.
 	BackfillMetadata(ctx context.Context, all bool) (int, error)
+	// BackfillVideoMetadata enqueues a `metadata` job for every non-archived video
+	// whose container was evidently never probed — no duration, no codec, no frame
+	// size — and returns how many were scheduled. It backs ?videos.
+	BackfillVideoMetadata(ctx context.Context) (int, error)
 }
 
 // OCRBackfiller enqueues an `ocr` job for every photo the text recogniser has
@@ -263,7 +268,8 @@ func NewAPI(cfg Config) *API {
 //	                                             ?dry_run=true only counts)
 //	POST /process/blurhash    RequireMaintainer  backfill missing blurred placeholders (?all=true forces a full
 //	                                             re-run, ?dry_run=true only counts)
-//	POST /process/metadata    RequireMaintainer  backfill unread file metadata (?all=true forces a full re-read)
+//	POST /process/metadata    RequireMaintainer  backfill unread file metadata (?all=true forces a full re-read,
+//	                                             ?videos=true re-probes videos with no technical metadata)
 //	POST /process/sidecars    RequireMaintainer  backfill missing metadata sidecars (?all=true forces a full re-run)
 //	POST /process/ocr         RequireMaintainer  backfill un-recognised photo text (?all=true forces a full re-run)
 //	POST /process/hls         RequireMaintainer  backfill missing streaming renditions (?all=true
@@ -569,18 +575,41 @@ func (a *API) serveCountedBackfill(w http.ResponseWriter, r *http.Request, b cou
 // has never been read out into the IPTC/XMP and file-technical columns, and reports
 // how many were scheduled. With ?all=true it schedules every non-archived photo (a
 // forced full re-read, which is how the library picks up fields a newer extractor
-// learned to read). It answers 503 when no metadata backfiller is wired.
+// learned to read). With ?videos=true it instead covers the videos whose container
+// was never read out — no duration, no codec, no frame size — which is how a
+// library repairs the clips it ingested while its probe was broken; those rows are
+// marked as extracted, so the plain run passes them by. It answers 503 when no
+// metadata backfiller is wired.
 func (a *API) handleBackfillMetadata(w http.ResponseWriter, r *http.Request) {
 	if a.metaBackfiller == nil {
 		writeError(w, http.StatusServiceUnavailable, "metadata backfill not available")
 		return
 	}
-	enqueued, err := a.metaBackfiller.BackfillMetadata(r.Context(), queryFlag(r, "all"))
+	enqueued, err := a.runMetadataBackfill(r)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "backfilling metadata failed")
 		return
 	}
 	writeJSON(w, http.StatusOK, backfillResponse{Enqueued: enqueued})
+}
+
+// runMetadataBackfill runs the metadata backfill the request asked for: the
+// video-scoped one for ?videos=true, otherwise the ordinary one honouring ?all.
+// The video scope has no "all" of its own — re-reading every video is what
+// ?all=true already does — so the two flags do not combine.
+func (a *API) runMetadataBackfill(r *http.Request) (int, error) {
+	if queryFlag(r, "videos") {
+		enqueued, err := a.metaBackfiller.BackfillVideoMetadata(r.Context())
+		if err != nil {
+			return 0, fmt.Errorf("processapi: backfilling video metadata: %w", err)
+		}
+		return enqueued, nil
+	}
+	enqueued, err := a.metaBackfiller.BackfillMetadata(r.Context(), queryFlag(r, "all"))
+	if err != nil {
+		return 0, fmt.Errorf("processapi: backfilling metadata: %w", err)
+	}
+	return enqueued, nil
 }
 
 // queryFlag reports whether the request's query parameter name is set to a truthy

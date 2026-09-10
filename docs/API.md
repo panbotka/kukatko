@@ -1199,9 +1199,18 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   = `photos.metadata_extracted_at IS NULL`, which are rows from the one-off imports
   and everything uploaded before extraction). Optional `?all=true` schedules **every non-archived photo**
   (a forced re-read of the whole library — this catches up fields the new extractor has learned to read).
+  Optional **`?videos=true`** instead schedules the **videos whose container was never read out** (no
+  duration, no `video_codec`, no frame size), via `metajob.BackfillVideoMetadata` — the clips whose probe
+  failed while they were being ingested, which the plain run passes by for ever because their rows *are*
+  marked as read; a clip with no duration also never gets a scrub preview, so this is what gives one back.
+  The video scope has no `all` of its own, so the two flags do not combine.
   The job is a pure **gap-filler**: it fills only columns that are still empty, so an empty extraction
   never overwrites a value the user wrote, and it does not touch `taken_at`/GPS/captions/curatorial data
-  at all. A missing original is **logged and skipped** (the run does not fail).
+  at all. The one deliberate exception is a **video's own file-derived fields** (duration, dimensions,
+  frame rate, video/audio codec, whether it has audio): nothing but a probe writes them, so a re-probe may
+  **correct** a wrong value — while a capture date somebody edited and a location somebody set by hand are
+  never overruled (details in `docs/PACKAGES.md`, `internal/metajob`).
+  A missing original is **logged and skipped** (the run does not fail).
   `POST /process/sidecars` → `{enqueued}` (backfill `sidecar` for photos whose **metadata
   sidecar is missing or stale**, via `sidecarjob.BackfillSidecars`; "missing/stale" =
   `photos.sidecar_written_at IS NULL OR sidecar_written_at < updated_at`). A sidecar is a YAML file

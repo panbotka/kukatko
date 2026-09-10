@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"image"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path"
@@ -147,6 +148,10 @@ type Config struct {
 	// TempDir is where uploads are streamed before publishing; "" uses the OS
 	// temp directory.
 	TempDir string
+	// Logger records the non-fatal failures the pipeline swallows — a video whose
+	// container could not be probed above all, which used to become empty metadata
+	// and no trace at all; nil uses slog.Default().
+	Logger *slog.Logger
 }
 
 // Service runs the ingest pipeline. It is safe for concurrent use: each Ingest
@@ -165,13 +170,19 @@ type Service struct {
 	maxFileSize int64
 	maxPixels   int64
 	tempDir     string
+	log         *slog.Logger
 }
 
-// New returns a Service from cfg, defaulting the enqueuer to NopEnqueuer.
+// New returns a Service from cfg, defaulting the enqueuer to NopEnqueuer and the
+// logger to slog.Default().
 func New(cfg Config) *Service {
 	enq := cfg.Enqueuer
 	if enq == nil {
 		enq = NopEnqueuer{}
+	}
+	logger := cfg.Logger
+	if logger == nil {
+		logger = slog.Default()
 	}
 	return &Service{
 		storage:     cfg.Storage,
@@ -186,6 +197,7 @@ func New(cfg Config) *Service {
 		maxFileSize: cfg.MaxFileSize,
 		maxPixels:   cfg.MaxPixels,
 		tempDir:     cfg.TempDir,
+		log:         logger,
 	}
 }
 
@@ -225,7 +237,7 @@ func (s *Service) IngestFile(ctx context.Context, src io.Reader, req Request) Fi
 		return dup
 	}
 
-	media, err := extractMedia(ctx, staged.path, req.Filename)
+	media, err := s.extractMedia(ctx, staged.path, req.Filename)
 	if err != nil {
 		return errorResult(req.Filename, err)
 	}
@@ -620,11 +632,11 @@ type videoFields struct {
 // filename names a video. Images take the EXIF path; videos are probed via
 // ffprobe/exiftool and require ffmpeg for poster extraction, so a missing ffmpeg
 // is reported as an error (the only fatal case — see extractVideoMedia).
-func extractMedia(ctx context.Context, path, filename string) (mediaMeta, error) {
+func (s *Service) extractMedia(ctx context.Context, path, filename string) (mediaMeta, error) {
 	if !video.IsVideoPath(filename) {
 		return mediaMeta{kind: photos.MediaImage, shared: extractMeta(ctx, path, filename)}, nil
 	}
-	return extractVideoMedia(ctx, path, filename)
+	return s.extractVideoMedia(ctx, path, filename)
 }
 
 // extractMeta reads EXIF/GPS metadata from the staged file, degrading to an
@@ -649,13 +661,30 @@ func extractMeta(ctx context.Context, path, filename string) exif.Metadata {
 // fallback) and returns a clear ErrFFmpegMissing-wrapped error when it is
 // absent. A metadata probe failure is non-fatal: the video is still catalogued
 // with whatever could be resolved (capture time falls back to the filename).
-func extractVideoMedia(ctx context.Context, path, filename string) (mediaMeta, error) {
+//
+// Non-fatal is not the same as invisible. A failed probe used to be swallowed into
+// empty video metadata with no trace anywhere, which is how a broken probe or a
+// missing ffprobe produced dozens of half-catalogued clips that nobody could
+// notice, let alone explain. It is logged with the file it happened on, so the
+// problem is discoverable while it is still happening; the clip itself is repaired
+// later by the `metadata` job (POST /process/metadata?videos=true).
+func (s *Service) extractVideoMedia(ctx context.Context, path, filename string) (mediaMeta, error) {
 	if !video.FFmpegAvailable() {
 		return mediaMeta{}, fmt.Errorf("ingest: video %q: %w", filename, video.ErrFFmpegMissing)
 	}
 	vm, err := video.Probe(ctx, path)
-	if err != nil {
+	switch {
+	case err != nil:
+		s.log.WarnContext(ctx, "video metadata probe failed; cataloguing the clip without it",
+			slog.String("filename", filename), slog.String("error", err.Error()))
 		vm = video.Metadata{}
+	case !vm.HasContainerMetadata():
+		// The commoner shape of the same failure: ffprobe could not read the container
+		// and the exiftool fallback returned tags with nothing about a video in them,
+		// so there is no error to report — only a clip with no duration, no codec and
+		// no frame size.
+		s.log.WarnContext(ctx, "video metadata probe read nothing about the container; "+
+			"cataloguing the clip without it", slog.String("filename", filename))
 	}
 	return mediaMeta{
 		kind:   photos.MediaVideo,

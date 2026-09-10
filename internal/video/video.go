@@ -111,6 +111,21 @@ type Metadata struct {
 	Raw map[string]any
 }
 
+// HasContainerMetadata reports whether this Metadata is the result of actually
+// reading a video container. A real clip always yields at least one of a duration,
+// a codec name and a frame size, so a Metadata with none of the three came from a
+// probe that read nothing — ffprobe failed and the exiftool fallback found no video
+// tags (it happily describes a truncated download as a text file).
+//
+// It is the difference between "the file says there is no sound" and "nobody
+// managed to ask the file anything", which is the whole reason a failed probe used
+// to be invisible: its zero values look exactly like a reading. Callers use it to
+// log the failure (internal/ingest) and to refuse to write those zero values back
+// over a catalogued clip (internal/metajob).
+func (m Metadata) HasContainerMetadata() bool {
+	return m.DurationMs != nil || m.VideoCodec != "" || (m.Width > 0 && m.Height > 0)
+}
+
 // IsVideoExt reports whether ext names a video format Kukátko ingests. The
 // extension may include or omit the leading dot and is case-insensitive.
 func IsVideoExt(ext string) bool {

@@ -759,11 +759,13 @@ func TestBackfillThumbnails_forbidden(t *testing.T) {
 // candidate uid (the unread set, or the active set when all is true), recording
 // the last `all` flag and how many calls it saw.
 type fakeMetadataBackfiller struct {
-	unread  []string
-	active  []string
-	calls   int
-	lastAll bool
-	err     error
+	unread     []string
+	active     []string
+	brokenVids []string
+	calls      int
+	videoCalls int
+	lastAll    bool
+	err        error
 }
 
 // BackfillMetadata schedules the appropriate candidate set and returns its size.
@@ -777,6 +779,16 @@ func (f *fakeMetadataBackfiller) BackfillMetadata(_ context.Context, all bool) (
 		return len(f.active), nil
 	}
 	return len(f.unread), nil
+}
+
+// BackfillVideoMetadata schedules the videos with no technical metadata and
+// returns how many, recording that the video scope was the one asked for.
+func (f *fakeMetadataBackfiller) BackfillVideoMetadata(_ context.Context) (int, error) {
+	f.videoCalls++
+	if f.err != nil {
+		return 0, f.err
+	}
+	return len(f.brokenVids), nil
 }
 
 // newServerWithMetadata mounts the API with the given metadata backfiller (the
@@ -994,5 +1006,31 @@ func TestEstimateLocations_forbidden(t *testing.T) {
 	}
 	if le.calls != 0 {
 		t.Errorf("BackfillLocations called %d times, want 0 behind a closed guard", le.calls)
+	}
+}
+
+// TestBackfillMetadata_videos routes ?videos=true to the video-scoped backfill —
+// the clips whose container was never probed — rather than to the ordinary one,
+// which would pass them by because their rows are marked as read.
+func TestBackfillMetadata_videos(t *testing.T) {
+	t.Parallel()
+
+	mb := &fakeMetadataBackfiller{unread: []string{"p1"}, brokenVids: []string{"v1", "v2"}}
+	srv := newServerWithMetadata(t, mb, passthrough)
+
+	resp := postProcess(t, srv.URL+"/process/metadata?videos=true")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var body backfillResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Enqueued != 2 {
+		t.Errorf("enqueued = %d, want 2", body.Enqueued)
+	}
+	if mb.videoCalls != 1 || mb.calls != 0 {
+		t.Errorf("calls = %d video / %d plain, want 1 / 0", mb.videoCalls, mb.calls)
 	}
 }

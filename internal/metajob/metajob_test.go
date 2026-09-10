@@ -5,13 +5,22 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"os"
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/exif"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/video"
 )
+
+// quietLogger is a logger that throws its records away, so a test that exercises
+// a skipped or empty probe does not print into the test output.
+func quietLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
 
 // errBoom is the generic failure a fake collaborator returns to check the error
 // path.
@@ -19,11 +28,13 @@ var errBoom = errors.New("boom")
 
 // fakePhotos is a PhotoStore recording what the service asked it to fill.
 type fakePhotos struct {
-	photo    photos.Photo
-	getErr   error
-	fillErr  error
-	filled   []photos.FileMetadata
-	filledAt []string
+	photo     photos.Photo
+	getErr    error
+	fillErr   error
+	repairErr error
+	filled    []photos.FileMetadata
+	filledAt  []string
+	repaired  []photos.VideoRepair
 }
 
 // GetByUID returns the configured photo, or the configured error.
@@ -46,11 +57,26 @@ func (f *fakePhotos) FillFileMetadata(_ context.Context, uid string, m photos.Fi
 	return true, nil
 }
 
+// RepairVideoMetadata records the video repair and reports whether it would have
+// written, or the configured error.
+func (f *fakePhotos) RepairVideoMetadata(
+	_ context.Context, _ string, r photos.VideoRepair,
+) (bool, error) {
+	if f.repairErr != nil {
+		return false, f.repairErr
+	}
+	f.repaired = append(f.repaired, r)
+	return !r.Empty(), nil
+}
+
 // fakeExtractor is an Extractor returning a canned extraction or error.
 type fakeExtractor struct {
-	meta  exif.Metadata
-	err   error
-	calls int
+	meta   exif.Metadata
+	video  video.Metadata
+	err    error
+	vidErr error
+	calls  int
+	probes int
 }
 
 // ExtractOriginal returns the canned metadata, counting the call.
@@ -62,10 +88,20 @@ func (f *fakeExtractor) ExtractOriginal(_ context.Context, _ photos.Photo) (exif
 	return f.meta, nil
 }
 
+// ProbeVideo returns the canned container metadata, counting the call.
+func (f *fakeExtractor) ProbeVideo(_ context.Context, _ photos.Photo) (video.Metadata, error) {
+	f.probes++
+	if f.vidErr != nil {
+		return video.Metadata{}, f.vidErr
+	}
+	return f.video, nil
+}
+
 // fakeLister is a PhotoLister returning canned uid sets.
 type fakeLister struct {
 	pending []string
 	active  []string
+	videos  []string
 	err     error
 }
 
@@ -77,6 +113,11 @@ func (f *fakeLister) ListPhotosMissingFileMetadata(_ context.Context, _ int) ([]
 // ListActiveUIDs returns every active uid.
 func (f *fakeLister) ListActiveUIDs(_ context.Context) ([]string, error) {
 	return f.active, f.err
+}
+
+// ListVideosMissingTechnicalMetadata returns the videos with no technical metadata.
+func (f *fakeLister) ListVideosMissingTechnicalMetadata(_ context.Context, _ int) ([]string, error) {
+	return f.videos, f.err
 }
 
 // fakeEnqueuer is an Enqueuer recording the uids it was asked to schedule.
@@ -150,7 +191,9 @@ func TestReextract_videoKeepsImageCodecEmpty(t *testing.T) {
 	store := &fakePhotos{photo: photos.Photo{FileName: "clip.mp4", MediaType: photos.MediaVideo}}
 	meta := fullMeta()
 	meta.ImageCodec = "jpeg" // as if the extractor had read the poster frame
-	svc := New(Config{Photos: store, Extractor: &fakeExtractor{meta: meta}})
+	svc := New(Config{
+		Photos: store, Extractor: &fakeExtractor{meta: meta}, Logger: quietLogger(),
+	})
 
 	if err := svc.Reextract(context.Background(), "vid1"); err != nil {
 		t.Fatalf("Reextract() error = %v", err)
@@ -346,4 +389,134 @@ func TestNew_requiresCollaborators(t *testing.T) {
 		}
 	}()
 	New(Config{Photos: &fakePhotos{}})
+}
+
+// TestReextract_videoIsReprobed checks the handler probes a video's container as
+// well as its tags, and hands the catalogue the repair the probe justifies.
+func TestReextract_videoIsReprobed(t *testing.T) {
+	t.Parallel()
+
+	store := &fakePhotos{photo: photos.Photo{FileName: "clip.mp4", MediaType: photos.MediaVideo}}
+	extr := &fakeExtractor{video: fullProbe()}
+	svc := New(Config{Photos: store, Extractor: extr, Logger: quietLogger()})
+
+	if err := svc.Reextract(context.Background(), "vid1"); err != nil {
+		t.Fatalf("Reextract() error = %v", err)
+	}
+	if extr.probes != 1 {
+		t.Fatalf("probed %d times, want 1", extr.probes)
+	}
+	if len(store.repaired) != 1 {
+		t.Fatalf("repaired %d times, want 1", len(store.repaired))
+	}
+	got := store.repaired[0]
+	if got.DurationMs == nil || *got.DurationMs != 7_500 {
+		t.Errorf("repaired duration = %v, want 7500", got.DurationMs)
+	}
+	if got.VideoCodec == nil || *got.VideoCodec != "h264" {
+		t.Errorf("repaired codec = %v, want h264", got.VideoCodec)
+	}
+}
+
+// TestReextract_stillIsNotProbed checks an image never reaches the video probe:
+// there is no container to read, and shelling out to ffprobe for every photo in the
+// library would be a backfill nobody asked for.
+func TestReextract_stillIsNotProbed(t *testing.T) {
+	t.Parallel()
+
+	store := &fakePhotos{photo: photos.Photo{FileName: "IMG_1.jpg", MediaType: photos.MediaImage}}
+	extr := &fakeExtractor{video: fullProbe()}
+	svc := New(Config{Photos: store, Extractor: extr})
+
+	if err := svc.Reextract(context.Background(), "pht1"); err != nil {
+		t.Fatalf("Reextract() error = %v", err)
+	}
+	if extr.probes != 0 {
+		t.Errorf("probed %d times, want 0", extr.probes)
+	}
+	if len(store.repaired) != 0 {
+		t.Errorf("repaired %d times, want 0", len(store.repaired))
+	}
+}
+
+// TestReextract_videoProbeFailures checks which probe failures are skips and which
+// reach the queue: a gone original and a host with no probing tool can never
+// succeed by being retried (and must not dead-letter a library-wide backfill),
+// while any other failure is returned so the job is retried and recorded.
+func TestReextract_videoProbeFailures(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		probeErr error
+		wantErr  error
+	}{
+		{
+			name:     "missing original is skipped",
+			probeErr: fmt.Errorf("metajob: probing 2024/05/clip.mp4: %w", os.ErrNotExist),
+		},
+		{
+			name:     "no probing tool is skipped",
+			probeErr: fmt.Errorf("metajob: probing 2024/05/clip.mp4: %w", video.ErrFFprobeMissing),
+		},
+		{
+			name:     "an unreadable container is retried",
+			probeErr: errBoom,
+			wantErr:  errBoom,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			store := &fakePhotos{photo: photos.Photo{FileName: "clip.mp4", MediaType: photos.MediaVideo}}
+			svc := New(Config{
+				Photos:    store,
+				Extractor: &fakeExtractor{vidErr: tt.probeErr},
+				Logger:    quietLogger(),
+			})
+
+			err := svc.Reextract(context.Background(), "vid1")
+			switch {
+			case tt.wantErr == nil && err != nil:
+				t.Fatalf("Reextract() error = %v, want nil (skip)", err)
+			case tt.wantErr != nil && !errors.Is(err, tt.wantErr):
+				t.Fatalf("Reextract() error = %v, want %v", err, tt.wantErr)
+			}
+			if len(store.repaired) != 0 {
+				t.Errorf("repaired %d times, want 0 — nothing was read", len(store.repaired))
+			}
+			if len(store.filled) != 1 {
+				t.Errorf("filled %d times, want 1 — the tags were still read", len(store.filled))
+			}
+		})
+	}
+}
+
+// TestBackfillVideoMetadata checks the video-scoped backfill schedules exactly the
+// videos whose container was never read out, and refuses to run without the
+// backfill collaborators.
+func TestBackfillVideoMetadata(t *testing.T) {
+	t.Parallel()
+
+	enq := &fakeEnqueuer{}
+	svc := New(Config{
+		Photos:    &fakePhotos{},
+		Extractor: &fakeExtractor{},
+		Lister:    &fakeLister{pending: []string{"x"}, active: []string{"x", "y"}, videos: []string{"v1", "v2"}},
+		Enqueuer:  enq,
+	})
+
+	enqueued, err := svc.BackfillVideoMetadata(context.Background())
+	if err != nil {
+		t.Fatalf("BackfillVideoMetadata() error = %v", err)
+	}
+	if enqueued != 2 || len(enq.uids) != 2 || enq.uids[0] != "v1" || enq.uids[1] != "v2" {
+		t.Errorf("scheduled %v (%d), want [v1 v2]", enq.uids, enqueued)
+	}
+
+	bare := New(Config{Photos: &fakePhotos{}, Extractor: &fakeExtractor{}})
+	if _, err := bare.BackfillVideoMetadata(context.Background()); !errors.Is(err, ErrBackfillUnavailable) {
+		t.Errorf("BackfillVideoMetadata() error = %v, want ErrBackfillUnavailable", err)
+	}
 }

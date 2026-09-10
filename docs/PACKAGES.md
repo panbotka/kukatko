@@ -365,6 +365,23 @@ to `## Package map` in `CLAUDE.md`.
   actually filled, so a no-op backfill is invisible to every reader; `metadata_extracted_at`
   is always stamped — the file was read, whatever it said. Nothing outside `fileMetadataColumns` is
   touched: captions, `taken_at`, GPS, ratings and curation data are out of scope. `ErrPhotoNotFound`)/
+  **`RepairVideoMetadata(ctx,uid,VideoRepair) (changed,error)`**
+  (the write side of the **video re-probe**, `internal/metajob`: it applies a decision the caller has already
+  made, column by column. Every `VideoRepair` field is optional and a nil one becomes a `COALESCE` over the
+  column → "leave it exactly as it is", so the statement carries **no policy of its own**; the two provenance
+  columns (`taken_at_source`, `location_source`) are written **only together with** the value they describe,
+  and `taken_at_before_unknown` goes through the shared `TakenAtBeforeUnknownAssignment`. The type spells the
+  split out: **file-derived** (`duration_ms`, `file_width`+`file_height`, `fps`, `video_codec`,
+  `audio_codec`+`has_audio`) versus **curated** (`taken_at`, `lat`+`lng`+`altitude`) — see `internal/metajob`
+  for who may overwrite what. An **empty repair never reaches the database** (no statement, no `updated_at`),
+  so re-probing a healthy clip is a true no-op; the statement is guarded by `media_type = 'video'`, because it
+  speaks about a container and aiming it at a still is a caller's bug → `ErrPhotoNotFound`)/
+  **`ListVideosMissingTechnicalMetadata(ctx,limit) ([]uid,error)`**
+  (the candidate set of the **video half of the metadata backfill**: non-archived videos with no
+  `duration_ms`, no `video_codec` or no frame size — exactly what a *failed* probe leaves behind, newest
+  first, `limit <= 0` = all. `fps` and audio are deliberately **not** in the predicate: a container can
+  legitimately carry neither, and a clip that could never satisfy it would be re-scheduled by every run
+  for ever)/
   **`ApplyImportMetadata(ctx,uid,ImportMetadata) (changed,error)`**
   (the write side of an **import from a foreign catalog** (it carried the source system's `Details` block and
   the file-technical fields of a photo detail) onto a photo already in the catalog. Differs from
@@ -822,7 +839,13 @@ to `## Package map` in `CLAUDE.md`.
   size, and offset 0 is always the last fallback. Pure and deterministic on purpose — ingest, a thumbnail
   rebuild, `face_detect` and `image_embed` each re-derive the poster independently and must land on the same
   frame. Cost and the measurements behind the thresholds: `docs/PERF.md` §2;
-  `IsVideoPath`/`IsVideoExt`/`FFmpegAvailable`/`FFprobeAvailable`; **on-the-fly transcode for
+  `IsVideoPath`/`IsVideoExt`/`FFmpegAvailable`/`FFprobeAvailable`;
+  **`Metadata.HasContainerMetadata()`** — the difference between a reading and a failure: a real clip always
+  yields at least one of a duration, a codec name and a full frame size, so a `Metadata` with none of the
+  three came from a probe that read **nothing** (ffprobe failed and the exiftool fallback happily described a
+  truncated download as a text file). `Probe` reports that as a nil error, which is why a failed probe used
+  to be invisible; `internal/ingest` logs it and `internal/metajob` refuses to write those zero values back
+  over a catalogued clip; **on-the-fly transcode for
   playback** (`transcode.go`): `IsWebFriendlyCodec(codec)` (h264/avc/vp8/vp9/av1/theora play
   natively in the browser, empty=unknown=no), `TranscodeArgs(src)` (ffmpeg → a **fragmented**
   H.264/AAC MP4 to `pipe:1` via `frag_keyframe+empty_moov`, audio optionally `0:a?` — testable
@@ -920,14 +943,19 @@ to `## Package map` in `CLAUDE.md`.
   which is exactly what `internal/ingest` does and what `internal/thumbjob` gets for free by reading a
   preview. Sub-images (non-origin bounds) encode from their own pixels), `internal/ingest/`
   (the upload/ingest pipeline: `Service` = `New(Config{Storage,Photos,Thumbnailer,Enqueuer,Sidecar,OCR,
-  Places,Duplicate,MaxFileSize,MaxPixels,TempDir})` (`MaxPixels` = the same decompression-bomb cap as `thumb.max_pixels`,
+  Places,Duplicate,MaxFileSize,MaxPixels,TempDir,Logger?})` (`Logger` defaults to `slog.Default()`) (`MaxPixels` = the same decompression-bomb cap as `thumb.max_pixels`,
   applied to the pHash decode via `imgconvert.EnforcePixelBound`; a rejected oversize source becomes a
   `phash_failed` warning, the photo is still catalogued) with **`IngestFile(ctx,src,Request{Filename,UploadedBy,Sidecar})`** (the full form;
   `Ingest(ctx,src,filename,uploadedBy)` = a thin wrapper for an upload without a sidecar) `→ FileResult`
   — streams to a temp +
   SHA256, exact-dup check, metadata (`mediaMeta`: **photo** → EXIF; **video** per `video.IsVideoPath`
   → `media_type=video` + `video.Probe`, requires `ffmpeg` otherwise a per-file error `ErrFFmpegMissing`,
-  `taken_at` falls back to the original name via `exif.FilenameTakenAt`),
+  `taken_at` falls back to the original name via `exif.FilenameTakenAt`; **a probe that fails is non-fatal but
+  no longer invisible** — the clip is still catalogued, and the failure is **logged with the file name**
+  (`WARN`), both when `Probe` errors and, the commoner shape, when it comes back with
+  `!HasContainerMetadata()`: a broken probe or a missing `ffprobe` otherwise produces dozens of
+  half-catalogued clips nobody can notice, and the repair route is
+  `POST /process/metadata?videos=true`),
   **`applySidecar`** (if the file has a sidecar — `internal/sidecar`, see below — it is applied **before**
   storing the original: the merged `taken_at` decides the `YYYY/MM`, so a Takeout photo with a stripped
   EXIF falls into the month it was **created**, not when it was imported; `Title`/`Description` from the sidecar
@@ -1868,8 +1896,11 @@ to `## Package map` in `CLAUDE.md`.
   `serveCountedBackfill`; `BlurhashBackfiller` optional — nil → 503; local, works even with the box offline),
   `POST /process/metadata` → `{enqueued}` runs `metajob.BackfillMetadata(all)` (backfill of `metadata`
   for photos whose file has never been read = `metadata_extracted_at IS NULL`; `?all=true`
-  forces a re-read of every non-archived photo; `MetadataBackfiller` optional — nil → 503;
-  local, works even with the box offline),
+  forces a re-read of every non-archived photo; **`?videos=true`** instead runs
+  `metajob.BackfillVideoMetadata()` over the videos whose container was never read out (no duration, no codec,
+  no frame size) — the clips the plain run passes by for ever, because their rows *are* marked as read; the
+  video scope has no `all` of its own, so the two flags do not combine (`runMetadataBackfill`);
+  `MetadataBackfiller` optional — nil → 503; local, works even with the box offline),
   `POST /process/hls` → `{enqueued}` runs `hlsjob.BackfillHLS(all)` (backfill of `hls_transcode` for
   non-archived videos with **no `photo_hls_renditions` row**; `?all=true` schedules every non-archived video,
   a forced full re-encode — how a newly enabled quality level or a changed `segment_seconds` reaches the
@@ -3672,13 +3703,31 @@ to `## Package map` in `CLAUDE.md`.
   `jobs.TypeMetadata`. **`Reextract(uid)`** is **exclusively a gap-filler**: it writes only into columns that
   are still empty (`photos.FillFileMetadata`), so an empty extraction never overwrites a value
   the user wrote, and it touches nothing else (captions, `taken_at`, GPS, ratings and albums are
-  out of its reach) → **idempotent**, a second run changes nothing (not even `updated_at`). Video: `image_codec`
-  stays empty (a clip's compression is the ffprobe-derived `video_codec`, which is out of scope); `original_name` is
+  out of its reach) → **idempotent**, a second run changes nothing (not even `updated_at`); `original_name` is
   reconstructed from `photo.FileName` (storage keeps the original under the name it arrived with — the catalogue
   cannot get closer, and it is written into an empty column anyway). **A missing original** (`os.ErrNotExist`
   from `Materialize`/`Extract`) is **logged and skipped** (a nil error): the file is gone, a retry will never
   succeed and a dead-letter would only break a library-wide run; other storage/DB errors are returned → the queue
-  retries. The **backfill** `BackfillMetadata(ctx,all) (int,error)` (the basis of `POST /process/metadata`):
+  retries. **The video re-probe** (`videorepair.go`, `Extractor.ProbeVideo` = `storage.Materialize` +
+  `video.Probe`): for a `media_type=video` the handler *also* probes the container again, because those
+  columns were read **exactly once**, while the clip was being ingested — a probe that failed there left them
+  empty for ever, and a clip with no duration can never get its scrub preview (`internal/storyboardjob`
+  refuses without one). `planVideoRepair(photo,probe)` is a pure function and holds the whole policy:
+  **file-derived** fields (`duration_ms`, dimensions, `fps`, `video_codec`, `audio_codec`+`has_audio`, the
+  last two always as a pair) may be **corrected**, since nothing but a probe ever writes them — a value that
+  differs from the file is offered, an identical one is not (so a re-probe of a healthy clip is a no-op), and
+  a field the probe could not read is never written ("I did not see it" ≠ "it is not there").
+  The **curated** fields are gap-fill only: a `taken_at` is offered solely when the photo has none or one
+  merely guessed from its file name (a `manual` date, an `exif` date, a date declared unknown — the disowned
+  value sits in `taken_at_before_unknown` — and a `taken_at_estimated` one all stand), coordinates solely
+  when the photo has **none at all and an empty `location_source`** (the rule `internal/geoestimate` already
+  follows, which is what keeps `manual` + no coordinates the tombstone it is meant to be). `video.Metadata.
+  HasContainerMetadata()` guards the lot: a probe that read no container writes **nothing**, so a second
+  failure cannot "correct" a duration to unknown and sound to silence — it is logged instead. A gone original
+  and a host with no `ffprobe`/`exiftool` are logged skips (neither is fixable by a retry, and dead-lettering
+  them would make a library-wide run look broken); every other probe failure is returned → the queue retries.
+  Video: `image_codec` still stays empty — a clip's compression is `video_codec`, which the re-probe owns.
+  The **backfill** `BackfillMetadata(ctx,all) (int,error)` (the basis of `POST /process/metadata`):
   it enqueues a `metadata` job for every photo whose file has **never been read**
   (`PhotoLister.ListPhotosMissingFileMetadata` = `metadata_extracted_at IS NULL`), or — when `all` —
   for every non-archived one (`ListActiveUIDs`, a forced re-read of the whole library, which is how the
@@ -3686,7 +3735,13 @@ to `## Package map` in `CLAUDE.md`.
   returns the count; `ErrBackfillUnavailable` when the `Service` had no `Lister`/`Enqueuer`. **It converges and is
   resumable**: the marker is stamped the moment the job finishes, so an interrupted run picks up exactly where
   it stopped, and a second run over an exhausted library enqueues **zero** jobs — even for a photo whose file
-  has no IPTC tags at all ("we looked and there was nothing there" is a finished photo, not a pending one)),
+  has no IPTC tags at all ("we looked and there was nothing there" is a finished photo, not a pending one).
+  **`BackfillVideoMetadata(ctx) (int,error)`** (the basis of `POST /process/metadata?videos=true`) is the
+  repair route for a library that ingested clips while its probe was broken: it enqueues a `metadata` job for
+  every video in `PhotoLister.ListVideosMissingTechnicalMetadata` — which the backfill above cannot reach,
+  because those rows carry a `metadata_extracted_at` — and it has **no `all` scope** of its own, since
+  re-reading every video is what `BackfillMetadata(all)` already does. Same guarantees: enqueue-only,
+  idempotent, resumable, and a repaired clip drops out of the candidate set),
   `internal/ocrjob/`
   (the worker handler of the `ocr` job — it **reads the text printed in a photo** (a street sign, a shop
   front, a scanned page, a banner over a stage) and stores it, so the library's search finds the photo by

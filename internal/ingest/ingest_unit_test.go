@@ -424,7 +424,7 @@ func TestExtractMedia_datesFromTheUploadNameNotTheStagedFile(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			media, err := extractMedia(context.Background(), staged, tc.filename)
+			media, err := New(Config{}).extractMedia(context.Background(), staged, tc.filename)
 			if err != nil {
 				t.Fatalf("extractMedia() error = %v", err)
 			}

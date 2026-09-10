@@ -266,7 +266,10 @@ that it was imported.
   smooth version up on its own the moment it lands. **The grid says it too**: a video still waiting
   for its smooth version carries a small hourglass beside the play mark on its tile, so you know
   before you click. It never blocks anything — the clip usually plays already, straight from the
-  original — and on an instance that does not encode videos at all no tile is marked. Downloading still gives you the
+  original — and on an instance that does not encode videos at all no tile is marked. A clip that
+  arrived while the library could not read its file — no length, no codec, and so no frame previews
+  either — is no longer stuck that way: a maintainer re-reads those clips in one pass and the previews
+  appear the next time one is played. Downloading still gives you the
   original file — the renditions exist to be watched, not to replace what you keep.
 
 ### On a phone

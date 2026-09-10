@@ -3,10 +3,12 @@ package metajob
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/panbotka/kukatko/internal/exif"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/storage"
+	"github.com/panbotka/kukatko/internal/video"
 )
 
 // StorageExtractor reads a photo's metadata out of its stored original. It goes
@@ -46,6 +48,35 @@ func (e *StorageExtractor) ExtractOriginal(
 	meta, err := exif.Extract(ctx, abs)
 	if err != nil {
 		return exif.Metadata{}, fmt.Errorf("metajob: reading %s: %w", photo.FilePath, err)
+	}
+	return meta, nil
+}
+
+// ProbeVideo materialises the photo's original and probes it as a video container,
+// returning what ffprobe (or the exiftool fallback) says about it. The temp copy an
+// object store leaves behind is always released, including on failure.
+//
+// A missing original surfaces as an error wrapping os.ErrNotExist and a host with
+// no probing tool as one wrapping video.ErrFFprobeMissing, which the caller reads
+// as "skip this photo" rather than as a job failure.
+func (e *StorageExtractor) ProbeVideo(
+	ctx context.Context, photo photos.Photo,
+) (video.Metadata, error) {
+	abs, release, err := e.storage.Materialize(ctx, photo.FilePath)
+	if err != nil {
+		return video.Metadata{}, fmt.Errorf("metajob: materializing original: %w", err)
+	}
+	defer release()
+
+	// The local store hands back a path without looking at it, so a photo whose
+	// original is gone would reach ffprobe and come back as an unreadable file
+	// rather than as a missing one. The caller branches on that difference.
+	if _, err := os.Stat(abs); err != nil {
+		return video.Metadata{}, fmt.Errorf("metajob: probing %s: %w", photo.FilePath, err)
+	}
+	meta, err := video.Probe(ctx, abs)
+	if err != nil {
+		return video.Metadata{}, fmt.Errorf("metajob: probing %s: %w", photo.FilePath, err)
 	}
 	return meta, nil
 }
