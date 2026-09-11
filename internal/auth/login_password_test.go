@@ -102,12 +102,18 @@ func TestDummyPasswordHash_matchesProductionCost(t *testing.T) {
 // caller must not be able to tell an existing account from a nonexistent or
 // disabled one by how long the answer takes.
 //
-// The comparison is deliberately coarse — the fastest of a few runs per branch,
-// within a factor of two of each other. Precision is not the point: the failure
-// this catches is a branch that skips bcrypt entirely, which is three orders of
-// magnitude faster, not one that is 30 % slower. Taking the minimum rather than
-// the mean is what keeps it stable on a loaded machine, where scheduling can
-// only ever add time to a CPU-bound loop.
+// The comparison is deliberately coarse — the fastest of a few rounds per
+// branch, within a small factor of each other. Precision is not the point: the
+// failure this catches is a branch that skips bcrypt entirely, which is three
+// orders of magnitude faster, not one that is 30 % slower. Taking the minimum
+// rather than the mean is what keeps it stable on a loaded machine, where
+// scheduling can only ever add time to a CPU-bound loop.
+//
+// The rounds interleave the branches instead of measuring each one to
+// completion in turn. Run back to back, whichever branch goes first absorbs the
+// load the machine is under at the start — on a busy CI runner that alone
+// inflated the first branch past a 2× tolerance while the last ran on a quiet
+// core, failing a test whose subject does the identical work on every path.
 func TestCheckLoginPassword_timingIsIndistinguishable(t *testing.T) {
 	t.Parallel()
 
@@ -118,9 +124,13 @@ func TestCheckLoginPassword_timingIsIndistinguishable(t *testing.T) {
 	// first branch that happens to need it.
 	dummyPasswordHash()
 
+	// tolerance leaves room for the scheduling noise of a shared runner while
+	// staying three orders of magnitude below the regression this guards: a
+	// branch that returns without hashing answers in microseconds, not in a
+	// quarter of the time.
 	const (
-		runs      = 3
-		tolerance = 2.0
+		rounds    = 3
+		tolerance = 4.0
 	)
 	branches := []struct {
 		name  string
@@ -133,19 +143,23 @@ func TestCheckLoginPassword_timingIsIndistinguishable(t *testing.T) {
 	}
 
 	fastest := make(map[string]time.Duration, len(branches))
-	for _, branch := range branches {
-		best := time.Duration(0)
-		for i := range runs {
+	for round := range rounds {
+		// Rotate the starting branch so that over the rounds each one pays the
+		// cost of going first exactly once, and the minimum below picks every
+		// branch's quietest round rather than its position in a fixed order.
+		for offset := range branches {
+			branch := branches[(round+offset)%len(branches)]
 			start := time.Now()
 			if err := checkLoginPassword(branch.user, branch.known, "definitely not the password"); err == nil {
 				t.Fatalf("%s: checkLoginPassword succeeded, want a failure", branch.name)
 			}
-			if elapsed := time.Since(start); i == 0 || elapsed < best {
-				best = elapsed
+			if elapsed := time.Since(start); round == 0 || elapsed < fastest[branch.name] {
+				fastest[branch.name] = elapsed
 			}
 		}
-		fastest[branch.name] = best
-		t.Logf("%s: fastest of %d = %s", branch.name, runs, best)
+	}
+	for _, branch := range branches {
+		t.Logf("%s: fastest of %d = %s", branch.name, rounds, fastest[branch.name])
 	}
 
 	for _, a := range branches {
