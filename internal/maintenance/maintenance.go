@@ -34,6 +34,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/exif"
+	"github.com/panbotka/kukatko/internal/facejob"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
@@ -163,11 +164,12 @@ type EmbedBackfiller interface {
 	BackfillEmbeddings(ctx context.Context) (int, error)
 }
 
-// FaceBackfiller enqueues face_detect jobs for photos missing face detection. It
+// FaceBackfiller enqueues face_detect jobs for stills missing face detection. It
 // is satisfied by *facejob.Service.
 type FaceBackfiller interface {
-	// BackfillFaces enqueues a face_detect job per unprocessed photo.
-	BackfillFaces(ctx context.Context) (int, error)
+	// BackfillFaces enqueues a face_detect job per unprocessed still and reports
+	// how many videos it passed over (detection does not run on footage).
+	BackfillFaces(ctx context.Context) (facejob.BackfillResult, error)
 }
 
 // PlaceBackfiller lists and schedules the reverse geocodes the library still

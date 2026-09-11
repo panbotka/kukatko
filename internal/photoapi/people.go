@@ -58,8 +58,8 @@ type peopleResponse struct {
 // hand-attached people.
 //
 // It is the only way to say who is in a picture the detector cannot see: anybody
-// appearing after a video's poster frame (the one frame face detection looks at),
-// and the profiles, backs of heads and crowd faces it misses on a still.
+// in a video at all (detection does not run on footage), and the profiles, backs
+// of heads and crowd faces it misses on a still.
 //
 // Attaching somebody already attached is a success, not a conflict: the caller
 // asked for a state that already holds and gets the same body as the first

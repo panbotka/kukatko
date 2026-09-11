@@ -2229,10 +2229,10 @@ describe('PhotoDetailPage — immersive viewer', () => {
   describe('a video and the page share the keyboard', () => {
     /**
      * Opens the detail page on a clip and hands back its `<video>`, made
-     * drivable (jsdom plays nothing by itself). `faces` is how many the detector
-     * found on the poster — only `m`'s page-side meaning, show the faces, needs
-     * one, and a clip that has one arrives with it selected, which would give
-     * Escape something to step back out of before the viewer.
+     * drivable (jsdom plays nothing by itself). `faces` is how many rows the
+     * catalogue still holds for the clip — normally none, since detection does
+     * not run on footage; `m` is asserted against one anyway, to pin down that
+     * a leftover row buys the clip no faces view.
      */
     async function clipPage(faces = 0): Promise<HTMLVideoElement> {
       fetchPhotoMock.mockResolvedValue(
@@ -2323,21 +2323,21 @@ describe('PhotoDetailPage — immersive viewer', () => {
       }
     })
 
-    it('reads m as mute while the clip plays, and as the faces while it does not', async () => {
+    it('reads m as mute while the clip plays, and as nothing at all while it does not', async () => {
       const video = await clipPage(1)
-      await screen.findByRole('button', { name: 'Show faces' })
+      // On a photograph `m` shows the faces. A clip has no faces view to show —
+      // detection does not run on footage — so the page has nothing to do with
+      // the key, even with a row left behind in the catalogue.
+      expect(screen.queryByRole('button', { name: 'Show faces' })).toBeNull()
 
       fireEvent.keyDown(document, { key: 'm' })
-      expect(await screen.findByTestId('face-overlay')).toBeInTheDocument()
+      expect(screen.queryByTestId('face-overlay')).toBeNull()
       expect(video.muted).toBe(false)
 
-      // Playing, the same key is the player's mute — and the faces stay as they
-      // were rather than being toggled behind the clip.
-      fireEvent.keyDown(document, { key: 'm' })
+      // Playing, the same key is the player's mute.
       play()
       fireEvent.keyDown(document, { key: 'm' })
       expect(video.muted).toBe(true)
-      expect(window.localStorage.getItem('kukatko.faces.overlay')).toBe('false')
     })
 
     it('gives Escape to leaving fullscreen, and keeps closing the viewer everywhere else', async () => {
@@ -2387,12 +2387,13 @@ describe('PhotoDetailPage — immersive viewer', () => {
   })
 
   /**
-   * Face detection runs on a video too — on ONE frame, the poster — so the clip
-   * has faces that can be named, and anybody who only appears later in it (or
-   * whom the detector missed on a still) is attached by hand instead.
+   * A video has no detected faces: the detector could only ever have read its
+   * poster, one arbitrary frame of the footage, so it is no longer asked at all.
+   * Who is in a clip is a plain list of people attached by hand — which is also
+   * how somebody the detector missed on a still is recorded.
    */
   describe('who is in this video', () => {
-    /** A clip, with the detector having found `faces` faces on its poster. */
+    /** A clip, with `faces` rows left in the catalogue for it (normally none). */
     function clip(faces = 1) {
       fetchPhotoMock.mockResolvedValue(
         photo({
@@ -2405,35 +2406,34 @@ describe('PhotoDetailPage — immersive viewer', () => {
       fetchFacesMock.mockResolvedValue(facesResponse(faces))
     }
 
-    it('opens the faces panel on a video and names a face there', async () => {
+    it('offers no faces view and draws no boxes, even with a row left in the data', async () => {
       const user = userEvent.setup()
       clip(1)
-      renderPage()
+      const { container } = renderPage()
       await screen.findByRole('heading', { name: 'Clip' })
 
-      await user.click(await screen.findByRole('button', { name: 'Show faces' }))
-      // The same panel a photograph gets, with the boxes over the poster frame —
-      // the one frame the detector actually looked at.
-      expect(await screen.findByText('Faces: 1')).toBeInTheDocument()
-      expect(screen.getByTestId('face-overlay')).toBeInTheDocument()
+      // No toggle to open it with, nothing drawn over the poster, and no layer
+      // waiting to hold either — a clip that kept a face row from before is
+      // still a clip with no boxes.
+      expect(screen.queryByRole('button', { name: 'Show faces' })).toBeNull()
+      expect(screen.queryByTestId('face-overlay')).toBeNull()
+      expect(container.querySelector('.kk-video__overlay')).toBeNull()
 
-      await user.type(screen.getByLabelText('Name'), 'Alice')
-      await user.click(await screen.findByRole('option', { name: /Alice/ }))
-      await waitFor(() => {
-        expect(assignFaceMock).toHaveBeenCalled()
-      })
+      // And the panel beside it is the people list, not the naming panel.
+      await openInfo(user)
+      expect(screen.queryByLabelText('Name this face')).toBeNull()
+      expect(await screen.findByRole('button', { name: 'Add who is here' })).toBeInTheDocument()
     })
 
-    it('reaches that panel from a numbered chip instead of falling back to the info view', async () => {
+    it('offers no click through to a naming panel that cannot open', async () => {
       const user = userEvent.setup()
       clip(1)
       renderPage()
       await screen.findByRole('heading', { name: 'Clip' })
       await openInfo(user)
 
-      await user.click(await screen.findByRole('button', { name: 'Name unnamed face 1' }))
-      expect(screen.getByLabelText('Name this face')).toBeInTheDocument()
-      expect(screen.getByTestId('face-overlay')).toBeInTheDocument()
+      // The chip would lead nowhere, so it is not offered as a control at all.
+      expect(screen.queryByRole('button', { name: 'Name unnamed face 1' })).toBeNull()
     })
 
     it('offers the add-a-person control on a clip, on a bare photo and on one full of faces', async () => {

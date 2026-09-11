@@ -59,7 +59,10 @@ configuration key both here **and** into `config.example.yaml`.
   `--thumbnails`/`--embeddings`/`--faces`/`--phashes`/`--import-orphans`/`--places`/`--dimensions`/
   `--face-markers`/`--sideways-faces`/`--impossible-dates`/`--missing-renditions`/`--delete-orphan-segments`
   (each opt-in; thumbnails/phashes enqueue `thumbnail` jobs drained by a running server's worker,
-  embeddings/faces backfill, orphan import synchronously via the upload pipeline; `--dimensions` writes the
+  embeddings/faces backfill, orphan import synchronously via the upload pipeline. `--faces` prints the
+  videos it passed over on its own line (`videos skipped by face detection=N`): detection does not run on
+  footage, so a library of mostly clips schedules far fewer jobs than it has media, and that number is what
+  says why rather than leaving it looking like nothing happened; `--dimensions` writes the
   catalogue directly — it rewrites the pixel dimensions of quarter-turned photos whose columns hold the
   **displayed** frame instead of the stored one, taking that correction from the file's own EXIF document rather
   than from its provenance, and then corrects the face boxes normalized against the same transposed frame.
@@ -708,8 +711,9 @@ on the server it stays opt-in (`?people=true`) because assembling it costs a fac
 read should not pay for, and **`--people=false`** skips it. When the response carries no roll-call at all
 — you turned it off, or the instance has no face backend — the row reads `- (not reported)`, which is
 **not** the same as "nobody is on this photo". **`PEOPLE`** is the people somebody attached **by hand** —
-no box, no detected face, for what detection cannot see (anybody after a video's poster frame, a profile,
-a back of a head). That one is always reported, so an empty row really does mean nobody was attached. The date and the location are printed beside their provenance (`estimated, year, manual` /
+no box, no detected face, for what detection cannot see (anybody in a video at all — detection does not run
+on footage — a profile, a back of a head). That one is always reported, so an empty row really does mean
+nobody was attached. The date and the location are printed beside their provenance (`estimated, year, manual` /
 `50.08750, 14.42111 (estimate)`) so an inferred value never reads like a measured one.
 
 #### `ctl photos image` — actually look at the photo

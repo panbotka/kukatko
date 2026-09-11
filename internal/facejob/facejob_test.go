@@ -37,10 +37,13 @@ type recordedDetection struct {
 
 // fakeVectorStore is an in-memory VectorStore for unit tests.
 type fakeVectorStore struct {
-	detected  map[string]bool
-	missing   []string
-	recorded  []recordedDetection
-	recordErr error
+	detected map[string]bool
+	missing  []string
+	// missingVideos is what CountVideosMissingFaces answers: the videos the
+	// backfill passes over rather than schedules.
+	missingVideos int
+	recorded      []recordedDetection
+	recordErr     error
 }
 
 // FacesDetected reports whether the photo is marked detected.
@@ -66,6 +69,11 @@ func (f *fakeVectorStore) RecordFaceDetection(
 // ListPhotosMissingFaces returns the canned missing uids.
 func (f *fakeVectorStore) ListPhotosMissingFaces(_ context.Context, _ int) ([]string, error) {
 	return append([]string(nil), f.missing...), nil
+}
+
+// CountVideosMissingFaces returns the canned count of passed-over videos.
+func (f *fakeVectorStore) CountVideosMissingFaces(_ context.Context) (int, error) {
+	return f.missingVideos, nil
 }
 
 // fakeSource is an ImageSource serving a fixed payload in a fixed frame. The
@@ -399,20 +407,25 @@ func TestHandle_payload(t *testing.T) {
 	}
 }
 
-// TestBackfillFaces enqueues one job per unprocessed photo and counts them.
+// TestBackfillFaces enqueues one job per unprocessed still, counts them, and
+// reports the videos it never scheduled — the number that tells a library of
+// mostly footage apart from one that is already fully detected.
 func TestBackfillFaces(t *testing.T) {
 	t.Parallel()
 
-	vs := &fakeVectorStore{missing: []string{"ph1", "ph2", "ph3"}}
+	vs := &fakeVectorStore{missing: []string{"ph1", "ph2", "ph3"}, missingVideos: 4}
 	enq := &fakeEnqueuer{}
 	svc := newService(t, &fakePhotoStore{}, vs, &fakeClient{}, &fakeSource{}, enq)
 
-	n, err := svc.BackfillFaces(context.Background())
+	res, err := svc.BackfillFaces(context.Background())
 	if err != nil {
 		t.Fatalf("BackfillFaces: %v", err)
 	}
-	if n != 3 {
-		t.Errorf("enqueued count = %d, want 3", n)
+	if res.Enqueued != 3 {
+		t.Errorf("enqueued count = %d, want 3", res.Enqueued)
+	}
+	if res.SkippedVideos != 4 {
+		t.Errorf("skipped videos = %d, want 4", res.SkippedVideos)
 	}
 	if strings.Join(enq.enqueued, ",") != "ph1,ph2,ph3" {
 		t.Errorf("enqueued = %v, want [ph1 ph2 ph3]", enq.enqueued)

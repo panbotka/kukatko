@@ -47,8 +47,8 @@ func (e *env) seedSubject(t *testing.T, name string) string {
 func TestAttachPerson_roundTrip(t *testing.T) {
 	env := newEnv(t)
 	client, _ := env.login(t, "editor", auth.RoleEditor)
-	// A video, deliberately: face detection only ever sees the poster frame, so a
-	// person appearing later in the clip is exactly what this endpoint is for.
+	// A video, deliberately: face detection does not run on footage at all, so
+	// this endpoint is the only way a clip names anybody.
 	photo := env.seedPhoto(t, photos.Photo{Title: "Clip", MediaType: photos.MediaVideo}, "clip.jpg", 10, 20, 30)
 	subjectUID := env.seedSubject(t, "Ludmila")
 	base := env.server.URL + "/api/v1/photos/" + photo.UID + "/people"

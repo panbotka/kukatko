@@ -218,8 +218,8 @@ const (
 	ActionMarkerInvalidate = "marker.invalidate"
 	// ActionPersonAttach records attaching a person to a media item by hand — no
 	// bounding box, no detected face — which is the only way to record somebody a
-	// detector cannot see: a face after a video's poster frame, a profile, a back
-	// of a head. The marker recording the link is the target; the photo and the
+	// detector cannot see: anybody in a video (detection does not run on footage),
+	// a profile, a back of a head. The marker recording the link is the target; the photo and the
 	// subject are in the details.
 	ActionPersonAttach = "person.attach"
 	// ActionPersonDetach records removing a hand-attached person from a media

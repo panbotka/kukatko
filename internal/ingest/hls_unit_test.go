@@ -78,10 +78,12 @@ func TestEnqueueJobs_hls(t *testing.T) {
 					t.Errorf("hls enqueued[%d] = %s, want %s", i, hls.uids[i], uid)
 				}
 			}
-			// The embedding and face jobs are scheduled regardless — the streaming
-			// encode is an addition to that work, never a replacement for it.
-			if len(enq.embeds) != 1 || len(enq.faces) != 1 {
-				t.Errorf("embeds=%v faces=%v, want one of each", enq.embeds, enq.faces)
+			// The embedding is scheduled regardless — the streaming encode is an
+			// addition to that work, never a replacement for it. Face detection
+			// is the mirror image of the encode: a still's job, never a clip's.
+			if len(enq.embeds) != 1 || len(enq.faces) != wantFaceJobs(tc.photo) {
+				t.Errorf("embeds=%v faces=%v, want 1 embed and %d faces",
+					enq.embeds, enq.faces, wantFaceJobs(tc.photo))
 			}
 		})
 	}

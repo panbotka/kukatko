@@ -44,7 +44,7 @@ type testEnv struct {
 
 // recordingEnqueuer is a JobEnqueuer that records the photo UIDs jobs were
 // enqueued for, so a test can assert post-ingest work (image embedding, face
-// detection) was scheduled — including on a video's poster frame.
+// detection) was scheduled — and, for a video, that face detection was not.
 type recordingEnqueuer struct {
 	mu     sync.Mutex
 	embeds []string

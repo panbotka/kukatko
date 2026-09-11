@@ -13,12 +13,21 @@
 // bytes it sent (UprightImage), which leaves no orientation reasoning anywhere in
 // the conversion. The full-resolution image is sent, not a downscaled preview.
 //
+// Videos are out of scope. Detection on a clip could only ever look at one frame
+// — the poster — which is an arbitrary sample of the footage: it found whoever
+// happened to be in that frame, said nothing about the other few thousand, and
+// drew its boxes over a picture the player stops showing the moment the clip
+// plays. Who is in a video is recorded by hand instead (a `person` marker, see
+// internal/people). So a clip is skipped here, in the backfill and in the
+// catalogue query behind it alike, and migration 0072 removed what the detector
+// had already stored.
+//
 // The handler is idempotent — a photo whose detection has already been recorded
 // is skipped without calling the sidecar — and offline-aware: when the box is
 // unreachable the job is deferred (requeued without burning a retry attempt) so
 // it completes once the box comes back rather than dead-lettering while it sleeps.
 // The same Service drives the face-detection backfill (enqueue a face_detect job
-// for every photo that has never been processed).
+// for every still that has never been processed).
 //
 // Every collaborator is an interface so the Service unit-tests with fakes and no
 // network, database or filesystem.
@@ -29,6 +38,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/panbotka/kukatko/internal/embedding"
@@ -66,9 +76,12 @@ type VectorStore interface {
 	// RecordFaceDetection stores the detected faces and marks the photo processed
 	// in one transaction, recording the frame the detector saw along with them.
 	RecordFaceDetection(ctx context.Context, photoUID string, det vectors.Detection) error
-	// ListPhotosMissingFaces returns uids of non-archived photos that have never
+	// ListPhotosMissingFaces returns uids of non-archived stills that have never
 	// had face detection run (limit <= 0 returns all).
 	ListPhotosMissingFaces(ctx context.Context, limit int) ([]string, error)
+	// CountVideosMissingFaces returns how many non-archived videos that listing
+	// leaves out, so the backfill can report what it passed over.
+	CountVideosMissingFaces(ctx context.Context) (int, error)
 }
 
 // ImageSource opens an upright copy of a photo's original image. It is satisfied
@@ -107,6 +120,8 @@ type Config struct {
 	// MinDetScore is the minimum det_score a face must have to be stored (default
 	// DefaultMinDetScore; a non-positive value disables the filter).
 	MinDetScore float64
+	// Logger records the photos the handler skips; nil uses slog.Default().
+	Logger *slog.Logger
 }
 
 // Service detects, converts and stores faces, and backfills face detection.
@@ -118,6 +133,7 @@ type Service struct {
 	enqueuer    Enqueuer
 	retryDelay  time.Duration
 	minDetScore float64
+	log         *slog.Logger
 }
 
 // New builds a Service from cfg, applying defaults for the optional tunables. It
@@ -136,6 +152,10 @@ func New(cfg Config) *Service {
 	if minDetScore == 0 {
 		minDetScore = DefaultMinDetScore
 	}
+	logger := cfg.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &Service{
 		photos:      cfg.Photos,
 		vectors:     cfg.Vectors,
@@ -144,6 +164,7 @@ func New(cfg Config) *Service {
 		enqueuer:    cfg.Enqueuer,
 		retryDelay:  retryDelay,
 		minDetScore: minDetScore,
+		log:         logger,
 	}
 }
 
@@ -180,11 +201,12 @@ func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 
 // Detect runs face detection for photoUID and stores the results. It is
 // idempotent: a photo whose detection has already been recorded returns nil
-// without calling the sidecar. When the sidecar is offline it returns a
-// worker.RetryAfter error so the job is requeued without consuming a retry
-// attempt; any other sidecar or storage failure is returned as an ordinary
-// (retryable) error. A missing photo is returned as an error so the job fails and
-// dead-letters rather than looping.
+// without calling the sidecar, and so does a video — detection does not run on
+// footage, and failing the job would dead-letter work that was never meant to
+// happen. When the sidecar is offline it returns a worker.RetryAfter error so the
+// job is requeued without consuming a retry attempt; any other sidecar or storage
+// failure is returned as an ordinary (retryable) error. A missing photo is
+// returned as an error so the job fails and dead-letters rather than looping.
 func (s *Service) Detect(ctx context.Context, photoUID string) error {
 	_, err := s.detect(ctx, photoUID, false)
 	return err
@@ -206,7 +228,8 @@ func (s *Service) Detect(ctx context.Context, photoUID string) error {
 //
 // The returned count is the number of faces stored, which is zero when the photo
 // genuinely holds none: a photo looked at and found empty is a result, not a
-// failure.
+// failure. A video is skipped here as it is in Detect — forcing does not buy the
+// clip a detection that no longer exists — and reports zero faces.
 func (s *Service) ForceDetect(ctx context.Context, photoUID string) (int, error) {
 	return s.detect(ctx, photoUID, true)
 }
@@ -216,6 +239,10 @@ func (s *Service) ForceDetect(ctx context.Context, photoUID string) (int, error)
 // the shared body of Detect and ForceDetect, so the two differ in exactly one
 // thing — whether the existing record is a reason to stop. A skipped photo
 // reports zero faces, which the caller (Detect) discards.
+//
+// A video is skipped whatever force says, and nothing is written for it: not the
+// faces, and not the record that the detector looked. Kept, that record would
+// report the step as done for work that no longer happens — see the package doc.
 func (s *Service) detect(ctx context.Context, photoUID string, force bool) (int, error) {
 	if !force {
 		detected, err := s.vectors.FacesDetected(ctx, photoUID)
@@ -230,6 +257,10 @@ func (s *Service) detect(ctx context.Context, photoUID string, force bool) (int,
 	photo, err := s.photos.GetByUID(ctx, photoUID)
 	if err != nil {
 		return 0, fmt.Errorf("facejob: loading photo %s: %w", photoUID, err)
+	}
+	if photo.MediaType == photos.MediaVideo {
+		s.log.DebugContext(ctx, "face detection skipped: video", slog.String("photo_uid", photo.UID))
+		return 0, nil
 	}
 
 	detection, err := s.detectFaces(ctx, photo)
@@ -328,22 +359,44 @@ func (s *Service) buildFaces(photo photos.Photo, det detectionResult) []vectors.
 	return out
 }
 
-// BackfillFaces enqueues a face_detect job for every non-archived photo that has
-// never had face detection run, returning how many uids it scheduled. Photos that
-// were already processed are never touched, and a photo whose job is already
-// queued is a harmless no-op (the enqueuer dedupes), so the backfill is safe to
-// run repeatedly.
-func (s *Service) BackfillFaces(ctx context.Context) (int, error) {
+// BackfillResult is what one run of BackfillFaces did: the jobs it scheduled and
+// the videos it deliberately did not.
+//
+// SkippedVideos is reported rather than dropped because the difference between
+// "the library is fully detected" and "the library is fully detected except for
+// the footage, which is never going to be" is exactly what an operator running
+// the backfill is asking about. Without it, a library of nothing but clips
+// answers a flat zero and looks broken.
+type BackfillResult struct {
+	// Enqueued is how many face_detect jobs were scheduled.
+	Enqueued int
+	// SkippedVideos is how many non-archived videos were passed over.
+	SkippedVideos int
+}
+
+// BackfillFaces enqueues a face_detect job for every non-archived still that has
+// never had face detection run, and reports how many videos it passed over along
+// the way. Photos that were already processed are never touched, and a photo
+// whose job is already queued is a harmless no-op (the enqueuer dedupes), so the
+// backfill is safe to run repeatedly.
+//
+// A video is never scheduled: detection does not run on footage, so enqueuing one
+// would only queue a job whose whole body is a skip.
+func (s *Service) BackfillFaces(ctx context.Context) (BackfillResult, error) {
 	uids, err := s.vectors.ListPhotosMissingFaces(ctx, 0)
 	if err != nil {
-		return 0, fmt.Errorf("facejob: listing photos missing faces: %w", err)
+		return BackfillResult{}, fmt.Errorf("facejob: listing photos missing faces: %w", err)
 	}
-	enqueued := 0
+	skipped, err := s.vectors.CountVideosMissingFaces(ctx)
+	if err != nil {
+		return BackfillResult{}, fmt.Errorf("facejob: counting videos without faces: %w", err)
+	}
+	res := BackfillResult{SkippedVideos: skipped}
 	for _, uid := range uids {
 		if err := s.enqueuer.EnqueueFaceDetect(ctx, uid); err != nil {
-			return enqueued, fmt.Errorf("facejob: enqueuing face_detect for %s: %w", uid, err)
+			return res, fmt.Errorf("facejob: enqueuing face_detect for %s: %w", uid, err)
 		}
-		enqueued++
+		res.Enqueued++
 	}
-	return enqueued, nil
+	return res, nil
 }

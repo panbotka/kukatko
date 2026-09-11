@@ -102,6 +102,11 @@ type RepairResult struct {
 	EmbeddingsEnqueued int `json:"embeddings_enqueued"`
 	// FacesEnqueued is the number of face_detect jobs scheduled.
 	FacesEnqueued int `json:"faces_enqueued"`
+	// FacesSkippedVideos is the number of videos the face repair passed over.
+	// Face detection does not run on footage — who is in a clip is recorded by
+	// hand — so a library of mostly video schedules far fewer jobs than it has
+	// photos, and this is the number that says why.
+	FacesSkippedVideos int `json:"faces_skipped_videos"`
 	// PhashesEnqueued is the number of pHash-recompute (thumbnail) jobs scheduled.
 	PhashesEnqueued int `json:"phashes_enqueued"`
 	// PlacesEnqueued is the number of `places` jobs scheduled. It counts photos
@@ -468,16 +473,18 @@ func (s *Service) repairEmbeddings(ctx context.Context, opts RepairOptions, res 
 	return nil
 }
 
-// repairFaces backfills missing face detections when selected.
+// repairFaces backfills the missing face detections when selected, and reports
+// the videos it left alone alongside them — detection does not run on footage.
 func (s *Service) repairFaces(ctx context.Context, opts RepairOptions, res *RepairResult) error {
 	if !opts.Faces {
 		return nil
 	}
-	n, err := s.faces.BackfillFaces(ctx)
+	backfill, err := s.faces.BackfillFaces(ctx)
 	if err != nil {
 		return fmt.Errorf("maintenance: backfilling faces: %w", err)
 	}
-	res.FacesEnqueued = n
+	res.FacesEnqueued = backfill.Enqueued
+	res.FacesSkippedVideos = backfill.SkippedVideos
 	return nil
 }
 

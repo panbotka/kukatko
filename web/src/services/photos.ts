@@ -673,8 +673,8 @@ export interface PhotoDetail extends Photo {
   labels: PhotoLabelRef[]
   /**
    * Who was attached to the media item **by hand** — the people the face
-   * detector could not reach (anybody after a video's poster frame, a profile or
-   * a back of a head on a still), ordered by name. Served unconditionally, so
+   * detector could not reach (anybody in a video, where it does not run at all;
+   * a profile or a back of a head on a still), ordered by name. Served unconditionally, so
    * this is a plain list and never `null`; optional here only so older fixtures
    * stay valid, and absent from a response the backend answered with no people
    * store wired. It is deliberately separate from the detected faces

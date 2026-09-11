@@ -479,11 +479,6 @@ export function PhotoDetailPage() {
   // Zoom, the edit preview and the on-image overlay are for a still image: a live
   // photo's motion preview and a video player's chrome are not a photograph.
   const isStill = ready !== null && ready.media_type !== 'video' && ready.media_type !== 'live'
-  // A video, though, has faces of its own. Detection runs on every medium and for
-  // a clip it looks at ONE frame — the poster — which is exactly the picture the
-  // player shows before it is played, so the boxes have a surface to land on and
-  // the panel beside them is the same panel a photograph gets.
-  const isVideo = ready !== null && ready.media_type === 'video'
   // While a neighbour loads the faces are keyed on the target photo, so they must
   // not be drawn over the still-displayed previous one.
   const loadingNext = ready !== null && ready.uid !== uid
@@ -493,8 +488,14 @@ export function PhotoDetailPage() {
   // rendition on stage as much as for the one being shown. A rotation does not:
   // FaceOverlay maps its boxes through it and follows the turned photo.
   // Brightness and contrast move no pixels at all.
+  //
+  // A VIDEO rules it out too, and for good: detection does not run on footage at
+  // all any more. A clip could only ever be detected on its poster — one
+  // arbitrary frame — so the boxes described a picture the player drops the
+  // moment it plays. Who is in a clip is a plain list of people now (PeoplePanel
+  // below), and no box is drawn over a video even if a row survived somewhere.
   const facesAvailable =
-    (isStill || isVideo) &&
+    isStill &&
     !loadingNext &&
     faces.faces.length > 0 &&
     !hasCrop(previewEdit) &&
@@ -1238,6 +1239,8 @@ export function PhotoDetailPage() {
   // Render the stage media by kind: a range-streaming player for videos, a
   // hover/hold motion preview for live photos, and the edit-reflecting still for
   // images (with the detected faces drawn as a toggleable overlay on top of it).
+  // A video gets no such overlay: nothing is detected on footage, and who is in a
+  // clip is the plain list of people in the panel beside it.
   const renderStage = () => {
     if (photo.media_type === 'video') {
       return (
@@ -1250,30 +1253,9 @@ export function PhotoDetailPage() {
             token={downloadToken}
             streaming={photo.hls === true}
             encode={videoEncode(photo)}
-            posterRatio={stage.ratio}
             // Which of the two owns a shared key. `setVideoScope` is a state
             // setter, so it is stable and the player reports into it directly.
             onKeyboardScope={setVideoScope}
-            // The boxes belong to the poster frame — the one frame detection
-            // looked at — so the player owns where they go and takes them down
-            // once the clip is playing. Nothing is passed for `measured` (it
-            // defaults true): the player mounts this layer only once it has the
-            // poster's own rectangle, so there is no estimate to wait out.
-            overlay={
-              showFaces ? (
-                <FaceOverlay
-                  faces={faces.faces}
-                  selected={faces.selected?.face_index ?? null}
-                  hovered={hoveredFace}
-                  onSelect={(faceIndex) => {
-                    faces.select(faceIndex)
-                    setPanel('faces')
-                  }}
-                  onHover={setHoveredFace}
-                  readOnly={!canWrite}
-                />
-              ) : undefined
-            }
           />
         </div>
       )

@@ -180,22 +180,16 @@ type Evidence struct {
 
 // applies reports whether step can ever produce a result for this photo.
 //
-// A photo with no coordinate has nothing to reverse-geocode. Text recognition
-// skips a video, in the job and in the backfill query alike. The streaming
-// encode is the mirror image: only a video has anything to encode.
-//
-// Face detection applies to a video, which is not obvious and was reported the
-// other way round until it was measured: the upload pipeline enqueues
-// `face_detect` for every media type and the detector runs on the video's poster
-// frame, faces and all. The report only ever looked truthful because it resolves
-// persisted evidence before this rule — so a video whose faces were already
-// detected read as done, while a freshly uploaded one claimed the step did not
-// apply with its detection job sitting in the queue.
+// A photo with no coordinate has nothing to reverse-geocode. Text recognition and
+// face detection both skip a video, in the job and in the backfill query alike:
+// each could only ever read the poster frame, one arbitrary sample of the
+// footage, and who is in a clip is recorded by hand instead. The streaming encode
+// is the mirror image: only a video has anything to encode.
 func (e Evidence) applies(step Step) bool {
 	switch step {
 	case StepPlaces:
 		return e.HasGPS
-	case StepOCR:
+	case StepOCR, StepFaceDetect:
 		return e.MediaType != photos.MediaVideo
 	case StepHLS:
 		return e.MediaType == photos.MediaVideo

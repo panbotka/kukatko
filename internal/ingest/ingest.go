@@ -556,13 +556,16 @@ func (s *Service) enqueueJobs(ctx context.Context, photo photos.Photo) []Warning
 }
 
 // scheduledJobs returns the enqueue call of every background job a freshly
-// catalogued photo earns, in the order they are scheduled. Image embedding and
-// face detection always apply; the rest are conditional, and a job whose feature
-// is switched off is left out rather than queued, because with no handler
-// registered it would wait in the queue forever.
+// catalogued photo earns, in the order they are scheduled. Image embedding always
+// applies; the rest are conditional, and a job whose feature is switched off is
+// left out rather than queued, because with no handler registered it would wait
+// in the queue forever.
 //
-// OCR is scheduled for stills only — a video's poster frame is deliberately not
-// read — so a clip leaves the queue exactly as it found it.
+// Face detection and OCR are scheduled for stills only — a video's poster frame
+// is deliberately neither read nor searched for faces, being one arbitrary sample
+// of the footage — so a clip leaves both queues exactly as it found them. Who is
+// in a clip is recorded by hand instead (a `person` marker), which is the only
+// answer that covers the whole of it.
 //
 // The streaming encode is the mirror image: it is scheduled for standalone
 // videos only. A still has nothing to segment, and a live photo's motion clip is
@@ -585,7 +588,9 @@ func (s *Service) enqueueJobs(ctx context.Context, photo photos.Photo) []Warning
 func (s *Service) scheduledJobs(photo photos.Photo) []func(context.Context, string) error {
 	scheduled := []func(context.Context, string) error{
 		s.enqueuer.EnqueueImageEmbed,
-		s.enqueuer.EnqueueFaceDetect,
+	}
+	if photo.MediaType != photos.MediaVideo {
+		scheduled = append(scheduled, s.enqueuer.EnqueueFaceDetect)
 	}
 	if s.ocr != nil && photo.MediaType != photos.MediaVideo {
 		scheduled = append(scheduled, s.ocr.EnqueueOCR)

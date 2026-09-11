@@ -234,8 +234,9 @@ deterministic rule:
 
 The rule is pure and deterministic, which matters beyond testability: several
 paths re-derive a video's poster independently (ingest's thumbnails, a thumbnail
-rebuild, face detection, the embedding job), and they must all land on the same
-frame or a video's faces would sit on a picture nobody else sees.
+rebuild, the embedding job), and they must all land on the same frame or a clip's
+grid tile and its search hit would be two different pictures. Face detection was
+on that list until it stopped running on a video altogether (migration `0072`).
 
 #### What it costs
 

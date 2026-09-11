@@ -265,6 +265,8 @@ func runMaintenanceRepair(cmd *cobra.Command) error {
 	cmd.Printf("repairs scheduled: thumbnails=%d phashes=%d embeddings=%d faces=%d places=%d\n",
 		result.ThumbnailsEnqueued, result.PhashesEnqueued, result.EmbeddingsEnqueued,
 		result.FacesEnqueued, result.PlacesEnqueued)
+	cmd.Printf("videos skipped by face detection=%d (a clip's people are recorded by hand)\n",
+		result.FacesSkippedVideos)
 	cmd.Printf("orphans imported=%d skipped=%d failed=%d\n",
 		result.OrphansImported, result.OrphansSkipped, result.OrphansFailed)
 	cmd.Printf("dimensions fixed=%d face boxes fixed=%d left alone=%d\n",

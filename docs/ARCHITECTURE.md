@@ -41,7 +41,8 @@ as the point — earlier attempts at this had the features and were still hard t
 - Photo detail = metadata/editing, faces and similar photos on one page.
 - **Videos** (mp4/mov/live photos) — storage, poster + thumbnails via `ffmpeg`,
   playback/streaming (range requests). Embedding on the poster frame
-  (which also makes videos searchable).
+  (which also makes videos searchable); face detection deliberately not — who is
+  in a clip is a plain list of people attached by hand.
 - **Duplicate management** — review of similar/duplicate photos (pHash + embedding) and bulk cleanup.
 
 **What is out of scope:**
@@ -372,8 +373,8 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
   - **Video** (migration `0004_video.sql`): `media_type IN (image|video|live)` (default `image`,
     partial index for "videos only"), `duration_ms`, `video_codec`, `audio_codec`, `has_audio`,
     `fps`. Populated for videos via `internal/video.Probe` (ffprobe → exiftool fallback);
-    the poster frame (`internal/video.ExtractPoster`, ffmpeg) feeds the thumbnailer/pHash and the embed/face
-    jobs — it is **chosen**, not taken at a fixed offset: a handful of candidates spread across the clip are
+    the poster frame (`internal/video.ExtractPoster`, ffmpeg) feeds the thumbnailer/pHash and the embed job
+    (never face detection, which does not run on footage — see migration `0072`) — it is **chosen**, not taken at a fixed offset: a handful of candidates spread across the clip are
     decoded small and the least flat one wins, so a clip that opens on darkness is not a black tile
     (the rule and its cost: `docs/PERF.md` §2). A live photo = still as the primary image + a motion clip as another `photo_files` row.
   - a generated `fts tsvector` column (GIN index) — see [§6.2](#62-hledani).

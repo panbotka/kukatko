@@ -2510,13 +2510,13 @@ here.
   faces/edits **closes** the drawer (it is not "show metadata"). In the faces/edits view the header is carried by
   its own panel (`FacesPanel`/`EditPanel` have a title + close), so the generic header
   „Informace" (`.kk-viewer__panel-head`) glows **only in the info view**. The same `panel` value drives the
-  boxes and the faces panel, so they can't diverge. **A video has the faces UI too** (`facesAvailable` is
-  `(isStill || isVideo)` since 09/2026): detection runs on every medium and for a clip it looks at one frame —
-  the poster — which is exactly the picture the player shows before it is played, so the boxes have a surface and
-  the panel beside them is the same `FacesPanel` a photograph gets. The overlay then lives **inside the player**
-  (`VideoPlayer`'s `overlay` prop, which owns its geometry and takes it down once the clip is playing) rather than
-  over `.kk-viewer__figure`, which a video has none of. A **live photo** is still left out: its motion preview is
-  not a photograph either. **A crop — and only a crop — stands the whole faces UI down**
+  boxes and the faces panel, so they can't diverge. **A video has no faces UI at all** (`facesAvailable` is
+  `isStill` again since 09/2026, having briefly been `(isStill || isVideo)`): face detection does not run on
+  footage — it could only ever have read the poster, one arbitrary frame — so there is no toggle, no
+  `FacesPanel` and **no overlay of any kind over the player**, not even if a face row survived somewhere in
+  the catalogue. Who is in a clip is the flat list in `PeoplePanel` beside it (`canOpenFaces` is therefore
+  false on a video, so its chips offer no click through to a panel that cannot open). A **live photo** is
+  left out of the on-image UI for its own reason: its motion preview is not a photograph either. **A crop — and only a crop — stands the whole faces UI down**
   (`!hasCrop(previewEdit)` in `facesAvailable`): it leaves a frame the boxes were never measured against, so every
   frame would miss its face; the UI comes back the moment the crop is off again — and a crop still **baked into the
   rendition on stage** (`renditionEdit`, see the edit-preview contract under `EditPanel`) stands it down the same
@@ -2685,12 +2685,14 @@ here.
   the next photo folds it back up with no effect to run; nothing about it is stored, here or on the
   server. **A chip offers the click only where the faces panel can actually open** — prop `canOpenFaces`,
   which the page feeds `facesAvailable`: on a photo whose boxes stand down (a saved crop leaves a frame they
-  were never measured against) the chips render as plain pills, because a chip that silently falls back to the
-  metadata view is worse than one that does not offer the click.
+  were never measured against) and on every video (no faces UI at all) the chips render as plain pills,
+  because a chip that silently falls back to the metadata view is worse than one that does not offer the
+  click.
   **The block's second half is who was attached BY HAND** (prop `people` = `PhotoDetail.people`, prop
-  `onPeopleChanged` handing the mutation's reply back to the page): face detection on a video only ever sees
-  the poster frame and on a still it misses profiles, backs of heads and crowd faces, so a name can be recorded
-  with no box at all. Such a person has **no crop to show**, so the chip is the shared `EntityChip`
+  `onPeopleChanged` handing the mutation's reply back to the page) — and **on a video it is the whole block**,
+  since detection does not run on footage and a clip therefore has no face chips at all. On a still it covers
+  the profiles, backs of heads and crowd faces the detector misses, so a name can be recorded with no box at
+  all. Such a person has **no crop to show**, so the chip is the shared `EntityChip`
   (`kind="person"` → the `person-circle` glyph, linking to `/people/{uid}`) with the editor's remove X —
   glyph versus portrait is exactly what tells the two kinds of chip apart at a glance. Adding is a
   **`person-plus` toggle button, offered on every medium and whatever the detector found** (`photo.organize.addPerson`,
@@ -3108,20 +3110,13 @@ here.
   `kukatko-tap-target`, so speed and skips are finger-sized on touch. A decode failure still falls back to the
   download link. Tests: `VideoPlayer.test.tsx` „keyboard shortcuts" (both directions for every shared key, the
   single-toggle space with the play button focused, and the reported scope), with jsdom's missing
-  playback/fullscreen APIs stubbed from **`src/test/media.ts`** (`stubPlayableMedia`, `stubFullscreen`). **The poster carries the faces** (props `overlay` + `posterRatio`, both new 09/2026): face
-  detection runs on a clip as well and looks at exactly **one** frame — the poster — so that frame is where its
-  boxes belong. The player hands `overlay` a layer (`.kk-video__overlay`) placed and sized **in JS**, because
-  only the running player knows where its poster paints: the element is sized by the stage and the picture is
-  fitted into it (`object-fit: contain`), so a layer covering the element would put every box off its face by the
-  width of one letterbox bar. `lib/faceGeometry` `containedRect(frame, ratio)` does the arithmetic, a
-  `ResizeObserver` on the `<video>` keeps it current (window `resize` where there is none), and the ratio is the
-  element's own (`videoWidth/videoHeight` on `loadedmetadata`) with the caller's `posterRatio` — the catalogue
-  row's shape — standing in until then. **The layer stands down the moment the clip is first played** (the
-  existing `started` flag, not `playing`): from then on the element paints a frame of the video, and boxes
-  measured on the poster would sit on the wrong picture; pausing does not bring the poster back, so neither do
-  they come back, and stepping to another clip mounts a fresh element with its own poster. Tests:
-  `VideoPlayer.test.tsx` „the poster overlay", which stubs `offsetWidth`/`offsetHeight` on `HTMLElement.prototype`
-  — jsdom lays nothing out, so without that there is no rectangle to place anything on.
+  playback/fullscreen APIs stubbed from **`src/test/media.ts`** (`stubPlayableMedia`, `stubFullscreen`). **No face boxes over the poster**: the player briefly took an
+  `overlay` (+ `posterRatio`) and placed it on the painted poster rectangle, because detection on a clip
+  looked at that one frame. Detection no longer runs on footage at all, so both props, the `.kk-video__overlay`
+  layer, the `ResizeObserver` measuring it and `lib/faceGeometry`'s `containedRect` are **gone**; who is in a
+  clip is the flat list in `PeoplePanel` on the detail page. Tests: `VideoPlayer.test.tsx` „the poster", which
+  asserts no such layer is rendered.
+
   `VideoScrubber` (`components/photo/`) = the timeline: a click/drag-to-seek rail exposed as
   `role="slider"` (so ←/→ seek ±5 s and PageUp/Down ±60 s once it has focus, without the player claiming those
   keys globally), plus the **hover preview** — a frame from the clip's storyboard sprite, drawn by offsetting one
@@ -5501,11 +5496,9 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   twin of `boxWithinCrop` — a marker growing from its top-left corner would slide off the face when it hits
   the CSS minimum; the `max()`/`clamp()` stay in CSS also because jsdom's CSSOM mangles `clamp()` in `left`
   but passes custom properties through verbatim)
-  + `containedRect(frame, ratio)` (a box in CSS pixels + a picture's aspect ratio → the rectangle an
-  `object-fit: contain` picture actually paints in, centred, letterbox bands excluded. What the face boxes over a
-  **video's poster** are placed on: a `<video>` is sized by its container, not by its picture, so percentages *of
-  the element* land every box a bar's width off its face. A degenerate box or ratio gives the box back, since
-  covering the element is harmless and dividing by zero is not). `faceCropStyle` is **gone**: it scaled the two axes
+  (`containedRect(frame, ratio)` is **gone** too: it placed the face boxes on a video poster's painted
+  rectangle, and nothing is drawn over a clip any more — detection does not run on footage.)
+  `faceCropStyle` is **gone**: it scaled the two axes
   independently (so it deformed) and read `tile_*` as though it were the whole frame, and the one component
   left using it, `FaceThumb`, was replaced by `FaceCrop` on the server-cut rendition;
   `faceThreshold.ts` = a pure conversion of the person-search threshold between **percent** (the UI) and the **cosine

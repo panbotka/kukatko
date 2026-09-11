@@ -84,9 +84,10 @@ func TestEnqueueJobs_places(t *testing.T) {
 				}
 			}
 			// The geocode is an addition to the always-scheduled work, never a
-			// replacement for it.
-			if len(enq.embeds) != 1 || len(enq.faces) != 1 {
-				t.Errorf("embeds=%v faces=%v, want one of each", enq.embeds, enq.faces)
+			// replacement for it; face detection is a still's alone.
+			if len(enq.embeds) != 1 || len(enq.faces) != wantFaceJobs(tc.photo) {
+				t.Errorf("embeds=%v faces=%v, want 1 embed and %d faces",
+					enq.embeds, enq.faces, wantFaceJobs(tc.photo))
 			}
 		})
 	}

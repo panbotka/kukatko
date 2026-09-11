@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/facejob"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
@@ -215,15 +216,16 @@ func (f *fakeBackfiller) BackfillEmbeddings(context.Context) (int, error) {
 	return f.n, nil
 }
 
-// fakeFaceBackfiller records that the face backfill ran and returns a fixed count.
+// fakeFaceBackfiller records that the face backfill ran and returns fixed counts.
 type fakeFaceBackfiller struct {
-	n      int
-	called bool
+	n       int
+	skipped int
+	called  bool
 }
 
-func (f *fakeFaceBackfiller) BackfillFaces(context.Context) (int, error) {
+func (f *fakeFaceBackfiller) BackfillFaces(context.Context) (facejob.BackfillResult, error) {
 	f.called = true
-	return f.n, nil
+	return facejob.BackfillResult{Enqueued: f.n, SkippedVideos: f.skipped}, nil
 }
 
 // fakeImporter records imported keys and returns configured outcomes/errors.
@@ -250,7 +252,7 @@ func (f *fakeImporter) ImportOriginal(_ context.Context, key string) (ImportOutc
 func scenario() (*Service, *fakeEnqueuer, *fakeBackfiller, *fakeFaceBackfiller, *fakeImporter) {
 	enq := &fakeEnqueuer{}
 	emb := &fakeBackfiller{n: 7}
-	faces := &fakeFaceBackfiller{n: 3}
+	faces := &fakeFaceBackfiller{n: 3, skipped: 2}
 	imp := &fakeImporter{outcomes: map[string]ImportOutcome{"orphan1": ImportCreated}}
 	svc := New(Config{
 		Photos: &fakePhotos{
@@ -374,6 +376,11 @@ func TestRepairBackfills(t *testing.T) {
 	}
 	if !faces.called || res.FacesEnqueued != 3 {
 		t.Errorf("faces: called=%v enqueued=%d, want true/3", faces.called, res.FacesEnqueued)
+	}
+	// The videos the backfill passed over are reported rather than dropped: a
+	// library of mostly footage schedules few jobs, and this is what says why.
+	if res.FacesSkippedVideos != 2 {
+		t.Errorf("faces: skipped videos = %d, want 2", res.FacesSkippedVideos)
 	}
 }
 

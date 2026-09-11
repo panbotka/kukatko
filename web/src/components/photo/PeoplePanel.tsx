@@ -98,15 +98,16 @@ export interface PeoplePanelProps {
  * Chips are numbered by position, matching the numbers on the boxes and in the
  * faces panel: `face_index` is negative for markers with no detected face.
  *
- * **The people somebody attached by hand** are the other half, and they are what
- * makes the block complete: face detection on a video only ever looks at the
- * poster frame, so whoever appears later in the clip is invisible to it, and on a
- * still it misses profiles, backs of heads and faces in a crowd. Such a person has
- * no crop to show, so the chip carries the generic person glyph instead — which is
- * exactly what tells the two kinds apart at a glance — and, for an editor, an X
- * that detaches them again. The add control is offered on every medium and
- * whatever the detector found, because "somebody in the background nobody
- * detected" is not a fallback case, it is the ordinary one.
+ * **The people somebody attached by hand** are the other half, and on a video
+ * they are the whole of it: face detection does not run on footage, so a clip has
+ * no face chips at all and this block is the plain list of who is in it — remove,
+ * and add. On a still it is what covers the profiles, backs of heads and faces in
+ * a crowd the detector misses. Such a person has no crop to show, so the chip
+ * carries the generic person glyph instead — which is exactly what tells the two
+ * kinds apart at a glance — and, for an editor, an X that detaches them again.
+ * The add control is offered on every medium and whatever the detector found,
+ * because "somebody in the background nobody detected" is not a fallback case, it
+ * is the ordinary one.
  *
  * A crowd is folded away rather than listed: past {@link UNNAMED_CHIP_LIMIT}
  * unnamed faces the rest sit behind one control that says how many there are and

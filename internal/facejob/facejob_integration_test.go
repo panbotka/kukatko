@@ -268,8 +268,29 @@ func TestDetect_requeuesWhenOffline(t *testing.T) {
 	t.Fatal("job was not deferred within 5s")
 }
 
+// storeClip catalogues a video row. No file is written: the backfill never opens
+// a clip — passing it over is the whole point — so the row is all it needs.
+func (h *harness) storeClip(t *testing.T, name string) photos.Photo {
+	t.Helper()
+	created, err := h.photos.Create(context.Background(), photos.Photo{
+		FileHash:   name + "-hash",
+		FilePath:   "2026/09/" + name + ".mp4",
+		FileName:   name + ".mp4",
+		FileSize:   1024,
+		FileMime:   "video/mp4",
+		FileWidth:  imgWidth,
+		FileHeight: imgHeight,
+		MediaType:  photos.MediaVideo,
+	})
+	if err != nil {
+		t.Fatalf("create clip: %v", err)
+	}
+	return created
+}
+
 // TestBackfillFaces_enqueuesOnlyUnprocessed verifies the backfill enqueues a job
-// only for photos that have never had face detection run.
+// only for stills that have never had face detection run, and reports the videos
+// it passed over instead of scheduling them — detection does not run on footage.
 func TestBackfillFaces_enqueuesOnlyUnprocessed(t *testing.T) {
 	h := newHarness(t)
 	ctx := t.Context()
@@ -279,16 +300,20 @@ func TestBackfillFaces_enqueuesOnlyUnprocessed(t *testing.T) {
 	processed := h.storeJPEG(t, "already")
 	missing1 := h.storeJPEG(t, "missing-1")
 	missing2 := h.storeJPEG(t, "missing-2")
+	clip := h.storeClip(t, "clip")
 	if err := h.vectors.RecordFaceDetection(ctx, processed.UID, vectors.Detection{Model: "buffalo_l"}); err != nil {
 		t.Fatalf("seed detection: %v", err)
 	}
 
-	n, err := svc.BackfillFaces(ctx)
+	res, err := svc.BackfillFaces(ctx)
 	if err != nil {
 		t.Fatalf("BackfillFaces: %v", err)
 	}
-	if n != 2 {
-		t.Errorf("enqueued = %d, want 2", n)
+	if res.Enqueued != 2 {
+		t.Errorf("enqueued = %d, want 2", res.Enqueued)
+	}
+	if res.SkippedVideos != 1 {
+		t.Errorf("skipped videos = %d, want 1", res.SkippedVideos)
 	}
 
 	queued, err := h.jobs.List(ctx, jobs.ListOptions{})
@@ -313,5 +338,8 @@ func TestBackfillFaces_enqueuesOnlyUnprocessed(t *testing.T) {
 	}
 	if enqueuedUIDs[processed.UID] {
 		t.Errorf("already-processed photo %s was enqueued", processed.UID)
+	}
+	if enqueuedUIDs[clip.UID] {
+		t.Errorf("video %s was enqueued for face detection", clip.UID)
 	}
 }

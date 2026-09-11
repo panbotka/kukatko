@@ -4,7 +4,8 @@
 // the recovery path for photos uploaded while the embeddings box was offline or
 // imported before embeddings existed. It depends only on a Backfiller behaviour
 // and a maintainer guard, both injected, so it stays decoupled from the job and
-// vector layers.
+// vector layers — the one exception being facejob.BackfillResult, the shape the
+// face backfill answers with, which it reports rather than redefines.
 package processapi
 
 import (
@@ -16,6 +17,8 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/panbotka/kukatko/internal/facejob"
 )
 
 // Backfiller enqueues an image_embed job for every photo missing an embedding.
@@ -26,12 +29,13 @@ type Backfiller interface {
 	BackfillEmbeddings(ctx context.Context) (int, error)
 }
 
-// FaceBackfiller enqueues a face_detect job for every photo that has not yet had
+// FaceBackfiller enqueues a face_detect job for every still that has not yet had
 // face detection run. It is satisfied by facejob.Service.
 type FaceBackfiller interface {
-	// BackfillFaces enqueues a face_detect job for every unprocessed photo and
-	// returns how many were scheduled.
-	BackfillFaces(ctx context.Context) (int, error)
+	// BackfillFaces enqueues a face_detect job for every unprocessed still and
+	// returns how many were scheduled together with how many videos it passed
+	// over (detection does not run on footage).
+	BackfillFaces(ctx context.Context) (facejob.BackfillResult, error)
 }
 
 // Reclusterer schedules the pass that groups the currently unassigned,
@@ -299,6 +303,17 @@ type backfillResponse struct {
 	Enqueued int `json:"enqueued"`
 }
 
+// faceBackfillResponse is the JSON body returned by the face-detection backfill:
+// the plain count plus the videos it left alone, which is the one backfill where
+// "nothing scheduled" and "nothing to schedule" are different answers.
+type faceBackfillResponse struct {
+	// Enqueued is the number of face_detect jobs scheduled by this call.
+	Enqueued int `json:"enqueued"`
+	// SkippedVideos is how many non-archived videos were passed over, because
+	// face detection does not run on footage.
+	SkippedVideos int `json:"skipped_videos"`
+}
+
 // reclusterResponse is the JSON body returned by the clustering endpoint.
 type reclusterResponse struct {
 	// Scheduled says whether this call queued a clustering pass. False means one
@@ -434,15 +449,19 @@ func (a *API) handleBackfillEmbeddings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, backfillResponse{Enqueued: enqueued})
 }
 
-// handleBackfillFaces enqueues face_detect jobs for all photos that have not yet
-// had face detection run and reports how many were scheduled.
+// handleBackfillFaces enqueues face_detect jobs for all stills that have not yet
+// had face detection run and reports how many were scheduled, together with how
+// many videos it passed over — detection does not run on footage, and a caller
+// that sees a small number is owed the reason.
 func (a *API) handleBackfillFaces(w http.ResponseWriter, r *http.Request) {
-	enqueued, err := a.faceBackfiller.BackfillFaces(r.Context())
+	res, err := a.faceBackfiller.BackfillFaces(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "backfilling faces failed")
 		return
 	}
-	writeJSON(w, http.StatusOK, backfillResponse{Enqueued: enqueued})
+	writeJSON(w, http.StatusOK, faceBackfillResponse{
+		Enqueued: res.Enqueued, SkippedVideos: res.SkippedVideos,
+	})
 }
 
 // handleBackfillPlaces enqueues `places` jobs for all geotagged photos missing a

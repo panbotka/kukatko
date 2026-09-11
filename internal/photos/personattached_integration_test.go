@@ -89,3 +89,45 @@ func TestList_handAttachedPerson(t *testing.T) {
 		}
 	})
 }
+
+// TestList_handAttachedPersonOnAVideo verifies the same for a clip, which is the
+// only way a video names anybody at all: face detection does not run on footage,
+// so who is in a video is recorded by hand and has to be as findable as a face on
+// a photograph — through `person:` and in that person's own gallery.
+func TestList_handAttachedPersonOnAVideo(t *testing.T) {
+	store, db := newStore(t)
+	ppl := people.NewStore(db.Pool())
+	ctx := t.Context()
+
+	clip := mustCreate(t, store, photos.Photo{
+		FileHash: "hv-1", FilePath: "p/1.mp4", FileName: "1.mp4", FileMime: "video/mp4",
+		MediaType: photos.MediaVideo, Title: "clip",
+	})
+
+	subject, err := ppl.CreateSubject(ctx, people.Subject{Name: "Vojta"})
+	if err != nil {
+		t.Fatalf("CreateSubject: %v", err)
+	}
+	if _, err := ppl.AttachSubjectToPhoto(ctx, clip.UID, subject.UID, audit.Entry{
+		Action: audit.ActionPersonAttach, TargetType: "markers",
+	}); err != nil {
+		t.Fatalf("AttachSubjectToPhoto: %v", err)
+	}
+
+	parsed := query.Parse("person:Vojta")
+	list, err := store.List(ctx, photos.ListParams{QueryFilters: parsed.Filters})
+	if err != nil {
+		t.Fatalf("List(person:): %v", err)
+	}
+	if set := uidSet(list); len(set) != 1 || !set[clip.UID] {
+		t.Fatalf("person: filter = %v, want the clip", set)
+	}
+
+	uids, err := ppl.ListPhotoUIDsBySubject(ctx, subject.UID)
+	if err != nil {
+		t.Fatalf("ListPhotoUIDsBySubject: %v", err)
+	}
+	if len(uids) != 1 || uids[0] != clip.UID {
+		t.Fatalf("subject gallery = %v, want the clip", uids)
+	}
+}

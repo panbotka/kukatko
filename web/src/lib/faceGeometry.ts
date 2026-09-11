@@ -318,38 +318,3 @@ export function squareCrop(bbox: Bbox, frame: Frame): Bbox {
   const top = Math.min(Math.max(centerY - side / 2, 0), frame.height - side)
   return [left / frame.width, top / frame.height, side / frame.width, side / frame.height]
 }
-
-/** Where a picture actually paints inside a bigger box, in CSS pixels. */
-export interface PaintedRect {
-  left: number
-  top: number
-  width: number
-  height: number
-}
-
-/**
- * The rectangle an `object-fit: contain` picture of aspect ratio `ratio`
- * (width ÷ height) paints inside a box of `frame` CSS pixels, centred, with the
- * letterbox bands left over on one axis.
- *
- * A video element is sized by its container, not by its picture: the poster is
- * fitted into that box and the leftover is black bars. Anything drawn in
- * percentages **of the element** — a face box over the poster frame — therefore
- * lands off its face by exactly the width of one bar. This is the arithmetic that
- * gives such a layer the painted rectangle to sit on instead.
- *
- * A degenerate box or ratio yields the box itself: there is nothing to letterbox
- * against, and covering the element is the harmless answer.
- */
-export function containedRect(frame: Frame, ratio: number): PaintedRect {
-  const full: PaintedRect = { left: 0, top: 0, width: frame.width, height: frame.height }
-  if (frame.width <= 0 || frame.height <= 0 || !Number.isFinite(ratio) || ratio <= 0) {
-    return full
-  }
-  const boxRatio = frame.width / frame.height
-  // Wider box than picture → the picture is as tall as the box, bars left/right;
-  // otherwise it is as wide as the box, bars above and below.
-  const width = boxRatio > ratio ? frame.height * ratio : frame.width
-  const height = boxRatio > ratio ? frame.height : frame.width / ratio
-  return { left: (frame.width - width) / 2, top: (frame.height - height) / 2, width, height }
-}

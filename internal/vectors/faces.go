@@ -182,22 +182,53 @@ func (s *Store) FacesDetected(ctx context.Context, photoUID string) (bool, error
 	return exists, nil
 }
 
-// listMissingFacesSQL selects the uids of non-archived photos that have no
+// listMissingFacesSQL selects the uids of non-archived stills that have no
 // face_detections row, newest first. The %s placeholder is replaced with a LIMIT
 // clause only when a positive limit is requested.
+//
+// Videos are excluded, and that exclusion is the whole reason the clause exists:
+// detection does not run on a clip at all (see migration 0072), so a video has no
+// detection row and never will. Left in, every video in the library would be
+// reported as a permanent gap and re-scheduled by every backfill forever.
 const listMissingFacesSQL = `
 SELECT p.uid
 FROM photos p
 LEFT JOIN face_detections fd ON fd.photo_uid = p.uid
-WHERE fd.photo_uid IS NULL AND p.archived_at IS NULL
+WHERE fd.photo_uid IS NULL AND p.archived_at IS NULL AND p.media_type <> 'video'
 ORDER BY p.created_at DESC, p.uid DESC%s`
 
-// ListPhotosMissingFaces returns the uids of non-archived photos that have not
+// ListPhotosMissingFaces returns the uids of non-archived stills that have not
 // yet had face detection run, newest first. A positive limit caps the result; a
 // non-positive limit returns every unprocessed photo. It backs the face-detection
 // backfill, which enqueues a face_detect job per returned uid.
+//
+// A video is never returned: it is not a photo the detector has not got to, it is
+// a photo the detector will never be asked about. CountVideosMissingFaces counts
+// them, so a backfill can say how many it left alone.
 func (s *Store) ListPhotosMissingFaces(ctx context.Context, limit int) ([]string, error) {
 	return s.queryPhotoUIDs(ctx, listMissingFacesSQL, limit)
+}
+
+// countVideosMissingFacesSQL counts the non-archived videos ListPhotosMissingFaces
+// leaves out: the clips that carry no detection record, which — detection having
+// stopped running on videos — is all of them.
+const countVideosMissingFacesSQL = `
+SELECT COUNT(*)
+FROM photos p
+LEFT JOIN face_detections fd ON fd.photo_uid = p.uid
+WHERE fd.photo_uid IS NULL AND p.archived_at IS NULL AND p.media_type = 'video'`
+
+// CountVideosMissingFaces returns how many non-archived videos the face-detection
+// backfill passes over. It is the counterpart of ListPhotosMissingFaces: the two
+// together partition the photos with no detection record into the ones that get a
+// job and the ones that are deliberately left alone, so a backfill can report the
+// second number instead of silently dropping it.
+func (s *Store) CountVideosMissingFaces(ctx context.Context) (int, error) {
+	var count int
+	if err := s.pool.QueryRow(ctx, countVideosMissingFacesSQL).Scan(&count); err != nil {
+		return 0, fmt.Errorf("counting videos skipped by face detection: %w", err)
+	}
+	return count, nil
 }
 
 // positiveOrNil returns a pointer to n, or nil when n is not a usable pixel

@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/panbotka/kukatko/internal/facejob"
 )
 
 // fakeBackfiller is a Backfiller stub returning canned values.
@@ -27,14 +29,15 @@ func (f *fakeBackfiller) BackfillEmbeddings(context.Context) (int, error) {
 // fakeFaceBackfiller is a FaceBackfiller stub returning canned values.
 type fakeFaceBackfiller struct {
 	enqueued int
+	skipped  int
 	err      error
 	calls    int
 }
 
 // BackfillFaces records the call and returns the canned result.
-func (f *fakeFaceBackfiller) BackfillFaces(context.Context) (int, error) {
+func (f *fakeFaceBackfiller) BackfillFaces(context.Context) (facejob.BackfillResult, error) {
 	f.calls++
-	return f.enqueued, f.err
+	return facejob.BackfillResult{Enqueued: f.enqueued, SkippedVideos: f.skipped}, f.err
 }
 
 // fakeReclusterer is a Reclusterer stub returning canned values.
@@ -273,11 +276,13 @@ func TestBackfillEmbeddings_error(t *testing.T) {
 	}
 }
 
-// TestBackfillFaces_ok reports the enqueued count on success.
+// TestBackfillFaces_ok reports the enqueued count on success, together with the
+// videos the backfill passed over — detection does not run on footage, and a
+// caller that sees a small number is owed the reason.
 func TestBackfillFaces_ok(t *testing.T) {
 	t.Parallel()
 
-	ff := &fakeFaceBackfiller{enqueued: 4}
+	ff := &fakeFaceBackfiller{enqueued: 4, skipped: 6}
 	srv := newServer(t, &fakeBackfiller{}, ff)
 
 	resp := postProcess(t, srv.URL+"/process/faces")
@@ -285,12 +290,15 @@ func TestBackfillFaces_ok(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
-	var body backfillResponse
+	var body faceBackfillResponse
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
 	if body.Enqueued != 4 {
 		t.Errorf("enqueued = %d, want 4", body.Enqueued)
+	}
+	if body.SkippedVideos != 6 {
+		t.Errorf("skipped_videos = %d, want 6", body.SkippedVideos)
 	}
 	if ff.calls != 1 {
 		t.Errorf("face backfiller calls = %d, want 1", ff.calls)

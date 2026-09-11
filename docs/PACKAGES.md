@@ -837,8 +837,9 @@ to `## Package map` in `CLAUDE.md`.
   still wins (never "no thumbnail", never an error that fails an upload). Sampling **stops early** at the first
   candidate with `value ≥ 0.30`, so an ordinary clip costs one sample; the winner is then re-extracted at full
   size, and offset 0 is always the last fallback. Pure and deterministic on purpose — ingest, a thumbnail
-  rebuild, `face_detect` and `image_embed` each re-derive the poster independently and must land on the same
-  frame. Cost and the measurements behind the thresholds: `docs/PERF.md` §2;
+  rebuild and `image_embed` each re-derive the poster independently and must land on the same frame
+  (`face_detect` was in that list until it stopped running on a video at all). Cost and the measurements
+  behind the thresholds: `docs/PERF.md` §2;
   `IsVideoPath`/`IsVideoExt`/`FFmpegAvailable`/`FFprobeAvailable`;
   **`Metadata.HasContainerMetadata()`** — the difference between a reading and a failure: a real clip always
   yields at least one of a duration, a codec name and a full frame size, so a `Metadata` with none of the
@@ -1579,7 +1580,10 @@ to `## Package map` in `CLAUDE.md`.
   in the meantime. `IoU` lives here rather than in `facematch` because both callers need it and two copies of
   a geometric primitive drift; `facematch.IoU` is a one-line delegation.
   `FacesDetected(uid)` (does a row exist?), `ListPhotosMissingFaces(limit)`
-  (uids of photos with no `face_detections` row, like `ListPhotosMissingEmbedding`);
+  (uids of **stills** with no `face_detections` row, like `ListPhotosMissingEmbedding`; a video is excluded —
+  detection does not run on footage, so a clip would otherwise be reported as a permanent gap and rescheduled
+  forever), `CountVideosMissingFaces()` (how many live videos that listing leaves out, so a backfill can say
+  what it passed over);
   **the detection frame** (`Detection.FrameWidth`/`FrameHeight` → `detect_width`/`detect_height`, a
   non-positive value stored as NULL) is the pixel size of the image the detector actually **saw**, in display
   orientation because `facejob` rotates before sending. It turns "which frame is this bbox normalised against?"
@@ -1627,7 +1631,8 @@ to `## Package map` in `CLAUDE.md`.
   DOUBLE PRECISION (0..1 display space, like `faces.bbox`), `score`, `invalid`, `reviewed`,
   timestamps + indexes on `photo_uid`/`subject_uid`; `person` (migration `0071`) is a **hand-attached**
   person — the claim "this subject is in this picture" with **no box, no detected face, no embedding**,
-  for what detection cannot see: anybody after a video's poster frame, a profile, a back of a head. A
+  for what detection cannot see: **anybody in a video at all** (detection does not run on footage), a
+  profile, a back of a head. A
   CHECK forbids it any geometry and a partial UNIQUE on `(photo_uid, subject_uid) WHERE type = 'person'`
   makes attaching idempotent; `Store` = `NewStore(pool)` over the shared pgx
   pool: **subjects** `CreateSubject`(generates a uid + a **unique slug from name** — `Slugify`
@@ -1880,9 +1885,13 @@ to `## Package map` in `CLAUDE.md`.
   **det_score filter**
   (`faces.min_det_score`, default 0.5, `<=0` disables) drops weak detections, reindexes the survivors
   contiguously; **idempotent** (a photo with a `face_detections` row is skipped; zero faces is still
-  recorded), **box offline** → `worker.RetryAfter(5 min)`; `BackfillFaces(ctx)` enqueues
-  `face_detect` for every unprocessed photo (`ListPhotosMissingFaces`, dedup no-op), returns
-  the count; the payload's **`force` flag** routes to `ForceDetect(uid) (int,error)`, which shares
+  recorded), **box offline** → `worker.RetryAfter(5 min)`; **a video is skipped** (nil error, nothing written —
+  not even the detection record, which would report the step as done for work that no longer happens: the
+  detector could only ever read the poster, one arbitrary frame, so who is in a clip is recorded by hand
+  instead, and migration `0072` removed what it had already stored); `BackfillFaces(ctx)` enqueues
+  `face_detect` for every unprocessed still (`ListPhotosMissingFaces`, dedup no-op), returns
+  `BackfillResult{Enqueued,SkippedVideos}` — the second number reported rather than dropped, because a
+  library of mostly footage would otherwise answer a flat zero and look broken; the payload's **`force` flag** routes to `ForceDetect(uid) (int,error)`, which shares
   `detect(uid,force)` with `Detect` and differs only in ignoring the recorded detection, then **returns how many
   faces the photo has afterwards** (0 is a result). The faces it finds replace the stored ones in one
   transaction, with the assignments carried over (see `internal/vectors`), so a rebuild never leaves duplicate
@@ -1892,7 +1901,7 @@ to `## Package map` in `CLAUDE.md`.
   Reclusterer,PlacesBackfiller,ThumbnailBackfiller,MetadataBackfiller,RequireMaintainer})`+`RegisterRoutes`
   mounts `/process`;
   `POST /process/embeddings` →
-  `{enqueued}` runs `embedjob.BackfillEmbeddings`, `POST /process/faces` → `{enqueued}` runs
+  `{enqueued}` runs `embedjob.BackfillEmbeddings`, `POST /process/faces` → `{enqueued, skipped_videos}` runs
   `facejob.BackfillFaces`, `POST /process/clusters` → **202** `{scheduled}` runs
   `clusterjob.ScheduleRecluster` (it **queues** the `face_cluster` pass — regroup the unassigned faces,
   then prepare the cluster summaries — rather than running minutes of vector search inside the
@@ -1944,13 +1953,10 @@ to `## Package map` in `CLAUDE.md`.
   many qualities the video was encoded into; the place column is **conditional**
   (`lat IS NOT NULL AND lng IS NOT NULL`) because `photo_places` also holds the coordinate-less marker the
   geocoder writes for a photo with no GPS, and that records that there was nothing to do rather than a place.
-  A step **applies** to a photo or it does not: `places` needs a coordinate, `ocr` reads a still (never a
-  video), and `hls_transcode` is the mirror image — only a standalone video has anything to encode, a live
-  photo's motion clip being a hover preview nobody streams. **`face_detect` applies to a video**: the upload
-  pipeline enqueues it for every media type and the detector runs on the video's **poster frame**. The rule
-  said otherwise until it was measured (staging held six faces across two videos), and the lie was invisible
-  once detection had run, because evidence is resolved before the applies-rule — only a freshly uploaded
-  video showed it, reporting `skipped` with its `face_detect` job sitting in the queue.
+  A step **applies** to a photo or it does not: `places` needs a coordinate, `ocr` and `face_detect` both
+  read a still (never a video — each could only ever have looked at the poster, one arbitrary frame of the
+  footage, so who is in a clip is recorded by hand instead), and `hls_transcode` is the mirror image — only a
+  standalone video has anything to encode, a live photo's motion clip being a hover preview nobody streams.
   `Service` = `New(Config{Evidence,Jobs,Enqueuer,Disabled})` (panics on a nil collaborator):
   `Report(photoUID)` = evidence + `jobs.Store.UnfinishedForPhoto` (**two** round trips, never an N+1) →
   `[]Status{Step,State,At?,Error?,FaceCount?,TextFound?}`; the precedence is landed evidence → the queue →

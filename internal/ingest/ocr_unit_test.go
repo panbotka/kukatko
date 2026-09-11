@@ -24,6 +24,17 @@ func (c *countingEnqueuer) EnqueueFaceDetect(_ context.Context, uid string) erro
 	return nil
 }
 
+// wantFaceJobs is how many face_detect jobs a freshly catalogued photo earns:
+// one for a still, none for a clip. Detection does not run on footage — it could
+// only ever have read the poster, one arbitrary frame — so who is in a video is
+// recorded by hand instead.
+func wantFaceJobs(photo photos.Photo) int {
+	if photo.MediaType == photos.MediaVideo {
+		return 0
+	}
+	return 1
+}
+
 // countingOCR is an OCREnqueuer that records the uids it was called for.
 type countingOCR struct {
 	uids []string
@@ -92,10 +103,12 @@ func TestEnqueueJobs_ocr(t *testing.T) {
 					t.Errorf("ocr enqueued[%d] = %s, want %s", i, ocr.uids[i], uid)
 				}
 			}
-			// The embedding and face jobs are scheduled regardless — OCR is an
-			// addition to that work, never a replacement for it.
-			if len(enq.embeds) != 1 || len(enq.faces) != 1 {
-				t.Errorf("embeds=%v faces=%v, want one of each", enq.embeds, enq.faces)
+			// The embedding is scheduled regardless — OCR is an addition to that
+			// work, never a replacement for it — and face detection follows the
+			// same still/video line OCR does.
+			if len(enq.embeds) != 1 || len(enq.faces) != wantFaceJobs(tc.photo) {
+				t.Errorf("embeds=%v faces=%v, want 1 embed and %d faces",
+					enq.embeds, enq.faces, wantFaceJobs(tc.photo))
 			}
 		})
 	}

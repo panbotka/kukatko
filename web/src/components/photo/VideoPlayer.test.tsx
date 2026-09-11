@@ -623,66 +623,11 @@ describe('VideoPlayer', () => {
     })
   })
 
-  describe('the poster overlay', () => {
-    it('sits on the painted poster, bars excluded', () => {
-      // A 4:3 poster in a 1000 x 600 player paints 800 x 600 in the middle: a
-      // layer covering the element would put every face box 100px off.
-      const undo = stubLayout(1000, 600)
-      try {
-        renderPlayer('ph1', false, {
-          posterRatio: 4 / 3,
-          overlay: <div data-testid="boxes" />,
-        })
-
-        const layer = screen.getByTestId('boxes').parentElement
-        expect(layer).toHaveStyle({ left: '100px', top: '0px', width: '800px', height: '600px' })
-      } finally {
-        undo()
-      }
-    })
-
-    it('prefers the shape the element reports over the estimate it was given', () => {
-      const undo = stubLayout(1000, 600)
-      try {
-        const { video } = renderPlayer('ph1', false, {
-          posterRatio: 4 / 3,
-          overlay: <div data-testid="boxes" />,
-        })
-        Object.defineProperty(video, 'videoWidth', { configurable: true, get: () => 1000 })
-        Object.defineProperty(video, 'videoHeight', { configurable: true, get: () => 1000 })
-        fireEvent.loadedMetadata(video)
-
-        // A square clip in the same box paints 600 x 600, centred.
-        const layer = screen.getByTestId('boxes').parentElement
-        expect(layer).toHaveStyle({ left: '200px', width: '600px', height: '600px' })
-      } finally {
-        undo()
-      }
-    })
-
-    it('takes the boxes down once the clip has been played', () => {
-      const undo = stubLayout(1000, 600)
-      try {
-        const { video } = renderPlayer('ph1', false, {
-          posterRatio: 4 / 3,
-          overlay: <div data-testid="boxes" />,
-        })
-        expect(screen.getByTestId('boxes')).toBeInTheDocument()
-
-        stubPlayableMedia(video)
-        fireEvent.click(screen.getByRole('button', { name: 'Play' }))
-        // The element now paints the video, not the poster — boxes measured on
-        // the poster would be boxes on the wrong picture. Pausing does not bring
-        // the poster back, so neither do they come back.
-        expect(screen.queryByTestId('boxes')).not.toBeInTheDocument()
-        fireEvent.click(screen.getByRole('button', { name: 'Pause' }))
-        expect(screen.queryByTestId('boxes')).not.toBeInTheDocument()
-      } finally {
-        undo()
-      }
-    })
-
-    it('draws nothing at all without an overlay to draw', () => {
+  describe('the poster', () => {
+    it('carries no overlay layer at all', () => {
+      // Face detection does not run on footage any more, so there are no boxes
+      // to place over the poster and no layer to place them in — who is in a
+      // clip is the plain list of people on the detail page beside it.
       const undo = stubLayout(1000, 600)
       try {
         const { container } = renderPlayer()

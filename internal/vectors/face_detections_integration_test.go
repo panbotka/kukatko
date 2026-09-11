@@ -3,8 +3,10 @@
 package vectors_test
 
 import (
+	"context"
 	"testing"
 
+	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
@@ -129,8 +131,26 @@ func TestFacesDetected_unprocessed(t *testing.T) {
 	}
 }
 
-// TestListPhotosMissingFaces returns only photos without a detection record and
-// excludes archived ones.
+// makeClip catalogues a video row, so the listing has footage to leave out.
+func makeClip(t *testing.T, store *photos.Store, hash string) string {
+	t.Helper()
+	created, err := store.Create(context.Background(), photos.Photo{
+		FileHash:  hash,
+		FilePath:  "2026/09/" + hash + ".mp4",
+		FileName:  hash + ".mp4",
+		FileMime:  "video/mp4",
+		MediaType: photos.MediaVideo,
+	})
+	if err != nil {
+		t.Fatalf("creating clip %s: %v", hash, err)
+	}
+	return created.UID
+}
+
+// TestListPhotosMissingFaces returns only stills without a detection record, and
+// excludes the archived ones and every video: detection does not run on footage,
+// so a clip is not a gap waiting to be filled — left in, it would be re-scheduled
+// by every backfill forever.
 func TestListPhotosMissingFaces(t *testing.T) {
 	store, photoStore, _ := newStore(t)
 	ctx := t.Context()
@@ -138,6 +158,7 @@ func TestListPhotosMissingFaces(t *testing.T) {
 	processed := makePhoto(t, photoStore, "fd_processed")
 	missing := makePhoto(t, photoStore, "fd_missing")
 	archived := makePhoto(t, photoStore, "fd_archived")
+	makeClip(t, photoStore, "fd_clip")
 
 	if err := store.RecordFaceDetection(ctx, processed, vectors.Detection{Model: "buffalo_l"}); err != nil {
 		t.Fatalf("RecordFaceDetection: %v", err)
@@ -152,6 +173,30 @@ func TestListPhotosMissingFaces(t *testing.T) {
 	}
 	if len(uids) != 1 || uids[0] != missing {
 		t.Fatalf("ListPhotosMissingFaces = %v, want only %s", uids, missing)
+	}
+}
+
+// TestCountVideosMissingFaces counts exactly what the listing left out: the live
+// videos with no detection record, which is what a backfill reports as skipped.
+// An archived clip is nobody's business, and a still is never counted here.
+func TestCountVideosMissingFaces(t *testing.T) {
+	store, photoStore, _ := newStore(t)
+	ctx := t.Context()
+
+	makePhoto(t, photoStore, "cv_still")
+	makeClip(t, photoStore, "cv_clip_1")
+	makeClip(t, photoStore, "cv_clip_2")
+	archivedClip := makeClip(t, photoStore, "cv_clip_archived")
+	if _, err := photoStore.Archive(ctx, archivedClip); err != nil {
+		t.Fatalf("Archive: %v", err)
+	}
+
+	count, err := store.CountVideosMissingFaces(ctx)
+	if err != nil {
+		t.Fatalf("CountVideosMissingFaces: %v", err)
+	}
+	if count != 2 {
+		t.Errorf("CountVideosMissingFaces = %d, want 2", count)
 	}
 }
 

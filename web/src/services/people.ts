@@ -392,9 +392,9 @@ export async function assignFace(
  * no bounding box, no detected face and no embedding.
  *
  * It is the answer to the half of "who is in this picture" the detector cannot
- * reach: face detection on a video only ever looks at the poster frame, so
- * anybody who appears later in the clip is invisible to it, and on a still it
- * misses profiles, backs of heads and faces in a crowd. `marker_uid` is the row
+ * reach: face detection does not run on a video at all, so this is the only way
+ * a clip names anybody, and on a still it misses profiles, backs of heads and
+ * faces in a crowd. `marker_uid` is the row
  * that records the link — the same `markers` table a face marker lives in, which
  * is why an attached person shows up in the subject's gallery and under
  * `person:` like any other.

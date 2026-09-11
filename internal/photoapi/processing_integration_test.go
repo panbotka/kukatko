@@ -230,21 +230,20 @@ func TestDetailProcessing_queuedRetryAfterAnErrorReadsFailed(t *testing.T) {
 	}
 }
 
-// TestDetailProcessing_videoSkipsText covers the media-type rule: a video is
-// outside text recognition, so the absence of a reading is not a gap — while
-// **face detection is not**, and reporting it as skipped was a lie. The upload
-// pipeline enqueues `face_detect` for every media type and the detector runs on
-// the video's poster frame; the claim was only ever invisible because evidence is
-// resolved before the applies-rule, so a video whose faces had already been
-// detected read as done and only a freshly uploaded one showed the mistake.
-func TestDetailProcessing_videoSkipsText(t *testing.T) {
+// TestDetailProcessing_videoSkipsTextAndFaces covers the media-type rule: a video
+// is outside both text recognition and face detection, so the absence of either
+// is not a gap. Each could only ever have read the poster — one arbitrary frame
+// of the footage — so neither is scheduled for a clip and who is in one is
+// recorded by hand instead. The thumbnail, which really is derived from that
+// frame, stays pending like any freshly uploaded photo's.
+func TestDetailProcessing_videoSkipsTextAndFaces(t *testing.T) {
 	env := newEnv(t)
 	client, _ := env.login(t, "viewer", auth.RoleViewer)
 	clip := env.seedPhoto(t,
 		photos.Photo{Title: "clip", MediaType: photos.MediaVideo}, "clip.mp4", 12, 34, 56)
 
 	report := detailProcessing(t, client, env.server.URL, clip.UID)
-	wantState(t, report, processing.StepFaceDetect, processing.StatePending)
+	wantState(t, report, processing.StepFaceDetect, processing.StateSkipped)
 	wantState(t, report, processing.StepOCR, processing.StateSkipped)
 	wantState(t, report, processing.StepThumbnail, processing.StatePending)
 }

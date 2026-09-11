@@ -374,9 +374,8 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   **attaching a person by hand** (`internal/photoapi/people.go`, the `PeopleAttacher` interface =
   `people.Store`, **nil → both endpoints answer 503 and the detail reports an empty list**): a person is
   otherwise linked to a media item only through a marker cut from a **detected** face, which covers less
-  than it looks — face detection on a video only ever sees the **poster frame**, so anybody appearing later
-  in the clip is invisible to it, and on a still the detector misses profiles, backs of heads and faces in a
-  crowd. These two endpoints record who is there anyway, with **no bounding box, no detected face, no
+  than it looks — **face detection does not run on a video at all**, so this is the only way a clip names
+  anybody, and on a still the detector misses profiles, backs of heads and faces in a crowd. These two endpoints record who is there anyway, with **no bounding box, no detected face, no
   embedding**: `POST /photos/{uid}/people` `{subject_uid}` (editor/admin) attaches and
   `DELETE /photos/{uid}/people/{subject_uid}` (editor/admin) detaches. Both answer **200** with the photo's
   resulting `{people:[{subject_uid,slug,name,type,marker_uid,attached_at}]}`, ordered by name — the same
@@ -737,16 +736,15 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   the master playlist advertises whatever was produced) → `done` with `at`; then by the **queue** (`jobs` for this `photo_uid` and
   type) → `running`/`queued`/`failed`, where `failed` covers a dead job **and** one whose last attempt
   errored, carrying its `last_error` as `error`; then `skipped` for a step that cannot apply (`places`
-  without GPS, `ocr` on a video, `hls_transcode` on anything that is **not** a standalone video, or a
+  without GPS, `ocr` or `face_detect` on a video, `hls_transcode` on anything that is **not** a standalone
+  video, or a
   feature switched off instance-wide — no worker handler
   is registered for it); otherwise `pending`. `face_detect` adds `face_count` and `ocr` adds `text_found`
   on a done step, so a result that legitimately found nothing does not read as a gap.
-  **`face_detect` applies to a video**, which is easy to get backwards: the upload pipeline enqueues it for
-  every media type and the detector runs on the video's **poster frame**. The report claimed otherwise until
-  it was measured, and the lie was invisible once detection had run (evidence is resolved before the
-  applies-rule) — only a freshly uploaded video showed it, reporting `skipped` with its `face_detect` job
-  sitting in the queue. Text recognition really is skipped for a video, in the job and in the backfill query
-  alike. The whole array costs
+  Text recognition and face detection are both skipped for a video, in the job and in the backfill query
+  alike: each could only ever have read the poster, one arbitrary frame of the footage, so a clip reports
+  both as `skipped` and who is in it is recorded by hand instead (`POST /photos/{uid}/people`). The whole
+  array costs
   **two round trips** (one for the evidence, one for `jobs.Store.UnfinishedForPhoto`), never an N+1.
   `POST /photos/{uid}/process/{step}` (**maintainer** via `RequireMaintainer` — scheduling background work
   is operations, not curation) enqueues that one step for that one photo through the shared
@@ -1193,7 +1191,9 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `cmd/kukatko/avatar.go`).
 - **Process API (`/api/v1`, `internal/processapi`, maintainer-only via `RequireMaintainer`):**
   `POST /process/embeddings` → `{enqueued}` (backfill `image_embed` for photos without an embedding),
-  `POST /process/faces` → `{enqueued}` (backfill `face_detect` for photos without face detection),
+  `POST /process/faces` → `{enqueued, skipped_videos}` (backfill `face_detect` for the **stills** without
+  face detection; a video is never scheduled — detection does not run on footage — and the count of the
+  clips passed over is reported so "nothing scheduled" and "nothing to schedule" stay different answers),
   `POST /process/clusters` → **202** `{scheduled}` (queues the `face_cluster` pass: regroup the
   unassigned faces, then prepare the cluster summaries; `scheduled:false` means a pass was already
   waiting or running — the work is on its way either way), `POST /process/places` → `{enqueued}` (backfill `places` reverse-geocode for
@@ -1695,6 +1695,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   → `RepairResult`
   with scheduling counts (`*_enqueued` + `orphans_imported/skipped/failed` +
   `dimensions_fixed`/`face_boxes_fixed`/`face_boxes_skipped`/`face_links_cleared`/
+  `faces_skipped_videos` (the clips the face repair passed over — detection does not run on footage)/
   `sideways_faces_enqueued`/`impossible_dates_cleared`/`renditions_dropped`/
   `orphan_segments_deleted`/`orphan_segments_kept`);
   `DisallowUnknownFields`, an empty selection →
