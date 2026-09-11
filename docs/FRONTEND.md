@@ -1833,8 +1833,17 @@ here.
   stronger one. A face with **no** offered suggestion is listed (with „Bez návrhu") but carries no
   controls; it stays for the photo detail, where a name can be typed. The keyboard does the lot:
   **1–9** confirm the row carrying that number, **a** confirms all, **→**/**Space** move on,
-  **←** goes back, **Esc** closes. Its styles are `components/people/albumFaces.css`, imported by
-  the page itself;
+  **←** goes back, **Esc** closes.
+  **The rows block does not move while a photo is on screen**: its height is frozen at what the list
+  measured when the photo opened (`useFrozenHeight`, keyed on the photo's uid) and rows empty out of a box
+  that keeps its size, because the stage above is capped against the height left over (`100cqh`) — every
+  confirmation used to resize the photograph and move every box on it. It is recomputed only on the move to
+  another photo, forward or back, and `max-height: 40vh` still has the last word over the frozen number, so
+  a short screen never reserves a wall of emptiness. The numbers never move either: a row's number is its
+  face's position among **all** the photo's faces (`photoRows` numbers first and filters after, exactly as
+  `FaceOverlay` numbers the boxes), so a confirmed row leaves a gap rather than renumbering the rest, and the
+  digit keys keep pointing at the faces they are drawn on. Its styles are
+  `components/people/albumFaces.css`, imported by the page itself;
 
   `LabelsPage` = `/labels` **a wrapping cloud of label chips** with counts + `Nový štítek`
   (editor/admin). It used to be a column of full-width rows: a label is one word and a number, so a
@@ -5090,6 +5099,16 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   of. An **unmeasurable** element (jsdom, which has neither layout nor `ResizeObserver`) reports
   `FALLBACK_WIDTH_PX` (1024), because a component that renders nothing until measured would otherwise render
   nothing at all in every test;
+  `useFrozenHeight(ref, key)` → the height `ref`'s element had **the moment `key` opened**, in CSS pixels,
+  held until `key` changes (null where nothing could be measured — jsdom, or before the first measurement).
+  It is for a list that is *answered away*: the album face-tagging run takes a row out on every confirmation,
+  and a block sized by its content shrank with it, moving the photograph above — which is sized against the
+  height left over — and its face boxes out from under the reader mid-rhythm. The measurement runs in a
+  **layout** effect, so the recomputation on the next photo is never painted as a jump, and until it lands the
+  hook reports null rather than the previous subject's number. Deliberately **not** re-measured on resize: a
+  phone hiding its URL bar fires one mid-run, and re-measuring there would be exactly the jump the freeze
+  prevents — the caller caps the frozen value in CSS (`max-height` in viewport units), which follows a
+  rotation on its own. Tests `hooks/useFrozenHeight.test.tsx`;
   `useGridDensity()` → `{density,setDensity,maxColumns,storedDensity,maxTilesPerRow}` = the photo grid's density (**always a
   concrete column count 1…10**, no `'auto'` mode) over `useSyncExternalStore` on top of `lib/gridDensity`. localStorage is
   **the single source of truth** (no in-memory copy): the snapshot is a primitive (a column count, or `null`

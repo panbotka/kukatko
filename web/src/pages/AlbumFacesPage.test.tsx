@@ -112,6 +112,42 @@ function rowOf(number: number): HTMLElement {
   return row as HTMLElement
 }
 
+/** The scrolling block holding the rows, whose height the run freezes. */
+function rowsBlock(): HTMLElement {
+  const block = document.querySelector('.kk-album-faces__rows')
+  if (block === null) {
+    throw new Error('row list not rendered')
+  }
+  return block as HTMLElement
+}
+
+/**
+ * Lays the row list out as 60 px per row and everything else as nothing, which is
+ * the only layout jsdom can be made to have. It is what lets the frozen height be
+ * read as a number of rows: a block still reporting three rows' worth after one
+ * of them was answered is the whole point of the freeze.
+ */
+function measureRowsAt60px(): void {
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    const rows = this.classList.contains('kk-album-faces__list')
+      ? this.querySelectorAll('.kk-album-faces__row').length
+      : 0
+    return {
+      width: 0,
+      height: rows * 60,
+      top: 0,
+      left: 0,
+      bottom: 0,
+      right: 0,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    }
+  })
+}
+
 beforeEach(async () => {
   vi.clearAllMocks()
   assignMock.mockResolvedValue(undefined)
@@ -263,6 +299,90 @@ describe('AlbumFacesPage', () => {
     renderPage()
 
     expect(await screen.findByText(/tohle album je projité/)).toBeInTheDocument()
+  })
+
+  it('holds the row list at the height it opened with', async () => {
+    const user = userEvent.setup()
+    measureRowsAt60px()
+    queueOf('p1')
+    facesFrom({
+      p1: [
+        face(0, [suggestion('Alice', 0.9)]),
+        face(1, [suggestion('Bob', 0.8)]),
+        face(2, [suggestion('Cyril', 0.8)]),
+      ],
+    })
+
+    renderPage()
+    await screen.findByText('Alice')
+    const block = rowsBlock()
+    expect(block).toHaveStyle({ height: '180px' })
+
+    await user.click(within(rowOf(1)).getByRole('button', { name: 'Potvrdit Alice' }))
+    await waitFor(() => {
+      expect(screen.queryByText('Alice')).not.toBeInTheDocument()
+    })
+
+    // Two rows left, so the list is now 120 px of content — and the block it sits
+    // in is expected not to have noticed, because the photograph above it is
+    // sized against the height left over.
+    expect(block).toHaveStyle({ height: '180px' })
+  })
+
+  it("reserves the next photo's own height when the run moves on", async () => {
+    const user = userEvent.setup()
+    measureRowsAt60px()
+    queueOf('p1', 'p2')
+    facesFrom({
+      p1: [
+        face(0, [suggestion('Alice', 0.9)]),
+        face(1, [suggestion('Bob', 0.8)]),
+        face(2, [suggestion('Cyril', 0.8)]),
+      ],
+      p2: [face(0, [suggestion('Dana', 0.8)])],
+    })
+
+    renderPage()
+    await screen.findByText('Alice')
+    expect(rowsBlock()).toHaveStyle({ height: '180px' })
+
+    await user.keyboard('{ArrowRight}')
+    await screen.findByText('Dana')
+
+    expect(rowsBlock()).toHaveStyle({ height: '60px' })
+  })
+
+  it('leaves the remaining rows on their own numbers after a confirmation', async () => {
+    const user = userEvent.setup()
+    queueOf('p1')
+    facesFrom({
+      p1: [
+        face(0, [suggestion('Alice', 0.9)]),
+        face(1, [suggestion('Bob', 0.8)]),
+        face(2, [suggestion('Cyril', 0.8)]),
+      ],
+    })
+
+    renderPage()
+    await screen.findByText('Alice')
+    await user.click(within(rowOf(1)).getByRole('button', { name: 'Potvrdit Alice' }))
+    await waitFor(() => {
+      expect(screen.queryByText('Alice')).not.toBeInTheDocument()
+    })
+
+    // Renumbering would put Bob on 1 — and 1 is still drawn on Alice's box.
+    expect(screen.queryByText('1', { selector: '.badge' })).not.toBeInTheDocument()
+    expect(within(rowOf(2)).getByText('Bob')).toBeInTheDocument()
+    expect(within(rowOf(3)).getByText('Cyril')).toBeInTheDocument()
+
+    // And the digit still reaches the face it is drawn on.
+    await user.keyboard('3')
+    await waitFor(() => {
+      expect(assignMock).toHaveBeenCalledWith(
+        'p1',
+        expect.objectContaining({ subject_uid: 'su_Cyril' }),
+      )
+    })
   })
 
   it('closes back to the album', async () => {

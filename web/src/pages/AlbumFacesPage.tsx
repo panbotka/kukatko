@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
 import Spinner from 'react-bootstrap/Spinner'
@@ -12,6 +12,7 @@ import { FaceCrop } from '../components/people/FaceCrop'
 import { FaceOverlay } from '../components/people/FaceOverlay'
 import { useAlbumFaces } from '../hooks/useAlbumFaces'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import { useFrozenHeight } from '../hooks/useFrozenHeight'
 import { useImageFrame } from '../hooks/useImageFrame'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { type FaceView } from '../services/people'
@@ -125,6 +126,15 @@ export function AlbumFacesPage() {
   const { uid = '' } = useParams<{ uid: string }>()
   const run = useAlbumFaces(uid)
   const [hovered, setHovered] = useState<number | null>(null)
+  // The list of questions holds the height it had when this photo opened.
+  // Confirming a face takes its row out, and a block that shrank with it would
+  // pull the photograph above it — and every box drawn on it — out from under the
+  // reader mid-rhythm, which is the one thing a yes-yes-yes surface must not do.
+  // Keyed on the photo, so the only thing that resizes it is moving to another
+  // one; the inner list is what gets measured, because the block itself is the
+  // thing being sized and would only ever report back its own frozen number.
+  const listRef = useRef<HTMLDivElement>(null)
+  const rowsHeight = useFrozenHeight(listRef, run.photo?.uid ?? null)
 
   useDocumentTitle(t('documentTitle.albumFaces'))
 
@@ -249,8 +259,11 @@ export function AlbumFacesPage() {
             </Alert>
           )}
 
-          <div className="kk-album-faces__rows">
-            <div className="list-group list-group-flush">
+          <div
+            className="kk-album-faces__rows"
+            style={rowsHeight === null ? undefined : { height: `${String(rowsHeight)}px` }}
+          >
+            <div ref={listRef} className="list-group list-group-flush kk-album-faces__list">
               {rows.map((row) => (
                 <div
                   key={row.face.face_index}

@@ -59,15 +59,31 @@
 }
 
 /* The questions. Capped at a third of the screen and scrolling by itself, so a
-   photo of a dozen people never pushes the photo off the top. */
+   photo of a dozen people never pushes the photo off the top.
+
+   Its height is *frozen* for as long as one photo is on screen: the page writes
+   the height the list had when the photo opened into an inline `height`
+   (`useFrozenHeight`), and confirming a face then empties a row out of a block
+   that does not move. `max-height` still has the last word over that inline
+   value, which is what keeps the reservation honest on a short screen — on a
+   laptop turned landscape a queue of twelve faces would otherwise freeze a wall
+   of held-open emptiness under the last remaining row. */
 .kk-album-faces__rows {
   flex: 0 1 auto;
   min-height: 0;
   max-height: 40vh;
   overflow-y: auto;
+  padding-inline: 1rem;
+}
+
+/* The measured element. The room under the last row belongs to it rather than to
+   the scroll box, so the frozen number covers the whole reservation: the box is
+   `border-box`, and padding left on it would be subtracted from the height the
+   list was measured at and scroll the last row by those few pixels. */
+.kk-album-faces__list {
   /* A hair of room under the last row, so its border never sits flush against
      the footer's and read as one thick line. */
-  padding: 0 1rem 0.25rem;
+  padding-bottom: 0.25rem;
 }
 
 .kk-album-faces__row {
