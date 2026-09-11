@@ -1529,6 +1529,17 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   that matches nothing comes back with `found: false` rather than an empty result set. The lookups are **unscoped**
   — an archived, hidden, private or non-primary-stack-member photo resolves, and `states` (`archived`, `hidden`,
   `private`, `stack_member`) says which, so a hit outside the library view is labelled instead of confusing.
+  **`GET /search/schema`** (same guard) publishes the **query language itself**: `{keys:[{key, kind,
+  values?}]}`, sorted by key, minted from the parser's own registry (`query.Keys`). `kind` is the value
+  kind's wire name — `text`, `number`, `date`, `bool`, `enum`, `id`, `count`, `duration` — and `values`
+  is present **only** for the keys whose vocabulary is closed (an enum's words, or `["yes","no"]` for a
+  yes/no and for a count's yes/no form); its absence says only the reader can supply the value. Aliases
+  (`subject:`, `keyword:`) are **not** published: they keep parsing, but suggesting two spellings of one
+  filter teaches the longer one for nothing. What a key *means* is not published either — that sentence is
+  translated, so it lives in the frontend's i18n (`searchCommand.queryKeys.<key>`), and a test fails the
+  moment the two lists disagree. The answer is compiled into the binary (no store is touched), so a client
+  fetches it once and keeps it; the command palette completes filter keys and values from it, which is how
+  it can never offer a filter the parser would reject.
 - **Bulk metadata API (`/api/v1`, `internal/bulkapi`, editor/admin via `RequireWrite`):**
   `POST /photos/bulk` `{photo_uids:[…], operations:{…}}` applies a set of operations to many photos
   **in a single transaction** with an audit-log entry. Operations (each optional): `add_to_albums`/

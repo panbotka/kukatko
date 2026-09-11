@@ -186,3 +186,51 @@ export function isEmptyResult(result: GlobalSearchResult): boolean {
     result.photos.length === 0
   )
 }
+
+/**
+ * One filter key of the query language, as the backend publishes it at
+ * `GET /api/v1/search/schema`. The list comes from the parser's own registry
+ * (`internal/query`), so a client that completes keys from it can never offer a
+ * filter that no longer parses — nor miss one that was just added.
+ */
+export interface QueryFilterKey {
+  /** The canonical key, lowercase and without the colon (`album`, `iso`). */
+  key: string
+  /**
+   * How the key's value is parsed: `text`, `number`, `date`, `bool`, `enum`,
+   * `id`, `count` or `duration`. A word rather than a union, because a build
+   * talking to a newer server must not break on a kind it has never heard of.
+   */
+  kind: string
+  /**
+   * Every word the key accepts, for the keys whose vocabulary is closed — an
+   * enum's words, or yes/no. Absent for the open-ended kinds, which is the
+   * client's cue that only the user can supply the value.
+   */
+  values?: string[]
+}
+
+/** The body of `GET /api/v1/search/schema`. */
+interface QuerySchemaBody {
+  keys: QueryFilterKey[]
+}
+
+/**
+ * Fetches the query language's filter keys. The answer is compiled into the
+ * server binary, so it is constant for as long as the connection is talking to
+ * the same build and a client may fetch it once and keep it.
+ *
+ * @throws ApiError when the request is refused (401 for a signed-out caller).
+ */
+export async function fetchQuerySchema(signal?: AbortSignal): Promise<QueryFilterKey[]> {
+  const res = await fetch(`${API_BASE}/search/schema`, {
+    method: 'GET',
+    credentials: 'same-origin',
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+  const body = (await res.json()) as QuerySchemaBody
+  return body.keys
+}

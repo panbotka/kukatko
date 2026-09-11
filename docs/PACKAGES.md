@@ -3044,7 +3044,16 @@ to `## Package map` in `CLAUDE.md`.
   `photoprism_aliases` of migration 0046; the lookups are **unscoped** (an archived, hidden, private or
   non-primary stack member resolves) and `states` names which of those it is, so a hit outside the library view
   is labelled rather than merely puzzling; a well-formed id matching nothing → `found:false`, **not** an empty
-  result set, and only a store failure is a 500; mounted by `server.WithAPI` (`buildGlobalSearchAPI` in
+  result set, and only a store failure is a 500; **the query language itself is published here too**
+  (`schema.go`): `GET /search/schema` → `{keys:[{key,kind,values?}]}` read straight off `query.Keys` — the
+  canonical keys sorted, each with its value kind's wire name and, for a closed vocabulary only, the words it
+  accepts (an enum's, or yes/no for a bool and for a count's yes/no form); aliases are deliberately absent and
+  so is any prose (what a key *means* is translated, so it lives in the frontend's i18n under
+  `searchCommand.queryKeys.<key>` — `schema_test.go` fails the moment the two lists disagree, in either
+  language, and a second test holds the frontend's own `FILTER_KEYS` literal to the parser's keys **plus** its
+  aliases). The response is compiled in, touches no store and is constant for the binary's life, so the command
+  palette fetches it once and completes filter keys and values from it rather than from a list of its own;
+  mounted by `server.WithAPI` (`buildGlobalSearchAPI` in
   `cmd/kukatko/globalsearch.go`, sharing the organize/people/photos store)), `internal/placesapi/`
   (a read-only HTTP API over the reverse-geocoded place hierarchy — the basis of Places browse: the interface
   `Store` (a subset of `photos.Store`: `AggregatePlaces`) → unit-testable with a fake; `NewAPI(Config{
@@ -4364,8 +4373,15 @@ to `## Package map` in `CLAUDE.md`.
   base36, a length that keeps the two families apart; `FindUID(input)` returns the first uid-shaped word of an
   input, so an id pasted with a word beside it is still recognised. A token with an **unknown** prefix is
   deliberately **not** accepted — probing every table per keystroke buys nothing. `internal/globalsearchapi`
-  routes a pasted id with it. The user-facing grammar: docs/API.md
-  "Search language (q=)". **`person:me` and `uploader:me` are deliberately *not* resolved here** — the parser
+  routes a pasted id with it. The registry is also **published** (`schema.go`, pure): `Keys() []KeyInfo`
+  returns every canonical key sorted, each with its `Kind` and — for a closed vocabulary only — the words it
+  accepts (`Kind.String()` gives the wire names `text`/`number`/`date`/`bool`/`enum`/`id`/`count`/`duration`;
+  a bool and a count's yes/no form offer `yes`/`no`, the two spellings a suggestion wants out of the six the
+  parser takes), and `Aliases()` hands out a copy of the alias table for a client that must *recognise* a
+  typed `subject:` without keeping its own list. `internal/globalsearchapi` serves both to the search
+  palette, so no list of filter keys anywhere else has to be maintained by hand. The user-facing grammar:
+  docs/API.md "Search language (q=)".
+  **`person:me` and `uploader:me` are deliberately *not* resolved here** — the parser
   knows nothing about who is asking, which is what keeps a filter's meaning independent of the request that
   carried it (`uploader:none`, which says nothing about the caller, is compiled by the store instead);
   see `internal/personme`), `internal/personme/`

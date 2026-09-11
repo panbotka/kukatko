@@ -93,7 +93,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/feedback` — persisted opinions: "not this person" / "not this label" / "not duplicates", idempotent, audited, never mutates; bulk exclusion lookups
 - `internal/feedbackapi` — `POST`/`DELETE /feedback/{face,label}-rejections` (RequireWrite)
 - `internal/geoestimate` — estimate a missing location from photos taken near it in time; refuses unless the neighbours cluster tightly (a wrong location is worse than none), marks every result `estimate`
-- `internal/globalsearchapi` — `GET /search/global` (grouped cross-entity)
+- `internal/globalsearchapi` — `GET /search/global` (grouped cross-entity) + `GET /search/schema` (the query language's filter keys, straight from the parser's registry)
 - `internal/hls` — the pure half of streaming: where a video's segments live (`hls/<file_hash>/<rendition>/`), what may be named there, the rendition list + ffmpeg argument plan, and the playlists a player is served; never runs ffmpeg
 - `internal/hlsjob` — the acting half: the `hls_transcode` job (ffmpeg into a temp dir, segments published under the layout, the row in `photo_hls_renditions`) and that table's store; publishes before it records, undoes its own partial run, one slot in the worker
 - `internal/imgconvert` — HEIC/RAW/video → decodable JPEG (shell-out)
@@ -131,7 +131,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/placesjob` — worker handler `places` (reverse geocode, rate-limited due to credits)
 - `internal/processapi` — maintainer-only `/process/*` backfills (embeddings, faces, clusters, places)
 - `internal/processing` — what has already been computed about **one** photo (evidence first, queue second) + scheduling the one step it missed
-- `internal/query` — pure parser of the search query language (`q=`): free text + key:value filters → AST; unknown tokens degrade to free text; compiled to SQL in `internal/photos`
+- `internal/query` — pure parser of the search query language (`q=`): free text + key:value filters → AST; unknown tokens degrade to free text; compiled to SQL in `internal/photos`; publishes its own key registry (`Keys`/`Aliases`) so nothing else keeps a copy
 - `internal/ratelimit` — per-key token-bucket limiter + HTTP middleware
 - `internal/reachability` — cached background probe of the embeddings sidecar (atomic flag for `/capabilities`)
 - `internal/reset` — the guarded library wipe (`kukatko maintenance reset`): dry run by default, typed database + bucket name, target + schema checks, storage deletion confined to Kukátko's own prefixes, audited in the truncation's transaction; never touches accounts/announcement/audit/migrations

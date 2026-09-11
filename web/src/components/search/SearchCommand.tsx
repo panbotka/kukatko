@@ -13,13 +13,22 @@ import {
   directHitSecondary,
   directHitTitle,
 } from '../../lib/directHit'
+import { type ValueFacet } from '../../lib/queryLanguage'
+import {
+  applySuggestedKey,
+  applySuggestedValue,
+  type QuerySuggestions,
+  suggestQuery,
+} from '../../lib/querySuggest'
 import { isTypingElement } from '../../lib/ratingHotkeys'
 import { isFormModalOpen } from '../../lib/shortcuts'
 import { thumbUrl } from '../../services/photos'
 import {
   directHitRoute,
+  fetchQuerySchema,
   type GlobalSearchDirect,
   type GlobalSearchResult,
+  type QueryFilterKey,
 } from '../../services/search'
 import { FadeInImage } from '../FadeInImage'
 import { Icon, type IconName } from '../Icon'
@@ -62,6 +71,17 @@ interface SearchItem {
    * the query is remembered (or moved back to the front of the ring).
    */
   query?: string
+  /**
+   * Set on the rows that complete the filter token being typed: the whole input
+   * with this suggestion applied, and whether picking it also runs the search.
+   *
+   * A finished value does run it — the filter is complete, so there is nothing
+   * left to say — while a bare key only completes to `key:` and hands the field
+   * back, because `album:` on its own is not a query anyone means. A key row is
+   * therefore the one palette row that opens nothing: {@link SearchItem.to} is
+   * empty and never used.
+   */
+  suggest?: { input: string; run: boolean }
 }
 
 /** A titled block of {@link SearchItem}s (Albums / Labels / People / Photos). */
@@ -70,6 +90,12 @@ interface SearchGroup {
   key: string
   /** i18n key for the visible heading, or `undefined` for the top action row. */
   headingKey?: ParseKeys
+  /**
+   * An already-translated heading, for the one group whose title depends on
+   * runtime data (the filter key whose values are being offered) and so cannot
+   * be a static i18n key. It wins over {@link SearchGroup.headingKey}.
+   */
+  headingText?: string
   /**
    * An action rendered on the heading's own line — the recent-searches group's
    * "forget these". It is a real control, so unlike the heading text it is not
@@ -175,6 +201,172 @@ function buildHistoryGroup(
       query,
     })),
   }
+}
+
+/** The glyph each name-valued facet's suggestion rows carry. */
+const FACET_ICON: Record<ValueFacet, IconName> = {
+  album: 'collection',
+  label: 'tags',
+  person: 'person-circle',
+}
+
+/** One completable name from the library. */
+interface FacetName {
+  /** What the row shows, localized. */
+  label: string
+  /**
+   * What the completed query must carry — the name as it is *stored*, not as it
+   * is displayed. The two differ for the albums whose title the app translates:
+   * completing with the rendering would produce a filter matching nothing.
+   */
+  value: string
+  /** The picture standing for the entity, when it has one. */
+  thumbSrc?: string
+  /** How many photos carry the name. */
+  count?: number
+}
+
+/**
+ * The names one facet offers for the typed prefix, drawn from an ordinary
+ * grouped search run on that prefix alone. A nameless entity is skipped: a query
+ * cannot name it, so completing to it would filter nothing.
+ */
+function facetNames(facet: ValueFacet, result: GlobalSearchResult, lang: string): FacetName[] {
+  switch (facet) {
+    case 'album':
+      return result.albums
+        .filter((album) => album.title !== '')
+        .map((album) => ({
+          label: albumDisplayTitle(album.title, lang),
+          value: album.title,
+          thumbSrc: album.thumb_url,
+          count: album.photo_count,
+        }))
+    case 'label':
+      return result.labels
+        .filter((label) => label.name !== '')
+        .map((label) => ({
+          label: label.name,
+          value: label.name,
+          thumbSrc: label.thumb_url,
+          count: label.photo_count,
+        }))
+    case 'person':
+      return result.people
+        .filter((person) => person.name !== '')
+        .map((person) => ({ label: person.name, value: person.name, thumbSrc: person.thumb_url }))
+  }
+}
+
+/**
+ * The sentence explaining one filter key, or `''` when this build carries no
+ * translation for it. The keys come from the server, which may be newer than the
+ * bundle talking to it: an unexplained key is still worth offering — its name is
+ * what the user types — so the row simply goes without its second line.
+ */
+function keyDescription(key: string, t: TFunction): string {
+  const id = `searchCommand.queryKeys.${key}` as ParseKeys
+  const text = t(id)
+  return text === id ? '' : text
+}
+
+/**
+ * One row completing a filter's *value*. Unlike a key row it finishes the
+ * filter, so picking it also runs the search: the whole query, the completed
+ * token included, exactly as the "search everything" row would.
+ */
+function suggestValueItem(
+  query: string,
+  value: string,
+  row: {
+    id: string
+    primary: string
+    icon: IconName
+    thumbSrc?: string
+    circle?: boolean
+    count?: number
+  },
+): SearchItem {
+  const input = applySuggestedValue(query, value)
+  const runQuery = input.trim()
+  return {
+    ...row,
+    to: `/search?${new URLSearchParams({ q: runQuery }).toString()}`,
+    query: runQuery,
+    suggest: { input, run: true },
+  }
+}
+
+/**
+ * The palette group that completes the filter token being typed, or null when
+ * there is nothing to complete.
+ *
+ * It is what makes the query language discoverable instead of memorised: a
+ * half-typed word offers the filter keys starting with it, each with a sentence
+ * saying what it does, and a key already followed by a colon offers its values —
+ * the words a closed key accepts, or the album, label and people *names* the
+ * library actually holds. The keys are the ones the server published, so this
+ * group can never drift from the parser that will read the query.
+ *
+ * Only the trailing token is touched; the filters typed in front of it are
+ * carried into the completed query unchanged.
+ */
+function buildSuggestGroup(
+  query: string,
+  suggestions: QuerySuggestions | null,
+  names: GlobalSearchResult | null,
+  lang: string,
+  t: TFunction,
+): SearchGroup | null {
+  if (suggestions === null) {
+    return null
+  }
+  if (suggestions.mode === 'keys') {
+    return {
+      key: 'suggest',
+      headingText: t('searchCommand.suggest.keys'),
+      items: suggestions.keys.map((entry) => ({
+        id: `sc-opt-key-${entry.key}`,
+        // A key row completes the field rather than opening anything; `to` is
+        // never read for it.
+        to: '',
+        primary: `${entry.key}:`,
+        secondary: keyDescription(entry.key, t),
+        icon: 'funnel',
+        suggest: { input: applySuggestedKey(query, entry.key), run: false },
+      })),
+    }
+  }
+  const headingText = t('searchCommand.suggest.values', { key: suggestions.key })
+  if (suggestions.mode === 'values') {
+    return {
+      key: 'suggest',
+      headingText,
+      items: suggestions.values.map((value) =>
+        suggestValueItem(query, value, {
+          id: `sc-opt-value-${value}`,
+          primary: value,
+          icon: 'sliders',
+        }),
+      ),
+    }
+  }
+  if (names === null) {
+    return null
+  }
+  const items = facetNames(suggestions.facet, names, lang).map((name, index) =>
+    suggestValueItem(query, name.value, {
+      // Indexed rather than named: a name carries spaces, and a DOM id with one
+      // is not an id `aria-activedescendant` can point at.
+      id: `sc-opt-name-${suggestions.facet}-${String(index)}`,
+      primary: name.label,
+      icon: FACET_ICON[suggestions.facet],
+      thumbSrc: name.thumbSrc,
+      circle: suggestions.facet === 'person',
+      count: name.count,
+    }),
+  )
+  return items.length === 0 ? null : { key: 'suggest', headingText, items }
 }
 
 /**
@@ -370,24 +562,78 @@ function SearchCommandDialog({ show, onClose }: DialogProps) {
   const history = useSearchHistory(show && query.trim() === '')
   const recordSearch = useRecordSearch()
 
-  const groups = useMemo(() => {
-    const built = buildGroups(query, result, i18n.language, t)
-    if (built.length > 0) {
-      return built
+  // The query language's filter keys, fetched from the server the first time the
+  // palette opens and kept: they are compiled into the binary, so the answer
+  // cannot change under a page that is still talking to it. A failed fetch
+  // simply leaves the palette without completion — it still searches.
+  const [schema, setSchema] = useState<QueryFilterKey[]>([])
+  useEffect(() => {
+    if (!show || schema.length > 0) {
+      return
     }
-    const historyGroup = buildHistoryGroup(
-      history.entries.map((entry) => entry.query),
-      history.clear,
-      t,
-    )
-    return historyGroup === null ? [] : [historyGroup]
-  }, [query, result, i18n.language, t, history.entries, history.clear])
+    const controller = new AbortController()
+    let cancelled = false
+    fetchQuerySchema(controller.signal)
+      .then((keys) => {
+        if (!cancelled) {
+          setSchema(keys)
+        }
+      })
+      .catch(() => {
+        // Nothing to complete from; the palette's own rows are unaffected.
+      })
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
+  }, [show, schema.length])
+
+  // Escape closes the suggestions before it closes the palette, and typing on
+  // brings them back — the field keeps whatever was written either way.
+  const [suggestDismissed, setSuggestDismissed] = useState(false)
+  const suggestions = useMemo(() => suggestQuery(query, schema), [query, schema])
+  // The names an `album:`/`label:`/`person:` value completes from are an ordinary
+  // grouped search — run on the half-typed value alone, not on the whole query,
+  // which as a string matches nothing.
+  const nameSearch = useGlobalSearch(suggestions?.mode === 'names' ? suggestions.prefix : '')
+
+  const groups = useMemo(() => {
+    const suggestGroup = suggestDismissed
+      ? null
+      : buildSuggestGroup(query, suggestions, nameSearch.result, i18n.language, t)
+    let base = buildGroups(query, result, i18n.language, t)
+    if (base.length === 0) {
+      const historyGroup = buildHistoryGroup(
+        history.entries.map((entry) => entry.query),
+        history.clear,
+        t,
+      )
+      base = historyGroup === null ? [] : [historyGroup]
+    }
+    // The completion ranks above everything the palette already offers: while a
+    // filter is being written, finishing it is what the next keystroke is for.
+    return suggestGroup === null ? base : [suggestGroup, ...base]
+  }, [
+    query,
+    result,
+    i18n.language,
+    t,
+    history.entries,
+    history.clear,
+    suggestions,
+    suggestDismissed,
+    nameSearch.result,
+  ])
   const flat = useMemo(() => groups.flatMap((group) => group.items), [groups])
+  // Whether the palette is currently completing a filter token, which is what
+  // Escape puts away and what the legend advertises Tab for.
+  const completing = flat.some((item) => item.suggest !== undefined)
 
   // A new query resets the cursor to the top row; a shrinking result set clamps
   // it back into range so the active id always points at a real row.
   useEffect(() => {
     setActiveIndex(0)
+    setSuggestDismissed(false)
   }, [query])
   useEffect(() => {
     setActiveIndex((index) => (index >= flat.length ? 0 : index))
@@ -407,6 +653,13 @@ function SearchCommandDialog({ show, onClose }: DialogProps) {
       if (item === undefined) {
         return
       }
+      // A bare key completes the field and stays: `album:` is not a query, it is
+      // the middle of one, and the palette's next job is to offer its values.
+      if (item.suggest !== undefined && !item.suggest.run) {
+        setQuery(item.suggest.input)
+        inputRef.current?.focus()
+        return
+      }
       // Opening a row that runs a search is that search being submitted — the
       // palette has no other moment at which one is, and the search page it
       // lands on only sees a query arriving in the URL.
@@ -424,6 +677,13 @@ function SearchCommandDialog({ show, onClose }: DialogProps) {
     // no-results short-circuit rather than leaning on the Modal's own key handling.
     if (event.key === 'Escape') {
       event.preventDefault()
+      // The first Escape only puts the completion away, leaving the text and the
+      // palette exactly as they were: it is the way out for somebody whose free
+      // text happens to look like the start of a filter key.
+      if (completing && !suggestDismissed) {
+        setSuggestDismissed(true)
+        return
+      }
       onClose()
       return
     }
@@ -450,6 +710,14 @@ function SearchCommandDialog({ show, onClose }: DialogProps) {
       case 'Enter':
         event.preventDefault()
         openItem(flat.at(activeIndex))
+        break
+      case 'Tab':
+        // Tab completes, and only that: on any other row it stays the key that
+        // moves focus out of the field.
+        if (flat.at(activeIndex)?.suggest !== undefined) {
+          event.preventDefault()
+          openItem(flat.at(activeIndex))
+        }
         break
       default:
         break
@@ -484,6 +752,7 @@ function SearchCommandDialog({ show, onClose }: DialogProps) {
       onExited={() => {
         setQuery('')
         setActiveIndex(0)
+        setSuggestDismissed(false)
       }}
       aria-label={t('searchCommand.dialogLabel')}
       dialogClassName="kukatko-search-dialog"
@@ -542,11 +811,14 @@ function SearchCommandDialog({ show, onClose }: DialogProps) {
         >
           {groups.map((group) => (
             <li key={group.key} className="kukatko-search-group" role="presentation">
-              {group.headingKey !== undefined && (
+              {(group.headingText !== undefined || group.headingKey !== undefined) && (
                 <div className="kukatko-search-group__heading">
                   {/* The label is decoration — the group's rows name themselves —
                       while an action beside it is not, so only the text is hidden. */}
-                  <span aria-hidden="true">{t(group.headingKey)}</span>
+                  <span aria-hidden="true">
+                    {group.headingText ??
+                      (group.headingKey === undefined ? null : t(group.headingKey))}
+                  </span>
                   {group.action}
                 </div>
               )}
@@ -596,6 +868,12 @@ function SearchCommandDialog({ show, onClose }: DialogProps) {
           <kbd>↵</kbd>
           {t('searchCommand.legend.open')}
         </span>
+        {completing && (
+          <span className="kukatko-search-legend__item">
+            <kbd>tab</kbd>
+            {t('searchCommand.legend.complete')}
+          </span>
+        )}
         <span className="kukatko-search-legend__item">
           <kbd>esc</kbd>
           {t('searchCommand.legend.close')}

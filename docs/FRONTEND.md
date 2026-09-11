@@ -1909,8 +1909,13 @@ here.
   was previously offered `square:`/`subject:` and nothing of their own (`useSearchHistory`, now active on
   focus rather than only on an empty box, so matching costs no request per keystroke) — followed by
   **filter keys** while the trailing token could still become one (`suggestFilterKeys`/
-  `applyFilterKey` + `FILTER_KEYS`), or **filter values** once a completable key is typed
-  (`suggestFilterValues`/`matchFilterValues`/`applyFilterValue`, lists from `useFilterValues`).
+  `applyFilterKey` + `FILTER_KEYS` — the box's own key list, aliases included, held to the backend parser's
+  registry by a test in `internal/globalsearchapi`), or **filter values** once a completable key is typed
+  (`suggestFilterValues`/`matchFilterValues`/`applyFilterValue`, lists from `useFilterValues`). Locating the
+  token being typed is shared with the command palette's completion: `keyTokenAt`/`valueTokenAt` say *where*
+  the caret is and what has been typed, each `suggest…` function then matching that prefix against whichever
+  key list it holds (this box's `FILTER_KEYS`, the palette's fetched schema), and `valueFacetForKey` names the
+  facet a key draws its values from.
   History rows come **first** and wear `clock-history`, completions follow wearing `funnel` (keys) or their
   photo count (values) — a query already run is a stronger proposal than a word half-way to a filter, and the
   glyph says which is which; the listbox names itself `search.history.label`/`search.keySuggestions`/
@@ -3983,8 +3988,30 @@ here.
   The rows that *run a search* — „Hledat vše" and the recent ones — carry `SearchItem.query`, and opening one
   **records it** (`useRecordSearch`): it is the palette's one deliberate submit, and what it hands the search
   page arrives there as a URL, which that page rightly refuses to remember on its own.
-  Keys `searchCommand.*`, `search.history.*`, `globalSearch.groups.*`, `globalSearch.direct.*`; in the shortcut
-  help the group `shortcuts.groups.global`). Both surfaces share `lib/directHit.ts` — the label maps
+  **The palette also completes the query language itself** (`lib/querySuggest.ts` + the
+  `buildSuggestGroup` half of `SearchCommand`): a half-typed word offers the **filter keys** starting with it
+  (`album:`, `alt:` …), each with a sentence saying what it does, and a key already followed by a colon offers
+  its **values** — the words a closed key takes (`type:` → image/video/live, a yes/no key → yes/no) or the real
+  **names** the library holds for `album:`/`label:`/`person:` (`subject:` included), looked up with an ordinary
+  `useGlobalSearch` run on the half-typed *value* alone, from one character on, and inserted quoted when the
+  language needs it (an album completes to its **stored** title, not to the rendering `albumDisplayTitle`
+  shows). The key list is **never written down here**: it is fetched once from `GET /search/schema`
+  (`fetchQuerySchema`, on the palette's first open — the answer is compiled into the server binary) so it
+  cannot drift from the parser; only the sentences are local, under `searchCommand.queryKeys.<key>`, and a
+  backend test fails when the two lists disagree. A key the bundle has no sentence for is still offered, just
+  without its second line. Only the **trailing** token is ever completed (`keyTokenAt`/`valueTokenAt` in
+  `lib/queryLanguage.ts`, the same locators the search page's own autocomplete uses), so the filters already
+  written in front of it are carried into the completed query untouched. The rows are ordinary palette rows
+  ranked **above** everything else while a filter is being written, so ↑/↓ walk them and Enter picks: a
+  **value** row finishes the filter and runs the whole query at once (and is recorded like any submit), while a
+  **key** row only completes to `key:` and hands the field back — `album:` is the middle of a query, not one.
+  **Tab** completes the active row exactly like Enter (and stays plain Tab on every other row), and **Esc**
+  closes the completion first, keeping the text and the palette, which is the way out for free text that merely
+  looks like the start of a key; the next Esc closes the palette as before. A failed schema fetch costs the
+  completion and nothing else.
+  Keys `searchCommand.*` (incl. `searchCommand.suggest.*` + `searchCommand.queryKeys.*`), `search.history.*`,
+  `globalSearch.groups.*`, `globalSearch.direct.*`; in the shortcut help the group
+  `shortcuts.groups.global`). Both surfaces share `lib/directHit.ts` — the label maps
   `DIRECT_KIND_LABEL`/`DIRECT_VIA_LABEL`/`DIRECT_STATE_LABEL`, the icon map `DIRECT_TARGET_ICON` and the pure
   `directHitSecondary`/`directHitTitle` — so the palette and the search page never drift apart on what an id
   means, and every i18n key stays a **literal** (a key built from a template would widen to `string` and lose
@@ -5960,7 +5987,12 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   where to fetch that photo's medallion, set **together or not at all**. Prefer `thumb_url`: it is already the
   small square size a row wants, and it is the *signed* address when the library sits behind a media Worker.
   Separate
-  from the photo `searchPhotos` (fulltext/semantic/hybrid), the basis for `GlobalSearchSections`; `bulk.ts` =
+  from the photo `searchPhotos` (fulltext/semantic/hybrid), the basis for `GlobalSearchSections`. The same
+  module also carries `fetchQuerySchema(signal)` over `GET /api/v1/search/schema` → `QueryFilterKey[]`
+  (`{key, kind, values?}`) — the **query language's own filter keys**, minted from the backend parser's
+  registry, `values` present only where the vocabulary is closed and `kind` typed as a plain `string` so a
+  bundle talking to a newer server cannot break on a kind it has never heard of; the answer is compiled into
+  the server binary, so the command palette fetches it once and keeps it; `bulk.ts` =
   `bulkUpdatePhotos(uids,ops)` over `POST /photos/bulk` (a bulk edit of the selection), the types
   `BulkOperations` (add/remove an album+label, set/clear the caption+description+location,
   archive/unarchive, set_favorite per-user)/`BulkLocation` (`{lat,lng,only_missing?}` — `only_missing`

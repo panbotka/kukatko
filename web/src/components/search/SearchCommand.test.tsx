@@ -6,13 +6,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../../i18n'
 import { type Photo } from '../../services/photos'
-import { type GlobalSearchResult } from '../../services/search'
+import { type GlobalSearchResult, type QueryFilterKey } from '../../services/search'
 
 import { SearchCommand } from './SearchCommand'
 
 vi.mock('../../services/search', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../services/search')>()
-  return { ...actual, globalSearch: vi.fn() }
+  return { ...actual, globalSearch: vi.fn(), fetchQuerySchema: vi.fn() }
 })
 
 vi.mock('../../services/searchHistory', async (importOriginal) => {
@@ -25,8 +25,22 @@ vi.mock('../../services/searchHistory', async (importOriginal) => {
   }
 })
 
-const { globalSearch } = await import('../../services/search')
+const { globalSearch, fetchQuerySchema } = await import('../../services/search')
 const searchMock = vi.mocked(globalSearch)
+const schemaMock = vi.mocked(fetchQuerySchema)
+
+/**
+ * The filter keys the server publishes, as the palette's completion sees them.
+ * A handful is enough: which keys exist is the backend's business (and its
+ * tests'), what matters here is what the palette does with them.
+ */
+const SCHEMA: QueryFilterKey[] = [
+  { key: 'album', kind: 'text' },
+  { key: 'alt', kind: 'number' },
+  { key: 'archived', kind: 'bool', values: ['yes', 'no'] },
+  { key: 'title', kind: 'text' },
+  { key: 'type', kind: 'enum', values: ['image', 'video', 'live'] },
+]
 const { fetchSearchHistory, recordSearch, clearSearchHistory } =
   await import('../../services/searchHistory')
 const historyMock = vi.mocked(fetchSearchHistory)
@@ -110,6 +124,8 @@ beforeEach(async () => {
   await i18n.changeLanguage('en')
   searchMock.mockReset()
   searchMock.mockResolvedValue(RESULT)
+  schemaMock.mockReset()
+  schemaMock.mockResolvedValue(SCHEMA)
   historyMock.mockResolvedValue([])
   recordHistoryMock.mockResolvedValue()
   clearHistoryMock.mockResolvedValue()
@@ -470,5 +486,144 @@ describe('SearchCommand', () => {
       expect(row.querySelector('img')).toBeNull()
     })
     expect(row.querySelector('i.bi.bi-collection')).not.toBeNull()
+  })
+})
+
+describe('SearchCommand query completion', () => {
+  /** Opens the palette and types `text` into it, returning the field. */
+  async function typeQuery(user: ReturnType<typeof userEvent.setup>, text: string) {
+    renderCommand()
+    await user.click(screen.getByRole('button', { name: 'Search' }))
+    const input = await screen.findByRole('combobox')
+    await user.type(input, text)
+    return input
+  }
+
+  it('offers the filter keys sharing the typed prefix, each explained', async () => {
+    const user = userEvent.setup()
+    await typeQuery(user, 'al')
+
+    const key = await screen.findByRole('option', { name: /album:/ })
+    expect(key).toHaveTextContent('Photos in an album')
+    expect(screen.getByRole('option', { name: /alt:/ })).toBeInTheDocument()
+    // The completion ranks above what the palette already offered.
+    const options = screen.getAllByRole('option')
+    expect(options[0]).toBe(key)
+    expect(options.at(-1)).not.toBe(key)
+  })
+
+  it('completes a key into key: and keeps the palette open on the field', async () => {
+    const user = userEvent.setup()
+    const input = await typeQuery(user, 'al')
+    await screen.findByRole('option', { name: /album:/ })
+
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(input).toHaveValue('album:')
+    // Nothing was searched: `album:` is the middle of a query, not one.
+    expect(screen.getByTestId('loc')).toHaveTextContent('/')
+    expect(screen.getByRole('combobox')).toBeInTheDocument()
+  })
+
+  it('leaves the filters already written alone when it completes a key', async () => {
+    const user = userEvent.setup()
+    const input = await typeQuery(user, 'archived:yes ty')
+    await screen.findByRole('option', { name: /type:/ })
+
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(input).toHaveValue('archived:yes type:')
+  })
+
+  it('offers an enum key its own values after the colon', async () => {
+    const user = userEvent.setup()
+    await typeQuery(user, 'type:')
+
+    expect(await screen.findByRole('option', { name: 'image' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'video' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'live' })).toBeInTheDocument()
+  })
+
+  it('offers yes/no for a yes-or-no key', async () => {
+    const user = userEvent.setup()
+    await typeQuery(user, 'archived:')
+
+    expect(await screen.findByRole('option', { name: 'yes' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'no' })).toBeInTheDocument()
+  })
+
+  it('runs the whole query when a value is picked with Enter', async () => {
+    const user = userEvent.setup()
+    const input = await typeQuery(user, 'beach type:vid')
+    await screen.findByRole('option', { name: 'video' })
+
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() => {
+      expect(screen.getByTestId('loc')).toHaveTextContent('/search?q=beach+type%3Avideo')
+    })
+    expect(recordHistoryMock).toHaveBeenCalledWith('beach type:video')
+  })
+
+  it('completes with Tab as well as Enter', async () => {
+    const user = userEvent.setup()
+    const input = await typeQuery(user, 'ty')
+    await screen.findByRole('option', { name: /type:/ })
+
+    fireEvent.keyDown(input, { key: 'Tab' })
+    expect(input).toHaveValue('type:')
+  })
+
+  it('completes an album name from the library, quoting it as the language needs', async () => {
+    const user = userEvent.setup()
+    const input = await typeQuery(user, 'album:bea')
+
+    // The album also matches as an ordinary result row further down, so the
+    // completion is the one identified by its id, and it is the one on top.
+    const rows = await screen.findAllByRole('option', { name: /Beach trip/ })
+    expect(rows[0]).toHaveAttribute('id', 'sc-opt-name-album-0')
+    // The names are looked up by the half-typed value alone — the whole query
+    // is not a string any album is called.
+    expect(searchMock).toHaveBeenCalledWith('bea', expect.anything())
+
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() => {
+      expect(screen.getByTestId('loc')).toHaveTextContent('album%3A%22Beach+trip%22')
+    })
+  })
+
+  it('closes the completion with Escape, keeping the text and the palette', async () => {
+    const user = userEvent.setup()
+    const input = await typeQuery(user, 'al')
+    await screen.findByRole('option', { name: /album:/ })
+
+    fireEvent.keyDown(input, { key: 'Escape' })
+    await waitFor(() => {
+      expect(screen.queryByRole('option', { name: /album:/ })).not.toBeInTheDocument()
+    })
+    expect(input).toHaveValue('al')
+    expect(screen.getByRole('combobox')).toBeInTheDocument()
+
+    // The next Escape closes the palette, as it always did.
+    fireEvent.keyDown(input, { key: 'Escape' })
+    await waitFor(() => {
+      expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+    })
+  })
+
+  it('offers nothing for a word that is not the start of a filter', async () => {
+    const user = userEvent.setup()
+    await typeQuery(user, 'beach')
+
+    const options = await screen.findAllByRole('option')
+    expect(options.some((option) => option.textContent.includes('album:'))).toBe(false)
+  })
+
+  it('still searches when the schema cannot be fetched', async () => {
+    schemaMock.mockRejectedValue(new Error('offline'))
+    const user = userEvent.setup()
+    await typeQuery(user, 'al')
+
+    expect(
+      await screen.findByRole('option', { name: /Search all photos for “al”/ }),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: /album:/ })).not.toBeInTheDocument()
   })
 })

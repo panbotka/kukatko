@@ -40,6 +40,7 @@ export const FILTER_KEYS = [
   'geo',
   'hidden',
   'iso',
+  'keyword',
   'keywords',
   'label',
   'landscape',
@@ -252,14 +253,25 @@ export interface KeySuggestion {
 /** Maximum number of keys the autocomplete dropdown offers at once. */
 const MAX_KEY_SUGGESTIONS = 8
 
+/** The bare key being typed at the end of the input, before any colon. */
+export interface KeyToken {
+  /** The letters typed so far, lowercased; never empty. */
+  prefix: string
+  /** Index in the input where the token (and thus the replacement) starts. */
+  start: number
+}
+
 /**
- * Suggests filter keys for the token currently being typed at the end of the
- * input: when the trailing token is one or more plain letters (no colon or
- * quote yet), the keys sharing that prefix are proposed. Returns null when
- * there is nothing sensible to suggest — mid-value, inside quotes, or an
- * already-completed key.
+ * The bare key token currently being typed at the end of the input — one or
+ * more plain letters with no colon or quote yet — or null when there is none:
+ * mid-value, inside quotes, or after a trailing space.
+ *
+ * It answers *where* the user is, not *what* to offer them: the caller matches
+ * the prefix against whichever key list it holds. {@link suggestFilterKeys}
+ * matches it against {@link FILTER_KEYS}; the command palette matches it against
+ * the schema the server publishes.
  */
-export function suggestFilterKeys(input: string): KeySuggestion | null {
+export function keyTokenAt(input: string): KeyToken | null {
   // An odd number of quotes means the caret sits inside a quoted value.
   const quotes = input.split('"').length - 1
   if (quotes % 2 === 1) {
@@ -270,22 +282,36 @@ export function suggestFilterKeys(input: string): KeySuggestion | null {
   if (token === '' || !/^[a-zA-Z]+$/.test(token)) {
     return null
   }
-  const prefix = token.toLowerCase()
-  const keys = FILTER_KEYS.filter((k) => k.startsWith(prefix) && k !== prefix).slice(
+  return { prefix: token.toLowerCase(), start }
+}
+
+/**
+ * Suggests filter keys for the token currently being typed at the end of the
+ * input: when the trailing token is one or more plain letters (no colon or
+ * quote yet), the keys sharing that prefix are proposed. Returns null when
+ * there is nothing sensible to suggest — mid-value, inside quotes, or an
+ * already-completed key.
+ */
+export function suggestFilterKeys(input: string): KeySuggestion | null {
+  const token = keyTokenAt(input)
+  if (token === null) {
+    return null
+  }
+  const keys = FILTER_KEYS.filter((k) => k.startsWith(token.prefix) && k !== token.prefix).slice(
     0,
     MAX_KEY_SUGGESTIONS,
   )
   if (keys.length === 0) {
     return null
   }
-  return { keys, start }
+  return { keys, start: token.start }
 }
 
 /**
  * Applies a chosen key suggestion: replaces the trailing token with `key:` so
  * the user continues straight into the value.
  */
-export function applyFilterKey(input: string, suggestion: KeySuggestion, key: string): string {
+export function applyFilterKey(input: string, suggestion: { start: number }, key: string): string {
   return input.slice(0, suggestion.start) + key + ':'
 }
 
@@ -345,6 +371,39 @@ function charsText(chars: readonly TokenChar[]): string {
  * spaces most needs completing.
  */
 export function suggestFilterValues(input: string): ValueSuggestion | null {
+  const token = valueTokenAt(input)
+  if (token === null) {
+    return null
+  }
+  const facet = VALUE_FACET_BY_KEY[token.key]
+  if (facet === undefined) {
+    return null
+  }
+  return { facet, prefix: token.prefix, start: token.start }
+}
+
+/** The `key:value` token being typed at the end of the input. */
+export interface ValueToken {
+  /** The lowercased filter key before the operator colon. */
+  key: string
+  /** The value text typed so far; `''` immediately after the colon. */
+  prefix: string
+  /** Index in the input where the value being typed starts (see {@link ValueSuggestion}). */
+  start: number
+}
+
+/**
+ * The `key:value` token being typed at the end of the input, whatever its key —
+ * or null when the trailing token is not filter-shaped, or the caret has already
+ * left it (a trailing space outside quotes).
+ *
+ * Like {@link keyTokenAt} it only locates the value; which values are worth
+ * offering depends on the key, and that is the caller's business:
+ * {@link suggestFilterValues} handles the three name-valued facets the search
+ * box completes, while the command palette also completes the keys whose
+ * vocabulary is closed (an enum, a yes/no) from the published schema.
+ */
+export function valueTokenAt(input: string): ValueToken | null {
   const tokens = scanTokens(input)
   const token = tokens.at(-1)
   // The caret must still be inside the token: a trailing space (outside quotes)
@@ -356,11 +415,15 @@ export function suggestFilterValues(input: string): ValueSuggestion | null {
   if (split === null) {
     return null
   }
-  const facet = VALUE_FACET_BY_KEY[split.key]
-  if (facet === undefined) {
-    return null
-  }
-  return { facet, ...valueBounds(token, split.colon) }
+  return { key: split.key, ...valueBounds(token, split.colon) }
+}
+
+/**
+ * The facet a filter key draws its completable *names* from, or undefined when
+ * the key takes no names (a number, a date, a yes/no — or no key at all).
+ */
+export function valueFacetForKey(key: string): ValueFacet | undefined {
+  return VALUE_FACET_BY_KEY[key]
 }
 
 /**
@@ -420,7 +483,7 @@ export function quoteFilterValue(value: string): string {
  */
 export function applyFilterValue(
   input: string,
-  suggestion: ValueSuggestion,
+  suggestion: { start: number },
   value: string,
 ): string {
   return input.slice(0, suggestion.start) + quoteFilterValue(value) + ' '

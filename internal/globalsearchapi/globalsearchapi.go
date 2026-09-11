@@ -149,8 +149,10 @@ func NewAPI(cfg Config) *API {
 // scoped under the API base path (for example /api/v1). The route requires auth:
 //
 //	GET /search/global?q=  grouped top-N matches across albums, labels, people, photos
+//	GET /search/schema     the query language's filter keys, as the parser knows them
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.With(a.requireAuth).Get("/search/global", a.handleGlobal)
+	r.With(a.requireAuth).Get("/search/schema", a.handleSchema)
 }
 
 // albumHit is a single album match: enough to link to and render a row.

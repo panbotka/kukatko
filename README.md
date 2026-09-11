@@ -49,6 +49,10 @@ photo-book tool (deliberately out of scope), or a product with support and a rel
   playback. `person:`, `label:` and `album:` autocomplete the **actual names in
   your library**, diacritics-insensitively and quoted correctly; a `?` cheat sheet is one keypress
   away, and a filter the parser did not understand is pointed out instead of silently ignored.
+  **Nothing here has to be memorised:** the command palette (`/` or Cmd-K) completes the language as
+  you write it — a half-typed word offers the filter keys starting with it, each explained in a line,
+  and a key followed by a colon offers its values: the words it accepts, or the albums, labels and
+  people your library actually holds. Tab or Enter finishes the filter and runs the whole query.
 - **The text in the picture is searchable too** — a street sign, a shop front, a race number, a
   scanned newspaper page. Every photo is run through a text recogniser and what it says becomes part
   of the search index, so typing *veselice* also finds the photo whose only claim to the word is
