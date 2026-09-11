@@ -17,6 +17,7 @@ import { clearBlurPlaceholderCache } from '../lib/blurPlaceholder'
 import { readGridScroll, writeGridScroll } from '../lib/gridScroll'
 import { stageRenditionName } from '../lib/rendition'
 import { resetRenditionVersions } from '../lib/renditionRebuild'
+import { ENCODE_POLL_INTERVAL_MS } from '../lib/videoEncode'
 import { type AlbumCount, type LabelCount } from '../services/organize'
 import { type FacesResponse, type PhotoSubject, type SubjectCount } from '../services/people'
 import {
@@ -311,6 +312,7 @@ function renderPage(
   canWrite = true,
   entry: string | Partial<Location> = '/photos/b?sort=oldest',
   semanticSearch = true,
+  videoStreaming = false,
 ) {
   return render(
     <I18nextProvider i18n={i18n}>
@@ -319,7 +321,7 @@ function renderPage(
           semantic_search: semanticSearch,
           known: true,
           passkeys: false,
-          video_streaming: false,
+          video_streaming: videoStreaming,
         }}
       >
         <AuthContext.Provider value={auth(canWrite)}>
@@ -2177,6 +2179,46 @@ describe('PhotoDetailPage — immersive viewer', () => {
       expect(video).not.toBeNull()
       expect(video?.getAttribute('src')).toContain('/photos/b/video')
       expect(container.querySelector('img[alt="Clip"]')).toBeNull()
+    })
+
+    it('holds a clip whose streaming version is still being made, then plays it', async () => {
+      // The whole point of the hold: the browser is never handed a clip it
+      // would only refuse — and the reader does not have to reload to get the
+      // player once the encode lands, because the viewer re-checks on its own.
+      const clip = photo({
+        media_type: 'video',
+        file_name: 'clip.mp4',
+        file_mime: 'video/mp4',
+        title: 'Clip',
+        hls: false,
+        processing: [{ step: 'hls_transcode', state: 'queued' }],
+      })
+      fetchPhotoMock.mockResolvedValue(clip)
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      try {
+        const { container } = renderPage(true, '/photos/b?sort=oldest', true, true)
+
+        await screen.findByRole('heading', { name: 'Clip' })
+        expect(container.querySelector('video')).toBeNull()
+        expect(screen.getByText(/still being prepared for playback/i)).toBeInTheDocument()
+
+        // The encode lands; the next poll is what the viewer learns it from.
+        fetchPhotoMock.mockResolvedValue({
+          ...clip,
+          hls: true,
+          processing: [{ step: 'hls_transcode', state: 'done', at: '2026-09-11T10:00:00Z' }],
+        })
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(ENCODE_POLL_INTERVAL_MS)
+        })
+
+        await waitFor(() => {
+          expect(container.querySelector('video')).not.toBeNull()
+        })
+        expect(screen.queryByText(/still being prepared for playback/i)).not.toBeInTheDocument()
+      } finally {
+        vi.useRealTimers()
+      }
     })
 
     it('leaves a video the detector found nobody on a view group of one', async () => {

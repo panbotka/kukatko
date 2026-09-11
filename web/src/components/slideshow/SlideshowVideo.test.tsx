@@ -2,6 +2,7 @@ import { act, fireEvent, render } from '@testing-library/react'
 import { I18nextProvider } from 'react-i18next'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { CapabilitiesContext } from '../../capabilities/CapabilitiesContext'
 import i18n from '../../i18n'
 import { type Photo } from '../../services/photos'
 
@@ -259,5 +260,65 @@ describe('SlideshowVideo', () => {
     expect(pause).toHaveBeenCalled()
     expect(video.hasAttribute('src')).toBe(false)
     expect(load).toHaveBeenCalled()
+  })
+})
+
+describe('SlideshowVideo while the streaming rendition is still being made', () => {
+  /**
+   * Renders a slide on an instance that DOES encode streaming renditions —
+   * the premise of the whole state, and deliberately not the default `setup`,
+   * which is about a library that plays every clip from the original.
+   */
+  function setupPending(overrides: Partial<SlideshowVideoProps> = {}) {
+    const props: SlideshowVideoProps = {
+      photo: clip({ hls: false }),
+      poster: '/api/v1/photos/v1/thumb/fit_1920',
+      playing: true,
+      intervalMs: INTERVAL_MS,
+      onEnded: vi.fn(),
+      className: 'slideshow__image',
+      ...overrides,
+    }
+    const utils = render(
+      <I18nextProvider i18n={i18n}>
+        <CapabilitiesContext.Provider
+          value={{ semantic_search: false, passkeys: false, video_streaming: true, known: true }}
+        >
+          <SlideshowVideo {...props} />
+        </CapabilitiesContext.Provider>
+      </I18nextProvider>,
+    )
+    return { ...utils, props }
+  }
+
+  it('shows the poster and says the clip is being processed, playing nothing', () => {
+    const { play } = stubPlayback()
+    const { container, getByText } = setupPending()
+
+    expect(container.querySelector('video')).toBeNull()
+    expect(container.querySelector('img')).toHaveAttribute(
+      'src',
+      '/api/v1/photos/v1/thumb/fit_1920',
+    )
+    expect(getByText('Video is being processed')).toBeInTheDocument()
+    expect(play).not.toHaveBeenCalled()
+  })
+
+  it('holds that poster for one ordinary photo interval, then advances', () => {
+    stubPlayback()
+    const { props } = setupPending()
+
+    tick(INTERVAL_MS - 1)
+    expect(props.onEnded).not.toHaveBeenCalled()
+    tick(1)
+    expect(props.onEnded).toHaveBeenCalledTimes(1)
+  })
+
+  it('plays a clip that already has its rendition as usual', () => {
+    const { play } = stubPlayback()
+    const { container } = setupPending({ photo: clip({ hls: true }) })
+
+    expect(container.querySelector('video')).not.toBeNull()
+    expect(play).toHaveBeenCalled()
   })
 })

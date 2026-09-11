@@ -1,8 +1,20 @@
 import { describe, expect, it } from 'vitest'
 
-import { type PhotoDetail, type PhotoProcessing, type ProcessingState } from '../services/photos'
+import {
+  type Photo,
+  type PhotoDetail,
+  type PhotoProcessing,
+  type ProcessingState,
+} from '../services/photos'
 
-import { encodeInProgress, shouldWatchEncode, videoEncode, videoFallback } from './videoEncode'
+import {
+  encodeInProgress,
+  shouldWatchEncode,
+  streamPending,
+  videoEncode,
+  videoFallback,
+  videoHold,
+} from './videoEncode'
 
 /** A detail of the given kind, with the streaming step in the given state. */
 function detail(
@@ -93,5 +105,62 @@ describe('videoFallback', () => {
     expect(videoFallback({ step: 'hls_transcode', state: 'done' })).toBe('unsupported')
     expect(videoFallback({ step: 'hls_transcode', state: 'skipped' })).toBe('unsupported')
     expect(videoFallback(null)).toBe('unsupported')
+  })
+})
+
+describe('videoHold', () => {
+  const row = (state: ProcessingState): PhotoProcessing => ({ step: 'hls_transcode', state })
+
+  it('holds a clip whose encode is owed, naming the stage it is at', () => {
+    expect(videoHold(false, row('queued'), true)).toBe('preparing')
+    expect(videoHold(false, row('pending'), true)).toBe('preparing')
+    expect(videoHold(false, row('running'), true)).toBe('preparingNow')
+    expect(videoHold(false, row('failed'), true)).toBe('preparationFailed')
+  })
+
+  it('plays a clip that already has a rendition, whatever the report says', () => {
+    expect(videoHold(true, row('queued'), true)).toBeNull()
+    expect(videoHold(true, row('running'), true)).toBeNull()
+    expect(videoHold(true, null, true)).toBeNull()
+  })
+
+  it('plays everything on an instance that does not stream at all', () => {
+    // Holding here would leave such a library unable to play a single clip.
+    expect(videoHold(false, row('queued'), false)).toBeNull()
+    expect(videoHold(false, row('running'), false)).toBeNull()
+    expect(videoHold(false, row('failed'), false)).toBeNull()
+  })
+
+  it('plays a clip whose report says nothing worth waiting for', () => {
+    expect(videoHold(false, row('skipped'), true)).toBeNull()
+    expect(videoHold(false, row('done'), true)).toBeNull()
+    // No report at all — an instance with no processing service, an older
+    // fixture: "cannot tell" is not "being prepared".
+    expect(videoHold(false, null, true)).toBeNull()
+  })
+})
+
+describe('streamPending', () => {
+  const row = (extra: Partial<Photo>): Photo => ({ uid: 'v1', ...extra }) as Photo
+
+  it('marks a video the server looked at and found no rendition for', () => {
+    expect(streamPending(row({ media_type: 'video', hls: false }), true)).toBe(true)
+  })
+
+  it('marks nothing once the rendition exists', () => {
+    expect(streamPending(row({ media_type: 'video', hls: true }), true)).toBe(false)
+  })
+
+  it('marks nothing when the payload does not say', () => {
+    expect(streamPending(row({ media_type: 'video' }), true)).toBe(false)
+  })
+
+  it('marks nothing on a still, which never streams', () => {
+    expect(streamPending(row({ media_type: 'image', hls: false }), true)).toBe(false)
+    expect(streamPending(row({ media_type: 'live', hls: false }), true)).toBe(false)
+  })
+
+  it('marks nothing when the instance does not stream at all', () => {
+    expect(streamPending(row({ media_type: 'video', hls: false }), false)).toBe(false)
   })
 })

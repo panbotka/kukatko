@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { I18nextProvider } from 'react-i18next'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { CapabilitiesContext } from '../../capabilities/CapabilitiesContext'
 import i18n from '../../i18n'
 import * as photosService from '../../services/photos'
 import { stubFullscreen, stubPlayableMedia } from '../../test/media'
@@ -722,7 +723,8 @@ describe('VideoPlayer', () => {
         encode: { step: 'hls_transcode', state: 'queued' },
       })
 
-      // The encode gates nothing: the original file is played exactly as before.
+      // No capabilities provider here, so the instance does not stream at all
+      // (see the hold below): the original file is played exactly as before.
       expect(video.getAttribute('src')).toContain('/photos/ph1/video')
       stubPlayableMedia(video)
       fireEvent.click(screen.getByRole('button', { name: 'Play' }))
@@ -745,5 +747,121 @@ describe('VideoPlayer', () => {
       renderPlayer('ph1', false, { encode: { step: 'hls_transcode', state: 'skipped' } })
       expect(screen.queryByText(/smoother version/i)).not.toBeInTheDocument()
     })
+  })
+})
+
+/**
+ * Renders the player on an instance that DOES encode streaming renditions,
+ * which is the whole premise of the hold: only there does "no rendition yet"
+ * mean "one is coming". Deliberately not the default helper above — every other
+ * test in this file is about an instance that plays clips from the original.
+ */
+function renderStreamingPlayer(extra: Partial<VideoPlayerProps> = {}) {
+  return render(
+    <I18nextProvider i18n={i18n}>
+      <CapabilitiesContext.Provider
+        value={{ semantic_search: false, passkeys: false, video_streaming: true, known: true }}
+      >
+        <VideoPlayer
+          uid="ph1"
+          title="Clip"
+          poster="/poster.jpg"
+          downloadHref="/api/v1/photos/ph1/download?original=true"
+          streaming={false}
+          {...extra}
+        />
+      </CapabilitiesContext.Provider>
+    </I18nextProvider>,
+  )
+}
+
+describe('VideoPlayer while the streaming rendition is still being made', () => {
+  beforeEach(async () => {
+    await i18n.changeLanguage('en')
+    fetchStoryboard.mockResolvedValue({ status: 'unavailable' })
+  })
+
+  it('offers the poster and the state of the encode instead of a player', () => {
+    const { container } = renderStreamingPlayer({
+      encode: { step: 'hls_transcode', state: 'queued' },
+    })
+
+    // Nothing is handed to the browser: no element, therefore no download of an
+    // original it would only refuse.
+    expect(container.querySelector('video')).toBeNull()
+    const poster = screen.getByRole('img', { name: 'Clip' })
+    expect(poster).toHaveAttribute('src', '/poster.jpg')
+    expect(
+      screen.getByText(
+        'This video is still being prepared for playback. Please come back in a few minutes.',
+      ),
+    ).toBeInTheDocument()
+    // The original stays one click away for whoever may fetch it.
+    expect(screen.getByRole('button', { name: 'Download the video' })).toHaveAttribute(
+      'href',
+      '/api/v1/photos/ph1/download?original=true',
+    )
+    // And none of the player's controls pretend the clip can be watched.
+    expect(screen.queryByRole('button', { name: 'Play' })).not.toBeInTheDocument()
+  })
+
+  it('says which stage the encode is at', () => {
+    const running = renderStreamingPlayer({ encode: { step: 'hls_transcode', state: 'running' } })
+    expect(
+      screen.getByText(
+        'This video is being prepared for playback right now. It will play in a moment.',
+      ),
+    ).toBeInTheDocument()
+    running.unmount()
+
+    renderStreamingPlayer({
+      encode: { step: 'hls_transcode', state: 'failed', error: 'ffmpeg exited with 1' },
+    })
+    expect(
+      screen.getByText('Preparing this video for playback did not finish.'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('ffmpeg exited with 1')).toBeInTheDocument()
+    expect(screen.getByText(/Processing section/i)).toBeInTheDocument()
+  })
+
+  it('plays a clip that has its rendition, and one whose report says nothing', () => {
+    const streamed = renderStreamingPlayer({
+      streaming: true,
+      encode: { step: 'hls_transcode', state: 'done' },
+    })
+    expect(streamed.container.querySelector('video')).not.toBeNull()
+    streamed.unmount()
+
+    const unreported = renderStreamingPlayer({ encode: null })
+    expect(unreported.container.querySelector('video')).not.toBeNull()
+  })
+
+  it('gives way to the player the moment the rendition lands, without a remount', () => {
+    // What the viewer's encode watch does to this component when its poll comes
+    // back with the encoded clip: the same element, new props, a player.
+    const { container, rerender } = renderStreamingPlayer({
+      encode: { step: 'hls_transcode', state: 'running' },
+    })
+    expect(container.querySelector('video')).toBeNull()
+
+    rerender(
+      <I18nextProvider i18n={i18n}>
+        <CapabilitiesContext.Provider
+          value={{ semantic_search: false, passkeys: false, video_streaming: true, known: true }}
+        >
+          <VideoPlayer
+            uid="ph1"
+            title="Clip"
+            poster="/poster.jpg"
+            downloadHref="/api/v1/photos/ph1/download?original=true"
+            streaming
+            encode={{ step: 'hls_transcode', state: 'done', at: '2026-09-11T10:00:00Z' }}
+          />
+        </CapabilitiesContext.Provider>
+      </I18nextProvider>,
+    )
+
+    expect(container.querySelector('video')).not.toBeNull()
+    expect(screen.queryByText(/being prepared/i)).not.toBeInTheDocument()
   })
 })

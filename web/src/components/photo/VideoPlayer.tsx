@@ -10,12 +10,18 @@ import Button from 'react-bootstrap/Button'
 import Dropdown from 'react-bootstrap/Dropdown'
 import { useTranslation } from 'react-i18next'
 
+import { useCapabilities } from '../../capabilities/CapabilitiesContext'
 import { useHlsPlayback } from '../../hooks/useHlsPlayback'
 import { useKeyboardShortcuts, type ShortcutMap } from '../../hooks/useKeyboardShortcuts'
 import { useStoryboard } from '../../hooks/useStoryboard'
 import { isTypingElement } from '../../lib/ratingHotkeys'
 import { shortcutToken } from '../../lib/shortcuts'
-import { encodeInProgress, videoFallback } from '../../lib/videoEncode'
+import {
+  encodeInProgress,
+  videoFallback,
+  videoHold,
+  type VideoFallback,
+} from '../../lib/videoEncode'
 import {
   ARROW_SECONDS,
   DEFAULT_PLAYBACK_RATE,
@@ -90,6 +96,53 @@ export interface VideoPlayerProps {
   onKeyboardScope?: (scope: VideoKeyboardScope) => void
 }
 
+/** Props for {@link VideoStandIn}. */
+interface VideoStandInProps {
+  /** Why the clip is not being played, and therefore what is said about it. */
+  fallback: VideoFallback
+  /** The encode row, read for the message of a failed preparation. */
+  encode: PhotoProcessing | null
+  /** Where the original file can be fetched, whatever the player cannot do. */
+  downloadHref: string
+}
+
+/**
+ * What is said in place of a clip that is not playing: the reason, the encoder's
+ * own error where there is one, and the download of the original — which stays
+ * offered in every one of these states, because the file itself is fine and the
+ * reader may well have a player that opens it.
+ *
+ * It is shared by the two ways a clip goes unplayed — never offered (the
+ * streaming rendition is still being made) and offered and refused (the browser
+ * cannot decode it) — so the same situation never reads two different ways.
+ */
+function VideoStandIn({ fallback, encode, downloadHref }: VideoStandInProps) {
+  const { t } = useTranslation()
+  return (
+    <>
+      <p className="mb-0 text-center">{t(`photo.video.${fallback}`)}</p>
+      {fallback === 'preparationFailed' && (
+        <>
+          {encode?.error !== undefined && encode.error !== '' && (
+            <p className="small text-center text-break mb-0">{encode.error}</p>
+          )}
+          <p className="small text-center mb-0">{t('photo.video.preparationFailedHint')}</p>
+        </>
+      )}
+      <Button
+        as="a"
+        href={downloadHref}
+        variant="light"
+        size="sm"
+        className="kk-video__download"
+        download
+      >
+        {t('photo.video.downloadInstead')}
+      </Button>
+    </>
+  )
+}
+
 /**
  * The video player on the photo detail page: an HTML5 `<video>` with Kukátko's
  * own control bar over it — play/pause, ±10 s skips, a scrubbable timeline with
@@ -139,12 +192,21 @@ export interface VideoPlayerProps {
  * footage at all: who is in a video is a plain list of people on the detail page
  * beside it, so there is nothing here to place over the picture.
  *
- * **When the browser cannot decode the codec** the player says what that means
- * *for this clip*, which the streaming encode's state decides: an encode still
- * queued or running makes it a wait ("being prepared for playback, come back in
- * a moment"), a failed one names the error and points at the Processing panel,
- * and only a clip nothing more will happen to keeps the old "cannot be played,
- * download it instead". The download link is offered in every one of those. The
+ * **A clip whose streaming version is still being made is not offered at all.**
+ * Its poster frame stands where the player would be, with the stage of the
+ * encode said over it — queued, running, or failed (which names the encoder's
+ * error and points at the Processing panel). This is the honest version of what
+ * the player used to do: hand the original to the browser, let it download and
+ * refuse the codec, and only then admit the clip was still being prepared. The
+ * decision is `videoHold`'s, and it holds nothing on an instance that does not
+ * encode at all — there every clip plays from the original as it always did.
+ * Nothing is lost by the hold: the download of the original is right there in
+ * it, and the viewer re-checks the encode on its own, so the player appears the
+ * moment the rendition lands.
+ *
+ * **When the browser cannot decode a clip it *was* offered** the same stand-in
+ * says so — "cannot be played, download it instead" for a clip nothing more
+ * will happen to. The download link is offered in every one of these states. The
  * same fact, while the clip *does* play progressively, is a single quiet line
  * under the control bar — a better version is coming, nothing to do about it.
  */
@@ -159,6 +221,11 @@ export function VideoPlayer({
   onKeyboardScope,
 }: VideoPlayerProps) {
   const { t } = useTranslation()
+  // Whether this instance encodes streaming renditions at all. It is what keeps
+  // the hold below honest: with the encode switched off no clip would ever stop
+  // being "in preparation", so such a library plays every clip from the original
+  // exactly as it did before streaming existed.
+  const { video_streaming: videoStreaming } = useCapabilities()
   const videoRef = useRef<HTMLVideoElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [failed, setFailed] = useState(false)
@@ -415,25 +482,45 @@ export function VideoPlayer({
   // is coarse and says a smoother version is coming.
   const preparing = !streaming && encodeInProgress(encode)
 
+  // The clip has no streaming rendition and the library is still making one:
+  // the player is not offered at all. What stands in its place is the poster
+  // frame — the picture the clip is — with the state of the encode said over it.
+  const hold = videoHold(streaming, encode, videoStreaming)
+
+  if (hold !== null) {
+    return (
+      <div className="kk-video kk-video--held">
+        {/* The poster is the whole picture here, so it carries the clip's name;
+            nothing about it is clickable, and the element is deliberately an
+            <img> rather than a source-less <video>: no byte of the original is
+            fetched for a clip that cannot yet be watched. */}
+        <img className="kk-video__media kk-video__still" src={poster} alt={title} />
+        <div className="kk-video__prepare" role="status">
+          <Icon
+            name={hold === 'preparationFailed' ? 'exclamation-triangle' : 'hourglass-split'}
+            className="kk-video__prepare-icon"
+            aria-hidden="true"
+          />
+          <VideoStandIn fallback={hold} encode={encode} downloadHref={downloadHref} />
+        </div>
+      </div>
+    )
+  }
+
   if (failed) {
-    // The browser will not play this clip. Whether that is a dead end or a wait
-    // is the encode's business, not the element's: a rendition still owed means
-    // this very clip becomes playable on its own in a few minutes.
-    const fallback = videoFallback(encode)
+    // The browser will not play a clip it was offered. Whether that is a dead
+    // end or a wait is the encode's business, not the element's: a rendition
+    // still owed means this very clip becomes playable on its own in a few
+    // minutes. (A clip whose encode is owed is normally held above and never
+    // reaches this; it is what an instance that does not stream at all, or a
+    // clip that was encoded and still will not decode, ends at.)
     return (
       <div className="d-flex flex-column align-items-center justify-content-center text-light p-4 gap-2">
-        <p className="mb-0 text-center">{t(`photo.video.${fallback}`)}</p>
-        {fallback === 'preparationFailed' && (
-          <>
-            {encode?.error !== undefined && encode.error !== '' && (
-              <p className="small text-center text-break mb-0">{encode.error}</p>
-            )}
-            <p className="small text-center mb-0">{t('photo.video.preparationFailedHint')}</p>
-          </>
-        )}
-        <Button as="a" href={downloadHref} variant="light" size="sm" download>
-          {t('photo.video.downloadInstead')}
-        </Button>
+        <VideoStandIn
+          fallback={videoFallback(encode)}
+          encode={encode}
+          downloadHref={downloadHref}
+        />
       </div>
     )
   }

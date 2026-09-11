@@ -4,11 +4,12 @@ import { useTranslation } from 'react-i18next'
 import { useCapabilities } from '../../capabilities/CapabilitiesContext'
 import { useThumbSrc } from '../../hooks/useThumbSrc'
 import { formatDuration } from '../../lib/format'
-import { isPlayableClip, isVideo } from '../../lib/mediaKind'
+import { isPlayableClip } from '../../lib/mediaKind'
 import { type PhotoHandoff } from '../../lib/photoHandoff'
 import { photoLabel } from '../../lib/photoTitle'
 import { formatTakenLabel } from '../../lib/takenDate'
 import { tileRenditionName, tileUsesPreviewURL } from '../../lib/tileRendition'
+import { streamPending } from '../../lib/videoEncode'
 import { type Photo, thumbUrl } from '../../services/photos'
 import { FadeInImage } from '../FadeInImage'
 import { Icon } from '../Icon'
@@ -147,11 +148,11 @@ export interface PhotoTileProps {
  * being prepared. It is one string rather than a labelled child because the
  * badge is exposed as a single image, whose descendants a screen reader ignores.
  */
-function clipBadgeLabel(photo: Photo, streamPending: boolean, t: TFunction): string {
+function clipBadgeLabel(photo: Photo, pending: boolean, t: TFunction): string {
   if (photo.media_type === 'live') {
     return t('library.tile.live')
   }
-  return streamPending ? t('library.tile.videoPreparing') : t('library.tile.video')
+  return pending ? t('library.tile.videoPreparing') : t('library.tile.video')
 }
 
 /**
@@ -182,13 +183,9 @@ export function PhotoTile({
 }: PhotoTileProps) {
   const { t, i18n } = useTranslation()
   const { video_streaming: videoStreaming } = useCapabilities()
-  // A clip whose streaming version has not been produced yet. `hls` is only ever
-  // `false` when the server actually looked and found no rendition — an absent
-  // one (an older payload, a still) says nothing and marks nothing — and the
-  // instance flag is what keeps this honest: with the encode switched off no clip
-  // will ever gain a rendition, so "still being prepared" would be a permanent
-  // lie rather than a passing state.
-  const streamPending = videoStreaming && isVideo(photo) && photo.hls === false
+  // A clip whose streaming version has not been produced yet — and therefore one
+  // the viewer will not play but show as being prepared (see `lib/videoEncode`).
+  const pending = streamPending(photo, videoStreaming)
   // The thumbnail address comes from the payload, not from the UID: only the
   // server can sign it. A signed URL expires, so a failed load gets one retry
   // with a freshly fetched one before the tile gives up.
@@ -246,18 +243,21 @@ export function PhotoTile({
           // accessible name anything inside it can have — an hourglass nested in
           // a role="img" would be announced by nobody. The pending state is
           // therefore said here, in words, rather than left to the glyph.
-          aria-label={clipBadgeLabel(photo, streamPending, t)}
+          aria-label={clipBadgeLabel(photo, pending, t)}
         >
-          <span aria-hidden="true">▶</span>
+          {/* The play mark says "this will play". A clip still waiting for its
+              streaming version will not — the viewer holds it and shows what is
+              being done to it — so the mark gives way to the hourglass rather
+              than standing beside it and promising something the tap cannot
+              deliver. The length stays either way: it is a fact about the clip,
+              not about whether it can be watched yet. */}
+          {pending ? (
+            <Icon name="hourglass-split" className="kk-tile__pending" />
+          ) : (
+            <span aria-hidden="true">▶</span>
+          )}
           {photo.duration_ms !== undefined && photo.duration_ms > 0 && (
             <span>{formatDuration(photo.duration_ms)}</span>
-          )}
-          {streamPending && (
-            // Quiet on purpose: one small glyph beside the play mark, in the
-            // badge's own muted foreground rather than a warning colour and
-            // never a second badge. The play affordance is untouched — the clip
-            // very likely plays already, straight from the original.
-            <Icon name="hourglass-split" className="kk-tile__pending" />
           )}
         </span>
       )}

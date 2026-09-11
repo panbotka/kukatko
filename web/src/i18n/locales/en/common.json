@@ -2508,6 +2508,7 @@
     "remaining": "{{remaining}} left",
     "loading": "Loading photos…",
     "video": "Video",
+    "videoPreparing": "Video is being processed",
     "empty": {
       "title": "No photos to play",
       "hint": "Adjust or clear the filters, or add some photos."

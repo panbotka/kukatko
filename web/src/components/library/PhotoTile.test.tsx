@@ -198,9 +198,10 @@ describe('PhotoTile streaming-pending mark', () => {
     renderTileWithStreaming(photo({ media_type: 'video', duration_ms: 154000, hls: false }), true)
 
     const badge = screen.getByRole('img', { name: pendingName })
-    // The play affordance and the duration stay: the clip very likely plays
-    // already, straight from the original, so this is information, not a block.
-    expect(badge).toHaveTextContent('▶')
+    // The hourglass takes the play mark's place rather than standing beside it:
+    // the viewer will not play this clip yet, so the tile must not promise it.
+    // The length stays — that is a fact about the clip, not about watching it.
+    expect(badge).not.toHaveTextContent('▶')
     expect(badge).toHaveTextContent('2:34')
     expect(badge.querySelector('.bi-hourglass-split')).not.toBeNull()
   })
@@ -209,6 +210,7 @@ describe('PhotoTile streaming-pending mark', () => {
     renderTileWithStreaming(photo({ media_type: 'video', duration_ms: 154000, hls: true }), true)
 
     const badge = screen.getByRole('img', { name: 'Video' })
+    expect(badge).toHaveTextContent('▶')
     expect(badge).toHaveTextContent('2:34')
     expect(badge.querySelector('.bi-hourglass-split')).toBeNull()
     expect(screen.queryByRole('img', { name: pendingName })).not.toBeInTheDocument()

@@ -2622,6 +2622,7 @@
     "remaining": "zbývá {{remaining}}",
     "loading": "Načítání fotek…",
     "video": "Video",
+    "videoPreparing": "Video se zpracovává",
     "empty": {
       "title": "Žádné fotky k promítání",
       "hint": "Uprav nebo zruš filtry, případně přidej fotky."

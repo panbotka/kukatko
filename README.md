@@ -226,7 +226,8 @@ the last mouse move, key or tap, taking the cursor with them, and come back the 
 (a tap on the picture is how you ask on a phone); a video in the show **plays** rather than sitting there
 as a frozen frame — muted, from the beginning, and the show moves on when the clip ends instead of when
 the photo interval does, with a clip that runs long (or that this browser cannot play at all) handed back
-to the show within seconds rather than stopping it · and a statistics page that answers what the library really
+to the show within seconds rather than stopping it, and a clip whose smooth version is still being made
+shown as a picture with a note rather than one that never starts · and a statistics page that answers what the library really
 looks like — photos per year across its whole span, arrivals per month, which cameras took most of
 it, what it costs in bytes, and how far along the processing is.
 
@@ -268,13 +269,16 @@ that it was imported.
   player picks that up on its own, letting the browser stream the playlist where it can and loading a
   demuxer only where it cannot. Each segment is authorised and signed as the player asks for it, so
   nothing that grants access to your library is ever written into a file the player keeps; videos
-  already in the library are caught up with the maintainer backfill. A clip whose encode is still in
-  the queue says so — "the video is still being prepared, come back in a moment" instead of a
-  dead-end "cannot be played", a quiet line under a clip that does play, and the player picks the
-  smooth version up on its own the moment it lands. **The grid says it too**: a video still waiting
-  for its smooth version carries a small hourglass beside the play mark on its tile, so you know
-  before you click. It never blocks anything — the clip usually plays already, straight from the
-  original — and on an instance that does not encode videos at all no tile is marked. A clip that
+  already in the library are caught up with the maintainer backfill. A clip whose encode is
+  still owed **is not handed to the browser at all**: in place of the player you get its poster
+  frame and a line saying where the work stands — waiting in the queue, being converted right now,
+  or a conversion that failed — instead of a browser that downloads a large file, refuses it and
+  only then admits the clip was still being prepared. Downloading the original is right there in
+  that message, and the player appears on its own, without reloading anything, the moment the
+  rendition lands. **The grid and the slideshow say the same**: a video still waiting for its smooth
+  version carries an hourglass instead of the play mark on its tile, and in a slideshow it is shown
+  as a picture with a note rather than a clip that will not start. On an instance that does not
+  encode videos at all nothing changes — every clip plays from the original as it always did. A clip that
   arrived while the library could not read its file — no length, no codec, and so no frame previews
   either — is no longer stuck that way: a maintainer re-reads those clips in one pass and the previews
   appear the next time one is played. Downloading still gives you the

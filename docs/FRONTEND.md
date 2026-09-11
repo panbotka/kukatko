@@ -858,13 +858,15 @@ here.
   (the group's member count at top right — an `images` icon + `stack_count`, `library.tile.stackCount`,
   only when `stack_count > 1`), a **play badge + duration** for a video/live photo (`▶` + `formatDuration`,
   **top right** — the date took the lower reading corner; a stack never meets a video)
-  which for a clip **whose streaming version is not ready yet** also carries a small `hourglass-split`
-  beside the play mark (`.kk-tile__pending` in `tokens.css`: a shade smaller, 75 % opaque, the badge's own
-  foreground — never a warning colour, and never a second badge). It is shown only when the row says
-  `hls === false` **and** the instance says `video_streaming` (`useCapabilities`): an absent `hls` is "nobody
-  asked", and with the encode switched off no clip would ever lose the mark. The play affordance is
-  untouched — the clip very likely plays already, progressively from the original, so this is information,
-  not a block. The badge is one `role="img"`, so the pending state is said **in its `aria-label`**
+  which for a clip **whose streaming version is not ready yet** shows a small `hourglass-split`
+  **in place of** the play mark (`.kk-tile__pending` in `tokens.css`: a shade smaller, 75 % opaque, the
+  badge's own foreground — never a warning colour, and never a second badge). The test is
+  `lib/videoEncode.streamPending`: the row says `hls === false` **and** the instance says `video_streaming`
+  (`useCapabilities`) — an absent `hls` is "nobody asked", and with the encode switched off no clip would
+  ever lose the mark. The play mark **gives way** rather than standing beside it (09/2026): the viewer no
+  longer plays such a clip but holds it and shows what is being done to it, so a tile promising playback
+  would be promising what the tap cannot deliver. The length stays either way — that is a fact about the
+  clip, not about watching it. The badge is one `role="img"`, so the pending state is said **in its `aria-label`**
   (`library.tile.videoPreparing`) rather than left to a glyph a reader would ignore; a still, a live photo
   and a clip that already streams read exactly as before. A placeholder with no
   layout shift — the photograph's **own** blurred stand-in while the thumbnail is on the way
@@ -3067,28 +3069,39 @@ here.
   **during** playback goes to the same "cannot play, download instead" state as an undecodable codec, and a
   non-fatal one is left to the library to recover from. The download link is always `photo.download_url`, the
   **original file** — a rendition is for watching, the file is what you keep.
-  **A clip whose streaming encode has not run yet says so** (prop `encode` = the `hls_transcode` row of
-  `PhotoDetail.processing`, `lib/videoEncode.videoEncode(photo)`, 09/2026): the encode **never gates
-  playback** — a browser-decodable original keeps playing progressively while it waits — but it decides what
-  the player puts in place of itself once the element *has* refused the media. `videoFallback(encode)` is
-  that decision in one pure function: `queued`/`pending` → `photo.video.preparing` („ještě se připravuje,
-  zkuste to za pár minut"), `running` → `photo.video.preparingNow`, `failed` →
-  `photo.video.preparationFailed` plus the job's own `error` and a pointer at the Zpracování panel (where a
-  maintainer already has **Spustit** for the step), and `done`/`skipped`/**no report at all** → the unchanged
-  `photo.video.unsupported` — an instance with streaming off, or a clip that was encoded and still cannot be
-  decoded, are the dead ends they always were. The download link is offered in every one of them. While the
-  clip *does* play and its encode is `queued`/`running` (`encodeInProgress`), the player adds **one quiet
-  line under the control bar** instead (`.kk-video__notice`, `photo.video.preparingHint`) — never a modal —
-  so the coarse seeking of a progressive file has an explanation and the reader knows a better version is
-  coming. **The wait ends by itself:** `hooks/useVideoEncodeWatch(uid | null)` re-fetches `GET /photos/{uid}`
+  **A clip whose streaming version is still being made is not offered to the browser at all** (prop `encode`
+  = the `hls_transcode` row of `PhotoDetail.processing`, `lib/videoEncode.videoEncode(photo)`; the hold is
+  `videoHold(streaming, encode, instanceStreaming)`, 09/2026): in place of the player stands the **poster
+  frame** (`.kk-video__still`, a plain `<img>` — so not one byte of the original is fetched) over a panel
+  (`.kk-video__prepare`) saying which stage the encode is at. It replaces the older behaviour, where the
+  original was handed to the element anyway, downloaded, refused by the browser, and only *then* explained —
+  the same fact was known before the first byte. Which message is `videoFallback(encode)`, one pure
+  function: `queued`/`pending` → `photo.video.preparing` („ještě se připravuje, zkuste to za pár minut"),
+  `running` → `photo.video.preparingNow`, `failed` → `photo.video.preparationFailed` plus the job's own
+  `error` and a pointer at the Zpracování panel (where a maintainer already has **Spustit** for the step).
+  **Three things unhold a clip**, each for its own reason: it already has a rendition; the instance does not
+  encode at all (the `video_streaming` capability — false as well while the flags have not been learned yet
+  — because holding there would leave such a library unable to play a single clip); or the report says
+  nothing worth waiting for (`done`, `skipped`, **no report at all**). Those play progressively exactly as
+  before, and if the browser then refuses the media they end at the same stand-in with the unchanged
+  `photo.video.unsupported`. The **download of the original** is offered in every one of these states — both
+  render `VideoStandIn`, so the same situation never reads two ways; its button is re-coloured by
+  `.kk-video__download` (near-black on near-white), because Superhero's own `.btn-light` is white on pale
+  grey — 1.9 : 1 — and this is the one control a clip that will not play has. While a clip *does* play and its encode
+  is `queued`/`running` (`encodeInProgress`), the player adds **one quiet line under the control bar**
+  (`.kk-video__notice`, `photo.video.preparingHint`) — never a modal — so the coarse seeking of a
+  progressive file has an explanation. **The wait ends by itself:** `hooks/useVideoEncodeWatch(uid | null)`
+  re-fetches `GET /photos/{uid}`
   every `ENCODE_POLL_INTERVAL_MS` (15 s) and reports the detail that first shows the encode settled;
-  `PhotoDetailPage` replaces the photo it holds with it, so the player swaps to the streaming source with no
+  `PhotoDetailPage` replaces the photo it holds with it, so the player appears with no
   reload and no button. What is watched is `shouldWatchEncode(photo)` — a video, without a rendition, whose
   encode is `queued`/`running` — so a still photo, an already encoded clip and an instance with streaming
   switched off generate **no request at all**; the watch also stops on any terminal state, on paging to
   another item, and while the tab is hidden (`visibilitychange`, resuming with an immediate poll). Tests:
   `lib/videoEncode.test.ts`, `hooks/useVideoEncodeWatch.test.tsx` (fake timers **with `shouldAdvanceTime`**,
-  or the async queries hang) and `VideoPlayer.test.tsx` „a streaming encode still owed".
+  or the async queries hang), `VideoPlayer.test.tsx` „a streaming encode still owed" + „while the streaming
+  rendition is still being made" (which pins the instance capability on — every other test in the file is an
+  instance that does not stream) and `PhotoDetailPage.test.tsx` „holds a clip … then plays it".
   **Keyboard (rewritten 09/2026):** the set everyone already knows from the big players — **Space**/`K`
   play/pause, **←/→** seek ∓5 s (`ARROW_SECONDS`), `J`/`L` ∓10 s (`SKIP_SECONDS`), **`0`–`9`** open the clip at
   that tenth of it (`tenthPosition`, `0` restarts), `M` mute, `F` fullscreen, `<`/`>` the speed, and **`,`/`.`**
@@ -4169,7 +4182,14 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   than the end of it), and a clip that cannot be played at all (a codec, a refused `play()`, a fatal streaming
   error) becomes its poster for **one ordinary photo interval**. A clip that finishes while the show is paused
   asks again on resume, so pausing into a finished clip cannot strand the show. The slide carries the tile's own
-  ▶ + duration badge (`.slideshow__badge`, outside the chrome so it does not fade) until playback starts)
+  ▶ + duration badge (`.slideshow__badge`, outside the chrome so it does not fade) until playback starts.
+  **A clip still being encoded is never played here either** (09/2026): where `lib/videoEncode.streamPending`
+  holds — the instance streams (`video_streaming`), the row says `hls: false` — the slide renders a plain
+  `<img>` of the poster instead of a `<video>` (state `pending`, decided once at mount; the stage keys a slide
+  by its photo), badges it `slideshow.videoPreparing` with the hourglass, never calls `play()`, and hands the
+  show on after **one ordinary photo interval** — the same answer the viewer gives, instead of a download the
+  browser will refuse and a slide that stares back until the 5 s grace runs out. Tests:
+  `SlideshowVideo.test.tsx` „while the streaming rendition is still being made")
   + `SlideshowCaption` (what the photo **is**, laid over the picture: title, capture date
   (`lib/takenDate` `formatTakenLabel`, so a coarse date reads „1974" and an estimate is marked) and
   description, each shown only when its toggle is on **and** the photo carries the value — an empty

@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { useCapabilities } from '../../capabilities/CapabilitiesContext'
 import { useHlsPlayback } from '../../hooks/useHlsPlayback'
 import { formatDuration } from '../../lib/format'
+import { streamPending } from '../../lib/videoEncode'
 import { type Photo } from '../../services/photos'
+import { Icon } from '../Icon'
 
 /**
  * How long one video slide may hold the show, however long the clip is.
@@ -29,12 +32,17 @@ export const MAX_VIDEO_SLIDE_MS = 30_000
 export const PLAYBACK_GRACE_MS = 5_000
 
 /**
- * Where a video slide is in its life: waiting for playback to begin, playing,
+ * Where a video slide is in its life: still being encoded (`pending` — never
+ * offered to the browser at all), waiting for playback to begin, playing,
  * finished (the clip ended or {@link MAX_VIDEO_SLIDE_MS} ran out), or unplayable
  * — which is not an error to report but a slide that reverts to being the
  * poster, held for as long as any photograph would be.
+ *
+ * `pending` and `failed` are deliberately two states and not one: they hold the
+ * slide for the same interval and look almost the same, but one says the library
+ * is still working on the clip and the other says this browser cannot play it.
  */
-type SlideState = 'starting' | 'playing' | 'over' | 'failed'
+type SlideState = 'pending' | 'starting' | 'playing' | 'over' | 'failed'
 
 /** Props for {@link SlideshowVideo}. */
 export interface SlideshowVideoProps {
@@ -105,6 +113,13 @@ function useBudgetedTimeout(active: boolean, budgetMs: number, onExpire: () => v
  * computed inside the listing query — so a slide of an encoded clip streams here
  * without the show ever fetching a detail payload.)
  *
+ * **A clip still being encoded is not played.** Where the instance streams and
+ * the row says this clip has no rendition yet, the slide is its poster from the
+ * start, badged as being prepared, and held for one ordinary photo interval —
+ * the same answer the viewer gives, rather than a browser left to download an
+ * original it cannot decode and a slide that stares back until the grace period
+ * runs out.
+ *
  * **Muted, always.** A slideshow that suddenly makes noise is worse than a silent
  * one, and a browser would refuse to autoplay it anyway. There is no sound
  * control here for the same reason there is no scrubber: it is not what this
@@ -131,8 +146,16 @@ export function SlideshowVideo({
   className,
 }: SlideshowVideoProps) {
   const { t } = useTranslation()
+  const { video_streaming: videoStreaming } = useCapabilities()
   const videoRef = useRef<HTMLVideoElement>(null)
-  const [state, setState] = useState<SlideState>('starting')
+  // A clip whose streaming version is still being made is not played here
+  // either: the show paints its poster for one ordinary interval and says what
+  // is happening to it, exactly as the viewer does. Decided once, at mount — the
+  // stage keys a slide by its photo, so this component never outlives its clip.
+  const [state, setState] = useState<SlideState>(
+    streamPending(photo, videoStreaming) ? 'pending' : 'starting',
+  )
+  const pending = state === 'pending'
 
   // A fatal streaming error is the same answer as a codec the browser refuses:
   // this clip is not going to play, so the slide becomes its poster.
@@ -154,7 +177,7 @@ export function SlideshowVideo({
   useBudgetedTimeout(playing && state === 'playing', MAX_VIDEO_SLIDE_MS, () => {
     setState('over')
   })
-  useBudgetedTimeout(playing && state === 'failed', intervalMs, () => {
+  useBudgetedTimeout(playing && (state === 'failed' || pending), intervalMs, () => {
     setState('over')
   })
 
@@ -166,12 +189,12 @@ export function SlideshowVideo({
     if (video === null) {
       return
     }
-    if (!playing || state === 'over' || state === 'failed') {
+    if (!playing || state === 'over' || state === 'failed' || pending) {
       video.pause()
       return
     }
     Promise.resolve(video.play()).catch(fail)
-  }, [playing, state, fail])
+  }, [playing, state, pending, fail])
 
   // Asking for the advance from an effect rather than from the `ended` handler
   // is what makes pausing safe: a clip that finishes and is then paused before
@@ -202,6 +225,26 @@ export function SlideshowVideo({
 
   const duration = photo.duration_ms ?? 0
   const started = state === 'playing' || state === 'over'
+
+  if (pending) {
+    // Not a source-less <video> but a plain picture: a clip with no streaming
+    // rendition is exactly as much a still as any photograph in the show, and
+    // this way not one byte of the original is fetched for it.
+    return (
+      <>
+        <img
+          className={className}
+          src={poster}
+          alt={photo.title || photo.file_name}
+          draggable={false}
+        />
+        <span className="slideshow__badge badge text-bg-dark opacity-75 d-inline-flex align-items-center gap-1">
+          <Icon name="hourglass-split" aria-hidden="true" />
+          <span>{t('slideshow.videoPreparing')}</span>
+        </span>
+      </>
+    )
+  }
 
   return (
     <>
