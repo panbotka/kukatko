@@ -5,8 +5,10 @@ import Table from 'react-bootstrap/Table'
 import { useTranslation } from 'react-i18next'
 
 import { formatCount, formatDateTime } from '../../lib/format'
+import { countToneAlerts, countToneClass, type CountTone } from '../../lib/jobStateTone'
 import { formatRelativeTime } from '../../lib/relativeTime'
 import type { VideoStatus } from '../../services/system'
+import { Icon } from '../Icon'
 
 /** One line of the table: what it counts, how many, and how it is presented. */
 interface VideoRow {
@@ -17,8 +19,12 @@ interface VideoRow {
   value: number
   /** True for the four states of an unencoded video, which are indented under it. */
   nested?: boolean
-  /** True when a non-zero value is work outstanding rather than good news. */
-  gap?: boolean
+  /**
+   * What the number counts, in the page's shared vocabulary — it is what the
+   * number is coloured by. Omitted for the three rows that are facts about the
+   * library rather than work in some state.
+   */
+  tone?: CountTone
 }
 
 /**
@@ -31,35 +37,57 @@ function rowsFor(video: VideoStatus): VideoRow[] {
   return [
     { key: 'videos', labelKey: 'system.video.videos', value: video.videos },
     { key: 'streamable', labelKey: 'system.video.streamable', value: video.streamable },
-    { key: 'missing', labelKey: 'system.video.missing', value: video.missing, gap: true },
+    // The backlog and the clips nobody has scheduled are both work waiting to
+    // happen, so they take the queue's own "waiting" tone rather than a second
+    // colour that would mean the same thing.
+    { key: 'missing', labelKey: 'system.video.missing', value: video.missing, tone: 'queued' },
     {
       key: 'running',
       labelKey: 'system.video.encodeRunning',
       value: video.encode_running,
       nested: true,
+      tone: 'running',
     },
     {
       key: 'queued',
       labelKey: 'system.video.encodeQueued',
       value: video.encode_queued,
       nested: true,
+      tone: 'queued',
     },
     {
       key: 'failed',
       labelKey: 'system.video.encodeFailed',
       value: video.encode_failed,
       nested: true,
-      gap: true,
+      tone: 'failed',
     },
     {
       key: 'not-scheduled',
       labelKey: 'system.video.notScheduled',
       value: video.not_scheduled,
       nested: true,
-      gap: true,
+      tone: 'queued',
     },
     { key: 'renditions', labelKey: 'system.video.renditions', value: video.renditions },
   ]
+}
+
+/**
+ * One count, coloured by what it counts — the page's shared rule, so a failed
+ * encode here reads exactly like a failed job in the queue table above. A
+ * failure that is actually there also carries a glyph, so the row never leans on
+ * colour alone to say something went wrong.
+ */
+function StateCell({ row, locale }: { row: VideoRow; locale: string }) {
+  const tone = row.tone ?? 'plain'
+  const tint = countToneClass(tone, row.value)
+  return (
+    <td className={`text-end${tint === '' ? '' : ` ${tint}`}`} data-testid={`video-${row.key}`}>
+      {countToneAlerts(tone, row.value) && <Icon name="exclamation-triangle" className="me-1" />}
+      {formatCount(row.value, locale)}
+    </td>
+  )
 }
 
 /**
@@ -134,14 +162,7 @@ export function VideoEncodingPanel({ video }: { video: VideoStatus }) {
                         >
                           {t(row.labelKey)}
                         </th>
-                        <td
-                          className={`text-end${
-                            row.gap === true && row.value > 0 ? ' text-warning fw-semibold' : ''
-                          }`}
-                          data-testid={`video-${row.key}`}
-                        >
-                          {formatCount(row.value, locale)}
-                        </td>
+                        <StateCell row={row} locale={locale} />
                       </tr>
                     ))}
                   </tbody>

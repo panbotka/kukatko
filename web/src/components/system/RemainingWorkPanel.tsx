@@ -1,6 +1,5 @@
 import { useTranslation } from 'react-i18next'
 
-import { formatCount } from '../../lib/format'
 import { LIBRARY_PATH } from '../../lib/libraryView'
 import { formatRelativeTime } from '../../lib/relativeTime'
 import type { DuplicateScan, RemainingWork, VideoStatus } from '../../services/system'
@@ -50,9 +49,9 @@ function duplicatesTile(scan: DuplicateScan, locale: string): StatTileSpec {
   return {
     key: 'duplicates',
     labelKey: 'system.remaining.duplicates',
-    value: formatCount(scan.groups, locale),
+    value: scan.groups,
     to: '/duplicates',
-    gap: true,
+    tone: 'queued',
     hintKey: 'system.remaining.duplicatesScanned',
     hintValues: {
       age: scan.computed_at === undefined ? '' : formatRelativeTime(scan.computed_at, locale),
@@ -72,47 +71,50 @@ function duplicatesTile(scan: DuplicateScan, locale: string): StatTileSpec {
  * counts.
  */
 function tilesFor(remaining: RemainingWork, video: VideoStatus, locale: string): StatTileSpec[] {
-  const count = (value: number) => formatCount(value, locale)
+  // Every tile in this section is a backlog: work waiting for somebody, which is
+  // the `queued` tone the job table paints its waiting column in. Zero is the
+  // good value here and the shared rule mutes it, which is exactly right — an
+  // emptied backlog should stop asking for attention.
   return [
     {
       key: 'faces-unassigned',
       labelKey: 'system.remaining.facesUnassigned',
-      value: count(remaining.faces_unassigned),
+      value: remaining.faces_unassigned,
       to: '/review',
-      gap: true,
+      tone: 'queued',
     },
     {
       key: 'clusters',
       labelKey: 'system.remaining.clusters',
-      value: count(remaining.clusters),
+      value: remaining.clusters,
       to: '/people/clusters',
-      gap: true,
+      tone: 'queued',
     },
     {
       key: 'without-taken-at',
       labelKey: 'system.remaining.withoutTakenAt',
-      value: count(remaining.photos_without_taken_at),
-      gap: true,
+      value: remaining.photos_without_taken_at,
+      tone: 'queued',
     },
     {
       key: 'without-gps',
       labelKey: 'system.remaining.withoutGps',
-      value: count(remaining.photos_without_gps),
+      value: remaining.photos_without_gps,
       to: NO_GPS_HREF,
-      gap: true,
+      tone: 'queued',
     },
     {
       key: 'without-place',
       labelKey: 'system.remaining.withoutPlace',
-      value: count(remaining.photos_without_place),
+      value: remaining.photos_without_place,
       to: MAINTENANCE_PATH,
-      gap: true,
+      tone: 'queued',
     },
     {
       key: 'without-ocr',
       labelKey: 'system.remaining.withoutOcr',
-      value: count(remaining.photos_without_ocr),
-      gap: true,
+      value: remaining.photos_without_ocr,
+      tone: 'queued',
     },
     // With streaming switched off no video is ever encoded, so "none of them has
     // a streaming version" is the instance working as configured and not work
@@ -123,18 +125,18 @@ function tilesFor(remaining: RemainingWork, video: VideoStatus, locale: string):
           {
             key: 'videos-without-streaming',
             labelKey: 'system.remaining.videosWithoutStreaming',
-            value: count(remaining.videos_without_streaming),
+            value: remaining.videos_without_streaming,
             to: VIDEOS_HREF,
-            gap: true,
+            tone: 'queued',
           } satisfies StatTileSpec,
         ]
       : []),
     {
       key: 'duplicate-markers',
       labelKey: 'system.remaining.duplicateMarkers',
-      value: count(remaining.duplicate_markers),
+      value: remaining.duplicate_markers,
       to: '/duplicate-markers',
-      gap: true,
+      tone: 'queued',
     },
     duplicatesTile(remaining.duplicates, locale),
   ]
@@ -142,8 +144,8 @@ function tilesFor(remaining: RemainingWork, video: VideoStatus, locale: string):
 
 /**
  * The dashboard's answer to "what is still to do?". Every number here is a
- * backlog, so zero is the good value and a non-zero one is highlighted: this is
- * the section an operator opens the page to shrink.
+ * backlog, so zero is the good value and a non-zero one is coloured as work
+ * waiting: this is the section an operator opens the page to shrink.
  */
 export function RemainingWorkPanel({
   remaining,

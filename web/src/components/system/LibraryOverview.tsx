@@ -26,44 +26,46 @@ function libraryQuery(query: string): string {
  * that selects exactly them, the collections to their catalogues. Faces and
  * embeddings have no listing of their own and stay static.
  */
-function tilesFor(library: LibrarySummary, locale: string): StatTileSpec[] {
-  const count = (value: number) => formatCount(value, locale)
+function tilesFor(library: LibrarySummary): StatTileSpec[] {
+  // Not one of these is a queue state: they are what the library *is*, so they
+  // take no colour at all and the eye is left for the sections that count work.
+  // A zero still recedes — the shared rule sees to that.
   return [
     {
       key: 'photos',
       labelKey: 'system.tiles.photos',
-      value: count(library.photos),
+      value: library.photos,
       to: LIBRARY_PATH,
     },
     {
       key: 'videos',
       labelKey: 'system.tiles.videos',
-      value: count(library.videos),
+      value: library.videos,
       to: libraryQuery('type:video'),
     },
     {
       key: 'trashed',
       labelKey: 'system.tiles.trashed',
-      value: count(library.trashed),
+      value: library.trashed,
       to: '/trash',
     },
     {
       key: 'hidden',
       labelKey: 'system.tiles.hidden',
-      value: count(library.hidden),
+      value: library.hidden,
       to: libraryQuery('hidden:yes'),
     },
     {
       key: 'private',
       labelKey: 'system.tiles.private',
-      value: count(library.private),
+      value: library.private,
       to: libraryQuery('private:yes'),
     },
-    { key: 'albums', labelKey: 'system.tiles.albums', value: count(library.albums), to: '/albums' },
-    { key: 'labels', labelKey: 'system.tiles.labels', value: count(library.labels), to: '/labels' },
-    { key: 'people', labelKey: 'system.tiles.people', value: count(library.people), to: '/people' },
-    { key: 'faces', labelKey: 'system.tiles.faces', value: count(library.faces) },
-    { key: 'embeddings', labelKey: 'system.tiles.embeddings', value: count(library.embeddings) },
+    { key: 'albums', labelKey: 'system.tiles.albums', value: library.albums, to: '/albums' },
+    { key: 'labels', labelKey: 'system.tiles.labels', value: library.labels, to: '/labels' },
+    { key: 'people', labelKey: 'system.tiles.people', value: library.people, to: '/people' },
+    { key: 'faces', labelKey: 'system.tiles.faces', value: library.faces },
+    { key: 'embeddings', labelKey: 'system.tiles.embeddings', value: library.embeddings },
   ]
 }
 
@@ -147,7 +149,7 @@ function CatalogueStorageCard({ library }: { library: LibrarySummary }) {
  * this section and the statistics page cannot drift apart.
  */
 export function LibraryOverview({ library }: { library: LibrarySummary }) {
-  const { t, i18n } = useTranslation()
+  const { t } = useTranslation()
   return (
     <section className="mb-4" aria-labelledby="system-library-title">
       <h2 id="system-library-title" className="kk-section-title mb-1">
@@ -157,7 +159,7 @@ export function LibraryOverview({ library }: { library: LibrarySummary }) {
         {t('system.dashboard.libraryIntro')}{' '}
         <Link to="/stats">{t('system.dashboard.libraryStatsLink')}</Link>
       </p>
-      <StatTileGrid tiles={tilesFor(library, i18n.language)} />
+      <StatTileGrid tiles={tilesFor(library)} />
       <Row className="g-3 mt-0" xs={1} md={2}>
         <Col>
           <UploadsCard library={library} />

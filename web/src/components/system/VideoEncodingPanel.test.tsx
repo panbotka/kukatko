@@ -56,11 +56,28 @@ describe('VideoEncodingPanel', () => {
     )
   })
 
-  it('highlights the backlog rows only while they are non-zero', () => {
-    const { unmount } = renderPanel(video())
-    expect(screen.getByTestId('video-not-scheduled')).toHaveClass('text-warning')
-    unmount()
+  it('colours each row by what it counts, on the page’s shared scale', () => {
+    renderPanel(video())
 
+    // Waiting work — the backlog itself and the clips nobody scheduled.
+    expect(screen.getByTestId('video-missing')).toHaveClass('kk-count--queued')
+    expect(screen.getByTestId('video-queued')).toHaveClass('kk-count--queued')
+    expect(screen.getByTestId('video-not-scheduled')).toHaveClass('kk-count--queued')
+    // Work in flight, and visibly so.
+    expect(screen.getByTestId('video-running')).toHaveClass('kk-count--running')
+    expect(screen.getByTestId('video-running')).toHaveClass('kk-count--running')
+    // A failure is danger, and never says so with colour alone.
+    const failed = screen.getByTestId('video-failed')
+    expect(failed).toHaveClass('kk-count--failed')
+    expect(failed.querySelector('.bi-exclamation-triangle')).not.toBeNull()
+    // A plain fact about the library takes no colour at all.
+    for (const key of ['video-videos', 'video-streamable', 'video-renditions']) {
+      const cell = screen.getByTestId(key)
+      expect(cell.className).toBe('text-end')
+    }
+  })
+
+  it('leaves every zero muted and uncoloured, warning glyph included', () => {
     renderPanel(
       video({
         missing: 0,
@@ -72,8 +89,18 @@ describe('VideoEncodingPanel', () => {
         oldest_queued_at: undefined,
       }),
     )
-    expect(screen.getByTestId('video-missing')).not.toHaveClass('text-warning')
-    expect(screen.getByTestId('video-not-scheduled')).not.toHaveClass('text-warning')
+
+    for (const key of ['video-missing', 'video-queued', 'video-running', 'video-not-scheduled']) {
+      const cell = screen.getByTestId(key)
+      expect(cell).toHaveClass('text-secondary')
+      expect(cell.className).not.toMatch(/kk-count--(queued|running|failed)/)
+      expect(cell).not.toHaveClass('kk-count--running')
+    }
+    // Nothing failed, so no danger and no glyph.
+    const failed = screen.getByTestId('video-failed')
+    expect(failed).toHaveClass('text-secondary')
+    expect(failed).not.toHaveClass('kk-count--failed')
+    expect(failed.querySelector('.bi-exclamation-triangle')).toBeNull()
     // Nothing is queued, so there is no wait to report.
     expect(screen.queryByTestId('video-oldest-wait')).not.toBeInTheDocument()
   })

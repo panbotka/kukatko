@@ -325,12 +325,35 @@ here.
   recognition service's URL, mapy.com's raw detail) and `JobQueuePanel` (the raw job-type ids).
   Tests: `TechnicalDetail.test.tsx`),
   `components/system/` = **the admin dashboard's four sections**, all rendered from the single
-  `GET /system/status` snapshot the page already polls (no second fetch, no arithmetic of their own):
+  `GET /system/status` snapshot the page already polls (no second fetch, no arithmetic of their own).
+  All four colour their numbers by **one shared rule**, `lib/jobStateTone`: `toneForJobState` maps the
+  backend's lifecycle states onto five meanings — `queued`/`running`/`failed`/`done`/`plain`, with **`dead`
+  folded into `failed`** (to a reader they are the same bad news; only the row's requeue button tells them
+  apart) — `countToneClass(tone, value)` returns the classes and `countToneAlerts` says whether the number
+  also earns a glyph. **A zero is always muted (`text-secondary`) and never coloured**, whatever it counts:
+  the whole point of the scale is that the eye falls on the non-zero values. So is `done`, which is history
+  that only grows and must not compete with the states somebody can act on. The three live states take
+  the classes `.kk-count--queued/--running/--failed` (`tokens.css`), and this is where the page turns out to
+  be **two surfaces, not one**: a table cell paints on the near-black page tone, while a tile's 30 px
+  `.kk-display` number paints on the `.card` fill — which Superhero bakes as a mid slate (**#4e5d6c**) inside
+  the `.card` rule itself, out of reach of the `--bs-card-bg` re-pin in `tokens.css`. The dark-theme
+  text-emphasis colours that measure **11.98 / 7.93 / 8.27:1** on a cell (AA for its 14 px text) collapse to
+  **4.36 / 2.89 / 3.01:1** on that slate; at 30 px/600 the bar is WCAG's large-text 3:1, so `running` misses
+  it and `failed` clears it by nothing. Hence a **second rendition** for `.kk-display`: the same hue mixed
+  toward `--kk-text` until it clears 3:1 with room (**3.81 / 3.77 / 3.52:1**), no new colour literals — only
+  the amount of white under them changes. `styles/countTones.test.ts` computes all of it from the stylesheets
+  and fails if a re-pinned token takes any of it below the bar. Colour is never the only carrier: every
+  state is named in words in its column header or row label (and again in `JobStateLegend`), and a
+  **non-zero failure carries an `exclamation-triangle`** beside the number. It replaced two unrelated rules
+  standing side by side — `dead` was `text-warning` in the queue table, a backlog `text-warning` in a tile,
+  and a `failed` count was not coloured at all. The sections:
   `StatTile`/`StatTileGrid` (**the dashboard's number tile** — a big `kk-display` value over its label, 2 per
   row on a phone up to 5 on a wide screen; a tile that has a view behind it makes the **whole card** the click
   target (`stretched-link` over the label, so the accessible name is the label and not "16 585") and a tile
-  with nowhere to go stays plain text rather than offering a link that lands somewhere unrelated; a `gap` tile
-  is `text-warning` **only while non-zero**, because a cleared backlog is the goal, not a warning),
+  with nowhere to go stays plain text rather than offering a link that lands somewhere unrelated. `value` is
+  a **number or a string**: a number is formatted by the tile itself (`formatCount`, active language) and is
+  what `tone` is applied to; a string is a value that is not a count at all — the duplicates tile's „—" while
+  the scan has no answer yet — and is always shown muted),
   `LibraryOverview` (**what is in the library**: ten tiles — fotky, z toho videa, v koši, skryté, soukromé,
   alba, štítky, osoby, obličeje, fotek k hledání podle obsahu, the first five linking to `/`, `/?q=type%3Avideo`, `/trash`,
   `/?q=hidden%3Ayes`, `/?q=private%3Ayes` — plus two cards: **Nedávno nahráno** (24 h / 7 / 30 / 365 days,
@@ -347,7 +370,9 @@ here.
   duplicitní značky →
   `/duplicate-markers`, skupiny duplicit → `/duplicates`; the duplicates tile is the only one that renders
   **`—` plus "hledá se na pozadí…"** until the backend's background scan has an answer, and "zjištěno <age>"
-  once it has — an unavailable scan must not read as "no duplicates"),
+  once it has — an unavailable scan must not read as "no duplicates". Every tile here is `tone: 'queued'`:
+  a backlog is work waiting for somebody, so it reads as the queue's waiting column does and a cleared one
+  goes quiet, which is the goal rather than a warning),
   `JobQueuePanel` (**the queue by type × state**: one row per job type with queued/running/failed/dead/done
   columns and its lifetime "celkem kdy" total, rows ordered dead-letter first then busiest then by name so the
   order is stable between two polls; a row with a dead letter carries its **own requeue button**, and the
@@ -356,13 +381,17 @@ here.
   it was a one-off re-embedding. An empty queue renders a sentence, not an empty table. **Every row is named
   in words** — `system.jobs.types.*`, „Hledání obličejů" rather than `face_detect`, falling back to the raw id
   for a type shipped before its translation — and the ids those names stand for are listed once, under the
-  table, behind a `TechnicalDetail`, for whoever has to match a row to a log line),
+  table, behind a `TechnicalDetail`, for whoever has to match a row to a log line. Each cell is a `StateCell`
+  taking its colour from the column it sits in, so `failed` and `dead` are both danger + glyph where `dead`
+  alone used to be amber, and the lifetime column takes the `done` tone the column beside it does),
   `VideoEncodingPanel` (**how far the video streaming encode has got**, from `status.video`: a `Card` with the
   same small `Table` idiom as the queue above it, counting **videos** — videí v knihovně, připraveno ke
   streamování, bez plynulé verze, and indented under that last one the four disjoint states that sum back up
   to it (právě se převádí / čeká ve frontě / selhalo nebo se vzdalo / nikdo nenaplánoval), then připravených
-  kvalit celkem. The two backlog rows (bez plynulé verze, nikdo nenaplánoval) go `text-warning` only while
-  non-zero, exactly like a `StatTile` gap. Below the table: how long the oldest queued encode has waited
+  kvalit celkem. Each row carries the `tone` its number means — the backlog and the unscheduled clips are
+  both `queued` (work waiting), the encode in flight is `running` and pulses, a failure is `failed` + glyph,
+  and the three plain facts about the library (videí, připraveno, kvalit) take no colour at all. Below the
+  table: how long the oldest queued encode has waited
   (`formatRelativeTime`, the exact stamp in the `title`) — a queue that has stopped moving looks like a busy
   one if only the depth is shown — and a caption saying why no byte size is given (segment sizes are recorded
   nowhere). It exists because the queue's `hls_transcode` row counts *jobs* and keeps the finished ones, so it
@@ -6303,11 +6332,15 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   has two shared classes: **`.kk-media-img`** (a fade + a `scale(0.98)` settle after decoding; it shares the
   `transform` transition with the library wall's hover zoom, which has a higher specificity) and **`.kk-skeleton`**
   (a shimmer gloss travelling across a warm surface-1 block, the period `--kk-duration-skeleton` = 1400 ms,
-  `linear infinite`). **The focus outline is never removed** —
+  `linear infinite`). A third repeating one is **`.kk-count--running`** (the breath on a `/system` number that
+  counts work in progress, the period `--kk-duration-pulse` = 2200 ms): its trough is a deliberately shallow
+  `opacity: 0.85`, because the number under it has to stay legible at both ends of the cycle — at the bottom
+  of the breath it still measures 6.4:1 on a table cell and 3.4:1 on a tile. **The focus outline is never removed** —
   `.kk-tile:focus-visible`/`.kk-tile__media:focus-visible` draw an `outline` (it survives the preview's `overflow:
   hidden`). **`prefers-reduced-motion`**: the token durations drop to `1ms`, so the lift
-  (`transform`), `.kk-appear` and the `.kk-media-img` fade become instant; the skeleton shimmer
-  (`--kk-duration-skeleton` doesn't belong in that collapse) is instead switched off directly and stays a static block;
+  (`transform`), `.kk-appear` and the `.kk-media-img` fade become instant; the two heartbeats
+  (`--kk-duration-skeleton`/`--kk-duration-pulse` don't belong in that collapse) are instead switched off
+  directly — the skeleton stays a static block and the running count a static number;
   spinners and progress bars keep animating, because they carry meaning),
   `styles/app.css` (**a global responsive polish layer** imported in `main.tsx` right after
   `tokens.css` — only cross-cutting mobile/touch things that Bootstrap utilities can't do: **safe-area

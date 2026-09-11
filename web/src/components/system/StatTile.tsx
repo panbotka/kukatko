@@ -5,6 +5,10 @@ import Row from 'react-bootstrap/Row'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
+import { formatCount } from '../../lib/format'
+import { countToneAlerts, countToneClass, type CountTone } from '../../lib/jobStateTone'
+import { Icon } from '../Icon'
+
 /**
  * One number on the admin dashboard: what it is, what it says, and — when there
  * is a screen that shows exactly the photos it counted — where clicking it goes.
@@ -21,8 +25,14 @@ export interface StatTileSpec {
   key: string
   /** i18n key of the label under the number. */
   labelKey: ParseKeys
-  /** The number, already formatted for the active language. */
-  value: string
+  /**
+   * What the tile says. A number is formatted for the active language by the
+   * tile itself and is what its colour is decided from; a string is a value that
+   * is not a count at all — the duplicates tile's „—" while the background scan
+   * has no answer yet — and is always shown muted, since it is not a figure the
+   * eye should be drawn to.
+   */
+  value: number | string
   /** Where the tile leads; omitted when no view matches this number. */
   to?: string
   /**
@@ -34,10 +44,13 @@ export interface StatTileSpec {
   /** Interpolation values for `hintKey`. */
   hintValues?: Record<string, string>
   /**
-   * True when the number is a backlog worth acting on. It is highlighted only
-   * while non-zero — a done backlog is not a warning, it is the goal.
+   * What the number counts, in the page's shared vocabulary — it is what the
+   * number is coloured by. A backlog is `queued`: work waiting for somebody.
+   * Omitted for a plain fact about the library, which stays in the body colour.
+   * Whatever the tone, a zero is never coloured — a cleared backlog is not a
+   * warning, it is the goal.
    */
-  gap?: boolean
+  tone?: CountTone
 }
 
 /**
@@ -47,18 +60,22 @@ export interface StatTileSpec {
  * screen-reader user nothing.
  */
 function StatTile({ tile }: { tile: StatTileSpec }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const label = t(tile.labelKey)
-  const highlight = tile.gap === true && tile.value !== '0'
+  // A tile with no number of its own counts as zero: muted, uncoloured.
+  const count = typeof tile.value === 'number' ? tile.value : 0
+  const tone = tile.tone ?? 'plain'
+  const tint = countToneClass(tone, count)
   return (
     <Col>
       <Card className="h-100">
         <Card.Body className="position-relative py-3">
           <div
-            className={`kk-display${highlight ? ' text-warning' : ''}`}
+            className={`kk-display${tint === '' ? '' : ` ${tint}`}`}
             data-testid={`tile-${tile.key}`}
           >
-            {tile.value}
+            {countToneAlerts(tone, count) && <Icon name="exclamation-triangle" className="me-2" />}
+            {typeof tile.value === 'number' ? formatCount(tile.value, i18n.language) : tile.value}
           </div>
           <div className="text-secondary kk-text-caption">
             {tile.to === undefined ? (

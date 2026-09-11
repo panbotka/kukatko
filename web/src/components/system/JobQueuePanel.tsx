@@ -6,7 +6,9 @@ import Table from 'react-bootstrap/Table'
 import { useTranslation } from 'react-i18next'
 
 import { formatCount } from '../../lib/format'
+import { countToneAlerts, countToneClass, toneForJobState } from '../../lib/jobStateTone'
 import type { JobsStatus } from '../../services/system'
+import { Icon } from '../Icon'
 import { JobStateLegend, type JobStateKey } from '../JobStateLegend'
 import { TechnicalDetail } from '../TechnicalDetail'
 
@@ -92,6 +94,35 @@ function rowsFor(jobs: JobsStatus): TypeRow[] {
   return rows
 }
 
+/**
+ * One count in the breakdown, coloured by the state whose column it sits in.
+ *
+ * The rule is the page's shared one ({@link countToneClass}), so the same state
+ * never reads one way here and another in the video section below. A non-zero
+ * failure also carries a glyph: the colour is a second signal on top of the
+ * column header, never the only one.
+ */
+function StateCell({
+  state,
+  value,
+  testId,
+  locale,
+}: {
+  state: string
+  value: number
+  testId: string
+  locale: string
+}) {
+  const tone = toneForJobState(state)
+  const tint = countToneClass(tone, value)
+  return (
+    <td className={`text-end${tint === '' ? '' : ` ${tint}`}`} data-testid={testId}>
+      {countToneAlerts(tone, value) && <Icon name="exclamation-triangle" className="me-1" />}
+      {formatCount(value, locale)}
+    </td>
+  )
+}
+
 /** Props for {@link JobQueuePanel}. */
 interface JobQueuePanelProps {
   /** The queue section of the status snapshot. */
@@ -157,17 +188,19 @@ export function JobQueuePanel({ jobs, onRequeue, requeuing }: JobQueuePanelProps
                         {typeLabel(row.type, t)}
                       </th>
                       {STATE_COLUMNS.map((state) => (
-                        <td
+                        <StateCell
                           key={state}
-                          className={`text-end${
-                            state === 'dead' && row.dead > 0 ? ' text-warning fw-semibold' : ''
-                          }`}
-                          data-testid={`job-${row.type}-${state}`}
-                        >
-                          {formatCount(row.counts[state] ?? 0, locale)}
-                        </td>
+                          state={state}
+                          value={row.counts[state] ?? 0}
+                          testId={`job-${row.type}-${state}`}
+                          locale={locale}
+                        />
                       ))}
-                      <td className="text-end text-secondary">{formatCount(row.total, locale)}</td>
+                      {/* The lifetime tally is finished work by definition, so it
+                          takes the `done` tone the column beside it does. */}
+                      <td className={`text-end ${countToneClass('done', row.total)}`}>
+                        {formatCount(row.total, locale)}
+                      </td>
                       <td className="text-end">
                         {row.dead > 0 && (
                           <Button
