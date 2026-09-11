@@ -329,11 +329,17 @@ describe('usePhotoShare', () => {
     act(() => {
       result.current.share()
     })
+    // Emptiness is the backend's answer, so the hook cannot know it before asking:
+    // the tap does leave `idle` for `manifest`, and only the reply settles it back.
+    // Waiting for the settled state rather than for the question having been asked
+    // is what keeps this from reading a snapshot mid-transition.
+    expect(result.current.status.kind).toBe('manifest')
     await waitFor(() => {
-      expect(fetchShareManifest).toHaveBeenCalled()
+      expect(result.current.status.kind).toBe('idle')
     })
+
+    expect(fetchShareManifest).toHaveBeenCalled()
     expect(share).not.toHaveBeenCalled()
-    expect(result.current.status.kind).toBe('idle')
     expect(result.current.error).toBeNull()
   })
 })
