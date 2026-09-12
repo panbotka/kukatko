@@ -1249,11 +1249,16 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   "members":[{…relative,"depth":1,"partner":false}],"families":[{…family,"child_uids":["su_…"]}]}`.
   `direction` defaults to `descendants` — "the Nečas family" means the descendants of a chosen root plus
   their partners (a `partner:true` member is in the set by marriage, carrying the depth of the descendant
-  they married); `ancestors` is the binary pedigree. `generations` bounds the walk and defaults to the whole
-  bounded one (the store clamps it to `family.MaxDepth` = 20, so asking for a thousand yields the deepest
-  walk there is rather than an error). An unrecognised `direction` or a negative/non-numeric `generations`
-  is 400; an unknown subject 404. `families` lists only the child edges whose person is also in `members`,
-  so the renderer is never handed an edge to a node it was not given.
+  they married); `ancestors` is the binary pedigree: nobody is in it by marriage (both sides of every
+  family are already in the set, so no member carries `partner:true`), and a person's parents are read off
+  `families` as *the family whose `child_uids` contains them* — the database keeps a person a child in at most
+  one family, which is what makes that a lookup rather than a search. `generations` bounds the walk and defaults
+  to the whole bounded one (the store clamps it to `family.MaxDepth` = 20, so asking for a thousand yields the
+  deepest walk there is rather than an error); it is the parameter a pedigree needs and a descendant walk does
+  not, since the latter is bounded by the family it finds. The tree page sends it only for `ancestors`, where it
+  is `generations=` in the address and 3 by default. An unrecognised `direction` or a negative/non-numeric
+  `generations` is 400; an unknown subject 404. `families` lists only the child edges whose person is also in
+  `members`, so the renderer is never handed an edge to a node it was not given.
   `PATCH /families/{uid}` (RequireWrite) → edits the family row itself, as opposed to who is in it:
   `{"kind":"marriage","from_year":1948,"to_year":null,"note":"oddáni v Křtinách"}` → the refreshed family.
   Like the subject body it **rewrites the whole editable set**, so an omitted year clears a stored one, and

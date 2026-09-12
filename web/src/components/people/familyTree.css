@@ -83,10 +83,15 @@
   stroke-width: 2;
 }
 
-/* Somebody already drawn in an earlier box — the partner two marriages share.
-   Dashed, so the repeat reads as a cross-reference and not as a second person
-   of the same name, which in this library is a real possibility. */
+/* Somebody already drawn elsewhere in the same drawing — the partner two
+   marriages share, or the ancestor a cousin marriage puts on both sides of a
+   pedigree. Dashed, so the repeat reads as a cross-reference and not as a
+   second person of the same name, which in this library is a real possibility;
+   and dashed in the muted *text* colour rather than in the border's, because
+   measured against the theme the border is rgb(66,59,49) on rgb(42,37,30) and
+   the dashes were invisible — a mark nobody can see marks nothing. */
 .kk-tree-person__plate--repeat {
+  stroke: var(--kk-text-muted);
   stroke-dasharray: 4 3;
 }
 
@@ -189,4 +194,66 @@
   font-size: 12px;
   text-anchor: middle;
   dominant-baseline: central;
+}
+
+/* ---- An ancestor nobody has recorded ----------------------------------- */
+
+/*
+ * The empty slot of a pedigree. It is drawn dashed and in muted colours so it
+ * reads as a *place* rather than as a person — but it is drawn, and at full
+ * size, because a gap the reader can see is the only kind that ever gets
+ * filled in.
+ */
+.kk-tree-gap__plate {
+  fill: none;
+  stroke: var(--kk-surface-border);
+  stroke-width: 1;
+  stroke-dasharray: 5 4;
+}
+
+.kk-tree-gap__ring {
+  fill: none;
+  stroke: var(--kk-surface-border);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+
+.kk-tree-gap__sign {
+  fill: var(--kk-text-muted);
+  font-size: 17px;
+  font-weight: 600;
+  text-anchor: middle;
+  dominant-baseline: central;
+  user-select: none;
+}
+
+.kk-tree-gap__label {
+  fill: var(--kk-text-muted);
+  font-size: 12px;
+  dominant-baseline: middle;
+  user-select: none;
+}
+
+/* Under canWrite the gap is the invitation, so it answers to the pointer the
+   way a person's card does: the whole slot is one button into the dialog that
+   fills it. */
+.kk-tree-gap--addable {
+  cursor: pointer;
+}
+
+.kk-tree-gap--addable:hover .kk-tree-gap__plate,
+.kk-tree-gap--addable:focus-visible .kk-tree-gap__plate {
+  fill: var(--kk-surface-overlay);
+  stroke: var(--kk-accent);
+}
+
+.kk-tree-gap--addable:hover .kk-tree-gap__sign,
+.kk-tree-gap--addable:focus-visible .kk-tree-gap__sign,
+.kk-tree-gap--addable:hover .kk-tree-gap__label,
+.kk-tree-gap--addable:focus-visible .kk-tree-gap__label {
+  fill: var(--kk-text);
+}
+
+.kk-tree-gap--addable:focus-visible {
+  outline: none;
 }

@@ -5,11 +5,16 @@ import {
   COUPLE_GAP,
   edgePath,
   emptyLayout,
+  emptyPedigree,
   type FamilyLayout,
   type LayoutFamily,
   type LayoutNode,
+  layoutAncestors,
   layoutDescendants,
+  LEVEL_GAP,
   NODE_HEIGHT,
+  type Pedigree,
+  type PedigreeSlot,
   PERSON_WIDTH,
   SIBLING_GAP,
   TREE_PADDING,
@@ -252,5 +257,217 @@ describe('edgePath', () => {
     expect(edgePath({ parentId: 'p', childId: 'c', x1: 100, y1: 60, x2: 40, y2: 120 })).toBe(
       'M 100 60 V 90 H 40 V 120',
     )
+  })
+})
+
+/**
+ * A four-generation pedigree of the kind the page is drawn for: Jan, his
+ * parents, all four grandparents and all eight great-grandparents.
+ *
+ * The uids spell out where everybody stands — `p` for the paternal side, `m` for
+ * the maternal one — because a pedigree test that has to be decoded is a test
+ * nobody will keep.
+ */
+function fullPedigree(): LayoutFamily[] {
+  return [
+    family('f_jan', ['pa', 'ma'], ['jan']),
+    family('f_pa', ['pp', 'pm'], ['pa']),
+    family('f_ma', ['mp', 'mm'], ['ma']),
+    family('f_pp', ['ppp', 'ppm'], ['pp']),
+    family('f_pm', ['pmp', 'pmm'], ['pm']),
+    family('f_mp', ['mpp', 'mpm'], ['mp']),
+    family('f_mm', ['mmp', 'mmm'], ['mm']),
+  ]
+}
+
+/** The slot of a given id, failing the test rather than returning undefined. */
+function slot(pedigree: Pedigree, id: string): PedigreeSlot {
+  const found = pedigree.slots.find((candidate) => candidate.id === id)
+  if (found === undefined) {
+    throw new Error(`the pedigree has no slot ${id}`)
+  }
+  return found
+}
+
+/** The slot standing for a given person, of which there may be several. */
+function slotsOf(pedigree: Pedigree, personUid: string): PedigreeSlot[] {
+  return pedigree.slots.filter((candidate) => candidate.personUid === personUid)
+}
+
+/** Asserts that no two slots of one generation overlap or touch. */
+function expectRowsClear(pedigree: Pedigree): void {
+  const byGeneration = new Map<number, PedigreeSlot[]>()
+  for (const place of pedigree.slots) {
+    byGeneration.set(place.generation, [...(byGeneration.get(place.generation) ?? []), place])
+  }
+  for (const row of byGeneration.values()) {
+    const ordered = [...row].sort((a, b) => a.x - b.x)
+    for (let i = 1; i < ordered.length; i += 1) {
+      const gap = ordered[i].x - (ordered[i - 1].x + ordered[i - 1].width)
+      expect(gap, `gap between ${ordered[i - 1].id} and ${ordered[i].id}`).toBeGreaterThanOrEqual(
+        -0.001,
+      )
+    }
+  }
+}
+
+describe('layoutAncestors', () => {
+  it('draws a full four-generation pedigree, oldest row on top', () => {
+    const pedigree = layoutAncestors({ rootUid: 'jan', families: fullPedigree(), generations: 3 })
+
+    // 1 + 2 + 4 + 8: a pedigree is bounded by construction.
+    expect(pedigree.slots).toHaveLength(15)
+    expect(pedigree.slots.filter((place) => place.personUid === null)).toHaveLength(0)
+    expect(slot(pedigree, 'a1').personUid).toBe('jan')
+    expect(slot(pedigree, 'a2').personUid).toBe('pa')
+    expect(slot(pedigree, 'a3').personUid).toBe('ma')
+    // Ahnentafel: the father of n is 2n, the mother 2n+1, all the way up.
+    expect(slot(pedigree, 'a8').personUid).toBe('ppp')
+    expect(slot(pedigree, 'a15').personUid).toBe('mmm')
+
+    // The root sits at the bottom and each generation one row above the last.
+    const rowStride = NODE_HEIGHT + LEVEL_GAP
+    expect(slot(pedigree, 'a1').y).toBe(TREE_PADDING + 3 * rowStride)
+    expect(slot(pedigree, 'a2').y).toBe(TREE_PADDING + 2 * rowStride)
+    expect(slot(pedigree, 'a8').y).toBe(TREE_PADDING)
+    expectRowsClear(pedigree)
+  })
+
+  it('centres a person between the two parents above them', () => {
+    const pedigree = layoutAncestors({ rootUid: 'jan', families: fullPedigree(), generations: 3 })
+
+    for (const place of pedigree.slots) {
+      const parents = pedigree.edges.filter((edge) => edge.childId === place.id)
+      if (parents.length === 0) {
+        continue
+      }
+      const centres = parents.map((edge) => edge.x1)
+      const between = (Math.min(...centres) + Math.max(...centres)) / 2
+      expect(place.x + place.width / 2).toBeCloseTo(between, 5)
+    }
+  })
+
+  it('leaves an unknown parent as a visible slot naming the child to fill it on', () => {
+    const pedigree = layoutAncestors({
+      rootUid: 'jan',
+      families: [family('f_jan', ['pa', 'ma'], ['jan']), family('f_pa', ['pp'], ['pa'])],
+      generations: 2,
+    })
+
+    // Jan's father has one recorded parent; the other side of that couple is a
+    // slot with nobody in it, to be filled in on the child it belongs to.
+    expect(slot(pedigree, 'a4').personUid).toBe('pp')
+    expect(slot(pedigree, 'a5').personUid).toBeNull()
+    expect(slot(pedigree, 'a5').childUid).toBe('pa')
+    // Jan's mother has no recorded parents at all: two blanks, not a missing row.
+    expect(slot(pedigree, 'a6').personUid).toBeNull()
+    expect(slot(pedigree, 'a7').personUid).toBeNull()
+    expect(slot(pedigree, 'a6').childUid).toBe('ma')
+    expectRowsClear(pedigree)
+  })
+
+  it('does not climb above a slot nobody has filled in', () => {
+    const pedigree = layoutAncestors({ rootUid: 'jan', families: [], generations: 4 })
+
+    // An unknown parent has no knowable parents of their own, so the drawing
+    // stops rather than fanning sixteen blanks out of nothing.
+    expect(pedigree.slots).toHaveLength(3)
+    expect(pedigree.edges).toHaveLength(2)
+  })
+
+  it('narrows to the branch that exists instead of reserving empty columns', () => {
+    const line = layoutAncestors({
+      rootUid: 'jan',
+      families: [
+        family('f_jan', ['pa'], ['jan']),
+        family('f_pa', ['pp'], ['pa']),
+        family('f_pp', ['ppp'], ['pp']),
+      ],
+      generations: 3,
+    })
+    const full = layoutAncestors({ rootUid: 'jan', families: fullPedigree(), generations: 3 })
+
+    // One recorded line four generations deep is half the paper the full
+    // pedigree of the same depth needs: each unknown half of a couple is one
+    // blank slot, not the eight columns its descendants would have filled.
+    expect(line.slots).toHaveLength(7)
+    expect(line.width).toBeLessThan(full.width * 0.6)
+    expect(line.height).toBe(full.height)
+  })
+
+  it('draws a shared ancestor on both sides without looping', () => {
+    // Petr and Eva are cousins: their fathers Josef and Karel are brothers, so
+    // Bohumil and Marie are Jan's great-grandparents twice over.
+    const pedigree = layoutAncestors({
+      rootUid: 'jan',
+      families: [
+        family('f_jan', ['petr', 'eva'], ['jan']),
+        family('f_petr', ['josef', 'ludmila'], ['petr']),
+        family('f_eva', ['karel', 'anna'], ['eva']),
+        family('f_old', ['bohumil', 'marie'], ['josef', 'anna']),
+      ],
+      generations: 3,
+    })
+
+    expect(slotsOf(pedigree, 'bohumil')).toHaveLength(2)
+    expect(slotsOf(pedigree, 'bohumil').filter((place) => place.repeat)).toHaveLength(1)
+    // Josef and Anna are the siblings the collapse runs through; each is drawn
+    // once, on the side they descend to.
+    expect(slotsOf(pedigree, 'josef')).toHaveLength(1)
+    expect(slotsOf(pedigree, 'anna')).toHaveLength(1)
+    expectRowsClear(pedigree)
+  })
+
+  it('stops a person who is their own ancestor instead of climbing for ever', () => {
+    const pedigree = layoutAncestors({
+      rootUid: 'jan',
+      families: [family('f_jan', ['jan', 'eva'], ['jan'])],
+      generations: 6,
+    })
+
+    // Jan is drawn again as his own father, marked as the repeat it is, and the
+    // climb ends there rather than recursing into itself. Eva's own parents are
+    // two blanks, which is why the drawing is five slots and not three.
+    expect(slotsOf(pedigree, 'jan')).toHaveLength(2)
+    expect(slot(pedigree, 'a2').repeat).toBe(true)
+    expect(slot(pedigree, 'a2').x).not.toBeNaN()
+    expect(pedigree.slots).toHaveLength(5)
+  })
+
+  it('bounds how far up it will draw', () => {
+    const deep = layoutAncestors({
+      rootUid: 'jan',
+      families: fullPedigree(),
+      generations: 99,
+    })
+    const none = layoutAncestors({ rootUid: 'jan', families: fullPedigree(), generations: 0 })
+
+    // A silly request is clamped, and above the last recorded generation there
+    // is only one row of blanks — an unknown ancestor has no knowable parents —
+    // so the drawing stops at 15 people and the 16 gaps above them…
+    expect(deep.slots).toHaveLength(31)
+    expect(Math.max(...deep.slots.map((place) => place.generation))).toBe(4)
+    // …and a request for nothing still yields the parents, which is the least a
+    // pedigree can say.
+    expect(none.slots).toHaveLength(3)
+  })
+
+  it('sizes the canvas around everything it drew', () => {
+    const pedigree = layoutAncestors({ rootUid: 'jan', families: fullPedigree(), generations: 3 })
+
+    const right = Math.max(...pedigree.slots.map((place) => place.x + place.width))
+    const bottom = Math.max(...pedigree.slots.map((place) => place.y + place.height))
+    expect(pedigree.width).toBeCloseTo(right + TREE_PADDING, 5)
+    expect(pedigree.height).toBeCloseTo(bottom + TREE_PADDING, 5)
+    expect(Math.min(...pedigree.slots.map((place) => place.x))).toBeGreaterThanOrEqual(TREE_PADDING)
+  })
+
+  it('has a canvas even with nothing on it', () => {
+    expect(emptyPedigree()).toEqual({
+      slots: [],
+      edges: [],
+      width: 2 * TREE_PADDING,
+      height: 2 * TREE_PADDING,
+    })
   })
 })

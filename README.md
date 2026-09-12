@@ -129,9 +129,13 @@ photo-book tool (deliberately out of scope), or a product with support and a rel
   and one that stays empty. The model is the one genealogy settled on decades ago — the **family** is
   the node, a couple (or a lone parent) with their children — so siblings, half-siblings and a second
   marriage are all *derived* and cannot contradict each other. **Zobrazit rodokmen** opens the whole
-  thing as a drawing: generations down the page, a couple in one box, branches that fold away, pan and
-  zoom, and a click on anybody redraws the tree from them. The person it is drawn from and the folded
-  branches are both in the address, so Back undoes either and a link carries the view.
+  thing as a drawing, and it goes both ways: **potomci** are generations down the page, a couple in one
+  box, branches that fold away; **předci** are the pedigree above a person, two slots per generation
+  for as many generations as you ask for. An ancestor nobody has recorded is drawn as an **empty slot**
+  rather than quietly left out — and for an editor that gap is a button: click it and the dialog opens
+  on the right person, ready to record their mother or father. Both drawings pan and zoom, and a click
+  on anybody redraws from them. The person it is drawn from, the direction, the depth and the folded
+  branches are all in the address, so Back undoes any of them and a link carries the view.
 - A catalogue of people goes wrong in exactly two ways and both have a repair: **merge** the same
   person filed twice into one record, and **move** the photos that turn out to be somebody else to
   whoever they really are.
