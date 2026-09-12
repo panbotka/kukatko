@@ -264,6 +264,13 @@ claude mcp add --transport http kukatko https://<host>/api/v1/mcp \
   --header "Authorization: Bearer kkt_…"
 ```
 
+The same token is what the **OpenAI Responses API** wants in its `mcp` tool's `authorization` field. What
+neither path gives you is a **connector tile in the claude.ai or ChatGPT UI**: those ask the server for OAuth,
+which this one does not have — the 401 says `WWW-Authenticate: Bearer` and every `/.well-known/` probe is a
+404. What it would take, whether it is worth it, and how it would be split up is worked out in
+[`docs/superpowers/specs/2026-09-12-mcp-oauth-design.md`](superpowers/specs/2026-09-12-mcp-oauth-design.md).
+Nothing is decided yet; until it is, a token is the way in.
+
 ## Tests
 
 `internal/mcpapi/mcpapi_integration_test.go` (tag `integration`) runs over the **real MCP transport**,
