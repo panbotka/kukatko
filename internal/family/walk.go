@@ -139,14 +139,22 @@ func clampGenerations(generations int) int {
 }
 
 // Tree returns the layout-ready payload of one family tree: the root, everybody
-// the walk in the given direction reached, and every family box tying them
-// together. Descendants are walked with their partners, because a couple is one
-// box in the drawing; ancestors are a binary pedigree and have no partners to
-// add — both sides of every family are already in the set.
+// the walk in the given direction reached within generations levels of them, and
+// every family box tying them together. Descendants are walked with their
+// partners, because a couple is one box in the drawing; ancestors are a binary
+// pedigree and have no partners to add — both sides of every family are already
+// in the set.
+//
+// generations is clamped into 1..MaxDepth, so 0 (an omitted parameter) yields the
+// whole bounded walk and no caller can ask for an unbounded one. A descendant
+// walk is trimmed in Go rather than in SQL, because its depth guard sits inside a
+// recursive term, which takes no parameter; the trim is exact all the same, since
+// the walk reports each person at their shortest depth and a partner carries the
+// depth of the descendant they married.
 //
 // An unrecognised direction returns ErrInvalidKind; a missing root returns
 // ErrSubjectNotFound.
-func (s *Store) Tree(ctx context.Context, rootUID string, direction Direction) (Tree, error) {
+func (s *Store) Tree(ctx context.Context, rootUID string, direction Direction, generations int) (Tree, error) {
 	if !direction.valid() {
 		return Tree{}, fmt.Errorf("%w: direction %q", ErrInvalidKind, direction)
 	}
@@ -154,14 +162,7 @@ func (s *Store) Tree(ctx context.Context, rootUID string, direction Direction) (
 	if err != nil {
 		return Tree{}, err
 	}
-	var members []Member
-	if direction == DirectionDescendants {
-		members, err = queryMembers(ctx, s.pool, "descendants",
-			descendantsSQL, rootUID, true)
-	} else {
-		members, err = queryMembers(ctx, s.pool, "ancestors",
-			ancestorsSQL, rootUID, MaxDepth)
-	}
+	members, err := s.treeMembers(ctx, rootUID, direction, clampGenerations(generations))
 	if err != nil {
 		return Tree{}, err
 	}
@@ -170,6 +171,32 @@ func (s *Store) Tree(ctx context.Context, rootUID string, direction Direction) (
 		return Tree{}, err
 	}
 	return Tree{Root: root, Direction: direction, Members: members, Families: families}, nil
+}
+
+// treeMembers walks one direction from the root, bounded by depth generations.
+func (s *Store) treeMembers(
+	ctx context.Context, rootUID string, direction Direction, depth int,
+) ([]Member, error) {
+	if direction == DirectionAncestors {
+		return queryMembers(ctx, s.pool, "ancestors", ancestorsSQL, rootUID, depth)
+	}
+	members, err := queryMembers(ctx, s.pool, "descendants", descendantsSQL, rootUID, true)
+	if err != nil {
+		return nil, err
+	}
+	return withinDepth(members, depth), nil
+}
+
+// withinDepth drops the members the walk found further from the root than depth
+// generations. The root itself is at depth 0 and therefore always survives.
+func withinDepth(members []Member, depth int) []Member {
+	kept := make([]Member, 0, len(members))
+	for _, m := range members {
+		if m.Depth <= depth {
+			kept = append(kept, m)
+		}
+	}
+	return kept
 }
 
 // memberUIDs returns the UIDs of the walked set, the argument the family lookup

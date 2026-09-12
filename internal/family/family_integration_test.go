@@ -289,7 +289,7 @@ func TestTree_carriesTheFamilyBoxesOfTheWalkedSet(t *testing.T) {
 	ctx := context.Background()
 	v := seedVillage(t, fam, ppl, db)
 
-	tree, err := fam.Tree(ctx, v.bohumil, family.DirectionDescendants)
+	tree, err := fam.Tree(ctx, v.bohumil, family.DirectionDescendants, 0)
 	if err != nil {
 		t.Fatalf("Tree: %v", err)
 	}
@@ -311,7 +311,7 @@ func TestTree_carriesTheFamilyBoxesOfTheWalkedSet(t *testing.T) {
 	if got := children[v.familyOfChildren[v.josef]]; len(got) != 2 {
 		t.Errorf("the root couple's box lists %v, want two children", got)
 	}
-	if _, err := fam.Tree(ctx, v.bohumil, "sideways"); !errors.Is(err, family.ErrInvalidKind) {
+	if _, err := fam.Tree(ctx, v.bohumil, "sideways", 0); !errors.Is(err, family.ErrInvalidKind) {
 		t.Errorf("Tree(sideways) = %v, want ErrInvalidKind", err)
 	}
 }

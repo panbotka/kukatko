@@ -1215,6 +1215,59 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `{photos,total,limit,offset,next_offset}` (newest-first, non-archived only, `limit`≤500). Mounted
   by `server.WithAPI` (`buildPeopleAPI` in `cmd/kukatko/people.go`). The subject's photo records
   build on `people.Store.ListPhotoUIDsBySubject` (distinct non-invalid markers → photo uid).
+- **Family / genealogy API (`/api/v1`, `internal/familyapi`):** the genealogy over subjects —
+  `internal/family`, where **the family is the node** (a couple or a lone parent plus their children) and
+  parents, siblings, partners and children are all *derived* from it, so they cannot contradict each other.
+  Five routes, flat patterns on the shared `/subjects/{uid}` prefix (no `chi.Mount`, same reason
+  `outlierapi` hangs there).
+  `GET /subjects/{uid}/relations` (RequireAuth) → the four derived lists in one response, each entry
+  carrying the person **plus their cover and photo count**, so the strip on the subject page renders
+  without a request per relative:
+  `{"parents":[{uid,slug,name,type,birth_year,death_year,cover_photo_uid?,photo_count,family_uid,child_kind}],
+  "siblings":[…],"partners":[{"family":{uid,partner_a_uid,partner_b_uid,kind,from_year,to_year,note,…},
+  "partner":{…}|null}],"children":[…]}`. `family_uid` names the family row the relation is recorded in and
+  `child_kind` (`birth`|`adopted`|`step`) how the child of the pair belongs to it — empty for a partner, who
+  is not a child of the family at all; `partner` is `null` for a lone-parent family, which is a family all
+  the same (it is where that person's children hang). A subject with nothing filled in gets four empty
+  lists; an unknown subject 404.
+  `POST /subjects/{uid}/relations` (RequireWrite) → **201** records one relation on the path subject. The
+  body names the role and **either** an existing subject **or** one to create inline:
+  `{"role":"parent","subject_uid":"su_…"}` or
+  `{"role":"parent","new_subject":{"name":"Marie Nečasová","birth_year":1921}}` (roles: `parent`, `child`,
+  `partner` — there is no `sibling`, because siblings are derived: give the two children the same parent.
+  Optional `child_kind`, ignored for `partner`; `new_subject` also takes `type`, `death_year` and `notes`).
+  Naming both or neither is 400. The answer is `{"family":{…},"relative":{…},"created":true|false}` — the
+  family the relation landed in (existing or created), the other person as a chip renders them, and whether
+  this call created them. **The inline half is one audited transaction:** subject and relation commit
+  together, so a refused relation leaves **no orphan subject** behind. That affordance is what makes filling
+  a tree bearable — otherwise every great-grandmother is a trip to another screen and back.
+  `DELETE /subjects/{uid}/relations/{uid2}` (RequireWrite) → 204 removes whatever ties the two together;
+  **which relation that is follows from the rows, not from the request** (parent, child or partner). Two
+  subjects that are not related answer 404, so a repeated click is never reported as a removal.
+  `GET /subjects/{uid}/tree?direction=descendants|ancestors&generations=N` (RequireAuth) → the
+  layout-ready payload the tree page draws: `{"root":{…relative},"direction":"descendants",
+  "members":[{…relative,"depth":1,"partner":false}],"families":[{…family,"child_uids":["su_…"]}]}`.
+  `direction` defaults to `descendants` — "the Nečas family" means the descendants of a chosen root plus
+  their partners (a `partner:true` member is in the set by marriage, carrying the depth of the descendant
+  they married); `ancestors` is the binary pedigree. `generations` bounds the walk and defaults to the whole
+  bounded one (the store clamps it to `family.MaxDepth` = 20, so asking for a thousand yields the deepest
+  walk there is rather than an error). An unrecognised `direction` or a negative/non-numeric `generations`
+  is 400; an unknown subject 404. `families` lists only the child edges whose person is also in `members`,
+  so the renderer is never handed an edge to a node it was not given.
+  `PATCH /families/{uid}` (RequireWrite) → edits the family row itself, as opposed to who is in it:
+  `{"kind":"marriage","from_year":1948,"to_year":null,"note":"oddáni v Křtinách"}` → the refreshed family.
+  Like the subject body it **rewrites the whole editable set**, so an omitted year clears a stored one, and
+  the `family.update` audit entry carries the old→new `changes` diff. `kind` is `marriage`|`partnership`
+  (the default — it is what the archive can honestly claim about most pairs)|`unknown`; each year within
+  1800…the current year with `to_year >= from_year` (400 otherwise), mirroring the SQL CHECKs of migration
+  `0073`. An unknown family is 404.
+  **Statuses worth knowing:** a refusal about the *state* of the tree is **409**, not 400 and never 500 —
+  a cycle (somebody made their own ancestor), a second parentage (a person is a child in at most one
+  family), a second family for one couple. The request was well formed; the tree is what stands in its way.
+  Every mutation writes its audit entry **inside the mutation's transaction**
+  (`subject.relation.add` / `subject.relation.remove` / `family.update`); the add entry's details name the
+  role, who the other person turned out to be and which family the relation joined. Mounted by
+  `server.WithAPI` (`buildFamilyAPI` in `cmd/kukatko/family.go`, in `readAPIOptions`). Not exposed over MCP.
 - **Subject avatar (`/api/v1`, `internal/avatarapi`):** `GET /subjects/{uid}/avatar` (RequireAuth) → the
   square **`image/jpeg`** that stands for the subject: 320 px, ~15 kB measured against real 24 Mpx
   originals (a `fit_1280` of one is ~190 kB). It is the people index's picture,

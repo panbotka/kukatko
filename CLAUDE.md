@@ -91,6 +91,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/facejob` — worker handler `face_detect` + backfill
 - `internal/facematch` — face↔marker IoU matching, identity suggestions, the compact per-photo roll-call, assignment state machine
 - `internal/family` — the genealogy over subjects: the family is the node (a couple or lone parent plus their children), everything else is derived; byte-ordered pairs, one family per child, cycle check, bounded descendant/ancestor walks
+- `internal/familyapi` — the five flat family routes (`/subjects/{uid}/relations`, `/subjects/{uid}/tree`, `PATCH /families/{uid}`); the `POST` takes an existing subject or creates one inline, in the store's one audited transaction
 - `internal/feedback` — persisted opinions: "not this person" / "not this label" / "not duplicates", idempotent, audited, never mutates; bulk exclusion lookups
 - `internal/feedbackapi` — `POST`/`DELETE /feedback/{face,label}-rejections` (RequireWrite)
 - `internal/geoestimate` — estimate a missing location from photos taken near it in time; refuses unless the neighbours cluster tightly (a wrong location is worse than none), marks every result `estimate`

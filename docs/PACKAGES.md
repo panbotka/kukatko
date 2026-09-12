@@ -1684,15 +1684,31 @@ to `## Package map` in `CLAUDE.md`.
   in a village, the same person is then reachable by two paths, and `UNION ALL` would both duplicate rows and
   explode combinatorially), collapsed to one row per person at their **shortest** depth, with the non-recursive
   partner step adding everybody who married in (`Member.Partner`); `Ancestors(subjectUID, generations)` = the
-  bounded pedigree (`clampGenerations` → 1..`MaxDepth`); `Tree(rootUID, direction)` → the **layout-ready**
+  bounded pedigree (`clampGenerations` → 1..`MaxDepth`); `Tree(rootUID, direction, generations)` → the
+  **layout-ready**
   payload (root, members, and the family boxes of the walked set, whose `ChildUIDs` are **filtered to members**
-  so the renderer is never handed an edge to a node it was not given); `GetFamily(uid)`.
+  so the renderer is never handed an edge to a node it was not given) — a **pedigree** takes the bound in SQL,
+  a **descendant** walk is trimmed in Go (`withinDepth`), since its depth guard sits inside a recursive term,
+  which takes no parameter; the trim is exact because each person is reported at their shortest depth and a
+  partner carries the depth of the descendant they married; `GetFamily(uid)`.
   **Writes** all go through the generic `mutateAudited(ctx, pool, entry, fn)` (the `internal/people` convention),
   so the audit row lands **in the mutation's own transaction** — and `entry.TargetUID` is stamped **before** the
   call, because `mutateAudited` copies the entry and a stamp made inside the closure is lost:
   `AddParentAudited`/`AddChildAudited` (the same core with the roles swapped, actions `subject.relation.add`),
   `AddPartnerAudited` (find-or-create, so adding the same couple twice returns the one family),
   `RemoveRelationAudited` (`subject.relation.remove`) and `UpdateFamilyAudited` (`family.update`, kind/years/note).
+  **`AddRelationAudited(subjectUID, AddRelation{Role,SubjectUID|New,ChildKind}, entry)`** is the one the HTTP API
+  uses: one call for all three roles (`RoleParent`/`RoleChild`/`RolePartner` — there is deliberately **no
+  sibling role**, siblings are derived, so the way to record one is to give the two children the same parent),
+  and the other person is **either** an existing subject **or** a `NewPerson` created by that same transaction
+  through `people.CreateSubjectTx`. That inline half is the affordance the whole data-entry story rests on, and
+  it is only worth anything if it is **atomic**: a relation refused after the subject row was written — a cycle,
+  a third parent — must leave **no orphan subject** behind, which two API calls could not promise. It returns
+  `AddResult{Family,Relative,Created}` and refuses with `ErrInvalidRole` (unrecognised role, wrapping
+  `ErrInvalidKind`) or `ErrAmbiguousRelation` (both an existing and a new subject named, or neither). It is the
+  one write that stamps **into `entry.Details`** from inside the closure — legitimate, and the mirror image of
+  the `TargetUID` trap: the entry is copied but its `Details` **map is shared**, so the facts only the mutation
+  knows (which family the relation joined, who the other person turned out to be) do reach the audit row.
   Attaching a parent is deliberately forgiving about the order somebody types things in: no family yet → the
   parent's lone-parent family is found or created; the family already lists that parent → only the membership
   kind is rewritten (an **empty kind means "leave it as it was"**, so adding the second parent of an *adopted*
@@ -1706,12 +1722,44 @@ to `## Package map` in `CLAUDE.md`.
   separating couple with children keeps its row (renormalised into the first column, since the pair index treats
   `(X,NULL)` and `(NULL,X)` as different rows) and a childless union's row goes. Sentinels `ErrSubjectNotFound`/
   `ErrFamilyNotFound`/`ErrRelationNotFound` (→404), `ErrCycle`/`ErrAlreadyChild`/`ErrSelfRelation`/
-  `ErrFamilyConflict`/`ErrInvalidKind`/`ErrInvalidYears` (→400/409). Both tables are classified in
+  `ErrFamilyConflict`/`ErrInvalidKind`/`ErrInvalidRole`/`ErrInvalidYears`/`ErrAmbiguousRelation` (→400/409). Both tables are classified in
   `internal/reset` as catalogue tables (a wipe empties them). Unit tests cover pair normalisation, the cycle rule
   and the validators; the integration test seeds a **three-generation family with a cousin marriage** and proves
   the diamond is walked once, that the one-family-per-child index refuses a second parentage (asserted against the
   schema, not only through the store), that an ancestor cannot be attached as a child, and that a refused
   mutation writes **no** audit row),
+  `internal/familyapi/`
+  (the HTTP surface over `internal/family`: `Store` (the interface the handlers depend on — `Relations`,
+  `Tree`, `AddRelationAudited`, `RemoveRelationAudited`, `GetFamily`, `UpdateFamilyAudited`, satisfied by
+  `*family.Store` and fakeable in tests), `NewAPI(Config{Store,RequireAuth,RequireWrite})` + `RegisterRoutes`
+  mounting five **flat** patterns — `GET|POST /subjects/{uid}/relations`,
+  `DELETE /subjects/{uid}/relations/{uid2}`, `GET /subjects/{uid}/tree`, `PATCH /families/{uid}`. Flat rather
+  than a `chi.Mount` for the same reason `peopleapi` is: `/subjects/{uid}` is shared with `peopleapi` and
+  `outlierapi`, and a mounted subrouter would collide with both. Mounted in `readAPIOptions`
+  (`buildFamilyAPI` in `cmd/kukatko/family.go`) rather than with a fresh `server.WithAPI` line in
+  `buildServices`, which sits at the `funlen` limit.
+  The handlers are thin — decode, guard, delegate, map the error — and the three decisions worth naming are
+  the status mapping, the audit details and the tree's parameters. **`familyStatus`** answers **404** for a
+  missing subject/family/relation, **409** for a refusal about the *state* of the tree (`ErrCycle`,
+  `ErrAlreadyChild`, `ErrFamilyConflict` — the request was well formed and the same one would have been
+  accepted against other rows, so 400 would be a lie and 500 would send somebody hunting a bug that is not
+  there), **400** for what the request itself got wrong (`ErrSelfRelation`, `ErrInvalidKind`/`ErrInvalidRole`,
+  `ErrInvalidYears`, `ErrAmbiguousRelation`, and `people.ErrInvalidType`/`ErrInvalidLifeYears` from an inline
+  `new_subject`), 500 only for an error it does not recognise. **Audit:** `POST` hands the store an **empty
+  details map** for it to stamp inside the transaction (`subject.relation.add`), `DELETE` names the other side
+  up front (`subject.relation.remove`), and `PATCH` loads the family **first** so `familyChanges` can record
+  the old→new diff via `ChangeSet.StampInto` and so a missing family answers 404 before anything is written —
+  `decodeFamilyUpdate` resolves an omitted `kind` to `partnership` there, the same default the store applies,
+  so the recorded diff matches what is stored. **`parseTreeParams`** defaults `direction` to `descendants`
+  and rejects an unrecognised one rather than quietly answering a different question; `generations` defaults
+  to 0 (= the whole bounded walk) and rejects a negative or non-numeric value, while the **upper** bound stays
+  the store's business (`clampGenerations`), because a client asking for a thousand generations means "all of
+  them", not an error about a limit it has no reason to know. Bodies are decoded with
+  `DisallowUnknownFields` under a 1 MiB limit. Unit tests drive the handlers behind pass-through guards with a
+  fake store (routing, decoding, the status table, the audit entry); the integration test mounts the **real**
+  auth guards over the test database and covers each route end to end plus the three things only the real
+  stack can show: a **viewer gets 403 on every write** (and an anonymous client 401 on the reads), the inline
+  `new_subject` path leaves **no orphan** when the relation is refused, and a cycle surfaces as **409**),
   `internal/people/`
   (the DB layer for **subjects** (people/animals/other) and **markers** (face/label regions on
   photos), tables `subjects`/`markers` in migration `0008_subjects_markers.sql`: `subjects`
@@ -1865,7 +1913,12 @@ to `## Package map` in `CLAUDE.md`.
   so the audit row commits/rolls back atomically with the mutation (the `internal/photos`/`internal/organize` convention);
   a shared tx-core (`insertMarkerTx`/`assignSubjectTx`/`unassignSubjectTx`/`setMarkerInvalid`/
   `prepareSubjectInsert`) is used by
-  both variants. `SetMarkerInvalidAudited` (action `marker.invalidate`, used by the repeated-marker review)
+  both variants. **`CreateSubjectTx(ctx, tx, subj)`** is the same insert on somebody else's transaction, so
+  another package can create a subject as part of a larger mutation of its own and the two commit or roll back
+  together — `internal/family` records a relation to a person who does not exist yet without ever leaving an
+  orphan behind. Each slug attempt runs in a **nested transaction (a savepoint)**, because a colliding insert
+  aborts the statement's transaction and the caller's work has to survive the collision; the pooled variants
+  can simply start a fresh transaction per attempt, which is why they do. `SetMarkerInvalidAudited` (action `marker.invalidate`, used by the repeated-marker review)
   changes **nothing but the flag**: the row survives and keeps its subject, so the decision is reversible and an
   invalidation stays distinguishable from an unassignment), `internal/facematch/`
   (linking detected faces to markers/subjects + identity suggestions, all behind the interfaces

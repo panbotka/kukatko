@@ -377,7 +377,8 @@ func buildServices(
 
 // readAPIOptions builds the server options for the read/curation API groups that
 // need little more than the shared pool and the auth guard: per-subject face
-// outliers, the people (subject) catalogue, albums and labels, the places browse
+// outliers, the people (subject) catalogue and the genealogy over it, albums and
+// labels, the places browse
 // hierarchy, per-user saved searches and search history, the announcement banner,
 // the instance settings, the returning-reader digest, the grouped global search
 // and the audit log. Route
@@ -422,6 +423,9 @@ func readAPIOptions(
 	return []server.Option{
 		server.WithAPI(buildOutlierAPI(db, authAPI).RegisterRoutes),
 		server.WithAPI(buildPeopleAPI(db, authAPI, mediaStore).RegisterRoutes),
+		// The family routes hang off the same /subjects prefix, flat like the
+		// outlier one, so they mount alongside rather than under peopleapi.
+		server.WithAPI(buildFamilyAPI(db, authAPI).RegisterRoutes),
 		server.WithAPI(buildOrganizeAPI(db, authAPI, sidecar).RegisterRoutes),
 		server.WithAPI(buildFeedbackAPI(db, authAPI).RegisterRoutes),
 		server.WithAPI(buildPlacesAPI(db, authAPI).RegisterRoutes),

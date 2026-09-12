@@ -415,3 +415,52 @@ func (s *Store) DeleteSubject(ctx context.Context, uid string) error {
 	}
 	return nil
 }
+
+// CreateSubjectTx inserts subj on the caller's transaction and returns it
+// refreshed with the generated UID, unique slug and timestamps. It applies the
+// same rules as CreateSubject — an empty type defaults to SubjectPerson, an
+// unrecognised one returns ErrInvalidType, an impossible birth/death year
+// ErrInvalidLifeYears — and differs only in whose transaction the row lands in.
+//
+// That difference is the point: it lets another package create a subject as part
+// of a larger mutation of its own, so the subject and whatever it was created for
+// commit or roll back together. internal/family uses it to record a relation to a
+// person who does not exist yet without ever leaving an orphan behind.
+//
+// Each slug attempt runs in a nested transaction (a savepoint), because a
+// colliding insert aborts the statement's transaction and the caller's work must
+// survive the collision.
+func CreateSubjectTx(ctx context.Context, tx pgx.Tx, subj Subject) (Subject, error) {
+	prepared, base, err := prepareSubjectInsert(subj)
+	if err != nil {
+		return Subject{}, err
+	}
+	return insertWithUniqueSlug(base, func(slug string) (Subject, error) {
+		prepared.Slug = slug
+		return insertSubjectInSavepoint(ctx, tx, prepared)
+	})
+}
+
+// insertSubjectInSavepoint inserts one prepared subject inside a savepoint of tx,
+// so a slug collision rolls back only the failed attempt. The insert's error is
+// returned unwrapped by this helper's own layer so insertWithUniqueSlug can still
+// recognise a unique violation.
+func insertSubjectInSavepoint(ctx context.Context, tx pgx.Tx, prepared Subject) (Subject, error) {
+	sp, err := tx.Begin(ctx)
+	if err != nil {
+		return Subject{}, fmt.Errorf("people: begin subject savepoint: %w", err)
+	}
+	defer func() { _ = sp.Rollback(ctx) }()
+
+	subj, err := scanSubject(sp.QueryRow(ctx, insertSubjectSQL,
+		prepared.UID, prepared.Slug, prepared.Name, prepared.Nickname, prepared.Type,
+		prepared.Favorite, prepared.Private, prepared.Notes, prepared.CoverPhotoUID,
+		prepared.BirthYear, prepared.DeathYear))
+	if err != nil {
+		return Subject{}, err
+	}
+	if err := sp.Commit(ctx); err != nil {
+		return Subject{}, fmt.Errorf("people: release subject savepoint: %w", err)
+	}
+	return subj, nil
+}
