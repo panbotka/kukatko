@@ -1649,6 +1649,69 @@ to `## Package map` in `CLAUDE.md`.
   photo row; `ApplyFaceBoxRepair(plans)` writes only the plans that carry a transform, each guarded on the
   fingerprint it was planned from, so a **skipped row keeps the fingerprint a later run finds it by** (a marker
   added tomorrow is new evidence) and no box is ever moved twice),
+  `internal/family/`
+  (the DB layer for the **genealogy over subjects** — who is whose parent, whose partner, whose child —
+  tables `subject_families`/`subject_family_children` in migration `0073_subject_families.sql`; it reads
+  subjects without owning them (`internal/people` does) and is a package of its own because the recursion
+  and the invariants are a separate concern from the fifteen files of `people`.
+  **The family is the node, not the edge:** a family is a couple (or a lone parent) plus their children, the
+  shape genealogy software settled on decades ago. A relationship table of `(from, to, type)` with
+  parent/spouse/sibling was the obvious first idea and the wrong one — symmetric edges have to be kept
+  symmetric by hand, a sibling edge can contradict the parents, half-siblings are unrepresentable — whereas
+  here **siblings, partners, half-siblings and step-relations are all derived** and therefore cannot disagree
+  with one another; a **childless marriage** is still a recordable row, which a plain parent edge cannot
+  express at all. `subject_families` = `uid PK` (prefix `fm`), two **nullable** partner columns (FK subjects
+  `ON DELETE CASCADE`), `kind IN (marriage|partnership|unknown)`, `from_year`/`to_year`, `note`, timestamps;
+  `subject_family_children` = `(family_uid, child_uid)` PK + `kind IN (birth|adopted|step)`.
+  **Three constraints carry the weight.** `subject_families_partners_ordered` holds the pair in **byte order**
+  with `COLLATE "C"` — `normalisePair` normalises with Go's `<`, and the database default collation is
+  locale- and version-dependent and orders `_` differently, so without the pin a pair Go considers normalised
+  could be refused (the same trap as `0038` for duplicate dismissals). `idx_subject_families_pair` is UNIQUE
+  **`NULLS NOT DISTINCT`**, which makes one couple exactly one family *and* one lone parent exactly one family
+  — the two NULLs of a lone parent then compare equal. `idx_subject_family_children_child` makes a person a
+  child in **at most one** family, which is what keeps the descendant walk a tree rather than a general graph.
+  The deliberate limitation that follows: two children of one mother by two unknown fathers read as full
+  siblings, and the escape hatch is a placeholder subject for the father (a subject with no photos is legal).
+  **Cycles** are the one contradiction SQL cannot refuse on its own (A a child of B's family while B is a child
+  of A's), so every attachment first walks the prospective parent's ancestors (`ancestorUIDsSQL` → the pure
+  `wouldCycle`) and refuses with `ErrCycle`; every recursive walk also carries a **`depth < 20`** guard
+  (`MaxDepth`), so a cycle that somehow reached the tables ends the query instead of the request.
+  `Store` = `NewStore(pool)`. **Reads:** `Relations(subjectUID)` → `{Parents,Siblings,Partners,Children}`, the
+  four derived lists the subject page's strip draws, each carrying a `Relative` (subject identity, life years,
+  cover and the **photo count counted the way the people index counts it**, so a chip's badge is a promise about
+  the next page) — a `Partnership` keeps its `Family` and a **nil `Partner` for a lone-parent family**;
+  `Descendants(rootUID, {WithPartners})` = the design's walk verbatim, **`UNION` not `UNION ALL`** (cousins marry
+  in a village, the same person is then reachable by two paths, and `UNION ALL` would both duplicate rows and
+  explode combinatorially), collapsed to one row per person at their **shortest** depth, with the non-recursive
+  partner step adding everybody who married in (`Member.Partner`); `Ancestors(subjectUID, generations)` = the
+  bounded pedigree (`clampGenerations` → 1..`MaxDepth`); `Tree(rootUID, direction)` → the **layout-ready**
+  payload (root, members, and the family boxes of the walked set, whose `ChildUIDs` are **filtered to members**
+  so the renderer is never handed an edge to a node it was not given); `GetFamily(uid)`.
+  **Writes** all go through the generic `mutateAudited(ctx, pool, entry, fn)` (the `internal/people` convention),
+  so the audit row lands **in the mutation's own transaction** — and `entry.TargetUID` is stamped **before** the
+  call, because `mutateAudited` copies the entry and a stamp made inside the closure is lost:
+  `AddParentAudited`/`AddChildAudited` (the same core with the roles swapped, actions `subject.relation.add`),
+  `AddPartnerAudited` (find-or-create, so adding the same couple twice returns the one family),
+  `RemoveRelationAudited` (`subject.relation.remove`) and `UpdateFamilyAudited` (`family.update`, kind/years/note).
+  Attaching a parent is deliberately forgiving about the order somebody types things in: no family yet → the
+  parent's lone-parent family is found or created; the family already lists that parent → only the membership
+  kind is rewritten (an **empty kind means "leave it as it was"**, so adding the second parent of an *adopted*
+  child does not reclassify the adoption); one parent recorded and this is the second → the lone-parent family's
+  pair is completed **in place only when that child is its only one** — a lone parent's other children are theirs
+  alone and rewriting the pair would silently hand all of them a second parent — otherwise the child **moves
+  into** the couple's family (the one they already have, or a fresh one) and the emptied lone-parent family is
+  pruned, which is also how **half-siblings** arise correctly; two other parents already → `ErrAlreadyChild`.
+  Removal is symmetric and conservative: losing
+  one parent moves the child to the **remaining** parent's lone-parent family rather than taking both away, a
+  separating couple with children keeps its row (renormalised into the first column, since the pair index treats
+  `(X,NULL)` and `(NULL,X)` as different rows) and a childless union's row goes. Sentinels `ErrSubjectNotFound`/
+  `ErrFamilyNotFound`/`ErrRelationNotFound` (→404), `ErrCycle`/`ErrAlreadyChild`/`ErrSelfRelation`/
+  `ErrFamilyConflict`/`ErrInvalidKind`/`ErrInvalidYears` (→400/409). Both tables are classified in
+  `internal/reset` as catalogue tables (a wipe empties them). Unit tests cover pair normalisation, the cycle rule
+  and the validators; the integration test seeds a **three-generation family with a cousin marriage** and proves
+  the diamond is walked once, that the one-family-per-child index refuses a second parentage (asserted against the
+  schema, not only through the store), that an ancestor cannot be attached as a child, and that a refused
+  mutation writes **no** audit row),
   `internal/people/`
   (the DB layer for **subjects** (people/animals/other) and **markers** (face/label regions on
   photos), tables `subjects`/`markers` in migration `0008_subjects_markers.sql`: `subjects`

@@ -256,6 +256,19 @@ const (
 	// the details — a merge cannot be undone, so the trail is the only record that
 	// the merged-away person ever existed.
 	ActionSubjectMerge = "subject.merge"
+	// ActionSubjectRelationAdd records recording a family relation between two
+	// subjects — a parent, a child or a partner. The subject whose page it was
+	// added from is the target; the other person and the family row the relation
+	// ended up in belong in the details, because the family is the node and which
+	// one a relation joined is the fact that can later surprise somebody.
+	ActionSubjectRelationAdd = "subject.relation.add"
+	// ActionSubjectRelationRemove records removing a family relation between two
+	// subjects. It is one action rather than three, because which relation it was
+	// follows from the rows and not from the request.
+	ActionSubjectRelationRemove = "subject.relation.remove"
+	// ActionFamilyUpdate records editing a family itself — whether it was a
+	// marriage, the years it lasted, the note on it — as opposed to who is in it.
+	ActionFamilyUpdate = "family.update"
 	// ActionUserCreate records creating a user account.
 	ActionUserCreate = "user.create"
 	// ActionUserUpdate records editing a user account.
