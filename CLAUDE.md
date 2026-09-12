@@ -75,7 +75,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/clusterjob` — the `face_cluster` job: reclustering and the preparation of the cluster summaries, off the request path
 - `internal/comments` — per-photo comment threads: plain text, soft delete, audited in the mutation's transaction; every role may write (viewers included), the endpoints live in `internal/photoapi`
 - `internal/config` — typed configuration, Viper, `Load()`
-- `internal/ctl` — **client** of the own API for `kukatko ctl`: contexts (kubectl-style), Bearer token, table/JSON/llm output, streamed renditions and uploads, the photo-edit body, the whole curation write surface (faces/subjects/clusters, albums, labels, stacks, image edits, saved searches, duplicates, comments), the photo lifecycle, and the irreversible commands behind their `--yes`/`--dry-run` gate (purge, trash, duplicate merge)
+- `internal/ctl` — **client** of the own API for `kukatko ctl`: contexts (kubectl-style), Bearer token, table/JSON/llm output, streamed renditions and uploads, the photo-edit body, the whole curation write surface (faces/subjects/families, clusters, albums, labels, stacks, image edits, saved searches, duplicates, comments), the photo lifecycle, and the irreversible commands behind their `--yes`/`--dry-run` gate (purge, trash, duplicate merge)
 - `internal/database` — pgxpool wrapper, embedded migration runner, pgvector types
 - `internal/dirimport` — `kukatko import dir`: walks a directory on disk and uploads its media via `internal/ingest`
 - `internal/duplicates` — near-dup groups (pHash banded-LSH + embedding HNSW, union-find); read-only, and never across the still/video boundary (a clip is judged by one poster frame)

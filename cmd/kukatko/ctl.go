@@ -121,7 +121,8 @@ func newCtlCmd() *cobra.Command {
 
 	cmd.AddCommand(
 		newCtlConfigCmd(opts), newCtlPhotosCmd(opts), newCtlAlbumsCmd(opts), newCtlLabelsCmd(opts),
-		newCtlSubjectsCmd(opts), newCtlFavoritesCmd(opts), newCtlRatingCmd(opts), newCtlBulkCmd(opts),
+		newCtlSubjectsCmd(opts), newCtlFamilyCmd(opts), newCtlFavoritesCmd(opts),
+		newCtlRatingCmd(opts), newCtlBulkCmd(opts),
 		newCtlFacesCmd(opts), newCtlClustersCmd(opts), newCtlStacksCmd(opts),
 		newCtlEditsCmd(opts), newCtlSavedSearchesCmd(opts), newCtlDuplicatesCmd(opts),
 		newCtlCommentsCmd(opts), newCtlTrashCmd(opts), newCtlProcessCmd(opts),

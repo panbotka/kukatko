@@ -101,6 +101,20 @@ func renderSubject(w io.Writer, out ctl.Output, raw json.RawMessage) error {
 	return renderRaw(w, out, raw, "subject", ctl.DecodeSubject, ctl.WriteSubject)
 }
 
+// renderRelations writes one person's parents, siblings, partners and children.
+func renderRelations(w io.Writer, out ctl.Output, raw json.RawMessage) error {
+	return renderRaw(w, out, raw, "relations", ctl.DecodeRelations, ctl.WriteRelations)
+}
+
+// renderRelationReport writes a recorded relation with both people named and the
+// role spelled out.
+func renderRelationReport(w io.Writer, out ctl.Output, report ctl.RelationReport) error {
+	if err := ctl.WriteRelationReport(w, out, report); err != nil {
+		return fmt.Errorf("writing the recorded relation: %w", err)
+	}
+	return nil
+}
+
 // renderBulkResult writes a bulk edit's per-photo outcome.
 func renderBulkResult(w io.Writer, out ctl.Output, raw json.RawMessage) error {
 	return renderRaw(w, out, raw, "bulk result", ctl.DecodeBulkResult, ctl.WriteBulkResult)

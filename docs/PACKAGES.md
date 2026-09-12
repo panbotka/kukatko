@@ -4897,6 +4897,23 @@ to `## Package map` in `CLAUDE.md`.
     `create_marker` with its own box, a named one `unassign_person` — the same rule the web face editor
     applies. **The assignment state machine, the find-or-create by name and every threshold stay on the
     server.** Errors: `ErrUnknownFace`, `ErrFaceNotMarked`, `ErrFaceNotNamed`, `ErrNegativeFaceIndex`.
+  - `family.go` — the genealogy over subjects, read and write: `GetRelations`/`FetchRelations` +
+    `DecodeRelations`, `AddRelation` + `DecodeRelationResult`, `RemoveRelation` (a `204`), `UpdateFamily` +
+    `DecodeFamily`, and the renderers `WriteRelations`/`WriteRelationReport`/`WriteFamily`. `Relations` is the
+    four derived lists; `Relations.Role(uid)`/`Find(uid)` say how somebody is related **before** a removal is
+    sent, which is what lets an unrelated pair fail locally instead of as a `404` and lets a sibling be told
+    that there is nothing to remove (`RoleSibling` is reported, never requested — siblings are derived from a
+    shared parent). `RelationInput` is validated locally (`ErrInvalidRole`, `ErrInvalidChildKind`,
+    `ErrSubjectRequired`/`ErrSubjectAmbiguous` for naming both an existing and a new person or neither, and
+    `SubjectInput.validate` for the person being created); `FamilyUpdate` mirrors the SQL CHECKs of migration
+    `0073` (`ErrInvalidFamilyKind`, `ErrInvalidFamilyYear`) and is a **whole-record** write, so `ErrNoFamilyEdits`
+    refuses an edit that names nothing — it would erase rather than do nothing. **`FindSubjectByName` resolves a
+    name client-side**, unlike the face and cluster assignments: the inline half of `POST /relations` *always*
+    creates, so a name that already exists would quietly split one person into two. It matches the stored name
+    or slug case-insensitively, reports "nobody" so the caller can create instead, and refuses an ambiguous name
+    naming every candidate. `RelationReport` is the third result ctl **synthesizes** (with `MergeReport` and the
+    `204` `Ack`): the answer carries neither the role that was asked for nor the name of the person the relation
+    was recorded on, and "created: true" without saying who became whose parent is unreadable.
   - `clusters.go` — the auto-clustered groups of unassigned faces: `ListClusters` + `DecodeClusters`,
     `AssignCluster(uid, SubjectRef)` + `DecodeClusterAssign` (one action names every face in the group and
     consumes it), `RemoveClusterFace(cluster, photo, index)` + `DecodeClusterRemoval`, whose `nil` cluster means

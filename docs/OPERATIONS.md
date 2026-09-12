@@ -990,6 +990,69 @@ has run. `delete` leaves the photos and their markers alone; the markers simply 
 re-creating the person will not re-attach a single face — if the two records are the same person, `merge`
 is what you want.
 
+#### `ctl family`
+
+The genealogy over subjects (`internal/familyapi`) — who is whose parent, whose partner and whose child.
+Reading needs any role, writing `editor`/`admin`.
+
+**The family is the node, not the edge:** a family is a couple (or a lone parent) plus their children, and
+parents, siblings, partners and children are all *derived* from it, which is why they cannot contradict each
+other. Hence **there is no `sibling` role**: the way to record one is to give the two children the same
+parent, and there is nothing between two siblings to remove.
+
+| Command | Meaning |
+| --- | --- |
+| `ctl family relations <subject-uid>` (alias `show`) | `GET /subjects/{uid}/relations` — the four derived lists as one table; `FAMILY` is the uid `family edit` takes |
+| `ctl family add <subject-uid> <role> [<related-subject-uid>]` | `POST /subjects/{uid}/relations`; role is `parent`, `child` or `partner`. `--name` instead of a uid, `--child-kind birth\|adopted\|step` |
+| `ctl family remove <subject-uid> <related-subject-uid>` | `DELETE /subjects/{uid}/relations/{uid2}` — **irreversible**, needs `--yes`, offers `--dry-run` |
+| `ctl family edit <family-uid>` | `PATCH /families/{uid}` — the union itself: `--kind marriage\|partnership\|unknown`, `--from-year`, `--to-year`, `--note` |
+
+`relations` prints one table rather than four because the four lists answer one question and `ROLE` is the
+column that separates them. `KIND` is what each relation is recorded as — how a child belongs to their family
+(`birth`/`adopted`/`step`), or what tied a couple together — and a partner row whose other side nobody
+remembers says `- (no partner recorded)`: a lone-parent family is a family all the same, because it is where
+that person's children hang.
+
+**`add` resolves `--name` client-side**, unlike `ctl faces assign --name`, and the difference matters: the
+inline half of the endpoint *always* creates, so handing it a name that already exists would quietly split one
+person into two. A name is matched case-insensitively against the stored name **or** slug; one match relates to
+that person, several are refused naming every candidate (a uid is then the only honest answer), and **a name
+that matches nobody creates them** — subject and relation in one transaction, so a refused relation leaves no
+orphan person behind. That inline creation is what makes filling a tree bearable: a great-grandmother nobody
+photographed is otherwise a trip to another screen and back, once per person, for every generation nobody wrote
+down. `--type`, `--birth-year`, `--death-year` and `--notes` describe a person being *created*; beside the uid
+of somebody who already exists they are refused rather than ignored. The role is the **other** person's side of
+the relation, and the report names both people, because neither a person nor an agent can read a uid.
+
+Nothing is destroyed by recording a relation, so `add` needs no `--yes`. A relation the tree cannot hold — a
+cycle (somebody made their own ancestor), a second parentage, a second family for one couple — is refused by
+the server with a **409** and changes nothing; the request was well formed, the tree is what stood in its way.
+
+**`remove` reads how the two are related first**, which is also what it reports: `Marie Nečasová (sub02) as the
+parent of Anna Nečasová (sub01)`. Which relation goes follows from the rows, not from the command line. Two
+people who are not related fail before a request is spent, and two siblings are told why there is nothing to
+remove. Removing one parent leaves the other — the child keeps the parentage it still has, because "X is no
+longer Y's father" must not quietly take Y's mother away too. Both people and every photo they are on survive;
+only the line between them goes, and nothing records who was whose parent once it is gone, which is why it
+needs `--yes`.
+
+**`edit` rewrites the whole record**, exactly as `PATCH /families/{uid}` does: a year or a note not passed is
+cleared, and an omitted `--kind` falls back to the server's default `partnership` (what the archive can
+honestly claim about most pairs; `unknown` admits nobody knows which it was). Pass everything the family should
+end up carrying, not only what changed — and an edit naming no flag at all is **refused rather than run**,
+because it would erase rather than do nothing. Each year lies within 1800…this year with `--to-year` not before
+`--from-year`, checked locally against the same rule the SQL CHECK enforces. The refreshed family prints with
+its partners **named**, which costs one lookup per partner the API's answer does not carry; a lookup that fails
+leaves the uid printed as it is rather than failing a write that already happened.
+
+```bash
+kukatkoctl family relations sub1a2b3
+kukatkoctl family add sub1a2b3 parent --name "Marie Nečasová" --birth-year 1921   # creates her if new
+kukatkoctl family add sub1a2b3 child sub9z8y7 --child-kind adopted
+kukatkoctl family edit fam1a2b3 --kind marriage --from-year 1948 --note "oddáni v Křtinách"
+kukatkoctl family remove sub1a2b3 sub9z8y7 --dry-run
+```
+
 #### `ctl faces`
 
 Naming the people on a photo — the most frequent curation there is (`internal/facematch`,
