@@ -11,6 +11,7 @@ import {
   encodeInProgress,
   shouldWatchEncode,
   streamPending,
+  streamUndecided,
   videoEncode,
   videoFallback,
   videoHold,
@@ -162,5 +163,23 @@ describe('streamPending', () => {
 
   it('marks nothing when the instance does not stream at all', () => {
     expect(streamPending(row({ media_type: 'video', hls: false }), false)).toBe(false)
+  })
+})
+
+describe('streamUndecided', () => {
+  const row = (extra: Partial<Photo>): Photo => ({ uid: 'v1', ...extra }) as Photo
+
+  it('holds the question open for a clip with no rendition until the flags land', () => {
+    expect(streamUndecided(row({ media_type: 'video', hls: false }), false)).toBe(true)
+  })
+
+  it('answers nothing once the flags are known, whatever they say', () => {
+    expect(streamUndecided(row({ media_type: 'video', hls: false }), true)).toBe(false)
+  })
+
+  it('answers nothing for a row the flags could not hold anyway', () => {
+    expect(streamUndecided(row({ media_type: 'video', hls: true }), false)).toBe(false)
+    expect(streamUndecided(row({ media_type: 'video' }), false)).toBe(false)
+    expect(streamUndecided(row({ media_type: 'image', hls: false }), false)).toBe(false)
   })
 })

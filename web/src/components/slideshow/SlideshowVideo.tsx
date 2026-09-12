@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useCapabilities } from '../../capabilities/CapabilitiesContext'
 import { useHlsPlayback } from '../../hooks/useHlsPlayback'
 import { formatDuration } from '../../lib/format'
-import { streamPending } from '../../lib/videoEncode'
+import { streamPending, streamUndecided } from '../../lib/videoEncode'
 import { type Photo } from '../../services/photos'
 import { Icon } from '../Icon'
 
@@ -32,17 +32,17 @@ export const MAX_VIDEO_SLIDE_MS = 30_000
 export const PLAYBACK_GRACE_MS = 5_000
 
 /**
- * Where a video slide is in its life: still being encoded (`pending` — never
- * offered to the browser at all), waiting for playback to begin, playing,
+ * Where a video slide is in its life: waiting for playback to begin, playing,
  * finished (the clip ended or {@link MAX_VIDEO_SLIDE_MS} ran out), or unplayable
  * — which is not an error to report but a slide that reverts to being the
  * poster, held for as long as any photograph would be.
  *
- * `pending` and `failed` are deliberately two states and not one: they hold the
- * slide for the same interval and look almost the same, but one says the library
- * is still working on the clip and the other says this browser cannot play it.
+ * A clip that is still being encoded is deliberately *not* one of these. Whether
+ * it is held is not something that happens to the slide but a fact about the
+ * library, read from the row and the capability flags on every render — and the
+ * flags can arrive after the slide is already on screen.
  */
-type SlideState = 'pending' | 'starting' | 'playing' | 'over' | 'failed'
+type SlideState = 'starting' | 'playing' | 'over' | 'failed'
 
 /** Props for {@link SlideshowVideo}. */
 export interface SlideshowVideoProps {
@@ -118,7 +118,10 @@ function useBudgetedTimeout(active: boolean, budgetMs: number, onExpire: () => v
  * start, badged as being prepared, and held for one ordinary photo interval —
  * the same answer the viewer gives, rather than a browser left to download an
  * original it cannot decode and a slide that stares back until the grace period
- * runs out.
+ * runs out. The capability flags that decide this arrive asynchronously, and on
+ * a cold load — a shared link, a reload, a restored tab — the first slide is on
+ * screen before them: so the decision is read on every render rather than taken
+ * at mount, and a clip the flags may yet hold stays a picture until they land.
  *
  * **Muted, always.** A slideshow that suddenly makes noise is worse than a silent
  * one, and a browser would refuse to autoplay it anyway. There is no sound
@@ -146,16 +149,21 @@ export function SlideshowVideo({
   className,
 }: SlideshowVideoProps) {
   const { t } = useTranslation()
-  const { video_streaming: videoStreaming } = useCapabilities()
+  const { video_streaming: videoStreaming, known: capabilitiesKnown } = useCapabilities()
   const videoRef = useRef<HTMLVideoElement>(null)
+  const [state, setState] = useState<SlideState>('starting')
   // A clip whose streaming version is still being made is not played here
   // either: the show paints its poster for one ordinary interval and says what
-  // is happening to it, exactly as the viewer does. Decided once, at mount — the
-  // stage keys a slide by its photo, so this component never outlives its clip.
-  const [state, setState] = useState<SlideState>(
-    streamPending(photo, videoStreaming) ? 'pending' : 'starting',
-  )
-  const pending = state === 'pending'
+  // is happening to it, exactly as the viewer does. Both facts are read on every
+  // render and never frozen at mount — the flags arrive after the first paint of
+  // a cold load, and a decision taken in a `useState` initialiser would leave
+  // that first slide with the answer given to flags that were not there yet.
+  const pending = streamPending(photo, videoStreaming)
+  const undecided = streamUndecided(photo, capabilitiesKnown)
+  // Either way the slide is a picture: while the flags are still on their way,
+  // a clip that they may well hold is not handed to the browser on the chance
+  // that they will not.
+  const stillPicture = pending || undecided
 
   // A fatal streaming error is the same answer as a codec the browser refuses:
   // this clip is not going to play, so the slide becomes its poster.
@@ -171,13 +179,14 @@ export function SlideshowVideo({
   })
 
   // The three clocks, each running only in the state it belongs to and only
-  // while the show is: waiting for playback, capping a long clip, and holding
-  // the poster of a clip that will not play.
-  useBudgetedTimeout(playing && state === 'starting', PLAYBACK_GRACE_MS, fail)
+  // while the show is: waiting for playback, capping a long clip, and holding a
+  // poster — of a clip that will not play, of one still being encoded, and of
+  // one whose flags never arrived, which is why the wait for them is timed too.
+  useBudgetedTimeout(playing && state === 'starting' && !stillPicture, PLAYBACK_GRACE_MS, fail)
   useBudgetedTimeout(playing && state === 'playing', MAX_VIDEO_SLIDE_MS, () => {
     setState('over')
   })
-  useBudgetedTimeout(playing && (state === 'failed' || pending), intervalMs, () => {
+  useBudgetedTimeout(playing && (state === 'failed' || stillPicture), intervalMs, () => {
     setState('over')
   })
 
@@ -189,12 +198,12 @@ export function SlideshowVideo({
     if (video === null) {
       return
     }
-    if (!playing || state === 'over' || state === 'failed' || pending) {
+    if (!playing || state === 'over' || state === 'failed' || stillPicture) {
       video.pause()
       return
     }
     Promise.resolve(video.play()).catch(fail)
-  }, [playing, state, pending, fail])
+  }, [playing, state, stillPicture, fail])
 
   // Asking for the advance from an effect rather than from the `ended` handler
   // is what makes pausing safe: a clip that finishes and is then paused before
@@ -208,9 +217,12 @@ export function SlideshowVideo({
     }
   }, [playing, state])
 
-  // Leaving the show — or stepping to another slide — must not leave a clip
-  // playing into an empty room. Dropping the source detaches the download too;
-  // hls.js, where it is in play, is destroyed by its own hook.
+  // Leaving the show — or stepping to another slide, or the flags landing and
+  // turning the slide into a picture — must not leave a clip playing into an
+  // empty room. Dropping the source detaches the download too; hls.js, where it
+  // is in play, is destroyed by its own hook. The element is re-read whenever
+  // the slide swaps between picture and player, so the one released is the one
+  // that was actually on screen.
   useEffect(() => {
     const video = videoRef.current
     return () => {
@@ -221,54 +233,55 @@ export function SlideshowVideo({
       video.removeAttribute('src')
       video.load()
     }
-  }, [])
+  }, [stillPicture])
 
   const duration = photo.duration_ms ?? 0
   const started = state === 'playing' || state === 'over'
 
-  if (pending) {
-    // Not a source-less <video> but a plain picture: a clip with no streaming
-    // rendition is exactly as much a still as any photograph in the show, and
-    // this way not one byte of the original is fetched for it.
-    return (
-      <>
+  return (
+    <>
+      {stillPicture ? (
+        // Not a source-less <video> but a plain picture: a clip with no
+        // streaming rendition is exactly as much a still as any photograph in
+        // the show, and this way not one byte of the original is fetched for it.
         <img
           className={className}
           src={poster}
           alt={photo.title || photo.file_name}
           draggable={false}
         />
+      ) : (
+        <video
+          ref={videoRef}
+          className={className}
+          src={src}
+          poster={poster}
+          // Muted is not a default here, it is the behaviour: see the component's
+          // documentation. `playsInline` keeps an iPhone from taking the clip
+          // fullscreen and throwing the reader out of the show.
+          muted
+          playsInline
+          preload="auto"
+          aria-label={photo.title || photo.file_name}
+          onPlaying={() => {
+            setState((current) => (current === 'starting' ? 'playing' : current))
+          }}
+          onEnded={() => {
+            setState('over')
+          }}
+          onError={fail}
+        />
+      )}
+      {pending && (
         <span className="slideshow__badge badge text-bg-dark opacity-75 d-inline-flex align-items-center gap-1">
           <Icon name="hourglass-split" aria-hidden="true" />
           <span>{t('slideshow.videoPreparing')}</span>
         </span>
-      </>
-    )
-  }
-
-  return (
-    <>
-      <video
-        ref={videoRef}
-        className={className}
-        src={src}
-        poster={poster}
-        // Muted is not a default here, it is the behaviour: see the component's
-        // documentation. `playsInline` keeps an iPhone from taking the clip
-        // fullscreen and throwing the reader out of the show.
-        muted
-        playsInline
-        preload="auto"
-        aria-label={photo.title || photo.file_name}
-        onPlaying={() => {
-          setState((current) => (current === 'starting' ? 'playing' : current))
-        }}
-        onEnded={() => {
-          setState('over')
-        }}
-        onError={fail}
-      />
-      {!started && (
+      )}
+      {/* Undecided says nothing of its own: the reader sees the badge every
+          clip carries until it starts moving, and one of the two answers
+          replaces it the moment the flags land. */}
+      {!pending && !started && (
         <span
           className="slideshow__badge badge text-bg-dark opacity-75 d-inline-flex align-items-center gap-1"
           role="img"

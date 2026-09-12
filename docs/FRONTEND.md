@@ -4212,11 +4212,19 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   ▶ + duration badge (`.slideshow__badge`, outside the chrome so it does not fade) until playback starts.
   **A clip still being encoded is never played here either** (09/2026): where `lib/videoEncode.streamPending`
   holds — the instance streams (`video_streaming`), the row says `hls: false` — the slide renders a plain
-  `<img>` of the poster instead of a `<video>` (state `pending`, decided once at mount; the stage keys a slide
-  by its photo), badges it `slideshow.videoPreparing` with the hourglass, never calls `play()`, and hands the
-  show on after **one ordinary photo interval** — the same answer the viewer gives, instead of a download the
-  browser will refuse and a slide that stares back until the 5 s grace runs out. Tests:
-  `SlideshowVideo.test.tsx` „while the streaming rendition is still being made")
+  `<img>` of the poster instead of a `<video>`, badges it `slideshow.videoPreparing` with the hourglass, never
+  calls `play()`, and hands the show on after **one ordinary photo interval** — the same answer the viewer
+  gives, instead of a download the browser will refuse and a slide that stares back until the 5 s grace runs
+  out. That test is read **on every render**, never frozen in a `useState` initialiser (09/2026 fix): the
+  capability flags are fetched asynchronously, so on a cold load — a shared link, a reload, a restored tab —
+  the **first** slide mounted with `video_streaming: false`, froze that answer and handed the browser the
+  original anyway (later slides were always right, being remounted per uid). While the flags are not `known`
+  yet, a row they could still hold (`lib/videoEncode.streamUndecided`: a video with `hls: false`) is the poster
+  with the ordinary ▶ badge and **no `<video>` at all**, so not one byte of a ~250 MB original is fetched on a
+  guess; that wait is timed by the same photo interval, so flags that never arrive move the show on instead of
+  stalling it. Swapping between player and picture releases the element it drops (`pause`, `src` removed,
+  `load`), so no download outlives it. Tests: `SlideshowVideo.test.tsx` „while the streaming rendition is still
+  being made" + „when the capability flags arrive late")
   + `SlideshowCaption` (what the photo **is**, laid over the picture: title, capture date
   (`lib/takenDate` `formatTakenLabel`, so a coarse date reads „1974" and an estimate is marked) and
   description, each shown only when its toggle is on **and** the photo carries the value — an empty

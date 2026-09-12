@@ -322,3 +322,116 @@ describe('SlideshowVideo while the streaming rendition is still being made', () 
     expect(play).toHaveBeenCalled()
   })
 })
+
+describe('SlideshowVideo when the capability flags arrive late', () => {
+  /** The flags as they read before and after the capabilities request lands. */
+  const unknownFlags = {
+    semantic_search: false,
+    passkeys: false,
+    video_streaming: false,
+    known: false,
+  }
+  const streamingFlags = { ...unknownFlags, video_streaming: true, known: true }
+  const noStreamingFlags = { ...unknownFlags, known: true }
+
+  /**
+   * Mounts a slide the way a cold load does: the flags are all-off and not yet
+   * known, because `GET /capabilities` has not answered. `land` re-renders the
+   * same slide with the answer, exactly as the provider does.
+   */
+  function setupColdLoad(overrides: Partial<SlideshowVideoProps> = {}) {
+    const props: SlideshowVideoProps = {
+      photo: clip({ hls: false }),
+      poster: '/api/v1/photos/v1/thumb/fit_1920',
+      playing: true,
+      intervalMs: INTERVAL_MS,
+      onEnded: vi.fn(),
+      className: 'slideshow__image',
+      ...overrides,
+    }
+    const tree = (flags: typeof unknownFlags) => (
+      <I18nextProvider i18n={i18n}>
+        <CapabilitiesContext.Provider value={flags}>
+          <SlideshowVideo {...props} />
+        </CapabilitiesContext.Provider>
+      </I18nextProvider>
+    )
+    const utils = render(tree(unknownFlags))
+    const land = (flags: typeof unknownFlags) => {
+      act(() => {
+        utils.rerender(tree(flags))
+      })
+    }
+    return { ...utils, props, land }
+  }
+
+  it('hands the original to nobody while the flags are still on their way', () => {
+    const { play } = stubPlayback()
+    const { container, getByRole } = setupColdLoad()
+
+    // Not even for one paint: the first slide of a cold load is the very place
+    // this used to fetch ~250 MB of a clip it was about to stop playing.
+    expect(container.querySelector('video')).toBeNull()
+    expect(container.querySelector('img')).toHaveAttribute(
+      'src',
+      '/api/v1/photos/v1/thumb/fit_1920',
+    )
+    expect(play).not.toHaveBeenCalled()
+    // Nothing is claimed about the clip yet — it is a video, and that is all.
+    expect(getByRole('img', { name: 'Video' })).toHaveTextContent('0:12')
+  })
+
+  it('holds the first slide once the flags say the clip is being encoded', () => {
+    const { play } = stubPlayback()
+    const { container, getByText, land } = setupColdLoad()
+
+    land(streamingFlags)
+
+    expect(getByText('Video is being processed')).toBeInTheDocument()
+    expect(container.querySelector('video')).toBeNull()
+    expect(play).not.toHaveBeenCalled()
+  })
+
+  it('plays the clip once the flags say the instance does not encode at all', () => {
+    const { play } = stubPlayback()
+    const { container, land } = setupColdLoad()
+
+    land(noStreamingFlags)
+
+    const video = container.querySelector('video')
+    expect(video).not.toBeNull()
+    expect(video?.getAttribute('src')).toContain('/photos/v1/video')
+    expect(play).toHaveBeenCalled()
+  })
+
+  it('advances rather than waiting forever on flags that never come', () => {
+    stubPlayback()
+    const { props } = setupColdLoad()
+
+    tick(INTERVAL_MS - 1)
+    expect(props.onEnded).not.toHaveBeenCalled()
+    tick(1)
+    expect(props.onEnded).toHaveBeenCalledTimes(1)
+  })
+
+  it('releases the element when a later answer turns the player into a picture', () => {
+    const { pause, load } = stubPlayback()
+    const { container, land } = setupColdLoad()
+
+    land(noStreamingFlags)
+    const video = container.querySelector('video')
+    if (video === null) {
+      throw new Error('the slide rendered no video element')
+    }
+    pause.mockClear()
+
+    // The flags are read again — an instance that has since been given an
+    // encoder — and the slide becomes the held poster. The element it just
+    // dropped must not keep downloading the original behind it.
+    land(streamingFlags)
+    expect(container.querySelector('video')).toBeNull()
+    expect(pause).toHaveBeenCalled()
+    expect(video.hasAttribute('src')).toBe(false)
+    expect(load).toHaveBeenCalled()
+  })
+})

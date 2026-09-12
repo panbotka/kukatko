@@ -135,3 +135,24 @@ export function videoHold(
 export function streamPending(photo: Photo, instanceStreaming: boolean): boolean {
   return instanceStreaming && isVideo(photo) && photo.hls === false
 }
+
+/**
+ * Whether the question {@link streamPending} answers cannot be answered yet:
+ * the row is one the flags could hold — a video whose payload says it has no
+ * rendition — and the flags have not been learned from the server.
+ *
+ * The capability flags are fetched asynchronously and read all-off until the
+ * answer lands, so "this instance does not encode" and "we have not asked yet"
+ * look identical to {@link streamPending}. Wherever a wrong answer merely hides
+ * a hint that is fine (see `CAPABILITIES_DEFAULT`), but where the answer decides
+ * whether a ~250 MB original is handed to the browser it is not: the wrong guess
+ * costs the download the hold exists to avoid. Somewhere that expensive, waiting
+ * out the fetch is cheaper than guessing — as long as the wait itself is timed,
+ * because flags that never arrive must not hold anything forever.
+ *
+ * @param photo The catalogue row.
+ * @param capabilitiesKnown Whether a capabilities response was ever received.
+ */
+export function streamUndecided(photo: Photo, capabilitiesKnown: boolean): boolean {
+  return !capabilitiesKnown && isVideo(photo) && photo.hls === false
+}
