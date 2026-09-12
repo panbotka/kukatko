@@ -3294,6 +3294,32 @@ here.
   way around — and both cover the photos **loaded so far**, since a decade nobody has paged in is not
   somewhere a reader can be sent. The set-cover PATCH sends `birth_year`/`death_year` back unchanged:
   `PATCH /subjects/{uid}` rewrites the whole record, so omitting them would erase them.
+  Between the header and the gallery sits the **`FamilyStrip`** (`components/people/FamilyStrip.tsx`): four
+  rows of round face chips — *Rodiče · Sourozenci · Partner · Děti* — read in **one** request
+  (`fetchRelations` → `GET /subjects/{uid}/relations`, each entry carrying its own cover and photo count, so a
+  family of a dozen is one call and not one per chip). The chip is the photo panel's person chip and not a
+  second way of drawing the same thing (the `ENTITY_STYLE.person` pill, `ps-1 pe-3`, a round face, the name),
+  with the **life span inside it** where anybody recorded one — with eight Nečases in the library the years are
+  what tell two namesakes apart. The face is **`SubjectAvatar`** (`components/people/SubjectAvatar.tsx` →
+  `GET /subjects/{uid}/avatar`, the server-cut square), which falls back to `InitialAvatar`'s coloured letter
+  for `photo_count === 0` (no request that could only 404) or a rendition that fails: a relative nobody
+  photographed is an **ordinary** node of a family tree, not a hole. A row nobody filled in is left out rather
+  than drawn empty and the whole section disappears for a viewer of a person with no recorded family; under
+  `canWrite` every row stays and gains a **`+`** (`person-plus`, the row named in its `aria-label`), because
+  there the `+` is the invitation. A strip that fails to load draws nothing at all — it is secondary to the
+  page it sits on, and an error banner over a gallery that loaded perfectly well would be louder than what it
+  reports. Each `+` opens **`AddRelationModal`** (`components/people/AddRelationModal.tsx`, mounted **only
+  while open** — it loads the whole people list): a four-way role picker (`ToggleButtonGroup`, radio, the rows
+  1:1) over `AddAutocomplete` (diacritics- and case-insensitive, the nickname searched too), `onAdd` →
+  `addRelation(subjectUid,{role,subject_uid})` and `onCreate` → `{role,new_subject:{name}}`, which the backend
+  creates and relates in **one audited transaction**. **Siblings are derived**, so that role has no endpoint of
+  its own: the dialog records the person as a **child of each recorded parent**, walking them one at a time so
+  the first call creates and every later one names the person it answered with (two parents must not mean two
+  people of one name) — and with no parents recorded it says what to record first instead of offering a field.
+  The dialog **stays open** after an add (the field clears, the role is kept, an `Alert` lists what the sitting
+  has recorded): recording the family of 118 people is several evenings of clicking, and four children have to
+  be four names typed in a row. A refusal is read off the `ApiError` status — 409 „nesedí do rodokmenu" (a
+  cycle, a second parentage), 400 „nedává smysl", anything else the generic failure. i18n under `family.*`.
   The page also carries the **two repairs for a mis-catalogued person**, both editors-only (a viewer sees
   neither): in the header **Sloučit s jinou osobou** → `MergeSubjectModal`, and on the batch bar
   **Přesunout k jiné osobě** (a second `extraActions` entry, any selection ≥ 1) → `MoveFacesModal`. Both
@@ -6141,6 +6167,18 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   (the `photo` already has `thumb_url` stamped)/`ExpandResult` (summary counts + `min_match_count` +
   `reason?` `empty_collection`/`no_source_embeddings`)/`ExpandReason`/`ExpandSearchRequest`;
   adding goes through `bulk.ts` (`POST /photos/bulk`), rejecting through `feedback.ts`;
+  `family.ts` = the genealogy client, a client of its own rather than more of the 21 kB `people.ts` because the
+  family is a separate model (the **family** is the node — a couple or lone parent plus their children — and
+  parents/siblings/partners/children are all **derived** from it, which is why they cannot contradict each
+  other): `fetchRelations(subjectUid,signal)` over `GET /subjects/{uid}/relations` and
+  `addRelation(subjectUid,req,signal)` over `POST /subjects/{uid}/relations`; the types mirror the Go structs
+  field for field — `Family`/`Relative` (`photo_count === 0` is **ordinary**, not an anomaly)/`Partnership`
+  (`partner: null` = a lone-parent family)/`Relations` (all four lists always present, an empty relation is
+  `[]` and never `null`)/`NewPerson`/`AddRelationRequest` (`subject_uid` **or** `new_subject`, never both)/
+  `AddRelationResult`/`FamilyKind`/`ChildKind`/`RelationRole` (`parent`/`child`/`partner` — a sibling is not a
+  role, see `AddRelationModal`); a refusal is an `ApiError` whose **status** is the message: 409 = the state of
+  the tree is in the way (a cycle, a second parentage — the same request would have been accepted against
+  different rows), 400 = the request got itself wrong;
   `recognition.ts` = the recognition-sweep client: `streamSweep(params,onMessage,signal)` over
   `GET /faces/sweep` **streams NDJSON** (`fetch`+`ReadableStream`, it splits lines by hand, `onMessage` receives
   only complete lines), the types `SweepParams` `{confidence,limit}` (`confidence` = **percent**, the backend

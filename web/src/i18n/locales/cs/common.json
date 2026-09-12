@@ -1853,6 +1853,37 @@
       "close": "Zavřít"
     }
   },
+  "family": {
+    "title": "Rodina",
+    "rows": {
+      "parents": "Rodiče",
+      "siblings": "Sourozenci",
+      "partners": "Partner",
+      "children": "Děti"
+    },
+    "role": {
+      "parent": "Rodič",
+      "sibling": "Sourozenec",
+      "partner": "Partner",
+      "child": "Dítě"
+    },
+    "add": {
+      "parent": "Přidat rodiče",
+      "sibling": "Přidat sourozence",
+      "partner": "Přidat partnera",
+      "child": "Přidat dítě",
+      "title": "Rodina — {{name}}",
+      "kindHeading": "Kým je ten člověk pro tuto osobu?",
+      "pickLabel": "Jméno osoby",
+      "siblingHint": "Sourozenec se zapíše jako dítě rodičů: {{parents}}.",
+      "siblingNoParents": "Sourozenectví vyplývá z rodičů, takže ho nejde zapsat, dokud žádní nejsou. Přidej nejdřív rodiče — sourozenci se pak zapisují jako jejich děti.",
+      "recorded": "Zapsáno: {{names}}",
+      "conflict": "Tenhle vztah do rodokmenu nesedí — třeba je ta osoba už dítětem v jiné rodině nebo by vznikl kruh.",
+      "invalid": "Tenhle vztah nedává smysl.",
+      "failed": "Vztah se nepodařilo zapsat.",
+      "close": "Hotovo"
+    }
+  },
   "clusters": {
     "title": "Skupiny obličejů",
     "subtitle": "Nepojmenované skupiny stejného obličeje — pojmenuj celou skupinu naráz.",

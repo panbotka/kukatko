@@ -1602,6 +1602,21 @@ body {
   font-weight: 400;
 }
 
+/* The family strip's row labels — Rodiče, Sourozenci, Partner, Děti. They line
+   up in a column so the chips beside them read as four rows of one table rather
+   than as four ragged lines; the width is the longest of the four plus air. On a
+   phone the column is dropped: a fixed label column there eats a third of the
+   row, and four rows that each start at the left edge are no harder to read. */
+.kk-family-row__label {
+  min-width: 5.5rem;
+}
+
+@media (max-width: 575.98px) {
+  .kk-family-row__label {
+    min-width: 0;
+  }
+}
+
 /* Library filter bar. The search field is the visual anchor (it grows to fill
    the header row); advanced filters live in a collapsible panel / offcanvas and
    surface as removable chips. These rules only cover what Bootstrap utilities

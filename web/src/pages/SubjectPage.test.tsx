@@ -8,6 +8,8 @@ import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
 import { GRID_COLUMNS_MAX } from '../lib/gridDensity'
 import { readGridScroll, writeGridScroll } from '../lib/gridScroll'
+import { ApiError } from '../services/auth'
+import { type Family, type Relations, type Relative } from '../services/family'
 import { type Subject, type SubjectCount } from '../services/people'
 import { type Photo, type PhotoListResponse } from '../services/photos'
 
@@ -30,6 +32,11 @@ vi.mock('../services/people', async (importOriginal) => {
   }
 })
 
+vi.mock('../services/family', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/family')>()
+  return { ...actual, fetchRelations: vi.fn(), addRelation: vi.fn() }
+})
+
 vi.mock('../services/organize', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/organize')>()
   return { ...actual, fetchAlbums: vi.fn(), fetchLabels: vi.fn() }
@@ -50,6 +57,7 @@ const {
   fetchFaces,
   assignFace,
 } = await import('../services/people')
+const { fetchRelations, addRelation } = await import('../services/family')
 const { bulkUpdatePhotos } = await import('../services/bulk')
 const { fetchAlbums, fetchLabels } = await import('../services/organize')
 const fetchSubjectMock = vi.mocked(fetchSubject)
@@ -60,6 +68,8 @@ const subjectsMock = vi.mocked(fetchSubjects)
 const mergeMock = vi.mocked(mergeSubject)
 const facesMock = vi.mocked(fetchFaces)
 const assignMock = vi.mocked(assignFace)
+const relationsMock = vi.mocked(fetchRelations)
+const addRelationMock = vi.mocked(addRelation)
 const bulkMock = vi.mocked(bulkUpdatePhotos)
 const albumsMock = vi.mocked(fetchAlbums)
 const labelsMock = vi.mocked(fetchLabels)
@@ -112,6 +122,40 @@ function subjectCount(uid: string, name: string): SubjectCount {
   return { ...subject(), uid, slug: name.toLowerCase(), name, marker_count: 2, photo_count: 2 }
 }
 
+/** One related person in the shape `GET /subjects/{uid}/relations` returns them. */
+function relative(uid: string, name: string, overrides: Partial<Relative> = {}): Relative {
+  return {
+    uid,
+    slug: name.toLowerCase(),
+    name,
+    type: 'person',
+    birth_year: null,
+    death_year: null,
+    photo_count: 3,
+    ...overrides,
+  }
+}
+
+/** The four derived lists, with everything unstated left empty. */
+function relations(overrides: Partial<Relations> = {}): Relations {
+  return { parents: [], siblings: [], partners: [], children: [], ...overrides }
+}
+
+/** One family row, as a partnership carries it. */
+function familyRow(uid = 'fm_1'): Family {
+  return {
+    uid,
+    partner_a_uid: 'sj_1',
+    partner_b_uid: 'sj_x',
+    kind: 'marriage',
+    from_year: null,
+    to_year: null,
+    note: '',
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  }
+}
+
 function auth(canWrite: boolean): AuthContextValue {
   return {
     status: 'authenticated',
@@ -157,6 +201,8 @@ beforeEach(async () => {
   mergeMock.mockReset()
   facesMock.mockReset()
   assignMock.mockReset()
+  relationsMock.mockReset()
+  addRelationMock.mockReset()
   bulkMock.mockReset()
   albumsMock.mockReset()
   labelsMock.mockReset()
@@ -169,6 +215,7 @@ beforeEach(async () => {
     no_embedding: 0,
     faces: [],
   })
+  relationsMock.mockResolvedValue(relations())
   albumsMock.mockResolvedValue([])
   labelsMock.mockResolvedValue([])
   subjectsMock.mockResolvedValue([subjectCount('sj_1', 'Jana'), subjectCount('sj_2', 'Jana K.')])
@@ -924,5 +971,249 @@ describe('SubjectPage scroll position', () => {
     unmount()
 
     expect(readGridScroll('/people/sj_1')).toEqual({ count: 2, scrollY: 1500 })
+  })
+})
+
+describe('SubjectPage family strip', () => {
+  /** What `POST /subjects/{uid}/relations` answers with for `who`. */
+  function added(who: Relative) {
+    return { family: familyRow(), relative: who, created: false }
+  }
+
+  it('draws the four rows of a person’s immediate family', async () => {
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    relationsMock.mockResolvedValue(
+      relations({
+        parents: [relative('sj_p', 'Marie')],
+        siblings: [relative('sj_s', 'Petr')],
+        partners: [{ family: familyRow(), partner: relative('sj_x', 'Bohumil') }],
+        children: [relative('sj_c', 'Anna')],
+      }),
+    )
+    renderPage(false)
+
+    await screen.findByRole('heading', { name: 'Family' })
+    expect(screen.getByText('Parents')).toBeInTheDocument()
+    expect(screen.getByText('Siblings')).toBeInTheDocument()
+    expect(screen.getByText('Partner')).toBeInTheDocument()
+    expect(screen.getByText('Children')).toBeInTheDocument()
+    // Each chip leads to that person's own page, which is what makes the strip a
+    // way to walk a family rather than a list of names.
+    expect(screen.getByRole('link', { name: 'Marie' })).toHaveAttribute('href', '/people/sj_p')
+    expect(screen.getByRole('link', { name: 'Petr' })).toHaveAttribute('href', '/people/sj_s')
+    expect(screen.getByRole('link', { name: 'Bohumil' })).toHaveAttribute('href', '/people/sj_x')
+    expect(screen.getByRole('link', { name: 'Anna' })).toHaveAttribute('href', '/people/sj_c')
+    // One request for the whole strip, not one per chip.
+    expect(relationsMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves out the relations nobody recorded', async () => {
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    relationsMock.mockResolvedValue(relations({ children: [relative('sj_c', 'Anna')] }))
+    renderPage(false)
+
+    await screen.findByRole('link', { name: 'Anna' })
+    // Four empty rows would say nothing four times over.
+    expect(screen.getByText('Children')).toBeInTheDocument()
+    expect(screen.queryByText('Parents')).not.toBeInTheDocument()
+    expect(screen.queryByText('Siblings')).not.toBeInTheDocument()
+    expect(screen.queryByText('Partner')).not.toBeInTheDocument()
+  })
+
+  it('draws nothing at all for a viewer of a person with no recorded family', async () => {
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    renderPage(false)
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    expect(screen.queryByRole('heading', { name: 'Family' })).not.toBeInTheDocument()
+  })
+
+  it('keeps the empty rows for an editor, because the + is the invitation', async () => {
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    renderPage()
+
+    await screen.findByRole('heading', { name: 'Family' })
+    expect(screen.getByRole('button', { name: 'Add a parent' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add a sibling' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add a partner' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add a child' })).toBeInTheDocument()
+  })
+
+  it('draws a relative nobody photographed as their initials, not as a hole', async () => {
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    relationsMock.mockResolvedValue(
+      relations({
+        parents: [relative('sj_p', 'Marie', { photo_count: 0 })],
+        children: [relative('sj_c', 'Anna')],
+      }),
+    )
+    renderPage(false)
+
+    // A great-grandmother nobody photographed is an ordinary node of a family
+    // tree: her chip asks for no picture that could only 404.
+    const missing = await screen.findByRole('link', { name: 'Marie' })
+    expect(missing.querySelector('img')).toBeNull()
+    expect(within(missing).getByText('M')).toBeInTheDocument()
+    // Somebody who is on photographs still gets their face.
+    const pictured = screen.getByRole('link', { name: 'Anna' })
+    expect(pictured.querySelector('img')).toHaveAttribute('src', '/api/v1/subjects/sj_c/avatar')
+  })
+
+  it('shows the life span inside the chip, which is what tells two namesakes apart', async () => {
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    relationsMock.mockResolvedValue(
+      relations({ parents: [relative('sj_p', 'Bohumil', { birth_year: 1923, death_year: 1998 })] }),
+    )
+    renderPage(false)
+
+    expect(await screen.findByRole('link', { name: /Bohumil/ })).toHaveTextContent('1923–1998')
+  })
+
+  it('records a relation against somebody the library already knows', async () => {
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    addRelationMock.mockResolvedValue(added(relative('sj_2', 'Jana K.')))
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByRole('heading', { name: 'Family' })
+    await user.click(screen.getByRole('button', { name: 'Add a parent' }))
+
+    const dialog = await screen.findByRole('dialog')
+    await user.type(within(dialog).getByRole('combobox'), 'Jana K')
+    await user.click(await screen.findByRole('option', { name: /Jana K\./ }))
+
+    await waitFor(() => {
+      expect(addRelationMock).toHaveBeenCalledWith('sj_1', {
+        role: 'parent',
+        subject_uid: 'sj_2',
+      })
+    })
+    // The strip is the record of what was just written, so it reads itself back.
+    await waitFor(() => {
+      expect(relationsMock).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  it('creates a person the library has never heard of and relates them at once', async () => {
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    addRelationMock.mockResolvedValue({
+      family: familyRow(),
+      relative: relative('sj_new', 'Marie Nečasová'),
+      created: true,
+    })
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByRole('heading', { name: 'Family' })
+    await user.click(screen.getByRole('button', { name: 'Add a parent' }))
+
+    const dialog = await screen.findByRole('dialog')
+    await user.type(within(dialog).getByRole('combobox'), 'Marie Nečasová')
+    await user.click(await screen.findByRole('option', { name: /Create/ }))
+
+    // One call, so the person and the relation land in one audited transaction —
+    // a refused relation leaves no orphan person behind.
+    await waitFor(() => {
+      expect(addRelationMock).toHaveBeenCalledWith('sj_1', {
+        role: 'parent',
+        new_subject: { name: 'Marie Nečasová' },
+      })
+    })
+    // The dialog stays open and says what it recorded: a person's four children
+    // are four names typed in a row, not four trips through a dialog.
+    expect(await screen.findByText(/Recorded: Marie Nečasová/)).toBeInTheDocument()
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
+  it('records a sibling as a child of both recorded parents', async () => {
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    relationsMock.mockResolvedValue(
+      relations({ parents: [relative('sj_m', 'Marie'), relative('sj_o', 'Josef')] }),
+    )
+    addRelationMock.mockResolvedValue(added(relative('sj_2', 'Jana K.')))
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByRole('heading', { name: 'Family' })
+    await user.click(screen.getByRole('button', { name: 'Add a sibling' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(/child of the parents: Marie, Josef/)).toBeInTheDocument()
+    await user.type(within(dialog).getByRole('combobox'), 'Jana K')
+    await user.click(await screen.findByRole('option', { name: /Jana K\./ }))
+
+    // Siblings are derived, so a sibling is recorded where it can be: as a child
+    // of the same parents, one call each.
+    await waitFor(() => {
+      expect(addRelationMock.mock.calls).toEqual([
+        ['sj_m', { role: 'child', subject_uid: 'sj_2' }],
+        ['sj_o', { role: 'child', subject_uid: 'sj_2' }],
+      ])
+    })
+  })
+
+  it('creates a sibling once, then relates that same person to the second parent', async () => {
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    relationsMock.mockResolvedValue(
+      relations({ parents: [relative('sj_m', 'Marie'), relative('sj_o', 'Josef')] }),
+    )
+    addRelationMock.mockResolvedValue({
+      family: familyRow(),
+      relative: relative('sj_new', 'Petr'),
+      created: true,
+    })
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByRole('heading', { name: 'Family' })
+    await user.click(screen.getByRole('button', { name: 'Add a sibling' }))
+    await user.type(within(await screen.findByRole('dialog')).getByRole('combobox'), 'Petr')
+    await user.click(await screen.findByRole('option', { name: /Create/ }))
+
+    // The second call names the person the first one created, so two parents do
+    // not mean two people of one name.
+    await waitFor(() => {
+      expect(addRelationMock.mock.calls).toEqual([
+        ['sj_m', { role: 'child', new_subject: { name: 'Petr' } }],
+        ['sj_o', { role: 'child', subject_uid: 'sj_new' }],
+      ])
+    })
+  })
+
+  it('says what to record first when a sibling has nothing to hang from', async () => {
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByRole('heading', { name: 'Family' })
+    await user.click(screen.getByRole('button', { name: 'Add a sibling' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(/Add a parent first/)).toBeInTheDocument()
+    // No field to type into: there is nowhere for the answer to go yet.
+    expect(within(dialog).queryByRole('combobox')).not.toBeInTheDocument()
+  })
+
+  it('explains a refusal about the state of the tree in the reader’s language', async () => {
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    addRelationMock.mockRejectedValue(new ApiError(409, 'family: relation would create a cycle'))
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByRole('heading', { name: 'Family' })
+    await user.click(screen.getByRole('button', { name: 'Add a child' }))
+    await user.type(within(await screen.findByRole('dialog')).getByRole('combobox'), 'Jana K')
+    await user.click(await screen.findByRole('option', { name: /Jana K\./ }))
+
+    expect(await screen.findByText(/does not fit the tree/)).toBeInTheDocument()
+  })
+
+  it('keeps every family write control away from a viewer', async () => {
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    relationsMock.mockResolvedValue(relations({ children: [relative('sj_c', 'Anna')] }))
+    renderPage(false)
+
+    await screen.findByRole('link', { name: 'Anna' })
+    expect(screen.queryByRole('button', { name: /^Add a/ })).not.toBeInTheDocument()
   })
 })

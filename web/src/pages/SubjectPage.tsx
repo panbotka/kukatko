@@ -12,6 +12,7 @@ import { GridDensityControl } from '../components/library/GridDensityControl'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { type BatchExtraAction, BatchActionBar } from '../components/organize/BatchActionBar'
 import { Candidates } from '../components/people/Candidates'
+import { FamilyStrip } from '../components/people/FamilyStrip'
 import { MergeSubjectModal } from '../components/people/MergeSubjectModal'
 import { MoveFacesModal } from '../components/people/MoveFacesModal'
 import { Outliers } from '../components/people/Outliers'
@@ -370,6 +371,13 @@ export function SubjectPage() {
           )}
         </div>
       </div>
+
+      {/* Who this person belongs to, above their photographs: in nine cases out
+          of ten that is what a reader came for, and for an editor the row of +
+          buttons is where a family tree actually gets filled in. The section
+          draws itself only when it has something to show or somebody who can add
+          it, exactly as `Outliers` does further down. */}
+      <FamilyStrip subjectUid={subject.uid} subjectName={subject.name} canWrite={canWrite} />
 
       <h2 className="kk-section-title">{t('subject.photos')}</h2>
       {status === 'loading' && <GridSkeleton label={t('subject.loadingPhotos')} />}
