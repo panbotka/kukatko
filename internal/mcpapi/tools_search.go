@@ -18,11 +18,12 @@ import (
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
-// errPersonMeUnlinked is what an agent gets for `person:me` when the token's own
-// user has never said which person of the library they are. It names the fix,
-// because the agent's next move is to tell its human where to set it.
+// errPersonMeUnlinked is what an agent gets for `person:me` — or `family:me`,
+// which names the same person — when the token's own user has never said which
+// person of the library they are. It names the fix, because the agent's next
+// move is to tell its human where to set it.
 var errPersonMeUnlinked = errors.New(
-	"person:me needs this token's user to be linked to a person; " +
+	"person:me/family:me needs this token's user to be linked to a person; " +
 		"set it on the account page, or name the person directly (person:<name or uid>)",
 )
 
@@ -33,6 +34,8 @@ var errPersonMeUnlinked = errors.New(
 const queryLanguageHelp = `Free words match the title, description, notes and file name (Czech-aware and ` +
 	`diacritics-insensitive, so "babicka" finds "babička"). key:value tokens filter; several tokens AND ` +
 	`together; -word and -key:value exclude. Keys: person:, album:, label: (each by name or uid), ` +
+	`family: (a whole family by the name or uid of one person: them, everybody descended from them and ` +
+	`all of their partners), ` +
 	`year:, month:, day:, taken:, before:, after: (dates as YYYY, YYYY-MM or YYYY-MM-DD; year: and the ` +
 	`other numbers take ranges like year:1960-1969), country:, city:, geo:yes|no, near:<photo-uid>, ` +
 	`dist:<km>, camera:, lens:, iso:, f:, mm:, mp:, type:image|video|live, faces:yes|no or a count, ` +
@@ -44,9 +47,9 @@ const queryLanguageHelp = `Free words match the title, description, notes and fi
 	`portrait:, landscape:, square:, panorama:, filename:, keywords:, uploader: (by username, ` +
 	`display name or uid; uploader:none are the imported photos, which nobody uploaded), ` +
 	`uid:<photo-uid or PhotoPrism-uid>. ` +
-	`favorite:, rating: and flag: mean the calling token's own user, person:me means the person ` +
-	`that user's account is linked to (an error when it is linked to none), and uploader:me means ` +
-	`what that user uploaded. ` +
+	`favorite:, rating: and flag: mean the calling token's own user, person:me (and family:me) means ` +
+	`the person that user's account is linked to (an error when it is linked to none), and uploader:me ` +
+	`means what that user uploaded. ` +
 	`uid: names exactly one photo and finds it even when archived, hidden or a stack variant. ` +
 	`Example: person:babicka year:1960-1969 -album:dovolena`
 

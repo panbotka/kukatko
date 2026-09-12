@@ -25,6 +25,9 @@ const (
 	maxResponseBody = 32 << 20
 	// maxErrorSnippet caps how much of a non-JSON error body is echoed back.
 	maxErrorSnippet = 400
+	// mimeJSON is the only media type the client sends or asks for: every
+	// /api/v1 route speaks JSON, and the streamed endpoints name their own type.
+	mimeJSON = "application/json"
 )
 
 // ErrInvalidServerURL indicates a server URL that is not an absolute http(s) URL.
@@ -189,7 +192,7 @@ func (c *Client) newRequest(
 			return nil, fmt.Errorf("encoding the request body for %s: %w", path, err)
 		}
 		payload = bytes.NewReader(encoded)
-		contentType = "application/json"
+		contentType = mimeJSON
 	}
 	return c.newStreamRequest(ctx, method, path, query, contentType, payload)
 }
@@ -211,7 +214,7 @@ func (c *Client) newStreamRequest(
 	if err != nil {
 		return nil, fmt.Errorf("building request for %s: %w", path, err)
 	}
-	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept", mimeJSON)
 	if payload != nil && contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}

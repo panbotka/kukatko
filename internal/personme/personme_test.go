@@ -272,3 +272,118 @@ func TestResolveUploader_pattern(t *testing.T) {
 		t.Errorf("value = (text %q, pattern %q), want both us123", value.Text, value.TextPattern())
 	}
 }
+
+// familyValues returns the text of every alternative of the query's family
+// filters, the twin of personValues for the second key that reserves the token.
+func familyValues(t *testing.T, q query.Query) []string {
+	t.Helper()
+	var out []string
+	for _, f := range q.Filters {
+		if f.Key != query.KeyFamily {
+			continue
+		}
+		for _, v := range f.Values {
+			out = append(out, v.Text)
+		}
+	}
+	return out
+}
+
+// TestResolve_family covers the second key the token is reserved under:
+// `family:me` is the caller's own family, which means the same subject UID
+// `person:me` resolves to — the filter then takes it as the root of the
+// descendant walk. The same rules follow from that: the exact lower-case
+// spelling wins, any other spelling stays a name match, and an account linked to
+// nobody cannot answer it.
+func TestResolve_family(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		input        string
+		linked       *string
+		wantUsed     bool
+		wantResolved bool
+		wantValues   []string
+	}{
+		{
+			name:         "a linked caller gets their own subject uid",
+			input:        "family:me",
+			linked:       new("sub123"),
+			wantUsed:     true,
+			wantResolved: true,
+			wantValues:   []string{"sub123"},
+		},
+		{
+			name:         "an unlinked caller cannot answer it",
+			input:        "family:me",
+			linked:       nil,
+			wantUsed:     true,
+			wantResolved: false,
+			wantValues:   []string{"me"},
+		},
+		{
+			name:         "another spelling stays an ordinary name match",
+			input:        "family:Me",
+			linked:       new("sub123"),
+			wantUsed:     false,
+			wantResolved: true,
+			wantValues:   []string{"Me"},
+		},
+		{
+			name:         "a name nobody shares with the token is untouched",
+			input:        "family:Nečas",
+			linked:       new("sub123"),
+			wantUsed:     false,
+			wantResolved: true,
+			wantValues:   []string{"Nečas"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			parsed := query.Parse(tt.input)
+
+			used, resolved := personme.Resolve(parsed.Filters, tt.linked)
+
+			if used != tt.wantUsed || resolved != tt.wantResolved {
+				t.Errorf("Resolve(%q) = (used %v, resolved %v), want (%v, %v)",
+					tt.input, used, resolved, tt.wantUsed, tt.wantResolved)
+			}
+			got := familyValues(t, parsed)
+			if len(got) != len(tt.wantValues) {
+				t.Fatalf("Resolve(%q) family values = %v, want %v", tt.input, got, tt.wantValues)
+			}
+			for i, want := range tt.wantValues {
+				if got[i] != want {
+					t.Errorf("Resolve(%q) family value %d = %q, want %q", tt.input, i, got[i], want)
+				}
+			}
+		})
+	}
+}
+
+// TestResolve_bothKeysAtOnce checks the two keys share one verdict: a query that
+// asks about the caller under both names is one question about one account, so
+// an unlinked caller fails it as a whole rather than half-resolving.
+func TestResolve_bothKeysAtOnce(t *testing.T) {
+	t.Parallel()
+
+	linked := query.Parse("person:me family:me")
+	used, resolved := personme.Resolve(linked.Filters, new("sub123"))
+	if !used || !resolved {
+		t.Fatalf("Resolve(person:me family:me) = (%v, %v), want (true, true)", used, resolved)
+	}
+	if got := personValues(t, linked); len(got) != 1 || got[0] != "sub123" {
+		t.Errorf("person values = %v, want [sub123]", got)
+	}
+	if got := familyValues(t, linked); len(got) != 1 || got[0] != "sub123" {
+		t.Errorf("family values = %v, want [sub123]", got)
+	}
+
+	unlinked := query.Parse("person:me family:me")
+	if used, resolved := personme.Resolve(unlinked.Filters, nil); !used || resolved {
+		t.Errorf("Resolve without a link = (%v, %v), want (true, false)", used, resolved)
+	}
+}

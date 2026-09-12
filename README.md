@@ -41,7 +41,9 @@ photo-book tool (deliberately out of scope), or a product with support and a rel
   untitled, untagged, undescribed photo is still reachable.
 - **A query language** that mixes free text with `key:value` filters in the same field:
   `dovolená camera:"Canon EOS R6" iso:100-400 faces:2`, `label:cat|dog`, `taken:2024-05`,
-  `person:"Anna Nováková" year:1985`, `near:<uid>` for "more like this one". Some 40 keys — people,
+  `person:"Anna Nováková" year:1985`, `near:<uid>` for "more like this one",
+  `family:Nečas` for a whole family at once — the named person, everybody descended from them and all of
+  their partners, which is exactly the set the drawn tree walks. Some 40 keys — people, families,
   albums, labels, country/city, `geo`, `dated` (`dated:no` is the pile of photos with no date at all,
   whether nobody ever knew it or somebody said so), camera, lens, `iso`, `f`, `mm`, `mp`, media type,
   codec, orientation, rating, favourite — and, for videos, `duration:1m-` in the units you would say
@@ -135,7 +137,9 @@ photo-book tool (deliberately out of scope), or a product with support and a rel
   rather than quietly left out — and for an editor that gap is a button: click it and the dialog opens
   on the right person, ready to record their mother or father. Both drawings pan and zoom, and a click
   on anybody redraws from them. The person it is drawn from, the direction, the depth and the folded
-  branches are all in the address, so Back undoes any of them and a link carries the view.
+  branches are all in the address, so Back undoes any of them and a link carries the view. And the same
+  family is a **search filter**: `family:Nečas` (or `family:me`) is every photo of the clan, the same
+  people the drawing walks, so the page and the query can never disagree.
 - A catalogue of people goes wrong in exactly two ways and both have a repair: **merge** the same
   person filed twice into one record, and **move** the photos that turn out to be somebody else to
   whoever they really are.

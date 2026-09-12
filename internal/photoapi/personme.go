@@ -7,14 +7,16 @@ import (
 )
 
 // noticePersonMeUnlinked is the machine-readable reason a listing came back
-// empty: the caller asked for `person:me` without their account having said
-// which person that is. The client turns the code into a sentence (and into an
+// empty: the caller asked for `person:me` — or `family:me`, the same word about
+// the same person — without their account having said which person that is. One
+// code covers both because there is one fact to state and one thing to do about
+// it, and the code is a wire value clients already read. The client turns the code into a sentence (and into an
 // offer to go and set it); the server states the fact, which is the same bargain
 // every other code in this API makes.
 const noticePersonMeUnlinked = "person_me_unlinked"
 
-// applyMeTokens resolves the query language's two caller-dependent values
-// against user — `person:me` against their linked subject and `uploader:me`
+// applyMeTokens resolves the query language's caller-dependent values against
+// user — `person:me` and `family:me` against their linked subject, `uploader:me`
 // against their own account (see internal/personme) — and returns the notices
 // the response should carry.
 //

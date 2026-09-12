@@ -941,6 +941,7 @@
       },
       "note": {
         "personMe": "je osoba, kterou jsi ty — podle nastavení na Mém účtu.",
+        "familyMe": "je tvoje vlastní rodina, podle osoby nastavené na Mém účtu.",
         "uploaderMe": "jsi ty,",
         "uploaderNone": "jsou importované fotky.",
         "datedNo": "je seznam všech nedatovaných — i těch, u kterých datum nikdo nikdy neznal."
@@ -953,6 +954,7 @@
         "album": "Fotky v albu (podle názvu nebo UID).",
         "label": "Fotky se štítkem (podle názvu nebo UID).",
         "person": "Fotky s osobou (podle jména nebo UID).",
+        "family": "Fotky celé rodiny: zadaná osoba, všichni její potomci a jejich partneři (podle jména nebo UID) — stejná množina, jakou kreslí rodokmen.",
         "uploader": "Kdo fotku nahrál (podle uživatelského jména nebo jména účtu, bez ohledu na diakritiku).",
         "state": "Oblíbené, soukromé a archivované (yes/no).",
         "hidden": "Skryté z knihovny (yes/no) — jediná cesta zpátky ke skryté fotce.",
@@ -979,7 +981,7 @@
         "uid": "Jedna fotka podle svého ID (nebo podle ID z původního katalogu). Najde ji i archivovanou nebo skrytou."
       }
     },
-    "personMeUnlinked": "Filtr person:me hledá osobu, kterou jsi ty — a tvůj účet zatím žádnou osobu nemá nastavenou, takže nic nenašel.",
+    "personMeUnlinked": "Filtr me (person:me, family:me) hledá osobu, kterou jsi ty — a tvůj účet zatím žádnou osobu nemá nastavenou, takže nic nenašel.",
     "personMeUnlinkedLink": "Nastavit na Mém účtu"
   },
   "globalSearch": {
@@ -1054,6 +1056,7 @@
       "f": "Clonové číslo, i rozsah",
       "face": "Stav obličeje; jediná hodnota je new (nepřiřazený)",
       "faces": "Počet obličejů: ano/ne, číslo nebo rozsah",
+      "family": "Fotky osoby, jejích potomků a jejich partnerů",
       "favorite": "Tvoje oblíbené (ano/ne)",
       "filename": "Původní název souboru",
       "flag": "Tvoje značka: pick, reject nebo eye",

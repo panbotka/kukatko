@@ -2,6 +2,7 @@ package photos
 
 import (
 	"math"
+	"strconv"
 	"strings"
 
 	"github.com/panbotka/kukatko/internal/query"
@@ -216,6 +217,7 @@ var queryCondBuilders = map[query.Key]condBuilder{
 	query.KeyAlbum:       albumCond,
 	query.KeyLabel:       labelCond,
 	query.KeyPerson:      personCond,
+	query.KeyFamily:      familyCond,
 	query.KeyUploader:    uploaderCond,
 	query.KeyCountry:     placeCond("country"),
 	query.KeyCity:        placeCond("city"),
@@ -336,6 +338,69 @@ func personCond(v query.Value, env condEnv) (string, bool) {
 		"WHERE m.photo_uid = photos.uid AND m.invalid = FALSE " +
 		"AND (s.name ILIKE " + p + " OR s.nickname ILIKE " + p +
 		" OR s.uid = " + uid + "))", true
+}
+
+// familyDepthLimit bounds the family: descendant walk at twenty generations.
+// internal/family already refuses to attach a child to one of its own
+// descendants, so a cycle should never reach the table; the guard is what makes
+// that a belt-and-braces claim rather than something a search request depends
+// on. It has to be here because the walk dedups on (uid, depth) — the pair keeps
+// growing round a cycle, so dedup alone would never terminate it.
+const familyDepthLimit = 20
+
+// familyPartnerExpr is the *other* partner of a family that a walked subject d
+// is a partner in. Half of a lone parent's family is NULL, so every use has to
+// drop those rows itself.
+const familyPartnerExpr = "CASE WHEN f.partner_a_uid = d.uid THEN f.partner_b_uid ELSE f.partner_a_uid END"
+
+// familyCond matches photos showing anybody in a chosen person's family: that
+// person, every descendant of theirs, and the partners of all of them. It is
+// deliberately the same set internal/family walks for the drawn tree, so the
+// page and the filter can never disagree about who "the Nečas family" is — and
+// deliberately not a connected component, which in a village would eventually
+// swallow everybody and stop filtering anything.
+//
+// The root is named the way personCond names a subject: by name pattern, by
+// nickname pattern or by exact UID, with the pattern and the UID bound as TWO
+// placeholders — one placeholder serving both a text comparison and a VARCHAR
+// one fails with SQLSTATE 42P08. `family:me` never arrives here as a word;
+// internal/personme rewrote it to the caller's subject UID before compiling.
+//
+// The member set is an inner WITH RECURSIVE rather than a list resolved in Go
+// because a condBuilder is handed neither a context nor a pool. It does not
+// depend on the outer row, so the planner builds it once and turns the whole
+// EXISTS into a hash semi join rather than re-walking it per photo — measured
+// against production, see docs/PERF.md §3.
+func familyCond(v query.Value, env condEnv) (string, bool) {
+	pattern := env.bind(likePattern(v.TextPattern()))
+	uid := env.bind(v.Text)
+	return "EXISTS (SELECT 1 FROM markers m WHERE m.photo_uid = photos.uid AND m.invalid = FALSE" +
+		" AND m.subject_uid IN (" + familyMembersSQL(pattern, uid) + "))", true
+}
+
+// familyMembersSQL renders the sub-select yielding one column of subject UIDs:
+// the roots matching the pattern or the UID, everybody descended from them, and
+// the partners of that whole set. pattern and uid are placeholders the caller
+// already bound, never user values.
+//
+// UNION rather than UNION ALL is load-bearing in the recursive term: when
+// cousins marry — which in a village they do — the same person is reachable by
+// two paths, and UNION ALL would duplicate the rows and, with only the depth
+// guard to stop it, explode combinatorially.
+func familyMembersSQL(pattern, uid string) string {
+	return "WITH RECURSIVE descendants(uid, depth) AS (" +
+		" SELECT s.uid, 0 FROM subjects s WHERE s.name ILIKE " + pattern +
+		" OR s.nickname ILIKE " + pattern + " OR s.uid = " + uid +
+		" UNION" +
+		" SELECT c.child_uid, d.depth + 1 FROM descendants d" +
+		" JOIN subject_families f ON f.partner_a_uid = d.uid OR f.partner_b_uid = d.uid" +
+		" JOIN subject_family_children c ON c.family_uid = f.uid" +
+		" WHERE d.depth < " + strconv.Itoa(familyDepthLimit) + ")" +
+		" SELECT uid FROM descendants" +
+		" UNION" +
+		" SELECT " + familyPartnerExpr + " FROM descendants d" +
+		" JOIN subject_families f ON f.partner_a_uid = d.uid OR f.partner_b_uid = d.uid" +
+		" WHERE " + familyPartnerExpr + " IS NOT NULL"
 }
 
 // uploaderCond matches who put the photo in the library: the uploading

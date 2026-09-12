@@ -56,6 +56,13 @@ const (
 	KeyLabel Key = "label"
 	// KeyPerson matches photos containing a subject by name or UID (text).
 	KeyPerson Key = "person"
+	// KeyFamily matches photos showing a subject's family: that person, every
+	// descendant of theirs and those descendants' partners (text). The root is
+	// named the way person: names a subject — by name, by nickname or by UID —
+	// and the set is the one the drawn tree walks, so the page and the filter
+	// cannot disagree. It has no Czech alias (rodina:): the key registry is
+	// English-only, which is also why osoba: is deliberately unsupported.
+	KeyFamily Key = "family"
 	// KeyFavorite keeps (or drops) the caller's favorites (yes/no).
 	KeyFavorite Key = "favorite"
 	// KeyPrivate keeps (or drops) private photos (yes/no).
@@ -197,6 +204,7 @@ var specs = map[Key]spec{
 	KeyAlbum:       {kind: KindText},
 	KeyLabel:       {kind: KindText},
 	KeyPerson:      {kind: KindText},
+	KeyFamily:      {kind: KindText},
 	KeyFavorite:    {kind: KindBool},
 	KeyPrivate:     {kind: KindBool},
 	KeyArchived:    {kind: KindBool},

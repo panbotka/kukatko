@@ -4502,7 +4502,12 @@ to `## Package map` in `CLAUDE.md`.
   (`800-`, `-200`), `*` as a wildcard in text (**an escaped or quoted asterisk is a literal** —
   `title:foo\*bar` searches for an asterisk); the filter registry `specs` (Key → Kind
   text/number/date/bool/enum/id/count + bound validation: rating 0–5, month 1–12, year 1000–9999, …)
-  with the aliases `subject:`→`person:`, `keyword:`→`keywords:`; **`text:`** matches the text a recogniser
+  with the aliases `subject:`→`person:`, `keyword:`→`keywords:`;
+  **`family:`** takes a person — by name, by nickname or by uid, exactly as `person:` does — and means
+  that person, everybody descended from them and all of their partners: the same set the drawn tree walks
+  (`internal/family`), so a page and a filter can never disagree about who a family is. It has **no Czech
+  alias** (`rodina:`), for the reason `osoba:` is unsupported too: the registry is English-only;
+  **`text:`** matches the text a recogniser
   read *inside* the photo (`photos.ocr_text`) and is deliberately its own key rather than folded into
   `description:`/`notes:` — OCR output is machine-read and noisy, and someone hunting for the photo of a
   particular shop wants to say so; the bool keys include
@@ -4529,6 +4534,11 @@ to `## Package map` in `CLAUDE.md`.
   `HasFilter(key)`. The AST is compiled into SQL by `internal/photos/store_query.go` (`queryClauses` — a map of
   builders per key, everything through bind parameters; per-user filters scoped to `RatedBy`, `near:`
   a spherical distance with the radius `dist:` default 5 km, `faces:` counts non-invalid face markers,
+  `family:` an `EXISTS` over `markers` whose subject is in an inner `WITH RECURSIVE` walk of the root's
+  descendants and their partners — the pattern and the uid bound as **two** placeholders, because one `$n`
+  serving both a text comparison and a `VARCHAR` one fails with SQLSTATE 42P08, and the walk guarded at 20
+  generations because it dedups on `(uid, depth)`; the walk does not depend on the outer row, so the planner
+  builds the member set once (measured on production — docs/PERF.md §3),
   the four video filters each narrowed by `queryCondGuards` to the rows their question means something for —
   the guard sits **outside** the negation, so `sound:no` and `duration:!10s` stay within the clips instead of
   answering for every still — and `fps:`'s bounds widened by half a percent so `fps:30` finds the 29.97 an
@@ -4550,14 +4560,16 @@ to `## Package map` in `CLAUDE.md`.
   typed `subject:` without keeping its own list. `internal/globalsearchapi` serves both to the search
   palette, so no list of filter keys anywhere else has to be maintained by hand. The user-facing grammar:
   docs/API.md "Search language (q=)".
-  **`person:me` and `uploader:me` are deliberately *not* resolved here** — the parser
+  **`person:me`, `family:me` and `uploader:me` are deliberately *not* resolved here** — the parser
   knows nothing about who is asking, which is what keeps a filter's meaning independent of the request that
   carried it (`uploader:none`, which says nothing about the caller, is compiled by the store instead);
   see `internal/personme`), `internal/personme/`
   (resolution of the words of the query language that mean something different to every caller:
-  **`person:me`** and **`uploader:me`**. `Resolve(filters, linkedSubjectUID) (used, resolved bool)` rewrites every `person:`
+  **`person:me`**, **`family:me`** and **`uploader:me`**. `Resolve(filters, linkedSubjectUID) (used, resolved bool)`
+  rewrites every `person:` **and `family:`**
   alternative whose text is exactly `me` — the negated `!me` included — to the caller's linked subject UID
   (both `Text` and `Pattern`, so the compiled LIKE cannot still match a person *named* "me"), in place.
+  (both keys name a subject, so one pass rewrites both and they share one verdict).
   `resolved` is false only when the token was used by an account with **no** link, which the caller answers
   with an empty result and a reason: `internal/photoapi` sets `photos.ListParams.MatchNone` and returns the
   notice `person_me_unlinked`, the MCP search tool returns an error naming the fix. Never "everything", never

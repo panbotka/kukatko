@@ -1960,7 +1960,8 @@ here.
   wording, the library raises under its own filter bar;
   beside it **`QueryNoticesAlert`** (`components/search/`) renders the response's `notices` — the reason an
   understood query was answered with **nothing** rather than with everything. The only code today is
-  `person_me_unlinked` (`person:me` from an account that has not said which person it is), shown as a
+  `person_me_unlinked` (`person:me` — or `family:me`, the same word about the same person — from an account
+  that has not said which person it is), shown as a
   sentence plus the one link that fixes it (`/account`); an **unknown code is ignored**, never printed raw,
   so a client older than the server does not show the reader an identifier. Both hooks
   (`usePaginatedPhotos`, `useWindowedPhotos`) carry `notices` alongside `unknownTokens`, so the library grid

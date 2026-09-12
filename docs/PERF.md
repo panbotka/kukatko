@@ -445,6 +445,40 @@ one slideshow, a handful of pages over the evening, never the grid and never a
 background job. If the library ever grows to where this is felt, the fix is a
 materialised shuffle key, not an index on a digest of a per-request seed.
 
+### The `family:` filter's recursive walk
+
+`family:` compiles into a correlated `EXISTS` over `markers` whose subject has to
+be in an inner `WITH RECURSIVE` walk of the root's descendants and their partners
+(`familyCond` in `internal/photos/store_query.go`). The obvious worry is that the
+walk runs once per photo. It does not: the walk does not reference the outer row,
+so the planner evaluates it once and turns the whole `EXISTS` into a hash semi
+join.
+
+**Measured on production data, 2026-09-13.** 21 018 photos, 121 subjects, 21 476
+markers. Production is still on 0.20.0 and has no `subject_families` yet, so the
+two tables were created as **`TEMP` tables in one psql session** — they live in
+`pg_temp`, shadow the public schema for that session only and vanish on
+disconnect, so nothing in the live library was written. They were seeded with a
+deliberately extreme genealogy: 60 couples chained so that the root's clan is
+essentially every subject in the library (119 of 121 people), which is far wider
+than any real family and therefore an upper bound.
+
+| Query | `EXPLAIN (ANALYZE)` execution |
+| --- | --- |
+| `family:` by name (`%Nečas%`) | **56.8 ms** |
+| `family:` by uid, root of the whole synthetic clan | **44.6 ms** |
+| `person:` over the same library (baseline) | **10.3 ms** |
+
+The plan confirms the hoisting: `Recursive Union … loops=1`, the member set
+built once (`Append … rows=239 loops=1`) and fed to a `Hash Semi Join` against
+`markers` — not a `SubPlan` re-executed per photo. A realistic clan is a small
+fraction of the library and cheaper still.
+
+So the documented fallback — resolving the descendant set in Go and passing it as
+`= ANY($n)`, which would need a pre-pass before compilation because a
+`condBuilder` receives neither a context nor a pool — is **not** taken. Take it
+only if a future measurement shows the planner stops hoisting.
+
 ### The album index (`GET /api/v1/albums`)
 
 **Symptom (production, 2026-08-02).** The endpoint took **32.8 s** to return

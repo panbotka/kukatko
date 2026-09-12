@@ -1,5 +1,6 @@
 // Package personme resolves the words of the search query language that mean
-// something different to every caller: `person:me` and `uploader:me`.
+// something different to every caller: `person:me`, `family:me` and
+// `uploader:me`.
 //
 // # Why it is not in internal/query
 //
@@ -31,12 +32,23 @@ package personme
 import "github.com/panbotka/kukatko/internal/query"
 
 // Token is the value of the person: filter (and of its subject: alias) that
-// names the caller rather than naming somebody. The uploader: filter reserves
-// the same word for the same reason — see ResolveUploader.
+// names the caller rather than naming somebody. The family: filter reserves the
+// same word for the same person — `family:me` is the caller's own family — and
+// the uploader: filter reserves it for the caller's account, see
+// ResolveUploader.
 const Token = "me"
 
-// Resolve rewrites every `person:me` alternative in filters to the subject
-// linked to the caller's account, in place.
+// subjectKeys are the filter keys whose value names a subject, and which
+// therefore reserve Token for the subject the caller is linked to. person:
+// matches that person; family: takes them as the root of a descendant walk.
+// Both resolve to the same UID, so both are rewritten by one pass.
+var subjectKeys = map[query.Key]bool{
+	query.KeyPerson: true,
+	query.KeyFamily: true,
+}
+
+// Resolve rewrites every `person:me` and `family:me` alternative in filters to
+// the subject linked to the caller's account, in place.
 //
 // linked is the caller's linked subject UID, or nil when the account has not
 // said which person it is. used reports whether the token appeared at all;
@@ -49,9 +61,13 @@ const Token = "me"
 // "everything I am not on" works for a linked caller; for an unlinked one it is
 // just as unresolvable, because the app cannot say which photos are not of a
 // person it cannot name.
+//
+// used and resolved are reported across both keys together: an account with no
+// linked subject can answer neither `person:me` nor `family:me`, and the one
+// reason it has to give is the same for either.
 func Resolve(filters []query.Filter, linked *string) (used, resolved bool) {
 	for i := range filters {
-		if filters[i].Key != query.KeyPerson {
+		if !subjectKeys[filters[i].Key] {
 			continue
 		}
 		values := filters[i].Values

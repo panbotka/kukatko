@@ -931,6 +931,7 @@
       },
       "note": {
         "personMe": "is the person that is you, as set on My account.",
+        "familyMe": "is your own family, taken from the person you are on My account.",
         "uploaderMe": "is you,",
         "uploaderNone": "are the imported photos.",
         "datedNo": "is the worklist of everything undated — including what never had a date at all."
@@ -943,6 +944,7 @@
         "album": "Photos in an album (by title or UID).",
         "label": "Photos carrying a label (by name or UID).",
         "person": "Photos with a person (by name or UID).",
+        "family": "Photos of a whole family: the named person, everybody descended from them and their partners (by name or UID) — the same set the drawn tree walks.",
         "uploader": "Who uploaded the photo (by username or account name, accents ignored).",
         "state": "Favorites, private and archived (yes/no).",
         "hidden": "Hidden from the library (yes/no) — the way back to a hidden photo.",
@@ -969,7 +971,7 @@
         "uid": "One photo by its own ID (or by the source ID it was imported under). It finds it even when archived or hidden."
       }
     },
-    "personMeUnlinked": "The person:me filter looks for the person that is you — and your account has not said which person that is, so it found nothing.",
+    "personMeUnlinked": "The me filter (person:me, family:me) looks for the person that is you — and your account has not said which person that is, so it found nothing.",
     "personMeUnlinkedLink": "Set it on My account"
   },
   "globalSearch": {
@@ -1044,6 +1046,7 @@
       "f": "The f-number, ranges allowed",
       "face": "Face state; the only value is new (unassigned)",
       "faces": "The face count: yes/no, a number or a range",
+      "family": "Photos of a person, their descendants and their partners",
       "favorite": "Your favorites (yes/no)",
       "filename": "The original file name",
       "flag": "Your flag: pick, reject or eye",

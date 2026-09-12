@@ -331,6 +331,67 @@ func TestPersonCond(t *testing.T) {
 	}
 }
 
+// TestFamilyCond covers what `family:` compiles to: the root is named exactly
+// as `person:` names a subject, the descendant set is an inner WITH RECURSIVE
+// rather than anything resolved outside SQL, and the walk carries its depth
+// guard. The two-placeholder rule is the trap it really guards: one $n serving
+// both the text pattern and the VARCHAR uid fails at execution with SQLSTATE
+// 42P08, which no amount of string assertion on a valid query would catch.
+func TestFamilyCond(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		input    string
+		contains []string
+		args     []any
+	}{
+		{
+			name:  "the root is a name, a nickname or an exact uid",
+			input: "family:necas",
+			contains: []string{
+				"WITH RECURSIVE descendants(uid, depth)",
+				"s.name ILIKE $1",
+				"s.nickname ILIKE $1",
+				"s.uid = $2",
+				"JOIN subject_family_children c ON c.family_uid = f.uid",
+				"d.depth < 20",
+				"m.invalid = FALSE",
+			},
+			args: []any{"%necas%", "necas"},
+		},
+		{
+			name:     "a wildcard anchors both name arms of the root",
+			input:    "family:neca*",
+			contains: []string{"s.name ILIKE $1", "s.nickname ILIKE $1"},
+			args:     []any{"neca%", "neca*"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			sql, args := buildCountQuery(ListParams{QueryFilters: query.Parse(tt.input).Filters})
+			for _, want := range tt.contains {
+				if !strings.Contains(sql, want) {
+					t.Errorf("query missing %q: %q", want, sql)
+				}
+			}
+			if strings.Contains(sql, "$3") {
+				t.Errorf("family: bound a third parameter: %q", sql)
+			}
+			if len(args) != len(tt.args) {
+				t.Fatalf("args = %v, want %v", args, tt.args)
+			}
+			for i, want := range tt.args {
+				if args[i] != want {
+					t.Errorf("arg %d = %v, want %v", i, args[i], want)
+				}
+			}
+		})
+	}
+}
+
 // TestVideoFilterClauses covers what the four video filters compile to: the
 // clip-length bounds in the milliseconds the column stores, the frame rate
 // widened enough for the NTSC rates, and the two yes/no filters — each of them

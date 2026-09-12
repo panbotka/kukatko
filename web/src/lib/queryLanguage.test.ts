@@ -186,6 +186,13 @@ describe('suggestFilterValues', () => {
     expect(suggestFilterValues('subject:jar')?.facet).toBe('person')
   })
 
+  it('completes family: from the people, since its value names one', () => {
+    // `family:` takes a person as the root of the walk, so the names it needs
+    // are the same list `person:` draws on — typing a surname from memory is
+    // exactly the case the completion exists for.
+    expect(suggestFilterValues('family:neč')?.facet).toBe('person')
+  })
+
   it('completes inside an unterminated quote, where spaces need it most', () => {
     const s = suggestFilterValues('album:"Léto 2')
     expect(s?.facet).toBe('album')
@@ -368,6 +375,10 @@ describe('suggestFilterKey', () => {
 
   it('proposes the key a Czech word means, which no spelling distance reaches', () => {
     expect(suggestFilterKey('osoba:Jarmila')).toBe('person')
+    // `family:` has no parser alias by design — the registry is English-only —
+    // so the Czech word for it arrives as an unknown token, and offering the fix
+    // is the whole reason this map exists.
+    expect(suggestFilterKey('rodina:Nečas')).toBe('family')
     expect(suggestFilterKey('rok:1965')).toBe('year')
     // Diacritics are folded, so the word survives being typed properly.
     expect(suggestFilterKey('štítek:svatba')).toBe('label')

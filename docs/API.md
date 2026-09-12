@@ -356,8 +356,8 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   a `q` made only of negative terms (`-word`) is forced to `fulltext` (there is nothing to embed). Filters
   the language did not understand are left alone (searched as text) and the response returns them in
   `unknown_tokens: []string` (also on `GET /photos`), so the UI can offer a gentle hint;
-  a query the server understood but **cannot satisfy** (today only `person:me` from an account with no
-  linked person) comes back **empty** with the reason in `notices: []string` (`person_me_unlinked`),
+  a query the server understood but **cannot satisfy** (today only `person:me`/`family:me` from an account
+  with no linked person) comes back **empty** with the reason in `notices: []string` (`person_me_unlinked`),
   never widened to the whole library;
   both list and search carry per-photo `is_favorite` **+ per-user `rating`/`flag`** for the current user,
   `?favorite=true` scopes the list to their favourites, **`?min_rating=n` / `?flag=pick|reject|eye` / `?sort=rating`**
@@ -2186,6 +2186,10 @@ the MCP tool answers with an error naming the fix instead. **The collision with 
 "me" is resolved in favour of the token**, but only in its exact lower-case spelling: `person:Me` or
 `person:ME` is an ordinary (case-insensitive) name match that still finds a subject named "me", and any
 subject is always reachable by UID (`person:<uid>`), which no name can shadow.
+**`family:me` — the caller's own family.** The same word under the `family:` key resolves to the same
+subject (`internal/personme` rewrites both keys in one pass and they share one verdict), which the filter
+then takes as the root of the walk — so an account with no linked person gets the same empty result and the
+same `person_me_unlinked` reason.
 **`uploader:me` — what the caller uploaded.** The same word under the uploader key, resolved the same way
 (`internal/personme`, `ResolveUploader`) against the **account making the request** rather than a person it
 is linked to — so it cannot fail and needs no notice; every other spelling (`uploader:Me`) is an ordinary
@@ -2208,6 +2212,7 @@ put a photo taken minutes either side of New Year in the same year.
 | `album:` | text | album membership by **name** (substring) or exact UID |
 | `label:` | text | a label by **name** or UID |
 | `person:` (alias `subject:`) | text | a subject by **name**, by **nickname** or by UID, via non-invalid markers. The name and the nickname are matched on the same terms (substring, `*` wildcard, case-insensitive, **diacritics-sensitive** like `album:`) against the same bound pattern, so `person:Bohouš` finds Bohumil Nečas; an empty nickname matches nothing. The exact lower-case value **`me`** is reserved: it means the person the caller's own account is linked to (`users.subject_uid`) — see below |
+| `family:` | text | a whole **family**: the named subject, everybody **descended** from them and all of those people's **partners**, matched through non-invalid markers. The root is named exactly as `person:` names a subject — by **name**, by **nickname** or by **UID**, same substring/`*`/case rules — and the set is the one `GET /subjects/{uid}/tree?direction=descendants` draws, so a page and a filter can never disagree about who "the Nečas family" is. It is deliberately **not** a connected component: in a village the families marry into each other, and a component would eventually swallow everybody and stop filtering anything. A person reachable by two paths (cousins marrying) is counted **once**. The walk is bounded at 20 generations. The exact lower-case value **`me`** is reserved here too — see above. There is **no** Czech alias `rodina:`, for the same reason `osoba:` is unsupported: the key registry is English-only |
 | `uploader:` | text | who uploaded the photo, by the account's **username or display name** (substring, `*` wildcard, and **accent-insensitive** like `text:` — a name is typed from memory, so `uploader:tomas` finds "Tomáš") or by exact UID. Two exact lower-case values are reserved: **`me`** is the caller's own account (see below) and **`none`** are the photos with **no** uploader, the ones an import brought in — so `uploader:!none` is everything somebody did upload |
 | `favorite:` `private:` `archived:` | `yes\|no` | per-user favourite / private / archived; `archived:` **removes the default live-only scope** |
 | `hidden:` | `yes\|no` | hidden from the library (`photos.hidden_from_library`); like `archived:` it **removes the default visible-only scope**, so `hidden:yes` is the documented way back to a hidden photo |

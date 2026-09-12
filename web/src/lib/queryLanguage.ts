@@ -33,6 +33,7 @@ export const FILTER_KEYS = [
   'f',
   'face',
   'faces',
+  'family',
   'favorite',
   'filename',
   'flag',
@@ -329,6 +330,7 @@ export type ValueFacet = 'album' | 'label' | 'person'
  */
 const VALUE_FACET_BY_KEY: Readonly<Record<string, ValueFacet | undefined>> = {
   album: 'album',
+  family: 'person',
   label: 'label',
   person: 'person',
   subject: 'person',
@@ -564,6 +566,7 @@ export type QueryHelpRowId =
   | 'album'
   | 'label'
   | 'person'
+  | 'family'
   | 'uploader'
   | 'state'
   | 'hidden'
@@ -592,7 +595,7 @@ export type QueryHelpRowId =
  * The ids of the code-led sentences a help row can carry, again a literal union
  * so `search.help.note.<id>` stays a valid typed-i18n key.
  */
-export type QueryHelpNoteId = 'personMe' | 'uploaderMe' | 'uploaderNone' | 'datedNo'
+export type QueryHelpNoteId = 'personMe' | 'familyMe' | 'uploaderMe' | 'uploaderNone' | 'datedNo'
 
 /**
  * One code-led sentence appended to a row's description: a literal query
@@ -645,6 +648,12 @@ export const QUERY_HELP_ROWS: QueryHelpRow[] = [
     keys: 'person: subject:',
     example: 'person:me',
     notes: [{ id: 'personMe', example: 'person:me' }],
+  },
+  {
+    id: 'family',
+    keys: 'family:',
+    example: 'family:Nečas',
+    notes: [{ id: 'familyMe', example: 'family:me' }],
   },
   {
     id: 'uploader',
@@ -737,6 +746,7 @@ const KEY_ALIASES: Readonly<Record<string, string | undefined>> = {
   popis: 'description',
   poznamka: 'notes',
   poznamky: 'notes',
+  rodina: 'family',
   rok: 'year',
   soubor: 'filename',
   stitek: 'label',
