@@ -179,6 +179,40 @@ func (e *Enqueuer) EnqueueSidecar(ctx context.Context, photoUID string) error {
 	return e.enqueuePhotoJobOpts(ctx, TypeSidecar, photoUID, EnqueueOptions{RunAfter: &runAfter})
 }
 
+// FamilyExportDebounce is how long a family_export job waits before it may run.
+// It is the coalescing window, and it is longer than SidecarDebounce because the
+// work it debounces is bigger and the burst it debounces is denser: one job
+// rewrites the whole genealogy, and filling in a family — a partner, then four
+// children, then their years — is a rapid series of small writes that all
+// describe the same file.
+const FamilyExportDebounce = 15 * time.Second
+
+// EnqueueFamilyExport schedules a rewrite of families.yaml, the library-level
+// export of the whole genealogy. It takes no identifier: there is one file for
+// the whole library and the handler reads the current state of every family when
+// it runs.
+//
+// Dedup is scoped to the queued state (idx_jobs_family_export_dedup, migration
+// 0075): a pre-existing *queued* job is a no-op (nil error), which is what
+// collapses a burst of relation edits into a single file write. An edit that
+// lands while a job is already *running* is not swallowed — it schedules a fresh
+// follow-up, because the running job read the genealogy before that edit and
+// would otherwise leave the file stale.
+//
+// Callers enqueue this after their mutation has committed: the job re-reads the
+// genealogy, so enqueuing after the write is what makes it serialise the new
+// state rather than the old one.
+func (e *Enqueuer) EnqueueFamilyExport(ctx context.Context) error {
+	runAfter := e.now().Add(FamilyExportDebounce)
+	if _, err := e.store.Enqueue(ctx, TypeFamilyExport, nil, EnqueueOptions{RunAfter: &runAfter}); err != nil {
+		if errors.Is(err, ErrDuplicate) {
+			return nil
+		}
+		return fmt.Errorf("jobs: enqueuing %s: %w", TypeFamilyExport, err)
+	}
+	return nil
+}
+
 // now returns the current time, indirected through the Enqueuer so tests can pin
 // it. A nil clock (the normal case) reads the wall clock.
 func (e *Enqueuer) now() time.Time {

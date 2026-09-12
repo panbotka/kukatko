@@ -42,6 +42,7 @@ const TYPE_LABELS: Record<string, ParseKeys | undefined> = {
   metadata: 'system.jobs.types.metadata',
   ocr: 'system.jobs.types.ocr',
   sidecar: 'system.jobs.types.sidecar',
+  family_export: 'system.jobs.types.family_export',
   storyboard: 'system.jobs.types.storyboard',
   hls_transcode: 'system.jobs.types.hls_transcode',
   backup: 'system.jobs.types.backup',

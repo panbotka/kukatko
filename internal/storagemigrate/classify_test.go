@@ -17,6 +17,7 @@ func TestLivesLocally_decidesEveryKind(t *testing.T) {
 	want := map[storekeys.Kind]bool{
 		storekeys.KindOriginal:  true,
 		storekeys.KindSidecar:   true,
+		storekeys.KindFamilies:  true,
 		storekeys.KindHLS:       true,
 		storekeys.KindThumbnail: false,
 		storekeys.KindDump:      false,

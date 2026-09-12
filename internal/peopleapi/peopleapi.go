@@ -76,7 +76,9 @@ type API struct {
 	subjects SubjectStore
 	photos   PhotoStore
 	// media stamps the thumb/download URLs onto every photo this API returns.
-	media        *mediaurl.Builder
+	media *mediaurl.Builder
+	// familyExport schedules the genealogy export after a subject changed.
+	familyExport FamilyExportEnqueuer
 	requireAuth  func(http.Handler) http.Handler
 	requireWrite func(http.Handler) http.Handler
 }
@@ -90,6 +92,10 @@ type Config struct {
 	// Storage decides where a client fetches the returned photos' media. A nil
 	// storage points them at this application's own media routes.
 	Storage storage.Storage
+	// FamilyExport schedules the rewrite of the library's genealogy export after
+	// a subject mutation. Nil disables it, which is what the wiring passes when
+	// the export is switched off.
+	FamilyExport FamilyExportEnqueuer
 	// RequireAuth guards the read endpoints for any signed-in user.
 	RequireAuth func(http.Handler) http.Handler
 	// RequireWrite guards the mutating endpoints for editors and admins.
@@ -102,6 +108,7 @@ func NewAPI(cfg Config) *API {
 		subjects:     cfg.Subjects,
 		photos:       cfg.Photos,
 		media:        mediaurl.NewBuilder(cfg.Storage),
+		familyExport: cfg.FamilyExport,
 		requireAuth:  cfg.RequireAuth,
 		requireWrite: cfg.RequireWrite,
 	}

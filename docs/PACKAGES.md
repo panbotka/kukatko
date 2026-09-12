@@ -653,7 +653,13 @@ to `## Package map` in `CLAUDE.md`.
   ones), and **every HLS segment the source holds under `hls/<file_hash>/`** (`planHLS`, found by
   `Source.KeysWithPrefix` — how many segments a video was cut into is known only to the store, and the
   catalogue's rendition rows are not touched by a migration, so segments left behind would turn every video
-  into a playlist of 404s). The sidecar is the non-regenerable disaster-recovery artifact, so
+  into a playlist of 404s). `KindFamilies` is the one kind `planKind` **declines**: the genealogy export
+  belongs to the library rather than to a photo, so planning it per photo would upload the same file once
+  per photo in the archive. `planLibrary` moves it instead, once per run and **after** the walk — the
+  running server rewrites it whenever a relation changes, so the end of the run is the smallest window in
+  which an edit lands on a disk the migration has already emptied — and a failure there aborts with an error
+  rather than joining the per-photo failures: there is one such object and no later photo to retry it beside.
+  The sidecar is the non-regenerable disaster-recovery artifact, so
   it is carried into the store with the original and the original is never deleted until the sidecar is
   durable there. `deleteLocal` removes only the **planned, verified** keys (never a fresh listing: an object
   written after the plan was verified nowhere) and only of the kinds `livesLocally` claims — original,
@@ -677,9 +683,12 @@ to `## Package map` in `CLAUDE.md`.
   per-application prefix — an original sits at `YYYY/MM/<name>` in the bucket root and the derived artefacts
   sit beside it — so "what is this object?" cannot be answered by a single prefix test, and before this
   package each whole-store operation carried its own list of prefixes to remember. `Kind` = `KindOriginal`
-  /`KindSidecar`/`KindThumbnail`/`KindHLS`/`KindDump`/`KindPartial`/`KindForeign` (+`String()`),
+  /`KindSidecar`/`KindFamilies`/`KindThumbnail`/`KindHLS`/`KindDump`/`KindPartial`/`KindForeign`
+  (+`String()`),
   `Classify(key)` (prefix tests against `thumb.CacheSubdir`, `sidecarexport.Prefix`, `hls.Prefix`,
-  `DumpPrefix`=`db/`, `PartialPrefix`=`.tmp/` and the anchored `YYYY/MM/<name>` pattern; a leading slash and
+  `DumpPrefix`=`db/`, `PartialPrefix`=`.tmp/` and the anchored `YYYY/MM/<name>` pattern, plus the one match by
+  **exact key**: `familyexport.Key` (`families.yaml`), which is a single object rather than a layout and owns
+  no prefix, so a foreign file whose name merely begins the same way stays foreign; a leading slash and
   surrounding whitespace are tolerated, everything else is foreign) and `Kinds()` (every kind, a fresh copy,
   so an operation can be tested against the whole enum rather than the prefixes its author thought of).
   It holds no layout of its own — those stay in `thumb`/`sidecarexport`/`hls`/`storage` — only the mapping.
@@ -1347,7 +1356,11 @@ to `## Package map` in `CLAUDE.md`.
   `(type, payload->>'photo_uid') WHERE state='queued' OR (state='running' AND type<>'sidecar')`
   (migration `0044` scopes the **sidecar** dedup to `queued` only, so an edit landing while a
   sidecar job runs schedules a follow-up rewrite instead of being swallowed as a duplicate — the
-  running job wrote the file before it saw that edit; other types keep queued|running dedup);
+  running job wrote the file before it saw that edit; other types keep queued|running dedup), plus
+  `idx_jobs_family_export_dedup` on `(type) WHERE type='family_export' AND state='queued'`
+  (migration `0075`): the library-wide genealogy export carries **no** `photo_uid`, so the index above
+  cannot see it and every enqueue would be distinct — the queued-only scope is the sidecar's reasoning
+  applied to the one file for the whole library. Both index names map to `ErrDuplicate` (`dedupIndexes`);
   `Store` = `NewStore(pool)` with
   `Enqueue(ctx,type,payload,opts)` (idempotent on the dedup key → `ErrDuplicate`,
   `EnqueueOptions{Priority,MaxAttempts,RunAfter}`) — a thin wrapper over the **package-level
@@ -1389,11 +1402,16 @@ to `## Package map` in `CLAUDE.md`.
   forced flag onto a run that already read its payload, and PostgreSQL re-checks that `WHERE` against the committed
   row if a worker claims it concurrently — so the flag is never lost *and* never applied in flight. It inserts
   nothing: the active-job count for that photo and type is unchanged; **job types** `image_embed`/
-  `face_detect`/`thumbnail`/`places`/`metadata`/`ocr`/`sidecar`/`storyboard`/`mail_send`/`nameless_detach`/
+  `face_detect`/`thumbnail`/`places`/`metadata`/`ocr`/`sidecar`/`family_export`/`storyboard`/`mail_send`/
+  `nameless_detach`/
   `nameless_restore`/`face_cluster`/`pp_import`/`ps_migrate`/`backup`; `Enqueuer` =
   `NewEnqueuer(store)`
   implements `ingest.JobEnqueuer` (`EnqueueImageEmbed`/`EnqueueFaceDetect`/`EnqueueThumbnail`/
   `EnqueuePlaces`/`EnqueueMetadata`, `ErrDuplicate`=no-op);
+  `EnqueueSidecar` delays its job by `SidecarDebounce` (5 s), the window a burst of edits collapses into,
+  and **`EnqueueFamilyExport(ctx)`** takes no identifier at all — there is one genealogy for the whole
+  library, so the payload names nothing — and waits `FamilyExportDebounce` (15 s), longer because filling
+  in a family is a denser burst over a bigger unit of work;
   `EnqueueThumbnailRebuild` is the **forced** thumbnail enqueue (payload `{photo_uid,force:true}`, handled by
   `thumbjob`): what a changed rendering — a saved or reset non-destructive edit — schedules, since the thumbnail
   cache is keyed by the original's hash and would otherwise serve the previous rendering forever. The flag rides in
@@ -1722,7 +1740,12 @@ to `## Package map` in `CLAUDE.md`.
   separating couple with children keeps its row (renormalised into the first column, since the pair index treats
   `(X,NULL)` and `(NULL,X)` as different rows) and a childless union's row goes. Sentinels `ErrSubjectNotFound`/
   `ErrFamilyNotFound`/`ErrRelationNotFound` (→404), `ErrCycle`/`ErrAlreadyChild`/`ErrSelfRelation`/
-  `ErrFamilyConflict`/`ErrInvalidKind`/`ErrInvalidRole`/`ErrInvalidYears`/`ErrAmbiguousRelation` (→400/409). Both tables are classified in
+  `ErrFamilyConflict`/`ErrInvalidKind`/`ErrInvalidRole`/`ErrInvalidYears`/`ErrAmbiguousRelation` (→400/409).
+  **`Export(ctx)`** is the read behind `families.yaml` (`internal/familyexport`): three statements — every
+  family, every child membership, and every subject either of them names — each in a deterministic order by
+  uid, so an unchanged genealogy exports to identical bytes. They are deliberately **not** in one
+  transaction: the file is rewritten on every relation change, so a run that catches a concurrent edit half
+  applied is superseded by the run that edit itself schedules. Both tables are classified in
   `internal/reset` as catalogue tables (a wipe empties them). Unit tests cover pair normalisation, the cycle rule
   and the validators; the integration test seeds a **three-generation family with a cousin marriage** and proves
   the diamond is walked once, that the one-family-per-child index refuses a second parentage (asserted against the
@@ -1759,7 +1782,49 @@ to `## Package map` in `CLAUDE.md`.
   fake store (routing, decoding, the status table, the audit entry); the integration test mounts the **real**
   auth guards over the test database and covers each route end to end plus the three things only the real
   stack can show: a **viewer gets 403 on every write** (and an anonymous client 401 on the reads), the inline
-  `new_subject` path leaves **no orphan** when the relation is refused, and a cycle surfaces as **409**),
+  `new_subject` path leaves **no orphan** when the relation is refused, and a cycle surfaces as **409**.
+  Every mutation additionally calls **`enqueueExport`** after the store has committed —
+  `Config.Export` (`ExportEnqueuer`, satisfied by `jobs.Enqueuer`, nil = the export is off) — so the
+  `families.yaml` on disk follows the tree in the database; it is best-effort in exactly the way the
+  sidecar enqueues are: a failed schedule is logged, never returned, because the relation is safely in
+  Postgres and the safety net must not be the thing that drops you),
+  `internal/familyexport/`
+  (the **library-level genealogy export**: the whole family tree as one versioned YAML document at
+  `families.yaml` in the root of the store, so the tree survives losing the database. It is the
+  subject-level counterpart of `internal/sidecarexport` and exists because a relationship is true about
+  **two people, not about any photograph** — it belongs in no photo's sidecar, and a great-grandmother
+  nobody photographed has no sidecar to belong to. `Version` (1), `Key` (`families.yaml`), `MIME`;
+  `Document{Version,GeneratedAt,Subjects,Families}` with `Subject{UID,Slug,Name,Nickname,Type,BirthYear,
+  DeathYear}` and `Family{UID,Partners []string,Kind,FromYear,ToYear,Note,Children []Child{SubjectUID,Kind}}`
+  — partners as a **list** (one uid for a lone parent, two for a couple) because the two columns carry no
+  roles, and the children folded into the family they belong to so the file reads as households rather than
+  as two tables to join by eye. `Build(Input{Export family.Export, Now})` is **pure** and orders everything
+  (families and subjects by uid, children within a family by uid), which is what makes an unchanged
+  genealogy marshal to identical bytes; `Marshal`/`Unmarshal` add and ignore the explanatory header;
+  `NewWriter(store).Write(ctx, doc)` renders the document into memory and hands the store its exact size and
+  digest, so the key holds either the whole file or the old one — a truncated write here is not a slightly
+  worse tree but every relation in the archive gone. The document is **closed over its own identifiers**
+  (every uid a family names is described in `Subjects`); a subject in **no** family is deliberately left
+  out, since they have no place in a tree and what is known about them rides in the sidecars of their
+  photos. Tests: the round-trip over a fixture that `TestDocument_fixtureIsExhaustive` keeps exhaustive —
+  the same pair `internal/sidecarexport` uses to hold its format sufficient — plus the closure property, the
+  header, the ordering and the writer's declared identity),
+  `internal/familyexportjob/`
+  (the **`family_export` job**: read the whole genealogy, write `families.yaml`. It is the scheduled half of
+  `internal/familyexport` and follows `internal/sidecarjob`'s shape, differing in the one way the data does
+  — a sidecar job is per photo, this one has no subject at all, so its payload names nothing and it needs no
+  backfill: "write it now" is the whole operation, exposed as `Export(ctx)` for `kukatko sidecar families`.
+  `New(Config{Families,Writer,Logger})` over two narrow interfaces (`FamilyStore.Export`, satisfied by
+  `*family.Store`; `DocumentWriter.Write`, by `*familyexport.Writer`), panicking on a missing one because
+  that is a wiring bug; `Handle` ignores the job payload. The handler is **idempotent and stateless** — it
+  reads the genealogy as it is now and writes the file as it should be now — which is why a coalesced job
+  costs nothing. An **empty** genealogy is written rather than skipped: a library whose last relation was
+  removed is described by a file with no families in it, and leaving the previous one would let a rebuild
+  restore a tree the user deleted. Built by `buildFamilyExportServiceOrNil` in `cmd/kukatko` behind
+  `sidecar.enabled` — the same switch as the photo sidecars, because it is the same promise — and registered
+  as a worker handler only when it exists, so no job of a type nothing can claim is ever enqueued. The
+  integration test records a relation through the real store, then reads the file back as if the database
+  were gone),
   `internal/people/`
   (the DB layer for **subjects** (people/animals/other) and **markers** (face/label regions on
   photos), tables `subjects`/`markers` in migration `0008_subjects_markers.sql`: `subjects`
@@ -2741,7 +2806,8 @@ to `## Package map` in `CLAUDE.md`.
   built in `auditEntry` (`subject.create`/`update`/`delete`/`merge`, actor from the auth context, details
   name/type; `DELETE` first loads the subject for the details and a clean 404)) and `PhotoStore`
   (`photos.Store.ListByUIDs`)
-  → unit-testable with fakes without a DB; `NewAPI(Config{Subjects,Photos,RequireAuth,RequireWrite})`+
+  → unit-testable with fakes without a DB; `NewAPI(Config{Subjects,Photos,FamilyExport,RequireAuth,
+  RequireWrite})`+
   `RegisterRoutes` mounts **flat** paths (not a mounted subrouter, so they coexist with
   `outlierapi`'s `GET /subjects/{uid}/outliers` without a chi Mount conflict): `GET /subjects`
   (RequireAuth, `{subjects:[SubjectCount]}` with marker **and** photo counts), `POST /subjects` (RequireWrite,
@@ -2757,7 +2823,12 @@ to `## Package map` in `CLAUDE.md`.
   markers, non-archived, newest-first) → page → `ListByUIDs` → reorder by the uid order); body
   decode `DisallowUnknownFields` + 1 MiB limit + empty name (or empty `keeper_uid`) → 400; sentinels mapped
   `ErrSubjectNotFound`→404/`ErrInvalidType`+`ErrMergeIntoSelf`→400; mounted by the eighth `server.WithAPI`
-  (`buildPeopleAPI` in `cmd/kukatko/people.go`)),
+  (`buildPeopleAPI` in `cmd/kukatko/people.go`). The **edit, the delete and the merge** additionally schedule
+  a rewrite of the library's genealogy export (`FamilyExportEnqueuer`, nil = the export is off): a subject
+  write is a change to the family tree more often than it looks — a rename changes what the tree says
+  somebody is called, a delete cascades away every family they were a partner or a child in, and a merge
+  moves their place in it — so `families.yaml` would otherwise describe people who no longer exist that way.
+  Like the sidecar enqueues it is best-effort and never fails the edit),
   `internal/avatar/`
   (the **small square picture of a face**, cut server-side: the subject avatar the people index draws
   (`internal/avatarapi`) and, by the same renderer, any single face a page shows as a square
@@ -3555,7 +3626,9 @@ to `## Package map` in `CLAUDE.md`.
   **what counts as an original is decided in one place** (`classify.go` over `internal/storekeys`):
   `backedUp(kind)` is a **default-less switch over every kind of object the store can hold**, so a new prefix
   cannot be added to the store without this package deciding about it (`TestBackedUp_decidesEveryKind` +
-  the `exhaustive` linter). Originals and metadata sidecars travel; `thumb/` and **`hls/`** do not — both are
+  the `exhaustive` linter). Originals, metadata sidecars and the library's genealogy export
+  (`families.yaml`, the only copy of the family tree outside the database) travel; `thumb/` and **`hls/`**
+  do not — both are
   reproducible from an original by an ordinary background job (the streaming segments used to be copied
   as if each segment were an original: 470 MB of regenerable data against 1.9 GB of video originals on
   staging, growing with every encode); `db/` and `.tmp/` are not library content; a **foreign** object *is*
@@ -3756,7 +3829,8 @@ to `## Package map` in `CLAUDE.md`.
   `TargetFromConfig(config.database.url, <the configured bucket>)` → `ErrTargetMismatch`; a DSN naming no
   database is refused too), the schema check, `Counts{Catalogue,Preserved}`
   of `[]TableCount` (`Rows()`, `NonEmpty()`) and a `StoragePlan{Referenced,Stored,Foreign,Sweep}` of
-  `PrefixCounts{Originals,Thumbnails,Sidecars,HLS}`; **`Execute(ctx,Options,before)`** deletes, in this order —
+  `PrefixCounts{Originals,Thumbnails,Sidecars,Families,HLS}`; **`Execute(ctx,Options,before)`** deletes, in
+  this order —
   `ErrNotExecuting` without `Options.Execute`, target re-verified, `checkConfirmation` (`Options.Confirm` must
   equal the target database name → `ErrConfirmationMismatch`, **and** `Options.ConfirmBucket` must equal
   `Target.Bucket` → `ErrBucketConfirmationMismatch` — the two come from independent config keys and can name
@@ -3785,7 +3859,9 @@ to `## Package map` in `CLAUDE.md`.
   which renditions, is known to the store and not to the catalogue, so `Referenced.HLS` is always 0 and only
   `Options.OrphanSweep` reaches them; `catalogueFiles.objectKeys` expands each
   catalogued path into its original + `sidecarexport.KeyFor` sidecar and each hash into `thumb.RelPath` × every
-  registered size (blind on purpose: probing first would cost a request per candidate); `deleteKeys` runs the
+  registered size (blind on purpose: probing first would cost a request per candidate), and names
+  `familyexport.Key` unconditionally — the genealogy export belongs to no photo, so no catalogue row implies
+  it, and a family tree that survived a wipe would restore itself over the empty library; `deleteKeys` runs the
   deletions through an `errgroup` bounded by `Options.Concurrency` (default 8), folding each outcome into
   `StorageResult{Deleted,Missing,Skipped,Foreign,Failed,Failures,ThumbCacheCleared,ThumbCacheSwept}` with the
   failure sample capped at 20 (`Touched()` reports whether the run got as far as doing anything);

@@ -813,7 +813,47 @@ on the same storage as the original.
   in `backup.DiskOriginals` — because the same pass also feeds the S3 sync, which **is** supposed to copy sidecars.
 - **Reading back (`restore --from-sidecars`) does not exist yet.** This is the export half; the format is
   designed to be sufficient for it, and the **round-trip test** in `internal/sidecarexport` is what holds that
-  sufficiency (and what a future importer will get as its spec).
+  sufficiency (and what a future importer will get as its spec). The same is true of the family tree export
+  below: both are written, neither is read back yet, and both are pinned by a round-trip test.
+
+### 8.2 The family tree — `families.yaml`, one file for the whole library
+
+**Decision:** write the library's whole genealogy to a **single YAML document at the root of the store**
+(`families.yaml`), rewritten by a `family_export` job whenever a relation — or a subject inside one —
+changes. Packages `internal/familyexport` (format + atomic write) and `internal/familyexportjob` (the job).
+The format is in [`RESTORE.md`](RESTORE.md) alongside the photo sidecar's.
+
+**Why it is not in the photo sidecars:** a relationship is true about **two people**, not about any
+photograph. It belongs in no photo's file — and the great-grandmother nobody ever photographed has no file
+to belong to at all. Left only in Postgres, the tree would be the one thing a user builds in Kukátko that
+"the catalogue survives the database" does not cover.
+
+**Key decisions:**
+
+- **One file, whole, at the root.** The genealogy is one graph and is only meaningful entire: a reader that
+  found half the families would build half a tree and not know it. It is small — a family archive holds tens
+  of families — so it is rewritten rather than patched.
+- **It is closed over its own identifiers.** Every subject a family names is described in the same file
+  (uid, slug, name, nickname, type, life years), so the tree can be rebuilt without anything else. A subject
+  in **no** family is deliberately absent: they have no place in a tree, and what is known about them travels
+  in the sidecars of the photos they appear on.
+- **Its own `Kind` in `internal/storekeys`** (`KindFamilies`), matched by its exact key rather than a prefix.
+  That is what makes the backup copy it, the storage migration move it (once per run, not once per photo) and
+  `maintenance reset` delete it — each of those switches over the enum without a default clause, so a new kind
+  of object in the store cannot be silently forgotten.
+- **Debounced by the queue, on an index of its own.** The job carries no payload — there is one genealogy, so
+  there is nothing to name — and `idx_jobs_dedup` keys on `payload ->> 'photo_uid'`, which would make every
+  enqueue distinct. Migration 0075 adds a partial unique index on the type alone, scoped to `queued` for the
+  reason [§8.1](#81-metadata-sidecars--curation-data-independent-of-the-database) gives for the sidecar's: an
+  edit arriving while a job runs must schedule a follow-up rather than be swallowed. `run_after` is 15 s,
+  longer than the sidecar's, because filling in a family is a denser burst over a bigger unit of work.
+- **A subject write schedules it too.** Renaming somebody changes what the tree says their name is, deleting
+  them cascades away every family they were in, and a merge moves their place in it — so `internal/peopleapi`
+  enqueues alongside `internal/familyapi`.
+- **The same switch as the photo sidecars** (`sidecar.enabled`): it is the same promise, and a second key
+  would let an instance end up half-covered — the state hardest to notice and worst to discover.
+- **An empty genealogy is written, not skipped.** A library whose last relation was removed is described by a
+  file with no families in it; leaving the previous file would let a rebuild restore a tree the user deleted.
 
 ---
 

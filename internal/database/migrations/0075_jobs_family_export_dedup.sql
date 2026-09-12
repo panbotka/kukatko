@@ -1,0 +1,31 @@
+-- 0075_jobs_family_export_dedup: at most one *queued* family_export job.
+--
+-- The `family_export` job rewrites families.yaml — the library-level YAML file
+-- at the root of the store that holds the whole genealogy, so the family tree
+-- survives losing the database (see internal/familyexport). It is enqueued by
+-- every mutation that changes a relation, and it reads the whole genealogy when
+-- it runs, so a burst of edits must collapse into one write of one file.
+--
+-- The queue's existing dedup index (idx_jobs_dedup) keys on
+-- (type, payload ->> 'photo_uid'), and this job belongs to no photo: its payload
+-- carries no photo_uid, the expression is NULL, and NULLs are distinct in a
+-- unique index — so without an index of its own, recording ten relations in a
+-- minute would queue ten identical full rewrites.
+--
+-- The predicate is state = 'queued' only, for exactly the reason migration 0044
+-- narrowed the sidecar's: a job that is already *running* read the genealogy at
+-- claim time and wrote the file before it could see an edit landing afterwards.
+-- With 'running' in the predicate that edit would be swallowed as a duplicate and
+-- the file would stay stale until some unrelated later edit happened to schedule
+-- a fresh job — and if the database is lost first, that relation is gone,
+-- defeating the guarantee the file exists for.
+--
+-- It is a partial index over one job type rather than a rewrite of
+-- idx_jobs_dedup, so nothing about the per-photo dedup changes and this index
+-- costs nothing for every other type. The store maps a violation of it to
+-- ErrDuplicate exactly as it does the other one.
+--
+-- This migration is wrapped in a transaction by the runner.
+
+CREATE UNIQUE INDEX idx_jobs_family_export_dedup ON jobs (type)
+    WHERE type = 'family_export' AND state = 'queued';

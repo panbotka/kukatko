@@ -14,12 +14,17 @@ import (
 // subject, and paging a subject's photos. Reads use the read guard and mutations
 // the write guard, both supplied via authAPI so peopleapi stays decoupled from
 // auth's wiring. mediaStore decides where a client fetches the returned photos'
-// thumbnails and originals.
-func buildPeopleAPI(db *database.DB, authAPI *auth.API, mediaStore storage.Storage) *peopleapi.API {
+// thumbnails and originals. A subject edit, deletion or merge schedules a rewrite
+// of the genealogy export through familyExport: all three change what the family
+// tree on disk says, and a deletion cascades whole families away.
+func buildPeopleAPI(
+	db *database.DB, authAPI *auth.API, mediaStore storage.Storage, familyExport familyExportScheduler,
+) *peopleapi.API {
 	return peopleapi.NewAPI(peopleapi.Config{
 		Subjects:     people.NewStore(db.Pool()),
 		Photos:       photos.NewStore(db.Pool()),
 		Storage:      mediaStore,
+		FamilyExport: familyExport,
 		RequireAuth:  authAPI.RequireAuth,
 		RequireWrite: authAPI.RequireWrite,
 	})

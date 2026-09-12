@@ -136,15 +136,90 @@ func passThrough(next http.Handler) http.Handler { return next }
 
 // newServer mounts an API backed by the given stores behind pass-through guards.
 func newServer(subjects peopleapi.SubjectStore, ps peopleapi.PhotoStore) http.Handler {
+	return newServerWithFamilyExport(subjects, ps, nil)
+}
+
+// newServerWithFamilyExport mounts an API that schedules its genealogy-export
+// rewrites through familyExport.
+func newServerWithFamilyExport(
+	subjects peopleapi.SubjectStore, ps peopleapi.PhotoStore, familyExport peopleapi.FamilyExportEnqueuer,
+) http.Handler {
 	api := peopleapi.NewAPI(peopleapi.Config{
 		Subjects:     subjects,
 		Photos:       ps,
+		FamilyExport: familyExport,
 		RequireAuth:  passThrough,
 		RequireWrite: passThrough,
 	})
 	r := chi.NewRouter()
 	api.RegisterRoutes(r)
 	return r
+}
+
+// fakeFamilyExport counts the genealogy-export rewrites the handlers scheduled.
+type fakeFamilyExport struct {
+	calls int
+}
+
+// EnqueueFamilyExport counts the call.
+func (f *fakeFamilyExport) EnqueueFamilyExport(context.Context) error {
+	f.calls++
+	return nil
+}
+
+// TestSubjectMutations_scheduleTheGenealogyExport pins that a subject write
+// reaches the family tree on disk. Renaming somebody changes what the tree says
+// their name is, deleting them cascades away every family they were in, and a
+// merge moves their place in it — all three would otherwise leave families.yaml
+// describing people who no longer exist that way.
+func TestSubjectMutations_scheduleTheGenealogyExport(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		method, target string
+		body           string
+	}{
+		{name: "rename", method: http.MethodPatch, target: "/subjects/su_a", body: `{"name":"Marie Nečasová"}`},
+		{name: "delete", method: http.MethodDelete, target: "/subjects/su_a"},
+		{name: "merge", method: http.MethodPost, target: "/subjects/su_a/merge", body: `{"keeper_uid":"su_b"}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			subjects := &fakeSubjects{byUID: map[string]people.Subject{
+				"su_a": {UID: "su_a", Name: "Marie", Type: people.SubjectPerson},
+				"su_b": {UID: "su_b", Name: "Maria", Type: people.SubjectPerson},
+			}}
+			export := &fakeFamilyExport{}
+			rec := do(t, newServerWithFamilyExport(subjects, nil, export), tt.method, tt.target, tt.body)
+			if rec.Code >= http.StatusBadRequest {
+				t.Fatalf("status = %d, want a success: %s", rec.Code, rec.Body)
+			}
+			if export.calls != 1 {
+				t.Errorf("scheduled %d export rewrite(s), want 1", export.calls)
+			}
+		})
+	}
+}
+
+// TestSubjectMutations_doNotScheduleAfterAFailure verifies a refused mutation
+// schedules nothing: the tree has not changed.
+func TestSubjectMutations_doNotScheduleAfterAFailure(t *testing.T) {
+	t.Parallel()
+
+	subjects := &fakeSubjects{
+		byUID:     map[string]people.Subject{"su_a": {UID: "su_a", Name: "Marie", Type: people.SubjectPerson}},
+		deleteErr: people.ErrSubjectNotFound,
+	}
+	export := &fakeFamilyExport{}
+	rec := do(t, newServerWithFamilyExport(subjects, nil, export), http.MethodDelete, "/subjects/su_a", "")
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+	if export.calls != 0 {
+		t.Errorf("scheduled %d export rewrite(s) after a failure, want none", export.calls)
+	}
 }
 
 // do issues a request against the mounted API and returns the recorder.

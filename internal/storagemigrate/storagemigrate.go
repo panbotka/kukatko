@@ -292,7 +292,46 @@ func (m *Migrator) Run(ctx context.Context) (Result, error) {
 	if err := m.walk(ctx); err != nil {
 		return m.result(), err
 	}
+	if err := m.migrateLibrary(ctx); err != nil {
+		return m.result(), err
+	}
 	return m.result(), nil
+}
+
+// migrateLibrary moves the objects that belong to no photo — today the genealogy
+// export — after every photo has been dealt with.
+//
+// Last rather than first, because the running server rewrites that file whenever
+// a relation changes: moving it at the end leaves the smallest window in which an
+// edit lands on the disk the migration has already emptied. (A relation changed
+// after this point writes it locally again, and the next run moves it — the same
+// property every sidecar written mid-run has.)
+//
+// A failure here aborts with an error rather than being collected like a photo's.
+// There is exactly one such object and no run after this to retry it in, so
+// "collect it and carry on" would mean finishing with a green report and the only
+// copy of the family tree left behind.
+func (m *Migrator) migrateLibrary(ctx context.Context) error {
+	objects, err := m.planLibrary(ctx)
+	if err != nil {
+		return err
+	}
+	if len(objects) == 0 {
+		return nil
+	}
+	if m.cfg.DryRun {
+		m.measure(objects)
+		return nil
+	}
+	for _, obj := range objects {
+		if err := m.transfer(ctx, obj); err != nil {
+			return fmt.Errorf("storagemigrate: moving %s: %w", obj.relPath, err)
+		}
+	}
+	if !m.cfg.DeleteLocal {
+		return nil
+	}
+	return m.deleteLocal(ctx, objects)
 }
 
 // begin stamps the run's start and remembers the work it set out to do, which is
@@ -515,7 +554,7 @@ func (m *Migrator) deleteLocal(ctx context.Context, objects []object) error {
 // disk means emptying it too.
 func livesLocally(kind storekeys.Kind) bool {
 	switch kind {
-	case storekeys.KindOriginal, storekeys.KindSidecar, storekeys.KindHLS:
+	case storekeys.KindOriginal, storekeys.KindSidecar, storekeys.KindFamilies, storekeys.KindHLS:
 		return true
 	case storekeys.KindThumbnail, storekeys.KindDump, storekeys.KindPartial, storekeys.KindForeign:
 		return false

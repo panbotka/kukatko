@@ -65,6 +65,7 @@ func (a *API) handleAddRelation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, status, msg)
 		return
 	}
+	a.enqueueExport(r.Context())
 	writeJSON(w, http.StatusCreated, result)
 }
 
@@ -81,6 +82,7 @@ func (a *API) handleRemoveRelation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, status, msg)
 		return
 	}
+	a.enqueueExport(r.Context())
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -112,6 +114,7 @@ func (a *API) handleUpdateFamily(w http.ResponseWriter, r *http.Request) {
 		writeError(w, status, msg)
 		return
 	}
+	a.enqueueExport(r.Context())
 	writeJSON(w, http.StatusOK, updated)
 }
 

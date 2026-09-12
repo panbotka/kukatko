@@ -149,6 +149,37 @@ func TestEnqueueDedup_sidecarScopedToQueued(t *testing.T) {
 	}
 }
 
+// TestEnqueueDedup_familyExportIsSingletonPerQueuedState verifies migration
+// 0075's index: the library-wide genealogy export dedups on its type alone —
+// its payload names no photo, so the per-photo index cannot see it — and only
+// while a job is queued, so a relation changed mid-run schedules the follow-up
+// rewrite that the running job could not have included.
+func TestEnqueueDedup_familyExportIsSingletonPerQueuedState(t *testing.T) {
+	store, _ := newStore(t)
+	ctx := t.Context()
+
+	if _, err := store.Enqueue(ctx, jobs.TypeFamilyExport, nil, jobs.EnqueueOptions{}); err != nil {
+		t.Fatalf("first family_export enqueue: %v", err)
+	}
+	if _, err := store.Enqueue(ctx, jobs.TypeFamilyExport, nil, jobs.EnqueueOptions{}); !errors.Is(err, jobs.ErrDuplicate) {
+		t.Fatalf("second queued family_export enqueue = %v, want ErrDuplicate (the debounce)", err)
+	}
+
+	claimed, err := store.Claim(ctx, "w1", jobs.TypeFamilyExport)
+	if err != nil {
+		t.Fatalf("Claim family_export: %v", err)
+	}
+	if claimed.State != jobs.StateRunning {
+		t.Fatalf("claimed state = %q, want running", claimed.State)
+	}
+	if _, err := store.Enqueue(ctx, jobs.TypeFamilyExport, nil, jobs.EnqueueOptions{}); err != nil {
+		t.Fatalf("family_export enqueue while running = %v, want success (a follow-up rewrite)", err)
+	}
+	if _, err := store.Enqueue(ctx, jobs.TypeFamilyExport, nil, jobs.EnqueueOptions{}); !errors.Is(err, jobs.ErrDuplicate) {
+		t.Fatalf("second follow-up enqueue = %v, want ErrDuplicate", err)
+	}
+}
+
 // TestClaimOrdering verifies claiming respects run_after (skips not-yet-due),
 // then priority DESC, then FIFO by id.
 func TestClaimOrdering(t *testing.T) {

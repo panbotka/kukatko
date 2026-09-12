@@ -17,6 +17,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/panbotka/kukatko/internal/familyexport"
 	"github.com/panbotka/kukatko/internal/hls"
 	"github.com/panbotka/kukatko/internal/sidecarexport"
 	"github.com/panbotka/kukatko/internal/storage"
@@ -525,6 +526,64 @@ func TestRun_deleteLocalRemovesTheSidecarAlongsideTheOriginal(t *testing.T) {
 		if exists(t, filepath.Join(fixture.sourceRoot, filepath.FromSlash(item.FilePath))) {
 			t.Errorf("local original of %s survived --delete-local", item.UID)
 		}
+	}
+}
+
+func TestRun_movesTheFamilyTreeExport(t *testing.T) {
+	t.Parallel()
+	fixture := newFixture(t, 2)
+	// The genealogy export belongs to the library rather than to any photo: one
+	// object at the root of the store, and the only copy of the family tree
+	// outside the database. It must travel exactly once, not once per photo.
+	writeFile(t, filepath.Join(fixture.sourceRoot, familyexport.Key), []byte("families: []"))
+
+	result, err := run(t, fixture.config())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result.Objects != 5 {
+		t.Errorf("uploaded %d objects, want 5 (2 originals + 2 thumbnails + 1 family tree)", result.Objects)
+	}
+	if !slices.Contains(objectKeys(t, fixture.destRoot), familyexport.Key) {
+		t.Errorf("the family tree export did not land in the destination; got %v",
+			objectKeys(t, fixture.destRoot))
+	}
+	if !exists(t, filepath.Join(fixture.sourceRoot, familyexport.Key)) {
+		t.Error("the local family tree export was removed without --delete-local")
+	}
+}
+
+func TestRun_deleteLocalRemovesTheFamilyTreeExport(t *testing.T) {
+	t.Parallel()
+	fixture := newFixture(t, 1)
+	writeFile(t, filepath.Join(fixture.sourceRoot, familyexport.Key), []byte("families: []"))
+	cfg := fixture.config()
+	cfg.DeleteLocal = true
+
+	if _, err := run(t, cfg); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !exists(t, filepath.Join(fixture.destRoot, familyexport.Key)) {
+		t.Fatal("the family tree export was not in the destination")
+	}
+	if exists(t, filepath.Join(fixture.sourceRoot, familyexport.Key)) {
+		t.Error("the local family tree export survived --delete-local")
+	}
+}
+
+func TestRun_libraryWithNoFamilyTreeExportMovesNothingExtra(t *testing.T) {
+	t.Parallel()
+	fixture := newFixture(t, 1)
+
+	result, err := run(t, fixture.config())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result.Objects != 2 {
+		t.Errorf("uploaded %d objects, want 2 (the original and its thumbnail)", result.Objects)
+	}
+	if slices.Contains(objectKeys(t, fixture.destRoot), familyexport.Key) {
+		t.Error("a library that never wrote a family tree got one in the destination")
 	}
 }
 

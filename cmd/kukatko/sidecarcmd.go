@@ -24,11 +24,13 @@ func newSidecarCmd() *cobra.Command {
 		Use:   "sidecar",
 		Short: "Metadata sidecar export (curation that survives the database)",
 		Long: "Write each photo's metadata and curation to a YAML sidecar next to the originals " +
-			"in storage, so the catalogue can be rebuilt from the storage alone. " +
-			"See docs/RESTORE.md for the format.",
+			"in storage, so the catalogue can be rebuilt from the storage alone — and the " +
+			"library's family tree to families.yaml beside them, since a relation belongs to no " +
+			"single photo. See docs/RESTORE.md for both formats.",
 		Args: cobra.NoArgs,
 	}
 	cmd.AddCommand(newSidecarBackfillCmd())
+	cmd.AddCommand(newSidecarFamiliesCmd())
 	return cmd
 }
 

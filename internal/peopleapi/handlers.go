@@ -119,6 +119,7 @@ func (a *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, status, msg)
 		return
 	}
+	a.enqueueFamilyExport(r.Context())
 	writeJSON(w, http.StatusOK, subj)
 }
 
@@ -159,6 +160,7 @@ func (a *API) handleDelete(w http.ResponseWriter, r *http.Request) {
 		writeError(w, status, msg)
 		return
 	}
+	a.enqueueFamilyExport(r.Context())
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -199,6 +201,7 @@ func (a *API) handleMerge(w http.ResponseWriter, r *http.Request) {
 		writeError(w, status, msg)
 		return
 	}
+	a.enqueueFamilyExport(r.Context())
 	writeJSON(w, http.StatusOK, result)
 }
 

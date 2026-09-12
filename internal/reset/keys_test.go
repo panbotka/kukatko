@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/panbotka/kukatko/internal/familyexport"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
 )
@@ -179,7 +180,7 @@ func TestObjectKeys_expandsEveryArtifact(t *testing.T) {
 	if len(keys) != counts.Total() {
 		t.Errorf("len(keys) = %d, want %d", len(keys), counts.Total())
 	}
-	for _, want := range []string{"2024/05/IMG_1.jpg", "sidecars/2024/05/IMG_1.jpg.yml"} {
+	for _, want := range []string{"2024/05/IMG_1.jpg", "sidecars/2024/05/IMG_1.jpg.yml", familyexport.Key} {
 		if !slices.Contains(keys, want) {
 			t.Errorf("keys %v do not contain %q", keys, want)
 		}
@@ -209,8 +210,15 @@ func TestObjectKeys_skipsUnusableRows(t *testing.T) {
 	if counts.Originals != 2 {
 		t.Errorf("originals = %d, want 2 (both rows are still attempted)", counts.Originals)
 	}
-	if len(keys) != 3 {
-		t.Errorf("len(keys) = %d, want 3", len(keys))
+	if counts.Families != 1 {
+		t.Errorf("families = %d, want 1 (the library export is named whatever the rows say)",
+			counts.Families)
+	}
+	if len(keys) != 4 {
+		t.Errorf("len(keys) = %d, want 4", len(keys))
+	}
+	if !slices.Contains(keys, familyexport.Key) {
+		t.Errorf("keys %v do not contain the family tree export %q", keys, familyexport.Key)
 	}
 }
 

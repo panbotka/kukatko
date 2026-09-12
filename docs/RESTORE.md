@@ -554,6 +554,123 @@ wrote, and a stale sidecar is worth more than none. See `config.example.yaml`.
   "on disk but not in the catalogue", which every sidecar is by construction. They are filtered out,
   so the scan neither counts them as orphans nor offers them to `repair --import-orphans`.
 
+## The family tree — `families.yaml`
+
+A relationship is true about **two people**, not about any photograph. It belongs in no photo's
+sidecar — and the great-grandmother nobody ever photographed has no sidecar to belong to at all. So
+the library's whole genealogy travels as one document of its own:
+
+```
+<storage root>/families.yaml
+```
+
+One file at the root of the storage, beside the `YYYY/` directories of the originals and the
+`sidecars/` tree. One file rather than a prefix of many, because a genealogy is one graph and is only
+meaningful whole: a reader that found half the families would build half a tree and not know it. It
+is small — a family archive holds tens of families, not millions — so it is rewritten entire rather
+than patched.
+
+### The file
+
+```yaml
+# Kukátko family tree.
+# … (the header explains what the file is; comments round-trip, parsers ignore them)
+version: 1
+generated_at: 2026-09-13T08:12:41Z
+subjects:
+    - uid: su000000000000001
+      slug: bohumil-necas-st
+      name: Bohumil Nečas st.
+      nickname: Bohouš
+      type: person
+      birth_year: 1901
+      death_year: 1978
+    - uid: su000000000000002
+      slug: marie-necasova
+      name: Marie Nečasová
+      type: person
+    - uid: su000000000000003
+      slug: bohumil-necas-ml
+      name: Bohumil Nečas ml.
+      type: person
+families:
+    - uid: fa000000000000001
+      partners:
+        - su000000000000001
+        - su000000000000002
+      kind: marriage
+      from_year: 1925
+      to_year: 1978
+      note: svatba ve Vavřinci
+      children:
+        - subject_uid: su000000000000003
+          kind: birth
+```
+
+- `version` is the schema version, written first. A reader that does not know a version should
+  **refuse** the file rather than guess at it.
+- `subjects` describes **everybody the families below name** — that is the property that makes the
+  file usable on its own. `uid` is what the families refer to them by, and it is the same subject uid
+  every photo sidecar carries on its markers, so the tree reconnects to the people the sidecars
+  already named. `nickname`, `birth_year` and `death_year` are omitted when unknown.
+- `families` is the model: a family is **a couple (or a lone parent) plus their children**, which is
+  the shape genealogy software settled on decades ago. `partners` holds one uid for a lone parent and
+  two for a couple, in no particular role — which of them is the mother is not something this file
+  claims to know. `kind` is `marriage`, `partnership` or `unknown`; `children[].kind` is `birth`,
+  `adopted` or `step`. A childless union is a legitimate family with no `children` key.
+- **Siblings, half-siblings and second marriages are not stored.** They are read off these families —
+  a sibling is another child of the family I am a child in, a half-sibling a child of another family
+  one of my parents is a partner in, a second marriage simply a second family — which is what stops
+  them from ever contradicting each other.
+
+Everything is ordered by uid (families, subjects, and the children within a family), so an unchanged
+genealogy always produces the same bytes and a diff of two exports shows only what actually changed.
+
+### What is deliberately NOT in it
+
+Which photos these people appear on, and their faces. Those are per-photo facts and they travel in
+each photo's own sidecar under `sidecars/`, keyed by the same subject uid. A subject who is in **no**
+family is also absent: they have no place in a tree, and what is known about them is in the sidecars
+of the photos they appear on.
+
+### When it is written
+
+A `family_export` job rewrites it whenever a relation changes — recorded, removed, or a family row
+edited — and also when a **subject** in one is renamed, deleted or merged, since all three change what
+the tree says. The job carries no payload (there is one genealogy, so there is nothing to name) and is
+debounced by a dedup index of its own: at most one such job is *queued* at a time, and it waits 15
+seconds before running, so filling in a family writes the file once rather than once per click. The
+handler is idempotent — it reads the genealogy as it is now and writes the file as it should be now.
+
+A library whose last relation was removed gets a file with **no families in it**, rather than no file:
+that is what says "there is no tree", instead of leaving yesterday's tree standing for a rebuild to
+restore.
+
+To write it right now — before a migration, an upgrade or a restore rehearsal — run:
+
+```bash
+kukatko sidecar families
+```
+
+It writes the file itself and needs no running server (see `docs/OPERATIONS.md`).
+
+### Backup, migration and wipe
+
+The export has its own kind in `internal/storekeys`, so the three operations that reason about the
+whole store each have to say what they do with it, and none of them can forget it: the **backup**
+copies it (it is the only copy of the tree outside the database), `storage migrate-to-r2` **moves** it
+once per run — and removes the local copy with `--delete-local`, after it is verified in the
+destination — and `maintenance reset` **deletes** it, because a family tree that survived a wipe would
+restore itself over the empty library.
+
+### Known limitations
+
+- **Rebuilding from it is not implemented yet**, exactly as for the photo sidecars. The format is
+  designed to be sufficient, and the round-trip test in `internal/familyexport` pins that: it
+  serialises a fully-populated genealogy, parses it back and asserts every field survives.
+- **It rides the same switch as the sidecars.** `sidecar.enabled: false` stops this file too. It is
+  one promise, so it is one switch — a second key would let an instance end up half-covered.
+
 ## Admin API (read-only)
 
 A running server exposes two **admin-only**, read-only restore endpoints under `/api/v1` (useful to

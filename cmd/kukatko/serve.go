@@ -311,10 +311,9 @@ func buildServices(
 	jobStore := jobs.NewStore(db.Pool())
 	enqueuer := jobs.NewEnqueuer(jobStore)
 	registerJobQueueMetrics(reg, jobStore)
-	// The sidecar scheduler every mutating API enqueues through: the real queue
-	// enqueuer, or a no-op when the metadata sidecar export is switched off.
-	sidecar := sidecarSchedulerFor(cfg, enqueuer)
-	ingestAPI, err := buildIngest(cfg, db, authAPI, enqueuer, sidecar, reg)
+	// The queue, or no-ops when an export is off (see exportSchedulersFor).
+	exports := exportSchedulersFor(cfg, enqueuer)
+	ingestAPI, err := buildIngest(cfg, db, authAPI, enqueuer, exports.sidecar, reg)
 	if err != nil {
 		return nil, backgroundServices{}, err
 	}
@@ -348,7 +347,7 @@ func buildServices(
 	}
 	rebuilders := photoRebuilders{embed: embedSvc, face: faceSvc, places: placesSvc}
 	photoAPI := buildPhotoAPI(cfg, db, authAPI, mediaStore, vectorStore, embedClient, matchSvc,
-		trashSvc, sidecar, enqueuer, storyboardSvc, jobStore, enqueuer, rebuilders, reg)
+		trashSvc, exports.sidecar, enqueuer, storyboardSvc, jobStore, enqueuer, rebuilders, reg)
 	clusterAPI, clusterSvc := buildClusterAPI(cfg, db, jobStore, authAPI, matchSvc)
 	mapsAPI, err := buildMapsAPI(cfg, db, authAPI, mapsHealth)
 	if err != nil {
@@ -364,14 +363,14 @@ func buildServices(
 		server.WithAPI(ingestAPI.RegisterRoutes),
 		server.WithAPI(photoAPI.RegisterRoutes),
 		server.WithAPI(clusterAPI.RegisterRoutes),
-		server.WithAPI(buildBulkAPI(cfg, db, authAPI, sidecar, enqueuer).RegisterRoutes),
+		server.WithAPI(buildBulkAPI(cfg, db, authAPI, exports.sidecar, enqueuer).RegisterRoutes),
 		server.WithAPI(buildDuplicatesAPI(cfg, db, authAPI, vectorStore).RegisterRoutes),
 		server.WithAPI(mapsAPI.RegisterRoutes),
 		server.WithAPI(jobAPI.RegisterRoutes),
 		server.WithAPI(processAPI.RegisterRoutes),
 		server.WithAPI(maintenanceAPI.RegisterRoutes),
 		server.WithAPI(buildImportAPI(db, authAPI).RegisterRoutes),
-	}, discoveryAPIOptions(cfg, db, authAPI, mediaStore, matchSvc), readAPIOptions(cfg, db, authAPI, mediaStore, sidecar))
+	}, discoveryAPIOptions(cfg, db, authAPI, mediaStore, matchSvc), readAPIOptions(cfg, db, authAPI, mediaStore, exports))
 	return opts, backgroundServices{worker: jobWorker, trash: trashSvc}, nil
 }
 
@@ -418,15 +417,16 @@ func discoveryAPIOptions(
 }
 
 func readAPIOptions(
-	cfg *config.Config, db *database.DB, authAPI *auth.API, mediaStore storage.Storage, sidecar sidecarScheduler,
+	cfg *config.Config, db *database.DB, authAPI *auth.API, mediaStore storage.Storage,
+	exports exportSchedulers,
 ) []server.Option {
 	return []server.Option{
 		server.WithAPI(buildOutlierAPI(db, authAPI).RegisterRoutes),
-		server.WithAPI(buildPeopleAPI(db, authAPI, mediaStore).RegisterRoutes),
+		server.WithAPI(buildPeopleAPI(db, authAPI, mediaStore, exports.family).RegisterRoutes),
 		// The family routes hang off the same /subjects prefix, flat like the
 		// outlier one, so they mount alongside rather than under peopleapi.
-		server.WithAPI(buildFamilyAPI(db, authAPI).RegisterRoutes),
-		server.WithAPI(buildOrganizeAPI(db, authAPI, sidecar).RegisterRoutes),
+		server.WithAPI(buildFamilyAPI(db, authAPI, exports.family).RegisterRoutes),
+		server.WithAPI(buildOrganizeAPI(db, authAPI, exports.sidecar).RegisterRoutes),
 		server.WithAPI(buildFeedbackAPI(db, authAPI).RegisterRoutes),
 		server.WithAPI(buildPlacesAPI(db, authAPI).RegisterRoutes),
 		server.WithAPI(buildSavedSearchAPI(db, authAPI).RegisterRoutes),

@@ -90,15 +90,101 @@ func (f *fakeStore) UpdateFamilyAudited(
 // passThrough is a no-op guard so handler behaviour is tested without auth.
 func passThrough(next http.Handler) http.Handler { return next }
 
-// newServer mounts an API backed by store behind pass-through guards.
+// fakeExport counts the genealogy-export rewrites the handlers scheduled, and can
+// refuse them.
+type fakeExport struct {
+	calls int
+	err   error
+}
+
+// EnqueueFamilyExport counts the call and returns the canned error.
+func (f *fakeExport) EnqueueFamilyExport(context.Context) error {
+	f.calls++
+	return f.err
+}
+
+// newServer mounts an API backed by store behind pass-through guards, with no
+// export scheduler — most handler tests are not about it.
 func newServer(store familyapi.Store) http.Handler {
+	return newServerWithExport(store, nil)
+}
+
+// newServerWithExport mounts an API that schedules its export rewrites through
+// export.
+func newServerWithExport(store familyapi.Store, export familyapi.ExportEnqueuer) http.Handler {
 	r := chi.NewRouter()
 	familyapi.NewAPI(familyapi.Config{
 		Store:        store,
+		Export:       export,
 		RequireAuth:  passThrough,
 		RequireWrite: passThrough,
 	}).RegisterRoutes(r)
 	return r
+}
+
+// TestMutations_scheduleTheGenealogyExport pins the promise this API carries for
+// the file on disk: every write schedules a rewrite of families.yaml, so losing
+// the database does not lose the relation that was just recorded.
+func TestMutations_scheduleTheGenealogyExport(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		method, target string
+		body           string
+	}{
+		{
+			name: "add a relation", method: http.MethodPost, target: "/subjects/su_a/relations",
+			body: `{"role":"parent","subject_uid":"su_b"}`,
+		},
+		{name: "remove a relation", method: http.MethodDelete, target: "/subjects/su_a/relations/su_b"},
+		{name: "edit a family", method: http.MethodPatch, target: "/families/fam1", body: `{"kind":"marriage"}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			export := &fakeExport{}
+			rec := do(t, newServerWithExport(&fakeStore{}, export), tt.method, tt.target, tt.body)
+			if rec.Code >= http.StatusBadRequest {
+				t.Fatalf("status = %d, want a success: %s", rec.Code, rec.Body)
+			}
+			if export.calls != 1 {
+				t.Errorf("scheduled %d export rewrite(s), want 1", export.calls)
+			}
+		})
+	}
+}
+
+// TestMutations_doNotScheduleAfterAFailure verifies a refused mutation schedules
+// nothing: there is nothing new to write, and a rewrite would only cost an
+// object-store request for bytes that have not changed.
+func TestMutations_doNotScheduleAfterAFailure(t *testing.T) {
+	t.Parallel()
+
+	export := &fakeExport{}
+	store := &fakeStore{addErr: family.ErrSubjectNotFound}
+	rec := do(t, newServerWithExport(store, export), http.MethodPost, "/subjects/su_a/relations",
+		`{"role":"parent","subject_uid":"su_b"}`)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+	if export.calls != 0 {
+		t.Errorf("scheduled %d export rewrite(s) after a failure, want none", export.calls)
+	}
+}
+
+// TestMutations_surviveAFailedSchedule verifies a queue that cannot take the
+// rewrite does not fail the user's edit: the relation is safely in Postgres, and
+// the file is a second copy of it.
+func TestMutations_surviveAFailedSchedule(t *testing.T) {
+	t.Parallel()
+
+	export := &fakeExport{err: errors.New("queue unavailable")}
+	rec := do(t, newServerWithExport(&fakeStore{}, export), http.MethodDelete,
+		"/subjects/su_a/relations/su_b", "")
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("status = %d, want 204 despite the failed schedule", rec.Code)
+	}
 }
 
 // do issues a request against the mounted API and returns the recorder.

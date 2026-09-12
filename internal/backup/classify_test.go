@@ -18,6 +18,7 @@ func TestBackedUp_decidesEveryKind(t *testing.T) {
 	want := map[storekeys.Kind]bool{
 		storekeys.KindOriginal:  true,
 		storekeys.KindSidecar:   true,
+		storekeys.KindFamilies:  true,
 		storekeys.KindForeign:   true,
 		storekeys.KindThumbnail: false,
 		storekeys.KindHLS:       false,
@@ -51,6 +52,7 @@ func TestBackedUpKey(t *testing.T) {
 	}{
 		{key: "2026/01/a.jpg", want: true},
 		{key: "sidecars/2026/01/a.jpg.yaml", want: true},
+		{key: "families.yaml", want: true},
 		{key: "thumb/ab/cd/ef/abcdef_tile_500.jpg", want: false},
 		{key: "hls/abcdef0123456789/1080p/init.mp4", want: false},
 		{key: "hls/abcdef0123456789/1080p/00003.m4s", want: false},

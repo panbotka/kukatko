@@ -9,6 +9,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/panbotka/kukatko/internal/familyexport"
 	"github.com/panbotka/kukatko/internal/sidecarexport"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/storekeys"
@@ -30,6 +31,9 @@ const (
 	kindThumbnail
 	// kindSidecar is a metadata sidecar under the sidecars/ prefix.
 	kindSidecar
+	// kindFamilies is the library's genealogy export, the single families.yaml at
+	// the root of the store.
+	kindFamilies
 	// kindHLS is a video's HLS initialisation or media segment under the hls/
 	// prefix.
 	kindHLS
@@ -55,6 +59,8 @@ func classifyKey(key string) keyKind {
 		return kindThumbnail
 	case storekeys.KindSidecar:
 		return kindSidecar
+	case storekeys.KindFamilies:
+		return kindFamilies
 	case storekeys.KindHLS:
 		return kindHLS
 	// A dump and a half-written upload are not the library's content: the reset
@@ -75,6 +81,10 @@ type PrefixCounts struct {
 	Thumbnails int `json:"thumbnails"`
 	// Sidecars counts keys under the sidecars/ prefix.
 	Sidecars int `json:"sidecars"`
+	// Families counts the library's genealogy export: one object or none. It is
+	// not a prefix and not per-photo, which is exactly why it is counted — an
+	// object nobody counts is an object a wipe forgets.
+	Families int `json:"families"`
 	// HLS counts keys under the hls/ prefix: the streaming segments of the
 	// library's videos. Unlike the other three it is only ever non-zero on a
 	// sweep, because a segment's key is not derivable from the catalogue — how
@@ -85,7 +95,7 @@ type PrefixCounts struct {
 
 // Total returns the sum of every owned prefix.
 func (p PrefixCounts) Total() int {
-	return p.Originals + p.Thumbnails + p.Sidecars + p.HLS
+	return p.Originals + p.Thumbnails + p.Sidecars + p.Families + p.HLS
 }
 
 // with returns the counts with the counter of kind's prefix incremented. A
@@ -99,6 +109,8 @@ func (p PrefixCounts) with(kind keyKind) PrefixCounts {
 		p.Thumbnails++
 	case kindSidecar:
 		p.Sidecars++
+	case kindFamilies:
+		p.Families++
 	case kindHLS:
 		p.HLS++
 	case kindForeign:
@@ -115,8 +127,12 @@ type catalogueFiles struct {
 	hashes []string
 }
 
-// objectKeys expands the catalogued files into every store key they own: each
-// original, the sidecar beside it, and one thumbnail per registered size.
+// objectKeys expands the catalogued files into every store key the wipe should
+// attempt: each original, the sidecar beside it, one thumbnail per registered
+// size, and the one object that belongs to no photo at all — the library's
+// genealogy export, which is named unconditionally because no catalogue row
+// implies it and a tree that survived a wipe would restore itself over the empty
+// library.
 //
 // The expansion is deliberately blind to what the store actually holds. Probing
 // first would cost one request per candidate on an object store — for a library
@@ -139,6 +155,8 @@ func (c catalogueFiles) objectKeys() ([]string, PrefixCounts) {
 		keys = append(keys, sidecar)
 		counts.Sidecars++
 	}
+	keys = append(keys, familyexport.Key)
+	counts.Families++
 	for _, hash := range c.hashes {
 		for _, size := range sizes {
 			key, err := thumb.RelPath(hash, size)

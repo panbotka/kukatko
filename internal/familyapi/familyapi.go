@@ -62,6 +62,7 @@ type Store interface {
 // by the caller so this package depends on auth's behaviour, not its wiring.
 type API struct {
 	store        Store
+	export       ExportEnqueuer
 	requireAuth  func(http.Handler) http.Handler
 	requireWrite func(http.Handler) http.Handler
 }
@@ -70,6 +71,10 @@ type API struct {
 type Config struct {
 	// Store backs the relation reads and mutations.
 	Store Store
+	// Export schedules the rewrite of the library's genealogy export after a
+	// mutation. Nil disables it, which is what the wiring passes when the export
+	// is switched off.
+	Export ExportEnqueuer
 	// RequireAuth guards the read endpoints for any signed-in user.
 	RequireAuth func(http.Handler) http.Handler
 	// RequireWrite guards the mutating endpoints for editors and admins.
@@ -78,7 +83,12 @@ type Config struct {
 
 // NewAPI returns an API from cfg.
 func NewAPI(cfg Config) *API {
-	return &API{store: cfg.Store, requireAuth: cfg.RequireAuth, requireWrite: cfg.RequireWrite}
+	return &API{
+		store:        cfg.Store,
+		export:       cfg.Export,
+		requireAuth:  cfg.RequireAuth,
+		requireWrite: cfg.RequireWrite,
+	}
 }
 
 // RegisterRoutes mounts the family endpoints onto r, which the caller has scoped

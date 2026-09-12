@@ -683,14 +683,22 @@ stacks:
 # embedding and the face vectors — large, binary, and cheap to recompute from the
 # original, which is what the embedding/face backfills are for.
 #
-# The format, in full: docs/RESTORE.md.
+# The same switch also governs the library's FAMILY TREE export: families.yaml at
+# the root of the storage, holding the whole genealogy — who is whose parent,
+# whose partner, whose child — plus everybody it names. A relationship is true
+# about two people rather than about any photograph, so it belongs in no photo's
+# sidecar; it is written by the `family_export` job whenever a relation (or a
+# subject in one) changes, and by `kukatko sidecar families` on demand. One
+# promise, one switch: a second key would let an instance end up half-covered.
+#
+# Both formats, in full: docs/RESTORE.md.
 sidecar:
   # Master switch, ON by default: a disaster-recovery mechanism nobody switched on
   # is not one, so it defaults to running before the day it is needed. false = no
-  # sidecar is written or deleted, no sidecar job is enqueued, and
-  # /process/sidecars answers 503. Sidecars already in storage are left exactly as
-  # they are — turning the export off is not a request to destroy what it already
-  # wrote, and a stale sidecar is worth more than no sidecar.
+  # sidecar and no family tree export is written or deleted, neither job is
+  # enqueued, and /process/sidecars answers 503. What is already in storage is
+  # left exactly as it is — turning the export off is not a request to destroy
+  # what it already wrote, and a stale sidecar is worth more than no sidecar.
   #
   # Turn it off if the I/O is not worth it to you: it is one small write per photo
   # per edit, against a store that may charge per request.

@@ -11,6 +11,7 @@ import (
 	"github.com/panbotka/kukatko/internal/embedding"
 	"github.com/panbotka/kukatko/internal/embedjob"
 	"github.com/panbotka/kukatko/internal/facejob"
+	"github.com/panbotka/kukatko/internal/familyexportjob"
 	"github.com/panbotka/kukatko/internal/hlsjob"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/jobsapi"
@@ -170,11 +171,15 @@ func buildJobServices(d jobServiceDeps) (registryServices, *maintenance.Service,
 	if err != nil {
 		return registryServices{}, nil, err
 	}
+	familyExportSvc, err := buildFamilyExportServiceOrNil(d.cfg, d.db)
+	if err != nil {
+		return registryServices{}, nil, err
+	}
 	return registryServices{
 		embed: d.embed, face: d.face, thumb: thumbSvc, meta: metaSvc,
 		places: d.places, sidecar: sidecarSvc, ocr: ocrSvc, mail: mailSvc,
 		nameless: buildNamelessService(d.db, d.store), storyboard: d.storyboard,
-		cluster: d.cluster, hls: hlsSvc,
+		cluster: d.cluster, hls: hlsSvc, familyExport: familyExportSvc,
 	}, maintenanceSvc, nil
 }
 
@@ -193,11 +198,15 @@ type registryServices struct {
 	storyboard *storyboardjob.Service
 	cluster    *clusterjob.Service
 	hls        *hlsjob.Service
+	// familyExport writes the library's genealogy export; nil when the sidecar
+	// export is switched off.
+	familyExport *familyexportjob.Service
 }
 
 // buildRegistry returns the worker registry with every configured handler
 // registered. The always-available handlers register unconditionally; the
-// config-gated ones (places, sidecar, ocr, mail_send, hls_transcode) register only when their service was
+// config-gated ones (places, sidecar, family_export, ocr, mail_send, hls_transcode) register only
+// when their service was
 // built, because an unregistered type is never claimed — so a job of a type with
 // no handler would sit queued forever.
 func buildRegistry(svc registryServices) *worker.Registry {
@@ -225,6 +234,9 @@ func buildRegistry(svc registryServices) *worker.Registry {
 	}
 	if svc.hls != nil {
 		registry.Register(jobs.TypeHLSTranscode, svc.hls.Handle)
+	}
+	if svc.familyExport != nil {
+		registry.Register(jobs.TypeFamilyExport, svc.familyExport.Handle)
 	}
 	return registry
 }

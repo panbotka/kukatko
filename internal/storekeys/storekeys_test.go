@@ -13,6 +13,7 @@ import (
 var sampleKeys = map[storekeys.Kind]string{
 	storekeys.KindOriginal:  "2024/05/IMG_0001.jpg",
 	storekeys.KindSidecar:   "sidecars/2024/05/IMG_0001.jpg.yaml",
+	storekeys.KindFamilies:  "families.yaml",
 	storekeys.KindThumbnail: "thumb/ab/cd/ef/abcdef_tile_500.jpg",
 	storekeys.KindHLS:       "hls/abcdef0123456789/1080p/00000.m4s",
 	storekeys.KindDump:      "db/kukatko-20260901T020000Z.dump",
@@ -94,6 +95,10 @@ func TestClassify(t *testing.T) {
 		{"hls init segment", "hls/abcdef0123456789/1080p/init.mp4", storekeys.KindHLS},
 		{"hls media segment", "hls/abcdef0123456789/1080p/00042.m4s", storekeys.KindHLS},
 		{"prefix that merely starts like hls", "hlsx/abcdef/1080p/init.mp4", storekeys.KindForeign},
+		{"family tree export", "families.yaml", storekeys.KindFamilies},
+		{"family tree export with a leading slash", "/families.yaml", storekeys.KindFamilies},
+		{"a name that merely starts like it", "families.yaml.bak", storekeys.KindForeign},
+		{"a directory of that name", "families.yaml/inner.txt", storekeys.KindForeign},
 		{"database dump", "db/kukatko-20260901T020000Z.dump", storekeys.KindDump},
 		{"partial upload", ".tmp/upload-123456", storekeys.KindPartial},
 		{"empty key", "", storekeys.KindForeign},
@@ -119,6 +124,7 @@ func TestKind_String(t *testing.T) {
 	want := map[storekeys.Kind]string{
 		storekeys.KindOriginal:  "original",
 		storekeys.KindSidecar:   "sidecar",
+		storekeys.KindFamilies:  "families",
 		storekeys.KindThumbnail: "thumbnail",
 		storekeys.KindHLS:       "hls",
 		storekeys.KindDump:      "dump",

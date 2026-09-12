@@ -11,6 +11,7 @@ import (
 	"path"
 	"path/filepath"
 
+	"github.com/panbotka/kukatko/internal/familyexport"
 	"github.com/panbotka/kukatko/internal/hls"
 	"github.com/panbotka/kukatko/internal/sidecarexport"
 	"github.com/panbotka/kukatko/internal/storage"
@@ -88,6 +89,11 @@ func (m *Migrator) planKind(ctx context.Context, kind storekeys.Kind, item Item)
 		return []object{m.planOriginal(item)}, nil
 	case storekeys.KindSidecar:
 		return m.planSidecar(ctx, item)
+	case storekeys.KindFamilies:
+		// The genealogy export belongs to the library, not to any one photo, so it
+		// is declined here and moved once per run by planLibrary. Planning it per
+		// photo would upload the same file once for every photo in the archive.
+		return nil, nil
 	case storekeys.KindThumbnail:
 		return m.planThumbs(item.FileHash, thumb.SizeNames())
 	case storekeys.KindHLS:
@@ -184,6 +190,34 @@ func (m *Migrator) planSidecar(ctx context.Context, item Item) ([]object, error)
 		kind:    storekeys.KindSidecar,
 		size:    info.Size(),
 		mime:    sidecarexport.MIME,
+		digest:  func(ctx context.Context) (string, error) { return hashSource(ctx, m.cfg.Source, key) },
+		open:    func(ctx context.Context) (io.ReadCloser, error) { return m.cfg.Source.Open(ctx, key) },
+	}}, nil
+}
+
+// planLibrary returns the objects that belong to the library as a whole rather
+// than to any photo: today only the genealogy export, families.yaml at the root
+// of the store.
+//
+// It is planned separately from every photo and moved once per run. Like a
+// sidecar it is disaster-recovery data rather than a regenerable artifact — it
+// is the only copy of the family tree outside the database — so it travels with
+// the originals instead of being left on the emptied disk. A library that has
+// never written one has nothing to move, which is not an error.
+func (m *Migrator) planLibrary(ctx context.Context) ([]object, error) {
+	key := familyexport.Key
+	info, err := m.cfg.Source.Stat(ctx, key)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("storagemigrate: stat family export %s: %w", key, err)
+	}
+	return []object{{
+		relPath: key,
+		kind:    storekeys.KindFamilies,
+		size:    info.Size(),
+		mime:    familyexport.MIME,
 		digest:  func(ctx context.Context) (string, error) { return hashSource(ctx, m.cfg.Source, key) },
 		open:    func(ctx context.Context) (io.ReadCloser, error) { return m.cfg.Source.Open(ctx, key) },
 	}}, nil

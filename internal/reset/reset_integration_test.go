@@ -11,6 +11,7 @@ import (
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
+	"github.com/panbotka/kukatko/internal/familyexport"
 	"github.com/panbotka/kukatko/internal/reset"
 	"github.com/panbotka/kukatko/internal/sidecarexport"
 	"github.com/panbotka/kukatko/internal/storage"
@@ -127,6 +128,10 @@ func (e *resetEnv) seedLibrary(t *testing.T) {
 			e.writeCacheFile(t, key)
 		}
 	}
+
+	// The library-level genealogy export: one object belonging to no photo, which
+	// the wipe must remove all the same.
+	e.writeObject(t, familyexport.Key, "family tree")
 
 	e.exec(t, `INSERT INTO albums (uid, title, slug) VALUES ($1,$2,$3)`, "alb000000001", "Trip", "trip")
 	e.exec(t, `INSERT INTO album_photos (album_uid, photo_uid) VALUES ($1,$2)`, "alb000000001", "pht000000001")

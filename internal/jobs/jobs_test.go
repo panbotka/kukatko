@@ -154,6 +154,58 @@ func TestEnqueueSidecar_debounces(t *testing.T) {
 	}
 }
 
+// TestEnqueueFamilyExport_debounces verifies the genealogy enqueue maps to
+// TypeFamilyExport, carries no payload — there is one file for the whole library,
+// so there is nothing for a payload to name — and delays the job by
+// FamilyExportDebounce, the window a burst of relation edits collapses into.
+func TestEnqueueFamilyExport_debounces(t *testing.T) {
+	t.Parallel()
+
+	pinned := time.Date(2026, time.September, 13, 12, 0, 0, 0, time.UTC)
+	fake := &fakeEnqueuer{}
+	enq := &Enqueuer{store: fake, clock: func() time.Time { return pinned }}
+
+	if err := enq.EnqueueFamilyExport(context.Background()); err != nil {
+		t.Fatalf("EnqueueFamilyExport: %v", err)
+	}
+	if fake.lastType != TypeFamilyExport {
+		t.Errorf("lastType = %q, want %q", fake.lastType, TypeFamilyExport)
+	}
+	if len(fake.lastPayload) != 0 {
+		t.Errorf("payload = %s, want none", fake.lastPayload)
+	}
+	if fake.lastOpts.RunAfter == nil {
+		t.Fatal("RunAfter is nil, want the debounce delay")
+	}
+	if want := pinned.Add(FamilyExportDebounce); !fake.lastOpts.RunAfter.Equal(want) {
+		t.Errorf("RunAfter = %v, want %v (now + FamilyExportDebounce)", *fake.lastOpts.RunAfter, want)
+	}
+}
+
+// TestEnqueueFamilyExport_swallowsADuplicate verifies a job already queued makes
+// the enqueue a no-op rather than an error: that collision *is* the debounce, and
+// a caller must never see it as a failed edit.
+func TestEnqueueFamilyExport_swallowsADuplicate(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeEnqueuer{err: ErrDuplicate}
+	if err := (&Enqueuer{store: fake}).EnqueueFamilyExport(context.Background()); err != nil {
+		t.Errorf("EnqueueFamilyExport with a job already queued = %v, want nil", err)
+	}
+}
+
+// TestEnqueueFamilyExport_reportsOtherFailures verifies a real queue failure is
+// not swallowed with the duplicates.
+func TestEnqueueFamilyExport_reportsOtherFailures(t *testing.T) {
+	t.Parallel()
+
+	broken := errors.New("connection refused")
+	fake := &fakeEnqueuer{err: broken}
+	if err := (&Enqueuer{store: fake}).EnqueueFamilyExport(context.Background()); !errors.Is(err, broken) {
+		t.Errorf("EnqueueFamilyExport = %v, want it to wrap %v", err, broken)
+	}
+}
+
 // TestEnqueueThumbnail_plainVsRebuild verifies the two thumbnail enqueues differ
 // only in the payload's force flag: both are TypeThumbnail carrying the photo_uid
 // the dedup index keys on (so a forced job dedupes against a plain one), and only

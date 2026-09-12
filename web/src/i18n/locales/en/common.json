@@ -3135,6 +3135,7 @@
         "mail_send": "Sending an e-mail",
         "nameless_detach": "Detaching the nameless person",
         "nameless_restore": "Restoring the nameless person",
+        "family_export": "Writing the family tree to storage",
         "face_cluster": "Grouping faces"
       }
     },

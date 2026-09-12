@@ -376,8 +376,10 @@ func printResetStoragePlan(cmd *cobra.Command, target reset.Target, plan reset.S
 	} else {
 		cmd.Println("store: local filesystem (no bucket)")
 	}
-	cmd.Printf("store (catalogue-referenced keys): %d original(s), %d thumbnail(s), %d sidecar(s)\n",
-		plan.Referenced.Originals, plan.Referenced.Thumbnails, plan.Referenced.Sidecars)
+	cmd.Printf("store (catalogue-referenced keys): %d original(s), %d thumbnail(s), %d sidecar(s),"+
+		" %d family tree export\n",
+		plan.Referenced.Originals, plan.Referenced.Thumbnails, plan.Referenced.Sidecars,
+		plan.Referenced.Families)
 	if !plan.Sweep {
 		// The HLS segments are deliberately not named here: their keys are not
 		// derivable from the catalogue, so without a sweep they are not among the
@@ -387,8 +389,10 @@ func printResetStoragePlan(cmd *cobra.Command, target reset.Target, plan reset.S
 		return
 	}
 	cmd.Printf("  orphan sweep on: the store holds %d original(s), %d thumbnail(s), %d sidecar(s),"+
-		" %d HLS segment(s) under Kukátko's prefixes — all of them would be deleted\n",
-		plan.Stored.Originals, plan.Stored.Thumbnails, plan.Stored.Sidecars, plan.Stored.HLS)
+		" %d family tree export, %d HLS segment(s) under Kukátko's prefixes"+
+		" — all of them would be deleted\n",
+		plan.Stored.Originals, plan.Stored.Thumbnails, plan.Stored.Sidecars,
+		plan.Stored.Families, plan.Stored.HLS)
 	cmd.Printf("  %d key(s) outside those prefixes would be left untouched\n", plan.Foreign)
 }
 

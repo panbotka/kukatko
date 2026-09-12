@@ -1271,7 +1271,11 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   family), a second family for one couple. The request was well formed; the tree is what stands in its way.
   Every mutation writes its audit entry **inside the mutation's transaction**
   (`subject.relation.add` / `subject.relation.remove` / `family.update`); the add entry's details name the
-  role, who the other person turned out to be and which family the relation joined. Mounted by
+  role, who the other person turned out to be and which family the relation joined. Every mutation also
+  **schedules a rewrite of `families.yaml`**, the library-level export of the whole genealogy (a `family_export`
+  job, debounced; see [`RESTORE.md`](RESTORE.md)) — so does a subject rename, delete or merge on
+  `/subjects/{uid}`, since all three change what the tree says. The schedule is best-effort: it never fails
+  the edit, which is safely in Postgres either way. Mounted by
   `server.WithAPI` (`buildFamilyAPI` in `cmd/kukatko/family.go`, in `readAPIOptions`). Not exposed over MCP.
 - **Subject avatar (`/api/v1`, `internal/avatarapi`):** `GET /subjects/{uid}/avatar` (RequireAuth) → the
   square **`image/jpeg`** that stands for the subject: 320 px, ~15 kB measured against real 24 Mpx

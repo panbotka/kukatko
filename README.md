@@ -374,6 +374,10 @@ were written.
 - **The catalogue survives losing the database.** Every photo's metadata and curation — title,
   description, dates, people, albums, labels — is also written to a versioned YAML sidecar next to
   the original. Lose the DB and the meaning of your library is still on the disk.
+- **So does the family tree.** Who is whose parent, whose partner, whose child is true about two
+  people rather than about any one photograph, so it goes into a file of its own — `families.yaml`
+  beside the photos, the whole genealogy with everybody it names described in the same document.
+  A great-grandmother nobody ever photographed is in there too.
 - Originals on **local disk** or in an **S3-compatible bucket** (Cloudflare R2, with short-lived
   signed URLs), plus **S3 backup** — `pg_dump` and originals with retention — and a restore runbook
   that has been used.

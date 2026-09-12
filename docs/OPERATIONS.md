@@ -162,7 +162,13 @@ configuration key both here **and** into `config.example.yaml`.
   can be run from cron and, above all, **before any risky operation** (a migration, upgrade, restore drill),
   which is exactly the moment a person is at the terminal. When `sidecar.enabled: false`, the command
   **fails** instead of a silent “0 scheduled”. The full format is in [`docs/RESTORE.md`](RESTORE.md),
-  the HTTP counterpart is `POST /api/v1/process/sidecars`,
+  the HTTP counterpart is `POST /api/v1/process/sidecars`.
+  `sidecar families` writes the library's **family tree export** (`families.yaml` at the root of the storage —
+  `internal/familyexportjob`) **now**, and unlike its sibling it writes the file itself rather than enqueuing:
+  there is one file and the work is one small read, so there is nothing to spread over a queue, and the moment
+  this is typed is exactly the moment a running server cannot be assumed. The server rewrites the file on its
+  own whenever a relation — or a subject in one — changes; this is the "before I do something risky" button. It
+  fails the same way when `sidecar.enabled: false`, and it has no HTTP counterpart,
   **`kukatko storage`** (operations over the storage of originals — `internal/storagemigrate`):
   `storage migrate-to-r2` (a one-off **resumable** move of the library to R2, see below),
   **`kukatko ctl`** (a remote client over the HTTP API of a running instance — `internal/ctl`; the only subcommand
@@ -1693,7 +1699,11 @@ other type; values ≤ 0 are ignored and a type
   against a store that may charge per request. Env: `KUKATKO_SIDECAR_ENABLED`. Unrelated to
   `internal/sidecar`, which reads *foreign* sidecars (Google Takeout, Apple XMP) on import. **The full
   format is in [`docs/RESTORE.md`](RESTORE.md)**; backfill `kukatko sidecar backfill [--all]` or
-  admin-only `POST /process/sidecars`.
+  admin-only `POST /process/sidecars`. **The same switch also governs the library's family tree export**
+  (`families.yaml`, `internal/familyexport`): it is the same promise — the meaning of the library survives the
+  database — and a second key would let an instance end up half-covered, which is the state hardest to notice
+  and worst to discover. When `false` no `family_export` job is enqueued or registered either, and the file
+  already in storage stays as it is; write it by hand with `kukatko sidecar families`.
 - **MCP keys (`mcp.*`, `internal/config` + `internal/mcpapi`):** the **MCP server** — the library exposed
   to an AI agent (Model Context Protocol) at `POST /api/v1/mcp`, so it can search, read, and organize within it
   ("find all photos of grandma from the sixties and put them in an album"). `enabled` (bool, **default false**) is

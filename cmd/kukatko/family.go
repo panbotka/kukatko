@@ -11,10 +11,13 @@ import (
 // subject's immediate relations, the tree walked up or down from them, recording
 // and removing a relation, and editing a family row. Reads use the read guard and
 // mutations the write guard, both supplied via authAPI so familyapi stays
-// decoupled from auth's wiring.
-func buildFamilyAPI(db *database.DB, authAPI *auth.API) *familyapi.API {
+// decoupled from auth's wiring. Every mutation schedules a rewrite of the
+// library's genealogy export through export, so the tree on disk follows the tree
+// in the database.
+func buildFamilyAPI(db *database.DB, authAPI *auth.API, export familyExportScheduler) *familyapi.API {
 	return familyapi.NewAPI(familyapi.Config{
 		Store:        family.NewStore(db.Pool()),
+		Export:       export,
 		RequireAuth:  authAPI.RequireAuth,
 		RequireWrite: authAPI.RequireWrite,
 	})

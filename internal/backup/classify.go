@@ -8,7 +8,8 @@ import (
 //
 // The rule is what a restore needs and nothing more: an original cannot be
 // reproduced from anything else, and a metadata sidecar is the catalogue's
-// disaster-recovery copy, so both travel. Everything Kukátko can rebuild from an
+// disaster-recovery copy — as is the genealogy export, which is the only copy of
+// the family tree outside the database — so all three travel. Everything Kukátko can rebuild from an
 // original — the thumbnail cache and a video's streaming segments — does not: it
 // would be paid for twice, in storage and in transfer, to save an operator a
 // background job they can run at any time. Dumps and half-written uploads are
@@ -22,7 +23,7 @@ import (
 // must be classified here before this package compiles cleanly again.
 func backedUp(kind storekeys.Kind) bool {
 	switch kind {
-	case storekeys.KindOriginal, storekeys.KindSidecar, storekeys.KindForeign:
+	case storekeys.KindOriginal, storekeys.KindSidecar, storekeys.KindFamilies, storekeys.KindForeign:
 		return true
 	case storekeys.KindThumbnail, storekeys.KindHLS, storekeys.KindDump, storekeys.KindPartial:
 		return false

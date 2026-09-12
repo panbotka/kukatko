@@ -31,6 +31,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/panbotka/kukatko/internal/familyexport"
 	"github.com/panbotka/kukatko/internal/hls"
 	"github.com/panbotka/kukatko/internal/sidecarexport"
 	"github.com/panbotka/kukatko/internal/thumb"
@@ -64,6 +65,13 @@ const (
 	// KindSidecar is a metadata sidecar under sidecars/: the catalogue's
 	// disaster-recovery copy, written by internal/sidecarexport.
 	KindSidecar
+	// KindFamilies is the library's genealogy export — the single families.yaml
+	// at the root of the store, written by internal/familyexport. Like a sidecar
+	// it is disaster-recovery data and not regenerable from anything else in the
+	// store, and unlike one it belongs to no photo: it is one object for the whole
+	// library, which is why it is a kind of its own rather than a sidecar living
+	// somewhere odd.
+	KindFamilies
 	// KindThumbnail is a cached thumbnail under thumb/, regenerable from the
 	// original by the thumbnail job.
 	KindThumbnail
@@ -83,6 +91,8 @@ func (k Kind) String() string {
 		return "original"
 	case KindSidecar:
 		return "sidecar"
+	case KindFamilies:
+		return "families"
 	case KindThumbnail:
 		return "thumbnail"
 	case KindHLS:
@@ -100,7 +110,7 @@ func (k Kind) String() string {
 // kinds is every Kind, in the order a report or a plan walks them. A new member
 // of the enum belongs here too; the package's tests fail otherwise.
 var kinds = []Kind{
-	KindOriginal, KindSidecar, KindThumbnail, KindHLS, KindDump, KindPartial, KindForeign,
+	KindOriginal, KindSidecar, KindFamilies, KindThumbnail, KindHLS, KindDump, KindPartial, KindForeign,
 }
 
 // Kinds returns every kind there is, originals first and foreign last. The
@@ -128,7 +138,9 @@ var originalKeyPattern = regexp.MustCompile(`^[0-9]{4}/[0-9]{2}/[^/]+$`)
 //
 // The test is by prefix and never by the store's answer, so it costs nothing and
 // works the same for a key that is about to be written as for one that was
-// listed.
+// listed. The one exception is the genealogy export, which is a single object
+// rather than a layout and is therefore matched by its exact key: it owns no
+// prefix, so a foreign file whose name merely begins the same way stays foreign.
 func Classify(key string) Kind {
 	clean := strings.TrimPrefix(strings.TrimSpace(key), "/")
 	switch {
@@ -138,6 +150,8 @@ func Classify(key string) Kind {
 		return KindThumbnail
 	case strings.HasPrefix(clean, sidecarexport.Prefix+"/"):
 		return KindSidecar
+	case clean == familyexport.Key:
+		return KindFamilies
 	case strings.HasPrefix(clean, hls.Prefix+"/"):
 		return KindHLS
 	case strings.HasPrefix(clean, DumpPrefix):
