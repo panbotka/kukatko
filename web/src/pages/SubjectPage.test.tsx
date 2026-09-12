@@ -95,6 +95,7 @@ function subject(): Subject {
     uid: 'sj_1',
     slug: 'jana',
     name: 'Jana',
+    nickname: '',
     type: 'person',
     favorite: false,
     private: false,
@@ -634,6 +635,46 @@ describe('SubjectPage life data', () => {
   function dated(uid: string, takenAt: string): Photo {
     return { ...photo(uid, `${uid}.jpg`), taken_at: takenAt }
   }
+
+  it('shows the nickname beside the name', async () => {
+    fetchSubjectMock.mockResolvedValue({ ...subject(), nickname: 'Janička' })
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    renderPage()
+
+    // Beside the name, not instead of it: the heading still names the person.
+    await screen.findByRole('heading', { level: 1, name: 'Jana' })
+    expect(screen.getByText('„Janička"')).toBeInTheDocument()
+  })
+
+  it('shows nothing at all for a person with no nickname', async () => {
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    renderPage()
+
+    await screen.findByRole('heading', { level: 1, name: 'Jana' })
+    // Empty quotation marks beside every second person would be noise standing
+    // in for a fact nobody recorded.
+    expect(screen.queryByText(/„/)).not.toBeInTheDocument()
+  })
+
+  it('saves the nickname from the edit dialog', async () => {
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    updateSubjectMock.mockResolvedValue({ ...subject(), nickname: 'Janička' })
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByRole('heading', { level: 1, name: 'Jana' })
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    await user.type(await screen.findByLabelText('Nickname'), '  Janička  ')
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(updateSubjectMock).toHaveBeenCalledWith(
+        'sj_1',
+        expect.objectContaining({ nickname: 'Janička' }),
+      )
+    })
+    expect(await screen.findByText('„Janička"')).toBeInTheDocument()
+  })
 
   it('shows a closed life span beside the name', async () => {
     fetchSubjectMock.mockResolvedValue({ ...subject(), birth_year: 1923, death_year: 1998 })

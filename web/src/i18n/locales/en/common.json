@@ -1723,6 +1723,7 @@
     "loadMore": "Load more",
     "loadingMore": "Loading…",
     "lifeSpan": "Life span: {{span}}",
+    "nickname": "Nickname: {{nickname}}",
     "age_one": "~{{count}} yr",
     "age_other": "~{{count}} yrs",
     "decades": {
@@ -1745,6 +1746,8 @@
       "title": "Edit person",
       "error": "Could not save. Check the name and try again.",
       "name": "Name",
+      "nickname": "Nickname",
+      "nicknameHelp": "Optional. What people actually call them — searchable exactly like the name.",
       "type": "Type",
       "birthYear": "Year of birth",
       "deathYear": "Year of death",

@@ -113,6 +113,7 @@ func fullDocument() Document {
 				MarkerUID:   "mrk001",
 				SubjectUID:  "sub001",
 				Name:        "Jana Nováková",
+				Nickname:    "Janička",
 				SubjectType: "person",
 				Type:        "face",
 				Box:         Box{X: 0.25, Y: 0.1, W: 0.2, H: 0.3},

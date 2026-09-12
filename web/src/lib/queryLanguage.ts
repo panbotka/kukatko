@@ -493,6 +493,14 @@ export function applyFilterValue(
 export interface FilterValue {
   /** The name exactly as a query must spell it (an album title, a label, a person). */
   name: string
+  /**
+   * Another way to say the same name, matched like it but never completed to: a
+   * person's nickname („Bohouš"). The backend's `person:` filter matches the
+   * nickname too, so typing one has to reach the row — while the completed token
+   * stays the NAME, which is what identifies the person. Absent for the facets
+   * that have no second name.
+   */
+  alias?: string
   /** How many photos carry it — what ranks the proposals. */
   count: number
 }
@@ -503,6 +511,9 @@ export interface FilterValue {
  * photo count and then alphabetically, and capped at
  * {@link MAX_VALUE_SUGGESTIONS}. An empty prefix matches everything, which is
  * what makes a bare `person:` offer the people who appear most.
+ *
+ * A value's {@link FilterValue.alias} is matched on the same terms as its name,
+ * so `person:bohous` reaches Bohumil Nečas; the row still completes to the name.
  *
  * Values that fold to the same name are collapsed: a query matches by name, so
  * two identically titled albums are one and the same proposal.
@@ -515,7 +526,10 @@ export function matchFilterValues(
   const folded = foldText(prefix)
   const matches = values.filter((value) => {
     const name = foldText(value.name)
-    return name !== '' && name.startsWith(folded)
+    if (name === '') {
+      return false
+    }
+    return name.startsWith(folded) || foldText(value.alias ?? '').startsWith(folded)
   })
   // Sorted before the fold-dedup so the survivor of two identically named values
   // is the one with the higher count.

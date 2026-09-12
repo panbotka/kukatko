@@ -74,8 +74,8 @@ func (s *Store) ListNamelessSubjects(ctx context.Context) ([]NamelessSubject, er
 	for rows.Next() {
 		var ns NamelessSubject
 		if err := rows.Scan(
-			&ns.UID, &ns.Slug, &ns.Name, &ns.Type, &ns.Favorite, &ns.Private,
-			&ns.Notes, &ns.CoverPhotoUID, &ns.BirthYear, &ns.DeathYear,
+			&ns.UID, &ns.Slug, &ns.Name, &ns.Nickname, &ns.Type, &ns.Favorite,
+			&ns.Private, &ns.Notes, &ns.CoverPhotoUID, &ns.BirthYear, &ns.DeathYear,
 			&ns.CreatedAt, &ns.UpdatedAt,
 			&ns.MarkerCount, &ns.FaceCount,
 		); err != nil {
@@ -213,9 +213,9 @@ func snapshotSubjectTx(ctx context.Context, tx pgx.Tx, uid string) (SubjectSnaps
 // slug is a parameter because a base slug taken in the meantime has to be
 // disambiguated.
 const restoreSubjectSQL = `
-INSERT INTO subjects (uid, slug, name, type, favorite, private, notes,
+INSERT INTO subjects (uid, slug, name, nickname, type, favorite, private, notes,
                       cover_photo_uid, birth_year, death_year, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 RETURNING ` + subjectColumns
 
 // RestoreSubject puts a snapshot back: it re-inserts the subject, re-assigns the
@@ -244,8 +244,8 @@ func (s *Store) RestoreSubject(ctx context.Context, snap SubjectSnapshot, entry 
 			// The insert's error is returned unwrapped by design: the caller inspects
 			// it for the slug unique violation that drives the next attempt.
 			restored, err := scanSubject(tx.QueryRow(ctx, restoreSubjectSQL,
-				subj.UID, slug, subj.Name, subj.Type, subj.Favorite, subj.Private,
-				subj.Notes, subj.CoverPhotoUID, subj.BirthYear, subj.DeathYear,
+				subj.UID, slug, subj.Name, subj.Nickname, subj.Type, subj.Favorite,
+				subj.Private, subj.Notes, subj.CoverPhotoUID, subj.BirthYear, subj.DeathYear,
 				timeOrNow(subj.CreatedAt), timeOrNow(subj.UpdatedAt)))
 			if err != nil {
 				return Subject{}, err

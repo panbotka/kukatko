@@ -958,11 +958,11 @@ writing `editor`/`admin`.
 
 | Command | Meaning |
 | --- | --- |
-| `ctl subjects list` | `GET /subjects` — a **bare `{"subjects":[…]}`**; `PHOTOS` = distinct photos, `MARKERS` = faces |
+| `ctl subjects list` | `GET /subjects` — a **bare `{"subjects":[…]}`**; `PHOTOS` = distinct photos, `MARKERS` = faces. A nickname rides inside `NAME` — `Bohumil Nečas („Bohouš")` — rather than taking a column most rows would leave empty |
 | `ctl subjects get <uid>` | `GET /subjects/{uid}` |
 | `ctl subjects photos <uid>` | `GET /subjects/{uid}/photos`; `--limit`/`--offset` |
-| `ctl subjects create <name>` | `POST /subjects`; `--type`, `--notes`, `--cover`, `--favorite`, `--private`, `--birth-year`, `--death-year` |
-| `ctl subjects rename <uid> <name>` | `PATCH /subjects/{uid}` with the stored record read back first |
+| `ctl subjects create <name>` | `POST /subjects`; `--nickname`, `--type`, `--notes`, `--cover`, `--favorite`, `--private`, `--birth-year`, `--death-year` |
+| `ctl subjects rename <uid> <name>` | `PATCH /subjects/{uid}` with the stored record read back first; `--nickname` changes what people call them in the same write — **omit it to keep** the stored one, pass `--nickname ""` to clear it |
 | `ctl subjects merge <source-uid> <keeper-uid>` | `POST /subjects/{uid}/merge` — **irreversible**, needs `--yes` |
 | `ctl subjects delete <uid>` | `DELETE /subjects/{uid}` — **irreversible**, needs `--yes` |
 
@@ -973,6 +973,10 @@ prints as a photo list. It does not read the catalog filters, so `ctl` does not 
 patching it, so a flag-per-field edit would silently erase everything you did not mention. `rename` is that
 edit done safely: it reads the record, changes the name, and sends the rest back untouched — otherwise
 renaming a pet would reclassify it as a person and drop its notes, cover and life years on the way.
+**`--nickname` is the one exception**, and only because it is the field most often corrected on its own:
+it is applied on top of the record that was read back, so everything else still survives the write. The
+nickname is searchable like the name (`ctl photos list -q 'person:Bohouš'` finds it) and is **never** part
+of the slug, so changing it breaks no link.
 
 **Merging and deleting cannot be undone**, so both refuse without an explicit `--yes` (there is no size at
 which losing a person's name is harmless, and no threshold to be under) and both offer `--dry-run`, which

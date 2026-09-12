@@ -85,6 +85,14 @@ export interface Subject {
   uid: string
   slug: string
   name: string
+  /**
+   * What people actually call the subject — Bohumil Nečas („Bohouš"). Empty when
+   * nobody recorded one, which is the usual case, so every surface that shows it
+   * has to omit it rather than print empty brackets. It is searched exactly like
+   * the name (subject search, `person:`, the global search) but it never feeds
+   * the slug, which stays derived from the name so existing links keep working.
+   */
+  nickname: string
   type: SubjectType
   favorite: boolean
   private: boolean
@@ -161,6 +169,8 @@ interface SubjectsResponse {
  */
 export interface SubjectInput {
   name: string
+  /** The nickname; the empty string clears it. Never part of the slug. */
+  nickname: string
   type: SubjectType
   favorite: boolean
   private: boolean

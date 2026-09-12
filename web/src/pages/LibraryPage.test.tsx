@@ -224,6 +224,7 @@ function subject(uid: string, name: string, photoCount: number): SubjectCount {
     uid,
     slug: uid,
     name,
+    nickname: '',
     type: 'person',
     favorite: false,
     notes: '',

@@ -19,6 +19,7 @@ function subject(over: Partial<SubjectCount> = {}): SubjectCount {
     uid: 's1',
     slug: 'anna',
     name: 'Anna',
+    nickname: '',
     type: 'person',
     favorite: false,
     private: false,
@@ -50,11 +51,11 @@ function coverFace(share: number): SubjectFace {
   }
 }
 
-function renderTile(over: Partial<SubjectCount> = {}) {
+function renderTile(over: Partial<SubjectCount> = {}, showNickname = false) {
   return render(
     <I18nextProvider i18n={i18n}>
       <MemoryRouter>
-        <SubjectTile subject={subject(over)} />
+        <SubjectTile subject={subject(over)} showNickname={showNickname} />
       </MemoryRouter>
     </I18nextProvider>,
   )
@@ -111,6 +112,25 @@ describe('SubjectTile', () => {
   it('says nothing about years for a subject carrying none', () => {
     renderTile()
     expect(screen.getByText('3 photos')).toBeInTheDocument()
+  })
+
+  it('shows the nickname in the caption when the search found the person by it', () => {
+    renderTile({ nickname: 'Anička' }, true)
+    expect(screen.getByText('„Anička" · 3 photos')).toBeInTheDocument()
+  })
+
+  it('leaves the nickname out when the search found the person by name', () => {
+    // The tile is a grid cell: a nickname nobody asked about is one more thing to
+    // read past, and the name already explains why the row is there.
+    renderTile({ nickname: 'Anička' })
+    expect(screen.getByText('3 photos')).toBeInTheDocument()
+    expect(screen.queryByText(/Anička/)).not.toBeInTheDocument()
+  })
+
+  it('shows nothing extra for a nickname-matched subject that has none', () => {
+    renderTile({}, true)
+    expect(screen.getByText('3 photos')).toBeInTheDocument()
+    expect(screen.queryByText(/„/)).not.toBeInTheDocument()
   })
 
   it('links to the subject page', () => {

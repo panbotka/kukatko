@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 import { useGlobalSearch } from '../../hooks/useGlobalSearch'
+import { nicknameTag } from '../../lib/nickname'
 import { thumbUrl } from '../../services/photos'
 import {
   DIRECT_KIND_LABEL,
@@ -143,18 +144,30 @@ export function GlobalSearchSections({ query }: { query: string }) {
             {t('globalSearch.groups.people')}
           </h2>
           <div className="d-flex flex-wrap gap-2">
-            {result.people.map((person) => (
-              <Link
-                key={person.uid}
-                to={`/people/${person.uid}`}
-                className={`d-inline-flex align-items-center gap-2 text-decoration-none text-white rounded-pill ${ENTITY_STYLE.person.className} ps-1 pe-3 py-1`}
-              >
-                <ChipThumb uid={person.cover} circle />
-                <span className="text-truncate" style={{ maxWidth: '12rem' }}>
-                  {person.name}
-                </span>
-              </Link>
-            ))}
+            {result.people.map((person) => {
+              // The hit may have come from the nickname alone, in which case a chip
+              // showing only the stored name looks unrelated to what was typed. It
+              // rides beside the name, never instead of it, and is absent for the
+              // many people who have none.
+              const nickname = nicknameTag(person.nickname)
+              return (
+                <Link
+                  key={person.uid}
+                  to={`/people/${person.uid}`}
+                  className={`d-inline-flex align-items-center gap-2 text-decoration-none text-white rounded-pill ${ENTITY_STYLE.person.className} ps-1 pe-3 py-1`}
+                >
+                  <ChipThumb uid={person.cover} circle />
+                  <span className="text-truncate" style={{ maxWidth: '12rem' }}>
+                    {person.name}
+                  </span>
+                  {nickname !== null && (
+                    <span className="text-truncate opacity-75" style={{ maxWidth: '8rem' }}>
+                      {nickname}
+                    </span>
+                  )}
+                </Link>
+              )
+            })}
           </div>
         </div>
       )}

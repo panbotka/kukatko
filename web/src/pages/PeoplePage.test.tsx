@@ -46,12 +46,19 @@ function subject(
     type = 'person',
     photoCount = 1,
     createdAt = '2026-01-01T00:00:00Z',
-  }: { type?: SubjectType; photoCount?: number; createdAt?: string } = {},
+    nickname = '',
+  }: {
+    type?: SubjectType
+    photoCount?: number
+    createdAt?: string
+    nickname?: string
+  } = {},
 ): SubjectCount {
   return {
     uid: `su_${name.toLowerCase()}`,
     slug: name.toLowerCase(),
     name,
+    nickname,
     type,
     favorite: false,
     private: false,
@@ -70,7 +77,7 @@ function library(): SubjectCount[] {
   return [
     subject('Anna', { photoCount: 12 }),
     subject('Němcová', { photoCount: 40 }),
-    subject('Bedřich', { photoCount: 3 }),
+    subject('Bedřich', { photoCount: 3, nickname: 'Bedík' }),
     // The most recently named of them, so the "recently added" order is about
     // when somebody was named rather than about the alphabet.
     subject('Rex', { type: 'pet', photoCount: 7, createdAt: '2026-08-30T10:00:00Z' }),
@@ -146,6 +153,34 @@ describe('PeoplePage', () => {
       expect(shownNames()).toEqual(['němcová'])
     })
     expect(screen.getByTestId('search')).toHaveTextContent('q=nemcova')
+  })
+
+  it('finds a person by the nickname and says on the tile why they are there', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByRole('link', { name: 'Anna' })
+
+    await user.type(screen.getByRole('searchbox', { name: 'Search people' }), 'bedik')
+
+    await waitFor(() => {
+      expect(shownNames()).toEqual(['bedřich'])
+    })
+    // Nothing in "Bedřich" resembles what was typed, so the tile has to show the
+    // nickname or the single result looks like a bug.
+    expect(screen.getByText(/„Bedík"/)).toBeInTheDocument()
+  })
+
+  it('leaves the nickname off a tile the name itself matched', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByRole('link', { name: 'Anna' })
+
+    await user.type(screen.getByRole('searchbox', { name: 'Search people' }), 'bedr')
+
+    await waitFor(() => {
+      expect(shownNames()).toEqual(['bedřich'])
+    })
+    expect(screen.queryByText(/Bedík/)).not.toBeInTheDocument()
   })
 
   it('sorts alphabetically when asked', async () => {

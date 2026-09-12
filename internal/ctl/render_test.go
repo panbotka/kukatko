@@ -166,3 +166,68 @@ func TestWriteSubject_lifeYears(t *testing.T) {
 		}
 	}
 }
+
+// TestWriteSubject_nickname verifies the detail table prints the nickname, and
+// dashes it for the many subjects nobody gave one — `subjects create --nickname`
+// and `subjects rename --nickname` both have to print back what they stored.
+func TestWriteSubject_nickname(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		nickname string
+		want     string
+	}{
+		{name: "a stored nickname is printed", nickname: "Bohouš", want: "Bohouš"},
+		{name: "no nickname dashes", nickname: "", want: "-"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var buf strings.Builder
+			subject := Subject{UID: "sub01", Name: "Bohumil Nečas", Nickname: tt.nickname}
+			if err := WriteSubject(&buf, subject); err != nil {
+				t.Fatalf("WriteSubject returned %v", err)
+			}
+			var line string
+			for candidate := range strings.SplitSeq(buf.String(), "\n") {
+				if strings.HasPrefix(candidate, "NICKNAME") {
+					line = candidate
+				}
+			}
+			if line == "" {
+				t.Fatalf("subject detail has no NICKNAME row:\n%s", buf.String())
+			}
+			if !strings.HasSuffix(line, tt.want) {
+				t.Errorf("NICKNAME row = %q, want it to end in %q", line, tt.want)
+			}
+		})
+	}
+}
+
+// TestWriteSubjects_nicknameRidesInTheNameColumn verifies the list keeps the
+// nickname inside NAME rather than spending a whole column on a field most rows
+// leave empty — and that a subject without one is printed unchanged.
+func TestWriteSubjects_nicknameRidesInTheNameColumn(t *testing.T) {
+	t.Parallel()
+
+	var buf strings.Builder
+	subjects := []Subject{
+		{UID: "sub01", Name: "Bohumil Nečas", Nickname: "Bohouš", Type: "person"},
+		{UID: "sub02", Name: "Anna Nováková", Type: "person"},
+	}
+	if err := WriteSubjects(&buf, subjects); err != nil {
+		t.Fatalf("WriteSubjects returned %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, `Bohumil Nečas („Bohouš")`) {
+		t.Errorf("list does not show the nickname beside the name:\n%s", out)
+	}
+	if !strings.Contains(out, "Anna Nováková  ") && !strings.Contains(out, "Anna Nováková\t") {
+		t.Errorf("a subject without a nickname is not printed plainly:\n%s", out)
+	}
+	if strings.Contains(out, "NICKNAME") {
+		t.Errorf("the list spends a column on the nickname:\n%s", out)
+	}
+}

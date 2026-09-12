@@ -30,6 +30,7 @@ import { DETAIL_DEFAULTS, detailQueryString } from '../lib/detailView'
 import { GRID_GAP_PX, gridTemplateColumns } from '../lib/gridDensity'
 import { gridScrollKey, readGridScroll } from '../lib/gridScroll'
 import { approximateAge, formatLifeSpan } from '../lib/lifeYears'
+import { nicknameTag } from '../lib/nickname'
 import { decadeAnchorId, formatDecade, groupPhotosByDecade } from '../lib/photoDecades'
 import { isNotFound } from '../services/auth'
 import { fetchSubject, type Subject, updateSubject } from '../services/people'
@@ -187,10 +188,11 @@ export function SubjectPage() {
       setCoverBusy(true)
       try {
         // PATCH rewrites the whole editable set, so every field the dialog owns
-        // has to be sent back as it stands — including the life years, which a
-        // cover change would otherwise silently clear.
+        // has to be sent back as it stands — including the nickname and the life
+        // years, which a cover change would otherwise silently clear.
         const updated = await updateSubject(subject.uid, {
           name: subject.name,
+          nickname: subject.nickname,
           type: subject.type,
           favorite: subject.favorite,
           private: subject.private,
@@ -306,6 +308,7 @@ export function SubjectPage() {
 
   const { subject } = state
   const lifeSpan = formatLifeSpan(subject.birth_year, subject.death_year)
+  const nickname = nicknameTag(subject.nickname)
 
   return (
     <>
@@ -313,6 +316,15 @@ export function SubjectPage() {
         <div className="d-flex align-items-center gap-2">
           <BackLink to={PEOPLE_PATH} label={t('subject.back')} />
           <h1 className="kk-page-title mb-0">{subject.name}</h1>
+          {/* What people actually call them, beside the name and never instead of
+              it: Bohumil Nečas („Bohouš"). It is the handle the family uses, so it
+              belongs on the same line as the name rather than on one of its own —
+              and when nobody recorded one, nothing is drawn at all. */}
+          {nickname !== null && (
+            <span className="text-secondary" aria-label={t('subject.nickname', { nickname })}>
+              {nickname}
+            </span>
+          )}
           {/* The life span beside the name, when anybody recorded it: „1923–1998",
               or „*1923" while only the birth is known. It is not a badge — it is
               part of who this page is about, and reads as the dates under a

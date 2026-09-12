@@ -170,6 +170,7 @@ export function PeoplePanel({
     return run(async () => {
       const subject = await createSubject({
         name,
+        nickname: '',
         type: 'person',
         favorite: false,
         private: false,

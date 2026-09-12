@@ -21,7 +21,11 @@ type subjectsResponse struct {
 // carries the user-editable subject fields; UID, slug and timestamps are managed
 // by the store.
 type subjectInput struct {
-	Name          string             `json:"name"`
+	Name string `json:"name"`
+	// Nickname is what people actually call the subject; the empty string (or an
+	// omitted key) clears it. It never feeds the slug, which stays derived from
+	// the name alone so existing links keep resolving.
+	Nickname      string             `json:"nickname"`
 	Type          people.SubjectType `json:"type"`
 	Favorite      bool               `json:"favorite"`
 	Private       bool               `json:"private"`
@@ -126,6 +130,7 @@ func (a *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 func subjectChanges(before people.Subject, after people.SubjectUpdate) *audit.ChangeSet {
 	changes := audit.NewChangeSet()
 	changes.Add("name", before.Name, after.Name)
+	changes.Add("nickname", before.Nickname, after.Nickname)
 	changes.Add("type", string(before.Type), string(after.Type))
 	changes.Add("favorite", before.Favorite, after.Favorite)
 	changes.Add("private", before.Private, after.Private)
@@ -279,6 +284,7 @@ func (a *API) resolvePhotos(r *http.Request, page []string) ([]photos.Photo, err
 func (in subjectInput) toSubject() people.Subject {
 	return people.Subject{
 		Name:          in.Name,
+		Nickname:      in.Nickname,
 		Type:          in.Type,
 		Favorite:      in.Favorite,
 		Private:       in.Private,
@@ -293,6 +299,7 @@ func (in subjectInput) toSubject() people.Subject {
 func (in subjectInput) toUpdate() people.SubjectUpdate {
 	return people.SubjectUpdate{
 		Name:          in.Name,
+		Nickname:      in.Nickname,
 		Type:          in.Type,
 		Favorite:      in.Favorite,
 		Private:       in.Private,

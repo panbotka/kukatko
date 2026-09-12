@@ -77,6 +77,7 @@ function namedSubject(birthYear: number | null): people.SubjectCount {
     uid: 'su_9',
     slug: 'alice',
     name: 'Alice',
+    nickname: '',
     type: 'person',
     favorite: false,
     private: false,
@@ -429,6 +430,7 @@ describe('FacesPanel', () => {
         uid: 'su_9',
         slug: 'alice',
         name: 'Alice',
+        nickname: '',
         type: 'person',
         favorite: false,
         private: false,
@@ -454,6 +456,51 @@ describe('FacesPanel', () => {
       subject_uid: 'su_9',
       subject_name: 'Alice',
     })
+  })
+
+  it('finds the person by their nickname and shows it beside the name', async () => {
+    // This is where a nickname earns its keep: whoever is naming faces knows the
+    // family by what everybody calls them, not by the name on the documents.
+    const user = userEvent.setup()
+    const acceptSuggestion = vi.fn()
+    fetchSubjectsMock.mockResolvedValue([
+      { ...namedSubject(null), name: 'Bohumil Nečas', nickname: 'Bohouš' },
+    ])
+    const selected = faceView({ face_index: 0 })
+    renderPanel(facesResult({ faces: [selected], selected, acceptSuggestion }))
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Name')).toBeEnabled()
+    })
+    await user.type(screen.getByLabelText('Name'), 'bohous')
+    const option = await screen.findByRole('option', { name: /Bohumil Nečas/ })
+    expect(option).toHaveTextContent('„Bohouš"')
+    await user.click(option)
+
+    expect(acceptSuggestion).toHaveBeenCalledWith(selected, {
+      subject_uid: 'su_9',
+      subject_name: 'Bohumil Nečas',
+    })
+  })
+
+  it('does not offer everybody when a nickname is typed', async () => {
+    // Most people have no nickname at all; a filter that matched the empty string
+    // would answer every query with the whole library.
+    const user = userEvent.setup()
+    fetchSubjectsMock.mockResolvedValue([
+      { ...namedSubject(null), name: 'Bohumil Nečas', nickname: 'Bohouš' },
+      { ...namedSubject(null), uid: 'su_8', slug: 'anna', name: 'Anna Nováková' },
+    ])
+    const selected = faceView({ face_index: 0 })
+    renderPanel(facesResult({ faces: [selected], selected }))
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Name')).toBeEnabled()
+    })
+    await user.type(screen.getByLabelText('Name'), 'bohous')
+
+    expect(await screen.findByRole('option', { name: /Bohumil Nečas/ })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: /Anna Nováková/ })).not.toBeInTheDocument()
   })
 
   it('shows a viewer the people, with nothing to click', () => {

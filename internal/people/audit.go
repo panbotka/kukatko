@@ -133,8 +133,8 @@ func (s *Store) CreateSubjectAudited(ctx context.Context, subj Subject, entry au
 	return insertAuditedWithUniqueSlug(ctx, s.pool, base, entry, func(tx pgx.Tx, slug string) (Subject, error) {
 		prepared.Slug = slug
 		return scanSubject(tx.QueryRow(ctx, insertSubjectSQL,
-			prepared.UID, prepared.Slug, prepared.Name, prepared.Type, prepared.Favorite,
-			prepared.Private, prepared.Notes, prepared.CoverPhotoUID,
+			prepared.UID, prepared.Slug, prepared.Name, prepared.Nickname, prepared.Type,
+			prepared.Favorite, prepared.Private, prepared.Notes, prepared.CoverPhotoUID,
 			prepared.BirthYear, prepared.DeathYear))
 	})
 }
@@ -158,8 +158,8 @@ func (s *Store) UpdateSubjectAudited(
 	base := Slugify(upd.Name)
 	updated, err := insertAuditedWithUniqueSlug(ctx, s.pool, base, entry, func(tx pgx.Tx, slug string) (Subject, error) {
 		row, err := scanSubject(tx.QueryRow(ctx, updateSubjectSQL,
-			uid, slug, upd.Name, upd.Type, upd.Favorite, upd.Private, upd.Notes,
-			upd.CoverPhotoUID, upd.BirthYear, upd.DeathYear))
+			uid, slug, upd.Name, upd.Nickname, upd.Type, upd.Favorite, upd.Private,
+			upd.Notes, upd.CoverPhotoUID, upd.BirthYear, upd.DeathYear))
 		if err != nil {
 			return Subject{}, err
 		}

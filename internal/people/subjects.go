@@ -17,14 +17,14 @@ const maxSlugAttempts = 1000
 
 // subjectColumns is the canonical, ordered column list for subject reads, matched
 // by scanSubject.
-const subjectColumns = "uid, slug, name, type, favorite, private, notes, " +
+const subjectColumns = "uid, slug, name, nickname, type, favorite, private, notes, " +
 	"cover_photo_uid, birth_year, death_year, created_at, updated_at"
 
 // insertSubjectSQL inserts a subject and returns the stored row.
 const insertSubjectSQL = `
-INSERT INTO subjects (uid, slug, name, type, favorite, private, notes, cover_photo_uid,
-                      birth_year, death_year)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+INSERT INTO subjects (uid, slug, name, nickname, type, favorite, private, notes,
+                      cover_photo_uid, birth_year, death_year)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 RETURNING ` + subjectColumns
 
 // scanSubject reads one subject row in subjectColumns order, wrapping any scan
@@ -32,7 +32,7 @@ RETURNING ` + subjectColumns
 func scanSubject(row pgx.Row) (Subject, error) {
 	var subj Subject
 	if err := row.Scan(
-		&subj.UID, &subj.Slug, &subj.Name, &subj.Type, &subj.Favorite,
+		&subj.UID, &subj.Slug, &subj.Name, &subj.Nickname, &subj.Type, &subj.Favorite,
 		&subj.Private, &subj.Notes, &subj.CoverPhotoUID, &subj.BirthYear, &subj.DeathYear,
 		&subj.CreatedAt, &subj.UpdatedAt,
 	); err != nil {
@@ -53,8 +53,8 @@ func (s *Store) CreateSubject(ctx context.Context, subj Subject) (Subject, error
 	return insertWithUniqueSlug(base, func(slug string) (Subject, error) {
 		prepared.Slug = slug
 		return scanSubject(s.pool.QueryRow(ctx, insertSubjectSQL,
-			prepared.UID, prepared.Slug, prepared.Name, prepared.Type, prepared.Favorite,
-			prepared.Private, prepared.Notes, prepared.CoverPhotoUID,
+			prepared.UID, prepared.Slug, prepared.Name, prepared.Nickname, prepared.Type,
+			prepared.Favorite, prepared.Private, prepared.Notes, prepared.CoverPhotoUID,
 			prepared.BirthYear, prepared.DeathYear))
 	})
 }
@@ -132,8 +132,8 @@ func (s *Store) getSubject(ctx context.Context, col, val string) (Subject, error
 // slug) and returns the refreshed row.
 const updateSubjectSQL = `
 UPDATE subjects SET
-    slug = $2, name = $3, type = $4, favorite = $5, private = $6,
-    notes = $7, cover_photo_uid = $8, birth_year = $9, death_year = $10, updated_at = now()
+    slug = $2, name = $3, nickname = $4, type = $5, favorite = $6, private = $7,
+    notes = $8, cover_photo_uid = $9, birth_year = $10, death_year = $11, updated_at = now()
 WHERE uid = $1
 RETURNING ` + subjectColumns
 
@@ -191,7 +191,7 @@ func updateSubjectTx(ctx context.Context, tx pgx.Tx, uid string, upd SubjectUpda
 	base := Slugify(upd.Name)
 	updated, err := insertWithUniqueSlug(base, func(slug string) (Subject, error) {
 		return scanSubject(tx.QueryRow(ctx, updateSubjectSQL,
-			uid, slug, upd.Name, upd.Type, upd.Favorite,
+			uid, slug, upd.Name, upd.Nickname, upd.Type, upd.Favorite,
 			upd.Private, upd.Notes, upd.CoverPhotoUID, upd.BirthYear, upd.DeathYear))
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -256,7 +256,7 @@ WITH best_face AS (
       AND p.file_width > 0 AND p.file_height > 0
     ORDER BY m.subject_uid, m.w * m.h DESC, m.score DESC, m.uid
 )
-SELECT s.uid, s.slug, s.name, s.type, s.favorite, s.private, s.notes,
+SELECT s.uid, s.slug, s.name, s.nickname, s.type, s.favorite, s.private, s.notes,
        s.cover_photo_uid, s.birth_year, s.death_year, s.created_at, s.updated_at,
        COUNT(p.uid) FILTER (WHERE m.type <> 'person') AS marker_count,
        COUNT(DISTINCT p.uid) AS photo_count,
@@ -282,7 +282,7 @@ func scanSubjectCount(row pgx.Row) (SubjectCount, error) {
 	var x, y, w, h *float64
 	var width, height, orientation *int
 	if err := row.Scan(
-		&sc.UID, &sc.Slug, &sc.Name, &sc.Type, &sc.Favorite, &sc.Private,
+		&sc.UID, &sc.Slug, &sc.Name, &sc.Nickname, &sc.Type, &sc.Favorite, &sc.Private,
 		&sc.Notes, &sc.CoverPhotoUID, &sc.BirthYear, &sc.DeathYear, &sc.CreatedAt,
 		&sc.UpdatedAt, &sc.MarkerCount,
 		&sc.PhotoCount, &photoUID, &x, &y, &w, &h, &width, &height, &orientation,

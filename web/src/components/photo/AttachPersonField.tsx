@@ -61,6 +61,9 @@ export function AttachPersonField({
         .map((subject) => ({
           uid: subject.uid,
           label: subject.name,
+          // Searchable by nickname too, like the face-naming field: the same
+          // person is being named, only without a box around their face.
+          alias: subject.nickname,
           // "Who is in this picture" is a question about pictures, so the hint
           // counts photos rather than the faces the naming flow counts.
           hint: String(subject.photo_count),

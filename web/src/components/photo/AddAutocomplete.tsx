@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Form from 'react-bootstrap/Form'
 import { useTranslation } from 'react-i18next'
 
+import { nicknameTag } from '../../lib/nickname'
 import { foldedEquals, foldedIncludes } from '../../lib/text'
 
 /** One selectable option in an {@link AddAutocomplete}. */
@@ -11,9 +12,20 @@ export interface AutocompleteOption {
   /** Human-readable text shown and filtered against. */
   label: string
   /**
+   * A second name the option also answers to, shown beside the label and filtered
+   * against exactly like it. It is a person's nickname („Bohouš"): when the task
+   * is naming a face, the handle the user remembers is very often the only one
+   * they know, so a field that matched the label alone would find nobody.
+   *
+   * Unlike {@link hint} it takes part in the search, which is the whole
+   * difference between the two — a hint carries a number, an alias carries
+   * another way to say the same name. Absent when the option has none.
+   */
+  alias?: string
+  /**
    * Secondary text shown muted at the end of the row (e.g. how many photos a
-   * person appears on). Not filtered against — the query only ever matches the
-   * label, so a hint can carry numbers without hijacking the search.
+   * person appears on). Not filtered against — the query only matches the label
+   * and the alias, so a hint can carry numbers without hijacking the search.
    */
   hint?: string
 }
@@ -55,11 +67,22 @@ export interface AddAutocompleteProps {
 const MAX_SUGGESTIONS = 50
 
 /**
- * A type-to-filter autocomplete for adding the photo to an album or attaching a
- * label. As the user types, options whose label matches the query
- * (case- and accent-insensitively) appear in a dropdown; choosing one — by click
- * or keyboard (Up/Down to move, Enter to select, Esc to close) — calls
- * {@link AddAutocompleteProps.onAdd} and clears the input.
+ * Reports whether an option answers to the typed text, by its label or by its
+ * alias, both matched case- and accent-insensitively as a substring. An absent
+ * alias widens nothing: the empty string contains no non-empty needle, and an
+ * empty needle already matched through the label.
+ */
+function matchesOption(option: AutocompleteOption, text: string): boolean {
+  return foldedIncludes(option.label, text) || foldedIncludes(option.alias ?? '', text)
+}
+
+/**
+ * A type-to-filter autocomplete for adding the photo to an album, attaching a
+ * label or naming a person. As the user types, options whose label — or alias, for
+ * a person their nickname — matches the query (case- and accent-insensitively)
+ * appear in a dropdown; choosing one — by click or keyboard (Up/Down to move,
+ * Enter to select, Esc to close) — calls {@link AddAutocompleteProps.onAdd} and
+ * clears the input.
  *
  * With {@link AddAutocompleteProps.onCreate} set, a query that names no existing
  * option gets a trailing "create «query»" row, so a photo can be given a label
@@ -93,7 +116,7 @@ export function AddAutocomplete({
   const trimmed = text.trim()
 
   const suggestions = useMemo(
-    () => options.filter((option) => foldedIncludes(option.label, text)).slice(0, MAX_SUGGESTIONS),
+    () => options.filter((option) => matchesOption(option, text)).slice(0, MAX_SUGGESTIONS),
     [options, text],
   )
 
@@ -245,6 +268,11 @@ export function AddAutocomplete({
                 }}
               >
                 <span className="text-truncate">{option.label}</span>
+                {option.alias !== undefined && option.alias !== '' && (
+                  <span className="ps-1 small text-secondary text-truncate">
+                    {nicknameTag(option.alias)}
+                  </span>
+                )}
                 {option.hint !== undefined && (
                   <span className="ms-auto ps-2 small text-secondary">{option.hint}</span>
                 )}

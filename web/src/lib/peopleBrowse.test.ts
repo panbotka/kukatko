@@ -17,12 +17,19 @@ function subject(
     type = 'person',
     photoCount = 1,
     createdAt = '2026-01-01T00:00:00Z',
-  }: { type?: SubjectType; photoCount?: number; createdAt?: string } = {},
+    nickname = '',
+  }: {
+    type?: SubjectType
+    photoCount?: number
+    createdAt?: string
+    nickname?: string
+  } = {},
 ): SubjectCount {
   return {
     uid: `su_${name.toLowerCase()}`,
     slug: name.toLowerCase(),
     name,
+    nickname,
     type,
     favorite: false,
     private: false,
@@ -41,7 +48,7 @@ function library(): SubjectCount[] {
   return [
     subject('Anna', { photoCount: 12 }),
     subject('Němcová', { photoCount: 40 }),
-    subject('Bedřich', { photoCount: 3 }),
+    subject('Bedřich', { photoCount: 3, nickname: 'Bedík' }),
     subject('Rex', { type: 'pet', photoCount: 7 }),
     subject('Chalupa', { type: 'other', photoCount: 5 }),
   ]
@@ -84,6 +91,20 @@ describe('browsePeople', () => {
   it('searches names case- and accent-insensitively, as the library facet does', () => {
     expect(browse({ q: 'nemcova' }).visible.map((s) => s.name)).toEqual(['Němcová'])
     expect(browse({ q: 'ANN' }).visible.map((s) => s.name)).toEqual(['Anna'])
+  })
+
+  it('searches the nickname too, accent-insensitively', () => {
+    // "Bedík" is what anybody in the village would type, and nothing in the
+    // stored name resembles it.
+    expect(browse({ q: 'bedik' }).visible.map((s) => s.name)).toEqual(['Bedřich'])
+    expect(browse({ q: 'BEDÍK' }).visible.map((s) => s.name)).toEqual(['Bedřich'])
+  })
+
+  it('does not let the people with no nickname match an unrelated query', () => {
+    // Four of the five subjects have an empty nickname; an OR that matched it
+    // would return the whole index for any query at all.
+    expect(browse({ q: 'bedik' }).visible).toHaveLength(1)
+    expect(browse({ q: 'zzz' }).visible).toHaveLength(0)
   })
 
   it('narrows to one kind of subject', () => {

@@ -55,6 +55,7 @@ function counted(uid: string, name: string, photos: number): SubjectCount {
     uid,
     slug: name.toLowerCase().replace(/\s+/g, '-'),
     name,
+    nickname: '',
     type: 'person',
     favorite: false,
     private: false,

@@ -137,6 +137,8 @@ func newCtlSubjectsCreateCmd(opts *ctlOptions) *cobra.Command {
 		},
 	}
 	flags := cmd.Flags()
+	flags.StringVar(&in.Nickname, "nickname", "",
+		"what people actually call them; searchable like the name, never part of the slug")
 	flags.StringVar(&in.Type, "type", "", "subject type: person (default), pet or other")
 	flags.StringVar(&in.Notes, "notes", "", "free-text note about the subject")
 	flags.StringVar(&cover, "cover", "", "uid of the photo to illustrate the subject with")
@@ -147,30 +149,39 @@ func newCtlSubjectsCreateCmd(opts *ctlOptions) *cobra.Command {
 	return cmd
 }
 
-// newCtlSubjectsRenameCmd builds "ctl subjects rename <uid> <name>".
+// newCtlSubjectsRenameCmd builds "ctl subjects rename <uid> <name>", optionally
+// changing the nickname in the same write.
 func newCtlSubjectsRenameCmd(opts *ctlOptions) *cobra.Command {
-	return &cobra.Command{
+	var nickname string
+	cmd := &cobra.Command{
 		Use:   "rename <uid> <name>",
-		Short: "Change a subject's name, leaving the rest of the record alone (editor or admin)",
+		Short: "Change a subject's name (and optionally nickname), leaving the rest alone (editor or admin)",
 		Long: "Change a subject's name.\n\n" +
 			"The record is read before it is written, because PATCH /subjects/{uid} rewrites\n" +
 			"the whole editable set: a body carrying the new name alone would reclassify a\n" +
 			"pet as a person and erase the notes, the cover photo and the life years with it.\n\n" +
 			"The slug is re-derived server-side and the cached name on every one of the\n" +
-			"subject's faces is refreshed; the markers themselves do not move.",
+			"subject's faces is refreshed; the markers themselves do not move.\n\n" +
+			"--nickname changes what people actually call them in the same write; left off,\n" +
+			"the stored nickname is kept. Pass an empty string to clear it. The nickname\n" +
+			"never reaches the slug, so changing it breaks no link.",
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, out, err := opts.resolve()
 			if err != nil {
 				return err
 			}
-			raw, err := client.RenameSubject(cmd.Context(), args[0], args[1])
+			raw, err := client.RenameSubject(cmd.Context(), args[0], args[1],
+				optionalString(cmd, "nickname", nickname))
 			if err != nil {
 				return fmt.Errorf("renaming subject %s: %w", args[0], err)
 			}
 			return renderSubject(cmd.OutOrStdout(), out, raw)
 		},
 	}
+	cmd.Flags().StringVar(&nickname, "nickname", "",
+		`what people actually call them; omit to keep the stored one, pass "" to clear it`)
+	return cmd
 }
 
 // newCtlSubjectsMergeCmd builds "ctl subjects merge <source-uid> <keeper-uid>",

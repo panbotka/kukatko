@@ -214,6 +214,11 @@ export function FaceAssignPanel({
             options={subjects.map((subject) => ({
               uid: subject.uid,
               label: subject.name,
+              // The nickname is searchable here and shown beside the name. This is
+              // where it earns its keep: whoever is naming faces usually knows the
+              // family by what everybody calls them, not by the name on the
+              // documents.
+              alias: subject.nickname,
               // Naming a face is face work, so the hint counts faces, not photos.
               hint: String(subject.marker_count),
             }))}

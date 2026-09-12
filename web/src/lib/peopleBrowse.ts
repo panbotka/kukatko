@@ -1,6 +1,6 @@
 import { type SubjectCount, type SubjectType } from '../services/people'
 
-import { foldedIncludes } from './text'
+import { matchesSubjectName } from './nickname'
 
 /**
  * Browsing the people index: the pure filter/sort the page lays over the one
@@ -143,7 +143,13 @@ export function browsePeople(
   subjects: SubjectCount[],
   { query, tab, sort, language }: PeopleBrowseOptions,
 ): PeopleBrowseResult {
-  const pool = subjects.filter((subject) => foldedIncludes(subject.name, query))
+  // The search matches the nickname as well as the name: in a village archive the
+  // handle somebody remembers ("Bohouš") is very often the only one they know,
+  // and a search that cannot find it sends them scrolling the whole index. An
+  // empty nickname widens nothing — see `lib/nickname`.
+  const pool = subjects.filter((subject) =>
+    matchesSubjectName(subject.name, subject.nickname, query),
+  )
 
   const counts: Record<PeopleTab, number> = { all: pool.length, person: 0, pet: 0, other: 0 }
   for (const subject of pool) {

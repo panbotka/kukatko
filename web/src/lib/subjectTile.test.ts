@@ -22,6 +22,7 @@ function subject(over: Partial<SubjectCount> = {}): SubjectCount {
     uid: 's1',
     slug: 'anna',
     name: 'Anna',
+    nickname: '',
     type: 'person',
     favorite: false,
     private: false,

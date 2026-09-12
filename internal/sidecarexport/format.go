@@ -49,7 +49,12 @@ import (
 // reader that dropped it would turn a reversible "the date is unknown" into a
 // permanent one, because the wrong date the owner disowned is recoverable from
 // nowhere else once the database is gone.
-const Version = 4
+// Version 5 adds curation.people[].nickname (see Person.Nickname). Additive, and
+// a bump for the same reason as the rest: what a village calls somebody is a fact
+// the database is the only holder of, so a reader that dropped the key would
+// restore the person under the name on their documents and lose the one everybody
+// actually used.
+const Version = 5
 
 // Document is one photo's sidecar: everything a human created or a machine
 // derived that would be expensive or impossible to recompute from the original
@@ -321,6 +326,11 @@ type Person struct {
 	SubjectUID string `yaml:"subject_uid,omitempty"`
 	// Name is the subject's name, empty for a detected face nobody has named.
 	Name string `yaml:"name,omitempty"`
+	// Nickname is what people actually call the subject, empty when the subject
+	// has none — or when the marker names nobody. It is recorded for the same
+	// reason as the name: it is a fact only the database holds, and a rebuild
+	// from the sidecars alone would otherwise lose it.
+	Nickname string `yaml:"nickname,omitempty"`
 	// SubjectType is person, pet or other.
 	SubjectType string `yaml:"subject_type,omitempty"`
 	// Type is the marker kind: face or label.
@@ -434,6 +444,7 @@ func peopleFrom(in []people.MarkerSubject) []Person {
 		person := Person{
 			MarkerUID:   m.UID,
 			Name:        m.SubjectName,
+			Nickname:    m.SubjectNickname,
 			SubjectType: string(m.SubjectType),
 			Type:        string(m.Type),
 			Box:         Box{X: m.X, Y: m.Y, W: m.W, H: m.H},

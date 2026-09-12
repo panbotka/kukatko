@@ -365,7 +365,7 @@ then the YAML document. Comments are ignored by any parser, so the file round-tr
 # ...
 # NOT in this file, deliberately, and please do not "fix" it: the image embedding
 # and the face vectors. ...
-version: 4
+version: 5
 generated_at: 2026-07-17T12:00:00Z
 identity:
     uid: pht000000000001
@@ -416,6 +416,7 @@ curation:
         - marker_uid: mrk001
           subject_uid: sub001
           name: Jana Nováková
+          nickname: Janička
           subject_type: person
           type: face
           box: {x: 0.25, y: 0.1, w: 0.2, h: 0.3}
@@ -439,7 +440,7 @@ Every group and key is omitted when empty, so a photo nobody has touched yields 
 
 | Group | Holds | Notes |
 | --- | --- | --- |
-| `version` | Schema version (currently `4`) | First key, so a reader can dispatch before parsing. A reader that meets a version it does not know should **refuse the file**, not guess. `2` added `curation.hidden_from_library`; a `1` document simply has no hidden photos. `3` added `temporal.precision`; an older document is a library where every date is an ordinary one. `4` added `temporal.taken_at_before_unknown`; an older document is a library where no cleared date was ever kept. |
+| `version` | Schema version (currently `5`) | First key, so a reader can dispatch before parsing. A reader that meets a version it does not know should **refuse the file**, not guess. `2` added `curation.hidden_from_library`; a `1` document simply has no hidden photos. `3` added `temporal.precision`; an older document is a library where every date is an ordinary one. `4` added `temporal.taken_at_before_unknown`; an older document is a library where no cleared date was ever kept. `5` added `curation.people[].nickname`; an older document is a library where nobody had one recorded. |
 | `generated_at` | When the file was written | Provenance: it tells you how current the file is, the first thing you want to know when rebuilding. |
 | `identity` | `uid`, `sha256`, `file_name`, `file_path`, `original_name`, `media_type`, `uploaded_by`, `external` | `sha256` is the durable link to the original: paths move, content does not. `external` carries `photoprism_uid` / `photoprism_file_hash` (the source system's SHA1, not Kukátko's SHA256) / `photosorter_uid` — the photo's provenance, and what `uid:pt…` search resolves against. |
 | `descriptive` | `title`, `description`, `notes`, `ai_note`, `subject`, `keywords`, `artist`, `copyright`, `license` | `keywords` are the IPTC keywords verbatim, comma-separated. They are **not** labels — labels are Kukátko's own taxonomy and live under `curation`. |

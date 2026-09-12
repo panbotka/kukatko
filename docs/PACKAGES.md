@@ -1715,7 +1715,8 @@ to `## Package map` in `CLAUDE.md`.
   `internal/people/`
   (the DB layer for **subjects** (people/animals/other) and **markers** (face/label regions on
   photos), tables `subjects`/`markers` in migration `0008_subjects_markers.sql`: `subjects`
-  = `uid PK` (prefix `su`), `slug UNIQUE`, `name`, `type IN (person|pet|other)`, `favorite`,
+  = `uid PK` (prefix `su`), `slug UNIQUE`, `name`, `nickname` (`TEXT NOT NULL DEFAULT ''`, migration
+  `0074`), `type IN (person|pet|other)`, `favorite`,
   `private`, `notes`, `cover_photo_uid` (FK photos `ON DELETE SET NULL`),
   `birth_year`/`death_year` (nullable INTEGER, migration `0051`), timestamps; `markers` =
   `uid PK` (prefix `mk`), `photo_uid` (FK photos `ON DELETE CASCADE`), `subject_uid` (FK
@@ -1739,6 +1740,18 @@ to `## Package map` in `CLAUDE.md`.
   day and in `facematch`; `peopleapi` rejects such a name with 400; the repair for existing
   data is `kukatko maintenance nameless-subjects`, see [`OPERATIONS.md`](OPERATIONS.md))/
   `UpdateSubject`(re-slugging + refresh of the `faces.subject_name` cache)/
+  — **the nickname** (`Nickname string`, migration `0074`): what people actually call the subject, `""` when
+  nobody recorded one. It is matched **wherever the name is** — `searchSubjectsSQL` (the predicate
+  `subjectMatchCond`, both arms folded through `immutable_unaccent` and reading the *same* `$1`, so the
+  pattern is bound once) behind `GET /search/global`, and `personCond` in `internal/photos` for `person:`.
+  An empty nickname widens nothing: a "contains" pattern never matches `''`, and the one pattern that would
+  (`'%%'`) already matched every row through the name arm. Three deliberate non-properties: **no UNIQUE**
+  (two men in one village are both "Bohouš"), **no length CHECK** (`name` has none either), and it
+  **never reaches the slug** — `Slugify`/`NameSlug` read `name` alone, because the slug is UNIQUE, appears
+  in URLs and is recorded in the audit trail. There is **no `faces.subject_nickname` cache** to match
+  `subject_name`: one denormalised copy per rename is enough, so a surface that needs the nickname joins
+  `subjects` (`ListMarkersWithSubjects` does, for the sidecar). `SubjectUpdate` rewrites it like every
+  other field, so an empty one **clears**, and a merge fills it onto a keeper that has none/
   — **the life span** `BirthYear`/`DeathYear *int` (nil = nobody recorded it, which is the normal case;
   plain years, because a year is what anybody knows about the people in a family archive, and every age
   derived from them is shown as an approximation). Both write paths run them through
@@ -3790,13 +3803,15 @@ to `## Package map` in `CLAUDE.md`.
   Not to be confused with `internal/sidecar`, which reads *foreign* sidecars (Google Takeout `.json`, Apple `.xmp`) during
   an import — this package only **writes**, and only its own format. `Document` = a versioned, grouped
   schema (`version`/`generated_at`/`identity`/`descriptive`/`temporal`/`spatial`/`technical`/
-  `curation`/`edit`), `Version = 4` (v2 added `curation.hidden_from_library` — additive, but still a bump,
+  `curation`/`edit`), `Version = 5` (v2 added `curation.hidden_from_library` — additive, but still a bump,
   because a reader that ignored the key would un-hide every hidden photo on restore; v3 added
   `temporal.precision`, omitted at the ordinary `day` grain, for the same reason: a reader that ignored it
   would restore "somewhere in the seventies" as a photo taken on 1 January 1970; v4 added
   `temporal.taken_at_before_unknown`, the date put away when somebody declared a photo's date unknown —
   a reader that dropped it would turn a reversible declaration into a permanent one, since after losing
-  the database the sidecar is the only place that date still exists);
+  the database the sidecar is the only place that date still exists; v5 added `curation.people[].nickname`,
+  what a village actually calls somebody — a fact only the database holds, so dropping the key would restore
+  the person under the name on their documents and lose the one everybody used);
   `Build(Input) Document` is a **pure function** (no I/O, no
   clock — the caller collects the collaborators), `Marshal`/`Unmarshal` add/ignore the header comment
   that explains **why there are no embeddings in the file** (large, binary, cheap to recompute from

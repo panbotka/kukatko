@@ -46,10 +46,11 @@ function entry(query: string): SearchHistoryEntry {
 }
 
 /** Builds a subject with just the fields the value autocomplete reads. */
-function subject(name: string, photoCount: number): SubjectCount {
+function subject(name: string, photoCount: number, nickname = ''): SubjectCount {
   return {
     uid: `su-${name}`,
     name,
+    nickname,
     slug: name.toLowerCase(),
     type: 'person',
     favorite: false,
@@ -336,6 +337,27 @@ describe('SearchQueryInput — value suggestions', () => {
     await user.click(screen.getByRole('option', { name: /Anna Marie/ }))
     // A name with a space arrives quoted, with the caret on a fresh token.
     expect(screen.getByRole('combobox')).toHaveValue('person:"Anna Marie" ')
+  })
+
+  it('reaches a person by their nickname and still completes to the name', async () => {
+    const user = userEvent.setup()
+    subjectsMock.mockResolvedValue([
+      subject('Bohumil Nečas', 12, 'Bohouš'),
+      subject('Anna Nováková', 40),
+    ])
+    renderInput()
+
+    await user.type(screen.getByRole('combobox'), 'person:bohous')
+    await screen.findByRole('listbox', { name: 'Value suggestions' })
+    // Only the person whose nickname matches: most people have none, and an empty
+    // one must not match anything.
+    const options = screen.getAllByRole('option')
+    expect(options).toHaveLength(1)
+    expect(options[0]).toHaveTextContent('Bohumil Nečas („Bohouš")')
+
+    await user.click(options[0])
+    // The completed token is the NAME — that is what identifies the person.
+    expect(screen.getByRole('combobox')).toHaveValue('person:"Bohumil Nečas" ')
   })
 
   it('matches values without diacritics', async () => {

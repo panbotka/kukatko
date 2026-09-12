@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 import { formatLifeSpan } from '../../lib/lifeYears'
+import { nicknameTag } from '../../lib/nickname'
 import { subjectTileImage } from '../../lib/subjectTile'
 import { EmptyState } from '../EmptyState'
 import { FadeInImage } from '../FadeInImage'
@@ -13,6 +14,13 @@ import { type SubjectCount, subjectAvatarUrl } from '../../services/people'
 export interface SubjectTileProps {
   /** The subject with its counts. */
   subject: SubjectCount
+  /**
+   * Shows the nickname in the caption. Set it for a tile the search found
+   * **through** the nickname: without it the row reads as a name that has nothing
+   * to do with what was typed. A subject with no nickname shows nothing either
+   * way, so it is safe to set unconditionally — it is simply pointless.
+   */
+  showNickname?: boolean
 }
 
 /**
@@ -32,8 +40,9 @@ export interface SubjectTileProps {
  * photo meant fetching megapixels to paint a 150 px square — measured on the real
  * library, 125 Mpx of image for one screen of tiles.
  *
- * Under the name the caption carries the photo count and, for whoever has one,
- * their life span ("1923–1998") — the one fact that tells two people of the same
+ * Under the name the caption carries — when {@link SubjectTileProps.showNickname}
+ * says the search found this person by it — the nickname („Bohouš"), then the
+ * photo count and, for whoever has one, their life span ("1923–1998") — the one fact that tells two people of the same
  * name apart at a glance, and the reason a family archive keeps years at all. It
  * stays on the count's own line, so a grid of people with years and one without
  * still lines up.
@@ -43,10 +52,11 @@ export interface SubjectTileProps {
  * however many of the person's faces it holds. The face tools next door show
  * `marker_count` instead, which is the right figure for them.
  */
-export function SubjectTile({ subject }: SubjectTileProps) {
+export function SubjectTile({ subject, showNickname = false }: SubjectTileProps) {
   const { t } = useTranslation()
   const image = subjectTileImage(subject)
   const lifeSpan = formatLifeSpan(subject.birth_year, subject.death_year)
+  const nickname = showNickname ? nicknameTag(subject.nickname) : null
   // A rendition that will not arrive (the cover moved, the source is gone) must
   // leave an honest placeholder rather than the browser's broken-image glyph.
   const [failed, setFailed] = useState(false)
@@ -89,6 +99,7 @@ export function SubjectTile({ subject }: SubjectTileProps) {
       </div>
       <div className="fw-semibold text-truncate">{subject.name}</div>
       <div className="kk-text-caption text-secondary text-truncate">
+        {nickname !== null && `${nickname} · `}
         {t('people.photoCount', { count: subject.photo_count })}
         {lifeSpan !== null && ` · ${lifeSpan}`}
       </div>

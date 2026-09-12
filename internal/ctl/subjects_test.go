@@ -184,8 +184,9 @@ func TestDecodeSubjects_invalid(t *testing.T) {
 
 // storedSubjectBody is a fully populated GET /subjects/{uid} body: the record a
 // rename must carry back untouched.
-const storedSubjectBody = `{"uid":"sub01","slug":"micka","name":"Micka","type":"pet","favorite":true,
-	"private":true,"notes":"the tabby","cover_photo_uid":"pht07","birth_year":2012,"death_year":2024}`
+const storedSubjectBody = `{"uid":"sub01","slug":"micka","name":"Micka","nickname":"Mičí","type":"pet",
+	"favorite":true,"private":true,"notes":"the tabby","cover_photo_uid":"pht07",
+	"birth_year":2012,"death_year":2024}`
 
 // TestClient_CreateSubject verifies a create reaches POST /subjects and that the
 // optional fields left alone are not sent at all.
@@ -237,40 +238,87 @@ func TestSubjectInput_validate(t *testing.T) {
 
 // TestClient_RenameSubject verifies a rename reads the record first and sends the
 // whole of it back with only the name changed — the PATCH rewrites everything, so
-// anything the body omits would be erased.
+// anything the body omits would be erased. The stored nickname is part of what
+// must survive a rename that does not mention it.
 func TestClient_RenameSubject(t *testing.T) {
 	t.Parallel()
 
-	var methods []string
-	var gotBody map[string]any
+	methods, gotBody, client := renameRecorder(t)
+
+	if _, err := client.RenameSubject(t.Context(), "sub01", " Mičinka ", nil); err != nil {
+		t.Fatalf("RenameSubject returned %v", err)
+	}
+	if len(*methods) != 2 || (*methods)[0] != http.MethodGet || (*methods)[1] != http.MethodPatch {
+		t.Fatalf("methods = %v, want a read then a patch", *methods)
+	}
+	if (*gotBody)["name"] != "Mičinka" {
+		t.Errorf("body name = %v, want the trimmed new name", (*gotBody)["name"])
+	}
+	for key, want := range map[string]any{
+		"nickname": "Mičí", "type": "pet", "favorite": true, "private": true,
+		"notes": "the tabby", "cover_photo_uid": "pht07",
+		"birth_year": float64(2012), "death_year": float64(2024),
+	} {
+		if (*gotBody)[key] != want {
+			t.Errorf("body[%q] = %v, want %v carried over untouched", key, (*gotBody)[key], want)
+		}
+	}
+}
+
+// TestClient_RenameSubject_nickname verifies the optional nickname: a pointer
+// replaces the stored one (trimmed), and a pointer to the empty string clears it —
+// the two cases a nil pointer must not be confused with.
+//
+// Clearing sends no `nickname` key at all, because the field is omitempty and the
+// PATCH rewrites the whole editable record: an absent key IS the empty value there,
+// exactly as it is for the notes. What the case pins down is that the stored
+// nickname is not carried back, which is what would make the clear a no-op.
+func TestClient_RenameSubject_nickname(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		nickname *string
+		want     any
+	}{
+		{name: "a value replaces the stored nickname", nickname: new(" Bohouš "), want: "Bohouš"},
+		{name: "an empty value clears it", nickname: new(""), want: nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, gotBody, client := renameRecorder(t)
+			if _, err := client.RenameSubject(t.Context(), "sub01", "Micka", tt.nickname); err != nil {
+				t.Fatalf("RenameSubject returned %v", err)
+			}
+			if (*gotBody)["nickname"] != tt.want {
+				t.Errorf("body nickname = %v, want %v", (*gotBody)["nickname"], tt.want)
+			}
+		})
+	}
+}
+
+// renameRecorder builds a client whose server answers the rename's read with
+// storedSubjectBody and records the PATCH's method order and decoded body. The two
+// pointers are filled by the handler, so a caller reads them only after the
+// request it is testing has returned.
+func renameRecorder(t *testing.T) (*[]string, *map[string]any, *Client) {
+	t.Helper()
+
+	methods := &[]string{}
+	gotBody := &map[string]any{}
 	client := testClient(t, "kkt_a_b", func(w http.ResponseWriter, r *http.Request) {
-		methods = append(methods, r.Method)
+		*methods = append(*methods, r.Method)
 		if r.Method == http.MethodGet {
 			w.Write([]byte(storedSubjectBody))
 			return
 		}
 		raw, _ := io.ReadAll(r.Body)
-		json.Unmarshal(raw, &gotBody)
+		json.Unmarshal(raw, gotBody)
 		w.Write([]byte(`{"uid":"sub01","slug":"micinka","name":"Mičinka","type":"pet"}`))
 	})
-
-	if _, err := client.RenameSubject(t.Context(), "sub01", " Mičinka "); err != nil {
-		t.Fatalf("RenameSubject returned %v", err)
-	}
-	if len(methods) != 2 || methods[0] != http.MethodGet || methods[1] != http.MethodPatch {
-		t.Fatalf("methods = %v, want a read then a patch", methods)
-	}
-	if gotBody["name"] != "Mičinka" {
-		t.Errorf("body name = %v, want the trimmed new name", gotBody["name"])
-	}
-	for key, want := range map[string]any{
-		"type": "pet", "favorite": true, "private": true, "notes": "the tabby",
-		"cover_photo_uid": "pht07", "birth_year": float64(2012), "death_year": float64(2024),
-	} {
-		if gotBody[key] != want {
-			t.Errorf("body[%q] = %v, want %v carried over untouched", key, gotBody[key], want)
-		}
-	}
+	return methods, gotBody, client
 }
 
 // TestClient_DeleteSubject verifies the delete reaches its path and treats the

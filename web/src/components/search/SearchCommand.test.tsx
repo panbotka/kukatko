@@ -97,7 +97,13 @@ const RESULT: GlobalSearchResult = {
     },
   ],
   people: [
-    { uid: 'su1', name: 'Beatrice', cover: 'ph3', thumb_url: '/api/v1/photos/ph3/thumb/tile_100' },
+    {
+      uid: 'su1',
+      name: 'Beatrice',
+      nickname: 'Bea',
+      cover: 'ph3',
+      thumb_url: '/api/v1/photos/ph3/thumb/tile_100',
+    },
   ],
   photos: [photo()],
 }
@@ -586,6 +592,24 @@ describe('SearchCommand query completion', () => {
     fireEvent.keyDown(input, { key: 'Enter' })
     await waitFor(() => {
       expect(screen.getByTestId('loc')).toHaveTextContent('album%3A%22Beach+trip%22')
+    })
+  })
+
+  it('completes a person and shows their nickname beside the name', async () => {
+    const user = userEvent.setup()
+    const input = await typeQuery(user, 'person:bea')
+
+    // The completion row is the one identified by its id; the same person also
+    // appears as an ordinary result further down.
+    const rows = await screen.findAllByRole('option', { name: /Beatrice/ })
+    expect(rows[0]).toHaveAttribute('id', 'sc-opt-name-person-0')
+    // Beside the name, never instead of it: the match may have come from the
+    // nickname, and the name is what the completed token carries.
+    expect(rows[0]).toHaveTextContent('„Bea"')
+
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() => {
+      expect(screen.getByTestId('loc')).toHaveTextContent('person%3ABeatrice')
     })
   })
 

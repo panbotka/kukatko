@@ -46,9 +46,13 @@ const (
 // leaves them zero. They differ whenever one photo carries several markers of
 // the same subject.
 type Subject struct {
-	UID           string    `json:"uid"`
-	Slug          string    `json:"slug"`
-	Name          string    `json:"name"`
+	UID  string `json:"uid"`
+	Slug string `json:"slug"`
+	Name string `json:"name"`
+	// Nickname is what people actually call the subject, empty when nobody
+	// recorded one. It is searched like the name (`ctl photos list -q
+	// person:bohous` finds it) but it is never part of the slug.
+	Nickname      string    `json:"nickname"`
 	Type          string    `json:"type"`
 	Favorite      bool      `json:"favorite"`
 	Private       bool      `json:"private"`
@@ -183,6 +187,7 @@ func (r SubjectRef) String() string {
 // field the operator meant to change.
 type SubjectInput struct {
 	Name          string  `json:"name"`
+	Nickname      string  `json:"nickname,omitempty"`
 	Type          string  `json:"type,omitempty"`
 	Favorite      bool    `json:"favorite,omitempty"`
 	Private       bool    `json:"private,omitempty"`
@@ -210,6 +215,7 @@ func (in SubjectInput) validate() error {
 func (s Subject) input() SubjectInput {
 	return SubjectInput{
 		Name:          s.Name,
+		Nickname:      s.Nickname,
 		Type:          s.Type,
 		Favorite:      s.Favorite,
 		Private:       s.Private,
@@ -273,13 +279,17 @@ func (c *Client) UpdateSubject(ctx context.Context, uid string, in SubjectInput)
 	return c.send(ctx, http.MethodPatch, "/subjects/"+url.PathEscape(uid), in)
 }
 
-// RenameSubject changes only a subject's name, reading the record first and
-// sending it back with the new name.
+// RenameSubject changes only a subject's name and, when nickname is non-nil, its
+// nickname, reading the record first and sending it back with the new values. A
+// nil nickname leaves the stored one alone; a pointer to the empty string clears
+// it, which is how `--nickname ""` erases one.
 //
 // The read is not optional: PATCH /subjects/{uid} rewrites the whole editable
 // record, so a body carrying the name alone would reclassify a pet as a person and
 // erase the notes, the cover and the life years along with it.
-func (c *Client) RenameSubject(ctx context.Context, uid, name string) (json.RawMessage, error) {
+func (c *Client) RenameSubject(
+	ctx context.Context, uid, name string, nickname *string,
+) (json.RawMessage, error) {
 	if err := requireUID("subject", uid); err != nil {
 		return nil, err
 	}
@@ -293,6 +303,9 @@ func (c *Client) RenameSubject(ctx context.Context, uid, name string) (json.RawM
 	}
 	in := stored.input()
 	in.Name = strings.TrimSpace(name)
+	if nickname != nil {
+		in.Nickname = strings.TrimSpace(*nickname)
+	}
 	return c.UpdateSubject(ctx, uid, in)
 }
 

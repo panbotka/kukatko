@@ -320,14 +320,22 @@ func labelCond(v query.Value, env condEnv) (string, bool) {
 		"WHERE pl.photo_uid = photos.uid AND (l.name ILIKE " + p + " OR l.uid = " + uid + "))", true
 }
 
-// personCond matches a contained subject by name pattern or exact UID via a
-// non-invalid marker, the same linkage the person= scope uses.
+// personCond matches a contained subject by name or nickname pattern, or by exact
+// UID, via a non-invalid marker — the same linkage the person= scope uses.
+//
+// The nickname matches on the same terms as the name, because in a village
+// archive it is often the only handle anybody remembers. Both name arms bind the
+// SAME pattern placeholder: they are text comparisons of one value, so a third
+// bind would be waste. An empty nickname widens nothing — a "contains" pattern
+// never matches the empty string, and the one pattern that does ('%%') already
+// matched every row through the name arm.
 func personCond(v query.Value, env condEnv) (string, bool) {
 	p := env.bind(likePattern(v.TextPattern()))
 	uid := env.bind(v.Text)
 	return "EXISTS (SELECT 1 FROM markers m JOIN subjects s ON s.uid = m.subject_uid " +
 		"WHERE m.photo_uid = photos.uid AND m.invalid = FALSE " +
-		"AND (s.name ILIKE " + p + " OR s.uid = " + uid + "))", true
+		"AND (s.name ILIKE " + p + " OR s.nickname ILIKE " + p +
+		" OR s.uid = " + uid + "))", true
 }
 
 // uploaderCond matches who put the photo in the library: the uploading

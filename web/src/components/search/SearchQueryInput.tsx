@@ -15,6 +15,7 @@ import {
   suggestFilterValues,
   type ValueSuggestion,
 } from '../../lib/queryLanguage'
+import { withNickname } from '../../lib/nickname'
 import { foldText } from '../../lib/text'
 import { type SearchHistoryEntry } from '../../services/searchHistory'
 import { Icon } from '../Icon'
@@ -189,7 +190,14 @@ export function SearchQueryInput({
           kind: 'values',
           suggestion: valueSuggestion,
           value: match.name,
-          option: { key: `value:${match.name}`, label: match.name, detail: String(match.count) },
+          option: {
+            key: `value:${match.name}`,
+            // The row reads "Bohumil Nečas („Bohouš")" when the person has a
+            // nickname — the match may have come from it — while the completed
+            // token above stays the name.
+            label: withNickname(match.name, match.alias),
+            detail: String(match.count),
+          },
         })
       }
     } else if (keySuggestion !== null) {

@@ -269,28 +269,56 @@ func TestHandleUpdate_ok(t *testing.T) {
 }
 
 // TestHandleUpdate_recordsChanges loads the existing subject and records old→new
-// for the fields the edit changed (name, type, favorite) under details.changes,
-// omitting the unchanged ones.
+// for the fields the edit changed (name, nickname, type, favorite) under
+// details.changes, omitting the unchanged ones.
 func TestHandleUpdate_recordsChanges(t *testing.T) {
 	t.Parallel()
 	subjects := &fakeSubjects{
 		subject: people.Subject{
-			UID: "su_a", Name: "Alice", Type: people.SubjectPerson, Favorite: false, Notes: "same",
+			UID: "su_a", Name: "Alice", Nickname: "Ali", Type: people.SubjectPerson,
+			Favorite: false, Notes: "same",
 		},
 		updated: people.Subject{UID: "su_a", Name: "Alice II"},
 	}
 	rec := do(t, newServer(subjects, fakePhotos{}), http.MethodPatch, "/subjects/su_a",
-		`{"name":"Alice II","type":"pet","favorite":true,"notes":"same"}`)
+		`{"name":"Alice II","nickname":"Ája","type":"pet","favorite":true,"notes":"same"}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
+	if subjects.lastUpdate.Nickname != "Ája" {
+		t.Errorf("update input nickname = %q, want the decoded Ája", subjects.lastUpdate.Nickname)
+	}
 	changes := changeMap(t, subjects.lastEntry)
 	assertChange(t, changes, "name", "Alice", "Alice II")
+	assertChange(t, changes, "nickname", "Ali", "Ája")
 	assertChange(t, changes, "type", "person", "pet")
 	assertChange(t, changes, "favorite", false, true)
 	if _, ok := changes["notes"]; ok {
 		t.Errorf("unchanged notes present in changes: %v", changes)
 	}
+}
+
+// TestHandleUpdate_clearsNickname verifies an edit whose body omits the nickname
+// clears it: the PATCH rewrites the whole editable set, so an absent key means
+// "nobody calls them that any more" rather than "leave it alone". The audit diff
+// has to say so too, or the old nickname survives nowhere.
+func TestHandleUpdate_clearsNickname(t *testing.T) {
+	t.Parallel()
+	subjects := &fakeSubjects{
+		subject: people.Subject{
+			UID: "su_a", Name: "Alice", Nickname: "Ali", Type: people.SubjectPerson,
+		},
+		updated: people.Subject{UID: "su_a", Name: "Alice"},
+	}
+	rec := do(t, newServer(subjects, fakePhotos{}), http.MethodPatch, "/subjects/su_a",
+		`{"name":"Alice","type":"person"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if subjects.lastUpdate.Nickname != "" {
+		t.Errorf("update input nickname = %q, want it cleared", subjects.lastUpdate.Nickname)
+	}
+	assertChange(t, changeMap(t, subjects.lastEntry), "nickname", "Ali", "")
 }
 
 // TestHandleUpdate_noChangesOmitsChangesKey verifies an edit that alters nothing

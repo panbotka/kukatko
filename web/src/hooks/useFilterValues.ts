@@ -87,7 +87,13 @@ async function loadFacetValues(facet: ValueFacet, signal: AbortSignal): Promise<
     }
     case 'person': {
       const subjects = await fetchSubjects(signal)
-      return subjects.map((subject) => ({ name: subject.name, count: subject.photo_count }))
+      // The nickname rides along as the alias: `person:` matches it server-side,
+      // so the completion has to offer the row somebody typing „Bohouš" expects.
+      return subjects.map((subject) => ({
+        name: subject.name,
+        alias: subject.nickname,
+        count: subject.photo_count,
+      }))
     }
   }
 }

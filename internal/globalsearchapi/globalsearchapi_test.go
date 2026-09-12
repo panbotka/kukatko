@@ -217,7 +217,7 @@ func TestHandleGlobal_grouped(t *testing.T) {
 	f := &fakeSearcher{
 		albums:      []organize.AlbumCount{{Album: organize.Album{UID: "al1", Title: "Dovolená"}, PhotoCount: 3}},
 		labels:      []organize.LabelCount{{Label: organize.Label{UID: "lb1", Name: "sunset"}, PhotoCount: 7}},
-		subjects:    []people.Subject{{UID: "su1", Name: "Tomáš"}},
+		subjects:    []people.Subject{{UID: "su1", Name: "Tomáš", Nickname: "Tom"}},
 		photos:      []photos.Photo{{UID: "ph1"}},
 		albumCovers: map[string]organize.Cover{"al1": {PhotoUID: cover, FileHash: "hash"}},
 	}
@@ -248,6 +248,11 @@ func TestHandleGlobal_grouped(t *testing.T) {
 	}
 	if len(body.People) != 1 || body.People[0].Name != "Tomáš" {
 		t.Fatalf("people = %+v, want one Tomáš", body.People)
+	}
+	// The hit may have matched through the nickname, so the row has to carry it:
+	// a result showing only the stored name would look unrelated to the query.
+	if body.People[0].Nickname != "Tom" {
+		t.Fatalf("person nickname = %q, want Tom beside the name", body.People[0].Nickname)
 	}
 	if len(body.Photos) != 1 || body.Photos[0].UID != "ph1" {
 		t.Fatalf("photos = %+v, want one ph1", body.Photos)

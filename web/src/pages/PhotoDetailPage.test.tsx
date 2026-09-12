@@ -216,6 +216,7 @@ function subjectCount(uid: string, name: string): SubjectCount {
     uid,
     slug: name.toLowerCase(),
     name,
+    nickname: '',
     type: 'person',
     favorite: false,
     private: false,

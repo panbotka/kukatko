@@ -10,18 +10,32 @@ import (
 // limit, so a mis-wired caller cannot request an unbounded scan.
 const defaultSearchLimit = 8
 
-// searchSubjectsSQL matches subjects by name, case- and accent-insensitively
-// (immutable_unaccent + ILIKE), ordered by name then uid for a stable result,
-// capped at the bound limit. The pattern in $1 is a pre-escaped "contains" ILIKE
-// pattern.
+// subjectMatchCond is the predicate that decides whether a subject answers to a
+// typed query: its name or its nickname contains the pattern, both folded through
+// immutable_unaccent on each side so neither case nor diacritics matter. A
+// nickname is the handle somebody naming faces actually remembers, so it has to
+// match on the same terms as the name.
+//
+// Both arms bind the SAME placeholder: they are text comparisons of one value,
+// and a second bind of it would only be waste. An empty nickname cannot widen a
+// search, because the pattern is a "contains" one — '%x%' never matches ” — and
+// the one query that does match everything ('%%') already matched every row
+// through the name arm.
+const subjectMatchCond = "(immutable_unaccent(name) ILIKE immutable_unaccent($1) " +
+	"OR immutable_unaccent(nickname) ILIKE immutable_unaccent($1))"
+
+// searchSubjectsSQL matches subjects by name or nickname, case- and
+// accent-insensitively (immutable_unaccent + ILIKE), ordered by name then uid for
+// a stable result, capped at the bound limit. The pattern in $1 is a pre-escaped
+// "contains" ILIKE pattern.
 const searchSubjectsSQL = "SELECT " + subjectColumns + " FROM subjects " +
-	"WHERE immutable_unaccent(name) ILIKE immutable_unaccent($1) " +
+	"WHERE " + subjectMatchCond + " " +
 	"ORDER BY name, uid LIMIT $2"
 
-// SearchSubjects returns up to limit subjects whose name contains q, matched
-// case- and accent-insensitively, ordered by name. A non-positive limit falls
-// back to defaultSearchLimit. It backs the grouped global-search endpoint. The
-// result is empty (not nil) when nothing matches.
+// SearchSubjects returns up to limit subjects whose name or nickname contains q,
+// matched case- and accent-insensitively, ordered by name. A non-positive limit
+// falls back to defaultSearchLimit. It backs the grouped global-search endpoint.
+// The result is empty (not nil) when nothing matches.
 func (s *Store) SearchSubjects(ctx context.Context, q string, limit int) ([]Subject, error) {
 	rows, err := s.pool.Query(ctx, searchSubjectsSQL, likePattern(q), clampSearchLimit(limit))
 	if err != nil {

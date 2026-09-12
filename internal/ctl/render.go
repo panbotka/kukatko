@@ -128,6 +128,10 @@ func WriteLabel(w io.Writer, label Label) error {
 // PHOTOS on how many photos those markers sit — both columns, because a marker
 // count is what the face tools mean and a photo count is what the gallery shows,
 // and one photo can hold several faces of the same person.
+//
+// The nickname rides inside the NAME column rather than taking one of its own:
+// „Bohouš" is how the person is found, so it has to be on screen, but most rows
+// carry none and an almost-empty column would cost every row its width.
 func WriteSubjects(w io.Writer, subjects []Subject) error {
 	if len(subjects) == 0 {
 		return writeLine(w, "no subjects found")
@@ -136,7 +140,7 @@ func WriteSubjects(w io.Writer, subjects []Subject) error {
 	for _, subject := range subjects {
 		rows = append(rows, []string{
 			subject.UID,
-			elide(dash(subject.Name), nameWidth),
+			elide(dash(subjectDisplayName(subject)), nameWidth),
 			dash(subject.Type),
 			strconv.Itoa(subject.PhotoCount),
 			strconv.Itoa(subject.MarkerCount),
@@ -148,13 +152,15 @@ func WriteSubjects(w io.Writer, subjects []Subject) error {
 }
 
 // WriteSubject renders one subject as an aligned key/value table. PHOTOS and
-// MARKERS are absent: the detail endpoint does not count them. The life years are
-// present because `subjects create` can write them and a create must print back
-// what it stored; both dash when nobody recorded them, which is the usual case.
+// MARKERS are absent: the detail endpoint does not count them. The nickname and
+// the life years are present because `subjects create` and `subjects rename` can
+// write them and a write must print back what it stored; each dashes when nobody
+// recorded it, which is the usual case.
 func WriteSubject(w io.Writer, subject Subject) error {
 	return writeKeyValues(w, [][2]string{
 		{"UID", subject.UID},
 		{"NAME", dash(subject.Name)},
+		{"NICKNAME", dash(subject.Nickname)},
 		{"SLUG", dash(subject.Slug)},
 		{"TYPE", dash(subject.Type)},
 		{"FAVORITE", strconv.FormatBool(subject.Favorite)},
@@ -166,6 +172,16 @@ func WriteSubject(w io.Writer, subject Subject) error {
 		{"CREATED", formatStamp(subject.CreatedAt)},
 		{"UPDATED", formatStamp(subject.UpdatedAt)},
 	})
+}
+
+// subjectDisplayName is the name with the nickname appended in Czech quotation
+// marks — `Bohumil Nečas („Bohouš")` — or the bare name for the many subjects
+// that have none.
+func subjectDisplayName(subject Subject) string {
+	if subject.Nickname == "" {
+		return subject.Name
+	}
+	return subject.Name + ` („` + subject.Nickname + `")`
 }
 
 // dashInt renders a nullable whole number, printing a dash when it is unset — a

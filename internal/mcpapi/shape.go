@@ -175,6 +175,11 @@ type subjectInfo struct {
 	UID  string `json:"uid"`
 	Slug string `json:"slug"`
 	Name string `json:"name"`
+	// Nickname is what people actually call the subject, absent when nobody
+	// recorded one. An agent resolving a person from a Czech sentence will far
+	// more often be handed the nickname than the full name, so it is reported
+	// wherever the name is — and `person:` matches it.
+	Nickname string `json:"nickname,omitempty"`
 	// Type is "person", "animal" or "other".
 	Type string `json:"type"`
 	// FaceCount is how many recognised faces are assigned to this subject.
@@ -270,11 +275,12 @@ func toLabelInfo(l organize.Label, count int) labelInfo {
 // counters to the caller: only the caller knows which one it can answer.
 func toSubjectInfo(s people.Subject) subjectInfo {
 	return subjectInfo{
-		UID:   s.UID,
-		Slug:  s.Slug,
-		Name:  s.Name,
-		Type:  string(s.Type),
-		Notes: s.Notes,
+		UID:      s.UID,
+		Slug:     s.Slug,
+		Name:     s.Name,
+		Nickname: s.Nickname,
+		Type:     string(s.Type),
+		Notes:    s.Notes,
 	}
 }
 

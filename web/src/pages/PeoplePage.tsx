@@ -17,6 +17,7 @@ import {
   PEOPLE_DEFAULTS,
   peopleBrowseOptions,
 } from '../lib/peopleBrowse'
+import { matchedByNickname } from '../lib/nickname'
 import { useUrlState } from '../lib/urlState'
 import { fetchSubjects, type SubjectCount } from '../services/people'
 
@@ -125,7 +126,12 @@ export function PeoplePage() {
             <TileGrid
               items={visible}
               itemKey={(subject) => subject.uid}
-              renderItem={(subject) => <SubjectTile subject={subject} />}
+              renderItem={(subject) => (
+                <SubjectTile
+                  subject={subject}
+                  showNickname={matchedByNickname(subject.name, subject.nickname, view.q)}
+                />
+              )}
               minTile={MIN_TILE}
               gap={TILE_GAP}
             />

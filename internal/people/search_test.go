@@ -1,6 +1,9 @@
 package people
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // TestLikePattern verifies the "contains" wrapping and that LIKE metacharacters
 // in the query are escaped so they match literally.
@@ -51,5 +54,36 @@ func TestClampSearchLimit(t *testing.T) {
 				t.Errorf("clampSearchLimit(%d) = %d, want %d", tt.in, got, tt.want)
 			}
 		})
+	}
+}
+
+// TestSearchSubjectsSQL_matchesNameAndNickname pins down the predicate the subject
+// search is built from: both the name and the nickname are compared, each folded
+// through immutable_unaccent on both sides, and both read the SAME bound pattern
+// so a third bind of one value is never paid for.
+func TestSearchSubjectsSQL_matchesNameAndNickname(t *testing.T) {
+	t.Parallel()
+
+	for _, want := range []string{
+		"immutable_unaccent(name) ILIKE immutable_unaccent($1)",
+		"immutable_unaccent(nickname) ILIKE immutable_unaccent($1)",
+		" OR ",
+	} {
+		if !strings.Contains(searchSubjectsSQL, want) {
+			t.Errorf("searchSubjectsSQL missing %q: %q", want, searchSubjectsSQL)
+		}
+	}
+	// A second placeholder for the pattern would mean the value is bound twice;
+	// $2 is the limit and must stay the last parameter.
+	if strings.Contains(searchSubjectsSQL, "$3") {
+		t.Errorf("searchSubjectsSQL binds a third parameter: %q", searchSubjectsSQL)
+	}
+	if !strings.Contains(searchSubjectsSQL, "LIMIT $2") {
+		t.Errorf("searchSubjectsSQL does not end in the bound limit: %q", searchSubjectsSQL)
+	}
+	// The nickname must not reach the ordering: the list is alphabetical by the
+	// name, which is what the people index and the global search both show.
+	if !strings.Contains(searchSubjectsSQL, "ORDER BY name, uid") {
+		t.Errorf("searchSubjectsSQL is not ordered by name then uid: %q", searchSubjectsSQL)
 	}
 }

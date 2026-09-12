@@ -180,9 +180,15 @@ type labelHit struct {
 
 // subjectHit is a single person/subject match, with the same cover pair as an
 // album hit.
+//
+// Nickname rides along because the match may have come from it alone: a result
+// row reading only the stored name would look unrelated to what was typed. It is
+// shown ALONGSIDE the name, never instead of it, and is absent when the subject
+// has none.
 type subjectHit struct {
 	UID      string  `json:"uid"`
 	Name     string  `json:"name"`
+	Nickname string  `json:"nickname,omitempty"`
 	Cover    *string `json:"cover,omitempty"`
 	ThumbURL string  `json:"thumb_url,omitempty"`
 }
@@ -329,7 +335,7 @@ func toLabelHits(rows []organize.LabelCount) []labelHit {
 func toSubjectHits(rows []people.Subject) []subjectHit {
 	out := make([]subjectHit, 0, len(rows))
 	for _, s := range rows {
-		out = append(out, subjectHit{UID: s.UID, Name: s.Name})
+		out = append(out, subjectHit{UID: s.UID, Name: s.Name, Nickname: s.Nickname})
 	}
 	return out
 }

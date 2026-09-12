@@ -14,27 +14,33 @@ type MarkerSubject struct {
 	// SubjectName is the assigned subject's display name, empty for an unassigned
 	// marker (a detected face nobody has named yet).
 	SubjectName string `json:"subject_name,omitempty"`
+	// SubjectNickname is what people actually call the assigned subject, empty
+	// both for an unassigned marker and for a subject nobody gave one. It rides
+	// along for the same reason as the name: it is a fact about the person that
+	// only the database holds, so an export without it loses it.
+	SubjectNickname string `json:"subject_nickname,omitempty"`
 	// SubjectType is the assigned subject's kind (person, animal, other), empty for
 	// an unassigned marker.
 	SubjectType SubjectType `json:"subject_type,omitempty"`
 }
 
 // listMarkersWithSubjectsSQL selects a photo's markers with the assigned
-// subject's name and type, oldest first. The join is LEFT because an unassigned
+// subject's name, nickname and type, oldest first. The join is LEFT because an unassigned
 // marker — a face the detector found and nobody has named — is a normal and
 // common row, and losing those would silently drop every pending face from the
 // export.
 const listMarkersWithSubjectsSQL = `
 SELECT m.uid, m.photo_uid, m.subject_uid, m.type, m.x, m.y, m.w, m.h,
        m.score, m.invalid, m.reviewed, m.created_at, m.updated_at,
-       COALESCE(s.name, ''), COALESCE(s.type, '')
+       COALESCE(s.name, ''), COALESCE(s.nickname, ''), COALESCE(s.type, '')
 FROM markers m
 LEFT JOIN subjects s ON s.uid = m.subject_uid
 WHERE m.photo_uid = $1
 ORDER BY m.created_at, m.uid`
 
 // ListMarkersWithSubjects returns every marker on the photo identified by
-// photoUID together with the assigned subject's name and type, oldest first. An
+// photoUID together with the assigned subject's name, nickname and type, oldest
+// first. An
 // unknown photo yields an empty slice (not an error).
 //
 // It is ListMarkersByPhoto resolved in one query rather than a lookup per
@@ -53,7 +59,8 @@ func (s *Store) ListMarkersWithSubjects(ctx context.Context, photoUID string) ([
 		var ms MarkerSubject
 		if err := rows.Scan(&ms.UID, &ms.PhotoUID, &ms.SubjectUID, &ms.Type,
 			&ms.X, &ms.Y, &ms.W, &ms.H, &ms.Score, &ms.Invalid, &ms.Reviewed,
-			&ms.CreatedAt, &ms.UpdatedAt, &ms.SubjectName, &ms.SubjectType); err != nil {
+			&ms.CreatedAt, &ms.UpdatedAt, &ms.SubjectName, &ms.SubjectNickname,
+			&ms.SubjectType); err != nil {
 			return nil, fmt.Errorf("people: scanning marker for photo %s: %w", photoUID, err)
 		}
 		out = append(out, ms)

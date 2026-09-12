@@ -13,6 +13,7 @@ import {
   directHitSecondary,
   directHitTitle,
 } from '../../lib/directHit'
+import { nicknameTag } from '../../lib/nickname'
 import { type ValueFacet } from '../../lib/queryLanguage'
 import {
   applySuggestedKey,
@@ -222,6 +223,14 @@ interface FacetName {
   value: string
   /** The picture standing for the entity, when it has one. */
   thumbSrc?: string
+  /**
+   * A second line under the label, for a person their nickname („Bohouš"). The
+   * match may have come from the nickname alone, and a row showing only the
+   * stored name would then look unrelated to what was typed. Absent when there is
+   * nothing to add — the completed value is always the stored NAME, which is what
+   * identifies the person.
+   */
+  secondary?: string
   /** How many photos carry the name. */
   count?: number
 }
@@ -254,7 +263,12 @@ function facetNames(facet: ValueFacet, result: GlobalSearchResult, lang: string)
     case 'person':
       return result.people
         .filter((person) => person.name !== '')
-        .map((person) => ({ label: person.name, value: person.name, thumbSrc: person.thumb_url }))
+        .map((person) => ({
+          label: person.name,
+          value: person.name,
+          thumbSrc: person.thumb_url,
+          secondary: nicknameTag(person.nickname) ?? undefined,
+        }))
   }
 }
 
@@ -281,6 +295,7 @@ function suggestValueItem(
   row: {
     id: string
     primary: string
+    secondary?: string
     icon: IconName
     thumbSrc?: string
     circle?: boolean
@@ -360,6 +375,7 @@ function buildSuggestGroup(
       // is not an id `aria-activedescendant` can point at.
       id: `sc-opt-name-${suggestions.facet}-${String(index)}`,
       primary: name.label,
+      secondary: name.secondary,
       icon: FACET_ICON[suggestions.facet],
       thumbSrc: name.thumbSrc,
       circle: suggestions.facet === 'person',
@@ -459,6 +475,9 @@ function buildGroups(
         id: `sc-opt-person-${person.uid}`,
         to: `/people/${person.uid}`,
         primary: person.name,
+        // „Bohouš" under the name: the row may have matched through the nickname,
+        // and the name alone would then look like an unrelated result.
+        secondary: nicknameTag(person.nickname) ?? undefined,
         thumbSrc: person.thumb_url,
         circle: true,
         icon: 'person-circle',

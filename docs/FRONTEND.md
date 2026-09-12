@@ -1925,7 +1925,10 @@ here.
   offer — the page autofocuses this box, so a first-time reader would otherwise meet an empty popover over the
   filters.
   Only `album:`, `label:`, `person:`/`subject:` complete values — a number or a date has no list to propose;
-  matching is **prefix + diacritics-insensitive** (`lib/text` `foldText`) and ranked by photo count, the picked
+  matching is **prefix + diacritics-insensitive** (`lib/text` `foldText`) and ranked by photo count, a person's
+  **nickname** matching on the same terms through `FilterValue.alias` while the row still **completes to the
+  name** (the row then reads „Bohumil Nečas („Bohouš")" via `lib/nickname` `withNickname`, since the match may
+  have come from the nickname alone), the picked
   value is inserted **properly quoted** (`quoteFilterValue`) with a trailing space, and a value token with no
   match still opens the dropdown with „Nic neodpovídá" rather than vanishing mid-word. Arrows move,
   Enter/Tab accept, Esc closes — but **Enter with nothing highlighted belongs to the form**, and **no panel
@@ -2718,6 +2721,11 @@ here.
   remove X only trims it). Adding runs through
   **`AddAutocomplete`** (a type-to-filter combobox over react-bootstrap primitives,
   **case/accent-insensitive** via `lib/text` `foldedIncludes`, keyboard ↑/↓/Enter/Esc + click,
+  an option's optional **`alias`** matched on the same terms as its `label` and drawn beside it — a person's
+  **nickname**, which is the one thing `hint` is not: a hint carries a number and is never searched, an alias
+  is another way to say the same name. `FaceAssignPanel` and `AttachPersonField` both pass
+  `alias: subject.nickname`, because whoever is naming a face knows the family by what everybody calls them,
+  not by the name on the documents; an absent alias widens nothing,
   a „nic neodpovídá" state, ~44px tap targets, ARIA combobox/listbox; an optional `onCreate` prop adds
   a „Vytvořit «dotaz»" row — `createAndAttachLabel` does `createLabel` + `attachLabel` and
   `createAndAddAlbum` does `createAlbum` + `addAlbumPhotos` (album defaults: empty description, non-private
@@ -3232,11 +3240,20 @@ here.
   selection see `listSubjectsSQL`), which is why the two agree on which face a tile shows. An avatar that
   never arrives falls back to the same placeholder rather than to a broken-image glyph. The caption under
   the name is the photo count plus, for whoever has one, the **life span** (`formatLifeSpan` → „1923–1998" /
-  „*1923" / „†1998") — on the count's own line, so a grid of people with years and one without still line up,
-  `SubjectPage` = `/people/:uid` a person's page: a header (name/**life span**/type + edit via
+  „*1923" / „†1998") — on the count's own line, so a grid of people with years and one without still line up.
+  It also opens with the **nickname** („Bohouš") when the prop `showNickname` says so, which `PeoplePage`
+  sets for a tile the search found **through** the nickname (`lib/nickname` `matchedByNickname`): a row whose
+  stored name has nothing to do with what was typed reads as a bug until the nickname is on screen, while a
+  row the name itself matched needs no explanation and stays uncluttered,
+  `SubjectPage` = `/people/:uid` a person's page: a header (name/**nickname**/**life span**/type + edit via
   `SubjectEditModal` — the page keeps it mounted, so the dialog **re-seeds every field (and clears the
   error) each time it opens**: a cancelled edit is really discarded and a failed save's message doesn't
-  greet the next opening; the dialog also carries the two **year** fields, shown **only for
+  greet the next opening; the dialog carries the **nickname** field for every type (a pet answers to one as
+  readily as a person; empty clears it, the value is trimmed, and it never reaches the slug — the backend
+  derives that from the name alone, so every existing link keeps resolving). The header draws it beside the
+  name rather than on a line of its own — Bohumil Nečas („Bohouš"), `lib/nickname` `nicknameTag` owning the
+  quotation marks so the page, the tile and every picker write it the same way — and **nothing at all** when
+  it is empty, which is the usual case; the dialog also carries the two **year** fields, shown **only for
   `type='person'`** (a pet has no life span to read) but always submitted, so a mistaken
   reclassification loses nothing, and pre-validated in place (`lifeYearsValid`, 1800…this year,
   death ≥ birth) so a typo is answered without a round trip — the backend stays the authority —
@@ -3995,20 +4012,23 @@ here.
   **names** the library holds for `album:`/`label:`/`person:` (`subject:` included), looked up with an ordinary
   `useGlobalSearch` run on the half-typed *value* alone, from one character on, and inserted quoted when the
   language needs it (an album completes to its **stored** title, not to the rendering `albumDisplayTitle`
-  shows). The key list is **never written down here**: it is fetched once from `GET /search/schema`
-  (`fetchQuerySchema`, on the palette's first open — the answer is compiled into the server binary) so it
-  cannot drift from the parser; only the sentences are local, under `searchCommand.queryKeys.<key>`, and a
-  backend test fails when the two lists disagree. A key the bundle has no sentence for is still offered, just
-  without its second line. Only the **trailing** token is ever completed (`keyTokenAt`/`valueTokenAt` in
-  `lib/queryLanguage.ts`, the same locators the search page's own autocomplete uses), so the filters already
-  written in front of it are carried into the completed query untouched. The rows are ordinary palette rows
-  ranked **above** everything else while a filter is being written, so ↑/↓ walk them and Enter picks: a
-  **value** row finishes the filter and runs the whole query at once (and is recorded like any submit), while a
-  **key** row only completes to `key:` and hands the field back — `album:` is the middle of a query, not one.
-  **Tab** completes the active row exactly like Enter (and stays plain Tab on every other row), and **Esc**
-  closes the completion first, keeping the text and the palette, which is the way out for free text that merely
-  looks like the start of a key; the next Esc closes the palette as before. A failed schema fetch costs the
-  completion and nothing else.
+  shows). A person's row carries their **nickname** on its second line („Bohouš", `lib/nickname`
+  `nicknameTag`) and so does the ordinary people result group: the backend matches the nickname too, so a row
+  showing only the stored name would look unrelated to what was typed — while the completed value stays the
+  **name**, which is what identifies the person. The key list is **never written down here**: it is fetched
+  once from `GET /search/schema` (`fetchQuerySchema`, on the palette's first open — the answer is compiled
+  into the server binary) so it cannot drift from the parser; only the sentences are local, under
+  `searchCommand.queryKeys.<key>`, and a backend test fails when the two lists disagree. A key the bundle has
+  no sentence for is still offered, just without its second line. Only the **trailing** token is ever
+  completed (`keyTokenAt`/`valueTokenAt` in `lib/queryLanguage.ts`, the same locators the search page's own
+  autocomplete uses), so the filters already written in front of it are carried into the completed query
+  untouched. The rows are ordinary palette rows ranked **above** everything else while a filter is being
+  written, so ↑/↓ walk them and Enter picks: a **value** row finishes the filter and runs the whole query at
+  once (and is recorded like any submit), while a **key** row only completes to `key:` and hands the field
+  back — `album:` is the middle of a query, not one. **Tab** completes the active row exactly like Enter (and
+  stays plain Tab on every other row), and **Esc** closes the completion first, keeping the text and the
+  palette, which is the way out for free text that merely looks like the start of a key; the next Esc closes
+  the palette as before. A failed schema fetch costs the completion and nothing else.
   Keys `searchCommand.*` (incl. `searchCommand.suggest.*` + `searchCommand.queryKeys.*`), `search.history.*`,
   `globalSearch.groups.*`, `globalSearch.direct.*`; in the shortcut help the group
   `shortcuts.groups.global`). Both surfaces share `lib/directHit.ts` — the label maps
@@ -4759,7 +4779,8 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   Enter costs one request; re-running an older query still moves it back to the front), the post is **not**
   bound to the caller's lifetime (the palette navigates away the same tick, and an aborted record is no
   record), and failures are swallowed *and forgotten*, so the next submit retries. `useFilterValues(facet,debounceMs?)` = the value lists behind the
-  search box's value autocomplete → `FilterValue[]` (`{name,count}`) for `album`/`label`/`person`: nothing is
+  search box's value autocomplete → `FilterValue[]` (`{name,alias?,count}` — `alias` is a person's nickname,
+  matched like the name but never completed to) for `album`/`label`/`person`: nothing is
   fetched until a facet is actually asked for, each facet is fetched **at most once** per mount (the lists are
   catalogue-wide, so matching as the reader types is pure client-side work and **no keystroke costs a
   request**) and the fetch itself is debounced 200 ms on top, so a `key:` typed and deleted again costs nothing
@@ -5370,6 +5391,14 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   **before** the birth, or an age past `MAX_PLAUSIBLE_AGE` (120) — an absurd number beside a face would
   present a data error as a fact — and `formatLifeSpan` → „1923–1998" / „*1923" / „†1998" / `null`;
   the labels themselves are i18n (`subject.age` with a plural count, „~23 let" / „~23 yrs"));
+  `lib/nickname.ts` (pure, the one place the nickname's *form* and its *matching* live, so the page header,
+  the people tile, the pickers and both value completions write and find it identically: `nicknameTag` →
+  „Bohouš" in Czech quotation marks, trimmed, and **`null`** for an absent/blank one (never an empty string —
+  a caller has to decide what to draw instead of silently printing empty quotes); `withNickname(name,nickname)`
+  → „Bohumil Nečas („Bohouš")" for the single-line places (a suggestion row, a picker option) where there is no
+  second element to style; `matchesSubjectName(name,nickname,query)` = the client-side twin of the backend's
+  subject search (substring, case- and accent-insensitive via `lib/text`), used by `browsePeople`; and
+  `matchedByNickname` = "the query found them **through** the nickname", which is what makes a tile show it);
   `lib/photoDecades.ts` (pure, built on `period`'s `decadeOf` so the decade **filter** and this decade
   **grouping** can never disagree: `groupPhotosByDecade` (one section per decade in order of first
   appearance, the undated in their own; never re-sorts, and a decade appearing twice is merged so the
@@ -5438,7 +5467,8 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   `peopleBrowse.ts` = the same job for the people index: the `PeopleView` type (`q`/`type`/`sort`) +
   `PEOPLE_DEFAULTS` (everybody, **most photos first**) + the `toPeopleTab`/`toPeopleSort` sanitizers +
   `peopleBrowseOptions(view, language)` + `browsePeople(subjects, options)` → `{visible, counts,
-  filteredOut}`. The search is `foldedIncludes` over the name; `comparator(sort, language)` owns the three
+  filteredOut}`. The search is `matchesSubjectName` over the name **and the nickname** (`lib/nickname`), so
+  „bedik" finds Bedřich; `comparator(sort, language)` owns the three
   orderings: `count` by `photo_count` (the figure the tile's caption shows), `name` by `localeCompare`
   (numeric, base sensitivity — the API orders in the *database's* collation, this one in the reader's) and
   `recent` by `Date.parse(created_at)` descending, an unparseable timestamp sorting oldest rather than

@@ -68,11 +68,16 @@ function lifeYearsValid(birth: number | null, death: number | null): boolean {
 }
 
 /**
- * A modal form for editing a subject's name, type, life span and visibility
- * flags. It preserves the existing cover (set elsewhere) and submits the full
- * editable set to `PATCH /subjects/{uid}`, surfacing a validation error inline.
- * Every opening starts from the subject as stored, so a cancelled edit is really
- * discarded.
+ * A modal form for editing a subject's name, nickname, type, life span and
+ * visibility flags. It preserves the existing cover (set elsewhere) and submits
+ * the full editable set to `PATCH /subjects/{uid}`, surfacing a validation error
+ * inline. Every opening starts from the subject as stored, so a cancelled edit is
+ * really discarded.
+ *
+ * **The nickname is optional and shown for every type**, unlike the life years: a
+ * pet answers to one as readily as a person does. An empty field clears it, and
+ * it is trimmed rather than validated — the one rule is that it never reaches the
+ * slug, which the backend derives from the name alone.
  *
  * **The birth and death year appear only for a person.** They are what turns a
  * gallery into a life — the header's „1923–1998", the „~23 let" beside a face —
@@ -85,6 +90,7 @@ function lifeYearsValid(birth: number | null, death: number | null): boolean {
 export function SubjectEditModal({ subject, show, onHide, onSaved }: SubjectEditModalProps) {
   const { t } = useTranslation()
   const [name, setName] = useState(subject.name)
+  const [nickname, setNickname] = useState(subject.nickname)
   const [type, setType] = useState<SubjectType>(subject.type)
   const [favorite, setFavorite] = useState(subject.favorite)
   const [isPrivate, setIsPrivate] = useState(subject.private)
@@ -106,6 +112,7 @@ export function SubjectEditModal({ subject, show, onHide, onSaved }: SubjectEdit
     setWasOpen(show)
     if (show) {
       setName(subject.name)
+      setNickname(subject.nickname)
       setType(subject.type)
       setFavorite(subject.favorite)
       setIsPrivate(subject.private)
@@ -131,6 +138,7 @@ export function SubjectEditModal({ subject, show, onHide, onSaved }: SubjectEdit
     }
     const input: SubjectInput = {
       name: trimmed,
+      nickname: nickname.trim(),
       type,
       favorite,
       private: isPrivate,
@@ -173,6 +181,18 @@ export function SubjectEditModal({ subject, show, onHide, onSaved }: SubjectEdit
                 setName(event.target.value)
               }}
             />
+          </Form.Group>
+          <Form.Group className="mb-3" controlId="subject-nickname">
+            <Form.Label>{t('subject.edit.nickname')}</Form.Label>
+            <Form.Control
+              type="text"
+              value={nickname}
+              disabled={busy}
+              onChange={(event) => {
+                setNickname(event.target.value)
+              }}
+            />
+            <Form.Text className="text-secondary">{t('subject.edit.nicknameHelp')}</Form.Text>
           </Form.Group>
           <Form.Group className="mb-3" controlId="subject-type">
             <Form.Label>{t('subject.edit.type')}</Form.Label>

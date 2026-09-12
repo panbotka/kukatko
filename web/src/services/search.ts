@@ -67,6 +67,12 @@ export interface GlobalSearchLabel extends GlobalSearchCover {
 export interface GlobalSearchPerson extends GlobalSearchCover {
   uid: string
   name: string
+  /**
+   * The person's nickname, absent when they have none. The match may have come
+   * from it alone, so a row showing only the stored name would look unrelated to
+   * what was typed — show it alongside the name, never instead of it.
+   */
+  nickname?: string
 }
 
 /** What a pasted UID names, as reported by the backend's direct hit. */

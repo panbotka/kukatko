@@ -273,6 +273,64 @@ func TestUploaderCond(t *testing.T) {
 	}
 }
 
+// TestPersonCond covers what `person:` compiles to: the name and the nickname are
+// both matched, against the SAME bound pattern, and the exact-uid arm stays beside
+// them. A nickname is often the only handle anybody remembers, so a query that
+// matched the name alone would find nobody; binding the pattern twice would be
+// waste, since both are text comparisons of one value.
+func TestPersonCond(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		input    string
+		contains []string
+		args     []any
+	}{
+		{
+			name:  "a name matches the name, the nickname or the exact uid",
+			input: "person:bohous",
+			contains: []string{
+				"EXISTS (SELECT 1 FROM markers m JOIN subjects s ON s.uid = m.subject_uid",
+				"m.invalid = FALSE",
+				"s.name ILIKE $1",
+				"s.nickname ILIKE $1",
+				"s.uid = $2",
+			},
+			args: []any{"%bohous%", "bohous"},
+		},
+		{
+			name:     "a wildcard anchors both name arms",
+			input:    "person:boh*",
+			contains: []string{"s.name ILIKE $1", "s.nickname ILIKE $1"},
+			args:     []any{"boh%", "boh*"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			sql, args := buildCountQuery(ListParams{QueryFilters: query.Parse(tt.input).Filters})
+			for _, want := range tt.contains {
+				if !strings.Contains(sql, want) {
+					t.Errorf("query missing %q: %q", want, sql)
+				}
+			}
+			if strings.Contains(sql, "$3") {
+				t.Errorf("person: bound a third parameter: %q", sql)
+			}
+			if len(args) != len(tt.args) {
+				t.Fatalf("args = %v, want %v", args, tt.args)
+			}
+			for i, want := range tt.args {
+				if args[i] != want {
+					t.Errorf("arg %d = %v, want %v", i, args[i], want)
+				}
+			}
+		})
+	}
+}
+
 // TestVideoFilterClauses covers what the four video filters compile to: the
 // clip-length bounds in the milliseconds the column stores, the frame rate
 // widened enough for the NTSC rates, and the two yes/no filters — each of them

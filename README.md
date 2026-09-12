@@ -47,8 +47,10 @@ photo-book tool (deliberately out of scope), or a product with support and a rel
   codec, orientation, rating, favourite — and, for videos, `duration:1m-` in the units you would say
   it in, `sound:no`, `fps:120-` and `streaming:no`, the clips still waiting to be prepared for
   playback. `person:`, `label:` and `album:` autocomplete the **actual names in
-  your library**, diacritics-insensitively and quoted correctly; a `?` cheat sheet is one keypress
-  away, and a filter the parser did not understand is pointed out instead of silently ignored.
+  your library**, diacritics-insensitively and quoted correctly — a person also by their nickname, the
+  suggestion then reading `Bohumil Nečas („Bohouš")` while the filter still carries the name; a `?` cheat
+  sheet is one keypress away, and a filter the parser did not understand is pointed out instead of silently
+  ignored.
   **Nothing here has to be memorised:** the command palette (`/` or Cmd-K) completes the language as
   you write it — a half-typed word offers the filter keys starting with it, each explained in a line,
   and a key followed by a colon offers its values: the words it accepts, or the albums, labels and
@@ -81,6 +83,13 @@ photo-book tool (deliberately out of scope), or a product with support and a rel
   load as a page of the library grid. Every other place a single face is shown as a small square — a
   person's suspicious faces, a group of unknown ones, the chips under a photograph — is the same
   server-cut crop, so a screen full of faces is kilobytes rather than a photograph apiece.
+- **A person can also be recorded under the name everybody actually uses.** Half a village answers to
+  something that appears on no document — Bohumil Nečas is „Bohouš" and nobody calls him anything else —
+  so a person carries an optional nickname beside their name. It is written next to the name on their page
+  and **searched exactly like it**: by the people index, by the command palette, by `person:Bohouš`, and by
+  the list you pick from when you put a name to a face, which is where it matters most — the handle you
+  remember is usually the nickname. It is not unique (two men in one village are both „Bohouš"), it never
+  changes the address of the person's page, and it rides along into the metadata sidecar.
 - Faces are detected, clustered, and matched against the people you have named — and **nothing is
   ever assigned automatically**. The machine narrows the list down, a human confirms.
 - **A video has people on it too — written down by hand.** The detector is not asked about a clip

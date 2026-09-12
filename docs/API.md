@@ -1166,13 +1166,22 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   wants the picture does **not** crop either of them any more — it asks for `GET /subjects/{uid}/avatar`
   below; the two fields say whether a subject *has* a picture (so a tile with none fires no request) and are
   still what a client cropping for itself needs;
-  `POST /subjects` (RequireWrite) → 201 creates a subject from `{name,type,favorite,private,notes,
+  `POST /subjects` (RequireWrite) → 201 creates a subject from `{name,nickname,type,favorite,private,notes,
   cover_photo_uid?,birth_year?,death_year?}` (empty name / unknown type → 400; a name that identifies **nobody** — punctuation or
   symbols alone, no letter and no digit — is also 400 `subject name must contain a letter or a digit`: it has
   no slug of its own, would be stored under the shared fallback slug, read as unnamed everywhere and act as a
   magnet for find-or-create-by-name lookups, which is exactly the catch-all `docs/OPERATIONS.md` §
   `maintenance nameless-subjects` describes); `GET /subjects/{uid}` (RequireAuth) →
   the subject (404); `PATCH /subjects/{uid}` (RequireWrite) → editing the same fields (404/400);
+  **`nickname` is what people actually call the subject** — Bohumil Nečas („Bohouš") — `""` when nobody
+  recorded one, which is the usual case. It is **searched like the name**: by the subject search behind
+  `GET /search/global` (accent-insensitive), by `person:`/`subject:` and by the pickers built on
+  `GET /subjects`. It is **not** unique (two men in one village are both "Bohouš"), carries no length
+  limit (neither does `name`) and **never feeds the slug**, which stays derived from `name` alone — the
+  slug is UNIQUE, lives in URLs and is written into the audit trail, so re-deriving it would break
+  every link already recorded. Like every other field of this body it is **rewritten**: an omitted or
+  empty `nickname` **clears** a stored one, and the change appears in the `subject.update` audit entry's
+  `changes` diff. One nickname, not a list: `notes` is free text already.
   **`birth_year`/`death_year` are the person's life span** — plain years, `null` (or omitted) for the usual
   "nobody recorded it". Like every other field of this body they are **rewritten**, not patched: a `null`
   **clears** a stored year, so a caller that changes only the cover must send the years it read back or it
@@ -1189,9 +1198,9 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   **the path subject is merged into the keeper and deleted**, in one transaction, with one `subject.merge`
   audit entry naming both (the source's name survives nowhere else: a merge cannot be undone). Everything
   the source carried moves — markers, the faces cache, confirmations, rejections, repeated-marker
-  dismissals — and the keeper's *empty* fields are filled from it (`favorite`/`private` OR-ed, `notes` and
-  `cover_photo_uid` only when it has none). `birth_year`/`death_year` travel as a **pair**, and only onto a
-  keeper carrying **neither**: filling them one at a time could pair one person's birth with another's
+  dismissals — and the keeper's *empty* fields are filled from it (`favorite`/`private` OR-ed, `nickname`,
+  `notes` and `cover_photo_uid` only when it has none). `birth_year`/`death_year` travel as a **pair**, and
+  only onto a keeper carrying **neither**: filling them one at a time could pair one person's birth with another's
   death, which is both a lie and a `death >= birth` CHECK violation — and a failed constraint would take
   the whole merge with it. Three rules cover the disagreements, all in
   [`PACKAGES.md`](PACKAGES.md) § `internal/people`: **markers are never deduplicated** (a photo carrying
@@ -1529,13 +1538,17 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
 - **Global Search API (`/api/v1`, `internal/globalsearchapi`, authenticated via `RequireAuth`):**
   grouped **cross-entity search** for the navbar quick-results and the search page. `GET /search/global?q=` →
   `{query, albums:[{uid,title,cover?,thumb_url?,photo_count}], labels:[{uid,name,cover?,thumb_url?,photo_count}],
-  people:[{uid,name,cover?,thumb_url?}], photos:[…usual photo shape…]}` — albums/labels/people matched by
-  name/description **accent- and case-insensitive** (`immutable_unaccent` + ILIKE via the store methods
+  people:[{uid,name,nickname?,cover?,thumb_url?}], photos:[…usual photo shape…]}` — albums/labels/people matched
+  by name/description **accent- and case-insensitive** (`immutable_unaccent` + ILIKE via the store methods
   `SearchAlbums`/`SearchLabels`/`SearchSubjects`), photos via the **existing full text** (`photos.Store.
-  Search` over the `fts` tsvector). Each group is capped at a small top-N (default 8, `Config.Limit`), the arrays
-  are always non-nil. An empty/whitespace `q` → 400, a store error → 500. The existing `GET /search` (per-user
-  photo fulltext/semantic/hybrid) stays unchanged. Mounted by `server.WithAPI` (`buildGlobalSearchAPI`
-  in `cmd/kukatko/globalsearch.go`, sharing the organize/people/photos store).
+  Search` over the `fts` tsvector). A person is matched by **name or nickname** (the same predicate, the same
+  bound pattern), which is why the hit carries `nickname` when there is one: the match may have come from it
+  alone, and a row showing only the stored name would read as unrelated to what was typed. It is shown
+  **beside** the name, never instead of it. Each group is capped at a small top-N (default 8,
+  `Config.Limit`), the arrays are always non-nil. An empty/whitespace `q` → 400, a store error → 500. The
+  existing `GET /search` (per-user photo fulltext/semantic/hybrid) stays unchanged. Mounted by
+  `server.WithAPI` (`buildGlobalSearchAPI` in `cmd/kukatko/globalsearch.go`, sharing the
+  organize/people/photos store).
   **Every entity hit carries its picture**, `cover` (the photo standing for it) and `thumb_url` (where to fetch
   that photo's medallion, `thumb.AvatarSize` = `tile_100`, stamped through `internal/mediaurl` exactly like a
   photo hit's — so a published bucket yields a signed edge URL). The two are set **together or not at all**, and
@@ -2136,7 +2149,7 @@ put a photo taken minutes either side of New Year in the same year.
 | `text:` | text | the text a recogniser read **inside** the photo (`photos.ocr_text`): a sign, a shop front, a scanned page. Substring, `*` wildcard, and **accent-insensitive** unlike its siblings — the latin recogniser routinely returns a Czech word without its diacritics, so `text:pouť` must still find a sign read as "Pout" |
 | `album:` | text | album membership by **name** (substring) or exact UID |
 | `label:` | text | a label by **name** or UID |
-| `person:` (alias `subject:`) | text | a subject by **name** or UID, via non-invalid markers. The exact lower-case value **`me`** is reserved: it means the person the caller's own account is linked to (`users.subject_uid`) — see below |
+| `person:` (alias `subject:`) | text | a subject by **name**, by **nickname** or by UID, via non-invalid markers. The name and the nickname are matched on the same terms (substring, `*` wildcard, case-insensitive, **diacritics-sensitive** like `album:`) against the same bound pattern, so `person:Bohouš` finds Bohumil Nečas; an empty nickname matches nothing. The exact lower-case value **`me`** is reserved: it means the person the caller's own account is linked to (`users.subject_uid`) — see below |
 | `uploader:` | text | who uploaded the photo, by the account's **username or display name** (substring, `*` wildcard, and **accent-insensitive** like `text:` — a name is typed from memory, so `uploader:tomas` finds "Tomáš") or by exact UID. Two exact lower-case values are reserved: **`me`** is the caller's own account (see below) and **`none`** are the photos with **no** uploader, the ones an import brought in — so `uploader:!none` is everything somebody did upload |
 | `favorite:` `private:` `archived:` | `yes\|no` | per-user favourite / private / archived; `archived:` **removes the default live-only scope** |
 | `hidden:` | `yes\|no` | hidden from the library (`photos.hidden_from_library`); like `archived:` it **removes the default visible-only scope**, so `hidden:yes` is the documented way back to a hidden photo |

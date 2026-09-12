@@ -142,9 +142,15 @@ func (t MarkerType) valid() bool {
 // Name and made unique by the store. CoverPhotoUID is nil until a cover photo is
 // chosen and is cleared if that photo is deleted.
 type Subject struct {
-	UID           string      `json:"uid"`
-	Slug          string      `json:"slug"`
-	Name          string      `json:"name"`
+	UID  string `json:"uid"`
+	Slug string `json:"slug"`
+	Name string `json:"name"`
+	// Nickname is what people actually call the subject, empty when nobody
+	// recorded one — which is most of the time. It is searchable exactly like
+	// Name (subject search, the person: filter, the global search) but it is
+	// never part of Slug: the slug is UNIQUE and appears in URLs, so re-deriving
+	// it from a nickname would break every link already written down.
+	Nickname      string      `json:"nickname"`
 	Type          SubjectType `json:"type"`
 	Favorite      bool        `json:"favorite"`
 	Private       bool        `json:"private"`
@@ -216,7 +222,10 @@ type SubjectCount struct {
 // BirthYear and DeathYear clear (set NULL) when nil, like CoverPhotoUID: the
 // update rewrites the whole editable set, so an omitted year means "unknown".
 type SubjectUpdate struct {
-	Name          string      `json:"name"`
+	Name string `json:"name"`
+	// Nickname replaces whatever was stored, the empty string clearing it. It
+	// does not feed the re-derived slug; see Subject.Nickname.
+	Nickname      string      `json:"nickname"`
 	Type          SubjectType `json:"type"`
 	Favorite      bool        `json:"favorite"`
 	Private       bool        `json:"private"`
