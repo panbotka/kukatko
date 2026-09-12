@@ -82,74 +82,86 @@ type okResult struct {
 // registerAlbumWriteTools adds the album mutations.
 func (a *API) registerAlbumWriteTools(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
-		Name: "create_album",
+		Name:  "create_album",
+		Title: "Create album",
 		Description: "Create an empty album and return it, including the uid you then pass to " +
 			"add_photos_to_album. Albums are hand-made collections of specific photos.",
+		Annotations: additiveAnnotations(),
 	}, a.handleCreateAlbum)
 
 	mcp.AddTool(s, &mcp.Tool{
-		Name: "add_photos_to_album",
+		Name:  "add_photos_to_album",
+		Title: "Add photos to album",
 		Description: "Add photos to an album. Adding a photo that is already in the album changes " +
 			"nothing, so this is safe to repeat. The whole batch applies in one transaction: if any " +
 			"photo or the album does not exist, nothing is added.",
-		Annotations: &mcp.ToolAnnotations{IdempotentHint: true},
+		Annotations: idempotentAnnotations(),
 	}, a.handleAddPhotosToAlbum)
 
 	mcp.AddTool(s, &mcp.Tool{
-		Name: "remove_photos_from_album",
+		Name:  "remove_photos_from_album",
+		Title: "Remove photos from album",
 		Description: "Remove photos from an album. This only unfiles them — the photos themselves " +
 			"are untouched and stay in the library.",
-		Annotations: &mcp.ToolAnnotations{IdempotentHint: true},
+		Annotations: idempotentAnnotations(),
 	}, a.handleRemovePhotosFromAlbum)
 }
 
 // registerLabelWriteTools adds the label mutations.
 func (a *API) registerLabelWriteTools(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
-		Name: "create_label",
+		Name:  "create_label",
+		Title: "Create label",
 		Description: "Create a label and return it, including the uid you then pass to attach_label. " +
 			"Labels are the library's own curated tags (\"beach\", \"birthday\") that apply to any " +
 			"number of photos, as opposed to albums, which are collections of specific photos.",
+		Annotations: additiveAnnotations(),
 	}, a.handleCreateLabel)
 
 	mcp.AddTool(s, &mcp.Tool{
-		Name: "attach_label",
+		Name:  "attach_label",
+		Title: "Attach label",
 		Description: "Attach a label to one photo. To label many photos at once use bulk_edit_photos " +
 			"instead — it is one transaction rather than one per photo.",
-		Annotations: &mcp.ToolAnnotations{IdempotentHint: true},
+		Annotations: idempotentAnnotations(),
 	}, a.handleAttachLabel)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "detach_label",
+		Title:       "Detach label",
 		Description: "Remove a label from one photo. The photo and the label both survive.",
-		Annotations: &mcp.ToolAnnotations{IdempotentHint: true},
+		Annotations: idempotentAnnotations(),
 	}, a.handleDetachLabel)
 }
 
 // registerPhotoWriteTools adds the per-photo edits and the bulk lever.
 func (a *API) registerPhotoWriteTools(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
-		Name: "set_photo_metadata",
+		Name:  "set_photo_metadata",
+		Title: "Edit photo text",
 		Description: "Set a photo's title, description or notes. Only the fields you pass change; " +
 			"pass an empty string to clear one. Returns the photo's new text.",
-		Annotations: &mcp.ToolAnnotations{IdempotentHint: true},
+		Annotations: idempotentAnnotations(),
 	}, a.handleSetPhotoMetadata)
 
 	mcp.AddTool(s, &mcp.Tool{
-		Name: "set_photo_rating",
+		Name:  "set_photo_rating",
+		Title: "Rate photo",
 		Description: "Set the favourite mark, the star rating (0-5) or the pick/reject flag on a " +
 			"photo. These are per-user: they record the opinion of the user who owns the token you " +
 			"are using, not a library-wide fact.",
-		Annotations: &mcp.ToolAnnotations{IdempotentHint: true},
+		Annotations: idempotentAnnotations(),
 	}, a.handleSetPhotoRating)
 
 	mcp.AddTool(s, &mcp.Tool{
-		Name: "bulk_edit_photos",
+		Name:  "bulk_edit_photos",
+		Title: "Bulk edit photos",
 		Description: "Apply one set of changes to many photos in a single transaction: add or remove " +
 			"albums and labels, set the title or description, and set the favourite, rating or flag. " +
 			"Prefer this over calling the single-photo tools in a loop — it is far faster and, because " +
 			"it is one transaction, a change cannot end up half-applied across the batch. Returns how " +
 			"many photos were updated, skipped or errored.",
+		Annotations: writeAnnotations(),
 	}, a.handleBulkEdit)
 }
 

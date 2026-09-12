@@ -45,46 +45,52 @@ var errNeedUIDOrSlug = errors.New("give either a uid or a slug")
 // organised: albums, labels and people.
 func (a *API) registerCollectionTools(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
-		Name: "list_albums",
+		Name:  "list_albums",
+		Title: "List albums",
 		Description: "List the albums with their photo counts. Use it to turn an album name a human " +
 			"used into the uid the other tools want, or to see how the library is organised. " +
 			"To read an album's photos, pass its uid to search_photos as album_uid.",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
+		Annotations: readAnnotations(),
 	}, a.handleListAlbums)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_album",
+		Title:       "Album detail",
 		Description: "Read one album by uid or slug: its title, description, type and photo count.",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
+		Annotations: readAnnotations(),
 	}, a.handleGetAlbum)
 
 	mcp.AddTool(s, &mcp.Tool{
-		Name: "list_labels",
+		Name:  "list_labels",
+		Title: "List labels",
 		Description: "List the labels with their photo counts. Labels are the library's own curated " +
 			"tags (\"beach\", \"birthday\"), as opposed to albums, which are collections of specific " +
 			"photos. To read a label's photos, pass its uid to search_photos as label_uid.",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
+		Annotations: readAnnotations(),
 	}, a.handleListLabels)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_label",
+		Title:       "Label detail",
 		Description: "Read one label by uid or slug: its name and photo count.",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
+		Annotations: readAnnotations(),
 	}, a.handleGetLabel)
 
 	mcp.AddTool(s, &mcp.Tool{
-		Name: "list_subjects",
+		Name:  "list_subjects",
+		Title: "List people",
 		Description: "List the people (and animals) the library knows by name, with how many " +
 			"recognised faces each has (face_count) and on how many photos each appears " +
 			"(photo_count). Use it to turn a name a human used into the uid the other tools " +
 			"want. To read someone's photos, pass their uid to search_photos as person_uid.",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
+		Annotations: readAnnotations(),
 	}, a.handleListSubjects)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_subject",
+		Title:       "Person detail",
 		Description: "Read one person or animal by uid or slug: their name, type, notes and face count.",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
+		Annotations: readAnnotations(),
 	}, a.handleGetSubject)
 }
 

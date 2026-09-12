@@ -27,20 +27,20 @@ func callerCtx(role auth.Role) context.Context {
 		caller{user: auth.User{UID: "user-1", Role: role}})
 }
 
-// TestRegisterRoutesDisabledMountsNothing pins the config switch's contract: off
-// means the route does not exist, not that it exists and refuses. A 403 would
-// still tell an attacker the endpoint is there.
+// TestRegisterRoutesDisabledAnswers404 pins the config switch's contract: off
+// means the endpoint reports itself absent, not that it exists and refuses. A 403
+// would still tell an attacker the endpoint is there.
 //
 // The enabled case answers 401 rather than 200 because the guard here is a
 // passthrough that identifies nobody, and an unidentified caller must never reach
 // a tool. That is the point: 401 proves the route is mounted *and* fails closed,
-// where 404 proves it was never mounted.
+// where 404 proves no MCP server was built behind it.
 //
-// The 404 is chi's own, because this router has no SPA fallback. The full server
-// does (server.routes mounts web.Handler on NotFound), so there a disabled path
-// falls through to index.html like any unknown URL — the assertion here is the
-// clean signal that nothing was registered on the router at all.
-func TestRegisterRoutesDisabledMountsNothing(t *testing.T) {
+// The 404 is handleDisabled's own, deliberately mounted rather than left to the
+// router: in the full binary an unrouted path falls into the SPA catch-all
+// (server.routes mounts web.Handler on NotFound) and would hand an MCP client
+// index.html with a 200 to parse as JSON-RPC.
+func TestRegisterRoutesDisabledAnswers404(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		enabled bool

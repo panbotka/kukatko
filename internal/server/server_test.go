@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -98,5 +99,77 @@ func TestServerRun_gracefulShutdown(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("Run did not return within timeout after context cancellation")
+	}
+}
+
+// TestWellKnownIsNotSwallowedBySPA pins that the metadata prefix answers 404
+// instead of the index document. An MCP client with no WWW-Authenticate to go on
+// probes /.well-known/oauth-protected-resource/<path> and then
+// /.well-known/oauth-protected-resource, and expects a 404 to mean "this server
+// has no OAuth". Answering 200 and HTML makes it fail parsing a web page as
+// JSON instead. Kukátko publishes nothing under the prefix: ACME is terminated by
+// the reverse proxy and the PWA manifest lives at /manifest.webmanifest.
+func TestWellKnownIsNotSwallowedBySPA(t *testing.T) {
+	t.Parallel()
+
+	paths := []string{
+		"/.well-known",
+		"/.well-known/",
+		"/.well-known/oauth-protected-resource",
+		"/.well-known/oauth-protected-resource/api/v1/mcp",
+		"/.well-known/oauth-authorization-server",
+		"/.well-known/openid-configuration",
+	}
+	srv := New("").Handler()
+
+	for _, path := range paths {
+		t.Run(path, func(t *testing.T) {
+			t.Parallel()
+
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, path, nil)
+			srv.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusNotFound {
+				t.Errorf("GET %s status = %d, want 404", path, rec.Code)
+			}
+			if ct := rec.Header().Get("Content-Type"); strings.HasPrefix(ct, "text/html") {
+				t.Errorf("GET %s Content-Type = %q; the SPA fallback swallowed the probe", path, ct)
+			}
+			if body := rec.Body.String(); body != notFoundBody {
+				t.Errorf("GET %s body = %q, want %q", path, body, notFoundBody)
+			}
+		})
+	}
+}
+
+// notFoundBody is exactly what handleNotFound writes, and nothing else in the
+// router does. Comparing against it tells "this path was carved out of the SPA
+// fallback" from "the SPA answered", without depending on whether the embedded
+// frontend was built — an unbuilt dist makes the fallback 404 too, so the status
+// code alone cannot tell the two apart.
+const notFoundBody = "{\"error\":\"not found\"}\n"
+
+// TestSPAFallbackStillOwnsUnknownPaths guards the other side of the same change:
+// only /.well-known was carved out, and an ordinary client-side route still
+// reaches the SPA handler. What that handler then answers depends on whether the
+// frontend was built into the binary, so the assertion is that handleNotFound did
+// not take the request — not a status code.
+func TestSPAFallbackStillOwnsUnknownPaths(t *testing.T) {
+	t.Parallel()
+
+	for _, path := range []string{"/albums/holiday", "/well-known/oauth-protected-resource"} {
+		t.Run(path, func(t *testing.T) {
+			t.Parallel()
+
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, path, nil)
+
+			New("").Handler().ServeHTTP(rec, req)
+
+			if rec.Body.String() == notFoundBody {
+				t.Errorf("GET %s was answered by handleNotFound; only /.well-known is carved out", path)
+			}
+		})
 	}
 }

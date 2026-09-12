@@ -100,38 +100,42 @@ type similarResult struct {
 // finding look-alikes, and counting the library.
 func (a *API) registerSearchTools(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
-		Name: "search_photos",
+		Name:  "search_photos",
+		Title: "Search photos",
 		Description: "Find photos in the library. This is the main entry point: start here. " +
 			"Returns a compact summary per photo (uid, title, capture date, thumbnail URL) plus " +
 			"the total number of matches and how many remain after this page — it never returns " +
 			"full metadata, so follow up with get_photo for the photos you actually care about.\n\n" +
 			queryLanguageHelp,
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
+		Annotations: readAnnotations(),
 	}, a.handleSearchPhotos)
 
 	mcp.AddTool(s, &mcp.Tool{
-		Name: "get_photo",
+		Name:  "get_photo",
+		Title: "Photo detail",
 		Description: "Read one photo in full: title, description, notes, capture date, location, " +
 			"camera settings, the calling user's favourite/rating, and the albums, labels and people " +
 			"it belongs to. Use it after search_photos, one photo at a time.",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
+		Annotations: readAnnotations(),
 	}, a.handleGetPhoto)
 
 	mcp.AddTool(s, &mcp.Tool{
-		Name: "find_similar_photos",
+		Name:  "find_similar_photos",
+		Title: "Find similar photos",
 		Description: "Find the photos that look most like a given photo, by visual similarity rather " +
 			"than by metadata. Useful for spotting near-duplicates and for finding the rest of a scene " +
 			"someone only tagged once. Returns each neighbour with its distance (0 = identical). " +
 			"Requires image embeddings; on a library without them it says so.",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
+		Annotations: readAnnotations(),
 	}, a.handleFindSimilar)
 
 	mcp.AddTool(s, &mcp.Tool{
-		Name: "library_stats",
+		Name:  "library_stats",
+		Title: "Library statistics",
 		Description: "Count the library in one call: live photos, of which videos, archived photos, " +
 			"photos with GPS, the calling user's favourites, and the number of albums, labels and " +
 			"people. Use it to answer \"how many …\" instead of paging through search_photos.",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
+		Annotations: readAnnotations(),
 	}, a.handleLibraryStats)
 }
 

@@ -13,7 +13,7 @@ Implementation: [`internal/mcpapi`](../internal/mcpapi), wiring `buildMCPAPI` in
 
 | | |
 | --- | --- |
-| **Path** | `POST /api/v1/mcp` |
+| **Path** | `/api/v1/mcp` — a client only ever POSTs to it |
 | **Transport** | Streamable HTTP, **stateless**, `application/json` response (not SSE) |
 | **Guard** | `RequireAuth` (the same auth as the rest of `/api/v1`) |
 | **Default** | **disabled** — `mcp.enabled: false` |
@@ -22,9 +22,18 @@ Implementation: [`internal/mcpapi`](../internal/mcpapi), wiring `buildMCPAPI` in
 The path is `/api/v1/mcp` because **all** of Kukátko's routes live under `/api/v1` (`server.WithAPI`
 mounts into a single subrouter). It has no top-level `/mcp` of its own.
 
-**Stateless** means every POST stands on its own: no `Mcp-Session-Id`, no server-side state that could
-be hijacked or that could expire. That keeps the endpoint an ordinary authenticated route, and the
-request context (principal + audit metadata) reaches all the way down into the tool handlers.
+The route is registered with `chi.Handle`, i.e. for **every** method, and the SDK's handler decides what
+each one means: `POST` is the protocol, a `GET` (which in a session-ful server would open the SSE stream)
+is answered **405** because this one is stateless, and a `DELETE` carrying a session header is answered
+**204**. There is nothing to gain from restricting the route to POST in chi — it would only move the same
+refusal one layer out and turn 405 into a different 405.
+
+**Stateless** means every POST stands on its own: no server-side state that could be hijacked or that
+could expire. That keeps the endpoint an ordinary authenticated route, and the request context (principal
++ audit metadata) reaches all the way down into the tool handlers. The SDK still *emits* an
+`Mcp-Session-Id` on `initialize` (`Mcp-Session-Id: YN2FLRSQHIBBJ4AYL2XBJMHS5H` and the like) — it simply
+never validates one on the way back in, so a client that echoes it, drops it or invents one is treated
+identically. Do not read the header's presence as session state; there is none.
 
 The SDK's DNS-rebinding guard is **off** (`DisableLocalhostProtection`): it rejects a request that comes
 in over loopback with a non-loopback `Host` header, which is exactly what a reverse proxy in front of
@@ -43,6 +52,27 @@ same RBAC as every other route:
   **`maintainer`** → read and write. A purely writing agent only needs `editor` (the lowest role with
   write access); the former `ai` role was removed (migration `0036`), and its successor at the top of
   the ladder is `maintainer`.
+
+### The 401 and why there is no OAuth discovery
+
+An unauthenticated call is answered **401 with `WWW-Authenticate: Bearer`** (`auth.Challenge`, set by
+`writeUnauthorized`, which every 401 the RBAC guards write goes through). That header is the first thing an MCP client reads.
+Anthropic's connector documentation says that when it is **missing**, Claude falls back to guessing the
+server's OAuth metadata: it probes `/.well-known/oauth-protected-resource/<path>` and then
+`/.well-known/oauth-protected-resource`, and expects a **404** to mean "this server has no OAuth". Until
+September 2026 Kukátko answered those probes with **200 and `index.html`** — the SPA catch-all swallowed
+them — so the client parsed a web page as JSON and failed incomprehensibly instead of concluding that
+there is nothing to discover. `internal/server` now answers everything under `/.well-known/` with a JSON
+404 (it publishes nothing there: ACME is terminated by the reverse proxy, the PWA manifest lives at
+`/manifest.webmanifest`).
+
+The scheme is `Bearer` and deliberately not `Basic`: `Basic` would make a browser pop its own native
+sign-in dialog over the SPA, which handles its 401s itself. **Kukátko implements no OAuth 2.1, no RFC 9728
+protected-resource metadata and no dynamic client registration** — a `kkt_` API token is the whole story.
+When that changes, `resource_metadata="…"` and `scope="…"` get appended to `auth.Challenge`.
+
+Sources: [Anthropic — connector authentication](https://claude.com/docs/connectors/building/authentication) ·
+[MCP — authorization](https://modelcontextprotocol.io/specification/draft/basic/authorization).
 
 The boundary is **doubled**, on purpose:
 
@@ -129,6 +159,26 @@ There are deliberately no separate tools for it.
 | `set_photo_rating` | Favorite / 0–5 stars / flag. **Per-user** — the opinion of the token's owner, not a fact about the library. |
 | `bulk_edit_photos` | One set of changes applied to many photos **in a single transaction**. The preferred tool for batches — an agent that calls the single-photo tools in a loop is slow and can end up applying a change only halfway. |
 
+### Titles and annotations
+
+Every tool carries a **`title`** (`Search photos`, `Add photos to album`) as well as its `name`: a client
+that has none renders the raw `snake_case` identifier in front of a human. They are English and are *not*
+translated — MCP is server-side and the server has no idea what language the agent's human speaks, so
+there is no i18n hook to hang them on.
+
+The annotations (built by the four constructors in `annotations.go`) say only what is true:
+
+| Hint | Where | Why |
+| --- | --- | --- |
+| `readOnlyHint: true` | the ten read tools | so a client need not confirm them |
+| `destructiveHint: false` | `create_album`, `create_label` | they only add a row. MCP **defaults this to `true`**, and a client that believes the default asks a human to approve "create an empty album" |
+| `idempotentHint: true` | `add_/remove_photos_from_album`, `attach_/detach_label`, `set_photo_metadata`, `set_photo_rating` | the second identical call leaves the library as the first did |
+| `openWorldHint: false` | **all nineteen** | MCP defaults it to `true`, i.e. "may reach an unpredictable external system". None of these do: they touch this instance's database and nothing else |
+
+`bulk_edit_photos` gets neither `destructiveHint: false` nor `idempotentHint`: it removes albums and
+labels as readily as it adds them, and a repeated run applies its changes to whatever the photos look
+like by then.
+
 ## What is deliberately NOT exposed
 
 **Nothing destructive or irreversible.** This is not a gap in the tool list for someone to "fill in"
@@ -180,14 +230,12 @@ mcp:
   enabled: true
 ```
 
-Disabled = **the route is not mounted at all** (`RegisterRoutes` registers nothing). Not that it exists and
-returns 403 — a 403 would still tell an attacker that the endpoint is there.
-
-**Careful when verifying by hand with curl:** in the full binary `/api/v1/mcp` then falls into the **SPA catch-all**
-(`server.routes()` has `router.NotFound(web.Handler())`) like any other unknown path, so it returns
-**`200` and `index.html`**, not 404 — the MCP client gets HTML, does not parse it and never opens the connection. That the route
-truly does not exist is visible in the access log: the `"route":"/api/v1/mcp"` field is missing. The tests see `404`,
-because their router has no SPA fallback; that is the clean signal that "there is nothing on the router".
+Disabled = **no MCP server is built** and the path answers a bare **404** (`handleDisabled`). Not a 403 — a
+403 would still tell an attacker that the endpoint is there. The 404 is *mounted* rather than left to the
+router on purpose: without it `/api/v1/mcp` fell into the **SPA catch-all** (`server.routes()` has
+`router.NotFound(web.Handler())`) like any other unknown path and returned **`200` and `index.html`**, so
+the client got HTML where it expected JSON-RPC and failed for the wrong reason. A client can now tell
+"this server does not have that" from "this server did not answer".
 
 A token for the agent (the lowest write-capable role is `editor`; `admin`/`maintainer` write too). A token is minted
 **by a user for themselves** — `POST /auth/tokens` always issues it to the calling principal, an admin cannot create
@@ -220,11 +268,16 @@ claude mcp add --transport http kukatko https://<host>/api/v1/mcp \
 
 `internal/mcpapi/mcpapi_integration_test.go` (tag `integration`) runs over the **real MCP transport**,
 real auth middleware and real `kkt_` tokens against `KUKATKO_TEST_DATABASE_URL`. It covers:
-a disabled server does not mount the route (404, not 403) · the endpoint requires auth · the `initialize` handshake ·
+a disabled server answers 404 and not 403 (and not HTML) · the endpoint requires auth · an unauthenticated call
+carries the `Bearer` challenge · every tool has a title, states `openWorldHint: false`, and no write tool claims
+`readOnlyHint` · the `initialize` handshake ·
 a viewer sees only the read tools · a viewer is rejected on **every** write tool and nothing changed ·
 destructive tools are not exposed · search returns the compact shape without EXIF and with pagination ·
 the search language works · a write token creates an album and attaches a label · **every mutation writes an audit
 row** · a partial edit does not null out the other fields · bulk is atomic · the tool descriptions are written.
+
+`internal/server/server_test.go` pins the other half of the discovery fix without a database: every
+`/.well-known/…` probe is 404 and not `text/html`, while an ordinary client-side route still reaches the SPA.
 
 Unit tests (`mcpapi_test.go`, run in `make check` without a DB) hold the pure helpers, the RBAC check and that
 `exif` does not leak into any payload. `shape_test.go` pins the payload shapes against the three rows they

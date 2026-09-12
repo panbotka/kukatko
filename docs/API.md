@@ -247,6 +247,20 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   to the cookie. A revoked / expired / unknown / malformed token, and the token of a disabled user →
   always **401** (never 403) with the **same body** — it cannot be told which case occurred. `last_used_at`
   is rewritten at most once a minute (the same safeguard as the sliding session).
+  **An unauthenticated request under `/api/v1` is answered `401` with `WWW-Authenticate: Bearer`**
+  (`auth.Challenge`), as RFC 9110 requires: every 401 the RBAC guards and the auth handlers write goes
+  through `writeUnauthorized`, so none of them can forget the header. It is `Bearer` and not `Basic` on purpose: `Basic` makes a
+  browser show its own native sign-in dialog on top of the SPA, which handles its 401s itself, and `Bearer`
+  names the one credential a non-browser client can actually present here. An MCP client reads the header
+  first and, finding none, starts guessing OAuth metadata instead of saying it needs a token — see
+  the `/.well-known` note below and [`docs/MCP.md`](MCP.md).
+- **`/.well-known/*` is not the SPA (`internal/server`):** the SPA catch-all
+  (`router.NotFound(web.Handler())`) is carved out for `/.well-known` and everything under it, which answer a
+  JSON **404**. Kukátko serves nothing there — ACME is terminated by the reverse proxy and the PWA manifest is
+  `/manifest.webmanifest` — and a client asking for `oauth-protected-resource`,
+  `oauth-authorization-server` or `openid-configuration` metadata has to be told "nothing here". Answering
+  `200` with `index.html` made such a client parse a web page as JSON and fail incomprehensibly instead of
+  concluding that this server has no OAuth. Ordinary client-side routes still reach the SPA unchanged.
 - **Upload API (`/api/v1`):** `POST /upload` (editor/admin via `RequireWrite`) — `multipart/form-data`
   with one+ files, **streamed**. Returns `{"results":[{filename,status,outcome,photo_uid?,error?,
   warnings?}]}` (200 overall, per-file 409 duplicate semantics). Mounted by the second `server.WithAPI`
@@ -967,12 +981,16 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   the client must send `Content-Type: application/json` and `Accept: application/json, text/event-stream`.
   The library `github.com/modelcontextprotocol/go-sdk` (pure Go, keeps `CGO_ENABLED=0`); the SDK's DNS-rebinding
   guard is **disabled**, because it rejects even a legitimate request from a reverse proxy and the endpoint is
-  authenticated. **Off by default** (`mcp.enabled: false`) — and when `false` the route is **not mounted at
-  all** (`RegisterRoutes` registers nothing), so the path **does not exist**, rather than returning 403;
-  in the whole binary it then falls into the SPA catch-all and returns `index.html` like any unknown path (the
-  access log lacks `"route":"/api/v1/mcp"`). **It calls the service layer in-process**, not its own HTTP API, so it
+  authenticated. **Off by default** (`mcp.enabled: false`) — and when `false` no MCP server is built and the
+  path answers a bare **404** (`{"error":"mcp is not enabled"}`), rather than 403 or, as before, the SPA
+  catch-all's `200` + `index.html`: a client can tell "this server does not have that" from "this server did
+  not answer". The route is registered for **every** method (`chi.Handle`); the SDK refuses a `GET` with 405
+  (there is no SSE stream on a stateless server) and answers a session-carrying `DELETE` with 204, and it
+  *emits* an `Mcp-Session-Id` on `initialize` without ever validating one on the way in.
+  Unauthenticated → **401 with `WWW-Authenticate: Bearer`** (see *Bearer authentication* above).
+  **It calls the service layer in-process**, not its own HTTP API, so it
   keeps the transaction boundaries. **Auth: no new mechanism** — `RequireAuth` as everywhere, the agent sends
-  `Authorization: Bearer kkt_…`, the role is the **token owner's** (`viewer` = read only; `editor`/`admin`/`ai`
+  `Authorization: Bearer kkt_…`, the role is the **token owner's** (`viewer` = read only; `editor`/`admin`/`maintainer`
   = also write). The boundary is **double**: write tools are **not registered at all** for a read-only caller (they
   do not see them in `tools/list` — two servers are built and `getServer` picks by principal) **and** every write
   handler re-verifies the role. Tools — reading: `search_photos` (free text + the **search language** +
@@ -980,7 +998,10 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `find_similar_photos`, `list_albums`/`get_album`, `list_labels`/`get_label`,
   `list_subjects`/`get_subject`, `library_stats`; writing: `create_album`, `add_photos_to_album`,
   `remove_photos_from_album`, `create_label`, `attach_label`, `detach_label`, `set_photo_metadata`,
-  `set_photo_rating`, `bulk_edit_photos`. An album's/label's/person's photos are read via `search_photos` with a
+  `set_photo_rating`, `bulk_edit_photos`. **Every tool carries an English `title`** (a client with none renders
+  the raw `snake_case` name) **and annotations**: `readOnlyHint` on the reads, `destructiveHint: false` on
+  `create_album`/`create_label`, `idempotentHint` where a repeated call really is a no-op, and
+  `openWorldHint: false` on all nineteen. An album's/label's/person's photos are read via `search_photos` with a
   scope — it is the same list path, so the other filters and pagination apply too. **The response shape is
   compact**: lists return only `{uid,title,taken_at,media_type,thumb_url}` + `total`/`offset`/
   **`remaining`**, **no tool returns the raw `exif` blob** (the agent's context is the scarce resource).

@@ -7,7 +7,12 @@ to `## Package map` in `CLAUDE.md`.
 <!-- BODY BEGIN -->
 - **Layout:** `cmd/kukatko/` (thin Cobra entrypoint: root + `serve` + `migrate` + `version`),
   `internal/server/` (chi HTTP server, graceful shutdown, `WithTrustedProxies` →
-  `clientip.Middleware` in place of chi's `middleware.RealIP`), `internal/version/`
+  `clientip.Middleware` in place of chi's `middleware.RealIP`; the SPA catch-all
+  `router.NotFound(web.Handler())` is carved out for **`/.well-known`** and **`/.well-known/*`**,
+  which answer a JSON **404** via `handleNotFound` — the application publishes nothing under that
+  prefix (ACME is terminated by the reverse proxy, the PWA manifest is `/manifest.webmanifest`), and
+  a client probing for `oauth-protected-resource` metadata has to get "nothing here" rather than
+  `index.html` with a 200, which it would try to parse as JSON), `internal/version/`
   (ldflags-injectable `Version`/`Commit`), `internal/config/` (typed configuration,
   Viper, `Load()`), `internal/database/` (pgxpool wrapper `DB` with `Ping`/`Close`/`Pool`,
   embedded migration runner `Migrate`, pgvector types registered on every connection,
@@ -34,6 +39,14 @@ to `## Package map` in `CLAUDE.md`.
   `API` = HTTP handlers + RBAC middleware
   `RequireAuth`/`RequireWrite`/`RequireAdmin`/`RequireMaintainer`/`RequireImport` +
   `RegisterRoutes`; sessions and users in migration `0002_auth.sql`.
+  **Every 401 the package writes goes through `writeUnauthorized(w, message)`**, which sets
+  `WWW-Authenticate: `+the exported `auth.Challenge` (`Bearer`) before the usual JSON error body, so
+  no guard or handler can forget the header RFC 9110 requires there. The scheme is `Bearer` and not
+  `Basic` on purpose: `Basic` makes a browser pop its own sign-in dialog over the SPA, which handles
+  its 401s itself. It also matters to a non-browser client — an MCP client that finds no challenge
+  starts guessing OAuth metadata under `/.well-known/…` instead of reporting that it needs a token
+  (see `docs/MCP.md`); `Challenge` is where `resource_metadata="…"`/`scope="…"` would be appended if
+  Kukátko ever grows its own OAuth.
   **`users.subject_uid`** (migration `0060_users_subject.sql`) is the person of the library an account
   belongs to: nullable, **not** unique (several accounts may legitimately be the same person), FK
   `users_subject_uid_fkey` → `subjects(uid)` **ON DELETE SET NULL** (deleting a person never deletes an
@@ -2213,11 +2226,12 @@ to `## Package map` in `CLAUDE.md`.
   `internal/mcpapi/`
   (**MCP server** — a library exposed to an AI agent over the Model Context Protocol at `POST /api/v1/mcp`;
   `NewAPI(Config{Enabled,Photos,Organize,People,Bulk,Similar,Processing,Media,RequireAuth,PageSize,MaxPageSize})`
-  + `RegisterRoutes`. **`Enabled:false` → `RegisterRoutes` registers nothing and the servers aren't even built**
-  (the route doesn't exist, rather than returning a 403 — a 403 would reveal that the endpoint is there; in the full binary the
-  path then falls into the SPA catch-all and returns `index.html`, in tests 404, because their router has no
-  fallback); this is a departure from the local "nil service → 503" idiom and is deliberate, the endpoint is an opt-in attack
-  surface. Transport:
+  + `RegisterRoutes`. **`Enabled:false` → the servers aren't built and the path answers a bare JSON 404**
+  (`handleDisabled`), not a 403 — the caller learns the feature is absent, not that it exists and is being
+  withheld. The 404 is mounted rather than left to the router precisely so the path does **not** fall into the
+  full binary's SPA catch-all, which used to hand an MCP client `index.html` with a 200 for it to parse as
+  JSON-RPC. This is a departure from the local "nil service → 503" idiom and is deliberate, the endpoint is an
+  opt-in attack surface. Transport:
   `github.com/modelcontextprotocol/go-sdk` (pure Go, keeps `CGO_ENABLED=0`), `NewStreamableHTTPHandler`
   with `Stateless:true` (each POST standalone → no session state **and** the request context reaches the
   tool handlers), `JSONResponse:true` (tools don't stream) and `DisableLocalhostProtection:true`
@@ -2228,7 +2242,15 @@ to `## Package map` in `CLAUDE.md`.
   → a viewer doesn't even see the write tools in `tools/list`; **and** every write handler calls `writerFromContext`
   (registration = UX, the check = the security boundary). The `withCaller` middleware assembles `caller{user, meta}`
   (`audit.FromRequest`) into the context, because a tool handler sees only `ctx`, not `*http.Request` — without a
-  principal **fail-closed 401**. The tools (`tools_search.go` / `tools_collections.go` / `tools_write.go` /
+  principal **fail-closed 401** (carrying `auth.Challenge` like every other 401 under `/api/v1`).
+  **Every tool carries a `Title` and annotations** (`annotations.go`): `readAnnotations` (readOnly),
+  `additiveAnnotations` (`destructiveHint:false` — `create_album`/`create_label` only add a row, and MCP's
+  default of `true` makes a client ask a human to approve "make an empty album"), `idempotentAnnotations`
+  and the plain `writeAnnotations` for `bulk_edit_photos`, which removes as readily as it adds and whose
+  repetition is **not** a no-op. All four pin `openWorldHint:false`: the library is a closed world, and MCP
+  defaults that hint to `true`. The title is English and not translated — the server has no idea what
+  language the agent's human speaks — and without one a client renders the raw `snake_case` name.
+  The tools (`tools_search.go` / `tools_collections.go` / `tools_write.go` /
   `tools_bulk.go`): reads `search_photos` (`query.Parse` → `ListParams.QueryFilters` + `RatedBy` =
   the caller, so `favorite:`/`rating:`/`flag:` mean theirs; free text → `FullText` and the **ranked path**
   `Store.Search`, only when no explicit `sort` came, otherwise `Store.List`), `get_photo`,

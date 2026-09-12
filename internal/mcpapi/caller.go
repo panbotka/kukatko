@@ -57,6 +57,10 @@ func (a *API) withCaller(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		user, ok := auth.UserFromContext(r.Context())
 		if !ok {
+			// The challenge belongs on any 401 an MCP client can meet, including this
+			// unreachable one: a client that finds it missing starts guessing OAuth
+			// metadata instead of reporting that it needs a token.
+			w.Header().Set("WWW-Authenticate", auth.Challenge)
 			writeError(w, http.StatusUnauthorized, "authentication required")
 			return
 		}

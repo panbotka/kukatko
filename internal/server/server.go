@@ -153,7 +153,25 @@ func (s *Server) routes() {
 			}
 		})
 	}
+	// /.well-known/ is the internet's registry of machine-readable metadata, and a
+	// client that asks for a document there expects a plain 404 when the server has
+	// none. Kukátko publishes nothing under the prefix — ACME is terminated by the
+	// reverse proxy, and the PWA manifest lives at /manifest.webmanifest — so every
+	// path below it is answered here rather than falling into the SPA. Without this
+	// an MCP client probing /.well-known/oauth-protected-resource/... gets 200 and
+	// index.html, and fails parsing HTML as JSON instead of concluding that this
+	// server simply has no OAuth (see docs/MCP.md).
+	s.router.Handle("/.well-known", http.HandlerFunc(handleNotFound))
+	s.router.Handle("/.well-known/*", http.HandlerFunc(handleNotFound))
 	s.router.NotFound(web.Handler().ServeHTTP)
+}
+
+// handleNotFound answers 404 with a JSON body, for the paths that must not be
+// swallowed by the SPA fallback. The body matters less than the status and the
+// content type: the caller is a machine that has to tell "nothing here" from
+// "here is a web page".
+func handleNotFound(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusNotFound, errorResponse{Error: "not found"})
 }
 
 // Run starts the HTTP server and blocks until ctx is canceled (for example on
@@ -189,6 +207,11 @@ func (s *Server) shutdown() error {
 		return fmt.Errorf("graceful shutdown: %w", err)
 	}
 	return nil
+}
+
+// errorResponse is the JSON body returned for error responses.
+type errorResponse struct {
+	Error string `json:"error"`
 }
 
 // healthResponse is the JSON body returned by the health-check endpoint.

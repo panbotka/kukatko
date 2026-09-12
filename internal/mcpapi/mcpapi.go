@@ -233,13 +233,24 @@ func (a *API) buildServer(canWrite bool) *mcp.Server {
 //
 //	POST /mcp  RequireAuth  Model Context Protocol (Streamable HTTP, stateless)
 //
-// When the server is disabled nothing is mounted: the path falls through to the
-// SPA handler like any other unknown route, rather than existing and refusing.
+// When the server is disabled the path answers a bare 404 instead. Nothing of
+// the MCP server is built or reachable — but the client is told "this server
+// does not have that" in the one way every HTTP client understands, rather than
+// falling into the SPA fallback and being handed 200 and index.html, which it
+// would try to parse as JSON-RPC.
 func (a *API) RegisterRoutes(r chi.Router) {
 	if !a.enabled {
+		r.Handle("/mcp", http.HandlerFunc(handleDisabled))
 		return
 	}
 	r.With(a.requireAuth, a.withCaller).Handle("/mcp", a.handler)
+}
+
+// handleDisabled answers the 404 of a server whose MCP endpoint is switched off.
+// It is deliberately not a 403: the caller learns that the feature is absent,
+// not that it exists and is being withheld.
+func handleDisabled(w http.ResponseWriter, _ *http.Request) {
+	writeError(w, http.StatusNotFound, "mcp is not enabled")
 }
 
 // positiveOr returns v when it is positive, and fallback otherwise, so a

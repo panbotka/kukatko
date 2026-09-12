@@ -58,7 +58,7 @@ func (a *API) RequireAuthOrDownloadToken(next http.Handler) http.Handler {
 		}
 		if err != nil {
 			a.clearExpiredCookie(w, err)
-			writeError(w, http.StatusUnauthorized, "authentication required")
+			writeUnauthorized(w, "authentication required")
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(withPrincipal(r.Context(), p)))
@@ -89,7 +89,7 @@ func (a *API) requireRole(req requirement, next http.Handler) http.Handler {
 		p, err := a.authenticateRequest(r)
 		if err != nil {
 			a.clearExpiredCookie(w, err)
-			writeError(w, http.StatusUnauthorized, "authentication required")
+			writeUnauthorized(w, "authentication required")
 			return
 		}
 		if !authorize(p.user.Role, req) {

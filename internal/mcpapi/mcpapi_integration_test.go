@@ -167,15 +167,32 @@ type callResult struct {
 	IsError           bool            `json:"isError"`
 }
 
-// toolInfo is one entry of a tools/list reply.
+// toolInfo is one entry of a tools/list reply. The annotations are decoded with
+// pointer bools so the test can tell "the hint is absent" (the client falls back
+// to the MCP default) from "the hint says false".
 type toolInfo struct {
 	Name        string `json:"name"`
+	Title       string `json:"title"`
 	Description string `json:"description"`
+	Annotations struct {
+		ReadOnlyHint    bool  `json:"readOnlyHint"`
+		DestructiveHint *bool `json:"destructiveHint"`
+		IdempotentHint  bool  `json:"idempotentHint"`
+		OpenWorldHint   *bool `json:"openWorldHint"`
+	} `json:"annotations"`
 }
 
 // rpc issues one JSON-RPC request to the MCP endpoint with the given bearer
 // token, returning the HTTP status and the decoded reply.
 func (e *env) rpc(t *testing.T, bearer, method string, params any) (int, rpcResponse) {
+	t.Helper()
+	status, _, out := e.rpcWithHeader(t, bearer, method, params)
+	return status, out
+}
+
+// rpcWithHeader is rpc plus the response headers, for the assertions that are
+// about the HTTP envelope rather than the JSON-RPC body.
+func (e *env) rpcWithHeader(t *testing.T, bearer, method string, params any) (int, http.Header, rpcResponse) {
 	t.Helper()
 	body := map[string]any{"jsonrpc": "2.0", "id": 1, "method": method}
 	if params != nil {
@@ -210,7 +227,7 @@ func (e *env) rpc(t *testing.T, bearer, method string, params any) (int, rpcResp
 			t.Fatalf("decode %s reply: %v (body %s)", method, err, raw)
 		}
 	}
-	return resp.StatusCode, out
+	return resp.StatusCode, resp.Header, out
 }
 
 // listTools returns the tool names the given token can see.
@@ -283,19 +300,38 @@ func (r callResult) decode(t *testing.T, dst any) {
 	}
 }
 
-// TestMCPDisabledRouteIsNotMounted pins the config switch end to end: with the
-// key off the path does not exist, rather than existing and refusing.
-//
-// The 404 is chi's, because this router mounts no SPA fallback; the full server
-// does, so there the same path falls through to index.html like any unknown URL.
-// Either way nothing of the MCP server is on the router — which is the claim.
-func TestMCPDisabledRouteIsNotMounted(t *testing.T) {
+// TestMCPDisabledAnswers404 pins the config switch end to end: with the key off
+// the endpoint is absent, and says so with a 404 rather than refusing with a 403
+// or — in the full binary, where an unknown path falls into the SPA fallback —
+// handing the client 200 and index.html to parse as JSON-RPC.
+func TestMCPDisabledAnswers404(t *testing.T) {
 	e := newEnvWith(t, false)
 	bearer := e.token(t, "agent-off", auth.RoleMaintainer)
 
-	status, _ := e.rpc(t, bearer, "tools/list", nil)
+	status, header, _ := e.rpcWithHeader(t, bearer, "tools/list", nil)
 	if status != http.StatusNotFound {
-		t.Fatalf("status = %d with mcp disabled, want 404 (the route must not be mounted at all)", status)
+		t.Fatalf("status = %d with mcp disabled, want 404 (the endpoint must report itself absent)", status)
+	}
+	if ct := header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		t.Errorf("Content-Type = %q, want application/json — a machine must not get a web page here", ct)
+	}
+}
+
+// TestMCPUnauthenticatedCarriesTheBearerChallenge pins the header an MCP client
+// reads first. Without it Claude falls back to guessing OAuth metadata under
+// /.well-known/…; with it the client reports plainly that it needs a token. The
+// scheme must stay Bearer: Basic would make a browser pop its native sign-in
+// dialog over the SPA.
+func TestMCPUnauthenticatedCarriesTheBearerChallenge(t *testing.T) {
+	e := newEnv(t)
+
+	status, header, _ := e.rpcWithHeader(t, "", "tools/list", nil)
+	if status != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", status)
+	}
+	challenge := header.Get("WWW-Authenticate")
+	if !strings.HasPrefix(challenge, "Bearer") {
+		t.Errorf("WWW-Authenticate = %q, want it to start with Bearer", challenge)
 	}
 }
 
@@ -891,5 +927,53 @@ func TestMCPToolDescriptionsAreWritten(t *testing.T) {
 			t.Errorf("tool %s has a %d-character description; describe what it does, "+
 				"what the arguments mean and what comes back", name, len(tool.Description))
 		}
+	}
+}
+
+// TestMCPToolMetadataIsComplete pins the per-tool metadata a client renders and
+// reasons about. A tool without a title shows up in a chat UI as raw
+// snake_case; a write tool that claims readOnlyHint would let a client skip the
+// confirmation it owes its human; and the two creates say destructiveHint false
+// so nobody is asked to approve "make an empty album". openWorldHint is false
+// everywhere — the library is a closed world.
+func TestMCPToolMetadataIsComplete(t *testing.T) {
+	e := newEnv(t)
+	tools := e.listTools(t, e.token(t, "agent-meta", auth.RoleMaintainer))
+
+	writes := map[string]bool{
+		"create_album": true, "add_photos_to_album": true, "remove_photos_from_album": true,
+		"create_label": true, "attach_label": true, "detach_label": true,
+		"set_photo_metadata": true, "set_photo_rating": true, "bulk_edit_photos": true,
+	}
+	additive := map[string]bool{"create_album": true, "create_label": true}
+
+	for name, tool := range tools {
+		if strings.TrimSpace(tool.Title) == "" {
+			t.Errorf("tool %s has no title; a client would render the bare name", name)
+		}
+		if tool.Annotations.OpenWorldHint == nil || *tool.Annotations.OpenWorldHint {
+			t.Errorf("tool %s does not state openWorldHint: false", name)
+		}
+		if writes[name] && tool.Annotations.ReadOnlyHint {
+			t.Errorf("write tool %s claims readOnlyHint", name)
+		}
+		if !writes[name] && !tool.Annotations.ReadOnlyHint {
+			t.Errorf("read tool %s does not state readOnlyHint", name)
+		}
+		if additive[name] {
+			if tool.Annotations.DestructiveHint == nil || *tool.Annotations.DestructiveHint {
+				t.Errorf("tool %s must state destructiveHint: false — it only adds a record", name)
+			}
+		}
+	}
+	for name := range writes {
+		if _, ok := tools[name]; !ok {
+			t.Errorf("write tool %s is missing from tools/list", name)
+		}
+	}
+	// bulk_edit_photos removes as readily as it adds and re-running it applies to
+	// whatever the photos look like by then, so it must not claim idempotence.
+	if tools["bulk_edit_photos"].Annotations.IdempotentHint {
+		t.Error("bulk_edit_photos claims idempotentHint; a repeated run is not a no-op")
 	}
 }

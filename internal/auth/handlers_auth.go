@@ -107,7 +107,7 @@ func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 func writeLoginError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrInvalidCredentials):
-		writeError(w, http.StatusUnauthorized, "invalid username or password")
+		writeUnauthorized(w, "invalid username or password")
 	case errors.Is(err, ErrNotApproved):
 		writeError(w, http.StatusForbidden, ErrNotApproved.Error())
 	default:
@@ -158,7 +158,7 @@ func (a *API) handleLogout(w http.ResponseWriter, r *http.Request) {
 func (a *API) handleMe(w http.ResponseWriter, r *http.Request) {
 	p, ok := principalFromContext(r.Context())
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "authentication required")
+		writeUnauthorized(w, "authentication required")
 		return
 	}
 	writeJSON(w, http.StatusOK, loginResponse{User: p.user, DownloadToken: p.session.DownloadToken})
@@ -180,7 +180,7 @@ func (a *API) handleMe(w http.ResponseWriter, r *http.Request) {
 func (a *API) handleSubject(w http.ResponseWriter, r *http.Request) {
 	p, ok := principalFromContext(r.Context())
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "authentication required")
+		writeUnauthorized(w, "authentication required")
 		return
 	}
 	var req subjectRequest
@@ -214,7 +214,7 @@ func (a *API) handleSubject(w http.ResponseWriter, r *http.Request) {
 func (a *API) handleWelcomeSeen(w http.ResponseWriter, r *http.Request) {
 	p, ok := principalFromContext(r.Context())
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "authentication required")
+		writeUnauthorized(w, "authentication required")
 		return
 	}
 	user, err := a.svc.MarkWelcomeSeen(r.Context(), p.user.UID)
@@ -234,7 +234,7 @@ func (a *API) handleWelcomeSeen(w http.ResponseWriter, r *http.Request) {
 func (a *API) handlePassword(w http.ResponseWriter, r *http.Request) {
 	p, ok := principalFromContext(r.Context())
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "authentication required")
+		writeUnauthorized(w, "authentication required")
 		return
 	}
 	var req changePasswordRequest
@@ -248,7 +248,7 @@ func (a *API) handlePassword(w http.ResponseWriter, r *http.Request) {
 	case err == nil:
 		w.WriteHeader(http.StatusNoContent)
 	case errors.Is(err, ErrInvalidCredentials):
-		writeError(w, http.StatusUnauthorized, "current password is incorrect")
+		writeUnauthorized(w, "current password is incorrect")
 	case errors.Is(err, ErrPasswordTooShort):
 		writeError(w, http.StatusBadRequest, ErrPasswordTooShort.Error())
 	default:

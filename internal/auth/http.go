@@ -254,3 +254,24 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, errorResponse{Error: message})
 }
+
+// Challenge is the value of the WWW-Authenticate header on every 401 this
+// package writes. RFC 9110 requires the header on a 401, and the scheme is the
+// one credential a non-browser client can actually present here: a `kkt_` API
+// token in `Authorization: Bearer …`. It is deliberately not `Basic`, which
+// would make a browser pop its native sign-in dialog over the SPA.
+//
+// An MCP client reads this header first: without it, Claude falls back to
+// guessing OAuth metadata by probing /.well-known/… (see docs/MCP.md). When
+// Kukátko grows its own OAuth this constant is where `resource_metadata="…"`
+// and `scope="…"` get appended.
+const Challenge = "Bearer"
+
+// writeUnauthorized answers 401 with the Challenge header and message as the
+// error body. Every rejection of a missing, expired or wrong credential — the
+// RBAC guards and the auth handlers alike — goes through it, so no 401 this
+// package writes can forget the header.
+func writeUnauthorized(w http.ResponseWriter, message string) {
+	w.Header().Set("WWW-Authenticate", Challenge)
+	writeError(w, http.StatusUnauthorized, message)
+}

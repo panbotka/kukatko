@@ -48,7 +48,7 @@ func apiTokenCreateLimitKey(userUID, ip string) string {
 func (a *API) handleCreateAPIToken(w http.ResponseWriter, r *http.Request) {
 	p, ok := principalFromContext(r.Context())
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "authentication required")
+		writeUnauthorized(w, "authentication required")
 		return
 	}
 	if !a.limiter.Allow(apiTokenCreateLimitKey(p.user.UID, clientIP(r)), a.now()) {
@@ -80,7 +80,7 @@ func (a *API) handleCreateAPIToken(w http.ResponseWriter, r *http.Request) {
 func (a *API) handleListAPITokens(w http.ResponseWriter, r *http.Request) {
 	p, ok := principalFromContext(r.Context())
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "authentication required")
+		writeUnauthorized(w, "authentication required")
 		return
 	}
 	tokens, err := a.svc.ListAPITokens(r.Context(), p.user.UID)
@@ -99,7 +99,7 @@ func (a *API) handleListAPITokens(w http.ResponseWriter, r *http.Request) {
 func (a *API) handleRevokeAPIToken(w http.ResponseWriter, r *http.Request) {
 	p, ok := principalFromContext(r.Context())
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "authentication required")
+		writeUnauthorized(w, "authentication required")
 		return
 	}
 	id := chi.URLParam(r, "id")

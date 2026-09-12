@@ -135,7 +135,7 @@ func ceremonyID(r *http.Request) string {
 func (a *API) handleBeginPasskeyRegistration(w http.ResponseWriter, r *http.Request) {
 	p, ok := principalFromContext(r.Context())
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "authentication required")
+		writeUnauthorized(w, "authentication required")
 		return
 	}
 	passkeys, ok := a.passkeysOrError(w)
@@ -159,7 +159,7 @@ func (a *API) handleBeginPasskeyRegistration(w http.ResponseWriter, r *http.Requ
 func (a *API) handleFinishPasskeyRegistration(w http.ResponseWriter, r *http.Request) {
 	p, ok := principalFromContext(r.Context())
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "authentication required")
+		writeUnauthorized(w, "authentication required")
 		return
 	}
 	passkeys, ok := a.passkeysOrError(w)
@@ -259,7 +259,7 @@ func (a *API) handleFinishPasskeyLogin(w http.ResponseWriter, r *http.Request) {
 func writePasskeyLoginError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrPasskeyRejected), errors.Is(err, ErrPasskeyCeremony):
-		writeError(w, http.StatusUnauthorized, ErrPasskeyRejected.Error())
+		writeUnauthorized(w, ErrPasskeyRejected.Error())
 	case errors.Is(err, ErrNotApproved):
 		writeError(w, http.StatusForbidden, ErrNotApproved.Error())
 	default:
@@ -273,7 +273,7 @@ func writePasskeyLoginError(w http.ResponseWriter, err error) {
 func (a *API) handleListPasskeys(w http.ResponseWriter, r *http.Request) {
 	p, ok := principalFromContext(r.Context())
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "authentication required")
+		writeUnauthorized(w, "authentication required")
 		return
 	}
 	passkeys, ok := a.passkeysOrError(w)
@@ -300,7 +300,7 @@ func (a *API) handleListPasskeys(w http.ResponseWriter, r *http.Request) {
 func (a *API) handleDeletePasskey(w http.ResponseWriter, r *http.Request) {
 	p, ok := principalFromContext(r.Context())
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "authentication required")
+		writeUnauthorized(w, "authentication required")
 		return
 	}
 	passkeys, ok := a.passkeysOrError(w)
