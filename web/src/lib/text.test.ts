@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { foldedEquals, foldedIncludes, foldText } from './text'
+import { foldedEquals, foldedIncludes, foldText, truncateText } from './text'
 
 describe('foldText', () => {
   it('lower-cases, trims and strips diacritics', () => {
@@ -32,5 +32,31 @@ describe('foldedEquals', () => {
   it('keeps distinct names apart', () => {
     expect(foldedEquals('sunset', 'sun')).toBe(false)
     expect(foldedEquals('Dovolená', '')).toBe(false)
+  })
+})
+
+describe('truncateText', () => {
+  it('leaves a string that already fits alone', () => {
+    expect(truncateText('Marie Nečasová', 20)).toBe('Marie Nečasová')
+    expect(truncateText('Marie', 5)).toBe('Marie')
+  })
+
+  it('cuts to the limit and marks the cut', () => {
+    expect(truncateText('Bohumil Nečas st.st.', 12)).toBe('Bohumil Neč…')
+  })
+
+  it('does not leave a space hanging before the ellipsis', () => {
+    expect(truncateText('Marie Nečasová', 7)).toBe('Marie…')
+  })
+
+  it('counts letters, not code units', () => {
+    // Written with a combining caron: six code units, five letters to a reader.
+    const decomposed = 'Z\u030Eofie'
+    expect(decomposed).toHaveLength(6)
+    expect(truncateText(decomposed, 5)).toBe(decomposed)
+  })
+
+  it('has nothing to say in no space at all', () => {
+    expect(truncateText('Marie', 0)).toBe('')
   })
 })

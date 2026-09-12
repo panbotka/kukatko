@@ -19,6 +19,7 @@ import { DuplicateMarkersPage } from './pages/DuplicateMarkersPage'
 import { DuplicatesPage } from './pages/DuplicatesPage'
 import { ExpandPage } from './pages/ExpandPage'
 import { FacesPage } from './pages/FacesPage'
+import { FamilyTreePage } from './pages/FamilyTreePage'
 import { FavoritesPage } from './pages/FavoritesPage'
 import { HelpPage } from './pages/HelpPage'
 import { ImportPage } from './pages/ImportPage'
@@ -110,6 +111,10 @@ export function AppRoutes() {
           <Route path="/places" element={<PlacesPage />} />
           <Route path="/people" element={<PeoplePage />} />
           <Route path="/people/:uid" element={<SubjectPage />} />
+          {/* The whole family of one person, drawn. Read-only like the person's
+              own page — the tree is filled in from the strip on that page — so
+              any signed-in role may look at it. */}
+          <Route path="/people/:uid/tree" element={<FamilyTreePage />} />
           {/* The sorting competition standings: read-only aggregate counts, so
               any signed-in role may watch the game — no write gate. */}
           <Route path="/leaderboard" element={<LeaderboardPage />} />

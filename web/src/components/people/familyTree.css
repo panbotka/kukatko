@@ -1,0 +1,192 @@
+/*
+ * The family tree's SVG stage.
+ *
+ * Everything inside the `<g>` is drawn in *layout units* (see
+ * `lib/familyLayout.ts`), which the stage's pan/zoom transform turns into
+ * pixels. So the font sizes here are layout units too, and they scale with the
+ * drawing rather than staying stubbornly 13 px while the tree shrinks around
+ * them — which is exactly what a reader zooming out to see four generations at
+ * once expects to happen.
+ */
+
+.kk-tree-stage {
+  position: relative;
+  overflow: hidden;
+  background-color: var(--kk-surface-sunken);
+  border: 1px solid var(--kk-surface-border);
+  border-radius: var(--kk-radius-md);
+  /* Tall enough for three generations on a laptop, capped so the drawing does
+     not outgrow a large monitor, and never taller than the viewport it is
+     panned inside. */
+  height: clamp(24rem, 68vh, 56rem);
+  touch-action: none;
+}
+
+.kk-tree-stage__svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+}
+
+.kk-tree-stage__svg:active {
+  cursor: grabbing;
+}
+
+/* The zoom/fit controls float over the top-right corner of the stage, where
+   they cover the drawing's margin rather than the first generation. */
+.kk-tree-stage__controls {
+  position: absolute;
+  top: var(--kk-space-2);
+  right: var(--kk-space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--kk-space-1);
+}
+
+/* ---- Lines ------------------------------------------------------------- */
+
+.kk-tree-edges path {
+  fill: none;
+  stroke: var(--kk-surface-border);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+/* ---- A person's card --------------------------------------------------- */
+
+.kk-tree-person {
+  cursor: pointer;
+  /* The card is a link, and the app underlines links. Here the underline would
+     run under a name and a pair of life years inside a box that is already
+     unmistakably clickable. */
+  text-decoration: none;
+}
+
+.kk-tree-person__plate {
+  fill: var(--kk-surface-raised);
+  stroke: var(--kk-surface-border);
+  stroke-width: 1;
+  transition: fill 120ms ease-out;
+}
+
+.kk-tree-person:hover .kk-tree-person__plate,
+.kk-tree-person:focus-visible .kk-tree-person__plate {
+  fill: var(--kk-surface-overlay);
+  stroke: var(--kk-accent);
+}
+
+/* The person the tree is rooted at, so a reader who has re-rooted three times
+   can still find the middle of the drawing. */
+.kk-tree-person__plate--root {
+  stroke: var(--kk-accent);
+  stroke-width: 2;
+}
+
+/* Somebody already drawn in an earlier box — the partner two marriages share.
+   Dashed, so the repeat reads as a cross-reference and not as a second person
+   of the same name, which in this library is a real possibility. */
+.kk-tree-person__plate--repeat {
+  stroke-dasharray: 4 3;
+}
+
+.kk-tree-person__name {
+  fill: var(--kk-text);
+  font-size: 13px;
+  dominant-baseline: middle;
+}
+
+.kk-tree-person__years {
+  fill: var(--kk-text-muted);
+  font-size: 11px;
+  dominant-baseline: middle;
+}
+
+.kk-tree-person__letter {
+  fill: #fff;
+  font-size: 17px;
+  font-weight: 600;
+  text-anchor: middle;
+  dominant-baseline: central;
+  user-select: none;
+}
+
+/* The eight avatar tones of `tokens.css`, as fills rather than backgrounds:
+   one person keeps one colour wherever they are drawn in the app. */
+.kk-tree-person__initial--tone-0 {
+  fill: var(--kk-avatar-0-bg);
+}
+
+.kk-tree-person__initial--tone-1 {
+  fill: var(--kk-avatar-1-bg);
+}
+
+.kk-tree-person__initial--tone-2 {
+  fill: var(--kk-avatar-2-bg);
+}
+
+.kk-tree-person__initial--tone-3 {
+  fill: var(--kk-avatar-3-bg);
+}
+
+.kk-tree-person__initial--tone-4 {
+  fill: var(--kk-avatar-4-bg);
+}
+
+.kk-tree-person__initial--tone-5 {
+  fill: var(--kk-avatar-5-bg);
+}
+
+.kk-tree-person__initial--tone-6 {
+  fill: var(--kk-avatar-6-bg);
+}
+
+.kk-tree-person__initial--tone-7 {
+  fill: var(--kk-avatar-7-bg);
+}
+
+/* ---- The couple's box -------------------------------------------------- */
+
+/* The bar joining two partners: the one mark that says the box is a couple and
+   not two people who happen to be side by side. */
+.kk-tree-box__union {
+  stroke: var(--kk-text-muted);
+  stroke-width: 2;
+}
+
+/* ---- The fold handle --------------------------------------------------- */
+
+.kk-tree-fold {
+  cursor: pointer;
+}
+
+.kk-tree-fold__dot {
+  fill: var(--kk-surface-1);
+  stroke: var(--kk-surface-border);
+  stroke-width: 1.5;
+}
+
+.kk-tree-fold:hover .kk-tree-fold__dot,
+.kk-tree-fold:focus-visible .kk-tree-fold__dot {
+  fill: var(--kk-accent-solid);
+  stroke: var(--kk-accent);
+}
+
+.kk-tree-fold__sign {
+  fill: var(--kk-text);
+  font-size: 15px;
+  font-weight: 600;
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* How many people the fold is hiding, written under the closed handle so a
+   reader can tell a branch worth opening from an empty one. */
+.kk-tree-fold__count {
+  fill: var(--kk-text-muted);
+  font-size: 12px;
+  text-anchor: middle;
+  dominant-baseline: central;
+}

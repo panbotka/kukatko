@@ -1882,7 +1882,29 @@
       "invalid": "Tenhle vztah nedává smysl.",
       "failed": "Vztah se nepodařilo zapsat.",
       "close": "Hotovo"
-    }
+    },
+    "tree": "Zobrazit rodokmen"
+  },
+  "familyTree": {
+    "title": "Rodokmen — {{name}}",
+    "back": "Zpět na osobu",
+    "loading": "Načítám rodokmen…",
+    "error": "Rodokmen se nepodařilo načíst.",
+    "empty": "Zatím tu není zapsaná žádná rodina.",
+    "emptyHint": "Vztahy se zapisují na stránce osoby, v sekci Rodina.",
+    "summary": "{{people}} osob · {{generations}} generací",
+    "openRoot": "Otevřít osobu",
+    "hint": "Táhnutím se strom posouvá, kolečkem nebo tlačítky přibližuje. Kliknutí na osobu překreslí rodokmen od ní.",
+    "reroot": "Překreslit rodokmen od osoby {{name}}",
+    "openPerson": "Otevřít osobu {{name}}",
+    "repeatHint": "{{name}} — zapsán/a i v jiné rodině",
+    "collapse": "Sbalit větev pod osobou {{name}}",
+    "expand": "Rozbalit větev pod osobou {{name}}",
+    "expandCount": "Rozbalit větev pod osobou {{name}} — skryto {{hidden}} lidí",
+    "zoomIn": "Přiblížit",
+    "zoomOut": "Oddálit",
+    "fit": "Zobrazit celý rodokmen",
+    "centreRoot": "Vrátit se k výchozí osobě"
   },
   "clusters": {
     "title": "Skupiny obličejů",

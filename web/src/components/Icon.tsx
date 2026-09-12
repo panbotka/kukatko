@@ -33,6 +33,7 @@ export type IconName =
   | 'cloud-arrow-up'
   | 'collection'
   | 'compass'
+  | 'crosshair'
   | 'dash-lg'
   | 'exclamation-triangle'
   | 'eye'
@@ -95,6 +96,8 @@ export type IconName =
   | 'wifi-off'
   | 'wrench-adjustable'
   | 'x-lg'
+  | 'zoom-in'
+  | 'zoom-out'
 
 /**
  * A decorative bootstrap-icons glyph. Icons only ever accompany a visible text

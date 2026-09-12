@@ -180,7 +180,17 @@ export function FamilyStrip({ subjectUid, subjectName, canWrite }: FamilyStripPr
 
   return (
     <section className="mb-4">
-      <h2 className="kk-section-title">{t('family.title')}</h2>
+      <div className="d-flex flex-wrap align-items-baseline gap-3">
+        <h2 className="kk-section-title">{t('family.title')}</h2>
+        {/* The way out of the four rows and into the whole family. It is offered
+            only once anything is recorded: a tree of one person is a page that
+            can say nothing, and the rows above are where it gets filled in. */}
+        {!empty && (
+          <Link to={`/people/${subjectUid}/tree`} className="kk-text-caption">
+            {t('family.tree')}
+          </Link>
+        )}
+      </div>
       <FamilyRow
         label={t('family.rows.parents')}
         people={relations.parents}

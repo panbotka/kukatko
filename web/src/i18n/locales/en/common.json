@@ -1822,7 +1822,29 @@
       "invalid": "This relation does not make sense.",
       "failed": "The relation could not be recorded.",
       "close": "Done"
-    }
+    },
+    "tree": "Show the family tree"
+  },
+  "familyTree": {
+    "title": "Family tree — {{name}}",
+    "back": "Back to the person",
+    "loading": "Loading the family tree…",
+    "error": "The family tree could not be loaded.",
+    "empty": "No family has been recorded here yet.",
+    "emptyHint": "Relations are recorded on the person's page, in the Family section.",
+    "summary": "{{people}} people · {{generations}} generations",
+    "openRoot": "Open the person",
+    "hint": "Drag to pan, scroll or use the buttons to zoom. Clicking a person redraws the tree from them.",
+    "reroot": "Redraw the tree from {{name}}",
+    "openPerson": "Open {{name}}",
+    "repeatHint": "{{name}} — also recorded in another family",
+    "collapse": "Collapse the branch under {{name}}",
+    "expand": "Expand the branch under {{name}}",
+    "expandCount": "Expand the branch under {{name}} — {{hidden}} people hidden",
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out",
+    "fit": "Fit the whole tree",
+    "centreRoot": "Back to the person it is rooted at"
   },
   "clusters": {
     "title": "Face groups",

@@ -216,3 +216,68 @@ export async function addRelation(
     signal,
   )
 }
+
+/** Which way a tree is walked from its root (`family.Direction`). */
+export type TreeDirection = 'descendants' | 'ancestors'
+
+/**
+ * One person in a walked tree (`family.Member`): the relative plus where the
+ * walk found them.
+ */
+export interface TreeMember extends Relative {
+  /**
+   * Generations between this person and the root, which is itself at 0. When
+   * two paths reach the same person — which happens as soon as cousins marry —
+   * the shortest one wins.
+   */
+  depth: number
+  /**
+   * True for somebody who is in the set only because they are partnered with a
+   * descendant: the "plus their partners" half of what a family means here.
+   */
+  partner: boolean
+}
+
+/**
+ * One family box of a drawn tree (`family.TreeFamily`): the family plus the
+ * children of it the walk actually reached. A child outside the walked set is
+ * left out on purpose, so the drawing is never handed an edge to a person it was
+ * given no node for.
+ */
+export interface TreeFamily extends Family {
+  child_uids: string[]
+}
+
+/**
+ * The layout-ready payload of one family tree (`family.Tree`). The layout itself
+ * is a pure function in `lib/familyLayout`; this is only its input.
+ */
+export interface FamilyTree {
+  root: Relative
+  direction: TreeDirection
+  members: TreeMember[]
+  families: TreeFamily[]
+}
+
+/**
+ * Reads the tree walked from a subject via `GET /subjects/{uid}/tree`.
+ *
+ * `generations` is optional and bounded by the backend: omitted means the whole
+ * walk, which for a village archive is a page and not a denial of service. An
+ * unknown subject is an {@link ApiError} 404.
+ */
+export async function fetchTree(
+  subjectUid: string,
+  direction: TreeDirection,
+  generations?: number,
+  signal?: AbortSignal,
+): Promise<FamilyTree> {
+  const params = new URLSearchParams({ direction })
+  if (generations !== undefined) {
+    params.set('generations', String(generations))
+  }
+  return getJSON<FamilyTree>(
+    `/subjects/${encodeURIComponent(subjectUid)}/tree?${params.toString()}`,
+    signal,
+  )
+}

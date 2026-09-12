@@ -122,6 +122,16 @@ photo-book tool (deliberately out of scope), or a product with support and a rel
   year is all anybody usually knows — and their page becomes a timeline: the span beside their name
   ("1923–1998"), roughly how old they were in every dated photograph, and a jump straight to the
   decade you meant.
+- **Who belongs to whom is written down, and drawn.** A person's page carries their immediate family —
+  parents, siblings, partner, children — as a row of face chips, and an editor fills it in from there:
+  pick an existing person or type a name nobody has recorded yet and the great-grandmother is created
+  and related in one go, which is the difference between a tree that gets filled in over a few evenings
+  and one that stays empty. The model is the one genealogy settled on decades ago — the **family** is
+  the node, a couple (or a lone parent) with their children — so siblings, half-siblings and a second
+  marriage are all *derived* and cannot contradict each other. **Zobrazit rodokmen** opens the whole
+  thing as a drawing: generations down the page, a couple in one box, branches that fold away, pan and
+  zoom, and a click on anybody redraws the tree from them. The person it is drawn from and the folded
+  branches are both in the address, so Back undoes either and a link carries the view.
 - A catalogue of people goes wrong in exactly two ways and both have a repair: **merge** the same
   person filed twice into one record, and **move** the photos that turn out to be somebody else to
   whoever they really are.
