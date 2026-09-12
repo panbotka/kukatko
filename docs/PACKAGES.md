@@ -680,12 +680,28 @@ to `## Package map` in `CLAUDE.md`.
   `internal/mediaurl/`
   (mints client media addresses and stamps them onto photo payloads; the only decision is made by the storage
   backend via `URL`. `NewBuilder(store)` → `Builder` with `Thumb(uid,fileHash,size)` /
-  `Download(uid,filePath)` (the client address: the signed Worker URL, otherwise a fallback to the own
+  `Download(uid,filePath,fileName)` (the client address: the signed Worker URL, otherwise a fallback to the own
   route `/api/v1/photos/...`), `Object(relPath)` / `ThumbObject(fileHash,size)` (the **raw** backend
-  response — an empty string = "stream it yourself", non-empty = "redirect there"; the media routes use this)
+  response — an empty string = "stream it yourself", non-empty = "redirect there"; the media routes use this),
+  `DownloadObject(filePath,fileName)` (the same raw answer for an **original**, decorated to download)
   and `Decorate(list)` / `DecorateOne(&photo)`, which fill `Photo.ThumbURL`+`Photo.PreviewURL`+`Photo.DownloadURL`.
   `Download` forces `?original=true` on the fallback so both branches mean the same thing (the stored original,
-  never the rendering of a non-destructive edit). **A nil `*Builder` is valid** and behaves like a backend that
+  never the rendering of a non-destructive edit).
+  **The signed download asks the edge for an attachment** (`downloadParam` = `dl`, valued with
+  `photos.file_name`, which the object key need not equal — the store suffixes a colliding name on ingest).
+  It must: a signed URL lives on the media domain, which is **another origin**, and a browser ignores
+  `<a download>` off-origin — so without the parameter "download the original" merely opened the photo in a
+  tab (and a video stand-in's "download the video" handed back a player that would not play it). The Worker
+  answers `Content-Disposition: attachment; filename=…` for it (`infra`: `workers/kukatko-media/index.js`,
+  which sanitizes the name and adds RFC 5987 `filename*` for a non-ASCII one). The parameter is
+  **not covered by the signature** on purpose — it grants nothing the signature does not already grant, it
+  only decides what the browser does with bytes the holder may fetch anyway — so the two repositories deploy
+  independently; a URL that will not parse is returned untouched (`withDownloadParam`), since a download
+  that opens in a tab beats a mangled URL the edge refuses. It rides on the **download URL alone**:
+  `Object`/`Thumb`/`ThumbObject` mint the very same objects as inline `<img>`/`<video>` sources out of one
+  shared edge cache entry, so downloading must stay a property of the URL, never of the object.
+  `photoapi.serveOriginal` redirects through `DownloadObject` for the same reason — the route promises an
+  attachment, and a `302` must not lose it. **A nil `*Builder` is valid** and behaves like a backend that
   publishes nothing → an API built without storage (test) still returns a working payload. `uid`/`size` are
   percent-encoded into the route. The payload carries **two** thumbnails, because the client picks between them
   by shape: `thumb.GridSize` (`tile_500`, the square crop a medallion or a card draws) and `thumb.PreviewSize`

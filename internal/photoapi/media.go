@@ -157,8 +157,13 @@ func (a *API) handleDownload(w http.ResponseWriter, r *http.Request) {
 // error. When the storage backend publishes its objects it redirects to the
 // original's signed URL instead, and the bytes never pass through here — unless
 // the caller asked for ?proxy=true (see wantsProxy), which streams them anyway.
+//
+// Either way the answer is an attachment under the original's own file name. On
+// the redirect the ask travels on the signed URL (mediaurl's DownloadObject),
+// because the browser, having landed on another origin, would otherwise just
+// display the photo — this route promises a download, and a 302 must not lose it.
 func (a *API) serveOriginal(w http.ResponseWriter, r *http.Request, photo photos.Photo) {
-	if signed := a.media.Object(photo.FilePath); signed != "" && !wantsProxy(r) {
+	if signed := a.media.DownloadObject(photo.FilePath, photo.FileName); signed != "" && !wantsProxy(r) {
 		redirectToMedia(w, r, signed)
 		return
 	}

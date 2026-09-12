@@ -557,7 +557,8 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   **aspect-preserving** rendition `thumb.PreviewSize` = `fit_720`, what the justified photo wall draws — a
   tile there is the shape of its photograph, so a centred square crop would both cut its ends off and, spread
   across that width, go soft) and `download_url` (the original, `?original=true` semantics — never
-  rendering an edit). The preview is deliberately an **existing** rung: every photo already has that
+  rendering an edit; on a publishing backend it also carries `dl=` — see the download routes below). The
+  preview is deliberately an **existing** rung: every photo already has that
   thumbnail, so the wall needed no backfill, and a size the cache had never heard of would be a signed URL to
   an object that does not exist. The values are minted by the storage backend via `Storage.URL`: `FS` returns
   empty → fallback to the own routes below, `R2` returns a **short-lived signed URL** (default 1 h) on
@@ -568,7 +569,15 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   (`Cache-Control`/`ETag`/`304`), or — when the backend publishes objects — answer with a **`302` redirect**
   to a signed URL (`Cache-Control: private, no-store`, so the cache does not outlive the signature), unless
   **`?proxy=true`** asks for the streaming branch anyway (see the share manifest below); the routes
-  remain, so old links and bookmarks keep working. The streaming branch of `/thumb/{size}` reads the size
+  remain, so old links and bookmarks keep working. **A redirected `/download` is still a download**: the
+  signed URL carries **`dl=<photos.file_name>`**, by which the edge Worker answers
+  `Content-Disposition: attachment` under that name (`infra`: `workers/kukatko-media/index.js`). Without it
+  the click merely *displays* the photo — the media domain is another origin, and a browser ignores
+  `<a download>` off-origin. The parameter is **deliberately unsigned** (it unlocks nothing: whoever holds
+  the signature may already fetch the bytes, `dl` only decides what the browser does with them), so the two
+  repositories need no lockstep deploy; and it is asked for **on the download URL alone** — the same object
+  is fetched inline as an `<img>`/`<video>` source from one shared edge cache entry, so a disposition
+  attached to the *object* would turn every such view into a download. The streaming branch of `/thumb/{size}` reads the size
   through `thumb.OpenOrGenerate` (local cache → the published object → generate), so it also answers on a
   backend that publishes objects but mints no signed URL, where the thumbnail may exist only in the bucket. `GET /photos/{uid}/video` (session/`?t=` token) streams
   video **with HTTP Range** (206 partial, `Accept-Ranges`, seek; a live photo = a motion clip, still → 404)

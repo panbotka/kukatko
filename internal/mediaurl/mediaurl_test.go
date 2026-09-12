@@ -86,8 +86,8 @@ func TestDownload_publishingBackendReturnsObjectURL(t *testing.T) {
 
 	builder := mediaurl.NewBuilder(publishing{prefix: "https://media.example/"})
 
-	got := builder.Download("ph1", "2024/05/photo.jpg")
-	want := "https://media.example/2024/05/photo.jpg?sig=deadbeef"
+	got := builder.Download("ph1", "2024/05/photo.jpg", "photo.jpg")
+	want := "https://media.example/2024/05/photo.jpg?dl=photo.jpg&sig=deadbeef"
 	if got != want {
 		t.Errorf("Download() = %q, want %q", got, want)
 	}
@@ -108,8 +108,9 @@ func TestThumb_filesystemBackendFallsBackToRoute(t *testing.T) {
 	if got, want := builder.Thumb("ph1", testHash, "tile_100"), "/api/v1/photos/ph1/thumb/tile_100"; got != want {
 		t.Errorf("Thumb() = %q, want %q", got, want)
 	}
-	if got, want := builder.Download("ph1", "2024/05/x.jpg"), "/api/v1/photos/ph1/download?original=true"; got != want {
-		t.Errorf("Download() = %q, want %q", got, want)
+	down := builder.Download("ph1", "2024/05/x.jpg", "x.jpg")
+	if want := "/api/v1/photos/ph1/download?original=true"; down != want {
+		t.Errorf("Download() = %q, want %q", down, want)
 	}
 }
 
@@ -214,5 +215,106 @@ func TestDecorateOne_previewIsTheAspectPreservingRendition(t *testing.T) {
 	}
 	if photo.PreviewURL == photo.ThumbURL {
 		t.Error("PreviewURL must not be the square crop")
+	}
+}
+
+// brokenURL is a storage.Storage whose URL method answers with a string that is
+// not a parsable URL, standing in for a backend (or a future signing scheme) that
+// hands back something this package cannot take apart.
+type brokenURL struct{ publishing }
+
+// URL returns an unparsable address (an invalid percent-escape).
+func (brokenURL) URL(string) string { return "https://media.example/%zz?sig=deadbeef" }
+
+// TestDownload_asksTheEdgeForAnAttachment proves the published download URL
+// carries the parameter by which the edge Worker is told to answer with
+// Content-Disposition: attachment, named after the original's own file name.
+// Without it the browser only displays the photo: <a download> is ignored when
+// the target is another origin, which the media domain always is.
+func TestDownload_asksTheEdgeForAnAttachment(t *testing.T) {
+	t.Parallel()
+
+	builder := mediaurl.NewBuilder(publishing{prefix: "https://media.example/"})
+
+	got := builder.Download("ph1", "2024/05/photo.jpg", "Vánoce 2024.jpg")
+	parsed, err := url.Parse(got)
+	if err != nil {
+		t.Fatalf("url.Parse(%q): %v", got, err)
+	}
+	if want := "/2024/05/photo.jpg"; parsed.Path != want {
+		t.Errorf("path = %q, want %q", parsed.Path, want)
+	}
+	if got, want := parsed.Query().Get("dl"), "Vánoce 2024.jpg"; got != want {
+		t.Errorf("dl = %q, want %q", got, want)
+	}
+	// The signature the backend minted must survive being re-encoded alongside it.
+	if got, want := parsed.Query().Get("sig"), "deadbeef"; got != want {
+		t.Errorf("sig = %q, want %q", got, want)
+	}
+}
+
+// TestDownload_inlineAddressesKeepNoDownloadParam proves the attachment is asked
+// for on the download URL alone. The same object is fetched inline as an <img>
+// or <video> source through Object/Thumb, and those must stay displayable.
+func TestDownload_inlineAddressesKeepNoDownloadParam(t *testing.T) {
+	t.Parallel()
+
+	builder := mediaurl.NewBuilder(publishing{prefix: "https://media.example/"})
+
+	for name, got := range map[string]string{
+		"Object":      builder.Object("2024/05/photo.jpg"),
+		"Thumb":       builder.Thumb("ph1", testHash, thumb.GridSize),
+		"ThumbObject": builder.ThumbObject(testHash, thumb.GridSize),
+	} {
+		if strings.Contains(got, "dl=") {
+			t.Errorf("%s() = %q, want no download parameter", name, got)
+		}
+	}
+}
+
+// TestDownloadObject_unpublishedAndUnparsable proves the two answers that are not
+// a decorated URL: nothing at all when the backend publishes no address (the
+// application then serves and labels the bytes itself), and the address untouched
+// when it cannot be parsed — a download that opens in a tab beats a mangled URL
+// that the edge would refuse.
+func TestDownloadObject_unpublishedAndUnparsable(t *testing.T) {
+	t.Parallel()
+
+	fs, err := storage.NewFS(t.TempDir())
+	if err != nil {
+		t.Fatalf("storage.NewFS: %v", err)
+	}
+	if got := mediaurl.NewBuilder(fs).DownloadObject("2024/05/x.jpg", "x.jpg"); got != "" {
+		t.Errorf("DownloadObject() = %q, want empty", got)
+	}
+
+	broken := mediaurl.NewBuilder(brokenURL{}).DownloadObject("2024/05/x.jpg", "x.jpg")
+	if want := "https://media.example/%zz?sig=deadbeef"; broken != want {
+		t.Errorf("DownloadObject() = %q, want %q", broken, want)
+	}
+}
+
+// TestDecorateOne_downloadIsNamedAfterTheOriginal proves the name the browser
+// saves under comes from the catalogue row, not from the object key. The two
+// differ whenever the store had to de-duplicate a colliding name on ingest.
+func TestDecorateOne_downloadIsNamedAfterTheOriginal(t *testing.T) {
+	t.Parallel()
+
+	builder := mediaurl.NewBuilder(publishing{prefix: "https://media.example/"})
+	photo := photos.Photo{
+		UID:      "ph1",
+		FileHash: testHash,
+		FilePath: "2024/05/race_1.jpg",
+		FileName: "race.jpg",
+	}
+
+	builder.DecorateOne(&photo)
+
+	parsed, err := url.Parse(photo.DownloadURL)
+	if err != nil {
+		t.Fatalf("url.Parse(%q): %v", photo.DownloadURL, err)
+	}
+	if got, want := parsed.Query().Get("dl"), "race.jpg"; got != want {
+		t.Errorf("dl = %q, want %q", got, want)
 	}
 }

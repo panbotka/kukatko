@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -223,7 +224,10 @@ func TestMediaRoutes_proxyStreamsBytesOnPublishedBackend(t *testing.T) {
 	if redirected.StatusCode != http.StatusFound {
 		t.Fatalf("plain download status = %d, want 302 (the default stays a redirect)", redirected.StatusCode)
 	}
-	if got, want := redirected.Header.Get("Location"), testMediaBaseURL+"/"+seeded.FilePath; got != want {
+	// The redirect keeps the route's promise of an attachment: ?dl= is how the edge
+	// is told to send Content-Disposition, since <a download> means nothing there.
+	want := testMediaBaseURL + "/" + seeded.FilePath + "?dl=" + url.QueryEscape(seeded.FileName)
+	if got := redirected.Header.Get("Location"); got != want {
 		t.Errorf("redirect Location = %q, want %q", got, want)
 	}
 

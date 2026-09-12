@@ -147,7 +147,10 @@ func TestThumbRoute_publishedBackendRedirectsToSignedURL(t *testing.T) {
 }
 
 // TestDownloadRoute_publishedBackendRedirectsToSignedURL proves the download route
-// redirects to the original's own object key, which is photos.file_path verbatim.
+// redirects to the original's own object key, which is photos.file_path verbatim,
+// and that the redirect keeps the route's promise of an attachment: it asks the
+// edge for one, named after the catalogued original. A 302 that dropped the ask
+// would only display the photo, because <a download> means nothing off-origin.
 func TestDownloadRoute_publishedBackendRedirectsToSignedURL(t *testing.T) {
 	env := newEnvWithMedia(t, newSigningR2(t))
 	client, _ := env.login(t, "editor", auth.RoleEditor)
@@ -161,7 +164,10 @@ func TestDownloadRoute_publishedBackendRedirectsToSignedURL(t *testing.T) {
 	if resp.StatusCode != http.StatusFound {
 		t.Fatalf("download status = %d, want 302", resp.StatusCode)
 	}
-	assertSignedURL(t, resp.Header.Get("Location"), seeded.FilePath)
+	target := assertSignedURL(t, resp.Header.Get("Location"), seeded.FilePath)
+	if got, want := target.Query().Get("dl"), seeded.FileName; got != want {
+		t.Errorf("signed URL dl = %q, want %q", got, want)
+	}
 }
 
 // TestVideoRoute_publishedBackendRedirectsToSignedURL proves video playback points
@@ -182,7 +188,12 @@ func TestVideoRoute_publishedBackendRedirectsToSignedURL(t *testing.T) {
 	if resp.StatusCode != http.StatusFound {
 		t.Fatalf("video status = %d, want 302", resp.StatusCode)
 	}
-	assertSignedURL(t, resp.Header.Get("Location"), seeded.FilePath)
+	target := assertSignedURL(t, resp.Header.Get("Location"), seeded.FilePath)
+	// Playback is an inline source: the attachment the download route asks for
+	// must not ride along, or the player would download the clip instead.
+	if got := target.Query().Get("dl"); got != "" {
+		t.Errorf("signed video URL dl = %q, want none", got)
+	}
 }
 
 // TestPhotoPayload_carriesRouteURLsOnFilesystemBackend proves the list payload

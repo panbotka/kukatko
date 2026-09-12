@@ -4138,3 +4138,49 @@ describe('PhotoDetailPage — the library operations on a clip', () => {
     expect(screen.queryByText('Photo moved to trash')).toBeNull()
   })
 })
+
+// A signed CDN address is on another origin than the app, where the browser
+// ignores `<a download>` — only the `dl` the backend stamps onto it makes the
+// edge answer with Content-Disposition: attachment. So the page must hand the
+// payload's address over verbatim; rebuilding or trimming it turns the download
+// back into "open the photo in a tab".
+describe('PhotoDetailPage download links', () => {
+  const SIGNED = 'https://media.example/2026/01/beach.jpg?dl=beach.jpg&exp=1767267600&sig=deadbeef'
+
+  it('links the original download at the payload address, parameters and all', async () => {
+    const user = userEvent.setup()
+    fetchPhotoMock.mockResolvedValue(photo({ download_url: SIGNED }))
+    renderPage()
+
+    await screen.findByRole('heading', { name: 'Beach' })
+    await openInfo(user)
+
+    // react-bootstrap renders an <a> Button with role="button", not link.
+    expect(screen.getByRole('button', { name: 'Download original' })).toHaveAttribute(
+      'href',
+      SIGNED,
+    )
+  })
+
+  it('offers the same address as the download of a clip that will not play', async () => {
+    fetchPhotoMock.mockResolvedValue(
+      photo({
+        media_type: 'video',
+        file_name: 'clip.mp4',
+        file_mime: 'video/mp4',
+        title: 'Clip',
+        download_url: SIGNED,
+        hls: false,
+        processing: [{ step: 'hls_transcode', state: 'queued' }],
+      }),
+    )
+    renderPage(true, '/photos/b?sort=oldest', true, true)
+
+    await screen.findByRole('heading', { name: 'Clip' })
+
+    expect(screen.getByRole('button', { name: 'Download the video' })).toHaveAttribute(
+      'href',
+      SIGNED,
+    )
+  })
+})

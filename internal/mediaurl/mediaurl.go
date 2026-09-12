@@ -41,6 +41,12 @@ import (
 // it mirrors the base path the server mounts the API on (/api/v1).
 const photosPath = "/api/v1/photos/"
 
+// downloadParam is the query parameter by which the edge Worker is asked to
+// answer with Content-Disposition: attachment, valued with the name to save the
+// file under (infra: workers/kukatko-media/index.js). An empty value still asks
+// for the attachment; the Worker then names it after the object key.
+const downloadParam = "dl"
+
 // Builder mints the client-facing media addresses for photos read out of the
 // catalogue. The zero value is not usable; call NewBuilder. A nil *Builder is
 // valid and behaves like a builder over a backend that publishes nothing — it
@@ -95,12 +101,58 @@ func (b *Builder) Thumb(uid, fileHash, size string) string {
 // otherwise this application's download route for uid. The route is asked for
 // ?original=true so both answers mean the same thing — the stored original,
 // never a rendering of a non-destructive edit, which only the application can
-// produce and which the plain download route would serve instead.
-func (b *Builder) Download(uid, filePath string) string {
-	if signed := b.Object(filePath); signed != "" {
+// produce and which the plain download route would serve instead. Either answer
+// downloads rather than displays: see DownloadObject.
+func (b *Builder) Download(uid, filePath, fileName string) string {
+	if signed := b.DownloadObject(filePath, fileName); signed != "" {
 		return signed
 	}
 	return photosPath + url.PathEscape(uid) + "/download?original=true"
+}
+
+// DownloadObject returns the signed URL of the stored object at filePath asking
+// the edge to hand it over as an attachment named fileName, or the empty string
+// when the backend publishes no address for it and this application must serve
+// (and label) the bytes itself.
+//
+// The ask is a single query parameter the Worker reads (downloadParam). It has to
+// exist because a link to another origin cannot download anything on its own: the
+// browser ignores <a download> unless the target is same-origin, and the media
+// domain never is — so a "download the original" button without this merely opens
+// the photo in a tab. Only a Content-Disposition from the edge saves the file, and
+// only the edge can send one without moving the bytes through here, which is the
+// entire point of having a CDN in front of the bucket.
+//
+// It is asked for on the URL and never on the object. The very same object is
+// fetched inline as an <img> or <video> source (Object, Thumb), from one shared
+// edge cache entry; a disposition stored on the object would turn every one of
+// those views into a download.
+func (b *Builder) DownloadObject(filePath, fileName string) string {
+	signed := b.Object(filePath)
+	if signed == "" {
+		return ""
+	}
+	return withDownloadParam(signed, fileName)
+}
+
+// withDownloadParam returns signed with the download parameter added, carrying
+// fileName as the name to save the file under. A URL that will not parse is
+// returned untouched: the parameter is a convenience, and a download that opens
+// in a tab beats a mangled URL that 403s.
+//
+// The parameter is not covered by the signature, which is what lets it be added
+// here at all. It grants nothing — the holder of the signature may already fetch
+// the bytes, and this only decides what the browser does with them — so the edge
+// and this application need no synchronized deploy.
+func withDownloadParam(signed, fileName string) string {
+	parsed, err := url.Parse(signed)
+	if err != nil {
+		return signed
+	}
+	query := parsed.Query()
+	query.Set(downloadParam, fileName)
+	parsed.RawQuery = query.Encode()
+	return parsed.String()
 }
 
 // Decorate fills in the media addresses (see DecorateOne) on every photo in
@@ -121,5 +173,5 @@ func (b *Builder) Decorate(list []photos.Photo) {
 func (b *Builder) DecorateOne(photo *photos.Photo) {
 	photo.ThumbURL = b.Thumb(photo.UID, photo.FileHash, thumb.GridSize)
 	photo.PreviewURL = b.Thumb(photo.UID, photo.FileHash, thumb.PreviewSize)
-	photo.DownloadURL = b.Download(photo.UID, photo.FilePath)
+	photo.DownloadURL = b.Download(photo.UID, photo.FilePath, photo.FileName)
 }
