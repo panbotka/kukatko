@@ -3359,10 +3359,16 @@ here.
   child) with the role picker on *parent* and that child's known parent already in hand for the sibling role;
   a successful add refetches the walk rather than patching the new person into the old answer.
   `TreeStage` (`components/people/TreeStage.tsx` + `familyTree.css`) is the sheet of paper **both** drawings are
-  painted on: drag to pan (pointer events with capture; a drag that travels more than 4 px swallows the click that
-  ends it, so panning over a person does not also follow their link), wheel to zoom about the cursor (a
+  painted on: drag to pan (a drag that travels more than 4 px swallows the click that ends it, so panning over a
+  person does not also follow their link), wheel to zoom about the cursor (a
   **hand-attached** listener — React's own wheel handler is passive and cannot `preventDefault`, without which the
   page scrolls instead of the tree zooming) and four buttons (zoom in/out, fit, back to the person it is about).
+  The pointer is captured **only once that 4 px has been passed**, never on `pointerdown`: capture retargets every
+  mouse event derived from that pointer, so an eager one delivers the `mouseup` — and with it the `click` — to the
+  `<svg>`, leaving every control inside the drawing (a person, a fold handle, a blank slot) dead to a **mouse**
+  while it still works under a finger. jsdom stubs the whole Pointer Capture API inert, so no simulated click can
+  see that: `TreeStage.test.tsx` guards the **timing of the capture call** instead. A move whose `buttons` is 0
+  ends the drag, because until the capture is taken a release outside the stage is never heard.
   Everything inside the transformed `<g>` is in **layout units**, font sizes included, so type shrinks with the
   drawing rather than staying 13 px while the tree gets smaller around it. `resetKey` is what the drawing is *of*:
   when it changes the reader's pan and zoom are dropped, so a new root starts fitted while a fold or a dialog

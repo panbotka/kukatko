@@ -111,7 +111,9 @@ export function TreeStage({ content, resetKey, focus, focusLabel, children }: Tr
   const stageRef = useRef<HTMLDivElement>(null)
   const size = useStageSize(stageRef)
   const [moved, setMoved] = useState<TreeView | null>(null)
-  const dragRef = useRef<{ x: number; y: number; travelled: number } | null>(null)
+  const dragRef = useRef<{ x: number; y: number; travelled: number; captured: boolean } | null>(
+    null,
+  )
   const draggedRef = useRef(false)
 
   const fitted = useMemo(() => fitView(content, size), [content, size])
@@ -147,14 +149,28 @@ export function TreeStage({ content, resetKey, focus, focusLabel, children }: Tr
     if (event.button !== 0) {
       return
     }
-    dragRef.current = { x: event.clientX, y: event.clientY, travelled: 0 }
+    // The pointer is deliberately *not* captured here. Capture retargets every
+    // mouse event derived from this pointer to the capturing element, so a
+    // capture taken before the reader has moved at all sends the `mouseup` —
+    // and with it the `click` — to this `<svg>` instead of to whatever was
+    // pressed. Every control inside the drawing (a person, a fold circle, an
+    // empty slot) would be dead to a mouse while still working under a finger,
+    // which is exactly the kind of bug no jsdom test can see. It is taken in
+    // onPointerMove instead, once the travel says this is a drag.
+    dragRef.current = { x: event.clientX, y: event.clientY, travelled: 0, captured: false }
     draggedRef.current = false
-    event.currentTarget.setPointerCapture(event.pointerId)
   }
 
   const onPointerMove = (event: ReactPointerEvent<SVGSVGElement>) => {
     const drag = dragRef.current
     if (drag === null) {
+      return
+    }
+    // Until the capture below is taken a release outside the stage is never
+    // heard, so a button that is no longer held ends the drag here — otherwise
+    // the drawing would follow the bare cursor around.
+    if (event.buttons === 0) {
+      dragRef.current = null
       return
     }
     const dx = event.clientX - drag.x
@@ -164,6 +180,13 @@ export function TreeStage({ content, resetKey, focus, focusLabel, children }: Tr
     drag.travelled += Math.abs(dx) + Math.abs(dy)
     if (drag.travelled > DRAG_SLOP_PX) {
       draggedRef.current = true
+      if (!drag.captured) {
+        // Now that this is a drag, capture the pointer so it keeps panning
+        // outside the stage's bounds — and so the click this gesture would
+        // otherwise deliver to a person never reaches them.
+        drag.captured = true
+        event.currentTarget.setPointerCapture(event.pointerId)
+      }
     }
     setMoved((current) => panBy(current ?? fitted, dx, dy))
   }
