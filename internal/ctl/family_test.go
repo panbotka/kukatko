@@ -356,6 +356,54 @@ func TestWriteRelations_lonePartner(t *testing.T) {
 		!strings.Contains(buf.String(), "fam03") {
 		t.Errorf("lone-parent family = %q, want the family named and its empty side stated", buf.String())
 	}
+	if !strings.Contains(buf.String(), RoleLoneParent) {
+		t.Errorf("lone-parent family = %q, want the row labelled %q", buf.String(), RoleLoneParent)
+	}
+	if !strings.Contains(buf.String(), "0 partners") {
+		t.Errorf("lone-parent family = %q, want it left out of the partner count", buf.String())
+	}
+}
+
+// TestWriteRelations_loneParentIsNotCounted verifies that a person with one
+// lone-parent family and one real partnership is summarized as having exactly
+// one partner: the family with nobody on the other side is a row, not a person.
+func TestWriteRelations_loneParentIsNotCounted(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	relations := Relations{
+		Partners: []Partnership{
+			{Family: Family{UID: "fam03", PartnerA: new("sub01"), Kind: FamilyPartnership}},
+			{
+				Family: Family{
+					UID: "fam04", PartnerA: new("sub01"), PartnerB: new("sub04"), Kind: FamilyPartnership,
+				},
+				Partner: &Relative{UID: "sub04", Name: "Eva Nečasová", PhotoCount: 5},
+			},
+		},
+		Children: []Relative{{UID: "sub05", Name: "Petr Nečas", FamilyUID: "fam03", ChildKind: ChildBirth}},
+	}
+	if err := WriteRelations(&buf, relations); err != nil {
+		t.Fatalf("WriteRelations returned %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "0 parents · 0 siblings · 1 partner · 1 child") {
+		t.Errorf("summary of one lone-parent family and one partnership = %q, want one partner", out)
+	}
+	partnerRows := 0
+	for line := range strings.SplitSeq(out, "\n") {
+		if strings.HasPrefix(line, RolePartner+" ") {
+			partnerRows++
+		}
+	}
+	if partnerRows != 1 {
+		t.Errorf("relations table = %q, want exactly one row in the partner role, got %d", out, partnerRows)
+	}
+	for _, want := range []string{RoleLoneParent, "fam03", "Eva Nečasová (sub04)", "fam04"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("relations table does not contain %q:\n%s", want, out)
+		}
+	}
 }
 
 // TestWriteRelationReport verifies a recorded relation names both people and says

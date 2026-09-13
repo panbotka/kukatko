@@ -59,7 +59,10 @@ func newCtlFamilyRelationsCmd(opts *ctlOptions) *cobra.Command {
 			"parents is a partner in.\n\n" +
 			"FAMILY names the family row each relation is recorded in — it is the uid\n" +
 			"`ctl family edit` takes — and KIND what the relation is recorded as: how a child\n" +
-			"belongs to their family, or what tied a couple together.",
+			"belongs to their family, or what tied a couple together.\n\n" +
+			"A family whose second partner nobody recorded is listed as `lone-parent` rather\n" +
+			"than as a partner, and is left out of the partner count: it is not a relation to\n" +
+			"anybody, only the family this person's children hang on.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, out, err := opts.resolve()

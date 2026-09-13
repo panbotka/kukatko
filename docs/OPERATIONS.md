@@ -1015,9 +1015,10 @@ parent, and there is nothing between two siblings to remove.
 
 `relations` prints one table rather than four because the four lists answer one question and `ROLE` is the
 column that separates them. `KIND` is what each relation is recorded as — how a child belongs to their family
-(`birth`/`adopted`/`step`), or what tied a couple together — and a partner row whose other side nobody
-remembers says `- (no partner recorded)`: a lone-parent family is a family all the same, because it is where
-that person's children hang.
+(`birth`/`adopted`/`step`), or what tied a couple together. A family whose second partner nobody recorded is
+listed under the role `lone-parent`, reading `- (no partner recorded)`, and is **left out of the partner
+count**: it is a family all the same — it is where that person's children hang, and its uid is what `family
+edit` takes — but there is nobody on the other side to call a partner.
 
 **`add` resolves `--name` client-side**, unlike `ctl faces assign --name`, and the difference matters: the
 inline half of the endpoint *always* creates, so handing it a name that already exists would quietly split one

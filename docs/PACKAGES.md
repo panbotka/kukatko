@@ -4979,7 +4979,10 @@ to `## Package map` in `CLAUDE.md`.
     four derived lists; `Relations.Role(uid)`/`Find(uid)` say how somebody is related **before** a removal is
     sent, which is what lets an unrelated pair fail locally instead of as a `404` and lets a sibling be told
     that there is nothing to remove (`RoleSibling` is reported, never requested — siblings are derived from a
-    shared parent). `RelationInput` is validated locally (`ErrInvalidRole`, `ErrInvalidChildKind`,
+    shared parent). `Partnership.LoneParent` marks the family that has nobody on the other side: `WriteRelations`
+    prints it under `RoleLoneParent` (reported, never requested, like `RoleSibling`) and leaves it out of the
+    summary's partner count — the row is kept because its family uid is what `family edit` takes, but a lone
+    parent is a family, not a partner. `RelationInput` is validated locally (`ErrInvalidRole`, `ErrInvalidChildKind`,
     `ErrSubjectRequired`/`ErrSubjectAmbiguous` for naming both an existing and a new person or neither, and
     `SubjectInput.validate` for the person being created); `FamilyUpdate` mirrors the SQL CHECKs of migration
     `0073` (`ErrInvalidFamilyKind`, `ErrInvalidFamilyYear`) and is a **whole-record** write, so `ErrNoFamilyEdits`

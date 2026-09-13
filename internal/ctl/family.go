@@ -53,6 +53,11 @@ const (
 	// record one is to give the two children the same parent — and there is no
 	// row between them to remove.
 	RoleSibling = "sibling"
+	// RoleLoneParent labels the row of a family that has no second partner, and
+	// is never a role a request may carry either. It is not a relation to anybody:
+	// it is the family the subject is a lone parent in, printed so the uid its
+	// children hang on stays visible.
+	RoleLoneParent = "lone-parent"
 )
 
 // The child kinds, saying how a child belongs to their family.
@@ -134,6 +139,15 @@ func (f Family) Partners() []string {
 type Partnership struct {
 	Family  Family    `json:"family"`
 	Partner *Relative `json:"partner"`
+}
+
+// LoneParent reports whether this family records no second partner. Such a
+// family is created whenever a child is recorded before a partner is, and it is
+// stored as a partnership because the family is the node a child hangs on — but
+// there is nobody on the other side, so it is neither presented nor counted as a
+// partner.
+func (p Partnership) LoneParent() bool {
+	return p.Partner == nil
 }
 
 // Relations is the derived view of one subject's immediate family, as GET
@@ -496,12 +510,14 @@ func relativeRow(role string, relative Relative) []string {
 
 // partnershipRow renders one partner, or the lone-parent family that records a
 // person whose partner nobody remembers — which is a family all the same, since
-// it is where their children hang.
+// it is where their children hang. The second is labelled RoleLoneParent rather
+// than RolePartner: the row is kept because the family uid is what `family edit`
+// takes, but there is nobody on the other side to call a partner.
 func partnershipRow(partnership Partnership) []string {
-	who := "- (no partner recorded)"
-	life := "-"
-	photos := "-"
+	role, who := RoleLoneParent, "- (no partner recorded)"
+	life, photos := "-", "-"
 	if partner := partnership.Partner; partner != nil {
+		role = RolePartner
 		who = SubjectLabel(partner.Name, partner.UID)
 		life = formatYears(partner.BirthYear, partner.DeathYear)
 		photos = strconv.Itoa(partner.PhotoCount)
@@ -510,15 +526,22 @@ func partnershipRow(partnership Partnership) []string {
 	if years := formatYears(partnership.Family.FromYear, partnership.Family.ToYear); years != "-" {
 		family += " " + years
 	}
-	return []string{RolePartner, who, life, dash(partnership.Family.Kind), dash(family), photos}
+	return []string{role, who, life, dash(partnership.Family.Kind), dash(family), photos}
 }
 
-// relationsSummary counts the four lists in one line.
+// relationsSummary counts the four lists in one line. Only real partners are
+// counted: a lone-parent family is a row in the table, never a person.
 func relationsSummary(relations Relations) string {
+	partners := 0
+	for _, partnership := range relations.Partners {
+		if !partnership.LoneParent() {
+			partners++
+		}
+	}
 	return strings.Join([]string{
 		strconv.Itoa(len(relations.Parents)) + " " + plural(len(relations.Parents), "parent", "parents"),
 		strconv.Itoa(len(relations.Siblings)) + " " + plural(len(relations.Siblings), "sibling", "siblings"),
-		strconv.Itoa(len(relations.Partners)) + " " + plural(len(relations.Partners), "partner", "partners"),
+		strconv.Itoa(partners) + " " + plural(partners, "partner", "partners"),
 		strconv.Itoa(len(relations.Children)) + " " + plural(len(relations.Children), "child", "children"),
 	}, " · ")
 }
