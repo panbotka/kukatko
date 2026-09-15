@@ -8,8 +8,9 @@
 //
 // The serving route deliberately has the same shape as the subject avatar it
 // grew out of (internal/avatarapi): a JPEG, an ETag answering 304 on
-// revalidation, a ten-minute private cache, and — for an account with no picture
-// from any source — a 404, which is the client's cue to draw the coloured
+// revalidation, a private cache — ten minutes for somebody else's picture, none
+// at all for the caller's own, see ownCacheControl — and, for an account with no
+// picture from any source, a 404, which is the client's cue to draw the coloured
 // initial. Nothing in the response says which of the three sources answered; the
 // chain is the server's business, and a client that had to know would have to
 // re-implement it.
@@ -42,15 +43,29 @@ import (
 	"github.com/panbotka/kukatko/internal/userpic"
 )
 
-// cacheControl is the caching policy for a profile picture. Like a subject
-// avatar and unlike a thumbnail it is *not* immutable: the URL names an account,
-// and what stands for that account changes when its owner uploads another
-// picture or links themselves to a different person. So it is cached for ten
-// minutes and revalidated after that against the ETag — a changed picture costs
-// one 304-sized request per reader, and a comment thread redrawn inside the
-// window costs none at all. It is private because it is served only to
+// cacheControl is the caching policy for somebody else's profile picture. Like a
+// subject avatar and unlike a thumbnail it is *not* immutable: the URL names an
+// account, and what stands for that account changes when its owner uploads
+// another picture or links themselves to a different person. So it is cached for
+// ten minutes and revalidated after that against the ETag — a changed picture
+// costs one 304-sized request per reader, and a comment thread redrawn inside
+// the window costs none at all. It is private because it is served only to
 // authenticated callers.
 const cacheControl = "private, max-age=600, must-revalidate"
+
+// ownCacheControl is the policy for the picture of the account asking for it.
+// That one picture is the only one that changes under its own reader: nobody
+// else's account is edited on the page they happen to be looking at, but theirs
+// is — they set it a moment ago on /account, and the bar at the top of that very
+// page draws it. Ten minutes of freshness there means the change they just made
+// appears not to have happened, and goes on not having happened across a reload,
+// because must-revalidate only governs what a *stale* entry may do.
+//
+// So their own picture is never reused without asking, and the ETag does the
+// deciding it was already computing. The cost is one conditional request per
+// page load, answered 304 and empty for the picture that has not changed;
+// everybody else's avatar in a thread still costs nothing.
+const ownCacheControl = "private, max-age=0, must-revalidate"
 
 // uploadField is the multipart form field an uploaded picture arrives in. It is
 // singular where the library's own upload endpoint takes "files": a person has
@@ -141,21 +156,34 @@ func (a *API) RegisterRoutes(r chi.Router) {
 // all answer 404 — every client draws the coloured initial for all three, so
 // they are one answer to it. A caller presenting the current ETag gets 304.
 func (a *API) handleAvatar(w http.ResponseWriter, r *http.Request) {
-	source, _, err := a.pictures.Resolve(r.Context(), chi.URLParam(r, "uid"))
+	uid := chi.URLParam(r, "uid")
+	source, _, err := a.pictures.Resolve(r.Context(), uid)
 	if err != nil {
 		writeResolveError(w, err)
 		return
 	}
+	policy := cachePolicy(r, uid)
 	if source.Upload != nil {
-		serveBytes(w, r, source.Upload)
+		serveBytes(w, r, source.Upload, policy)
 		return
 	}
-	a.servePhoto(w, r, source)
+	a.servePhoto(w, r, source, policy)
+}
+
+// cachePolicy picks how long this answer may be reused without asking again: the
+// caller's own picture never is, anybody else's for ten minutes. See
+// ownCacheControl for why the two differ. A request with no principal — which
+// RequireAuth does not let through — is nobody's own picture.
+func cachePolicy(r *http.Request, uid string) string {
+	if user, ok := auth.UserFromContext(r.Context()); ok && user.UID == uid {
+		return ownCacheControl
+	}
+	return cacheControl
 }
 
 // servePhoto cuts the picture out of a library photo and streams it, which is
 // the path a picked photo and an inherited face share.
-func (a *API) servePhoto(w http.ResponseWriter, r *http.Request, source userpic.Source) {
+func (a *API) servePhoto(w http.ResponseWriter, r *http.Request, source userpic.Source, policy string) {
 	if a.renderer == nil {
 		writeError(w, http.StatusServiceUnavailable, "profile pictures not available")
 		return
@@ -173,7 +201,7 @@ func (a *API) servePhoto(w http.ResponseWriter, r *http.Request, source userpic.
 	}
 	defer func() { _ = reader.Close() }()
 
-	if writeCacheHeaders(w, r, etag) {
+	if writeCacheHeaders(w, r, etag, policy) {
 		return
 	}
 	w.Header().Set("Content-Type", "image/jpeg")
@@ -188,9 +216,9 @@ func (a *API) servePhoto(w http.ResponseWriter, r *http.Request, source userpic.
 // Its ETag is a digest of the bytes themselves, so replacing the picture
 // invalidates every cached copy of it and re-uploading the identical file
 // invalidates none.
-func serveBytes(w http.ResponseWriter, r *http.Request, data []byte) {
+func serveBytes(w http.ResponseWriter, r *http.Request, data []byte, policy string) {
 	digest := sha256.Sum256(data)
-	if writeCacheHeaders(w, r, strconv.Quote("up-"+hex.EncodeToString(digest[:]))) {
+	if writeCacheHeaders(w, r, strconv.Quote("up-"+hex.EncodeToString(digest[:])), policy) {
 		return
 	}
 	w.Header().Set("Content-Type", "image/jpeg")
@@ -202,9 +230,9 @@ func serveBytes(w http.ResponseWriter, r *http.Request, data []byte) {
 
 // writeCacheHeaders stamps the validators onto the response and reports whether
 // the request was answered with 304, in which case the caller must write no body.
-func writeCacheHeaders(w http.ResponseWriter, r *http.Request, etag string) bool {
+func writeCacheHeaders(w http.ResponseWriter, r *http.Request, etag, policy string) bool {
 	w.Header().Set("ETag", etag)
-	w.Header().Set("Cache-Control", cacheControl)
+	w.Header().Set("Cache-Control", policy)
 	if r.Header.Get("If-None-Match") == etag {
 		w.WriteHeader(http.StatusNotModified)
 		return true

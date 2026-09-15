@@ -444,3 +444,45 @@ func TestPicture_requiresASession(t *testing.T) {
 		t.Errorf("status = %d, want 401", resp.StatusCode)
 	}
 }
+
+// TestPicture_myOwnPictureIsNeverReusedWithoutAsking is the bug the bar had: a
+// user set their picture on /account and the avatar above it went on showing the
+// old one, across a reload, because the answer was still fresh in the browser's
+// cache. Their own picture therefore revalidates every time — and an unchanged
+// one is still a 304, so freshness is bought with an empty response and not with
+// the picture all over again. Everybody else's keeps the ten-minute cache: no
+// page a reader is on edits somebody else's account.
+func TestPicture_myOwnPictureIsNeverReusedWithoutAsking(t *testing.T) {
+	env := newEnv(t)
+	mine, client := env.login(t, "mine")
+	theirs, other := env.login(t, "theirs")
+	for _, c := range []*http.Client{client, other} {
+		if status := env.upload(t, c, "picture", squareJPEG(t, 600)); status != http.StatusNoContent {
+			t.Fatalf("upload status = %d, want 204", status)
+		}
+	}
+
+	own := env.avatarOf(t, client, mine, "")
+	defer func() { _ = own.Body.Close() }()
+	if own.StatusCode != http.StatusOK {
+		t.Fatalf("own avatar status = %d, want 200", own.StatusCode)
+	}
+	if got, want := own.Header.Get("Cache-Control"), "private, max-age=0, must-revalidate"; got != want {
+		t.Errorf("own Cache-Control = %q, want %q", got, want)
+	}
+
+	conditional := env.avatarOf(t, client, mine, own.Header.Get("ETag"))
+	defer func() { _ = conditional.Body.Close() }()
+	if conditional.StatusCode != http.StatusNotModified {
+		t.Errorf("revalidating an unchanged picture = %d, want 304", conditional.StatusCode)
+	}
+
+	somebodyElse := env.avatarOf(t, client, theirs, "")
+	defer func() { _ = somebodyElse.Body.Close() }()
+	if somebodyElse.StatusCode != http.StatusOK {
+		t.Fatalf("somebody else's avatar status = %d, want 200", somebodyElse.StatusCode)
+	}
+	if got, want := somebodyElse.Header.Get("Cache-Control"), "private, max-age=600, must-revalidate"; got != want {
+		t.Errorf("somebody else's Cache-Control = %q, want %q", got, want)
+	}
+}

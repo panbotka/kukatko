@@ -1334,7 +1334,14 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   asks one URL and either gets a picture or a **404**, which is its cue to draw the coloured initial. Which
   of the three answered is deliberately not in the response. The linked subject is the **default**: an
   account that has said which person it is wears that face with no action from anybody. Same serving shape as
-  the subject avatar above: `ETag` + `private, max-age=600, must-revalidate`, `If-None-Match` → 304; a picked
+  the subject avatar above, with one difference: `ETag` + `If-None-Match` → 304 always, but the freshness
+  depends on **whose** picture it is — `private, max-age=600, must-revalidate` for somebody else's, `private,
+  max-age=0, must-revalidate` for the **caller's own**. Their own is the only picture that changes under its
+  own reader (they set it on `/account`, and the bar above that very page draws it), and `must-revalidate`
+  governs only what a *stale* entry may do, so ten minutes of freshness there outlived a reload and went on
+  showing the picture they had just replaced. Always revalidating costs one conditional request per page
+  load, answered 304 and empty when nothing changed; a thread full of other people's avatars costs nothing
+  as before. A picked
   or inherited photo is cut by the very same `internal/avatar` renderer (centre-cropped whole for a pick, the
   face box for an inherited face) and an upload is served straight from its row. A picked photo is re-judged
   on **every** request, so one archived, purged or flagged after the fact simply stops answering and the

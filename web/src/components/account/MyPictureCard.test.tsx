@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { type ReactNode, useCallback, useMemo, useState } from 'react'
 import { I18nextProvider } from 'react-i18next'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -34,22 +35,38 @@ const pickMyPictureMock = vi.mocked(pickMyPicture)
 const clearMyPictureMock = vi.mocked(clearMyPicture)
 const searchPhotosMock = vi.mocked(searchPhotos)
 
-/** A signed-in session, linked to a person of the library or not. */
-function auth(subjectUid: string | null): AuthContextValue {
-  return {
-    status: 'authenticated',
-    user: { uid: 'u1', username: 'u', display_name: 'User One', subject_uid: subjectUid },
-    role: 'viewer',
-    refresh: vi.fn(),
-  } as unknown as AuthContextValue
+/**
+ * A signed-in session, linked to a person of the library or not. It counts
+ * picture changes the way the real provider does, because that counter is what
+ * the preview — and the avatar in the bar, which this card cannot see — redraws
+ * from.
+ */
+function Session({ subjectUid, children }: { subjectUid: string | null; children: ReactNode }) {
+  const [pictureVersion, setPictureVersion] = useState(0)
+  const pictureChanged = useCallback(() => {
+    setPictureVersion((previous) => previous + 1)
+  }, [])
+  const value = useMemo(
+    () =>
+      ({
+        status: 'authenticated',
+        user: { uid: 'u1', username: 'u', display_name: 'User One', subject_uid: subjectUid },
+        role: 'viewer',
+        pictureVersion,
+        pictureChanged,
+        refresh: vi.fn(),
+      }) as unknown as AuthContextValue,
+    [subjectUid, pictureVersion, pictureChanged],
+  )
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
 function renderCard(subjectUid: string | null = null) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <AuthContext.Provider value={auth(subjectUid)}>
+      <Session subjectUid={subjectUid}>
         <MyPictureCard />
-      </AuthContext.Provider>
+      </Session>
     </I18nextProvider>,
   )
 }
@@ -91,7 +108,7 @@ describe('MyPictureCard', () => {
     expect(
       await screen.findByText('Showing the face of the person you are linked to.'),
     ).toBeInTheDocument()
-    expect(preview()?.getAttribute('src')).toBe('/api/v1/users/u1/avatar?v=0')
+    expect(preview()?.getAttribute('src')).toBe('/api/v1/users/u1/avatar')
     expect(screen.queryByRole('button', { name: /Remove/ })).not.toBeInTheDocument()
   })
 
@@ -111,8 +128,8 @@ describe('MyPictureCard', () => {
       expect(uploadMyPictureMock).toHaveBeenCalledWith(file)
     })
     expect(await screen.findByText('Showing the picture you uploaded.')).toBeInTheDocument()
-    // The preview must not keep showing the old picture out of the ten-minute
-    // cache, so its URL changes with every saved change.
+    // No avatar of this account may keep showing the old picture out of the
+    // browser's cache, so the URL moves with every saved change.
     expect(preview()?.getAttribute('src')).toBe('/api/v1/users/u1/avatar?v=1')
   })
 

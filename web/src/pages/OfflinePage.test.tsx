@@ -18,6 +18,8 @@ function authValue(overrides: Partial<AuthContextValue> = {}): AuthContextValue 
     isAdmin: false,
     isMaintainer: false,
     canImport: false,
+    pictureVersion: 0,
+    pictureChanged: vi.fn(),
     login: vi.fn(),
     loginWithPasskey: vi.fn(),
     logout: vi.fn(),

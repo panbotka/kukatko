@@ -36,6 +36,24 @@ export interface AuthContextValue {
   isMaintainer: boolean
   /** True when the current user may trigger imports (maintainer only). */
   canImport: boolean
+  /**
+   * How many times the signed-in user has changed their own profile picture
+   * since this tab was loaded. It lives here because the picture is changed in
+   * one place (the account page) and drawn in several others — the bar at the
+   * top of that very page above all — and an `<img>` whose `src` never changes
+   * is never re-requested, however stale the picture behind it has become.
+   *
+   * It is a counter rather than the picture's identity: what a reader needs is
+   * "this is not the one you already have", and a reload gets the current
+   * picture from the server anyway, which is why it starts at zero every time.
+   */
+  pictureVersion: number
+  /**
+   * Announces that the signed-in user's picture has just changed, so every
+   * avatar of theirs on the screen redraws. Called by whatever performed the
+   * change, after the server has confirmed it.
+   */
+  pictureChanged: () => void
   login: (username: string, password: string) => Promise<void>
   /**
    * Signs in with a passkey instead of a password: runs the discoverable WebAuthn

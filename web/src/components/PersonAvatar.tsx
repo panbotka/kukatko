@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useContext, useState } from 'react'
 
+import { AuthContext } from '../auth/AuthContext'
 import { userAvatarUrl } from '../services/userpic'
 
 import { InitialAvatar } from './InitialAvatar'
@@ -13,11 +14,6 @@ export interface PersonAvatarProps {
    * person who has no account — draws initials without firing a request.
    */
   userUid?: string
-  /**
-   * Bumped by the page that just changed this picture, to defeat the ten-minute
-   * cache on its own preview. Readers elsewhere want the cache and omit it.
-   */
-  version?: number
   /** Extra classes for spacing at the call site. */
   className?: string
 }
@@ -38,14 +34,30 @@ export interface PersonAvatarProps {
  * rather than a hole where a face failed to load — which is also what a 404 or an
  * unreachable original degrades to, instead of a broken-image glyph.
  *
+ * When the account it draws is the signed-in one, it asks for the version the
+ * auth context counts, so a picture just changed on the account page redraws
+ * everywhere it stands for that person — the bar, a comment of theirs — instead
+ * of every one of those keeping the picture the browser already had. No call
+ * site has to know whether it is drawing the reader themselves, which is the
+ * point: the bar is written once and does not think about profile pictures.
+ *
  * It is `aria-hidden`: the avatar never appears without the name written out
  * beside it, so announcing a lone letter would only make a screen reader repeat
  * itself.
  */
-export function PersonAvatar({ name, userUid, version, className }: PersonAvatarProps) {
-  const [failed, setFailed] = useState(false)
+export function PersonAvatar({ name, userUid, className }: PersonAvatarProps) {
+  const auth = useContext(AuthContext)
+  // The URL that failed, not a bare flag: the fallback must last exactly as long
+  // as the picture that provoked it. An account that had none answered 404 and
+  // fell back to its letter, and a flag would leave it wearing that letter after
+  // its owner uploaded a picture — the very moment they are watching for it.
+  const [failedSrc, setFailedSrc] = useState<string | null>(null)
 
-  if (userUid === undefined || userUid === '' || failed) {
+  if (userUid === undefined || userUid === '') {
+    return <InitialAvatar name={name} className={className} />
+  }
+  const src = userAvatarUrl(userUid, auth?.user?.uid === userUid ? auth.pictureVersion : 0)
+  if (failedSrc === src) {
     return <InitialAvatar name={name} className={className} />
   }
   return (
@@ -54,13 +66,13 @@ export function PersonAvatar({ name, userUid, version, className }: PersonAvatar
       // No download token: the browser sends the session cookie with a
       // same-origin <img>, which is how every other protected picture in the app
       // is addressed.
-      src={userAvatarUrl(userUid, version)}
+      src={src}
       alt=""
       aria-hidden="true"
       loading="lazy"
       decoding="async"
       onError={() => {
-        setFailed(true)
+        setFailedSrc(src)
       }}
     />
   )

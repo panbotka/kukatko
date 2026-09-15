@@ -1647,8 +1647,9 @@ here.
   default, so overriding it comes after setting it): what the account looks like wherever it is named.
   It reads `fetchMyPicture` (`GET /auth/picture`) on mount and shows the resolved source in words
   (`account.picture.source.{upload,photo,subject,none}`) beside a live `PersonAvatar` preview at
-  `.kk-avatar--lg` — the same endpoint every reader sees, bumped by a `version` counter after each change so
-  the ten-minute cache cannot show the picture the user just replaced. **The source it knows is `none` is the
+  `.kk-avatar--lg` — the same endpoint every reader sees. A saved change calls `pictureChanged()` on the auth
+  context rather than counting for itself, because the avatar it must not leave stale is the one in the bar
+  above it, which this card cannot reach. **The source it knows is `none` is the
   one it does not request**, since that could only 404. Three actions: „Nahrát obrázek" (a `visually-hidden`
   `<input type="file" accept="image/jpeg,image/png,image/webp">` behind a real button, the same bargain
   `PickFilesButton` strikes, reset on change so re-picking the same file after a failure fires again) →
@@ -2798,10 +2799,14 @@ here.
   account is linked to — is deliberately invisible here: the server resolves the chain, and a client that had
   to know would have to re-implement it and would get it wrong the moment a picked photo was archived. It
   used to draw `author_photo_uid` (the linked person's cover photo) through `thumbUrl`; that field is still on
-  the payload but nothing reads it. The optional `version` prop appends `?v=n` and exists for exactly one
-  caller — `MyPictureCard`, whose own preview must not keep showing the old picture out of the response's
-  ten-minute cache. The fallback is the **normal** case, not an error path: most accounts have set nothing and
-  name no person, so the letter has to look like a design rather than a hole. `.kk-avatar--photo` fills the
+  the payload but nothing reads it. It takes **no version prop**: it reads `AuthContext` itself
+  (`useContext`, not `useAuth` — outside a provider it simply draws without a version) and appends
+  `?v=pictureVersion` only when the account it is drawing **is the reader's own**, so a picture just changed
+  on the account page redraws in the bar and beside that person's comments without any call site knowing it
+  was them. Its 404 fallback remembers **which URL** failed rather than setting a flag, for the same reason:
+  an account with no picture answers 404 and wears its letter, and a flag would keep it wearing that letter
+  after its owner uploaded one. The fallback is the **normal** case, not an error path: most accounts have
+  set nothing and name no person, so the letter has to look like a design rather than a hole. `.kk-avatar--photo` fills the
   same circle with `object-fit: cover` over a neutral surface; `.kk-avatar--sm` (1.5 rem, the nav bar) and
   `.kk-avatar--lg` (4 rem, the account page's preview) are the two size variants. Tests:
   `PersonAvatar.test.tsx`. **`InitialAvatar`**
@@ -4691,7 +4696,12 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   specificity);
   `auth/` (`AuthContext`/`useAuth` + `AuthProvider` = boot `GET /auth/me`,
   exposes `status`/`user`/`role`/`login`/**`loginWithPasskey`**/`logout`/`refresh`/`canWrite`/`isAdmin`
-  (admin+)/`isMaintainer`/`canImport`. `loginWithPasskey()` runs the discoverable ceremony in
+  (admin+)/`isMaintainer`/`canImport`/**`pictureVersion`**/**`pictureChanged()`**. The last two are the
+  profile picture's cache buster: a counter of the changes this tab has made to the signed-in user's own
+  picture, and the announcement that bumps it. It lives on the session because the picture is changed in one
+  place (`MyPictureCard`) and drawn in several (the bar, a comment of theirs), and nothing re-requests an
+  `<img>` whose `src` never moved. It starts at zero on every load — a reload gets the current picture from
+  the server, which answers the caller's own with `max-age=0`. `loginWithPasskey()` runs the discoverable ceremony in
   `services/passkeys` and publishes the `AuthSession` it yields — the very same one the password endpoint
   returns, applied the same way, so nothing downstream can tell the two apart; it rejects with a
   `PasskeyError`, which `LoginPage` translates.

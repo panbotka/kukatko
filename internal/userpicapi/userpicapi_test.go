@@ -106,6 +106,24 @@ func TestAvatar_anAccountWithNoPictureIs404(t *testing.T) {
 	}
 }
 
+// TestAvatar_aPictureThatIsNotTheCallersStaysCacheable pins the policy for the
+// common case: an avatar in a comment thread belongs to somebody else, nothing
+// the reader does changes it, so it is worth ten minutes of not asking. The
+// caller's own picture — which does change under them — is the integration
+// test's business, since it needs a real principal on the request.
+func TestAvatar_aPictureThatIsNotTheCallersStaysCacheable(t *testing.T) {
+	t.Parallel()
+
+	router, _ := route(t,
+		fakePictures{source: userpic.Source{Upload: []byte("stored")}, origin: userpic.OriginUpload},
+		photos.Photo{})
+
+	rec := get(t, router, "")
+	if got, want := rec.Header().Get("Cache-Control"), "private, max-age=600, must-revalidate"; got != want {
+		t.Errorf("Cache-Control = %q, want %q", got, want)
+	}
+}
+
 func TestAvatar_anUploadIsServedFromItsStoredBytes(t *testing.T) {
 	t.Parallel()
 

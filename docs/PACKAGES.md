@@ -2959,9 +2959,13 @@ to `## Package map` in `CLAUDE.md`.
   streams straight from its row with an ETag that is a SHA-256 of the bytes (so replacing the picture
   invalidates every cached copy and re-uploading the same file invalidates none), a picked or inherited photo
   goes through the **same** `*avatar.Renderer` (`nil` face = whole frame for a pick, the subject's box for an
-  inherited face; a nil renderer → 503, which an upload is unaffected by), `private, max-age=600,
-  must-revalidate` + `If-None-Match` → 304, and every "no picture" — `ErrNoPicture`,
-  `photos.ErrPhotoNotFound` — is the same **404**. `PUT` tells its two payloads apart by content type
+  inherited face; a nil renderer → 503, which an upload is unaffected by), `If-None-Match` → 304, and every
+  "no picture" — `ErrNoPicture`,
+  `photos.ErrPhotoNotFound` — is the same **404**. The `Cache-Control` is picked per caller (`cachePolicy`):
+  `private, max-age=600, must-revalidate` for somebody else's picture, `private, max-age=0, must-revalidate`
+  for the **caller's own**, which is the only one that changes under its own reader — ten minutes of
+  freshness on that one left the bar showing the picture its owner had just replaced, across a reload, since
+  `must-revalidate` governs only a *stale* entry. `PUT` tells its two payloads apart by content type
   (`multipart/form-data` field `picture` → upload, anything else → JSON `{photo_uid}`), bounds the upload
   twice (the declared `Content-Length` and a `http.MaxBytesReader`, so a client that lies is stopped too) and
   maps outcomes: `ErrTooLarge` → **413**, `ErrUnsupportedFormat`/`ErrPhotoNotAllowed`/`ErrPhotoNotFound` →

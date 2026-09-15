@@ -70,15 +70,15 @@ function errorKeyFor(error: unknown): ErrorKey {
  * which of the two will happen before it is pressed.
  *
  * The preview is the real thing — {@link PersonAvatar} against the same endpoint
- * every reader uses — with a version counter that defeats the response's
- * ten-minute cache, so a picture just changed is the picture shown.
+ * every reader uses. A saved change is announced to the auth context, which is
+ * what makes the preview *and* the avatar in the bar above it show the new
+ * picture rather than the one the browser already had.
  */
 export function MyPictureCard() {
   const { t } = useTranslation()
-  const { user } = useAuth()
+  const { user, pictureChanged } = useAuth()
   const [origin, setOrigin] = useState<PictureOrigin>('none')
   const [state, setState] = useState<State>({ status: 'loading' })
-  const [version, setVersion] = useState(0)
   const [picking, setPicking] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
 
@@ -115,9 +115,10 @@ export function MyPictureCard() {
     try {
       await action()
       await reload()
-      // The picture is cached for ten minutes; without this the page that just
-      // changed it would go on showing the old one.
-      setVersion((previous) => previous + 1)
+      // Nothing re-requests a picture whose URL has not moved, so every avatar
+      // of this account on the screen — this preview, the one in the bar — would
+      // go on showing the picture the browser already had.
+      pictureChanged()
       setState({ status: 'idle' })
     } catch (error: unknown) {
       setState({ status: 'error', messageKey: errorKeyFor(error) })
@@ -147,7 +148,6 @@ export function MyPictureCard() {
             // that could only 404 — every other caller asks and lets the 404 do
             // the talking.
             userUid={origin === 'none' ? undefined : userUid}
-            version={version}
             className="kk-avatar--lg"
           />
           <span className="text-secondary">{t(`account.picture.source.${origin}`)}</span>

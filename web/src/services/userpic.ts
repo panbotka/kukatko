@@ -33,14 +33,21 @@ export const PICTURE_ACCEPT = 'image/jpeg,image/png,image/webp'
  * The URL of one account's picture — a square JPEG, or a 404 when the account
  * has no picture from any source, which is the caller's cue to draw the initial.
  *
- * `version` is a cache-buster and nothing else: the response is cached for ten
- * minutes, so a picture the user has just changed would otherwise keep showing
- * the old one on the very page that changed it. Readers elsewhere want the cache
- * and pass nothing.
+ * `version` counts the changes the signed-in user has made to their own picture
+ * since this tab was loaded, and is a cache-buster and nothing else. A reload
+ * needs none: the server answers the caller's own picture with `max-age=0`, so
+ * the browser revalidates it and gets whatever it is now. Within one page,
+ * though, nothing re-requests a `<img>` whose `src` never changed — so a change
+ * made here bumps the counter, which is what repaints the avatar in the bar
+ * without a reload.
+ *
+ * Zero therefore means "nothing has changed under me" and yields the plain URL,
+ * which every other reader of that account asks for too — one cache entry, not
+ * two.
  */
-export function userAvatarUrl(uid: string, version?: number): string {
+export function userAvatarUrl(uid: string, version = 0): string {
   const url = `${API_BASE}/users/${encodeURIComponent(uid)}/avatar`
-  return version === undefined ? url : `${url}?v=${String(version)}`
+  return version === 0 ? url : `${url}?v=${String(version)}`
 }
 
 /** Reads which source currently answers for the signed-in account. */

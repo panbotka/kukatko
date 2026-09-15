@@ -98,6 +98,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(() => loadSession(), [loadSession])
 
+  // The count of profile-picture changes made in this tab; see
+  // AuthContextValue.pictureVersion for why the avatars need one.
+  const [pictureVersion, setPictureVersion] = useState(0)
+  const pictureChanged = useCallback(() => {
+    setPictureVersion((previous) => previous + 1)
+  }, [])
+
   const value = useMemo<AuthContextValue>(() => {
     const user = state.session?.user ?? null
     return {
@@ -109,12 +116,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAdmin: user ? isAdmin(user.role) : false,
       isMaintainer: user ? isMaintainer(user.role) : false,
       canImport: user ? canImport(user.role) : false,
+      pictureVersion,
+      pictureChanged,
       login,
       loginWithPasskey,
       logout,
       refresh,
     }
-  }, [state, login, loginWithPasskey, logout, refresh])
+  }, [state, pictureVersion, pictureChanged, login, loginWithPasskey, logout, refresh])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

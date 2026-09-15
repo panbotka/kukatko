@@ -19,6 +19,8 @@ function auth(
     role?: string
     /** The person of the library this account says it is; omitted means none. */
     subjectUid?: string
+    /** How many times this session has changed its own profile picture. */
+    pictureVersion?: number
   } = {},
 ): AuthContextValue {
   const { canWrite = false, isMaintainer = false } = opts
@@ -42,6 +44,8 @@ function auth(
     isMaintainer,
     // Import is an operations capability: maintainer only.
     canImport: isMaintainer,
+    pictureVersion: opts.pictureVersion ?? 0,
+    pictureChanged: vi.fn(),
     login: vi.fn(),
     logout: vi.fn(),
     refresh: vi.fn(),
@@ -413,6 +417,38 @@ describe('Layout navbar', () => {
     for (const name of ['Import', 'Maintenance', 'System', 'Users', 'Audit']) {
       expect(screen.queryByRole('link', { name })).not.toBeInTheDocument()
     }
+  })
+
+  it('draws the account’s own picture, and re-asks after they change it', () => {
+    // The bug this pins: the picture is changed on /account, and the avatar in
+    // the bar above that very page kept the one the browser already had — a
+    // reload included. The bar itself knows nothing about profile pictures; it
+    // is PersonAvatar that notices it is drawing the reader themselves.
+    const { rerender, container } = renderLayout(auth())
+    expect(container.querySelector('#user-menu img')).toHaveAttribute(
+      'src',
+      '/api/v1/users/u1/avatar',
+    )
+
+    rerender(
+      <I18nextProvider i18n={i18n}>
+        <AuthContext.Provider value={auth({ pictureVersion: 1 })}>
+          <CapabilitiesContext.Provider value={CAPABILITIES_DEFAULT}>
+            <MemoryRouter initialEntries={['/']}>
+              <Routes>
+                <Route element={<Layout />}>
+                  <Route path="/" element={<div>page content</div>} />
+                </Route>
+              </Routes>
+            </MemoryRouter>
+          </CapabilitiesContext.Provider>
+        </AuthContext.Provider>
+      </I18nextProvider>,
+    )
+    expect(container.querySelector('#user-menu img')).toHaveAttribute(
+      'src',
+      '/api/v1/users/u1/avatar?v=1',
+    )
   })
 
   it('keeps the administration out of the bar entirely', async () => {
