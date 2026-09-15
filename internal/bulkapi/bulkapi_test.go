@@ -327,6 +327,40 @@ func TestHandleBulk_rateLimited(t *testing.T) {
 	}
 }
 
+// TestHandleBulk_rateLimitRunsBehindTheWriteGuard verifies the middleware order:
+// the limiter sits *inside* RequireWrite, so a request the guard rejects never
+// reaches a bucket and cannot spend a legitimate caller's burst. That order is
+// what lets the limiter read the caller's identity (and let an exempt API token
+// through); this test is the guard against quietly swapping it back.
+func TestHandleBulk_rateLimitRunsBehindTheWriteGuard(t *testing.T) {
+	t.Parallel()
+
+	limiter := ratelimit.New(0.0001, 1) // one token, so a single charge exhausts it
+	denyWrite := func(http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusForbidden)
+		})
+	}
+	api := NewAPI(Config{Service: stubService{}, RequireWrite: denyWrite, RateLimit: limiter.Middleware})
+	r := chi.NewRouter()
+	r.Route("/api/v1", api.RegisterRoutes)
+
+	for i := range 5 {
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/photos/bulk",
+			strings.NewReader(`{"photo_uids":["ph1"],"operations":{"archive":true}}`))
+		req.RemoteAddr = "203.0.113.9:9000"
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("request %d: status = %d, want 403 (the guard runs first)", i, rec.Code)
+		}
+	}
+	// The bucket is untouched: the one token is still there for a real caller.
+	if !limiter.Allow("203.0.113.9") {
+		t.Error("the refused requests spent the address's budget; the limiter ran ahead of the guard")
+	}
+}
+
 // stubService is a Service that records nothing and returns an empty result.
 type stubService struct{}
 

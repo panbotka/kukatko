@@ -588,7 +588,13 @@
       "revokeError": "The token could not be revoked. Please try again.",
       "confirmTitle": "Revoke the token?",
       "confirmBody": "The token “{{name}}” stops working immediately and anything signing in with it goes silent. This cannot be undone — you would have to create a new one.",
-      "confirmAction": "Revoke token"
+      "confirmAction": "Revoke token",
+      "unlimited": {
+        "badge": "No rate limit",
+        "label": "Exempt from rate limits",
+        "hint": "A token with this switch is not throttled when commenting, uploading or editing in bulk. It is meant for an agent working through thousands of photos at once — an ordinary token, and a browser session, never get it. Only an admin can set it.",
+        "error": "The token's rate limit could not be changed. Please try again."
+      }
     },
     "subject": {
       "title": "Who I am in the library",
@@ -638,7 +644,8 @@
       },
       "api_token": {
         "create": "API token created",
-        "revoke": "API token revoked"
+        "revoke": "API token revoked",
+        "update": "API token rate limit changed"
       },
       "audit": {
         "purge": "Audit log purged"

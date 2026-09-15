@@ -16,6 +16,7 @@ import {
   register,
   revokeApiToken,
   roleAtLeast,
+  setApiTokenUnlimited,
   type Role,
 } from './auth'
 
@@ -167,6 +168,7 @@ describe('API tokens', () => {
     user_uid: 'u1',
     name: 'backup cli',
     created_at: '2026-02-01T10:00:00Z',
+    unlimited: false,
   }
 
   it('unwraps the token list', async () => {
@@ -186,7 +188,38 @@ describe('API tokens', () => {
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
     expect(init.method).toBe('POST')
-    expect(init.body).toBe(JSON.stringify({ name: 'backup cli' }))
+    // A token is throttled unless the caller says otherwise, so the flag travels
+    // on every creation rather than only on the rare exempt one.
+    expect(init.body).toBe(JSON.stringify({ name: 'backup cli', unlimited: false }))
+  })
+
+  it('asks for a rate-limit exemption when one is wanted', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ token: TOKEN, secret: 'kkt_at1_s' }, 201))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await createApiToken('agent', true)
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(init.body).toBe(JSON.stringify({ name: 'agent', unlimited: true }))
+  })
+
+  it('patches the rate-limit exemption by id and resolves on 204', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(setApiTokenUnlimited('at 1', true)).resolves.toBeUndefined()
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('/api/v1/auth/tokens/at%201')
+    expect(init.method).toBe('PATCH')
+    expect(init.body).toBe(JSON.stringify({ unlimited: true }))
+  })
+
+  it('throws ApiError with status 403 when a non-admin patches the exemption', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ error: 'forbidden' }, 403)))
+    await expect(setApiTokenUnlimited('at1', true)).rejects.toMatchObject({ status: 403 })
   })
 
   it('throws ApiError with status 429 when token creation is rate limited', async () => {

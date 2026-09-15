@@ -186,8 +186,9 @@ type Config struct {
 	Processing ProcessingService
 	// CommentRateLimit throttles comment creation. It is mounted inside the auth
 	// guard so it can key on the acting user rather than the client IP — a
-	// household behind one address is many people. A nil value disables
-	// throttling.
+	// household behind one address is many people — and, for the same reason, so
+	// that a request bearing an API token an admin marked unlimited can be let
+	// through it (see auth.RateLimitExempt). A nil value disables throttling.
 	CommentRateLimit func(http.Handler) http.Handler
 	// RetentionDays is the trash retention window reported by the trash-info
 	// endpoint so the UI can show the auto-purge countdown.

@@ -70,6 +70,7 @@ const ACTION_LABEL_KEYS: Record<string, ParseKeys> = {
   'announcement.set': 'activity.actions.announcement.set',
   'api_token.create': 'activity.actions.api_token.create',
   'api_token.revoke': 'activity.actions.api_token.revoke',
+  'api_token.update': 'activity.actions.api_token.update',
   'audit.purge': 'activity.actions.audit.purge',
   'duplicate.dismiss': 'activity.actions.duplicate.dismiss',
   'duplicate.undismiss': 'activity.actions.duplicate.undismiss',

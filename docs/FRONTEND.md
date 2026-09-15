@@ -1675,7 +1675,16 @@ here.
   with retry. **A 403 — on the listing or on the creation — switches the whole section to a read-only
   explanation** (`account.apiTokens.forbidden`) instead of leaving a form that answers every submit with an
   error; every token endpoint is behind plain `RequireAuth` today, so this is the guard for a backend that
-  changes its mind, not a client-side role gate. Texts in `account.apiTokens.*`, the empty state links to the
+  changes its mind, not a client-side role gate. The **rate-limit exemption** is the one property of a token
+  that outlives its minting: a token carrying it is badged (`account.apiTokens.unlimited.badge`) for everybody
+  who can see the row — "why is this one different" is a question the list should answer — while the switch
+  that *moves* it, both on each row and beside the create field, is rendered **only for an admin**
+  (`useAuth().isAdmin`), because the backend refuses anybody else and an affordance that always fails is worse
+  than none. The row switch is optimistic like the revoke: it flips at once and is put back under an alert
+  (`account.apiTokens.unlimited.error`) if the server disagrees. `createApiToken(name, unlimited)` and
+  `setApiTokenUnlimited(id, unlimited)` (PATCH) live in `services/auth`; the flag resets with the name field
+  after a creation, so the next token is an ordinary one unless asked for again.
+  Texts in `account.apiTokens.*`, the empty state links to the
   help chapter via `API_TOKENS_HELP_HREF` = `/help#help-api-tokens`,
   `HelpPage` = **user help** (route `/help`, **no role gate** — every logged-in user sees it;
   the link is in the user menu under the name, the item „Nápověda" with a `question-circle` icon): a reading column

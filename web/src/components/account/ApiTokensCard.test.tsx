@@ -4,6 +4,7 @@ import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { AuthContext, type AuthContextValue } from '../../auth/AuthContext'
 import i18n from '../../i18n'
 import { ApiError, type ApiToken } from '../../services/auth'
 
@@ -16,13 +17,16 @@ vi.mock('../../services/auth', async (importOriginal) => {
     fetchApiTokens: vi.fn(),
     createApiToken: vi.fn(),
     revokeApiToken: vi.fn(),
+    setApiTokenUnlimited: vi.fn(),
   }
 })
 
-const { createApiToken, fetchApiTokens, revokeApiToken } = await import('../../services/auth')
+const { createApiToken, fetchApiTokens, revokeApiToken, setApiTokenUnlimited } =
+  await import('../../services/auth')
 const listMock = vi.mocked(fetchApiTokens)
 const createMock = vi.mocked(createApiToken)
 const revokeMock = vi.mocked(revokeApiToken)
+const unlimitedMock = vi.mocked(setApiTokenUnlimited)
 
 /** A token that has been used, so the row shows both of its timestamps. */
 const USED_TOKEN: ApiToken = {
@@ -31,6 +35,7 @@ const USED_TOKEN: ApiToken = {
   name: 'backup script',
   created_at: '2026-02-01T10:00:00Z',
   last_used_at: '2026-03-04T08:30:00Z',
+  unlimited: false,
 }
 
 /** A token that has never authenticated anything. */
@@ -39,6 +44,7 @@ const FRESH_TOKEN: ApiToken = {
   user_uid: 'u1',
   name: 'laptop cli',
   created_at: '2026-02-02T10:00:00Z',
+  unlimited: false,
 }
 
 /**
@@ -55,12 +61,29 @@ function stamp(iso: string): string {
   })
 }
 
-function renderCard() {
+/**
+ * A signed-in identity for the card. Only `isAdmin` matters to it: the
+ * rate-limit switch exists for an admin and for nobody else.
+ */
+function auth(isAdmin: boolean): AuthContextValue {
+  return {
+    status: 'authenticated',
+    user: { uid: 'u1', username: 'jana', display_name: 'Jana', role: isAdmin ? 'admin' : 'editor' },
+    role: isAdmin ? 'admin' : 'editor',
+    downloadToken: null,
+    canWrite: true,
+    isAdmin,
+  } as unknown as AuthContextValue
+}
+
+function renderCard(isAdmin = false) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <MemoryRouter>
-        <ApiTokensCard />
-      </MemoryRouter>
+      <AuthContext.Provider value={auth(isAdmin)}>
+        <MemoryRouter>
+          <ApiTokensCard />
+        </MemoryRouter>
+      </AuthContext.Provider>
     </I18nextProvider>,
   )
 }
@@ -70,6 +93,7 @@ beforeEach(async () => {
   listMock.mockResolvedValue([])
   createMock.mockResolvedValue({ token: FRESH_TOKEN, secret: 'kkt_at2_secret' })
   revokeMock.mockResolvedValue(undefined)
+  unlimitedMock.mockResolvedValue(undefined)
 })
 
 describe('ApiTokensCard list', () => {
@@ -135,7 +159,7 @@ describe('ApiTokensCard create', () => {
     await user.type(screen.getByLabelText('Name of the new token'), 'laptop cli')
     await user.click(screen.getByRole('button', { name: /Create token/ }))
 
-    expect(createMock).toHaveBeenCalledWith('laptop cli')
+    expect(createMock).toHaveBeenCalledWith('laptop cli', false)
     // The secret, once, with the warning that it will never be shown again.
     const secret = await screen.findByLabelText('Secret token')
     expect(secret).toHaveValue('kkt_at2_secret')
@@ -241,6 +265,91 @@ describe('ApiTokensCard revoke', () => {
 
     expect(await screen.findByText(/could not be revoked/)).toBeInTheDocument()
     expect(screen.getByText('backup script')).toBeInTheDocument()
+  })
+})
+
+describe('ApiTokensCard rate-limit exemption', () => {
+  /** A token an admin exempted from the rate limits. */
+  const UNLIMITED_TOKEN: ApiToken = { ...USED_TOKEN, id: 'at3', name: 'agent', unlimited: true }
+
+  /**
+   * The list row carrying the named token, so an assertion about one token's
+   * badge or switch cannot accidentally match another row's.
+   */
+  function rowFor(name: string): HTMLElement {
+    const row = screen.getByText(name).closest('.list-group-item')
+    if (!(row instanceof HTMLElement)) {
+      throw new Error(`no token row named ${name}`)
+    }
+    return row
+  }
+
+  it('badges an exempt token for everybody, admin or not', async () => {
+    listMock.mockResolvedValue([USED_TOKEN, UNLIMITED_TOKEN])
+    renderCard()
+
+    await screen.findByText('agent')
+    expect(within(rowFor('agent')).getByText('No rate limit')).toBeInTheDocument()
+    // The ordinary token beside it carries no badge.
+    expect(within(rowFor('backup script')).queryByText('No rate limit')).not.toBeInTheDocument()
+  })
+
+  it('offers the switch to nobody below admin', async () => {
+    listMock.mockResolvedValue([UNLIMITED_TOKEN])
+    renderCard()
+    await screen.findByText('agent')
+
+    expect(
+      screen.queryByRole('checkbox', { name: 'Exempt from rate limits' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('lets an admin ask for an exempt token when creating one', async () => {
+    const user = userEvent.setup()
+    listMock.mockResolvedValue([])
+    renderCard(true)
+    await screen.findByText('No tokens yet')
+
+    await user.type(screen.getByLabelText('Name of the new token'), 'agent')
+    await user.click(screen.getByRole('checkbox', { name: 'Exempt from rate limits' }))
+    await user.click(screen.getByRole('button', { name: /Create token/ }))
+
+    expect(createMock).toHaveBeenCalledWith('agent', true)
+    // The switch resets with the name, so the next token is an ordinary one
+    // unless it is asked for again.
+    await screen.findByLabelText('Secret token')
+    expect(screen.getByRole('checkbox', { name: 'Exempt from rate limits' })).not.toBeChecked()
+  })
+
+  it('turns the flag on from a row and keeps it there', async () => {
+    const user = userEvent.setup()
+    listMock.mockResolvedValue([USED_TOKEN])
+    renderCard(true)
+    await screen.findByText('backup script')
+
+    const row = rowFor('backup script')
+    const toggle = within(row).getByRole('checkbox', { name: 'Exempt from rate limits' })
+    expect(toggle).not.toBeChecked()
+    await user.click(toggle)
+
+    expect(unlimitedMock).toHaveBeenCalledWith('at1', true)
+    expect(toggle).toBeChecked()
+    expect(within(row).getByText('No rate limit')).toBeInTheDocument()
+  })
+
+  it('puts the switch back and reports the failure when the server refuses', async () => {
+    const user = userEvent.setup()
+    listMock.mockResolvedValue([UNLIMITED_TOKEN])
+    unlimitedMock.mockRejectedValue(new ApiError(403, 'forbidden'))
+    renderCard(true)
+    await screen.findByText('agent')
+
+    const row = rowFor('agent')
+    const toggle = within(row).getByRole('checkbox', { name: 'Exempt from rate limits' })
+    await user.click(toggle)
+
+    expect(await screen.findByText(/rate limit could not be changed/)).toBeInTheDocument()
+    expect(within(row).getByRole('checkbox', { name: 'Exempt from rate limits' })).toBeChecked()
   })
 })
 

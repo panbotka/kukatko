@@ -30,7 +30,7 @@ func TestHTTP_maintainerBoundary(t *testing.T) {
 	env := newTokenEnv(t, 50)
 	env.user(t, "ops-agent", auth.RoleMaintainer)
 	opsUser := env.user(t, "ops-token-holder", auth.RoleMaintainer)
-	_, opsToken := env.mintToken(t, opsUser.UID, "agent cli", nil)
+	_, opsToken := env.mintToken(t, opsUser, "agent cli", nil)
 
 	// Bearer token: an automation account's intended credential.
 	t.Run("maintainer bearer token", func(t *testing.T) {
@@ -88,7 +88,7 @@ func TestHTTP_importGuardRoleMatrix(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(string(tt.role), func(t *testing.T) {
 			u := env.user(t, tt.user, tt.role)
-			_, token := env.mintToken(t, u.UID, "cli", nil)
+			_, token := env.mintToken(t, u, "cli", nil)
 			if status, data := env.request(t, http.MethodGet, "/api/v1/probe/import", token, ""); status != tt.want {
 				t.Errorf("import probe for %s = %d, want %d (body %s)", tt.role, status, tt.want, data)
 			}
@@ -114,7 +114,7 @@ func TestHTTP_adminGuardRoleMatrix(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(string(tt.role), func(t *testing.T) {
 			u := env.user(t, tt.user, tt.role)
-			_, token := env.mintToken(t, u.UID, "cli", nil)
+			_, token := env.mintToken(t, u, "cli", nil)
 			if status, data := env.request(t, http.MethodGet, "/api/v1/probe/admin", token, ""); status != tt.want {
 				t.Errorf("admin probe for %s = %d, want %d (body %s)", tt.role, status, tt.want, data)
 			}

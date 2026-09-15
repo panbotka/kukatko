@@ -23,6 +23,7 @@ import "github.com/go-chi/chi/v5"
 //	DELETE /auth/passkeys/{id}    RequireAuth
 //	POST   /auth/tokens           RequireAuth
 //	GET    /auth/tokens           RequireAuth
+//	PATCH  /auth/tokens/{id}      RequireAuth (admin-only in the handler)
 //	DELETE /auth/tokens/{id}      RequireAuth
 //	GET    /admin/users           RequireAdmin
 //	POST   /admin/users           RequireAdmin
@@ -80,6 +81,12 @@ func (a *API) RegisterRoutes(r chi.Router) {
 			r.Use(a.RequireAuth)
 			r.Post("/", a.handleCreateAPIToken)
 			r.Get("/", a.handleListAPITokens)
+			// The rate-limit exemption is an admin's decision, but the role check
+			// lives in the service rather than in a RequireAdmin here: minting a
+			// token needs the very same check *conditionally* (only when the body
+			// asks for the exemption), so keeping both in one place is what stops
+			// the two paths from drifting apart.
+			r.Patch("/{id}", a.handleUpdateAPIToken)
 			r.Delete("/{id}", a.handleRevokeAPIToken)
 		})
 	})

@@ -79,8 +79,8 @@ type Config struct {
 	Places PlacesEnqueuer
 	// RequireWrite guards the endpoint for editors and admins.
 	RequireWrite func(http.Handler) http.Handler
-	// RateLimit is an optional per-client-IP throttle applied ahead of the auth
-	// check. A nil value disables throttling.
+	// RateLimit is an optional per-client-IP throttle applied *behind* the auth
+	// check, so it can read who the caller is. A nil value disables throttling.
 	RateLimit func(http.Handler) http.Handler
 }
 
@@ -105,19 +105,24 @@ func passthroughMiddleware(next http.Handler) http.Handler { return next }
 // RegisterRoutes mounts the bulk endpoints onto r, scoped by the caller under
 // the API base path (for example /api/v1):
 //
-//	POST /photos/bulk                   rate limit + RequireWrite   apply metadata operations to many photos
-//	POST /photos/bulk/location-summary   rate limit + RequireWrite   count the targets that already have a location
+//	POST /photos/bulk                   RequireWrite + rate limit   apply metadata operations to many photos
+//	POST /photos/bulk/location-summary   RequireWrite + rate limit   count the targets that already have a location
 //
 // The summary is a POST despite reading nothing but counts: its argument is the
 // selection itself, up to a full batch of UIDs, which belongs in a body rather
 // than in a query string. It is guarded like the apply because it exists only to
 // answer the apply's own question.
 //
-// The rate limiter runs outermost so an abusive batch flood is capped by client
-// IP before the auth lookup and the transactional apply.
+// The rate limiter runs *inside* the write guard, not ahead of it: the throttle
+// keys on the client IP for everybody, but an API token an admin marked
+// unlimited is exempt from it (see auth.RateLimitExempt), and the caller's
+// identity is knowable only after authentication. The batch apply still happens
+// behind both, so the swap makes no expensive work reachable — an
+// unauthenticated flood merely pays one indexed credential lookup before its
+// 401.
 func (a *API) RegisterRoutes(r chi.Router) {
-	r.With(a.rateLimit, a.requireWrite).Post("/photos/bulk", a.handleBulk)
-	r.With(a.rateLimit, a.requireWrite).
+	r.With(a.requireWrite, a.rateLimit).Post("/photos/bulk", a.handleBulk)
+	r.With(a.requireWrite, a.rateLimit).
 		Post("/photos/bulk/location-summary", a.handleLocationSummary)
 }
 

@@ -13,20 +13,29 @@ import (
 type CreateAPITokenInput struct {
 	Name      string
 	ExpiresAt *time.Time
+	// Unlimited asks for a token exempt from the comment, upload and bulk rate
+	// limiters. Only an admin may ask for it; anybody else gets
+	// ErrAPITokenUnlimitedForbidden and no token at all.
+	Unlimited bool
 }
 
-// CreateAPIToken mints a token for userUID and returns it together with the
-// plaintext credential, which exists only in this return value: the store keeps
-// nothing but a hash, so the secret can never be shown again. The token row and
-// entry are committed in one transaction. It returns ErrAPITokenNameRequired for
-// an empty name and ErrAPITokenExpiryInPast for an expiry that has already
-// passed.
+// CreateAPIToken mints a token for actor — tokens are always minted for oneself
+// — and returns it together with the plaintext credential, which exists only in
+// this return value: the store keeps nothing but a hash, so the secret can never
+// be shown again. The token row and entry are committed in one transaction. It
+// returns ErrAPITokenNameRequired for an empty name, ErrAPITokenExpiryInPast for
+// an expiry that has already passed, and ErrAPITokenUnlimitedForbidden when a
+// non-admin asks for the rate-limit exemption — in which case no token is
+// created at all.
 func (s *Service) CreateAPIToken(
-	ctx context.Context, userUID string, in CreateAPITokenInput, entry audit.Entry,
+	ctx context.Context, actor User, in CreateAPITokenInput, entry audit.Entry,
 ) (APIToken, string, error) {
 	name, err := normalizeAPITokenName(in.Name)
 	if err != nil {
 		return APIToken{}, "", err
+	}
+	if in.Unlimited && !actor.Role.IsAdmin() {
+		return APIToken{}, "", ErrAPITokenUnlimitedForbidden
 	}
 	now := s.now()
 	if in.ExpiresAt != nil && !in.ExpiresAt.After(now) {
@@ -39,16 +48,18 @@ func (s *Service) CreateAPIToken(
 	}
 	tok := APIToken{
 		ID:         id,
-		UserUID:    userUID,
+		UserUID:    actor.UID,
 		Name:       name,
 		CreatedAt:  now,
 		ExpiresAt:  in.ExpiresAt,
+		Unlimited:  in.Unlimited,
 		SecretHash: secretHash,
 	}
 	if entry.Details == nil {
 		entry.Details = map[string]any{}
 	}
 	entry.Details["name"] = name
+	entry.Details["unlimited"] = tok.Unlimited
 	if err := s.store.CreateAPITokenAudited(ctx, tok, entry); err != nil {
 		return APIToken{}, "", err
 	}
@@ -84,6 +95,36 @@ func (s *Service) RevokeAPIToken(ctx context.Context, id string, actor User, ent
 		return err
 	}
 	return nil
+}
+
+// SetAPITokenUnlimited turns the rate-limit exemption on or off on one of
+// actor's own tokens, reporting whether the flag actually moved. It is an
+// admin's decision — anybody else gets ErrAPITokenUnlimitedForbidden — and it
+// reaches only the caller's own credentials: a token belonging to somebody else
+// is reported as ErrAPITokenNotFound, exactly as an unknown id is, so not even
+// an admin can flip a colleague's token from here (revocation, which an admin
+// may do to anyone, remains the way to deal with somebody else's credential).
+// The flag and its audit entry commit in one transaction; setting the value a
+// token already has changes nothing and writes no entry.
+func (s *Service) SetAPITokenUnlimited(
+	ctx context.Context, id string, unlimited bool, actor User, entry audit.Entry,
+) (bool, error) {
+	if !actor.Role.IsAdmin() {
+		return false, ErrAPITokenUnlimitedForbidden
+	}
+	tok, err := s.store.GetAPITokenByID(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	if tok.UserUID != actor.UID {
+		return false, ErrAPITokenNotFound
+	}
+	if entry.Details == nil {
+		entry.Details = map[string]any{}
+	}
+	entry.Details["name"] = tok.Name
+	entry.Details["unlimited"] = unlimited
+	return s.store.SetAPITokenUnlimitedAudited(ctx, id, unlimited, entry)
 }
 
 // AuthenticateAPIToken validates a plaintext bearer credential and returns the

@@ -183,8 +183,8 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   (session cookie or `?t=download_token` via `Service.AuthenticateDownloadToken` →
   `Store.GetSessionByDownloadToken`) for media without a cookie.
 - **API tokens (`/api/v1/auth/tokens`, all behind `RequireAuth`):** long-lived bearer credentials for
-  non-interactive clients (CLI, scripts, agents). `POST /auth/tokens` (`{name, expires_at?}`) → 201
-  `{token:{id,user_uid,name,created_at,expires_at?,last_used_at?,revoked_at?}, secret:"kkt_<id>_<secret>"}`
+  non-interactive clients (CLI, scripts, agents). `POST /auth/tokens` (`{name, expires_at?, unlimited?}`) → 201
+  `{token:{id,user_uid,name,created_at,expires_at?,last_used_at?,revoked_at?,unlimited}, secret:"kkt_<id>_<secret>"}`
   — **`secret` is returned once and only once**, the server keeps only a SHA-256 hash; 400 (empty name /
   expiry in the past / unknown field), **429** (the creation rate-limit shares the login limiter, key
   `apitoken:<uid>|<ip>`). `GET /auth/tokens` → `{tokens:[…]}` — **only the caller's own tokens**,
@@ -192,6 +192,17 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   also 204 and writes no second audit entry); **someone else's token → 404, not 403** (an admin may
   revoke anyone's). Both create and revoke write an audit entry (`api_token.create`/`api_token.revoke`)
   **in the same transaction** as the mutation.
+  `unlimited` (default `false`, always present in the response) exempts requests bearing the token from the
+  **comment, upload and bulk** rate limiters — for an agent driving the library through `kukatko ctl`, whose
+  bursts are what those limiters are shaped to stop. **Only an admin may set it**: any other role asking for it
+  on the create → **403 and no token is created at all**. The map-tile limiter is deliberately *not* covered —
+  it protects paid mapy.com credit, not our CPU — and a **session cookie is never exempt**, whatever the user's
+  role: the exemption belongs to one revocable credential, so a stolen cookie cannot spend it.
+  `PATCH /auth/tokens/{id}` `{unlimited}` → **204** turns the flag on and off afterwards; **admin-only (403
+  otherwise)** and only on **the caller's own** token — somebody else's, or an unknown id, is **404 even for an
+  admin** (revocation is the power an admin holds over a colleague's credential; this is not). It is idempotent:
+  re-sending the value the token already has is still 204 and writes no second entry. Each actual change writes
+  `api_token.update` (details: the token's name and the value it moved to) **in the same transaction**.
 - **Passkeys (`/api/v1/auth/passkeys/*`, `internal/auth`):** WebAuthn sign-in beside the password —
   the private half never leaves the authenticator, nothing reusable is typed, and a credential minted
   for this origin cannot be replayed against another one. Six routes, all of them mounted on every
@@ -261,7 +272,10 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `oauth-authorization-server` or `openid-configuration` metadata has to be told "nothing here". Answering
   `200` with `index.html` made such a client parse a web page as JSON and fail incomprehensibly instead of
   concluding that this server has no OAuth. Ordinary client-side routes still reach the SPA unchanged.
-- **Upload API (`/api/v1`):** `POST /upload` (editor/admin via `RequireWrite`) — `multipart/form-data`
+- **Upload API (`/api/v1`):** `POST /upload` (editor/admin via `RequireWrite`, **then** the per-IP
+  `ratelimit.upload` throttle — the limiter moved *behind* the auth guard so it can see who the caller is and
+  let an `unlimited` API token through; the bucket key is still the client IP for everyone else, and an
+  unauthenticated flood now pays one indexed credential lookup before its 401) — `multipart/form-data`
   with one+ files, **streamed**. Returns `{"results":[{filename,status,outcome,photo_uid?,error?,
   warnings?}]}` (200 overall, per-file 409 duplicate semantics). Mounted by the second `server.WithAPI`
   in `serve` (`buildIngest` in `cmd/kukatko/ingest.go`). Limit `upload.max_file_size_mb` (0 = no limit).
@@ -837,7 +851,9 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   photo, move it between albums or name a face), and locking the read-only half of a family out of the
   conversation would defeat the feature. That route also carries the **per-user** rate limit
   `ratelimit.comment` (default 0.5/s, burst 10 → 429), mounted *inside* the auth guard so it keys on the
-  caller rather than on a household's shared IP.
+  caller rather than on a household's shared IP — and, for the same reason, so that a request bearing an API
+  token marked `unlimited` passes through it untouched (it is not charged a token, so it cannot drain anybody
+  else's budget either).
   `PATCH /photos/{uid}/comments/{commentUID}` `{body}` → 200 with the edited comment, **author only** —
   anyone else, admins included, gets 403: an admin may remove a comment but never rewrite what someone is
   recorded as having said. The edit stamps `edited_at` (null until the first edit).
@@ -1668,7 +1684,9 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   moment the two lists disagree. The answer is compiled into the binary (no store is touched), so a client
   fetches it once and keeps it; the command palette completes filter keys and values from it, which is how
   it can never offer a filter the parser would reject.
-- **Bulk metadata API (`/api/v1`, `internal/bulkapi`, editor/admin via `RequireWrite`):**
+- **Bulk metadata API (`/api/v1`, `internal/bulkapi`, editor/admin via `RequireWrite`, **then** the per-IP
+  `ratelimit.bulk` throttle — mounted behind the guard, and skipped for an `unlimited` API token, exactly as
+  `POST /upload` above):**
   `POST /photos/bulk` `{photo_uids:[…], operations:{…}}` applies a set of operations to many photos
   **in a single transaction** with an audit-log entry. Operations (each optional): `add_to_albums`/
   `remove_from_albums`, `add_labels`/`remove_labels`, `set_caption`/`clear_caption` (→title),

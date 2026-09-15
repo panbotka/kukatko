@@ -592,7 +592,13 @@
       "revokeError": "Token se nepodařilo zneplatnit. Zkuste to prosím znovu.",
       "confirmTitle": "Zneplatnit token?",
       "confirmBody": "Token „{{name}}“ okamžitě přestane fungovat a všechno, co se jím přihlašuje, se odmlčí. Vrátit to nejde — museli byste vytvořit nový.",
-      "confirmAction": "Zneplatnit token"
+      "confirmAction": "Zneplatnit token",
+      "unlimited": {
+        "badge": "Bez omezení rychlosti",
+        "label": "Bez omezení rychlosti",
+        "hint": "Token s tímto přepínačem nebrzdí omezení rychlosti u komentářů, nahrávání a hromadných úprav. Je to pro pomocníka, který projde tisíce fotek najednou — běžný token ani přihlášení v prohlížeči ho nedostane. Nastavit ho může jen správce.",
+        "error": "Omezení rychlosti se u tokenu nepodařilo změnit. Zkuste to prosím znovu."
+      }
     },
     "subject": {
       "title": "Kdo jsem v knihovně",
@@ -642,7 +648,8 @@
       },
       "api_token": {
         "create": "Vytvoření API tokenu",
-        "revoke": "Zneplatnění API tokenu"
+        "revoke": "Zneplatnění API tokenu",
+        "update": "Změna omezení rychlosti tokenu"
       },
       "audit": {
         "purge": "Úklid auditního logu"

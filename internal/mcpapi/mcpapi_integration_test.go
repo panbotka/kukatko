@@ -100,7 +100,7 @@ func (e *env) token(t *testing.T, username string, role auth.Role) string {
 	if err != nil {
 		t.Fatalf("CreateUser(%s): %v", username, err)
 	}
-	_, plaintext, err := e.authSvc.CreateAPIToken(t.Context(), user.UID,
+	_, plaintext, err := e.authSvc.CreateAPIToken(t.Context(), user,
 		auth.CreateAPITokenInput{Name: "agent"},
 		audit.Entry{ActorUID: user.UID, Action: audit.ActionAPITokenCreate, TargetType: "api_tokens"})
 	if err != nil {

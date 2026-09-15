@@ -241,3 +241,97 @@ func TestClientIP(t *testing.T) {
 		})
 	}
 }
+
+// TestMiddlewareExcept_exemptBypassesTheBucket verifies an exempt request is
+// neither throttled nor charged: a hundred of them pass, and the full burst is
+// still there afterwards for the throttled caller sharing that address.
+func TestMiddlewareExcept_exemptBypassesTheBucket(t *testing.T) {
+	t.Parallel()
+
+	l := New(0.0001, 2) // tiny refill so the burst does not replenish mid-test
+	handler := l.MiddlewareExcept(func(r *http.Request) bool {
+		return r.Header.Get("X-Exempt") == "yes"
+	})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	do := func(exempt bool) int {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/upload", nil)
+		req.RemoteAddr = "1.1.1.1:5555"
+		if exempt {
+			req.Header.Set("X-Exempt", "yes")
+		}
+		handler.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	for i := range 100 {
+		if got := do(true); got != http.StatusOK {
+			t.Fatalf("exempt request %d: got %d, want 200", i, got)
+		}
+	}
+	for i := range 2 {
+		if got := do(false); got != http.StatusOK {
+			t.Fatalf("throttled request %d: got %d, want 200 (the burst must be untouched)", i, got)
+		}
+	}
+	if got := do(false); got != http.StatusTooManyRequests {
+		t.Fatalf("throttled request past the burst: got %d, want 429", got)
+	}
+	// And the exemption still holds once the shared bucket is empty.
+	if got := do(true); got != http.StatusOK {
+		t.Fatalf("exempt request after the bucket ran dry: got %d, want 200", got)
+	}
+}
+
+// TestKeyedMiddlewareExcept_exemptSkipsTheKeyFunction verifies the keyed variant
+// applies the same exemption and does not even ask for a bucket key for an
+// exempt request, while a nil predicate throttles everything as before.
+func TestKeyedMiddlewareExcept_exemptSkipsTheKeyFunction(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		exempt func(*http.Request) bool
+		want   []int
+	}{
+		{
+			name:   "nil predicate throttles past the burst",
+			exempt: nil,
+			want:   []int{http.StatusOK, http.StatusTooManyRequests},
+		},
+		{
+			name:   "exempt predicate lets everything through",
+			exempt: func(*http.Request) bool { return true },
+			want:   []int{http.StatusOK, http.StatusOK},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			l := New(0.0001, 1)
+			keyed := 0
+			handler := l.KeyedMiddlewareExcept(func(*http.Request) string {
+				keyed++
+				return "shared"
+			}, tt.exempt)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			}))
+
+			for i, want := range tt.want {
+				rec := httptest.NewRecorder()
+				req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/photos/ph_1/comments", nil)
+				handler.ServeHTTP(rec, req)
+				if rec.Code != want {
+					t.Fatalf("request %d: got %d, want %d", i, rec.Code, want)
+				}
+			}
+			if tt.exempt != nil && keyed != 0 {
+				t.Errorf("key function called %d times for exempt requests, want 0", keyed)
+			}
+		})
+	}
+}

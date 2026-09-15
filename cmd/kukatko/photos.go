@@ -175,7 +175,7 @@ func buildPhotoAPI(
 		Redetector:        rebuilders.face,
 		Regeocoder:        rebuilders.regeocoderOrNil(),
 		Rebuilds:          enqueuer,
-		CommentRateLimit:  commentLimit.KeyedMiddleware(commentRateKey),
+		CommentRateLimit:  commentLimit.KeyedMiddlewareExcept(commentRateKey, auth.RateLimitExempt),
 		RetentionDays:     cfg.Trash.RetentionDays,
 		VideoTranscode:    cfg.Video.Transcode,
 		RequireAuth:       authAPI.RequireAuth,

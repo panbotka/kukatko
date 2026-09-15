@@ -16,7 +16,7 @@ import (
 //
 //nolint:gosec // G101: a list of column names, not a credential; "secret_hash" is a column.
 const apiTokenColumns = `id, user_uid, name, secret_hash, created_at, expires_at,
-	last_used_at, revoked_at`
+	last_used_at, revoked_at, unlimited`
 
 // scanAPIToken reads one api_tokens row in apiTokenColumns order, returning a
 // wrapped error on failure.
@@ -24,7 +24,7 @@ func scanAPIToken(row pgx.Row) (APIToken, error) {
 	var t APIToken
 	if err := row.Scan(
 		&t.ID, &t.UserUID, &t.Name, &t.SecretHash, &t.CreatedAt,
-		&t.ExpiresAt, &t.LastUsedAt, &t.RevokedAt,
+		&t.ExpiresAt, &t.LastUsedAt, &t.RevokedAt, &t.Unlimited,
 	); err != nil {
 		return APIToken{}, fmt.Errorf("auth: scanning api token: %w", err)
 	}
@@ -37,13 +37,14 @@ func scanAPIToken(row pgx.Row) (APIToken, error) {
 // TargetUID defaults to the token's id. created_at is written from the
 // caller-supplied value so the token's timeline follows the service clock.
 func (s *Store) CreateAPITokenAudited(ctx context.Context, tok APIToken, entry audit.Entry) error {
-	const q = `INSERT INTO api_tokens (id, user_uid, name, secret_hash, created_at, expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6)`
+	const q = `INSERT INTO api_tokens (id, user_uid, name, secret_hash, created_at, expires_at, unlimited)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)`
 	if entry.TargetUID == "" {
 		entry.TargetUID = tok.ID
 	}
 	return s.inAuditedTx(ctx, entry, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, q, tok.ID, tok.UserUID, tok.Name, tok.SecretHash, tok.CreatedAt, tok.ExpiresAt)
+		_, err := tx.Exec(ctx, q,
+			tok.ID, tok.UserUID, tok.Name, tok.SecretHash, tok.CreatedAt, tok.ExpiresAt, tok.Unlimited)
 		if err != nil {
 			return fmt.Errorf("auth: inserting api token: %w", err)
 		}
@@ -79,6 +80,39 @@ func (s *Store) RevokeAPITokenAudited(
 		return false, err
 	}
 	return revoked, nil
+}
+
+// SetAPITokenUnlimitedAudited sets the rate-limit exemption on the token
+// identified by id and writes entry in the same transaction, reporting whether a
+// row actually changed. A token that already carries the requested value changes
+// nothing: the function reports false and writes no audit entry, so re-sending a
+// switch that is already in that position does not fill the trail with
+// non-events. A vanished token likewise reports false rather than erroring — the
+// caller has just read it, and a concurrent revocation is not this call's
+// business.
+func (s *Store) SetAPITokenUnlimitedAudited(
+	ctx context.Context, id string, unlimited bool, entry audit.Entry,
+) (bool, error) {
+	const q = `UPDATE api_tokens SET unlimited = $2 WHERE id = $1 AND unlimited IS DISTINCT FROM $2`
+	if entry.TargetUID == "" {
+		entry.TargetUID = id
+	}
+	changed := false
+	err := s.inAuditedTx(ctx, entry, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, q, id, unlimited)
+		if err != nil {
+			return fmt.Errorf("auth: setting api token unlimited: %w", err)
+		}
+		changed = tag.RowsAffected() > 0
+		if !changed {
+			return errNoAuditableChange
+		}
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	return changed, nil
 }
 
 // errNoAuditableChange is returned by an inAuditedTx mutation that decided there

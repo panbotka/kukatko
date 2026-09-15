@@ -18,7 +18,14 @@ import (
 	"github.com/panbotka/kukatko/internal/clientip"
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
+	"github.com/panbotka/kukatko/internal/ratelimit"
 )
+
+// throttledProbeBurst is the burst of the probe route standing in for the
+// library's throttled writes. It mirrors the comment limiter's shipped default
+// (ratelimit.comment: 0.5/s, burst 10), so a test that outruns it outruns the
+// real thing.
+const throttledProbeBurst = 10
 
 // tokenEnv is an httptest server over the auth API with a service clock the test
 // drives, plus direct database access so audit rows and last_used_at stamps can
@@ -54,6 +61,13 @@ func newTokenEnv(t *testing.T, createLimit int) *tokenEnv {
 		api.RegisterRoutes(r)
 		r.With(api.RequireAuth).Get("/probe/auth", probeOK)
 		r.With(api.RequireWrite).Get("/probe/write", probeOK)
+		// The shape every throttled write in the library has: the real limiter
+		// mounted *inside* the write guard with the real exemption predicate, so
+		// the bucket keys on the client address for everybody except a bearer
+		// token an admin marked unlimited.
+		throttle := ratelimit.New(0.5, throttledProbeBurst)
+		r.With(api.RequireWrite, throttle.MiddlewareExcept(auth.RateLimitExempt)).
+			Get("/probe/throttled", probeOK)
 		r.With(api.RequireAdmin).Get("/probe/admin", probeOK)
 		r.With(api.RequireImport).Get("/probe/import", probeOK)
 	})
@@ -78,11 +92,11 @@ func (e *tokenEnv) user(t *testing.T, username string, role auth.Role) auth.User
 // mintToken creates an API token straight through the service (bypassing HTTP)
 // and returns the stored token plus its plaintext credential.
 func (e *tokenEnv) mintToken(
-	t *testing.T, userUID, name string, expiresAt *time.Time,
+	t *testing.T, owner auth.User, name string, expiresAt *time.Time,
 ) (auth.APIToken, string) {
 	t.Helper()
-	entry := audit.Entry{ActorUID: userUID, Action: audit.ActionAPITokenCreate, TargetType: "api_tokens"}
-	tok, secret, err := e.svc.CreateAPIToken(t.Context(), userUID,
+	entry := audit.Entry{ActorUID: owner.UID, Action: audit.ActionAPITokenCreate, TargetType: "api_tokens"}
+	tok, secret, err := e.svc.CreateAPIToken(t.Context(), owner,
 		auth.CreateAPITokenInput{Name: name, ExpiresAt: expiresAt}, entry)
 	if err != nil {
 		t.Fatalf("CreateAPIToken(%q): %v", name, err)
@@ -295,8 +309,8 @@ func TestHTTP_bearerInheritsUserRole(t *testing.T) {
 	env := newTokenEnv(t, 50)
 	viewer := env.user(t, "viewer", auth.RoleViewer)
 	admin := env.user(t, "admin", auth.RoleAdmin)
-	_, viewerSecret := env.mintToken(t, viewer.UID, "viewer token", nil)
-	_, adminSecret := env.mintToken(t, admin.UID, "admin token", nil)
+	_, viewerSecret := env.mintToken(t, viewer, "viewer token", nil)
+	_, adminSecret := env.mintToken(t, admin, "admin token", nil)
 
 	tests := []struct {
 		name   string
@@ -339,11 +353,11 @@ func TestHTTP_bearerRejectsBadCredentials(t *testing.T) {
 	alice := env.user(t, "alice", auth.RoleEditor)
 
 	expiry := env.now.Add(time.Hour)
-	_, expiredSecret := env.mintToken(t, alice.UID, "expiring", &expiry)
-	revoked, revokedSecret := env.mintToken(t, alice.UID, "doomed", nil)
-	valid, validSecret := env.mintToken(t, alice.UID, "good", nil)
+	_, expiredSecret := env.mintToken(t, alice, "expiring", &expiry)
+	revoked, revokedSecret := env.mintToken(t, alice, "doomed", nil)
+	valid, validSecret := env.mintToken(t, alice, "good", nil)
 	disabledUser := env.user(t, "gone", auth.RoleEditor)
-	_, disabledSecret := env.mintToken(t, disabledUser.UID, "orphan", nil)
+	_, disabledSecret := env.mintToken(t, disabledUser, "orphan", nil)
 
 	entry := audit.Entry{ActorUID: alice.UID, Action: audit.ActionAPITokenRevoke, TargetType: "api_tokens"}
 	if err := env.svc.RevokeAPIToken(t.Context(), revoked.ID, alice, entry); err != nil {
@@ -443,7 +457,7 @@ func TestHTTP_bearerDoesNotDisturbCookieAuth(t *testing.T) {
 func TestHTTP_apiTokenLastUsedThrottled(t *testing.T) {
 	env := newTokenEnv(t, 50)
 	alice := env.user(t, "alice", auth.RoleEditor)
-	tok, secret := env.mintToken(t, alice.UID, "busy client", nil)
+	tok, secret := env.mintToken(t, alice, "busy client", nil)
 
 	if at := env.lastUsedAt(t, tok.ID); at != nil {
 		t.Fatalf("fresh token has last_used_at = %v, want NULL", at)
@@ -482,8 +496,8 @@ func TestHTTP_apiTokenRevokeOwnership(t *testing.T) {
 	env.user(t, "bob", auth.RoleEditor)
 	env.user(t, "root", auth.RoleAdmin)
 
-	aliceToken, aliceSecret := env.mintToken(t, alice.UID, "alice's", nil)
-	otherToken, _ := env.mintToken(t, alice.UID, "alice's second", nil)
+	aliceToken, aliceSecret := env.mintToken(t, alice, "alice's", nil)
+	otherToken, _ := env.mintToken(t, alice, "alice's second", nil)
 
 	// Bob sees someone else's token as absent, not forbidden.
 	bobCookie := env.login(t, "bob")

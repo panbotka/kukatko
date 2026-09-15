@@ -22,6 +22,12 @@ var (
 	ErrAPITokenNameRequired = errors.New("auth: api token name is required")
 	// ErrAPITokenExpiryInPast indicates a requested expiry that has already passed.
 	ErrAPITokenExpiryInPast = errors.New("auth: api token expiry must be in the future")
+	// ErrAPITokenUnlimitedForbidden indicates a caller who is not an admin tried
+	// to mint or change a token exempt from the rate limits. The exemption spends
+	// a shared resource on one credential's behalf, so it is an administrator's
+	// decision; the request is refused outright rather than silently downgraded
+	// to a throttled token nobody asked for.
+	ErrAPITokenUnlimitedForbidden = errors.New("auth: only an admin may set a token unlimited")
 )
 
 const (
@@ -52,6 +58,12 @@ type APIToken struct {
 	ExpiresAt  *time.Time `json:"expires_at,omitempty"`
 	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
 	RevokedAt  *time.Time `json:"revoked_at,omitempty"`
+	// Unlimited exempts requests bearing this token from the comment, upload and
+	// bulk rate limiters. Only an admin may set it — see Service.CreateAPIToken
+	// and Service.SetAPITokenUnlimited — and it is deliberately a property of the
+	// credential rather than of its owner: a session cookie never carries it, so
+	// a stolen cookie cannot spend the exemption.
+	Unlimited bool `json:"unlimited"`
 	// SecretHash holds the hex-encoded SHA-256 of the secret; excluded from JSON.
 	SecretHash string `json:"-"`
 }

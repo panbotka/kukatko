@@ -31,6 +31,7 @@ func buildBulkAPI(
 		Sidecar:      sidecar,
 		Places:       places,
 		RequireWrite: authAPI.RequireWrite,
-		RateLimit:    bulkLimit.Middleware,
+		// By client IP, except for an unlimited API token — see buildIngest.
+		RateLimit: bulkLimit.MiddlewareExcept(auth.RateLimitExempt),
 	})
 }

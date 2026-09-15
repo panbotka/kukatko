@@ -189,6 +189,12 @@ func (a *API) RunMaintenance(ctx context.Context, interval time.Duration) {
 type principal struct {
 	user    User
 	session Session
+	// unlimited records that the request authenticated with an API token marked
+	// exempt from the rate limits. It is carried here, rather than looked up
+	// again downstream, because the token row has already been read; and it is
+	// false for every cookie-authenticated request whatever the user's role, so
+	// the exemption can never ride a browser session or a stolen cookie.
+	unlimited bool
 }
 
 // contextKey is an unexported type for context keys defined in this package, so
@@ -225,6 +231,22 @@ func UserFromContext(ctx context.Context) (User, bool) {
 func SessionFromContext(ctx context.Context) (Session, bool) {
 	p, ok := principalFromContext(ctx)
 	return p.session, ok
+}
+
+// RateLimitExempt reports whether r was authenticated by an API token an admin
+// marked unlimited, and may therefore skip a rate limiter entirely. It is the
+// exemption predicate the throttled routes hand to
+// ratelimit.Limiter.MiddlewareExcept, which is why it takes a request rather
+// than a context.
+//
+// It answers false for everything else, including an admin's own browser
+// session: the exemption belongs to one revocable credential, not to a person,
+// so a stolen cookie gains nothing from it. A route that mounts it must sit
+// *inside* its auth guard — before the guard has run there is no principal on
+// the context and every request looks unexempt.
+func RateLimitExempt(r *http.Request) bool {
+	p, ok := principalFromContext(r.Context())
+	return ok && p.unlimited
 }
 
 // PasskeysEnabled reports whether this instance can run a WebAuthn ceremony at

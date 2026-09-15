@@ -349,6 +349,11 @@ const (
 	ActionAPITokenCreate = "api_token.create"
 	// ActionAPITokenRevoke records revoking a long-lived API token.
 	ActionAPITokenRevoke = "api_token.revoke"
+	// ActionAPITokenUpdate records an administrator turning a token's rate-limit
+	// exemption on or off. The details carry the token's name and the value it
+	// was moved to, so the trail answers "since when did this credential stop
+	// being throttled" without a second lookup.
+	ActionAPITokenUpdate = "api_token.update"
 	// ActionAnnouncementSet records a maintainer publishing (or replacing) the
 	// instance-wide announcement banner. The published message and level are
 	// recorded in the entry's details.
@@ -412,8 +417,9 @@ var knownActions = map[string]struct{}{
 	ActionUserPassword: {}, ActionUserPasswordReset: {}, ActionUserPasswordResetUse: {},
 	ActionUserApprove: {}, ActionUserRegister: {}, ActionPasskeyRegister: {},
 	ActionPasskeyLogin: {}, ActionPasskeyDelete: {}, ActionAPITokenCreate: {},
-	ActionAPITokenRevoke: {}, ActionAnnouncementSet: {}, ActionAnnouncementClear: {},
-	ActionSettingsUpdate: {}, ActionAuditPurge: {}, ActionLibraryReset: {},
+	ActionAPITokenRevoke: {}, ActionAPITokenUpdate: {}, ActionAnnouncementSet: {},
+	ActionAnnouncementClear: {}, ActionSettingsUpdate: {}, ActionAuditPurge: {},
+	ActionLibraryReset: {},
 }
 
 // KnownAction reports whether action is one of the trail's own action labels. An

@@ -241,7 +241,7 @@ to `## Package map` in `CLAUDE.md`.
   protects low-entropy passwords against a dictionary and is paid once per login, whereas a token is verified
   on *every* request and a 256-bit random secret has no dictionary; the comparison is constant-
   time (`subtle.ConstantTimeCompare`). The plaintext is returned **exactly once**, at creation.
-  The `APIToken` model (`name`, `expires_at`, `last_used_at`, `revoked_at`) + pure predicates
+  The `APIToken` model (`name`, `expires_at`, `last_used_at`, `revoked_at`, `unlimited`) + pure predicates
   `Revoked`/`Expired`/`Active`; a token **inherits the owner's role** (no role column, no second
   permission system). `Service.AuthenticateAPIToken` returns, on any failure, the single
   `ErrInvalidAPIToken` (→ 401, never 403, the body doesn't distinguish the case) and stamps `last_used_at`
@@ -250,6 +250,23 @@ to `## Package map` in `CLAUDE.md`.
   row in one transaction; `errNoAuditableChange` turns a repeated revocation into a no-op with no audit
   record. `bearerToken` parses `Authorization` case-insensitively per RFC 7235; a missing or
   non-Bearer scheme falls through to the cookie.
+  **The rate-limit exemption** (`unlimited`, migration `0077_api_tokens_unlimited.sql`): a token an admin
+  marked unlimited skips the comment, upload and bulk throttles entirely — the case is an agent driving the
+  library through `kukatko ctl`, whose bursts are exactly what those limiters are shaped to stop while being
+  work somebody asked for. It is a property of **the credential, never of the person**: `authenticateRequest`
+  copies it onto the request's `principal` only on the bearer path, so a session cookie is throttled whatever
+  the owner's role (a stolen cookie gains nothing) and the exemption dies with the token when it is revoked.
+  `RateLimitExempt(r)` is the exported predicate the throttled routes hand to
+  `ratelimit.Limiter.MiddlewareExcept`; it reads the principal, so a route mounting it must sit **inside** its
+  auth guard. Setting the flag is admin-only in the **service**, not in middleware —
+  `Service.CreateAPIToken` (which now takes the acting `User`) refuses a non-admin's `Unlimited` with
+  `ErrAPITokenUnlimitedForbidden` → **403 and no token at all**, and `Service.SetAPITokenUnlimited` refuses the
+  same way — because creation needs that check *conditionally* (only when the body asks) and one place cannot
+  drift from the other. The toggle reaches **only the caller's own** token (somebody else's → `ErrAPITokenNotFound`
+  → 404, even for an admin: revocation is the power an admin holds over a colleague's credential, this is not),
+  and `Store.SetAPITokenUnlimitedAudited` writes it `inAuditedTx` with `UPDATE … WHERE unlimited IS DISTINCT
+  FROM $2`, so re-sending the value a token already carries changes nothing and writes no audit row
+  (`api_token.update`, details `name` + the value moved to).
   **Passkeys** (`passkey.go`, `passkey_ceremony.go`, `store_passkey.go`, `handlers_passkey.go`,
   migration `0067_passkey_credentials.sql`, library `github.com/go-webauthn/webauthn`): WebAuthn
   sign-in beside the password. It lives **in this package rather than a package of its own** on
@@ -4719,15 +4736,23 @@ to `## Package map` in `CLAUDE.md`.
   chose, so nobody mints a fresh bucket per request; an empty bucket →
   **429** + `Retry-After`); `ratePerSec ≤ 0` → a **disabled** limiter (Allow always true, Middleware a
   no-op — the endpoint is switched off cleanly by config); memory-bounded by an opportunistic cleanup at `maxBuckets`
-  (8192), so it needs no external goroutine; mounted as the outermost middleware ahead of auth on
-  `POST /upload` (ingest), `POST /photos/bulk` (bulkapi), `POST /import/*` (importapi) and
-  `GET /map/tiles/...` (mapsapi) — the limits come from the `ratelimit.*` config; login and geocode have their own
-  limiters. `KeyedMiddleware(keyFn)` is the same middleware with the bucket key chosen by the caller instead
-  of the IP; `Middleware` is now `KeyedMiddleware(clientIP)`. It exists for `POST /photos/{uid}/comments`,
-  which is throttled **per user** and therefore mounted *inside* the auth guard (the principal is only on the
-  context once auth has run) — a household behind one NAT is one address but many people. A key function
-  returning `""` is not special-cased: every such request shares one bucket, the safe reading of "no identity
-  to attribute this to"), `internal/clientip/`
+  (8192), so it needs no external goroutine; mounted on `POST /upload` (ingest), `POST /photos/bulk`
+  (bulkapi), `POST /import/*` (importapi) and `GET /map/tiles/...` (mapsapi) — the limits come from the
+  `ratelimit.*` config; login and geocode have their own limiters. `KeyedMiddleware(keyFn)` is the same
+  middleware with the bucket key chosen by the caller instead of the IP; `Middleware` is now
+  `KeyedMiddleware(clientIP)`. It exists for `POST /photos/{uid}/comments`, which is throttled **per user**
+  and therefore mounted *inside* the auth guard (the principal is only on the context once auth has run) — a
+  household behind one NAT is one address but many people. A key function returning `""` is not
+  special-cased: every such request shares one bucket, the safe reading of "no identity to attribute this to".
+  `MiddlewareExcept(exempt)`/`KeyedMiddlewareExcept(keyFn, exempt)` add an **exemption predicate**: a request
+  for which `exempt` reports true is passed straight through, never reaching a bucket at all — not charged a
+  token and not refunded one, so an exempt caller cannot drain the budget a throttled one shares (an exemption
+  is the absence of a bucket, not a private one; a nil predicate is the plain middleware). It is how an API
+  token marked `unlimited` skips the throttle (`auth.RateLimitExempt`), which is also why `POST /upload` and
+  `POST /photos/bulk` now mount the limiter **behind `RequireWrite` rather than ahead of it**: the caller's
+  identity has to be known when the limiter runs. Nothing expensive became reachable — both routes already
+  required write access, so an unauthenticated flood merely pays one indexed credential lookup before its
+  401), `internal/clientip/`
   (**who a request actually came from** — the one answer the rate limiters, the audit trail and the access log
   all key on. A forwarding header is request data like any other, so chi's `middleware.RealIP`, which believed
   `True-Client-IP`/`X-Real-IP`/`X-Forwarded-For` from **anybody**, let an anonymous caller rotate a header and

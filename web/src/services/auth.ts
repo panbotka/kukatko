@@ -419,6 +419,12 @@ export async function resetPassword(
  * response. `expires_at` is absent on a token that never expires, `last_used_at`
  * on one that has never authenticated a request (and it is rewritten at most
  * once a minute, so it is "roughly when", not an access log).
+ *
+ * `unlimited` is the one property an admin can change after minting: a token
+ * carrying it is exempt from the comment, upload and bulk rate limits, which is
+ * what an agent working through thousands of photographs needs. It is always
+ * present (the backend does not omit it) and is `false` for every ordinary
+ * token.
  */
 export interface ApiToken {
   id: string
@@ -428,6 +434,7 @@ export interface ApiToken {
   expires_at?: string
   last_used_at?: string
   revoked_at?: string
+  unlimited: boolean
 }
 
 /** Response body of `POST /api/v1/auth/tokens`. */
@@ -473,21 +480,54 @@ export async function fetchApiTokens(signal?: AbortSignal): Promise<ApiToken[]> 
  * Mints a named API token for the signed-in user and returns it together with
  * its plaintext secret — the only time the secret is ever disclosed.
  *
+ * `unlimited` asks for a token exempt from the rate limits; only an admin may,
+ * and a refusal creates no token at all.
+ *
  * @throws ApiError with `status` 400 (empty name), 429 (the creation rate limit,
- *   shared with login) or 403 (a role that may not mint tokens).
+ *   shared with login) or 403 (a role that may not mint tokens, or a non-admin
+ *   asking for `unlimited`).
  */
-export async function createApiToken(name: string, signal?: AbortSignal): Promise<CreatedApiToken> {
+export async function createApiToken(
+  name: string,
+  unlimited = false,
+  signal?: AbortSignal,
+): Promise<CreatedApiToken> {
   const res = await apiFetch('/auth/tokens', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'same-origin',
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name, unlimited }),
     signal,
   })
   if (!res.ok) {
     throw new ApiError(res.status, await readErrorMessage(res))
   }
   return (await res.json()) as CreatedApiToken
+}
+
+/**
+ * Turns the rate-limit exemption on or off on one of the signed-in user's own
+ * tokens. Admin-only, idempotent (re-sending the value a token already has is
+ * still a 204), and scoped to the caller: somebody else's token answers 404.
+ *
+ * @throws ApiError with `status` 403 (any role below admin), 404 (no such token
+ *   of the caller's) or 5xx.
+ */
+export async function setApiTokenUnlimited(
+  id: string,
+  unlimited: boolean,
+  signal?: AbortSignal,
+): Promise<void> {
+  const res = await apiFetch(`/auth/tokens/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify({ unlimited }),
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
 }
 
 /**

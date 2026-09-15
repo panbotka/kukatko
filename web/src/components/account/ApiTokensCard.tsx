@@ -10,6 +10,7 @@ import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
+import { useAuth } from '../../auth/AuthContext'
 import { useReloadKey } from '../../hooks/useReloadKey'
 import { formatDateTimeMinutes } from '../../lib/format'
 import {
@@ -20,6 +21,7 @@ import {
   type CreatedApiToken,
   fetchApiTokens,
   revokeApiToken,
+  setApiTokenUnlimited,
 } from '../../services/auth'
 import { ConfirmModal } from '../ConfirmModal'
 import { EmptyState } from '../EmptyState'
@@ -90,8 +92,22 @@ function tokenPrefix(token: ApiToken): string {
 /**
  * One token in the list: its name, the identifying prefix, when it was made and
  * when it was last seen, plus the way to revoke it.
+ *
+ * A token exempt from the rate limits is badged for everybody who can see it,
+ * because "why is this one different" is a question the list should answer. The
+ * switch that moves the flag is rendered only for an admin (`onToggleUnlimited`
+ * is undefined otherwise) — the backend refuses anybody else, and an affordance
+ * that always fails is worse than none.
  */
-function TokenRow({ token, onRevoke }: { token: ApiToken; onRevoke: (token: ApiToken) => void }) {
+function TokenRow({
+  token,
+  onRevoke,
+  onToggleUnlimited,
+}: {
+  token: ApiToken
+  onRevoke: (token: ApiToken) => void
+  onToggleUnlimited?: (token: ApiToken, unlimited: boolean) => void
+}) {
   const { t, i18n } = useTranslation()
   const expired = isExpired(token, Date.now())
 
@@ -101,6 +117,12 @@ function TokenRow({ token, onRevoke }: { token: ApiToken; onRevoke: (token: ApiT
         <div className="d-flex align-items-center gap-2 flex-wrap">
           <span className="fw-semibold text-break">{token.name}</span>
           {expired && <Badge bg="secondary">{t('account.apiTokens.expired')}</Badge>}
+          {token.unlimited && (
+            <Badge bg="info" className="d-inline-flex align-items-center gap-1">
+              <Icon name="lightning-charge-fill" />
+              {t('account.apiTokens.unlimited.badge')}
+            </Badge>
+          )}
         </div>
         <div className="text-secondary small text-break">
           <code>{tokenPrefix(token)}</code>
@@ -124,6 +146,18 @@ function TokenRow({ token, onRevoke }: { token: ApiToken; onRevoke: (token: ApiT
             </>
           )}
         </div>
+        {onToggleUnlimited !== undefined && (
+          <Form.Check
+            type="switch"
+            className="mt-2"
+            id={`api-token-unlimited-${token.id}`}
+            checked={token.unlimited}
+            label={t('account.apiTokens.unlimited.label')}
+            onChange={(event) => {
+              onToggleUnlimited(token, event.target.checked)
+            }}
+          />
+        )}
       </div>
       {/* The glyph keeps its word above `sm`; below it the row is a long token
           name plus one Czech-worded button, which does not fit a phone. */}
@@ -225,17 +259,25 @@ function CreatedSecret({
  * mint one. Should that ever change, a 403 on the listing or on the creation
  * switches the whole section to a read-only explanation rather than leaving a
  * form that answers every submission with an error.
+ *
+ * The one thing a token can carry that its owner's role does not is the
+ * rate-limit exemption, and that is an admin's decision: the switch — on the
+ * creation form and on each row — is rendered only for an admin, because the
+ * backend refuses everybody else.
  */
 export function ApiTokensCard() {
   const { t } = useTranslation()
+  const { isAdmin } = useAuth()
   const [state, setState] = useState<ListState>({ status: 'loading' })
   const [reloadKey, reload] = useReloadKey()
   const [name, setName] = useState('')
+  const [unlimited, setUnlimited] = useState(false)
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<CreateErrorKey | null>(null)
   const [created, setCreated] = useState<CreatedApiToken | null>(null)
   const [pendingRevoke, setPendingRevoke] = useState<ApiToken | null>(null)
   const [revokeError, setRevokeError] = useState(false)
+  const [unlimitedError, setUnlimitedError] = useState(false)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -266,9 +308,10 @@ export function ApiTokensCard() {
     setCreating(true)
     setCreateError(null)
     try {
-      const result = await createApiToken(name.trim())
+      const result = await createApiToken(name.trim(), isAdmin && unlimited)
       setCreated(result)
       setName('')
+      setUnlimited(false)
       // The secret panel lives outside the list, so refreshing is free: the new
       // token simply shows up among the others, as any other client's would.
       reload()
@@ -280,6 +323,31 @@ export function ApiTokensCard() {
       }
     } finally {
       setCreating(false)
+    }
+  }
+
+  async function toggleUnlimited(token: ApiToken, next: boolean) {
+    setUnlimitedError(false)
+    // Optimistic, like the revoke below: the switch moves at once and is put
+    // back if the server disagrees.
+    const apply = (value: boolean) => {
+      setState((prev) =>
+        prev.status !== 'ready'
+          ? prev
+          : {
+              status: 'ready',
+              tokens: prev.tokens.map((item) =>
+                item.id === token.id ? { ...item, unlimited: value } : item,
+              ),
+            },
+      )
+    }
+    apply(next)
+    try {
+      await setApiTokenUnlimited(token.id, next)
+    } catch {
+      setUnlimitedError(true)
+      apply(token.unlimited)
     }
   }
 
@@ -313,6 +381,12 @@ export function ApiTokensCard() {
         {revokeError && (
           <Alert variant="danger" role="alert">
             {t('account.apiTokens.revokeError')}
+          </Alert>
+        )}
+
+        {unlimitedError && (
+          <Alert variant="danger" role="alert">
+            {t('account.apiTokens.unlimited.error')}
           </Alert>
         )}
 
@@ -351,7 +425,18 @@ export function ApiTokensCard() {
         {state.status === 'ready' && state.tokens.length > 0 && (
           <ListGroup>
             {state.tokens.map((token) => (
-              <TokenRow key={token.id} token={token} onRevoke={setPendingRevoke} />
+              <TokenRow
+                key={token.id}
+                token={token}
+                onRevoke={setPendingRevoke}
+                onToggleUnlimited={
+                  isAdmin
+                    ? (item, next) => {
+                        void toggleUnlimited(item, next)
+                      }
+                    : undefined
+                }
+              />
             ))}
           </ListGroup>
         )}
@@ -405,6 +490,22 @@ export function ApiTokensCard() {
               </InputGroup>
               <Form.Text className="text-secondary">{t('account.apiTokens.nameHint')}</Form.Text>
             </Form.Group>
+            {isAdmin && (
+              <Form.Group controlId="api-token-unlimited" className="mt-3">
+                <Form.Check
+                  type="switch"
+                  checked={unlimited}
+                  disabled={creating}
+                  label={t('account.apiTokens.unlimited.label')}
+                  onChange={(event) => {
+                    setUnlimited(event.target.checked)
+                  }}
+                />
+                <Form.Text className="text-secondary">
+                  {t('account.apiTokens.unlimited.hint')}
+                </Form.Text>
+              </Form.Group>
+            )}
           </Form>
         )}
       </Card.Body>

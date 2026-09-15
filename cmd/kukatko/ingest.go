@@ -53,5 +53,8 @@ func buildIngest(
 		MaxPixels:   cfg.Thumb.MaxPixels,
 	})
 	uploadLimit := ratelimit.New(cfg.RateLimit.Upload.RatePerSec, cfg.RateLimit.Upload.Burst)
-	return ingest.NewAPI(svc, authAPI.RequireWrite, uploadLimit.Middleware), nil
+	// Throttled by client IP, except for a request bearing an API token an admin
+	// marked unlimited — an agent importing a shoebox of scans is the case the
+	// limiter's burst was never meant to stop.
+	return ingest.NewAPI(svc, authAPI.RequireWrite, uploadLimit.MiddlewareExcept(auth.RateLimitExempt)), nil
 }

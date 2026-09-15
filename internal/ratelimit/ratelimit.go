@@ -8,6 +8,11 @@
 // working. Building a limiter with a non-positive rate yields a disabled limiter
 // that allows everything, letting a single endpoint opt out purely via
 // configuration without branching at the call site.
+//
+// A single *caller* can be let through instead of a whole endpoint by giving the
+// middleware an exemption predicate (MiddlewareExcept, KeyedMiddlewareExcept):
+// an exempt request bypasses the bucket entirely rather than being charged and
+// refunded, so it can neither be throttled nor exhaust anybody else's budget.
 package ratelimit
 
 import (
@@ -151,6 +156,21 @@ func (l *Limiter) Middleware(next http.Handler) http.Handler {
 	return l.KeyedMiddleware(clientIP)(next)
 }
 
+// MiddlewareExcept is Middleware with an exemption predicate: a request for
+// which exempt reports true is passed straight through, spending nothing from
+// any bucket, while every other request is throttled by client IP exactly as
+// Middleware throttles it. It exists so a credential can be let through without
+// inventing a bucket key that is never charged — an exemption is the absence of
+// a bucket, not a private one.
+//
+// exempt runs on every request, so it must be cheap and must not block; the
+// intended shape reads an identity the auth guard has already put on the
+// request's context, which means such a route mounts this middleware *inside*
+// its guard. A nil exempt is the same as Middleware.
+func (l *Limiter) MiddlewareExcept(exempt func(*http.Request) bool) func(http.Handler) http.Handler {
+	return l.KeyedMiddlewareExcept(clientIP, exempt)
+}
+
 // KeyedMiddleware is Middleware with the bucket key chosen by keyFn instead of
 // the client IP, for an endpoint that should be throttled per principal rather
 // than per address: a household behind one NAT is a single IP but many people,
@@ -161,11 +181,25 @@ func (l *Limiter) Middleware(next http.Handler) http.Handler {
 // shares one bucket, which is the safe reading of "no identity to attribute
 // this to". A disabled limiter yields a pass-through, as Middleware does.
 func (l *Limiter) KeyedMiddleware(keyFn func(*http.Request) string) func(http.Handler) http.Handler {
+	return l.KeyedMiddlewareExcept(keyFn, nil)
+}
+
+// KeyedMiddlewareExcept is KeyedMiddleware with the exemption predicate of
+// MiddlewareExcept: an exempt request never reaches a bucket at all — it is not
+// charged a token and not refunded one, so an exempt caller cannot empty the
+// bucket a throttled one shares. A nil exempt throttles everything.
+func (l *Limiter) KeyedMiddlewareExcept(
+	keyFn func(*http.Request) string, exempt func(*http.Request) bool,
+) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		if l.disabled {
 			return next
 		}
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if exempt != nil && exempt(r) {
+				next.ServeHTTP(w, r)
+				return
+			}
 			if !l.Allow(keyFn(r)) {
 				writeTooManyRequests(w)
 				return
