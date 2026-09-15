@@ -360,14 +360,14 @@ describe('FacesPanel', () => {
       face_index: 0,
       suggestions: [
         { subject_uid: 'su_2', subject_name: 'Bob', distance: 0.9, confidence: 0.1 },
-        { subject_uid: 'su_3', subject_name: 'Cyril', distance: 0.7, confidence: 0.3 },
+        { subject_uid: 'su_3', subject_name: 'Cyril', distance: 0.8, confidence: 0.2 },
       ],
     })
     renderPanel(facesResult({ faces: [selected], selected }))
 
     // Nothing clears the floor, so nothing is clickable — the closest neighbour is
     // named as a hint for the typeahead, never as a recommendation.
-    expect(await screen.findByText('Uncertain match: Cyril · 30%')).toBeInTheDocument()
+    expect(await screen.findByText('Uncertain match: Cyril · 20%')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Cyril/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Bob/ })).not.toBeInTheDocument()
     expect(screen.queryByText('Suggestions')).not.toBeInTheDocument()
@@ -622,6 +622,17 @@ describe('FacesPanel confirm all', () => {
     )
 
     expect(screen.getByRole('button', { name: /Confirm all \(2\)/ })).toBeInTheDocument()
+  })
+
+  it('ignores a weakly suggested face the selected panel still offers a button for', async () => {
+    // The two floors pull apart here: a 30 % suggestion is a chip somebody may tap
+    // deliberately, but "confirm all" would write it unread, so it is not counted.
+    const weak = faceView({ face_index: 2, suggestions: [suggestion('Cyril', 0.3)] })
+    fetchSubjectsMock.mockResolvedValue([])
+    renderPanel(facesResult({ faces: [...twoSuggested(), weak], selected: weak }))
+
+    expect(screen.getByRole('button', { name: /Confirm all \(2\)/ })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: /Cyril · 30/ })).toBeInTheDocument()
   })
 
   it('stays away when a single row button would do the same job', () => {

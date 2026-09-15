@@ -13,8 +13,14 @@
  * enough that a suggestion is worth a button, low enough that the faces of people
  * the library already knows are not withheld. Everything under it is shown once,
  * muted and labelled uncertain, so the information survives without looking like
- * advice. Where the line sits, and what was measured to put it there, is in
- * `docs/THRESHOLDS.md`.
+ * advice.
+ *
+ * There are **two** lines, because a button and a batch are not the same offer.
+ * {@link SUGGESTION_DISPLAY_FLOOR} decides what a human may accept with one
+ * deliberate tap, looking at the face and the name together;
+ * {@link BULK_CONFIRMATION_FLOOR} decides what a single "confirm all" may write
+ * unread, and sits higher. Where each line sits, and what was measured to put it
+ * there, is in `docs/THRESHOLDS.md`.
  */
 
 import { type FaceView, type Suggestion } from '../services/people'
@@ -25,13 +31,29 @@ import { hasEmbedding, isNamed } from './faceState'
  *
  * It sat at 0.5 — the complement of `faces.suggestion_max_distance`
  * (`facematch.DefaultSuggestionMaxDistance`), i.e. exactly where the backend's
- * primary suggestion search stops — and is now **0.4**, one band into the widened
- * tail. Measured against the names a human already gave, a top suggestion in the
- * 0.40–0.50 band is the right person 88 % of the time, and admitting it grows the
- * share of unnamed faces carrying a one-tap button by about half. See
- * `docs/THRESHOLDS.md` for the measurement and for why the line stops here.
+ * primary suggestion search stops — then at 0.4, and is now **0.25**, deep into
+ * the widened tail. The band it admits measures worse than the one above it, and
+ * that is a decision rather than an oversight: this library is full of faces a
+ * couple of percent of the frame wide, where the right person routinely lands
+ * around 30 % — on the photo that moved this line they were the one face left
+ * without a button, beside four weaker-looking neighbours that each had one.
+ * A wrong chip costs one look and no click; a
+ * withheld one costs the whole point of the screen. See `docs/THRESHOLDS.md` for
+ * the measurement per band and the photo that moved the line.
  */
-export const SUGGESTION_DISPLAY_FLOOR = 0.4
+export const SUGGESTION_DISPLAY_FLOOR = 0.25
+
+/**
+ * The confidence a suggestion must reach to be named by a **bulk** confirmation.
+ *
+ * Stricter than {@link SUGGESTION_DISPLAY_FLOOR} on purpose, and left at the 0.4
+ * the display floor used to hold. One tap on a chip is a human answering one
+ * question about one face; one tap on "confirm all" writes a dozen names nobody
+ * read. The 0.25–0.40 band is worth offering — it is not worth applying
+ * unattended, so a face in it keeps its own row button and is simply not counted
+ * into the batch.
+ */
+export const BULK_CONFIRMATION_FLOOR = 0.4
 
 /** What a face panel should render for one face's ranked suggestions. */
 export interface RankedSuggestions {
@@ -83,9 +105,10 @@ export function rankSuggestions(suggestions: Suggestion[], max: number): RankedS
  * is picked by comparison rather than by taking the first element, so a caller
  * that reorders cannot confirm the wrong person.
  *
- * It is the single answer to "what does this face's confirm button do", shared by
- * the photo detail's bulk action ({@link bulkConfirmations}) and by the album
- * face-tagging run, which shows the same identity as one row's offer.
+ * It is the single answer to "what does this face's *own* button do", shared by
+ * the photo detail's panel and by the album face-tagging run, which shows the same
+ * identity as one row's offer. A bulk confirmation starts from it too, but then
+ * applies its own stricter floor — see {@link bulkConfirmations}.
  */
 export function topSuggestion(face: FaceView): Suggestion | null {
   if (isNamed(face) || !hasEmbedding(face)) {
@@ -113,10 +136,14 @@ export interface FaceConfirmation {
  * bulkConfirmations picks the faces a single "confirm all" may name, and the
  * identity each of them would get.
  *
- * A face qualifies exactly when {@link topSuggestion} names somebody for it.
- * There is deliberately no second, stricter threshold: the bulk action confirms
- * exactly what the panel offers one by one, and follows the floor if it ever
- * moves (see `docs/THRESHOLDS.md`).
+ * A face qualifies when {@link topSuggestion} names somebody for it **and** that
+ * suggestion clears {@link BULK_CONFIRMATION_FLOOR} — a second, stricter line than
+ * the one the rows themselves use. The bulk action used to confirm exactly what
+ * the panel offered one by one; once the display floor dropped to 0.25 that stopped
+ * being the same promise, because the band between the two floors is offered on the
+ * understanding that a human is looking at the face while they accept it. So a
+ * 0.30 face keeps its own button and is quietly left out of the count above the
+ * list (see `docs/THRESHOLDS.md`).
  *
  * **One person is named once per photo.** When two qualifying faces top-suggest
  * the same subject, only the more confident one is confirmed; the other is left
@@ -135,7 +162,7 @@ export function bulkConfirmations(faces: FaceView[]): FaceConfirmation[] {
   const bySubject = new Map<string, FaceConfirmation>()
   for (const face of faces) {
     const top = topSuggestion(face)
-    if (top === null) {
+    if (top === null || top.confidence < BULK_CONFIRMATION_FLOOR) {
       continue
     }
     const held = bySubject.get(top.subject_uid)

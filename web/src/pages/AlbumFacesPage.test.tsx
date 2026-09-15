@@ -208,6 +208,25 @@ describe('AlbumFacesPage', () => {
     })
   })
 
+  it('leaves a weak offer out of the batch while its own row keeps the button', async () => {
+    const user = userEvent.setup()
+    queueOf('p1')
+    facesFrom({ p1: [face(0, [suggestion('Alice', 0.9)]), face(1, [suggestion('Bob', 0.3)])] })
+
+    renderPage()
+    await screen.findByText('Alice')
+    // Bob is offered — the display floor admits 30 % — but "confirm all" holds a
+    // stricter line, so it counts one face and writes one name.
+    expect(within(rowOf(2)).getByRole('button', { name: 'Potvrdit Bob' })).toBeInTheDocument()
+
+    await user.click(await screen.findByRole('button', { name: /Potvrdit vše \(1\)/ }))
+
+    await waitFor(() => {
+      expect(assignMock).toHaveBeenCalledTimes(1)
+    })
+    expect(screen.getByText('Bob')).toBeInTheDocument()
+  })
+
   it('dismisses a row without writing anything', async () => {
     const user = userEvent.setup()
     queueOf('p1')

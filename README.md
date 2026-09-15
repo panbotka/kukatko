@@ -105,9 +105,11 @@ photo-book tool (deliberately out of scope), or a product with support and a rel
   `person:`, and rides along into the metadata sidecar. Remove them again with one click. It is
   offered on every photo and every video, not only on the ones the detector came back empty from.
 - **Naming a group photograph is one click, not twelve.** When several faces on one photo already
-  carry a confident suggestion, the faces panel offers to confirm all of them at once. It names
-  exactly what it was already offering face by face, never the same person twice on one photograph,
-  and it can be stopped halfway — what it could not save it says so, and leaves unnamed.
+  carry a confident suggestion, the faces panel offers to confirm all of them at once. It is
+  deliberately more cautious than the buttons beside each face: a weak suggestion is still worth
+  showing to somebody looking at that one face, and not worth writing a dozen at a time, so it stays
+  a single tap of its own. It never names the same person twice on one photograph and it can be
+  stopped halfway — what it could not save it says so, and leaves unnamed.
 - **A whole album gets named in one sitting.** After an event the album is uploaded at once and
   every face on it wants a name, which is the one job the photo detail is the wrong shape for. An
   album whose photos still carry somebody unnamed grows an **Obličeje** button, and behind it the

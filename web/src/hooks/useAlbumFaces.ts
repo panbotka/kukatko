@@ -205,6 +205,11 @@ async function loadQueue(albumUid: string, signal: AbortSignal): Promise<Photo[]
  * again the next time the album is walked, because a face passed over in a hurry
  * is not evidence about who it is.
  *
+ * **Confirm-all is stricter than the rows.** Every row with an offered suggestion
+ * carries its own one-tap button, down to the display floor; the button that names
+ * the whole photo takes only what clears `BULK_CONFIRMATION_FLOOR`, so the weakest
+ * offers are answered one at a time by somebody who looked at the face.
+ *
  * **A failed confirmation leaves the face unnamed.** Names are applied to the
  * cached faces only once the server has taken them, so a refused request leaves
  * the row exactly where it was; the tally is reported and the run goes on.
@@ -453,7 +458,9 @@ export function useAlbumFaces(albumUid: string): UseAlbumFacesResult {
     [dismissed, view],
   )
   // The batch is computed from the rows, not from the photo: a face dismissed
-  // this run is not offered again by the button that names everything.
+  // this run is not offered again by the button that names everything. It is also
+  // a subset of the rows rather than all of them — `bulkConfirmations` holds a
+  // stricter floor than a row's own button, so the weak offers stay one tap each.
   const batch = useMemo(() => bulkConfirmations(rows.map((row) => row.face)), [rows])
 
   const confirmAll = useCallback(() => {

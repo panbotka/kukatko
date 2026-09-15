@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { type Bbox, type FaceView, type Suggestion } from '../services/people'
 
 import {
+  BULK_CONFIRMATION_FLOOR,
   bulkConfirmations,
   rankSuggestions,
   SUGGESTION_DISPLAY_FLOOR,
@@ -45,7 +46,7 @@ describe('rankSuggestions', () => {
 
   it('offers nothing below the floor and keeps only the strongest as uncertain', () => {
     const ranked = rankSuggestions(
-      [suggestion('Alice', 0.1), suggestion('Bob', 0.35), suggestion('Cyril', 0.2)],
+      [suggestion('Alice', 0.1), suggestion('Bob', 0.22), suggestion('Cyril', 0.2)],
       3,
     )
 
@@ -53,14 +54,21 @@ describe('rankSuggestions', () => {
     expect(ranked.uncertain?.subject_name).toBe('Bob')
   })
 
-  it('offers a 40 % suggestion — the floor was lowered to admit exactly those', () => {
-    // The band 0.40–0.50 used to be muted text. Measured against the names a
-    // human already gave, its top suggestion is the right person 86 % of the
-    // time, so it is a button now (see `docs/THRESHOLDS.md`).
-    const ranked = rankSuggestions([suggestion('Alice', 0.42)], 3)
+  it('offers a 30 % suggestion — the floor was lowered to admit exactly those', () => {
+    // On the tiny faces this library is full of, the right person routinely lands
+    // in the 0.25–0.40 band; it was muted text until the floor moved to 0.25, and
+    // is a button now (see `docs/THRESHOLDS.md`).
+    const ranked = rankSuggestions([suggestion('Alice', 0.3), suggestion('Bob', 0.2)], 3)
 
     expect(ranked.offered.map((s) => s.subject_name)).toEqual(['Alice'])
     expect(ranked.uncertain).toBeNull()
+  })
+
+  it('mutes a 20 % suggestion rather than offering it', () => {
+    const ranked = rankSuggestions([suggestion('Alice', 0.2)], 3)
+
+    expect(ranked.offered).toEqual([])
+    expect(ranked.uncertain?.subject_name).toBe('Alice')
   })
 
   it('has nothing to say about a face with no suggestions', () => {
@@ -99,15 +107,28 @@ describe('bulkConfirmations', () => {
   })
 
   it('leaves out a face whose best suggestion is only uncertain', () => {
-    // 0.39 is below the display floor, so the panel shows it muted rather than as
-    // a button — and a button is exactly what the bulk action presses.
-    expect(bulkConfirmations([face(0, [suggestion('Alice', 0.39)])])).toEqual([])
+    // 0.20 is below the display floor, so the panel shows it muted rather than as
+    // a button — and a button is the least the bulk action needs.
+    expect(bulkConfirmations([face(0, [suggestion('Alice', 0.2)])])).toEqual([])
   })
 
-  it('follows the floor rather than a threshold of its own', () => {
-    // A 42 % suggestion is offered as a chip, so "confirm all" presses it too:
-    // the bulk action is the rows, repeated.
-    const batch = bulkConfirmations([face(0, [suggestion('Alice', 0.42)])])
+  it('leaves out a 30 % face the rows do offer — its floor is stricter', () => {
+    // The chip is there for a deliberate single tap; one click must not write a
+    // name from the band that measures worst (see `docs/THRESHOLDS.md`).
+    const weak = face(0, [suggestion('Alice', 0.3)])
+
+    expect(topSuggestion(weak)?.subject_name).toBe('Alice')
+    expect(bulkConfirmations([weak])).toEqual([])
+  })
+
+  it('takes a 45 % face: offered as a chip and strong enough to be written', () => {
+    const batch = bulkConfirmations([face(0, [suggestion('Alice', 0.45)])])
+
+    expect(batch.map((item) => item.subject.subject_name)).toEqual(['Alice'])
+  })
+
+  it('treats a suggestion exactly at the bulk floor as confirmable', () => {
+    const batch = bulkConfirmations([face(0, [suggestion('Alice', BULK_CONFIRMATION_FLOOR)])])
 
     expect(batch.map((item) => item.subject.subject_name)).toEqual(['Alice'])
   })
@@ -165,7 +186,13 @@ describe('topSuggestion', () => {
   })
 
   it('names nobody when the best candidate is below the floor', () => {
-    expect(topSuggestion(face(0, [suggestion('Alice', 0.39)]))).toBeNull()
+    expect(topSuggestion(face(0, [suggestion('Alice', 0.2)]))).toBeNull()
+  })
+
+  it('names the person behind a 30 % chip — it is the display floor it follows', () => {
+    const top = topSuggestion(face(0, [suggestion('Alice', 0.3)]))
+
+    expect(top?.subject_name).toBe('Alice')
   })
 
   it('names nobody for a face that already names somebody', () => {

@@ -85,10 +85,11 @@ const STATE_CHIP: Record<FaceState, string> = {
  *
  * On a group photo where several faces already carry a confident suggestion,
  * naming them one row at a time is the same click repeated; a single **confirm
- * all** above the list does the lot. It offers exactly what the rows offer — the
- * suggestions {@link bulkConfirmations} finds in the panel's own display tier —
- * and it appears only from two faces up, because with one the row's own button is
- * already the shorter path.
+ * all** above the list does the lot. It offers *less* than the rows do: the rows
+ * follow the display floor, while {@link bulkConfirmations} keeps its own stricter
+ * one, so a weak-but-offered suggestion stays a deliberate single click and is not
+ * counted on the button. It appears only from two faces up, because with one the
+ * row's own button is already the shorter path.
  *
  * A viewer may not name anybody, so their rows are plain rows rather than dead
  * buttons — the app-wide rule (see `ReasonedButton`) is that a role never leaves

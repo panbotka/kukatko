@@ -1840,7 +1840,9 @@ here.
   surface uses, while dismiss writes **nothing at all** — it drops the row for this run and the face
   is offered again next time. That is deliberately unlike the review game, where „no" is a stored
   rejection: there the reader answers a question about a face, here they move past one.
-  **Potvrdit vše (N)** confirms every offer on the photo through `bulkConfirmations`, so its
+  **Potvrdit vše (N)** goes through `bulkConfirmations`, which is **less** than every offer on the
+  photo: it holds `BULK_CONFIRMATION_FLOOR` (0.4) while the rows themselves offer from 0.25, so a
+  weakly suggested row keeps its own one-tap button and is simply not counted on the batch. Its
   one-person-once rule applies here too — two faces top-suggesting the same subject confirm only the
   stronger one. A face with **no** offered suggestion is listed (with „Bez návrhu") but carries no
   controls; it stays for the photo detail, where a name can be typed. The keyboard does the lot:
@@ -4562,8 +4564,9 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   **Above the rows sits one bulk control** — **Potvrdit vše (N)** — for the photograph where several faces each
   already carry a confident suggestion and naming them one row at a time is the same click repeated. What it
   names is `lib/faceSuggestion`'s `bulkConfirmations`: an unnamed face **with an embedding** whose strongest
-  suggestion clears the **same display floor** the row's own suggestion buttons use — deliberately no second,
-  stricter threshold, so it follows the floor if that ever moves (`docs/THRESHOLDS.md`) — and **one person only
+  suggestion clears `BULK_CONFIRMATION_FLOOR` (**0.4**) — a **stricter** line than the 0.25 display floor the
+  row's own buttons use, because one tap here writes a dozen names nobody read, while a chip is a human
+  answering about one face they are looking at (`docs/THRESHOLDS.md`) — and **one person only
   once per photograph**: when two faces top-suggest the same subject only the surer one is confirmed and the
   other is left for a human, because the same person on two markers of one photo is exactly what
   `internal/dupmarkers` exists to clean up. It is shown only to `canWrite` and only from **two** faces up (with
@@ -4588,14 +4591,15 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   face always has candidates, and a 10 % one offered as a button is a wrong click waiting to happen on a
   crowd; when nothing clears the floor the strongest is stated once as muted, **unclickable** text
   („Nejistý návrh: {name} · {confidence}") — the hint survives, the recommendation does not.
-  The floor is **0.4 confidence** since 2026-09-09 (it was 0.5, the backend's own cutoff): the band
-  0.40–0.50 names the right person 86 % of the time on the library's already-named faces, and
-  admitting it is what makes the album face-tagging run offer a button on about a fifth more faces —
-  the measurement, and why the line stops there, is in `docs/THRESHOLDS.md`. Which identity a single
+  The floor is **0.25 confidence** since 2026-09-15 (0.5 until 2026-09-09, then 0.4): this library is
+  full of faces a couple of percent of the frame wide, where the right person routinely lands around
+  30 % — the 0.25–0.40 band names the right person 85 % of the time on already-named faces and nearly
+  quadruples the share of unnamed faces carrying a button (10 % → 39 %), at the price of a weaker band
+  being visibly offered; the measurement is in `docs/THRESHOLDS.md`. Which identity a single
   confirm button applies is `topSuggestion(face)` in the same module — unnamed, has an embedding,
-  strongest **offered** candidate by comparison — and it is the one answer `FaceAssignPanel`,
-  `bulkConfirmations` and `AlbumFacesPage` all read, so no surface can offer a name another would
-  refuse. Building the request that applies it is `lib/faceAssign`'s `buildAssign(face, who)`:
+  strongest **offered** candidate by comparison — and it is the one answer `FaceAssignPanel` and
+  `AlbumFacesPage` read, so neither surface can offer a name the other would refuse; `bulkConfirmations`
+  starts from it and then keeps its own stricter floor. Building the request that applies it is `lib/faceAssign`'s `buildAssign(face, who)`:
   `assign_person` on an existing `marker_uid`, `create_marker` from the bbox otherwise — the
   backend's own fork (`internal/facematch`), which the UI never shows because naming either face is
   the same one click. It lives in `lib/` rather than inside `useFaces` because two naming surfaces
@@ -5753,8 +5757,9 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   `faceThreshold.ts` = a pure conversion of the person-search threshold between **percent** (the UI) and the **cosine
   distance** (the backend): `percentToDistance` (`1 - p/100`)/`distanceToPercent` (the inverse,
   rounded — also the „match %" on a card)/`clampThresholdPercent` + the range constants (20–80, step 5,
-  default 50); `faceSuggestion.ts` = the **display floor** on identity suggestions:
-  `SUGGESTION_DISPLAY_FLOOR` (0.5 confidence = the complement of `faces.suggestion_max_distance`) and the pure
+  default 50); `faceSuggestion.ts` = the **two floors** on identity suggestions:
+  `SUGGESTION_DISPLAY_FLOOR` (0.25 confidence — what a row may offer as a one-tap chip) and the stricter
+  `BULK_CONFIRMATION_FLOOR` (0.4 — what a single „Potvrdit vše" may write unread), and the pure
   `rankSuggestions(suggestions, max)` → `{offered, uncertain}`, where `uncertain` is the strongest candidate
   **only when none cleared the floor** (picked by comparison, not by taking the first, so a caller that
   reorders cannot mislabel it). It is a display decision, not a new cosine threshold — the derivation is in
