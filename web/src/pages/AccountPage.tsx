@@ -12,6 +12,7 @@ import { Link } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
 import { ApiTokensCard } from '../components/account/ApiTokensCard'
+import { MyPictureCard } from '../components/account/MyPictureCard'
 import { MySubjectCard } from '../components/account/MySubjectCard'
 import { PasskeysCard } from '../components/account/PasskeysCard'
 import { Icon } from '../components/Icon'
@@ -63,10 +64,15 @@ function errorKeyFor(error: unknown): AccountErrorKey {
  * greet everyone on the landing page; it lives here now, where a curious user
  * goes looking for it, rather than in front of the photos.
  *
- * Above those sits {@link MySubjectCard}: which person of the library this
- * account belongs to. It is the one setting here that changes what *other*
- * people see — the linked person's face appears beside this account's comments —
- * so the card says so before the field rather than after the save.
+ * Above those sit {@link MySubjectCard} — which person of the library this
+ * account belongs to — and {@link MyPictureCard}, what the account looks like
+ * wherever it is named. The two are one subject in two halves: linking a person
+ * is *also* how an account gets a face, and the picture card is where that
+ * default is overridden with an upload or a photograph.
+ *
+ * The link is the one setting here that changes what *other* people see — the
+ * linked person's face appears beside this account's comments — so its card says
+ * so before the field rather than after the save.
  *
  * It is also the way to {@link MyActivityPage} — the user's own history of
  * actions. That entry point lives here rather than in the navigation: the bar is
@@ -179,6 +185,12 @@ export function AccountPage() {
             identity card because it is part of the same answer: the first block
             says which account this is, this one says which person. */}
         <MySubjectCard />
+
+        {/* And what this account looks like. It follows the link rather than
+            preceding it, because the link is the picture's own default: an
+            account that has just said which person it is already has a face, and
+            this card is where one overrides it. */}
+        <MyPictureCard />
 
         <Card text="light" className="mb-4">
           <Card.Body>

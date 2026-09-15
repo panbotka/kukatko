@@ -37,6 +37,7 @@ import {
   TOOLS_GROUP,
   UPLOAD_ITEM,
 } from './navItems'
+import { PersonAvatar } from './PersonAvatar'
 import { SearchCommand } from './search/SearchCommand'
 import { WelcomeModal } from './welcome/WelcomeModal'
 
@@ -309,7 +310,21 @@ export function Layout() {
                 <Nav className="ms-3">
                   <NavDropdown
                     align="end"
-                    title={user.display_name || user.username}
+                    // A picture where the name alone used to stand: whatever the
+                    // account resolves to, and the coloured initial — the common
+                    // case — when it resolves to nothing. It is `sm` because the
+                    // bar's width is already spoken for; a full-size disc here
+                    // pushes the menu past the container on a narrow desktop.
+                    title={
+                      <span className="d-inline-flex align-items-center gap-2">
+                        <PersonAvatar
+                          name={user.display_name || user.username}
+                          userUid={user.uid}
+                          className="kk-avatar--sm"
+                        />
+                        {user.display_name || user.username}
+                      </span>
+                    }
                     id="user-menu"
                   >
                     {renderMenuItem(ACCOUNT_ITEM)}

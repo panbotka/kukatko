@@ -15,7 +15,10 @@ here.
   + a `NavDropdown.Header` (`kk-menu-section` — the drawer's uppercase caption label, so both widths name
   the block the same way) + the `adminItems({isAdmin, isMaintainer})` entries, rendered by `renderMenuItem`
   like every other entry of the menu; it sits **between the account block and Odhlásit se**, and the whole
-  block — divider and heading included — is skipped when the list comes back empty) + role-gated
+  block — divider and heading included — is skipped when the list comes back empty. The toggle itself
+  wears a `PersonAvatar` at `.kk-avatar--sm` beside the display name — the account's own picture where a
+  bare name used to stand; 1.5 rem rather than the default 2, because the desktop bar's width is already
+  spoken for) + role-gated
   nav with a **visible hierarchy based on
   how often an ordinary person uses an item**: the everyday loop (browsing, sorting, adding photos) is
   loud and immediate, while admin/power-user tooling is present but quieter. It leads with **Knihovna** `/` (= the home
@@ -1640,6 +1643,25 @@ here.
   (`PUT /auth/subject`) and then `useAuth().refresh()`, because the menu entry and the avatar both read the
   link off the session rather than off this card. A link whose person has since been deleted reads as
   „Propojená osoba už v knihovně není" instead of a blank. Tests: `MySubjectCard.test.tsx`,
+  **plus `MyPictureCard`** (`components/account/`, directly *under* the link — the link is the picture's own
+  default, so overriding it comes after setting it): what the account looks like wherever it is named.
+  It reads `fetchMyPicture` (`GET /auth/picture`) on mount and shows the resolved source in words
+  (`account.picture.source.{upload,photo,subject,none}`) beside a live `PersonAvatar` preview at
+  `.kk-avatar--lg` — the same endpoint every reader sees, bumped by a `version` counter after each change so
+  the ten-minute cache cannot show the picture the user just replaced. **The source it knows is `none` is the
+  one it does not request**, since that could only 404. Three actions: „Nahrát obrázek" (a `visually-hidden`
+  `<input type="file" accept="image/jpeg,image/png,image/webp">` behind a real button, the same bargain
+  `PickFilesButton` strikes, reset on change so re-picking the same file after a failure fires again) →
+  `uploadMyPicture`; „Vybrat z knihovny" → `PhotoPickerModal`; and a **remove** button that appears only for
+  a stored picture — labelled „Odstranit a vrátit se ke svému obličeji" for a linked account, because
+  clearing restores the *chain*, not the letter. Failures are named rather than generic: 413 → too large,
+  400 → the server's own message decides between „soukromá nebo skrytá fotka" and an unreadable file.
+  **`PhotoPickerModal`** (`components/account/`) is the picker: a search field over a grid of square
+  thumbnails (`searchPhotos({q, limit: 24, sort: 'newest'})` → `.kk-picture-picker` buttons), opening on the
+  newest photos rather than on an empty state. It is deliberately **not** the library grid — that one is
+  virtualised, URL-driven and selection-aware, built for browsing tens of thousands of photographs, and this
+  needs one photo found by typing a word — and it does not try to predict the server's refusal of a private
+  or hidden photo; the card above shows the 400. Tests: `MyPictureCard.test.tsx`,
   **plus `PasskeysCard`** (`components/account/`, directly under the password form — it is the same question,
   how this person gets in, answered better): the account's WebAuthn credentials. It renders **nothing at all**
   unless `useCapabilities()` reports `known && passkeys` — an instance with no relying party configured gets
@@ -2766,15 +2788,21 @@ here.
   three forms: 1 komentář / 2 komentáře / 5 komentářů), the thread **oldest first** (a conversation reads
   forwards) as a `<ul>` of `CommentItem`, and the composer. **Empty state invites the first remark**
   („Napiš, co o téhle fotce víš…") rather than reporting an absence. **`PersonAvatar`**
-  (`components/`) is what a thread actually draws: the **cover photo of the person the author's account is
-  linked to** (`author_photo_uid` on the comment → `thumbUrl(uid, AVATAR_SIZE)`, the smallest square rung that
-  covers the 2 rem circle at `MAX_RENDITION_DPR` — `tile_100`, a fifth of the `tile_224` it used to take; no
-  download token — the
-  browser sends the session cookie with a same-origin `<img>`), falling back to `InitialAvatar` when there
-  is no link, no cover photo, or the image fails to load. The fallback is the **normal** case, not an error
-  path: most accounts name no person and most people have no hand-picked cover, so the letter has to look
-  like a design rather than a hole. `.kk-avatar--photo` fills the same circle with `object-fit: cover` over
-  a neutral surface. Tests: `PersonAvatar.test.tsx`. **`InitialAvatar`**
+  (`components/`) is what a thread actually draws: **whatever picture the author's account resolves to**
+  (`userAvatarUrl(author_uid)` → `GET /users/{uid}/avatar`, `services/userpic`; no download token — the
+  browser sends the session cookie with a same-origin `<img>`), falling back to `InitialAvatar` when the
+  comment names no account (an authorless one carries `author_uid: ''`) or the request answers 404. **Which**
+  of the three sources answered — an uploaded picture, a photo the user picked, the face of the person the
+  account is linked to — is deliberately invisible here: the server resolves the chain, and a client that had
+  to know would have to re-implement it and would get it wrong the moment a picked photo was archived. It
+  used to draw `author_photo_uid` (the linked person's cover photo) through `thumbUrl`; that field is still on
+  the payload but nothing reads it. The optional `version` prop appends `?v=n` and exists for exactly one
+  caller — `MyPictureCard`, whose own preview must not keep showing the old picture out of the response's
+  ten-minute cache. The fallback is the **normal** case, not an error path: most accounts have set nothing and
+  name no person, so the letter has to look like a design rather than a hole. `.kk-avatar--photo` fills the
+  same circle with `object-fit: cover` over a neutral surface; `.kk-avatar--sm` (1.5 rem, the nav bar) and
+  `.kk-avatar--lg` (4 rem, the account page's preview) are the two size variants. Tests:
+  `PersonAvatar.test.tsx`. **`InitialAvatar`**
   (`components/`, **NEW**) draws a person as **the first letter of their name in a coloured disc** — the
   stand-in for a profile picture in a library that stores photographs, not avatars, and never fetches an
   external asset (no gravatar-style lookup leaking who reads what). Both the letter and the colour are pure

@@ -1327,6 +1327,34 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   A subject that does not exist, has no picture at all, or whose picture names a photo that is gone all
   answer **404** (the grid draws its placeholder for each). Mounted by `server.WithAPI` (`buildAvatarAPI` in
   `cmd/kukatko/avatar.go`).
+- **Profile picture (`/api/v1`, `internal/userpicapi`):** `GET /users/{uid}/avatar` (RequireAuth) → the
+  square **`image/jpeg`** that stands for one **account**, and three self-service routes that change the
+  caller's own. The picture is the first answer of a chain the **server** resolves — an uploaded picture, a
+  library photo the user picked, the avatar of the subject `users.subject_uid` names, nothing — so the client
+  asks one URL and either gets a picture or a **404**, which is its cue to draw the coloured initial. Which
+  of the three answered is deliberately not in the response. The linked subject is the **default**: an
+  account that has said which person it is wears that face with no action from anybody. Same serving shape as
+  the subject avatar above: `ETag` + `private, max-age=600, must-revalidate`, `If-None-Match` → 304; a picked
+  or inherited photo is cut by the very same `internal/avatar` renderer (centre-cropped whole for a pick, the
+  face box for an inherited face) and an upload is served straight from its row. A picked photo is re-judged
+  on **every** request, so one archived, purged or flagged after the fact simply stops answering and the
+  account falls down the chain instead of erroring.
+  `GET /auth/picture` (RequireAuth) → `{origin: "upload"|"photo"|"subject"|"none", photo_uid?, subject_uid?}`
+  — for the account page, which has to label the picture it shows and say what clearing it falls back to; it
+  never returns the bytes. `PUT /auth/picture` (RequireAuth) sets it, and the two ways to give one are told
+  apart by the content type: **`multipart/form-data`** with a `picture` file uploads one (JPEG/PNG/WebP, at
+  most 8 MiB — an over-large request is refused **413** before it is buffered, not read into memory), while
+  **`application/json`** `{photo_uid}` points at a library photo. A photo flagged **`private` or
+  `hidden_from_library` is refused 400**: a profile picture is shown to every reader of every thread the
+  account writes in, so allowing one would be the plainest way to sidestep the flag. An undecodable upload is
+  400 too. `DELETE /auth/picture` (RequireAuth) clears it, idempotently — which restores the *chain*, not
+  necessarily the initial: a linked account falls back to that person's face. All three are **self-scoped**
+  (the account is the session's, never the request's) and, following `POST /auth/password`, **not audited** —
+  the audit trail records what was done *to* an account by somebody else.
+  An upload is stored **in Postgres** (`user_pictures`), re-encoded on receipt to a square JPEG of at most
+  512 px; the submitted original is never kept. Nothing here adds a `storekeys` Kind, so backup, storage
+  migration and the library wipe are unchanged. Mounted by `server.WithAPI` (`buildUserPicAPI` in
+  `cmd/kukatko/userpic.go`). Not exposed over MCP.
 - **Process API (`/api/v1`, `internal/processapi`, maintainer-only via `RequireMaintainer`):**
   `POST /process/embeddings` → `{enqueued}` (backfill `image_embed` for photos without an embedding),
   `POST /process/faces` → `{enqueued, skipped_videos}` (backfill `face_detect` for the **stills** without

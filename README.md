@@ -157,6 +157,13 @@ photo-book tool (deliberately out of scope), or a product with support and a rel
   beside everything you have written. Several accounts may be the same person (a household login and
   a personal one both are), deleting a person from the library never harms an account, and the page
   where you set it says out loud that it puts your face on your comments.
+- **And your account can have a real picture.** By default it already does: an account that has said
+  which person it is wears that person's face, with nothing to set up. If you would rather something
+  else, the account page takes an upload (JPEG, PNG or WebP — it is cropped square, stored small, and
+  the file you send is not kept) or lets you point at any photograph in the library. Removing it drops
+  back to your face, and then to the coloured letter. A photograph marked **private or hidden never
+  becomes a profile picture**: it would be shown to everybody who reads a thread you wrote in, which
+  is exactly what those marks are for.
 
 ### Tidying up, as a game
 

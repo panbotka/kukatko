@@ -608,6 +608,31 @@
       "clear": "Zrušit propojení",
       "unknownPerson": "Propojená osoba už v knihovně není.",
       "error": "Propojení se nepodařilo uložit. Zkus to prosím znovu."
+    },
+    "picture": {
+      "title": "Moje fotka",
+      "hint": "To, co tě zastupuje všude, kde jsi podepsaný — u komentářů i v účtu v liště. Nahraj obrázek, vyber fotku z knihovny, nebo to nech na obličeji osoby, se kterou máš účet propojený.",
+      "source": {
+        "upload": "Ukazuje se obrázek, který jsi nahrál.",
+        "photo": "Ukazuje se fotka, kterou jsi vybral z knihovny.",
+        "subject": "Ukazuje se obličej osoby, se kterou máš účet propojený.",
+        "none": "Ukazuje se první písmeno tvého jména."
+      },
+      "upload": "Nahrát obrázek",
+      "pick": "Vybrat z knihovny",
+      "clear": "Odstranit fotku",
+      "clearToFace": "Odstranit a vrátit se ke svému obličeji",
+      "formats": "JPEG, PNG nebo WebP, nejvýš {{megabytes}} MB. Ořízne se na čtverec a uloží zmenšená; soubor, který pošleš, se nikde nenechává.",
+      "pickTitle": "Vybrat fotku",
+      "searchLabel": "Hledat v knihovně",
+      "searchPlaceholder": "Jméno, místo, rok…",
+      "searching": "Hledám…",
+      "searchError": "Knihovnu se nepodařilo prohledat. Zkus to prosím znovu.",
+      "noMatches": "Tomu nic neodpovídá.",
+      "errorFormat": "Ten soubor se nepodařilo přečíst jako obrázek. Zkus JPEG, PNG nebo WebP.",
+      "errorTooLarge": "Ten obrázek je moc velký.",
+      "errorPrivate": "Soukromá nebo skrytá fotka nemůže být profilová — viděl by ji každý, kdo si přečte tvoje komentáře.",
+      "errorGeneric": "Fotku se nepodařilo uložit. Zkus to prosím znovu."
     }
   },
   "activity": {

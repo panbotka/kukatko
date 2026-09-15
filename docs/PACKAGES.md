@@ -2916,7 +2916,59 @@ to `## Package map` in `CLAUDE.md`.
   that means "no picture" — `ErrSubjectNotFound`, `ErrNoAvatar`, `photos.ErrPhotoNotFound` — is the same 404,
   since the grid draws its placeholder for all three; a render failure is a logged 500. Mounted in `serve`
   (`buildAvatarAPI` in `cmd/kukatko/avatar.go`, which builds its own `thumb.Thumbnailer` over the shared
-  cache)), `internal/organize/`
+  cache)),
+  `internal/userpic/`
+  (a **user's profile picture** — the small square that stands for an *account* wherever a person is named,
+  instead of the coloured initial. It is not one thing but the first of four answers that exists, and the
+  order is the point: an uploaded picture, a library photo the user picked, the avatar of the subject
+  `users.subject_uid` names — the **default**, so a linked account wears that face with no action from
+  anybody — and nothing, which the HTTP layer answers 404 and a client draws as the initial. `Service` =
+  `NewService(Config{Pictures,Users,Subjects,Photos})` with `Resolve` (→ `Source{Upload|PhotoUID,Face}` +
+  `Origin`), `Describe` (→ `State{Origin,PhotoUID,SubjectUID}`, the same walk without the bytes, for the
+  account page), `SetUpload`, `SetPhoto`, `Clear`; the four dependencies are interfaces (`*Store`,
+  `*auth.Store`, `*people.Store`, `*photos.Store`) so the chain unit-tests with fakes. **Every link is
+  re-checked on every call** rather than trusted from when it was set: a picked photo that has since been
+  archived, purged or flagged **falls through** instead of failing, which is the difference between a chain
+  and a stored decision. `Showable(photo)` is the one judgement — not archived, not `private`, not
+  `hidden_from_library` — made both when a photo is picked (`SetPhoto` → `ErrPhotoNotAllowed` /
+  `ErrPhotoNotFound`) and every time one is served, since a photo hidden after the fact must stop being
+  shown; letting a private photo onto a profile, seen by every reader of every thread the account writes in,
+  would be the plainest way to sidestep the flag. `Normalize(data)` is what is actually stored for an upload:
+  decode (a **whitelist** of `jpeg`/`png`/`webp` — the registered decoders are a global set the thumbnailer
+  also contributes to, so "whatever decoded" would make the accepted formats an accident of the import
+  graph), turn upright by the EXIF orientation read out of the submitted bytes with goexif + `imgconvert.Orient`
+  (a phone writes an upright picture and a tag; without this a portrait selfie would be stored on its side
+  for good), centre-crop square, scale to at most `MaxSide` = 512 **never upscaling**, re-encode JPEG q85 —
+  so the stored picture carries no metadata, no GPS and no 40 Mpx panorama, and the submitted original is
+  never kept. `ReadUpload(r)` bounds a body at `MaxUploadBytes` = 8 MiB by reading one byte past it.
+  `Store` over table **`user_pictures`** (migration `0078`: `user_uid` PK → `users` `ON DELETE CASCADE`,
+  `kind IN (upload|photo)`, `image BYTEA`, `photo_uid`, `updated_at`, plus a CHECK that exactly one source is
+  set and that it is the one `kind` names) — `Get`/`SetUpload`/`SetPhoto`/`Clear`, the set an upsert so
+  switching from an upload to a pick leaves no orphaned bytes. Two deliberate schema decisions: the bytes are
+  **in Postgres, not the object store** (no `storekeys` Kind → backup, storage migration, the orphan sweep and
+  the wipe all unchanged; it rides the database dump the backup already takes), and **not on `users`**, whose
+  one canonical column list (`auth.userColumns`) is read on every authenticated request — a picture there
+  would be loaded by every login. `photo_uid` carries **no foreign key**: the reset preserves this table
+  (`internal/reset`, `preservedTables`) and TRUNCATE refuses a preserved table pointing into a wiped one, and
+  the fallback a FK would enforce is needed anyway. **Nothing here is audited**, following
+  `POST /auth/password` — the audit trail records what was done *to* an account by somebody else),
+  `internal/userpicapi/`
+  (its HTTP surface: `NewAPI(Config{Pictures,Photos,Renderer,RequireAuth})` + `RegisterRoutes` mounts four
+  **flat** routes so `/auth/picture` coexists with `auth`'s own `/auth` group — `GET /users/{uid}/avatar`,
+  `GET`/`PUT`/`DELETE /auth/picture`, all RequireAuth. Serving has the same shape as `avatarapi`: an upload
+  streams straight from its row with an ETag that is a SHA-256 of the bytes (so replacing the picture
+  invalidates every cached copy and re-uploading the same file invalidates none), a picked or inherited photo
+  goes through the **same** `*avatar.Renderer` (`nil` face = whole frame for a pick, the subject's box for an
+  inherited face; a nil renderer → 503, which an upload is unaffected by), `private, max-age=600,
+  must-revalidate` + `If-None-Match` → 304, and every "no picture" — `ErrNoPicture`,
+  `photos.ErrPhotoNotFound` — is the same **404**. `PUT` tells its two payloads apart by content type
+  (`multipart/form-data` field `picture` → upload, anything else → JSON `{photo_uid}`), bounds the upload
+  twice (the declared `Content-Length` and a `http.MaxBytesReader`, so a client that lies is stopped too) and
+  maps outcomes: `ErrTooLarge` → **413**, `ErrUnsupportedFormat`/`ErrPhotoNotAllowed`/`ErrPhotoNotFound` →
+  **400**, everything else a logged 500. The three writes are **self-scoped** — the account comes from
+  `auth.UserFromContext`, never from the request. Mounted in `serve` (`buildUserPicAPI` in
+  `cmd/kukatko/userpic.go`, in `discoveryAPIOptions`, sharing the avatar renderer's cache directory)),
+  `internal/organize/`
   (the DB layer for **organization** — albums, labels, **per-user favorites** (replacing the global
   the old global `photos.favorite`) and **per-user ratings** (0–5 stars + a personal flag none/pick/reject/eye);
   tables `albums`/`album_photos`/`labels`/`photo_labels`/
@@ -3883,8 +3935,9 @@ to `## Package map` in `CLAUDE.md`.
   every object the store owns so the library can be re-imported from scratch. The deployment has **no S3 backup**
   ([`READINESS_AUDIT.md`](READINESS_AUDIT.md) §4), so the guards *are* the package and the truncation is the easy
   part. **Two explicit table lists** in `tables.go` — `catalogueTables` (27, wiped, incl. `photoprism_aliases`
-  from `0046` and `review_skips` from `0059`) and `preservedTables` (6:
-  `users`/`sessions`/`api_tokens`/`announcements`/`audit_log`/`schema_migrations`, never touched), exported as
+  from `0046` and `review_skips` from `0059`) and `preservedTables` (10: `users`/`sessions`/`api_tokens`/
+  `passkey_credentials`/`password_reset_tokens`/`user_pictures`/`announcements`/`instance_settings`/
+  `audit_log`/`schema_migrations`, never touched), exported as
   `CatalogueTables()`/`PreservedTables()`; an allowlist rather than "everything except", because a forgotten
   entry in the first merely survives while a forgotten entry in an exclusion list would be **destroyed**.
   `classifySchema` compares them with `pg_tables` and aborts on `ErrSchemaDrift` naming the offender, so a

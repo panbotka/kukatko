@@ -1180,6 +1180,59 @@
   object-fit: cover;
 }
 
+/* The bar's account control. Smaller than the default disc because the desktop
+   bar's width is already spoken for: at 2rem beside the display name the user
+   menu pushes the row past its container on a narrow desktop. */
+.kk-avatar--sm {
+  width: 1.5rem;
+  height: 1.5rem;
+  font-size: 0.7rem;
+}
+
+/* The account page's own preview, where the picture is the subject rather than a
+   marginal note beside a name, and is worth looking at before it is published. */
+.kk-avatar--lg {
+  width: 4rem;
+  height: 4rem;
+  font-size: 1.75rem;
+}
+
+/* The grid of the "pick a photo" dialog: square thumbnails as plain buttons,
+   auto-filled so the dialog's width decides how many fit rather than a
+   breakpoint guessing. */
+.kk-picture-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(6rem, 1fr));
+  gap: 0.5rem;
+}
+
+.kk-picture-picker__tile {
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: var(--kk-radius-tile);
+  background: var(--kk-surface-1);
+  aspect-ratio: 1;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.kk-picture-picker__tile:hover:not(:disabled),
+.kk-picture-picker__tile:focus-visible {
+  border-color: var(--kk-accent);
+}
+
+.kk-picture-picker__tile:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.kk-picture-picker__tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
 .kk-avatar--tone-0 {
   background-color: var(--kk-avatar-0-bg);
 }

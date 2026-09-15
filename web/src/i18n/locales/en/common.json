@@ -604,6 +604,31 @@
       "clear": "Unlink",
       "unknownPerson": "The linked person is no longer in the library.",
       "error": "The link could not be saved. Please try again."
+    },
+    "picture": {
+      "title": "My picture",
+      "hint": "What stands for you wherever you are named — beside your comments and on the account menu. Upload a picture, pick a photo from the library, or leave it to the face of the person you are linked to.",
+      "source": {
+        "upload": "Showing the picture you uploaded.",
+        "photo": "Showing the photo you picked from the library.",
+        "subject": "Showing the face of the person you are linked to.",
+        "none": "Showing the first letter of your name."
+      },
+      "upload": "Upload a picture",
+      "pick": "Pick from the library",
+      "clear": "Remove the picture",
+      "clearToFace": "Remove it and go back to my face",
+      "formats": "JPEG, PNG or WebP, up to {{megabytes}} MB. It is cropped to a square and stored small; the file you send is not kept.",
+      "pickTitle": "Pick a photo",
+      "searchLabel": "Search the library",
+      "searchPlaceholder": "A name, a place, a year…",
+      "searching": "Searching…",
+      "searchError": "The library could not be searched. Please try again.",
+      "noMatches": "Nothing matches that.",
+      "errorFormat": "That file could not be read as a picture. Try a JPEG, a PNG or a WebP.",
+      "errorTooLarge": "That picture is too large.",
+      "errorPrivate": "A private or hidden photo cannot be a profile picture — everybody who reads your comments would see it.",
+      "errorGeneric": "The picture could not be saved. Please try again."
     }
   },
   "activity": {

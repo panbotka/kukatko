@@ -4,44 +4,51 @@ import { describe, expect, it } from 'vitest'
 import { PersonAvatar } from './PersonAvatar'
 
 /**
- * The rendered photo, if there is one. An `alt=""` image maps to the
- * `presentation` role and is `aria-hidden`, so it takes the hidden query — which
- * is exactly the point: the name is always written out beside the avatar.
+ * The rendered picture, if there is one. An `alt=""` image maps to the
+ * `presentation` role and is `aria-hidden`, so it takes the hidden query — the
+ * avatar is decoration beside a name that is written out anyway.
  */
 function photo(): HTMLElement | null {
   return screen.queryByRole('presentation', { hidden: true })
 }
 
 describe('PersonAvatar', () => {
-  it('draws the linked person’s cover photo when there is one', () => {
-    render(<PersonAvatar name="Jarmila" photoUid="ph_1" />)
-
+  it('draws the account’s picture when it has one', () => {
+    render(<PersonAvatar name="Jarmila" userUid="usr_1" />)
     const img = screen.getByRole('presentation', { hidden: true })
-    expect(img.getAttribute('src')).toBe('/api/v1/photos/ph_1/thumb/tile_100')
+    // One endpoint, whatever the picture turns out to be: the server resolves
+    // the chain and the client never has to know which source answered.
+    expect(img.getAttribute('src')).toBe('/api/v1/users/usr_1/avatar')
     expect(img).toHaveAttribute('aria-hidden', 'true')
     expect(img).toHaveAttribute('alt', '')
   })
 
-  it('falls back to the coloured initial without a cover photo', () => {
+  it('falls back to the coloured initial without an account', () => {
     render(<PersonAvatar name="Jarmila" />)
-
     expect(photo()).toBeNull()
     expect(screen.getByText('J')).toBeInTheDocument()
   })
 
-  it('treats an empty photo uid as no photo', () => {
-    render(<PersonAvatar name="Jarmila" photoUid="" />)
-
+  it('treats an empty user uid as no account', () => {
+    // An authorless comment (its account was deleted) carries exactly this.
+    render(<PersonAvatar name="Jarmila" userUid="" />)
     expect(photo()).toBeNull()
     expect(screen.getByText('J')).toBeInTheDocument()
   })
 
-  it('falls back to the initial when the photo fails to load', () => {
-    render(<PersonAvatar name="Jarmila" photoUid="ph_gone" />)
-
+  it('falls back to the initial when the picture 404s', () => {
+    // The common case, not an error path: an account with no picture from any
+    // source answers 404, which the browser reports as a failed load.
+    render(<PersonAvatar name="Jarmila" userUid="usr_none" />)
     fireEvent.error(screen.getByRole('presentation', { hidden: true }))
-
     expect(photo()).toBeNull()
     expect(screen.getByText('J')).toBeInTheDocument()
+  })
+
+  it('busts the cache when the page that owns the picture has just changed it', () => {
+    render(<PersonAvatar name="Jarmila" userUid="usr_1" version={3} />)
+    expect(screen.getByRole('presentation', { hidden: true }).getAttribute('src')).toBe(
+      '/api/v1/users/usr_1/avatar?v=3',
+    )
   })
 })

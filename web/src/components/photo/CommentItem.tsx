@@ -31,11 +31,12 @@ export interface CommentItemProps {
  * either. `white-space: pre-wrap` in the stylesheet keeps the writer's own line
  * breaks without inventing any other syntax.
  *
- * The avatar beside it is {@link PersonAvatar}: an account that has said which
- * person of the library it is shows that person's cover photo, and everything
- * else — no link, or a linked person with no cover photo — shows the coloured
- * initial. That is where "linking an account publishes that face" becomes
- * visible, which is why the account page says so before the link is made.
+ * The avatar beside it is {@link PersonAvatar}: whatever picture the author's
+ * account resolves to — one they uploaded, a photo of the library they picked,
+ * or the face of the person the account says they are — and the coloured initial
+ * when none of those answers. That is where "linking an account publishes that
+ * face" becomes visible, which is why the account page says so before the link is
+ * made.
  *
  * Editing happens **in place**, in a textarea that replaces the body — a modal for
  * fixing a typo would hide the conversation the remark belongs to. Deleting does
@@ -74,10 +75,10 @@ export function CommentItem({
 
   return (
     <li className="kk-comment">
-      {/* A face when the author's account has said which person of the library
-          it is *and* that person has a cover photo; the coloured initial — the
-          common case — otherwise. */}
-      <PersonAvatar name={authorName} photoUid={comment.author_photo_uid} />
+      {/* Whatever the author's account resolves to; the coloured initial — the
+          common case — when it resolves to nothing. An authorless comment (its
+          account was deleted) names no user and goes straight to the letter. */}
+      <PersonAvatar name={authorName} userUid={comment.author_uid} />
       <div className="kk-comment__main">
         <p className="kk-comment__meta">
           <span className="kk-comment__author">{authorName}</span>

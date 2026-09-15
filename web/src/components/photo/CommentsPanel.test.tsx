@@ -97,21 +97,21 @@ describe('CommentsPanel', () => {
     expect(screen.getByText('2 comments')).toBeInTheDocument()
   })
 
-  it('shows the author’s linked face, and the initial when there is none', async () => {
+  it('shows the author’s own picture, and the initial for an authorless comment', async () => {
     fetchCommentsMock.mockResolvedValue([
-      // An account linked to a person who has a cover photo: that face is what
-      // the thread shows, which is the whole reason the account page warns
-      // before the link is made.
-      comment({ author_photo_uid: 'ph_cover' }),
-      // Everything else — no link, or a linked person with no cover photo —
-      // keeps the coloured initial. This is the common case, not a failure.
-      comment({ uid: 'cm_2', author_uid: 'usr_petr', author_name: 'Petr' }),
+      // The thread asks one endpoint for the author's account; whether that
+      // resolves to an upload, a picked photo or the linked person's face is the
+      // server's business and not visible here.
+      comment(),
+      // A comment whose account was deleted keeps its place but names nobody, so
+      // it goes straight to the coloured initial without firing a request.
+      comment({ uid: 'cm_2', author_uid: '', author_name: 'Petr' }),
     ])
     renderPanel()
 
     const items = await screen.findAllByRole('listitem')
     const face = within(items[0]).getByRole('presentation', { hidden: true })
-    expect(face.getAttribute('src')).toBe('/api/v1/photos/ph_cover/thumb/tile_100')
+    expect(face.getAttribute('src')).toBe('/api/v1/users/usr_jarmila/avatar')
     expect(within(items[1]).queryByRole('presentation', { hidden: true })).not.toBeInTheDocument()
     expect(within(items[1]).getByText('P')).toBeInTheDocument()
   })

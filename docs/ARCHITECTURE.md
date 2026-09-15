@@ -438,7 +438,7 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
   `DELETE ... WHERE created_at < cutoff` over `idx_audit_log_created_at`, `older_than_days`), which
   deletes old records and **audits itself** (`audit.purge` with the cutoff and the count — the fresh purge record
   survives, so deleting the trail stays traceable). The same reasoning makes `audit_log` one of the six tables the
-  **library wipe** (`kukatko maintenance reset`, `internal/reset`) must never truncate: it writes its own
+  **library wipe** (`kukatko maintenance reset`, `internal/reset`) one of the tables that must never be truncated: it writes its own
   `library.reset` entry **in the truncation's transaction**, so the record of the deletion is what survives it.
   Other mutation domains adopt the in-tx audit convention gradually.
   **The edit payload** (`ChangeSet` in `internal/audit/changes.go`): the `details` of an edit action carries under
@@ -452,6 +452,17 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
 
 - **`user_favorites`** — per-user favorites: `(user_uid, photo_uid) PK`, `added_at`.
   Replaces the global `photos.favorite`.
+- **`user_pictures`** — a user's **profile picture**: `user_uid PK` → `users` `ON DELETE CASCADE`,
+  `kind IN (upload|photo)`, `image BYTEA`, `photo_uid`, `updated_at`, with a CHECK that exactly one
+  source is set and that it is the one `kind` names (migration `0078`, see `internal/userpic`).
+  The bytes live in Postgres rather than the object store on purpose: a profile picture is not library
+  media — no original, no derivatives, no place in an album — and a `storekeys` Kind for it would mean
+  extending backup, storage migration, the orphan sweep and the wipe for a few tens of kilobytes per
+  account. It is deliberately **not a column on `users`** either, whose one canonical column list is read
+  on every authenticated request. `photo_uid` carries **no foreign key**: the table is preserved by the
+  wipe while `photos` is truncated, and a dangling pick already has to mean the same as no pick (the
+  resolver falls through to the next source), so the constraint would buy nothing and cost the reset a
+  special case.
 - **`jobs`** — persistent queue (see [§8](#8-asynchronni-joby--box-offline)):
   ```
   jobs(

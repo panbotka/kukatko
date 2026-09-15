@@ -165,6 +165,8 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/thumb` — thumbnailer (pure-Go default, optional `vips` engine), cache layout
 - `internal/thumbjob` — worker handler `thumbnail` (thumbnail regeneration + pHashes + the blur placeholder)
 - `internal/trash` — permanent deletion (purge) of archived photos + scheduled retention
+- `internal/userpic` — a user's profile picture: the chain (uploaded picture → picked library photo → the linked subject's face → nothing), the re-encode to a square JPEG kept in Postgres, and the refusal of a private/hidden photo
+- `internal/userpicapi` — `GET /users/{uid}/avatar` + the self-service `GET`/`PUT`/`DELETE /auth/picture`; not audited
 - `internal/vectors` — embeddings and faces directly in Postgres (`halfvec` + HNSW cosine)
 - `internal/version` — ldflags-injectable `Version`/`Commit`
 - `internal/video` — shell-out to ffprobe/ffmpeg: metadata, poster frame, on-the-fly transcode

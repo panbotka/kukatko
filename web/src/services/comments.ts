@@ -42,11 +42,11 @@ export interface PhotoComment {
   /** The author's display name (falling back to the username), resolved server-side. */
   author_name: string
   /**
-   * The cover photo of the person the author's account says it is, so the thread
-   * can show a face instead of a letter. Absent in every incomplete case — no
-   * account, no linked person, or a linked person with no cover photo chosen,
-   * which is the common one — so the initials fallback is the normal rendering,
-   * not an error path.
+   * The cover photo of the person the author's account says it is. It predates
+   * profile pictures and the thread no longer draws it: `PersonAvatar` asks
+   * `GET /users/{uid}/avatar` with `author_uid`, which resolves the whole chain
+   * (an uploaded picture, a picked photo, the linked person's face) rather than
+   * this one link of it.
    */
   author_photo_uid?: string
   body: string

@@ -1,7 +1,6 @@
 import { useState } from 'react'
 
-import { MAX_RENDITION_DPR, squareRenditionName } from '../lib/rendition'
-import { thumbUrl } from '../services/photos'
+import { userAvatarUrl } from '../services/userpic'
 
 import { InitialAvatar } from './InitialAvatar'
 
@@ -10,58 +9,52 @@ export interface PersonAvatarProps {
   /** The person's name; drives the letter and the colour of the fallback. */
   name: string
   /**
-   * The photo to show instead of a letter — the cover photo of the person this
-   * account is linked to. Undefined (the common case) draws initials.
+   * The account whose picture is drawn. Undefined — an authorless comment, a
+   * person who has no account — draws initials without firing a request.
    */
-  photoUid?: string
+  userUid?: string
+  /**
+   * Bumped by the page that just changed this picture, to defeat the ten-minute
+   * cache on its own preview. Readers elsewhere want the cache and omit it.
+   */
+  version?: number
   /** Extra classes for spacing at the call site. */
   className?: string
 }
 
 /**
- * How wide the circle is drawn, in CSS pixels — `.kk-avatar`'s `2rem` at the
- * app's 16 px root. It is a constant here rather than a measurement because the
- * class fixes the size: nothing renders this avatar at any other one, and
- * measuring would mean fetching a first picture before knowing which to fetch.
- */
-const AVATAR_CSS_PX = 32
-
-/**
- * The thumbnail size the circle is cut from: the smallest square rung that still
- * covers 32 CSS pixels on the sharpest screen worth sizing for, which is
- * `tile_100`. The avatar used to take `tile_224` — five times the pixels it can
- * draw — and a comment thread pays that for every distinct author in it.
- */
-const AVATAR_SIZE = squareRenditionName(AVATAR_CSS_PX, MAX_RENDITION_DPR)
-
-/**
- * Somebody as a small round picture: the cover photo of the person their account
- * says they are, or — when there is no account, no linked person, or no cover
- * photo chosen for that person — the coloured initial of {@link InitialAvatar}.
+ * Somebody as a small round picture: whatever `GET /users/{uid}/avatar` answers
+ * for their account — a picture they uploaded, a photo of the library they
+ * picked, or the face of the person the account says they are — falling back to
+ * the coloured initial of {@link InitialAvatar}.
  *
- * The fallback is the normal case, not an error path. Most accounts name no
- * person, and most people in a family archive have no hand-picked cover photo,
- * so the letter has to look like a deliberate design rather than a hole where a
- * face failed to load. A photo that fails to load at request time falls back to
- * exactly the same letter, so a purged or unreachable original degrades to what
- * the reader saw yesterday instead of to a broken-image glyph.
+ * Which of those three answered is deliberately not visible here. The server
+ * resolves the chain and hands back either a picture or a 404; a client that had
+ * to know which source won would have to re-implement the chain, and would get
+ * it wrong the moment a picked photo was archived.
  *
- * It is `aria-hidden` for the same reason the initial is: the avatar never
- * appears without the name written out beside it.
+ * The fallback is the normal case, not an error path. Most accounts have set
+ * nothing and name no person, so the letter has to look like a deliberate design
+ * rather than a hole where a face failed to load — which is also what a 404 or an
+ * unreachable original degrades to, instead of a broken-image glyph.
+ *
+ * It is `aria-hidden`: the avatar never appears without the name written out
+ * beside it, so announcing a lone letter would only make a screen reader repeat
+ * itself.
  */
-export function PersonAvatar({ name, photoUid, className }: PersonAvatarProps) {
+export function PersonAvatar({ name, userUid, version, className }: PersonAvatarProps) {
   const [failed, setFailed] = useState(false)
 
-  if (photoUid === undefined || photoUid === '' || failed) {
+  if (userUid === undefined || userUid === '' || failed) {
     return <InitialAvatar name={name} className={className} />
   }
   return (
     <img
       className={`kk-avatar kk-avatar--photo${className === undefined ? '' : ` ${className}`}`}
       // No download token: the browser sends the session cookie with a
-      // same-origin <img>, which is how every other thumbnail in the app is
-      // addressed by UID alone.
-      src={thumbUrl(photoUid, AVATAR_SIZE)}
+      // same-origin <img>, which is how every other protected picture in the app
+      // is addressed.
+      src={userAvatarUrl(userUid, version)}
       alt=""
       aria-hidden="true"
       loading="lazy"

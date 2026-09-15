@@ -92,6 +92,13 @@ var catalogueTables = []string{
 // administrator had just mailed to somebody locked out would be an outage for
 // that person, and the links are short-lived anyway — the periodic cleanup takes
 // them, not the reset.
+// user_pictures stays, because it belongs to the accounts and not to the
+// library: a picture somebody uploaded of themselves is not a photograph of the
+// archive, and throwing it away would be an outage for that person rather than
+// part of the wipe. Its photo_uid column deliberately carries no foreign key
+// (see migration 0078), so a row pointing at a photo the wipe removes is left
+// dangling — and a dangling pick means exactly what no pick means, so the
+// account falls through to the next source of the chain by itself.
 // And audit_log stays, because the record of the deletion is the only
 // thing left to read afterwards; the reset writes its own entry into it, in the
 // same transaction as the truncation.
@@ -104,6 +111,7 @@ var preservedTables = []string{
 	"password_reset_tokens",
 	"schema_migrations",
 	"sessions",
+	"user_pictures",
 	"users",
 }
 

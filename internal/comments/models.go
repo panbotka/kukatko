@@ -60,16 +60,16 @@ type Comment struct {
 	// resolved by the store — so a client renders a name without a second lookup.
 	AuthorName string `json:"author_name"`
 	// AuthorPhotoUID is the cover photo of the person the author's account says
-	// it is, so the thread can show a face where it would otherwise draw the
-	// first letter of a name. It is nil in every case but the fully-set one: no
-	// account, no linked person, or a linked person nobody has chosen a cover
-	// photo for — which is the common case, and why the client must always keep
-	// its initial-letter fallback.
+	// it is. It is nil in every case but the fully-set one: no account, no linked
+	// person, or a linked person nobody has chosen a cover photo for — which is
+	// the common case.
 	//
-	// Linking an account to a person is what publishes that face here, which is
-	// stated where the link is set. It is a cover photo, chosen by hand on the
-	// person's page, and is shown to every reader of the thread — the same
-	// readers who can already open that person's page.
+	// It predates profile pictures and is no longer how a thread draws a face:
+	// the web client asks GET /users/{uid}/avatar with AuthorUID instead, which
+	// resolves the whole chain (an uploaded picture, a picked photo, the linked
+	// person's face) rather than this one link of it. The field stays for API
+	// consumers that read a thread without following that endpoint, and because
+	// it is a true fact about the author either way.
 	AuthorPhotoUID *string   `json:"author_photo_uid,omitempty"`
 	Body           string    `json:"body"`
 	CreatedAt      time.Time `json:"created_at"`
