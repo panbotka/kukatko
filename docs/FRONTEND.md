@@ -500,10 +500,11 @@ here.
   and the selection readable without a column of checkmarks. Keyboard Up/Down/Enter (with nothing highlighted it takes the best
   match), **Backspace over an empty query removes the last chip**, Esc closes; combobox/listbox
   ARIA (`aria-multiselectable`), a `MAX_SUGGESTIONS` (50) cap on rendered suggestions, ~44px tap
-  targets. The suggestion list is **layout-responsive** (via `useIsNarrowViewport`) so a scrollable
-  modal never clips it: on desktop it is a **`position: fixed` overlay** measured off the input
-  (escaping any `overflow: auto` `.modal-body` — the bulk pickers and `BulkEditModal` both nest it in
-  one), sized to its content up to `min(50vh, room-below)` and scrolling only its own options beyond
+  targets. The suggestion list is **layout-responsive** (via the shared `useAnchoredMenu` hook —
+  `AddAutocomplete` places its own list with the very same one) so a scrollable modal never clips
+  it: on desktop it is a **`position: fixed` overlay** measured off the input (escaping any
+  `overflow: auto` `.modal-body` — the bulk pickers and `BulkEditModal` both nest it in one), sized
+  to its content up to `min(50vh, room-below)` and scrolling only its own options beyond
   that; on a phone it flows **in the modal's own scroll** (`position-static`), keeping the field and
   its options reachable **above the on-screen keyboard**. The desktop overlay also carries
   **`.kk-overlay-menu`**, which lifts it off Bootstrap's `.dropdown-menu` z-index (1000 — under every
@@ -2734,7 +2735,13 @@ here.
   reuse an existing entry instead of colliding on the slug. **Both fields therefore stay mounted even with an
   empty option list** — that is the only way to get the first album/label. The create row is offered only for
   a name that really does not exist: an entry the photo already carries is out of `options`, so it is handed
-  over separately as **`existingNames`**, which suppresses the offer without putting it back in the list).
+  over separately as **`existingNames`**, which suppresses the offer without putting it back in the list.
+  The list itself is placed by the shared **`useAnchoredMenu`** — the very hook `MultiSelect` uses —
+  so a scrolling ancestor cannot clip it: a `position: fixed` overlay measured off the input on
+  desktop (re-measured on capture-phase `scroll` and `resize`, raised by `.kk-overlay-menu`), an
+  in-flow `position-static` block inside the container’s own scroll on a phone. It used to be an
+  absolute `top: 100%` box, which `AddRelationModal`’s `modal-dialog-scrollable` body cut down to
+  **28px of a 426px list** — 0.64 of one row).
   **1b. Komentáře** (`CommentsPanel`, `components/photo/`, **NEW**) = **the conversation around the photo**,
   mounted directly under the people because that is what it is usually about („kdo je ten kluk vlevo?").
   It is the social half of the archive: most of what a family knows about an old photograph is not metadata
@@ -3320,7 +3327,12 @@ here.
   The dialog **stays open** after an add (the field clears, the role is kept, an `Alert` lists what the sitting
   has recorded): recording the family of 118 people is several evenings of clicking, and four children have to
   be four names typed in a row. A refusal is read off the `ApiError` status — 409 „nesedí do rodokmenu" (a
-  cycle, a second parentage), 400 „nedává smysl", anything else the generic failure. i18n under `family.*`.
+  cycle, a second parentage), 400 „nedává smysl", anything else the generic failure.
+  The dialog is `centered scrollable` **`fullscreen="sm-down"`** like the app’s other pickers: a
+  phone needs the whole screen for the field, its suggestions and the on-screen keyboard, and a
+  third of it left one clipped half-row. On desktop the list is the fixed overlay above, so the
+  body’s `overflow: auto` no longer clips it and the centred dialog does not resize per keystroke.
+  i18n under `family.*`. Tests `AddRelationModal.test.tsx`.
   Once anything is recorded the heading grows a **Zobrazit rodokmen** link to `/people/:uid/tree` (offered only
   then: a tree of one person is a page that can say nothing, and the rows above are where it gets filled in),
   The page also carries the **two repairs for a mis-catalogued person**, both editors-only (a viewer sees
@@ -5311,6 +5323,20 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   square-tile croppers keep taking `displayFrame` from the row (see the viewer's invariant above). Tests
   `hooks/useImageFrame.test.tsx` + `test/imageFrame.ts` (`loadImageAs`/`frameRatio` — jsdom fetches nothing, so
   a test about a box has to report the load itself);
+  `useAnchoredMenu(anchor, open)` → `{className, style}` for the list element = **where a field’s
+  is painted**, shared by `MultiSelect` and `AddAutocomplete` so the two can never drift apart. An
+  `overflow: auto` ancestor — a `modal-dialog-scrollable` body above all — clips any absolutely
+  positioned child that reaches past it, which is exactly what a dropdown under an input does, so
+  the viewport picks between two layouts: on desktop a `position: fixed` overlay measured off the
+  anchor’s viewport box (`top: bottom+4`, the anchor’s width, growing to `min(50vh, room-below)` and
+  never under 120px, then scrolling its own rows), re-measured on **capture-phase** `scroll` (the
+  modal body scrolls *under* it, which a bubbling listener never sees) and on `resize`, hidden for
+  the one frame before the layout effect measures it so it never flashes at 0,0, and raised by
+  `.kk-overlay-menu`; on a phone (`useIsNarrowViewport`) an in-flow `position-static` block capped
+  at `50vh` inside the ancestor’s own scroll, which keeps the field and its rows above the on-screen
+  keyboard a fixed box would sit under. Nothing is measured while the menu is closed. Tests
+  `components/MultiSelect.test.tsx` + `components/photo/AddAutocomplete.test.tsx`
+  (matchMedia-driven, fixed overlay vs. `position-static`);
   `useIsNarrowViewport()` = a shared hook over `matchMedia` (`NARROW_VIEWPORT_QUERY` = `(max-width: 767.98px)`,
   Bootstrap `md`;
   it removes `change`, a missing/broken `matchMedia` → „wide"; the single source of truth for the filter

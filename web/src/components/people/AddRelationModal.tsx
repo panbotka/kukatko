@@ -188,8 +188,14 @@ export function AddRelationModal({
   // everything else the backend judges against the rows.
   const options = subjects.filter((candidate) => candidate.uid !== subjectUid)
 
+  // `fullscreen="sm-down"` like the app's other pickers: on a phone the field,
+  // its suggestion list and the on-screen keyboard together need the whole
+  // screen, and a third of it left one clipped half-row of suggestions. The
+  // dialog stays `centered` and `scrollable` on desktop, where the list is a
+  // fixed overlay that neither the body's `overflow: auto` clips nor the
+  // dialog's own height has to grow for — so it does not resize per keystroke.
   return (
-    <Modal show={show} onHide={onHide} centered scrollable>
+    <Modal show={show} onHide={onHide} centered scrollable fullscreen="sm-down">
       <Modal.Header closeButton>
         <Modal.Title>{t('family.add.title', { name: subjectName })}</Modal.Title>
       </Modal.Header>

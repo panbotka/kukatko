@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Form from 'react-bootstrap/Form'
 import { useTranslation } from 'react-i18next'
 
+import { useAnchoredMenu } from '../../hooks/useAnchoredMenu'
 import { nicknameTag } from '../../lib/nickname'
 import { foldedEquals, foldedIncludes } from '../../lib/text'
 
@@ -94,7 +95,9 @@ function matchesOption(option: AutocompleteOption, text: string): boolean {
  * offered for creation.
  *
  * Built on react-bootstrap primitives (no extra dependency) with
- * combobox/listbox ARIA roles and ~44px tap targets.
+ * combobox/listbox ARIA roles and ~44px tap targets. The suggestion list is
+ * placed by {@link import('../../hooks/useAnchoredMenu').useAnchoredMenu}, so a
+ * scrollable panel or modal body around the field cannot clip it.
  */
 export function AddAutocomplete({
   options,
@@ -111,6 +114,7 @@ export function AddAutocomplete({
   const [open, setOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState(-1)
   const containerRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   const listboxId = `${id}-listbox`
   const trimmed = text.trim()
@@ -133,6 +137,13 @@ export function AddAutocomplete({
 
   // A dropdown is only shown once the user has typed something.
   const showDropdown = open && trimmed !== ''
+
+  // The field is nested in a scrollable panel or modal body more often than not
+  // — the add-relative dialog is `modal-dialog-scrollable`, whose `overflow:
+  // auto` used to leave a single clipped half-row visible. The shared hook lifts
+  // the list out of that: a fixed overlay measured off the input on desktop, an
+  // in-flow block inside the panel's own scroll on a phone.
+  const menu = useAnchoredMenu(inputRef, showDropdown)
 
   // Reset the keyboard highlight whenever the filtered set changes.
   useEffect(() => {
@@ -212,6 +223,7 @@ export function AddAutocomplete({
         {label}
       </Form.Label>
       <Form.Control
+        ref={inputRef}
         id={id}
         type="text"
         className="kukatko-tap-target"
@@ -241,8 +253,8 @@ export function AddAutocomplete({
           id={listboxId}
           role="listbox"
           aria-label={label}
-          className="dropdown-menu show w-100 mt-1 shadow overflow-auto"
-          style={{ top: '100%', maxHeight: '50vh' }}
+          className={menu.className}
+          style={menu.style}
         >
           {rowCount === 0 && (
             <li className="dropdown-item-text text-secondary small">
