@@ -3320,10 +3320,13 @@ here.
   while open** — it loads the whole people list): a four-way role picker (`ToggleButtonGroup`, radio, the rows
   1:1) over `AddAutocomplete` (diacritics- and case-insensitive, the nickname searched too), `onAdd` →
   `addRelation(subjectUid,{role,subject_uid})` and `onCreate` → `{role,new_subject:{name}}`, which the backend
-  creates and relates in **one audited transaction**. **Siblings are derived**, so that role has no endpoint of
-  its own: the dialog records the person as a **child of each recorded parent**, walking them one at a time so
-  the first call creates and every later one names the person it answered with (two parents must not mean two
-  people of one name) — and with no parents recorded it says what to record first instead of offering a field.
+  creates and relates in **one audited transaction**. All four rows are **one request on the subject itself**,
+  `sibling` included: it is a role the endpoint takes, which puts the pair in the family the subject is a child
+  in, or — when nobody recorded the parents, and quite possibly nobody can — creates a family with **no parents
+  in it** for the two of them. The dialog used to post a `child` per recorded parent instead, which cost a
+  request each and dead-ended with „přidej nejdřív rodiče" for anybody whose parents the library had never
+  heard of. All that is left of that is the copy: `family.add.siblingHint` names the parents the sibling will
+  hang off, `siblingHintNoParents` says the two will share a parentless family that a parent can join later.
   The dialog **stays open** after an add (the field clears, the role is kept, an `Alert` lists what the sitting
   has recorded): recording the family of 118 people is several evenings of clicking, and four children have to
   be four names typed in a row. A refusal is read off the `ApiError` status — 409 „nesedí do rodokmenu" (a
@@ -3368,7 +3371,7 @@ here.
   saying where relations are recorded — **except** an editor looking upwards, who gets the pedigree's two blank
   parent slots instead, because there the gap *is* the invitation and a sentence about another page is not.
   Clicking a blank slot opens `AddRelationModal` on the **child** it belongs to (a parent is recorded on their
-  child) with the role picker on *parent* and that child's known parent already in hand for the sibling role;
+  child) with the role picker on *parent* and that child's known parent already in hand for the sibling copy;
   a successful add refetches the walk rather than patching the new person into the old answer.
   `TreeStage` (`components/people/TreeStage.tsx` + `familyTree.css`) is the sheet of paper **both** drawings are
   painted on: drag to pan (a drag that travels more than 4 px swallows the click that ends it, so panning over a
@@ -6294,17 +6297,19 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   `reason?` `empty_collection`/`no_source_embeddings`)/`ExpandReason`/`ExpandSearchRequest`;
   adding goes through `bulk.ts` (`POST /photos/bulk`), rejecting through `feedback.ts`;
   `family.ts` = the genealogy client, a client of its own rather than more of the 21 kB `people.ts` because the
-  family is a separate model (the **family** is the node — a couple or lone parent plus their children — and
-  parents/siblings/partners/children are all **derived** from it, which is why they cannot contradict each
-  other): `fetchRelations(subjectUid,signal)` over `GET /subjects/{uid}/relations` and
+  family is a separate model (the **family** is the node — a couple, a lone parent or nobody, plus their
+  children — and parents/siblings/partners/children are all **derived** from it, which is why they cannot
+  contradict each other): `fetchRelations(subjectUid,signal)` over `GET /subjects/{uid}/relations` and
   `addRelation(subjectUid,req,signal)` over `POST /subjects/{uid}/relations`; the types mirror the Go structs
   field for field — `Family`/`Relative` (`photo_count === 0` is **ordinary**, not an anomaly)/`Partnership`
   (`partner: null` = a lone-parent family)/`Relations` (all four lists always present, an empty relation is
   `[]` and never `null`)/`NewPerson`/`AddRelationRequest` (`subject_uid` **or** `new_subject`, never both)/
-  `AddRelationResult`/`FamilyKind`/`ChildKind`/`RelationRole` (`parent`/`child`/`partner` — a sibling is not a
-  role, see `AddRelationModal`); a refusal is an `ApiError` whose **status** is the message: 409 = the state of
-  the tree is in the way (a cycle, a second parentage — the same request would have been accepted against
-  different rows), 400 = the request got itself wrong; `fetchTree(subjectUid,direction,generations?,signal)` over
+  `AddRelationResult`/`FamilyKind`/`ChildKind`/`RelationRole` (`parent`/`child`/`partner`/`sibling` — a sibling
+  is still derived rather than stored, but it is a role a request may carry, because the family the two share
+  may have to be created with nobody in its partner columns); a refusal is an `ApiError` whose **status** is
+  the message: 409 = the state of the tree is in the way (a cycle, a second parentage, two prospective siblings
+  already in different families — the same request would have been accepted against different rows),
+  400 = the request got itself wrong; `fetchTree(subjectUid,direction,generations?,signal)` over
   `GET /subjects/{uid}/tree` is the layout's input — `FamilyTree{root,direction,members,families}` with
   `TreeMember` = a `Relative` plus `depth` (the **shortest** path wins when two reach the same person) and
   `partner` (in the set only by marriage, the "plus their partners" half of what a family means here), and

@@ -118,9 +118,11 @@ function FamilyRow({ label, people, addLabel, canWrite, onAdd }: FamilyRowProps)
  * with their initials in it.
  *
  * Every list is *derived* from the family rows rather than stored, which is why
- * they cannot contradict each other — and why the siblings row has no relation of
- * its own to add: a sibling is recorded as a child of the same parents, which
- * {@link AddRelationModal} does on the reader's behalf.
+ * they cannot contradict each other. The siblings row carries the same `+` as the
+ * other three all the same: a sibling is recorded as another child of the family
+ * this person is a child in, and where there is none — nobody wrote the parents
+ * down, and quite possibly nobody can — the backend creates a family with no
+ * parents in it for the two of them.
  *
  * The whole strip is one request (`GET /subjects/{uid}/relations`), which carries
  * each person's cover and photo count, so a family of a dozen costs one call and

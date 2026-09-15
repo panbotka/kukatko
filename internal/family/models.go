@@ -3,20 +3,29 @@
 // owns those — and adds two tables of its own, subject_families and
 // subject_family_children (migration 0073).
 //
-// The family is the node, not the edge. A family is a couple (or a lone parent)
-// plus their children, which is the shape genealogy software settled on decades
-// ago and the reason the derived relations here cannot contradict each other:
+// The family is the node, not the edge. A family is a couple, a lone parent or —
+// since migration 0076 — nobody at all, plus their children; that is the shape
+// genealogy software settled on decades ago and the reason the derived relations
+// here cannot contradict each other:
 // siblings are the other children of the family a person is a child in, a partner
 // is the other partner of a family they are a partner in, half-siblings are the
 // children of another family one of their parents is a partner in, and a second
 // marriage is simply a second family.
 //
+// The partnerless family is the sibling group: two people known to be brother
+// and sister whose parents are not in the library have a real shared fact and,
+// before 0076, nowhere to write it. It is created with two children at once and
+// deleted as soon as it drops below two, so the row cannot linger as the orphan
+// the dropped CHECK was guarding against, and a parent attached to anybody in it
+// later joins that same family rather than splitting the group.
+//
 // Two database constraints carry the invariants this package relies on. The
-// unique pair index (NULLS NOT DISTINCT) makes one couple exactly one family and
-// one lone parent exactly one family; the unique index on child_uid makes a
-// person a child in at most one family, which is what keeps the descendant walk a
-// tree rather than a general graph. Cycles are the one thing SQL cannot refuse on
-// its own — A the child of B's family while B is the child of A's — so every
+// unique pair index (NULLS NOT DISTINCT, and partial over the rows that name a
+// partner) makes one couple exactly one family and one lone parent exactly one
+// family, while leaving every sibling group a row of its own; the unique index on
+// child_uid makes a person a child in at most one family, which is what keeps the
+// descendant walk a tree rather than a general graph. Cycles are the one thing SQL
+// cannot refuse on its own — A the child of B's family while B is the child of A's — so every
 // attachment walks the prospective parents' ancestors first (see wouldCycle), and
 // every recursive walk carries a depth guard so a cycle that somehow reached the
 // table still cannot hang a request.
@@ -57,6 +66,16 @@ var (
 	// ErrInvalidYears indicates a from/to year outside the accepted range or a
 	// partnership that ends before it begins.
 	ErrInvalidYears = errors.New("family: invalid from or to year")
+	// ErrDifferentFamilies indicates two subjects asked to be siblings are
+	// already children of two different families. Making them siblings would mean
+	// taking one of them out of a parentage somebody recorded on purpose, and a
+	// child is never moved between families silently.
+	ErrDifferentFamilies = errors.New("family: these two are children of different families")
+	// ErrSiblingsDerived indicates an attempt to remove a sibling relation that is
+	// not stored: the two share a family that records a parent, so their being
+	// siblings follows from that parent and the way to part them is to remove it.
+	ErrSiblingsDerived = errors.New(
+		"family: these two are siblings through a recorded parent, so there is no sibling relation to remove")
 )
 
 const (
@@ -144,11 +163,13 @@ func (d Direction) valid() bool {
 	}
 }
 
-// Family is one couple (or lone parent) with the metadata of their union. Either
-// partner may be nil — a lone parent is a family, because the
-// great-grandmother whose husband nobody remembers still has children — but not
-// both, and when both are set they are stored in byte order (see normalisePair),
-// which is what makes the unique pair index mean "one couple, one family".
+// Family is one couple, one lone parent or one bare sibling group, with the
+// metadata of the union where there is one. Either partner may be nil — a lone
+// parent is a family, because the great-grandmother whose husband nobody
+// remembers still has children — and since migration 0076 both may be, which is
+// how two siblings whose parents are not in the library are recorded. When both
+// are set they are stored in byte order (see normalisePair), which is what makes
+// the unique pair index mean "one couple, one family".
 type Family struct {
 	UID string `json:"uid"`
 	// PartnerA and PartnerB are the two sides of the union, nil when unrecorded.
@@ -229,7 +250,8 @@ type Relative struct {
 
 // Partnership is one family a subject is a partner in, together with the person
 // on the other side. Partner is nil for a lone-parent family, which is a family
-// all the same: it is where that person's children hang.
+// all the same: it is where that person's children hang. A sibling group names no
+// partner and therefore never appears in this list at all.
 type Partnership struct {
 	Family  Family    `json:"family"`
 	Partner *Relative `json:"partner"`
@@ -293,8 +315,10 @@ type DescendantOptions struct {
 // pair index (NULLS NOT DISTINCT) sees one row per lone parent rather than one
 // per column they happened to be written into.
 //
-// Both empty yields (nil, nil), which no caller may store: a family with neither
-// partner is refused by subject_families_has_partner.
+// Both empty yields (nil, nil), which is the pair of a sibling group: since
+// migration 0076 a family may record no partner at all, and the unique pair index
+// is partial so every such group is a row of its own rather than one row for the
+// whole library.
 func normalisePair(a, b string) (*string, *string) {
 	switch {
 	case a == "" && b == "":

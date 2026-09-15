@@ -1222,8 +1222,9 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   by `server.WithAPI` (`buildPeopleAPI` in `cmd/kukatko/people.go`). The subject's photo records
   build on `people.Store.ListPhotoUIDsBySubject` (distinct non-invalid markers → photo uid).
 - **Family / genealogy API (`/api/v1`, `internal/familyapi`):** the genealogy over subjects —
-  `internal/family`, where **the family is the node** (a couple or a lone parent plus their children) and
-  parents, siblings, partners and children are all *derived* from it, so they cannot contradict each other.
+  `internal/family`, where **the family is the node** (a couple, a lone parent, or — since migration `0076` —
+  nobody at all, plus their children) and parents, siblings, partners and children are all *derived* from it,
+  so they cannot contradict each other.
   Five routes, flat patterns on the shared `/subjects/{uid}` prefix (no `chi.Mount`, same reason
   `outlierapi` hangs there).
   `GET /subjects/{uid}/relations` (RequireAuth) → the four derived lists in one response, each entry
@@ -1234,22 +1235,34 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   "partner":{…}|null}],"children":[…]}`. `family_uid` names the family row the relation is recorded in and
   `child_kind` (`birth`|`adopted`|`step`) how the child of the pair belongs to it — empty for a partner, who
   is not a child of the family at all; `partner` is `null` for a lone-parent family, which is a family all
-  the same (it is where that person's children hang). A subject with nothing filled in gets four empty
-  lists; an unknown subject 404.
+  the same (it is where that person's children hang). A **sibling group** — a family with no partners at all —
+  names nobody, so it shows up only as the `siblings` list of its children. A subject with nothing filled in
+  gets four empty lists; an unknown subject 404.
   `POST /subjects/{uid}/relations` (RequireWrite) → **201** records one relation on the path subject. The
   body names the role and **either** an existing subject **or** one to create inline:
   `{"role":"parent","subject_uid":"su_…"}` or
   `{"role":"parent","new_subject":{"name":"Marie Nečasová","birth_year":1921}}` (roles: `parent`, `child`,
-  `partner` — there is no `sibling`, because siblings are derived: give the two children the same parent.
-  Optional `child_kind`, ignored for `partner`; `new_subject` also takes `type`, `death_year` and `notes`).
+  `partner`, `sibling`. Optional `child_kind`, ignored for `partner`; `new_subject` also takes `type`,
+  `death_year` and `notes`).
+  **`sibling` is still not a stored edge** — a sibling is another child of the family somebody is a child in —
+  but the family it needs may have to be created: the other person joins the family the path subject is a
+  child in, and when neither of them is anybody's recorded child a family **with no parents at all** is created
+  for the two of them. No placeholder "unknown parent" subject is invented; a real parent recorded on any one
+  of the group later attaches to *that* family, so the whole group becomes their children at once and no child
+  is ever given a second family. Two people who are already children of **different** families are **409**:
+  honouring that would mean taking one of them out of a parentage somebody recorded on purpose.
   Naming both or neither is 400. The answer is `{"family":{…},"relative":{…},"created":true|false}` — the
   family the relation landed in (existing or created), the other person as a chip renders them, and whether
   this call created them. **The inline half is one audited transaction:** subject and relation commit
   together, so a refused relation leaves **no orphan subject** behind. That affordance is what makes filling
   a tree bearable — otherwise every great-grandmother is a trip to another screen and back.
   `DELETE /subjects/{uid}/relations/{uid2}` (RequireWrite) → 204 removes whatever ties the two together;
-  **which relation that is follows from the rows, not from the request** (parent, child or partner). Two
-  subjects that are not related answer 404, so a repeated click is never reported as a removal.
+  **which relation that is follows from the rows, not from the request** (parent, child, partner, or a sibling
+  link with nothing behind it). Two subjects that are not related answer 404, so a repeated click is never
+  reported as a removal. A **sibling** relation is removable only when the family the two share records no
+  parent — there the link is the whole relation, the other person's membership goes and a group that drops
+  below two children is deleted. With a parent on the family they are siblings *because* they are that
+  parent's children, so there is nothing between them to remove and the answer is **409**.
   `GET /subjects/{uid}/tree?direction=descendants|ancestors&generations=N` (RequireAuth) → the
   layout-ready payload the tree page draws: `{"root":{…relative},"direction":"descendants",
   "members":[{…relative,"depth":1,"partner":false}],"families":[{…family,"child_uids":["su_…"]}]}`.
@@ -1274,7 +1287,9 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `0073`. An unknown family is 404.
   **Statuses worth knowing:** a refusal about the *state* of the tree is **409**, not 400 and never 500 —
   a cycle (somebody made their own ancestor), a second parentage (a person is a child in at most one
-  family), a second family for one couple. The request was well formed; the tree is what stands in its way.
+  family), a second family for one couple, two prospective siblings already in two different families, a
+  sibling link that is derived from a recorded parent. The request was well formed; the tree is what stands
+  in its way.
   Every mutation writes its audit entry **inside the mutation's transaction**
   (`subject.relation.add` / `subject.relation.remove` / `family.update`); the add entry's details name the
   role, who the other person turned out to be and which family the relation joined. Every mutation also

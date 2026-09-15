@@ -1680,12 +1680,12 @@ to `## Package map` in `CLAUDE.md`.
   tables `subject_families`/`subject_family_children` in migration `0073_subject_families.sql`; it reads
   subjects without owning them (`internal/people` does) and is a package of its own because the recursion
   and the invariants are a separate concern from the fifteen files of `people`.
-  **The family is the node, not the edge:** a family is a couple (or a lone parent) plus their children, the
-  shape genealogy software settled on decades ago. A relationship table of `(from, to, type)` with
-  parent/spouse/sibling was the obvious first idea and the wrong one — symmetric edges have to be kept
-  symmetric by hand, a sibling edge can contradict the parents, half-siblings are unrepresentable — whereas
-  here **siblings, partners, half-siblings and step-relations are all derived** and therefore cannot disagree
-  with one another; a **childless marriage** is still a recordable row, which a plain parent edge cannot
+  **The family is the node, not the edge:** a family is a couple, a lone parent or a bare sibling group, plus
+  their children — the shape genealogy software settled on decades ago. A relationship table of
+  `(from, to, type)` with parent/spouse/sibling was the obvious first idea and the wrong one — symmetric edges
+  have to be kept symmetric by hand, a sibling edge can contradict the parents, half-siblings are
+  unrepresentable — whereas here **siblings, partners, half-siblings and step-relations are all derived**
+  and therefore cannot disagree with one another; a **childless marriage** is still a recordable row, which a plain parent edge cannot
   express at all. `subject_families` = `uid PK` (prefix `fm`), two **nullable** partner columns (FK subjects
   `ON DELETE CASCADE`), `kind IN (marriage|partnership|unknown)`, `from_year`/`to_year`, `note`, timestamps;
   `subject_family_children` = `(family_uid, child_uid)` PK + `kind IN (birth|adopted|step)`.
@@ -1698,6 +1698,14 @@ to `## Package map` in `CLAUDE.md`.
   child in **at most one** family, which is what keeps the descendant walk a tree rather than a general graph.
   The deliberate limitation that follows: two children of one mother by two unknown fathers read as full
   siblings, and the escape hatch is a placeholder subject for the father (a subject with no photos is legal).
+  **Migration `0076` made a partnerless family legal** — the *sibling group*: two people known to be brother
+  and sister whose parents are not in the library had a real shared fact and nowhere to write it, and a
+  placeholder "unknown parent" subject would have bought the constraint at the price of a phantom in the
+  people list. It drops `subject_families_has_partner` and makes the pair index **partial** (`WHERE
+  partner_a_uid IS NOT NULL OR partner_b_uid IS NOT NULL`); without that second half the all-NULL pairs of
+  every group in the library would compare equal and collapse into one row. What holds the row together
+  instead is the store: a group is created with two children at once and `pruneFamily` deletes it the moment
+  it drops below two, so it cannot linger as the orphan the CHECK was guarding against.
   **Cycles** are the one contradiction SQL cannot refuse on its own (A a child of B's family while B is a child
   of A's), so every attachment first walks the prospective parent's ancestors (`ancestorUIDsSQL` → the pure
   `wouldCycle`) and refuses with `ErrCycle`; every recursive walk also carries a **`depth < 20`** guard
@@ -1724,8 +1732,7 @@ to `## Package map` in `CLAUDE.md`.
   `AddPartnerAudited` (find-or-create, so adding the same couple twice returns the one family),
   `RemoveRelationAudited` (`subject.relation.remove`) and `UpdateFamilyAudited` (`family.update`, kind/years/note).
   **`AddRelationAudited(subjectUID, AddRelation{Role,SubjectUID|New,ChildKind}, entry)`** is the one the HTTP API
-  uses: one call for all three roles (`RoleParent`/`RoleChild`/`RolePartner` — there is deliberately **no
-  sibling role**, siblings are derived, so the way to record one is to give the two children the same parent),
+  uses: one call for all four roles (`RoleParent`/`RoleChild`/`RolePartner`/`RoleSibling`),
   and the other person is **either** an existing subject **or** a `NewPerson` created by that same transaction
   through `people.CreateSubjectTx`. That inline half is the affordance the whole data-entry story rests on, and
   it is only worth anything if it is **atomic**: a relation refused after the subject row was written — a cycle,
@@ -1742,13 +1749,27 @@ to `## Package map` in `CLAUDE.md`.
   pair is completed **in place only when that child is its only one** — a lone parent's other children are theirs
   alone and rewriting the pair would silently hand all of them a second parent — otherwise the child **moves
   into** the couple's family (the one they already have, or a fresh one) and the emptied lone-parent family is
-  pruned, which is also how **half-siblings** arise correctly; two other parents already → `ErrAlreadyChild`.
+  pruned, which is also how **half-siblings** arise correctly; the family records no parent at all → it is a
+  sibling group and the parent joins **it** (`adoptGroup`), so every child in the group becomes that parent's
+  child — in place when the parent has no family of their own, otherwise the whole group moves into their
+  lone-parent family, each membership keeping its kind, and the emptied group is pruned; two other parents
+  already → `ErrAlreadyChild`.
+  **`attachSibling`** is the sibling role's write, and its rule is that a child is never moved between families
+  silently: one of the two is already somebody's child → the other joins that family; neither is → a family with
+  no partners is created for the pair (`newSiblingGroup`, `KindUnknown` — claiming a partnership between nobody
+  and nobody would be the one thing the row says that is untrue); both are, in **different** families →
+  `ErrDifferentFamilies`. `checkNoCycleFor` is the many-to-many cycle check both paths need (a parent adopting a
+  group gains every child of it at once); a group has no partners and therefore no ancestry to contradict.
   Removal is symmetric and conservative: losing
   one parent moves the child to the **remaining** parent's lone-parent family rather than taking both away, a
   separating couple with children keeps its row (renormalised into the first column, since the pair index treats
-  `(X,NULL)` and `(NULL,X)` as different rows) and a childless union's row goes. Sentinels `ErrSubjectNotFound`/
+  `(X,NULL)` and `(NULL,X)` as different rows) and a childless union's row goes. A **sibling** link is removable
+  only when the family behind it records no parent — there it is the whole relation (`detachSibling`), and
+  `pruneFamily` deletes a group that drops below two children; with a parent on the family the two are siblings
+  *because* they are that parent's children, which is `ErrSiblingsDerived`. Sentinels `ErrSubjectNotFound`/
   `ErrFamilyNotFound`/`ErrRelationNotFound` (→404), `ErrCycle`/`ErrAlreadyChild`/`ErrSelfRelation`/
-  `ErrFamilyConflict`/`ErrInvalidKind`/`ErrInvalidRole`/`ErrInvalidYears`/`ErrAmbiguousRelation` (→400/409).
+  `ErrFamilyConflict`/`ErrDifferentFamilies`/`ErrSiblingsDerived`/`ErrInvalidKind`/`ErrInvalidRole`/
+  `ErrInvalidYears`/`ErrAmbiguousRelation` (→400/409).
   **`Export(ctx)`** is the read behind `families.yaml` (`internal/familyexport`): three statements — every
   family, every child membership, and every subject either of them names — each in a deterministic order by
   uid, so an unchanged genealogy exports to identical bytes. They are deliberately **not** in one
@@ -1758,7 +1779,10 @@ to `## Package map` in `CLAUDE.md`.
   and the validators; the integration test seeds a **three-generation family with a cousin marriage** and proves
   the diamond is walked once, that the one-family-per-child index refuses a second parentage (asserted against the
   schema, not only through the store), that an ancestor cannot be attached as a child, and that a refused
-  mutation writes **no** audit row),
+  mutation writes **no** audit row; a second integration file covers the sibling group end to end — two
+  parentless groups coexisting (which the pre-`0076` index would have collapsed), a parent adopting a whole
+  group with and without a family of their own, the two-families refusal, both removal rules, and the group's
+  round trip through `families.yaml`),
   `internal/familyapi/`
   (the HTTP surface over `internal/family`: `Store` (the interface the handlers depend on — `Relations`,
   `Tree`, `AddRelationAudited`, `RemoveRelationAudited`, `GetFamily`, `UpdateFamilyAudited`, satisfied by
@@ -1772,9 +1796,11 @@ to `## Package map` in `CLAUDE.md`.
   The handlers are thin — decode, guard, delegate, map the error — and the three decisions worth naming are
   the status mapping, the audit details and the tree's parameters. **`familyStatus`** answers **404** for a
   missing subject/family/relation, **409** for a refusal about the *state* of the tree (`ErrCycle`,
-  `ErrAlreadyChild`, `ErrFamilyConflict` — the request was well formed and the same one would have been
+  `ErrAlreadyChild`, `ErrFamilyConflict`, `ErrDifferentFamilies`, `ErrSiblingsDerived` — the request was well
+  formed and the same one would have been
   accepted against other rows, so 400 would be a lie and 500 would send somebody hunting a bug that is not
-  there), **400** for what the request itself got wrong (`ErrSelfRelation`, `ErrInvalidKind`/`ErrInvalidRole`,
+  there — `ErrDifferentFamilies` and `ErrSiblingsDerived` join them for the sibling role), **400** for what the
+  request itself got wrong (`ErrSelfRelation`, `ErrInvalidKind`/`ErrInvalidRole`,
   `ErrInvalidYears`, `ErrAmbiguousRelation`, and `people.ErrInvalidType`/`ErrInvalidLifeYears` from an inline
   `new_subject`), 500 only for an error it does not recognise. **Audit:** `POST` hands the store an **empty
   details map** for it to stamp inside the transaction (`subject.relation.add`), `DELETE` names the other side
@@ -1804,12 +1830,13 @@ to `## Package map` in `CLAUDE.md`.
   nobody photographed has no sidecar to belong to. `Version` (1), `Key` (`families.yaml`), `MIME`;
   `Document{Version,GeneratedAt,Subjects,Families}` with `Subject{UID,Slug,Name,Nickname,Type,BirthYear,
   DeathYear}` and `Family{UID,Partners []string,Kind,FromYear,ToYear,Note,Children []Child{SubjectUID,Kind}}`
-  — partners as a **list** (one uid for a lone parent, two for a couple) because the two columns carry no
-  roles, and the children folded into the family they belong to so the file reads as households rather than
-  as two tables to join by eye. `Build(Input{Export family.Export, Now})` is **pure** and orders everything
-  (families and subjects by uid, children within a family by uid), which is what makes an unchanged
-  genealogy marshal to identical bytes; `Marshal`/`Unmarshal` add and ignore the explanatory header;
-  `NewWriter(store).Write(ctx, doc)` renders the document into memory and hands the store its exact size and
+  — partners as a **list** (two uids for a couple, one for a lone parent, and the key omitted altogether for a
+  sibling group, whose children are known to be siblings while their parents are not in the library) because
+  the two columns carry no roles, and the children folded into the family they belong to so the file reads as
+  households rather than as two tables to join by eye. `Build(Input{Export family.Export, Now})` is **pure**
+  and orders everything (families and subjects by uid, children within a family by uid), which is what makes
+  an unchanged genealogy marshal to identical bytes; `Marshal`/`Unmarshal` add and ignore the explanatory
+  header; `NewWriter(store).Write(ctx, doc)` renders the document into memory and hands the store its exact size and
   digest, so the key holds either the whole file or the old one — a truncated write here is not a slightly
   worse tree but every relation in the archive gone. The document is **closed over its own identifiers**
   (every uid a family names is described in `Subjects`); a subject in **no** family is deliberately left

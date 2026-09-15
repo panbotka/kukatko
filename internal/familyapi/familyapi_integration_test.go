@@ -485,3 +485,60 @@ func TestUnauthenticated_isRefused(t *testing.T) {
 		}
 	}
 }
+
+// TestAddRelation_siblingWithNoParents verifies the endpoint takes the sibling
+// role and records the one relation that has nowhere else to go: two people whose
+// parents are not in the library. The response names a family with no partners,
+// the people list gains no phantom, and removing the link again is allowed —
+// which it is not once a parent hangs on the family.
+func TestAddRelation_siblingWithNoParents(t *testing.T) {
+	env := newEnv(t)
+	editor := env.login(t, "sibling-editor", auth.RoleEditor)
+	josef := env.subject(t, "Josef Nečas")
+	anna := env.subject(t, "Anna Nečasová")
+
+	result := env.addRelation(t, editor, josef, `{"role":"sibling","subject_uid":"`+anna+`"}`)
+	if result.Family.PartnerA != nil || result.Family.PartnerB != nil {
+		t.Errorf("family = %+v, want no partner recorded", result.Family)
+	}
+	if result.Relative.UID != anna || result.Created {
+		t.Errorf("relative = %+v, created = %v, want the existing Anna", result.Relative, result.Created)
+	}
+
+	var relations family.Relations
+	env.decode(t, editor, http.MethodGet, "/api/v1/subjects/"+josef+"/relations", nil, http.StatusOK, &relations)
+	if len(relations.Siblings) != 1 || relations.Siblings[0].UID != anna {
+		t.Errorf("siblings = %+v, want Anna", relations.Siblings)
+	}
+	if len(relations.Parents) != 0 {
+		t.Errorf("parents = %+v, want none: no placeholder parent may be invented", relations.Parents)
+	}
+
+	// A sibling created inline is still one audited transaction.
+	created := env.addRelation(t, editor, josef, `{"role":"sibling","new_subject":{"name":"Marie Nečasová"}}`)
+	if !created.Created || created.Family.UID != result.Family.UID {
+		t.Errorf("inline sibling = %+v, want a new person in the same group", created)
+	}
+	if got := env.countSubjects(t, "Marie Nečasová"); got != 1 {
+		t.Errorf("subjects named Marie = %d, want exactly the one created", got)
+	}
+
+	// Parentless: the link is the whole relation, so it can be taken back.
+	if got := env.status(t, editor, http.MethodDelete,
+		"/api/v1/subjects/"+josef+"/relations/"+created.Relative.UID, nil); got != http.StatusNoContent {
+		t.Errorf("removing a parentless sibling = %d, want 204", got)
+	}
+
+	// With a parent on the family they are siblings *through* that parent, and
+	// the refusal is about the state of the tree rather than about the request.
+	mother := env.subject(t, "Ludmila Nečasová")
+	env.addRelation(t, editor, josef, `{"role":"parent","subject_uid":"`+mother+`"}`)
+	if got := env.status(t, editor, http.MethodDelete,
+		"/api/v1/subjects/"+josef+"/relations/"+anna, nil); got != http.StatusConflict {
+		t.Errorf("removing a derived sibling = %d, want 409", got)
+	}
+	env.decode(t, editor, http.MethodGet, "/api/v1/subjects/"+anna+"/relations", nil, http.StatusOK, &relations)
+	if len(relations.Parents) != 1 || relations.Parents[0].UID != mother {
+		t.Errorf("Anna's parents = %+v, want the mother her brother gained", relations.Parents)
+	}
+}

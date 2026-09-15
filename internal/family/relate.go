@@ -22,9 +22,7 @@ var ErrAmbiguousRelation = errors.New(
 	"family: name either an existing subject or a new one, not both and not neither")
 
 // Role says which side of a relation the other person occupies, seen from the
-// subject the relation is recorded on. There is no sibling role: siblings are
-// derived from a shared family, so the way to record one is to give the two
-// children the same parent.
+// subject the relation is recorded on.
 type Role string
 
 // The recognised relation roles.
@@ -35,12 +33,18 @@ const (
 	RoleChild Role = "child"
 	// RolePartner makes the other person the subject's partner.
 	RolePartner Role = "partner"
+	// RoleSibling makes the other person the subject's sibling. It is still not a
+	// stored edge — a sibling is another child of the family somebody is a child
+	// in — but it is a role a request may carry, because the family it needs may
+	// have to be created: two people whose parents are not in the library share a
+	// family with no partners at all. See attachSibling.
+	RoleSibling Role = "sibling"
 )
 
 // valid reports whether r is one of the recognised relation roles.
 func (r Role) valid() bool {
 	switch r {
-	case RoleParent, RoleChild, RolePartner:
+	case RoleParent, RoleChild, RolePartner, RoleSibling:
 		return true
 	default:
 		return false
@@ -75,7 +79,8 @@ type AddRelation struct {
 	// ChildKind is how the child of the pair belongs to their family — birth,
 	// adopted or step. Empty means birth for a new membership and leaves an
 	// existing one as it was. It is ignored for RolePartner, who is not a child
-	// of the family at all.
+	// of the family at all; for RoleSibling it describes the membership the call
+	// creates, which is the person who joins the other's family.
 	ChildKind ChildKind `json:"child_kind,omitempty"`
 }
 
@@ -103,7 +108,8 @@ type AddResult struct {
 // It returns ErrInvalidRole for an unrecognised role, ErrAmbiguousRelation when
 // the request names both an existing and a new subject or neither,
 // ErrSubjectNotFound when a named subject does not exist, and whatever the
-// attachment refuses with: ErrSelfRelation, ErrCycle, ErrAlreadyChild.
+// attachment refuses with: ErrSelfRelation, ErrCycle, ErrAlreadyChild,
+// ErrDifferentFamilies.
 func (s *Store) AddRelationAudited(
 	ctx context.Context, subjectUID string, rel AddRelation, entry audit.Entry,
 ) (AddResult, error) {
@@ -201,10 +207,10 @@ func resolveOther(ctx context.Context, tx pgx.Tx, rel AddRelation) (string, bool
 }
 
 // attachInRole records the relation itself, in the role the request asked for:
-// the other person as the subject's parent, as their child, or as their partner.
-// The first two are the same attachment with the arguments swapped — the family
-// is the node, so which of the pair the page was opened from is presentation, not
-// data.
+// the other person as the subject's parent, their child, their partner or their
+// sibling. The first two are the same attachment with the arguments swapped — the
+// family is the node, so which of the pair the page was opened from is
+// presentation, not data — and the sibling role is symmetric for the same reason.
 func attachInRole(
 	ctx context.Context, tx pgx.Tx, subjectUID, otherUID string, role Role, kind ChildKind,
 ) (Family, error) {
@@ -216,6 +222,8 @@ func attachInRole(
 	case RolePartner:
 		first, second := normalisePair(subjectUID, otherUID)
 		return findOrCreateFamily(ctx, tx, first, second)
+	case RoleSibling:
+		return attachSibling(ctx, tx, subjectUID, otherUID, kind)
 	default:
 		return Family{}, fmt.Errorf("%w: %q", ErrInvalidRole, role)
 	}

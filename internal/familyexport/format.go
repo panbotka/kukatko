@@ -100,20 +100,25 @@ type Subject struct {
 	DeathYear *int `yaml:"death_year,omitempty"`
 }
 
-// Family is one couple (or lone parent) plus the children who belong to them.
+// Family is one couple, one lone parent or one bare sibling group, plus the
+// children who belong to them.
 //
 // The family is the node of this model, not the edge: siblings, half-siblings
 // and second marriages are all read off these rows rather than stored, which is
 // what stops them from ever contradicting each other. See migration 0073 for the
-// reasoning in full.
+// reasoning in full, and 0076 for why a family may name nobody at all.
 type Family struct {
 	// UID is the family's Kukátko UID.
 	UID string `yaml:"uid"`
-	// Partners names the two sides of the union — one uid for a lone parent, two
-	// for a couple, and never none. It is a list rather than a pair of keys
-	// because the two carry no roles: which of them is the mother is not
-	// something this file claims to know.
-	Partners []string `yaml:"partners"`
+	// Partners names the two sides of the union — two uids for a couple, one for a
+	// lone parent, and none at all for a sibling group, whose children are known
+	// to be siblings while their parents are not in the library. It is a list
+	// rather than a pair of keys because the two carry no roles: which of them is
+	// the mother is not something this file claims to know.
+	//
+	// It is omitted rather than written empty when there is nobody in it, so a
+	// reader meets no key instead of an empty one and the document round-trips.
+	Partners []string `yaml:"partners,omitempty"`
 	// Kind is marriage, partnership or unknown.
 	Kind string `yaml:"kind,omitempty"`
 	// FromYear and ToYear bound the union, omitted when unknown.

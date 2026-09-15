@@ -613,11 +613,14 @@ families:
   file usable on its own. `uid` is what the families refer to them by, and it is the same subject uid
   every photo sidecar carries on its markers, so the tree reconnects to the people the sidecars
   already named. `nickname`, `birth_year` and `death_year` are omitted when unknown.
-- `families` is the model: a family is **a couple (or a lone parent) plus their children**, which is
-  the shape genealogy software settled on decades ago. `partners` holds one uid for a lone parent and
-  two for a couple, in no particular role — which of them is the mother is not something this file
-  claims to know. `kind` is `marriage`, `partnership` or `unknown`; `children[].kind` is `birth`,
-  `adopted` or `step`. A childless union is a legitimate family with no `children` key.
+- `families` is the model: a family is **a couple, a lone parent or nobody at all, plus their
+  children**, which is the shape genealogy software settled on decades ago. `partners` holds two uids
+  for a couple and one for a lone parent, in no particular role — which of them is the mother is not
+  something this file claims to know — and the key is **absent** for a *sibling group*: people known
+  to be brother and sister whose parents the library never heard of. `kind` is `marriage`,
+  `partnership` or `unknown`; `children[].kind` is `birth`, `adopted` or `step`. A childless union is
+  a legitimate family with no `children` key; a sibling group always has at least two children,
+  because one child alone would be nobody's sibling.
 - **Siblings, half-siblings and second marriages are not stored.** They are read off these families —
   a sibling is another child of the family I am a child in, a half-sibling a child of another family
   one of my parents is a partner in, a second marriage simply a second family — which is what stops

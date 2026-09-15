@@ -104,9 +104,9 @@ func childrenByFamily(children []family.ChildMembership) map[string][]Child {
 }
 
 // partnersOf returns the family's recorded partners: two uids for a couple, one
-// for a lone parent. The nil column of a lone parent is dropped rather than
-// written as an empty string, so the list means "the people in this union" and
-// nothing has to be filtered by a reader.
+// for a lone parent, none for a sibling group. The nil column of a lone parent is
+// dropped rather than written as an empty string, so the list means "the people
+// in this union" and nothing has to be filtered by a reader.
 func partnersOf(fam family.Family) []string {
 	out := make([]string, 0, 2)
 	for _, uid := range []*string{fam.PartnerA, fam.PartnerB} {
@@ -126,10 +126,12 @@ func partnersOf(fam family.Family) []string {
 const header = `# Kukátko family tree.
 #
 # This file holds the library's whole genealogy: every person who appears in a
-# family, and every family — a couple or a lone parent plus their children —
-# tying them together. Siblings, half-siblings and second marriages are not
-# stored: they are read off these families, which is what stops them from
-# contradicting each other.
+# family, and every family — a couple, a lone parent, or nobody at all, plus
+# their children — tying them together. Siblings, half-siblings and second
+# marriages are not stored: they are read off these families, which is what stops
+# them from contradicting each other. A family with no partners is a sibling
+# group: people known to be brother and sister whose parents the library never
+# heard of.
 #
 # It sits at the root of the storage, beside the originals and the sidecars/
 # tree, so the tree can be rebuilt from the storage alone — no database. It is

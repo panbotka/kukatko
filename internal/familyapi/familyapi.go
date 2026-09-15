@@ -95,7 +95,7 @@ func NewAPI(cfg Config) *API {
 // under the API base path (for example /api/v1):
 //
 //	GET    /subjects/{uid}/relations         RequireAuth   parents, siblings, partners, children
-//	POST   /subjects/{uid}/relations         RequireWrite  record a relation (existing or new subject)
+//	POST   /subjects/{uid}/relations         RequireWrite  record a relation (parent/child/partner/sibling)
 //	DELETE /subjects/{uid}/relations/{uid2}  RequireWrite  remove the relation between two subjects
 //	GET    /subjects/{uid}/tree              RequireAuth   the tree walked from the subject
 //	PATCH  /families/{uid}                   RequireWrite  edit a family: kind, years, note
@@ -166,7 +166,9 @@ func familyStatus(err error) (int, string) {
 		return http.StatusNotFound, err.Error()
 	case errors.Is(err, family.ErrCycle),
 		errors.Is(err, family.ErrAlreadyChild),
-		errors.Is(err, family.ErrFamilyConflict):
+		errors.Is(err, family.ErrFamilyConflict),
+		errors.Is(err, family.ErrDifferentFamilies),
+		errors.Is(err, family.ErrSiblingsDerived):
 		return http.StatusConflict, err.Error()
 	case errors.Is(err, family.ErrSelfRelation),
 		errors.Is(err, family.ErrInvalidKind),

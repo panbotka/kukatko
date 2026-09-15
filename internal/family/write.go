@@ -58,6 +58,14 @@ const deleteChildSQL = "DELETE FROM subject_family_children WHERE family_uid = $
 // that just lost its last child is still worth keeping.
 const countChildrenSQL = "SELECT COUNT(*) FROM subject_family_children WHERE family_uid = $1"
 
+// familyChildrenSQL reads a family's children with how each of them belongs, for
+// the one write that moves a whole group at once — a sibling group meeting the
+// parent's existing lone-parent family. Each membership keeps its own kind: an
+// adopted child does not become a born one because a parent was added to their
+// brother.
+const familyChildrenSQL = `
+SELECT child_uid, kind FROM subject_family_children WHERE family_uid = $1 ORDER BY child_uid`
+
 // ancestorUIDsSQL walks up from the given subjects and returns them together with
 // everybody above them. It is the cycle check's evidence: if the prospective
 // child is in this set, attaching them would make somebody their own ancestor.
@@ -214,6 +222,9 @@ func (s *Store) RemoveRelationAudited(
 //     case the child moves into it and the emptied lone-parent family is pruned.
 //     That second step is what makes "add the mother, then add the father" work
 //     for a couple the library already knew about;
+//   - the child's family records no parent at all — it is a sibling group, and the
+//     parent is attached to *that* family, so every child in it becomes this
+//     parent's child. See adoptGroup for why the group is never split;
 //   - the child's family already has two other parents — ErrAlreadyChild, because
 //     a person is a child in at most one family and this model will not guess
 //     which parentage was meant to win.
@@ -241,10 +252,187 @@ func attachChild(ctx context.Context, tx pgx.Tx, childUID, parentUID string, kin
 	if slices.Contains(current.partnerUIDs(), parentUID) {
 		return current, setChildKind(ctx, tx, current.UID, childUID, kind)
 	}
-	if len(current.partnerUIDs()) > 1 {
+	switch len(current.partnerUIDs()) {
+	case 0:
+		return adoptGroup(ctx, tx, current, childUID, parentUID, kind)
+	case 1:
+		return completeParentage(ctx, tx, current, childUID, parentUID, kind)
+	default:
 		return Family{}, fmt.Errorf("%w: %s is a child of family %s", ErrAlreadyChild, childUID, current.UID)
 	}
-	return completeParentage(ctx, tx, current, childUID, parentUID, kind)
+}
+
+// adoptGroup gives a parentless sibling group its first recorded parent.
+//
+// The parent is attached to the group itself rather than to the one child the
+// relation happened to be typed on, which is the whole point of the group being a
+// family: the library was told these people are siblings, so a parent of one of
+// them is a parent of all of them, and moving the single child out would split a
+// group somebody recorded on purpose and leave the rest of it parentless.
+//
+// Where the parent already has a lone-parent family — their other children hang
+// off it, and one lone parent is exactly one family — the group moves into that
+// one whole instead, each membership keeping its own kind, and the emptied group
+// row is pruned. Otherwise the group's own row takes the parent, which keeps its
+// uid and every membership on it untouched.
+func adoptGroup(
+	ctx context.Context, tx pgx.Tx, group Family, childUID, parentUID string, kind ChildKind,
+) (Family, error) {
+	members, err := familyChildren(ctx, tx, group.UID)
+	if err != nil {
+		return Family{}, err
+	}
+	// Every child of the group gains this parent, so every one of them is a
+	// prospective descendant and the cycle check has to cover the lot.
+	if err := checkNoCycleFor(ctx, tx, membershipUIDs(members), parentUID); err != nil {
+		return Family{}, err
+	}
+	first, second := normalisePair(parentUID, "")
+	existing, err := findFamilyByPair(ctx, tx, first, second)
+	switch {
+	case err == nil:
+		return existing, moveGroup(ctx, tx, group, existing, members, childUID, kind)
+	case errors.Is(err, ErrFamilyNotFound):
+		return adoptInPlace(ctx, tx, group, childUID, first, second, kind)
+	default:
+		return Family{}, err
+	}
+}
+
+// moveGroup moves every child of a sibling group into the parent's existing
+// lone-parent family and prunes the emptied group. Only the child the relation
+// was recorded on takes the requested kind; the others keep theirs.
+func moveGroup(
+	ctx context.Context, tx pgx.Tx, group, target Family,
+	members []ChildMembership, childUID string, kind ChildKind,
+) error {
+	for _, member := range members {
+		memberKind := member.Kind
+		if member.ChildUID == childUID {
+			memberKind = kind
+		}
+		if err := moveChild(ctx, tx, group.UID, target.UID, member.ChildUID, memberKind); err != nil {
+			return err
+		}
+	}
+	return pruneFamily(ctx, tx, group)
+}
+
+// adoptInPlace writes the parent onto the sibling group's own row, which keeps
+// the family uid — and every membership already hanging on it — intact.
+func adoptInPlace(
+	ctx context.Context, tx pgx.Tx, group Family, childUID string, first, second *string, kind ChildKind,
+) (Family, error) {
+	fam, err := scanFamily(tx.QueryRow(ctx, setFamilyPartnersSQL, group.UID, first, second))
+	if err != nil {
+		return Family{}, translateWriteError(err)
+	}
+	return fam, setChildKind(ctx, tx, fam.UID, childUID, kind)
+}
+
+// attachSibling records that two subjects are siblings, which in a model whose
+// node is the family means putting them in one: a sibling is another child of the
+// family somebody is a child in, and that reading holds whether or not anybody is
+// recorded above them.
+//
+// Which family it is follows from what is already known, and the rule throughout
+// is that a child is never moved between families silently:
+//
+//   - one of the two is already somebody's recorded child — the other joins that
+//     family, so a sibling of a person whose parents are known becomes their
+//     parents' child, which is exactly what recording one meant before there was
+//     a sibling role;
+//   - neither of them is — a family with no partners at all is created for the
+//     two of them. No placeholder "unknown parent" subject is invented: a phantom
+//     person in the people list is a worse lie than an empty pair, and the real
+//     parents can be attached to this very family the day they turn up;
+//   - both are children of *different* families — ErrDifferentFamilies, because
+//     the only way to honour the request would be to take one of them out of a
+//     parentage somebody recorded on purpose.
+//
+// kind describes the membership this call creates — the person who joins the
+// other's family, or the second child of a new group — and an empty one means
+// birth. Two people who already share a family are already siblings, so the call
+// is idempotent and only rewrites that kind.
+func attachSibling(
+	ctx context.Context, tx pgx.Tx, subjectUID, otherUID string, kind ChildKind,
+) (Family, error) {
+	if err := requireSubjects(ctx, tx, subjectUID, otherUID); err != nil {
+		return Family{}, err
+	}
+	subjectFam, subjectErr := optionalChildFamily(ctx, tx, subjectUID)
+	if subjectErr != nil {
+		return Family{}, subjectErr
+	}
+	otherFam, otherErr := optionalChildFamily(ctx, tx, otherUID)
+	if otherErr != nil {
+		return Family{}, otherErr
+	}
+	switch {
+	case subjectFam != nil && otherFam != nil:
+		return alreadySiblings(ctx, tx, *subjectFam, *otherFam, subjectUID, otherUID, kind)
+	case subjectFam != nil:
+		return joinAsChild(ctx, tx, *subjectFam, otherUID, childKindOrDefault(kind))
+	case otherFam != nil:
+		return joinAsChild(ctx, tx, *otherFam, subjectUID, childKindOrDefault(kind))
+	default:
+		return newSiblingGroup(ctx, tx, subjectUID, otherUID, childKindOrDefault(kind))
+	}
+}
+
+// alreadySiblings handles the pair that are both somebody's recorded child: the
+// same family means they are siblings already and only the membership kind is
+// rewritten, two different families means the request cannot be honoured without
+// moving one of them, which this model refuses to do quietly.
+func alreadySiblings(
+	ctx context.Context, tx pgx.Tx, subjectFam, otherFam Family, subjectUID, otherUID string, kind ChildKind,
+) (Family, error) {
+	if subjectFam.UID != otherFam.UID {
+		return Family{}, fmt.Errorf("%w: %s is a child of family %s and %s of family %s",
+			ErrDifferentFamilies, subjectUID, subjectFam.UID, otherUID, otherFam.UID)
+	}
+	if kind == "" {
+		return subjectFam, nil
+	}
+	return subjectFam, setChildKind(ctx, tx, subjectFam.UID, otherUID, kind)
+}
+
+// joinAsChild puts one more child into an existing family. A family with partners
+// hands the newcomer its parents, so it is checked for a cycle first; a sibling
+// group has none and therefore no ancestry anybody could contradict.
+func joinAsChild(ctx context.Context, tx pgx.Tx, fam Family, childUID string, kind ChildKind) (Family, error) {
+	if err := checkNoCycleFor(ctx, tx, []string{childUID}, fam.partnerUIDs()...); err != nil {
+		return Family{}, err
+	}
+	return fam, insertChild(ctx, tx, fam.UID, childUID, kind)
+}
+
+// newSiblingGroup creates the bare family two siblings with no recorded parents
+// share: no partner, the two of them as children. It is the row migration 0076
+// opened the schema for — "these two are brother and sister" is a fact about the
+// two of them, and the library used to have nowhere to put one whose parents it
+// had never heard of.
+//
+// Its kind is KindUnknown rather than the usual KindPartnership default, because
+// the kind describes what tied the partners together and this family has none:
+// claiming a partnership between nobody and nobody would be the one thing the
+// record says that is not true.
+func newSiblingGroup(
+	ctx context.Context, tx pgx.Tx, subjectUID, otherUID string, kind ChildKind,
+) (Family, error) {
+	uid, err := newFamilyUID()
+	if err != nil {
+		return Family{}, err
+	}
+	first, second := normalisePair("", "")
+	fam, err := scanFamily(tx.QueryRow(ctx, insertFamilySQL, uid, first, second, KindUnknown))
+	if err != nil {
+		return Family{}, translateWriteError(err)
+	}
+	if err := insertChild(ctx, tx, fam.UID, subjectUID, ChildBirth); err != nil {
+		return Family{}, err
+	}
+	return fam, insertChild(ctx, tx, fam.UID, otherUID, kind)
 }
 
 // attachToNewFamily joins a child with no recorded parentage to the parent's
@@ -325,12 +513,30 @@ func isOnlyChild(ctx context.Context, q querier, familyUID string) (bool, error)
 // parentUID, which is the one contradiction the schema cannot refuse on its own:
 // the one-family-per-child index stops a second parentage, not a circular one.
 func checkNoCycle(ctx context.Context, tx pgx.Tx, childUID, parentUID string) error {
-	ancestors, err := ancestorUIDs(ctx, tx, parentUID)
+	return checkNoCycleFor(ctx, tx, []string{childUID}, parentUID)
+}
+
+// checkNoCycleFor is the many-to-many form of that check: none of childUIDs may
+// already be an ancestor of any of parentUIDs. Neither side is always one person
+// — a parent attached to a sibling group becomes the parent of every child in it,
+// and a child joining a couple's family gains both of them — and the ancestry is
+// read once for the whole set rather than per pair.
+//
+// With no prospective parent there is nobody above anybody, so a sibling group
+// passes it without a query.
+func checkNoCycleFor(ctx context.Context, tx pgx.Tx, childUIDs []string, parentUIDs ...string) error {
+	if len(childUIDs) == 0 || len(parentUIDs) == 0 {
+		return nil
+	}
+	ancestors, err := ancestorUIDs(ctx, tx, parentUIDs...)
 	if err != nil {
 		return err
 	}
-	if wouldCycle(childUID, ancestors) {
-		return fmt.Errorf("%w: %s is already an ancestor of %s", ErrCycle, childUID, parentUID)
+	for _, childUID := range childUIDs {
+		if wouldCycle(childUID, ancestors) {
+			return fmt.Errorf("%w: %s is already an ancestor of %s",
+				ErrCycle, childUID, strings.Join(parentUIDs, ", "))
+		}
 	}
 	return nil
 }
@@ -383,7 +589,7 @@ func findOrCreateFamily(ctx context.Context, tx pgx.Tx, first, second *string) (
 
 // removeRelation deletes whatever ties the two subjects together, looking for it
 // in the order a page offers it: the other is the subject's child, the other is
-// the subject's parent, the two are partners.
+// the subject's parent, the two are partners, the two are siblings.
 func removeRelation(ctx context.Context, tx pgx.Tx, subjectUID, otherUID string) error {
 	done, err := detachParentage(ctx, tx, otherUID, subjectUID)
 	if err != nil || done {
@@ -395,13 +601,47 @@ func removeRelation(ctx context.Context, tx pgx.Tx, subjectUID, otherUID string)
 	}
 	first, second := normalisePair(subjectUID, otherUID)
 	fam, err := findFamilyByPair(ctx, tx, first, second)
-	if errors.Is(err, ErrFamilyNotFound) {
-		return fmt.Errorf("%w: %s and %s", ErrRelationNotFound, subjectUID, otherUID)
+	if err == nil {
+		return detachPartner(ctx, tx, fam, otherUID)
 	}
+	if !errors.Is(err, ErrFamilyNotFound) {
+		return err
+	}
+	return detachSibling(ctx, tx, subjectUID, otherUID)
+}
+
+// detachSibling parts two siblings, which is a relation there is something to
+// remove for in exactly one case: the family they share records no parent. Then
+// the sibling link *is* the whole relation — somebody said these two are brother
+// and sister and nothing else follows from it — and the other subject's
+// membership goes, leaving a group that has dropped below two children to be
+// pruned.
+//
+// With a parent on the family the two are siblings because they are that
+// parent's children, so there is no row between them and taking one of them out
+// of the family would silently remove a parentage nobody asked about. That is
+// ErrSiblingsDerived, and the way to part them is to remove the parent.
+func detachSibling(ctx context.Context, tx pgx.Tx, subjectUID, otherUID string) error {
+	notRelated := fmt.Errorf("%w: %s and %s", ErrRelationNotFound, subjectUID, otherUID)
+	subjectFam, err := optionalChildFamily(ctx, tx, subjectUID)
 	if err != nil {
 		return err
 	}
-	return detachPartner(ctx, tx, fam, otherUID)
+	otherFam, err := optionalChildFamily(ctx, tx, otherUID)
+	if err != nil {
+		return err
+	}
+	if subjectFam == nil || otherFam == nil || subjectFam.UID != otherFam.UID {
+		return notRelated
+	}
+	if len(subjectFam.partnerUIDs()) > 0 {
+		return fmt.Errorf("%w: %s and %s are children of family %s",
+			ErrSiblingsDerived, subjectUID, otherUID, subjectFam.UID)
+	}
+	if err := deleteChild(ctx, tx, subjectFam.UID, otherUID); err != nil {
+		return err
+	}
+	return pruneFamily(ctx, tx, *subjectFam)
 }
 
 // detachParentage removes parentUID from childUID's parentage when that is
@@ -481,24 +721,40 @@ func detachPartner(ctx context.Context, tx pgx.Tx, fam Family, partnerUID string
 	return nil
 }
 
-// pruneFamily deletes a lone-parent family that has no children left. A childless
-// *couple* survives: a marriage nobody had children from is a fact worth keeping,
-// while a lone parent with no children records nothing at all.
+// pruneFamily deletes a family that has stopped recording anything. How many
+// children that takes depends on the shape of the row:
+//
+//   - a couple always survives, childless or not: a marriage nobody had children
+//     from is a fact worth keeping, and it is the box a tree draws;
+//   - a lone parent needs one child, since the family is only where their
+//     children hang;
+//   - a sibling group needs two, because one child alone is nobody's sibling —
+//     that is the row's entire content, and half of it is not a relation.
 func pruneFamily(ctx context.Context, tx pgx.Tx, fam Family) error {
-	if len(fam.partnerUIDs()) > 1 {
+	partners := len(fam.partnerUIDs())
+	if partners > 1 {
 		return nil
 	}
 	children, err := countChildren(ctx, tx, fam.UID)
 	if err != nil {
 		return err
 	}
-	if children > 0 {
+	if children >= minChildren(partners) {
 		return nil
 	}
 	if _, err := tx.Exec(ctx, deleteFamilySQL, fam.UID); err != nil {
 		return fmt.Errorf("family: deleting family %s: %w", fam.UID, err)
 	}
 	return nil
+}
+
+// minChildren is how many children a family with this many partners must keep to
+// be worth a row: one for a lone parent, two for a sibling group.
+func minChildren(partners int) int {
+	if partners == 0 {
+		return 2
+	}
+	return 1
 }
 
 // countChildren returns how many children a family has.
@@ -508,6 +764,54 @@ func countChildren(ctx context.Context, q querier, familyUID string) (int, error
 		return 0, fmt.Errorf("family: counting children of %s: %w", familyUID, err)
 	}
 	return n, nil
+}
+
+// familyChildren reads a family's children with how each of them belongs.
+func familyChildren(ctx context.Context, q querier, familyUID string) ([]ChildMembership, error) {
+	rows, err := q.Query(ctx, familyChildrenSQL, familyUID)
+	if err != nil {
+		return nil, fmt.Errorf("family: reading children of %s: %w", familyUID, err)
+	}
+	defer rows.Close()
+
+	out := []ChildMembership{}
+	for rows.Next() {
+		membership := ChildMembership{FamilyUID: familyUID}
+		if err := rows.Scan(&membership.ChildUID, &membership.Kind); err != nil {
+			return nil, fmt.Errorf("family: scanning child of %s: %w", familyUID, err)
+		}
+		out = append(out, membership)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("family: reading children of %s: %w", familyUID, err)
+	}
+	return out, nil
+}
+
+// membershipUIDs returns the children of a group, which is the set a prospective
+// parent is checked for a cycle against.
+func membershipUIDs(members []ChildMembership) []string {
+	uids := make([]string, 0, len(members))
+	for _, member := range members {
+		uids = append(uids, member.ChildUID)
+	}
+	return uids
+}
+
+// optionalChildFamily returns the family the subject is a child in, or nil when
+// they are nobody's recorded child. It is childFamily for the callers to which
+// "no parentage" is an ordinary answer rather than a refusal — recording a
+// sibling and removing one both have to look at both people before they know
+// which case they are in.
+func optionalChildFamily(ctx context.Context, q querier, subjectUID string) (*Family, error) {
+	fam, _, err := childFamily(ctx, q, subjectUID)
+	if errors.Is(err, ErrFamilyNotFound) {
+		return nil, nil //nolint:nilnil // "no family" is the answer, not an error.
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &fam, nil
 }
 
 // insertChild records a child's membership of a family.

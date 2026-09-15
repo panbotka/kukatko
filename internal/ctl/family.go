@@ -17,7 +17,7 @@ import (
 // obvious mistake costs no round trip.
 var (
 	// ErrInvalidRole indicates a relation role the API does not recognise.
-	ErrInvalidRole = errors.New(`ctl: a relation role is "parent", "child" or "partner"`)
+	ErrInvalidRole = errors.New(`ctl: a relation role is "parent", "child", "partner" or "sibling"`)
 	// ErrInvalidChildKind indicates a child kind outside the recognised set.
 	ErrInvalidChildKind = errors.New(`ctl: a child kind is "birth", "adopted" or "step"`)
 	// ErrInvalidFamilyKind indicates a family kind outside the recognised set.
@@ -33,10 +33,14 @@ var (
 	// ErrNotRelated indicates the two subjects share no relation this package
 	// records, so there is nothing to remove.
 	ErrNotRelated = errors.New("ctl: these two are not related")
-	// ErrSiblingsDerived indicates an attempt to remove a sibling relation. There
-	// is no such row: siblings are the other children of a shared family.
+	// ErrSiblingsDerived indicates an attempt to remove a sibling relation that
+	// follows from a recorded parent. There is no row between the two: they are
+	// siblings because they are that parent's children, so the way to part them is
+	// to remove the parent. Two siblings whose family records no parent are a
+	// different case — there the sibling link is the whole relation, and it can be
+	// removed.
 	ErrSiblingsDerived = errors.New(
-		"ctl: siblings are derived from a shared parent, so there is no sibling relation to remove")
+		"ctl: these two are siblings through a recorded parent, so there is no sibling relation to remove")
 )
 
 // The relation roles POST /subjects/{uid}/relations accepts. They are the other
@@ -48,10 +52,11 @@ const (
 	RoleChild = "child"
 	// RolePartner makes the other person the subject's partner.
 	RolePartner = "partner"
-	// RoleSibling is how Relations.Role reports a sibling, and never a role a
-	// request may carry: siblings are derived from a shared family, so the way to
-	// record one is to give the two children the same parent — and there is no
-	// row between them to remove.
+	// RoleSibling makes the other person the subject's sibling, and is also how
+	// Relations.Role reports one. It is still not a stored edge — a sibling is
+	// another child of the family somebody is a child in — but it is a role a
+	// request may carry, because that family may have to be created: two people
+	// whose parents are not in the library share a family with no partners at all.
 	RoleSibling = "sibling"
 	// RoleLoneParent labels the row of a family that has no second partner, and
 	// is never a role a request may carry either. It is not a relation to anybody:
@@ -108,9 +113,10 @@ type Relative struct {
 }
 
 // Family is one couple — or one lone parent, which is a family all the same,
-// since it is where that person's children hang — with the metadata of their
-// union. Either partner may be absent; the two columns carry no role, so which of
-// them is the mother is not something this record claims to know.
+// since it is where that person's children hang, or a bare sibling group, which
+// names nobody — with the metadata of their union. Either partner may be absent;
+// the two columns carry no role, so which of them is the mother is not something
+// this record claims to know.
 type Family struct {
 	UID       string    `json:"uid"`
 	PartnerA  *string   `json:"partner_a_uid"`
@@ -236,7 +242,7 @@ type RelationInput struct {
 // validate range-checks what the CLI can reject without a round trip.
 func (in RelationInput) validate() error {
 	switch in.Role {
-	case RoleParent, RoleChild, RolePartner:
+	case RoleParent, RoleChild, RolePartner, RoleSibling:
 	default:
 		return fmt.Errorf("%w: %q", ErrInvalidRole, in.Role)
 	}
@@ -592,8 +598,10 @@ func WriteFamily(w io.Writer, family Family, names map[string]string) error {
 	})
 }
 
-// familyPartners names both sides of a family, or says that only one of them is
-// recorded — which is a fact about the family, not a gap in the answer.
+// familyPartners names both sides of a family, or says that only one — or
+// neither — is recorded, which is a fact about the family and not a gap in the
+// answer: a family naming nobody is the sibling group of two people whose parents
+// the library has never heard of.
 func familyPartners(family Family, names map[string]string) string {
 	partners := family.Partners()
 	labels := make([]string, 0, len(partners))
@@ -602,7 +610,7 @@ func familyPartners(family Family, names map[string]string) string {
 	}
 	switch len(labels) {
 	case 0:
-		return "-"
+		return "- (sibling group: no parent recorded)"
 	case 1:
 		return labels[0] + " (lone parent)"
 	default:

@@ -1828,7 +1828,7 @@
       "kindHeading": "How is this person related?",
       "pickLabel": "Person’s name",
       "siblingHint": "A sibling is recorded as a child of the parents: {{parents}}.",
-      "siblingNoParents": "Siblings follow from the parents, so one cannot be recorded while there are none. Add a parent first — siblings are then recorded as their children.",
+      "siblingHintNoParents": "Nobody has recorded the parents, so the two are recorded as the children of a family with no parents in it. Add a parent to either of them later and they become the parent of everybody in the group.",
       "recorded": "Recorded: {{names}}",
       "conflict": "This relation does not fit the tree — the person may already be a child in another family, or it would make somebody their own ancestor.",
       "invalid": "This relation does not make sense.",

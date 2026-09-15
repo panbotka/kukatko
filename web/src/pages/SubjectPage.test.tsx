@@ -1125,7 +1125,7 @@ describe('SubjectPage family strip', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument()
   })
 
-  it('records a sibling as a child of both recorded parents', async () => {
+  it('records a sibling in one request, naming the parents it will hang off', async () => {
     fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
     relationsMock.mockResolvedValue(
       relations({ parents: [relative('sj_m', 'Marie'), relative('sj_o', 'Josef')] }),
@@ -1142,17 +1142,17 @@ describe('SubjectPage family strip', () => {
     await user.type(within(dialog).getByRole('combobox'), 'Jana K')
     await user.click(await screen.findByRole('option', { name: /Jana K\./ }))
 
-    // Siblings are derived, so a sibling is recorded where it can be: as a child
-    // of the same parents, one call each.
+    // A sibling is still derived — the backend makes the person another child of
+    // the family this one is a child in — but it is one audited request on the
+    // subject, not a `child` posted once per recorded parent.
     await waitFor(() => {
       expect(addRelationMock.mock.calls).toEqual([
-        ['sj_m', { role: 'child', subject_uid: 'sj_2' }],
-        ['sj_o', { role: 'child', subject_uid: 'sj_2' }],
+        ['sj_1', { role: 'sibling', subject_uid: 'sj_2' }],
       ])
     })
   })
 
-  it('creates a sibling once, then relates that same person to the second parent', async () => {
+  it('creates a sibling and relates them in the same single request', async () => {
     fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
     relationsMock.mockResolvedValue(
       relations({ parents: [relative('sj_m', 'Marie'), relative('sj_o', 'Josef')] }),
@@ -1170,28 +1170,36 @@ describe('SubjectPage family strip', () => {
     await user.type(within(await screen.findByRole('dialog')).getByRole('combobox'), 'Petr')
     await user.click(await screen.findByRole('option', { name: /Create/ }))
 
-    // The second call names the person the first one created, so two parents do
-    // not mean two people of one name.
+    // One call, so a sibling of two recorded parents can never become two people
+    // of one name — the backend creates and relates in one transaction.
     await waitFor(() => {
       expect(addRelationMock.mock.calls).toEqual([
-        ['sj_m', { role: 'child', new_subject: { name: 'Petr' } }],
-        ['sj_o', { role: 'child', subject_uid: 'sj_new' }],
+        ['sj_1', { role: 'sibling', new_subject: { name: 'Petr' } }],
       ])
     })
   })
 
-  it('says what to record first when a sibling has nothing to hang from', async () => {
+  it('records a sibling for somebody whose parents nobody wrote down', async () => {
     fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    addRelationMock.mockResolvedValue(added(relative('sj_2', 'Jana K.')))
     const user = userEvent.setup()
     renderPage()
 
     await screen.findByRole('heading', { name: 'Family' })
     await user.click(screen.getByRole('button', { name: 'Add a sibling' }))
 
+    // No parents recorded is no longer a dead end: the field is there, and the
+    // copy says the two will share a family a parent can join later.
     const dialog = await screen.findByRole('dialog')
-    expect(within(dialog).getByText(/Add a parent first/)).toBeInTheDocument()
-    // No field to type into: there is nowhere for the answer to go yet.
-    expect(within(dialog).queryByRole('combobox')).not.toBeInTheDocument()
+    expect(within(dialog).getByText(/family with no parents in it/)).toBeInTheDocument()
+    await user.type(within(dialog).getByRole('combobox'), 'Jana K')
+    await user.click(await screen.findByRole('option', { name: /Jana K\./ }))
+
+    await waitFor(() => {
+      expect(addRelationMock.mock.calls).toEqual([
+        ['sj_1', { role: 'sibling', subject_uid: 'sj_2' }],
+      ])
+    })
   })
 
   it('explains a refusal about the state of the tree in the reader’s language', async () => {

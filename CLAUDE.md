@@ -90,7 +90,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/expandapi` — `GET /albums/{uid}/similar`, `GET /labels/{uid}/similar` (RequireWrite)
 - `internal/facejob` — worker handler `face_detect` + backfill
 - `internal/facematch` — face↔marker IoU matching, identity suggestions, the compact per-photo roll-call, assignment state machine
-- `internal/family` — the genealogy over subjects: the family is the node (a couple or lone parent plus their children), everything else is derived; byte-ordered pairs, one family per child, cycle check, bounded descendant/ancestor walks
+- `internal/family` — the genealogy over subjects: the family is the node (a couple, a lone parent or a bare sibling group, plus their children), everything else is derived; byte-ordered pairs, one family per child, cycle check, bounded descendant/ancestor walks
 - `internal/familyexport` — the library-level `families.yaml` at the store root: the whole genealogy in one versioned YAML document, closed over its own subjects, so the tree survives losing the database
 - `internal/familyexportjob` — the `family_export` job: one file for the whole library, rewritten whenever a relation (or a subject in one) changes, debounced by the queue's dedup
 - `internal/familyapi` — the five flat family routes (`/subjects/{uid}/relations`, `/subjects/{uid}/tree`, `PATCH /families/{uid}`); the `POST` takes an existing subject or creates one inline, in the store's one audited transaction

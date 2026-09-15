@@ -77,16 +77,20 @@ export type ChildKind = 'birth' | 'adopted' | 'step'
 
 /**
  * The side the *other* person takes in a recorded relation (`family.Role`). It is
- * the whole vocabulary the endpoint accepts: a sibling is not among them, because
- * siblings are derived from a shared parentage rather than stored (see
- * {@link AddRelationRequest}).
+ * the whole vocabulary the endpoint accepts.
+ *
+ * `sibling` is still not a stored edge — a sibling is another child of the family
+ * somebody is a child in — but it is a role a request may carry, because that
+ * family may have to be created: two people whose parents are not in the library
+ * share a family with no partners at all.
  */
-export type RelationRole = 'parent' | 'child' | 'partner'
+export type RelationRole = 'parent' | 'child' | 'partner' | 'sibling'
 
 /**
- * One family row (`family.Family`): a couple, or a lone parent with the second
- * column left null — a great-grandmother whose husband nobody remembers still has
- * children, and they hang off her family.
+ * One family row (`family.Family`): a couple, a lone parent with the second column
+ * left null — a great-grandmother whose husband nobody remembers still has
+ * children, and they hang off her family — or a sibling group, which leaves both
+ * columns null because the parents of the children in it are not in the library.
  */
 export interface Family {
   uid: string

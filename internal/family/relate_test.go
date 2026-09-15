@@ -5,9 +5,10 @@ import (
 	"testing"
 )
 
-// TestRole_valid accepts the three roles a relation can be recorded in and
-// nothing else — notably not "sibling", which is derived from a shared family and
-// is recorded by giving two children the same parent.
+// TestRole_valid accepts the four roles a relation can be recorded in and nothing
+// else. "sibling" is among them since a sibling group became a legal family:
+// still not a stored edge, but a request may ask for one, because the family the
+// two share may have to be created with no partners in it.
 func TestRole_valid(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -17,7 +18,8 @@ func TestRole_valid(t *testing.T) {
 		{role: RoleParent, want: true},
 		{role: RoleChild, want: true},
 		{role: RolePartner, want: true},
-		{role: "sibling", want: false},
+		{role: RoleSibling, want: true},
+		{role: "cousin", want: false},
 		{role: "", want: false},
 	} {
 		t.Run(string(tc.role), func(t *testing.T) {

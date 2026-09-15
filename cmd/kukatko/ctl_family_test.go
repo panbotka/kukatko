@@ -22,6 +22,16 @@ const ctlRelationsBody = `{
 		"birth_year":1974,"death_year":null,"photo_count":7,"family_uid":"fam02","child_kind":"birth"}]
 }`
 
+// ctlParentlessSiblingsBody is a relations answer for the one removable sibling
+// link: a family with no parent on it, so nothing about the pair follows from
+// anybody above them.
+const ctlParentlessSiblingsBody = `{
+	"parents":[],
+	"siblings":[{"uid":"sub03","slug":"josef-necas","name":"Josef Nečas","type":"person",
+		"birth_year":1950,"death_year":null,"photo_count":4,"family_uid":"fam03","child_kind":"birth"}],
+	"partners":[],"children":[]
+}`
+
 // ctlSubjectListBody is the {"subjects": […]} list a lookup by name reads.
 const ctlSubjectListBody = `{"subjects":[
 	{"uid":"sub01","slug":"anna-necasova","name":"Anna Nečasová","type":"person"},
@@ -230,7 +240,7 @@ func TestCtlFamilyAdd_detailsNeedAName(t *testing.T) {
 }
 
 // TestCtlFamilyAdd_unknownRole verifies a role the API does not know is refused
-// locally — there is no sibling relation to record.
+// locally, before a request is spent on it.
 func TestCtlFamilyAdd_unknownRole(t *testing.T) {
 	var writes int
 	configPath := ctlServer(t, func(w http.ResponseWriter, r *http.Request) {
@@ -241,7 +251,7 @@ func TestCtlFamilyAdd_unknownRole(t *testing.T) {
 	})
 
 	_, err := runCtl(t, "", "ctl", "--ctl-config", configPath,
-		"family", "add", "sub01", "sibling", "sub03")
+		"family", "add", "sub01", "cousin", "sub03")
 	if err == nil || !strings.Contains(err.Error(), "parent") {
 		t.Fatalf("add with an unknown role = %v, want the roles named", err)
 	}
@@ -327,19 +337,53 @@ func TestCtlFamilyRemove_dryRun(t *testing.T) {
 	}
 }
 
-// TestCtlFamilyRemove_siblings verifies a pair of siblings is refused with the
-// reason: there is no sibling row, only a shared parent.
+// TestCtlFamilyRemove_siblings verifies a pair of siblings whose family records a
+// parent is refused with the reason: there is no sibling row, only that parent.
 func TestCtlFamilyRemove_siblings(t *testing.T) {
 	var writes int
 	configPath := familyRemoveServer(t, &writes)
 
 	_, err := runCtl(t, "", "ctl", "--ctl-config", configPath,
 		"family", "remove", "sub01", "sub03", "--yes")
-	if err == nil || !strings.Contains(err.Error(), "siblings are derived") {
+	if err == nil || !strings.Contains(err.Error(), "through a recorded parent") {
 		t.Fatalf("removing a sibling = %v, want the derivation explained", err)
+	}
+	if err == nil || !strings.Contains(err.Error(), "sub02") {
+		t.Errorf("removing a sibling = %v, want the shared parent named", err)
 	}
 	if writes != 0 {
 		t.Errorf("%d relations were removed, want none", writes)
+	}
+}
+
+// TestCtlFamilyRemove_parentlessSiblings verifies the one case where a sibling
+// link *is* the whole relation: two people whose shared family records no parent.
+// The removal goes through rather than being refused client-side, because there
+// is a row to remove and nothing else the pair would lose.
+func TestCtlFamilyRemove_parentlessSiblings(t *testing.T) {
+	var writes int
+	configPath := ctlServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodDelete:
+			writes++
+			w.WriteHeader(http.StatusNoContent)
+		case strings.HasSuffix(r.URL.Path, "/relations"):
+			w.Write([]byte(ctlParentlessSiblingsBody))
+		default:
+			w.Write([]byte(ctlAnnaBody))
+		}
+	})
+
+	out, err := runCtl(t, "", "ctl", "--ctl-config", configPath,
+		"family", "remove", "sub01", "sub03", "--yes")
+	if err != nil {
+		t.Fatalf("removing a parentless sibling returned %v", err)
+	}
+	if !strings.Contains(out, "as the sibling of") {
+		t.Errorf("removal said %q, want it to name the sibling relation", out)
+	}
+	if writes != 1 {
+		t.Errorf("%d relations were removed, want 1", writes)
 	}
 }
 

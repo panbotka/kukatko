@@ -17,13 +17,14 @@ import Modal from '../Modal'
 import { AddAutocomplete } from '../photo/AddAutocomplete'
 
 /**
- * The four relations the strip draws, which are also the four a `+` can record.
+ * The four relations the strip draws, which are also the four a `+` can record —
+ * and, since the backend grew the `sibling` role, the four roles the endpoint
+ * itself accepts.
  *
- * Three of them are the endpoint's own roles. `sibling` is not: siblings are
- * derived from a shared parentage rather than stored, so recording one means
- * recording the person as a child of the subject's parents — which is exactly
- * what this dialog does, and why a person with no recorded parents cannot be
- * given a sibling yet.
+ * A sibling is still derived rather than stored: recording one makes the person
+ * another child of the family the subject is a child in. What changed is that the
+ * family may now be created on the spot with no parents in it, so a sibling can
+ * be recorded for somebody whose parents the library has never heard of.
  */
 export type RelationKind = 'parent' | 'sibling' | 'partner' | 'child'
 
@@ -44,9 +45,9 @@ export interface AddRelationModalProps {
   /** Their name, for the dialog's copy. */
   subjectName: string
   /**
-   * The subject's recorded parents. A sibling is recorded as *their* child, so
-   * this is both what makes that role possible and what the dialog names when it
-   * explains where the new person will hang.
+   * The subject's recorded parents, which is what the dialog names when it
+   * explains where a sibling will hang. An empty list is not a dead end any more:
+   * the two then share a family with no parents in it.
    */
   parents: readonly Relative[]
   /** Which row's `+` opened the dialog; the picker starts there. */
@@ -116,12 +117,6 @@ export function AddRelationModal({
     }
   }
 
-  // A sibling hangs off the subject's parents, so without them there is nothing
-  // to hang one from. The row's + still opens this dialog — a dead button that
-  // explains nothing is worse — and the dialog says what to record first.
-  const siblingsPossible = parents.length > 0
-  const impossible = chosen === 'sibling' && !siblingsPossible
-
   /** Turns a failed request into a sentence in the reader's language. */
   function describe(err: unknown): string {
     if (err instanceof ApiError && err.status === 409) {
@@ -136,43 +131,21 @@ export function AddRelationModal({
     return t('family.add.failed')
   }
 
-  /**
-   * Records the relation as a child of each of the subject's parents — which is
-   * what a sibling *is* in a model whose node is the family.
-   *
-   * The parents are walked one at a time: the first call may be the one that
-   * creates the person, and every call after it relates the person it answered
-   * with, so "add the sibling to my mother and my father" cannot end up creating
-   * two people of the same name.
-   */
-  async function recordSibling(target: Target) {
-    let request: AddRelationRequest =
-      target.existing === undefined
-        ? { role: 'child', new_subject: target.person }
-        : { role: 'child', subject_uid: target.existing }
-    for (const parent of parents) {
-      const result = await addRelation(parent.uid, request)
-      // Everything after the first call relates the person that call answered
-      // with, so a sibling of two recorded parents is one new person, not two.
-      request = { role: 'child', subject_uid: result.relative.uid }
-    }
-  }
-
   /** Runs one add with the busy/error plumbing; reports whether it landed. */
   async function record(target: Target, name: string): Promise<boolean> {
     setBusy(true)
     setError(null)
     try {
-      if (chosen === 'sibling') {
-        await recordSibling(target)
-      } else {
-        await addRelation(
-          subjectUid,
-          target.existing === undefined
-            ? { role: chosen, new_subject: target.person }
-            : { role: chosen, subject_uid: target.existing },
-        )
-      }
+      // All four rows are one request in one audited transaction, the sibling
+      // included: the backend puts the pair in the family the subject is a child
+      // in, or creates a parentless one for them. Walking the parents from here,
+      // as this dialog used to, cost a request per parent and could not record a
+      // sibling at all for somebody whose parents nobody wrote down.
+      const request: AddRelationRequest =
+        target.existing === undefined
+          ? { role: chosen, new_subject: target.person }
+          : { role: chosen, subject_uid: target.existing }
+      await addRelation(subjectUid, request)
       setAdded((previous) => [...previous, name])
       onAdded()
       return true
@@ -228,11 +201,13 @@ export function AddRelationModal({
           ))}
         </ToggleButtonGroup>
 
-        {chosen === 'sibling' && siblingsPossible && (
+        {chosen === 'sibling' && (
           <p className="small text-secondary">
-            {t('family.add.siblingHint', {
-              parents: parents.map((parent) => parent.name).join(', '),
-            })}
+            {parents.length > 0
+              ? t('family.add.siblingHint', {
+                  parents: parents.map((parent) => parent.name).join(', '),
+                })
+              : t('family.add.siblingHintNoParents')}
           </p>
         )}
 
@@ -248,31 +223,25 @@ export function AddRelationModal({
           </Alert>
         )}
 
-        {impossible ? (
-          <Alert variant="secondary" className="py-2 small mb-0">
-            {t('family.add.siblingNoParents')}
-          </Alert>
-        ) : (
-          <AddAutocomplete
-            id="add-relation-person"
-            label={t('family.add.pickLabel')}
-            autoFocus
-            disabled={busy || loading}
-            options={options.map((candidate) => ({
-              uid: candidate.uid,
-              label: candidate.name,
-              // Searchable by nickname too: in a village archive the handle is
-              // very often the only name anybody remembers.
-              alias: candidate.nickname,
-              hint: String(candidate.photo_count),
-            }))}
-            onAdd={(uid) => {
-              const picked = options.find((candidate) => candidate.uid === uid)
-              void record({ existing: uid }, picked?.name ?? '')
-            }}
-            onCreate={(name) => record({ person: { name } }, name)}
-          />
-        )}
+        <AddAutocomplete
+          id="add-relation-person"
+          label={t('family.add.pickLabel')}
+          autoFocus
+          disabled={busy || loading}
+          options={options.map((candidate) => ({
+            uid: candidate.uid,
+            label: candidate.name,
+            // Searchable by nickname too: in a village archive the handle is
+            // very often the only name anybody remembers.
+            alias: candidate.nickname,
+            hint: String(candidate.photo_count),
+          }))}
+          onAdd={(uid) => {
+            const picked = options.find((candidate) => candidate.uid === uid)
+            void record({ existing: uid }, picked?.name ?? '')
+          }}
+          onCreate={(name) => record({ person: { name } }, name)}
+        />
       </Modal.Body>
       <Modal.Footer>
         <Button variant="secondary" onClick={onHide} disabled={busy}>

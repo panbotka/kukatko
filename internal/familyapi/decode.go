@@ -18,7 +18,7 @@ const maxBodyBytes = 1 << 20 // 1 MiB
 
 // errNoRole is returned when a relation request omits the role, which is the one
 // thing about it that cannot be inferred.
-var errNoRole = errors.New("role is required: parent, child or partner")
+var errNoRole = errors.New("role is required: parent, child, partner or sibling")
 
 // decodeAddRelation reads and validates the JSON relation body from r, rejecting
 // unknown fields and an oversized body. It checks only what the request must

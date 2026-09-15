@@ -1001,15 +1001,16 @@ is what you want.
 The genealogy over subjects (`internal/familyapi`) — who is whose parent, whose partner and whose child.
 Reading needs any role, writing `editor`/`admin`.
 
-**The family is the node, not the edge:** a family is a couple (or a lone parent) plus their children, and
-parents, siblings, partners and children are all *derived* from it, which is why they cannot contradict each
-other. Hence **there is no `sibling` role**: the way to record one is to give the two children the same
-parent, and there is nothing between two siblings to remove.
+**The family is the node, not the edge:** a family is a couple, a lone parent or a bare sibling group, plus
+their children, and parents, siblings, partners and children are all *derived* from it, which is why they
+cannot contradict each other. `sibling` is a role all the same, because the family two siblings share may have
+to be created: when their parents are not in the library it is a family with **no partners at all** (migration
+`0076`).
 
 | Command | Meaning |
 | --- | --- |
 | `ctl family relations <subject-uid>` (alias `show`) | `GET /subjects/{uid}/relations` — the four derived lists as one table; `FAMILY` is the uid `family edit` takes |
-| `ctl family add <subject-uid> <role> [<related-subject-uid>]` | `POST /subjects/{uid}/relations`; role is `parent`, `child` or `partner`. `--name` instead of a uid, `--child-kind birth\|adopted\|step` |
+| `ctl family add <subject-uid> <role> [<related-subject-uid>]` | `POST /subjects/{uid}/relations`; role is `parent`, `child`, `partner` or `sibling`. `--name` instead of a uid, `--child-kind birth\|adopted\|step` |
 | `ctl family remove <subject-uid> <related-subject-uid>` | `DELETE /subjects/{uid}/relations/{uid2}` — **irreversible**, needs `--yes`, offers `--dry-run` |
 | `ctl family edit <family-uid>` | `PATCH /families/{uid}` — the union itself: `--kind marriage\|partnership\|unknown`, `--from-year`, `--to-year`, `--note` |
 
@@ -1018,7 +1019,17 @@ column that separates them. `KIND` is what each relation is recorded as — how 
 (`birth`/`adopted`/`step`), or what tied a couple together. A family whose second partner nobody recorded is
 listed under the role `lone-parent`, reading `- (no partner recorded)`, and is **left out of the partner
 count**: it is a family all the same — it is where that person's children hang, and its uid is what `family
-edit` takes — but there is nobody on the other side to call a partner.
+edit` takes — but there is nobody on the other side to call a partner. A **sibling group** names nobody at all,
+so it never appears among the partnerships; it shows up only as the `sibling` rows of its children, and `family
+edit` prints its partners as `- (sibling group: no parent recorded)`.
+
+**`add <subject> sibling <other>`** makes the other person another child of the family the subject is a child
+in — a sibling is still derived, not stored. Where there is no such family, because nobody recorded the parents
+and quite possibly nobody can, a family with **no parents at all** is created for the two of them; no
+placeholder "unknown parent" subject is invented, and a real parent recorded on any one of the group later
+attaches to *that* family, so the whole group becomes their children at once. Two people who are already
+children of **different** families are refused with a 409: honouring that would mean taking one of them out of
+a parentage somebody recorded on purpose.
 
 **`add` resolves `--name` client-side**, unlike `ctl faces assign --name`, and the difference matters: the
 inline half of the endpoint *always* creates, so handing it a name that already exists would quietly split one
@@ -1037,8 +1048,11 @@ the server with a **409** and changes nothing; the request was well formed, the 
 
 **`remove` reads how the two are related first**, which is also what it reports: `Marie Nečasová (sub02) as the
 parent of Anna Nečasová (sub01)`. Which relation goes follows from the rows, not from the command line. Two
-people who are not related fail before a request is spent, and two siblings are told why there is nothing to
-remove. Removing one parent leaves the other — the child keeps the parentage it still has, because "X is no
+people who are not related fail before a request is spent. Two **siblings** can be parted only when the family
+they share records no parent — there the link is the whole relation, and the group is deleted once it drops
+below two children; with a parent on it they are siblings *because* they are that parent's children, so the
+removal is refused naming that parent and the way to part them is to remove it. Removing one parent leaves the
+other — the child keeps the parentage it still has, because "X is no
 longer Y's father" must not quietly take Y's mother away too. Both people and every photo they are on survive;
 only the line between them goes, and nothing records who was whose parent once it is gone, which is why it
 needs `--yes`.

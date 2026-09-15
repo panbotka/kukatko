@@ -130,7 +130,11 @@ photo-book tool (deliberately out of scope), or a product with support and a rel
   and related in one go, which is the difference between a tree that gets filled in over a few evenings
   and one that stays empty. The model is the one genealogy settled on decades ago — the **family** is
   the node, a couple (or a lone parent) with their children — so siblings, half-siblings and a second
-  marriage are all *derived* and cannot contradict each other. **Zobrazit rodokmen** opens the whole
+  marriage are all *derived* and cannot contradict each other. Two people known to be brother and sister
+  whose parents are not in the library are recorded all the same: they share a family nobody is a parent
+  in yet, and the day a parent turns up, adding them to either sibling makes them the parent of the whole
+  group — no invented "unknown parent" ever appears among the people.
+  **Zobrazit rodokmen** opens the whole
   thing as a drawing, and it goes both ways: **potomci** are generations down the page, a couple in one
   box, branches that fold away; **předci** are the pedigree above a person, two slots per generation
   for as many generations as you ask for. An ancestor nobody has recorded is drawn as an **empty slot**

@@ -1888,7 +1888,7 @@
       "kindHeading": "Kým je ten člověk pro tuto osobu?",
       "pickLabel": "Jméno osoby",
       "siblingHint": "Sourozenec se zapíše jako dítě rodičů: {{parents}}.",
-      "siblingNoParents": "Sourozenectví vyplývá z rodičů, takže ho nejde zapsat, dokud žádní nejsou. Přidej nejdřív rodiče — sourozenci se pak zapisují jako jejich děti.",
+      "siblingHintNoParents": "Rodiče zatím nikdo nezapsal, takže se oba zapíšou jako děti jedné rodiny bez rodičů. Až se rodič najde, stačí ho přidat komukoli z nich — bude rodičem všech.",
       "recorded": "Zapsáno: {{names}}",
       "conflict": "Tenhle vztah do rodokmenu nesedí — třeba je ta osoba už dítětem v jiné rodině nebo by vznikl kruh.",
       "invalid": "Tenhle vztah nedává smysl.",

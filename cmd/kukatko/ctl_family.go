@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -25,11 +26,11 @@ var personFlags = []string{"type", "birth-year", "death-year", "notes"}
 // newCtlFamilyCmd builds the "ctl family" tree: the genealogy over subjects,
 // served by internal/familyapi.
 //
-// The family is the node, not the edge — a couple (or a lone parent) plus their
-// children — so parents, siblings, partners and children are all derived from it
-// and cannot contradict each other. That is why there is no `sibling` role and
-// nothing to remove between two siblings: the way to record one is to give the
-// two children the same parent.
+// The family is the node, not the edge — a couple, a lone parent or nobody at
+// all, plus their children — so parents, siblings, partners and children are all
+// derived from it and cannot contradict each other. `sibling` is a role all the
+// same, because the family two siblings share may have to be created: when their
+// parents are not in the library it is a family with no partners at all.
 //
 // Reading needs any role, writing the editor or admin one. Removing a relation
 // carries --yes and --dry-run; adding one does not, because nothing is lost by it.
@@ -122,12 +123,18 @@ func newCtlFamilyAddCmd(opts *ctlOptions) *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "add <subject-uid> <role> [<related-subject-uid>]",
-		Short: "Record a relation: somebody's parent, child or partner (editor or admin)",
+		Short: "Record a relation: somebody's parent, child, partner or sibling (editor or admin)",
 		Long: "Record one relation on a person.\n\n" +
 			"The role is the *other* person's side of it: `parent` makes them the subject's\n" +
-			"parent, `child` their child, `partner` their partner. There is no `sibling`:\n" +
-			"siblings are derived, so the way to record one is to give the two children the\n" +
-			"same parent.\n\n" +
+			"parent, `child` their child, `partner` their partner, `sibling` their sibling.\n\n" +
+			"A sibling is still not a stored edge — it is another child of the family this\n" +
+			"person is a child in — so recording one makes the other person a child of that\n" +
+			"family. Where there is none, because nobody recorded the parents and quite\n" +
+			"possibly nobody can, a family with no parents at all is created for the two of\n" +
+			"them; no placeholder parent is invented, and a real one attached later joins\n" +
+			"that same family, so the whole group becomes their children at once. Two people\n" +
+			"who are already children of *different* families are refused: honouring that\n" +
+			"would mean taking one of them out of a parentage somebody recorded on purpose.\n\n" +
 			"Name the other person by uid, or with --name. A name that matches a subject —\n" +
 			"case-insensitively, by name or by slug — relates to that person; a name that\n" +
 			"matches nobody creates them, together with the relation, in one transaction, so\n" +
@@ -207,13 +214,18 @@ func newCtlFamilyRemoveCmd(opts *ctlOptions) *cobra.Command {
 		Short: "Remove whatever relates two people (editor or admin)",
 		Long: "Remove the relation between two people.\n\n" +
 			"Which relation that is follows from the rows rather than from the command line:\n" +
-			"one is the other's parent, or their child, or their partner. Both people survive\n" +
-			"with every photo they are on — only the line between them goes.\n\n" +
+			"one is the other's parent, or their child, or their partner, or the two are\n" +
+			"siblings with no recorded parents. Both people survive with every photo they\n" +
+			"are on — only the line between them goes.\n\n" +
 			"Nothing records who was whose parent once it is gone, so this needs --yes;\n" +
 			"--dry-run says who would be removed as whose what and writes nothing. Both read\n" +
 			"the relation first, which is what lets two people who are not related fail\n" +
-			"before a request is spent, and lets a sibling say so: siblings are derived from\n" +
-			"a shared parent, and the way to part them is to remove that parent.\n\n" +
+			"before a request is spent.\n\n" +
+			"Two siblings can be parted only when the family they share records no parent —\n" +
+			"there the sibling link is the whole relation, and the group is deleted once it\n" +
+			"drops below two children. With a parent on it they are siblings *because* they\n" +
+			"are that parent's children, so there is nothing between them to remove and the\n" +
+			"way to part them is to remove the parent.\n\n" +
 			"Removing one parent leaves the other: the child keeps the parentage it still\n" +
 			"has, because \"X is no longer Y's father\" must not quietly take Y's mother away.",
 		Args: cobra.ExactArgs(2),
@@ -252,8 +264,11 @@ func runFamilyRemove(
 
 // describeRelation reads how the two are related and renders it as the phrase
 // every confirmation of this command is built from — "Marie Nečasová (sub02) as
-// the parent of Anna Nečasová (sub01)". A pair that is not related and a pair of
-// siblings are both refused here, before a request is spent on a 404.
+// the parent of Anna Nečasová (sub01)". A pair that is not related is refused
+// here, before a request is spent on a 404, and so is a pair of siblings whose
+// family records a parent: there the sibling link is not a row, it is what
+// follows from that parent. Siblings with no recorded parent fall through and are
+// removable, which is the one case where the link is the whole relation.
 func describeRelation(cmd *cobra.Command, client *ctl.Client, subjectUID, otherUID string) (string, error) {
 	subject, err := client.FetchSubject(cmd.Context(), subjectUID)
 	if err != nil {
@@ -265,13 +280,24 @@ func describeRelation(cmd *cobra.Command, client *ctl.Client, subjectUID, otherU
 	}
 	role, other := relations.Role(otherUID), relations.Find(otherUID)
 	switch {
-	case role == ctl.RoleSibling:
-		return "", fmt.Errorf("%w: %s and %s are siblings", ctl.ErrSiblingsDerived, subjectUID, otherUID)
+	case role == ctl.RoleSibling && len(relations.Parents) > 0:
+		return "", fmt.Errorf("%w: %s and %s are children of %s",
+			ctl.ErrSiblingsDerived, subjectUID, otherUID, parentLabels(relations))
 	case role == "" || other == nil:
 		return "", fmt.Errorf("%w: %s and %s", ctl.ErrNotRelated, subjectUID, otherUID)
 	}
 	return ctl.SubjectLabel(other.Name, other.UID) + " as the " + role + " of " +
 		ctl.SubjectLabel(subject.Name, subject.UID), nil
+}
+
+// parentLabels names the parents two siblings share, so the refusal says which
+// relation to remove instead of only that this one cannot be.
+func parentLabels(relations ctl.Relations) string {
+	labels := make([]string, 0, len(relations.Parents))
+	for _, parent := range relations.Parents {
+		labels = append(labels, ctl.SubjectLabel(parent.Name, parent.UID))
+	}
+	return strings.Join(labels, " and ")
 }
 
 // newCtlFamilyEditCmd builds "ctl family edit <family-uid>".

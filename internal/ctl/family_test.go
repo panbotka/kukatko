@@ -134,7 +134,8 @@ func TestRelationInput_validate(t *testing.T) {
 		in   RelationInput
 		want error
 	}{
-		"unknown role":     {RelationInput{Role: "sibling", SubjectUID: "sub02"}, ErrInvalidRole},
+		"unknown role":     {RelationInput{Role: "cousin", SubjectUID: "sub02"}, ErrInvalidRole},
+		"sibling role":     {RelationInput{Role: RoleSibling, SubjectUID: "sub02"}, nil},
 		"unknown kind":     {RelationInput{Role: RoleChild, SubjectUID: "sub02", ChildKind: "foster"}, ErrInvalidChildKind},
 		"neither side":     {RelationInput{Role: RoleParent}, ErrSubjectRequired},
 		"both sides":       {RelationInput{Role: RoleParent, SubjectUID: "sub02", New: person}, ErrSubjectAmbiguous},
