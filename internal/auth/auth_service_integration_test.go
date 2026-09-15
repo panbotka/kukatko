@@ -417,3 +417,26 @@ func TestAuthenticateDownloadToken(t *testing.T) {
 		}
 	})
 }
+
+// TestGetUserByUIDOrUsername verifies the reference lookup accepts both ways a
+// human names an account and refuses anything else, which is what lets a reader
+// filtering by account (the audit trail) tell a real account apart from a typo.
+func TestGetUserByUIDOrUsername(t *testing.T) {
+	env := newTestEnv(t)
+	created := env.createUser(t, "panbotka", auth.RoleEditor)
+
+	for _, ref := range []string{created.UID, "panbotka"} {
+		got, err := env.store.GetUserByUIDOrUsername(t.Context(), ref)
+		if err != nil {
+			t.Fatalf("GetUserByUIDOrUsername(%q): %v", ref, err)
+		}
+		if got.UID != created.UID {
+			t.Errorf("GetUserByUIDOrUsername(%q).UID = %q, want %q", ref, got.UID, created.UID)
+		}
+	}
+	for _, ref := range []string{"", "nobody", "us-nope"} {
+		if _, err := env.store.GetUserByUIDOrUsername(t.Context(), ref); !errors.Is(err, auth.ErrUserNotFound) {
+			t.Errorf("GetUserByUIDOrUsername(%q) error = %v, want ErrUserNotFound", ref, err)
+		}
+	}
+}

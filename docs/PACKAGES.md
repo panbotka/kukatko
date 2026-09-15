@@ -3328,7 +3328,11 @@ to `## Package map` in `CLAUDE.md`.
   left out** (one `UPDATE` over many photos without loading the old rows — a SELECT-before-UPDATE would
   double the queries per batch), it keeps its original summary in details; action constants `ActionPhotosBulk`/`ActionPhoto{Update,Edit,Archive,Unarchive,Purge}`/
   `ActionAlbum{Create,Update,Delete}`/`ActionLabel{Create,Update,Delete}`/`ActionFaceAssign`/
-  `ActionUser{Create,Update,Disable,Password}`/`ActionAuditPurge`; `Store` = `NewStore(pool)` with `Record(ctx,Entry)`
+  `ActionUser{Create,Update,Disable,Password}`/`ActionAuditPurge`; the labels are a **closed set** and
+  `KnownAction(action)` is its membership test — a reader filtering the trail (`internal/auditapi`) refuses an
+  unrecognised value instead of answering with the empty listing it would match, and
+  `TestKnownActionsCoverEveryConstant` parses `audit.go` itself so a new constant cannot be added without
+  landing in the set; `Store` = `NewStore(pool)` with `Record(ctx,Entry)`
   (its own connection) and **filtered reads** `List(ctx,Filter)`/`Count(ctx,Filter)` (`Filter{ActorUID,
   TargetType,TargetUID,Action,Since,Until,Limit,Offset}`, newest-first, limit cap 500/default 100)
   for the admin listing; **retention purge** `PurgeOlderThan(ctx, cutoff) (int, error)` = one
@@ -3340,10 +3344,20 @@ to `## Package map` in `CLAUDE.md`.
   and **user management** `auth.Store.{CreateUser,UpdateUserProfile,SetUserDisabled,SetPasswordHash}Audited`
   (`user.*`) — every mutation + audit in one tx via the shared `rowQuerier`/`mutateAudited` (photos) and
   `inAuditedTx` (auth); further domains (albums/labels/people) follow the same convention), `internal/auditapi/`
-  (HTTP API over the audit trail: `NewAPI(Config{Store,RequireAdmin,RequireAuth})`+`RegisterRoutes`
+  (HTTP API over the audit trail: `NewAPI(Config{Store,ResolveUser,RequireAdmin,RequireAuth})`+`RegisterRoutes`
   mounts `GET /audit` behind `RequireAdmin` and `GET /audit/mine` behind `RequireAuth`; `parseFilter` from the query `user`/`entity_type`/`entity_uid`/
   `action`/`via`/`decision`/`since`/`until` (RFC3339)/`limit`/`offset` → `audit.Filter` (an invalid
   time/number/`via`/`decision` → 400), returns `{entries,total,limit,offset,next_offset}` newest-first;
+  **every filter is checked and the parameter set is closed**, because an ignored typo answers 200 + an empty
+  list, which reads as "this person did nothing": a key outside `recognisedParams` → 400 naming it
+  (`rejectUnknownParams`, sorted so the message is deterministic), an `action` outside `audit.KnownAction` → 400
+  naming it, and `user` → `resolveActor` through the **`ResolveUser` function in `Config`** — a narrow
+  `func(ctx, value) (uid, error)` rather than the whole user service, wired in `cmd/kukatko/audit.go` to
+  `auth.Store.GetUserByUIDOrUsername`, so a **UID or a username** both work and a value naming neither → 400,
+  while an existing account with no rows keeps answering 200 + an empty list. A failure of the lookup itself is
+  wrapped in `errUserLookup` and answered **500** by `writeFilterError`, the one filter error that is not the
+  caller's fault. `entity_uid`/`entity_type` are **deliberately left unchecked**: the trail outlives what it
+  describes (an entry about a purged photo is the point of keeping one) and the entity type is a free string;
   **`via=review`** → `Filter.ReviewOnly` (the literal `details ->> 'via' = 'review'`, matches the partial
   index 0037), **`decision=yes|no`** → `Filter.Actions` ("Ano" = `face.assign`+`label.attach` / "Ne" =
   `face.reject`+`label.reject`) — the basis of the admin per-user review-decision overview;
@@ -3351,8 +3365,8 @@ to `## Package map` in `CLAUDE.md`.
   **overwrites `Filter.ActorUID` with the session user's UID unconditionally** (`auth.UserFromContext`) — so on
   every page, under every filter, the query can only reach the caller's own rows, and the system's actor-less
   ones (empty `actor_uid`) match nothing; a `user` parameter naming **somebody else → 403** (refusing beats
-  silently rewriting: the caller must not believe they are reading someone else's history), naming oneself is
-  accepted; no principal on the context → 401 (fail closed). It is a **separate route rather than a looser guard
+  silently rewriting: the caller must not believe they are reading someone else's history) — **by username just
+  as by UID**, since the value is resolved before it is compared — naming oneself is accepted; no principal on the context → 401 (fail closed). It is a **separate route rather than a looser guard
   on `/audit`** so the impossibility of reading foreign rows is a property of the route's shape, not of a branch
   a later edit could weaken; `respond` (list+count+`buildResponse`) is shared by both handlers. The narrowed
   records are returned whole, `ip`/`user_agent` included — the caller's own request metadata; read-only — writes go through

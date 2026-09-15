@@ -146,6 +146,19 @@ func (s *Store) GetUserByUID(ctx context.Context, uid string) (User, error) {
 	return s.getUser(ctx, "uid", uid)
 }
 
+// GetUserByUIDOrUsername returns the account named by ref, which may be either
+// an account UID or a username — the two ways a human refers to an account, and
+// a reader filtering by account (the audit trail) has to accept both. The UID is
+// tried first, so a UID always names the account it belongs to whatever
+// usernames exist. It returns ErrUserNotFound when ref names neither.
+func (s *Store) GetUserByUIDOrUsername(ctx context.Context, ref string) (User, error) {
+	user, err := s.GetUserByUID(ctx, ref)
+	if err == nil || !errors.Is(err, ErrUserNotFound) {
+		return user, err
+	}
+	return s.GetUserByUsername(ctx, ref)
+}
+
 // getUser fetches a single user filtered by an equality on the trusted column
 // name col (an internal constant, never user input), translating pgx.ErrNoRows
 // into ErrUserNotFound.

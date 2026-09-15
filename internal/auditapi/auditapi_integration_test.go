@@ -4,11 +4,15 @@ package auditapi_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -49,6 +53,7 @@ func newEnv(t *testing.T) *env {
 	store := audit.NewStore(db.Pool())
 	api := auditapi.NewAPI(auditapi.Config{
 		Store:        store,
+		ResolveUser:  resolveUser(authStore),
 		RequireAdmin: authAPI.RequireAdmin,
 		RequireAuth:  authAPI.RequireAuth,
 	})
@@ -64,6 +69,22 @@ func newEnv(t *testing.T) *env {
 	server := httptest.NewServer(r)
 	t.Cleanup(server.Close)
 	return &env{baseURL: server.URL, authSvc: authSvc, store: store}
+}
+
+// resolveUser mirrors the server's own wiring (resolveAuditUser in
+// cmd/kukatko): the user filter is resolved against the account store as a UID
+// or a username, and a value naming neither is refused.
+func resolveUser(store *auth.Store) auditapi.ResolveUser {
+	return func(ctx context.Context, value string) (string, error) {
+		user, err := store.GetUserByUIDOrUsername(ctx, value)
+		if errors.Is(err, auth.ErrUserNotFound) {
+			return "", auditapi.ErrUnknownUser
+		}
+		if err != nil {
+			return "", err
+		}
+		return user.UID, nil
+	}
 }
 
 // seed writes the given entries to the audit log in order.
@@ -452,6 +473,173 @@ func TestMineRequiresAuthentication(t *testing.T) {
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("anonymous mine status = %d, want 401", resp.StatusCode)
+	}
+}
+
+// errorBody mirrors the endpoint's error envelope, so a test can assert the
+// message names what the caller got wrong — a 400 that says nothing would be
+// barely better than the empty list it replaces.
+type errorBody struct {
+	Error string `json:"error"`
+}
+
+// badRequest GETs url and asserts it is refused with 400 and a message naming
+// want. It returns the message so a caller can assert more about it.
+func badRequest(t *testing.T, client *http.Client, url, want string) string {
+	t.Helper()
+	resp := do(t, client, http.MethodGet, url, nil)
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("GET %s status = %d, want 400", url, resp.StatusCode)
+	}
+	var body errorBody
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decoding error body: %v", err)
+	}
+	if !strings.Contains(body.Error, want) {
+		t.Errorf("GET %s error = %q, want it to name %q", url, body.Error, want)
+	}
+	return body.Error
+}
+
+// TestListRejectsNonsenseFilters verifies the endpoint answers a typo rather
+// than serving an empty list that reads as "this person did nothing": a
+// misspelled action, an unknown parameter and a user naming no account are each
+// refused with 400 naming the offending value.
+func TestListRejectsNonsenseFilters(t *testing.T) {
+	env := newEnv(t)
+	admin, adminUID := env.loginUser(t, "admin", auth.RoleAdmin)
+	env.seed(t, ownRows(adminUID)...)
+
+	base := env.baseURL + "/api/v1/audit"
+	badRequest(t, admin, base+"?action=photo.updat", "photo.updat")
+	badRequest(t, admin, base+"?user=nobody", "nobody")
+	badRequest(t, admin, base+"?actor="+adminUID, "actor")
+	badRequest(t, admin, base+"?from=2026-01-01T00:00:00Z", "from")
+
+	// The same strictness on the own-activity listing, which shares the parser.
+	mine := env.baseURL + "/api/v1/audit/mine"
+	badRequest(t, admin, mine+"?action=nonsense", "nonsense")
+	badRequest(t, admin, mine+"?actor=me", "actor")
+}
+
+// TestListAcceptsUsernameAsUser verifies the user filter takes the name a human
+// knows as well as the UID, that the two answer identically, and that an account
+// with no recorded actions still gets the true answer: 200 and an empty list.
+func TestListAcceptsUsernameAsUser(t *testing.T) {
+	env := newEnv(t)
+	admin := env.login(t, "admin", auth.RoleAdmin)
+	actorUID := env.createUser(t, "panbotka", auth.RoleEditor)
+	env.createUser(t, "quiet", auth.RoleEditor)
+	env.seed(t, ownRows(actorUID)...)
+
+	base := env.baseURL + "/api/v1/audit"
+	byName := list(t, admin, base+"?user=panbotka")
+	byUID := list(t, admin, base+"?user="+actorUID)
+	if byName.Total != 3 || byUID.Total != 3 {
+		t.Fatalf("totals by name/uid = %d/%d, want 3/3", byName.Total, byUID.Total)
+	}
+	if len(byName.Entries) != len(byUID.Entries) {
+		t.Fatalf("entry counts by name/uid = %d/%d, want them equal", len(byName.Entries), len(byUID.Entries))
+	}
+	for i := range byName.Entries {
+		if byName.Entries[i].ID != byUID.Entries[i].ID {
+			t.Errorf("entry %d id by name/uid = %d/%d, want the same row", i, byName.Entries[i].ID, byUID.Entries[i].ID)
+		}
+	}
+
+	// An existing account with nothing to its name is a true empty answer, not
+	// an error: this is exactly what must stay distinguishable from a typo.
+	quiet := list(t, admin, base+"?user=quiet")
+	if quiet.Total != 0 || len(quiet.Entries) != 0 {
+		t.Errorf("silent user total/len = %d/%d, want 0/0", quiet.Total, len(quiet.Entries))
+	}
+}
+
+// TestListKeepsEntriesOfVanishedEntities verifies the deliberate exception: the
+// trail outlives what it describes, so an entity_uid that resolves to nothing —
+// a purged photo, which is precisely what an audit trail is kept for — still
+// returns its entries, and an entity_type nobody has registered is accepted too.
+func TestListKeepsEntriesOfVanishedEntities(t *testing.T) {
+	env := newEnv(t)
+	admin := env.login(t, "admin", auth.RoleAdmin)
+	env.seed(t,
+		audit.Entry{Action: audit.ActionPhotoPurge, TargetType: "photos", TargetUID: "ph-gone"},
+		audit.Entry{Action: audit.ActionPhotoArchive, TargetType: "photos", TargetUID: "ph-gone"},
+	)
+
+	base := env.baseURL + "/api/v1/audit"
+	gone := list(t, admin, base+"?entity_uid=ph-gone")
+	if gone.Total != 2 {
+		t.Errorf("entries about a purged photo = %d, want 2", gone.Total)
+	}
+	unknownKind := list(t, admin, base+"?entity_type=a_kind_invented_tomorrow")
+	if unknownKind.Total != 0 {
+		t.Errorf("unknown entity_type total = %d, want 0", unknownKind.Total)
+	}
+}
+
+// TestMineRejectsAnotherUsersName verifies the own-activity guard survives the
+// user filter learning usernames: asking for somebody else by name is the same
+// 403 as asking by UID, not a 400, while naming oneself either way is accepted.
+func TestMineRejectsAnotherUsersName(t *testing.T) {
+	env := newEnv(t)
+	editor, editorUID := env.loginUser(t, "editor", auth.RoleEditor)
+	otherUID := env.createUser(t, "other", auth.RoleEditor)
+	seed := ownRows(editorUID)
+	env.seed(t, append(seed, ownRows(otherUID)...)...)
+
+	base := env.baseURL + "/api/v1/audit/mine"
+	for _, ref := range []string{"other", otherUID} {
+		resp := do(t, editor, http.MethodGet, base+"?user="+ref, nil)
+		if resp.StatusCode != http.StatusForbidden {
+			t.Errorf("mine?user=%s status = %d, want 403", ref, resp.StatusCode)
+		}
+		_ = resp.Body.Close()
+	}
+	for _, ref := range []string{"editor", editorUID} {
+		own := list(t, editor, base+"?user="+ref)
+		if own.Total != 3 {
+			t.Errorf("mine?user=%s total = %d, want 3", ref, own.Total)
+		}
+	}
+}
+
+// TestListAcceptsTheFrontendFilters verifies both audit pages still work
+// unchanged now that unknown parameters are refused: every key the frontend's
+// buildAuditQuery (web/src/services/audit.ts) can write is sent at once, and the
+// listing answers 200.
+func TestListAcceptsTheFrontendFilters(t *testing.T) {
+	env := newEnv(t)
+	admin, adminUID := env.loginUser(t, "admin", auth.RoleAdmin)
+	env.seed(t, reviewRows(adminUID)...)
+
+	frontendParams := url.Values{
+		"action":      {audit.ActionFaceAssign},
+		"entity_type": {"markers"},
+		"entity_uid":  {"mk-1"},
+		"via":         {"review"},
+		"decision":    {"yes"},
+		"since":       {"2020-01-01T00:00:00Z"},
+		"until":       {"2099-12-31T23:59:59Z"},
+		"limit":       {"100"},
+		"offset":      {"0"},
+	}
+	mine := list(t, admin, env.baseURL+"/api/v1/audit/mine?"+frontendParams.Encode())
+	if mine.Total != 1 {
+		t.Errorf("my-activity with every frontend filter total = %d, want 1", mine.Total)
+	}
+
+	// The admin page sends the same set plus the user filter.
+	frontendParams.Set("user", "admin")
+	all := list(t, admin, env.baseURL+"/api/v1/audit?"+frontendParams.Encode())
+	if all.Total != 1 {
+		t.Errorf("admin listing with every frontend filter total = %d, want 1", all.Total)
+	}
+
+	// And the unfiltered first page both pages open with.
+	if opening := list(t, admin, env.baseURL+"/api/v1/audit?limit=100"); opening.Total != 4 {
+		t.Errorf("opening page total = %d, want 4", opening.Total)
 	}
 }
 

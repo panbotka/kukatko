@@ -1773,7 +1773,18 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   for edit actions `details.changes` = `{"<field>":{"old":…,"new":…}}` with only the changed fields — see
   the `internal/audit` convention; a bulk edit `photos.bulk` does not have it)
   with the filters `?user=`/`?entity_type=`/`?entity_uid=`/`?action=`/`?since=`/`?until=` (RFC3339) and
-  pagination `?limit=`(≤500)/`?offset=`; an invalid time/number → 400. In addition, **filters for the admin
+  pagination `?limit=`(≤500)/`?offset=`; an invalid time/number → 400. **Every filter is checked and an
+  unrecognised query key → 400 naming it** — the allow-list is exactly the parameters listed here plus the two
+  review ones below, so `?actor=`/`?from=` is refused rather than ignored. `?user=` takes an account **UID or a
+  username** (resolved through the `ResolveUser` lookup handed to `auditapi.Config`, so the package keeps no
+  dependency on the user service); a value naming **neither → 400**, while a real account with nothing to its
+  name still answers **200 + an empty list** — that one is a true answer. `?action=` is checked against
+  `audit.KnownAction`, the closed set of `Action*` constants (a test parses them out of the source, so a new
+  constant cannot be forgotten here): an unknown action → 400 naming it. `?entity_uid=` and `?entity_type=`
+  stay **deliberately unchecked** — the trail outlives what it describes (an entry about a purged photo is the
+  point of keeping one) and the entity type is a free string by design. The reason for the strictness: an
+  ignored typo answers with an empty list, which reads as "this person did nothing" rather than "you asked
+  wrong". In addition, **filters for the admin
   overview of one user's decisions in the review game**: `?via=review` (only review decisions —
   `details.via='review'`, i.e. the actions `face.assign`/`label.attach`/`face.reject`/`label.reject`;
   the literal matches the partial index from migration 0037) and `?decision=yes|no` (the Yes bucket = assign+attach /
@@ -1783,7 +1794,9 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   a non-admin therefore never reads somebody else's rows, and never the **system's** either (an entry with an
   empty `actor_uid` matches no actor filter). `?user=` naming **somebody else → 403**, not a silent narrowing:
   quietly rewriting the request would leave the caller believing they see something they do not; `?user=` naming
-  **oneself** is accepted and changes nothing. It is a route of its own rather than a looser guard on `/audit`
+  **oneself** is accepted and changes nothing. Because `?user=` resolves usernames too, asking for somebody else
+  **by name is the same 403**, not a 400 — the value is resolved first and it is the resolved account that is
+  compared. It is a route of its own rather than a looser guard on `/audit`
   precisely so the narrowing is a property of the route's shape, not of a branch a later edit could weaken.
   The records are served **whole, `ip` and `user_agent` included** — that is the caller's own address and
   browser, and seeing it is how a user recognises (or disowns) an action. For an admin nothing changes:

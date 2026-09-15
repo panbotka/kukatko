@@ -8,6 +8,19 @@
 // is write-only from the application's side — entries are appended within
 // mutation transactions elsewhere — so this package never mutates it.
 //
+// # Every filter is checked
+//
+// A reader's filters are validated strictly, and an unknown query key is refused
+// by name rather than ignored. The reason is that this endpoint's empty answer
+// is a statement about a person: ?user=panbotka returning nothing reads as "they
+// did nothing", not "you spelled the parameter wrong", and that is a half hour
+// of looking for actions that were there all along. So a user value is resolved
+// as an account UID or a username, an action is checked against audit's closed
+// set of labels, and an invented parameter is a 400. The two exceptions are
+// entity_uid and entity_type, and both are deliberate: the trail outlives the
+// entities it describes (an entry about a purged photo is the point of having a
+// trail), and the entity type is a free string by design.
+//
 // # Why /audit/mine is a route of its own
 //
 // The own-activity view could have been the same endpoint under a looser guard,
@@ -28,11 +41,14 @@
 package auditapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
+	"slices"
 	"strconv"
 	"time"
 
@@ -46,6 +62,7 @@ import (
 // and the caller's own actions behind the plain auth guard.
 type API struct {
 	store        *audit.Store
+	resolveUser  ResolveUser
 	requireAdmin func(http.Handler) http.Handler
 	requireAuth  func(http.Handler) http.Handler
 }
@@ -54,6 +71,10 @@ type API struct {
 type Config struct {
 	// Store reads audit entries.
 	Store *audit.Store
+	// ResolveUser turns the user filter's value — an account UID or a username —
+	// into an account UID, so the trail can be filtered by the name a human
+	// knows. Without it a user filter is answered 500 rather than guessed at.
+	ResolveUser ResolveUser
 	// RequireAdmin guards the full listing so only admins can read the trail.
 	RequireAdmin func(http.Handler) http.Handler
 	// RequireAuth guards the own-activity listing, which any signed-in user may
@@ -63,7 +84,12 @@ type Config struct {
 
 // NewAPI returns an API from cfg.
 func NewAPI(cfg Config) *API {
-	return &API{store: cfg.Store, requireAdmin: cfg.RequireAdmin, requireAuth: cfg.RequireAuth}
+	return &API{
+		store:        cfg.Store,
+		resolveUser:  cfg.ResolveUser,
+		requireAdmin: cfg.RequireAdmin,
+		requireAuth:  cfg.RequireAuth,
+	}
 }
 
 // RegisterRoutes mounts the audit endpoints onto r, which the caller has scoped
@@ -91,9 +117,9 @@ type listResponse struct {
 // for pagination. An invalid filter or pagination value is answered with 400 and
 // a store failure with 500.
 func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
-	filter, err := parseFilter(r.URL.Query())
+	filter, err := parseFilter(r.Context(), r.URL.Query(), a.resolveUser)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeFilterError(w, err)
 		return
 	}
 	a.respond(w, r, filter)
@@ -105,7 +131,9 @@ func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 // (system actions) therefore never appear. A user parameter naming somebody else
 // is answered with 403 — the request is refused rather than quietly rewritten,
 // so nobody reads a listing believing it is somebody else's; naming oneself is
-// accepted and changes nothing.
+// accepted and changes nothing. Since the user parameter also accepts a
+// username, asking for somebody else by name is the same refusal — the value is
+// resolved first, and it is the resolved account that is compared.
 func (a *API) handleListMine(w http.ResponseWriter, r *http.Request) {
 	user, ok := auth.UserFromContext(r.Context())
 	if !ok {
@@ -113,9 +141,9 @@ func (a *API) handleListMine(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "authentication required")
 		return
 	}
-	filter, err := parseFilter(r.URL.Query())
+	filter, err := parseFilter(r.Context(), r.URL.Query(), a.resolveUser)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeFilterError(w, err)
 		return
 	}
 	if filter.ActorUID != "" && filter.ActorUID != user.UID {
@@ -177,46 +205,146 @@ const (
 	decisionNo  = "no"
 )
 
-// parseFilter builds an audit.Filter from the request query parameters,
-// validating the date range (RFC 3339) and the numeric pagination. Recognised
-// parameters: user, entity_type, entity_uid, action, via, decision, since,
-// until, limit, offset. The via parameter accepts only "review" (restricting to
-// the review game's decisions); the decision parameter accepts "yes" or "no"
-// (the Ano/Ne action buckets); any other non-empty value is rejected. It returns
-// an error for a malformed value.
-func parseFilter(q queryValues) (audit.Filter, error) {
+// recognisedParams is the closed set of query parameters the two listings
+// accept. It exists so a misspelled or invented key is answered rather than
+// ignored: silently dropping ?actor= or ?from= leaves the caller reading a
+// listing that does not mean what they asked for. Every entry here is parsed
+// below, and the frontend's audit client (web/src/services/audit.ts) sends
+// nothing else.
+var recognisedParams = map[string]struct{}{
+	"user": {}, "entity_type": {}, "entity_uid": {}, "action": {},
+	"via": {}, "decision": {}, "since": {}, "until": {},
+	"limit": {}, "offset": {},
+}
+
+// ResolveUser maps the value of the user filter — an account UID or a username,
+// because a human filtering the trail reaches for the name they know — onto that
+// account's UID. It returns ErrUnknownUser when the value names no account, and
+// any other error when the lookup itself failed.
+//
+// It is a function rather than a store so this package stays a read-only reader
+// of the trail and does not grow a dependency on the whole user service.
+type ResolveUser func(ctx context.Context, value string) (string, error)
+
+// ErrUnknownUser is returned by a ResolveUser for a value that is neither an
+// account UID nor a username.
+var ErrUnknownUser = errors.New("auditapi: no such user")
+
+// errUserLookup marks a failure of the user lookup itself — the store could not
+// be reached. It is the one filter error that is the server's fault rather than
+// the caller's, so it is answered 500 while everything else is a 400.
+var errUserLookup = errors.New("resolving the user filter failed")
+
+// parseFilter builds an audit.Filter from the request query parameters. Every
+// value is checked, because an unchecked filter answers a typo with an empty
+// list — indistinguishable from "this person did nothing".
+//
+// Recognised parameters: user, entity_type, entity_uid, action, via, decision,
+// since, until, limit, offset; any other key is refused by name. The user value
+// is resolved through resolve as a UID or a username, an unknown action is
+// refused against audit's closed set, via accepts only "review" and decision
+// only "yes" or "no", the timestamps must be RFC 3339 and the pagination
+// non-negative integers.
+//
+// Two values stay deliberately unchecked. entity_uid is not resolved because the
+// trail outlives what it describes — an entry about a purged photo is exactly
+// what the trail is for — and entity_type is a free string by design, so an
+// allow-list would go stale the moment a new kind of entity is audited.
+func parseFilter(ctx context.Context, q url.Values, resolve ResolveUser) (audit.Filter, error) {
+	if err := rejectUnknownParams(q); err != nil {
+		return audit.Filter{}, err
+	}
 	filter := audit.Filter{
-		ActorUID:   q.Get("user"),
 		TargetType: q.Get("entity_type"),
 		TargetUID:  q.Get("entity_uid"),
-		Action:     q.Get("action"),
+	}
+	if action := q.Get("action"); action != "" {
+		if !audit.KnownAction(action) {
+			return audit.Filter{}, fmt.Errorf("unknown action %q", action)
+		}
+		filter.Action = action
 	}
 	if err := parseReviewFilter(q, &filter); err != nil {
 		return audit.Filter{}, err
 	}
+	if err := parseRange(q, &filter); err != nil {
+		return audit.Filter{}, err
+	}
+	// The actor is resolved last: it is the only filter that reaches the
+	// database, and there is no point paying for that behind a value the pure
+	// checks above would have rejected anyway.
+	actorUID, err := resolveActor(ctx, q.Get("user"), resolve)
+	if err != nil {
+		return audit.Filter{}, err
+	}
+	filter.ActorUID = actorUID
+	return filter, nil
+}
+
+// rejectUnknownParams returns an error naming the first unrecognised query key,
+// in sorted order so the same request always gets the same message.
+func rejectUnknownParams(q url.Values) error {
+	unknown := make([]string, 0, len(q))
+	for key := range q {
+		if _, ok := recognisedParams[key]; !ok {
+			unknown = append(unknown, key)
+		}
+	}
+	if len(unknown) == 0 {
+		return nil
+	}
+	slices.Sort(unknown)
+	return fmt.Errorf("unknown query parameter %q", unknown[0])
+}
+
+// resolveActor turns the user filter's value into an actor UID, accepting either
+// an account UID or a username. An empty value means "every actor" and needs no
+// lookup; a value naming no account is a caller error, while a failing lookup is
+// wrapped in errUserLookup so the handler can tell the two apart.
+func resolveActor(ctx context.Context, value string, resolve ResolveUser) (string, error) {
+	if value == "" {
+		return "", nil
+	}
+	if resolve == nil {
+		return "", fmt.Errorf("%w: no user lookup is configured", errUserLookup)
+	}
+	uid, err := resolve(ctx, value)
+	switch {
+	case errors.Is(err, ErrUnknownUser):
+		return "", fmt.Errorf("user %q is neither an account uid nor a username", value)
+	case err != nil:
+		return "", fmt.Errorf("%w: %w", errUserLookup, err)
+	}
+	return uid, nil
+}
+
+// parseRange applies the created-at range and the pagination onto filter,
+// returning an error for a timestamp that is not RFC 3339 or a limit/offset that
+// is not a non-negative integer.
+func parseRange(q url.Values, filter *audit.Filter) error {
 	since, err := parseTime(q.Get("since"))
 	if err != nil {
-		return audit.Filter{}, errors.New("since must be an RFC 3339 timestamp")
+		return errors.New("since must be an RFC 3339 timestamp")
 	}
 	filter.Since = since
 	until, err := parseTime(q.Get("until"))
 	if err != nil {
-		return audit.Filter{}, errors.New("until must be an RFC 3339 timestamp")
+		return errors.New("until must be an RFC 3339 timestamp")
 	}
 	filter.Until = until
 	if filter.Limit, err = parseNonNegative(q.Get("limit")); err != nil {
-		return audit.Filter{}, errors.New("limit must be a non-negative integer")
+		return errors.New("limit must be a non-negative integer")
 	}
 	if filter.Offset, err = parseNonNegative(q.Get("offset")); err != nil {
-		return audit.Filter{}, errors.New("offset must be a non-negative integer")
+		return errors.New("offset must be a non-negative integer")
 	}
-	return filter, nil
+	return nil
 }
 
 // parseReviewFilter applies the review-decision filters onto filter: via=review
 // restricts to the review game's decisions and decision=yes|no to the Ano/Ne
 // action bucket. It returns an error for an unsupported via or decision value.
-func parseReviewFilter(q queryValues, filter *audit.Filter) error {
+func parseReviewFilter(q url.Values, filter *audit.Filter) error {
 	switch via := q.Get("via"); via {
 	case "":
 	case "review":
@@ -234,12 +362,6 @@ func parseReviewFilter(q queryValues, filter *audit.Filter) error {
 		return errors.New("decision filter only supports 'yes' or 'no'")
 	}
 	return nil
-}
-
-// queryValues is the subset of url.Values parseFilter needs, so it can be tested
-// without constructing a request.
-type queryValues interface {
-	Get(key string) string
 }
 
 // parseTime parses an optional RFC 3339 timestamp, returning nil for an empty
@@ -280,6 +402,17 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 	if err := json.NewEncoder(w).Encode(payload); err != nil {
 		log.Printf("auditapi: encoding JSON response: %v", err)
 	}
+}
+
+// writeFilterError answers a rejected filter: 500 when the user lookup itself
+// failed — the server's fault, and nothing the caller can rewrite — and 400 with
+// the parser's own message, which names the offending value, for everything else.
+func writeFilterError(w http.ResponseWriter, err error) {
+	if errors.Is(err, errUserLookup) {
+		writeError(w, http.StatusInternalServerError, "resolving the user filter failed")
+		return
+	}
+	writeError(w, http.StatusBadRequest, err.Error())
 }
 
 // writeError writes an error response with the given status code and message.

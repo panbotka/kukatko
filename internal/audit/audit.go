@@ -354,6 +354,50 @@ const (
 	ActionLibraryReset = "library.reset"
 )
 
+// knownActions is every action label above, as the set that tells a real action
+// apart from a typo. A filter reading the trail can then refuse an unrecognised
+// value instead of answering "this never happened", which a misspelling and a
+// genuinely empty history are otherwise indistinguishable from.
+//
+// It is a hand-kept list because the constants are a hand-kept block; the drift
+// between the two is what TestKnownActionsCoverEveryConstant guards, reading the
+// package's own source so a new constant cannot be added without landing here.
+var knownActions = map[string]struct{}{
+	ActionPhotosBulk: {}, ActionPhotosMerge: {}, ActionDuplicateDismiss: {},
+	ActionDuplicateUndismiss: {}, ActionDuplicateConfirm: {}, ActionDuplicateUnconfirm: {},
+	ActionDuplicateMarkerDismiss: {}, ActionDuplicateMarkerUndismiss: {}, ActionPhotoUpdate: {},
+	ActionLocationConfirm: {}, ActionLocationReject: {}, ActionPhotoDateClear: {},
+	ActionPhotoArchive: {}, ActionPhotoUnarchive: {}, ActionPhotoHide: {},
+	ActionPhotoUnhide: {}, ActionPhotoPurge: {}, ActionPhotoThumbnail: {},
+	ActionPhotoEmbedding: {}, ActionPhotoFaces: {}, ActionPhotoPlace: {},
+	ActionPhotoStoryboard: {}, ActionPhotoEdit: {}, ActionCommentCreate: {},
+	ActionCommentUpdate: {}, ActionCommentDelete: {}, ActionAlbumCreate: {},
+	ActionAlbumUpdate: {}, ActionAlbumDelete: {}, ActionAlbumAddPhotos: {},
+	ActionAlbumRemovePhotos: {}, ActionLabelCreate: {}, ActionLabelUpdate: {},
+	ActionLabelDelete: {}, ActionLabelAttach: {}, ActionLabelDetach: {},
+	ActionLabelReject: {}, ActionLabelUnreject: {}, ActionFaceAssign: {},
+	ActionFaceUnassign: {}, ActionMarkerInvalidate: {}, ActionPersonAttach: {},
+	ActionPersonDetach: {}, ActionFaceReject: {}, ActionFaceUnreject: {},
+	ActionFaceConfirm: {}, ActionFaceUnconfirm: {}, ActionSubjectCreate: {},
+	ActionSubjectUpdate: {}, ActionSubjectDelete: {}, ActionSubjectMerge: {},
+	ActionSubjectRelationAdd: {}, ActionSubjectRelationRemove: {}, ActionFamilyUpdate: {},
+	ActionUserCreate: {}, ActionUserUpdate: {}, ActionUserDisable: {},
+	ActionUserPassword: {}, ActionUserPasswordReset: {}, ActionUserPasswordResetUse: {},
+	ActionUserApprove: {}, ActionUserRegister: {}, ActionPasskeyRegister: {},
+	ActionPasskeyLogin: {}, ActionPasskeyDelete: {}, ActionAPITokenCreate: {},
+	ActionAPITokenRevoke: {}, ActionAnnouncementSet: {}, ActionAnnouncementClear: {},
+	ActionSettingsUpdate: {}, ActionAuditPurge: {}, ActionLibraryReset: {},
+}
+
+// KnownAction reports whether action is one of the trail's own action labels. An
+// unrecognised value is always a caller's mistake — the set is closed and only
+// this package writes into the action column — so a reader may refuse it rather
+// than return the empty listing it would otherwise match.
+func KnownAction(action string) bool {
+	_, ok := knownActions[action]
+	return ok
+}
+
 // ViaReview is the details.via marker every decisive review-game answer carries.
 // It is what tells a review decision apart from the same action performed on an
 // ordinary curation page, and it is the predicate of the partial index behind
