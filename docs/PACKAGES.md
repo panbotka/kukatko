@@ -518,7 +518,15 @@ to `## Package map` in `CLAUDE.md`.
   `ListStackCandidates` (not-yet-stacked non-archived photos for detection)/`StackInfoByUIDs`/
   `ListStackMembers` (stack members, **primary first** — the strip of variants)/`StackCounts` (member count
   per `stack_uid` — the tile badge)/`CreateStack`/`SetStackPrimary`/`UnstackMember`/`UnstackAll`
-  (reversible bookkeeping over `stack_uid`/`stack_primary`), plus `ListParams.IncludeStackMembers`
+  (reversible bookkeeping over `stack_uid`/`stack_primary`) and their **audited variants**
+  (`store_stacks_audit.go`): `CreateStackAudited`/`SetStackPrimaryAudited`/`UnstackMemberAudited`/
+  `UnstackAllAudited` plus `CreateStacksAudited(plans,entry)`, which applies a whole detection pass
+  (`StackPlan{PrimaryUID,MemberUIDs}`, decided purely by `internal/stacks`) and its one entry in a single
+  transaction. Each writes `entry` on the **mutation's own transaction**, so a refused operation leaves no
+  row, and each fills the details in itself — the `stack_uid`, the promoted photo's `previous_primary_uid`,
+  the members a dissolved stack had — because those are facts only the transaction knows. `stackEntry`
+  **copies** the caller's entry before completing it: a target stamped onto the original inside the closure
+  would be thrown away with it, and the row would record a NULL target. Plus `ListParams.IncludeStackMembers`
   (lifts the shared visibility predicate `(stack_uid IS NULL OR stack_primary)` for a caller that wants
   **all** members) and the exported **`LeaveStackTx(ctx,tx,uid)`** (takes one photo out of its stack and
   repairs the remnant — dissolve below 2 members, re-elect a lost primary — on the caller's transaction).
@@ -4410,14 +4418,20 @@ to `## Package map` in `CLAUDE.md`.
   a copy) under one visible **primary** photo, **without merging rows** (the counterpart of `dupmerge`, which
   merges genuine duplicates — stack members are kept on purpose; see `docs/ARCHITECTURE.md` §5.1 + migration
   `0030_photo_stacks.sql`); `Config{Enabled,Rules RuleSet}` + the `Store` interface (satisfied by `*photos.Store`,
-  a fake in unit tests: `ListStackCandidates`/`StackInfoByUIDs`/`CreateStack`/`SetStackPrimary`/
-  `UnstackMember`/`UnstackAll`); `Service = New(store,cfg)` (panics on a nil store):
-  **`DetectStacks(ctx) (created,error)`** (backing `POST /process/stacks`) groups the **not-yet-stacked
+  a fake in unit tests: `ListStackCandidates`/`StackInfoByUIDs`/`CreateStackAudited`/`CreateStacksAudited`/
+  `SetStackPrimaryAudited`/`UnstackMemberAudited`/`UnstackAllAudited`); `Service = New(store,cfg)` (panics on a
+  nil store). **Every mutating method takes the `audit.Entry` its change is recorded with** and only carries it
+  through — who acted is the caller's knowledge, the stack uid and the members are the store's, and the store
+  writes the entry in the mutation's own transaction:
+  **`DetectStacks(ctx,entry) (created,error)`** (backing `POST /process/stacks`) groups the **not-yet-stacked
   non-archived** photos by the enabled rules — synchronous, incremental and **idempotent**: a re-run over a
   settled library creates nothing and does not touch an existing/manual stack; a no-op (0) when the feature or
-  every rule is off; **`StackSelection(ctx,uids)`** groups a selection manually (`photos.ErrStackTooSmall`
-  below 2 distinct, `photos.ErrPhotoNotFound` when one is missing/archived), **`SetPrimary`/`Unstack`/`UnstackWhole`**
-  delegate to the store; **pure detection** (`rules.go`): four independently switchable rules
+  every rule is off, and then it records nothing either, because nothing ran. It decides the whole pass as pure
+  `photos.StackPlan`s (`planComponent`) and hands them to `CreateStacksAudited`, so the stacks and the single
+  `stacks.detect` entry share **one** transaction; **`StackSelection(ctx,uids,entry)`** groups a selection
+  manually (`photos.ErrStackTooSmall` below 2 distinct, `photos.ErrPhotoNotFound` when one is
+  missing/archived), **`SetPrimary`/`Unstack`/`UnstackWhole`** (each `(ctx,uid,entry)`) delegate to the store;
+  **pure detection** (`rules.go`): four independently switchable rules
   (`RuleSet{BaseName,SequentialCopy,UniqueID,TimeGPS}`, each with a different rate of false matches — a wrongly
   stacked photo is invisible, so the rules link only photos that **plausibly are** the same
   shot) key the candidates (`baseNameKey` the bare stem / `canonicalNameKey` strips a trailing

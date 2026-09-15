@@ -699,7 +699,8 @@
       },
       "photos": {
         "bulk": "Bulk photo edit",
-        "merge": "Duplicate photos merged"
+        "merge": "Duplicate photos merged",
+        "stack": "Photos grouped into a stack"
       },
       "settings": {
         "update": "Instance settings changed"
@@ -719,6 +720,14 @@
         "password_reset_use": "Password reset through a link",
         "register": "User registered",
         "update": "User edited"
+      },
+      "stack": {
+        "set_primary": "Stack's primary photo changed",
+        "ungroup": "Photo taken out of its stack",
+        "ungroup_all": "Stack dissolved"
+      },
+      "stacks": {
+        "detect": "Stack detection run"
       }
     },
     "targets": {

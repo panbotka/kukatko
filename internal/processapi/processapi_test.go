@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/facejob"
 )
 
@@ -390,16 +391,20 @@ func TestRecluster_unavailable(t *testing.T) {
 	}
 }
 
-// fakeStacksDetector is a StacksDetector stub returning canned values.
+// fakeStacksDetector is a StacksDetector stub returning canned values and
+// keeping the audit entry it was handed.
 type fakeStacksDetector struct {
 	created int
 	err     error
 	calls   int
+	entry   audit.Entry
 }
 
-// DetectStacks records the call and returns the canned result.
-func (f *fakeStacksDetector) DetectStacks(context.Context) (int, error) {
+// DetectStacks records the call and its audit entry, then returns the canned
+// result.
+func (f *fakeStacksDetector) DetectStacks(_ context.Context, entry audit.Entry) (int, error) {
 	f.calls++
+	f.entry = entry
 	return f.created, f.err
 }
 
@@ -439,6 +444,9 @@ func TestDetectStacks_ok(t *testing.T) {
 	}
 	if sd.calls != 1 {
 		t.Errorf("detector calls = %d, want 1", sd.calls)
+	}
+	if sd.entry.Action != audit.ActionStacksDetect || sd.entry.TargetType != "photos" {
+		t.Errorf("audit entry = %+v, want a stacks.detect entry on photos", sd.entry)
 	}
 }
 

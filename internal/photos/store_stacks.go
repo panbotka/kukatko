@@ -161,24 +161,48 @@ func (s *Store) StackCounts(ctx context.Context, stackUIDs []string) (map[string
 // remnant re-elects one). It returns ErrStackTooSmall for fewer than two distinct
 // members, ErrPhotoNotFound when a member (or the primary) is missing or archived.
 func (s *Store) CreateStack(ctx context.Context, primaryUID string, memberUIDs []string) (string, error) {
-	uids := dedupeStrings(memberUIDs)
-	if len(uids) < 2 {
-		return "", ErrStackTooSmall
-	}
-	if !slices.Contains(uids, primaryUID) {
-		return "", ErrPhotoNotFound
+	plan, err := StackPlan{PrimaryUID: primaryUID, MemberUIDs: memberUIDs}.normalize()
+	if err != nil {
+		return "", err
 	}
 	stackUID, err := newStackUID()
 	if err != nil {
 		return "", err
 	}
 	err = s.inTx(ctx, func(tx pgx.Tx) error {
-		return applyNewStackTx(ctx, tx, stackUID, primaryUID, uids)
+		return applyNewStackTx(ctx, tx, stackUID, plan.PrimaryUID, plan.MemberUIDs)
 	})
 	if err != nil {
 		return "", err
 	}
 	return stackUID, nil
+}
+
+// StackPlan is one stack to form: the photos that belong together and which of
+// them leads. Deciding a plan is pure (the detection rules and the primary
+// election in internal/stacks); applying one is the store's job, which is what
+// lets a whole detection pass be handed over as a slice of plans and applied in
+// a single transaction.
+type StackPlan struct {
+	// PrimaryUID is the member the stack is shown as; it must be one of MemberUIDs.
+	PrimaryUID string
+	// MemberUIDs are the photos to group, the primary included.
+	MemberUIDs []string
+}
+
+// normalize returns the plan with its members deduped (first-seen order kept),
+// or ErrStackTooSmall for fewer than two distinct members and ErrPhotoNotFound
+// when the primary is not one of them — the two ways a plan can fail to describe
+// a stack at all, checked before any row is touched.
+func (p StackPlan) normalize() (StackPlan, error) {
+	uids := dedupeStrings(p.MemberUIDs)
+	if len(uids) < 2 {
+		return StackPlan{}, ErrStackTooSmall
+	}
+	if !slices.Contains(uids, p.PrimaryUID) {
+		return StackPlan{}, ErrPhotoNotFound
+	}
+	return StackPlan{PrimaryUID: p.PrimaryUID, MemberUIDs: uids}, nil
 }
 
 // applyNewStackTx assigns the fresh stack to its members and repairs the stacks
@@ -218,26 +242,57 @@ func applyNewStackTx(ctx context.Context, tx pgx.Tx, stackUID, primaryUID string
 func (s *Store) SetStackPrimary(ctx context.Context, memberUID string) (string, error) {
 	var stackUID string
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
-		su, err := memberStackTx(ctx, tx, memberUID)
-		if err != nil {
-			return err
-		}
+		su, _, err := setStackPrimaryTx(ctx, tx, memberUID)
 		stackUID = su
-		if _, err := tx.Exec(ctx,
-			`UPDATE photos SET stack_primary = false, updated_at = now()
-			 WHERE stack_uid = $1 AND stack_primary`, su); err != nil {
-			return fmt.Errorf("photos: clearing stack primary: %w", err)
-		}
-		if _, err := tx.Exec(ctx,
-			`UPDATE photos SET stack_primary = true, updated_at = now() WHERE uid = $1`, memberUID); err != nil {
-			return fmt.Errorf("photos: setting stack primary: %w", err)
-		}
-		return nil
+		return err
 	})
 	if err != nil {
 		return "", err
 	}
 	return stackUID, nil
+}
+
+// setStackPrimaryTx promotes memberUID inside tx and returns its stack's uid
+// together with the uid of the primary it replaced (empty when the stack had
+// none, which the invariant repair allows only transiently). It clears the
+// previous primary and sets the new one in two statements so the
+// one-primary-per-stack index never sees two primaries at once. It returns
+// ErrPhotoNotFound when the photo does not exist and ErrPhotoNotStacked when it
+// is not a member of any stack.
+func setStackPrimaryTx(ctx context.Context, tx pgx.Tx, memberUID string) (string, string, error) {
+	stackUID, err := memberStackTx(ctx, tx, memberUID)
+	if err != nil {
+		return "", "", err
+	}
+	previous, err := stackPrimaryTx(ctx, tx, stackUID)
+	if err != nil {
+		return "", "", err
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE photos SET stack_primary = false, updated_at = now()
+		 WHERE stack_uid = $1 AND stack_primary`, stackUID); err != nil {
+		return "", "", fmt.Errorf("photos: clearing stack primary: %w", err)
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE photos SET stack_primary = true, updated_at = now() WHERE uid = $1`, memberUID); err != nil {
+		return "", "", fmt.Errorf("photos: setting stack primary: %w", err)
+	}
+	return stackUID, previous, nil
+}
+
+// stackPrimaryTx returns the uid of the stack's current primary on tx, or an
+// empty string when it has none.
+func stackPrimaryTx(ctx context.Context, tx pgx.Tx, stackUID string) (string, error) {
+	var uid string
+	err := tx.QueryRow(ctx,
+		`SELECT uid FROM photos WHERE stack_uid = $1 AND stack_primary`, stackUID).Scan(&uid)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("photos: reading stack primary: %w", err)
+	}
+	return uid, nil
 }
 
 // UnstackMember removes memberUID from its stack, turning it back into an ordinary
@@ -248,19 +303,30 @@ func (s *Store) SetStackPrimary(ctx context.Context, memberUID string) (string, 
 func (s *Store) UnstackMember(ctx context.Context, memberUID string) (string, error) {
 	var stackUID string
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
-		su, err := memberStackTx(ctx, tx, memberUID)
-		if err != nil {
-			return err
-		}
+		su, err := unstackMemberTx(ctx, tx, memberUID)
 		stackUID = su
-		if _, err := tx.Exec(ctx,
-			`UPDATE photos SET stack_uid = NULL, stack_primary = false, updated_at = now()
-			 WHERE uid = $1`, memberUID); err != nil {
-			return fmt.Errorf("photos: unstacking member: %w", err)
-		}
-		return repairStackTx(ctx, tx, su)
+		return err
 	})
 	if err != nil {
+		return "", err
+	}
+	return stackUID, nil
+}
+
+// unstackMemberTx takes memberUID out of its stack on tx, repairs the remnant
+// and returns the uid of the stack it left. It returns ErrPhotoNotFound or
+// ErrPhotoNotStacked.
+func unstackMemberTx(ctx context.Context, tx pgx.Tx, memberUID string) (string, error) {
+	stackUID, err := memberStackTx(ctx, tx, memberUID)
+	if err != nil {
+		return "", err
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE photos SET stack_uid = NULL, stack_primary = false, updated_at = now()
+		 WHERE uid = $1`, memberUID); err != nil {
+		return "", fmt.Errorf("photos: unstacking member: %w", err)
+	}
+	if err := repairStackTx(ctx, tx, stackUID); err != nil {
 		return "", err
 	}
 	return stackUID, nil
@@ -272,22 +338,58 @@ func (s *Store) UnstackMember(ctx context.Context, memberUID string) (string, er
 func (s *Store) UnstackAll(ctx context.Context, memberUID string) (string, error) {
 	var stackUID string
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
-		su, err := memberStackTx(ctx, tx, memberUID)
-		if err != nil {
-			return err
-		}
+		su, _, err := unstackAllTx(ctx, tx, memberUID)
 		stackUID = su
-		if _, err := tx.Exec(ctx,
-			`UPDATE photos SET stack_uid = NULL, stack_primary = false, updated_at = now()
-			 WHERE stack_uid = $1`, su); err != nil {
-			return fmt.Errorf("photos: dissolving stack: %w", err)
-		}
-		return nil
+		return err
 	})
 	if err != nil {
 		return "", err
 	}
 	return stackUID, nil
+}
+
+// unstackAllTx dissolves the stack memberUID belongs to on tx and returns the
+// dissolved stack's uid together with every member it had, in uid order — the
+// list nothing else can recover once the rows are standalone again. It returns
+// ErrPhotoNotFound or ErrPhotoNotStacked.
+func unstackAllTx(ctx context.Context, tx pgx.Tx, memberUID string) (string, []string, error) {
+	stackUID, err := memberStackTx(ctx, tx, memberUID)
+	if err != nil {
+		return "", nil, err
+	}
+	members, err := stackMemberUIDsTx(ctx, tx, stackUID)
+	if err != nil {
+		return "", nil, err
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE photos SET stack_uid = NULL, stack_primary = false, updated_at = now()
+		 WHERE stack_uid = $1`, stackUID); err != nil {
+		return "", nil, fmt.Errorf("photos: dissolving stack: %w", err)
+	}
+	return stackUID, members, nil
+}
+
+// stackMemberUIDsTx returns the uids of the stack's members on tx, in uid order,
+// empty (not nil) when the stack has none.
+func stackMemberUIDsTx(ctx context.Context, tx pgx.Tx, stackUID string) ([]string, error) {
+	rows, err := tx.Query(ctx, `SELECT uid FROM photos WHERE stack_uid = $1 ORDER BY uid`, stackUID)
+	if err != nil {
+		return nil, fmt.Errorf("photos: querying stack member uids: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]string, 0)
+	for rows.Next() {
+		var uid string
+		if err := rows.Scan(&uid); err != nil {
+			return nil, fmt.Errorf("photos: scanning stack member uid: %w", err)
+		}
+		out = append(out, uid)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("photos: iterating stack member uids: %w", err)
+	}
+	return out, nil
 }
 
 // LeaveStackTx takes uid out of whatever stack it belongs to and repairs that

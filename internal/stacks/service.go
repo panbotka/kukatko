@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/photos"
 )
 
@@ -20,13 +21,22 @@ type Config struct {
 // Store is the persistence the stack Service needs: enumerating the photos to
 // consider and applying the reversible grouping. *photos.Store satisfies it; a
 // fake stands in for unit tests.
+//
+// Every mutating method takes the audit entry its change is to be recorded with
+// and writes it in the same transaction as the change, so a stack operation can
+// never commit without leaving a trace (and a failed one leaves none). The
+// Service only carries the entry through — who acted and from where is the
+// caller's knowledge, while the stack uid and the members are the store's.
 type Store interface {
 	ListStackCandidates(ctx context.Context) ([]photos.StackCandidate, error)
 	StackInfoByUIDs(ctx context.Context, uids []string) ([]photos.StackCandidate, error)
-	CreateStack(ctx context.Context, primaryUID string, memberUIDs []string) (string, error)
-	SetStackPrimary(ctx context.Context, memberUID string) (string, error)
-	UnstackMember(ctx context.Context, memberUID string) (string, error)
-	UnstackAll(ctx context.Context, memberUID string) (string, error)
+	CreateStackAudited(
+		ctx context.Context, primaryUID string, memberUIDs []string, entry audit.Entry,
+	) (string, error)
+	CreateStacksAudited(ctx context.Context, plans []photos.StackPlan, entry audit.Entry) ([]string, error)
+	SetStackPrimaryAudited(ctx context.Context, memberUID string, entry audit.Entry) (string, error)
+	UnstackMemberAudited(ctx context.Context, memberUID string, entry audit.Entry) (string, error)
+	UnstackAllAudited(ctx context.Context, memberUID string, entry audit.Entry) (string, error)
 }
 
 // Service detects stacks over the library and carries out the manual stacking
@@ -48,11 +58,17 @@ func New(store Store, cfg Config) *Service {
 }
 
 // DetectStacks groups the currently unstacked, non-archived photos into stacks by
-// the enabled rules and returns how many stacks were created. It is incremental
-// and idempotent: already-stacked photos are never candidates, so a re-run over a
-// settled library creates nothing and never disturbs an existing or manually
-// curated stack. It is a no-op returning 0 when the feature or every rule is off.
-func (s *Service) DetectStacks(ctx context.Context) (int, error) {
+// the enabled rules and returns how many stacks were created, recording the pass
+// under entry. It is incremental and idempotent: already-stacked photos are never
+// candidates, so a re-run over a settled library creates nothing and never
+// disturbs an existing or manually curated stack. It is a no-op returning 0 when
+// the feature or every rule is off — and then writes no audit entry either,
+// because nothing ran.
+//
+// The whole pass is applied in one transaction together with its single audit
+// entry, so the trail's promise holds for a bulk decision too: what the entry
+// claims was created is exactly what committed.
+func (s *Service) DetectStacks(ctx context.Context, entry audit.Entry) (int, error) {
 	if !s.enabled || !s.rules.Any() {
 		return 0, nil
 	}
@@ -60,36 +76,38 @@ func (s *Service) DetectStacks(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("stacks: listing candidates: %w", err)
 	}
-	created := 0
-	for _, component := range Group(candidates, s.rules) {
-		if err := s.stackComponent(ctx, candidates, component); err != nil {
-			return created, err
-		}
-		created++
+	components := Group(candidates, s.rules)
+	plans := make([]photos.StackPlan, len(components))
+	for i, component := range components {
+		plans[i] = planComponent(candidates, component)
 	}
-	return created, nil
+	created, err := s.store.CreateStacksAudited(ctx, plans, entry)
+	if err != nil {
+		return 0, fmt.Errorf("stacks: creating stacks: %w", err)
+	}
+	return len(created), nil
 }
 
-// stackComponent creates one stack from the candidates at the component's
-// indices, choosing the primary with PickPrimary.
-func (s *Service) stackComponent(ctx context.Context, candidates []photos.StackCandidate, component []int) error {
+// planComponent turns the candidates at the component's indices into the plan for
+// one stack, choosing the primary with PickPrimary. It is pure: deciding is this
+// package's job, applying is the store's.
+func planComponent(candidates []photos.StackCandidate, component []int) photos.StackPlan {
 	members := make([]photos.StackCandidate, len(component))
 	uids := make([]string, len(component))
 	for i, idx := range component {
 		members[i] = candidates[idx]
 		uids[i] = candidates[idx].UID
 	}
-	if _, err := s.store.CreateStack(ctx, PickPrimary(members), uids); err != nil {
-		return fmt.Errorf("stacks: creating stack: %w", err)
-	}
-	return nil
+	return photos.StackPlan{PrimaryUID: PickPrimary(members), MemberUIDs: uids}
 }
 
 // StackSelection groups the given photos into one new stack for the cases the
 // rules miss, choosing the primary with PickPrimary, and returns the new
-// stack_uid. It returns photos.ErrStackTooSmall for fewer than two distinct
-// photos and photos.ErrPhotoNotFound when one is missing or archived.
-func (s *Service) StackSelection(ctx context.Context, uids []string) (string, error) {
+// stack_uid. The grouping is recorded under entry in the same transaction. It
+// returns photos.ErrStackTooSmall for fewer than two distinct photos and
+// photos.ErrPhotoNotFound when one is missing or archived — neither writes an
+// entry, because neither changes anything.
+func (s *Service) StackSelection(ctx context.Context, uids []string, entry audit.Entry) (string, error) {
 	distinct := distinctStrings(uids)
 	if len(distinct) < 2 {
 		return "", photos.ErrStackTooSmall
@@ -101,16 +119,17 @@ func (s *Service) StackSelection(ctx context.Context, uids []string) (string, er
 	if len(info) != len(distinct) {
 		return "", photos.ErrPhotoNotFound
 	}
-	stackUID, err := s.store.CreateStack(ctx, PickPrimary(info), distinct)
+	stackUID, err := s.store.CreateStackAudited(ctx, PickPrimary(info), distinct, entry)
 	if err != nil {
 		return "", fmt.Errorf("stacks: stacking selection: %w", err)
 	}
 	return stackUID, nil
 }
 
-// SetPrimary makes uid the primary of its stack, returning the stack_uid.
-func (s *Service) SetPrimary(ctx context.Context, uid string) (string, error) {
-	stackUID, err := s.store.SetStackPrimary(ctx, uid)
+// SetPrimary makes uid the primary of its stack, returning the stack_uid and
+// recording the change under entry in the same transaction.
+func (s *Service) SetPrimary(ctx context.Context, uid string, entry audit.Entry) (string, error) {
+	stackUID, err := s.store.SetStackPrimaryAudited(ctx, uid, entry)
 	if err != nil {
 		return "", fmt.Errorf("stacks: setting primary: %w", err)
 	}
@@ -118,18 +137,20 @@ func (s *Service) SetPrimary(ctx context.Context, uid string) (string, error) {
 }
 
 // Unstack removes uid from its stack, turning it back into a standalone photo,
-// returning the stack_uid it left.
-func (s *Service) Unstack(ctx context.Context, uid string) (string, error) {
-	stackUID, err := s.store.UnstackMember(ctx, uid)
+// returning the stack_uid it left and recording the change under entry in the
+// same transaction.
+func (s *Service) Unstack(ctx context.Context, uid string, entry audit.Entry) (string, error) {
+	stackUID, err := s.store.UnstackMemberAudited(ctx, uid, entry)
 	if err != nil {
 		return "", fmt.Errorf("stacks: unstacking member: %w", err)
 	}
 	return stackUID, nil
 }
 
-// UnstackWhole dissolves the entire stack uid belongs to, returning its stack_uid.
-func (s *Service) UnstackWhole(ctx context.Context, uid string) (string, error) {
-	stackUID, err := s.store.UnstackAll(ctx, uid)
+// UnstackWhole dissolves the entire stack uid belongs to, returning its stack_uid
+// and recording the change under entry in the same transaction.
+func (s *Service) UnstackWhole(ctx context.Context, uid string, entry audit.Entry) (string, error) {
+	stackUID, err := s.store.UnstackAllAudited(ctx, uid, entry)
 	if err != nil {
 		return "", fmt.Errorf("stacks: dissolving stack: %w", err)
 	}

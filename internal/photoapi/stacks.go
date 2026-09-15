@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/photos"
 )
@@ -16,17 +17,27 @@ import (
 // Stacker performs the manual stacking operations behind the write-guarded stack
 // endpoints. stacks.Service satisfies it; a nil Stacker (the feature disabled in
 // config) makes those endpoints answer 503.
+//
+// Every operation takes the audit entry recording it and writes it in the same
+// transaction as the change, so none of them can alter what the library shows
+// without leaving a trace.
 type Stacker interface {
 	// StackSelection groups the given photos into one new stack and returns its
 	// stack_uid.
-	StackSelection(ctx context.Context, uids []string) (string, error)
+	StackSelection(ctx context.Context, uids []string, entry audit.Entry) (string, error)
 	// SetPrimary makes the photo the primary of its stack and returns the stack_uid.
-	SetPrimary(ctx context.Context, uid string) (string, error)
+	SetPrimary(ctx context.Context, uid string, entry audit.Entry) (string, error)
 	// Unstack removes the photo from its stack and returns the stack_uid it left.
-	Unstack(ctx context.Context, uid string) (string, error)
+	Unstack(ctx context.Context, uid string, entry audit.Entry) (string, error)
 	// UnstackWhole dissolves the entire stack the photo belongs to.
-	UnstackWhole(ctx context.Context, uid string) (string, error)
+	UnstackWhole(ctx context.Context, uid string, entry audit.Entry) (string, error)
 }
+
+// stackOp is one stack mutation addressed through a single photo: it applies the
+// change, records it under entry in the same transaction and answers with the
+// stack uid involved. The three single-photo endpoints differ only in which one
+// they pick off the Stacker.
+type stackOp func(ctx context.Context, uid string, entry audit.Entry) (string, error)
 
 // stackMember is one file of a stack as presented in the detail response's
 // variants strip: enough to render a thumbnail, its format and size, and to link
@@ -118,7 +129,8 @@ func (a *API) handleStackSelection(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	stackUID, err := a.stacker.StackSelection(r.Context(), req.PhotoUIDs)
+	entry := audit.FromRequest(r, user.UID).Entry(audit.ActionPhotosStack, "photos", "", nil)
+	stackUID, err := a.stacker.StackSelection(r.Context(), req.PhotoUIDs, entry)
 	if err != nil {
 		writeStackError(w, err, "stacking photos failed")
 		return
@@ -132,27 +144,36 @@ func (a *API) handleStackSelection(w http.ResponseWriter, r *http.Request) {
 // with the refreshed detail. It answers 503 when stacking is disabled, 404 for a
 // missing photo and 409 when the photo is not stacked.
 func (a *API) handleStackSetPrimary(w http.ResponseWriter, r *http.Request) {
-	a.runStackMutation(w, r, a.stacker.SetPrimary, "setting stack primary failed")
+	a.runStackMutation(w, r, audit.ActionStackSetPrimary,
+		func(s Stacker) stackOp { return s.SetPrimary }, "setting stack primary failed")
 }
 
 // handleUnstackMember removes the path photo from its stack and answers with the
 // refreshed detail (the photo is now standalone).
 func (a *API) handleUnstackMember(w http.ResponseWriter, r *http.Request) {
-	a.runStackMutation(w, r, a.stacker.Unstack, "unstacking photo failed")
+	a.runStackMutation(w, r, audit.ActionStackUngroup,
+		func(s Stacker) stackOp { return s.Unstack }, "unstacking photo failed")
 }
 
 // handleUnstackAll dissolves the whole stack the path photo belongs to and
 // answers with the refreshed detail.
 func (a *API) handleUnstackAll(w http.ResponseWriter, r *http.Request) {
-	a.runStackMutation(w, r, a.stacker.UnstackWhole, "unstacking stack failed")
+	a.runStackMutation(w, r, audit.ActionStackUngroupAll,
+		func(s Stacker) stackOp { return s.UnstackWhole }, "unstacking stack failed")
 }
 
-// runStackMutation resolves the acting user, applies op to the path photo and
-// answers with the photo's refreshed detail. It answers 503 when no stacker is
-// wired, 401 when unauthenticated, and maps stack errors otherwise.
+// runStackMutation resolves the acting user, applies the operation pick takes off
+// the wired Stacker to the path photo — recording it as action in the mutation's
+// own transaction — and answers with the photo's refreshed detail. It answers 503
+// when no stacker is wired, 401 when unauthenticated, and maps stack errors
+// otherwise.
+//
+// The operation is picked from the Stacker rather than passed in already bound
+// because a method value taken off a nil interface panics on the spot: with
+// stacking switched off the endpoint has to answer 503, not fall over.
 func (a *API) runStackMutation(
-	w http.ResponseWriter, r *http.Request,
-	op func(ctx context.Context, uid string) (string, error), failMsg string,
+	w http.ResponseWriter, r *http.Request, action string,
+	pick func(s Stacker) stackOp, failMsg string,
 ) {
 	if a.stacker == nil {
 		writeError(w, http.StatusServiceUnavailable, "stacking not available")
@@ -164,7 +185,8 @@ func (a *API) runStackMutation(
 		return
 	}
 	uid := chi.URLParam(r, "uid")
-	if _, err := op(r.Context(), uid); err != nil {
+	entry := audit.FromRequest(r, user.UID).Entry(action, "photos", uid, nil)
+	if _, err := pick(a.stacker)(r.Context(), uid, entry); err != nil {
 		writeStackError(w, err, failMsg)
 		return
 	}

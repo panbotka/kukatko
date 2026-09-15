@@ -738,7 +738,13 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `POST /photos/{uid}/unstack` (editor/admin) removes `{uid}` from the stack (it becomes standalone; a
   two-member stack thereby dissolves, a stack that loses its primary picks a new one) → refreshed detail
   (409 when it is not in a stack); `POST /photos/{uid}/unstack-all` (editor/admin) dissolves the whole stack
-  `{uid}` belongs to → refreshed detail. **Fields in the responses:** every photo in list/search/detail may
+  `{uid}` belongs to → refreshed detail.
+  **All four are audited** (`internal/photos/store_stacks_audit.go`): each writes its entry —
+  `photos.stack`, `stack.set_primary`, `stack.ungroup`, `stack.ungroup_all` — **inside the mutation's own
+  transaction**, so a refused operation leaves no row and a row means the change committed. The details are
+  enough to reconstruct the change: the `stack_uid` throughout, `primary_uid` + `photo_uids` for the grouping,
+  `previous_primary_uid` for the promotion, `photo_uid` for the photo taken out and `photo_uids` for the
+  members a dissolved stack had. **Fields in the responses:** every photo in list/search/detail may
   carry `stack_uid` (string) and `stack_count` (int; **≥ 2 only for a stacked primary**, otherwise omitted —
   it drives the tile badge); the detail (`GET /photos/{uid}`) additionally `stack_members` — an array (primary
   first) `{uid, file_name, media_type, file_mime, file_width, file_height, file_size, is_primary, thumb_url,
@@ -1376,7 +1382,9 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `POST /process/stacks` → `{created}` (detection and grouping of photos into stacks over the whole library via
   `stacks.Service.DetectStacks`; **synchronous**, the candidates are **only the not-yet-stacked non-archived**
   photos, so a re-run is idempotent and does not break a manual or an existing stack; **503** when
-  `stacks.enabled: false`).
+  `stacks.enabled: false`). **Audited** as one `stacks.detect` entry per run — no photo is its target, the
+  details carry `created`, `stack_uids` and the number of photos grouped — written in the single transaction
+  that forms the pass's stacks, so what the entry claims is exactly what committed.
   `POST /process/locations` → `{estimated}` (location estimation for photos without GPS from photos taken close
   in time, via `geoestimate.BackfillLocations`; **synchronous**, **503** when
   `location_estimate.enabled: false`). The candidates are only photos **without coordinates** with an empty

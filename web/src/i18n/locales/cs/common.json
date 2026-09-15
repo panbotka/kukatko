@@ -703,7 +703,8 @@
       },
       "photos": {
         "bulk": "Hromadná úprava fotek",
-        "merge": "Sloučení duplicitních fotek"
+        "merge": "Sloučení duplicitních fotek",
+        "stack": "Seskupení fotek do skupiny"
       },
       "settings": {
         "update": "Změna nastavení instance"
@@ -723,6 +724,14 @@
         "password_reset_use": "Obnovení hesla přes odkaz",
         "register": "Registrace uživatele",
         "update": "Úprava uživatele"
+      },
+      "stack": {
+        "set_primary": "Změna hlavní fotky skupiny",
+        "ungroup": "Vyjmutí fotky ze skupiny",
+        "ungroup_all": "Zrušení skupiny"
+      },
+      "stacks": {
+        "detect": "Automatické hledání skupin"
       }
     },
     "targets": {

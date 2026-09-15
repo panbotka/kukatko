@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/photos"
 )
@@ -84,6 +85,38 @@ func TestIntegration_StackHTTPEndpoints(t *testing.T) {
 	if got := getStackList(t, editor, e.server.URL+"/api/v1/photos"); got.Total != 2 {
 		t.Errorf("after unstack list total = %d, want 2 standalone photos", got.Total)
 	}
+
+	// Each of the three changes left its own audit row: grouping, moving the
+	// primary and taking a photo out all change what the library shows, and the
+	// trail used to fall silent on every one of them.
+	for _, action := range []string{
+		audit.ActionPhotosStack, audit.ActionStackSetPrimary, audit.ActionStackUngroup,
+	} {
+		if n := e.countAuditAction(t, action); n != 1 {
+			t.Errorf("audit rows for %s = %d, want 1", action, n)
+		}
+	}
+	rec := e.lastAudit(t, audit.ActionStackUngroup)
+	if rec.ActorUID == nil || *rec.ActorUID == "" || rec.IP == nil || rec.UserAgent == nil {
+		t.Errorf("unstack entry actor/IP/UA = %v/%v/%v, want all three recorded",
+			rec.ActorUID, rec.IP, rec.UserAgent)
+	}
+	if rec.Details["photo_uid"] != jpg.UID || rec.Details["stack_uid"] == nil {
+		t.Errorf("unstack details = %v, want the photo and the stack it left", rec.Details)
+	}
+}
+
+// lastAudit returns the newest audit row for action, failing when there is none.
+func (e *env) lastAudit(t *testing.T, action string) audit.Record {
+	t.Helper()
+	recs, err := audit.NewStore(e.db.Pool()).List(t.Context(), audit.Filter{Action: action, Limit: 1})
+	if err != nil {
+		t.Fatalf("listing audit %q: %v", action, err)
+	}
+	if len(recs) == 0 {
+		t.Fatalf("no audit row for %q", action)
+	}
+	return recs[0]
 }
 
 func TestIntegration_StackForbiddenForViewer(t *testing.T) {

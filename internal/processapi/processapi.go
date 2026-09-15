@@ -18,6 +18,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/facejob"
 )
 
@@ -173,9 +175,10 @@ type HLSBackfiller interface {
 // config — makes the /process/stacks endpoint answer 503.
 type StacksDetector interface {
 	// DetectStacks groups the currently unstacked photos and returns how many
-	// stacks were created. It is idempotent: a re-run over a settled library
+	// stacks were created, recording the pass under entry in the same transaction
+	// that forms the stacks. It is idempotent: a re-run over a settled library
 	// creates nothing.
-	DetectStacks(ctx context.Context) (int, error)
+	DetectStacks(ctx context.Context, entry audit.Entry) (int, error)
 }
 
 // LocationEstimator infers a location for photos that have none from photos
@@ -382,12 +385,19 @@ func (a *API) handleBackfillHLS(w http.ResponseWriter, r *http.Request) {
 // handleDetectStacks groups the currently unstacked photos into stacks by the
 // enabled rules and reports how many stacks were created. It answers 503 when the
 // stacking feature is disabled.
+//
+// Unlike its neighbours the pass mutates the catalogue rather than queueing jobs,
+// so it is audited: one entry for the run, written in the transaction that forms
+// the stacks. The route is guarded by RequireMaintainer, so a principal is present
+// in production; an absent one yields an empty actor UID (stored as NULL).
 func (a *API) handleDetectStacks(w http.ResponseWriter, r *http.Request) {
 	if a.stacksDetector == nil {
 		writeError(w, http.StatusServiceUnavailable, "stacking not available")
 		return
 	}
-	created, err := a.stacksDetector.DetectStacks(r.Context())
+	user, _ := auth.UserFromContext(r.Context())
+	entry := audit.FromRequest(r, user.UID).Entry(audit.ActionStacksDetect, "photos", "", nil)
+	created, err := a.stacksDetector.DetectStacks(r.Context(), entry)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "detecting stacks failed")
 		return

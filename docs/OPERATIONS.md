@@ -1673,7 +1673,9 @@ other type; values ≤ 0 are ignored and a type
   `_RULES_SEQUENTIAL_COPY`, `_RULES_UNIQUE_ID`, `_RULES_TIME_GPS`. The **admin backfill** `POST
   /process/stacks` (like the other `/process/*`) runs detection over the whole library via
   `stacks.Service.DetectStacks` and returns `{created}`; the candidates are only so-far-unstacked, unarchived
-  photos, so a re-run is idempotent. With `stacks.enabled: false` it responds 503.
+  photos, so a re-run is idempotent. With `stacks.enabled: false` it responds 503. The run is **audited**
+  as one `stacks.detect` entry carrying the created count and the new stack uids, written in the same
+  transaction that forms them — as are the four manual stack operations (`docs/API.md`).
 - **Duplicate keys (`duplicate.*`, `internal/config` + `internal/duplicates`/`internal/embedjob`):**
   near-duplicate detection, the `GET /duplicates` review page and the non-blocking "this looks like an
   existing photo" warning on upload. `enabled` (bool, **default true**) is the master switch — with it off

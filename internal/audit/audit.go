@@ -58,6 +58,31 @@ const (
 	// the target; the archived copies and the counts of what moved (albums,
 	// labels, people, filled scalar fields) are listed in the entry's details.
 	ActionPhotosMerge = "photos.merge"
+	// ActionPhotosStack records grouping a selection of photos into one new
+	// stack — the manual counterpart of the detector, for the variants of one
+	// shot the rules miss. Nothing is merged or deleted: the members keep their
+	// own rows and one of them leads. The new stack's primary is the target; the
+	// stack uid, the chosen primary and every member are in the details.
+	ActionPhotosStack = "photos.stack"
+	// ActionStackSetPrimary records a user changing which member of a stack the
+	// library shows — the one visible tile behind which the others sit. The photo
+	// promoted is the target; the stack uid and the primary it replaced are in
+	// the details, so the change can be read back and undone.
+	ActionStackSetPrimary = "stack.set_primary"
+	// ActionStackUngroup records taking one photo out of its stack, turning it
+	// back into a standalone photo. The photo taken out is the target and the
+	// stack it left is in the details; whether the remnant survived is the
+	// store's invariant repair, not a separate decision.
+	ActionStackUngroup = "stack.ungroup"
+	// ActionStackUngroupAll records dissolving a whole stack: every member becomes
+	// a standalone photo again. The photo the stack was addressed through is the
+	// target; the dissolved stack uid and all its members are in the details.
+	ActionStackUngroupAll = "stack.ungroup_all"
+	// ActionStacksDetect records a maintainer running the automatic stack
+	// detection pass over the library. It is a multi-stack action — one entry for
+	// the whole pass, written in the transaction that forms the stacks, with the
+	// created count and every new stack uid in the details.
+	ActionStacksDetect = "stacks.detect"
 	// ActionDuplicateDismiss records a user settling a duplicate pair as "these
 	// two are genuinely different". It records an opinion — neither photo is
 	// touched — so the detector stops linking the pair on later scans. The
@@ -363,7 +388,9 @@ const (
 // between the two is what TestKnownActionsCoverEveryConstant guards, reading the
 // package's own source so a new constant cannot be added without landing here.
 var knownActions = map[string]struct{}{
-	ActionPhotosBulk: {}, ActionPhotosMerge: {}, ActionDuplicateDismiss: {},
+	ActionPhotosBulk: {}, ActionPhotosMerge: {}, ActionPhotosStack: {},
+	ActionStackSetPrimary: {}, ActionStackUngroup: {}, ActionStackUngroupAll: {},
+	ActionStacksDetect: {}, ActionDuplicateDismiss: {},
 	ActionDuplicateUndismiss: {}, ActionDuplicateConfirm: {}, ActionDuplicateUnconfirm: {},
 	ActionDuplicateMarkerDismiss: {}, ActionDuplicateMarkerUndismiss: {}, ActionPhotoUpdate: {},
 	ActionLocationConfirm: {}, ActionLocationReject: {}, ActionPhotoDateClear: {},
