@@ -2774,7 +2774,9 @@ here.
   desktop (re-measured on capture-phase `scroll` and `resize`, raised by `.kk-overlay-menu`), an
   in-flow `position-static` block inside the container’s own scroll on a phone. It used to be an
   absolute `top: 100%` box, which `AddRelationModal`’s `modal-dialog-scrollable` body cut down to
-  **28px of a 426px list** — 0.64 of one row).
+  **28px of a 426px list** — 0.64 of one row). The viewer’s own drawer is why that overlay
+  rebases itself onto the containing block: `.kk-viewer__panel` slides on `transform`, which owns
+  every fixed descendant, so a straight viewport measurement put both fields’ lists off screen.
   **1b. Komentáře** (`CommentsPanel`, `components/photo/`, **NEW**) = **the conversation around the photo**,
   mounted directly under the people because that is what it is usually about („kdo je ten kluk vlevo?").
   It is the social half of the archive: most of what a family knows about an old photograph is not metadata
@@ -5376,10 +5378,21 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   never under 120px, then scrolling its own rows), re-measured on **capture-phase** `scroll` (the
   modal body scrolls *under* it, which a bubbling listener never sees) and on `resize`, hidden for
   the one frame before the layout effect measures it so it never flashes at 0,0, and raised by
-  `.kk-overlay-menu`; on a phone (`useIsNarrowViewport`) an in-flow `position-static` block capped
+  `.kk-overlay-menu`. That viewport measurement is then **rebased onto the containing block**:
+  a `position: fixed` box is placed against the nearest ancestor whose `transform`, `perspective`,
+  `filter`, `backdrop-filter`, a `will-change` naming one of them, `contain:
+  layout|paint|strict|content` or container type claims it — **any** value other than `none`, an
+  identity matrix included — so the hook walks up for that ancestor and subtracts its *padding-box*
+  origin (border widths included; the viewer’s drawer has a 1px one). Without that the drawer, which
+  sits at `translateX(0)` while open, threw the album/label list ~1000px past the right edge of a
+  1440px screen; the height cap is a length, so it needs no such correction. On a phone
+  (`useIsNarrowViewport`) an in-flow `position-static` block capped
   at `50vh` inside the ancestor’s own scroll, which keeps the field and its rows above the on-screen
   keyboard a fixed box would sit under. Nothing is measured while the menu is closed. Tests
-  `components/MultiSelect.test.tsx` + `components/photo/AddAutocomplete.test.tsx`
+  `hooks/useAnchoredMenu.test.tsx` (the arithmetic over stubbed boxes: a plain anchor, a transformed
+  ancestor, an explicit `transform: none`, the border-box→padding-box pixel, and a phone branch
+  carrying no coordinates at all) + `components/MultiSelect.test.tsx` +
+  `components/photo/AddAutocomplete.test.tsx`
   (matchMedia-driven, fixed overlay vs. `position-static`);
   `useIsNarrowViewport()` = a shared hook over `matchMedia` (`NARROW_VIEWPORT_QUERY` = `(max-width: 767.98px)`,
   Bootstrap `md`;

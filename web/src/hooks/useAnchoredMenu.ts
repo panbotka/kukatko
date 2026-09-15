@@ -32,6 +32,82 @@ const MARGIN = 8
 const MIN_HEIGHT = 120
 
 /**
+ * The `will-change` hints that promise one of the properties below, and so make
+ * an element the containing block for its fixed descendants before the property
+ * is ever set.
+ */
+const CONTAINING_WILL_CHANGE = ['transform', 'perspective', 'filter', 'backdrop-filter']
+
+/** The `contain` values that make an element the containing block. */
+const CONTAINING_CONTAIN = ['layout', 'paint', 'strict', 'content']
+
+/** Reports whether a computed value says the property is actually in effect. */
+function isSet(value: string): boolean {
+  return value !== '' && value !== 'none'
+}
+
+/** Reads a computed length, treating "not laid out" (jsdom, `auto`) as zero. */
+function px(value: string): number {
+  const parsed = Number.parseFloat(value)
+  return Number.isNaN(parsed) ? 0 : parsed
+}
+
+/**
+ * Reports whether `element` is the containing block for `position: fixed`
+ * descendants — i.e. whether a fixed child of it is placed against *its* box
+ * rather than against the viewport.
+ *
+ * A transform is the usual culprit and the one that broke the photo viewer, but
+ * the same is true of `perspective`, `filter`, `backdrop-filter`, a `will-change`
+ * naming any of them, `contain: layout|paint|strict|content` and a container
+ * query context. Any value other than `none` counts — an identity matrix
+ * included, which is why the viewer's drawer qualifies while it sits at
+ * `translateX(0)`.
+ */
+function isFixedContainingBlock(element: HTMLElement): boolean {
+  const style = getComputedStyle(element)
+  const willChange = style.willChange
+  const contain = style.getPropertyValue('contain')
+  const containerType = style.getPropertyValue('container-type')
+  return (
+    isSet(style.transform) ||
+    isSet(style.perspective) ||
+    isSet(style.filter) ||
+    isSet(style.getPropertyValue('backdrop-filter')) ||
+    CONTAINING_WILL_CHANGE.some((property) => willChange.includes(property)) ||
+    CONTAINING_CONTAIN.some((value) => contain.includes(value)) ||
+    (containerType !== '' && containerType !== 'normal')
+  )
+}
+
+/**
+ * The viewport coordinates a fixed child of `element` is placed against: the
+ * padding-box origin of the nearest ancestor that is a containing block for
+ * fixed positioning, or `(0, 0)` when there is none and the viewport itself
+ * holds the child.
+ *
+ * Subtracting this from a viewport measurement is what makes the overlay land
+ * where it was measured. A scaled or rotated ancestor would need more than an
+ * offset, but nothing in the app transforms a menu's ancestor that way — the
+ * drawers translate.
+ */
+function containingBlockOrigin(element: HTMLElement): { top: number; left: number } {
+  for (let parent = element.parentElement; parent !== null; parent = parent.parentElement) {
+    if (!isFixedContainingBlock(parent)) {
+      continue
+    }
+    const rect = parent.getBoundingClientRect()
+    const style = getComputedStyle(parent)
+    // A fixed child is laid out against the padding box; the rect is the border box.
+    return {
+      top: rect.top + px(style.borderTopWidth),
+      left: rect.left + px(style.borderLeftWidth),
+    }
+  }
+  return { top: 0, left: 0 }
+}
+
+/**
  * Places a field's suggestion list so a scrolling ancestor cannot clip it.
  *
  * An `overflow: auto` ancestor — `modal-dialog-scrollable`'s body, above all —
@@ -40,7 +116,12 @@ const MIN_HEIGHT = 120
  * viewport picks between them:
  *
  * - **desktop:** a `position: fixed` overlay measured off the anchor's viewport
- *   box, so no ancestor's overflow applies to it. It is re-measured on a
+ *   box, so no ancestor's overflow applies to it. That viewport measurement is
+ *   then rebased onto the containing block an ancestor may have claimed — a
+ *   transform of any value, an identity matrix included, makes one and would
+ *   otherwise throw the menu as far off screen as the ancestor sits from the
+ *   viewport's corner (the photo viewer's sliding info drawer did exactly that).
+ *   It is re-measured on a
  *   capture-phase `scroll` (the modal body scrolling *under* it is the case a
  *   bubbling listener never sees) and on `resize`, and it takes its layer from
  *   `.kk-overlay-menu` — Bootstrap's `.dropdown-menu` sits at z-index 1000,
@@ -76,7 +157,16 @@ export function useAnchoredMenu(
       MIN_HEIGHT,
       Math.min(window.innerHeight * 0.5, window.innerHeight - rect.bottom - GAP - MARGIN),
     )
-    setPosition({ top: rect.bottom + GAP, left: rect.left, width: rect.width, maxHeight })
+    // `top`/`left` are resolved against the containing block, which is the
+    // viewport only while no ancestor claims fixed descendants for itself; the
+    // height above is a length, so it never needs the same correction.
+    const origin = containingBlockOrigin(element)
+    setPosition({
+      top: rect.bottom + GAP - origin.top,
+      left: rect.left - origin.left,
+      width: rect.width,
+      maxHeight,
+    })
   }, [anchor])
 
   // Only the desktop overlay needs coordinates, and only while it is open.
