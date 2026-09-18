@@ -151,6 +151,12 @@ type ListParams struct {
 	// list/search path to one or more labels so every other filter, the sort and
 	// pagination apply unchanged.
 	LabelUIDs []string
+	// TaskUIDs, when non-empty, restricts the result to photos that are part of
+	// every listed task (AND): each UID contributes its own correlated EXISTS over
+	// photo_task_photos. It is what a task's own page reads its grid from, and it
+	// scopes the shared list/search path exactly as the album and label scopes do,
+	// so every other filter, the sort and pagination apply unchanged.
+	TaskUIDs []string
 	// SubjectUIDs, when non-empty, restricts the result to photos that contain every
 	// listed subject (person/pet/other) — AND semantics like the album/label scopes:
 	// each UID contributes its own correlated EXISTS over markers, so a photo must
@@ -442,15 +448,16 @@ func favoriteClauses(params ListParams, bind func(any) string) []string {
 
 // membershipClauses returns the album/label scoping filters as correlated EXISTS
 // subqueries, binding each UID through bind. It emits one EXISTS per selected
-// album UID and one per selected label UID; because buildWhere joins every clause
+// album UID, one per selected label UID and one per selected task UID; because
+// buildWhere joins every clause
 // with AND, a photo must be a member of every listed album and carry every listed
 // label to match ("in album A and album B, with label X and label Y"). The clauses
-// keep an album- or label-scoped listing on the shared List/Count/Search path, so
+// keep an album-, label- or task-scoped listing on the shared List/Count/Search path, so
 // the standard filters, the chosen ordering and pagination all apply on top of the
 // scope. The outer photo reference is qualified (photos.uid) to disambiguate it
 // from the join table's photo_uid inside the subquery.
 func membershipClauses(params ListParams, bind func(any) string) []string {
-	where := make([]string, 0, len(params.AlbumUIDs)+len(params.LabelUIDs))
+	where := make([]string, 0, len(params.AlbumUIDs)+len(params.LabelUIDs)+len(params.TaskUIDs))
 	for _, albumUID := range params.AlbumUIDs {
 		where = append(where, "EXISTS (SELECT 1 FROM album_photos ap "+
 			"WHERE ap.photo_uid = photos.uid AND ap.album_uid = "+bind(albumUID)+")")
@@ -458,6 +465,10 @@ func membershipClauses(params ListParams, bind func(any) string) []string {
 	for _, labelUID := range params.LabelUIDs {
 		where = append(where, "EXISTS (SELECT 1 FROM photo_labels pl "+
 			"WHERE pl.photo_uid = photos.uid AND pl.label_uid = "+bind(labelUID)+")")
+	}
+	for _, taskUID := range params.TaskUIDs {
+		where = append(where, "EXISTS (SELECT 1 FROM photo_task_photos tp "+
+			"WHERE tp.photo_uid = photos.uid AND tp.task_uid = "+bind(taskUID)+")")
 	}
 	return where
 }
@@ -570,7 +581,8 @@ func hiddenClauses(params ListParams) []string {
 	switch {
 	case params.IncludeHidden:
 		return nil
-	case len(params.AlbumUIDs) > 0 || len(params.LabelUIDs) > 0 || params.FavoriteOf != "":
+	case len(params.AlbumUIDs) > 0 || len(params.LabelUIDs) > 0 || len(params.TaskUIDs) > 0 ||
+		params.FavoriteOf != "":
 		return nil
 	case queryHasFilter(params.QueryFilters, query.KeyHidden), uidLookup(params):
 		return nil

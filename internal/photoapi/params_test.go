@@ -241,6 +241,15 @@ func TestParseListParams_valid(t *testing.T) {
 			},
 		},
 		{
+			name:  "task scope",
+			query: "task=tk_1&task=tk_2",
+			check: func(t *testing.T, p photos.ListParams) {
+				if len(p.TaskUIDs) != 2 || p.TaskUIDs[0] != "tk_1" || p.TaskUIDs[1] != "tk_2" {
+					t.Errorf("task scope mismapped: %v", p.TaskUIDs)
+				}
+			},
+		},
+		{
 			name:  "repeated album and label params select several (AND)",
 			query: "album=al_1&album=al_2&label=lb_1&label=lb_2",
 			check: func(t *testing.T, p photos.ListParams) {
@@ -537,6 +546,7 @@ func TestParseListParams_complexityCap(t *testing.T) {
 		{name: "over-long q rejected", values: url.Values{"q": {overLength}}, wantErr: true},
 		{name: "normal query accepted", values: url.Values{"q": {"beach label:cat|dog iso:100-400"}}, wantErr: false},
 		{name: "too many scope filters rejected", values: url.Values{"album": overScope}, wantErr: true},
+		{name: "too many task scope filters rejected", values: url.Values{"task": overScope}, wantErr: true},
 	}
 
 	for _, tt := range tests {

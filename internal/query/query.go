@@ -54,6 +54,10 @@ const (
 	KeyAlbum Key = "album"
 	// KeyLabel matches photos carrying a label by name or UID (text).
 	KeyLabel Key = "label"
+	// KeyTask matches photos that are part of a task, by its question or its UID
+	// (text) — "everything that batch was about", including the closed ones, so a
+	// finished batch stays findable after its question is answered.
+	KeyTask Key = "task"
 	// KeyPerson matches photos containing a subject by name or UID (text).
 	KeyPerson Key = "person"
 	// KeyFamily matches photos showing a subject's family: that person, every
@@ -203,6 +207,7 @@ var specs = map[Key]spec{
 	KeyText:        {kind: KindText},
 	KeyAlbum:       {kind: KindText},
 	KeyLabel:       {kind: KindText},
+	KeyTask:        {kind: KindText},
 	KeyPerson:      {kind: KindText},
 	KeyFamily:      {kind: KindText},
 	KeyFavorite:    {kind: KindBool},

@@ -264,6 +264,7 @@ func TestHiddenClauses(t *testing.T) {
 		{name: "include-hidden lifts", params: ListParams{IncludeHidden: true}},
 		{name: "album scope lifts", params: ListParams{AlbumUIDs: []string{"al_1"}}},
 		{name: "label scope lifts", params: ListParams{LabelUIDs: []string{"lb_1"}}},
+		{name: "task scope lifts", params: ListParams{TaskUIDs: []string{"tk_1"}}},
 		{name: "favorites scope lifts", params: ListParams{FavoriteOf: "us_1"}},
 		{
 			name:   "subject scope still hides",
@@ -392,6 +393,19 @@ func TestUIDCond(t *testing.T) {
 // filters and pagination.
 func TestBuildListQuery_membershipScope(t *testing.T) {
 	t.Parallel()
+
+	t.Run("task scope binds the uid", func(t *testing.T) {
+		t.Parallel()
+		query, args := buildListQuery(ListParams{TaskUIDs: []string{"tk_1"}})
+		want := "EXISTS (SELECT 1 FROM photo_task_photos tp " +
+			"WHERE tp.photo_uid = photos.uid AND tp.task_uid = $1)"
+		if !strings.Contains(query, want) {
+			t.Errorf("query missing task scope %q: %q", want, query)
+		}
+		if len(args) != 3 || args[0] != "tk_1" {
+			t.Errorf("args = %v, want [tk_1 limit offset]", args)
+		}
+	})
 
 	t.Run("album scope binds the uid", func(t *testing.T) {
 		t.Parallel()

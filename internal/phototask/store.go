@@ -102,8 +102,10 @@ func (f Filter) effectiveStates() []State {
 	return nil
 }
 
-// page returns the limit and offset to query with, clamped to the bounds above.
-func (f Filter) page() (limit, offset int) {
+// Page returns the limit and offset the listing will actually use, clamped to
+// the bounds above. It is exported because the HTTP layer echoes them back to
+// the client, which must be told what it got rather than what it asked for.
+func (f Filter) Page() (limit, offset int) {
 	limit = f.Limit
 	if limit <= 0 {
 		limit = DefaultLimit
@@ -195,7 +197,7 @@ func (s *Store) List(ctx context.Context, f Filter) ([]Task, int, error) {
 		return nil, 0, fmt.Errorf("phototask: counting tasks: %w", err)
 	}
 
-	limit, offset := f.page()
+	limit, offset := f.Page()
 	listQuery := "SELECT " + taskColumns + taskJoins + where + taskOrder +
 		fmt.Sprintf("\nLIMIT $%d OFFSET $%d", len(args)+1, len(args)+2)
 	rows, err := s.pool.Query(ctx, listQuery, append(args, limit, offset)...)

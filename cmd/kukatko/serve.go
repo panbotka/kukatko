@@ -433,6 +433,7 @@ func readAPIOptions(
 		server.WithAPI(buildOrganizeAPI(db, authAPI, exports.sidecar).RegisterRoutes),
 		server.WithAPI(buildFeedbackAPI(db, authAPI).RegisterRoutes),
 		server.WithAPI(buildPlacesAPI(db, authAPI).RegisterRoutes),
+		server.WithAPI(buildPhotoTaskAPI(cfg, db, authAPI).RegisterRoutes),
 		server.WithAPI(buildSavedSearchAPI(db, authAPI).RegisterRoutes),
 		server.WithAPI(buildSearchHistoryAPI(db, authAPI).RegisterRoutes),
 		server.WithAPI(buildAnnouncementAPI(db, authAPI).RegisterRoutes),

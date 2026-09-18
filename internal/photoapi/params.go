@@ -143,13 +143,13 @@ func applyQuery(q url.Values, params *photos.ListParams) ([]string, error) {
 // limit lever; a few hundred is far above any real scoped grid.
 const maxScopeFilters = 256
 
-// capScopeFilters rejects a request whose album, label and person scope filters
+// capScopeFilters rejects a request whose album, label, task and person scope filters
 // together exceed maxScopeFilters, so the multi-value param path cannot be used
 // to force an oversized WHERE clause the way a packed q token could. It returns
 // a descriptive error the caller answers with 400; a normal scoped view carries
 // a handful of UIDs and passes untouched.
 func capScopeFilters(params photos.ListParams) error {
-	n := len(params.AlbumUIDs) + len(params.LabelUIDs) + len(params.SubjectUIDs)
+	n := len(params.AlbumUIDs) + len(params.LabelUIDs) + len(params.TaskUIDs) + len(params.SubjectUIDs)
 	if n > maxScopeFilters {
 		return fmt.Errorf("too many scope filters: %d exceed the limit of %d", n, maxScopeFilters)
 	}
@@ -296,6 +296,10 @@ func applyFilters(q url.Values, params *photos.ListParams) error {
 	// one-element slice, so the historical ?album=<uid> form keeps working.
 	params.AlbumUIDs = nonEmptyValues(q["album"])
 	params.LabelUIDs = nonEmptyValues(q["label"])
+	// Task is multi-valued on the same terms. It is how a task's page reads its
+	// own grid, so the frozen group is browsed with every ordinary filter and
+	// sort available on top of it.
+	params.TaskUIDs = nonEmptyValues(q["task"])
 	// Person is multi-valued too (?person=a&person=b), combined with AND: the grid
 	// narrows to photos that contain every listed subject (person/pet/other).
 	params.SubjectUIDs = nonEmptyValues(q["person"])

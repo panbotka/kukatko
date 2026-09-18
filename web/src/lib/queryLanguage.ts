@@ -61,6 +61,7 @@ export const FILTER_KEYS = [
   'streaming',
   'subject',
   'taken',
+  'task',
   'text',
   'title',
   'type',
@@ -565,6 +566,7 @@ export type QueryHelpRowId =
   | 'photoText'
   | 'album'
   | 'label'
+  | 'task'
   | 'person'
   | 'family'
   | 'uploader'
@@ -643,6 +645,7 @@ export const QUERY_HELP_ROWS: QueryHelpRow[] = [
   { id: 'photoText', keys: 'text:', example: 'text:veselice' },
   { id: 'album', keys: 'album:', example: 'album:"Léto 2024"' },
   { id: 'label', keys: 'label:', example: 'label:cat|dog' },
+  { id: 'task', keys: 'task:', example: 'task:tk7hcmtn79ubvf0ij7cenj7sr5' },
   {
     id: 'person',
     keys: 'person: subject:',
@@ -753,6 +756,8 @@ const KEY_ALIASES: Readonly<Record<string, string | undefined>> = {
   stitky: 'label',
   tvar: 'faces',
   tvare: 'faces',
+  ukol: 'task',
+  ukoly: 'task',
   zeme: 'country',
   zvuk: 'sound',
 }

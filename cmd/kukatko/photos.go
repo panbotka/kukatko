@@ -19,6 +19,7 @@ import (
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photoapi"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/phototask"
 	"github.com/panbotka/kukatko/internal/places"
 	"github.com/panbotka/kukatko/internal/placesjob"
 	"github.com/panbotka/kukatko/internal/processing"
@@ -176,6 +177,7 @@ func buildPhotoAPI(
 		Regeocoder:        rebuilders.regeocoderOrNil(),
 		Rebuilds:          enqueuer,
 		CommentRateLimit:  commentLimit.KeyedMiddlewareExcept(commentRateKey, auth.RateLimitExempt),
+		Tasks:             phototask.NewStore(db.Pool()),
 		RetentionDays:     cfg.Trash.RetentionDays,
 		VideoTranscode:    cfg.Video.Transcode,
 		RequireAuth:       authAPI.RequireAuth,

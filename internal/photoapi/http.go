@@ -23,6 +23,7 @@ import (
 	"github.com/panbotka/kukatko/internal/mediaurl"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/phototask"
 	"github.com/panbotka/kukatko/internal/processing"
 	"github.com/panbotka/kukatko/internal/query"
 	"github.com/panbotka/kukatko/internal/storage"
@@ -61,6 +62,7 @@ type API struct {
 	regeocoder     PhotoRegeocoder
 	rebuilds       RebuildEnqueuer
 	comments       CommentStore
+	tasks          TaskLookup
 	storyboards    StoryboardService
 	hls            HLSRenditions
 	processing     ProcessingService
@@ -172,6 +174,10 @@ type Config struct {
 	// comment_count on the detail response. When nil those endpoints answer 503
 	// and the detail reports a zero count.
 	Comments CommentStore
+	// Tasks backs the open-tasks chip on the detail response: the questions still
+	// waiting on somebody that this photograph is part of. When nil the detail
+	// simply carries none, which is also what a photograph in no task looks like.
+	Tasks TaskLookup
 	// Storyboards backs the video scrub-preview endpoints (status + sprite). When
 	// nil the status endpoint reports "unavailable" and the sprite route answers
 	// 404, so the player simply shows no preview — never an error.
@@ -244,6 +250,7 @@ func NewAPI(cfg Config) *API {
 		regeocoder:        cfg.Regeocoder,
 		rebuilds:          cfg.Rebuilds,
 		comments:          cfg.Comments,
+		tasks:             cfg.Tasks,
 		storyboards:       cfg.Storyboards,
 		hls:               cfg.HLS,
 		processing:        cfg.Processing,
@@ -674,6 +681,11 @@ type photoDetail struct {
 	// badge the thread without fetching it. It is always present (0 for a photo
 	// with no comments, and for an instance with no comments backend wired).
 	CommentCount int `json:"comment_count"`
+	// Tasks is the open questions this photograph is part of, so somebody who
+	// reached it by browsing finds the question without having been sent its link.
+	// Closed tasks are left out: they are the record of settled work, and the chip
+	// is an invitation to answer.
+	Tasks []phototask.Ref `json:"tasks,omitempty"`
 	// Processing is the account of what the library has already computed about the
 	// photo — one entry per step, in a fixed order. It is omitted when no
 	// processing service is wired or the report could not be read; the photo is
@@ -766,6 +778,7 @@ func (a *API) writeDetail(w http.ResponseWriter, r *http.Request, userUID string
 		Place:        a.resolvePlace(r.Context(), photo.UID),
 		StackMembers: members,
 		CommentCount: commentCount,
+		Tasks:        a.resolveTasks(r.Context(), photo.UID),
 		Processing:   a.resolveProcessing(r.Context(), photo.UID),
 		OCRText:      a.resolveOCR(r.Context(), photo.UID),
 		Faces:        a.resolveFaces(r, photo.UID),

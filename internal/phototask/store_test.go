@@ -64,9 +64,9 @@ func TestFilterPage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			limit, offset := tt.filter.page()
+			limit, offset := tt.filter.Page()
 			if limit != tt.wantLimit || offset != tt.wantOffset {
-				t.Errorf("page() = %d, %d, want %d, %d", limit, offset, tt.wantLimit, tt.wantOffset)
+				t.Errorf("Page() = %d, %d, want %d, %d", limit, offset, tt.wantLimit, tt.wantOffset)
 			}
 		})
 	}

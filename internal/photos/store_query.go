@@ -216,6 +216,7 @@ var queryCondBuilders = map[query.Key]condBuilder{
 	query.KeyCodec:       codecCond,
 	query.KeyAlbum:       albumCond,
 	query.KeyLabel:       labelCond,
+	query.KeyTask:        taskCond,
 	query.KeyPerson:      personCond,
 	query.KeyFamily:      familyCond,
 	query.KeyUploader:    uploaderCond,
@@ -320,6 +321,16 @@ func labelCond(v query.Value, env condEnv) (string, bool) {
 	uid := env.bind(v.Text)
 	return "EXISTS (SELECT 1 FROM photo_labels pl JOIN labels l ON l.uid = pl.label_uid " +
 		"WHERE pl.photo_uid = photos.uid AND (l.name ILIKE " + p + " OR l.uid = " + uid + "))", true
+}
+
+// taskCond matches membership in a task by question pattern or exact UID. Closed
+// tasks match too: the frozen group is the record of what a batch of edits
+// touched, and that is exactly what somebody searching for it wants back.
+func taskCond(v query.Value, env condEnv) (string, bool) {
+	p := env.bind(likePattern(v.TextPattern()))
+	uid := env.bind(v.Text)
+	return "EXISTS (SELECT 1 FROM photo_task_photos tp JOIN photo_tasks t ON t.uid = tp.task_uid " +
+		"WHERE tp.photo_uid = photos.uid AND (t.title ILIKE " + p + " OR t.uid = " + uid + "))", true
 }
 
 // personCond matches a contained subject by name or nickname pattern, or by exact

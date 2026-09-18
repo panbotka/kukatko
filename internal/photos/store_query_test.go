@@ -278,6 +278,28 @@ func TestUploaderCond(t *testing.T) {
 // them. A nickname is often the only handle anybody remembers, so a query that
 // matched the name alone would find nobody; binding the pattern twice would be
 // waste, since both are text comparisons of one value.
+// TestTaskCond verifies a task filter matches the question or the exact uid, and
+// that the two placeholders are bound separately — one parameter serving both a
+// text comparison and a VARCHAR one fails type deduction.
+func TestTaskCond(t *testing.T) {
+	t.Parallel()
+
+	sql, args := buildCountQuery(ListParams{QueryFilters: query.Parse("task:dům").Filters})
+	for _, want := range []string{
+		"EXISTS (SELECT 1 FROM photo_task_photos tp JOIN photo_tasks t ON t.uid = tp.task_uid",
+		"tp.photo_uid = photos.uid",
+		"t.title ILIKE $1",
+		"t.uid = $2",
+	} {
+		if !strings.Contains(sql, want) {
+			t.Errorf("query missing %q: %q", want, sql)
+		}
+	}
+	if len(args) != 2 || args[0] != "%dům%" || args[1] != "dům" {
+		t.Errorf("args = %v, want the pattern and the bare uid bound separately", args)
+	}
+}
+
 func TestPersonCond(t *testing.T) {
 	t.Parallel()
 
