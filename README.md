@@ -284,6 +284,31 @@ than pretending to be a gap. A maintainer can run any missing step for that one 
 Right under it, the photo states how it got here as one fact: who uploaded it and when, or simply
 that it was imported.
 
+### Questions only a person can answer
+
+Sorting out an inherited library does not arrive as a stream of small edits. It arrives in batches that
+share a doubt: sixty-seven scans whose printed caption disagrees with their stored date, forty
+photographs dated before the camera that took them was on sale, six copies of one picture carrying three
+different years. Each batch ends somewhere no amount of analysis reaches — in which year was the house
+rebuilt? — and the only person who knows is usually not the person editing the library.
+
+- A **task** is that question, made into a page you can send. It holds the photographs it is about, the
+  question in plain words, whatever context makes it answerable, and the conversation underneath. The
+  link is all somebody needs: they open it, look at three pictures, and write a sentence.
+- **Anybody signed in can answer, including a viewer.** They cannot retitle a photo or move it between
+  albums, and they do not need to — answering is what they are there for. Opening, closing and editing a
+  task stay with the people who curate.
+- **The group of photographs is frozen on purpose.** The search that produced it is kept beside it as
+  evidence and never re-run, because the whole point is that the data is wrong and is about to be fixed —
+  a live group would empty itself the moment the work was done, taking with it the record of which
+  photographs the batch touched. That record is why a finished task is worth keeping rather than deleting.
+- **The state says whose move it is** — waiting for an answer, in progress, ready for approval, done,
+  rejected — and *rejected* is a full result, not a failure: deciding that a doubt is unfounded, or that a
+  date cannot be established, is an answer, and a closed task always says how it ended.
+- The listing marks the tasks **somebody has replied to since anyone last looked**, which is the one thing
+  you actually scan it for. A photograph that belongs to an open task says so on its own page, so the
+  question finds you even when the link did not.
+
 ### Places and video
 
 - A **map** with clustering that says out loud how much of the library carries a location at all,

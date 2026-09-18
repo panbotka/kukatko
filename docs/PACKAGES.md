@@ -1319,7 +1319,10 @@ to `## Package map` in `CLAUDE.md`.
   so the route cannot be used to probe which comment UIDs exist; `writeDetail` stamps **`comment_count`** via
   `commentCount`, which asks the bulk `CountsAmong` for the one UID so the detail can never grow an N+1)),
   `internal/comments/`
-  (the store behind those endpoints — the `photo_comments` table from migration `0052_photo_comments.sql`:
+  (the store behind those endpoints — the `comments` table from migration `0052_photo_comments.sql`,
+  renamed and given a second subject by `0080_comments_subject.sql` (a comment hangs off a photo **or** a
+  task, exactly one of the two, enforced by `comments_one_subject`; the store takes a `Subject` and builds
+  its per-kind statements once at package initialisation, so no request ever assembles SQL):
   `uid PK` (prefix `cm`), `photo_uid` FK **CASCADE** (purging a photo takes its thread with it), `author_uid`
   FK **SET NULL** (a comment outlives its author's account: authorless, and thereafter editable by nobody),
   `body TEXT` with `CHECK (char_length(body) BETWEEN 1 AND 2000)` mirroring `normalizeBody` (trim →
@@ -3200,6 +3203,52 @@ to `## Package map` in `CLAUDE.md`.
   `duplicate_marker.dismiss`/`duplicate_marker.undismiss`, targeting the subject with the photo in the details);
   `ErrTargetNotFound`→404, `ErrEmptyKey`→400,
   otherwise 500; mounted by another `server.WithAPI` (`buildFeedbackAPI` in `cmd/kukatko/feedback.go`)),
+  `internal/phototask/`
+  (the DB layer for the **work queue**: a question about a frozen group of photographs — what the
+  curation of an inherited library actually ends at, "in which year was this rebuilt", which only a
+  person can answer; two tables from migration `0079_photo_tasks.sql`: `photo_tasks` (`uid PK` (prefix
+  `tk`), `title` CHECK 1–200 (the question in one line — it is the page heading and the text of the
+  link that gets sent around), `body` ≤ 8000 (Markdown context), `state VARCHAR(16)` CHECK in
+  `question`/`working`/`review`/`done`/`rejected`, `resolution` ≤ 4000, `source_query` ≤ 2000, `created_by`/`closed_by`
+  FK users **SET NULL**, `created_at`/`updated_at`/`state_at`/`closed_at`, plus the two constraints that
+  make a closed task inseparable from its explanation — `photo_tasks_closed_is_explained` (a closed
+  state carries `closed_at` **and** a non-empty resolution) and `photo_tasks_open_is_not_closed` (an open
+  one carries neither, so reopening cannot leave a stale "closed by")) and `photo_task_photos`
+  (`(task_uid, photo_uid)` PK, both **CASCADE**, `added_at`; the **frozen** membership — an explicit list,
+  never a stored query, because a task exists *because* the data is wrong and is answered by fixing it,
+  so a live group would empty itself the moment the work was done and take the record of what was
+  touched with it. `source_query` keeps the rule that produced the group as evidence and the server
+  never runs it); `State` with `Valid`/`Closed`/`NeedsHuman` + `States`/`OpenStates`, `Task`,
+  `Update` (pointer fields: nil = leave alone), `Filter{States,Open,Answered,Search,PhotoUID,Limit,Offset}`
+  with `Page()` (clamped to `DefaultLimit` 50 / `MaxLimit` 200) and `conditions()`; the rules of an edit
+  are the **pure** `applyUpdate`/`newFields`/`closure`/`diff` in `apply.go`, so the store writes what they
+  return and decides nothing (a state that moves stamps `state_at` and recomputes the closing marks; one
+  that stays put keeps `state_at`, which is what makes "has anybody replied since" mean anything);
+  `Store` = `NewStore(pool)`: `Get`/`List` (returns the page **and** the total before it)/`Create`/`Update`/
+  `Delete`/`AddPhotos`/`RemovePhotos` (each in one transaction with its `audit.Write`, via `inTx`;
+  membership writes `touch` the task so a batch counts as activity) and `OpenForPhotos` (the reverse
+  lookup the photo detail draws its chip from, bulk-shaped so it can never become an N+1);
+  **the read joins the `comments` table itself** rather than enriching afterwards — the thread is where
+  a task's answer arrives, not an ornament on it, so `comment_count`, `last_comment_at` and the derived
+  `has_new_answer` (newest comment later than `state_at`) have to be filterable and pageable in the same
+  query; enriching after paging would silently return short pages), `internal/phototaskapi/`
+  (the HTTP API over tasks; `Store` + `CommentStore` interfaces → unit-testable with fakes;
+  `NewAPI(Config{Store,Comments,RequireAuth,RequireWrite,CommentThrottle})`+`RegisterRoutes` mounts
+  `/tasks` with the guards split where the feature needs them: `GET /tasks` (filters `state` (repeatable
+  and comma-separated, an unknown one → **400** rather than an empty result), `open`, `answered`, `q`,
+  `photo`, `limit`, `offset`; the envelope echoes `limit`/`offset` as actually applied) and
+  `GET /tasks/{uid}` behind **`RequireAuth`**, `POST`/`PATCH`/`DELETE /tasks[/{uid}]` and
+  `POST`/`DELETE /tasks/{uid}/photos` behind `RequireWrite`, and the whole thread
+  (`GET`/`POST /tasks/{uid}/comments` + `PATCH`/`DELETE /tasks/{uid}/comments/{commentUID}`) behind
+  **`RequireAuth`** — answering is what a viewer account is *for* here, since the person who remembers
+  the year is rarely the person who edits the library; the per-user comment throttle is built from the
+  same `ratelimit.Comment` configuration as the photo threads but in its own bucket, so a burst of
+  answers cannot use up somebody's allowance for commenting on photographs; `resolveComment` answers
+  **404** for a comment that belongs to a different task, `canEditComment`/`canDeleteComment` are the
+  same predicates the photo thread uses; **a task's photographs have no route here** — they are read
+  through the catalogue with `GET /photos?task=…`, the same projection, signed media URLs and paging as
+  any other listing, and a second gallery endpoint would only have drifted from the first;
+  mounted by `server.WithAPI` (`buildPhotoTaskAPI` in `cmd/kukatko/phototask.go`, in `readAPIOptions`)),
   `internal/savedsearch/`
   (the DB layer for **per-user saved searches** ("smart albums") — a named, owner's private
   filter/search definition the user reopens; mirrors the per-user ownership of
@@ -3326,10 +3375,15 @@ to `## Package map` in `CLAUDE.md`.
   lock and then sees a `last_seen_at` that is already now), then counts. **What counts:** photos under the
   library grid's own base filter (`archived_at IS NULL AND (stack_uid IS NULL OR stack_primary) AND NOT
   hidden_from_library` — so the number printed equals the number of tiles the link opens), live comments
-  (`deleted_at IS NULL`), **hand-curated** albums only (`type = 'album'`; an import mints folder/moment/month
-  groupings by the hundred) and **named** subjects only (`name <> ''`). **Whose news:** every count — and the
-  album list with it — subtracts the **reader's own** work (`photos.uploaded_by`, `photo_comments.author_uid`,
-  `albums.created_by`, all `IS DISTINCT FROM $2`): the digest reports what *others* did while the reader was
+  (`deleted_at IS NULL`, **photo threads only** — `photo_uid IS NOT NULL`, since migration 0080 put both
+  subjects in one table and a task's thread is answered work rather than library news), **hand-curated**
+  albums only (`type = 'album'`; an import mints folder/moment/month groupings by the hundred), **named**
+  subjects only (`name <> ''`) and **waiting questions** (`photo_tasks` opened since the reference point
+  whose state is still `question`) — the one count that asks something *of* the reader rather than reporting
+  what happened, and the reason somebody who never opens the task list still meets the question they were
+  meant to answer. It takes part in `counts.empty()` like the rest, so it can raise the panel on its own. **Whose news:** every count — and the
+  album list with it — subtracts the **reader's own** work (`photos.uploaded_by`, `comments.author_uid`,
+  `albums.created_by`, `photo_tasks.created_by`, all `IS DISTINCT FROM $2`): the digest reports what *others* did while the reader was
   away, and "1 new comment" for the comment they just wrote is an echo, not news. `IS DISTINCT FROM` rather
   than `<>` because all three columns are `ON DELETE SET NULL` — work whose actor has since been deleted
   belongs to nobody and stays news to everybody. **Subjects are the deliberate exception:** the schema records
@@ -3345,7 +3399,7 @@ to `## Package map` in `CLAUDE.md`.
   `MaxItems` (**6**) links while the counts report the true totals. A `HasNews false` (zero-value) `Summary`
   covers both "first visit" and "nothing happened" so the client branches on one flag. Every count is an
   indexed range over a creation timestamp (`idx_albums_created_at`, `idx_subjects_created_at`,
-  `idx_photo_comments_created_at` from 0053; `idx_photos_live_created_at` from 0015), with the actor exclusion
+  `idx_comments_created_at` from 0053 (renamed with its table by 0080); `idx_photos_live_created_at` from 0015), with the actor exclusion
   a plan `Filter` on top of that `Index Cond` rather than a new access path — pinned by
   `TestCountsStayIndexBacked`, which seeds 4 000 old rows per table and reads the plan back)),
   `internal/whatsnewapi/`

@@ -6,6 +6,7 @@ import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 
 import { useAuth } from '../../auth/AuthContext'
+import { NewTaskModal } from '../tasks/NewTaskModal'
 import { type UseBulkEditResult } from '../../hooks/useBulkEdit'
 import { useIsNarrowViewport } from '../../hooks/useIsNarrowViewport'
 import { pendingOptions, pendingValue, resolvePending } from '../../lib/pendingCreate'
@@ -160,6 +161,9 @@ function BarAction({
  * instead of forcing a second toolbar next to it.
  */
 export function BatchActionBar({ bulk, onSelectAll, extraActions }: BatchActionBarProps) {
+  // Whether the "ask about these" dialog is open. It lives here rather than in
+  // each page because the question is asked from every grid alike.
+  const [asking, setAsking] = useState(false)
   const { t } = useTranslation()
   const { show } = useToast()
   const { canWrite } = useAuth()
@@ -447,6 +451,20 @@ export function BatchActionBar({ bulk, onSelectAll, extraActions }: BatchActionB
   // it renders nothing and the ZIP stays the answer.
   const shareControl = <SharePhotosButton photoUids={bulk.photoUids} variant="outline-light" />
   const stackControl = <StackSelectedControl bulk={bulk} variant="outline-light" />
+  // Asking about a selection is the entry point of the work queue: the answer to
+  // "what year is this?" comes from a person, and a person needs a link to a page
+  // that shows them the photographs and takes a sentence back. Opening the task
+  // here is what makes that link exist.
+  const askAction = (
+    <BarAction
+      icon="ui-checks"
+      label={t('batch.ask')}
+      onClick={() => {
+        setAsking(true)
+      }}
+      disabled={busy}
+    />
+  )
   const moreAction = (
     <BarAction icon="sliders" label={t('batch.more')} onClick={bulk.open} disabled={busy} />
   )
@@ -501,6 +519,7 @@ export function BatchActionBar({ bulk, onSelectAll, extraActions }: BatchActionB
                   {downloadControl}
                   {shareControl}
                   {stackControl}
+                  {askAction}
                   {moreAction}
                   {extras}
                 </div>
@@ -518,6 +537,7 @@ export function BatchActionBar({ bulk, onSelectAll, extraActions }: BatchActionB
             {downloadControl}
             {shareControl}
             {stackControl}
+            {askAction}
             {moreAction}
             {extras}
           </>
@@ -617,6 +637,14 @@ export function BatchActionBar({ bulk, onSelectAll, extraActions }: BatchActionB
         photoUids={bulk.photoUids}
         onHide={bulk.close}
         onDone={bulk.finish}
+      />
+
+      <NewTaskModal
+        show={asking}
+        photoUids={bulk.photoUids}
+        onClose={() => {
+          setAsking(false)
+        }}
       />
     </div>
   )

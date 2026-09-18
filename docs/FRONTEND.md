@@ -266,7 +266,11 @@ here.
   all** — an empty "0 new photos of you" is noise, and for most readers this line simply never exists;
   albums link to `/albums/{uid}` and people to `/people/{uid}` via the shared `DigestLine`, which after the
   server's 6 links appends a plain **non-linked** `whatsNew.more` tail (no page lists "albums created since
-  Tuesday"); comments are a count, not a link. **Dismiss is keyed on the digest's `since`** in localStorage
+  Tuesday"); comments are a count, not a link. **The questions line is drawn last and is a link**
+  (`/tasks?state=question`, key `whatsNew.tasks`): every other line reports what happened, that one asks
+  something of the reader — the questions opened since their last visit that are still waiting for an
+  answer. It goes quiet the moment somebody has replied, because it is an invitation rather than a tally,
+  and it is how the work queue reaches a person who never opens the task list. **Dismiss is keyed on the digest's `since`** in localStorage
   (`lib/whatsNewDismissal.ts`: `readDismissedWhatsNew`/`writeDismissedWhatsNew`, mirrors
   `announcementDismissal.ts`) — `since` is constant for the length of a visit, so closing the panel closes it
   for **this** visit through every reload and every walk around the app, and the next visit's fresh `since`
@@ -1912,6 +1916,36 @@ here.
   the tiles carry the label scope in the detail link (`detailQuery` with `label=uid`) → Esc/Back/prev-next from a photo
   returns to the label; + a **Promítání** button + for editors **hover-select** → the shared
   **`BatchActionBar`** (the library's full set of actions, `onSelectAll`; refetch on success),
+  `TasksPage` = `/tasks` the **work queue**: one row per task (one of its photographs as a 56px tile, the
+  question, the state as a `TaskStateBadge`, the photo/comment counts, and a loud **Nová odpověď** badge when
+  `has_new_answer`), open tasks first and the most recently touched at the top, where a reply counts as a
+  touch. A chip row filters by state (`Otevřené` = the default, `Všechny`, one per state) plus `S odpovědí`,
+  and a search box over the question; all of it round-trips through the URL (`useUrlState`, keys
+  `state`/`answered`/`q`) so Back restores the filter. Every signed-in role may read it — a viewer who was
+  sent a link finds the question again here once the link has scrolled out of their chat — and only
+  `canWrite` sees **Nový úkol**, which opens `NewTaskModal`,
+  `TaskDetailPage` = `/tasks/:uid` the page a **link is sent to**, so it is built for somebody who has never
+  seen Kukátko: the question is the `h1`, the Markdown context and (for a closed task) its resolution follow,
+  then the photographs — a `PhotoGrid` over `useScopedPhotos({task: uid})` and deliberately **no `FilterBar`**,
+  the group being frozen, so filtering it could only hide part of the evidence the question rests on — then
+  the thread (`CommentsPanel` with a `taskSubject`), and last, for a writer only, `TaskControls`. That order
+  is the design: a viewer reaches the box they came to write in without scrolling past controls they cannot
+  use. A 404 lands in a `missing` state of its own (`isNotFound`), because a link outlives the task it points
+  at and "this question has been deleted" is not "could not be loaded". The tiles carry the task scope in the
+  detail link (`detailQuery` with `task=uid`) → Esc/Back/prev-next from a photo returns to the task,
+  `pages/task/TaskControls` (the curation half: a `<select>` of the five states, the **resolution textarea
+  that appears as soon as a closing state is picked** — with Save disabled until it has text, because the
+  server refuses a task that is closed and silent and discovering that as a failed save would be worse than
+  being asked up front — a collapsed editor for the question/context/remembered query, a link that runs the
+  remembered query in `/search`, and Delete behind `ConfirmModal`),
+  `components/tasks/TaskStateBadge` (one state as a badge: the three open states warm, `done` green,
+  `rejected` **grey rather than red** — it is a result, not a failure) and
+  `components/tasks/NewTaskModal` (two fields, question + context, because a question that takes a form to
+  ask does not get asked; on success it navigates straight to the new task, which is both the confirmation
+  and the page whose link gets sent on. `photoUids` opens it over a selection), The selection is where it is
+  usually opened from: **`BatchActionBar` carries a shared „Zeptat se" action** beside Stack, on every grid
+  alike (library, album, label, search), so asking about photographs starts where the photographs are —
+  select, ask, send the link,
   `SearchPage` = semantic/hybrid/fulltext search: a prominent debounced (350 ms)
   search field **spanning the whole width** + the mode switch tucked into `SearchModeControl` below it
   (`q`+`mode` in the URL), the same virtualized grid as the
@@ -2778,13 +2812,22 @@ here.
   **28px of a 426px list** — 0.64 of one row). The viewer’s own drawer is why that overlay
   rebases itself onto the containing block: `.kk-viewer__panel` slides on `transform`, which owns
   every fixed descendant, so a straight viewport measurement put both fields’ lists off screen.
+  **1a0. Otevřený úkol** (a link at the very top of the info panel, only when
+  `photo.tasks` is non-empty) = the questions still waiting on somebody *about this picture*. It is first
+  because it is the one thing in the panel addressed to the reader rather than describing the photograph,
+  and it exists so a person who arrived by browsing meets the question without having been sent its link.
+  Closed tasks never appear: the chip is an invitation to answer, not an archive.
   **1b. Komentáře** (`CommentsPanel`, `components/photo/`, **NEW**) = **the conversation around the photo**,
   mounted directly under the people because that is what it is usually about („kdo je ten kluk vlevo?").
   It is the social half of the archive: most of what a family knows about an old photograph is not metadata
   anybody will ever type into a form, it comes out when someone recognises something and says so. So joining
   in is deliberately cheap — **every signed-in role may post, viewers included** (backend
   `RequireAuth`, not `RequireWrite`, see [`API.md`](API.md)), and the composer is therefore **never hidden
-  from a viewer**; it is the one place in the app where a viewer writes. The panel takes
+  from a viewer**. It used to be the one place in the app where a viewer writes; a task's thread is now
+  the other, and the same components serve both: the panel, `CommentItem` and `useComments` take a
+  **`CommentSubject`** (`{kind: 'photo' | 'task', uid}`, built with `photoSubject`/`taskSubject`) rather
+  than a photo uid, because server-side the two threads are one table with one set of rules and a second
+  copy of this UI would have drifted from the first. The panel takes
   `photoUid` + `currentUserUid` + `canModerate` as **props, not from `useAuth`** (like `PeoplePanel`'s
   `canWrite`), so it renders in a test with no auth provider. Structure: an eyebrow heading that becomes the
   **pluralised count** once there is one (`photo.comments.count`, `_one/_few/_many/_other` — Czech needs

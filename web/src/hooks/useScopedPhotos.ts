@@ -5,14 +5,16 @@ import { fetchPhotos, type PhotoListParams } from '../services/photos'
 import { usePaginatedPhotos, type UsePaginatedPhotosResult } from './usePaginatedPhotos'
 
 /**
- * A photo-list scope: restrict the listing to one album, one label, or one
- * place (country and/or city). The detail pages set exactly the field(s) their
- * view needs (an album, a label, or a country + city); all empty would list the
- * whole library, which these callers never do.
+ * A photo-list scope: restrict the listing to one album, one label, one task, or
+ * one place (country and/or city). The detail pages set exactly the field(s)
+ * their view needs; all empty would list the whole library, which these callers
+ * never do.
  */
 export interface PhotoScope {
   album?: string
   label?: string
+  /** Scope to the frozen group of one task (the task detail page's grid). */
+  task?: string
   /** Scope to photos taken in this country (paired with `city` on the Places page). */
   country?: string
   /** Scope to photos taken in this city. */
@@ -64,10 +66,11 @@ export function useScopedPhotos(
       ...params,
       album: scope.album ?? params.album,
       label: scope.label ?? params.label,
+      task: scope.task ?? params.task,
       country: scope.country ?? params.country,
       city: scope.city ?? params.city,
     }),
-    [params, scope.album, scope.label, scope.country, scope.city],
+    [params, scope.album, scope.label, scope.task, scope.country, scope.city],
   )
   const fetcher = useCallback(
     (p: PhotoListParams, signal: AbortSignal) => fetchPhotos(p, signal),

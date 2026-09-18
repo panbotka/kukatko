@@ -122,6 +122,11 @@ type Summary struct {
 	AlbumCount  int       `json:"album_count"`
 	People      []Person  `json:"people,omitempty"`
 	PersonCount int       `json:"person_count"`
+	// Tasks is how many questions were opened since the reference point and are
+	// still waiting for an answer — the one line of the digest that asks something
+	// of the reader rather than telling them what happened. A person who never
+	// opens the task list still meets the question they were meant to answer.
+	Tasks int `json:"tasks"`
 }
 
 // counts holds the "how many since" numbers, kept together so the assembly of a
@@ -131,6 +136,9 @@ type counts struct {
 	comments int
 	albums   int
 	people   int
+	// tasks counts the questions opened since the reference point that are still
+	// waiting for a person, the reader's own excluded.
+	tasks int
 	// mine counts the new photos the reader appears on. It is a subset of photos
 	// — same base predicate, plus a marker naming the reader's linked person — so
 	// it can never be the only thing that happened, and empty() ignores it.
@@ -140,7 +148,7 @@ type counts struct {
 // empty reports whether nothing at all happened since the reference point, which
 // is what decides that no panel is shown.
 func (c counts) empty() bool {
-	return c.photos == 0 && c.comments == 0 && c.albums == 0 && c.people == 0
+	return c.photos == 0 && c.comments == 0 && c.albums == 0 && c.people == 0 && c.tasks == 0
 }
 
 // newSummary assembles the digest from the reference point, the counts and the
@@ -161,5 +169,6 @@ func newSummary(since time.Time, c counts, albums []Album, people []Person) Summ
 		AlbumCount:  c.albums,
 		People:      people,
 		PersonCount: c.people,
+		Tasks:       c.tasks,
 	}
 }

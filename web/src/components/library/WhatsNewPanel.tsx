@@ -18,6 +18,9 @@ import { Icon } from '../Icon'
  * down a capture-time timeline (a scan of grandma's 1962 negatives is *new* but
  * not *recent*).
  */
+/** Where the questions line leads: the tasks still waiting for a person. */
+const WAITING_TASKS_HREF = '/tasks?state=question'
+
 const RECENTLY_ADDED_HREF = `${LIBRARY_PATH}?sort=added`
 
 /** DOM id of the collapsible detail, so the toggle can point `aria-controls` at it. */
@@ -121,6 +124,7 @@ export function WhatsNewPanel() {
   const comments = summary.comments ?? 0
   const albumTotal = summary.album_count ?? 0
   const personTotal = summary.person_count ?? 0
+  const tasks = summary.tasks ?? 0
   const albums: DigestLink[] = (summary.albums ?? []).map((album) => ({
     uid: album.uid,
     label: album.title,
@@ -143,6 +147,7 @@ export function WhatsNewPanel() {
     albumTotal > 0 ? t('whatsNew.albumsCount', { count: albumTotal }) : '',
     personTotal > 0 ? t('whatsNew.peopleCount', { count: personTotal }) : '',
     comments > 0 ? t('whatsNew.comments', { count: comments }) : '',
+    tasks > 0 ? t('whatsNew.tasks', { count: tasks }) : '',
   ].filter((part) => part !== '')
 
   const toggleLabel = t(expanded ? 'whatsNew.collapse' : 'whatsNew.expand')
@@ -230,6 +235,15 @@ export function WhatsNewPanel() {
                 <DigestLine label={t('whatsNew.people')} links={people} total={personTotal} />
               )}
               {comments > 0 && <li>{t('whatsNew.comments', { count: comments })}</li>}
+              {/* Last, and a link: every other line reports what happened, this
+                  one asks something of the reader. It counts only the questions
+                  still waiting for an answer, so it goes quiet the moment
+                  somebody has replied — it is an invitation, not a tally. */}
+              {tasks > 0 && (
+                <li>
+                  <Link to={WAITING_TASKS_HREF}>{t('whatsNew.tasks', { count: tasks })}</Link>
+                </li>
+              )}
             </ul>
           </div>
         </div>

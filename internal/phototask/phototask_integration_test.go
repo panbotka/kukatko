@@ -126,8 +126,10 @@ func TestCreate_readsBack(t *testing.T) {
 	if task.PhotoCount != 2 {
 		t.Errorf("photo_count = %d, want 2", task.PhotoCount)
 	}
-	if task.CoverPhotoUID != one.UID {
-		t.Errorf("cover = %q, want the first photo added", task.CoverPhotoUID)
+	// The whole batch is inserted in one statement and so shares one added_at:
+	// the cover is whichever uid sorts first, which is arbitrary but stable.
+	if task.CoverPhotoUID != one.UID && task.CoverPhotoUID != two.UID {
+		t.Errorf("cover = %q, want one of the task's photos", task.CoverPhotoUID)
 	}
 	if task.CreatedByUID != actor || task.CreatedByName != "Pan Botka" {
 		t.Errorf("author = %s/%s, want the actor resolved", task.CreatedByUID, task.CreatedByName)

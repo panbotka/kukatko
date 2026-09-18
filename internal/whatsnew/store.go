@@ -108,6 +108,12 @@ func (s *Store) rotateVisit(ctx context.Context, userUID string, now time.Time) 
 // surfaced where it can be acted on — the task listing, which says outright which
 // tasks have been replied to since anybody last looked.
 //
+// The last subquery is the one line of the digest that asks something *of* the
+// reader: questions opened since they were last here that are still waiting for
+// an answer. It counts only the `question` state, because a task already being
+// worked on is not waiting on them, and it excludes their own for the same reason
+// every other line does — being told about the question you asked is not news.
+//
 // $2 is the reader. Their own upload, comment and album are subtracted: the
 // digest reports what *others* did while they were away, and being told about
 // the comment you just wrote is a bug, not news. IS DISTINCT FROM rather than
@@ -133,7 +139,10 @@ SELECT
         WHERE created_at > $1 AND type = 'album'
           AND created_by IS DISTINCT FROM $2),
     (SELECT count(*) FROM subjects
-        WHERE created_at > $1 AND name <> '')`
+        WHERE created_at > $1 AND name <> ''),
+    (SELECT count(*) FROM photo_tasks
+        WHERE created_at > $1 AND state = 'question'
+          AND created_by IS DISTINCT FROM $2)`
 
 // minePhotosSQL counts the new photographs the reader themselves is on. It is
 // the photo predicate of countsSQL — the library grid's own base filter and the
@@ -161,7 +170,7 @@ WHERE p.created_at > $1
 func (s *Store) countSince(ctx context.Context, v visit) (counts, error) {
 	var c counts
 	if err := s.pool.QueryRow(ctx, countsSQL, v.since, v.viewer).
-		Scan(&c.photos, &c.comments, &c.albums, &c.people); err != nil {
+		Scan(&c.photos, &c.comments, &c.albums, &c.people, &c.tasks); err != nil {
 		return counts{}, fmt.Errorf("whatsnew: counting changes: %w", err)
 	}
 	if v.subjectUID == nil || c.photos == 0 {

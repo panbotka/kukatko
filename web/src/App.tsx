@@ -50,6 +50,8 @@ import { SlideshowPage } from './pages/SlideshowPage'
 import { StatsPage } from './pages/StatsPage'
 import { SubjectPage } from './pages/SubjectPage'
 import { SystemStatusPage } from './pages/SystemStatusPage'
+import { TaskDetailPage } from './pages/TaskDetailPage'
+import { TasksPage } from './pages/TasksPage'
 import { TrashPage } from './pages/TrashPage'
 import { UploadPage } from './pages/UploadPage'
 import { UsersPage } from './pages/UsersPage'
@@ -105,6 +107,11 @@ export function AppRoutes() {
           <Route path="/albums/:uid" element={<AlbumDetailPage />} />
           <Route path="/labels" element={<LabelsPage />} />
           <Route path="/labels/:uid" element={<LabelDetailPage />} />
+          {/* The work queue. Readable and answerable by every signed-in role:
+              the person who knows in which year the house was rebuilt is rarely
+              the person who edits the library, and the link is sent to them. */}
+          <Route path="/tasks" element={<TasksPage />} />
+          <Route path="/tasks/:uid" element={<TaskDetailPage />} />
           <Route path="/search" element={<SearchPage />} />
           <Route path="/saved" element={<SavedSearchesPage />} />
           <Route path="/map" element={<MapPage />} />

@@ -48,6 +48,13 @@ export interface WhatsNew {
   album_count?: number
   people?: WhatsNewPerson[]
   person_count?: number
+  /**
+   * How many questions were opened since the last visit and are still waiting
+   * for an answer. It is the one line of the digest that asks something *of* the
+   * reader, which is why it is drawn last and as a link: somebody who never
+   * opens the task list still meets the question they were meant to answer.
+   */
+  tasks?: number
 }
 
 /**

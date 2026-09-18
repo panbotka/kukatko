@@ -463,6 +463,30 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
   wipe while `photos` is truncated, and a dangling pick already has to mean the same as no pick (the
   resolver falls through to the next source), so the constraint would buy nothing and cost the reset a
   special case.
+- **`photo_tasks` + `photo_task_photos`** — the **work queue**: a question about a group of
+  photographs, its state (`question`/`working`/`review`/`done`/`rejected`), the resolution that closes it
+  and the search that produced the group, plus the group itself as `(task_uid, photo_uid)` rows
+  (migration `0079`, see `internal/phototask`). Two decisions are worth naming, because both look like
+  restrictions and are not:
+  - **The membership is an explicit list, never a stored query.** A task exists because some data is
+    wrong and is answered by fixing it, so a group defined by a query ("photographs dated before their
+    camera existed") would empty itself the moment the work was done — taking with it the record of which
+    photographs were changed and why. The query is kept beside the list as evidence and is never run by
+    the server. The frozen list is what lets a *closed* task stay worth keeping, and it is why the batch
+    labels this replaces could never be deleted: one label was both the queue and the receipt.
+  - **A closed task is inseparable from its explanation**, enforced by two CHECK constraints rather than
+    by the application. "Rejected" is a real outcome here — a doubt found unfounded, a date that cannot be
+    established — and the failure mode to design against is not a wrong answer but a task that is closed
+    and silent, which the next reader cannot tell from an abandoned one.
+
+  `state_at` sits beside `updated_at` for one reason: compared against the newest comment on the task it
+  answers what the state alone cannot — has anybody replied since we last looked. That comparison is what
+  an agent polls, and it stays true when nobody remembered to advance the state.
+- **`comments`** — one person's plain-text note on **one subject**: a photograph, or a task. Two nullable
+  foreign keys with a `CHECK (num_nonnulls(photo_uid, task_uid) = 1)`, rather than a `(kind, uid)` pair,
+  so both cascades stay the database's job (migration `0052`, renamed and extended by `0080`). The two
+  threads are one table because they are the same conversation with a different subject — one rate limit,
+  one set of audit actions, one soft-delete rule, one piece of client code.
 - **`jobs`** — persistent queue (see [§8](#8-asynchronni-joby--box-offline)):
   ```
   jobs(

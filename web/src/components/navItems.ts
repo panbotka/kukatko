@@ -72,6 +72,7 @@ export const BROWSE_GROUP: NavGroup = {
       titleKey: 'savedSearches.navTitle',
       icon: 'bookmarks',
     },
+    { to: '/tasks', labelKey: 'nav.tasks', titleKey: 'nav.titles.tasks', icon: 'ui-checks' },
     { to: '/people', labelKey: 'nav.people', titleKey: 'nav.titles.people', icon: 'people' },
     { to: '/places', labelKey: 'nav.places', titleKey: 'nav.titles.places', icon: 'geo-alt' },
     { to: '/map', labelKey: 'nav.map', titleKey: 'nav.titles.map', icon: 'map' },

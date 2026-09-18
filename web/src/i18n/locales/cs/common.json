@@ -95,7 +95,8 @@
       "outliers": "Najít obličeje přiřazené omylem",
       "leaderboard": "Zobrazit žebříček třídění",
       "stats": "Zobrazit statistiky knihovny",
-      "myPhotos": "Zobrazit fotky, na kterých jsem"
+      "myPhotos": "Zobrazit fotky, na kterých jsem",
+      "tasks": "Úkoly"
     },
     "expand": "Rozšířit",
     "review": "Třídění",
@@ -111,7 +112,8 @@
     },
     "stats": "Statistiky",
     "versionTitle": "Verze aplikace",
-    "myPhotos": "Moje fotky"
+    "myPhotos": "Moje fotky",
+    "tasks": "Úkoly"
   },
   "help": {
     "title": "Nápověda",
@@ -1328,6 +1330,75 @@
       "hint": "Připoj tento štítek k fotkám a uvidíš je tady."
     }
   },
+  "tasks": {
+    "title": "Úkoly",
+    "create": "Nový úkol",
+    "loading": "Načítám úkoly…",
+    "error": "Úkoly se nepodařilo načíst.",
+    "empty": {
+      "title": "Žádné úkoly",
+      "hint": "Úkol je otázka nad skupinou fotek. Označ fotky v knihovně a zeptej se."
+    },
+    "filters": {
+      "open": "Otevřené",
+      "all": "Všechny",
+      "answered": "S odpovědí",
+      "search": "Hledat v úkolech",
+      "searchPlaceholder": "Hledat v otázkách…"
+    },
+    "state": {
+      "question": "Čeká na odpověď",
+      "working": "Pracuje se",
+      "review": "Ke schválení",
+      "done": "Hotovo",
+      "rejected": "Zamítnuto"
+    },
+    "row": {
+      "answered": "Nová odpověď",
+      "photos_one": "{{count}} fotka",
+      "photos_few": "{{count}} fotky",
+      "photos_many": "{{count}} fotky",
+      "photos_other": "{{count}} fotek",
+      "comments_one": "{{count}} komentář",
+      "comments_few": "{{count}} komentáře",
+      "comments_many": "{{count}} komentáře",
+      "comments_other": "{{count}} komentářů"
+    }
+  },
+  "taskDetail": {
+    "back": "Úkoly",
+    "missing": "Úkol neexistuje",
+    "missingHint": "Nejspíš byl smazaný. Zkus seznam úkolů.",
+    "error": "Úkol se nepodařilo načíst.",
+    "opened": "Založil {{name}}",
+    "someone": "někdo",
+    "resolution": "Jak to dopadlo",
+    "noPhotos": "Žádné fotky",
+    "noPhotosHint": "K tomuhle úkolu zatím nejsou přiřazené žádné fotky.",
+    "discussion": "Diskuse",
+    "delete": {
+      "title": "Smazat úkol?",
+      "body": "Fotky zůstanou, ale zmizí otázka, seznam fotek, kterých se dávka týkala, i všechny odpovědi. Hotovou práci je lepší zavřít než smazat.",
+      "confirm": "Smazat"
+    },
+    "controls": {
+      "title": "Správa úkolu",
+      "state": "Stav",
+      "resolution": "Jak to dopadlo",
+      "resolutionHint": "Zavřít úkol jde jen s odůvodněním — i „zamítnuto“ je plnohodnotný výsledek.",
+      "resolutionPlaceholder": "Např. 1987 podle kroniky, potvrdil pamětník.",
+      "question": "Otázka",
+      "body": "Kontext",
+      "query": "Zdrojový dotaz",
+      "queryHint": "Dotaz, kterým skupina vznikla. Slouží jako důkaz, nespouští se.",
+      "save": "Uložit",
+      "saving": "Ukládám…",
+      "failed": "Uložení se nepodařilo.",
+      "edit": "Upravit zadání",
+      "delete": "Smazat úkol",
+      "showQuery": "Zobrazit fotky dotazu"
+    }
+  },
   "places": {
     "title": "Místa",
     "breadcrumb": "Procházení míst",
@@ -1541,6 +1612,7 @@
     "labelPlaceholder": "Pište pro filtrování štítků…",
     "favorite": "Oblíbené",
     "archive": "Archivovat",
+    "ask": "Zeptat se",
     "location": {
       "action": "Nastavit polohu",
       "title": "Nastavit polohu vybraných fotek",
@@ -2632,7 +2704,8 @@
       "runNow": "Spustit",
       "runError": "Krok se nepodařilo naplánovat.",
       "runNotApplicable": "Tenhle krok se tady neprovádí."
-    }
+    },
+    "openTask": "Otevřený úkol: {{title}}"
   },
   "upload": {
     "title": "Nahrát",
@@ -3934,7 +4007,11 @@
     "peopleCount_many": "{{count}} nově pojmenovaného člověka",
     "peopleCount_other": "{{count}} nově pojmenovaných lidí",
     "expand": "Podrobnosti",
-    "collapse": "Skrýt podrobnosti"
+    "collapse": "Skrýt podrobnosti",
+    "tasks_one": "{{count}} nová otázka pro tebe",
+    "tasks_few": "{{count}} nové otázky pro tebe",
+    "tasks_many": "{{count}} nové otázky pro tebe",
+    "tasks_other": "{{count}} nových otázek pro tebe"
   },
   "welcome": {
     "title": "Vítej v Kukátku",

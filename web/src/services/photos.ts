@@ -379,6 +379,13 @@ export interface PhotoListParams {
    */
   label?: string
   /**
+   * Scope the listing to the frozen group of one or more tasks (`task` query
+   * param). Like {@link PhotoListParams.album}, several UIDs are comma-joined and
+   * sent as repeated params combined with AND. It is how a task's own page reads
+   * its grid. Empty / undefined means no scope.
+   */
+  task?: string
+  /**
    * Scope the listing to photos that contain one or more subjects/people
    * (`person` query param). Like {@link PhotoListParams.album}, several subject
    * UIDs are comma-joined here and sent as repeated params (`?person=a&person=b`)
@@ -486,6 +493,7 @@ export function buildPhotoQuery(params: PhotoListParams): URLSearchParams {
   set('taken_before', params.taken_before)
   setList('album', params.album)
   setList('label', params.label)
+  setList('task', params.task)
   setList('person', params.person)
   set('uploader', params.uploader)
   set('country', params.country)
@@ -701,6 +709,20 @@ export interface PhotoDetail extends Photo {
    * fetching the thread; optional here only so older fixtures stay valid.
    */
   comment_count?: number
+  /**
+   * The **open** tasks this photograph is part of — the questions still waiting
+   * on somebody. Absent when there are none, and closed tasks are never listed:
+   * the chip the viewer draws from this is an invitation to answer, not an
+   * archive of settled work.
+   */
+  tasks?: PhotoTaskRef[]
+}
+
+/** The compact form of a task, as the photo detail carries it. */
+export interface PhotoTaskRef {
+  uid: string
+  title: string
+  state: string
 }
 
 /**

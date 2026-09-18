@@ -245,3 +245,31 @@ describe('WhatsNewPanel — new photos of you', () => {
     expect(screen.queryByText(/new photos of you/)).not.toBeInTheDocument()
   })
 })
+
+describe('the questions line', () => {
+  it('asks the reader about the tasks still waiting, as a link', async () => {
+    fetchMock.mockResolvedValue({
+      has_news: true,
+      since: '2026-08-08T20:30:00Z',
+      photos: 2,
+      tasks: 3,
+    })
+    renderPanel()
+
+    const link = await screen.findByRole('link', { name: '3 new questions for you' })
+    expect(link).toHaveAttribute('href', '/tasks?state=question')
+  })
+
+  it('stays quiet when nobody is waiting on an answer', async () => {
+    fetchMock.mockResolvedValue({
+      has_news: true,
+      since: '2026-08-08T20:30:00Z',
+      photos: 2,
+      tasks: 0,
+    })
+    renderPanel()
+
+    expect(await screen.findByRole('link', { name: '2 new photos' })).toBeInTheDocument()
+    expect(screen.queryByText(/question/)).not.toBeInTheDocument()
+  })
+})

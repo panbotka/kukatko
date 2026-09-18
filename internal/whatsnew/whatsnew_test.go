@@ -20,7 +20,12 @@ func TestCountsEmpty(t *testing.T) {
 		{name: "only comments", in: counts{comments: 1}, want: false},
 		{name: "only albums", in: counts{albums: 1}, want: false},
 		{name: "only people", in: counts{people: 1}, want: false},
-		{name: "everything", in: counts{photos: 2, comments: 2, albums: 2, people: 2}, want: false},
+		{name: "only a waiting question", in: counts{tasks: 1}, want: false},
+		{
+			name: "everything",
+			in:   counts{photos: 2, comments: 2, albums: 2, people: 2, tasks: 2},
+			want: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -60,7 +65,8 @@ func TestNewSummary_counts(t *testing.T) {
 	since := time.Date(2026, 8, 1, 9, 0, 0, 0, time.UTC)
 	albums := []Album{{UID: "al1", Title: "Léto"}}
 	people := []Person{{UID: "su1", Name: "Anna"}}
-	got := newSummary(since, counts{photos: 12, comments: 4, albums: 9, people: 3}, albums, people)
+	got := newSummary(since, counts{photos: 12, comments: 4, albums: 9, people: 3, tasks: 2},
+		albums, people)
 
 	if !got.HasNews {
 		t.Fatalf("HasNews = false, want true")
@@ -76,6 +82,9 @@ func TestNewSummary_counts(t *testing.T) {
 	}
 	if got.PersonCount != 3 || len(got.People) != 1 {
 		t.Errorf("PersonCount/len(People) = %d/%d, want 3/1", got.PersonCount, len(got.People))
+	}
+	if got.Tasks != 2 {
+		t.Errorf("Tasks = %d, want 2", got.Tasks)
 	}
 }
 

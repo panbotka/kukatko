@@ -152,8 +152,11 @@ type Task struct {
 	ClosedByUID  string     `json:"closed_by,omitempty"`
 	ClosedByName string     `json:"closed_by_name,omitempty"`
 	PhotoCount   int        `json:"photo_count"`
-	// CoverPhotoUID is the first photograph added, used as the listing's
-	// thumbnail. Empty for a task with no photographs.
+	// CoverPhotoUID is one of the task's photographs, used as the listing's
+	// thumbnail: the earliest added, with the uid breaking ties. A whole batch is
+	// normally added in one statement and therefore shares one added_at, so within
+	// a batch the choice is arbitrary — but it is stable, which is all a thumbnail
+	// needs. Empty for a task with no photographs.
 	CoverPhotoUID string `json:"cover_photo_uid,omitempty"`
 	CommentCount  int    `json:"comment_count"`
 	// LastCommentAt is when the newest live comment was written, nil for a thread

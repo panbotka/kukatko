@@ -207,6 +207,13 @@ later — it is a decision about what an autonomous agent may do to someone else
   one person speaking to their family in their own name; an agent posting into that thread would put words
   in a human's mouth, and the audit trail would record a person as their author. Reading is not exposed
   either — a thread is the most personal text in the library and nothing an agent does needs it.
+- **No task tools either — for now, and for a different reason.** The work queue
+  (`internal/phototask`, see [`API.md`](API.md)) is precisely the surface an agent *should* have: it is
+  where a question is asked of a person and where the answer comes back. It is left out only because MCP
+  is off on this instance, so the tools would be code nobody runs; `kukatko ctl tasks` is the agent's
+  path today. Should MCP ever be turned on, the **task** thread is exposed and the **photo** thread stays
+  out: a task's thread is a conversation an agent is a party to, a photo's is a family talking among
+  themselves.
 
 The `TestMCPDestructiveToolsAreNotExposed` test guards this **by intent, not by a list of names**: it takes
 the highest role, walks `tools/list` and fails on any tool whose name contains `delete`, `purge`,

@@ -4185,3 +4185,31 @@ describe('PhotoDetailPage download links', () => {
     )
   })
 })
+
+describe('the open-task chip', () => {
+  it('links to the question somebody is waiting on about this photo', async () => {
+    fetchPhotoMock.mockResolvedValue(
+      photo({
+        tasks: [{ uid: 'tk_1', title: 'In which year was the house rebuilt?', state: 'question' }],
+      }),
+    )
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByRole('heading', { name: 'Beach' })
+    await openInfo(user)
+
+    const link = await screen.findByRole('link', {
+      name: /Open task: In which year was the house rebuilt\?/,
+    })
+    expect(link).toHaveAttribute('href', '/tasks/tk_1')
+  })
+
+  it('draws nothing for a photo no question is waiting on', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByRole('heading', { name: 'Beach' })
+    await openInfo(user)
+
+    expect(screen.queryByText(/Open task:/)).not.toBeInTheDocument()
+  })
+})

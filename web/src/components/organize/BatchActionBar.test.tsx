@@ -608,3 +608,17 @@ describe('BatchActionBar share action', () => {
     expect(screen.getByRole('button', { name: 'Download ZIP' })).toBeInTheDocument()
   })
 })
+
+describe('asking about a selection', () => {
+  it('opens the question dialog over the picked photos', async () => {
+    const user = userEvent.setup()
+    renderBar(makeBulk())
+
+    await user.click(screen.getByRole('button', { name: 'Ask about these' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByRole('heading', { name: 'New task' })).toBeInTheDocument()
+    // The dialog names how many photographs the question will be about.
+    expect(within(dialog).getByText(/2 photos/)).toBeInTheDocument()
+  })
+})

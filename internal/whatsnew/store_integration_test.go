@@ -97,6 +97,23 @@ func (e *env) addAlbum(t *testing.T, uid, title, creator string, createdAt time.
 	           VALUES ($1, $2, $3, 'album', nullif($4, ''), $5, $5)`, uid, uid, title, creator, createdAt)
 }
 
+// addTask opens a task in the given state, created by creator (empty = nobody).
+// The closing marks are computed here rather than in SQL: a closed task must
+// carry both a resolution and a closed_at (the two CHECK constraints of
+// migration 0079), and reusing the state parameter inside a CASE would make pgx
+// deduce two types for it.
+func (e *env) addTask(t *testing.T, uid, state, creator string, createdAt time.Time) {
+	t.Helper()
+	resolution, closedAt := "", any(nil)
+	if state == "done" || state == "rejected" {
+		resolution, closedAt = "hotovo", createdAt
+	}
+	e.exec(t, `INSERT INTO photo_tasks (uid, title, state, resolution, created_by,
+	               created_at, updated_at, state_at, closed_at)
+	           VALUES ($1, 'V kterém roce?', $2, $3, nullif($4, ''), $5, $5, $5, $6)`,
+		uid, state, resolution, creator, createdAt, closedAt)
+}
+
 // addSubject inserts a named person. Subjects record no creator, which is why
 // they are news to everybody.
 func (e *env) addSubject(t *testing.T, uid, name string, createdAt time.Time) {
@@ -144,6 +161,35 @@ func TestOwnWorkIsNotNews(t *testing.T) {
 	if other.Photos != 1 || other.Comments != 1 || other.AlbumCount != 1 {
 		t.Errorf("other reader's photos/comments/albums = %d/%d/%d, want 1/1/1",
 			other.Photos, other.Comments, other.AlbumCount)
+	}
+}
+
+// TestWaitingQuestionsAreNews: a task opened since the reader was last here and
+// still waiting for an answer is the one line of the digest that asks something
+// of them. Their own question is not news to them, and a task already being
+// worked on is not waiting on anybody.
+func TestWaitingQuestionsAreNews(t *testing.T) {
+	env := newEnv(t)
+	env.addUser(t, "usr-a")
+	env.addUser(t, "usr-b")
+	env.openVisits(t, "usr-a", "usr-b")
+
+	at := env.now.Add(-time.Second)
+	env.addTask(t, "tk-open", "question", "usr-a", at)
+	env.addTask(t, "tk-working", "working", "usr-a", at)
+	env.addTask(t, "tk-done", "done", "usr-a", at)
+
+	mine := env.summary(t, "usr-a")
+	if mine.HasNews {
+		t.Errorf("author's own digest = %+v, want has_news false — own question is not news", mine)
+	}
+
+	other := env.summary(t, "usr-b")
+	if !other.HasNews {
+		t.Fatalf("other reader's digest = %+v, want has_news true", other)
+	}
+	if other.Tasks != 1 {
+		t.Errorf("tasks = %d, want 1 — only the one still waiting for an answer", other.Tasks)
 	}
 }
 

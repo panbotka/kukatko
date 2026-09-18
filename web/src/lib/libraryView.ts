@@ -70,6 +70,13 @@ export type LibraryView = {
    */
   label: string
   /**
+   * Task scope: '' (none) or the UID of one task, whose frozen group the listing
+   * is narrowed to. Encoded like {@link LibraryView.album}; it is set by the task
+   * detail page and carried into a photo's detail so paging stays inside the
+   * task, never by the library's own filter bar.
+   */
+  task: string
+  /**
    * Person facet: '' (any) or a comma-joined list of subject UIDs, every one of
    * which a photo must contain (AND). Encoded like {@link LibraryView.album}; a
    * subject is on a photo when a named face/region marker links them.
@@ -138,6 +145,7 @@ export const LIBRARY_DEFAULTS: LibraryView = {
   year: '',
   album: '',
   label: '',
+  task: '',
   person: '',
   uploader: '',
   favorite: '',
@@ -325,6 +333,7 @@ export function viewToParams(view: LibraryView): PhotoListParams {
     q: queryWithDated(view),
     album: view.album,
     label: view.label,
+    task: view.task,
     person: view.person,
     uploader: view.uploader,
     favorite: view.favorite,
@@ -353,6 +362,7 @@ export function hasActiveFilters(
     !isAnyPeriod(periodOf(view)) ||
     view.album !== '' ||
     view.label !== '' ||
+    view.task !== '' ||
     view.person !== '' ||
     view.uploader !== '' ||
     view.favorite !== '' ||

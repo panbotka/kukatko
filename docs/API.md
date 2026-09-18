@@ -295,6 +295,12 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   select several albums/labels at once, combined with **AND** — a photo must be in **all** selected
   albums and carry **all** selected labels (each UID = its own correlated `EXISTS`). A single value
   (`?album={uid}`) is a backward-compatible single-album scope;
+  the **`task` scope** (`?task={uid}`, multi-valued on the same terms) narrows the listing to one
+  task's **frozen group** — the photographs a question is about. It is how a task's own page reads its
+  grid, so the group is browsed with every ordinary filter, sort and page on top of it rather than
+  through a gallery endpoint of its own. Like `album`/`label` (and unlike `person`) it **lifts the
+  default hidden-from-library scope**: a photograph deliberately filed into a task is meant to be seen
+  there. The `album`, `label`, `task` and `person` UIDs together are capped at 256 per request;
   the **`person` scope** (`?person={uid}`, also multi-valued, repeated `?person=a&person=b`,
   combined with **AND**) narrows the listing to photos containing **all** selected subjects
   (person/animal/other) —
@@ -871,8 +877,53 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   as the change, targeting the **photo** with the comment's UID in `details.comment_uid`. Purging a photo
   removes its thread (FK `ON DELETE CASCADE`); deleting a user leaves their comments in place, authorless
   (`ON DELETE SET NULL`) and therefore editable by nobody. **MCP deliberately exposes no comment tool** (see
-  [`MCP.md`](MCP.md)). Table `photo_comments` (migration `0052_photo_comments.sql`); 503 when no comments
-  backend is wired.
+  [`MCP.md`](MCP.md)). Table `comments` (migration `0052_photo_comments.sql`, renamed and given a second subject by
+  `0080_comments_subject.sql`); 503 when no comments backend is wired.
+- **Tasks API (`/api/v1`, `internal/phototaskapi` + `internal/phototask`):** the **work queue** — a
+  question about a frozen group of photographs ("in which year was house no. 2 rebuilt?"), with the state
+  of play and the conversation that settles it. It exists because curating an inherited library arrives in
+  batches that end at something only a person can answer, and until now that question had nowhere to live.
+  `GET /tasks` (authenticated) → `{tasks,total,limit,offset}`, open tasks first and the most recently
+  touched at the top, where a **reply counts as a touch**. Filters: `state` (repeatable **and**
+  comma-separated; an unknown state is a **400**, never an empty result — a typo must say so), `open=true`
+  (the shorthand for the three live states; ignored when `state` is given), `answered=true`, `q` (substring
+  of the question or its context), `photo={uid}`, `limit` (default 50, max 200) / `offset`; the envelope
+  echoes the `limit`/`offset` actually applied, not the ones asked for.
+  Each task carries `uid`, `title` (the question), `body` (Markdown context), `state`
+  (`question`/`working`/`review`/`done`/`rejected`), `resolution`, `query`, `created_by`/`created_by_name`,
+  `created_at`/`updated_at`/`state_at`, `closed_at`/`closed_by`/`closed_by_name`, `photo_count`,
+  `cover_photo_uid`, `comment_count`, `last_comment_at` and the derived **`has_new_answer`** — somebody
+  has written in the thread since the state last moved. That flag is the point of the listing:
+  `GET /tasks?answered=true` is the work that has an answer and is waiting to be written into the library,
+  and it stays true even when nobody remembered to advance the state.
+  `GET /tasks/{uid}` (authenticated) → the task, 404 when deleted.
+  `POST /tasks` `{title,body,query,state,photo_uids}` → **201**; `PATCH /tasks/{uid}`
+  `{title?,body?,query?,state?,resolution?}` → 200 (an omitted field unchanged, an explicit `""` clears it);
+  `DELETE /tasks/{uid}` → 204; `POST`/`DELETE /tasks/{uid}/photos` `{photo_uids}` → `{changed,task}`
+  (already-present / already-absent photographs are ignored, so replaying a batch is harmless) — **all five
+  behind `RequireWrite`**. Closing a task (`state` `done` or `rejected`) without a non-empty `resolution` is
+  a **400**: "rejected" is a real outcome, and what must never exist is a task that is closed and silent.
+  Reopening clears `closed_at`/`closed_by` and keeps the text. Advancing the state stamps `state_at`; an
+  edit that leaves the state alone deliberately does not.
+  **A task's photographs have no route here.** They are read through the catalogue with
+  `GET /photos?task={uid}` — the same projection, signed media URLs, filters and paging as any other
+  listing — and the search language learns `task:` for the same reason.
+  **The thread** (`GET`/`POST /tasks/{uid}/comments`, `PATCH`/`DELETE /tasks/{uid}/comments/{commentUID}`)
+  is the same table, shapes and rules as the per-photo thread above, addressed with a task subject, and it
+  is guarded by **`RequireAuth`** on all four routes. That is not an oversight to be tightened later: the
+  person who remembers the year is rarely the person who edits the library, so answering is exactly what a
+  viewer account is for here. The create route carries the same per-user throttle (429), built from the
+  same `ratelimit.comment` configuration in its own bucket, so a burst of answers cannot use up somebody's
+  allowance for commenting on photographs. A comment addressed through the wrong task answers **404**.
+  `GET /photos/{uid}` carries **`tasks`** — the open tasks the photograph is part of, as
+  `[{uid,title,state}]`, omitted when there are none — so somebody who reached a picture by browsing finds
+  the question without having been sent its link; closed tasks are left out, the chip being an invitation
+  to answer rather than an archive. Every mutation writes its audit entry **in the same transaction**
+  (`task.create` / `task.update` / `task.delete` / `task.add_photos` / `task.remove_photos`, targeting the
+  task; an update carries the field-level diff under `details.changes`, so who closed a task and when is
+  read from the trail without a second action label). Tables `photo_tasks` + `photo_task_photos`
+  (migration `0079_photo_tasks.sql`); the thread lives in `comments` (`0080_comments_subject.sql`), whose
+  503 rule is the photo thread's.
 - **Jobs API (`/api/v1`, `internal/jobsapi`, maintainer-only via `RequireMaintainer`):**
   `GET /jobs/stats` → `{by_state,by_type,total}`; `GET /jobs` → `{jobs,limit,offset}`
   (recent/dead-letter listing, query `state`/`limit`/`offset`, invalid → 400);
@@ -1652,7 +1703,13 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
 - **What's New API (`/api/v1`, `internal/whatsnewapi` + `internal/whatsnew`, authenticated via
   `RequireAuth`):** the digest behind the **"what's new since your last visit"** panel on the library home.
   `GET /whats-new` → `200 {has_news, since?, photos, mine_photos, comments, albums:[{uid,title}], album_count,
-  people:[{uid,name}], person_count}`. **`has_news` is the only flag the client branches on** — it is false
+  people:[{uid,name}], person_count, tasks}`. **`tasks`** is the one number in the digest that asks something
+  *of* the reader rather than telling them what happened: questions opened since their last visit that are
+  still **waiting for an answer** (state `question` only — a task already being worked on waits on nobody),
+  their own excluded like every other line. It is what gives the work queue a way to reach somebody who
+  never opens the task list; the panel draws it as a link to `/tasks?state=question`. The **comment** count
+  stays photo threads only, even though both threads now live in one table — a task's thread is answered
+  work, and it is surfaced where it can be acted on. **`has_news` is the only flag the client branches on** — it is false
   (and everything else absent or zero) for a **first-ever visit** and for a visit that found nothing, and in
   both cases no panel is shown; a vanished account is reported the same way, so the endpoint returns 200 in
   every non-failure case (never 404/204, one shape to parse). A store failure → 500.
@@ -2304,6 +2361,7 @@ put a photo taken minutes either side of New Year in the same year.
 | `text:` | text | the text a recogniser read **inside** the photo (`photos.ocr_text`): a sign, a shop front, a scanned page. Substring, `*` wildcard, and **accent-insensitive** unlike its siblings — the latin recogniser routinely returns a Czech word without its diacritics, so `text:pouť` must still find a sign read as "Pout" |
 | `album:` | text | album membership by **name** (substring) or exact UID |
 | `label:` | text | a label by **name** or UID |
+| `task:` | text | membership in a **task** — the work queue's frozen group — by the task's **question** (substring, `*` wildcard) or exact UID. Closed tasks match too: the group is the record of what a batch of edits touched, which is exactly what somebody searching for it wants back |
 | `person:` (alias `subject:`) | text | a subject by **name**, by **nickname** or by UID, via non-invalid markers. The name and the nickname are matched on the same terms (substring, `*` wildcard, case-insensitive, **diacritics-sensitive** like `album:`) against the same bound pattern, so `person:Bohouš` finds Bohumil Nečas; an empty nickname matches nothing. The exact lower-case value **`me`** is reserved: it means the person the caller's own account is linked to (`users.subject_uid`) — see below |
 | `family:` | text | a whole **family**: the named subject, everybody **descended** from them and all of those people's **partners**, matched through non-invalid markers. The root is named exactly as `person:` names a subject — by **name**, by **nickname** or by **UID**, same substring/`*`/case rules — and the set is the one `GET /subjects/{uid}/tree?direction=descendants` draws, so a page and a filter can never disagree about who "the Nečas family" is. It is deliberately **not** a connected component: in a village the families marry into each other, and a component would eventually swallow everybody and stop filtering anything. A person reachable by two paths (cousins marrying) is counted **once**. The walk is bounded at 20 generations. The exact lower-case value **`me`** is reserved here too — see above. There is **no** Czech alias `rodina:`, for the same reason `osoba:` is unsupported: the key registry is English-only |
 | `uploader:` | text | who uploaded the photo, by the account's **username or display name** (substring, `*` wildcard, and **accent-insensitive** like `text:` — a name is typed from memory, so `uploader:tomas` finds "Tomáš") or by exact UID. Two exact lower-case values are reserved: **`me`** is the caller's own account (see below) and **`none`** are the photos with **no** uploader, the ones an import brought in — so `uploader:!none` is everything somebody did upload |
@@ -2340,7 +2398,7 @@ their question means something for (`queryCondGuards` in `store_query.go`), and 
 the negation: `sound:no`, `sound:!yes` and `duration:!10s` all stay within the clips instead of answering
 for every still in the library. The orientation filters read the stored dimensions, which for a video are
 recorded without rotation handling — a separate question, and none of the four depends on it.
-Structured query params (`?album=`, `?label=`, `?year=`, …) **keep working unchanged** —
+Structured query params (`?album=`, `?label=`, `?task=`, `?year=`, …) **keep working unchanged** —
 the language is purely additive and saved searches stay compatible.
 
 ### Complexity limits (400)

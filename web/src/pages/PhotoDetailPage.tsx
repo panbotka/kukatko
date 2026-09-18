@@ -1645,6 +1645,25 @@ export function PhotoDetailPage() {
           </div>
         )}
         <div className="kk-viewer__panel-body">
+          {/* A question somebody is waiting on about this very picture, first in
+              the panel because it is the one thing here that is addressed to the
+              reader. Somebody who arrived by browsing meets the question without
+              having been sent its link. */}
+          {(photo.tasks ?? []).length > 0 && (
+            <section className="kk-viewer__section">
+              <ul className="list-unstyled d-flex flex-column gap-1 mb-0">
+                {(photo.tasks ?? []).map((task) => (
+                  <li key={task.uid}>
+                    <Link to={`/tasks/${task.uid}`} className="d-flex align-items-center gap-2">
+                      <Icon name="ui-checks" />
+                      <span>{t('photo.openTask', { title: task.title })}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
           {showEdit && (
             <section className="kk-viewer__section">
               <EditPanel

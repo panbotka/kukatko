@@ -381,9 +381,10 @@ Empties this instance's library — every catalogue table and every object the c
 deployment has **no S3 backup**, and the only way back is re-walking the folders the library was
 imported from: a misfire is **unrecoverable**. The guards below are the feature, not decoration.
 
-**What it deletes.** The 28 catalogue tables — `photos`, `photo_files`, `albums`, `album_photos`, `labels`,
-`photo_labels`, `subjects`, `markers`, `faces`, `face_clusters`, `face_detections`, `face_confirmations`,
-`embeddings`, `photo_phashes`, `photo_places`, `photo_edits`, `photo_comments`, `photoprism_aliases`,
+**What it deletes.** The catalogue tables — `photos`, `photo_files`, `albums`, `album_photos`, `labels`,
+`photo_labels`, `photo_tasks`, `photo_task_photos`, `subjects`, `markers`, `faces`, `face_clusters`,
+`face_detections`, `face_confirmations`,
+`embeddings`, `photo_phashes`, `photo_places`, `photo_edits`, `comments`, `photoprism_aliases`,
 `import_runs`, `import_failures`, `jobs`, the
 per-user curation (`user_favorites`, `user_ratings`, `saved_searches`) and the rejection/dismissal tables
 (`face_rejections`, `label_rejections`, `duplicate_dismissals`, `duplicate_marker_dismissals`) — in **one**
@@ -569,7 +570,7 @@ second loop, over people, which [`ctl faces`](#ctl-faces) continues.
 | `--sort` (`list` only) | server default | `newest`/`oldest`/`taken_at`/`added`/`title`/`size`/`rating` |
 | `--order` (`list` only) | per `--sort` | `asc`/`desc` |
 | `--year` | `0` (no filter) | calendar year. **The API has no year** — the client translates it into `taken_after`/`taken_before` |
-| `--album` / `--label` | — | scope to an album/label uid |
+| `--album` / `--label` / `--task` | — | scope to an album/label/task uid |
 | `--favorite` (`list` only) | `false` | only your own favorites |
 | `--archived` | server default (`false`) | `true` = including the archive, `only` = trash only |
 | `--mode` (`search` only) | `hybrid` | `fulltext`/`semantic`/`hybrid` |
@@ -1276,6 +1277,59 @@ kukatkoctl edits set pht01h2j3 --rotate 90              # it was scanned sideway
 kukatkoctl edits reset pht01h2j3                        # and back, thumbnails rebuilt
 kukatkoctl comments list pht01h2j3                      # who remembers what about this photo
 kukatkoctl saved-searches create "Nedatované" --param q="taken:unknown" --param sort=oldest
+```
+
+#### `ctl tasks` — the work queue
+
+A task is a question about a frozen group of photographs, with the state of play and the conversation
+that settles it (`internal/phototaskapi`). Reading a task and writing in its thread are open to every
+signed-in role, viewers included; opening, editing, closing and changing membership need `editor`/`admin`.
+
+| Command | Meaning |
+| --- | --- |
+| `ctl tasks list` | `GET /tasks`; `--state` (comma separated), `--open`, `--answered`, `--search`, `--photo`, `--limit`, `--offset` |
+| `ctl tasks show <uid>` | `GET /tasks/{uid}` |
+| `ctl tasks create [<photo-uid>…]` | `POST /tasks`; `--title` (required), `--body`/`--body-file`, `--query`, `--state`; uids from args or stdin |
+| `ctl tasks update <uid>` | `PATCH /tasks/{uid}`; `--title`, `--body`/`--body-file`, `--query`, `--state`, `--resolution`/`--resolution-file` |
+| `ctl tasks delete <uid>` | `DELETE /tasks/{uid}` — needs `--yes`; the photographs stay |
+| `ctl tasks add-photos <uid> [<photo-uid>…]` | `POST /tasks/{uid}/photos` |
+| `ctl tasks remove-photos <uid> [<photo-uid>…]` | `DELETE /tasks/{uid}/photos` |
+| `ctl tasks comments <uid>` | `GET /tasks/{uid}/comments` |
+| `ctl tasks comment <uid> [<text>]` | `POST /tasks/{uid}/comments`; `--body-file` |
+
+**`ctl tasks list --answered` is the command the loop turns on.** It lists the tasks somebody has replied
+to since the state last moved — the work that has an answer and is waiting to be written into the library
+— and it stays truthful even when nobody remembered to advance the state. In a table listing the same
+thing is the `NEW` column.
+
+A task's photographs are read through the catalogue, not from a route of its own:
+`kukatkoctl photos list --task <uid>` (or `q=task:<uid>`), so the frozen group is browsed with every
+ordinary filter, sort and page on top of it.
+
+Closing a task (`--state done` or `--state rejected`) needs a `--resolution`: "rejected" is a real
+outcome — deciding a doubt is unfounded, or that a date cannot be established — and what must never exist
+is a task that is closed and silent. Reopening one clears the closing marks and keeps the text.
+
+`delete` is behind [the gate](#the-irreversible-commands-and-their-gate) and is the exception rather than
+the way work ends. Finished work is **closed**: the frozen list of photographs is the record of which
+pictures a batch of edits touched, and deleting the task destroys that along with every answer written
+under it.
+
+Long text is awkward on a command line, so `--body-file` and `--resolution-file` read it from a file. The
+comment is attributed to the **token's own account**, always — an agent answers as itself and never puts
+words in a person's mouth, in a thread whose whole value is that it records who remembered what.
+
+```bash
+# What has been answered since we last looked?
+kukatkoctl tasks list --answered -o llm --fields uid,title,state,comment_count
+
+# Open a question over a batch, then send its link to whoever knows.
+kukatkoctl tasks create --title "V kterém roce se přestavoval dům čp. 2?" \
+  --body-file /tmp/context.md --query 'camera:Olympus dated:no' ph1 ph2 ph3
+
+# Write the answer in, then close the task with the reason.
+kukatkoctl tasks comment tk7hcm… --body-file /tmp/answer.txt
+kukatkoctl tasks update tk7hcm… --state done --resolution "1987 podle kroniky"
 ```
 
 #### `ctl favorites` and `ctl rating`

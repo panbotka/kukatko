@@ -95,7 +95,8 @@
       "outliers": "Find faces assigned by mistake",
       "leaderboard": "Show the sorting leaderboard",
       "stats": "Show the library statistics",
-      "myPhotos": "Show the photos I am on"
+      "myPhotos": "Show the photos I am on",
+      "tasks": "Tasks"
     },
     "expand": "Expand",
     "review": "Review",
@@ -111,7 +112,8 @@
     },
     "stats": "Statistics",
     "versionTitle": "App version",
-    "myPhotos": "My photos"
+    "myPhotos": "My photos",
+    "tasks": "Tasks"
   },
   "help": {
     "title": "Help",
@@ -1372,6 +1374,71 @@
       "hint": "Attach this label to photos to see them here."
     }
   },
+  "tasks": {
+    "title": "Tasks",
+    "create": "New task",
+    "loading": "Loading tasks…",
+    "error": "The tasks could not be loaded.",
+    "empty": {
+      "title": "No tasks",
+      "hint": "A task is a question about a group of photos. Select some in the library and ask."
+    },
+    "filters": {
+      "open": "Open",
+      "all": "All",
+      "answered": "Answered",
+      "search": "Search tasks",
+      "searchPlaceholder": "Search the questions…"
+    },
+    "state": {
+      "question": "Waiting for an answer",
+      "working": "In progress",
+      "review": "For approval",
+      "done": "Done",
+      "rejected": "Rejected"
+    },
+    "row": {
+      "answered": "New answer",
+      "photos_one": "{{count}} photo",
+      "photos_other": "{{count}} photos",
+      "comments_one": "{{count}} comment",
+      "comments_other": "{{count}} comments"
+    }
+  },
+  "taskDetail": {
+    "back": "Tasks",
+    "missing": "This task does not exist",
+    "missingHint": "It has probably been deleted. Try the task list.",
+    "error": "The task could not be loaded.",
+    "opened": "Opened by {{name}}",
+    "someone": "someone",
+    "resolution": "How it ended",
+    "noPhotos": "No photos",
+    "noPhotosHint": "No photos have been added to this task yet.",
+    "discussion": "Discussion",
+    "delete": {
+      "title": "Delete this task?",
+      "body": "The photos survive, but the question goes, along with the list of photos the batch was about and every answer written under it. Finished work is better closed than deleted.",
+      "confirm": "Delete"
+    },
+    "controls": {
+      "title": "Manage the task",
+      "state": "State",
+      "resolution": "How it ended",
+      "resolutionHint": "A task can only be closed with a reason — \"rejected\" is a result too.",
+      "resolutionPlaceholder": "E.g. 1987 according to the chronicle, confirmed by a witness.",
+      "question": "Question",
+      "body": "Context",
+      "query": "Source query",
+      "queryHint": "The search the group came from. Kept as evidence; never re-run.",
+      "save": "Save",
+      "saving": "Saving…",
+      "failed": "Saving failed.",
+      "edit": "Edit the question",
+      "delete": "Delete the task",
+      "showQuery": "Show the query's photos"
+    }
+  },
   "places": {
     "title": "Places",
     "breadcrumb": "Places navigation",
@@ -1571,6 +1638,7 @@
     "labelPlaceholder": "Type to filter labels…",
     "favorite": "Favorite",
     "archive": "Archive",
+    "ask": "Ask about these",
     "location": {
       "action": "Set location",
       "title": "Set the location of the selected photos",
@@ -2532,7 +2600,8 @@
       "runNow": "Run now",
       "runError": "Could not schedule the step.",
       "runNotApplicable": "This step does not apply here."
-    }
+    },
+    "openTask": "Open task: {{title}}"
   },
   "upload": {
     "title": "Upload",
@@ -3760,7 +3829,9 @@
     "peopleCount_one": "{{count}} newly named person",
     "peopleCount_other": "{{count}} newly named people",
     "expand": "Details",
-    "collapse": "Hide details"
+    "collapse": "Hide details",
+    "tasks_one": "{{count}} new question for you",
+    "tasks_other": "{{count}} new questions for you"
   },
   "welcome": {
     "title": "Welcome to Kukátko",
