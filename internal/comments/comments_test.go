@@ -123,8 +123,8 @@ func fkError(constraint string) error {
 }
 
 // TestTranslateMutation verifies the error classification: no row changed means
-// the comment is gone, a photo_uid foreign-key violation means the photo is, and
-// anything else keeps its cause with the operation for context.
+// the comment is gone, a subject foreign-key violation means the photo or task is,
+// and anything else keeps its cause with the operation for context.
 func TestTranslateMutation(t *testing.T) {
 	t.Parallel()
 
@@ -138,7 +138,7 @@ func TestTranslateMutation(t *testing.T) {
 		{
 			name: "photo foreign key means the photo is gone",
 			err:  fkError("photo_comments_photo_uid_fkey"),
-			want: ErrPhotoNotFound,
+			want: ErrSubjectNotFound,
 		},
 		{
 			name: "another foreign key is not reported as a missing photo",
@@ -155,7 +155,7 @@ func TestTranslateMutation(t *testing.T) {
 				t.Fatalf("translateMutation(%v) = %v, want %v", tt.err, got, tt.want)
 			}
 			if tt.want == nil {
-				if errors.Is(got, ErrPhotoNotFound) || errors.Is(got, ErrNotFound) {
+				if errors.Is(got, ErrSubjectNotFound) || errors.Is(got, ErrNotFound) {
 					t.Fatalf("translateMutation(%v) = %v, want a wrapped error", tt.err, got)
 				}
 				if !strings.Contains(got.Error(), "testing") {

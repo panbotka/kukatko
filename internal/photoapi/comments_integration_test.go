@@ -335,7 +335,7 @@ func TestCommentsAPI_countAndSoftDelete(t *testing.T) {
 
 	var kept int
 	if err := e.db.Pool().QueryRow(t.Context(),
-		"SELECT count(*) FROM photo_comments WHERE uid = $1 AND deleted_at IS NOT NULL",
+		"SELECT count(*) FROM comments WHERE uid = $1 AND deleted_at IS NOT NULL",
 		first.UID).Scan(&kept); err != nil {
 		t.Fatalf("counting the deleted row: %v", err)
 	}
@@ -412,7 +412,7 @@ func TestCommentsAPI_cascadeOnPurge(t *testing.T) {
 	mustStatus(t, admin, http.MethodPost,
 		e.server.URL+"/api/v1/photos/"+doomed.UID+"/purge?confirm=true", http.StatusNoContent)
 
-	counts, err := e.comments.CountsAmong(t.Context(), []string{doomed.UID, kept.UID})
+	counts, err := e.comments.CountsAmong(t.Context(), comments.SubjectPhoto, []string{doomed.UID, kept.UID})
 	if err != nil {
 		t.Fatalf("CountsAmong: %v", err)
 	}

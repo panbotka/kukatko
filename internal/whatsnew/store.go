@@ -103,6 +103,11 @@ func (s *Store) rotateVisit(ctx context.Context, userUID string, now time.Time) 
 // of tiles the "new photos" link actually opens. Counting raw rows here would
 // promise photos that the destination then silently drops.
 //
+// The comment count is photo threads only. A task's thread (migration 0080 put
+// both in one table) is answered work rather than library news, and it is
+// surfaced where it can be acted on — the task listing, which says outright which
+// tasks have been replied to since anybody last looked.
+//
 // $2 is the reader. Their own upload, comment and album are subtracted: the
 // digest reports what *others* did while they were away, and being told about
 // the comment you just wrote is a bug, not news. IS DISTINCT FROM rather than
@@ -120,8 +125,9 @@ SELECT
           AND (stack_uid IS NULL OR stack_primary)
           AND NOT hidden_from_library
           AND uploaded_by IS DISTINCT FROM $2),
-    (SELECT count(*) FROM photo_comments
+    (SELECT count(*) FROM comments
         WHERE created_at > $1 AND deleted_at IS NULL
+          AND photo_uid IS NOT NULL
           AND author_uid IS DISTINCT FROM $2),
     (SELECT count(*) FROM albums
         WHERE created_at > $1 AND type = 'album'

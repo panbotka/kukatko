@@ -165,7 +165,7 @@ func (e *env) insertSubject(t *testing.T, uid, name string, createdAt time.Time)
 // insertComment inserts a live comment on a photo, created at the given time.
 func (e *env) insertComment(t *testing.T, uid, photoUID string, createdAt time.Time) {
 	t.Helper()
-	e.exec(t, `INSERT INTO photo_comments (uid, photo_uid, body, created_at)
+	e.exec(t, `INSERT INTO comments (uid, photo_uid, body, created_at)
 	           VALUES ($1, $2, 'kdo je to?', $3)`, uid, photoUID, createdAt)
 }
 
@@ -295,7 +295,7 @@ func TestExcludedFromCounts(t *testing.T) {
 	env.insertPhoto(t, "ph-hidden", at)
 	env.exec(t, `UPDATE photos SET hidden_from_library = true WHERE uid = $1`, "ph-hidden")
 	env.insertComment(t, "cm-gone", "ph-visible", at)
-	env.exec(t, `UPDATE photo_comments SET deleted_at = $2 WHERE uid = $1`, "cm-gone", at)
+	env.exec(t, `UPDATE comments SET deleted_at = $2 WHERE uid = $1`, "cm-gone", at)
 	env.exec(t, `INSERT INTO albums (uid, slug, title, type, created_at, updated_at)
 	             VALUES ('al-folder', 'al-folder', '2026/08', 'folder', $1, $1)`, at)
 	env.exec(t, `INSERT INTO subjects (uid, slug, name, type, created_at, updated_at)

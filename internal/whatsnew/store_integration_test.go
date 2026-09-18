@@ -86,7 +86,7 @@ func (e *env) addPhoto(t *testing.T, uid, uploader string, createdAt time.Time) 
 // author's account is gone, since author_uid is ON DELETE SET NULL).
 func (e *env) addComment(t *testing.T, uid, photoUID, author string, createdAt time.Time) {
 	t.Helper()
-	e.exec(t, `INSERT INTO photo_comments (uid, photo_uid, author_uid, body, created_at)
+	e.exec(t, `INSERT INTO comments (uid, photo_uid, author_uid, body, created_at)
 	           VALUES ($1, $2, nullif($3, ''), 'kdo je to?', $4)`, uid, photoUID, author, createdAt)
 }
 
@@ -250,15 +250,15 @@ func TestCountsStayIndexBacked(t *testing.T) {
 	old := env.now.Add(-30 * 24 * time.Hour)
 	env.exec(t, `INSERT INTO photos (uid, file_hash, file_path, created_at, updated_at)
 	             SELECT 'ph'||i, 'h'||i, 'p'||i||'.jpg', $1, $1 FROM generate_series(1, 4000) i`, old)
-	env.exec(t, `INSERT INTO photo_comments (uid, photo_uid, body, created_at)
+	env.exec(t, `INSERT INTO comments (uid, photo_uid, body, created_at)
 	             SELECT 'cm'||i, 'ph'||i, 'x', $1 FROM generate_series(1, 4000) i`, old)
 	env.exec(t, `INSERT INTO albums (uid, slug, title, type, created_at, updated_at)
 	             SELECT 'al'||i, 'al'||i, 'a'||i, 'album', $1, $1 FROM generate_series(1, 4000) i`, old)
 	env.exec(t, `INSERT INTO subjects (uid, slug, name, type, created_at, updated_at)
 	             SELECT 'su'||i, 'su'||i, 's'||i, 'person', $1, $1 FROM generate_series(1, 4000) i`, old)
-	env.exec(t, `ANALYZE photos, photo_comments, albums, subjects`)
+	env.exec(t, `ANALYZE photos, comments, albums, subjects`)
 
-	for _, table := range []string{"photos", "photo_comments", "albums", "subjects"} {
+	for _, table := range []string{"photos", "comments", "albums", "subjects"} {
 		if plan := env.plan(t, table); !strings.Contains(plan, "Index") {
 			t.Errorf("plan for %s is not index-backed:\n%s", table, plan)
 		}
@@ -273,7 +273,7 @@ var countPlans = map[string]string{
           AND (stack_uid IS NULL OR stack_primary)
           AND NOT hidden_from_library
           AND uploaded_by IS DISTINCT FROM $2`,
-	"photo_comments": `SELECT count(*) FROM photo_comments
+	"comments": `SELECT count(*) FROM comments
         WHERE created_at > $1 AND deleted_at IS NULL
           AND author_uid IS DISTINCT FROM $2`,
 	"albums": `SELECT count(*) FROM albums

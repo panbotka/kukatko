@@ -27,17 +27,19 @@ const maxCommentBody = 16 << 10
 // satisfies it and a test fake can stand in. When nil the comment endpoints
 // answer 503 and the detail reports a zero count.
 type CommentStore interface {
-	// List returns the live comments on photoUID, oldest first.
-	List(ctx context.Context, photoUID string) ([]comments.Comment, error)
-	// CountsAmong returns the number of live comments per photo UID; photos
-	// without a comment are absent from the map.
-	CountsAmong(ctx context.Context, photoUIDs []string) (map[string]int, error)
+	// List returns the live comments on the subject, oldest first.
+	List(ctx context.Context, subj comments.Subject) ([]comments.Comment, error)
+	// CountsAmong returns the number of live comments per subject UID within the
+	// kind; subjects without a comment are absent from the map.
+	CountsAmong(ctx context.Context, kind comments.SubjectKind, uids []string) (map[string]int, error)
 	// Get returns one live comment, or comments.ErrNotFound.
 	Get(ctx context.Context, uid string) (comments.Comment, error)
-	// Create stores a comment by authorUID on photoUID, auditing it in the same
-	// transaction. It returns comments.ErrPhotoNotFound for a missing photo and
+	// Create stores a comment by authorUID on the subject, auditing it in the same
+	// transaction. It returns comments.ErrSubjectNotFound for a missing photo and
 	// comments.ErrEmptyBody / comments.ErrBodyTooLong for an invalid body.
-	Create(ctx context.Context, photoUID, authorUID, body string, entry audit.Entry) (comments.Comment, error)
+	Create(
+		ctx context.Context, subj comments.Subject, authorUID, body string, entry audit.Entry,
+	) (comments.Comment, error)
 	// Update rewrites a live comment's body, auditing it in the same transaction.
 	Update(ctx context.Context, uid, body string, entry audit.Entry) (comments.Comment, error)
 	// Delete soft-deletes a live comment, auditing it in the same transaction.
@@ -64,7 +66,7 @@ func (a *API) handleListComments(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "comments backend not configured")
 		return
 	}
-	list, err := a.comments.List(r.Context(), chi.URLParam(r, "uid"))
+	list, err := a.comments.List(r.Context(), comments.PhotoSubject(chi.URLParam(r, "uid")))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "listing comments failed")
 		return
@@ -100,7 +102,7 @@ func (a *API) handleCreateComment(w http.ResponseWriter, r *http.Request) {
 	}
 	photoUID := chi.URLParam(r, "uid")
 	entry := audit.FromRequest(r, user.UID).Entry(audit.ActionCommentCreate, "photos", photoUID, nil)
-	created, err := a.comments.Create(r.Context(), photoUID, user.UID, body.Body, entry)
+	created, err := a.comments.Create(r.Context(), comments.PhotoSubject(photoUID), user.UID, body.Body, entry)
 	if err != nil {
 		writeCommentError(w, err, "creating comment failed")
 		return
@@ -217,7 +219,7 @@ func (a *API) commentCount(ctx context.Context, uid string) (int, error) {
 	if a.comments == nil {
 		return 0, nil
 	}
-	counts, err := a.comments.CountsAmong(ctx, []string{uid})
+	counts, err := a.comments.CountsAmong(ctx, comments.SubjectPhoto, []string{uid})
 	if err != nil {
 		return 0, fmt.Errorf("photoapi: counting comments: %w", err)
 	}
@@ -241,7 +243,7 @@ func decodeComment(r *http.Request) (commentRequest, error) {
 // missing photo or comment, 400 for an invalid body, otherwise 500 with failMsg.
 func writeCommentError(w http.ResponseWriter, err error, failMsg string) {
 	switch {
-	case errors.Is(err, comments.ErrPhotoNotFound):
+	case errors.Is(err, comments.ErrSubjectNotFound):
 		writeError(w, http.StatusNotFound, "photo not found")
 	case errors.Is(err, comments.ErrNotFound):
 		writeError(w, http.StatusNotFound, "comment not found")

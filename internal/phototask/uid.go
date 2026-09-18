@@ -1,4 +1,4 @@
-package comments
+package phototask
 
 import (
 	"crypto/rand"
@@ -7,8 +7,8 @@ import (
 )
 
 const (
-	// commentUIDPrefix marks UIDs that identify comments rows.
-	commentUIDPrefix = "cm"
+	// taskUIDPrefix marks UIDs that identify photo_tasks rows.
+	taskUIDPrefix = "tk"
 	// uidSuffixLen is the number of random characters appended after the prefix.
 	// At ~5 bits per character this yields ~120 bits of entropy, and with the
 	// two-character prefix the total length stays at 26 — within VARCHAR(32).
@@ -20,11 +20,11 @@ const (
 	uidAlphabet = "0123456789abcdefghijklmnopqrstuv"
 )
 
-// newCommentUID returns a fresh UID for a comment row, of the form "cm" followed
-// by uidSuffixLen random base32 characters. It returns a wrapped error only if
-// the system random source fails.
-func newCommentUID() (string, error) {
-	return newUID(commentUIDPrefix)
+// newTaskUID returns a fresh UID for a task row, of the form "tk" followed by
+// uidSuffixLen random base32 characters. It returns a wrapped error only if the
+// system random source fails.
+func newTaskUID() (string, error) {
+	return newUID(taskUIDPrefix)
 }
 
 // newUID returns a UID of the form prefix + uidSuffixLen random base32 chars. It
@@ -32,7 +32,7 @@ func newCommentUID() (string, error) {
 // compile-time constants and a violation is a programming error.
 func newUID(prefix string) (string, error) {
 	if len(prefix)+uidSuffixLen > uidMaxLen {
-		panic(fmt.Sprintf("comments: uid prefix %q too long for VARCHAR(%d)", prefix, uidMaxLen))
+		panic(fmt.Sprintf("phototask: uid prefix %q too long for VARCHAR(%d)", prefix, uidMaxLen))
 	}
 	suffix, err := randomString(uidSuffixLen)
 	if err != nil {
@@ -47,7 +47,7 @@ func newUID(prefix string) (string, error) {
 func randomString(n int) (string, error) {
 	buf := make([]byte, n)
 	if _, err := rand.Read(buf); err != nil {
-		return "", fmt.Errorf("comments: reading random bytes: %w", err)
+		return "", fmt.Errorf("phototask: reading random bytes: %w", err)
 	}
 	var sb strings.Builder
 	sb.Grow(n)

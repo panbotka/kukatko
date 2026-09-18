@@ -55,7 +55,7 @@ func TestCatalogueTables_holdTheLibrary(t *testing.T) {
 	for _, name := range []string{
 		"photos", "photo_files", "albums", "album_photos", "labels", "photo_labels",
 		"subjects", "markers", "faces", "face_detections", "embeddings", "photo_phashes",
-		"photo_places", "photo_edits", "photo_comments", "import_runs", "import_failures", "jobs",
+		"photo_places", "photo_edits", "comments", "import_runs", "import_failures", "jobs",
 		"user_favorites", "user_ratings", "saved_searches", "search_history", "face_rejections",
 		"label_rejections", "duplicate_dismissals", "photoprism_aliases", "photo_hls_renditions",
 	} {

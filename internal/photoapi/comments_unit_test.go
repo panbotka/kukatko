@@ -21,13 +21,15 @@ type fakeComments struct {
 }
 
 // List returns nothing; the thread endpoint is covered by the integration tests.
-func (f *fakeComments) List(_ context.Context, _ string) ([]comments.Comment, error) {
+func (f *fakeComments) List(_ context.Context, _ comments.Subject) ([]comments.Comment, error) {
 	return nil, f.err
 }
 
 // CountsAmong records the requested UIDs and returns the configured counts or error.
-func (f *fakeComments) CountsAmong(_ context.Context, photoUIDs []string) (map[string]int, error) {
-	f.gotUIDs = photoUIDs
+func (f *fakeComments) CountsAmong(
+	_ context.Context, _ comments.SubjectKind, uids []string,
+) (map[string]int, error) {
+	f.gotUIDs = uids
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -41,7 +43,7 @@ func (f *fakeComments) Get(_ context.Context, _ string) (comments.Comment, error
 
 // Create is unused by these tests.
 func (f *fakeComments) Create(
-	_ context.Context, _, _, _ string, _ audit.Entry,
+	_ context.Context, _ comments.Subject, _, _ string, _ audit.Entry,
 ) (comments.Comment, error) {
 	return comments.Comment{}, f.err
 }
@@ -230,7 +232,7 @@ func TestWriteCommentError(t *testing.T) {
 		err  error
 		want int
 	}{
-		{name: "missing photo", err: comments.ErrPhotoNotFound, want: http.StatusNotFound},
+		{name: "missing photo", err: comments.ErrSubjectNotFound, want: http.StatusNotFound},
 		{name: "missing comment", err: comments.ErrNotFound, want: http.StatusNotFound},
 		{name: "empty body", err: comments.ErrEmptyBody, want: http.StatusBadRequest},
 		{name: "over-long body", err: comments.ErrBodyTooLong, want: http.StatusBadRequest},

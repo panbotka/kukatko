@@ -227,6 +227,26 @@ const (
 	// ActionLabelUnreject records a user taking back a label rejection. The photo
 	// UID is in the details, the label UID is the target.
 	ActionLabelUnreject = "label.unreject"
+	// ActionTaskCreate records opening a task — a question about a group of
+	// photographs. The task is the target; the photo UIDs it was opened over are
+	// listed in the details, because the group is the evidence and a later
+	// membership change must not be able to rewrite what was asked about.
+	ActionTaskCreate = "task.create"
+	// ActionTaskUpdate records editing a task: its question, its context, its
+	// remembered query, its resolution, or its state. Every changed field is in
+	// the entry's details as an old/new diff, so closing a task — and who closed
+	// it — is read from the trail without a second action label.
+	ActionTaskUpdate = "task.update"
+	// ActionTaskDelete records deleting a task outright. A finished task is
+	// normally closed rather than deleted, since its frozen list of photographs is
+	// the record of what a batch of edits touched.
+	ActionTaskDelete = "task.delete"
+	// ActionTaskAddPhotos records adding one or more photographs to a task; the
+	// affected photo UIDs are listed in the entry's details.
+	ActionTaskAddPhotos = "task.add_photos"
+	// ActionTaskRemovePhotos records removing one or more photographs from a
+	// task; the affected photo UIDs are listed in the entry's details.
+	ActionTaskRemovePhotos = "task.remove_photos"
 	// ActionFaceAssign records assigning a face to a subject — either by pointing
 	// an existing marker at the subject or by creating a new face marker already
 	// naming it. The affected marker, subject and photo are listed in the details.
@@ -407,7 +427,9 @@ var knownActions = map[string]struct{}{
 	ActionAlbumUpdate: {}, ActionAlbumDelete: {}, ActionAlbumAddPhotos: {},
 	ActionAlbumRemovePhotos: {}, ActionLabelCreate: {}, ActionLabelUpdate: {},
 	ActionLabelDelete: {}, ActionLabelAttach: {}, ActionLabelDetach: {},
-	ActionLabelReject: {}, ActionLabelUnreject: {}, ActionFaceAssign: {},
+	ActionLabelReject: {}, ActionLabelUnreject: {}, ActionTaskCreate: {},
+	ActionTaskUpdate: {}, ActionTaskDelete: {}, ActionTaskAddPhotos: {},
+	ActionTaskRemovePhotos: {}, ActionFaceAssign: {},
 	ActionFaceUnassign: {}, ActionMarkerInvalidate: {}, ActionPersonAttach: {},
 	ActionPersonDetach: {}, ActionFaceReject: {}, ActionFaceUnreject: {},
 	ActionFaceConfirm: {}, ActionFaceUnconfirm: {}, ActionSubjectCreate: {},

@@ -17,7 +17,7 @@ import (
 // foreignKeyViolation is the PostgreSQL SQLSTATE for a foreign-key violation.
 const foreignKeyViolation = "23503"
 
-// Store is the database access layer for photo comments. It owns no connection;
+// Store is the database access layer for comment threads. It owns no connection;
 // it borrows the shared pgx pool supplied at construction.
 type Store struct {
 	pool *pgxpool.Pool
@@ -33,10 +33,18 @@ func NewStore(pool *pgxpool.Pool) *Store {
 // name is resolved here rather than by the caller so one query yields everything
 // a thread needs to render; it collapses to the empty string both for an empty
 // display name (fall back to the username) and for a deleted account (no u row).
-const commentColumns = `c.uid, c.photo_uid, COALESCE(c.author_uid, ''),
+// The two subject columns are collapsed to the empty string as well: exactly one
+// of them is ever set, and Comment reports the unset one as absent.
+const commentColumns = `c.uid, COALESCE(c.photo_uid, ''), COALESCE(c.task_uid, ''),
+	COALESCE(c.author_uid, ''),
 	COALESCE(NULLIF(u.display_name, ''), u.username, ''),
 	s.cover_photo_uid,
 	c.body, c.created_at, c.edited_at`
+
+// mutationColumns is what a mutating CTE returns for the outer select to join
+// against. It is the raw row, not the resolved projection: the author's name is
+// added by the join that reads the CTE back.
+const mutationColumns = `uid, photo_uid, task_uid, author_uid, body, created_at, edited_at`
 
 // authorJoin resolves a comment's author to a user row, and that account to the
 // person it says it is. Both are LEFT JOINs, and for different reasons: the user
@@ -47,23 +55,78 @@ const commentColumns = `c.uid, c.photo_uid, COALESCE(c.author_uid, ''),
 const authorJoin = ` LEFT JOIN users u ON u.uid = c.author_uid` +
 	` LEFT JOIN subjects s ON s.uid = u.subject_uid`
 
-// listSQL reads one photo's live comments oldest first — a conversation reads
-// forwards — with the UID as a stable tie-break for comments written in the same
-// instant. Soft-deleted rows are filtered out here, as on every read path.
-const listSQL = `
-SELECT ` + commentColumns + `
-FROM photo_comments c` + authorJoin + `
-WHERE c.photo_uid = $1 AND c.deleted_at IS NULL
-ORDER BY c.created_at, c.uid`
+// subjectStatements holds the three statements whose text depends on which
+// column carries the subject. They are built once per kind at package
+// initialisation rather than formatted per call, so no request ever assembles
+// SQL and the column name can only ever come from the closed set below.
+type subjectStatements struct {
+	list        string
+	countsAmong string
+	create      string
+}
 
-// List returns the live comments on photoUID, oldest first, each carrying its
-// author's resolved name. A photo with no comments — or one that does not exist —
-// yields an empty slice and a nil error: a thread is a view of a photo, not a
-// claim that it exists, and the caller has already resolved the photo.
-func (s *Store) List(ctx context.Context, photoUID string) ([]Comment, error) {
-	rows, err := s.pool.Query(ctx, listSQL, photoUID)
+// statements maps each subject kind to the statements written against its own
+// column. A kind absent from this map cannot be queried at all, which is what
+// makes ErrInvalidSubject the only possible outcome of an unknown one.
+var statements = map[SubjectKind]subjectStatements{
+	SubjectPhoto: buildStatements("photo_uid"),
+	SubjectTask:  buildStatements("task_uid"),
+}
+
+// buildStatements returns the per-kind statements for the subject stored in
+// column: the thread listing (oldest first — a conversation reads forwards — with
+// the UID as a stable tie-break for comments written in the same instant), the
+// bulk count, and the insert. Soft-deleted rows are filtered out of both reads,
+// as on every read path.
+func buildStatements(column string) subjectStatements {
+	return subjectStatements{
+		list: `
+SELECT ` + commentColumns + `
+FROM comments c` + authorJoin + `
+WHERE c.` + column + ` = $1 AND c.deleted_at IS NULL
+ORDER BY c.created_at, c.uid`,
+		countsAmong: `
+SELECT ` + column + `, count(*)
+FROM comments
+WHERE ` + column + ` = ANY($1) AND deleted_at IS NULL
+GROUP BY ` + column,
+		create: `
+WITH inserted AS (
+    INSERT INTO comments (uid, ` + column + `, author_uid, body)
+    VALUES ($1, $2, $3, $4)
+    RETURNING ` + mutationColumns + `
+)
+SELECT ` + commentColumns + `
+FROM inserted c` + authorJoin,
+	}
+}
+
+// statementsFor returns the statements for subj, or ErrInvalidSubject when it
+// names no known kind or carries no uid.
+func statementsFor(subj Subject) (subjectStatements, error) {
+	if !subj.Valid() {
+		return subjectStatements{}, ErrInvalidSubject
+	}
+	stmts, ok := statements[subj.Kind]
+	if !ok {
+		return subjectStatements{}, ErrInvalidSubject
+	}
+	return stmts, nil
+}
+
+// List returns the live comments on subj, oldest first, each carrying its
+// author's resolved name. A subject with no comments — or one that does not
+// exist — yields an empty slice and a nil error: a thread is a view of a photo or
+// a task, not a claim that it exists, and the caller has already resolved it.
+// An unknown subject kind yields ErrInvalidSubject.
+func (s *Store) List(ctx context.Context, subj Subject) ([]Comment, error) {
+	stmts, err := statementsFor(subj)
 	if err != nil {
-		return nil, fmt.Errorf("comments: listing comments of photo %s: %w", photoUID, err)
+		return nil, err
+	}
+	rows, err := s.pool.Query(ctx, stmts.list, subj.UID)
+	if err != nil {
+		return nil, fmt.Errorf("comments: listing comments of %s %s: %w", subj.Kind, subj.UID, err)
 	}
 	defer rows.Close()
 
@@ -71,38 +134,35 @@ func (s *Store) List(ctx context.Context, photoUID string) ([]Comment, error) {
 	for rows.Next() {
 		c, scanErr := scanComment(rows)
 		if scanErr != nil {
-			return nil, fmt.Errorf("comments: reading comments of photo %s: %w", photoUID, scanErr)
+			return nil, fmt.Errorf("comments: reading comments of %s %s: %w", subj.Kind, subj.UID, scanErr)
 		}
 		out = append(out, c)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("comments: iterating comments of photo %s: %w", photoUID, err)
+		return nil, fmt.Errorf("comments: iterating comments of %s %s: %w", subj.Kind, subj.UID, err)
 	}
 	return out, nil
 }
 
-// countsAmongSQL counts the live comments of many photos in one aggregate pass,
-// so annotating a payload never costs a query per photo.
-const countsAmongSQL = `
-SELECT photo_uid, count(*)
-FROM photo_comments
-WHERE photo_uid = ANY($1) AND deleted_at IS NULL
-GROUP BY photo_uid`
-
-// CountsAmong returns how many live comments each of photoUIDs has, keyed by
-// photo UID. Photos without a comment are absent from the map (a missing key
-// reads as zero), and an empty input yields an empty map without querying.
+// CountsAmong returns how many live comments each of uids has within the thread
+// kind, keyed by subject UID. Subjects without a comment are absent from the map
+// (a missing key reads as zero), and an empty input yields an empty map without
+// querying. An unknown kind yields ErrInvalidSubject.
 //
 // It is deliberately the bulk shape even though the photo detail asks about a
 // single photo: a per-photo count would be one query per item the moment a
 // listing wanted the same badge, and this way that N+1 cannot be written by
 // accident.
-func (s *Store) CountsAmong(ctx context.Context, photoUIDs []string) (map[string]int, error) {
-	out := make(map[string]int, len(photoUIDs))
-	if len(photoUIDs) == 0 {
+func (s *Store) CountsAmong(ctx context.Context, kind SubjectKind, uids []string) (map[string]int, error) {
+	out := make(map[string]int, len(uids))
+	if len(uids) == 0 {
 		return out, nil
 	}
-	rows, err := s.pool.Query(ctx, countsAmongSQL, photoUIDs)
+	stmts, err := statementsFor(Subject{Kind: kind, UID: "-"})
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.pool.Query(ctx, stmts.countsAmong, uids)
 	if err != nil {
 		return nil, fmt.Errorf("comments: counting comments: %w", err)
 	}
@@ -124,10 +184,11 @@ func (s *Store) CountsAmong(ctx context.Context, photoUIDs []string) (map[string
 	return out, nil
 }
 
-// getSQL reads one live comment by UID.
+// getSQL reads one live comment by UID. It needs no per-kind variant: a comment
+// is addressed by its own UID, whatever it hangs off.
 const getSQL = `
 SELECT ` + commentColumns + `
-FROM photo_comments c` + authorJoin + `
+FROM comments c` + authorJoin + `
 WHERE c.uid = $1 AND c.deleted_at IS NULL`
 
 // Get returns the live comment with the given UID, or ErrNotFound when it does
@@ -145,28 +206,23 @@ func (s *Store) Get(ctx context.Context, uid string) (Comment, error) {
 	return c, nil
 }
 
-// createSQL inserts a comment and reads it back with its author resolved. The
-// insert is wrapped in a CTE so the join to users can run over the new row in the
-// same round-trip.
-const createSQL = `
-WITH inserted AS (
-    INSERT INTO photo_comments (uid, photo_uid, author_uid, body)
-    VALUES ($1, $2, $3, $4)
-    RETURNING uid, photo_uid, author_uid, body, created_at, edited_at
-)
-SELECT ` + commentColumns + `
-FROM inserted c` + authorJoin
-
-// Create stores a new comment by authorUID on photoUID and writes entry to the
-// audit log in the same transaction, so a comment that exists always has a record
-// of who wrote it. The body is trimmed and validated (ErrEmptyBody /
-// ErrBodyTooLong); a photo that does not exist yields ErrPhotoNotFound. An empty
-// authorUID stores SQL NULL, which only a caller without a principal can produce.
+// Create stores a new comment by authorUID on subj and writes entry to the audit
+// log in the same transaction, so a comment that exists always has a record of
+// who wrote it. The body is trimmed and validated (ErrEmptyBody /
+// ErrBodyTooLong); a subject that does not exist yields ErrSubjectNotFound, and
+// an unknown kind ErrInvalidSubject. An empty authorUID stores SQL NULL, which
+// only a caller without a principal can produce.
 //
 // The new comment's UID is stamped into the audit entry's details as
 // "comment_uid" — the caller cannot know it in advance, and without it a
 // create entry could not be tied to the row it created.
-func (s *Store) Create(ctx context.Context, photoUID, authorUID, body string, entry audit.Entry) (Comment, error) {
+func (s *Store) Create(
+	ctx context.Context, subj Subject, authorUID, body string, entry audit.Entry,
+) (Comment, error) {
+	stmts, err := statementsFor(subj)
+	if err != nil {
+		return Comment{}, err
+	}
 	trimmed, err := normalizeBody(body)
 	if err != nil {
 		return Comment{}, err
@@ -175,8 +231,8 @@ func (s *Store) Create(ctx context.Context, photoUID, authorUID, body string, en
 	if err != nil {
 		return Comment{}, err
 	}
-	return s.mutateAudited(ctx, entry, "creating comment", createSQL,
-		uid, photoUID, nullableUID(authorUID), trimmed)
+	return s.mutateAudited(ctx, entry, "creating comment", stmts.create,
+		uid, subj.UID, nullableUID(authorUID), trimmed)
 }
 
 // updateSQL rewrites a live comment's body and stamps edited_at, reading the row
@@ -184,10 +240,10 @@ func (s *Store) Create(ctx context.Context, photoUID, authorUID, body string, en
 // editing one is a not-found rather than a resurrection.
 const updateSQL = `
 WITH updated AS (
-    UPDATE photo_comments
+    UPDATE comments
     SET body = $2, edited_at = now()
     WHERE uid = $1 AND deleted_at IS NULL
-    RETURNING uid, photo_uid, author_uid, body, created_at, edited_at
+    RETURNING ` + mutationColumns + `
 )
 SELECT ` + commentColumns + `
 FROM updated c` + authorJoin
@@ -209,10 +265,10 @@ func (s *Store) Update(ctx context.Context, uid, body string, entry audit.Entry)
 // caller can tell a real delete from a no-op.
 const deleteSQL = `
 WITH removed AS (
-    UPDATE photo_comments
+    UPDATE comments
     SET deleted_at = now()
     WHERE uid = $1 AND deleted_at IS NULL
-    RETURNING uid, photo_uid, author_uid, body, created_at, edited_at
+    RETURNING ` + mutationColumns + `
 )
 SELECT ` + commentColumns + `
 FROM removed c` + authorJoin
@@ -258,8 +314,8 @@ func (s *Store) mutateAudited(
 
 // entryWithComment returns entry with the affected comment's UID added to its
 // details, leaving the caller's map untouched (it is copied, not mutated). The
-// audit target stays the photo — a comment is only ever read in the context of
-// the picture it hangs off — so the comment UID lives in the details.
+// audit target stays the subject — a comment is only ever read in the context of
+// the picture or the task it hangs off — so the comment UID lives in the details.
 func entryWithComment(entry audit.Entry, commentUID string) audit.Entry {
 	details := make(map[string]any, len(entry.Details)+1)
 	maps.Copy(details, entry.Details)
@@ -279,8 +335,8 @@ type rowScanner interface {
 // stays wrapped so pgx.ErrNoRows and constraint violations remain classifiable.
 func scanComment(row rowScanner) (Comment, error) {
 	var c Comment
-	if err := row.Scan(&c.UID, &c.PhotoUID, &c.AuthorUID, &c.AuthorName, &c.AuthorPhotoUID,
-		&c.Body, &c.CreatedAt, &c.EditedAt); err != nil {
+	if err := row.Scan(&c.UID, &c.PhotoUID, &c.TaskUID, &c.AuthorUID, &c.AuthorName,
+		&c.AuthorPhotoUID, &c.Body, &c.CreatedAt, &c.EditedAt); err != nil {
 		return Comment{}, fmt.Errorf("scanning comment row: %w", err)
 	}
 	return c, nil
@@ -288,15 +344,17 @@ func scanComment(row rowScanner) (Comment, error) {
 
 // translateMutation maps a failed mutation to the package's sentinel errors: no
 // row changed means the comment is gone (or never existed), and a foreign-key
-// violation on photo_uid means the photo is. Anything else is wrapped with op.
+// violation on either subject column means the photo or task is. Anything else is
+// wrapped with op.
 func translateMutation(err error, op string) error {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotFound
 	}
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == foreignKeyViolation &&
-		strings.Contains(pgErr.ConstraintName, "photo_uid") {
-		return ErrPhotoNotFound
+		(strings.Contains(pgErr.ConstraintName, "photo_uid") ||
+			strings.Contains(pgErr.ConstraintName, "task_uid")) {
+		return ErrSubjectNotFound
 	}
 	return fmt.Errorf("comments: %s: %w", op, err)
 }
