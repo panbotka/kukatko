@@ -33,8 +33,11 @@ const MaxCommentLen = 2000
 // of who is on a photo, where it was taken and when — which is exactly what an
 // agent trying to date a photo needs to read.
 type Comment struct {
-	UID        string    `json:"uid"`
-	PhotoUID   string    `json:"photo_uid"`
+	UID string `json:"uid"`
+	// PhotoUID is set on a photograph's thread, TaskUID on a task's. Exactly one
+	// of the two ever is: server-side they are one table with one subject each.
+	PhotoUID   string    `json:"photo_uid,omitempty"`
+	TaskUID    string    `json:"task_uid,omitempty"`
 	AuthorUID  string    `json:"author_uid"`
 	AuthorName string    `json:"author_name"`
 	Body       string    `json:"body"`
@@ -57,7 +60,7 @@ func (c *Client) ListComments(ctx context.Context, photoUID string) (json.RawMes
 	if err := requireUID("photo", photoUID); err != nil {
 		return nil, err
 	}
-	return c.get(ctx, commentsPath(photoUID), nil)
+	return c.get(ctx, commentsPath("photos", photoUID), nil)
 }
 
 // AddComment appends a comment to a photo's thread and returns the created
@@ -78,19 +81,57 @@ func (c *Client) AddComment(ctx context.Context, photoUID, body string) (json.Ra
 	if err := requireUID("photo", photoUID); err != nil {
 		return nil, err
 	}
+	body, err := normalizeCommentBody(body)
+	if err != nil {
+		return nil, err
+	}
+	return c.send(ctx, http.MethodPost, commentsPath("photos", photoUID), commentBody{Body: body})
+}
+
+// commentsPath renders the thread path for one subject. The collection is the
+// only difference between a photograph's thread and a task's: server-side they
+// are one table, one rate limit and one set of rules.
+func commentsPath(collection, uid string) string {
+	return "/" + collection + "/" + url.PathEscape(uid) + "/comments"
+}
+
+// ListTaskComments fetches a task's thread — the answers to the question it
+// asks. Every signed-in role may read it. Decode it with DecodeComments.
+func (c *Client) ListTaskComments(ctx context.Context, taskUID string) (json.RawMessage, error) {
+	if err := requireUID("task", taskUID); err != nil {
+		return nil, err
+	}
+	return c.get(ctx, commentsPath("tasks", taskUID), nil)
+}
+
+// AddTaskComment answers a task and returns the created comment as raw JSON.
+//
+// The author is the token's owner, on the same terms as AddComment: an agent
+// answers under its own account, never a person's. Every role may write, which
+// on a task is the point rather than an allowance — the person who knows the
+// answer is rarely the person who edits the library.
+func (c *Client) AddTaskComment(ctx context.Context, taskUID, body string) (json.RawMessage, error) {
+	if err := requireUID("task", taskUID); err != nil {
+		return nil, err
+	}
+	body, err := normalizeCommentBody(body)
+	if err != nil {
+		return nil, err
+	}
+	return c.send(ctx, http.MethodPost, commentsPath("tasks", taskUID), commentBody{Body: body})
+}
+
+// normalizeCommentBody trims a body and refuses a blank or over-long one, so a
+// bad body costs no round trip. It is the one validation both threads share.
+func normalizeCommentBody(body string) (string, error) {
 	body = strings.TrimSpace(body)
 	switch {
 	case body == "":
-		return nil, ErrEmptyComment
+		return "", ErrEmptyComment
 	case len([]rune(body)) > MaxCommentLen:
-		return nil, fmt.Errorf("%w: got %d", ErrCommentTooLong, len([]rune(body)))
+		return "", fmt.Errorf("%w: got %d", ErrCommentTooLong, len([]rune(body)))
 	}
-	return c.send(ctx, http.MethodPost, commentsPath(photoUID), commentBody{Body: body})
-}
-
-// commentsPath renders the thread path for one photo.
-func commentsPath(photoUID string) string {
-	return "/photos/" + url.PathEscape(photoUID) + "/comments"
+	return body, nil
 }
 
 // DecodeComments decodes the bare {"comments": […]} envelope.
@@ -123,7 +164,7 @@ func DecodeComment(raw json.RawMessage) (Comment, error) {
 // came for.
 func WriteComments(w io.Writer, comments []Comment) error {
 	if len(comments) == 0 {
-		return writeLine(w, "no comments on this photo")
+		return writeLine(w, "no comments yet")
 	}
 	for i, comment := range comments {
 		if i > 0 {

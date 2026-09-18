@@ -5,11 +5,11 @@ import { useTranslation } from 'react-i18next'
 import { PersonAvatar } from '../PersonAvatar'
 import { formatDateTimeMinutes } from '../../lib/format'
 import { formatRelativeTime } from '../../lib/relativeTime'
-import { MAX_COMMENT_LENGTH, type PhotoComment } from '../../services/comments'
+import { type Comment, MAX_COMMENT_LENGTH } from '../../services/comments'
 
 /** Props for {@link CommentItem}. */
 export interface CommentItemProps {
-  comment: PhotoComment
+  comment: Comment
   /** Whether the reader wrote this comment and may rewrite it. */
   canEdit: boolean
   /** Whether the reader may remove it — its author, or an admin moderating. */

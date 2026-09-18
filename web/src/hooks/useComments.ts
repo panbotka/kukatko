@@ -1,14 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
+  type Comment,
+  type CommentSubject,
   createComment,
   deleteComment,
   fetchComments,
-  type PhotoComment,
   updateComment,
 } from '../services/comments'
 
-/** Fetch lifecycle of one photo's thread. */
+/** Fetch lifecycle of one thread. */
 export type CommentsStatus = 'loading' | 'ready' | 'error'
 
 /** Why a write failed, in the terms a reader cares about. */
@@ -24,7 +25,7 @@ export type CommentFailure =
 export interface UseCommentsResult {
   status: CommentsStatus
   /** The live thread, oldest first. Empty while loading and after a failure. */
-  comments: PhotoComment[]
+  comments: Comment[]
   /** The thread's length — the number the count badge shows. */
   count: number
   /** True while a create/edit/delete is in flight, so the controls can stand down. */
@@ -62,8 +63,9 @@ function classify(err: unknown): CommentFailure {
 }
 
 /**
- * The photo's comment thread as state: loads it, and applies posts, edits and
- * deletes to the local list so the conversation updates in place.
+ * A subject's comment thread as state — a photograph's or a task's: loads it, and
+ * applies posts, edits and deletes to the local list so the conversation updates
+ * in place.
  *
  * Every write reuses the record the backend returns rather than a guess assembled
  * in the browser — the server owns the uid, the timestamps and the author name, and
@@ -71,12 +73,20 @@ function classify(err: unknown): CommentFailure {
  * reload. The trade is one round-trip of latency on a control that is already
  * disabled while it runs.
  *
- * The thread aborts its fetch on unmount / uid change, so paging quickly through
- * photos cannot land an earlier photo's comments in a later photo's panel.
+ * The thread aborts its fetch on unmount / subject change, so paging quickly
+ * through photos cannot land an earlier photo's comments in a later photo's panel.
+ *
+ * The subject may be passed as an inline object: it is keyed on its two fields
+ * rather than on identity, so a caller need not memoise one.
  */
-export function useComments(photoUid: string, options: UseCommentsOptions = {}): UseCommentsResult {
+export function useComments(
+  subject: CommentSubject,
+  options: UseCommentsOptions = {},
+): UseCommentsResult {
+  const { kind, uid: subjectUid } = subject
+  const target = useMemo<CommentSubject>(() => ({ kind, uid: subjectUid }), [kind, subjectUid])
   const [status, setStatus] = useState<CommentsStatus>('loading')
-  const [comments, setComments] = useState<PhotoComment[]>([])
+  const [comments, setComments] = useState<Comment[]>([])
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<CommentFailure | null>(null)
   // Held in a ref so a caller may pass an inline arrow without re-running the load
@@ -85,7 +95,7 @@ export function useComments(photoUid: string, options: UseCommentsOptions = {}):
   onCountChange.current = options.onCountChange
 
   // Reports a new thread length upwards, from the one place the list is replaced.
-  const publish = useCallback((next: PhotoComment[]): void => {
+  const publish = useCallback((next: Comment[]): void => {
     setComments(next)
     onCountChange.current?.(next.length)
   }, [])
@@ -93,7 +103,7 @@ export function useComments(photoUid: string, options: UseCommentsOptions = {}):
   useEffect(() => {
     const controller = new AbortController()
     setStatus('loading')
-    fetchComments(photoUid, controller.signal)
+    fetchComments(target, controller.signal)
       .then((list) => {
         if (!controller.signal.aborted) {
           publish(list)
@@ -109,12 +119,12 @@ export function useComments(photoUid: string, options: UseCommentsOptions = {}):
     return () => {
       controller.abort()
     }
-  }, [photoUid, publish])
+  }, [target, publish])
 
   // The shared shape of every write: stand the controls down, run it, and either
   // apply the server's answer to the list or report why it did not happen.
   const run = useCallback(
-    async (apply: () => Promise<PhotoComment[]>): Promise<boolean> => {
+    async (apply: () => Promise<Comment[]>): Promise<boolean> => {
       setBusy(true)
       setFailure(null)
       try {
@@ -133,29 +143,29 @@ export function useComments(photoUid: string, options: UseCommentsOptions = {}):
   const post = useCallback(
     (body: string): Promise<boolean> =>
       run(async () => {
-        const created = await createComment(photoUid, body)
+        const created = await createComment(target, body)
         // Appended, not prepended: the thread reads oldest first, like a conversation.
         return [...comments, created]
       }),
-    [comments, photoUid, run],
+    [comments, target, run],
   )
 
   const edit = useCallback(
     (uid: string, body: string): Promise<boolean> =>
       run(async () => {
-        const edited = await updateComment(photoUid, uid, body)
+        const edited = await updateComment(target, uid, body)
         return comments.map((item) => (item.uid === uid ? edited : item))
       }),
-    [comments, photoUid, run],
+    [comments, target, run],
   )
 
   const remove = useCallback(
     (uid: string): Promise<boolean> =>
       run(async () => {
-        await deleteComment(photoUid, uid)
+        await deleteComment(target, uid)
         return comments.filter((item) => item.uid !== uid)
       }),
-    [comments, photoUid, run],
+    [comments, target, run],
   )
 
   return { status, comments, count: comments.length, busy, failure, post, edit, remove }

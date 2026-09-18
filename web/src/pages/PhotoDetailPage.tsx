@@ -95,6 +95,7 @@ import {
 import { shouldWatchEncode, videoEncode } from '../lib/videoEncode'
 import { preloadUids } from '../lib/viewerPreload'
 import { isNotFound } from '../services/auth'
+import { photoSubject } from '../services/comments'
 import {
   archivePhoto,
   downloadUrl,
@@ -1719,7 +1720,7 @@ export function PhotoDetailPage() {
               {panelOpen && (
                 <section className="kk-viewer__section">
                   <CommentsPanel
-                    photoUid={photo.uid}
+                    subject={photoSubject(photo.uid)}
                     currentUserUid={user?.uid ?? null}
                     canModerate={isAdmin}
                     onCountChange={setCommentCount}

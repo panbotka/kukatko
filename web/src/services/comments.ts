@@ -1,9 +1,14 @@
 import { ApiError } from './auth'
 
 /**
- * Photo-comments client, mirroring the backend JSON shapes of `internal/comments`
- * and the comment routes of `internal/photoapi`. A comment is one short plain-text
- * note by one user on one photo — the family conversation around a picture.
+ * Comments client, mirroring the backend JSON shapes of `internal/comments` and
+ * the comment routes of `internal/photoapi` and `internal/phototaskapi`. A comment
+ * is one short plain-text note by one user on one subject: a photograph — the
+ * family conversation around a picture — or a task, where it is the answer to the
+ * question the task asks.
+ *
+ * Which of the two a thread belongs to is a {@link CommentSubject}; everything
+ * below it is identical, because server-side it is one table and one set of rules.
  *
  * Two properties of the backend shape the whole client:
  *
@@ -28,16 +33,40 @@ const API_BASE = '/api/v1'
  */
 export const MAX_COMMENT_LENGTH = 2000
 
+/** What a comment thread hangs off: a photograph, or a task. */
+export type CommentSubjectKind = 'photo' | 'task'
+
+/** The one thing a thread is about — the kind, and the uid of that row. */
+export interface CommentSubject {
+  kind: CommentSubjectKind
+  uid: string
+}
+
+/** Names the thread of a photograph. */
+export function photoSubject(uid: string): CommentSubject {
+  return { kind: 'photo', uid }
+}
+
+/** Names the thread of a task. */
+export function taskSubject(uid: string): CommentSubject {
+  return { kind: 'task', uid }
+}
+
 /**
  * One stored comment as read back from the API (`comments.Comment`).
+ *
+ * Exactly one of `photo_uid` and `task_uid` is set, matching the row's one subject.
  *
  * `author_uid` and `author_name` are **empty strings** for a comment whose author's
  * account has since been deleted: the row survives authorless, and nobody may edit
  * it any more. Renderers must therefore not assume a name is present.
  */
-export interface PhotoComment {
+export interface Comment {
   uid: string
-  photo_uid: string
+  /** The photograph this comment is on; absent on a task thread. */
+  photo_uid?: string
+  /** The task this comment is on; absent on a photo thread. */
+  task_uid?: string
   author_uid: string
   /** The author's display name (falling back to the username), resolved server-side. */
   author_name: string
@@ -55,9 +84,9 @@ export interface PhotoComment {
   edited_at?: string
 }
 
-/** Response body of `GET /api/v1/photos/{uid}/comments`. */
+/** Response body of the thread endpoint of either subject. */
 interface CommentListResponse {
-  comments: PhotoComment[]
+  comments: Comment[]
 }
 
 /** Standard backend error envelope shared by every API group. */
@@ -102,37 +131,41 @@ async function send<T>(
   return (text === '' ? undefined : JSON.parse(text)) as T
 }
 
-/** Builds the thread path for a photo, escaping the uid. */
-function threadPath(photoUid: string): string {
-  return `/photos/${encodeURIComponent(photoUid)}/comments`
+/**
+ * Builds the thread path for a subject, escaping the uid. The two collections are
+ * the only difference between a photo thread and a task thread.
+ */
+function threadPath(subject: CommentSubject): string {
+  const collection = subject.kind === 'task' ? 'tasks' : 'photos'
+  return `/${collection}/${encodeURIComponent(subject.uid)}/comments`
 }
 
 /**
- * Lists a photo's comments, **oldest first** — a conversation reads forwards.
+ * Lists a subject's comments, **oldest first** — a conversation reads forwards.
  *
- * A photo with no comments (and, deliberately, a photo that does not exist) yields
+ * A subject with no comments (and, deliberately, one that does not exist) yields
  * an empty array rather than a 404, so an empty thread is a normal result.
  */
 export async function fetchComments(
-  photoUid: string,
+  subject: CommentSubject,
   signal?: AbortSignal,
-): Promise<PhotoComment[]> {
-  const body = await send<CommentListResponse>('GET', threadPath(photoUid), undefined, signal)
+): Promise<Comment[]> {
+  const body = await send<CommentListResponse>('GET', threadPath(subject), undefined, signal)
   return body.comments
 }
 
 /**
- * Appends a comment to a photo's thread and returns the created record.
+ * Appends a comment to a subject's thread and returns the created record.
  *
  * @throws ApiError 400 (blank or over-long body), 404 (no such photo) or 429 (the
  *   per-user rate limit — the caller should say "slow down", not "it failed").
  */
 export async function createComment(
-  photoUid: string,
+  subject: CommentSubject,
   body: string,
   signal?: AbortSignal,
-): Promise<PhotoComment> {
-  return send<PhotoComment>('POST', threadPath(photoUid), { body }, signal)
+): Promise<Comment> {
+  return send<Comment>('POST', threadPath(subject), { body }, signal)
 }
 
 /**
@@ -141,17 +174,17 @@ export async function createComment(
  *
  * @throws ApiError 403 (someone else's comment — admins included: an admin may
  *   remove a comment but never rewrite what someone is recorded as having said) or
- *   404 (already deleted, or addressed through the wrong photo).
+ *   404 (already deleted, or addressed through the wrong subject).
  */
 export async function updateComment(
-  photoUid: string,
+  subject: CommentSubject,
   commentUid: string,
   body: string,
   signal?: AbortSignal,
-): Promise<PhotoComment> {
-  return send<PhotoComment>(
+): Promise<Comment> {
+  return send<Comment>(
     'PATCH',
-    `${threadPath(photoUid)}/${encodeURIComponent(commentUid)}`,
+    `${threadPath(subject)}/${encodeURIComponent(commentUid)}`,
     { body },
     signal,
   )
@@ -164,13 +197,13 @@ export async function updateComment(
  * @throws ApiError 403 (not the author and not an admin) or 404 (already deleted).
  */
 export async function deleteComment(
-  photoUid: string,
+  subject: CommentSubject,
   commentUid: string,
   signal?: AbortSignal,
 ): Promise<void> {
   await send<undefined>(
     'DELETE',
-    `${threadPath(photoUid)}/${encodeURIComponent(commentUid)}`,
+    `${threadPath(subject)}/${encodeURIComponent(commentUid)}`,
     undefined,
     signal,
   )

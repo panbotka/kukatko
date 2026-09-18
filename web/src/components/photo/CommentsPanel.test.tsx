@@ -5,9 +5,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../../i18n'
 import { ApiError } from '../../services/auth'
-import { type PhotoComment } from '../../services/comments'
+import { type Comment } from '../../services/comments'
 
 import { CommentsPanel } from './CommentsPanel'
+
+/** The thread under test hangs off one photograph; the panel is subject-agnostic. */
+const PHOTO_SUBJECT = { kind: 'photo', uid: 'ph_1' } as const
 
 vi.mock('../../services/comments', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../services/comments')>()
@@ -27,7 +30,7 @@ const createCommentMock = vi.mocked(createComment)
 const updateCommentMock = vi.mocked(updateComment)
 const deleteCommentMock = vi.mocked(deleteComment)
 
-function comment(overrides: Partial<PhotoComment> = {}): PhotoComment {
+function comment(overrides: Partial<Comment> = {}): Comment {
   return {
     uid: 'cm_1',
     photo_uid: 'ph_1',
@@ -54,7 +57,7 @@ function renderPanel(
   return render(
     <I18nextProvider i18n={i18n}>
       <CommentsPanel
-        photoUid="ph_1"
+        subject={PHOTO_SUBJECT}
         currentUserUid={currentUserUid}
         canModerate={canModerate}
         onCountChange={onCountChange}
@@ -144,7 +147,7 @@ describe('CommentsPanel', () => {
     await user.click(screen.getByRole('button', { name: 'Post comment' }))
 
     await waitFor(() => {
-      expect(createCommentMock).toHaveBeenCalledWith('ph_1', 'Summer of 1968.')
+      expect(createCommentMock).toHaveBeenCalledWith(PHOTO_SUBJECT, 'Summer of 1968.')
     })
     expect(await screen.findByText('Summer of 1968.')).toBeInTheDocument()
     // The composer empties itself, ready for the next remark.
@@ -165,7 +168,7 @@ describe('CommentsPanel', () => {
 
     await user.keyboard('{Enter}')
     await waitFor(() => {
-      expect(createCommentMock).toHaveBeenCalledWith('ph_1', 'one\ntwo')
+      expect(createCommentMock).toHaveBeenCalledWith(PHOTO_SUBJECT, 'one\ntwo')
     })
   })
 
@@ -182,7 +185,7 @@ describe('CommentsPanel', () => {
     await user.click(screen.getByRole('button', { name: 'Post comment' }))
 
     await waitFor(() => {
-      expect(createCommentMock).toHaveBeenCalledWith('ph_1', 'I remember this day.')
+      expect(createCommentMock).toHaveBeenCalledWith(PHOTO_SUBJECT, 'I remember this day.')
     })
   })
 
@@ -202,7 +205,7 @@ describe('CommentsPanel', () => {
 
     await waitFor(() => {
       expect(updateCommentMock).toHaveBeenCalledWith(
-        'ph_1',
+        PHOTO_SUBJECT,
         'cm_1',
         'The barn, a year before the fire.',
       )
@@ -235,7 +238,7 @@ describe('CommentsPanel', () => {
 
     await user.click(within(dialog).getByRole('button', { name: 'Delete' }))
     await waitFor(() => {
-      expect(deleteCommentMock).toHaveBeenCalledWith('ph_1', 'cm_1')
+      expect(deleteCommentMock).toHaveBeenCalledWith(PHOTO_SUBJECT, 'cm_1')
     })
     await waitFor(() => {
       expect(screen.queryByText('This is the barn before it burned down.')).not.toBeInTheDocument()

@@ -49,6 +49,7 @@ func addFilterFlags(cmd *cobra.Command, list *ctl.ListOptions) {
 	flags.IntVar(&list.Year, "year", 0, "keep only photos taken in this calendar year")
 	flags.StringVar(&list.Album, "album", "", "keep only photos in this album (uid)")
 	flags.StringVar(&list.Label, "label", "", "keep only photos carrying this label (uid)")
+	flags.StringVar(&list.Task, "task", "", "keep only photos in this task (uid)")
 	flags.StringVar(&list.Archived, "archived", "",
 		`archived photos: "false" (default), "true" to include, "only" for the trash`)
 }

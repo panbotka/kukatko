@@ -439,6 +439,101 @@ func TestCtlDuplicates(t *testing.T) {
 
 // TestCtlComments verifies a thread reads back whole and that a comment posts
 // with no author of its own — the server takes it from the token.
+// tasksListBody is a one-task page, as the tasks endpoint serves one.
+const tasksListBody = `{"tasks":[{"uid":"tk1","title":"V kterém roce?","state":"question",` +
+	`"photo_count":3,"comment_count":1,"has_new_answer":true}],"total":1,"limit":50,"offset":0}`
+
+// TestCtlTasks walks the command group against a stub server: the listing, the
+// answered filter an agent polls with, opening a task and answering one.
+func TestCtlTasks(t *testing.T) {
+	var paths, methods []string
+	configPath := ctlServer(t, func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path+"?"+r.URL.RawQuery)
+		methods = append(methods, r.Method)
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/comments"):
+			if r.Method == http.MethodPost {
+				_, _ = w.Write([]byte(`{"uid":"cm1","task_uid":"tk1","body":"1987",` +
+					`"created_at":"2026-09-18T12:00:00Z"}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"comments":[]}`))
+		case r.URL.Path == "/api/v1/tasks" && r.Method == http.MethodPost:
+			_, _ = w.Write([]byte(`{"uid":"tk2","title":"Nová","state":"question"}`))
+		default:
+			_, _ = w.Write([]byte(tasksListBody))
+		}
+	})
+
+	out, err := runCtl(t, "", "ctl", "--ctl-config", configPath, "tasks", "list", "--answered")
+	if err != nil {
+		t.Fatalf("tasks list: %v", err)
+	}
+	for _, want := range []string{"tk1", "V kterém roce?", "question", "yes", "1 of 1 task"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("tasks list output does not contain %q:\n%s", want, out)
+		}
+	}
+	if !strings.Contains(paths[0], "answered=true") {
+		t.Errorf("the answered filter did not reach the wire: %q", paths[0])
+	}
+
+	if _, err := runCtl(t, "", "ctl", "--ctl-config", configPath, "tasks", "create",
+		"--title", "Nová", "ph1", "ph2"); err != nil {
+		t.Fatalf("tasks create: %v", err)
+	}
+	if _, err := runCtl(t, "", "ctl", "--ctl-config", configPath, "tasks", "comment",
+		"tk1", "1987"); err != nil {
+		t.Fatalf("tasks comment: %v", err)
+	}
+	if got := paths[len(paths)-1]; !strings.HasPrefix(got, "/api/v1/tasks/tk1/comments") {
+		t.Errorf("the comment went to %q", got)
+	}
+	if got := methods[len(methods)-1]; got != http.MethodPost {
+		t.Errorf("the comment used %s, want POST", got)
+	}
+}
+
+// TestCtlTasks_updateNeedsAField verifies an update naming nothing is refused
+// before the server is contacted.
+func TestCtlTasks_updateNeedsAField(t *testing.T) {
+	configPath := ctlServer(t, func(_ http.ResponseWriter, _ *http.Request) {
+		t.Error("the server was contacted despite an empty update")
+	})
+	if _, err := runCtl(t, "", "ctl", "--ctl-config", configPath,
+		"tasks", "update", "tk1"); err == nil {
+		t.Error("an update naming no field succeeded, want a refusal")
+	}
+}
+
+// TestCtlTasks_deleteNeedsConfirmation verifies the irreversible gate: the
+// command reads the task to name it, then refuses without --yes.
+func TestCtlTasks_deleteNeedsConfirmation(t *testing.T) {
+	var methods []string
+	configPath := ctlServer(t, func(w http.ResponseWriter, r *http.Request) {
+		methods = append(methods, r.Method)
+		_, _ = w.Write([]byte(`{"uid":"tk1","title":"V kterém roce?","state":"question","photo_count":3}`))
+	})
+	if _, err := runCtl(t, "", "ctl", "--ctl-config", configPath,
+		"tasks", "delete", "tk1"); err == nil {
+		t.Error("delete without --yes succeeded, want a refusal")
+	}
+	for _, method := range methods {
+		if method == http.MethodDelete {
+			t.Error("the task was deleted despite the missing confirmation")
+		}
+	}
+
+	out, err := runCtl(t, "", "ctl", "--ctl-config", configPath,
+		"tasks", "delete", "tk1", "--dry-run")
+	if err != nil {
+		t.Fatalf("dry run: %v", err)
+	}
+	if !strings.Contains(out, "dry run") || !strings.Contains(out, "V kterém roce?") {
+		t.Errorf("dry run output = %q, want it to name the task", out)
+	}
+}
+
 func TestCtlComments(t *testing.T) {
 	var gotBody map[string]string
 	configPath := ctlServer(t, func(w http.ResponseWriter, r *http.Request) {

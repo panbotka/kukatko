@@ -189,6 +189,22 @@ func renderDuplicates(w io.Writer, out ctl.Output, raw json.RawMessage) error {
 }
 
 // renderComments writes a photo's whole comment thread.
+// renderTaskPage renders a task listing in the chosen format.
+func renderTaskPage(w io.Writer, out ctl.Output, raw json.RawMessage) error {
+	return renderRaw(w, out, raw, "task list", ctl.DecodeTaskPage, ctl.WriteTaskPage)
+}
+
+// renderTask renders one task in the chosen format.
+func renderTask(w io.Writer, out ctl.Output, raw json.RawMessage) error {
+	return renderRaw(w, out, raw, "task", ctl.DecodeTask, ctl.WriteTask)
+}
+
+// renderTaskMembership renders the answer to a task membership change.
+func renderTaskMembership(w io.Writer, out ctl.Output, raw json.RawMessage) error {
+	return renderRaw(w, out, raw, "task membership",
+		ctl.DecodeTaskMembership, ctl.WriteTaskMembership)
+}
+
 func renderComments(w io.Writer, out ctl.Output, raw json.RawMessage) error {
 	return renderRaw(w, out, raw, "comment thread", ctl.DecodeComments, ctl.WriteComments)
 }

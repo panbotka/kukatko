@@ -127,7 +127,7 @@ func TestWriteComments(t *testing.T) {
 	if err := WriteComments(&buf, nil); err != nil {
 		t.Fatalf("WriteComments returned %v", err)
 	}
-	if strings.TrimSpace(buf.String()) != "no comments on this photo" {
+	if strings.TrimSpace(buf.String()) != "no comments yet" {
 		t.Errorf("empty output = %q, want the one-line message", buf.String())
 	}
 }

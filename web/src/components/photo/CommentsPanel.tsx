@@ -8,13 +8,18 @@ import { useTranslation } from 'react-i18next'
 import { ConfirmModal } from '../ConfirmModal'
 import { Icon } from '../Icon'
 import { type CommentFailure, useComments } from '../../hooks/useComments'
-import { MAX_COMMENT_LENGTH } from '../../services/comments'
+import { type CommentSubject, MAX_COMMENT_LENGTH } from '../../services/comments'
 
 import { CommentItem } from './CommentItem'
 
 /** Props for {@link CommentsPanel}. */
 export interface CommentsPanelProps {
-  photoUid: string
+  /**
+   * What the thread hangs off: a photograph, or a task. The panel itself is the
+   * same either way — one conversation, one composer — so the subject is all that
+   * distinguishes the two.
+   */
+  subject: CommentSubject
   /**
    * The reader's own uid, or null when unknown. It decides which comments carry an
    * edit affordance — the author's own, and nobody else's.
@@ -57,13 +62,13 @@ const FAILURE_MESSAGE: Record<CommentFailure, ParseKeys> = {
  * to speak of.
  */
 export function CommentsPanel({
-  photoUid,
+  subject,
   currentUserUid,
   canModerate,
   onCountChange,
 }: CommentsPanelProps) {
   const { t } = useTranslation()
-  const { status, comments, count, busy, failure, post, edit, remove } = useComments(photoUid, {
+  const { status, comments, count, busy, failure, post, edit, remove } = useComments(subject, {
     onCountChange,
   })
   const [draft, setDraft] = useState('')

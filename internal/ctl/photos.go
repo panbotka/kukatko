@@ -209,6 +209,9 @@ type ListOptions struct {
 	// Album and Label scope the list to one album's or one label's photos.
 	Album string
 	Label string
+	// Task scopes the list to the frozen group of one task — how an agent reads
+	// the photographs a question is about.
+	Task string
 	// Favorite scopes the list to the calling user's own favorites.
 	Favorite bool
 	// Archived is "", "false", "true" or "only"; empty leaves the server default
@@ -243,6 +246,7 @@ func (o ListOptions) query() (url.Values, error) {
 	setNonEmpty(q, "order", o.Order)
 	setNonEmpty(q, "album", o.Album)
 	setNonEmpty(q, "label", o.Label)
+	setNonEmpty(q, "task", o.Task)
 	setNonEmpty(q, "archived", o.Archived)
 	if o.Limit > 0 {
 		q.Set("limit", strconv.Itoa(o.Limit))

@@ -125,7 +125,8 @@ func newCtlCmd() *cobra.Command {
 		newCtlRatingCmd(opts), newCtlBulkCmd(opts),
 		newCtlFacesCmd(opts), newCtlClustersCmd(opts), newCtlStacksCmd(opts),
 		newCtlEditsCmd(opts), newCtlSavedSearchesCmd(opts), newCtlDuplicatesCmd(opts),
-		newCtlCommentsCmd(opts), newCtlTrashCmd(opts), newCtlProcessCmd(opts),
+		newCtlCommentsCmd(opts), newCtlTasksCmd(opts), newCtlTrashCmd(opts),
+		newCtlProcessCmd(opts),
 	)
 	return cmd
 }
