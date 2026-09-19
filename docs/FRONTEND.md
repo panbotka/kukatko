@@ -2862,7 +2862,10 @@ here.
   `canWrite`), so it renders in a test with no auth provider. Structure: an eyebrow heading that becomes the
   **pluralised count** once there is one (`photo.comments.count`, `_one/_few/_many/_other` — Czech needs
   three forms: 1 komentář / 2 komentáře / 5 komentářů), the thread **oldest first** (a conversation reads
-  forwards) as a `<ul>` of `CommentItem`, and the composer. **Empty state invites the first remark**
+  forwards) as a `<ul>` of `CommentItem`, and the composer. `heading={false}` drops that eyebrow for a
+  caller that already titles the section around it — the task page heads its card "Diskuse" and lifts the
+  count (via `onCountChange`) up beside it, so the reader is not told twice what they are looking at.
+  **Empty state invites the first remark**
   („Napiš, co o téhle fotce víš…") rather than reporting an absence. **`PersonAvatar`**
   (`components/`) is what a thread actually draws: **whatever picture the author's account resolves to**
   (`userAvatarUrl(author_uid)` → `GET /users/{uid}/avatar`, `services/userpic`; no download token — the

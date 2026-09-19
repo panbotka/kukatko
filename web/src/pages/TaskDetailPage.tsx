@@ -79,6 +79,8 @@ export function TaskDetailPage() {
   const [reloadKey, reload] = useReloadKey()
   const [busy, setBusy] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  // Reported up by the thread so the section's heading can carry its length.
+  const [commentCount, setCommentCount] = useState(0)
 
   // The wall is an ordinary photo list: filters, sort and density live in the
   // URL exactly as they do on a label or an album, so Back restores them and a
@@ -248,12 +250,21 @@ export function TaskDetailPage() {
         <Card.Header className="d-flex align-items-center gap-2">
           <Icon name="chat-left-text" aria-hidden="true" />
           <h2 className="h6 mb-0">{t('taskDetail.discussion')}</h2>
+          {commentCount > 0 && (
+            <span className="text-body-secondary small">
+              {t('photo.comments.count', { count: commentCount })}
+            </span>
+          )}
         </Card.Header>
         <Card.Body>
           <CommentsPanel
             subject={taskSubject(task.uid)}
             currentUserUid={user?.uid ?? null}
             canModerate={isAdmin}
+            // The card is already headed "Diskuse"; the panel's own eyebrow
+            // would say it a second time, so the count moves up beside it.
+            heading={false}
+            onCountChange={setCommentCount}
           />
         </Card.Body>
       </Card>

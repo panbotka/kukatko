@@ -33,6 +33,13 @@ export interface CommentsPanelProps {
   canModerate: boolean
   /** Reports the thread's length up to the viewer chrome, so the badge stays true. */
   onCountChange?: (count: number) => void
+  /**
+   * Whether the panel writes its own heading. True by default — in the viewer
+   * the thread stands on its own and has to name itself. A caller that already
+   * titles the section around it (the task page puts the panel on a card headed
+   * "Diskuse") passes false, so the reader is not told twice.
+   */
+  heading?: boolean
 }
 
 /**
@@ -66,6 +73,7 @@ export function CommentsPanel({
   currentUserUid,
   canModerate,
   onCountChange,
+  heading = true,
 }: CommentsPanelProps) {
   const { t } = useTranslation()
   const { status, comments, count, busy, failure, post, edit, remove } = useComments(subject, {
@@ -100,9 +108,11 @@ export function CommentsPanel({
       {/* The heading counts the thread once there is one ("3 komentáře"), which is
           both the section's name and the discoverability the badge on the toggle
           promised. i18next owns the plural form — Czech needs three of them. */}
-      <p className="kk-text-eyebrow mb-2">
-        {count > 0 ? t('photo.comments.count', { count }) : t('photo.comments.title')}
-      </p>
+      {heading && (
+        <p className="kk-text-eyebrow mb-2">
+          {count > 0 ? t('photo.comments.count', { count }) : t('photo.comments.title')}
+        </p>
+      )}
 
       {status === 'loading' && (
         <div className="kk-comments__state">

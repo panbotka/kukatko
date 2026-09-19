@@ -307,6 +307,24 @@ describe('the discussion', () => {
     const card = heading.closest('.card')
     expect(card).not.toBeNull()
     expect(card).toContainElement(screen.getByLabelText('New comment'))
+    // The card names the section, so the panel does not name it again.
+    expect(screen.queryByText('Comments')).not.toBeInTheDocument()
+  })
+
+  it("carries the thread's length in the section heading", async () => {
+    fetchCommentsMock.mockResolvedValue([
+      {
+        uid: 'cm1',
+        task_uid: 'tk1',
+        author_uid: 'u2',
+        author_name: 'Pamětník',
+        body: '1987.',
+        created_at: '2026-09-18T11:00:00Z',
+      },
+    ])
+    renderPage()
+
+    expect(await screen.findByText('1 comment')).toBeInTheDocument()
   })
 })
 
