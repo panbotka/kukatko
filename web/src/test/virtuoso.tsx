@@ -1,4 +1,4 @@
-import { forwardRef, type ReactNode, useImperativeHandle } from 'react'
+import { type CSSProperties, forwardRef, type ReactNode, useImperativeHandle } from 'react'
 
 /**
  * The react-virtuoso stand-ins every grid test needs.
@@ -19,6 +19,12 @@ export interface MockVirtuosoProps {
   data?: readonly unknown[]
   itemContent?: (index: number, item: never) => ReactNode
   computeItemKey?: (index: number, item: never) => string
+  /**
+   * Forwarded onto the stand-in element, so a test can assert what the caller
+   * asked the list for — the reserved height, for instance, which decides
+   * whether an embedded wall leaves a hole under a short group of photographs.
+   */
+  style?: CSSProperties
 }
 
 /** Renders every item of `data`, keyed as the component asked for. */
@@ -42,11 +48,19 @@ export function virtuosoMock() {
         scrollToIndex: () => undefined,
         getState: () => undefined,
       }))
-      return <div data-testid="grid">{renderAll(props)}</div>
+      return (
+        <div data-testid="grid" style={props.style}>
+          {renderAll(props)}
+        </div>
+      )
     }),
     VirtuosoGrid: forwardRef<unknown, MockVirtuosoProps>(function MockVirtuosoGrid(props, ref) {
       useImperativeHandle(ref, () => ({ scrollToIndex: () => undefined }))
-      return <div data-testid="grid">{renderAll(props)}</div>
+      return (
+        <div data-testid="grid" style={props.style}>
+          {renderAll(props)}
+        </div>
+      )
     }),
   }
 }

@@ -136,6 +136,14 @@ export interface PhotoGridProps {
    * other grid) has none.
    */
   photos: readonly (Photo | undefined)[]
+  /**
+   * How much height the wall reserves while it has nothing to show yet. The
+   * default keeps a page whose whole content *is* the grid from collapsing to
+   * nothing and jumping as the first page lands. A grid embedded in a flowing
+   * page — a task's few photographs above its discussion — passes `'0'`, where
+   * that reserve would instead be a hole between two sections.
+   */
+  minHeight?: string
   loadingMore: boolean
   moreError: boolean
   /**
@@ -240,6 +248,7 @@ export interface PhotoGridProps {
  */
 export function PhotoGrid({
   photos,
+  minHeight = '50vh',
   loadingMore,
   moreError,
   onEndReached,
@@ -550,7 +559,7 @@ export function PhotoGrid({
         // A row keys on the photo that opens it, so re-laying the wall out (a
         // resize, a density step) reuses the rows whose first photo did not move.
         computeItemKey={(index, row) => `row-${String(row.start)}-${String(index)}`}
-        style={{ minHeight: '50vh' }}
+        style={{ minHeight }}
       />
     </div>
   )

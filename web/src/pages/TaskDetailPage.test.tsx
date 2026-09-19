@@ -15,6 +15,36 @@ import { TaskDetailPage } from './TaskDetailPage'
 // instead (see `test/virtuoso`).
 vi.mock('react-virtuoso', async () => (await import('../test/virtuoso')).virtuosoMock())
 
+/** One catalogued photograph, enough for the wall to render a row. */
+function gridPhoto(uid: string) {
+  return {
+    uid,
+    file_hash: uid,
+    file_name: `${uid}.jpg`,
+    file_size: 1,
+    file_mime: 'image/jpeg',
+    file_width: 100,
+    file_height: 100,
+    taken_at_source: 'exif',
+    thumb_url: `/api/v1/photos/${uid}/thumb/tile_500`,
+    download_url: `/api/v1/photos/${uid}/download?original=true`,
+    title: '',
+    description: '',
+    camera_make: '',
+    camera_model: '',
+    lens_model: '',
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  }
+}
+
+/** The `minHeight` the page handed the wall, read off the mocked Virtuoso. */
+function gridMinHeight(): string | undefined {
+  // Scoped to the wall itself: the filter bar mounts a list of its own.
+  const el = document.querySelector<HTMLElement>('.kukatko-photo-grid [data-testid="grid"]')
+  return el?.style.minHeight
+}
+
 vi.mock('../services/tasks', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/tasks')>()
   return { ...actual, fetchTask: vi.fn(), updateTask: vi.fn(), deleteTask: vi.fn() }
@@ -185,7 +215,8 @@ describe('TaskDetailPage', () => {
 
     expect(await screen.findByText('How it ended')).toBeInTheDocument()
     expect(screen.getByText('The year cannot be established.')).toBeInTheDocument()
-    expect(screen.getByText('Rejected')).toBeInTheDocument()
+    // The filter bar's own "Rejected" flag option carries the same word.
+    expect(screen.getAllByText('Rejected').length).toBeGreaterThan(0)
   })
 
   it('says so when the task has been deleted since the link was sent', async () => {
@@ -193,5 +224,53 @@ describe('TaskDetailPage', () => {
     renderPage()
 
     expect(await screen.findByText('This task does not exist')).toBeInTheDocument()
+  })
+})
+
+describe('the photo wall', () => {
+  it('reserves no empty height, so the discussion follows the photographs', async () => {
+    fetchPhotosMock.mockResolvedValue({
+      photos: [gridPhoto('ph1')],
+      total: 1,
+      limit: 100,
+      offset: 0,
+      next_offset: null,
+    })
+    renderPage()
+    await screen.findByRole('heading', { name: /In which year/ })
+
+    // The library's half-viewport reserve keeps a page whose whole content is
+    // the grid from collapsing; here the grid is a section between the question
+    // and the answer box, where that reserve is a hole.
+    expect(gridMinHeight()).toBe('0')
+  })
+})
+
+describe('the wall behaves like every other scoped list', () => {
+  it('offers the filter bar and round-trips its view through the URL', async () => {
+    const user = userEvent.setup()
+    fetchPhotosMock.mockResolvedValue({
+      photos: [gridPhoto('ph1')],
+      total: 1,
+      limit: 100,
+      offset: 0,
+      next_offset: null,
+    })
+    renderPage()
+    await screen.findByRole('heading', { name: /In which year/ })
+
+    await user.click(screen.getByRole('button', { name: /Filters/i }))
+    expect(await screen.findByLabelText('Sort')).toBeInTheDocument()
+
+    await user.selectOptions(screen.getByLabelText('Sort'), 'oldest')
+
+    await waitFor(() => {
+      expect(fetchPhotosMock).toHaveBeenLastCalledWith(
+        // The task scope survives the filter change: a filter narrows what of
+        // the frozen group is on screen, never what the group is.
+        expect.objectContaining({ task: 'tk1', sort: 'oldest' }),
+        expect.anything(),
+      )
+    })
   })
 })

@@ -906,7 +906,10 @@ here.
   and is an ordinary link everywhere else — the element type is unchanged, so the selection-mode reasoning
   above still holds),
   `PhotoGrid` (the **justified photo wall**: a virtualized **`react-virtuoso` `Virtuoso`** list,
-  window-scroll, footer spinner/retry. Photos keep **their own proportions** — the tiles are laid into rows
+  window-scroll, footer spinner/retry. `minHeight` (default `50vh`) is what the list reserves before it has
+  anything to show: right for a page whose whole content is the wall, which would otherwise collapse and
+  jump as the first page lands — and wrong for a wall embedded in a flowing page, where the reserve is a
+  hole under a short group, so `TaskDetailPage` passes `'0'`. Photos keep **their own proportions** — the tiles are laid into rows
   that share one height and fill the width edge to edge (`lib/justifiedLayout`), so a panorama is wide, a
   portrait is tall and nothing is cropped into a square on the way in. Virtualization is **by row**, which is
   what the variable-height list is for; everything a page passes or receives is still in **photo** indices
@@ -1926,8 +1929,14 @@ here.
   `canWrite` sees **Nový úkol**, which opens `NewTaskModal`,
   `TaskDetailPage` = `/tasks/:uid` the page a **link is sent to**, so it is built for somebody who has never
   seen Kukátko: the question is the `h1`, the Markdown context and (for a closed task) its resolution follow,
-  then the photographs — a `PhotoGrid` over `useScopedPhotos({task: uid})` and deliberately **no `FilterBar`**,
-  the group being frozen, so filtering it could only hide part of the evidence the question rests on — then
+  then the photographs — an ordinary scoped list: `PhotoGrid` over `useScopedPhotos({task: uid})` with the
+  shared `FilterBar`, the density control, `SlideshowStart` and, for an editor, hover-select into
+  `BatchActionBar`, all round-tripping through the URL exactly as on a label. The first cut left the filter
+  bar out on the argument that a frozen group must not be filtered; that confused the two things it does —
+  a filter narrows what of the group is **on screen**, never what the group **is**, and the photographs a
+  question is about are usually the ones somebody is about to edit, so making them behave differently from
+  every other list was the odd choice. The wall passes `minHeight="0"`: the library's half-viewport reserve
+  is right for a page that *is* a grid and a hole between two sections here. Then
   the thread (`CommentsPanel` with a `taskSubject`), and last, for a writer only, `TaskControls`. That order
   is the design: a viewer reaches the box they came to write in without scrolling past controls they cannot
   use. A 404 lands in a `missing` state of its own (`isNotFound`), because a link outlives the task it points

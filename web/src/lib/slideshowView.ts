@@ -9,6 +9,8 @@ import { writeUrlState } from './urlState'
 export interface SlideshowScope {
   album?: string
   label?: string
+  /** One task's frozen group, when the show is started from a task's page. */
+  task?: string
   /**
    * The search mode, set only when launching from the search page. Its presence
    * is what tells the slideshow to replay the *search* (ranking `q` through
@@ -32,6 +34,9 @@ export function slideshowHref(scope: SlideshowScope, view: LibraryView): string 
   }
   if (scope.label !== undefined && scope.label !== '') {
     params.set('label', scope.label)
+  }
+  if (scope.task !== undefined && scope.task !== '') {
+    params.set('task', scope.task)
   }
   // Unlike the filters, the mode is written even when it equals the search
   // page's default: the slideshow reads its presence — not its value — as

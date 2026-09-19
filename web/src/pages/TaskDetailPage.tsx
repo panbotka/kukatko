@@ -9,17 +9,22 @@ import { ConfirmModal } from '../components/ConfirmModal'
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
 import { Markdown } from '../components/Markdown'
+import { FilterBar } from '../components/library/FilterBar'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
+import { BatchActionBar } from '../components/organize/BatchActionBar'
+import { SlideshowStart } from '../components/slideshow/SlideshowStart'
 import { CommentsPanel } from '../components/photo/CommentsPanel'
 import { TaskStateBadge } from '../components/tasks/TaskStateBadge'
+import { useBulkEdit } from '../hooks/useBulkEdit'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useGridScrollMemory } from '../hooks/useGridScrollMemory'
 import { useReloadKey } from '../hooks/useReloadKey'
 import { useScopedPhotos } from '../hooks/useScopedPhotos'
 import { detailQueryString } from '../lib/detailView'
 import { gridScrollKey, readGridScroll } from '../lib/gridScroll'
-import { LIBRARY_DEFAULTS, viewToParams } from '../lib/libraryView'
+import { LIBRARY_DEFAULTS, type LibraryView, viewToParams } from '../lib/libraryView'
+import { useUrlState } from '../lib/urlState'
 import { isNotFound } from '../services/auth'
 import { taskSubject } from '../services/comments'
 import { deleteTask, fetchTask, type Task, updateTask } from '../services/tasks'
@@ -50,8 +55,12 @@ const TASKS_PATH = '/tasks'
  * membership — come last and only for a writer; a viewer sees a question, some
  * photographs and a place to answer, which is all they need.
  *
- * The grid carries no filter bar. The group is frozen by design, so filtering it
- * would only ever hide part of the evidence the question rests on.
+ * The wall behaves like every other scoped list — filters, sort and tiles per
+ * row, all round-tripping through the URL — because a task's group is often the
+ * one somebody is about to edit, and having to relearn a different set of
+ * controls here would be the odd thing. The *membership* stays frozen: a filter
+ * narrows what of the group is on screen, never what the group is, and the count
+ * beside the filter bar says how much of it is showing.
  */
 export function TaskDetailPage() {
   const { t } = useTranslation()
@@ -64,22 +73,39 @@ export function TaskDetailPage() {
   const [busy, setBusy] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
-  const params = useMemo(() => viewToParams(LIBRARY_DEFAULTS), [])
+  // The wall is an ordinary photo list: filters, sort and density live in the
+  // URL exactly as they do on a label or an album, so Back restores them and a
+  // link to a task carries the view it was shared in. The *membership* is still
+  // frozen — a filter only narrows what of the group is on screen, and the count
+  // beside the filter bar always says how much of it that is.
+  const [view, setView] = useUrlState<LibraryView>(LIBRARY_DEFAULTS)
+  const params = useMemo(() => viewToParams(view), [view])
   const scope = useMemo(() => ({ task: uid }), [uid])
   // Each tile carries the task scope, so the photo detail pages prev/next within
   // the task and Back returns to the question rather than to the whole library.
   const detailQuery = useMemo(
-    () => detailQueryString({ ...LIBRARY_DEFAULTS, task: uid, mode: '' }),
-    [uid],
+    () => detailQueryString({ ...view, task: uid, album: '', label: '', favorite: '', mode: '' }),
+    [view, uid],
   )
   const scrollKey = gridScrollKey(location.pathname, location.search)
   const restoreCount = useMemo(() => readGridScroll(scrollKey)?.count ?? 0, [scrollKey])
-  const { photos, status, loadingMore, moreError, loadMore, retry } = useScopedPhotos(
+  const { photos, total, status, loadingMore, moreError, loadMore, retry } = useScopedPhotos(
     scope,
     params,
     { reloadKey, initialCount: restoreCount },
   )
   const gridScroll = useGridScrollMemory({ key: scrollKey, count: photos.length })
+
+  // Hover-select, as on every other scoped list: the photographs a question is
+  // about are usually the ones about to be edited, so the full batch vocabulary
+  // belongs on this page rather than one navigation away.
+  const bulk = useBulkEdit({ onEdited: reload, hoverSelect: true })
+  const selection = bulk.selection
+  const selecting = selection.count > 0
+
+  const selectAllInView = useCallback(() => {
+    selection.selectMany(photos.map((photo) => photo.uid))
+  }, [photos, selection])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -157,10 +183,17 @@ export function TaskDetailPage() {
   const task = state.task
 
   return (
-    <>
-      <div className="d-flex align-items-center gap-2 flex-wrap mb-2">
-        <BackLink to={TASKS_PATH} label={t('taskDetail.back')} />
-        <TaskStateBadge state={task.state} />
+    // Keep the last section scrollable clear of the floating batch bar while a
+    // selection is active, so the discussion never hides behind it.
+    <div style={{ paddingBottom: selecting ? 'var(--kk-batch-clearance)' : undefined }}>
+      <div className="d-flex align-items-center justify-content-between gap-2 flex-wrap mb-2">
+        <div className="d-flex align-items-center gap-2 flex-wrap kk-min-w-0">
+          <BackLink to={TASKS_PATH} label={t('taskDetail.back')} />
+          <TaskStateBadge state={task.state} />
+        </div>
+        {status === 'ready' && photos.length > 0 && (
+          <SlideshowStart scope={scope} view={view} count={total} />
+        )}
       </div>
 
       {/* The question is the page. Everything else on it exists to answer this. */}
@@ -188,6 +221,8 @@ export function TaskDetailPage() {
         </Card>
       )}
 
+      <FilterBar view={view} onChange={setView} total={total} />
+
       {status === 'loading' && <GridSkeleton />}
       {status === 'error' && <ErrorState title={t('library.error.load')} onRetry={retry} />}
       {status === 'ready' && photos.length === 0 && (
@@ -197,10 +232,15 @@ export function TaskDetailPage() {
         <div className="mb-4">
           <PhotoGrid
             photos={photos}
+            // The wall is a section between the question and the discussion, not
+            // the page itself: the library's half-viewport reserve would be a
+            // hole under the three photographs a task usually has.
+            minHeight="0"
             loadingMore={loadingMore}
             moreError={moreError}
             onEndReached={loadMore}
             onRetry={retry}
+            selection={bulk.gridSelection}
             detailQuery={detailQuery}
             scroll={gridScroll}
           />
@@ -229,6 +269,10 @@ export function TaskDetailPage() {
         />
       )}
 
+      {bulk.canBulkEdit && selecting && (
+        <BatchActionBar bulk={bulk} onSelectAll={selectAllInView} />
+      )}
+
       <ConfirmModal
         show={confirmDelete}
         title={t('taskDetail.delete.title')}
@@ -242,6 +286,6 @@ export function TaskDetailPage() {
       >
         <p className="mb-0">{t('taskDetail.delete.body')}</p>
       </ConfirmModal>
-    </>
+    </div>
   )
 }
