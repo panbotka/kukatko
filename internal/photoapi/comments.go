@@ -32,6 +32,9 @@ type CommentStore interface {
 	// CountsAmong returns the number of live comments per subject UID within the
 	// kind; subjects without a comment are absent from the map.
 	CountsAmong(ctx context.Context, kind comments.SubjectKind, uids []string) (map[string]int, error)
+	// LatestAmong returns the newest live comment per subject UID within the
+	// kind; subjects without a comment are absent from the map.
+	LatestAmong(ctx context.Context, kind comments.SubjectKind, uids []string) (map[string]comments.Comment, error)
 	// Get returns one live comment, or comments.ErrNotFound.
 	Get(ctx context.Context, uid string) (comments.Comment, error)
 	// Create stores a comment by authorUID on the subject, auditing it in the same

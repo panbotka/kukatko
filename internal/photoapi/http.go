@@ -626,7 +626,7 @@ func (a *API) writeFilterPage(
 		writeError(w, http.StatusInternalServerError, "counting photos failed")
 		return
 	}
-	views, err := a.annotate(r.Context(), userUID, list)
+	views, err := a.annotatePage(r.Context(), userUID, params, list)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "annotating photos failed")
 		return

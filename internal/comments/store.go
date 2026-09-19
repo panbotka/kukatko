@@ -62,6 +62,7 @@ const authorJoin = ` LEFT JOIN users u ON u.uid = c.author_uid` +
 type subjectStatements struct {
 	list        string
 	countsAmong string
+	latestAmong string
 	create      string
 }
 
@@ -76,8 +77,11 @@ var statements = map[SubjectKind]subjectStatements{
 // buildStatements returns the per-kind statements for the subject stored in
 // column: the thread listing (oldest first — a conversation reads forwards — with
 // the UID as a stable tie-break for comments written in the same instant), the
-// bulk count, and the insert. Soft-deleted rows are filtered out of both reads,
-// as on every read path.
+// bulk count, the bulk "newest comment per subject" (DISTINCT ON over the same
+// index the listing reads, newest first — the mirror image of the thread's
+// tie-break, so the two never disagree about which of two same-instant comments
+// is the last word), and the insert. Soft-deleted rows are filtered out of every
+// read, as on every read path.
 func buildStatements(column string) subjectStatements {
 	return subjectStatements{
 		list: `
@@ -90,6 +94,11 @@ SELECT ` + column + `, count(*)
 FROM comments
 WHERE ` + column + ` = ANY($1) AND deleted_at IS NULL
 GROUP BY ` + column,
+		latestAmong: `
+SELECT DISTINCT ON (c.` + column + `) ` + commentColumns + `
+FROM comments c` + authorJoin + `
+WHERE c.` + column + ` = ANY($1) AND c.deleted_at IS NULL
+ORDER BY c.` + column + `, c.created_at DESC, c.uid DESC`,
 		create: `
 WITH inserted AS (
     INSERT INTO comments (uid, ` + column + `, author_uid, body)
@@ -190,6 +199,44 @@ const getSQL = `
 SELECT ` + commentColumns + `
 FROM comments c` + authorJoin + `
 WHERE c.uid = $1 AND c.deleted_at IS NULL`
+
+// LatestAmong returns the newest live comment on each of uids within the thread
+// kind, keyed by subject UID. Subjects without a live comment are absent from
+// the map, and an empty input yields an empty map without querying. An unknown
+// kind yields ErrInvalidSubject.
+//
+// It is one grouped query for the whole page for the same reason CountsAmong
+// is: the caller is a listing (a task's review ledger, one row per photograph),
+// and a per-row lookup would be the N+1 that shape invites. The DISTINCT ON
+// walks idx_comments_photo / idx_comments_task backwards, so the cost is one
+// index probe per subject rather than a sort over its thread.
+func (s *Store) LatestAmong(ctx context.Context, kind SubjectKind, uids []string) (map[string]Comment, error) {
+	out := make(map[string]Comment, len(uids))
+	if len(uids) == 0 {
+		return out, nil
+	}
+	stmts, err := statementsFor(Subject{Kind: kind, UID: "-"})
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.pool.Query(ctx, stmts.latestAmong, uids)
+	if err != nil {
+		return nil, fmt.Errorf("comments: reading latest comments: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		c, scanErr := scanComment(rows)
+		if scanErr != nil {
+			return nil, fmt.Errorf("comments: scanning latest comment: %w", scanErr)
+		}
+		out[c.Subject().UID] = c
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("comments: iterating latest comments: %w", err)
+	}
+	return out, nil
+}
 
 // Get returns the live comment with the given UID, or ErrNotFound when it does
 // not exist or has been soft-deleted. The HTTP layer reads the comment before

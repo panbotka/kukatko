@@ -57,11 +57,21 @@ type Photo struct {
 	FileHeight int        `json:"file_height"`
 	MediaType  string     `json:"media_type"`
 	TakenAt    *time.Time `json:"taken_at,omitempty"`
-	Title      string     `json:"title"`
-	IsFavorite bool       `json:"is_favorite"`
-	Rating     int        `json:"rating"`
-	Flag       string     `json:"flag"`
-	ArchivedAt *time.Time `json:"archived_at,omitempty"`
+	// TakenAtPrecision, TakenAtSource and TakenAtEstimated qualify the date the
+	// way the ledger prints it: how coarsely it was stated, where it came from,
+	// and whether it is a guess.
+	TakenAtPrecision string     `json:"taken_at_precision"`
+	TakenAtSource    string     `json:"taken_at_source"`
+	TakenAtEstimated bool       `json:"taken_at_estimated"`
+	Title            string     `json:"title"`
+	IsFavorite       bool       `json:"is_favorite"`
+	Rating           int        `json:"rating"`
+	Flag             string     `json:"flag"`
+	ArchivedAt       *time.Time `json:"archived_at,omitempty"`
+	// LastComment is the newest live comment on the photo. Only a task-scoped
+	// listing carries it; it is nil both for a photo without a comment and for a
+	// listing that never asked.
+	LastComment *LastComment `json:"last_comment,omitempty"`
 }
 
 // PhotoPage decodes the envelope of GET /photos and GET /search.

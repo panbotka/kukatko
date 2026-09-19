@@ -199,6 +199,11 @@ func renderTask(w io.Writer, out ctl.Output, raw json.RawMessage) error {
 	return renderRaw(w, out, raw, "task", ctl.DecodeTask, ctl.WriteTask)
 }
 
+// renderTaskLedger renders a task's review ledger in the chosen format.
+func renderTaskLedger(w io.Writer, out ctl.Output, raw json.RawMessage) error {
+	return renderRaw(w, out, raw, "task ledger", ctl.DecodeTaskLedger, ctl.WriteTaskLedger)
+}
+
 // renderTaskMembership renders the answer to a task membership change.
 func renderTaskMembership(w io.Writer, out ctl.Output, raw json.RawMessage) error {
 	return renderRaw(w, out, raw, "task membership",

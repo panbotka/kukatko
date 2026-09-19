@@ -16,6 +16,7 @@ import (
 // fakeComments is a controllable CommentStore for the handler unit tests.
 type fakeComments struct {
 	counts  map[string]int
+	latest  map[string]comments.Comment
 	err     error
 	gotUIDs []string
 }
@@ -34,6 +35,18 @@ func (f *fakeComments) CountsAmong(
 		return nil, f.err
 	}
 	return f.counts, nil
+}
+
+// LatestAmong records the requested UIDs and returns the configured latest
+// comments or error.
+func (f *fakeComments) LatestAmong(
+	_ context.Context, _ comments.SubjectKind, uids []string,
+) (map[string]comments.Comment, error) {
+	f.gotUIDs = uids
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.latest, nil
 }
 
 // Get is unused by these tests.

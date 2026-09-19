@@ -34,9 +34,37 @@ func newCtlTasksCmd(opts *ctlOptions) *cobra.Command {
 		newCtlTasksAddPhotosCmd(opts), newCtlTasksRemovePhotosCmd(opts),
 		newCtlTasksCommentsCmd(opts), newCtlTasksCommentCmd(opts),
 		newCtlTasksParticipantsCmd(opts), newCtlTasksAssignCmd(opts),
-		newCtlTasksUnassignCmd(opts),
+		newCtlTasksUnassignCmd(opts), newCtlTasksLedgerCmd(opts),
 	)
 	return cmd
+}
+
+// newCtlTasksLedgerCmd prints a task's whole group as a review ledger: one row
+// per photograph with its date, where the date came from and the last comment.
+func newCtlTasksLedgerCmd(opts *ctlOptions) *cobra.Command {
+	return &cobra.Command{
+		Use:   "ledger <uid>",
+		Short: "List a task's photographs with their date, its source and the last comment",
+		Long: "The review ledger of a task: every photograph in its frozen group on one line —\n" +
+			"the date at the precision it was stated (1974-06-14, 1974-06, 1974, 1970s; a\n" +
+			"~ marks an estimate), where the date came from, the first line of the newest\n" +
+			"comment and who wrote it. It pages through the whole group.\n\n" +
+			"Run it before moving a batch to review: the summary counts the rows that\n" +
+			"still carry no comment, and the convention is that every changed photograph\n" +
+			"explains itself in its thread.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, out, err := opts.resolve()
+			if err != nil {
+				return err
+			}
+			raw, err := client.TaskLedger(cmd.Context(), args[0])
+			if err != nil {
+				return fmt.Errorf("reading the ledger of task %s: %w", args[0], err)
+			}
+			return renderTaskLedger(cmd.OutOrStdout(), out, raw)
+		},
+	}
 }
 
 // newCtlTasksListCmd lists tasks, narrowed by state or by whether anybody has

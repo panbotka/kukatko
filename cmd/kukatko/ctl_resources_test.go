@@ -583,3 +583,50 @@ func TestCtlAlbumsAddPhotos_confirmationGate(t *testing.T) {
 		t.Errorf("add-photos made %d requests once accepted, want one", requests)
 	}
 }
+
+// ledgerBody is a one-page task-scoped /photos envelope with the last_comment
+// column, as internal/photoapi shapes it under ?task=.
+const ledgerBody = `{"photos":[{"uid":"pht01","file_name":"a.jpg","title":"Rekruti",` +
+	`"taken_at":"1974-01-01T00:00:00Z","taken_at_precision":"decade","taken_at_source":"manual",` +
+	`"last_comment":{"uid":"cm1","body":"Odhad podle uniformy.","author_uid":"us9",` +
+	`"author_name":"Agent","created_at":"2026-09-19T10:00:00Z"}},` +
+	`{"uid":"pht02","file_name":"b.jpg","title":"","taken_at_source":"","last_comment":null}],` +
+	`"total":2,"limit":500,"offset":0,"next_offset":null}`
+
+// TestCtlTasksLedger verifies the ledger reads the task's group through the
+// task-scoped listing, prints one row per photograph with the precision-aware
+// date and the comment, and that -o llm keeps the comment column.
+func TestCtlTasksLedger(t *testing.T) {
+	var gotPath, gotQuery string
+	configPath := ctlServer(t, func(w http.ResponseWriter, r *http.Request) {
+		gotPath, gotQuery = r.URL.Path, r.URL.RawQuery
+		w.Write([]byte(ledgerBody))
+	})
+
+	out, err := runCtl(t, "", "ctl", "--ctl-config", configPath, "tasks", "ledger", "tk1")
+	if err != nil {
+		t.Fatalf("tasks ledger returned %v", err)
+	}
+	if gotPath != "/api/v1/photos" || !strings.Contains(gotQuery, "task=tk1") {
+		t.Errorf("ledger read %s?%s, want the task-scoped photo listing", gotPath, gotQuery)
+	}
+	for _, want := range []string{"TAKEN", "LAST COMMENT", "pht01", "1970s", "manual", "Odhad podle uniformy.",
+		"Agent", "pht02", "2 photos · 1 with a comment · 1 without"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("table output lacks %q:\n%s", want, out)
+		}
+	}
+
+	out, err = runCtl(t, "", "ctl", "--ctl-config", configPath, "tasks", "ledger", "tk1", "-o", "llm")
+	if err != nil {
+		t.Fatalf("tasks ledger -o llm returned %v", err)
+	}
+	for _, want := range []string{`"task_uid":"tk1"`, `"last_comment":{`, `"taken_at_precision":"decade"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("llm output lacks %s:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, `"pht02"`) && strings.Contains(out, `"last_comment":null`) {
+		t.Errorf("llm output kept an empty last_comment:\n%s", out)
+	}
+}

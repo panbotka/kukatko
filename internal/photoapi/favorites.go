@@ -68,6 +68,11 @@ type photoView struct {
 	// member-count badge. Non-primary members are hidden from listings, so a photo
 	// carrying a count is always the one visible member of its stack.
 	StackCount int `json:"stack_count,omitempty"`
+	// LastComment is the newest live comment on the photo, carried only by a
+	// task-scoped listing (see annotateLastComments): present-and-null there for
+	// a photo nobody has commented on, absent everywhere else so the ordinary
+	// library page never pays for it.
+	LastComment lastCommentField `json:"last_comment,omitzero"`
 }
 
 // annotate pairs each photo with the current user's per-user annotations —
@@ -223,7 +228,7 @@ func (a *API) writeFavoritePage(
 		writeError(w, http.StatusInternalServerError, "counting photos failed")
 		return
 	}
-	views, err := a.annotate(r.Context(), userUID, list)
+	views, err := a.annotatePage(r.Context(), userUID, params, list)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "annotating photos failed")
 		return
@@ -231,6 +236,24 @@ func (a *API) writeFavoritePage(
 	resp := pageResponse(params, views, counts)
 	hints.stamp(&resp)
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// annotatePage is annotate plus what a listing page carries and a detail does
+// not: under a task scope, each row's newest comment.
+func (a *API) annotatePage(
+	ctx context.Context, userUID string, params photos.ListParams, list []photos.Photo,
+) ([]photoView, error) {
+	views, err := a.annotate(ctx, userUID, list)
+	if err != nil {
+		return nil, err
+	}
+	if !taskScoped(params) {
+		return views, nil
+	}
+	if err := a.annotateLastComments(ctx, views); err != nil {
+		return nil, err
+	}
+	return views, nil
 }
 
 // writeFavoriteError maps a favorites store error to an HTTP response: 404 for a
