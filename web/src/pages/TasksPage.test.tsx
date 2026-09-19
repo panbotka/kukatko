@@ -166,3 +166,55 @@ describe('TasksPage', () => {
     expect(await screen.findByText('The tasks could not be loaded.')).toBeInTheDocument()
   })
 })
+
+describe('the state is the colour of the row', () => {
+  it('stripes every row with its own state', async () => {
+    // Five questions in five states is the page at its most confusing if they
+    // all look alike, so each row carries its state as data — the stripe down
+    // its left side is drawn from it (`.kk-task-row[data-state=…]`).
+    fetchTasksMock.mockResolvedValue(
+      page([
+        task({ uid: 'tk1', title: 'Waiting', state: 'question' }),
+        task({ uid: 'tk2', title: 'Started', state: 'working' }),
+        task({ uid: 'tk3', title: 'Checking', state: 'review' }),
+        task({ uid: 'tk4', title: 'Finished', state: 'done' }),
+        task({ uid: 'tk5', title: 'Refused', state: 'rejected' }),
+      ]),
+    )
+    renderPage()
+
+    await screen.findByText('Waiting')
+    const rows = document.querySelectorAll<HTMLElement>('.kk-task-row')
+    expect([...rows].map((row) => row.dataset.state)).toEqual([
+      'question',
+      'working',
+      'review',
+      'done',
+      'rejected',
+    ])
+  })
+
+  it('paints each badge in its own state class', async () => {
+    fetchTasksMock.mockResolvedValue(
+      page([
+        task({ uid: 'tk1', title: 'Waiting', state: 'question' }),
+        task({ uid: 'tk2', title: 'Finished', state: 'done' }),
+      ]),
+    )
+    renderPage()
+
+    await screen.findByText('Waiting')
+    // Scoped to the rows: the filter chips above them carry the same words.
+    const badge = (uid: string) => document.querySelector(`a[href="/tasks/${uid}"] .kk-task-state`)
+    expect(badge('tk1')).toHaveClass('kk-task-state--question')
+    expect(badge('tk2')).toHaveClass('kk-task-state--done')
+  })
+
+  it('gives "somebody answered" the accent rather than a sixth state hue', async () => {
+    fetchTasksMock.mockResolvedValue(page([task({ has_new_answer: true })]))
+    renderPage()
+
+    // It sits next to a state badge, so it must not read as another state.
+    expect(await screen.findByText('New answer')).toHaveClass('kk-task-answered')
+  })
+})

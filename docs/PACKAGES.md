@@ -3220,7 +3220,9 @@ to `## Package map` in `CLAUDE.md`.
   touched with it. `source_query` keeps the rule that produced the group as evidence and the server
   never runs it); `State` with `Valid`/`Closed`/`NeedsHuman` + `States`/`OpenStates`, `Task`,
   `Update` (pointer fields: nil = leave alone), `Filter{States,Open,Answered,Search,PhotoUID,Limit,Offset}`
-  with `Page()` (clamped to `DefaultLimit` 50 / `MaxLimit` 200) and `conditions()`; the rules of an edit
+  with `Page()` (clamped to `DefaultLimit` 50 / `MaxLimit` 200) and `conditions()` — where `Search` runs
+  through `immutable_unaccent` on **both** sides, like every other text search in the library, so "dum"
+  finds "dům" and a queue nobody can spell is still a queue somebody can search; the rules of an edit
   are the **pure** `applyUpdate`/`newFields`/`closure`/`diff` in `apply.go`, so the store writes what they
   return and decides nothing (a state that moves stamps `state_at` and recomputes the closing marks; one
   that stays put keeps `state_at`, which is what makes "has anybody replied since" mean anything);

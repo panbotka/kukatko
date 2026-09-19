@@ -2955,3 +2955,65 @@ body {
 .kk-upload-thumb--error {
   border-color: var(--bs-danger);
 }
+
+/* ---- Work queue --------------------------------------------------------- */
+
+/*
+ * One question in the queue (`pages/TasksPage.tsx`). The page is read by
+ * scanning it for what to do next, so a row is a surface with a coloured edge
+ * rather than a line of text: the stripe down its left side is the task's
+ * state, in the same hue the badge on the right uses.
+ *
+ * The hue itself is defined once in `tokens.css` and picked here off the row's
+ * `data-state`, so the badge and the stripe cannot drift apart. The stripe is
+ * never the only signal — the badge beside it states the state in words and
+ * carries a glyph.
+ */
+.kk-task-row {
+  border: 1px solid var(--kk-surface-border);
+  border-inline-start: 4px solid var(--kk-task-stripe, var(--kk-surface-border));
+  background-color: var(--kk-surface-raised);
+  transition: background-color var(--kk-duration-fast) var(--kk-ease-standard);
+}
+
+.kk-task-row:hover,
+.kk-task-row:focus-visible {
+  background-color: color-mix(in srgb, var(--kk-surface-raised) 88%, var(--bs-primary) 12%);
+}
+
+.kk-task-row[data-state='question'] {
+  --kk-task-stripe: var(--kk-task-question-bg);
+}
+
+.kk-task-row[data-state='working'] {
+  --kk-task-stripe: var(--kk-task-working-bg);
+}
+
+.kk-task-row[data-state='review'] {
+  --kk-task-stripe: var(--kk-task-review-bg);
+}
+
+.kk-task-row[data-state='done'] {
+  --kk-task-stripe: var(--kk-task-done-bg);
+}
+
+.kk-task-row[data-state='rejected'] {
+  --kk-task-stripe: var(--kk-task-rejected-bg);
+}
+
+/*
+ * A closed question stays in the listing as the record of what was decided, but
+ * it is not work any more, so it recedes: the thumbnail and the text drop to
+ * three quarters until the row is hovered.
+ */
+.kk-task-row[data-state='done'],
+.kk-task-row[data-state='rejected'] {
+  opacity: 0.75;
+}
+
+.kk-task-row[data-state='done']:hover,
+.kk-task-row[data-state='rejected']:hover,
+.kk-task-row[data-state='done']:focus-visible,
+.kk-task-row[data-state='rejected']:focus-visible {
+  opacity: 1;
+}

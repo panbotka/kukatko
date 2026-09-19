@@ -26,10 +26,14 @@ export interface TaskControlsProps {
 }
 
 /**
- * The curation half of a task's page: the state, the resolution and the wording
- * of the question. It is rendered only for a writer, and it sits below the
- * discussion on purpose — a viewer who was sent the link should reach the answer
- * box without scrolling past controls they cannot use.
+ * The bookkeeping half of a task's page: how far along it is, how it ended, and
+ * the query the group came from. It is rendered only for a writer, and it sits
+ * below the discussion on purpose — a viewer who was sent the link should reach
+ * the answer box without scrolling past controls they cannot use, and a writer
+ * reaches for this card only once the conversation has told them something.
+ *
+ * The wording of the question is *not* here: it is edited in place at the top of
+ * the page (`TaskQuestion`), where the words themselves are.
  *
  * Closing is the one move with a rule attached: the resolution field appears as
  * soon as a closed state is picked, because the server refuses a task that is
@@ -40,15 +44,11 @@ export function TaskControls({ task, busy, onSave, onDelete, onChanged }: TaskCo
   const { t } = useTranslation()
   const [state, setState] = useState<TaskState>(task.state)
   const [resolution, setResolution] = useState(task.resolution)
-  const [editing, setEditing] = useState(false)
-  const [title, setTitle] = useState(task.title)
-  const [body, setBody] = useState(task.body)
   const [query, setQuery] = useState(task.query)
   const [failed, setFailed] = useState(false)
 
   const closing = isClosedState(state)
-  const stateChanged = state !== task.state
-  const resolutionChanged = resolution !== task.resolution
+  const changed = state !== task.state || resolution !== task.resolution || query !== task.query
 
   async function apply(edit: TaskEdit) {
     setFailed(false)
@@ -107,27 +107,29 @@ export function TaskControls({ task, busy, onSave, onDelete, onChanged }: TaskCo
           </Form.Group>
         )}
 
+        <Form.Group className="mb-3">
+          <Form.Label htmlFor="task-query">{t('taskDetail.controls.query')}</Form.Label>
+          <Form.Control
+            id="task-query"
+            value={query}
+            disabled={busy}
+            onChange={(event) => {
+              setQuery(event.target.value)
+            }}
+          />
+          <Form.Text>{t('taskDetail.controls.queryHint')}</Form.Text>
+        </Form.Group>
+
         <div className="d-flex flex-wrap gap-2 align-items-center">
           <Button
             variant="primary"
             size="sm"
-            disabled={
-              busy || (!stateChanged && !resolutionChanged) || (closing && resolution === '')
-            }
+            disabled={busy || !changed || (closing && resolution === '')}
             onClick={() => {
-              void apply({ state, resolution })
+              void apply({ state, resolution, query })
             }}
           >
             {busy ? t('taskDetail.controls.saving') : t('taskDetail.controls.save')}
-          </Button>
-          <Button
-            variant="outline-secondary"
-            size="sm"
-            onClick={() => {
-              setEditing((open) => !open)
-            }}
-          >
-            <Icon name="pencil" /> {t('taskDetail.controls.edit')}
           </Button>
           {task.query !== '' && (
             <Link
@@ -141,57 +143,6 @@ export function TaskControls({ task, busy, onSave, onDelete, onChanged }: TaskCo
             <Icon name="trash" /> {t('taskDetail.controls.delete')}
           </Button>
         </div>
-
-        {editing && (
-          <div className="mt-3 border-top pt-3">
-            <Form.Group className="mb-3">
-              <Form.Label htmlFor="task-title">{t('taskDetail.controls.question')}</Form.Label>
-              <Form.Control
-                id="task-title"
-                value={title}
-                disabled={busy}
-                onChange={(event) => {
-                  setTitle(event.target.value)
-                }}
-              />
-            </Form.Group>
-            <Form.Group className="mb-3">
-              <Form.Label htmlFor="task-body">{t('taskDetail.controls.body')}</Form.Label>
-              <Form.Control
-                id="task-body"
-                as="textarea"
-                rows={5}
-                value={body}
-                disabled={busy}
-                onChange={(event) => {
-                  setBody(event.target.value)
-                }}
-              />
-            </Form.Group>
-            <Form.Group className="mb-3">
-              <Form.Label htmlFor="task-query">{t('taskDetail.controls.query')}</Form.Label>
-              <Form.Control
-                id="task-query"
-                value={query}
-                disabled={busy}
-                onChange={(event) => {
-                  setQuery(event.target.value)
-                }}
-              />
-              <Form.Text>{t('taskDetail.controls.queryHint')}</Form.Text>
-            </Form.Group>
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={busy || title.trim() === ''}
-              onClick={() => {
-                void apply({ title, body, query })
-              }}
-            >
-              {busy ? t('taskDetail.controls.saving') : t('taskDetail.controls.save')}
-            </Button>
-          </div>
-        )}
       </Card.Body>
     </Card>
   )

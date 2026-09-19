@@ -388,6 +388,18 @@ func TestList_filtersAndOrder(t *testing.T) {
 		t.Errorf("List(search) = %v, want just the matching task", uids(found))
 	}
 
+	// The search is as forgiving as the rest of the library: neither the
+	// diacritics nor the case of the query have to match what was written.
+	for _, term := range []string{"o dome", "OTEVŘENÁ", "otevrena"} {
+		loose, _, err := f.tasks.List(ctx, phototask.Filter{Search: term})
+		if err != nil {
+			t.Fatalf("List(search %q): %v", term, err)
+		}
+		if len(loose) != 1 || loose[0].UID != open.UID {
+			t.Errorf("List(search %q) = %v, want just the matching task", term, uids(loose))
+		}
+	}
+
 	page, pageTotal, err := f.tasks.List(ctx, phototask.Filter{Limit: 1, Offset: 1})
 	if err != nil {
 		t.Fatalf("List(page): %v", err)

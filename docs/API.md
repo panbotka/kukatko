@@ -887,8 +887,9 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   touched at the top, where a **reply counts as a touch**. Filters: `state` (repeatable **and**
   comma-separated; an unknown state is a **400**, never an empty result — a typo must say so), `open=true`
   (the shorthand for the three live states; ignored when `state` is given), `answered=true`, `q` (substring
-  of the question or its context), `photo={uid}`, `limit` (default 50, max 200) / `offset`; the envelope
-  echoes the `limit`/`offset` actually applied, not the ones asked for.
+  of the question or its context, matched **case- and diacritics-insensitively** like every other text
+  search in the library — `q=dum` finds "dům"), `photo={uid}`, `limit` (default 50, max 200) / `offset`;
+  the envelope echoes the `limit`/`offset` actually applied, not the ones asked for.
   Each task carries `uid`, `title` (the question), `body` (Markdown context), `state`
   (`question`/`working`/`review`/`done`/`rejected`), `resolution`, `query`, `created_by`/`created_by_name`,
   `created_at`/`updated_at`/`state_at`, `closed_at`/`closed_by`/`closed_by_name`, `photo_count`,

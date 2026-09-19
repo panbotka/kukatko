@@ -1922,13 +1922,21 @@ here.
   `TasksPage` = `/tasks` the **work queue**: one row per task (one of its photographs as a 56px tile, the
   question, the state as a `TaskStateBadge`, the photo/comment counts, and a loud **Nová odpověď** badge when
   `has_new_answer`), open tasks first and the most recently touched at the top, where a reply counts as a
-  touch. A chip row filters by state (`Otevřené` = the default, `Všechny`, one per state) plus `S odpovědí`,
+  touch. The row is **striped in its state's hue**: it carries `data-state` and `.kk-task-row` draws the
+  leading border from it, so the page is scannable before a word of it is read — the first cut left the
+  state to a single badge on the right and read as one undifferentiated list. A closed row also drops to
+  75 % opacity until hovered: it is the record of a decision, not work. **Nová odpověď** takes the app's
+  azure accent rather than a sixth state hue, because it sits beside a state badge and must not read as
+  another state of the work. A chip row filters by state (`Otevřené` = the default, `Všechny`, one per
+  state) plus `S odpovědí`,
   and a search box over the question; all of it round-trips through the URL (`useUrlState`, keys
   `state`/`answered`/`q`) so Back restores the filter. Every signed-in role may read it — a viewer who was
   sent a link finds the question again here once the link has scrolled out of their chat — and only
   `canWrite` sees **Nový úkol**, which opens `NewTaskModal`,
   `TaskDetailPage` = `/tasks/:uid` the page a **link is sent to**, so it is built for somebody who has never
-  seen Kukátko: the question is the `h1`, the Markdown context and (for a closed task) its resolution follow,
+  seen Kukátko: the byline (`TaskQuestion`) is the page's **eyebrow above** the `h1`, not a line under it —
+  it says where the question came from, which is worth knowing before reading it and never worth reading
+  first — then the question as the `h1`, the Markdown context and (for a closed task) its resolution,
   then the photographs — an ordinary scoped list: `PhotoGrid` over `useScopedPhotos({task: uid})` with the
   shared `FilterBar`, the density control, `SlideshowStart` and, for an editor, hover-select into
   `BatchActionBar`, all round-tripping through the URL exactly as on a label. The first cut left the filter
@@ -1937,18 +1945,31 @@ here.
   question is about are usually the ones somebody is about to edit, so making them behave differently from
   every other list was the odd choice. The wall passes `minHeight="0"`: the library's half-viewport reserve
   is right for a page that *is* a grid and a hole between two sections here. Then
-  the thread (`CommentsPanel` with a `taskSubject`), and last, for a writer only, `TaskControls`. That order
-  is the design: a viewer reaches the box they came to write in without scrolling past controls they cannot
-  use. A 404 lands in a `missing` state of its own (`isNotFound`), because a link outlives the task it points
+  the thread (`CommentsPanel` with a `taskSubject`) **on a `Card` of its own** — the conversation is the
+  page's other half and is bounded like one, rather than running on from the wall — and last, for a writer
+  only, `TaskControls`. That order is the design: a viewer reaches the box they came to write in without
+  scrolling past controls they cannot use. A 404 lands in a `missing` state of its own (`isNotFound`),
+  because a link outlives the task it points
   at and "this question has been deleted" is not "could not be loaded". The tiles carry the task scope in the
   detail link (`detailQuery` with `task=uid`) → Esc/Back/prev-next from a photo returns to the task,
-  `pages/task/TaskControls` (the curation half: a `<select>` of the five states, the **resolution textarea
-  that appears as soon as a closing state is picked** — with Save disabled until it has text, because the
-  server refuses a task that is closed and silent and discovering that as a failed save would be worse than
-  being asked up front — a collapsed editor for the question/context/remembered query, a link that runs the
-  remembered query in `/search`, and Delete behind `ConfirmModal`),
-  `components/tasks/TaskStateBadge` (one state as a badge: the three open states warm, `done` green,
-  `rejected` **grey rather than red** — it is a result, not a failure) and
+  `pages/task/TaskQuestion` (the byline, the question and its context — and, **for a writer, the pencil
+  that turns those two blocks into the two fields that produced them, in place**. Rewording used to live in
+  the card at the foot of the page, which meant scrolling past the whole conversation to fix a word and
+  scrolling back to see whether it had taken; an editor now edits the thing they are looking at. A failed
+  save keeps the editor open and says so),
+  `pages/task/TaskControls` (the **bookkeeping** half — no longer the wording: a `<select>` of the five
+  states, the **resolution textarea that appears as soon as a closing state is picked** — with Save disabled
+  until it has text, because the server refuses a task that is closed and silent and discovering that as a
+  failed save would be worse than being asked up front — the remembered query, all three saved together, a
+  link that runs that query in `/search`, and Delete behind `ConfirmModal`),
+  `components/tasks/taskState` (`TASK_STATE_STYLE`, the one map from a state to its colour class and glyph,
+  read by the badge *and* by the row stripe so the two cannot drift; the hues themselves live once in
+  `styles/tokens.css` and are guarded by `styles/taskQueue.test.ts`),
+  `components/tasks/TaskStateBadge` (one state as a badge: **five hues far apart**, not five shades of one
+  warning colour — amber is waiting on a person, cyan somebody is on it, violet waiting for a yes, green
+  finished, and `rejected` **slate rather than red**, because closing a question with "no, and here is why"
+  is a full result. Each badge also carries its name in words and a glyph, so nothing is lost without
+  colour) and
   `components/tasks/NewTaskModal` (two fields, question + context, because a question that takes a form to
   ask does not get asked; on success it navigates straight to the new task, which is both the confirmation
   and the page whose link gets sent on. `photoUids` opens it over a selection), The selection is where it is

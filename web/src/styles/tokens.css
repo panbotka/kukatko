@@ -272,6 +272,30 @@
   --kk-entity-person-bg: #c23b6b; /* rose   — people */
   --kk-entity-fg: #fff;
 
+  /* ---- Task states ----------------------------------------------------
+     A task is a question about a group of photographs, and its state is the
+     one thing the queue is scanned for: who is waiting on whom. So each of
+     the five states gets its own hue rather than five shades of the same
+     warning colour — a page where every row looks alike has to be read word
+     by word.
+
+     They run in the order work moves: amber is waiting on a person (the
+     loudest, because it is the only one asking something of the reader),
+     cyan means somebody is on it, violet is waiting for a yes, green is
+     finished. `rejected` is slate rather than red: closing a question with
+     "no, and here is why" is a full result, not a failure.
+
+     Amber carries the page's near-black text (≈ 9:1); the other four carry
+     white at ≥ 4.5:1. The hue is never the only signal — every badge also
+     states its name and carries a glyph (see `components/tasks/taskState.ts`). */
+  --kk-task-question-bg: #e0a800; /* amber  — waiting on a person */
+  --kk-task-question-fg: #15130f;
+  --kk-task-working-bg: #0f6f8c; /* cyan   — somebody is on it */
+  --kk-task-review-bg: #6244c5; /* violet — waiting for a yes */
+  --kk-task-done-bg: #3f7d20; /* green  — finished */
+  --kk-task-rejected-bg: #4a443a; /* slate  — a result, not a failure */
+  --kk-task-fg: #fff;
+
   /* ---- Avatar tones ---------------------------------------------------
      The palette an initial-circle avatar picks from. Kukátko stores no
      profile pictures — it stores photographs — so a person in a conversation
@@ -1142,6 +1166,59 @@
 
 .kk-entity-person {
   background-color: var(--kk-entity-person-bg) !important;
+}
+
+/* ---- Task state badges -------------------------------------------------- */
+
+/*
+ * One class per task state, painted from the tokens above. Like the entity
+ * modifiers, they carry `!important` so they win over the `bg-*` utility
+ * react-bootstrap's `<Badge>` puts on every badge without a specificity fight.
+ *
+ * The glyph is spaced from the word rather than crammed against it, and the
+ * badge keeps the page's normal weight: it is a label, not a shout.
+ */
+.kk-task-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  font-weight: 600;
+}
+
+.kk-task-state--question {
+  background-color: var(--kk-task-question-bg) !important;
+  color: var(--kk-task-question-fg) !important;
+}
+
+.kk-task-state--working {
+  background-color: var(--kk-task-working-bg) !important;
+  color: var(--kk-task-fg) !important;
+}
+
+.kk-task-state--review {
+  background-color: var(--kk-task-review-bg) !important;
+  color: var(--kk-task-fg) !important;
+}
+
+.kk-task-state--done {
+  background-color: var(--kk-task-done-bg) !important;
+  color: var(--kk-task-fg) !important;
+}
+
+.kk-task-state--rejected {
+  background-color: var(--kk-task-rejected-bg) !important;
+  color: var(--kk-task-fg) !important;
+}
+
+/*
+ * "Somebody has replied since the state last moved" — the one thing the queue
+ * is actually scanned for. It sits next to a state badge, so it takes the
+ * app's own azure accent rather than a sixth state hue: the colour reads as
+ * the application pointing at a row, not as another state of the work.
+ */
+.kk-task-answered {
+  background-color: var(--kk-accent-solid) !important;
+  color: var(--kk-on-accent) !important;
 }
 
 /* ---- Initial-circle avatar --------------------------------------------- */

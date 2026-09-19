@@ -8,7 +8,7 @@ import { BackLink } from '../components/BackLink'
 import { ConfirmModal } from '../components/ConfirmModal'
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
-import { Markdown } from '../components/Markdown'
+import { Icon } from '../components/Icon'
 import { FilterBar } from '../components/library/FilterBar'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
@@ -30,6 +30,7 @@ import { taskSubject } from '../services/comments'
 import { deleteTask, fetchTask, type Task, updateTask } from '../services/tasks'
 
 import { TaskControls } from './task/TaskControls'
+import { TaskQuestion } from './task/TaskQuestion'
 
 /**
  * Fetch lifecycle of the task record. `missing` is a 404 kept apart from
@@ -51,9 +52,15 @@ const TASKS_PATH = '/tasks'
  *
  * This is the page a link is sent to, so it is built for somebody who has never
  * seen Kukátko: the question is the heading, the pictures are under it, and the
- * box to write in is under those. The curation controls — state, resolution,
- * membership — come last and only for a writer; a viewer sees a question, some
- * photographs and a place to answer, which is all they need.
+ * box to write in is under those. Each of those three is a block of its own —
+ * the byline and question, the wall, the conversation on its own card — because
+ * a page whose parts run together is a page that has to be read to be
+ * understood. The bookkeeping — state, resolution, the source query — comes
+ * last and only for a writer; a viewer sees a question, some photographs and a
+ * place to answer, which is all they need.
+ *
+ * Rewording the question happens where the question is, not in the card at the
+ * foot: see `TaskQuestion`.
  *
  * The wall behaves like every other scoped list — filters, sort and tiles per
  * row, all round-tripping through the URL — because a task's group is often the
@@ -196,21 +203,7 @@ export function TaskDetailPage() {
         )}
       </div>
 
-      {/* The question is the page. Everything else on it exists to answer this. */}
-      <h1 className="kk-page-title mb-2">{task.title}</h1>
-      <p className="text-body-secondary small mb-3">
-        {t('taskDetail.opened', { name: task.created_by_name || t('taskDetail.someone') })}
-        {' · '}
-        {t('tasks.row.photos', { count: task.photo_count })}
-      </p>
-
-      {task.body !== '' && (
-        <Card className="mb-4">
-          <Card.Body>
-            <Markdown>{task.body}</Markdown>
-          </Card.Body>
-        </Card>
-      )}
+      <TaskQuestion task={task} canEdit={canWrite} busy={busy} onSave={save} />
 
       {task.resolution !== '' && (
         <Card className="mb-4 border-success">
@@ -247,15 +240,23 @@ export function TaskDetailPage() {
         </div>
       )}
 
-      {/* Anybody signed in may answer: that is what the link was sent for. */}
-      <section className="mb-4">
-        <h2 className="h5">{t('taskDetail.discussion')}</h2>
-        <CommentsPanel
-          subject={taskSubject(task.uid)}
-          currentUserUid={user?.uid ?? null}
-          canModerate={isAdmin}
-        />
-      </section>
+      {/* Anybody signed in may answer: that is what the link was sent for.
+          The conversation is the page's other half, so it gets a surface of its
+          own rather than running on from the photographs — a question, the
+          pictures it is about, and then a visibly separate place to talk. */}
+      <Card as="section" className="mb-4">
+        <Card.Header className="d-flex align-items-center gap-2">
+          <Icon name="chat-left-text" aria-hidden="true" />
+          <h2 className="h6 mb-0">{t('taskDetail.discussion')}</h2>
+        </Card.Header>
+        <Card.Body>
+          <CommentsPanel
+            subject={taskSubject(task.uid)}
+            currentUserUid={user?.uid ?? null}
+            canModerate={isAdmin}
+          />
+        </Card.Body>
+      </Card>
 
       {canWrite && (
         <TaskControls

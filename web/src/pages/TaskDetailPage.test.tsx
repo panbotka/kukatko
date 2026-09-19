@@ -203,7 +203,13 @@ describe('TaskDetailPage', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => {
-      expect(updateTaskMock).toHaveBeenCalledWith('tk1', { state: 'done', resolution: '1987' })
+      // The card saves its three bookkeeping fields together; the source query
+      // rides along unchanged, which the server diffs away.
+      expect(updateTaskMock).toHaveBeenCalledWith('tk1', {
+        state: 'done',
+        resolution: '1987',
+        query: 'camera:Olympus',
+      })
     })
   })
 
@@ -224,6 +230,83 @@ describe('TaskDetailPage', () => {
     renderPage()
 
     expect(await screen.findByText('This task does not exist')).toBeInTheDocument()
+  })
+})
+
+describe('the question block', () => {
+  it('puts the byline above the question, not under it', async () => {
+    renderPage()
+
+    const heading = await screen.findByRole('heading', { name: /In which year/ })
+    const byline = screen.getByText(/Opened by Pan Botka/)
+    // The byline is the eyebrow of the page: it says where the question came
+    // from, which is worth knowing before reading it and never worth reading
+    // first. So it precedes the heading in the document.
+    expect(byline.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('rewords the question in place, where the question is', async () => {
+    const user = userEvent.setup()
+    updateTaskMock.mockResolvedValue(task({ title: 'Which year exactly?', body: 'Two of them.' }))
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: /Edit the question/ }))
+
+    // The fields open beside the heading they belong to — not in the card at
+    // the foot of the page, a whole conversation away from the words.
+    const title = screen.getByLabelText('Question')
+    const body = screen.getByLabelText('Context')
+    expect(title).toHaveValue('In which year was the house rebuilt?')
+    expect(body).toHaveValue('Three photos of the rebuilding.')
+
+    await user.clear(title)
+    await user.type(title, 'Which year exactly?')
+    await user.clear(body)
+    await user.type(body, 'Two of them.')
+    // The editor's own Save, not the bookkeeping card's.
+    await user.click(screen.getAllByRole('button', { name: 'Save' })[0])
+
+    await waitFor(() => {
+      expect(updateTaskMock).toHaveBeenCalledWith('tk1', {
+        title: 'Which year exactly?',
+        body: 'Two of them.',
+      })
+    })
+    // A landed save closes the editor and the new wording stands as the heading.
+    expect(await screen.findByRole('heading', { name: 'Which year exactly?' })).toBeInTheDocument()
+    expect(screen.queryByLabelText('Question')).not.toBeInTheDocument()
+  })
+
+  it('keeps the editor open and says so when the save did not land', async () => {
+    const user = userEvent.setup()
+    updateTaskMock.mockRejectedValue(new Error('nope'))
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: /Edit the question/ }))
+    await user.click(screen.getAllByRole('button', { name: 'Save' })[0])
+
+    expect(await screen.findByText('Saving failed.')).toBeInTheDocument()
+    expect(screen.getByLabelText('Question')).toBeInTheDocument()
+  })
+
+  it('offers a viewer no way to reword it', async () => {
+    renderPage(false)
+    await screen.findByRole('heading', { name: /In which year/ })
+
+    expect(screen.queryByRole('button', { name: /Edit the question/ })).not.toBeInTheDocument()
+  })
+})
+
+describe('the discussion', () => {
+  it('stands on a surface of its own, apart from the photographs', async () => {
+    renderPage()
+
+    const heading = await screen.findByRole('heading', { name: 'Discussion' })
+    // A card, not a run of text under the wall: the conversation is the page's
+    // other half and is bounded like one.
+    const card = heading.closest('.card')
+    expect(card).not.toBeNull()
+    expect(card).toContainElement(screen.getByLabelText('New comment'))
   })
 })
 

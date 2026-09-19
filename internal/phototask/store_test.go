@@ -90,8 +90,10 @@ func TestFilterConditions(t *testing.T) {
 	for _, want := range []string{
 		"t.state = ANY($1)",
 		"th.last_comment_at > t.state_at",
-		"t.title ILIKE $2",
-		"t.body ILIKE $2",
+		// Both sides pass through immutable_unaccent, so "dum" finds "dům" —
+		// the same shape every other text search in the library uses.
+		"immutable_unaccent(t.title) ILIKE immutable_unaccent($2)",
+		"immutable_unaccent(t.body) ILIKE immutable_unaccent($2)",
 		"tp.photo_uid = $3",
 	} {
 		if !strings.Contains(joined, want) {

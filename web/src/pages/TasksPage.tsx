@@ -195,6 +195,11 @@ export function TasksPage() {
  * One line of the listing: the thumbnail of the first photograph, the question,
  * the state, and the two counts. The "answered" mark is deliberately loud — it
  * is the one thing a reader scans the page for.
+ *
+ * The state is on the row twice over: as the badge on the right, and as the
+ * coloured stripe down the left that `data-state` picks (see `.kk-task-row` in
+ * `styles/app.css`). That is what makes the queue scannable — the shape of the
+ * page tells you what is waiting on you before you read a word of it.
  */
 function TaskRow({ task }: { task: Task }) {
   const { t } = useTranslation()
@@ -202,6 +207,7 @@ function TaskRow({ task }: { task: Task }) {
     <li>
       <Link
         to={`/tasks/${task.uid}`}
+        data-state={task.state}
         className="d-flex align-items-center gap-3 p-2 rounded text-decoration-none kk-task-row"
       >
         {task.cover_photo_uid !== undefined && task.cover_photo_uid !== '' ? (
@@ -230,7 +236,11 @@ function TaskRow({ task }: { task: Task }) {
           </span>
         </span>
         <span className="d-flex align-items-center gap-2 flex-shrink-0">
-          {task.has_new_answer && <Badge bg="warning text-dark">{t('tasks.row.answered')}</Badge>}
+          {task.has_new_answer && (
+            <Badge className="kk-task-answered">
+              <Icon name="chat-left-text" /> {t('tasks.row.answered')}
+            </Badge>
+          )}
           <TaskStateBadge state={task.state} />
         </span>
       </Link>

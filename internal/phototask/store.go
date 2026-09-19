@@ -135,8 +135,13 @@ func (f Filter) conditions() ([]string, []any) {
 		where = append(where, "th.last_comment_at IS NOT NULL AND th.last_comment_at > t.state_at")
 	}
 	if f.Search != "" {
-		pattern := bind("%" + likeEscape(f.Search) + "%")
-		where = append(where, "(t.title ILIKE "+pattern+" OR t.body ILIKE "+pattern+")")
+		// Case- *and* accent-insensitive, exactly like every other text search in
+		// the library (albums, labels, people): somebody typing "dum" is looking
+		// for "dům", and a queue you have to spell with the right diacritics to
+		// search is a queue nobody searches.
+		pattern := "immutable_unaccent(" + bind("%"+likeEscape(f.Search)+"%") + ")"
+		where = append(where, "(immutable_unaccent(t.title) ILIKE "+pattern+
+			" OR immutable_unaccent(t.body) ILIKE "+pattern+")")
 	}
 	if f.PhotoUID != "" {
 		where = append(where, "EXISTS (SELECT 1 FROM photo_task_photos tp"+

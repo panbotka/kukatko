@@ -2,22 +2,21 @@ import { Badge } from 'react-bootstrap'
 import { useTranslation } from 'react-i18next'
 
 import { type TaskState } from '../../services/tasks'
+import { Icon } from '../Icon'
+
+import { TASK_STATE_STYLE } from './taskState'
 
 /**
- * The colour each state is drawn in. The three open states are warm — something
- * is waiting on somebody — and the two closed ones are quiet: "rejected" is a
- * result rather than a failure, so it is grey, not red.
+ * Draws one task state as a badge: its hue, its glyph and its name in the
+ * reader's language. The colours themselves are documented in
+ * {@link TASK_STATE_STYLE}, which the queue's row stripe reads too.
  */
-const VARIANT: Record<TaskState, string> = {
-  question: 'warning text-dark',
-  working: 'info text-dark',
-  review: 'primary',
-  done: 'success',
-  rejected: 'secondary',
-}
-
-/** Draws one task state as a badge, named in the reader's language. */
 export function TaskStateBadge({ state }: { state: TaskState }) {
   const { t } = useTranslation()
-  return <Badge bg={VARIANT[state]}>{t(`tasks.state.${state}`)}</Badge>
+  const style = TASK_STATE_STYLE[state]
+  return (
+    <Badge className={`kk-task-state ${style.className}`}>
+      <Icon name={style.icon} /> {t(`tasks.state.${state}`)}
+    </Badge>
+  )
 }
