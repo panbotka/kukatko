@@ -309,7 +309,13 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   grid, so the group is browsed with every ordinary filter, sort and page on top of it rather than
   through a gallery endpoint of its own. Like `album`/`label` (and unlike `person`) it **lifts the
   default hidden-from-library scope**: a photograph deliberately filed into a task is meant to be seen
-  there. The `album`, `label`, `task` and `person` UIDs together are capped at 256 per request;
+  there. Alone among the scopes it **also lifts the stack collapse**
+  (`stack_uid IS NULL OR stack_primary`), so a stack's non-primary members — a RAW sibling, an edited
+  variant — are listed too: a frozen group is the set of *files* somebody picked, and "recompute these
+  seven RAWs" is a question about the RAW, not about the JPEG it sits under. Without the lift a task
+  over stacked RAWs served an empty grid under its own `photo_count`. An album or a label still shows
+  one tile per shot. The `album`, `label`, `task` and `person` UIDs together are capped at 256 per
+  request;
   the **`person` scope** (`?person={uid}`, also multi-valued, repeated `?person=a&person=b`,
   combined with **AND**) narrows the listing to photos containing **all** selected subjects
   (person/animal/other) —

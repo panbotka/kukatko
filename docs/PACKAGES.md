@@ -551,7 +551,8 @@ to `## Package map` in `CLAUDE.md`.
   **copies** the caller's entry before completing it: a target stamped onto the original inside the closure
   would be thrown away with it, and the row would record a NULL target. Plus `ListParams.IncludeStackMembers`
   (lifts the shared visibility predicate `(stack_uid IS NULL OR stack_primary)` for a caller that wants
-  **all** members) and the exported **`LeaveStackTx(ctx,tx,uid)`** (takes one photo out of its stack and
+  **all** members — as a `uid:` filter and a **task scope** do on their own, the latter because a task's
+  frozen group names files rather than shots) and the exported **`LeaveStackTx(ctx,tx,uid)`** (takes one photo out of its stack and
   repairs the remnant — dissolve below 2 members, re-elect a lost primary — on the caller's transaction).
   Every path that removes a photo from circulation calls it in the **same transaction** as the mutation:
   `Archive`/`ArchiveAudited`, `Delete`/`DeleteAudited` (and thus `internal/trash`'s retention purge),
@@ -565,9 +566,9 @@ to `## Package map` in `CLAUDE.md`.
   firehose, and `hiddenClauses` — `stackClauses`' sibling, a bare `photos.*` predicate in
   `whereClauses`, so it reaches `List`, `Count`, `Search`, `FilterUIDs`, `YearBuckets` and
   `TimelineBuckets` at once — emits `NOT hidden_from_library` by default. It **lifts itself** when the
-  listing is scoped to an album (`AlbumUIDs`), a label (`LabelUIDs`) or the caller's favourites
-  (`FavoriteOf`): a photo filed there was put there deliberately, and that one rule spares every caller
-  a flag. `ListParams.IncludeHidden` is the explicit escape hatch, and an explicit `hidden:` in the
+  listing is scoped to an album (`AlbumUIDs`), a label (`LabelUIDs`), a task (`TaskUIDs`) or the
+  caller's favourites (`FavoriteOf`): a photo filed there was put there deliberately, and that one rule
+  spares every caller a flag. `ListParams.IncludeHidden` is the explicit escape hatch, and an explicit `hidden:` in the
   query language yields the default too (`archivedClauses`' precedent — otherwise `hidden:yes` would
   match nothing). It is neither `archived_at` (on its way out, purged after retention) nor `private`
   (a sharing concept, out of scope). The two hand-written library queries repeat the predicate by hand:

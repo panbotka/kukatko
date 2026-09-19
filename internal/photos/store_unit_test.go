@@ -331,6 +331,69 @@ func TestBuildListQuery_hiddenQueryFilterCompiles(t *testing.T) {
 	}
 }
 
+// TestStackClauses verifies the stack-visibility default and every scope that
+// lifts it. A stack's non-primary members stay out of a listing so that one shot
+// occupies one tile, but a task's frozen group names the files themselves —
+// "recompute these seven RAWs" is a question about the RAW, not about the JPEG
+// it is filed under — so the filter yields to a task scope the way the
+// visible-only filter does. An album or a label is still a shelf a shot was put
+// on rather than a set of files, so both keep collapsing.
+func TestStackClauses(t *testing.T) {
+	t.Parallel()
+
+	primaryOnly := []string{"(stack_uid IS NULL OR stack_primary)"}
+
+	tests := []struct {
+		name   string
+		params ListParams
+		want   []string
+	}{
+		{name: "default collapses a stack", params: ListParams{}, want: primaryOnly},
+		{name: "include-members lifts", params: ListParams{IncludeStackMembers: true}},
+		{name: "task scope lifts", params: ListParams{TaskUIDs: []string{"tk_1"}}},
+		{name: "a uid: lookup lifts", params: ListParams{QueryFilters: uidFilters("ph_1")}},
+		{
+			name:   "album scope still collapses",
+			params: ListParams{AlbumUIDs: []string{"al_1"}},
+			want:   primaryOnly,
+		},
+		{
+			name:   "label scope still collapses",
+			params: ListParams{LabelUIDs: []string{"lb_1"}},
+			want:   primaryOnly,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := stackClauses(tt.params); !slices.Equal(got, tt.want) {
+				t.Errorf("stackClauses(%+v) = %v, want %v", tt.params, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestBuildListQuery_taskScopeKeepsStackMembers verifies the lift reaches the
+// assembled query: a task-scoped listing must not carry the stack-primary
+// predicate, or a task opened over RAW siblings shows an empty grid while its
+// own photo count says there are seven.
+func TestBuildListQuery_taskScopeKeepsStackMembers(t *testing.T) {
+	t.Parallel()
+
+	// The bare column name is in every SELECT list, so match the predicate.
+	const collapse = "(stack_uid IS NULL OR stack_primary)"
+
+	scoped, _ := buildListQuery(ListParams{TaskUIDs: []string{"tk_1"}})
+	if strings.Contains(scoped, collapse) {
+		t.Errorf("task-scoped list query still collapses stacks: %q", scoped)
+	}
+	unscoped, _ := buildListQuery(ListParams{})
+	if !strings.Contains(unscoped, collapse) {
+		t.Errorf("default list query missing the stack filter: %q", unscoped)
+	}
+}
+
 // boolFilters builds the parsed-filter slice for one yes/no key, the shape
 // internal/query hands the store.
 func boolFilters(key query.Key, value bool) []query.Filter {

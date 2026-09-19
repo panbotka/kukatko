@@ -83,7 +83,9 @@ type ListParams struct {
 	OnlyArchived bool
 	// IncludeStackMembers returns the non-primary members of a stack alongside the
 	// primaries when true. By default (false) only a stack's primary is returned,
-	// so the several files of one shot occupy a single tile in every listing.
+	// so the several files of one shot occupy a single tile in every listing —
+	// see stackClauses, which also lifts the filter on its own for a listing
+	// scoped to a task, whose frozen group names the files themselves.
 	IncludeStackMembers bool
 	// IncludeHidden returns the photos hidden from the library alongside the
 	// visible ones when true. By default (false) they are dropped from every
@@ -155,7 +157,9 @@ type ListParams struct {
 	// every listed task (AND): each UID contributes its own correlated EXISTS over
 	// photo_task_photos. It is what a task's own page reads its grid from, and it
 	// scopes the shared list/search path exactly as the album and label scopes do,
-	// so every other filter, the sort and pagination apply unchanged.
+	// so every other filter, the sort and pagination apply unchanged. Unlike those
+	// two it also lifts the stack filter (see stackClauses): a frozen group is a
+	// set of files, so every member of it has to be reachable.
 	TaskUIDs []string
 	// SubjectUIDs, when non-empty, restricts the result to photos that contain every
 	// listed subject (person/pet/other) — AND semantics like the album/label scopes:
@@ -545,8 +549,16 @@ func archivedClauses(params ListParams) []string {
 // deliberately want every member (e.g. listing a single stack's variants), and so
 // does a uid: filter (see uidLookup) — an id names one file, not the shot it is
 // filed under.
+//
+// A task scope (TaskUIDs) lifts it for the same reason: a task's group is frozen
+// over the files somebody picked, not over the shots they belong to, and a
+// question like "recompute these seven RAWs" is about the RAW rather than the
+// JPEG it sits under. Without the lift the task's own photo count — a plain
+// count of its membership rows — stood above an empty grid. An album or a label
+// keeps collapsing: those are shelves a shot was filed on, where one tile per
+// shot is the point.
 func stackClauses(params ListParams) []string {
-	if params.IncludeStackMembers || uidLookup(params) {
+	if params.IncludeStackMembers || uidLookup(params) || len(params.TaskUIDs) > 0 {
 		return nil
 	}
 	return []string{"(stack_uid IS NULL OR stack_primary)"}

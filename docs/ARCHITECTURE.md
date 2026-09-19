@@ -360,7 +360,9 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
     paginated total) and to manual count queries (album/label counts, a subject's marker count + its
     gallery, the place facet) and to `ListActivePhashes` (the duplicate universe — a RAW and its JPEG are thus never
     offered as a near-duplicate) and the similar strip. `ListParams.IncludeStackMembers` lifts the predicate
-    for callers that want all members (listing the variants of a single stack). These changes also
+    for callers that want all members (listing the variants of a single stack), a `uid:` filter lifts it
+    (an id names one file), and so does a **task scope** (`ListParams.TaskUIDs`): a task's frozen group is
+    a set of files, not of shots, so collapsing it left the task page's grid empty under its own count. These changes also
     **straightened out the counts**: album/label/subject counts now count `p.uid` via a join to `photos` with
     the predicate "visible + not archived", so the count always matches the grid it describes (previously
     it also included archived ones). Detection is driven by `internal/stacks` (synchronous, idempotent, incremental

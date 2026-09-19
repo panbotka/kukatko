@@ -498,3 +498,56 @@ func TestOpenForPhotos(t *testing.T) {
 		t.Errorf("OpenForPhotos(nil) = %v, %v, want an empty map and no error", empty, err)
 	}
 }
+
+// listedUIDs returns the uids of a photo listing, for a readable failure.
+func listedUIDs(list []photos.Photo) []string {
+	out := make([]string, 0, len(list))
+	for _, p := range list {
+		out = append(out, p.UID)
+	}
+	return out
+}
+
+// TestTaskScope_listsStackMembers covers the regression where a task opened over
+// the RAW siblings of a stack showed an empty grid. The header counts the
+// membership rows, but the listing behind the grid collapsed every non-primary
+// member away, so "7 fotek" stood above nothing. A frozen group names the files
+// themselves, so a task-scoped listing returns them whatever they are filed
+// under — while the library goes on showing one tile per shot.
+func TestTaskScope_listsStackMembers(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	jpeg := f.makePhoto(t, "shot")
+	raw := f.makePhoto(t, "shotraw")
+	if _, err := f.photos.CreateStack(ctx, jpeg.UID, []string{jpeg.UID, raw.UID}); err != nil {
+		t.Fatalf("CreateStack: %v", err)
+	}
+
+	task := f.mustCreate(t, "Přepočítat RAW", raw.UID)
+	scope := photos.ListParams{TaskUIDs: []string{task.UID}}
+
+	listed, err := f.photos.List(ctx, scope)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(listed) != 1 || listed[0].UID != raw.UID {
+		t.Errorf("task-scoped listing = %v, want the stacked RAW %s", listedUIDs(listed), raw.UID)
+	}
+
+	count, err := f.photos.Count(ctx, scope)
+	if err != nil {
+		t.Fatalf("Count: %v", err)
+	}
+	if count != task.PhotoCount {
+		t.Errorf("grid count = %d but the header says %d", count, task.PhotoCount)
+	}
+
+	library, err := f.photos.List(ctx, photos.ListParams{})
+	if err != nil {
+		t.Fatalf("List(library): %v", err)
+	}
+	if got := listedUIDs(library); len(got) != 1 || got[0] != jpeg.UID {
+		t.Errorf("library listing = %v, want only the stack primary %s", got, jpeg.UID)
+	}
+}
