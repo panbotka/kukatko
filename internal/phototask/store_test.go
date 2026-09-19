@@ -273,11 +273,14 @@ func TestScanTaskDerivesNewAnswer(t *testing.T) {
 	}
 }
 
-// fakeRow feeds scanTask the two timestamps the derived flag is computed from,
-// leaving every other column at its zero value.
+// fakeRow feeds scanTask the two timestamps the derived flag is computed from
+// and the participants aggregate, leaving every other column at its zero value.
 type fakeRow struct {
 	stateAt       time.Time
 	lastCommentAt *time.Time
+	// participants is the raw JSON the query's aggregate produces; nil stands
+	// for an absent value, which a read must survive.
+	participants []byte
 }
 
 // Scan fills the destinations in taskColumns order.
@@ -287,5 +290,49 @@ func (f fakeRow) Scan(dest ...any) error {
 	*(dest[3].(*State)) = StateQuestion
 	*(dest[10].(*time.Time)) = f.stateAt
 	*(dest[17].(**time.Time)) = f.lastCommentAt
+	*(dest[18].(*[]byte)) = f.participants
 	return nil
+}
+
+// TestScanTaskParticipants verifies the aggregate is decoded, and that a task
+// with nobody on it — or a row where the aggregate is absent altogether — reads
+// as an empty list rather than failing.
+func TestScanTaskParticipants(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		raw  []byte
+		want []Participant
+	}{
+		{name: "absent", raw: nil, want: []Participant{}},
+		{name: "empty aggregate", raw: []byte(`[]`), want: []Participant{}},
+		{
+			name: "one person, joined by acting",
+			raw:  []byte(`[{"user_uid":"u1","name":"Anna","added_by":""}]`),
+			want: []Participant{{UserUID: "u1", Name: "Anna"}},
+		},
+		{
+			name: "one person, put there by somebody",
+			raw:  []byte(`[{"user_uid":"u1","name":"Anna","added_by":"u2","added_by_name":"Bob"}]`),
+			want: []Participant{{UserUID: "u1", Name: "Anna", AddedByUID: "u2", AddedByName: "Bob"}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := scanTask(fakeRow{participants: tt.raw})
+			if err != nil {
+				t.Fatalf("scanTask: %v", err)
+			}
+			if len(got.Participants) != len(tt.want) {
+				t.Fatalf("Participants = %v, want %v", got.Participants, tt.want)
+			}
+			for i, want := range tt.want {
+				if got.Participants[i] != want {
+					t.Errorf("Participants[%d] = %+v, want %+v", i, got.Participants[i], want)
+				}
+			}
+		})
+	}
 }

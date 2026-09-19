@@ -247,6 +247,14 @@ const (
 	// ActionTaskRemovePhotos records removing one or more photographs from a
 	// task; the affected photo UIDs are listed in the entry's details.
 	ActionTaskRemovePhotos = "task.remove_photos"
+	// ActionTaskAssign records putting somebody on a task — asking a particular
+	// person a question before they have done anything about it. The person is
+	// listed in the entry's details. Joining a task by *acting* on it is not
+	// recorded here: the act that caused it already is.
+	ActionTaskAssign = "task.assign"
+	// ActionTaskUnassign records taking somebody off a task; the person is
+	// listed in the entry's details.
+	ActionTaskUnassign = "task.unassign"
 	// ActionFaceAssign records assigning a face to a subject — either by pointing
 	// an existing marker at the subject or by creating a new face marker already
 	// naming it. The affected marker, subject and photo are listed in the details.
@@ -429,7 +437,8 @@ var knownActions = map[string]struct{}{
 	ActionLabelDelete: {}, ActionLabelAttach: {}, ActionLabelDetach: {},
 	ActionLabelReject: {}, ActionLabelUnreject: {}, ActionTaskCreate: {},
 	ActionTaskUpdate: {}, ActionTaskDelete: {}, ActionTaskAddPhotos: {},
-	ActionTaskRemovePhotos: {}, ActionFaceAssign: {},
+	ActionTaskRemovePhotos: {}, ActionTaskAssign: {}, ActionTaskUnassign: {},
+	ActionFaceAssign:   {},
 	ActionFaceUnassign: {}, ActionMarkerInvalidate: {}, ActionPersonAttach: {},
 	ActionPersonDetach: {}, ActionFaceReject: {}, ActionFaceUnreject: {},
 	ActionFaceConfirm: {}, ActionFaceUnconfirm: {}, ActionSubjectCreate: {},

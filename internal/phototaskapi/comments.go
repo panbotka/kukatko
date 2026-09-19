@@ -64,6 +64,9 @@ func (a *API) handleCreateComment(w http.ResponseWriter, r *http.Request) {
 		writeCommentError(w, err, "creating comment failed")
 		return
 	}
+	// Answering a question is what puts somebody on it — for a viewer it is the
+	// only thing they can do to a task, so it has to be what counts.
+	a.joinAuthor(r, uid, user.UID)
 	writeJSON(w, http.StatusCreated, created)
 }
 

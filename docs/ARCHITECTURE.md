@@ -463,11 +463,12 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
   wipe while `photos` is truncated, and a dangling pick already has to mean the same as no pick (the
   resolver falls through to the next source), so the constraint would buy nothing and cost the reset a
   special case.
-- **`photo_tasks` + `photo_task_photos`** — the **work queue**: a question about a group of
-  photographs, its state (`question`/`working`/`review`/`done`/`rejected`), the resolution that closes it
-  and the search that produced the group, plus the group itself as `(task_uid, photo_uid)` rows
-  (migration `0079`, see `internal/phototask`). Two decisions are worth naming, because both look like
-  restrictions and are not:
+- **`photo_tasks` + `photo_task_photos` + `photo_task_participants`** — the **work queue**: a question
+  about a group of photographs, its state (`question`/`working`/`review`/`done`/`rejected`), the
+  resolution that closes it and the search that produced the group, plus the group itself as
+  `(task_uid, photo_uid)` rows and the people on it as `(task_uid, user_uid)` rows
+  (migrations `0079` and `0081`, see `internal/phototask`). Two decisions are worth naming, because both
+  look like restrictions and are not:
   - **The membership is an explicit list, never a stored query.** A task exists because some data is
     wrong and is answered by fixing it, so a group defined by a query ("photographs dated before their
     camera existed") would empty itself the moment the work was done — taking with it the record of which
@@ -482,6 +483,15 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
   `state_at` sits beside `updated_at` for one reason: compared against the newest comment on the task it
   answers what the state alone cannot — has anybody replied since we last looked. That comparison is what
   an agent polls, and it stays true when nobody remembered to advance the state.
+
+  **Participation is a side effect, not a form to fill in.** Every write to a task joins its actor in the
+  same transaction, and answering in the thread joins the author right after the comment lands, so the
+  list of people on a question is a record of who actually did something rather than of who remembered to
+  tick a box. `added_by` carries the one case that has no act behind it — asking a particular person
+  before they have seen the question — and is therefore the whole difference between "Anna is on this"
+  and "you put Anna on this". It could all have been *derived* (the creator, plus the thread's authors,
+  plus the audit trail's actors), but that query cannot be filtered or paged cheaply, goes silently wrong
+  when a comment is soft deleted, and has nothing to derive the asked-in-advance case from.
 - **`comments`** — one person's plain-text note on **one subject**: a photograph, or a task. Two nullable
   foreign keys with a `CHECK (num_nonnulls(photo_uid, task_uid) = 1)`, rather than a `(kind, uid)` pair,
   so both cascades stay the database's job (migration `0052`, renamed and extended by `0080`). The two

@@ -1377,6 +1377,11 @@
   "tasks": {
     "title": "Tasks",
     "create": "New task",
+    "add": {
+      "new": "A new question",
+      "existing": "Add to a question",
+      "noneOpen": "No open question yet. Ask a new one."
+    },
     "loading": "Loading tasks…",
     "error": "The tasks could not be loaded.",
     "empty": {
@@ -1387,6 +1392,7 @@
       "open": "Open",
       "all": "All",
       "answered": "Answered",
+      "mine": "Mine",
       "search": "Search tasks",
       "searchPlaceholder": "Search the questions…"
     },
@@ -1416,6 +1422,20 @@
     "noPhotos": "No photos",
     "noPhotosHint": "No photos have been added to this task yet.",
     "discussion": "Discussion",
+    "people": {
+      "title": "On this task",
+      "nobody": "nobody yet",
+      "add": "Add",
+      "remove": "Remove {{name}}",
+      "pick": "Who should be on this task?",
+      "loading": "Loading people…",
+      "loadFailed": "The people could not be loaded.",
+      "everybody": "Everybody is already on this task.",
+      "acted": "{{name}} — took part in this task",
+      "askedBy": "{{name}} — added by {{by}}"
+    },
+    "removeSelected": "Remove from the task",
+    "removeFailed": "The photos could not be removed from the task.",
     "delete": {
       "title": "Delete this task?",
       "body": "The photos survive, but the question goes, along with the list of photos the batch was about and every answer written under it. Finished work is better closed than deleted.",

@@ -61,6 +61,16 @@ type Store interface {
 	AddPhotos(ctx context.Context, uid string, photoUIDs []string, entry audit.Entry) (int, error)
 	// RemovePhotos drops photographs from a task and reports how many were removed.
 	RemovePhotos(ctx context.Context, uid string, photoUIDs []string, entry audit.Entry) (int, error)
+	// Participants returns the people on a task, oldest membership first.
+	Participants(ctx context.Context, uid string) ([]phototask.Participant, error)
+	// Assign puts somebody on a task on purpose, auditing it in the same
+	// transaction.
+	Assign(ctx context.Context, uid, userUID string, entry audit.Entry) error
+	// Unassign takes somebody off a task, reporting whether a row was removed.
+	Unassign(ctx context.Context, uid, userUID string, entry audit.Entry) (bool, error)
+	// Join records that somebody acted on a task. Idempotent and unaudited: the
+	// act it follows is what the audit trail records.
+	Join(ctx context.Context, uid, userUID string) error
 }
 
 // CommentStore is the subset of comments.Store a task's thread needs. It is the
@@ -126,6 +136,9 @@ func NewAPI(cfg Config) *API {
 //	DELETE /tasks/{uid}                    delete one
 //	POST   /tasks/{uid}/photos             add photographs
 //	DELETE /tasks/{uid}/photos             remove photographs
+//	GET    /tasks/{uid}/participants       who is on it (any role)
+//	POST   /tasks/{uid}/participants       put somebody on it
+//	DELETE /tasks/{uid}/participants/{u}   take somebody off it
 //	GET    /tasks/{uid}/comments           read the thread (any role)
 //	POST   /tasks/{uid}/comments           answer (any role, including viewers)
 //	PATCH  /tasks/{uid}/comments/{cuid}    edit one's own answer
@@ -139,6 +152,9 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.With(a.requireWrite).Delete("/{uid}", a.handleDelete)
 		r.With(a.requireWrite).Post("/{uid}/photos", a.handleAddPhotos)
 		r.With(a.requireWrite).Delete("/{uid}/photos", a.handleRemovePhotos)
+		r.With(a.requireAuth).Get("/{uid}/participants", a.handleListParticipants)
+		r.With(a.requireWrite).Post("/{uid}/participants", a.handleAssign)
+		r.With(a.requireWrite).Delete("/{uid}/participants/{userUID}", a.handleUnassign)
 		a.registerCommentRoutes(r)
 	})
 }
@@ -189,6 +205,8 @@ func writeTaskError(w http.ResponseWriter, err error, fallback string) {
 		errors.Is(err, phototask.ErrClosedNeedsResolution),
 		errors.Is(err, phototask.ErrTooManyPhotos):
 		writeError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, phototask.ErrUserNotFound):
+		writeError(w, http.StatusNotFound, "user not found")
 	default:
 		writeError(w, http.StatusInternalServerError, fallback)
 	}

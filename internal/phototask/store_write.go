@@ -34,7 +34,8 @@ ON CONFLICT DO NOTHING`
 
 // Create opens a task over photoUIDs and writes entry to the audit log in the
 // same transaction, so a task that exists always has a record of who opened it
-// and over which photographs. The text fields are trimmed and validated
+// and over which photographs. The actor joins the task's participants in that
+// same transaction — acting on a question is what puts somebody on it. The text fields are trimmed and validated
 // (ErrEmptyTitle, ErrTooLong); a task opened in a closed state must carry a
 // resolution (ErrClosedNeedsResolution) and an unknown state is ErrInvalidState.
 // A photograph that does not exist yields ErrPhotoNotFound and nothing is
@@ -61,6 +62,10 @@ func (s *Store) Create(ctx context.Context, t Task, photoUIDs []string, entry au
 			return fmt.Errorf("inserting task row: %w", err)
 		}
 		if err := addMembers(ctx, tx, uid, photoUIDs); err != nil {
+			return err
+		}
+		// Opening a question is the strongest statement of being on it.
+		if err := joinParticipant(ctx, tx, uid, entry.ActorUID); err != nil {
 			return err
 		}
 		return audit.Write(ctx, tx, withTarget(entry, uid, "photo_uids", photoUIDs))
@@ -110,6 +115,9 @@ func (s *Store) Update(ctx context.Context, uid string, upd Update, entry audit.
 			next.Resolution, next.Query, next.StateAt, next.ClosedAt,
 			nullableUID(next.ClosedBy)); err != nil {
 			return fmt.Errorf("updating task row: %w", err)
+		}
+		if err := joinParticipant(ctx, tx, uid, entry.ActorUID); err != nil {
+			return err
 		}
 		return audit.Write(ctx, tx, withChanges(entry, uid, changes))
 	})
@@ -161,6 +169,9 @@ func (s *Store) AddPhotos(ctx context.Context, uid string, photoUIDs []string, e
 		if err := touch(ctx, tx, uid); err != nil {
 			return err
 		}
+		if err := joinParticipant(ctx, tx, uid, entry.ActorUID); err != nil {
+			return err
+		}
 		return audit.Write(ctx, tx, withTarget(entry, uid, "photo_uids", photoUIDs))
 	})
 	return added, err
@@ -185,6 +196,9 @@ func (s *Store) RemovePhotos(
 		}
 		removed = int(tag.RowsAffected())
 		if err := touch(ctx, tx, uid); err != nil {
+			return err
+		}
+		if err := joinParticipant(ctx, tx, uid, entry.ActorUID); err != nil {
 			return err
 		}
 		return audit.Write(ctx, tx, withTarget(entry, uid, "photo_uids", photoUIDs))
@@ -323,6 +337,8 @@ func translate(err error, op string) error {
 		switch {
 		case strings.Contains(pgErr.ConstraintName, "photo_uid"):
 			return ErrPhotoNotFound
+		case strings.Contains(pgErr.ConstraintName, "user_uid"):
+			return ErrUserNotFound
 		case strings.Contains(pgErr.ConstraintName, "task_uid"):
 			return ErrNotFound
 		}
@@ -336,6 +352,7 @@ func isSentinel(err error) bool {
 	for _, sentinel := range []error{
 		ErrNotFound, ErrPhotoNotFound, ErrEmptyTitle, ErrTooLong,
 		ErrInvalidState, ErrClosedNeedsResolution, ErrTooManyPhotos,
+		ErrUserNotFound,
 	} {
 		if errors.Is(err, sentinel) {
 			return true

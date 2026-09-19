@@ -306,8 +306,16 @@ rebuilt? — and the only person who knows is usually not the person editing the
   rejected — and *rejected* is a full result, not a failure: deciding that a doubt is unfounded, or that a
   date cannot be established, is an answer, and a closed task always says how it ended.
 - The listing marks the tasks **somebody has replied to since anyone last looked**, which is the one thing
-  you actually scan it for. A photograph that belongs to an open task says so on its own page, so the
+  you actually scan it for, and each row is striped in the colour of its state so the queue can be
+  scanned before it is read. A photograph that belongs to an open task says so on its own page, so the
   question finds you even when the link did not.
+- **You are put on a question by answering it.** Opening a task, replying in its thread or moving it
+  along adds you to it, so "what am I involved in?" is a filter rather than a list anybody maintains. A
+  particular person can also be asked outright — putting their name against a question before they have
+  seen it — which is how it reaches the one relative who would know.
+- Asking starts where the photographs are: select some, and the same dialog either **opens a new
+  question** or **adds them to one already waiting**. From a task's own page the photographs behave like
+  any other list, so taking one back out is the ordinary select-and-act.
 
 ### Places and video
 

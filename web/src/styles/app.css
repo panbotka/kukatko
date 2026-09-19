@@ -3036,3 +3036,38 @@ body {
 .kk-task-row[data-state='rejected']:focus-visible {
   opacity: 1;
 }
+
+/*
+ * One person on a task: their picture, their name, and — for a writer — the
+ * control that takes them off it. A pill rather than a bare avatar row, because
+ * the name is the point: a face nobody recognises says nothing, and these are
+ * accounts rather than the people in the photographs.
+ */
+.kk-task-person {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--kk-space-2);
+  max-width: 100%;
+  padding: 0.15rem var(--kk-space-2) 0.15rem 0.15rem;
+  border: 1px solid var(--kk-surface-border);
+  border-radius: var(--kk-radius-pill);
+  background-color: var(--kk-surface-raised);
+  font-size: var(--kk-font-size-caption);
+}
+
+/* The remove control is a quiet glyph until the pill is hovered or focused: it
+   is destructive-ish and permanently loud would make the row read as a form. */
+.kk-task-person__remove {
+  --bs-btn-padding-x: 0.25rem;
+  --bs-btn-padding-y: 0;
+
+  line-height: 1;
+  color: var(--kk-text-muted);
+  opacity: 0.6;
+  transition: opacity var(--kk-duration-fast) var(--kk-ease-standard);
+}
+
+.kk-task-person:hover .kk-task-person__remove,
+.kk-task-person__remove:focus-visible {
+  opacity: 1;
+}

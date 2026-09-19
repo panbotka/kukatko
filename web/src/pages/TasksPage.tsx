@@ -32,10 +32,11 @@ type State =
 type TasksView = {
   state: string
   answered: string
+  mine: string
   q: string
 }
 
-const TASKS_DEFAULTS: TasksView = { state: '', answered: '', q: '' }
+const TASKS_DEFAULTS: TasksView = { state: '', answered: '', mine: '', q: '' }
 
 /** The filter row's choices: the default, every state, and one chip per state. */
 const FILTER_CHOICES = ['', 'all', ...TASK_STATES] as const
@@ -70,6 +71,9 @@ export function TasksPage() {
       states,
       open: view.state === '',
       answered: view.answered === '1',
+      // "me" rather than the reader's own uid: the server resolves it, so the
+      // page never has to learn who it is before it can ask.
+      participant: view.mine === '1' ? 'me' : '',
       q: view.q,
     }
   }, [view])
@@ -143,6 +147,19 @@ export function TasksPage() {
           }}
         >
           {t('tasks.filters.answered')}
+        </Button>
+        {/* "What am I on?" — the questions the reader opened, answered, moved
+            along or was put on. It narrows whatever state filter is already
+            chosen rather than replacing it, so "mine, still open" is one click
+            from "everything open". */}
+        <Button
+          size="sm"
+          variant={view.mine === '1' ? 'primary' : 'outline-secondary'}
+          onClick={() => {
+            setView({ mine: view.mine === '1' ? '' : '1' })
+          }}
+        >
+          <Icon name="person-circle" /> {t('tasks.filters.mine')}
         </Button>
         <Form className="ms-auto d-flex gap-2" onSubmit={submitSearch} role="search">
           <Form.Control

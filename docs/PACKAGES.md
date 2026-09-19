@@ -39,6 +39,12 @@ to `## Package map` in `CLAUDE.md`.
   `API` = HTTP handlers + RBAC middleware
   `RequireAuth`/`RequireWrite`/`RequireAdmin`/`RequireMaintainer`/`RequireImport` +
   `RegisterRoutes`; sessions and users in migration `0002_auth.sql`.
+  **`directory.go`** is the one all-authenticated view of accounts: `DirectoryEntry{UID,Name}`,
+  `Store.Directory`/`Service.Directory` and `GET /users`, listing the active approved accounts by the
+  name each is shown under. It exists because naming a person is now something an ordinary user does —
+  putting somebody on a task is how a question reaches the relative who would know — and it is a type and
+  a query of its own rather than a trimmed `User`: the address, the role, the approval state and the hash
+  never leave the database, so no handler can forget to strip them.
   **Every 401 the package writes goes through `writeUnauthorized(w, message)`**, which sets
   `WWW-Authenticate: `+the exported `auth.Challenge` (`Bearer`) before the usual JSON error body, so
   no guard or handler can forget the header RFC 9110 requires there. The scheme is `Bearer` and not
@@ -3230,15 +3236,29 @@ to `## Package map` in `CLAUDE.md`.
   `Delete`/`AddPhotos`/`RemovePhotos` (each in one transaction with its `audit.Write`, via `inTx`;
   membership writes `touch` the task so a batch counts as activity) and `OpenForPhotos` (the reverse
   lookup the photo detail draws its chip from, bulk-shaped so it can never become an N+1);
+  **who is on a task** (`participants.go`, table `photo_task_participants` from migration
+  `0081_photo_task_participants.sql`): `Participant{UserUID,Name,JoinedAt,AddedByUID,AddedByName}`,
+  `Participants`/`Assign`/`Unassign`/`Join`, `Filter.ParticipantUID`, and — the part that makes the list
+  true without anybody maintaining it — an idempotent `joinParticipant` inside *every* write's transaction,
+  so acting on a question is what puts you on it. `added_by` is the one distinction the table carries:
+  NULL = joined by acting, a uid = was asked by that person, which is the difference between "Anna is on
+  this" and "you put Anna on this". `Join` is the unaudited, transaction-free form for the one act the
+  package does not own — writing in the thread, which belongs to `internal/comments` — and `Assign`
+  *upgrades* an existing row (somebody who acted and is then asked has been asked) while `joinParticipant`
+  never downgrades one. The aggregate rides along with every read as a `json_agg` LATERAL, so a listing
+  renders who is on each task without a second request, while the **filter** is an `EXISTS` over the
+  `(user_uid, joined_at)` index rather than a predicate over that aggregate;
   **the read joins the `comments` table itself** rather than enriching afterwards — the thread is where
   a task's answer arrives, not an ornament on it, so `comment_count`, `last_comment_at` and the derived
   `has_new_answer` (newest comment later than `state_at`) have to be filterable and pageable in the same
   query; enriching after paging would silently return short pages), `internal/phototaskapi/`
-  (the HTTP API over tasks; `Store` + `CommentStore` interfaces → unit-testable with fakes;
+  (the HTTP API over tasks, their threads and their people; `Store` + `CommentStore` interfaces →
+  unit-testable with fakes;
   `NewAPI(Config{Store,Comments,RequireAuth,RequireWrite,CommentThrottle})`+`RegisterRoutes` mounts
   `/tasks` with the guards split where the feature needs them: `GET /tasks` (filters `state` (repeatable
   and comma-separated, an unknown one → **400** rather than an empty result), `open`, `answered`, `q`,
-  `photo`, `limit`, `offset`; the envelope echoes `limit`/`offset` as actually applied) and
+  `photo`, `participant` (with `me` resolving to the caller, so a client need not learn its own uid),
+  `limit`, `offset`; the envelope echoes `limit`/`offset` as actually applied) and
   `GET /tasks/{uid}` behind **`RequireAuth`**, `POST`/`PATCH`/`DELETE /tasks[/{uid}]` and
   `POST`/`DELETE /tasks/{uid}/photos` behind `RequireWrite`, and the whole thread
   (`GET`/`POST /tasks/{uid}/comments` + `PATCH`/`DELETE /tasks/{uid}/comments/{commentUID}`) behind
@@ -3247,7 +3267,15 @@ to `## Package map` in `CLAUDE.md`.
   same `ratelimit.Comment` configuration as the photo threads but in its own bucket, so a burst of
   answers cannot use up somebody's allowance for commenting on photographs; `resolveComment` answers
   **404** for a comment that belongs to a different task, `canEditComment`/`canDeleteComment` are the
-  same predicates the photo thread uses; **a task's photographs have no route here** — they are read
+  same predicates the photo thread uses;
+  **the people on a task** are `GET /tasks/{uid}/participants` (RequireAuth — knowing who else is on a
+  question is part of deciding whether to answer it) plus `POST`/`DELETE …/participants[/{userUID}]`
+  behind `RequireWrite`, both answering with the list as it now stands so a caller never follows a write
+  with a read. `handleCreateComment` calls `joinAuthor` **after** the comment lands rather than with it:
+  the thread belongs to `internal/comments`, which knows nothing about tasks, and threading a task store
+  through it to save one statement would couple the two for no gain — so a failure there is logged and
+  swallowed, because the answer *is* written and must not be reported as failed over its bookkeeping;
+  **a task's photographs have no route here** — they are read
   through the catalogue with `GET /photos?task=…`, the same projection, signed media URLs and paging as
   any other listing, and a second gallery endpoint would only have drifted from the first;
   mounted by `server.WithAPI` (`buildPhotoTaskAPI` in `cmd/kukatko/phototask.go`, in `readAPIOptions`)),

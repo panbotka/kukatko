@@ -1930,9 +1930,13 @@ here.
   another state of the work. The row **wraps** below ~12rem of text: the badges do not shrink, so on a
   phone a long question was being squeezed into a column one word wide with the badges painted over it;
   they now drop to a line of their own, still ranged right. A chip row filters by state (`Otevřené` = the
-  default, `Všechny`, one per state) plus `S odpovědí`,
+  default, `Všechny`, one per state) plus `S odpovědí` and **`Moje`** — the questions the reader opened,
+  answered, moved along or was put on, sent as `participant=me` so the page never has to learn its own
+  uid. It narrows whatever state filter is already chosen rather than replacing it, so "mine, still open"
+  is one click from "everything open" —
   and a search box over the question; all of it round-trips through the URL (`useUrlState`, keys
-  `state`/`answered`/`q`) so Back restores the filter. Every signed-in role may read it — a viewer who was
+  `state`/`answered`/`mine`/`q`) so Back restores the filter. Every signed-in role may read it — a viewer
+  who was
   sent a link finds the question again here once the link has scrolled out of their chat — and only
   `canWrite` sees **Nový úkol**, which opens `NewTaskModal`,
   `TaskDetailPage` = `/tasks/:uid` the page a **link is sent to**, so it is built for somebody who has never
@@ -1950,7 +1954,11 @@ here.
   the thread (`CommentsPanel` with a `taskSubject`) **on a `Card` of its own** — the conversation is the
   page's other half and is bounded like one, rather than running on from the wall — and last, for a writer
   only, `TaskControls`. That order is the design: a viewer reaches the box they came to write in without
-  scrolling past controls they cannot use. A 404 lands in a `missing` state of its own (`isNotFound`),
+  scrolling past controls they cannot use. Under the question sits **`TaskParticipants`**, and for an
+  editor the wall's `BatchActionBar` carries the page's own **Odebrat z úkolu** as an `extraActions`
+  entry (the shape an album's remove-from-album uses) — a failed removal says so rather than looking
+  unclicked, and the selection survives it so it can be retried. A 404 lands in a `missing` state of its
+  own (`isNotFound`),
   because a link outlives the task it points
   at and "this question has been deleted" is not "could not be loaded". The tiles carry the task scope in the
   detail link (`detailQuery` with `task=uid`) → Esc/Back/prev-next from a photo returns to the task,
@@ -1964,6 +1972,14 @@ here.
   until it has text, because the server refuses a task that is closed and silent and discovering that as a
   failed save would be worse than being asked up front — the remembered query, all three saved together, a
   link that runs that query in `/search`, and Delete behind `ConfirmModal`),
+  `pages/task/TaskParticipants` (**who is on this question**: a pill per person — `PersonAvatar` plus the
+  name — and, for a writer, an × on each and an **Přidat** button opening a picker over
+  `services/directory`. Almost everybody here arrived by *acting*: opening a task, answering it or moving
+  it along puts you on it, so the row fills itself as the work happens and nobody maintains it. The one
+  deliberate act is asking a particular person, and the two are told apart in each pill's `title` rather
+  than by a second visual language — they are the same fact arrived at two ways, and a reader scanning the
+  row wants the faces. Every change answers with the list as it now stands, so the row redraws without
+  refetching the task),
   `components/tasks/taskState` (`TASK_STATE_STYLE`, the one map from a state to its colour class and glyph,
   read by the badge *and* by the row stripe so the two cannot drift; the hues themselves live once in
   `styles/tokens.css` and are guarded by `styles/taskQueue.test.ts`),
@@ -1974,7 +1990,13 @@ here.
   colour) and
   `components/tasks/NewTaskModal` (two fields, question + context, because a question that takes a form to
   ask does not get asked; on success it navigates straight to the new task, which is both the confirmation
-  and the page whose link gets sent on. `photoUids` opens it over a selection), The selection is where it is
+  and the page whose link gets sent on. `photoUids` opens it over a selection — and with photographs in
+  hand the dialog also offers **Přidat k otázce**, a picker over the *open* tasks that adds the selection
+  to one that already exists. Both live in one dialog because from where the reader stands they are one
+  intent ("these pictures need somebody to look at them"); splitting them into two buttons would mean a
+  reader who picked the wrong one starts over, and one more control on the batch bar. Only open tasks are
+  offered: a closed task's frozen group is the record of what the work touched, and adding to it after the
+  fact would make that a lie), The selection is where it is
   usually opened from: **`BatchActionBar` carries a shared „Zeptat se" action** beside Stack, on every grid
   alike (library, album, label, search), so asking about photographs starts where the photographs are —
   select, ask, send the link,

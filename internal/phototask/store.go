@@ -2,6 +2,7 @@ package phototask
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -44,7 +45,7 @@ const taskColumns = `t.uid, t.title, t.body, t.state, t.resolution, t.source_que
 	(SELECT count(*) FROM photo_task_photos tp WHERE tp.task_uid = t.uid),
 	COALESCE((SELECT tp.photo_uid FROM photo_task_photos tp WHERE tp.task_uid = t.uid
 		ORDER BY tp.added_at, tp.photo_uid LIMIT 1), ''),
-	th.comment_count, th.last_comment_at`
+	th.comment_count, th.last_comment_at, pa.participants`
 
 // taskJoins resolves both author accounts and summarises the thread. The users
 // are LEFT JOINs because created_by and closed_by are ON DELETE SET NULL: losing
@@ -59,7 +60,20 @@ LEFT JOIN LATERAL (
     SELECT count(*) AS comment_count, max(c.created_at) AS last_comment_at
     FROM comments c
     WHERE c.task_uid = t.uid AND c.deleted_at IS NULL
-) th ON TRUE`
+) th ON TRUE
+LEFT JOIN LATERAL (
+    SELECT COALESCE(json_agg(json_build_object(
+        'user_uid', p.user_uid,
+        'name', COALESCE(NULLIF(pu.display_name, ''), pu.username, ''),
+        'joined_at', p.joined_at,
+        'added_by', COALESCE(p.added_by, ''),
+        'added_by_name', COALESCE(NULLIF(au.display_name, ''), au.username, '')
+    ) ORDER BY p.joined_at, p.user_uid), '[]'::json) AS participants
+    FROM photo_task_participants p
+    JOIN users pu ON pu.uid = p.user_uid
+    LEFT JOIN users au ON au.uid = p.added_by
+    WHERE p.task_uid = t.uid
+) pa ON TRUE`
 
 // taskOrder puts the open tasks first and the most recently touched of them at
 // the top, where "touched" counts a reply as well as an edit — a task somebody
@@ -84,6 +98,10 @@ type Filter struct {
 	Search string
 	// PhotoUID restricts the listing to tasks that photograph is part of.
 	PhotoUID string
+	// ParticipantUID restricts the listing to tasks that person is on — the
+	// "what am I involved in?" view. It combines with every other filter, so
+	// "mine, still open" is one query.
+	ParticipantUID string
 	// Limit and Offset page the result; Limit is clamped to MaxLimit and defaults
 	// to DefaultLimit.
 	Limit  int
@@ -146,6 +164,13 @@ func (f Filter) conditions() ([]string, []any) {
 	if f.PhotoUID != "" {
 		where = append(where, "EXISTS (SELECT 1 FROM photo_task_photos tp"+
 			" WHERE tp.task_uid = t.uid AND tp.photo_uid = "+bind(f.PhotoUID)+")")
+	}
+	if f.ParticipantUID != "" {
+		// EXISTS rather than a filter over the aggregated participants above:
+		// the aggregate is for rendering, and making the listing depend on it
+		// would turn a lookup on the (user_uid, joined_at) index into a scan.
+		where = append(where, "EXISTS (SELECT 1 FROM photo_task_participants pp"+
+			" WHERE pp.task_uid = t.uid AND pp.user_uid = "+bind(f.ParticipantUID)+")")
 	}
 	return where, args
 }
@@ -288,13 +313,27 @@ type rowScanner interface {
 // package prefix: every caller adds the operation that failed, and the cause
 // stays wrapped so pgx.ErrNoRows remains classifiable.
 func scanTask(row rowScanner) (Task, error) {
-	var t Task
+	var (
+		t            Task
+		participants []byte
+	)
 	err := row.Scan(&t.UID, &t.Title, &t.Body, &t.State, &t.Resolution, &t.Query,
 		&t.CreatedByUID, &t.CreatedByName, &t.CreatedAt, &t.UpdatedAt, &t.StateAt,
 		&t.ClosedAt, &t.ClosedByUID, &t.ClosedByName,
-		&t.PhotoCount, &t.CoverPhotoUID, &t.CommentCount, &t.LastCommentAt)
+		&t.PhotoCount, &t.CoverPhotoUID, &t.CommentCount, &t.LastCommentAt,
+		&participants)
 	if err != nil {
 		return Task{}, fmt.Errorf("scanning task row: %w", err)
+	}
+	// The aggregate is COALESCE'd to an empty array by the query, so a task with
+	// nobody on it decodes to an empty slice. An absent value is treated the same
+	// way rather than failing: participation is an annotation on a task, and it
+	// must never be able to make the task itself unreadable.
+	t.Participants = make([]Participant, 0)
+	if len(participants) > 0 {
+		if err := json.Unmarshal(participants, &t.Participants); err != nil {
+			return Task{}, fmt.Errorf("decoding task participants: %w", err)
+		}
 	}
 	t.HasNewAnswer = t.LastCommentAt != nil && t.LastCommentAt.After(t.StateAt)
 	return t, nil

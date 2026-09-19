@@ -35,6 +35,7 @@ function task(overrides: Partial<Task> = {}): Task {
     photo_count: 3,
     comment_count: 0,
     has_new_answer: false,
+    participants: [],
     ...overrides,
   }
 }
@@ -127,6 +128,33 @@ describe('TasksPage', () => {
     await waitFor(() => {
       expect(fetchTasksMock).toHaveBeenLastCalledWith(
         expect.objectContaining({ answered: true }),
+        expect.anything(),
+      )
+    })
+  })
+
+  it('narrows to the questions the reader is on', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByText(/3 photos/)
+
+    await user.click(screen.getByRole('button', { name: /Mine/ }))
+
+    await waitFor(() => {
+      // "me", not the reader's own uid: the server resolves it, so the page
+      // never has to learn who it is before it can ask.
+      expect(fetchTasksMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ participant: 'me' }),
+        expect.anything(),
+      )
+    })
+  })
+
+  it('keeps "mine" in the URL and combines it with a state', async () => {
+    renderPage('/tasks?mine=1&state=question')
+    await waitFor(() => {
+      expect(fetchTasksMock).toHaveBeenCalledWith(
+        expect.objectContaining({ participant: 'me', states: ['question'] }),
         expect.anything(),
       )
     })

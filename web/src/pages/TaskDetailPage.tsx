@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Card } from 'react-bootstrap'
+import { Alert, Card } from 'react-bootstrap'
 import { useTranslation } from 'react-i18next'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 
@@ -12,7 +12,7 @@ import { Icon } from '../components/Icon'
 import { FilterBar } from '../components/library/FilterBar'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
-import { BatchActionBar } from '../components/organize/BatchActionBar'
+import { type BatchExtraAction, BatchActionBar } from '../components/organize/BatchActionBar'
 import { SlideshowStart } from '../components/slideshow/SlideshowStart'
 import { CommentsPanel } from '../components/photo/CommentsPanel'
 import { TaskStateBadge } from '../components/tasks/TaskStateBadge'
@@ -27,9 +27,17 @@ import { LIBRARY_DEFAULTS, type LibraryView, viewToParams } from '../lib/library
 import { useUrlState } from '../lib/urlState'
 import { isNotFound } from '../services/auth'
 import { taskSubject } from '../services/comments'
-import { deleteTask, fetchTask, type Task, updateTask } from '../services/tasks'
+import {
+  deleteTask,
+  fetchTask,
+  type Participant,
+  removeTaskPhotos,
+  type Task,
+  updateTask,
+} from '../services/tasks'
 
 import { TaskControls } from './task/TaskControls'
+import { TaskParticipants } from './task/TaskParticipants'
 import { TaskQuestion } from './task/TaskQuestion'
 
 /**
@@ -81,6 +89,12 @@ export function TaskDetailPage() {
   const [confirmDelete, setConfirmDelete] = useState(false)
   // Reported up by the thread so the section's heading can carry its length.
   const [commentCount, setCommentCount] = useState(0)
+  // The people on the task. It starts from the fetched task and is replaced by
+  // every membership change's own answer, so a change redraws without a refetch.
+  const [people, setPeople] = useState<Participant[]>([])
+  // Set when taking photographs out of the group failed, so the page can say so
+  // instead of looking as though nothing was clicked.
+  const [removeFailed, setRemoveFailed] = useState(false)
 
   // The wall is an ordinary photo list: filters, sort and density live in the
   // URL exactly as they do on a label or an album, so Back restores them and a
@@ -116,12 +130,47 @@ export function TaskDetailPage() {
     selection.selectMany(photos.map((photo) => photo.uid))
   }, [photos, selection])
 
+  // Taking photographs out of the group is the task page's own action, merged
+  // into the shared bar rather than shown on a toolbar of its own — the same
+  // shape an album's "remove from album" uses.
+  const removeSelected = useCallback(async () => {
+    const uids = [...selection.selected]
+    if (uids.length === 0) {
+      return
+    }
+    setRemoveFailed(false)
+    try {
+      await removeTaskPhotos(uid, uids)
+      // Leave selection mode before reloading: the removed photographs vanish
+      // from the wall, and a selection still holding their uids would send them
+      // to the next action. A failed removal keeps it, so it can be retried.
+      selection.disable()
+      reload()
+    } catch {
+      setRemoveFailed(true)
+    }
+  }, [selection, uid, reload])
+
+  const extraActions = useMemo<BatchExtraAction[]>(
+    () => [
+      {
+        id: 'remove-from-task',
+        icon: 'dash-lg',
+        label: t('taskDetail.removeSelected'),
+        danger: true,
+        onClick: () => void removeSelected(),
+      },
+    ],
+    [t, removeSelected],
+  )
+
   useEffect(() => {
     const controller = new AbortController()
     setState({ status: 'loading' })
     fetchTask(uid, controller.signal)
       .then((task) => {
         setState({ status: 'ready', task })
+        setPeople(task.participants)
       })
       .catch((err: unknown) => {
         if (err instanceof DOMException && err.name === 'AbortError') {
@@ -144,6 +193,7 @@ export function TaskDetailPage() {
       try {
         const updated = await updateTask(uid, edit)
         setState({ status: 'ready', task: updated })
+        setPeople(updated.participants)
         return true
       } catch {
         return false
@@ -207,6 +257,13 @@ export function TaskDetailPage() {
 
       <TaskQuestion task={task} canEdit={canWrite} busy={busy} onSave={save} />
 
+      <TaskParticipants
+        taskUid={task.uid}
+        participants={people}
+        canEdit={canWrite}
+        onChange={setPeople}
+      />
+
       {task.resolution !== '' && (
         <Card className="mb-4 border-success">
           <Card.Body>
@@ -222,6 +279,11 @@ export function TaskDetailPage() {
       {status === 'error' && <ErrorState title={t('library.error.load')} onRetry={retry} />}
       {status === 'ready' && photos.length === 0 && (
         <EmptyState title={t('taskDetail.noPhotos')} hint={t('taskDetail.noPhotosHint')} />
+      )}
+      {removeFailed && (
+        <Alert variant="danger" className="py-2">
+          {t('taskDetail.removeFailed')}
+        </Alert>
       )}
       {status === 'ready' && photos.length > 0 && (
         <div className="mb-4">
@@ -282,7 +344,7 @@ export function TaskDetailPage() {
       )}
 
       {bulk.canBulkEdit && selecting && (
-        <BatchActionBar bulk={bulk} onSelectAll={selectAllInView} />
+        <BatchActionBar bulk={bulk} onSelectAll={selectAllInView} extraActions={extraActions} />
       )}
 
       <ConfirmModal

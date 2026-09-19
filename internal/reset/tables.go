@@ -54,6 +54,7 @@ var catalogueTables = []string{
 	"photo_labels",
 	"photo_phashes",
 	"photo_places",
+	"photo_task_participants",
 	"photo_task_photos",
 	"photo_tasks",
 	"photoprism_aliases",

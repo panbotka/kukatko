@@ -1287,7 +1287,7 @@ signed-in role, viewers included; opening, editing, closing and changing members
 
 | Command | Meaning |
 | --- | --- |
-| `ctl tasks list` | `GET /tasks`; `--state` (comma separated), `--open`, `--answered`, `--search`, `--photo`, `--limit`, `--offset` |
+| `ctl tasks list` | `GET /tasks`; `--state` (comma separated), `--open`, `--answered`, `--search`, `--photo`, `--participant` / `--mine`, `--limit`, `--offset` |
 | `ctl tasks show <uid>` | `GET /tasks/{uid}` |
 | `ctl tasks create [<photo-uid>…]` | `POST /tasks`; `--title` (required), `--body`/`--body-file`, `--query`, `--state`; uids from args or stdin |
 | `ctl tasks update <uid>` | `PATCH /tasks/{uid}`; `--title`, `--body`/`--body-file`, `--query`, `--state`, `--resolution`/`--resolution-file` |
@@ -1296,11 +1296,22 @@ signed-in role, viewers included; opening, editing, closing and changing members
 | `ctl tasks remove-photos <uid> [<photo-uid>…]` | `DELETE /tasks/{uid}/photos` |
 | `ctl tasks comments <uid>` | `GET /tasks/{uid}/comments` |
 | `ctl tasks comment <uid> [<text>]` | `POST /tasks/{uid}/comments`; `--body-file` |
+| `ctl tasks participants <uid>` | `GET /tasks/{uid}/participants` |
+| `ctl tasks assign <uid> <user-uid>` | `POST /tasks/{uid}/participants` — ask a particular person |
+| `ctl tasks unassign <uid> <user-uid>` | `DELETE /tasks/{uid}/participants/{user}` |
+| `ctl people` | `GET /users` — the uids the assign commands take |
 
 **`ctl tasks list --answered` is the command the loop turns on.** It lists the tasks somebody has replied
 to since the state last moved — the work that has an answer and is waiting to be written into the library
 — and it stays truthful even when nobody remembered to advance the state. In a table listing the same
 thing is the `NEW` column.
+
+**Who is on a task mostly looks after itself.** Opening one, editing it, moving its state, changing its
+membership or answering in its thread puts the actor on it, so `ctl tasks participants` is a report rather
+than a register. `assign` is for the other case — asking a particular person before they have done
+anything — and the `HOW` column tells the two apart: `acted`, or `asked by …`. `ctl tasks list --mine`
+(the same as `--participant me`) is "what have I been put on?", which is how an agent finds the questions
+a person handed it; it narrows whatever state filter is already given, so `--mine --open` is one call.
 
 A task's photographs are read through the catalogue, not from a route of its own:
 `kukatkoctl photos list --task <uid>` (or `q=task:<uid>`), so the frozen group is browsed with every

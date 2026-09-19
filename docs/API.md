@@ -8,7 +8,16 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `download_token`), `POST /auth/register` (anonymous, see below), `POST /auth/logout`,
   `GET /auth/me`, `POST /auth/password` (revokes other
   sessions), `GET|POST /auth/password-reset/{token}` (anonymous, see below), `PUT /auth/subject`,
-  `POST /auth/welcome-seen`, the passkey routes under `/auth/passkeys/*` (see below). Admin-only: `GET|POST /admin/users`,
+  `POST /auth/welcome-seen`, the passkey routes under `/auth/passkeys/*` (see below).
+  **`GET /users`** (RequireAuth) → `{users:[{uid,name}]}`, the people of the library ordered by the name
+  each is known under, disabled and not-yet-approved accounts left out. It is the directory a *name* is
+  picked from — putting somebody on a task is how a question reaches the one relative who would know — and
+  it is deliberately **not** the administrative view below: no addresses, no roles, no approval state, no
+  notes. Widening it to every signed-in role exposes nothing a thread does not already, since every comment
+  in the library is shown with its author's name and picture; the columns that make the list an
+  administrative record never leave the database, because the query selects two of them. It sits beside
+  `GET /users/{uid}/avatar` (`internal/userpicapi`), which is the picture for the same uid.
+  Admin-only: `GET|POST /admin/users`,
   `PATCH /admin/users/{uid}`, `POST /admin/users/{uid}/approve`,
   `POST /admin/users/{uid}/disable`, `POST /admin/users/{uid}/password` (reset revokes all of the
   user's sessions), `POST /admin/users/{uid}/password-reset` (see below).
@@ -888,12 +897,15 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   comma-separated; an unknown state is a **400**, never an empty result — a typo must say so), `open=true`
   (the shorthand for the three live states; ignored when `state` is given), `answered=true`, `q` (substring
   of the question or its context, matched **case- and diacritics-insensitively** like every other text
-  search in the library — `q=dum` finds "dům"), `photo={uid}`, `limit` (default 50, max 200) / `offset`;
+  search in the library — `q=dum` finds "dům"), `photo={uid}`, **`participant={uid|me}`** (only the tasks
+  that person is on; `me` resolves to the caller, so a client need not learn its own uid to ask "what am I
+  involved in?"), `limit` (default 50, max 200) / `offset`;
   the envelope echoes the `limit`/`offset` actually applied, not the ones asked for.
   Each task carries `uid`, `title` (the question), `body` (Markdown context), `state`
   (`question`/`working`/`review`/`done`/`rejected`), `resolution`, `query`, `created_by`/`created_by_name`,
   `created_at`/`updated_at`/`state_at`, `closed_at`/`closed_by`/`closed_by_name`, `photo_count`,
-  `cover_photo_uid`, `comment_count`, `last_comment_at` and the derived **`has_new_answer`** — somebody
+  `cover_photo_uid`, `comment_count`, `last_comment_at`, **`participants`** (always an array) and the
+  derived **`has_new_answer`** — somebody
   has written in the thread since the state last moved. That flag is the point of the listing:
   `GET /tasks?answered=true` is the work that has an answer and is waiting to be written into the library,
   and it stays true even when nobody remembered to advance the state.
@@ -916,6 +928,22 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   viewer account is for here. The create route carries the same per-user throttle (429), built from the
   same `ratelimit.comment` configuration in its own bucket, so a burst of answers cannot use up somebody's
   allowance for commenting on photographs. A comment addressed through the wrong task answers **404**.
+  **The people on a task** (`GET /tasks/{uid}/participants` RequireAuth → `{participants}`;
+  `POST /tasks/{uid}/participants` `{user_uid}` and `DELETE /tasks/{uid}/participants/{userUID}`, both
+  **`RequireWrite`**, both answering with the list as it now stands so a caller never follows a write with a
+  read). Each entry is `{user_uid,name,joined_at,added_by?,added_by_name?}`, oldest membership first.
+  **Most participation is not a decision:** opening a task, editing it, moving its state or changing its
+  membership joins the actor **in the same transaction as the write**, and answering in the thread joins the
+  author right after the comment lands. `added_by` is the whole distinction — absent means "joined by
+  acting", set means "was asked, by this person" — which is what lets a client tell "Anna is on this" from
+  "you put Anna on this". Assigning is `RequireWrite` while answering is not, for the same reason as the
+  thread: adding your own answer is a viewer's business, putting somebody else's name against a question is
+  curation. Assigning somebody already on a task only records that they were asked; unassigning somebody who
+  is not on it is a no-op, not an error. A `user_uid` naming no account is **404**, an empty one **400**.
+  Both write `task.assign` / `task.unassign` in the mutation's transaction, naming the person under
+  `details.user_uid`; joining *by acting* is deliberately not audited, because the act that caused it
+  already is. Table `photo_task_participants` (migration `0081_photo_task_participants.sql`), which
+  backfills the existing tasks' authors and thread writers so the feature does not start out looking broken.
   `GET /photos/{uid}` carries **`tasks`** — the open tasks the photograph is part of, as
   `[{uid,title,state}]`, omitted when there are none — so somebody who reached a picture by browsing finds
   the question without having been sent its link; closed tasks are left out, the chip being an invitation

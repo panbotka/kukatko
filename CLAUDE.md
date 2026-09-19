@@ -58,7 +58,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/announcementapi` — dual-guard `/announcement` (`GET` RequireAuth, `PUT`/`DELETE` RequireMaintainer)
 - `internal/audit` — durable audit trail; `Write(ctx, exec, Entry)` runs **in the same transaction** as the mutation
 - `internal/auditapi` — read-only listings: admin-only `GET /audit`, own-actions `GET /audit/mine`
-- `internal/auth` — viewer/editor/admin/maintainer roles (strict ladder), bcrypt, sliding sessions, RBAC middleware, API tokens (Bearer), passkeys (WebAuthn)
+- `internal/auth` — viewer/editor/admin/maintainer roles (strict ladder), bcrypt, sliding sessions, RBAC middleware, API tokens (Bearer), passkeys (WebAuthn), all-authenticated name directory (`GET /users`)
 - `internal/avatar` — a face as a small square picture, cut server-side (the subject avatar and `GET /photos/{uid}/face` alike): the crop geometry, the per-face choice of source thumbnail and the cache-only rendition
 - `internal/avatarapi` — all-authenticated `GET /subjects/{uid}/avatar` (JPEG + ETag; "no picture" of any kind is a 404)
 - `internal/backup` — S3 backup (pg_dump + sync of originals + retention) **and** restore
@@ -130,8 +130,8 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/photoapi` — read/curation API over the catalog: list, search, media, edit, faces, rating, comments
 - `internal/photoedit` — applies non-destructive edits (crop/rotate/brightness/contrast), pure-Go
 - `internal/photos` — **the photo-catalog core**, `Store` over pgx; dedup on SHA256 `file_hash`
-- `internal/phototask` — the work queue: a question about a **frozen** group of photos, its state (`question`/`working`/`review`/`done`/`rejected`) and the remembered query that produced it; the listing joins the thread so "answered since the state moved" is filterable
-- `internal/phototaskapi` — `/tasks` (write guard) + a task's thread (`RequireAuth`, so a viewer may answer); a task's photos are read through `GET /photos?task=`
+- `internal/phototask` — the work queue: a question about a **frozen** group of photos, its state (`question`/`working`/`review`/`done`/`rejected`), the remembered query that produced it and the people on it (acting joins you; being asked is the explicit half); the listing joins the thread so "answered since the state moved" is filterable
+- `internal/phototaskapi` — `/tasks` (write guard) + a task's thread and its participants (`RequireAuth` to read, so a viewer may answer); a task's photos are read through `GET /photos?task=`
 - `internal/places` — cache of reverse-geocoded places (side table `photo_places`)
 - `internal/placesapi` — `GET /places` (hierarchy of countries → cities with counts)
 - `internal/placesjob` — worker handler `places` (reverse geocode, rate-limited due to credits)

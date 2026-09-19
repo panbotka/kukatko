@@ -32,6 +32,8 @@ func newCtlTasksCmd(opts *ctlOptions) *cobra.Command {
 		newCtlTasksUpdateCmd(opts), newCtlTasksDeleteCmd(opts),
 		newCtlTasksAddPhotosCmd(opts), newCtlTasksRemovePhotosCmd(opts),
 		newCtlTasksCommentsCmd(opts), newCtlTasksCommentCmd(opts),
+		newCtlTasksParticipantsCmd(opts), newCtlTasksAssignCmd(opts),
+		newCtlTasksUnassignCmd(opts),
 	)
 	return cmd
 }
@@ -41,6 +43,7 @@ func newCtlTasksCmd(opts *ctlOptions) *cobra.Command {
 func newCtlTasksListCmd(opts *ctlOptions) *cobra.Command {
 	var listOpts ctl.TaskListOptions
 	var states string
+	var mine bool
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List tasks, open ones first",
@@ -51,6 +54,9 @@ func newCtlTasksListCmd(opts *ctlOptions) *cobra.Command {
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			listOpts.States = splitStates(states)
+			if mine {
+				listOpts.Participant = "me"
+			}
 			client, out, err := opts.resolve()
 			if err != nil {
 				return err
@@ -70,6 +76,9 @@ func newCtlTasksListCmd(opts *ctlOptions) *cobra.Command {
 		"only tasks answered since the state last moved")
 	flags.StringVar(&listOpts.Search, "search", "", "match a substring of the question or its context")
 	flags.StringVar(&listOpts.PhotoUID, "photo", "", "only tasks this photo is part of")
+	flags.StringVar(&listOpts.Participant, "participant", "",
+		`only tasks this person is on; "me" means whoever the token belongs to`)
+	flags.BoolVar(&mine, "mine", false, `shorthand for --participant me`)
 	flags.IntVar(&listOpts.Limit, "limit", 0, "how many to return")
 	flags.IntVar(&listOpts.Offset, "offset", 0, "where to start")
 	return cmd

@@ -47,7 +47,15 @@ function gridMinHeight(): string | undefined {
 
 vi.mock('../services/tasks', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/tasks')>()
-  return { ...actual, fetchTask: vi.fn(), updateTask: vi.fn(), deleteTask: vi.fn() }
+  return {
+    ...actual,
+    fetchTask: vi.fn(),
+    updateTask: vi.fn(),
+    deleteTask: vi.fn(),
+    assignTaskParticipant: vi.fn(),
+    unassignTaskParticipant: vi.fn(),
+    removeTaskPhotos: vi.fn(),
+  }
 })
 
 vi.mock('../services/photos', async (importOriginal) => {
@@ -55,12 +63,22 @@ vi.mock('../services/photos', async (importOriginal) => {
   return { ...actual, fetchPhotos: vi.fn() }
 })
 
+vi.mock('../services/directory', () => ({
+  listDirectory: vi.fn(),
+}))
+
 vi.mock('../services/comments', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/comments')>()
   return { ...actual, fetchComments: vi.fn(), createComment: vi.fn() }
 })
 
-const { fetchTask, updateTask } = await import('../services/tasks')
+const { fetchTask, updateTask, assignTaskParticipant, unassignTaskParticipant, removeTaskPhotos } =
+  await import('../services/tasks')
+const removeTaskPhotosMock = vi.mocked(removeTaskPhotos)
+const { listDirectory } = await import('../services/directory')
+const listDirectoryMock = vi.mocked(listDirectory)
+const assignMock = vi.mocked(assignTaskParticipant)
+const unassignMock = vi.mocked(unassignTaskParticipant)
 const { fetchPhotos } = await import('../services/photos')
 const { fetchComments } = await import('../services/comments')
 const fetchTaskMock = vi.mocked(fetchTask)
@@ -85,6 +103,7 @@ function task(overrides: Partial<Task> = {}): Task {
     photo_count: 0,
     comment_count: 0,
     has_new_answer: false,
+    participants: [],
     ...overrides,
   }
 }
@@ -133,6 +152,11 @@ beforeEach(async () => {
     next_offset: null,
   })
   fetchCommentsMock.mockResolvedValue([])
+  listDirectoryMock.mockReset()
+  assignMock.mockReset()
+  unassignMock.mockReset()
+  listDirectoryMock.mockResolvedValue([])
+  removeTaskPhotosMock.mockReset()
 })
 
 describe('TaskDetailPage', () => {
@@ -294,6 +318,154 @@ describe('the question block', () => {
     await screen.findByRole('heading', { name: /In which year/ })
 
     expect(screen.queryByRole('button', { name: /Edit the question/ })).not.toBeInTheDocument()
+  })
+})
+
+describe('who is on the task', () => {
+  /** A participant who joined by acting on the task. */
+  const acted = { user_uid: 'u2', name: 'Anna', joined_at: '2026-09-18T10:00:00Z' }
+
+  it('names the people on it, and says who was asked rather than turned up', async () => {
+    fetchTaskMock.mockResolvedValue(
+      task({
+        participants: [
+          acted,
+          {
+            user_uid: 'u3',
+            name: 'Teta',
+            joined_at: '2026-09-18T11:00:00Z',
+            added_by: 'u1',
+            added_by_name: 'Pan Botka',
+          },
+        ],
+      }),
+    )
+    renderPage()
+
+    expect(await screen.findByText('Anna')).toBeInTheDocument()
+    // The distinction is in the title, not a second visual language: both are
+    // the same fact arrived at two ways.
+    expect(screen.getByTitle(/Anna — took part/)).toBeInTheDocument()
+    expect(screen.getByTitle(/Teta — added by Pan Botka/)).toBeInTheDocument()
+  })
+
+  it('says so when nobody is on it yet', async () => {
+    renderPage()
+    expect(await screen.findByText('nobody yet')).toBeInTheDocument()
+  })
+
+  it('lets a writer put somebody on it, from the people of the library', async () => {
+    const user = userEvent.setup()
+    listDirectoryMock.mockResolvedValue([
+      { uid: 'u2', name: 'Anna' },
+      { uid: 'u3', name: 'Teta' },
+    ])
+    assignMock.mockResolvedValue([acted])
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: /Add/ }))
+    await user.click(await screen.findByRole('button', { name: 'Anna' }))
+
+    await waitFor(() => {
+      expect(assignMock).toHaveBeenCalledWith('tk1', 'u2')
+    })
+    // The reply redraws the row, so no refetch of the task is needed.
+    expect(await screen.findByText('Anna')).toBeInTheDocument()
+  })
+
+  it('leaves out the people already on it', async () => {
+    const user = userEvent.setup()
+    fetchTaskMock.mockResolvedValue(task({ participants: [acted] }))
+    listDirectoryMock.mockResolvedValue([
+      { uid: 'u2', name: 'Anna' },
+      { uid: 'u3', name: 'Teta' },
+    ])
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: /Add/ }))
+
+    expect(await screen.findByRole('button', { name: 'Teta' })).toBeInTheDocument()
+    // Anna is on the task, so she is a chip in the row and not a choice in the
+    // dialog — the only "Anna" on screen is the chip.
+    expect(screen.queryByRole('button', { name: 'Anna' })).not.toBeInTheDocument()
+  })
+
+  it('lets a writer take somebody off it', async () => {
+    const user = userEvent.setup()
+    fetchTaskMock.mockResolvedValue(task({ participants: [acted] }))
+    unassignMock.mockResolvedValue([])
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: 'Remove Anna' }))
+
+    await waitFor(() => {
+      expect(unassignMock).toHaveBeenCalledWith('tk1', 'u2')
+    })
+    expect(await screen.findByText('nobody yet')).toBeInTheDocument()
+  })
+
+  it('offers a viewer neither control', async () => {
+    fetchTaskMock.mockResolvedValue(task({ participants: [acted] }))
+    renderPage(false)
+
+    expect(await screen.findByText('Anna')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Remove Anna/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Add$/ })).not.toBeInTheDocument()
+  })
+})
+
+describe('taking photographs out of the group', () => {
+  /** The wall with one tile in it, selectable by a writer. */
+  function withOnePhoto() {
+    fetchPhotosMock.mockResolvedValue({
+      photos: [gridPhoto('ph1')],
+      total: 1,
+      limit: 100,
+      offset: 0,
+      next_offset: null,
+    })
+  }
+
+  it('offers removal in the shared batch bar, not on a toolbar of its own', async () => {
+    const user = userEvent.setup()
+    withOnePhoto()
+    removeTaskPhotosMock.mockResolvedValue({ changed: 1, task: task() })
+    renderPage()
+
+    await screen.findByRole('heading', { name: /In which year/ })
+    await user.click(await screen.findByRole('button', { name: /^Select / }))
+
+    // The task's own action sits among the library's shared vocabulary.
+    const remove = await screen.findByRole('button', { name: 'Remove from the task' })
+    expect(screen.getByRole('toolbar')).toContainElement(remove)
+
+    await user.click(remove)
+    await waitFor(() => {
+      expect(removeTaskPhotosMock).toHaveBeenCalledWith('tk1', ['ph1'])
+    })
+  })
+
+  it('says so when the removal did not land, instead of looking unclicked', async () => {
+    const user = userEvent.setup()
+    withOnePhoto()
+    removeTaskPhotosMock.mockRejectedValue(new Error('nope'))
+    renderPage()
+
+    await screen.findByRole('heading', { name: /In which year/ })
+    await user.click(await screen.findByRole('button', { name: /^Select / }))
+    await user.click(await screen.findByRole('button', { name: 'Remove from the task' }))
+
+    expect(
+      await screen.findByText('The photos could not be removed from the task.'),
+    ).toBeInTheDocument()
+  })
+
+  it('gives a viewer no batch bar at all', async () => {
+    withOnePhoto()
+    renderPage(false)
+
+    await screen.findByRole('heading', { name: /In which year/ })
+    expect(screen.queryByRole('button', { name: /^Select / })).not.toBeInTheDocument()
   })
 })
 

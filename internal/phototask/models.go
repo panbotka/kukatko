@@ -121,6 +121,8 @@ var (
 	ErrClosedNeedsResolution = errors.New("phototask: a closed task needs a resolution")
 	// ErrTooManyPhotos indicates a membership change beyond MaxPhotos.
 	ErrTooManyPhotos = errors.New("phototask: too many photos")
+	// ErrUserNotFound indicates the person being put on a task has no account.
+	ErrUserNotFound = errors.New("phototask: user not found")
 )
 
 // Task is one stored task as read back for a client: the question, the state of
@@ -167,6 +169,29 @@ type Task struct {
 	// each client, because it is the whole signal an agent polls for: work that
 	// has been answered and is waiting to be written into the library.
 	HasNewAnswer bool `json:"has_new_answer"`
+	// Participants are the people on this task, oldest membership first. Always
+	// present (possibly empty) on every read, listing included: knowing who is
+	// already on a question is part of reading the queue, not a detail of one
+	// task.
+	Participants []Participant `json:"participants"`
+}
+
+// Participant is one person on a task.
+//
+// Most participation is a side effect rather than a decision: opening a task,
+// answering it or moving it along joins its actor. AddedByUID is what tells the
+// two apart — empty means "joined by acting", set means "was asked, by this
+// person" — which is the difference between "Anna is on this" and "you put Anna
+// on this", and the only reason the column exists.
+type Participant struct {
+	UserUID string `json:"user_uid"`
+	// Name is the display name, falling back to the username.
+	Name     string    `json:"name"`
+	JoinedAt time.Time `json:"joined_at"`
+	// AddedByUID and AddedByName name whoever put this person on the task, and
+	// are empty for somebody who joined by acting on it.
+	AddedByUID  string `json:"added_by,omitempty"`
+	AddedByName string `json:"added_by_name,omitempty"`
 }
 
 // Update is a partial change to a task: a nil field is left alone, a non-nil one

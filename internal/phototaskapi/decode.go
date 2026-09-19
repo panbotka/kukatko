@@ -106,8 +106,9 @@ func (u updateRequest) toUpdate() phototask.Update {
 
 // parseFilter reads a listing's query parameters into a store filter. An unknown
 // state is an error rather than an empty result, so a typo says so instead of
-// looking like "nothing matches".
-func parseFilter(q url.Values) (phototask.Filter, error) {
+// looking like "nothing matches". callerUID is who is asking, which the
+// participant filter's "me" alias resolves to.
+func parseFilter(q url.Values, callerUID string) (phototask.Filter, error) {
 	states, err := parseStates(q["state"])
 	if err != nil {
 		return phototask.Filter{}, err
@@ -121,14 +122,27 @@ func parseFilter(q url.Values) (phototask.Filter, error) {
 		return phototask.Filter{}, err
 	}
 	return phototask.Filter{
-		States:   states,
-		Open:     parseBool(q.Get("open")),
-		Answered: parseBool(q.Get("answered")),
-		Search:   strings.TrimSpace(q.Get("q")),
-		PhotoUID: strings.TrimSpace(q.Get("photo")),
-		Limit:    limit,
-		Offset:   offset,
+		States:         states,
+		Open:           parseBool(q.Get("open")),
+		Answered:       parseBool(q.Get("answered")),
+		Search:         strings.TrimSpace(q.Get("q")),
+		PhotoUID:       strings.TrimSpace(q.Get("photo")),
+		ParticipantUID: resolveParticipant(q.Get("participant"), callerUID),
+		Limit:          limit,
+		Offset:         offset,
 	}, nil
+}
+
+// resolveParticipant reads the participant filter, translating the literal "me"
+// to the caller's own account. The alias exists because "what am I on?" is the
+// question the filter is almost always asked, and a client that had to know its
+// own uid to ask it would have to fetch it first.
+func resolveParticipant(value, callerUID string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "me" {
+		return callerUID
+	}
+	return trimmed
 }
 
 // parseStates reads the repeatable state parameter, which may also be

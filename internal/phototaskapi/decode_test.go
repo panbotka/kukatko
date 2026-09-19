@@ -27,7 +27,7 @@ func TestParseFilter(t *testing.T) {
 		"photo":    {"ph1"},
 		"limit":    {"10"},
 		"offset":   {"20"},
-	})
+	}, "us-caller")
 	if err != nil {
 		t.Fatalf("parseFilter: %v", err)
 	}
@@ -44,17 +44,51 @@ func TestParseFilter(t *testing.T) {
 		t.Errorf("paging = %d/%d, want 10/20", got.Limit, got.Offset)
 	}
 
-	if _, err := parseFilter(url.Values{"state": {"parked"}}); err == nil {
+	if _, err := parseFilter(url.Values{"state": {"parked"}}, "us-caller"); err == nil {
 		t.Error("parseFilter(unknown state) = nil error, want a refusal")
 	}
-	if _, err := parseFilter(url.Values{"limit": {"-1"}}); err == nil {
+	if _, err := parseFilter(url.Values{"limit": {"-1"}}, "us-caller"); err == nil {
 		t.Error("parseFilter(negative limit) = nil error, want a refusal")
 	}
-	if _, err := parseFilter(url.Values{"offset": {"x"}}); err == nil {
+	if _, err := parseFilter(url.Values{"offset": {"x"}}, "us-caller"); err == nil {
 		t.Error("parseFilter(non-numeric offset) = nil error, want a refusal")
 	}
-	if empty, err := parseFilter(url.Values{}); err != nil || empty.Limit != 0 {
+	if empty, err := parseFilter(url.Values{}, "us-caller"); err != nil || empty.Limit != 0 {
 		t.Errorf("parseFilter(empty) = %+v, %v, want the zero filter", empty, err)
+	}
+}
+
+// TestParseFilterParticipant verifies the "what am I on?" filter, including the
+// "me" alias — the form it is almost always asked in, so that a client need not
+// know its own uid to ask the question.
+func TestParseFilterParticipant(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{name: "absent", value: "", want: ""},
+		{name: "me resolves to the caller", value: "me", want: "us-caller"},
+		{name: "padded me still resolves", value: "  me  ", want: "us-caller"},
+		{name: "an explicit uid passes through", value: "us-other", want: "us-other"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			values := url.Values{}
+			if tt.value != "" {
+				values.Set("participant", tt.value)
+			}
+			got, err := parseFilter(values, "us-caller")
+			if err != nil {
+				t.Fatalf("parseFilter: %v", err)
+			}
+			if got.ParticipantUID != tt.want {
+				t.Errorf("ParticipantUID = %q, want %q", got.ParticipantUID, tt.want)
+			}
+		})
 	}
 }
 

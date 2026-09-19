@@ -76,6 +76,35 @@ export interface Task {
   last_comment_at?: string
   /** Somebody has written in the thread since the state last moved. */
   has_new_answer: boolean
+  /**
+   * The people on this task, oldest membership first. Always present (possibly
+   * empty) on every read, listing included.
+   */
+  participants: Participant[]
+}
+
+/**
+ * One person on a task (`phototask.Participant`).
+ *
+ * Most participation is a side effect rather than a decision: opening a task,
+ * answering it or moving it along joins its actor. {@link added_by} is what
+ * tells the two apart — absent means "joined by acting", set means "was asked,
+ * by this person" — which is the difference between "Anna is on this" and "you
+ * put Anna on this".
+ */
+export interface Participant {
+  user_uid: string
+  /** The display name, falling back to the username. */
+  name: string
+  joined_at: string
+  /** Absent for somebody who joined by acting on the task. */
+  added_by?: string
+  added_by_name?: string
+}
+
+/** Response body of the participant endpoints. */
+export interface ParticipantList {
+  participants: Participant[]
 }
 
 /** The compact form of a task, as the photo detail carries it (`phototask.Ref`). */
@@ -105,6 +134,12 @@ export interface TaskListParams {
   q?: string
   /** Only tasks this photograph is part of. */
   photo?: string
+  /**
+   * Only tasks this person is on. The literal `me` means the signed-in caller,
+   * which is how the page asks "what am I involved in?" without first having to
+   * learn its own uid.
+   */
+  participant?: string
   limit?: number
   offset?: number
 }
@@ -200,6 +235,9 @@ function listQuery(params: TaskListParams): string {
   if (params.photo !== undefined && params.photo !== '') {
     search.set('photo', params.photo)
   }
+  if (params.participant !== undefined && params.participant !== '') {
+    search.set('participant', params.participant)
+  }
   if (params.limit !== undefined && params.limit > 0) {
     search.set('limit', String(params.limit))
   }
@@ -278,4 +316,58 @@ export async function removeTaskPhotos(
     { photo_uids: photoUids },
     signal,
   )
+}
+
+/** Reads the people on a task, oldest membership first. */
+export async function fetchTaskParticipants(
+  uid: string,
+  signal?: AbortSignal,
+): Promise<Participant[]> {
+  const body = await send<ParticipantList>(
+    'GET',
+    `${taskPath(uid)}/participants`,
+    undefined,
+    signal,
+  )
+  return body.participants
+}
+
+/**
+ * Puts somebody on a task — asking a particular person, before they have done
+ * anything about it. Answers with the participants as they now stand, so the
+ * caller never has to follow the write with a read.
+ *
+ * @throws ApiError 403 (a viewer: naming somebody else is curation) or 404 (the
+ *   task is gone, or the uid names no account).
+ */
+export async function assignTaskParticipant(
+  uid: string,
+  userUid: string,
+  signal?: AbortSignal,
+): Promise<Participant[]> {
+  const body = await send<ParticipantList>(
+    'POST',
+    `${taskPath(uid)}/participants`,
+    { user_uid: userUid },
+    signal,
+  )
+  return body.participants
+}
+
+/**
+ * Takes somebody off a task. Somebody who was not on it is not an error — the
+ * end state is the same either way, and what they did stays in the audit trail.
+ */
+export async function unassignTaskParticipant(
+  uid: string,
+  userUid: string,
+  signal?: AbortSignal,
+): Promise<Participant[]> {
+  const body = await send<ParticipantList>(
+    'DELETE',
+    `${taskPath(uid)}/participants/${encodeURIComponent(userUid)}`,
+    undefined,
+    signal,
+  )
+  return body.participants
 }

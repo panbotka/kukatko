@@ -1333,6 +1333,11 @@
   "tasks": {
     "title": "Úkoly",
     "create": "Nový úkol",
+    "add": {
+      "new": "Nová otázka",
+      "existing": "Přidat k otázce",
+      "noneOpen": "Žádná otevřená otázka. Založ novou."
+    },
     "loading": "Načítám úkoly…",
     "error": "Úkoly se nepodařilo načíst.",
     "empty": {
@@ -1343,6 +1348,7 @@
       "open": "Otevřené",
       "all": "Všechny",
       "answered": "S odpovědí",
+      "mine": "Moje",
       "search": "Hledat v úkolech",
       "searchPlaceholder": "Hledat v otázkách…"
     },
@@ -1376,6 +1382,20 @@
     "noPhotos": "Žádné fotky",
     "noPhotosHint": "K tomuhle úkolu zatím nejsou přiřazené žádné fotky.",
     "discussion": "Diskuse",
+    "people": {
+      "title": "Na úkolu",
+      "nobody": "zatím nikdo",
+      "add": "Přidat",
+      "remove": "Odebrat {{name}}",
+      "pick": "Koho přidat k úkolu?",
+      "loading": "Načítám lidi…",
+      "loadFailed": "Seznam lidí se nepodařilo načíst.",
+      "everybody": "Všichni už u úkolu jsou.",
+      "acted": "{{name}} — podílí se na úkolu",
+      "askedBy": "{{name}} — přidáno: {{by}}"
+    },
+    "removeSelected": "Odebrat z úkolu",
+    "removeFailed": "Fotky se z úkolu nepodařilo odebrat.",
     "delete": {
       "title": "Smazat úkol?",
       "body": "Fotky zůstanou, ale zmizí otázka, seznam fotek, kterých se dávka týkala, i všechny odpovědi. Hotovou práci je lepší zavřít než smazat.",

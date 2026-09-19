@@ -12,7 +12,11 @@ import (
 // authenticated role may read the queue: a person who was sent a link is here to
 // see the question, and seeing the rest of the queue does them no harm.
 func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
-	filter, err := parseFilter(r.URL.Query())
+	user, ok := currentUser(w, r)
+	if !ok {
+		return
+	}
+	filter, err := parseFilter(r.URL.Query(), user.UID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

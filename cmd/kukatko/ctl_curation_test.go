@@ -630,3 +630,75 @@ func TestCtlCuration_llmOutput(t *testing.T) {
 		})
 	}
 }
+
+// participantsBody is a task's people as the endpoint serves them: one who
+// joined by acting, one who was asked.
+const participantsBody = `{"participants":[` +
+	`{"user_uid":"us1","name":"Pan Botka","joined_at":"2026-09-18T10:00:00Z","added_by":""},` +
+	`{"user_uid":"us2","name":"Teta","joined_at":"2026-09-18T11:00:00Z",` +
+	`"added_by":"us1","added_by_name":"Pan Botka"}]}`
+
+// TestCtlTaskParticipants verifies the three participant commands reach the
+// right routes, that the listing tells being asked from having acted, and that
+// --mine becomes the filter the server understands.
+func TestCtlTaskParticipants(t *testing.T) {
+	var paths, methods []string
+	configPath := ctlServer(t, func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path+"?"+r.URL.RawQuery)
+		methods = append(methods, r.Method)
+		switch {
+		case strings.Contains(r.URL.Path, "/participants"):
+			_, _ = w.Write([]byte(participantsBody))
+		case r.URL.Path == "/api/v1/users":
+			_, _ = w.Write([]byte(`{"users":[{"uid":"us1","name":"Pan Botka"}]}`))
+		default:
+			_, _ = w.Write([]byte(tasksListBody))
+		}
+	})
+
+	out, err := runCtl(t, "", "ctl", "--ctl-config", configPath, "tasks", "participants", "tk1")
+	if err != nil {
+		t.Fatalf("tasks participants: %v", err)
+	}
+	// The one distinction the table exists to show.
+	for _, want := range []string{"us1", "Pan Botka", "acted", "Teta", "asked by"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("participants output does not contain %q:\n%s", want, out)
+		}
+	}
+
+	if _, err := runCtl(t, "", "ctl", "--ctl-config", configPath,
+		"tasks", "assign", "tk1", "us2"); err != nil {
+		t.Fatalf("tasks assign: %v", err)
+	}
+	if got, want := methods[len(methods)-1], http.MethodPost; got != want {
+		t.Errorf("assign used %s, want %s", got, want)
+	}
+	if _, err := runCtl(t, "", "ctl", "--ctl-config", configPath,
+		"tasks", "unassign", "tk1", "us2"); err != nil {
+		t.Fatalf("tasks unassign: %v", err)
+	}
+	if got, want := methods[len(methods)-1], http.MethodDelete; got != want {
+		t.Errorf("unassign used %s, want %s", got, want)
+	}
+	if got := paths[len(paths)-1]; !strings.HasPrefix(got, "/api/v1/tasks/tk1/participants/us2") {
+		t.Errorf("unassign went to %q", got)
+	}
+
+	// --mine is the agent's "what have I been put on?".
+	if _, err := runCtl(t, "", "ctl", "--ctl-config", configPath,
+		"tasks", "list", "--mine"); err != nil {
+		t.Fatalf("tasks list --mine: %v", err)
+	}
+	if got := paths[len(paths)-1]; !strings.Contains(got, "participant=me") {
+		t.Errorf("--mine did not reach the wire: %q", got)
+	}
+
+	people, err := runCtl(t, "", "ctl", "--ctl-config", configPath, "people")
+	if err != nil {
+		t.Fatalf("people: %v", err)
+	}
+	if !strings.Contains(people, "us1") || !strings.Contains(people, "Pan Botka") {
+		t.Errorf("people output does not list the account:\n%s", people)
+	}
+}

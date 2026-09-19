@@ -25,6 +25,7 @@ import "github.com/go-chi/chi/v5"
 //	GET    /auth/tokens           RequireAuth
 //	PATCH  /auth/tokens/{id}      RequireAuth (admin-only in the handler)
 //	DELETE /auth/tokens/{id}      RequireAuth
+//	GET    /users                 RequireAuth (uid + name only)
 //	GET    /admin/users           RequireAdmin
 //	POST   /admin/users           RequireAdmin
 //	PATCH  /admin/users/{uid}     RequireAdmin
@@ -90,6 +91,12 @@ func (a *API) RegisterRoutes(r chi.Router) {
 			r.Delete("/{id}", a.handleRevokeAPIToken)
 		})
 	})
+
+	// The people of the library, for every signed-in role: uid and name only.
+	// It sits beside /users/{uid}/avatar (internal/userpicapi), which is the
+	// picture for the same uid, and deliberately apart from /admin/users below,
+	// which is the administrative record of an account.
+	r.With(a.RequireAuth).Get("/users", a.handleDirectory)
 
 	r.Route("/admin/users", func(r chi.Router) {
 		r.Use(a.RequireAdmin)

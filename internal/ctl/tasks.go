@@ -49,6 +49,9 @@ type Task struct {
 	// HasNewAnswer is the signal an agent polls for: somebody has written in the
 	// thread since the state last moved.
 	HasNewAnswer bool `json:"has_new_answer"`
+	// Participants are the people on the task — whoever opened it, answered it
+	// or was asked. Always present, possibly empty.
+	Participants []Participant `json:"participants"`
 }
 
 // TaskPage is one page of a task listing with the total before paging.
@@ -80,8 +83,12 @@ type TaskListOptions struct {
 	Search string
 	// PhotoUID restricts the listing to tasks that photograph is part of.
 	PhotoUID string
-	Limit    int
-	Offset   int
+	// Participant restricts the listing to tasks that person is on. The literal
+	// "me" means whoever the token belongs to, which is how an agent asks for
+	// the questions it has been put on.
+	Participant string
+	Limit       int
+	Offset      int
 }
 
 // query renders the options as the listing's query parameters, omitting every
@@ -102,6 +109,7 @@ func (o TaskListOptions) query() (url.Values, error) {
 	}
 	setNonEmpty(q, "q", o.Search)
 	setNonEmpty(q, "photo", o.PhotoUID)
+	setNonEmpty(q, "participant", o.Participant)
 	if o.Limit > 0 {
 		q.Set("limit", strconv.Itoa(o.Limit))
 	}
