@@ -2974,6 +2974,25 @@ body {
   border-inline-start: 4px solid var(--kk-task-stripe, var(--kk-surface-border));
   background-color: var(--kk-surface-raised);
   transition: background-color var(--kk-duration-fast) var(--kk-ease-standard);
+
+  /* On a phone the badges and a long question cannot share a line: the badges
+     do not shrink, so the question was left a column one word wide and the two
+     overlapped. Let the row wrap instead — the badges drop to a line of their
+     own, still ranged right, and the question keeps the width it needs. */
+  flex-wrap: wrap;
+}
+
+/* The question and its counts. The basis is what decides when the row breaks:
+   below it the badges are no longer worth squeezing the question for. */
+.kk-task-row__text {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+/* Ranged right whether they sit beside the question or on the line below. */
+.kk-task-row__badges {
+  flex-shrink: 0;
+  margin-inline-start: auto;
 }
 
 .kk-task-row:hover,

@@ -62,6 +62,23 @@ describe('task state hues', () => {
     }
   })
 
+  it('lets the row break rather than squeeze the question', () => {
+    // On a phone a long question and two badges cannot share a line. The badges
+    // do not shrink, so without this the question was left a column one word
+    // wide and the badges were painted over it.
+    const row = declarations(ruleBody(app, /\.kk-task-row\s*(?=\{)/) ?? '')
+    expect(row.get('flex-wrap')).toBe('wrap')
+
+    const text = declarations(ruleBody(app, /\.kk-task-row__text\s*(?=\{)/) ?? '')
+    // A basis, not `flex-grow` alone: it is the width below which the row
+    // breaks instead of narrowing the question further.
+    expect(text.get('flex')).toMatch(/\d/)
+    expect(text.get('min-width')).toBe('0')
+
+    const badges = declarations(ruleBody(app, /\.kk-task-row__badges\s*(?=\{)/) ?? '')
+    expect(badges.get('margin-inline-start')).toBe('auto')
+  })
+
   it('reinforces every hue with a glyph, for a reader who sees no colour', () => {
     const icons = TASK_STATES.map((state) => TASK_STATE_STYLE[state].icon)
     expect(new Set(icons).size).toBe(TASK_STATES.length)

@@ -227,7 +227,7 @@ function TaskRow({ task }: { task: Task }) {
             <Icon name="ui-checks" />
           </span>
         )}
-        <span className="flex-grow-1 kk-min-w-0">
+        <span className="kk-task-row__text">
           <span className="d-block fw-semibold text-body">{task.title}</span>
           <span className="d-block small text-body-secondary">
             {t('tasks.row.photos', { count: task.photo_count })}
@@ -235,7 +235,7 @@ function TaskRow({ task }: { task: Task }) {
             {t('tasks.row.comments', { count: task.comment_count })}
           </span>
         </span>
-        <span className="d-flex align-items-center gap-2 flex-shrink-0">
+        <span className="kk-task-row__badges d-flex align-items-center gap-2">
           {task.has_new_answer && (
             <Badge className="kk-task-answered">
               <Icon name="chat-left-text" /> {t('tasks.row.answered')}

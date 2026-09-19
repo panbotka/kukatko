@@ -1927,8 +1927,10 @@ here.
   state to a single badge on the right and read as one undifferentiated list. A closed row also drops to
   75 % opacity until hovered: it is the record of a decision, not work. **Nová odpověď** takes the app's
   azure accent rather than a sixth state hue, because it sits beside a state badge and must not read as
-  another state of the work. A chip row filters by state (`Otevřené` = the default, `Všechny`, one per
-  state) plus `S odpovědí`,
+  another state of the work. The row **wraps** below ~12rem of text: the badges do not shrink, so on a
+  phone a long question was being squeezed into a column one word wide with the badges painted over it;
+  they now drop to a line of their own, still ranged right. A chip row filters by state (`Otevřené` = the
+  default, `Všechny`, one per state) plus `S odpovědí`,
   and a search box over the question; all of it round-trips through the URL (`useUrlState`, keys
   `state`/`answered`/`q`) so Back restores the filter. Every signed-in role may read it — a viewer who was
   sent a link finds the question again here once the link has scrolled out of their chat — and only
