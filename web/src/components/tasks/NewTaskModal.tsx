@@ -227,8 +227,12 @@ function OpenTaskPicker({ busy, onPick }: { busy: boolean; onPick: (task: Task) 
     return <p className="text-body-secondary mb-0">{t('tasks.add.noneOpen')}</p>
   }
 
+  // A flex column, not `d-grid`: a grid's implicit column is sized by its widest
+  // item, so one long question made every row overflow the dialog and carried
+  // the state badge outside it. Stretched flex items take the container's width,
+  // which is what lets the title truncate.
   return (
-    <div className="d-grid gap-1">
+    <div className="d-flex flex-column gap-1">
       {state.tasks.map((task) => (
         <Button
           key={task.uid}

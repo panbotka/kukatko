@@ -221,8 +221,11 @@ function PersonPicker({
         {state.status === 'ready' && choices.length === 0 && (
           <p className="text-body-secondary mb-0">{t('taskDetail.people.everybody')}</p>
         )}
+        {/* A flex column, not `d-grid` — see the note in NewTaskModal: a grid
+            column takes the width of its widest item, so one long name would
+            push the rows out of the dialog. */}
         {choices.length > 0 && (
-          <div className="d-grid gap-1">
+          <div className="d-flex flex-column gap-1">
             {choices.map((user) => (
               <Button
                 key={user.uid}

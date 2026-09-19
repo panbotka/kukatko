@@ -111,6 +111,30 @@ describe('NewTaskModal', () => {
     expect(await screen.findByText('the task page')).toBeInTheDocument()
   })
 
+  it('keeps a long question inside the dialog', async () => {
+    const user = userEvent.setup()
+    fetchTasksMock.mockResolvedValue({
+      tasks: [
+        task({ title: 'A question long enough to be wider than the dialog it is listed in' }),
+      ],
+      total: 1,
+      limit: 50,
+      offset: 0,
+    })
+    renderModal(['ph3'])
+
+    await user.click(screen.getByRole('button', { name: 'Add to a question' }))
+    const row = await screen.findByRole('button', { name: /A question long enough/ })
+
+    // jsdom lays nothing out, so what the guard can hold is the mechanism: the
+    // rows are a stretched flex column (a `d-grid` column takes the width of its
+    // widest item, which pushed the row and its state badge outside the dialog)
+    // and the title is the part allowed to truncate.
+    expect(row.parentElement).toHaveClass('d-flex', 'flex-column')
+    expect(row.parentElement).not.toHaveClass('d-grid')
+    expect(row.querySelector('.text-truncate')).toHaveTextContent(/A question long enough/)
+  })
+
   it('says so when there is no open question to add to', async () => {
     const user = userEvent.setup()
     fetchTasksMock.mockResolvedValue({ tasks: [], total: 0, limit: 50, offset: 0 })
