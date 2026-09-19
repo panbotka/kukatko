@@ -22,8 +22,8 @@ const foreignKeyViolation = "23503"
 // what newFields validated.
 const insertTaskSQL = `
 INSERT INTO photo_tasks (uid, title, body, state, resolution, source_query,
-	created_by, state_at, state_by, closed_at, closed_by)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
+	created_by, state_at, state_by, closed_at, closed_by, options)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
 
 // insertMembersSQL adds photographs to a task, ignoring the ones already there
 // so adding the same batch twice is not an error.
@@ -58,7 +58,7 @@ func (s *Store) Create(ctx context.Context, t Task, photoUIDs []string, entry au
 	err = s.inTx(ctx, "creating task", func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, insertTaskSQL, uid, f.Title, f.Body, string(f.State),
 			f.Resolution, f.Query, nullableUID(entry.ActorUID), f.StateAt, nullableUID(f.StateBy),
-			f.ClosedAt, nullableUID(f.ClosedBy)); err != nil {
+			f.ClosedAt, nullableUID(f.ClosedBy), f.Options); err != nil {
 			return fmt.Errorf("inserting task row: %w", err)
 		}
 		if err := addMembers(ctx, tx, uid, photoUIDs); err != nil {
@@ -82,7 +82,7 @@ func (s *Store) Create(ctx context.Context, t Task, photoUIDs []string, entry au
 const updateTaskSQL = `
 UPDATE photo_tasks
 SET title = $2, body = $3, state = $4, resolution = $5, source_query = $6,
-	state_at = $7, state_by = $8, closed_at = $9, closed_by = $10, updated_at = now()
+	state_at = $7, state_by = $8, closed_at = $9, closed_by = $10, options = $11, updated_at = now()
 WHERE uid = $1`
 
 // currentSQL reads the columns an edit folds onto, locking the row for the rest
@@ -91,7 +91,7 @@ WHERE uid = $1`
 // cannot be locked, and an edit does not need them.
 const currentSQL = `
 SELECT title, body, state, resolution, source_query, state_at, COALESCE(state_by, ''),
-	closed_at, COALESCE(closed_by, '')
+	closed_at, COALESCE(closed_by, ''), options
 FROM photo_tasks WHERE uid = $1 FOR UPDATE`
 
 // Update folds upd onto the stored task, writes entry — stamped with the
@@ -115,7 +115,7 @@ func (s *Store) Update(ctx context.Context, uid string, upd Update, entry audit.
 		}
 		if _, err := tx.Exec(ctx, updateTaskSQL, uid, next.Title, next.Body, string(next.State),
 			next.Resolution, next.Query, next.StateAt, nullableUID(next.StateBy), next.ClosedAt,
-			nullableUID(next.ClosedBy)); err != nil {
+			nullableUID(next.ClosedBy), next.Options); err != nil {
 			return fmt.Errorf("updating task row: %w", err)
 		}
 		if err := joinParticipant(ctx, tx, uid, entry.ActorUID); err != nil {
@@ -285,12 +285,15 @@ func (s *Store) inTx(ctx context.Context, op string, mutate func(tx pgx.Tx) erro
 func scanCurrent(row rowScanner) (Task, error) {
 	var t Task
 	err := row.Scan(&t.Title, &t.Body, &t.State, &t.Resolution, &t.Query,
-		&t.StateAt, &t.StateByUID, &t.ClosedAt, &t.ClosedByUID)
+		&t.StateAt, &t.StateByUID, &t.ClosedAt, &t.ClosedByUID, &t.Options)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Task{}, ErrNotFound
 	}
 	if err != nil {
 		return Task{}, fmt.Errorf("scanning task row: %w", err)
+	}
+	if t.Options == nil {
+		t.Options = []string{}
 	}
 	return t, nil
 }
@@ -354,7 +357,7 @@ func isSentinel(err error) bool {
 	for _, sentinel := range []error{
 		ErrNotFound, ErrPhotoNotFound, ErrEmptyTitle, ErrTooLong,
 		ErrInvalidState, ErrClosedNeedsResolution, ErrTooManyPhotos,
-		ErrUserNotFound,
+		ErrUserNotFound, ErrTooManyOptions, ErrEmptyOption, ErrDuplicateOption,
 	} {
 		if errors.Is(err, sentinel) {
 			return true

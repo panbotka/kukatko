@@ -48,6 +48,19 @@ export interface UseCommentsOptions {
    * chrome truthful without refetching the whole photo detail.
    */
   onCountChange?: (count: number) => void
+  /**
+   * Called with the whole thread whenever it is replaced — on load and after
+   * every successful write — for a caller that reads something off it the panel
+   * does not draw (the task page marks the answer option matching the reader's
+   * latest comment as chosen).
+   */
+  onThreadChange?: (comments: Comment[]) => void
+  /**
+   * Bumping it refetches the thread. A write made *outside* the panel — the task
+   * page's answer buttons post a comment of their own — has no other way to put
+   * its result into the list.
+   */
+  reloadKey?: string | number
 }
 
 /** Maps a thrown API error onto the failure the reader is shown. */
@@ -93,11 +106,15 @@ export function useComments(
   // effect on every render of the page above.
   const onCountChange = useRef(options.onCountChange)
   onCountChange.current = options.onCountChange
+  const onThreadChange = useRef(options.onThreadChange)
+  onThreadChange.current = options.onThreadChange
+  const reloadKey = options.reloadKey ?? ''
 
-  // Reports a new thread length upwards, from the one place the list is replaced.
+  // Reports a new thread upwards, from the one place the list is replaced.
   const publish = useCallback((next: Comment[]): void => {
     setComments(next)
     onCountChange.current?.(next.length)
+    onThreadChange.current?.(next)
   }, [])
 
   useEffect(() => {
@@ -119,7 +136,7 @@ export function useComments(
     return () => {
       controller.abort()
     }
-  }, [target, publish])
+  }, [target, publish, reloadKey])
 
   // The shared shape of every write: stand the controls down, run it, and either
   // apply the server's answer to the list or report why it did not happen.

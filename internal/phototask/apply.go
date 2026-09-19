@@ -2,6 +2,7 @@ package phototask
 
 import (
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/panbotka/kukatko/internal/audit"
@@ -17,6 +18,7 @@ type fields struct {
 	State      State
 	Resolution string
 	Query      string
+	Options    []string
 	StateAt    time.Time
 	StateBy    string
 	ClosedAt   *time.Time
@@ -37,6 +39,10 @@ func newFields(t Task, actorUID string, now time.Time) (fields, error) {
 	if err != nil {
 		return fields{}, err
 	}
+	options, err := normalizeOptions(t.Options)
+	if err != nil {
+		return fields{}, err
+	}
 	state := t.State
 	if state == "" {
 		state = StateQuestion
@@ -50,7 +56,8 @@ func newFields(t Task, actorUID string, now time.Time) (fields, error) {
 	}
 	return fields{
 		Title: title, Body: text.body, State: state, Resolution: text.resolution,
-		Query: text.query, StateAt: now, StateBy: actorUID, ClosedAt: closedAt, ClosedBy: closedBy,
+		Query: text.query, Options: options, StateAt: now, StateBy: actorUID,
+		ClosedAt: closedAt, ClosedBy: closedBy,
 	}, nil
 }
 
@@ -63,8 +70,11 @@ func newFields(t Task, actorUID string, now time.Time) (fields, error) {
 func applyUpdate(cur Task, upd Update, actorUID string, now time.Time) (fields, *audit.ChangeSet, error) {
 	next := fields{
 		Title: cur.Title, Body: cur.Body, State: cur.State, Resolution: cur.Resolution,
-		Query: cur.Query, StateAt: cur.StateAt, StateBy: cur.StateByUID,
+		Query: cur.Query, Options: cur.Options, StateAt: cur.StateAt, StateBy: cur.StateByUID,
 		ClosedAt: cur.ClosedAt, ClosedBy: cur.ClosedByUID,
+	}
+	if next.Options == nil {
+		next.Options = []string{}
 	}
 	if err := applyText(&next, upd); err != nil {
 		return fields{}, nil, err
@@ -91,7 +101,8 @@ func applyUpdate(cur Task, upd Update, actorUID string, now time.Time) (fields, 
 	return next, diff(cur, next), nil
 }
 
-// applyText folds the four free-text fields of upd onto next, normalising each.
+// applyText folds the four free-text fields and the answer options of upd onto
+// next, normalising each.
 func applyText(next *fields, upd Update) error {
 	if upd.Title != nil {
 		title, err := normalizeTitle(*upd.Title)
@@ -99,6 +110,13 @@ func applyText(next *fields, upd Update) error {
 			return err
 		}
 		next.Title = title
+	}
+	if upd.Options != nil {
+		options, err := normalizeOptions(*upd.Options)
+		if err != nil {
+			return err
+		}
+		next.Options = options
 	}
 	for _, f := range []struct {
 		value *string
@@ -162,7 +180,8 @@ func closure(state State, resolution, actorUID string, now time.Time) (*time.Tim
 
 // diff records which fields an update actually changed, for the audit entry. The
 // derived marks (state_at, state_by, closed_at, closed_by) are left out: they are
-// consequences of the state, and the state itself is in the diff.
+// consequences of the state, and the state itself is in the diff. The options
+// are compared as sets in order, with an absent list equal to an empty one.
 func diff(cur Task, next fields) *audit.ChangeSet {
 	changes := audit.NewChangeSet()
 	changes.Add("title", cur.Title, next.Title)
@@ -170,5 +189,8 @@ func diff(cur Task, next fields) *audit.ChangeSet {
 	changes.Add("state", string(cur.State), string(next.State))
 	changes.Add("resolution", cur.Resolution, next.Resolution)
 	changes.Add("query", cur.Query, next.Query)
+	if !slices.Equal(cur.Options, next.Options) {
+		changes.Add("options", cur.Options, next.Options)
+	}
 	return changes
 }

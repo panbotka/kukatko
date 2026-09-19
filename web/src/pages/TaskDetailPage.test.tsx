@@ -80,7 +80,8 @@ const listDirectoryMock = vi.mocked(listDirectory)
 const assignMock = vi.mocked(assignTaskParticipant)
 const unassignMock = vi.mocked(unassignTaskParticipant)
 const { fetchPhotos } = await import('../services/photos')
-const { fetchComments } = await import('../services/comments')
+const { fetchComments, createComment } = await import('../services/comments')
+const createCommentMock = vi.mocked(createComment)
 const fetchTaskMock = vi.mocked(fetchTask)
 const updateTaskMock = vi.mocked(updateTask)
 const fetchPhotosMock = vi.mocked(fetchPhotos)
@@ -108,6 +109,7 @@ function task(overrides: Partial<Task> = {}): Task {
     last_activity_by_name: 'Pan Botka',
     waiting_on_me: false,
     participants: [],
+    options: [],
     ...overrides,
   }
 }
@@ -156,6 +158,7 @@ beforeEach(async () => {
     next_offset: null,
   })
   fetchCommentsMock.mockResolvedValue([])
+  createCommentMock.mockReset()
   listDirectoryMock.mockReset()
   assignMock.mockReset()
   unassignMock.mockReset()
@@ -526,6 +529,8 @@ describe('the photo wall', () => {
 describe('the wall behaves like every other scoped list', () => {
   it('offers the filter bar and round-trips its view through the URL', async () => {
     const user = userEvent.setup()
+    // A batch, not a two-photo question: a small group drops the bar.
+    fetchTaskMock.mockResolvedValue(task({ photo_count: 40 }))
     fetchPhotosMock.mockResolvedValue({
       photos: [gridPhoto('ph1')],
       total: 1,
@@ -549,5 +554,163 @@ describe('the wall behaves like every other scoped list', () => {
         expect.anything(),
       )
     })
+  })
+})
+
+describe('quick answers', () => {
+  /** One live comment on the task, as the thread serves it. */
+  function comment(uid: string, author: string, body: string) {
+    return {
+      uid,
+      task_uid: 'tk1',
+      author_uid: author,
+      author_name: author,
+      body,
+      created_at: '2026-09-18T11:00:00Z',
+    }
+  }
+
+  it('draws the options as buttons under the question, above the people', async () => {
+    fetchTaskMock.mockResolvedValue(task({ options: ['1936', '1938', 'nevím'] }))
+    renderPage(false)
+
+    const heading = await screen.findByRole('heading', { name: /In which year/ })
+    const first = screen.getByRole('button', { name: '1936' })
+    const people = screen.getByText('On this task')
+    expect(screen.getByRole('button', { name: '1938' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'nevím' })).toBeInTheDocument()
+    // Question, then the answers, then who is on it — the choice sits where the
+    // question is, not at the foot of the page past the photographs.
+    expect(heading.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(first.compareDocumentPosition(people) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // Large enough for a thumb, and nothing is chosen yet.
+    expect(first).toHaveClass('btn-lg', 'btn-outline-primary')
+    expect(first).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('posts the option text as a comment and marks it chosen', async () => {
+    const user = userEvent.setup()
+    fetchTaskMock.mockResolvedValue(task({ options: ['1936', '1938'] }))
+    const posted = comment('cm1', 'u1', '1938')
+    createCommentMock.mockResolvedValue(posted)
+    renderPage()
+    await screen.findByRole('button', { name: '1938' })
+
+    // Once the answer is in, the thread is fetched again and carries it.
+    fetchCommentsMock.mockResolvedValue([posted])
+    await user.click(screen.getByRole('button', { name: '1938' }))
+
+    await waitFor(() => {
+      expect(createCommentMock).toHaveBeenCalledWith({ kind: 'task', uid: 'tk1' }, '1938')
+    })
+    const chosen = await screen.findByRole('button', { name: '1938', pressed: true })
+    expect(chosen).toHaveClass('btn-primary')
+    expect(screen.getByRole('button', { name: '1936' })).toHaveClass('btn-outline-primary')
+    // The thread was refreshed rather than left as it was.
+    expect(fetchCommentsMock.mock.calls.length).toBeGreaterThan(1)
+
+    // Tapping the chosen answer again posts nothing: it is already in the thread.
+    await user.click(chosen)
+    expect(createCommentMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("reads the chosen answer off the reader's latest comment, not anybody's", async () => {
+    fetchTaskMock.mockResolvedValue(task({ options: ['1936', '1938'] }))
+    fetchCommentsMock.mockResolvedValue([
+      comment('cm1', 'u2', '1936'),
+      comment('cm2', 'u1', '1938'),
+      comment('cm3', 'u1', 'nebo spíš 1938, podle kroniky'),
+    ])
+    renderPage()
+
+    await screen.findByRole('button', { name: '1938' })
+    await waitFor(() => {
+      // The reader's *latest* comment is free text, so nothing is chosen — and
+      // Anna's 1936 is hers, not the reader's.
+      expect(screen.getByRole('button', { name: '1936' })).toHaveAttribute('aria-pressed', 'false')
+      expect(screen.getByRole('button', { name: '1938' })).toHaveAttribute('aria-pressed', 'false')
+    })
+  })
+
+  it('gives a review with no options the built-in pair, posting the fixed strings', async () => {
+    const user = userEvent.setup()
+    fetchTaskMock.mockResolvedValue(task({ state: 'review' }))
+    createCommentMock.mockResolvedValue(comment('cm1', 'u1', 'Schvaluji.'))
+    renderPage(false)
+
+    await user.click(await screen.findByRole('button', { name: 'Approve' }))
+    await waitFor(() => {
+      // Localised label, fixed Czech body: the agent matches the string, and it
+      // cannot know which language the person read the page in.
+      expect(createCommentMock).toHaveBeenCalledWith({ kind: 'task', uid: 'tk1' }, 'Schvaluji.')
+    })
+
+    createCommentMock.mockResolvedValue(comment('cm2', 'u1', 'Vrátit k přepracování.'))
+    await user.click(screen.getByRole('button', { name: 'Send back' }))
+    await waitFor(() => {
+      expect(createCommentMock).toHaveBeenLastCalledWith(
+        { kind: 'task', uid: 'tk1' },
+        'Vrátit k přepracování.',
+      )
+    })
+  })
+
+  it('lets a review with its own options keep them', async () => {
+    fetchTaskMock.mockResolvedValue(task({ state: 'review', options: ['1936', '1938'] }))
+    renderPage()
+
+    expect(await screen.findByRole('button', { name: '1936' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument()
+  })
+
+  it('offers no buttons for a free-text question', async () => {
+    renderPage()
+    await screen.findByRole('heading', { name: /In which year/ })
+
+    expect(screen.queryByText('Answer with one tap')).not.toBeInTheDocument()
+  })
+
+  it('says so when the answer did not post, and stays usable', async () => {
+    const user = userEvent.setup()
+    fetchTaskMock.mockResolvedValue(task({ options: ['1936', '1938'] }))
+    createCommentMock.mockRejectedValue(new ApiError(500, 'boom'))
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: '1936' }))
+
+    expect(await screen.findByText(/The answer could not be posted/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '1936' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '1936' })).toHaveAttribute('aria-pressed', 'false')
+  })
+})
+
+describe('the filter bar on a small group', () => {
+  it('is left out for a two-photo question', async () => {
+    fetchTaskMock.mockResolvedValue(task({ photo_count: 2 }))
+    fetchPhotosMock.mockResolvedValue({
+      photos: [gridPhoto('ph1'), gridPhoto('ph2')],
+      total: 2,
+      limit: 100,
+      offset: 0,
+      next_offset: null,
+    })
+    renderPage()
+    await screen.findByRole('heading', { name: /In which year/ })
+
+    await waitFor(() => {
+      expect(document.querySelector('.kukatko-photo-grid')).toBeInTheDocument()
+    })
+    expect(screen.queryByRole('search')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Filters/ })).not.toBeInTheDocument()
+    // The count stays: the byline says it and so does the line over the wall.
+    expect(screen.getAllByText('2 photos').length).toBeGreaterThan(0)
+  })
+
+  it('stays for a batch of forty', async () => {
+    fetchTaskMock.mockResolvedValue(task({ photo_count: 40 }))
+    renderPage()
+    await screen.findByRole('heading', { name: /In which year/ })
+
+    expect(screen.getByRole('search')).toBeInTheDocument()
   })
 })

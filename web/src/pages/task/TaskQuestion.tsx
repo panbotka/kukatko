@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 
 import { Icon } from '../../components/Icon'
 import { Markdown } from '../../components/Markdown'
+import { AnswerOptionsEditor } from '../../components/tasks/AnswerOptionsEditor'
 import { type Task, type TaskEdit } from '../../services/tasks'
 
 /** Props for {@link TaskQuestion}. */
@@ -36,6 +37,7 @@ export function TaskQuestion({ task, canEdit, busy, onSave }: TaskQuestionProps)
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState(task.title)
   const [body, setBody] = useState(task.body)
+  const [options, setOptions] = useState<string[]>(task.options)
   const [failed, setFailed] = useState(false)
 
   function open() {
@@ -43,13 +45,20 @@ export function TaskQuestion({ task, canEdit, busy, onSave }: TaskQuestionProps)
     // form that was abandoned — or that somebody else has since overwritten.
     setTitle(task.title)
     setBody(task.body)
+    setOptions(task.options)
     setFailed(false)
     setEditing(true)
   }
 
   async function submit() {
     setFailed(false)
-    if (await onSave({ title, body })) {
+    const edit: TaskEdit = { title, body }
+    // The options travel only when they changed: an absent field is "leave it
+    // alone" on the wire, and an untouched set should not enter the audit diff.
+    if (!sameOptions(options, task.options)) {
+      edit.options = options
+    }
+    if (await onSave(edit)) {
       setEditing(false)
       return
     }
@@ -101,6 +110,12 @@ export function TaskQuestion({ task, canEdit, busy, onSave }: TaskQuestionProps)
               />
               <Form.Text>{t('taskDetail.controls.bodyHint')}</Form.Text>
             </Form.Group>
+            <AnswerOptionsEditor
+              idPrefix="task"
+              value={options}
+              onChange={setOptions}
+              disabled={busy}
+            />
             <div className="d-flex gap-2">
               <Button
                 variant="primary"
@@ -157,4 +172,9 @@ export function TaskQuestion({ task, canEdit, busy, onSave }: TaskQuestionProps)
       )}
     </section>
   )
+}
+
+/** Whether two option lists hold the same entries in the same order. */
+function sameOptions(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((entry, i) => entry === b[i])
 }

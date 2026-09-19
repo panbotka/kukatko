@@ -30,6 +30,8 @@ type createRequest struct {
 	Query     string   `json:"query"`
 	State     string   `json:"state"`
 	PhotoUIDs []string `json:"photo_uids"`
+	// Options are the answers the question offers, at most phototask.MaxOptions.
+	Options []string `json:"options"`
 }
 
 // updateRequest is the JSON body of PATCH /tasks/{uid}. Every field is a pointer
@@ -41,6 +43,9 @@ type updateRequest struct {
 	Query      *string `json:"query"`
 	State      *string `json:"state"`
 	Resolution *string `json:"resolution"`
+	// Options replaces the whole set: absent leaves it alone, an empty array
+	// clears it.
+	Options *[]string `json:"options"`
 }
 
 // membershipRequest is the JSON body of the two membership endpoints.
@@ -96,7 +101,9 @@ func decodeMembership(r *http.Request) ([]string, error) {
 // state is only carried across, not validated: the store owns that rule, and
 // owning it twice is how the two come to disagree.
 func (u updateRequest) toUpdate() phototask.Update {
-	upd := phototask.Update{Title: u.Title, Body: u.Body, Query: u.Query, Resolution: u.Resolution}
+	upd := phototask.Update{
+		Title: u.Title, Body: u.Body, Query: u.Query, Resolution: u.Resolution, Options: u.Options,
+	}
 	if u.State != nil {
 		state := phototask.State(*u.State)
 		upd.State = &state

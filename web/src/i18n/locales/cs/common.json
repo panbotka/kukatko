@@ -1420,7 +1420,21 @@
       "failed": "Uložení se nepodařilo.",
       "edit": "Upravit zadání",
       "delete": "Smazat úkol",
-      "showQuery": "Zobrazit fotky dotazu"
+      "showQuery": "Zobrazit fotky dotazu",
+      "options": {
+        "label": "Možnosti odpovědi",
+        "hint": "Až 5 krátkých odpovědí. Zobrazí se jako tlačítka pod otázkou; klepnutí pošle text do diskuse.",
+        "placeholder": "Např. 1936",
+        "add": "Přidat možnost",
+        "remove": "Odebrat možnost {{text}}",
+        "full": "Víc než 5 možností nejde. Odeber některou, pokud chceš jinou."
+      }
+    },
+    "answers": {
+      "label": "Odpověď jedním klepnutím",
+      "approve": "Schvaluji",
+      "sendBack": "Vrátit k přepracování",
+      "failed": "Odpověď se nepodařilo odeslat. Zkus to znovu, nebo napiš do diskuse."
     }
   },
   "places": {

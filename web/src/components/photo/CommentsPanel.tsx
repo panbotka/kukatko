@@ -8,7 +8,7 @@ import { useTranslation } from 'react-i18next'
 import { ConfirmModal } from '../ConfirmModal'
 import { Icon } from '../Icon'
 import { type CommentFailure, useComments } from '../../hooks/useComments'
-import { type CommentSubject, MAX_COMMENT_LENGTH } from '../../services/comments'
+import { type Comment, type CommentSubject, MAX_COMMENT_LENGTH } from '../../services/comments'
 
 import { CommentItem } from './CommentItem'
 
@@ -33,6 +33,10 @@ export interface CommentsPanelProps {
   canModerate: boolean
   /** Reports the thread's length up to the viewer chrome, so the badge stays true. */
   onCountChange?: (count: number) => void
+  /** Reports the whole thread whenever it changes; see `UseCommentsOptions`. */
+  onThreadChange?: (comments: Comment[]) => void
+  /** Bumping it refetches the thread, for a comment posted outside the panel. */
+  reloadKey?: string | number
   /**
    * Whether the panel writes its own heading. True by default — in the viewer
    * the thread stands on its own and has to name itself. A caller that already
@@ -73,11 +77,15 @@ export function CommentsPanel({
   currentUserUid,
   canModerate,
   onCountChange,
+  onThreadChange,
+  reloadKey,
   heading = true,
 }: CommentsPanelProps) {
   const { t } = useTranslation()
   const { status, comments, count, busy, failure, post, edit, remove } = useComments(subject, {
     onCountChange,
+    onThreadChange,
+    reloadKey,
   })
   const [draft, setDraft] = useState('')
   // The comment the reader has asked to delete, or null. One dialog serves the

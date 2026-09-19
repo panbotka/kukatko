@@ -28,12 +28,16 @@ const titleWidthTask = 44
 // Task mirrors the JSON a task is served as (phototask.Task): the question, whose
 // move it is, and the two counts that say whether anything has happened.
 type Task struct {
-	UID           string     `json:"uid"`
-	Title         string     `json:"title"`
-	Body          string     `json:"body"`
-	State         string     `json:"state"`
-	Resolution    string     `json:"resolution"`
-	Query         string     `json:"query"`
+	UID        string `json:"uid"`
+	Title      string `json:"title"`
+	Body       string `json:"body"`
+	State      string `json:"state"`
+	Resolution string `json:"resolution"`
+	Query      string `json:"query"`
+	// Options are the answers the question offers. A person's answer is a comment
+	// whose body is one of them verbatim, so `tasks comments` is matched against
+	// this list exactly.
+	Options       []string   `json:"options"`
 	CreatedBy     string     `json:"created_by"`
 	CreatedByName string     `json:"created_by_name"`
 	CreatedAt     time.Time  `json:"created_at"`
@@ -142,6 +146,8 @@ type TaskInput struct {
 	State string `json:"state,omitempty"`
 	// PhotoUIDs is the frozen group the question is about.
 	PhotoUIDs []string `json:"photo_uids,omitempty"`
+	// Options are the answers offered, at most five short distinct strings.
+	Options []string `json:"options,omitempty"`
 }
 
 // TaskUpdate is a partial change. A nil field is left alone; a pointer to an
@@ -153,11 +159,14 @@ type TaskUpdate struct {
 	Query      *string `json:"query,omitempty"`
 	State      *string `json:"state,omitempty"`
 	Resolution *string `json:"resolution,omitempty"`
+	// Options replaces the whole set; a pointer to an empty slice clears it.
+	Options *[]string `json:"options,omitempty"`
 }
 
 // empty reports whether the update names no field at all.
 func (u TaskUpdate) empty() bool {
-	return u.Title == nil && u.Body == nil && u.Query == nil && u.State == nil && u.Resolution == nil
+	return u.Title == nil && u.Body == nil && u.Query == nil && u.State == nil &&
+		u.Resolution == nil && u.Options == nil
 }
 
 // tasksPath is the collection endpoint.
@@ -334,6 +343,9 @@ func WriteTask(w io.Writer, task Task) error {
 		{"Last comment", formatTime(task.LastCommentAt)},
 		{"Last activity", lastActivity(task)},
 		{"Query", dash(task.Query)},
+	}
+	if len(task.Options) > 0 {
+		rows = append(rows, [2]string{"Options", strings.Join(task.Options, " · ")})
 	}
 	if task.ClosedAt != nil {
 		rows = append(rows,

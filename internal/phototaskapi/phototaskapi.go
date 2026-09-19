@@ -204,7 +204,10 @@ func writeTaskError(w http.ResponseWriter, err error, fallback string) {
 		errors.Is(err, phototask.ErrTooLong),
 		errors.Is(err, phototask.ErrInvalidState),
 		errors.Is(err, phototask.ErrClosedNeedsResolution),
-		errors.Is(err, phototask.ErrTooManyPhotos):
+		errors.Is(err, phototask.ErrTooManyPhotos),
+		errors.Is(err, phototask.ErrTooManyOptions),
+		errors.Is(err, phototask.ErrEmptyOption),
+		errors.Is(err, phototask.ErrDuplicateOption):
 		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, phototask.ErrUserNotFound):
 		writeError(w, http.StatusNotFound, "user not found")

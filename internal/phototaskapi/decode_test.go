@@ -155,6 +155,14 @@ func TestUpdateRequestToUpdate(t *testing.T) {
 	if got.State == nil || *got.State != phototask.State("parked") {
 		t.Errorf("state = %v, want the value carried through unvalidated", got.State)
 	}
+	if got.Options != nil {
+		t.Errorf("options = %v, want absent when the request did not name them", got.Options)
+	}
+
+	cleared := updateRequest{Options: &[]string{}}.toUpdate()
+	if cleared.Options == nil || len(*cleared.Options) != 0 {
+		t.Errorf("options = %v, want an explicit empty set", cleared.Options)
+	}
 }
 
 // TestCommentPolicy verifies who may rewrite and who may remove a comment.
@@ -214,6 +222,9 @@ func TestWriteTaskError(t *testing.T) {
 			want: http.StatusBadRequest,
 		},
 		{name: "too many photos", err: phototask.ErrTooManyPhotos, want: http.StatusBadRequest},
+		{name: "too many options", err: phototask.ErrTooManyOptions, want: http.StatusBadRequest},
+		{name: "blank option", err: phototask.ErrEmptyOption, want: http.StatusBadRequest},
+		{name: "duplicate option", err: phototask.ErrDuplicateOption, want: http.StatusBadRequest},
 		{name: "anything else", err: errors.New("boom"), want: http.StatusInternalServerError},
 	}
 	for _, tt := range tests {

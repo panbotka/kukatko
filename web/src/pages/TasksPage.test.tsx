@@ -40,6 +40,7 @@ function task(overrides: Partial<Task> = {}): Task {
     last_activity_by_name: 'Pan Botka',
     waiting_on_me: false,
     participants: [],
+    options: [],
     ...overrides,
   }
 }

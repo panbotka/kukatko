@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom'
 import { addTaskPhotos, createTask, fetchTasks, type Task } from '../../services/tasks'
 import { Icon } from '../Icon'
 
+import { AnswerOptionsEditor } from './AnswerOptionsEditor'
 import { TaskStateBadge } from './TaskStateBadge'
 
 /** Props for {@link NewTaskModal}. */
@@ -44,6 +45,7 @@ export function NewTaskModal({ show, onClose, photoUids = [] }: NewTaskModalProp
   const [mode, setMode] = useState<Mode>('new')
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
+  const [options, setOptions] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
 
@@ -62,7 +64,14 @@ export function NewTaskModal({ show, onClose, photoUids = [] }: NewTaskModalProp
   function submit() {
     setBusy(true)
     setFailed(false)
-    createTask({ title, body, photo_uids: photoUids })
+    createTask({
+      title,
+      body,
+      photo_uids: photoUids,
+      // Sent only when there is something to send: a question with no options is
+      // answered in free text, and the server reads an absent field the same way.
+      ...(options.length > 0 ? { options } : {}),
+    })
       .then((task) => {
         void navigate(`/tasks/${task.uid}`)
       })
@@ -136,7 +145,7 @@ export function NewTaskModal({ show, onClose, photoUids = [] }: NewTaskModalProp
                 }}
               />
             </Form.Group>
-            <Form.Group>
+            <Form.Group className="mb-3">
               <Form.Label htmlFor="new-task-body">{t('taskDetail.controls.body')}</Form.Label>
               <Form.Control
                 id="new-task-body"
@@ -149,6 +158,12 @@ export function NewTaskModal({ show, onClose, photoUids = [] }: NewTaskModalProp
                 }}
               />
             </Form.Group>
+            <AnswerOptionsEditor
+              idPrefix="new-task"
+              value={options}
+              onChange={setOptions}
+              disabled={busy}
+            />
           </>
         ) : (
           <OpenTaskPicker busy={busy} onPick={addTo} />

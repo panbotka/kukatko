@@ -1460,7 +1460,21 @@
       "failed": "Saving failed.",
       "edit": "Edit the question",
       "delete": "Delete the task",
-      "showQuery": "Show the query's photos"
+      "showQuery": "Show the query's photos",
+      "options": {
+        "label": "Answer options",
+        "hint": "Up to 5 short answers. They show as buttons under the question; a tap posts the text into the discussion.",
+        "placeholder": "E.g. 1936",
+        "add": "Add an option",
+        "remove": "Remove option {{text}}",
+        "full": "No more than 5 options. Remove one to add another."
+      }
+    },
+    "answers": {
+      "label": "Answer with one tap",
+      "approve": "Approve",
+      "sendBack": "Send back",
+      "failed": "The answer could not be posted. Try again, or write in the discussion."
     }
   },
   "places": {

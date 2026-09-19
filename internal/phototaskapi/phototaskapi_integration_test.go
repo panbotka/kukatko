@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -195,6 +196,66 @@ func TestTaskLifecycle(t *testing.T) {
 
 	e.do(t, editor, http.MethodDelete, "/api/v1/tasks/"+task.UID, nil, http.StatusNoContent, nil)
 	e.do(t, editor, http.MethodGet, "/api/v1/tasks/"+task.UID, nil, http.StatusNotFound, nil)
+}
+
+// TestTaskOptions walks the answer options through the API: opened with a set,
+// read back on the listing and the detail, replaced and cleared by PATCH, and
+// refused with a 400 that names the rule when the set is malformed.
+func TestTaskOptions(t *testing.T) {
+	e := newEnv(t)
+	editor := e.login(t, "editor", auth.RoleEditor)
+
+	body, _ := json.Marshal(map[string]any{
+		"title": "Je na nápisu rok 1936, nebo 1938?", "options": []string{" 1936", "1938", "nevím"},
+	})
+	var task phototask.Task
+	e.do(t, editor, http.MethodPost, "/api/v1/tasks", body, http.StatusCreated, &task)
+	if !slices.Equal(task.Options, []string{"1936", "1938", "nevím"}) {
+		t.Fatalf("options after create = %q", task.Options)
+	}
+
+	var page struct {
+		Tasks []phototask.Task `json:"tasks"`
+	}
+	e.do(t, editor, http.MethodGet, "/api/v1/tasks", nil, http.StatusOK, &page)
+	if len(page.Tasks) != 1 || !slices.Equal(page.Tasks[0].Options, task.Options) {
+		t.Errorf("listing options = %v, want %q", page.Tasks, task.Options)
+	}
+
+	for name, bad := range map[string][]string{
+		"too many": {"a", "b", "c", "d", "e", "f"},
+		"blank":    {"a", " "},
+		"too long": {strings.Repeat("x", phototask.MaxOptionLen+1)},
+		"repeated": {"1936", "1936"},
+	} {
+		patch, _ := json.Marshal(map[string]any{"options": bad})
+		resp := e.mustDo(t, editor, http.MethodPatch, "/api/v1/tasks/"+task.UID, patch)
+		payload, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusBadRequest || !strings.Contains(string(payload), "option") {
+			t.Errorf("%s: status = %d, body = %s; want 400 naming the option", name, resp.StatusCode, payload)
+		}
+	}
+
+	untouched, _ := json.Marshal(map[string]any{"body": "jiný kontext"})
+	var edited phototask.Task
+	e.do(t, editor, http.MethodPatch, "/api/v1/tasks/"+task.UID, untouched, http.StatusOK, &edited)
+	if !slices.Equal(edited.Options, task.Options) {
+		t.Errorf("an edit naming no options changed them to %q", edited.Options)
+	}
+
+	cleared, _ := json.Marshal(map[string]any{"options": []string{}})
+	e.do(t, editor, http.MethodPatch, "/api/v1/tasks/"+task.UID, cleared, http.StatusOK, &edited)
+	if edited.Options == nil || len(edited.Options) != 0 {
+		t.Errorf("options after clearing = %v, want an empty array", edited.Options)
+	}
+	// The wire must say [] rather than null: a client is promised an array.
+	resp := e.mustDo(t, editor, http.MethodGet, "/api/v1/tasks/"+task.UID, nil)
+	raw, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if !strings.Contains(string(raw), `"options":[]`) {
+		t.Errorf("detail payload lacks an empty options array: %s", raw)
+	}
 }
 
 // TestViewerMayAnswerButNotCurate is the point of the feature: the person who

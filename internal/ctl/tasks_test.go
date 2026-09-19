@@ -106,6 +106,7 @@ func TestCreateTask(t *testing.T) {
 	})
 	_, err := client.CreateTask(t.Context(), TaskInput{
 		Title: "Kdy?", Query: "camera:Olympus", PhotoUIDs: []string{"ph1", "ph2"},
+		Options: []string{"1936", "1938"},
 	})
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
@@ -121,6 +122,9 @@ func TestCreateTask(t *testing.T) {
 	}
 	if _, ok := gotBody["body"]; ok {
 		t.Error("an empty body was sent, want it omitted")
+	}
+	if string(gotBody["options"]) != `["1936","1938"]` {
+		t.Errorf("options = %s", gotBody["options"])
 	}
 }
 
@@ -171,6 +175,15 @@ func TestUpdateTask(t *testing.T) {
 		err, ErrNoTaskEdits,
 	) {
 		t.Errorf("empty update error = %v, want ErrNoTaskEdits", err)
+	}
+
+	// Clearing the options is an edit in its own right, and it must reach the
+	// wire as an empty array rather than be dropped as "nothing to send".
+	if _, err := client.UpdateTask(t.Context(), "tk1", TaskUpdate{Options: &[]string{}}); err != nil {
+		t.Fatalf("clearing options: %v", err)
+	}
+	if string(gotBody["options"]) != `[]` {
+		t.Errorf("cleared options = %s, want []", gotBody["options"])
 	}
 }
 
@@ -307,6 +320,19 @@ func TestWriteTask(t *testing.T) {
 	}
 	if strings.Contains(got, "Resolution") {
 		t.Error("an open task printed a resolution")
+	}
+	if strings.Contains(got, "Options") {
+		t.Error("a task with no options printed an Options line")
+	}
+
+	withOptions := task
+	withOptions.Options = []string{"1936", "1938", "nevím"}
+	buf.Reset()
+	if err := WriteTask(&buf, withOptions); err != nil {
+		t.Fatalf("WriteTask(options): %v", err)
+	}
+	if !strings.Contains(buf.String(), "Options         1936 · 1938 · nevím") {
+		t.Errorf("options line missing:\n%s", buf.String())
 	}
 
 	closed := task

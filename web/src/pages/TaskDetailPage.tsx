@@ -26,7 +26,7 @@ import { gridScrollKey, readGridScroll } from '../lib/gridScroll'
 import { LIBRARY_DEFAULTS, type LibraryView, viewToParams } from '../lib/libraryView'
 import { useUrlState } from '../lib/urlState'
 import { isNotFound } from '../services/auth'
-import { taskSubject } from '../services/comments'
+import { type Comment, taskSubject } from '../services/comments'
 import {
   deleteTask,
   fetchTask,
@@ -36,6 +36,7 @@ import {
   updateTask,
 } from '../services/tasks'
 
+import { TaskAnswers } from './task/TaskAnswers'
 import { TaskControls } from './task/TaskControls'
 import { TaskParticipants } from './task/TaskParticipants'
 import { TaskQuestion } from './task/TaskQuestion'
@@ -53,6 +54,13 @@ type State =
 
 /** Where the back link leads. */
 const TASKS_PATH = '/tasks'
+
+/**
+ * The largest frozen group the page still shows without the filter bar. A
+ * two-photo question does not need a search field, a sort and a density control
+ * between the question and its pictures; a batch of forty does.
+ */
+export const SMALL_GROUP_MAX = 12
 
 /**
  * One task: the question, the photographs it is about, and the conversation that
@@ -89,6 +97,11 @@ export function TaskDetailPage() {
   const [confirmDelete, setConfirmDelete] = useState(false)
   // Reported up by the thread so the section's heading can carry its length.
   const [commentCount, setCommentCount] = useState(0)
+  // The thread itself, reported up so the answer buttons can mark the option
+  // matching the reader's latest comment as chosen; and the key that makes the
+  // panel refetch after a button posted a comment behind its back.
+  const [thread, setThread] = useState<Comment[]>([])
+  const [threadKey, reloadThread] = useReloadKey()
   // The people on the task. It starts from the fetched task and is replaced by
   // every membership change's own answer, so a change redraws without a refetch.
   const [people, setPeople] = useState<Participant[]>([])
@@ -185,6 +198,19 @@ export function TaskDetailPage() {
 
   useDocumentTitle(state.status === 'ready' ? state.task.title : null)
 
+  // The reader's most recent live comment, oldest-first thread read backwards.
+  const chosen = useMemo(() => {
+    if (!user) {
+      return null
+    }
+    for (let i = thread.length - 1; i >= 0; i--) {
+      if (thread[i]?.author_uid === user.uid) {
+        return thread[i]?.body ?? null
+      }
+    }
+    return null
+  }, [thread, user])
+
   // Every curation control funnels through one save, so the page has one place
   // that knows how to apply an answer and one place that reports it failed.
   const save = useCallback(
@@ -257,6 +283,8 @@ export function TaskDetailPage() {
 
       <TaskQuestion task={task} canEdit={canWrite} busy={busy} onSave={save} />
 
+      <TaskAnswers task={task} chosen={chosen} onAnswered={reloadThread} />
+
       <TaskParticipants
         taskUid={task.uid}
         participants={people}
@@ -273,7 +301,17 @@ export function TaskDetailPage() {
         </Card>
       )}
 
-      <FilterBar view={view} onChange={setView} total={total} />
+      {/* A small group gets its count and its pictures, nothing to filter them
+          with: a search field over two photographs is furniture. */}
+      {task.photo_count > SMALL_GROUP_MAX ? (
+        <FilterBar view={view} onChange={setView} total={total} />
+      ) : (
+        status === 'ready' && (
+          <p className="text-body-secondary small mb-2">
+            {t('tasks.row.photos', { count: total })}
+          </p>
+        )
+      )}
 
       {status === 'loading' && <GridSkeleton />}
       {status === 'error' && <ErrorState title={t('library.error.load')} onRetry={retry} />}
@@ -327,6 +365,8 @@ export function TaskDetailPage() {
             // would say it a second time, so the count moves up beside it.
             heading={false}
             onCountChange={setCommentCount}
+            onThreadChange={setThread}
+            reloadKey={threadKey}
           />
         </Card.Body>
       </Card>

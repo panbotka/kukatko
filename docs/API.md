@@ -911,7 +911,8 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   involved in?"), `limit` (default 50, max 200) / `offset`;
   the envelope echoes the `limit`/`offset` actually applied, not the ones asked for.
   Each task carries `uid`, `title` (the question), `body` (Markdown context), `state`
-  (`question`/`working`/`review`/`done`/`rejected`), `resolution`, `query`, `created_by`/`created_by_name`,
+  (`question`/`working`/`review`/`done`/`rejected`), `resolution`, `query`, **`options`** (always an
+  array, see below), `created_by`/`created_by_name`,
   `created_at`/`updated_at`/`state_at`/`state_by` (who last moved the state; absent on a task from before
   it was recorded, which the server reads as the creator), `closed_at`/`closed_by`/`closed_by_name`,
   `photo_count`, `cover_photo_uid`, `comment_count`, `last_comment_at`, **`participants`** (always an
@@ -929,14 +930,28 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   is the work that has an answer and is waiting to be written into the library, true even when nobody
   remembered to advance the state; `GET /tasks?waiting=true` is the finer "my move" list.
   `GET /tasks/{uid}` (authenticated) → the task, as the caller sees it; 404 when deleted.
-  `POST /tasks` `{title,body,query,state,photo_uids}` → **201**; `PATCH /tasks/{uid}`
-  `{title?,body?,query?,state?,resolution?}` → 200 (an omitted field unchanged, an explicit `""` clears it);
+  `POST /tasks` `{title,body,query,state,photo_uids,options?}` → **201**; `PATCH /tasks/{uid}`
+  `{title?,body?,query?,state?,resolution?,options?}` → 200 (an omitted field unchanged, an explicit `""`
+  clears it; `options` absent = leave alone, `[]` = clear, a list = replace the whole set);
   `DELETE /tasks/{uid}` → 204; `POST`/`DELETE /tasks/{uid}/photos` `{photo_uids}` → `{changed,task}`
   (already-present / already-absent photographs are ignored, so replaying a batch is harmless) — **all five
   behind `RequireWrite`**. Closing a task (`state` `done` or `rejected`) without a non-empty `resolution` is
   a **400**: "rejected" is a real outcome, and what must never exist is a task that is closed and silent.
   Reopening clears `closed_at`/`closed_by` and keeps the text. Advancing the state stamps `state_at` and
   `state_by` in the same transaction; an edit that leaves the state alone deliberately does neither.
+  **Quick answers (`options`).** Most questions an agent opens are a choice ("1936, or 1938?"), so a task
+  may carry up to **5 answer options** — each trimmed, non-empty, at most **60 characters**, distinct —
+  which a client draws as buttons under the question; the count is a CHECK on the column (migration
+  `0083_photo_tasks_options.sql`), the rest is validated in `internal/phototask` and a broken set is a
+  **400** naming the rule (too many, blank, too long, duplicate). **Answering is not an endpoint:**
+  choosing an option posts an ordinary comment on the task (`POST /tasks/{uid}/comments`) whose body is
+  **exactly the option text**, so the thread stays the single record and an agent reads the answer with
+  the same call as any other and matches it against the options verbatim. A task in **`review` with no
+  options of its own** is a yes/no question and gets two **built-in** answers whose posted text is fixed
+  whatever language the client is showing: **`Schvaluji.`** (approve) and **`Vrátit k přepracování.`**
+  (send back) — an agent matches these two strings, never a localised label. A review task *with* options
+  keeps its own; the built-in pair never replaces an explicit choice. The update's audit diff carries
+  `options` like every other field.
   **A task's photographs have no route here.** They are read through the catalogue with
   `GET /photos?task={uid}` — the same projection, signed media URLs, filters and paging as any other
   listing — and the search language learns `task:` for the same reason.

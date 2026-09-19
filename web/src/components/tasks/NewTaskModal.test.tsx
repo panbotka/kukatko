@@ -41,6 +41,7 @@ function task(overrides: Partial<Task> = {}): Task {
     last_activity_by_name: 'Pan Botka',
     waiting_on_me: false,
     participants: [],
+    options: [],
     ...overrides,
   }
 }
@@ -84,6 +85,50 @@ describe('NewTaskModal', () => {
     })
     // The page it lands on is both the confirmation and the link to send on.
     expect(await screen.findByText('the task page')).toBeInTheDocument()
+  })
+
+  it('opens a question with answer options, added one at a time', async () => {
+    const user = userEvent.setup()
+    createTaskMock.mockResolvedValue(task())
+    renderModal(['ph1'])
+
+    await user.type(screen.getByLabelText('Question'), 'Is it 1936 or 1938?')
+    const field = screen.getByLabelText('Answer options')
+    // Enter adds an option and does not submit the dialog.
+    await user.type(field, '1936{Enter}')
+    expect(createTaskMock).not.toHaveBeenCalled()
+    await user.type(field, '1938')
+    await user.click(screen.getByRole('button', { name: 'Add an option' }))
+    // A repeat is refused quietly: the plus stays disabled.
+    await user.type(field, '1938')
+    expect(screen.getByRole('button', { name: 'Add an option' })).toBeDisabled()
+    await user.clear(field)
+
+    expect(screen.getByText('1936')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Remove option 1938' }))
+    await user.type(field, 'nevím{Enter}')
+
+    await user.click(screen.getByRole('button', { name: 'New task' }))
+    await waitFor(() => {
+      expect(createTaskMock).toHaveBeenCalledWith({
+        title: 'Is it 1936 or 1938?',
+        body: '',
+        photo_uids: ['ph1'],
+        options: ['1936', 'nevím'],
+      })
+    })
+  })
+
+  it('stops at five options', async () => {
+    const user = userEvent.setup()
+    renderModal(['ph1'])
+
+    const field = screen.getByLabelText('Answer options')
+    for (const option of ['a', 'b', 'c', 'd', 'e']) {
+      await user.type(field, `${option}{Enter}`)
+    }
+    expect(screen.queryByLabelText('Answer options')).not.toBeInTheDocument()
+    expect(screen.getByText(/No more than 5 options/)).toBeInTheDocument()
   })
 
   it('refuses to open a question with no question in it', () => {

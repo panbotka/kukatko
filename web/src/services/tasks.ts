@@ -59,6 +59,13 @@ export interface Task {
   resolution: string
   /** The search that produced the group, kept as evidence and never re-run. */
   query: string
+  /**
+   * The answers the question offers, in order — at most {@link MAX_TASK_OPTIONS},
+   * each short and distinct. Choosing one posts an ordinary comment whose body is
+   * the option text verbatim ({@link answerOptions}). Always present; empty means
+   * the question is answered in free text.
+   */
+  options: string[]
   /** Empty for a task whose author's account has since been deleted. */
   created_by: string
   created_by_name: string
@@ -176,6 +183,8 @@ export interface TaskInput {
   query?: string
   state?: TaskState
   photo_uids?: string[]
+  /** The answers to offer as buttons; see {@link Task.options}. */
+  options?: string[]
 }
 
 /**
@@ -188,6 +197,55 @@ export interface TaskEdit {
   query?: string
   state?: TaskState
   resolution?: string
+  /** Replaces the whole set of answers; an empty array clears it. */
+  options?: string[]
+}
+
+/** How many answer options a question may offer (`phototask.MaxOptions`). */
+export const MAX_TASK_OPTIONS = 5
+
+/** The longest answer option, in characters (`phototask.MaxOptionLen`). */
+export const MAX_TASK_OPTION_LENGTH = 60
+
+/**
+ * The two built-in answers of a `review` task that offers no options of its own
+ * (`phototask.ReviewApprove` / `phototask.ReviewReturn`). The page labels them in
+ * the reader's language but **posts exactly these strings**, whatever the UI
+ * language: the agent that opened the review matches the answer against them,
+ * and it cannot know which language the person read the page in.
+ */
+export const REVIEW_APPROVE = 'Schvaluji.'
+export const REVIEW_RETURN = 'Vrátit k přepracování.'
+
+/** One answer a task page offers as a button. */
+export interface AnswerOption {
+  /** The comment body a tap posts, verbatim. */
+  text: string
+  /**
+   * Set for the two built-in review answers, whose button label is localised
+   * while {@link text} stays fixed. Absent for an option the task carries itself,
+   * whose text is its own label.
+   */
+  builtin?: 'approve' | 'sendBack'
+}
+
+/**
+ * The answers a task offers: its own options when it has any, otherwise — for a
+ * task waiting in `review` — the built-in approve/return pair, otherwise none.
+ * A task's own options always win, so an agent that asks a review question with
+ * a specific choice ("1936 or 1938?") is not answered with a yes.
+ */
+export function answerOptions(task: Pick<Task, 'state' | 'options'>): AnswerOption[] {
+  if (task.options.length > 0) {
+    return task.options.map((text) => ({ text }))
+  }
+  if (task.state === 'review') {
+    return [
+      { text: REVIEW_APPROVE, builtin: 'approve' },
+      { text: REVIEW_RETURN, builtin: 'sendBack' },
+    ]
+  }
+  return []
 }
 
 /** Response body of the two membership endpoints. */

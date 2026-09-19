@@ -74,7 +74,7 @@ const taskColumns = `t.uid, t.title, t.body, t.state, t.resolution, t.source_que
 	th.comment_count, th.last_comment_at, ` + answeredSQL + `,
 	COALESCE(la.at, t.created_at), COALESCE(la.by, ''),
 	COALESCE(NULLIF(lu.display_name, ''), lu.username, ''), ` + waitingSQL + `,
-	pa.participants`
+	pa.participants, t.options`
 
 // taskJoins resolves both author accounts, summarises the thread, finds the
 // last activity and aggregates the participants. The users are LEFT JOINs
@@ -393,9 +393,14 @@ func scanTask(row rowScanner) (Task, error) {
 		&t.ClosedAt, &t.ClosedByUID, &t.ClosedByName,
 		&t.PhotoCount, &t.CoverPhotoUID, &t.CommentCount, &t.LastCommentAt, &t.HasNewAnswer,
 		&t.LastActivityAt, &t.LastActivityByUID, &t.LastActivityByName, &t.WaitingOnMe,
-		&participants)
+		&participants, &t.Options)
 	if err != nil {
 		return Task{}, fmt.Errorf("scanning task row: %w", err)
+	}
+	// The column is NOT NULL, so this only guards a scanner that left the
+	// destination alone: a client is promised an array, never null.
+	if t.Options == nil {
+		t.Options = []string{}
 	}
 	// The aggregate is COALESCE'd to an empty array by the query, so a task with
 	// nobody on it decodes to an empty slice. An absent value is treated the same

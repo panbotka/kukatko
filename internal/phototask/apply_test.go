@@ -2,6 +2,7 @@ package phototask
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -381,5 +382,121 @@ func TestStateBy(t *testing.T) {
 				t.Errorf("state_by = %q, want %q", next.StateBy, tt.want)
 			}
 		})
+	}
+}
+
+// TestNormalizeOptions verifies the rules an answer set is held to: the count,
+// blank entries, the per-option length, duplicates after trimming — and that a
+// good set comes back trimmed, in order, never nil.
+func TestNormalizeOptions(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		in      []string
+		want    []string
+		wantErr error
+	}{
+		{name: "nil is an empty set", in: nil, want: []string{}},
+		{name: "trimmed and ordered", in: []string{" 1936 ", "1938", "nevím"}, want: []string{"1936", "1938", "nevím"}},
+		{name: "five is the limit", in: []string{"a", "b", "c", "d", "e"}, want: []string{"a", "b", "c", "d", "e"}},
+		{name: "six is too many", in: []string{"a", "b", "c", "d", "e", "f"}, wantErr: ErrTooManyOptions},
+		{name: "blank option", in: []string{"1936", "   "}, wantErr: ErrEmptyOption},
+		{name: "over-long option", in: []string{strings.Repeat("ž", MaxOptionLen+1)}, wantErr: ErrTooLong},
+		{name: "sixty characters fit", in: []string{strings.Repeat("ž", MaxOptionLen)}, want: []string{strings.Repeat("ž", MaxOptionLen)}},
+		{name: "duplicate after trimming", in: []string{"1936", " 1936"}, wantErr: ErrDuplicateOption},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := normalizeOptions(tt.in)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("normalizeOptions(%q) error = %v, want %v", tt.in, err, tt.wantErr)
+			}
+			if err != nil {
+				return
+			}
+			if got == nil {
+				t.Fatal("normalizeOptions returned nil, want an empty slice")
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("normalizeOptions(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestOptions_openAndEdit verifies the options travel through both write paths:
+// opening a task validates and keeps them, an edit that names them replaces the
+// whole set (an empty set clears it), and one that does not leaves them alone.
+func TestOptions_openAndEdit(t *testing.T) {
+	t.Parallel()
+
+	opened, err := newFields(Task{Title: "Kdy?", Options: []string{"1936", " 1938 "}}, "us1", ref)
+	if err != nil {
+		t.Fatalf("newFields: %v", err)
+	}
+	if !slices.Equal(opened.Options, []string{"1936", "1938"}) {
+		t.Errorf("opened options = %q", opened.Options)
+	}
+	if _, err := newFields(Task{Title: "Kdy?", Options: []string{"a", "a"}}, "us1", ref); !errors.Is(
+		err, ErrDuplicateOption,
+	) {
+		t.Errorf("duplicate on open: error = %v, want ErrDuplicateOption", err)
+	}
+
+	cur := stored()
+	cur.Options = []string{"1936", "1938"}
+
+	kept, changes, err := applyUpdate(cur, Update{Body: new("jiný kontext")}, "us1", ref)
+	if err != nil {
+		t.Fatalf("edit without options: %v", err)
+	}
+	if !slices.Equal(kept.Options, cur.Options) {
+		t.Errorf("an edit naming no options changed them to %q", kept.Options)
+	}
+	if _, ok := changes.Map()["options"]; ok {
+		t.Error("an untouched option set entered the audit diff")
+	}
+
+	replaced, changes, err := applyUpdate(cur, Update{Options: &[]string{"nevím"}}, "us1", ref)
+	if err != nil {
+		t.Fatalf("replacing options: %v", err)
+	}
+	if !slices.Equal(replaced.Options, []string{"nevím"}) {
+		t.Errorf("replaced options = %q", replaced.Options)
+	}
+	if _, ok := changes.Map()["options"]; !ok {
+		t.Error("a replaced option set is missing from the audit diff")
+	}
+
+	cleared, _, err := applyUpdate(cur, Update{Options: &[]string{}}, "us1", ref)
+	if err != nil {
+		t.Fatalf("clearing options: %v", err)
+	}
+	if cleared.Options == nil || len(cleared.Options) != 0 {
+		t.Errorf("cleared options = %v, want an empty slice", cleared.Options)
+	}
+
+	if _, _, err := applyUpdate(cur, Update{Options: &[]string{"a", "b", "c", "d", "e", "f"}}, "us1", ref); !errors.Is(
+		err, ErrTooManyOptions,
+	) {
+		t.Errorf("six options: error = %v, want ErrTooManyOptions", err)
+	}
+}
+
+// TestDiff_optionsNilEqualsEmpty verifies a stored task from before the column
+// (options nil) diffs as unchanged against a normalised empty set — otherwise
+// every edit of an older task would record a phantom options change.
+func TestDiff_optionsNilEqualsEmpty(t *testing.T) {
+	t.Parallel()
+
+	cur := stored()
+	next := fields{
+		Title: cur.Title, Body: cur.Body, State: cur.State, Resolution: cur.Resolution,
+		Query: cur.Query, Options: []string{}, StateAt: cur.StateAt,
+	}
+	if got := diff(cur, next).Map(); got != nil {
+		t.Errorf("diff = %v, want none", got)
 	}
 }

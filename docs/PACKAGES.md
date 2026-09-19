@@ -3219,7 +3219,15 @@ to `## Package map` in `CLAUDE.md`.
   `question`/`working`/`review`/`done`/`rejected`, `resolution` ≤ 4000, `source_query` ≤ 2000, `created_by`/`closed_by`
   FK users **SET NULL**, `created_at`/`updated_at`/`state_at`/`closed_at`, `state_by` (migration
   `0082_photo_tasks_state_by.sql`: who last moved the state, FK users SET NULL, stamped with `state_at`;
-  NULL on the rows that predate it, read as the creator), plus the two constraints that
+  NULL on the rows that predate it, read as the creator), `options TEXT[] NOT NULL DEFAULT '{}'`
+  (migration `0083_photo_tasks_options.sql`: the **quick answers** — up to five short strings a client
+  draws as buttons; choosing one posts a comment with exactly that text, so the thread stays the one
+  record; the CHECK pins only the count, the per-option rules — trimmed, non-empty, ≤ `MaxOptionLen`
+  60 characters, distinct — are `normalizeOptions` in `models.go` with its own sentinels
+  `ErrTooManyOptions`/`ErrEmptyOption`/`ErrDuplicateOption` (+ `ErrTooLong`), and `ReviewApprove`
+  (`Schvaluji.`) / `ReviewReturn` (`Vrátit k přepracování.`) are the two built-in answers a `review`
+  task without options is given by the client, fixed strings so an agent can match them whatever
+  language the person read the page in), plus the two constraints that
   make a closed task inseparable from its explanation — `photo_tasks_closed_is_explained` (a closed
   state carries `closed_at` **and** a non-empty resolution) and `photo_tasks_open_is_not_closed` (an open
   one carries neither, so reopening cannot leave a stale "closed by")) and `photo_task_photos`
@@ -3275,7 +3283,9 @@ to `## Package map` in `CLAUDE.md`.
   `waiting` (both caller-relative: `parseFilter` puts the signed-in uid into `Filter.CallerUID`), `q`,
   `photo`, `participant` (with `me` resolving to the caller, so a client need not learn its own uid),
   `limit`, `offset`; the envelope echoes `limit`/`offset` as actually applied) and
-  `GET /tasks/{uid}` (read **as the caller**, so its two flags are theirs) behind **`RequireAuth`**, `POST`/`PATCH`/`DELETE /tasks[/{uid}]` and
+  `GET /tasks/{uid}` (read **as the caller**, so its two flags are theirs) behind **`RequireAuth`**, `POST`/`PATCH`/`DELETE /tasks[/{uid}]` (both
+  bodies carry `options`; on PATCH a `*[]string`, so absent, `[]` and a list are three different
+  things, and the three option sentinels map to **400** in `writeTaskError`) and
   `POST`/`DELETE /tasks/{uid}/photos` behind `RequireWrite`, and the whole thread
   (`GET`/`POST /tasks/{uid}/comments` + `PATCH`/`DELETE /tasks/{uid}/comments/{commentUID}`) behind
   **`RequireAuth`** — answering is what a viewer account is *for* here, since the person who remembers

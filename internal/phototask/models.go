@@ -52,6 +52,14 @@ const (
 	MaxResolutionLen = 4000
 	// MaxQueryLen bounds the remembered search that produced the group.
 	MaxQueryLen = 2000
+	// MaxOptions bounds the answer options a question offers. Five is a choice a
+	// thumb can make on a phone; more than that is a form, and mirrors the CHECK
+	// constraint on the column from migration 0083.
+	MaxOptions = 5
+	// MaxOptionLen bounds one answer option. An option is a button label — "1936",
+	// "nevím", "Schvaluji." — and a label that needs a second line is a sentence
+	// that belongs in the thread.
+	MaxOptionLen = 60
 	// MaxPhotos bounds one task's membership. A batch is tens of photographs;
 	// this is far above that and exists so a malformed request cannot ask the
 	// database to insert an unbounded list in one statement.
@@ -123,6 +131,25 @@ var (
 	ErrTooManyPhotos = errors.New("phototask: too many photos")
 	// ErrUserNotFound indicates the person being put on a task has no account.
 	ErrUserNotFound = errors.New("phototask: user not found")
+	// ErrTooManyOptions indicates more answer options than MaxOptions.
+	ErrTooManyOptions = errors.New("phototask: too many options")
+	// ErrEmptyOption indicates an answer option that is blank once trimmed.
+	ErrEmptyOption = errors.New("phototask: an option is empty")
+	// ErrDuplicateOption indicates the same answer option given twice; the wrapped
+	// message names it.
+	ErrDuplicateOption = errors.New("phototask: duplicate option")
+)
+
+// The two built-in answers of a review task. A task in StateReview that offers
+// no options of its own is a yes/no question — "may this batch be written into
+// the library?" — and a client draws these two for it, with labels in the
+// reader's language but posting exactly these strings, so the agent can match
+// the answer without knowing which language the person read the page in.
+const (
+	// ReviewApprove is the comment a client posts for "yes, write it".
+	ReviewApprove = "Schvaluji."
+	// ReviewReturn is the comment a client posts for "no, rework it".
+	ReviewReturn = "Vrátit k přepracování."
 )
 
 // Task is one stored task as read back for a client: the question, the state of
@@ -141,6 +168,14 @@ type Task struct {
 	// Query is the search that produced the group, kept verbatim as evidence of
 	// the rule behind it. The server never executes it.
 	Query string `json:"query"`
+	// Options are the answers the question offers, in the order they were given:
+	// at most MaxOptions, each trimmed, non-empty, at most MaxOptionLen
+	// characters and distinct. A client draws them as buttons, and choosing one
+	// posts an ordinary comment whose body is the option text verbatim — the
+	// thread stays the single record, and an agent matches the answer against
+	// the options exactly. Always present on a read; empty means the question is
+	// answered in free text.
+	Options []string `json:"options"`
 	// CreatedByUID and CreatedByName are empty for a task whose author's account
 	// has since been deleted (the row survives authorless).
 	CreatedByUID  string    `json:"created_by"`
@@ -228,6 +263,8 @@ type Update struct {
 	State      *State
 	Resolution *string
 	Query      *string
+	// Options replaces the whole set; a pointer to an empty slice clears it.
+	Options *[]string
 }
 
 // normalizeTitle trims a question and validates what is left: ErrEmptyTitle for
@@ -252,4 +289,30 @@ func normalizeText(field, value string, limit int) (string, error) {
 		return "", fmt.Errorf("%w: %s over %d characters", ErrTooLong, field, limit)
 	}
 	return trimmed, nil
+}
+
+// normalizeOptions trims every answer option and validates the set: at most
+// MaxOptions (ErrTooManyOptions), none blank (ErrEmptyOption), none over
+// MaxOptionLen (ErrTooLong) and no two the same after trimming
+// (ErrDuplicateOption). The result is never nil, so an empty set reads back —
+// and diffs — the same whether it came from a missing field or an empty array.
+func normalizeOptions(options []string) ([]string, error) {
+	if len(options) > MaxOptions {
+		return nil, fmt.Errorf("%w: %d over the limit of %d", ErrTooManyOptions, len(options), MaxOptions)
+	}
+	out := make([]string, 0, len(options))
+	for i, option := range options {
+		trimmed := strings.TrimSpace(option)
+		if trimmed == "" {
+			return nil, fmt.Errorf("%w: option %d", ErrEmptyOption, i+1)
+		}
+		if utf8.RuneCountInString(trimmed) > MaxOptionLen {
+			return nil, fmt.Errorf("%w: option %d over %d characters", ErrTooLong, i+1, MaxOptionLen)
+		}
+		if slices.Contains(out, trimmed) {
+			return nil, fmt.Errorf("%w: %q", ErrDuplicateOption, trimmed)
+		}
+		out = append(out, trimmed)
+	}
+	return out, nil
 }

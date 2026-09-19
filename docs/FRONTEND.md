@@ -1966,7 +1966,35 @@ here.
   own (`isNotFound`),
   because a link outlives the task it points
   at and "this question has been deleted" is not "could not be loaded". The tiles carry the task scope in the
-  detail link (`detailQuery` with `task=uid`) → Esc/Back/prev-next from a photo returns to the task,
+  detail link (`detailQuery` with `task=uid`) → Esc/Back/prev-next from a photo returns to the task.
+  **Quick answers:** directly under the question and above the people sits **`TaskAnswers`**, and a
+  **small group** (`photo_count` ≤ `SMALL_GROUP_MAX` = 12) drops the `FilterBar` — search field, sort,
+  density and the Filters button — for a plain count line over the wall: a two-photo question does not
+  need a search box between it and its pictures, a batch of forty does. The bulk selection is untouched.
+  The page also owns the thread's state for the answers: `CommentsPanel` reports the whole thread up
+  (`onThreadChange`) so the option equal to the **reader's latest comment** is drawn as chosen, and a
+  `reloadKey` from `useReloadKey` makes the panel refetch after a button posted a comment behind its back,
+  `pages/task/TaskAnswers` (the question's answers as a row of **large buttons** — `btn-lg`, wrapping on a
+  phone — for every signed-in role, viewers included: the task's own `options`, or for a `review` task
+  with none the built-in pair with localised labels ("Schvaluji" / "Vrátit k přepracování", en "Approve"
+  / "Send back") that **posts the fixed Czech strings** `REVIEW_APPROVE` / `REVIEW_RETURN` whatever the
+  UI language, because the agent matches the string and cannot know which language the person read the
+  page in. A tap posts an **ordinary comment whose body is the option text verbatim** through
+  `createComment(taskSubject)` — no answer endpoint, the thread stays the one record — then asks the page
+  to refresh the thread; every button is disabled while one request is in flight so a double tap cannot
+  post twice, the option equal to the reader's latest comment is the filled `primary` with
+  `aria-pressed`, the others `outline-primary`, tapping the chosen one again does nothing, and a failure
+  is an inline `Alert` under the row with the page still usable. `answerOptions(task)` in
+  `services/tasks` is the one rule for which answers a task offers: its own always win over the built-in
+  pair),
+  `components/tasks/AnswerOptionsEditor` (the **Možnosti odpovědi** field shared by `NewTaskModal` and
+  `TaskQuestion`'s in-place editor: up to `MAX_TASK_OPTIONS` = 5 entries added **one at a time** — Enter
+  (which must not submit the form around it) or a plus button — and shown as removable chips, because an
+  answer may itself contain a comma and a chip per answer shows the exact strings that will become
+  buttons and, verbatim, comments; a blank, over-long (`MAX_TASK_OPTION_LENGTH` = 60) or repeated entry
+  leaves the plus disabled rather than raising an error, and once the set is full the field gives way to
+  a line saying why. `TaskQuestion` sends `options` only when they changed, so an untouched set neither
+  travels nor enters the audit diff; `NewTaskModal` sends them only when there are any),
   `pages/task/TaskQuestion` (the byline, the question and its context — and, **for a writer, the pencil
   that turns those two blocks into the two fields that produced them, in place**. Rewording used to live in
   the card at the foot of the page, which meant scrolling past the whole conversation to fix a word and
@@ -1993,7 +2021,8 @@ here.
   finished, and `rejected` **slate rather than red**, because closing a question with "no, and here is why"
   is a full result. Each badge also carries its name in words and a glyph, so nothing is lost without
   colour) and
-  `components/tasks/NewTaskModal` (two fields, question + context, because a question that takes a form to
+  `components/tasks/NewTaskModal` (two fields, question + context — plus the optional answer options via
+  `AnswerOptionsEditor` — because a question that takes a form to
   ask does not get asked; on success it navigates straight to the new task, which is both the confirmation
   and the page whose link gets sent on. `photoUids` opens it over a selection — and with photographs in
   hand the dialog also offers **Přidat k otázce**, a picker over the *open* tasks that adds the selection
@@ -2940,7 +2969,9 @@ here.
   local guess — the server owns the uid, the timestamps and the author name — and classifies a failure into
   `throttled` (429, the per-user `ratelimit.comment` → „komentáře jdou moc rychle po sobě"), `forbidden`
   (403/404) or `failed`; **a rejected post keeps the text in the box**, so nothing anyone typed is thrown
-  away. The **count badge** rides the viewer's own info toggle (`.kk-viewer__btn--badged` +
+  away. Two more options serve the task page: `onThreadChange` reports the whole list whenever it is
+  replaced (the answer buttons read the reader's latest comment off it) and `reloadKey` refetches the
+  thread when bumped, for a comment posted outside the panel. The **count badge** rides the viewer's own info toggle (`.kk-viewer__btn--badged` +
   `.kk-viewer__btn-badge`, capped at „99+"), seeded from `PhotoDetail.comment_count` and thereafter fed by
   the open thread's `onCountChange`, so posting or deleting re-badges **without a second GET of the photo**;
   the number is in the button's **accessible name** too (`photo.viewer.infoWithComments`, pluralised), since

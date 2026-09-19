@@ -1288,9 +1288,9 @@ signed-in role, viewers included; opening, editing, closing and changing members
 | Command | Meaning |
 | --- | --- |
 | `ctl tasks list` | `GET /tasks`; `--state` (comma separated), `--open`, `--answered`, `--waiting`, `--search`, `--photo`, `--participant` / `--mine`, `--limit`, `--offset` |
-| `ctl tasks show <uid>` | `GET /tasks/{uid}`; prints `Last activity` ("2026-09-19 17:21 by Tomáš Kozák") and `Waiting on you` (`yes`/`no`) |
-| `ctl tasks create [<photo-uid>…]` | `POST /tasks`; `--title` (required), `--body`/`--body-file`, `--query`, `--state`; uids from args or stdin |
-| `ctl tasks update <uid>` | `PATCH /tasks/{uid}`; `--title`, `--body`/`--body-file`, `--query`, `--state`, `--resolution`/`--resolution-file` |
+| `ctl tasks show <uid>` | `GET /tasks/{uid}`; prints `Last activity` ("2026-09-19 17:21 by Tomáš Kozák") and `Waiting on you` (`yes`/`no`); an `Options` line when the task offers answers |
+| `ctl tasks create [<photo-uid>…]` | `POST /tasks`; `--title` (required), `--body`/`--body-file`, `--query`, `--state`, `--option` (repeatable, ≤ 5); uids from args or stdin |
+| `ctl tasks update <uid>` | `PATCH /tasks/{uid}`; `--title`, `--body`/`--body-file`, `--query`, `--state`, `--resolution`/`--resolution-file`, `--option` (replaces the whole set) or `--clear-options` (mutually exclusive) |
 | `ctl tasks delete <uid>` | `DELETE /tasks/{uid}` — needs `--yes`; the photographs stay |
 | `ctl tasks add-photos <uid> [<photo-uid>…]` | `POST /tasks/{uid}/photos` |
 | `ctl tasks remove-photos <uid> [<photo-uid>…]` | `DELETE /tasks/{uid}/photos` |
@@ -1331,6 +1331,16 @@ the way work ends. Finished work is **closed**: the frozen list of photographs i
 pictures a batch of edits touched, and deleting the task destroys that along with every answer written
 under it.
 
+**Quick answers.** Most questions are a choice, so a task may offer up to **five answer options**
+(`--option "1936" --option "1938" --option "nevím"`; each trimmed, non-empty, ≤ 60 characters,
+distinct — a broken set is a 400 that names the rule). The web page draws them as large buttons under
+the question, and **a tap posts an ordinary comment whose body is the option text verbatim** — there is
+no separate answer endpoint, so `ctl tasks comments` reads the answer as before and the agent matches it
+against its own options exactly. A task in `review` with no options of its own gets a built-in pair
+whose posted text is **fixed regardless of the UI language**: `Schvaluji.` (approve) and
+`Vrátit k přepracování.` (send back). Match those two strings; never their localised labels. `tasks
+show` prints an `Options` line when set and `-o llm` carries `options` like every other field.
+
 Long text is awkward on a command line, so `--body-file` and `--resolution-file` read it from a file. The
 comment is attributed to the **token's own account**, always — an agent answers as itself and never puts
 words in a person's mouth, in a thread whose whole value is that it records who remembered what.
@@ -1345,6 +1355,10 @@ kukatkoctl tasks list --answered -o llm --fields uid,title,state,comment_count
 # Open a question over a batch, then send its link to whoever knows.
 kukatkoctl tasks create --title "V kterém roce se přestavoval dům čp. 2?" \
   --body-file /tmp/context.md --query 'camera:Olympus dated:no' ph1 ph2 ph3
+
+# A choice: the person taps one of these and the comment is the text, verbatim.
+kukatkoctl tasks create --title "Je na nápisu rok 1936, nebo 1938?" \
+  --option 1936 --option 1938 --option nevím ph4 ph5
 
 # Write the answer in, then close the task with the reason.
 kukatkoctl tasks comment tk7hcm… --body-file /tmp/answer.txt

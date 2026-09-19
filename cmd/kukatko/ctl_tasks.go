@@ -162,12 +162,16 @@ func newCtlTasksCreateCmd(opts *ctlOptions) *cobra.Command {
 	flags.StringVar(&bodyFile, "body-file", "", "read the context from this file instead of --body")
 	flags.StringVar(&in.Query, "query", "", "the search that produced the group, kept as evidence")
 	flags.StringVar(&in.State, "state", "", "the state to open in (default question)")
+	flags.StringArrayVar(&in.Options, "option", nil,
+		"an answer to offer as a button (repeatable, at most 5; a chosen one is posted as a comment verbatim)")
 	return cmd
 }
 
 // newCtlTasksUpdateCmd edits a task or advances its state.
 func newCtlTasksUpdateCmd(opts *ctlOptions) *cobra.Command {
 	var title, body, bodyFile, searchQuery, state, resolution, resolutionFile string
+	var options []string
+	var clearOptions bool
 	cmd := &cobra.Command{
 		Use:   "update <uid>",
 		Short: "Edit a task, or advance its state",
@@ -175,12 +179,14 @@ func newCtlTasksUpdateCmd(opts *ctlOptions) *cobra.Command {
 			"Only the flags you give are changed; an explicit empty value clears a field.\n" +
 			"Closing a task (--state done or --state rejected) needs a --resolution: a\n" +
 			"closed task always says how it ended, and \"rejected\" is a result rather than\n" +
-			"a failure. Reopening one clears the closing marks but keeps the text.",
+			"a failure. Reopening one clears the closing marks but keeps the text.\n" +
+			"--option replaces the whole set of answer options; --clear-options empties it.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			upd, err := taskUpdateFromFlags(cmd, updateFlags{
 				title: title, body: body, bodyFile: bodyFile, query: searchQuery,
 				state: state, resolution: resolution, resolutionFile: resolutionFile,
+				options: options, clearOptions: clearOptions,
 			})
 			if err != nil {
 				return err
@@ -205,6 +211,10 @@ func newCtlTasksUpdateCmd(opts *ctlOptions) *cobra.Command {
 	flags.StringVar(&resolution, "resolution", "", "how it ended (required when closing)")
 	flags.StringVar(&resolutionFile, "resolution-file", "",
 		"read the resolution from this file instead of --resolution")
+	flags.StringArrayVar(&options, "option", nil,
+		"replace the answer options with these (repeatable, at most 5)")
+	flags.BoolVar(&clearOptions, "clear-options", false, "remove every answer option")
+	cmd.MarkFlagsMutuallyExclusive("option", "clear-options")
 	return cmd
 }
 
@@ -218,6 +228,8 @@ type updateFlags struct {
 	state          string
 	resolution     string
 	resolutionFile string
+	options        []string
+	clearOptions   bool
 }
 
 // taskUpdateFromFlags builds the partial update, treating an unset flag as
@@ -237,7 +249,21 @@ func taskUpdateFromFlags(cmd *cobra.Command, f updateFlags) (ctl.TaskUpdate, err
 		Query:      optionalString(cmd, "query", f.query),
 		State:      optionalString(cmd, "state", f.state),
 		Resolution: optionalText(cmd, "resolution", f.resolutionFile, resolution),
+		Options:    optionalOptions(f.options, f.clearOptions),
 	}, nil
+}
+
+// optionalOptions turns the two option flags into the update's replacement set:
+// nil when neither was given, an empty (non-nil) set for --clear-options, and
+// the listed options otherwise. Cobra refuses the two together.
+func optionalOptions(options []string, clearAll bool) *[]string {
+	if clearAll {
+		return &[]string{}
+	}
+	if len(options) == 0 {
+		return nil
+	}
+	return &options
 }
 
 // optionalText is optionalString for a field that may also have been given as a

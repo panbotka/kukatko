@@ -3,12 +3,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from './auth'
 import {
   addTaskPhotos,
+  answerOptions,
   createTask,
   deleteTask,
   fetchTask,
   fetchTasks,
   isClosedState,
   OPEN_TASK_STATES,
+  REVIEW_APPROVE,
+  REVIEW_RETURN,
   TASK_STATES,
   updateTask,
 } from './tasks'
@@ -54,6 +57,36 @@ describe('task states', () => {
     }
     const open = TASK_STATES.filter((state) => !isClosedState(state))
     expect(open).toEqual([...OPEN_TASK_STATES])
+  })
+})
+
+describe('answerOptions', () => {
+  it('offers a task its own options, in order', () => {
+    expect(answerOptions({ state: 'question', options: ['1936', '1938'] })).toEqual([
+      { text: '1936' },
+      { text: '1938' },
+    ])
+  })
+
+  it('gives a review with no options the built-in pair, and only a review', () => {
+    expect(answerOptions({ state: 'review', options: [] })).toEqual([
+      { text: REVIEW_APPROVE, builtin: 'approve' },
+      { text: REVIEW_RETURN, builtin: 'sendBack' },
+    ])
+    expect(answerOptions({ state: 'question', options: [] })).toEqual([])
+    expect(answerOptions({ state: 'done', options: [] })).toEqual([])
+  })
+
+  it('posts fixed Czech strings for the built-in pair, whatever the UI language', () => {
+    // The agent matches these verbatim; they must never be localised.
+    expect(REVIEW_APPROVE).toBe('Schvaluji.')
+    expect(REVIEW_RETURN).toBe('Vrátit k přepracování.')
+  })
+
+  it('lets a review with its own options keep them', () => {
+    expect(answerOptions({ state: 'review', options: ['ano, ale 1937'] })).toEqual([
+      { text: 'ano, ale 1937' },
+    ])
   })
 })
 

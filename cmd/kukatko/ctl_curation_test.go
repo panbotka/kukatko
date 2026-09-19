@@ -500,6 +500,55 @@ func TestCtlTasks(t *testing.T) {
 	}
 }
 
+// TestCtlTasks_options verifies the repeatable --option reaches the wire on
+// create and update, that --clear-options sends an empty array, and that the two
+// together are refused before the server is contacted.
+func TestCtlTasks_options(t *testing.T) {
+	var bodies []map[string]json.RawMessage
+	configPath := ctlServer(t, func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]json.RawMessage
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		bodies = append(bodies, body)
+		_, _ = w.Write([]byte(`{"uid":"tk2","title":"Rok?","state":"question","options":["1936","1938"]}`))
+	})
+
+	out, err := runCtl(t, "", "ctl", "--ctl-config", configPath, "tasks", "create",
+		"--title", "Rok?", "--option", "1936", "--option", "1938", "ph1")
+	if err != nil {
+		t.Fatalf("tasks create --option: %v", err)
+	}
+	if got := string(bodies[0]["options"]); got != `["1936","1938"]` {
+		t.Errorf("create sent options %s", got)
+	}
+	if !strings.Contains(out, "1936 · 1938") {
+		t.Errorf("show output lacks the Options line:\n%s", out)
+	}
+
+	if _, err := runCtl(t, "", "ctl", "--ctl-config", configPath, "tasks", "update", "tk2",
+		"--option", "nevím"); err != nil {
+		t.Fatalf("tasks update --option: %v", err)
+	}
+	if got := string(bodies[1]["options"]); got != `["nevím"]` {
+		t.Errorf("update sent options %s", got)
+	}
+
+	if _, err := runCtl(t, "", "ctl", "--ctl-config", configPath, "tasks", "update", "tk2",
+		"--clear-options"); err != nil {
+		t.Fatalf("tasks update --clear-options: %v", err)
+	}
+	if got := string(bodies[2]["options"]); got != `[]` {
+		t.Errorf("clear sent options %s, want []", got)
+	}
+
+	if _, err := runCtl(t, "", "ctl", "--ctl-config", configPath, "tasks", "update", "tk2",
+		"--option", "a", "--clear-options"); err == nil {
+		t.Error("--option together with --clear-options succeeded, want a refusal")
+	}
+	if len(bodies) != 3 {
+		t.Errorf("the server saw %d requests, want 3 (the refused one never left)", len(bodies))
+	}
+}
+
 // TestCtlTasks_updateNeedsAField verifies an update naming nothing is refused
 // before the server is contacted.
 func TestCtlTasks_updateNeedsAField(t *testing.T) {

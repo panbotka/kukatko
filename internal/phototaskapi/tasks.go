@@ -65,7 +65,7 @@ func (a *API) handleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	created, err := a.store.Create(r.Context(), phototask.Task{
 		Title: body.Title, Body: body.Body, Query: body.Query,
-		State: phototask.State(body.State),
+		State: phototask.State(body.State), Options: body.Options,
 	}, body.PhotoUIDs, taskEntry(r, user.UID, audit.ActionTaskCreate, ""))
 	if err != nil {
 		writeTaskError(w, err, "creating task failed")
