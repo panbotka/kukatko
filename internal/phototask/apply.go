@@ -8,7 +8,7 @@ import (
 )
 
 // fields is the set of columns a write actually sets: the text, the state, and
-// the three values the state drags along with it. Keeping them in one struct is
+// the four values the state drags along with it. Keeping them in one struct is
 // what lets the rules below be a pure function — the store writes whatever this
 // returns and decides nothing itself.
 type fields struct {
@@ -18,6 +18,7 @@ type fields struct {
 	Resolution string
 	Query      string
 	StateAt    time.Time
+	StateBy    string
 	ClosedAt   *time.Time
 	ClosedBy   string
 }
@@ -25,7 +26,8 @@ type fields struct {
 // newFields validates the values a task is opened with and returns the columns
 // to insert. A task may be opened in any valid state, closed ones included (an
 // agent recording a decision already taken), but a closed one must say how it
-// ended. now stamps both state_at and, for a closed task, closed_at.
+// ended. now stamps both state_at and, for a closed task, closed_at; actorUID is
+// recorded as the one who put the task in its state.
 func newFields(t Task, actorUID string, now time.Time) (fields, error) {
 	title, err := normalizeTitle(t.Title)
 	if err != nil {
@@ -48,19 +50,21 @@ func newFields(t Task, actorUID string, now time.Time) (fields, error) {
 	}
 	return fields{
 		Title: title, Body: text.body, State: state, Resolution: text.resolution,
-		Query: text.query, StateAt: now, ClosedAt: closedAt, ClosedBy: closedBy,
+		Query: text.query, StateAt: now, StateBy: actorUID, ClosedAt: closedAt, ClosedBy: closedBy,
 	}, nil
 }
 
 // applyUpdate folds upd onto the stored task and returns the columns to write
 // plus the diff to audit. A nil field is left alone; changing the state moves
-// state_at and recomputes the closing marks, and a state that stays put keeps the
-// state_at it had — which is what makes "has anybody replied since" mean
-// something. actorUID is stamped as the person who closed it.
+// state_at, names actorUID in state_by and recomputes the closing marks, and a
+// state that stays put keeps the state_at and state_by it had — which is what
+// makes "has anybody replied since" and "whose move is it" mean something.
+// actorUID is also stamped as the person who closed it.
 func applyUpdate(cur Task, upd Update, actorUID string, now time.Time) (fields, *audit.ChangeSet, error) {
 	next := fields{
 		Title: cur.Title, Body: cur.Body, State: cur.State, Resolution: cur.Resolution,
-		Query: cur.Query, StateAt: cur.StateAt, ClosedAt: cur.ClosedAt, ClosedBy: cur.ClosedByUID,
+		Query: cur.Query, StateAt: cur.StateAt, StateBy: cur.StateByUID,
+		ClosedAt: cur.ClosedAt, ClosedBy: cur.ClosedByUID,
 	}
 	if err := applyText(&next, upd); err != nil {
 		return fields{}, nil, err
@@ -73,6 +77,7 @@ func applyUpdate(cur Task, upd Update, actorUID string, now time.Time) (fields, 
 	}
 	if next.State != cur.State {
 		next.StateAt = now
+		next.StateBy = actorUID
 		closedAt, closedBy, err := closure(next.State, next.Resolution, actorUID, now)
 		if err != nil {
 			return fields{}, nil, err
@@ -156,7 +161,7 @@ func closure(state State, resolution, actorUID string, now time.Time) (*time.Tim
 }
 
 // diff records which fields an update actually changed, for the audit entry. The
-// derived marks (state_at, closed_at, closed_by) are left out: they are
+// derived marks (state_at, state_by, closed_at, closed_by) are left out: they are
 // consequences of the state, and the state itself is in the diff.
 func diff(cur Task, next fields) *audit.ChangeSet {
 	changes := audit.NewChangeSet()

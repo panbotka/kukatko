@@ -1920,9 +1920,12 @@ here.
   returns to the label; + a **Promítání** button + for editors **hover-select** → the shared
   **`BatchActionBar`** (the library's full set of actions, `onSelectAll`; refetch on success),
   `TasksPage` = `/tasks` the **work queue**: one row per task (one of its photographs as a 56px tile, the
-  question, the state as a `TaskStateBadge`, the photo/comment counts, and a loud **Nová odpověď** badge when
-  `has_new_answer`), open tasks first and the most recently touched at the top, where a reply counts as a
-  touch. The row is **striped in its state's hue**: it carries `data-state` and `.kk-task-row` draws the
+  question, the state as a `TaskStateBadge`, the photo/comment counts, **who acted last** — "naposledy
+  Tomáš Kozák · před 2 h", `last_activity_by_name` (falling back to *někdo* for a gone account) + a
+  `<time dateTime>` through `formatRelativeTime`, so whose move it is reads off the row without opening
+  the task — and a loud **Nová odpověď** badge when `has_new_answer`, which the server now computes **per
+  reader**: one's own reply never lights it), open tasks first and the most recently touched at the top,
+  where a reply counts as a touch. The row is **striped in its state's hue**: it carries `data-state` and `.kk-task-row` draws the
   leading border from it, so the page is scannable before a word of it is read — the first cut left the
   state to a single badge on the right and read as one undifferentiated list. A closed row also drops to
   75 % opacity until hovered: it is the record of a decision, not work. **Nová odpověď** takes the app's
@@ -1930,12 +1933,14 @@ here.
   another state of the work. The row **wraps** below ~12rem of text: the badges do not shrink, so on a
   phone a long question was being squeezed into a column one word wide with the badges painted over it;
   they now drop to a line of their own, still ranged right. A chip row filters by state (`Otevřené` = the
-  default, `Všechny`, one per state) plus `S odpovědí` and **`Moje`** — the questions the reader opened,
+  default, `Všechny`, one per state) plus `S odpovědí`, **`Na mně`** (`waiting=1` — the tasks whose move
+  is the reader's: open, the reader on them, somebody else acted last; the server decides it per caller,
+  the page sends a flag) and **`Moje`** — the questions the reader opened,
   answered, moved along or was put on, sent as `participant=me` so the page never has to learn its own
-  uid. It narrows whatever state filter is already chosen rather than replacing it, so "mine, still open"
-  is one click from "everything open" —
+  uid. Each narrows whatever state filter is already chosen rather than replacing it, so "mine, still
+  open" is one click from "everything open" —
   and a search box over the question; all of it round-trips through the URL (`useUrlState`, keys
-  `state`/`answered`/`mine`/`q`) so Back restores the filter. Every signed-in role may read it — a viewer
+  `state`/`answered`/`waiting`/`mine`/`q`) so Back restores the filter. Every signed-in role may read it — a viewer
   who was
   sent a link finds the question again here once the link has scrolled out of their chat — and only
   `canWrite` sees **Nový úkol**, which opens `NewTaskModal`,

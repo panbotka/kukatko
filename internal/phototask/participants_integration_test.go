@@ -229,7 +229,7 @@ func TestList_carriesParticipants(t *testing.T) {
 		t.Errorf("participant name = %q, want the display name", got[0].Participants[0].Name)
 	}
 
-	one, err := f.tasks.Get(ctx, task.UID)
+	one, err := f.tasks.Get(ctx, task.UID, actor)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}

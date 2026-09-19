@@ -103,6 +103,10 @@ function task(overrides: Partial<Task> = {}): Task {
     photo_count: 0,
     comment_count: 0,
     has_new_answer: false,
+    last_activity_at: '2026-09-18T10:00:00Z',
+    last_activity_by: 'u1',
+    last_activity_by_name: 'Pan Botka',
+    waiting_on_me: false,
     participants: [],
     ...overrides,
   }

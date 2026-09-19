@@ -1392,6 +1392,7 @@
       "open": "Open",
       "all": "All",
       "answered": "Answered",
+      "waiting": "On me",
       "mine": "Mine",
       "search": "Search tasks",
       "searchPlaceholder": "Search the questions…"
@@ -1405,6 +1406,7 @@
     },
     "row": {
       "answered": "New answer",
+      "lastActivity": "last by {{name}}",
       "photos_one": "{{count}} photo",
       "photos_other": "{{count}} photos",
       "comments_one": "{{count}} comment",

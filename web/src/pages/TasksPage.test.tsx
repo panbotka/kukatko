@@ -35,6 +35,10 @@ function task(overrides: Partial<Task> = {}): Task {
     photo_count: 3,
     comment_count: 0,
     has_new_answer: false,
+    last_activity_at: '2026-09-18T10:00:00Z',
+    last_activity_by: 'u1',
+    last_activity_by_name: 'Pan Botka',
+    waiting_on_me: false,
     participants: [],
     ...overrides,
   }
@@ -131,6 +135,52 @@ describe('TasksPage', () => {
         expect.anything(),
       )
     })
+  })
+
+  it('narrows to the tasks waiting on the reader', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByText(/3 photos/)
+
+    await user.click(screen.getByRole('button', { name: /On me/ }))
+
+    await waitFor(() => {
+      // A plain flag: the server decides whose move it is, per caller.
+      expect(fetchTasksMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ waiting: true }),
+        expect.anything(),
+      )
+    })
+  })
+
+  it('keeps "on me" in the URL and combines it with a state', async () => {
+    renderPage('/tasks?waiting=1&state=working')
+    await waitFor(() => {
+      expect(fetchTasksMock).toHaveBeenCalledWith(
+        expect.objectContaining({ waiting: true, states: ['working'] }),
+        expect.anything(),
+      )
+    })
+    expect(await screen.findByRole('button', { name: /On me/ })).toHaveClass('btn-primary')
+  })
+
+  it('says who acted last on every row', async () => {
+    fetchTasksMock.mockResolvedValue(
+      page([
+        task({ last_activity_by: 'u2', last_activity_by_name: 'Tomáš Kozák' }),
+        task({ uid: 'tk2', last_activity_by: '', last_activity_by_name: '' }),
+      ]),
+    )
+    renderPage()
+
+    expect(await screen.findByText(/last by Tomáš Kozák/)).toBeInTheDocument()
+    // An actor whose account is gone still gets a line, not a blank.
+    expect(screen.getByText(/last by someone/)).toBeInTheDocument()
+    // The stamp is machine-readable as well as relative.
+    expect(screen.getAllByText(/ago|now|yesterday/)[0].closest('time')).toHaveAttribute(
+      'dateTime',
+      '2026-09-18T10:00:00Z',
+    )
   })
 
   it('narrows to the questions the reader is on', async () => {

@@ -280,7 +280,7 @@ func TestMembership(t *testing.T) {
 	if removed != 1 {
 		t.Errorf("removed = %d, want 1", removed)
 	}
-	after, err := f.tasks.Get(ctx, task.UID)
+	after, err := f.tasks.Get(ctx, task.UID, actor)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}

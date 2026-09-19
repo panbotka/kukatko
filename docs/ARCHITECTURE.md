@@ -484,7 +484,16 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
 
   `state_at` sits beside `updated_at` for one reason: compared against the newest comment on the task it
   answers what the state alone cannot — has anybody replied since we last looked. That comparison is what
-  an agent polls, and it stays true when nobody remembered to advance the state.
+  an agent polls, and it stays true when nobody remembered to advance the state. `state_by` (migration
+  `0082`) names who made that move, stamped in the same transaction; a NULL — the rows from before the
+  column, and a task nobody has advanced — reads as the creator. Both comparisons are **relative to the
+  reader**: the store takes the caller's uid into every read and computes `has_new_answer` over the
+  comments by *somebody else* (one's own context comment sent the agent to re-read its own words), and
+  `waiting_on_me` from the **last activity** — the newest of the last state change, the opening and the
+  newest live comment, never a photo or participant change — as "open, I am on it, and the last actor was
+  not me". The two flags are SQL fragments used as columns *and* as the `answered`/`waiting` filters, so
+  a badge and the list it belongs to cannot disagree, and a caller-relative filter is never applied after
+  paging.
 
   **Participation is a side effect, not a form to fill in.** Every write to a task joins its actor in the
   same transaction, and answering in the thread joins the author right after the comment lands, so the

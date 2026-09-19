@@ -32,9 +32,14 @@ func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleGet writes one task, or 404.
+// handleGet writes one task, or 404. The task is read as the caller: whether
+// it has a new answer and whether it waits on them are theirs alone.
 func (a *API) handleGet(w http.ResponseWriter, r *http.Request) {
-	task, err := a.store.Get(r.Context(), taskUID(r))
+	user, ok := currentUser(w, r)
+	if !ok {
+		return
+	}
+	task, err := a.store.Get(r.Context(), taskUID(r), user.UID)
 	if err != nil {
 		writeTaskError(w, err, "reading task failed")
 		return
@@ -145,7 +150,7 @@ func (a *API) changeMembership(
 		writeTaskError(w, err, failMsg)
 		return
 	}
-	task, err := a.store.Get(r.Context(), uid)
+	task, err := a.store.Get(r.Context(), uid, user.UID)
 	if err != nil {
 		writeTaskError(w, err, failMsg)
 		return

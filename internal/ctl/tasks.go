@@ -39,6 +39,7 @@ type Task struct {
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
 	StateAt       time.Time  `json:"state_at"`
+	StateBy       string     `json:"state_by"`
 	ClosedAt      *time.Time `json:"closed_at"`
 	ClosedBy      string     `json:"closed_by"`
 	ClosedByName  string     `json:"closed_by_name"`
@@ -46,9 +47,17 @@ type Task struct {
 	CoverPhotoUID string     `json:"cover_photo_uid"`
 	CommentCount  int        `json:"comment_count"`
 	LastCommentAt *time.Time `json:"last_comment_at"`
-	// HasNewAnswer is the signal an agent polls for: somebody has written in the
-	// thread since the state last moved.
+	// HasNewAnswer is the signal an agent polls for: somebody *other than the
+	// token's own account* has written in the thread since the state last moved.
 	HasNewAnswer bool `json:"has_new_answer"`
+	// LastActivityAt, LastActivityBy and LastActivityByName say who acted last —
+	// the newest of the last state change, the opening and the newest comment.
+	LastActivityAt     time.Time `json:"last_activity_at"`
+	LastActivityBy     string    `json:"last_activity_by"`
+	LastActivityByName string    `json:"last_activity_by_name"`
+	// WaitingOnMe says the move is the token's: the task is open, the account
+	// is on it, and somebody else acted last.
+	WaitingOnMe bool `json:"waiting_on_me"`
 	// Participants are the people on the task — whoever opened it, answered it
 	// or was asked. Always present, possibly empty.
 	Participants []Participant `json:"participants"`
@@ -76,9 +85,12 @@ type TaskListOptions struct {
 	States []string
 	// Open is the shorthand for the three states a live task can be in.
 	Open bool
-	// Answered restricts the listing to tasks somebody has replied to since the
-	// state last moved — the work waiting to be written into the library.
+	// Answered restricts the listing to tasks somebody else has replied to since
+	// the state last moved — the work waiting to be written into the library.
 	Answered bool
+	// Waiting restricts the listing to tasks whose move is the token's: open,
+	// the account on them, and the last activity somebody else's.
+	Waiting bool
 	// Search matches a substring of the question or its context.
 	Search string
 	// PhotoUID restricts the listing to tasks that photograph is part of.
@@ -106,6 +118,9 @@ func (o TaskListOptions) query() (url.Values, error) {
 	}
 	if o.Answered {
 		q.Set("answered", "true")
+	}
+	if o.Waiting {
+		q.Set("waiting", "true")
 	}
 	setNonEmpty(q, "q", o.Search)
 	setNonEmpty(q, "photo", o.PhotoUID)
@@ -312,10 +327,12 @@ func WriteTask(w io.Writer, task Task) error {
 		{"Photos", strconv.Itoa(task.PhotoCount)},
 		{"Comments", strconv.Itoa(task.CommentCount)},
 		{"New answer", newAnswerMark(task.HasNewAnswer)},
+		{"Waiting on you", yesNo(task.WaitingOnMe)},
 		{"Opened by", NamedUID(task.CreatedByName, task.CreatedBy)},
 		{"Opened", formatStamp(task.CreatedAt)},
 		{"State since", formatStamp(task.StateAt)},
 		{"Last comment", formatTime(task.LastCommentAt)},
+		{"Last activity", lastActivity(task)},
 		{"Query", dash(task.Query)},
 	}
 	if task.ClosedAt != nil {
@@ -331,6 +348,32 @@ func WriteTask(w io.Writer, task Task) error {
 		return nil
 	}
 	return writeLine(w, "\n"+task.Body)
+}
+
+// yesNo renders a boolean the way a person reads it and a script greps for it.
+func yesNo(value bool) string {
+	if value {
+		return "yes"
+	}
+	return "no"
+}
+
+// lastActivity renders when the task was last acted on and by whom: "2026-09-19
+// 17:21 by Tomáš Kozák", falling back to the uid when the name is unknown and
+// to the bare stamp when the actor's account is gone. A zero stamp — a server
+// from before the field existed — is a dash.
+func lastActivity(task Task) string {
+	if task.LastActivityAt.IsZero() {
+		return "-"
+	}
+	who := task.LastActivityByName
+	if who == "" {
+		who = task.LastActivityBy
+	}
+	if who == "" {
+		return formatStamp(task.LastActivityAt)
+	}
+	return formatStamp(task.LastActivityAt) + " by " + who
 }
 
 // WriteTaskMembership renders the answer to a membership change: what moved, and

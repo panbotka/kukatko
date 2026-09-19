@@ -22,8 +22,8 @@ const foreignKeyViolation = "23503"
 // what newFields validated.
 const insertTaskSQL = `
 INSERT INTO photo_tasks (uid, title, body, state, resolution, source_query,
-	created_by, state_at, closed_at, closed_by)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
+	created_by, state_at, state_by, closed_at, closed_by)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
 
 // insertMembersSQL adds photographs to a task, ignoring the ones already there
 // so adding the same batch twice is not an error.
@@ -57,8 +57,8 @@ func (s *Store) Create(ctx context.Context, t Task, photoUIDs []string, entry au
 	}
 	err = s.inTx(ctx, "creating task", func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, insertTaskSQL, uid, f.Title, f.Body, string(f.State),
-			f.Resolution, f.Query, nullableUID(entry.ActorUID), f.StateAt, f.ClosedAt,
-			nullableUID(f.ClosedBy)); err != nil {
+			f.Resolution, f.Query, nullableUID(entry.ActorUID), f.StateAt, nullableUID(f.StateBy),
+			f.ClosedAt, nullableUID(f.ClosedBy)); err != nil {
 			return fmt.Errorf("inserting task row: %w", err)
 		}
 		if err := addMembers(ctx, tx, uid, photoUIDs); err != nil {
@@ -73,16 +73,16 @@ func (s *Store) Create(ctx context.Context, t Task, photoUIDs []string, entry au
 	if err != nil {
 		return Task{}, err
 	}
-	return s.Get(ctx, uid)
+	return s.Get(ctx, uid, entry.ActorUID)
 }
 
-// updateTaskSQL rewrites every field an edit may touch. state_at, closed_at and
-// closed_by are written too because they are consequences of the state, computed
-// by applyUpdate rather than by SQL.
+// updateTaskSQL rewrites every field an edit may touch. state_at, state_by,
+// closed_at and closed_by are written too because they are consequences of the
+// state, computed by applyUpdate rather than by SQL.
 const updateTaskSQL = `
 UPDATE photo_tasks
 SET title = $2, body = $3, state = $4, resolution = $5, source_query = $6,
-	state_at = $7, closed_at = $8, closed_by = $9, updated_at = now()
+	state_at = $7, state_by = $8, closed_at = $9, closed_by = $10, updated_at = now()
 WHERE uid = $1`
 
 // currentSQL reads the columns an edit folds onto, locking the row for the rest
@@ -90,7 +90,8 @@ WHERE uid = $1`
 // stale state. It is the bare row: the joins and counts of the full projection
 // cannot be locked, and an edit does not need them.
 const currentSQL = `
-SELECT title, body, state, resolution, source_query, state_at, closed_at, COALESCE(closed_by, '')
+SELECT title, body, state, resolution, source_query, state_at, COALESCE(state_by, ''),
+	closed_at, COALESCE(closed_by, '')
 FROM photo_tasks WHERE uid = $1 FOR UPDATE`
 
 // Update folds upd onto the stored task, writes entry — stamped with the
@@ -99,8 +100,9 @@ FROM photo_tasks WHERE uid = $1 FOR UPDATE`
 // ones Create raises, and closing without a resolution is refused
 // (ErrClosedNeedsResolution).
 //
-// Changing the state moves state_at, which is what resets "has anybody replied
-// since"; an edit that leaves the state alone deliberately does not.
+// Changing the state moves state_at and names the actor in state_by, which is
+// what resets "has anybody replied since" and makes the move theirs; an edit that
+// leaves the state alone deliberately does neither.
 func (s *Store) Update(ctx context.Context, uid string, upd Update, entry audit.Entry) (Task, error) {
 	err := s.inTx(ctx, "updating task", func(tx pgx.Tx) error {
 		cur, err := scanCurrent(tx.QueryRow(ctx, currentSQL, uid))
@@ -112,7 +114,7 @@ func (s *Store) Update(ctx context.Context, uid string, upd Update, entry audit.
 			return err
 		}
 		if _, err := tx.Exec(ctx, updateTaskSQL, uid, next.Title, next.Body, string(next.State),
-			next.Resolution, next.Query, next.StateAt, next.ClosedAt,
+			next.Resolution, next.Query, next.StateAt, nullableUID(next.StateBy), next.ClosedAt,
 			nullableUID(next.ClosedBy)); err != nil {
 			return fmt.Errorf("updating task row: %w", err)
 		}
@@ -124,7 +126,7 @@ func (s *Store) Update(ctx context.Context, uid string, upd Update, entry audit.
 	if err != nil {
 		return Task{}, err
 	}
-	return s.Get(ctx, uid)
+	return s.Get(ctx, uid, entry.ActorUID)
 }
 
 // Delete removes a task outright — with its membership and its thread, which
@@ -283,7 +285,7 @@ func (s *Store) inTx(ctx context.Context, op string, mutate func(tx pgx.Tx) erro
 func scanCurrent(row rowScanner) (Task, error) {
 	var t Task
 	err := row.Scan(&t.Title, &t.Body, &t.State, &t.Resolution, &t.Query,
-		&t.StateAt, &t.ClosedAt, &t.ClosedByUID)
+		&t.StateAt, &t.StateByUID, &t.ClosedAt, &t.ClosedByUID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Task{}, ErrNotFound
 	}

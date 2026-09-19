@@ -23,9 +23,10 @@ func newCtlTasksCmd(opts *ctlOptions) *cobra.Command {
 			"A task holds the question, the photographs it is about, the state of play\n" +
 			"and the conversation that settles it. Reading one and writing in its thread\n" +
 			"are open to every signed-in role; opening and closing need write access.\n\n" +
-			"`tasks list --answered` is the one an agent polls: it lists the tasks\n" +
-			"somebody has replied to since the state last moved — the work that has an\n" +
-			"answer and is waiting to be written into the library.",
+			"`tasks list --waiting` is the one an agent polls: it lists the tasks whose\n" +
+			"move is yours — open, you are on them, and somebody else acted last.\n" +
+			"`--answered` is the coarser signal: somebody other than you has written in\n" +
+			"the thread since the state last moved.",
 	}
 	cmd.AddCommand(
 		newCtlTasksListCmd(opts), newCtlTasksShowCmd(opts), newCtlTasksCreateCmd(opts),
@@ -49,8 +50,10 @@ func newCtlTasksListCmd(opts *ctlOptions) *cobra.Command {
 		Short: "List tasks, open ones first",
 		Long: "List tasks.\n\n" +
 			"Open tasks come first, the most recently touched at the top, where a reply\n" +
-			"counts as a touch. The NEW column marks a task somebody has answered since\n" +
-			"its state last moved; --answered lists only those.",
+			"counts as a touch. The NEW column marks a task somebody else has answered\n" +
+			"since its state last moved; --answered lists only those. --waiting lists the\n" +
+			"tasks whose move is yours: open, you are on them, and the last activity was\n" +
+			"not yours.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			listOpts.States = splitStates(states)
@@ -73,7 +76,9 @@ func newCtlTasksListCmd(opts *ctlOptions) *cobra.Command {
 		"only these states, comma separated (question, working, review, done, rejected)")
 	flags.BoolVar(&listOpts.Open, "open", false, "only the states a live task can be in")
 	flags.BoolVar(&listOpts.Answered, "answered", false,
-		"only tasks answered since the state last moved")
+		"only tasks somebody else answered since the state last moved")
+	flags.BoolVar(&listOpts.Waiting, "waiting", false,
+		"only tasks whose move is yours: open, you are on them, somebody else acted last")
 	flags.StringVar(&listOpts.Search, "search", "", "match a substring of the question or its context")
 	flags.StringVar(&listOpts.PhotoUID, "photo", "", "only tasks this photo is part of")
 	flags.StringVar(&listOpts.Participant, "participant", "",

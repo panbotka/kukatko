@@ -106,8 +106,9 @@ func (u updateRequest) toUpdate() phototask.Update {
 
 // parseFilter reads a listing's query parameters into a store filter. An unknown
 // state is an error rather than an empty result, so a typo says so instead of
-// looking like "nothing matches". callerUID is who is asking, which the
-// participant filter's "me" alias resolves to.
+// looking like "nothing matches". callerUID is who is asking: the participant
+// filter's "me" alias resolves to it, and the two caller-relative flags — and
+// the answered/waiting filters over them — are computed for it.
 func parseFilter(q url.Values, callerUID string) (phototask.Filter, error) {
 	states, err := parseStates(q["state"])
 	if err != nil {
@@ -123,8 +124,10 @@ func parseFilter(q url.Values, callerUID string) (phototask.Filter, error) {
 	}
 	return phototask.Filter{
 		States:         states,
+		CallerUID:      callerUID,
 		Open:           parseBool(q.Get("open")),
 		Answered:       parseBool(q.Get("answered")),
+		Waiting:        parseBool(q.Get("waiting")),
 		Search:         strings.TrimSpace(q.Get("q")),
 		PhotoUID:       strings.TrimSpace(q.Get("photo")),
 		ParticipantUID: resolveParticipant(q.Get("participant"), callerUID),

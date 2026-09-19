@@ -36,6 +36,9 @@ type env struct {
 	server  *httptest.Server
 	authSvc *auth.Service
 	photos  *photos.Store
+	// uids remembers the uid of every account login created, by username, so a
+	// test can put one person on a task by the other's hand.
+	uids map[string]string
 }
 
 // newEnv builds the HTTP test environment over a freshly truncated database.
@@ -62,17 +65,20 @@ func newEnv(t *testing.T) *env {
 	})
 	server := httptest.NewServer(r)
 	t.Cleanup(server.Close)
-	return &env{server: server, authSvc: authSvc, photos: photos.NewStore(db.Pool())}
+	return &env{server: server, authSvc: authSvc, photos: photos.NewStore(db.Pool()),
+		uids: make(map[string]string)}
 }
 
 // login creates a user with the given role and returns a cookie-bearing client.
 func (e *env) login(t *testing.T, username string, role auth.Role) *http.Client {
 	t.Helper()
-	if _, err := e.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
+	created, err := e.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
 		Username: username, Email: username + "@example.test", Password: testPassword, Role: role,
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("CreateUser(%s): %v", username, err)
 	}
+	e.uids[username] = created.UID
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		t.Fatalf("cookiejar.New: %v", err)
@@ -320,5 +326,86 @@ func TestAnonymousIsRefused(t *testing.T) {
 		if resp.StatusCode != http.StatusUnauthorized {
 			t.Errorf("GET %s as anonymous = %d, want 401", path, resp.StatusCode)
 		}
+	}
+}
+
+// TestWhoseTurn walks the loop the queue exists for over HTTP: the editor opens a
+// question and asks the viewer, the viewer answers, the editor moves on — and at
+// every step `waiting=1`, `waiting_on_me`, the caller-relative `has_new_answer`
+// and the last-activity fields say whose move it is, each as its own reader.
+func TestWhoseTurn(t *testing.T) {
+	e := newEnv(t)
+	editor := e.login(t, "editor", auth.RoleEditor)
+	viewer := e.login(t, "pametnik", auth.RoleViewer)
+	task := e.openTask(t, editor, "V kterém roce?")
+
+	type page struct {
+		Tasks []phototask.Task `json:"tasks"`
+		Total int              `json:"total"`
+	}
+	waitingOn := func(c *http.Client) page {
+		t.Helper()
+		var got page
+		e.do(t, c, http.MethodGet, "/api/v1/tasks?waiting=1", nil, http.StatusOK, &got)
+		return got
+	}
+	detail := func(c *http.Client) phototask.Task {
+		t.Helper()
+		var got phototask.Task
+		e.do(t, c, http.MethodGet, "/api/v1/tasks/"+task.UID, nil, http.StatusOK, &got)
+		return got
+	}
+
+	// Asked and untouched: the viewer's move, not the editor's.
+	ask, _ := json.Marshal(map[string]string{"user_uid": e.uids["pametnik"]})
+	e.do(t, editor, http.MethodPost, "/api/v1/tasks/"+task.UID+"/participants", ask, http.StatusOK, nil)
+	if got := waitingOn(viewer); got.Total != 1 || !got.Tasks[0].WaitingOnMe {
+		t.Errorf("waiting=1 for the person asked = %+v, want the task", got)
+	}
+	if got := waitingOn(editor); got.Total != 0 {
+		t.Errorf("waiting=1 for the asker = %+v, want nothing", got)
+	}
+	asked := detail(viewer)
+	if asked.LastActivityByUID != e.uids["editor"] || asked.LastActivityByName != "editor" ||
+		asked.LastActivityAt.IsZero() {
+		t.Errorf("last activity = %q (%q) at %v, want the editor's opening",
+			asked.LastActivityByUID, asked.LastActivityByName, asked.LastActivityAt)
+	}
+
+	// The viewer answers: the editor's move now, and an answer for the editor
+	// alone — the viewer sees no new answer in their own words.
+	time.Sleep(10 * time.Millisecond)
+	answer, _ := json.Marshal(map[string]string{"body": "Bylo to v roce 1987."})
+	e.do(t, viewer, http.MethodPost, "/api/v1/tasks/"+task.UID+"/comments", answer, http.StatusCreated, nil)
+	if got := detail(editor); !got.HasNewAnswer || !got.WaitingOnMe || got.LastActivityByUID != e.uids["pametnik"] {
+		t.Errorf("editor's read after the answer = answer %v / waiting %v / by %q, want true / true / the viewer",
+			got.HasNewAnswer, got.WaitingOnMe, got.LastActivityByUID)
+	}
+	if got := detail(viewer); got.HasNewAnswer || got.WaitingOnMe {
+		t.Errorf("viewer's read of their own answer = answer %v / waiting %v, want neither",
+			got.HasNewAnswer, got.WaitingOnMe)
+	}
+	if got := waitingOn(editor); got.Total != 1 {
+		t.Errorf("waiting=1 for the editor after the answer = %+v, want the task", got)
+	}
+
+	// The waiting filter combines with the others and is a plain boolean.
+	var combined page
+	e.do(t, editor, http.MethodGet, "/api/v1/tasks?waiting=true&state=question&participant=me",
+		nil, http.StatusOK, &combined)
+	if combined.Total != 1 {
+		t.Errorf("waiting+state+participant = %+v, want the task", combined)
+	}
+
+	// The editor moves the state: seen, and nobody's move until the viewer acts.
+	time.Sleep(10 * time.Millisecond)
+	advance, _ := json.Marshal(map[string]string{"state": "working"})
+	e.do(t, editor, http.MethodPatch, "/api/v1/tasks/"+task.UID, advance, http.StatusOK, nil)
+	if got := detail(editor); got.HasNewAnswer || got.WaitingOnMe || got.StateByUID != e.uids["editor"] {
+		t.Errorf("editor's read after moving = answer %v / waiting %v / state_by %q, want false / false / self",
+			got.HasNewAnswer, got.WaitingOnMe, got.StateByUID)
+	}
+	if got := waitingOn(viewer); got.Total != 1 {
+		t.Errorf("waiting=1 for the viewer after the editor moved = %+v, want the task", got)
 	}
 }

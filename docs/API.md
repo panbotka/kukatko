@@ -901,7 +901,10 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `GET /tasks` (authenticated) → `{tasks,total,limit,offset}`, open tasks first and the most recently
   touched at the top, where a **reply counts as a touch**. Filters: `state` (repeatable **and**
   comma-separated; an unknown state is a **400**, never an empty result — a typo must say so), `open=true`
-  (the shorthand for the three live states; ignored when `state` is given), `answered=true`, `q` (substring
+  (the shorthand for the three live states; ignored when `state` is given), `answered=true`, **`waiting=true`**
+  (only the tasks whose move is the caller's — see `waiting_on_me` below; evaluated in SQL like every other
+  filter, never by post-filtering a page, because a caller-relative predicate applied after paging would
+  silently return short pages), `q` (substring
   of the question or its context, matched **case- and diacritics-insensitively** like every other text
   search in the library — `q=dum` finds "dům"), `photo={uid}`, **`participant={uid|me}`** (only the tasks
   that person is on; `me` resolves to the caller, so a client need not learn its own uid to ask "what am I
@@ -909,21 +912,31 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   the envelope echoes the `limit`/`offset` actually applied, not the ones asked for.
   Each task carries `uid`, `title` (the question), `body` (Markdown context), `state`
   (`question`/`working`/`review`/`done`/`rejected`), `resolution`, `query`, `created_by`/`created_by_name`,
-  `created_at`/`updated_at`/`state_at`, `closed_at`/`closed_by`/`closed_by_name`, `photo_count`,
-  `cover_photo_uid`, `comment_count`, `last_comment_at`, **`participants`** (always an array) and the
-  derived **`has_new_answer`** — somebody
-  has written in the thread since the state last moved. That flag is the point of the listing:
-  `GET /tasks?answered=true` is the work that has an answer and is waiting to be written into the library,
-  and it stays true even when nobody remembered to advance the state.
-  `GET /tasks/{uid}` (authenticated) → the task, 404 when deleted.
+  `created_at`/`updated_at`/`state_at`/`state_by` (who last moved the state; absent on a task from before
+  it was recorded, which the server reads as the creator), `closed_at`/`closed_by`/`closed_by_name`,
+  `photo_count`, `cover_photo_uid`, `comment_count`, `last_comment_at`, **`participants`** (always an
+  array), **`last_activity_at`/`last_activity_by`/`last_activity_by_name`** (who acted last and when: the
+  newest of the last state change, the opening and the newest live comment — photo and participant changes
+  do not count; the uid is empty when the account is gone) and two flags that are **relative to the
+  caller**: **`has_new_answer`** — somebody *other than the caller* has written in the thread since the
+  state last moved (one's own context comment is not an answer; a soft-deleted comment never counts; a
+  closed task may still carry it, because a late reply is worth seeing) — and **`waiting_on_me`** — the
+  task is open, the caller is on it, and `last_activity_by` is not the caller (an empty one counts as
+  somebody else); always false for a closed task and for a caller who is not on it. Together they answer
+  "whose move is it": a question just opened and assigned to the agent waits on the agent, after the agent
+  comments it waits on the human, after the human replies it waits on the agent again. `has_new_answer` is
+  the coarser signal — a reply does not clear it, only a state change does — and `GET /tasks?answered=true`
+  is the work that has an answer and is waiting to be written into the library, true even when nobody
+  remembered to advance the state; `GET /tasks?waiting=true` is the finer "my move" list.
+  `GET /tasks/{uid}` (authenticated) → the task, as the caller sees it; 404 when deleted.
   `POST /tasks` `{title,body,query,state,photo_uids}` → **201**; `PATCH /tasks/{uid}`
   `{title?,body?,query?,state?,resolution?}` → 200 (an omitted field unchanged, an explicit `""` clears it);
   `DELETE /tasks/{uid}` → 204; `POST`/`DELETE /tasks/{uid}/photos` `{photo_uids}` → `{changed,task}`
   (already-present / already-absent photographs are ignored, so replaying a batch is harmless) — **all five
   behind `RequireWrite`**. Closing a task (`state` `done` or `rejected`) without a non-empty `resolution` is
   a **400**: "rejected" is a real outcome, and what must never exist is a task that is closed and silent.
-  Reopening clears `closed_at`/`closed_by` and keeps the text. Advancing the state stamps `state_at`; an
-  edit that leaves the state alone deliberately does not.
+  Reopening clears `closed_at`/`closed_by` and keeps the text. Advancing the state stamps `state_at` and
+  `state_by` in the same transaction; an edit that leaves the state alone deliberately does neither.
   **A task's photographs have no route here.** They are read through the catalogue with
   `GET /photos?task={uid}` — the same projection, signed media URLs, filters and paging as any other
   listing — and the search language learns `task:` for the same reason.

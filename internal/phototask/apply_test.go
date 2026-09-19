@@ -344,3 +344,42 @@ func TestDiff(t *testing.T) {
 		}
 	}
 }
+
+// TestStateBy verifies the mover is recorded with the move and only with it:
+// opening a task names its opener, changing the state names the actor, and an
+// edit that leaves the state alone keeps whoever moved it last.
+func TestStateBy(t *testing.T) {
+	t.Parallel()
+
+	ref := time.Date(2026, 9, 19, 17, 0, 0, 0, time.UTC)
+	opened, err := newFields(Task{Title: "Kdy?"}, "us-opener", ref)
+	if err != nil {
+		t.Fatalf("newFields: %v", err)
+	}
+	if opened.StateBy != "us-opener" {
+		t.Errorf("a new task's state_by = %q, want the opener", opened.StateBy)
+	}
+
+	cur := Task{Title: "Kdy?", State: StateQuestion, StateAt: ref.Add(-time.Hour), StateByUID: "us-opener"}
+	tests := []struct {
+		name string
+		upd  Update
+		want string
+	}{
+		{name: "moving the state names the actor", upd: Update{State: new(StateWorking)}, want: "us-agent"},
+		{name: "an edit keeps the last mover", upd: Update{Body: new("more context")}, want: "us-opener"},
+		{name: "the same state again is not a move", upd: Update{State: new(StateQuestion)}, want: "us-opener"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			next, _, err := applyUpdate(cur, tt.upd, "us-agent", ref)
+			if err != nil {
+				t.Fatalf("applyUpdate: %v", err)
+			}
+			if next.StateBy != tt.want {
+				t.Errorf("state_by = %q, want %q", next.StateBy, tt.want)
+			}
+		})
+	}
+}

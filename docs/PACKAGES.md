@@ -3217,7 +3217,9 @@ to `## Package map` in `CLAUDE.md`.
   `tk`), `title` CHECK 1–200 (the question in one line — it is the page heading and the text of the
   link that gets sent around), `body` ≤ 8000 (Markdown context), `state VARCHAR(16)` CHECK in
   `question`/`working`/`review`/`done`/`rejected`, `resolution` ≤ 4000, `source_query` ≤ 2000, `created_by`/`closed_by`
-  FK users **SET NULL**, `created_at`/`updated_at`/`state_at`/`closed_at`, plus the two constraints that
+  FK users **SET NULL**, `created_at`/`updated_at`/`state_at`/`closed_at`, `state_by` (migration
+  `0082_photo_tasks_state_by.sql`: who last moved the state, FK users SET NULL, stamped with `state_at`;
+  NULL on the rows that predate it, read as the creator), plus the two constraints that
   make a closed task inseparable from its explanation — `photo_tasks_closed_is_explained` (a closed
   state carries `closed_at` **and** a non-empty resolution) and `photo_tasks_open_is_not_closed` (an open
   one carries neither, so reopening cannot leave a stale "closed by")) and `photo_task_photos`
@@ -3226,14 +3228,16 @@ to `## Package map` in `CLAUDE.md`.
   so a live group would empty itself the moment the work was done and take the record of what was
   touched with it. `source_query` keeps the rule that produced the group as evidence and the server
   never runs it); `State` with `Valid`/`Closed`/`NeedsHuman` + `States`/`OpenStates`, `Task`,
-  `Update` (pointer fields: nil = leave alone), `Filter{States,Open,Answered,Search,PhotoUID,Limit,Offset}`
+  `Update` (pointer fields: nil = leave alone),
+  `Filter{CallerUID,States,Open,Answered,Waiting,Search,PhotoUID,ParticipantUID,Limit,Offset}`
   with `Page()` (clamped to `DefaultLimit` 50 / `MaxLimit` 200) and `conditions()` — where `Search` runs
   through `immutable_unaccent` on **both** sides, like every other text search in the library, so "dum"
   finds "dům" and a queue nobody can spell is still a queue somebody can search; the rules of an edit
   are the **pure** `applyUpdate`/`newFields`/`closure`/`diff` in `apply.go`, so the store writes what they
-  return and decides nothing (a state that moves stamps `state_at` and recomputes the closing marks; one
-  that stays put keeps `state_at`, which is what makes "has anybody replied since" mean anything);
-  `Store` = `NewStore(pool)`: `Get`/`List` (returns the page **and** the total before it)/`Create`/`Update`/
+  return and decides nothing (a state that moves stamps `state_at` + `state_by` and recomputes the closing
+  marks; one that stays put keeps both, which is what makes "has anybody replied since" mean anything);
+  `Store` = `NewStore(pool)`: `Get(ctx, uid, callerUID)`/`List` (returns the page **and** the total before
+  it; **every read takes the caller** — it is `$1` in the projection, see below)/`Create`/`Update`/
   `Delete`/`AddPhotos`/`RemovePhotos` (each in one transaction with its `audit.Write`, via `inTx`;
   membership writes `touch` the task so a batch counts as activity) and `OpenForPhotos` (the reverse
   lookup the photo detail draws its chip from, bulk-shaped so it can never become an N+1);
@@ -3251,16 +3255,27 @@ to `## Package map` in `CLAUDE.md`.
   `(user_uid, joined_at)` index rather than a predicate over that aggregate;
   **the read joins the `comments` table itself** rather than enriching afterwards — the thread is where
   a task's answer arrives, not an ornament on it, so `comment_count`, `last_comment_at` and the derived
-  `has_new_answer` (newest comment later than `state_at`) have to be filterable and pageable in the same
-  query; enriching after paging would silently return short pages), `internal/phototaskapi/`
+  `has_new_answer` have to be filterable and pageable in the same query; enriching after paging would
+  silently return short pages. **Whose turn it is** (`store.go`, `callerParam`/`answeredSQL`/`waitingSQL`):
+  the caller's uid is always `$1` of every read, the thread LATERAL adds `last_reply_at` = the newest live
+  comment by somebody **other than the caller**, a second LATERAL picks the **last activity** (`la.at`,
+  `la.by`: the newest of the opening, the last state change with a NULL `state_by` read as the creator,
+  and the newest live comment; a tie at one instant goes to the comment), and the two flags are one SQL
+  fragment each, used both as a column of `taskColumns` and as the `Answered`/`Waiting` clause of
+  `conditions()` — so the badge a client draws and the list it asks for are the same predicate, evaluated
+  server-side. `HasNewAnswer` = `last_reply_at > state_at` (one's own comment never lights it; a closed
+  task may still carry it); `WaitingOnMe` = open ∧ caller is a participant ∧ `la.by IS DISTINCT FROM`
+  caller (an unknown actor counts as somebody else); `LastActivityAt/ByUID/ByName` ride along; membership
+  and participant writes deliberately do not count as activity), `internal/phototaskapi/`
   (the HTTP API over tasks, their threads and their people; `Store` + `CommentStore` interfaces →
   unit-testable with fakes;
   `NewAPI(Config{Store,Comments,RequireAuth,RequireWrite,CommentThrottle})`+`RegisterRoutes` mounts
   `/tasks` with the guards split where the feature needs them: `GET /tasks` (filters `state` (repeatable
-  and comma-separated, an unknown one → **400** rather than an empty result), `open`, `answered`, `q`,
+  and comma-separated, an unknown one → **400** rather than an empty result), `open`, `answered`,
+  `waiting` (both caller-relative: `parseFilter` puts the signed-in uid into `Filter.CallerUID`), `q`,
   `photo`, `participant` (with `me` resolving to the caller, so a client need not learn its own uid),
   `limit`, `offset`; the envelope echoes `limit`/`offset` as actually applied) and
-  `GET /tasks/{uid}` behind **`RequireAuth`**, `POST`/`PATCH`/`DELETE /tasks[/{uid}]` and
+  `GET /tasks/{uid}` (read **as the caller**, so its two flags are theirs) behind **`RequireAuth`**, `POST`/`PATCH`/`DELETE /tasks[/{uid}]` and
   `POST`/`DELETE /tasks/{uid}/photos` behind `RequireWrite`, and the whole thread
   (`GET`/`POST /tasks/{uid}/comments` + `PATCH`/`DELETE /tasks/{uid}/comments/{commentUID}`) behind
   **`RequireAuth`** — answering is what a viewer account is *for* here, since the person who remembers

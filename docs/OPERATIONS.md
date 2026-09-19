@@ -1287,8 +1287,8 @@ signed-in role, viewers included; opening, editing, closing and changing members
 
 | Command | Meaning |
 | --- | --- |
-| `ctl tasks list` | `GET /tasks`; `--state` (comma separated), `--open`, `--answered`, `--search`, `--photo`, `--participant` / `--mine`, `--limit`, `--offset` |
-| `ctl tasks show <uid>` | `GET /tasks/{uid}` |
+| `ctl tasks list` | `GET /tasks`; `--state` (comma separated), `--open`, `--answered`, `--waiting`, `--search`, `--photo`, `--participant` / `--mine`, `--limit`, `--offset` |
+| `ctl tasks show <uid>` | `GET /tasks/{uid}`; prints `Last activity` ("2026-09-19 17:21 by Tomáš Kozák") and `Waiting on you` (`yes`/`no`) |
 | `ctl tasks create [<photo-uid>…]` | `POST /tasks`; `--title` (required), `--body`/`--body-file`, `--query`, `--state`; uids from args or stdin |
 | `ctl tasks update <uid>` | `PATCH /tasks/{uid}`; `--title`, `--body`/`--body-file`, `--query`, `--state`, `--resolution`/`--resolution-file` |
 | `ctl tasks delete <uid>` | `DELETE /tasks/{uid}` — needs `--yes`; the photographs stay |
@@ -1301,10 +1301,15 @@ signed-in role, viewers included; opening, editing, closing and changing members
 | `ctl tasks unassign <uid> <user-uid>` | `DELETE /tasks/{uid}/participants/{user}` |
 | `ctl people` | `GET /users` — the uids the assign commands take |
 
-**`ctl tasks list --answered` is the command the loop turns on.** It lists the tasks somebody has replied
-to since the state last moved — the work that has an answer and is waiting to be written into the library
-— and it stays truthful even when nobody remembered to advance the state. In a table listing the same
-thing is the `NEW` column.
+**`ctl tasks list --waiting` is the command the loop turns on.** It lists the tasks whose move is the
+token's: open, the account is on them, and somebody else acted last (`waiting_on_me`). A question a person
+just opened and handed to the agent is on it; once the agent comments it is on the person; once they reply
+it is on the agent again. `--answered` is the coarser signal — somebody **other than the token's account**
+has written in the thread since the state last moved; a reply does not clear it, only a state change does
+— and it stays truthful even when nobody remembered to advance the state. Both are relative to the
+caller, so the agent's own context comment lights neither for the agent. In a table listing `--answered`
+is the `NEW` column; `-o llm` carries `waiting_on_me`, `last_activity_at`, `last_activity_by` and
+`last_activity_by_name` like every other field.
 
 **Who is on a task mostly looks after itself.** Opening one, editing it, moving its state, changing its
 membership or answering in its thread puts the actor on it, so `ctl tasks participants` is a report rather
@@ -1331,7 +1336,10 @@ comment is attributed to the **token's own account**, always — an agent answer
 words in a person's mouth, in a thread whose whole value is that it records who remembered what.
 
 ```bash
-# What has been answered since we last looked?
+# Whose move is it? — the questions waiting on this account.
+kukatkoctl tasks list --waiting -o llm --fields uid,title,state,last_activity_by_name
+
+# What has somebody else answered since the state last moved?
 kukatkoctl tasks list --answered -o llm --fields uid,title,state,comment_count
 
 # Open a question over a batch, then send its link to whoever knows.

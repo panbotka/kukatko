@@ -44,8 +44,9 @@ import (
 type Store interface {
 	// List returns one page of matching tasks and the total before paging.
 	List(ctx context.Context, f phototask.Filter) ([]phototask.Task, int, error)
-	// Get returns one task, or phototask.ErrNotFound.
-	Get(ctx context.Context, uid string) (phototask.Task, error)
+	// Get returns one task as callerUID sees it (the two caller-relative flags
+	// are computed for them), or phototask.ErrNotFound.
+	Get(ctx context.Context, uid, callerUID string) (phototask.Task, error)
 	// Create opens a task over photoUIDs, auditing it in the same transaction.
 	Create(
 		ctx context.Context, t phototask.Task, photoUIDs []string, entry audit.Entry,

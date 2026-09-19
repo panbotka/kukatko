@@ -1348,6 +1348,7 @@
       "open": "Otevřené",
       "all": "Všechny",
       "answered": "S odpovědí",
+      "waiting": "Na mně",
       "mine": "Moje",
       "search": "Hledat v úkolech",
       "searchPlaceholder": "Hledat v otázkách…"
@@ -1361,6 +1362,7 @@
     },
     "row": {
       "answered": "Nová odpověď",
+      "lastActivity": "naposledy {{name}}",
       "photos_one": "{{count}} fotka",
       "photos_few": "{{count}} fotky",
       "photos_many": "{{count}} fotky",

@@ -305,9 +305,11 @@ rebuilt? — and the only person who knows is usually not the person editing the
 - **The state says whose move it is** — waiting for an answer, in progress, ready for approval, done,
   rejected — and *rejected* is a full result, not a failure: deciding that a doubt is unfounded, or that a
   date cannot be established, is an answer, and a closed task always says how it ended.
-- The listing marks the tasks **somebody has replied to since anyone last looked**, which is the one thing
-  you actually scan it for, and each row is striped in the colour of its state so the queue can be
-  scanned before it is read. A photograph that belongs to an open task says so on its own page, so the
+- The listing marks the tasks **somebody else has replied to since the state last moved**, shows on
+  every row **who acted last** and how long ago, and has an **On me** filter for the questions whose move
+  is yours — open, you are on them, and the last word was not yours — which is the one thing you actually
+  scan it for; each row is striped in the colour of its state so the queue can be scanned before it is
+  read. A photograph that belongs to an open task says so on its own page, so the
   question finds you even when the link did not.
 - **You are put on a question by answering it.** Opening a task, replying in its thread or moving it
   along adds you to it, so "what am I involved in?" is a filter rather than a list anybody maintains. A

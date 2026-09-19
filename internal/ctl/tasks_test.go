@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
 
 // taskBody is a realistic single-task payload, as the server serves one.
@@ -14,7 +15,9 @@ const taskBody = `{"uid":"tk1","title":"V kterém roce se přestavoval dům?","b
 "state":"question","resolution":"","query":"camera:Olympus","created_by":"us1",
 "created_by_name":"Pan Botka","created_at":"2026-09-18T10:00:00Z","updated_at":"2026-09-18T10:00:00Z",
 "state_at":"2026-09-18T10:00:00Z","photo_count":3,"cover_photo_uid":"ph1","comment_count":2,
-"last_comment_at":"2026-09-18T12:00:00Z","has_new_answer":true}`
+"last_comment_at":"2026-09-18T12:00:00Z","has_new_answer":true,
+"last_activity_at":"2026-09-18T12:00:00Z","last_activity_by":"us2","last_activity_by_name":"Tomáš Kozák",
+"waiting_on_me":true}`
 
 // taskListBody is a one-task page with more behind it, so the summary has a next
 // offset to print.
@@ -31,7 +34,7 @@ func TestListTasks_query(t *testing.T) {
 		_, _ = w.Write([]byte(taskListBody))
 	})
 	_, err := client.ListTasks(t.Context(), TaskListOptions{
-		States: []string{"question", "review"}, Answered: true, Search: "dům",
+		States: []string{"question", "review"}, Answered: true, Waiting: true, Search: "dům",
 		PhotoUID: "ph1", Limit: 10, Offset: 20,
 	})
 	if err != nil {
@@ -41,7 +44,8 @@ func TestListTasks_query(t *testing.T) {
 		t.Errorf("path = %q, want /api/v1/tasks", gotPath)
 	}
 	for _, want := range []string{
-		"state=question%2Creview", "answered=true", "q=d%C5%AFm", "photo=ph1", "limit=10", "offset=20",
+		"state=question%2Creview", "answered=true", "waiting=true", "q=d%C5%AFm", "photo=ph1",
+		"limit=10", "offset=20",
 	} {
 		if !strings.Contains(gotQuery, want) {
 			t.Errorf("query %q does not contain %q", gotQuery, want)
@@ -293,7 +297,10 @@ func TestWriteTask(t *testing.T) {
 		t.Fatalf("WriteTask: %v", err)
 	}
 	got := buf.String()
-	for _, want := range []string{"tk1", "V kterém roce", "question", "Pan Botka", "Tři fotky."} {
+	for _, want := range []string{
+		"tk1", "V kterém roce", "question", "Pan Botka", "Tři fotky.",
+		"Last activity   2026-09-18 12:00 by Tomáš Kozák", "Waiting on you  yes",
+	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("output does not contain %q:\n%s", want, got)
 		}
@@ -340,5 +347,32 @@ func TestDecodeTask_malformed(t *testing.T) {
 	}
 	if _, err := DecodeTaskPage(json.RawMessage(`{`)); err == nil {
 		t.Error("DecodeTaskPage accepted malformed JSON")
+	}
+}
+
+// TestLastActivity verifies the one line `tasks show` prints about whose move it
+// is, and its fallbacks when the name or the whole actor is unknown.
+func TestLastActivity(t *testing.T) {
+	t.Parallel()
+
+	at := time.Date(2026, 9, 19, 17, 21, 0, 0, time.UTC)
+	tests := []struct {
+		name string
+		task Task
+		want string
+	}{
+		{name: "named", task: Task{LastActivityAt: at, LastActivityBy: "us2", LastActivityByName: "Tomáš Kozák"},
+			want: "2026-09-19 17:21 by Tomáš Kozák"},
+		{name: "uid only", task: Task{LastActivityAt: at, LastActivityBy: "us2"}, want: "2026-09-19 17:21 by us2"},
+		{name: "account gone", task: Task{LastActivityAt: at}, want: "2026-09-19 17:21"},
+		{name: "old server", task: Task{}, want: "-"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := lastActivity(tt.task); got != tt.want {
+				t.Errorf("lastActivity() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }

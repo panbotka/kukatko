@@ -147,9 +147,14 @@ type Task struct {
 	CreatedByName string    `json:"created_by_name"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
-	// StateAt is when the state last moved. Compared against LastCommentAt it
-	// answers the question the state alone cannot: has anybody replied since?
-	StateAt      time.Time  `json:"state_at"`
+	// StateAt is when the state last moved. Compared against the newest comment
+	// by somebody other than the reader it answers the question the state alone
+	// cannot: has anybody replied since?
+	StateAt time.Time `json:"state_at"`
+	// StateByUID is who last moved the state, stamped together with StateAt.
+	// Empty on a task from before the column existed (migration 0082) or whose
+	// mover's account is gone; a reader treats that as the creator.
+	StateByUID   string     `json:"state_by,omitempty"`
 	ClosedAt     *time.Time `json:"closed_at,omitempty"`
 	ClosedByUID  string     `json:"closed_by,omitempty"`
 	ClosedByName string     `json:"closed_by_name,omitempty"`
@@ -164,11 +169,30 @@ type Task struct {
 	// LastCommentAt is when the newest live comment was written, nil for a thread
 	// nobody has written in.
 	LastCommentAt *time.Time `json:"last_comment_at,omitempty"`
-	// HasNewAnswer reports that somebody has commented since the state last
-	// moved. It is derived, and it is stamped by the store rather than left to
-	// each client, because it is the whole signal an agent polls for: work that
-	// has been answered and is waiting to be written into the library.
+	// HasNewAnswer reports that somebody *other than the reader* has commented
+	// since the state last moved. It is relative to whoever asked for the task
+	// (Filter.CallerUID / Get's callerUID): one's own context comment is not an
+	// answer, and a flag that lit up for it sent the agent to re-read its own
+	// words. It is derived and stamped by the store rather than left to each
+	// client, because it is the whole signal an agent polls for: work that has
+	// been answered and is waiting to be written into the library. Soft-deleted
+	// comments never count; a closed task may still carry it, because a late
+	// reply is worth seeing.
 	HasNewAnswer bool `json:"has_new_answer"`
+	// LastActivityAt, LastActivityByUID and LastActivityByName say who acted
+	// last and when: the newest of the last state change (StateAt/StateByUID,
+	// with an unrecorded mover read as the creator), the task's creation and the
+	// newest live comment. Membership and participant changes do not count —
+	// they are bookkeeping, not a move in the conversation. The uid is empty
+	// when the actor's account is gone.
+	LastActivityAt     time.Time `json:"last_activity_at"`
+	LastActivityByUID  string    `json:"last_activity_by"`
+	LastActivityByName string    `json:"last_activity_by_name"`
+	// WaitingOnMe reports that the move is the reader's: the task is open, the
+	// reader is on it, and the last activity was somebody else's (an unknown
+	// actor counts as somebody else). Always false for a reader who is not on
+	// the task and for a closed task, whatever is written under it afterwards.
+	WaitingOnMe bool `json:"waiting_on_me"`
 	// Participants are the people on this task, oldest membership first. Always
 	// present (possibly empty) on every read, listing included: knowing who is
 	// already on a question is part of reading the queue, not a detail of one

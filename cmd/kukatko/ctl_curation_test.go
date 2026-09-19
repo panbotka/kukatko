@@ -477,6 +477,12 @@ func TestCtlTasks(t *testing.T) {
 	if !strings.Contains(paths[0], "answered=true") {
 		t.Errorf("the answered filter did not reach the wire: %q", paths[0])
 	}
+	if _, err := runCtl(t, "", "ctl", "--ctl-config", configPath, "tasks", "list", "--waiting"); err != nil {
+		t.Fatalf("tasks list --waiting: %v", err)
+	}
+	if got := paths[len(paths)-1]; !strings.Contains(got, "waiting=true") {
+		t.Errorf("the waiting filter did not reach the wire: %q", got)
+	}
 
 	if _, err := runCtl(t, "", "ctl", "--ctl-config", configPath, "tasks", "create",
 		"--title", "Nová", "ph1", "ph2"); err != nil {

@@ -78,33 +78,66 @@ func TestFilterPage(t *testing.T) {
 func TestFilterConditions(t *testing.T) {
 	t.Parallel()
 
-	if where, args := (Filter{}).conditions(); len(where) != 0 || len(args) != 0 {
-		t.Errorf("the zero filter compiled to %v / %v, want nothing", where, args)
+	// The caller is always the first argument, bound by the projection whether
+	// or not a clause needs it — so even the zero filter carries one.
+	if where, args := (Filter{}).conditions(); len(where) != 0 || len(args) != 1 {
+		t.Errorf("the zero filter compiled to %v / %v, want no clauses and just the caller", where, args)
 	}
 
 	where, args := Filter{
-		States: []State{StateQuestion, StateReview}, Answered: true,
+		CallerUID: "us-me", States: []State{StateQuestion, StateReview}, Answered: true, Waiting: true,
 		Search: "dům", PhotoUID: "ph1",
 	}.conditions()
 	joined := strings.Join(where, " AND ")
 	for _, want := range []string{
-		"t.state = ANY($1)",
-		"th.last_comment_at > t.state_at",
+		"t.state = ANY($2)",
+		// Both caller-relative filters are the very fragments the projection
+		// computes the flags from, so a badge and a listing cannot disagree.
+		answeredSQL,
+		waitingSQL,
 		// Both sides pass through immutable_unaccent, so "dum" finds "dům" —
 		// the same shape every other text search in the library uses.
-		"immutable_unaccent(t.title) ILIKE immutable_unaccent($2)",
-		"immutable_unaccent(t.body) ILIKE immutable_unaccent($2)",
-		"tp.photo_uid = $3",
+		"immutable_unaccent(t.title) ILIKE immutable_unaccent($3)",
+		"immutable_unaccent(t.body) ILIKE immutable_unaccent($3)",
+		"tp.photo_uid = $4",
 	} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("clauses %q do not contain %q", joined, want)
 		}
 	}
-	if len(args) != 3 {
-		t.Fatalf("args = %v, want three (states, pattern, photo)", args)
+	if len(args) != 4 {
+		t.Fatalf("args = %v, want four (caller, states, pattern, photo)", args)
 	}
-	if got, ok := args[1].(string); !ok || got != "%dům%" {
-		t.Errorf("search argument = %v, want the wrapped pattern", args[1])
+	if got, ok := args[0].(string); !ok || got != "us-me" {
+		t.Errorf("first argument = %v, want the caller", args[0])
+	}
+	if got, ok := args[2].(string); !ok || got != "%dům%" {
+		t.Errorf("search argument = %v, want the wrapped pattern", args[2])
+	}
+}
+
+// TestCallerRelativeSQL pins the shape of the two caller-relative fragments:
+// they read the caller from the first parameter only, the reply comparison
+// ignores the caller's own comments (that is th.last_reply_at, not
+// th.last_comment_at), and a closed task can never be waiting on anybody.
+func TestCallerRelativeSQL(t *testing.T) {
+	t.Parallel()
+
+	for _, fragment := range []string{answeredSQL, waitingSQL, taskJoins, taskColumns} {
+		if strings.Contains(fragment, "$2") {
+			t.Errorf("fragment binds a second parameter, the reads own only the caller:\n%s", fragment)
+		}
+	}
+	if !strings.Contains(answeredSQL, "th.last_reply_at > t.state_at") ||
+		strings.Contains(answeredSQL, "last_comment_at") {
+		t.Errorf("answeredSQL = %q, want it measured on the newest reply by somebody else", answeredSQL)
+	}
+	if !strings.Contains(waitingSQL, "t.state NOT IN ('done', 'rejected')") ||
+		!strings.Contains(waitingSQL, "la.by IS DISTINCT FROM "+callerParam) {
+		t.Errorf("waitingSQL = %q, want open + last actor not the caller", waitingSQL)
+	}
+	if !strings.Contains(taskJoins, "c.author_uid IS DISTINCT FROM "+callerParam+") AS last_reply_at") {
+		t.Errorf("the thread summary does not exclude the caller's own comments:\n%s", taskJoins)
 	}
 }
 
@@ -242,42 +275,44 @@ func fmtWrap(err error) error {
 // TestScanTaskDerivesNewAnswer verifies the derived flag: a reply newer than the
 // last state move is a new answer, one older than it is not, and a thread nobody
 // has written in never is.
-func TestScanTaskDerivesNewAnswer(t *testing.T) {
+func TestScanTaskReadsFlags(t *testing.T) {
 	t.Parallel()
 
-	stateAt := time.Date(2026, 9, 18, 10, 0, 0, 0, time.UTC)
-	after := stateAt.Add(time.Hour)
-	before := stateAt.Add(-time.Hour)
-
-	tests := []struct {
-		name          string
-		lastCommentAt *time.Time
-		want          bool
-	}{
-		{name: "no comments", lastCommentAt: nil, want: false},
-		{name: "reply after the state moved", lastCommentAt: &after, want: true},
-		{name: "reply before the state moved", lastCommentAt: &before, want: false},
-		{name: "reply at the same instant", lastCommentAt: &stateAt, want: false},
+	at := time.Date(2026, 9, 19, 17, 21, 0, 0, time.UTC)
+	got, err := scanTask(fakeRow{
+		stateAt: at.Add(-time.Hour), hasNewAnswer: true, waiting: true,
+		lastActivityAt: at, lastActivityBy: "us2", lastActivityByName: "Tomáš Kozák",
+	})
+	if err != nil {
+		t.Fatalf("scanTask: %v", err)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			got, err := scanTask(fakeRow{stateAt: stateAt, lastCommentAt: tt.lastCommentAt})
-			if err != nil {
-				t.Fatalf("scanTask: %v", err)
-			}
-			if got.HasNewAnswer != tt.want {
-				t.Errorf("HasNewAnswer = %v, want %v", got.HasNewAnswer, tt.want)
-			}
-		})
+	if !got.HasNewAnswer || !got.WaitingOnMe {
+		t.Errorf("flags = answer %v / waiting %v, want both as the row said", got.HasNewAnswer, got.WaitingOnMe)
+	}
+	if !got.LastActivityAt.Equal(at) || got.LastActivityByUID != "us2" || got.LastActivityByName != "Tomáš Kozák" {
+		t.Errorf("last activity = %v by %q (%q), want the row's", got.LastActivityAt,
+			got.LastActivityByUID, got.LastActivityByName)
+	}
+
+	quiet, err := scanTask(fakeRow{stateAt: at})
+	if err != nil {
+		t.Fatalf("scanTask(quiet): %v", err)
+	}
+	if quiet.HasNewAnswer || quiet.WaitingOnMe {
+		t.Errorf("a row saying neither read as answer %v / waiting %v", quiet.HasNewAnswer, quiet.WaitingOnMe)
 	}
 }
 
-// fakeRow feeds scanTask the two timestamps the derived flag is computed from
-// and the participants aggregate, leaving every other column at its zero value.
+// fakeRow feeds scanTask the columns the tests care about — the state stamp,
+// the two flags the query computes, the last activity and the participants
+// aggregate — leaving every other column at its zero value.
 type fakeRow struct {
-	stateAt       time.Time
-	lastCommentAt *time.Time
+	stateAt            time.Time
+	hasNewAnswer       bool
+	waiting            bool
+	lastActivityAt     time.Time
+	lastActivityBy     string
+	lastActivityByName string
 	// participants is the raw JSON the query's aggregate produces; nil stands
 	// for an absent value, which a read must survive.
 	participants []byte
@@ -289,8 +324,12 @@ func (f fakeRow) Scan(dest ...any) error {
 	*(dest[1].(*string)) = "Kdy?"
 	*(dest[3].(*State)) = StateQuestion
 	*(dest[10].(*time.Time)) = f.stateAt
-	*(dest[17].(**time.Time)) = f.lastCommentAt
-	*(dest[18].(*[]byte)) = f.participants
+	*(dest[19].(*bool)) = f.hasNewAnswer
+	*(dest[20].(*time.Time)) = f.lastActivityAt
+	*(dest[21].(*string)) = f.lastActivityBy
+	*(dest[22].(*string)) = f.lastActivityByName
+	*(dest[23].(*bool)) = f.waiting
+	*(dest[24].(*[]byte)) = f.participants
 	return nil
 }
 

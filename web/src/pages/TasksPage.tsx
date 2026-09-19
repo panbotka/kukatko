@@ -11,6 +11,7 @@ import { TaskStateBadge } from '../components/tasks/TaskStateBadge'
 import { useAuth } from '../auth/AuthContext'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useReloadKey } from '../hooks/useReloadKey'
+import { formatRelativeTime } from '../lib/relativeTime'
 import { useUrlState } from '../lib/urlState'
 import { thumbUrl } from '../services/photos'
 import { fetchTasks, type Task, TASK_STATES, type TaskState } from '../services/tasks'
@@ -32,11 +33,12 @@ type State =
 type TasksView = {
   state: string
   answered: string
+  waiting: string
   mine: string
   q: string
 }
 
-const TASKS_DEFAULTS: TasksView = { state: '', answered: '', mine: '', q: '' }
+const TASKS_DEFAULTS: TasksView = { state: '', answered: '', waiting: '', mine: '', q: '' }
 
 /** The filter row's choices: the default, every state, and one chip per state. */
 const FILTER_CHOICES = ['', 'all', ...TASK_STATES] as const
@@ -71,6 +73,7 @@ export function TasksPage() {
       states,
       open: view.state === '',
       answered: view.answered === '1',
+      waiting: view.waiting === '1',
       // "me" rather than the reader's own uid: the server resolves it, so the
       // page never has to learn who it is before it can ask.
       participant: view.mine === '1' ? 'me' : '',
@@ -148,6 +151,19 @@ export function TasksPage() {
         >
           {t('tasks.filters.answered')}
         </Button>
+        {/* "Whose move is it?" — the tasks that are open, have the reader on
+            them, and where somebody else acted last. The server evaluates it
+            per caller (`waiting=1`), so the page never has to reason about who
+            wrote what. */}
+        <Button
+          size="sm"
+          variant={view.waiting === '1' ? 'primary' : 'outline-secondary'}
+          onClick={() => {
+            setView({ waiting: view.waiting === '1' ? '' : '1' })
+          }}
+        >
+          <Icon name="hourglass-split" /> {t('tasks.filters.waiting')}
+        </Button>
         {/* "What am I on?" — the questions the reader opened, answered, moved
             along or was put on. It narrows whatever state filter is already
             chosen rather than replacing it, so "mine, still open" is one click
@@ -210,8 +226,10 @@ export function TasksPage() {
 
 /**
  * One line of the listing: the thumbnail of the first photograph, the question,
- * the state, and the two counts. The "answered" mark is deliberately loud — it
- * is the one thing a reader scans the page for.
+ * the state, the two counts and who acted last. The "answered" mark is
+ * deliberately loud — it is the one thing a reader scans the page for — and the
+ * last activity ("naposledy Tomáš Kozák · před 2 h") says whose move it is
+ * without opening the task.
  *
  * The state is on the row twice over: as the badge on the right, and as the
  * coloured stripe down the left that `data-state` picks (see `.kk-task-row` in
@@ -219,7 +237,9 @@ export function TasksPage() {
  * page tells you what is waiting on you before you read a word of it.
  */
 function TaskRow({ task }: { task: Task }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const lastBy =
+    task.last_activity_by_name !== '' ? task.last_activity_by_name : t('taskDetail.someone')
   return (
     <li>
       <Link
@@ -250,6 +270,12 @@ function TaskRow({ task }: { task: Task }) {
             {t('tasks.row.photos', { count: task.photo_count })}
             {' · '}
             {t('tasks.row.comments', { count: task.comment_count })}
+            {' · '}
+            {t('tasks.row.lastActivity', { name: lastBy })}
+            {' · '}
+            <time dateTime={task.last_activity_at}>
+              {formatRelativeTime(task.last_activity_at, i18n.language)}
+            </time>
           </span>
         </span>
         <span className="kk-task-row__badges d-flex align-items-center gap-2">

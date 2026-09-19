@@ -66,6 +66,11 @@ export interface Task {
   updated_at: string
   /** When the state last moved — what `has_new_answer` is measured against. */
   state_at: string
+  /**
+   * Who last moved the state. Absent on a task from before it was recorded,
+   * which the server reads as the creator.
+   */
+  state_by?: string
   closed_at?: string
   closed_by?: string
   closed_by_name?: string
@@ -74,8 +79,26 @@ export interface Task {
   cover_photo_uid?: string
   comment_count: number
   last_comment_at?: string
-  /** Somebody has written in the thread since the state last moved. */
+  /**
+   * Somebody **other than the reader** has written in the thread since the
+   * state last moved. Relative to the signed-in caller: one's own reply never
+   * lights it, and a soft-deleted comment never counts.
+   */
   has_new_answer: boolean
+  /**
+   * Who acted last and when: the newest of the last state change, the opening
+   * and the newest live comment. Photo and participant changes do not count.
+   * The uid is empty when the actor's account is gone.
+   */
+  last_activity_at: string
+  last_activity_by: string
+  last_activity_by_name: string
+  /**
+   * The move is the reader's: the task is open, the reader is on it, and the
+   * last activity was somebody else's. Always false for a closed task and for
+   * a reader who is not on it.
+   */
+  waiting_on_me: boolean
   /**
    * The people on this task, oldest membership first. Always present (possibly
    * empty) on every read, listing included.
@@ -128,8 +151,10 @@ export interface TaskListParams {
   states?: readonly TaskState[]
   /** The shorthand for the three open states; ignored when `states` is given. */
   open?: boolean
-  /** Only tasks answered since the state last moved. */
+  /** Only tasks somebody else answered since the state last moved. */
   answered?: boolean
+  /** Only tasks whose move is the caller's (`waiting_on_me`), evaluated server-side. */
+  waiting?: boolean
   /** Match a substring of the question or its context. */
   q?: string
   /** Only tasks this photograph is part of. */
@@ -228,6 +253,9 @@ function listQuery(params: TaskListParams): string {
   }
   if (params.answered === true) {
     search.set('answered', 'true')
+  }
+  if (params.waiting === true) {
+    search.set('waiting', 'true')
   }
   if (params.q !== undefined && params.q !== '') {
     search.set('q', params.q)

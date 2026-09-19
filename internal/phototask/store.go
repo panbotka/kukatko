@@ -33,34 +33,90 @@ func NewStore(pool *pgxpool.Pool) *Store {
 	return &Store{pool: pool}
 }
 
+// callerParam is the placeholder every read binds the reader's uid to. It is
+// always the first parameter: three of the projection's columns depend on who is
+// asking (HasNewAnswer, WaitingOnMe, and through them two filters), so the caller
+// is part of the query itself rather than a post-processing step — which is what
+// keeps a caller-relative filter honest across paging. The cast pins the type
+// so the same parameter can be compared against a VARCHAR column in several
+// places without pgx having to deduce it twice.
+const callerParam = "$1::text"
+
+// answeredSQL is "somebody else has replied since the state last moved": the
+// newest live comment by anyone but the caller is later than state_at. It is
+// one fragment used as both a column and a filter, so the badge a client draws
+// and the list it asks for can never disagree.
+const answeredSQL = `(th.last_reply_at IS NOT NULL AND th.last_reply_at > t.state_at)`
+
+// waitingSQL is "the move is the caller's": the task is open, the caller is on
+// it, and the last activity was not theirs. An unknown last actor (a deleted
+// account) reads as somebody else — a task nobody can be shown to have answered
+// is still waiting. Like answeredSQL it serves the column and the filter alike.
+const waitingSQL = `(t.state NOT IN ('done', 'rejected')
+	AND EXISTS (SELECT 1 FROM photo_task_participants me
+		WHERE me.task_uid = t.uid AND me.user_uid = ` + callerParam + `)
+	AND la.by IS DISTINCT FROM ` + callerParam + `)`
+
 // taskColumns is the projection every read returns, expecting the task row
-// aliased t, its two author accounts left-joined as cu and xu, and the thread
-// summary as th. The counts are resolved here rather than by the caller so one
-// query yields everything a listing renders — and so the thread's newest comment
-// is available to the filter and the ordering, not just to the payload.
+// aliased t, its two author accounts left-joined as cu and xu, the thread
+// summary as th, the last activity as la with its account lu, and the
+// participants as pa. The counts and the two caller-relative flags are resolved
+// here rather than by the caller so one query yields everything a listing
+// renders — and so the thread's newest reply is available to the filter and the
+// ordering, not just to the payload.
 const taskColumns = `t.uid, t.title, t.body, t.state, t.resolution, t.source_query,
 	COALESCE(t.created_by, ''), COALESCE(NULLIF(cu.display_name, ''), cu.username, ''),
-	t.created_at, t.updated_at, t.state_at,
+	t.created_at, t.updated_at, t.state_at, COALESCE(t.state_by, ''),
 	t.closed_at, COALESCE(t.closed_by, ''), COALESCE(NULLIF(xu.display_name, ''), xu.username, ''),
 	(SELECT count(*) FROM photo_task_photos tp WHERE tp.task_uid = t.uid),
 	COALESCE((SELECT tp.photo_uid FROM photo_task_photos tp WHERE tp.task_uid = t.uid
 		ORDER BY tp.added_at, tp.photo_uid LIMIT 1), ''),
-	th.comment_count, th.last_comment_at, pa.participants`
+	th.comment_count, th.last_comment_at, ` + answeredSQL + `,
+	COALESCE(la.at, t.created_at), COALESCE(la.by, ''),
+	COALESCE(NULLIF(lu.display_name, ''), lu.username, ''), ` + waitingSQL + `,
+	pa.participants`
 
-// taskJoins resolves both author accounts and summarises the thread. The users
-// are LEFT JOINs because created_by and closed_by are ON DELETE SET NULL: losing
-// an account must not lose the task. The thread is a LATERAL so its two values
-// can be filtered and ordered on, which is the whole reason the count is not
-// fetched separately afterwards.
+// taskJoins resolves both author accounts, summarises the thread, finds the
+// last activity and aggregates the participants. The users are LEFT JOINs
+// because created_by, closed_by and state_by are ON DELETE SET NULL: losing an
+// account must not lose the task. The thread is a LATERAL so its values can be
+// filtered and ordered on, which is the whole reason the count is not fetched
+// separately afterwards; last_reply_at is the same maximum restricted to
+// comments by somebody other than the caller — one's own words are not a reply.
+//
+// The last activity is the newest of three dated acts: the task's creation, the
+// last state change (an unrecorded mover read as the creator — the rows from
+// before migration 0082, and the truth for a task nobody has advanced) and the
+// newest live comment. Membership and participant changes are deliberately not
+// among them: they are bookkeeping around the conversation, not a move in it.
+// The rank breaks a tie at the same instant in favour of the comment, then the
+// state change, so a reply posted in the same second as a move still reads as
+// the reply.
 const taskJoins = `
 FROM photo_tasks t
 LEFT JOIN users cu ON cu.uid = t.created_by
 LEFT JOIN users xu ON xu.uid = t.closed_by
 LEFT JOIN LATERAL (
-    SELECT count(*) AS comment_count, max(c.created_at) AS last_comment_at
+    SELECT count(*) AS comment_count, max(c.created_at) AS last_comment_at,
+        max(c.created_at) FILTER (WHERE c.author_uid IS DISTINCT FROM ` + callerParam + `) AS last_reply_at
     FROM comments c
     WHERE c.task_uid = t.uid AND c.deleted_at IS NULL
 ) th ON TRUE
+LEFT JOIN LATERAL (
+    SELECT a.at, a.by
+    FROM (
+        SELECT t.created_at AS at, t.created_by AS by, 2 AS rank
+        UNION ALL
+        SELECT t.state_at, COALESCE(t.state_by, t.created_by), 1
+        UNION ALL
+        SELECT c.created_at, c.author_uid, 0
+        FROM comments c
+        WHERE c.task_uid = t.uid AND c.deleted_at IS NULL
+    ) a
+    ORDER BY a.at DESC, a.rank
+    LIMIT 1
+) la ON TRUE
+LEFT JOIN users lu ON lu.uid = la.by
 LEFT JOIN LATERAL (
     SELECT COALESCE(json_agg(json_build_object(
         'user_uid', p.user_uid,
@@ -90,10 +146,19 @@ type Filter struct {
 	// Open is the shorthand for "the three states a live task can be in". It
 	// applies only when States is empty, so an explicit choice always wins.
 	Open bool
-	// Answered restricts the listing to tasks whose thread has grown since the
-	// state last moved — the work that has been replied to and is waiting to be
-	// written into the library. It is the one an agent polls.
+	// CallerUID is who is reading. HasNewAnswer and WaitingOnMe are relative to
+	// it, and so are the Answered and Waiting filters; empty means "nobody in
+	// particular", for which every comment is somebody else's and no task waits.
+	CallerUID string
+	// Answered restricts the listing to tasks somebody other than the caller has
+	// replied to since the state last moved — the work that has been answered
+	// and is waiting to be written into the library. It is the one an agent polls.
 	Answered bool
+	// Waiting restricts the listing to tasks whose move is the caller's: open,
+	// the caller on them, and the last activity somebody else's. It is evaluated
+	// in SQL like every other filter, because a caller-relative predicate applied
+	// after paging would silently return short pages.
+	Waiting bool
 	// Search matches a substring of the question or its context, case-insensitively.
 	Search string
 	// PhotoUID restricts the listing to tasks that photograph is part of.
@@ -136,12 +201,12 @@ func (f Filter) Page() (limit, offset int) {
 }
 
 // conditions compiles the filter into WHERE clauses and their arguments. The
-// clauses are ANDed by the caller; an empty filter yields none.
+// clauses are ANDed by the caller; an empty filter yields none. The arguments
+// start with the caller, which the projection binds as callerParam whether or
+// not any clause needs it, so the clauses' own placeholders start at $2.
 func (f Filter) conditions() ([]string, []any) {
-	var (
-		where []string
-		args  []any
-	)
+	var where []string
+	args := []any{f.CallerUID}
 	bind := func(value any) string {
 		args = append(args, value)
 		return "$" + strconv.Itoa(len(args))
@@ -150,7 +215,10 @@ func (f Filter) conditions() ([]string, []any) {
 		where = append(where, "t.state = ANY("+bind(stateStrings(states))+")")
 	}
 	if f.Answered {
-		where = append(where, "th.last_comment_at IS NOT NULL AND th.last_comment_at > t.state_at")
+		where = append(where, answeredSQL)
+	}
+	if f.Waiting {
+		where = append(where, waitingSQL)
 	}
 	if f.Search != "" {
 		// Case- *and* accent-insensitive, exactly like every other text search in
@@ -201,10 +269,12 @@ func whereSQL(clauses []string) string {
 	return "\nWHERE " + strings.Join(clauses, "\n  AND ")
 }
 
-// Get returns the task with the given UID, or ErrNotFound.
-func (s *Store) Get(ctx context.Context, uid string) (Task, error) {
-	query := "SELECT " + taskColumns + taskJoins + "\nWHERE t.uid = $1"
-	t, err := scanTask(s.pool.QueryRow(ctx, query, uid))
+// Get returns the task with the given UID, or ErrNotFound. callerUID is who is
+// reading: HasNewAnswer and WaitingOnMe are computed for them, and an empty
+// caller reads a task nobody is waiting on whose every comment is a reply.
+func (s *Store) Get(ctx context.Context, uid, callerUID string) (Task, error) {
+	query := "SELECT " + taskColumns + taskJoins + "\nWHERE t.uid = $2"
+	t, err := scanTask(s.pool.QueryRow(ctx, query, callerUID, uid))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Task{}, ErrNotFound
 	}
@@ -308,19 +378,21 @@ type rowScanner interface {
 	Scan(dest ...any) error
 }
 
-// scanTask reads one task row in taskColumns order and derives HasNewAnswer from
-// the two timestamps, so no client has to compare them. Its error carries no
-// package prefix: every caller adds the operation that failed, and the cause
-// stays wrapped so pgx.ErrNoRows remains classifiable.
+// scanTask reads one task row in taskColumns order. The two caller-relative
+// flags arrive already computed by the query — the same fragments the filters
+// use — so no client, and no second code path, has to derive them. Its error
+// carries no package prefix: every caller adds the operation that failed, and
+// the cause stays wrapped so pgx.ErrNoRows remains classifiable.
 func scanTask(row rowScanner) (Task, error) {
 	var (
 		t            Task
 		participants []byte
 	)
 	err := row.Scan(&t.UID, &t.Title, &t.Body, &t.State, &t.Resolution, &t.Query,
-		&t.CreatedByUID, &t.CreatedByName, &t.CreatedAt, &t.UpdatedAt, &t.StateAt,
+		&t.CreatedByUID, &t.CreatedByName, &t.CreatedAt, &t.UpdatedAt, &t.StateAt, &t.StateByUID,
 		&t.ClosedAt, &t.ClosedByUID, &t.ClosedByName,
-		&t.PhotoCount, &t.CoverPhotoUID, &t.CommentCount, &t.LastCommentAt,
+		&t.PhotoCount, &t.CoverPhotoUID, &t.CommentCount, &t.LastCommentAt, &t.HasNewAnswer,
+		&t.LastActivityAt, &t.LastActivityByUID, &t.LastActivityByName, &t.WaitingOnMe,
 		&participants)
 	if err != nil {
 		return Task{}, fmt.Errorf("scanning task row: %w", err)
@@ -335,6 +407,5 @@ func scanTask(row rowScanner) (Task, error) {
 			return Task{}, fmt.Errorf("decoding task participants: %w", err)
 		}
 	}
-	t.HasNewAnswer = t.LastCommentAt != nil && t.LastCommentAt.After(t.StateAt)
 	return t, nil
 }
