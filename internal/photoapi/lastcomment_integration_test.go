@@ -59,7 +59,8 @@ func TestList_taskScopeCarriesLastComment(t *testing.T) {
 	outside := env.seedPhoto(t, photos.Photo{Title: "Outside"}, "outside.jpg", 10, 10, 200)
 
 	task, err := phototask.NewStore(env.db.Pool()).Create(t.Context(), phototask.Task{Title: "Dávka"},
-		[]string{commented.UID, silent.UID}, audit.Entry{ActorUID: editor.UID, Action: audit.ActionTaskCreate})
+		phototask.Opening{PhotoUIDs: []string{commented.UID, silent.UID}},
+		audit.Entry{ActorUID: editor.UID, Action: audit.ActionTaskCreate})
 	if err != nil {
 		t.Fatalf("creating the task: %v", err)
 	}

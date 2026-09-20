@@ -216,6 +216,10 @@ func TestLoad_defaults(t *testing.T) {
 		{"mail.from_name", cfg.Mail.FromName, ""},
 		{"mail.base_url", cfg.Mail.BaseURL, ""},
 		{"mail.timeout", cfg.Mail.Timeout, 15 * time.Second},
+		// The daily tasks digest is off out of the box and, once on, goes out at
+		// 07:00 UTC.
+		{"tasks.digest.enabled", cfg.Tasks.Digest.Enabled, false},
+		{"tasks.digest.hour", cfg.Tasks.Digest.Hour, 7},
 		{"metrics.enabled", cfg.Metrics.Enabled, true},
 		// The library gauges aggregate over the largest tables there are and
 		// Prometheus scrapes forever, so a default of "no memoisation" would make
@@ -1390,6 +1394,55 @@ func TestLoad_mailValidation(t *testing.T) {
 			}
 			if tt.wantErr == nil && err != nil {
 				t.Fatalf("Load returned unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+// TestLoad_taskDigest verifies both digest keys are settable from the
+// environment and that the hour must be an hour of the day — checked whether or
+// not the digest is switched on, so the mistake surfaces before the day it is.
+func TestLoad_taskDigest(t *testing.T) {
+	tests := []struct {
+		name        string
+		env         map[string]string
+		wantEnabled bool
+		wantHour    int
+		wantErr     error
+	}{
+		{
+			name:        "env override",
+			env:         map[string]string{"KUKATKO_TASKS_DIGEST_ENABLED": "true", "KUKATKO_TASKS_DIGEST_HOUR": "18"},
+			wantEnabled: true, wantHour: 18,
+		},
+		{name: "midnight is an hour", env: map[string]string{"KUKATKO_TASKS_DIGEST_HOUR": "0"}, wantHour: 0},
+		{name: "last hour of the day", env: map[string]string{"KUKATKO_TASKS_DIGEST_HOUR": "23"}, wantHour: 23},
+		{name: "24 is not an hour", env: map[string]string{"KUKATKO_TASKS_DIGEST_HOUR": "24"}, wantErr: ErrInvalidTaskDigestHour},
+		{
+			name:    "negative, even while disabled",
+			env:     map[string]string{"KUKATKO_TASKS_DIGEST_ENABLED": "false", "KUKATKO_TASKS_DIGEST_HOUR": "-1"},
+			wantErr: ErrInvalidTaskDigestHour,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setMinimalEnv(t)
+			for k, v := range tt.env {
+				t.Setenv(k, v)
+			}
+			cfg, err := Load("")
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("Load error = %v, want %v", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Load returned unexpected error: %v", err)
+			}
+			if cfg.Tasks.Digest.Enabled != tt.wantEnabled || cfg.Tasks.Digest.Hour != tt.wantHour {
+				t.Errorf("tasks.digest = %+v, want enabled=%v hour=%d",
+					cfg.Tasks.Digest, tt.wantEnabled, tt.wantHour)
 			}
 		})
 	}

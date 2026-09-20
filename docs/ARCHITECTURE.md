@@ -765,7 +765,7 @@ lost on restart).
   (`RetryAfterError`), which is still written so it never burns a retry attempt. The queue state is read via the **admin Jobs API**
   (`internal/jobsapi`: `GET /jobs/stats`, `GET /jobs`, `POST /jobs/{id}/requeue`); the UI polls it.
 - **Job types:** `thumbnail`, `places`, `metadata`, `sidecar`, `storyboard`, `hls_transcode`, `mail_send`,
-  `face_cluster`
+  `task_digest`, `face_cluster`
   (run locally on the
   Pi, immediately), `image_embed`, `face_detect`, `ocr` (require the box), `pp_import`, `ps_migrate`, `backup`.
   `ocr` reads the text printed in a photo (`POST /ocr/image` over its `fit_1920` preview) into
@@ -792,7 +792,10 @@ lost on restart).
   its data, so the message is rendered when it is delivered rather than when it is scheduled, and a mail
   enqueued while the SMTP server is away still arrives once it is back. It is enqueued **inside the
   transaction of the mutation that caused it** (the way audit rows are written), so a rolled-back registration
-  sends nothing. See `internal/mailjob`.
+  sends nothing. See `internal/mailjob`. `task_digest` is the once-a-day run that mails every person the open
+  tasks whose move is theirs; it is enqueued by a scheduler at `tasks.digest.hour` UTC (only with the digest
+  and mail both on), schedules `mail_send` jobs rather than sending, and stamps `users.task_digest_at` so a
+  queue that has not moved since the last digest sends nothing. See `internal/taskdigestjob`.
 - **Box offline:** the embeddings client checks the sidecar's availability before processing (health check).
   When the box is offline, `image_embed`/`face_detect`/`ocr` jobs stay `queued` with `run_after`
   pushed out (backoff), upload and browsing work without restriction. Once the box comes up the queue

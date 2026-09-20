@@ -3248,7 +3248,15 @@ to `## Package map` in `CLAUDE.md`.
   it; **every read takes the caller** — it is `$1` in the projection, see below)/`Create`/`Update`/
   `Delete`/`AddPhotos`/`RemovePhotos` (each in one transaction with its `audit.Write`, via `inTx`;
   membership writes `touch` the task so a batch counts as activity) and `OpenForPhotos` (the reverse
-  lookup the photo detail draws its chip from, bulk-shaped so it can never become an N+1);
+  lookup the photo detail draws its chip from, bulk-shaped so it can never become an N+1); **the daily
+  digest's two reads** (`digest.go`): `Digests(ctx)` → `[]Digest{UserUID,Email,DisplayName,Total,Tasks
+  (≤ DigestLimit = 20, newest activity first),NewestActivityAt,DigestedAt}` — the listing's `waitingSQL`
+  turned inside out, one query over every participant of every open task (reusing `activityJoin`, so the
+  mail and the „Na mně" filter can never disagree about whose move it is), restricted to accounts that
+  can sign in (`NOT disabled AND approved_at IS NOT NULL`) and to people with a waiting task whose activity
+  is newer than `users.task_digest_at` (migration `0084_users_task_digest.sql`; NULL = never written to),
+  and `MarkDigested(ctx, uid, at)` which stamps that column without touching `updated_at`; consumed by
+  `internal/taskdigestjob`;
   **who is on a task** (`participants.go`, table `photo_task_participants` from migration
   `0081_photo_task_participants.sql`): `Participant{UserUID,Name,JoinedAt,AddedByUID,AddedByName}`,
   `Participants`/`Assign`/`Unassign`/`Join`, `Filter.ParticipantUID`, and — the part that makes the list
@@ -5104,7 +5112,7 @@ to `## Package map` in `CLAUDE.md`.
     printable rather than raw 8-bit because it needs no `8BITMIME` from the server and it folds the long lines
     the 998-octet limit would otherwise break; the Q-encoded subject is what makes `Váš účet byl schválen`
     survive a server that only takes ASCII headers.
-  - **Four Czech templates**, each a **pure function of its own data struct** returning
+  - **Five Czech templates**, each a **pure function of its own data struct** returning
     `Rendered{Template,Subject,Body}` (`Rendered.Message(to)` addresses it), unit-tested against the exact
     expected text: `RenderRegistrationReceived` (`RegistrationReceivedData{DisplayName,Username}` — your
     account exists and waits for an administrator), `RenderAccountApproved`
@@ -5115,7 +5123,13 @@ to `## Package map` in `CLAUDE.md`.
     details the tests pin: an empty display name degrades to the impersonal `Dobrý den,` rather than greeting a
     blank, and `ValidFor` is rendered with the **Czech plural rule** in the largest unit it divides evenly into
     (`jednu hodinu`, `2 hodiny`, `7 dnů`), with a non-positive duration falling back to
-    `Odkaz má omezenou platnost.` instead of printing a zero.
+    `Odkaz má omezenou platnost.` instead of printing a zero. The fifth, `RenderTasksWaitingDigest`
+    (`TasksWaitingDigestData{DisplayName,Total,Tasks []DigestTask{Title,State,URL},QueueURL}`), is the
+    daily digest of tasks waiting on a person: subject `Čeká na tebe N úkolů` (the verb and the noun follow
+    the plural rule — `Čeká na tebe 1 úkol`, `Čekají na tebe 3 úkoly`), one line per listed task with its
+    state in the queue's own words (`čeká na odpověď`/`pracuje se`/`ke schválení`, an unknown state printed
+    as it is) and its absolute link, `…a dalších M úkolů.` when the list was cut, and the link to
+    `/tasks?waiting=1`. It is **informal** (`Ahoj, …`) like the queue in the app, unlike the account mails.
   - Configuration is `mail.*` (`internal/config`, [`OPERATIONS.md`](OPERATIONS.md)); an enabled mailer with no
     `host`, `from_address` or `base_url` fails startup naming every missing key.
 
@@ -5149,6 +5163,39 @@ to `## Package map` in `CLAUDE.md`.
   - Wired in `cmd/kukatko` next to the other handlers and **only when `mail.enabled`** (`buildMailServiceOrNil`);
     with mail off nothing enqueues either, and a job left over from a period when mail was on simply waits in
     the queue until it is configured again. The worker gives `mail_send` its own single-slot pool.
+
+- **Daily tasks digest (`internal/taskdigestjob`):** the one message the task queue sends out of the app —
+  once a day, every person is mailed the open tasks whose move is theirs, so a question an agent opened
+  reaches the human it waits on. It is the `task_digest` job plus the scheduler that enqueues it, and it
+  sends nothing itself: every message is a `mail_send` job scheduled through `mailjob.Enqueuer`, so it
+  inherits the queue's retries and the mailer's address guard.
+  - **`Service`** (`New(Config{Source,Mail,Exec,BaseURL,Clock,Logger})`, panicking on a missing `Source`/
+    `Mail`/`Exec`) is the handler. `Run` asks `Source.Digests` (satisfied by `*phototask.Store`) who is due,
+    and for each person schedules one mail on `Exec` (the pool — a digest is nobody's mutation) **and then
+    stamps** the account (`MarkDigested` with the clock), in that order: a stamp without a mail would
+    silence somebody, a mail without a stamp only repeats itself. A recipient the mailer refuses
+    (`ErrPlaceholderAddress` for a `.invalid` placeholder, `ErrInvalidAddress` for none) is **skipped and left
+    unstamped** — they hear the news once the address is fixed — and never fails the run; a queue or stamp
+    failure for one person is logged, counted and skipped over, and the run then returns `ErrPartialRun` so
+    the queue retries for the rest (the people it reached are stamped, so a retry repeats nothing). With
+    mail off (`Mail.Enabled()` false) nothing is scheduled **and nobody is stamped**. Links are
+    `TaskURL(base, uid)` = `<base>/tasks/{uid}` and `QueueURL(base)` = `<base>/tasks?waiting=1`, on
+    `mail.base_url` exactly as the password-reset link is (site-relative when it is empty).
+    `Result{Sent,Skipped,Failed}` is what `Handle` logs.
+  - **`Scheduler`** (`NewScheduler(SchedulerConfig{Enabled,Enqueuer,Hour,Clock,Logger})`) follows the trash
+    retention purge's shape — one goroutine for the life of the server, `Run` returning at once when
+    disabled — but enqueues the job rather than doing the work, so a run is retried, observable and
+    dead-lettered like every other. `NextRun(now, hour)` (pure, tested) is the next `hour:00:00 UTC`
+    strictly after `now`; a missed hour is not caught up. The enqueue is `jobs.Enqueuer.EnqueueTaskDigest`,
+    deduped on the queued state by `idx_jobs_task_digest_dedup` (migration 0084, the family-export
+    index's shape), so a restart straddling the hour cannot queue the same day twice.
+  - Wired in `cmd/kukatko` (`taskdigest.go`) **only when `tasks.digest.enabled` and `mail.enabled` are
+    both true** — the handler is registered and the scheduler is live under the same `taskDigestOn` answer,
+    so a job is never enqueued that nothing will claim. Configuration `tasks.digest.*`
+    ([`OPERATIONS.md`](OPERATIONS.md)). Tests: the store query over a real database (who gets one, the
+    stamp, the cap), the service against the real `mailjob.Enqueuer` + `mail_send` handler + `mailer.Fake`
+    with a fixed clock (one mail per person, none when nothing is due, none when mail is off, the skip, the
+    partial run), and the scheduler's timing.
 
 - **Remote CLI client (`internal/ctl`):** the client half of `kukatko ctl` — the one piece of the tree that
   Kukátko calls **over HTTP as a foreign server**, not through the DB and the disk. It has nothing in common with `internal/config`

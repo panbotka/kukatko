@@ -54,14 +54,15 @@ func NewStore(pool *pgxpool.Pool) *Store {
 // dedupIndexes names every index whose violation means "this work is already
 // scheduled" rather than a broken insert, so Enqueue answers ErrDuplicate for it.
 //
-// There are two because there are two shapes of duplicate. idx_jobs_dedup
-// (migrations 0005 and 0044) keys the per-photo types on
-// (type, payload ->> 'photo_uid'); idx_jobs_family_export_dedup (migration 0075)
-// keys the one library-wide type on its type alone, since its payload names no
-// photo and NULLs would otherwise be distinct.
+// There are two shapes of duplicate. idx_jobs_dedup (migrations 0005 and
+// 0044) keys the per-photo types on (type, payload ->> 'photo_uid'); the
+// library-wide types — idx_jobs_family_export_dedup (migration 0075) and
+// idx_jobs_task_digest_dedup (migration 0084) — key on the type alone, since
+// their payloads name no photo and NULLs would otherwise be distinct.
 var dedupIndexes = map[string]bool{
 	"idx_jobs_dedup":               true,
 	"idx_jobs_family_export_dedup": true,
+	"idx_jobs_task_digest_dedup":   true,
 }
 
 // isUniqueViolation reports whether err is a PostgreSQL unique-constraint

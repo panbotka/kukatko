@@ -326,6 +326,10 @@ rebuilt? — and the only person who knows is usually not the person editing the
   message if you want one, then the photographs, which every reader (and the terminal) sees as links and
   small thumbnails. A viewer can do this too, because it is a comment. Any photo identifier typed or
   pasted into a comment renders the same way, on a photo's thread as on a task's.
+- **The queue can come to you by e-mail.** With the digest switched on (`tasks.digest.enabled`, on top of
+  a working mail setup), everybody with tasks waiting on them gets one message a day — „Čeká na tebe 3
+  úkoly", each question with its link, and a link to the whole „Na mně" list — and only on a day something
+  on their queue actually moved. A queue that has not changed since yesterday sends nothing.
 
 ### Places and video
 

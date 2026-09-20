@@ -54,6 +54,12 @@ func PasswordReset(to string, data mailer.PasswordResetData) Mail {
 	return Mail{Template: mailer.TemplatePasswordReset, To: to, Data: data}
 }
 
+// TasksWaitingDigest is the daily mail listing the tasks whose move is the
+// recipient's.
+func TasksWaitingDigest(to string, data mailer.TasksWaitingDigestData) Mail {
+	return Mail{Template: mailer.TemplateTasksWaitingDigest, To: to, Data: data}
+}
+
 // Scheduler inserts a job into the persistent queue through a caller-supplied
 // executor. It is satisfied by jobs.Enqueue, which is what production wires; a
 // test substitutes its own function and needs no database.
@@ -177,7 +183,8 @@ func encodePayload(m Mail) (json.RawMessage, error) {
 func knownTemplate(name string) bool {
 	switch name {
 	case mailer.TemplateRegistrationReceived, mailer.TemplateAccountApproved,
-		mailer.TemplateNewRegistrationPending, mailer.TemplatePasswordReset:
+		mailer.TemplateNewRegistrationPending, mailer.TemplatePasswordReset,
+		mailer.TemplateTasksWaitingDigest:
 		return true
 	default:
 		return false

@@ -128,10 +128,11 @@ func runServe(cmd *cobra.Command) error {
 
 // startBackgroundServices builds the optional Wake-on-LAN auto-wake service and
 // launches every background goroutine tied to ctx so they stop on shutdown: the
-// job worker, the trash retention purge, the auto-wake check loop (inert when
-// disabled), the embeddings-reachability probe loop (inert when no embedding URL
-// is configured) that backs GET /capabilities, and — when configured — the
-// scheduled S3 backup.
+// job worker, the trash retention purge, the daily tasks-digest scheduler
+// (inert unless the digest and mail are both on), the auto-wake check loop
+// (inert when disabled), the embeddings-reachability probe loop (inert when no
+// embedding URL is configured) that backs GET /capabilities, and — when
+// configured — the scheduled S3 backup.
 func startBackgroundServices(
 	ctx context.Context, cfg *config.Config, db *database.DB,
 	bg backgroundServices, backupSvc *backup.Service, reachChecker *reachability.Checker,
@@ -142,6 +143,7 @@ func startBackgroundServices(
 	}
 	startWorker(ctx, bg.worker)
 	go bg.trash.RunPurge(ctx, trashPurgeInterval)
+	go buildTaskDigestScheduler(cfg, db).Run(ctx)
 	go wakeSvc.Run(ctx, wakeCheckInterval)
 	go reachChecker.Run(ctx, capabilitiesCheckInterval)
 	if backupSvc != nil {

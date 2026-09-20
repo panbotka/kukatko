@@ -575,6 +575,19 @@ mail:
   # Bounds one delivery attempt: connect, negotiate and send.
   timeout: 15s
 
+# The task queue's one message that leaves the app: a daily e-mail to every
+# person listing the open tasks whose move is theirs (the listing's "Na mně").
+# It rides on mail.* above — with mail.enabled false nothing is ever scheduled,
+# whatever is set here — and the links inside it are built on mail.base_url.
+tasks:
+  digest:
+    # Off by default. When on, the `task_digest` job runs once a day and sends
+    # one message per person, and only when a task waiting on them has moved
+    # since their previous digest — a queue that has not changed sends nothing.
+    enabled: false
+    # The UTC hour of the day (0–23) the digest is sent at.
+    hour: 7
+
 # Backup destination: a SECOND, INDEPENDENT bucket. It shares nothing with
 # storage.r2.* — its own endpoint, region, bucket and credentials — so it can
 # live in another account or with another provider. Do not assume both are R2.

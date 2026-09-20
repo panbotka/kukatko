@@ -26,6 +26,7 @@ import (
 	"github.com/panbotka/kukatko/internal/processapi"
 	"github.com/panbotka/kukatko/internal/sidecarjob"
 	"github.com/panbotka/kukatko/internal/storyboardjob"
+	"github.com/panbotka/kukatko/internal/taskdigestjob"
 	"github.com/panbotka/kukatko/internal/thumbjob"
 	"github.com/panbotka/kukatko/internal/worker"
 )
@@ -140,7 +141,8 @@ type jobServiceDeps struct {
 // buildJobServices constructs every handler the worker registry needs, returning
 // them bundled together with the library-maintenance service (which shares the
 // thumbnail service's construction and is not a job handler itself). The
-// config-gated ones — sidecar, OCR, mail, the HLS transcode — come back nil when their
+// config-gated ones — sidecar, OCR, mail, the HLS transcode, the tasks digest — come back nil
+// when their
 // feature is switched off; buildRegistry then registers no handler for them, which is what
 // keeps a job of a type nothing can claim from ever being enqueued. The places
 // service is passed in rather than built here, since the rebuild endpoints share
@@ -180,6 +182,7 @@ func buildJobServices(d jobServiceDeps) (registryServices, *maintenance.Service,
 		places: d.places, sidecar: sidecarSvc, ocr: ocrSvc, mail: mailSvc,
 		nameless: buildNamelessService(d.db, d.store), storyboard: d.storyboard,
 		cluster: d.cluster, hls: hlsSvc, familyExport: familyExportSvc,
+		taskDigest: buildTaskDigestServiceOrNil(d.cfg, d.db),
 	}, maintenanceSvc, nil
 }
 
@@ -201,12 +204,15 @@ type registryServices struct {
 	// familyExport writes the library's genealogy export; nil when the sidecar
 	// export is switched off.
 	familyExport *familyexportjob.Service
+	// taskDigest mails the daily list of tasks waiting on a person; nil unless
+	// the digest and mail are both switched on.
+	taskDigest *taskdigestjob.Service
 }
 
 // buildRegistry returns the worker registry with every configured handler
 // registered. The always-available handlers register unconditionally; the
-// config-gated ones (places, sidecar, family_export, ocr, mail_send, hls_transcode) register only
-// when their service was
+// config-gated ones (places, sidecar, family_export, ocr, mail_send, hls_transcode,
+// task_digest) register only when their service was
 // built, because an unregistered type is never claimed — so a job of a type with
 // no handler would sit queued forever.
 func buildRegistry(svc registryServices) *worker.Registry {
@@ -237,6 +243,9 @@ func buildRegistry(svc registryServices) *worker.Registry {
 	}
 	if svc.familyExport != nil {
 		registry.Register(jobs.TypeFamilyExport, svc.familyExport.Handle)
+	}
+	if svc.taskDigest != nil {
+		registry.Register(jobs.TypeTaskDigest, svc.taskDigest.Handle)
 	}
 	return registry
 }

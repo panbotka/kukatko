@@ -93,6 +93,9 @@ var (
 	// ErrInvalidMailEncryption indicates mail.encryption is set to an unknown
 	// value (it must be empty, "starttls", "tls" or "none").
 	ErrInvalidMailEncryption = errors.New(`config: mail.encryption must be "starttls", "tls" or "none"`)
+	// ErrInvalidTaskDigestHour indicates tasks.digest.hour is not an hour of the
+	// day.
+	ErrInvalidTaskDigestHour = errors.New("config: tasks.digest.hour must be between 0 and 23")
 )
 
 // Config is the fully resolved, typed configuration for a kukatko process.
@@ -111,6 +114,7 @@ type Config struct {
 	Auth       AuthConfig       `mapstructure:"auth"`
 	Maps       MapsConfig       `mapstructure:"maps"`
 	Mail       MailConfig       `mapstructure:"mail"`
+	Tasks      TasksConfig      `mapstructure:"tasks"`
 	Backup     BackupConfig     `mapstructure:"backup"`
 	Trash      TrashConfig      `mapstructure:"trash"`
 	Duplicate  DuplicateConfig  `mapstructure:"duplicate"`
@@ -731,6 +735,30 @@ type MailConfig struct {
 	Timeout time.Duration `mapstructure:"timeout"`
 }
 
+// TasksConfig configures the task queue's out-of-app side: the daily digest.
+type TasksConfig struct {
+	Digest TaskDigestConfig `mapstructure:"digest"`
+}
+
+// TaskDigestConfig configures the daily e-mail listing the tasks waiting on a
+// person (internal/taskdigestjob). Enabled defaults to false and the job is
+// scheduled only when mail is enabled too — with either off nothing is ever
+// enqueued. Hour is the UTC hour of the day the digest runs at, 0–23.
+type TaskDigestConfig struct {
+	Enabled bool `mapstructure:"enabled"`
+	Hour    int  `mapstructure:"hour"`
+}
+
+// validate checks the digest hour is an hour of the day. A disabled digest is
+// still checked: the value is a mistake whether or not it is used today, and
+// it is cheaper to hear about it now than on the day the digest is switched on.
+func (d TaskDigestConfig) validate() error {
+	if d.Hour < 0 || d.Hour > 23 {
+		return fmt.Errorf("%w: got %d", ErrInvalidTaskDigestHour, d.Hour)
+	}
+	return nil
+}
+
 // MapsConfig holds the server-side mapy.com API key (kept off the client) and
 // the base URL of the mapy.com REST API the tile and reverse-geocode proxies
 // call.
@@ -1194,6 +1222,10 @@ func setMailDefaults(v *viper.Viper) {
 	v.SetDefault("mail.from_name", "")
 	v.SetDefault("mail.base_url", "")
 	v.SetDefault("mail.timeout", "15s")
+	// The daily digest of tasks waiting on a person rides on mail; off until
+	// somebody asks for it, and sent at 07:00 UTC when on.
+	v.SetDefault("tasks.digest.enabled", false)
+	v.SetDefault("tasks.digest.hour", 7)
 }
 
 func setMapsDefaults(v *viper.Viper) {
@@ -1417,6 +1449,9 @@ func (c *Config) validateSections() error {
 		return err
 	}
 	if err := c.Mail.validate(); err != nil {
+		return err
+	}
+	if err := c.Tasks.Digest.validate(); err != nil {
 		return err
 	}
 	return c.Auth.validate()

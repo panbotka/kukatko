@@ -164,6 +164,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/sweepapi` — `GET /faces/sweep` (RequireWrite) streaming NDJSON
 - `internal/system` — aggregation of instance operational state for the admin dashboard
 - `internal/systemapi` — maintainer-only `GET /system/status`
+- `internal/taskdigestjob` — the `task_digest` job + its daily scheduler: one mail per person listing the open tasks whose move is theirs, only when something changed since `users.task_digest_at`; sends through `mail_send`, never itself; on only with `tasks.digest.enabled` **and** mail
 - `internal/thumb` — thumbnailer (pure-Go default, optional `vips` engine), cache layout
 - `internal/thumbjob` — worker handler `thumbnail` (thumbnail regeneration + pHashes + the blur placeholder)
 - `internal/trash` — permanent deletion (purge) of archived photos + scheduled retention

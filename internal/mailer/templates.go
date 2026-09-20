@@ -4,9 +4,11 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
-// Template names. Each names one of the four messages Kukátko can send and is
+// Template names. Each names one of the five messages Kukátko can send and is
 // carried on the Rendered value, so a log line or an audit entry can say which
 // message went out without repeating its subject.
 const (
@@ -19,6 +21,9 @@ const (
 	TemplateNewRegistrationPending = "new_registration_pending"
 	// TemplatePasswordReset carries the link to choose a new password.
 	TemplatePasswordReset = "password_reset"
+	// TemplateTasksWaitingDigest lists the tasks whose move is the recipient's,
+	// once a day.
+	TemplateTasksWaitingDigest = "tasks_waiting_digest"
 )
 
 // signature closes every message. Kukátko sends as itself, never as a person.
@@ -151,6 +156,121 @@ func RenderPasswordReset(d PasswordResetData) Rendered {
 			signature,
 		),
 	}
+}
+
+// DigestTask is one line of the tasks digest: the question, its state and the
+// absolute link to its page. State is the task's state as the queue names it
+// (question/working/review); the template puts it into words, so the mail and
+// the app describe the same state the same way.
+type DigestTask struct {
+	Title string
+	State string
+	URL   string
+}
+
+// TasksWaitingDigestData is what the daily digest needs: whom to greet, how
+// many tasks wait on them in total, the first of those tasks (the caller decides
+// how many; the template says "and N more" for the rest) and the link to the
+// full list.
+type TasksWaitingDigestData struct {
+	DisplayName string
+	Total       int
+	Tasks       []DigestTask
+	QueueURL    string
+}
+
+// RenderTasksWaitingDigest builds the once-a-day message listing the open tasks
+// whose move is the recipient's. It is a pure function of d. The register is
+// informal, like the task queue in the app ("Na mně", "3 úkoly čekají na
+// tebe"), and unlike the account mails — those speak to a stranger, this one to
+// somebody already at work in the library.
+func RenderTasksWaitingDigest(d TasksWaitingDigestData) Rendered {
+	lines := []string{
+		informalGreeting(d.DisplayName),
+		"",
+		"v Kukátku na tebe " + waitVerb(d.Total) + " " + taskCount(d.Total) + ":",
+		"",
+	}
+	for _, task := range d.Tasks {
+		lines = append(lines,
+			"- "+strings.TrimSpace(task.Title)+" ("+taskStateWords(task.State)+")",
+			"  "+task.URL,
+		)
+	}
+	if rest := d.Total - len(d.Tasks); rest > 0 {
+		lines = append(lines, "", "…a "+moreWord(rest)+" "+taskCount(rest)+".")
+	}
+	lines = append(lines,
+		"",
+		"Všechno, co na tebe čeká: "+d.QueueURL,
+		"",
+		signature,
+	)
+	return Rendered{
+		Template: TemplateTasksWaitingDigest,
+		Subject:  capitalize(waitVerb(d.Total)) + " na tebe " + taskCount(d.Total),
+		Body:     body(lines...),
+	}
+}
+
+// taskCount renders a number of tasks with the Czech plural rule: "1 úkol",
+// "3 úkoly", "7 úkolů".
+func taskCount(count int) string {
+	return czechCount(count, "1 úkol", "úkoly", "úkolů")
+}
+
+// waitVerb is the verb agreeing with a count of tasks: "čekají" for two to four
+// (the plural form), "čeká" for one and for five and more (the genitive plural
+// takes a singular verb).
+func waitVerb(count int) string {
+	if count >= 2 && count <= 4 {
+		return "čekají"
+	}
+	return "čeká"
+}
+
+// capitalize upper-cases the first letter of word, which may be multi-byte
+// ("čeká" → "Čeká"); an empty word stays empty.
+func capitalize(word string) string {
+	first, size := utf8.DecodeRuneInString(word)
+	if size == 0 {
+		return word
+	}
+	return string(unicode.ToUpper(first)) + word[size:]
+}
+
+// moreWord is the adjective in "…a dalších N úkolů" agreeing with the count:
+// "další" for one to four, "dalších" for five and more.
+func moreWord(count int) string {
+	if count >= 1 && count <= 4 {
+		return "další"
+	}
+	return "dalších"
+}
+
+// taskStateWords puts a task state into words, the same words the app's queue
+// uses for it. An unknown state is printed as it is, rather than hidden.
+func taskStateWords(state string) string {
+	switch state {
+	case "question":
+		return "čeká na odpověď"
+	case "working":
+		return "pracuje se"
+	case "review":
+		return "ke schválení"
+	default:
+		return state
+	}
+}
+
+// informalGreeting opens a message to somebody at work in the library, falling
+// back to a bare "Ahoj," when the display name is empty.
+func informalGreeting(name string) string {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return "Ahoj,"
+	}
+	return "Ahoj, " + trimmed + ","
 }
 
 // body joins the lines of a message body with newlines and terminates the last

@@ -97,6 +97,15 @@ func TestHandle_rendersEveryTemplate(t *testing.T) {
 			}),
 			wantBody: "Odkaz platí jednu hodinu.",
 		},
+		{
+			name: "tasks waiting digest",
+			mail: TasksWaitingDigest("jan@example.com", mailer.TasksWaitingDigestData{
+				Total: 1, Tasks: []mailer.DigestTask{{Title: "Rok svatby", State: "question",
+					URL: "https://kukatko.example/tasks/tk-1"}},
+				QueueURL: "https://kukatko.example/tasks?waiting=1",
+			}),
+			wantBody: "- Rok svatby (čeká na odpověď)\n  https://kukatko.example/tasks/tk-1",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

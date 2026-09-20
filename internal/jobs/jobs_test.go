@@ -206,6 +206,42 @@ func TestEnqueueFamilyExport_reportsOtherFailures(t *testing.T) {
 	}
 }
 
+// TestEnqueueTaskDigest_isImmediateAndUnkeyed verifies the digest enqueue maps
+// to TypeTaskDigest with no payload — one run covers everybody — and no delay:
+// the scheduler calling it has already waited for the configured hour.
+func TestEnqueueTaskDigest_isImmediateAndUnkeyed(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeEnqueuer{}
+	if err := (&Enqueuer{store: fake}).EnqueueTaskDigest(context.Background()); err != nil {
+		t.Fatalf("EnqueueTaskDigest: %v", err)
+	}
+	if fake.lastType != TypeTaskDigest {
+		t.Errorf("lastType = %q, want %q", fake.lastType, TypeTaskDigest)
+	}
+	if len(fake.lastPayload) != 0 {
+		t.Errorf("payload = %s, want none", fake.lastPayload)
+	}
+	if fake.lastOpts.RunAfter != nil {
+		t.Errorf("RunAfter = %v, want nil (run at once)", *fake.lastOpts.RunAfter)
+	}
+}
+
+// TestEnqueueTaskDigest_duplicateIsNotAnError verifies a digest already queued
+// makes the enqueue a no-op — that collision is the restart guard — while any
+// other queue failure is reported.
+func TestEnqueueTaskDigest_duplicateIsNotAnError(t *testing.T) {
+	t.Parallel()
+
+	if err := (&Enqueuer{store: &fakeEnqueuer{err: ErrDuplicate}}).EnqueueTaskDigest(context.Background()); err != nil {
+		t.Errorf("EnqueueTaskDigest with a job already queued = %v, want nil", err)
+	}
+	broken := errors.New("connection refused")
+	if err := (&Enqueuer{store: &fakeEnqueuer{err: broken}}).EnqueueTaskDigest(context.Background()); !errors.Is(err, broken) {
+		t.Errorf("EnqueueTaskDigest = %v, want it to wrap %v", err, broken)
+	}
+}
+
 // TestEnqueueThumbnail_plainVsRebuild verifies the two thumbnail enqueues differ
 // only in the payload's force flag: both are TypeThumbnail carrying the photo_uid
 // the dedup index keys on (so a forced job dedupes against a plain one), and only

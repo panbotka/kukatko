@@ -119,6 +119,14 @@ const (
 	// host that is briefly unreachable delays the message instead of losing it.
 	// See internal/mailjob.
 	TypeMailSend = "mail_send"
+	// TypeTaskDigest sends every person one e-mail a day listing the open tasks
+	// whose move is theirs — the "waiting on me" of the task queue, evaluated for
+	// everybody at once rather than for one reader. It runs locally and only
+	// schedules mail_send jobs; it is enqueued once a day by the scheduler in
+	// internal/taskdigestjob, and only while the digest and mail are both on.
+	// It belongs to no photo, so it has a dedup index of its own (migration
+	// 0084) keeping at most one queued job.
+	TypeTaskDigest = "task_digest"
 	// TypeNamelessDetach detaches one nameless catch-all subject: the subject row
 	// is deleted and every marker and cached face that pointed at it is left
 	// unassigned. It runs locally, in the queue rather than in the HTTP request,

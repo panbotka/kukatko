@@ -100,7 +100,7 @@ func askParticipants(
 			IP: entry.IP, UserAgent: entry.UserAgent,
 		}
 		if err := audit.Write(ctx, tx, withTarget(asked, taskUID, "user_uid", userUID)); err != nil {
-			return err
+			return fmt.Errorf("auditing asked participant: %w", err)
 		}
 	}
 	return nil

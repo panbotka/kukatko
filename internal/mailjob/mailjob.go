@@ -149,6 +149,8 @@ func render(p payload) (mailer.Rendered, error) {
 		return renderWith(p, mailer.RenderNewRegistrationPending)
 	case mailer.TemplatePasswordReset:
 		return renderWith(p, mailer.RenderPasswordReset)
+	case mailer.TemplateTasksWaitingDigest:
+		return renderWith(p, mailer.RenderTasksWaitingDigest)
 	default:
 		return mailer.Rendered{}, fmt.Errorf("%w: %q", ErrUnknownTemplate, p.Template)
 	}

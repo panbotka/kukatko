@@ -213,6 +213,26 @@ func (e *Enqueuer) EnqueueFamilyExport(ctx context.Context) error {
 	return nil
 }
 
+// EnqueueTaskDigest schedules one run of the daily tasks-waiting digest: the
+// job that mails every person the open tasks whose move is theirs. It takes no
+// identifier and no delay — the scheduler that calls it already waited for the
+// configured hour, and the handler reads the current queue when it runs.
+//
+// Dedup is scoped to the queued state (idx_jobs_task_digest_dedup, migration
+// 0084): a pre-existing *queued* job is a no-op (nil error), so a restart
+// straddling the scheduled hour cannot queue the same day's digest twice. A
+// job already *running* does not block a fresh one; the handler's own stamp
+// on each account is what keeps the second run from repeating the mail.
+func (e *Enqueuer) EnqueueTaskDigest(ctx context.Context) error {
+	if _, err := e.store.Enqueue(ctx, TypeTaskDigest, nil, EnqueueOptions{}); err != nil {
+		if errors.Is(err, ErrDuplicate) {
+			return nil
+		}
+		return fmt.Errorf("jobs: enqueuing %s: %w", TypeTaskDigest, err)
+	}
+	return nil
+}
+
 // now returns the current time, indirected through the Enqueuer so tests can pin
 // it. A nil clock (the normal case) reads the wall clock.
 func (e *Enqueuer) now() time.Time {

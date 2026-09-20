@@ -2025,6 +2025,17 @@ other type; values ≤ 0 are ignored and a type
   recipient in the reserved `.invalid` domain (the placeholder addresses in the user table) is **refused,
   never dialled**. Env: `KUKATKO_MAIL_ENABLED`/`_HOST`/`_PORT`/`_USERNAME`/`_PASSWORD`/`_ENCRYPTION`/
   `_FROM_ADDRESS`/`_FROM_NAME`/`_BASE_URL`/`_TIMEOUT`.
+- **Tasks digest keys (`tasks.digest.*`, `internal/taskdigestjob`):** the one message the task queue sends
+  outside the app — once a day, every person is e-mailed the open tasks whose move is theirs (the listing's
+  „Na mně"), up to 20 of them with a link each and „…a dalších M" for the rest, plus a link to
+  `/tasks?waiting=1`. `enabled` (bool, **default false**) switches it on; it **rides on `mail.*`** — with
+  `mail.enabled` false nothing is scheduled whatever this says, and the links are built on `mail.base_url`.
+  `hour` (**default 7**) is the **UTC** hour of the day (0–23; anything else → `ErrInvalidTaskDigestHour` at
+  startup, checked even while disabled) at which the `task_digest` job is enqueued; the worker then sends
+  **one mail per person and only when something changed** since that person's previous digest
+  (`users.task_digest_at`, stamped after the mail is scheduled) — a queue that has not moved sends nothing,
+  and a `.invalid` placeholder address is skipped, never dialled. A server that was down at the hour sends
+  nothing until the next one. Env: `KUKATKO_TASKS_DIGEST_ENABLED`, `KUKATKO_TASKS_DIGEST_HOUR`.
 
 ### `maps.user_agent` — restricting the mapy.com key to a User-Agent
 

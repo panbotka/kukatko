@@ -180,6 +180,28 @@ func TestEnqueueDedup_familyExportIsSingletonPerQueuedState(t *testing.T) {
 	}
 }
 
+// TestEnqueueDedup_taskDigestIsSingletonPerQueuedState verifies migration
+// 0084's index: the daily digest dedups on its type alone while queued, so a
+// restart straddling the scheduled hour cannot queue the same day twice, and a
+// job already running never blocks the next one.
+func TestEnqueueDedup_taskDigestIsSingletonPerQueuedState(t *testing.T) {
+	store, _ := newStore(t)
+	ctx := t.Context()
+
+	if _, err := store.Enqueue(ctx, jobs.TypeTaskDigest, nil, jobs.EnqueueOptions{}); err != nil {
+		t.Fatalf("first task_digest enqueue: %v", err)
+	}
+	if _, err := store.Enqueue(ctx, jobs.TypeTaskDigest, nil, jobs.EnqueueOptions{}); !errors.Is(err, jobs.ErrDuplicate) {
+		t.Fatalf("second queued task_digest enqueue = %v, want ErrDuplicate", err)
+	}
+	if _, err := store.Claim(ctx, "w1", jobs.TypeTaskDigest); err != nil {
+		t.Fatalf("Claim task_digest: %v", err)
+	}
+	if _, err := store.Enqueue(ctx, jobs.TypeTaskDigest, nil, jobs.EnqueueOptions{}); err != nil {
+		t.Fatalf("task_digest enqueue while running = %v, want success", err)
+	}
+}
+
 // TestClaimOrdering verifies claiming respects run_after (skips not-yet-due),
 // then priority DESC, then FIFO by id.
 func TestClaimOrdering(t *testing.T) {
