@@ -172,7 +172,7 @@ func TestList_byParticipant(t *testing.T) {
 	other := f.makeUser(t, "us-other", "jiny", "Jiný")
 
 	mine := f.mustCreate(t, "Moje otázka")
-	theirs, err := f.tasks.Create(ctx, phototask.Task{Title: "Cizí otázka"}, nil,
+	theirs, err := f.tasks.Create(ctx, phototask.Task{Title: "Cizí otázka"}, phototask.Opening{},
 		audit.Entry{ActorUID: other, Action: audit.ActionTaskCreate})
 	if err != nil {
 		t.Fatalf("creating the other task: %v", err)
@@ -235,5 +235,67 @@ func TestList_carriesParticipants(t *testing.T) {
 	}
 	if len(one.Participants) != 1 {
 		t.Errorf("Get participants = %v, want the same one", names(one.Participants))
+	}
+}
+
+// TestCreate_askedAtOpening verifies handing a task to somebody as it is opened
+// reads exactly as handing it over afterwards: each asked person carries the
+// creator as added_by, the creator is on it by acting, a repeated uid is asked
+// once, and every hand-over is its own assign in the trail.
+func TestCreate_askedAtOpening(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	anna := f.makeUser(t, "us-anna", "anna", "Anna")
+	agent := f.makeUser(t, "us-agent", "agent", "Agent")
+
+	task, err := f.tasks.Create(ctx, phototask.Task{Title: "Přejmenovat wf: štítky", State: phototask.StateWorking},
+		phototask.Opening{AskedUIDs: []string{anna, agent, anna}}, entry(audit.ActionTaskCreate))
+	if err != nil {
+		t.Fatalf("Create with asked participants: %v", err)
+	}
+	if task.PhotoCount != 0 || task.CoverPhotoUID != "" {
+		t.Errorf("task over nothing = %d photos, cover %q; want none", task.PhotoCount, task.CoverPhotoUID)
+	}
+	if task.State != phototask.StateWorking {
+		t.Errorf("state = %q, want working as asked", task.State)
+	}
+
+	addedBy := make(map[string]string, len(task.Participants))
+	for _, p := range task.Participants {
+		addedBy[p.UserUID] = p.AddedByUID
+	}
+	want := map[string]string{actor: "", anna: actor, agent: actor}
+	if len(addedBy) != len(want) {
+		t.Fatalf("participants = %+v, want the creator and the two asked", task.Participants)
+	}
+	for uid, by := range want {
+		if got, ok := addedBy[uid]; !ok || got != by {
+			t.Errorf("participant %s added_by = %q (present %v), want %q", uid, got, ok, by)
+		}
+	}
+	if n := f.auditCount(t, audit.ActionTaskAssign); n != 2 {
+		t.Errorf("assign audit rows = %d, want one per person asked", n)
+	}
+	if n := f.auditCount(t, audit.ActionTaskCreate); n != 1 {
+		t.Errorf("create audit rows = %d, want 1", n)
+	}
+}
+
+// TestCreate_askedUnknownWritesNothing verifies a hand-over to a person with no
+// account fails the whole opening: no task, no participants, no audit rows.
+func TestCreate_askedUnknownWritesNothing(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	_, err := f.tasks.Create(ctx, phototask.Task{Title: "Komu?"},
+		phototask.Opening{AskedUIDs: []string{"us-nobody"}}, entry(audit.ActionTaskCreate))
+	if !errors.Is(err, phototask.ErrUserNotFound) {
+		t.Fatalf("Create with an unknown person: err = %v, want ErrUserNotFound", err)
+	}
+	if _, total, err := f.tasks.List(ctx, phototask.Filter{}); err != nil || total != 0 {
+		t.Errorf("after the refusal: total = %d, err = %v; want no task at all", total, err)
+	}
+	if n := f.auditCount(t, audit.ActionTaskCreate) + f.auditCount(t, audit.ActionTaskAssign); n != 0 {
+		t.Errorf("audit rows after the refusal = %d, want none", n)
 	}
 }

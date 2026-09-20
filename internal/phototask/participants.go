@@ -3,6 +3,7 @@ package phototask
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 
@@ -79,6 +80,49 @@ func (s *Store) Assign(ctx context.Context, taskUID, userUID string, entry audit
 		}
 		return audit.Write(ctx, tx, withTarget(entry, taskUID, "user_uid", userUID))
 	})
+}
+
+// askParticipants puts each of userUIDs on the task as asked by entry's actor
+// and audits each as an assign, inside the caller's transaction — so a task
+// handed to somebody at its opening reads, in the participants and in the
+// trail, exactly as one handed over afterwards. A uid given twice is asked
+// once; a person with no account fails the whole transaction (ErrUserNotFound
+// once translated), because half a hand-over is worse than none.
+func askParticipants(
+	ctx context.Context, tx pgx.Tx, taskUID string, userUIDs []string, entry audit.Entry,
+) error {
+	for _, userUID := range uniqueUIDs(userUIDs) {
+		if _, err := tx.Exec(ctx, assignSQL, taskUID, userUID, nullableUID(entry.ActorUID)); err != nil {
+			return fmt.Errorf("inserting asked participant: %w", err)
+		}
+		asked := audit.Entry{
+			ActorUID: entry.ActorUID, Action: audit.ActionTaskAssign,
+			IP: entry.IP, UserAgent: entry.UserAgent,
+		}
+		if err := audit.Write(ctx, tx, withTarget(asked, taskUID, "user_uid", userUID)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// uniqueUIDs drops blanks and repeats from uids, keeping first-seen order, so
+// asking the same person twice in one request asks them once.
+func uniqueUIDs(uids []string) []string {
+	seen := make(map[string]struct{}, len(uids))
+	out := make([]string, 0, len(uids))
+	for _, uid := range uids {
+		uid = strings.TrimSpace(uid)
+		if uid == "" {
+			continue
+		}
+		if _, dup := seen[uid]; dup {
+			continue
+		}
+		seen[uid] = struct{}{}
+		out = append(out, uid)
+	}
+	return out
 }
 
 // Unassign takes userUID off the task and writes entry in the same transaction,

@@ -129,10 +129,15 @@ export function TaskDetailPage() {
   )
   const scrollKey = gridScrollKey(location.pathname, location.search)
   const restoreCount = useMemo(() => readGridScroll(scrollKey)?.count ?? 0, [scrollKey])
+  // A task about the library rather than about photographs has no wall at all:
+  // once the task is known to be over nothing, the photo list is not even
+  // fetched — the request would only come back empty — and nothing below
+  // draws a grid, a filter bar or a removal for it.
+  const knownEmpty = state.status === 'ready' && state.task.photo_count === 0
   const { photos, total, status, loadingMore, moreError, loadMore, retry } = useScopedPhotos(
     scope,
     params,
-    { reloadKey, initialCount: restoreCount },
+    { reloadKey, initialCount: restoreCount, enabled: !knownEmpty },
   )
   const gridScroll = useGridScrollMemory({ key: scrollKey, count: photos.length })
 
@@ -170,10 +175,11 @@ export function TaskDetailPage() {
     }
   }, [selection, uid, reload])
 
-  // Removal changes the group and is a writer's; a viewer's bar has none.
+  // Removal changes the group and is a writer's; a viewer's bar has none, and
+  // neither does a task with nothing to remove.
   const extraActions = useMemo<BatchExtraAction[]>(
     () =>
-      canWrite
+      canWrite && !knownEmpty
         ? [
             {
               id: 'remove-from-task',
@@ -184,7 +190,7 @@ export function TaskDetailPage() {
             },
           ]
         : [],
-    [canWrite, t, removeSelected],
+    [canWrite, knownEmpty, t, removeSelected],
   )
 
   // Putting a selection into the discussion posts a comment behind the panel's
@@ -318,16 +324,18 @@ export function TaskDetailPage() {
         </Card>
       )}
 
-      {/* A small group gets its count and its pictures, nothing to filter them
-          with: a search field over two photographs is furniture. */}
-      {task.photo_count > SMALL_GROUP_MAX ? (
+      {/* A task over nothing says so in one muted line and draws no wall: no
+          grid, no filter bar, nothing to select. A small group gets its count
+          and its pictures, nothing to filter them with: a search field over
+          two photographs is furniture. */}
+      {task.photo_count === 0 && (
+        <p className="text-body-secondary small mb-4">{t('tasks.row.noPhotos')}</p>
+      )}
+      {task.photo_count > SMALL_GROUP_MAX && (
         <FilterBar view={view} onChange={setView} total={total} />
-      ) : (
-        status === 'ready' && (
-          <p className="text-body-secondary small mb-2">
-            {t('tasks.row.photos', { count: total })}
-          </p>
-        )
+      )}
+      {task.photo_count > 0 && task.photo_count <= SMALL_GROUP_MAX && status === 'ready' && (
+        <p className="text-body-secondary small mb-2">{t('tasks.row.photos', { count: total })}</p>
       )}
 
       {status === 'loading' && <GridSkeleton />}

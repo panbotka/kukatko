@@ -94,7 +94,7 @@ func (f *fixture) mustCreate(t *testing.T, title string, photoUIDs ...string) ph
 	t.Helper()
 	task, err := f.tasks.Create(context.Background(),
 		phototask.Task{Title: title, Body: "kontext", Query: "camera:Olympus"},
-		photoUIDs, entry(audit.ActionTaskCreate))
+		phototask.Opening{PhotoUIDs: photoUIDs}, entry(audit.ActionTaskCreate))
 	if err != nil {
 		t.Fatalf("Create(%q): %v", title, err)
 	}
@@ -174,7 +174,7 @@ func TestCreate_rejects(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := f.tasks.Create(context.Background(), tt.task, tt.photoUIDs,
+			_, err := f.tasks.Create(context.Background(), tt.task, phototask.Opening{PhotoUIDs: tt.photoUIDs},
 				entry(audit.ActionTaskCreate))
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("Create error = %v, want %v", err, tt.wantErr)

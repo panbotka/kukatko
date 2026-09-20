@@ -203,6 +203,28 @@ describe('TasksPage', () => {
     )
   })
 
+  it('says a task over nothing has no photos, in words and with the placeholder', async () => {
+    fetchTasksMock.mockResolvedValue(
+      page([
+        task({
+          uid: 'tk9',
+          title: 'Rename the wf: labels',
+          photo_count: 0,
+          cover_photo_uid: undefined,
+        }),
+      ]),
+    )
+    renderPage()
+
+    const row = (await screen.findByText('Rename the wf: labels')).closest('a')
+    expect(row).not.toBeNull()
+    expect(row).toHaveTextContent(/No photos/)
+    expect(row).not.toHaveTextContent(/0 photos/)
+    // No cover to show: the placeholder glyph stands in, never a broken image.
+    expect(row?.querySelector('img')).toBeNull()
+    expect(row?.querySelector('.bi-ui-checks')).not.toBeNull()
+  })
+
   it('narrows to the questions the reader is on', async () => {
     const user = userEvent.setup()
     renderPage()

@@ -49,9 +49,10 @@ type Store interface {
 	// Get returns one task as callerUID sees it (the two caller-relative flags
 	// are computed for them), or phototask.ErrNotFound.
 	Get(ctx context.Context, uid, callerUID string) (phototask.Task, error)
-	// Create opens a task over photoUIDs, auditing it in the same transaction.
+	// Create opens a task over opening's photographs (possibly none) with its
+	// people asked, auditing it all in the same transaction.
 	Create(
-		ctx context.Context, t phototask.Task, photoUIDs []string, entry audit.Entry,
+		ctx context.Context, t phototask.Task, opening phototask.Opening, entry audit.Entry,
 	) (phototask.Task, error)
 	// Update folds a partial change onto a task, auditing it in the same
 	// transaction.

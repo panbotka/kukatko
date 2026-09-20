@@ -101,7 +101,7 @@ function task(overrides: Partial<Task> = {}): Task {
     created_at: '2026-09-18T10:00:00Z',
     updated_at: '2026-09-18T10:00:00Z',
     state_at: '2026-09-18T10:00:00Z',
-    photo_count: 0,
+    photo_count: 3,
     comment_count: 0,
     has_new_answer: false,
     last_activity_at: '2026-09-18T10:00:00Z',
@@ -728,6 +728,29 @@ describe('quick answers', () => {
     expect(await screen.findByText(/The answer could not be posted/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '1936' })).toBeEnabled()
     expect(screen.getByRole('button', { name: '1936' })).toHaveAttribute('aria-pressed', 'false')
+  })
+})
+
+describe('a task over nothing', () => {
+  it('draws one muted line instead of a wall, and fetches no photos', async () => {
+    fetchTaskMock.mockResolvedValue(task({ photo_count: 0 }))
+    renderPage()
+    await screen.findByRole('heading', { name: /In which year/ })
+
+    // The byline says it and so does the line where the wall would be.
+    expect(screen.getAllByText('No photos').length).toBeGreaterThan(0)
+    expect(screen.queryByText('0 photos')).not.toBeInTheDocument()
+    expect(document.querySelector('.kukatko-photo-grid')).not.toBeInTheDocument()
+    expect(screen.queryByRole('search')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Filters/ })).not.toBeInTheDocument()
+    // The "nothing matched" hint is for a filter that narrowed a group away,
+    // not for a group that was never there.
+    expect(
+      screen.queryByText('No photos have been added to this task yet.'),
+    ).not.toBeInTheDocument()
+    expect(fetchPhotosMock).not.toHaveBeenCalled()
+    // Nothing to select means nothing to take out of the task.
+    expect(screen.queryByRole('button', { name: 'Remove from the task' })).not.toBeInTheDocument()
   })
 })
 

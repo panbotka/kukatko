@@ -296,6 +296,26 @@ func TestWriteTaskPage(t *testing.T) {
 	}
 }
 
+// TestPhotoCount verifies an empty group is spelled out, so an operator who
+// piped nothing by accident reads it in the result rather than in a zero.
+func TestPhotoCount(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		count int
+		want  string
+	}{
+		{count: 0, want: "0 (no photos)"},
+		{count: 1, want: "1"},
+		{count: 40, want: "40"},
+	}
+	for _, tt := range tests {
+		if got := photoCount(tt.count); got != tt.want {
+			t.Errorf("photoCount(%d) = %q, want %q", tt.count, got, tt.want)
+		}
+	}
+}
+
 // TestWriteTask verifies the detail view, and that the closing block appears only
 // once a task is closed.
 func TestWriteTask(t *testing.T) {

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -150,25 +151,35 @@ func newCtlTasksShowCmd(opts *ctlOptions) *cobra.Command {
 }
 
 // newCtlTasksCreateCmd opens a task over the photographs named on the command
-// line or read from stdin.
+// line or read from stdin — or over none at all — handing it to whoever
+// --assign names.
 func newCtlTasksCreateCmd(opts *ctlOptions) *cobra.Command {
 	var in ctl.TaskInput
 	var bodyFile string
 	cmd := &cobra.Command{
 		Use:   "create [<photo-uid>…]",
-		Short: "Open a task over a group of photographs",
+		Short: "Open a task over a group of photographs, or over none",
 		Long: "Open a task.\n\n" +
 			"The photographs are given as arguments or read from stdin, one uid per line,\n" +
 			"and the group is frozen: it is the record of what the batch was about, so it\n" +
 			"does not follow a query as the data is fixed. Pass the query that produced it\n" +
-			"as --query and it is kept verbatim as evidence, never re-run.",
+			"as --query and it is kept verbatim as evidence, never re-run.\n\n" +
+			"A task may be about the library rather than about particular photographs\n" +
+			"(\"rename the wf: labels\"): with no arguments and a terminal on stdin nothing is\n" +
+			"read and the task has no photographs; an empty pipe means the same, and the\n" +
+			"result says \"no photos\" so an accidental one is visible. Photographs can be\n" +
+			"added later with add-photos.\n\n" +
+			"--assign puts a person on the task as asked, exactly as `tasks assign` would,\n" +
+			"in the same transaction — so handing work over is one command. Combined with\n" +
+			"--state working it is \"somebody should do this\"; the default question state\n" +
+			"is \"somebody should answer this\".",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			body, err := textOrFile(cmd, "body", in.Body, bodyFile)
 			if err != nil {
 				return err
 			}
 			in.Body = body
-			uids, _, err := photoUIDsFromArgs(cmd, args)
+			uids, err := optionalPhotoUIDs(cmd, args)
 			if err != nil {
 				return err
 			}
@@ -192,7 +203,47 @@ func newCtlTasksCreateCmd(opts *ctlOptions) *cobra.Command {
 	flags.StringVar(&in.State, "state", "", "the state to open in (default question)")
 	flags.StringArrayVar(&in.Options, "option", nil,
 		"an answer to offer as a button (repeatable, at most 5; a chosen one is posted as a comment verbatim)")
+	flags.StringArrayVar(&in.Participants, "assign", nil,
+		"put this person on the task as asked (user uid, see `ctl people`; repeatable)")
 	return cmd
+}
+
+// optionalPhotoUIDs is photoUIDsFromArgs for a command whose group may be empty.
+// Arguments win; with none, a piped stdin is read as usual and an empty pipe
+// means no photographs; a terminal on stdin is never read, so an interactive
+// `tasks create --title …` opens a task over nothing instead of waiting on a
+// line nobody is going to type.
+func optionalPhotoUIDs(cmd *cobra.Command, args []string) ([]string, error) {
+	if len(args) > 0 {
+		uids, err := ctl.NormalizeUIDs(args)
+		if err != nil {
+			return nil, fmt.Errorf("reading the photo uids: %w", err)
+		}
+		return uids, nil
+	}
+	if isTerminal(cmd.InOrStdin()) {
+		return nil, nil
+	}
+	uids, err := ctl.ParsePhotoUIDs(cmd.InOrStdin())
+	if errors.Is(err, ctl.ErrNoPhotoUIDs) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("reading the photo uids from stdin: %w", err)
+	}
+	return uids, nil
+}
+
+// isTerminal reports whether r is a character device — an interactive terminal
+// (or /dev/null) rather than a pipe, a file or a test's buffer. Only an *os.File
+// can be one; anything else is read.
+func isTerminal(r io.Reader) bool {
+	file, ok := r.(*os.File)
+	if !ok {
+		return false
+	}
+	info, err := file.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
 }
 
 // newCtlTasksUpdateCmd edits a task or advances its state.

@@ -148,6 +148,9 @@ type TaskInput struct {
 	PhotoUIDs []string `json:"photo_uids,omitempty"`
 	// Options are the answers offered, at most five short distinct strings.
 	Options []string `json:"options,omitempty"`
+	// Participants are the people asked at the outset (user uids, see `ctl
+	// people`), put on the task as asked by the token's account.
+	Participants []string `json:"participants,omitempty"`
 }
 
 // TaskUpdate is a partial change. A nil field is left alone; a pointer to an
@@ -333,7 +336,7 @@ func WriteTask(w io.Writer, task Task) error {
 		{"UID", task.UID},
 		{"Question", dash(task.Title)},
 		{"State", task.State},
-		{"Photos", strconv.Itoa(task.PhotoCount)},
+		{"Photos", photoCount(task.PhotoCount)},
 		{"Comments", strconv.Itoa(task.CommentCount)},
 		{"New answer", newAnswerMark(task.HasNewAnswer)},
 		{"Waiting on you", yesNo(task.WaitingOnMe)},
@@ -360,6 +363,16 @@ func WriteTask(w io.Writer, task Task) error {
 		return nil
 	}
 	return writeLine(w, "\n"+task.Body)
+}
+
+// photoCount renders a task's group size, saying "no photos" in words for an
+// empty one: a task over nothing is allowed, but the operator who meant to pipe
+// a list in and piped nothing should see it in the result, not in the count.
+func photoCount(count int) string {
+	if count == 0 {
+		return "0 (no photos)"
+	}
+	return strconv.Itoa(count)
 }
 
 // yesNo renders a boolean the way a person reads it and a script greps for it.

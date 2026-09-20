@@ -19,6 +19,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/comments"
+	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/phototask"
@@ -34,6 +35,7 @@ const testPassword = "correct horse battery staple"
 // env wires the auth and task APIs behind an httptest server over the
 // integration database.
 type env struct {
+	db      *database.DB
 	server  *httptest.Server
 	authSvc *auth.Service
 	photos  *photos.Store
@@ -66,7 +68,7 @@ func newEnv(t *testing.T) *env {
 	})
 	server := httptest.NewServer(r)
 	t.Cleanup(server.Close)
-	return &env{server: server, authSvc: authSvc, photos: photos.NewStore(db.Pool()),
+	return &env{db: db, server: server, authSvc: authSvc, photos: photos.NewStore(db.Pool()),
 		uids: make(map[string]string)}
 }
 

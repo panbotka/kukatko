@@ -1416,7 +1416,15 @@
       "photos_one": "{{count}} photo",
       "photos_other": "{{count}} photos",
       "comments_one": "{{count}} comment",
-      "comments_other": "{{count}} comments"
+      "comments_other": "{{count}} comments",
+      "noPhotos": "No photos"
+    },
+    "new": {
+      "who": "Who",
+      "whoHint": "Who you are asking, or handing the task to. Whoever opens it is always on it.",
+      "stateQuestion": "someone should answer",
+      "stateWorking": "someone should do it",
+      "noPhotos": "A task without photos; they can be added later."
     }
   },
   "taskDetail": {

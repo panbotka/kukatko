@@ -69,7 +69,9 @@ export function TaskQuestion({ task, canEdit, busy, onSave }: TaskQuestionProps)
     <p className="text-body-secondary small mb-1">
       {t('taskDetail.opened', { name: task.created_by_name || t('taskDetail.someone') })}
       {' · '}
-      {t('tasks.row.photos', { count: task.photo_count })}
+      {task.photo_count === 0
+        ? t('tasks.row.noPhotos')
+        : t('tasks.row.photos', { count: task.photo_count })}
     </p>
   )
 

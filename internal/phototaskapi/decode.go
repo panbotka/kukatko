@@ -25,13 +25,18 @@ const maxPhotoUIDs = phototask.MaxPhotos
 
 // createRequest is the JSON body of POST /tasks.
 type createRequest struct {
-	Title     string   `json:"title"`
-	Body      string   `json:"body"`
-	Query     string   `json:"query"`
-	State     string   `json:"state"`
+	Title string `json:"title"`
+	Body  string `json:"body"`
+	Query string `json:"query"`
+	State string `json:"state"`
+	// PhotoUIDs is the frozen group. Absent or empty opens a task over nothing —
+	// agenda about the library rather than about particular photographs.
 	PhotoUIDs []string `json:"photo_uids"`
 	// Options are the answers the question offers, at most phototask.MaxOptions.
 	Options []string `json:"options"`
+	// Participants are the people asked at the outset (user uids), each put on
+	// the task as asked by the creator exactly as the assign endpoint would.
+	Participants []string `json:"participants"`
 }
 
 // updateRequest is the JSON body of PATCH /tasks/{uid}. Every field is a pointer

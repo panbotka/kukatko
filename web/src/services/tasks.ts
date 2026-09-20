@@ -200,9 +200,18 @@ export interface TaskInput {
   body?: string
   query?: string
   state?: TaskState
+  /**
+   * The frozen group. Absent or empty opens a task about the library rather
+   * than about particular photographs; they can be added later.
+   */
   photo_uids?: string[]
   /** The answers to offer as buttons; see {@link Task.options}. */
   options?: string[]
+  /**
+   * The people asked at the outset (user uids): each is put on the task as
+   * asked by the creator, exactly as assigning them afterwards would.
+   */
+  participants?: string[]
 }
 
 /**

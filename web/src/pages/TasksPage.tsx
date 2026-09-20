@@ -366,7 +366,9 @@ function TaskRow({ task }: { task: Task }) {
         <span className="kk-task-row__text">
           <span className="d-block fw-semibold text-body">{task.title}</span>
           <span className="d-block small text-body-secondary">
-            {t('tasks.row.photos', { count: task.photo_count })}
+            {task.photo_count === 0
+              ? t('tasks.row.noPhotos')
+              : t('tasks.row.photos', { count: task.photo_count })}
             {' · '}
             {t('tasks.row.comments', { count: task.comment_count })}
             {' · '}

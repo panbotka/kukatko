@@ -47,8 +47,9 @@ func (a *API) handleGet(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, task)
 }
 
-// handleCreate opens a task over the given photographs and writes 201 with the
-// task as stored.
+// handleCreate opens a task over the given photographs — none is allowed — with
+// the given people asked at the outset, and writes 201 with the task as stored.
+// An unknown person is a 404 like an unknown photograph, and nothing is written.
 func (a *API) handleCreate(w http.ResponseWriter, r *http.Request) {
 	user, ok := currentUser(w, r)
 	if !ok {
@@ -66,7 +67,8 @@ func (a *API) handleCreate(w http.ResponseWriter, r *http.Request) {
 	created, err := a.store.Create(r.Context(), phototask.Task{
 		Title: body.Title, Body: body.Body, Query: body.Query,
 		State: phototask.State(body.State), Options: body.Options,
-	}, body.PhotoUIDs, taskEntry(r, user.UID, audit.ActionTaskCreate, ""))
+	}, phototask.Opening{PhotoUIDs: body.PhotoUIDs, AskedUIDs: body.Participants},
+		taskEntry(r, user.UID, audit.ActionTaskCreate, ""))
 	if err != nil {
 		writeTaskError(w, err, "creating task failed")
 		return

@@ -32,18 +32,37 @@ INSERT INTO photo_task_photos (task_uid, photo_uid)
 SELECT $1, u FROM unnest($2::text[]) AS u
 ON CONFLICT DO NOTHING`
 
-// Create opens a task over photoUIDs and writes entry to the audit log in the
-// same transaction, so a task that exists always has a record of who opened it
-// and over which photographs. The actor joins the task's participants in that
-// same transaction — acting on a question is what puts somebody on it. The text fields are trimmed and validated
-// (ErrEmptyTitle, ErrTooLong); a task opened in a closed state must carry a
-// resolution (ErrClosedNeedsResolution) and an unknown state is ErrInvalidState.
-// A photograph that does not exist yields ErrPhotoNotFound and nothing is
-// written.
+// Opening is what a task is opened with beyond its own text: the photographs it
+// is about and the people asked at the outset. Both may be empty. A task about
+// the library rather than about particular photographs ("rename the wf: labels")
+// has no group at all — the frozen-list reasoning applies whenever there is one,
+// and an empty one simply has nothing to freeze yet; photographs may still be
+// added later. A task nobody was handed to has nobody asked.
+type Opening struct {
+	// PhotoUIDs is the frozen group, at most MaxPhotos; nil or empty for a task
+	// over nothing.
+	PhotoUIDs []string
+	// AskedUIDs are put on the task as asked by the creator — exactly what a
+	// later Assign records — in the opening's transaction, each audited as its
+	// own assign action. A uid given twice is asked once.
+	AskedUIDs []string
+}
+
+// Create opens a task over opening.PhotoUIDs and writes entry to the audit log
+// in the same transaction, so a task that exists always has a record of who
+// opened it and over which photographs. The actor joins the task's participants
+// in that same transaction — acting on a question is what puts somebody on it —
+// and every uid in opening.AskedUIDs is put on it as asked by the actor, audited
+// as an assign each. The text fields are trimmed and validated (ErrEmptyTitle,
+// ErrTooLong); a task opened in a closed state must carry a resolution
+// (ErrClosedNeedsResolution) and an unknown state is ErrInvalidState. A
+// photograph that does not exist yields ErrPhotoNotFound, a person with no
+// account ErrUserNotFound, and in either case nothing is written.
 //
 // The new task's UID becomes the audit entry's target when the caller left it
 // empty — it cannot be known in advance.
-func (s *Store) Create(ctx context.Context, t Task, photoUIDs []string, entry audit.Entry) (Task, error) {
+func (s *Store) Create(ctx context.Context, t Task, opening Opening, entry audit.Entry) (Task, error) {
+	photoUIDs := opening.PhotoUIDs
 	if len(photoUIDs) > MaxPhotos {
 		return Task{}, fmt.Errorf("%w: %d over the limit of %d", ErrTooManyPhotos, len(photoUIDs), MaxPhotos)
 	}
@@ -66,6 +85,9 @@ func (s *Store) Create(ctx context.Context, t Task, photoUIDs []string, entry au
 		}
 		// Opening a question is the strongest statement of being on it.
 		if err := joinParticipant(ctx, tx, uid, entry.ActorUID); err != nil {
+			return err
+		}
+		if err := askParticipants(ctx, tx, uid, opening.AskedUIDs, entry); err != nil {
 			return err
 		}
 		return audit.Write(ctx, tx, withTarget(entry, uid, "photo_uids", photoUIDs))

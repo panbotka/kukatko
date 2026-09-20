@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
@@ -14,10 +14,16 @@ vi.mock('../../services/tasks', async (importOriginal) => {
   return { ...actual, createTask: vi.fn(), fetchTasks: vi.fn(), addTaskPhotos: vi.fn() }
 })
 
+vi.mock('../../services/directory', () => ({
+  listDirectory: vi.fn(),
+}))
+
 const { createTask, fetchTasks, addTaskPhotos } = await import('../../services/tasks')
 const createTaskMock = vi.mocked(createTask)
 const fetchTasksMock = vi.mocked(fetchTasks)
 const addTaskPhotosMock = vi.mocked(addTaskPhotos)
+const { listDirectory } = await import('../../services/directory')
+const listDirectoryMock = vi.mocked(listDirectory)
 
 /** A task with everything at a sensible default. */
 function task(overrides: Partial<Task> = {}): Task {
@@ -65,9 +71,78 @@ beforeEach(async () => {
   createTaskMock.mockReset()
   fetchTasksMock.mockReset()
   addTaskPhotosMock.mockReset()
+  listDirectoryMock.mockReset()
+  listDirectoryMock.mockResolvedValue([
+    { uid: 'u2', name: 'Anna' },
+    { uid: 'u3', name: 'Agent' },
+  ])
 })
 
 describe('NewTaskModal', () => {
+  it('hands the task to somebody and opens it as work, in one request', async () => {
+    const user = userEvent.setup()
+    createTaskMock.mockResolvedValue(task({ state: 'working' }))
+    renderModal([])
+
+    await user.type(screen.getByLabelText('Question'), 'Rename the wf: labels')
+
+    // The state offers only the two openings, never a closed one, and the
+    // helper text says what each means.
+    const state = screen.getByLabelText('State')
+    expect(
+      within(state)
+        .getAllByRole('option')
+        .map((o) => o.textContent),
+    ).toEqual(['Waiting for an answer', 'In progress'])
+    expect(screen.getByText('someone should answer')).toBeInTheDocument()
+    await user.selectOptions(state, 'working')
+    expect(screen.getByText('someone should do it')).toBeInTheDocument()
+
+    // Who: the picker over the directory, the pick shown as a chip.
+    await user.click(screen.getByRole('button', { name: 'Add' }))
+    const picker = await screen.findByRole('dialog', { name: 'Who should be on this task?' })
+    await user.click(within(picker).getByRole('button', { name: /Anna/ }))
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'Who should be on this task?' })).toBeNull()
+    })
+    const who = screen.getByRole('group', { name: 'Who' })
+    expect(within(who).getByText('Anna')).toBeInTheDocument()
+
+    // A second pick no longer offers the first person.
+    await user.click(screen.getByRole('button', { name: 'Add' }))
+    const again = await screen.findByRole('dialog', { name: 'Who should be on this task?' })
+    expect(within(again).queryByRole('button', { name: /Anna/ })).toBeNull()
+    await user.click(within(again).getByRole('button', { name: /Agent/ }))
+
+    // And a chip can be taken off again before anything is sent.
+    await user.click(await screen.findByRole('button', { name: 'Remove Agent' }))
+    expect(within(who).queryByText('Agent')).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: 'New task' }))
+    await waitFor(() => {
+      expect(createTaskMock).toHaveBeenCalledWith({
+        title: 'Rename the wf: labels',
+        body: '',
+        photo_uids: [],
+        participants: ['u2'],
+        state: 'working',
+      })
+    })
+    expect(await screen.findByText('the task page')).toBeInTheDocument()
+  })
+
+  it('says in one line that a task from the bare button has no photos', () => {
+    renderModal()
+    expect(screen.getByText('A task without photos; they can be added later.')).toBeInTheDocument()
+    expect(screen.queryByText(/\d+ photos?/)).not.toBeInTheDocument()
+  })
+
+  it('keeps the selection and says how big it is', () => {
+    renderModal(['ph1', 'ph2'])
+    expect(screen.getByText('2 photos')).toBeInTheDocument()
+    expect(screen.queryByText('A task without photos; they can be added later.')).toBeNull()
+  })
+
   it('opens a question over the selection and lands on its page', async () => {
     const user = userEvent.setup()
     createTaskMock.mockResolvedValue(task())

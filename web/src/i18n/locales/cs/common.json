@@ -1380,7 +1380,15 @@
       "comments_one": "{{count}} komentář",
       "comments_few": "{{count}} komentáře",
       "comments_many": "{{count}} komentáře",
-      "comments_other": "{{count}} komentářů"
+      "comments_other": "{{count}} komentářů",
+      "noPhotos": "Bez fotek"
+    },
+    "new": {
+      "who": "Komu",
+      "whoHint": "Koho se ptáš, nebo komu úkol předáváš. Kdo úkol zakládá, je na něm vždy.",
+      "stateQuestion": "někdo má odpovědět",
+      "stateWorking": "někdo to má udělat",
+      "noPhotos": "Úkol bez fotek; fotky jde přidat i později."
     }
   },
   "taskDetail": {
