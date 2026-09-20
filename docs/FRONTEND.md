@@ -1093,7 +1093,10 @@ here.
   note to the drawer's foot (`SearchNote`, defined once and placed in exactly one of the two), the page's own
   view actions to the drawer's very bottom (**`viewActions`**, a `ReactNode` the page hands over — seated
   in exactly one place per viewport, the drawer's foot on a phone and the `.kukatko-filter-status` line on
-  desktop, so the buttons are never in the document twice), and the **result count into the header
+  desktop, so the buttons are never in the document twice; and **`displayExtras`**, a `ReactNode`
+  seated right beside the density stepper — after it in the bar on desktop, under it in the drawer's
+  `DisplayControls` on a phone — for a control that answers the same "how do I look at these"
+  question, which is where the task page's wall/ledger toggle goes), and the **result count into the header
   row itself**, wrapping onto a full-width line under the Filtry button (`.kukatko-filter-status`
   + `flex-row-reverse`, with a 2.75 rem right pad so it clears the timeline rail's lane). `.kukatko-filter-search`
   drops to an 8 rem flex-basis below `md` (an 18 rem basis is wider than the screen, which wrapped the button
@@ -2009,7 +2012,18 @@ here.
   **Do diskuse** (plus the downloads) and none of the writer's actions, the removal included
   (`extraActions` is empty for them). The posted comment lists the selected uids one per line (see
   `DiscussPhotosModal`), the thread refetches through the same `reloadKey` the quick answers use, and
-  `CommentBody` renders each uid as a link carrying `?task=` so the viewer stays in the task. A 404 lands in a `missing` state of its
+  `CommentBody` renders each uid as a link carrying `?task=` so the viewer stays in the task. **The group
+  has two layouts**, the wall and the **review ledger** (`TaskLedger`), chosen by `TaskViewToggle` — in
+  the filter bar's `displayExtras` beside the density stepper for a large group, on the count line for a
+  small one — and kept in the URL as **`?view=list`** (`TaskView` = `LibraryView` + `view`,
+  `TASK_DEFAULTS`, `isTaskListView` in `lib/libraryView`), so Back restores it and a batch's ledger can
+  be sent as a link. The layout rides through the detail query too (`DetailView.view`), and `backHref`
+  learnt a task branch: a photograph opened from a task goes back to `/tasks/{uid}` in the layout it was
+  left in, not to the library filtered down to the group. Both layouts draw the same `useScopedPhotos`
+  array in the same sort, and switching does not refetch it (the paginated hook keys on the params'
+  value, which the toggle does not change). The page fetches the group only once the task has loaded and
+  says it has one — a request for an empty group would only come back empty, and the page is a skeleton
+  until then anyway. A 404 lands in a `missing` state of its
   own (`isNotFound`),
   because a link outlives the task it points
   at and "this question has been deleted" is not "could not be loaded". The tiles carry the task scope in the
@@ -2081,6 +2095,27 @@ here.
   usually opened from: **`BatchActionBar` carries a shared „Zeptat se" action** beside Stack, on every grid
   alike (library, album, label, search), so asking about photographs starts where the photographs are —
   select, ask, send the link,
+  `components/tasks/TaskLedger` (**the review ledger** — a task's group as one line per photograph,
+  built for the batch in `review`: an agent changed sixty dates and left a comment on each, and the
+  human approving it reads sixty lines instead of opening sixty photographs. A `react-virtuoso`
+  `Virtuoso` over the same `Photo[]` the wall draws, window-scrolled, paged by `onEndReached` with the
+  wall's own `GridFooter`. Each `LedgerRow`: the selection button (`aria-pressed`, the tile's
+  `selection.toggle` label, Shift for a range through `onToggleRange`), a `tile_100` thumbnail, the
+  title-or-file-name as the row's link **stretched over the row** (`stretched-link`, the button layered
+  above it), the date **at its stated precision** (`formatTakenPeriod`, else `formatDate`: `14. 6. 1974`,
+  `červen 1974`, `1974`, `1970–1979` — the decade span is the one label the app uses everywhere, see
+  `lib/takenDate`) with a `Badge` for the source (`lib/taskLedger` `sourceLabel`: the technical panel's
+  names for a known source, the stored value verbatim for one the app does not know, so an agent's
+  `estimate` is read rather than rendered "unknown") and a warning badge for `taken_at_estimated`, then
+  the last comment's **first line** (`commentExcerpt`, `COMMENT_EXCERPT_MAX` 200, whole body in the
+  `title`) with the author and `formatRelativeTime`; no date reads „bez data", no comment „bez
+  komentáře", both muted. In selection-first mode (anything picked) a row toggles instead of opening,
+  the wall's rule. Layout in `app.css` `.kk-ledger-row`: a five-column grid on desktop; **on a phone the
+  row stacks** (thumbnail and title, then the date, then the comment clamped to two lines) and never
+  scrolls sideways — `styles/taskLedger.test.ts` reads those facts off the stylesheet),
+  `components/tasks/TaskViewToggle` (wall ⇄ ledger as two `aria-pressed` buttons in one group, glyph +
+  „Přehled"/„List"; writes `TaskView.view` and nothing else — URL state, not a stored preference, because
+  a reviewer shares a ledger by sending its link),
   `components/tasks/DiscussPhotosModal` (**puts a selection into a task's discussion**: a `tile_100`
   preview of the selected photographs — `DISCUSS_PREVIEW_MAX` = 24, then „+N" — an optional message and
   **Odeslat**. It posts **one ordinary comment** through `createComment(taskSubject)`, no new endpoint or

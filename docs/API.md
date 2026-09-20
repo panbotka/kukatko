@@ -961,7 +961,16 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `options` like every other field.
   **A task's photographs have no route here.** They are read through the catalogue with
   `GET /photos?task={uid}` — the same projection, signed media URLs, filters and paging as any other
-  listing — and the search language learns `task:` for the same reason.
+  listing — and the search language learns `task:` for the same reason. **Under a task scope every
+  item additionally carries `last_comment`**: `{uid, body, author_uid, author_name, created_at}` of
+  the newest **live** comment on that photo, or `null` for a photo nobody has commented on (a
+  soft-deleted comment never counts). It is what the review ledger reads per row — the agent's
+  convention is that every changed photo carries a comment saying what was done and why, and the
+  change itself is `taken_at` with its `taken_at_precision`/`taken_at_source`/`taken_at_estimated`,
+  all of which the item already has — and it is resolved for the whole page in **one grouped query**
+  (`comments.LatestAmong`), never per row. Outside a task scope the key is **absent** (not `null`), so
+  the ordinary library listing stays exactly as cheap as it was; a client must not read absence as
+  "no comment".
   **The thread** (`GET`/`POST /tasks/{uid}/comments`, `PATCH`/`DELETE /tasks/{uid}/comments/{commentUID}`)
   is the same table, shapes and rules as the per-photo thread above, addressed with a task subject, and it
   is guarded by **`RequireAuth`** on all four routes. That is not an oversight to be tightened later: the

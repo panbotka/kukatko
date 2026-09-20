@@ -1163,6 +1163,13 @@ to `## Package map` in `CLAUDE.md`.
   the list returns `{photos,total,limit,offset,next_offset}` (each photo annotated with `is_favorite`
   + per-user `rating`/`flag` via the shared `annotate`: `FavoriteStore.FavoritedAmong` +
   `RatingStore.RatingsAmong`, a photo with no row = rating 0 / flag `none`) for infinite scroll;
+  a **task-scoped** listing (`ListParams.TaskUIDs` set, `taskScoped`) additionally stamps
+  **`last_comment`** on every row (`lastcomment.go`: `annotateLastComments` asks
+  `comments.LatestAmong` once for the page; the field is a tri-state `lastCommentField` — absent from
+  the JSON outside a task scope via `omitzero`, an explicit `null` for a row with no live comment,
+  the compact `{uid,body,author_uid,author_name,created_at}` otherwise — because a plain pointer
+  with `omitempty` could not tell "not asked" from "asked, none"); it is what the review ledger and
+  `ctl tasks ledger` read per row, and no other listing pays for it;
   **per-user favorites** (`favorites.go`): `PUT`/`DELETE /photos/{uid}/favorite` (any logged-in user,
   idempotent toggle → 204, 404 missing photo, 503 without a `Favorites` backend) + `GET /favorites`
   (the current user's favorites in the list-endpoint shape, equivalent to `?favorite=true`);
@@ -1326,7 +1333,11 @@ to `## Package map` in `CLAUDE.md`.
   so the route cannot be used to probe which comment UIDs exist; `writeDetail` stamps **`comment_count`** via
   `commentCount`, which asks the bulk `CountsAmong` for the one UID so the detail can never grow an N+1)),
   `internal/comments/`
-  (the store behind those endpoints — the `comments` table from migration `0052_photo_comments.sql`,
+  (the store behind those endpoints — with `LatestAmong(ctx, subject, uids)`, the **newest live comment
+  per subject** for a whole page in one `DISTINCT ON (subject uid) … ORDER BY created_at DESC, uid DESC`
+  query joined to the author's name, soft-deleted rows excluded, a map keyed by subject uid with no entry
+  for a thread that has none — the task-scoped listing's `last_comment` is built from it —
+  the `comments` table from migration `0052_photo_comments.sql`,
   renamed and given a second subject by `0080_comments_subject.sql` (a comment hangs off a photo **or** a
   task, exactly one of the two, enforced by `comments_one_subject`; the store takes a `Subject` and builds
   its per-kind statements once at package initialisation, so no request ever assembles SQL):
@@ -5219,6 +5230,12 @@ to `## Package map` in `CLAUDE.md`.
     `insufficient permissions`. It **never** prints the body or the token; another non-2xx → `*StatusError`
     with the server's `{"error":…}` text (otherwise a limited excerpt of the body). The body is read through `io.LimitReader`,
     timeout 30 s.
+  - `ledger.go` — `TaskLedger(ctx, taskUID)`: the review ledger behind `ctl tasks ledger` — pages
+    `GET /photos?task=` through the whole frozen group (`ledgerPageSize` 500, never past
+    `ledgerMaxPhotos` 1000, the server's own cap) and keeps the rows as the server's bytes so `-o json`/
+    `-o llm` reassemble them verbatim; the table renderer prints `UID`, `TAKEN` at its precision
+    (`1974-06-14`/`1974-06`/`1974`/`1970s`), `SOURCE`, the comment's first line cut to `commentWidth` and
+    `BY`.
   - `photos.go` — `ListPhotos`/`GetPhoto(uid, PhotoDetailOptions)`/`SearchPhotos` +
     `DecodePhotoPage`/`DecodePhotoDetail`. `PhotoDetail` carries every field the renderer prints, which since
     `photos edit` exists means every field that command can write — an agent that edits a photo has to be able

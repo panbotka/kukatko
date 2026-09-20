@@ -61,3 +61,19 @@ describe('detailView helpers', () => {
     expect(parsed.get('q')).toBe('cat')
   })
 })
+
+describe('the task scope', () => {
+  it('sends Back to the task page, in the layout the photo was opened from', () => {
+    expect(backHref({ ...DETAIL_DEFAULTS, task: 'tk1' })).toBe('/tasks/tk1')
+    expect(backHref({ ...DETAIL_DEFAULTS, task: 'tk1', view: 'list', sort: 'oldest' })).toBe(
+      '/tasks/tk1?sort=oldest&view=list',
+    )
+  })
+
+  it('carries the layout in the detail query only when it is not the default', () => {
+    expect(detailQueryString({ ...DETAIL_DEFAULTS, task: 'tk1', view: 'list' })).toBe(
+      'task=tk1&view=list',
+    )
+    expect(detailQueryString({ ...DETAIL_DEFAULTS, task: 'tk1' })).toBe('task=tk1')
+  })
+})

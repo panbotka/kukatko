@@ -156,6 +156,36 @@ export const LIBRARY_DEFAULTS: LibraryView = {
 }
 
 /**
+ * The value of {@link TaskView.view} that shows a task's group as the review
+ * ledger — one line per photograph — rather than as the photo wall. The wall is
+ * the default and has no value of its own, so `?view=list` is the only form the
+ * key ever takes in a URL.
+ */
+export const TASK_LIST_VIEW = 'list'
+
+/**
+ * View state of a task's page: the library view plus how the group is laid out.
+ * `view` is `''` for the photo wall (the default) or {@link TASK_LIST_VIEW} for
+ * the ledger, and it rides in the URL like every other piece of view state so
+ * Back restores it and a link to a task carries the layout it was shared in.
+ */
+// A type alias, not an interface, for the same urlState reason as LibraryView.
+export type TaskView = LibraryView & {
+  view: string
+}
+
+/** Defaults of a task's page: the library defaults and the photo wall. */
+export const TASK_DEFAULTS: TaskView = {
+  ...LIBRARY_DEFAULTS,
+  view: '',
+}
+
+/** Whether a task view asks for the ledger rather than the wall. */
+export function isTaskListView(view: string): boolean {
+  return view === TASK_LIST_VIEW
+}
+
+/**
  * Default view of a grid scoped to **one album**: the library defaults, but
  * oldest first. An album is a story, and a story is read from its beginning —
  * the backend pins an album scope to capture-time order for exactly that reason

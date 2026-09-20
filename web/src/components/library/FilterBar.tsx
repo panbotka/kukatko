@@ -144,6 +144,13 @@ export interface FilterBarProps<T extends LibraryView> {
    * places, so a page can never have the same button in the document twice.
    */
   viewActions?: ReactNode
+  /**
+   * Further display controls that belong beside the density stepper — the task
+   * page's wall/ledger toggle. Rendered right after the stepper on desktop and
+   * with it in the drawer on a phone, so wherever the reader finds "how many
+   * tiles" they find "tiles or lines" next to it.
+   */
+  displayExtras?: ReactNode
 }
 
 /**
@@ -243,6 +250,7 @@ export function FilterBar<T extends LibraryView>({
   showFavorite = false,
   searchHref,
   viewActions,
+  displayExtras,
 }: FilterBarProps<T>) {
   const { t, i18n } = useTranslation()
   const [open, setOpen] = useState(false)
@@ -296,7 +304,7 @@ export function FilterBar<T extends LibraryView>({
   // that *filters* does.
   const panel = (
     <>
-      {narrow && (showSort || showDensity) && (
+      {narrow && (showSort || showDensity || displayExtras !== undefined) && (
         <>
           <DisplayControls
             view={view}
@@ -304,6 +312,7 @@ export function FilterBar<T extends LibraryView>({
             showSort={showSort}
             sortOptions={sortOptions}
             showDensity={showDensity}
+            extras={displayExtras}
           />
           <hr className="my-3" />
         </>
@@ -422,6 +431,7 @@ export function FilterBar<T extends LibraryView>({
         )}
 
         {!narrow && showDensity && <GridDensityControl />}
+        {!narrow && displayExtras}
 
         <Button
           type="button"
@@ -640,12 +650,14 @@ function DisplayControls({
   showSort,
   sortOptions,
   showDensity,
+  extras,
 }: {
   view: LibraryView
   push: (patch: Partial<LibraryView>) => void
   showSort: boolean
   sortOptions: readonly string[] | undefined
   showDensity: boolean
+  extras: ReactNode
 }) {
   const { t } = useTranslation()
   return (
@@ -674,6 +686,7 @@ function DisplayControls({
           <GridDensityControl />
         </Col>
       )}
+      {extras !== undefined && <Col xs={12}>{extras}</Col>}
     </Row>
   )
 }

@@ -1452,6 +1452,16 @@
     },
     "removeSelected": "Remove from the task",
     "removeFailed": "The photos could not be removed from the task.",
+    "view": {
+      "label": "Group layout",
+      "grid": "Grid",
+      "list": "List"
+    },
+    "ledger": {
+      "noDate": "no date",
+      "noComment": "no comment",
+      "estimated": "estimate"
+    },
     "delete": {
       "title": "Delete this task?",
       "body": "The photos survive, but the question goes, along with the list of photos the batch was about and every answer written under it. Finished work is better closed than deleted.",

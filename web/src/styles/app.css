@@ -3138,3 +3138,140 @@ body {
 .kk-task-person__remove:focus-visible {
   opacity: 1;
 }
+
+/* ---------------------------------------------------------------------------
+ * Task ledger — a task's group as one line per photograph
+ *
+ * The batch in review is read, not looked at: sixty dates and the sixty notes
+ * saying why, and the reviewer scans them for the one that is wrong. So a row is
+ * a table line — checkbox, thumbnail, title, date with its source, the last
+ * comment — on a surface of its own, and the columns line up down the list so
+ * the eye can run down the date column alone.
+ *
+ * The row is the containing block of the title's `stretched-link`, which makes
+ * the whole line open the photograph; the selection button is layered above
+ * that surface (the link's pseudo-element sits at z-index 1) so it stays a
+ * button. On a phone the five columns cannot share a line without a horizontal
+ * scroll, which a list must never have, so the row stacks: thumbnail and title
+ * first, the date and then the comment below them, the comment clamped to two
+ * lines rather than cut to one.
+ */
+.kk-ledger-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 3fr) auto minmax(0, 5fr);
+  grid-template-areas: 'check thumb title date comment';
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.25rem;
+  border: 1px solid var(--kk-surface-border);
+  border-radius: var(--kk-radius-sm);
+  background-color: var(--kk-surface-raised);
+  transition:
+    background-color var(--kk-duration-fast) var(--kk-ease-standard),
+    border-color var(--kk-duration-fast) var(--kk-ease-standard);
+}
+
+.kk-ledger-row:hover,
+.kk-ledger-row:focus-within {
+  background-color: color-mix(in srgb, var(--kk-surface-raised) 88%, var(--bs-primary) 12%);
+}
+
+.kk-ledger-row--selected {
+  border-color: var(--bs-primary);
+  background-color: color-mix(in srgb, var(--kk-surface-raised) 80%, var(--bs-primary) 20%);
+}
+
+.kk-ledger-row__check {
+  grid-area: check;
+  position: relative;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 1px solid var(--bs-secondary);
+  border-radius: 0.25rem;
+  background-color: transparent;
+  color: var(--bs-body-color);
+}
+
+.kk-ledger-row__check--on {
+  border-color: var(--bs-primary);
+  background-color: var(--bs-primary);
+  color: #fff;
+}
+
+.kk-ledger-row__thumb {
+  grid-area: thumb;
+  width: 3.5rem;
+  height: 3.5rem;
+  object-fit: cover;
+  border-radius: var(--kk-radius-sm);
+  background-color: var(--kk-surface-border);
+}
+
+.kk-ledger-row__title {
+  grid-area: title;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  color: inherit;
+  text-decoration: none;
+}
+
+.kk-ledger-row__date {
+  grid-area: date;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  white-space: nowrap;
+}
+
+.kk-ledger-row__comment {
+  grid-area: comment;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.kk-ledger-row__excerpt {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 767.98px) {
+  .kk-ledger-row {
+    grid-template-columns: auto auto minmax(0, 1fr);
+    grid-template-areas:
+      'check thumb title'
+      'check thumb date'
+      'check thumb comment';
+    row-gap: 0.125rem;
+  }
+
+  .kk-ledger-row__date {
+    flex-wrap: wrap;
+    white-space: normal;
+  }
+
+  .kk-ledger-row__comment {
+    flex-wrap: wrap;
+  }
+
+  .kk-ledger-row__excerpt {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    white-space: normal;
+  }
+}

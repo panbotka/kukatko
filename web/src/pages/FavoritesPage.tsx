@@ -45,7 +45,7 @@ export function FavoritesPage() {
   // Each tile carries the favorites scope so the detail page pages prev/next
   // within favorites and Esc/Back returns here, not the whole library.
   const detailQuery = useMemo(
-    () => detailQueryString({ ...view, favorite: 'true', mode: '' }),
+    () => detailQueryString({ ...view, favorite: 'true', mode: '', view: '' }),
     [view],
   )
   // Where the grid was left, per view, so opening a photo and coming back — Back,

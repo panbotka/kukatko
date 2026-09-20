@@ -1416,6 +1416,16 @@
     },
     "removeSelected": "Odebrat z úkolu",
     "removeFailed": "Fotky se z úkolu nepodařilo odebrat.",
+    "view": {
+      "label": "Zobrazení skupiny",
+      "grid": "Mřížka",
+      "list": "Přehled"
+    },
+    "ledger": {
+      "noDate": "bez data",
+      "noComment": "bez komentáře",
+      "estimated": "odhad"
+    },
     "delete": {
       "title": "Smazat úkol?",
       "body": "Fotky zůstanou, ale zmizí otázka, seznam fotek, kterých se dávka týkala, i všechny odpovědi. Hotovou práci je lepší zavřít než smazat.",

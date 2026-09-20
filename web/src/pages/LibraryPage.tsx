@@ -95,7 +95,7 @@ export function LibraryPage() {
   // The detail link carries this view — album, label, person and the favorites
   // toggle included, so prev/next pages through the same filtered grid — but never
   // the search scope, which the library never applies.
-  const detailQuery = useMemo(() => detailQueryString({ ...view, mode: '' }), [view])
+  const detailQuery = useMemo(() => detailQueryString({ ...view, mode: '', view: '' }), [view])
   // A bulk edit can change what the filters match, so bump the key to refetch.
   const [reloadKey, reload] = useReloadKey()
   // The grid is a *window* over the result, not a growing prefix of it: `photos`

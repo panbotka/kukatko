@@ -1295,6 +1295,7 @@ signed-in role, viewers included; opening, editing, closing and changing members
 | `ctl tasks add-photos <uid> [<photo-uid>…]` | `POST /tasks/{uid}/photos` |
 | `ctl tasks remove-photos <uid> [<photo-uid>…]` | `DELETE /tasks/{uid}/photos` |
 | `ctl tasks comments <uid>` | `GET /tasks/{uid}/comments` |
+| `ctl tasks ledger <uid>` | the **review ledger**: the task's whole frozen group as one row per photo — `UID`, `TAKEN` (rendered at its precision: `1974-06-14`, `1974-06`, `1974`, `1970s`), `SOURCE`, `LAST COMMENT` (first line, truncated) and `BY` — read from `GET /photos?task={uid}` (which carries `last_comment` under a task scope), paged through the whole group (capped at 1000); `-o llm` gives the compact rows. The agent's own final check before moving a batch to `review` |
 | `ctl tasks comment <uid> [<text>]` | `POST /tasks/{uid}/comments`; `--body-file` |
 | `ctl tasks participants <uid>` | `GET /tasks/{uid}/participants` |
 | `ctl tasks assign <uid> <user-uid>` | `POST /tasks/{uid}/participants` — ask a particular person |

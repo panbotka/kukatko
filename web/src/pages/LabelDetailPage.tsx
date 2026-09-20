@@ -67,7 +67,7 @@ export function LabelDetailPage() {
   // Each tile carries the label scope so the detail page pages prev/next within
   // this label and Esc/Back returns to it, not the whole library.
   const detailQuery = useMemo(
-    () => detailQueryString({ ...view, label: uid, album: '', favorite: '', mode: '' }),
+    () => detailQueryString({ ...view, label: uid, album: '', favorite: '', mode: '', view: '' }),
     [view, uid],
   )
   // Where the grid was left, per view, so opening a photo and coming back — Back,

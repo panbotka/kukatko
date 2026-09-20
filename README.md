@@ -326,6 +326,14 @@ rebuilt? — and the only person who knows is usually not the person editing the
   message if you want one, then the photographs, which every reader (and the terminal) sees as links and
   small thumbnails. A viewer can do this too, because it is a comment. Any photo identifier typed or
   pasted into a comment renders the same way, on a photo's thread as on a task's.
+- **Approving a batch is reading, not clicking.** A task's group can be shown as a **ledger** instead of
+  a wall — „Přehled" beside the density control, `?view=list` in the link — one line per photograph:
+  thumbnail, title, the date exactly as precise as the catalogue claims it („červen 1974", not
+  „1. 6. 1974") with its source and an „odhad" flag, and the last comment on the photo with who wrote
+  it and when. An agent's convention is to leave a comment on every photo it changes saying why, so a
+  sixty-photo batch in review is sixty lines to scan rather than sixty photographs to open; the rows
+  select like tiles, so the ones that are wrong go straight into the discussion or out of the task.
+  The terminal reads the same rows with `kukatko ctl tasks ledger <uid>`.
 - **The queue can come to you by e-mail.** With the digest switched on (`tasks.digest.enabled`, on top of
   a working mail setup), everybody with tasks waiting on them gets one message a day — „Čeká na tebe 3
   úkoly", each question with its link, and a link to the whole „Na mně" list — and only on a day something

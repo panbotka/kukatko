@@ -6,6 +6,8 @@ import {
   LIBRARY_PATH,
   type LibraryView,
   parseFilterList,
+  TASK_DEFAULTS,
+  type TaskView,
   viewToParams,
 } from './libraryView'
 import { searchHref } from './searchView'
@@ -34,12 +36,20 @@ import { writeUrlState } from './urlState'
 // constraint, like LibraryView.
 export type DetailView = LibraryView & {
   mode: string
+  /**
+   * How the task page the photo was opened from laid its group out — `''` (the
+   * wall) or `TASK_LIST_VIEW`; see {@link import('./libraryView').TaskView}.
+   * Carried through the detail so that Back lands on the ledger the reader
+   * left, not on the wall. Meaningless — and always `''` — outside a task scope.
+   */
+  view: string
 }
 
 /** Defaults: the library defaults plus an empty (no) search scope. */
 export const DETAIL_DEFAULTS: DetailView = {
   ...LIBRARY_DEFAULTS,
   mode: '',
+  view: '',
 }
 
 /**
@@ -76,6 +86,13 @@ export function detailQueryString(view: DetailView): string {
 export function backHref(view: DetailView): string {
   const albums = parseFilterList(view.album)
   const labels = parseFilterList(view.label)
+  const tasks = parseFilterList(view.task)
+  if (tasks.length === 1 && albums.length === 0 && labels.length === 0 && view.mode === '') {
+    // A photograph opened from a task's page goes back to the question, not to
+    // the library filtered down to the task's group — and to the layout (wall
+    // or ledger) the reader had it in, which is what `view` is carried for.
+    return `/tasks/${tasks[0]}${scopedQuery({ ...view, task: '' }, TASK_DEFAULTS)}`
+  }
   if (albums.length === 1) {
     // Against the album page's own defaults, not the library's: an album rests
     // at oldest-first, so "newest" is the value that has to be carried back and
@@ -111,7 +128,7 @@ function libraryQuery(view: DetailView): string {
  * whose resting view is not the library's — an album, which rests oldest-first.
  * Only a value the destination would not assume by itself ends up in the URL.
  */
-function scopedQuery(view: DetailView, defaults: LibraryView): string {
+function scopedQuery(view: DetailView, defaults: LibraryView | TaskView): string {
   const query = writeUrlState(view, defaults).toString()
   return query === '' ? '' : `?${query}`
 }

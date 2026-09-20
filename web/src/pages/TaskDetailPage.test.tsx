@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
@@ -9,7 +9,7 @@ import { ApiError } from '../services/auth'
 import i18n from '../i18n'
 import { type Task } from '../services/tasks'
 
-import { TaskDetailPage } from './TaskDetailPage'
+import { SMALL_GROUP_MAX, TaskDetailPage } from './TaskDetailPage'
 
 // jsdom lays nothing out, so the real virtualizer mounts nothing: render it all
 // instead (see `test/virtuoso`).
@@ -128,15 +128,28 @@ function auth(canWrite: boolean): AuthContextValue {
   } as unknown as AuthContextValue
 }
 
-function renderPage(canWrite = true) {
+/** Where the router is, readable off the document: the URL is view state here. */
+function LocationProbe() {
+  const location = useLocation()
+  return <output data-testid="location">{location.pathname + location.search}</output>
+}
+
+/** The URL the page currently sits at. */
+function currentLocation(): string {
+  return screen.getByTestId('location').textContent
+}
+
+function renderPage(canWrite = true, initialEntry = '/tasks/tk1') {
   return render(
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={auth(canWrite)}>
-        <MemoryRouter initialEntries={['/tasks/tk1']}>
+        <MemoryRouter initialEntries={[initialEntry]}>
           <Routes>
             <Route path="/tasks/:uid" element={<TaskDetailPage />} />
             <Route path="/tasks" element={<p>list</p>} />
+            <Route path="/photos/:uid" element={<p>viewer</p>} />
           </Routes>
+          <LocationProbe />
         </MemoryRouter>
       </AuthContext.Provider>
     </I18nextProvider>,
@@ -782,5 +795,162 @@ describe('the filter bar on a small group', () => {
     await screen.findByRole('heading', { name: /In which year/ })
 
     expect(screen.getByRole('search')).toBeInTheDocument()
+  })
+})
+
+describe('the review ledger', () => {
+  /** The ledger row a title link sits in. */
+  function rowOf(link: HTMLElement | undefined): HTMLElement {
+    const row = link?.closest<HTMLElement>('.kk-ledger-row')
+    if (row === null || row === undefined) {
+      throw new Error('the link is not in a ledger row')
+    }
+    return row
+  }
+
+  /** A dated, commented photograph: what a reviewed batch's rows are made of. */
+  function ledgerPhoto(
+    uid: string,
+    overrides: Partial<ReturnType<typeof gridPhoto>> & {
+      taken_at?: string
+      taken_at_precision?: string
+      taken_at_estimated?: boolean
+      last_comment?: {
+        uid: string
+        body: string
+        author_uid: string
+        author_name: string
+        created_at: string
+      } | null
+    } = {},
+  ) {
+    return { ...gridPhoto(uid), title: `Photo ${uid}`, ...overrides }
+  }
+
+  /** A group of `count` photographs, so the page draws a wall or a ledger. */
+  function withPhotos(photos: ReturnType<typeof ledgerPhoto>[]) {
+    fetchTaskMock.mockResolvedValue(task({ photo_count: photos.length }))
+    fetchPhotosMock.mockResolvedValue({
+      photos,
+      total: photos.length,
+      limit: 100,
+      offset: 0,
+      next_offset: null,
+    })
+  }
+
+  it('offers the toggle and keeps the choice in the URL, so Back restores it', async () => {
+    const user = userEvent.setup()
+    withPhotos([ledgerPhoto('ph1')])
+    renderPage()
+    await screen.findByRole('heading', { name: /In which year/ })
+
+    // The wall by default: tiles, no rows.
+    expect(await screen.findByRole('link', { name: 'Photo ph1' })).toBeInTheDocument()
+    expect(document.querySelector('.kk-ledger-row')).toBeNull()
+    expect(currentLocation()).toBe('/tasks/tk1')
+
+    await user.click(screen.getByRole('button', { name: 'List' }))
+    expect(currentLocation()).toBe('/tasks/tk1?view=list')
+    expect(document.querySelector('.kk-ledger-row')).not.toBeNull()
+    expect(screen.getByRole('button', { name: 'List' })).toHaveAttribute('aria-pressed', 'true')
+
+    await user.click(screen.getByRole('button', { name: 'Grid' }))
+    expect(currentLocation()).toBe('/tasks/tk1')
+    expect(document.querySelector('.kk-ledger-row')).toBeNull()
+  })
+
+  it('renders the date at its stated precision, the source, and the last comment', async () => {
+    withPhotos([
+      ledgerPhoto('ph1', {
+        taken_at: '1974-06-01T00:00:00Z',
+        taken_at_precision: 'month',
+        taken_at_source: 'manual',
+        taken_at_estimated: true,
+        last_comment: {
+          uid: 'cm1',
+          body: 'Dated from the reunion badge.\n\nThe badge reads 1974.',
+          author_uid: 'u2',
+          author_name: 'Pan Botka',
+          created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+        },
+      }),
+      ledgerPhoto('ph2', { last_comment: null }),
+    ])
+    renderPage(true, '/tasks/tk1?view=list')
+    await screen.findByRole('heading', { name: /In which year/ })
+
+    const rows = await screen.findAllByRole('link', { name: /^Photo ph/ })
+    expect(rows).toHaveLength(2)
+    const first = rowOf(rows[0])
+    // June, not the first of June: the month is all the catalogue claims.
+    expect(within(first).getByText('June 1974')).toBeInTheDocument()
+    expect(within(first).getByText('Set manually')).toBeInTheDocument()
+    expect(within(first).getByText('estimate')).toBeInTheDocument()
+    // The first line only, with who said it and how long ago.
+    expect(within(first).getByText('Dated from the reunion badge.')).toBeInTheDocument()
+    expect(within(first).queryByText(/The badge reads/)).toBeNull()
+    expect(within(first).getByText(/Pan Botka/)).toBeInTheDocument()
+    expect(within(first).getByText('2h ago')).toBeInTheDocument()
+
+    const second = rowOf(rows[1])
+    expect(within(second).getByText('no date')).toBeInTheDocument()
+    expect(within(second).getByText('no comment')).toBeInTheDocument()
+  })
+
+  it('opens a row in the viewer with the task context, so prev/next stay inside the task', async () => {
+    const user = userEvent.setup()
+    withPhotos([ledgerPhoto('ph1')])
+    renderPage(true, '/tasks/tk1?view=list')
+    await screen.findByRole('heading', { name: /In which year/ })
+
+    await user.click(await screen.findByRole('link', { name: 'Photo ph1' }))
+    expect(currentLocation()).toBe('/photos/ph1?task=tk1&view=list')
+  })
+
+  it('selects from the rows, so the batch actions apply from the ledger too', async () => {
+    const user = userEvent.setup()
+    withPhotos([ledgerPhoto('ph1'), ledgerPhoto('ph2')])
+    removeTaskPhotosMock.mockResolvedValue({ changed: 1, task: task() })
+    renderPage(true, '/tasks/tk1?view=list')
+    await screen.findByRole('heading', { name: /In which year/ })
+
+    await user.click(await screen.findByRole('button', { name: 'Select Photo ph1' }))
+    expect(screen.getByRole('button', { name: 'Select Photo ph1' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    // Selection-first now: clicking another row picks it rather than opening it.
+    await user.click(screen.getByRole('link', { name: 'Photo ph2' }))
+    expect(currentLocation()).toBe('/tasks/tk1?view=list')
+    expect(screen.getByRole('button', { name: 'Select Photo ph2' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+
+    const remove = await screen.findByRole('button', { name: 'Remove from the task' })
+    expect(screen.getByRole('toolbar')).toContainElement(remove)
+    await user.click(remove)
+    await waitFor(() => {
+      expect(removeTaskPhotosMock).toHaveBeenCalledWith('tk1', ['ph1', 'ph2'])
+    })
+  })
+
+  it('reads the group in the sort the filter bar asks for', async () => {
+    withPhotos(Array.from({ length: SMALL_GROUP_MAX + 1 }, (_, i) => ledgerPhoto(`ph${String(i)}`)))
+    renderPage(true, '/tasks/tk1?view=list&sort=oldest')
+    await screen.findByRole('heading', { name: /In which year/ })
+
+    await waitFor(() => {
+      expect(fetchPhotosMock).toHaveBeenCalledWith(
+        expect.objectContaining({ task: 'tk1', sort: 'oldest' }),
+        expect.anything(),
+      )
+    })
+    expect(await screen.findAllByRole('link', { name: /^Photo ph/ })).toHaveLength(
+      SMALL_GROUP_MAX + 1,
+    )
+    // The toggle sits in the filter bar for a group this size.
+    expect(screen.getByRole('button', { name: 'List' })).toHaveAttribute('aria-pressed', 'true')
   })
 })

@@ -7,6 +7,20 @@ import type { PhotoSubject } from './people'
  * declared explicitly; the rest are intentionally omitted to keep the type
  * focused — extend it as later views require more metadata.
  */
+/**
+ * The newest live comment on a photograph, as a task-scoped listing carries it:
+ * who said what, and when. The compact shape a review ledger reads on one line,
+ * not the thread's own record (`services/comments` `Comment`), which has the
+ * edit stamp and the subject the ledger does not need.
+ */
+export interface LastComment {
+  uid: string
+  body: string
+  author_uid: string
+  author_name: string
+  created_at: string
+}
+
 export interface Photo {
   uid: string
   file_hash: string
@@ -214,6 +228,15 @@ export interface Photo {
    * `<img>` using it must tolerate a stale one; see {@link useThumbSrc}.
    */
   thumb_url: string
+  /**
+   * The newest live comment on the photo — only on a **task-scoped** listing
+   * (`?task=`), where a reviewer reads the group as a ledger and the last word
+   * in each thread is the line that says what was done. There it is always
+   * present: the comment, or `null` for a photo nobody has commented on. On
+   * every other listing the key is absent, so the library stays as cheap as it
+   * is; a client must not read absence as "no comment".
+   */
+  last_comment?: LastComment | null
   /**
    * Where to fetch this photo's aspect-preserving rendition (`fit_720`) — what
    * the justified photo wall draws, where a tile is the shape of its photograph

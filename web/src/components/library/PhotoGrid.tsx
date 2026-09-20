@@ -24,15 +24,23 @@ import { Skeleton } from '../Skeleton'
 
 import { PhotoTile } from './PhotoTile'
 
-/** State the footer needs, threaded to the virtuoso components via `context`. */
-interface GridContext {
+/**
+ * State the footer needs, threaded to the virtuoso components via `context`.
+ * Shared with the task ledger, which pages through the same photo listing and
+ * ends in the same spinner-or-retry.
+ */
+export interface GridContext {
   loadingMore: boolean
   moreError: boolean
   onRetry: () => void
 }
 
-/** Footer slot: a spinner while a page loads, or a retry control if one failed. */
-function GridFooter({ context }: { context?: GridContext }) {
+/**
+ * Footer slot: a spinner while a page loads, or a retry control if one failed.
+ * Exported for the other virtualized photo list (the task ledger), so a paging
+ * failure looks the same under a list of lines as under the wall.
+ */
+export function GridFooter({ context }: { context?: GridContext }) {
   const { t } = useTranslation()
   if (!context) {
     return null

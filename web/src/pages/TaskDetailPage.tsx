@@ -19,7 +19,9 @@ import {
 } from '../components/organize/BatchActionBar'
 import { SlideshowStart } from '../components/slideshow/SlideshowStart'
 import { CommentsPanel } from '../components/photo/CommentsPanel'
+import { TaskLedger } from '../components/tasks/TaskLedger'
 import { TaskStateBadge } from '../components/tasks/TaskStateBadge'
+import { TaskViewToggle } from '../components/tasks/TaskViewToggle'
 import { useBulkEdit } from '../hooks/useBulkEdit'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useGridScrollMemory } from '../hooks/useGridScrollMemory'
@@ -27,7 +29,7 @@ import { useReloadKey } from '../hooks/useReloadKey'
 import { useScopedPhotos } from '../hooks/useScopedPhotos'
 import { detailQueryString } from '../lib/detailView'
 import { gridScrollKey, readGridScroll } from '../lib/gridScroll'
-import { LIBRARY_DEFAULTS, type LibraryView, viewToParams } from '../lib/libraryView'
+import { isTaskListView, TASK_DEFAULTS, type TaskView, viewToParams } from '../lib/libraryView'
 import { useUrlState } from '../lib/urlState'
 import { isNotFound } from '../services/auth'
 import { type Comment, taskSubject } from '../services/comments'
@@ -117,9 +119,20 @@ export function TaskDetailPage() {
   // URL exactly as they do on a label or an album, so Back restores them and a
   // link to a task carries the view it was shared in. The *membership* is still
   // frozen — a filter only narrows what of the group is on screen, and the count
-  // beside the filter bar always says how much of it that is.
-  const [view, setView] = useUrlState<LibraryView>(LIBRARY_DEFAULTS)
+  // beside the filter bar always says how much of it that is. The layout — wall
+  // or ledger (`?view=list`) — is one more piece of that view state.
+  const [view, setView] = useUrlState<TaskView>(TASK_DEFAULTS)
+  const listView = isTaskListView(view.view)
+  // Switching wall ⇄ ledger changes the URL (and so `view`) but not the query:
+  // the params compile to the same value, which is what the paginated hook keys
+  // on, so the group is not refetched for a change in how it is drawn.
   const params = useMemo(() => viewToParams(view), [view])
+  const setLayout = useCallback(
+    (next: string) => {
+      setView({ view: next })
+    },
+    [setView],
+  )
   const scope = useMemo(() => ({ task: uid }), [uid])
   // Each tile carries the task scope, so the photo detail pages prev/next within
   // the task and Back returns to the question rather than to the whole library.
@@ -130,14 +143,16 @@ export function TaskDetailPage() {
   const scrollKey = gridScrollKey(location.pathname, location.search)
   const restoreCount = useMemo(() => readGridScroll(scrollKey)?.count ?? 0, [scrollKey])
   // A task about the library rather than about photographs has no wall at all:
-  // once the task is known to be over nothing, the photo list is not even
-  // fetched — the request would only come back empty — and nothing below
-  // draws a grid, a filter bar or a removal for it.
+  // the photo list is fetched only once the task is known to be over something
+  // — a request for an empty group would only come back empty — and nothing
+  // below draws a grid, a filter bar or a removal for it. Waiting for the task
+  // costs nothing visible: the page is a skeleton until the task has loaded.
   const knownEmpty = state.status === 'ready' && state.task.photo_count === 0
+  const hasGroup = state.status === 'ready' && state.task.photo_count > 0
   const { photos, total, status, loadingMore, moreError, loadMore, retry } = useScopedPhotos(
     scope,
     params,
-    { reloadKey, initialCount: restoreCount, enabled: !knownEmpty },
+    { reloadKey, initialCount: restoreCount, enabled: hasGroup },
   )
   const gridScroll = useGridScrollMemory({ key: scrollKey, count: photos.length })
 
@@ -332,10 +347,23 @@ export function TaskDetailPage() {
         <p className="text-body-secondary small mb-4">{t('tasks.row.noPhotos')}</p>
       )}
       {task.photo_count > SMALL_GROUP_MAX && (
-        <FilterBar view={view} onChange={setView} total={total} />
+        <FilterBar
+          view={view}
+          onChange={setView}
+          total={total}
+          displayExtras={<TaskViewToggle value={view.view} onChange={setLayout} />}
+        />
       )}
+      {/* A small group has no filter bar to host the layout toggle, so it sits
+          on the count line: a five-photo batch in review is read as a ledger
+          just as a sixty-photo one is. */}
       {task.photo_count > 0 && task.photo_count <= SMALL_GROUP_MAX && status === 'ready' && (
-        <p className="text-body-secondary small mb-2">{t('tasks.row.photos', { count: total })}</p>
+        <div className="d-flex align-items-center justify-content-between gap-2 mb-2">
+          <p className="text-body-secondary small mb-0">
+            {t('tasks.row.photos', { count: total })}
+          </p>
+          <TaskViewToggle value={view.view} onChange={setLayout} size="sm" />
+        </div>
       )}
 
       {status === 'loading' && <GridSkeleton />}
@@ -348,7 +376,20 @@ export function TaskDetailPage() {
           {t('taskDetail.removeFailed')}
         </Alert>
       )}
-      {status === 'ready' && photos.length > 0 && (
+      {status === 'ready' && photos.length > 0 && listView && (
+        <div className="mb-4">
+          <TaskLedger
+            photos={photos}
+            loadingMore={loadingMore}
+            moreError={moreError}
+            onEndReached={loadMore}
+            onRetry={retry}
+            selection={bulk.gridSelection}
+            detailQuery={detailQuery}
+          />
+        </div>
+      )}
+      {status === 'ready' && photos.length > 0 && !listView && (
         <div className="mb-4">
           <PhotoGrid
             photos={photos}

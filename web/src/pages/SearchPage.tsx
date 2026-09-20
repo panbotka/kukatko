@@ -81,7 +81,7 @@ export function SearchPage() {
   // mode — so the detail page pages prev/next through the same ranked results and
   // Esc/Back returns to the search, not the library with `q` as a substring filter.
   const detailQuery = useMemo(
-    () => detailQueryString({ ...view, favorite: '', mode }),
+    () => detailQueryString({ ...view, favorite: '', mode, view: '' }),
     [view, mode],
   )
   // Where the grid was left, per view, so opening a photo and coming back — Back,
