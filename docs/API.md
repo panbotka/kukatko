@@ -937,12 +937,22 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   flags and filters, so the badge, the chips on `/tasks` and the list they open can never disagree. The
   route is a static segment, matched ahead of `/tasks/{uid}`.
   `GET /tasks/{uid}` (authenticated) → the task, as the caller sees it; 404 when deleted.
-  `POST /tasks` `{title,body,query,state,photo_uids,options?}` → **201**; `PATCH /tasks/{uid}`
+  `POST /tasks` `{title,body,query,state,photo_uids?,options?,participants?}` → **201**; `PATCH /tasks/{uid}`
   `{title?,body?,query?,state?,resolution?,options?}` → 200 (an omitted field unchanged, an explicit `""`
   clears it; `options` absent = leave alone, `[]` = clear, a list = replace the whole set);
   `DELETE /tasks/{uid}` → 204; `POST`/`DELETE /tasks/{uid}/photos` `{photo_uids}` → `{changed,task}`
   (already-present / already-absent photographs are ignored, so replaying a batch is harmless) — **all five
-  behind `RequireWrite`**. Closing a task (`state` `done` or `rejected`) without a non-empty `resolution` is
+  behind `RequireWrite`**.
+  **`photo_uids` is optional on create** (absent or `[]`): a task may be about the library rather than
+  about particular photographs ("rename the `wf:` labels"), and then `cover_photo_uid` is `null` and
+  `photo_count` 0 — photographs can still be added afterwards with `POST /tasks/{uid}/photos`, and the
+  `MaxPhotos` limit of 1000 is unchanged. On the two membership routes an empty list stays a **400**:
+  there the list *is* the request. **`participants` hands the task over as it is opened** — an array of
+  user uids, each put on the task as **asked by the creator** (`added_by` = the caller) in the opening's
+  transaction and audited as the same `task.assign` action a later `POST …/participants` writes, so a
+  task handed over at birth reads exactly like one handed over afterwards. A uid given twice is asked
+  once; a uid naming no account is **404** and nothing at all is written — half a hand-over is worse
+  than none. Closing a task (`state` `done` or `rejected`) without a non-empty `resolution` is
   a **400**: "rejected" is a real outcome, and what must never exist is a task that is closed and silent.
   Reopening clears `closed_at`/`closed_by` and keeps the text. Advancing the state stamps `state_at` and
   `state_by` in the same transaction; an edit that leaves the state alone deliberately does neither.

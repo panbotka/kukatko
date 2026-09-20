@@ -1289,7 +1289,7 @@ signed-in role, viewers included; opening, editing, closing and changing members
 | --- | --- |
 | `ctl tasks list` | `GET /tasks`; `--state` (comma separated), `--open`, `--answered`, `--waiting`, `--search`, `--photo`, `--participant` / `--mine`, `--limit`, `--offset` |
 | `ctl tasks show <uid>` | `GET /tasks/{uid}`; prints `Last activity` ("2026-09-19 17:21 by Tomáš Kozák") and `Waiting on you` (`yes`/`no`); an `Options` line when the task offers answers |
-| `ctl tasks create [<photo-uid>…]` | `POST /tasks`; `--title` (required), `--body`/`--body-file`, `--query`, `--state`, `--option` (repeatable, ≤ 5); uids from args or stdin |
+| `ctl tasks create [<photo-uid>…]` | `POST /tasks`; `--title` (required), `--body`/`--body-file`, `--query`, `--state`, `--option` (repeatable, ≤ 5), `--assign <user-uid>` (repeatable); uids from args or stdin, **or none at all** |
 | `ctl tasks update <uid>` | `PATCH /tasks/{uid}`; `--title`, `--body`/`--body-file`, `--query`, `--state`, `--resolution`/`--resolution-file`, `--option` (replaces the whole set) or `--clear-options` (mutually exclusive) |
 | `ctl tasks delete <uid>` | `DELETE /tasks/{uid}` — needs `--yes`; the photographs stay |
 | `ctl tasks add-photos <uid> [<photo-uid>…]` | `POST /tasks/{uid}/photos` |
@@ -1318,6 +1318,20 @@ than a register. `assign` is for the other case — asking a particular person b
 anything — and the `HOW` column tells the two apart: `acted`, or `asked by …`. `ctl tasks list --mine`
 (the same as `--participant me`) is "what have I been put on?", which is how an agent finds the questions
 a person handed it; it narrows whatever state filter is already given, so `--mine --open` is one call.
+
+**Handing work over is one command.** `ctl tasks create --assign <user-uid>` (repeatable, uids from
+`ctl people`) puts each person on the task as **asked**, in the opening's own transaction and audited
+exactly as `ctl tasks assign` would be — there is no create-then-assign pair to get half-way through.
+With `--state working` it reads "somebody should do this"; the default `question` state is "somebody
+should answer this".
+
+**A task need not be about photographs.** `ctl tasks create --title 'rename the wf: labels'` with no
+arguments opens a task over nothing — agenda about the library rather than about particular pictures —
+and photographs can be added later with `add-photos`. Where the uids come from follows the shell: with
+arguments, the arguments; with none and a **pipe** on stdin, the piped uids, an empty pipe meaning no
+photographs; with none and a **terminal** on stdin, nothing is read, so an interactive `create` opens
+the task instead of waiting on a line nobody is going to type. Either way the result prints
+`Photos  0 (no photos)` in words, so an accidentally empty pipe is visible rather than silent.
 
 A task's photographs are read through the catalogue, not from a route of its own:
 `kukatkoctl photos list --task <uid>` (or `q=task:<uid>`), so the frozen group is browsed with every

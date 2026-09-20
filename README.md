@@ -321,6 +321,15 @@ rebuilt? — and the only person who knows is usually not the person editing the
 - Asking starts where the photographs are: select some, and the same dialog either **opens a new
   question** or **adds them to one already waiting**. From a task's own page the photographs behave like
   any other list, so taking one back out is the ordinary select-and-act.
+- **A task can be handed over as it is opened.** The same dialog asks *who* should be on it — picked
+  from the people with accounts, shown as chips — and whether it opens as a question (someone should
+  answer) or as work (someone should do it), so giving somebody a job is one dialog rather than opening
+  a task and then assigning it. From the terminal that is
+  `kukatko ctl tasks create --state working --assign <user-uid>`.
+- **A task does not have to be about photographs.** „Přejmenovat štítky `wf:`" or „kam patří fotky
+  z náboru?" is agenda about the library rather than about particular pictures, and the **Nový úkol**
+  button with nothing selected opens exactly that — a task with no photographs, which says „Bez fotek"
+  in place of a group and can still get one later. Everything else about it is the same task.
 - **Pointing at pictures from the discussion.** The usual objection to a batch is "these three are
   wrong": on a task's page select them and choose **Do diskuse**, and one comment lists them — a
   message if you want one, then the photographs, which every reader (and the terminal) sees as links and

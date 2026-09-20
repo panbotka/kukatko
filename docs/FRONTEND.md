@@ -1998,7 +1998,12 @@ here.
   a filter narrows what of the group is **on screen**, never what the group **is**, and the photographs a
   question is about are usually the ones somebody is about to edit, so making them behave differently from
   every other list was the odd choice. The wall passes `minHeight="0"`: the library's half-viewport reserve
-  is right for a page that *is* a grid and a hole between two sections here. Then
+  is right for a page that *is* a grid and a hole between two sections here. **A task over nothing
+  draws no wall at all**: `photo_count === 0` is known from the task itself, so the photo list is not even
+  fetched (`useScopedPhotos({enabled})`) — the request could only come back empty — and there is no
+  grid, no filter bar, no count and no **Odebrat z úkolu** in the batch bar, only the muted line
+  „Bez fotek". The queue row says the same in place of its count and draws the placeholder glyph
+  where a cover thumbnail would be. Then
   the thread (`CommentsPanel` with a `taskSubject`) **on a `Card` of its own** — the conversation is the
   page's other half and is bounded like one, rather than running on from the wall — and last, for a writer
   only, `TaskControls`. That order is the design: a viewer reaches the box they came to write in without
@@ -2067,8 +2072,8 @@ here.
   failed save would be worse than being asked up front — the remembered query, all three saved together, a
   link that runs that query in `/search`, and Delete behind `ConfirmModal`),
   `pages/task/TaskParticipants` (**who is on this question**: a pill per person — `PersonAvatar` plus the
-  name — and, for a writer, an × on each and an **Přidat** button opening a picker over
-  `services/directory`. Almost everybody here arrived by *acting*: opening a task, answering it or moving
+  name — and, for a writer, an × on each and an **Přidat** button opening `PersonPicker` (shared with
+  the create dialog). Almost everybody here arrived by *acting*: opening a task, answering it or moving
   it along puts you on it, so the row fills itself as the work happens and nobody maintains it. The one
   deliberate act is asking a particular person, and the two are told apart in each pill's `title` rather
   than by a second visual language — they are the same fact arrived at two ways, and a reader scanning the
@@ -2082,16 +2087,33 @@ here.
   finished, and `rejected` **slate rather than red**, because closing a question with "no, and here is why"
   is a full result. Each badge also carries its name in words and a glyph, so nothing is lost without
   colour) and
+  `components/tasks/PersonPicker` (**somebody to ask**: a modal list over `services/directory`, one
+  `PersonAvatar` + name per row, the people in `already` left out so a second pick never offers the same
+  person twice; the directory is fetched when the dialog opens rather than with the page that hosts it,
+  and it is a list to read rather than a field to search — a family archive has a dozen accounts, not a
+  company's thousands. It is shared by `TaskParticipants` (asking one more person) and `NewTaskModal`
+  (handing a task over as it is opened), which is the whole reason it was lifted out of the first: two
+  copies of the same dozen names would have drifted),
   `components/tasks/NewTaskModal` (two fields, question + context — plus the optional answer options via
   `AnswerOptionsEditor` — because a question that takes a form to
   ask does not get asked; on success it navigates straight to the new task, which is both the confirmation
-  and the page whose link gets sent on. `photoUids` opens it over a selection — and with photographs in
+  and the page whose link gets sent on. Under them sit the two fields for **handing work over** rather
+  than asking: **Komu**, a multi-pick through `PersonPicker` shown as removable chips and sent as
+  `participants`, so whoever should be on the task is on it from the start instead of after a second step
+  on the task page; and **Stav**, limited to the two openings `OPENING_STATES` names — `question`
+  (default, "někdo má odpovědět") and `working` ("někdo to má udělat"), with the helper line under the
+  select saying which is which. The closed states are results, not openings, and `review` is where work
+  arrives rather than where it starts, so neither is offered here. Each optional field travels only when
+  there is something to send. `photoUids` opens it over a selection — and with photographs in
   hand the dialog also offers **Přidat k otázce**, a picker over the *open* tasks that adds the selection
   to one that already exists. Both live in one dialog because from where the reader stands they are one
   intent ("these pictures need somebody to look at them"); splitting them into two buttons would mean a
   reader who picked the wrong one starts over, and one more control on the batch bar. Only open tasks are
   offered: a closed task's frozen group is the record of what the work touched, and adding to it after the
-  fact would make that a lie), The selection is where it is
+  fact would make that a lie. From the bare **Nový úkol** button there is no selection at all and the
+  dialog says so in one muted line — a task over nothing is allowed, and worth stating rather than
+  leaving the reader to wonder; with nothing in hand „Přidat k otázce“ is not offered either, since
+  there would be nothing to add), The selection is where it is
   usually opened from: **`BatchActionBar` carries a shared „Zeptat se" action** beside Stack, on every grid
   alike (library, album, label, search), so asking about photographs starts where the photographs are —
   select, ask, send the link,

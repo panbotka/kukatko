@@ -3259,7 +3259,17 @@ to `## Package map` in `CLAUDE.md`.
   it; **every read takes the caller** — it is `$1` in the projection, see below)/`Create`/`Update`/
   `Delete`/`AddPhotos`/`RemovePhotos` (each in one transaction with its `audit.Write`, via `inTx`;
   membership writes `touch` the task so a batch counts as activity) and `OpenForPhotos` (the reverse
-  lookup the photo detail draws its chip from, bulk-shaped so it can never become an N+1); **the daily
+  lookup the photo detail draws its chip from, bulk-shaped so it can never become an N+1);
+  **what a task is opened with** beyond its own text is one struct, `Opening{PhotoUIDs,AskedUIDs}`, the
+  second argument of `Create` — two lists that may each be empty and are both written in the opening's
+  transaction. `PhotoUIDs` is the frozen group and **zero is allowed**: a task about the library rather
+  than about particular photographs has nothing to freeze (see `docs/ARCHITECTURE.md`), `MaxPhotos`
+  (1000) is unchanged and photographs may be added later. `AskedUIDs` hands the task over as it is
+  opened — `askParticipants` runs the same `assignSQL` a later `Assign` does and writes one
+  `audit.ActionTaskAssign` entry per person, so a task handed over at birth is indistinguishable, in the
+  participants and in the trail, from one handed over afterwards; `uniqueUIDs` drops blanks and repeats
+  so asking the same person twice asks them once, and an unknown account fails the whole transaction
+  (`ErrUserNotFound`) rather than leaving half a hand-over; **the daily
   digest's two reads** (`digest.go`): `Digests(ctx)` → `[]Digest{UserUID,Email,DisplayName,Total,Tasks
   (≤ DigestLimit = 20, newest activity first),NewestActivityAt,DigestedAt}` — the listing's `waitingSQL`
   turned inside out, one query over every participant of every open task (reusing `activityJoin`, so the
@@ -3313,7 +3323,10 @@ to `## Package map` in `CLAUDE.md`.
   (`handleSummary`: the store's `Summary` as the caller — a static segment chi matches ahead of `/{uid}`) and
   `GET /tasks/{uid}` (read **as the caller**, so its two flags are theirs) behind **`RequireAuth`**, `POST`/`PATCH`/`DELETE /tasks[/{uid}]` (both
   bodies carry `options`; on PATCH a `*[]string`, so absent, `[]` and a list are three different
-  things, and the three option sentinels map to **400** in `writeTaskError`) and
+  things, and the three option sentinels map to **400** in `writeTaskError`; the create body's
+  `photo_uids` is **optional** — absent or `[]` opens a task over nothing — while `decodeMembership`
+  still refuses an empty list on the two photo routes, where the list *is* the request, and its
+  `participants` becomes `Opening.AskedUIDs`, so one POST both opens the task and hands it over) and
   `POST`/`DELETE /tasks/{uid}/photos` behind `RequireWrite`, and the whole thread
   (`GET`/`POST /tasks/{uid}/comments` + `PATCH`/`DELETE /tasks/{uid}/comments/{commentUID}`) behind
   **`RequireAuth`** — answering is what a viewer account is *for* here, since the person who remembers

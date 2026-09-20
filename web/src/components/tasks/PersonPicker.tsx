@@ -58,9 +58,9 @@ export function PersonPicker({ show, busy, already, onPick, onClose }: PersonPic
     state.status === 'ready' ? state.users.filter((u) => !already.includes(u.uid)) : []
 
   return (
-    <Modal show={show} onHide={onClose} centered>
+    <Modal show={show} onHide={onClose} centered aria-labelledby="person-picker-title">
       <Modal.Header closeButton>
-        <Modal.Title as="h2" className="h5">
+        <Modal.Title as="h2" className="h5" id="person-picker-title">
           {t('taskDetail.people.pick')}
         </Modal.Title>
       </Modal.Header>

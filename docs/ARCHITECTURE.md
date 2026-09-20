@@ -477,6 +477,12 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
     photographs were changed and why. The query is kept beside the list as evidence and is never run by
     the server. The frozen list is what lets a *closed* task stay worth keeping, and it is why the batch
     labels this replaces could never be deleted: one label was both the queue and the receipt.
+    That reasoning is about a group that *exists*, and it holds unchanged whenever one does — it says
+    nothing about a task having to be about photographs at all, so **an empty group is allowed**:
+    agenda that is about the library rather than about particular pictures ("rename the `wf:` labels",
+    "which albums should the recruits go to?") has nothing to freeze, and before it fit here it went
+    into chat or into a markdown file and was lost. The frozen group stays the normal case; zero is the
+    exception, and photographs added to such a task later are frozen from then on like any other.
   - **A closed task is inseparable from its explanation**, enforced by two CHECK constraints rather than
     by the application. "Rejected" is a real outcome here — a doubt found unfounded, a date that cannot be
     established — and the failure mode to design against is not a wrong answer but a task that is closed
