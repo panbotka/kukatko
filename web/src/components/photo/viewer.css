@@ -948,6 +948,56 @@
   color: var(--kk-text);
 }
 
+/* A photo uid in the text is the one token that becomes a link; it keeps the
+   body's colour so the sentence still reads as one, and the underline says it
+   is a link. */
+.kk-comment__ref {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+  overflow-wrap: anywhere;
+}
+
+/* The photographs a comment refers to, as a strip of small squares under it:
+   the courtesy on top of the links, so a "these three are wrong" shows the
+   three without a click. */
+.kk-comment__strip {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--kk-space-1);
+  margin: var(--kk-space-2) 0 0;
+  padding: 0;
+}
+
+.kk-comment__thumb {
+  display: block;
+  width: 3rem;
+  height: 3rem;
+  border-radius: var(--kk-radius-sm);
+  overflow: hidden;
+  background: var(--kk-surface-sunken);
+}
+
+.kk-comment__thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.kk-comment__strip-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 3rem;
+  height: 3rem;
+  border-radius: var(--kk-radius-sm);
+  background: var(--kk-surface-sunken);
+  color: var(--kk-text-muted);
+  font-size: var(--kk-font-size-caption);
+}
+
 .kk-comment__actions,
 .kk-comment__edit-actions {
   display: flex;

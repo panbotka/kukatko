@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
@@ -467,12 +467,59 @@ describe('taking photographs out of the group', () => {
     ).toBeInTheDocument()
   })
 
-  it('gives a viewer no batch bar at all', async () => {
+  it('lets a viewer select and put the photos into the discussion, and nothing else', async () => {
+    const user = userEvent.setup()
     withOnePhoto()
+    createCommentMock.mockResolvedValue({
+      uid: 'cm1',
+      task_uid: 'tk1',
+      author_uid: 'u1',
+      author_name: 'U',
+      body: 'ph1',
+      created_at: '2026-09-20T10:00:00Z',
+    })
     renderPage(false)
 
     await screen.findByRole('heading', { name: /In which year/ })
-    expect(screen.queryByRole('button', { name: /^Select / })).not.toBeInTheDocument()
+    // Commenting is open to a viewer, so pointing at pictures from the
+    // discussion must be too: the tiles select for them.
+    await user.click(await screen.findByRole('button', { name: /^Select / }))
+
+    const bar = await screen.findByRole('toolbar')
+    expect(within(bar).getByRole('button', { name: 'To the discussion' })).toBeInTheDocument()
+    // The writer-only actions — the page's own removal included — are not there.
+    expect(within(bar).queryByRole('button', { name: 'Remove from the task' })).toBeNull()
+    expect(within(bar).queryByRole('button', { name: 'Archive' })).toBeNull()
+    expect(within(bar).queryByRole('button', { name: 'Add to album' })).toBeNull()
+
+    await user.click(within(bar).getByRole('button', { name: 'To the discussion' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Send' }))
+
+    await waitFor(() => {
+      expect(createCommentMock).toHaveBeenCalledWith({ kind: 'task', uid: 'tk1' }, 'ph1')
+    })
+    // The thread is asked to refetch, as after a quick answer.
+    await waitFor(() => {
+      expect(fetchCommentsMock).toHaveBeenCalledTimes(2)
+    })
+    // The selection is spent, so the bar goes.
+    await waitFor(() => {
+      expect(screen.queryByRole('toolbar')).toBeNull()
+    })
+  })
+
+  it('offers a writer the discussion beside the removal', async () => {
+    const user = userEvent.setup()
+    withOnePhoto()
+    renderPage()
+
+    await screen.findByRole('heading', { name: /In which year/ })
+    await user.click(await screen.findByRole('button', { name: /^Select / }))
+
+    const bar = await screen.findByRole('toolbar')
+    expect(within(bar).getByRole('button', { name: 'To the discussion' })).toBeInTheDocument()
+    expect(within(bar).getByRole('button', { name: 'Remove from the task' })).toBeInTheDocument()
   })
 })
 

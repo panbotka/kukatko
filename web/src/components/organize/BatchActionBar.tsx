@@ -6,6 +6,7 @@ import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 
 import { useAuth } from '../../auth/AuthContext'
+import { DiscussPhotosModal } from '../tasks/DiscussPhotosModal'
 import { NewTaskModal } from '../tasks/NewTaskModal'
 import { type UseBulkEditResult } from '../../hooks/useBulkEdit'
 import { useIsNarrowViewport } from '../../hooks/useIsNarrowViewport'
@@ -85,6 +86,20 @@ export interface BatchExtraAction {
   danger?: boolean
 }
 
+/**
+ * The discussion a selection can be put into — the task page's own case. With
+ * it set the bar offers **Do diskuse**, which posts one comment on that task
+ * listing the selected photographs (see `DiscussPhotosModal`); the comment is
+ * open to every role, so the action is the one thing a viewer's bar carries
+ * besides the downloads.
+ */
+export interface BatchDiscussion {
+  /** The task whose thread the comment goes on. */
+  taskUid: string
+  /** Called once the comment landed and the selection was cleared — to refetch the thread. */
+  onPosted?: () => void
+}
+
 /** Props for {@link BatchActionBar}. */
 export interface BatchActionBarProps {
   /** The bulk-edit state from `useBulkEdit` (hover-select), owned by the page. */
@@ -97,6 +112,11 @@ export interface BatchActionBarProps {
    * none (the library, favorites, search).
    */
   extraActions?: readonly BatchExtraAction[]
+  /**
+   * The task thread a selection can be sent to. Only the task page passes it;
+   * everywhere else the action does not exist, because there is no thread.
+   */
+  discussion?: BatchDiscussion
 }
 
 /**
@@ -159,11 +179,24 @@ function BarAction({
  * from page to page; a page that owns actions of its own (an album's set-cover /
  * remove-from-album) hands them over as `extraActions` and they join the bar
  * instead of forcing a second toolbar next to it.
+ *
+ * The bar is a writer's tool, with one exception: on a task page a **viewer**
+ * selects too (the page opens selection to them), and their bar carries only
+ * what a viewer may do — select all, download, share and **Do diskuse** — the
+ * metadata actions are hidden, not disabled, because a control that can never
+ * work is furniture.
  */
-export function BatchActionBar({ bulk, onSelectAll, extraActions }: BatchActionBarProps) {
+export function BatchActionBar({
+  bulk,
+  onSelectAll,
+  extraActions,
+  discussion,
+}: BatchActionBarProps) {
   // Whether the "ask about these" dialog is open. It lives here rather than in
   // each page because the question is asked from every grid alike.
   const [asking, setAsking] = useState(false)
+  // Whether the "put these into the discussion" dialog is open.
+  const [discussing, setDiscussing] = useState(false)
   const { t } = useTranslation()
   const { show } = useToast()
   const { canWrite } = useAuth()
@@ -468,6 +501,34 @@ export function BatchActionBar({ bulk, onSelectAll, extraActions }: BatchActionB
   const moreAction = (
     <BarAction icon="sliders" label={t('batch.more')} onClick={bulk.open} disabled={busy} />
   )
+  // Pointing at pictures from the discussion — "these three are wrong" — is how
+  // a reviewer answers a batch, so on the task page the selection can be written
+  // straight into the thread as one comment.
+  const discussAction =
+    discussion !== undefined ? (
+      <BarAction
+        icon="chat-left-text"
+        label={t('batch.discuss.action')}
+        onClick={() => {
+          setDiscussing(true)
+        }}
+        disabled={busy}
+      />
+    ) : null
+  // Everything that writes metadata is a writer's; a viewer's bar keeps the
+  // downloads and the discussion.
+  const writerActions = canWrite
+    ? {
+        album: albumAction,
+        label: labelAction,
+        favorite: favoriteAction,
+        location: locationControl,
+        archive: archiveAction,
+        stack: stackControl,
+        ask: askAction,
+        more: moreAction,
+      }
+    : null
   const extras = extraActions?.map((action) => (
     <BarAction
       key={action.id}
@@ -496,8 +557,8 @@ export function BatchActionBar({ bulk, onSelectAll, extraActions }: BatchActionB
         </span>
         {narrow ? (
           <>
-            {albumAction}
-            {labelAction}
+            {writerActions?.album}
+            {writerActions?.label}
             <Dropdown drop="up" align="end" className="kk-batch-overflow">
               <Dropdown.Toggle
                 variant="outline-light"
@@ -513,14 +574,15 @@ export function BatchActionBar({ bulk, onSelectAll, extraActions }: BatchActionB
               <Dropdown.Menu className="kk-batch-overflow-menu">
                 <div className="d-grid gap-1">
                   {selectAllControl}
-                  {favoriteAction}
-                  {locationControl}
-                  {archiveAction}
+                  {writerActions?.favorite}
+                  {writerActions?.location}
+                  {writerActions?.archive}
                   {downloadControl}
                   {shareControl}
-                  {stackControl}
-                  {askAction}
-                  {moreAction}
+                  {writerActions?.stack}
+                  {writerActions?.ask}
+                  {discussAction}
+                  {writerActions?.more}
                   {extras}
                 </div>
               </Dropdown.Menu>
@@ -529,16 +591,17 @@ export function BatchActionBar({ bulk, onSelectAll, extraActions }: BatchActionB
         ) : (
           <>
             {selectAllControl}
-            {albumAction}
-            {labelAction}
-            {favoriteAction}
-            {locationControl}
-            {archiveAction}
+            {writerActions?.album}
+            {writerActions?.label}
+            {writerActions?.favorite}
+            {writerActions?.location}
+            {writerActions?.archive}
             {downloadControl}
             {shareControl}
-            {stackControl}
-            {askAction}
-            {moreAction}
+            {writerActions?.stack}
+            {writerActions?.ask}
+            {discussAction}
+            {writerActions?.more}
             {extras}
           </>
         )}
@@ -646,6 +709,25 @@ export function BatchActionBar({ bulk, onSelectAll, extraActions }: BatchActionB
           setAsking(false)
         }}
       />
+
+      {discussion !== undefined && (
+        <DiscussPhotosModal
+          show={discussing}
+          taskUid={discussion.taskUid}
+          photoUids={bulk.photoUids}
+          onClose={() => {
+            setDiscussing(false)
+          }}
+          onPosted={() => {
+            // The comment is the record; the selection has served its purpose.
+            // `clear`, not `finish`: nothing about the photographs changed, so
+            // the wall need not reload.
+            setDiscussing(false)
+            bulk.selection.clear()
+            discussion.onPosted?.()
+          }}
+        />
+      )}
     </div>
   )
 }

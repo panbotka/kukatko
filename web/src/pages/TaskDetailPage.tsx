@@ -12,7 +12,11 @@ import { Icon } from '../components/Icon'
 import { FilterBar } from '../components/library/FilterBar'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
-import { type BatchExtraAction, BatchActionBar } from '../components/organize/BatchActionBar'
+import {
+  type BatchDiscussion,
+  type BatchExtraAction,
+  BatchActionBar,
+} from '../components/organize/BatchActionBar'
 import { SlideshowStart } from '../components/slideshow/SlideshowStart'
 import { CommentsPanel } from '../components/photo/CommentsPanel'
 import { TaskStateBadge } from '../components/tasks/TaskStateBadge'
@@ -134,8 +138,10 @@ export function TaskDetailPage() {
 
   // Hover-select, as on every other scoped list: the photographs a question is
   // about are usually the ones about to be edited, so the full batch vocabulary
-  // belongs on this page rather than one navigation away.
-  const bulk = useBulkEdit({ onEdited: reload, hoverSelect: true })
+  // belongs on this page rather than one navigation away. Open to viewers too:
+  // pointing at pictures from the discussion is an answer, and answering has
+  // always been open to every role — the bar hides the writer-only actions.
+  const bulk = useBulkEdit({ onEdited: reload, hoverSelect: true, openToViewers: true })
   const selection = bulk.selection
   const selecting = selection.count > 0
 
@@ -164,17 +170,28 @@ export function TaskDetailPage() {
     }
   }, [selection, uid, reload])
 
+  // Removal changes the group and is a writer's; a viewer's bar has none.
   const extraActions = useMemo<BatchExtraAction[]>(
-    () => [
-      {
-        id: 'remove-from-task',
-        icon: 'dash-lg',
-        label: t('taskDetail.removeSelected'),
-        danger: true,
-        onClick: () => void removeSelected(),
-      },
-    ],
-    [t, removeSelected],
+    () =>
+      canWrite
+        ? [
+            {
+              id: 'remove-from-task',
+              icon: 'dash-lg',
+              label: t('taskDetail.removeSelected'),
+              danger: true,
+              onClick: () => void removeSelected(),
+            },
+          ]
+        : [],
+    [canWrite, t, removeSelected],
+  )
+
+  // Putting a selection into the discussion posts a comment behind the panel's
+  // back, so the thread is asked to refetch, exactly as after a quick answer.
+  const discussion = useMemo<BatchDiscussion>(
+    () => ({ taskUid: uid, onPosted: reloadThread }),
+    [uid, reloadThread],
   )
 
   useEffect(() => {
@@ -384,7 +401,12 @@ export function TaskDetailPage() {
       )}
 
       {bulk.canBulkEdit && selecting && (
-        <BatchActionBar bulk={bulk} onSelectAll={selectAllInView} extraActions={extraActions} />
+        <BatchActionBar
+          bulk={bulk}
+          onSelectAll={selectAllInView}
+          extraActions={extraActions}
+          discussion={discussion}
+        />
       )}
 
       <ConfirmModal

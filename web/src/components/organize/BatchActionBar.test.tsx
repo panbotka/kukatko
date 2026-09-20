@@ -18,6 +18,10 @@ vi.mock('../../services/bulk', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../services/bulk')>()
   return { ...actual, bulkUpdatePhotos: vi.fn() }
 })
+vi.mock('../../services/comments', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../services/comments')>()
+  return { ...actual, createComment: vi.fn() }
+})
 vi.mock('../../services/organize', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../services/organize')>()
   return {
@@ -30,6 +34,8 @@ vi.mock('../../services/organize', async (importOriginal) => {
 })
 
 const { bulkUpdatePhotos } = await import('../../services/bulk')
+const { createComment } = await import('../../services/comments')
+const createCommentMock = vi.mocked(createComment)
 const { fetchAlbums, fetchLabels, createAlbum, createLabel } =
   await import('../../services/organize')
 const bulkMock = vi.mocked(bulkUpdatePhotos)
@@ -492,18 +498,103 @@ describe('BatchActionBar inline creation', () => {
     expect(bulkMock).toHaveBeenLastCalledWith(['a', 'b'], { add_to_albums: ['al9'] })
   })
 
-  it('does not offer creation to a viewer', async () => {
-    albumsMock.mockResolvedValue([album('al1', 'Trip')])
-    labelsMock.mockResolvedValue([])
-    const user = userEvent.setup()
+  it('offers a viewer none of the metadata actions, so nothing to create from', () => {
     renderBar(makeBulk(), undefined, viewerAuth)
 
-    await user.click(screen.getByRole('button', { name: 'Add to album' }))
-    await user.type(await screen.findByLabelText('Add to albums'), 'Ostatky 2022')
+    // `POST /photos/bulk` is a writer's; a viewer's bar never offers what it
+    // cannot do — hidden, not greyed out.
+    expect(screen.queryByRole('button', { name: 'Add to album' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Labels' })).toBeNull()
+  })
+})
 
-    // A viewer may not create an album, so the row is simply absent.
-    expect(await screen.findByText('No matches.')).toBeInTheDocument()
-    expect(screen.queryByRole('option', { name: /Create/ })).toBeNull()
+describe('BatchActionBar discussion', () => {
+  const uid1 = 'ph000000000000000000000001'
+  const uid2 = 'ph000000000000000000000002'
+
+  /** The bar over a two-photo selection of real-shaped uids. */
+  function discussBulk(): UseBulkEditResult {
+    const bulk = makeBulk()
+    bulk.selection.selected = new Set([uid1, uid2])
+    bulk.photoUids = [uid1, uid2]
+    return bulk
+  }
+
+  function renderWithDiscussion(
+    bulk: UseBulkEditResult,
+    auth: AuthContextValue = editorAuth,
+    onPosted = vi.fn(),
+  ) {
+    render(
+      <I18nextProvider i18n={i18n}>
+        <AuthContext.Provider value={auth}>
+          <ToastProvider>
+            <MemoryRouter>
+              <BatchActionBar
+                bulk={bulk}
+                onSelectAll={vi.fn()}
+                discussion={{ taskUid: 'tk1', onPosted }}
+              />
+            </MemoryRouter>
+          </ToastProvider>
+        </AuthContext.Provider>
+      </I18nextProvider>,
+    )
+    return onPosted
+  }
+
+  beforeEach(() => {
+    createCommentMock.mockReset()
+  })
+
+  it('exists only where there is a thread to post into', () => {
+    renderBar(makeBulk())
+    expect(screen.queryByRole('button', { name: 'To the discussion' })).toBeNull()
+  })
+
+  it('posts the selection as one comment, clears it and tells the page', async () => {
+    const user = userEvent.setup()
+    const bulk = discussBulk()
+    createCommentMock.mockResolvedValue({
+      uid: 'cm1',
+      task_uid: 'tk1',
+      author_uid: 'u1',
+      author_name: 'U',
+      body: 'x',
+      created_at: '2026-09-20T10:00:00Z',
+    })
+    const onPosted = renderWithDiscussion(bulk)
+
+    await user.click(screen.getByRole('button', { name: 'To the discussion' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.type(within(dialog).getByLabelText('Message'), 'These are wrong')
+    await user.click(within(dialog).getByRole('button', { name: 'Send' }))
+
+    await waitFor(() => {
+      expect(createCommentMock).toHaveBeenCalledWith(
+        { kind: 'task', uid: 'tk1' },
+        `These are wrong\n\n${uid1}\n${uid2}`,
+      )
+    })
+    await waitFor(() => {
+      expect(onPosted).toHaveBeenCalledTimes(1)
+    })
+    // The selection is spent; the wall itself did not change, so no reload.
+    expect(bulk.selection.clear).toHaveBeenCalledTimes(1)
+    expect(bulk.finish).not.toHaveBeenCalled()
+    expect(await screen.findByText('2 photos put into the discussion.')).toBeInTheDocument()
+  })
+
+  it('gives a viewer the discussion and the downloads, and no metadata action', () => {
+    renderWithDiscussion(discussBulk(), viewerAuth)
+
+    const bar = screen.getByRole('toolbar', { name: 'Batch actions' })
+    expect(within(bar).getByRole('button', { name: 'To the discussion' })).toBeInTheDocument()
+    expect(within(bar).getByRole('button', { name: 'Download ZIP' })).toBeInTheDocument()
+    expect(within(bar).getByRole('button', { name: 'Select all' })).toBeInTheDocument()
+    for (const name of ['Add to album', 'Labels', 'Favorite', 'Archive', 'Ask about these']) {
+      expect(within(bar).queryByRole('button', { name })).toBeNull()
+    }
   })
 })
 

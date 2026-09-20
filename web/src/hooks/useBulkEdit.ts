@@ -27,11 +27,24 @@ export interface UseBulkEditOptions {
    * /expand candidate review), which still gate selection behind a button.
    */
   hoverSelect?: boolean
+  /**
+   * Let every signed-in role select, not only a writer. The task page opts in:
+   * putting a selection into the discussion is a comment, and commenting is
+   * open to viewers, so the tiles must be selectable for them too. The bar then
+   * hides the writer-only actions itself; a page that opts in must not offer
+   * writer-only `extraActions` to a viewer.
+   */
+  openToViewers?: boolean
 }
 
 /** Selection state plus the bulk-edit dialog wiring for one photo list. */
 export interface UseBulkEditResult {
-  /** Whether the acting user may bulk edit. Viewers never see the control. */
+  /**
+   * Whether the acting user may select at all — a writer always, a viewer only
+   * where the page opted in with `openToViewers`. Pages gate their selection
+   * toolbar on it; the writer-only actions inside the toolbar gate on
+   * `useAuth().canWrite` themselves.
+   */
   canBulkEdit: boolean
   /** The underlying grid selection (enter/leave selection mode, toggle tiles). */
   selection: UseSelectionResult
@@ -63,8 +76,9 @@ export interface UseBulkEditResult {
  * selection so the reader can retry without re-picking every tile.
  */
 export function useBulkEdit(options: UseBulkEditOptions = {}): UseBulkEditResult {
-  const { onEdited, hoverSelect = false } = options
+  const { onEdited, hoverSelect = false, openToViewers = false } = options
   const { canWrite } = useAuth()
+  const canSelect = canWrite || openToViewers
   const selection = useSelection()
   const [editing, setEditing] = useState(false)
 
@@ -88,8 +102,9 @@ export function useBulkEdit(options: UseBulkEditOptions = {}): UseBulkEditResult
   const photoUids = useMemo(() => [...selection.selected], [selection.selected])
 
   const gridSelection = useMemo<PhotoGridSelection | undefined>(() => {
-    // A viewer never selects, so the grid stays a plain link grid for them.
-    if (!canWrite) {
+    // A viewer never selects — unless the page opened selection to them — so
+    // the grid stays a plain link grid for them.
+    if (!canSelect) {
       return undefined
     }
     // Hover-select is always on for a writer (no explicit mode to enter); the
@@ -114,7 +129,7 @@ export function useBulkEdit(options: UseBulkEditOptions = {}): UseBulkEditResult
         }
       : undefined
   }, [
-    canWrite,
+    canSelect,
     hoverSelect,
     selection.active,
     selection.selected,
@@ -125,7 +140,7 @@ export function useBulkEdit(options: UseBulkEditOptions = {}): UseBulkEditResult
 
   return useMemo(
     () => ({
-      canBulkEdit: canWrite,
+      canBulkEdit: canSelect,
       selection,
       photoUids,
       gridSelection,
@@ -134,6 +149,6 @@ export function useBulkEdit(options: UseBulkEditOptions = {}): UseBulkEditResult
       close,
       finish,
     }),
-    [canWrite, selection, photoUids, gridSelection, editing, open, close, finish],
+    [canSelect, selection, photoUids, gridSelection, editing, open, close, finish],
   )
 }

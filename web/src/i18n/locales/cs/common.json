@@ -1702,7 +1702,22 @@
     "applied_few": "Použito na {{count}} fotky",
     "applied_many": "Použito na {{count}} fotky",
     "applied_other": "Použito na {{count}} fotek",
-    "error": "Změnu se nepodařilo použít. Zkuste to prosím znovu."
+    "error": "Změnu se nepodařilo použít. Zkuste to prosím znovu.",
+    "discuss": {
+      "action": "Do diskuse",
+      "title": "Vložit vybrané fotky do diskuse",
+      "message": "Zpráva",
+      "placeholder": "Co je s těmito fotkami? (nepovinné)",
+      "send": "Odeslat",
+      "sending": "Odesílám…",
+      "sent_one": "Do diskuse jsi vložil {{count}} fotku.",
+      "sent_few": "Do diskuse jsi vložil {{count}} fotky.",
+      "sent_many": "Do diskuse jsi vložil {{count}} fotky.",
+      "sent_other": "Do diskuse jsi vložil {{count}} fotek.",
+      "failed": "Komentář se nepodařilo odeslat. Zkus to prosím znovu.",
+      "tooMany": "Do jednoho komentáře se vejde jen {{fits}} z {{count}} vybraných fotek. Zmenši výběr nebo zkrať zprávu.",
+      "more": "+{{count}}"
+    }
   },
   "toast": {
     "close": "Zavřít"
@@ -2484,7 +2499,13 @@
       "unknownAuthor": "Smazaný uživatel",
       "throttled": "Moment — komentáře jdou moc rychle po sobě. Zkus to za chvilku.",
       "forbidden": "Tenhle komentář už upravit ani smazat nejde.",
-      "failed": "Komentář se nepodařilo uložit. Zkus to prosím znovu."
+      "failed": "Komentář se nepodařilo uložit. Zkus to prosím znovu.",
+      "referenced": "Fotky zmíněné v komentáři",
+      "refPhoto": "Fotka {{uid}}",
+      "moreRefs_one": "a {{count}} další fotka",
+      "moreRefs_few": "a {{count}} další fotky",
+      "moreRefs_many": "a {{count}} dalších fotek",
+      "moreRefs_other": "a {{count}} dalších fotek"
     },
     "video": {
       "label": "Přehrávač videa",

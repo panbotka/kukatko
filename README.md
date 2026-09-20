@@ -321,6 +321,11 @@ rebuilt? — and the only person who knows is usually not the person editing the
 - Asking starts where the photographs are: select some, and the same dialog either **opens a new
   question** or **adds them to one already waiting**. From a task's own page the photographs behave like
   any other list, so taking one back out is the ordinary select-and-act.
+- **Pointing at pictures from the discussion.** The usual objection to a batch is "these three are
+  wrong": on a task's page select them and choose **Do diskuse**, and one comment lists them — a
+  message if you want one, then the photographs, which every reader (and the terminal) sees as links and
+  small thumbnails. A viewer can do this too, because it is a comment. Any photo identifier typed or
+  pasted into a comment renders the same way, on a photo's thread as on a task's.
 
 ### Places and video
 

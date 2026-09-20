@@ -7,6 +7,7 @@ import { formatDateTimeMinutes } from '../../lib/format'
 import { formatRelativeTime } from '../../lib/relativeTime'
 import { type Comment, MAX_COMMENT_LENGTH } from '../../services/comments'
 
+import { CommentBody } from './CommentBody'
 /** Props for {@link CommentItem}. */
 export interface CommentItemProps {
   comment: Comment
@@ -29,7 +30,9 @@ export interface CommentItemProps {
  * The body is rendered as text (React escapes it), never as HTML or markdown: the
  * backend stores exactly what was typed and parses nothing, so the client must not
  * either. `white-space: pre-wrap` in the stylesheet keeps the writer's own line
- * breaks without inventing any other syntax.
+ * breaks without inventing any other syntax. The one token recognised in it is a
+ * photo uid, which {@link CommentBody} turns into a link (and a thumbnail under
+ * the remark) — on a task's thread carrying the task, so the viewer stays in it.
  *
  * The avatar beside it is {@link PersonAvatar}: whatever picture the author's
  * account resolves to — one they uploaded, a photo of the library they picked,
@@ -145,7 +148,7 @@ export function CommentItem({
             </div>
           </form>
         ) : (
-          <p className="kk-comment__body">{comment.body}</p>
+          <CommentBody body={comment.body} taskUid={comment.task_uid} />
         )}
 
         {!editing && (canEdit || canDelete) && (

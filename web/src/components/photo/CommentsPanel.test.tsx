@@ -1,6 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
+import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../../i18n'
@@ -54,14 +55,17 @@ function renderPanel(
   } = {},
 ) {
   const { currentUserUid = 'usr_jarmila', canModerate = false, onCountChange } = options
+  // A router, because a photo uid in a body renders as a `Link`.
   return render(
     <I18nextProvider i18n={i18n}>
-      <CommentsPanel
-        subject={PHOTO_SUBJECT}
-        currentUserUid={currentUserUid}
-        canModerate={canModerate}
-        onCountChange={onCountChange}
-      />
+      <MemoryRouter>
+        <CommentsPanel
+          subject={PHOTO_SUBJECT}
+          currentUserUid={currentUserUid}
+          canModerate={canModerate}
+          onCountChange={onCountChange}
+        />
+      </MemoryRouter>
     </I18nextProvider>,
   )
 }
@@ -308,6 +312,22 @@ describe('CommentsPanel', () => {
     ).toBeInTheDocument()
     // The text stays in the box, so nothing anyone typed is thrown away.
     expect(screen.getByLabelText('New comment')).toHaveValue('Again!')
+  })
+
+  it('renders a photo uid in a task thread as a link that stays in the task', async () => {
+    const ref = 'ph000000000000000000000001'
+    fetchCommentsMock.mockResolvedValue([
+      comment({ photo_uid: undefined, task_uid: 'tk1', body: `Wrong one: ${ref}` }),
+    ])
+    renderPanel()
+
+    const link = await screen.findByRole('link', { name: ref })
+    expect(link).toHaveAttribute('href', `/photos/${ref}?task=tk1`)
+    // And the thumbnail under it leads to the same place.
+    expect(screen.getByRole('link', { name: `Photo ${ref}` })).toHaveAttribute(
+      'href',
+      `/photos/${ref}?task=tk1`,
+    )
   })
 
   it('speaks Czech, with the plural the count needs', async () => {

@@ -1441,7 +1441,9 @@ here.
   `BulkEditModal`); each metadata action runs **as a single `POST /photos/bulk`** via `bulkUpdatePhotos`,
   success/failure reported by a **toast** (`useToast`): success clears the selection and reloads the grid (`bulk.finish`),
   **a failure keeps the selection** (it can be retried). Driven by `useBulkEdit({hoverSelect:true})`; Esc clears the
-  selection via grid keyboard nav. **Editor/admin only** (`bulk.canBulkEdit`), i18n `batch.*`.
+  selection via grid keyboard nav. **Editor/admin only** (`bulk.canBulkEdit`), i18n `batch.*` — except
+  where a page passes `openToViewers` (the task page, see the `discussion` prop below), which makes
+  `canBulkEdit` true for a viewer too and leaves the bar to hide its writer-only actions itself.
   **Responsive:** on a phone (`useIsNarrowViewport`) the ~10 labelled actions can't share one row, so the bar
   **collapses** — clear (✕), the count and the two most-common actions (**Přidat do alba** / **Štítky**, icon-only)
   stay inline, the rest fold into a **`…` overflow `Dropdown`** (`drop="up"`, `batch.overflow`) — keeping it a single
@@ -1454,7 +1456,18 @@ here.
   `BarAction` styling, disabled while a batch request is in flight) — so a page never grows a second
   toolbar: `AlbumDetailPage` passes **Nastavit obálku** (needs exactly 1 selected) + **Odebrat z alba**
   (`danger`), `SubjectPage` passes **Nastavit jako náhled**; the library, favorites, label and search
-  pages pass none),
+  pages pass none). **`discussion?: BatchDiscussion`** (`{taskUid, onPosted?}`) is the task page's
+  alone: with it set the bar carries **Do diskuse** (`batch.discuss.action`, a `chat-left-text` glyph,
+  between **Zeptat se** and **Další úpravy**), which opens `DiscussPhotosModal` over the selection and,
+  once the comment landed, **clears the selection** (`selection.clear`, not `finish` — nothing about the
+  photographs changed, so the wall does not reload) and calls `onPosted` so the page refetches its
+  thread. Elsewhere the prop is absent and the action does not exist, because there is no thread.
+  **Viewer gating:** the bar is a writer's tool with one exception — a task page opens selection to a
+  viewer (`useBulkEdit({openToViewers: true})`), and their bar keeps only what a viewer may do: clear, the
+  count, **Vybrat vše**, **Stáhnout**/**Sdílet** and **Do diskuse**; every metadata action (album, labels,
+  favorite, location, archive, stack, ask, the full editor) is **hidden, not disabled**, gated on
+  `useAuth().canWrite` inside the bar. A page that opts in must not hand a viewer writer-only `extraActions`
+  (the task page passes none to a viewer),
   `BulkEditControl` (**a reusable trigger** for bulk editing: a button
   (`selection.edit`) + `BulkEditModal`, driven solely by the result of `useBulkEdit`; **it doesn't render at all
   for a viewer**, and at an empty selection it is a `ReasonedButton` that says why it is off
@@ -1989,7 +2002,14 @@ here.
   scrolling past controls they cannot use. Under the question sits **`TaskParticipants`**, and for an
   editor the wall's `BatchActionBar` carries the page's own **Odebrat z úkolu** as an `extraActions`
   entry (the shape an album's remove-from-album uses) — a failed removal says so rather than looking
-  unclicked, and the selection survives it so it can be retried. A 404 lands in a `missing` state of its
+  unclicked, and the selection survives it so it can be retried. **The wall selects for a viewer too**
+  (`useBulkEdit({openToViewers: true})`): the typical objection to a batch is "these three are wrong",
+  and pointing at pictures from the discussion is an answer, which has always been open to every role —
+  so the page hands the bar `discussion={{taskUid, onPosted: reloadThread}}` and a viewer's bar carries
+  **Do diskuse** (plus the downloads) and none of the writer's actions, the removal included
+  (`extraActions` is empty for them). The posted comment lists the selected uids one per line (see
+  `DiscussPhotosModal`), the thread refetches through the same `reloadKey` the quick answers use, and
+  `CommentBody` renders each uid as a link carrying `?task=` so the viewer stays in the task. A 404 lands in a `missing` state of its
   own (`isNotFound`),
   because a link outlives the task it points
   at and "this question has been deleted" is not "could not be loaded". The tiles carry the task scope in the
@@ -2061,6 +2081,17 @@ here.
   usually opened from: **`BatchActionBar` carries a shared „Zeptat se" action** beside Stack, on every grid
   alike (library, album, label, search), so asking about photographs starts where the photographs are —
   select, ask, send the link,
+  `components/tasks/DiscussPhotosModal` (**puts a selection into a task's discussion**: a `tile_100`
+  preview of the selected photographs — `DISCUSS_PREVIEW_MAX` = 24, then „+N" — an optional message and
+  **Odeslat**. It posts **one ordinary comment** through `createComment(taskSubject)`, no new endpoint or
+  shape: the body is `lib/photoRefs` `discussionBody` = the trimmed message, a blank line, then **one uid
+  per line**, plain text, so the CLI reads a list and the web renders links (`CommentBody`). The comment
+  limit (`MAX_COMMENT_LENGTH` = 2000; a uid costs 27) is enforced *here* by `photoRefsThatFit(message)`:
+  a selection larger than fits is refused inline with the count that would (`batch.discuss.tooMany`) and
+  Send is disabled, rather than sent and bounced; the message is charged against the same budget live. A
+  failed post keeps the dialog open with an inline `batch.discuss.failed` and the message intact; success
+  toasts `batch.discuss.sent` (pluralised) and calls `onPosted`, leaving the selection to the caller.
+  Open to every role — it is a comment. Tests `DiscussPhotosModal.test.tsx`),
   `SearchPage` = semantic/hybrid/fulltext search: a prominent debounced (350 ms)
   search field **spanning the whole width** + the mode switch tucked into `SearchModeControl` below it
   (`q`+`mode` in the URL), the same virtualized grid as the
@@ -2985,7 +3016,21 @@ here.
   `PersonAvatar` + author + `formatRelativeTime` (`lib/relativeTime`, `Intl.RelativeTimeFormat`
   `numeric: 'auto'` + `style: 'narrow'` → „před 2 h", „včera"; the absolute stamp survives as the `<time>`'s
   `title`) + an „upraveno" marker when `edited_at` is set + the body with **`white-space: pre-wrap`** — the
-  backend parses nothing, so the client renders text, never HTML/markdown. **Edit is in place** (a textarea
+  backend parses nothing, so the client renders text, never HTML/markdown. The body goes through
+  **`CommentBody`** (`components/photo/`): the one token it recognises is a **photo uid** (`ph` + 24 of the
+  catalogue's base32 alphabet `0-9a-v`, word-bounded — `lib/photoRefs` `splitPhotoRefs`/`referencedPhotoUids`,
+  the pure half), which becomes a `Link` to `/photos/{uid}` with the uid as its text (`.kk-comment__ref`,
+  underlined, the body's colour); **inside a task thread** (`comment.task_uid` set) every link carries
+  `?task={taskUid}` (`photoRefHref`) so the viewer's prev/next and Back stay in the task. Everything else
+  stays text — markup in a body is never interpreted, there is no `dangerouslySetInnerHTML` anywhere in
+  the chain. Under the body a **strip of `tile_100` thumbnails** (`.kk-comment__strip`, a `<ul>` named
+  `photo.comments.referenced`) draws the referenced uids, each once and in order of first mention, capped
+  at `COMMENT_STRIP_MAX` = 12 then „+N", each a link to the same place; a thumbnail whose image fails to
+  load **drops out** (`CommentThumb` remembers its own error) rather than showing a broken image — a uid of
+  the right shape need not exist, and one outside the task's group still links, because the reference is
+  to the photograph, not to its membership. This is how the batch bar's **Do diskuse** (`DiscussPhotosModal`)
+  reads back, and why `kukatko ctl tasks comment` with uids in the text needed no change. Tests
+  `CommentBody.test.tsx`, `lib/photoRefs.test.ts`. **Edit is in place** (a textarea
   replacing the body; a modal for fixing a typo would hide the conversation the remark belongs to), **only
   on the reader's own comment**; **delete** is the author's *or* an admin's (`canModerate`) and always goes
   through **one** `ConfirmModal` owned by the panel, not one per row. An admin therefore removes but never

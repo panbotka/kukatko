@@ -1714,7 +1714,20 @@
     "retry": "Try again",
     "applied_one": "Applied to {{count}} photo",
     "applied_other": "Applied to {{count}} photos",
-    "error": "The change could not be applied. Please try again."
+    "error": "The change could not be applied. Please try again.",
+    "discuss": {
+      "action": "To the discussion",
+      "title": "Put the selected photos into the discussion",
+      "message": "Message",
+      "placeholder": "What about these photos? (optional)",
+      "send": "Send",
+      "sending": "Sending…",
+      "sent_one": "{{count}} photo put into the discussion.",
+      "sent_other": "{{count}} photos put into the discussion.",
+      "failed": "The comment could not be posted. Please try again.",
+      "tooMany": "Only {{fits}} of the {{count}} selected photos fit in one comment. Pick fewer or shorten the message.",
+      "more": "+{{count}}"
+    }
   },
   "toast": {
     "close": "Dismiss"
@@ -2380,7 +2393,11 @@
       "unknownAuthor": "Deleted user",
       "throttled": "Steady on — comments are coming too fast. Try again in a moment.",
       "forbidden": "This comment can no longer be edited or deleted.",
-      "failed": "The comment could not be saved. Please try again."
+      "failed": "The comment could not be saved. Please try again.",
+      "referenced": "Photos mentioned in the comment",
+      "refPhoto": "Photo {{uid}}",
+      "moreRefs_one": "and {{count}} more photo",
+      "moreRefs_other": "and {{count}} more photos"
     },
     "video": {
       "label": "Video player",
