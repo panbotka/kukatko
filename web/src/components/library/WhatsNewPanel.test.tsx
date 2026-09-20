@@ -246,8 +246,8 @@ describe('WhatsNewPanel — new photos of you', () => {
   })
 })
 
-describe('the questions line', () => {
-  it('asks the reader about the tasks still waiting, as a link', async () => {
+describe('the tasks line', () => {
+  it('tells the reader how many tasks wait on them, as a link to their own move', async () => {
     fetchMock.mockResolvedValue({
       has_news: true,
       since: '2026-08-08T20:30:00Z',
@@ -256,8 +256,10 @@ describe('the questions line', () => {
     })
     renderPanel()
 
-    const link = await screen.findByRole('link', { name: '3 new questions for you' })
-    expect(link).toHaveAttribute('href', '/tasks?state=question')
+    // The queue narrowed to "on me" — the very count the line reports — not
+    // to a state, which would show other people's questions too.
+    const link = await screen.findByRole('link', { name: '3 tasks wait on you' })
+    expect(link).toHaveAttribute('href', '/tasks?waiting=1')
   })
 
   it('stays quiet when nobody is waiting on an answer', async () => {
@@ -270,6 +272,6 @@ describe('the questions line', () => {
     renderPanel()
 
     expect(await screen.findByRole('link', { name: '2 new photos' })).toBeInTheDocument()
-    expect(screen.queryByText(/question/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/wait on you/)).not.toBeInTheDocument()
   })
 })

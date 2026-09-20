@@ -18,8 +18,8 @@ import { Icon } from '../Icon'
  * down a capture-time timeline (a scan of grandma's 1962 negatives is *new* but
  * not *recent*).
  */
-/** Where the questions line leads: the tasks still waiting for a person. */
-const WAITING_TASKS_HREF = '/tasks?state=question'
+/** Where the tasks line leads: the queue narrowed to the reader's own move. */
+const WAITING_TASKS_HREF = '/tasks?waiting=1'
 
 const RECENTLY_ADDED_HREF = `${LIBRARY_PATH}?sort=added`
 
@@ -236,9 +236,11 @@ export function WhatsNewPanel() {
               )}
               {comments > 0 && <li>{t('whatsNew.comments', { count: comments })}</li>}
               {/* Last, and a link: every other line reports what happened, this
-                  one asks something of the reader. It counts only the questions
-                  still waiting for an answer, so it goes quiet the moment
-                  somebody has replied — it is an invitation, not a tally. */}
+                  one asks something of the reader. It is the queue's own "whose
+                  move is it" count — the open tasks the reader is on where
+                  somebody else acted last — so it goes quiet the moment they
+                  have answered, and it is not bounded by the visit: a question
+                  asked a fortnight ago is still theirs to answer. */}
               {tasks > 0 && (
                 <li>
                   <Link to={WAITING_TASKS_HREF}>{t('whatsNew.tasks', { count: tasks })}</Link>

@@ -2959,6 +2959,38 @@ body {
 /* ---- Work queue --------------------------------------------------------- */
 
 /*
+ * "Tasks wait on you" (`components/tasks/WaitingBadge.tsx`): the count of
+ * tasks whose move is the reader's, as a small pill after the Úkoly label — in
+ * the Procházet dropdown and on its toggle, and in the phone drawer — and,
+ * with `--over`, on the corner of the hamburger, so a phone reader sees the
+ * summons without opening the menu.
+ *
+ * It is deliberately smaller than Bootstrap's default badge (0.65em → 0.6875rem
+ * on a fixed rem, so it does not scale with the label it sits beside) and sits
+ * on the label's line; in the bar it is the one element allowed the danger
+ * colour, because it is the one thing in the shell that asks for a person.
+ * Width matters here (the inline bar is measured to the pixel between 992 and
+ * 1400px), so it takes no margin of its own: the `gap` of the flex link it
+ * sits in is the only spacing it gets.
+ */
+.kk-waiting-badge {
+  font-size: 0.6875rem;
+  line-height: 1;
+  padding: 0.25em 0.5em;
+  min-width: 1.5em;
+  vertical-align: 0.1em;
+}
+
+/* On the hamburger: pinned to the top-right corner of the (relatively
+   positioned) toggle, overlapping the glyph's edge rather than widening the
+   button, so the phone row `[search] [hamburger]` keeps its geometry. */
+.kk-waiting-badge--over {
+  position: absolute;
+  top: 0.125rem;
+  right: 0.125rem;
+}
+
+/*
  * One question in the queue (`pages/TasksPage.tsx`). The page is read by
  * scanning it for what to do next, so a row is a surface with a coloured edge
  * rather than a line of text: the stripe down its left side is the task's

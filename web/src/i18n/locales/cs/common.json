@@ -1340,6 +1340,16 @@
     },
     "loading": "Načítám úkoly…",
     "error": "Úkoly se nepodařilo načíst.",
+    "count_one": "{{count}} úkol",
+    "count_few": "{{count}} úkoly",
+    "count_many": "{{count}} úkolu",
+    "count_other": "{{count}} úkolů",
+    "loadMore": "Načíst další",
+    "waitingBadge_one": "{{count}} úkol čeká na tebe",
+    "waitingBadge_few": "{{count}} úkoly čekají na tebe",
+    "waitingBadge_many": "{{count}} úkolu čeká na tebe",
+    "waitingBadge_other": "{{count}} úkolů čeká na tebe",
+    "chipCount": "{{label}} ({{count}})",
     "empty": {
       "title": "Žádné úkoly",
       "hint": "Úkol je otázka nad skupinou fotek. Označ fotky v knihovně a zeptej se."
@@ -4046,10 +4056,10 @@
     "peopleCount_other": "{{count}} nově pojmenovaných lidí",
     "expand": "Podrobnosti",
     "collapse": "Skrýt podrobnosti",
-    "tasks_one": "{{count}} nová otázka pro tebe",
-    "tasks_few": "{{count}} nové otázky pro tebe",
-    "tasks_many": "{{count}} nové otázky pro tebe",
-    "tasks_other": "{{count}} nových otázek pro tebe"
+    "tasks_one": "{{count}} úkol čeká na tebe",
+    "tasks_few": "{{count}} úkoly čekají na tebe",
+    "tasks_many": "{{count}} úkolu čeká na tebe",
+    "tasks_other": "{{count}} úkolů čeká na tebe"
   },
   "welcome": {
     "title": "Vítej v Kukátku",

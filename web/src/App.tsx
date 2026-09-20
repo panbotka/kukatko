@@ -55,6 +55,7 @@ import { TasksPage } from './pages/TasksPage'
 import { TrashPage } from './pages/TrashPage'
 import { UploadPage } from './pages/UploadPage'
 import { UsersPage } from './pages/UsersPage'
+import { TaskSummaryProvider } from './tasks/TaskSummaryProvider'
 
 /**
  * The app's route table. `/login`, `/register` and `/password-reset/:token` are
@@ -204,7 +205,12 @@ export function App() {
                 wraps the whole route table, so any route can opt into the
                 transition later without a second integration. */}
             <MorphProvider>
-              <AppRoutes />
+              {/* The work queue's counts for the navigation badge and the queue
+                  page's chips. Inside AuthProvider because it fetches only for a
+                  signed-in reader; outside the routes because the shell reads it. */}
+              <TaskSummaryProvider>
+                <AppRoutes />
+              </TaskSummaryProvider>
             </MorphProvider>
           </CapabilitiesProvider>
         </AuthProvider>

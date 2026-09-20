@@ -44,6 +44,8 @@ import (
 type Store interface {
 	// List returns one page of matching tasks and the total before paging.
 	List(ctx context.Context, f phototask.Filter) ([]phototask.Task, int, error)
+	// Summary returns the queue's counts as callerUID sees them.
+	Summary(ctx context.Context, callerUID string) (phototask.Summary, error)
 	// Get returns one task as callerUID sees it (the two caller-relative flags
 	// are computed for them), or phototask.ErrNotFound.
 	Get(ctx context.Context, uid, callerUID string) (phototask.Task, error)
@@ -131,6 +133,7 @@ func NewAPI(cfg Config) *API {
 // under the API base path (for example /api/v1):
 //
 //	GET    /tasks                          list tasks (any role)
+//	GET    /tasks/summary                  the counts behind the badge and chips (any role)
 //	POST   /tasks                          open a task
 //	GET    /tasks/{uid}                    read one (any role)
 //	PATCH  /tasks/{uid}                    edit or advance one
@@ -147,6 +150,8 @@ func NewAPI(cfg Config) *API {
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.Route("/tasks", func(r chi.Router) {
 		r.With(a.requireAuth).Get("/", a.handleList)
+		// A static segment: chi matches it ahead of /{uid} whatever the order.
+		r.With(a.requireAuth).Get("/summary", a.handleSummary)
 		r.With(a.requireWrite).Post("/", a.handleCreate)
 		r.With(a.requireAuth).Get("/{uid}", a.handleGet)
 		r.With(a.requireWrite).Patch("/{uid}", a.handleUpdate)

@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import { CAPABILITIES_DEFAULT, CapabilitiesContext } from '../capabilities/CapabilitiesContext'
 import i18n from '../i18n'
+import { TaskSummaryContext, type TaskSummaryState } from '../tasks/TaskSummaryContext'
 
 import { Layout } from './Layout'
 
@@ -776,5 +777,76 @@ describe('Layout navbar in the tablet band', () => {
 
     expect(container.querySelector('.navbar-collapse')).toBeNull()
     expect(container.querySelector('.kk-tabbar')).not.toBeNull()
+  })
+})
+
+/** The queue's counts as the shell holds them: `waiting` tasks wait on the reader. */
+function waitingOn(waiting: number): TaskSummaryState {
+  return {
+    summary: {
+      by_state: { question: waiting, working: 0, review: 0, done: 0, rejected: 0 },
+      open: waiting,
+      waiting_on_me: waiting,
+      answered: 0,
+    },
+    refresh: vi.fn(),
+  }
+}
+
+function renderLayoutWithCounts(value: AuthContextValue, counts: TaskSummaryState) {
+  return render(
+    <I18nextProvider i18n={i18n}>
+      <AuthContext.Provider value={value}>
+        <TaskSummaryContext.Provider value={counts}>
+          <MemoryRouter initialEntries={['/']}>
+            <Routes>
+              <Route element={<Layout />}>
+                <Route path="/" element={<div>page content</div>} />
+              </Route>
+            </Routes>
+          </MemoryRouter>
+        </TaskSummaryContext.Provider>
+      </AuthContext.Provider>
+    </I18nextProvider>,
+  )
+}
+
+describe('the tasks-waiting badge', () => {
+  beforeEach(async () => {
+    await i18n.changeLanguage('en')
+    mockViewport(false)
+  })
+
+  it('shows the count on the Browse toggle and on the Tasks entry', async () => {
+    const user = userEvent.setup()
+    renderLayoutWithCounts(auth(), waitingOn(3))
+
+    // On the toggle, so the summons is visible while the dropdown is closed…
+    const toggle = screen.getByRole('button', { name: /Browse/ })
+    expect(within(toggle).getByTestId('waiting-badge')).toHaveTextContent('3')
+    expect(within(toggle).getByText('3 tasks wait on you')).toBeInTheDocument()
+
+    // …and on the entry itself once it is open.
+    await user.click(toggle)
+    const tasks = await screen.findByRole('link', { name: /Tasks/ })
+    expect(within(tasks).getByTestId('waiting-badge')).toHaveTextContent('3')
+  })
+
+  it('draws nothing when nothing waits, or when the counts are unknown', () => {
+    const { unmount } = renderLayoutWithCounts(auth(), waitingOn(0))
+    expect(screen.queryByTestId('waiting-badge')).not.toBeInTheDocument()
+    unmount()
+
+    renderLayout(auth())
+    expect(screen.queryByTestId('waiting-badge')).not.toBeInTheDocument()
+  })
+
+  it('puts the count on the hamburger, where a phone reader sees it without opening the menu', () => {
+    mockViewport(true)
+    renderLayoutWithCounts(auth(), waitingOn(2))
+
+    const hamburger = screen.getByRole('button', { name: 'Open the menu' })
+    expect(within(hamburger).getByTestId('waiting-badge')).toHaveTextContent('2')
+    expect(within(hamburger).getByTestId('waiting-badge')).toHaveClass('kk-waiting-badge--over')
   })
 })

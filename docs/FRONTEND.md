@@ -139,7 +139,21 @@ here.
   `.kukatko-navbar .nav-link > .bi`, which buys ~170px and costs nothing (every icon there is `aria-hidden`
   beside a label that names the destination). At `xl` the container is 1140px and the icons come back.
   Guarded by `styles/navbarBand.test.ts` (the band opens exactly where `NAV_DRAWER_QUERY` closes) and by the
-  „tablet band" cases in `components/Layout.test.tsx`,
+  „tablet band" cases in `components/Layout.test.tsx`. **The bar tells you where you stand with the work
+  queue** (since 2026-09-20): `useWaitingOnMe()` (from `TaskSummaryProvider`, below) is drawn as a
+  `WaitingBadge` — the number of tasks whose move is the reader's — on the **Úkoly** entry inside „Procházet"
+  *and* on the „Procházet" toggle itself (`groupBadge`: a count inside a closed dropdown is a count nobody
+  sees), and on a phone on the **corner of the hamburger** (`Navbar.Toggle` with children: the default glyph
+  restated + the badge with `over`), so the summons is visible without opening the menu; the drawer's own
+  Úkoly row wears it too. Nothing is drawn for zero or while the counts are unknown. **Width, measured**
+  (Chromium over the real `Layout`, Czech labels, maintainer = the widest role, display name „Tomáš Kozák",
+  3 waiting): the badge is **17px** and adds **25px** to the „Procházet" toggle (107→133px in the icon-less
+  992–1199 band, 131→157px from 1200px); the whole collapse row (the nav, the shortcuts button, the user menu) grows from **798 to 823px** in
+  the 888px collapse at 992px (65px of slack left), from **990 to 1015px** in the 1068px collapse at 1200px
+  (53px left) and in the 1248px collapse at 1400px (233px left) — nothing wraps, nothing scrolls, and the
+  document stays exactly as wide as the viewport at every width. The badge takes no margin of its own so it
+  costs only its 17px plus the link's `gap`. Guarded by the "tasks-waiting
+  badge" cases in `Layout.test.tsx` and `MobileNavDrawer.test.tsx`,
   `MobileNavDrawer` (**the phone menu, as a real drawer** — `components/MobileNavDrawer.tsx`, rendered by
   `Layout` only below the navbar's `lg` breakpoint — a phone's menu, and a portrait tablet's — and opened by
   the hamburger, whose `aria-controls` points at
@@ -267,10 +281,12 @@ here.
   albums link to `/albums/{uid}` and people to `/people/{uid}` via the shared `DigestLine`, which after the
   server's 6 links appends a plain **non-linked** `whatsNew.more` tail (no page lists "albums created since
   Tuesday"); comments are a count, not a link. **The questions line is drawn last and is a link**
-  (`/tasks?state=question`, key `whatsNew.tasks`): every other line reports what happened, that one asks
-  something of the reader — the questions opened since their last visit that are still waiting for an
-  answer. It goes quiet the moment somebody has replied, because it is an invitation rather than a tally,
-  and it is how the work queue reaches a person who never opens the task list. **Dismiss is keyed on the digest's `since`** in localStorage
+  (`/tasks?waiting=1`, key `whatsNew.tasks` = „3 úkoly čekají na tebe" / "3 tasks wait on you"): every
+  other line reports what happened, that one asks something of the reader — since 2026-09-20 the queue's own
+  `waiting_on_me` count (open, the reader on it, somebody else acted last), not bounded by the visit, so a
+  question asked a fortnight ago is still on the line and one they already answered is not. It goes quiet
+  the moment they have replied, because it is an invitation rather than a tally, and it is how the work
+  queue reaches a person who never opens the task list. **Dismiss is keyed on the digest's `since`** in localStorage
   (`lib/whatsNewDismissal.ts`: `readDismissedWhatsNew`/`writeDismissedWhatsNew`, mirrors
   `announcementDismissal.ts`) — `since` is constant for the length of a visit, so closing the panel closes it
   for **this** visit through every reload and every walk around the app, and the next visit's fresh `since`
@@ -1927,7 +1943,18 @@ here.
   reader**: one's own reply never lights it), open tasks first and the most recently touched at the top,
   where a reply counts as a touch. The row is **striped in its state's hue**: it carries `data-state` and `.kk-task-row` draws the
   leading border from it, so the page is scannable before a word of it is read — the first cut left the
-  state to a single badge on the right and read as one undifferentiated list. A closed row also drops to
+  state to a single badge on the right and read as one undifferentiated list. **The chips carry counts**
+  (since 2026-09-20): `useTaskSummary()` — refreshed on arrival, so the numbers are the queue's now — puts
+  „Čeká na odpověď (22)", „Ke schválení (9)", „Otevřené (34)", „Všechny" (the sum over `by_state`),
+  „S odpovědí (n)" and „Na mně (n)" on the row through `tasks.chipCount`; a zero is the plain label
+  (`chip()`), and „Moje" is not in the summary and carries none. **Paging:** the page asks for `limit=50`
+  (`PAGE_SIZE`) explicitly, prints „34 úkolů" (`tasks.count`) above the list, and when `total` exceeds the
+  rows shown offers **Načíst další** (`tasks.loadMore`), which fetches the next page at `offset = rows
+  shown` and **appends** (`State.more` = idle/loading/error: a failed append keeps the rows and offers the
+  button again). The offset is deliberately **not** in the URL — a reload starts from the top and Back
+  restores the filter, which is what the reader chose — and it is remembered together with the params and
+  reload key it was chosen under (`Paging`), so a new filter starts from the top without an effect
+  resetting it (and without a wasted request at the old offset). A closed row also drops to
   75 % opacity until hovered: it is the record of a decision, not work. **Nová odpověď** takes the app's
   azure accent rather than a sixth state hue, because it sits beside a state badge and must not read as
   another state of the work. The row **wraps** below ~12rem of text: the badges do not shrink, so on a
@@ -4994,6 +5021,24 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   in the footer: it fetches **only when `enabled`** (admin), refetches after ~30 s, **pauses on a hidden tab**
   (`visibilitychange`/`document.hidden`) and refreshes immediately on return; it swallows a failure and returns `null`
   (the badge hides), and on unmount/`enabled→false` it cancels the timer and the in-flight request — nothing outlives it;
+  `TaskSummaryProvider` + `useTaskSummary()` / `useWaitingOnMe()` (`tasks/TaskSummaryContext.tsx`,
+  `tasks/TaskSummaryProvider.tsx`; mounted in `App` inside `AuthProvider`, around the routes) = the work
+  queue's counts (`fetchTaskSummary`, `GET /tasks/summary`: `by_state`, `open`, `waiting_on_me`, `answered`)
+  for the navigation badge, the hamburger, the drawer and the chips on `/tasks`, held **once** so they cannot
+  disagree. Fetched on mount **only for `status === 'authenticated'`** (never for an anonymous visitor;
+  signing out clears it), then at most every **60 s** (`REFRESH_INTERVAL_MS`) while the tab is visible
+  (pauses hidden, refetches on return), **immediately after any task write from this browser** — the
+  `services/tasks` request helper and the three task-thread writes in `services/comments` announce
+  themselves on `lib/taskChanges` (`subscribeTaskChanges`/`notifyTaskChanged`, a one-topic module-level
+  bus, because the services have no React tree to reach into), and on `refresh()` (which `TasksPage` calls
+  on arrival). A failed fetch sets `summary` to `null`, which every consumer draws as *nothing* — the badge
+  hides silently, the chips fall back to plain labels; the context's default outside the provider is the
+  same `null` + a no-op `refresh`, so a focused test needs no provider. Tests:
+  `tasks/TaskSummaryProvider.test.tsx`, `lib/taskChanges.test.ts`;
+  `WaitingBadge` (`components/tasks/WaitingBadge.tsx`) = the count as a small `danger` pill
+  (`.kk-waiting-badge`, `--over` pins it to the corner of the hamburger); renders **nothing for zero**, the
+  digit is `aria-hidden` and a visually-hidden sentence (`tasks.waitingBadge`, „3 úkoly čekají na tebe")
+  is what a screen reader gets, repeated as the `title`;
   `useAnnouncement()` = a poller of the instance-wide announcement over `fetchAnnouncement` (`GET /announcement`) for
   `AnnouncementBanner`: fetch on mount + refetch after ~60 s, **pauses on a hidden tab** and refreshes immediately
   on return, swallows a failure and returns `null` (the banner hides), on unmount it cancels the timer and the in-flight request (mirrors

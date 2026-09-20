@@ -14,13 +14,44 @@ import { useReloadKey } from '../hooks/useReloadKey'
 import { formatRelativeTime } from '../lib/relativeTime'
 import { useUrlState } from '../lib/urlState'
 import { thumbUrl } from '../services/photos'
-import { fetchTasks, type Task, TASK_STATES, type TaskState } from '../services/tasks'
+import {
+  fetchTasks,
+  type Task,
+  type TaskListParams,
+  TASK_STATES,
+  type TaskState,
+  type TaskSummary,
+} from '../services/tasks'
+import { useTaskSummary } from '../tasks/TaskSummaryContext'
 
-/** Fetch lifecycle of the listing. */
+/**
+ * How many rows one request brings. The server's own default is the same, but
+ * the page states it: "load more" appends the next page from `offset`, and a
+ * page size the client did not choose is a page size it cannot reason about.
+ */
+export const PAGE_SIZE = 50
+
+/**
+ * Fetch lifecycle of the listing. `more` is the state of a "load more" request
+ * appending to an already shown page; a failed one keeps the rows on screen and
+ * offers the button again rather than replacing the list with an error.
+ */
 type State =
   | { status: 'loading' }
   | { status: 'error' }
-  | { status: 'ready'; tasks: Task[]; total: number }
+  | { status: 'ready'; tasks: Task[]; total: number; more: 'idle' | 'loading' | 'error' }
+
+/**
+ * Where the listing currently reads from. The offset belongs to one filter and
+ * one reload: it is remembered together with the params it was chosen under,
+ * so a new filter — or a retry — starts from the top without an effect having
+ * to reset it (and without a wasted request at the old offset).
+ */
+interface Paging {
+  params: TaskListParams
+  reloadKey: string
+  offset: number
+}
 
 /**
  * View state kept in the URL, so Back restores the filter the reader was on —
@@ -63,10 +94,18 @@ export function TasksPage() {
   const [draft, setDraft] = useState(view.q)
   const [creating, setCreating] = useState(false)
   const [reloadKey, reload] = useReloadKey()
+  // The counts on the chips. Refreshed on arrival so the numbers are the
+  // queue's now, not the shell's last poll — and they refresh themselves after
+  // every write made from this browser.
+  const { summary, refresh: refreshSummary } = useTaskSummary()
 
   useDocumentTitle(t('tasks.title'))
 
-  const params = useMemo(() => {
+  useEffect(() => {
+    refreshSummary()
+  }, [refreshSummary])
+
+  const params = useMemo<TaskListParams>(() => {
     const states: TaskState[] | undefined =
       view.state === '' || view.state === 'all' ? undefined : [view.state as TaskState]
     return {
@@ -81,26 +120,49 @@ export function TasksPage() {
     }
   }, [view])
 
+  // The offset is not in the URL on purpose: a reload starts from the top, and
+  // Back restores the filter, which is what the reader chose — not how far down
+  // they had scrolled.
+  const [paging, setPaging] = useState<Paging>({ params, reloadKey, offset: 0 })
+  const offset = paging.params === params && paging.reloadKey === reloadKey ? paging.offset : 0
+
   // Retry re-runs the same effect rather than firing a second fetch of its own,
-  // so a retried load is aborted on unmount exactly like the first.
+  // so a retried load is aborted on unmount exactly like the first. A "load
+  // more" is the same effect at a later offset, appending instead of replacing.
   useEffect(() => {
     const controller = new AbortController()
-    setState({ status: 'loading' })
-    fetchTasks(params, controller.signal)
+    const appending = offset > 0
+    setState((prev) =>
+      appending && prev.status === 'ready' ? { ...prev, more: 'loading' } : { status: 'loading' },
+    )
+    fetchTasks({ ...params, limit: PAGE_SIZE, offset }, controller.signal)
       .then((page) => {
         if (!controller.signal.aborted) {
-          setState({ status: 'ready', tasks: page.tasks, total: page.total })
+          setState((prev) => ({
+            status: 'ready',
+            tasks:
+              appending && prev.status === 'ready' ? [...prev.tasks, ...page.tasks] : page.tasks,
+            total: page.total,
+            more: 'idle',
+          }))
         }
       })
       .catch(() => {
         if (!controller.signal.aborted) {
-          setState({ status: 'error' })
+          setState((prev) =>
+            appending && prev.status === 'ready' ? { ...prev, more: 'error' } : { status: 'error' },
+          )
         }
       })
     return () => {
       controller.abort()
     }
-  }, [params, reloadKey])
+  }, [params, reloadKey, offset])
+
+  /** Puts a count after a chip's label, or leaves the label alone for zero. */
+  function chip(label: string, count: number | undefined): string {
+    return count !== undefined && count > 0 ? t('tasks.chipCount', { label, count }) : label
+  }
 
   const submitSearch = useCallback(
     (event: React.SyntheticEvent) => {
@@ -137,9 +199,11 @@ export function TasksPage() {
               setView({ state: choice })
             }}
           >
-            {choice === '' && t('tasks.filters.open')}
-            {choice === 'all' && t('tasks.filters.all')}
-            {choice !== '' && choice !== 'all' && t(`tasks.state.${choice}`)}
+            {choice === '' && chip(t('tasks.filters.open'), summary?.open)}
+            {choice === 'all' && chip(t('tasks.filters.all'), totalOf(summary))}
+            {choice !== '' &&
+              choice !== 'all' &&
+              chip(t(`tasks.state.${choice}`), summary?.by_state[choice])}
           </Button>
         ))}
         <Button
@@ -149,7 +213,7 @@ export function TasksPage() {
             setView({ answered: view.answered === '1' ? '' : '1' })
           }}
         >
-          {t('tasks.filters.answered')}
+          {chip(t('tasks.filters.answered'), summary?.answered)}
         </Button>
         {/* "Whose move is it?" — the tasks that are open, have the reader on
             them, and where somebody else acted last. The server evaluates it
@@ -162,7 +226,7 @@ export function TasksPage() {
             setView({ waiting: view.waiting === '1' ? '' : '1' })
           }}
         >
-          <Icon name="hourglass-split" /> {t('tasks.filters.waiting')}
+          <Icon name="hourglass-split" /> {chip(t('tasks.filters.waiting'), summary?.waiting_on_me)}
         </Button>
         {/* "What am I on?" — the questions the reader opened, answered, moved
             along or was put on. It narrows whatever state filter is already
@@ -207,11 +271,38 @@ export function TasksPage() {
       )}
 
       {state.status === 'ready' && state.tasks.length > 0 && (
-        <ul className="list-unstyled d-flex flex-column gap-2 mb-0">
-          {state.tasks.map((task) => (
-            <TaskRow key={task.uid} task={task} />
-          ))}
-        </ul>
+        <>
+          {/* How many match — the whole queue, not the page — so a reader who
+              sees fifty rows knows there are thirty-four more behind the button. */}
+          <p className="small text-body-secondary mb-2">
+            {t('tasks.count', { count: state.total })}
+          </p>
+          <ul className="list-unstyled d-flex flex-column gap-2 mb-0">
+            {state.tasks.map((task) => (
+              <TaskRow key={task.uid} task={task} />
+            ))}
+          </ul>
+          {state.tasks.length < state.total && (
+            <div className="text-center mt-3">
+              {state.more === 'error' && (
+                <p className="small text-danger mb-2">{t('tasks.error')}</p>
+              )}
+              <Button
+                variant="outline-secondary"
+                size="sm"
+                disabled={state.more === 'loading'}
+                onClick={() => {
+                  setPaging({ params, reloadKey, offset: state.tasks.length })
+                }}
+              >
+                {state.more === 'loading' && (
+                  <Spinner animation="border" size="sm" className="me-2" aria-hidden="true" />
+                )}
+                {t('tasks.loadMore')}
+              </Button>
+            </div>
+          )}
+        </>
       )}
 
       <NewTaskModal
@@ -222,6 +313,14 @@ export function TasksPage() {
       />
     </>
   )
+}
+
+/** Every task there is, whatever its state — the number behind „Všechny". */
+function totalOf(summary: TaskSummary | null): number | undefined {
+  if (summary === null) {
+    return undefined
+  }
+  return Object.values(summary.by_state).reduce((sum, n) => sum + n, 0)
 }
 
 /**

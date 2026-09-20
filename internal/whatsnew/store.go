@@ -10,24 +10,37 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// TaskCounter answers the one question the digest asks the work queue: how
+// many tasks wait on this reader. It is the phototask store in production; an
+// interface so the digest neither copies the "whose move is it" predicate nor
+// depends on the store's construction.
+type TaskCounter interface {
+	// WaitingOnMe returns how many open tasks the caller is on where somebody
+	// else acted last.
+	WaitingOnMe(ctx context.Context, callerUID string) (int, error)
+}
+
 // Store produces the "what's new" digest over the shared pgx pool. It owns no
 // connection; it borrows the pool supplied at construction.
 type Store struct {
-	pool *pgxpool.Pool
-	gap  time.Duration
+	pool  *pgxpool.Pool
+	tasks TaskCounter
+	gap   time.Duration
 }
 
 // NewStore returns a Store backed by pool, using [VisitGap] as the inactivity
-// threshold that starts a new visit. The pool stays owned by the caller.
-func NewStore(pool *pgxpool.Pool) *Store {
-	return &Store{pool: pool, gap: VisitGap}
+// threshold that starts a new visit and tasks for the "tasks wait on you" line.
+// The pool stays owned by the caller. A nil tasks makes that line always zero,
+// which is what a digest without a work queue should say.
+func NewStore(pool *pgxpool.Pool, tasks TaskCounter) *Store {
+	return &Store{pool: pool, tasks: tasks, gap: VisitGap}
 }
 
 // WithGap returns a copy of s that treats gap, rather than [VisitGap], as the
 // inactivity threshold. It exists for tests, which cannot wait six hours to
 // observe a visit rotation; production wiring uses NewStore.
 func (s *Store) WithGap(gap time.Duration) *Store {
-	return &Store{pool: s.pool, gap: gap}
+	return &Store{pool: s.pool, tasks: s.tasks, gap: gap}
 }
 
 // rotateVisitSQL stamps the heartbeat and, when the previous read is at least a
@@ -108,11 +121,11 @@ func (s *Store) rotateVisit(ctx context.Context, userUID string, now time.Time) 
 // surfaced where it can be acted on — the task listing, which says outright which
 // tasks have been replied to since anybody last looked.
 //
-// The last subquery is the one line of the digest that asks something *of* the
-// reader: questions opened since they were last here that are still waiting for
-// an answer. It counts only the `question` state, because a task already being
-// worked on is not waiting on them, and it excludes their own for the same reason
-// every other line does — being told about the question you asked is not news.
+// The tasks line is not here: it is not a "since" count at all. What the digest
+// says about the work queue is how many tasks wait on the reader right now,
+// which is the queue's own caller-relative predicate (see [TaskCounter]) — a
+// question that has been waiting on you for a fortnight is still yours to
+// answer, whereas one opened yesterday that you have already answered is not.
 //
 // $2 is the reader. Their own upload, comment and album are subtracted: the
 // digest reports what *others* did while they were away, and being told about
@@ -139,10 +152,7 @@ SELECT
         WHERE created_at > $1 AND type = 'album'
           AND created_by IS DISTINCT FROM $2),
     (SELECT count(*) FROM subjects
-        WHERE created_at > $1 AND name <> ''),
-    (SELECT count(*) FROM photo_tasks
-        WHERE created_at > $1 AND state = 'question'
-          AND created_by IS DISTINCT FROM $2)`
+        WHERE created_at > $1 AND name <> '')`
 
 // minePhotosSQL counts the new photographs the reader themselves is on. It is
 // the photo predicate of countsSQL — the library grid's own base filter and the
@@ -164,14 +174,22 @@ WHERE p.created_at > $1
       WHERE m.photo_uid = p.uid AND m.subject_uid = $3 AND m.invalid = FALSE)`
 
 // countSince returns how many photos, comments, hand-curated albums and named
-// people somebody other than the reader created after v.since, and — for an
-// account linked to a person — how many of those photos that person is on. An
-// unlinked account skips the second query entirely and reports zero.
+// people somebody other than the reader created after v.since, how many tasks
+// wait on the reader now, and — for an account linked to a person — how many of
+// those photos that person is on. An unlinked account skips the last query
+// entirely and reports zero.
 func (s *Store) countSince(ctx context.Context, v visit) (counts, error) {
 	var c counts
 	if err := s.pool.QueryRow(ctx, countsSQL, v.since, v.viewer).
-		Scan(&c.photos, &c.comments, &c.albums, &c.people, &c.tasks); err != nil {
+		Scan(&c.photos, &c.comments, &c.albums, &c.people); err != nil {
 		return counts{}, fmt.Errorf("whatsnew: counting changes: %w", err)
+	}
+	if s.tasks != nil {
+		waiting, err := s.tasks.WaitingOnMe(ctx, v.viewer)
+		if err != nil {
+			return counts{}, fmt.Errorf("whatsnew: counting tasks waiting on the reader: %w", err)
+		}
+		c.tasks = waiting
 	}
 	if v.subjectUID == nil || c.photos == 0 {
 		return c, nil

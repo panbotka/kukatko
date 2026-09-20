@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import { CAPABILITIES_DEFAULT, CapabilitiesContext } from '../capabilities/CapabilitiesContext'
 import i18n from '../i18n'
+import { TaskSummaryContext } from '../tasks/TaskSummaryContext'
 import { declarations, readCss, ruleBody } from '../test/css'
 
 import { Layout } from './Layout'
@@ -499,5 +500,47 @@ describe('MobileNavDrawer — my photos', () => {
       'href',
       '/?person=sub123',
     )
+  })
+})
+
+describe('MobileNavDrawer — the tasks-waiting badge', () => {
+  beforeEach(async () => {
+    await i18n.changeLanguage('en')
+    mockViewport(true)
+  })
+
+  it('wears the count on the Tasks row, the same one the hamburger showed', async () => {
+    const user = userEvent.setup()
+    render(
+      <I18nextProvider i18n={i18n}>
+        <AuthContext.Provider value={auth()}>
+          <TaskSummaryContext.Provider
+            value={{
+              summary: {
+                by_state: { question: 4, working: 0, review: 0, done: 0, rejected: 0 },
+                open: 4,
+                waiting_on_me: 4,
+                answered: 0,
+              },
+              refresh: vi.fn(),
+            }}
+          >
+            <MemoryRouter initialEntries={['/']}>
+              <Routes>
+                <Route element={<Layout />}>
+                  <Route path="/" element={<div>home page</div>} />
+                </Route>
+              </Routes>
+            </MemoryRouter>
+          </TaskSummaryContext.Provider>
+        </AuthContext.Provider>
+      </I18nextProvider>,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Open the menu' }))
+    const drawer = await screen.findByRole('dialog')
+    const row = within(drawer).getByRole('link', { name: /Tasks/ })
+    expect(within(row).getByTestId('waiting-badge')).toHaveTextContent('4')
+    expect(within(row).getByText('4 tasks wait on you')).toBeInTheDocument()
   })
 })

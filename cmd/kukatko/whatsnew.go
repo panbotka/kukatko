@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/database"
+	"github.com/panbotka/kukatko/internal/phototask"
 	"github.com/panbotka/kukatko/internal/whatsnew"
 	"github.com/panbotka/kukatko/internal/whatsnewapi"
 )
@@ -11,10 +12,11 @@ import (
 // what happened in the library since the caller's previous visit, readable by
 // every signed-in role. The read guard is supplied via authAPI so whatsnewapi
 // stays decoupled from auth's wiring, and the store keeps the per-account visit
-// bookkeeping the digest is measured from.
+// bookkeeping the digest is measured from. The task store supplies the "tasks
+// wait on you" line, so the digest and the queue's badge count the same thing.
 func buildWhatsNewAPI(db *database.DB, authAPI *auth.API) *whatsnewapi.API {
 	return whatsnewapi.NewAPI(whatsnewapi.Config{
-		Store:       whatsnew.NewStore(db.Pool()),
+		Store:       whatsnew.NewStore(db.Pool(), phototask.NewStore(db.Pool())),
 		RequireAuth: authAPI.RequireAuth,
 	})
 }

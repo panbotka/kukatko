@@ -43,7 +43,11 @@ func (f lastCommentField) MarshalJSON() ([]byte, error) {
 	if f.comment == nil {
 		return []byte("null"), nil
 	}
-	return json.Marshal(f.comment)
+	out, err := json.Marshal(f.comment)
+	if err != nil {
+		return nil, fmt.Errorf("photoapi: encoding last comment: %w", err)
+	}
+	return out, nil
 }
 
 // resolvedLastComment builds the field for a row whose thread has been read:

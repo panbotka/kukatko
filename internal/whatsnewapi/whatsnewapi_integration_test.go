@@ -18,6 +18,7 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
+	"github.com/panbotka/kukatko/internal/phototask"
 	"github.com/panbotka/kukatko/internal/whatsnew"
 	"github.com/panbotka/kukatko/internal/whatsnewapi"
 )
@@ -55,7 +56,7 @@ func newEnv(t *testing.T) *env {
 
 	e := &env{authSvc: authSvc, db: db, now: time.Date(2026, 8, 9, 9, 0, 0, 0, time.UTC)}
 	api := whatsnewapi.NewAPI(whatsnewapi.Config{
-		Store:       whatsnew.NewStore(db.Pool()).WithGap(testGap),
+		Store:       whatsnew.NewStore(db.Pool(), phototask.NewStore(db.Pool())).WithGap(testGap),
 		RequireAuth: authAPI.RequireAuth,
 		Now:         func() time.Time { return e.now },
 	})

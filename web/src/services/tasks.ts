@@ -1,3 +1,5 @@
+import { notifyTaskChanged } from '../lib/taskChanges'
+
 import { ApiError } from './auth'
 
 /**
@@ -153,6 +155,22 @@ export interface TaskPage {
   offset: number
 }
 
+/**
+ * The queue at a glance, as returned by `GET /api/v1/tasks/summary`
+ * (`phototask.Summary`): how many tasks stand in each state, how many are open,
+ * and — relative to the signed-in caller — how many wait on them and how many
+ * have been answered. `by_state` always names every state, zero included.
+ * `waiting_on_me` is the number on the navigation badge; `answered` is the open
+ * tasks somebody else replied to since the state last moved, i.e. what the
+ * `answered` filter over the default listing returns.
+ */
+export interface TaskSummary {
+  by_state: Record<TaskState, number>
+  open: number
+  waiting_on_me: number
+  answered: number
+}
+
 /** Query parameters of the listing. */
 export interface TaskListParams {
   states?: readonly TaskState[]
@@ -272,7 +290,11 @@ async function readErrorMessage(res: Response): Promise<string> {
   return res.statusText || `request failed: ${res.status}`
 }
 
-/** Issues a request against the tasks API, throwing ApiError on a non-OK status. */
+/**
+ * Issues a request against the tasks API, throwing ApiError on a non-OK status.
+ * Every successful write announces itself on the task-change bus, so the counts
+ * behind the navigation badge refresh at once rather than on their next poll.
+ */
 async function send<T>(
   method: string,
   path: string,
@@ -288,6 +310,9 @@ async function send<T>(
   })
   if (!res.ok) {
     throw new ApiError(res.status, await readErrorMessage(res))
+  }
+  if (method !== 'GET') {
+    notifyTaskChanged()
   }
   if (res.status === 204) {
     return undefined as T
@@ -343,6 +368,14 @@ export async function fetchTasks(
   signal?: AbortSignal,
 ): Promise<TaskPage> {
   return send<TaskPage>('GET', `/tasks${listQuery(params)}`, undefined, signal)
+}
+
+/**
+ * Reads the queue's counts as the caller sees them. Cheap — one query server
+ * side — and read by every signed-in role, so the shell may poll it.
+ */
+export async function fetchTaskSummary(signal?: AbortSignal): Promise<TaskSummary> {
+  return send<TaskSummary>('GET', '/tasks/summary', undefined, signal)
 }
 
 /** Reads one task. @throws ApiError 404 when it has been deleted since. */

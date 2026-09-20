@@ -1384,6 +1384,12 @@
     },
     "loading": "Loading tasks…",
     "error": "The tasks could not be loaded.",
+    "count_one": "{{count}} task",
+    "count_other": "{{count}} tasks",
+    "loadMore": "Load more",
+    "waitingBadge_one": "{{count}} task waits on you",
+    "waitingBadge_other": "{{count}} tasks wait on you",
+    "chipCount": "{{label}} ({{count}})",
     "empty": {
       "title": "No tasks",
       "hint": "A task is a question about a group of photos. Select some in the library and ask."
@@ -3868,8 +3874,8 @@
     "peopleCount_other": "{{count}} newly named people",
     "expand": "Details",
     "collapse": "Hide details",
-    "tasks_one": "{{count}} new question for you",
-    "tasks_other": "{{count}} new questions for you"
+    "tasks_one": "{{count}} task waits on you",
+    "tasks_other": "{{count}} tasks wait on you"
   },
   "welcome": {
     "title": "Welcome to Kukátko",

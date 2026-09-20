@@ -6,7 +6,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
-import { type Task, type TaskPage } from '../services/tasks'
+import { type Task, type TaskPage, type TaskSummary } from '../services/tasks'
+import { TaskSummaryContext, type TaskSummaryState } from '../tasks/TaskSummaryContext'
 
 import { TasksPage } from './TasksPage'
 
@@ -64,16 +65,34 @@ function auth(canWrite: boolean): AuthContextValue {
   } as unknown as AuthContextValue
 }
 
-function renderPage(entry = '/tasks', canWrite = true) {
+/** The queue's counts as the shell would hold them, overridden per case. */
+function summary(overrides: Partial<TaskSummary> = {}): TaskSummary {
+  return {
+    by_state: { question: 22, working: 3, review: 9, done: 40, rejected: 0 },
+    open: 34,
+    waiting_on_me: 5,
+    answered: 7,
+    ...overrides,
+  }
+}
+
+function renderPage(entry = '/tasks', canWrite = true, counts?: TaskSummaryState) {
+  const page = (
+    <MemoryRouter initialEntries={[entry]}>
+      <Routes>
+        <Route path="/tasks" element={<TasksPage />} />
+        <Route path="/tasks/:uid" element={<p>detail</p>} />
+      </Routes>
+    </MemoryRouter>
+  )
   return render(
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={auth(canWrite)}>
-        <MemoryRouter initialEntries={[entry]}>
-          <Routes>
-            <Route path="/tasks" element={<TasksPage />} />
-            <Route path="/tasks/:uid" element={<p>detail</p>} />
-          </Routes>
-        </MemoryRouter>
+        {counts === undefined ? (
+          page
+        ) : (
+          <TaskSummaryContext.Provider value={counts}>{page}</TaskSummaryContext.Provider>
+        )}
       </AuthContext.Provider>
     </I18nextProvider>,
   )
@@ -243,6 +262,107 @@ describe('TasksPage', () => {
     renderPage()
 
     expect(await screen.findByText('The tasks could not be loaded.')).toBeInTheDocument()
+  })
+})
+
+describe('the queue tells you where you stand', () => {
+  it('puts the counts on the chips and leaves a zero as a plain label', async () => {
+    renderPage('/tasks', true, { summary: summary(), refresh: vi.fn() })
+    await screen.findByText(/3 photos/)
+
+    expect(screen.getByRole('button', { name: 'Open (34)' })).toBeInTheDocument()
+    // Every state, whatever its own count says.
+    expect(screen.getByRole('button', { name: 'All (74)' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Waiting for an answer (22)' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'For approval (9)' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Answered (7)' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /On me \(5\)/ })).toBeInTheDocument()
+    // Nothing rejected: the label alone, no "(0)".
+    expect(screen.getByRole('button', { name: 'Rejected' })).toBeInTheDocument()
+    // "Mine" is not in the summary and carries no number.
+    expect(screen.getByRole('button', { name: /^Mine$/ })).toBeInTheDocument()
+  })
+
+  it('keeps the chips plain without the counts', async () => {
+    renderPage()
+    await screen.findByText(/3 photos/)
+
+    expect(screen.getByRole('button', { name: 'Open' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /\(\d+\)/ })).not.toBeInTheDocument()
+  })
+
+  it('refreshes the counts on arrival', async () => {
+    const refresh = vi.fn()
+    renderPage('/tasks', true, { summary: null, refresh })
+    await screen.findByText(/3 photos/)
+
+    expect(refresh).toHaveBeenCalled()
+  })
+
+  it('asks for a page of fifty and says how many there are', async () => {
+    fetchTasksMock.mockResolvedValue({ tasks: [task()], total: 34, limit: 50, offset: 0 })
+    renderPage()
+    await screen.findByText(/3 photos/)
+
+    expect(fetchTasksMock).toHaveBeenCalledWith(
+      expect.objectContaining({ limit: 50, offset: 0 }),
+      expect.anything(),
+    )
+    expect(screen.getByText('34 tasks')).toBeInTheDocument()
+  })
+
+  it('loads the next page under the first and stops when everything is shown', async () => {
+    const user = userEvent.setup()
+    fetchTasksMock.mockImplementation((params = {}) =>
+      Promise.resolve(
+        params.offset === undefined || params.offset === 0
+          ? { tasks: [task({ uid: 'tk1', title: 'First page' })], total: 2, limit: 50, offset: 0 }
+          : { tasks: [task({ uid: 'tk2', title: 'Second page' })], total: 2, limit: 50, offset: 1 },
+      ),
+    )
+    renderPage()
+    await screen.findByText('First page')
+
+    await user.click(screen.getByRole('button', { name: 'Load more' }))
+
+    // Appended, not replaced — and the button is gone once the total is shown.
+    expect(await screen.findByText('Second page')).toBeInTheDocument()
+    expect(screen.getByText('First page')).toBeInTheDocument()
+    expect(fetchTasksMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ limit: 50, offset: 1 }),
+      expect.anything(),
+    )
+    expect(screen.queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument()
+  })
+
+  it('starts a new filter from the top', async () => {
+    const user = userEvent.setup()
+    fetchTasksMock.mockImplementation((params = {}) =>
+      Promise.resolve({
+        tasks: [task({ uid: `tk-${String(params.offset ?? 0)}`, title: 'Row' })],
+        total: 3,
+        limit: 50,
+        offset: params.offset ?? 0,
+      }),
+    )
+    renderPage()
+    await screen.findByText('Row')
+    await user.click(screen.getByRole('button', { name: 'Load more' }))
+    await waitFor(() => {
+      expect(screen.getAllByText('Row')).toHaveLength(2)
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Rejected' }))
+
+    await waitFor(() => {
+      expect(fetchTasksMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ states: ['rejected'], offset: 0 }),
+        expect.anything(),
+      )
+    })
+    await waitFor(() => {
+      expect(screen.getAllByText('Row')).toHaveLength(1)
+    })
   })
 })
 

@@ -50,12 +50,22 @@
 // lives on. That is the intended reading: the digest covers the time since the
 // reader was last at the front door.
 //
+// # The tasks line
+//
+// One line is not about the visit at all: how many tasks wait on the reader.
+// It is the work queue's own "whose move is it" count, read from the task store
+// through [TaskCounter], because a question asked a fortnight ago is still
+// theirs to answer and one opened yesterday that they have already answered is
+// not — a "since" count could say neither. It is caller-relative by
+// construction, so the reader's own untouched questions never count.
+//
 // # Cost
 //
-// Every count is a range over a creation timestamp backed by its own index
-// (0053, plus idx_photos_live_created_at from 0015), so the work is proportional
-// to what is new rather than to the size of the library. The package only reads
-// the catalogue; the sole write it makes is the visit bookkeeping on the caller's
+// Every "since" count is a range over a creation timestamp backed by its own
+// index (0053, plus idx_photos_live_created_at from 0015), so the work is
+// proportional to what is new rather than to the size of the library; the tasks
+// line is one pass over the (small) task table. The package only reads the
+// catalogue; the sole write it makes is the visit bookkeeping on the caller's
 // own account row.
 package whatsnew
 
@@ -122,10 +132,13 @@ type Summary struct {
 	AlbumCount  int       `json:"album_count"`
 	People      []Person  `json:"people,omitempty"`
 	PersonCount int       `json:"person_count"`
-	// Tasks is how many questions were opened since the reference point and are
-	// still waiting for an answer — the one line of the digest that asks something
-	// of the reader rather than telling them what happened. A person who never
-	// opens the task list still meets the question they were meant to answer.
+	// Tasks is how many tasks wait on the reader right now — the one line of the
+	// digest that asks something of the reader rather than telling them what
+	// happened, and the one number not measured from the reference point: a
+	// question is theirs to answer however long ago it was asked. It is the work
+	// queue's own waiting_on_me count (open, the reader on it, somebody else acted
+	// last), so a person who never opens the task list still meets the question
+	// they were meant to answer.
 	Tasks int `json:"tasks"`
 }
 
@@ -136,8 +149,7 @@ type counts struct {
 	comments int
 	albums   int
 	people   int
-	// tasks counts the questions opened since the reference point that are still
-	// waiting for a person, the reader's own excluded.
+	// tasks counts the tasks waiting on the reader now; not a "since" number.
 	tasks int
 	// mine counts the new photos the reader appears on. It is a subset of photos
 	// — same base predicate, plus a marker naming the reader's linked person — so

@@ -14,6 +14,7 @@ import { useCapabilities } from '../capabilities/CapabilitiesContext'
 import { useIsNavDrawerViewport } from '../hooks/useIsNarrowViewport'
 import { LIBRARY_PATH } from '../lib/libraryView'
 import { formatVersion } from '../lib/version'
+import { useWaitingOnMe } from '../tasks/TaskSummaryContext'
 
 import { AnnouncementBanner } from './AnnouncementBanner'
 import { Footer } from './Footer'
@@ -34,11 +35,13 @@ import {
   PRIMARY_ITEMS,
   REVIEW_ITEM,
   STATS_ITEM,
+  TASKS_PATH,
   TOOLS_GROUP,
   UPLOAD_ITEM,
 } from './navItems'
 import { PersonAvatar } from './PersonAvatar'
 import { SearchCommand } from './search/SearchCommand'
+import { WaitingBadge } from './tasks/WaitingBadge'
 import { WelcomeModal } from './welcome/WelcomeModal'
 
 /**
@@ -87,6 +90,14 @@ import { WelcomeModal } from './welcome/WelcomeModal'
  * the widest role's bar comes out marginally *narrower* than before, which is what
  * keeps this change clear of the inline row's long-standing overflow.
  *
+ * **The bar tells you where you stand with the work queue.** The Úkoly entry
+ * lives inside „Procházet", where a count would be invisible until the dropdown
+ * is opened, so the number of tasks waiting on the reader ({@link WaitingBadge},
+ * from `TaskSummaryProvider`) is drawn on the *toggle* as well as on the entry;
+ * on a phone the same count sits on the corner of the hamburger, for the same
+ * reason. Nothing is drawn for zero, so the bar's width — measured, not guessed:
+ * see `docs/FRONTEND.md` — only pays for the badge while there is a summons.
+ *
  * The language switcher is not in the bar: this instance is Czech, so the setting
  * sits on the account page rather than
  * spending prime bar space. Every entry pairs an icon (for daily recognition) with
@@ -125,6 +136,9 @@ export function Layout() {
   // along on the capabilities the shell already holds, so opening the menu costs
   // no request; `null` (nothing loaded yet, or the call failed) shows nothing.
   const version = formatVersion(useCapabilities().version)
+  // How many tasks wait on the reader — the one count the bar carries. Zero
+  // (or unknown) draws nothing.
+  const waitingOnMe = useWaitingOnMe()
   // The mobile navbar is controlled so it can be closed programmatically. Below
   // the `lg` breakpoint the nav folds into a hamburger; react-bootstrap's
   // `collapseOnSelect` only collapses on a fired select event, which this bar's
@@ -170,6 +184,20 @@ export function Layout() {
   /** True when any route in `items` is the current location. */
   function groupActive(items: NavEntry[]): boolean {
     return items.some((item) => pathMatches(pathname, item.to))
+  }
+
+  /** The count badge an entry carries: only the work queue has one. */
+  function badgeFor(entry: NavEntry) {
+    return entry.to === TASKS_PATH ? <WaitingBadge count={waitingOnMe} /> : null
+  }
+
+  /**
+   * The badge a group's toggle carries: the sum over its entries, so a count
+   * inside a closed dropdown is not a count nobody sees.
+   */
+  function groupBadge(group: NavGroup) {
+    const count = group.items.some((item) => item.to === TASKS_PATH) ? waitingOnMe : 0
+    return <WaitingBadge count={count} />
   }
 
   /**
@@ -233,6 +261,7 @@ export function Layout() {
         >
           <Icon name={group.icon} />
           {t(group.labelKey)}
+          {groupBadge(group)}
         </Dropdown.Toggle>
         <Dropdown.Menu>
           {group.items.map((item) => (
@@ -245,6 +274,7 @@ export function Layout() {
             >
               <Icon name={item.icon} />
               {t(item.labelKey)}
+              {badgeFor(item)}
             </Dropdown.Item>
           ))}
         </Dropdown.Menu>
@@ -382,8 +412,18 @@ export function Layout() {
           {/* The hamburger closes the phone row (`[search] [hamburger]`): a menu
               button sits best under the thumb on the trailing edge. It is
               `display: none` on `lg`+, so the desktop bar is unmoved by where it
-              stands in the DOM. */}
-          <Navbar.Toggle aria-controls={MOBILE_MENU_ID} label={t('nav.openMenu')} />
+              stands in the DOM. It wears the tasks-waiting count on its corner:
+              Úkoly is inside the menu, and a summons behind a closed menu is no
+              summons. The children replace react-bootstrap's default glyph, so
+              the glyph is restated alongside the badge. */}
+          <Navbar.Toggle
+            aria-controls={MOBILE_MENU_ID}
+            label={t('nav.openMenu')}
+            className="position-relative"
+          >
+            <span className="navbar-toggler-icon" />
+            <WaitingBadge count={waitingOnMe} over />
+          </Navbar.Toggle>
         </Container>
       </Navbar>
       {/* Phone only: the hamburger opens a real drawer of labelled sections

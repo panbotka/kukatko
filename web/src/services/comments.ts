@@ -1,3 +1,5 @@
+import { notifyTaskChanged } from '../lib/taskChanges'
+
 import { ApiError } from './auth'
 
 /**
@@ -165,7 +167,20 @@ export async function createComment(
   body: string,
   signal?: AbortSignal,
 ): Promise<Comment> {
-  return send<Comment>('POST', threadPath(subject), { body }, signal)
+  const created = await send<Comment>('POST', threadPath(subject), { body }, signal)
+  announceTaskWrite(subject)
+  return created
+}
+
+/**
+ * Tells the task-change bus a task's thread was written to, so the counts
+ * behind the navigation badge ("whose move is it") refresh at once. A photo's
+ * thread is not the queue's business and stays silent.
+ */
+function announceTaskWrite(subject: CommentSubject): void {
+  if (subject.kind === 'task') {
+    notifyTaskChanged()
+  }
 }
 
 /**
@@ -182,12 +197,14 @@ export async function updateComment(
   body: string,
   signal?: AbortSignal,
 ): Promise<Comment> {
-  return send<Comment>(
+  const edited = await send<Comment>(
     'PATCH',
     `${threadPath(subject)}/${encodeURIComponent(commentUid)}`,
     { body },
     signal,
   )
+  announceTaskWrite(subject)
+  return edited
 }
 
 /**
@@ -207,4 +224,5 @@ export async function deleteComment(
     undefined,
     signal,
   )
+  announceTaskWrite(subject)
 }

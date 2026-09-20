@@ -7,6 +7,7 @@ import { useAuth } from '../auth/AuthContext'
 import { useCapabilities } from '../capabilities/CapabilitiesContext'
 import { LIBRARY_PATH } from '../lib/libraryView'
 import { formatVersion } from '../lib/version'
+import { useWaitingOnMe } from '../tasks/TaskSummaryContext'
 
 import { Icon } from './Icon'
 import { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp'
@@ -21,9 +22,11 @@ import {
   PRIMARY_ITEMS,
   REVIEW_ITEM,
   STATS_ITEM,
+  TASKS_PATH,
   TOOLS_GROUP,
   UPLOAD_ITEM,
 } from './navItems'
+import { WaitingBadge } from './tasks/WaitingBadge'
 
 /**
  * The id the navbar's hamburger points at with `aria-controls`. The desktop
@@ -92,6 +95,9 @@ export function MobileNavDrawer({
   // user menu prints it. It comes from the capabilities the shell already holds,
   // so opening the drawer costs no request.
   const version = formatVersion(useCapabilities().version)
+  // The tasks waiting on the reader, worn by the Úkoly row exactly as the bar's
+  // dropdown entry wears it (and the hamburger that opened this drawer).
+  const waitingOnMe = useWaitingOnMe()
   // "My photos", offered only to an account that has said which person of the
   // library it is — the same gate the desktop user menu applies, from the same
   // builder, so the two menus cannot drift.
@@ -141,6 +147,7 @@ export function MobileNavDrawer({
       >
         <Icon name={entry.icon} className="kk-navdrawer__icon" />
         <span className="kk-navdrawer__label">{t(entry.labelKey)}</span>
+        {entry.to === TASKS_PATH && <WaitingBadge count={waitingOnMe} />}
       </NavLink>
     )
   }

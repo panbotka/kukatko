@@ -76,32 +76,27 @@ const taskColumns = `t.uid, t.title, t.body, t.state, t.resolution, t.source_que
 	COALESCE(NULLIF(lu.display_name, ''), lu.username, ''), ` + waitingSQL + `,
 	pa.participants, t.options`
 
-// taskJoins resolves both author accounts, summarises the thread, finds the
-// last activity and aggregates the participants. The users are LEFT JOINs
-// because created_by, closed_by and state_by are ON DELETE SET NULL: losing an
-// account must not lose the task. The thread is a LATERAL so its values can be
-// filtered and ordered on, which is the whole reason the count is not fetched
-// separately afterwards; last_reply_at is the same maximum restricted to
+// threadJoin summarises a task's thread as th. It is a LATERAL so its values
+// can be filtered and ordered on, which is the whole reason the count is not
+// fetched separately afterwards; last_reply_at is the same maximum restricted to
 // comments by somebody other than the caller — one's own words are not a reply.
-//
-// The last activity is the newest of three dated acts: the task's creation, the
-// last state change (an unrecorded mover read as the creator — the rows from
-// before migration 0082, and the truth for a task nobody has advanced) and the
-// newest live comment. Membership and participant changes are deliberately not
-// among them: they are bookkeeping around the conversation, not a move in it.
-// The rank breaks a tie at the same instant in favour of the comment, then the
-// state change, so a reply posted in the same second as a move still reads as
-// the reply.
-const taskJoins = `
-FROM photo_tasks t
-LEFT JOIN users cu ON cu.uid = t.created_by
-LEFT JOIN users xu ON xu.uid = t.closed_by
+const threadJoin = `
 LEFT JOIN LATERAL (
     SELECT count(*) AS comment_count, max(c.created_at) AS last_comment_at,
         max(c.created_at) FILTER (WHERE c.author_uid IS DISTINCT FROM ` + callerParam + `) AS last_reply_at
     FROM comments c
     WHERE c.task_uid = t.uid AND c.deleted_at IS NULL
-) th ON TRUE
+) th ON TRUE`
+
+// activityJoin finds a task's last activity as la: the newest of three dated
+// acts — the task's creation, the last state change (an unrecorded mover read as
+// the creator — the rows from before migration 0082, and the truth for a task
+// nobody has advanced) and the newest live comment. Membership and participant
+// changes are deliberately not among them: they are bookkeeping around the
+// conversation, not a move in it. The rank breaks a tie at the same instant in
+// favour of the comment, then the state change, so a reply posted in the same
+// second as a move still reads as the reply.
+const activityJoin = `
 LEFT JOIN LATERAL (
     SELECT a.at, a.by
     FROM (
@@ -115,7 +110,17 @@ LEFT JOIN LATERAL (
     ) a
     ORDER BY a.at DESC, a.rank
     LIMIT 1
-) la ON TRUE
+) la ON TRUE`
+
+// taskJoins resolves both author accounts, summarises the thread, finds the
+// last activity and aggregates the participants. The users are LEFT JOINs
+// because created_by, closed_by and state_by are ON DELETE SET NULL: losing an
+// account must not lose the task. The thread and the activity are the two
+// fragments the summary shares (see summarySQL); the rest is for rendering.
+const taskJoins = `
+FROM photo_tasks t
+LEFT JOIN users cu ON cu.uid = t.created_by
+LEFT JOIN users xu ON xu.uid = t.closed_by` + threadJoin + activityJoin + `
 LEFT JOIN users lu ON lu.uid = la.by
 LEFT JOIN LATERAL (
     SELECT COALESCE(json_agg(json_build_object(

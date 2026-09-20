@@ -9,6 +9,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
+	"github.com/panbotka/kukatko/internal/phototask"
 	"github.com/panbotka/kukatko/internal/whatsnew"
 )
 
@@ -37,7 +38,7 @@ func newEnv(t *testing.T) *env {
 	db := dbtest.New(t)
 	dbtest.TruncateAll(t, db)
 	return &env{
-		store: whatsnew.NewStore(db.Pool()).WithGap(testGap),
+		store: whatsnew.NewStore(db.Pool(), phototask.NewStore(db.Pool())).WithGap(testGap),
 		db:    db,
 		now:   time.Date(2026, 9, 6, 9, 0, 0, 0, time.UTC),
 	}
@@ -164,32 +165,45 @@ func TestOwnWorkIsNotNews(t *testing.T) {
 	}
 }
 
-// TestWaitingQuestionsAreNews: a task opened since the reader was last here and
-// still waiting for an answer is the one line of the digest that asks something
-// of them. Their own question is not news to them, and a task already being
-// worked on is not waiting on anybody.
-func TestWaitingQuestionsAreNews(t *testing.T) {
+// putOnTask makes user a participant of the task, the way being asked does.
+func (e *env) putOnTask(t *testing.T, taskUID, userUID string) {
+	t.Helper()
+	e.exec(t, `INSERT INTO photo_task_participants (task_uid, user_uid) VALUES ($1, $2)`, taskUID, userUID)
+}
+
+// TestTasksWaitingOnTheReaderAreNews: the digest's task line is the queue's own
+// "whose move is it" count, not a "since" number. A task the reader is on where
+// somebody else acted last is theirs to answer however long ago it was opened;
+// their own untouched question, a task they are not on and a closed task are
+// not — and the line alone is enough for the panel to appear.
+func TestTasksWaitingOnTheReaderAreNews(t *testing.T) {
 	env := newEnv(t)
 	env.addUser(t, "usr-a")
 	env.addUser(t, "usr-b")
 	env.openVisits(t, "usr-a", "usr-b")
 
-	at := env.now.Add(-time.Second)
-	env.addTask(t, "tk-open", "question", "usr-a", at)
+	// Opened long before this visit: still waiting on B.
+	at := env.now.Add(-48 * time.Hour)
+	env.addTask(t, "tk-asked", "question", "usr-a", at)
+	env.putOnTask(t, "tk-asked", "usr-a")
+	env.putOnTask(t, "tk-asked", "usr-b")
 	env.addTask(t, "tk-working", "working", "usr-a", at)
+	env.putOnTask(t, "tk-working", "usr-b")
+	env.addTask(t, "tk-not-mine", "question", "usr-a", at)
 	env.addTask(t, "tk-done", "done", "usr-a", at)
+	env.putOnTask(t, "tk-done", "usr-b")
 
 	mine := env.summary(t, "usr-a")
 	if mine.HasNews {
-		t.Errorf("author's own digest = %+v, want has_news false — own question is not news", mine)
+		t.Errorf("asker's digest = %+v, want has_news false — their own untouched questions wait on nobody else", mine)
 	}
 
 	other := env.summary(t, "usr-b")
 	if !other.HasNews {
-		t.Fatalf("other reader's digest = %+v, want has_news true", other)
+		t.Fatalf("asked reader's digest = %+v, want has_news true", other)
 	}
-	if other.Tasks != 1 {
-		t.Errorf("tasks = %d, want 1 — only the one still waiting for an answer", other.Tasks)
+	if other.Tasks != 2 {
+		t.Errorf("tasks = %d, want 2 — the open tasks B is on where A acted last", other.Tasks)
 	}
 }
 

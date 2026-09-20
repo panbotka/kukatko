@@ -929,6 +929,13 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   the coarser signal — a reply does not clear it, only a state change does — and `GET /tasks?answered=true`
   is the work that has an answer and is waiting to be written into the library, true even when nobody
   remembered to advance the state; `GET /tasks?waiting=true` is the finer "my move" list.
+  **`GET /tasks/summary`** (authenticated, one cheap query) → `{by_state:{question,working,review,done,rejected},
+  open, waiting_on_me, answered}` — the queue at a glance: `by_state` always names every state (zero
+  included), `open` is the sum of the three live ones, and the last two are **per caller**: `waiting_on_me`
+  is exactly the count of `GET /tasks?waiting=true` (the number on the navigation badge), `answered` the
+  count of `GET /tasks?answered=true` over the **open** tasks — the same SQL fragments as the listing's
+  flags and filters, so the badge, the chips on `/tasks` and the list they open can never disagree. The
+  route is a static segment, matched ahead of `/tasks/{uid}`.
   `GET /tasks/{uid}` (authenticated) → the task, as the caller sees it; 404 when deleted.
   `POST /tasks` `{title,body,query,state,photo_uids,options?}` → **201**; `PATCH /tasks/{uid}`
   `{title?,body?,query?,state?,resolution?,options?}` → 200 (an omitted field unchanged, an explicit `""`
@@ -1767,10 +1774,13 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `RequireAuth`):** the digest behind the **"what's new since your last visit"** panel on the library home.
   `GET /whats-new` → `200 {has_news, since?, photos, mine_photos, comments, albums:[{uid,title}], album_count,
   people:[{uid,name}], person_count, tasks}`. **`tasks`** is the one number in the digest that asks something
-  *of* the reader rather than telling them what happened: questions opened since their last visit that are
-  still **waiting for an answer** (state `question` only — a task already being worked on waits on nobody),
-  their own excluded like every other line. It is what gives the work queue a way to reach somebody who
-  never opens the task list; the panel draws it as a link to `/tasks?state=question`. The **comment** count
+  *of* the reader rather than telling them what happened — and the one **not measured from the visit**:
+  it is the caller's `waiting_on_me` count from `GET /tasks/summary` (open, the reader on it, somebody else
+  acted last), because a question asked a fortnight ago is still theirs to answer and one asked yesterday
+  that they have already answered is not. It is what gives the work queue a way to reach somebody who
+  never opens the task list; the panel draws it as "3 úkoly čekají na tebe", a link to `/tasks?waiting=1`.
+  (Until 2026-09-20 it counted `question`-state tasks opened since the visit, the reader's own excluded —
+  a number that said nothing about whose move it was.) The **comment** count
   stays photo threads only, even though both threads now live in one table — a task's thread is answered
   work, and it is surfaced where it can be acted on. **`has_news` is the only flag the client branches on** — it is false
   (and everything else absent or zero) for a **first-ever visit** and for a visit that found nothing, and in

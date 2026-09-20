@@ -3274,7 +3274,15 @@ to `## Package map` in `CLAUDE.md`.
   server-side. `HasNewAnswer` = `last_reply_at > state_at` (one's own comment never lights it; a closed
   task may still carry it); `WaitingOnMe` = open ∧ caller is a participant ∧ `la.by IS DISTINCT FROM`
   caller (an unknown actor counts as somebody else); `LastActivityAt/ByUID/ByName` ride along; membership
-  and participant writes deliberately do not count as activity), `internal/phototaskapi/`
+  and participant writes deliberately do not count as activity). **The queue at a glance** (`summary.go`):
+  `Summary(ctx, callerUID)` → `Summary{ByState (every state, zero included), Open, WaitingOnMe, Answered}`
+  in **one** `count(*) FILTER (…)` statement over `photo_tasks` plus the same two LATERALs the listing uses
+  (`threadJoin`/`activityJoin`, split out of `taskJoins` for exactly this; the participants aggregate and the
+  user joins are left out) — `WaitingOnMe` is the `waitingSQL` fragment, `Answered` is `answeredSQL` over the
+  open states, so the navigation badge, the chips and the lists behind them are one predicate;
+  `summarySQL` is *built* from `States` (`buildSummarySQL`, guarded by a unit test) so a sixth state could
+  not be forgotten. `WaitingOnMe(ctx, callerUID)` is the same query narrowed to the one number
+  `internal/whatsnew` asks for), `internal/phototaskapi/`
   (the HTTP API over tasks, their threads and their people; `Store` + `CommentStore` interfaces →
   unit-testable with fakes;
   `NewAPI(Config{Store,Comments,RequireAuth,RequireWrite,CommentThrottle})`+`RegisterRoutes` mounts
@@ -3282,7 +3290,8 @@ to `## Package map` in `CLAUDE.md`.
   and comma-separated, an unknown one → **400** rather than an empty result), `open`, `answered`,
   `waiting` (both caller-relative: `parseFilter` puts the signed-in uid into `Filter.CallerUID`), `q`,
   `photo`, `participant` (with `me` resolving to the caller, so a client need not learn its own uid),
-  `limit`, `offset`; the envelope echoes `limit`/`offset` as actually applied) and
+  `limit`, `offset`; the envelope echoes `limit`/`offset` as actually applied), **`GET /tasks/summary`**
+  (`handleSummary`: the store's `Summary` as the caller — a static segment chi matches ahead of `/{uid}`) and
   `GET /tasks/{uid}` (read **as the caller**, so its two flags are theirs) behind **`RequireAuth`**, `POST`/`PATCH`/`DELETE /tasks[/{uid}]` (both
   bodies carry `options`; on PATCH a `*[]string`, so absent, `[]` and a list are three different
   things, and the three option sentinels map to **400** in `writeTaskError`) and
@@ -3437,9 +3446,15 @@ to `## Package map` in `CLAUDE.md`.
   subjects only (`name <> ''`) and **waiting questions** (`photo_tasks` opened since the reference point
   whose state is still `question`) — the one count that asks something *of* the reader rather than reporting
   what happened, and the reason somebody who never opens the task list still meets the question they were
-  meant to answer. It takes part in `counts.empty()` like the rest, so it can raise the panel on its own. **Whose news:** every count — and the
+  meant to answer. It takes part in `counts.empty()` like the rest, so it can raise the panel on its own. **Since 2026-09-20 it is
+  not a "since" count at all:** `NewStore(pool, tasks TaskCounter)` takes the task store (interface
+  `WaitingOnMe(ctx, callerUID)`; nil = the line is always zero) and `countSince` reads the caller's
+  **`waiting_on_me`** from it — the queue's own "whose move is it" predicate (open, the reader on it,
+  somebody else acted last) — because a question asked a fortnight ago is still theirs to answer and one
+  opened yesterday that they already answered is not; the old `photo_tasks` subquery (state `question`,
+  opened since the visit, own excluded) is gone from `countsSQL`. **Whose news:** every count — and the
   album list with it — subtracts the **reader's own** work (`photos.uploaded_by`, `comments.author_uid`,
-  `albums.created_by`, `photo_tasks.created_by`, all `IS DISTINCT FROM $2`): the digest reports what *others* did while the reader was
+  `albums.created_by`, all `IS DISTINCT FROM $2`): the digest reports what *others* did while the reader was
   away, and "1 new comment" for the comment they just wrote is an echo, not news. `IS DISTINCT FROM` rather
   than `<>` because all three columns are `ON DELETE SET NULL` — work whose actor has since been deleted
   belongs to nobody and stays news to everybody. **Subjects are the deliberate exception:** the schema records
