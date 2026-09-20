@@ -181,7 +181,7 @@ func TestTextClauses_escapesLikeMetacharacters(t *testing.T) {
 		Search:    "a_b",
 		SearchNot: []string{"a_b"},
 	})
-	if !strings.Contains(sql, "camera_make ILIKE $1") {
+	if !strings.Contains(sql, "immutable_unaccent(camera_make) ILIKE immutable_unaccent($1)") {
 		t.Errorf("query missing the camera filter: %q", sql)
 	}
 	// textClauses binds camera, lens and search; the negation follows last.
@@ -288,7 +288,7 @@ func TestTaskCond(t *testing.T) {
 	for _, want := range []string{
 		"EXISTS (SELECT 1 FROM photo_task_photos tp JOIN photo_tasks t ON t.uid = tp.task_uid",
 		"tp.photo_uid = photos.uid",
-		"t.title ILIKE $1",
+		"immutable_unaccent(t.title) ILIKE immutable_unaccent($1)",
 		"t.uid = $2",
 	} {
 		if !strings.Contains(sql, want) {
@@ -315,8 +315,8 @@ func TestPersonCond(t *testing.T) {
 			contains: []string{
 				"EXISTS (SELECT 1 FROM markers m JOIN subjects s ON s.uid = m.subject_uid",
 				"m.invalid = FALSE",
-				"s.name ILIKE $1",
-				"s.nickname ILIKE $1",
+				"immutable_unaccent(s.name) ILIKE immutable_unaccent($1)",
+				"immutable_unaccent(s.nickname) ILIKE immutable_unaccent($1)",
 				"s.uid = $2",
 			},
 			args: []any{"%bohous%", "bohous"},
@@ -324,7 +324,7 @@ func TestPersonCond(t *testing.T) {
 		{
 			name:     "a wildcard anchors both name arms",
 			input:    "person:boh*",
-			contains: []string{"s.name ILIKE $1", "s.nickname ILIKE $1"},
+			contains: []string{"immutable_unaccent(s.name) ILIKE immutable_unaccent($1)", "immutable_unaccent(s.nickname) ILIKE immutable_unaccent($1)"},
 			args:     []any{"boh%", "boh*"},
 		},
 	}
@@ -373,8 +373,8 @@ func TestFamilyCond(t *testing.T) {
 			input: "family:necas",
 			contains: []string{
 				"WITH RECURSIVE descendants(uid, depth)",
-				"s.name ILIKE $1",
-				"s.nickname ILIKE $1",
+				"immutable_unaccent(s.name) ILIKE immutable_unaccent($1)",
+				"immutable_unaccent(s.nickname) ILIKE immutable_unaccent($1)",
 				"s.uid = $2",
 				"JOIN subject_family_children c ON c.family_uid = f.uid",
 				"d.depth < 20",
@@ -385,7 +385,7 @@ func TestFamilyCond(t *testing.T) {
 		{
 			name:     "a wildcard anchors both name arms of the root",
 			input:    "family:neca*",
-			contains: []string{"s.name ILIKE $1", "s.nickname ILIKE $1"},
+			contains: []string{"immutable_unaccent(s.name) ILIKE immutable_unaccent($1)", "immutable_unaccent(s.nickname) ILIKE immutable_unaccent($1)"},
 			args:     []any{"neca%", "neca*"},
 		},
 	}
@@ -529,5 +529,97 @@ func TestFPSCond_ntscSlack(t *testing.T) {
 	}
 	if bounds[0] < 29.5 || bounds[1] > 30.5 {
 		t.Errorf("fps bounds %v reach beyond the neighbouring frame rates", bounds)
+	}
+}
+
+// TestQueryTextFilters_foldAccentsOnBothSides is the guard over the rule that
+// every text match the query language compiles is case- *and* accent-insensitive:
+// both the column and the bound pattern pass through immutable_unaccent, so a
+// query typed without háčky finds the accented value and — the mirror case that
+// one-sided folding would miss — an accented query finds a value stored bare.
+//
+// It walks every key with a text arm rather than sampling, because the failure
+// mode this replaces was exactly one key being forgotten. The shape mirrors
+// internal/phototask's own assertion over its compiled search clause.
+func TestQueryTextFilters_foldAccentsOnBothSides(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		input string
+		want  []string
+	}{
+		{"title:pout", []string{"immutable_unaccent(title) ILIKE immutable_unaccent($1)"}},
+		{"description:pout", []string{"immutable_unaccent(description) ILIKE immutable_unaccent($1)"}},
+		{"notes:pout", []string{"immutable_unaccent(notes) ILIKE immutable_unaccent($1)"}},
+		{"filename:dovolena", []string{"immutable_unaccent(file_name) ILIKE immutable_unaccent($1)"}},
+		{"keywords:pout", []string{"immutable_unaccent(keywords) ILIKE immutable_unaccent($1)"}},
+		{"text:pout", []string{"immutable_unaccent(ocr_text) ILIKE immutable_unaccent($1)"}},
+		{"lens:sigma", []string{"immutable_unaccent(lens_model) ILIKE immutable_unaccent($1)"}},
+		{"camera:canon", []string{
+			"immutable_unaccent(camera_make) ILIKE immutable_unaccent($1)",
+			"immutable_unaccent(camera_model) ILIKE immutable_unaccent($1)",
+		}},
+		{"codec:jpeg", []string{
+			"immutable_unaccent(image_codec) ILIKE immutable_unaccent($1)",
+			"immutable_unaccent(video_codec) ILIKE immutable_unaccent($1)",
+		}},
+		{"country:Cesko", []string{"immutable_unaccent(pp.country) ILIKE immutable_unaccent($1)"}},
+		{"city:Chotemice", []string{"immutable_unaccent(pp.city) ILIKE immutable_unaccent($1)"}},
+		{"album:dovolena", []string{"immutable_unaccent(a.title) ILIKE immutable_unaccent($1)"}},
+		{"label:kytka", []string{"immutable_unaccent(l.name) ILIKE immutable_unaccent($1)"}},
+		{"task:popisky", []string{"immutable_unaccent(t.title) ILIKE immutable_unaccent($1)"}},
+		{"person:necas", []string{
+			"immutable_unaccent(s.name) ILIKE immutable_unaccent($1)",
+			"immutable_unaccent(s.nickname) ILIKE immutable_unaccent($1)",
+		}},
+		{"family:necas", []string{
+			"immutable_unaccent(s.name) ILIKE immutable_unaccent($1)",
+			"immutable_unaccent(s.nickname) ILIKE immutable_unaccent($1)",
+		}},
+		{"uploader:tomas", []string{
+			"immutable_unaccent(u.username) ILIKE immutable_unaccent($1)",
+			"immutable_unaccent(u.display_name) ILIKE immutable_unaccent($1)",
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			t.Parallel()
+			sql, _ := buildCountQuery(ListParams{QueryFilters: query.Parse(tt.input).Filters})
+			for _, want := range tt.want {
+				if !strings.Contains(sql, want) {
+					t.Errorf("compiled %q missing %q: %q", tt.input, want, sql)
+				}
+			}
+			// No text arm may be left comparing a raw column: that is the
+			// accent-sensitive shape this test exists to keep out.
+			if strings.Contains(sql, "ILIKE $") {
+				t.Errorf("compiled %q still holds an unfolded ILIKE: %q", tt.input, sql)
+			}
+		})
+	}
+}
+
+// TestFreeTextClauses_foldAccentsOnBothSides covers the two free-text arms of
+// the list path, which carry no key at all: q's plain terms (params.Search) and
+// its '-term' exclusions. The positive side matches through the fts column,
+// which migration 0007 generates through immutable_unaccent, so leaving either
+// of these bare would make the substring listing and the ranked search disagree
+// about whether "dum" is "dům".
+func TestFreeTextClauses_foldAccentsOnBothSides(t *testing.T) {
+	t.Parallel()
+
+	sql, _ := buildCountQuery(ListParams{Search: "dum", SearchNot: []string{"kostel"}})
+	for _, want := range []string{
+		"immutable_unaccent(title) ILIKE immutable_unaccent($1)",
+		"immutable_unaccent(description) ILIKE immutable_unaccent($1)",
+		"immutable_unaccent(notes) ILIKE immutable_unaccent($1)",
+		"immutable_unaccent(COALESCE(title, '')) NOT ILIKE immutable_unaccent($2)",
+		"immutable_unaccent(COALESCE(description, '')) NOT ILIKE immutable_unaccent($2)",
+		"immutable_unaccent(COALESCE(notes, '')) NOT ILIKE immutable_unaccent($2)",
+	} {
+		if !strings.Contains(sql, want) {
+			t.Errorf("compiled query missing %q: %q", want, sql)
+		}
 	}
 }

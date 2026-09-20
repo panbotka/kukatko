@@ -2418,6 +2418,14 @@ using the wildcard. Keys are case-insensitive (`ISO:100` = `iso:100`). **An unkn
 an error**: the whole token is searched as ordinary text (so `foo:bar` still finds a photo by its caption)
 and the response returns it in `unknown_tokens`, so the UI can show a hint. `*` is the **only** wildcard —
 SQL's `%` and `_` always match themselves, in a filter value, in free text and in its `-term` negation alike.
+**Every text match is case- *and* accent-insensitive.** Both sides of the comparison are folded through
+`immutable_unaccent`, so `city:Chotemice` finds "Chotěmice" and — the mirror case one-sided folding would
+miss — `text:pouť` finds a sign the recogniser read as "Pout". It holds for every filter whose value column
+below says *text* (`title:` `description:` `notes:` `filename:` `keywords:` `text:` `album:` `label:` `task:`
+`person:` `family:` `uploader:` `country:` `city:` `camera:` `lens:` `codec:`), for free text, and for a
+`-term` negation. The UID arms of `album:`/`label:`/`task:`/`person:`/`family:`/`uploader:`/`uid:` are
+unaffected — those are equality, not a pattern. The fold costs no index: these are `%…%` substring matches,
+which reach none either way.
 **`person:me` — the caller's own person.** `me` in a `person:`/`subject:` value resolves to the subject
 the caller's account is linked to, so it composes with everything else (`person:me year:1998`) and can be
 saved as a smart album. It is resolved **outside** `internal/query` (which stays a pure parser with no
@@ -2450,13 +2458,13 @@ put a photo taken minutes either side of New Year in the same year.
 | `title:` `description:` `notes:` | text | the corresponding photo column (substring, `*` wildcard) |
 | `filename:` | text | the file name |
 | `keywords:` (alias `keyword:`) | text | IPTC keywords |
-| `text:` | text | the text a recogniser read **inside** the photo (`photos.ocr_text`): a sign, a shop front, a scanned page. Substring, `*` wildcard, and **accent-insensitive** unlike its siblings — the latin recogniser routinely returns a Czech word without its diacritics, so `text:pouť` must still find a sign read as "Pout" |
+| `text:` | text | the text a recogniser read **inside** the photo (`photos.ocr_text`): a sign, a shop front, a scanned page. Substring, `*` wildcard, accent-insensitive like every text filter — which matters most here, because the latin recogniser routinely returns a Czech word without its diacritics, so `text:pouť` still finds a sign read as "Pout" |
 | `album:` | text | album membership by **name** (substring) or exact UID |
 | `label:` | text | a label by **name** or UID |
 | `task:` | text | membership in a **task** — the work queue's frozen group — by the task's **question** (substring, `*` wildcard) or exact UID. Closed tasks match too: the group is the record of what a batch of edits touched, which is exactly what somebody searching for it wants back |
-| `person:` (alias `subject:`) | text | a subject by **name**, by **nickname** or by UID, via non-invalid markers. The name and the nickname are matched on the same terms (substring, `*` wildcard, case-insensitive, **diacritics-sensitive** like `album:`) against the same bound pattern, so `person:Bohouš` finds Bohumil Nečas; an empty nickname matches nothing. The exact lower-case value **`me`** is reserved: it means the person the caller's own account is linked to (`users.subject_uid`) — see below |
+| `person:` (alias `subject:`) | text | a subject by **name**, by **nickname** or by UID, via non-invalid markers. The name and the nickname are matched on the same terms (substring, `*` wildcard, case- and accent-insensitive like `album:`) against the same bound pattern, so `person:Bohouš` finds Bohumil Nečas and `person:Necas` finds him too; an empty nickname matches nothing. The exact lower-case value **`me`** is reserved: it means the person the caller's own account is linked to (`users.subject_uid`) — see below |
 | `family:` | text | a whole **family**: the named subject, everybody **descended** from them and all of those people's **partners**, matched through non-invalid markers. The root is named exactly as `person:` names a subject — by **name**, by **nickname** or by **UID**, same substring/`*`/case rules — and the set is the one `GET /subjects/{uid}/tree?direction=descendants` draws, so a page and a filter can never disagree about who "the Nečas family" is. It is deliberately **not** a connected component: in a village the families marry into each other, and a component would eventually swallow everybody and stop filtering anything. A person reachable by two paths (cousins marrying) is counted **once**. The walk is bounded at 20 generations. The exact lower-case value **`me`** is reserved here too — see above. There is **no** Czech alias `rodina:`, for the same reason `osoba:` is unsupported: the key registry is English-only |
-| `uploader:` | text | who uploaded the photo, by the account's **username or display name** (substring, `*` wildcard, and **accent-insensitive** like `text:` — a name is typed from memory, so `uploader:tomas` finds "Tomáš") or by exact UID. Two exact lower-case values are reserved: **`me`** is the caller's own account (see below) and **`none`** are the photos with **no** uploader, the ones an import brought in — so `uploader:!none` is everything somebody did upload |
+| `uploader:` | text | who uploaded the photo, by the account's **username or display name** (substring, `*` wildcard, accent-insensitive like every text filter — a name is typed from memory, so `uploader:tomas` finds "Tomáš") or by exact UID. Two exact lower-case values are reserved: **`me`** is the caller's own account (see below) and **`none`** are the photos with **no** uploader, the ones an import brought in — so `uploader:!none` is everything somebody did upload |
 | `favorite:` `private:` `archived:` | `yes\|no` | per-user favourite / private / archived; `archived:` **removes the default live-only scope** |
 | `hidden:` | `yes\|no` | hidden from the library (`photos.hidden_from_library`); like `archived:` it **removes the default visible-only scope**, so `hidden:yes` is the documented way back to a hidden photo |
 | `rating:` | `0-5`, ranges | the current user's rating; no row = 0, so `rating:0` finds the unrated |
@@ -2465,7 +2473,7 @@ put a photo taken minutes either side of New Year in the same year.
 | `taken:` `added:` | `YYYY`, `YYYY-MM`, `YYYY-MM-DD` | date of capture / of adding to the catalog (whole day/month/year) |
 | `dated:` | `yes\|no` | has / has no capture date. `dated:no` is the worklist of everything the timeline cannot place, and it deliberately covers **both** the photos whose date somebody declared unknown and those that never had one — the same job either way. Provenance separates them on the photo (`taken_at_source`, `taken_at_before_unknown`) |
 | `before:` / `after:` | a date as above | captured **before** the start of the date / **from** the start of the date |
-| `country:` `city:` | text | country/city from reverse geocoding (`photo_places`) |
+| `country:` `city:` | text | country/city from reverse geocoding (`photo_places`); the geocoder writes Czech names, so the accent fold is what makes `country:Cesko` find "Česko" |
 | `geo:` | `yes\|no` | has / has no GPS coordinates |
 | `alt:` | number (m), ranges | altitude (non-negative only — `-` is the range operator) |
 | `near:` | a photo's UID | photos within `dist:` km of the given photo (spherical distance; the reference photo matches too) |

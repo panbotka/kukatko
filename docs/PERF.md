@@ -479,6 +479,35 @@ So the documented fallback — resolving the descendant set in Go and passing it
 `condBuilder` receives neither a context nor a pool — is **not** taken. Take it
 only if a future measurement shows the planner stops hoisting.
 
+### The accent fold on the text filters
+
+Every text filter the query language compiles wraps both sides of its `ILIKE` in
+`immutable_unaccent` (`unaccentLike` in `internal/photos/store_query.go`), so
+`city:Chotemice` finds "Chotěmice". The worry is the wrapper: a function call
+around a column cannot use a plain index. It costs nothing here, because these
+are `%…%` contains-matches — they reach no index either way, before the fold or
+after it.
+
+**Measured on production data, 2026-09-20.** 21 019 photos, 2 459 `photo_places`
+rows, 126 subjects. `EXPLAIN (ANALYZE, BUFFERS)`, plain form against folded form:
+
+| Query | Before | After |
+| --- | --- | --- |
+| `count(*)` over `title ILIKE '%dum%'` (whole table) | 39.8 ms, seq scan | 58.2 ms, parallel seq scan |
+| a listing page: `archived_at IS NULL`, `ORDER BY taken_at DESC`, `LIMIT 60` | 46.8 ms, seq scan + sort | **17.4 ms**, index scan on `idx_photos_live_taken_at` |
+| `country:` over `photo_places`, same 2 459 rows matched | 19.4 ms | 29.4 ms |
+
+The whole-table count is the worst case and still under 60 ms. The **listing
+page** is the shape a user actually waits on, and there the fold is faster, not
+slower: the wider row estimate makes the planner walk the `taken_at` index and
+stop at 60 rows instead of scanning and sorting the library. On `photo_places`
+the filter's own buffer count is unchanged (70 either way); the difference is
+plan shape over a table two orders of magnitude smaller than `photos`.
+
+No index was added. A trigram (`pg_trgm` GIN) index over the folded expression
+would be the move if the library grows an order of magnitude and the whole-table
+count becomes a real path — it is not one today.
+
 ### The album index (`GET /api/v1/albums`)
 
 **Symptom (production, 2026-08-02).** The endpoint took **32.8 s** to return

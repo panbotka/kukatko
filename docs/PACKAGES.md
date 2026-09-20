@@ -4894,7 +4894,10 @@ to `## Package map` in `CLAUDE.md`.
   `Value.TextPattern()`, fallback to `Text` for values built in code); renderings `FreeText()` (websearch syntax for FTS incl. phrases and `-` negations),
   `PlainText()` (the positive terms for an ILIKE substring and for the embedding query), `NotTerms()`,
   `HasFilter(key)`. The AST is compiled into SQL by `internal/photos/store_query.go` (`queryClauses` — a map of
-  builders per key, everything through bind parameters; per-user filters scoped to `RatedBy`, `near:`
+  builders per key, everything through bind parameters; **every text arm folded through
+  `immutable_unaccent` on both sides** (`unaccentLike`) — one rule for the lot, so `city:Chotemice` finds
+  "Chotěmice" and `text:pouť` finds the "Pout" a recogniser read, while the UID arms stay plain equality;
+  per-user filters scoped to `RatedBy`, `near:`
   a spherical distance with the radius `dist:` default 5 km, `faces:` counts non-invalid face markers,
   `family:` an `EXISTS` over `markers` whose subject is in an inner `WITH RECURSIVE` walk of the root's
   descendants and their partners — the pattern and the uid bound as **two** placeholders, because one `$n`
@@ -4907,7 +4910,8 @@ to `## Package map` in `CLAUDE.md`.
   NTSC file records,
   every **decimal** bound (both an exact one and the ends of a range) allowed ±0.005 because of float4, integer bounds
   stay exact; `likePattern` makes a wildcard only out of an unescaped `*` and escapes `%`/`_`, just like
-  the substring filters `Search`/`?camera=`/`?lens=` in `store_list.go`). The package also owns the **uid
+  the substring filters `Search`/`?camera=`/`?lens=` in `store_list.go`'s `textClauses`, which share the
+  accent fold for the same reason — on the list path q's own free text *is* `Search`). The package also owns the **uid
   router** (`uidref.go`, pure, no I/O): `ClassifyUID(token) (UIDRef, bool)` reads a uid's two-letter prefix and
   says what it names — `ph` photo, `al` album, `lb` label, `su` subject (`EntityPerson`), `st` stack, `mk`
   marker, all 26 characters of lowercase base32, plus `pt` = an **imported** photo uid at 16 characters of

@@ -53,6 +53,9 @@ photo-book tool (deliberately out of scope), or a product with support and a rel
   suggestion then reading `Bohumil Nečas („Bohouš")` while the filter still carries the name; a `?` cheat
   sheet is one keypress away, and a filter the parser did not understand is pointed out instead of silently
   ignored.
+  **Nothing has to be spelled with háčky, either:** every text filter folds accents on both sides, so
+  `city:Chotemice` finds Chotěmice — and, the other way round, `text:pouť` finds a sign the reader read
+  as "Pout".
   **Nothing here has to be memorised:** the command palette (`/` or Cmd-K) completes the language as
   you write it — a half-typed word offers the filter keys starting with it, each explained in a line,
   and a key followed by a colon offers its values: the words it accepts, or the albums, labels and

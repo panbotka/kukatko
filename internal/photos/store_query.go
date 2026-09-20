@@ -39,13 +39,19 @@ func queryClauses(params ListParams, bind func(any) string) []string {
 // searchNotClauses compiles the negated free-text terms into NOT ILIKE filters
 // over the same columns the positive substring search matches. NULL columns
 // count as empty so a photo without a description still passes "-word".
+//
+// Accent-folded on both sides, because the term it negates is: the positive
+// free-text search runs through the fts column, which is itself generated
+// through immutable_unaccent. Leaving the exclusion plain would make `-dum`
+// keep the "dům" photos that `dum` on its own would have found — an exclusion
+// that silently fails to exclude.
 func searchNotClauses(params ListParams, bind func(any) string) []string {
 	where := make([]string, 0, len(params.SearchNot))
 	for _, term := range params.SearchNot {
-		p := bind("%" + likeEscape(term) + "%")
-		where = append(where, "(COALESCE(title, '') NOT ILIKE "+p+
-			" AND COALESCE(description, '') NOT ILIKE "+p+
-			" AND COALESCE(notes, '') NOT ILIKE "+p+")")
+		p := unaccent(bind("%" + likeEscape(term) + "%"))
+		where = append(where, "("+unaccent("COALESCE(title, '')")+" NOT ILIKE "+p+
+			" AND "+unaccent("COALESCE(description, '')")+" NOT ILIKE "+p+
+			" AND "+unaccent("COALESCE(notes, '')")+" NOT ILIKE "+p+")")
 	}
 	return where
 }
@@ -205,13 +211,13 @@ type condBuilder func(v query.Value, env condEnv) (string, bool)
 // query.KeyDist is deliberately absent: dist: only parameterises near:.
 var queryCondBuilders = map[query.Key]condBuilder{
 	query.KeyUID:         uidCond,
-	query.KeyTitle:       likeCond("title"),
-	query.KeyDescription: likeCond("description"),
-	query.KeyNotes:       likeCond("notes"),
-	query.KeyFilename:    likeCond("file_name"),
-	query.KeyKeywords:    likeCond("keywords"),
+	query.KeyTitle:       unaccentLikeCond("title"),
+	query.KeyDescription: unaccentLikeCond("description"),
+	query.KeyNotes:       unaccentLikeCond("notes"),
+	query.KeyFilename:    unaccentLikeCond("file_name"),
+	query.KeyKeywords:    unaccentLikeCond("keywords"),
 	query.KeyText:        unaccentLikeCond("ocr_text"),
-	query.KeyLens:        likeCond("lens_model"),
+	query.KeyLens:        unaccentLikeCond("lens_model"),
 	query.KeyCamera:      cameraCond,
 	query.KeyCodec:       codecCond,
 	query.KeyAlbum:       albumCond,
@@ -256,41 +262,62 @@ var queryCondBuilders = map[query.Key]condBuilder{
 	query.KeyNear:        nearCond,
 }
 
-// likeCond builds a case-insensitive pattern match against one column.
-func likeCond(column string) condBuilder {
-	return func(v query.Value, env condEnv) (string, bool) {
-		return column + " ILIKE " + env.bind(likePattern(v.TextPattern())), true
-	}
-}
-
 // unaccentLikeCond builds a case- *and* accent-insensitive pattern match against
 // one column, folding both sides through immutable_unaccent.
 //
-// Its siblings above use a plain ILIKE, and the divergence is on purpose. This
-// one serves ocr_text, whose content nobody typed: the recogniser reads Latin
-// script and routinely returns a Czech word stripped of its diacritics ("Pouť
-// 2026" on a real sign comes back as "Pout 2026"). Matching a user's correctly
-// spelled `text:pouť` against that with ILIKE would find nothing, and the reader
-// would conclude the photo is not in the library rather than that the recogniser
-// dropped a háček. Both sides are folded, so the search works whichever of the
-// two is missing its accents.
+// Every text filter in the query language is built from this, which is how the
+// rest of the library already searches: the photo fulltext column, album and
+// label search, subject search, the task queue. A Czech keyboard is not always
+// at hand and a háček is easy to drop, so somebody typing `city:Chotemice` is
+// naming the village, not spelling a stored value — and folding only one side
+// would fail the mirror case, where the *stored* value is the one missing its
+// accents. That is routine for ocr_text, whose content nobody typed: the
+// recogniser reads Latin script and returns "Pouť 2026" off a real sign as
+// "Pout 2026". Folding both sides makes the search work whichever side is bare.
+//
+// This is a `%…%` contains-match, so no index was reachable before the fold
+// either and the wrapper costs nothing an index could have saved — measured
+// against production, see docs/PERF.md §3.
+//
+// `filename:` is folded too, deliberately. A file name is a machine string and
+// loose matching could surprise, but the values here are not machine-generated
+// in practice — they come from a camera, a phone or a person's own folder, and
+// "Dovolená 2024.jpg" is exactly the kind of name somebody hunts for by typing
+// "dovolena". Folding an ASCII name changes nothing, so the widening only ever
+// touches the names that needed it.
 func unaccentLikeCond(column string) condBuilder {
 	return func(v query.Value, env condEnv) (string, bool) {
-		p := env.bind(likePattern(v.TextPattern()))
-		return "immutable_unaccent(" + column + ") ILIKE immutable_unaccent(" + p + ")", true
+		return unaccentLike(column, env.bind(likePattern(v.TextPattern()))), true
 	}
 }
 
+// unaccentLike renders one accent-folded ILIKE test: both the column expression
+// and the bound pattern go through immutable_unaccent, so the match survives
+// whichever of the two dropped its diacritics.
+func unaccentLike(expr, placeholder string) string {
+	return unaccent(expr) + " ILIKE " + unaccent(placeholder)
+}
+
+// unaccent wraps a SQL expression in the immutable wrapper around unaccent()
+// that the fts column and every text search in the library are built on.
+func unaccent(expr string) string {
+	return "immutable_unaccent(" + expr + ")"
+}
+
 // cameraCond matches the camera make or model, mirroring the camera= filter.
+//
+// Folded like the rest even though a camera make is ASCII in practice: one rule
+// for every text filter is a rule nobody has to remember, where a list of
+// exceptions is a list that goes stale. Folding an ASCII value is a no-op.
 func cameraCond(v query.Value, env condEnv) (string, bool) {
 	p := env.bind(likePattern(v.TextPattern()))
-	return "(camera_make ILIKE " + p + " OR camera_model ILIKE " + p + ")", true
+	return "(" + unaccentLike("camera_make", p) + " OR " + unaccentLike("camera_model", p) + ")", true
 }
 
 // codecCond matches the still-image or video codec.
 func codecCond(v query.Value, env condEnv) (string, bool) {
 	p := env.bind(likePattern(v.TextPattern()))
-	return "(image_codec ILIKE " + p + " OR video_codec ILIKE " + p + ")", true
+	return "(" + unaccentLike("image_codec", p) + " OR " + unaccentLike("video_codec", p) + ")", true
 }
 
 // uidCond matches one photo by its own UID or by the PhotoPrism UID it was
@@ -307,20 +334,23 @@ func uidCond(v query.Value, env condEnv) (string, bool) {
 		" WHERE pa.photoprism_uid = " + uid + " AND pa.photo_uid = photos.uid))", true
 }
 
-// albumCond matches membership in an album by title pattern or exact UID.
+// albumCond matches membership in an album by title pattern or exact UID. The
+// title arm is accent-folded, matching how the album list's own search box
+// (internal/organize) already reads a typed title.
 func albumCond(v query.Value, env condEnv) (string, bool) {
 	p := env.bind(likePattern(v.TextPattern()))
 	uid := env.bind(v.Text)
 	return "EXISTS (SELECT 1 FROM album_photos ap JOIN albums a ON a.uid = ap.album_uid " +
-		"WHERE ap.photo_uid = photos.uid AND (a.title ILIKE " + p + " OR a.uid = " + uid + "))", true
+		"WHERE ap.photo_uid = photos.uid AND (" + unaccentLike("a.title", p) + " OR a.uid = " + uid + "))", true
 }
 
-// labelCond matches a carried label by name pattern or exact UID.
+// labelCond matches a carried label by name pattern or exact UID, accent-folded
+// like the label list's own search.
 func labelCond(v query.Value, env condEnv) (string, bool) {
 	p := env.bind(likePattern(v.TextPattern()))
 	uid := env.bind(v.Text)
 	return "EXISTS (SELECT 1 FROM photo_labels pl JOIN labels l ON l.uid = pl.label_uid " +
-		"WHERE pl.photo_uid = photos.uid AND (l.name ILIKE " + p + " OR l.uid = " + uid + "))", true
+		"WHERE pl.photo_uid = photos.uid AND (" + unaccentLike("l.name", p) + " OR l.uid = " + uid + "))", true
 }
 
 // taskCond matches membership in a task by question pattern or exact UID. Closed
@@ -330,11 +360,15 @@ func taskCond(v query.Value, env condEnv) (string, bool) {
 	p := env.bind(likePattern(v.TextPattern()))
 	uid := env.bind(v.Text)
 	return "EXISTS (SELECT 1 FROM photo_task_photos tp JOIN photo_tasks t ON t.uid = tp.task_uid " +
-		"WHERE tp.photo_uid = photos.uid AND (t.title ILIKE " + p + " OR t.uid = " + uid + "))", true
+		"WHERE tp.photo_uid = photos.uid AND (" + unaccentLike("t.title", p) + " OR t.uid = " + uid + "))", true
 }
 
 // personCond matches a contained subject by name or nickname pattern, or by exact
 // UID, via a non-invalid marker — the same linkage the person= scope uses.
+//
+// Both name arms are accent-folded, the same way internal/people's own subject
+// search reads a typed name: in this archive the names are Czech, and `person:necas`
+// has to reach "Nečas" or the filter is unusable from a keyboard without háčky.
 //
 // The nickname matches on the same terms as the name, because in a village
 // archive it is often the only handle anybody remembers. Both name arms bind the
@@ -347,7 +381,7 @@ func personCond(v query.Value, env condEnv) (string, bool) {
 	uid := env.bind(v.Text)
 	return "EXISTS (SELECT 1 FROM markers m JOIN subjects s ON s.uid = m.subject_uid " +
 		"WHERE m.photo_uid = photos.uid AND m.invalid = FALSE " +
-		"AND (s.name ILIKE " + p + " OR s.nickname ILIKE " + p +
+		"AND (" + unaccentLike("s.name", p) + " OR " + unaccentLike("s.nickname", p) +
 		" OR s.uid = " + uid + "))", true
 }
 
@@ -392,7 +426,8 @@ func familyCond(v query.Value, env condEnv) (string, bool) {
 // familyMembersSQL renders the sub-select yielding one column of subject UIDs:
 // the roots matching the pattern or the UID, everybody descended from them, and
 // the partners of that whole set. pattern and uid are placeholders the caller
-// already bound, never user values.
+// already bound, never user values. The root arms are accent-folded like
+// personCond's — `family:necas` names the Nečas family.
 //
 // UNION rather than UNION ALL is load-bearing in the recursive term: when
 // cousins marry — which in a village they do — the same person is reachable by
@@ -400,8 +435,8 @@ func familyCond(v query.Value, env condEnv) (string, bool) {
 // guard to stop it, explode combinatorially.
 func familyMembersSQL(pattern, uid string) string {
 	return "WITH RECURSIVE descendants(uid, depth) AS (" +
-		" SELECT s.uid, 0 FROM subjects s WHERE s.name ILIKE " + pattern +
-		" OR s.nickname ILIKE " + pattern + " OR s.uid = " + uid +
+		" SELECT s.uid, 0 FROM subjects s WHERE " + unaccentLike("s.name", pattern) +
+		" OR " + unaccentLike("s.nickname", pattern) + " OR s.uid = " + uid +
 		" UNION" +
 		" SELECT c.child_uid, d.depth + 1 FROM descendants d" +
 		" JOIN subject_families f ON f.partner_a_uid = d.uid OR f.partner_b_uid = d.uid" +
@@ -427,8 +462,8 @@ func familyMembersSQL(pattern, uid string) string {
 // photos somebody did upload: `IS NULL` is never itself unknown, so the
 // NULL-safe wrapper around the negation changes nothing here.
 //
-// The name arms are folded through immutable_unaccent on both sides, unlike
-// albumCond's plain ILIKE: a person typing `uploader:tomas` is naming a
+// The name arms are folded through immutable_unaccent on both sides, as every
+// text arm in this file is: a person typing `uploader:tomas` is naming a
 // colleague from memory, not spelling a stored value, and "Tomáš" has to answer
 // to it.
 func uploaderCond(v query.Value, env condEnv) (string, bool) {
@@ -438,16 +473,21 @@ func uploaderCond(v query.Value, env condEnv) (string, bool) {
 	p := env.bind(likePattern(v.TextPattern()))
 	uid := env.bind(v.Text)
 	return "EXISTS (SELECT 1 FROM users u WHERE u.uid = photos.uploaded_by AND (" +
-		"immutable_unaccent(u.username) ILIKE immutable_unaccent(" + p + ") OR " +
-		"immutable_unaccent(u.display_name) ILIKE immutable_unaccent(" + p + ") OR " +
+		unaccentLike("u.username", p) + " OR " +
+		unaccentLike("u.display_name", p) + " OR " +
 		"u.uid = " + uid + "))", true
 }
 
 // placeCond builds a match against one photo_places column (country or city).
+//
+// Accent-folded on both sides like every other text filter: the values here are
+// Czech place names written by the geocoder ("Česko", "Chotěmice"), and nobody
+// hunting for their own village should have to reproduce its háčky to find it.
 func placeCond(column string) condBuilder {
 	return func(v query.Value, env condEnv) (string, bool) {
+		p := env.bind(likePattern(v.TextPattern()))
 		return "EXISTS (SELECT 1 FROM photo_places pp WHERE pp.photo_uid = photos.uid " +
-			"AND pp." + column + " ILIKE " + env.bind(likePattern(v.TextPattern())) + ")", true
+			"AND " + unaccentLike("pp."+column, p) + ")", true
 	}
 }
 

@@ -659,24 +659,32 @@ func gpsClauses(params ListParams) []string {
 	return []string{"(lat IS NULL OR lng IS NULL)"}
 }
 
-// textClauses returns the case-insensitive substring filters (camera, lens,
-// free-text search), binding each wildcard pattern through bind. Each value is
-// run through likeEscape first: these filters are plain substrings with no
-// wildcard syntax of their own, so a '%' or '_' the user typed must match
-// itself — as it already does on the negation path (searchNotClauses), which
-// would otherwise read the same term differently from its "-term" negation.
+// textClauses returns the case- and accent-insensitive substring filters
+// (camera, lens, free-text search), binding each wildcard pattern through bind.
+// Each value is run through likeEscape first: these filters are plain substrings
+// with no wildcard syntax of their own, so a '%' or '_' the user typed must
+// match itself — as it already does on the negation path (searchNotClauses),
+// which would otherwise read the same term differently from its "-term"
+// negation.
+//
+// The fold through immutable_unaccent is the same one searchNotClauses and the
+// query language's text filters use, for the same reason: on the list path q's
+// free text *is* params.Search, so without it "dum" would find "dům" in the
+// ranked search (which matches through the unaccented fts column) and miss it
+// in the listing that the same box produces.
 func textClauses(params ListParams, bind func(any) string) []string {
 	var where []string
 	if params.Camera != "" {
 		p := bind("%" + likeEscape(params.Camera) + "%")
-		where = append(where, "(camera_make ILIKE "+p+" OR camera_model ILIKE "+p+")")
+		where = append(where, "("+unaccentLike("camera_make", p)+" OR "+unaccentLike("camera_model", p)+")")
 	}
 	if params.Lens != "" {
-		where = append(where, "lens_model ILIKE "+bind("%"+likeEscape(params.Lens)+"%"))
+		where = append(where, unaccentLike("lens_model", bind("%"+likeEscape(params.Lens)+"%")))
 	}
 	if params.Search != "" {
 		p := bind("%" + likeEscape(params.Search) + "%")
-		where = append(where, "(title ILIKE "+p+" OR description ILIKE "+p+" OR notes ILIKE "+p+")")
+		where = append(where, "("+unaccentLike("title", p)+" OR "+unaccentLike("description", p)+
+			" OR "+unaccentLike("notes", p)+")")
 	}
 	return where
 }

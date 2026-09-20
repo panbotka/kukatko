@@ -218,9 +218,9 @@ func TestBuildListQuery(t *testing.T) {
 		for _, want := range []string{
 			"taken_at >= $1", "taken_at <= $2",
 			"lat IS NOT NULL AND lng IS NOT NULL",
-			"camera_make ILIKE $3 OR camera_model ILIKE $3",
-			"lens_model ILIKE $4",
-			"title ILIKE $5 OR description ILIKE $5 OR notes ILIKE $5",
+			"immutable_unaccent(camera_make) ILIKE immutable_unaccent($3) OR immutable_unaccent(camera_model) ILIKE immutable_unaccent($3)",
+			"immutable_unaccent(lens_model) ILIKE immutable_unaccent($4)",
+			"immutable_unaccent(title) ILIKE immutable_unaccent($5) OR immutable_unaccent(description) ILIKE immutable_unaccent($5) OR immutable_unaccent(notes) ILIKE immutable_unaccent($5)",
 		} {
 			if !strings.Contains(query, want) {
 				t.Errorf("query missing %q: %q", want, query)
