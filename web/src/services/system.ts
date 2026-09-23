@@ -110,6 +110,8 @@ export interface BackupStatus {
   running: boolean
   last_started_at?: string
   last_finished_at?: string
+  /** Finish of the last successful run; equals `last_finished_at` when the latest run succeeded. */
+  last_succeeded_at?: string
   last_error?: string
   last_result?: {
     dump_key: string

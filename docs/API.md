@@ -1980,7 +1980,9 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `GET /import/runs` + `GET /jobs/stats` + `GET /import/failures`.
 - **Backup API (`/api/v1`, `internal/backupapi`, maintainer-only via `RequireMaintainer`):** the status and trigger of
   the S3 backup. `GET /backup` → status + the last run (`{configured,running,last_started_at,
-  last_finished_at,last_error,last_result}`; without configuration `configured:false`); `POST /backup`
+  last_finished_at,last_succeeded_at,last_error,last_result}` — `last_succeeded_at` is the finish of the last
+  **successful** run, equal to `last_finished_at` exactly when the latest run succeeded; all of it is in memory
+  and empty after a restart; without configuration `configured:false`); `POST /backup`
   starts a backup in the **background** (`Trigger`) → 202 `{status:"started"}`, `backup.ErrAlreadyRunning` →
   409, without configuration → 503. The whole API is mounted **always** (`buildBackupAPI` in
   `cmd/kukatko/backup.go`); the scheduler (`backup.schedule`) and the CLI `kukatko backup` share the same

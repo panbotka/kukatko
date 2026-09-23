@@ -156,6 +156,11 @@ type Status struct {
 	// LastFinishedAt is when the most recent run finished, or nil if none has
 	// finished.
 	LastFinishedAt *time.Time `json:"last_finished_at,omitempty"`
+	// LastSucceededAt is when the most recent *successful* run finished, or nil
+	// if none has succeeded since the process started. It is kept apart from
+	// LastFinishedAt so a failed run does not hide how long ago the last good
+	// backup was; the most recent run succeeded exactly when the two are equal.
+	LastSucceededAt *time.Time `json:"last_succeeded_at,omitempty"`
 	// LastError is the most recent run's error message, empty on success.
 	LastError string `json:"last_error,omitempty"`
 	// LastResult is the most recent completed run's result, or nil if none.
@@ -275,7 +280,9 @@ func (s *Service) runReserved(ctx context.Context, ts time.Time) (Result, error)
 }
 
 // finish records the outcome of a run: clears the running flag, stamps the
-// finish time, and stores the result and any error message.
+// finish time (and, for a successful run, the success time — the same instant,
+// so a reader can tell whether the latest run is the latest good one), and
+// stores the result and any error message.
 func (s *Service) finish(res Result, runErr error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -286,7 +293,9 @@ func (s *Service) finish(res Result, runErr error) {
 	s.status.LastResult = &result
 	if runErr != nil {
 		s.status.LastError = runErr.Error()
+		return
 	}
+	s.status.LastSucceededAt = &finished
 }
 
 // execute does the actual backup work. The dump is mandatory: if it fails the

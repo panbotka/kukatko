@@ -2106,7 +2106,7 @@ algorithm cannot be changed in just one of them.
 
 ## Prometheus metrics
 
-`GET /metrics` (namespace `kukatko`, mounted outside `/api/v1` when `metrics.enabled`) exposes five
+`GET /metrics` (namespace `kukatko`, mounted outside `/api/v1` when `metrics.enabled`) exposes six
 groups, plus `kukatko_build_info{version,commit} 1` — the constant-1 gauge naming the running build
 (the same `internal/version` values `/healthz` reports), for annotating a deploy or joining onto any
 series with `* on() group_left(version) kukatko_build_info`. It is **unauthenticated** — restrict it at the network layer — so it deliberately carries only
@@ -2189,6 +2189,46 @@ becomes a label value.
   `kukatko_import_last_run_start_timestamp_seconds{source}` and `_finish_timestamp_seconds{source}`
   (absent while a run is still going). Both are Unix seconds: express the age as `time() - <gauge>`
   rather than exporting a pre-computed one.
+- **The platform underneath**, read on every scrape from `system.Service.Platform` — the System page's own
+  caches (the dashboard aggregation and the disk measurement, each memoised for 30 s and shared with the
+  page) and two in-memory states; the collector adds **no cache of its own** and runs no SQL the caches do
+  not already memoise:
+  - **Backup:** `kukatko_backup_configured` (always present, 0 without a destination), `_running`,
+    `_last_run_success` (1/0 for the most recent *finished* run), `_last_run_finish_timestamp_seconds`,
+    `_last_success_timestamp_seconds` (the last *good* run — it stays put through a failure) and
+    `_last_run_originals{result="uploaded|skipped"}`. The backup state lives in memory: after a restart
+    every outcome series is **absent** until the next run finishes, so write alerts that tolerate it.
+  - **Disk:** `kukatko_disk_tree_bytes{tree="originals|cache"}` and `kukatko_disk_filesystem_free_bytes` /
+    `_size_bytes` of the filesystem holding `storage.originals_path` (on an object-store instance the
+    originals tree is empty and the filesystem is the one the path would be on).
+  - **Map provider:** `kukatko_maps_configured` (0 without a mapy.com key), `kukatko_maps_up` (0 after a
+    rejected key, a 429, an unreachable upstream or another failure) and
+    `kukatko_maps_last_check_timestamp_seconds` — both absent until a call has been observed, because the
+    tracker records what the proxy saw and never probes (an idle map is unknown, not down).
+  - **Streaming encode states:** `kukatko_library_videos_by_encode_state{state="streamable|queued|running|
+    failed|not_scheduled"}` (disjoint, summing to every browsable video; the four non-streamable states sum
+    to `_videos_without_streaming`), `kukatko_library_video_encode_oldest_queued_timestamp_seconds` (absent
+    with nothing queued) and `kukatko_library_video_streaming_enabled`. `not_scheduled` is the one to alert
+    on: no queue row records a video that was never offered for encoding.
+  - **Backlogs and weight:** `kukatko_library_backlog{kind="faces_unassigned|clusters|
+    photos_without_taken_at|photos_without_gps|photos_without_ocr|duplicate_markers"}` and
+    `kukatko_library_bytes{set="live|trash|derived"}` (live and trash by the catalogue's own file sizes,
+    derived measured in the local cache — absent when the disk measurement failed). The near-duplicate
+    scan is deliberately **not** exported: its background refresh is too expensive to be kept warm by a
+    scraper.
+  - `kukatko_platform_collect_errors_total{source="catalogue|disk"}` — a failed source drops only its own
+    series for that scrape (the backup and map series are in memory and cannot fail).
+
+  ```promql
+  # Did last night's backup run and succeed? (fires on a failure, and on no success for 26 h)
+  kukatko_backup_last_run_success == 0
+  time() - kukatko_backup_last_success_timestamp_seconds > 26 * 3600
+  # Will the box run out of disk within a week?
+  predict_linear(kukatko_disk_filesystem_free_bytes[1d], 7 * 86400) < 0
+  # Videos nobody will ever encode, where streaming is on
+  kukatko_library_videos_by_encode_state{state="not_scheduled"} > 0
+    and on() kukatko_library_video_streaming_enabled == 1
+  ```
 
 **Histogram buckets differ per family on purpose**, because each is sized to the work it measures:
 
@@ -2211,8 +2251,8 @@ the two per-rendition encode families for every configured rendition × outcome.
 counters (`stale_locks_recovered_total`, `geocode_credits_spent_total`, …) are at zero anyway.
 
 The gauges carry no `_total` suffix on purpose (it is reserved for counters, so `rate()` over a name
-stays meaningful). A queue-query or library-aggregation failure drops only its own families and never
-fails the whole scrape.
+stays meaningful). A queue-query, library-aggregation or platform-source failure drops only its own
+families and never fails the whole scrape.
 
 ## Make targets and CI/CD
 

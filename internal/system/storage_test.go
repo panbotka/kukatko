@@ -122,6 +122,40 @@ func TestStorageCacheMemoises(t *testing.T) {
 	}
 }
 
+// TestStorageCacheMemoisesFailure verifies a failed measurement is reported as
+// failed on every read inside the TTL, not only on the read that recomputed it —
+// a scrape landing a second later must not take the partial numbers for real ones.
+func TestStorageCacheMemoisesFailure(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "a.bin"), 100)
+
+	now := time.Unix(0, 0)
+	clock := func() time.Time { return now }
+	cache := newStorageCache(root, "", time.Minute, clock)
+
+	cancelled, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := cache.usage(cancelled); err == nil {
+		t.Fatal("usage with a cancelled context: err = nil, want the interrupted walk")
+	}
+
+	now = now.Add(30 * time.Second)
+	if _, err := cache.usage(t.Context()); err == nil {
+		t.Error("usage within the TTL: err = nil, want the memoised failure")
+	}
+
+	now = now.Add(time.Minute)
+	fresh, err := cache.usage(t.Context())
+	if err != nil {
+		t.Fatalf("usage past the TTL: %v", err)
+	}
+	if fresh.OriginalsBytes != 100 {
+		t.Errorf("fresh originals = %d, want 100", fresh.OriginalsBytes)
+	}
+}
+
 // writeFile writes size bytes to path, creating parent directories, failing the
 // test on any error.
 func writeFile(t *testing.T, path string, size int) {

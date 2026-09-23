@@ -41,6 +41,7 @@ type storageCache struct {
 
 	mu         sync.Mutex
 	cached     StorageUsage
+	cachedErr  error
 	computedAt time.Time
 	valid      bool
 }
@@ -62,15 +63,22 @@ func newStorageCache(originals, cachePath string, ttl time.Duration, now func() 
 // older than the TTL (or has never been computed). A recompute error is
 // returned alongside the freshly gathered partial value; the caller may treat
 // the byte counts as best-effort.
+//
+// The error is memoised with the value, so every read inside the TTL reports the
+// same outcome: the dashboard shows the partial numbers either way, but /metrics
+// must be able to tell a partial measurement (a free-space reading of zero after
+// a failed statfs) from a real one on every scrape, not only on the one that
+// happened to recompute.
 func (c *storageCache) usage(ctx context.Context) (StorageUsage, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	if c.valid && c.now().Sub(c.computedAt) < c.ttl {
-		return c.cached, nil
+		return c.cached, c.cachedErr
 	}
 	usage, err := c.compute(ctx)
 	c.cached = usage
+	c.cachedErr = err
 	c.computedAt = c.now()
 	c.valid = true
 	return usage, err

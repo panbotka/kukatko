@@ -4773,7 +4773,13 @@ to `## Package map` in `CLAUDE.md`.
   cache and with `StreamingEnabled` stamped exactly as `Collect` stamps it, so the Prometheus collector
   (`kukatko_library_videos_without_streaming`) reads the dashboard's own number instead of counting again — a
   failure is an error, never an empty backlog, so a scrape drops the gauge rather than exporting a zero that
-  reads as "everything is encoded". The three video
+  reads as "everything is encoded". **`Platform(ctx) Platform`** (`platform.go`) is the scrape-safe accessor
+  the platform collector is built on: the memoised dashboard (streaming flag stamped, `DerivedBytes` from the
+  storage measurement), the memoised `StorageUsage`, `backup.Status` and `Maps` — **no** DB ping, sidecar
+  probe, queue or import query and no duplicate scan (its background refresh would be kept warm forever by
+  the scraper). A failed dashboard or storage read is a **nil** section, not an error, so a reader drops only
+  that section; `storageCache` memoises the measurement's **error** with its value, so every read inside the
+  TTL agrees on whether it is partial. The three video
   aggregates are folded into `countDashboardSQL` as CTEs (`hls_encoded` = renditions reduced to one row per
   video, `hls_encodes` = the `hls_transcode` queue grouped by the photo uid in its payload, `video_streaming`
   = both left-joined onto the browsable videos), each scanned once — **no per-video query**, which is what
@@ -5098,7 +5104,17 @@ to `## Package map` in `CLAUDE.md`.
   `VideoBacklog` — the **same** memoised aggregations the admin dashboard reads, so `/metrics`,
   `GET /system/stats` and `GET /system/status` cannot disagree and a scrape re-counts nothing;
   `/metrics` is unauthenticated, so only instance-wide aggregates go in it, never a per-user number or a
-  photo/album/label/person name as a label value; `Handler()`
+  photo/album/label/person name as a label value; `RegisterPlatform(PlatformFunc)` (`platform.go`) adds the
+  **platform** families read from one `PlatformSnapshot` per scrape — `kukatko_backup_configured`/`_running`/
+  `_last_run_success`/`_last_run_finish_timestamp_seconds`/`_last_success_timestamp_seconds`/
+  `_last_run_originals{result}`, `kukatko_disk_tree_bytes{tree}`/`_filesystem_free_bytes`/`_filesystem_size_bytes`,
+  `kukatko_maps_configured`/`_up`/`_last_check_timestamp_seconds`, `kukatko_library_video_streaming_enabled`/
+  `_videos_by_encode_state{state}`/`_video_encode_oldest_queued_timestamp_seconds`/`_backlog{kind}`/
+  `_bytes{set}` — with **no cache of its own** (the sources are the system caches or in-memory state; a second
+  layer would only make backup/maps lag); a nil `Disk`/`Catalogue` drops exactly that section and bumps
+  `kukatko_platform_collect_errors_total{source}`, and an event that has not happened in this process (no
+  finished backup, no observed map call, nothing queued) is **absent**, never a zero. Wired in
+  `cmd/kukatko/platform_metrics.go` onto `system.Service.Platform`; `Handler()`
   is mounted by `serve` on `/metrics` (the middleware skips that path, a scrape does not instrument itself),
   the observation methods `JobStarted`/`JobFinished`/`StaleLocksRecovered`/`ObserveEmbeddingCall`/
   `SetEmbeddingUp(target,up)`/

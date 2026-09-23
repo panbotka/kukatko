@@ -408,6 +408,43 @@ func TestService_Run_full(t *testing.T) {
 	if status.LastError != "" {
 		t.Errorf("Status.LastError = %q, want empty", status.LastError)
 	}
+	if status.LastSucceededAt == nil || status.LastFinishedAt == nil ||
+		!status.LastSucceededAt.Equal(*status.LastFinishedAt) {
+		t.Errorf("Status.LastSucceededAt = %v, want the finish time %v",
+			status.LastSucceededAt, status.LastFinishedAt)
+	}
+}
+
+// TestService_Run_failureKeepsLastSuccess verifies a failed run moves the finish
+// time but not the success time, so "when did the last good backup finish" stays
+// answerable after a bad night, and the two differ exactly when the latest run
+// failed.
+func TestService_Run_failureKeepsLastSuccess(t *testing.T) {
+	t.Parallel()
+	dumper := &fakeDumper{data: []byte("dump")}
+	svc := newTestService(t, newFakeStore(nil), dumper, &fakeOriginals{}, 0)
+
+	if _, err := svc.Run(context.Background(), time.Now()); err != nil {
+		t.Fatalf("first Run() error = %v", err)
+	}
+	succeeded := svc.Status().LastSucceededAt
+	if succeeded == nil {
+		t.Fatal("Status.LastSucceededAt = nil after a successful run")
+	}
+
+	dumper.startErr = errors.New("pg_dump exploded")
+	if _, err := svc.Run(context.Background(), time.Now()); err == nil {
+		t.Fatal("second Run() error = nil, want dump failure")
+	}
+	status := svc.Status()
+	if status.LastSucceededAt == nil || !status.LastSucceededAt.Equal(*succeeded) {
+		t.Errorf("Status.LastSucceededAt = %v after a failure, want the earlier %v",
+			status.LastSucceededAt, succeeded)
+	}
+	if status.LastFinishedAt == nil || status.LastFinishedAt.Equal(*succeeded) {
+		t.Errorf("Status.LastFinishedAt = %v, want the failed run's own finish time",
+			status.LastFinishedAt)
+	}
 }
 
 func TestService_Run_dumpFailureSkipsPrune(t *testing.T) {
@@ -429,6 +466,9 @@ func TestService_Run_dumpFailureSkipsPrune(t *testing.T) {
 	}
 	if svc.Status().LastError == "" {
 		t.Error("Status.LastError empty after a failed run")
+	}
+	if got := svc.Status().LastSucceededAt; got != nil {
+		t.Errorf("Status.LastSucceededAt = %v after only a failed run, want nil", got)
 	}
 }
 

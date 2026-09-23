@@ -241,8 +241,8 @@ func setupAuth(ctx context.Context, cmd *cobra.Command, cfg *config.Config, db *
 // backup service drives the scheduler (nil when not configured). It also builds
 // the embeddings-reachability checker that both backs GET /capabilities and the
 // caller starts as a background loop, returning it for that purpose. It also
-// registers the library-content /metrics collector over the system service it
-// builds, so the gauges and the dashboard share one aggregation.
+// registers the library-content and platform /metrics collectors over the system
+// service it builds, so the gauges and the dashboard share one aggregation.
 func appendOpsAPIs(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, apis []server.Option,
 	reg *metrics.Registry, mapsHealth *mapy.Health, geocodeBudget *placesjob.WindowBudget,
@@ -265,6 +265,7 @@ func appendOpsAPIs(
 	}
 	apis = append(apis, server.WithAPI(systemAPI.RegisterRoutes))
 	registerLibraryMetrics(reg, systemSvc, cfg.Metrics.LibraryTTL)
+	registerPlatformMetrics(reg, systemSvc)
 
 	reachChecker, err := buildReachabilityChecker(cfg, reg)
 	if err != nil {
