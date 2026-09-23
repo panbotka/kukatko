@@ -2107,16 +2107,32 @@ algorithm cannot be changed in just one of them.
 ## Prometheus metrics
 
 `GET /metrics` (namespace `kukatko`, mounted outside `/api/v1` when `metrics.enabled`) exposes five
-groups. It is **unauthenticated** — restrict it at the network layer — so it deliberately carries only
+groups, plus `kukatko_build_info{version,commit} 1` — the constant-1 gauge naming the running build
+(the same `internal/version` values `/healthz` reports), for annotating a deploy or joining onto any
+series with `* on() group_left(version) kukatko_build_info`. It is **unauthenticated** — restrict it at the network layer — so it deliberately carries only
 instance-wide aggregates: nothing per-user, and no name of a photo, album, label or person ever
 becomes a label value.
 
 - **Request and worker instrumentation** (event-driven, recorded as things happen):
   `kukatko_http_requests_total{method,route,status}` + `_request_duration_seconds` + `_inflight_requests`
   (the route label is the chi route *pattern*, never a raw URL), `kukatko_jobs_started_total{type}` /
-  `_finished_total{type,outcome}` / `_execution_duration_seconds{type,outcome}`,
-  `kukatko_embedding_request_duration_seconds{operation,outcome}` + `_service_up`,
-  `kukatko_thumbnail_generation_duration_seconds` and `kukatko_geocode_credits_spent_total`.
+  `_finished_total{type,outcome}` / `_execution_duration_seconds{type,outcome}` (outcome `success`,
+  `error` — the attempt failed and **will be retried** — `deferred` — requeued without a burned
+  attempt, the box was offline — or `terminal`: the handler declared the job permanently failed and it
+  was parked in `failed` with no retry), `kukatko_jobs_stale_locks_recovered_total` (running jobs
+  requeued because their worker stopped heartbeating — a crash or an OOM kill; **any increase is an
+  incident**, alert on `increase(...[1h]) > 0`),
+  `kukatko_embedding_request_duration_seconds{operation,outcome}` +
+  `kukatko_embedding_service_up{target}`, `kukatko_thumbnail_generation_duration_seconds` and
+  `kukatko_geocode_credits_spent_total`.
+  `service_up` is **reachability**, not the outcome of the last embed call: `target="text"` is the
+  host that answers `/embed/text` (`embedding.text_url`, else the box), refreshed **every minute** by
+  the semantic-search capability probe; `target="box"` is `embedding.url`, refreshed by the auto-wake
+  loop's probe (which only probes while `embedding.wake.enabled` and enough embedding work waits) and
+  by every image/face/OCR call. Every call moves the gauge of the host it went to — a transport-level
+  "offline" marks it 0, any answer (even an error response) marks it 1. The gauge is **not**
+  pre-set: an unprobed target is unknown, not down, and a 0 at startup would fire an outage alert on
+  every restart.
   `kukatko_import_run_photos{source,outcome}` — the tally of a run in progress — was removed with the
   migration importers that checkpointed it; the last-run gauges below are unaffected.
 - **The streaming encode** (event-driven, recorded where ffmpeg runs):
@@ -2173,6 +2189,26 @@ becomes a label value.
   `kukatko_import_last_run_start_timestamp_seconds{source}` and `_finish_timestamp_seconds{source}`
   (absent while a run is still going). Both are Unix seconds: express the age as `time() - <gauge>`
   rather than exporting a pre-computed one.
+
+**Histogram buckets differ per family on purpose**, because each is sized to the work it measures:
+
+- `kukatko_jobs_execution_duration_seconds`, `kukatko_embedding_request_duration_seconds` and
+  `kukatko_thumbnail_generation_duration_seconds` use exponential buckets from **10 ms doubling to
+  ~655 s** (17 finite bounds). The Prometheus defaults stop at 10 s, while `image_embed`/`face_detect`
+  against a waking box, `ocr`, `storyboard`, `metadata` and a RAW/HEIC thumbnail routinely run longer;
+  with the defaults they all landed in `+Inf` and no quantile above p50 meant anything.
+- `kukatko_http_request_duration_seconds` keeps the **defaults** (5 ms … 10 s, where nearly every
+  request lands, so existing dashboards keep their boundaries) plus a short tail of **30, 60, 120 and
+  300 s** for the streaming routes — the recognition sweep's NDJSON, a video download.
+- `kukatko_video_encode_duration_seconds` starts at 5 s and triples to ~3 h (above).
+
+**Series exist from process start.** A labelled family exports nothing until its first observation,
+which made "nothing failed" indistinguishable from "the instrumentation is broken". So at startup
+every label combination the instance can produce is created at zero: the job families for **every job
+type the worker has a handler for** × every outcome, the embeddings call histogram for every
+operation (`image`, `text`, `face`, `ocr`) × `success`/`error`, and — only with `video.hls.enabled` —
+the two per-rendition encode families for every configured rendition × outcome. The unlabelled
+counters (`stale_locks_recovered_total`, `geocode_credits_spent_total`, …) are at zero anyway.
 
 The gauges carry no `_total` suffix on purpose (it is reserved for counters, so `rate()` over a name
 stays meaningful). A queue-query or library-aggregation failure drops only its own families and never

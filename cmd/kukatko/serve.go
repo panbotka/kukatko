@@ -105,7 +105,7 @@ func runServe(cmd *cobra.Command) error {
 		return err
 	}
 
-	if err := startBackgroundServices(ctx, cfg, db, bg, backupSvc, reachChecker); err != nil {
+	if err := startBackgroundServices(ctx, cfg, db, reg, bg, backupSvc, reachChecker); err != nil {
 		return err
 	}
 	// One-off, off the startup path: which image model the sidecar actually serves,
@@ -132,12 +132,13 @@ func runServe(cmd *cobra.Command) error {
 // (inert unless the digest and mail are both on), the auto-wake check loop
 // (inert when disabled), the embeddings-reachability probe loop (inert when no
 // embedding URL is configured) that backs GET /capabilities, and — when
-// configured — the scheduled S3 backup.
+// configured — the scheduled S3 backup. reg (nil when metrics are off) receives
+// the auto-wake loop's box probes.
 func startBackgroundServices(
-	ctx context.Context, cfg *config.Config, db *database.DB,
+	ctx context.Context, cfg *config.Config, db *database.DB, reg *metrics.Registry,
 	bg backgroundServices, backupSvc *backup.Service, reachChecker *reachability.Checker,
 ) error {
-	wakeSvc, err := buildWakeService(cfg, db)
+	wakeSvc, err := buildWakeService(cfg, db, reg)
 	if err != nil {
 		return err
 	}
@@ -265,7 +266,7 @@ func appendOpsAPIs(
 	apis = append(apis, server.WithAPI(systemAPI.RegisterRoutes))
 	registerLibraryMetrics(reg, systemSvc, cfg.Metrics.LibraryTTL)
 
-	reachChecker, err := buildReachabilityChecker(cfg)
+	reachChecker, err := buildReachabilityChecker(cfg, reg)
 	if err != nil {
 		return nil, nil, nil, err
 	}

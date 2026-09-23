@@ -36,6 +36,7 @@ func buildHLSServiceOrNil(
 	if err != nil {
 		return nil, err
 	}
+	initEncodeMetrics(reg, plan)
 	store, err := newStorage(cfg)
 	if err != nil {
 		return nil, err

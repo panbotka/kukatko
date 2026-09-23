@@ -65,7 +65,7 @@ func TestBuildReachabilityChecker_followsTextURL(t *testing.T) {
 	cfg.Embedding.URL = deadURL(t)
 	cfg.Embedding.TextURL = liveURL(t)
 
-	checker, err := buildReachabilityChecker(cfg)
+	checker, err := buildReachabilityChecker(cfg, nil)
 	if err != nil {
 		t.Fatalf("buildReachabilityChecker: %v", err)
 	}
@@ -82,7 +82,7 @@ func TestBuildReachabilityChecker_withoutTextURL(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Embedding.URL = deadURL(t)
 
-	checker, err := buildReachabilityChecker(cfg)
+	checker, err := buildReachabilityChecker(cfg, nil)
 	if err != nil {
 		t.Fatalf("buildReachabilityChecker: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestBuildReachabilityChecker_withoutTextURL(t *testing.T) {
 // builds no client and never advertises semantic search.
 func TestBuildReachabilityChecker_unconfigured(t *testing.T) {
 	t.Parallel()
-	checker, err := buildReachabilityChecker(&config.Config{})
+	checker, err := buildReachabilityChecker(&config.Config{}, nil)
 	if err != nil {
 		t.Fatalf("buildReachabilityChecker: %v", err)
 	}

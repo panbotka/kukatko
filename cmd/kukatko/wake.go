@@ -9,6 +9,7 @@ import (
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/embedding"
 	"github.com/panbotka/kukatko/internal/jobs"
+	"github.com/panbotka/kukatko/internal/metrics"
 	"github.com/panbotka/kukatko/internal/wake"
 )
 
@@ -35,10 +36,12 @@ func (c embedJobCounter) PendingEmbeddingJobs(ctx context.Context) (int, error) 
 
 // buildWakeService constructs the optional Wake-on-LAN auto-wake service from
 // configuration. It uses the job store for queue depth and a lightweight
-// embeddings client for sidecar health probing. It returns an inert service when
+// embeddings client for sidecar health probing, whose results reg (nil when
+// metrics are off) records as the box's reachability — the loop probes the box
+// whether or not a job happens to be running. It returns an inert service when
 // wake is disabled; a configuration error surfaces here (config validation
 // already checks the MAC, so this typically only fails on a bad interface name).
-func buildWakeService(cfg *config.Config, db *database.DB) (*wake.Service, error) {
+func buildWakeService(cfg *config.Config, db *database.DB, reg *metrics.Registry) (*wake.Service, error) {
 	w := cfg.Embedding.Wake
 	client, err := embedding.New(embeddingClientConfig(cfg))
 	if err != nil {
@@ -52,7 +55,7 @@ func buildWakeService(cfg *config.Config, db *database.DB) (*wake.Service, error
 		MinQueue:      w.MinQueue,
 		Cooldown:      w.Cooldown,
 		Queue:         embedJobCounter{store: jobs.NewStore(db.Pool())},
-		Health:        client,
+		Health:        instrumentProbe(client, reg, embedding.TargetBox),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("wake: building service: %w", err)

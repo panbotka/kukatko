@@ -25,6 +25,8 @@ type fakeQueue struct {
 	terminal  map[int64]error
 	deferred  map[int64]time.Duration
 	recovered int
+	// staleRecoverable is what each RecoverStaleLocks call reports as recovered.
+	staleRecoverable int64
 	// beats counts Heartbeat calls per job id.
 	beats map[int64]int
 	// owner records, per job id, the worker id of the last lifecycle write, so
@@ -157,12 +159,20 @@ func (q *fakeQueue) ownerOf(id int64) string {
 	return q.owner[id]
 }
 
-// RecoverStaleLocks counts the call and recovers nothing.
+// RecoverStaleLocks counts the call and reports staleRecoverable jobs recovered
+// (none unless a test sets it).
 func (q *fakeQueue) RecoverStaleLocks(_ context.Context, _ time.Duration) (int64, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	q.recovered++
-	return 0, nil
+	return q.staleRecoverable, nil
+}
+
+// recoveries returns how many RecoverStaleLocks scans have run.
+func (q *fakeQueue) recoveries() int {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.recovered
 }
 
 // snapshot returns copies of the recorded completions and failures.

@@ -16,7 +16,19 @@ const (
 	// OutcomeDeferred marks a job requeued without a burned attempt (the box
 	// was offline, so the handler asked to retry later).
 	OutcomeDeferred = "deferred"
+	// OutcomeTerminal marks a job that failed permanently: the handler declared
+	// that no retry can succeed, so the job was parked as failed at once. Kept
+	// apart from OutcomeError, which may well succeed on the next attempt.
+	OutcomeTerminal = "terminal"
 )
+
+// jobOutcomes is every outcome a finished job can be reported under, in the
+// order the job families are pre-initialised with.
+var jobOutcomes = []string{OutcomeSuccess, OutcomeError, OutcomeDeferred, OutcomeTerminal}
+
+// callOutcomes is every outcome an embeddings call or a streaming encode can be
+// reported under.
+var callOutcomes = []string{OutcomeSuccess, OutcomeError}
 
 // routeLabel returns the bounded HTTP route label for req: the chi route
 // pattern (for example "/api/v1/photos/{uid}") when routing matched one,
@@ -44,7 +56,8 @@ func (r *Registry) JobStarted(jobType string) {
 }
 
 // JobFinished records that a job of jobType finished with the given outcome
-// (one of OutcomeSuccess, OutcomeError, OutcomeDeferred) after running for d.
+// (one of OutcomeSuccess, OutcomeError, OutcomeDeferred, OutcomeTerminal) after
+// running for d.
 // It satisfies the worker's metrics-observer contract.
 func (r *Registry) JobFinished(jobType, outcome string, d time.Duration) {
 	r.jobsFinished.WithLabelValues(jobType, outcome).Inc()
@@ -62,15 +75,25 @@ func (r *Registry) ObserveEmbeddingCall(operation string, d time.Duration, err e
 	r.embeddingDuration.WithLabelValues(operation, outcome).Observe(d.Seconds())
 }
 
-// SetEmbeddingUp records the embeddings sidecar's reachability: true when the
-// last call reached the box, false when it was offline. It satisfies
-// embedding.Observer.
-func (r *Registry) SetEmbeddingUp(up bool) {
-	if up {
-		r.embeddingUp.Set(1)
-		return
+// StaleLocksRecovered records that n running jobs were requeued because their
+// lock went stale. It satisfies the worker's metrics-observer contract; a
+// non-positive n records nothing.
+func (r *Registry) StaleLocksRecovered(n int64) {
+	if n > 0 {
+		r.staleLocks.Add(float64(n))
 	}
-	r.embeddingUp.Set(0)
+}
+
+// SetEmbeddingUp records the reachability of one embeddings sidecar target:
+// true when it answered its latest health probe or call, false when it was
+// offline. target is a small fixed vocabulary naming the role of the host
+// ("box", "text"), never a URL. It satisfies embedding.Observer.
+func (r *Registry) SetEmbeddingUp(target string, up bool) {
+	value := 0.0
+	if up {
+		value = 1
+	}
+	r.embeddingUp.WithLabelValues(target).Set(value)
 }
 
 // GeocodeCreditSpent records that the places job spent one mapy.com

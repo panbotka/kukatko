@@ -70,6 +70,7 @@ func buildJobs(
 		return nil, nil, nil, nil, err
 	}
 	registry := buildRegistry(svcs)
+	initJobMetrics(reg, registry.Types())
 
 	w := worker.New(worker.Config{
 		Queue:             store,

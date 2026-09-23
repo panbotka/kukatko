@@ -1520,7 +1520,9 @@ to `## Package map` in `CLAUDE.md`.
   or
   `Terminal(cause)`/`TerminalError` → `FailTerminal` instead of `Fail` (the job can never succeed, so it is
   parked in `failed` rather than retried with backoff — used by `mail_send` for a permanently undeliverable
-  address); a built-in **noop**
+  address); the optional `Observer` (`JobStarted`/`JobFinished`/`StaleLocksRecovered`, satisfied by
+  `*metrics.Registry`) gets outcome `success`/`error`/`deferred`/`terminal` from `outcomeFor`, which classifies
+  in the same order `record` writes, and the count of every stale-lock scan that requeued something; a built-in **noop**
   handler (`TypeNoop`/`NoopHandler`/`RegisterBuiltins`) only for sanity/tests; `Run` returns nil),
   `internal/wake/`
   (optional **Wake-on-LAN auto-wake** of the box, **default OFF** and fully inert when off: the package
@@ -5054,8 +5056,9 @@ to `## Package map` in `CLAUDE.md`.
   process-global `DefaultRegisterer`, so tests build independent metric surfaces without cross-test
   leakage; `New()` → `Registry` registers HTTP (`kukatko_http_requests_total` counter + a latency
   histogram + an inflight gauge, the route label = the **chi route pattern**, never a raw URL), the job lifecycle
-  (started/finished counter + a duration histogram by type/outcome), embeddings (a duration histogram +
-  an up gauge), import progress (a gauge per source/outcome), thumbnail duration and the geocode credit
+  (started/finished counter + a duration histogram by type/outcome — outcomes `success`/`error`/`deferred`/
+  `terminal` — plus `kukatko_jobs_stale_locks_recovered_total`), embeddings (a duration histogram +
+  `service_up{target}`, target `box`|`text` = the role of the host, never its URL), import progress (a gauge per source/outcome), thumbnail duration and the geocode credit
   counter (`kukatko_geocode_credits_spent_total` — metered mapy.com money, so the spend of a running import
   is watchable, not inferred from the bill), the **streaming encode** (`registerVideoEncode`:
   `kukatko_video_encode_duration_seconds{rendition,outcome}` + `_output_bytes_total{rendition,outcome}`, one
@@ -5063,8 +5066,14 @@ to `## Package map` in `CLAUDE.md`.
   through a six-second clip or a forty-minute one — plus `_source_seconds_total`, the footage counted once per
   **video**, so the summed duration divided by it is what a minute of video costs to encode; the histogram uses
   `ExponentialBuckets(5,3,8)` — 5 s tripling to just over three hours — because the default buckets top out at
-  ten seconds, shorter than every encode this exists to measure) + the standard
-  `go_`/`process_` collectors; the **pull-at-scrape collectors** `RegisterDBPool` (live pgx pool stats),
+  ten seconds, shorter than every encode this exists to measure), `kukatko_build_info{version,commit} 1` from
+  `internal/version` + the standard `go_`/`process_` collectors; the job, embedding and thumbnail histograms use
+  `workDurationBuckets` (`ExponentialBuckets(0.01,2,17)`, 10 ms → ~655 s) and HTTP `httpDurationBuckets` (the
+  defaults + 30/60/120/300 s for streaming routes) — the defaults' 10 s ceiling put every minute-long job in
+  `+Inf`; `preinit.go` creates every label combination at zero at startup (`InitJobTypes` from the worker
+  registry's `Types()`, `InitEmbeddingOperations` from `embedding.Operations()`, `InitVideoEncode` from the
+  configured rendition plan, all called from `cmd/kukatko/obs.go`), so an idle family reads 0 instead of
+  absent — except `service_up`, whose 0 would claim an outage nobody observed; the **pull-at-scrape collectors** `RegisterDBPool` (live pgx pool stats),
   `RegisterJobQueue` (`QueueDepthFunc` → `map[QueueCell]int` keyed by (type,state); the collector folds that
   one breakdown into `kukatko_jobs_queue_depth{state}`/`_by_type{type}`/`_by_type_state{type,state}`, so the
   three families are sums of each other and one query per scrape answers all of them; `collectTimeout` 5 s,
@@ -5091,8 +5100,9 @@ to `## Package map` in `CLAUDE.md`.
   `/metrics` is unauthenticated, so only instance-wide aggregates go in it, never a per-user number or a
   photo/album/label/person name as a label value; `Handler()`
   is mounted by `serve` on `/metrics` (the middleware skips that path, a scrape does not instrument itself),
-  the observation methods `JobStarted`/`JobFinished`/`ObserveEmbeddingCall`/`SetEmbeddingUp`/
-  `SetImportProgress`/`ObserveThumbnail`/`GeocodeCreditSpent`/`ObserveRenditionEncode`/`ObserveEncodedSource`
+  the observation methods `JobStarted`/`JobFinished`/`StaleLocksRecovered`/`ObserveEmbeddingCall`/
+  `SetEmbeddingUp(target,up)`/
+  `ObserveThumbnail`/`GeocodeCreditSpent`/`ObserveRenditionEncode`/`ObserveEncodedSource`
   and `Middleware(routeOf)` are handed to the subsystems that
   emit the events; it keeps the lightweight approach — one namespace, limited label sets;
   tunables in the `metrics.*` config), `internal/web/`

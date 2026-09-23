@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -16,6 +17,7 @@ type fakeObserver struct {
 	mu       sync.Mutex
 	started  []string
 	finished []finishedCall
+	stale    int64
 }
 
 // finishedCall captures one JobFinished invocation.
@@ -36,6 +38,20 @@ func (o *fakeObserver) JobFinished(jobType, outcome string, _ time.Duration) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	o.finished = append(o.finished, finishedCall{jobType: jobType, outcome: outcome})
+}
+
+// StaleLocksRecovered adds n to the recorded stale-lock recoveries.
+func (o *fakeObserver) StaleLocksRecovered(n int64) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.stale += n
+}
+
+// staleRecovered returns the recorded stale-lock recoveries.
+func (o *fakeObserver) staleRecovered() int64 {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.stale
 }
 
 // snapshot returns copies of the recorded calls.
@@ -75,6 +91,18 @@ func TestProcess_recordsJobMetrics(t *testing.T) {
 			handler:     func(context.Context, jobs.Job) error { return RetryAfter(time.Minute, errors.New("offline")) },
 			wantOutcome: outcomeDeferred,
 		},
+		{
+			name:        "terminal",
+			handler:     func(context.Context, jobs.Job) error { return Terminal(errors.New("corrupt original")) },
+			wantOutcome: outcomeTerminal,
+		},
+		{
+			name: "wrapped terminal",
+			handler: func(context.Context, jobs.Job) error {
+				return fmt.Errorf("decoding: %w", Terminal(errors.New("corrupt original")))
+			},
+			wantOutcome: outcomeTerminal,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -113,5 +141,70 @@ func TestProcess_noHandlerSkipsStartMetric(t *testing.T) {
 	started, finished := obs.snapshot()
 	if len(started) != 0 || len(finished) != 0 {
 		t.Errorf("started=%v finished=%v, want both empty", started, finished)
+	}
+}
+
+// TestRecoverLoop_reportsRecoveredLocks verifies every stale-lock recovery that
+// requeued something reaches the observer with its count, so the incident is a
+// counter on /metrics and not only a log line.
+func TestRecoverLoop_reportsRecoveredLocks(t *testing.T) {
+	t.Parallel()
+
+	q := newFakeQueue()
+	q.staleRecoverable = 2
+	obs := &fakeObserver{}
+	w := New(Config{
+		Queue: q, Registry: NewRegistry(), Concurrency: 1, IDPrefix: "test",
+		StaleScanInterval: time.Millisecond, Metrics: obs,
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		w.recoverLoop(ctx)
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for obs.staleRecovered() < 4 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	cancel()
+	<-done
+
+	if got := obs.staleRecovered(); got < 4 || got%2 != 0 {
+		t.Errorf("stale locks recovered = %d, want a positive multiple of 2 (two scans or more)", got)
+	}
+}
+
+// TestRecoverLoop_nothingRecoveredIsSilent verifies a scan that requeued nothing
+// does not reach the observer, so the counter moves only on a real incident.
+func TestRecoverLoop_nothingRecoveredIsSilent(t *testing.T) {
+	t.Parallel()
+
+	q := newFakeQueue()
+	obs := &fakeObserver{}
+	w := New(Config{
+		Queue: q, Registry: NewRegistry(), Concurrency: 1, IDPrefix: "test",
+		StaleScanInterval: time.Millisecond, Metrics: obs,
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		w.recoverLoop(ctx)
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for q.recoveries() < 3 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	cancel()
+	<-done
+
+	if q.recoveries() < 3 {
+		t.Fatalf("recovery scans = %d, want at least 3", q.recoveries())
+	}
+	if got := obs.staleRecovered(); got != 0 {
+		t.Errorf("stale locks recovered = %d, want 0 when no scan recovered anything", got)
 	}
 }

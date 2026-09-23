@@ -45,11 +45,12 @@ func (c *fakeClient) Healthy(context.Context) bool { return c.healthy }
 
 // recordingObserver captures the calls Instrument forwards to it.
 type recordingObserver struct {
-	op    string
-	err   error
-	calls int
-	up    bool
-	upSet bool
+	op     string
+	err    error
+	calls  int
+	up     bool
+	upSet  bool
+	target string
 }
 
 // ObserveEmbeddingCall records the latest call's operation and error.
@@ -59,8 +60,9 @@ func (o *recordingObserver) ObserveEmbeddingCall(operation string, _ time.Durati
 	o.calls++
 }
 
-// SetEmbeddingUp records the latest up signal.
-func (o *recordingObserver) SetEmbeddingUp(up bool) {
+// SetEmbeddingUp records the latest up signal and the target it was for.
+func (o *recordingObserver) SetEmbeddingUp(target string, up bool) {
+	o.target = target
 	o.up = up
 	o.upSet = true
 }
@@ -90,8 +92,8 @@ func TestInstrument_recordsImageCall(t *testing.T) {
 	if obs.op != OpImage || obs.err != nil || obs.calls != 1 {
 		t.Errorf("observed op=%q err=%v calls=%d, want image/nil/1", obs.op, obs.err, obs.calls)
 	}
-	if !obs.up {
-		t.Error("expected sidecar marked up after a successful call")
+	if !obs.up || obs.target != TargetBox {
+		t.Errorf("up=%v target=%q, want the box marked up after a successful call", obs.up, obs.target)
 	}
 }
 
@@ -126,8 +128,8 @@ func TestInstrument_ocrUnavailableMarksDown(t *testing.T) {
 	obs := &recordingObserver{}
 	c := Instrument(&fakeClient{ocrErr: ErrUnavailable}, obs)
 	_, _ = c.ImageOCR(context.Background(), strings.NewReader("x"), 0.5)
-	if !obs.upSet || obs.up {
-		t.Errorf("up = %v (set %v), want the sidecar marked down", obs.up, obs.upSet)
+	if !obs.upSet || obs.up || obs.target != TargetBox {
+		t.Errorf("up = %v (set %v, target %q), want the box marked down", obs.up, obs.upSet, obs.target)
 	}
 }
 
@@ -156,6 +158,9 @@ func TestInstrument_unavailableMarksDown(t *testing.T) {
 			if obs.up != tt.wantUp {
 				t.Errorf("up = %v, want %v", obs.up, tt.wantUp)
 			}
+			if obs.target != TargetText {
+				t.Errorf("target = %q, want %q: a text call lands on the text host", obs.target, TargetText)
+			}
 		})
 	}
 }
@@ -170,7 +175,77 @@ func TestInstrument_healthyMirrorsProbe(t *testing.T) {
 	if !c.Healthy(context.Background()) {
 		t.Error("Healthy = false, want true")
 	}
-	if !obs.upSet || !obs.up {
-		t.Errorf("up not set true by Healthy: set=%v up=%v", obs.upSet, obs.up)
+	if !obs.upSet || !obs.up || obs.target != TargetBox {
+		t.Errorf("up not set true for the box by Healthy: set=%v up=%v target=%q", obs.upSet, obs.up, obs.target)
+	}
+}
+
+// TestInstrumentProbe_recordsTarget verifies a standalone probe reports its
+// result under the target it was built for, whichever way the probe goes.
+func TestInstrumentProbe_recordsTarget(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		target  string
+		healthy bool
+	}{
+		{name: "text host up", target: TargetText, healthy: true},
+		{name: "text host down", target: TargetText, healthy: false},
+		{name: "box down", target: TargetBox, healthy: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			obs := &recordingObserver{}
+			p := InstrumentProbe(&fakeClient{healthy: tt.healthy}, obs, tt.target)
+			if got := p.Healthy(context.Background()); got != tt.healthy {
+				t.Errorf("Healthy = %v, want the inner result %v", got, tt.healthy)
+			}
+			if !obs.upSet || obs.up != tt.healthy || obs.target != tt.target {
+				t.Errorf("observed set=%v up=%v target=%q, want up=%v for %q",
+					obs.upSet, obs.up, obs.target, tt.healthy, tt.target)
+			}
+		})
+	}
+}
+
+// TestInstrumentProbe_nilObserverReturnsInner verifies a nil observer leaves the
+// probe unwrapped.
+func TestInstrumentProbe_nilObserverReturnsInner(t *testing.T) {
+	t.Parallel()
+
+	inner := &fakeClient{}
+	if got := InstrumentProbe(inner, nil, TargetBox); got != inner {
+		t.Errorf("InstrumentProbe(inner, nil) = %v, want the inner prober unchanged", got)
+	}
+}
+
+// TestOperations_coversEveryInstrumentedCall verifies the operation list names
+// each call the decorator reports, so a pre-created series never misses one.
+func TestOperations_coversEveryInstrumentedCall(t *testing.T) {
+	t.Parallel()
+
+	obs := &recordingObserver{}
+	c := Instrument(&fakeClient{}, obs)
+	ctx := context.Background()
+	seen := map[string]bool{}
+	_, _, _, _ = c.ImageEmbedding(ctx, strings.NewReader("x"))
+	seen[obs.op] = true
+	_, _, _, _ = c.TextEmbedding(ctx, "q")
+	seen[obs.op] = true
+	_, _, _ = c.FaceEmbeddings(ctx, strings.NewReader("x"))
+	seen[obs.op] = true
+	_, _ = c.ImageOCR(ctx, strings.NewReader("x"), 0.5)
+	seen[obs.op] = true
+
+	ops := Operations()
+	if len(ops) != len(seen) {
+		t.Errorf("Operations() = %v, want exactly the reported operations %v", ops, seen)
+	}
+	for _, op := range ops {
+		if !seen[op] {
+			t.Errorf("Operations() lists %q, which no instrumented call reports", op)
+		}
 	}
 }

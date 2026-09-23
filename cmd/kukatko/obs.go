@@ -8,6 +8,7 @@ import (
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/embedding"
+	"github.com/panbotka/kukatko/internal/hls"
 	"github.com/panbotka/kukatko/internal/hlsjob"
 	"github.com/panbotka/kukatko/internal/importer"
 	"github.com/panbotka/kukatko/internal/jobs"
@@ -53,12 +54,47 @@ func thumbOptions(cfg *config.Config, reg *metrics.Registry, db *database.DB) []
 }
 
 // instrumentEmbedding wraps c so its calls report latency and availability to
-// reg, returning c unchanged when reg is nil.
+// reg, and creates the call-duration series of every operation at zero so they
+// exist before the first call. It returns c unchanged when reg is nil.
 func instrumentEmbedding(c embedding.Client, reg *metrics.Registry) embedding.Client {
 	if reg == nil {
 		return c
 	}
+	reg.InitEmbeddingOperations(embedding.Operations())
 	return embedding.Instrument(c, reg)
+}
+
+// instrumentProbe wraps a background loop's health probe so each result is
+// recorded on reg as target's reachability, returning p unchanged when reg is
+// nil (a nil *Registry must not become a non-nil embedding.Observer).
+func instrumentProbe(p embedding.Prober, reg *metrics.Registry, target string) embedding.Prober {
+	if reg == nil {
+		return p
+	}
+	return embedding.InstrumentProbe(p, reg, target)
+}
+
+// initJobMetrics creates the job series of every type the worker has a handler
+// for, at zero, so an idle queue reads as "nothing ran" rather than as missing
+// instrumentation. It is a no-op when reg is nil.
+func initJobMetrics(reg *metrics.Registry, jobTypes []string) {
+	if reg == nil {
+		return
+	}
+	reg.InitJobTypes(jobTypes)
+}
+
+// initEncodeMetrics creates the streaming-encode series of every rendition in
+// plan, at zero. It is a no-op when reg is nil.
+func initEncodeMetrics(reg *metrics.Registry, plan []hls.Rendition) {
+	if reg == nil {
+		return
+	}
+	names := make([]string, 0, len(plan))
+	for _, rendition := range plan {
+		names = append(names, rendition.Name)
+	}
+	reg.InitVideoEncode(names)
 }
 
 // workerObserver returns reg as a worker.Observer, or a nil interface when reg

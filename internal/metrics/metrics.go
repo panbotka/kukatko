@@ -23,6 +23,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+
+	"github.com/panbotka/kukatko/internal/version"
 )
 
 // namespace is the metric name prefix shared by every series this binary
@@ -48,10 +50,11 @@ type Registry struct {
 	jobsStarted  *prometheus.CounterVec
 	jobsFinished *prometheus.CounterVec
 	jobDuration  *prometheus.HistogramVec
+	staleLocks   prometheus.Counter
 
 	// Embeddings sidecar.
 	embeddingDuration *prometheus.HistogramVec
-	embeddingUp       prometheus.Gauge
+	embeddingUp       *prometheus.GaugeVec
 
 	// Thumbnail generation.
 	thumbnailDuration prometheus.Histogram
@@ -63,6 +66,9 @@ type Registry struct {
 	encodeDuration     *prometheus.HistogramVec
 	encodeOutputBytes  *prometheus.CounterVec
 	encodeSourceSecond prometheus.Counter
+
+	// Which build is running.
+	buildInfo *prometheus.GaugeVec
 }
 
 // New constructs a Registry with every series registered, including the
@@ -74,6 +80,7 @@ func New() *Registry {
 	r.registerJobs()
 	r.registerExternal()
 	r.registerVideoEncode()
+	r.registerBuildInfo(version.Get())
 	r.reg.MustRegister(
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
@@ -95,7 +102,7 @@ func (r *Registry) registerHTTP() {
 		Subsystem: "http",
 		Name:      "request_duration_seconds",
 		Help:      "HTTP request duration in seconds, partitioned by method and route pattern.",
-		Buckets:   prometheus.DefBuckets,
+		Buckets:   httpDurationBuckets,
 	}, []string{"method", "route"})
 	r.httpInflight = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: namespace,
@@ -126,9 +133,16 @@ func (r *Registry) registerJobs() {
 		Subsystem: "jobs",
 		Name:      "execution_duration_seconds",
 		Help:      "Background job execution time in seconds, partitioned by job type and outcome.",
-		Buckets:   prometheus.DefBuckets,
+		Buckets:   workDurationBuckets,
 	}, []string{"type", "outcome"})
-	r.reg.MustRegister(r.jobsStarted, r.jobsFinished, r.jobDuration)
+	r.staleLocks = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: namespace,
+		Subsystem: "jobs",
+		Name:      "stale_locks_recovered_total",
+		Help: "Total running jobs requeued because their lock went stale — the worker that " +
+			"claimed them stopped heartbeating. Any increase is an incident.",
+	})
+	r.reg.MustRegister(r.jobsStarted, r.jobsFinished, r.jobDuration, r.staleLocks)
 }
 
 // registerExternal creates and registers the embeddings sidecar, import
@@ -139,20 +153,21 @@ func (r *Registry) registerExternal() {
 		Subsystem: "embedding",
 		Name:      "request_duration_seconds",
 		Help:      "Embeddings sidecar call duration in seconds, partitioned by operation and outcome.",
-		Buckets:   prometheus.DefBuckets,
+		Buckets:   workDurationBuckets,
 	}, []string{"operation", "outcome"})
-	r.embeddingUp = prometheus.NewGauge(prometheus.GaugeOpts{
+	r.embeddingUp = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: namespace,
 		Subsystem: "embedding",
 		Name:      "service_up",
-		Help:      "Whether the embeddings sidecar responded to its last call (1 = reachable, 0 = offline).",
-	})
+		Help: "Whether an embeddings sidecar target answered its last health probe or call " +
+			"(1 = reachable, 0 = offline); target is box (images, faces, OCR) or text (/embed/text).",
+	}, []string{"target"})
 	r.thumbnailDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Namespace: namespace,
 		Subsystem: "thumbnail",
 		Name:      "generation_duration_seconds",
 		Help:      "Wall-clock time to generate one thumbnail size in seconds.",
-		Buckets:   prometheus.DefBuckets,
+		Buckets:   workDurationBuckets,
 	})
 	r.geocodeCredits = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace: namespace,
@@ -162,6 +177,23 @@ func (r *Registry) registerExternal() {
 	})
 	r.reg.MustRegister(r.embeddingDuration, r.embeddingUp, r.thumbnailDuration, r.geocodeCredits)
 }
+
+// workDurationBuckets are the boundaries shared by the histograms of work that is
+// usually quick but routinely takes minutes — a job run, an embeddings sidecar
+// call, one thumbnail size — in seconds: 10 ms, doubling to just under eleven
+// minutes. The default buckets stop at ten seconds, while an image_embed or
+// face_detect against a waking box, an OCR pass, a storyboard or a RAW/HEIC
+// thumbnail regularly outlast that; with the defaults every such observation
+// fell into +Inf and any quantile above the median read as "more than 10 s".
+// Eighteen buckets (with +Inf) per label pair keep the series count bounded.
+var workDurationBuckets = prometheus.ExponentialBuckets(0.01, 2, 17)
+
+// httpDurationBuckets are the HTTP latency boundaries, in seconds: the defaults,
+// which suit the interactive API they were designed for, plus a short tail for
+// the streaming routes (the recognition sweep's NDJSON, a video download) that
+// outlive every default bucket. Only the tail is added, so the request histogram
+// keeps its resolution where nearly every request lands.
+var httpDurationBuckets = append(append([]float64(nil), prometheus.DefBuckets...), 30, 60, 120, 300)
 
 // encodeDurationBuckets are the boundaries of the streaming-encode histogram, in
 // seconds: 5 s, then tripling to just over three hours. The default buckets top
@@ -203,6 +235,20 @@ func (r *Registry) registerVideoEncode() {
 			"to get what a second of footage costs to encode.",
 	})
 	r.reg.MustRegister(r.encodeDuration, r.encodeOutputBytes, r.encodeSourceSecond)
+}
+
+// registerBuildInfo creates and registers kukatko_build_info, the constant-1
+// gauge whose labels name the running build, so a dashboard can annotate a
+// deploy and an alert can tell which version produced a series. The labels are
+// fixed at link time, so the one series is set once and never changes.
+func (r *Registry) registerBuildInfo(build version.Info) {
+	r.buildInfo = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: namespace,
+		Name:      "build_info",
+		Help:      "Always 1; the labels name the version and commit of the running binary.",
+	}, []string{"version", "commit"})
+	r.buildInfo.WithLabelValues(build.Version, build.Commit).Set(1)
+	r.reg.MustRegister(r.buildInfo)
 }
 
 // Handler returns an http.Handler that serves the registered metrics in the

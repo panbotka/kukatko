@@ -8,6 +8,7 @@ import (
 	"github.com/panbotka/kukatko/internal/capabilitiesapi"
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/embedding"
+	"github.com/panbotka/kukatko/internal/metrics"
 	"github.com/panbotka/kukatko/internal/reachability"
 	"github.com/panbotka/kukatko/internal/version"
 )
@@ -31,7 +32,11 @@ const capabilitiesCheckInterval = time.Minute
 // keeps working while the GPU box sleeps, and probing the box would wrongly grey
 // the mode out. This is the one health probe that follows the text URL — the one
 // internal/wake reads must stay on the box, or the box would never be woken.
-func buildReachabilityChecker(cfg *config.Config) (*reachability.Checker, error) {
+//
+// Every probe is also recorded on reg (nil when metrics are off) as the text
+// target's reachability: this loop is the one that knows, every minute, whether
+// semantic search can be answered, whether or not anyone is searching.
+func buildReachabilityChecker(cfg *config.Config, reg *metrics.Registry) (*reachability.Checker, error) {
 	textURL := textEmbeddingURL(cfg)
 	if textURL == "" {
 		return reachability.New(reachability.Config{}), nil
@@ -42,7 +47,10 @@ func buildReachabilityChecker(cfg *config.Config) (*reachability.Checker, error)
 	if err != nil {
 		return nil, fmt.Errorf("capabilities: building embedding health client: %w", err)
 	}
-	return reachability.New(reachability.Config{Health: client, Enabled: true}), nil
+	return reachability.New(reachability.Config{
+		Health:  instrumentProbe(client, reg, embedding.TargetText),
+		Enabled: true,
+	}), nil
 }
 
 // buildCapabilitiesAPI mounts GET /capabilities, an all-authenticated view of the

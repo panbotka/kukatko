@@ -40,6 +40,8 @@ func TestRegistry_exposesExpectedMetricNames(t *testing.T) {
 		"kukatko_jobs_started_total",
 		"kukatko_jobs_finished_total",
 		"kukatko_jobs_execution_duration_seconds",
+		"kukatko_jobs_stale_locks_recovered_total",
+		"kukatko_build_info",
 		"kukatko_jobs_queue_depth",
 		"kukatko_jobs_queue_depth_by_type",
 		"kukatko_jobs_queue_depth_by_type_state",
@@ -81,7 +83,8 @@ func exerciseAll(r *Registry) {
 	r.JobStarted("image_embed")
 	r.JobFinished("image_embed", OutcomeSuccess, 250*time.Millisecond)
 	r.ObserveEmbeddingCall("image", 10*time.Millisecond, nil)
-	r.SetEmbeddingUp(true)
+	r.SetEmbeddingUp("box", true)
+	r.StaleLocksRecovered(1)
 	r.ObserveThumbnail(5 * time.Millisecond)
 	r.ObserveRenditionEncode("1080p", OutcomeSuccess, 90*time.Second, 12_582_912)
 	r.ObserveEncodedSource(45 * time.Second)

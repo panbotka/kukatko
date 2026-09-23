@@ -170,6 +170,10 @@ const (
 	// outcomeDeferred marks a job requeued without a burned attempt because the
 	// handler asked to retry later (the box was offline).
 	outcomeDeferred = "deferred"
+	// outcomeTerminal marks a handler that returned a TerminalError: the job is
+	// parked as failed with no retry, unlike outcomeError, which may succeed on
+	// the next attempt.
+	outcomeTerminal = "terminal"
 )
 
 // Observer receives background-job lifecycle signals so the worker stays
@@ -180,8 +184,11 @@ type Observer interface {
 	// JobStarted records that a job of jobType was dispatched to its handler.
 	JobStarted(jobType string)
 	// JobFinished records that a job of jobType finished with outcome (one of
-	// "success", "error", "deferred") after running for d.
+	// "success", "error", "deferred", "terminal") after running for d.
 	JobFinished(jobType, outcome string, d time.Duration)
+	// StaleLocksRecovered records that stale-lock recovery requeued n running
+	// jobs whose worker stopped heartbeating. It is called only for n > 0.
+	StaleLocksRecovered(n int64)
 }
 
 // nopObserver is the default Observer used when Config.Metrics is nil; every
@@ -193,6 +200,9 @@ func (nopObserver) JobStarted(string) {}
 
 // JobFinished does nothing.
 func (nopObserver) JobFinished(string, string, time.Duration) {}
+
+// StaleLocksRecovered does nothing.
+func (nopObserver) StaleLocksRecovered(int64) {}
 
 // Queue is the subset of jobs.Store the worker depends on, expressed as an
 // interface so the runtime can be unit-tested with a fake.
@@ -517,14 +527,17 @@ func (w *Worker) heartbeatLoop(ctx context.Context, workerID string, job jobs.Jo
 }
 
 // outcomeFor classifies a handler's result into an Observer outcome label:
-// a nil error is success, a RetryAfterError is a deferral, anything else is an
-// error.
+// a nil error is success, a RetryAfterError is a deferral, a TerminalError is
+// terminal, anything else is an error. The order mirrors record, so the label
+// always names the queue write that follows.
 func outcomeFor(err error) string {
 	switch {
 	case err == nil:
 		return outcomeSuccess
 	case isRetryAfter(err):
 		return outcomeDeferred
+	case isTerminal(err):
+		return outcomeTerminal
 	default:
 		return outcomeError
 	}
@@ -615,6 +628,7 @@ func (w *Worker) recoverLoop(ctx context.Context) {
 			continue
 		}
 		if n > 0 {
+			w.metrics.StaleLocksRecovered(n)
 			log.Printf("worker: recovered %d stale job lock(s)", n)
 		}
 	}
