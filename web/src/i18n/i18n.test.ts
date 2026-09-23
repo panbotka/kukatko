@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import csCommon from './locales/cs/common.json'
 import enCommon from './locales/en/common.json'
-import { initOptions, supportedLngs } from './index'
+import appI18n, { initOptions, supportedLngs, syncDocumentLang } from './index'
 
 /** The localStorage key i18next-browser-languagedetector caches under. */
 const STORAGE_KEY = 'i18nextLng'
@@ -183,6 +183,88 @@ describe('default language', () => {
     await instance.changeLanguage('en')
 
     expect(window.localStorage.getItem(STORAGE_KEY)).toBe('en')
+  })
+})
+
+/**
+ * `<html lang>` must name the language the UI is in, or a screen reader reads
+ * English text with Czech pronunciation. index.html ships `cs`; the bootstrap
+ * keeps the attribute on i18next from the first resolution onwards.
+ */
+describe('document language', () => {
+  beforeEach(() => {
+    window.localStorage.removeItem(STORAGE_KEY)
+  })
+
+  /** Boots a fresh instance wired to a detached root, as the app wires its own. */
+  async function bootSynced() {
+    const root = document.createElement('html')
+    root.lang = 'cs'
+    const instance = createInstance()
+    syncDocumentLang(instance, root)
+    await instance.use(LanguageDetector).init(initOptions)
+    return { instance, root }
+  }
+
+  it('is set on the initial resolution for a stored English preference', async () => {
+    window.localStorage.setItem(STORAGE_KEY, 'en')
+
+    const { root } = await bootSynced()
+
+    expect(root.lang).toBe('en')
+  })
+
+  it('follows every switch, cs → en → cs', async () => {
+    const { instance, root } = await bootSynced()
+    expect(root.lang).toBe('cs')
+
+    await instance.changeLanguage('en')
+    expect(root.lang).toBe('en')
+
+    await instance.changeLanguage('cs')
+    expect(root.lang).toBe('cs')
+  })
+
+  it('names the resolved language, not a regional variant', async () => {
+    window.localStorage.setItem(STORAGE_KEY, 'en-US')
+
+    const { root } = await bootSynced()
+
+    expect(root.lang).toBe('en')
+  })
+
+  it('applies at once to an instance that is already initialised', async () => {
+    const instance = await bootFreshInstance()
+    await instance.changeLanguage('en')
+    const root = document.createElement('html')
+
+    syncDocumentLang(instance, root)
+
+    expect(root.lang).toBe('en')
+  })
+
+  it('stops following after unsubscribing', async () => {
+    const instance = await bootFreshInstance()
+    const root = document.createElement('html')
+    const unsubscribe = syncDocumentLang(instance, root)
+
+    unsubscribe()
+    await instance.changeLanguage('en')
+
+    expect(root.lang).toBe('cs')
+  })
+
+  it("keeps the real document on the app's own instance", async () => {
+    const before = appI18n.language
+    try {
+      await appI18n.changeLanguage('en')
+      expect(document.documentElement.lang).toBe('en')
+
+      await appI18n.changeLanguage('cs')
+      expect(document.documentElement.lang).toBe('cs')
+    } finally {
+      await appI18n.changeLanguage(before)
+    }
   })
 })
 

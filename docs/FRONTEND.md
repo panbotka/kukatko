@@ -6806,7 +6806,13 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   without a stored choice it is `fallbackLng: 'cs'` that decides. **`showSupportNotice: false`** keeps
   i18next's `console.info` ad for Locize out of the console — in every build, dev included, because a
   console with nothing in it is one where a real warning is visible at a glance (guarded by the
-  `console noise` case in `i18n.test.ts`, which clears the once-per-page global flag first). **Pluralization** via
+  `console noise` case in `i18n.test.ts`, which clears the once-per-page global flag first). **`<html lang>`
+  follows the UI language**: `syncDocumentLang(i18n)` subscribes to `languageChanged` *before* `init`, so the
+  initial resolution (a stored `en` included — no flash of the `cs` that `index.html` ships) and every later
+  switch set `document.documentElement.lang` to the **resolved** language; a stale attribute would make a screen
+  reader read English with Czech pronunciation. Nothing else assumes a static `lang` — `Intl` formatting takes
+  `i18n.language` explicitly and there are no `:lang()`/hyphenation rules (the `document language` cases in
+  `i18n.test.ts`). **Pluralization** via
   i18next CLDR plural suffixes: count-bound strings where the noun agrees with the number have
   the forms `key_one/_few/_many/_other` (Czech) and `key_one/_other` (English) — the caller only passes
   `{ count }` (e.g. `albums.photoCount`, `clusters.size`, `bulkEdit.title`, `duplicates.memberCount`/
