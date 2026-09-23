@@ -281,6 +281,25 @@ describe('SearchPage', () => {
     expect(screen.queryByText(/^Photos:/)).not.toBeInTheDocument()
   })
 
+  it('does not present visual neighbours as matches when no text matched', async () => {
+    // Gibberish in the default hybrid mode: the text half found nothing, so the
+    // server flags no_text_match and the neighbours must not read as best matches.
+    searchMock.mockResolvedValue(
+      page([photo('a', 'a.jpg')], {
+        total: 192,
+        mode: 'hybrid',
+        ranked_total: true,
+        no_text_match: true,
+      }),
+    )
+    renderSearch('/search?q=qwertzuiop')
+
+    expect(await screen.findByText('Exact matches: 0 — visually closest: 192')).toBeInTheDocument()
+    expect(screen.queryByText(/Best matches/)).not.toBeInTheDocument()
+    // The neighbours themselves stay: "I know what it looked like" still works.
+    expect(screen.getByRole('link', { name: 'a.jpg' })).toBeInTheDocument()
+  })
+
   it('states a real count plainly, as the library does', async () => {
     // Full-text runs a genuine SQL count, so its number is a true total.
     searchMock.mockResolvedValue(page([photo('a', 'a.jpg')], { total: 42, mode: 'fulltext' }))

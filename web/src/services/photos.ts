@@ -299,6 +299,15 @@ export interface PhotoListResponse {
    */
   degraded?: boolean
   /**
+   * True when a hybrid search's full-text half matched nothing, so every photo
+   * returned is only a semantic neighbour of the query. The vector ranking has
+   * no relevance floor — a typo or gibberish still gets its nearest photos — so
+   * the UI must say nothing matched exactly rather than calling them the best
+   * matches. Absent (treated as false) in every other mode and on list
+   * responses.
+   */
+  no_text_match?: boolean
+  /**
    * Filter-shaped `q` tokens the search query language did not understand
    * (unknown key or malformed value). They degraded to free text server-side,
    * so results are still meaningful; the UI shows a gentle hint. Absent when

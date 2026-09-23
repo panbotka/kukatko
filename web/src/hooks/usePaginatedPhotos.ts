@@ -88,6 +88,14 @@ export interface UsePaginatedPhotosResult {
    */
   totalRanked: boolean
   /**
+   * True when a hybrid search's full-text half matched nothing, so every photo
+   * in the result is only a semantic neighbour of the query (the server's
+   * `no_text_match`). A nearest-neighbour ranking returns something for any
+   * string, a typo included, so a caller must not word such a set as matches.
+   * False everywhere else.
+   */
+  totalNoTextMatch: boolean
+  /**
    * How many of `total` are standalone video clips. Zero on a stills-only
    * result, equal to `total` on a video-only one — the two numbers together are
    * what lets a count line say what it counts instead of calling every result a
@@ -132,6 +140,7 @@ interface Data {
   photos: Photo[]
   total: number
   totalRanked: boolean
+  totalNoTextMatch: boolean
   totalVideos: number
   nextOffset: number | null
   loading: boolean
@@ -161,6 +170,7 @@ const INITIAL: Data = {
   photos: [],
   total: 0,
   totalRanked: false,
+  totalNoTextMatch: false,
   totalVideos: 0,
   nextOffset: 0,
   loading: true,
@@ -263,6 +273,7 @@ export function usePaginatedPhotos(
           photos: [...prev.photos, ...res.photos],
           total: res.total,
           totalRanked: res.ranked_total ?? false,
+          totalNoTextMatch: res.no_text_match ?? false,
           totalVideos: res.video_total ?? 0,
           nextOffset: res.next_offset,
           loading: false,
@@ -366,6 +377,7 @@ export function usePaginatedPhotos(
         photos,
         total: res.total,
         totalRanked: res.ranked_total ?? false,
+        totalNoTextMatch: res.no_text_match ?? false,
         totalVideos: res.video_total ?? 0,
         nextOffset: res.next_offset,
         loading: false,
@@ -445,6 +457,7 @@ export function usePaginatedPhotos(
     photos: data.photos,
     total: data.total,
     totalRanked: data.totalRanked,
+    totalNoTextMatch: data.totalNoTextMatch,
     totalVideos: data.totalVideos,
     status,
     loadingMore: data.loading && !data.initial,

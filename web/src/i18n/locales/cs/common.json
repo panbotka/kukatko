@@ -786,6 +786,7 @@
     "countVideos": "Počet videí: {{count}}",
     "countMixed": "Počet fotek a videí: {{count}}",
     "countRanked": "Nejlepší shody: {{count}}",
+    "countNoTextMatch": "Přesné shody: 0 — vizuálně nejbližší: {{count}}",
     "loading": "Načítání fotek…",
     "loadingMore": "Načítání dalších fotek…",
     "selectAll": "Vybrat vše",

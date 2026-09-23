@@ -433,6 +433,14 @@ type listResponse struct {
 	// because the embeddings sidecar was unavailable, so the UI can tell the user
 	// that semantic ranking was skipped. Omitted when false.
 	Degraded bool `json:"degraded,omitempty"`
+	// NoTextMatch is true when a hybrid search found no full-text match at all,
+	// so every photo it returns is only a semantic neighbour of the query. The
+	// vector ranking has no relevance floor and returns neighbours for any
+	// string, a typo or gibberish included; this flag lets the UI say "nothing
+	// matched exactly, these are the visually closest" instead of presenting
+	// them as best matches. Only hybrid sets it — semantic mode is neighbours by
+	// request, and full-text reports an honest zero. Omitted when false.
+	NoTextMatch bool `json:"no_text_match,omitempty"`
 	// UnknownTokens lists the filter-shaped tokens of the q query language the
 	// server did not understand (unknown key or malformed value). They degraded
 	// to free text, so the result is still meaningful; the UI shows a gentle
@@ -535,7 +543,8 @@ func pageResponse(params photos.ListParams, list []photoView, counts photos.Medi
 // `mode`, the `unknown_tokens` the query language did not understand, and
 // `ranked_total: true` whenever `total` is the size of a bounded ranked pool
 // rather than an exact count. `video_total` says how many of `total` are video
-// clips, in every mode.
+// clips, in every mode. A hybrid search whose full-text half matched nothing
+// sets `no_text_match: true`: its results are only semantic neighbours.
 func (a *API) handleSearch(w http.ResponseWriter, r *http.Request) {
 	params, unknown, err := parseListParams(r.URL.Query())
 	if err != nil {
@@ -585,8 +594,8 @@ func (a *API) handleSearch(w http.ResponseWriter, r *http.Request) {
 }
 
 // writeRankedSearch runs the ranked search in the given mode and writes the
-// annotated page, stamping the effective mode, the ranked-total and degraded
-// flags and the query hints onto the response.
+// annotated page, stamping the effective mode, the ranked-total, degraded and
+// no-text-match flags and the query hints onto the response.
 func (a *API) writeRankedSearch(
 	w http.ResponseWriter, r *http.Request, userUID string,
 	mode searchMode, plain string, params photos.ListParams, hints pageHints,
@@ -605,6 +614,7 @@ func (a *API) writeRankedSearch(
 	resp.Mode = string(mode)
 	resp.RankedTotal = result.ranked
 	resp.Degraded = result.degraded
+	resp.NoTextMatch = result.noTextMatch
 	hints.stamp(&resp)
 	writeJSON(w, http.StatusOK, resp)
 }

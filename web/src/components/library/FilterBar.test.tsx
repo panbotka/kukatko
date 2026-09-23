@@ -31,6 +31,8 @@ interface BarProps {
   total?: number
   /** Whether that count is the best matches of a ranked search, not a total. */
   totalRanked?: boolean
+  /** Whether that ranked set holds no text match, only visual neighbours. */
+  totalNoTextMatch?: boolean
   /** How many of that count are video clips; 0 (the default) is stills only. */
   totalVideos?: number
   /** Whether that count is still being fetched under a just-changed filter. */
@@ -252,6 +254,26 @@ describe('FilterBar header', () => {
       // the result changes nothing about it.
       await barIn(lng, { total: 200, totalVideos: 200, totalRanked: true })
       expect(screen.getByText(sentence)).toBeInTheDocument()
+    })
+
+    it.each([
+      ['en', 'Exact matches: 0 — visually closest: 192', 'Best matches: 192'],
+      ['cs', 'Přesné shody: 0 — vizuálně nejbližší: 192', 'Nejlepší shody: 192'],
+    ])(
+      'does not call visual neighbours matches when no text matched (%s)',
+      async (lng, sentence, wrongSentence) => {
+        // The confirmed bug: gibberish in the default hybrid mode read
+        // "Nejlepší shody: 192" although nothing matched the text at all.
+        await barIn(lng, { total: 192, totalRanked: true, totalNoTextMatch: true })
+        expect(screen.getByText(sentence)).toBeInTheDocument()
+        expect(screen.queryByText(wrongSentence)).not.toBeInTheDocument()
+      },
+    )
+
+    it('leaves an empty ranked result to the plain wording even with no text match', async () => {
+      await barIn('en', { total: 0, totalRanked: true, totalNoTextMatch: true })
+      expect(screen.getByText('Photos: 0')).toBeInTheDocument()
+      expect(screen.queryByText(/Exact matches/)).not.toBeInTheDocument()
     })
   })
 

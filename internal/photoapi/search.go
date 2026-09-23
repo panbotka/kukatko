@@ -80,6 +80,13 @@ type searchResult struct {
 	videos   int
 	ranked   bool
 	degraded bool
+	// noTextMatch is true when a hybrid search's full-text half matched nothing
+	// and every result it returns is a semantic neighbour. A nearest-neighbour
+	// ranking has no relevance floor — any string, gibberish included, gets the
+	// photos closest to it — so without this a typo reads as a page of confident
+	// matches. It is a statement about the full-text half only; semantic mode,
+	// which is nothing but neighbours by request, never sets it.
+	noTextMatch bool
 }
 
 // parseSearchMode maps the `mode` query value to a searchMode, defaulting to
@@ -179,6 +186,10 @@ func (a *API) hybridSearch(ctx context.Context, query string, params photos.List
 		total:  len(fused),
 		videos: countVideos(fused, byUID),
 		ranked: true,
+		// ftList is the whole full-text pool, not a page of it, so an empty one
+		// means the text matched nothing anywhere. An empty fused set needs no
+		// flag: the empty state already tells the truth.
+		noTextMatch: len(ftList) == 0 && len(fused) > 0,
 	}, nil
 }
 

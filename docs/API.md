@@ -382,7 +382,11 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   (500 nearest neighbours; 200 from each ranking fed into the fusion) and report the size of the ranked
   set built from it, which stops growing at the pool however many photos match — so `total` there is
   the count of **best matches returned**, flagged `ranked_total: true` so a client never presents it as
-  a library total; `video_total` follows whichever `total` it is — the clips among the matching photos,
+  a library total; **`no_text_match: true`** (hybrid only, omitted otherwise) says the full-text half
+  matched **nothing**, so every result is only a semantic neighbour — the vector ranking has no relevance
+  floor and answers any string, a typo or gibberish included, so a client must word such a set as „the
+  visually closest", not as matches (no threshold is applied: the neighbours are the feature, only the
+  label was overstating them); `video_total` follows whichever `total` it is — the clips among the matching photos,
   or the clips among the best matches — so the wording of a count never outruns what was counted;
   **`q` speaks the search language** (see [Search language](#search-language-q) below): free
   text + `key:value` filters in one string — filters narrow the result in all modes, the free-text

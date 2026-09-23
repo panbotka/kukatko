@@ -1282,6 +1282,11 @@ to `## Package map` in `CLAUDE.md`.
   `fusionPool`=200 from each ranking before `fuseRRF`), which saturates there however many photos
   actually match — so it is the number of best matches returned, and the flag makes the client word it
   as such instead of as a library total;
+  **`no_text_match`** (`searchResult.noTextMatch`, hybrid only): the full-text pool fed into the fusion
+  was empty while the fused set was not — every result is a semantic neighbour, and nearest-neighbour
+  search has no relevance floor, so gibberish gets a full pool; the flag lets the client say nothing
+  matched exactly instead of calling them best matches (deliberately no cosine cutoff — no measured
+  threshold separates a real visual match from noise, and the neighbours are the feature);
   **`video_total` rides with whichever total it is** (`searchResult.videos` → `video_total`): the
   counted paths take it from `store.CountMedia` (one extra aggregate over the same scan), the ranked
   ones from `countVideos` over the ranked uids they already hold in memory, so the breakdown never

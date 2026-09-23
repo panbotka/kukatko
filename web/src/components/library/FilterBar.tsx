@@ -67,6 +67,15 @@ export interface FilterBarProps<T extends LibraryView> {
    */
   totalRanked?: boolean
   /**
+   * Whether the ranked set holds no text match at all — the hybrid search's
+   * full-text half found nothing, so every photo counted is only a visual
+   * neighbour of the query. A nearest-neighbour ranking has no relevance floor
+   * and returns something for any string, a typo or gibberish included, so the
+   * status line then says nothing matched exactly instead of announcing the set
+   * as best matches. Only meaningful together with `totalRanked`.
+   */
+  totalNoTextMatch?: boolean
+  /**
    * How many of `total` are standalone video clips, which decides what the count
    * calls the things it counts: photos, videos, or both. A page that does not
    * know (or a library with no clips in it) omits it and reads exactly as it
@@ -239,6 +248,7 @@ export function FilterBar<T extends LibraryView>({
   onChange,
   total,
   totalRanked = false,
+  totalNoTextMatch = false,
   totalVideos = 0,
   totalPending = false,
   showSearch = true,
@@ -368,7 +378,7 @@ export function FilterBar<T extends LibraryView>({
           are looking at. What the number *is* is stated here in words rather
           than left to a tooltip, which a phone cannot reach ({@link countLabel}). */}
       <span className="text-secondary small" aria-live="polite">
-        {countLabel(t, total, totalPending, totalRanked, totalVideos)}
+        {countLabel(t, total, totalPending, totalRanked, totalNoTextMatch, totalVideos)}
       </span>
       <div className="d-flex align-items-center gap-2">
         {clearVisible && (
@@ -712,6 +722,14 @@ function DisplayControls({
  * The ranked wording names no medium at all ("the best matches"), so `videos`
  * never reaches it.
  *
+ * `noTextMatch` keeps the ranked wording from overstating a guess. A hybrid
+ * search whose text half matched nothing hands back only the nearest photos by
+ * look — and a nearest-neighbour ranking has no relevance floor, so a typo or
+ * plain gibberish gets a full pool of them. Calling those "the best matches"
+ * reads as confident hits; the line instead states the exact-match count (zero)
+ * and names the rest as the visually closest photos. The neighbours stay on
+ * screen: "I can't spell it but I know what it looked like" is the feature.
+ *
  * `videos` is the other honest half. Announcing seven clips as "Photos: 7" is
  * simply false, so a result set that holds any names what it holds — all videos,
  * or photos and videos both. A set with no clips in it is worded exactly as it
@@ -723,6 +741,7 @@ function countLabel(
   total: number | undefined,
   pending: boolean,
   ranked: boolean,
+  noTextMatch: boolean,
   videos: number,
 ): string {
   if (pending) {
@@ -730,6 +749,9 @@ function countLabel(
   }
   if (total === undefined) {
     return ''
+  }
+  if (ranked && noTextMatch && total > 0) {
+    return t('library.countNoTextMatch', { count: total })
   }
   if (ranked && total > 0) {
     return t('library.countRanked', { count: total })

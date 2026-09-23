@@ -95,6 +95,7 @@ export function SearchPage() {
     photos,
     total,
     totalRanked,
+    totalNoTextMatch,
     totalVideos,
     status,
     degraded,
@@ -280,12 +281,15 @@ export function SearchPage() {
           When there is one, `totalRanked` says whether it may be called a total
           at all: the ranked modes report the size of a bounded pool of best
           matches, not a count of everything that matches. `totalVideos` decides
-          which noun it gets — a video-only search is not seven photographs. */}
+          which noun it gets — a video-only search is not seven photographs.
+          `totalNoTextMatch` keeps a typo from reading as confident matches: when
+          the hybrid search's text half found nothing, the line says so. */}
       <FilterBar
         view={view}
         onChange={setView}
         total={hasQuery ? total : undefined}
         totalRanked={totalRanked}
+        totalNoTextMatch={totalNoTextMatch}
         totalVideos={totalVideos}
         showSearch={false}
         showSort={false}

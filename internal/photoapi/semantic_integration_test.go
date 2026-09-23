@@ -212,6 +212,49 @@ func TestSearch_rankedTotalMarksPooledCounts(t *testing.T) {
 	}
 }
 
+// TestSearch_noTextMatchFlagsNeighbours verifies a hybrid search whose full-text
+// half matched nothing says so: gibberish still gets its semantic neighbours
+// (that is the feature), but the response flags no_text_match so the UI does not
+// present them as confident matches. A hybrid query that does match text, and
+// the fulltext and semantic modes, leave the flag unset — full-text keeps its
+// honest zero and semantic keeps its neighbours.
+func TestSearch_noTextMatchFlagsNeighbours(t *testing.T) {
+	env := newEnv(t)
+	client, _ := env.login(t, "no-text-match", auth.RoleViewer)
+	base := env.server.URL
+
+	a := env.seedPhoto(t, photos.Photo{Title: "village square"}, "square.jpg", 14, 0, 0)
+	b := env.seedPhoto(t, photos.Photo{Title: "church bell"}, "bell.jpg", 28, 0, 0)
+	const nonsense = "qwertzuiop"
+	env.embedder.byQuery[nonsense] = imageVecAt(map[int]float32{0: 1})
+	env.embedder.byQuery["village"] = imageVecAt(map[int]float32{0: 1})
+	saveVec(t, env, a.UID, imageVecAt(map[int]float32{0: 1}))
+	saveVec(t, env, b.UID, imageVecAt(map[int]float32{1: 1}))
+
+	hybrid := getSearch(t, client, base, "q="+nonsense)
+	if hybrid.Mode != "hybrid" || hybrid.Total != 2 {
+		t.Fatalf("hybrid nonsense: mode=%q total=%d, want hybrid/2 neighbours", hybrid.Mode, hybrid.Total)
+	}
+	if !hybrid.NoTextMatch {
+		t.Fatal("hybrid nonsense: no_text_match = false, want true (nothing matched the text)")
+	}
+
+	fulltext := getSearch(t, client, base, "q="+nonsense+"&mode=fulltext")
+	if fulltext.Total != 0 || fulltext.NoTextMatch {
+		t.Fatalf("fulltext nonsense: total=%d no_text_match=%v, want 0/false", fulltext.Total, fulltext.NoTextMatch)
+	}
+
+	semantic := getSearch(t, client, base, "q="+nonsense+"&mode=semantic")
+	if semantic.Total != 2 || semantic.NoTextMatch {
+		t.Fatalf("semantic nonsense: total=%d no_text_match=%v, want 2/false", semantic.Total, semantic.NoTextMatch)
+	}
+
+	matched := getSearch(t, client, base, "q=village")
+	if matched.NoTextMatch {
+		t.Fatal("hybrid with a text match: no_text_match = true, want false")
+	}
+}
+
 // containsAll reports whether seen holds every uid.
 func containsAll(seen map[string]int, uids ...string) bool {
 	for _, uid := range uids {

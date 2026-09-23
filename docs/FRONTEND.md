@@ -2166,7 +2166,11 @@ here.
   `semantic` ranks 500 neighbours, so their number saturates there and „Počet fotek: 200" would claim the
   library holds exactly two hundred photographs of the thing searched for — the line says
   **„Nejlepší shody: 200"** instead, while `fulltext` and a filter-only query (both a real SQL count, as is
-  a degraded fallback) keep stating the total plainly. **`totalVideos={totalVideos}`** rides beside it
+  a degraded fallback) keep stating the total plainly. **`totalNoTextMatch={totalNoTextMatch}`** (the
+  response's `no_text_match`) keeps a typo from reading as confident hits: when the hybrid search's text
+  half found nothing, the line reads **„Přesné shody: 0 — vizuálně nejbližší: 192"** instead of
+  „Nejlepší shody: 192" — the neighbours stay on screen (knowing what it looked like still works), only
+  the label stops overstating them. **`totalVideos={totalVideos}`** rides beside it
   (the response's `video_total`) so a video-only search reads „Počet videí: 7" rather than „Počet fotek: 7";
   the ranked wording names no medium at all, so it is unaffected.
   idle/loading/empty/error states (an empty result is `SearchEmptyState` — it **repeats the query**
@@ -5018,7 +5022,9 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `loadMore`/`retry`, reset+refetch **with a skeleton** when the query/`key`/`enabled` changes, cancels
   in-flight requests and ignores stale responses, and also exposes `mode`/`degraded`/**`totalRanked`**
   (the search response's `ranked_total` — `total` is the size of a ranked pool of best matches, not a count
-  of what matches, so a caller must not word it as a total; false on every plain list); `enabled:false`
+  of what matches, so a caller must not word it as a total; false on every plain list) and
+  **`totalNoTextMatch`** (the response's `no_text_match` — a hybrid set with no text match at all, only
+  visual neighbours); `enabled:false`
   → an `idle` state without a request. **`reloadKey` (separate from `key`) is a _background_ refetch of all pages
   loaded so far with the query unchanged: the current photos stay pinned, `status` stays
   `ready` (no skeleton, no reloading of previews), so a bulk edit (favorite/archive)

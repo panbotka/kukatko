@@ -782,6 +782,7 @@
     "countVideos": "Videos: {{count}}",
     "countMixed": "Photos and videos: {{count}}",
     "countRanked": "Best matches: {{count}}",
+    "countNoTextMatch": "Exact matches: 0 — visually closest: {{count}}",
     "loading": "Loading photos…",
     "loadingMore": "Loading more photos…",
     "selectAll": "Select all",

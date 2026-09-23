@@ -371,6 +371,7 @@ type listResp struct {
 	Mode          string         `json:"mode"`
 	RankedTotal   bool           `json:"ranked_total"`
 	Degraded      bool           `json:"degraded"`
+	NoTextMatch   bool           `json:"no_text_match"`
 	UnknownTokens []string       `json:"unknown_tokens"`
 	Notices       []string       `json:"notices"`
 }
