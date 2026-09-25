@@ -61,12 +61,11 @@ func buildReviewAPI(
 		Outliers:   buildOutlierService(db),
 		Subjects:   peopleStore,
 		Photos:     photoStore,
-		// The mixer's album rule, the round's breather card and the reveal after a
-		// confirmed assignment are all read-only extras over stores that already
-		// exist; none of them can fail a round, so they are wired unconditionally.
+		// The mixer's album rule and the round's breather card are read-only
+		// extras over stores that already exist; neither can fail a round, so both
+		// are wired unconditionally.
 		Albums:            organizeStore,
 		Breathers:         review.NewBreatherStore(db.Pool()),
-		Stats:             peopleStore,
 		Media:             mediaurl.NewBuilder(mediaStore),
 		BandMin:           cfg.Review.BandMin,
 		BandMax:           cfg.Review.BandMax,

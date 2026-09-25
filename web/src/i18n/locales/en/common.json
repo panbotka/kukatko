@@ -3850,14 +3850,6 @@
       "favorite": "Somebody has this photo in their favourites.",
       "rated": "Somebody rated this photo highly."
     },
-    "reveal": {
-      "tag": "just added",
-      "title_one": "{{name}} is now on {{count}} photo",
-      "title_other": "{{name}} is now on {{count}} photos",
-      "span": "oldest {{oldest}} · newest {{newest}}",
-      "oldest": "oldest {{year}}",
-      "open": "Show photos of {{name}}"
-    },
     "summary": {
       "title": "Round done",
       "confirmed": "Yes",

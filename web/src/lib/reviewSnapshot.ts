@@ -6,7 +6,6 @@ import {
   type ReviewBreather,
   type ReviewKind,
   type ReviewQuestion,
-  type ReviewReveal,
   type ReviewSource,
 } from '../services/review'
 
@@ -227,17 +226,6 @@ function isBreather(value: unknown): value is ReviewBreather {
   )
 }
 
-function isReveal(value: unknown): value is ReviewReveal {
-  return (
-    isObj(value) &&
-    isString(value.subject_uid) &&
-    isString(value.name) &&
-    isNumber(value.photo_count) &&
-    isOptional(value.oldest_year, isNumber) &&
-    isOptional(value.newest_year, isNumber)
-  )
-}
-
 function isCard(value: unknown): value is ReviewCard {
   if (!isObj(value) || !isString(value.key)) {
     return false
@@ -247,8 +235,6 @@ function isCard(value: unknown): value is ReviewCard {
       return isQuestion(value.question)
     case 'breather':
       return isBreather(value.breather)
-    case 'reveal':
-      return isReveal(value.reveal)
     default:
       return false
   }

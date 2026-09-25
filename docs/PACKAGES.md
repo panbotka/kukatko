@@ -1961,8 +1961,8 @@ to `## Package map` in `CLAUDE.md`.
   and `PhotoCount` is exactly the length of `ListPhotoUIDsBySubject`, so a "N photos" badge keeps its
   promise about the gallery behind it; `SubjectStats(uid)` (`stats.go`) answers the same two numbers plus the
   **year span** (`OldestYear`/`NewestYear`, both 0 for a wholly undated person) for **one** subject, with the
-  same joins so it cannot become a third opinion — a primary-key lookup plus `idx_markers_subject_uid`, cheap
-  enough for the review game's per-answer reveal, `ErrSubjectNotFound` for an unknown uid; plus
+  same joins so it cannot become a third opinion — a primary-key lookup plus `idx_markers_subject_uid`,
+  `ErrSubjectNotFound` for an unknown uid; plus
   `CoverFace *SubjectFace` = the face that illustrates the subject in the people grid when it has no
   `cover_photo_uid` — the `best_face` CTE in `listSubjectsSQL` takes per subject a `DISTINCT ON` with
   the order **`w*h DESC, score DESC, uid`**: the tile is a square zoomed from the crop of the cache
@@ -2600,12 +2600,13 @@ to `## Package map` in `CLAUDE.md`.
   write (a game answered at one keypress per second must not fail because a row could not be written), and it
   reaches **nothing** in the catalogue: never a `feedback` rejection, never a narrowing of `candidates`/`sweep`,
   never an identity change, and deliberately **not in the audit trail** — the audit records what happened to the
-  library, and a player saying "I don't know" is a fact about the player. Three further dependencies are **read-only extras**, each
+  library, and a player saying "I don't know" is a fact about the player. Two further dependencies are **read-only extras**, each
   optional and each switched off by a nil: `Albums` (`AlbumMembership`, satisfied by `*organize.Store` →
-  `AlbumUIDsForPhotos`) feeds the mixer's album rule, `Breathers` (`BreatherSource`, satisfied by
-  `*review.BreatherStore`) picks the round's non-question card, and `Stats` (`SubjectStatsReader`, satisfied by
-  `*people.Store` → `SubjectStats`) reads the answer reveal. **None of them can fail a round or an answer** —
-  every failure is logged and degrades to "that extra is absent".
+  `AlbumUIDsForPhotos`) feeds the mixer's album rule, and `Breathers` (`BreatherSource`, satisfied by
+  `*review.BreatherStore`) picks the round's non-question card. **Neither can fail a round** — every failure is
+  logged and degrades to "that extra is absent". An answer carries back only its `Result` and the session
+  counters; there is no per-answer payoff (a confirmed face used to bring back a card with the person's photo
+  count and year span — it interrupted the run and was removed).
   **The rounds (`mixer.go`) — a playlist, not a sorted list.** Everything above produces a *pool*
   (`QueueSize`, default 20); what a player is served is a **round** mixed out of it (`RoundSize`, default 10,
   `review.round_size`), and **one request is one round**. `mixRound(pool,mixConfig,albumLookup) → (round,rest)`
@@ -2637,10 +2638,6 @@ to `## Package map` in `CLAUDE.md`.
   era first, the library's own visibility rules applied) yields one candidate per era; the round takes its turn
   out of that list, so consecutive rounds show different decades. It is carried **outside** `questions`, typed
   `BreatherKind`, and has **no id the answer endpoint would accept**.
-  **The reveal (`answer.go`, `revealFor`)** rides back on a `resultAssigned` face answer only: `people.Store.
-  SubjectStats` (one aggregate keyed on `subjects.uid` + `idx_markers_subject_uid`, the same visibility rule
-  `listSubjectsSQL` applies) gives the person's photo count and year span, read **after** the write so it
-  includes it. A missing subject or a failed read yields no reveal, never an error.
   **The three new checks (`extras.go`) — checking what the machine already acted on.** The first two kinds
   clean up guesses about things nobody had decided; these clean up guesses the machine *wrote*: a coordinate on a
   photo, a pair the detector linked, an assignment somebody made. No other page lists those as questions, which

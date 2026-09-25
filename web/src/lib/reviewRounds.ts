@@ -1,5 +1,5 @@
 import { type Photo } from '../services/photos'
-import { type ReviewBreather, type ReviewQuestion, type ReviewReveal } from '../services/review'
+import { type ReviewBreather, type ReviewQuestion } from '../services/review'
 
 /**
  * The round arithmetic of the review game, kept DOM-free so the decisions that
@@ -19,7 +19,6 @@ import { type ReviewBreather, type ReviewQuestion, type ReviewReveal } from '../
 export type ReviewCard =
   | { type: 'question'; key: string; question: ReviewQuestion }
   | { type: 'breather'; key: string; breather: ReviewBreather }
-  | { type: 'reveal'; key: string; reveal: ReviewReveal }
 
 /** Wraps a question as the card that asks it. */
 export function questionCard(question: ReviewQuestion): ReviewCard {
@@ -31,15 +30,6 @@ export function breatherCard(breather: ReviewBreather): ReviewCard {
   return { type: 'breather', key: `breather:${breather.photo.uid}`, breather }
 }
 
-/** Wraps the payoff of a confirmed face as the card that reveals it. */
-export function revealCard(reveal: ReviewReveal): ReviewCard {
-  return {
-    type: 'reveal',
-    key: `reveal:${reveal.subject_uid}:${String(reveal.photo_count)}`,
-    reveal,
-  }
-}
-
 /** The photo a card shows, for preloading and for the session mosaic. */
 export function cardPhoto(card: ReviewCard): Photo | undefined {
   switch (card.type) {
@@ -47,8 +37,6 @@ export function cardPhoto(card: ReviewCard): Photo | undefined {
       return card.question.photo
     case 'breather':
       return card.breather.photo
-    case 'reveal':
-      return undefined
   }
 }
 
@@ -91,33 +79,6 @@ export function buildRoundCards(
     cards.push(questionCard(question))
   }
   return cards
-}
-
-/**
- * Places a freshly earned reveal into a round in flight.
- *
- * A reveal is the payoff of a confirmed face, so it takes the round's next
- * breather slot when there is one — a card the player has already been promised a
- * pause at, now carrying something they did rather than a stock photo. With no
- * slot left it gets one of its own, right *behind* the card on screen: never
- * replacing what the player is looking at, and never so far ahead that the
- * connection to the answer is lost.
- *
- * At most one reveal rides in a round; a run of confirmations is a good session,
- * not a reason to interrupt it ten times.
- */
-export function insertReveal(cards: readonly ReviewCard[], reveal: ReviewReveal): ReviewCard[] {
-  const next = [...cards]
-  if (next.length === 0 || next.some((card) => card.type === 'reveal')) {
-    return next
-  }
-  const slot = next.findIndex((card, index) => index > 0 && card.type === 'breather')
-  if (slot > 0) {
-    next[slot] = revealCard(reveal)
-    return next
-  }
-  next.splice(1, 0, revealCard(reveal))
-  return next
 }
 
 /**

@@ -723,15 +723,15 @@
 }
 
 /* ---------------------------------------------------------------------------
-   The cards that ask nothing: the breather, the reveal, and the two summaries.
+   The cards that ask nothing: the breather and the two summaries.
 
    They share the game's three-part body (prompt / stage / actions) or its
    centring column, so nothing about the "always fits, the photo shrinks" rule
    changes — a pause is still a full screen, just one with no verdict on it.
    --------------------------------------------------------------------------- */
 
-/* "jen pro radost" / "právě jsi přidal" — the small line that says what kind of
-   card this is, above the title. */
+/* "jen pro radost" — the small line that says what kind of card this is, above
+   the title. */
 .review-game__breather-tag {
   font-size: 0.8rem;
   letter-spacing: 0.08em;
@@ -748,30 +748,6 @@
 .review-game__breather-year {
   color: var(--bs-secondary-color);
   font-weight: 400;
-}
-
-/* The reveal has no photo to fill the stage with, so its stage is a plain box
-   holding the one way onward: into the person's own gallery. */
-.review-game__stage--plain {
-  container-type: normal;
-}
-
-.review-game__reveal-link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0.75rem 1.5rem;
-  border: 1px solid var(--kk-accent);
-  border-radius: 0.5rem;
-  color: var(--kk-accent);
-  text-decoration: none;
-  font-size: 1.1rem;
-}
-
-.review-game__reveal-link:hover,
-.review-game__reveal-link:focus-visible {
-  background: var(--kk-accent-subtle);
-  color: var(--kk-accent-hover);
 }
 
 /* The summary cards live in the centring column, which already owns the bottom

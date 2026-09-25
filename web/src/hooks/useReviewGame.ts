@@ -3,7 +3,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   buildRoundCards,
   dailyMixDone,
-  insertReveal,
   markDailyMixDone,
   milestoneCrossed,
   questionCard,
@@ -207,7 +206,7 @@ export interface ReviewGame {
   undoError: boolean
   /** Answers the current question and advances immediately (optimistic). */
   answer: (verdict: ReviewAnswer) => void
-  /** Moves past a card that asks nothing (a breather, a reveal). */
+  /** Moves past a card that asks nothing (a breather). */
   advance: () => void
   /** Puts the next round on screen, dismissing the between-rounds card. */
   nextRound: () => void
@@ -571,13 +570,7 @@ export function useReviewGame(source: ReviewSource = 'both', user?: string): Rev
         if (directRef.current.has(q.id) && verdict !== 'skip') {
           await sendDirect(q, verdict)
         } else {
-          const res = await answerReview(q.id, verdict)
-          // The payoff of a confirmed face: what the player just added to. It
-          // rides into the round as a card rather than a toast, because it is
-          // the moment the work pays off, not a status message.
-          if (res.reveal !== undefined) {
-            commitQueue(insertReveal(queueRef.current, res.reveal))
-          }
+          await answerReview(q.id, verdict)
         }
         return true
       } catch {
@@ -585,7 +578,7 @@ export function useReviewGame(source: ReviewSource = 'both', user?: string): Rev
         return false
       }
     },
-    [commitQueue, sendDirect],
+    [sendDirect],
   )
 
   /**

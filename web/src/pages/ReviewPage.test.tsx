@@ -1088,20 +1088,9 @@ describe('ReviewPage rounds', () => {
     expect(screen.getByTestId('review-combo').textContent).toBe(comboBefore)
   })
 
-  it('turns a confirmed face into a reveal card that asks nothing', async () => {
+  it('goes straight on to the next question after a confirmed face', async () => {
     const user = userEvent.setup()
-    answerMock.mockResolvedValue({
-      result: 'assigned',
-      answered: 1,
-      remaining: 2,
-      reveal: {
-        subject_uid: 's-alois',
-        name: 'Alois Skoták',
-        photo_count: 27,
-        oldest_year: 1962,
-        newest_year: 1998,
-      },
-    })
+    answerMock.mockResolvedValue({ result: 'assigned', answered: 1, remaining: 2 })
     queueMock.mockResolvedValue(
       makeQueue([
         faceQuestion('q1', 'Alice'),
@@ -1118,12 +1107,12 @@ describe('ReviewPage rounds', () => {
     })
     await user.keyboard('{ArrowRight}')
 
-    const reveal = await screen.findByTestId('review-reveal')
-    expect(reveal).toHaveTextContent('Alois Skoták is now on 27 photos')
-    expect(reveal).toHaveTextContent('oldest 1962')
-    // It leads to the person, and it is not a question.
-    expect(screen.getByTestId('review-reveal-link')).toHaveAttribute('href', '/people/s-alois')
+    // No card interrupts the run: the next question is the next thing on screen.
+    await waitFor(() => {
+      expect(screen.getByTestId('review-question')).toHaveTextContent('Cyril')
+    })
     expect(answerMock).toHaveBeenCalledTimes(2)
+    expect(screen.queryByTestId('review-breather-continue')).not.toBeInTheDocument()
   })
 
   it('celebrates the tenth answer of the session, once', async () => {

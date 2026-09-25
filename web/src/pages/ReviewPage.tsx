@@ -18,7 +18,7 @@ import { AuthContext } from '../auth/AuthContext'
 import { EmptyState } from '../components/EmptyState'
 import { Icon, type IconName } from '../components/Icon'
 import { KeyboardShortcutsHelp } from '../components/KeyboardShortcutsHelp'
-import { BreatherCard, RevealCard } from '../components/review/ReviewBreather'
+import { BreatherCard } from '../components/review/ReviewBreather'
 import { ReviewDuplicate } from '../components/review/ReviewDuplicate'
 import { ReviewFacePair, ReviewFaceZoom } from '../components/review/ReviewFacePair'
 import { ReviewOutlier } from '../components/review/ReviewOutlier'
@@ -880,8 +880,6 @@ export function ReviewPage() {
         onDismiss={advance}
       />
     )
-  } else if (stage === 'breather' && card?.type === 'reveal') {
-    body = <RevealCard reveal={card.reveal} onDismiss={advance} />
   } else if (stage === 'round-summary' && game.summary !== null) {
     body = (
       <RoundSummaryCard

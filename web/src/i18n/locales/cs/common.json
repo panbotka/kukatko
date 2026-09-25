@@ -4022,16 +4022,6 @@
       "favorite": "Tuhle fotku má někdo v oblíbených.",
       "rated": "Tuhle fotku někdo ohodnotil vysoko."
     },
-    "reveal": {
-      "tag": "právě přibylo",
-      "title_one": "{{name}} má teď {{count}} fotku",
-      "title_few": "{{name}} má teď {{count}} fotky",
-      "title_many": "{{name}} má teď {{count}} fotky",
-      "title_other": "{{name}} má teď {{count}} fotek",
-      "span": "nejstarší {{oldest}} · nejnovější {{newest}}",
-      "oldest": "nejstarší {{year}}",
-      "open": "Zobrazit fotky, kde je {{name}}"
-    },
     "summary": {
       "title": "Kolo hotovo",
       "confirmed": "Ano",

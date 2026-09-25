@@ -75,9 +75,7 @@
 // A round may also carry a Breather: a photo somebody already rated or
 // favourited, with its title and year and nothing to answer (breathers.go). It
 // travels outside the questions array and carries a kind of its own, so it can
-// never be mistaken for a question. And a yes that confirms a face assignment
-// answers with a small Reveal — how many photos that person is on now, and how
-// far back their collection reaches.
+// never be mistaken for a question.
 //
 // What the game asks about is the player's choice: people, labels or both (see
 // source.go). The selection is pushed into the rebuild rather than applied to
@@ -454,22 +452,6 @@ type Breather struct {
 	Reason string `json:"reason"`
 }
 
-// Reveal is the small payoff a confirmed face assignment carries back: what the
-// player just added to, in the person's own terms. It is read after the write,
-// from one indexed query, and its absence is never an error — a reveal that
-// could not be read simply is not shown.
-type Reveal struct {
-	// SubjectUID and Name identify the person the answer assigned a face to.
-	SubjectUID string `json:"subject_uid"`
-	Name       string `json:"name"`
-	// PhotoCount is how many visible photos they now appear on.
-	PhotoCount int `json:"photo_count"`
-	// OldestYear and NewestYear span their dated photos; both zero when none of
-	// their photos carries a date.
-	OldestYear int `json:"oldest_year,omitempty"`
-	NewestYear int `json:"newest_year,omitempty"`
-}
-
 // QueueResult is one round of questions plus the session counters.
 type QueueResult struct {
 	// Questions is the round, mixed for variety (see mixer.go).
@@ -505,9 +487,6 @@ type AnswerResult struct {
 	Answered int `json:"answered"`
 	// Remaining estimates how many questions are still queued.
 	Remaining int `json:"remaining"`
-	// Reveal is present only when the answer confirmed a face assignment: what
-	// the person's collection looks like now that it holds one more photo.
-	Reveal *Reveal `json:"reveal,omitempty"`
 }
 
 // Sweeper scans face candidates over a bounded window of the named subjects;
@@ -631,13 +610,6 @@ type BreatherSource interface {
 	PickBreathers(ctx context.Context, userUID string, limit int) ([]BreatherPick, error)
 }
 
-// SubjectStatsReader reads one person's headline numbers for the answer reveal;
-// *people.Store satisfies it. A nil one switches the reveal off.
-type SubjectStatsReader interface {
-	// SubjectStats returns the subject's visible photo count and year span.
-	SubjectStats(ctx context.Context, subjectUID string) (people.SubjectStats, error)
-}
-
 // Assigner applies the existing face-assignment state machine; *facematch.Service
 // satisfies it.
 type Assigner interface {
@@ -684,9 +656,6 @@ type Config struct {
 	Albums AlbumMembership
 	// Breathers picks the round's non-question cards; nil switches them off.
 	Breathers BreatherSource
-	// Stats reads the person behind a confirmed assignment for the answer's
-	// reveal; nil switches the reveal off.
-	Stats SubjectStatsReader
 	// Media stamps thumbnail/download URLs onto the photos the three new
 	// question kinds carry. A nil builder yields the application's own routes.
 	Media *mediaurl.Builder
@@ -765,7 +734,6 @@ type Service struct {
 	photos     PhotoStore
 	albums     AlbumMembership
 	breathers  BreatherSource
-	stats      SubjectStatsReader
 	media      *mediaurl.Builder
 	log        *slog.Logger
 
@@ -906,7 +874,6 @@ func New(cfg Config) *Service {
 		photos:           cfg.Photos,
 		albums:           cfg.Albums,
 		breathers:        cfg.Breathers,
-		stats:            cfg.Stats,
 		media:            cfg.Media,
 		log:              cfg.Log,
 		bandMin:          cfg.BandMin,

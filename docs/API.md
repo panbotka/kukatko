@@ -1267,14 +1267,9 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   however full the library is → `reason:"source_off"`; the source is fine but **nothing sits in the band right
   now** (or the rebuild was cut short — a timed-out scan may not claim the library is empty) →
   `reason:"no_candidates"`.
-  `POST /review/answer` with `{question_id,answer:"yes"|"no"|"skip"}` → `{result,answered,remaining,
-  reveal?{subject_uid,name,photo_count,oldest_year?,newest_year?}}`
+  `POST /review/answer` with `{question_id,answer:"yes"|"no"|"skip"}` → `{result,answered,remaining}`
   (`result` ∈ assigned / labeled / confirmed / cleared / detached / rejected / skipped / already_answered / gone).
-  `reveal` is present **only** on `result:"assigned"` — the payoff of a confirmed face: how many visible photos
-  that person is on now (counted per photo, not per marker, so it matches their gallery) and the years their
-  dated photos span. It is one indexed read (`people.Store.SubjectStats`) taken **after** the write, so the
-  numbers include it, and any failure simply omits the field rather than failing an answer that already
-  succeeded.
+  Nothing else rides back, a confirmed face included: the game moves straight on to the next question.
   Every verdict routes through a write path that already exists elsewhere; the package opens none of its own:
   **face** yes → the **existing** assign state machine (the same path as `POST /photos/{uid}/faces/assign`; the
   action is derived from the face's current state — a marker exists → `assign_person`, otherwise `create_marker`

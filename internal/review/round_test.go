@@ -1,8 +1,7 @@
 package review
 
 // Round-level tests: what a Queue response is now that one request is one round,
-// plus the two read-only extras a round carries — the breather card and the
-// reveal an answer sends back. The mixer's own rules are asserted in
+// plus the read-only extra a round carries — the breather card. The mixer's own rules are asserted in
 // mixer_test.go, against the pure function.
 
 import (
@@ -13,8 +12,6 @@ import (
 	"time"
 
 	"github.com/panbotka/kukatko/internal/audit"
-	"github.com/panbotka/kukatko/internal/organize"
-	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/sweep"
 	"github.com/panbotka/kukatko/internal/vectors"
@@ -349,13 +346,6 @@ func TestQueue_noBreatherSourceMeansNoBreathers(t *testing.T) {
 	}
 }
 
-// withStats scripts one subject's headline numbers behind the answer reveal.
-func withStats(f *fixture) {
-	f.stats = &fakeSubjectStats{stats: map[string]people.SubjectStats{
-		"subj1": {UID: "subj1", Name: "Anna", PhotoCount: 42, OldestYear: 1961, NewestYear: 2019},
-	}}
-}
-
 // withFace scripts the face a yes answer assigns.
 func withFace(f *fixture) {
 	f.faces.faces[vectors.FaceKey{PhotoUID: "photo1", FaceIndex: 0}] = vectors.Face{
@@ -363,89 +353,18 @@ func withFace(f *fixture) {
 	}
 }
 
-func TestAnswer_confirmedFaceRevealsThePerson(t *testing.T) {
+func TestAnswer_confirmedFaceIsAnOrdinaryAnswer(t *testing.T) {
 	t.Parallel()
-	f := newFixture(t, func(f *fixture) {
-		withFace(f)
-		withStats(f)
-	})
-	id := faceQuestionID("photo1", 0, "subj1")
-	res, err := f.svc.Answer(context.Background(), "user", id, AnswerYes, audit.Meta{})
-	if err != nil {
-		t.Fatalf("Answer: %v", err)
-	}
-	if res.Reveal == nil {
-		t.Fatalf("no reveal on a confirmed assignment: %+v", res)
-	}
-	want := Reveal{
-		SubjectUID: "subj1", Name: "Anna", PhotoCount: 42, OldestYear: 1961, NewestYear: 2019,
-	}
-	if *res.Reveal != want {
-		t.Errorf("reveal = %+v, want %+v", *res.Reveal, want)
-	}
-}
-
-func TestAnswer_noRevealOnAnythingButAConfirmedFace(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	tests := []struct {
-		name   string
-		id     string
-		answer Answer
-	}{
-		{"a rejected face", faceQuestionID("photo1", 0, "subj1"), AnswerNo},
-		{"a skipped face", faceQuestionID("photo1", 0, "subj1"), AnswerSkip},
-		{"a confirmed label", labelQuestionID("photo1", "lab1"), AnswerYes},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			f := newFixture(t, func(f *fixture) {
-				withFace(f)
-				withStats(f)
-				f.organize.labels = []organize.LabelCount{labelCount("lab1", 1)}
-			})
-			res, err := f.svc.Answer(ctx, "user", tt.id, tt.answer, audit.Meta{})
-			if err != nil {
-				t.Fatalf("Answer: %v", err)
-			}
-			if res.Reveal != nil {
-				t.Errorf("reveal = %+v, want none for %s", *res.Reveal, tt.name)
-			}
-		})
-	}
-}
-
-func TestAnswer_revealFailureDoesNotFailTheAnswer(t *testing.T) {
-	t.Parallel()
-	// The write has already happened by the time the reveal is read. Failing the
-	// request would tell the player their answer was lost when it was not.
-	f := newFixture(t, func(f *fixture) {
-		withFace(f)
-		f.stats = &fakeSubjectStats{err: errors.New("stats are down")}
-	})
-	id := faceQuestionID("photo1", 0, "subj1")
-	res, err := f.svc.Answer(context.Background(), "user", id, AnswerYes, audit.Meta{})
-	if err != nil {
-		t.Fatalf("Answer: %v", err)
-	}
-	if res.Result != resultAssigned {
-		t.Errorf("result = %q, want assigned", res.Result)
-	}
-	if res.Reveal != nil {
-		t.Errorf("reveal = %+v, want none when it could not be read", *res.Reveal)
-	}
-}
-
-func TestAnswer_noStatsReaderMeansNoReveal(t *testing.T) {
-	t.Parallel()
+	// A confirmed face carries nothing back beyond the write it made and the
+	// session counters: the game moves straight on to the next question.
 	f := newFixture(t, withFace)
 	id := faceQuestionID("photo1", 0, "subj1")
 	res, err := f.svc.Answer(context.Background(), "user", id, AnswerYes, audit.Meta{})
 	if err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
-	if res.Reveal != nil {
-		t.Errorf("reveal = %+v with no stats reader wired, want none", *res.Reveal)
+	want := AnswerResult{Result: resultAssigned, Answered: 1, Remaining: res.Remaining}
+	if res != want {
+		t.Errorf("answer = %+v, want %+v", res, want)
 	}
 }

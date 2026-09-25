@@ -238,20 +238,6 @@ export interface ReviewQueue {
   reason?: string
 }
 
-/**
- * What a confirmed face assignment reveals about the person (`review.Reveal`):
- * how many photos they are on now and how far their collection reaches. Present
- * only on `result: "assigned"`, and absent whenever it could not be read — the
- * write has already happened either way.
- */
-export interface ReviewReveal {
-  subject_uid: string
-  name: string
-  photo_count: number
-  oldest_year?: number
-  newest_year?: number
-}
-
 /** Response body of `POST /review/answer` (`review.AnswerResult`). */
 export interface ReviewAnswerResult {
   /**
@@ -261,8 +247,6 @@ export interface ReviewAnswerResult {
   result: string
   answered: number
   remaining: number
-  /** The payoff of a confirmed face assignment; absent for every other outcome. */
-  reveal?: ReviewReveal
 }
 
 /**

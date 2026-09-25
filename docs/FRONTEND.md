@@ -4174,12 +4174,11 @@ here.
   the day's first round), the ⚡ combo from `COMBO_FLOOR = 2` up (one answer is not a run), the 🔥 day-streak from
   `useReviewStreak`, and the session counter (hidden below `sm`, where the room is not there); the hairline bar
   under the header tracks **the round**, because a session has no end to measure against.
-  **The cards that ask nothing** (`components/review/ReviewBreather.tsx`): `BreatherCard` = „jen pro radost", a
-  photo somebody favourited or rated highly with its title and year, and `RevealCard` = the payoff of a face just
-  confirmed („**Alois Skoták** má teď 27 fotek · nejstarší 1962") with a link into that person's gallery. Both
-  render into the game's own three-part body, so the fullscreen rules hold; both are dismissed by **any key** or
-  the Pokračovat button (`RESERVED_KEYS` — Esc, `z`, `o`, `?` — keep their own meanings) and **neither moves the
-  round position, the combo or any total**. The answer keys reach `answer()` first and no-op there, which is what
+  **The card that asks nothing** (`components/review/ReviewBreather.tsx`): `BreatherCard` = „jen pro radost", a
+  photo somebody favourited or rated highly with its title and year. It renders into the game's own three-part
+  body, so the fullscreen rules hold; it is dismissed by **any key** or the Pokračovat button (`RESERVED_KEYS` —
+  Esc, `z`, `o`, `?` — keep their own meanings) and **moves neither the round position, the combo nor any
+  total**. A confirmed face interrupts nothing: the game goes straight on to the next question. The answer keys reach `answer()` first and no-op there, which is what
   lets → both dismiss a breather and continue into the next round unambiguously.
   **The cards that close something** (`ReviewSummary.tsx`): `RoundSummaryCard` = the round's Ano/Ne/Nevím split
   and one primary action — **Ještě kolo?**, or „Zobrazit souhrn" once the backend is dry — which **Enter/Space/→**
@@ -4231,8 +4230,8 @@ here.
   endpoint, and the undo button staying **disabled** across a place verdict; and for the round game: the
   position counting through the round and the round closing into a summary of what was **played**, Enter opening
   the next round, „Dnešní mix" titling the day's first and „Pro dnešek splněno" not closing the game, the combo
-  a skip breaks and an **undo restores**, a breather that moves **no** counter and answers nothing, a reveal card
-  linking to the person, the 10-answer celebration, the streak read from the caller's own leaderboard row — and
+  a skip breaks and an **undo restores**, a breather that moves **no** counter and answers nothing, a confirmed face
+  going straight on to the next question, the 10-answer celebration, the streak read from the caller's own leaderboard row — and
   the game playing on when that read **fails** — a session left mid-round closing with a summary + a mosaic
   while both answers stayed persisted, no summary for a player who answered nothing, the three swipe directions,
   the hint naming the verdict mid-drag while answering nothing, a short drag and a **second finger** deciding
@@ -4241,7 +4240,7 @@ here.
   `@media (hover: none)`, which jsdom evaluates for nobody; the drag wrapper being exactly the size of the stage,
   so `100cqh` still measures what the face box was normalised against; and the swipe verdict staying off the
   answer row and `pointer-events: none` — read out of the shipped stylesheet like the `app.css` guards in
-  `src/styles/`) + `lib/reviewRounds.test.ts` (breather placement, the reveal's one-slot-per-round rule, the
+  `src/styles/`) + `lib/reviewRounds.test.ts` (breather placement, the
   milestone edges and the local-day daily flag, including storage that throws) + `lib/reviewSnapshot.test.ts`
   (the run's write/read round trip, a foreign user, another source, and every malformed shape it must refuse)
   + the `ReviewPage resume` tests (a remount restores the card, the round, the combo and the tallies without a
@@ -4602,10 +4601,9 @@ so Zpět and the Ponechat levou/obě/pravou buttons never hide under a notch or 
   The zoom is a **crop of a `fit_*` preview** (`padBbox` 40 % → `cropImageStyle`, the box drawn with the stage's
   own `review-photo__box` via `boxWithinCrop`, the rung from `lib/faceSource` at the review limits, degrading on
   a 404) rather than the 320 px chip blown up, and it is what `review.facePair.*` names)
-  + `ReviewBreather` (`BreatherCard`/`RevealCard` — the two cards a round carries that **ask nothing**: a photo
-  „jen pro radost" with its title and year and the reason it was picked, and the payoff of a face just confirmed
-  with a link into that person's gallery. Both render the game's own three-part body, so a pause is still a full
-  screen, just one with no verdict on it)
+  + `ReviewBreather` (`BreatherCard` — the one card a round carries that **asks nothing**: a photo
+  „jen pro radost" with its title and year and the reason it was picked. It renders the game's own three-part
+  body, so a pause is still a full screen, just one with no verdict on it)
   + `ReviewSummary` (`RoundSummaryCard`/`SessionSummaryCard`/`MilestoneBurst` — what closes a round, what closes
   a session, and the 10/25/50 badge. The tally lines are one shared `Tallies`, so the round card and the session
   card can never drift apart in what Ano/Ne/Nevím look like; the session mosaic is capped at 12 tiles, because
@@ -5561,9 +5559,7 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   a skip resets it, an undo restores what it was), `session` (the yes/no/skip split), `touched` (the photos
   decided about, capped at `TOUCHED_LIMIT = 24` for the closing mosaic), `milestone` (10/25/50, via
   `milestoneCrossed`) and the **daily-mix flag** in `localStorage` (`dailyMixDone`/`markDailyMixDone`, keyed on
-  the **local** day — a UTC key would flip over mid-evening). A `reveal` on an answer response is spliced into
-  the round in flight by `insertReveal`: it takes the next **breather** slot if there is one, otherwise a slot of
-  its own right behind the card on screen, and only ever **one per round**. `advance()` moves past a card that
+  the **local** day — a UTC key would flip over mid-evening). `advance()` moves past a card that
   asks nothing and deliberately touches **no** counter — a pause that scored points would not be a pause.
   Answers stay **optimistic** (`answer` moves the UI
   immediately and the request finishes in the background; a failure falls into `failed` for an explicit retry — it never blocks
@@ -6755,9 +6751,8 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   the in-flight answers first. `ReviewQueue.breathers` (`ReviewBreather[]`, absent when empty) are
   **not questions**: a photo somebody rated or favourited, tagged `BREATHER_KIND` and carrying no id the answer
   endpoint would accept — render them differently and never offer Ano/Ne on one.
-  `ReviewAnswerResult.reveal` (`ReviewReveal`) rides back on `result: 'assigned'` only, with the person's photo
-  count and year span. Both become cards through `lib/reviewRounds` (`ReviewCard`, `buildRoundCards`,
-  `insertReveal`), which is also where the milestone and daily-mix arithmetic lives, DOM-free and unit-tested.
+  `ReviewAnswerResult` is just `{result,answered,remaining}`. Questions and breathers become cards through
+  `lib/reviewRounds` (`ReviewCard`, `buildRoundCards`), which is also where the milestone and daily-mix arithmetic lives, DOM-free and unit-tested.
   And **the leaderboard**
   `fetchLeaderboard(window,signal)` over `GET /review/leaderboard?window=all|7d|today` →
   `Leaderboard{window,caller_uid,entries:LeaderboardEntry[]}` (`LeaderboardEntry` =

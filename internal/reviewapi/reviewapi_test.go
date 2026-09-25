@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -387,7 +388,7 @@ func TestRegisterRoutes_writeGuardApplied(t *testing.T) {
 	}
 }
 
-// The round metadata, the breather cards, the answer reveal and the leaderboard
+// The round metadata, the breather cards and the leaderboard
 // streak all reach the client as extra fields on bodies that already existed.
 // These tests read the raw JSON rather than decoding back into the Go types,
 // because the thing that can break is the wire shape: a client that has never
@@ -451,40 +452,20 @@ func TestHandleQueue_omitsBreathersWhenThereAreNone(t *testing.T) {
 	}
 }
 
-func TestHandleAnswer_carriesTheReveal(t *testing.T) {
+func TestHandleAnswer_carriesOnlyTheResultAndCounters(t *testing.T) {
 	t.Parallel()
-	svc := &fakeService{answerRes: review.AnswerResult{
-		Result: "assigned", Answered: 3, Remaining: 9,
-		Reveal: &review.Reveal{
-			SubjectUID: "s1", Name: "Anna", PhotoCount: 42, OldestYear: 1961, NewestYear: 2019,
-		},
-	}}
+	// A confirmed face is an answer like any other: the body names the write and
+	// the session counters, and nothing else rides along.
+	svc := &fakeService{answerRes: review.AnswerResult{Result: "assigned", Answered: 3, Remaining: 9}}
 	server := newServer(t, svc)
 	var got map[string]any
 	body := `{"question_id":"face:p1:0:s1","answer":"yes"}`
 	if status := doJSON(t, http.MethodPost, server.URL+"/review/answer", body, &got); status != http.StatusOK {
 		t.Fatalf("status = %d, want 200", status)
 	}
-	reveal, ok := got["reveal"].(map[string]any)
-	if !ok {
-		t.Fatalf("body has no reveal object: %+v", got)
-	}
-	if reveal["name"] != "Anna" || reveal["photo_count"] != float64(42) ||
-		reveal["oldest_year"] != float64(1961) || reveal["newest_year"] != float64(2019) {
-		t.Errorf("reveal = %+v, want Anna's numbers", reveal)
-	}
-}
-
-func TestHandleAnswer_omitsTheRevealWhenThereIsNone(t *testing.T) {
-	t.Parallel()
-	server := newServer(t, &fakeService{answerRes: review.AnswerResult{Result: "rejected"}})
-	var got map[string]any
-	body := `{"question_id":"face:p1:0:s1","answer":"no"}`
-	if status := doJSON(t, http.MethodPost, server.URL+"/review/answer", body, &got); status != http.StatusOK {
-		t.Fatalf("status = %d, want 200", status)
-	}
-	if _, ok := got["reveal"]; ok {
-		t.Errorf("reveal = %v, want the field omitted entirely", got["reveal"])
+	want := map[string]any{"result": "assigned", "answered": float64(3), "remaining": float64(9)}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("body = %+v, want %+v", got, want)
 	}
 }
 

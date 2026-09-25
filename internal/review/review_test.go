@@ -260,13 +260,12 @@ type fixture struct {
 	// case, which is also how the Service ships to an operator without a database
 	// behind the game.
 	skips *fakeSkips
-	// albums, breathers and stats back the three read-only extras — the mixer's
-	// album rule, the round's breather card and the answer reveal. They stay nil
-	// unless a test wires them, which is also the "not wired" case the Service
-	// has to keep working through.
+	// albums and breathers back the two read-only extras — the mixer's album
+	// rule and the round's breather card. They stay nil unless a test wires
+	// them, which is also the "not wired" case the Service has to keep working
+	// through.
 	albums    *fakeAlbums
 	breathers *fakeBreathers
-	stats     *fakeSubjectStats
 	now       *time.Time
 	svc       *Service
 }
@@ -318,9 +317,6 @@ func newFixture(t *testing.T, mutate func(*fixture)) *fixture {
 	if f.breathers != nil {
 		cfg.Breathers = f.breathers
 		cfg.Photos = f.breathers
-	}
-	if f.stats != nil {
-		cfg.Stats = f.stats
 	}
 	f.svc = New(cfg)
 	return f
@@ -418,26 +414,6 @@ func (f *fakeBreathers) ListByUIDs(_ context.Context, uids []string) ([]photos.P
 		}
 	}
 	return out, nil
-}
-
-// fakeSubjectStats serves scripted per-subject headline numbers.
-type fakeSubjectStats struct {
-	stats map[string]people.SubjectStats
-	err   error
-}
-
-// SubjectStats returns the scripted stats, or ErrSubjectNotFound.
-func (f *fakeSubjectStats) SubjectStats(
-	_ context.Context, subjectUID string,
-) (people.SubjectStats, error) {
-	if f.err != nil {
-		return people.SubjectStats{}, f.err
-	}
-	stats, ok := f.stats[subjectUID]
-	if !ok {
-		return people.SubjectStats{}, people.ErrSubjectNotFound
-	}
-	return stats, nil
 }
 
 // scannedPerson builds a scanned subject with face candidates at the given

@@ -1,13 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
 import { type Photo } from '../services/photos'
-import { type ReviewBreather, type ReviewQuestion, type ReviewReveal } from '../services/review'
+import { type ReviewBreather, type ReviewQuestion } from '../services/review'
 
 import {
   buildRoundCards,
   DAILY_STORAGE_KEY,
   dailyMixDone,
-  insertReveal,
   localDayKey,
   markDailyMixDone,
   milestoneCrossed,
@@ -27,11 +26,6 @@ function question(id: string): ReviewQuestion {
 /** A breather card's payload. */
 function breather(uid: string): ReviewBreather {
   return { kind: 'breather', photo: photo(uid), title: uid, reason: 'favorite' }
-}
-
-/** The payoff of a confirmed face. */
-function reveal(name = 'Alois'): ReviewReveal {
-  return { subject_uid: 's1', name, photo_count: 27, oldest_year: 1962 }
 }
 
 /** The card types in order, as a compact string for readable assertions. */
@@ -64,42 +58,6 @@ describe('buildRoundCards', () => {
     // A page of nothing but breathers is not a round, it is a slideshow — and
     // the game would report progress through a round nobody is playing.
     expect(buildRoundCards([], [breather('b1')])).toEqual([])
-  })
-})
-
-describe('insertReveal', () => {
-  it('takes the next breather slot, so the round keeps its one pause', () => {
-    const cards = buildRoundCards([question('a'), question('b')], [breather('b1')])
-    expect(shape(cards)).toBe('qbq')
-    const withReveal = insertReveal(cards, reveal())
-    expect(shape(withReveal)).toBe('qrq')
-  })
-
-  it('gets a slot behind the current card when no breather is left', () => {
-    const cards = buildRoundCards([question('a'), question('b')])
-    const withReveal = insertReveal(cards, reveal())
-    // Never in place of what the player is looking at, and never so far ahead
-    // that the payoff loses its connection to the answer that earned it.
-    expect(shape(withReveal)).toBe('qrq')
-  })
-
-  it('never replaces the card on screen, even when that card is the breather', () => {
-    const cards: ReviewCard[] = buildRoundCards([question('a')], [breather('b1')])
-    // A round whose breather sits first: it is what the player is looking at.
-    const onScreenBreather = [cards[0], ...cards.slice(1)]
-    const withReveal = insertReveal(onScreenBreather, reveal())
-    expect(withReveal[0]).toEqual(cards[0])
-  })
-
-  it('rides only once per round', () => {
-    const cards = buildRoundCards([question('a'), question('b'), question('c')])
-    const once = insertReveal(cards, reveal('Alois'))
-    const twice = insertReveal(once, reveal('Bára'))
-    expect(twice.filter((card) => card.type === 'reveal')).toHaveLength(1)
-  })
-
-  it('drops a reveal that arrives after the round is over', () => {
-    expect(insertReveal([], reveal())).toEqual([])
   })
 })
 
